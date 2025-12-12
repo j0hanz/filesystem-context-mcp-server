@@ -1,6 +1,6 @@
 {
   "name": "filesystem-context-mcp",
-  "version": "1.4.0",
+  "version": "1.0.0",
   "description": "MCP server for filesystem scanning, searching, and analysis with security validation",
   "type": "module",
   "main": "dist/index.js",
