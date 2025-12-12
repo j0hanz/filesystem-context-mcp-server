@@ -23,7 +23,20 @@ export function registerListAllowedDirectoriesTool(server: McpServer): void {
     },
     () => {
       const dirs = getAllowedDirectories();
-      const structured = { ok: true, allowedDirectories: dirs };
+      const count = dirs.length;
+      const hint =
+        count === 0
+          ? 'No directories configured. Server cannot access any files.'
+          : count === 1
+            ? 'Single directory configured. All operations are sandboxed here.'
+            : `${count} directories configured. Operations work across all of them.`;
+
+      const structured = {
+        ok: true,
+        allowedDirectories: dirs,
+        count,
+        hint,
+      };
       return {
         content: [{ type: 'text', text: formatAllowedDirectories(dirs) }],
         structuredContent: structured,

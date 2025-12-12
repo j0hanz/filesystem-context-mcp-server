@@ -5,6 +5,8 @@ import { ErrorSchema, FileTypeSchema, TreeEntrySchema } from './common.js';
 export const ListAllowedDirectoriesOutputSchema = {
   ok: z.boolean(),
   allowedDirectories: z.array(z.string()).optional(),
+  count: z.number().optional().describe('Number of allowed directories'),
+  hint: z.string().optional().describe('Usage hint based on configuration'),
   error: ErrorSchema.optional(),
 };
 

@@ -5,6 +5,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { createErrorResponse, ErrorCode } from '../lib/errors.js';
 import { searchContent } from '../lib/file-operations.js';
 import { formatContentMatches } from '../lib/formatters.js';
+import { logger } from '../lib/mcp-logger.js';
 import {
   SearchContentInputSchema,
   SearchContentOutputSchema,
@@ -44,7 +45,13 @@ export function registerSearchContentTool(server: McpServer): void {
       wholeWord,
       isLiteral,
     }) => {
+      const toolLogger = 'search_content';
       try {
+        logger.info(
+          `Starting search: pattern="${pattern}" in "${path}"`,
+          toolLogger
+        );
+
         const result = await searchContent(path, pattern, {
           filePattern,
           excludePatterns,
@@ -85,6 +92,12 @@ export function registerSearchContentTool(server: McpServer): void {
             stoppedReason: result.summary.stoppedReason,
           },
         };
+
+        logger.info(
+          `Search complete: ${result.summary.matches} matches in ${result.summary.filesMatched} files (${result.summary.filesScanned} scanned)`,
+          toolLogger
+        );
+
         return {
           content: [
             { type: 'text', text: formatContentMatches(result.matches) },
@@ -92,6 +105,7 @@ export function registerSearchContentTool(server: McpServer): void {
           structuredContent: structured,
         };
       } catch (error) {
+        logger.error(`Search failed: ${String(error)}`, toolLogger);
         return createErrorResponse(error, ErrorCode.E_UNKNOWN, path);
       }
     }
