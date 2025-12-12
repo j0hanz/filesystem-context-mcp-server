@@ -1,0 +1,20 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "name": "io.github.j0hanz/filesystem-context",
+  "description": "🔍 Read-only MCP server for secure filesystem exploration, searching, and analysis",
+  "repository": {
+    "url": "https://github.com/j0hanz/filesystem-context-mcp-server",
+    "source": "github"
+  },
+  "version": "1.0.9",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@j0hanz/filesystem-context-mcp",
+      "version": "1.0.9",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}
