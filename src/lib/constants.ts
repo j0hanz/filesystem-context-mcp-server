@@ -280,7 +280,7 @@ export function getMimeType(ext: string): string {
   );
 }
 
-export const MIME_TYPES = {
+const MIME_TYPES = {
   // Images
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
