@@ -3,27 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { z } from 'zod';
 
-import { getAllowedDirectories } from '../lib/path-validation.js';
-
-// Helper for path autocompletion
-function pathCompleter(value: string): string[] {
-  const dirs = getAllowedDirectories();
-  const lowerValue = value.toLowerCase();
-  return dirs.filter(
-    (d) =>
-      d.toLowerCase().includes(lowerValue) ||
-      lowerValue.includes(d.toLowerCase().slice(0, 10))
-  );
-}
-
-// Common directories to exclude from scanning
-const DEFAULT_EXCLUDES = [
-  'node_modules/**',
-  '.git/**',
-  'dist/**',
-  'build/**',
-  'coverage/**',
-];
+import { DEFAULT_EXCLUDES, pathCompleter } from './shared.js';
 
 // Operation configurations for cleaner prompt generation
 interface OperationConfig {

@@ -3,28 +3,10 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { z } from 'zod';
 
-import { getAllowedDirectories } from '../lib/path-validation.js';
+import { DEFAULT_EXCLUDES, pathCompleter } from './shared.js';
 
-// Helper for path autocompletion
-function pathCompleter(value: string): string[] {
-  const dirs = getAllowedDirectories();
-  const lowerValue = value.toLowerCase();
-  return dirs.filter(
-    (d) =>
-      d.toLowerCase().includes(lowerValue) ||
-      lowerValue.includes(d.toLowerCase().slice(0, 10))
-  );
-}
-
-// Common directories to exclude from analysis
-const DEFAULT_EXCLUDES = [
-  'node_modules/**',
-  '.git/**',
-  'dist/**',
-  'build/**',
-  'coverage/**',
-  '*.min.js',
-];
+// Extended excludes for codebase analysis (adds minified files)
+const ANALYZE_EXCLUDES = [...DEFAULT_EXCLUDES, '*.min.js'];
 
 // Focus-specific search patterns and deliverables
 interface FocusConfig {
@@ -138,7 +120,7 @@ export function registerAnalyzeCodebasePrompt(server: McpServer): void {
         ...focusAreas.map((f) => FOCUS_CONFIG[f]?.maxResults ?? 100)
       );
 
-      const excludesJson = JSON.stringify(DEFAULT_EXCLUDES);
+      const excludesJson = JSON.stringify(ANALYZE_EXCLUDES);
 
       // Build search instructions for each focus area
       const searchInstructions = focusAreas
@@ -160,7 +142,7 @@ export function registerAnalyzeCodebasePrompt(server: McpServer): void {
 
 ⚠️ First run \`list_allowed_directories\` to verify path is accessible.
 
-**Default excludes:** ${DEFAULT_EXCLUDES.slice(0, 4).join(', ')}
+**Default excludes:** ${ANALYZE_EXCLUDES.slice(0, 4).join(', ')}
 
 **Workflow:**
 1. \`directory_tree\` maxDepth=${maxDepth} excludePatterns=${excludesJson} → structure overview

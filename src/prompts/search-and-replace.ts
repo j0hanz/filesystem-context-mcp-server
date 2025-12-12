@@ -3,29 +3,10 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { z } from 'zod';
 
-import { getAllowedDirectories } from '../lib/path-validation.js';
+import { DEFAULT_EXCLUDES, pathCompleter } from './shared.js';
 
-// Helper for path autocompletion
-function pathCompleter(value: string): string[] {
-  const dirs = getAllowedDirectories();
-  const lowerValue = value.toLowerCase();
-  return dirs.filter(
-    (d) =>
-      d.toLowerCase().includes(lowerValue) ||
-      lowerValue.includes(d.toLowerCase().slice(0, 10))
-  );
-}
-
-// Common directories to exclude from search
-const DEFAULT_EXCLUDES = [
-  'node_modules/**',
-  '.git/**',
-  'dist/**',
-  'build/**',
-  'coverage/**',
-  '*.lock',
-  '*.min.js',
-];
+// Extended excludes for search-and-replace (adds lock/minified files)
+const SEARCH_REPLACE_EXCLUDES = [...DEFAULT_EXCLUDES, '*.lock', '*.min.js'];
 
 export function registerSearchAndReplacePrompt(server: McpServer): void {
   server.registerPrompt(
@@ -87,7 +68,7 @@ export function registerSearchAndReplacePrompt(server: McpServer): void {
       isLiteral,
       maxResults,
     }) => {
-      const excludesJson = JSON.stringify(DEFAULT_EXCLUDES);
+      const excludesJson = JSON.stringify(SEARCH_REPLACE_EXCLUDES);
 
       // Build search options string
       const searchOptions = [
@@ -124,7 +105,7 @@ export function registerSearchAndReplacePrompt(server: McpServer): void {
 | Literal (no regex) | ${String(isLiteral)} |
 | Max results | ${maxResults} |
 
-**Default excludes:** ${DEFAULT_EXCLUDES.slice(0, 4).join(', ')}
+**Default excludes:** ${SEARCH_REPLACE_EXCLUDES.slice(0, 4).join(', ')}
 
 **Workflow:**
 1. \`search_content\` ${searchOptions}

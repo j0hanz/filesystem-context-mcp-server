@@ -3,29 +3,10 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { z } from 'zod';
 
-import { getAllowedDirectories } from '../lib/path-validation.js';
+import { DEFAULT_EXCLUDES, pathCompleter } from './shared.js';
 
-// Helper for path autocompletion
-function pathCompleter(value: string): string[] {
-  const dirs = getAllowedDirectories();
-  const lowerValue = value.toLowerCase();
-  return dirs.filter(
-    (d) =>
-      d.toLowerCase().includes(lowerValue) ||
-      lowerValue.includes(d.toLowerCase().slice(0, 10))
-  );
-}
-
-// Common directories to exclude from duplicate scanning
-const DEFAULT_EXCLUDES = [
-  'node_modules/**',
-  '.git/**',
-  'dist/**',
-  'build/**',
-  'coverage/**',
-  '*.min.js',
-  '*.bundle.js',
-];
+// Extended excludes for duplicate scanning (adds minified/bundled files to base excludes)
+const DUPLICATE_EXCLUDES = [...DEFAULT_EXCLUDES, '*.min.js', '*.bundle.js'];
 
 export function registerFindDuplicatesPrompt(server: McpServer): void {
   server.registerPrompt(
@@ -58,7 +39,7 @@ export function registerFindDuplicatesPrompt(server: McpServer): void {
       },
     },
     ({ path, pattern, searchTerm, minLines }) => {
-      const excludePatterns = JSON.stringify(DEFAULT_EXCLUDES);
+      const excludePatterns = JSON.stringify(DUPLICATE_EXCLUDES);
 
       const searchInstructions = searchTerm
         ? `\`search_content\` pattern="${searchTerm}" contextLines=2 → find all occurrences`

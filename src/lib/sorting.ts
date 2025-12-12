@@ -2,8 +2,8 @@ import * as path from 'node:path';
 
 import type { FileType } from '../config/types.js';
 
-// Common sortable entry interface
-export interface SortableEntry {
+// Common sortable entry interface (internal use only)
+interface SortableEntry {
   name?: string;
   size?: number;
   modified?: Date;

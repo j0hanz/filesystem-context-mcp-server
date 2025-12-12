@@ -9,11 +9,8 @@ export function setMcpServerInstance(server: McpServer): void {
   mcpServerInstance = server;
 }
 
-export function mcpLog(
-  level: LogLevel,
-  data: string,
-  loggerName?: string
-): void {
+// Internal logging function - use `logger` object for external access
+function mcpLog(level: LogLevel, data: string, loggerName?: string): void {
   if (!mcpServerInstance) {
     // Fallback to stderr if server not connected
     console.error(`[${level}] ${loggerName ? `${loggerName}: ` : ''}${data}`);

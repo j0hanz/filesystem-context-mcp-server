@@ -3,29 +3,10 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { z } from 'zod';
 
-import { getAllowedDirectories } from '../lib/path-validation.js';
+import { DEFAULT_EXCLUDES, pathCompleter } from './shared.js';
 
-// Helper for path autocompletion
-function pathCompleter(value: string): string[] {
-  const dirs = getAllowedDirectories();
-  const lowerValue = value.toLowerCase();
-  return dirs.filter(
-    (d) =>
-      d.toLowerCase().includes(lowerValue) ||
-      lowerValue.includes(d.toLowerCase().slice(0, 10))
-  );
-}
-
-// Common directories to exclude
-const DEFAULT_EXCLUDES = [
-  'node_modules/**',
-  '.git/**',
-  'dist/**',
-  'build/**',
-  'coverage/**',
-  '.next/**',
-  '.nuxt/**',
-];
+// Extended excludes for project overview (adds framework-specific dirs)
+const PROJECT_EXCLUDES = [...DEFAULT_EXCLUDES, '.next/**', '.nuxt/**'];
 
 // Config files to look for by category
 const CONFIG_FILES: Record<string, string[]> = {
@@ -89,7 +70,7 @@ export function registerProjectOverviewPrompt(server: McpServer): void {
       },
     },
     ({ path, depth, includeCI }) => {
-      const excludesJson = JSON.stringify(DEFAULT_EXCLUDES);
+      const excludesJson = JSON.stringify(PROJECT_EXCLUDES);
       const configList = getConfigFileList();
 
       // Priority files to always try reading
@@ -110,7 +91,7 @@ export function registerProjectOverviewPrompt(server: McpServer): void {
 
 ⚠️ First run \`list_allowed_directories\` to verify path is accessible.
 
-**Default excludes:** ${DEFAULT_EXCLUDES.slice(0, 4).join(', ')}
+**Default excludes:** ${PROJECT_EXCLUDES.slice(0, 4).join(', ')}
 
 **Workflow:**
 1. \`directory_tree\` maxDepth=${String(depth)} excludePatterns=${excludesJson} → structure
