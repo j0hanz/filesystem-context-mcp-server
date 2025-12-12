@@ -1,7 +1,8 @@
 {
   "name": "@j0hanz/filesystem-context-mcp",
   "version": "1.0.8",
-  "description": "A Model Context Protocol (MCP) server that provides context from the filesystem by scanning and analyzing files and directories.",
+  "mcpName": "io.github.j0hanz/filesystem-context",
+  "description": "🔍 Read-only MCP server for secure filesystem exploration, searching, and analysis",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
