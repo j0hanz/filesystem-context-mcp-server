@@ -21,14 +21,9 @@ import { createServer, parseArgs, startServer } from './server.js';
 async function main(): Promise<void> {
   const { allowedDirs, allowCwd } = await parseArgs();
 
-  console.error('Filesystem Context MCP Server starting...');
-
   if (allowedDirs.length > 0) {
     setAllowedDirectories(allowedDirs);
     console.error('Allowed directories (from CLI):');
-    for (const dir of allowedDirs) {
-      console.error(`  - ${dir}`);
-    }
   } else {
     console.error(
       `No directories specified via CLI. Will use MCP Roots${allowCwd ? ' or current working directory' : ''}.`
@@ -41,17 +36,14 @@ async function main(): Promise<void> {
 
 // Graceful shutdown handlers
 process.on('SIGTERM', () => {
-  console.error('Received SIGTERM, shutting down gracefully...');
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
-  console.error('Received SIGINT, shutting down gracefully...');
   process.exit(0);
 });
 
 // Run main and handle fatal errors
-main().catch((error: unknown) => {
-  console.error('Fatal error:', error);
+main().catch(() => {
   process.exit(1);
 });

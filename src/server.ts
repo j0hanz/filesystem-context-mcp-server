@@ -71,12 +71,10 @@ async function updateRootsFromClient(server: McpServer): Promise<void> {
         const currentDirs = getAllowedDirectories();
         const mergedDirs = [...new Set([...currentDirs, ...validDirs])];
         setAllowedDirectories(mergedDirs);
-        console.error('Updated allowed directories from roots:', mergedDirs);
       }
     }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error('Roots protocol not available:', message);
+  } catch {
+    // Ignore errors - roots protocol may not be supported
   }
 }
 
@@ -99,13 +97,11 @@ export async function startServer(server: McpServer): Promise<void> {
   server.server.setNotificationHandler(
     RootsListChangedNotificationSchema,
     async () => {
-      console.error('Received roots/list_changed notification');
       await updateRootsFromClient(server);
     }
   );
 
   await server.connect(transport);
-  console.error('Server connected and ready');
 
   // Update allowed directories from roots protocol if available
   void updateRootsFromClient(server).then(() => {
@@ -118,7 +114,6 @@ export async function startServer(server: McpServer): Promise<void> {
         console.error(
           'No directories specified. Using current working directory:'
         );
-        console.error(`  - ${cwd}`);
       } else {
         console.error(
           'WARNING: No directories configured. Use --allow-cwd flag or specify directories via CLI/roots protocol.'

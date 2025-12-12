@@ -228,7 +228,6 @@ export async function getValidRootDirectories(
   for (const root of roots) {
     // Only accept file:// URIs
     if (!root.uri.startsWith('file://')) {
-      console.error(`Skipping non-file:// root URI: ${root.uri}`);
       continue;
     }
 
@@ -250,9 +249,7 @@ export async function getValidRootDirectories(
       } else {
         console.error(`Skipping root (not a directory): ${normalizedPath}`);
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`Skipping inaccessible root ${root.uri}: ${message}`);
+    } catch {
       continue;
     }
   }

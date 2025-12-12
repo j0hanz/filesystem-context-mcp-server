@@ -809,16 +809,11 @@ export async function searchContent(
       if (fileHadMatches) filesMatched++;
 
       if (stoppedReason !== undefined) break;
-    } catch (error) {
+    } catch {
       if (handle) {
         await handle.close().catch(() => {});
       }
       skippedInaccessible++;
-
-      const { code } = error as NodeJS.ErrnoException;
-      if (code !== 'ENOENT' && code !== 'EACCES' && code !== 'EPERM') {
-        console.error(`[searchContent] Error processing ${file}:`, error);
-      }
     }
   }
 
