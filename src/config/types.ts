@@ -160,7 +160,7 @@ export interface DetailedError {
 }
 
 export interface ErrorResponse {
-  [x: string]: unknown;
+  [key: string]: unknown;
   content: { type: 'text'; text: string }[];
   structuredContent: {
     ok: false;

@@ -14,23 +14,9 @@ export function createExcludeMatcher(
     matchers.some((m) => m.match(name) || m.match(relativePath));
 }
 
-// Handle directory traversal errors with consistent logging
-export function handleDirectoryError(
-  error: unknown,
-  context: string,
-  currentPath: string
-): { shouldLog: boolean } {
-  const { code } = error as NodeJS.ErrnoException;
-  const shouldLog = code !== 'ENOENT' && code !== 'EACCES' && code !== 'EPERM';
-
-  if (shouldLog) {
-    console.error(
-      `[${context}] Error reading directory ${currentPath}:`,
-      error
-    );
-  }
-
-  return { shouldLog };
+// Handle directory traversal errors (silently ignored to avoid log noise)
+export function handleDirectoryError(error: unknown): void {
+  void (error as NodeJS.ErrnoException).code;
 }
 
 // Classify symlink/access errors for summary tracking

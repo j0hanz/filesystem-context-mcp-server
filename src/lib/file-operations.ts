@@ -120,17 +120,11 @@ function countRegexMatches(
 
     // Check timeout periodically
     if (count % 100 === 0 && Date.now() > deadline) {
-      console.error(
-        `[countRegexMatches] Regex matching timed out after ${timeoutMs}ms on line (length: ${line.length})`
-      );
       return -1; // Signal timeout
     }
 
     // Safety check for runaway regex
     if (iterations > maxIterations) {
-      console.error(
-        `[countRegexMatches] Max iterations exceeded (${maxIterations}) on line (length: ${line.length})`
-      );
       return -1; // Signal runaway regex
     }
   }
@@ -277,7 +271,7 @@ export async function listDirectory(
         items = await fs.readdir(currentPath, { withFileTypes: true });
       } catch (error) {
         skippedInaccessible++;
-        handleDirectoryError(error, 'listDirectory', currentPath);
+        handleDirectoryError(error);
         return;
       }
 
@@ -600,11 +594,7 @@ export async function searchContent(
       `Potentially unsafe regular expression (ReDoS risk): ${searchPattern}. ` +
         'Avoid patterns with nested quantifiers, overlapping alternations, or exponential backtracking.',
       basePath,
-      {
-        searchPattern,
-        finalPattern,
-        reason: 'ReDoS risk detected by safe-regex2',
-      }
+      { reason: 'ReDoS risk detected' }
     );
   }
 
@@ -768,9 +758,6 @@ export async function searchContent(
           const matchCount = countRegexMatches(line, regex);
           if (matchCount < 0) {
             linesSkippedDueToRegexTimeout++;
-            console.error(
-              `[searchContent] Skipping line ${lineNumber} in ${validFile} due to regex timeout`
-            );
             if (lineBuffer) {
               lineBuffer.push(trimmedLine);
             }
@@ -879,7 +866,7 @@ export async function analyzeDirectory(
         items = await fs.readdir(currentPath, { withFileTypes: true });
       } catch (error) {
         skippedInaccessible++;
-        handleDirectoryError(error, 'analyzeDirectory', currentPath);
+        handleDirectoryError(error);
         return;
       }
 
