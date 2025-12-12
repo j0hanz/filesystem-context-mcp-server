@@ -1,11 +1,6 @@
 import type { Buffer } from 'node:buffer';
 
-export interface ImageDimensions {
-  width: number;
-  height: number;
-}
-
-type ImageParser = (buffer: Buffer) => ImageDimensions | null;
+import type { ImageDimensions, ImageParser } from '../config/types.js';
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47] as const;
 const JPEG_SIGNATURE = [0xff, 0xd8] as const;

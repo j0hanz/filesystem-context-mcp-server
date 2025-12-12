@@ -1,3 +1,5 @@
+import type { Buffer } from 'node:buffer';
+
 /**
  * File and Directory Types
  */
@@ -239,3 +241,39 @@ export interface ErrorResponse {
   };
   isError: true;
 }
+
+// =============================================================================
+// Server Types
+// =============================================================================
+
+/**
+ * Result of parsing command-line arguments.
+ */
+export interface ParseArgsResult {
+  allowedDirs: string[];
+  allowCwd: boolean;
+}
+
+/**
+ * Options for server configuration.
+ */
+export interface ServerOptions {
+  allowCwd?: boolean;
+}
+
+// =============================================================================
+// Image Types
+// =============================================================================
+
+/**
+ * Image width and height dimensions.
+ */
+export interface ImageDimensions {
+  width: number;
+  height: number;
+}
+
+/**
+ * Function signature for parsing image dimensions from a buffer.
+ */
+export type ImageParser = (buffer: Buffer) => ImageDimensions | null;

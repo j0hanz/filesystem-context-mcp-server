@@ -6,6 +6,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { RootsListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { Root } from '@modelcontextprotocol/sdk/types.js';
 
+import type { ParseArgsResult, ServerOptions } from './config/types.js';
 import { normalizePath } from './lib/path-utils.js';
 import {
   getAllowedDirectories,
@@ -18,11 +19,6 @@ import { registerAllTools } from './tools/index.js';
 const require = createRequire(import.meta.url);
 const packageJson = require('../package.json') as { version: string };
 const SERVER_VERSION = packageJson.version;
-
-export interface ParseArgsResult {
-  allowedDirs: string[];
-  allowCwd: boolean;
-}
 
 export async function parseArgs(): Promise<ParseArgsResult> {
   const args = process.argv.slice(2);
@@ -59,10 +55,6 @@ export async function parseArgs(): Promise<ParseArgsResult> {
   }
 
   return { allowedDirs: validatedDirs, allowCwd };
-}
-
-export interface ServerOptions {
-  allowCwd?: boolean;
 }
 
 // Store server options for use in startServer
