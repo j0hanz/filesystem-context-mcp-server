@@ -1,0 +1,91 @@
+name: Publish to npm
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Build and Publish to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      # Trusted Publishing requires npm 11.5.1+
+      - name: Update npm to latest
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Run type-check
+        run: npm run type-check
+
+      - name: Run tests
+        run: npm run test
+
+      - name: Build package
+        run: npm run build
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+
+      - name: Update package version
+        run: npm version ${{ steps.version.outputs.version }} --no-git-tag-version --allow-same-version
+
+      # Trusted Publishing: No NODE_AUTH_TOKEN needed!
+      # npm automatically uses OIDC for authentication
+      - name: Publish to npm (Trusted Publishing)
+        run: npm publish --access public
+
+      - name: Create workflow summary
+        run: |
+          echo "## 📦 Package Published to npm" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Package** | [\`@j0hanz/filesystem-context-mcp\`](https://www.npmjs.com/package/@j0hanz/filesystem-context-mcp) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Version** | \`${{ steps.version.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Registry** | npmjs.com |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Auth** | 🔐 Trusted Publishing (OIDC) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Provenance** | ✅ Auto-generated |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Release** | [${{ github.event.release.name }}](${{ github.event.release.html_url }}) |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Usage" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**MCP Server Configuration:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+          echo "{" >> $GITHUB_STEP_SUMMARY
+          echo "  \"mcpServers\": {" >> $GITHUB_STEP_SUMMARY
+          echo "    \"filesystem\": {" >> $GITHUB_STEP_SUMMARY
+          echo "      \"command\": \"npx\"," >> $GITHUB_STEP_SUMMARY
+          echo "      \"args\": [\"-y\", \"@j0hanz/filesystem-context-mcp@${{ steps.version.outputs.version }}\", \"/path/to/dir\"]" >> $GITHUB_STEP_SUMMARY
+          echo "    }" >> $GITHUB_STEP_SUMMARY
+          echo "  }" >> $GITHUB_STEP_SUMMARY
+          echo "}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Direct installation:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "npm install -g @j0hanz/filesystem-context-mcp" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
