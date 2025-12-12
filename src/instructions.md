@@ -1,245 +1,174 @@
 # Filesystem Context MCP Server
 
-> **Read-only** filesystem tools for exploring directories, searching files, and analyzing codebases. All operations are safe and idempotent.
+> **Read-only** tools for exploring directories, searching files, and analyzing codebases.
 
----
+## Quick Reference
 
-## Tool Selection Guide
+| Goal                | Tool                       | Key Parameters                      |
+| ------------------- | -------------------------- | ----------------------------------- |
+| Check access        | `list_allowed_directories` | —                                   |
+| Project structure   | `directory_tree`           | `maxDepth`, `excludePatterns`       |
+| List contents       | `list_directory`           | `recursive`, `sortBy`               |
+| Directory stats     | `analyze_directory`        | `topN`, `excludePatterns`           |
+| Find files          | `search_files`             | `pattern` (glob), `maxResults`      |
+| Search in files     | `search_content`           | `pattern` (regex), `contextLines`   |
+| Read file           | `read_file`                | `head`, `tail`, `lineStart/lineEnd` |
+| Read multiple files | `read_multiple_files`      | `paths[]` — **preferred for 2+**    |
+| File metadata       | `get_file_info`            | —                                   |
+| Binary/media files  | `read_media_file`          | `maxSize`                           |
 
-### Which Tool Should I Use?
-
-| Goal                              | Tool                       | Key Parameters                                    |
-| --------------------------------- | -------------------------- | ------------------------------------------------- |
-| See what directories I can access | `list_allowed_directories` | _(none)_                                          |
-| Visualize project structure       | `directory_tree`           | `maxDepth`, `excludePatterns`, `includeSize`      |
-| List directory contents           | `list_directory`           | `recursive`, `sortBy`, `maxEntries`               |
-| Get directory statistics          | `analyze_directory`        | `topN`, `excludePatterns`                         |
-| Find files by name/pattern        | `search_files`             | `pattern` (glob), `excludePatterns`, `maxResults` |
-| Search inside file contents       | `search_content`           | `pattern` (regex), `filePattern`, `contextLines`  |
-| Read a single file                | `read_file`                | `head`, `tail`, `lineStart`/`lineEnd`             |
-| Read multiple files               | `read_multiple_files`      | `paths[]`, `head`, `tail`                         |
-| Get file metadata                 | `get_file_info`            | _(path only)_                                     |
-| Read images/binary files          | `read_media_file`          | `maxSize`                                         |
-
----
-
-## Quick Start Workflow
-
-**Always start here:**
-
-```text
-1. list_allowed_directories         → Know your boundaries
-2. directory_tree(path, maxDepth=3) → See project structure
-3. analyze_directory(path)          → Get statistics
-```
-
----
-
-## Tool Reference
-
-### `list_allowed_directories`
-
-Returns all directories this server can access. **Call first** to understand scope.
-
-### `directory_tree`
-
-Returns a JSON tree structure—ideal for AI parsing.
-
-| Parameter         | Type     | Default | Description                 |
-| ----------------- | -------- | ------- | --------------------------- |
-| `path`            | string   | —       | Directory to visualize      |
-| `maxDepth`        | number   | 5       | How deep to traverse (0-50) |
-| `excludePatterns` | string[] | []      | Glob patterns to skip       |
-| `includeHidden`   | boolean  | false   | Include dotfiles            |
-| `includeSize`     | boolean  | false   | Show file sizes             |
-| `maxFiles`        | number   | —       | Limit total files returned  |
-
-**Example:** `directory_tree(path, maxDepth=3, excludePatterns=["node_modules", "dist"])`
-
-### `list_directory`
-
-Flat listing with metadata. Use for detailed file information.
-
-| Parameter       | Type    | Default | Description                        |
-| --------------- | ------- | ------- | ---------------------------------- |
-| `path`          | string  | —       | Directory to list                  |
-| `recursive`     | boolean | false   | Include subdirectories             |
-| `sortBy`        | enum    | "name"  | `name`, `size`, `modified`, `type` |
-| `maxDepth`      | number  | 10      | Depth limit when recursive         |
-| `maxEntries`    | number  | —       | Limit results (up to 100,000)      |
-| `includeHidden` | boolean | false   | Include dotfiles                   |
-
-### `analyze_directory`
-
-Statistics: file counts, sizes, types, largest files, recent changes.
-
-| Parameter         | Type     | Default | Description                    |
-| ----------------- | -------- | ------- | ------------------------------ |
-| `path`            | string   | —       | Directory to analyze           |
-| `maxDepth`        | number   | 10      | How deep to analyze            |
-| `topN`            | number   | 10      | Number of largest/recent files |
-| `excludePatterns` | string[] | []      | Patterns to skip               |
-| `includeHidden`   | boolean  | false   | Include dotfiles               |
-
-### `search_files`
-
-Find files by glob pattern. Returns paths, sizes, and modification dates.
-
-| Parameter         | Type     | Default | Description                            |
-| ----------------- | -------- | ------- | -------------------------------------- |
-| `path`            | string   | —       | Base directory                         |
-| `pattern`         | string   | —       | **Glob**: `**/*.ts`, `src/**/test*.js` |
-| `excludePatterns` | string[] | []      | Patterns to skip                       |
-| `maxResults`      | number   | —       | Limit results (up to 10,000)           |
-| `maxDepth`        | number   | —       | Depth limit                            |
-| `sortBy`          | enum     | "path"  | `name`, `size`, `modified`, `path`     |
-
-**Common patterns:**
-
-- `**/*.ts` — All TypeScript files
-- `src/**/*.{js,jsx}` — JS/JSX in src
-- `**/test/**` — All test directories
-- `**/*.test.ts` — Test files by convention
-
-### `search_content`
-
-Grep-like search inside files. Returns matching lines with context.
-
-| Parameter         | Type     | Default | Description                             |
-| ----------------- | -------- | ------- | --------------------------------------- |
-| `path`            | string   | —       | Base directory                          |
-| `pattern`         | string   | —       | **Regex**: `TODO\|FIXME`, `function\s+` |
-| `filePattern`     | string   | `**/*`  | Glob to filter files                    |
-| `excludePatterns` | string[] | []      | Patterns to skip                        |
-| `caseSensitive`   | boolean  | false   | Case-sensitive matching                 |
-| `wholeWord`       | boolean  | false   | Match whole words only                  |
-| `isLiteral`       | boolean  | false   | Treat pattern as literal (not regex)    |
-| `contextLines`    | number   | 0       | Lines before/after match (0-10)         |
-| `maxResults`      | number   | 100     | Limit matches                           |
-| `maxFilesScanned` | number   | —       | Limit files to scan                     |
-| `maxFileSize`     | number   | 1MB     | Skip files larger than this             |
-| `timeoutMs`       | number   | —       | Operation timeout                       |
-| `skipBinary`      | boolean  | true    | Skip binary files                       |
-
-**Example:** `search_content(path, pattern="export (function|class)", filePattern="**/*.ts", contextLines=2)`
-
-### `read_file`
-
-Read a single file with optional line selection.
-
-| Parameter   | Type   | Default | Description                                 |
-| ----------- | ------ | ------- | ------------------------------------------- |
-| `path`      | string | —       | File to read                                |
-| `encoding`  | enum   | "utf-8" | `utf-8`, `ascii`, `base64`, `hex`, `latin1` |
-| `maxSize`   | number | 10MB    | Maximum file size                           |
-| `head`      | number | —       | Read first N lines only                     |
-| `tail`      | number | —       | Read last N lines only                      |
-| `lineStart` | number | —       | Start line (1-indexed)                      |
-| `lineEnd`   | number | —       | End line (inclusive)                        |
-
-**⚠️ Cannot combine:** `head`/`tail` with `lineStart`/`lineEnd`
-
-### `read_multiple_files`
-
-**Preferred for 2+ files** — runs in parallel, individual failures don't block others.
-
-| Parameter  | Type     | Default | Description             |
-| ---------- | -------- | ------- | ----------------------- |
-| `paths`    | string[] | —       | Files to read (max 100) |
-| `encoding` | enum     | "utf-8" | Encoding for all files  |
-| `maxSize`  | number   | 10MB    | Max size per file       |
-| `head`     | number   | —       | First N lines from each |
-| `tail`     | number   | —       | Last N lines from each  |
-
-### `get_file_info`
-
-Metadata only: size, timestamps, permissions, MIME type.
-
-| Parameter | Type   | Description       |
-| --------- | ------ | ----------------- |
-| `path`    | string | File or directory |
-
-### `read_media_file`
-
-Returns binary files as base64 with MIME type. Includes image dimensions.
-
-| Parameter | Type   | Default | Description        |
-| --------- | ------ | ------- | ------------------ |
-| `path`    | string | —       | Path to media file |
-| `maxSize` | number | 50MB    | Maximum file size  |
-
----
-
-## Efficiency Best Practices
-
-### ✅ Do
-
-- **Batch reads**: Use `read_multiple_files` for 2+ files
-- **Limit scope**: Always set `maxResults`, `maxDepth`, `maxEntries`
-- **Exclude noise**: Use `excludePatterns=["node_modules", ".git", "dist"]`
-- **Preview large files**: Use `head=50` or `tail=50` before full read
-- **Search then read**: `search_files` → `read_multiple_files`
-
-### ❌ Don't
-
-- Call `read_file` in a loop — use `read_multiple_files`
-- Use `recursive=true` without `maxDepth` on large directories
-- Search with `maxResults` unset on large codebases
-- Read entire large files when you only need a section
-
----
-
-## Common Workflows
+## Workflows
 
 ### Project Discovery
 
 ```text
-list_allowed_directories
-directory_tree(path, maxDepth=3, excludePatterns=["node_modules",".git"])
-analyze_directory(path, excludePatterns=["node_modules"])
-read_multiple_files([package.json, README.md, tsconfig.json])
+list_allowed_directories → directory_tree(maxDepth=3) → analyze_directory → read_multiple_files([package.json, README.md])
 ```
 
-### Find and Read Code
+### Find & Read Code
 
 ```text
-search_files(path, pattern="**/*.service.ts")
-read_multiple_files([...results])
+search_files(pattern="**/*.ts") → read_multiple_files([...results])
 ```
 
-### Search Code Patterns
+### Search Patterns
 
 ```text
-search_content(path, pattern="async function", filePattern="**/*.ts", contextLines=2)
+search_content(pattern="TODO|FIXME", filePattern="**/*.ts", contextLines=2)
 ```
 
-### Investigate Large Files
+## Best Practices
 
-```text
-analyze_directory(path)  → See largestFiles
-get_file_info(largefile) → Check exact size
-read_file(largefile, head=100) → Preview beginning
-```
+**Do:**
 
----
+- Use `read_multiple_files` for 2+ files (parallel, resilient)
+- Set `maxResults`, `maxDepth`, `maxEntries` limits
+- Use `excludePatterns=["node_modules", ".git", "dist"]`
+- Preview with `head=50` before full reads
 
-## Error Recovery
+**Don't:**
 
-| Error Code          | Meaning                       | Solution                                    |
-| ------------------- | ----------------------------- | ------------------------------------------- |
-| `E_ACCESS_DENIED`   | Path outside allowed dirs     | Run `list_allowed_directories`              |
-| `E_NOT_FOUND`       | Path doesn't exist            | Use `list_directory` to explore             |
-| `E_NOT_FILE`        | Expected file, got directory  | Use `list_directory` or `directory_tree`    |
-| `E_NOT_DIRECTORY`   | Expected directory, got file  | Use `read_file` or `get_file_info`          |
-| `E_TOO_LARGE`       | File exceeds size limit       | Use `head`/`tail` or increase `maxSize`     |
-| `E_BINARY_FILE`     | Binary file in text operation | Use `read_media_file` instead               |
-| `E_TIMEOUT`         | Operation too slow            | Reduce `maxResults`, `maxDepth`, `maxFiles` |
-| `E_INVALID_PATTERN` | Bad glob/regex syntax         | Check pattern syntax                        |
+- Loop `read_file` — batch with `read_multiple_files`
+- Recursive search without `maxDepth`
+- Search without `maxResults` on large codebases
 
----
+## Tool Details
 
-## Security Notes
+### `directory_tree`
 
-- **Read-only**: No writes, deletes, or modifications possible
-- **Path validation**: Symlinks cannot escape allowed directories
-- **Binary detection**: Prevents accidental large base64 in text output
+JSON tree structure for AI parsing.
+
+| Parameter         | Default | Description           |
+| ----------------- | ------- | --------------------- |
+| `path`            | —       | Directory path        |
+| `maxDepth`        | 5       | Depth limit (0-50)    |
+| `excludePatterns` | []      | Glob patterns to skip |
+| `includeHidden`   | false   | Include dotfiles      |
+| `includeSize`     | false   | Show file sizes       |
+| `maxFiles`        | —       | Limit total files     |
+
+### `search_files`
+
+Find files by glob pattern.
+
+| Parameter         | Default | Description               |
+| ----------------- | ------- | ------------------------- |
+| `path`            | —       | Base directory            |
+| `pattern`         | —       | Glob: `**/*.ts`, `src/**` |
+| `excludePatterns` | []      | Patterns to skip          |
+| `maxResults`      | —       | Limit (up to 10,000)      |
+| `sortBy`          | "path"  | `name/size/modified/path` |
+
+### `search_content`
+
+Grep-like regex search in files.
+
+| Parameter       | Default | Description               |
+| --------------- | ------- | ------------------------- |
+| `path`          | —       | Base directory            |
+| `pattern`       | —       | Regex: `TODO\|FIXME`      |
+| `filePattern`   | `**/*`  | Glob filter               |
+| `contextLines`  | 0       | Lines before/after (0-10) |
+| `caseSensitive` | false   | Case matching             |
+| `wholeWord`     | false   | Word boundaries           |
+| `isLiteral`     | false   | Escape regex              |
+| `maxResults`    | 100     | Limit matches             |
+| `skipBinary`    | true    | Skip binary files         |
+
+### `read_file`
+
+Read single file with line selection.
+
+| Parameter   | Default | Description                     |
+| ----------- | ------- | ------------------------------- |
+| `path`      | —       | File path                       |
+| `encoding`  | utf-8   | `utf-8/ascii/base64/hex/latin1` |
+| `maxSize`   | 10MB    | Size limit                      |
+| `head`      | —       | First N lines                   |
+| `tail`      | —       | Last N lines                    |
+| `lineStart` | —       | Start line (1-indexed)          |
+| `lineEnd`   | —       | End line (inclusive)            |
+
+> ⚠️ Cannot combine `head/tail` with `lineStart/lineEnd`
+
+### `read_multiple_files`
+
+Parallel batch reads — failures don't block others.
+
+| Parameter  | Default | Description        |
+| ---------- | ------- | ------------------ |
+| `paths`    | —       | Array (max 100)    |
+| `encoding` | utf-8   | Encoding for all   |
+| `maxSize`  | 10MB    | Per-file limit     |
+| `head`     | —       | First N lines each |
+| `tail`     | —       | Last N lines each  |
+
+### `list_directory`
+
+Flat listing with metadata.
+
+| Parameter    | Default | Description               |
+| ------------ | ------- | ------------------------- |
+| `path`       | —       | Directory path            |
+| `recursive`  | false   | Include subdirs           |
+| `sortBy`     | "name"  | `name/size/modified/type` |
+| `maxDepth`   | 10      | Depth when recursive      |
+| `maxEntries` | —       | Limit (up to 100,000)     |
+
+### `analyze_directory`
+
+Statistics: counts, sizes, types, largest/recent files.
+
+| Parameter         | Default | Description        |
+| ----------------- | ------- | ------------------ |
+| `path`            | —       | Directory path     |
+| `maxDepth`        | 10      | Analysis depth     |
+| `topN`            | 10      | Top largest/recent |
+| `excludePatterns` | []      | Patterns to skip   |
+
+### `read_media_file`
+
+Binary files as base64 with MIME type and dimensions.
+
+| Parameter | Default | Description     |
+| --------- | ------- | --------------- |
+| `path`    | —       | Media file path |
+| `maxSize` | 50MB    | Size limit      |
+
+## Error Codes
+
+| Code                | Solution                              |
+| ------------------- | ------------------------------------- |
+| `E_ACCESS_DENIED`   | Check `list_allowed_directories`      |
+| `E_NOT_FOUND`       | Verify path with `list_directory`     |
+| `E_NOT_FILE`        | Use `list_directory` instead          |
+| `E_TOO_LARGE`       | Use `head/tail` or increase `maxSize` |
+| `E_BINARY_FILE`     | Use `read_media_file`                 |
+| `E_TIMEOUT`         | Reduce limits                         |
+| `E_INVALID_PATTERN` | Check glob/regex syntax               |
+
+## Security
+
+- **Read-only** — no writes, deletes, or modifications
+- **Path validation** — symlinks cannot escape allowed directories
+- **Binary detection** — prevents accidental base64 bloat

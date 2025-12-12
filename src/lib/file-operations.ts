@@ -4,7 +4,6 @@ import * as readline from 'node:readline';
 import { createReadStream } from 'node:fs';
 
 import fg from 'fast-glob';
-import { Minimatch } from 'minimatch';
 import safeRegex from 'safe-regex2';
 
 import type {
@@ -35,6 +34,12 @@ import {
   PARALLEL_CONCURRENCY,
   REGEX_MATCH_TIMEOUT_MS,
 } from './constants.js';
+import {
+  classifyAccessError,
+  createExcludeMatcher,
+  handleDirectoryError,
+  insertSorted,
+} from './directory-helpers.js';
 import { ErrorCode, McpError } from './errors.js';
 import {
   getFileType,
@@ -48,18 +53,7 @@ import {
   validateExistingPath,
   validateExistingPathDetailed,
 } from './path-validation.js';
-
-// Create matcher from exclude patterns
-function createExcludeMatcher(
-  excludePatterns: string[]
-): (name: string, relativePath: string) => boolean {
-  if (excludePatterns.length === 0) {
-    return () => false;
-  }
-  const matchers = excludePatterns.map((pattern) => new Minimatch(pattern));
-  return (name: string, relativePath: string): boolean =>
-    matchers.some((m) => m.match(name) || m.match(relativePath));
-}
+import { createSearchResultSorter, createSorter } from './sorting.js';
 
 interface ParallelResult<R> {
   results: R[];
@@ -283,13 +277,7 @@ export async function listDirectory(
         items = await fs.readdir(currentPath, { withFileTypes: true });
       } catch (error) {
         skippedInaccessible++;
-        const { code } = error as NodeJS.ErrnoException;
-        if (code !== 'ENOENT' && code !== 'EACCES' && code !== 'EPERM') {
-          console.error(
-            `[listDirectory] Error reading directory ${currentPath}:`,
-            error
-          );
-        }
+        handleDirectoryError(error, 'listDirectory', currentPath);
         return;
       }
 
@@ -392,22 +380,7 @@ export async function listDirectory(
     DIR_TRAVERSAL_CONCURRENCY
   );
 
-  entries.sort((a, b) => {
-    switch (sortBy) {
-      case 'size':
-        return (b.size ?? 0) - (a.size ?? 0);
-      case 'modified':
-        return (b.modified?.getTime() ?? 0) - (a.modified?.getTime() ?? 0);
-      case 'type':
-        if (a.type !== b.type) {
-          return a.type === 'directory' ? -1 : 1;
-        }
-        return a.name.localeCompare(b.name);
-      case 'name':
-      default:
-        return a.name.localeCompare(b.name);
-    }
-  });
+  entries.sort(createSorter(sortBy));
 
   return {
     path: validPath,
@@ -506,19 +479,7 @@ export async function searchFiles(
 
   await flushBatch();
 
-  results.sort((a, b) => {
-    switch (sortBy) {
-      case 'size':
-        return (b.size ?? 0) - (a.size ?? 0);
-      case 'modified':
-        return (b.modified?.getTime() ?? 0) - (a.modified?.getTime() ?? 0);
-      case 'name':
-        return path.basename(a.path).localeCompare(path.basename(b.path));
-      case 'path':
-      default:
-        return a.path.localeCompare(b.path);
-    }
-  });
+  results.sort(createSearchResultSorter(sortBy));
 
   return {
     basePath: validPath,
@@ -907,22 +868,6 @@ export async function analyzeDirectory(
 
   const shouldExclude = createExcludeMatcher(excludePatterns);
 
-  const insertSorted = <T>(
-    arr: T[],
-    item: T,
-    compare: (a: T, b: T) => boolean,
-    maxLen: number
-  ): void => {
-    if (maxLen <= 0) return;
-    const idx = arr.findIndex((el) => compare(item, el));
-    if (idx === -1) {
-      if (arr.length < maxLen) arr.push(item);
-    } else {
-      arr.splice(idx, 0, item);
-      if (arr.length > maxLen) arr.pop();
-    }
-  };
-
   await runWorkQueue<{ currentPath: string; depth: number }>(
     [{ currentPath: validPath, depth: 0 }],
     async ({ currentPath, depth }, enqueue) => {
@@ -934,13 +879,7 @@ export async function analyzeDirectory(
         items = await fs.readdir(currentPath, { withFileTypes: true });
       } catch (error) {
         skippedInaccessible++;
-        const { code } = error as NodeJS.ErrnoException;
-        if (code !== 'ENOENT' && code !== 'EACCES' && code !== 'EPERM') {
-          console.error(
-            `[analyzeDirectory] Error reading directory ${currentPath}:`,
-            error
-          );
-        }
+        handleDirectoryError(error, 'analyzeDirectory', currentPath);
         return;
       }
 
@@ -995,11 +934,7 @@ export async function analyzeDirectory(
             );
           }
         } catch (error) {
-          if (
-            error instanceof McpError &&
-            (error.code === ErrorCode.E_ACCESS_DENIED ||
-              error.code === ErrorCode.E_SYMLINK_NOT_ALLOWED)
-          ) {
+          if (classifyAccessError(error) === 'symlink') {
             symlinksNotFollowed++;
           } else {
             skippedInaccessible++;
@@ -1088,11 +1023,7 @@ export async function getDirectoryTree(
       ({ resolvedPath: validatedPath, isSymlink } =
         await validateExistingPathDetailed(currentPath));
     } catch (error) {
-      if (
-        error instanceof McpError &&
-        (error.code === ErrorCode.E_ACCESS_DENIED ||
-          error.code === ErrorCode.E_SYMLINK_NOT_ALLOWED)
-      ) {
+      if (classifyAccessError(error) === 'symlink') {
         symlinksNotFollowed++;
       } else {
         skippedInaccessible++;

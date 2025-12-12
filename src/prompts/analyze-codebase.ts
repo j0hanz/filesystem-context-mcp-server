@@ -5,70 +5,112 @@ import { z } from 'zod';
 
 import { getAllowedDirectories } from '../lib/path-validation.js';
 
+// Helper for path autocompletion
+function pathCompleter(value: string): string[] {
+  const dirs = getAllowedDirectories();
+  const lowerValue = value.toLowerCase();
+  return dirs.filter(
+    (d) =>
+      d.toLowerCase().includes(lowerValue) ||
+      lowerValue.includes(d.toLowerCase().slice(0, 10))
+  );
+}
+
+// Focus-specific search patterns and deliverables
+const FOCUS_CONFIG: Record<
+  string,
+  { searches: string[]; deliverables: string[] }
+> = {
+  architecture: {
+    searches: [
+      'class/interface definitions',
+      'exports/imports',
+      'module boundaries',
+    ],
+    deliverables: [
+      'Module organization',
+      'Dependency flow',
+      'Layering patterns',
+    ],
+  },
+  patterns: {
+    searches: ['Factory', 'Singleton', 'Observer', 'common design patterns'],
+    deliverables: ['Identified patterns', 'Usage analysis', 'Effectiveness'],
+  },
+  quality: {
+    searches: ['TODO', 'FIXME', 'HACK', '@deprecated'],
+    deliverables: [
+      'Technical debt',
+      'Documentation coverage',
+      'Code consistency',
+    ],
+  },
+  security: {
+    searches: ['eval', 'exec', 'password', 'secret', 'token', 'api_key'],
+    deliverables: [
+      'Vulnerabilities',
+      'Hardcoded secrets',
+      'Input validation gaps',
+    ],
+  },
+};
+
 export function registerAnalyzeCodebasePrompt(server: McpServer): void {
   server.registerPrompt(
     'analyze-codebase',
     {
       description:
-        'Deep analysis of code patterns, architecture, and implementation details in a codebase',
+        'Deep code analysis: architecture, patterns, quality, or security',
       argsSchema: {
         path: completable(
-          z.string().min(1).describe('Root path of the codebase to analyze'),
-          (value) => {
-            const dirs = getAllowedDirectories();
-            return dirs.filter(
-              (d) =>
-                d.toLowerCase().includes(value.toLowerCase()) ||
-                value.toLowerCase().includes(d.toLowerCase().slice(0, 10))
-            );
-          }
+          z.string().min(1).describe('Codebase root path'),
+          pathCompleter
         ),
         focus: z
           .enum(['architecture', 'patterns', 'quality', 'security', 'all'])
           .optional()
           .default('all')
-          .describe('Analysis focus area (default: all)'),
+          .describe('Focus: architecture, patterns, quality, security, or all'),
         filePattern: z
           .string()
           .optional()
           .default('**/*.{ts,js,py,java,go,rs}')
-          .describe(
-            'Glob pattern for files to analyze (default: common source files)'
-          ),
+          .describe('Source file glob pattern'),
       },
     },
-    ({ path, focus, filePattern }) => ({
-      messages: [
-        {
-          role: 'user',
-          content: {
-            type: 'text',
-            text: `Perform a deep analysis of the codebase at "${path}" with focus on: ${focus}.
+    ({ path, focus, filePattern }) => {
+      const focusAreas = focus === 'all' ? Object.keys(FOCUS_CONFIG) : [focus];
+      const searches = focusAreas.flatMap(
+        (f) => FOCUS_CONFIG[f]?.searches ?? []
+      );
+      const deliverables = focusAreas.flatMap(
+        (f) => FOCUS_CONFIG[f]?.deliverables ?? []
+      );
 
-Use the available filesystem tools systematically:
+      return {
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: `Analyze codebase at "${path}" (focus: ${focus}).
 
-1. **Discovery Phase**
-   - Use \`directory_tree\` to understand the overall structure
-   - Use \`search_files\` with pattern "${filePattern}" to find source files
-   - Use \`analyze_directory\` to get file statistics and identify largest/most recent files
+⚠️ First run \`list_allowed_directories\` to verify path is accessible.
 
-2. **Code Inspection Phase**
-   - Use \`search_content\` to find key patterns:
-     ${focus === 'architecture' || focus === 'all' ? '- Search for class/interface definitions, exports, imports' : ''}
-     ${focus === 'patterns' || focus === 'all' ? '- Search for common design patterns (Factory, Singleton, Observer, etc.)' : ''}
-     ${focus === 'quality' || focus === 'all' ? '- Search for TODO, FIXME, HACK comments' : ''}
-     ${focus === 'security' || focus === 'all' ? '- Search for potential security concerns (eval, exec, password, secret, token)' : ''}
-   - Use \`read_multiple_files\` to examine key files identified in discovery
+**Workflow:**
+1. \`directory_tree\` → structure overview
+2. \`search_files\` pattern="${filePattern}" → find source files
+3. \`analyze_directory\` → stats & hotspots
+4. \`search_content\` → find: ${searches.join(', ')}
+5. \`read_multiple_files\` → examine key files
 
-3. **Analysis Deliverables**
-   ${focus === 'architecture' || focus === 'all' ? '- **Architecture**: Module organization, dependency flow, layering patterns' : ''}
-   ${focus === 'patterns' || focus === 'all' ? '- **Design Patterns**: Identified patterns, their usage, and effectiveness' : ''}
-   ${focus === 'quality' || focus === 'all' ? '- **Code Quality**: Technical debt indicators, documentation coverage, consistency' : ''}
-   ${focus === 'security' || focus === 'all' ? '- **Security**: Potential vulnerabilities, hardcoded secrets, input validation' : ''}
-   - **Recommendations**: Prioritized list of improvements with rationale`,
+**Deliverables:**
+${deliverables.map((d) => `- ${d}`).join('\n')}
+- Prioritized recommendations`,
+            },
           },
-        },
-      ],
-    })
+        ],
+      };
+    }
   );
 }

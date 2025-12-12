@@ -5,82 +5,69 @@ import { z } from 'zod';
 
 import { getAllowedDirectories } from '../lib/path-validation.js';
 
+// Helper for path autocompletion
+function pathCompleter(value: string): string[] {
+  const dirs = getAllowedDirectories();
+  const lowerValue = value.toLowerCase();
+  return dirs.filter(
+    (d) =>
+      d.toLowerCase().includes(lowerValue) ||
+      lowerValue.includes(d.toLowerCase().slice(0, 10))
+  );
+}
+
 export function registerFindDuplicatesPrompt(server: McpServer): void {
   server.registerPrompt(
     'find-duplicates',
     {
       description:
-        'Find duplicate or similar code patterns, files, and potential refactoring opportunities',
+        'Find duplicate code, similar patterns, and refactoring opportunities',
       argsSchema: {
         path: completable(
-          z.string().min(1).describe('Root path to search for duplicates'),
-          (value) => {
-            const dirs = getAllowedDirectories();
-            return dirs.filter(
-              (d) =>
-                d.toLowerCase().includes(value.toLowerCase()) ||
-                value.toLowerCase().includes(d.toLowerCase().slice(0, 10))
-            );
-          }
+          z.string().min(1).describe('Root path to search'),
+          pathCompleter
         ),
         pattern: z
           .string()
           .optional()
           .default('**/*.{ts,js,tsx,jsx,py,java}')
-          .describe('Glob pattern for files to check (default: source files)'),
+          .describe('Source file glob pattern'),
         searchTerm: z
           .string()
           .optional()
-          .describe(
-            'Optional specific pattern or function name to find duplicates of'
-          ),
+          .describe('Specific function/pattern to find duplicates of'),
       },
     },
-    ({ path, pattern, searchTerm }) => ({
-      messages: [
-        {
-          role: 'user',
-          content: {
-            type: 'text',
-            text: `Find duplicate code and refactoring opportunities in "${path}".
+    ({ path, pattern, searchTerm }) => {
+      const searchInstructions = searchTerm
+        ? `\`search_content\` → find all "${searchTerm}" occurrences`
+        : `\`search_content\` → find duplicates: function signatures, imports, utility patterns`;
 
-Use the available filesystem tools:
+      return {
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: `Find duplicates in "${path}".
 
-1. **File Discovery**
-   - Use \`search_files\` with pattern "${pattern}" to find all relevant files
-   - Use \`analyze_directory\` to identify files of similar sizes (potential duplicates)
+⚠️ First run \`list_allowed_directories\` to verify path is accessible.
 
-2. **Content Analysis**
-   ${
-     searchTerm
-       ? `- Use \`search_content\` to find all occurrences of "${searchTerm}"`
-       : `- Use \`search_content\` to find common duplicate patterns:
-     - Similar function signatures
-     - Repeated import statements
-     - Common utility patterns (error handling, logging, validation)
-     - Copied configuration blocks`
-   }
+**Workflow:**
+1. \`search_files\` pattern="${pattern}" → list files
+2. \`analyze_directory\` → find similar-sized files
+3. ${searchInstructions}
+4. \`read_multiple_files\` → compare suspects
 
-3. **Detailed Inspection**
-   - Use \`read_multiple_files\` to compare files with similar sizes or names
-   - Look for:
-     - Copy-pasted code blocks
-     - Functions with similar logic but different names
-     - Repeated patterns that could be abstracted
-     - Similar error handling or validation logic
-
-4. **Report Findings**
-   - **Exact Duplicates**: Files or code blocks that are identical
-   - **Near Duplicates**: Similar code with minor variations
-   - **Pattern Opportunities**: Repeated patterns that could be abstracted into utilities
-   - **Refactoring Suggestions**: Specific recommendations with:
-     - Which files are affected
-     - Proposed abstraction or consolidation
-     - Estimated complexity reduction
-     - Potential risks of refactoring`,
+**Report:**
+- **Exact duplicates**: identical code blocks
+- **Near duplicates**: similar code with variations
+- **Patterns to abstract**: repeated logic → utilities
+- **Refactoring plan**: files affected, proposed changes, risks`,
+            },
           },
-        },
-      ],
-    })
+        ],
+      };
+    }
   );
 }

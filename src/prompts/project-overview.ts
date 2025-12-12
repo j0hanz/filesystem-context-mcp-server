@@ -5,23 +5,27 @@ import { z } from 'zod';
 
 import { getAllowedDirectories } from '../lib/path-validation.js';
 
+// Helper for path autocompletion
+function pathCompleter(value: string): string[] {
+  const dirs = getAllowedDirectories();
+  const lowerValue = value.toLowerCase();
+  return dirs.filter(
+    (d) =>
+      d.toLowerCase().includes(lowerValue) ||
+      lowerValue.includes(d.toLowerCase().slice(0, 10))
+  );
+}
+
 export function registerProjectOverviewPrompt(server: McpServer): void {
   server.registerPrompt(
     'project-overview',
     {
       description:
-        'Get a comprehensive overview of a project directory structure, key files, and organization patterns',
+        'Quick overview of project structure, tech stack, and key files',
       argsSchema: {
         path: completable(
-          z.string().min(1).describe('Root path of the project to analyze'),
-          (value) => {
-            const dirs = getAllowedDirectories();
-            return dirs.filter(
-              (d) =>
-                d.toLowerCase().includes(value.toLowerCase()) ||
-                value.toLowerCase().includes(d.toLowerCase().slice(0, 10))
-            );
-          }
+          z.string().min(1).describe('Project root path'),
+          pathCompleter
         ),
         depth: z
           .number()
@@ -30,7 +34,7 @@ export function registerProjectOverviewPrompt(server: McpServer): void {
           .max(10)
           .optional()
           .default(4)
-          .describe('Maximum depth to explore (default: 4)'),
+          .describe('Tree depth (1-10, default: 4)'),
       },
     },
     ({ path, depth }) => ({
@@ -39,24 +43,21 @@ export function registerProjectOverviewPrompt(server: McpServer): void {
           role: 'user',
           content: {
             type: 'text',
-            text: `Please provide a comprehensive overview of the project at "${path}".
+            text: `Analyze project at "${path}".
 
-Use the available filesystem tools to:
+⚠️ First run \`list_allowed_directories\` to verify path is accessible.
 
-1. **Directory Structure** - Use \`directory_tree\` with maxDepth=${String(depth)} to visualize the project layout
-2. **Project Analysis** - Use \`analyze_directory\` to get statistics about file types, sizes, and recent activity
-3. **Key Configuration Files** - Use \`read_multiple_files\` to read common config files if they exist:
-   - package.json, tsconfig.json, pyproject.toml, Cargo.toml
-   - .gitignore, README.md, LICENSE
-   - Any config files in the root directory
+**Tools to use:**
+1. \`directory_tree\` (maxDepth=${String(depth)}) → structure
+2. \`analyze_directory\` → stats & largest files
+3. \`read_multiple_files\` → config files (package.json, tsconfig.json, README.md, etc.)
 
-Based on the gathered information, provide:
-- **Project Type**: Identify the language(s), framework(s), and build tools
-- **Directory Organization**: Explain the folder structure and conventions used
-- **Key Entry Points**: Identify main files, entry points, or important modules
-- **Dependencies**: Summarize key dependencies if package manifest is found
-- **Notable Patterns**: Highlight any interesting architectural patterns or conventions
-- **Recommendations**: Suggest any improvements to project organization if applicable`,
+**Provide:**
+- Tech stack (languages, frameworks, build tools)
+- Folder organization & conventions
+- Entry points & key modules
+- Dependencies overview
+- Notable patterns or issues`,
           },
         },
       ],
