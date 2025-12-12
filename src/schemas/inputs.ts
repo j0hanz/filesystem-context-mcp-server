@@ -55,7 +55,22 @@ export const SearchFilesInputSchema = {
   pattern: z
     .string()
     .min(1, 'Pattern cannot be empty')
-    .max(1000, 'Pattern is too long')
+    .max(1000, 'Pattern is too long (max 1000 characters)')
+    .refine(
+      (val) => {
+        // Basic glob pattern validation
+        try {
+          // Check for potentially problematic patterns
+          if (val.includes('**/**/**')) {
+            return false; // Excessive nesting
+          }
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { message: 'Invalid glob pattern syntax' }
+    )
     .describe('Glob pattern to match files (e.g., "**/*.ts")'),
   excludePatterns: z
     .array(z.string().max(500, 'Individual exclude pattern is too long'))
@@ -94,6 +109,11 @@ const ReadFileBaseSchema = z.object({
     .enum(['utf-8', 'utf8', 'ascii', 'base64', 'hex', 'latin1'])
     .optional()
     .default('utf-8')
+    .refine(
+      (val) =>
+        ['utf-8', 'utf8', 'ascii', 'base64', 'hex', 'latin1'].includes(val),
+      { message: 'Invalid encoding specified' }
+    )
     .describe('File encoding'),
   maxSize: z
     .number()

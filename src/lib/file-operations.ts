@@ -103,21 +103,41 @@ function countRegexMatches(
   regex: RegExp,
   timeoutMs: number = REGEX_MATCH_TIMEOUT_MS
 ): number {
+  // Safety check for empty line
+  if (line.length === 0) return 0;
+
   regex.lastIndex = 0;
   let count = 0;
   const deadline = Date.now() + timeoutMs;
+  const maxIterations = line.length * 2; // Prevent infinite loops
+  let iterations = 0;
 
   let match: RegExpExecArray | null;
   while ((match = regex.exec(line)) !== null) {
     count++;
+    iterations++;
+
+    // Prevent infinite loops on zero-width matches
     if (match[0] === '') {
       regex.lastIndex++;
+      // Prevent advancing beyond string length
+      if (regex.lastIndex > line.length) break;
     }
+
+    // Check timeout periodically
     if (count % 100 === 0 && Date.now() > deadline) {
       console.error(
         `[countRegexMatches] Regex matching timed out after ${timeoutMs}ms on line (length: ${line.length})`
       );
       return -1; // Signal timeout
+    }
+
+    // Safety check for runaway regex
+    if (iterations > maxIterations) {
+      console.error(
+        `[countRegexMatches] Max iterations exceeded (${maxIterations}) on line (length: ${line.length})`
+      );
+      return -1; // Signal runaway regex
     }
   }
 
@@ -126,6 +146,11 @@ function countRegexMatches(
 
 // Check if regex is simple enough to be safe
 function isSimpleSafePattern(pattern: string): boolean {
+  // Validate input
+  if (typeof pattern !== 'string' || pattern.length === 0) {
+    return false;
+  }
+
   // Patterns with nested quantifiers are the main ReDoS concern
   const nestedQuantifierPattern = /[+*?}]\s*\)\s*[+*?{]/;
   if (nestedQuantifierPattern.test(pattern)) {
@@ -136,8 +161,12 @@ function isSimpleSafePattern(pattern: string): boolean {
   const highRepetitionPattern = /\{(\d+)(?:,\d*)?\}/g;
   let match;
   while ((match = highRepetitionPattern.exec(pattern)) !== null) {
-    const count = parseInt(match[1] ?? '0', 10);
-    if (count >= 25) {
+    const countStr = match[1];
+    if (countStr === undefined) continue;
+
+    const count = parseInt(countStr, 10);
+    // Check for NaN and high values
+    if (Number.isNaN(count) || count >= 25) {
       return false;
     }
   }
@@ -148,7 +177,7 @@ function isSimpleSafePattern(pattern: string): boolean {
 // Convert file mode to permission string (e.g., 'rwxr-xr-x')
 function getPermissions(mode: number): string {
   // Permission strings indexed by octal value (0-7)
-  const permStrings = [
+  const PERM_STRINGS = [
     '---',
     '--x',
     '-w-',
@@ -157,11 +186,16 @@ function getPermissions(mode: number): string {
     'r-x',
     'rw-',
     'rwx',
-  ] as const;
+  ] as const satisfies readonly string[];
 
-  const owner = permStrings[(mode >> 6) & 7] ?? '---';
-  const group = permStrings[(mode >> 3) & 7] ?? '---';
-  const other = permStrings[mode & 7] ?? '---';
+  // Use bitwise operations and bounds-checked array access
+  const ownerIndex = (mode >> 6) & 0b111;
+  const groupIndex = (mode >> 3) & 0b111;
+  const otherIndex = mode & 0b111;
+
+  const owner = PERM_STRINGS[ownerIndex] ?? '---';
+  const group = PERM_STRINGS[groupIndex] ?? '---';
+  const other = PERM_STRINGS[otherIndex] ?? '---';
 
   return `${owner}${group}${other}`;
 }

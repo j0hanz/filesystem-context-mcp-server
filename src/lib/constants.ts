@@ -273,10 +273,14 @@ export const KNOWN_BINARY_EXTENSIONS = new Set([
 
 // MIME type lookup
 export function getMimeType(ext: string): string {
-  return MIME_TYPES[ext.toLowerCase()] ?? 'application/octet-stream';
+  const lowerExt = ext.toLowerCase();
+  return (
+    (MIME_TYPES as Record<string, string>)[lowerExt] ??
+    'application/octet-stream'
+  );
 }
 
-export const MIME_TYPES: Readonly<Record<string, string>> = {
+export const MIME_TYPES = {
   // Images
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -341,4 +345,4 @@ export const MIME_TYPES: Readonly<Record<string, string>> = {
   '.woff2': 'font/woff2',
   // Other
   '.wasm': 'application/wasm',
-};
+} as const satisfies Readonly<Record<string, string>>;

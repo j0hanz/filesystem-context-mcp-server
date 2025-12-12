@@ -168,26 +168,28 @@ async function findUTF8Boundary(
   position: number
 ): Promise<number> {
   if (position <= 0) return 0;
+
   const buf = Buffer.alloc(1);
   let currentPos = position;
 
-  // Backtrack up to 4 bytes (max UTF-8 char length)
-  // We want to find a byte that is NOT a continuation byte (10xxxxxx)
+  // Backtrack up to 4 bytes to find leading byte
   for (let i = 0; i < 4; i++) {
     // If we reached the beginning of the file, that's a boundary
     if (currentPos <= 0) return 0;
 
-    // Read the byte at the current position
-    // We read from currentPos - 1 because we are checking the byte *before* the current boundary
-    // Wait, no. We want to ensure 'position' (the start of our read) is a valid char start.
-    // So we check the byte at 'position'.
-    // If it is 10xxxxxx, it's a continuation. We need to move start back.
+    try {
+      await handle.read(buf, 0, 1, currentPos);
+    } catch (error) {
+      // On read error, return original position to avoid data corruption
+      console.error(
+        '[findUTF8Boundary] Read error at position',
+        currentPos,
+        error
+      );
+      return position;
+    }
 
-    await handle.read(buf, 0, 1, currentPos);
-
-    // If it's not a continuation byte (0b10xxxxxx), it's a start byte or ASCII
-    // 0xC0 is 11000000, 0x80 is 10000000.
-    // (byte & 0xC0) === 0x80 checks if it starts with 10
+    // Check if byte is a leading byte
     const byte = buf[0];
     if (byte !== undefined && (byte & 0xc0) !== 0x80) {
       return currentPos;
@@ -195,7 +197,7 @@ async function findUTF8Boundary(
     currentPos--;
   }
 
-  // If we didn't find a start byte, just return original to avoid infinite loops
+  // If we backtracked 4 bytes and still found only continuation bytes,
   return position;
 }
 
@@ -232,7 +234,7 @@ export async function tailFile(
       position = startPos;
 
       const { bytesRead } = await handle.read(chunk, 0, size, position);
-      if (!bytesRead) break;
+      if (bytesRead === 0) break;
 
       const readData = chunk.subarray(0, bytesRead).toString('utf-8');
       const chunkText = readData + remainingText;
@@ -248,12 +250,19 @@ export async function tailFile(
         i >= 0 && linesFound < numLines;
         i--
       ) {
-        lines.unshift(chunkLines[i] ?? '');
-        linesFound++;
+        const line = chunkLines[i];
+        if (line !== undefined) {
+          lines.unshift(line);
+          linesFound++;
+        }
       }
     }
 
     return lines.join('\n');
+  } catch (error) {
+    // Ensure handle is closed even on error
+    await handle.close().catch(() => {});
+    throw error;
   } finally {
     await handle.close().catch(() => {});
   }

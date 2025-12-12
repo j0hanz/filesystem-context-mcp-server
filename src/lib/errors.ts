@@ -112,6 +112,35 @@ export function classifyError(error: unknown): ErrorCode {
   return classifyByMessage(error);
 }
 
+// Assertion function for exhaustive checks
+function assertNever(value: never): never {
+  throw new Error(
+    `Unhandled discriminated union member: ${JSON.stringify(value)}`
+  );
+}
+
+// Validate ErrorCode exhaustiveness at compile time
+function validateErrorCode(code: ErrorCode): ErrorCode {
+  switch (code) {
+    case ErrorCode.E_ACCESS_DENIED:
+    case ErrorCode.E_NOT_FOUND:
+    case ErrorCode.E_NOT_FILE:
+    case ErrorCode.E_NOT_DIRECTORY:
+    case ErrorCode.E_TOO_LARGE:
+    case ErrorCode.E_BINARY_FILE:
+    case ErrorCode.E_TIMEOUT:
+    case ErrorCode.E_INVALID_PATTERN:
+    case ErrorCode.E_INVALID_INPUT:
+    case ErrorCode.E_PERMISSION_DENIED:
+    case ErrorCode.E_SYMLINK_NOT_ALLOWED:
+    case ErrorCode.E_PATH_TRAVERSAL:
+    case ErrorCode.E_UNKNOWN:
+      return code;
+    default:
+      return assertNever(code);
+  }
+}
+
 function classifyByMessage(error: unknown): ErrorCode {
   const message = error instanceof Error ? error.message : String(error);
   const lowerMessage = message.toLowerCase();
@@ -122,7 +151,7 @@ function classifyByMessage(error: unknown): ErrorCode {
     lowerMessage.includes('access denied') ||
     lowerMessage.includes('outside allowed')
   ) {
-    return ErrorCode.E_ACCESS_DENIED;
+    return validateErrorCode(ErrorCode.E_ACCESS_DENIED);
   }
 
   // Not found (including ENOENT message patterns)
@@ -131,7 +160,7 @@ function classifyByMessage(error: unknown): ErrorCode {
     lowerMessage.includes('does not exist') ||
     lowerMessage.includes('enoent')
   ) {
-    return ErrorCode.E_NOT_FOUND;
+    return validateErrorCode(ErrorCode.E_NOT_FOUND);
   }
 
   // Type mismatches
@@ -139,33 +168,33 @@ function classifyByMessage(error: unknown): ErrorCode {
     lowerMessage.includes('not a file') ||
     lowerMessage.includes('is a directory')
   ) {
-    return ErrorCode.E_NOT_FILE;
+    return validateErrorCode(ErrorCode.E_NOT_FILE);
   }
   if (lowerMessage.includes('not a directory')) {
-    return ErrorCode.E_NOT_DIRECTORY;
+    return validateErrorCode(ErrorCode.E_NOT_DIRECTORY);
   }
 
   // Size limits
   if (lowerMessage.includes('too large') || lowerMessage.includes('exceeds')) {
-    return ErrorCode.E_TOO_LARGE;
+    return validateErrorCode(ErrorCode.E_TOO_LARGE);
   }
 
   // Binary file
   if (lowerMessage.includes('binary')) {
-    return ErrorCode.E_BINARY_FILE;
+    return validateErrorCode(ErrorCode.E_BINARY_FILE);
   }
 
   // Timeout
   if (lowerMessage.includes('timeout') || lowerMessage.includes('timed out')) {
-    return ErrorCode.E_TIMEOUT;
+    return validateErrorCode(ErrorCode.E_TIMEOUT);
   }
 
   // Invalid pattern
   if (lowerMessage.includes('invalid') && lowerMessage.includes('pattern')) {
-    return ErrorCode.E_INVALID_PATTERN;
+    return validateErrorCode(ErrorCode.E_INVALID_PATTERN);
   }
   if (lowerMessage.includes('regex') || lowerMessage.includes('regexp')) {
-    return ErrorCode.E_INVALID_PATTERN;
+    return validateErrorCode(ErrorCode.E_INVALID_PATTERN);
   }
 
   // Invalid input
@@ -173,7 +202,7 @@ function classifyByMessage(error: unknown): ErrorCode {
     lowerMessage.includes('invalid') ||
     lowerMessage.includes('cannot specify')
   ) {
-    return ErrorCode.E_INVALID_INPUT;
+    return validateErrorCode(ErrorCode.E_INVALID_INPUT);
   }
 
   // Permission (when no error code available)
@@ -181,20 +210,20 @@ function classifyByMessage(error: unknown): ErrorCode {
     lowerMessage.includes('permission denied') ||
     lowerMessage.includes('permission')
   ) {
-    return ErrorCode.E_PERMISSION_DENIED;
+    return validateErrorCode(ErrorCode.E_PERMISSION_DENIED);
   }
 
   // Symlink
   if (lowerMessage.includes('symlink')) {
-    return ErrorCode.E_SYMLINK_NOT_ALLOWED;
+    return validateErrorCode(ErrorCode.E_SYMLINK_NOT_ALLOWED);
   }
 
   // Path traversal
   if (lowerMessage.includes('traversal')) {
-    return ErrorCode.E_PATH_TRAVERSAL;
+    return validateErrorCode(ErrorCode.E_PATH_TRAVERSAL);
   }
 
-  return ErrorCode.E_UNKNOWN;
+  return validateErrorCode(ErrorCode.E_UNKNOWN);
 }
 
 // Create detailed error with suggestions
