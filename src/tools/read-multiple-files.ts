@@ -31,8 +31,9 @@ export function registerReadMultipleFilesTool(server: McpServer): void {
         // Validate head/tail mutual exclusivity early
         validateHeadTail({ head, tail });
 
+        // Read multiple files in parallel
         const results = await readMultipleFiles(paths, {
-          encoding: encoding as BufferEncoding,
+          encoding,
           maxSize,
           head,
           tail,

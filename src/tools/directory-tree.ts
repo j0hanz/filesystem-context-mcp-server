@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { createErrorResponse, ErrorCode } from '../lib/errors.js';
 import { getDirectoryTree } from '../lib/file-operations.js';
-import { formatTreeEntry } from '../lib/formatters.js';
+import { formatOperationSummary, formatTreeEntry } from '../lib/formatters.js';
 import {
   DirectoryTreeInputSchema,
   DirectoryTreeOutputSchema,
@@ -60,17 +60,13 @@ export function registerDirectoryTreeTool(server: McpServer): void {
         };
 
         // Add truncation notice for better error recovery feedback
-        if (result.summary.truncated) {
-          textOutput += `\n\n⚠️ PARTIAL RESULTS: tree was truncated`;
-          textOutput +=
-            '\nTip: Increase maxDepth or maxFiles, or add excludePatterns to narrow scope.';
-        }
-        if (result.summary.skippedInaccessible > 0) {
-          textOutput += `\nNote: ${result.summary.skippedInaccessible} item(s) were inaccessible and skipped.`;
-        }
-        if (result.summary.symlinksNotFollowed > 0) {
-          textOutput += `\nNote: ${result.summary.symlinksNotFollowed} symlink(s) were not followed (security).`;
-        }
+        textOutput += formatOperationSummary({
+          truncated: result.summary.truncated,
+          truncatedReason: 'tree was truncated',
+          tip: 'Increase maxDepth or maxFiles, or add excludePatterns to narrow scope.',
+          skippedInaccessible: result.summary.skippedInaccessible,
+          symlinksNotFollowed: result.summary.symlinksNotFollowed,
+        });
 
         return {
           content: [{ type: 'text', text: textOutput }],

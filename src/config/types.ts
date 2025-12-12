@@ -189,3 +189,20 @@ export interface ImageDimensions {
 }
 
 export type ImageParser = (buffer: Buffer) => ImageDimensions | null;
+
+export interface ValidatedPathDetails {
+  requestedPath: string;
+  resolvedPath: string;
+  isSymlink: boolean;
+}
+
+export interface ScanFileResult {
+  matches: ContentMatch[];
+  linesSkippedDueToRegexTimeout: number;
+  fileHadMatches: boolean;
+}
+
+export interface ParallelResult<R> {
+  results: R[];
+  errors: { index: number; error: Error }[];
+}

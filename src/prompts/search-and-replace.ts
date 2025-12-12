@@ -3,10 +3,10 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { z } from 'zod';
 
-import { DEFAULT_EXCLUDES, pathCompleter } from './shared.js';
+import { buildExcludes, pathCompleter } from './shared.js';
 
 // Extended excludes for search-and-replace (adds lock/minified files)
-const SEARCH_REPLACE_EXCLUDES = [...DEFAULT_EXCLUDES, '*.lock', '*.min.js'];
+const SEARCH_REPLACE_EXCLUDES = buildExcludes('lockFiles', 'minified');
 
 export function registerSearchAndReplacePrompt(server: McpServer): void {
   server.registerPrompt(

@@ -3,10 +3,10 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { z } from 'zod';
 
-import { DEFAULT_EXCLUDES, pathCompleter } from './shared.js';
+import { buildExcludes, pathCompleter } from './shared.js';
 
 // Extended excludes for duplicate scanning (adds minified/bundled files to base excludes)
-const DUPLICATE_EXCLUDES = [...DEFAULT_EXCLUDES, '*.min.js', '*.bundle.js'];
+const DUPLICATE_EXCLUDES = buildExcludes('minified', 'bundled');
 
 export function registerFindDuplicatesPrompt(server: McpServer): void {
   server.registerPrompt(

@@ -1,7 +1,5 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import * as readline from 'node:readline';
-import { createReadStream } from 'node:fs';
 
 import fg from 'fast-glob';
 import safeRegex from 'safe-regex2';
@@ -27,12 +25,10 @@ import {
   DEFAULT_TOP_N,
   DIR_TRAVERSAL_CONCURRENCY,
   getMimeType,
-  MAX_LINE_CONTENT_LENGTH,
   MAX_MEDIA_FILE_SIZE,
   MAX_SEARCHABLE_FILE_SIZE,
   MAX_TEXT_FILE_SIZE,
   PARALLEL_CONCURRENCY,
-  REGEX_MATCH_TIMEOUT_MS,
 } from './constants.js';
 import {
   classifyAccessError,
@@ -45,6 +41,7 @@ import {
   getFileType,
   isHidden,
   isProbablyBinary,
+  processInParallel,
   readFile,
   runWorkQueue,
 } from './fs-helpers.js';
@@ -53,114 +50,12 @@ import {
   validateExistingPath,
   validateExistingPathDetailed,
 } from './path-validation.js';
+import {
+  isSimpleSafePattern,
+  prepareSearchPattern,
+  scanFileForContent,
+} from './search-helpers.js';
 import { createSearchResultSorter, createSorter } from './sorting.js';
-
-interface ParallelResult<R> {
-  results: R[];
-  errors: { index: number; error: Error }[];
-}
-
-// Process items in parallel with controlled concurrency
-async function processInParallel<T, R>(
-  items: T[],
-  processor: (item: T) => Promise<R>,
-  concurrency: number = PARALLEL_CONCURRENCY
-): Promise<ParallelResult<R>> {
-  const results: R[] = [];
-  const errors: { index: number; error: Error }[] = [];
-
-  for (let i = 0; i < items.length; i += concurrency) {
-    const batch = items.slice(i, i + concurrency);
-    const batchResults = await Promise.allSettled(batch.map(processor));
-
-    for (let j = 0; j < batchResults.length; j++) {
-      const result = batchResults[j];
-      if (result?.status === 'fulfilled') {
-        results.push(result.value);
-      } else if (result?.status === 'rejected') {
-        const globalIndex = i + j;
-        const error =
-          result.reason instanceof Error
-            ? result.reason
-            : new Error(String(result.reason));
-        errors.push({ index: globalIndex, error });
-      }
-    }
-  }
-
-  return { results, errors };
-}
-
-// Count regex matches with timeout protection (returns -1 on timeout)
-function countRegexMatches(
-  line: string,
-  regex: RegExp,
-  timeoutMs: number = REGEX_MATCH_TIMEOUT_MS
-): number {
-  // Safety check for empty line
-  if (line.length === 0) return 0;
-
-  regex.lastIndex = 0;
-  let count = 0;
-  const deadline = Date.now() + timeoutMs;
-  const maxIterations = line.length * 2; // Prevent infinite loops
-  let iterations = 0;
-
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(line)) !== null) {
-    count++;
-    iterations++;
-
-    // Prevent infinite loops on zero-width matches
-    if (match[0] === '') {
-      regex.lastIndex++;
-      // Prevent advancing beyond string length
-      if (regex.lastIndex > line.length) break;
-    }
-
-    // Check timeout periodically
-    if (count % 100 === 0 && Date.now() > deadline) {
-      return -1; // Signal timeout
-    }
-
-    // Safety check for runaway regex
-    if (iterations > maxIterations) {
-      return -1; // Signal runaway regex
-    }
-  }
-
-  return count;
-}
-
-// Check if regex is simple enough to be safe
-function isSimpleSafePattern(pattern: string): boolean {
-  // Validate input
-  if (typeof pattern !== 'string' || pattern.length === 0) {
-    return false;
-  }
-
-  // Patterns with nested quantifiers are the main ReDoS concern
-  const nestedQuantifierPattern = /[+*?}]\s*\)\s*[+*?{]/;
-  if (nestedQuantifierPattern.test(pattern)) {
-    return false;
-  }
-
-  // Check for high repetition counts that safe-regex2 would flag (default limit is 25)
-  const highRepetitionPattern = /\{(\d+)(?:,\d*)?\}/g;
-  let match;
-  while ((match = highRepetitionPattern.exec(pattern)) !== null) {
-    const countStr = match[1];
-    if (countStr === undefined) continue;
-
-    const count = parseInt(countStr, 10);
-    // Check for NaN and high values
-    if (Number.isNaN(count) || count >= 25) {
-      return false;
-    }
-  }
-
-  return true;
-}
 
 // Convert file mode to permission string (e.g., 'rwxr-xr-x')
 function getPermissions(mode: number): string {
@@ -576,15 +471,11 @@ export async function searchContent(
   const deadlineMs =
     timeoutMs !== undefined ? Date.now() + timeoutMs : undefined;
 
-  let finalPattern = searchPattern;
-
-  if (isLiteral) {
-    finalPattern = finalPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-
-  if (wholeWord) {
-    finalPattern = `\\b${finalPattern}\\b`;
-  }
+  // Prepare the search pattern with optional literal escaping and word boundaries
+  const finalPattern = prepareSearchPattern(searchPattern, {
+    isLiteral,
+    wholeWord,
+  });
 
   const needsReDoSCheck = !isLiteral && !isSimpleSafePattern(finalPattern);
 
@@ -609,35 +500,6 @@ export async function searchContent(
       basePath,
       { searchPattern: finalPattern }
     );
-  }
-
-  // Circular buffer to hold context lines before a match
-  class CircularLineBuffer {
-    private buffer: string[];
-    private writeIndex = 0;
-    private count = 0;
-
-    constructor(private capacity: number) {
-      this.buffer = new Array<string>(capacity);
-    }
-
-    push(line: string): void {
-      this.buffer[this.writeIndex] = line;
-      this.writeIndex = (this.writeIndex + 1) % this.capacity;
-      if (this.count < this.capacity) this.count++;
-    }
-
-    toArray(): string[] {
-      if (this.count === 0) return [];
-      if (this.count < this.capacity) {
-        return this.buffer.slice(0, this.count);
-      }
-      // Buffer is full - return in correct order starting from writeIndex
-      return [
-        ...this.buffer.slice(this.writeIndex),
-        ...this.buffer.slice(0, this.writeIndex),
-      ];
-    }
   }
 
   const matches: ContentMatch[] = [];
@@ -711,92 +573,25 @@ export async function searchContent(
       await handle.close();
       handle = undefined;
 
-      const fileStream = createReadStream(validFile, {
-        encoding: 'utf-8',
+      const scanResult = await scanFileForContent(validFile, regex, {
+        maxResults,
+        contextLines,
+        deadlineMs,
+        currentMatchCount: matches.length,
       });
 
-      const rl = readline.createInterface({
-        input: fileStream,
-        crlfDelay: Infinity,
-      });
+      matches.push(...scanResult.matches);
+      linesSkippedDueToRegexTimeout += scanResult.linesSkippedDueToRegexTimeout;
+      if (scanResult.fileHadMatches) filesMatched++;
 
-      let fileHadMatches = false;
-      let lineNumber = 0;
-      const lineBuffer =
-        contextLines > 0 ? new CircularLineBuffer(contextLines) : null;
-      const pendingMatches: { match: ContentMatch; afterNeeded: number }[] = [];
-
-      try {
-        for await (const line of rl) {
-          lineNumber++;
-
-          if (deadlineMs !== undefined && Date.now() > deadlineMs) {
-            stopNow('timeout');
-            break;
-          }
-          if (matches.length >= maxResults) {
-            stopNow('maxResults');
-            break;
-          }
-
-          const trimmedLine = line.trim().substring(0, MAX_LINE_CONTENT_LENGTH);
-
-          for (const pending of pendingMatches) {
-            if (pending.afterNeeded > 0) {
-              pending.match.contextAfter ??= [];
-              pending.match.contextAfter.push(trimmedLine);
-              pending.afterNeeded--;
-            }
-          }
-          while (
-            pendingMatches.length > 0 &&
-            pendingMatches[0]?.afterNeeded === 0
-          ) {
-            pendingMatches.shift();
-          }
-
-          const matchCount = countRegexMatches(line, regex);
-          if (matchCount < 0) {
-            linesSkippedDueToRegexTimeout++;
-            if (lineBuffer) {
-              lineBuffer.push(trimmedLine);
-            }
-            continue;
-          }
-          if (matchCount > 0) {
-            fileHadMatches = true;
-            const newMatch: ContentMatch = {
-              file: validFile,
-              line: lineNumber,
-              content: trimmedLine,
-              matchCount,
-            };
-
-            const contextBefore = lineBuffer?.toArray();
-            if (contextBefore && contextBefore.length > 0) {
-              newMatch.contextBefore = contextBefore;
-            }
-
-            matches.push(newMatch);
-
-            if (contextLines > 0) {
-              pendingMatches.push({
-                match: newMatch,
-                afterNeeded: contextLines,
-              });
-            }
-          }
-
-          if (lineBuffer) {
-            lineBuffer.push(trimmedLine);
-          }
-        }
-      } finally {
-        rl.close();
-        fileStream.destroy();
+      if (deadlineMs !== undefined && Date.now() > deadlineMs) {
+        stopNow('timeout');
+        break;
       }
-
-      if (fileHadMatches) filesMatched++;
+      if (matches.length >= maxResults) {
+        stopNow('maxResults');
+        break;
+      }
 
       if (stoppedReason !== undefined) break;
     } catch {

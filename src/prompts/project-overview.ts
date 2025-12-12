@@ -3,10 +3,10 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { z } from 'zod';
 
-import { DEFAULT_EXCLUDES, pathCompleter } from './shared.js';
+import { buildExcludes, pathCompleter } from './shared.js';
 
 // Extended excludes for project overview (adds framework-specific dirs)
-const PROJECT_EXCLUDES = [...DEFAULT_EXCLUDES, '.next/**', '.nuxt/**'];
+const PROJECT_EXCLUDES = buildExcludes('nextjs', 'nuxtjs');
 
 // Config files to look for by category
 const CONFIG_FILES: Record<string, string[]> = {

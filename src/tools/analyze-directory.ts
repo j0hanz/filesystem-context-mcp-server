@@ -4,7 +4,10 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { createErrorResponse, ErrorCode } from '../lib/errors.js';
 import { analyzeDirectory } from '../lib/file-operations.js';
-import { formatDirectoryAnalysis } from '../lib/formatters.js';
+import {
+  formatDirectoryAnalysis,
+  formatOperationSummary,
+} from '../lib/formatters.js';
 import {
   AnalyzeDirectoryInputSchema,
   AnalyzeDirectoryOutputSchema,
@@ -60,13 +63,10 @@ export function registerAnalyzeDirectoryTool(server: McpServer): void {
 
         // Build text output with error recovery feedback
         let textOutput = formatDirectoryAnalysis(result.analysis);
-
-        if (result.summary.skippedInaccessible > 0) {
-          textOutput += `\n\nNote: ${result.summary.skippedInaccessible} item(s) were inaccessible and skipped.`;
-        }
-        if (result.summary.symlinksNotFollowed > 0) {
-          textOutput += `\nNote: ${result.summary.symlinksNotFollowed} symlink(s) were not followed (security).`;
-        }
+        textOutput += formatOperationSummary({
+          skippedInaccessible: result.summary.skippedInaccessible,
+          symlinksNotFollowed: result.summary.symlinksNotFollowed,
+        });
 
         return {
           content: [{ type: 'text', text: textOutput }],

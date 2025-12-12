@@ -5,12 +5,13 @@ import type { Stats } from 'node:fs';
 import { createReadStream } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
 
-import type { FileType } from '../config/types.js';
+import type { FileType, ParallelResult } from '../config/types.js';
 import {
   BINARY_CHECK_BUFFER_SIZE,
   KNOWN_BINARY_EXTENSIONS,
   KNOWN_TEXT_EXTENSIONS,
   MAX_TEXT_FILE_SIZE,
+  PARALLEL_CONCURRENCY,
 } from './constants.js';
 import { ErrorCode, McpError } from './errors.js';
 import { validateExistingPath } from './path-validation.js';
@@ -467,4 +468,35 @@ export async function readFile(
   const content = await fs.readFile(validPath, { encoding });
 
   return { path: validPath, content, truncated: false };
+}
+
+// Process items in parallel with controlled concurrency
+export async function processInParallel<T, R>(
+  items: T[],
+  processor: (item: T) => Promise<R>,
+  concurrency: number = PARALLEL_CONCURRENCY
+): Promise<ParallelResult<R>> {
+  const results: R[] = [];
+  const errors: { index: number; error: Error }[] = [];
+
+  for (let i = 0; i < items.length; i += concurrency) {
+    const batch = items.slice(i, i + concurrency);
+    const batchResults = await Promise.allSettled(batch.map(processor));
+
+    for (let j = 0; j < batchResults.length; j++) {
+      const result = batchResults[j];
+      if (result?.status === 'fulfilled') {
+        results.push(result.value);
+      } else if (result?.status === 'rejected') {
+        const globalIndex = i + j;
+        const error =
+          result.reason instanceof Error
+            ? result.reason
+            : new Error(String(result.reason));
+        errors.push({ index: globalIndex, error });
+      }
+    }
+  }
+
+  return { results, errors };
 }

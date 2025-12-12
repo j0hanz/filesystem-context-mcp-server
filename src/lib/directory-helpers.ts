@@ -14,9 +14,9 @@ export function createExcludeMatcher(
     matchers.some((m) => m.match(name) || m.match(relativePath));
 }
 
-// Handle directory traversal errors (silently ignored to avoid log noise)
-export function handleDirectoryError(error: unknown): void {
-  void (error as NodeJS.ErrnoException).code;
+// Handle directory operation errors (currently no-op)
+export function handleDirectoryError(_error: unknown): void {
+  void _error;
 }
 
 // Classify symlink/access errors for summary tracking

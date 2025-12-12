@@ -3,10 +3,10 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { z } from 'zod';
 
-import { DEFAULT_EXCLUDES, pathCompleter } from './shared.js';
+import { buildExcludes, pathCompleter } from './shared.js';
 
 // Extended excludes for codebase analysis (adds minified files)
-const ANALYZE_EXCLUDES = [...DEFAULT_EXCLUDES, '*.min.js'];
+const ANALYZE_EXCLUDES = buildExcludes('minified');
 
 // Focus-specific search patterns and deliverables
 interface FocusConfig {

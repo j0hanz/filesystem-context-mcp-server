@@ -4,7 +4,10 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { createErrorResponse, ErrorCode } from '../lib/errors.js';
 import { searchFiles } from '../lib/file-operations.js';
-import { formatSearchResults } from '../lib/formatters.js';
+import {
+  formatOperationSummary,
+  formatSearchResults,
+} from '../lib/formatters.js';
 import {
   SearchFilesInputSchema,
   SearchFilesOutputSchema,
@@ -61,17 +64,12 @@ export function registerSearchFilesTool(server: McpServer): void {
 
         // Build text output with truncation notice for better error recovery feedback
         let textOutput = formatSearchResults(result.results);
-
-        if (result.summary.truncated) {
-          textOutput += `\n\n⚠️ PARTIAL RESULTS: reached max results limit (${result.summary.matched} returned)`;
-          if (result.summary.skippedInaccessible > 0) {
-            textOutput += `; ${result.summary.skippedInaccessible} file(s) skipped (inaccessible)`;
-          }
-          textOutput +=
-            '\nTip: Increase maxResults, use more specific pattern, or add excludePatterns to narrow scope.';
-        } else if (result.summary.skippedInaccessible > 0) {
-          textOutput += `\n\nNote: ${result.summary.skippedInaccessible} file(s) were inaccessible and skipped.`;
-        }
+        textOutput += formatOperationSummary({
+          truncated: result.summary.truncated,
+          truncatedReason: `reached max results limit (${result.summary.matched} returned)`,
+          tip: 'Increase maxResults, use more specific pattern, or add excludePatterns to narrow scope.',
+          skippedInaccessible: result.summary.skippedInaccessible,
+        });
 
         return {
           content: [{ type: 'text', text: textOutput }],

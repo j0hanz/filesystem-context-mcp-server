@@ -4,7 +4,10 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { createErrorResponse, ErrorCode } from '../lib/errors.js';
 import { searchContent } from '../lib/file-operations.js';
-import { formatContentMatches } from '../lib/formatters.js';
+import {
+  formatContentMatches,
+  formatOperationSummary,
+} from '../lib/formatters.js';
 import { logger } from '../lib/mcp-logger.js';
 import {
   SearchContentInputSchema,
@@ -101,47 +104,35 @@ export function registerSearchContentTool(server: McpServer): void {
         // Build text output with truncation notice for better error recovery feedback
         let textOutput = formatContentMatches(result.matches);
 
+        // Determine truncation reason and tip
+        let truncatedReason: string | undefined;
+        let tip: string | undefined;
+
         if (result.summary.truncated) {
-          const reasons: string[] = [];
           if (result.summary.stoppedReason === 'timeout') {
-            reasons.push('search timed out');
+            truncatedReason = 'search timed out';
+            tip =
+              'Increase timeoutMs, use more specific filePattern, or add excludePatterns to narrow scope.';
           } else if (result.summary.stoppedReason === 'maxResults') {
-            reasons.push(
-              `reached max results limit (${result.summary.matches})`
-            );
+            truncatedReason = `reached max results limit (${result.summary.matches})`;
           } else if (result.summary.stoppedReason === 'maxFiles') {
-            reasons.push(
-              `reached max files limit (${result.summary.filesScanned} scanned)`
-            );
+            truncatedReason = `reached max files limit (${result.summary.filesScanned} scanned)`;
           }
-          if (result.summary.skippedTooLarge > 0) {
-            reasons.push(
-              `${result.summary.skippedTooLarge} file(s) skipped (too large)`
-            );
-          }
-          if (result.summary.skippedBinary > 0) {
-            reasons.push(
-              `${result.summary.skippedBinary} file(s) skipped (binary)`
-            );
-          }
-          if (result.summary.skippedInaccessible > 0) {
-            reasons.push(
-              `${result.summary.skippedInaccessible} file(s) skipped (inaccessible)`
-            );
-          }
-          if (result.summary.linesSkippedDueToRegexTimeout > 0) {
-            reasons.push(
-              `${result.summary.linesSkippedDueToRegexTimeout} line(s) skipped (regex timeout)`
-            );
-          }
+        }
 
-          textOutput += `\n\n⚠️ PARTIAL RESULTS: ${reasons.join('; ')}`;
+        textOutput += formatOperationSummary({
+          truncated: result.summary.truncated,
+          truncatedReason,
+          tip,
+          skippedTooLarge: result.summary.skippedTooLarge,
+          skippedBinary: result.summary.skippedBinary,
+          skippedInaccessible: result.summary.skippedInaccessible,
+          linesSkippedDueToRegexTimeout:
+            result.summary.linesSkippedDueToRegexTimeout,
+        });
+
+        if (result.summary.truncated && !tip) {
           textOutput += `\nScanned ${result.summary.filesScanned} files, found ${result.summary.matches} matches in ${result.summary.filesMatched} files.`;
-
-          if (result.summary.stoppedReason === 'timeout') {
-            textOutput +=
-              '\nTip: Increase timeoutMs, use more specific filePattern, or add excludePatterns to narrow scope.';
-          }
         }
 
         return {

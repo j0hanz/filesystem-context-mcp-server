@@ -35,7 +35,7 @@ export function registerReadFileTool(server: McpServer): void {
             : undefined;
 
         const result = await readFile(path, {
-          encoding: encoding as BufferEncoding,
+          encoding,
           maxSize,
           lineRange,
           head,

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import type { Root } from '@modelcontextprotocol/sdk/types.js';
 
+import type { ValidatedPathDetails } from '../config/types.js';
 import { ErrorCode, McpError } from './errors.js';
 import { normalizePath } from './path-utils.js';
 
@@ -34,12 +35,6 @@ function isPathWithinAllowedDirectories(normalizedPath: string): boolean {
       candidate === allowed || candidate.startsWith(allowed + PATH_SEPARATOR)
     );
   });
-}
-
-interface ValidatedPathDetails {
-  requestedPath: string;
-  resolvedPath: string;
-  isSymlink: boolean;
 }
 
 async function validateExistingPathDetailsInternal(

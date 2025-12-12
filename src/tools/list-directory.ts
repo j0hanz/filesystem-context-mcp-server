@@ -2,7 +2,10 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { createErrorResponse, ErrorCode } from '../lib/errors.js';
 import { listDirectory } from '../lib/file-operations.js';
-import { formatDirectoryListing } from '../lib/formatters.js';
+import {
+  formatDirectoryListing,
+  formatOperationSummary,
+} from '../lib/formatters.js';
 import {
   ListDirectoryInputSchema,
   ListDirectoryOutputSchema,
@@ -67,18 +70,13 @@ export function registerListDirectoryTool(server: McpServer): void {
 
         // Build text output with truncation notice for better error recovery feedback
         let textOutput = formatDirectoryListing(result.entries, result.path);
-
-        if (result.summary.truncated) {
-          textOutput += `\n\n⚠️ PARTIAL RESULTS: reached max entries limit (${result.summary.totalEntries} returned)`;
-          textOutput +=
-            '\nTip: Increase maxEntries or reduce maxDepth to see more results.';
-        }
-        if (result.summary.skippedInaccessible > 0) {
-          textOutput += `\nNote: ${result.summary.skippedInaccessible} item(s) were inaccessible and skipped.`;
-        }
-        if (result.summary.symlinksNotFollowed > 0) {
-          textOutput += `\nNote: ${result.summary.symlinksNotFollowed} symlink(s) were not followed (security).`;
-        }
+        textOutput += formatOperationSummary({
+          truncated: result.summary.truncated,
+          truncatedReason: `reached max entries limit (${result.summary.totalEntries} returned)`,
+          tip: 'Increase maxEntries or reduce maxDepth to see more results.',
+          skippedInaccessible: result.summary.skippedInaccessible,
+          symlinksNotFollowed: result.summary.symlinksNotFollowed,
+        });
 
         return {
           content: [{ type: 'text', text: textOutput }],

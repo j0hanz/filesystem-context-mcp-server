@@ -19,3 +19,22 @@ export const DEFAULT_EXCLUDES = [
   'build/**',
   'coverage/**',
 ] as const;
+
+// Extended exclude patterns for different use cases
+export const EXTENDED_EXCLUDES = {
+  minified: ['*.min.js'] as const,
+  bundled: ['*.bundle.js'] as const,
+  lockFiles: ['*.lock'] as const,
+  nextjs: ['.next/**'] as const,
+  nuxtjs: ['.nuxt/**'] as const,
+} as const;
+
+// Build exclude patterns by combining base with extensions
+export function buildExcludes(
+  ...extensions: (keyof typeof EXTENDED_EXCLUDES)[]
+): string[] {
+  return [
+    ...DEFAULT_EXCLUDES,
+    ...extensions.flatMap((ext) => [...EXTENDED_EXCLUDES[ext]]),
+  ];
+}
