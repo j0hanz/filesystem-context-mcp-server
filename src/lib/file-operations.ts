@@ -1100,7 +1100,7 @@ export async function getDirectoryTree(
       return null;
     }
 
-    const name = path.basename(currentPath);
+    const name = path.basename(validatedPath);
 
     if (shouldExclude(name, relativePath)) {
       return null;
