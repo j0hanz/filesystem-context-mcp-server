@@ -1,8 +1,6 @@
 # Filesystem Context MCP Server
 
-
-  <img src="docs/logo.png" alt="Filesystem Context MCP Server Logo" width="175">
-
+  <img src="docs/logo.png" alt="Filesystem Context MCP Server Logo" width="125">
 
 A secure, read-only MCP server for filesystem scanning, searching, and analysis with comprehensive security validation.
 
