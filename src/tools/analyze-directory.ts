@@ -57,10 +57,19 @@ export function registerAnalyzeDirectoryTool(server: McpServer): void {
             symlinksNotFollowed: result.summary.symlinksNotFollowed,
           },
         };
+
+        // Build text output with error recovery feedback
+        let textOutput = formatDirectoryAnalysis(result.analysis);
+
+        if (result.summary.skippedInaccessible > 0) {
+          textOutput += `\n\nNote: ${result.summary.skippedInaccessible} item(s) were inaccessible and skipped.`;
+        }
+        if (result.summary.symlinksNotFollowed > 0) {
+          textOutput += `\nNote: ${result.summary.symlinksNotFollowed} symlink(s) were not followed (security).`;
+        }
+
         return {
-          content: [
-            { type: 'text', text: formatDirectoryAnalysis(result.analysis) },
-          ],
+          content: [{ type: 'text', text: textOutput }],
           structuredContent: structured,
         };
       } catch (error) {

@@ -58,10 +58,23 @@ export function registerSearchFilesTool(server: McpServer): void {
             skippedInaccessible: result.summary.skippedInaccessible,
           },
         };
+
+        // Build text output with truncation notice for better error recovery feedback
+        let textOutput = formatSearchResults(result.results);
+
+        if (result.summary.truncated) {
+          textOutput += `\n\n⚠️ PARTIAL RESULTS: reached max results limit (${result.summary.matched} returned)`;
+          if (result.summary.skippedInaccessible > 0) {
+            textOutput += `; ${result.summary.skippedInaccessible} file(s) skipped (inaccessible)`;
+          }
+          textOutput +=
+            '\nTip: Increase maxResults, use more specific pattern, or add excludePatterns to narrow scope.';
+        } else if (result.summary.skippedInaccessible > 0) {
+          textOutput += `\n\nNote: ${result.summary.skippedInaccessible} file(s) were inaccessible and skipped.`;
+        }
+
         return {
-          content: [
-            { type: 'text', text: formatSearchResults(result.results) },
-          ],
+          content: [{ type: 'text', text: textOutput }],
           structuredContent: structured,
         };
       } catch (error) {

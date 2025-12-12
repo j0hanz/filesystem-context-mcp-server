@@ -64,13 +64,24 @@ export function registerListDirectoryTool(server: McpServer): void {
             symlinksNotFollowed: result.summary.symlinksNotFollowed,
           },
         };
+
+        // Build text output with truncation notice for better error recovery feedback
+        let textOutput = formatDirectoryListing(result.entries, result.path);
+
+        if (result.summary.truncated) {
+          textOutput += `\n\n⚠️ PARTIAL RESULTS: reached max entries limit (${result.summary.totalEntries} returned)`;
+          textOutput +=
+            '\nTip: Increase maxEntries or reduce maxDepth to see more results.';
+        }
+        if (result.summary.skippedInaccessible > 0) {
+          textOutput += `\nNote: ${result.summary.skippedInaccessible} item(s) were inaccessible and skipped.`;
+        }
+        if (result.summary.symlinksNotFollowed > 0) {
+          textOutput += `\nNote: ${result.summary.symlinksNotFollowed} symlink(s) were not followed (security).`;
+        }
+
         return {
-          content: [
-            {
-              type: 'text',
-              text: formatDirectoryListing(result.entries, result.path),
-            },
-          ],
+          content: [{ type: 'text', text: textOutput }],
           structuredContent: structured,
         };
       } catch (error) {

@@ -259,10 +259,6 @@ export async function tailFile(
     }
 
     return lines.join('\n');
-  } catch (error) {
-    // Ensure handle is closed even on error
-    await handle.close().catch(() => {});
-    throw error;
   } finally {
     await handle.close().catch(() => {});
   }

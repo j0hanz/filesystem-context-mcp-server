@@ -44,7 +44,7 @@ export function registerDirectoryTreeTool(server: McpServer): void {
           maxFiles,
         });
 
-        const textOutput = formatTreeEntry(result.tree);
+        let textOutput = formatTreeEntry(result.tree);
 
         const structured = {
           ok: true,
@@ -58,6 +58,19 @@ export function registerDirectoryTreeTool(server: McpServer): void {
             symlinksNotFollowed: result.summary.symlinksNotFollowed,
           },
         };
+
+        // Add truncation notice for better error recovery feedback
+        if (result.summary.truncated) {
+          textOutput += `\n\n⚠️ PARTIAL RESULTS: tree was truncated`;
+          textOutput +=
+            '\nTip: Increase maxDepth or maxFiles, or add excludePatterns to narrow scope.';
+        }
+        if (result.summary.skippedInaccessible > 0) {
+          textOutput += `\nNote: ${result.summary.skippedInaccessible} item(s) were inaccessible and skipped.`;
+        }
+        if (result.summary.symlinksNotFollowed > 0) {
+          textOutput += `\nNote: ${result.summary.symlinksNotFollowed} symlink(s) were not followed (security).`;
+        }
 
         return {
           content: [{ type: 'text', text: textOutput }],

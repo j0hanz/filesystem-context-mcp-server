@@ -98,10 +98,54 @@ export function registerSearchContentTool(server: McpServer): void {
           toolLogger
         );
 
+        // Build text output with truncation notice for better error recovery feedback
+        let textOutput = formatContentMatches(result.matches);
+
+        if (result.summary.truncated) {
+          const reasons: string[] = [];
+          if (result.summary.stoppedReason === 'timeout') {
+            reasons.push('search timed out');
+          } else if (result.summary.stoppedReason === 'maxResults') {
+            reasons.push(
+              `reached max results limit (${result.summary.matches})`
+            );
+          } else if (result.summary.stoppedReason === 'maxFiles') {
+            reasons.push(
+              `reached max files limit (${result.summary.filesScanned} scanned)`
+            );
+          }
+          if (result.summary.skippedTooLarge > 0) {
+            reasons.push(
+              `${result.summary.skippedTooLarge} file(s) skipped (too large)`
+            );
+          }
+          if (result.summary.skippedBinary > 0) {
+            reasons.push(
+              `${result.summary.skippedBinary} file(s) skipped (binary)`
+            );
+          }
+          if (result.summary.skippedInaccessible > 0) {
+            reasons.push(
+              `${result.summary.skippedInaccessible} file(s) skipped (inaccessible)`
+            );
+          }
+          if (result.summary.linesSkippedDueToRegexTimeout > 0) {
+            reasons.push(
+              `${result.summary.linesSkippedDueToRegexTimeout} line(s) skipped (regex timeout)`
+            );
+          }
+
+          textOutput += `\n\n⚠️ PARTIAL RESULTS: ${reasons.join('; ')}`;
+          textOutput += `\nScanned ${result.summary.filesScanned} files, found ${result.summary.matches} matches in ${result.summary.filesMatched} files.`;
+
+          if (result.summary.stoppedReason === 'timeout') {
+            textOutput +=
+              '\nTip: Increase timeoutMs, use more specific filePattern, or add excludePatterns to narrow scope.';
+          }
+        }
+
         return {
-          content: [
-            { type: 'text', text: formatContentMatches(result.matches) },
-          ],
+          content: [{ type: 'text', text: textOutput }],
           structuredContent: structured,
         };
       } catch (error) {
