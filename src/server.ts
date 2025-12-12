@@ -104,7 +104,7 @@ export async function startServer(server: McpServer): Promise<void> {
   await server.connect(transport);
 
   // Update allowed directories from roots protocol if available
-  void updateRootsFromClient(server).then(() => {
+  void updateRootsFromClient(server).then((): void => {
     const dirs = getAllowedDirectories();
     if (dirs.length === 0) {
       if (serverOptions.allowCwd) {

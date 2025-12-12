@@ -1,6 +1,3 @@
-/**
- * Structured error handling utilities for consistent error responses
- */
 import {
   type DetailedError,
   ErrorCode,
@@ -37,6 +34,7 @@ export const NODE_ERROR_CODE_MAP: Readonly<Record<string, ErrorCode>> = {
   EINVAL: ErrorCode.E_INVALID_INPUT,
 } as const;
 
+// Custom error class for MCP operations
 export class McpError extends Error {
   constructor(
     public code: ErrorCode,
@@ -68,9 +66,7 @@ export class McpError extends Error {
   }
 }
 
-/**
- * Mapping of error codes to actionable suggestions for users
- */
+// Error code to suggestion mapping
 const ERROR_SUGGESTIONS: Readonly<Record<ErrorCode, string>> = {
   [ErrorCode.E_ACCESS_DENIED]:
     'Check that the path is within an allowed directory. Use list_allowed_directories to see available paths.',
@@ -201,9 +197,7 @@ function classifyByMessage(error: unknown): ErrorCode {
   return ErrorCode.E_UNKNOWN;
 }
 
-/**
- * Create a detailed error object with suggestions
- */
+// Create detailed error with suggestions
 export function createDetailedError(
   error: unknown,
   path?: string,
@@ -215,23 +209,25 @@ export function createDetailedError(
 
   const effectivePath =
     path ?? (error instanceof McpError ? error.path : undefined);
-  const mergedDetails = {
-    ...(error instanceof McpError ? error.details : undefined),
-    ...(additionalDetails ?? undefined),
-  } satisfies Record<string, unknown>;
+
+  // Merge details from McpError and additionalDetails
+  const mcpDetails = error instanceof McpError ? error.details : undefined;
+  const mergedDetails: Record<string, unknown> = {
+    ...mcpDetails,
+    ...additionalDetails,
+  };
+  const hasDetails = Object.keys(mergedDetails).length > 0;
 
   return {
     code,
     message,
     path: effectivePath,
     suggestion,
-    details: Object.keys(mergedDetails).length > 0 ? mergedDetails : undefined,
+    details: hasDetails ? mergedDetails : undefined,
   };
 }
 
-/**
- * Format a detailed error for display
- */
+// Format error for display
 export function formatDetailedError(error: DetailedError): string {
   const lines: string[] = [`Error [${error.code}]: ${error.message}`];
 
@@ -246,13 +242,11 @@ export function formatDetailedError(error: DetailedError): string {
   return lines.join('\n');
 }
 
-/**
- * Get suggestion for an error code
- */
 export function getSuggestion(code: ErrorCode): string {
   return ERROR_SUGGESTIONS[code];
 }
 
+// Create MCP-compatible error response
 export function createErrorResponse(
   error: unknown,
   defaultCode: ErrorCode,

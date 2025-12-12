@@ -1,20 +1,4 @@
 #!/usr/bin/env node
-/**
- * Filesystem Context MCP Server
- *
- * A secure, read-only MCP server for filesystem scanning and searching.
- * Provides tools for listing directories, reading files, searching content,
- * and analyzing directory structures.
- *
- * Security: All operations are restricted to explicitly allowed directories,
- * with symlink escape protection and path traversal prevention.
- *
- * Usage:
- *   filesystem-context-mcp /path/to/dir1 /path/to/dir2
- *   filesystem-context-mcp --allow-cwd  # Use current working directory
- *
- * Or with MCP Roots protocol (no CLI args needed).
- */
 import { setAllowedDirectories } from './lib/path-validation.js';
 import { createServer, parseArgs, startServer } from './server.js';
 
@@ -44,6 +28,10 @@ process.on('SIGINT', () => {
 });
 
 // Run main and handle fatal errors
-main().catch(() => {
+main().catch((error: unknown) => {
+  console.error(
+    'Fatal error:',
+    error instanceof Error ? error.message : String(error)
+  );
   process.exit(1);
 });

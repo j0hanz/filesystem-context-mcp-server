@@ -7,30 +7,23 @@ import type {
   TreeEntry,
 } from '../config/types.js';
 
-/**
- * Format bytes to human-readable string
- */
+const BYTES_PER_KB = 1024;
+const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
+
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
 
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
-  const k = 1024;
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  const unit = units[i] ?? 'B';
+  const unitIndex = Math.floor(Math.log(bytes) / Math.log(BYTES_PER_KB));
+  const unit = BYTE_UNITS[unitIndex] ?? 'B';
+  const value = bytes / Math.pow(BYTES_PER_KB, unitIndex);
 
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${unit}`;
+  return `${parseFloat(value.toFixed(2))} ${unit}`;
 }
 
-/**
- * Format date to ISO string
- */
 function formatDate(date: Date): string {
   return date.toISOString();
 }
 
-/**
- * Format directory listing for human-readable output
- */
 export function formatDirectoryListing(
   entries: DirectoryEntry[],
   basePath: string
@@ -74,9 +67,6 @@ export function formatDirectoryListing(
   return lines.join('\n');
 }
 
-/**
- * Format search results for human-readable output
- */
 export function formatSearchResults(results: SearchResult[]): string {
   if (results.length === 0) {
     return 'No matches found';
@@ -94,9 +84,6 @@ export function formatSearchResults(results: SearchResult[]): string {
   return lines.join('\n');
 }
 
-/**
- * Format content matches for human-readable output
- */
 export function formatContentMatches(matches: ContentMatch[]): string {
   if (matches.length === 0) {
     return 'No matches found';
@@ -153,9 +140,6 @@ export function formatContentMatches(matches: ContentMatch[]): string {
   return lines.join('\n');
 }
 
-/**
- * Format file info for human-readable output
- */
 export function formatFileInfo(info: FileInfo): string {
   const lines = [
     `Name: ${info.name}`,
@@ -180,9 +164,6 @@ export function formatFileInfo(info: FileInfo): string {
   return lines.join('\n');
 }
 
-/**
- * Format directory analysis for human-readable output
- */
 export function formatDirectoryAnalysis(analysis: DirectoryAnalysis): string {
   const lines = [
     `Directory Analysis: ${analysis.path}`,
@@ -226,9 +207,6 @@ export function formatDirectoryAnalysis(analysis: DirectoryAnalysis): string {
   return lines.join('\n');
 }
 
-/**
- * Format tree entry for human-readable output
- */
 export function formatTreeEntry(entry: TreeEntry, indent = ''): string {
   const lines: string[] = [];
   const icon = entry.type === 'directory' ? '📁' : '📄';
@@ -243,9 +221,6 @@ export function formatTreeEntry(entry: TreeEntry, indent = ''): string {
   return lines.join('\n');
 }
 
-/**
- * Format allowed directories list for human-readable output
- */
 export function formatAllowedDirectories(dirs: string[]): string {
   if (dirs.length === 0) {
     return 'No directories are currently allowed.';

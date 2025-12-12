@@ -2,6 +2,7 @@ import type { Buffer } from 'node:buffer';
 
 import type { ImageDimensions, ImageParser } from '../config/types.js';
 
+// Image format signatures
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47] as const;
 const JPEG_SIGNATURE = [0xff, 0xd8] as const;
 const GIF_SIGNATURE = [0x47, 0x49, 0x46] as const;
@@ -119,7 +120,7 @@ function parseWebp(buffer: Buffer): ImageDimensions | null {
   return null;
 }
 
-const IMAGE_PARSERS: Record<string, ImageParser> = {
+const IMAGE_PARSERS: Readonly<Record<string, ImageParser>> = {
   '.png': parsePng,
   '.jpg': parseJpeg,
   '.jpeg': parseJpeg,
@@ -128,10 +129,6 @@ const IMAGE_PARSERS: Record<string, ImageParser> = {
   '.webp': parseWebp,
 };
 
-/**
- * Parse image dimensions from common image format headers.
- * Supports PNG, JPEG, GIF, BMP, and WebP.
- */
 export function parseImageDimensions(
   buffer: Buffer,
   ext: string

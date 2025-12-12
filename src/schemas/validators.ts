@@ -1,6 +1,6 @@
 import { ErrorCode, McpError } from '../lib/errors.js';
 
-/// Validate that head and tail are not both specified
+// Validates line range parameters
 export function validateLineRange(params: {
   lineStart?: number;
   lineEnd?: number;
@@ -53,7 +53,7 @@ export function validateLineRange(params: {
   }
 }
 
-/// Validate that head and tail are not both specified
+// Validates head and tail are mutually exclusive
 export function validateHeadTail(params: {
   head?: number;
   tail?: number;

@@ -15,10 +15,7 @@ import {
 import { ErrorCode, McpError } from './errors.js';
 import { validateExistingPath } from './path-validation.js';
 
-/**
- * Concurrent work queue processor with optional abort support.
- * Processes items with controlled concurrency, allowing new items to be enqueued during processing.
- */
+// Concurrent work queue processor with abort support
 export async function runWorkQueue<T>(
   initialItems: T[],
   worker: (item: T, enqueue: (item: T) => void) => Promise<void>,
@@ -165,10 +162,7 @@ export async function isProbablyBinary(
   }
 }
 
-/**
- * Find the start of a UTF-8 character by backtracking from a position.
- * Used to align reads to character boundaries.
- */
+// Find UTF-8 character boundary by backtracking
 async function findUTF8Boundary(
   handle: fs.FileHandle,
   position: number

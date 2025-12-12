@@ -1,6 +1,3 @@
-/**
- * Tests for output formatters
- */
 import { describe, expect, it } from 'vitest';
 
 import type { ContentMatch, DirectoryEntry } from '../../config/types.js';

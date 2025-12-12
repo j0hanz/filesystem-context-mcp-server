@@ -1,6 +1,3 @@
-/**
- * Tests for image metadata parsing in readMediaFile
- */
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';

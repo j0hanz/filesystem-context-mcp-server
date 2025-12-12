@@ -49,7 +49,7 @@ import {
   validateExistingPathDetailed,
 } from './path-validation.js';
 
-// Create a matcher function from exclude patterns
+// Create matcher from exclude patterns
 function createExcludeMatcher(
   excludePatterns: string[]
 ): (name: string, relativePath: string) => boolean {
@@ -61,15 +61,12 @@ function createExcludeMatcher(
     matchers.some((m) => m.match(name) || m.match(relativePath));
 }
 
-/**
- * Result type for parallel operations with error collection.
- * Allows callers to handle partial failures gracefully.
- */
 interface ParallelResult<R> {
   results: R[];
   errors: { index: number; error: Error }[];
 }
 
+// Process items in parallel with controlled concurrency
 async function processInParallel<T, R>(
   items: T[],
   processor: (item: T) => Promise<R>,
@@ -100,6 +97,7 @@ async function processInParallel<T, R>(
   return { results, errors };
 }
 
+// Count regex matches with timeout protection (returns -1 on timeout)
 function countRegexMatches(
   line: string,
   regex: RegExp,
@@ -126,10 +124,7 @@ function countRegexMatches(
   return count;
 }
 
-/**
- * Check if a regex pattern is simple enough to be safe without full ReDoS analysis.
- * This reduces false positives from safe-regex2 for common safe patterns.
- */
+// Check if regex is simple enough to be safe
 function isSimpleSafePattern(pattern: string): boolean {
   // Patterns with nested quantifiers are the main ReDoS concern
   const nestedQuantifierPattern = /[+*?}]\s*\)\s*[+*?{]/;
@@ -150,11 +145,24 @@ function isSimpleSafePattern(pattern: string): boolean {
   return true;
 }
 
+// Convert file mode to permission string (e.g., 'rwxr-xr-x')
 function getPermissions(mode: number): string {
-  const p = ['---', '--x', '-w-', '-wx', 'r--', 'r-x', 'rw-', 'rwx'] as const;
-  const owner = p[(mode >> 6) & 7] ?? '---';
-  const group = p[(mode >> 3) & 7] ?? '---';
-  const other = p[mode & 7] ?? '---';
+  // Permission strings indexed by octal value (0-7)
+  const permStrings = [
+    '---',
+    '--x',
+    '-w-',
+    '-wx',
+    'r--',
+    'r-x',
+    'rw-',
+    'rwx',
+  ] as const;
+
+  const owner = permStrings[(mode >> 6) & 7] ?? '---';
+  const group = permStrings[(mode >> 3) & 7] ?? '---';
+  const other = permStrings[mode & 7] ?? '---';
+
   return `${owner}${group}${other}`;
 }
 

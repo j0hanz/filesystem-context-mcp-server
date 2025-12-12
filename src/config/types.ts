@@ -1,13 +1,7 @@
 import type { Buffer } from 'node:buffer';
 
-/**
- * File and Directory Types
- */
 export type FileType = 'file' | 'directory' | 'symlink' | 'other';
 
-/**
- * Detailed metadata about a file or directory.
- */
 export interface FileInfo {
   name: string;
   path: string;
@@ -22,25 +16,16 @@ export interface FileInfo {
   symlinkTarget?: string;
 }
 
-/**
- * An entry in a directory listing.
- */
 export interface DirectoryEntry {
   name: string;
-  /** Absolute, normalized path for the entry (realpath when applicable). */
   path: string;
-  /** Path relative to the requested base path. */
   relativePath: string;
   type: FileType;
   size?: number;
   modified?: Date;
-  /** Target path for symbolic links (only present when includeSymlinkTargets is true) */
   symlinkTarget?: string;
 }
 
-/**
- * Result of a directory listing operation.
- */
 export interface ListDirectoryResult {
   path: string;
   entries: DirectoryEntry[];
@@ -55,9 +40,6 @@ export interface ListDirectoryResult {
   };
 }
 
-/**
- * A single file match result from a glob search.
- */
 export interface SearchResult {
   path: string;
   type: FileType;
@@ -65,9 +47,6 @@ export interface SearchResult {
   modified?: Date;
 }
 
-/**
- * Result of a file search operation.
- */
 export interface SearchFilesResult {
   basePath: string;
   pattern: string;
@@ -79,9 +58,6 @@ export interface SearchFilesResult {
   };
 }
 
-/**
- * A single content match within a file.
- */
 export interface ContentMatch {
   file: string;
   line: number;
@@ -91,9 +67,6 @@ export interface ContentMatch {
   matchCount: number;
 }
 
-/**
- * Result of a content search operation.
- */
 export interface SearchContentResult {
   basePath: string;
   pattern: string;
@@ -112,9 +85,6 @@ export interface SearchContentResult {
   };
 }
 
-/**
- * Analysis data for a directory.
- */
 export interface DirectoryAnalysis {
   path: string;
   totalFiles: number;
@@ -126,9 +96,6 @@ export interface DirectoryAnalysis {
   maxDepth: number;
 }
 
-/**
- * Result of a directory analysis operation.
- */
 export interface AnalyzeDirectoryResult {
   analysis: DirectoryAnalysis;
   summary: {
@@ -138,13 +105,6 @@ export interface AnalyzeDirectoryResult {
   };
 }
 
-// =============================================================================
-// Directory Tree Types
-// =============================================================================
-
-/**
- * An entry in a directory tree structure.
- */
 export interface TreeEntry {
   name: string;
   type: 'file' | 'directory';
@@ -152,9 +112,6 @@ export interface TreeEntry {
   children?: TreeEntry[];
 }
 
-/**
- * Result of a directory tree operation.
- */
 export interface DirectoryTreeResult {
   tree: TreeEntry;
   summary: {
@@ -167,32 +124,15 @@ export interface DirectoryTreeResult {
   };
 }
 
-// =============================================================================
-// Media File Types
-// =============================================================================
-
-/**
- * Result of reading a media/binary file.
- */
 export interface MediaFileResult {
   path: string;
   mimeType: string;
   size: number;
-  /** Base64-encoded file data */
   data: string;
-  /** Image dimensions (if applicable) */
   width?: number;
   height?: number;
 }
 
-// =============================================================================
-// Error Types
-// =============================================================================
-
-/**
- * Error codes used throughout the application.
- * Using const object instead of enum (better tree-shaking, no runtime overhead).
- */
 export const ErrorCode = {
   E_ACCESS_DENIED: 'E_ACCESS_DENIED',
   E_NOT_FOUND: 'E_NOT_FOUND',
@@ -211,9 +151,6 @@ export const ErrorCode = {
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
 
-/**
- * Detailed error information with suggestions.
- */
 export interface DetailedError {
   code: ErrorCode;
   message: string;
@@ -222,11 +159,6 @@ export interface DetailedError {
   details?: Record<string, unknown>;
 }
 
-/**
- * Standardized error response structure for MCP tools.
- * The index signature `[x: string]: unknown` is required for compatibility
- * with the MCP SDK's CallToolResult type.
- */
 export interface ErrorResponse {
   [x: string]: unknown;
   content: { type: 'text'; text: string }[];
@@ -242,38 +174,18 @@ export interface ErrorResponse {
   isError: true;
 }
 
-// =============================================================================
-// Server Types
-// =============================================================================
-
-/**
- * Result of parsing command-line arguments.
- */
 export interface ParseArgsResult {
   allowedDirs: string[];
   allowCwd: boolean;
 }
 
-/**
- * Options for server configuration.
- */
 export interface ServerOptions {
   allowCwd?: boolean;
 }
 
-// =============================================================================
-// Image Types
-// =============================================================================
-
-/**
- * Image width and height dimensions.
- */
 export interface ImageDimensions {
   width: number;
   height: number;
 }
 
-/**
- * Function signature for parsing image dimensions from a buffer.
- */
 export type ImageParser = (buffer: Buffer) => ImageDimensions | null;

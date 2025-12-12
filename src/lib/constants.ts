@@ -1,18 +1,18 @@
-// Concurrency limits
+// Concurrency Limits
 export const PARALLEL_CONCURRENCY = 20;
 export const DIR_TRAVERSAL_CONCURRENCY = 8;
 
-// Timeout limits (in milliseconds)
-export const REGEX_MATCH_TIMEOUT_MS = 100; // Per-line regex match timeout to prevent ReDoS hangs
+// Timeout Limits (ms)
+export const REGEX_MATCH_TIMEOUT_MS = 100;
 
-// Size limits (in bytes)
-export const MAX_SEARCHABLE_FILE_SIZE = 1024 * 1024; // 1MB
-export const MAX_TEXT_FILE_SIZE = 10 * 1024 * 1024; // 10MB default for text files
-export const MAX_MEDIA_FILE_SIZE = 50 * 1024 * 1024; // 50MB default for media files
+// Size Limits (bytes)
+export const MAX_SEARCHABLE_FILE_SIZE = 1024 * 1024;
+export const MAX_TEXT_FILE_SIZE = 10 * 1024 * 1024;
+export const MAX_MEDIA_FILE_SIZE = 50 * 1024 * 1024;
 export const MAX_LINE_CONTENT_LENGTH = 200;
-export const BINARY_CHECK_BUFFER_SIZE = 512; // Increased for better accuracy
+export const BINARY_CHECK_BUFFER_SIZE = 512;
 
-// Default limits for operations
+// Default Operation Limits
 export const DEFAULT_MAX_DEPTH = 10;
 export const DEFAULT_MAX_RESULTS = 100;
 export const DEFAULT_TOP_N = 10;
@@ -271,19 +271,12 @@ export const KNOWN_BINARY_EXTENSIONS = new Set([
   '.map',
 ]);
 
-/**
- * Get the MIME type for a file extension.
- * Returns 'application/octet-stream' for unknown extensions.
- *
- * @param ext - File extension including the dot (e.g., '.png')
- * @returns The MIME type string
- */
+// MIME type lookup
 export function getMimeType(ext: string): string {
   return MIME_TYPES[ext.toLowerCase()] ?? 'application/octet-stream';
 }
 
-// MIME type mappings for media files
-export const MIME_TYPES: Record<string, string> = {
+export const MIME_TYPES: Readonly<Record<string, string>> = {
   // Images
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
