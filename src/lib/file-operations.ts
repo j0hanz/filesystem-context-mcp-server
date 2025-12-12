@@ -43,14 +43,11 @@ import {
   readFile,
   runWorkQueue,
 } from './fs-helpers.js';
+import { parseImageDimensions } from './image-parsing.js';
 import {
   validateExistingPath,
   validateExistingPathDetailed,
 } from './path-validation.js';
-
-function shouldStopBecauseOfTimeout(deadlineMs: number | undefined): boolean {
-  return deadlineMs !== undefined && Date.now() > deadlineMs;
-}
 
 // Create a matcher function from exclude patterns
 function createExcludeMatcher(
@@ -76,17 +73,12 @@ interface ParallelResult<R> {
 async function processInParallel<T, R>(
   items: T[],
   processor: (item: T) => Promise<R>,
-  concurrency: number = PARALLEL_CONCURRENCY,
-  signal?: AbortSignal
+  concurrency: number = PARALLEL_CONCURRENCY
 ): Promise<ParallelResult<R>> {
   const results: R[] = [];
   const errors: { index: number; error: Error }[] = [];
 
   for (let i = 0; i < items.length; i += concurrency) {
-    // Check for abort before processing each batch
-    if (signal?.aborted) {
-      break;
-    }
     const batch = items.slice(i, i + concurrency);
     const batchResults = await Promise.allSettled(batch.map(processor));
 
@@ -137,35 +129,24 @@ function countRegexMatches(
 /**
  * Check if a regex pattern is simple enough to be safe without full ReDoS analysis.
  * This reduces false positives from safe-regex2 for common safe patterns.
- *
- * A pattern is considered "simple safe" if it:
- * - Has no nested quantifiers (e.g., (a+)+ or (a*)*) which are the main ReDoS concern
- * - Has no high repetition counts (e.g., {25} or higher) that safe-regex2 would flag
- *
- * This is a quick heuristic, not a full safety proof.
  */
 function isSimpleSafePattern(pattern: string): boolean {
   // Patterns with nested quantifiers are the main ReDoS concern
-  // Look for quantifier followed by closing paren then another quantifier
-  // Matches patterns like: (a+)+, (a*)+, (a+)*, (a?)+, (a{2})+
   const nestedQuantifierPattern = /[+*?}]\s*\)\s*[+*?{]/;
   if (nestedQuantifierPattern.test(pattern)) {
-    return false; // Potentially dangerous, needs full check
+    return false;
   }
 
   // Check for high repetition counts that safe-regex2 would flag (default limit is 25)
-  // Matches {n} or {n,} or {n,m} where n >= 25
   const highRepetitionPattern = /\{(\d+)(?:,\d*)?\}/g;
   let match;
   while ((match = highRepetitionPattern.exec(pattern)) !== null) {
     const count = parseInt(match[1] ?? '0', 10);
     if (count >= 25) {
-      return false; // High repetition count, needs full check
+      return false;
     }
   }
 
-  // Simple patterns without nested quantifiers or high repetition are generally safe
-  // Examples: "throw new McpError\(", "\bword\b", "foo|bar"
   return true;
 }
 
@@ -185,7 +166,6 @@ export async function getFileInfo(filePath: string): Promise<FileInfo> {
   const ext = path.extname(name).toLowerCase();
   const mimeType = ext ? getMimeType(ext) : undefined;
 
-  // If it is a symlink, try to read the link target without following.
   let symlinkTarget: string | undefined;
   if (isSymlink) {
     try {
@@ -195,7 +175,6 @@ export async function getFileInfo(filePath: string): Promise<FileInfo> {
     }
   }
 
-  // Use stat for size/dates (follows symlinks), but keep type as symlink based on lstat.
   const stats = await fs.stat(resolvedPath);
 
   return {
@@ -358,7 +337,6 @@ export async function listDirectory(
           }
         );
 
-      // Count errors from parallel processing as inaccessible
       skippedInaccessible += processingErrors.length;
 
       for (const { entry, enqueueDir } of processedEntries) {
@@ -379,7 +357,6 @@ export async function listDirectory(
       case 'modified':
         return (b.modified?.getTime() ?? 0) - (a.modified?.getTime() ?? 0);
       case 'type':
-        // directories first, then by name
         if (a.type !== b.type) {
           return a.type === 'directory' ? -1 : 1;
         }
@@ -463,8 +440,8 @@ export async function searchFiles(
     dot: true,
     ignore: excludePatterns,
     suppressErrors: true,
-    followSymbolicLinks: false, // Security: never follow symlinks
-    deep: maxDepth, // Limit search depth if specified
+    followSymbolicLinks: false,
+    deep: maxDepth,
   });
 
   for await (const entry of stream) {
@@ -513,13 +490,8 @@ export async function searchFiles(
   };
 }
 
-// Re-export readFile from fs-helpers so it can be used by tools
 export { readFile };
 
-/**
- * Read multiple files in parallel.
- * Individual file errors don't fail the entire operation.
- */
 export async function readMultipleFiles(
   filePaths: string[],
   options: {
@@ -538,7 +510,6 @@ export async function readMultipleFiles(
 
   if (filePaths.length === 0) return [];
 
-  // Preserve input order while limiting concurrency to avoid spiky I/O / EMFILE.
   const output: { path: string; content?: string; error?: string }[] =
     filePaths.map((filePath) => ({ path: filePath }));
 
@@ -608,20 +579,16 @@ export async function searchContent(
   const deadlineMs =
     timeoutMs !== undefined ? Date.now() + timeoutMs : undefined;
 
-  // Build the final pattern
   let finalPattern = searchPattern;
 
-  // Escape regex special characters if literal mode
   if (isLiteral) {
     finalPattern = finalPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
-  // Add word boundaries if whole word mode
   if (wholeWord) {
     finalPattern = `\\b${finalPattern}\\b`;
   }
 
-  // ReDoS protection: skip check for literal or simple patterns
   const needsReDoSCheck = !isLiteral && !isSimpleSafePattern(finalPattern);
 
   if (needsReDoSCheck && !safeRegex(finalPattern)) {
@@ -674,13 +641,13 @@ export async function searchContent(
     dot: false,
     ignore: excludePatterns,
     suppressErrors: true,
-    followSymbolicLinks: false, // Security: never follow symlinks
+    followSymbolicLinks: false,
   });
 
   for await (const entry of stream) {
     const file = typeof entry === 'string' ? entry : String(entry);
 
-    if (shouldStopBecauseOfTimeout(deadlineMs)) {
+    if (deadlineMs !== undefined && Date.now() > deadlineMs) {
       stopNow('timeout');
       break;
     }
@@ -740,7 +707,7 @@ export async function searchContent(
         for await (const line of rl) {
           lineNumber++;
 
-          if (shouldStopBecauseOfTimeout(deadlineMs)) {
+          if (deadlineMs !== undefined && Date.now() > deadlineMs) {
             stopNow('timeout');
             break;
           }
@@ -771,7 +738,6 @@ export async function searchContent(
             console.error(
               `[searchContent] Skipping line ${lineNumber} in ${validFile} due to regex timeout`
             );
-            // Still add to buffer for context
             if (contextLines > 0) {
               lineBuffer.push(trimmedLine);
               if (lineBuffer.length > contextLines) {
@@ -824,7 +790,6 @@ export async function searchContent(
       }
       skippedInaccessible++;
 
-      // Log unexpected errors for debugging
       const { code } = error as NodeJS.ErrnoException;
       if (code !== 'ENOENT' && code !== 'EACCES' && code !== 'EPERM') {
         console.error(`[searchContent] Error processing ${file}:`, error);
@@ -921,12 +886,10 @@ export async function analyzeDirectory(
         const fullPath = path.join(currentPath, item.name);
         const relativePath = path.relative(validPath, fullPath);
 
-        // Skip hidden files/directories unless includeHidden is true
         if (!includeHidden && isHidden(item.name)) {
           continue;
         }
 
-        // Skip items matching exclude patterns
         if (shouldExclude(item.name, relativePath)) {
           continue;
         }
@@ -1006,10 +969,6 @@ export async function analyzeDirectory(
   };
 }
 
-/**
- * Build a JSON tree structure of a directory.
- * More efficient for AI parsing than flat file lists.
- */
 export async function getDirectoryTree(
   dirPath: string,
   options: {
@@ -1029,7 +988,6 @@ export async function getDirectoryTree(
   } = options;
   const validPath = await validateExistingPath(dirPath);
 
-  // Ensure the requested path is a directory (not just an existing path).
   const rootStats = await fs.stat(validPath);
   if (!rootStats.isDirectory()) {
     throw new McpError(
@@ -1082,7 +1040,6 @@ export async function getDirectoryTree(
 
     const name = path.basename(currentPath);
 
-    // Check exclusions
     if (shouldExclude(name, relativePath)) {
       return null;
     }
@@ -1196,10 +1153,6 @@ export async function getDirectoryTree(
   };
 }
 
-/**
- * Read a media/binary file and return as base64.
- * Useful for images, audio, and other binary content.
- */
 export async function readMediaFile(
   filePath: string,
   options: {
@@ -1253,147 +1206,4 @@ export async function readMediaFile(
     width,
     height,
   };
-}
-
-interface ImageDimensions {
-  width: number;
-  height: number;
-}
-type ImageParser = (buffer: Buffer) => ImageDimensions | null;
-
-const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47] as const;
-const JPEG_SIGNATURE = [0xff, 0xd8] as const;
-const GIF_SIGNATURE = [0x47, 0x49, 0x46] as const;
-const BMP_SIGNATURE = [0x42, 0x4d] as const;
-const WEBP_RIFF = [0x52, 0x49, 0x46, 0x46] as const;
-const WEBP_MARKER = [0x57, 0x45, 0x42, 0x50] as const;
-
-function matchesSignature(
-  buffer: Buffer,
-  signature: readonly number[],
-  offset = 0
-): boolean {
-  if (buffer.length < offset + signature.length) return false;
-  return signature.every((byte, i) => buffer[offset + i] === byte);
-}
-
-function parsePng(buffer: Buffer): ImageDimensions | null {
-  if (buffer.length < 24 || !matchesSignature(buffer, PNG_SIGNATURE))
-    return null;
-  return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
-}
-
-function parseJpeg(buffer: Buffer): ImageDimensions | null {
-  if (buffer.length < 2 || !matchesSignature(buffer, JPEG_SIGNATURE))
-    return null;
-  let offset = 2;
-  while (offset < buffer.length - 8) {
-    if (buffer[offset] !== 0xff) {
-      offset++;
-      continue;
-    }
-    const marker = buffer[offset + 1];
-    const isSOF =
-      marker !== undefined &&
-      ((marker >= 0xc0 && marker <= 0xc3) ||
-        (marker >= 0xc5 && marker <= 0xc7) ||
-        (marker >= 0xc9 && marker <= 0xcb) ||
-        (marker >= 0xcd && marker <= 0xcf));
-    if (isSOF) {
-      return {
-        width: buffer.readUInt16BE(offset + 7),
-        height: buffer.readUInt16BE(offset + 5),
-      };
-    }
-    if (offset + 3 >= buffer.length) break;
-    offset += 2 + buffer.readUInt16BE(offset + 2);
-  }
-  return null;
-}
-
-function parseGif(buffer: Buffer): ImageDimensions | null {
-  if (buffer.length < 10 || !matchesSignature(buffer, GIF_SIGNATURE))
-    return null;
-  return { width: buffer.readUInt16LE(6), height: buffer.readUInt16LE(8) };
-}
-
-function parseBmp(buffer: Buffer): ImageDimensions | null {
-  if (buffer.length < 26 || !matchesSignature(buffer, BMP_SIGNATURE))
-    return null;
-  return {
-    width: buffer.readInt32LE(18),
-    height: Math.abs(buffer.readInt32LE(22)),
-  };
-}
-
-function parseWebp(buffer: Buffer): ImageDimensions | null {
-  if (buffer.length < 30) return null;
-  if (
-    !matchesSignature(buffer, WEBP_RIFF) ||
-    !matchesSignature(buffer, WEBP_MARKER, 8)
-  )
-    return null;
-
-  const chunkType = [buffer[12], buffer[13], buffer[14], buffer[15]];
-  // VP8 (lossy): 0x56 0x50 0x38 0x20
-  if (
-    chunkType[0] === 0x56 &&
-    chunkType[1] === 0x50 &&
-    chunkType[2] === 0x38 &&
-    chunkType[3] === 0x20
-  ) {
-    return {
-      width: buffer.readUInt16LE(26) & 0x3fff,
-      height: buffer.readUInt16LE(28) & 0x3fff,
-    };
-  }
-  // VP8L (lossless): 0x56 0x50 0x38 0x4c
-  if (
-    chunkType[0] === 0x56 &&
-    chunkType[1] === 0x50 &&
-    chunkType[2] === 0x38 &&
-    chunkType[3] === 0x4c
-  ) {
-    const bits = buffer.readUInt32LE(21);
-    return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1 };
-  }
-  // VP8X (extended): 0x56 0x50 0x38 0x58
-  if (
-    chunkType[0] === 0x56 &&
-    chunkType[1] === 0x50 &&
-    chunkType[2] === 0x38 &&
-    chunkType[3] === 0x58
-  ) {
-    const width =
-      (buffer[24] ?? 0) | ((buffer[25] ?? 0) << 8) | ((buffer[26] ?? 0) << 16);
-    const height =
-      (buffer[27] ?? 0) | ((buffer[28] ?? 0) << 8) | ((buffer[29] ?? 0) << 16);
-    return { width: width + 1, height: height + 1 };
-  }
-  return null;
-}
-
-const IMAGE_PARSERS: Record<string, ImageParser> = {
-  '.png': parsePng,
-  '.jpg': parseJpeg,
-  '.jpeg': parseJpeg,
-  '.gif': parseGif,
-  '.bmp': parseBmp,
-  '.webp': parseWebp,
-};
-
-/**
- * Parse image dimensions from common image format headers.
- * Supports PNG, JPEG, GIF, BMP, and WebP.
- */
-function parseImageDimensions(
-  buffer: Buffer,
-  ext: string
-): ImageDimensions | null {
-  try {
-    const parser = IMAGE_PARSERS[ext];
-    return parser ? parser(buffer) : null;
-  } catch {
-    return null;
-  }
 }
