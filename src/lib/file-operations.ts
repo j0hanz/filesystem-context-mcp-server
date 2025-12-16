@@ -70,11 +70,10 @@ function getPermissions(mode: number): string {
     'rwx',
   ] as const satisfies readonly string[];
 
-  // Use bitwise operations and bounds-checked array access
+  // Bitwise mask guarantees indices 0-7
   const ownerIndex = (mode >> 6) & 0b111;
   const groupIndex = (mode >> 3) & 0b111;
   const otherIndex = mode & 0b111;
-
   const owner = PERM_STRINGS[ownerIndex] ?? '---';
   const group = PERM_STRINGS[groupIndex] ?? '---';
   const other = PERM_STRINGS[otherIndex] ?? '---';
@@ -406,31 +405,40 @@ export async function readMultipleFiles(
   const output: { path: string; content?: string; error?: string }[] =
     filePaths.map((filePath) => ({ path: filePath }));
 
-  let cumulativeSizeBytes = 0;
+  // Pre-calculate total size to avoid race condition in parallel reads
+  let totalSize = 0;
+  const fileSizes = new Map<string, number>();
+
+  for (const filePath of filePaths) {
+    try {
+      const validPath = await validateExistingPath(filePath);
+      const stats = await fs.stat(validPath);
+      fileSizes.set(filePath, stats.size);
+      totalSize += stats.size;
+    } catch {
+      // Skip files we can't access - they'll error during read
+      fileSizes.set(filePath, 0);
+    }
+  }
+
+  if (totalSize > maxTotalSize) {
+    throw new McpError(
+      ErrorCode.E_TOO_LARGE,
+      `Total size of all files (${totalSize} bytes) exceeds limit (${maxTotalSize} bytes)`,
+      undefined,
+      { totalSize, maxTotalSize, fileCount: filePaths.length }
+    );
+  }
 
   const { results, errors } = await processInParallel(
     filePaths.map((filePath, index) => ({ filePath, index })),
     async ({ filePath, index }) => {
-      // Check cumulative size before reading
-      if (cumulativeSizeBytes >= maxTotalSize) {
-        throw new McpError(
-          ErrorCode.E_TOO_LARGE,
-          `Cumulative read size limit exceeded (${maxTotalSize} bytes). Aborting remaining reads.`,
-          filePath,
-          { cumulativeSizeBytes, maxTotalSize }
-        );
-      }
-
       const result = await readFile(filePath, {
         encoding,
         maxSize,
         head,
         tail,
       });
-
-      // Track cumulative size
-      const contentSize = Buffer.byteLength(result.content, encoding);
-      cumulativeSizeBytes += contentSize;
 
       return {
         index,
@@ -529,6 +537,7 @@ export async function searchContent(
   let linesSkippedDueToRegexTimeout = 0;
   let truncated = false;
   let stoppedReason: SearchContentResult['summary']['stoppedReason'];
+  let firstPathValidated = false;
 
   const stopNow = (reason: typeof stoppedReason): boolean => {
     truncated = true;
@@ -548,6 +557,18 @@ export async function searchContent(
 
   for await (const entry of stream) {
     const file = typeof entry === 'string' ? entry : String(entry);
+
+    // Paranoid check: validate first result to detect unexpected fast-glob behavior
+    if (!firstPathValidated) {
+      try {
+        await validateExistingPath(file);
+        firstPathValidated = true;
+      } catch {
+        console.error('[SECURITY] fast-glob returned invalid path:', file);
+        stopNow('maxFiles');
+        break;
+      }
+    }
 
     if (deadlineMs !== undefined && Date.now() > deadlineMs) {
       stopNow('timeout');

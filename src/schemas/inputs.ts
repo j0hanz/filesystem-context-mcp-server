@@ -33,7 +33,9 @@ export const ListDirectoryInputSchema = {
     .max(100, 'maxDepth cannot exceed 100')
     .optional()
     .default(DEFAULT_MAX_DEPTH)
-    .describe('Maximum depth for recursive listing'),
+    .describe(
+      'Maximum depth for recursive listing (higher values may impact performance)'
+    ),
   maxEntries: z
     .number()
     .int('maxEntries must be an integer')
@@ -111,7 +113,9 @@ export const SearchFilesInputSchema = {
     .min(1, 'maxDepth must be at least 1')
     .max(100, 'maxDepth cannot exceed 100')
     .optional()
-    .describe('Maximum directory depth to search'),
+    .describe(
+      'Maximum directory depth to search (lower values improve performance)'
+    ),
 };
 
 // Base schema for reading a file with various options.

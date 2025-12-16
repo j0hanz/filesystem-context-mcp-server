@@ -70,8 +70,10 @@ function countRegexMatches(
   regex.lastIndex = 0;
   let count = 0;
   const deadline = Date.now() + timeoutMs;
-  const maxIterations = line.length * 2; // Prevent infinite loops
+  // Hard cap prevents issues with extremely long lines (e.g., minified JS)
+  const maxIterations = Math.min(line.length * 2, 10000);
   let iterations = 0;
+  let lastIndex = 0;
 
   let match: RegExpExecArray | null;
   while ((match = regex.exec(line)) !== null) {
@@ -80,13 +82,25 @@ function countRegexMatches(
 
     // Prevent infinite loops on zero-width matches
     if (match[0] === '') {
+      const { lastIndex: newIndex } = regex;
       regex.lastIndex++;
+      lastIndex = newIndex + 1;
       // Prevent advancing beyond string length
       if (regex.lastIndex > line.length) break;
+    } else {
+      const { lastIndex: currentIndex } = regex;
+      // Detect if regex is stuck (lastIndex not advancing)
+      if (currentIndex === lastIndex) {
+        return -1; // Regex not making progress
+      }
+      lastIndex = currentIndex;
     }
 
-    // Check timeout more frequently to catch slow patterns
-    if ((count % 10 === 0 || iterations % 50 === 0) && Date.now() > deadline) {
+    // Hybrid timeout check for both fast and slow regex patterns
+    const shouldCheckTimeout =
+      (count > 0 && count % 10 === 0) ||
+      (iterations > 0 && iterations % 50 === 0);
+    if (shouldCheckTimeout && Date.now() > deadline) {
       return -1; // Signal timeout
     }
 

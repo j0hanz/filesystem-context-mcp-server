@@ -31,8 +31,53 @@ try {
     path.join(currentDir, 'instructions.md'),
     'utf-8'
   );
-} catch {
-  // Instructions file not found - continue without instructions
+} catch (error) {
+  // Instructions file not found or unreadable
+  console.error(
+    '[WARNING] Failed to load instructions.md:',
+    error instanceof Error ? error.message : String(error)
+  );
+}
+
+// Reserved device names on Windows that should be rejected
+const RESERVED_DEVICE_NAMES = new Set([
+  'CON',
+  'PRN',
+  'AUX',
+  'NUL',
+  'COM1',
+  'COM2',
+  'COM3',
+  'COM4',
+  'COM5',
+  'COM6',
+  'COM7',
+  'COM8',
+  'COM9',
+  'LPT1',
+  'LPT2',
+  'LPT3',
+  'LPT4',
+  'LPT5',
+  'LPT6',
+  'LPT7',
+  'LPT8',
+  'LPT9',
+]);
+
+function validateCliPath(inputPath: string): void {
+  // Check for null bytes (path injection)
+  if (inputPath.includes('\0')) {
+    throw new Error('Path contains null bytes');
+  }
+
+  // Check for reserved device names on Windows
+  if (process.platform === 'win32') {
+    const basename = path.basename(inputPath).split('.')[0]?.toUpperCase();
+    if (basename && RESERVED_DEVICE_NAMES.has(basename)) {
+      throw new Error(`Reserved device name not allowed: ${basename}`);
+    }
+  }
 }
 
 export async function parseArgs(): Promise<ParseArgsResult> {
@@ -53,6 +98,7 @@ export async function parseArgs(): Promise<ParseArgsResult> {
   const validatedDirs: string[] = [];
 
   for (const dir of args) {
+    validateCliPath(dir);
     const normalized = normalizePath(dir);
 
     try {

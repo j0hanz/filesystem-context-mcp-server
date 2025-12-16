@@ -182,9 +182,8 @@ async function findUTF8Boundary(
     } catch (error) {
       // On read error, return original position to avoid data corruption
       console.error(
-        '[findUTF8Boundary] Read error at position',
-        currentPos,
-        error
+        `[findUTF8Boundary] Read error at position ${currentPos}:`,
+        error instanceof Error ? error.message : String(error)
       );
       return position;
     }
@@ -205,7 +204,8 @@ export async function tailFile(
   filePath: string,
   numLines: number
 ): Promise<string> {
-  const CHUNK_SIZE = 64 * 1024;
+  // Optimized chunk size reduces syscalls with minimal memory overhead
+  const CHUNK_SIZE = 256 * 1024;
   const validPath = await validateExistingPath(filePath);
   const stats = await fs.stat(validPath);
   const fileSize = stats.size;

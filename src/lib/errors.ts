@@ -108,7 +108,13 @@ export function classifyError(error: unknown): ErrorCode {
     if (mapped) return mapped;
   }
 
-  // 3. Message pattern matching (fallback for non-Node errors)
+  // 3. Common case optimization: check for ENOENT in message
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.toLowerCase().includes('enoent')) {
+    return validateErrorCode(ErrorCode.E_NOT_FOUND);
+  }
+
+  // 4. Message pattern matching (fallback for non-Node errors)
   return classifyByMessage(error);
 }
 
@@ -154,10 +160,7 @@ function classifyByMessage(error: unknown): ErrorCode {
     return validateErrorCode(ErrorCode.E_ACCESS_DENIED);
   }
 
-  // Not found (prioritize ENOENT, then path-related patterns)
-  if (lowerMessage.includes('enoent')) {
-    return validateErrorCode(ErrorCode.E_NOT_FOUND);
-  }
+  // Not found (path-related patterns)
   if (
     (lowerMessage.includes('path') ||
       lowerMessage.includes('file') ||

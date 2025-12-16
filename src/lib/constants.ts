@@ -3,7 +3,12 @@ export const PARALLEL_CONCURRENCY = 20;
 export const DIR_TRAVERSAL_CONCURRENCY = 8;
 
 // Timeout Limits (ms)
-export const REGEX_MATCH_TIMEOUT_MS = 100;
+// Configurable via REGEX_TIMEOUT_MS env var (range: 50-1000ms)
+const envTimeout = parseInt(process.env.REGEX_TIMEOUT_MS ?? '100', 10);
+export const REGEX_MATCH_TIMEOUT_MS =
+  !Number.isNaN(envTimeout) && envTimeout >= 50 && envTimeout <= 1000
+    ? envTimeout
+    : 100;
 
 // Size Limits (bytes)
 export const MAX_SEARCHABLE_FILE_SIZE = 1024 * 1024;

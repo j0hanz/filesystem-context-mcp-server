@@ -4,33 +4,37 @@ type LogLevel = 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical';
 
 // Store the low-level server instance for logging
 let mcpServerInstance: McpServer | null = null;
+let loggingFailureCount = 0;
+const MAX_FAILURE_WARNINGS = 10;
 
 export function setMcpServerInstance(server: McpServer): void {
   mcpServerInstance = server;
+  loggingFailureCount = 0; // Reset counter on new server
 }
 
 // Internal logging function - use `logger` object for external access
 function mcpLog(level: LogLevel, data: string, loggerName?: string): void {
   if (!mcpServerInstance) {
-    // Fallback to stderr if server not connected
     console.error(`[${level}] ${loggerName ? `${loggerName}: ` : ''}${data}`);
     return;
   }
 
-  try {
-    mcpServerInstance.server
-      .sendLoggingMessage({
-        level,
-        data,
-        logger: loggerName,
-      })
-      .catch(() => {
-        // Logging failed - fallback handled below
-      });
-  } catch {
-    // Ignore logging errors - don't break operations
-    console.error(`[${level}] ${data}`);
-  }
+  mcpServerInstance.server
+    .sendLoggingMessage({
+      level,
+      data,
+      logger: loggerName,
+    })
+    .catch(() => {
+      loggingFailureCount++;
+      console.error(`[${level}] ${loggerName ? `${loggerName}: ` : ''}${data}`);
+
+      if (loggingFailureCount === MAX_FAILURE_WARNINGS) {
+        console.error(
+          '[CRITICAL] MCP logging failed 10 times. Further failures will not be reported.'
+        );
+      }
+    });
 }
 
 export const logger = {

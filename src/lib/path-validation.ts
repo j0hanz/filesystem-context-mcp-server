@@ -87,7 +87,7 @@ async function validateExistingPathDetailsInternal(
     if (nodeError.code === 'ELOOP') {
       throw new McpError(
         ErrorCode.E_SYMLINK_NOT_ALLOWED,
-        `Too many symbolic links in path: ${requestedPath}`,
+        `Too many symbolic links in path (possible circular reference): ${requestedPath}`,
         requestedPath,
         { originalCode: nodeError.code },
         error
@@ -114,11 +114,15 @@ async function validateExistingPathDetailsInternal(
   const normalizedReal = normalizePath(realPath);
 
   if (!isPathWithinAllowedDirectories(normalizedReal)) {
-    // Note: Error details include resolvedPath for debugging purposes.
-    // In production environments, consider sanitizing these details if path disclosure is a concern.
+    const allowedDirs = getAllowedDirectories();
+    const suggestion =
+      allowedDirs.length > 0
+        ? `Allowed directories:\n${allowedDirs.map((d) => `  - ${d}`).join('\n')}`
+        : 'No allowed directories configured. Use CLI arguments or MCP roots protocol.';
+
     throw new McpError(
       ErrorCode.E_ACCESS_DENIED,
-      `Access denied: Path '${requestedPath}' is outside allowed directories`,
+      `Access denied: Path '${requestedPath}' is outside allowed directories.\n\n${suggestion}`,
       requestedPath,
       { resolvedPath: realPath, normalizedResolvedPath: normalizedReal }
     );
