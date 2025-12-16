@@ -9,6 +9,7 @@ import type {
 
 const BYTES_PER_KB = 1024;
 const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
+const SEPARATOR_LENGTH = 50;
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -167,7 +168,7 @@ export function formatFileInfo(info: FileInfo): string {
 export function formatDirectoryAnalysis(analysis: DirectoryAnalysis): string {
   const lines = [
     `Directory Analysis: ${analysis.path}`,
-    '='.repeat(50),
+    '='.repeat(SEPARATOR_LENGTH),
     '',
     'Summary:',
     `  Total Files: ${analysis.totalFiles}`,

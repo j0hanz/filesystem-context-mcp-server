@@ -16,8 +16,6 @@ import {
   getValidRootDirectories,
   setAllowedDirectories,
 } from './lib/path-validation.js';
-import { registerAllPrompts } from './prompts/index.js';
-import { registerAllResources } from './resources/index.js';
 import { registerAllTools } from './tools/index.js';
 
 // Get version from package.json
@@ -112,8 +110,6 @@ export function createServer(options: ServerOptions = {}): McpServer {
   );
 
   registerAllTools(server);
-  registerAllPrompts(server);
-  registerAllResources(server);
 
   return server;
 }

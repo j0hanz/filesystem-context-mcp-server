@@ -33,7 +33,6 @@ import {
 import {
   classifyAccessError,
   createExcludeMatcher,
-  handleDirectoryError,
   insertSorted,
 } from './directory-helpers.js';
 import { ErrorCode, McpError } from './errors.js';
@@ -164,9 +163,8 @@ export async function listDirectory(
       let items;
       try {
         items = await fs.readdir(currentPath, { withFileTypes: true });
-      } catch (error) {
+      } catch {
         skippedInaccessible++;
-        handleDirectoryError(error);
         return;
       }
 
@@ -389,6 +387,7 @@ export async function readMultipleFiles(
   options: {
     encoding?: BufferEncoding;
     maxSize?: number;
+    maxTotalSize?: number;
     head?: number;
     tail?: number;
   } = {}
@@ -396,6 +395,7 @@ export async function readMultipleFiles(
   const {
     encoding = 'utf-8',
     maxSize = MAX_TEXT_FILE_SIZE,
+    maxTotalSize = 100 * 1024 * 1024,
     head,
     tail,
   } = options;
@@ -405,15 +405,32 @@ export async function readMultipleFiles(
   const output: { path: string; content?: string; error?: string }[] =
     filePaths.map((filePath) => ({ path: filePath }));
 
+  let cumulativeSizeBytes = 0;
+
   const { results, errors } = await processInParallel(
     filePaths.map((filePath, index) => ({ filePath, index })),
     async ({ filePath, index }) => {
+      // Check cumulative size before reading
+      if (cumulativeSizeBytes >= maxTotalSize) {
+        throw new McpError(
+          ErrorCode.E_TOO_LARGE,
+          `Cumulative read size limit exceeded (${maxTotalSize} bytes). Aborting remaining reads.`,
+          filePath,
+          { cumulativeSizeBytes, maxTotalSize }
+        );
+      }
+
       const result = await readFile(filePath, {
         encoding,
         maxSize,
         head,
         tail,
       });
+
+      // Track cumulative size
+      const contentSize = Buffer.byteLength(result.content, encoding);
+      cumulativeSizeBytes += contentSize;
+
       return {
         index,
         value: { path: result.path, content: result.content },
@@ -544,34 +561,29 @@ export async function searchContent(
       break;
     }
 
-    let validFile: string;
-    let handle: fs.FileHandle | undefined;
     try {
-      validFile = await validateExistingPath(file);
-      handle = await fs.open(validFile, 'r');
-      const stats = await handle.stat();
+      const validFile = await validateExistingPath(file);
+      const handle = await fs.open(validFile, 'r');
 
-      filesScanned++;
+      try {
+        const stats = await handle.stat();
+        filesScanned++;
 
-      if (stats.size > maxFileSize) {
-        skippedTooLarge++;
-        await handle.close();
-        handle = undefined;
-        continue;
-      }
-
-      if (skipBinary) {
-        const binary = await isProbablyBinary(validFile, handle);
-        if (binary) {
-          skippedBinary++;
-          await handle.close();
-          handle = undefined;
+        if (stats.size > maxFileSize) {
+          skippedTooLarge++;
           continue;
         }
-      }
 
-      await handle.close();
-      handle = undefined;
+        if (skipBinary) {
+          const binary = await isProbablyBinary(validFile, handle);
+          if (binary) {
+            skippedBinary++;
+            continue;
+          }
+        }
+      } finally {
+        await handle.close().catch(() => {});
+      }
 
       const scanResult = await scanFileForContent(validFile, regex, {
         maxResults,
@@ -595,9 +607,6 @@ export async function searchContent(
 
       if (stoppedReason !== undefined) break;
     } catch {
-      if (handle) {
-        await handle.close().catch(() => {});
-      }
       skippedInaccessible++;
     }
   }
@@ -659,9 +668,8 @@ export async function analyzeDirectory(
       let items;
       try {
         items = await fs.readdir(currentPath, { withFileTypes: true });
-      } catch (error) {
+      } catch {
         skippedInaccessible++;
-        handleDirectoryError(error);
         return;
       }
 
@@ -705,13 +713,13 @@ export async function analyzeDirectory(
             insertSorted(
               largestFiles,
               { path: validated.resolvedPath, size: stats.size },
-              (a, b) => a.size > b.size,
+              (a, b) => b.size - a.size,
               topN
             );
             insertSorted(
               recentlyModified,
               { path: validated.resolvedPath, modified: stats.mtime },
-              (a, b) => a.modified.getTime() > b.modified.getTime(),
+              (a, b) => b.modified.getTime() - a.modified.getTime(),
               topN
             );
           }

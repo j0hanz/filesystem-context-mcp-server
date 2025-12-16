@@ -26,7 +26,7 @@ export function registerReadMultipleFilesTool(server: McpServer): void {
         openWorldHint: true,
       },
     },
-    async ({ paths, encoding, maxSize, head, tail }) => {
+    async ({ paths, encoding, maxSize, maxTotalSize, head, tail }) => {
       try {
         // Validate head/tail mutual exclusivity early
         validateHeadTail({ head, tail });
@@ -35,6 +35,7 @@ export function registerReadMultipleFilesTool(server: McpServer): void {
         const results = await readMultipleFiles(paths, {
           encoding,
           maxSize,
+          maxTotalSize,
           head,
           tail,
         });

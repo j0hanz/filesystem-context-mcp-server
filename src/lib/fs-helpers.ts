@@ -34,8 +34,7 @@ export async function runWorkQueue<T>(
 
   const onAbort = (): void => {
     aborted = true;
-    // Clear remaining work (keep the already-consumed prefix intact)
-    queue.length = head;
+    // Don't modify queue - just stop new work from being enqueued
     if (inFlight === 0) {
       doneResolve?.();
     }

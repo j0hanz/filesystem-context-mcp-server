@@ -114,9 +114,11 @@ async function validateExistingPathDetailsInternal(
   const normalizedReal = normalizePath(realPath);
 
   if (!isPathWithinAllowedDirectories(normalizedReal)) {
+    // Note: Error details include resolvedPath for debugging purposes.
+    // In production environments, consider sanitizing these details if path disclosure is a concern.
     throw new McpError(
       ErrorCode.E_ACCESS_DENIED,
-      `Access denied: Path '${requestedPath}' resolves to '${realPath}' which is outside allowed directories (symlink escape attempt)`,
+      `Access denied: Path '${requestedPath}' is outside allowed directories`,
       requestedPath,
       { resolvedPath: realPath, normalizedResolvedPath: normalizedReal }
     );

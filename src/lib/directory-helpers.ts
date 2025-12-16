@@ -14,11 +14,6 @@ export function createExcludeMatcher(
     matchers.some((m) => m.match(name) || m.match(relativePath));
 }
 
-// Handle directory operation errors (currently no-op)
-export function handleDirectoryError(_error: unknown): void {
-  void _error;
-}
-
 // Classify symlink/access errors for summary tracking
 export function classifyAccessError(
   error: unknown
@@ -34,14 +29,15 @@ export function classifyAccessError(
 }
 
 // Insert item into sorted array maintaining sort order (descending by comparator)
+// Comparator should return negative if a < b, positive if a > b, 0 if equal
 export function insertSorted<T>(
   arr: T[],
   item: T,
-  compare: (a: T, b: T) => boolean,
+  compare: (a: T, b: T) => number,
   maxLen: number
 ): void {
   if (maxLen <= 0) return;
-  const idx = arr.findIndex((el) => compare(item, el));
+  const idx = arr.findIndex((el) => compare(item, el) < 0);
   if (idx === -1) {
     if (arr.length < maxLen) arr.push(item);
   } else {

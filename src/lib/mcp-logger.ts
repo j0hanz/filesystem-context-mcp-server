@@ -18,11 +18,15 @@ function mcpLog(level: LogLevel, data: string, loggerName?: string): void {
   }
 
   try {
-    void mcpServerInstance.server.sendLoggingMessage({
-      level,
-      data,
-      logger: loggerName,
-    });
+    mcpServerInstance.server
+      .sendLoggingMessage({
+        level,
+        data,
+        logger: loggerName,
+      })
+      .catch(() => {
+        // Logging failed - fallback handled below
+      });
   } catch {
     // Ignore logging errors - don't break operations
     console.error(`[${level}] ${data}`);

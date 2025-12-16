@@ -154,11 +154,16 @@ function classifyByMessage(error: unknown): ErrorCode {
     return validateErrorCode(ErrorCode.E_ACCESS_DENIED);
   }
 
-  // Not found (including ENOENT message patterns)
+  // Not found (prioritize ENOENT, then path-related patterns)
+  if (lowerMessage.includes('enoent')) {
+    return validateErrorCode(ErrorCode.E_NOT_FOUND);
+  }
   if (
-    lowerMessage.includes('not found') ||
-    lowerMessage.includes('does not exist') ||
-    lowerMessage.includes('enoent')
+    (lowerMessage.includes('path') ||
+      lowerMessage.includes('file') ||
+      lowerMessage.includes('directory')) &&
+    (lowerMessage.includes('not found') ||
+      lowerMessage.includes('does not exist'))
   ) {
     return validateErrorCode(ErrorCode.E_NOT_FOUND);
   }

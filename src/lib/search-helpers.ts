@@ -18,7 +18,12 @@ class CircularLineBuffer {
   }
 
   push(line: string): void {
-    this.buffer[this.writeIndex] = line;
+    // Defensive truncation (should already be handled by caller)
+    const truncatedLine =
+      line.length > MAX_LINE_CONTENT_LENGTH
+        ? line.substring(0, MAX_LINE_CONTENT_LENGTH)
+        : line;
+    this.buffer[this.writeIndex] = truncatedLine;
     this.writeIndex = (this.writeIndex + 1) % this.capacity;
     if (this.count < this.capacity) this.count++;
   }
@@ -74,8 +79,8 @@ function countRegexMatches(
       if (regex.lastIndex > line.length) break;
     }
 
-    // Check timeout periodically
-    if (count % 100 === 0 && Date.now() > deadline) {
+    // Check timeout more frequently to catch slow patterns
+    if ((count % 10 === 0 || iterations % 50 === 0) && Date.now() > deadline) {
       return -1; // Signal timeout
     }
 

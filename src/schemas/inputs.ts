@@ -81,7 +81,14 @@ export const SearchFilesInputSchema = {
       'Glob pattern to match files. Examples: "**/*.ts" (all TypeScript files), "src/**/*.js" (JS files in src), "*.json" (JSON files in current dir)'
     ),
   excludePatterns: z
-    .array(z.string().max(500, 'Individual exclude pattern is too long'))
+    .array(
+      z
+        .string()
+        .max(500, 'Individual exclude pattern is too long')
+        .refine((val) => !val.includes('**/**/**'), {
+          message: 'Pattern too deeply nested (max 2 levels of **)',
+        })
+    )
     .max(100, 'Too many exclude patterns (max 100)')
     .optional()
     .default([])
@@ -186,6 +193,16 @@ const ReadMultipleFilesBaseSchema = z.object({
     .optional()
     .default(MAX_TEXT_FILE_SIZE)
     .describe('Maximum file size in bytes per file (default 10MB)'),
+  maxTotalSize: z
+    .number()
+    .int('maxTotalSize must be an integer')
+    .min(1, 'maxTotalSize must be at least 1 byte')
+    .max(1024 * 1024 * 1024, 'maxTotalSize cannot exceed 1GB')
+    .optional()
+    .default(100 * 1024 * 1024)
+    .describe(
+      'Maximum total size in bytes for all files combined (default 100MB)'
+    ),
   head: z
     .number()
     .int('head must be an integer')
@@ -233,7 +250,14 @@ export const SearchContentInputSchema = {
     .default('**/*')
     .describe('Glob pattern to filter files'),
   excludePatterns: z
-    .array(z.string().max(500, 'Individual exclude pattern is too long'))
+    .array(
+      z
+        .string()
+        .max(500, 'Individual exclude pattern is too long')
+        .refine((val) => !val.includes('**/**/**'), {
+          message: 'Pattern too deeply nested (max 2 levels of **)',
+        })
+    )
     .max(100, 'Too many exclude patterns (max 100)')
     .optional()
     .default([])

@@ -44,10 +44,15 @@ function parseJpeg(buffer: Buffer): ImageDimensions | null {
         (marker >= 0xc9 && marker <= 0xcb) ||
         (marker >= 0xcd && marker <= 0xcf));
     if (isSOF) {
-      return {
-        width: buffer.readUInt16BE(offset + 7),
-        height: buffer.readUInt16BE(offset + 5),
-      };
+      const width = buffer.readUInt16BE(offset + 7);
+      const height = buffer.readUInt16BE(offset + 5);
+
+      // Validate dimensions are reasonable (JPEG spec allows up to 65535x65535)
+      if (width <= 0 || height <= 0 || width > 65535 || height > 65535) {
+        return null;
+      }
+
+      return { width, height };
     }
     if (offset + 3 >= buffer.length) break;
     offset += 2 + buffer.readUInt16BE(offset + 2);
@@ -82,6 +87,9 @@ function parseWebp(buffer: Buffer): ImageDimensions | null {
   }
 
   const chunkType = [buffer[12], buffer[13], buffer[14], buffer[15]];
+  let width: number;
+  let height: number;
+
   // VP8 (lossy): 0x56 0x50 0x38 0x20
   if (
     chunkType[0] === 0x56 &&
@@ -89,35 +97,43 @@ function parseWebp(buffer: Buffer): ImageDimensions | null {
     chunkType[2] === 0x38 &&
     chunkType[3] === 0x20
   ) {
-    return {
-      width: buffer.readUInt16LE(26) & 0x3fff,
-      height: buffer.readUInt16LE(28) & 0x3fff,
-    };
+    width = buffer.readUInt16LE(26) & 0x3fff;
+    height = buffer.readUInt16LE(28) & 0x3fff;
   }
   // VP8L (lossless): 0x56 0x50 0x38 0x4c
-  if (
+  else if (
     chunkType[0] === 0x56 &&
     chunkType[1] === 0x50 &&
     chunkType[2] === 0x38 &&
     chunkType[3] === 0x4c
   ) {
     const bits = buffer.readUInt32LE(21);
-    return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1 };
+    width = (bits & 0x3fff) + 1;
+    height = ((bits >> 14) & 0x3fff) + 1;
   }
   // VP8X (extended): 0x56 0x50 0x38 0x58
-  if (
+  else if (
     chunkType[0] === 0x56 &&
     chunkType[1] === 0x50 &&
     chunkType[2] === 0x38 &&
     chunkType[3] === 0x58
   ) {
-    const width =
+    width =
       (buffer[24] ?? 0) | ((buffer[25] ?? 0) << 8) | ((buffer[26] ?? 0) << 16);
-    const height =
+    height =
       (buffer[27] ?? 0) | ((buffer[28] ?? 0) << 8) | ((buffer[29] ?? 0) << 16);
-    return { width: width + 1, height: height + 1 };
+    width = width + 1;
+    height = height + 1;
+  } else {
+    return null;
   }
-  return null;
+
+  // Validate dimensions are reasonable (max 16384x16384 for WebP spec)
+  if (width <= 0 || height <= 0 || width > 16384 || height > 16384) {
+    return null;
+  }
+
+  return { width, height };
 }
 
 const IMAGE_PARSERS: Readonly<Record<string, ImageParser>> = {
