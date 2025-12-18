@@ -422,6 +422,39 @@ Add to Cursor's MCP configuration:
 </details>
 
 <details>
+<summary><b>Codex</b></summary>
+
+Add to `~/.codex/config.toml`:
+
+**Basic Configuration (auto-detects current directory):**
+
+```toml
+[mcp_servers.filesystem-context]
+command = "npx"
+args = ["-y", "@j0hanz/filesystem-context-mcp@latest"]
+```
+
+**Configuration with Explicit Directory:**
+
+```toml
+[mcp_servers.filesystem-context]
+command = "npx"
+args = ["-y", "@j0hanz/filesystem-context-mcp@latest", "/path/to/your/project"]
+```
+
+**Configuration with Multiple Directories:**
+
+```toml
+[mcp_servers.filesystem-context]
+command = "npx"
+args = ["-y", "@j0hanz/filesystem-context-mcp@latest", "/path/to/project1", "/path/to/project2"]
+```
+
+> **Note:** You can access the config file via Codex IDE by clicking the gear icon → "Codex Settings > Open config.toml". If no directories are specified, it will use the current working directory automatically.
+
+</details>
+
+<details>
 <summary><b>Windsurf</b></summary>
 
 Add to Windsurf's MCP configuration:
