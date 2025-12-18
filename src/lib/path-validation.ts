@@ -34,6 +34,31 @@ function isPathWithinAllowedDirectories(normalizedPath: string): boolean {
   });
 }
 
+const RESERVED_DEVICE_NAMES = new Set([
+  'CON',
+  'PRN',
+  'AUX',
+  'NUL',
+  'COM1',
+  'COM2',
+  'COM3',
+  'COM4',
+  'COM5',
+  'COM6',
+  'COM7',
+  'COM8',
+  'COM9',
+  'LPT1',
+  'LPT2',
+  'LPT3',
+  'LPT4',
+  'LPT5',
+  'LPT6',
+  'LPT7',
+  'LPT8',
+  'LPT9',
+]);
+
 async function validateExistingPathDetailsInternal(
   requestedPath: string
 ): Promise<ValidatedPathDetails> {
@@ -43,6 +68,30 @@ async function validateExistingPathDetailsInternal(
       'Path cannot be empty or whitespace',
       requestedPath
     );
+  }
+
+  // Check for null bytes (path truncation attack prevention)
+  if (requestedPath.includes('\0')) {
+    throw new McpError(
+      ErrorCode.E_INVALID_INPUT,
+      'Path contains null bytes',
+      requestedPath
+    );
+  }
+
+  // Check for Windows reserved device names
+  if (process.platform === 'win32') {
+    const segments = requestedPath.split(/[\\/]/);
+    for (const segment of segments) {
+      const baseName = segment.split('.')[0]?.toUpperCase();
+      if (baseName && RESERVED_DEVICE_NAMES.has(baseName)) {
+        throw new McpError(
+          ErrorCode.E_INVALID_INPUT,
+          `Windows reserved device name not allowed: ${baseName}`,
+          requestedPath
+        );
+      }
+    }
   }
 
   const normalizedRequested = normalizePath(requestedPath);

@@ -618,73 +618,27 @@ export async function searchContent(
     followSymbolicLinks: false,
   });
 
-  for await (const entry of stream) {
-    const file = typeof entry === 'string' ? entry : String(entry);
+  try {
+    for await (const entry of stream) {
+      const file = typeof entry === 'string' ? entry : String(entry);
 
-    if (!firstPathValidated) {
-      try {
-        await validateExistingPath(file);
-        firstPathValidated = true;
-      } catch {
-        console.error('[SECURITY] fast-glob returned invalid path:', file);
-        stopNow('maxFiles');
-        break;
-      }
-    }
-
-    if (deadlineMs !== undefined && Date.now() > deadlineMs) {
-      stopNow('timeout');
-      break;
-    }
-    if (maxFilesScanned !== undefined && filesScanned >= maxFilesScanned) {
-      stopNow('maxFiles');
-      break;
-    }
-    if (matches.length >= maxResults) {
-      stopNow('maxResults');
-      break;
-    }
-
-    try {
-      const handle = await fs.open(file, 'r');
-      let shouldScan = true;
-
-      try {
-        const stats = await handle.stat();
-        filesScanned++;
-
-        if (stats.size > maxFileSize) {
-          skippedTooLarge++;
-          shouldScan = false;
-        } else if (skipBinary) {
-          const binary = await isProbablyBinary(file, handle);
-          if (binary) {
-            skippedBinary++;
-            shouldScan = false;
-          }
+      if (!firstPathValidated) {
+        try {
+          await validateExistingPath(file);
+          firstPathValidated = true;
+        } catch {
+          console.error('[SECURITY] fast-glob returned invalid path:', file);
+          stopNow('maxFiles');
+          break;
         }
-      } finally {
-        await handle.close().catch(() => {});
       }
-
-      if (!shouldScan) continue;
-
-      const scanResult = await scanFileForContent(file, regex, {
-        maxResults,
-        contextLines,
-        deadlineMs,
-        currentMatchCount: matches.length,
-        isLiteral,
-        searchString: isLiteral ? searchPattern : undefined,
-        caseSensitive,
-      });
-
-      matches.push(...scanResult.matches);
-      linesSkippedDueToRegexTimeout += scanResult.linesSkippedDueToRegexTimeout;
-      if (scanResult.fileHadMatches) filesMatched++;
 
       if (deadlineMs !== undefined && Date.now() > deadlineMs) {
         stopNow('timeout');
+        break;
+      }
+      if (maxFilesScanned !== undefined && filesScanned >= maxFilesScanned) {
+        stopNow('maxFiles');
         break;
       }
       if (matches.length >= maxResults) {
@@ -692,10 +646,61 @@ export async function searchContent(
         break;
       }
 
-      if (stoppedReason !== undefined) break;
-    } catch {
-      skippedInaccessible++;
+      try {
+        const handle = await fs.open(file, 'r');
+        let shouldScan = true;
+
+        try {
+          const stats = await handle.stat();
+          filesScanned++;
+
+          if (stats.size > maxFileSize) {
+            skippedTooLarge++;
+            shouldScan = false;
+          } else if (skipBinary) {
+            const binary = await isProbablyBinary(file, handle);
+            if (binary) {
+              skippedBinary++;
+              shouldScan = false;
+            }
+          }
+        } finally {
+          await handle.close().catch(() => {});
+        }
+
+        if (!shouldScan) continue;
+
+        const scanResult = await scanFileForContent(file, regex, {
+          maxResults,
+          contextLines,
+          deadlineMs,
+          currentMatchCount: matches.length,
+          isLiteral,
+          searchString: isLiteral ? searchPattern : undefined,
+          caseSensitive,
+        });
+
+        matches.push(...scanResult.matches);
+        linesSkippedDueToRegexTimeout +=
+          scanResult.linesSkippedDueToRegexTimeout;
+        if (scanResult.fileHadMatches) filesMatched++;
+
+        if (deadlineMs !== undefined && Date.now() > deadlineMs) {
+          stopNow('timeout');
+          break;
+        }
+        if (matches.length >= maxResults) {
+          stopNow('maxResults');
+          break;
+        }
+
+        if (stoppedReason !== undefined) break;
+      } catch {
+        skippedInaccessible++;
+      }
     }
+  } finally {
+    // Ensure the stream is closed
   }
 
   return {

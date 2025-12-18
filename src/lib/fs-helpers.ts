@@ -53,14 +53,21 @@ export async function runWorkQueue<T>(
           queue.push(item);
           maybeStartNext();
         }
-      }).finally(() => {
-        inFlight--;
-        if (inFlight === 0 && (queue.length === 0 || aborted)) {
-          doneResolve?.();
-        } else if (!aborted) {
-          maybeStartNext();
-        }
-      });
+      })
+        .catch((error: unknown) => {
+          console.error(
+            '[runWorkQueue] Worker error:',
+            error instanceof Error ? error.message : String(error)
+          );
+        })
+        .finally(() => {
+          inFlight--;
+          if (inFlight === 0 && (queue.length === 0 || aborted)) {
+            doneResolve?.();
+          } else if (!aborted) {
+            maybeStartNext();
+          }
+        });
     }
   };
 
