@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import type { ContentMatch, DirectoryEntry } from '../../config/types.js';
 import {
+  formatAllowedDirectories,
   formatContentMatches,
+  formatDirectoryAnalysis,
   formatDirectoryListing,
   formatFileInfo,
+  formatOperationSummary,
   formatSearchResults,
+  formatTreeEntry,
 } from '../../lib/formatters.js';
 
 describe('formatters', () => {
@@ -266,6 +270,77 @@ describe('formatters', () => {
       // Should contain both file names
       expect(result).toContain('file1.ts');
       expect(result).toContain('file2.ts');
+    });
+  });
+
+  describe('formatDirectoryAnalysis', () => {
+    it('should format summary and file types', () => {
+      const analysis = {
+        path: '/test',
+        totalFiles: 3,
+        totalDirectories: 1,
+        totalSize: 1024,
+        fileTypes: { '.ts': 2, '.json': 1 },
+        largestFiles: [{ path: '/test/a.ts', size: 800 }],
+        recentlyModified: [
+          { path: '/test/a.ts', modified: new Date('2024-01-02') },
+        ],
+        maxDepth: 2,
+      };
+      const result = formatDirectoryAnalysis(analysis);
+      expect(result).toContain('Directory Analysis');
+      expect(result).toContain('Total Files: 3');
+      expect(result).toContain('.ts: 2');
+      expect(result).toContain('Largest Files:');
+    });
+  });
+
+  describe('formatAllowedDirectories', () => {
+    it('should handle empty allowed directories', () => {
+      const result = formatAllowedDirectories([]);
+      expect(result).toContain('No directories');
+    });
+
+    it('should list allowed directories', () => {
+      const result = formatAllowedDirectories(['/a', '/b']);
+      expect(result).toContain('/a');
+      expect(result).toContain('/b');
+    });
+  });
+
+  describe('formatOperationSummary', () => {
+    it('should include truncation notice and tips', () => {
+      const result = formatOperationSummary({
+        truncated: true,
+        truncatedReason: 'limit reached',
+        tip: 'Reduce scope',
+        skippedInaccessible: 2,
+        symlinksNotFollowed: 1,
+        skippedTooLarge: 3,
+        skippedBinary: 4,
+        linesSkippedDueToRegexTimeout: 5,
+      });
+      expect(result).toContain('PARTIAL RESULTS');
+      expect(result).toContain('Reduce scope');
+      expect(result).toContain('inaccessible');
+      expect(result).toContain('symlink');
+      expect(result).toContain('too large');
+      expect(result).toContain('binary');
+      expect(result).toContain('regex timeout');
+    });
+  });
+
+  describe('formatTreeEntry', () => {
+    it('should format tree entries recursively', () => {
+      const tree = {
+        name: 'root',
+        type: 'directory' as const,
+        children: [{ name: 'file.txt', type: 'file' as const, size: 100 }],
+      };
+      const result = formatTreeEntry(tree);
+      expect(result).toContain('[DIR]');
+      expect(result).toContain('[FILE]');
+      expect(result).toContain('file.txt');
     });
   });
 });

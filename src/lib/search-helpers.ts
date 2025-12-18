@@ -19,6 +19,13 @@ interface ScanFileResult {
   fileHadMatches: boolean;
 }
 
+interface MatchCountOptions {
+  isLiteral?: boolean;
+  searchString?: string;
+  caseSensitive?: boolean;
+  wholeWord?: boolean;
+}
+
 function countLiteralMatches(
   line: string,
   searchString: string,
@@ -59,30 +66,21 @@ function countRegexMatches(
     count++;
     iterations++;
 
-    if (match[0] === '') {
-      const { lastIndex: newIndex } = regex;
-      regex.lastIndex++;
-      lastIndex = newIndex + 1;
-      if (regex.lastIndex > line.length) break;
-    } else {
-      const { lastIndex: currentIndex } = regex;
-      // Detect if regex is stuck (lastIndex not advancing)
-      if (currentIndex === lastIndex) {
-        return -1; // Regex not making progress
-      }
-      lastIndex = currentIndex;
-    }
-
-    const shouldCheckTimeout =
-      (count > 0 && count % 10 === 0) ||
-      (iterations > 0 && iterations % 50 === 0);
-    if (shouldCheckTimeout && Date.now() > deadline) {
+    const {
+      status,
+      lastIndex: nextIndex,
+      shouldBreak,
+    } = advanceRegexMatch(regex, match, line.length, lastIndex);
+    if (status === 'stuck') {
       return -1;
     }
+    lastIndex = nextIndex;
+    if (shouldBreak) {
+      break;
+    }
 
-    // Safety check for runaway regex
-    if (iterations > maxIterations) {
-      return -1; // Signal runaway regex
+    if (shouldAbortRegex(count, iterations, deadline, maxIterations)) {
+      return -1;
     }
   }
 
@@ -128,10 +126,6 @@ function updatePendingMatches(
   while (pendingMatches.length > 0 && pendingMatches[0]?.afterNeeded === 0) {
     pendingMatches.shift();
   }
-}
-
-function prepareTrimmedLine(line: string): string {
-  return line.trim().substring(0, MAX_LINE_CONTENT_LENGTH);
 }
 
 export function prepareSearchPattern(
@@ -197,53 +191,40 @@ export async function scanFileForContent(
     for await (const line of rl) {
       lineNumber++;
 
-      if (deadlineMs !== undefined && Date.now() > deadlineMs) break;
-      if (currentMatchCount + matches.length >= maxResults) break;
+      if (shouldStopScan(deadlineMs, currentMatchCount, matches, maxResults)) {
+        break;
+      }
 
-      const trimmedLine = prepareTrimmedLine(line);
+      const trimmedLine = trimAndClampLine(line);
       updatePendingMatches(pendingMatches, trimmedLine);
 
-      const matchCount =
-        isLiteral && searchString && !wholeWord
-          ? countLiteralMatches(line, searchString, caseSensitive ?? false)
-          : countRegexMatches(line, regex);
+      const matchCount = getMatchCount(line, regex, {
+        isLiteral,
+        searchString,
+        caseSensitive,
+        wholeWord,
+      });
 
       if (matchCount < 0) {
         linesSkippedDueToRegexTimeout++;
-        if (contextLines > 0) {
-          contextBuffer.push(trimmedLine);
-          if (contextBuffer.length > contextLines) contextBuffer.shift();
-        }
+        pushContextLine(contextBuffer, trimmedLine, contextLines);
         continue;
       }
 
       if (matchCount > 0) {
         fileHadMatches = true;
-        const newMatch: ContentMatch = {
-          file: filePath,
-          line: lineNumber,
-          content: trimmedLine,
+        const newMatch = buildMatch(
+          filePath,
+          lineNumber,
+          trimmedLine,
           matchCount,
-        };
-
-        if (contextBuffer.length > 0) {
-          newMatch.contextBefore = [...contextBuffer];
-        }
-
+          contextBuffer
+        );
         matches.push(newMatch);
-
-        if (contextLines > 0) {
-          pendingMatches.push({
-            match: newMatch,
-            afterNeeded: contextLines,
-          });
-        }
+        queueContextAfter(pendingMatches, newMatch, contextLines);
       }
 
-      if (contextLines > 0) {
-        contextBuffer.push(trimmedLine);
-        if (contextBuffer.length > contextLines) contextBuffer.shift();
-      }
+      pushContextLine(contextBuffer, trimmedLine, contextLines);
     }
   } finally {
     rl.close();
@@ -251,4 +232,110 @@ export async function scanFileForContent(
   }
 
   return { matches, linesSkippedDueToRegexTimeout, fileHadMatches };
+}
+
+function shouldStopScan(
+  deadlineMs: number | undefined,
+  currentMatchCount: number,
+  matches: ContentMatch[],
+  maxResults: number
+): boolean {
+  if (deadlineMs !== undefined && Date.now() > deadlineMs) return true;
+  return currentMatchCount + matches.length >= maxResults;
+}
+
+function trimAndClampLine(line: string): string {
+  return line.trim().substring(0, MAX_LINE_CONTENT_LENGTH);
+}
+
+function getMatchCount(
+  line: string,
+  regex: RegExp,
+  options: MatchCountOptions
+): number {
+  if (options.isLiteral && options.searchString && !options.wholeWord) {
+    return countLiteralMatches(
+      line,
+      options.searchString,
+      options.caseSensitive ?? false
+    );
+  }
+  return countRegexMatches(line, regex);
+}
+
+function buildMatch(
+  file: string,
+  line: number,
+  content: string,
+  matchCount: number,
+  contextBuffer: string[]
+): ContentMatch {
+  const match: ContentMatch = {
+    file,
+    line,
+    content,
+    matchCount,
+  };
+  if (contextBuffer.length > 0) {
+    match.contextBefore = [...contextBuffer];
+  }
+  return match;
+}
+
+function queueContextAfter(
+  pendingMatches: PendingMatch[],
+  match: ContentMatch,
+  contextLines: number
+): void {
+  if (contextLines <= 0) return;
+  pendingMatches.push({
+    match,
+    afterNeeded: contextLines,
+  });
+}
+
+function pushContextLine(
+  contextBuffer: string[],
+  trimmedLine: string,
+  contextLines: number
+): void {
+  if (contextLines <= 0) return;
+  contextBuffer.push(trimmedLine);
+  if (contextBuffer.length > contextLines) contextBuffer.shift();
+}
+
+function shouldAbortRegex(
+  count: number,
+  iterations: number,
+  deadline: number,
+  maxIterations: number
+): boolean {
+  const shouldCheckTimeout =
+    (count > 0 && count % 10 === 0) ||
+    (iterations > 0 && iterations % 50 === 0);
+  if (shouldCheckTimeout && Date.now() > deadline) {
+    return true;
+  }
+  return iterations > maxIterations;
+}
+
+function advanceRegexMatch(
+  regex: RegExp,
+  match: RegExpExecArray,
+  lineLength: number,
+  lastIndex: number
+): { status: 'ok' | 'stuck'; lastIndex: number; shouldBreak: boolean } {
+  if (match[0] === '') {
+    const { lastIndex: newIndex } = regex;
+    regex.lastIndex++;
+    const nextIndex = newIndex + 1;
+    const shouldBreak = regex.lastIndex > lineLength;
+    return { status: 'ok', lastIndex: nextIndex, shouldBreak };
+  }
+
+  const { lastIndex: currentIndex } = regex;
+  if (currentIndex === lastIndex) {
+    return { status: 'stuck', lastIndex, shouldBreak: true };
+  }
+  return { status: 'ok', lastIndex: currentIndex, shouldBreak: false };
 }

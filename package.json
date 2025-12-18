@@ -29,6 +29,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "type-check": "tsc --noEmit",
+    "bench": "tsx scripts/benchmarks.ts",
     "inspector": "npx @modelcontextprotocol/inspector",
     "prepublishOnly": "npm run lint && npm run type-check && npm run build"
   },

@@ -121,6 +121,100 @@ async function forEachDirectoryEntry(
   }
 }
 
+interface DirectoryItemResult {
+  entry: DirectoryEntry;
+  enqueueDir?: { currentPath: string; depth: number };
+  skippedInaccessible?: boolean;
+  symlinkNotFollowed?: boolean;
+}
+
+async function buildDirectoryItemResult(
+  item: Dirent,
+  currentPath: string,
+  basePath: string,
+  options: {
+    includeSymlinkTargets: boolean;
+    recursive: boolean;
+    depth: number;
+    maxDepth: number;
+  }
+): Promise<DirectoryItemResult> {
+  const fullPath = path.join(currentPath, item.name);
+  const relativePath = path.relative(basePath, fullPath) || item.name;
+
+  try {
+    if (item.isSymbolicLink()) {
+      const stats = await fs.lstat(fullPath);
+
+      let symlinkTarget: string | undefined;
+      if (options.includeSymlinkTargets) {
+        try {
+          symlinkTarget = await fs.readlink(fullPath);
+        } catch {
+          // Symlink target unreadable
+        }
+      }
+
+      const entry: DirectoryEntry = {
+        name: item.name,
+        path: fullPath,
+        relativePath,
+        type: 'symlink',
+        size: stats.size,
+        modified: stats.mtime,
+        symlinkTarget,
+      };
+      return { entry, symlinkNotFollowed: true };
+    }
+
+    const stats = await fs.stat(fullPath);
+    const isDir = item.isDirectory();
+    let type: FileType;
+    if (isDir) {
+      type = 'directory';
+    } else if (item.isFile()) {
+      type = 'file';
+    } else {
+      type = getFileType(stats);
+    }
+
+    const entry: DirectoryEntry = {
+      name: item.name,
+      path: fullPath,
+      relativePath,
+      type,
+      size: type === 'file' ? stats.size : undefined,
+      modified: stats.mtime,
+    };
+
+    const enqueueDir =
+      options.recursive && isDir && options.depth + 1 <= options.maxDepth
+        ? {
+            currentPath: await validateExistingPath(fullPath),
+            depth: options.depth + 1,
+          }
+        : undefined;
+
+    return { entry, enqueueDir };
+  } catch {
+    let type: FileType;
+    if (item.isDirectory()) {
+      type = 'directory';
+    } else if (item.isFile()) {
+      type = 'file';
+    } else {
+      type = 'other';
+    }
+    const entry: DirectoryEntry = {
+      name: item.name,
+      path: fullPath,
+      relativePath,
+      type,
+    };
+    return { entry, skippedInaccessible: true };
+  }
+}
+
 function pushTopN<T>(
   arr: T[],
   item: T,
@@ -177,6 +271,16 @@ function sortSearchResults(
   }
 }
 
+function shouldStopListDirectory(
+  maxEntries: number | undefined,
+  entries: DirectoryEntry[]
+): { stop: boolean; truncated: boolean } {
+  if (maxEntries !== undefined && entries.length >= maxEntries) {
+    return { stop: true, truncated: true };
+  }
+  return { stop: false, truncated: false };
+}
+
 function buildSearchRegex(
   searchPattern: string,
   options: {
@@ -216,6 +320,25 @@ function buildSearchRegex(
       basePath,
       { searchPattern: finalPattern }
     );
+  }
+}
+
+async function toSearchResult(
+  match: string
+): Promise<SearchResult | { error: Error }> {
+  try {
+    const { requestedPath, resolvedPath, isSymlink } =
+      await validateExistingPathDetailed(match);
+    const stats = await fs.stat(resolvedPath);
+    const { size, mtime: modified } = stats;
+    return {
+      path: requestedPath,
+      type: isSymlink ? 'symlink' : getFileType(stats),
+      size: stats.isFile() ? size : undefined,
+      modified,
+    };
+  } catch (error) {
+    return { error: error instanceof Error ? error : new Error(String(error)) };
   }
 }
 
@@ -400,11 +523,9 @@ export async function listDirectory(
   let symlinksNotFollowed = 0;
 
   const stopIfNeeded = (): boolean => {
-    if (maxEntries !== undefined && entries.length >= maxEntries) {
-      truncated = true;
-      return true;
-    }
-    return false;
+    const decision = shouldStopListDirectory(maxEntries, entries);
+    if (decision.truncated) truncated = true;
+    return decision.stop;
   };
 
   await runWorkQueue<{ currentPath: string; depth: number }>(
@@ -427,102 +548,35 @@ export async function listDirectory(
         : items.filter((item) => !isHidden(item.name));
 
       const { results: processedEntries, errors: processingErrors } =
-        await processInParallel(
-          visibleItems,
-          async (
-            item
-          ): Promise<{
-            entry: DirectoryEntry;
-            enqueueDir?: { currentPath: string; depth: number };
-          }> => {
-            const fullPath = path.join(currentPath, item.name);
-            const relativePath =
-              path.relative(validPath, fullPath) || item.name;
-
-            try {
-              if (item.isSymbolicLink()) {
-                symlinksNotFollowed++;
-                const stats = await fs.lstat(fullPath);
-
-                let symlinkTarget: string | undefined;
-                if (includeSymlinkTargets) {
-                  try {
-                    symlinkTarget = await fs.readlink(fullPath);
-                  } catch {
-                    // Symlink target unreadable
-                  }
-                }
-
-                const entry: DirectoryEntry = {
-                  name: item.name,
-                  path: fullPath,
-                  relativePath,
-                  type: 'symlink',
-                  size: stats.size,
-                  modified: stats.mtime,
-                  symlinkTarget,
-                };
-                return { entry };
-              }
-
-              const stats = await fs.stat(fullPath);
-              const isDir = item.isDirectory();
-              let type: FileType;
-              if (isDir) {
-                type = 'directory';
-              } else if (item.isFile()) {
-                type = 'file';
-              } else {
-                type = getFileType(stats);
-              }
-
-              const entry: DirectoryEntry = {
-                name: item.name,
-                path: fullPath,
-                relativePath,
-                type,
-                size: type === 'file' ? stats.size : undefined,
-                modified: stats.mtime,
-              };
-
-              const enqueueDir =
-                recursive && isDir && depth + 1 <= maxDepth
-                  ? {
-                      currentPath: await validateExistingPath(fullPath),
-                      depth: depth + 1,
-                    }
-                  : undefined;
-
-              return { entry, enqueueDir };
-            } catch {
-              skippedInaccessible++;
-              let type: FileType;
-              if (item.isDirectory()) {
-                type = 'directory';
-              } else if (item.isFile()) {
-                type = 'file';
-              } else {
-                type = 'other';
-              }
-              const entry: DirectoryEntry = {
-                name: item.name,
-                path: fullPath,
-                relativePath,
-                type,
-              };
-              return { entry };
-            }
-          }
+        await processInParallel(visibleItems, async (item) =>
+          buildDirectoryItemResult(item, currentPath, validPath, {
+            includeSymlinkTargets,
+            recursive,
+            depth,
+            maxDepth,
+          })
         );
 
       skippedInaccessible += processingErrors.length;
 
-      for (const { entry, enqueueDir } of processedEntries) {
+      for (const result of processedEntries) {
+        const {
+          entry,
+          enqueueDir,
+          skippedInaccessible: skippedInaccessibleItem,
+          symlinkNotFollowed: symlinkNotFollowedItem,
+        } = result;
         if (stopIfNeeded()) break;
         entries.push(entry);
         if (entry.type === 'directory') totalDirectories++;
         if (entry.type === 'file') totalFiles++;
         if (enqueueDir) enqueue(enqueueDir);
+        if (skippedInaccessibleItem) {
+          skippedInaccessible++;
+        }
+        if (symlinkNotFollowedItem) {
+          symlinksNotFollowed++;
+        }
       }
     },
     DIR_TRAVERSAL_CONCURRENCY
@@ -571,22 +625,15 @@ export async function searchFiles(
     const toProcess = batch.splice(0, batch.length);
 
     const settled = await Promise.allSettled(
-      toProcess.map(async (match) => {
-        const { requestedPath, resolvedPath, isSymlink } =
-          await validateExistingPathDetailed(match);
-        const stats = await fs.stat(resolvedPath);
-        const { size, mtime: modified } = stats;
-        return {
-          path: requestedPath,
-          type: isSymlink ? 'symlink' : getFileType(stats),
-          size: stats.isFile() ? size : undefined,
-          modified,
-        } satisfies SearchResult;
-      })
+      toProcess.map(async (match) => toSearchResult(match))
     );
 
     for (const r of settled) {
       if (r.status === 'fulfilled') {
+        if ('error' in r.value) {
+          skippedInaccessible++;
+          continue;
+        }
         if (maxResults !== undefined && results.length >= maxResults) {
           truncated = true;
           return;
@@ -734,6 +781,45 @@ export async function readMultipleFiles(
   return output;
 }
 
+type SearchStopReason = SearchContentResult['summary']['stoppedReason'];
+
+function getSearchStopReason(
+  deadlineMs: number | undefined,
+  maxFilesScanned: number | undefined,
+  maxResults: number,
+  filesScanned: number,
+  matchCount: number
+): SearchStopReason | undefined {
+  if (deadlineMs !== undefined && Date.now() > deadlineMs) return 'timeout';
+  if (maxFilesScanned !== undefined && filesScanned >= maxFilesScanned) {
+    return 'maxFiles';
+  }
+  if (matchCount >= maxResults) return 'maxResults';
+  return undefined;
+}
+
+function applySearchStop(
+  reason: SearchStopReason,
+  state: { truncated: boolean; stoppedReason: SearchStopReason | undefined }
+): void {
+  state.truncated = true;
+  state.stoppedReason = reason;
+}
+
+async function resolveSearchPath(
+  rawPath: string
+): Promise<{ openPath: string; displayPath: string } | null> {
+  try {
+    const validatedPath = await validateExistingPathDetailed(rawPath);
+    return {
+      openPath: validatedPath.resolvedPath,
+      displayPath: validatedPath.requestedPath,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function searchContent(
   basePath: string,
   searchPattern: string,
@@ -785,14 +871,10 @@ export async function searchContent(
   let skippedBinary = 0;
   let skippedInaccessible = 0;
   let linesSkippedDueToRegexTimeout = 0;
-  let truncated = false;
-  let stoppedReason: SearchContentResult['summary']['stoppedReason'];
-
-  const stopNow = (reason: typeof stoppedReason): boolean => {
-    truncated = true;
-    stoppedReason = reason;
-    return true;
-  };
+  const stopState: {
+    truncated: boolean;
+    stoppedReason: SearchContentResult['summary']['stoppedReason'];
+  } = { truncated: false, stoppedReason: undefined };
 
   const stream = fg.stream(filePattern, {
     cwd: validPath,
@@ -807,28 +889,22 @@ export async function searchContent(
   try {
     for await (const entry of stream) {
       const rawPath = typeof entry === 'string' ? entry : String(entry);
-      let validatedPath: Awaited<
-        ReturnType<typeof validateExistingPathDetailed>
-      >;
-      try {
-        validatedPath = await validateExistingPathDetailed(rawPath);
-      } catch {
+      const resolved = await resolveSearchPath(rawPath);
+      if (!resolved) {
         skippedInaccessible++;
         continue;
       }
-      const openPath = validatedPath.resolvedPath;
-      const displayPath = validatedPath.requestedPath;
+      const { openPath, displayPath } = resolved;
 
-      if (deadlineMs !== undefined && Date.now() > deadlineMs) {
-        stopNow('timeout');
-        break;
-      }
-      if (maxFilesScanned !== undefined && filesScanned >= maxFilesScanned) {
-        stopNow('maxFiles');
-        break;
-      }
-      if (matches.length >= maxResults) {
-        stopNow('maxResults');
+      const stopReason = getSearchStopReason(
+        deadlineMs,
+        maxFilesScanned,
+        maxResults,
+        filesScanned,
+        matches.length
+      );
+      if (stopReason) {
+        applySearchStop(stopReason, stopState);
         break;
       }
 
@@ -868,16 +944,17 @@ export async function searchContent(
           scanResult.linesSkippedDueToRegexTimeout;
         if (scanResult.fileHadMatches) filesMatched++;
 
-        if (deadlineMs !== undefined && Date.now() > deadlineMs) {
-          stopNow('timeout');
+        const postScanStopReason = getSearchStopReason(
+          deadlineMs,
+          maxFilesScanned,
+          maxResults,
+          filesScanned,
+          matches.length
+        );
+        if (postScanStopReason) {
+          applySearchStop(postScanStopReason, stopState);
           break;
         }
-        if (matches.length >= maxResults) {
-          stopNow('maxResults');
-          break;
-        }
-
-        if (stoppedReason !== undefined) break;
       } catch {
         skippedInaccessible++;
       }
@@ -897,12 +974,12 @@ export async function searchContent(
       filesScanned,
       filesMatched,
       matches: matches.length,
-      truncated,
+      truncated: stopState.truncated,
       skippedTooLarge,
       skippedBinary,
       skippedInaccessible,
       linesSkippedDueToRegexTimeout,
-      stoppedReason,
+      stoppedReason: stopState.stoppedReason,
     },
   };
 }
@@ -1027,6 +1104,69 @@ export async function analyzeDirectory(
   };
 }
 
+interface CollectedEntry {
+  parentPath: string;
+  name: string;
+  type: 'file' | 'directory';
+  size?: number;
+  depth: number;
+}
+
+function buildChildrenByParent(
+  directoriesFound: Set<string>,
+  collectedEntries: CollectedEntry[]
+): Map<string, TreeEntry[]> {
+  const childrenByParent = new Map<string, TreeEntry[]>();
+
+  for (const dirPath of directoriesFound) {
+    childrenByParent.set(dirPath, []);
+  }
+
+  for (const entry of collectedEntries) {
+    const treeEntry: TreeEntry = {
+      name: entry.name,
+      type: entry.type,
+    };
+    if (entry.type === 'file' && entry.size !== undefined) {
+      treeEntry.size = entry.size;
+    }
+    if (entry.type === 'directory') {
+      const fullPath = path.join(entry.parentPath, entry.name);
+      treeEntry.children = childrenByParent.get(fullPath) ?? [];
+    }
+
+    const siblings = childrenByParent.get(entry.parentPath);
+    if (siblings) {
+      siblings.push(treeEntry);
+    }
+  }
+
+  return childrenByParent;
+}
+
+function sortTreeChildren(childrenByParent: Map<string, TreeEntry[]>): void {
+  for (const children of childrenByParent.values()) {
+    children.sort((a, b) => {
+      if (a.type !== b.type) {
+        return a.type === 'directory' ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
+  }
+}
+
+function buildTree(
+  rootPath: string,
+  childrenByParent: Map<string, TreeEntry[]>
+): TreeEntry {
+  const rootName = path.basename(rootPath);
+  return {
+    name: rootName || rootPath,
+    type: 'directory',
+    children: childrenByParent.get(rootPath) ?? [],
+  };
+}
+
 export async function getDirectoryTree(
   dirPath: string,
   options: {
@@ -1073,15 +1213,6 @@ export async function getDirectoryTree(
     truncated = true;
     return true;
   };
-
-  // Flat collection of all entries with parent tracking for tree assembly
-  interface CollectedEntry {
-    parentPath: string;
-    name: string;
-    type: 'file' | 'directory';
-    size?: number;
-    depth: number;
-  }
 
   const collectedEntries: CollectedEntry[] = [];
   const directoriesFound = new Set<string>([validPath]);
@@ -1166,50 +1297,12 @@ export async function getDirectoryTree(
     DIR_TRAVERSAL_CONCURRENCY
   );
 
-  const childrenByParent = new Map<string, TreeEntry[]>();
-
-  for (const dirPath of directoriesFound) {
-    childrenByParent.set(dirPath, []);
-  }
-
-  for (const entry of collectedEntries) {
-    const treeEntry: TreeEntry = {
-      name: entry.name,
-      type: entry.type,
-    };
-    if (entry.type === 'file' && entry.size !== undefined) {
-      treeEntry.size = entry.size;
-    }
-    if (entry.type === 'directory') {
-      const fullPath = path.join(entry.parentPath, entry.name);
-      treeEntry.children = childrenByParent.get(fullPath) ?? [];
-    }
-
-    const siblings = childrenByParent.get(entry.parentPath);
-    if (siblings) {
-      siblings.push(treeEntry);
-    }
-  }
-
-  const sortChildren = (entries: TreeEntry[]): void => {
-    entries.sort((a, b) => {
-      if (a.type !== b.type) {
-        return a.type === 'directory' ? -1 : 1;
-      }
-      return a.name.localeCompare(b.name);
-    });
-  };
-
-  for (const children of childrenByParent.values()) {
-    sortChildren(children);
-  }
-
-  const rootName = path.basename(validPath);
-  const tree: TreeEntry = {
-    name: rootName || validPath,
-    type: 'directory',
-    children: childrenByParent.get(validPath) ?? [],
-  };
+  const childrenByParent = buildChildrenByParent(
+    directoriesFound,
+    collectedEntries
+  );
+  sortTreeChildren(childrenByParent);
+  const tree = buildTree(validPath, childrenByParent);
 
   return {
     tree,

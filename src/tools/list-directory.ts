@@ -12,6 +12,7 @@ import {
   ListDirectoryInputSchema,
   ListDirectoryOutputSchema,
 } from '../schemas/index.js';
+import { buildTraversalSummary } from './shared/summary.js';
 
 function getExtension(name: string, isFile: boolean): string | undefined {
   if (!isFile) return undefined;
@@ -68,12 +69,7 @@ export function registerListDirectoryTool(server: McpServer): void {
           })),
           summary: {
             totalEntries: result.summary.totalEntries,
-            totalFiles: result.summary.totalFiles,
-            totalDirectories: result.summary.totalDirectories,
-            maxDepthReached: result.summary.maxDepthReached,
-            truncated: result.summary.truncated,
-            skippedInaccessible: result.summary.skippedInaccessible,
-            symlinksNotFollowed: result.summary.symlinksNotFollowed,
+            ...buildTraversalSummary(result.summary),
           },
         };
 

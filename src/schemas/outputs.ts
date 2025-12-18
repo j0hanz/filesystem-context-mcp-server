@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { ErrorSchema, FileTypeSchema, TreeEntrySchema } from './common.js';
+import { TraversalSummarySchema } from './output-helpers.js';
 
 export const ListAllowedDirectoriesOutputSchema = {
   ok: z.boolean(),
@@ -44,18 +45,8 @@ export const ListDirectoryOutputSchema = {
   summary: z
     .object({
       totalEntries: z.number().optional(),
-      totalFiles: z.number(),
-      totalDirectories: z.number(),
-      maxDepthReached: z.number().optional(),
-      truncated: z.boolean(),
-      skippedInaccessible: z.number().optional(),
-      symlinksNotFollowed: z
-        .number()
-        .optional()
-        .describe(
-          'Number of symbolic links encountered but not followed (for security)'
-        ),
     })
+    .merge(TraversalSummarySchema)
     .optional(),
   error: ErrorSchema.optional(),
 };
@@ -209,16 +200,7 @@ export const AnalyzeDirectoryOutputSchema = {
 export const DirectoryTreeOutputSchema = {
   ok: z.boolean(),
   tree: TreeEntrySchema.optional(),
-  summary: z
-    .object({
-      totalFiles: z.number(),
-      totalDirectories: z.number(),
-      maxDepthReached: z.number().optional(),
-      truncated: z.boolean(),
-      skippedInaccessible: z.number().optional(),
-      symlinksNotFollowed: z.number().optional(),
-    })
-    .optional(),
+  summary: TraversalSummarySchema.optional(),
   error: ErrorSchema.optional(),
 };
 

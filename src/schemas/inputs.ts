@@ -6,24 +6,15 @@ import {
   DEFAULT_TOP_N,
   DEFAULT_TREE_DEPTH,
   MAX_MEDIA_FILE_SIZE,
-  MAX_TEXT_FILE_SIZE,
 } from '../lib/constants.js';
-
-function isSafeGlobPattern(value: string): boolean {
-  if (value.length === 0) return false;
-
-  // Disallow absolute paths (POSIX and Windows) and traversal segments
-  const absolutePattern = /^([/\\]|[A-Za-z]:[/\\]|\\\\)/u;
-  if (absolutePattern.test(value)) {
-    return false;
-  }
-
-  if (/[\\/]\.\.(?:[/\\]|$)/u.test(value) || value.startsWith('..')) {
-    return false;
-  }
-
-  return true;
-}
+import {
+  BasicExcludePatternsSchema,
+  EncodingSchema,
+  ExcludePatternsSchema,
+  isSafeGlobPattern,
+  ReadFileMaxSizeSchema,
+  ReadMultipleFilesMaxSizeSchema,
+} from './input-helpers.js';
 
 export const ListDirectoryInputSchema = {
   path: z
@@ -101,19 +92,7 @@ export const SearchFilesInputSchema = {
     .describe(
       'Glob pattern to match files. Examples: "**/*.ts" (all TypeScript files), "src/**/*.js" (JS files in src), "*.json" (JSON files in current dir)'
     ),
-  excludePatterns: z
-    .array(
-      z
-        .string()
-        .max(500, 'Individual exclude pattern is too long')
-        .refine((val) => !val.includes('**/**/**'), {
-          message: 'Pattern too deeply nested (max 2 levels of **)',
-        })
-    )
-    .max(100, 'Too many exclude patterns (max 100)')
-    .optional()
-    .default([])
-    .describe('Patterns to exclude'),
+  excludePatterns: ExcludePatternsSchema.describe('Patterns to exclude'),
   maxResults: z
     .number()
     .int('maxResults must be an integer')
@@ -143,19 +122,8 @@ const ReadFileBaseSchema = z.object({
     .string()
     .min(1, 'Path cannot be empty')
     .describe('Path to the file to read'),
-  encoding: z
-    .enum(['utf-8', 'utf8', 'ascii', 'base64', 'hex', 'latin1'])
-    .optional()
-    .default('utf-8')
-    .describe('File encoding'),
-  maxSize: z
-    .number()
-    .int('maxSize must be an integer')
-    .min(1, 'maxSize must be at least 1 byte')
-    .max(100 * 1024 * 1024, 'maxSize cannot exceed 100MB')
-    .optional()
-    .default(MAX_TEXT_FILE_SIZE)
-    .describe('Maximum file size in bytes (default 10MB)'),
+  encoding: EncodingSchema,
+  maxSize: ReadFileMaxSizeSchema,
   lineStart: z
     .number()
     .int('lineStart must be an integer')
@@ -198,19 +166,8 @@ const ReadMultipleFilesBaseSchema = z.object({
     .min(1, 'At least one path is required')
     .max(100, 'Cannot read more than 100 files at once')
     .describe('Array of file paths to read'),
-  encoding: z
-    .enum(['utf-8', 'utf8', 'ascii', 'base64', 'hex', 'latin1'])
-    .optional()
-    .default('utf-8')
-    .describe('File encoding'),
-  maxSize: z
-    .number()
-    .int('maxSize must be an integer')
-    .min(1, 'maxSize must be at least 1 byte')
-    .max(100 * 1024 * 1024, 'maxSize cannot exceed 100MB')
-    .optional()
-    .default(MAX_TEXT_FILE_SIZE)
-    .describe('Maximum file size in bytes per file (default 10MB)'),
+  encoding: EncodingSchema,
+  maxSize: ReadMultipleFilesMaxSizeSchema,
   maxTotalSize: z
     .number()
     .int('maxTotalSize must be an integer')
@@ -271,19 +228,9 @@ export const SearchContentInputSchema = {
         'File pattern must be relative to the base path (no absolute or ".." segments)',
     })
     .describe('Glob pattern to filter files'),
-  excludePatterns: z
-    .array(
-      z
-        .string()
-        .max(500, 'Individual exclude pattern is too long')
-        .refine((val) => !val.includes('**/**/**'), {
-          message: 'Pattern too deeply nested (max 2 levels of **)',
-        })
-    )
-    .max(100, 'Too many exclude patterns (max 100)')
-    .optional()
-    .default([])
-    .describe('Glob patterns to exclude (e.g., "node_modules/**")'),
+  excludePatterns: ExcludePatternsSchema.describe(
+    'Glob patterns to exclude (e.g., "node_modules/**")'
+  ),
   caseSensitive: z
     .boolean()
     .optional()
@@ -373,12 +320,9 @@ export const AnalyzeDirectoryInputSchema = {
     .optional()
     .default(DEFAULT_TOP_N)
     .describe('Number of top items to return'),
-  excludePatterns: z
-    .array(z.string().max(500, 'Individual exclude pattern is too long'))
-    .max(100, 'Too many exclude patterns (max 100)')
-    .optional()
-    .default([])
-    .describe('Glob patterns to exclude (e.g., "node_modules", "*.log")'),
+  excludePatterns: BasicExcludePatternsSchema.describe(
+    'Glob patterns to exclude (e.g., "node_modules", "*.log")'
+  ),
   includeHidden: z
     .boolean()
     .optional()
@@ -399,12 +343,9 @@ export const DirectoryTreeInputSchema = {
     .optional()
     .default(DEFAULT_TREE_DEPTH)
     .describe('Maximum depth to traverse (default 5)'),
-  excludePatterns: z
-    .array(z.string().max(500, 'Individual exclude pattern is too long'))
-    .max(100, 'Too many exclude patterns (max 100)')
-    .optional()
-    .default([])
-    .describe('Glob patterns to exclude (e.g., "node_modules", "*.log")'),
+  excludePatterns: BasicExcludePatternsSchema.describe(
+    'Glob patterns to exclude (e.g., "node_modules", "*.log")'
+  ),
   includeHidden: z
     .boolean()
     .optional()
