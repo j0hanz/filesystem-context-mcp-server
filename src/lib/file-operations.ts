@@ -392,9 +392,13 @@ export async function searchFiles(
       if (r.status === 'fulfilled') {
         if (maxResults !== undefined && results.length >= maxResults) {
           truncated = true;
-          break;
+          return;
         }
         results.push(r.value);
+        if (maxResults !== undefined && results.length >= maxResults) {
+          truncated = true;
+          return;
+        }
       } else {
         skippedInaccessible++;
       }
@@ -431,7 +435,9 @@ export async function searchFiles(
     }
   }
 
-  await flushBatch();
+  if (!truncated) {
+    await flushBatch();
+  }
 
   sortSearchResults(results, sortBy);
 
@@ -467,6 +473,7 @@ export async function readMultipleFiles(
     head,
     tail,
   } = options;
+  const isPartialRead = head !== undefined || tail !== undefined;
 
   if (filePaths.length === 0) return [];
 
@@ -481,13 +488,15 @@ export async function readMultipleFiles(
       const validPath = await validateExistingPath(filePath);
       const stats = await fs.stat(validPath);
       fileSizes.set(filePath, stats.size);
-      totalSize += stats.size;
+      if (!isPartialRead) {
+        totalSize += stats.size;
+      }
     } catch {
       fileSizes.set(filePath, 0);
     }
   }
 
-  if (totalSize > maxTotalSize) {
+  if (!isPartialRead && totalSize > maxTotalSize) {
     throw new McpError(
       ErrorCode.E_TOO_LARGE,
       `Total size of all files (${totalSize} bytes) exceeds limit (${maxTotalSize} bytes)`,
@@ -543,6 +552,7 @@ export async function searchContent(
     contextLines?: number;
     wholeWord?: boolean;
     isLiteral?: boolean;
+    includeHidden?: boolean;
   } = {}
 ): Promise<SearchContentResult> {
   const {
@@ -557,6 +567,7 @@ export async function searchContent(
     contextLines = 0,
     wholeWord = false,
     isLiteral = false,
+    includeHidden = false,
   } = options;
   const validPath = await validateExistingPath(basePath);
 
@@ -614,7 +625,7 @@ export async function searchContent(
     cwd: validPath,
     absolute: true,
     onlyFiles: true,
-    dot: false,
+    dot: includeHidden,
     ignore: excludePatterns,
     suppressErrors: true,
     followSymbolicLinks: false,
@@ -677,6 +688,7 @@ export async function searchContent(
             isLiteral,
             searchString: isLiteral ? searchPattern : undefined,
             caseSensitive,
+            wholeWord,
             fileHandle: handle,
           });
 
@@ -707,7 +719,9 @@ export async function searchContent(
       }
     }
   } finally {
-    // Ensure the stream is closed
+    // Ensure the stream is closed promptly on early exit
+    const { destroy } = stream as { destroy?: () => void };
+    if (typeof destroy === 'function') destroy.call(stream);
   }
 
   return {

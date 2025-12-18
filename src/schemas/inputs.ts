@@ -328,6 +328,11 @@ export const SearchContentInputSchema = {
     .optional()
     .default(true)
     .describe('Skip likely-binary files (recommended)'),
+  includeHidden: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe('Include hidden files and directories (dotfiles) in the search'),
   contextLines: z
     .number()
     .int('contextLines must be an integer')

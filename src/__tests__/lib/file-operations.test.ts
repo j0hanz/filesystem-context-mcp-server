@@ -155,6 +155,22 @@ describe('File Operations', () => {
       expect(results[0]?.content).toBeDefined();
       expect(results[1]?.error).toBeDefined();
     });
+
+    it('should not apply total size cap when only reading heads/tails', async () => {
+      const big1 = path.join(testDir, 'big1.log');
+      const big2 = path.join(testDir, 'big2.log');
+      const largeContent = 'A'.repeat(50_000); // 50KB each
+      await fs.writeFile(big1, largeContent);
+      await fs.writeFile(big2, largeContent);
+
+      const results = await readMultipleFiles([big1, big2], {
+        head: 1,
+        maxTotalSize: 10, // Would fail under old logic
+      });
+
+      expect(results.every((r) => r.content !== undefined)).toBe(true);
+      await Promise.all([fs.rm(big1), fs.rm(big2)]).catch(() => {});
+    });
   });
 
   describe('getFileInfo', () => {
@@ -191,6 +207,21 @@ describe('File Operations', () => {
       expect(result.matches.length).toBe(0);
     });
 
+    it('should enforce wholeWord when using literal search', async () => {
+      const literalFile = path.join(testDir, 'literal.txt');
+      await fs.writeFile(literalFile, 'concatenate cat scatter catapult cat\n');
+
+      const result = await searchContent(testDir, 'cat', {
+        isLiteral: true,
+        wholeWord: true,
+        filePattern: '**/*.txt',
+      });
+
+      expect(result.matches.length).toBe(1);
+      expect(result.matches[0]?.matchCount).toBe(2);
+      await fs.rm(literalFile).catch(() => {});
+    });
+
     it('should skip binary files by default', async () => {
       const result = await searchContent(testDir, 'PNG');
       // Should not find matches in binary file
@@ -203,6 +234,18 @@ describe('File Operations', () => {
       });
       expect(result.matches.length).toBeGreaterThan(0);
       expect(result.matches.every((m) => m.file.endsWith('.ts'))).toBe(true);
+    });
+
+    it('should include hidden files when requested', async () => {
+      const result = await searchContent(testDir, 'hidden', {
+        includeHidden: true,
+        filePattern: '**/*',
+        isLiteral: true,
+      });
+      expect(result.matches.length).toBeGreaterThan(0);
+      expect(
+        result.matches.some((m) => m.file.includes(`.hidden${path.sep}`))
+      ).toBe(true);
     });
 
     it('should reject unsafe regex patterns (ReDoS protection)', async () => {

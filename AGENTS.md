@@ -21,7 +21,7 @@
 
 - TypeScript strict; prefer explicit returns and pure helpers.
 - Prettier: 2-space indent, semicolons, single quotes, 80-char width; imports auto-ordered (node -> externals -> internal -> relative).
-- ESLint: no `any`; require type-only imports; naming defaults to camelCase, PascalCase for types/enums, UPPER_CASE for constants; `_`-prefixed params allowed when unused.
+- ESLint: no `any`; require type-only imports; naming defaults to camelCase, PascalCase for types/enums, UPPER*CASE for constants; `*`-prefixed params allowed when unused.
 
 ## Testing Guidelines
 

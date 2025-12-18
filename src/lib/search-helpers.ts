@@ -155,6 +155,7 @@ export async function scanFileForContent(
     isLiteral?: boolean;
     searchString?: string;
     caseSensitive?: boolean;
+    wholeWord?: boolean;
     fileHandle?: FileHandle;
   }
 ): Promise<ScanFileResult> {
@@ -166,6 +167,7 @@ export async function scanFileForContent(
     isLiteral,
     searchString,
     caseSensitive,
+    wholeWord,
     fileHandle,
   } = options;
   const matches: ContentMatch[] = [];
@@ -195,7 +197,7 @@ export async function scanFileForContent(
       updatePendingMatches(pendingMatches, trimmedLine);
 
       const matchCount =
-        isLiteral && searchString
+        isLiteral && searchString && !wholeWord
           ? countLiteralMatches(line, searchString, caseSensitive ?? false)
           : countRegexMatches(line, regex);
 
