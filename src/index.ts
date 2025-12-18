@@ -18,7 +18,6 @@ async function main(): Promise<void> {
   await startServer(server);
 }
 
-// Graceful shutdown handlers
 process.on('SIGTERM', () => {
   process.exit(0);
 });
@@ -27,7 +26,6 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-// Run main and handle fatal errors
 main().catch((error: unknown) => {
   console.error(
     'Fatal error:',

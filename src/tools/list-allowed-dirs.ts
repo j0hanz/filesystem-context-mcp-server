@@ -2,15 +2,10 @@ import * as fs from 'node:fs/promises';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
+import type { DirectoryAccess } from '../config/types.js';
 import { formatAllowedDirectories } from '../lib/formatters.js';
 import { getAllowedDirectories } from '../lib/path-validation.js';
 import { ListAllowedDirectoriesOutputSchema } from '../schemas/index.js';
-
-interface DirectoryAccess {
-  path: string;
-  accessible: boolean;
-  readable: boolean;
-}
 
 async function checkDirectoryAccess(dirPath: string): Promise<DirectoryAccess> {
   try {

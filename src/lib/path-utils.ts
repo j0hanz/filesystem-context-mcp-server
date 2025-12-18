@@ -8,12 +8,10 @@ function expandHome(filepath: string): string {
   return filepath;
 }
 
-// Normalize path to canonical absolute form
 export function normalizePath(p: string): string {
   const expanded = expandHome(p);
   const resolved = path.resolve(expanded);
 
-  // On Windows, normalize drive letter to lowercase (C: -> c:)
   if (process.platform === 'win32' && /^[A-Z]:/.test(resolved)) {
     return resolved.charAt(0).toLowerCase() + resolved.slice(1);
   }

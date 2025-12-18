@@ -3,17 +3,16 @@ import type {
   DirectoryAnalysis,
   DirectoryEntry,
   FileInfo,
+  OperationSummary,
   SearchResult,
   TreeEntry,
 } from '../config/types.js';
 
-// === Formatting Constants ===
 const BYTES_PER_KILOBYTE = 1024;
 const BYTE_UNIT_LABELS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
 const ANALYSIS_SEPARATOR_WIDTH = 50;
 const LINE_NUMBER_PAD_WIDTH = 4;
 
-// === Byte Formatting ===
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
 
@@ -108,7 +107,6 @@ export function formatContentMatches(matches: ContentMatch[]): string {
   for (const [file, fileMatches] of byFile) {
     lines.push(`${file}:`);
     for (const match of fileMatches) {
-      // Show context before if available
       if (match.contextBefore && match.contextBefore.length > 0) {
         for (let i = 0; i < match.contextBefore.length; i++) {
           const contextLine = match.contextBefore[i];
@@ -118,11 +116,9 @@ export function formatContentMatches(matches: ContentMatch[]): string {
           );
         }
       }
-      // Show the match line (highlighted)
       lines.push(
         `  > ${String(match.line).padStart(LINE_NUMBER_PAD_WIDTH)}: ${match.content}`
       );
-      // Show context after if available
       if (match.contextAfter && match.contextAfter.length > 0) {
         for (let i = 0; i < match.contextAfter.length; i++) {
           const contextLine = match.contextAfter[i];
@@ -132,7 +128,6 @@ export function formatContentMatches(matches: ContentMatch[]): string {
           );
         }
       }
-      // Add separator if there was context
       if (
         (match.contextBefore && match.contextBefore.length > 0) ||
         (match.contextAfter && match.contextAfter.length > 0)
@@ -240,19 +235,6 @@ export function formatAllowedDirectories(dirs: string[]): string {
   return lines.join('\n');
 }
 
-// Common summary structure for operation results
-interface OperationSummary {
-  truncated?: boolean;
-  truncatedReason?: string;
-  tip?: string;
-  skippedInaccessible?: number;
-  symlinksNotFollowed?: number;
-  skippedTooLarge?: number;
-  skippedBinary?: number;
-  linesSkippedDueToRegexTimeout?: number;
-}
-
-// Format operation summary messages (truncation, skipped items, symlinks)
 export function formatOperationSummary(summary: OperationSummary): string {
   const lines: string[] = [];
 

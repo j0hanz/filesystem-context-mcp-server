@@ -1,5 +1,3 @@
-// Path validation and security module - the SECURITY BOUNDARY of this server.
-// All filesystem operations MUST call validateExistingPath() before accessing any path.
 import * as fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -30,7 +28,6 @@ function isPathWithinAllowedDirectories(normalizedPath: string): boolean {
   const candidate = normalizeForComparison(normalizedPath);
   return allowedDirectories.some((allowedDir) => {
     const allowed = normalizeForComparison(allowedDir);
-    // Exact match or is a child path
     return (
       candidate === allowed || candidate.startsWith(allowed + PATH_SEPARATOR)
     );
@@ -40,7 +37,6 @@ function isPathWithinAllowedDirectories(normalizedPath: string): boolean {
 async function validateExistingPathDetailsInternal(
   requestedPath: string
 ): Promise<ValidatedPathDetails> {
-  // Validate input is not empty or only whitespace
   if (!requestedPath || requestedPath.trim().length === 0) {
     throw new McpError(
       ErrorCode.E_INVALID_INPUT,
@@ -64,7 +60,6 @@ async function validateExistingPathDetailsInternal(
   try {
     realPath = await fs.realpath(normalizedRequested);
   } catch (error) {
-    // Distinguish between different error types for better error messages
     const nodeError = error as NodeJS.ErrnoException;
     if (nodeError.code === 'ENOENT') {
       throw new McpError(
@@ -102,7 +97,6 @@ async function validateExistingPathDetailsInternal(
         error
       );
     }
-    // Generic fallback for other errors
     throw new McpError(
       ErrorCode.E_NOT_FOUND,
       `Path is not accessible: ${requestedPath}`,
@@ -128,7 +122,6 @@ async function validateExistingPathDetailsInternal(
     );
   }
 
-  // Check if the resolved path differs from the requested path (indicating a symlink)
   const isSymlink = normalizedRequested !== normalizedReal;
 
   return {
@@ -151,14 +144,12 @@ export async function validateExistingPath(
   return details.resolvedPath;
 }
 
-// Extract valid directory paths from MCP Root objects (file:// URIs only)
 export async function getValidRootDirectories(
   roots: Root[]
 ): Promise<string[]> {
   const validDirs: string[] = [];
 
   for (const root of roots) {
-    // Only accept file:// URIs
     if (!root.uri.startsWith('file://')) {
       continue;
     }
@@ -167,10 +158,8 @@ export async function getValidRootDirectories(
       const dirPath = fileURLToPath(root.uri);
       const normalizedPath = normalizePath(dirPath);
 
-      // Verify the directory exists and is accessible
       const stats = await fs.stat(normalizedPath);
       if (stats.isDirectory()) {
-        // Resolve symlinks to get the real path
         try {
           const realPath = await fs.realpath(normalizedPath);
           validDirs.push(normalizePath(realPath));

@@ -16,7 +16,6 @@ import {
 import { ErrorCode, McpError } from './errors.js';
 import { validateExistingPath } from './path-validation.js';
 
-// Concurrent work queue processor with abort support
 export async function runWorkQueue<T>(
   initialItems: T[],
   worker: (item: T, enqueue: (item: T) => void) => Promise<void>,
@@ -152,14 +151,12 @@ export async function isProbablyBinary(
   }
 }
 
-// Find UTF-8 character boundary by backtracking
 async function findUTF8Boundary(
   handle: fs.FileHandle,
   position: number
 ): Promise<number> {
   if (position <= 0) return 0;
 
-  // Read up to 4 bytes at once (max UTF-8 character size)
   const backtrackSize = Math.min(4, position);
   const startPos = position - backtrackSize;
   const buf = Buffer.allocUnsafe(backtrackSize);
@@ -167,7 +164,6 @@ async function findUTF8Boundary(
   try {
     const { bytesRead } = await handle.read(buf, 0, backtrackSize, startPos);
 
-    // Parse backwards to find leading byte (not continuation byte 10xxxxxx)
     for (let i = bytesRead - 1; i >= 0; i--) {
       const byte = buf[i];
       if (byte !== undefined && (byte & 0xc0) !== 0x80) {
@@ -190,7 +186,6 @@ export async function tailFile(
   filePath: string,
   numLines: number
 ): Promise<string> {
-  // Optimized chunk size reduces syscalls with minimal memory overhead
   const CHUNK_SIZE = 256 * 1024;
   const validPath = await validateExistingPath(filePath);
   const stats = await fs.stat(validPath);
@@ -212,7 +207,6 @@ export async function tailFile(
 
       if (startPos > 0) {
         const alignedPos = await findUTF8Boundary(handle, startPos);
-        // If we moved back, we need to read more
         size = position - alignedPos;
         startPos = alignedPos;
       }
@@ -300,7 +294,6 @@ export async function headFile(
   }
 }
 
-// Read specific line range from file using streaming
 async function readLineRange(
   filePath: string,
   startLine: number,
@@ -329,7 +322,6 @@ async function readLineRange(
         lines.push(line);
       }
 
-      // Check if there are more lines after the requested range
       if (lineNumber > endLine) {
         hasMoreLines = true;
         break;
@@ -382,7 +374,6 @@ export async function readFile(
     );
   }
 
-  // Check for mutually exclusive options
   const optionsCount = [lineRange, head, tail].filter(Boolean).length;
   if (optionsCount > 1) {
     throw new McpError(
@@ -392,7 +383,6 @@ export async function readFile(
     );
   }
 
-  // Validate lineRange if provided
   if (lineRange) {
     if (lineRange.start < 1) {
       throw new McpError(
@@ -420,7 +410,6 @@ export async function readFile(
     return { path: validPath, content, truncated: true, totalLines: undefined };
   }
 
-  // For line range, use streaming to avoid loading entire file into memory
   if (lineRange) {
     const result = await readLineRange(
       validPath,
@@ -428,7 +417,6 @@ export async function readFile(
       lineRange.end
     );
     const expectedLines = lineRange.end - lineRange.start + 1;
-    // truncated if: not starting at line 1, OR didn't get all requested lines, OR file has more lines
     const isTruncated =
       lineRange.start > 1 ||
       result.linesRead < expectedLines ||
@@ -452,13 +440,11 @@ export async function readFile(
 
   const content = await fs.readFile(validPath, { encoding });
 
-  // Count total lines for full reads
   const totalLines = content.split('\n').length;
 
   return { path: validPath, content, truncated: false, totalLines };
 }
 
-// Process items in parallel using the shared work queue
 export async function processInParallel<T, R>(
   items: T[],
   processor: (item: T) => Promise<R>,

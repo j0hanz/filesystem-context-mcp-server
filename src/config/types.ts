@@ -207,3 +207,40 @@ export interface ParallelResult<R> {
   results: R[];
   errors: { index: number; error: Error }[];
 }
+
+// Sort field type for file operations
+export type SortField = 'name' | 'size' | 'modified' | 'type' | 'path';
+
+// Sortable interface for file operations
+export interface Sortable {
+  name?: string;
+  size?: number;
+  modified?: Date;
+  type?: FileType;
+  path?: string;
+}
+
+// Operation summary for formatters
+export interface OperationSummary {
+  truncated?: boolean;
+  truncatedReason?: string;
+  tip?: string;
+  skippedInaccessible?: number;
+  symlinksNotFollowed?: number;
+  skippedTooLarge?: number;
+  skippedBinary?: number;
+  linesSkippedDueToRegexTimeout?: number;
+}
+
+// Pending match tracker for search helpers
+export interface PendingMatch {
+  match: ContentMatch;
+  afterNeeded: number;
+}
+
+// Directory access status
+export interface DirectoryAccess {
+  path: string;
+  accessible: boolean;
+  readable: boolean;
+}

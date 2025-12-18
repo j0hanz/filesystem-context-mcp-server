@@ -4,10 +4,8 @@ import {
   type ErrorResponse,
 } from '../config/types.js';
 
-// Re-export ErrorCode from centralized location
 export { ErrorCode };
 
-// Type guard for Node.js ErrnoException
 export function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return (
     error instanceof Error &&
@@ -16,7 +14,6 @@ export function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   );
 }
 
-// Mapping of Node.js error codes to McpError codes
 export const NODE_ERROR_CODE_MAP: Readonly<Record<string, ErrorCode>> = {
   ENOENT: ErrorCode.E_NOT_FOUND,
   EACCES: ErrorCode.E_PERMISSION_DENIED,
@@ -34,7 +31,6 @@ export const NODE_ERROR_CODE_MAP: Readonly<Record<string, ErrorCode>> = {
   EINVAL: ErrorCode.E_INVALID_INPUT,
 } as const;
 
-// Custom error class for MCP operations
 export class McpError extends Error {
   constructor(
     public code: ErrorCode,
@@ -45,11 +41,9 @@ export class McpError extends Error {
   ) {
     super(message, { cause });
     this.name = 'McpError';
-    // Ensure proper prototype chain for instanceof checks
     Object.setPrototypeOf(this, McpError.prototype);
   }
 
-  // Create McpError from existing error
   static fromError(
     code: ErrorCode,
     message: string,
@@ -58,7 +52,6 @@ export class McpError extends Error {
     details?: Record<string, unknown>
   ): McpError {
     const mcpError = new McpError(code, message, path, details, originalError);
-    // Preserve stack trace if available
     if (originalError instanceof Error && originalError.stack) {
       mcpError.stack = `${String(mcpError.stack)}\nCaused by: ${originalError.stack}`;
     }
@@ -66,7 +59,6 @@ export class McpError extends Error {
   }
 }
 
-// Error code to suggestion mapping
 const ERROR_SUGGESTIONS: Readonly<Record<ErrorCode, string>> = {
   [ErrorCode.E_ACCESS_DENIED]:
     'Check that the path is within an allowed directory. Use list_allowed_directories to see available paths.',
@@ -96,36 +88,29 @@ const ERROR_SUGGESTIONS: Readonly<Record<ErrorCode, string>> = {
     'An unexpected error occurred. Check the error message for details.',
 } as const;
 
-// Classify an unknown error into a standardized ErrorCode
 export function classifyError(error: unknown): ErrorCode {
-  // 1. Direct McpError classification
   if (error instanceof McpError) {
     return error.code;
   }
-  // 2. Node.js ErrnoException code mapping
   if (isNodeError(error) && error.code) {
     const mapped = NODE_ERROR_CODE_MAP[error.code];
     if (mapped) return mapped;
   }
 
-  // 3. Common case optimization: check for ENOENT in message
   const message = error instanceof Error ? error.message : String(error);
   if (message.toLowerCase().includes('enoent')) {
     return validateErrorCode(ErrorCode.E_NOT_FOUND);
   }
 
-  // 4. Message pattern matching (fallback for non-Node errors)
   return classifyByMessage(error);
 }
 
-// Assertion function for exhaustive checks
 function assertNever(value: never): never {
   throw new Error(
     `Unhandled discriminated union member: ${JSON.stringify(value)}`
   );
 }
 
-// Validate ErrorCode exhaustiveness at compile time
 function validateErrorCode(code: ErrorCode): ErrorCode {
   switch (code) {
     case ErrorCode.E_ACCESS_DENIED:
@@ -151,7 +136,6 @@ function classifyByMessage(error: unknown): ErrorCode {
   const message = error instanceof Error ? error.message : String(error);
   const lowerMessage = message.toLowerCase();
 
-  // Access/security related
   if (
     lowerMessage.includes('not within allowed') ||
     lowerMessage.includes('access denied') ||
@@ -160,7 +144,6 @@ function classifyByMessage(error: unknown): ErrorCode {
     return validateErrorCode(ErrorCode.E_ACCESS_DENIED);
   }
 
-  // Not found (path-related patterns)
   if (
     (lowerMessage.includes('path') ||
       lowerMessage.includes('file') ||
@@ -171,7 +154,6 @@ function classifyByMessage(error: unknown): ErrorCode {
     return validateErrorCode(ErrorCode.E_NOT_FOUND);
   }
 
-  // Type mismatches
   if (
     lowerMessage.includes('not a file') ||
     lowerMessage.includes('is a directory')
@@ -182,22 +164,18 @@ function classifyByMessage(error: unknown): ErrorCode {
     return validateErrorCode(ErrorCode.E_NOT_DIRECTORY);
   }
 
-  // Size limits
   if (lowerMessage.includes('too large') || lowerMessage.includes('exceeds')) {
     return validateErrorCode(ErrorCode.E_TOO_LARGE);
   }
 
-  // Binary file
   if (lowerMessage.includes('binary')) {
     return validateErrorCode(ErrorCode.E_BINARY_FILE);
   }
 
-  // Timeout
   if (lowerMessage.includes('timeout') || lowerMessage.includes('timed out')) {
     return validateErrorCode(ErrorCode.E_TIMEOUT);
   }
 
-  // Invalid pattern
   if (lowerMessage.includes('invalid') && lowerMessage.includes('pattern')) {
     return validateErrorCode(ErrorCode.E_INVALID_PATTERN);
   }
@@ -205,7 +183,6 @@ function classifyByMessage(error: unknown): ErrorCode {
     return validateErrorCode(ErrorCode.E_INVALID_PATTERN);
   }
 
-  // Invalid input
   if (
     lowerMessage.includes('invalid') ||
     lowerMessage.includes('cannot specify')
@@ -213,7 +190,6 @@ function classifyByMessage(error: unknown): ErrorCode {
     return validateErrorCode(ErrorCode.E_INVALID_INPUT);
   }
 
-  // Permission (when no error code available)
   if (
     lowerMessage.includes('permission denied') ||
     lowerMessage.includes('permission')
@@ -221,12 +197,10 @@ function classifyByMessage(error: unknown): ErrorCode {
     return validateErrorCode(ErrorCode.E_PERMISSION_DENIED);
   }
 
-  // Symlink
   if (lowerMessage.includes('symlink')) {
     return validateErrorCode(ErrorCode.E_SYMLINK_NOT_ALLOWED);
   }
 
-  // Path traversal
   if (lowerMessage.includes('traversal')) {
     return validateErrorCode(ErrorCode.E_PATH_TRAVERSAL);
   }
@@ -234,7 +208,6 @@ function classifyByMessage(error: unknown): ErrorCode {
   return validateErrorCode(ErrorCode.E_UNKNOWN);
 }
 
-// Create detailed error with suggestions
 export function createDetailedError(
   error: unknown,
   path?: string,
@@ -247,7 +220,6 @@ export function createDetailedError(
   const effectivePath =
     path ?? (error instanceof McpError ? error.path : undefined);
 
-  // Merge details from McpError and additionalDetails
   const mcpDetails = error instanceof McpError ? error.details : undefined;
   const mergedDetails: Record<string, unknown> = {
     ...mcpDetails,
@@ -264,7 +236,6 @@ export function createDetailedError(
   };
 }
 
-// Format error for display
 export function formatDetailedError(error: DetailedError): string {
   const lines: string[] = [`Error [${error.code}]: ${error.message}`];
 
@@ -283,14 +254,12 @@ export function getSuggestion(code: ErrorCode): string {
   return ERROR_SUGGESTIONS[code];
 }
 
-// Create MCP-compatible error response
 export function createErrorResponse(
   error: unknown,
   defaultCode: ErrorCode,
   path?: string
 ): ErrorResponse {
   const detailed = createDetailedError(error, path);
-  // Use more specific code if classified, otherwise use default
   const finalCode =
     detailed.code === ErrorCode.E_UNKNOWN ? defaultCode : detailed.code;
   detailed.code = finalCode;
@@ -310,7 +279,6 @@ export function createErrorResponse(
   };
 }
 
-// Utility to validate mutually exclusive options
 export function validateMutuallyExclusive(
   options: Record<string, unknown>,
   optionNames: string[],
@@ -328,7 +296,6 @@ export function validateMutuallyExclusive(
   }
 }
 
-// Utility to validate option pairs (both must be present or both absent)
 export function validateOptionPair(
   options: Record<string, unknown>,
   optionA: string,

@@ -18,6 +18,8 @@ import type {
   SearchContentResult,
   SearchFilesResult,
   SearchResult,
+  Sortable,
+  SortField,
   TreeEntry,
 } from '../config/types.js';
 import {
@@ -51,9 +53,6 @@ import {
   scanFileForContent,
 } from './search-helpers.js';
 
-// === Inlined from directory-helpers.ts ===
-
-// Create matcher from exclude patterns
 function createExcludeMatcher(
   excludePatterns: string[]
 ): (name: string, relativePath: string) => boolean {
@@ -65,7 +64,6 @@ function createExcludeMatcher(
     matchers.some((m) => m.match(name) || m.match(relativePath));
 }
 
-// Classify symlink/access errors for summary tracking
 function classifyAccessError(error: unknown): 'symlink' | 'inaccessible' {
   if (
     error instanceof McpError &&
@@ -77,7 +75,6 @@ function classifyAccessError(error: unknown): 'symlink' | 'inaccessible' {
   return 'inaccessible';
 }
 
-// Insert item into sorted array maintaining sort order (descending by comparator)
 function insertSorted<T>(
   arr: T[],
   item: T,
@@ -94,19 +91,6 @@ function insertSorted<T>(
   }
 }
 
-// === Unified sorting comparators with type-safe builder ===
-
-type SortField = 'name' | 'size' | 'modified' | 'type' | 'path';
-
-interface Sortable {
-  name?: string;
-  size?: number;
-  modified?: Date;
-  type?: FileType;
-  path?: string;
-}
-
-// Comparator functions for each sort field (descending for size/modified, ascending for strings)
 const SORT_COMPARATORS: Readonly<
   Record<SortField, (a: Sortable, b: Sortable) => number>
 > = {
@@ -126,7 +110,6 @@ function sortByField(items: Sortable[], sortBy: SortField): void {
   items.sort(comparator);
 }
 
-// Search results use basename for 'name' sort
 function sortSearchResults(
   results: Sortable[],
   sortBy: 'name' | 'size' | 'modified' | 'path'
@@ -140,9 +123,7 @@ function sortSearchResults(
   }
 }
 
-// Convert file mode to permission string (e.g., 'rwxr-xr-x')
 function getPermissions(mode: number): string {
-  // Permission strings indexed by octal value (0-7)
   const PERM_STRINGS = [
     '---',
     '--x',
@@ -154,7 +135,6 @@ function getPermissions(mode: number): string {
     'rwx',
   ] as const satisfies readonly string[];
 
-  // Bitwise mask guarantees indices 0-7
   const ownerIndex = (mode >> 6) & 0b111;
   const groupIndex = (mode >> 3) & 0b111;
   const otherIndex = mode & 0b111;
@@ -490,7 +470,6 @@ export async function readMultipleFiles(
   const output: { path: string; content?: string; error?: string }[] =
     filePaths.map((filePath) => ({ path: filePath }));
 
-  // Pre-calculate total size to avoid race condition in parallel reads
   let totalSize = 0;
   const fileSizes = new Map<string, number>();
 
@@ -501,7 +480,6 @@ export async function readMultipleFiles(
       fileSizes.set(filePath, stats.size);
       totalSize += stats.size;
     } catch {
-      // Skip files we can't access - they'll error during read
       fileSizes.set(filePath, 0);
     }
   }
@@ -643,7 +621,6 @@ export async function searchContent(
   for await (const entry of stream) {
     const file = typeof entry === 'string' ? entry : String(entry);
 
-    // Paranoid check: validate first result to detect unexpected fast-glob behavior
     if (!firstPathValidated) {
       try {
         await validateExistingPath(file);
@@ -669,8 +646,6 @@ export async function searchContent(
     }
 
     try {
-      // fast-glob operates within validated cwd with followSymbolicLinks:false,
-      // so paths are already bounded - skip redundant validateExistingPath for glob results
       const handle = await fs.open(file, 'r');
       let shouldScan = true;
 
@@ -921,7 +896,6 @@ export async function getDirectoryTree(
   const collectedEntries: CollectedEntry[] = [];
   const directoriesFound = new Set<string>([validPath]);
 
-  // Phase 1: Collect all entries using runWorkQueue for work-stealing concurrency
   await runWorkQueue<{ currentPath: string; depth: number }>(
     [{ currentPath: validPath, depth: 0 }],
     async ({ currentPath, depth }, enqueue) => {
@@ -952,7 +926,6 @@ export async function getDirectoryTree(
 
         const { name } = item;
 
-        // Filter hidden files
         if (!includeHidden && name.startsWith('.')) {
           continue;
         }
@@ -960,19 +933,16 @@ export async function getDirectoryTree(
         const fullPath = path.join(currentPath, name);
         const relativePath = path.relative(validPath, fullPath);
 
-        // Check exclusion patterns
         if (shouldExclude(name, relativePath)) {
           continue;
         }
 
-        // Handle symlinks - skip but count
         if (item.isSymbolicLink()) {
           symlinksNotFollowed++;
           continue;
         }
 
         try {
-          // Validate path is within allowed directories
           const { resolvedPath, isSymlink } =
             await validateExistingPathDetailed(fullPath);
 
@@ -1002,11 +972,9 @@ export async function getDirectoryTree(
               depth,
             });
 
-            // Enqueue subdirectory for traversal if not at max depth
             if (depth + 1 <= maxDepth) {
               enqueue({ currentPath: resolvedPath, depth: depth + 1 });
             } else {
-              // Directory exists but we can't recurse due to depth limit
               truncated = true;
             }
           }
@@ -1022,15 +990,12 @@ export async function getDirectoryTree(
     DIR_TRAVERSAL_CONCURRENCY
   );
 
-  // Phase 2: Build tree structure from collected entries
   const childrenByParent = new Map<string, TreeEntry[]>();
 
-  // Initialize all directories with empty children arrays
   for (const dirPath of directoriesFound) {
     childrenByParent.set(dirPath, []);
   }
 
-  // Group entries by parent and create TreeEntry objects
   for (const entry of collectedEntries) {
     const treeEntry: TreeEntry = {
       name: entry.name,
@@ -1050,7 +1015,6 @@ export async function getDirectoryTree(
     }
   }
 
-  // Sort children: directories first, then alphabetically by name
   const sortChildren = (entries: TreeEntry[]): void => {
     entries.sort((a, b) => {
       if (a.type !== b.type) {
@@ -1064,7 +1028,6 @@ export async function getDirectoryTree(
     sortChildren(children);
   }
 
-  // Build root entry
   const rootName = path.basename(validPath);
   const tree: TreeEntry = {
     name: rootName || validPath,

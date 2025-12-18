@@ -1,19 +1,16 @@
 import * as readline from 'node:readline';
 import { createReadStream } from 'node:fs';
 
-import type { ContentMatch, ScanFileResult } from '../config/types.js';
+import type {
+  ContentMatch,
+  PendingMatch,
+  ScanFileResult,
+} from '../config/types.js';
 import {
   MAX_LINE_CONTENT_LENGTH,
   REGEX_MATCH_TIMEOUT_MS,
 } from './constants.js';
 
-// Pending match tracker for context-after lines
-interface PendingMatch {
-  match: ContentMatch;
-  afterNeeded: number;
-}
-
-// Count literal string matches in a line
 function countLiteralMatches(
   line: string,
   searchString: string,
@@ -35,19 +32,16 @@ function countLiteralMatches(
   return count;
 }
 
-// Count regex matches with timeout protection (returns -1 on timeout)
 function countRegexMatches(
   line: string,
   regex: RegExp,
   timeoutMs: number = REGEX_MATCH_TIMEOUT_MS
 ): number {
-  // Safety check for empty line
   if (line.length === 0) return 0;
 
   regex.lastIndex = 0;
   let count = 0;
   const deadline = Date.now() + timeoutMs;
-  // Hard cap prevents issues with extremely long lines (e.g., minified JS)
   const maxIterations = Math.min(line.length * 2, 10000);
   let iterations = 0;
   let lastIndex = 0;
@@ -57,12 +51,10 @@ function countRegexMatches(
     count++;
     iterations++;
 
-    // Prevent infinite loops on zero-width matches
     if (match[0] === '') {
       const { lastIndex: newIndex } = regex;
       regex.lastIndex++;
       lastIndex = newIndex + 1;
-      // Prevent advancing beyond string length
       if (regex.lastIndex > line.length) break;
     } else {
       const { lastIndex: currentIndex } = regex;
@@ -73,12 +65,11 @@ function countRegexMatches(
       lastIndex = currentIndex;
     }
 
-    // Hybrid timeout check for both fast and slow regex patterns
     const shouldCheckTimeout =
       (count > 0 && count % 10 === 0) ||
       (iterations > 0 && iterations % 50 === 0);
     if (shouldCheckTimeout && Date.now() > deadline) {
-      return -1; // Signal timeout
+      return -1;
     }
 
     // Safety check for runaway regex
@@ -90,20 +81,16 @@ function countRegexMatches(
   return count;
 }
 
-// Check if regex is simple enough to be safe without full ReDoS check
 export function isSimpleSafePattern(pattern: string): boolean {
-  // Validate input
   if (typeof pattern !== 'string' || pattern.length === 0) {
     return false;
   }
 
-  // Patterns with nested quantifiers are the main ReDoS concern
   const nestedQuantifierPattern = /[+*?}]\s*\)\s*[+*?{]/;
   if (nestedQuantifierPattern.test(pattern)) {
     return false;
   }
 
-  // Check for high repetition counts that safe-regex2 would flag (default limit is 25)
   const highRepetitionPattern = /\{(\d+)(?:,\d*)?\}/g;
   let match;
   while ((match = highRepetitionPattern.exec(pattern)) !== null) {
@@ -111,7 +98,6 @@ export function isSimpleSafePattern(pattern: string): boolean {
     if (countStr === undefined) continue;
 
     const count = parseInt(countStr, 10);
-    // Check for NaN and high values
     if (Number.isNaN(count) || count >= 25) {
       return false;
     }
@@ -120,7 +106,6 @@ export function isSimpleSafePattern(pattern: string): boolean {
   return true;
 }
 
-// Process pending matches to add context-after lines
 function updatePendingMatches(
   pendingMatches: PendingMatch[],
   trimmedLine: string
@@ -132,18 +117,15 @@ function updatePendingMatches(
       pending.afterNeeded--;
     }
   }
-  // Remove completed pending matches from the front
   while (pendingMatches.length > 0 && pendingMatches[0]?.afterNeeded === 0) {
     pendingMatches.shift();
   }
 }
 
-// Trim and truncate line content for storage
 function prepareTrimmedLine(line: string): string {
   return line.trim().substring(0, MAX_LINE_CONTENT_LENGTH);
 }
 
-// Prepare final search pattern with optional literal escaping and word boundaries
 export function prepareSearchPattern(
   searchPattern: string,
   options: { isLiteral?: boolean; wholeWord?: boolean }
@@ -194,7 +176,6 @@ export async function scanFileForContent(
   });
 
   let lineNumber = 0;
-  // Simple array for context lines (contextLines is capped at 0-10)
   const contextBuffer: string[] = [];
   const pendingMatches: PendingMatch[] = [];
 
@@ -208,7 +189,6 @@ export async function scanFileForContent(
       const trimmedLine = prepareTrimmedLine(line);
       updatePendingMatches(pendingMatches, trimmedLine);
 
-      // Use fast path for literal searches
       const matchCount =
         isLiteral && searchString
           ? countLiteralMatches(line, searchString, caseSensitive ?? false)
@@ -246,7 +226,6 @@ export async function scanFileForContent(
         }
       }
 
-      // Update context buffer
       if (contextLines > 0) {
         contextBuffer.push(trimmedLine);
         if (contextBuffer.length > contextLines) contextBuffer.shift();

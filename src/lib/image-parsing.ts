@@ -2,7 +2,6 @@ import type { Buffer } from 'node:buffer';
 
 import type { ImageDimensions, ImageParser } from '../config/types.js';
 
-// Image format signatures
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47] as const;
 const JPEG_SIGNATURE = [0xff, 0xd8] as const;
 const GIF_SIGNATURE = [0x47, 0x49, 0x46] as const;
@@ -47,7 +46,6 @@ function parseJpeg(buffer: Buffer): ImageDimensions | null {
       const width = buffer.readUInt16BE(offset + 7);
       const height = buffer.readUInt16BE(offset + 5);
 
-      // Validate dimensions are reasonable (JPEG spec allows up to 65535x65535)
       if (width <= 0 || height <= 0 || width > 65535 || height > 65535) {
         return null;
       }
@@ -90,7 +88,6 @@ function parseWebp(buffer: Buffer): ImageDimensions | null {
   let width: number;
   let height: number;
 
-  // VP8 (lossy): 0x56 0x50 0x38 0x20
   if (
     chunkType[0] === 0x56 &&
     chunkType[1] === 0x50 &&
@@ -99,9 +96,7 @@ function parseWebp(buffer: Buffer): ImageDimensions | null {
   ) {
     width = buffer.readUInt16LE(26) & 0x3fff;
     height = buffer.readUInt16LE(28) & 0x3fff;
-  }
-  // VP8L (lossless): 0x56 0x50 0x38 0x4c
-  else if (
+  } else if (
     chunkType[0] === 0x56 &&
     chunkType[1] === 0x50 &&
     chunkType[2] === 0x38 &&
@@ -110,9 +105,7 @@ function parseWebp(buffer: Buffer): ImageDimensions | null {
     const bits = buffer.readUInt32LE(21);
     width = (bits & 0x3fff) + 1;
     height = ((bits >> 14) & 0x3fff) + 1;
-  }
-  // VP8X (extended): 0x56 0x50 0x38 0x58
-  else if (
+  } else if (
     chunkType[0] === 0x56 &&
     chunkType[1] === 0x50 &&
     chunkType[2] === 0x38 &&
@@ -128,7 +121,6 @@ function parseWebp(buffer: Buffer): ImageDimensions | null {
     return null;
   }
 
-  // Validate dimensions are reasonable (max 16384x16384 for WebP spec)
   if (width <= 0 || height <= 0 || width > 16384 || height > 16384) {
     return null;
   }

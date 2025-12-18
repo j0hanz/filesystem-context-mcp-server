@@ -17,12 +17,10 @@ import {
 } from './lib/path-validation.js';
 import { registerAllTools } from './tools/index.js';
 
-// Get version from package.json
 const require = createRequire(import.meta.url);
 const packageJson = require('../package.json') as { version: string };
 const SERVER_VERSION = packageJson.version;
 
-// Load server instructions
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 let serverInstructions = '';
 try {
@@ -31,14 +29,12 @@ try {
     'utf-8'
   );
 } catch (error) {
-  // Instructions file not found or unreadable
   console.error(
     '[WARNING] Failed to load instructions.md:',
     error instanceof Error ? error.message : String(error)
   );
 }
 
-// Reserved device names on Windows that should be rejected
 const RESERVED_DEVICE_NAMES = new Set([
   'CON',
   'PRN',
@@ -65,12 +61,10 @@ const RESERVED_DEVICE_NAMES = new Set([
 ]);
 
 function validateCliPath(inputPath: string): void {
-  // Check for null bytes (path injection)
   if (inputPath.includes('\0')) {
     throw new Error('Path contains null bytes');
   }
 
-  // Check for reserved device names on Windows
   if (process.platform === 'win32') {
     const basename = path.basename(inputPath).split('.')[0]?.toUpperCase();
     if (basename && RESERVED_DEVICE_NAMES.has(basename)) {
@@ -82,14 +76,12 @@ function validateCliPath(inputPath: string): void {
 export async function parseArgs(): Promise<ParseArgsResult> {
   const args = process.argv.slice(2);
 
-  // Check for --allow-cwd flag
   const allowCwdIndex = args.indexOf('--allow-cwd');
   const allowCwd = allowCwdIndex !== -1;
   if (allowCwd) {
     args.splice(allowCwdIndex, 1);
   }
 
-  // Allow empty args - will fall back to CWD or roots protocol
   if (args.length === 0) {
     return { allowedDirs: [], allowCwd };
   }
@@ -117,7 +109,6 @@ export async function parseArgs(): Promise<ParseArgsResult> {
   return { allowedDirs: validatedDirs, allowCwd };
 }
 
-// Store server options for use in startServer
 let serverOptions: ServerOptions = {};
 
 async function updateRootsFromClient(server: McpServer): Promise<void> {
@@ -134,7 +125,7 @@ async function updateRootsFromClient(server: McpServer): Promise<void> {
       }
     }
   } catch {
-    // Ignore errors - roots protocol may not be supported
+    // Roots protocol may not be supported
   }
 }
 
@@ -171,13 +162,11 @@ export async function startServer(server: McpServer): Promise<void> {
 
   await server.connect(transport);
 
-  // Update allowed directories from roots protocol
   await updateRootsFromClient(server);
 
   const dirs = getAllowedDirectories();
   if (dirs.length === 0) {
     if (serverOptions.allowCwd) {
-      // Fall back to current working directory only if explicitly allowed
       const cwd = normalizePath(process.cwd());
       setAllowedDirectories([cwd]);
       console.error(

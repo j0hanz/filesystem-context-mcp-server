@@ -21,74 +21,50 @@ function parseEnvInt(
   return parsed;
 }
 
-// Concurrency Limits
-// Configurable via PARALLEL_JOBS env var (range: 1-100)
 export const PARALLEL_CONCURRENCY = parseEnvInt('PARALLEL_JOBS', 20, 1, 100);
-
-// Configurable via TRAVERSAL_JOBS env var (range: 1-50)
 export const DIR_TRAVERSAL_CONCURRENCY = parseEnvInt(
   'TRAVERSAL_JOBS',
   8,
   1,
   50
 );
-
-// Timeout Limits (ms)
-// Configurable via REGEX_TIMEOUT env var (range: 50-1000ms)
 export const REGEX_MATCH_TIMEOUT_MS = parseEnvInt(
   'REGEX_TIMEOUT',
   100,
   50,
   1000
 );
-
-// Size Limits (bytes)
-// Configurable via MAX_SEARCH_SIZE env var (range: 100KB-10MB)
 export const MAX_SEARCHABLE_FILE_SIZE = parseEnvInt(
   'MAX_SEARCH_SIZE',
-  1024 * 1024, // 1MB
-  100 * 1024, // 100KB
-  10 * 1024 * 1024 // 10MB
+  1024 * 1024,
+  100 * 1024,
+  10 * 1024 * 1024
 );
-
-// Configurable via MAX_FILE_SIZE env var (range: 1MB-100MB)
 export const MAX_TEXT_FILE_SIZE = parseEnvInt(
   'MAX_FILE_SIZE',
-  10 * 1024 * 1024, // 10MB
-  1024 * 1024, // 1MB
-  100 * 1024 * 1024 // 100MB
+  10 * 1024 * 1024,
+  1024 * 1024,
+  100 * 1024 * 1024
 );
-
-// Configurable via MAX_MEDIA_SIZE env var (range: 1MB-500MB)
 export const MAX_MEDIA_FILE_SIZE = parseEnvInt(
   'MAX_MEDIA_SIZE',
-  50 * 1024 * 1024, // 50MB
-  1024 * 1024, // 1MB
-  500 * 1024 * 1024 // 500MB
+  50 * 1024 * 1024,
+  1024 * 1024,
+  500 * 1024 * 1024
 );
 
 export const MAX_LINE_CONTENT_LENGTH = 200;
 export const BINARY_CHECK_BUFFER_SIZE = 512;
 
-// Default Operation Limits
-// Configurable via DEFAULT_DEPTH env var (range: 1-100)
 export const DEFAULT_MAX_DEPTH = parseEnvInt('DEFAULT_DEPTH', 10, 1, 100);
-
-// Configurable via DEFAULT_RESULTS env var (range: 10-10000)
 export const DEFAULT_MAX_RESULTS = parseEnvInt(
   'DEFAULT_RESULTS',
   100,
   10,
   10000
 );
-
-// Configurable via DEFAULT_TOP env var (range: 1-1000)
 export const DEFAULT_TOP_N = parseEnvInt('DEFAULT_TOP', 10, 1, 1000);
-
-// Configurable via DEFAULT_TREE env var (range: 1-50)
 export const DEFAULT_TREE_DEPTH = parseEnvInt('DEFAULT_TREE', 5, 1, 50);
-
-// Known text file extensions for fast-path binary detection
 export const KNOWN_TEXT_EXTENSIONS = new Set([
   '.ts',
   '.tsx',
@@ -180,7 +156,7 @@ export const KNOWN_TEXT_EXTENSIONS = new Set([
   '.editorconfig',
   '.prettierrc',
   '.eslintrc',
-  '.lock', // package-lock.json, yarn.lock, etc. are text
+  '.lock',
   '.csv',
   '.tsv',
   '.rst',
@@ -234,9 +210,7 @@ export const KNOWN_TEXT_EXTENSIONS = new Set([
   '.containerfile',
 ]);
 
-// Known binary file extensions for fast-path binary detection
 export const KNOWN_BINARY_EXTENSIONS = new Set([
-  // Images
   '.png',
   '.jpg',
   '.jpeg',
@@ -255,7 +229,6 @@ export const KNOWN_BINARY_EXTENSIONS = new Set([
   '.heic',
   '.heif',
   '.avif',
-  // Audio
   '.mp3',
   '.wav',
   '.flac',
@@ -265,7 +238,6 @@ export const KNOWN_BINARY_EXTENSIONS = new Set([
   '.m4a',
   '.opus',
   '.aiff',
-  // Video
   '.mp4',
   '.avi',
   '.mov',
@@ -276,7 +248,6 @@ export const KNOWN_BINARY_EXTENSIONS = new Set([
   '.m4v',
   '.mpeg',
   '.mpg',
-  // Archives
   '.zip',
   '.tar',
   '.gz',
@@ -287,7 +258,6 @@ export const KNOWN_BINARY_EXTENSIONS = new Set([
   '.cab',
   '.iso',
   '.dmg',
-  // Executables & Libraries
   '.exe',
   '.dll',
   '.so',
@@ -302,13 +272,11 @@ export const KNOWN_BINARY_EXTENSIONS = new Set([
   '.rpm',
   '.apk',
   '.ipa',
-  // Fonts
   '.ttf',
   '.otf',
   '.woff',
   '.woff2',
   '.eot',
-  // Documents (binary formats)
   '.pdf',
   '.doc',
   '.docx',
@@ -319,15 +287,12 @@ export const KNOWN_BINARY_EXTENSIONS = new Set([
   '.odt',
   '.ods',
   '.odp',
-  // Databases
   '.sqlite',
   '.sqlite3',
   '.db',
   '.mdb',
   '.accdb',
-  // WebAssembly
   '.wasm',
-  // Other binary
   '.bin',
   '.dat',
   '.pak',
@@ -337,11 +302,9 @@ export const KNOWN_BINARY_EXTENSIONS = new Set([
   '.pyo',
   '.node',
   '.napi',
-  // Source maps (can be large and not useful for text search)
   '.map',
 ]);
 
-// MIME type lookup
 export function getMimeType(ext: string): string {
   const lowerExt = ext.toLowerCase();
   return (
@@ -351,7 +314,6 @@ export function getMimeType(ext: string): string {
 }
 
 const MIME_TYPES = {
-  // Images
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -365,7 +327,6 @@ const MIME_TYPES = {
   '.avif': 'image/avif',
   '.heic': 'image/heic',
   '.heif': 'image/heif',
-  // Audio
   '.mp3': 'audio/mpeg',
   '.wav': 'audio/wav',
   '.ogg': 'audio/ogg',
@@ -374,7 +335,6 @@ const MIME_TYPES = {
   '.m4a': 'audio/mp4',
   '.wma': 'audio/x-ms-wma',
   '.opus': 'audio/opus',
-  // Video
   '.mp4': 'video/mp4',
   '.webm': 'video/webm',
   '.avi': 'video/x-msvideo',
@@ -382,9 +342,7 @@ const MIME_TYPES = {
   '.wmv': 'video/x-ms-wmv',
   '.mkv': 'video/x-matroska',
   '.flv': 'video/x-flv',
-  // Documents
   '.pdf': 'application/pdf',
-  // Common text (best-effort)
   '.txt': 'text/plain',
   '.log': 'text/plain',
   '.md': 'text/markdown',
@@ -402,17 +360,14 @@ const MIME_TYPES = {
   '.cjs': 'text/javascript',
   '.ts': 'text/typescript',
   '.tsx': 'text/typescript',
-  // Archives
   '.zip': 'application/zip',
   '.tar': 'application/x-tar',
   '.gz': 'application/gzip',
   '.7z': 'application/x-7z-compressed',
   '.rar': 'application/vnd.rar',
-  // Fonts
   '.ttf': 'font/ttf',
   '.otf': 'font/otf',
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
-  // Other
   '.wasm': 'application/wasm',
 } as const satisfies Readonly<Record<string, string>>;
