@@ -13,37 +13,27 @@ function validateLineRange(params: {
   path: string;
 }): void {
   const { lineStart, lineEnd, head, tail, path } = params;
-  const hasLineStart = lineStart !== undefined;
-  const hasLineEnd = lineEnd !== undefined;
 
-  if (hasLineStart !== hasLineEnd) {
-    const missing = hasLineStart ? 'lineEnd' : 'lineStart';
-    const provided = hasLineStart ? 'lineStart' : 'lineEnd';
+  // Validate that both or neither of lineStart and lineEnd are provided
+  if ((lineStart !== undefined) !== (lineEnd !== undefined)) {
     throw new McpError(
       ErrorCode.E_INVALID_INPUT,
-      `Invalid lineRange: ${provided} requires ${missing} to also be specified`,
+      'lineStart and lineEnd must be specified together',
       path
     );
   }
 
-  if (hasLineStart && hasLineEnd && lineEnd < lineStart) {
-    throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
-      `Invalid lineRange: lineEnd (${lineEnd}) must be >= lineStart (${lineStart})`,
-      path
-    );
-  }
-
-  const hasLineRange = hasLineStart && hasLineEnd;
+  // Validate mutual exclusivity of line range options
   const optionsCount = [
-    hasLineRange,
+    lineStart !== undefined,
     head !== undefined,
     tail !== undefined,
   ].filter(Boolean).length;
+
   if (optionsCount > 1) {
     throw new McpError(
       ErrorCode.E_INVALID_INPUT,
-      'Cannot specify multiple of lineRange (lineStart + lineEnd), head, or tail simultaneously',
+      'Cannot specify multiple of lineRange, head, or tail',
       path
     );
   }

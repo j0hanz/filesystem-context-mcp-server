@@ -24,7 +24,6 @@ export async function runWorkQueue<T>(
   signal?: AbortSignal
 ): Promise<void> {
   const queue: T[] = [...initialItems];
-  let head = 0;
   let inFlight = 0;
   let aborted = false;
   let doneResolve: (() => void) | undefined;
@@ -42,20 +41,12 @@ export async function runWorkQueue<T>(
 
   signal?.addEventListener('abort', onAbort, { once: true });
 
-  const maybeCompactQueue = (): void => {
-    if (head > 1024 && head * 2 > queue.length) {
-      queue.splice(0, head);
-      head = 0;
-    }
-  };
-
   const maybeStartNext = (): void => {
     if (aborted) return;
 
-    while (inFlight < concurrency && head < queue.length) {
-      const next = queue[head];
+    while (inFlight < concurrency && queue.length > 0) {
+      const next = queue.shift();
       if (next === undefined) break;
-      head++;
 
       inFlight++;
       void worker(next, (item: T) => {
@@ -65,8 +56,7 @@ export async function runWorkQueue<T>(
         }
       }).finally(() => {
         inFlight--;
-        maybeCompactQueue();
-        if (inFlight === 0 && (head >= queue.length || aborted)) {
+        if (inFlight === 0 && (queue.length === 0 || aborted)) {
           doneResolve?.();
         } else if (!aborted) {
           maybeStartNext();
@@ -77,7 +67,7 @@ export async function runWorkQueue<T>(
 
   maybeStartNext();
 
-  if (inFlight === 0 && head >= queue.length) {
+  if (inFlight === 0 && queue.length === 0) {
     doneResolve?.();
   }
 
@@ -123,7 +113,7 @@ export async function isProbablyBinary(
   }
 
   try {
-    const buffer = Buffer.alloc(BINARY_CHECK_BUFFER_SIZE);
+    const buffer = Buffer.allocUnsafe(BINARY_CHECK_BUFFER_SIZE);
     const { bytesRead } = await handle.read(
       buffer,
       0,
@@ -169,34 +159,30 @@ async function findUTF8Boundary(
 ): Promise<number> {
   if (position <= 0) return 0;
 
-  const buf = Buffer.alloc(1);
-  let currentPos = position;
+  // Read up to 4 bytes at once (max UTF-8 character size)
+  const backtrackSize = Math.min(4, position);
+  const startPos = position - backtrackSize;
+  const buf = Buffer.allocUnsafe(backtrackSize);
 
-  // Backtrack up to 4 bytes to find leading byte
-  for (let i = 0; i < 4; i++) {
-    // If we reached the beginning of the file, that's a boundary
-    if (currentPos <= 0) return 0;
+  try {
+    const { bytesRead } = await handle.read(buf, 0, backtrackSize, startPos);
 
-    try {
-      await handle.read(buf, 0, 1, currentPos);
-    } catch (error) {
-      // On read error, return original position to avoid data corruption
-      console.error(
-        `[findUTF8Boundary] Read error at position ${currentPos}:`,
-        error instanceof Error ? error.message : String(error)
-      );
-      return position;
+    // Parse backwards to find leading byte (not continuation byte 10xxxxxx)
+    for (let i = bytesRead - 1; i >= 0; i--) {
+      const byte = buf[i];
+      if (byte !== undefined && (byte & 0xc0) !== 0x80) {
+        return startPos + i;
+      }
     }
-
-    // Check if byte is a leading byte
-    const byte = buf[0];
-    if (byte !== undefined && (byte & 0xc0) !== 0x80) {
-      return currentPos;
-    }
-    currentPos--;
+  } catch (error) {
+    console.error(
+      `[findUTF8Boundary] Read error at position ${position}:`,
+      error instanceof Error ? error.message : String(error)
+    );
+    return position;
   }
 
-  // If we backtracked 4 bytes and still found only continuation bytes,
+  // Fallback if all bytes are continuation bytes
   return position;
 }
 

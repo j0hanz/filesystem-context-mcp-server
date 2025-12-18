@@ -128,17 +128,8 @@ async function validateExistingPathDetailsInternal(
     );
   }
 
-  // Detect if the *requested* path is a symlink without following it.
-  // Note: lstat runs after the allowed-directory string check above.
-  let isSymlink = false;
-  try {
-    const lstats = await fs.lstat(normalizedRequested);
-    isSymlink = lstats.isSymbolicLink();
-  } catch {
-    // If lstat fails but realpath succeeded, treat as non-symlink.
-    // This can happen on some platforms/filesystems; safe default.
-    isSymlink = false;
-  }
+  // Check if the resolved path differs from the requested path (indicating a symlink)
+  const isSymlink = normalizedRequested !== normalizedReal;
 
   return {
     requestedPath: normalizedRequested,

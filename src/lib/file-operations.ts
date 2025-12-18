@@ -710,6 +710,9 @@ export async function searchContent(
         contextLines,
         deadlineMs,
         currentMatchCount: matches.length,
+        isLiteral,
+        searchString: isLiteral ? searchPattern : undefined,
+        caseSensitive,
       });
 
       matches.push(...scanResult.matches);

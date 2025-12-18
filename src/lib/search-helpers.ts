@@ -13,6 +13,28 @@ interface PendingMatch {
   afterNeeded: number;
 }
 
+// Count literal string matches in a line
+function countLiteralMatches(
+  line: string,
+  searchString: string,
+  caseSensitive: boolean
+): number {
+  if (line.length === 0 || searchString.length === 0) return 0;
+
+  const haystack = caseSensitive ? line : line.toLowerCase();
+  const needle = caseSensitive ? searchString : searchString.toLowerCase();
+
+  let count = 0;
+  let pos = 0;
+
+  while ((pos = haystack.indexOf(needle, pos)) !== -1) {
+    count++;
+    pos += needle.length;
+  }
+
+  return count;
+}
+
 // Count regex matches with timeout protection (returns -1 on timeout)
 function countRegexMatches(
   line: string,
@@ -147,9 +169,20 @@ export async function scanFileForContent(
     contextLines: number;
     deadlineMs?: number;
     currentMatchCount: number;
+    isLiteral?: boolean;
+    searchString?: string;
+    caseSensitive?: boolean;
   }
 ): Promise<ScanFileResult> {
-  const { maxResults, contextLines, deadlineMs, currentMatchCount } = options;
+  const {
+    maxResults,
+    contextLines,
+    deadlineMs,
+    currentMatchCount,
+    isLiteral,
+    searchString,
+    caseSensitive,
+  } = options;
   const matches: ContentMatch[] = [];
   let linesSkippedDueToRegexTimeout = 0;
   let fileHadMatches = false;
@@ -175,7 +208,12 @@ export async function scanFileForContent(
       const trimmedLine = prepareTrimmedLine(line);
       updatePendingMatches(pendingMatches, trimmedLine);
 
-      const matchCount = countRegexMatches(line, regex);
+      // Use fast path for literal searches
+      const matchCount =
+        isLiteral && searchString
+          ? countLiteralMatches(line, searchString, caseSensitive ?? false)
+          : countRegexMatches(line, regex);
+
       if (matchCount < 0) {
         linesSkippedDueToRegexTimeout++;
         if (contextLines > 0) {
