@@ -14,6 +14,11 @@ import {
   validateExistingPath,
   validateExistingPathDetailed,
 } from '../path-validation.js';
+import {
+  analyzePatternComplexity,
+  getComplexityWarning,
+} from './pattern-complexity.js';
+import { validateGlobPatternOrThrow } from './pattern-validator.js';
 import { sortSearchResults } from './sorting.js';
 
 interface SearchFilesState {
@@ -157,7 +162,9 @@ function createSearchStream(
   basePath: string,
   pattern: string,
   excludePatterns: string[],
-  maxDepth: number | undefined
+  maxDepth: number | undefined,
+  baseNameMatch = false,
+  skipSymlinks = true
 ): AsyncIterable<string | Buffer> {
   return fg.stream(pattern, {
     cwd: basePath,
@@ -166,8 +173,9 @@ function createSearchStream(
     dot: true,
     ignore: excludePatterns,
     suppressErrors: true,
-    followSymbolicLinks: false,
+    followSymbolicLinks: !skipSymlinks,
     deep: maxDepth,
+    baseNameMatch,
   });
 }
 
@@ -181,15 +189,30 @@ export async function searchFiles(
     maxDepth?: number;
     maxFilesScanned?: number;
     timeoutMs?: number;
+    baseNameMatch?: boolean;
+    skipSymlinks?: boolean;
   } = {}
 ): Promise<SearchFilesResult> {
   const validPath = await validateExistingPath(basePath);
+
+  // Validate pattern
+  validateGlobPatternOrThrow(pattern, validPath);
+
+  // Analyze pattern complexity
+  const complexity = analyzePatternComplexity(pattern);
+  const warning = getComplexityWarning(complexity);
+  if (warning) {
+    console.warn(warning);
+  }
+
   const {
     maxResults,
     sortBy = 'path',
     maxDepth,
     maxFilesScanned = DEFAULT_SEARCH_MAX_FILES,
     timeoutMs = DEFAULT_SEARCH_TIMEOUT_MS,
+    baseNameMatch,
+    skipSymlinks,
   } = options;
   const effectiveMaxResults = maxResults ?? DEFAULT_MAX_RESULTS;
   const deadlineMs = timeoutMs ? Date.now() + timeoutMs : undefined;
@@ -199,7 +222,9 @@ export async function searchFiles(
     validPath,
     pattern,
     excludePatterns,
-    maxDepth
+    maxDepth,
+    baseNameMatch ?? false,
+    skipSymlinks ?? true
   );
 
   try {

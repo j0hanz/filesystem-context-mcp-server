@@ -143,6 +143,8 @@ async function handleSearchFiles({
   maxDepth,
   maxFilesScanned,
   timeoutMs,
+  baseNameMatch,
+  skipSymlinks,
 }: {
   path: string;
   pattern: string;
@@ -152,6 +154,8 @@ async function handleSearchFiles({
   maxDepth?: number;
   maxFilesScanned?: number;
   timeoutMs?: number;
+  baseNameMatch?: boolean;
+  skipSymlinks?: boolean;
 }): Promise<ToolResponse<SearchFilesStructuredResult>> {
   const result = await searchFiles(searchBasePath, pattern, excludePatterns, {
     maxResults,
@@ -159,6 +163,8 @@ async function handleSearchFiles({
     maxDepth,
     maxFilesScanned,
     timeoutMs,
+    baseNameMatch,
+    skipSymlinks,
   });
   return buildToolResponse(
     buildTextResult(result),

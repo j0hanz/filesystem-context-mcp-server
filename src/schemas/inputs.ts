@@ -133,6 +133,18 @@ export const SearchFilesInputSchema = {
     .optional()
     .default(DEFAULT_SEARCH_TIMEOUT_MS)
     .describe('Timeout in milliseconds for the search operation'),
+  baseNameMatch: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      'If true, patterns without slashes match against basename of paths. Useful for finding config files like "*.json" in nested directories'
+    ),
+  skipSymlinks: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe('Skip symbolic links for security and performance'),
 };
 
 // Base schema for reading a file with various options.
@@ -317,6 +329,20 @@ export const SearchContentInputSchema = {
     .default(false)
     .describe(
       'Treat pattern as a literal string instead of regex. Special characters like ., *, ? will be escaped automatically. Use this when searching for exact text containing regex metacharacters.'
+    ),
+  baseNameMatch: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      'If true, file patterns without slashes match against basename only. Useful for finding files by name regardless of directory depth'
+    ),
+  caseSensitiveFileMatch: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe(
+      'Case sensitive file pattern matching. Set to false for case-insensitive filename matching on case-insensitive filesystems'
     ),
 };
 

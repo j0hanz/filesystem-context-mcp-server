@@ -20,6 +20,11 @@ import {
   validateExistingPath,
   validateExistingPathDetailed,
 } from '../path-validation.js';
+import {
+  analyzePatternComplexity,
+  getComplexityWarning,
+} from './pattern-complexity.js';
+import { validateGlobPatternOrThrow } from './pattern-validator.js';
 
 interface SearchContentState {
   matches: ContentMatch[];
@@ -566,7 +571,9 @@ function createSearchStream(
   basePath: string,
   filePattern: string,
   excludePatterns: string[],
-  includeHidden: boolean
+  includeHidden: boolean,
+  baseNameMatch = false,
+  caseSensitiveFileMatch = true
 ): AsyncIterable<string | Buffer> {
   return fg.stream(filePattern, {
     cwd: basePath,
@@ -576,6 +583,8 @@ function createSearchStream(
     ignore: excludePatterns,
     suppressErrors: true,
     followSymbolicLinks: false,
+    baseNameMatch,
+    caseSensitiveMatch: caseSensitiveFileMatch,
   });
 }
 
@@ -650,6 +659,8 @@ export async function searchContent(
     wholeWord?: boolean;
     isLiteral?: boolean;
     includeHidden?: boolean;
+    baseNameMatch?: boolean;
+    caseSensitiveFileMatch?: boolean;
   } = {}
 ): Promise<SearchContentResult> {
   const {
@@ -665,9 +676,22 @@ export async function searchContent(
     wholeWord = false,
     isLiteral = false,
     includeHidden = false,
+    baseNameMatch,
+    caseSensitiveFileMatch,
   } = options;
 
   const validPath = await validateExistingPath(basePath);
+
+  // Validate file pattern
+  validateGlobPatternOrThrow(filePattern, validPath);
+
+  // Analyze pattern complexity
+  const complexity = analyzePatternComplexity(filePattern);
+  const warning = getComplexityWarning(complexity);
+  if (warning) {
+    console.warn(warning);
+  }
+
   const deadlineMs = timeoutMs ? Date.now() + timeoutMs : undefined;
   const { regex } = buildSearchRegex(searchPattern, {
     isLiteral,
@@ -681,7 +705,9 @@ export async function searchContent(
     validPath,
     filePattern,
     excludePatterns,
-    includeHidden
+    includeHidden,
+    baseNameMatch ?? false,
+    caseSensitiveFileMatch ?? true
   );
 
   try {

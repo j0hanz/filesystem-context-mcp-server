@@ -33,10 +33,16 @@ function createOutputSkeleton(filePaths: string[]): ReadMultipleResult[] {
 async function collectFileBudget(
   filePaths: string[],
   isPartialRead: boolean,
-  maxTotalSize: number,
-  maxSize: number
+  maxTotalSize: number
 ): Promise<{ skippedBudget: Set<string> }> {
   const skippedBudget = new Set<string>();
+
+  // Skip budget checks entirely for partial reads (head/tail)
+  // since we're only reading small portions of files
+  if (isPartialRead) {
+    return { skippedBudget };
+  }
+
   let totalSize = 0;
 
   for (const filePath of filePaths) {
@@ -44,14 +50,11 @@ async function collectFileBudget(
       const validPath = await validateExistingPath(filePath);
       const stats = await fs.stat(validPath);
 
-      const estimatedSize = isPartialRead
-        ? Math.min(stats.size, maxSize)
-        : stats.size;
-      if (totalSize + estimatedSize > maxTotalSize) {
+      if (totalSize + stats.size > maxTotalSize) {
         skippedBudget.add(filePath);
         continue;
       }
-      totalSize += estimatedSize;
+      totalSize += stats.size;
     } catch {
       // Ignore per-file size errors; handled during read.
     }
@@ -132,8 +135,7 @@ export async function readMultipleFiles(
   const { skippedBudget } = await collectFileBudget(
     filePaths,
     isPartialRead,
-    maxTotalSize,
-    maxSize
+    maxTotalSize
   );
 
   const filesToProcess = buildProcessTargets(filePaths, skippedBudget);

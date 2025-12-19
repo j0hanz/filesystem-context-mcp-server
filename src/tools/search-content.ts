@@ -183,6 +183,8 @@ async function handleSearchContent({
   contextLines,
   wholeWord,
   isLiteral,
+  baseNameMatch,
+  caseSensitiveFileMatch,
 }: {
   path: string;
   pattern: string;
@@ -198,6 +200,8 @@ async function handleSearchContent({
   contextLines?: number;
   wholeWord?: boolean;
   isLiteral?: boolean;
+  baseNameMatch?: boolean;
+  caseSensitiveFileMatch?: boolean;
 }): Promise<ToolResponse<SearchContentStructuredResult>> {
   const result = await searchContent(searchBasePath, pattern, {
     filePattern,
@@ -212,6 +216,8 @@ async function handleSearchContent({
     contextLines,
     wholeWord,
     isLiteral,
+    baseNameMatch,
+    caseSensitiveFileMatch,
   });
 
   return buildToolResponse(
