@@ -155,18 +155,21 @@ If neither CLI arguments nor MCP Roots provide directories, the server automatic
 
 All configuration values have sensible defaults and are optional. Only configure if you need to tune performance or resource usage.
 
-| Variable          | Default | Range      | Description                           |
-| ----------------- | ------- | ---------- | ------------------------------------- |
-| `PARALLEL_JOBS`   | 20      | 1-100      | Maximum parallel file operations      |
-| `TRAVERSAL_JOBS`  | 8       | 1-50       | Directory traversal concurrency       |
-| `REGEX_TIMEOUT`   | 100     | 50-1000    | Regex matching timeout (milliseconds) |
-| `MAX_FILE_SIZE`   | 10MB    | 1MB-100MB  | Maximum text file size (bytes)        |
-| `MAX_MEDIA_SIZE`  | 50MB    | 1MB-500MB  | Maximum media file size (bytes)       |
-| `MAX_SEARCH_SIZE` | 1MB     | 100KB-10MB | Maximum file size for content search  |
-| `DEFAULT_DEPTH`   | 10      | 1-100      | Default maximum recursion depth       |
-| `DEFAULT_RESULTS` | 100     | 10-10000   | Default maximum search results        |
-| `DEFAULT_TOP`     | 10      | 1-1000     | Default top N items in analysis       |
-| `DEFAULT_TREE`    | 5       | 1-50       | Default directory tree depth          |
+| Variable                   | Default | Range       | Description                           |
+| -------------------------- | ------- | ----------- | ------------------------------------- |
+| `PARALLEL_JOBS`            | 20      | 1-100       | Maximum parallel file operations      |
+| `TRAVERSAL_JOBS`           | 8       | 1-50        | Directory traversal concurrency       |
+| `REGEX_TIMEOUT`            | 100     | 50-1000     | Regex matching timeout (milliseconds) |
+| `MAX_FILE_SIZE`            | 10MB    | 1MB-100MB   | Maximum text file size (bytes)        |
+| `MAX_MEDIA_SIZE`           | 50MB    | 1MB-500MB   | Maximum media file size (bytes)       |
+| `MAX_SEARCH_SIZE`          | 1MB     | 100KB-10MB  | Maximum file size for content search  |
+| `DEFAULT_DEPTH`            | 10      | 1-100       | Default maximum recursion depth       |
+| `DEFAULT_RESULTS`          | 100     | 10-10000    | Default maximum search results        |
+| `DEFAULT_SEARCH_MAX_FILES` | 20000   | 100-100000  | Default max files to scan in searches |
+| `DEFAULT_SEARCH_TIMEOUT`   | 30000   | 100-3600000 | Default search timeout (milliseconds) |
+| `DEFAULT_TOP`              | 10      | 1-1000      | Default top N items in analysis       |
+| `DEFAULT_TREE`             | 5       | 1-50        | Default directory tree depth          |
+| `DEFAULT_TREE_MAX_FILES`   | 5000    | 100-200000  | Default max files in directory tree   |
 
 > **💡 Tip:** See [CONFIGURATION.md](CONFIGURATION.md) for detailed environment variable usage examples, configuration profiles, and best practices for different use cases.
 
@@ -211,9 +214,11 @@ Search for files using glob patterns.
 | `path`            | string   | ✅       | -       | Base directory to search from                 |
 | `pattern`         | string   | ✅       | -       | Glob pattern (e.g., `**/*.ts`, `src/**/*.js`) |
 | `excludePatterns` | string[] | ❌       | `[]`    | Patterns to exclude                           |
-| `maxResults`      | number   | ❌       | -       | Maximum matches to return (max 10,000)        |
+| `maxResults`      | number   | ❌       | `100`   | Maximum matches to return (1-10,000)          |
 | `sortBy`          | string   | ❌       | `path`  | Sort by: `name`, `size`, `modified`, `path`   |
 | `maxDepth`        | number   | ❌       | -       | Maximum directory depth to search (1-100)     |
+| `maxFilesScanned` | number   | ❌       | `20000` | Maximum files to scan before stopping         |
+| `timeoutMs`       | number   | ❌       | `30000` | Timeout in milliseconds (100-3,600,000)       |
 
 **Returns:** List of matching files with path, type, size, and modified date.
 
@@ -253,13 +258,14 @@ Read the contents of a text file.
 
 Read multiple files in parallel for efficient batch operations.
 
-| Parameter  | Type     | Required | Default | Description                          |
-| ---------- | -------- | -------- | ------- | ------------------------------------ |
-| `paths`    | string[] | ✅       | -       | Array of file paths (max 100)        |
-| `encoding` | string   | ❌       | `utf-8` | File encoding                        |
-| `maxSize`  | number   | ❌       | 10MB    | Maximum file size per file           |
-| `head`     | number   | ❌       | -       | Read only first N lines of each file |
-| `tail`     | number   | ❌       | -       | Read only last N lines of each file  |
+| Parameter      | Type     | Required | Default | Description                               |
+| -------------- | -------- | -------- | ------- | ----------------------------------------- |
+| `paths`        | string[] | ✅       | -       | Array of file paths (max 100)             |
+| `encoding`     | string   | ❌       | `utf-8` | File encoding                             |
+| `maxSize`      | number   | ❌       | 10MB    | Maximum file size per file                |
+| `maxTotalSize` | number   | ❌       | 100MB   | Maximum total size for all files combined |
+| `head`         | number   | ❌       | -       | Read only first N lines of each file      |
+| `tail`         | number   | ❌       | -       | Read only last N lines of each file       |
 
 **Returns:** Array of results with content or error for each file.
 
@@ -290,9 +296,10 @@ Search for text content within files using regular expressions.
 | `caseSensitive`   | boolean  | ❌       | `false` | Case-sensitive search                            |
 | `maxResults`      | number   | ❌       | `100`   | Maximum number of results (1-10,000)             |
 | `maxFileSize`     | number   | ❌       | 1MB     | Maximum file size to scan                        |
-| `maxFilesScanned` | number   | ❌       | -       | Maximum files to scan before stopping            |
-| `timeoutMs`       | number   | ❌       | -       | Timeout in milliseconds (100-3,600,000)          |
+| `maxFilesScanned` | number   | ❌       | `20000` | Maximum files to scan before stopping            |
+| `timeoutMs`       | number   | ❌       | `30000` | Timeout in milliseconds (100-3,600,000)          |
 | `skipBinary`      | boolean  | ❌       | `true`  | Skip binary files                                |
+| `includeHidden`   | boolean  | ❌       | `false` | Include hidden files and directories             |
 | `contextLines`    | number   | ❌       | `0`     | Lines of context before/after match (0-10)       |
 | `wholeWord`       | boolean  | ❌       | `false` | Match whole words only                           |
 | `isLiteral`       | boolean  | ❌       | `false` | Treat pattern as literal string (escape special) |
@@ -554,16 +561,44 @@ src/
 ├── lib/
 │   ├── constants.ts      # Configuration constants and limits
 │   ├── errors.ts         # Error handling utilities
-│   ├── file-operations.ts# Core filesystem operations
-│   ├── formatters.ts     # Output formatting utilities
-│   ├── fs-helpers.ts     # Low-level filesystem helpers
+│   ├── file-operations.ts# Core filesystem operations (exports)
 │   ├── path-utils.ts     # Path manipulation utilities
-│   └── path-validation.ts# Security: path validation layer
+│   ├── path-validation.ts# Security: path validation layer
+│   ├── fs-helpers.ts     # Low-level filesystem helpers (exports)
+│   ├── file-operations/  # Core filesystem operations
+│   │   ├── analyze-directory.ts
+│   │   ├── directory-items.ts
+│   │   ├── directory-iteration.ts
+│   │   ├── directory-tree.ts
+│   │   ├── file-info.ts
+│   │   ├── list-directory.ts
+│   │   ├── read-media-file.ts
+│   │   ├── read-multiple-files.ts
+│   │   ├── search-content.ts
+│   │   ├── search-files.ts
+│   │   └── sorting.ts
+│   ├── fs-helpers/       # Low-level filesystem helpers
+│   │   ├── binary-detect.ts
+│   │   ├── concurrency.ts
+│   │   ├── fs-utils.ts
+│   │   ├── readers.ts
+│   │   └── readers/      # File reading utilities
+│   │       ├── head-file.ts
+│   │       ├── line-range.ts
+│   │       ├── read-file.ts
+│   │       ├── tail-file.ts
+│   │       └── utf8.ts
+│   └── path-validation/  # Security: path validation
+│       ├── allowed-directories.ts
+│       ├── errors.ts
+│       ├── roots.ts
+│       └── validators.ts
 ├── schemas/
 │   ├── common.ts         # Shared Zod schemas
+│   ├── input-helpers.ts  # Input validation helpers
 │   ├── inputs.ts         # Input validation schemas
+│   ├── output-helpers.ts # Output formatting helpers
 │   ├── outputs.ts        # Output validation schemas
-│   ├── validators.ts     # Custom validation functions
 │   └── index.ts          # Schema exports
 ├── tools/
 │   ├── analyze-directory.ts
@@ -576,8 +611,18 @@ src/
 │   ├── read-multiple-files.ts
 │   ├── search-content.ts
 │   ├── search-files.ts
+│   ├── tool-response.ts  # Tool response formatting
 │   └── index.ts          # Tool registration
 └── __tests__/            # Test files
+    ├── lib/
+    │   ├── errors.test.ts
+    │   ├── file-operations.test.ts
+    │   ├── fs-helpers.test.ts
+    │   └── path-validation.test.ts
+    ├── schemas/
+    │   └── validators.test.ts
+    └── security/
+        └── filesystem-boundary.test.ts
 ```
 
 ### Testing with MCP Inspector
