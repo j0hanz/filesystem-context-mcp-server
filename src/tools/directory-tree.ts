@@ -7,7 +7,6 @@ import {
   DirectoryTreeInputSchema,
   DirectoryTreeOutputSchema,
 } from '../schemas/index.js';
-import { buildTraversalSummary } from './shared/summary.js';
 
 export function registerDirectoryTreeTool(server: McpServer): void {
   server.registerTool(
@@ -50,7 +49,7 @@ export function registerDirectoryTreeTool(server: McpServer): void {
         const structured = {
           ok: true,
           tree: result.tree,
-          summary: buildTraversalSummary(result.summary),
+          summary: result.summary,
         };
 
         // Add truncation notice for better error recovery feedback

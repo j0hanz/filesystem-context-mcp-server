@@ -210,7 +210,5 @@ export const ReadMediaFileOutputSchema = {
   mimeType: z.string().optional(),
   size: z.number().optional(),
   data: z.string().optional(),
-  width: z.number().optional(),
-  height: z.number().optional(),
   error: ErrorSchema.optional(),
 };

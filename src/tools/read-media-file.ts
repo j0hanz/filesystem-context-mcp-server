@@ -14,7 +14,6 @@ export function registerReadMediaFileTool(server: McpServer): void {
       title: 'Read Media File',
       description:
         'Read binary/media files (images, audio, fonts, etc.) and return as base64-encoded data with MIME type. ' +
-        'For images, also returns dimensions (width x height) when available. ' +
         'Use this instead of read_file for non-text files. ' +
         'Supports common formats: PNG, JPG, GIF, WebP, SVG, MP3, WAV, TTF, WOFF2, etc.',
       inputSchema: ReadMediaFileInputSchema,
@@ -36,11 +35,6 @@ export function registerReadMediaFileTool(server: McpServer): void {
           `Size: ${result.size} bytes`,
         ];
 
-        // Add dimensions if available
-        if (result.width !== undefined && result.height !== undefined) {
-          textLines.push(`Dimensions: ${result.width}x${result.height}`);
-        }
-
         textLines.push(
           `Data: [base64 encoded, ${result.data.length} characters]`
         );
@@ -52,8 +46,6 @@ export function registerReadMediaFileTool(server: McpServer): void {
           mimeType: result.mimeType,
           size: result.size,
           data: result.data,
-          width: result.width,
-          height: result.height,
         };
 
         return {

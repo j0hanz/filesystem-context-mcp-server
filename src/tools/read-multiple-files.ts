@@ -1,10 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import {
-  createErrorResponse,
-  ErrorCode,
-  validateMutuallyExclusive,
-} from '../lib/errors.js';
+import { createErrorResponse, ErrorCode } from '../lib/errors.js';
 import { readMultipleFiles } from '../lib/file-operations.js';
 import {
   ReadMultipleFilesInputSchema,
@@ -31,9 +27,6 @@ export function registerReadMultipleFilesTool(server: McpServer): void {
     },
     async ({ paths, encoding, maxSize, maxTotalSize, head, tail }) => {
       try {
-        // Validate head/tail mutual exclusivity early
-        validateMutuallyExclusive({ head, tail }, ['head', 'tail']);
-
         // Read multiple files in parallel
         const results = await readMultipleFiles(paths, {
           encoding,

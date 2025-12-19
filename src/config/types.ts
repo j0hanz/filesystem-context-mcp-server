@@ -128,8 +128,6 @@ export interface MediaFileResult {
   mimeType: string;
   size: number;
   data: string;
-  width?: number;
-  height?: number;
 }
 
 export const ErrorCode = {
@@ -138,13 +136,11 @@ export const ErrorCode = {
   E_NOT_FILE: 'E_NOT_FILE',
   E_NOT_DIRECTORY: 'E_NOT_DIRECTORY',
   E_TOO_LARGE: 'E_TOO_LARGE',
-  E_BINARY_FILE: 'E_BINARY_FILE',
   E_TIMEOUT: 'E_TIMEOUT',
   E_INVALID_PATTERN: 'E_INVALID_PATTERN',
   E_INVALID_INPUT: 'E_INVALID_INPUT',
   E_PERMISSION_DENIED: 'E_PERMISSION_DENIED',
   E_SYMLINK_NOT_ALLOWED: 'E_SYMLINK_NOT_ALLOWED',
-  E_PATH_TRAVERSAL: 'E_PATH_TRAVERSAL',
   E_UNKNOWN: 'E_UNKNOWN',
 } as const;
 

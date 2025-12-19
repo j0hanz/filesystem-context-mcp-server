@@ -166,7 +166,7 @@ Statistics: counts, sizes, types, largest/recent files.
 
 ### `read_media_file`
 
-Binary files as base64 with MIME type and dimensions.
+Binary files as base64 with MIME type.
 
 | Parameter | Default | Description     |
 | --------- | ------- | --------------- |
@@ -194,7 +194,6 @@ Detailed metadata about a file or directory.
 | `E_NOT_FILE`          | Expected file, got directory | Use `list_directory` instead          |
 | `E_NOT_DIRECTORY`     | Expected directory, got file | Use `read_file` instead               |
 | `E_TOO_LARGE`         | File exceeds size limit      | Use `head/tail` or increase `maxSize` |
-| `E_BINARY_FILE`       | Binary in text operation     | Use `read_media_file`                 |
 | `E_TIMEOUT`           | Operation took too long      | Reduce limits                         |
 | `E_INVALID_PATTERN`   | Malformed glob/regex         | Check glob/regex syntax               |
 | `E_PERMISSION_DENIED` | OS-level access denied       | Check file permissions                |

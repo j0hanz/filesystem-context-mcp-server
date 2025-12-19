@@ -89,8 +89,6 @@ const ERROR_SUGGESTIONS: Readonly<Record<ErrorCode, string>> = {
     'The path points to a file, not a directory. Use read_file to read file contents.',
   [ErrorCode.E_TOO_LARGE]:
     'The file exceeds the size limit. Use head or tail parameters to read partial content, or increase maxSize.',
-  [ErrorCode.E_BINARY_FILE]:
-    'This appears to be a binary file. Use read_media_file for images/audio, or set skipBinary=false to include.',
   [ErrorCode.E_TIMEOUT]:
     'The operation timed out. Try with a smaller scope, fewer files, or increase timeoutMs.',
   [ErrorCode.E_INVALID_PATTERN]:
@@ -101,8 +99,6 @@ const ERROR_SUGGESTIONS: Readonly<Record<ErrorCode, string>> = {
     'Permission denied by the operating system. Check file permissions.',
   [ErrorCode.E_SYMLINK_NOT_ALLOWED]:
     'Symbolic links that escape allowed directories are not permitted for security reasons.',
-  [ErrorCode.E_PATH_TRAVERSAL]:
-    'Path traversal attempts (../) that escape allowed directories are not permitted.',
   [ErrorCode.E_UNKNOWN]:
     'An unexpected error occurred. Check the error message for details.',
 } as const;
@@ -195,38 +191,4 @@ export function createErrorResponse(
     },
     isError: true,
   };
-}
-
-export function validateMutuallyExclusive(
-  options: Record<string, unknown>,
-  optionNames: string[],
-  context?: string
-): void {
-  const definedOptions = optionNames.filter(
-    (name) => options[name] !== undefined
-  );
-  if (definedOptions.length > 1) {
-    throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
-      `Cannot specify multiple of: ${definedOptions.join(', ')}`,
-      context
-    );
-  }
-}
-
-export function validateOptionPair(
-  options: Record<string, unknown>,
-  optionA: string,
-  optionB: string,
-  context?: string
-): void {
-  const hasA = options[optionA] !== undefined;
-  const hasB = options[optionB] !== undefined;
-  if (hasA !== hasB) {
-    throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
-      `${optionA} and ${optionB} must be specified together`,
-      context
-    );
-  }
 }

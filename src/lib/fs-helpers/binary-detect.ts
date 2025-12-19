@@ -4,7 +4,6 @@ import * as path from 'node:path';
 import {
   BINARY_CHECK_BUFFER_SIZE,
   KNOWN_BINARY_EXTENSIONS,
-  KNOWN_TEXT_EXTENSIONS,
 } from '../constants.js';
 import { validateExistingPath } from '../path-validation.js';
 
@@ -14,9 +13,6 @@ export async function isProbablyBinary(
 ): Promise<boolean> {
   const ext = path.extname(filePath).toLowerCase();
 
-  if (KNOWN_TEXT_EXTENSIONS.has(ext)) {
-    return false;
-  }
   if (KNOWN_BINARY_EXTENSIONS.has(ext)) {
     return true;
   }

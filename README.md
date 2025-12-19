@@ -356,7 +356,7 @@ Read a binary/media file and return it as base64-encoded data.
 
 **Supported formats:** Images (PNG, JPG, GIF, WebP, SVG, etc.), Audio (MP3, WAV, FLAC, etc.), Video (MP4, WebM, etc.), Fonts (TTF, WOFF, etc.), PDFs, and more.
 
-**Returns:** Base64-encoded data with MIME type, size, and dimensions (for images).
+**Returns:** Base64-encoded data with MIME type and size.
 
 ## 🔌 Client Configuration
 
@@ -557,7 +557,6 @@ src/
 │   ├── file-operations.ts# Core filesystem operations
 │   ├── formatters.ts     # Output formatting utilities
 │   ├── fs-helpers.ts     # Low-level filesystem helpers
-│   ├── image-parsing.ts  # Image dimension parsing
 │   ├── path-utils.ts     # Path manipulation utilities
 │   └── path-validation.ts# Security: path validation layer
 ├── schemas/

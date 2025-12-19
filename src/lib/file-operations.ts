@@ -43,7 +43,6 @@ import {
   readFile,
   runWorkQueue,
 } from './fs-helpers.js';
-import { parseImageDimensions } from './image-parsing.js';
 import {
   validateExistingPath,
   validateExistingPathDetailed,
@@ -1349,22 +1348,10 @@ export async function readMediaFile(
   const buffer = await fs.readFile(validPath);
   const data = buffer.toString('base64');
 
-  let width: number | undefined;
-  let height: number | undefined;
-
-  if (mimeType.startsWith('image/')) {
-    const dimensions = parseImageDimensions(buffer, ext);
-    if (dimensions) {
-      ({ width, height } = dimensions);
-    }
-  }
-
   return {
     path: validPath,
     mimeType,
     size,
     data,
-    width,
-    height,
   };
 }

@@ -1,11 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import {
-  createErrorResponse,
-  ErrorCode,
-  validateMutuallyExclusive,
-  validateOptionPair,
-} from '../lib/errors.js';
+import { createErrorResponse, ErrorCode } from '../lib/errors.js';
 import { readFile } from '../lib/file-operations.js';
 import { ReadFileInputSchema, ReadFileOutputSchema } from '../schemas/index.js';
 
@@ -30,19 +25,6 @@ export function registerReadFileTool(server: McpServer): void {
     },
     async ({ path, encoding, maxSize, lineStart, lineEnd, head, tail }) => {
       try {
-        // Validate option constraints early (before file I/O)
-        validateOptionPair(
-          { lineStart, lineEnd },
-          'lineStart',
-          'lineEnd',
-          path
-        );
-        validateMutuallyExclusive(
-          { lineRange: lineStart, head, tail },
-          ['lineRange', 'head', 'tail'],
-          path
-        );
-
         const lineRange =
           lineStart !== undefined && lineEnd !== undefined
             ? { start: lineStart, end: lineEnd }
