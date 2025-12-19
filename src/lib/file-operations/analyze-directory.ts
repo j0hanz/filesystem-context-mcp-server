@@ -20,7 +20,7 @@ import {
   classifyAccessError,
   createExcludeMatcher,
   forEachDirectoryEntry,
-} from './directory-iteration.js';
+} from './directory-helpers.js';
 
 interface AnalysisState {
   totalFiles: number;
