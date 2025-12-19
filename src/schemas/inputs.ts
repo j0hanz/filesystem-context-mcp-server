@@ -2,8 +2,8 @@ import { z } from 'zod';
 
 import { MAX_MEDIA_FILE_SIZE } from '../lib/constants.js';
 import {
-  BasicExcludePatternsSchema,
   BaseNameMatchSchema,
+  BasicExcludePatternsSchema,
   CaseSensitiveSchema,
   ContextLinesSchema,
   EncodingSchema,
@@ -15,8 +15,8 @@ import {
   LineStartSchema,
   MaxDepthSchema,
   MaxEntriesSchema,
-  MaxFilesScannedSchema,
   MaxFileSizeSearchSchema,
+  MaxFilesScannedSchema,
   MaxResultsSchema,
   ReadFileMaxSizeSchema,
   ReadMultipleFilesMaxSizeSchema,
