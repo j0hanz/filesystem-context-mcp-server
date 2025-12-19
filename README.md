@@ -267,6 +267,8 @@ Read multiple files in parallel for efficient batch operations.
 | `head`         | number   | ❌       | -       | Read only first N lines of each file      |
 | `tail`         | number   | ❌       | -       | Read only last N lines of each file       |
 
+> **Note:** Use `read_file` for single files with line ranges (`lineStart`/`lineEnd`). Use `read_multiple_files` for batch operations with `head`/`tail` parameters. The batch API does not support line ranges per file.
+
 **Returns:** Array of results with content or error for each file.
 
 ---

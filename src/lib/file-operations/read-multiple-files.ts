@@ -26,6 +26,22 @@ function assertHeadTailOptions(
   );
 }
 
+function assertNoSingleFileParams(options: Record<string, unknown>): void {
+  const unsupported = ['lineStart', 'lineEnd'].filter((key) => key in options);
+  if (unsupported.length > 0) {
+    throw new McpError(
+      ErrorCode.E_INVALID_INPUT,
+      `Parameter(s) ${unsupported.join(', ')} are not supported by read_multiple_files. ` +
+        `Use read_file for line ranges, or use head/tail with read_multiple_files.`,
+      undefined,
+      {
+        suggestion:
+          'Call read_file({ path, lineStart, lineEnd }) for single-file line ranges.',
+      }
+    );
+  }
+}
+
 function createOutputSkeleton(filePaths: string[]): ReadMultipleResult[] {
   return filePaths.map((filePath) => ({ path: filePath }));
 }
@@ -134,6 +150,7 @@ export async function readMultipleFiles(
   } = options;
 
   assertHeadTailOptions(head, tail);
+  assertNoSingleFileParams(options as Record<string, unknown>);
 
   const output = createOutputSkeleton(filePaths);
   const isPartialRead = head !== undefined || tail !== undefined;

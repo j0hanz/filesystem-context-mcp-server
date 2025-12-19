@@ -393,6 +393,20 @@ describe('File Operations', () => {
     });
   });
 
+  describe('readMultipleFiles', () => {
+    it('should reject unsupported single-file parameters with clear message', async () => {
+      // Intentionally pass invalid parameters to test validation
+      const invalidOptions = {
+        lineStart: 1,
+        lineEnd: 10,
+      };
+      await expect(
+        // @ts-expect-error - Testing invalid input handling
+        readMultipleFiles([path.join(testDir, 'README.md')], invalidOptions)
+      ).rejects.toThrow(/not supported by read_multiple_files/i);
+    });
+  });
+
   describe('readMediaFile', () => {
     it('should read binary file as base64', async () => {
       const result = await readMediaFile(path.join(testDir, 'image.png'));
@@ -468,6 +482,21 @@ describe('File Operations', () => {
         });
         // Either completes quickly or times out
         expect(result).toBeDefined();
+      });
+
+      it('should stop early when maxResults is 0 (edge case)', async () => {
+        const result = await searchContent(testDir, 'Line', { maxResults: 0 });
+        expect(result.summary.truncated).toBe(true);
+        expect(result.summary.stoppedReason).toBe('maxResults');
+      });
+
+      it('should match literal strings when isLiteral=true', async () => {
+        const result = await searchContent(testDir, 'Test.*Project', {
+          isLiteral: true,
+          filePattern: '**/*.md',
+        });
+        // When literal, "Test.*Project" should NOT match "Test Project"
+        expect(result.matches.length).toBe(0);
       });
     });
 
