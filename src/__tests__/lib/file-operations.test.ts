@@ -393,33 +393,6 @@ describe('File Operations', () => {
     });
   });
 
-  describe('readMultipleFiles', () => {
-    it('should handle single-file parameters correctly', async () => {
-      // 1. Should allow lineStart/lineEnd for single file
-      const singleFileResults = await readMultipleFiles(
-        [path.join(testDir, 'README.md')],
-        { lineStart: 1, lineEnd: 1 }
-      );
-      expect(singleFileResults.length).toBe(1);
-      expect(singleFileResults[0]?.content).toBeDefined();
-
-      // 2. Should reject lineStart/lineEnd for multiple files
-      const invalidOptions = {
-        lineStart: 1,
-        lineEnd: 10,
-      };
-      await expect(
-        readMultipleFiles(
-          [
-            path.join(testDir, 'README.md'),
-            path.join(testDir, 'src', 'index.ts'),
-          ],
-          invalidOptions
-        )
-      ).rejects.toThrow(/not supported by read_multiple_files/i);
-    });
-  });
-
   describe('readMediaFile', () => {
     it('should read binary file as base64', async () => {
       const result = await readMediaFile(path.join(testDir, 'image.png'));

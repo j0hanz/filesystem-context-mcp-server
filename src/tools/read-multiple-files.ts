@@ -60,8 +60,6 @@ async function handleReadMultipleFiles(args: {
   maxTotalSize?: number;
   head?: number;
   tail?: number;
-  lineStart?: number;
-  lineEnd?: number;
 }): Promise<ToolResponse<ReadMultipleStructuredResult>> {
   const results = await readMultipleFiles(args.paths, {
     encoding: args.encoding,
@@ -69,8 +67,6 @@ async function handleReadMultipleFiles(args: {
     maxTotalSize: args.maxTotalSize,
     head: args.head,
     tail: args.tail,
-    lineStart: args.lineStart,
-    lineEnd: args.lineEnd,
   });
 
   return buildToolResponse(

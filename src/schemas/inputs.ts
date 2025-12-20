@@ -148,12 +148,6 @@ const ReadMultipleFilesBaseSchema = z.object({
     ),
   head: HeadLinesSchema.describe('Read only the first N lines of each file'),
   tail: TailLinesSchema.describe('Read only the last N lines of each file'),
-  lineStart: LineStartSchema.describe(
-    'Start line (1-indexed) for reading a range (only supported when reading a single file)'
-  ),
-  lineEnd: LineEndSchema.describe(
-    'End line (inclusive) for reading a range (only supported when reading a single file)'
-  ),
 });
 
 export const ReadMultipleFilesInputSchema = ReadMultipleFilesBaseSchema.shape;
