@@ -49,22 +49,34 @@ function startWorker<T>(
   maybeStartNext: () => void
 ): void {
   state.inFlight++;
-  void worker(item, (next) => {
-    enqueueItem(state, next);
-    maybeStartNext();
-  })
-    .catch((error: unknown) => {
-      console.error(
-        '[runWorkQueue] Worker error:',
-        error instanceof Error ? error.message : String(error)
-      );
+
+  try {
+    void worker(item, (next) => {
+      enqueueItem(state, next);
+      maybeStartNext();
     })
-    .finally(() => {
-      handleWorkerCompletion(state);
-      if (!state.aborted) {
-        maybeStartNext();
-      }
-    });
+      .catch((error: unknown) => {
+        console.error(
+          '[runWorkQueue] Worker error:',
+          error instanceof Error ? error.message : String(error)
+        );
+      })
+      .finally(() => {
+        handleWorkerCompletion(state);
+        if (!state.aborted) {
+          maybeStartNext();
+        }
+      });
+  } catch (error) {
+    console.error(
+      '[runWorkQueue] Worker synchronous error:',
+      error instanceof Error ? error.message : String(error)
+    );
+    handleWorkerCompletion(state);
+    if (!state.aborted) {
+      maybeStartNext();
+    }
+  }
 }
 
 function createQueueProcessor<T>(

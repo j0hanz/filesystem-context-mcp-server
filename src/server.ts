@@ -20,7 +20,10 @@ import { registerAllTools } from './tools/index.js';
 const SERVER_VERSION = packageJson.version;
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
-let serverInstructions = '';
+let serverInstructions = `
+Filesystem Context MCP Server
+(Detailed instructions failed to load - check logs)
+`;
 try {
   serverInstructions = await fs.readFile(
     path.join(currentDir, 'instructions.md'),
@@ -124,10 +127,11 @@ async function recomputeAllowedDirectories(): Promise<void> {
 async function updateRootsFromClient(server: McpServer): Promise<void> {
   try {
     const rootsResult = await server.server.listRoots();
+    const rawRoots = (rootsResult as unknown as { roots?: unknown }).roots;
+    const roots = Array.isArray(rawRoots) ? rawRoots : [];
+
     rootDirectories =
-      rootsResult.roots.length > 0
-        ? await getValidRootDirectories(rootsResult.roots as Root[])
-        : [];
+      roots.length > 0 ? await getValidRootDirectories(roots as Root[]) : [];
   } catch (error) {
     console.error(
       '[DEBUG] MCP Roots protocol unavailable or failed:',
