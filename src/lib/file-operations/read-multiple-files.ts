@@ -26,19 +26,22 @@ function assertHeadTailOptions(
   );
 }
 
-function assertNoSingleFileParams(options: unknown): void {
+function assertNoSingleFileParams(options: unknown, fileCount: number): void {
   if (!options || typeof options !== 'object') return;
   const opts = options as Record<string, unknown>;
   const unsupported = ['lineStart', 'lineEnd'].filter((key) => key in opts);
+
+  if (fileCount === 1) return;
+
   if (unsupported.length > 0) {
     throw new McpError(
       ErrorCode.E_INVALID_INPUT,
-      `Parameter(s) ${unsupported.join(', ')} are not supported by read_multiple_files. ` +
+      `Parameter(s) ${unsupported.join(', ')} are not supported by read_multiple_files when reading multiple files. ` +
         `Use read_file for line ranges, or use head/tail with read_multiple_files.`,
       undefined,
       {
         suggestion:
-          'Call read_file({ path, lineStart, lineEnd }) for single-file line ranges.',
+          'Call read_file({ path, lineStart, lineEnd }) for single-file line ranges, or ensure only one path is provided.',
       }
     );
   }
@@ -139,6 +142,8 @@ export async function readMultipleFiles(
     maxTotalSize?: number;
     head?: number;
     tail?: number;
+    lineStart?: number;
+    lineEnd?: number;
   } = {}
 ): Promise<ReadMultipleResult[]> {
   if (filePaths.length === 0) return [];
@@ -149,13 +154,18 @@ export async function readMultipleFiles(
     maxTotalSize = 100 * 1024 * 1024,
     head,
     tail,
+    lineStart,
+    lineEnd,
   } = options;
 
   assertHeadTailOptions(head, tail);
-  assertNoSingleFileParams(options);
+  assertNoSingleFileParams(options, filePaths.length);
 
   const output = createOutputSkeleton(filePaths);
-  const isPartialRead = head !== undefined || tail !== undefined;
+  const isPartialRead =
+    head !== undefined ||
+    tail !== undefined ||
+    (lineStart !== undefined && lineEnd !== undefined);
   const { skippedBudget } = await collectFileBudget(
     filePaths,
     isPartialRead,
@@ -167,11 +177,21 @@ export async function readMultipleFiles(
   const { results, errors } = await processInParallel(
     filesToProcess,
     async ({ filePath, index }) => {
+      let lineRange: { start: number; end: number } | undefined;
+      if (
+        filePaths.length === 1 &&
+        lineStart !== undefined &&
+        lineEnd !== undefined
+      ) {
+        lineRange = { start: lineStart, end: lineEnd };
+      }
+
       const result = await readFile(filePath, {
         encoding,
         maxSize,
         head,
         tail,
+        lineRange,
       });
 
       return {
