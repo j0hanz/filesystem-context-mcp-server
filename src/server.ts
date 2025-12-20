@@ -128,8 +128,11 @@ async function updateRootsFromClient(server: McpServer): Promise<void> {
       rootsResult.roots.length > 0
         ? await getValidRootDirectories(rootsResult.roots as Root[])
         : [];
-  } catch {
-    // Roots protocol may not be supported
+  } catch (error) {
+    console.error(
+      '[DEBUG] MCP Roots protocol unavailable or failed:',
+      error instanceof Error ? error.message : String(error)
+    );
   } finally {
     await recomputeAllowedDirectories();
   }

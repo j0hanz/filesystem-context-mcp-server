@@ -19,7 +19,8 @@
   ],
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist', {recursive: true, force: true})\"",
-    "build": "tsc && npm run copy:assets",
+    "validate:instructions": "node -e \"require('fs').accessSync('src/instructions.md')\"",
+    "build": "tsc && npm run validate:instructions && npm run copy:assets",
     "copy:assets": "node -e \"require('fs').copyFileSync('src/instructions.md', 'dist/instructions.md')\"",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",

@@ -9,7 +9,7 @@ import {
   DEFAULT_SEARCH_TIMEOUT_MS,
   PARALLEL_CONCURRENCY,
 } from '../constants.js';
-import { getFileType } from '../fs-helpers.js';
+import { getFileType, safeDestroy } from '../fs-helpers.js';
 import {
   validateExistingPath,
   validateExistingPathDetailed,
@@ -223,8 +223,7 @@ export async function searchFiles(
       maxResults: effectiveMaxResults,
     });
   } finally {
-    const { destroy } = stream as { destroy?: () => void };
-    if (typeof destroy === 'function') destroy.call(stream);
+    safeDestroy(stream);
   }
 
   sortSearchResults(state.results, sortBy);

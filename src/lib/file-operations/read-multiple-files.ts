@@ -26,8 +26,10 @@ function assertHeadTailOptions(
   );
 }
 
-function assertNoSingleFileParams(options: Record<string, unknown>): void {
-  const unsupported = ['lineStart', 'lineEnd'].filter((key) => key in options);
+function assertNoSingleFileParams(options: unknown): void {
+  if (!options || typeof options !== 'object') return;
+  const opts = options as Record<string, unknown>;
+  const unsupported = ['lineStart', 'lineEnd'].filter((key) => key in opts);
   if (unsupported.length > 0) {
     throw new McpError(
       ErrorCode.E_INVALID_INPUT,
@@ -150,7 +152,7 @@ export async function readMultipleFiles(
   } = options;
 
   assertHeadTailOptions(head, tail);
-  assertNoSingleFileParams(options as Record<string, unknown>);
+  assertNoSingleFileParams(options);
 
   const output = createOutputSkeleton(filePaths);
   const isPartialRead = head !== undefined || tail !== undefined;
@@ -185,10 +187,13 @@ export async function readMultipleFiles(
     PARALLEL_CONCURRENCY
   );
 
-  const mappedErrors = errors.map((failure) => ({
-    index: filesToProcess[failure.index]?.index ?? failure.index,
-    error: failure.error,
-  }));
+  const mappedErrors = errors.map((failure) => {
+    const target = filesToProcess[failure.index];
+    return {
+      index: target?.index ?? -1,
+      error: failure.error,
+    };
+  });
 
   applyParallelResults(output, results, mappedErrors, filePaths);
   applySkippedBudgetErrors(output, skippedBudget, filePaths, maxTotalSize);

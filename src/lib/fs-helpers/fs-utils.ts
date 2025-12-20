@@ -12,3 +12,18 @@ export function getFileType(stats: Stats): FileType {
 export function isHidden(name: string): boolean {
   return name.startsWith('.');
 }
+
+export function safeDestroy(stream: unknown): void {
+  if (
+    stream &&
+    typeof stream === 'object' &&
+    'destroy' in stream &&
+    typeof (stream as { destroy: unknown }).destroy === 'function'
+  ) {
+    try {
+      (stream as { destroy: () => void }).destroy();
+    } catch {
+      // Ignore errors during destruction
+    }
+  }
+}

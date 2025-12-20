@@ -74,7 +74,9 @@ export async function isProbablyBinary(
     return slice.includes(0);
   } finally {
     if (shouldClose) {
-      await handle.close().catch(() => {});
+      await handle.close().catch((error: unknown) => {
+        console.error('Failed to close file handle:', error);
+      });
     }
   }
 }

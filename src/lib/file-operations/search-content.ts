@@ -15,7 +15,7 @@ import {
   REGEX_MATCH_TIMEOUT_MS,
 } from '../constants.js';
 import { ErrorCode, McpError } from '../errors.js';
-import { isProbablyBinary } from '../fs-helpers.js';
+import { isProbablyBinary, safeDestroy } from '../fs-helpers.js';
 import {
   validateExistingPath,
   validateExistingPathDetailed,
@@ -718,8 +718,7 @@ export async function searchContent(
       regex
     );
   } finally {
-    const { destroy } = stream as { destroy?: () => void };
-    if (typeof destroy === 'function') destroy.call(stream);
+    safeDestroy(stream);
   }
 
   return {
