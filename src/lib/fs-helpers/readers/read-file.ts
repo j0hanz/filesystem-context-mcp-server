@@ -25,7 +25,10 @@ function normalizeOptions(options: {
 }): NormalizedOptions {
   return {
     encoding: options.encoding ?? 'utf-8',
-    maxSize: options.maxSize ?? MAX_TEXT_FILE_SIZE,
+    maxSize: Math.min(
+      options.maxSize ?? MAX_TEXT_FILE_SIZE,
+      MAX_TEXT_FILE_SIZE
+    ),
     lineRange: options.lineRange,
     head: options.head,
     tail: options.tail,
