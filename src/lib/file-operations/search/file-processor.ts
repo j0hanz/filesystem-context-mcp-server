@@ -7,161 +7,161 @@ import { MAX_LINE_CONTENT_LENGTH } from '../../constants.js';
 import { isProbablyBinary } from '../../fs-helpers.js';
 import { validateExistingPathDetailed } from '../../path-validation.js';
 import { ContextManager } from './context-manager.js';
-import type { MatchStrategy } from './match-strategy.js';
+import type { Matcher } from './match-strategy.js';
 import type { ScanResult, SearchOptions } from './types.js';
 
-export class FileProcessor {
-  private readonly strategy: MatchStrategy;
-  private readonly options: SearchOptions;
+function createEmptyResult(overrides: Partial<ScanResult>): ScanResult {
+  return {
+    matches: [],
+    linesSkippedDueToRegexTimeout: 0,
+    fileHadMatches: false,
+    skippedTooLarge: false,
+    skippedBinary: false,
+    scanned: false,
+    ...overrides,
+  };
+}
 
-  constructor(strategy: MatchStrategy, options: SearchOptions) {
-    this.strategy = strategy;
-    this.options = options;
+async function resolvePath(
+  rawPath: string
+): Promise<{ openPath: string; displayPath: string } | null> {
+  try {
+    const validated = await validateExistingPathDetailed(rawPath);
+    return {
+      openPath: validated.resolvedPath,
+      displayPath: validated.requestedPath,
+    };
+  } catch {
+    return null;
   }
+}
 
-  async processFile(rawPath: string): Promise<ScanResult> {
-    const resolved = await this.resolvePath(rawPath);
-    if (!resolved) {
-      return this.createEmptyResult({ scanned: false }); // Inaccessible
-    }
+function createReadInterface(handle: fsPromises.FileHandle): {
+  rl: readline.Interface;
+  stream: ReadStream;
+} {
+  const stream = handle.createReadStream({
+    encoding: 'utf-8',
+    autoClose: false,
+  });
+  const rl = readline.createInterface({
+    input: stream,
+    crlfDelay: Infinity,
+  });
+  return { rl, stream };
+}
 
-    const handle = await fsPromises.open(resolved.openPath, 'r');
-    try {
-      return await this.scanWithHandle(
-        handle,
-        resolved.openPath,
-        resolved.displayPath
-      );
-    } finally {
-      await handle.close().catch(() => {});
-    }
+function trimLine(line: string): string {
+  return line.trimEnd().substring(0, MAX_LINE_CONTENT_LENGTH);
+}
+
+function shouldStop(
+  currentFileMatches: number,
+  options: SearchOptions
+): boolean {
+  if (options.deadlineMs && Date.now() > options.deadlineMs) {
+    return true;
   }
-
-  private async resolvePath(
-    rawPath: string
-  ): Promise<{ openPath: string; displayPath: string } | null> {
-    try {
-      const validated = await validateExistingPathDetailed(rawPath);
-      return {
-        openPath: validated.resolvedPath,
-        displayPath: validated.requestedPath,
-      };
-    } catch {
-      return null;
-    }
+  if (options.currentMatchCount + currentFileMatches >= options.maxResults) {
+    return true;
   }
+  return false;
+}
 
-  private async scanWithHandle(
-    handle: fsPromises.FileHandle,
-    openPath: string,
-    displayPath: string
-  ): Promise<ScanResult> {
-    const stats = await handle.stat();
-    if (stats.size > this.options.maxFileSize) {
-      return this.createEmptyResult({ scanned: true, skippedTooLarge: true });
-    }
+async function scanContent(
+  handle: fsPromises.FileHandle,
+  displayPath: string,
+  matcher: Matcher,
+  options: SearchOptions
+): Promise<ScanResult> {
+  const contextManager = new ContextManager(options.contextLines);
+  const matches: ContentMatch[] = [];
+  let linesSkipped = 0;
+  let lineNumber = 0;
 
-    if (this.options.skipBinary && (await isProbablyBinary(openPath, handle))) {
-      return this.createEmptyResult({ scanned: true, skippedBinary: true });
-    }
+  const { rl, stream } = createReadInterface(handle);
 
-    return await this.scanContent(handle, displayPath);
-  }
+  try {
+    for await (const line of rl) {
+      lineNumber++;
 
-  private async scanContent(
-    handle: fsPromises.FileHandle,
-    displayPath: string
-  ): Promise<ScanResult> {
-    const contextManager = new ContextManager(this.options.contextLines);
-    const matches: ContentMatch[] = [];
-    let linesSkipped = 0;
-    let lineNumber = 0;
+      if (shouldStop(matches.length, options)) break;
 
-    const { rl, stream } = this.createReadInterface(handle);
+      const trimmed = trimLine(line);
+      contextManager.pushLine(trimmed);
 
-    try {
-      for await (const line of rl) {
-        lineNumber++;
+      const matchCount = matcher(line);
 
-        if (this.shouldStop(matches.length)) break;
-
-        const trimmed = this.trimLine(line);
-        contextManager.pushLine(trimmed);
-
-        const matchCount = this.strategy.countMatches(line);
-
-        if (matchCount < 0) {
-          linesSkipped++;
-          continue;
-        }
-
-        if (matchCount > 0) {
-          matches.push(
-            contextManager.createMatch(
-              displayPath,
-              lineNumber,
-              trimmed,
-              matchCount
-            )
-          );
-        }
+      if (matchCount < 0) {
+        linesSkipped++;
+        continue;
       }
-    } finally {
-      rl.close();
-      stream.destroy();
+
+      if (matchCount > 0) {
+        matches.push(
+          contextManager.createMatch(
+            displayPath,
+            lineNumber,
+            trimmed,
+            matchCount
+          )
+        );
+      }
     }
-
-    return {
-      matches,
-      linesSkippedDueToRegexTimeout: linesSkipped,
-      fileHadMatches: matches.length > 0,
-      skippedTooLarge: false,
-      skippedBinary: false,
-      scanned: true,
-    };
+  } finally {
+    rl.close();
+    stream.destroy();
   }
 
-  private createReadInterface(handle: fsPromises.FileHandle): {
-    rl: readline.Interface;
-    stream: ReadStream;
-  } {
-    const stream = handle.createReadStream({
-      encoding: 'utf-8',
-      autoClose: false,
-    });
-    const rl = readline.createInterface({
-      input: stream,
-      crlfDelay: Infinity,
-    });
-    return { rl, stream };
+  return {
+    matches,
+    linesSkippedDueToRegexTimeout: linesSkipped,
+    fileHadMatches: matches.length > 0,
+    skippedTooLarge: false,
+    skippedBinary: false,
+    scanned: true,
+  };
+}
+
+async function scanWithHandle(
+  handle: fsPromises.FileHandle,
+  openPath: string,
+  displayPath: string,
+  matcher: Matcher,
+  options: SearchOptions
+): Promise<ScanResult> {
+  const stats = await handle.stat();
+  if (stats.size > options.maxFileSize) {
+    return createEmptyResult({ scanned: true, skippedTooLarge: true });
   }
 
-  private trimLine(line: string): string {
-    return line.trimEnd().substring(0, MAX_LINE_CONTENT_LENGTH);
+  if (options.skipBinary && (await isProbablyBinary(openPath, handle))) {
+    return createEmptyResult({ scanned: true, skippedBinary: true });
   }
 
-  private shouldStop(currentFileMatches: number): boolean {
-    if (this.options.deadlineMs && Date.now() > this.options.deadlineMs) {
-      return true;
-    }
-    if (
-      this.options.currentMatchCount + currentFileMatches >=
-      this.options.maxResults
-    ) {
-      return true;
-    }
-    return false;
+  return await scanContent(handle, displayPath, matcher, options);
+}
+
+export async function processFile(
+  rawPath: string,
+  matcher: Matcher,
+  options: SearchOptions
+): Promise<ScanResult> {
+  const resolved = await resolvePath(rawPath);
+  if (!resolved) {
+    return createEmptyResult({ scanned: false }); // Inaccessible
   }
 
-  private createEmptyResult(overrides: Partial<ScanResult>): ScanResult {
-    return {
-      matches: [],
-      linesSkippedDueToRegexTimeout: 0,
-      fileHadMatches: false,
-      skippedTooLarge: false,
-      skippedBinary: false,
-      scanned: false,
-      ...overrides,
-    };
+  const handle = await fsPromises.open(resolved.openPath, 'r');
+  try {
+    return await scanWithHandle(
+      handle,
+      resolved.openPath,
+      resolved.displayPath,
+      matcher,
+      options
+    );
+  } finally {
+    await handle.close().catch(() => {});
   }
 }

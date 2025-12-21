@@ -3,100 +3,9 @@ import safeRegex from 'safe-regex2';
 import { REGEX_MATCH_TIMEOUT_MS } from '../../constants.js';
 import { ErrorCode, McpError } from '../../errors.js';
 
-export interface MatchStrategy {
-  countMatches(line: string): number;
-  isValid(): boolean;
-}
+export type Matcher = (line: string) => number;
 
-export class LiteralMatchStrategy implements MatchStrategy {
-  private readonly needle: string;
-  private readonly haystackTransform: (s: string) => string;
-
-  constructor(pattern: string, caseSensitive: boolean) {
-    this.needle = caseSensitive ? pattern : pattern.toLowerCase();
-    this.haystackTransform = caseSensitive ? (s) => s : (s) => s.toLowerCase();
-  }
-
-  countMatches(line: string): number {
-    if (line.length === 0 || this.needle.length === 0) return 0;
-
-    const haystack = this.haystackTransform(line);
-    let count = 0;
-    let pos = 0;
-
-    while ((pos = haystack.indexOf(this.needle, pos)) !== -1) {
-      count++;
-      pos += this.needle.length;
-    }
-
-    return count;
-  }
-
-  isValid(): boolean {
-    return true;
-  }
-}
-
-export class RegexMatchStrategy implements MatchStrategy {
-  private readonly regex: RegExp;
-  private readonly timeoutMs: number;
-
-  constructor(regex: RegExp, timeoutMs: number = REGEX_MATCH_TIMEOUT_MS) {
-    this.regex = regex;
-    this.timeoutMs = timeoutMs;
-  }
-
-  countMatches(line: string): number {
-    if (line.length === 0) return 0;
-
-    this.regex.lastIndex = 0;
-    let count = 0;
-    const deadline = Date.now() + this.timeoutMs;
-    const maxIterations = Math.min(line.length * 2, 10000);
-    let iterations = 0;
-    let lastIndex = 0;
-
-    let match: RegExpExecArray | null;
-    while ((match = this.regex.exec(line)) !== null) {
-      count++;
-      iterations++;
-
-      const { lastIndex: currentIndex } = this.regex;
-      if (match[0] === '') {
-        this.regex.lastIndex++;
-      }
-      if (currentIndex === lastIndex) {
-        return -1; // Infinite loop protection
-      }
-      ({ lastIndex } = this.regex);
-
-      if (this.shouldCheckTimeout(count, iterations, deadline, maxIterations)) {
-        return -1;
-      }
-    }
-
-    return count;
-  }
-
-  isValid(): boolean {
-    return true;
-  }
-
-  private shouldCheckTimeout(
-    count: number,
-    iterations: number,
-    deadline: number,
-    maxIterations: number
-  ): boolean {
-    const shouldCheck =
-      (count > 0 && count % 10 === 0) ||
-      (iterations > 0 && iterations % 50 === 0);
-
-    return (shouldCheck && Date.now() > deadline) || iterations > maxIterations;
-  }
-}
-
-export function createMatchStrategy(
+export function createMatcher(
   pattern: string,
   options: {
     isLiteral: boolean;
@@ -104,21 +13,96 @@ export function createMatchStrategy(
     caseSensitive: boolean;
     basePath: string;
   }
-): MatchStrategy {
+): Matcher {
   const { isLiteral, wholeWord, caseSensitive, basePath } = options;
 
   if (isLiteral && !wholeWord) {
-    return new LiteralMatchStrategy(pattern, caseSensitive);
+    return createLiteralMatcher(pattern, caseSensitive);
   }
 
-  // For wholeWord or regex, we use RegexStrategy
+  // Regex matcher
   const finalPattern = preparePattern(pattern, isLiteral, wholeWord);
   const needsReDoSCheck = !isLiteral && !isSimpleSafePattern(finalPattern);
 
   ensureSafePattern(finalPattern, pattern, basePath, needsReDoSCheck);
 
   const regex = compileRegex(finalPattern, caseSensitive, basePath);
-  return new RegexMatchStrategy(regex);
+  return createRegexMatcher(regex);
+}
+
+function createLiteralMatcher(
+  pattern: string,
+  caseSensitive: boolean
+): Matcher {
+  const needle = caseSensitive ? pattern : pattern.toLowerCase();
+  const haystackTransform = caseSensitive
+    ? (s: string) => s
+    : (s: string) => s.toLowerCase();
+
+  return (line: string): number => {
+    if (line.length === 0 || needle.length === 0) return 0;
+
+    const haystack = haystackTransform(line);
+    let count = 0;
+    let pos = 0;
+
+    while ((pos = haystack.indexOf(needle, pos)) !== -1) {
+      count++;
+      pos += needle.length;
+    }
+
+    return count;
+  };
+}
+
+function createRegexMatcher(
+  regex: RegExp,
+  timeoutMs: number = REGEX_MATCH_TIMEOUT_MS
+): Matcher {
+  return (line: string): number => {
+    if (line.length === 0) return 0;
+
+    regex.lastIndex = 0;
+    let count = 0;
+    const deadline = Date.now() + timeoutMs;
+    const maxIterations = Math.min(line.length * 2, 10000);
+    let iterations = 0;
+    let lastIndex = 0;
+
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(line)) !== null) {
+      count++;
+      iterations++;
+
+      const { lastIndex: currentIndex } = regex;
+      if (match[0] === '') {
+        regex.lastIndex++;
+      }
+      if (currentIndex === lastIndex) {
+        return -1; // Infinite loop protection
+      }
+      ({ lastIndex } = regex);
+
+      if (shouldCheckTimeout(count, iterations, deadline, maxIterations)) {
+        return -1;
+      }
+    }
+
+    return count;
+  };
+}
+
+function shouldCheckTimeout(
+  count: number,
+  iterations: number,
+  deadline: number,
+  maxIterations: number
+): boolean {
+  const shouldCheck =
+    (count > 0 && count % 10 === 0) ||
+    (iterations > 0 && iterations % 50 === 0);
+
+  return (shouldCheck && Date.now() > deadline) || iterations > maxIterations;
 }
 
 function preparePattern(

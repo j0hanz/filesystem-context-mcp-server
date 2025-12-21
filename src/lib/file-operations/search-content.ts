@@ -1,5 +1,5 @@
 import type { SearchContentResult } from '../../config/types.js';
-import { SearchEngine } from './search/engine.js';
+import { executeSearch } from './search/engine.js';
 
 export async function searchContent(
   basePath: string,
@@ -21,6 +21,5 @@ export async function searchContent(
     caseSensitiveFileMatch?: boolean;
   } = {}
 ): Promise<SearchContentResult> {
-  const engine = new SearchEngine(basePath, options);
-  return engine.search(searchPattern);
+  return executeSearch(basePath, searchPattern, options);
 }
