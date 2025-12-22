@@ -4,6 +4,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
+import { ErrorCode, toRpcError } from '../lib/errors.js';
 import { getAllowedDirectories } from '../lib/path-validation.js';
 import { ListAllowedDirectoriesOutputSchema } from '../schemas/index.js';
 import { buildToolResponse, type ToolResponse } from './tool-response.js';
@@ -92,6 +93,12 @@ export function registerListAllowedDirectoriesTool(server: McpServer): void {
   server.registerTool(
     'list_allowed_directories',
     LIST_ALLOWED_DIRECTORIES_TOOL,
-    async () => await handleListAllowedDirectories()
+    async () => {
+      try {
+        return await handleListAllowedDirectories();
+      } catch (error: unknown) {
+        throw toRpcError(error, ErrorCode.E_UNKNOWN);
+      }
+    }
   );
 }
