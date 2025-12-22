@@ -52,9 +52,14 @@ function buildStructuredResult(
 }
 
 function buildTextResult(
-  result: Awaited<ReturnType<typeof getDirectoryTree>>
+  result: Awaited<ReturnType<typeof getDirectoryTree>>,
+  includeSize: boolean | undefined
 ): string {
   let textOutput = formatTreeEntry(result.tree);
+  if (includeSize === false) {
+    textOutput +=
+      '\n(Size omitted. Set includeSize=true to include file sizes in the tree.)';
+  }
   textOutput += formatOperationSummary({
     truncated: result.summary.truncated,
     truncatedReason: 'tree was truncated',
@@ -88,7 +93,7 @@ async function handleDirectoryTree({
     maxFiles,
   });
   const structured = buildStructuredResult(result);
-  const textOutput = buildTextResult(result);
+  const textOutput = buildTextResult(result, includeSize);
   return buildToolResponse(textOutput, structured);
 }
 

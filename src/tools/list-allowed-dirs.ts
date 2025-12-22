@@ -15,17 +15,31 @@ interface DirectoryAccess {
   readable: boolean;
 }
 
-function formatAllowedDirectories(dirs: string[]): string {
+function formatAllowedDirectories(
+  dirs: string[],
+  accessStatus: DirectoryAccess[]
+): string {
   if (dirs.length === 0) {
     return 'No directories are currently allowed.';
   }
 
   const lines = ['Allowed Directories:', ''];
   for (const dir of dirs) {
-    lines.push(`  - ${dir}`);
+    const access = accessStatus.find((a) => a.path === dir);
+    const tag = buildAccessTag(access);
+    lines.push(tag ? `  - ${dir} ${tag}` : `  - ${dir}`);
   }
 
   return lines.join('\n');
+}
+
+function buildAccessTag(
+  access: DirectoryAccess | undefined
+): string | undefined {
+  if (!access) return undefined;
+  if (!access.accessible) return '[inaccessible]';
+  if (!access.readable) return '[no read access]';
+  return '[readable]';
 }
 
 async function checkDirectoryAccess(dirPath: string): Promise<DirectoryAccess> {
@@ -72,7 +86,10 @@ async function handleListAllowedDirectories(): Promise<
     hint,
   };
 
-  return buildToolResponse(formatAllowedDirectories(dirs), structured);
+  return buildToolResponse(
+    formatAllowedDirectories(dirs, accessStatus),
+    structured
+  );
 }
 
 const LIST_ALLOWED_DIRECTORIES_TOOL = {

@@ -82,6 +82,10 @@ function buildTextResult(
 ): string {
   const { truncatedReason, tip } = buildTruncationInfo(result);
   let textOutput = formatSearchResults(result.results);
+  if (result.results.length === 0) {
+    textOutput +=
+      '\n(Try a broader pattern, remove excludePatterns, or set includeHidden=true if searching dotfiles.)';
+  }
   textOutput += formatOperationSummary({
     truncated: result.summary.truncated,
     truncatedReason,

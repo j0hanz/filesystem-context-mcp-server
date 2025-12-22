@@ -20,6 +20,19 @@ function buildLineRange(
   return undefined;
 }
 
+function assertNoMixedRangeOptions(
+  hasHeadTail: boolean,
+  hasLineRange: boolean,
+  filePath: string
+): void {
+  if (!hasHeadTail || !hasLineRange) return;
+  throw new McpError(
+    ErrorCode.E_INVALID_INPUT,
+    'head/tail cannot be combined with lineStart/lineEnd',
+    filePath
+  );
+}
+
 function assertLineRangeComplete(
   hasLineStart: boolean,
   hasLineEnd: boolean,
@@ -86,6 +99,11 @@ async function handleReadFile(args: {
   head?: number;
   tail?: number;
 }): Promise<ToolResponse<ReadFileStructuredResult>> {
+  assertNoMixedRangeOptions(
+    args.head !== undefined || args.tail !== undefined,
+    args.lineStart !== undefined || args.lineEnd !== undefined,
+    args.path
+  );
   const lineRange = buildLineRange(args.lineStart, args.lineEnd, args.path);
   const result = await readFile(args.path, {
     encoding: args.encoding,

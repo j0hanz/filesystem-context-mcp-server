@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
-import { ErrorCode, toRpcError } from '../lib/errors.js';
+import { ErrorCode, McpError, toRpcError } from '../lib/errors.js';
 import { readMultipleFiles } from '../lib/file-operations.js';
 import {
   ReadMultipleFilesInputSchema,
@@ -60,6 +60,19 @@ function buildReadMultipleNote(
   return '\n[Truncated]';
 }
 
+function assertNoMixedRangeOptions(
+  hasHeadTail: boolean,
+  hasLineRange: boolean,
+  pathLabel: string
+): void {
+  if (!hasHeadTail || !hasLineRange) return;
+  throw new McpError(
+    ErrorCode.E_INVALID_INPUT,
+    'head/tail cannot be combined with lineStart/lineEnd',
+    pathLabel
+  );
+}
+
 async function handleReadMultipleFiles(args: {
   paths: string[];
   encoding?: BufferEncoding;
@@ -70,6 +83,11 @@ async function handleReadMultipleFiles(args: {
   lineStart?: number;
   lineEnd?: number;
 }): Promise<ToolResponse<ReadMultipleStructuredResult>> {
+  assertNoMixedRangeOptions(
+    args.head !== undefined || args.tail !== undefined,
+    args.lineStart !== undefined || args.lineEnd !== undefined,
+    args.paths[0] ?? '<paths>'
+  );
   const results = await readMultipleFiles(args.paths, {
     encoding: args.encoding,
     maxSize: args.maxSize,

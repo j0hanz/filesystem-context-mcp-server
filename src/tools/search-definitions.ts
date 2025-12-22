@@ -31,7 +31,12 @@ function formatTextResult(result: SearchDefinitionsResult): string {
     ]
       .filter(Boolean)
       .join(' and ');
-    return `No definitions found matching ${criteria}`;
+    const scopeNote = `Scanned ${summary.filesScanned} file(s), matched ${summary.filesMatched}.`;
+    const hint =
+      !searchName && !searchType
+        ? 'Provide name or type to narrow the search.'
+        : 'Try adjusting name/type or excludePatterns to refine results.';
+    return `No definitions found matching ${criteria || 'current criteria'}\n${scopeNote}\n${hint}`;
   }
 
   const lines: string[] = [];
@@ -76,6 +81,10 @@ function formatTextResult(result: SearchDefinitionsResult): string {
   if (summary.truncated) {
     lines.push(`(Results truncated - scanned ${summary.filesScanned} files)`);
   }
+
+  lines.push(
+    `Scanned ${summary.filesScanned} file(s), matched ${summary.filesMatched}.`
+  );
 
   return lines.join('\n');
 }

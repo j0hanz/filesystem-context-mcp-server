@@ -44,10 +44,12 @@ function formatDirectoryAnalysis(
     .map(([ext, count]) => `  ${ext}: ${count}`);
 
   const largest = analysis.largestFiles.map(
-    (file) => `  ${formatBytes(file.size)} - ${file.path}`
+    (file) =>
+      `  ${formatBytes(file.size)} - ${pathModule.relative(analysis.path, file.path)}`
   );
   const recent = analysis.recentlyModified.map(
-    (file) => `  ${formatDate(file.modified)} - ${file.path}`
+    (file) =>
+      `  ${formatDate(file.modified)} - ${pathModule.relative(analysis.path, file.path)}`
   );
 
   const lines = [

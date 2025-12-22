@@ -119,6 +119,10 @@ function buildTextResult(
   result: Awaited<ReturnType<typeof listDirectory>>
 ): string {
   let textOutput = formatDirectoryListing(result.entries, result.path);
+  if (result.entries.length === 0 && result.summary.totalEntries > 0) {
+    textOutput +=
+      '\n(No entries matched the provided pattern/filters, but the directory contains items.)';
+  }
   textOutput += formatOperationSummary({
     truncated: result.summary.truncated,
     truncatedReason: `reached max entries limit (${result.summary.totalEntries} returned)`,

@@ -53,7 +53,10 @@ function formatFileMatches(
   file: string,
   matches: SearchContentResult['matches']
 ): string[] {
-  const lines: string[] = [`${file}:`];
+  const matchCount = matches.reduce((sum, m) => sum + m.matchCount, 0);
+  const lines: string[] = [
+    `${file} (${matchCount} match${matchCount === 1 ? '' : 'es'}):`,
+  ];
   for (const match of matches) {
     lines.push(...formatMatchBlock(match));
   }
