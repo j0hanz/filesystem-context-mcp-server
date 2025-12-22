@@ -41,48 +41,68 @@ function validateCliPath(inputPath: string): void {
     throw new Error('Path contains null bytes');
   }
 
-  if (process.platform === 'win32') {
-    const basename = path.basename(inputPath).split('.')[0]?.toUpperCase();
-    if (basename && RESERVED_DEVICE_NAMES.has(basename)) {
-      throw new Error(`Reserved device name not allowed: ${basename}`);
-    }
+  const reserved = getReservedCliDeviceName(inputPath);
+  if (reserved) {
+    throw new Error(`Reserved device name not allowed: ${reserved}`);
   }
 }
 
-export async function parseArgs(): Promise<ParseArgsResult> {
-  const args = process.argv.slice(2);
+function getReservedCliDeviceName(inputPath: string): string | undefined {
+  if (process.platform !== 'win32') return undefined;
+  const basename = path.basename(inputPath).split('.')[0]?.toUpperCase();
+  if (!basename) return undefined;
+  return RESERVED_DEVICE_NAMES.has(basename) ? basename : undefined;
+}
 
+function extractAllowCwd(args: string[]): {
+  allowCwd: boolean;
+  rest: string[];
+} {
   const allowCwdIndex = args.indexOf('--allow-cwd');
-  const allowCwd = allowCwdIndex !== -1;
-  if (allowCwd) {
-    args.splice(allowCwdIndex, 1);
+  if (allowCwdIndex === -1) {
+    return { allowCwd: false, rest: args };
   }
 
-  if (args.length === 0) {
-    return { allowedDirs: [], allowCwd };
-  }
+  const rest = [...args];
+  rest.splice(allowCwdIndex, 1);
+  return { allowCwd: true, rest };
+}
 
+async function validateDirectoryPath(inputPath: string): Promise<string> {
+  validateCliPath(inputPath);
+  const normalized = normalizePath(inputPath);
+
+  try {
+    const stats = await fs.stat(normalized);
+    if (!stats.isDirectory()) {
+      throw new Error(`Error: '${inputPath}' is not a directory`);
+    }
+    return normalized;
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Error:')) {
+      throw error;
+    }
+    throw new Error(`Error: Cannot access directory '${inputPath}'`);
+  }
+}
+
+async function normalizeCliDirectories(args: string[]): Promise<string[]> {
   const validatedDirs: string[] = [];
 
   for (const dir of args) {
-    validateCliPath(dir);
-    const normalized = normalizePath(dir);
-
-    try {
-      const stats = await fs.stat(normalized);
-      if (!stats.isDirectory()) {
-        throw new Error(`Error: '${dir}' is not a directory`);
-      }
-      validatedDirs.push(normalized);
-    } catch (error) {
-      if (error instanceof Error && error.message.startsWith('Error:')) {
-        throw error;
-      }
-      throw new Error(`Error: Cannot access directory '${dir}'`);
-    }
+    validatedDirs.push(await validateDirectoryPath(dir));
   }
 
-  return { allowedDirs: validatedDirs, allowCwd };
+  return validatedDirs;
+}
+
+export async function parseArgs(): Promise<ParseArgsResult> {
+  const argv = process.argv.slice(2);
+  const { allowCwd, rest } = extractAllowCwd(argv);
+  const allowedDirs =
+    rest.length > 0 ? await normalizeCliDirectories(rest) : [];
+
+  return { allowedDirs, allowCwd };
 }
 
 let serverOptions: ServerOptions = {};

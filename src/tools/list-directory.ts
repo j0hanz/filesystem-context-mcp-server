@@ -10,6 +10,7 @@ import {
   ListDirectoryInputSchema,
   ListDirectoryOutputSchema,
 } from '../schemas/index.js';
+import { formatBytes, formatOperationSummary } from './shared/formatting.js';
 import { buildToolResponse, type ToolResponse } from './tool-response.js';
 
 function getExtension(name: string, isFile: boolean): string | undefined {
@@ -20,16 +21,6 @@ function getExtension(name: string, isFile: boolean): string | undefined {
 
 type ListDirectoryArgs = z.infer<z.ZodObject<typeof ListDirectoryInputSchema>>;
 type ListDirectoryStructuredResult = z.infer<typeof ListDirectoryOutputSchema>;
-
-const BYTE_UNIT_LABELS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const unitIndex = Math.floor(Math.log(bytes) / Math.log(1024));
-  const unit = BYTE_UNIT_LABELS[unitIndex] ?? 'B';
-  const value = bytes / Math.pow(1024, unitIndex);
-  return `${parseFloat(value.toFixed(2))} ${unit}`;
-}
 
 function formatDirectoryListing(
   entries: Awaited<ReturnType<typeof listDirectory>>['entries'],
@@ -42,30 +33,8 @@ function formatDirectoryListing(
   const lines = [
     `Contents of ${basePath}:`,
     '',
-    ...(dirs.length
-      ? [
-          'Directories:',
-          ...dirs.map((dir) => {
-            const symlink = dir.symlinkTarget ? ` -> ${dir.symlinkTarget}` : '';
-            return `  [DIR]  ${dir.relativePath}${symlink}`;
-          }),
-          '',
-        ]
-      : []),
-    ...(files.length
-      ? [
-          'Files:',
-          ...files.map((file) => {
-            const size =
-              file.size !== undefined ? ` (${formatBytes(file.size)})` : '';
-            const tag = file.type === 'symlink' ? '[LINK]' : '[FILE]';
-            const symlink = file.symlinkTarget
-              ? ` -> ${file.symlinkTarget}`
-              : '';
-            return `  ${tag} ${file.relativePath}${size}${symlink}`;
-          }),
-        ]
-      : []),
+    ...formatDirectoryLines(dirs),
+    ...formatFileLines(files),
     '',
     `Total: ${dirs.length} directories, ${files.length} files`,
   ];
@@ -73,41 +42,34 @@ function formatDirectoryListing(
   return lines.join('\n');
 }
 
-function formatOperationSummary(summary: {
-  truncated?: boolean;
-  truncatedReason?: string;
-  tip?: string;
-  skippedInaccessible?: number;
-  symlinksNotFollowed?: number;
-  skippedTooLarge?: number;
-  skippedBinary?: number;
-  linesSkippedDueToRegexTimeout?: number;
-}): string {
-  const lines: string[] = [];
+function formatDirectoryLines(
+  dirs: Awaited<ReturnType<typeof listDirectory>>['entries']
+): string[] {
+  if (dirs.length === 0) return [];
+  return [
+    'Directories:',
+    ...dirs.map((dir) => {
+      const symlink = dir.symlinkTarget ? ` -> ${dir.symlinkTarget}` : '';
+      return `  [DIR]  ${dir.relativePath}${symlink}`;
+    }),
+    '',
+  ];
+}
 
-  if (summary.truncated) {
-    lines.push(
-      `\n\n!! PARTIAL RESULTS: ${summary.truncatedReason ?? 'results truncated'}`
-    );
-    if (summary.tip) {
-      lines.push(`Tip: ${summary.tip}`);
-    }
-  }
-
-  const note = (count: number | undefined, msg: string): void => {
-    if (count && count > 0) lines.push(`Note: ${count} ${msg}`);
-  };
-
-  note(summary.skippedTooLarge, 'file(s) skipped (too large).');
-  note(summary.skippedBinary, 'file(s) skipped (binary).');
-  note(summary.skippedInaccessible, 'item(s) were inaccessible and skipped.');
-  note(summary.symlinksNotFollowed, 'symlink(s) were not followed (security).');
-  note(
-    summary.linesSkippedDueToRegexTimeout,
-    'line(s) skipped (regex timeout).'
-  );
-
-  return lines.join('\n');
+function formatFileLines(
+  files: Awaited<ReturnType<typeof listDirectory>>['entries']
+): string[] {
+  if (files.length === 0) return [];
+  return [
+    'Files:',
+    ...files.map((file) => {
+      const size =
+        file.size !== undefined ? ` (${formatBytes(file.size)})` : '';
+      const tag = file.type === 'symlink' ? '[LINK]' : '[FILE]';
+      const symlink = file.symlinkTarget ? ` -> ${file.symlinkTarget}` : '';
+      return `  ${tag} ${file.relativePath}${size}${symlink}`;
+    }),
+  ];
 }
 
 const LIST_DIRECTORY_TOOL = {

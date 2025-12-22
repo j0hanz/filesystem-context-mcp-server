@@ -10,6 +10,11 @@ import {
   AnalyzeDirectoryInputSchema,
   AnalyzeDirectoryOutputSchema,
 } from '../schemas/index.js';
+import {
+  formatBytes,
+  formatDate,
+  formatOperationSummary,
+} from './shared/formatting.js';
 import { buildToolResponse, type ToolResponse } from './tool-response.js';
 
 type AnalyzeDirectoryArgs = z.infer<
@@ -18,20 +23,6 @@ type AnalyzeDirectoryArgs = z.infer<
 type AnalyzeDirectoryStructuredResult = z.infer<
   typeof AnalyzeDirectoryOutputSchema
 >;
-
-const BYTE_UNIT_LABELS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const unitIndex = Math.floor(Math.log(bytes) / Math.log(1024));
-  const unit = BYTE_UNIT_LABELS[unitIndex] ?? 'B';
-  const value = bytes / Math.pow(1024, unitIndex);
-  return `${parseFloat(value.toFixed(2))} ${unit}`;
-}
-
-function formatDate(date: Date): string {
-  return date.toISOString();
-}
 
 function formatDirectoryAnalysis(
   analysis: Awaited<ReturnType<typeof analyzeDirectory>>['analysis']
@@ -66,37 +57,6 @@ function formatDirectoryAnalysis(
     ...(recent.length ? ['Recently Modified:', ...recent] : []),
   ];
 
-  return lines.join('\n');
-}
-
-function formatOperationSummary(summary: {
-  truncated?: boolean;
-  truncatedReason?: string;
-  tip?: string;
-  skippedInaccessible?: number;
-  symlinksNotFollowed?: number;
-  skippedTooLarge?: number;
-  skippedBinary?: number;
-  linesSkippedDueToRegexTimeout?: number;
-}): string {
-  const lines: string[] = [];
-  if (summary.truncated) {
-    lines.push(
-      `\n\n!! PARTIAL RESULTS: ${summary.truncatedReason ?? 'results truncated'}`
-    );
-    if (summary.tip) lines.push(`Tip: ${summary.tip}`);
-  }
-  const note = (count: number | undefined, msg: string): void => {
-    if (count && count > 0) lines.push(`Note: ${count} ${msg}`);
-  };
-  note(summary.skippedTooLarge, 'file(s) skipped (too large).');
-  note(summary.skippedBinary, 'file(s) skipped (binary).');
-  note(summary.skippedInaccessible, 'item(s) were inaccessible and skipped.');
-  note(summary.symlinksNotFollowed, 'symlink(s) were not followed (security).');
-  note(
-    summary.linesSkippedDueToRegexTimeout,
-    'line(s) skipped (regex timeout).'
-  );
   return lines.join('\n');
 }
 

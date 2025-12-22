@@ -14,16 +14,18 @@ export function isHidden(name: string): boolean {
 }
 
 export function safeDestroy(stream: unknown): void {
-  if (
-    stream &&
-    typeof stream === 'object' &&
-    'destroy' in stream &&
-    typeof (stream as { destroy: unknown }).destroy === 'function'
-  ) {
-    try {
-      (stream as { destroy: () => void }).destroy();
-    } catch {
-      // Ignore errors during destruction
-    }
+  const destroy = getDestroyFn(stream);
+  if (!destroy) return;
+  try {
+    destroy();
+  } catch {
+    // Ignore errors during destruction
   }
+}
+
+function getDestroyFn(stream: unknown): (() => void) | undefined {
+  if (!stream || typeof stream !== 'object') return undefined;
+  const candidate = stream as { destroy?: () => void };
+  if (typeof candidate.destroy !== 'function') return undefined;
+  return candidate.destroy.bind(stream);
 }

@@ -172,22 +172,37 @@ async function buildDirectoryItemResult(
   const relativePath = path.relative(basePath, fullPath) || item.name;
 
   try {
-    if (item.isSymbolicLink()) {
-      return await buildSymlinkResult(
-        item,
-        fullPath,
-        relativePath,
-        options.includeSymlinkTargets
-      );
-    }
-
-    return await buildRegularResult(item, fullPath, relativePath, {
+    return await buildDirectoryItemResultCore(item, fullPath, relativePath, {
       ...options,
       basePath,
     });
   } catch {
     return buildFallbackEntry(item, fullPath, relativePath);
   }
+}
+
+async function buildDirectoryItemResultCore(
+  item: Dirent,
+  fullPath: string,
+  relativePath: string,
+  options: {
+    includeSymlinkTargets: boolean;
+    recursive: boolean;
+    depth: number;
+    maxDepth: number;
+    basePath: string;
+  }
+): Promise<DirectoryItemResult> {
+  if (item.isSymbolicLink()) {
+    return await buildSymlinkResult(
+      item,
+      fullPath,
+      relativePath,
+      options.includeSymlinkTargets
+    );
+  }
+
+  return await buildRegularResult(item, fullPath, relativePath, options);
 }
 
 export function createStopChecker(
@@ -223,9 +238,31 @@ function applyDirectoryItemResult(
   const { entry, enqueueDir, skippedInaccessible, symlinkNotFollowed } = result;
 
   state.entries.push(entry);
+  applyEntryCounts(entry, state);
+  enqueueDirectory(enqueueDir, enqueue);
+  applyResultFlags(state, skippedInaccessible, symlinkNotFollowed);
+}
+
+function applyEntryCounts(
+  entry: DirectoryEntry,
+  state: ListDirectoryState
+): void {
   if (entry.type === 'directory') state.totalDirectories++;
   if (entry.type === 'file') state.totalFiles++;
+}
+
+function enqueueDirectory(
+  enqueueDir: { currentPath: string; depth: number } | undefined,
+  enqueue: (entry: { currentPath: string; depth: number }) => void
+): void {
   if (enqueueDir) enqueue(enqueueDir);
+}
+
+function applyResultFlags(
+  state: ListDirectoryState,
+  skippedInaccessible: boolean | undefined,
+  symlinkNotFollowed: boolean | undefined
+): void {
   if (skippedInaccessible) state.skippedInaccessible++;
   if (symlinkNotFollowed) state.symlinksNotFollowed++;
 }

@@ -13,6 +13,22 @@ interface ReadMultipleResult {
   error?: string;
 }
 
+interface NormalizedReadMultipleOptions {
+  encoding: BufferEncoding;
+  maxSize: number;
+  maxTotalSize: number;
+  head?: number;
+  tail?: number;
+}
+
+interface ReadMultipleOptions {
+  encoding?: BufferEncoding;
+  maxSize?: number;
+  maxTotalSize?: number;
+  head?: number;
+  tail?: number;
+}
+
 function assertHeadTailOptions(
   head: number | undefined,
   tail: number | undefined
@@ -30,13 +46,32 @@ function createOutputSkeleton(filePaths: string[]): ReadMultipleResult[] {
   return filePaths.map((filePath) => ({ path: filePath }));
 }
 
+function normalizeReadMultipleOptions(
+  options: ReadMultipleOptions = {}
+): NormalizedReadMultipleOptions {
+  return {
+    encoding: options.encoding ?? 'utf-8',
+    maxSize: options.maxSize ?? MAX_TEXT_FILE_SIZE,
+    maxTotalSize: options.maxTotalSize ?? 100 * 1024 * 1024,
+    head: options.head,
+    tail: options.tail,
+  };
+}
+
+function isPartialRead(options: NormalizedReadMultipleOptions): boolean {
+  return options.head !== undefined || options.tail !== undefined;
+}
+
 async function collectFileBudget(
   filePaths: string[],
   isPartialRead: boolean,
-  maxTotalSize: number,
-  maxSize: number
+  maxTotalSize: number
 ): Promise<{ skippedBudget: Set<string> }> {
   const skippedBudget = new Set<string>();
+
+  if (isPartialRead) {
+    return { skippedBudget };
+  }
 
   // Gather file sizes
   const { results } = await processInParallel(
@@ -54,9 +89,7 @@ async function collectFileBudget(
   const orderedResults = [...results].sort((a, b) => a.index - b.index);
 
   for (const result of orderedResults) {
-    const estimatedSize = isPartialRead
-      ? Math.min(result.size, maxSize)
-      : result.size;
+    const estimatedSize = result.size;
     if (totalSize + estimatedSize > maxTotalSize) {
       skippedBudget.add(result.filePath);
       continue;
@@ -112,47 +145,34 @@ function applySkippedBudgetErrors(
   }
 }
 
-export async function readMultipleFiles(
-  filePaths: string[],
-  options: {
-    encoding?: BufferEncoding;
-    maxSize?: number;
-    maxTotalSize?: number;
-    head?: number;
-    tail?: number;
-  } = {}
-): Promise<ReadMultipleResult[]> {
-  if (filePaths.length === 0) return [];
+function mapParallelErrors(
+  errors: { index: number; error: Error }[],
+  filesToProcess: { filePath: string; index: number }[]
+): { index: number; error: Error }[] {
+  return errors.map((failure) => {
+    const target = filesToProcess[failure.index];
+    return {
+      index: target?.index ?? -1,
+      error: failure.error,
+    };
+  });
+}
 
-  const {
-    encoding = 'utf-8',
-    maxSize = MAX_TEXT_FILE_SIZE,
-    maxTotalSize = 100 * 1024 * 1024,
-    head,
-    tail,
-  } = options;
-
-  assertHeadTailOptions(head, tail);
-
-  const output = createOutputSkeleton(filePaths);
-  const isPartialRead = head !== undefined || tail !== undefined;
-  const { skippedBudget } = await collectFileBudget(
-    filePaths,
-    isPartialRead,
-    maxTotalSize,
-    maxSize
-  );
-
-  const filesToProcess = buildProcessTargets(filePaths, skippedBudget);
-
-  const { results, errors } = await processInParallel(
+async function readFilesInParallel(
+  filesToProcess: { filePath: string; index: number }[],
+  options: NormalizedReadMultipleOptions
+): Promise<{
+  results: { index: number; value: ReadMultipleResult }[];
+  errors: { index: number; error: Error }[];
+}> {
+  return await processInParallel(
     filesToProcess,
     async ({ filePath, index }) => {
       const result = await readFile(filePath, {
-        encoding,
-        maxSize,
-        head,
-        tail,
+        encoding: options.encoding,
+        maxSize: options.maxSize,
+        head: options.head,
+        tail: options.tail,
       });
 
       return {
@@ -167,17 +187,40 @@ export async function readMultipleFiles(
     },
     PARALLEL_CONCURRENCY
   );
+}
 
-  const mappedErrors = errors.map((failure) => {
-    const target = filesToProcess[failure.index];
-    return {
-      index: target?.index ?? -1,
-      error: failure.error,
-    };
-  });
+export async function readMultipleFiles(
+  filePaths: string[],
+  options: ReadMultipleOptions = {}
+): Promise<ReadMultipleResult[]> {
+  if (filePaths.length === 0) return [];
+
+  const normalized = normalizeReadMultipleOptions(options);
+  assertHeadTailOptions(normalized.head, normalized.tail);
+
+  const output = createOutputSkeleton(filePaths);
+  const partialRead = isPartialRead(normalized);
+  const { skippedBudget } = await collectFileBudget(
+    filePaths,
+    partialRead,
+    normalized.maxTotalSize
+  );
+
+  const filesToProcess = buildProcessTargets(filePaths, skippedBudget);
+
+  const { results, errors } = await readFilesInParallel(
+    filesToProcess,
+    normalized
+  );
+  const mappedErrors = mapParallelErrors(errors, filesToProcess);
 
   applyParallelResults(output, results, mappedErrors, filePaths);
-  applySkippedBudgetErrors(output, skippedBudget, filePaths, maxTotalSize);
+  applySkippedBudgetErrors(
+    output,
+    skippedBudget,
+    filePaths,
+    normalized.maxTotalSize
+  );
 
   return output;
 }

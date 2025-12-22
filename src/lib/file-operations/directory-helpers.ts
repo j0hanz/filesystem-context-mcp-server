@@ -76,6 +76,30 @@ async function readDirectoryEntries(
   }
 }
 
+function buildIterationEntry(
+  currentPath: string,
+  basePath: string,
+  item: Dirent
+): DirectoryIterationEntry {
+  const fullPath = path.join(currentPath, item.name);
+  const relativePath = path.relative(basePath, fullPath);
+  return {
+    item,
+    name: item.name,
+    fullPath,
+    relativePath,
+  };
+}
+
+function shouldSkipEntry(
+  entry: DirectoryIterationEntry,
+  options: DirectoryIterationOptions
+): boolean {
+  if (!options.includeHidden && isHidden(entry.name)) return true;
+  if (options.shouldExclude(entry.name, entry.relativePath)) return true;
+  return false;
+}
+
 export async function forEachDirectoryEntry(
   currentPath: string,
   basePath: string,
@@ -84,16 +108,22 @@ export async function forEachDirectoryEntry(
 ): Promise<void> {
   const items = await readDirectoryEntries(currentPath, options.onInaccessible);
   if (!items) return;
+  await iterateDirectoryEntries(items, currentPath, basePath, options, handler);
+}
+
+async function iterateDirectoryEntries(
+  items: Dirent[],
+  currentPath: string,
+  basePath: string,
+  options: DirectoryIterationOptions,
+  handler: (entry: DirectoryIterationEntry) => Promise<void>
+): Promise<void> {
+  const shouldStop = options.shouldStop ?? (() => false);
 
   for (const item of items) {
-    if (options.shouldStop?.()) break;
-    const { name } = item;
-    if (!options.includeHidden && isHidden(name)) continue;
-
-    const fullPath = path.join(currentPath, name);
-    const relativePath = path.relative(basePath, fullPath);
-    if (options.shouldExclude(name, relativePath)) continue;
-
-    await handler({ item, name, fullPath, relativePath });
+    if (shouldStop()) break;
+    const entry = buildIterationEntry(currentPath, basePath, item);
+    if (shouldSkipEntry(entry, options)) continue;
+    await handler(entry);
   }
 }

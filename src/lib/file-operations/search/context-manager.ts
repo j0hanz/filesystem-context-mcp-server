@@ -46,15 +46,20 @@ export class ContextManager {
   }
 
   private updatePendingMatches(line: string): void {
-    for (const pending of this.pendingMatches) {
-      if (pending.afterNeeded > 0) {
-        pending.match.contextAfter ??= [];
-        pending.match.contextAfter.push(line);
-        pending.afterNeeded--;
-      }
-    }
+    this.appendPendingContext(line);
+    this.pruneCompletedMatches();
+  }
 
-    // Remove completed pending matches
+  private appendPendingContext(line: string): void {
+    for (const pending of this.pendingMatches) {
+      if (pending.afterNeeded <= 0) continue;
+      pending.match.contextAfter ??= [];
+      pending.match.contextAfter.push(line);
+      pending.afterNeeded--;
+    }
+  }
+
+  private pruneCompletedMatches(): void {
     while (
       this.pendingMatches.length > 0 &&
       this.pendingMatches[0]?.afterNeeded === 0

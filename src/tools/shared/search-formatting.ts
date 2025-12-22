@@ -4,82 +4,72 @@ import type { z } from 'zod';
 
 import type { SearchContentResult } from '../../config/types.js';
 import type { SearchContentOutputSchema } from '../../schemas/index.js';
+import { formatOperationSummary } from './formatting.js';
 
 type SearchContentStructuredResult = z.infer<typeof SearchContentOutputSchema>;
 
 const LINE_NUMBER_PAD_WIDTH = 4;
 
-function formatContentMatches(matches: SearchContentResult['matches']): string {
-  if (matches.length === 0) return 'No matches found';
-
-  const byFile = new Map<string, typeof matches>();
+function groupMatchesByFile(
+  matches: SearchContentResult['matches']
+): Map<string, SearchContentResult['matches']> {
+  const byFile = new Map<string, SearchContentResult['matches']>();
   for (const match of matches) {
     const list = byFile.get(match.file) ?? [];
     list.push(match);
     byFile.set(match.file, list);
   }
-
-  const formatContext = (
-    context: string[] | undefined,
-    startLine: number
-  ): string[] =>
-    (context ?? []).map(
-      (line, idx) =>
-        `    ${String(startLine + idx).padStart(LINE_NUMBER_PAD_WIDTH)}: ${line}`
-    );
-
-  const lines: string[] = [`Found ${matches.length} matches:`, ''];
-  for (const [file, fileMatches] of byFile) {
-    lines.push(`${file}:`);
-    for (const match of fileMatches) {
-      const before = formatContext(
-        match.contextBefore,
-        match.line - (match.contextBefore?.length ?? 0)
-      );
-      const after = formatContext(match.contextAfter, match.line + 1);
-      lines.push(...before);
-      lines.push(
-        `  > ${String(match.line).padStart(LINE_NUMBER_PAD_WIDTH)}: ${
-          match.content
-        }`
-      );
-      lines.push(...after);
-      if (before.length || after.length) lines.push('    ---');
-    }
-    lines.push('');
-  }
-
-  return lines.join('\n');
+  return byFile;
 }
 
-function formatOperationSummary(summary: {
-  truncated?: boolean;
-  truncatedReason?: string;
-  tip?: string;
-  skippedInaccessible?: number;
-  symlinksNotFollowed?: number;
-  skippedTooLarge?: number;
-  skippedBinary?: number;
-  linesSkippedDueToRegexTimeout?: number;
-}): string {
-  const lines: string[] = [];
-  if (summary.truncated) {
-    lines.push(
-      `\n\n!! PARTIAL RESULTS: ${summary.truncatedReason ?? 'results truncated'}`
-    );
-    if (summary.tip) lines.push(`Tip: ${summary.tip}`);
-  }
-  const note = (count: number | undefined, msg: string): void => {
-    if (count && count > 0) lines.push(`Note: ${count} ${msg}`);
-  };
-  note(summary.skippedTooLarge, 'file(s) skipped (too large).');
-  note(summary.skippedBinary, 'file(s) skipped (binary).');
-  note(summary.skippedInaccessible, 'item(s) were inaccessible and skipped.');
-  note(summary.symlinksNotFollowed, 'symlink(s) were not followed (security).');
-  note(
-    summary.linesSkippedDueToRegexTimeout,
-    'line(s) skipped (regex timeout).'
+function formatContextLines(
+  context: string[] | undefined,
+  startLine: number
+): string[] {
+  return (context ?? []).map(
+    (line, idx) =>
+      `    ${String(startLine + idx).padStart(LINE_NUMBER_PAD_WIDTH)}: ${line}`
   );
+}
+
+function formatMatchBlock(
+  match: SearchContentResult['matches'][number]
+): string[] {
+  const before = formatContextLines(
+    match.contextBefore,
+    match.line - (match.contextBefore?.length ?? 0)
+  );
+  const after = formatContextLines(match.contextAfter, match.line + 1);
+  const lines = [
+    ...before,
+    `  > ${String(match.line).padStart(LINE_NUMBER_PAD_WIDTH)}: ${match.content}`,
+    ...after,
+  ];
+  if (before.length || after.length) lines.push('    ---');
+  return lines;
+}
+
+function formatFileMatches(
+  file: string,
+  matches: SearchContentResult['matches']
+): string[] {
+  const lines: string[] = [`${file}:`];
+  for (const match of matches) {
+    lines.push(...formatMatchBlock(match));
+  }
+  lines.push('');
+  return lines;
+}
+
+function formatContentMatches(matches: SearchContentResult['matches']): string {
+  if (matches.length === 0) return 'No matches found';
+
+  const byFile = groupMatchesByFile(matches);
+  const lines: string[] = [`Found ${matches.length} matches:`, ''];
+  for (const [file, fileMatches] of byFile) {
+    lines.push(...formatFileMatches(file, fileMatches));
+  }
+
   return lines.join('\n');
 }
 

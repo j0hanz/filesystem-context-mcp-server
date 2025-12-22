@@ -17,57 +17,37 @@ import { buildToolResponse, type ToolResponse } from './tool-response.js';
 type SearchContentArgs = z.infer<z.ZodObject<typeof SearchContentInputSchema>>;
 type SearchContentStructuredResult = z.infer<typeof SearchContentOutputSchema>;
 
-async function handleSearchContent({
-  path: searchBasePath,
-  pattern,
-  filePattern,
-  excludePatterns,
-  caseSensitive,
-  maxResults,
-  maxFileSize,
-  maxFilesScanned,
-  timeoutMs,
-  skipBinary,
-  includeHidden,
-  contextLines,
-  wholeWord,
-  isLiteral,
-  baseNameMatch,
-  caseSensitiveFileMatch,
-}: {
-  path: string;
-  pattern: string;
-  filePattern?: string;
-  excludePatterns?: string[];
-  caseSensitive?: boolean;
-  maxResults?: number;
-  maxFileSize?: number;
-  maxFilesScanned?: number;
-  timeoutMs?: number;
-  skipBinary?: boolean;
-  includeHidden?: boolean;
-  contextLines?: number;
-  wholeWord?: boolean;
-  isLiteral?: boolean;
-  baseNameMatch?: boolean;
-  caseSensitiveFileMatch?: boolean;
-}): Promise<ToolResponse<SearchContentStructuredResult>> {
-  const result = await searchContent(searchBasePath, pattern, {
-    filePattern,
-    excludePatterns,
-    caseSensitive,
-    maxResults,
-    maxFileSize,
-    maxFilesScanned,
-    timeoutMs,
-    skipBinary,
-    includeHidden,
-    contextLines,
-    wholeWord,
-    isLiteral,
-    baseNameMatch,
-    caseSensitiveFileMatch,
-  });
+type SearchContentOptions = Parameters<typeof searchContent>[2];
+
+function buildSearchContentOptions(
+  args: SearchContentArgs
+): SearchContentOptions {
+  return {
+    filePattern: args.filePattern,
+    excludePatterns: args.excludePatterns,
+    caseSensitive: args.caseSensitive,
+    maxResults: args.maxResults,
+    maxFileSize: args.maxFileSize,
+    maxFilesScanned: args.maxFilesScanned,
+    timeoutMs: args.timeoutMs,
+    skipBinary: args.skipBinary,
+    includeHidden: args.includeHidden,
+    contextLines: args.contextLines,
+    wholeWord: args.wholeWord,
+    isLiteral: args.isLiteral,
+    baseNameMatch: args.baseNameMatch,
+    caseSensitiveFileMatch: args.caseSensitiveFileMatch,
+  };
+}
+
+async function handleSearchContent(
+  args: SearchContentArgs
+): Promise<ToolResponse<SearchContentStructuredResult>> {
+  const result = await searchContent(
+    args.path,
+    args.pattern,
+    buildSearchContentOptions(args)
+  );
 
   return buildToolResponse(
     buildTextResult(result),

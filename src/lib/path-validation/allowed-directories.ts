@@ -89,22 +89,33 @@ async function expandAllowedDirectories(dirs: string[]): Promise<string[]> {
     if (!normalized) continue;
     expanded.push(normalized);
 
-    try {
-      const realPath = await fs.realpath(normalized);
-      const normalizedReal = normalizeAllowedDirectory(realPath);
-      if (
-        normalizedReal &&
-        normalizeForComparison(normalizedReal) !==
-          normalizeForComparison(normalized)
-      ) {
-        expanded.push(normalizedReal);
-      }
-    } catch {
-      // Keep normalized path if realpath fails
+    const normalizedReal = await resolveRealPath(normalized);
+    if (normalizedReal && shouldAddRealPath(normalized, normalizedReal)) {
+      expanded.push(normalizedReal);
     }
   }
 
   return [...new Set(expanded)];
+}
+
+async function resolveRealPath(normalized: string): Promise<string | null> {
+  try {
+    const realPath = await fs.realpath(normalized);
+    return normalizeAllowedDirectory(realPath);
+  } catch {
+    return null;
+  }
+}
+
+function shouldAddRealPath(
+  normalized: string,
+  normalizedReal: string | null
+): boolean {
+  if (!normalizedReal) return false;
+  return (
+    normalizeForComparison(normalizedReal) !==
+    normalizeForComparison(normalized)
+  );
 }
 
 export async function setAllowedDirectoriesResolved(

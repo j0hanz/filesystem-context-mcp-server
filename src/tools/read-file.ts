@@ -14,21 +14,25 @@ function buildLineRange(
 ): { start: number; end: number } | undefined {
   const hasLineStart = lineStart !== undefined;
   const hasLineEnd = lineEnd !== undefined;
-  if (hasLineStart !== hasLineEnd) {
-    const missing = hasLineStart ? 'lineEnd' : 'lineStart';
-    const provided = hasLineStart ? 'lineStart' : 'lineEnd';
-    throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
-      `Invalid lineRange: ${provided} requires ${missing} to also be specified`,
-      filePath
-    );
-  }
-
-  if (lineStart !== undefined && lineEnd !== undefined) {
-    return { start: lineStart, end: lineEnd };
-  }
+  assertLineRangeComplete(hasLineStart, hasLineEnd, filePath);
+  if (hasLineStart && hasLineEnd) return { start: lineStart, end: lineEnd };
 
   return undefined;
+}
+
+function assertLineRangeComplete(
+  hasLineStart: boolean,
+  hasLineEnd: boolean,
+  filePath: string
+): void {
+  if (hasLineStart === hasLineEnd) return;
+  const missing = hasLineStart ? 'lineEnd' : 'lineStart';
+  const provided = hasLineStart ? 'lineStart' : 'lineEnd';
+  throw new McpError(
+    ErrorCode.E_INVALID_INPUT,
+    `Invalid lineRange: ${provided} requires ${missing} to also be specified`,
+    filePath
+  );
 }
 
 function buildTextResult(
@@ -36,19 +40,38 @@ function buildTextResult(
   head: number | undefined,
   tail: number | undefined
 ): string {
-  let text = result.content;
+  const note = buildReadFileNote(result, head, tail);
+  return note ? `${result.content}\n\n${note}` : result.content;
+}
+
+function buildReadFileNote(
+  result: Awaited<ReturnType<typeof readFile>>,
+  head: number | undefined,
+  tail: number | undefined
+): string | undefined {
   if (result.truncated) {
-    if (result.totalLines) {
-      text += `\n\n[Showing requested lines. Total lines in file: ${result.totalLines}]`;
-    } else if (head !== undefined) {
-      text += `\n\n[Showing first ${String(head)} lines]`;
-    } else if (tail !== undefined) {
-      text += `\n\n[Showing last ${String(tail)} lines]`;
-    }
-  } else if (result.totalLines) {
-    text += `\n\n[Total lines: ${result.totalLines}]`;
+    return buildTruncatedNote(result, head, tail);
   }
-  return text;
+  return result.totalLines !== undefined
+    ? `Total lines: ${result.totalLines}`
+    : undefined;
+}
+
+function buildTruncatedNote(
+  result: Awaited<ReturnType<typeof readFile>>,
+  head: number | undefined,
+  tail: number | undefined
+): string | undefined {
+  if (result.totalLines !== undefined) {
+    return `Showing requested lines. Total lines in file: ${result.totalLines}`;
+  }
+  if (head !== undefined) {
+    return `Showing first ${String(head)} lines`;
+  }
+  if (tail !== undefined) {
+    return `Showing last ${String(tail)} lines`;
+  }
+  return undefined;
 }
 
 type ReadFileArgs = z.infer<z.ZodObject<typeof ReadFileInputSchema>>;

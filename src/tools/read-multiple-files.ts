@@ -37,23 +37,27 @@ function buildStructuredResult(
 function buildTextResult(
   results: Awaited<ReturnType<typeof readMultipleFiles>>
 ): string {
-  const textParts: string[] = [];
-  for (const result of results) {
-    if (result.content !== undefined) {
-      const note =
-        result.truncated === true
-          ? result.totalLines !== undefined
-            ? `\n\n[Truncated. Total lines: ${result.totalLines}]`
-            : '\n\n[Truncated]'
-          : '';
-      textParts.push(`=== ${result.path} ===\n${result.content}${note}`);
-    } else {
-      textParts.push(
-        `=== ${result.path} ===\n[Error: ${result.error ?? 'Unknown error'}]`
-      );
-    }
+  return results.map(formatReadMultipleResult).join('\n\n');
+}
+
+function formatReadMultipleResult(
+  result: Awaited<ReturnType<typeof readMultipleFiles>>[number]
+): string {
+  if (result.content !== undefined) {
+    const note = buildReadMultipleNote(result);
+    return `=== ${result.path} ===\n${result.content}${note}`;
   }
-  return textParts.join('\n\n');
+  return `=== ${result.path} ===\n[Error: ${result.error ?? 'Unknown error'}]`;
+}
+
+function buildReadMultipleNote(
+  result: Awaited<ReturnType<typeof readMultipleFiles>>[number]
+): string {
+  if (result.truncated !== true) return '';
+  if (result.totalLines !== undefined) {
+    return `\n\n[Truncated. Total lines: ${result.totalLines}]`;
+  }
+  return '\n\n[Truncated]';
 }
 
 async function handleReadMultipleFiles(args: {

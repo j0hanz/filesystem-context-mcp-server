@@ -8,24 +8,11 @@ import {
   GetFileInfoInputSchema,
   GetFileInfoOutputSchema,
 } from '../schemas/index.js';
+import { formatBytes, formatDate } from './shared/formatting.js';
 import { buildToolResponse, type ToolResponse } from './tool-response.js';
 
 type GetFileInfoArgs = z.infer<z.ZodObject<typeof GetFileInfoInputSchema>>;
 type GetFileInfoStructuredResult = z.infer<typeof GetFileInfoOutputSchema>;
-
-const BYTE_UNIT_LABELS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const unitIndex = Math.floor(Math.log(bytes) / Math.log(1024));
-  const unit = BYTE_UNIT_LABELS[unitIndex] ?? 'B';
-  const value = bytes / Math.pow(1024, unitIndex);
-  return `${parseFloat(value.toFixed(2))} ${unit}`;
-}
-
-function formatDate(date: Date): string {
-  return date.toISOString();
-}
 
 function formatFileInfo(info: Awaited<ReturnType<typeof getFileInfo>>): string {
   const lines = [

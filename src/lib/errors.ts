@@ -105,23 +105,30 @@ const INVALID_PARAMS_CODES: ReadonlySet<ErrorCode> = new Set([
   ErrorCode.E_SYMLINK_NOT_ALLOWED,
 ]);
 
-export function classifyError(error: unknown): ErrorCode {
+function getDirectErrorCode(error: unknown): ErrorCode | undefined {
   if (error instanceof McpError) {
     return error.code;
   }
   if (isNodeError(error) && error.code) {
-    const mapped = NODE_ERROR_CODE_MAP[error.code];
-    if (mapped) return mapped;
+    return NODE_ERROR_CODE_MAP[error.code];
   }
+  return undefined;
+}
 
+function classifyMessageError(error: unknown): ErrorCode | undefined {
   const message = error instanceof Error ? error.message : String(error);
-  const lowerMessage = message.toLowerCase();
-
-  if (lowerMessage.includes('enoent')) {
+  if (message.toLowerCase().includes('enoent')) {
     return ErrorCode.E_NOT_FOUND;
   }
+  return undefined;
+}
 
-  return ErrorCode.E_UNKNOWN;
+export function classifyError(error: unknown): ErrorCode {
+  const direct = getDirectErrorCode(error);
+  if (direct) return direct;
+
+  const messageCode = classifyMessageError(error);
+  return messageCode ?? ErrorCode.E_UNKNOWN;
 }
 
 export function createDetailedError(
@@ -133,23 +140,32 @@ export function createDetailedError(
   const code = classifyError(error);
   const suggestion = ERROR_SUGGESTIONS[code];
 
-  const effectivePath =
-    path ?? (error instanceof McpError ? error.path : undefined);
+  return {
+    code,
+    message,
+    path: resolveErrorPath(error, path),
+    suggestion,
+    details: mergeErrorDetails(error, additionalDetails),
+  };
+}
 
+function resolveErrorPath(error: unknown, path?: string): string | undefined {
+  if (path) return path;
+  if (error instanceof McpError) return error.path;
+  return undefined;
+}
+
+function mergeErrorDetails(
+  error: unknown,
+  additionalDetails?: Record<string, unknown>
+): Record<string, unknown> | undefined {
   const mcpDetails = error instanceof McpError ? error.details : undefined;
   const mergedDetails: Record<string, unknown> = {
     ...mcpDetails,
     ...additionalDetails,
   };
-  const hasDetails = Object.keys(mergedDetails).length > 0;
-
-  return {
-    code,
-    message,
-    path: effectivePath,
-    suggestion,
-    details: hasDetails ? mergedDetails : undefined,
-  };
+  if (Object.keys(mergedDetails).length === 0) return undefined;
+  return mergedDetails;
 }
 
 export function formatDetailedError(error: DetailedError): string {

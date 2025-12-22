@@ -58,37 +58,62 @@ function createRegexMatcher(
   regex: RegExp,
   timeoutMs: number = REGEX_MATCH_TIMEOUT_MS
 ): Matcher {
-  return (line: string): number => {
-    if (line.length === 0) return 0;
+  return (line: string): number => countRegexMatches(line, regex, timeoutMs);
+}
 
-    regex.lastIndex = 0;
-    let count = 0;
-    const deadline = Date.now() + timeoutMs;
-    const maxIterations = Math.min(line.length * 2, 10000);
-    let iterations = 0;
-    let lastIndex = 0;
+function countRegexMatches(
+  line: string,
+  regex: RegExp,
+  timeoutMs: number
+): number {
+  if (line.length === 0) return 0;
+  regex.lastIndex = 0;
 
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(line)) !== null) {
-      count++;
-      iterations++;
+  const deadline = Date.now() + timeoutMs;
+  const maxIterations = Math.min(line.length * 2, 10000);
+  return runRegexMatchLoop(line, regex, deadline, maxIterations);
+}
 
-      const { lastIndex: currentIndex } = regex;
-      if (match[0] === '') {
-        regex.lastIndex++;
-      }
-      if (currentIndex === lastIndex) {
-        return -1; // Infinite loop protection
-      }
-      ({ lastIndex } = regex);
+function runRegexMatchLoop(
+  line: string,
+  regex: RegExp,
+  deadline: number,
+  maxIterations: number
+): number {
+  let count = 0;
+  let iterations = 0;
+  let lastIndex = 0;
 
-      if (shouldCheckTimeout(count, iterations, deadline, maxIterations)) {
-        return -1;
-      }
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(line)) !== null) {
+    count++;
+    iterations++;
+
+    const advance = advanceRegexIndex(match, regex, lastIndex);
+    if (advance.shouldAbort) return -1;
+    lastIndex = advance.nextLastIndex;
+
+    if (shouldCheckTimeout(count, iterations, deadline, maxIterations)) {
+      return -1;
     }
+  }
 
-    return count;
-  };
+  return count;
+}
+
+function advanceRegexIndex(
+  match: RegExpExecArray,
+  regex: RegExp,
+  lastIndex: number
+): { nextLastIndex: number; shouldAbort: boolean } {
+  const currentIndex = regex.lastIndex;
+  if (match[0] === '') {
+    regex.lastIndex++;
+  }
+  if (currentIndex === lastIndex) {
+    return { nextLastIndex: lastIndex, shouldAbort: true };
+  }
+  return { nextLastIndex: regex.lastIndex, shouldAbort: false };
 }
 
 function shouldCheckTimeout(
@@ -97,11 +122,15 @@ function shouldCheckTimeout(
   deadline: number,
   maxIterations: number
 ): boolean {
-  const shouldCheck =
-    (count > 0 && count % 10 === 0) ||
-    (iterations > 0 && iterations % 50 === 0);
+  if (iterations > maxIterations) return true;
+  if (!isCheckInterval(count, iterations)) return false;
+  return Date.now() > deadline;
+}
 
-  return (shouldCheck && Date.now() > deadline) || iterations > maxIterations;
+function isCheckInterval(count: number, iterations: number): boolean {
+  const countInterval = count > 0 && count % 10 === 0;
+  const iterationInterval = iterations > 0 && iterations % 50 === 0;
+  return countInterval || iterationInterval;
 }
 
 function preparePattern(

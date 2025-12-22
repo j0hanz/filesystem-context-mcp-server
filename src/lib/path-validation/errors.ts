@@ -18,44 +18,46 @@ function buildAllowedDirectoriesHint(): string {
     : 'No allowed directories configured. Use CLI arguments or MCP roots protocol.';
 }
 
+const NODE_ERROR_MAP: Readonly<
+  Record<
+    string,
+    { code: ErrorCode; message: (requestedPath: string) => string }
+  >
+> = {
+  ENOENT: {
+    code: ErrorCode.E_NOT_FOUND,
+    message: (requestedPath) => `Path does not exist: ${requestedPath}`,
+  },
+  EACCES: {
+    code: ErrorCode.E_PERMISSION_DENIED,
+    message: (requestedPath) =>
+      `Permission denied accessing path: ${requestedPath}`,
+  },
+  EPERM: {
+    code: ErrorCode.E_PERMISSION_DENIED,
+    message: (requestedPath) =>
+      `Permission denied accessing path: ${requestedPath}`,
+  },
+  ELOOP: {
+    code: ErrorCode.E_SYMLINK_NOT_ALLOWED,
+    message: (requestedPath) =>
+      `Too many symbolic links in path (possible circular reference): ${requestedPath}`,
+  },
+  ENAMETOOLONG: {
+    code: ErrorCode.E_INVALID_INPUT,
+    message: (requestedPath) => `Path name too long: ${requestedPath}`,
+  },
+} as const;
+
 export function toMcpError(requestedPath: string, error: unknown): McpError {
   const nodeError = error as NodeJS.ErrnoException;
   const { code } = nodeError;
 
-  if (code === 'ENOENT') {
+  const mapping = code ? NODE_ERROR_MAP[code] : undefined;
+  if (mapping) {
     return createMcpError(
-      ErrorCode.E_NOT_FOUND,
-      `Path does not exist: ${requestedPath}`,
-      requestedPath,
-      { originalCode: code },
-      error
-    );
-  }
-
-  if (code === 'EACCES' || code === 'EPERM') {
-    return createMcpError(
-      ErrorCode.E_PERMISSION_DENIED,
-      `Permission denied accessing path: ${requestedPath}`,
-      requestedPath,
-      { originalCode: code },
-      error
-    );
-  }
-
-  if (code === 'ELOOP') {
-    return createMcpError(
-      ErrorCode.E_SYMLINK_NOT_ALLOWED,
-      `Too many symbolic links in path (possible circular reference): ${requestedPath}`,
-      requestedPath,
-      { originalCode: code },
-      error
-    );
-  }
-
-  if (code === 'ENAMETOOLONG') {
-    return createMcpError(
-      ErrorCode.E_INVALID_INPUT,
-      `Path name too long: ${requestedPath}`,
+      mapping.code,
+      mapping.message(requestedPath),
       requestedPath,
       { originalCode: code },
       error

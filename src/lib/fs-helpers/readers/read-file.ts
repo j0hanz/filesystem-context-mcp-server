@@ -16,13 +16,24 @@ interface NormalizedOptions {
   tail?: number;
 }
 
-function normalizeOptions(options: {
+interface ReadFileOptions {
   encoding?: BufferEncoding;
   maxSize?: number;
   lineRange?: { start: number; end: number };
   head?: number;
   tail?: number;
-}): NormalizedOptions {
+}
+
+interface ReadFileResult {
+  path: string;
+  content: string;
+  truncated: boolean;
+  totalLines?: number;
+}
+
+type ReadMode = 'lineRange' | 'tail' | 'head' | 'full';
+
+function normalizeOptions(options: ReadFileOptions): NormalizedOptions {
   return {
     encoding: options.encoding ?? 'utf-8',
     maxSize: Math.min(
@@ -73,11 +84,45 @@ function validateLineRange(
   }
 }
 
+function resolveReadMode(options: NormalizedOptions): ReadMode {
+  if (options.lineRange) return 'lineRange';
+  if (options.tail !== undefined) return 'tail';
+  if (options.head !== undefined) return 'head';
+  return 'full';
+}
+
+function assertWithinMaxSize(
+  stats: Stats,
+  maxSize: number,
+  filePath: string
+): void {
+  if (stats.size <= maxSize) return;
+  throw new McpError(
+    ErrorCode.E_TOO_LARGE,
+    `File too large: ${stats.size} bytes (max: ${maxSize} bytes). Use head, tail, or lineRange for partial reads.`,
+    filePath,
+    { size: stats.size, maxSize }
+  );
+}
+
+function requireOption<T>(
+  value: T | undefined,
+  name: string,
+  filePath: string
+): T {
+  if (value !== undefined) return value;
+  throw new McpError(
+    ErrorCode.E_INVALID_INPUT,
+    `Missing ${name} option`,
+    filePath
+  );
+}
+
 async function readLineRangeContent(
   filePath: string,
   options: NormalizedOptions
 ): Promise<{ content: string; truncated: boolean }> {
-  const lineRange = options.lineRange as { start: number; end: number };
+  const lineRange = requireOption(options.lineRange, 'lineRange', filePath);
   const maxLineRange = 100000;
   const requestedLines = lineRange.end - lineRange.start + 1;
   if (requestedLines > maxLineRange) {
@@ -142,21 +187,95 @@ async function readFullContent(
   return { content, totalLines: content.split('\n').length };
 }
 
+function buildReadResult(
+  filePath: string,
+  content: string,
+  truncated: boolean,
+  totalLines?: number
+): ReadFileResult {
+  return { path: filePath, content, truncated, totalLines };
+}
+
+async function readLineRangeResult(
+  validPath: string,
+  filePath: string,
+  normalized: NormalizedOptions
+): Promise<ReadFileResult> {
+  const lineRange = requireOption(normalized.lineRange, 'lineRange', filePath);
+  validateLineRange(lineRange, filePath);
+  const { content, truncated } = await readLineRangeContent(
+    validPath,
+    normalized
+  );
+  return buildReadResult(validPath, content, truncated);
+}
+
+async function readTailResult(
+  validPath: string,
+  filePath: string,
+  normalized: NormalizedOptions
+): Promise<ReadFileResult> {
+  const tail = requireOption(normalized.tail, 'tail', filePath);
+  const { content, truncated } = await readTailContent(
+    validPath,
+    tail,
+    normalized
+  );
+  return buildReadResult(validPath, content, truncated);
+}
+
+async function readHeadResult(
+  validPath: string,
+  filePath: string,
+  normalized: NormalizedOptions
+): Promise<ReadFileResult> {
+  const head = requireOption(normalized.head, 'head', filePath);
+  const { content, truncated } = await readHeadContent(
+    validPath,
+    head,
+    normalized
+  );
+  return buildReadResult(validPath, content, truncated);
+}
+
+async function readFullResult(
+  validPath: string,
+  filePath: string,
+  stats: Stats,
+  normalized: NormalizedOptions
+): Promise<ReadFileResult> {
+  assertWithinMaxSize(stats, normalized.maxSize, filePath);
+  const { content, totalLines } = await readFullContent(
+    validPath,
+    normalized.encoding
+  );
+  return buildReadResult(validPath, content, false, totalLines);
+}
+
+async function readByMode(
+  validPath: string,
+  filePath: string,
+  stats: Stats,
+  normalized: NormalizedOptions
+): Promise<ReadFileResult> {
+  const mode = resolveReadMode(normalized);
+  if (mode === 'lineRange') {
+    return await readLineRangeResult(validPath, filePath, normalized);
+  }
+  if (mode === 'tail') {
+    return await readTailResult(validPath, filePath, normalized);
+  }
+  if (mode === 'head') {
+    return await readHeadResult(validPath, filePath, normalized);
+  }
+
+  return await readFullResult(validPath, filePath, stats, normalized);
+}
+
 export async function readFile(
   filePath: string,
-  options: {
-    encoding?: BufferEncoding;
-    maxSize?: number;
-    lineRange?: { start: number; end: number };
-    head?: number;
-    tail?: number;
-  } = {}
-): Promise<{
-  path: string;
-  content: string;
-  truncated: boolean;
-  totalLines?: number;
-}> {
+  options: ReadFileOptions = {}
+): Promise<ReadFileResult> {
   const normalized = normalizeOptions(options);
   const validPath = await validateExistingPath(filePath);
   const stats = await fs.stat(validPath);
@@ -164,46 +283,5 @@ export async function readFile(
   assertIsFile(stats, filePath);
   assertSingleMode(normalized, filePath);
 
-  if (normalized.lineRange) {
-    validateLineRange(normalized.lineRange, filePath);
-    const { content, truncated } = await readLineRangeContent(
-      validPath,
-      normalized
-    );
-    return { path: validPath, content, truncated, totalLines: undefined };
-  }
-
-  if (normalized.tail !== undefined) {
-    const { content, truncated } = await readTailContent(
-      validPath,
-      normalized.tail,
-      normalized
-    );
-    return { path: validPath, content, truncated, totalLines: undefined };
-  }
-
-  if (normalized.head !== undefined) {
-    const { content, truncated } = await readHeadContent(
-      validPath,
-      normalized.head,
-      normalized
-    );
-    return { path: validPath, content, truncated, totalLines: undefined };
-  }
-
-  if (stats.size > normalized.maxSize) {
-    throw new McpError(
-      ErrorCode.E_TOO_LARGE,
-      `File too large: ${stats.size} bytes (max: ${normalized.maxSize} bytes). Use head, tail, or lineRange for partial reads.`,
-      filePath,
-      { size: stats.size, maxSize: normalized.maxSize }
-    );
-  }
-
-  const { content, totalLines } = await readFullContent(
-    validPath,
-    normalized.encoding
-  );
-
-  return { path: validPath, content, truncated: false, totalLines };
+  return await readByMode(validPath, filePath, stats, normalized);
 }

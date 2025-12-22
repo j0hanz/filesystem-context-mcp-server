@@ -82,13 +82,33 @@ function applyChunkLines(
   numLines: number,
   hasMoreBefore: boolean
 ): void {
-  const chunkLines = chunkText.replace(/\r\n/g, '\n').split('\n');
+  const chunkLines = splitChunkLines(chunkText);
+  const lines = updateRemainingText(state, chunkLines, hasMoreBefore);
+  appendLinesFromEnd(state, lines, numLines);
+}
+
+function splitChunkLines(chunkText: string): string[] {
+  return chunkText.replace(/\r\n/g, '\n').split('\n');
+}
+
+function updateRemainingText(
+  state: TailReadState,
+  chunkLines: string[],
+  hasMoreBefore: boolean
+): string[] {
   if (hasMoreBefore) {
     state.remainingText = chunkLines.shift() ?? '';
-  } else {
-    state.remainingText = '';
+    return chunkLines;
   }
+  state.remainingText = '';
+  return chunkLines;
+}
 
+function appendLinesFromEnd(
+  state: TailReadState,
+  chunkLines: string[],
+  numLines: number
+): void {
   for (let i = chunkLines.length - 1; i >= 0; i--) {
     if (state.linesFound >= numLines) break;
     const line = chunkLines[i];
@@ -97,6 +117,25 @@ function applyChunkLines(
       state.linesFound++;
     }
   }
+}
+
+async function readAlignedChunk(
+  handle: fs.FileHandle,
+  aligned: TailReadWindow,
+  encoding: BufferEncoding
+): Promise<{ data: string; bytesRead: number } | null> {
+  const chunk = Buffer.alloc(aligned.size + 4);
+  const { bytesRead } = await handle.read(
+    chunk,
+    0,
+    aligned.size,
+    aligned.startPos
+  );
+  if (bytesRead === 0) return null;
+  return {
+    data: chunk.subarray(0, bytesRead).toString(encoding),
+    bytesRead,
+  };
 }
 
 async function readTailChunk(
@@ -125,21 +164,14 @@ async function readTailChunk(
   );
 
   state.position = aligned.startPos;
-  const chunk = Buffer.alloc(aligned.size + 4);
-  const { bytesRead } = await handle.read(
-    chunk,
-    0,
-    aligned.size,
-    aligned.startPos
-  );
-  if (bytesRead === 0) {
+  const chunkResult = await readAlignedChunk(handle, aligned, encoding);
+  if (!chunkResult) {
     state.position = 0;
     return;
   }
 
-  state.bytesReadTotal += bytesRead;
-  const readData = chunk.subarray(0, bytesRead).toString(encoding);
-  const combined = readData + state.remainingText;
+  state.bytesReadTotal += chunkResult.bytesRead;
+  const combined = chunkResult.data + state.remainingText;
   applyChunkLines(state, combined, numLines, state.position > 0);
 }
 

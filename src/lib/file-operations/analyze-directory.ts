@@ -104,6 +104,91 @@ function shouldStop(state: AnalysisState, maxEntries: number): boolean {
   return false;
 }
 
+async function resolveEntryPath(
+  fullPath: string,
+  item: { isSymbolicLink: () => boolean },
+  state: AnalysisState
+): Promise<string | null> {
+  try {
+    const validated = await validateExistingPathDetailed(fullPath);
+    if (validated.isSymlink || item.isSymbolicLink()) {
+      state.symlinksNotFollowed++;
+      return null;
+    }
+    return validated.resolvedPath;
+  } catch (error) {
+    if (classifyAccessError(error) === 'symlink') {
+      state.symlinksNotFollowed++;
+    } else {
+      state.skippedInaccessible++;
+    }
+    return null;
+  }
+}
+
+function enqueueChildDirectory(
+  resolvedPath: string,
+  depth: number,
+  options: { maxDepth: number },
+  enqueue: (entry: { currentPath: string; depth: number }) => void
+): void {
+  if (depth + 1 > options.maxDepth) return;
+  enqueue({ currentPath: resolvedPath, depth: depth + 1 });
+}
+
+function handleDirectoryStats(
+  resolvedPath: string,
+  depth: number,
+  state: AnalysisState,
+  options: { maxDepth: number; maxEntries: number },
+  enqueue: (entry: { currentPath: string; depth: number }) => void
+): void {
+  state.totalDirectories++;
+  if (shouldStop(state, options.maxEntries)) return;
+  enqueueChildDirectory(resolvedPath, depth, options, enqueue);
+}
+
+function handleFileStats(
+  resolvedPath: string,
+  stats: Stats,
+  state: AnalysisState,
+  options: { topN: number; maxEntries: number }
+): void {
+  updateFileStats(state, resolvedPath, stats, options.topN);
+  shouldStop(state, options.maxEntries);
+}
+
+async function processDirectoryEntry(
+  params: { currentPath: string; depth: number },
+  entry: { item: { isSymbolicLink: () => boolean }; fullPath: string },
+  enqueue: (entry: { currentPath: string; depth: number }) => void,
+  state: AnalysisState,
+  options: {
+    maxDepth: number;
+    topN: number;
+    maxEntries: number;
+  }
+): Promise<void> {
+  if (shouldStop(state, options.maxEntries)) return;
+
+  const resolvedPath = await resolveEntryPath(
+    entry.fullPath,
+    entry.item,
+    state
+  );
+  if (!resolvedPath) return;
+
+  const stats = await fs.stat(resolvedPath);
+  if (stats.isDirectory()) {
+    handleDirectoryStats(resolvedPath, params.depth, state, options, enqueue);
+    return;
+  }
+
+  if (stats.isFile()) {
+    handleFileStats(resolvedPath, stats, state, options);
+  }
+}
+
 async function handleEntry(
   params: { currentPath: string; depth: number },
   enqueue: (entry: { currentPath: string; depth: number }) => void,
@@ -132,40 +217,8 @@ async function handleEntry(
       },
       shouldStop: () => shouldStop(state, options.maxEntries),
     },
-    async ({ item, fullPath }) => {
-      if (shouldStop(state, options.maxEntries)) return;
-      try {
-        const validated = await validateExistingPathDetailed(fullPath);
-        if (validated.isSymlink || item.isSymbolicLink()) {
-          state.symlinksNotFollowed++;
-          return;
-        }
-
-        const stats = await fs.stat(validated.resolvedPath);
-        if (stats.isDirectory()) {
-          state.totalDirectories++;
-          if (shouldStop(state, options.maxEntries)) return;
-          if (params.depth + 1 <= options.maxDepth) {
-            enqueue({
-              currentPath: validated.resolvedPath,
-              depth: params.depth + 1,
-            });
-          }
-          return;
-        }
-
-        if (stats.isFile()) {
-          updateFileStats(state, validated.resolvedPath, stats, options.topN);
-          if (shouldStop(state, options.maxEntries)) return;
-        }
-      } catch (error) {
-        if (classifyAccessError(error) === 'symlink') {
-          state.symlinksNotFollowed++;
-        } else {
-          state.skippedInaccessible++;
-        }
-      }
-    }
+    async ({ item, fullPath }) =>
+      processDirectoryEntry(params, { item, fullPath }, enqueue, state, options)
   );
 }
 
@@ -200,27 +253,20 @@ export async function analyzeDirectory(
     includeHidden?: boolean;
   } = {}
 ): Promise<AnalyzeDirectoryResult> {
-  const {
-    maxDepth = DEFAULT_MAX_DEPTH,
-    topN = DEFAULT_TOP_N,
-    maxEntries = DEFAULT_ANALYZE_MAX_ENTRIES,
-    excludePatterns = [],
-    includeHidden = false,
-  } = options;
-
+  const normalized = normalizeAnalyzeOptions(options);
   const basePath = await validateExistingDirectory(dirPath);
   const state = initAnalysisState();
-  const shouldExclude = createExcludeMatcher(excludePatterns);
+  const shouldExclude = createExcludeMatcher(normalized.excludePatterns);
 
   await runWorkQueue<{ currentPath: string; depth: number }>(
     [{ currentPath: basePath, depth: 0 }],
     async (params, enqueue) =>
       handleEntry(params, enqueue, state, {
         basePath,
-        maxDepth,
-        topN,
-        maxEntries,
-        includeHidden,
+        maxDepth: normalized.maxDepth,
+        topN: normalized.topN,
+        maxEntries: normalized.maxEntries,
+        includeHidden: normalized.includeHidden,
         shouldExclude,
       }),
     DIR_TRAVERSAL_CONCURRENCY
@@ -234,4 +280,38 @@ export async function analyzeDirectory(
       symlinksNotFollowed: state.symlinksNotFollowed,
     },
   };
+}
+
+function normalizeAnalyzeOptions(options: {
+  maxDepth?: number;
+  topN?: number;
+  maxEntries?: number;
+  excludePatterns?: string[];
+  includeHidden?: boolean;
+}): {
+  maxDepth: number;
+  topN: number;
+  maxEntries: number;
+  excludePatterns: string[];
+  includeHidden: boolean;
+} {
+  const defaults = {
+    maxDepth: DEFAULT_MAX_DEPTH,
+    topN: DEFAULT_TOP_N,
+    maxEntries: DEFAULT_ANALYZE_MAX_ENTRIES,
+    excludePatterns: [] as string[],
+    includeHidden: false,
+  };
+  return mergeDefined(defaults, options);
+}
+
+function mergeDefined<T extends object>(defaults: T, overrides: Partial<T>): T {
+  const entries = Object.entries(overrides).filter(
+    ([, value]) => value !== undefined
+  );
+  const merged: T = {
+    ...defaults,
+    ...(Object.fromEntries(entries) as Partial<T>),
+  };
+  return merged;
 }

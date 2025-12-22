@@ -69,14 +69,24 @@ export async function isProbablyBinary(
 
   try {
     const slice = await readProbe(handle);
-    if (slice.length === 0) return false;
-    if (hasUtf8Bom(slice) || hasUtf16Bom(slice)) return false;
-    return slice.includes(0);
+    return isBinarySlice(slice);
   } finally {
-    if (shouldClose) {
-      await handle.close().catch((error: unknown) => {
-        console.error('Failed to close file handle:', error);
-      });
-    }
+    await closeHandle(handle, shouldClose);
   }
+}
+
+function isBinarySlice(slice: Buffer): boolean {
+  if (slice.length === 0) return false;
+  if (hasUtf8Bom(slice) || hasUtf16Bom(slice)) return false;
+  return slice.includes(0);
+}
+
+async function closeHandle(
+  handle: fs.FileHandle,
+  shouldClose: boolean
+): Promise<void> {
+  if (!shouldClose) return;
+  await handle.close().catch((error: unknown) => {
+    console.error('Failed to close file handle:', error);
+  });
 }

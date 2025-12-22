@@ -55,6 +55,20 @@ function trimLine(line: string): string {
   return line.trimEnd().substring(0, MAX_LINE_CONTENT_LENGTH);
 }
 
+function createScanResult(
+  matches: ContentMatch[],
+  linesSkipped: number
+): ScanResult {
+  return {
+    matches,
+    linesSkippedDueToRegexTimeout: linesSkipped,
+    fileHadMatches: matches.length > 0,
+    skippedTooLarge: false,
+    skippedBinary: false,
+    scanned: true,
+  };
+}
+
 function shouldStop(
   currentFileMatches: number,
   options: SearchOptions
@@ -68,6 +82,41 @@ function shouldStop(
   return false;
 }
 
+async function scanLines(
+  rl: readline.Interface,
+  displayPath: string,
+  matcher: Matcher,
+  options: SearchOptions,
+  contextManager: ContextManager
+): Promise<{ matches: ContentMatch[]; linesSkipped: number }> {
+  const matches: ContentMatch[] = [];
+  let linesSkipped = 0;
+  let lineNumber = 0;
+
+  for await (const line of rl) {
+    lineNumber++;
+    if (shouldStop(matches.length, options)) break;
+
+    const trimmed = trimLine(line);
+    contextManager.pushLine(trimmed);
+
+    const matchCount = matcher(line);
+    if (matchCount < 0) {
+      linesSkipped++;
+      continue;
+    }
+    if (matchCount === 0) {
+      continue;
+    }
+
+    matches.push(
+      contextManager.createMatch(displayPath, lineNumber, trimmed, matchCount)
+    );
+  }
+
+  return { matches, linesSkipped };
+}
+
 async function scanContent(
   handle: fsPromises.FileHandle,
   displayPath: string,
@@ -75,52 +124,21 @@ async function scanContent(
   options: SearchOptions
 ): Promise<ScanResult> {
   const contextManager = new ContextManager(options.contextLines);
-  const matches: ContentMatch[] = [];
-  let linesSkipped = 0;
-  let lineNumber = 0;
-
   const { rl, stream } = createReadInterface(handle);
 
   try {
-    for await (const line of rl) {
-      lineNumber++;
-
-      if (shouldStop(matches.length, options)) break;
-
-      const trimmed = trimLine(line);
-      contextManager.pushLine(trimmed);
-
-      const matchCount = matcher(line);
-
-      if (matchCount < 0) {
-        linesSkipped++;
-        continue;
-      }
-
-      if (matchCount > 0) {
-        matches.push(
-          contextManager.createMatch(
-            displayPath,
-            lineNumber,
-            trimmed,
-            matchCount
-          )
-        );
-      }
-    }
+    const { matches, linesSkipped } = await scanLines(
+      rl,
+      displayPath,
+      matcher,
+      options,
+      contextManager
+    );
+    return createScanResult(matches, linesSkipped);
   } finally {
     rl.close();
     stream.destroy();
   }
-
-  return {
-    matches,
-    linesSkippedDueToRegexTimeout: linesSkipped,
-    fileHadMatches: matches.length > 0,
-    skippedTooLarge: false,
-    skippedBinary: false,
-    scanned: true,
-  };
 }
 
 async function scanWithHandle(

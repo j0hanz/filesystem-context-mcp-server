@@ -14,36 +14,70 @@ import {
 } from './list-directory-helpers.js';
 import { sortByField } from './sorting.js';
 
+interface ListDirectoryOptions {
+  recursive?: boolean;
+  includeHidden?: boolean;
+  maxDepth?: number;
+  maxEntries?: number;
+  sortBy?: 'name' | 'size' | 'modified' | 'type';
+  includeSymlinkTargets?: boolean;
+}
+
+function mergeDefined<T extends object>(defaults: T, overrides: Partial<T>): T {
+  const entries = Object.entries(overrides).filter(
+    ([, value]) => value !== undefined
+  );
+  const merged: T = {
+    ...defaults,
+    ...(Object.fromEntries(entries) as Partial<T>),
+  };
+  return merged;
+}
+
+function normalizeListDirectoryOptions(
+  options: ListDirectoryOptions
+): Required<ListDirectoryOptions> {
+  const defaults: Required<ListDirectoryOptions> = {
+    recursive: false,
+    includeHidden: false,
+    maxDepth: DEFAULT_MAX_DEPTH,
+    maxEntries: DEFAULT_LIST_MAX_ENTRIES,
+    sortBy: 'name',
+    includeSymlinkTargets: false,
+  };
+  return mergeDefined(defaults, options);
+}
+
+function buildSummary(
+  state: ReturnType<typeof initListState>
+): ListDirectoryResult['summary'] {
+  return {
+    totalEntries: state.entries.length,
+    totalFiles: state.totalFiles,
+    totalDirectories: state.totalDirectories,
+    maxDepthReached: state.maxDepthReached,
+    truncated: state.truncated,
+    skippedInaccessible: state.skippedInaccessible,
+    symlinksNotFollowed: state.symlinksNotFollowed,
+  };
+}
+
 export async function listDirectory(
   dirPath: string,
-  options: {
-    recursive?: boolean;
-    includeHidden?: boolean;
-    maxDepth?: number;
-    maxEntries?: number;
-    sortBy?: 'name' | 'size' | 'modified' | 'type';
-    includeSymlinkTargets?: boolean;
-  } = {}
+  options: ListDirectoryOptions = {}
 ): Promise<ListDirectoryResult> {
-  const {
-    recursive = false,
-    includeHidden = false,
-    maxDepth = DEFAULT_MAX_DEPTH,
-    maxEntries = DEFAULT_LIST_MAX_ENTRIES,
-    sortBy = 'name',
-    includeSymlinkTargets = false,
-  } = options;
+  const normalized = normalizeListDirectoryOptions(options);
 
   const basePath = await validateExistingDirectory(dirPath);
   const state = initListState();
-  const shouldStop = createStopChecker(maxEntries, state);
+  const shouldStop = createStopChecker(normalized.maxEntries, state);
   const config: ListDirectoryConfig = {
     basePath,
-    recursive,
-    includeHidden,
-    maxDepth,
-    maxEntries,
-    includeSymlinkTargets,
+    recursive: normalized.recursive,
+    includeHidden: normalized.includeHidden,
+    maxDepth: normalized.maxDepth,
+    maxEntries: normalized.maxEntries,
+    includeSymlinkTargets: normalized.includeSymlinkTargets,
   };
 
   await runWorkQueue<{ currentPath: string; depth: number }>(
@@ -53,19 +87,11 @@ export async function listDirectory(
     DIR_TRAVERSAL_CONCURRENCY
   );
 
-  sortByField(state.entries, sortBy);
+  sortByField(state.entries, normalized.sortBy);
 
   return {
     path: basePath,
     entries: state.entries,
-    summary: {
-      totalEntries: state.entries.length,
-      totalFiles: state.totalFiles,
-      totalDirectories: state.totalDirectories,
-      maxDepthReached: state.maxDepthReached,
-      truncated: state.truncated,
-      skippedInaccessible: state.skippedInaccessible,
-      symlinksNotFollowed: state.symlinksNotFollowed,
-    },
+    summary: buildSummary(state),
   };
 }

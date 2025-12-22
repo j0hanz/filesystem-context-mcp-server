@@ -41,15 +41,21 @@ function ensureNoReservedWindowsNames(requestedPath: string): void {
 
   const segments = requestedPath.split(/[\\/]/);
   for (const segment of segments) {
-    const baseName = segment.split('.')[0]?.toUpperCase();
-    if (baseName && RESERVED_DEVICE_NAMES.has(baseName)) {
+    const reserved = getReservedDeviceName(segment);
+    if (reserved) {
       throw new McpError(
         ErrorCode.E_INVALID_INPUT,
-        `Windows reserved device name not allowed: ${baseName}`,
+        `Windows reserved device name not allowed: ${reserved}`,
         requestedPath
       );
     }
   }
+}
+
+function getReservedDeviceName(segment: string): string | undefined {
+  const baseName = segment.split('.')[0]?.toUpperCase();
+  if (!baseName) return undefined;
+  return RESERVED_DEVICE_NAMES.has(baseName) ? baseName : undefined;
 }
 
 function ensureWithinAllowedDirectories(
