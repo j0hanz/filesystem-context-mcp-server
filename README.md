@@ -43,6 +43,8 @@ A secure, read-only MCP server for filesystem scanning, searching, and analysis 
 | Read source code                 | `read_file`                |
 | Batch read multiple files        | `read_multiple_files`      |
 | Get file metadata (size, dates)  | `get_file_info`            |
+| Batch get file metadata          | `get_multiple_file_info`   |
+| Compute file checksums/hashes    | `compute_checksums`        |
 | Read images or binary files      | `read_media_file`          |
 | Check available directories      | `list_allowed_directories` |
 
@@ -263,6 +265,55 @@ Read the contents of a text file.
 ### `read_multiple_files`
 
 Read multiple files in parallel for efficient batch operations.
+
+| Parameter      | Type     | Required | Default | Description                                |
+| -------------- | -------- | -------- | ------- | ------------------------------------------ |
+| `paths`        | string[] | ✅       | -       | Array of file paths to read (max 100)      |
+| `encoding`     | string   | ❌       | `utf-8` | File encoding                              |
+| `maxSize`      | number   | ❌       | 10MB    | Maximum size per file in bytes             |
+| `maxTotalSize` | number   | ❌       | 100MB   | Maximum total size for all files combined  |
+| `head`         | number   | ❌       | -       | Read only first N lines of each file       |
+| `tail`         | number   | ❌       | -       | Read only last N lines of each file        |
+| `lineStart`    | number   | ❌       | -       | Start line (1-indexed) for reading a range |
+| `lineEnd`      | number   | ❌       | -       | End line (inclusive) for reading a range   |
+
+**Returns:** Array of file contents with individual success/error status.
+
+---
+
+### `get_multiple_file_info`
+
+Get metadata for multiple files/directories in parallel.
+
+| Parameter         | Type     | Required | Default | Description                       |
+| ----------------- | -------- | -------- | ------- | --------------------------------- |
+| `paths`           | string[] | ✅       | -       | Array of paths to query (max 100) |
+| `includeMimeType` | boolean  | ❌       | `true`  | Include MIME type detection       |
+
+**Returns:** Array of file info (name, path, type, size, timestamps, permissions, mimeType) with individual success/error status, plus summary.
+
+---
+
+### `compute_checksums`
+
+Compute cryptographic checksums for files using memory-efficient streaming.
+
+| Parameter     | Type     | Required | Default  | Description                                       |
+| ------------- | -------- | -------- | -------- | ------------------------------------------------- |
+| `paths`       | string[] | ✅       | -        | Array of file paths (max 50)                      |
+| `algorithm`   | string   | ❌       | `sha256` | Hash algorithm: `md5`, `sha1`, `sha256`, `sha512` |
+| `encoding`    | string   | ❌       | `hex`    | Output encoding: `hex` or `base64`                |
+| `maxFileSize` | number   | ❌       | 100MB    | Skip files larger than this                       |
+
+**Returns:** Array of checksums with file sizes, plus summary (total, succeeded, failed).
+
+**Use cases:**
+
+- Verify file integrity after transfers
+- Detect duplicate files by comparing hashes
+- Generate checksums for release artifacts
+
+---
 
 | Parameter      | Type     | Required | Default | Description                               |
 | -------------- | -------- | -------- | ------- | ----------------------------------------- |

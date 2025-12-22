@@ -20,6 +20,8 @@ This server enables AI assistants to safely explore and analyze filesystem conte
 | Read file           | `read_file`                | `head`, `tail`, `lineStart/lineEnd`     |
 | Read multiple files | `read_multiple_files`      | `paths[]` — **preferred for 2+**        |
 | File metadata       | `get_file_info`            | `path`                                  |
+| Batch file metadata | `get_multiple_file_info`   | `paths[]` — **preferred for 2+**        |
+| Compute checksums   | `compute_checksums`        | `paths[]`, `algorithm`                  |
 | Binary/media files  | `read_media_file`          | `maxSize`                               |
 
 ---
@@ -222,6 +224,30 @@ Detailed metadata about a file or directory.
 | `path`    | —       | Path to file or directory |
 
 **Returns:** name, path, type, size, created, modified, accessed, permissions, isHidden, mimeType, symlinkTarget (if applicable).
+
+### `get_multiple_file_info`
+
+Batch metadata retrieval for multiple files/directories (parallel processing).
+
+| Parameter         | Default | Description                 |
+| ----------------- | ------- | --------------------------- |
+| `paths`           | —       | Array of paths (max 100)    |
+| `includeMimeType` | true    | Include MIME type detection |
+
+**Returns:** Array of file info with individual success/error status, plus summary (total, succeeded, failed, totalSize).
+
+### `compute_checksums`
+
+Compute cryptographic hashes for files using streaming (memory-efficient).
+
+| Parameter     | Default | Description                             |
+| ------------- | ------- | --------------------------------------- |
+| `paths`       | —       | Array of file paths (max 50)            |
+| `algorithm`   | sha256  | Hash: `md5`, `sha1`, `sha256`, `sha512` |
+| `encoding`    | hex     | Output: `hex` or `base64`               |
+| `maxFileSize` | 100MB   | Skip files larger than this             |
+
+**Returns:** Array of checksums with file sizes, plus summary. Useful for integrity checks and duplicate detection.
 
 ---
 
