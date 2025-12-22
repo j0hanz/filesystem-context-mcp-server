@@ -1,5 +1,6 @@
 export {
   AnalyzeDirectoryInputSchema,
+  DefinitionTypeSchema,
   DirectoryTreeInputSchema,
   GetFileInfoInputSchema,
   ListDirectoryInputSchema,
@@ -7,12 +8,14 @@ export {
   ReadMediaFileInputSchema,
   ReadMultipleFilesInputSchema,
   SearchContentInputSchema,
+  SearchDefinitionsInputSchema,
   SearchFilesInputSchema,
 } from './inputs.js';
 
 // Output schemas
 export {
   AnalyzeDirectoryOutputSchema,
+  DefinitionTypeOutputSchema,
   DirectoryTreeOutputSchema,
   GetFileInfoOutputSchema,
   ListAllowedDirectoriesOutputSchema,
@@ -21,5 +24,6 @@ export {
   ReadMediaFileOutputSchema,
   ReadMultipleFilesOutputSchema,
   SearchContentOutputSchema,
+  SearchDefinitionsOutputSchema,
   SearchFilesOutputSchema,
 } from './outputs.js';

@@ -278,3 +278,44 @@ export const ReadMediaFileInputSchema = {
     .default(MAX_MEDIA_FILE_SIZE)
     .describe('Maximum file size in bytes (default 50MB)'),
 };
+
+export const DefinitionTypeSchema = z.enum([
+  'function',
+  'class',
+  'interface',
+  'type',
+  'enum',
+  'variable',
+]);
+
+export const SearchDefinitionsInputSchema = {
+  path: z
+    .string()
+    .min(1, 'Path cannot be empty')
+    .describe('Directory to search for definitions'),
+  name: z
+    .string()
+    .max(100, 'Name is too long (max 100 characters)')
+    .optional()
+    .describe('Symbol name to find (e.g., "UserService", "handleSubmit")'),
+  type: DefinitionTypeSchema.optional().describe(
+    'Type of definition to find: function, class, interface, type, enum, or variable'
+  ),
+  caseSensitive: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe('Case sensitive name matching (default: true)'),
+  maxResults: MaxResultsSchema.describe(
+    'Maximum number of definitions to return'
+  ),
+  excludePatterns: ExcludePatternsSchema.describe(
+    'Glob patterns to exclude (e.g., "node_modules/**", "**/*.test.ts")'
+  ),
+  includeHidden: IncludeHiddenSchema.describe(
+    'Include hidden files and directories in the search'
+  ),
+  contextLines: ContextLinesSchema.describe(
+    'Number of lines to include before and after each definition (0-10)'
+  ),
+};

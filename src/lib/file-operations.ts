@@ -5,5 +5,6 @@ export { listDirectory } from './file-operations/list-directory.js';
 export { readMediaFile } from './file-operations/read-media-file.js';
 export { readMultipleFiles } from './file-operations/read-multiple-files.js';
 export { searchContent } from './file-operations/search-content.js';
+export { searchDefinitions } from './file-operations/search-definitions.js';
 export { searchFiles } from './file-operations/search-files.js';
 export { readFile } from './fs-helpers.js';

@@ -131,6 +131,49 @@ export interface MediaFileResult {
   data: string;
 }
 
+export type DefinitionType =
+  | 'function'
+  | 'class'
+  | 'interface'
+  | 'type'
+  | 'enum'
+  | 'variable';
+
+export interface SearchDefinitionsOptions {
+  path: string;
+  name?: string;
+  type?: DefinitionType;
+  caseSensitive?: boolean;
+  maxResults?: number;
+  excludePatterns?: string[];
+  includeHidden?: boolean;
+  contextLines?: number;
+}
+
+export interface DefinitionMatch {
+  file: string;
+  line: number;
+  definitionType: DefinitionType;
+  name: string;
+  content: string;
+  contextBefore?: string[];
+  contextAfter?: string[];
+  exported: boolean;
+}
+
+export interface SearchDefinitionsResult {
+  basePath: string;
+  searchName?: string;
+  searchType?: DefinitionType;
+  definitions: DefinitionMatch[];
+  summary: {
+    filesScanned: number;
+    filesMatched: number;
+    totalDefinitions: number;
+    truncated: boolean;
+  };
+}
+
 export const ErrorCode = {
   E_ACCESS_DENIED: 'E_ACCESS_DENIED',
   E_NOT_FOUND: 'E_NOT_FOUND',

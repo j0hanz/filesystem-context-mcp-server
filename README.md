@@ -37,6 +37,7 @@ A secure, read-only MCP server for filesystem scanning, searching, and analysis 
 | Explore project structure        | `list_directory`           |
 | Find specific file types         | `search_files`             |
 | Search for code patterns/text    | `search_content`           |
+| Find code definitions            | `search_definitions`       |
 | Understand codebase statistics   | `analyze_directory`        |
 | Get AI-friendly project overview | `directory_tree`           |
 | Read source code                 | `read_file`                |
@@ -323,6 +324,55 @@ Search for text content within files using regular expressions.
 
 ---
 
+### `search_definitions`
+
+Find code definitions (classes, functions, interfaces, types, enums, variables) in TypeScript/JavaScript files without manual regex construction.
+
+| Parameter         | Type     | Required | Default | Description                                                                           |
+| ----------------- | -------- | -------- | ------- | ------------------------------------------------------------------------------------- |
+| `path`            | string   | ❌       | -       | Base directory to search in                                                           |
+| `name`            | string   | ❌       | -       | Definition name to search for                                                         |
+| `type`            | string   | ❌       | -       | Definition type to find: `class`, `function`, `interface`, `type`, `enum`, `variable` |
+| `caseSensitive`   | boolean  | ❌       | `true`  | Case-sensitive name matching                                                          |
+| `maxResults`      | number   | ❌       | `100`   | Maximum number of results (1-10,000)                                                  |
+| `excludePatterns` | string[] | ❌       | `[]`    | Glob patterns to exclude                                                              |
+| `includeHidden`   | boolean  | ❌       | `false` | Include hidden files and directories                                                  |
+| `contextLines`    | number   | ❌       | `0`     | Lines of context before/after match (0-10)                                            |
+
+**Returns:** List of definitions with name, type (class/function/interface/type/enum/variable), file path, line number, exported status, and code preview.
+
+**Use cases:**
+
+- **Find by name:** Search for a specific definition like `UserService`
+- **Discovery mode:** Find all definitions of a type (e.g., all interfaces)
+- **Combined:** Find definitions matching a name pattern and type
+
+**Examples:**
+
+```json
+{
+  "path": "/project/src",
+  "name": "UserService"
+}
+```
+
+```json
+{
+  "path": "/project/src",
+  "type": "interface"
+}
+```
+
+```json
+{
+  "path": "/project/src",
+  "name": "Handler",
+  "type": "class"
+}
+```
+
+---
+
 ### `analyze_directory`
 
 Analyze a directory structure and return statistics.
@@ -580,6 +630,7 @@ src/
 │   │   ├── read-media-file.ts
 │   │   ├── read-multiple-files.ts
 │   │   ├── search-content.ts
+│   │   ├── search-definitions.ts
 │   │   ├── search-files.ts
 │   │   └── sorting.ts
 │   ├── fs-helpers/       # Low-level filesystem helpers
@@ -615,6 +666,7 @@ src/
 │   ├── read-media-file.ts
 │   ├── read-multiple-files.ts
 │   ├── search-content.ts
+│   ├── search-definitions.ts
 │   ├── search-files.ts
 │   ├── tool-response.ts  # Tool response formatting
 │   └── index.ts          # Tool registration

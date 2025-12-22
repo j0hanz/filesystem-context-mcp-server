@@ -16,6 +16,7 @@ This server enables AI assistants to safely explore and analyze filesystem conte
 | Directory stats     | `analyze_directory`        | `topN`, `excludePatterns`, `maxEntries` |
 | Find files          | `search_files`             | `pattern` (glob), `maxResults`          |
 | Search in files     | `search_content`           | `pattern` (regex), `contextLines`       |
+| Find definitions    | `search_definitions`       | `name`, `type`, `contextLines`          |
 | Read file           | `read_file`                | `head`, `tail`, `lineStart/lineEnd`     |
 | Read multiple files | `read_multiple_files`      | `paths[]` — **preferred for 2+**        |
 | File metadata       | `get_file_info`            | `path`                                  |
@@ -41,6 +42,13 @@ search_files(pattern="**/*.ts") → read_multiple_files([...results])
 
 ```text
 search_content(pattern="TODO|FIXME", filePattern="**/*.ts", contextLines=2)
+```
+
+### Find Code Definitions
+
+```text
+search_definitions(path="src/", name="User") → Find classes/functions/types named "User"
+search_definitions(path="src/", type="interface") → Discover all interfaces
 ```
 
 ### Common Glob Patterns
@@ -112,6 +120,27 @@ Grep-like regex search in files.
 | `isLiteral`     | false   | Escape regex              |
 | `maxResults`    | 100     | Limit matches             |
 | `skipBinary`    | true    | Skip binary files         |
+
+### `search_definitions`
+
+Find code definitions (classes, functions, interfaces, types, enums, variables) without manual regex construction.
+
+| Parameter         | Default | Description                                                                   |
+| ----------------- | ------- | ----------------------------------------------------------------------------- |
+| `path`            | -       | Base directory to search                                                      |
+| `name`            | -       | Definition name to find                                                       |
+| `type`            | -       | Definition type: `class`, `function`, `interface`, `type`, `enum`, `variable` |
+| `caseSensitive`   | true    | Case-sensitive name matching                                                  |
+| `maxResults`      | 100     | Limit matches                                                                 |
+| `excludePatterns` | []      | Glob patterns to exclude                                                      |
+| `includeHidden`   | false   | Include hidden files and directories                                          |
+| `contextLines`    | 0       | Lines of context before/after match (0-10)                                    |
+
+**Usage patterns:**
+
+- **Find by name:** `search_definitions(path="src/", name="UserService")` — finds class/function/type named UserService
+- **Discovery mode:** `search_definitions(path="src/", type="interface")` — lists all interfaces
+- **Combined:** `search_definitions(path="src/", name="Handler", type="class")` — finds classes named "Handler"
 
 ### `read_file`
 

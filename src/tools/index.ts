@@ -9,6 +9,7 @@ import { registerReadFileTool } from './read-file.js';
 import { registerReadMediaFileTool } from './read-media-file.js';
 import { registerReadMultipleFilesTool } from './read-multiple-files.js';
 import { registerSearchContentTool } from './search-content.js';
+import { registerSearchDefinitionsTool } from './search-definitions.js';
 import { registerSearchFilesTool } from './search-files.js';
 
 export function registerAllTools(server: McpServer): void {
@@ -19,6 +20,7 @@ export function registerAllTools(server: McpServer): void {
   registerReadMultipleFilesTool(server);
   registerGetFileInfoTool(server);
   registerSearchContentTool(server);
+  registerSearchDefinitionsTool(server);
   registerAnalyzeDirectoryTool(server);
   registerDirectoryTreeTool(server);
   registerReadMediaFileTool(server);
