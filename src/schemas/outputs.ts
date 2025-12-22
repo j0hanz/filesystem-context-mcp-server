@@ -27,7 +27,11 @@ export const ListDirectoryOutputSchema = z.object({
   entries: z
     .array(
       z.object({
-        name: z.string(),
+        name: z.string().describe('Entry name (basename)'),
+        relativePath: z
+          .string()
+          .optional()
+          .describe('Relative path from the listed base directory'),
         type: FileTypeSchema,
         extension: z
           .string()

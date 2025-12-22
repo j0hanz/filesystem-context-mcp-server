@@ -21,3 +21,14 @@ it('readMultipleFiles handles all files failing', async () => {
   expect(results.length).toBe(2);
   expect(results.every((r) => r.error !== undefined)).toBe(true);
 });
+
+it('readMultipleFiles rejects line range with head/tail', async () => {
+  const filePath = path.join(getTestDir(), 'multiline.txt');
+  await expect(
+    readMultipleFiles([filePath], {
+      lineStart: 1,
+      lineEnd: 2,
+      head: 1,
+    })
+  ).rejects.toThrow('Cannot specify multiple');
+});

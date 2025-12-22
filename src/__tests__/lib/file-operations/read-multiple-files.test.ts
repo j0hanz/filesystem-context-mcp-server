@@ -44,3 +44,16 @@ it('readMultipleFiles enforces total size cap for head/tail reads', async () => 
   expect(results.every((r) => r.error !== undefined)).toBe(true);
   await Promise.all([fs.rm(big1), fs.rm(big2)]).catch(() => {});
 });
+
+it('readMultipleFiles supports line range reads', async () => {
+  const filePath = path.join(getTestDir(), 'multiline.txt');
+  const results = await readMultipleFiles([filePath], {
+    lineStart: 2,
+    lineEnd: 4,
+  });
+
+  const content = results[0]?.content ?? '';
+  expect(content.split('\n')[0]).toBe('Line 2');
+  expect(content.split('\n')[2]).toBe('Line 4');
+  expect(results[0]?.truncated).toBe(true);
+});

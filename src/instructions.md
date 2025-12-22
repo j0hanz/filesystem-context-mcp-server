@@ -99,11 +99,12 @@ Find files by glob pattern.
 
 | Parameter         | Default | Description               |
 | ----------------- | ------- | ------------------------- |
-| `path`            | —       | Base directory            |
-| `pattern`         | —       | Glob: `**/*.ts`, `src/**` |
+| `path`            | -       | Base directory            |
+| `pattern`         | -       | Glob: `**/*.ts`, `src/**` |
 | `excludePatterns` | []      | Patterns to skip          |
-| `maxResults`      | —       | Limit (up to 10,000)      |
+| `maxResults`      | -       | Limit (up to 10,000)      |
 | `sortBy`          | "path"  | `name/size/modified/path` |
+| `includeHidden`   | false   | Include dotfiles          |
 
 ### `search_content`
 
@@ -160,15 +161,19 @@ Read single file with line selection.
 
 ### `read_multiple_files`
 
-Parallel batch reads — failures don't block others.
+Parallel batch reads - failures don't block others.
 
-| Parameter  | Default | Description        |
-| ---------- | ------- | ------------------ |
-| `paths`    | —       | Array (max 100)    |
-| `encoding` | utf-8   | Encoding for all   |
-| `maxSize`  | 10MB    | Per-file limit     |
-| `head`     | —       | First N lines each |
-| `tail`     | —       | Last N lines each  |
+| Parameter   | Default | Description                     |
+| ----------- | ------- | ------------------------------- |
+| `paths`     | -       | Array (max 100)                 |
+| `encoding`  | utf-8   | Encoding for all                |
+| `maxSize`   | 10MB    | Per-file limit                  |
+| `head`      | -       | First N lines each              |
+| `tail`      | -       | Last N lines each               |
+| `lineStart` | -       | Start line (1-indexed) per file |
+| `lineEnd`   | -       | End line (inclusive) per file   |
+
+> ⚠️ Cannot combine `head/tail` with `lineStart/lineEnd`
 
 ### `list_directory`
 
@@ -176,11 +181,13 @@ Flat listing with metadata.
 
 | Parameter    | Default | Description               |
 | ------------ | ------- | ------------------------- |
-| `path`       | —       | Directory path            |
+| `path`       | -       | Directory path            |
 | `recursive`  | false   | Include subdirs           |
 | `sortBy`     | "name"  | `name/size/modified/type` |
 | `maxDepth`   | 10      | Depth when recursive      |
 | `maxEntries` | 10000   | Limit (up to 100,000)     |
+
+**Structured output notes:** `entries[].name` is the basename, and `entries[].relativePath` is the path relative to the listed base.
 
 ### `analyze_directory`
 

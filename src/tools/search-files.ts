@@ -106,6 +106,7 @@ async function handleSearchFiles({
   timeoutMs,
   baseNameMatch,
   skipSymlinks,
+  includeHidden,
 }: {
   path: string;
   pattern: string;
@@ -117,6 +118,7 @@ async function handleSearchFiles({
   timeoutMs?: number;
   baseNameMatch?: boolean;
   skipSymlinks?: boolean;
+  includeHidden?: boolean;
 }): Promise<ToolResponse<SearchFilesStructuredResult>> {
   const result = await searchFiles(searchBasePath, pattern, excludePatterns, {
     maxResults,
@@ -126,6 +128,7 @@ async function handleSearchFiles({
     timeoutMs,
     baseNameMatch,
     skipSymlinks,
+    includeHidden,
   });
   return buildToolResponse(
     buildTextResult(result),
@@ -139,7 +142,7 @@ const SEARCH_FILES_TOOL = {
     'Find files matching a glob pattern within a directory tree. ' +
     'Pattern examples: "**/*.ts" (all TypeScript files), "src/**/*.{js,jsx}" (JS/JSX in src), ' +
     '"**/test/**" (all test directories). Returns paths, types, sizes, and modification dates. ' +
-    'Use excludePatterns to skip directories like node_modules.',
+    'Use excludePatterns to skip directories like node_modules, and includeHidden=true to include dotfiles.',
   inputSchema: SearchFilesInputSchema,
   outputSchema: SearchFilesOutputSchema.shape,
   annotations: {

@@ -2,6 +2,8 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { Dirent, Stats } from 'node:fs';
 
+import { minimatch } from 'minimatch';
+
 import type { DirectoryEntry } from '../../config/types.js';
 import { PARALLEL_CONCURRENCY } from '../constants.js';
 import { isHidden, processInParallel } from '../fs-helpers.js';
@@ -24,6 +26,7 @@ export interface ListDirectoryConfig {
   maxDepth: number;
   maxEntries?: number;
   includeSymlinkTargets: boolean;
+  pattern?: string;
 }
 
 export function initListState(): ListDirectoryState {
@@ -233,12 +236,16 @@ async function readVisibleItems(
 function applyDirectoryItemResult(
   result: DirectoryItemResult,
   state: ListDirectoryState,
-  enqueue: (entry: { currentPath: string; depth: number }) => void
+  enqueue: (entry: { currentPath: string; depth: number }) => void,
+  pattern?: string
 ): void {
   const { entry, enqueueDir, skippedInaccessible, symlinkNotFollowed } = result;
 
-  state.entries.push(entry);
-  applyEntryCounts(entry, state);
+  if (!pattern || minimatch(entry.relativePath, pattern, { dot: true })) {
+    state.entries.push(entry);
+    applyEntryCounts(entry, state);
+  }
+
   enqueueDirectory(enqueueDir, enqueue);
   applyResultFlags(state, skippedInaccessible, symlinkNotFollowed);
 }
@@ -271,11 +278,12 @@ function processResults(
   results: DirectoryItemResult[],
   state: ListDirectoryState,
   enqueue: (entry: { currentPath: string; depth: number }) => void,
-  shouldStop: () => boolean
+  shouldStop: () => boolean,
+  pattern?: string
 ): void {
   for (const result of results) {
     if (shouldStop()) break;
-    applyDirectoryItemResult(result, state, enqueue);
+    applyDirectoryItemResult(result, state, enqueue, pattern);
   }
 }
 
@@ -313,5 +321,5 @@ export async function handleDirectory(
   );
 
   state.skippedInaccessible += errors.length;
-  processResults(results, state, enqueue, shouldStop);
+  processResults(results, state, enqueue, shouldStop, config.pattern);
 }

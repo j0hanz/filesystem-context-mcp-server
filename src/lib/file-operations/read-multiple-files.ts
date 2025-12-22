@@ -17,6 +17,7 @@ interface NormalizedReadMultipleOptions {
   encoding: BufferEncoding;
   maxSize: number;
   maxTotalSize: number;
+  lineRange?: { start: number; end: number };
   head?: number;
   tail?: number;
 }
@@ -27,17 +28,64 @@ interface ReadMultipleOptions {
   maxTotalSize?: number;
   head?: number;
   tail?: number;
+  lineStart?: number;
+  lineEnd?: number;
 }
 
-function assertHeadTailOptions(
+function assertLineRangeComplete(
+  lineStart: number | undefined,
+  lineEnd: number | undefined
+): void {
+  const hasLineStart = lineStart !== undefined;
+  const hasLineEnd = lineEnd !== undefined;
+  if (hasLineStart === hasLineEnd) return;
+  const missing = hasLineStart ? 'lineEnd' : 'lineStart';
+  const provided = hasLineStart ? 'lineStart' : 'lineEnd';
+  throw new McpError(
+    ErrorCode.E_INVALID_INPUT,
+    `Invalid lineRange: ${provided} requires ${missing} to also be specified`,
+    undefined
+  );
+}
+
+function assertLineRangeOrder(
+  lineStart: number | undefined,
+  lineEnd: number | undefined
+): void {
+  if (lineStart === undefined || lineEnd === undefined) return;
+  if (lineEnd >= lineStart) return;
+  throw new McpError(
+    ErrorCode.E_INVALID_INPUT,
+    `Invalid lineRange: lineEnd (${lineEnd}) must be >= lineStart (${lineStart})`,
+    undefined
+  );
+}
+
+function buildLineRange(
+  lineStart: number | undefined,
+  lineEnd: number | undefined
+): { start: number; end: number } | undefined {
+  assertLineRangeComplete(lineStart, lineEnd);
+  assertLineRangeOrder(lineStart, lineEnd);
+  if (lineStart === undefined || lineEnd === undefined) return undefined;
+  return { start: lineStart, end: lineEnd };
+}
+
+function assertExclusiveReadOptions(
+  lineRange: { start: number; end: number } | undefined,
   head: number | undefined,
   tail: number | undefined
 ): void {
-  if (head === undefined || tail === undefined) return;
+  const optionsCount = [
+    lineRange !== undefined,
+    head !== undefined,
+    tail !== undefined,
+  ].filter(Boolean).length;
+  if (optionsCount <= 1) return;
 
   throw new McpError(
     ErrorCode.E_INVALID_INPUT,
-    'Cannot specify both head and tail simultaneously',
+    'Cannot specify multiple of lineRange (lineStart + lineEnd), head, or tail simultaneously',
     undefined
   );
 }
@@ -49,17 +97,23 @@ function createOutputSkeleton(filePaths: string[]): ReadMultipleResult[] {
 function normalizeReadMultipleOptions(
   options: ReadMultipleOptions = {}
 ): NormalizedReadMultipleOptions {
+  const lineRange = buildLineRange(options.lineStart, options.lineEnd);
   return {
     encoding: options.encoding ?? 'utf-8',
     maxSize: options.maxSize ?? MAX_TEXT_FILE_SIZE,
     maxTotalSize: options.maxTotalSize ?? 100 * 1024 * 1024,
+    lineRange,
     head: options.head,
     tail: options.tail,
   };
 }
 
 function isPartialRead(options: NormalizedReadMultipleOptions): boolean {
-  return options.head !== undefined || options.tail !== undefined;
+  return (
+    options.lineRange !== undefined ||
+    options.head !== undefined ||
+    options.tail !== undefined
+  );
 }
 
 async function collectFileBudget(
@@ -172,6 +226,7 @@ async function readFilesInParallel(
         maxSize: options.maxSize,
         head: options.head,
         tail: options.tail,
+        lineRange: options.lineRange,
       });
 
       return {
@@ -195,7 +250,11 @@ export async function readMultipleFiles(
   if (filePaths.length === 0) return [];
 
   const normalized = normalizeReadMultipleOptions(options);
-  assertHeadTailOptions(normalized.head, normalized.tail);
+  assertExclusiveReadOptions(
+    normalized.lineRange,
+    normalized.head,
+    normalized.tail
+  );
 
   const output = createOutputSkeleton(filePaths);
   const partialRead = isPartialRead(normalized);

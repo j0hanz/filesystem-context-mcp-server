@@ -32,7 +32,8 @@ export async function searchFiles(
     excludePatterns,
     normalized.maxDepth,
     normalized.baseNameMatch,
-    normalized.skipSymlinks
+    normalized.skipSymlinks,
+    normalized.includeHidden
   );
 
   try {

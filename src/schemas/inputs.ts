@@ -105,6 +105,9 @@ export const SearchFilesInputSchema = {
     .optional()
     .default(true)
     .describe('Skip symbolic links for security and performance'),
+  includeHidden: IncludeHiddenSchema.describe(
+    'Include hidden files and directories (dotfiles) in the search'
+  ),
 };
 
 // Base schema for reading a file with various options.
@@ -149,6 +152,12 @@ const ReadMultipleFilesBaseSchema = z.object({
     ),
   head: HeadLinesSchema.describe('Read only the first N lines of each file'),
   tail: TailLinesSchema.describe('Read only the last N lines of each file'),
+  lineStart: LineStartSchema.describe(
+    'Start line (1-indexed) for reading a range from each file'
+  ),
+  lineEnd: LineEndSchema.describe(
+    'End line (inclusive) for reading a range from each file'
+  ),
 });
 
 export const ReadMultipleFilesInputSchema = ReadMultipleFilesBaseSchema.shape;

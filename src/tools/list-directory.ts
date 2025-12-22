@@ -76,7 +76,7 @@ const LIST_DIRECTORY_TOOL = {
   title: 'List Directory',
   description:
     'List files and subdirectories in a specified path with optional recursive traversal. ' +
-    'Returns names, types (file/directory/symlink), sizes, and modification dates. ' +
+    'Returns names (basename), relative paths, types (file/directory/symlink), sizes, and modification dates. ' +
     'Use recursive=true with maxDepth to explore nested structures. ' +
     'For a visual tree structure, use directory_tree instead.',
   inputSchema: ListDirectoryInputSchema,
@@ -95,9 +95,10 @@ function buildStructuredResult(
     ok: true,
     path: result.path,
     entries: result.entries.map((e) => ({
-      name: e.relativePath,
+      name: e.name,
+      relativePath: e.relativePath,
       type: e.type,
-      extension: getExtension(e.relativePath, e.type === 'file'),
+      extension: getExtension(e.name, e.type === 'file'),
       size: e.size,
       modified: e.modified?.toISOString(),
       symlinkTarget: e.symlinkTarget,
@@ -136,6 +137,7 @@ async function handleListDirectory({
   maxEntries,
   sortBy,
   includeSymlinkTargets,
+  pattern,
 }: {
   path: string;
   recursive?: boolean;
@@ -144,6 +146,7 @@ async function handleListDirectory({
   maxEntries?: number;
   sortBy?: 'name' | 'size' | 'modified' | 'type';
   includeSymlinkTargets?: boolean;
+  pattern?: string;
 }): Promise<ToolResponse<ListDirectoryStructuredResult>> {
   const result = await listDirectory(dirPath, {
     recursive,
@@ -152,6 +155,7 @@ async function handleListDirectory({
     maxEntries,
     sortBy,
     includeSymlinkTargets,
+    pattern,
   });
   const structured = buildStructuredResult(result);
   const textOutput = buildTextResult(result);

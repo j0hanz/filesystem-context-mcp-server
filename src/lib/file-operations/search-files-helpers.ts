@@ -29,6 +29,7 @@ export interface SearchFilesOptions {
   timeoutMs?: number;
   baseNameMatch?: boolean;
   skipSymlinks?: boolean;
+  includeHidden?: boolean;
 }
 
 interface ScanStreamOptions {
@@ -223,13 +224,14 @@ export function createSearchStream(
   excludePatterns: string[],
   maxDepth: number | undefined,
   baseNameMatch = false,
-  skipSymlinks = true
+  skipSymlinks = true,
+  includeHidden = false
 ): AsyncIterable<string | Buffer> {
   return fg.stream(pattern, {
     cwd: basePath,
     absolute: true,
     onlyFiles: true,
-    dot: true,
+    dot: includeHidden,
     ignore: excludePatterns,
     suppressErrors: true,
     followSymbolicLinks: !skipSymlinks,
@@ -246,6 +248,7 @@ export function normalizeSearchFilesOptions(options: SearchFilesOptions): {
   deadlineMs?: number;
   baseNameMatch: boolean;
   skipSymlinks: boolean;
+  includeHidden: boolean;
 } {
   const defaults: Required<Omit<SearchFilesOptions, 'maxDepth'>> & {
     maxDepth: number | undefined;
@@ -257,6 +260,7 @@ export function normalizeSearchFilesOptions(options: SearchFilesOptions): {
     timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
     baseNameMatch: false,
     skipSymlinks: true,
+    includeHidden: false,
   };
   const merged = mergeDefined(defaults, options);
   return {
@@ -267,6 +271,7 @@ export function normalizeSearchFilesOptions(options: SearchFilesOptions): {
     deadlineMs: merged.timeoutMs ? Date.now() + merged.timeoutMs : undefined,
     baseNameMatch: merged.baseNameMatch,
     skipSymlinks: merged.skipSymlinks,
+    includeHidden: merged.includeHidden,
   };
 }
 

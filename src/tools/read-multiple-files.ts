@@ -67,6 +67,8 @@ async function handleReadMultipleFiles(args: {
   maxTotalSize?: number;
   head?: number;
   tail?: number;
+  lineStart?: number;
+  lineEnd?: number;
 }): Promise<ToolResponse<ReadMultipleStructuredResult>> {
   const results = await readMultipleFiles(args.paths, {
     encoding: args.encoding,
@@ -74,6 +76,8 @@ async function handleReadMultipleFiles(args: {
     maxTotalSize: args.maxTotalSize,
     head: args.head,
     tail: args.tail,
+    lineStart: args.lineStart,
+    lineEnd: args.lineEnd,
   });
 
   return buildToolResponse(
@@ -88,7 +92,7 @@ const READ_MULTIPLE_FILES_TOOL = {
     'Read contents of multiple files in a single operation (parallel processing). ' +
     'More efficient than calling read_file repeatedly. ' +
     'Individual file errors do not fail the entire operation-each file reports success or error independently. ' +
-    'Supports head/tail for reading partial content from all files.',
+    'Supports head/tail or lineStart/lineEnd for reading partial content from all files (mutually exclusive).',
   inputSchema: ReadMultipleFilesInputSchema,
   outputSchema: ReadMultipleFilesOutputSchema.shape,
   annotations: {

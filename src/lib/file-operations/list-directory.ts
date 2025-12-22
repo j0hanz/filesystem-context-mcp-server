@@ -21,6 +21,7 @@ interface ListDirectoryOptions {
   maxEntries?: number;
   sortBy?: 'name' | 'size' | 'modified' | 'type';
   includeSymlinkTargets?: boolean;
+  pattern?: string;
 }
 
 function mergeDefined<T extends object>(defaults: T, overrides: Partial<T>): T {
@@ -44,6 +45,7 @@ function normalizeListDirectoryOptions(
     maxEntries: DEFAULT_LIST_MAX_ENTRIES,
     sortBy: 'name',
     includeSymlinkTargets: false,
+    pattern: '',
   };
   return mergeDefined(defaults, options);
 }
@@ -78,6 +80,7 @@ export async function listDirectory(
     maxDepth: normalized.maxDepth,
     maxEntries: normalized.maxEntries,
     includeSymlinkTargets: normalized.includeSymlinkTargets,
+    pattern: normalized.pattern,
   };
 
   await runWorkQueue<{ currentPath: string; depth: number }>(
