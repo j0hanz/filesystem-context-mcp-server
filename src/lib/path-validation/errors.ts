@@ -81,7 +81,7 @@ export function toAccessDeniedWithHint(
   const suggestion = buildAllowedDirectoriesHint();
   return new McpError(
     ErrorCode.E_ACCESS_DENIED,
-    `Access denied: Path '${requestedPath}' is outside allowed directories.\n\n${suggestion}`,
+    `Access denied: Path '${requestedPath}' is outside allowed directories.\n${suggestion}`,
     requestedPath,
     { resolvedPath, normalizedResolvedPath: normalizedResolved }
   );

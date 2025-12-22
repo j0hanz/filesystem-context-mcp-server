@@ -41,7 +41,7 @@ function buildTextResult(
   tail: number | undefined
 ): string {
   const note = buildReadFileNote(result, head, tail);
-  return note ? `${result.content}\n\n${note}` : result.content;
+  return note ? `${result.content}\n${note}` : result.content;
 }
 
 function buildReadFileNote(

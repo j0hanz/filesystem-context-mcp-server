@@ -37,7 +37,7 @@ function buildStructuredResult(
 function buildTextResult(
   results: Awaited<ReturnType<typeof readMultipleFiles>>
 ): string {
-  return results.map(formatReadMultipleResult).join('\n\n');
+  return results.map(formatReadMultipleResult).join('\n');
 }
 
 function formatReadMultipleResult(
@@ -55,9 +55,9 @@ function buildReadMultipleNote(
 ): string {
   if (result.truncated !== true) return '';
   if (result.totalLines !== undefined) {
-    return `\n\n[Truncated. Total lines: ${result.totalLines}]`;
+    return `\n[Truncated. Total lines: ${result.totalLines}]`;
   }
-  return '\n\n[Truncated]';
+  return '\n[Truncated]';
 }
 
 async function handleReadMultipleFiles(args: {
