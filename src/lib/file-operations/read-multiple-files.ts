@@ -65,13 +65,10 @@ function isPartialRead(options: NormalizedReadMultipleOptions): boolean {
 async function collectFileBudget(
   filePaths: string[],
   isPartialRead: boolean,
-  maxTotalSize: number
+  maxTotalSize: number,
+  maxSize: number
 ): Promise<{ skippedBudget: Set<string> }> {
   const skippedBudget = new Set<string>();
-
-  if (isPartialRead) {
-    return { skippedBudget };
-  }
 
   // Gather file sizes
   const { results } = await processInParallel(
@@ -89,7 +86,9 @@ async function collectFileBudget(
   const orderedResults = [...results].sort((a, b) => a.index - b.index);
 
   for (const result of orderedResults) {
-    const estimatedSize = result.size;
+    const estimatedSize = isPartialRead
+      ? Math.min(result.size, maxSize)
+      : result.size;
     if (totalSize + estimatedSize > maxTotalSize) {
       skippedBudget.add(result.filePath);
       continue;
@@ -203,7 +202,8 @@ export async function readMultipleFiles(
   const { skippedBudget } = await collectFileBudget(
     filePaths,
     partialRead,
-    normalized.maxTotalSize
+    normalized.maxTotalSize,
+    normalized.maxSize
   );
 
   const filesToProcess = buildProcessTargets(filePaths, skippedBudget);

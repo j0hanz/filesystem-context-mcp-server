@@ -1,5 +1,6 @@
 export {
   getAllowedDirectories,
+  isPathWithinDirectories,
   setAllowedDirectories,
   setAllowedDirectoriesResolved,
   RESERVED_DEVICE_NAMES,

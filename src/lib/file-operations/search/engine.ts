@@ -1,6 +1,6 @@
 import type { SearchContentResult } from '../../../config/types.js';
 import { safeDestroy } from '../../fs-helpers.js';
-import { validateExistingPath } from '../../path-validation.js';
+import { validateExistingDirectory } from '../../path-validation.js';
 import { validateGlobPatternOrThrow } from '../pattern-validator.js';
 import { buildSearchOptions, getDeadlineMs } from './engine-options.js';
 import type { SearchOptions } from './engine-options.js';
@@ -61,7 +61,7 @@ export async function executeSearch(
 ): Promise<SearchContentResult> {
   const options = buildSearchOptions(partialOptions);
 
-  const validPath = await validateExistingPath(basePath);
+  const validPath = await validateExistingDirectory(basePath);
   validateGlobPatternOrThrow(options.filePattern, validPath);
 
   const matcher = createMatcher(searchPattern, {

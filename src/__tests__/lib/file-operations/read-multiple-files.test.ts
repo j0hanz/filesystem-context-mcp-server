@@ -29,7 +29,7 @@ it('readMultipleFiles handles individual file errors gracefully', async () => {
   expect(results[1]?.error).toBeDefined();
 });
 
-it('readMultipleFiles skips total size cap for head/tail reads', async () => {
+it('readMultipleFiles enforces total size cap for head/tail reads', async () => {
   const big1 = path.join(getTestDir(), 'big1.log');
   const big2 = path.join(getTestDir(), 'big2.log');
   const largeContent = 'A'.repeat(50_000);
@@ -41,6 +41,6 @@ it('readMultipleFiles skips total size cap for head/tail reads', async () => {
     maxTotalSize: 10,
   });
 
-  expect(results.every((r) => r.content !== undefined)).toBe(true);
+  expect(results.every((r) => r.error !== undefined)).toBe(true);
   await Promise.all([fs.rm(big1), fs.rm(big2)]).catch(() => {});
 });

@@ -65,11 +65,12 @@ export function getAllowedDirectories(): string[] {
   return [...allowedDirectories];
 }
 
-export function isPathWithinAllowedDirectories(
-  normalizedPath: string
+export function isPathWithinDirectories(
+  normalizedPath: string,
+  allowedDirs: string[]
 ): boolean {
   const candidate = normalizeForComparison(normalizedPath);
-  return allowedDirectories.some((allowedDir) => {
+  return allowedDirs.some((allowedDir) => {
     const allowed = normalizeForComparison(allowedDir);
     const root = normalizeForComparison(path.parse(allowedDir).root);
     if (allowed === root) {
@@ -79,6 +80,12 @@ export function isPathWithinAllowedDirectories(
       candidate === allowed || candidate.startsWith(allowed + PATH_SEPARATOR)
     );
   });
+}
+
+export function isPathWithinAllowedDirectories(
+  normalizedPath: string
+): boolean {
+  return isPathWithinDirectories(normalizedPath, allowedDirectories);
 }
 
 async function expandAllowedDirectories(dirs: string[]): Promise<string[]> {

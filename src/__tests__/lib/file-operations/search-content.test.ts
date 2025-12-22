@@ -14,6 +14,13 @@ it('searchContent finds content in files', async () => {
   expect(result.matches[0]?.file).toContain('index.ts');
 });
 
+it('searchContent rejects file base path', async () => {
+  const filePath = path.join(getTestDir(), 'README.md');
+  await expect(searchContent(filePath, 'hello')).rejects.toThrow(
+    /not a directory/i
+  );
+});
+
 it('searchContent searches case-insensitively by default', async () => {
   const result = await searchContent(getTestDir(), 'HELLO');
   expect(result.matches.length).toBeGreaterThan(0);

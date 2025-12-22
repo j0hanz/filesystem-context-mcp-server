@@ -1,3 +1,5 @@
+import * as path from 'node:path';
+
 import { expect, it } from 'vitest';
 
 import { searchFiles } from '../../../lib/file-operations.js';
@@ -28,4 +30,11 @@ it('searchFiles returns empty results for non-matching patterns', async () => {
 it('searchFiles respects maxResults', async () => {
   const result = await searchFiles(getTestDir(), '**/*', [], { maxResults: 1 });
   expect(result.results.length).toBeLessThanOrEqual(1);
+});
+
+it('searchFiles rejects file base path', async () => {
+  const filePath = path.join(getTestDir(), 'README.md');
+  await expect(searchFiles(filePath, '**/*.ts')).rejects.toThrow(
+    /not a directory/i
+  );
 });

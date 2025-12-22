@@ -12,6 +12,7 @@ import { normalizePath } from './lib/path-utils.js';
 import {
   getAllowedDirectories,
   getValidRootDirectories,
+  isPathWithinDirectories,
   RESERVED_DEVICE_NAMES,
   setAllowedDirectoriesResolved,
 } from './lib/path-validation.js';
@@ -133,15 +134,18 @@ function logMissingDirectories(options: ServerOptions): void {
 }
 
 async function recomputeAllowedDirectories(): Promise<void> {
-  const cliAllowedDirs = serverOptions.cliAllowedDirs ?? [];
+  const cliAllowedDirs = normalizeAllowedDirectories(
+    serverOptions.cliAllowedDirs ?? []
+  );
   const allowCwd = serverOptions.allowCwd === true;
   const allowCwdDirs = allowCwd ? [normalizePath(process.cwd())] : [];
+  const baseline = [...cliAllowedDirs, ...allowCwdDirs];
+  const rootsToInclude =
+    baseline.length > 0
+      ? await filterRootsWithinBaseline(rootDirectories, baseline)
+      : rootDirectories;
 
-  await setAllowedDirectoriesResolved([
-    ...cliAllowedDirs,
-    ...allowCwdDirs,
-    ...rootDirectories,
-  ]);
+  await setAllowedDirectoriesResolved([...baseline, ...rootsToInclude]);
 }
 
 async function updateRootsFromClient(server: McpServer): Promise<void> {
@@ -153,6 +157,7 @@ async function updateRootsFromClient(server: McpServer): Promise<void> {
     rootDirectories =
       roots.length > 0 ? await getValidRootDirectories(roots as Root[]) : [];
   } catch (error) {
+    rootDirectories = [];
     console.error(
       '[DEBUG] MCP Roots protocol unavailable or failed:',
       error instanceof Error ? error.message : String(error)
@@ -160,6 +165,42 @@ async function updateRootsFromClient(server: McpServer): Promise<void> {
   } finally {
     await recomputeAllowedDirectories();
   }
+}
+
+function normalizeAllowedDirectories(dirs: string[]): string[] {
+  return dirs
+    .map((dir) => dir.trim())
+    .filter((dir) => dir.length > 0)
+    .map(normalizePath);
+}
+
+async function filterRootsWithinBaseline(
+  roots: string[],
+  baseline: string[]
+): Promise<string[]> {
+  const normalizedBaseline = normalizeAllowedDirectories(baseline);
+  const filtered: string[] = [];
+
+  for (const root of roots) {
+    const normalizedRoot = normalizePath(root);
+    if (!isPathWithinDirectories(normalizedRoot, normalizedBaseline)) {
+      continue;
+    }
+
+    try {
+      const realPath = await fs.realpath(normalizedRoot);
+      const normalizedReal = normalizePath(realPath);
+      if (!isPathWithinDirectories(normalizedReal, normalizedBaseline)) {
+        continue;
+      }
+    } catch {
+      continue;
+    }
+
+    filtered.push(normalizedRoot);
+  }
+
+  return filtered;
 }
 
 export function createServer(options: ServerOptions = {}): McpServer {
