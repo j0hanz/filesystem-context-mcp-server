@@ -2,7 +2,6 @@ export {
   getAllowedDirectories,
   setAllowedDirectories,
   setAllowedDirectoriesResolved,
-  expandAllowedDirectories,
   RESERVED_DEVICE_NAMES,
 } from './path-validation/allowed-directories.js';
 export {

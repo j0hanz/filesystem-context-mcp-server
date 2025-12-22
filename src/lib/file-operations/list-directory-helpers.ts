@@ -7,7 +7,7 @@ import { PARALLEL_CONCURRENCY } from '../constants.js';
 import { isHidden, processInParallel } from '../fs-helpers.js';
 import { validateExistingPath } from '../path-validation.js';
 
-export interface ListDirectoryState {
+interface ListDirectoryState {
   entries: DirectoryEntry[];
   totalFiles: number;
   totalDirectories: number;

@@ -42,7 +42,7 @@ function stripTrailingSeparator(normalized: string): string {
     : normalized;
 }
 
-export function normalizeAllowedDirectory(dir: string): string {
+function normalizeAllowedDirectory(dir: string): string {
   const normalized = normalizePath(dir);
   if (normalized.length === 0) return '';
 
@@ -81,9 +81,7 @@ export function isPathWithinAllowedDirectories(
   });
 }
 
-export async function expandAllowedDirectories(
-  dirs: string[]
-): Promise<string[]> {
+async function expandAllowedDirectories(dirs: string[]): Promise<string[]> {
   const expanded: string[] = [];
 
   for (const dir of dirs) {

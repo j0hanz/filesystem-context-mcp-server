@@ -15,21 +15,6 @@ interface DetailedError {
   details?: Record<string, unknown>;
 }
 
-interface ErrorResponse {
-  [key: string]: unknown;
-  content: { type: 'text'; text: string }[];
-  structuredContent: {
-    ok: false;
-    error: {
-      code: string;
-      message: string;
-      path?: string;
-      suggestion?: string;
-    };
-  };
-  isError: true;
-}
-
 export function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return (
     error instanceof Error &&
@@ -183,31 +168,6 @@ export function formatDetailedError(error: DetailedError): string {
 
 export function getSuggestion(code: ErrorCode): string {
   return ERROR_SUGGESTIONS[code];
-}
-
-export function createErrorResponse(
-  error: unknown,
-  defaultCode: ErrorCode,
-  path?: string
-): ErrorResponse {
-  const detailed = createDetailedError(error, path);
-  const finalCode =
-    detailed.code === ErrorCode.E_UNKNOWN ? defaultCode : detailed.code;
-  detailed.code = finalCode;
-
-  return {
-    content: [{ type: 'text', text: formatDetailedError(detailed) }],
-    structuredContent: {
-      ok: false,
-      error: {
-        code: detailed.code,
-        message: detailed.message,
-        path: detailed.path,
-        suggestion: detailed.suggestion,
-      },
-    },
-    isError: true,
-  };
 }
 
 export function toRpcError(

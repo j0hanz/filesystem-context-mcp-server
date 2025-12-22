@@ -5,7 +5,7 @@ const UNSAFE_PATTERN = /\.\.|^[/\\]/;
 const MAX_PATTERN_LENGTH = 1000;
 const MAX_BRACE_EXPANSION = 100;
 
-export interface PatternValidationResult {
+interface PatternValidationResult {
   isValid: boolean;
   error?: string;
   suggestion?: string;
@@ -15,7 +15,7 @@ export interface PatternValidationResult {
  * Validates glob patterns for safety and common mistakes
  * Prevents backslashes, absolute paths, and overly complex patterns
  */
-export function validateGlobPattern(pattern: string): PatternValidationResult {
+function validateGlobPattern(pattern: string): PatternValidationResult {
   // Check for empty pattern
   if (!pattern || pattern.trim().length === 0) {
     return {

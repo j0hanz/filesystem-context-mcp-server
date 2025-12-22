@@ -11,7 +11,7 @@ function createMcpError(
   return new McpError(code, message, requestedPath, details, cause);
 }
 
-export function buildAllowedDirectoriesHint(): string {
+function buildAllowedDirectoriesHint(): string {
   const allowedDirs = getAllowedDirectories();
   return allowedDirs.length > 0
     ? `Allowed directories:\n${allowedDirs.map((d) => `  - ${d}`).join('\n')}`

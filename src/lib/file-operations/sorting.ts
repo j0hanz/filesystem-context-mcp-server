@@ -2,9 +2,9 @@ import * as path from 'node:path';
 
 import type { FileType } from '../../config/types.js';
 
-export type SortField = 'name' | 'size' | 'modified' | 'type' | 'path';
+type SortField = 'name' | 'size' | 'modified' | 'type' | 'path';
 
-export interface Sortable {
+interface Sortable {
   name?: string;
   size?: number;
   modified?: Date;
