@@ -10,6 +10,7 @@ import {
 } from '../schemas/index.js';
 import { buildToolResponse, type ToolResponse } from './tool-response.js';
 
+type ReadMediaArgs = z.infer<z.ZodObject<typeof ReadMediaFileInputSchema>>;
 type ReadMediaStructuredResult = z.infer<typeof ReadMediaFileOutputSchema>;
 
 function buildStructuredResult(
@@ -57,7 +58,7 @@ const READ_MEDIA_FILE_TOOL = {
     'Use this instead of read_file for non-text files. ' +
     'Supports common formats: PNG, JPG, GIF, WebP, SVG, MP3, WAV, TTF, WOFF2, etc.',
   inputSchema: ReadMediaFileInputSchema,
-  outputSchema: ReadMediaFileOutputSchema,
+  outputSchema: ReadMediaFileOutputSchema.shape,
   annotations: {
     readOnlyHint: true,
     idempotentHint: true,
@@ -66,11 +67,15 @@ const READ_MEDIA_FILE_TOOL = {
 } as const;
 
 export function registerReadMediaFileTool(server: McpServer): void {
-  server.registerTool('read_media_file', READ_MEDIA_FILE_TOOL, async (args) => {
-    try {
-      return await handleReadMediaFile(args);
-    } catch (error) {
-      throw toRpcError(error, ErrorCode.E_NOT_FILE, args.path);
+  server.registerTool(
+    'read_media_file',
+    READ_MEDIA_FILE_TOOL,
+    async (args: ReadMediaArgs) => {
+      try {
+        return await handleReadMediaFile(args);
+      } catch (error: unknown) {
+        throw toRpcError(error, ErrorCode.E_NOT_FILE, args.path);
+      }
     }
-  });
+  );
 }

@@ -14,6 +14,7 @@ import {
 } from './shared/search-formatting.js';
 import { buildToolResponse, type ToolResponse } from './tool-response.js';
 
+type SearchContentArgs = z.infer<z.ZodObject<typeof SearchContentInputSchema>>;
 type SearchContentStructuredResult = z.infer<typeof SearchContentOutputSchema>;
 
 async function handleSearchContent({
@@ -83,7 +84,7 @@ const SEARCH_CONTENT_TOOL = {
     'Filter files with filePattern glob (e.g., "**/*.ts" for TypeScript only). ' +
     'Automatically skips binary files unless skipBinary=false.',
   inputSchema: SearchContentInputSchema,
-  outputSchema: SearchContentOutputSchema,
+  outputSchema: SearchContentOutputSchema.shape,
   annotations: {
     readOnlyHint: true,
     idempotentHint: true,
@@ -92,11 +93,15 @@ const SEARCH_CONTENT_TOOL = {
 } as const;
 
 export function registerSearchContentTool(server: McpServer): void {
-  server.registerTool('search_content', SEARCH_CONTENT_TOOL, async (args) => {
-    try {
-      return await handleSearchContent(args);
-    } catch (error) {
-      throw toRpcError(error, ErrorCode.E_UNKNOWN, args.path);
+  server.registerTool(
+    'search_content',
+    SEARCH_CONTENT_TOOL,
+    async (args: SearchContentArgs) => {
+      try {
+        return await handleSearchContent(args);
+      } catch (error: unknown) {
+        throw toRpcError(error, ErrorCode.E_UNKNOWN, args.path);
+      }
     }
-  });
+  );
 }

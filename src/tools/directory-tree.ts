@@ -10,6 +10,7 @@ import {
 } from '../schemas/index.js';
 import { buildToolResponse, type ToolResponse } from './tool-response.js';
 
+type DirectoryTreeArgs = z.infer<z.ZodObject<typeof DirectoryTreeInputSchema>>;
 type DirectoryTreeStructuredResult = z.infer<typeof DirectoryTreeOutputSchema>;
 
 const BYTE_UNIT_LABELS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
@@ -127,7 +128,7 @@ const DIRECTORY_TREE_TOOL = {
     'Use maxDepth to limit traversal depth and excludePatterns to skip folders like node_modules. ' +
     'Optionally include file sizes with includeSize=true.',
   inputSchema: DirectoryTreeInputSchema,
-  outputSchema: DirectoryTreeOutputSchema,
+  outputSchema: DirectoryTreeOutputSchema.shape,
   annotations: {
     readOnlyHint: true,
     idempotentHint: true,
@@ -136,11 +137,15 @@ const DIRECTORY_TREE_TOOL = {
 } as const;
 
 export function registerDirectoryTreeTool(server: McpServer): void {
-  server.registerTool('directory_tree', DIRECTORY_TREE_TOOL, async (args) => {
-    try {
-      return await handleDirectoryTree(args);
-    } catch (error) {
-      throw toRpcError(error, ErrorCode.E_NOT_DIRECTORY, args.path);
+  server.registerTool(
+    'directory_tree',
+    DIRECTORY_TREE_TOOL,
+    async (args: DirectoryTreeArgs) => {
+      try {
+        return await handleDirectoryTree(args);
+      } catch (error: unknown) {
+        throw toRpcError(error, ErrorCode.E_NOT_DIRECTORY, args.path);
+      }
     }
-  });
+  );
 }

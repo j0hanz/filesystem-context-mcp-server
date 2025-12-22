@@ -12,6 +12,9 @@ import {
 } from '../schemas/index.js';
 import { buildToolResponse, type ToolResponse } from './tool-response.js';
 
+type AnalyzeDirectoryArgs = z.infer<
+  z.ZodObject<typeof AnalyzeDirectoryInputSchema>
+>;
 type AnalyzeDirectoryStructuredResult = z.infer<
   typeof AnalyzeDirectoryOutputSchema
 >;
@@ -166,7 +169,7 @@ const ANALYZE_DIRECTORY_TOOL = {
     'Useful for understanding project structure and identifying large files. ' +
     'Use excludePatterns to skip directories like node_modules.',
   inputSchema: AnalyzeDirectoryInputSchema,
-  outputSchema: AnalyzeDirectoryOutputSchema,
+  outputSchema: AnalyzeDirectoryOutputSchema.shape,
   annotations: {
     readOnlyHint: true,
     idempotentHint: true,
@@ -178,10 +181,10 @@ export function registerAnalyzeDirectoryTool(server: McpServer): void {
   server.registerTool(
     'analyze_directory',
     ANALYZE_DIRECTORY_TOOL,
-    async (args) => {
+    async (args: AnalyzeDirectoryArgs) => {
       try {
         return await handleAnalyzeDirectory(args);
-      } catch (error) {
+      } catch (error: unknown) {
         throw toRpcError(error, ErrorCode.E_NOT_DIRECTORY, args.path);
       }
     }

@@ -51,6 +51,7 @@ function buildTextResult(
   return text;
 }
 
+type ReadFileArgs = z.infer<z.ZodObject<typeof ReadFileInputSchema>>;
 type ReadFileStructuredResult = z.infer<typeof ReadFileOutputSchema>;
 
 async function handleReadFile(args: {
@@ -92,7 +93,7 @@ const READ_FILE_TOOL = {
     'For multiple files, use read_multiple_files for efficiency. ' +
     'For binary/media files, use read_media_file instead.',
   inputSchema: ReadFileInputSchema,
-  outputSchema: ReadFileOutputSchema,
+  outputSchema: ReadFileOutputSchema.shape,
   annotations: {
     readOnlyHint: true,
     idempotentHint: true,
@@ -101,11 +102,15 @@ const READ_FILE_TOOL = {
 } as const;
 
 export function registerReadFileTool(server: McpServer): void {
-  server.registerTool('read_file', READ_FILE_TOOL, async (args) => {
-    try {
-      return await handleReadFile(args);
-    } catch (error) {
-      throw toRpcError(error, ErrorCode.E_NOT_FILE, args.path);
+  server.registerTool(
+    'read_file',
+    READ_FILE_TOOL,
+    async (args: ReadFileArgs) => {
+      try {
+        return await handleReadFile(args);
+      } catch (error: unknown) {
+        throw toRpcError(error, ErrorCode.E_NOT_FILE, args.path);
+      }
     }
-  });
+  );
 }

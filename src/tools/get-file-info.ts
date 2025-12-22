@@ -10,6 +10,7 @@ import {
 } from '../schemas/index.js';
 import { buildToolResponse, type ToolResponse } from './tool-response.js';
 
+type GetFileInfoArgs = z.infer<z.ZodObject<typeof GetFileInfoInputSchema>>;
 type GetFileInfoStructuredResult = z.infer<typeof GetFileInfoOutputSchema>;
 
 const BYTE_UNIT_LABELS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
@@ -84,7 +85,7 @@ const GET_FILE_INFO_TOOL = {
     'MIME type (for files), hidden status, and symlink target (if applicable). ' +
     'Use this to check file properties before reading large files.',
   inputSchema: GetFileInfoInputSchema,
-  outputSchema: GetFileInfoOutputSchema,
+  outputSchema: GetFileInfoOutputSchema.shape,
   annotations: {
     readOnlyHint: true,
     idempotentHint: true,
@@ -93,11 +94,15 @@ const GET_FILE_INFO_TOOL = {
 } as const;
 
 export function registerGetFileInfoTool(server: McpServer): void {
-  server.registerTool('get_file_info', GET_FILE_INFO_TOOL, async (args) => {
-    try {
-      return await handleGetFileInfo(args);
-    } catch (error) {
-      throw toRpcError(error, ErrorCode.E_NOT_FOUND, args.path);
+  server.registerTool(
+    'get_file_info',
+    GET_FILE_INFO_TOOL,
+    async (args: GetFileInfoArgs) => {
+      try {
+        return await handleGetFileInfo(args);
+      } catch (error: unknown) {
+        throw toRpcError(error, ErrorCode.E_NOT_FOUND, args.path);
+      }
     }
-  });
+  );
 }

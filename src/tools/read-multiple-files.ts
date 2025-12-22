@@ -10,6 +10,9 @@ import {
 } from '../schemas/index.js';
 import { buildToolResponse, type ToolResponse } from './tool-response.js';
 
+type ReadMultipleArgs = z.infer<
+  z.ZodObject<typeof ReadMultipleFilesInputSchema>
+>;
 type ReadMultipleStructuredResult = z.infer<
   typeof ReadMultipleFilesOutputSchema
 >;
@@ -80,10 +83,10 @@ const READ_MULTIPLE_FILES_TOOL = {
   description:
     'Read contents of multiple files in a single operation (parallel processing). ' +
     'More efficient than calling read_file repeatedly. ' +
-    'Individual file errors do not fail the entire operation—each file reports success or error independently. ' +
+    'Individual file errors do not fail the entire operation-each file reports success or error independently. ' +
     'Supports head/tail for reading partial content from all files.',
   inputSchema: ReadMultipleFilesInputSchema,
-  outputSchema: ReadMultipleFilesOutputSchema,
+  outputSchema: ReadMultipleFilesOutputSchema.shape,
   annotations: {
     readOnlyHint: true,
     idempotentHint: true,
@@ -95,10 +98,10 @@ export function registerReadMultipleFilesTool(server: McpServer): void {
   server.registerTool(
     'read_multiple_files',
     READ_MULTIPLE_FILES_TOOL,
-    async (args) => {
+    async (args: ReadMultipleArgs) => {
       try {
         return await handleReadMultipleFiles(args);
-      } catch (error) {
+      } catch (error: unknown) {
         throw toRpcError(error, ErrorCode.E_UNKNOWN);
       }
     }

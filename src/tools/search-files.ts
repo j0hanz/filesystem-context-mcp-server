@@ -12,6 +12,7 @@ import {
 } from '../schemas/index.js';
 import { buildToolResponse, type ToolResponse } from './tool-response.js';
 
+type SearchFilesArgs = z.infer<z.ZodObject<typeof SearchFilesInputSchema>>;
 type SearchFilesStructuredResult = z.infer<typeof SearchFilesOutputSchema>;
 
 const BYTE_UNIT_LABELS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
@@ -180,7 +181,7 @@ const SEARCH_FILES_TOOL = {
     '"**/test/**" (all test directories). Returns paths, types, sizes, and modification dates. ' +
     'Use excludePatterns to skip directories like node_modules.',
   inputSchema: SearchFilesInputSchema,
-  outputSchema: SearchFilesOutputSchema,
+  outputSchema: SearchFilesOutputSchema.shape,
   annotations: {
     readOnlyHint: true,
     idempotentHint: true,
@@ -189,11 +190,15 @@ const SEARCH_FILES_TOOL = {
 } as const;
 
 export function registerSearchFilesTool(server: McpServer): void {
-  server.registerTool('search_files', SEARCH_FILES_TOOL, async (args) => {
-    try {
-      return await handleSearchFiles(args);
-    } catch (error) {
-      throw toRpcError(error, ErrorCode.E_INVALID_PATTERN, args.path);
+  server.registerTool(
+    'search_files',
+    SEARCH_FILES_TOOL,
+    async (args: SearchFilesArgs) => {
+      try {
+        return await handleSearchFiles(args);
+      } catch (error: unknown) {
+        throw toRpcError(error, ErrorCode.E_INVALID_PATTERN, args.path);
+      }
     }
-  });
+  );
 }

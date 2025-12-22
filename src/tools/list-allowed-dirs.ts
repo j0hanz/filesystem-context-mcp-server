@@ -81,7 +81,7 @@ const LIST_ALLOWED_DIRECTORIES_TOOL = {
     'Call this FIRST to understand the scope of available file operations. ' +
     'All other tools will only work within these directories for security.',
   inputSchema: {},
-  outputSchema: ListAllowedDirectoriesOutputSchema,
+  outputSchema: ListAllowedDirectoriesOutputSchema.shape,
   annotations: {
     readOnlyHint: true,
     idempotentHint: true,

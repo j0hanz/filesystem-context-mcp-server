@@ -18,6 +18,7 @@ function getExtension(name: string, isFile: boolean): string | undefined {
   return ext ? ext.slice(1) : undefined;
 }
 
+type ListDirectoryArgs = z.infer<z.ZodObject<typeof ListDirectoryInputSchema>>;
 type ListDirectoryStructuredResult = z.infer<typeof ListDirectoryOutputSchema>;
 
 const BYTE_UNIT_LABELS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
@@ -117,7 +118,7 @@ const LIST_DIRECTORY_TOOL = {
     'Use recursive=true with maxDepth to explore nested structures. ' +
     'For a visual tree structure, use directory_tree instead.',
   inputSchema: ListDirectoryInputSchema,
-  outputSchema: ListDirectoryOutputSchema,
+  outputSchema: ListDirectoryOutputSchema.shape,
   annotations: {
     readOnlyHint: true,
     idempotentHint: true,
@@ -196,11 +197,15 @@ async function handleListDirectory({
 }
 
 export function registerListDirectoryTool(server: McpServer): void {
-  server.registerTool('list_directory', LIST_DIRECTORY_TOOL, async (args) => {
-    try {
-      return await handleListDirectory(args);
-    } catch (error) {
-      throw toRpcError(error, ErrorCode.E_NOT_DIRECTORY, args.path);
+  server.registerTool(
+    'list_directory',
+    LIST_DIRECTORY_TOOL,
+    async (args: ListDirectoryArgs) => {
+      try {
+        return await handleListDirectory(args);
+      } catch (error: unknown) {
+        throw toRpcError(error, ErrorCode.E_NOT_DIRECTORY, args.path);
+      }
     }
-  });
+  );
 }
