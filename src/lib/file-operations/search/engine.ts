@@ -87,12 +87,12 @@ function shouldStop(
 }
 
 function updateState(state: SearchState, result: ScanResult): void {
+  state.filesScanned++;
   if (!result.scanned) {
     state.skippedInaccessible++;
     return;
   }
 
-  state.filesScanned++;
   if (result.skippedTooLarge) state.skippedTooLarge++;
   if (result.skippedBinary) state.skippedBinary++;
 
