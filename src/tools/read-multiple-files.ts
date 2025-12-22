@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
-import { createErrorResponse, ErrorCode } from '../lib/errors.js';
+import { ErrorCode, toRpcError } from '../lib/errors.js';
 import { readMultipleFiles } from '../lib/file-operations.js';
 import {
   ReadMultipleFilesInputSchema,
@@ -99,7 +99,7 @@ export function registerReadMultipleFilesTool(server: McpServer): void {
       try {
         return await handleReadMultipleFiles(args);
       } catch (error) {
-        return createErrorResponse(error, ErrorCode.E_UNKNOWN);
+        throw toRpcError(error, ErrorCode.E_UNKNOWN);
       }
     }
   );

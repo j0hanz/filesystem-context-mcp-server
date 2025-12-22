@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
-import { createErrorResponse, ErrorCode, McpError } from '../lib/errors.js';
+import { ErrorCode, McpError, toRpcError } from '../lib/errors.js';
 import { readFile } from '../lib/file-operations.js';
 import { ReadFileInputSchema, ReadFileOutputSchema } from '../schemas/index.js';
 import { buildToolResponse, type ToolResponse } from './tool-response.js';
@@ -105,7 +105,7 @@ export function registerReadFileTool(server: McpServer): void {
     try {
       return await handleReadFile(args);
     } catch (error) {
-      return createErrorResponse(error, ErrorCode.E_NOT_FILE, args.path);
+      throw toRpcError(error, ErrorCode.E_NOT_FILE, args.path);
     }
   });
 }

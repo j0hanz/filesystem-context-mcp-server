@@ -4,7 +4,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
-import { createErrorResponse, ErrorCode } from '../lib/errors.js';
+import { ErrorCode, toRpcError } from '../lib/errors.js';
 import { analyzeDirectory } from '../lib/file-operations.js';
 import {
   AnalyzeDirectoryInputSchema,
@@ -182,7 +182,7 @@ export function registerAnalyzeDirectoryTool(server: McpServer): void {
       try {
         return await handleAnalyzeDirectory(args);
       } catch (error) {
-        return createErrorResponse(error, ErrorCode.E_NOT_DIRECTORY, args.path);
+        throw toRpcError(error, ErrorCode.E_NOT_DIRECTORY, args.path);
       }
     }
   );

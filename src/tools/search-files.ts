@@ -4,7 +4,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
-import { createErrorResponse, ErrorCode } from '../lib/errors.js';
+import { ErrorCode, toRpcError } from '../lib/errors.js';
 import { searchFiles } from '../lib/file-operations.js';
 import {
   SearchFilesInputSchema,
@@ -193,7 +193,7 @@ export function registerSearchFilesTool(server: McpServer): void {
     try {
       return await handleSearchFiles(args);
     } catch (error) {
-      return createErrorResponse(error, ErrorCode.E_INVALID_PATTERN, args.path);
+      throw toRpcError(error, ErrorCode.E_INVALID_PATTERN, args.path);
     }
   });
 }

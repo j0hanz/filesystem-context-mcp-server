@@ -1,3 +1,8 @@
+import {
+  ErrorCode as RpcErrorCode,
+  McpError as RpcMcpError,
+} from '@modelcontextprotocol/sdk/types.js';
+
 import { ErrorCode } from '../config/types.js';
 
 export { ErrorCode };
@@ -103,6 +108,18 @@ const ERROR_SUGGESTIONS: Readonly<Record<ErrorCode, string>> = {
     'An unexpected error occurred. Check the error message for details.',
 } as const;
 
+const INVALID_PARAMS_CODES: ReadonlySet<ErrorCode> = new Set([
+  ErrorCode.E_ACCESS_DENIED,
+  ErrorCode.E_NOT_FOUND,
+  ErrorCode.E_NOT_FILE,
+  ErrorCode.E_NOT_DIRECTORY,
+  ErrorCode.E_TOO_LARGE,
+  ErrorCode.E_INVALID_PATTERN,
+  ErrorCode.E_INVALID_INPUT,
+  ErrorCode.E_PERMISSION_DENIED,
+  ErrorCode.E_SYMLINK_NOT_ALLOWED,
+]);
+
 export function classifyError(error: unknown): ErrorCode {
   if (error instanceof McpError) {
     return error.code;
@@ -191,4 +208,29 @@ export function createErrorResponse(
     },
     isError: true,
   };
+}
+
+export function toRpcError(
+  error: unknown,
+  defaultCode: ErrorCode,
+  path?: string
+): RpcMcpError {
+  const detailed = createDetailedError(error, path);
+  const finalCode =
+    detailed.code === ErrorCode.E_UNKNOWN ? defaultCode : detailed.code;
+  detailed.code = finalCode;
+
+  const rpcCode = INVALID_PARAMS_CODES.has(finalCode)
+    ? RpcErrorCode.InvalidParams
+    : RpcErrorCode.InternalError;
+
+  return new RpcMcpError(rpcCode, detailed.message, {
+    toolError: {
+      code: detailed.code,
+      message: detailed.message,
+      path: detailed.path,
+      suggestion: detailed.suggestion,
+      details: detailed.details,
+    },
+  });
 }
