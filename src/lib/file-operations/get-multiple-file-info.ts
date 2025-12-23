@@ -69,7 +69,10 @@ export async function getMultipleFileInfo(
 
   const { results, errors } = await processInParallel(
     paths.map((filePath, index) => ({ filePath, index })),
-    async ({ filePath }) => processFileInfo(filePath),
+    async ({ filePath, index }) => ({
+      index,
+      value: await processFileInfo(filePath),
+    }),
     PARALLEL_CONCURRENCY
   );
 

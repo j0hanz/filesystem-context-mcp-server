@@ -1,5 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import type { Stats } from 'node:fs';
 
 import type { DirectoryTreeResult, TreeEntry } from '../../config/types.js';
 import { validateExistingPathDetailed } from '../path-validation.js';
@@ -140,7 +141,13 @@ async function processTreeEntry(
   );
   if (!resolvedPath) return;
 
-  const stats = await fs.stat(resolvedPath);
+  let stats: Stats;
+  try {
+    stats = await fs.stat(resolvedPath);
+  } catch {
+    state.skippedInaccessible++;
+    return;
+  }
   if (stats.isFile()) {
     addFileEntry(
       state,

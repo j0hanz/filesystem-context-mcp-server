@@ -62,6 +62,14 @@ async function computeSingleChecksum(
     );
   }
 
+  if (!stats.isFile()) {
+    throw new McpError(
+      ErrorCode.E_NOT_FILE,
+      `Cannot compute checksum for non-file path: ${filePath}`,
+      filePath
+    );
+  }
+
   if (stats.size > maxFileSize) {
     throw new McpError(
       ErrorCode.E_TOO_LARGE,
@@ -71,7 +79,12 @@ async function computeSingleChecksum(
   }
 
   // Compute hash using streaming for memory efficiency
-  const hash = await computeHashStream(validPath, algorithm);
+  const hash = await computeHashStream(
+    validPath,
+    algorithm,
+    maxFileSize,
+    filePath
+  );
   const checksum = hash.digest(encoding as crypto.BinaryToTextEncoding);
 
   return {
@@ -84,22 +97,48 @@ async function computeSingleChecksum(
 
 function computeHashStream(
   filePath: string,
-  algorithm: ChecksumAlgorithm
+  algorithm: ChecksumAlgorithm,
+  maxFileSize: number,
+  requestedPath: string
 ): Promise<crypto.Hash> {
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash(algorithm);
     const stream = createReadStream(filePath);
+    let bytesRead = 0;
+    let settled = false;
 
     stream.on('data', (chunk: Buffer | string) => {
+      const chunkSize =
+        typeof chunk === 'string' ? Buffer.byteLength(chunk) : chunk.length;
+      bytesRead += chunkSize;
+      if (bytesRead > maxFileSize) {
+        const error = new McpError(
+          ErrorCode.E_TOO_LARGE,
+          `File exceeds maximum size (${bytesRead} > ${maxFileSize}): ${requestedPath}`,
+          requestedPath
+        );
+        if (!settled) {
+          settled = true;
+          stream.destroy(error);
+          reject(error);
+        }
+        return;
+      }
       hash.update(chunk);
     });
 
     stream.on('end', () => {
-      resolve(hash);
+      if (!settled) {
+        settled = true;
+        resolve(hash);
+      }
     });
 
     stream.on('error', (error) => {
-      reject(error);
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
     });
   });
 }
@@ -141,9 +180,16 @@ export async function computeChecksums(
   }));
 
   const { results, errors } = await processInParallel(
-    paths,
-    async (filePath) =>
-      computeSingleChecksum(filePath, algorithm, encoding, maxFileSize),
+    paths.map((filePath, index) => ({ filePath, index })),
+    async ({ filePath, index }) => ({
+      index,
+      value: await computeSingleChecksum(
+        filePath,
+        algorithm,
+        encoding,
+        maxFileSize
+      ),
+    }),
     PARALLEL_CONCURRENCY
   );
 

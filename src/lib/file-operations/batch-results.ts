@@ -5,26 +5,29 @@ export function createOutputSkeleton<T>(
   return paths.map((filePath) => build(filePath));
 }
 
+export interface IndexedResult<T> {
+  index: number;
+  value: T;
+}
+
 export function applyParallelResults<T extends { path: string }>(
   output: T[],
-  results: T[],
+  results: IndexedResult<T>[],
   errors: { index: number; error: Error }[],
   paths: string[],
   buildError: (filePath: string, error: Error) => T
 ): void {
-  applySuccessResults(output, results, paths);
+  applySuccessResults(output, results);
   applyErrorResults(output, errors, paths, buildError);
 }
 
 function applySuccessResults<T extends { path: string }>(
   output: T[],
-  results: T[],
-  paths: string[]
+  results: IndexedResult<T>[]
 ): void {
   for (const result of results) {
-    const index = paths.indexOf(result.path);
-    if (index !== -1 && output[index] !== undefined) {
-      output[index] = result;
+    if (output[result.index] !== undefined) {
+      output[result.index] = result.value;
     }
   }
 }
