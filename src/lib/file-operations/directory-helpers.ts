@@ -100,6 +100,23 @@ function shouldSkipEntry(
   return false;
 }
 
+async function iterateDirectoryEntries(
+  dir: Dir,
+  currentPath: string,
+  basePath: string,
+  options: DirectoryIterationOptions,
+  handler: (entry: DirectoryIterationEntry) => Promise<void>
+): Promise<void> {
+  const shouldStop = options.shouldStop ?? (() => false);
+
+  for await (const item of dir) {
+    if (shouldStop()) break;
+    const entry = buildIterationEntry(currentPath, basePath, item);
+    if (shouldSkipEntry(entry, options)) continue;
+    await handler(entry);
+  }
+}
+
 export async function forEachDirectoryEntry(
   currentPath: string,
   basePath: string,
@@ -108,15 +125,9 @@ export async function forEachDirectoryEntry(
 ): Promise<void> {
   const dir = await openDirectory(currentPath, options.onInaccessible);
   if (!dir) return;
-  const shouldStop = options.shouldStop ?? (() => false);
 
   try {
-    for await (const item of dir) {
-      if (shouldStop()) break;
-      const entry = buildIterationEntry(currentPath, basePath, item);
-      if (shouldSkipEntry(entry, options)) continue;
-      await handler(entry);
-    }
+    await iterateDirectoryEntries(dir, currentPath, basePath, options, handler);
   } catch {
     options.onInaccessible();
   } finally {

@@ -194,24 +194,31 @@ async function filterRootsWithinBaseline(
 
   for (const root of roots) {
     const normalizedRoot = normalizePath(root);
-    if (!isPathWithinDirectories(normalizedRoot, normalizedBaseline)) {
-      continue;
-    }
-
-    try {
-      const realPath = await fs.realpath(normalizedRoot);
-      const normalizedReal = normalizePath(realPath);
-      if (!isPathWithinDirectories(normalizedReal, normalizedBaseline)) {
-        continue;
-      }
-    } catch {
-      continue;
-    }
-
-    filtered.push(normalizedRoot);
+    const isValid = await isRootWithinBaseline(
+      normalizedRoot,
+      normalizedBaseline
+    );
+    if (isValid) filtered.push(normalizedRoot);
   }
 
   return filtered;
+}
+
+async function isRootWithinBaseline(
+  normalizedRoot: string,
+  baseline: string[]
+): Promise<boolean> {
+  if (!isPathWithinDirectories(normalizedRoot, baseline)) {
+    return false;
+  }
+
+  try {
+    const realPath = await fs.realpath(normalizedRoot);
+    const normalizedReal = normalizePath(realPath);
+    return isPathWithinDirectories(normalizedReal, baseline);
+  } catch {
+    return false;
+  }
 }
 
 export function createServer(options: ServerOptions = {}): McpServer {

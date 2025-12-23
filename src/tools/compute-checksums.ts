@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
+import type { ComputeChecksumsResult } from '../config/types.js';
 import { ErrorCode, toRpcError } from '../lib/errors.js';
 import { computeChecksums } from '../lib/file-operations.js';
 import {
@@ -10,25 +11,6 @@ import {
 } from '../schemas/index.js';
 import { formatBytes } from './shared/formatting.js';
 import { buildToolResponse, type ToolResponse } from './tool-response.js';
-
-type ChecksumAlgorithm = 'md5' | 'sha1' | 'sha256' | 'sha512';
-
-interface ChecksumResult {
-  path: string;
-  checksum?: string;
-  algorithm: ChecksumAlgorithm;
-  size?: number;
-  error?: string;
-}
-
-interface ComputeChecksumsResult {
-  results: ChecksumResult[];
-  summary: {
-    total: number;
-    succeeded: number;
-    failed: number;
-  };
-}
 
 type ComputeChecksumsArgs = z.infer<
   z.ZodObject<typeof ComputeChecksumsInputSchema>
@@ -60,23 +42,31 @@ function buildTextResult(result: ComputeChecksumsResult): string {
   lines.push('');
 
   for (const item of result.results) {
-    if (item.checksum) {
-      const size =
-        item.size !== undefined ? ` (${formatBytes(item.size)})` : '';
-      lines.push(`${item.checksum}  ${item.path}${size}`);
-    } else {
-      lines.push(`[Error: ${item.error ?? 'Unknown error'}]  ${item.path}`);
-    }
+    lines.push(formatChecksumLine(item));
   }
 
   lines.push('');
   lines.push('Summary:');
-  lines.push(`  Algorithm: ${result.results[0]?.algorithm ?? 'sha256'}`);
+  lines.push(`  Algorithm: ${getSummaryAlgorithm(result)}`);
   lines.push(`  Total: ${result.summary.total}`);
   lines.push(`  Succeeded: ${result.summary.succeeded}`);
   lines.push(`  Failed: ${result.summary.failed}`);
 
   return lines.join('\n');
+}
+
+function formatChecksumLine(
+  item: ComputeChecksumsResult['results'][number]
+): string {
+  if (!item.checksum) {
+    return `[Error: ${item.error ?? 'Unknown error'}]  ${item.path}`;
+  }
+  const size = item.size !== undefined ? ` (${formatBytes(item.size)})` : '';
+  return `${item.checksum}  ${item.path}${size}`;
+}
+
+function getSummaryAlgorithm(result: ComputeChecksumsResult): string {
+  return result.results[0]?.algorithm ?? 'sha256';
 }
 
 async function handleComputeChecksums(

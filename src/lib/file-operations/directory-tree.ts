@@ -8,6 +8,7 @@ import {
 } from '../constants.js';
 import { ErrorCode, McpError } from '../errors.js';
 import { runWorkQueue } from '../fs-helpers.js';
+import { mergeDefined } from '../merge-defined.js';
 import { validateExistingPath } from '../path-validation.js';
 import { createExcludeMatcher } from './directory-helpers.js';
 import {
@@ -120,15 +121,4 @@ function normalizeTreeOptions(options: {
     maxFiles: DEFAULT_TREE_MAX_FILES,
   };
   return mergeDefined(defaults, options);
-}
-
-function mergeDefined<T extends object>(defaults: T, overrides: Partial<T>): T {
-  const entries = Object.entries(overrides).filter(
-    ([, value]) => value !== undefined
-  );
-  const merged: T = {
-    ...defaults,
-    ...(Object.fromEntries(entries) as Partial<T>),
-  };
-  return merged;
 }

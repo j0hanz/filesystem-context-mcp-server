@@ -1,11 +1,7 @@
 import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import type { Stats } from 'node:fs';
 
-import type {
-  AnalyzeDirectoryResult,
-  DirectoryAnalysis,
-} from '../../config/types.js';
+import type { AnalyzeDirectoryResult } from '../../config/types.js';
 import {
   DEFAULT_ANALYZE_MAX_ENTRIES,
   DEFAULT_MAX_DEPTH,
@@ -13,87 +9,22 @@ import {
   DIR_TRAVERSAL_CONCURRENCY,
 } from '../constants.js';
 import { runWorkQueue } from '../fs-helpers.js';
+import { mergeDefined } from '../merge-defined.js';
 import {
   validateExistingDirectory,
   validateExistingPathDetailed,
 } from '../path-validation.js';
 import {
+  type AnalysisState,
+  finalizeAnalysis,
+  initAnalysisState,
+  updateFileStats,
+} from './analyze-directory-helpers.js';
+import {
   classifyAccessError,
   createExcludeMatcher,
   forEachDirectoryEntry,
 } from './directory-helpers.js';
-
-interface AnalysisState {
-  totalFiles: number;
-  totalDirectories: number;
-  totalSize: number;
-  currentMaxDepth: number;
-  skippedInaccessible: number;
-  symlinksNotFollowed: number;
-  truncated: boolean;
-  fileTypes: Record<string, number>;
-  largestFiles: { path: string; size: number }[];
-  recentlyModified: { path: string; modified: Date }[];
-}
-
-function initAnalysisState(): AnalysisState {
-  return {
-    totalFiles: 0,
-    totalDirectories: 0,
-    totalSize: 0,
-    currentMaxDepth: 0,
-    skippedInaccessible: 0,
-    symlinksNotFollowed: 0,
-    truncated: false,
-    fileTypes: {},
-    largestFiles: [],
-    recentlyModified: [],
-  };
-}
-
-function pushTopN<T>(
-  arr: T[],
-  item: T,
-  compare: (a: T, b: T) => number,
-  maxLen: number
-): void {
-  if (maxLen <= 0) return;
-  arr.push(item);
-  if (arr.length <= maxLen) return;
-  arr.sort(compare);
-  arr.length = maxLen;
-}
-
-function updateFileType(state: AnalysisState, filename: string): void {
-  const ext = path.extname(filename).toLowerCase() || '(no extension)';
-  state.fileTypes[ext] = (state.fileTypes[ext] ?? 0) + 1;
-}
-
-function updateFileStats(
-  state: AnalysisState,
-  filePath: string,
-  stats: Stats,
-  topN: number
-): void {
-  state.totalFiles++;
-  state.totalSize += stats.size;
-
-  updateFileType(state, filePath);
-
-  pushTopN(
-    state.largestFiles,
-    { path: filePath, size: stats.size },
-    (a, b) => b.size - a.size,
-    topN
-  );
-
-  pushTopN(
-    state.recentlyModified,
-    { path: filePath, modified: stats.mtime },
-    (a, b) => b.modified.getTime() - a.modified.getTime(),
-    topN
-  );
-}
 
 function shouldStop(state: AnalysisState, maxEntries: number): boolean {
   if (state.truncated) return true;
@@ -222,27 +153,6 @@ async function handleEntry(
   );
 }
 
-function finalizeAnalysis(
-  state: AnalysisState,
-  basePath: string
-): DirectoryAnalysis {
-  state.largestFiles.sort((a, b) => b.size - a.size);
-  state.recentlyModified.sort(
-    (a, b) => b.modified.getTime() - a.modified.getTime()
-  );
-
-  return {
-    path: basePath,
-    totalFiles: state.totalFiles,
-    totalDirectories: state.totalDirectories,
-    totalSize: state.totalSize,
-    fileTypes: state.fileTypes,
-    largestFiles: state.largestFiles,
-    recentlyModified: state.recentlyModified,
-    maxDepth: state.currentMaxDepth,
-  };
-}
-
 export async function analyzeDirectory(
   dirPath: string,
   options: {
@@ -305,15 +215,4 @@ function normalizeAnalyzeOptions(options: {
     includeHidden: false,
   };
   return mergeDefined(defaults, options);
-}
-
-function mergeDefined<T extends object>(defaults: T, overrides: Partial<T>): T {
-  const entries = Object.entries(overrides).filter(
-    ([, value]) => value !== undefined
-  );
-  const merged: T = {
-    ...defaults,
-    ...(Object.fromEntries(entries) as Partial<T>),
-  };
-  return merged;
 }

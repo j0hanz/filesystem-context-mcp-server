@@ -1,13 +1,16 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import type { Dir, Dirent, Stats } from 'node:fs';
+import type { Dir, Dirent } from 'node:fs';
 
 import { minimatch } from 'minimatch';
 
 import type { DirectoryEntry } from '../../config/types.js';
 import { PARALLEL_CONCURRENCY } from '../constants.js';
 import { isHidden, processInParallel } from '../fs-helpers.js';
-import { validateExistingPath } from '../path-validation.js';
+import {
+  buildDirectoryItemResult,
+  type DirectoryItemResult,
+} from './list-directory-entry.js';
 
 interface ListDirectoryState {
   entries: DirectoryEntry[];
@@ -40,178 +43,6 @@ export function initListState(): ListDirectoryState {
     skippedInaccessible: 0,
     symlinksNotFollowed: 0,
   };
-}
-
-interface DirectoryItemResult {
-  entry: DirectoryEntry;
-  enqueueDir?: { currentPath: string; depth: number };
-  skippedInaccessible?: boolean;
-  symlinkNotFollowed?: boolean;
-}
-
-function buildEntryBase(
-  item: Dirent,
-  fullPath: string,
-  relativePath: string,
-  type: DirectoryEntry['type']
-): DirectoryEntry {
-  return {
-    name: item.name,
-    path: fullPath,
-    relativePath,
-    type,
-  };
-}
-
-function resolveEntryType(stats: Stats): DirectoryEntry['type'] {
-  if (stats.isDirectory()) return 'directory';
-  if (stats.isFile()) return 'file';
-  if (stats.isSymbolicLink()) return 'symlink';
-  return 'other';
-}
-
-async function buildSymlinkResult(
-  item: Dirent,
-  fullPath: string,
-  relativePath: string,
-  includeSymlinkTargets: boolean,
-  stats: Stats
-): Promise<DirectoryItemResult> {
-  let symlinkTarget: string | undefined;
-
-  if (includeSymlinkTargets) {
-    try {
-      symlinkTarget = await fs.readlink(fullPath);
-    } catch {
-      symlinkTarget = undefined;
-    }
-  }
-
-  const entry: DirectoryEntry = {
-    name: item.name,
-    path: fullPath,
-    relativePath,
-    type: 'symlink',
-    size: stats.size,
-    modified: stats.mtime,
-    symlinkTarget,
-  };
-
-  return { entry, symlinkNotFollowed: true };
-}
-
-async function buildEnqueueDir(
-  fullPath: string,
-  depth: number,
-  maxDepth: number,
-  recursive: boolean
-): Promise<{ currentPath: string; depth: number } | undefined> {
-  if (!recursive || depth + 1 > maxDepth) return undefined;
-
-  return {
-    currentPath: await validateExistingPath(fullPath),
-    depth: depth + 1,
-  };
-}
-
-async function buildRegularResult(
-  item: Dirent,
-  fullPath: string,
-  relativePath: string,
-  stats: Stats,
-  options: {
-    includeSymlinkTargets: boolean;
-    recursive: boolean;
-    depth: number;
-    maxDepth: number;
-    basePath: string;
-  }
-): Promise<DirectoryItemResult> {
-  const type = resolveEntryType(stats);
-
-  const entry: DirectoryEntry = {
-    ...buildEntryBase(item, fullPath, relativePath, type),
-    size: type === 'file' ? stats.size : undefined,
-    modified: stats.mtime,
-  };
-
-  const enqueueDir = await buildEnqueueDir(
-    fullPath,
-    options.depth,
-    options.maxDepth,
-    options.recursive
-  );
-
-  return { entry, enqueueDir };
-}
-
-function buildFallbackEntry(
-  item: Dirent,
-  fullPath: string,
-  relativePath: string
-): DirectoryItemResult {
-  const type: DirectoryEntry['type'] = item.isDirectory()
-    ? 'directory'
-    : item.isFile()
-      ? 'file'
-      : item.isSymbolicLink()
-        ? 'symlink'
-        : 'other';
-
-  return {
-    entry: buildEntryBase(item, fullPath, relativePath, type),
-    skippedInaccessible: true,
-  };
-}
-
-async function buildDirectoryItemResult(
-  item: Dirent,
-  currentPath: string,
-  basePath: string,
-  options: {
-    includeSymlinkTargets: boolean;
-    recursive: boolean;
-    depth: number;
-    maxDepth: number;
-  }
-): Promise<DirectoryItemResult> {
-  const fullPath = path.join(currentPath, item.name);
-  const relativePath = path.relative(basePath, fullPath) || item.name;
-
-  try {
-    return await buildDirectoryItemResultCore(item, fullPath, relativePath, {
-      ...options,
-      basePath,
-    });
-  } catch {
-    return buildFallbackEntry(item, fullPath, relativePath);
-  }
-}
-
-async function buildDirectoryItemResultCore(
-  item: Dirent,
-  fullPath: string,
-  relativePath: string,
-  options: {
-    includeSymlinkTargets: boolean;
-    recursive: boolean;
-    depth: number;
-    maxDepth: number;
-    basePath: string;
-  }
-): Promise<DirectoryItemResult> {
-  const stats = await fs.lstat(fullPath);
-  if (stats.isSymbolicLink()) {
-    return await buildSymlinkResult(
-      item,
-      fullPath,
-      relativePath,
-      options.includeSymlinkTargets,
-      stats
-    );
-  }
-
-  return await buildRegularResult(item, fullPath, relativePath, stats, options);
 }
 
 export function createStopChecker(
@@ -271,12 +102,16 @@ async function* streamVisibleItems(
   const dir = await openDirectory(currentPath, onInaccessible);
   if (!dir) return;
 
+  const filteredItems = filterVisibleItems(
+    dir,
+    currentPath,
+    basePath,
+    includeHidden,
+    excludePatterns
+  );
+
   try {
-    for await (const item of dir) {
-      if (!includeHidden && isHidden(item.name)) continue;
-      if (shouldExcludeEntry(item, currentPath, basePath, excludePatterns)) {
-        continue;
-      }
+    for await (const item of filteredItems) {
       yield item;
     }
   } catch {
@@ -284,6 +119,40 @@ async function* streamVisibleItems(
   } finally {
     await dir.close().catch(() => {});
   }
+}
+
+async function* filterVisibleItems(
+  items: AsyncIterable<Dirent>,
+  currentPath: string,
+  basePath: string,
+  includeHidden: boolean,
+  excludePatterns: string[]
+): AsyncIterable<Dirent> {
+  for await (const item of items) {
+    if (
+      shouldIncludeEntry(item, currentPath, basePath, {
+        includeHidden,
+        excludePatterns,
+      })
+    ) {
+      yield item;
+    }
+  }
+}
+
+function shouldIncludeEntry(
+  item: Dirent,
+  currentPath: string,
+  basePath: string,
+  options: { includeHidden: boolean; excludePatterns: string[] }
+): boolean {
+  if (!options.includeHidden && isHidden(item.name)) return false;
+  if (
+    shouldExcludeEntry(item, currentPath, basePath, options.excludePatterns)
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function applyDirectoryItemResult(
@@ -340,6 +209,52 @@ function processResults(
   }
 }
 
+async function flushBatch(
+  batch: Dirent[],
+  params: { currentPath: string; depth: number },
+  config: ListDirectoryConfig,
+  state: ListDirectoryState,
+  enqueue: (entry: { currentPath: string; depth: number }) => void,
+  shouldStop: () => boolean
+): Promise<void> {
+  if (batch.length === 0) return;
+  if (shouldStop()) return;
+
+  const items = batch.splice(0, batch.length);
+  const { results, errors } = await processInParallel(
+    items,
+    async (item) =>
+      buildDirectoryItemResult(item, params.currentPath, config.basePath, {
+        includeSymlinkTargets: config.includeSymlinkTargets,
+        recursive: config.recursive,
+        depth: params.depth,
+        maxDepth: config.maxDepth,
+      }),
+    PARALLEL_CONCURRENCY
+  );
+
+  state.skippedInaccessible += errors.length;
+  processResults(results, state, enqueue, shouldStop, config.pattern);
+}
+
+async function processItemStream(
+  itemStream: AsyncIterable<Dirent>,
+  batch: Dirent[],
+  params: { currentPath: string; depth: number },
+  config: ListDirectoryConfig,
+  state: ListDirectoryState,
+  enqueue: (entry: { currentPath: string; depth: number }) => void,
+  shouldStop: () => boolean
+): Promise<void> {
+  for await (const item of itemStream) {
+    if (shouldStop()) break;
+    batch.push(item);
+    if (batch.length >= PARALLEL_CONCURRENCY) {
+      await flushBatch(batch, params, config, state, enqueue, shouldStop);
+    }
+  }
+}
+
 export async function handleDirectory(
   params: { currentPath: string; depth: number },
   enqueue: (entry: { currentPath: string; depth: number }) => void,
@@ -347,8 +262,7 @@ export async function handleDirectory(
   state: ListDirectoryState,
   shouldStop: () => boolean
 ): Promise<void> {
-  if (params.depth > config.maxDepth) return;
-  if (shouldStop()) return;
+  if (params.depth > config.maxDepth || shouldStop()) return;
 
   state.maxDepthReached = Math.max(state.maxDepthReached, params.depth);
 
@@ -362,34 +276,14 @@ export async function handleDirectory(
     }
   );
   const batch: Dirent[] = [];
-
-  const flushBatch = async (): Promise<void> => {
-    if (batch.length === 0) return;
-    const items = batch.splice(0, batch.length);
-    const { results, errors } = await processInParallel(
-      items,
-      async (item) =>
-        buildDirectoryItemResult(item, params.currentPath, config.basePath, {
-          includeSymlinkTargets: config.includeSymlinkTargets,
-          recursive: config.recursive,
-          depth: params.depth,
-          maxDepth: config.maxDepth,
-        }),
-      PARALLEL_CONCURRENCY
-    );
-
-    state.skippedInaccessible += errors.length;
-    processResults(results, state, enqueue, shouldStop, config.pattern);
-  };
-
-  for await (const item of itemStream) {
-    if (shouldStop()) break;
-    batch.push(item);
-    if (batch.length >= PARALLEL_CONCURRENCY) {
-      await flushBatch();
-      if (shouldStop()) break;
-    }
-  }
-
-  await flushBatch();
+  await processItemStream(
+    itemStream,
+    batch,
+    params,
+    config,
+    state,
+    enqueue,
+    shouldStop
+  );
+  await flushBatch(batch, params, config, state, enqueue, shouldStop);
 }

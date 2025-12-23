@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
-import type { FileInfo } from '../config/types.js';
+import type { GetMultipleFileInfoResult } from '../config/types.js';
 import { ErrorCode, toRpcError } from '../lib/errors.js';
 import { getMultipleFileInfo } from '../lib/file-operations.js';
 import {
@@ -18,22 +18,6 @@ type GetMultipleFileInfoArgs = z.infer<
 type GetMultipleFileInfoStructuredResult = z.infer<
   typeof GetMultipleFileInfoOutputSchema
 >;
-
-interface MultipleFileInfoResult {
-  path: string;
-  info?: FileInfo;
-  error?: string;
-}
-
-interface GetMultipleFileInfoResult {
-  results: MultipleFileInfoResult[];
-  summary: {
-    total: number;
-    succeeded: number;
-    failed: number;
-    totalSize: number;
-  };
-}
 
 function buildStructuredResult(
   result: GetMultipleFileInfoResult
@@ -70,20 +54,7 @@ function buildTextResult(result: GetMultipleFileInfoResult): string {
   lines.push('');
 
   for (const item of result.results) {
-    if (item.info) {
-      lines.push(`=== ${item.path} ===`);
-      lines.push(`  Type: ${item.info.type}`);
-      lines.push(`  Size: ${formatBytes(item.info.size)}`);
-      lines.push(`  Modified: ${item.info.modified.toISOString()}`);
-      if (item.info.mimeType) {
-        lines.push(`  MIME: ${item.info.mimeType}`);
-      }
-      lines.push('');
-    } else {
-      lines.push(`=== ${item.path} ===`);
-      lines.push(`  [Error: ${item.error ?? 'Unknown error'}]`);
-      lines.push('');
-    }
+    lines.push(...formatFileInfoBlock(item));
   }
 
   lines.push('Summary:');
@@ -93,6 +64,30 @@ function buildTextResult(result: GetMultipleFileInfoResult): string {
   lines.push(`  Total Size: ${formatBytes(result.summary.totalSize)}`);
 
   return lines.join('\n');
+}
+
+function formatFileInfoBlock(
+  item: GetMultipleFileInfoResult['results'][number]
+): string[] {
+  if (!item.info) {
+    return [
+      `=== ${item.path} ===`,
+      `  [Error: ${item.error ?? 'Unknown error'}]`,
+      '',
+    ];
+  }
+
+  const lines = [
+    `=== ${item.path} ===`,
+    `  Type: ${item.info.type}`,
+    `  Size: ${formatBytes(item.info.size)}`,
+    `  Modified: ${item.info.modified.toISOString()}`,
+  ];
+  if (item.info.mimeType) {
+    lines.push(`  MIME: ${item.info.mimeType}`);
+  }
+  lines.push('');
+  return lines;
 }
 
 async function handleGetMultipleFileInfo(

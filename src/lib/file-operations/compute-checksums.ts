@@ -2,13 +2,17 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 
+import type {
+  ChecksumAlgorithm,
+  ChecksumEncoding,
+  ChecksumResult,
+  ComputeChecksumsResult,
+} from '../../config/types.js';
 import { PARALLEL_CONCURRENCY } from '../constants.js';
 import { ErrorCode, McpError } from '../errors.js';
 import { processInParallel } from '../fs-helpers.js';
 import { validateExistingPath } from '../path-validation.js';
-
-type ChecksumAlgorithm = 'md5' | 'sha1' | 'sha256' | 'sha512';
-type ChecksumEncoding = 'hex' | 'base64';
+import { applyParallelResults, createOutputSkeleton } from './batch-results.js';
 
 interface ComputeChecksumsOptions {
   algorithm?: ChecksumAlgorithm;
@@ -16,24 +20,28 @@ interface ComputeChecksumsOptions {
   maxFileSize?: number;
 }
 
-interface ChecksumResult {
-  path: string;
-  checksum?: string;
-  algorithm: ChecksumAlgorithm;
-  size?: number;
-  error?: string;
-}
+const DEFAULT_MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+const DEFAULT_ALGORITHM: ChecksumAlgorithm = 'sha256';
+const DEFAULT_ENCODING: ChecksumEncoding = 'hex';
 
-interface ComputeChecksumsResult {
-  results: ChecksumResult[];
-  summary: {
-    total: number;
-    succeeded: number;
-    failed: number;
+function normalizeComputeOptions(options: ComputeChecksumsOptions): {
+  algorithm: ChecksumAlgorithm;
+  encoding: ChecksumEncoding;
+  maxFileSize: number;
+} {
+  return {
+    algorithm: options.algorithm ?? DEFAULT_ALGORITHM,
+    encoding: options.encoding ?? DEFAULT_ENCODING,
+    maxFileSize: options.maxFileSize ?? DEFAULT_MAX_FILE_SIZE,
   };
 }
 
-const DEFAULT_MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+function buildEmptyResult(): ComputeChecksumsResult {
+  return {
+    results: [],
+    summary: { total: 0, succeeded: 0, failed: 0 },
+  };
+}
 
 async function computeSingleChecksum(
   filePath: string,
@@ -96,44 +104,6 @@ function computeHashStream(
   });
 }
 
-function createOutputSkeleton(
-  paths: string[],
-  algorithm: ChecksumAlgorithm
-): ChecksumResult[] {
-  return paths.map((filePath) => ({
-    path: filePath,
-    algorithm,
-  }));
-}
-
-function applyResults(
-  output: ChecksumResult[],
-  results: ChecksumResult[],
-  errors: { index: number; error: Error }[],
-  paths: string[],
-  algorithm: ChecksumAlgorithm
-): void {
-  // Apply successful results
-  for (const result of results) {
-    const index = paths.indexOf(result.path);
-    if (index !== -1 && output[index] !== undefined) {
-      output[index] = result;
-    }
-  }
-
-  // Apply errors
-  for (const failure of errors) {
-    const filePath = paths[failure.index] ?? '(unknown)';
-    if (output[failure.index] !== undefined) {
-      output[failure.index] = {
-        path: filePath,
-        algorithm,
-        error: failure.error.message,
-      };
-    }
-  }
-}
-
 function calculateSummary(results: ChecksumResult[]): {
   total: number;
   succeeded: number;
@@ -161,27 +131,27 @@ export async function computeChecksums(
   paths: string[],
   options: ComputeChecksumsOptions = {}
 ): Promise<ComputeChecksumsResult> {
-  if (paths.length === 0) {
-    return {
-      results: [],
-      summary: { total: 0, succeeded: 0, failed: 0 },
-    };
-  }
+  if (paths.length === 0) return buildEmptyResult();
 
-  const algorithm: ChecksumAlgorithm = options.algorithm ?? 'sha256';
-  const encoding: ChecksumEncoding = options.encoding ?? 'hex';
-  const maxFileSize = options.maxFileSize ?? DEFAULT_MAX_FILE_SIZE;
+  const { algorithm, encoding, maxFileSize } = normalizeComputeOptions(options);
 
-  const output = createOutputSkeleton(paths, algorithm);
+  const output = createOutputSkeleton(paths, (filePath) => ({
+    path: filePath,
+    algorithm,
+  }));
 
   const { results, errors } = await processInParallel(
-    paths.map((filePath, index) => ({ filePath, index })),
-    async ({ filePath }) =>
+    paths,
+    async (filePath) =>
       computeSingleChecksum(filePath, algorithm, encoding, maxFileSize),
     PARALLEL_CONCURRENCY
   );
 
-  applyResults(output, results, errors, paths, algorithm);
+  applyParallelResults(output, results, errors, paths, (filePath, error) => ({
+    path: filePath,
+    algorithm,
+    error: error.message,
+  }));
 
   return {
     results: output,

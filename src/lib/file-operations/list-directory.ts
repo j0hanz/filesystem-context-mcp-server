@@ -5,6 +5,7 @@ import {
   DIR_TRAVERSAL_CONCURRENCY,
 } from '../constants.js';
 import { runWorkQueue } from '../fs-helpers.js';
+import { mergeDefined } from '../merge-defined.js';
 import { validateExistingDirectory } from '../path-validation.js';
 import {
   createStopChecker,
@@ -23,17 +24,6 @@ interface ListDirectoryOptions {
   sortBy?: 'name' | 'size' | 'modified' | 'type';
   includeSymlinkTargets?: boolean;
   pattern?: string;
-}
-
-function mergeDefined<T extends object>(defaults: T, overrides: Partial<T>): T {
-  const entries = Object.entries(overrides).filter(
-    ([, value]) => value !== undefined
-  );
-  const merged: T = {
-    ...defaults,
-    ...(Object.fromEntries(entries) as Partial<T>),
-  };
-  return merged;
 }
 
 function normalizeListDirectoryOptions(

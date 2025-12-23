@@ -3,14 +3,16 @@ import { safeDestroy } from '../fs-helpers.js';
 import { validateExistingDirectory } from '../path-validation.js';
 import { validateGlobPatternOrThrow } from './pattern-validator.js';
 import {
-  buildScanOptions,
   buildSearchFilesResult,
   createSearchStream,
   initSearchFilesState,
-  normalizeSearchFilesOptions,
   scanStream,
-  type SearchFilesOptions,
 } from './search-files-helpers.js';
+import {
+  buildScanOptions,
+  normalizeSearchFilesOptions,
+  type SearchFilesOptions,
+} from './search-files-options.js';
 
 export async function searchFiles(
   basePath: string,

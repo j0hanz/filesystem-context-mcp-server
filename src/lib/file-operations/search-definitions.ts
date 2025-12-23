@@ -14,6 +14,45 @@ import { executeSearch } from './search/engine.js';
  * TypeScript/JavaScript file extensions for definition search
  */
 const TS_JS_FILE_PATTERN = '**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}';
+const ARROW_FUNCTION_REGEX = /=\s*(?:async\s+)?(?:\([^)]*\)|[^=])\s*=>/u;
+const SIMPLE_TYPE_PATTERNS: Readonly<Record<DefinitionType, string>> = {
+  class: '\\bclass\\s+[A-Za-z_$]',
+  function: '\\bfunction\\s+[A-Za-z_$]',
+  interface: '\\binterface\\s+[A-Za-z_$]',
+  type: '\\btype\\s+[A-Za-z_$]',
+  enum: '\\benum\\s+[A-Za-z_$]',
+  variable: '\\b(?:const|let|var)\\s+[A-Za-z_$]',
+} as const;
+
+const KEYWORD_BY_TYPE: Readonly<Record<DefinitionType, string>> = {
+  class: 'class',
+  function: 'function',
+  interface: 'interface',
+  type: 'type',
+  enum: 'enum',
+  variable: '(?:const|let|var)',
+} as const;
+
+const LINE_TYPE_PATTERNS: readonly [RegExp, DefinitionType][] = [
+  [/\bclass\s+/u, 'class'],
+  [/\binterface\s+/u, 'interface'],
+  [/\btype\s+\w+\s*=/u, 'type'],
+  [/\benum\s+/u, 'enum'],
+  [/\bfunction\s+/u, 'function'],
+  [ARROW_FUNCTION_REGEX, 'function'],
+];
+
+const NAME_EXTRACTORS: readonly [RegExp, readonly DefinitionType[]][] = [
+  [/\bclass\s+([A-Za-z_$][A-Za-z0-9_$]*)/u, ['class']],
+  [/\binterface\s+([A-Za-z_$][A-Za-z0-9_$]*)/u, ['interface']],
+  [/\btype\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=/u, ['type']],
+  [/\benum\s+([A-Za-z_$][A-Za-z0-9_$]*)/u, ['enum']],
+  [/\bfunction\s+([A-Za-z_$][A-Za-z0-9_$]*)/u, ['function']],
+  [
+    /\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)/u,
+    ['variable', 'function'],
+  ],
+];
 
 /**
  * Escape special regex characters in a string
@@ -27,21 +66,7 @@ function escapeRegex(str: string): string {
  * These patterns are safe for regex engines and we filter results post-search.
  */
 function getSimpleTypePattern(type: DefinitionType): string {
-  // Use simple keyword patterns that are safe for regex
-  switch (type) {
-    case 'class':
-      return '\\bclass\\s+[A-Za-z_$]';
-    case 'function':
-      return '\\bfunction\\s+[A-Za-z_$]';
-    case 'interface':
-      return '\\binterface\\s+[A-Za-z_$]';
-    case 'type':
-      return '\\btype\\s+[A-Za-z_$]';
-    case 'enum':
-      return '\\benum\\s+[A-Za-z_$]';
-    case 'variable':
-      return '\\b(?:const|let|var)\\s+[A-Za-z_$]';
-  }
+  return SIMPLE_TYPE_PATTERNS[type];
 }
 
 /**
@@ -68,24 +93,48 @@ function buildPattern(name?: string, type?: DefinitionType): string {
   return '\\b(?:class|interface|type|function|enum|const|let|var)\\s+[A-Za-z_$]';
 }
 
+function getMaxResults(options: SearchDefinitionsOptions): number {
+  return options.maxResults ?? 100;
+}
+
+function isArrowFunction(content: string): boolean {
+  return ARROW_FUNCTION_REGEX.test(content);
+}
+
 /**
  * Get the primary keyword for a definition type
  */
 function getKeywordForType(type: DefinitionType): string {
-  switch (type) {
-    case 'class':
-      return 'class';
-    case 'function':
-      return 'function';
-    case 'interface':
-      return 'interface';
-    case 'type':
-      return 'type';
-    case 'enum':
-      return 'enum';
-    case 'variable':
-      return '(?:const|let|var)';
-  }
+  return KEYWORD_BY_TYPE[type];
+}
+
+function resolveEffectiveType(
+  detectedType: DefinitionType,
+  searchType: DefinitionType | undefined,
+  content: string
+): DefinitionType {
+  if (searchType !== 'function') return detectedType;
+  if (detectedType !== 'variable') return detectedType;
+  return isArrowFunction(content) ? 'function' : detectedType;
+}
+
+function isNameMatch(
+  name: string,
+  searchName: string | undefined,
+  caseSensitive: boolean
+): boolean {
+  if (!searchName) return true;
+  return caseSensitive
+    ? name === searchName
+    : name.toLowerCase() === searchName.toLowerCase();
+}
+
+function isTypeMatch(
+  searchType: DefinitionType | undefined,
+  effectiveType: DefinitionType
+): boolean {
+  if (!searchType) return true;
+  return effectiveType === searchType;
 }
 
 /**
@@ -93,16 +142,8 @@ function getKeywordForType(type: DefinitionType): string {
  */
 function classifyLine(content: string): DefinitionType {
   const trimmed = content.trim();
-
-  if (/\bclass\s+/u.test(trimmed)) return 'class';
-  if (/\binterface\s+/u.test(trimmed)) return 'interface';
-  if (/\btype\s+\w+\s*=/u.test(trimmed)) return 'type';
-  if (/\benum\s+/u.test(trimmed)) return 'enum';
-  if (
-    /\bfunction\s+/u.test(trimmed) ||
-    /=\s*(?:async\s+)?(?:\([^)]*\)|[^=])\s*=>/u.test(trimmed)
-  ) {
-    return 'function';
+  for (const [pattern, type] of LINE_TYPE_PATTERNS) {
+    if (pattern.test(trimmed)) return type;
   }
   return 'variable';
 }
@@ -112,27 +153,19 @@ function classifyLine(content: string): DefinitionType {
  */
 function extractName(content: string, searchType?: DefinitionType): string {
   const trimmed = content.trim();
-
-  // Try specific patterns based on type
-  const patterns: [RegExp, DefinitionType[]][] = [
-    [/\bclass\s+([A-Za-z_$][A-Za-z0-9_$]*)/u, ['class']],
-    [/\binterface\s+([A-Za-z_$][A-Za-z0-9_$]*)/u, ['interface']],
-    [/\btype\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=/u, ['type']],
-    [/\benum\s+([A-Za-z_$][A-Za-z0-9_$]*)/u, ['enum']],
-    [/\bfunction\s+([A-Za-z_$][A-Za-z0-9_$]*)/u, ['function']],
-    [
-      /\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)/u,
-      ['variable', 'function'],
-    ],
-  ];
-
-  for (const [pattern, types] of patterns) {
-    if (searchType && !types.includes(searchType)) continue;
+  const candidates = getExtractorCandidates(searchType);
+  for (const [pattern] of candidates) {
     const match = pattern.exec(trimmed);
     if (match?.[1]) return match[1];
   }
-
   return 'unknown';
+}
+
+function getExtractorCandidates(
+  searchType?: DefinitionType
+): readonly [RegExp, readonly DefinitionType[]][] {
+  if (!searchType) return NAME_EXTRACTORS;
+  return NAME_EXTRACTORS.filter(([, types]) => types.includes(searchType));
 }
 
 /**
@@ -140,6 +173,61 @@ function extractName(content: string, searchType?: DefinitionType): string {
  */
 function isExported(content: string): boolean {
   return /\bexport\b/u.test(content);
+}
+
+function resolveDefinitionMeta(
+  content: string,
+  searchName?: string,
+  searchType?: DefinitionType,
+  caseSensitive = true
+): { name: string; effectiveType: DefinitionType; exported: boolean } | null {
+  const detectedType = classifyLine(content);
+  const name = extractName(content, searchType);
+  if (name === 'unknown') return null;
+
+  const effectiveType = resolveEffectiveType(detectedType, searchType, content);
+
+  if (!isTypeMatch(searchType, effectiveType)) return null;
+  if (!isNameMatch(name, searchName, caseSensitive)) return null;
+
+  return {
+    name,
+    effectiveType,
+    exported: isExported(content),
+  };
+}
+
+function buildDefinitionMatch(
+  match: {
+    file: string;
+    line: number;
+    content: string;
+    contextBefore?: string[];
+    contextAfter?: string[];
+  },
+  basePath: string,
+  searchName?: string,
+  searchType?: DefinitionType,
+  caseSensitive = true
+): DefinitionMatch | null {
+  const meta = resolveDefinitionMeta(
+    match.content,
+    searchName,
+    searchType,
+    caseSensitive
+  );
+  if (!meta) return null;
+
+  return {
+    file: pathModule.relative(basePath, match.file),
+    line: match.line,
+    definitionType: searchType ?? meta.effectiveType,
+    name: meta.name,
+    content: match.content,
+    contextBefore: match.contextBefore,
+    contextAfter: match.contextAfter,
+    exported: meta.exported,
+  };
 }
 
 /**
@@ -161,44 +249,78 @@ function processMatches(
   const results: DefinitionMatch[] = [];
 
   for (const match of matches) {
-    const detectedType = classifyLine(match.content);
-    const name = extractName(match.content, searchType);
-
-    // Skip if we can't extract a name
-    if (name === 'unknown') continue;
-
-    // For function type, also accept arrow functions declared with const/let
-    const effectiveType =
-      searchType === 'function' &&
-      detectedType === 'variable' &&
-      /=\s*(?:async\s+)?(?:\([^)]*\)|[^=])\s*=>/u.test(match.content)
-        ? 'function'
-        : detectedType;
-
-    // Filter by type if specified
-    if (searchType && effectiveType !== searchType) continue;
-
-    // Filter by name if specified
-    if (searchName) {
-      const nameMatches = caseSensitive
-        ? name === searchName
-        : name.toLowerCase() === searchName.toLowerCase();
-      if (!nameMatches) continue;
-    }
-
-    results.push({
-      file: pathModule.relative(basePath, match.file),
-      line: match.line,
-      definitionType: searchType ?? effectiveType,
-      name,
-      content: match.content,
-      contextBefore: match.contextBefore,
-      contextAfter: match.contextAfter,
-      exported: isExported(match.content),
-    });
+    const result = buildDefinitionMatch(
+      match,
+      basePath,
+      searchName,
+      searchType,
+      caseSensitive ?? true
+    );
+    if (result) results.push(result);
   }
 
   return results;
+}
+
+function buildAdditionalPatterns(options: SearchDefinitionsOptions): string[] {
+  if (options.type !== 'function' || !options.name) return [];
+  return [`\\b(?:const|let)\\s+${escapeRegex(options.name)}\\s*=`];
+}
+
+function buildCombinedPattern(options: SearchDefinitionsOptions): string {
+  const pattern = buildPattern(options.name, options.type);
+  const additional = buildAdditionalPatterns(options);
+  if (additional.length === 0) return pattern;
+  return `${pattern}|${additional.join('|')}`;
+}
+
+function buildSearchOptions(
+  options: SearchDefinitionsOptions,
+  maxResults: number
+): {
+  filePattern: string;
+  caseSensitive: boolean;
+  maxResults: number;
+  excludePatterns?: string[];
+  contextLines: number;
+  includeHidden: boolean;
+  isLiteral: false;
+  wholeWord: false;
+} {
+  return {
+    filePattern: TS_JS_FILE_PATTERN,
+    caseSensitive: options.caseSensitive ?? true,
+    maxResults: maxResults * 3,
+    excludePatterns: options.excludePatterns,
+    contextLines: options.contextLines ?? 2,
+    includeHidden: options.includeHidden ?? false,
+    isLiteral: false,
+    wholeWord: false,
+  };
+}
+
+function buildSearchResult(
+  validPath: string,
+  options: SearchDefinitionsOptions,
+  definitions: DefinitionMatch[],
+  summary: { filesScanned: number; filesMatched: number; truncated: boolean },
+  maxResults: number
+): SearchDefinitionsResult {
+  const limitedDefinitions = definitions.slice(0, maxResults);
+  const truncated = summary.truncated || definitions.length > maxResults;
+
+  return {
+    basePath: validPath,
+    searchName: options.name,
+    searchType: options.type,
+    definitions: limitedDefinitions,
+    summary: {
+      filesScanned: summary.filesScanned,
+      filesMatched: summary.filesMatched,
+      totalDefinitions: limitedDefinitions.length,
+      truncated,
+    },
+  };
 }
 
 /**
@@ -217,33 +339,14 @@ export async function searchDefinitions(
   }
 
   const validPath = await validateExistingDirectory(options.path);
-  const pattern = buildPattern(options.name, options.type);
+  const combinedPattern = buildCombinedPattern(options);
+  const maxResults = getMaxResults(options);
 
-  // For function searches, also search for arrow functions
-  const additionalPatterns: string[] = [];
-  if (options.type === 'function' && options.name) {
-    // Also search for arrow function declarations
-    additionalPatterns.push(
-      `\\b(?:const|let)\\s+${escapeRegex(options.name)}\\s*=`
-    );
-  }
-
-  // Combine patterns if needed
-  const combinedPattern =
-    additionalPatterns.length > 0
-      ? `${pattern}|${additionalPatterns.join('|')}`
-      : pattern;
-
-  const searchResult = await executeSearch(validPath, combinedPattern, {
-    filePattern: TS_JS_FILE_PATTERN,
-    caseSensitive: options.caseSensitive ?? true,
-    maxResults: (options.maxResults ?? 100) * 3, // Get more results to filter
-    excludePatterns: options.excludePatterns,
-    contextLines: options.contextLines ?? 2,
-    includeHidden: options.includeHidden ?? false,
-    isLiteral: false,
-    wholeWord: false,
-  });
+  const searchResult = await executeSearch(
+    validPath,
+    combinedPattern,
+    buildSearchOptions(options, maxResults)
+  );
 
   // Process and filter matches
   const definitions = processMatches(
@@ -254,22 +357,15 @@ export async function searchDefinitions(
     options.caseSensitive ?? true
   );
 
-  // Apply maxResults limit
-  const limitedDefinitions = definitions.slice(0, options.maxResults ?? 100);
-  const truncated =
-    searchResult.summary.truncated ||
-    definitions.length > (options.maxResults ?? 100);
-
-  return {
-    basePath: validPath,
-    searchName: options.name,
-    searchType: options.type,
-    definitions: limitedDefinitions,
-    summary: {
+  return buildSearchResult(
+    validPath,
+    options,
+    definitions,
+    {
       filesScanned: searchResult.summary.filesScanned,
       filesMatched: searchResult.summary.filesMatched,
-      totalDefinitions: limitedDefinitions.length,
-      truncated,
+      truncated: searchResult.summary.truncated,
     },
-  };
+    maxResults
+  );
 }

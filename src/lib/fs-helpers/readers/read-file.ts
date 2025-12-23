@@ -5,9 +5,12 @@ import { MAX_TEXT_FILE_SIZE } from '../../constants.js';
 import { ErrorCode, McpError } from '../../errors.js';
 import { validateExistingPath } from '../../path-validation.js';
 import { isProbablyBinary } from '../binary-detect.js';
-import { headFile } from './head-file.js';
-import { readLineRange } from './line-range.js';
-import { tailFile } from './tail-file.js';
+import {
+  readFullContent,
+  readHeadContent,
+  readLineRangeContent,
+  readTailContent,
+} from './read-file-content.js';
 
 interface NormalizedOptions {
   encoding: BufferEncoding;
@@ -122,73 +125,19 @@ function requireOption<T>(
   );
 }
 
-async function readLineRangeContent(
-  filePath: string,
-  options: NormalizedOptions
-): Promise<{ content: string; truncated: boolean }> {
-  const lineRange = requireOption(options.lineRange, 'lineRange', filePath);
+function assertLineRangeWithinLimit(
+  lineRange: { start: number; end: number },
+  filePath: string
+): void {
   const maxLineRange = 100000;
   const requestedLines = lineRange.end - lineRange.start + 1;
-  if (requestedLines > maxLineRange) {
-    throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
-      `Invalid lineRange: range too large (max ${maxLineRange} lines)`,
-      filePath,
-      { requestedLines, maxLineRange }
-    );
-  }
-
-  const result = await readLineRange(
+  if (requestedLines <= maxLineRange) return;
+  throw new McpError(
+    ErrorCode.E_INVALID_INPUT,
+    `Invalid lineRange: range too large (max ${maxLineRange} lines)`,
     filePath,
-    lineRange.start,
-    lineRange.end,
-    options.encoding,
-    options.maxSize
+    { requestedLines, maxLineRange }
   );
-
-  const expectedLines = lineRange.end - lineRange.start + 1;
-  const isTruncated =
-    lineRange.start > 1 ||
-    result.linesRead < expectedLines ||
-    result.hasMoreLines;
-
-  return { content: result.content, truncated: isTruncated };
-}
-
-async function readHeadContent(
-  filePath: string,
-  head: number,
-  options: NormalizedOptions
-): Promise<{ content: string; truncated: boolean }> {
-  const content = await headFile(
-    filePath,
-    head,
-    options.encoding,
-    options.maxSize
-  );
-  return { content, truncated: true };
-}
-
-async function readTailContent(
-  filePath: string,
-  tail: number,
-  options: NormalizedOptions
-): Promise<{ content: string; truncated: boolean }> {
-  const content = await tailFile(
-    filePath,
-    tail,
-    options.encoding,
-    options.maxSize
-  );
-  return { content, truncated: true };
-}
-
-async function readFullContent(
-  filePath: string,
-  encoding: BufferEncoding
-): Promise<{ content: string; totalLines: number }> {
-  const content = await fs.readFile(filePath, { encoding });
-  return { content, totalLines: content.split('\n').length };
 }
 
 function buildReadResult(
@@ -207,9 +156,14 @@ async function readLineRangeResult(
 ): Promise<ReadFileResult> {
   const lineRange = requireOption(normalized.lineRange, 'lineRange', filePath);
   validateLineRange(lineRange, filePath);
+  assertLineRangeWithinLimit(lineRange, filePath);
   const { content, truncated } = await readLineRangeContent(
     validPath,
-    normalized
+    lineRange,
+    {
+      encoding: normalized.encoding,
+      maxSize: normalized.maxSize,
+    }
   );
   return buildReadResult(validPath, content, truncated);
 }
@@ -220,11 +174,10 @@ async function readTailResult(
   normalized: NormalizedOptions
 ): Promise<ReadFileResult> {
   const tail = requireOption(normalized.tail, 'tail', filePath);
-  const { content, truncated } = await readTailContent(
-    validPath,
-    tail,
-    normalized
-  );
+  const { content, truncated } = await readTailContent(validPath, tail, {
+    encoding: normalized.encoding,
+    maxSize: normalized.maxSize,
+  });
   return buildReadResult(validPath, content, truncated);
 }
 
@@ -234,11 +187,10 @@ async function readHeadResult(
   normalized: NormalizedOptions
 ): Promise<ReadFileResult> {
   const head = requireOption(normalized.head, 'head', filePath);
-  const { content, truncated } = await readHeadContent(
-    validPath,
-    head,
-    normalized
-  );
+  const { content, truncated } = await readHeadContent(validPath, head, {
+    encoding: normalized.encoding,
+    maxSize: normalized.maxSize,
+  });
   return buildReadResult(validPath, content, truncated);
 }
 

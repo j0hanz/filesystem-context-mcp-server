@@ -18,64 +18,76 @@ type SearchDefinitionsStructuredResult = z.infer<
   typeof SearchDefinitionsOutputSchema
 >;
 
+function buildCriteriaText(searchName?: string, searchType?: string): string {
+  const parts = [
+    searchName ? `name "${searchName}"` : null,
+    searchType ? `type "${searchType}"` : null,
+  ].filter(Boolean);
+  return parts.join(' and ');
+}
+
+function buildSearchLabel(searchName?: string, searchType?: string): string {
+  const parts = [
+    searchName ? `"${searchName}"` : null,
+    searchType ? `(${searchType})` : null,
+  ].filter(Boolean);
+  return parts.join(' ');
+}
+
+function formatContextLines(lines?: string[]): string[] {
+  return (lines ?? []).map((line) => `    ${line}`);
+}
+
+function formatDefinitionBlock(
+  def: SearchDefinitionsResult['definitions'][number]
+): string[] {
+  const exportMarker = def.exported ? ' | exported' : '';
+  const lines: string[] = [
+    `[${def.definitionType}] ${def.file}:${def.line}${exportMarker}`,
+  ];
+
+  lines.push(...formatContextLines(def.contextBefore));
+  lines.push(`  > ${def.content}`);
+  lines.push(...formatContextLines(def.contextAfter));
+  lines.push('');
+
+  return lines;
+}
+
+function formatNoResultsText(result: SearchDefinitionsResult): string {
+  const { summary, searchName, searchType } = result;
+  const criteria = buildCriteriaText(searchName, searchType);
+  const scopeNote = `Scanned ${summary.filesScanned} file(s), matched ${summary.filesMatched}.`;
+  const hint =
+    !searchName && !searchType
+      ? 'Provide name or type to narrow the search.'
+      : 'Try adjusting name/type or excludePatterns to refine results.';
+  return `No definitions found matching ${criteria || 'current criteria'}\n${scopeNote}\n${hint}`;
+}
+
+function buildHeaderLines(result: SearchDefinitionsResult): string[] {
+  const { summary, searchName, searchType } = result;
+  const searchLabel = buildSearchLabel(searchName, searchType);
+  const header = `Found ${summary.totalDefinitions} definition(s)${
+    searchLabel ? ` for ${searchLabel}` : ''
+  }:`;
+  return [header, ''];
+}
+
 /**
  * Format text output for search definitions results
  */
 function formatTextResult(result: SearchDefinitionsResult): string {
-  const { definitions, summary, searchName, searchType } = result;
+  const { definitions, summary } = result;
 
   if (definitions.length === 0) {
-    const criteria = [
-      searchName ? `name "${searchName}"` : null,
-      searchType ? `type "${searchType}"` : null,
-    ]
-      .filter(Boolean)
-      .join(' and ');
-    const scopeNote = `Scanned ${summary.filesScanned} file(s), matched ${summary.filesMatched}.`;
-    const hint =
-      !searchName && !searchType
-        ? 'Provide name or type to narrow the search.'
-        : 'Try adjusting name/type or excludePatterns to refine results.';
-    return `No definitions found matching ${criteria || 'current criteria'}\n${scopeNote}\n${hint}`;
+    return formatNoResultsText(result);
   }
 
-  const lines: string[] = [];
-  const searchCriteria = [
-    searchName ? `"${searchName}"` : null,
-    searchType ? `(${searchType})` : null,
-  ]
-    .filter(Boolean)
-    .join(' ');
-
-  lines.push(
-    `Found ${summary.totalDefinitions} definition(s)${searchCriteria ? ` for ${searchCriteria}` : ''}:`
-  );
-  lines.push('');
+  const lines: string[] = [...buildHeaderLines(result)];
 
   for (const def of definitions) {
-    const exportMarker = def.exported ? ' | exported' : '';
-    lines.push(
-      `[${def.definitionType}] ${def.file}:${def.line}${exportMarker}`
-    );
-
-    // Show context before
-    if (def.contextBefore && def.contextBefore.length > 0) {
-      for (const line of def.contextBefore) {
-        lines.push(`    ${line}`);
-      }
-    }
-
-    // Show the matching line
-    lines.push(`  > ${def.content}`);
-
-    // Show context after
-    if (def.contextAfter && def.contextAfter.length > 0) {
-      for (const line of def.contextAfter) {
-        lines.push(`    ${line}`);
-      }
-    }
-
-    lines.push('');
+    lines.push(...formatDefinitionBlock(def));
   }
 
   if (summary.truncated) {

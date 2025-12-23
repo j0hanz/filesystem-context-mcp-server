@@ -4,6 +4,7 @@ import {
   DEFAULT_SEARCH_TIMEOUT_MS,
   MAX_SEARCHABLE_FILE_SIZE,
 } from '../../constants.js';
+import { mergeDefined } from '../../merge-defined.js';
 
 export interface SearchOptions {
   filePattern: string;
@@ -20,17 +21,6 @@ export interface SearchOptions {
   includeHidden: boolean;
   baseNameMatch: boolean;
   caseSensitiveFileMatch: boolean;
-}
-
-function mergeDefined<T extends object>(defaults: T, overrides: Partial<T>): T {
-  const entries = Object.entries(overrides).filter(
-    ([, value]) => value !== undefined
-  );
-  const merged: T = {
-    ...defaults,
-    ...(Object.fromEntries(entries) as Partial<T>),
-  };
-  return merged;
 }
 
 export function buildSearchOptions(

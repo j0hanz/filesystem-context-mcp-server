@@ -1,0 +1,78 @@
+import { z } from 'zod';
+
+import { MAX_MEDIA_FILE_SIZE } from '../../lib/constants.js';
+import {
+  EncodingSchema,
+  HeadLinesSchema,
+  LineEndSchema,
+  LineStartSchema,
+  ReadFileMaxSizeSchema,
+  ReadMultipleFilesMaxSizeSchema,
+  SkipBinarySchema,
+  TailLinesSchema,
+} from '../input-helpers.js';
+
+const ReadFileBaseSchema = z.object({
+  path: z
+    .string()
+    .min(1, 'Path cannot be empty')
+    .describe('Path to the file to read'),
+  encoding: EncodingSchema,
+  maxSize: ReadFileMaxSizeSchema,
+  lineStart: LineStartSchema,
+  lineEnd: LineEndSchema,
+  skipBinary: SkipBinarySchema,
+  head: HeadLinesSchema.describe(
+    'Read only the first N lines of the file (memory efficient for large files)'
+  ),
+  tail: TailLinesSchema.describe(
+    'Read only the last N lines of the file (memory efficient for large files)'
+  ),
+});
+
+export const ReadFileInputSchema = ReadFileBaseSchema.shape;
+
+const ReadMultipleFilesBaseSchema = z.object({
+  paths: z
+    .array(z.string().min(1, 'Path cannot be empty'))
+    .min(1, 'At least one path is required')
+    .max(100, 'Cannot read more than 100 files at once')
+    .describe('Array of file paths to read'),
+  encoding: EncodingSchema,
+  maxSize: ReadMultipleFilesMaxSizeSchema,
+  maxTotalSize: z
+    .number()
+    .int('maxTotalSize must be an integer')
+    .min(1, 'maxTotalSize must be at least 1 byte')
+    .max(1024 * 1024 * 1024, 'maxTotalSize cannot exceed 1GB')
+    .optional()
+    .default(100 * 1024 * 1024)
+    .describe(
+      'Maximum total size in bytes for all files combined (default 100MB)'
+    ),
+  head: HeadLinesSchema.describe('Read only the first N lines of each file'),
+  tail: TailLinesSchema.describe('Read only the last N lines of each file'),
+  lineStart: LineStartSchema.describe(
+    'Start line (1-indexed) for reading a range from each file'
+  ),
+  lineEnd: LineEndSchema.describe(
+    'End line (inclusive) for reading a range from each file'
+  ),
+});
+
+export const ReadMultipleFilesInputSchema = ReadMultipleFilesBaseSchema.shape;
+
+export const ReadMediaFileInputSchema = {
+  path: z
+    .string()
+    .min(1, 'Path cannot be empty')
+    .describe('Path to the media file to read'),
+  maxSize: z
+    .number()
+    .int('maxSize must be an integer')
+    .min(1, 'maxSize must be at least 1 byte')
+    .max(500 * 1024 * 1024, 'maxSize cannot exceed 500MB')
+    .optional()
+    .default(MAX_MEDIA_FILE_SIZE)
+    .describe('Maximum file size in bytes (default 50MB)'),
+};

@@ -3,14 +3,10 @@ import * as fs from 'node:fs/promises';
 import fg from 'fast-glob';
 
 import type { SearchFilesResult, SearchResult } from '../../config/types.js';
-import {
-  DEFAULT_MAX_RESULTS,
-  DEFAULT_SEARCH_MAX_FILES,
-  DEFAULT_SEARCH_TIMEOUT_MS,
-  PARALLEL_CONCURRENCY,
-} from '../constants.js';
+import { PARALLEL_CONCURRENCY } from '../constants.js';
 import { getFileType } from '../fs-helpers.js';
 import { validateExistingPathDetailed } from '../path-validation.js';
+import type { SearchFilesOptions } from './search-files-options.js';
 import { sortSearchResults } from './sorting.js';
 
 export interface SearchFilesState {
@@ -19,17 +15,6 @@ export interface SearchFilesState {
   truncated: boolean;
   filesScanned: number;
   stoppedReason?: SearchFilesResult['summary']['stoppedReason'];
-}
-
-export interface SearchFilesOptions {
-  maxResults?: number;
-  sortBy?: 'name' | 'size' | 'modified' | 'path';
-  maxDepth?: number;
-  maxFilesScanned?: number;
-  timeoutMs?: number;
-  baseNameMatch?: boolean;
-  skipSymlinks?: boolean;
-  includeHidden?: boolean;
 }
 
 interface ScanStreamOptions {
@@ -240,52 +225,6 @@ export function createSearchStream(
   });
 }
 
-export function normalizeSearchFilesOptions(options: SearchFilesOptions): {
-  effectiveMaxResults: number;
-  sortBy: 'name' | 'size' | 'modified' | 'path';
-  maxDepth?: number;
-  maxFilesScanned: number;
-  deadlineMs?: number;
-  baseNameMatch: boolean;
-  skipSymlinks: boolean;
-  includeHidden: boolean;
-} {
-  const defaults: Required<Omit<SearchFilesOptions, 'maxDepth'>> & {
-    maxDepth: number | undefined;
-  } = {
-    maxResults: DEFAULT_MAX_RESULTS,
-    sortBy: 'path',
-    maxDepth: undefined,
-    maxFilesScanned: DEFAULT_SEARCH_MAX_FILES,
-    timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-    baseNameMatch: false,
-    skipSymlinks: true,
-    includeHidden: false,
-  };
-  const merged = mergeDefined(defaults, options);
-  return {
-    effectiveMaxResults: merged.maxResults,
-    sortBy: merged.sortBy,
-    maxDepth: merged.maxDepth,
-    maxFilesScanned: merged.maxFilesScanned,
-    deadlineMs: merged.timeoutMs ? Date.now() + merged.timeoutMs : undefined,
-    baseNameMatch: merged.baseNameMatch,
-    skipSymlinks: merged.skipSymlinks,
-    includeHidden: merged.includeHidden,
-  };
-}
-
-function mergeDefined<T extends object>(defaults: T, overrides: Partial<T>): T {
-  const entries = Object.entries(overrides).filter(
-    ([, value]) => value !== undefined
-  );
-  const merged: T = {
-    ...defaults,
-    ...(Object.fromEntries(entries) as Partial<T>),
-  };
-  return merged;
-}
-
 export function buildSearchFilesResult(
   basePath: string,
   pattern: string,
@@ -304,17 +243,5 @@ export function buildSearchFilesResult(
       filesScanned: state.filesScanned,
       stoppedReason: state.stoppedReason,
     },
-  };
-}
-
-export function buildScanOptions(normalized: {
-  deadlineMs?: number;
-  maxFilesScanned: number;
-  effectiveMaxResults: number;
-}): ScanStreamOptions {
-  return {
-    deadlineMs: normalized.deadlineMs,
-    maxFilesScanned: normalized.maxFilesScanned,
-    maxResults: normalized.effectiveMaxResults,
   };
 }
