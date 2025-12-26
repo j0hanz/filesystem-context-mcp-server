@@ -2,13 +2,18 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
-import { ErrorCode, McpError, toRpcError } from '../lib/errors.js';
+import { ErrorCode, McpError } from '../lib/errors.js';
 import { readMultipleFiles } from '../lib/file-operations.js';
 import {
   ReadMultipleFilesInputSchema,
   ReadMultipleFilesOutputSchema,
 } from '../schemas/index.js';
-import { buildToolResponse, type ToolResponse } from './tool-response.js';
+import {
+  buildToolErrorResponse,
+  buildToolResponse,
+  type ToolResponse,
+  type ToolResult,
+} from './tool-response.js';
 
 type ReadMultipleArgs = z.infer<
   z.ZodObject<typeof ReadMultipleFilesInputSchema>
@@ -120,16 +125,26 @@ const READ_MULTIPLE_FILES_TOOL = {
   },
 } as const;
 
+const READ_MULTIPLE_FILES_TOOL_DEPRECATED = {
+  ...READ_MULTIPLE_FILES_TOOL,
+  description: `${READ_MULTIPLE_FILES_TOOL.description} (Deprecated: use readMultipleFiles.)`,
+} as const;
+
 export function registerReadMultipleFilesTool(server: McpServer): void {
+  const handler = async (
+    args: ReadMultipleArgs
+  ): Promise<ToolResult<ReadMultipleStructuredResult>> => {
+    try {
+      return await handleReadMultipleFiles(args);
+    } catch (error: unknown) {
+      return buildToolErrorResponse(error, ErrorCode.E_UNKNOWN);
+    }
+  };
+
   server.registerTool(
     'read_multiple_files',
-    READ_MULTIPLE_FILES_TOOL,
-    async (args: ReadMultipleArgs) => {
-      try {
-        return await handleReadMultipleFiles(args);
-      } catch (error: unknown) {
-        throw toRpcError(error, ErrorCode.E_UNKNOWN);
-      }
-    }
+    READ_MULTIPLE_FILES_TOOL_DEPRECATED,
+    handler
   );
+  server.registerTool('readMultipleFiles', READ_MULTIPLE_FILES_TOOL, handler);
 }

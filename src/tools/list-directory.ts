@@ -4,14 +4,19 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
-import { ErrorCode, toRpcError } from '../lib/errors.js';
+import { ErrorCode } from '../lib/errors.js';
 import { listDirectory } from '../lib/file-operations.js';
 import {
   ListDirectoryInputSchema,
   ListDirectoryOutputSchema,
 } from '../schemas/index.js';
 import { formatBytes, formatOperationSummary } from './shared/formatting.js';
-import { buildToolResponse, type ToolResponse } from './tool-response.js';
+import {
+  buildToolErrorResponse,
+  buildToolResponse,
+  type ToolResponse,
+  type ToolResult,
+} from './tool-response.js';
 
 function getExtension(name: string, isFile: boolean): string | undefined {
   if (!isFile) return undefined;
@@ -87,6 +92,11 @@ const LIST_DIRECTORY_TOOL = {
     idempotentHint: true,
     openWorldHint: true,
   },
+} as const;
+
+const LIST_DIRECTORY_TOOL_DEPRECATED = {
+  ...LIST_DIRECTORY_TOOL,
+  description: `${LIST_DIRECTORY_TOOL.description} (Deprecated: use listDirectory.)`,
 } as const;
 
 function buildStructuredResult(
@@ -171,15 +181,24 @@ async function handleListDirectory({
 }
 
 export function registerListDirectoryTool(server: McpServer): void {
+  const handler = async (
+    args: ListDirectoryArgs
+  ): Promise<ToolResult<ListDirectoryStructuredResult>> => {
+    try {
+      return await handleListDirectory(args);
+    } catch (error: unknown) {
+      return buildToolErrorResponse(
+        error,
+        ErrorCode.E_NOT_DIRECTORY,
+        args.path
+      );
+    }
+  };
+
   server.registerTool(
     'list_directory',
-    LIST_DIRECTORY_TOOL,
-    async (args: ListDirectoryArgs) => {
-      try {
-        return await handleListDirectory(args);
-      } catch (error: unknown) {
-        throw toRpcError(error, ErrorCode.E_NOT_DIRECTORY, args.path);
-      }
-    }
+    LIST_DIRECTORY_TOOL_DEPRECATED,
+    handler
   );
+  server.registerTool('listDirectory', LIST_DIRECTORY_TOOL, handler);
 }

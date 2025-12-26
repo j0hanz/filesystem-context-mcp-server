@@ -141,3 +141,27 @@ itWindows(
     );
   }
 );
+
+itWindows(
+  'validateExistingPath rejects Windows reserved device names with suffixes',
+  async () => {
+    const candidates = [
+      'CON',
+      'CON.txt',
+      'CON.',
+      'CON ',
+      'CON::$DATA',
+      'AUX.txt',
+      'NUL ',
+      'COM1',
+      'LPT1.txt',
+    ];
+
+    for (const candidate of candidates) {
+      const attempt = path.join(testDir, candidate);
+      await expect(validateExistingPath(attempt)).rejects.toThrow(
+        /reserved device name/i
+      );
+    }
+  }
+);

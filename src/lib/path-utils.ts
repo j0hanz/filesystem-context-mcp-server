@@ -18,3 +18,19 @@ export function normalizePath(p: string): string {
 
   return resolved;
 }
+
+export function resolveWithinRoot(root: string, input: string): string | null {
+  const resolved = path.resolve(root, input);
+  const relative = path.relative(root, resolved);
+  if (
+    relative === '' ||
+    (!relative.startsWith('..') && !path.isAbsolute(relative))
+  ) {
+    return resolved;
+  }
+  return null;
+}
+
+export function isPathWithinRoot(root: string, candidate: string): boolean {
+  return resolveWithinRoot(root, candidate) !== null;
+}

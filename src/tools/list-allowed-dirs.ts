@@ -4,10 +4,15 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
-import { ErrorCode, toRpcError } from '../lib/errors.js';
+import { ErrorCode, isNodeError } from '../lib/errors.js';
 import { getAllowedDirectories } from '../lib/path-validation.js';
 import { ListAllowedDirectoriesOutputSchema } from '../schemas/index.js';
-import { buildToolResponse, type ToolResponse } from './tool-response.js';
+import {
+  buildToolErrorResponse,
+  buildToolResponse,
+  type ToolResponse,
+  type ToolResult,
+} from './tool-response.js';
 
 interface DirectoryAccess {
   path: string;
@@ -44,15 +49,19 @@ function buildAccessTag(
 
 async function checkDirectoryAccess(dirPath: string): Promise<DirectoryAccess> {
   try {
-    await fs.access(dirPath, fs.constants.R_OK);
+    const dir = await fs.opendir(dirPath);
+    await dir.close();
     return { path: dirPath, accessible: true, readable: true };
-  } catch {
-    try {
-      await fs.access(dirPath, fs.constants.F_OK);
-      return { path: dirPath, accessible: true, readable: false };
-    } catch {
-      return { path: dirPath, accessible: false, readable: false };
+  } catch (error) {
+    if (isNodeError(error)) {
+      if (error.code === 'EACCES' || error.code === 'EPERM') {
+        return { path: dirPath, accessible: true, readable: false };
+      }
+      if (error.code === 'ENOENT' || error.code === 'ENOTDIR') {
+        return { path: dirPath, accessible: false, readable: false };
+      }
     }
+    return { path: dirPath, accessible: false, readable: false };
   }
 }
 
@@ -106,16 +115,30 @@ const LIST_ALLOWED_DIRECTORIES_TOOL = {
   },
 } as const;
 
+const LIST_ALLOWED_DIRECTORIES_TOOL_DEPRECATED = {
+  ...LIST_ALLOWED_DIRECTORIES_TOOL,
+  description: `${LIST_ALLOWED_DIRECTORIES_TOOL.description} (Deprecated: use listAllowedDirectories.)`,
+} as const;
+
 export function registerListAllowedDirectoriesTool(server: McpServer): void {
+  const handler = async (): Promise<
+    ToolResult<ListAllowedDirectoriesStructuredResult>
+  > => {
+    try {
+      return await handleListAllowedDirectories();
+    } catch (error: unknown) {
+      return buildToolErrorResponse(error, ErrorCode.E_UNKNOWN);
+    }
+  };
+
   server.registerTool(
     'list_allowed_directories',
+    LIST_ALLOWED_DIRECTORIES_TOOL_DEPRECATED,
+    handler
+  );
+  server.registerTool(
+    'listAllowedDirectories',
     LIST_ALLOWED_DIRECTORIES_TOOL,
-    async () => {
-      try {
-        return await handleListAllowedDirectories();
-      } catch (error: unknown) {
-        throw toRpcError(error, ErrorCode.E_UNKNOWN);
-      }
-    }
+    handler
   );
 }

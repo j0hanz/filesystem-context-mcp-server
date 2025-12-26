@@ -64,7 +64,9 @@ function ensureNoWindowsDriveRelativePath(requestedPath: string): void {
 }
 
 function getReservedDeviceName(segment: string): string | undefined {
-  const baseName = segment.split('.')[0]?.toUpperCase();
+  const trimmed = segment.replace(/[ .]+$/g, '');
+  const withoutStream = trimmed.split(':')[0] ?? '';
+  const baseName = withoutStream.split('.')[0]?.toUpperCase();
   if (!baseName) return undefined;
   return RESERVED_DEVICE_NAMES.has(baseName) ? baseName : undefined;
 }

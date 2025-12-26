@@ -2,14 +2,19 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
-import { ErrorCode, toRpcError } from '../lib/errors.js';
+import { ErrorCode } from '../lib/errors.js';
 import { getFileInfo } from '../lib/file-operations.js';
 import {
   GetFileInfoInputSchema,
   GetFileInfoOutputSchema,
 } from '../schemas/index.js';
 import { formatBytes, formatDate } from './shared/formatting.js';
-import { buildToolResponse, type ToolResponse } from './tool-response.js';
+import {
+  buildToolErrorResponse,
+  buildToolResponse,
+  type ToolResponse,
+  type ToolResult,
+} from './tool-response.js';
 
 type GetFileInfoArgs = z.infer<z.ZodObject<typeof GetFileInfoInputSchema>>;
 type GetFileInfoStructuredResult = z.infer<typeof GetFileInfoOutputSchema>;
@@ -80,16 +85,22 @@ const GET_FILE_INFO_TOOL = {
   },
 } as const;
 
+const GET_FILE_INFO_TOOL_DEPRECATED = {
+  ...GET_FILE_INFO_TOOL,
+  description: `${GET_FILE_INFO_TOOL.description} (Deprecated: use getFileInfo.)`,
+} as const;
+
 export function registerGetFileInfoTool(server: McpServer): void {
-  server.registerTool(
-    'get_file_info',
-    GET_FILE_INFO_TOOL,
-    async (args: GetFileInfoArgs) => {
-      try {
-        return await handleGetFileInfo(args);
-      } catch (error: unknown) {
-        throw toRpcError(error, ErrorCode.E_NOT_FOUND, args.path);
-      }
+  const handler = async (
+    args: GetFileInfoArgs
+  ): Promise<ToolResult<GetFileInfoStructuredResult>> => {
+    try {
+      return await handleGetFileInfo(args);
+    } catch (error: unknown) {
+      return buildToolErrorResponse(error, ErrorCode.E_NOT_FOUND, args.path);
     }
-  );
+  };
+
+  server.registerTool('get_file_info', GET_FILE_INFO_TOOL_DEPRECATED, handler);
+  server.registerTool('getFileInfo', GET_FILE_INFO_TOOL, handler);
 }

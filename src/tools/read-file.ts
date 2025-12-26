@@ -2,10 +2,15 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
-import { ErrorCode, McpError, toRpcError } from '../lib/errors.js';
+import { ErrorCode, McpError } from '../lib/errors.js';
 import { readFile } from '../lib/file-operations.js';
 import { ReadFileInputSchema, ReadFileOutputSchema } from '../schemas/index.js';
-import { buildToolResponse, type ToolResponse } from './tool-response.js';
+import {
+  buildToolErrorResponse,
+  buildToolResponse,
+  type ToolResponse,
+  type ToolResult,
+} from './tool-response.js';
 
 function buildLineRange(
   lineStart: number | undefined,
@@ -145,16 +150,22 @@ const READ_FILE_TOOL = {
   },
 } as const;
 
+const READ_FILE_TOOL_DEPRECATED = {
+  ...READ_FILE_TOOL,
+  description: `${READ_FILE_TOOL.description} (Deprecated: use readFile.)`,
+} as const;
+
 export function registerReadFileTool(server: McpServer): void {
-  server.registerTool(
-    'read_file',
-    READ_FILE_TOOL,
-    async (args: ReadFileArgs) => {
-      try {
-        return await handleReadFile(args);
-      } catch (error: unknown) {
-        throw toRpcError(error, ErrorCode.E_NOT_FILE, args.path);
-      }
+  const handler = async (
+    args: ReadFileArgs
+  ): Promise<ToolResult<ReadFileStructuredResult>> => {
+    try {
+      return await handleReadFile(args);
+    } catch (error: unknown) {
+      return buildToolErrorResponse(error, ErrorCode.E_NOT_FILE, args.path);
     }
-  );
+  };
+
+  server.registerTool('read_file', READ_FILE_TOOL_DEPRECATED, handler);
+  server.registerTool('readFile', READ_FILE_TOOL, handler);
 }

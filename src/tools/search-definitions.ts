@@ -3,13 +3,18 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { z } from 'zod';
 
 import type { SearchDefinitionsResult } from '../config/types.js';
-import { ErrorCode, toRpcError } from '../lib/errors.js';
+import { ErrorCode } from '../lib/errors.js';
 import { searchDefinitions } from '../lib/file-operations.js';
 import {
   SearchDefinitionsInputSchema,
   SearchDefinitionsOutputSchema,
 } from '../schemas/index.js';
-import { buildToolResponse, type ToolResponse } from './tool-response.js';
+import {
+  buildToolErrorResponse,
+  buildToolResponse,
+  type ToolResponse,
+  type ToolResult,
+} from './tool-response.js';
 
 type SearchDefinitionsArgs = z.infer<
   z.ZodObject<typeof SearchDefinitionsInputSchema>
@@ -167,16 +172,26 @@ const SEARCH_DEFINITIONS_TOOL = {
   },
 } as const;
 
+const SEARCH_DEFINITIONS_TOOL_DEPRECATED = {
+  ...SEARCH_DEFINITIONS_TOOL,
+  description: `${SEARCH_DEFINITIONS_TOOL.description} (Deprecated: use searchDefinitions.)`,
+} as const;
+
 export function registerSearchDefinitionsTool(server: McpServer): void {
+  const handler = async (
+    args: SearchDefinitionsArgs
+  ): Promise<ToolResult<SearchDefinitionsStructuredResult>> => {
+    try {
+      return await handleSearchDefinitions(args);
+    } catch (error: unknown) {
+      return buildToolErrorResponse(error, ErrorCode.E_UNKNOWN, args.path);
+    }
+  };
+
   server.registerTool(
     'search_definitions',
-    SEARCH_DEFINITIONS_TOOL,
-    async (args: SearchDefinitionsArgs) => {
-      try {
-        return await handleSearchDefinitions(args);
-      } catch (error: unknown) {
-        throw toRpcError(error, ErrorCode.E_UNKNOWN, args.path);
-      }
-    }
+    SEARCH_DEFINITIONS_TOOL_DEPRECATED,
+    handler
   );
+  server.registerTool('searchDefinitions', SEARCH_DEFINITIONS_TOOL, handler);
 }

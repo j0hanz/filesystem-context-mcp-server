@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
-import { ErrorCode, toRpcError } from '../lib/errors.js';
+import { ErrorCode } from '../lib/errors.js';
 import { searchContent } from '../lib/file-operations.js';
 import {
   SearchContentInputSchema,
@@ -12,7 +12,12 @@ import {
   buildStructuredResult,
   buildTextResult,
 } from './shared/search-formatting.js';
-import { buildToolResponse, type ToolResponse } from './tool-response.js';
+import {
+  buildToolErrorResponse,
+  buildToolResponse,
+  type ToolResponse,
+  type ToolResult,
+} from './tool-response.js';
 
 type SearchContentArgs = z.infer<z.ZodObject<typeof SearchContentInputSchema>>;
 type SearchContentStructuredResult = z.infer<typeof SearchContentOutputSchema>;
@@ -72,16 +77,26 @@ const SEARCH_CONTENT_TOOL = {
   },
 } as const;
 
+const SEARCH_CONTENT_TOOL_DEPRECATED = {
+  ...SEARCH_CONTENT_TOOL,
+  description: `${SEARCH_CONTENT_TOOL.description} (Deprecated: use searchContent.)`,
+} as const;
+
 export function registerSearchContentTool(server: McpServer): void {
+  const handler = async (
+    args: SearchContentArgs
+  ): Promise<ToolResult<SearchContentStructuredResult>> => {
+    try {
+      return await handleSearchContent(args);
+    } catch (error: unknown) {
+      return buildToolErrorResponse(error, ErrorCode.E_UNKNOWN, args.path);
+    }
+  };
+
   server.registerTool(
     'search_content',
-    SEARCH_CONTENT_TOOL,
-    async (args: SearchContentArgs) => {
-      try {
-        return await handleSearchContent(args);
-      } catch (error: unknown) {
-        throw toRpcError(error, ErrorCode.E_UNKNOWN, args.path);
-      }
-    }
+    SEARCH_CONTENT_TOOL_DEPRECATED,
+    handler
   );
+  server.registerTool('searchContent', SEARCH_CONTENT_TOOL, handler);
 }

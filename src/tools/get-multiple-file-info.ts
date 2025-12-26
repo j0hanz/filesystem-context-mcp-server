@@ -3,14 +3,19 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { z } from 'zod';
 
 import type { GetMultipleFileInfoResult } from '../config/types.js';
-import { ErrorCode, toRpcError } from '../lib/errors.js';
+import { ErrorCode } from '../lib/errors.js';
 import { getMultipleFileInfo } from '../lib/file-operations.js';
 import {
   GetMultipleFileInfoInputSchema,
   GetMultipleFileInfoOutputSchema,
 } from '../schemas/index.js';
 import { formatBytes } from './shared/formatting.js';
-import { buildToolResponse, type ToolResponse } from './tool-response.js';
+import {
+  buildToolErrorResponse,
+  buildToolResponse,
+  type ToolResponse,
+  type ToolResult,
+} from './tool-response.js';
 
 type GetMultipleFileInfoArgs = z.infer<
   z.ZodObject<typeof GetMultipleFileInfoInputSchema>
@@ -119,16 +124,30 @@ const GET_MULTIPLE_FILE_INFO_TOOL = {
   },
 } as const;
 
+const GET_MULTIPLE_FILE_INFO_TOOL_DEPRECATED = {
+  ...GET_MULTIPLE_FILE_INFO_TOOL,
+  description: `${GET_MULTIPLE_FILE_INFO_TOOL.description} (Deprecated: use getMultipleFileInfo.)`,
+} as const;
+
 export function registerGetMultipleFileInfoTool(server: McpServer): void {
+  const handler = async (
+    args: GetMultipleFileInfoArgs
+  ): Promise<ToolResult<GetMultipleFileInfoStructuredResult>> => {
+    try {
+      return await handleGetMultipleFileInfo(args);
+    } catch (error: unknown) {
+      return buildToolErrorResponse(error, ErrorCode.E_UNKNOWN);
+    }
+  };
+
   server.registerTool(
     'get_multiple_file_info',
+    GET_MULTIPLE_FILE_INFO_TOOL_DEPRECATED,
+    handler
+  );
+  server.registerTool(
+    'getMultipleFileInfo',
     GET_MULTIPLE_FILE_INFO_TOOL,
-    async (args: GetMultipleFileInfoArgs) => {
-      try {
-        return await handleGetMultipleFileInfo(args);
-      } catch (error: unknown) {
-        throw toRpcError(error, ErrorCode.E_UNKNOWN);
-      }
-    }
+    handler
   );
 }

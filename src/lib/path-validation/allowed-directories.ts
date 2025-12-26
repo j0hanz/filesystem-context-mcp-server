@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-import { normalizePath } from '../path-utils.js';
+import { isPathWithinRoot, normalizePath } from '../path-utils.js';
 
 const PATH_SEPARATOR = process.platform === 'win32' ? '\\' : '/';
 
@@ -70,16 +70,9 @@ export function isPathWithinDirectories(
   allowedDirs: string[]
 ): boolean {
   const candidate = normalizeForComparison(normalizedPath);
-  return allowedDirs.some((allowedDir) => {
-    const allowed = normalizeForComparison(allowedDir);
-    const root = normalizeForComparison(path.parse(allowedDir).root);
-    if (allowed === root) {
-      return candidate.startsWith(allowed);
-    }
-    return (
-      candidate === allowed || candidate.startsWith(allowed + PATH_SEPARATOR)
-    );
-  });
+  return allowedDirs.some((allowedDir) =>
+    isPathWithinRoot(normalizeForComparison(allowedDir), candidate)
+  );
 }
 
 export function isPathWithinAllowedDirectories(

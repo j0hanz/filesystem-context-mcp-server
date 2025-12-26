@@ -2,13 +2,18 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
-import { ErrorCode, toRpcError } from '../lib/errors.js';
+import { ErrorCode } from '../lib/errors.js';
 import { readMediaFile } from '../lib/file-operations.js';
 import {
   ReadMediaFileInputSchema,
   ReadMediaFileOutputSchema,
 } from '../schemas/index.js';
-import { buildToolResponse, type ToolResponse } from './tool-response.js';
+import {
+  buildToolErrorResponse,
+  buildToolResponse,
+  type ToolResponse,
+  type ToolResult,
+} from './tool-response.js';
 
 type ReadMediaArgs = z.infer<z.ZodObject<typeof ReadMediaFileInputSchema>>;
 type ReadMediaStructuredResult = z.infer<typeof ReadMediaFileOutputSchema>;
@@ -66,16 +71,26 @@ const READ_MEDIA_FILE_TOOL = {
   },
 } as const;
 
+const READ_MEDIA_FILE_TOOL_DEPRECATED = {
+  ...READ_MEDIA_FILE_TOOL,
+  description: `${READ_MEDIA_FILE_TOOL.description} (Deprecated: use readMediaFile.)`,
+} as const;
+
 export function registerReadMediaFileTool(server: McpServer): void {
+  const handler = async (
+    args: ReadMediaArgs
+  ): Promise<ToolResult<ReadMediaStructuredResult>> => {
+    try {
+      return await handleReadMediaFile(args);
+    } catch (error: unknown) {
+      return buildToolErrorResponse(error, ErrorCode.E_NOT_FILE, args.path);
+    }
+  };
+
   server.registerTool(
     'read_media_file',
-    READ_MEDIA_FILE_TOOL,
-    async (args: ReadMediaArgs) => {
-      try {
-        return await handleReadMediaFile(args);
-      } catch (error: unknown) {
-        throw toRpcError(error, ErrorCode.E_NOT_FILE, args.path);
-      }
-    }
+    READ_MEDIA_FILE_TOOL_DEPRECATED,
+    handler
   );
+  server.registerTool('readMediaFile', READ_MEDIA_FILE_TOOL, handler);
 }

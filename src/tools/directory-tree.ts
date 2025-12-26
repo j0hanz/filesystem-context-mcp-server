@@ -2,14 +2,19 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
-import { ErrorCode, toRpcError } from '../lib/errors.js';
+import { ErrorCode } from '../lib/errors.js';
 import { getDirectoryTree } from '../lib/file-operations.js';
 import {
   DirectoryTreeInputSchema,
   DirectoryTreeOutputSchema,
 } from '../schemas/index.js';
 import { formatBytes, formatOperationSummary } from './shared/formatting.js';
-import { buildToolResponse, type ToolResponse } from './tool-response.js';
+import {
+  buildToolErrorResponse,
+  buildToolResponse,
+  type ToolResponse,
+  type ToolResult,
+} from './tool-response.js';
 
 type DirectoryTreeArgs = z.infer<z.ZodObject<typeof DirectoryTreeInputSchema>>;
 type DirectoryTreeStructuredResult = z.infer<typeof DirectoryTreeOutputSchema>;
@@ -114,16 +119,30 @@ const DIRECTORY_TREE_TOOL = {
   },
 } as const;
 
+const DIRECTORY_TREE_TOOL_DEPRECATED = {
+  ...DIRECTORY_TREE_TOOL,
+  description: `${DIRECTORY_TREE_TOOL.description} (Deprecated: use directoryTree.)`,
+} as const;
+
 export function registerDirectoryTreeTool(server: McpServer): void {
+  const handler = async (
+    args: DirectoryTreeArgs
+  ): Promise<ToolResult<DirectoryTreeStructuredResult>> => {
+    try {
+      return await handleDirectoryTree(args);
+    } catch (error: unknown) {
+      return buildToolErrorResponse(
+        error,
+        ErrorCode.E_NOT_DIRECTORY,
+        args.path
+      );
+    }
+  };
+
   server.registerTool(
     'directory_tree',
-    DIRECTORY_TREE_TOOL,
-    async (args: DirectoryTreeArgs) => {
-      try {
-        return await handleDirectoryTree(args);
-      } catch (error: unknown) {
-        throw toRpcError(error, ErrorCode.E_NOT_DIRECTORY, args.path);
-      }
-    }
+    DIRECTORY_TREE_TOOL_DEPRECATED,
+    handler
   );
+  server.registerTool('directoryTree', DIRECTORY_TREE_TOOL, handler);
 }

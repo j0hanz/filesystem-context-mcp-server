@@ -3,14 +3,19 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { z } from 'zod';
 
 import type { ComputeChecksumsResult } from '../config/types.js';
-import { ErrorCode, toRpcError } from '../lib/errors.js';
+import { ErrorCode } from '../lib/errors.js';
 import { computeChecksums } from '../lib/file-operations.js';
 import {
   ComputeChecksumsInputSchema,
   ComputeChecksumsOutputSchema,
 } from '../schemas/index.js';
 import { formatBytes } from './shared/formatting.js';
-import { buildToolResponse, type ToolResponse } from './tool-response.js';
+import {
+  buildToolErrorResponse,
+  buildToolResponse,
+  type ToolResponse,
+  type ToolResult,
+} from './tool-response.js';
 
 type ComputeChecksumsArgs = z.infer<
   z.ZodObject<typeof ComputeChecksumsInputSchema>
@@ -101,16 +106,26 @@ const COMPUTE_CHECKSUMS_TOOL = {
   },
 } as const;
 
+const COMPUTE_CHECKSUMS_TOOL_DEPRECATED = {
+  ...COMPUTE_CHECKSUMS_TOOL,
+  description: `${COMPUTE_CHECKSUMS_TOOL.description} (Deprecated: use computeChecksums.)`,
+} as const;
+
 export function registerComputeChecksumsTool(server: McpServer): void {
+  const handler = async (
+    args: ComputeChecksumsArgs
+  ): Promise<ToolResult<ComputeChecksumsStructuredResult>> => {
+    try {
+      return await handleComputeChecksums(args);
+    } catch (error: unknown) {
+      return buildToolErrorResponse(error, ErrorCode.E_UNKNOWN);
+    }
+  };
+
   server.registerTool(
     'compute_checksums',
-    COMPUTE_CHECKSUMS_TOOL,
-    async (args: ComputeChecksumsArgs) => {
-      try {
-        return await handleComputeChecksums(args);
-      } catch (error: unknown) {
-        throw toRpcError(error, ErrorCode.E_UNKNOWN);
-      }
-    }
+    COMPUTE_CHECKSUMS_TOOL_DEPRECATED,
+    handler
   );
+  server.registerTool('computeChecksums', COMPUTE_CHECKSUMS_TOOL, handler);
 }

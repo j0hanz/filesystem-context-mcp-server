@@ -4,14 +4,19 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
-import { ErrorCode, toRpcError } from '../lib/errors.js';
+import { ErrorCode } from '../lib/errors.js';
 import { searchFiles } from '../lib/file-operations.js';
 import {
   SearchFilesInputSchema,
   SearchFilesOutputSchema,
 } from '../schemas/index.js';
 import { formatBytes, formatOperationSummary } from './shared/formatting.js';
-import { buildToolResponse, type ToolResponse } from './tool-response.js';
+import {
+  buildToolErrorResponse,
+  buildToolResponse,
+  type ToolResponse,
+  type ToolResult,
+} from './tool-response.js';
 
 type SearchFilesArgs = z.infer<z.ZodObject<typeof SearchFilesInputSchema>>;
 type SearchFilesStructuredResult = z.infer<typeof SearchFilesOutputSchema>;
@@ -156,16 +161,26 @@ const SEARCH_FILES_TOOL = {
   },
 } as const;
 
+const SEARCH_FILES_TOOL_DEPRECATED = {
+  ...SEARCH_FILES_TOOL,
+  description: `${SEARCH_FILES_TOOL.description} (Deprecated: use searchFiles.)`,
+} as const;
+
 export function registerSearchFilesTool(server: McpServer): void {
-  server.registerTool(
-    'search_files',
-    SEARCH_FILES_TOOL,
-    async (args: SearchFilesArgs) => {
-      try {
-        return await handleSearchFiles(args);
-      } catch (error: unknown) {
-        throw toRpcError(error, ErrorCode.E_INVALID_PATTERN, args.path);
-      }
+  const handler = async (
+    args: SearchFilesArgs
+  ): Promise<ToolResult<SearchFilesStructuredResult>> => {
+    try {
+      return await handleSearchFiles(args);
+    } catch (error: unknown) {
+      return buildToolErrorResponse(
+        error,
+        ErrorCode.E_INVALID_PATTERN,
+        args.path
+      );
     }
-  );
+  };
+
+  server.registerTool('search_files', SEARCH_FILES_TOOL_DEPRECATED, handler);
+  server.registerTool('searchFiles', SEARCH_FILES_TOOL, handler);
 }
