@@ -2,42 +2,40 @@
 
 ## Project Structure & Module Organization
 
-- `src/index.ts` is the CLI entry; `src/server.ts` wires MCP roots and startup; `src/instructions.md` is bundled for clients.
-- `src/tools/` holds MCP tool handlers; `src/lib/` contains filesystem helpers, formatters, and path validation; `src/schemas/` defines Zod inputs/outputs; `src/config/` keeps shared types.
-- Tests mirror code in `src/__tests__/lib`, `src/__tests__/schemas`, and `src/__tests__/security`.
-- Build artifacts live in `dist/`; docs and assets are in `docs/`; utility scripts sit in `scripts/`.
+- `src/` contains the TypeScript source. Entry points are `src/index.ts` (CLI) and `src/server.ts` (server wiring).
+- Core logic lives in `src/lib/`, MCP tool wrappers in `src/tools/`, and Zod schemas in `src/schemas/`.
+- Tests live in `src/__tests__/` and follow the `src/**/*.test.ts` naming pattern.
+- `dist/` is build output, `docs/` holds documentation assets, `scripts/` contains utilities, and `benchmark/` and `coverage/` are generated outputs.
 
 ## Build, Test, and Development Commands
 
-- `npm install` (Node >=20) to set up dependencies.
-- `npm run dev` start watch mode via tsx for rapid edits.
-- `npm run build` compile TypeScript and copy `src/instructions.md` into `dist/`.
-- `npm run start` execute the compiled server from `dist/index.js`.
-- `npm run test` | `npm run test:watch` | `npm run test:coverage` run Vitest suites.
-- `npm run lint`, `npm run type-check`, `npm run format` enforce style and correctness.
-- `npm run inspector` opens MCP Inspector to exercise tools interactively.
+- `npm run build` compiles TypeScript and copies `src/instructions.md` into `dist/`.
+- `npm run dev` runs watch mode via `tsx` for local development.
+- `npm run start` runs the compiled server from `dist/`.
+- `npm run test`, `npm run test:watch`, and `npm run test:coverage` run Vitest (coverage uses V8 reporters).
+- `npm run lint`, `npm run format`, and `npm run type-check` enforce linting, formatting, and type checks.
+- `npm run bench` runs benchmarks; `npm run inspector` launches the MCP Inspector.
 
 ## Coding Style & Naming Conventions
 
-- TypeScript strict; prefer explicit returns and pure helpers.
-- Prettier: 2-space indent, semicolons, single quotes, 80-char width; imports auto-ordered (node -> externals -> internal -> relative).
-- ESLint: no `any`; require type-only imports; naming defaults to camelCase, PascalCase for types/enums, UPPER*CASE for constants; `*`-prefixed params allowed when unused.
+- TypeScript (ESM) with 2-space indentation, semicolons, single quotes, and 80-column wrapping (Prettier).
+- Import order is enforced by `@trivago/prettier-plugin-sort-imports` (node built-ins, deps, then local).
+- ESLint + `typescript-eslint` is strict: prefer type imports, explicit return types, camelCase/PascalCase naming, no `any`, and no unused imports.
+- Do not hand-edit `dist/`; regenerate with `npm run build`.
 
 ## Testing Guidelines
 
-- Vitest + V8 coverage; place specs under `src/__tests__/**` with `*.test.ts` names.
-- Keep security boundary cases in `src/__tests__/security/`; prefer temp dirs and deterministic paths in FS tests.
-- Run `npm run test:coverage` for new features and avoid coverage regression.
-
-## Security & Configuration Tips
-
-- Server is intentionally read-only; do not add write operations to tools.
-- Route new filesystem access through `src/lib/path-validation.ts` and related helpers.
-- Tune limits via env vars in `CONFIGURATION.md` (e.g., `MAX_FILE_SIZE`, `PARALLEL_JOBS`); avoid raising defaults without justification.
+- Vitest runs in a Node environment with `src/**/*.test.ts` files (mostly under `src/__tests__/`).
+- Coverage focuses on `src/lib/**/*.ts` and excludes test files.
+- Add tests for security boundaries and path validation when changing filesystem behavior.
 
 ## Commit & Pull Request Guidelines
 
-- Use conventional commits (`feat:`, `fix:`, `chore:`, `docs:`) consistent with repo history.
-- Before opening a PR, run `npm run lint && npm run type-check && npm run test` and note results.
-- PRs should include a concise summary, linked issue (if any), security impact notes, and sample CLI/Inspector steps.
-- Omit `dist/` and `logs/` from commits unless preparing a release that requires built assets.
+- Recent history uses Conventional Commits (for example, `feat: add tool`) and version-only release commits like `1.3.0`. Follow the same pattern.
+- PRs should include a short summary, tests run, and any relevant doc or config updates. Link issues when available.
+
+## Security and Configuration Notes
+
+- This server is read-only by design; avoid adding write or delete behavior.
+- Configuration and environment variables are documented in `CONFIGURATION.md`. Update it when adding options.
+- Agent-facing tool guidance lives in `src/instructions.md` and is bundled into `dist/` during builds.
