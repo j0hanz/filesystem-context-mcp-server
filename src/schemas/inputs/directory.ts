@@ -5,6 +5,7 @@ import {
   BasicExcludePatternsSchema,
   IncludeHiddenSchema,
   isSafeGlobPattern,
+  ListExcludePatternsSchema,
   MaxDepthSchema,
   MaxEntriesSchema,
   SortByDirectorySchema,
@@ -25,19 +26,9 @@ export const ListDirectoryInputSchema = {
       'If true, list contents of subdirectories recursively up to maxDepth'
     ),
   includeHidden: IncludeHiddenSchema,
-  excludePatterns: z
-    .array(
-      z
-        .string()
-        .max(500, 'Individual exclude pattern is too long')
-        .refine((val) => !val.includes('**/**/**'), {
-          message: 'Pattern too deeply nested (max 2 levels of **)',
-        })
-    )
-    .max(100, 'Too many exclude patterns (max 100)')
-    .optional()
-    .default([])
-    .describe('Glob patterns to exclude (e.g., "node_modules/**")'),
+  excludePatterns: ListExcludePatternsSchema.describe(
+    'Glob patterns to exclude (e.g., "node_modules/**")'
+  ),
   maxDepth: MaxDepthSchema.describe(
     'Maximum depth for recursive listing (higher values may impact performance)'
   ),

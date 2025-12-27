@@ -20,6 +20,15 @@ interface DirectoryAccess {
   readable: boolean;
 }
 
+type DirectoryAccessStatus = Omit<DirectoryAccess, 'path'>;
+
+const ACCESS_STATUS_BY_CODE: Record<string, DirectoryAccessStatus> = {
+  EACCES: { accessible: true, readable: false },
+  EPERM: { accessible: true, readable: false },
+  ENOENT: { accessible: false, readable: false },
+  ENOTDIR: { accessible: false, readable: false },
+};
+
 function formatAllowedDirectories(
   dirs: string[],
   accessStatus: DirectoryAccess[]
@@ -47,21 +56,29 @@ function buildAccessTag(
   return '[readable]';
 }
 
+function resolveAccessFromError(
+  error: unknown,
+  dirPath: string
+): DirectoryAccess {
+  if (!isNodeError(error)) {
+    return { path: dirPath, accessible: false, readable: false };
+  }
+
+  const status = error.code ? ACCESS_STATUS_BY_CODE[error.code] : undefined;
+  if (!status) {
+    return { path: dirPath, accessible: false, readable: false };
+  }
+
+  return { path: dirPath, ...status };
+}
+
 async function checkDirectoryAccess(dirPath: string): Promise<DirectoryAccess> {
   try {
     const dir = await fs.opendir(dirPath);
     await dir.close();
     return { path: dirPath, accessible: true, readable: true };
   } catch (error) {
-    if (isNodeError(error)) {
-      if (error.code === 'EACCES' || error.code === 'EPERM') {
-        return { path: dirPath, accessible: true, readable: false };
-      }
-      if (error.code === 'ENOENT' || error.code === 'ENOTDIR') {
-        return { path: dirPath, accessible: false, readable: false };
-      }
-    }
-    return { path: dirPath, accessible: false, readable: false };
+    return resolveAccessFromError(error, dirPath);
   }
 }
 

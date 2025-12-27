@@ -1,8 +1,6 @@
 import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import type { Stats } from 'node:fs';
 
-import type { DirectoryTreeResult, TreeEntry } from '../../config/types.js';
 import { validateExistingPathDetailed } from '../path-validation.js';
 import {
   classifyAccessError,
@@ -83,6 +81,18 @@ async function resolveEntryPath(
   }
 }
 
+async function getEntryStats(
+  resolvedPath: string,
+  state: TreeState
+): Promise<Stats | null> {
+  try {
+    return await fs.stat(resolvedPath);
+  } catch {
+    state.skippedInaccessible++;
+    return null;
+  }
+}
+
 function addFileEntry(
   state: TreeState,
   params: { currentPath: string; depth: number },
@@ -123,6 +133,37 @@ function addDirectoryEntry(
   }
 }
 
+function handleStatsEntry(
+  stats: Stats,
+  params: { currentPath: string; depth: number },
+  name: string,
+  resolvedPath: string,
+  enqueue: (entry: { currentPath: string; depth: number }) => void,
+  state: TreeState,
+  options: { includeSize: boolean; maxDepth: number }
+): void {
+  if (stats.isFile()) {
+    addFileEntry(
+      state,
+      params,
+      name,
+      options.includeSize ? stats.size : undefined
+    );
+    return;
+  }
+
+  if (stats.isDirectory()) {
+    addDirectoryEntry(
+      state,
+      params,
+      name,
+      resolvedPath,
+      enqueue,
+      options.maxDepth
+    );
+  }
+}
+
 async function processTreeEntry(
   params: { currentPath: string; depth: number },
   entry: {
@@ -141,33 +182,17 @@ async function processTreeEntry(
   );
   if (!resolvedPath) return;
 
-  let stats: Stats;
-  try {
-    stats = await fs.stat(resolvedPath);
-  } catch {
-    state.skippedInaccessible++;
-    return;
-  }
-  if (stats.isFile()) {
-    addFileEntry(
-      state,
-      params,
-      entry.name,
-      options.includeSize ? stats.size : undefined
-    );
-    return;
-  }
-
-  if (stats.isDirectory()) {
-    addDirectoryEntry(
-      state,
-      params,
-      entry.name,
-      resolvedPath,
-      enqueue,
-      options.maxDepth
-    );
-  }
+  const stats = await getEntryStats(resolvedPath, state);
+  if (!stats) return;
+  handleStatsEntry(
+    stats,
+    params,
+    entry.name,
+    resolvedPath,
+    enqueue,
+    state,
+    options
+  );
 }
 
 export async function handleTreeNode(
@@ -208,81 +233,4 @@ export async function handleTreeNode(
         maxDepth: options.maxDepth,
       })
   );
-}
-
-export function buildChildrenByParent(
-  directoriesFound: Set<string>,
-  collectedEntries: CollectedEntry[]
-): Map<string, TreeEntry[]> {
-  const childrenByParent = new Map<string, TreeEntry[]>();
-
-  for (const dirPath of directoriesFound) {
-    childrenByParent.set(dirPath, []);
-  }
-
-  for (const entry of collectedEntries) {
-    const treeEntry = buildTreeEntry(entry, childrenByParent);
-    const siblings = childrenByParent.get(entry.parentPath);
-    if (siblings) {
-      siblings.push(treeEntry);
-    }
-  }
-
-  return childrenByParent;
-}
-
-function buildTreeEntry(
-  entry: CollectedEntry,
-  childrenByParent: Map<string, TreeEntry[]>
-): TreeEntry {
-  const treeEntry: TreeEntry = {
-    name: entry.name,
-    type: entry.type,
-  };
-  if (entry.type === 'file' && entry.size !== undefined) {
-    treeEntry.size = entry.size;
-  }
-  if (entry.type === 'directory') {
-    const fullPath = path.join(entry.parentPath, entry.name);
-    treeEntry.children = childrenByParent.get(fullPath) ?? [];
-  }
-  return treeEntry;
-}
-
-export function sortTreeChildren(
-  childrenByParent: Map<string, TreeEntry[]>
-): void {
-  for (const children of childrenByParent.values()) {
-    children.sort((a, b) => {
-      if (a.type !== b.type) {
-        return a.type === 'directory' ? -1 : 1;
-      }
-      return a.name.localeCompare(b.name);
-    });
-  }
-}
-
-export function buildTree(
-  rootPath: string,
-  childrenByParent: Map<string, TreeEntry[]>
-): TreeEntry {
-  const rootName = path.basename(rootPath);
-  return {
-    name: rootName || rootPath,
-    type: 'directory',
-    children: childrenByParent.get(rootPath) ?? [],
-  };
-}
-
-export function buildTreeSummary(
-  state: TreeState
-): DirectoryTreeResult['summary'] {
-  return {
-    totalFiles: state.totalFiles,
-    totalDirectories: state.totalDirectories,
-    maxDepthReached: state.maxDepthReached,
-    truncated: state.truncated,
-    skippedInaccessible: state.skippedInaccessible,
-    symlinksNotFollowed: state.symlinksNotFollowed,
-  };
 }

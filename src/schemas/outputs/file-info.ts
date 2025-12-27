@@ -1,24 +1,11 @@
 import { z } from 'zod';
 
-import { ErrorSchema, FileTypeSchema } from '../common.js';
+import { ErrorSchema } from '../common.js';
+import { FileInfoSchema } from '../output-helpers.js';
 
 export const GetFileInfoOutputSchema = z.object({
   ok: z.boolean(),
-  info: z
-    .object({
-      name: z.string(),
-      path: z.string(),
-      type: FileTypeSchema,
-      size: z.number(),
-      created: z.string().optional(),
-      modified: z.string(),
-      accessed: z.string().optional(),
-      permissions: z.string(),
-      isHidden: z.boolean().optional(),
-      mimeType: z.string().optional(),
-      symlinkTarget: z.string().optional(),
-    })
-    .optional(),
+  info: FileInfoSchema.optional(),
   error: ErrorSchema.optional(),
 });
 
@@ -28,21 +15,7 @@ export const GetMultipleFileInfoOutputSchema = z.object({
     .array(
       z.object({
         path: z.string(),
-        info: z
-          .object({
-            name: z.string(),
-            path: z.string(),
-            type: FileTypeSchema,
-            size: z.number(),
-            created: z.string().optional(),
-            modified: z.string(),
-            accessed: z.string().optional(),
-            permissions: z.string(),
-            isHidden: z.boolean().optional(),
-            mimeType: z.string().optional(),
-            symlinkTarget: z.string().optional(),
-          })
-          .optional(),
+        info: FileInfoSchema.optional(),
         error: z.string().optional(),
       })
     )

@@ -16,6 +16,7 @@ import { setAllowedDirectories } from '../src/lib/path-validation.js';
 interface BenchmarkResult {
   name: string;
   avgMs: number;
+  p95Ms: number;
   memDeltaMb: number;
 }
 
@@ -71,13 +72,23 @@ async function measure(
   }
 
   const avgMs = samples.reduce((sum, v) => sum + v, 0) / samples.length;
+  const p95Ms = percentile(samples, 95);
   const memDeltaMb = memDeltaTotal / iterations / (1024 * 1024);
 
   return {
     name,
     avgMs,
+    p95Ms,
     memDeltaMb,
   };
+}
+
+function percentile(samples: number[], target: number): number {
+  if (samples.length === 0) return 0;
+  const sorted = [...samples].sort((a, b) => a - b);
+  const rank = Math.ceil((target / 100) * sorted.length);
+  const index = Math.min(sorted.length - 1, Math.max(0, rank - 1));
+  return sorted[index];
 }
 
 async function runBenchmarks(): Promise<BenchmarkResult[]> {
@@ -137,11 +148,11 @@ async function runBenchmarks(): Promise<BenchmarkResult[]> {
 }
 
 function renderTable(results: BenchmarkResult[]): void {
-  console.log('| Benchmark | Avg ms | Mem Δ (MB) |');
-  console.log('| --- | ---: | ---: |');
+  console.log('| Benchmark | Avg ms | P95 ms | Mem Delta (MB) |');
+  console.log('| --- | ---: | ---: | ---: |');
   for (const result of results) {
     console.log(
-      `| ${result.name} | ${result.avgMs.toFixed(2)} | ${result.memDeltaMb.toFixed(2)} |`
+      `| ${result.name} | ${result.avgMs.toFixed(2)} | ${result.p95Ms.toFixed(2)} | ${result.memDeltaMb.toFixed(2)} |`
     );
   }
 }

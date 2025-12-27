@@ -70,11 +70,18 @@ export const BasicExcludePatternsSchema = z
   .optional()
   .default(DEFAULT_EXCLUDE_PATTERNS);
 
-// ============================================================================
-// REUSABLE SCHEMA FRAGMENTS
-// ============================================================================
-// These schemas eliminate duplication across input definitions.
-// If you change a constraint (e.g., maxDepth limit), update once here.
+export const ListExcludePatternsSchema = z
+  .array(
+    z
+      .string()
+      .max(500, 'Individual exclude pattern is too long')
+      .refine((val) => !val.includes('**/**/**'), {
+        message: 'Pattern too deeply nested (max 2 levels of **)',
+      })
+  )
+  .max(100, 'Too many exclude patterns (max 100)')
+  .optional()
+  .default([]);
 
 export const MaxDepthSchema = z
   .number()

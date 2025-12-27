@@ -28,24 +28,42 @@ function comparePathThenName(a: Sortable, b: Sortable): number {
   return compareString(a.name, b.name);
 }
 
+function compareBaseNameThenPath(a: Sortable, b: Sortable): number {
+  const baseCompare = compareString(
+    path.basename(a.path ?? ''),
+    path.basename(b.path ?? '')
+  );
+  if (baseCompare !== 0) return baseCompare;
+  return compareString(a.path, b.path);
+}
+
+function compareOptionalNumberDesc(
+  left: number | undefined,
+  right: number | undefined,
+  tieBreak: () => number
+): number {
+  const diff = (right ?? 0) - (left ?? 0);
+  if (diff !== 0) return diff;
+  return tieBreak();
+}
+
+function compareTypeThenName(a: Sortable, b: Sortable): number {
+  if (a.type === b.type) return compareNameThenPath(a, b);
+  return a.type === 'directory' ? -1 : 1;
+}
+
 const SORT_COMPARATORS: Readonly<
   Record<SortField, (a: Sortable, b: Sortable) => number>
 > = {
-  size: (a, b) => {
-    const sizeCompare = (b.size ?? 0) - (a.size ?? 0);
-    if (sizeCompare !== 0) return sizeCompare;
-    return compareNameThenPath(a, b);
-  },
-  modified: (a, b) => {
-    const timeCompare =
-      (b.modified?.getTime() ?? 0) - (a.modified?.getTime() ?? 0);
-    if (timeCompare !== 0) return timeCompare;
-    return compareNameThenPath(a, b);
-  },
-  type: (a, b) => {
-    if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
-    return compareNameThenPath(a, b);
-  },
+  size: (a, b) =>
+    compareOptionalNumberDesc(a.size, b.size, () => compareNameThenPath(a, b)),
+  modified: (a, b) =>
+    compareOptionalNumberDesc(
+      a.modified?.getTime(),
+      b.modified?.getTime(),
+      () => compareNameThenPath(a, b)
+    ),
+  type: (a, b) => compareTypeThenName(a, b),
   path: (a, b) => comparePathThenName(a, b),
   name: (a, b) => compareNameThenPath(a, b),
 };
@@ -59,17 +77,7 @@ export function sortSearchResults(
   results: Sortable[],
   sortBy: 'name' | 'size' | 'modified' | 'path'
 ): void {
-  if (sortBy === 'name') {
-    results.sort((a, b) => {
-      const baseCompare = compareString(
-        path.basename(a.path ?? ''),
-        path.basename(b.path ?? '')
-      );
-      if (baseCompare !== 0) return baseCompare;
-      return compareString(a.path, b.path);
-    });
-    return;
-  }
-
-  sortByField(results, sortBy);
+  const comparator =
+    sortBy === 'name' ? compareBaseNameThenPath : SORT_COMPARATORS[sortBy];
+  results.sort(comparator);
 }

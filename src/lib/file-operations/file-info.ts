@@ -28,6 +28,15 @@ function getPermissions(mode: number): string {
   return `${owner}${group}${other}`;
 }
 
+function resolveMimeType(
+  ext: string,
+  includeMimeType: boolean
+): string | undefined {
+  if (!includeMimeType) return undefined;
+  if (!ext) return undefined;
+  return getMimeType(ext);
+}
+
 async function getSymlinkTarget(
   pathToRead: string
 ): Promise<string | undefined> {
@@ -36,6 +45,14 @@ async function getSymlinkTarget(
   } catch {
     return undefined;
   }
+}
+
+async function resolveSymlinkTarget(
+  pathToRead: string,
+  isSymlink: boolean
+): Promise<string | undefined> {
+  if (!isSymlink) return undefined;
+  return getSymlinkTarget(pathToRead);
 }
 
 export async function getFileInfo(
@@ -48,10 +65,8 @@ export async function getFileInfo(
   const name = path.basename(requestedPath);
   const ext = path.extname(name).toLowerCase();
   const includeMimeType = options.includeMimeType !== false;
-  const mimeType = includeMimeType && ext ? getMimeType(ext) : undefined;
-  const symlinkTarget = isSymlink
-    ? await getSymlinkTarget(requestedPath)
-    : undefined;
+  const mimeType = resolveMimeType(ext, includeMimeType);
+  const symlinkTarget = await resolveSymlinkTarget(requestedPath, isSymlink);
 
   const stats = await fs.stat(resolvedPath);
 

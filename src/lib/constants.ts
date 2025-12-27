@@ -1,5 +1,23 @@
 import { availableParallelism } from 'node:os';
 
+type EnvParseResult = number | null | undefined;
+
+function parseEnvIntValue(
+  envVar: string,
+  min: number,
+  max: number
+): EnvParseResult {
+  const value = process.env[envVar];
+  if (!value) return undefined;
+
+  const parsed = parseInt(value, 10);
+  if (Number.isNaN(parsed) || parsed < min || parsed > max) {
+    return null;
+  }
+
+  return parsed;
+}
+
 // Helper function for parsing and validating integer environment variables
 function parseEnvInt(
   envVar: string,
@@ -7,19 +25,15 @@ function parseEnvInt(
   min: number,
   max: number
 ): number {
-  const value = process.env[envVar];
-  if (!value) {
-    return defaultValue;
-  }
-
-  const parsed = parseInt(value, 10);
-  if (Number.isNaN(parsed) || parsed < min || parsed > max) {
+  const parsed = parseEnvIntValue(envVar, min, max);
+  if (parsed === undefined) return defaultValue;
+  if (parsed === null) {
+    const value = process.env[envVar] ?? '';
     console.error(
       `[WARNING] Invalid ${envVar} value: ${value} (must be ${min}-${max}). Using default: ${defaultValue}`
     );
     return defaultValue;
   }
-
   return parsed;
 }
 
@@ -28,19 +42,15 @@ function parseOptionalEnvInt(
   min: number,
   max: number
 ): number | undefined {
-  const value = process.env[envVar];
-  if (!value) {
-    return undefined;
-  }
-
-  const parsed = parseInt(value, 10);
-  if (Number.isNaN(parsed) || parsed < min || parsed > max) {
+  const parsed = parseEnvIntValue(envVar, min, max);
+  if (parsed === undefined) return undefined;
+  if (parsed === null) {
+    const value = process.env[envVar] ?? '';
     console.error(
       `[WARNING] Invalid ${envVar} value: ${value} (must be ${min}-${max}). Ignoring.`
     );
     return undefined;
   }
-
   return parsed;
 }
 

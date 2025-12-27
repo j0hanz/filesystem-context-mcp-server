@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { ErrorSchema } from '../common.js';
+import { BatchSummarySchema } from '../output-helpers.js';
 
 export const ComputeChecksumsOutputSchema = z.object({
   ok: z.boolean(),
@@ -15,12 +16,6 @@ export const ComputeChecksumsOutputSchema = z.object({
       })
     )
     .optional(),
-  summary: z
-    .object({
-      total: z.number(),
-      succeeded: z.number(),
-      failed: z.number(),
-    })
-    .optional(),
+  summary: BatchSummarySchema.optional(),
   error: ErrorSchema.optional(),
 });

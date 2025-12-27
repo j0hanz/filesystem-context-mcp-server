@@ -1,6 +1,7 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
+import type { Stats } from 'node:fs';
 
 import type {
   ChecksumAlgorithm,
@@ -24,6 +25,11 @@ const DEFAULT_MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 const DEFAULT_ALGORITHM: ChecksumAlgorithm = 'sha256';
 const DEFAULT_ENCODING: ChecksumEncoding = 'hex';
 
+interface StreamState {
+  bytesRead: number;
+  settled: boolean;
+}
+
 function normalizeComputeOptions(options: ComputeChecksumsOptions): {
   algorithm: ChecksumAlgorithm;
   encoding: ChecksumEncoding;
@@ -43,17 +49,7 @@ function buildEmptyResult(): ComputeChecksumsResult {
   };
 }
 
-async function computeSingleChecksum(
-  filePath: string,
-  algorithm: ChecksumAlgorithm,
-  encoding: ChecksumEncoding,
-  maxFileSize: number
-): Promise<ChecksumResult> {
-  const validPath = await validateExistingPath(filePath);
-
-  // Check file stats
-  const stats = await fs.stat(validPath);
-
+function ensureFileIsRegular(stats: Stats, filePath: string): void {
   if (stats.isDirectory()) {
     throw new McpError(
       ErrorCode.E_NOT_FILE,
@@ -69,16 +65,47 @@ async function computeSingleChecksum(
       filePath
     );
   }
+}
 
-  if (stats.size > maxFileSize) {
-    throw new McpError(
-      ErrorCode.E_TOO_LARGE,
-      `File exceeds maximum size (${stats.size} > ${maxFileSize}): ${filePath}`,
-      filePath
-    );
-  }
+function ensureMaxFileSize(
+  size: number,
+  maxFileSize: number,
+  filePath: string
+): void {
+  if (size <= maxFileSize) return;
+  throw new McpError(
+    ErrorCode.E_TOO_LARGE,
+    `File exceeds maximum size (${size} > ${maxFileSize}): ${filePath}`,
+    filePath
+  );
+}
 
-  // Compute hash using streaming for memory efficiency
+function buildChecksumResult(
+  filePath: string,
+  checksum: string,
+  algorithm: ChecksumAlgorithm,
+  size: number
+): ChecksumResult {
+  return {
+    path: filePath,
+    checksum,
+    algorithm,
+    size,
+  };
+}
+
+async function computeSingleChecksum(
+  filePath: string,
+  algorithm: ChecksumAlgorithm,
+  encoding: ChecksumEncoding,
+  maxFileSize: number
+): Promise<ChecksumResult> {
+  const validPath = await validateExistingPath(filePath);
+
+  const stats = await fs.stat(validPath);
+  ensureFileIsRegular(stats, filePath);
+  ensureMaxFileSize(stats.size, maxFileSize, filePath);
+
   const hash = await computeHashStream(
     validPath,
     algorithm,
@@ -87,12 +114,25 @@ async function computeSingleChecksum(
   );
   const checksum = hash.digest(encoding as crypto.BinaryToTextEncoding);
 
-  return {
-    path: filePath,
-    checksum,
-    algorithm,
-    size: stats.size,
-  };
+  return buildChecksumResult(filePath, checksum, algorithm, stats.size);
+}
+
+function createTooLargeError(
+  bytesRead: number,
+  maxFileSize: number,
+  requestedPath: string
+): McpError {
+  return new McpError(
+    ErrorCode.E_TOO_LARGE,
+    `File exceeds maximum size (${bytesRead} > ${maxFileSize}): ${requestedPath}`,
+    requestedPath
+  );
+}
+
+function settleOnce(state: StreamState, action: () => void): void {
+  if (state.settled) return;
+  state.settled = true;
+  action();
 }
 
 function computeHashStream(
@@ -104,41 +144,37 @@ function computeHashStream(
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash(algorithm);
     const stream = createReadStream(filePath);
-    let bytesRead = 0;
-    let settled = false;
+    const state: StreamState = { bytesRead: 0, settled: false };
 
     stream.on('data', (chunk: Buffer | string) => {
       const chunkSize =
         typeof chunk === 'string' ? Buffer.byteLength(chunk) : chunk.length;
-      bytesRead += chunkSize;
-      if (bytesRead > maxFileSize) {
-        const error = new McpError(
-          ErrorCode.E_TOO_LARGE,
-          `File exceeds maximum size (${bytesRead} > ${maxFileSize}): ${requestedPath}`,
+      state.bytesRead += chunkSize;
+      if (state.bytesRead > maxFileSize) {
+        const error = createTooLargeError(
+          state.bytesRead,
+          maxFileSize,
           requestedPath
         );
-        if (!settled) {
-          settled = true;
+        settleOnce(state, () => {
           stream.destroy(error);
           reject(error);
-        }
+        });
         return;
       }
       hash.update(chunk);
     });
 
     stream.on('end', () => {
-      if (!settled) {
-        settled = true;
+      settleOnce(state, () => {
         resolve(hash);
-      }
+      });
     });
 
     stream.on('error', (error) => {
-      if (!settled) {
-        settled = true;
+      settleOnce(state, () => {
         reject(error);
-      }
+      });
     });
   });
 }

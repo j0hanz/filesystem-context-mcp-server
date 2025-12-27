@@ -15,9 +15,11 @@ import {
   buildChildrenByParent,
   buildTree,
   buildTreeSummary,
+  sortTreeChildren,
+} from './directory-tree-builders.js';
+import {
   handleTreeNode,
   initTreeState,
-  sortTreeChildren,
   type TreeState,
 } from './directory-tree-helpers.js';
 
