@@ -5,7 +5,6 @@ export {
   ListDirectoryOutputSchema,
 } from './outputs/directory.js';
 export {
-  DefinitionTypeOutputSchema,
   SearchContentOutputSchema,
   SearchDefinitionsOutputSchema,
   SearchFilesOutputSchema,

@@ -9,7 +9,7 @@ import { validateExistingPathDetailed } from '../path-validation.js';
 import type { SearchFilesOptions } from './search-files-options.js';
 import { sortSearchResults } from './sorting.js';
 
-export interface SearchFilesState {
+interface SearchFilesState {
   results: SearchResult[];
   skippedInaccessible: number;
   truncated: boolean;

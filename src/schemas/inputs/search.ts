@@ -138,7 +138,7 @@ export const SearchContentInputSchema = {
     ),
 };
 
-export const DefinitionTypeSchema = z.enum([
+const DefinitionTypeSchema = z.enum([
   'function',
   'class',
   'interface',

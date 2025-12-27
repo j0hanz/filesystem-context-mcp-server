@@ -4,7 +4,6 @@ export {
   ListDirectoryInputSchema,
 } from './inputs/directory.js';
 export {
-  DefinitionTypeSchema,
   SearchContentInputSchema,
   SearchDefinitionsInputSchema,
   SearchFilesInputSchema,
@@ -18,8 +17,4 @@ export {
   GetFileInfoInputSchema,
   GetMultipleFileInfoInputSchema,
 } from './inputs/file-info.js';
-export {
-  ChecksumAlgorithmSchema,
-  ChecksumEncodingSchema,
-  ComputeChecksumsInputSchema,
-} from './inputs/checksums.js';
+export { ComputeChecksumsInputSchema } from './inputs/checksums.js';

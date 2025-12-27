@@ -5,7 +5,7 @@ export function createOutputSkeleton<T>(
   return paths.map((filePath) => build(filePath));
 }
 
-export interface IndexedResult<T> {
+interface IndexedResult<T> {
   index: number;
   value: T;
 }

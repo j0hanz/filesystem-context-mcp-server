@@ -19,10 +19,10 @@ export function buildToolResponse<T>(
 }
 
 export type ToolResponse<T> = ReturnType<typeof buildToolResponse<T>>;
-export type ToolErrorResponse = ReturnType<typeof buildToolErrorResponse>;
+type ToolErrorResponse = ReturnType<typeof buildToolErrorResponse>;
 export type ToolResult<T> = ToolResponse<T> | ToolErrorResponse;
 
-export interface ToolErrorStructuredContent extends Record<string, unknown> {
+interface ToolErrorStructuredContent extends Record<string, unknown> {
   ok: false;
   error: {
     code: string;

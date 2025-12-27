@@ -16,7 +16,7 @@ export interface SearchFilesOptions {
   includeHidden?: boolean;
 }
 
-export interface NormalizedSearchFilesOptions {
+interface NormalizedSearchFilesOptions {
   effectiveMaxResults: number;
   sortBy: 'name' | 'size' | 'modified' | 'path';
   maxDepth?: number;

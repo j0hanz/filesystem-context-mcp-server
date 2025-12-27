@@ -71,7 +71,7 @@ export const SearchContentOutputSchema = z.object({
   error: ErrorSchema.optional(),
 });
 
-export const DefinitionTypeOutputSchema = z.enum([
+const DefinitionTypeOutputSchema = z.enum([
   'function',
   'class',
   'interface',

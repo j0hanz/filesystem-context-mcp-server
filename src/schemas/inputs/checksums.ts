@@ -1,12 +1,7 @@
 import { z } from 'zod';
 
-export const ChecksumAlgorithmSchema = z.enum([
-  'md5',
-  'sha1',
-  'sha256',
-  'sha512',
-]);
-export const ChecksumEncodingSchema = z.enum(['hex', 'base64']);
+const ChecksumAlgorithmSchema = z.enum(['md5', 'sha1', 'sha256', 'sha512']);
+const ChecksumEncodingSchema = z.enum(['hex', 'base64']);
 
 export const ComputeChecksumsInputSchema = {
   paths: z
