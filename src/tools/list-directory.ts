@@ -67,8 +67,7 @@ const LIST_DIRECTORY_TOOL = {
     'List files and subdirectories in a specified path with optional recursive traversal. ' +
     'Returns names (basename), relative paths, types (file/directory/symlink), sizes, and modification dates. ' +
     'Use recursive=true with maxDepth to explore nested structures. ' +
-    'Use excludePatterns to skip directories like node_modules, or pattern to include only matching paths. ' +
-    'For a visual tree structure, use directory_tree instead.',
+    'Use excludePatterns to skip directories like node_modules, or pattern to include only matching paths.',
   inputSchema: ListDirectoryInputSchema,
   outputSchema: ListDirectoryOutputSchema.shape,
   annotations: {

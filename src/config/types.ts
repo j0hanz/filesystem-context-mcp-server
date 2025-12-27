@@ -85,72 +85,6 @@ export interface SearchContentResult {
   };
 }
 
-export interface DirectoryAnalysis {
-  path: string;
-  totalFiles: number;
-  totalDirectories: number;
-  totalSize: number;
-  fileTypes: Record<string, number>;
-  largestFiles: { path: string; size: number }[];
-  recentlyModified: { path: string; modified: Date }[];
-  maxDepth: number;
-}
-
-export interface AnalyzeDirectoryResult {
-  analysis: DirectoryAnalysis;
-  summary: {
-    truncated: boolean;
-    skippedInaccessible: number;
-    symlinksNotFollowed: number;
-  };
-}
-
-export interface TreeEntry {
-  name: string;
-  type: 'file' | 'directory';
-  size?: number;
-  children?: TreeEntry[];
-}
-
-export interface DirectoryTreeResult {
-  tree: TreeEntry;
-  summary: {
-    totalFiles: number;
-    totalDirectories: number;
-    maxDepthReached: number;
-    truncated: boolean;
-    skippedInaccessible: number;
-    symlinksNotFollowed: number;
-  };
-}
-
-export interface MediaFileResult {
-  path: string;
-  mimeType: string;
-  size: number;
-  data: string;
-}
-
-export type ChecksumAlgorithm = 'md5' | 'sha1' | 'sha256' | 'sha512';
-export type ChecksumEncoding = 'hex' | 'base64';
-
-export interface ChecksumResult {
-  path: string;
-  checksum?: string;
-  algorithm: ChecksumAlgorithm;
-  size?: number;
-  error?: string;
-}
-
-export interface ComputeChecksumsResult {
-  results: ChecksumResult[];
-  summary: {
-    total: number;
-    succeeded: number;
-    failed: number;
-  };
-}
-
 export interface MultipleFileInfoResult {
   path: string;
   info?: FileInfo;
@@ -164,50 +98,6 @@ export interface GetMultipleFileInfoResult {
     succeeded: number;
     failed: number;
     totalSize: number;
-  };
-}
-
-export type DefinitionType =
-  | 'function'
-  | 'class'
-  | 'interface'
-  | 'type'
-  | 'enum'
-  | 'variable';
-
-export interface SearchDefinitionsOptions {
-  path: string;
-  name?: string;
-  type?: DefinitionType;
-  caseSensitive?: boolean;
-  maxResults?: number;
-  excludePatterns?: string[];
-  includeHidden?: boolean;
-  contextLines?: number;
-  signal?: AbortSignal;
-}
-
-export interface DefinitionMatch {
-  file: string;
-  line: number;
-  definitionType: DefinitionType;
-  name: string;
-  content: string;
-  contextBefore?: string[];
-  contextAfter?: string[];
-  exported: boolean;
-}
-
-export interface SearchDefinitionsResult {
-  basePath: string;
-  searchName?: string;
-  searchType?: DefinitionType;
-  definitions: DefinitionMatch[];
-  summary: {
-    filesScanned: number;
-    filesMatched: number;
-    totalDefinitions: number;
-    truncated: boolean;
   };
 }
 

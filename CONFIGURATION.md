@@ -27,25 +27,20 @@ Values are integers. Sizes are in bytes, timeouts are in milliseconds.
 
 ### File Size Limits
 
-| Variable          | Default | Range      | Applies To                         | Increase For       | Decrease For        |
-| ----------------- | ------- | ---------- | ---------------------------------- | ------------------ | ------------------- |
-| `MAX_FILE_SIZE`   | 10MB    | 1MB-100MB  | `read_file`, `read_multiple_files` | Large logs/data    | Low memory          |
-| `MAX_MEDIA_SIZE`  | 50MB    | 1MB-500MB  | `read_media_file`                  | High-res media     | Basic image support |
-| `MAX_SEARCH_SIZE` | 1MB     | 100KB-10MB | `search_content`                   | Large source files | Performance focus   |
+| Variable          | Default | Range      | Applies To                         | Increase For       | Decrease For      |
+| ----------------- | ------- | ---------- | ---------------------------------- | ------------------ | ----------------- |
+| `MAX_FILE_SIZE`   | 10MB    | 1MB-100MB  | `read_file`, `read_multiple_files` | Large logs/data    | Low memory        |
+| `MAX_SEARCH_SIZE` | 1MB     | 100KB-10MB | `search_content`                   | Large source files | Performance focus |
 
 ### Default Operation Limits
 
-| Variable                      | Default | Range       | Applies To                                             |
-| ----------------------------- | ------- | ----------- | ------------------------------------------------------ |
-| `DEFAULT_DEPTH`               | `10`    | 1-100       | `list_directory`, `search_files`, `analyze_directory`  |
-| `DEFAULT_RESULTS`             | `100`   | 10-10000    | `search_files`, `search_content`, `search_definitions` |
-| `DEFAULT_LIST_MAX_ENTRIES`    | `10000` | 100-100000  | `list_directory`                                       |
-| `DEFAULT_SEARCH_MAX_FILES`    | `20000` | 100-100000  | `search_files`, `search_content`                       |
-| `DEFAULT_SEARCH_TIMEOUT`      | `30000` | 100-3600000 | `search_files`, `search_content`                       |
-| `DEFAULT_TOP`                 | `10`    | 1-1000      | `analyze_directory`                                    |
-| `DEFAULT_ANALYZE_MAX_ENTRIES` | `20000` | 100-100000  | `analyze_directory`                                    |
-| `DEFAULT_TREE`                | `5`     | 1-50        | `directory_tree`                                       |
-| `DEFAULT_TREE_MAX_FILES`      | `5000`  | 100-200000  | `directory_tree`                                       |
+| Variable                   | Default | Range       | Applies To                       |
+| -------------------------- | ------- | ----------- | -------------------------------- |
+| `DEFAULT_DEPTH`            | `10`    | 1-100       | `list_directory`, `search_files` |
+| `DEFAULT_RESULTS`          | `100`   | 10-10000    | `search_files`, `search_content` |
+| `DEFAULT_LIST_MAX_ENTRIES` | `10000` | 100-100000  | `list_directory`                 |
+| `DEFAULT_SEARCH_MAX_FILES` | `20000` | 100-100000  | `search_files`, `search_content` |
+| `DEFAULT_SEARCH_TIMEOUT`   | `30000` | 100-3600000 | `search_files`, `search_content` |
 
 ## Configuration Examples
 

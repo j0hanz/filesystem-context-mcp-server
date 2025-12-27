@@ -97,12 +97,6 @@ export const MAX_TEXT_FILE_SIZE = parseEnvInt(
   1024 * 1024,
   100 * 1024 * 1024
 );
-export const MAX_MEDIA_FILE_SIZE = parseEnvInt(
-  'MAX_MEDIA_SIZE',
-  50 * 1024 * 1024,
-  1024 * 1024,
-  500 * 1024 * 1024
-);
 
 export const MAX_LINE_CONTENT_LENGTH = 200;
 export const MAX_SEARCH_LINE_LENGTH = 100_000;
@@ -132,20 +126,6 @@ export const DEFAULT_SEARCH_TIMEOUT_MS = parseEnvInt(
   30000,
   100,
   3600000
-);
-export const DEFAULT_TOP_N = parseEnvInt('DEFAULT_TOP', 10, 1, 1000);
-export const DEFAULT_ANALYZE_MAX_ENTRIES = parseEnvInt(
-  'DEFAULT_ANALYZE_MAX_ENTRIES',
-  20000,
-  100,
-  100000
-);
-export const DEFAULT_TREE_DEPTH = parseEnvInt('DEFAULT_TREE', 5, 1, 50);
-export const DEFAULT_TREE_MAX_FILES = parseEnvInt(
-  'DEFAULT_TREE_MAX_FILES',
-  5000,
-  100,
-  200000
 );
 export const KNOWN_BINARY_EXTENSIONS = new Set([
   '.png',

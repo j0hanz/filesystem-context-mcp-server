@@ -238,7 +238,7 @@ async function assertNotBinary(
   if (!isBinary) return;
   throw new McpError(
     ErrorCode.E_INVALID_INPUT,
-    `Binary file detected: ${filePath}. Use read_media_file instead.`,
+    `Binary file detected: ${filePath}. Set skipBinary=false to read as text.`,
     filePath
   );
 }

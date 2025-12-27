@@ -1,15 +1,12 @@
 import { z } from 'zod';
 
 import {
-  DEFAULT_ANALYZE_MAX_ENTRIES,
   DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_LIST_MAX_ENTRIES,
   DEFAULT_MAX_DEPTH,
   DEFAULT_MAX_RESULTS,
   DEFAULT_SEARCH_MAX_FILES,
   DEFAULT_SEARCH_TIMEOUT_MS,
-  DEFAULT_TOP_N,
-  DEFAULT_TREE_DEPTH,
   MAX_SEARCHABLE_FILE_SIZE,
   MAX_TEXT_FILE_SIZE,
 } from '../lib/constants.js';
@@ -64,12 +61,6 @@ export const ExcludePatternsSchema = z
   .optional()
   .default(DEFAULT_EXCLUDE_PATTERNS);
 
-export const BasicExcludePatternsSchema = z
-  .array(z.string().max(500, 'Individual exclude pattern is too long'))
-  .max(100, 'Too many exclude patterns (max 100)')
-  .optional()
-  .default(DEFAULT_EXCLUDE_PATTERNS);
-
 export const ListExcludePatternsSchema = z
   .array(
     z
@@ -119,24 +110,6 @@ export const TimeoutMsSchema = z
   .default(DEFAULT_SEARCH_TIMEOUT_MS)
   .describe('Timeout in milliseconds for the operation');
 
-export const TopNSchema = z
-  .number()
-  .int('topN must be an integer')
-  .min(1, 'topN must be at least 1')
-  .max(1000, 'topN cannot exceed 1000')
-  .optional()
-  .default(DEFAULT_TOP_N)
-  .describe('Number of top items to return');
-
-export const TreeMaxDepthSchema = z
-  .number()
-  .int('maxDepth must be an integer')
-  .min(0, 'maxDepth must be non-negative')
-  .max(50, 'maxDepth cannot exceed 50')
-  .optional()
-  .default(DEFAULT_TREE_DEPTH)
-  .describe('Maximum depth to traverse (default 5)');
-
 export const IncludeHiddenSchema = z
   .boolean()
   .optional()
@@ -163,15 +136,6 @@ export const MaxEntriesSchema = z
   .optional()
   .default(DEFAULT_LIST_MAX_ENTRIES)
   .describe('Maximum number of entries to return (prevents huge responses)');
-
-export const AnalyzeMaxEntriesSchema = z
-  .number()
-  .int('maxEntries must be an integer')
-  .min(1, 'maxEntries must be at least 1')
-  .max(100000, 'maxEntries cannot exceed 100,000')
-  .optional()
-  .default(DEFAULT_ANALYZE_MAX_ENTRIES)
-  .describe('Maximum number of entries to scan before truncating');
 
 export const CaseSensitiveSchema = z
   .boolean()

@@ -8,21 +8,16 @@ This server enables AI assistants to safely explore and analyze filesystem conte
 
 ## Quick Reference
 
-| Goal                | Tool                       | Key Parameters                          |
-| ------------------- | -------------------------- | --------------------------------------- |
-| Check access        | `list_allowed_directories` | —                                       |
-| Project structure   | `directory_tree`           | `maxDepth`, `excludePatterns`           |
-| List contents       | `list_directory`           | `recursive`, `sortBy`                   |
-| Directory stats     | `analyze_directory`        | `topN`, `excludePatterns`, `maxEntries` |
-| Find files          | `search_files`             | `pattern` (glob), `maxResults`          |
-| Search in files     | `search_content`           | `pattern` (regex), `contextLines`       |
-| Find definitions    | `search_definitions`       | `name`, `type`, `contextLines`          |
-| Read file           | `read_file`                | `head`, `tail`, `lineStart/lineEnd`     |
-| Read multiple files | `read_multiple_files`      | `paths[]` — **preferred for 2+**        |
-| File metadata       | `get_file_info`            | `path`                                  |
-| Batch file metadata | `get_multiple_file_info`   | `paths[]` — **preferred for 2+**        |
-| Compute checksums   | `compute_checksums`        | `paths[]`, `algorithm`                  |
-| Binary/media files  | `read_media_file`          | `maxSize`                               |
+| Goal                | Tool                       | Key Parameters                      |
+| ------------------- | -------------------------- | ----------------------------------- |
+| Check access        | `list_allowed_directories` | -                                   |
+| List contents       | `list_directory`           | `recursive`, `sortBy`               |
+| Find files          | `search_files`             | `pattern` (glob), `maxResults`      |
+| Search in files     | `search_content`           | `pattern` (regex), `contextLines`   |
+| Read file           | `read_file`                | `head`, `tail`, `lineStart/lineEnd` |
+| Read multiple files | `read_multiple_files`      | `paths[]` - **preferred for 2+**    |
+| File metadata       | `get_file_info`            | `path`                              |
+| Batch file metadata | `get_multiple_file_info`   | `paths[]` - **preferred for 2+**    |
 
 ---
 
@@ -31,7 +26,7 @@ This server enables AI assistants to safely explore and analyze filesystem conte
 ### Project Discovery
 
 ```text
-list_allowed_directories → directory_tree(maxDepth=3) → analyze_directory → read_multiple_files([package.json, README.md])
+list_allowed_directories → list_directory(path=".", recursive=true, maxDepth=3) → read_multiple_files([package.json, README.md])
 ```
 
 ### Find & Read Code
@@ -44,13 +39,6 @@ search_files(pattern="**/*.ts") → read_multiple_files([...results])
 
 ```text
 search_content(pattern="TODO|FIXME", filePattern="**/*.ts", contextLines=2)
-```
-
-### Find Code Definitions
-
-```text
-search_definitions(path="src/", name="User") → Find classes/functions/types named "User"
-search_definitions(path="src/", type="interface") → Discover all interfaces
 ```
 
 ### Common Glob Patterns
@@ -82,19 +70,6 @@ search_definitions(path="src/", type="interface") → Discover all interfaces
 
 ## Tool Details
 
-### `directory_tree`
-
-JSON tree structure for AI parsing.
-
-| Parameter         | Default | Description           |
-| ----------------- | ------- | --------------------- |
-| `path`            | —       | Directory path        |
-| `maxDepth`        | 5       | Depth limit (0-50)    |
-| `excludePatterns` | []      | Glob patterns to skip |
-| `includeHidden`   | false   | Include dotfiles      |
-| `includeSize`     | false   | Show file sizes       |
-| `maxFiles`        | —       | Limit total files     |
-
 ### `search_files`
 
 Find files (not directories) by glob pattern.
@@ -124,41 +99,20 @@ Grep-like regex search in files.
 | `maxResults`    | 100     | Limit matches             |
 | `skipBinary`    | true    | Skip binary files         |
 
-### `search_definitions`
-
-Find code definitions (classes, functions, interfaces, types, enums, variables) without manual regex construction.
-
-| Parameter         | Default | Description                                                                   |
-| ----------------- | ------- | ----------------------------------------------------------------------------- |
-| `path`            | -       | Base directory to search                                                      |
-| `name`            | -       | Definition name to find                                                       |
-| `type`            | -       | Definition type: `class`, `function`, `interface`, `type`, `enum`, `variable` |
-| `caseSensitive`   | true    | Case-sensitive name matching                                                  |
-| `maxResults`      | 100     | Limit matches                                                                 |
-| `excludePatterns` | []      | Glob patterns to exclude                                                      |
-| `includeHidden`   | false   | Include hidden files and directories                                          |
-| `contextLines`    | 0       | Lines of context before/after match (0-10)                                    |
-
-**Usage patterns:**
-
-- **Find by name:** `search_definitions(path="src/", name="UserService")` — finds class/function/type named UserService
-- **Discovery mode:** `search_definitions(path="src/", type="interface")` — lists all interfaces
-- **Combined:** `search_definitions(path="src/", name="Handler", type="class")` — finds classes named "Handler"
-
 ### `read_file`
 
 Read single file with line selection.
 
-| Parameter    | Default | Description                                         |
-| ------------ | ------- | --------------------------------------------------- |
-| `path`       | -       | File path                                           |
-| `encoding`   | utf-8   | `utf-8/ascii/base64/hex/latin1`                     |
-| `maxSize`    | 10MB    | Size limit                                          |
-| `skipBinary` | false   | Reject binary files (use `read_media_file` instead) |
-| `head`       | -       | First N lines                                       |
-| `tail`       | -       | Last N lines                                        |
-| `lineStart`  | -       | Start line (1-indexed)                              |
-| `lineEnd`    | -       | End line (inclusive)                                |
+| Parameter    | Default | Description                     |
+| ------------ | ------- | ------------------------------- |
+| `path`       | -       | File path                       |
+| `encoding`   | utf-8   | `utf-8/ascii/base64/hex/latin1` |
+| `maxSize`    | 10MB    | Size limit                      |
+| `skipBinary` | true    | Reject binary files             |
+| `head`       | -       | First N lines                   |
+| `tail`       | -       | Last N lines                    |
+| `lineStart`  | -       | Start line (1-indexed)          |
+| `lineEnd`    | -       | End line (inclusive)            |
 
 > ⚠️ Cannot combine `head/tail` with `lineStart/lineEnd`
 
@@ -194,27 +148,6 @@ Flat listing with metadata.
 
 **Structured output notes:** `entries[].name` is the basename, and `entries[].relativePath` is the path relative to the listed base.
 
-### `analyze_directory`
-
-Statistics: counts, sizes, types, largest/recent files.
-
-| Parameter         | Default | Description         |
-| ----------------- | ------- | ------------------- |
-| `path`            | -       | Directory path      |
-| `maxDepth`        | 10      | Analysis depth      |
-| `topN`            | 10      | Top largest/recent  |
-| `maxEntries`      | 20000   | Max entries scanned |
-| `excludePatterns` | []      | Patterns to skip    |
-
-### `read_media_file`
-
-Binary files as base64 with MIME type.
-
-| Parameter | Default | Description     |
-| --------- | ------- | --------------- |
-| `path`    | —       | Media file path |
-| `maxSize` | 50MB    | Size limit      |
-
 ### `get_file_info`
 
 Detailed metadata about a file or directory.
@@ -236,21 +169,6 @@ Batch metadata retrieval for multiple files/directories (parallel processing).
 
 **Returns:** Array of file info with individual success/error status, plus summary (total, succeeded, failed, totalSize).
 
-### `compute_checksums`
-
-Compute cryptographic hashes for files using streaming (memory-efficient).
-
-| Parameter     | Default | Description                             |
-| ------------- | ------- | --------------------------------------- |
-| `paths`       | —       | Array of file paths (max 50)            |
-| `algorithm`   | sha256  | Hash: `md5`, `sha1`, `sha256`, `sha512` |
-| `encoding`    | hex     | Output: `hex` or `base64`               |
-| `maxFileSize` | 100MB   | Skip files larger than this             |
-
-**Returns:** Array of checksums with file sizes, plus summary. Useful for integrity checks and duplicate detection.
-
----
-
 ## Error Codes
 
 | Code                  | Cause                        | Solution                              |
@@ -270,5 +188,5 @@ Compute cryptographic hashes for files using streaming (memory-efficient).
 
 - **Read-only** — no writes, deletes, or modifications
 - **Path validation** — symlinks cannot escape allowed directories
-- **Binary detection** — prevents accidental base64 bloat
+- **Binary detection** - prevents accidental binary reads
 - **Input sanitization** — patterns validated for ReDoS protection

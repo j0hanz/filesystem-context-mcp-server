@@ -21,31 +21,22 @@ A secure, read-only MCP server for filesystem scanning, searching, and analysis 
 - Directory listing with recursive support
 - File search with glob patterns
 - Content search with regex and context lines
-- Directory analysis (counts, sizes, largest/recent files)
-- Directory tree optimized for AI parsing
 - File reading with head/tail/line ranges
 - Batch reads and metadata lookups in parallel
-- Checksum computation (md5/sha1/sha256/sha512)
-- Media/binary file reading as base64
 - Security: path validation, symlink escape protection, read-only operations
 
 ## When to Use
 
-| Task                             | Tool                       |
-| -------------------------------- | -------------------------- |
-| Explore project structure        | `list_directory`           |
-| Find specific file types         | `search_files`             |
-| Search for code patterns/text    | `search_content`           |
-| Find code definitions            | `search_definitions`       |
-| Understand codebase statistics   | `analyze_directory`        |
-| Get AI-friendly project overview | `directory_tree`           |
-| Read source code                 | `read_file`                |
-| Batch read multiple files        | `read_multiple_files`      |
-| Get file metadata (size, dates)  | `get_file_info`            |
-| Batch get file metadata          | `get_multiple_file_info`   |
-| Compute file checksums/hashes    | `compute_checksums`        |
-| Read images or binary files      | `read_media_file`          |
-| Check available directories      | `list_allowed_directories` |
+| Task                            | Tool                       |
+| ------------------------------- | -------------------------- |
+| Explore project structure       | `list_directory`           |
+| Find specific file types        | `search_files`             |
+| Search for code patterns/text   | `search_content`           |
+| Read source code                | `read_file`                |
+| Batch read multiple files       | `read_multiple_files`      |
+| Get file metadata (size, dates) | `get_file_info`            |
+| Batch get file metadata         | `get_multiple_file_info`   |
+| Check available directories     | `list_allowed_directories` |
 
 ## Quick Start
 
@@ -131,24 +122,19 @@ All configuration is optional. Values are integers unless noted. Sizes are in by
 
 ### Environment Variables
 
-| Variable                         | Default                 | Range       | Description                                                                  |
-| -------------------------------- | ----------------------- | ----------- | ---------------------------------------------------------------------------- |
-| `UV_THREADPOOL_SIZE`             | (unset)                 | 1-1024      | libuv threadpool size. If set, caps parallelism.                             |
-| `FILESYSTEM_CONTEXT_CONCURRENCY` | Auto (2x cores, cap 50) | 1-100       | Parallel file operations. Further capped by `UV_THREADPOOL_SIZE`             |
-| `TRAVERSAL_JOBS`                 | 8                       | 1-50        | Directory traversal concurrency                                              |
-| `REGEX_TIMEOUT`                  | 100                     | 50-1000     | Regex timeout per line (prevents ReDoS)                                      |
-| `MAX_FILE_SIZE`                  | 10MB                    | 1MB-100MB   | Max text file size (`read_file`, `read_multiple_files`)                      |
-| `MAX_MEDIA_SIZE`                 | 50MB                    | 1MB-500MB   | Max media size (`read_media_file`)                                           |
-| `MAX_SEARCH_SIZE`                | 1MB                     | 100KB-10MB  | Max file size for content search (`search_content`)                          |
-| `DEFAULT_DEPTH`                  | 10                      | 1-100       | Default max depth (`list_directory`, `search_files`, `analyze_directory`)    |
-| `DEFAULT_RESULTS`                | 100                     | 10-10000    | Default max results (`search_files`, `search_content`, `search_definitions`) |
-| `DEFAULT_LIST_MAX_ENTRIES`       | 10000                   | 100-100000  | Default max entries (`list_directory`)                                       |
-| `DEFAULT_SEARCH_MAX_FILES`       | 20000                   | 100-100000  | Default max files scanned (`search_files`, `search_content`)                 |
-| `DEFAULT_SEARCH_TIMEOUT`         | 30000                   | 100-3600000 | Default search timeout (`search_files`, `search_content`)                    |
-| `DEFAULT_TOP`                    | 10                      | 1-1000      | Default top N (`analyze_directory`)                                          |
-| `DEFAULT_ANALYZE_MAX_ENTRIES`    | 20000                   | 100-100000  | Default max entries (`analyze_directory`)                                    |
-| `DEFAULT_TREE`                   | 5                       | 1-50        | Default tree depth (`directory_tree`)                                        |
-| `DEFAULT_TREE_MAX_FILES`         | 5000                    | 100-200000  | Default max files (`directory_tree`)                                         |
+| Variable                         | Default                 | Range       | Description                                                      |
+| -------------------------------- | ----------------------- | ----------- | ---------------------------------------------------------------- |
+| `UV_THREADPOOL_SIZE`             | (unset)                 | 1-1024      | libuv threadpool size. If set, caps parallelism.                 |
+| `FILESYSTEM_CONTEXT_CONCURRENCY` | Auto (2x cores, cap 50) | 1-100       | Parallel file operations. Further capped by `UV_THREADPOOL_SIZE` |
+| `TRAVERSAL_JOBS`                 | 8                       | 1-50        | Directory traversal concurrency                                  |
+| `REGEX_TIMEOUT`                  | 100                     | 50-1000     | Regex timeout per line (prevents ReDoS)                          |
+| `MAX_FILE_SIZE`                  | 10MB                    | 1MB-100MB   | Max text file size (`read_file`, `read_multiple_files`)          |
+| `MAX_SEARCH_SIZE`                | 1MB                     | 100KB-10MB  | Max file size for content search (`search_content`)              |
+| `DEFAULT_DEPTH`                  | 10                      | 1-100       | Default max depth (`list_directory`, `search_files`)             |
+| `DEFAULT_RESULTS`                | 100                     | 10-10000    | Default max results (`search_files`, `search_content`)           |
+| `DEFAULT_LIST_MAX_ENTRIES`       | 10000                   | 100-100000  | Default max entries (`list_directory`)                           |
+| `DEFAULT_SEARCH_MAX_FILES`       | 20000                   | 100-100000  | Default max files scanned (`search_files`, `search_content`)     |
+| `DEFAULT_SEARCH_TIMEOUT`         | 30000                   | 100-3600000 | Default search timeout (`search_files`, `search_content`)        |
 
 See [CONFIGURATION.md](CONFIGURATION.md) for profiles and examples.
 
@@ -217,7 +203,7 @@ Read the contents of a text file.
 | `path`       | string  | Yes      | -       | File path to read                                           |
 | `encoding`   | string  | No       | `utf-8` | File encoding (`utf-8`, `ascii`, `base64`, `hex`, `latin1`) |
 | `maxSize`    | number  | No       | 10MB    | Maximum file size in bytes (capped by `MAX_FILE_SIZE`)      |
-| `skipBinary` | boolean | No       | `true`  | Reject likely-binary files (use `read_media_file` instead)  |
+| `skipBinary` | boolean | No       | `true`  | Reject likely-binary files                                  |
 | `lineStart`  | number  | No       | -       | Start line (1-indexed) for range reading                    |
 | `lineEnd`    | number  | No       | -       | End line (inclusive) for range reading                      |
 | `head`       | number  | No       | -       | Read only first N lines                                     |
@@ -276,21 +262,6 @@ Returns: Array of file info with individual success/error status, plus summary.
 
 ---
 
-### `compute_checksums`
-
-Compute cryptographic checksums for files using streaming.
-
-| Parameter     | Type     | Required | Default | Description                          |
-| ------------- | -------- | -------- | ------- | ------------------------------------ |
-| `paths`       | string[] | Yes      | -       | Array of file paths (max 50)         |
-| `algorithm`   | string   | No       | sha256  | `md5`, `sha1`, `sha256`, `sha512`    |
-| `encoding`    | string   | No       | hex     | `hex` or `base64`                    |
-| `maxFileSize` | number   | No       | 100MB   | Skip files larger than this (1B-1GB) |
-
-Returns: Checksums with file sizes and summary (total/succeeded/failed).
-
----
-
 ### `search_content`
 
 Search for text content within files using regular expressions.
@@ -315,70 +286,6 @@ Search for text content within files using regular expressions.
 | `caseSensitiveFileMatch` | boolean  | No       | `true`                | Case-sensitive filename matching                           |
 
 Returns: Matching lines with file path, line number, content, and optional context.
-
----
-
-### `search_definitions`
-
-Find code definitions (classes, functions, interfaces, types, enums, variables).
-
-| Parameter         | Type     | Required | Default               | Description                                                  |
-| ----------------- | -------- | -------- | --------------------- | ------------------------------------------------------------ |
-| `path`            | string   | Yes      | -                     | Base directory to search                                     |
-| `name`            | string   | No       | -                     | Definition name to find                                      |
-| `type`            | string   | No       | -                     | `class`, `function`, `interface`, `type`, `enum`, `variable` |
-| `caseSensitive`   | boolean  | No       | `true`                | Case-sensitive name matching                                 |
-| `maxResults`      | number   | No       | `100`                 | Maximum number of definitions to return                      |
-| `excludePatterns` | string[] | No       | built-in exclude list | Glob patterns to exclude                                     |
-| `includeHidden`   | boolean  | No       | `false`               | Include hidden files and directories                         |
-| `contextLines`    | number   | No       | `0`                   | Lines of context before/after match (0-10)                   |
-
----
-
-### `analyze_directory`
-
-Analyze a directory structure and return statistics.
-
-| Parameter         | Type     | Required | Default               | Description                            |
-| ----------------- | -------- | -------- | --------------------- | -------------------------------------- |
-| `path`            | string   | Yes      | -                     | Directory to analyze                   |
-| `maxDepth`        | number   | No       | `10`                  | Maximum depth to analyze (0-100)       |
-| `topN`            | number   | No       | `10`                  | Number of top items to return (1-1000) |
-| `maxEntries`      | number   | No       | `20000`               | Maximum entries to scan (1-100000)     |
-| `excludePatterns` | string[] | No       | built-in exclude list | Glob patterns to exclude               |
-| `includeHidden`   | boolean  | No       | `false`               | Include hidden files and directories   |
-
-Returns: File/dir counts, total size, type distribution, largest files, and recently modified files.
-
----
-
-### `directory_tree`
-
-Get a JSON tree structure of a directory.
-
-| Parameter         | Type     | Required | Default               | Description                          |
-| ----------------- | -------- | -------- | --------------------- | ------------------------------------ |
-| `path`            | string   | Yes      | -                     | Directory path to build tree from    |
-| `maxDepth`        | number   | No       | `5`                   | Maximum depth to traverse (0-50)     |
-| `excludePatterns` | string[] | No       | built-in exclude list | Glob patterns to exclude             |
-| `includeHidden`   | boolean  | No       | `false`               | Include hidden files and directories |
-| `includeSize`     | boolean  | No       | `false`               | Include file sizes in the tree       |
-| `maxFiles`        | number   | No       | `5000`                | Maximum total files to include       |
-
-Returns: Tree structure plus summary (files scanned, truncated, skipped, etc.).
-
----
-
-### `read_media_file`
-
-Read a binary/media file and return base64-encoded data.
-
-| Parameter | Type   | Required | Default | Description                                             |
-| --------- | ------ | -------- | ------- | ------------------------------------------------------- |
-| `path`    | string | Yes      | -       | Path to the media file                                  |
-| `maxSize` | number | No       | 50MB    | Maximum file size in bytes (capped by `MAX_MEDIA_SIZE`) |
-
-Supported formats include images, audio, video, fonts, PDFs, and more.
 
 ---
 
@@ -550,7 +457,7 @@ src/
 | "Access denied" error    | Ensure the path is within an allowed directory. Use `list_allowed_directories` to check. |
 | "Path does not exist"    | Verify the path exists. Use `list_directory` to explore available files.                 |
 | "File too large"         | Use `head`/`tail` or increase `maxSize`.                                                 |
-| "Binary file" warning    | Use `read_media_file` or set `skipBinary=false` in `read_file`.                          |
+| "Binary file" warning    | Set `skipBinary=false` in `read_file` to read as text.                                   |
 | No directories available | Pass explicit paths, use `--allow-cwd`, or ensure the client provides MCP Roots.         |
 | Symlink blocked          | Symlinks that resolve outside allowed directories are blocked.                           |
 | Regex timeout            | Simplify the regex or increase `REGEX_TIMEOUT`.                                          |

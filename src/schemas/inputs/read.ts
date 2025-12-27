@@ -1,6 +1,5 @@
 import { z } from 'zod';
 
-import { MAX_MEDIA_FILE_SIZE } from '../../lib/constants.js';
 import {
   EncodingSchema,
   HeadLinesSchema,
@@ -61,18 +60,3 @@ const ReadMultipleFilesBaseSchema = z.object({
 });
 
 export const ReadMultipleFilesInputSchema = ReadMultipleFilesBaseSchema.shape;
-
-export const ReadMediaFileInputSchema = {
-  path: z
-    .string()
-    .min(1, 'Path cannot be empty')
-    .describe('Path to the media file to read'),
-  maxSize: z
-    .number()
-    .int('maxSize must be an integer')
-    .min(1, 'maxSize must be at least 1 byte')
-    .max(MAX_MEDIA_FILE_SIZE, 'maxSize cannot exceed 50MB')
-    .optional()
-    .default(MAX_MEDIA_FILE_SIZE)
-    .describe('Maximum file size in bytes (default 50MB, max 50MB)'),
-};

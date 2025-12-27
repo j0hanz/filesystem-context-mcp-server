@@ -28,12 +28,3 @@ export const ReadMultipleFilesOutputSchema = z.object({
   summary: BatchSummarySchema.optional(),
   error: ErrorSchema.optional(),
 });
-
-export const ReadMediaFileOutputSchema = z.object({
-  ok: z.boolean(),
-  path: z.string().optional(),
-  mimeType: z.string().optional(),
-  size: z.number().optional(),
-  data: z.string().optional(),
-  error: ErrorSchema.optional(),
-});

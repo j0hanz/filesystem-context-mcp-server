@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { ErrorSchema, FileTypeSchema, TreeEntrySchema } from '../common.js';
+import { ErrorSchema, FileTypeSchema } from '../common.js';
 import { TraversalSummarySchema } from '../output-helpers.js';
 
 export const ListAllowedDirectoriesOutputSchema = z.object({
@@ -52,42 +52,5 @@ export const ListDirectoryOutputSchema = z.object({
     })
     .merge(TraversalSummarySchema)
     .optional(),
-  error: ErrorSchema.optional(),
-});
-
-export const AnalyzeDirectoryOutputSchema = z.object({
-  ok: z.boolean(),
-  path: z.string().optional(),
-  totalFiles: z.number().optional(),
-  totalDirectories: z.number().optional(),
-  totalSize: z.number().optional(),
-  fileTypes: z.record(z.number()).optional(),
-  largestFiles: z
-    .array(
-      z.object({ path: z.string().describe('Relative path'), size: z.number() })
-    )
-    .optional(),
-  recentlyModified: z
-    .array(
-      z.object({
-        path: z.string().describe('Relative path'),
-        modified: z.string(),
-      })
-    )
-    .optional(),
-  summary: z
-    .object({
-      truncated: z.boolean().optional(),
-      skippedInaccessible: z.number().optional(),
-      symlinksNotFollowed: z.number().optional(),
-    })
-    .optional(),
-  error: ErrorSchema.optional(),
-});
-
-export const DirectoryTreeOutputSchema = z.object({
-  ok: z.boolean(),
-  tree: TreeEntrySchema.optional(),
-  summary: TraversalSummarySchema.optional(),
   error: ErrorSchema.optional(),
 });
