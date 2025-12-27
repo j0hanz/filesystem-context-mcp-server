@@ -3,56 +3,20 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { z } from 'zod';
 
 import { joinLines } from '../config/formatting.js';
-import { ErrorCode, McpError } from '../lib/errors.js';
+import { ErrorCode } from '../lib/errors.js';
 import { readFile } from '../lib/file-operations.js';
 import { ReadFileInputSchema, ReadFileOutputSchema } from '../schemas/index.js';
+import {
+  assertNoMixedRangeOptions,
+  buildLineRange,
+} from './shared/read-range.js';
 import {
   buildToolErrorResponse,
   buildToolResponse,
   type ToolResponse,
   type ToolResult,
+  withToolErrorHandling,
 } from './tool-response.js';
-
-function buildLineRange(
-  lineStart: number | undefined,
-  lineEnd: number | undefined,
-  filePath: string
-): { start: number; end: number } | undefined {
-  const hasLineStart = lineStart !== undefined;
-  const hasLineEnd = lineEnd !== undefined;
-  assertLineRangeComplete(hasLineStart, hasLineEnd, filePath);
-  if (hasLineStart && hasLineEnd) return { start: lineStart, end: lineEnd };
-
-  return undefined;
-}
-
-function assertNoMixedRangeOptions(
-  hasHeadTail: boolean,
-  hasLineRange: boolean,
-  filePath: string
-): void {
-  if (!hasHeadTail || !hasLineRange) return;
-  throw new McpError(
-    ErrorCode.E_INVALID_INPUT,
-    'head/tail cannot be combined with lineStart/lineEnd',
-    filePath
-  );
-}
-
-function assertLineRangeComplete(
-  hasLineStart: boolean,
-  hasLineEnd: boolean,
-  filePath: string
-): void {
-  if (hasLineStart === hasLineEnd) return;
-  const missing = hasLineStart ? 'lineEnd' : 'lineStart';
-  const provided = hasLineStart ? 'lineStart' : 'lineEnd';
-  throw new McpError(
-    ErrorCode.E_INVALID_INPUT,
-    `Invalid lineRange: ${provided} requires ${missing} to also be specified`,
-    filePath
-  );
-}
 
 function buildTextResult(
   result: Awaited<ReturnType<typeof readFile>>,
@@ -106,11 +70,10 @@ async function handleReadFile(args: {
   tail?: number;
   skipBinary?: boolean;
 }): Promise<ToolResponse<ReadFileStructuredResult>> {
-  assertNoMixedRangeOptions(
-    args.head !== undefined || args.tail !== undefined,
-    args.lineStart !== undefined || args.lineEnd !== undefined,
-    args.path
-  );
+  const hasHeadTail = args.head !== undefined || args.tail !== undefined;
+  const hasLineRange =
+    args.lineStart !== undefined || args.lineEnd !== undefined;
+  assertNoMixedRangeOptions(hasHeadTail, hasLineRange, args.path);
   const lineRange = buildLineRange(args.lineStart, args.lineEnd, args.path);
   const result = await readFile(args.path, {
     encoding: args.encoding,
@@ -151,15 +114,13 @@ const READ_FILE_TOOL = {
 } as const;
 
 export function registerReadFileTool(server: McpServer): void {
-  const handler = async (
+  const handler = (
     args: ReadFileArgs
-  ): Promise<ToolResult<ReadFileStructuredResult>> => {
-    try {
-      return await handleReadFile(args);
-    } catch (error: unknown) {
-      return buildToolErrorResponse(error, ErrorCode.E_NOT_FILE, args.path);
-    }
-  };
+  ): Promise<ToolResult<ReadFileStructuredResult>> =>
+    withToolErrorHandling(
+      () => handleReadFile(args),
+      (error) => buildToolErrorResponse(error, ErrorCode.E_NOT_FILE, args.path)
+    );
 
   server.registerTool('read_file', READ_FILE_TOOL, handler);
 }

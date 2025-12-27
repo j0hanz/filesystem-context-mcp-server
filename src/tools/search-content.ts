@@ -17,6 +17,7 @@ import {
   buildToolResponse,
   type ToolResponse,
   type ToolResult,
+  withToolErrorHandling,
 } from './tool-response.js';
 
 type SearchContentArgs = z.infer<z.ZodObject<typeof SearchContentInputSchema>>;
@@ -82,16 +83,14 @@ const SEARCH_CONTENT_TOOL = {
 } as const;
 
 export function registerSearchContentTool(server: McpServer): void {
-  const handler = async (
+  const handler = (
     args: SearchContentArgs,
     extra: { signal: AbortSignal }
-  ): Promise<ToolResult<SearchContentStructuredResult>> => {
-    try {
-      return await handleSearchContent(args, extra.signal);
-    } catch (error: unknown) {
-      return buildToolErrorResponse(error, ErrorCode.E_UNKNOWN, args.path);
-    }
-  };
+  ): Promise<ToolResult<SearchContentStructuredResult>> =>
+    withToolErrorHandling(
+      () => handleSearchContent(args, extra.signal),
+      (error) => buildToolErrorResponse(error, ErrorCode.E_UNKNOWN, args.path)
+    );
 
   server.registerTool('search_content', SEARCH_CONTENT_TOOL, handler);
 }

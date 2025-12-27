@@ -13,6 +13,7 @@ import {
   buildToolResponse,
   type ToolResponse,
   type ToolResult,
+  withToolErrorHandling,
 } from './tool-response.js';
 
 interface DirectoryAccess {
@@ -30,7 +31,7 @@ const ACCESS_STATUS_BY_CODE: Record<string, DirectoryAccessStatus> = {
   ENOTDIR: { accessible: false, readable: false },
 };
 
-function formatAllowedDirectories(
+function buildTextResult(
   dirs: string[],
   accessStatus: DirectoryAccess[]
 ): string {
@@ -38,8 +39,12 @@ function formatAllowedDirectories(
     return 'No directories allowed.';
   }
 
+  const accessByPath = new Map(
+    accessStatus.map((status) => [status.path, status])
+  );
+
   const lines = dirs.map((dir) => {
-    const access = accessStatus.find((a) => a.path === dir);
+    const access = accessByPath.get(dir);
     const tag = buildAccessTag(access);
     return tag ? `${dir} ${tag}` : dir;
   });
@@ -112,10 +117,7 @@ async function handleListAllowedDirectories(): Promise<
     hint,
   };
 
-  return buildToolResponse(
-    formatAllowedDirectories(dirs, accessStatus),
-    structured
-  );
+  return buildToolResponse(buildTextResult(dirs, accessStatus), structured);
 }
 
 const LIST_ALLOWED_DIRECTORIES_TOOL = {
@@ -133,15 +135,12 @@ const LIST_ALLOWED_DIRECTORIES_TOOL = {
 } as const;
 
 export function registerListAllowedDirectoriesTool(server: McpServer): void {
-  const handler = async (): Promise<
+  const handler = (): Promise<
     ToolResult<ListAllowedDirectoriesStructuredResult>
-  > => {
-    try {
-      return await handleListAllowedDirectories();
-    } catch (error: unknown) {
-      return buildToolErrorResponse(error, ErrorCode.E_UNKNOWN);
-    }
-  };
+  > =>
+    withToolErrorHandling(handleListAllowedDirectories, (error) =>
+      buildToolErrorResponse(error, ErrorCode.E_UNKNOWN)
+    );
 
   server.registerTool(
     'list_allowed_directories',

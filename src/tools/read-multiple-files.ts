@@ -3,17 +3,22 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { z } from 'zod';
 
 import { joinLines } from '../config/formatting.js';
-import { ErrorCode, McpError } from '../lib/errors.js';
+import { ErrorCode } from '../lib/errors.js';
 import { readMultipleFiles } from '../lib/file-operations.js';
 import {
   ReadMultipleFilesInputSchema,
   ReadMultipleFilesOutputSchema,
 } from '../schemas/index.js';
 import {
+  assertLineRangeComplete,
+  assertNoMixedRangeOptions,
+} from './shared/read-range.js';
+import {
   buildToolErrorResponse,
   buildToolResponse,
   type ToolResponse,
   type ToolResult,
+  withToolErrorHandling,
 } from './tool-response.js';
 
 type ReadMultipleArgs = z.infer<
@@ -69,19 +74,6 @@ function buildReadMultipleNote(
   return '\n[Truncated]';
 }
 
-function assertNoMixedRangeOptions(
-  hasHeadTail: boolean,
-  hasLineRange: boolean,
-  pathLabel: string
-): void {
-  if (!hasHeadTail || !hasLineRange) return;
-  throw new McpError(
-    ErrorCode.E_INVALID_INPUT,
-    'head/tail cannot be combined with lineStart/lineEnd',
-    pathLabel
-  );
-}
-
 async function handleReadMultipleFiles(
   args: {
     paths: string[];
@@ -95,11 +87,12 @@ async function handleReadMultipleFiles(
   },
   signal?: AbortSignal
 ): Promise<ToolResponse<ReadMultipleStructuredResult>> {
-  assertNoMixedRangeOptions(
-    args.head !== undefined || args.tail !== undefined,
-    args.lineStart !== undefined || args.lineEnd !== undefined,
-    args.paths[0] ?? '<paths>'
-  );
+  const pathLabel = args.paths[0] ?? '<paths>';
+  const hasHeadTail = args.head !== undefined || args.tail !== undefined;
+  const hasLineRange =
+    args.lineStart !== undefined || args.lineEnd !== undefined;
+  assertLineRangeComplete(args.lineStart, args.lineEnd, pathLabel);
+  assertNoMixedRangeOptions(hasHeadTail, hasLineRange, pathLabel);
   const results = await readMultipleFiles(args.paths, {
     encoding: args.encoding,
     maxSize: args.maxSize,
@@ -134,16 +127,14 @@ const READ_MULTIPLE_FILES_TOOL = {
 } as const;
 
 export function registerReadMultipleFilesTool(server: McpServer): void {
-  const handler = async (
+  const handler = (
     args: ReadMultipleArgs,
     extra: { signal: AbortSignal }
-  ): Promise<ToolResult<ReadMultipleStructuredResult>> => {
-    try {
-      return await handleReadMultipleFiles(args, extra.signal);
-    } catch (error: unknown) {
-      return buildToolErrorResponse(error, ErrorCode.E_UNKNOWN);
-    }
-  };
+  ): Promise<ToolResult<ReadMultipleStructuredResult>> =>
+    withToolErrorHandling(
+      () => handleReadMultipleFiles(args, extra.signal),
+      (error) => buildToolErrorResponse(error, ErrorCode.E_UNKNOWN)
+    );
 
   server.registerTool('read_multiple_files', READ_MULTIPLE_FILES_TOOL, handler);
 }

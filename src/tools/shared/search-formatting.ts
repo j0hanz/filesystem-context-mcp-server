@@ -79,13 +79,14 @@ function formatContentMatches(matches: SearchContentResult['matches']): string {
 export function buildStructuredResult(
   result: SearchContentResult
 ): SearchContentStructuredResult {
+  const { basePath, pattern, filePattern, matches, summary } = result;
   return {
     ok: true,
-    basePath: result.basePath,
-    pattern: result.pattern,
-    filePattern: result.filePattern,
-    matches: result.matches.map((m) => ({
-      file: pathModule.relative(result.basePath, m.file),
+    basePath,
+    pattern,
+    filePattern,
+    matches: matches.map((m) => ({
+      file: pathModule.relative(basePath, m.file),
       line: m.line,
       content: m.content,
       contextBefore: m.contextBefore,
@@ -93,16 +94,16 @@ export function buildStructuredResult(
       matchCount: m.matchCount,
     })),
     summary: {
-      filesScanned: result.summary.filesScanned,
-      filesMatched: result.summary.filesMatched,
-      totalMatches: result.summary.matches,
-      truncated: result.summary.truncated,
-      skippedTooLarge: result.summary.skippedTooLarge || undefined,
-      skippedBinary: result.summary.skippedBinary || undefined,
-      skippedInaccessible: result.summary.skippedInaccessible || undefined,
+      filesScanned: summary.filesScanned,
+      filesMatched: summary.filesMatched,
+      totalMatches: summary.matches,
+      truncated: summary.truncated,
+      skippedTooLarge: summary.skippedTooLarge || undefined,
+      skippedBinary: summary.skippedBinary || undefined,
+      skippedInaccessible: summary.skippedInaccessible || undefined,
       linesSkippedDueToRegexTimeout:
-        result.summary.linesSkippedDueToRegexTimeout || undefined,
-      stoppedReason: result.summary.stoppedReason,
+        summary.linesSkippedDueToRegexTimeout || undefined,
+      stoppedReason: summary.stoppedReason,
     },
   };
 }
@@ -132,20 +133,21 @@ function buildTruncationInfo(result: SearchContentResult): {
 }
 
 export function buildTextResult(result: SearchContentResult): string {
+  const { summary } = result;
   const { truncatedReason, tip } = buildTruncationInfo(result);
   let textOutput = formatContentMatches(result.matches);
   textOutput += formatOperationSummary({
-    truncated: result.summary.truncated,
+    truncated: summary.truncated,
     truncatedReason,
     tip,
-    skippedTooLarge: result.summary.skippedTooLarge,
-    skippedBinary: result.summary.skippedBinary,
-    skippedInaccessible: result.summary.skippedInaccessible,
-    linesSkippedDueToRegexTimeout: result.summary.linesSkippedDueToRegexTimeout,
+    skippedTooLarge: summary.skippedTooLarge,
+    skippedBinary: summary.skippedBinary,
+    skippedInaccessible: summary.skippedInaccessible,
+    linesSkippedDueToRegexTimeout: summary.linesSkippedDueToRegexTimeout,
   });
 
-  if (result.summary.truncated && !tip) {
-    textOutput += `\nScanned ${result.summary.filesScanned} files, found ${result.summary.matches} matches in ${result.summary.filesMatched} files.`;
+  if (summary.truncated && !tip) {
+    textOutput += `\nScanned ${summary.filesScanned} files, found ${summary.matches} matches in ${summary.filesMatched} files.`;
   }
 
   return textOutput;

@@ -2,7 +2,6 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
-import { formatBytes, formatDate, joinLines } from '../config/formatting.js';
 import { ErrorCode } from '../lib/errors.js';
 import { getFileInfo } from '../lib/file-operations.js';
 import {
@@ -10,52 +9,26 @@ import {
   GetFileInfoOutputSchema,
 } from '../schemas/index.js';
 import {
+  buildFileInfoPayload,
+  formatFileInfoDetails,
+} from './shared/file-info.js';
+import {
   buildToolErrorResponse,
   buildToolResponse,
   type ToolResponse,
   type ToolResult,
+  withToolErrorHandling,
 } from './tool-response.js';
 
 type GetFileInfoArgs = z.infer<z.ZodObject<typeof GetFileInfoInputSchema>>;
 type GetFileInfoStructuredResult = z.infer<typeof GetFileInfoOutputSchema>;
-
-function formatFileInfo(info: Awaited<ReturnType<typeof getFileInfo>>): string {
-  const lines = [
-    `Name: ${info.name}`,
-    `Path: ${info.path}`,
-    `Type: ${info.type}`,
-    `Size: ${formatBytes(info.size)}`,
-    `Created: ${formatDate(info.created)}`,
-    `Modified: ${formatDate(info.modified)}`,
-    `Accessed: ${formatDate(info.accessed)}`,
-    `Permissions: ${info.permissions}`,
-    `Hidden: ${info.isHidden ? 'Yes' : 'No'}`,
-  ];
-
-  if (info.mimeType) lines.push(`MIME Type: ${info.mimeType}`);
-  if (info.symlinkTarget) lines.push(`Symlink Target: ${info.symlinkTarget}`);
-
-  return joinLines(lines);
-}
 
 function buildStructuredResult(
   info: Awaited<ReturnType<typeof getFileInfo>>
 ): GetFileInfoStructuredResult {
   return {
     ok: true,
-    info: {
-      name: info.name,
-      path: info.path,
-      type: info.type,
-      size: info.size,
-      created: info.created.toISOString(),
-      modified: info.modified.toISOString(),
-      accessed: info.accessed.toISOString(),
-      permissions: info.permissions,
-      isHidden: info.isHidden,
-      mimeType: info.mimeType,
-      symlinkTarget: info.symlinkTarget,
-    },
+    info: buildFileInfoPayload(info),
   };
 }
 
@@ -66,7 +39,7 @@ async function handleGetFileInfo({
 }): Promise<ToolResponse<GetFileInfoStructuredResult>> {
   const info = await getFileInfo(path);
   const structured = buildStructuredResult(info);
-  return buildToolResponse(formatFileInfo(info), structured);
+  return buildToolResponse(formatFileInfoDetails(info), structured);
 }
 
 const GET_FILE_INFO_TOOL = {
@@ -86,15 +59,13 @@ const GET_FILE_INFO_TOOL = {
 } as const;
 
 export function registerGetFileInfoTool(server: McpServer): void {
-  const handler = async (
+  const handler = (
     args: GetFileInfoArgs
-  ): Promise<ToolResult<GetFileInfoStructuredResult>> => {
-    try {
-      return await handleGetFileInfo(args);
-    } catch (error: unknown) {
-      return buildToolErrorResponse(error, ErrorCode.E_NOT_FOUND, args.path);
-    }
-  };
+  ): Promise<ToolResult<GetFileInfoStructuredResult>> =>
+    withToolErrorHandling(
+      () => handleGetFileInfo(args),
+      (error) => buildToolErrorResponse(error, ErrorCode.E_NOT_FOUND, args.path)
+    );
 
   server.registerTool('get_file_info', GET_FILE_INFO_TOOL, handler);
 }

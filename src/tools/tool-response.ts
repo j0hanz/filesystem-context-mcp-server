@@ -22,6 +22,17 @@ export type ToolResponse<T> = ReturnType<typeof buildToolResponse<T>>;
 type ToolErrorResponse = ReturnType<typeof buildToolErrorResponse>;
 export type ToolResult<T> = ToolResponse<T> | ToolErrorResponse;
 
+export async function withToolErrorHandling<T>(
+  run: () => Promise<ToolResponse<T>>,
+  onError: (error: unknown) => ToolResult<T>
+): Promise<ToolResult<T>> {
+  try {
+    return await run();
+  } catch (error) {
+    return onError(error);
+  }
+}
+
 interface ToolErrorStructuredContent extends Record<string, unknown> {
   ok: false;
   error: {

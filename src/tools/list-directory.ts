@@ -20,6 +20,7 @@ import {
   buildToolResponse,
   type ToolResponse,
   type ToolResult,
+  withToolErrorHandling,
 } from './tool-response.js';
 
 function getExtension(name: string, isFile: boolean): string | undefined {
@@ -81,10 +82,11 @@ const LIST_DIRECTORY_TOOL = {
 function buildStructuredResult(
   result: Awaited<ReturnType<typeof listDirectory>>
 ): ListDirectoryStructuredResult {
+  const { entries, summary, path } = result;
   return {
     ok: true,
-    path: result.path,
-    entries: result.entries.map((e) => ({
+    path,
+    entries: entries.map((e) => ({
       name: e.name,
       relativePath: e.relativePath,
       type: e.type,
@@ -94,13 +96,13 @@ function buildStructuredResult(
       symlinkTarget: e.symlinkTarget,
     })),
     summary: {
-      totalEntries: result.summary.totalEntries,
-      totalFiles: result.summary.totalFiles,
-      totalDirectories: result.summary.totalDirectories,
-      maxDepthReached: result.summary.maxDepthReached,
-      truncated: result.summary.truncated,
-      skippedInaccessible: result.summary.skippedInaccessible,
-      symlinksNotFollowed: result.summary.symlinksNotFollowed,
+      totalEntries: summary.totalEntries,
+      totalFiles: summary.totalFiles,
+      totalDirectories: summary.totalDirectories,
+      maxDepthReached: summary.maxDepthReached,
+      truncated: summary.truncated,
+      skippedInaccessible: summary.skippedInaccessible,
+      symlinksNotFollowed: summary.symlinksNotFollowed,
     },
   };
 }
@@ -108,17 +110,18 @@ function buildStructuredResult(
 function buildTextResult(
   result: Awaited<ReturnType<typeof listDirectory>>
 ): string {
-  let textOutput = formatDirectoryListing(result.entries, result.path);
-  if (result.entries.length === 0 && result.summary.totalEntries > 0) {
+  const { entries, summary, path } = result;
+  let textOutput = formatDirectoryListing(entries, path);
+  if (entries.length === 0 && summary.totalEntries > 0) {
     textOutput +=
       '\n(No entries matched the provided pattern/filters, but the directory contains items.)';
   }
   textOutput += formatOperationSummary({
-    truncated: result.summary.truncated,
-    truncatedReason: `reached max entries limit (${result.summary.totalEntries} returned)`,
+    truncated: summary.truncated,
+    truncatedReason: `reached max entries limit (${summary.totalEntries} returned)`,
     tip: 'Increase maxEntries or reduce maxDepth to see more results.',
-    skippedInaccessible: result.summary.skippedInaccessible,
-    symlinksNotFollowed: result.summary.symlinksNotFollowed,
+    skippedInaccessible: summary.skippedInaccessible,
+    symlinksNotFollowed: summary.symlinksNotFollowed,
   });
   return textOutput;
 }
@@ -164,20 +167,15 @@ async function handleListDirectory(
 }
 
 export function registerListDirectoryTool(server: McpServer): void {
-  const handler = async (
+  const handler = (
     args: ListDirectoryArgs,
     extra: { signal: AbortSignal }
-  ): Promise<ToolResult<ListDirectoryStructuredResult>> => {
-    try {
-      return await handleListDirectory(args, extra.signal);
-    } catch (error: unknown) {
-      return buildToolErrorResponse(
-        error,
-        ErrorCode.E_NOT_DIRECTORY,
-        args.path
-      );
-    }
-  };
+  ): Promise<ToolResult<ListDirectoryStructuredResult>> =>
+    withToolErrorHandling(
+      () => handleListDirectory(args, extra.signal),
+      (error) =>
+        buildToolErrorResponse(error, ErrorCode.E_NOT_DIRECTORY, args.path)
+    );
 
   server.registerTool('list_directory', LIST_DIRECTORY_TOOL, handler);
 }

@@ -20,6 +20,7 @@ import {
   buildToolResponse,
   type ToolResponse,
   type ToolResult,
+  withToolErrorHandling,
 } from './tool-response.js';
 
 type SearchFilesArgs = z.infer<z.ZodObject<typeof SearchFilesInputSchema>>;
@@ -43,22 +44,23 @@ function formatSearchResults(
 function buildStructuredResult(
   result: Awaited<ReturnType<typeof searchFiles>>
 ): SearchFilesStructuredResult {
+  const { basePath, pattern, results, summary } = result;
   return {
     ok: true,
-    basePath: result.basePath,
-    pattern: result.pattern,
-    results: result.results.map((r) => ({
-      path: pathModule.relative(result.basePath, r.path),
+    basePath,
+    pattern,
+    results: results.map((r) => ({
+      path: pathModule.relative(basePath, r.path),
       type: r.type === 'directory' ? 'other' : r.type,
       size: r.size,
       modified: r.modified?.toISOString(),
     })),
     summary: {
-      matched: result.summary.matched,
-      truncated: result.summary.truncated,
-      skippedInaccessible: result.summary.skippedInaccessible,
-      filesScanned: result.summary.filesScanned,
-      stoppedReason: result.summary.stoppedReason,
+      matched: summary.matched,
+      truncated: summary.truncated,
+      skippedInaccessible: summary.skippedInaccessible,
+      filesScanned: summary.filesScanned,
+      stoppedReason: summary.stoppedReason,
     },
   };
 }
@@ -90,21 +92,22 @@ function buildTruncationInfo(result: Awaited<ReturnType<typeof searchFiles>>): {
 function buildTextResult(
   result: Awaited<ReturnType<typeof searchFiles>>
 ): string {
+  const { summary, results } = result;
   const { truncatedReason, tip } = buildTruncationInfo(result);
-  let textOutput = formatSearchResults(result.results);
-  if (result.results.length === 0) {
+  let textOutput = formatSearchResults(results);
+  if (results.length === 0) {
     textOutput +=
       '\n(Try a broader pattern, remove excludePatterns, or set includeHidden=true if searching dotfiles.)';
   }
   textOutput += formatOperationSummary({
-    truncated: result.summary.truncated,
+    truncated: summary.truncated,
     truncatedReason,
     tip:
       tip ??
-      (result.summary.truncated
+      (summary.truncated
         ? 'Increase maxResults, use more specific pattern, or add excludePatterns to narrow scope.'
         : undefined),
-    skippedInaccessible: result.summary.skippedInaccessible,
+    skippedInaccessible: summary.skippedInaccessible,
   });
   return textOutput;
 }
@@ -172,20 +175,15 @@ const SEARCH_FILES_TOOL = {
 } as const;
 
 export function registerSearchFilesTool(server: McpServer): void {
-  const handler = async (
+  const handler = (
     args: SearchFilesArgs,
     extra: { signal: AbortSignal }
-  ): Promise<ToolResult<SearchFilesStructuredResult>> => {
-    try {
-      return await handleSearchFiles(args, extra.signal);
-    } catch (error: unknown) {
-      return buildToolErrorResponse(
-        error,
-        ErrorCode.E_INVALID_PATTERN,
-        args.path
-      );
-    }
-  };
+  ): Promise<ToolResult<SearchFilesStructuredResult>> =>
+    withToolErrorHandling(
+      () => handleSearchFiles(args, extra.signal),
+      (error) =>
+        buildToolErrorResponse(error, ErrorCode.E_INVALID_PATTERN, args.path)
+    );
 
   server.registerTool('search_files', SEARCH_FILES_TOOL, handler);
 }

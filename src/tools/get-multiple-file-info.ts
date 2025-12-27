@@ -11,10 +11,15 @@ import {
   GetMultipleFileInfoOutputSchema,
 } from '../schemas/index.js';
 import {
+  buildFileInfoPayload,
+  formatFileInfoSummary,
+} from './shared/file-info.js';
+import {
   buildToolErrorResponse,
   buildToolResponse,
   type ToolResponse,
   type ToolResult,
+  withToolErrorHandling,
 } from './tool-response.js';
 
 type GetMultipleFileInfoArgs = z.infer<
@@ -31,21 +36,7 @@ function buildStructuredResult(
     ok: true,
     results: result.results.map((r) => ({
       path: r.path,
-      info: r.info
-        ? {
-            name: r.info.name,
-            path: r.info.path,
-            type: r.info.type,
-            size: r.info.size,
-            created: r.info.created.toISOString(),
-            modified: r.info.modified.toISOString(),
-            accessed: r.info.accessed.toISOString(),
-            permissions: r.info.permissions,
-            isHidden: r.info.isHidden,
-            mimeType: r.info.mimeType,
-            symlinkTarget: r.info.symlinkTarget,
-          }
-        : undefined,
+      info: r.info ? buildFileInfoPayload(r.info) : undefined,
       error: r.error,
     })),
     summary: result.summary,
@@ -64,10 +55,7 @@ function formatFileInfoBlock(
   if (!item.info) {
     return [`${item.path} [error: ${item.error ?? 'unknown'}]`];
   }
-  const mime = item.info.mimeType ? ` | ${item.info.mimeType}` : '';
-  return [
-    `${item.path} | ${item.info.type} | ${formatBytes(item.info.size)}${mime}`,
-  ];
+  return [formatFileInfoSummary(item.path, item.info)];
 }
 
 async function handleGetMultipleFileInfo(
@@ -100,15 +88,13 @@ const GET_MULTIPLE_FILE_INFO_TOOL = {
 } as const;
 
 export function registerGetMultipleFileInfoTool(server: McpServer): void {
-  const handler = async (
+  const handler = (
     args: GetMultipleFileInfoArgs
-  ): Promise<ToolResult<GetMultipleFileInfoStructuredResult>> => {
-    try {
-      return await handleGetMultipleFileInfo(args);
-    } catch (error: unknown) {
-      return buildToolErrorResponse(error, ErrorCode.E_UNKNOWN);
-    }
-  };
+  ): Promise<ToolResult<GetMultipleFileInfoStructuredResult>> =>
+    withToolErrorHandling(
+      () => handleGetMultipleFileInfo(args),
+      (error) => buildToolErrorResponse(error, ErrorCode.E_UNKNOWN)
+    );
 
   server.registerTool(
     'get_multiple_file_info',
