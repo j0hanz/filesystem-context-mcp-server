@@ -95,6 +95,6 @@ export async function headFile(
     await readHeadChunks(handle, state, numLines, maxBytesRead);
     return state.lines.slice(0, numLines).join('\n');
   } finally {
-    await handle.close().catch(() => {});
+    await handle.close();
   }
 }

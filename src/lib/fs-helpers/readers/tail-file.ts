@@ -195,6 +195,6 @@ export async function tailFile(
 
     return state.lines.join('\n');
   } finally {
-    await handle.close().catch(() => {});
+    await handle.close();
   }
 }

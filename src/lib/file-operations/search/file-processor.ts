@@ -24,27 +24,6 @@ function createEmptyResult(overrides: Partial<ScanResult>): ScanResult {
   };
 }
 
-async function resolvePath(
-  rawPath: string
-): Promise<{ openPath: string; displayPath: string } | null> {
-  try {
-    const validated = await validateExistingPathDetailed(rawPath);
-    return {
-      openPath: validated.resolvedPath,
-      displayPath: validated.requestedPath,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function createReadStream(handle: fsPromises.FileHandle): ReadStream {
-  return handle.createReadStream({
-    encoding: 'utf-8',
-    autoClose: false,
-  });
-}
-
 function attachAbortHandler(
   stream: ReadStream,
   signal?: AbortSignal
@@ -66,13 +45,46 @@ function attachAbortHandler(
   };
 }
 
+function* processChunk(
+  text: string,
+  state: { buffer: string; overflow: boolean },
+  maxLineLength: number
+): Generator<string> {
+  let cursor = 0;
+  while (cursor < text.length) {
+    const newlineIndex = text.indexOf('\n', cursor);
+    const segmentEnd = newlineIndex === -1 ? text.length : newlineIndex;
+    const segment = text.slice(cursor, segmentEnd);
+
+    if (!state.overflow) {
+      if (state.buffer.length + segment.length > maxLineLength) {
+        const remaining = Math.max(0, maxLineLength - state.buffer.length);
+        if (remaining > 0) {
+          state.buffer += segment.slice(0, remaining);
+        }
+        state.overflow = true;
+      } else {
+        state.buffer += segment;
+      }
+    }
+
+    if (newlineIndex !== -1) {
+      yield state.buffer.replace(/\r$/, '');
+      state.buffer = '';
+      state.overflow = false;
+      cursor = newlineIndex + 1;
+    } else {
+      cursor = segmentEnd;
+    }
+  }
+}
+
 async function* iterateLines(
   stream: ReadStream,
   maxLineLength: number,
   signal?: AbortSignal
 ): AsyncGenerator<string> {
-  let buffer = '';
-  let overflow = false;
+  const state = { buffer: '', overflow: false };
   const detachAbort = attachAbortHandler(stream, signal);
   const iterableStream = stream as AsyncIterable<string | Buffer>;
 
@@ -80,73 +92,15 @@ async function* iterateLines(
     for await (const chunk of iterableStream) {
       if (signal?.aborted) break;
       const text = typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
-      let cursor = 0;
-
-      while (cursor < text.length) {
-        const newlineIndex = text.indexOf('\n', cursor);
-        const segmentEnd = newlineIndex === -1 ? text.length : newlineIndex;
-        const segment = text.slice(cursor, segmentEnd);
-
-        if (!overflow) {
-          if (buffer.length + segment.length > maxLineLength) {
-            const remaining = Math.max(0, maxLineLength - buffer.length);
-            if (remaining > 0) {
-              buffer += segment.slice(0, remaining);
-            }
-            overflow = true;
-          } else {
-            buffer += segment;
-          }
-        }
-
-        if (newlineIndex !== -1) {
-          yield buffer.replace(/\r$/, '');
-          buffer = '';
-          overflow = false;
-          cursor = newlineIndex + 1;
-        } else {
-          cursor = segmentEnd;
-        }
-      }
+      yield* processChunk(text, state, maxLineLength);
     }
 
-    if (!signal?.aborted && buffer.length > 0) {
-      yield buffer.replace(/\r$/, '');
+    if (!signal?.aborted && state.buffer.length > 0) {
+      yield state.buffer.replace(/\r$/, '');
     }
   } finally {
     detachAbort();
   }
-}
-
-function trimLine(line: string): string {
-  return line.trimEnd().substring(0, MAX_LINE_CONTENT_LENGTH);
-}
-
-function createScanResult(
-  matches: ContentMatch[],
-  linesSkipped: number
-): ScanResult {
-  return {
-    matches,
-    linesSkippedDueToRegexTimeout: linesSkipped,
-    fileHadMatches: matches.length > 0,
-    skippedTooLarge: false,
-    skippedBinary: false,
-    scanned: true,
-  };
-}
-
-function shouldStop(
-  currentFileMatches: number,
-  options: SearchOptions
-): boolean {
-  if (options.deadlineMs && Date.now() > options.deadlineMs) {
-    return true;
-  }
-  if (options.currentMatchCount + currentFileMatches >= options.maxResults) {
-    return true;
-  }
-  return false;
 }
 
 async function scanLines(
@@ -167,9 +121,15 @@ async function scanLines(
   )) {
     if (options.signal?.aborted) break;
     lineNumber++;
-    if (shouldStop(matches.length, options)) break;
 
-    const trimmed = trimLine(line);
+    if (
+      (options.deadlineMs && Date.now() > options.deadlineMs) ||
+      options.currentMatchCount + matches.length >= options.maxResults
+    ) {
+      break;
+    }
+
+    const trimmed = line.trimEnd().substring(0, MAX_LINE_CONTENT_LENGTH);
     contextManager.pushLine(trimmed);
 
     const matchCount = matcher(line);
@@ -196,7 +156,10 @@ async function scanContent(
   options: SearchOptions
 ): Promise<ScanResult> {
   const contextManager = new ContextManager(options.contextLines);
-  const stream = createReadStream(handle);
+  const stream = handle.createReadStream({
+    encoding: 'utf-8',
+    autoClose: false,
+  });
 
   try {
     const { matches, linesSkipped } = await scanLines(
@@ -206,7 +169,14 @@ async function scanContent(
       options,
       contextManager
     );
-    return createScanResult(matches, linesSkipped);
+    return {
+      matches,
+      linesSkippedDueToRegexTimeout: linesSkipped,
+      fileHadMatches: matches.length > 0,
+      skippedTooLarge: false,
+      skippedBinary: false,
+      scanned: true,
+    };
   } finally {
     stream.destroy();
   }
@@ -239,21 +209,27 @@ export async function processFile(
   if (options.signal?.aborted) {
     return createEmptyResult({ scanned: true });
   }
-  const resolved = await resolvePath(rawPath);
-  if (!resolved) {
-    return createEmptyResult({ scanned: false }); // Inaccessible
+
+  let openPath: string;
+  let displayPath: string;
+  try {
+    const validated = await validateExistingPathDetailed(rawPath);
+    openPath = validated.resolvedPath;
+    displayPath = validated.requestedPath;
+  } catch {
+    return createEmptyResult({ scanned: false });
   }
 
-  const handle = await fsPromises.open(resolved.openPath, 'r');
+  const handle = await fsPromises.open(openPath, 'r');
   try {
     return await scanWithHandle(
       handle,
-      resolved.openPath,
-      resolved.displayPath,
+      openPath,
+      displayPath,
       matcher,
       options
     );
   } finally {
-    await handle.close().catch(() => {});
+    await handle.close();
   }
 }
