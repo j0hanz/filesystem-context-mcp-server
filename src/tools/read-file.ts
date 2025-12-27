@@ -137,8 +137,8 @@ const READ_FILE_TOOL = {
   title: 'Read File',
   description:
     'Read the text contents of a single file. ' +
-    'Supports different encodings and partial reads via head (first N lines), tail (last N lines), ' +
-    'or lineStart/lineEnd (specific line range). ' +
+    'Supports encodings and partial reads via head (first N lines), tail (last N lines), ' +
+    'or lineStart/lineEnd (specific line range; mutually exclusive with head/tail). ' +
     'Use skipBinary=true to reject binary files. ' +
     'For multiple files, use read_multiple_files for efficiency.',
   inputSchema: ReadFileInputSchema,

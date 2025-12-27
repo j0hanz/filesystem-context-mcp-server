@@ -121,9 +121,9 @@ async function handleListAllowedDirectories(): Promise<
 const LIST_ALLOWED_DIRECTORIES_TOOL = {
   title: 'List Allowed Directories',
   description:
-    'Returns the list of directories this server is permitted to access. ' +
-    'Call this FIRST to understand the scope of available file operations. ' +
-    'All other tools will only work within these directories for security.',
+    'List the directories this server is permitted to access, plus access status. ' +
+    'Call this first to understand the scope of available file operations. ' +
+    'All other tools only work within these directories for security.',
   outputSchema: ListAllowedDirectoriesOutputSchema.shape,
   annotations: {
     readOnlyHint: true,

@@ -157,10 +157,11 @@ async function handleSearchFiles(
 const SEARCH_FILES_TOOL = {
   title: 'Search Files',
   description:
-    'Find files matching a glob pattern within a directory tree (files only). ' +
+    'Find files (not directories) matching a glob pattern within a directory tree. ' +
     'Pattern examples: "**/*.ts" (all TypeScript files), "src/**/*.{js,jsx}" (JS/JSX in src), ' +
     '"**/test/**" (all test directories). Returns paths, types, sizes, and modification dates. ' +
-    'Use excludePatterns to skip directories like node_modules, and includeHidden=true to include dotfiles.',
+    'excludePatterns defaults to common dependency/build dirs (pass [] to disable). ' +
+    'Symlink traversal is disabled (skipSymlinks must remain true).',
   inputSchema: SearchFilesInputSchema,
   outputSchema: SearchFilesOutputSchema.shape,
   annotations: {

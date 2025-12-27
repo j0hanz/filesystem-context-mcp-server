@@ -70,6 +70,7 @@ const SEARCH_CONTENT_TOOL = {
     'Returns matching lines with optional context (contextLines parameter). ' +
     'Use isLiteral=true for exact string matching, wholeWord=true to avoid partial matches. ' +
     'Filter files with filePattern glob (e.g., "**/*.ts" for TypeScript only). ' +
+    'excludePatterns defaults to common dependency/build dirs (pass [] to disable). ' +
     'Automatically skips binary files unless skipBinary=false.',
   inputSchema: SearchContentInputSchema,
   outputSchema: SearchContentOutputSchema.shape,

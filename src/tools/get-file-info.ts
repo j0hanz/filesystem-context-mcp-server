@@ -72,7 +72,7 @@ async function handleGetFileInfo({
 const GET_FILE_INFO_TOOL = {
   title: 'Get File Info',
   description:
-    'Retrieve detailed metadata about a file or directory without reading its contents. ' +
+    'Retrieve detailed metadata about a file or directory without reading contents. ' +
     'Returns: name, path, type, size, timestamps (created/modified/accessed), permissions, ' +
     'MIME type (for files), hidden status, and symlink target (if applicable). ' +
     'Use this to check file properties before reading large files.',

@@ -88,7 +88,7 @@ const GET_MULTIPLE_FILE_INFO_TOOL = {
   description:
     'Retrieve detailed metadata about multiple files or directories in a single operation (parallel processing). ' +
     'More efficient than calling get_file_info repeatedly. ' +
-    'Individual file errors do not fail the entire operation-each file reports success or error independently. ' +
+    'Individual file errors do not fail the entire operation; each file reports success or error independently. ' +
     'Returns: name, path, type, size, timestamps, permissions, MIME type, and symlink target for each path.',
   inputSchema: GetMultipleFileInfoInputSchema,
   outputSchema: GetMultipleFileInfoOutputSchema.shape,
