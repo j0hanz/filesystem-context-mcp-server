@@ -7,83 +7,7 @@ import { processFile } from './file-processor.js';
 import type { Matcher } from './match-strategy.js';
 import type { ScanResult, SearchState } from './types.js';
 
-interface ProcessorBaseOptions {
-  maxResults: number;
-  contextLines: number;
-  deadlineMs?: number;
-  signal?: AbortSignal;
-  isLiteral: boolean;
-  wholeWord: boolean;
-  caseSensitive: boolean;
-  maxFileSize: number;
-  skipBinary: boolean;
-  searchPattern: string;
-}
-
-interface StreamProcessingState {
-  active: Set<Promise<void>>;
-  inFlight: number;
-  processorBaseOptions: ProcessorBaseOptions;
-}
-
 type StreamStopReason = 'timeout' | 'abort' | null;
-
-function attachStreamGuards(
-  stream: AsyncIterable<string | Buffer>,
-  searchState: SearchState,
-  deadlineMs: number | undefined,
-  signal?: AbortSignal
-): { getStopReason: () => StreamStopReason; cleanup: () => void } {
-  let stopReason: StreamStopReason = null;
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-
-  const destroyStream = (): void => {
-    safeDestroy(stream as unknown);
-  };
-
-  const onAbort = (): void => {
-    if (stopReason === null) {
-      const isTimeout = deadlineMs !== undefined && Date.now() >= deadlineMs;
-      if (isTimeout) {
-        stopReason = 'timeout';
-        searchState.truncated = true;
-        searchState.stoppedReason = 'timeout';
-      } else {
-        stopReason = 'abort';
-      }
-    }
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-      timeoutId = undefined;
-    }
-    destroyStream();
-  };
-
-  if (signal?.aborted) {
-    onAbort();
-  } else if (signal) {
-    signal.addEventListener('abort', onAbort, { once: true });
-  }
-
-  if (deadlineMs !== undefined) {
-    const delay = Math.max(0, deadlineMs - Date.now());
-    timeoutId = setTimeout(() => {
-      if (stopReason === 'abort') return;
-      stopReason = 'timeout';
-      searchState.truncated = true;
-      searchState.stoppedReason = 'timeout';
-      destroyStream();
-    }, delay);
-  }
-
-  return {
-    getStopReason: () => stopReason,
-    cleanup: () => {
-      if (signal) signal.removeEventListener('abort', onAbort);
-      if (timeoutId) clearTimeout(timeoutId);
-    },
-  };
-}
 
 export function createStream(
   basePath: string,
@@ -162,12 +86,60 @@ function updateState(
   }
 }
 
-function buildProcessorBaseOptions(
+export async function processStream(
+  stream: AsyncIterable<string | Buffer>,
+  searchState: SearchState,
+  matcher: Matcher,
   options: SearchOptions,
   deadlineMs: number | undefined,
-  searchPattern: string
-): ProcessorBaseOptions {
-  return {
+  searchPattern: string,
+  signal?: AbortSignal
+): Promise<void> {
+  const active = new Set<Promise<void>>();
+  let inFlight = 0;
+  let stopReason: StreamStopReason = null;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  const destroyStream = (): void => {
+    safeDestroy(stream as unknown);
+  };
+
+  const onAbort = (): void => {
+    if (stopReason === null) {
+      const isTimeout = deadlineMs !== undefined && Date.now() >= deadlineMs;
+      if (isTimeout) {
+        stopReason = 'timeout';
+        searchState.truncated = true;
+        searchState.stoppedReason = 'timeout';
+      } else {
+        stopReason = 'abort';
+      }
+    }
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = undefined;
+    }
+    destroyStream();
+  };
+
+  if (signal?.aborted) {
+    onAbort();
+  } else if (signal) {
+    signal.addEventListener('abort', onAbort, { once: true });
+  }
+
+  if (deadlineMs !== undefined) {
+    const delay = Math.max(0, deadlineMs - Date.now());
+    timeoutId = setTimeout(() => {
+      if (stopReason === 'abort') return;
+      stopReason = 'timeout';
+      searchState.truncated = true;
+      searchState.stoppedReason = 'timeout';
+      destroyStream();
+    }, delay);
+  }
+
+  const baseOptions = {
     maxResults: options.maxResults,
     contextLines: options.contextLines,
     deadlineMs,
@@ -178,142 +150,58 @@ function buildProcessorBaseOptions(
     skipBinary: options.skipBinary,
     searchPattern,
   };
-}
-
-async function enforceMaxFilesScanned(
-  state: SearchState,
-  options: SearchOptions,
-  inFlight: number,
-  active: Set<Promise<void>>
-): Promise<'ok' | 'skip' | 'stop'> {
-  if (state.filesScanned + inFlight < options.maxFilesScanned) {
-    return 'ok';
-  }
-  if (active.size === 0) {
-    return 'stop';
-  }
-  await Promise.race(active);
-  return 'skip';
-}
-
-async function waitForConcurrency(active: Set<Promise<void>>): Promise<void> {
-  while (active.size >= PARALLEL_CONCURRENCY) {
-    await Promise.race(active);
-  }
-}
-
-function createProcessingState(
-  options: SearchOptions,
-  deadlineMs: number | undefined,
-  searchPattern: string
-): StreamProcessingState {
-  return {
-    active: new Set<Promise<void>>(),
-    inFlight: 0,
-    processorBaseOptions: buildProcessorBaseOptions(
-      options,
-      deadlineMs,
-      searchPattern
-    ),
-  };
-}
-
-async function handleStreamEntry(
-  entry: string | Buffer,
-  searchState: SearchState,
-  processing: StreamProcessingState,
-  matcher: Matcher,
-  options: SearchOptions,
-  deadlineMs: number | undefined,
-  signal?: AbortSignal
-): Promise<'continue' | 'stop'> {
-  if (signal?.aborted) return 'stop';
-  if (shouldStop(searchState, options, deadlineMs)) return 'stop';
-  const maxFilesAction = await enforceMaxFilesScanned(
-    searchState,
-    options,
-    processing.inFlight,
-    processing.active
-  );
-  if (maxFilesAction === 'stop') return 'stop';
-  if (maxFilesAction === 'skip') return 'continue';
-  await waitForConcurrency(processing.active);
-  const rawPath = String(entry);
-  const task = createProcessingTask(
-    rawPath,
-    searchState,
-    matcher,
-    processing.processorBaseOptions,
-    options,
-    deadlineMs,
-    signal
-  );
-  processing.inFlight++;
-  processing.active.add(task);
-  void task.finally(() => {
-    processing.active.delete(task);
-    processing.inFlight--;
-  });
-  return 'continue';
-}
-
-function createProcessingTask(
-  rawPath: string,
-  state: SearchState,
-  matcher: Matcher,
-  processorBaseOptions: ProcessorBaseOptions,
-  options: SearchOptions,
-  deadlineMs: number | undefined,
-  signal?: AbortSignal
-): Promise<void> {
-  return (async (): Promise<void> => {
-    try {
-      if (signal?.aborted) return;
-      if (shouldStop(state, options, deadlineMs)) return;
-      const result = await processFile(rawPath, matcher, {
-        ...processorBaseOptions,
-        currentMatchCount: state.matches.length,
-        getCurrentMatchCount: () => state.matches.length,
-        signal,
-      });
-      updateState(state, result, options);
-    } catch {
-      state.skippedInaccessible++;
-    }
-  })();
-}
-
-export async function processStream(
-  stream: AsyncIterable<string | Buffer>,
-  searchState: SearchState,
-  matcher: Matcher,
-  options: SearchOptions,
-  deadlineMs: number | undefined,
-  searchPattern: string,
-  signal?: AbortSignal
-): Promise<void> {
-  const processing = createProcessingState(options, deadlineMs, searchPattern);
-  const guard = attachStreamGuards(stream, searchState, deadlineMs, signal);
 
   try {
     for await (const entry of stream) {
       if (signal?.aborted) break;
-      const action = await handleStreamEntry(
-        entry,
-        searchState,
-        processing,
-        matcher,
-        options,
-        deadlineMs,
-        signal
-      );
-      if (action === 'stop') break;
+      if (shouldStop(searchState, options, deadlineMs)) break;
+
+      if (searchState.filesScanned + inFlight >= options.maxFilesScanned) {
+        if (active.size === 0) {
+          searchState.truncated = true;
+          searchState.stoppedReason = 'maxFiles';
+          break;
+        }
+        await Promise.race(active);
+        continue;
+      }
+
+      while (active.size >= PARALLEL_CONCURRENCY) {
+        await Promise.race(active);
+        if (signal?.aborted) break;
+        if (shouldStop(searchState, options, deadlineMs)) break;
+      }
+
+      if (signal?.aborted) break;
+      if (shouldStop(searchState, options, deadlineMs)) break;
+
+      const rawPath = String(entry);
+      const task = (async (): Promise<void> => {
+        try {
+          if (signal?.aborted) return;
+          if (shouldStop(searchState, options, deadlineMs)) return;
+          const result = await processFile(rawPath, matcher, {
+            ...baseOptions,
+            currentMatchCount: searchState.matches.length,
+            getCurrentMatchCount: () => searchState.matches.length,
+            signal,
+          });
+          updateState(searchState, result, options);
+        } catch {
+          searchState.skippedInaccessible++;
+        }
+      })();
+      inFlight += 1;
+      active.add(task);
+      void task.finally(() => {
+        active.delete(task);
+        inFlight -= 1;
+      });
     }
   } catch (error) {
-    const reason = guard.getStopReason();
-    if (reason === 'timeout') {
+    if (deadlineMs !== undefined && Date.now() > deadlineMs) {
       // fall through to finalize below
-    } else if (reason === 'abort') {
+    } else if (signal?.aborted) {
       const abortError = new Error('Search aborted');
       abortError.name = 'AbortError';
       throw abortError;
@@ -321,8 +209,9 @@ export async function processStream(
       throw error;
     }
   } finally {
-    guard.cleanup();
-    await Promise.all(processing.active);
+    if (signal) signal.removeEventListener('abort', onAbort);
+    if (timeoutId) clearTimeout(timeoutId);
+    await Promise.all(active);
   }
   if (deadlineMs && Date.now() > deadlineMs && !searchState.truncated) {
     searchState.truncated = true;

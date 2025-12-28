@@ -5,178 +5,10 @@ interface ParallelResult<R> {
   errors: { index: number; error: Error }[];
 }
 
-interface WorkQueueState<T> {
-  queue: T[];
-  head: number;
-  inFlight: number;
-  aborted: boolean;
-  errors: Error[];
-  abortReason?: Error;
-  doneResolve?: () => void;
-}
-
-function createDonePromise(state: WorkQueueState<unknown>): Promise<void> {
-  return new Promise<void>((resolve) => {
-    state.doneResolve = resolve;
-  });
-}
-
-function resolveIfDone<T>(state: WorkQueueState<T>): void {
-  if (state.inFlight !== 0) return;
-  if (queueSize(state) === 0 || state.aborted) {
-    state.doneResolve?.();
-  }
-}
-
 function createAbortError(): Error {
   const error = new Error('Operation aborted');
   error.name = 'AbortError';
   return error;
-}
-
-function recordError<T>(state: WorkQueueState<T>, error: unknown): void {
-  const normalized = error instanceof Error ? error : new Error(String(error));
-  state.errors.push(normalized);
-  if (!state.aborted) {
-    state.aborted = true;
-    state.abortReason = normalized;
-  }
-  resolveIfDone(state);
-}
-
-function createAbortHandler<T>(state: WorkQueueState<T>): () => void {
-  return (): void => {
-    if (!state.aborted) {
-      state.aborted = true;
-      state.abortReason = createAbortError();
-    }
-    resolveIfDone(state);
-  };
-}
-
-function enqueueItem<T>(state: WorkQueueState<T>, item: T): void {
-  if (state.aborted) return;
-  state.queue.push(item);
-}
-
-function queueSize<T>(state: WorkQueueState<T>): number {
-  return state.queue.length - state.head;
-}
-
-function compactQueueIfNeeded<T>(state: WorkQueueState<T>): void {
-  if (state.head < 1024) return;
-  if (state.head * 2 < state.queue.length) return;
-  state.queue.splice(0, state.head);
-  state.head = 0;
-}
-
-function handleWorkerCompletion<T>(state: WorkQueueState<T>): void {
-  state.inFlight--;
-  resolveIfDone(state);
-}
-
-function startWorker<T>(
-  state: WorkQueueState<T>,
-  item: T,
-  worker: (item: T, enqueue: (item: T) => void) => Promise<void>,
-  maybeStartNext: () => void
-): void {
-  state.inFlight++;
-
-  try {
-    void worker(item, (next) => {
-      enqueueItem(state, next);
-      maybeStartNext();
-    })
-      .catch((error: unknown) => {
-        console.error(
-          '[runWorkQueue] Worker error:',
-          error instanceof Error ? error.message : String(error)
-        );
-        recordError(state, error);
-      })
-      .finally(() => {
-        handleWorkerCompletion(state);
-        if (!state.aborted) {
-          maybeStartNext();
-        }
-      });
-  } catch (error) {
-    console.error(
-      '[runWorkQueue] Worker synchronous error:',
-      error instanceof Error ? error.message : String(error)
-    );
-    recordError(state, error);
-    handleWorkerCompletion(state);
-    if (!state.aborted) {
-      maybeStartNext();
-    }
-  }
-}
-
-function createQueueProcessor<T>(
-  state: WorkQueueState<T>,
-  worker: (item: T, enqueue: (item: T) => void) => Promise<void>,
-  concurrency: number
-): () => void {
-  const maybeStartNext = (): void => {
-    if (state.aborted) return;
-
-    while (state.inFlight < concurrency && queueSize(state) > 0) {
-      const next = state.queue[state.head];
-      state.head += 1;
-      compactQueueIfNeeded(state);
-      if (next === undefined) break;
-      startWorker(state, next, worker, maybeStartNext);
-    }
-  };
-
-  return maybeStartNext;
-}
-
-export async function runWorkQueue<T>(
-  initialItems: T[],
-  worker: (item: T, enqueue: (item: T) => void) => Promise<void>,
-  concurrency: number,
-  signal?: AbortSignal
-): Promise<void> {
-  const state: WorkQueueState<T> = {
-    queue: [...initialItems],
-    head: 0,
-    inFlight: 0,
-    aborted: false,
-    errors: [],
-  };
-  const donePromise = createDonePromise(state);
-  const onAbort = createAbortHandler(state);
-
-  if (signal?.aborted) {
-    state.aborted = true;
-    state.abortReason = createAbortError();
-  }
-
-  signal?.addEventListener('abort', onAbort, { once: true });
-
-  const maybeStartNext = createQueueProcessor(state, worker, concurrency);
-  maybeStartNext();
-  resolveIfDone(state);
-
-  try {
-    await donePromise;
-  } finally {
-    signal?.removeEventListener('abort', onAbort);
-  }
-
-  if (state.errors.length === 1) {
-    const error = state.errors[0];
-    throw error ?? new Error('Work queue failed');
-  }
-  if (state.errors.length > 1) {
-    throw new AggregateError(state.errors, 'Work queue failed');
-  }
-  if (state.abortReason) {
-    throw state.abortReason;
-  }
 }
 
 export async function processInParallel<T, R>(
@@ -192,21 +24,58 @@ export async function processInParallel<T, R>(
     return { results, errors };
   }
 
-  await runWorkQueue(
-    items.map((item, index) => ({ item, index })),
-    async ({ item, index }) => {
-      try {
-        const result = await processor(item);
-        results.push(result);
-      } catch (reason) {
-        const error =
-          reason instanceof Error ? reason : new Error(String(reason));
-        errors.push({ index, error });
-      }
-    },
-    concurrency,
-    signal
-  );
+  let nextIndex = 0;
+  let aborted = Boolean(signal?.aborted);
+  const inFlight = new Set<Promise<void>>();
+
+  const onAbort = (): void => {
+    aborted = true;
+  };
+
+  if (signal && !signal.aborted) {
+    signal.addEventListener('abort', onAbort, { once: true });
+  }
+
+  const startNext = (): void => {
+    while (
+      !aborted &&
+      inFlight.size < concurrency &&
+      nextIndex < items.length
+    ) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const item = items[index];
+      if (item === undefined) break;
+      const task = (async (): Promise<void> => {
+        try {
+          const result = await processor(item);
+          results.push(result);
+        } catch (reason) {
+          const error =
+            reason instanceof Error ? reason : new Error(String(reason));
+          errors.push({ index, error });
+        }
+      })();
+      inFlight.add(task);
+      void task.finally(() => {
+        inFlight.delete(task);
+      });
+    }
+  };
+
+  startNext();
+  while (inFlight.size > 0) {
+    await Promise.race(inFlight);
+    startNext();
+  }
+
+  if (signal) {
+    signal.removeEventListener('abort', onAbort);
+  }
+
+  if (aborted) {
+    throw createAbortError();
+  }
 
   return { results, errors };
 }

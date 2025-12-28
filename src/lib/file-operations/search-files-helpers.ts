@@ -23,7 +23,6 @@ interface ScanStreamOptions {
   maxResults: number;
 }
 
-type SearchStopReason = SearchFilesResult['summary']['stoppedReason'];
 type StreamStopReason = 'timeout' | 'abort' | null;
 
 export function initSearchFilesState(): SearchFilesState {
@@ -44,70 +43,6 @@ function assertNotAborted(signal?: AbortSignal): void {
   }
 }
 
-function markTruncated(
-  state: SearchFilesState,
-  reason: SearchStopReason
-): void {
-  state.truncated = true;
-  state.stoppedReason = reason;
-}
-
-function getDeadlineStopReason(options: {
-  deadlineMs?: number;
-}): SearchStopReason | undefined {
-  if (options.deadlineMs !== undefined && Date.now() > options.deadlineMs) {
-    return 'timeout';
-  }
-  return undefined;
-}
-
-function getMaxFilesStopReason(
-  state: SearchFilesState,
-  options: { maxFilesScanned?: number }
-): SearchStopReason | undefined {
-  if (
-    options.maxFilesScanned !== undefined &&
-    state.filesScanned >= options.maxFilesScanned
-  ) {
-    return 'maxFiles';
-  }
-  return undefined;
-}
-
-function getMaxResultsStopReason(
-  state: SearchFilesState,
-  options: { maxResults: number }
-): SearchStopReason | undefined {
-  if (state.results.length >= options.maxResults) {
-    return 'maxResults';
-  }
-  return undefined;
-}
-
-function getStopReason(
-  state: SearchFilesState,
-  options: {
-    deadlineMs?: number;
-    maxFilesScanned?: number;
-    maxResults: number;
-  }
-): SearchStopReason | undefined {
-  return (
-    getDeadlineStopReason(options) ??
-    getMaxFilesStopReason(state, options) ??
-    getMaxResultsStopReason(state, options)
-  );
-}
-
-function applyStopIfNeeded(
-  state: SearchFilesState,
-  reason: SearchStopReason | undefined
-): boolean {
-  if (!reason) return false;
-  markTruncated(state, reason);
-  return true;
-}
-
 function shouldStopProcessing(
   state: SearchFilesState,
   options: {
@@ -116,7 +51,25 @@ function shouldStopProcessing(
     maxResults: number;
   }
 ): boolean {
-  return applyStopIfNeeded(state, getStopReason(state, options));
+  if (options.deadlineMs !== undefined && Date.now() > options.deadlineMs) {
+    state.truncated = true;
+    state.stoppedReason = 'timeout';
+    return true;
+  }
+  if (
+    options.maxFilesScanned !== undefined &&
+    state.filesScanned >= options.maxFilesScanned
+  ) {
+    state.truncated = true;
+    state.stoppedReason = 'maxFiles';
+    return true;
+  }
+  if (state.results.length >= options.maxResults) {
+    state.truncated = true;
+    state.stoppedReason = 'maxResults';
+    return true;
+  }
+  return false;
 }
 
 async function toSearchResult(
@@ -185,17 +138,9 @@ async function processBatch(
     const slice = toProcess.slice(cursor, cursor + sliceSize);
     cursor += sliceSize;
 
-    const inFlight = new Map<
-      string,
-      Promise<SearchResult | { error: Error }>
-    >();
     const settled = await Promise.allSettled(
       slice.map((match) => {
-        const cached = inFlight.get(match);
-        if (cached) return cached;
-        const pending = toSearchResult(match);
-        inFlight.set(match, pending);
-        return pending;
+        return toSearchResult(match);
       })
     );
 
@@ -207,12 +152,13 @@ async function processBatch(
   }
 }
 
-function attachStreamGuards(
+export async function scanStream(
   stream: AsyncIterable<string | Buffer>,
   state: SearchFilesState,
   options: ScanStreamOptions,
   signal?: AbortSignal
-): { getStopReason: () => StreamStopReason; cleanup: () => void } {
+): Promise<void> {
+  const batch: string[] = [];
   let stopReason: StreamStopReason = null;
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
@@ -256,24 +202,6 @@ function attachStreamGuards(
     }, delay);
   }
 
-  return {
-    getStopReason: () => stopReason,
-    cleanup: () => {
-      if (signal) signal.removeEventListener('abort', onAbort);
-      if (timeoutId) clearTimeout(timeoutId);
-    },
-  };
-}
-
-export async function scanStream(
-  stream: AsyncIterable<string | Buffer>,
-  state: SearchFilesState,
-  options: ScanStreamOptions,
-  signal?: AbortSignal
-): Promise<void> {
-  const batch: string[] = [];
-  const guard = attachStreamGuards(stream, state, options, signal);
-
   try {
     for await (const entry of stream) {
       assertNotAborted(signal);
@@ -292,16 +220,27 @@ export async function scanStream(
       await processBatch(batch, state, options, signal);
     }
   } catch (error) {
-    const reason = guard.getStopReason();
-    if (reason === 'timeout') return;
-    if (reason === 'abort') {
+    if (options.deadlineMs !== undefined && Date.now() >= options.deadlineMs) {
+      return;
+    }
+    if (signal?.aborted) {
       const abortError = new Error('Search aborted');
       abortError.name = 'AbortError';
       throw abortError;
     }
     throw error;
   } finally {
-    guard.cleanup();
+    if (signal) signal.removeEventListener('abort', onAbort);
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+
+  if (signal?.aborted) {
+    if (options.deadlineMs !== undefined && Date.now() >= options.deadlineMs) {
+      return;
+    }
+    const abortError = new Error('Search aborted');
+    abortError.name = 'AbortError';
+    throw abortError;
   }
 }
 
