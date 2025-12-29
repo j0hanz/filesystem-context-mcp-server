@@ -61,6 +61,14 @@ it('setAllowedDirectories returns empty array when no directories set', () => {
   resetAllowedDirectories();
 });
 
+it('validateExistingPath rejects when no allowed directories configured', async () => {
+  setAllowedDirectories([]);
+  await expect(validateExistingPath(testFile)).rejects.toThrow(
+    /no allowed directories configured/i
+  );
+  resetAllowedDirectories();
+});
+
 it('validateExistingPath allows paths within allowed directories', async () => {
   const result = await validateExistingPath(testFile);
   expect(result).toContain('test.txt');

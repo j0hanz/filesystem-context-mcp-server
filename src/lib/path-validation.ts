@@ -182,7 +182,14 @@ function ensureWithinAllowedDirectories(
   requestedPath: string,
   details?: Record<string, unknown>
 ): void {
-  if (allowedDirectories.length === 0) return;
+  if (allowedDirectories.length === 0) {
+    throw new McpError(
+      ErrorCode.E_ACCESS_DENIED,
+      'Access denied: No allowed directories configured. Use --allow-cwd or configure roots via the MCP Roots protocol.',
+      requestedPath,
+      details
+    );
+  }
   if (isPathWithinAllowedDirectories(normalizedPath)) return;
 
   throw new McpError(
