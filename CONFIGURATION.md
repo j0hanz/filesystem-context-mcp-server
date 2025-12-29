@@ -20,14 +20,16 @@ values emit a warning and fall back to defaults (or are ignored for
 
 ### Performance and Concurrency
 
-| Variable                         | Default                 | Range   | Description                                                       | Increase For         | Decrease For           |
-| -------------------------------- | ----------------------- | ------- | ----------------------------------------------------------------- | -------------------- | ---------------------- |
-| `UV_THREADPOOL_SIZE`             | (unset)                 | 1-1024  | libuv threadpool size (set before start). Caps parallelism.       | Heavy fs/crypto load | Memory-constrained     |
-| `FILESYSTEM_CONTEXT_CONCURRENCY` | Auto (2x cores, cap 50) | 1-100   | Parallel file operations (further capped by `UV_THREADPOOL_SIZE`) | SSDs, many CPU cores | HDDs, shared systems   |
-| `TRAVERSAL_JOBS`                 | 8                       | 1-50    | Directory traversal parallelism                                   | Fast storage         | Network drives         |
-| `REGEX_TIMEOUT`                  | 100                     | 50-1000 | Regex timeout per line (prevents ReDoS)                           | Complex patterns     | CI/CD, simple searches |
+| Variable                         | Default                 | Range   | Description                                                       | Increase For         | Decrease For         |
+| -------------------------------- | ----------------------- | ------- | ----------------------------------------------------------------- | -------------------- | -------------------- |
+| `UV_THREADPOOL_SIZE`             | (unset)                 | 1-1024  | libuv threadpool size (set before start). Caps parallelism.       | Heavy fs/crypto load | Memory-constrained   |
+| `FILESYSTEM_CONTEXT_CONCURRENCY` | Auto (2x cores, cap 50) | 1-100   | Parallel file operations (further capped by `UV_THREADPOOL_SIZE`) | SSDs, many CPU cores | HDDs, shared systems |
+| `TRAVERSAL_JOBS`                 | 8                       | 1-50    | Reserved (currently unused; kept for compatibility)               | n/a                  | n/a                  |
+| `REGEX_TIMEOUT`                  | 100                     | 50-1000 | Reserved (currently unused; regex engine is RE2)                  | n/a                  | n/a                  |
 
 > Note: `UV_THREADPOOL_SIZE` must be set before the process starts.
+
+> Note: `TRAVERSAL_JOBS` and `REGEX_TIMEOUT` are parsed but currently unused.
 
 ### File Size Limits
 
@@ -38,21 +40,23 @@ values emit a warning and fall back to defaults (or are ignored for
 
 `MAX_FILE_SIZE` is a hard cap for read tools; per-request `maxSize` values are
 clamped. `MAX_SEARCH_SIZE` sets the default `maxFileSize` for content search
-and can be overridden per request (up to 100MB).
+and can be overridden per request (up to 100MB). `read_multiple_files`
+enforces `maxTotalSize` (default 100MB, max 1GB).
 
 ### Default Operation Limits
 
-| Variable                   | Default | Range       | Applies To                       |
-| -------------------------- | ------- | ----------- | -------------------------------- |
-| `DEFAULT_DEPTH`            | `10`    | 1-100       | `list_directory`, `search_files` |
-| `DEFAULT_RESULTS`          | `100`   | 10-10000    | `search_files`, `search_content` |
-| `DEFAULT_LIST_MAX_ENTRIES` | `10000` | 100-100000  | `list_directory`                 |
-| `DEFAULT_SEARCH_MAX_FILES` | `20000` | 100-100000  | `search_files`, `search_content` |
-| `DEFAULT_SEARCH_TIMEOUT`   | `30000` | 100-3600000 | `search_files`, `search_content` |
+| Variable                   | Default | Range       | Applies To                                         |
+| -------------------------- | ------- | ----------- | -------------------------------------------------- |
+| `DEFAULT_DEPTH`            | `10`    | 1-100       | `list_directory`, `search_files`                   |
+| `DEFAULT_RESULTS`          | `100`   | 10-10000    | `search_files`, `search_content`                   |
+| `DEFAULT_LIST_MAX_ENTRIES` | `10000` | 100-100000  | `list_directory`                                   |
+| `DEFAULT_SEARCH_MAX_FILES` | `20000` | 100-100000  | `search_files`, `search_content`                   |
+| `DEFAULT_SEARCH_TIMEOUT`   | `30000` | 100-3600000 | `list_directory`, `search_files`, `search_content` |
 
 Defaults apply when tool parameters are omitted. Tool-level `maxDepth` can be
 set to `0` to restrict listing/searching to the base directory, even though
-`DEFAULT_DEPTH` is constrained to 1-100.
+`DEFAULT_DEPTH` is constrained to 1-100. `read_file` and `read_multiple_files`
+use fixed 30s timeouts (not configurable via env).
 
 ## Configuration Examples
 
@@ -87,9 +91,9 @@ set to `0` to restrict listing/searching to the base directory, even though
       ],
       "env": {
         "FILESYSTEM_CONTEXT_CONCURRENCY": "30",
-        "TRAVERSAL_JOBS": "12",
-        "REGEX_TIMEOUT": "150",
-        "MAX_FILE_SIZE": "20971520"
+        "MAX_FILE_SIZE": "20971520",
+        "MAX_SEARCH_SIZE": "2097152",
+        "DEFAULT_SEARCH_TIMEOUT": "60000"
       }
     }
   }
@@ -122,14 +126,14 @@ set to `0` to restrict listing/searching to the base directory, even though
 {
   "env": {
     "FILESYSTEM_CONTEXT_CONCURRENCY": "40",
-    "TRAVERSAL_JOBS": "16",
-    "REGEX_TIMEOUT": "200",
-    "MAX_FILE_SIZE": "20971520"
+    "MAX_FILE_SIZE": "20971520",
+    "MAX_SEARCH_SIZE": "2097152",
+    "DEFAULT_SEARCH_MAX_FILES": "40000"
   }
 }
 ```
 
-_Use for: Fast SSD, many CPU cores, complex regex searches_
+_Use for: Fast SSD, many CPU cores, large repositories_
 
 **CI/CD Pipeline**
 
@@ -137,13 +141,12 @@ _Use for: Fast SSD, many CPU cores, complex regex searches_
 {
   "env": {
     "FILESYSTEM_CONTEXT_CONCURRENCY": "10",
-    "REGEX_TIMEOUT": "50",
     "MAX_SEARCH_SIZE": "524288"
   }
 }
 ```
 
-_Use for: Fast execution, minimal resources, literal searches_
+_Use for: Fast execution, minimal resources_
 
 **Resource-Constrained**
 
@@ -151,7 +154,6 @@ _Use for: Fast execution, minimal resources, literal searches_
 {
   "env": {
     "FILESYSTEM_CONTEXT_CONCURRENCY": "5",
-    "TRAVERSAL_JOBS": "3",
     "MAX_FILE_SIZE": "5242880"
   }
 }
@@ -161,11 +163,11 @@ _Use for: Containers, shared servers, slow disks_
 
 ## Troubleshooting
 
-| Issue                            | Solution                                     |
-| -------------------------------- | -------------------------------------------- |
-| Regex timeout warnings           | Increase `REGEX_TIMEOUT` or simplify pattern |
-| Environment variable not applied | Restart client, verify JSON syntax           |
-| Invalid value warning            | Check range limits in tables above           |
+| Issue                            | Solution                                 |
+| -------------------------------- | ---------------------------------------- |
+| Invalid regex or pattern         | Simplify pattern or set `isLiteral=true` |
+| Environment variable not applied | Restart client, verify JSON syntax       |
+| Invalid value warning            | Check range limits in tables above       |
 
 ## Command Line Arguments
 
