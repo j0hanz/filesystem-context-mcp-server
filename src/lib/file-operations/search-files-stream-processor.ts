@@ -37,7 +37,7 @@ function stopDueToMaxFiles(
   maxFilesScanned: number | undefined
 ): boolean {
   if (maxFilesScanned === undefined) return false;
-  if (state.filesScanned < maxFilesScanned) return false;
+  if (state.filesScanned <= maxFilesScanned) return false;
   markStopped(state, 'maxFiles');
   return true;
 }
@@ -199,6 +199,14 @@ async function handleStreamEntry(
 ): Promise<boolean> {
   if (shouldAbortOrStop(signal, state, options)) return false;
 
+  if (
+    options.maxFilesScanned !== undefined &&
+    state.filesScanned >= options.maxFilesScanned
+  ) {
+    markStopped(state, 'maxFiles');
+    return false;
+  }
+
   const matchPath = typeof entry === 'string' ? entry : String(entry);
   state.filesScanned += 1;
   if (shouldStopProcessing(state, options)) return false;
@@ -261,7 +269,7 @@ export async function drainStream(
   signal?: AbortSignal
 ): Promise<void> {
   await processStreamEntries(stream, state, options, batch, signal);
-  if (!state.truncated) {
+  if (!state.truncated || state.stoppedReason === 'maxFiles') {
     await processBatch(batch, state, options, signal);
   }
 }

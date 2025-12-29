@@ -59,24 +59,14 @@ function getLinePreview(line: string): string {
   return line.trimEnd().substring(0, MAX_LINE_CONTENT_LENGTH);
 }
 
-function updateContextLine(
-  contextManager: ContextManager,
-  line: string,
-  needsContext: boolean
-): string | undefined {
-  if (!needsContext) return undefined;
-  const trimmed = getLinePreview(line);
-  contextManager.pushLine(trimmed);
-  return trimmed;
-}
-
 function recordMatch(
   state: LineScanState,
   displayPath: string,
   line: string,
   trimmed: string | undefined,
   matchCount: number,
-  contextManager: ContextManager
+  contextManager: ContextManager,
+  excludeCurrentLine: boolean
 ): void {
   const content = trimmed ?? getLinePreview(line);
   state.matches.push(
@@ -84,7 +74,8 @@ function recordMatch(
       displayPath,
       state.lineNumber,
       content,
-      matchCount
+      matchCount,
+      excludeCurrentLine
     )
   );
 }
@@ -95,14 +86,23 @@ function handleMatchCount(
   displayPath: string,
   line: string,
   trimmed: string | undefined,
-  contextManager: ContextManager
+  contextManager: ContextManager,
+  excludeCurrentLine: boolean
 ): void {
   if (matchCount < 0) {
     state.linesSkipped++;
     return;
   }
   if (matchCount === 0) return;
-  recordMatch(state, displayPath, line, trimmed, matchCount, contextManager);
+  recordMatch(
+    state,
+    displayPath,
+    line,
+    trimmed,
+    matchCount,
+    contextManager,
+    excludeCurrentLine
+  );
 }
 
 function processLine(
@@ -134,7 +134,10 @@ function processLine(
     return false;
   }
 
-  const trimmed = updateContextLine(contextManager, line, needsContext);
+  const trimmed = needsContext ? getLinePreview(line) : undefined;
+  if (needsContext && trimmed !== undefined) {
+    contextManager.pushLine(trimmed);
+  }
   const matchCount = matcher(line);
   if (matchCount > 0 && options.reserveMatchSlot) {
     if (!options.reserveMatchSlot()) {
@@ -148,7 +151,8 @@ function processLine(
     displayPath,
     line,
     trimmed,
-    contextManager
+    contextManager,
+    needsContext
   );
 
   return true;

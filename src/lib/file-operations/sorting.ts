@@ -39,8 +39,17 @@ function compareOptionalNumberDesc(
 }
 
 function compareTypeThenName(a: Sortable, b: Sortable): number {
-  if (a.type === b.type) return compareNameThenPath(a, b);
-  return a.type === 'directory' ? -1 : 1;
+  const typeRank: Record<FileType, number> = {
+    directory: 0,
+    file: 1,
+    symlink: 2,
+    other: 3,
+  };
+  const leftType = a.type ?? 'other';
+  const rightType = b.type ?? 'other';
+  const rankDiff = typeRank[leftType] - typeRank[rightType];
+  if (rankDiff !== 0) return rankDiff;
+  return compareNameThenPath(a, b);
 }
 
 const SORT_COMPARATORS: Readonly<

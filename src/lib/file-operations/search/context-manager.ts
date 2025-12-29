@@ -27,7 +27,8 @@ export class ContextManager {
     filePath: string,
     line: number,
     content: string,
-    matchCount: number
+    matchCount: number,
+    excludeCurrentLine = false
   ): ContentMatch {
     const match: ContentMatch = {
       file: filePath,
@@ -37,7 +38,12 @@ export class ContextManager {
     };
 
     if (this.buffer.length > this.bufferStart) {
-      match.contextBefore = this.buffer.slice(this.bufferStart);
+      const bufferEnd = excludeCurrentLine
+        ? Math.max(this.bufferStart, this.buffer.length - 1)
+        : this.buffer.length;
+      if (bufferEnd > this.bufferStart) {
+        match.contextBefore = this.buffer.slice(this.bufferStart, bufferEnd);
+      }
     }
 
     if (this.contextLines > 0) {
