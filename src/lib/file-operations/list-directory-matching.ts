@@ -6,6 +6,7 @@ import { minimatch } from 'minimatch';
 import type { Minimatch } from 'minimatch';
 
 import { isHidden } from '../fs-helpers.js';
+import { withAbort } from '../fs-helpers/abort.js';
 
 const EXCLUDE_MATCH_OPTIONS = {
   dot: true,
@@ -19,11 +20,15 @@ const PATTERN_MATCH_OPTIONS = {
 
 async function openDirectory(
   currentPath: string,
-  onInaccessible: () => void
+  onInaccessible: () => void,
+  signal?: AbortSignal
 ): Promise<Dir | null> {
   try {
-    return await fs.opendir(currentPath);
-  } catch {
+    return await withAbort(fs.opendir(currentPath), signal);
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw error;
+    }
     onInaccessible();
     return null;
   }
@@ -80,9 +85,11 @@ export async function* streamVisibleItems(
   excludeMatchers: Minimatch[],
   onInaccessible: () => void,
   onScanned: () => void,
-  onVisible: () => void
+  onVisible: () => void,
+  signal?: AbortSignal
 ): AsyncIterable<Dirent> {
-  const dir = await openDirectory(currentPath, onInaccessible);
+  if (signal?.aborted) return;
+  const dir = await openDirectory(currentPath, onInaccessible, signal);
   if (!dir) return;
 
   try {
@@ -91,6 +98,7 @@ export async function* streamVisibleItems(
       excludeMatchers,
       onScanned,
       onVisible,
+      signal,
     });
   } catch {
     onInaccessible();
@@ -108,9 +116,11 @@ async function* iterateVisibleItems(
     excludeMatchers: Minimatch[];
     onScanned: () => void;
     onVisible: () => void;
+    signal?: AbortSignal;
   }
 ): AsyncIterable<Dirent> {
   for await (const item of dir) {
+    if (options.signal?.aborted) break;
     if (!handleStreamItem(item, currentPath, basePath, options)) {
       continue;
     }

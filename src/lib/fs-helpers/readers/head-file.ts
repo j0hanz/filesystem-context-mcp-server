@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import { StringDecoder } from 'node:string_decoder';
 
 import { validateExistingPath } from '../../path-validation.js';
-import { assertNotAborted } from '../abort.js';
+import { assertNotAborted, withAbort } from '../abort.js';
 
 interface HeadReadState {
   lines: string[];
@@ -72,7 +72,10 @@ async function readHeadChunks(
     if (maxBytesRead !== undefined && state.bytesRead >= maxBytesRead) break;
 
     const maxChunk = maxChunkSize(maxBytesRead, state.bytesRead);
-    const result = await handle.read(chunk, 0, maxChunk, state.bytesRead);
+    const result = await withAbort(
+      handle.read(chunk, 0, maxChunk, state.bytesRead),
+      signal
+    );
     if (result.bytesRead === 0) break;
 
     state.bytesRead += result.bytesRead;
@@ -92,8 +95,8 @@ export async function headFile(
   signal?: AbortSignal
 ): Promise<string> {
   assertNotAborted(signal);
-  const validPath = await validateExistingPath(filePath);
-  const handle = await fs.open(validPath, 'r');
+  const validPath = await validateExistingPath(filePath, signal);
+  const handle = await withAbort(fs.open(validPath, 'r'), signal);
 
   try {
     const state = initHeadState(encoding);

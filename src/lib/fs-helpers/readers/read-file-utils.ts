@@ -283,7 +283,11 @@ export async function assertNotBinary(
   normalized: NormalizedOptions
 ): Promise<void> {
   assertNotAborted(normalized.signal);
-  const isBinary = await isProbablyBinary(validPath);
+  const isBinary = await isProbablyBinary(
+    validPath,
+    undefined,
+    normalized.signal
+  );
   if (!isBinary) return;
   throw new McpError(
     ErrorCode.E_INVALID_INPUT,

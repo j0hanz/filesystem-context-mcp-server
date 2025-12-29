@@ -97,6 +97,17 @@ function attachAbortListener(
   };
 }
 
+function createAbortPromise(signal?: AbortSignal): Promise<void> | undefined {
+  if (!signal) return undefined;
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const onAbort = (): void => {
+      resolve();
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 function enqueueItem(state: QueueState, item: DirectoryQueueItem): void {
   if (state.aborted) return;
   state.queue.push(item);
@@ -151,20 +162,23 @@ function startNextTasks(
 async function drainQueue(
   state: QueueState,
   worker: QueueWorker,
-  concurrency: number
+  concurrency: number,
+  abortPromise?: Promise<void>
 ): Promise<void> {
   startNextTasks(state, worker, concurrency);
   while (state.inFlight.size > 0) {
-    await Promise.race(state.inFlight);
+    if (state.aborted) return;
+    const raceTargets = abortPromise
+      ? [...state.inFlight, abortPromise]
+      : [...state.inFlight];
+    await Promise.race(raceTargets);
     startNextTasks(state, worker, concurrency);
   }
 }
 
 function throwIfQueueFailed(state: QueueState): void {
   if (state.errors.length === 1) {
-    const [firstError] = state.errors;
-    if (firstError) throw firstError;
-    throw new Error('Work queue failed');
+    throw state.errors.at(0) ?? new Error('Work queue failed');
   }
   if (state.errors.length > 1) {
     throw new AggregateError(state.errors, 'Work queue failed');
@@ -181,10 +195,11 @@ async function runDirectoryQueue(
   signal?: AbortSignal
 ): Promise<void> {
   const state = createQueueState(initialItems, signal);
+  const abortPromise = createAbortPromise(signal);
   const detachAbort = attachAbortListener(state, signal);
 
   try {
-    await drainQueue(state, worker, concurrency);
+    await drainQueue(state, worker, concurrency, abortPromise);
   } finally {
     detachAbort();
   }
@@ -265,7 +280,7 @@ export async function listDirectory(
   const { signal, ...rest } = options;
   const normalized = normalizeListDirectoryOptions(rest);
 
-  const basePath = await validateExistingDirectory(dirPath);
+  const basePath = await validateExistingDirectory(dirPath, signal);
   const { config, state, shouldStop } = buildTraversalContext(
     basePath,
     normalized,

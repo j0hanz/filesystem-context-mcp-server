@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 
 import { validateExistingPath } from '../../path-validation.js';
-import { assertNotAborted } from '../abort.js';
+import { assertNotAborted, withAbort } from '../abort.js';
 import {
   assertIsFile,
   assertNotBinary,
@@ -52,9 +52,9 @@ export async function readFile(
 ): Promise<ReadFileResult> {
   const normalized = normalizeOptions(options);
   assertNotAborted(normalized.signal);
-  const validPath = await validateExistingPath(filePath);
+  const validPath = await validateExistingPath(filePath, normalized.signal);
   assertNotAborted(normalized.signal);
-  const stats = await fs.stat(validPath);
+  const stats = await withAbort(fs.stat(validPath), normalized.signal);
 
   return await readFileWithStatsInternal(
     filePath,

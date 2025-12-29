@@ -1,8 +1,11 @@
 import type { FileHandle } from 'node:fs/promises';
 
+import { withAbort } from '../abort.js';
+
 export async function findUTF8Boundary(
   handle: FileHandle,
-  position: number
+  position: number,
+  signal?: AbortSignal
 ): Promise<number> {
   if (position <= 0) return 0;
 
@@ -12,7 +15,8 @@ export async function findUTF8Boundary(
     handle,
     backtrackSize,
     startPos,
-    position
+    position,
+    signal
   );
   if (!readResult) return position;
 
@@ -28,11 +32,15 @@ async function readBacktrackBuffer(
   handle: FileHandle,
   backtrackSize: number,
   startPos: number,
-  position: number
+  position: number,
+  signal?: AbortSignal
 ): Promise<{ buffer: Buffer; bytesRead: number } | null> {
   const buffer = Buffer.allocUnsafe(backtrackSize);
   try {
-    const { bytesRead } = await handle.read(buffer, 0, backtrackSize, startPos);
+    const { bytesRead } = await withAbort(
+      handle.read(buffer, 0, backtrackSize, startPos),
+      signal
+    );
     return { buffer, bytesRead };
   } catch (error) {
     console.error(

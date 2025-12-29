@@ -177,7 +177,7 @@ async function ensureSearchBasePath(
   signal?: AbortSignal
 ): Promise<string> {
   assertNotAborted(signal);
-  const validPath = await validateExistingDirectory(basePath);
+  const validPath = await validateExistingDirectory(basePath, signal);
   validateGlobPatternOrThrow(options.filePattern, validPath);
   return validPath;
 }

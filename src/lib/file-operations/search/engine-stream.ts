@@ -275,7 +275,12 @@ async function runWithAbortController(
   } finally {
     if (signal) signal.removeEventListener('abort', onAbortSignal);
     clearTimer();
-    await Promise.all(active);
+    const shouldWaitForActive =
+      !signal?.aborted &&
+      !(deadlineMs !== undefined && Date.now() >= deadlineMs);
+    if (shouldWaitForActive) {
+      await Promise.all(active);
+    }
   }
 }
 

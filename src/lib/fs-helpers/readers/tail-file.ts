@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
 
 import { validateExistingPath } from '../../path-validation.js';
-import { assertNotAborted } from '../abort.js';
+import { assertNotAborted, withAbort } from '../abort.js';
 import { findUTF8Boundary } from './utf8.js';
 
 interface TailReadState {
@@ -60,11 +60,12 @@ async function alignWindow(
   window: TailReadWindow,
   position: number,
   maxBytesRead: number | undefined,
-  bytesReadTotal: number
+  bytesReadTotal: number,
+  signal?: AbortSignal
 ): Promise<TailReadWindow> {
   if (window.startPos <= 0) return window;
 
-  const alignedPos = await findUTF8Boundary(handle, window.startPos);
+  const alignedPos = await findUTF8Boundary(handle, window.startPos, signal);
   const alignedSize = position - alignedPos;
 
   if (
@@ -123,14 +124,13 @@ function appendLinesFromEnd(
 async function readAlignedChunk(
   handle: fs.FileHandle,
   aligned: TailReadWindow,
-  encoding: BufferEncoding
+  encoding: BufferEncoding,
+  signal?: AbortSignal
 ): Promise<{ data: string; bytesRead: number } | null> {
   const chunk = Buffer.alloc(aligned.size + 4);
-  const { bytesRead } = await handle.read(
-    chunk,
-    0,
-    aligned.size,
-    aligned.startPos
+  const { bytesRead } = await withAbort(
+    handle.read(chunk, 0, aligned.size, aligned.startPos),
+    signal
   );
   if (bytesRead === 0) return null;
   return {
@@ -163,11 +163,12 @@ async function readTailChunk(
     window,
     state.position,
     maxBytesRead,
-    state.bytesReadTotal
+    state.bytesReadTotal,
+    signal
   );
 
   state.position = aligned.startPos;
-  const chunkResult = await readAlignedChunk(handle, aligned, encoding);
+  const chunkResult = await readAlignedChunk(handle, aligned, encoding, signal);
   if (!chunkResult) {
     state.position = 0;
     return;
@@ -186,11 +187,11 @@ export async function tailFile(
   signal?: AbortSignal
 ): Promise<string> {
   assertNotAborted(signal);
-  const validPath = await validateExistingPath(filePath);
-  const stats = await fs.stat(validPath);
+  const validPath = await validateExistingPath(filePath, signal);
+  const stats = await withAbort(fs.stat(validPath), signal);
   if (stats.size === 0) return '';
 
-  const handle = await fs.open(validPath, 'r');
+  const handle = await withAbort(fs.open(validPath, 'r'), signal);
   try {
     const state = initTailState(stats.size);
 

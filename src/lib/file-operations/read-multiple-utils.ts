@@ -7,6 +7,7 @@ import {
   readFile,
   readFileWithStats,
 } from '../fs-helpers.js';
+import { withAbort } from '../fs-helpers/abort.js';
 import { validateExistingPath } from '../path-validation.js';
 
 export interface ReadMultipleResult {
@@ -70,8 +71,8 @@ export async function collectFileBudget(
   const { results } = await processInParallel(
     filePaths.map((filePath, index) => ({ filePath, index })),
     async ({ filePath, index }) => {
-      const validPath = await validateExistingPath(filePath);
-      const stats = await fs.stat(validPath);
+      const validPath = await validateExistingPath(filePath, signal);
+      const stats = await withAbort(fs.stat(validPath), signal);
       return { filePath, index, validPath, stats };
     },
     PARALLEL_CONCURRENCY,

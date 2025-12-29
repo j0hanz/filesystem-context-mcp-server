@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import type { SearchResult } from '../../config/types.js';
 import { PARALLEL_CONCURRENCY } from '../constants.js';
 import { getFileType } from '../fs-helpers.js';
+import { withAbort } from '../fs-helpers/abort.js';
 import { validateExistingPathDetailed } from '../path-validation.js';
 import type { ScanStreamOptions } from './search-files-stream.js';
 import type { SearchFilesState } from './search-files.js';
@@ -70,12 +71,13 @@ function shouldAbortOrStop(
 }
 
 async function toSearchResult(
-  match: string
+  match: string,
+  signal?: AbortSignal
 ): Promise<SearchResult | { error: Error }> {
   try {
     const { requestedPath, resolvedPath, isSymlink } =
-      await validateExistingPathDetailed(match);
-    const stats = await fs.stat(resolvedPath);
+      await validateExistingPathDetailed(match, signal);
+    const stats = await withAbort(fs.stat(resolvedPath), signal);
     return {
       path: requestedPath,
       type: isSymlink ? 'symlink' : getFileType(stats),
@@ -133,7 +135,7 @@ async function processSlice(
 ): Promise<boolean> {
   const settled = await Promise.allSettled(
     slice.map((match) => {
-      return toSearchResult(match);
+      return toSearchResult(match, signal);
     })
   );
 

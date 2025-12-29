@@ -124,7 +124,7 @@ export async function searchFiles(
   excludePatterns: string[] = [],
   options: SearchFilesOptions = {}
 ): Promise<SearchFilesResult> {
-  const validPath = await validateExistingDirectory(basePath);
+  const validPath = await validateExistingDirectory(basePath, options.signal);
 
   // Validate pattern
   validateGlobPatternOrThrow(pattern, validPath);

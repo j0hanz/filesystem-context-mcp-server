@@ -7,6 +7,7 @@ import {
   MAX_SEARCH_LINE_LENGTH,
 } from '../../constants.js';
 import { isProbablyBinary } from '../../fs-helpers.js';
+import { withAbort } from '../../fs-helpers/abort.js';
 import { validateExistingPathDetailed } from '../../path-validation.js';
 import { ContextManager } from './context-manager.js';
 import { iterateLines } from './line-iterator.js';
@@ -235,12 +236,15 @@ async function scanWithHandle(
   matcher: Matcher,
   options: SearchOptions
 ): Promise<ScanResult> {
-  const stats = await handle.stat();
+  const stats = await withAbort(handle.stat(), options.signal);
   if (stats.size > options.maxFileSize) {
     return createEmptyResult({ scanned: true, skippedTooLarge: true });
   }
 
-  if (options.skipBinary && (await isProbablyBinary(openPath, handle))) {
+  if (
+    options.skipBinary &&
+    (await isProbablyBinary(openPath, handle, options.signal))
+  ) {
     return createEmptyResult({ scanned: true, skippedBinary: true });
   }
 
@@ -259,14 +263,20 @@ export async function processFile(
   let openPath: string;
   let displayPath: string;
   try {
-    const validated = await validateExistingPathDetailed(rawPath);
+    const validated = await validateExistingPathDetailed(
+      rawPath,
+      options.signal
+    );
     openPath = validated.resolvedPath;
     displayPath = validated.requestedPath;
   } catch {
     return createEmptyResult({ scanned: false });
   }
 
-  const handle = await fsPromises.open(openPath, 'r');
+  const handle = await withAbort(
+    fsPromises.open(openPath, 'r'),
+    options.signal
+  );
   try {
     return await scanWithHandle(
       handle,

@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import type { Dirent, Stats } from 'node:fs';
 
 import type { DirectoryEntry } from '../../config/types.js';
+import { withAbort } from '../fs-helpers/abort.js';
 import { validateExistingPathDetailed } from '../path-validation.js';
 
 export interface DirectoryItemResult {
@@ -38,11 +39,13 @@ async function buildSymlinkResult(
   fullPath: string,
   relativePath: string,
   includeSymlinkTargets: boolean,
-  stats: Stats
+  stats: Stats,
+  signal?: AbortSignal
 ): Promise<DirectoryItemResult> {
   const symlinkTarget = await resolveSymlinkTarget(
     fullPath,
-    includeSymlinkTargets
+    includeSymlinkTargets,
+    signal
   );
 
   const entry: DirectoryEntry = {
@@ -60,12 +63,13 @@ async function buildSymlinkResult(
 
 async function resolveSymlinkTarget(
   fullPath: string,
-  includeSymlinkTargets: boolean
+  includeSymlinkTargets: boolean,
+  signal?: AbortSignal
 ): Promise<string | undefined> {
   if (!includeSymlinkTargets) return undefined;
   try {
-    const symlinkTarget = await fs.readlink(fullPath);
-    await validateExistingPathDetailed(fullPath);
+    const symlinkTarget = await withAbort(fs.readlink(fullPath), signal);
+    await validateExistingPathDetailed(fullPath, signal);
     return symlinkTarget;
   } catch {
     return undefined;
@@ -146,16 +150,18 @@ async function buildDirectoryItemResultCore(
     recursive: boolean;
     depth: number;
     maxDepth: number;
+    signal?: AbortSignal;
   }
 ): Promise<DirectoryItemResult> {
-  const stats = await fs.lstat(fullPath);
+  const stats = await withAbort(fs.lstat(fullPath), options.signal);
   if (stats.isSymbolicLink()) {
     return await buildSymlinkResult(
       item,
       fullPath,
       relativePath,
       options.includeSymlinkTargets,
-      stats
+      stats,
+      options.signal
     );
   }
 
@@ -171,6 +177,7 @@ export async function buildDirectoryItemResult(
     recursive: boolean;
     depth: number;
     maxDepth: number;
+    signal?: AbortSignal;
   }
 ): Promise<DirectoryItemResult> {
   const fullPath = path.join(currentPath, item.name);

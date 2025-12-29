@@ -6,6 +6,7 @@ import {
   KNOWN_BINARY_EXTENSIONS,
 } from '../constants.js';
 import { validateExistingPath } from '../path-validation.js';
+import { withAbort } from './abort.js';
 
 function hasKnownBinaryExtension(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
@@ -15,14 +16,15 @@ function hasKnownBinaryExtension(filePath: string): boolean {
 async function withFileHandle<T>(
   filePath: string,
   fn: (handle: fs.FileHandle) => Promise<T>,
-  existingHandle?: fs.FileHandle
+  existingHandle?: fs.FileHandle,
+  signal?: AbortSignal
 ): Promise<T> {
   if (existingHandle) {
     return fn(existingHandle);
   }
 
-  const effectivePath = await validateExistingPath(filePath);
-  const handle = await fs.open(effectivePath, 'r');
+  const effectivePath = await validateExistingPath(filePath, signal);
+  const handle = await withAbort(fs.open(effectivePath, 'r'), signal);
   try {
     return await fn(handle);
   } finally {
@@ -32,13 +34,14 @@ async function withFileHandle<T>(
   }
 }
 
-async function readProbe(handle: fs.FileHandle): Promise<Buffer> {
+async function readProbe(
+  handle: fs.FileHandle,
+  signal?: AbortSignal
+): Promise<Buffer> {
   const buffer = Buffer.allocUnsafe(BINARY_CHECK_BUFFER_SIZE);
-  const { bytesRead } = await handle.read(
-    buffer,
-    0,
-    BINARY_CHECK_BUFFER_SIZE,
-    0
+  const { bytesRead } = await withAbort(
+    handle.read(buffer, 0, BINARY_CHECK_BUFFER_SIZE, 0),
+    signal
   );
 
   if (bytesRead === 0) {
@@ -67,7 +70,8 @@ function hasUtf16Bom(slice: Buffer): boolean {
 
 export async function isProbablyBinary(
   filePath: string,
-  existingHandle?: fs.FileHandle
+  existingHandle?: fs.FileHandle,
+  signal?: AbortSignal
 ): Promise<boolean> {
   if (hasKnownBinaryExtension(filePath)) {
     return true;
@@ -76,10 +80,11 @@ export async function isProbablyBinary(
   return withFileHandle(
     filePath,
     async (handle) => {
-      const slice = await readProbe(handle);
+      const slice = await readProbe(handle, signal);
       return isBinarySlice(slice);
     },
-    existingHandle
+    existingHandle,
+    signal
   );
 }
 

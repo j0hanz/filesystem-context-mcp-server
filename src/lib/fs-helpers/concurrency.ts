@@ -57,6 +57,17 @@ function attachAbortListener<T, R>(
   };
 }
 
+function createAbortPromise(signal?: AbortSignal): Promise<void> | undefined {
+  if (!signal) return undefined;
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const onAbort = (): void => {
+      resolve();
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 function canStartNext<T, R>(state: ParallelState<T, R>): boolean {
   return (
     !state.aborted &&
@@ -101,10 +112,17 @@ function startNextTasks<T, R>(state: ParallelState<T, R>): void {
   }
 }
 
-async function drainTasks<T, R>(state: ParallelState<T, R>): Promise<void> {
+async function drainTasks<T, R>(
+  state: ParallelState<T, R>,
+  abortPromise?: Promise<void>
+): Promise<void> {
   startNextTasks(state);
   while (state.inFlight.size > 0) {
-    await Promise.race(state.inFlight);
+    if (state.aborted) return;
+    const raceTargets = abortPromise
+      ? [...state.inFlight, abortPromise]
+      : [...state.inFlight];
+    await Promise.race(raceTargets);
     startNextTasks(state);
   }
 }
@@ -116,6 +134,7 @@ export async function processInParallel<T, R>(
   signal?: AbortSignal
 ): Promise<ParallelResult<R>> {
   const state = createState(items, processor, concurrency, signal);
+  const abortPromise = createAbortPromise(signal);
 
   if (items.length === 0) {
     return { results: state.results, errors: state.errors };
@@ -124,7 +143,7 @@ export async function processInParallel<T, R>(
   const detachAbort = attachAbortListener(state, signal);
 
   try {
-    await drainTasks(state);
+    await drainTasks(state, abortPromise);
   } finally {
     detachAbort();
   }

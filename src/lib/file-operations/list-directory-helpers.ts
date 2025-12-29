@@ -147,6 +147,7 @@ async function flushBatch(
         recursive: config.recursive,
         depth: params.depth,
         maxDepth: config.maxDepth,
+        signal: config.signal,
       }),
     PARALLEL_CONCURRENCY,
     config.signal
@@ -198,7 +199,8 @@ export async function handleDirectory(
     },
     () => {
       state.entriesVisible++;
-    }
+    },
+    config.signal
   );
   const batch: Dirent[] = [];
   await processItemStream(
