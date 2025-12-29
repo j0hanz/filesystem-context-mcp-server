@@ -47,6 +47,24 @@ it('readFile handles reading beyond file length gracefully', async () => {
   expect(result.truncated).toBe(true);
 });
 
+it('readFile head read is not truncated when file is shorter than head', async () => {
+  const result = await readFile(path.join(getTestDir(), 'multiline.txt'), {
+    head: 200,
+  });
+  expect(result.content).toContain('Line 100');
+  expect(result.truncated).toBe(false);
+  expect(result.hasMoreLines).toBe(false);
+});
+
+it('readFile tail read is not truncated when file is shorter than tail', async () => {
+  const result = await readFile(path.join(getTestDir(), 'multiline.txt'), {
+    tail: 200,
+  });
+  expect(result.content).toContain('Line 1');
+  expect(result.truncated).toBe(false);
+  expect(result.hasMoreLines).toBe(false);
+});
+
 it('readFile handles empty file', async () => {
   const emptyFile = path.join(getTestDir(), 'empty-read.txt');
   await fs.writeFile(emptyFile, '');

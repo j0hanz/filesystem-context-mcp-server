@@ -111,14 +111,15 @@ function advanceRegexIndex(
   regex: RegExpLike,
   lastIndex: number
 ): { nextLastIndex: number; shouldAbort: boolean } {
-  const currentIndex = regex.lastIndex;
+  let nextIndex = regex.lastIndex;
   if (match[0] === '') {
-    regex.lastIndex++;
+    nextIndex = regex.lastIndex + 1;
+    regex.lastIndex = nextIndex;
   }
-  if (currentIndex === lastIndex) {
+  if (nextIndex <= lastIndex) {
     return { nextLastIndex: lastIndex, shouldAbort: true };
   }
-  return { nextLastIndex: regex.lastIndex, shouldAbort: false };
+  return { nextLastIndex: nextIndex, shouldAbort: false };
 }
 
 function shouldCheckTimeout(

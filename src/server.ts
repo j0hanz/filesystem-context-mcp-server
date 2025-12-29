@@ -176,10 +176,10 @@ async function updateRootsFromClient(server: McpServer): Promise<void> {
       timeout: ROOTS_TIMEOUT_MS,
     });
     const rawRoots = (rootsResult as unknown as { roots?: unknown }).roots;
-    const roots = Array.isArray(rawRoots) ? rawRoots : [];
+    const roots = Array.isArray(rawRoots) ? rawRoots.filter(isRoot) : [];
 
     rootDirectories =
-      roots.length > 0 ? await getValidRootDirectories(roots as Root[]) : [];
+      roots.length > 0 ? await getValidRootDirectories(roots) : [];
   } catch (error) {
     rootDirectories = [];
     console.error(
@@ -189,6 +189,12 @@ async function updateRootsFromClient(server: McpServer): Promise<void> {
   } finally {
     await recomputeAllowedDirectories();
   }
+}
+
+function isRoot(value: unknown): value is Root {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as { uri?: unknown };
+  return typeof candidate.uri === 'string';
 }
 
 function normalizeAllowedDirectories(dirs: string[]): string[] {

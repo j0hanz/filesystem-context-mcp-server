@@ -31,7 +31,7 @@ function shouldStopLineRange(
     return true;
   }
 
-  if (maxBytesRead !== undefined && bytesRead > maxBytesRead) {
+  if (maxBytesRead !== undefined && bytesRead >= maxBytesRead) {
     state.hasMoreLines = true;
     return true;
   }

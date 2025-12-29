@@ -65,11 +65,12 @@ export async function readHeadContent(
     options.signal
   );
   const linesRead = countLines(content);
+  const hasMoreLines = linesRead >= head;
   return {
     content,
-    truncated: true,
+    truncated: hasMoreLines,
     linesRead,
-    hasMoreLines: linesRead >= head,
+    hasMoreLines,
   };
 }
 
@@ -91,11 +92,12 @@ export async function readTailContent(
     options.signal
   );
   const linesRead = countLines(content);
+  const hasMoreLines = linesRead >= tail;
   return {
     content,
-    truncated: true,
+    truncated: hasMoreLines,
     linesRead,
-    hasMoreLines: linesRead >= tail,
+    hasMoreLines,
   };
 }
 

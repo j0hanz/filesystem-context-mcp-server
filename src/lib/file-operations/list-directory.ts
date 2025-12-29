@@ -56,13 +56,25 @@ async function runDirectoryQueue(
   const inFlight = new Set<Promise<void>>();
   const errors: Error[] = [];
   let aborted = Boolean(signal?.aborted);
+  let abortListenerAttached = false;
+  let abortResolve: (() => void) | undefined;
+  const abortPromise = signal
+    ? new Promise<void>((resolve) => {
+        abortResolve = resolve;
+        if (signal.aborted) resolve();
+      })
+    : undefined;
 
   if (aborted) throw createAbortError();
 
   const onAbort = (): void => {
     aborted = true;
+    if (abortResolve) abortResolve();
   };
-  signal?.addEventListener('abort', onAbort, { once: true });
+  if (signal && !signal.aborted) {
+    signal.addEventListener('abort', onAbort, { once: true });
+    abortListenerAttached = true;
+  }
 
   try {
     while (index < queue.length || inFlight.size > 0) {
@@ -91,23 +103,15 @@ async function runDirectoryQueue(
       if (inFlight.size > 0) {
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (aborted) break;
-        const abortPromise = new Promise<void>((resolve) => {
-          if (signal?.aborted) resolve();
-          else {
-            signal?.addEventListener(
-              'abort',
-              () => {
-                resolve();
-              },
-              { once: true }
-            );
-          }
-        });
-        await Promise.race([...inFlight, abortPromise]);
+        if (abortPromise) {
+          await Promise.race([...inFlight, abortPromise]);
+        } else {
+          await Promise.race([...inFlight]);
+        }
       }
     }
   } finally {
-    signal?.removeEventListener('abort', onAbort);
+    if (abortListenerAttached) signal?.removeEventListener('abort', onAbort);
   }
 
   if (errors.length > 0) {

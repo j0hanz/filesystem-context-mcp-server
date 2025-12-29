@@ -1,7 +1,7 @@
 import { ErrorCode, McpError } from '../errors.js';
 
 const BACKSLASH_PATTERN = /\\/g;
-const UNSAFE_PATTERN = /\.\.|^[/\\]/;
+const UNSAFE_PATTERN = /\.\.|^[/\\]|^[A-Za-z]:/u;
 const MAX_PATTERN_LENGTH = 1000;
 const MAX_BRACE_EXPANSION = 100;
 
