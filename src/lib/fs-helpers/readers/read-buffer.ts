@@ -1,8 +1,8 @@
 import { createReadStream } from 'node:fs';
-import type { ReadStream } from 'node:fs';
+import { Writable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 import { ErrorCode, McpError } from '../../errors.js';
-import { createAbortError } from '../abort.js';
 
 const STREAM_CHUNK_SIZE = 64 * 1024;
 
@@ -19,43 +19,39 @@ function createTooLargeError(
   );
 }
 
-function attachAbortHandler(
-  stream: ReadStream,
-  signal?: AbortSignal
-): () => void {
-  if (!signal) return () => {};
+class BufferCollector extends Writable {
+  private chunks: Buffer[] = [];
+  private totalSize = 0;
 
-  const onAbort = (): void => {
-    stream.destroy(createAbortError());
-  };
-
-  if (signal.aborted) {
-    onAbort();
-  } else {
-    signal.addEventListener('abort', onAbort, { once: true });
+  constructor(
+    private readonly maxSize: number,
+    private readonly requestedPath: string
+  ) {
+    super();
   }
 
-  return (): void => {
-    signal.removeEventListener('abort', onAbort);
-  };
-}
-
-async function collectChunks(
-  iterableStream: AsyncIterable<Buffer>,
-  maxSize: number,
-  requestedPath: string,
-  chunks: Buffer[]
-): Promise<number> {
-  let totalSize = 0;
-  for await (const chunk of iterableStream) {
+  override _write(
+    chunk: Buffer | string,
+    _encoding: BufferEncoding,
+    callback: (error?: Error | null) => void
+  ): void {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    totalSize += buffer.length;
-    if (totalSize > maxSize) {
-      throw createTooLargeError(totalSize, maxSize, requestedPath);
+    this.totalSize += buffer.length;
+
+    if (this.totalSize > this.maxSize) {
+      callback(
+        createTooLargeError(this.totalSize, this.maxSize, this.requestedPath)
+      );
+      return;
     }
-    chunks.push(buffer);
+
+    this.chunks.push(buffer);
+    callback();
   }
-  return totalSize;
+
+  getResult(): Buffer {
+    return Buffer.concat(this.chunks, this.totalSize);
+  }
 }
 
 export async function readFileBufferWithLimit(
@@ -64,23 +60,15 @@ export async function readFileBufferWithLimit(
   requestedPath: string = filePath,
   signal?: AbortSignal
 ): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-  const stream: ReadStream = createReadStream(filePath, {
+  const stream = createReadStream(filePath, {
     highWaterMark: STREAM_CHUNK_SIZE,
   });
-  const detachAbort = attachAbortHandler(stream, signal);
-  const iterableStream = stream as AsyncIterable<Buffer>;
+  const collector = new BufferCollector(maxSize, requestedPath);
 
-  try {
-    const totalSize = await collectChunks(
-      iterableStream,
-      maxSize,
-      requestedPath,
-      chunks
-    );
-    return Buffer.concat(chunks, totalSize);
-  } finally {
-    detachAbort();
-    stream.destroy();
+  if (signal) {
+    await pipeline(stream, collector, { signal });
+  } else {
+    await pipeline(stream, collector);
   }
+  return collector.getResult();
 }

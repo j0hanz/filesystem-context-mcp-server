@@ -1,8 +1,6 @@
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 
-import fg from 'fast-glob';
-
 import type { ListDirectoryResult } from '../../config/types.js';
 import {
   DEFAULT_LIST_MAX_ENTRIES,
@@ -11,6 +9,7 @@ import {
 } from '../constants.js';
 import { createTimedAbortSignal } from '../fs-helpers/abort.js';
 import { validateExistingDirectory } from '../path-validation.js';
+import { globEntries } from './glob-engine.js';
 
 interface ListDirectoryOptions {
   recursive?: boolean;
@@ -30,8 +29,6 @@ type NormalizedOptions = Required<
 > & {
   pattern?: string;
 };
-
-type GlobEntry = fg.Entry;
 
 function normalizeOptions(options: ListDirectoryOptions): NormalizedOptions {
   return {
@@ -67,15 +64,6 @@ function sortEntries(
   entries.sort(compare);
 }
 
-async function* toEntries(
-  stream: AsyncIterable<GlobEntry | string | Buffer>
-): AsyncGenerator<GlobEntry> {
-  for await (const item of stream) {
-    if (typeof item === 'string' || Buffer.isBuffer(item)) continue;
-    yield item;
-  }
-}
-
 export async function listDirectory(
   dirPath: string,
   options: ListDirectoryOptions = {}
@@ -97,20 +85,21 @@ export async function listDirectory(
     normalized.pattern ?? (normalized.recursive ? '**/*' : '*');
   const maxDepth = normalized.recursive ? normalized.maxDepth : 1;
 
-  const stream = fg.stream(globPattern, {
-    cwd: basePath,
-    absolute: true,
-    dot: normalized.includeHidden,
-    ignore: normalized.excludePatterns,
-    onlyFiles: false,
-    followSymbolicLinks: false,
-    stats: true,
-    objectMode: true,
-    deep: maxDepth,
-  });
-
   try {
-    for await (const entry of toEntries(stream)) {
+    const stream = globEntries({
+      cwd: basePath,
+      pattern: globPattern,
+      excludePatterns: normalized.excludePatterns,
+      includeHidden: normalized.includeHidden,
+      baseNameMatch: false,
+      caseSensitiveMatch: true,
+      maxDepth,
+      followSymbolicLinks: false,
+      onlyFiles: false,
+      stats: true,
+    });
+
+    for await (const entry of stream) {
       if (signal.aborted) {
         truncated = true;
         stoppedReason = 'aborted';

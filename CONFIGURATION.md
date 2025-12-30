@@ -14,18 +14,19 @@ Environment variables for tuning performance and resource limits. All variables 
 
 ## Environment Variables
 
-Values are integers. Sizes are in bytes, timeouts are in milliseconds. Invalid
-values emit a warning and fall back to defaults (or are ignored for
-`UV_THREADPOOL_SIZE`).
+Values are integers unless otherwise noted. Sizes are in bytes, timeouts are in
+milliseconds. Invalid values emit a warning and fall back to defaults (or are
+ignored for `UV_THREADPOOL_SIZE`).
 
 ### Performance and Concurrency
 
-| Variable                         | Default                 | Range   | Description                                                       | Increase For         | Decrease For         |
-| -------------------------------- | ----------------------- | ------- | ----------------------------------------------------------------- | -------------------- | -------------------- |
-| `UV_THREADPOOL_SIZE`             | (unset)                 | 1-1024  | libuv threadpool size (set before start). Caps parallelism.       | Heavy fs/crypto load | Memory-constrained   |
-| `FILESYSTEM_CONTEXT_CONCURRENCY` | Auto (2x cores, cap 50) | 1-100   | Parallel file operations (further capped by `UV_THREADPOOL_SIZE`) | SSDs, many CPU cores | HDDs, shared systems |
-| `TRAVERSAL_JOBS`                 | 8                       | 1-50    | Reserved (currently unused; kept for compatibility)               | n/a                  | n/a                  |
-| `REGEX_TIMEOUT`                  | 100                     | 50-1000 | Reserved (currently unused; regex engine is RE2)                  | n/a                  | n/a                  |
+| Variable                         | Default                 | Range   | Description                                                                                                            | Increase For                  | Decrease For           |
+| -------------------------------- | ----------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ---------------------- |
+| `UV_THREADPOOL_SIZE`             | (unset)                 | 1-1024  | libuv threadpool size (set before start). Caps parallelism.                                                            | Heavy fs/crypto load          | Memory-constrained     |
+| `FILESYSTEM_CONTEXT_CONCURRENCY` | Auto (2x cores, cap 50) | 1-100   | Parallel file operations (further capped by `UV_THREADPOOL_SIZE`)                                                      | SSDs, many CPU cores          | HDDs, shared systems   |
+| `TRAVERSAL_JOBS`                 | 8                       | 1-50    | Reserved (currently unused; kept for compatibility)                                                                    | n/a                           | n/a                    |
+| `REGEX_TIMEOUT`                  | 100                     | 50-1000 | Reserved (currently unused; regex engine is RE2)                                                                       | n/a                           | n/a                    |
+| `FILESYSTEM_CONTEXT_GLOB_ENGINE` | fast-glob               | n/a     | Glob implementation (`fast-glob` or `node`). Auto-falls back to `fast-glob` when options require unsupported features. | Reduce deps (if parity is OK) | Maximum feature parity |
 
 > Note: `UV_THREADPOOL_SIZE` must be set before the process starts.
 

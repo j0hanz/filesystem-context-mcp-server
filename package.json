@@ -27,6 +27,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:node": "node --test --import tsx/esm node-tests/errors-is-node-error.test.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
     "type-check": "tsc --noEmit",

@@ -1,5 +1,3 @@
-import fg from 'fast-glob';
-
 import type { SearchFilesResult, SearchResult } from '../../config/types.js';
 import {
   DEFAULT_MAX_RESULTS,
@@ -8,6 +6,7 @@ import {
 } from '../constants.js';
 import { createTimedAbortSignal } from '../fs-helpers/abort.js';
 import { validateExistingDirectory } from '../path-validation.js';
+import { globEntries } from './glob-engine.js';
 import { sortSearchResults } from './sorting.js';
 
 export interface SearchFilesOptions {
@@ -29,8 +28,6 @@ type NormalizedOptions = Required<
   sortBy: NonNullable<SearchFilesOptions['sortBy']>;
 };
 
-type GlobEntry = fg.Entry;
-
 function normalizeOptions(options: SearchFilesOptions): NormalizedOptions {
   return {
     maxResults: options.maxResults ?? DEFAULT_MAX_RESULTS,
@@ -42,15 +39,6 @@ function normalizeOptions(options: SearchFilesOptions): NormalizedOptions {
     skipSymlinks: options.skipSymlinks ?? true,
     includeHidden: options.includeHidden ?? false,
   };
-}
-
-async function* toEntries(
-  stream: AsyncIterable<GlobEntry | string | Buffer>
-): AsyncGenerator<GlobEntry> {
-  for await (const item of stream) {
-    if (typeof item === 'string' || Buffer.isBuffer(item)) continue;
-    yield item;
-  }
 }
 
 export async function searchFiles(
@@ -77,21 +65,20 @@ export async function searchFiles(
 
     const results: SearchResult[] = [];
 
-    const stream = fg.stream(pattern, {
+    const stream = globEntries({
       cwd: root,
-      absolute: true,
-      dot: normalized.includeHidden,
-      followSymbolicLinks: false,
+      pattern,
+      excludePatterns,
+      includeHidden: normalized.includeHidden,
       baseNameMatch: normalized.baseNameMatch,
       caseSensitiveMatch: true,
-      ignore: excludePatterns,
+      maxDepth: normalized.maxDepth,
+      followSymbolicLinks: false,
       onlyFiles: false,
       stats: true,
-      objectMode: true,
-      deep: normalized.maxDepth ?? Number.POSITIVE_INFINITY,
     });
 
-    for await (const entry of toEntries(stream)) {
+    for await (const entry of stream) {
       if (signal.aborted) {
         state.truncated = true;
         state.stoppedReason = 'timeout';

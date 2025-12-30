@@ -2,6 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { Stats } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { parseArgs as parseNodeArgs } from 'node:util';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -68,20 +69,6 @@ function getReservedCliDeviceName(inputPath: string): string | undefined {
   return RESERVED_DEVICE_NAMES.has(basename) ? basename : undefined;
 }
 
-function extractAllowCwd(args: string[]): {
-  allowCwd: boolean;
-  rest: string[];
-} {
-  const allowCwdIndex = args.indexOf('--allow-cwd');
-  if (allowCwdIndex === -1) {
-    return { allowCwd: false, rest: args };
-  }
-
-  const rest = [...args];
-  rest.splice(allowCwdIndex, 1);
-  return { allowCwd: true, rest };
-}
-
 async function validateDirectoryPath(inputPath: string): Promise<string> {
   validateCliPath(inputPath);
   const normalized = normalizePath(inputPath);
@@ -120,10 +107,21 @@ async function normalizeCliDirectories(args: string[]): Promise<string[]> {
 }
 
 export async function parseArgs(): Promise<ParseArgsResult> {
-  const argv = process.argv.slice(2);
-  const { allowCwd, rest } = extractAllowCwd(argv);
+  const { values, positionals } = parseNodeArgs({
+    args: process.argv.slice(2),
+    strict: true,
+    allowPositionals: true,
+    options: {
+      'allow-cwd': {
+        type: 'boolean',
+        default: false,
+      },
+    } as const,
+  });
+
+  const allowCwd = values['allow-cwd'];
   const allowedDirs =
-    rest.length > 0 ? await normalizeCliDirectories(rest) : [];
+    positionals.length > 0 ? await normalizeCliDirectories(positionals) : [];
 
   return { allowedDirs, allowCwd };
 }

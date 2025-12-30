@@ -1,7 +1,6 @@
 import * as fsp from 'node:fs/promises';
 import readline from 'node:readline';
 
-import fg from 'fast-glob';
 import RE2 from 're2';
 import safeRegex from 'safe-regex2';
 
@@ -21,8 +20,7 @@ import {
   validateExistingDirectory,
   validateExistingPathDetailed,
 } from '../../path-validation.js';
-
-type GlobEntry = fg.Entry;
+import { globEntries } from '../glob-engine.js';
 
 export interface SearchOptions {
   filePattern: string;
@@ -216,15 +214,6 @@ async function scanFile(
   }
 }
 
-async function* toEntries(
-  stream: AsyncIterable<GlobEntry | string | Buffer>
-): AsyncGenerator<GlobEntry> {
-  for await (const item of stream) {
-    if (typeof item === 'string' || Buffer.isBuffer(item)) continue;
-    yield item;
-  }
-}
-
 export async function searchContent(
   basePath: string,
   pattern: string,
@@ -252,21 +241,21 @@ export async function searchContent(
 
   const matches: ContentMatch[] = [];
 
-  const stream = fg.stream(opts.filePattern, {
-    cwd: root,
-    absolute: true,
-    dot: opts.includeHidden,
-    ignore: opts.excludePatterns,
-    followSymbolicLinks: false,
-    baseNameMatch: opts.baseNameMatch,
-    caseSensitiveMatch: opts.caseSensitiveFileMatch,
-    suppressErrors: true,
-    stats: true,
-    objectMode: true,
-  });
-
   try {
-    for await (const entry of toEntries(stream)) {
+    const stream = globEntries({
+      cwd: root,
+      pattern: opts.filePattern,
+      excludePatterns: opts.excludePatterns,
+      includeHidden: opts.includeHidden,
+      baseNameMatch: opts.baseNameMatch,
+      caseSensitiveMatch: opts.caseSensitiveFileMatch,
+      followSymbolicLinks: false,
+      onlyFiles: false,
+      stats: true,
+      suppressErrors: true,
+    });
+
+    for await (const entry of stream) {
       if (signal.aborted) {
         summary.truncated = true;
         summary.stoppedReason = 'timeout';
