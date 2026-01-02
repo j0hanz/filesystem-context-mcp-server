@@ -53,8 +53,7 @@ const ReadMultipleFilesBaseSchema = z.strictObject({
   encoding: EncodingSchema,
   maxSize: ReadMultipleFilesMaxSizeSchema,
   maxTotalSize: z
-    .number()
-    .int('maxTotalSize must be an integer')
+    .int({ error: 'maxTotalSize must be an integer' })
     .min(1, 'maxTotalSize must be at least 1 byte')
     .max(1024 * 1024 * 1024, 'maxTotalSize cannot exceed 1GB')
     .optional()
