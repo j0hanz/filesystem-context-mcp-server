@@ -11,7 +11,11 @@ import {
   SEARCH_WORKERS,
 } from '../../constants.js';
 import { createTimedAbortSignal } from '../../fs-helpers.js';
+import { normalizePath } from '../../path-utils.js';
 import {
+  getAllowedDirectories,
+  isPathWithinDirectories,
+  toAccessDeniedWithHint,
   validateExistingDirectory,
   validateExistingPathDetailed,
 } from '../../path-validation.js';
@@ -147,6 +151,17 @@ function buildWorkerOptions(options: ResolvedOptions): WorkerScanOptions {
     skipBinary: options.skipBinary,
     contextLines: options.contextLines,
   };
+}
+
+function resolveNonSymlinkPath(
+  entryPath: string,
+  allowedDirs: string[]
+): { resolvedPath: string; requestedPath: string } {
+  const normalized = normalizePath(entryPath);
+  if (!isPathWithinDirectories(normalized, allowedDirs)) {
+    throw toAccessDeniedWithHint(entryPath, normalized, normalized);
+  }
+  return { resolvedPath: normalized, requestedPath: normalized };
 }
 
 function resolveWorkerUrl(): URL {
@@ -299,6 +314,7 @@ export async function searchContent(
   const useWorkers = SEARCH_WORKERS > 0;
   const worker = useWorkers ? createSearchWorker() : undefined;
   const workerOptions = useWorkers ? buildWorkerOptions(opts) : undefined;
+  const allowedDirs = getAllowedDirectories();
 
   let filesScanned = 0;
   let filesMatched = 0;
@@ -346,8 +362,9 @@ export async function searchContent(
       }
 
       try {
-        const { resolvedPath, requestedPath } =
-          await validateExistingPathDetailed(entry.path, signal);
+        const { resolvedPath, requestedPath } = entry.dirent.isSymbolicLink()
+          ? await validateExistingPathDetailed(entry.path, signal)
+          : resolveNonSymlinkPath(entry.path, allowedDirs);
         const scanResult = worker
           ? await worker.scan(
               {

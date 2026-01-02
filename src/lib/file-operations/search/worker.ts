@@ -2,6 +2,7 @@ import { parentPort } from 'node:worker_threads';
 
 import {
   buildMatcher,
+  type Matcher,
   type MatcherOptions,
   type ScanFileOptions,
   scanFileResolved,
@@ -15,6 +16,26 @@ if (!port) {
 }
 
 type WorkerScanOptions = ScanFileOptions & MatcherOptions;
+
+const matcherCache = new Map<string, Matcher>();
+
+function getMatcherCacheKey(pattern: string, options: MatcherOptions): string {
+  return [
+    options.caseSensitive ? '1' : '0',
+    options.wholeWord ? '1' : '0',
+    options.isLiteral ? '1' : '0',
+    pattern,
+  ].join('|');
+}
+
+function getCachedMatcher(pattern: string, options: MatcherOptions): Matcher {
+  const key = getMatcherCacheKey(pattern, options);
+  const cached = matcherCache.get(key);
+  if (cached) return cached;
+  const matcher = buildMatcher(pattern, options);
+  matcherCache.set(key, matcher);
+  return matcher;
+}
 
 interface WorkerScanRequest {
   id: number;
@@ -84,7 +105,7 @@ port.on('message', async (message: unknown) => {
   activeScans.set(id, controller);
 
   try {
-    const matcher = buildMatcher(payload.pattern, payload.options);
+    const matcher = getCachedMatcher(payload.pattern, payload.options);
     const result = await scanFileResolved(
       payload.resolvedPath,
       payload.requestedPath,

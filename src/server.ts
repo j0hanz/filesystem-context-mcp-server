@@ -173,7 +173,13 @@ async function updateRootsFromClient(server: McpServer): Promise<void> {
     const rootsResult = await server.server.listRoots(undefined, {
       timeout: ROOTS_TIMEOUT_MS,
     });
-    const rawRoots = (rootsResult as unknown as { roots?: unknown }).roots;
+    const rootsResultUnknown: unknown = rootsResult;
+    const rawRoots =
+      typeof rootsResultUnknown === 'object' &&
+      rootsResultUnknown !== null &&
+      'roots' in rootsResultUnknown
+        ? (rootsResultUnknown as { roots?: unknown }).roots
+        : undefined;
     const roots = Array.isArray(rawRoots) ? rawRoots.filter(isRoot) : [];
 
     rootDirectories =
