@@ -19,7 +19,7 @@ export function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   );
 }
 
-export const NODE_ERROR_CODE_MAP: Readonly<Record<string, ErrorCode>> = {
+export const NODE_ERROR_CODE_MAP = {
   ENOENT: ErrorCode.E_NOT_FOUND,
   EACCES: ErrorCode.E_PERMISSION_DENIED,
   EPERM: ErrorCode.E_PERMISSION_DENIED,
@@ -34,7 +34,17 @@ export const NODE_ERROR_CODE_MAP: Readonly<Record<string, ErrorCode>> = {
   ENOTEMPTY: ErrorCode.E_NOT_DIRECTORY,
   EEXIST: ErrorCode.E_INVALID_INPUT,
   EINVAL: ErrorCode.E_INVALID_INPUT,
-} as const;
+} as const satisfies Readonly<Record<string, ErrorCode>>;
+
+type NodeErrorCode = keyof typeof NODE_ERROR_CODE_MAP;
+
+function isKnownNodeErrorCode(code: string): code is NodeErrorCode {
+  return code in NODE_ERROR_CODE_MAP;
+}
+
+function getNodeErrorCode(code: string): ErrorCode | undefined {
+  return isKnownNodeErrorCode(code) ? NODE_ERROR_CODE_MAP[code] : undefined;
+}
 
 export class McpError extends Error {
   constructor(
@@ -94,7 +104,7 @@ function getDirectErrorCode(error: unknown): ErrorCode | undefined {
     return error.code;
   }
   if (isNodeError(error) && error.code) {
-    return NODE_ERROR_CODE_MAP[error.code];
+    return getNodeErrorCode(error.code);
   }
   return undefined;
 }

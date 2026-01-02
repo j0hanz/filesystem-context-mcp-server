@@ -190,9 +190,12 @@ async function updateRootsFromClient(server: McpServer): Promise<void> {
 }
 
 function isRoot(value: unknown): value is Root {
-  if (!value || typeof value !== 'object') return false;
-  const candidate = value as { uri?: unknown };
-  return typeof candidate.uri === 'string';
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    'uri' in value &&
+    typeof value.uri === 'string'
+  );
 }
 
 function normalizeAllowedDirectories(dirs: string[]): string[] {
