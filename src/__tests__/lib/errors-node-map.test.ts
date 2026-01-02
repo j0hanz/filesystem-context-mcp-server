@@ -1,18 +1,22 @@
-import { expect, it } from 'vitest';
+import assert from 'node:assert/strict';
+import { it } from 'node:test';
 
 import { ErrorCode, NODE_ERROR_CODE_MAP } from '../../lib/errors.js';
 
-it('NODE_ERROR_CODE_MAP maps common Node.js error codes', () => {
-  expect(NODE_ERROR_CODE_MAP.ENOENT).toBe(ErrorCode.E_NOT_FOUND);
-  expect(NODE_ERROR_CODE_MAP.EACCES).toBe(ErrorCode.E_PERMISSION_DENIED);
-  expect(NODE_ERROR_CODE_MAP.EPERM).toBe(ErrorCode.E_PERMISSION_DENIED);
-  expect(NODE_ERROR_CODE_MAP.EISDIR).toBe(ErrorCode.E_NOT_FILE);
-  expect(NODE_ERROR_CODE_MAP.ENOTDIR).toBe(ErrorCode.E_NOT_DIRECTORY);
-  expect(NODE_ERROR_CODE_MAP.ELOOP).toBe(ErrorCode.E_SYMLINK_NOT_ALLOWED);
-  expect(NODE_ERROR_CODE_MAP.ETIMEDOUT).toBe(ErrorCode.E_TIMEOUT);
+void it('NODE_ERROR_CODE_MAP maps common Node.js error codes', () => {
+  assert.strictEqual(NODE_ERROR_CODE_MAP.ENOENT, ErrorCode.E_NOT_FOUND);
+  assert.strictEqual(NODE_ERROR_CODE_MAP.EACCES, ErrorCode.E_PERMISSION_DENIED);
+  assert.strictEqual(NODE_ERROR_CODE_MAP.EPERM, ErrorCode.E_PERMISSION_DENIED);
+  assert.strictEqual(NODE_ERROR_CODE_MAP.EISDIR, ErrorCode.E_NOT_FILE);
+  assert.strictEqual(NODE_ERROR_CODE_MAP.ENOTDIR, ErrorCode.E_NOT_DIRECTORY);
+  assert.strictEqual(
+    NODE_ERROR_CODE_MAP.ELOOP,
+    ErrorCode.E_SYMLINK_NOT_ALLOWED
+  );
+  assert.strictEqual(NODE_ERROR_CODE_MAP.ETIMEDOUT, ErrorCode.E_TIMEOUT);
 });
 
-it('NODE_ERROR_CODE_MAP handles resource exhaustion errors as timeout', () => {
-  expect(NODE_ERROR_CODE_MAP.EMFILE).toBe(ErrorCode.E_TIMEOUT);
-  expect(NODE_ERROR_CODE_MAP.ENFILE).toBe(ErrorCode.E_TIMEOUT);
+void it('NODE_ERROR_CODE_MAP handles resource exhaustion errors as timeout', () => {
+  assert.strictEqual(NODE_ERROR_CODE_MAP.EMFILE, ErrorCode.E_TIMEOUT);
+  assert.strictEqual(NODE_ERROR_CODE_MAP.ENFILE, ErrorCode.E_TIMEOUT);
 });

@@ -1,17 +1,29 @@
-import { afterAll, beforeAll } from 'vitest';
+import { after, before, type TestContext } from 'node:test';
 
 import {
   acquireFileOpsFixture,
   releaseFileOpsFixture,
 } from './file-ops-fixture.js';
 
-export function useFileOpsFixture(): () => string {
+export function withFileOpsFixture(
+  fn: (getTestDir: () => string) => void
+): void {
   let testDir = '';
-  beforeAll(async () => {
+  before(async () => {
     ({ testDir } = await acquireFileOpsFixture());
   });
-  afterAll(async () => {
+
+  after(async () => {
     await releaseFileOpsFixture();
   });
-  return () => testDir;
+
+  fn(() => testDir);
+}
+
+export async function setupFileOpsFixture(t: TestContext): Promise<string> {
+  const { testDir } = await acquireFileOpsFixture();
+  t.after(async () => {
+    await releaseFileOpsFixture();
+  });
+  return testDir;
 }

@@ -1,14 +1,19 @@
 import * as path from 'node:path';
-
-import { expect, it } from 'vitest';
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 
 import { tailFile } from '../../../lib/fs-helpers.js';
-import { useFileOpsFixture } from '../fixtures/file-ops-hooks.js';
+import { withFileOpsFixture } from '../fixtures/file-ops-hooks.js';
 
-const getTestDir = useFileOpsFixture();
-
-it('tailFile returns last N lines', async () => {
-  const content = await tailFile(path.join(getTestDir(), 'multiline.txt'), 5);
-  const lines = content.split('\n').filter((l) => l);
-  expect(lines[lines.length - 1]).toBe('Line 100');
+void describe('tailFile', () => {
+  withFileOpsFixture((getTestDir) => {
+    void it('tailFile returns last N lines', async () => {
+      const content = await tailFile(
+        path.join(getTestDir(), 'multiline.txt'),
+        5
+      );
+      const lines = content.split('\n').filter((l) => l);
+      assert.strictEqual(lines[lines.length - 1], 'Line 100');
+    });
+  });
 });

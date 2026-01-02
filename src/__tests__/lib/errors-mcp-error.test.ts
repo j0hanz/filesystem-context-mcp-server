@@ -1,8 +1,9 @@
-import { expect, it } from 'vitest';
+import assert from 'node:assert/strict';
+import { it } from 'node:test';
 
 import { ErrorCode, McpError } from '../../lib/errors.js';
 
-it('McpError creates error with all properties', () => {
+void it('McpError creates error with all properties', () => {
   const error = new McpError(
     ErrorCode.E_ACCESS_DENIED,
     'Access denied',
@@ -10,14 +11,14 @@ it('McpError creates error with all properties', () => {
     { extra: 'detail' }
   );
 
-  expect(error.code).toBe(ErrorCode.E_ACCESS_DENIED);
-  expect(error.message).toBe('Access denied');
-  expect(error.path).toBe('/some/path');
-  expect(error.details).toEqual({ extra: 'detail' });
-  expect(error.name).toBe('McpError');
+  assert.strictEqual(error.code, ErrorCode.E_ACCESS_DENIED);
+  assert.strictEqual(error.message, 'Access denied');
+  assert.strictEqual(error.path, '/some/path');
+  assert.deepStrictEqual(error.details, { extra: 'detail' });
+  assert.strictEqual(error.name, 'McpError');
 });
 
-it('McpError supports cause chaining', () => {
+void it('McpError supports cause chaining', () => {
   const cause = new Error('Original error');
   const error = new McpError(
     ErrorCode.E_NOT_FOUND,
@@ -26,16 +27,16 @@ it('McpError supports cause chaining', () => {
     undefined,
     cause
   );
-  expect(error.cause).toBe(cause);
+  assert.strictEqual(error.cause, cause);
 });
 
-it('McpError is instanceof Error', () => {
+void it('McpError is instanceof Error', () => {
   const error = new McpError(ErrorCode.E_UNKNOWN, 'Test');
-  expect(error instanceof Error).toBe(true);
-  expect(error instanceof McpError).toBe(true);
+  assert.strictEqual(error instanceof Error, true);
+  assert.strictEqual(error instanceof McpError, true);
 });
 
-it('McpError.fromError wraps existing errors', () => {
+void it('McpError.fromError wraps existing errors', () => {
   const original = new Error('Original');
   original.stack = 'Original stack trace';
 
@@ -46,7 +47,7 @@ it('McpError.fromError wraps existing errors', () => {
     '/path'
   );
 
-  expect(mcpError.code).toBe(ErrorCode.E_NOT_FOUND);
-  expect(mcpError.cause).toBe(original);
-  expect(mcpError.stack).toContain('Caused by: Original stack trace');
+  assert.strictEqual(mcpError.code, ErrorCode.E_NOT_FOUND);
+  assert.strictEqual(mcpError.cause, original);
+  assert.ok(mcpError.stack?.includes('Caused by: Original stack trace'));
 });

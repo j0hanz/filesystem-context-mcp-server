@@ -24,9 +24,9 @@
     "copy:assets": "node -e \"require('fs').copyFileSync('src/instructions.md', 'dist/instructions.md')\"",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
+    "test": "node --test --import tsx/esm \"src/__tests__/**/*.test.ts\"",
+    "test:watch": "node --test --watch --import tsx/esm \"src/__tests__/**/*.test.ts\"",
+    "test:coverage": "node --test --experimental-test-coverage --import tsx/esm \"src/__tests__/**/*.test.ts\"",
     "test:node": "node --test --import tsx/esm node-tests/errors-is-node-error.test.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -62,15 +62,13 @@
     "@eslint/js": "^9.39.2",
     "@trivago/prettier-plugin-sort-imports": "^6.0.0",
     "@types/node": "^22.19.3",
-    "@vitest/coverage-v8": "^4.0.16",
     "eslint": "^9.23.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-unused-imports": "^4.3.0",
     "prettier": "^3.7.4",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.50.0",
-    "vitest": "^4.0.16"
+    "typescript-eslint": "^8.50.0"
   },
   "engines": {
     "node": ">=20.0.0"

@@ -1,8 +1,9 @@
-import { expect, it } from 'vitest';
+import assert from 'node:assert/strict';
+import { it } from 'node:test';
 
 import { isHidden } from '../../../lib/fs-helpers.js';
 
-it('isHidden identifies hidden files', () => {
-  expect(isHidden('.git')).toBe(true);
-  expect(isHidden('file.txt')).toBe(false);
+void it('isHidden identifies hidden files', () => {
+  assert.strictEqual(isHidden('.git'), true);
+  assert.strictEqual(isHidden('file.txt'), false);
 });

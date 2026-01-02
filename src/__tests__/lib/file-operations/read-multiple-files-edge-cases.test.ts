@@ -1,50 +1,59 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-
-import { expect, it } from 'vitest';
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 
 import { readMultipleFiles } from '../../../lib/file-operations.js';
-import { useFileOpsFixture } from '../fixtures/file-ops-hooks.js';
+import { withFileOpsFixture } from '../fixtures/file-ops-hooks.js';
 
-const getTestDir = useFileOpsFixture();
+void describe('readMultipleFiles edge cases', () => {
+  withFileOpsFixture((getTestDir) => {
+    void it('readMultipleFiles handles empty array', async () => {
+      const results = await readMultipleFiles([]);
+      assert.strictEqual(results.length, 0);
+    });
 
-it('readMultipleFiles handles empty array', async () => {
-  const results = await readMultipleFiles([]);
-  expect(results.length).toBe(0);
-});
+    void it('readMultipleFiles handles all files failing', async () => {
+      const paths = [
+        path.join(getTestDir(), 'nonexistent1.txt'),
+        path.join(getTestDir(), 'nonexistent2.txt'),
+      ];
+      const results = await readMultipleFiles(paths);
+      assert.strictEqual(results.length, 2);
+      assert.strictEqual(
+        results.every((r) => r.error !== undefined),
+        true
+      );
+    });
 
-it('readMultipleFiles handles all files failing', async () => {
-  const paths = [
-    path.join(getTestDir(), 'nonexistent1.txt'),
-    path.join(getTestDir(), 'nonexistent2.txt'),
-  ];
-  const results = await readMultipleFiles(paths);
-  expect(results.length).toBe(2);
-  expect(results.every((r) => r.error !== undefined)).toBe(true);
-});
+    void it('readMultipleFiles rejects line range with head/tail', async () => {
+      const filePath = path.join(getTestDir(), 'multiline.txt');
+      await assert.rejects(
+        readMultipleFiles([filePath], {
+          lineStart: 1,
+          lineEnd: 2,
+          head: 1,
+        }),
+        /Cannot specify multiple/
+      );
+    });
 
-it('readMultipleFiles rejects line range with head/tail', async () => {
-  const filePath = path.join(getTestDir(), 'multiline.txt');
-  await expect(
-    readMultipleFiles([filePath], {
-      lineStart: 1,
-      lineEnd: 2,
-      head: 1,
-    })
-  ).rejects.toThrow('Cannot specify multiple');
-});
+    void it('readMultipleFiles applies maxTotalSize per entry even with duplicates', async () => {
+      const filePath = path.join(getTestDir(), 'big-duplicate.log');
+      const largeContent = 'A'.repeat(50_000);
+      await fs.writeFile(filePath, largeContent);
 
-it('readMultipleFiles applies maxTotalSize per entry even with duplicates', async () => {
-  const filePath = path.join(getTestDir(), 'big-duplicate.log');
-  const largeContent = 'A'.repeat(50_000);
-  await fs.writeFile(filePath, largeContent);
+      const results = await readMultipleFiles([filePath, filePath], {
+        head: 1,
+        maxTotalSize: 10,
+      });
 
-  const results = await readMultipleFiles([filePath, filePath], {
-    head: 1,
-    maxTotalSize: 10,
+      assert.strictEqual(results.length, 2);
+      assert.strictEqual(
+        results.every((r) => r.error !== undefined),
+        true
+      );
+      await fs.rm(filePath).catch(() => {});
+    });
   });
-
-  expect(results.length).toBe(2);
-  expect(results.every((r) => r.error !== undefined)).toBe(true);
-  await fs.rm(filePath).catch(() => {});
 });

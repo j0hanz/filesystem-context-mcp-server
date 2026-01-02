@@ -1,42 +1,50 @@
 import * as path from 'node:path';
-
-import { expect, it } from 'vitest';
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 
 import { searchFiles } from '../../../lib/file-operations.js';
-import { useFileOpsFixture } from '../fixtures/file-ops-hooks.js';
+import { withFileOpsFixture } from '../fixtures/file-ops-hooks.js';
 
-const getTestDir = useFileOpsFixture();
+void describe('searchFiles', () => {
+  withFileOpsFixture((getTestDir) => {
+    void it('searchFiles finds files by glob pattern', async () => {
+      const result = await searchFiles(getTestDir(), '**/*.ts', [], {
+        sortBy: 'modified',
+      });
+      assert.strictEqual(result.results.length, 2);
+      assert.strictEqual(
+        result.results.some((r) => r.path.includes('index.ts')),
+        true
+      );
+      const first = result.results.find((r) => r.type === 'file');
+      if (first) {
+        assert.ok(first.modified instanceof Date);
+      }
+    });
 
-it('searchFiles finds files by glob pattern', async () => {
-  const result = await searchFiles(getTestDir(), '**/*.ts', [], {
-    sortBy: 'modified',
+    void it('searchFiles finds markdown files', async () => {
+      const result = await searchFiles(getTestDir(), '**/*.md');
+      assert.strictEqual(result.results.length, 2);
+    });
+
+    void it('searchFiles returns empty results for non-matching patterns', async () => {
+      const result = await searchFiles(getTestDir(), '**/*.xyz');
+      assert.strictEqual(result.results.length, 0);
+    });
+
+    void it('searchFiles respects maxResults', async () => {
+      const result = await searchFiles(getTestDir(), '**/*', [], {
+        maxResults: 1,
+      });
+      assert.ok(result.results.length <= 1);
+    });
+
+    void it('searchFiles rejects file base path', async () => {
+      const filePath = path.join(getTestDir(), 'README.md');
+      await assert.rejects(
+        searchFiles(filePath, '**/*.ts'),
+        /not a directory/i
+      );
+    });
   });
-  expect(result.results.length).toBe(2);
-  expect(result.results.some((r) => r.path.includes('index.ts'))).toBe(true);
-  const first = result.results.find((r) => r.type === 'file');
-  if (first) {
-    expect(first.modified).toBeInstanceOf(Date);
-  }
-});
-
-it('searchFiles finds markdown files', async () => {
-  const result = await searchFiles(getTestDir(), '**/*.md');
-  expect(result.results.length).toBe(2);
-});
-
-it('searchFiles returns empty results for non-matching patterns', async () => {
-  const result = await searchFiles(getTestDir(), '**/*.xyz');
-  expect(result.results.length).toBe(0);
-});
-
-it('searchFiles respects maxResults', async () => {
-  const result = await searchFiles(getTestDir(), '**/*', [], { maxResults: 1 });
-  expect(result.results.length).toBeLessThanOrEqual(1);
-});
-
-it('searchFiles rejects file base path', async () => {
-  const filePath = path.join(getTestDir(), 'README.md');
-  await expect(searchFiles(filePath, '**/*.ts')).rejects.toThrow(
-    /not a directory/i
-  );
 });

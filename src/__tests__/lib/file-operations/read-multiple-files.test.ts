@@ -1,67 +1,75 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-
-import { expect, it } from 'vitest';
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 
 import { readMultipleFiles } from '../../../lib/file-operations.js';
-import { useFileOpsFixture } from '../fixtures/file-ops-hooks.js';
+import { withFileOpsFixture } from '../fixtures/file-ops-hooks.js';
 
-const getTestDir = useFileOpsFixture();
+void describe('readMultipleFiles', () => {
+  withFileOpsFixture((getTestDir) => {
+    void it('readMultipleFiles reads multiple files in parallel', async () => {
+      const paths = [
+        path.join(getTestDir(), 'README.md'),
+        path.join(getTestDir(), 'src', 'index.ts'),
+      ];
+      const results = await readMultipleFiles(paths);
+      assert.strictEqual(results.length, 2);
+      assert.strictEqual(
+        results.every((r) => r.content !== undefined),
+        true
+      );
+    });
 
-it('readMultipleFiles reads multiple files in parallel', async () => {
-  const paths = [
-    path.join(getTestDir(), 'README.md'),
-    path.join(getTestDir(), 'src', 'index.ts'),
-  ];
-  const results = await readMultipleFiles(paths);
-  expect(results.length).toBe(2);
-  expect(results.every((r) => r.content !== undefined)).toBe(true);
-});
+    void it('readMultipleFiles handles individual file errors gracefully', async () => {
+      const paths = [
+        path.join(getTestDir(), 'README.md'),
+        path.join(getTestDir(), 'non-existent.txt'),
+      ];
+      const results = await readMultipleFiles(paths);
+      assert.strictEqual(results.length, 2);
+      assert.ok(results[0]?.content);
+      assert.ok(results[1]?.error);
+    });
 
-it('readMultipleFiles handles individual file errors gracefully', async () => {
-  const paths = [
-    path.join(getTestDir(), 'README.md'),
-    path.join(getTestDir(), 'non-existent.txt'),
-  ];
-  const results = await readMultipleFiles(paths);
-  expect(results.length).toBe(2);
-  expect(results[0]?.content).toBeDefined();
-  expect(results[1]?.error).toBeDefined();
-});
+    void it('readMultipleFiles preserves requested paths for duplicates', async () => {
+      const filePath = path.join(getTestDir(), 'README.md');
+      const results = await readMultipleFiles([filePath, filePath]);
+      assert.strictEqual(results.length, 2);
+      assert.strictEqual(results[0]?.path, filePath);
+      assert.strictEqual(results[1]?.path, filePath);
+    });
 
-it('readMultipleFiles preserves requested paths for duplicates', async () => {
-  const filePath = path.join(getTestDir(), 'README.md');
-  const results = await readMultipleFiles([filePath, filePath]);
-  expect(results.length).toBe(2);
-  expect(results[0]?.path).toBe(filePath);
-  expect(results[1]?.path).toBe(filePath);
-});
+    void it('readMultipleFiles enforces total size cap for head/tail reads', async () => {
+      const big1 = path.join(getTestDir(), 'big1.log');
+      const big2 = path.join(getTestDir(), 'big2.log');
+      const largeContent = 'A'.repeat(50_000);
+      await fs.writeFile(big1, largeContent);
+      await fs.writeFile(big2, largeContent);
 
-it('readMultipleFiles enforces total size cap for head/tail reads', async () => {
-  const big1 = path.join(getTestDir(), 'big1.log');
-  const big2 = path.join(getTestDir(), 'big2.log');
-  const largeContent = 'A'.repeat(50_000);
-  await fs.writeFile(big1, largeContent);
-  await fs.writeFile(big2, largeContent);
+      const results = await readMultipleFiles([big1, big2], {
+        head: 1,
+        maxTotalSize: 10,
+      });
 
-  const results = await readMultipleFiles([big1, big2], {
-    head: 1,
-    maxTotalSize: 10,
+      assert.strictEqual(
+        results.every((r) => r.error !== undefined),
+        true
+      );
+      await Promise.all([fs.rm(big1), fs.rm(big2)]).catch(() => {});
+    });
+
+    void it('readMultipleFiles supports line range reads', async () => {
+      const filePath = path.join(getTestDir(), 'multiline.txt');
+      const results = await readMultipleFiles([filePath], {
+        lineStart: 2,
+        lineEnd: 4,
+      });
+
+      const content = results[0]?.content ?? '';
+      assert.strictEqual(content.split('\n')[0], 'Line 2');
+      assert.strictEqual(content.split('\n')[2], 'Line 4');
+      assert.strictEqual(results[0]?.truncated, true);
+    });
   });
-
-  expect(results.every((r) => r.error !== undefined)).toBe(true);
-  await Promise.all([fs.rm(big1), fs.rm(big2)]).catch(() => {});
-});
-
-it('readMultipleFiles supports line range reads', async () => {
-  const filePath = path.join(getTestDir(), 'multiline.txt');
-  const results = await readMultipleFiles([filePath], {
-    lineStart: 2,
-    lineEnd: 4,
-  });
-
-  const content = results[0]?.content ?? '';
-  expect(content.split('\n')[0]).toBe('Line 2');
-  expect(content.split('\n')[2]).toBe('Line 4');
-  expect(results[0]?.truncated).toBe(true);
 });

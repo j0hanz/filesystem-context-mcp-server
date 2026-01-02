@@ -1,9 +1,10 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import fg from 'fast-glob';
-import { expect, it } from 'vitest';
 
 function getRepoRoot(): string {
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -68,19 +69,22 @@ async function collectFsImportOffenders(
   return offenders;
 }
 
-it('keeps direct node:fs imports inside boundary modules', async () => {
-  const repoRoot = getRepoRoot();
-  const sourceFiles = await listSourceFiles(repoRoot);
-  const offenders = await collectFsImportOffenders(
-    repoRoot,
-    sourceFiles,
-    isAllowedFsImportFile
-  );
+void describe('filesystem boundary', () => {
+  void it('keeps direct node:fs imports inside boundary modules', async () => {
+    const repoRoot = getRepoRoot();
+    const sourceFiles = await listSourceFiles(repoRoot);
+    const offenders = await collectFsImportOffenders(
+      repoRoot,
+      sourceFiles,
+      isAllowedFsImportFile
+    );
 
-  expect(
-    offenders,
-    `Unexpected node:fs imports detected outside boundary modules. ` +
-      `To keep "validate-before-access" auditable, route filesystem access through ` +
-      `src/lib/file-operations.ts and src/lib/fs-helpers.ts (and validate paths in src/lib/path-validation.ts).`
-  ).toEqual([]);
+    assert.deepStrictEqual(
+      offenders,
+      [],
+      `Unexpected node:fs imports detected outside boundary modules. ` +
+        `To keep "validate-before-access" auditable, route filesystem access through ` +
+        `src/lib/file-operations.ts and src/lib/fs-helpers.ts (and validate paths in src/lib/path-validation.ts).`
+    );
+  });
 });

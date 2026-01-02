@@ -1,25 +1,30 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-
-import { expect, it } from 'vitest';
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 
 import { headFile } from '../../../lib/fs-helpers.js';
-import { useFileOpsFixture } from '../fixtures/file-ops-hooks.js';
+import { withFileOpsFixture } from '../fixtures/file-ops-hooks.js';
 
-const getTestDir = useFileOpsFixture();
+void describe('headFile edge cases', () => {
+  withFileOpsFixture((getTestDir) => {
+    void it('headFile handles requesting more lines than file has', async () => {
+      const content = await headFile(
+        path.join(getTestDir(), 'multiline.txt'),
+        200
+      );
+      const lines = content.split('\n');
+      assert.strictEqual(lines.length, 100);
+    });
 
-it('headFile handles requesting more lines than file has', async () => {
-  const content = await headFile(path.join(getTestDir(), 'multiline.txt'), 200);
-  const lines = content.split('\n');
-  expect(lines.length).toBe(100);
-});
+    void it('headFile handles empty file', async () => {
+      const emptyFile = path.join(getTestDir(), 'empty-head.txt');
+      await fs.writeFile(emptyFile, '');
 
-it('headFile handles empty file', async () => {
-  const emptyFile = path.join(getTestDir(), 'empty-head.txt');
-  await fs.writeFile(emptyFile, '');
+      const content = await headFile(emptyFile, 5);
+      assert.strictEqual(content, '');
 
-  const content = await headFile(emptyFile, 5);
-  expect(content).toBe('');
-
-  await fs.rm(emptyFile);
+      await fs.rm(emptyFile);
+    });
+  });
 });
