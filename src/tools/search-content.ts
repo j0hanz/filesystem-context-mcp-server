@@ -3,8 +3,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { z } from 'zod';
 
 import { ErrorCode } from '../lib/errors.js';
-import { createTimedAbortSignal } from '../lib/fs-helpers.js';
 import { searchContent } from '../lib/file-operations.js';
+import { createTimedAbortSignal } from '../lib/fs-helpers.js';
 import {
   SearchContentInputSchema,
   SearchContentOutputSchema,

@@ -69,10 +69,22 @@ const BASE_PARALLEL_CONCURRENCY = parseEnvInt(
   100
 );
 
+const MAX_SEARCH_WORKERS = Math.max(1, availableParallelism() - 1);
+const BASE_SEARCH_WORKERS = parseEnvInt(
+  'FILESYSTEM_CONTEXT_SEARCH_WORKERS',
+  0,
+  0,
+  32
+);
+
 export const PARALLEL_CONCURRENCY =
   UV_THREADPOOL_LIMIT !== undefined
     ? Math.min(BASE_PARALLEL_CONCURRENCY, UV_THREADPOOL_LIMIT)
     : BASE_PARALLEL_CONCURRENCY;
+export const SEARCH_WORKERS =
+  BASE_SEARCH_WORKERS > 0
+    ? Math.min(BASE_SEARCH_WORKERS, MAX_SEARCH_WORKERS)
+    : 0;
 export const MAX_SEARCHABLE_FILE_SIZE = parseEnvInt(
   'MAX_SEARCH_SIZE',
   1024 * 1024,

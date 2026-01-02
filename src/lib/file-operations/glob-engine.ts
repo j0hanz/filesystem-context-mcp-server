@@ -35,19 +35,30 @@ type GlobEngine = 'fast-glob' | 'node';
 type FastGlobEntry = fg.Entry;
 
 const RAW_GLOB_ENGINE =
-  process.env.FILESYSTEM_CONTEXT_GLOB_ENGINE?.toLowerCase() ?? 'fast-glob';
+  process.env.FILESYSTEM_CONTEXT_GLOB_ENGINE?.toLowerCase() ?? 'auto';
 
 function resolveGlobEngine(options: GlobEntriesOptions): GlobEngine {
+  if (RAW_GLOB_ENGINE === 'fast-glob') return 'fast-glob';
   if (RAW_GLOB_ENGINE === 'node' || RAW_GLOB_ENGINE === 'node:fs') {
     return canUseNodeGlob(options) ? 'node' : 'fast-glob';
   }
+  if (RAW_GLOB_ENGINE === 'auto') {
+    return canUseNodeGlob(options) ? 'node' : 'fast-glob';
+  }
   return 'fast-glob';
+}
+
+function hasNegationPattern(patterns: string[]): boolean {
+  return patterns.some((pattern) => pattern.trim().startsWith('!'));
 }
 
 function canUseNodeGlob(options: GlobEntriesOptions): boolean {
   if (typeof fsp.glob !== 'function') return false;
   if (options.includeHidden) return false;
   if (!options.caseSensitiveMatch) return false;
+  if (options.suppressErrors) return false;
+  if (options.excludePatterns.length > 0) return false;
+  if (hasNegationPattern(options.excludePatterns)) return false;
   return true;
 }
 

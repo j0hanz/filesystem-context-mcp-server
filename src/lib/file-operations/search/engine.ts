@@ -1,26 +1,28 @@
-import * as fsp from 'node:fs/promises';
-import readline from 'node:readline';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { Worker } from 'node:worker_threads';
 
-import RE2 from 're2';
-import safeRegex from 'safe-regex2';
-
-import type {
-  ContentMatch,
-  SearchContentResult,
-} from '../../../config/types.js';
+import type { SearchContentResult } from '../../../config/types.js';
 import {
   DEFAULT_MAX_RESULTS,
   DEFAULT_SEARCH_MAX_FILES,
   DEFAULT_SEARCH_TIMEOUT_MS,
-  MAX_LINE_CONTENT_LENGTH,
   MAX_SEARCHABLE_FILE_SIZE,
+  SEARCH_WORKERS,
 } from '../../constants.js';
-import { createTimedAbortSignal, isProbablyBinary } from '../../fs-helpers.js';
+import { createTimedAbortSignal } from '../../fs-helpers.js';
 import {
   validateExistingDirectory,
   validateExistingPathDetailed,
 } from '../../path-validation.js';
 import { globEntries } from '../glob-engine.js';
+import {
+  buildMatcher,
+  type MatcherOptions,
+  type ScanFileOptions,
+  scanFileResolved,
+  type ScanFileResult,
+} from './scan-file.js';
 
 interface SearchOptions {
   filePattern: string;
@@ -43,9 +45,74 @@ export interface SearchContentOptions extends Partial<SearchOptions> {
   signal?: AbortSignal;
 }
 
-type Matcher = (line: string) => number;
-
 type ResolvedOptions = SearchOptions;
+
+type WorkerScanOptions = ScanFileOptions & MatcherOptions;
+
+interface WorkerScanRequest {
+  id: number;
+  type: 'scan';
+  payload: {
+    resolvedPath: string;
+    requestedPath: string;
+    pattern: string;
+    options: WorkerScanOptions;
+    maxMatches: number;
+  };
+}
+
+interface WorkerCancelRequest {
+  id: number;
+  type: 'cancel';
+  reason?: string;
+}
+
+interface WorkerScanSuccess {
+  id: number;
+  ok: true;
+  result: ScanFileResult;
+}
+
+interface WorkerScanFailure {
+  id: number;
+  ok: false;
+  error: string;
+}
+
+type WorkerScanResponse = WorkerScanSuccess | WorkerScanFailure;
+
+interface SearchWorkerClient {
+  scan: (
+    payload: WorkerScanRequest['payload'],
+    signal?: AbortSignal
+  ) => Promise<ScanFileResult>;
+  close: () => Promise<void>;
+}
+
+function isWorkerScanResponse(value: unknown): value is WorkerScanResponse {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as { id?: unknown; ok?: unknown };
+  return typeof candidate.id === 'number' && typeof candidate.ok === 'boolean';
+}
+
+function getAbortError(signal: AbortSignal): Error {
+  const { reason } = signal as { reason?: unknown };
+  if (reason instanceof Error) {
+    return reason;
+  }
+  return new Error('Operation aborted');
+}
+
+function getAbortReason(signal: AbortSignal): string | undefined {
+  const { reason } = signal as { reason?: unknown };
+  if (reason instanceof Error) {
+    return reason.message;
+  }
+  if (typeof reason === 'string') {
+    return reason;
+  }
+  return undefined;
+}
 
 const DEFAULTS: SearchOptions = {
   filePattern: '**/*',
@@ -71,149 +138,150 @@ function mergeOptions(partial: SearchContentOptions): ResolvedOptions {
   return merged;
 }
 
-function buildMatcher(pattern: string, o: ResolvedOptions): Matcher {
-  if (o.isLiteral && !o.wholeWord) {
-    const needle = o.caseSensitive ? pattern : pattern.toLowerCase();
-    return (line: string): number => {
-      const hay = o.caseSensitive ? line : line.toLowerCase();
-      if (needle.length === 0 || hay.length === 0) return 0;
-      let count = 0;
-      let pos = hay.indexOf(needle);
-      while (pos !== -1) {
-        count++;
-        pos = hay.indexOf(needle, pos + needle.length);
-      }
-      return count;
-    };
-  }
-
-  const escaped = o.isLiteral
-    ? pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    : pattern;
-  const final = o.wholeWord ? `\\b${escaped}\\b` : escaped;
-  if (!safeRegex(final)) {
-    throw new Error(
-      `Potentially unsafe regular expression (ReDoS risk): ${pattern}`
-    );
-  }
-  const regex = new RE2(final, o.caseSensitive ? 'g' : 'gi');
-  return (line: string): number => {
-    regex.lastIndex = 0;
-    let count = 0;
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(line)) !== null) {
-      count++;
-      if (match[0].length === 0) {
-        regex.lastIndex++;
-      }
-    }
-    return count;
+function buildWorkerOptions(options: ResolvedOptions): WorkerScanOptions {
+  return {
+    caseSensitive: options.caseSensitive,
+    wholeWord: options.wholeWord,
+    isLiteral: options.isLiteral,
+    maxFileSize: options.maxFileSize,
+    skipBinary: options.skipBinary,
+    contextLines: options.contextLines,
   };
 }
 
-interface ContextState {
-  before: string[];
-  pendingAfter: { match: ContentMatch; left: number }[];
-}
-
-function makeContext(): ContextState {
-  return { before: [], pendingAfter: [] };
-}
-
-function pushContext(ctx: ContextState, line: string, max: number): void {
-  if (max <= 0) return;
-  ctx.before.push(line);
-  if (ctx.before.length > max) ctx.before.shift();
-  for (const pending of ctx.pendingAfter) {
-    if (pending.left <= 0) continue;
-    pending.match.contextAfter ??= [];
-    pending.match.contextAfter.push(line);
-    pending.left -= 1;
+function resolveWorkerUrl(): URL {
+  const workerJsUrl = new URL('./worker.js', import.meta.url);
+  const workerJsPath = fileURLToPath(workerJsUrl);
+  if (existsSync(workerJsPath)) {
+    return workerJsUrl;
   }
-  while (ctx.pendingAfter.length > 0 && ctx.pendingAfter[0]?.left === 0) {
-    ctx.pendingAfter.shift();
+
+  const workerTsUrl = new URL('./worker.ts', import.meta.url);
+  const workerTsPath = fileURLToPath(workerTsUrl);
+  if (existsSync(workerTsPath)) {
+    return workerTsUrl;
   }
-}
 
-function trimContent(line: string): string {
-  return line.trimEnd().slice(0, MAX_LINE_CONTENT_LENGTH);
-}
-
-async function scanFile(
-  targetPath: string,
-  matcher: Matcher,
-  opts: ResolvedOptions,
-  summary: SearchContentResult['summary'],
-  matches: ContentMatch[],
-  signal: AbortSignal
-): Promise<void> {
-  const { resolvedPath, requestedPath } = await validateExistingPathDetailed(
-    targetPath,
-    signal
+  throw new Error(
+    `Search worker entrypoint not found at ${workerJsPath} or ${workerTsPath}`
   );
-  const handle = await fsp.open(resolvedPath, 'r');
+}
 
-  try {
-    const stats = await handle.stat();
-
-    if (stats.size > opts.maxFileSize) {
-      summary.skippedTooLarge++;
-      return;
+function createSearchWorker(): SearchWorkerClient {
+  const worker = new Worker(resolveWorkerUrl());
+  let nextId = 1;
+  let closed = false;
+  const pending = new Map<
+    number,
+    {
+      resolve: (result: ScanFileResult) => void;
+      reject: (error: Error) => void;
+      signal?: AbortSignal;
+      onAbort?: () => void;
     }
+  >();
 
-    if (
-      opts.skipBinary &&
-      (await isProbablyBinary(resolvedPath, handle, signal))
-    ) {
-      summary.skippedBinary++;
-      return;
+  const cleanupPendingRecord = (record: {
+    signal?: AbortSignal;
+    onAbort?: () => void;
+  }): void => {
+    if (record.signal && record.onAbort) {
+      record.signal.removeEventListener('abort', record.onAbort);
     }
+  };
 
-    const rl = readline.createInterface({
-      input: handle.createReadStream({ encoding: 'utf-8', autoClose: false }),
-      crlfDelay: Infinity,
-      signal,
-    });
+  const rejectPending = (error: Error): void => {
+    for (const record of pending.values()) {
+      cleanupPendingRecord(record);
+      const { reject } = record;
+      reject(error);
+    }
+    pending.clear();
+  };
 
-    const ctx = makeContext();
-    let lineNo = 0;
-    try {
-      for await (const line of rl) {
-        if (signal.aborted) break;
-        lineNo++;
-        pushContext(ctx, trimContent(line), opts.contextLines);
+  worker.on('message', (message: unknown) => {
+    if (!isWorkerScanResponse(message)) return;
+    const record = pending.get(message.id);
+    if (!record) return;
+    pending.delete(message.id);
+    cleanupPendingRecord(record);
+    if (message.ok) {
+      record.resolve(message.result);
+    } else {
+      record.reject(new Error(message.error));
+    }
+  });
 
-        if (matches.length >= opts.maxResults) {
-          summary.truncated = true;
-          summary.stoppedReason = 'maxResults';
-          break;
-        }
+  worker.on('error', (error) => {
+    if (closed) return;
+    closed = true;
+    rejectPending(error);
+  });
 
-        const count = matcher(line);
-        if (count > 0) {
-          const match: ContentMatch = {
-            file: requestedPath,
-            line: lineNo,
-            content: trimContent(line),
-            contextBefore: opts.contextLines > 0 ? [...ctx.before] : undefined,
-            matchCount: count,
-          };
-          matches.push(match);
-          if (opts.contextLines > 0) {
-            ctx.pendingAfter.push({ match, left: opts.contextLines });
-          }
-        }
+  worker.on('exit', (code) => {
+    if (closed) return;
+    closed = true;
+    const error = new Error(`Search worker exited with code ${String(code)}`);
+    rejectPending(error);
+  });
+
+  return {
+    scan: async (payload, signal) => {
+      if (closed) {
+        throw new Error('Search worker is closed');
       }
-    } finally {
-      rl.close();
-    }
+      if (signal?.aborted) {
+        throw getAbortError(signal);
+      }
+      const id = nextId++;
+      return await new Promise<ScanFileResult>((resolve, reject) => {
+        let aborted = false;
+        const onAbort = (): void => {
+          if (aborted) return;
+          aborted = true;
+          pending.delete(id);
+          try {
+            const cancelRequest: WorkerCancelRequest = {
+              id,
+              type: 'cancel',
+              reason: signal ? getAbortReason(signal) : undefined,
+            };
+            worker.postMessage(cancelRequest);
+          } catch {
+            // Ignore postMessage failures after abort.
+          }
+          reject(
+            signal ? getAbortError(signal) : new Error('Operation aborted')
+          );
+        };
 
-    if (matches.length > 0) {
-      summary.filesMatched++;
-    }
-  } finally {
-    await handle.close();
-  }
+        if (signal) {
+          signal.addEventListener('abort', onAbort, { once: true });
+        }
+
+        pending.set(id, { resolve, reject, signal, onAbort });
+        if (signal?.aborted) {
+          onAbort();
+          return;
+        }
+        try {
+          worker.postMessage({ id, type: 'scan', payload });
+        } catch (error: unknown) {
+          pending.delete(id);
+          if (signal) {
+            signal.removeEventListener('abort', onAbort);
+          }
+          reject(error instanceof Error ? error : new Error(String(error)));
+        }
+      });
+    },
+    close: async () => {
+      if (closed) return;
+      closed = true;
+      rejectPending(new Error('Search worker closed'));
+      await worker.terminate();
+    },
+  };
 }
 
 export async function searchContent(
@@ -228,6 +296,9 @@ export async function searchContent(
   );
   const root = await validateExistingDirectory(basePath, signal);
   const matcher = buildMatcher(pattern, opts);
+  const useWorkers = SEARCH_WORKERS > 0;
+  const worker = useWorkers ? createSearchWorker() : undefined;
+  const workerOptions = useWorkers ? buildWorkerOptions(opts) : undefined;
 
   const summary: SearchContentResult['summary'] = {
     filesScanned: 0,
@@ -241,7 +312,7 @@ export async function searchContent(
     stoppedReason: undefined,
   };
 
-  const matches: ContentMatch[] = [];
+  const matches: SearchContentResult['matches'] = [];
 
   try {
     const stream = globEntries({
@@ -270,9 +341,48 @@ export async function searchContent(
         break;
       }
       summary.filesScanned++;
+      const remaining = opts.maxResults - matches.length;
+      if (remaining <= 0) {
+        summary.truncated = true;
+        summary.stoppedReason = 'maxResults';
+        break;
+      }
 
       try {
-        await scanFile(entry.path, matcher, opts, summary, matches, signal);
+        const { resolvedPath, requestedPath } =
+          await validateExistingPathDetailed(entry.path, signal);
+        const scanResult = worker
+          ? await worker.scan(
+              {
+                resolvedPath,
+                requestedPath,
+                pattern,
+                options: workerOptions ?? buildWorkerOptions(opts),
+                maxMatches: remaining,
+              },
+              signal
+            )
+          : await scanFileResolved(
+              resolvedPath,
+              requestedPath,
+              matcher,
+              opts,
+              signal,
+              remaining
+            );
+
+        if (scanResult.skippedTooLarge) {
+          summary.skippedTooLarge++;
+        }
+        if (scanResult.skippedBinary) {
+          summary.skippedBinary++;
+        }
+        if (scanResult.matched) {
+          summary.filesMatched++;
+        }
+        if (scanResult.matches.length > 0) {
+          matches.push(...scanResult.matches);
+        }
       } catch {
         summary.skippedInaccessible++;
       }
@@ -293,6 +403,9 @@ export async function searchContent(
       summary,
     };
   } finally {
+    if (worker) {
+      await worker.close().catch(() => undefined);
+    }
     cleanup();
   }
 }
