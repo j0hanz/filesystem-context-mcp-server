@@ -58,15 +58,11 @@ export async function searchFiles(
     const needsStats =
       normalized.sortBy === 'size' || normalized.sortBy === 'modified';
 
-    const state: SearchFilesResult['summary'] = {
-      matched: 0,
-      truncated: false,
-      skippedInaccessible: 0,
-      filesScanned: 0,
-      stoppedReason: undefined,
-    };
-
     const results: SearchResult[] = [];
+    let filesScanned = 0;
+    let truncated = false;
+    let stoppedReason: SearchFilesResult['summary']['stoppedReason'];
+    const skippedInaccessible = 0;
 
     const stream = globEntries({
       cwd: root,
@@ -83,17 +79,17 @@ export async function searchFiles(
 
     for await (const entry of stream) {
       if (signal.aborted) {
-        state.truncated = true;
-        state.stoppedReason = 'timeout';
+        truncated = true;
+        stoppedReason = 'timeout';
         break;
       }
-      if (state.filesScanned >= normalized.maxFilesScanned) {
-        state.truncated = true;
-        state.stoppedReason = 'maxFiles';
+      if (filesScanned >= normalized.maxFilesScanned) {
+        truncated = true;
+        stoppedReason = 'maxFiles';
         break;
       }
 
-      state.filesScanned++;
+      filesScanned++;
 
       const type = entry.dirent.isDirectory()
         ? 'directory'
@@ -121,20 +117,25 @@ export async function searchFiles(
       });
 
       if (results.length >= normalized.maxResults) {
-        state.truncated = true;
-        state.stoppedReason = 'maxResults';
+        truncated = true;
+        stoppedReason = 'maxResults';
         break;
       }
     }
 
     sortSearchResults(results, normalized.sortBy);
-    state.matched = results.length;
 
     return {
       basePath: root,
       pattern,
       results,
-      summary: state,
+      summary: {
+        matched: results.length,
+        truncated,
+        skippedInaccessible,
+        filesScanned,
+        stoppedReason,
+      },
     };
   } finally {
     cleanup();

@@ -300,19 +300,16 @@ export async function searchContent(
   const worker = useWorkers ? createSearchWorker() : undefined;
   const workerOptions = useWorkers ? buildWorkerOptions(opts) : undefined;
 
-  const summary: SearchContentResult['summary'] = {
-    filesScanned: 0,
-    filesMatched: 0,
-    matches: 0,
-    truncated: false,
-    skippedTooLarge: 0,
-    skippedBinary: 0,
-    skippedInaccessible: 0,
-    linesSkippedDueToRegexTimeout: 0,
-    stoppedReason: undefined,
-  };
+  let filesScanned = 0;
+  let filesMatched = 0;
+  let skippedTooLarge = 0;
+  let skippedBinary = 0;
+  let skippedInaccessible = 0;
+  const linesSkippedDueToRegexTimeout = 0;
+  let truncated = false;
+  let stoppedReason: SearchContentResult['summary']['stoppedReason'];
 
-  const matches: SearchContentResult['matches'] = [];
+  const matches: SearchContentResult['matches'][number][] = [];
 
   try {
     const stream = globEntries({
@@ -331,20 +328,20 @@ export async function searchContent(
     for await (const entry of stream) {
       if (!entry.dirent.isFile()) continue;
       if (signal.aborted) {
-        summary.truncated = true;
-        summary.stoppedReason = 'timeout';
+        truncated = true;
+        stoppedReason = 'timeout';
         break;
       }
-      if (summary.filesScanned >= opts.maxFilesScanned) {
-        summary.truncated = true;
-        summary.stoppedReason = 'maxFiles';
+      if (filesScanned >= opts.maxFilesScanned) {
+        truncated = true;
+        stoppedReason = 'maxFiles';
         break;
       }
-      summary.filesScanned++;
+      filesScanned++;
       const remaining = opts.maxResults - matches.length;
       if (remaining <= 0) {
-        summary.truncated = true;
-        summary.stoppedReason = 'maxResults';
+        truncated = true;
+        stoppedReason = 'maxResults';
         break;
       }
 
@@ -372,25 +369,24 @@ export async function searchContent(
             );
 
         if (scanResult.skippedTooLarge) {
-          summary.skippedTooLarge++;
+          skippedTooLarge++;
         }
         if (scanResult.skippedBinary) {
-          summary.skippedBinary++;
+          skippedBinary++;
         }
         if (scanResult.matched) {
-          summary.filesMatched++;
+          filesMatched++;
         }
         if (scanResult.matches.length > 0) {
           matches.push(...scanResult.matches);
         }
       } catch {
-        summary.skippedInaccessible++;
+        skippedInaccessible++;
       }
 
-      summary.matches = matches.length;
       if (matches.length >= opts.maxResults) {
-        summary.truncated = true;
-        summary.stoppedReason = 'maxResults';
+        truncated = true;
+        stoppedReason = 'maxResults';
         break;
       }
     }
@@ -400,7 +396,17 @@ export async function searchContent(
       pattern,
       filePattern: opts.filePattern,
       matches,
-      summary,
+      summary: {
+        filesScanned,
+        filesMatched,
+        matches: matches.length,
+        truncated,
+        skippedTooLarge,
+        skippedBinary,
+        skippedInaccessible,
+        linesSkippedDueToRegexTimeout,
+        stoppedReason,
+      },
     };
   } finally {
     if (worker) {

@@ -1,106 +1,106 @@
 export type FileType = 'file' | 'directory' | 'symlink' | 'other';
 
 export interface FileInfo {
-  name: string;
-  path: string;
-  type: FileType;
-  size: number;
-  created: Date;
-  modified: Date;
-  accessed: Date;
-  permissions: string;
-  isHidden: boolean;
-  mimeType?: string;
-  symlinkTarget?: string;
+  readonly name: string;
+  readonly path: string;
+  readonly type: FileType;
+  readonly size: number;
+  readonly created: Date;
+  readonly modified: Date;
+  readonly accessed: Date;
+  readonly permissions: string;
+  readonly isHidden: boolean;
+  readonly mimeType?: string;
+  readonly symlinkTarget?: string;
 }
 
 export interface DirectoryEntry {
-  name: string;
-  path: string;
-  relativePath: string;
-  type: FileType;
-  size?: number;
-  modified?: Date;
-  symlinkTarget?: string;
+  readonly name: string;
+  readonly path: string;
+  readonly relativePath: string;
+  readonly type: FileType;
+  readonly size?: number;
+  readonly modified?: Date;
+  readonly symlinkTarget?: string;
 }
 
 export interface ListDirectoryResult {
-  path: string;
-  entries: DirectoryEntry[];
-  summary: {
-    totalEntries: number;
-    entriesScanned?: number;
-    entriesVisible?: number;
-    totalFiles: number;
-    totalDirectories: number;
-    maxDepthReached: number;
-    truncated: boolean;
-    stoppedReason?: 'maxEntries' | 'aborted';
-    skippedInaccessible: number;
-    symlinksNotFollowed: number;
+  readonly path: string;
+  readonly entries: readonly DirectoryEntry[];
+  readonly summary: {
+    readonly totalEntries: number;
+    readonly entriesScanned?: number;
+    readonly entriesVisible?: number;
+    readonly totalFiles: number;
+    readonly totalDirectories: number;
+    readonly maxDepthReached: number;
+    readonly truncated: boolean;
+    readonly stoppedReason?: 'maxEntries' | 'aborted';
+    readonly skippedInaccessible: number;
+    readonly symlinksNotFollowed: number;
   };
 }
 
 export interface SearchResult {
-  path: string;
-  type: FileType;
-  size?: number;
-  modified?: Date;
+  readonly path: string;
+  readonly type: FileType;
+  readonly size?: number;
+  readonly modified?: Date;
 }
 
 export interface SearchFilesResult {
-  basePath: string;
-  pattern: string;
-  results: SearchResult[];
-  summary: {
-    matched: number;
-    truncated: boolean;
-    skippedInaccessible: number;
-    filesScanned: number;
-    stoppedReason?: 'maxResults' | 'maxFiles' | 'timeout';
+  readonly basePath: string;
+  readonly pattern: string;
+  readonly results: readonly SearchResult[];
+  readonly summary: {
+    readonly matched: number;
+    readonly truncated: boolean;
+    readonly skippedInaccessible: number;
+    readonly filesScanned: number;
+    readonly stoppedReason?: 'maxResults' | 'maxFiles' | 'timeout';
   };
 }
 
 export interface ContentMatch {
-  file: string;
-  line: number;
-  content: string;
-  contextBefore?: string[];
-  contextAfter?: string[];
-  matchCount: number;
+  readonly file: string;
+  readonly line: number;
+  readonly content: string;
+  readonly contextBefore?: readonly string[];
+  readonly contextAfter?: readonly string[];
+  readonly matchCount: number;
 }
 
 export interface SearchContentResult {
-  basePath: string;
-  pattern: string;
-  filePattern: string;
-  matches: ContentMatch[];
-  summary: {
-    filesScanned: number;
-    filesMatched: number;
-    matches: number;
-    truncated: boolean;
-    skippedTooLarge: number;
-    skippedBinary: number;
-    skippedInaccessible: number;
-    linesSkippedDueToRegexTimeout: number;
-    stoppedReason?: 'maxResults' | 'maxFiles' | 'timeout';
+  readonly basePath: string;
+  readonly pattern: string;
+  readonly filePattern: string;
+  readonly matches: readonly ContentMatch[];
+  readonly summary: {
+    readonly filesScanned: number;
+    readonly filesMatched: number;
+    readonly matches: number;
+    readonly truncated: boolean;
+    readonly skippedTooLarge: number;
+    readonly skippedBinary: number;
+    readonly skippedInaccessible: number;
+    readonly linesSkippedDueToRegexTimeout: number;
+    readonly stoppedReason?: 'maxResults' | 'maxFiles' | 'timeout';
   };
 }
 
 export interface MultipleFileInfoResult {
-  path: string;
-  info?: FileInfo;
-  error?: string;
+  readonly path: string;
+  readonly info?: FileInfo;
+  readonly error?: string;
 }
 
 export interface GetMultipleFileInfoResult {
-  results: MultipleFileInfoResult[];
-  summary: {
-    total: number;
-    succeeded: number;
-    failed: number;
-    totalSize: number;
+  readonly results: readonly MultipleFileInfoResult[];
+  readonly summary: {
+    readonly total: number;
+    readonly succeeded: number;
+    readonly failed: number;
+    readonly totalSize: number;
   };
 }
 

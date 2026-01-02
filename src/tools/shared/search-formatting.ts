@@ -45,7 +45,7 @@ function groupMatchesByFile(
 }
 
 function formatContextLines(
-  context: string[] | undefined,
+  context: readonly string[] | undefined,
   startLine: number
 ): string[] {
   return (context ?? []).map(
@@ -109,8 +109,8 @@ export function buildStructuredResult(
       file: m.relativeFile,
       line: m.line,
       content: m.content,
-      contextBefore: m.contextBefore,
-      contextAfter: m.contextAfter,
+      contextBefore: m.contextBefore ? [...m.contextBefore] : undefined,
+      contextAfter: m.contextAfter ? [...m.contextAfter] : undefined,
       matchCount: m.matchCount,
     })),
     summary: {

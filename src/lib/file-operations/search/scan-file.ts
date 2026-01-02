@@ -23,10 +23,10 @@ export interface ScanFileOptions {
 }
 
 export interface ScanFileResult {
-  matches: ContentMatch[];
-  matched: boolean;
-  skippedTooLarge: boolean;
-  skippedBinary: boolean;
+  readonly matches: readonly ContentMatch[];
+  readonly matched: boolean;
+  readonly skippedTooLarge: boolean;
+  readonly skippedBinary: boolean;
 }
 
 export function buildMatcher(
@@ -72,9 +72,14 @@ export function buildMatcher(
   };
 }
 
+interface PendingAfter {
+  buffer: string[];
+  left: number;
+}
+
 interface ContextState {
   before: string[];
-  pendingAfter: { match: ContentMatch; left: number }[];
+  pendingAfter: PendingAfter[];
 }
 
 function makeContext(): ContextState {
@@ -87,8 +92,7 @@ function pushContext(ctx: ContextState, line: string, max: number): void {
   if (ctx.before.length > max) ctx.before.shift();
   for (const pending of ctx.pendingAfter) {
     if (pending.left <= 0) continue;
-    pending.match.contextAfter ??= [];
-    pending.match.contextAfter.push(line);
+    pending.buffer.push(line);
     pending.left -= 1;
   }
   while (ctx.pendingAfter.length > 0 && ctx.pendingAfter[0]?.left === 0) {
@@ -151,17 +155,22 @@ export async function scanFileResolved(
 
         const count = matcher(line);
         if (count > 0) {
+          const contextAfter = options.contextLines > 0 ? [] : undefined;
           const match: ContentMatch = {
             file: requestedPath,
             line: lineNo,
             content: trimContent(line),
             contextBefore:
               options.contextLines > 0 ? [...ctx.before] : undefined,
+            contextAfter,
             matchCount: count,
           };
           matches.push(match);
-          if (options.contextLines > 0) {
-            ctx.pendingAfter.push({ match, left: options.contextLines });
+          if (contextAfter) {
+            ctx.pendingAfter.push({
+              buffer: contextAfter,
+              left: options.contextLines,
+            });
           }
         }
 

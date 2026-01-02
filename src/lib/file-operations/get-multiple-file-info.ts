@@ -26,7 +26,7 @@ async function processFileInfo(
   };
 }
 
-function calculateSummary(results: MultipleFileInfoResult[]): {
+function calculateSummary(results: readonly MultipleFileInfoResult[]): {
   total: number;
   succeeded: number;
   failed: number;
@@ -54,7 +54,7 @@ function calculateSummary(results: MultipleFileInfoResult[]): {
 }
 
 export async function getMultipleFileInfo(
-  paths: string[],
+  paths: readonly string[],
   options: GetMultipleFileInfoOptions = {}
 ): Promise<GetMultipleFileInfoResult> {
   if (paths.length === 0) {

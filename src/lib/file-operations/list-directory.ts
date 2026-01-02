@@ -1,7 +1,10 @@
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 
-import type { ListDirectoryResult } from '../../config/types.js';
+import type {
+  DirectoryEntry,
+  ListDirectoryResult,
+} from '../../config/types.js';
 import {
   DEFAULT_LIST_MAX_ENTRIES,
   DEFAULT_MAX_DEPTH,
@@ -48,17 +51,17 @@ function normalizeOptions(options: ListDirectoryOptions): NormalizedOptions {
 }
 
 function sortEntries(
-  entries: ListDirectoryResult['entries'],
+  entries: DirectoryEntry[],
   sortBy: NonNullable<ListDirectoryOptions['sortBy']>
 ): void {
   const compare = {
-    name: (a: (typeof entries)[number], b: (typeof entries)[number]) =>
+    name: (a: DirectoryEntry, b: DirectoryEntry) =>
       a.name.localeCompare(b.name),
-    type: (a: (typeof entries)[number], b: (typeof entries)[number]) =>
+    type: (a: DirectoryEntry, b: DirectoryEntry) =>
       a.type.localeCompare(b.type),
-    size: (a: (typeof entries)[number], b: (typeof entries)[number]) =>
+    size: (a: DirectoryEntry, b: DirectoryEntry) =>
       (a.size ?? 0) - (b.size ?? 0),
-    modified: (a: (typeof entries)[number], b: (typeof entries)[number]) =>
+    modified: (a: DirectoryEntry, b: DirectoryEntry) =>
       (a.modified?.getTime() ?? 0) - (b.modified?.getTime() ?? 0),
   }[sortBy];
   entries.sort(compare);
@@ -75,7 +78,7 @@ export async function listDirectory(
   );
   const basePath = await validateExistingDirectory(dirPath, signal);
 
-  const entries: ListDirectoryResult['entries'] = [];
+  const entries: DirectoryEntry[] = [];
   let totalFiles = 0;
   let totalDirectories = 0;
   let truncated = false;
