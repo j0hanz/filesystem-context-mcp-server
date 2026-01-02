@@ -27,7 +27,7 @@ class BufferCollector extends Writable {
     private readonly maxSize: number,
     private readonly requestedPath: string
   ) {
-    super();
+    super({ autoDestroy: true });
   }
 
   override _write(
@@ -65,10 +65,6 @@ export async function readFileBufferWithLimit(
   });
   const collector = new BufferCollector(maxSize, requestedPath);
 
-  if (signal) {
-    await pipeline(stream, collector, { signal });
-  } else {
-    await pipeline(stream, collector);
-  }
+  await pipeline(stream, collector, { signal });
   return collector.getResult();
 }

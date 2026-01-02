@@ -152,65 +152,67 @@ async function scanFile(
     signal
   );
   const handle = await fsp.open(resolvedPath, 'r');
-  const stats = await handle.stat();
 
-  if (stats.size > opts.maxFileSize) {
-    summary.skippedTooLarge++;
-    await handle.close();
-    return;
-  }
-
-  if (
-    opts.skipBinary &&
-    (await isProbablyBinary(resolvedPath, handle, signal))
-  ) {
-    summary.skippedBinary++;
-    await handle.close();
-    return;
-  }
-
-  const rl = readline.createInterface({
-    input: handle.createReadStream({ encoding: 'utf-8', autoClose: false }),
-    crlfDelay: Infinity,
-    signal,
-  });
-
-  const ctx = makeContext();
-  let lineNo = 0;
   try {
-    for await (const line of rl) {
-      if (signal.aborted) break;
-      lineNo++;
-      pushContext(ctx, trimContent(line), opts.contextLines);
+    const stats = await handle.stat();
 
-      if (matches.length >= opts.maxResults) {
-        summary.truncated = true;
-        summary.stoppedReason = 'maxResults';
-        break;
-      }
+    if (stats.size > opts.maxFileSize) {
+      summary.skippedTooLarge++;
+      return;
+    }
 
-      const count = matcher(line);
-      if (count > 0) {
-        const match: ContentMatch = {
-          file: requestedPath,
-          line: lineNo,
-          content: trimContent(line),
-          contextBefore: opts.contextLines > 0 ? [...ctx.before] : undefined,
-          matchCount: count,
-        };
-        matches.push(match);
-        if (opts.contextLines > 0) {
-          ctx.pendingAfter.push({ match, left: opts.contextLines });
+    if (
+      opts.skipBinary &&
+      (await isProbablyBinary(resolvedPath, handle, signal))
+    ) {
+      summary.skippedBinary++;
+      return;
+    }
+
+    const rl = readline.createInterface({
+      input: handle.createReadStream({ encoding: 'utf-8', autoClose: false }),
+      crlfDelay: Infinity,
+      signal,
+    });
+
+    const ctx = makeContext();
+    let lineNo = 0;
+    try {
+      for await (const line of rl) {
+        if (signal.aborted) break;
+        lineNo++;
+        pushContext(ctx, trimContent(line), opts.contextLines);
+
+        if (matches.length >= opts.maxResults) {
+          summary.truncated = true;
+          summary.stoppedReason = 'maxResults';
+          break;
+        }
+
+        const count = matcher(line);
+        if (count > 0) {
+          const match: ContentMatch = {
+            file: requestedPath,
+            line: lineNo,
+            content: trimContent(line),
+            contextBefore: opts.contextLines > 0 ? [...ctx.before] : undefined,
+            matchCount: count,
+          };
+          matches.push(match);
+          if (opts.contextLines > 0) {
+            ctx.pendingAfter.push({ match, left: opts.contextLines });
+          }
         }
       }
+    } finally {
+      rl.close();
+    }
+
+    if (matches.length > 0) {
+      summary.filesMatched++;
     }
   } finally {
-    rl.close();
     await handle.close();
-  }
-
-  if (matches.length > 0) {
-    summary.filesMatched++;
   }
 }
 
