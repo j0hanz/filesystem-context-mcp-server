@@ -25,6 +25,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 logs/
+.memdb/
 
 # Editor directories and files
 .github/*
@@ -49,3 +50,7 @@ coverage/
 # Cache
 .cache/
 *.cache
+
+# Local reports
+.jscpd/
+reports/
