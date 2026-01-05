@@ -5,6 +5,7 @@ import type { z } from 'zod';
 import { ErrorCode } from '../lib/errors.js';
 import { searchContent } from '../lib/file-operations.js';
 import { createTimedAbortSignal } from '../lib/fs-helpers.js';
+import { withToolDiagnostics } from '../lib/observability/diagnostics.js';
 import {
   SearchContentInputSchema,
   SearchContentOutputSchema,
@@ -79,19 +80,25 @@ export function registerSearchContentTool(server: McpServer): void {
     args: SearchContentArgs,
     extra: { signal: AbortSignal }
   ): Promise<ToolResult<SearchContentStructuredResult>> =>
-    withToolErrorHandling(
-      async () => {
-        const { signal, cleanup } = createTimedAbortSignal(
-          extra.signal,
-          args.timeoutMs
-        );
-        try {
-          return await handleSearchContent(args, signal);
-        } finally {
-          cleanup();
-        }
-      },
-      (error) => buildToolErrorResponse(error, ErrorCode.E_UNKNOWN, args.path)
+    withToolDiagnostics(
+      'search_content',
+      () =>
+        withToolErrorHandling(
+          async () => {
+            const { signal, cleanup } = createTimedAbortSignal(
+              extra.signal,
+              args.timeoutMs
+            );
+            try {
+              return await handleSearchContent(args, signal);
+            } finally {
+              cleanup();
+            }
+          },
+          (error) =>
+            buildToolErrorResponse(error, ErrorCode.E_UNKNOWN, args.path)
+        ),
+      { path: args.path }
     );
 
   server.registerTool('search_content', SEARCH_CONTENT_TOOL, handler);

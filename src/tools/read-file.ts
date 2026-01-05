@@ -8,6 +8,7 @@ import { ErrorCode } from '../lib/errors.js';
 import { readFile } from '../lib/file-operations.js';
 import { createTimedAbortSignal } from '../lib/fs-helpers.js';
 import { assertLineRangeOptions, buildLineRange } from '../lib/line-range.js';
+import { withToolDiagnostics } from '../lib/observability/diagnostics.js';
 import { ReadFileInputSchema, ReadFileOutputSchema } from '../schemas/index.js';
 import {
   buildToolErrorResponse,
@@ -188,19 +189,25 @@ export function registerReadFileTool(server: McpServer): void {
     args: ReadFileArgs,
     extra: { signal?: AbortSignal }
   ): Promise<ToolResult<ReadFileStructuredResult>> =>
-    withToolErrorHandling(
-      async () => {
-        const { signal, cleanup } = createTimedAbortSignal(
-          extra.signal,
-          READ_FILE_TIMEOUT_MS
-        );
-        try {
-          return await handleReadFile(args, signal);
-        } finally {
-          cleanup();
-        }
-      },
-      (error) => buildToolErrorResponse(error, ErrorCode.E_NOT_FILE, args.path)
+    withToolDiagnostics(
+      'read_file',
+      () =>
+        withToolErrorHandling(
+          async () => {
+            const { signal, cleanup } = createTimedAbortSignal(
+              extra.signal,
+              READ_FILE_TIMEOUT_MS
+            );
+            try {
+              return await handleReadFile(args, signal);
+            } finally {
+              cleanup();
+            }
+          },
+          (error) =>
+            buildToolErrorResponse(error, ErrorCode.E_NOT_FILE, args.path)
+        ),
+      { path: args.path }
     );
 
   server.registerTool('read_file', READ_FILE_TOOL, handler);

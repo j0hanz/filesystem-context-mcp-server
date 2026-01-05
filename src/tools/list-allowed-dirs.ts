@@ -6,6 +6,7 @@ import type { z } from 'zod';
 
 import { joinLines } from '../config/formatting.js';
 import { ErrorCode, isNodeError } from '../lib/errors.js';
+import { withToolDiagnostics } from '../lib/observability/diagnostics.js';
 import { getAllowedDirectories } from '../lib/path-validation.js';
 import { ListAllowedDirectoriesOutputSchema } from '../schemas/index.js';
 import {
@@ -138,8 +139,13 @@ export function registerListAllowedDirectoriesTool(server: McpServer): void {
   const handler = (): Promise<
     ToolResult<ListAllowedDirectoriesStructuredResult>
   > =>
-    withToolErrorHandling(handleListAllowedDirectories, (error) =>
-      buildToolErrorResponse(error, ErrorCode.E_UNKNOWN)
+    withToolErrorHandling(
+      () =>
+        withToolDiagnostics(
+          'list_allowed_directories',
+          handleListAllowedDirectories
+        ),
+      (error) => buildToolErrorResponse(error, ErrorCode.E_UNKNOWN)
     );
 
   server.registerTool(

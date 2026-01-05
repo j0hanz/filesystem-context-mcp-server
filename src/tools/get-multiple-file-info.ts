@@ -7,6 +7,7 @@ import type { GetMultipleFileInfoResult } from '../config/types.js';
 import { ErrorCode } from '../lib/errors.js';
 import { getMultipleFileInfo } from '../lib/file-operations.js';
 import { createTimedAbortSignal } from '../lib/fs-helpers.js';
+import { withToolDiagnostics } from '../lib/observability/diagnostics.js';
 import {
   GetMultipleFileInfoInputSchema,
   GetMultipleFileInfoOutputSchema,
@@ -95,19 +96,21 @@ export function registerGetMultipleFileInfoTool(server: McpServer): void {
     args: GetMultipleFileInfoArgs,
     extra: { signal?: AbortSignal }
   ): Promise<ToolResult<GetMultipleFileInfoStructuredResult>> =>
-    withToolErrorHandling(
-      async () => {
-        const { signal, cleanup } = createTimedAbortSignal(
-          extra.signal,
-          GET_MULTIPLE_FILE_INFO_TIMEOUT_MS
-        );
-        try {
-          return await handleGetMultipleFileInfo(args, signal);
-        } finally {
-          cleanup();
-        }
-      },
-      (error) => buildToolErrorResponse(error, ErrorCode.E_UNKNOWN)
+    withToolDiagnostics('get_multiple_file_info', () =>
+      withToolErrorHandling(
+        async () => {
+          const { signal, cleanup } = createTimedAbortSignal(
+            extra.signal,
+            GET_MULTIPLE_FILE_INFO_TIMEOUT_MS
+          );
+          try {
+            return await handleGetMultipleFileInfo(args, signal);
+          } finally {
+            cleanup();
+          }
+        },
+        (error) => buildToolErrorResponse(error, ErrorCode.E_UNKNOWN)
+      )
     );
 
   server.registerTool(

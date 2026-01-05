@@ -5,6 +5,7 @@ import type { z } from 'zod';
 import { ErrorCode } from '../lib/errors.js';
 import { getFileInfo } from '../lib/file-operations.js';
 import { createTimedAbortSignal } from '../lib/fs-helpers.js';
+import { withToolDiagnostics } from '../lib/observability/diagnostics.js';
 import {
   GetFileInfoInputSchema,
   GetFileInfoOutputSchema,
@@ -69,19 +70,25 @@ export function registerGetFileInfoTool(server: McpServer): void {
     args: GetFileInfoArgs,
     extra: { signal?: AbortSignal }
   ): Promise<ToolResult<GetFileInfoStructuredResult>> =>
-    withToolErrorHandling(
-      async () => {
-        const { signal, cleanup } = createTimedAbortSignal(
-          extra.signal,
-          GET_FILE_INFO_TIMEOUT_MS
-        );
-        try {
-          return await handleGetFileInfo(args, signal);
-        } finally {
-          cleanup();
-        }
-      },
-      (error) => buildToolErrorResponse(error, ErrorCode.E_NOT_FOUND, args.path)
+    withToolDiagnostics(
+      'get_file_info',
+      () =>
+        withToolErrorHandling(
+          async () => {
+            const { signal, cleanup } = createTimedAbortSignal(
+              extra.signal,
+              GET_FILE_INFO_TIMEOUT_MS
+            );
+            try {
+              return await handleGetFileInfo(args, signal);
+            } finally {
+              cleanup();
+            }
+          },
+          (error) =>
+            buildToolErrorResponse(error, ErrorCode.E_NOT_FOUND, args.path)
+        ),
+      { path: args.path }
     );
 
   server.registerTool('get_file_info', GET_FILE_INFO_TOOL, handler);

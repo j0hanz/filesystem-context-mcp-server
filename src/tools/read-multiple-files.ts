@@ -8,6 +8,7 @@ import { ErrorCode } from '../lib/errors.js';
 import { readMultipleFiles } from '../lib/file-operations.js';
 import { createTimedAbortSignal } from '../lib/fs-helpers.js';
 import { assertLineRangeOptions } from '../lib/line-range.js';
+import { withToolDiagnostics } from '../lib/observability/diagnostics.js';
 import {
   ReadMultipleFilesInputSchema,
   ReadMultipleFilesOutputSchema,
@@ -197,19 +198,21 @@ export function registerReadMultipleFilesTool(server: McpServer): void {
     args: ReadMultipleArgs,
     extra: { signal?: AbortSignal }
   ): Promise<ToolResult<ReadMultipleStructuredResult>> =>
-    withToolErrorHandling(
-      async () => {
-        const { signal, cleanup } = createTimedAbortSignal(
-          extra.signal,
-          READ_MULTIPLE_TIMEOUT_MS
-        );
-        try {
-          return await handleReadMultipleFiles(args, signal);
-        } finally {
-          cleanup();
-        }
-      },
-      (error) => buildToolErrorResponse(error, ErrorCode.E_UNKNOWN)
+    withToolDiagnostics('read_multiple_files', () =>
+      withToolErrorHandling(
+        async () => {
+          const { signal, cleanup } = createTimedAbortSignal(
+            extra.signal,
+            READ_MULTIPLE_TIMEOUT_MS
+          );
+          try {
+            return await handleReadMultipleFiles(args, signal);
+          } finally {
+            cleanup();
+          }
+        },
+        (error) => buildToolErrorResponse(error, ErrorCode.E_UNKNOWN)
+      )
     );
 
   server.registerTool('read_multiple_files', READ_MULTIPLE_FILES_TOOL, handler);

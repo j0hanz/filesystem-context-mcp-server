@@ -20,6 +20,7 @@ import { ErrorCode } from '../lib/errors.js';
 import { searchFiles } from '../lib/file-operations.js';
 import { createTimedAbortSignal } from '../lib/fs-helpers.js';
 import { mergeDefined } from '../lib/merge-defined.js';
+import { withToolDiagnostics } from '../lib/observability/diagnostics.js';
 import {
   SearchFilesInputSchema,
   SearchFilesOutputSchema,
@@ -234,20 +235,29 @@ export function registerSearchFilesTool(server: McpServer): void {
     args: SearchFilesArgs,
     extra: { signal: AbortSignal }
   ): Promise<ToolResult<SearchFilesStructuredResult>> =>
-    withToolErrorHandling(
-      async () => {
-        const { signal, cleanup } = createTimedAbortSignal(
-          extra.signal,
-          args.timeoutMs
-        );
-        try {
-          return await handleSearchFiles(args, signal);
-        } finally {
-          cleanup();
-        }
-      },
-      (error) =>
-        buildToolErrorResponse(error, ErrorCode.E_INVALID_PATTERN, args.path)
+    withToolDiagnostics(
+      'search_files',
+      () =>
+        withToolErrorHandling(
+          async () => {
+            const { signal, cleanup } = createTimedAbortSignal(
+              extra.signal,
+              args.timeoutMs
+            );
+            try {
+              return await handleSearchFiles(args, signal);
+            } finally {
+              cleanup();
+            }
+          },
+          (error) =>
+            buildToolErrorResponse(
+              error,
+              ErrorCode.E_INVALID_PATTERN,
+              args.path
+            )
+        ),
+      { path: args.path }
     );
 
   server.registerTool('search_files', SEARCH_FILES_TOOL, handler);

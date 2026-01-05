@@ -18,6 +18,7 @@ import { ErrorCode } from '../lib/errors.js';
 import { listDirectory } from '../lib/file-operations.js';
 import { createTimedAbortSignal } from '../lib/fs-helpers.js';
 import { mergeDefined } from '../lib/merge-defined.js';
+import { withToolDiagnostics } from '../lib/observability/diagnostics.js';
 import {
   ListDirectoryInputSchema,
   ListDirectoryOutputSchema,
@@ -272,20 +273,25 @@ export function registerListDirectoryTool(server: McpServer): void {
     args: ListDirectoryArgs,
     extra: { signal: AbortSignal }
   ): Promise<ToolResult<ListDirectoryStructuredResult>> =>
-    withToolErrorHandling(
-      async () => {
-        const { signal, cleanup } = createTimedAbortSignal(
-          extra.signal,
-          args.timeoutMs
-        );
-        try {
-          return await handleListDirectory(args, signal);
-        } finally {
-          cleanup();
-        }
-      },
-      (error) =>
-        buildToolErrorResponse(error, ErrorCode.E_NOT_DIRECTORY, args.path)
+    withToolDiagnostics(
+      'list_directory',
+      () =>
+        withToolErrorHandling(
+          async () => {
+            const { signal, cleanup } = createTimedAbortSignal(
+              extra.signal,
+              args.timeoutMs
+            );
+            try {
+              return await handleListDirectory(args, signal);
+            } finally {
+              cleanup();
+            }
+          },
+          (error) =>
+            buildToolErrorResponse(error, ErrorCode.E_NOT_DIRECTORY, args.path)
+        ),
+      { path: args.path }
     );
 
   server.registerTool('list_directory', LIST_DIRECTORY_TOOL, handler);
