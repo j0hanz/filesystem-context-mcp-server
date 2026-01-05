@@ -12,8 +12,12 @@ export function buildToolResponse<T>(
   content: { type: 'text'; text: string }[];
   structuredContent: T;
 } {
+  const json = JSON.stringify(structuredContent);
   return {
-    content: [{ type: 'text', text }],
+    content: [
+      { type: 'text', text },
+      { type: 'text', text: json },
+    ],
     structuredContent,
   };
 }
@@ -60,17 +64,24 @@ export function buildToolErrorResponse(
 
   const text = formatDetailedError(detailed);
 
-  return {
-    content: [{ type: 'text', text }],
-    structuredContent: {
-      ok: false,
-      error: {
-        code: detailed.code,
-        message: detailed.message,
-        path: detailed.path,
-        suggestion: detailed.suggestion,
-      },
+  const structuredContent: ToolErrorStructuredContent = {
+    ok: false,
+    error: {
+      code: detailed.code,
+      message: detailed.message,
+      path: detailed.path,
+      suggestion: detailed.suggestion,
     },
+  };
+
+  const json = JSON.stringify(structuredContent);
+
+  return {
+    content: [
+      { type: 'text', text },
+      { type: 'text', text: json },
+    ],
+    structuredContent,
     isError: true,
   };
 }

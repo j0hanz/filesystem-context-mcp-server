@@ -6,7 +6,10 @@ import { parseArgs as parseNodeArgs } from 'node:util';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { RootsListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  InitializedNotificationSchema,
+  RootsListChangedNotificationSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import type { Root } from '@modelcontextprotocol/sdk/types.js';
 
 import packageJson from '../package.json' with { type: 'json' };
@@ -124,6 +127,7 @@ export async function parseArgs(): Promise<ParseArgsResult> {
 
 let serverOptions: ServerOptions = {};
 let rootDirectories: string[] = [];
+let clientInitialized = false;
 
 interface ParseArgsResult {
   allowedDirs: string[];
@@ -268,15 +272,24 @@ export async function startServer(server: McpServer): Promise<void> {
   const transport = new StdioServerTransport();
 
   server.server.setNotificationHandler(
-    RootsListChangedNotificationSchema,
+    InitializedNotificationSchema,
     async () => {
+      clientInitialized = true;
       await updateRootsFromClient(server);
     }
   );
 
-  await server.connect(transport);
+  server.server.setNotificationHandler(
+    RootsListChangedNotificationSchema,
+    async () => {
+      if (!clientInitialized) return;
+      await updateRootsFromClient(server);
+    }
+  );
 
-  await updateRootsFromClient(server);
+  await recomputeAllowedDirectories();
+
+  await server.connect(transport);
 
   const dirs = getAllowedDirectories();
   if (dirs.length === 0) {
