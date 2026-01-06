@@ -4,14 +4,14 @@ import type { Stats } from 'node:fs';
 import { ErrorCode, McpError } from '../../errors.js';
 import { validateExistingPath } from '../../path-validation.js';
 import { assertNotAborted, withAbort } from '../abort.js';
+import { assertNotBinary } from './binary-check.js';
+import { readByMode } from './read-modes.js';
 import {
-  assertNotBinary,
   type NormalizedOptions,
   normalizeOptions,
-  readByMode,
   type ReadFileOptions,
   type ReadFileResult,
-} from './read-file-utils.js';
+} from './read-options.js';
 
 async function readFileWithStatsInternal(
   filePath: string,

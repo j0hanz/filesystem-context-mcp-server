@@ -9,11 +9,6 @@ import {
   formatOperationSummary,
   joinLines,
 } from '../config/formatting.js';
-import {
-  DEFAULT_LIST_MAX_ENTRIES,
-  DEFAULT_MAX_DEPTH,
-  DEFAULT_SEARCH_TIMEOUT_MS,
-} from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { listDirectory } from '../lib/file-operations.js';
 import { createTimedAbortSignal } from '../lib/fs-helpers.js';
@@ -30,40 +25,8 @@ import {
   withToolErrorHandling,
 } from './tool-response.js';
 
-function getExtension(name: string, isFile: boolean): string | undefined {
-  if (!isFile) return undefined;
-  const ext = pathModule.extname(name);
-  return ext ? ext.slice(1) : undefined;
-}
-
 type ListDirectoryArgs = z.infer<typeof ListDirectoryInputSchema>;
 type ListDirectoryStructuredResult = z.infer<typeof ListDirectoryOutputSchema>;
-
-type ListSort = 'name' | 'size' | 'modified' | 'type';
-
-interface ListOptions {
-  recursive: boolean;
-  includeHidden: boolean;
-  excludePatterns: readonly string[];
-  maxDepth: number;
-  maxEntries: number;
-  timeoutMs: number;
-  sortBy: ListSort;
-  includeSymlinkTargets: boolean;
-  pattern?: string;
-}
-
-const DEFAULT_LIST_OPTIONS: ListOptions = {
-  recursive: false,
-  includeHidden: false,
-  excludePatterns: [],
-  maxDepth: DEFAULT_MAX_DEPTH,
-  maxEntries: DEFAULT_LIST_MAX_ENTRIES,
-  timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-  sortBy: 'name',
-  includeSymlinkTargets: false,
-  pattern: undefined,
-};
 
 function formatDirectoryListing(
   entries: Awaited<ReturnType<typeof listDirectory>>['entries'],
@@ -136,7 +99,10 @@ function buildStructuredResult(
       name: e.name,
       relativePath: e.relativePath,
       type: e.type,
-      extension: getExtension(e.name, e.type === 'file'),
+      extension:
+        e.type === 'file'
+          ? pathModule.extname(e.name).replace('.', '') || undefined
+          : undefined,
       size: e.size,
       modified: e.modified?.toISOString(),
       symlinkTarget: e.symlinkTarget,
@@ -181,59 +147,15 @@ function buildTextResult(
 }
 
 async function handleListDirectory(
-  {
-    path: dirPath,
-    recursive,
-    includeHidden,
-    excludePatterns,
-    maxDepth,
-    maxEntries,
-    timeoutMs,
-    sortBy,
-    includeSymlinkTargets,
-    pattern,
-  }: {
-    path: string;
-    recursive?: boolean;
-    includeHidden?: boolean;
-    excludePatterns?: string[];
-    maxDepth?: number;
-    maxEntries?: number;
-    timeoutMs?: number;
-    sortBy?: 'name' | 'size' | 'modified' | 'type';
-    includeSymlinkTargets?: boolean;
-    pattern?: string;
-  },
+  args: ListDirectoryArgs,
   signal?: AbortSignal
 ): Promise<ToolResponse<ListDirectoryStructuredResult>> {
-  const effectiveOptions: ListOptions = {
-    recursive: recursive ?? DEFAULT_LIST_OPTIONS.recursive,
-    includeHidden: includeHidden ?? DEFAULT_LIST_OPTIONS.includeHidden,
-    excludePatterns: excludePatterns ?? DEFAULT_LIST_OPTIONS.excludePatterns,
-    maxDepth: maxDepth ?? DEFAULT_LIST_OPTIONS.maxDepth,
-    maxEntries: maxEntries ?? DEFAULT_LIST_OPTIONS.maxEntries,
-    timeoutMs: timeoutMs ?? DEFAULT_LIST_OPTIONS.timeoutMs,
-    sortBy: sortBy ?? DEFAULT_LIST_OPTIONS.sortBy,
-    includeSymlinkTargets:
-      includeSymlinkTargets ?? DEFAULT_LIST_OPTIONS.includeSymlinkTargets,
-    pattern: pattern ?? DEFAULT_LIST_OPTIONS.pattern,
-  };
-  const result = await listDirectory(dirPath, {
-    recursive: effectiveOptions.recursive,
-    includeHidden: effectiveOptions.includeHidden,
-    excludePatterns: effectiveOptions.excludePatterns,
-    maxDepth: effectiveOptions.maxDepth,
-    maxEntries: effectiveOptions.maxEntries,
-    // AbortSignal timeout is enforced by createTimedAbortSignal.
-    sortBy: effectiveOptions.sortBy,
-    includeSymlinkTargets: effectiveOptions.includeSymlinkTargets,
-    pattern: effectiveOptions.pattern,
-    signal,
-  });
+  const { path: dirPath, ...options } = args;
+  const result = await listDirectory(dirPath, { ...options, signal });
   const structured = buildStructuredResult(result);
   structured.effectiveOptions = {
-    ...effectiveOptions,
-    excludePatterns: [...effectiveOptions.excludePatterns],
+    ...options,
+    excludePatterns: [...options.excludePatterns],
   };
   const textOutput = buildTextResult(result);
   return buildToolResponse(textOutput, structured);

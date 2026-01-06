@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
-import { ErrorSchema, FileTypeSchema } from '../common.js';
+import { ErrorSchema } from '../error-schema.js';
+import { FileTypeSchema } from '../file-type-schema.js';
 import { TraversalSummarySchema } from '../output-helpers.js';
 
 export const ListAllowedDirectoriesOutputSchema = z.object({

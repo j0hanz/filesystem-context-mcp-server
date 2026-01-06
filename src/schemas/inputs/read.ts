@@ -1,16 +1,18 @@
 import { z } from 'zod';
 
 import {
-  applyLineRangeIssues,
   EncodingSchema,
-  HeadLinesSchema,
-  LineEndSchema,
-  LineStartSchema,
   ReadFileMaxSizeSchema,
   ReadMultipleFilesMaxSizeSchema,
   SkipBinarySchema,
-  TailLinesSchema,
 } from '../input-helpers.js';
+import {
+  applyLineRangeIssues,
+  HeadLinesSchema,
+  LineEndSchema,
+  LineStartSchema,
+  TailLinesSchema,
+} from '../line-range-schemas.js';
 
 const ReadFileBaseSchema = z.strictObject({
   path: z

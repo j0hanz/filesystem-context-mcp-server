@@ -57,16 +57,15 @@ async function collectFsImportOffenders(
   sourceFiles: string[],
   allowFsImport: (relPath: string) => boolean
 ): Promise<string[]> {
-  const offenders: string[] = [];
-  for (const relPath of sourceFiles) {
-    const absPath = path.join(repoRoot, relPath);
-    const content = await fs.readFile(absPath, 'utf-8');
-    if (!hasFsImport(content)) continue;
-    if (!allowFsImport(relPath)) {
-      offenders.push(relPath);
-    }
-  }
-  return offenders;
+  const results = await Promise.all(
+    sourceFiles.map(async (relPath) => {
+      const absPath = path.join(repoRoot, relPath);
+      const content = await fs.readFile(absPath, 'utf-8');
+      if (!hasFsImport(content)) return null;
+      return allowFsImport(relPath) ? null : relPath;
+    })
+  );
+  return results.filter((value): value is string => value !== null);
 }
 
 void describe('filesystem boundary', () => {

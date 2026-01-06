@@ -100,24 +100,24 @@ void describe('searchContent', () => {
       );
     });
 
-    void it('searchContent rejects unsafe regex patterns', async () => {
-      const unsafePatterns = ['(a+)+', '([a-zA-Z]+)*', '(.*a){25}'];
-      for (const pattern of unsafePatterns) {
+    const unsafePatterns = ['(a+)+', '([a-zA-Z]+)*', '(.*a){25}'];
+    unsafePatterns.forEach((pattern) => {
+      void it(`searchContent rejects unsafe regex pattern "${pattern}"`, async () => {
         await assert.rejects(
           searchContent(getTestDir(), pattern),
           /ReDoS|unsafe/i
         );
-      }
+      });
     });
 
-    void it('searchContent accepts safe regex patterns', async () => {
-      const safePatterns = ['hello', 'world\\d+', '[a-z]+', 'function\\s+\\w+'];
-      for (const pattern of safePatterns) {
+    const safePatterns = ['hello', 'world\\d+', '[a-z]+', 'function\\s+\\w+'];
+    safePatterns.forEach((pattern) => {
+      void it(`searchContent accepts safe regex pattern "${pattern}"`, async () => {
         const result = await searchContent(getTestDir(), pattern, {
           filePattern: '**/*.ts',
         });
         assert.ok(result);
-      }
+      });
     });
 
     void it('searchContent returns context lines when requested', async () => {

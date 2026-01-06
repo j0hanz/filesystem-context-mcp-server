@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { FileTypeSchema } from './common.js';
+import { FileTypeSchema } from './file-type-schema.js';
 
 export const TraversalSummarySchema = z.object({
   totalFiles: z.number(),

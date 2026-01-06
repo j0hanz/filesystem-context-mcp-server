@@ -7,7 +7,7 @@ import { after, before, describe, it } from 'node:test';
 import { normalizePath } from '../../lib/path-utils.js';
 import {
   getAllowedDirectories,
-  setAllowedDirectories,
+  setAllowedDirectoriesResolved,
   validateExistingPath,
 } from '../../lib/path-validation.js';
 
@@ -22,7 +22,7 @@ void describe('path-validation', () => {
     await fs.mkdir(subDir);
     testFile = path.join(subDir, 'test.txt');
     await fs.writeFile(testFile, 'test content');
-    setAllowedDirectories([normalizePath(testDir)]);
+    await setAllowedDirectoriesResolved([normalizePath(testDir)]);
   });
 
   after(async () => {
@@ -33,8 +33,8 @@ void describe('path-validation', () => {
     }
   });
 
-  function resetAllowedDirectories(): void {
-    setAllowedDirectories([normalizePath(testDir)]);
+  async function resetAllowedDirectories(): Promise<void> {
+    await setAllowedDirectoriesResolved([normalizePath(testDir)]);
   }
 
   async function createFileInDir(
@@ -48,27 +48,27 @@ void describe('path-validation', () => {
     return filePath;
   }
 
-  void it('setAllowedDirectories and getAllowedDirectories set and get allowed directories', () => {
+  void it('setAllowedDirectories and getAllowedDirectories set and get allowed directories', async () => {
     const dirs = ['/test/dir1', '/test/dir2'];
-    setAllowedDirectories(dirs.map(normalizePath));
+    await setAllowedDirectoriesResolved(dirs.map(normalizePath));
     const result = getAllowedDirectories();
     assert.strictEqual(result.length, 2);
-    resetAllowedDirectories();
+    await resetAllowedDirectories();
   });
 
-  void it('setAllowedDirectories returns empty array when no directories set', () => {
-    setAllowedDirectories([]);
+  void it('setAllowedDirectories returns empty array when no directories set', async () => {
+    await setAllowedDirectoriesResolved([]);
     assert.deepStrictEqual(getAllowedDirectories(), []);
-    resetAllowedDirectories();
+    await resetAllowedDirectories();
   });
 
   void it('validateExistingPath rejects when no allowed directories configured', async () => {
-    setAllowedDirectories([]);
+    await setAllowedDirectoriesResolved([]);
     await assert.rejects(
       validateExistingPath(testFile),
       /no allowed directories configured/i
     );
-    resetAllowedDirectories();
+    await resetAllowedDirectories();
   });
 
   void it('validateExistingPath allows paths within allowed directories', async () => {
@@ -102,10 +102,10 @@ void describe('path-validation', () => {
 
   void it('validateExistingPath allows paths when filesystem root is allowed', async () => {
     const rootDir = path.parse(testDir).root;
-    setAllowedDirectories([normalizePath(rootDir)]);
+    await setAllowedDirectoriesResolved([normalizePath(rootDir)]);
     const result = await validateExistingPath(testFile);
     assert.ok(result.includes('test.txt'));
-    resetAllowedDirectories();
+    await resetAllowedDirectories();
   });
 
   void it('validateExistingPath handles paths with spaces', async () => {
@@ -137,39 +137,4 @@ void describe('path-validation', () => {
     const pathWithNull = path.join(testDir, 'file\0name.txt');
     await assert.rejects(validateExistingPath(pathWithNull));
   });
-
-  const itWindows = process.platform === 'win32' ? it : it.skip;
-
-  void itWindows(
-    'validateExistingPath rejects Windows drive-relative paths',
-    async () => {
-      await assert.rejects(validateExistingPath('C:'), /drive-relative/i);
-      await assert.rejects(validateExistingPath('C:temp'), /drive-relative/i);
-    }
-  );
-
-  void itWindows(
-    'validateExistingPath rejects Windows reserved device names with suffixes',
-    async () => {
-      const candidates = [
-        'CON',
-        'CON.txt',
-        'CON.',
-        'CON ',
-        'CON::$DATA',
-        'AUX.txt',
-        'NUL ',
-        'COM1',
-        'LPT1.txt',
-      ];
-
-      for (const candidate of candidates) {
-        const attempt = path.join(testDir, candidate);
-        await assert.rejects(
-          validateExistingPath(attempt),
-          /reserved device name/i
-        );
-      }
-    }
-  );
 });

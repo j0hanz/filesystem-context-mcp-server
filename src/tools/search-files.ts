@@ -9,13 +9,6 @@ import {
   formatOperationSummary,
   joinLines,
 } from '../config/formatting.js';
-import {
-  DEFAULT_EXCLUDE_PATTERNS,
-  DEFAULT_MAX_DEPTH,
-  DEFAULT_MAX_RESULTS,
-  DEFAULT_SEARCH_MAX_FILES,
-  DEFAULT_SEARCH_TIMEOUT_MS,
-} from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { searchFiles } from '../lib/file-operations.js';
 import { createTimedAbortSignal } from '../lib/fs-helpers.js';
@@ -34,32 +27,6 @@ import {
 
 type SearchFilesArgs = z.infer<typeof SearchFilesInputSchema>;
 type SearchFilesStructuredResult = z.infer<typeof SearchFilesOutputSchema>;
-
-type SearchSort = 'name' | 'size' | 'modified' | 'path';
-
-interface SearchOptions {
-  excludePatterns: readonly string[];
-  maxResults: number;
-  sortBy: SearchSort;
-  maxDepth: number;
-  maxFilesScanned: number;
-  timeoutMs: number;
-  baseNameMatch: boolean;
-  skipSymlinks: boolean;
-  includeHidden: boolean;
-}
-
-const DEFAULT_SEARCH_OPTIONS: SearchOptions = {
-  excludePatterns: DEFAULT_EXCLUDE_PATTERNS,
-  maxResults: DEFAULT_MAX_RESULTS,
-  sortBy: 'path',
-  maxDepth: DEFAULT_MAX_DEPTH,
-  maxFilesScanned: DEFAULT_SEARCH_MAX_FILES,
-  timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-  baseNameMatch: false,
-  skipSymlinks: true,
-  includeHidden: false,
-};
 
 function formatSearchResults(
   results: Awaited<ReturnType<typeof searchFiles>>['results'],
@@ -154,54 +121,18 @@ function buildTextResult(
 }
 
 async function handleSearchFiles(
-  {
-    path: searchBasePath,
-    pattern,
-    excludePatterns,
-    maxResults,
-    sortBy,
-    maxDepth,
-    maxFilesScanned,
-    timeoutMs,
-    baseNameMatch,
-    skipSymlinks,
-    includeHidden,
-  }: {
-    path: string;
-    pattern: string;
-    excludePatterns?: string[];
-    maxResults?: number;
-    sortBy?: 'name' | 'size' | 'modified' | 'path';
-    maxDepth?: number;
-    maxFilesScanned?: number;
-    timeoutMs?: number;
-    baseNameMatch?: boolean;
-    skipSymlinks?: boolean;
-    includeHidden?: boolean;
-  },
+  args: SearchFilesArgs,
   signal?: AbortSignal
 ): Promise<ToolResponse<SearchFilesStructuredResult>> {
-  const effectiveOptions: SearchOptions = {
-    excludePatterns: excludePatterns ?? DEFAULT_SEARCH_OPTIONS.excludePatterns,
-    maxResults: maxResults ?? DEFAULT_SEARCH_OPTIONS.maxResults,
-    sortBy: sortBy ?? DEFAULT_SEARCH_OPTIONS.sortBy,
-    maxDepth: maxDepth ?? DEFAULT_SEARCH_OPTIONS.maxDepth,
-    maxFilesScanned: maxFilesScanned ?? DEFAULT_SEARCH_OPTIONS.maxFilesScanned,
-    timeoutMs: timeoutMs ?? DEFAULT_SEARCH_OPTIONS.timeoutMs,
-    baseNameMatch: baseNameMatch ?? DEFAULT_SEARCH_OPTIONS.baseNameMatch,
-    skipSymlinks: skipSymlinks ?? DEFAULT_SEARCH_OPTIONS.skipSymlinks,
-    includeHidden: includeHidden ?? DEFAULT_SEARCH_OPTIONS.includeHidden,
-  };
-  const { excludePatterns: effectiveExclude, ...searchOptions } =
-    effectiveOptions;
-  const result = await searchFiles(searchBasePath, pattern, effectiveExclude, {
-    ...searchOptions,
+  const { path: searchBasePath, pattern, excludePatterns, ...options } = args;
+  const result = await searchFiles(searchBasePath, pattern, excludePatterns, {
+    ...options,
     signal,
   });
   const structured = buildStructuredResult(result);
   structured.effectiveOptions = {
-    ...effectiveOptions,
-    excludePatterns: [...effectiveOptions.excludePatterns],
+    ...options,
+    excludePatterns: [...excludePatterns],
   };
   return buildToolResponse(buildTextResult(result), structured);
 }

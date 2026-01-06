@@ -1,14 +1,11 @@
 import * as path from 'node:path';
 
-import type { FileType } from '../../config/types.js';
-
-type SortField = 'name' | 'size' | 'modified' | 'type' | 'path';
+type SortKey = 'name' | 'size' | 'modified' | 'path';
 
 interface Sortable {
   name?: string;
   size?: number;
   modified?: Date;
-  type?: FileType;
   path?: string;
 }
 
@@ -38,22 +35,8 @@ function compareOptionalNumberDesc(
   return tieBreak();
 }
 
-function compareTypeThenName(a: Sortable, b: Sortable): number {
-  const typeRank: Record<FileType, number> = {
-    directory: 0,
-    file: 1,
-    symlink: 2,
-    other: 3,
-  };
-  const leftType = a.type ?? 'other';
-  const rightType = b.type ?? 'other';
-  const rankDiff = typeRank[leftType] - typeRank[rightType];
-  if (rankDiff !== 0) return rankDiff;
-  return compareNameThenPath(a, b);
-}
-
 const SORT_COMPARATORS: Readonly<
-  Record<SortField, (a: Sortable, b: Sortable) => number>
+  Record<SortKey, (a: Sortable, b: Sortable) => number>
 > = {
   size: (a, b) =>
     compareOptionalNumberDesc(a.size, b.size, () => compareNameThenPath(a, b)),
@@ -63,15 +46,9 @@ const SORT_COMPARATORS: Readonly<
       b.modified?.getTime(),
       () => compareNameThenPath(a, b)
     ),
-  type: (a, b) => compareTypeThenName(a, b),
   path: (a, b) => comparePathThenName(a, b),
   name: (a, b) => compareNameThenPath(a, b),
 };
-
-export function sortByField(items: Sortable[], sortBy: SortField): void {
-  const comparator = SORT_COMPARATORS[sortBy];
-  items.sort(comparator);
-}
 
 export function sortSearchResults(
   results: Sortable[],

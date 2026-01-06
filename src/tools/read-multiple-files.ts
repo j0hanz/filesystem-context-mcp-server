@@ -53,12 +53,6 @@ function buildStructuredResult(
   };
 }
 
-function buildTextResult(
-  results: Awaited<ReturnType<typeof readMultipleFiles>>
-): string {
-  return joinLines(results.map(formatReadMultipleResult));
-}
-
 function formatReadMultipleResult(
   result: Awaited<ReturnType<typeof readMultipleFiles>>[number]
 ): string {
@@ -157,7 +151,7 @@ async function handleReadMultipleFiles(
   });
 
   return buildToolResponse(
-    buildTextResult(results),
+    joinLines(results.map(formatReadMultipleResult)),
     buildStructuredResult(results, effectiveOptions)
   );
 }

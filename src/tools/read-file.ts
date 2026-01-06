@@ -18,63 +18,39 @@ import {
   withToolErrorHandling,
 } from './tool-response.js';
 
-function buildTextResult(
-  result: Awaited<ReturnType<typeof readFile>>,
-  head: number | undefined,
-  tail: number | undefined
-): string {
-  const note = buildReadFileNote(result, head, tail);
-  return note ? joinLines([result.content, note]) : result.content;
-}
-
 function buildReadFileNote(
   result: Awaited<ReturnType<typeof readFile>>,
   head: number | undefined,
   tail: number | undefined
 ): string | undefined {
-  const rangeNote = buildRangeNote(result);
+  const rangeNote =
+    result.readMode === 'lineRange' &&
+    result.lineStart !== undefined &&
+    result.lineEnd !== undefined
+      ? `Showing lines ${result.lineStart}-${result.lineEnd}`
+      : undefined;
   const linesNote =
     result.totalLines !== undefined
       ? `Total lines: ${result.totalLines}`
       : undefined;
   if (result.truncated) {
+    const truncatedNote =
+      result.totalLines !== undefined
+        ? `Showing requested lines. Total lines in file: ${result.totalLines}`
+        : head !== undefined
+          ? `Showing first ${String(head)} lines`
+          : tail !== undefined
+            ? `Showing last ${String(tail)} lines`
+            : undefined;
     return joinLines(
-      [buildTruncatedNote(result, head, tail), rangeNote, linesNote].filter(
-        (value): value is string => Boolean(value)
+      [truncatedNote, rangeNote, linesNote].filter((value): value is string =>
+        Boolean(value)
       )
     );
   }
   return joinLines(
     [rangeNote, linesNote].filter((value): value is string => Boolean(value))
   );
-}
-
-function buildTruncatedNote(
-  result: Awaited<ReturnType<typeof readFile>>,
-  head: number | undefined,
-  tail: number | undefined
-): string | undefined {
-  if (result.totalLines !== undefined) {
-    return `Showing requested lines. Total lines in file: ${result.totalLines}`;
-  }
-  if (head !== undefined) {
-    return `Showing first ${String(head)} lines`;
-  }
-  if (tail !== undefined) {
-    return `Showing last ${String(tail)} lines`;
-  }
-  return undefined;
-}
-
-function buildRangeNote(
-  result: Awaited<ReturnType<typeof readFile>>
-): string | undefined {
-  if (result.readMode === 'lineRange') {
-    if (result.lineStart !== undefined && result.lineEnd !== undefined) {
-      return `Showing lines ${result.lineStart}-${result.lineEnd}`;
-    }
-  }
-  return undefined;
 }
 
 type ReadFileArgs = z.infer<typeof ReadFileInputSchema>;
@@ -161,7 +137,8 @@ async function handleReadFile(
     signal,
   });
 
-  const text = buildTextResult(result, args.head, args.tail);
+  const note = buildReadFileNote(result, args.head, args.tail);
+  const text = note ? joinLines([result.content, note]) : result.content;
   return buildToolResponse(
     text,
     buildStructuredReadResult(result, args, effectiveOptions)

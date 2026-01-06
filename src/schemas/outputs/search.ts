@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { ErrorSchema } from '../common.js';
+import { ErrorSchema } from '../error-schema.js';
 
 const SearchFilesTypeSchema = z.enum(['file', 'symlink', 'other']);
 

@@ -1,71 +1,22 @@
 import type { Stats } from 'node:fs';
 
-import { MAX_TEXT_FILE_SIZE } from '../../constants.js';
 import { ErrorCode, McpError } from '../../errors.js';
-import { assertNotAborted } from '../abort.js';
-import { isProbablyBinary } from '../binary-detect.js';
 import {
   readFullContent,
   readHeadContent,
   readLineRangeContent,
   readTailContent,
 } from './read-file-content.js';
-
-export type ReadMode = 'lineRange' | 'tail' | 'head' | 'full';
-
-export interface ReadFileOptions {
-  encoding?: BufferEncoding;
-  maxSize?: number;
-  lineRange?: { start: number; end: number };
-  head?: number;
-  tail?: number;
-  skipBinary?: boolean;
-  signal?: AbortSignal;
-}
-
-export interface NormalizedOptions {
-  encoding: BufferEncoding;
-  maxSize: number;
-  lineRange?: { start: number; end: number };
-  head?: number;
-  tail?: number;
-  skipBinary: boolean;
-  signal?: AbortSignal;
-}
-
-export interface ReadFileResult {
-  path: string;
-  content: string;
-  truncated: boolean;
-  totalLines?: number;
-  readMode: ReadMode;
-  lineStart?: number;
-  lineEnd?: number;
-  head?: number;
-  tail?: number;
-  linesRead?: number;
-  hasMoreLines?: boolean;
-}
+import {
+  type NormalizedOptions,
+  type ReadFileResult,
+  resolveReadMode,
+} from './read-options.js';
 
 type ReadResultMetadata = Omit<
   ReadFileResult,
   'path' | 'content' | 'truncated' | 'totalLines'
 >;
-
-export function normalizeOptions(options: ReadFileOptions): NormalizedOptions {
-  return {
-    encoding: options.encoding ?? 'utf-8',
-    maxSize: Math.min(
-      options.maxSize ?? MAX_TEXT_FILE_SIZE,
-      MAX_TEXT_FILE_SIZE
-    ),
-    lineRange: options.lineRange,
-    head: options.head,
-    tail: options.tail,
-    skipBinary: options.skipBinary ?? false,
-    signal: options.signal,
-  };
-}
 
 function validateLineRange(
   lineRange: { start: number; end: number },
@@ -87,11 +38,19 @@ function validateLineRange(
   }
 }
 
-function resolveReadMode(options: NormalizedOptions): ReadMode {
-  if (options.lineRange) return 'lineRange';
-  if (options.tail !== undefined) return 'tail';
-  if (options.head !== undefined) return 'head';
-  return 'full';
+function assertLineRangeWithinLimit(
+  lineRange: { start: number; end: number },
+  filePath: string
+): void {
+  const maxLineRange = 100000;
+  const requestedLines = lineRange.end - lineRange.start + 1;
+  if (requestedLines <= maxLineRange) return;
+  throw new McpError(
+    ErrorCode.E_INVALID_INPUT,
+    `Invalid lineRange: range too large (max ${maxLineRange} lines)`,
+    filePath,
+    { requestedLines, maxLineRange }
+  );
 }
 
 function assertWithinMaxSize(
@@ -118,21 +77,6 @@ function requireOption<T>(
     ErrorCode.E_INVALID_INPUT,
     `Missing ${name} option`,
     filePath
-  );
-}
-
-function assertLineRangeWithinLimit(
-  lineRange: { start: number; end: number },
-  filePath: string
-): void {
-  const maxLineRange = 100000;
-  const requestedLines = lineRange.end - lineRange.start + 1;
-  if (requestedLines <= maxLineRange) return;
-  throw new McpError(
-    ErrorCode.E_INVALID_INPUT,
-    `Invalid lineRange: range too large (max ${maxLineRange} lines)`,
-    filePath,
-    { requestedLines, maxLineRange }
   );
 }
 
@@ -254,23 +198,4 @@ export async function readByMode(
   }
 
   return await readFullResult(validPath, filePath, stats, normalized);
-}
-
-export async function assertNotBinary(
-  validPath: string,
-  filePath: string,
-  normalized: NormalizedOptions
-): Promise<void> {
-  assertNotAborted(normalized.signal);
-  const isBinary = await isProbablyBinary(
-    validPath,
-    undefined,
-    normalized.signal
-  );
-  if (!isBinary) return;
-  throw new McpError(
-    ErrorCode.E_INVALID_INPUT,
-    `Binary file detected: ${filePath}. Set skipBinary=false to read as text.`,
-    filePath
-  );
 }

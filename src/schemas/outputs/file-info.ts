@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { ErrorSchema } from '../common.js';
+import { ErrorSchema } from '../error-schema.js';
 import { FileInfoSchema } from '../output-helpers.js';
 
 export const GetFileInfoOutputSchema = z.object({

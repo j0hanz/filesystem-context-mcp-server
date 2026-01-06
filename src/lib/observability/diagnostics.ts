@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 import { channel } from 'node:diagnostics_channel';
 
-export type DiagnosticsDetail = 0 | 1 | 2;
+type DiagnosticsDetail = 0 | 1 | 2;
 
-export interface ToolDiagnosticsEvent {
+interface ToolDiagnosticsEvent {
   phase: 'start' | 'end';
   tool: string;
   durationMs?: number;

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { ErrorSchema } from '../common.js';
+import { ErrorSchema } from '../error-schema.js';
 import { BatchSummarySchema } from '../output-helpers.js';
 
 export const ReadFileOutputSchema = z.object({

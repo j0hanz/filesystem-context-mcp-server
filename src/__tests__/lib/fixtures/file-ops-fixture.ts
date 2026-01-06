@@ -3,7 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { normalizePath } from '../../../lib/path-utils.js';
-import { setAllowedDirectories } from '../../../lib/path-validation.js';
+import { setAllowedDirectoriesResolved } from '../../../lib/path-validation.js';
 
 interface FileOpsFixture {
   testDir: string;
@@ -51,7 +51,7 @@ async function populateTestDir(base: string): Promise<void> {
 async function createFixture(): Promise<FileOpsFixture> {
   const testDir = await fs.mkdtemp(path.join(os.tmpdir(), TEST_DIR_PREFIX));
   await populateTestDir(testDir);
-  setAllowedDirectories([normalizePath(testDir)]);
+  await setAllowedDirectoriesResolved([normalizePath(testDir)]);
   return { testDir };
 }
 

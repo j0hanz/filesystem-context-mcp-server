@@ -58,13 +58,13 @@ void describe('validators', () => {
     },
   ];
 
-  for (const testCase of validLineRangeCases) {
+  validLineRangeCases.forEach((testCase) => {
     void it(`validateLineRange accepts ${testCase.name}`, () => {
       assert.doesNotThrow(() => {
         validateLineRange(testCase.params);
       });
     });
-  }
+  });
 
   const invalidLineRangeCases = [
     {
@@ -99,7 +99,7 @@ void describe('validators', () => {
     },
   ];
 
-  for (const testCase of invalidLineRangeCases) {
+  invalidLineRangeCases.forEach((testCase) => {
     void it(`validateLineRange rejects ${testCase.name}`, () => {
       expectMcpError(
         () => {
@@ -111,7 +111,7 @@ void describe('validators', () => {
         }
       );
     });
-  }
+  });
 
   const validHeadTailCases: [number | undefined, number | undefined][] = [
     [10, undefined],
@@ -119,13 +119,13 @@ void describe('validators', () => {
     [undefined, undefined],
   ];
 
-  for (const [head, tail] of validHeadTailCases) {
+  validHeadTailCases.forEach(([head, tail]) => {
     void it('validateHeadTail accepts valid head/tail combination', () => {
       assert.doesNotThrow(() => {
         validateHeadTail(head, tail);
       });
     });
-  }
+  });
 
   void it('validateHeadTail rejects both head and tail', () => {
     expectMcpError(

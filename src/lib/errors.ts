@@ -19,7 +19,7 @@ export function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   );
 }
 
-export const NODE_ERROR_CODE_MAP = {
+const NODE_ERROR_CODE_MAP = {
   ENOENT: ErrorCode.E_NOT_FOUND,
   EACCES: ErrorCode.E_PERMISSION_DENIED,
   EPERM: ErrorCode.E_PERMISSION_DENIED,
@@ -123,7 +123,7 @@ function isTimeoutError(error: unknown): boolean {
   return message.includes('timed out') || message.includes('timeout');
 }
 
-export function classifyError(error: unknown): ErrorCode {
+function classifyError(error: unknown): ErrorCode {
   if (isTimeoutError(error)) {
     return ErrorCode.E_TIMEOUT;
   }

@@ -11,12 +11,10 @@ interface TailReadState {
   linesFound: number;
   lines: string[];
 }
-
 interface TailReadWindow {
   startPos: number;
   size: number;
 }
-
 const CHUNK_SIZE = 256 * 1024;
 
 function initTailState(fileSize: number): TailReadState {
@@ -28,11 +26,6 @@ function initTailState(fileSize: number): TailReadState {
     lines: [],
   };
 }
-
-function shouldContinue(state: TailReadState, numLines: number): boolean {
-  return state.position > 0 && state.linesFound < numLines;
-}
-
 function clampWindow(
   position: number,
   maxBytesRead: number | undefined,
@@ -54,7 +47,6 @@ function clampWindow(
 
   return { startPos, size };
 }
-
 async function alignWindow(
   handle: fs.FileHandle,
   window: TailReadWindow,
@@ -77,20 +69,15 @@ async function alignWindow(
 
   return window;
 }
-
 function applyChunkLines(
   state: TailReadState,
   chunkText: string,
   numLines: number,
   hasMoreBefore: boolean
 ): void {
-  const chunkLines = splitChunkLines(chunkText);
+  const chunkLines = chunkText.replace(/\r\n/g, '\n').split('\n');
   const lines = updateRemainingText(state, chunkLines, hasMoreBefore);
   appendLinesFromEnd(state, lines, numLines);
-}
-
-function splitChunkLines(chunkText: string): string[] {
-  return chunkText.replace(/\r\n/g, '\n').split('\n');
 }
 
 function updateRemainingText(
@@ -195,7 +182,7 @@ export async function tailFile(
   try {
     const state = initTailState(stats.size);
 
-    while (shouldContinue(state, numLines)) {
+    while (state.position > 0 && state.linesFound < numLines) {
       await readTailChunk(
         handle,
         state,
