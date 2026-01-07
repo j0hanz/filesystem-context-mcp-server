@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { readFile } from '../../../lib/fs-helpers.js';
+import { readFile } from '../../../lib/fs-helpers/readers/read-file.js';
 import { withFileOpsFixture } from '../fixtures/file-ops-hooks.js';
 
 void describe('readFile', () => {

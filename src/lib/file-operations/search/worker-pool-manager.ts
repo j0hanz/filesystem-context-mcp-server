@@ -27,14 +27,3 @@ export function getSearchWorkerPool(
 
   return poolInstance;
 }
-
-/**
- * Close the global pool instance if it exists.
- */
-export async function closeSearchWorkerPool(): Promise<void> {
-  if (poolInstance) {
-    await poolInstance.close();
-    poolInstance = null;
-    poolSize = 0;
-  }
-}

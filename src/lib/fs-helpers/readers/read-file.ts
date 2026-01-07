@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 
 import { ErrorCode, McpError } from '../../errors.js';
-import { validateExistingPath } from '../../path-validation.js';
+import { validateExistingPath } from '../../path-validation/validate-existing.js';
 import { assertNotAborted, withAbort } from '../abort.js';
 import { assertNotBinary } from './binary-check.js';
 import { readByMode } from './read-modes.js';

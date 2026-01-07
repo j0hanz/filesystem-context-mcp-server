@@ -119,31 +119,6 @@ export class SearchWorkerPool {
   }
 
   /**
-   * Cancel a pending scan request.
-   */
-  cancel(requestId: number): void {
-    for (const slot of this.slots) {
-      if (slot.pending.has(requestId) && slot.worker) {
-        slot.worker.postMessage({ type: 'cancel', id: requestId });
-        break;
-      }
-    }
-  }
-
-  /**
-   * Cancel all pending requests.
-   */
-  cancelAll(): void {
-    for (const slot of this.slots) {
-      for (const [id] of slot.pending) {
-        if (slot.worker) {
-          slot.worker.postMessage({ type: 'cancel', id });
-        }
-      }
-    }
-  }
-
-  /**
    * Close the pool and terminate all workers.
    */
   async close(): Promise<void> {
@@ -173,40 +148,10 @@ export class SearchWorkerPool {
     await Promise.allSettled(terminatePromises);
     this.log('Worker pool closed');
   }
-
-  /**
-   * Get pool statistics.
-   */
-  getStats(): {
-    size: number;
-    activeWorkers: number;
-    pendingTasks: number;
-    disabledSlots: number;
-  } {
-    let activeWorkers = 0;
-    let pendingTasks = 0;
-    let disabledSlots = 0;
-
-    for (const slot of this.slots) {
-      if (slot.worker) activeWorkers++;
-      pendingTasks += slot.pending.size;
-      if (!slot.worker && slot.respawnCount >= MAX_RESPAWNS) disabledSlots++;
-    }
-
-    return {
-      size: this.slots.length,
-      activeWorkers,
-      pendingTasks,
-      disabledSlots,
-    };
-  }
 }
 
 export function isWorkerPoolAvailable(): boolean {
   return !isSourceContext;
 }
 
-export type {
-  WorkerScanRequest,
-  WorkerScanResult,
-} from './worker-pool-types.js';
+export type { WorkerScanResult } from './worker-pool-types.js';

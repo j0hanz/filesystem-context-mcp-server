@@ -5,7 +5,7 @@ import type { z } from 'zod';
 import { joinLines } from '../config/formatting.js';
 import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
-import { createTimedAbortSignal } from '../lib/fs-helpers.js';
+import { createTimedAbortSignal } from '../lib/fs-helpers/abort.js';
 import { readFile } from '../lib/fs-helpers/readers/read-file.js';
 import { assertLineRangeOptions } from '../lib/line-range.js';
 import { withToolDiagnostics } from '../lib/observability/diagnostics.js';
@@ -18,112 +18,39 @@ import {
   withToolErrorHandling,
 } from './tool-response.js';
 
+type ReadFileArgs = z.infer<typeof ReadFileInputSchema>;
+type ReadFileStructuredResult = z.infer<typeof ReadFileOutputSchema>;
 function buildReadFileNote(
   result: Awaited<ReturnType<typeof readFile>>,
   head: number | undefined,
   tail: number | undefined
 ): string | undefined {
-  const rangeNote = buildRangeNote(result);
-  const linesNote = buildLinesNote(result);
+  const notes: string[] = [];
   if (result.truncated) {
-    return joinNotes(
-      buildTruncatedNote(result, head, tail),
-      rangeNote,
-      linesNote
-    );
+    if (result.totalLines !== undefined) {
+      notes.push(
+        `Showing requested lines. Total lines in file: ${result.totalLines}`
+      );
+    } else if (head !== undefined) {
+      notes.push(`Showing first ${String(head)} lines`);
+    } else if (tail !== undefined) {
+      notes.push(`Showing last ${String(tail)} lines`);
+    }
   }
-  return joinNotes(rangeNote, linesNote);
-}
 
-type ReadFileArgs = z.infer<typeof ReadFileInputSchema>;
-type ReadFileStructuredResult = z.infer<typeof ReadFileOutputSchema>;
-
-// Hardcoded defaults for removed parameters
-const DEFAULT_ENCODING: BufferEncoding = 'utf-8';
-const DEFAULT_SKIP_BINARY = true;
-
-interface EffectiveReadOptions {
-  encoding: BufferEncoding;
-  maxSize: number;
-  skipBinary: boolean;
-  lineRange?: { start: number; end: number };
-  head?: number;
-  tail?: number;
-}
-
-function buildRangeNote(
-  result: Awaited<ReturnType<typeof readFile>>
-): string | undefined {
   if (
     result.readMode === 'lineRange' &&
     result.lineStart !== undefined &&
     result.lineEnd !== undefined
   ) {
-    return `Showing lines ${result.lineStart}-${result.lineEnd}`;
+    notes.push(`Showing lines ${result.lineStart}-${result.lineEnd}`);
   }
-  return undefined;
-}
 
-function buildLinesNote(
-  result: Awaited<ReturnType<typeof readFile>>
-): string | undefined {
-  return result.totalLines !== undefined
-    ? `Total lines: ${result.totalLines}`
-    : undefined;
-}
-
-function buildTruncatedNote(
-  result: Awaited<ReturnType<typeof readFile>>,
-  head: number | undefined,
-  tail: number | undefined
-): string | undefined {
   if (result.totalLines !== undefined) {
-    return `Showing requested lines. Total lines in file: ${result.totalLines}`;
+    notes.push(`Total lines: ${result.totalLines}`);
   }
-  if (head !== undefined) return `Showing first ${String(head)} lines`;
-  if (tail !== undefined) return `Showing last ${String(tail)} lines`;
-  return undefined;
-}
 
-function joinNotes(...notes: (string | undefined)[]): string | undefined {
-  return joinLines(notes.filter((value): value is string => Boolean(value)));
-}
-
-function buildEffectiveReadOptions(
-  args: ReadFileArgs,
-  lineRange: { start: number; end: number } | undefined
-): EffectiveReadOptions {
-  return {
-    encoding: DEFAULT_ENCODING,
-    maxSize: MAX_TEXT_FILE_SIZE,
-    skipBinary: DEFAULT_SKIP_BINARY,
-    lineRange,
-    head: args.head,
-    tail: args.tail,
-  };
-}
-
-function resolveLineRange(
-  args: ReadFileArgs
-): { start: number; end: number } | undefined {
-  return args.lineStart !== undefined && args.lineEnd !== undefined
-    ? { start: args.lineStart, end: args.lineEnd }
-    : undefined;
-}
-
-function buildReadOptions(
-  effectiveOptions: EffectiveReadOptions,
-  signal?: AbortSignal
-): Parameters<typeof readFile>[1] {
-  return {
-    encoding: effectiveOptions.encoding,
-    maxSize: effectiveOptions.maxSize,
-    lineRange: effectiveOptions.lineRange,
-    head: effectiveOptions.head,
-    tail: effectiveOptions.tail,
-    skipBinary: effectiveOptions.skipBinary,
-    signal,
-  };
+  return notes.length ? joinLines(notes) : undefined;
 }
 
 function buildStructuredReadResult(
@@ -165,12 +92,19 @@ async function handleReadFile(
     },
     args.path
   );
-  const lineRange = resolveLineRange(args);
-  const effectiveOptions = buildEffectiveReadOptions(args, lineRange);
-  const result = await readFile(
-    args.path,
-    buildReadOptions(effectiveOptions, signal)
-  );
+  const lineRange =
+    args.lineStart !== undefined && args.lineEnd !== undefined
+      ? { start: args.lineStart, end: args.lineEnd }
+      : undefined;
+  const result = await readFile(args.path, {
+    encoding: 'utf-8',
+    maxSize: MAX_TEXT_FILE_SIZE,
+    skipBinary: true,
+    lineRange,
+    head: args.head,
+    tail: args.tail,
+    signal,
+  });
 
   const note = buildReadFileNote(result, args.head, args.tail);
   const text = note ? joinLines([result.content, note]) : result.content;

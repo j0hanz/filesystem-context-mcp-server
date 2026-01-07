@@ -1,6 +1,6 @@
 import type { ListDirectoryResult } from '../../config/types.js';
 import { createTimedAbortSignal } from '../fs-helpers/abort.js';
-import { validateExistingDirectory } from '../path-validation.js';
+import { validateExistingDirectory } from '../path-validation/validate-existing.js';
 import {
   executeListDirectory,
   type ListDirectoryOptions,

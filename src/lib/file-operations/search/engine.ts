@@ -1,10 +1,8 @@
 import type { SearchContentResult } from '../../../config/types.js';
 import { SEARCH_WORKERS } from '../../constants.js';
-import { createTimedAbortSignal } from '../../fs-helpers.js';
-import {
-  getAllowedDirectories,
-  validateExistingDirectory,
-} from '../../path-validation.js';
+import { createTimedAbortSignal } from '../../fs-helpers/abort.js';
+import { getAllowedDirectories } from '../../path-validation/allowed-directories.js';
+import { validateExistingDirectory } from '../../path-validation/validate-existing.js';
 import type { ResolvedOptions, SearchContentOptions } from './options.js';
 import { mergeOptions } from './options.js';
 import type { ResolvedFile, ScanSummary } from './scan-collector.js';

@@ -183,10 +183,4 @@ if (parentPort) {
   }
 }
 
-export type {
-  WorkerRequest,
-  WorkerResponse,
-  ScanRequest,
-  ScanResult,
-  ScanError,
-};
+export type { WorkerResponse, ScanRequest, ScanResult };

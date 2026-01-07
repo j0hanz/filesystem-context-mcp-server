@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import { setAllowedDirectoriesResolved } from './lib/path-validation.js';
+import { setAllowedDirectoriesResolved } from './lib/path-validation/allowed-directories.js';
 import { createServer, parseArgs, startServer } from './server.js';
 
 const SHUTDOWN_TIMEOUT_MS = 5000;

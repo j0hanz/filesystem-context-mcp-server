@@ -4,7 +4,7 @@ import type { Stats } from 'node:fs';
 import { parseArgs as parseNodeArgs } from 'node:util';
 
 import { normalizePath } from '../lib/path-utils.js';
-import { RESERVED_DEVICE_NAMES } from '../lib/path-validation.js';
+import { RESERVED_DEVICE_NAMES } from '../lib/path-validation/path-rules.js';
 
 export interface ParseArgsResult {
   allowedDirs: string[];

@@ -5,7 +5,7 @@ import type { ContentMatch } from '../../../config/types.js';
 import { makeContext, pushContext, trimContent } from './scan-helpers.js';
 import type { Matcher, ScanFileOptions, ScanFileResult } from './scan-types.js';
 
-export type BinaryDetector = (
+type BinaryDetector = (
   path: string,
   handle: fsp.FileHandle,
   signal?: AbortSignal
@@ -37,10 +37,9 @@ function updateContext(
   contextLines: number,
   ctx: ReturnType<typeof makeContext>
 ): string | undefined {
-  const trimmedLine = contextLines > 0 ? trimContent(line) : undefined;
-  if (trimmedLine !== undefined) {
-    pushContext(ctx, trimmedLine, contextLines);
-  }
+  if (contextLines <= 0) return undefined;
+  const trimmedLine = trimContent(line);
+  pushContext(ctx, trimmedLine, contextLines);
   return trimmedLine;
 }
 
@@ -54,115 +53,21 @@ function appendMatch(
   contextLines: number,
   ctx: ReturnType<typeof makeContext>
 ): void {
-  matches.push(
-    buildMatch(
-      requestedPath,
-      line,
-      trimmedLine,
-      lineNo,
-      count,
-      contextLines,
-      ctx
-    )
-  );
-}
-
-function buildMatch(
-  requestedPath: string,
-  line: string,
-  trimmedLine: string | undefined,
-  lineNo: number,
-  count: number,
-  contextLines: number,
-  ctx: ReturnType<typeof makeContext>
-): ContentMatch {
   const contextAfter = contextLines > 0 ? [] : undefined;
-  const match: ContentMatch = {
+  matches.push({
     file: requestedPath,
     line: lineNo,
     content: trimmedLine ?? trimContent(line),
     contextBefore: contextLines > 0 ? [...ctx.before] : undefined,
     contextAfter,
     matchCount: count,
-  };
+  });
   if (contextAfter) {
     ctx.pendingAfter.push({
       buffer: contextAfter,
       left: contextLines,
     });
   }
-  return match;
-}
-
-function handleLine(
-  line: string,
-  lineNo: number,
-  requestedPath: string,
-  matcher: Matcher,
-  options: ScanFileOptions,
-  ctx: ReturnType<typeof makeContext>,
-  matches: ContentMatch[]
-): void {
-  const trimmedLine = updateContext(line, options.contextLines, ctx);
-  const count = matcher(line);
-  if (count > 0) {
-    appendMatch(
-      matches,
-      requestedPath,
-      line,
-      trimmedLine,
-      lineNo,
-      count,
-      options.contextLines,
-      ctx
-    );
-  }
-}
-
-async function scanLines(
-  rl: readline.Interface,
-  requestedPath: string,
-  matcher: Matcher,
-  options: ScanFileOptions,
-  maxMatches: number,
-  isCancelled: () => boolean
-): Promise<ContentMatch[]> {
-  const ctx = makeContext();
-  const matches: ContentMatch[] = [];
-  let lineNo = 0;
-
-  for await (const line of rl) {
-    if (isCancelled()) break;
-    lineNo++;
-    handleLine(line, lineNo, requestedPath, matcher, options, ctx, matches);
-
-    if (matches.length >= maxMatches) {
-      break;
-    }
-  }
-
-  return matches;
-}
-
-function buildSkipResult(
-  skippedTooLarge: boolean,
-  skippedBinary: boolean
-): ScanFileResult {
-  return {
-    matches: [],
-    matched: false,
-    skippedTooLarge,
-    skippedBinary,
-  };
-}
-
-function buildMatchResult(matches: ContentMatch[]): ScanFileResult {
-  return {
-    matches,
-    matched: matches.length > 0,
-    skippedTooLarge: false,
-    skippedBinary: false,
-  };
 }
 
 async function readMatches(
@@ -175,27 +80,36 @@ async function readMatches(
   signal?: AbortSignal
 ): Promise<ContentMatch[]> {
   const rl = buildReadline(handle, signal);
+  const ctx = makeContext();
+  const matches: ContentMatch[] = [];
+  let lineNo = 0;
   try {
-    return await scanLines(
-      rl,
-      requestedPath,
-      matcher,
-      options,
-      maxMatches,
-      isCancelled
-    );
+    for await (const line of rl) {
+      if (isCancelled()) break;
+      lineNo++;
+
+      const { contextLines } = options;
+      const trimmedLine = updateContext(line, contextLines, ctx);
+      const count = matcher(line);
+      if (count > 0) {
+        appendMatch(
+          matches,
+          requestedPath,
+          line,
+          trimmedLine,
+          lineNo,
+          count,
+          contextLines,
+          ctx
+        );
+      }
+
+      if (matches.length >= maxMatches) break;
+    }
+    return matches;
   } finally {
     rl.close();
   }
-}
-
-async function shouldSkipBinaryFile(
-  resolvedPath: string,
-  handle: fsp.FileHandle,
-  options: ScanLoopOptions
-): Promise<boolean> {
-  if (!options.options.skipBinary) return false;
-  return await options.isProbablyBinary(resolvedPath, handle, options.signal);
 }
 
 async function scanWithHandle(
@@ -208,11 +122,24 @@ async function scanWithHandle(
   const stats = await handle.stat();
 
   if (stats.size > scanOptions.maxFileSize) {
-    return buildSkipResult(true, false);
+    return {
+      matches: [],
+      matched: false,
+      skippedTooLarge: true,
+      skippedBinary: false,
+    };
   }
 
-  if (await shouldSkipBinaryFile(resolvedPath, handle, options)) {
-    return buildSkipResult(false, true);
+  if (
+    scanOptions.skipBinary &&
+    (await options.isProbablyBinary(resolvedPath, handle, options.signal))
+  ) {
+    return {
+      matches: [],
+      matched: false,
+      skippedTooLarge: false,
+      skippedBinary: true,
+    };
   }
 
   const matches = await readMatches(
@@ -224,7 +151,12 @@ async function scanWithHandle(
     options.isCancelled,
     options.signal
   );
-  return buildMatchResult(matches);
+  return {
+    matches,
+    matched: matches.length > 0,
+    skippedTooLarge: false,
+    skippedBinary: false,
+  };
 }
 
 export async function scanFileWithMatcher(

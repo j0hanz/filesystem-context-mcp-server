@@ -3,7 +3,7 @@ import type {
   MultipleFileInfoResult,
 } from '../../config/types.js';
 import { PARALLEL_CONCURRENCY } from '../constants.js';
-import { processInParallel } from '../fs-helpers.js';
+import { processInParallel } from '../fs-helpers/concurrency.js';
 import { getFileInfo } from './file-info.js';
 
 interface GetMultipleFileInfoOptions {

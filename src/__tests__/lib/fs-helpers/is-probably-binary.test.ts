@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { isProbablyBinary } from '../../../lib/fs-helpers.js';
+import { isProbablyBinary } from '../../../lib/fs-helpers/binary-detect.js';
 import { withFileOpsFixture } from '../fixtures/file-ops-hooks.js';
 
 void describe('isProbablyBinary', () => {

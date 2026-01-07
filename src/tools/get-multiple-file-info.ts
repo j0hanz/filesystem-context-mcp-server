@@ -6,7 +6,7 @@ import { formatBytes, joinLines } from '../config/formatting.js';
 import type { GetMultipleFileInfoResult } from '../config/types.js';
 import { ErrorCode } from '../lib/errors.js';
 import { getMultipleFileInfo } from '../lib/file-operations/get-multiple-file-info.js';
-import { createTimedAbortSignal } from '../lib/fs-helpers.js';
+import { createTimedAbortSignal } from '../lib/fs-helpers/abort.js';
 import { withToolDiagnostics } from '../lib/observability/diagnostics.js';
 import {
   GetMultipleFileInfoInputSchema,

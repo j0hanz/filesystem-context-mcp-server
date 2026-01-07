@@ -1,10 +1,8 @@
 import type { SearchContentResult } from '../../../config/types.js';
 import { normalizePath } from '../../path-utils.js';
-import {
-  isPathWithinDirectories,
-  toAccessDeniedWithHint,
-  validateExistingPathDetailed,
-} from '../../path-validation.js';
+import { isPathWithinDirectories } from '../../path-validation/allowed-directories.js';
+import { toAccessDeniedWithHint } from '../../path-validation/path-errors.js';
+import { validateExistingPathDetailed } from '../../path-validation/validate-existing.js';
 import { globEntries } from '../glob-engine.js';
 import type { ResolvedOptions } from './options.js';
 

@@ -4,7 +4,7 @@ import type { z } from 'zod';
 
 import { ErrorCode } from '../lib/errors.js';
 import { getFileInfo } from '../lib/file-operations/file-info.js';
-import { createTimedAbortSignal } from '../lib/fs-helpers.js';
+import { createTimedAbortSignal } from '../lib/fs-helpers/abort.js';
 import { withToolDiagnostics } from '../lib/observability/diagnostics.js';
 import {
   GetFileInfoInputSchema,

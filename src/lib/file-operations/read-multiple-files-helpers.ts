@@ -1,11 +1,11 @@
 import type { Stats } from 'node:fs';
 
 import { MAX_TEXT_FILE_SIZE, PARALLEL_CONCURRENCY } from '../constants.js';
+import { processInParallel } from '../fs-helpers/concurrency.js';
 import {
-  processInParallel,
   readFile,
   readFileWithStats,
-} from '../fs-helpers.js';
+} from '../fs-helpers/readers/read-file.js';
 import { assertLineRangeOptions } from '../line-range.js';
 
 export interface ReadMultipleResult {
@@ -66,7 +66,7 @@ function buildReadOptions(options: NormalizedReadMultipleOptions): {
   };
 }
 
-export async function readSingleFile(
+async function readSingleFile(
   task: FileReadTask,
   options: NormalizedReadMultipleOptions,
   signal?: AbortSignal
@@ -120,7 +120,7 @@ export async function readFilesInParallel(
   );
 }
 
-export function normalizeReadMultipleOptions(
+function normalizeReadMultipleOptions(
   options: ReadMultipleOptions,
   pathLabel: string
 ): NormalizedReadMultipleOptions {
@@ -160,79 +160,4 @@ export function resolveNormalizedOptions(
     normalized: normalizeReadMultipleOptions(rest, pathLabel),
     signal,
   };
-}
-
-export function buildOutput(
-  filePaths: readonly string[]
-): ReadMultipleResult[] {
-  return filePaths.map((filePath) => ({ path: filePath }));
-}
-
-export function buildFilesToProcess(
-  filePaths: readonly string[],
-  validated: Map<
-    number,
-    {
-      validPath: string;
-      stats: Stats;
-    }
-  >,
-  skippedBudget: Set<number>
-): FileReadTask[] {
-  return filePaths
-    .map((filePath, index) => {
-      const cached = validated.get(index);
-      return cached
-        ? {
-            filePath,
-            index,
-            validPath: cached.validPath,
-            stats: cached.stats,
-          }
-        : { filePath, index };
-    })
-    .filter(({ index }) => !skippedBudget.has(index));
-}
-
-export function applyResults(
-  output: ReadMultipleResult[],
-  results: { index: number; value: ReadMultipleResult }[]
-): void {
-  for (const result of results) {
-    output[result.index] = result.value;
-  }
-}
-
-export function applyErrors(
-  output: ReadMultipleResult[],
-  errors: { index: number; error: Error }[],
-  filesToProcess: { index: number }[],
-  filePaths: readonly string[]
-): void {
-  for (const failure of errors) {
-    const target = filesToProcess[failure.index];
-    const originalIndex = target?.index ?? -1;
-    if (originalIndex < 0) continue;
-    const filePath = filePaths[originalIndex] ?? '(unknown)';
-    output[originalIndex] = {
-      path: filePath,
-      error: failure.error.message,
-    };
-  }
-}
-
-export function applySkippedBudget(
-  output: ReadMultipleResult[],
-  skippedBudget: Set<number>,
-  filePaths: readonly string[],
-  maxTotalSize: number
-): void {
-  for (const index of skippedBudget) {
-    const filePath = filePaths[index];
-    if (!filePath) continue;
-    output[index] = {
-      path: filePath,
-      error: `Skipped: combined estimated read would exceed maxTotalSize (${maxTotalSize} bytes)`,
-    };
-  }
 }

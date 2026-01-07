@@ -51,6 +51,7 @@ export const SearchContentOutputSchema = z.object({
       excludePatterns: z.array(z.string()),
       caseSensitive: z.boolean(),
       maxResults: z.number(),
+      contextLines: z.number(),
       isLiteral: z.boolean(),
     })
     .optional()

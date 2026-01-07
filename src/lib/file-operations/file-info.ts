@@ -4,9 +4,9 @@ import type { Stats } from 'node:fs';
 
 import type { FileInfo } from '../../config/types.js';
 import { getMimeType } from '../constants.js';
-import { getFileType, isHidden } from '../fs-helpers.js';
 import { assertNotAborted, withAbort } from '../fs-helpers/abort.js';
-import { validateExistingPathDetailed } from '../path-validation.js';
+import { getFileType, isHidden } from '../fs-helpers/fs-utils.js';
+import { validateExistingPathDetailed } from '../path-validation/validate-existing.js';
 
 const PERM_STRINGS = [
   '---',

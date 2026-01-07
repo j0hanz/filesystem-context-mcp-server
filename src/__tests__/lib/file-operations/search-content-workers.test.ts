@@ -1,13 +1,3 @@
-/**
- * Tests for worker threads search functionality.
- *
- * These tests run in a child process with FILESYSTEM_CONTEXT_SEARCH_WORKERS
- * enabled to test the worker pool implementation.
- *
- * NOTE: These tests are skipped in source context (tsx) because worker threads
- * don't work properly with tsx's module resolution. They run against compiled
- * code in the dist/ directory.
- */
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import assert from 'node:assert/strict';
@@ -16,17 +6,14 @@ import { after, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
-const currentFile = fileURLToPath(import.meta.url);
-const isSourceContext = currentFile.endsWith('.ts');
-
-// Worker tests only work with compiled code
+const isSourceContext = fileURLToPath(import.meta.url).endsWith('.ts');
 const shouldSkip = isSourceContext;
 
 // Create a test script that will run searchContent with workers enabled
 // Uses compiled code paths for proper module resolution
 const testScript = `
 import { searchContent } from './dist/lib/file-operations/search/engine.js';
-import { setAllowedDirectoriesResolved } from './dist/lib/path-validation.js';
+import { setAllowedDirectoriesResolved } from './dist/lib/path-validation/allowed-directories.js';
 
 async function main() {
   const testDir = process.argv[2];
@@ -62,12 +49,33 @@ interface TestResult {
   error?: string;
 }
 
+async function expectHelloMatches(
+  testDir: string,
+  workers: number
+): Promise<void> {
+  const result = await runSearchWithWorkers(testDir, 'hello', workers);
+
+  assert.strictEqual(
+    result.success,
+    true,
+    `Expected success but got error: ${result.error ?? 'unknown'}`
+  );
+  assert.ok(
+    result.matches !== undefined && result.matches > 0,
+    'Should find matches'
+  );
+  assert.strictEqual(
+    result.filesMatched,
+    15,
+    'Should match 15 files (every other file)'
+  );
+}
+
 async function runSearchWithWorkers(
   testDir: string,
   pattern: string,
   workers: number
 ): Promise<TestResult> {
-  // Get project root (3 levels up from __tests__/lib/file-operations)
   const projectRoot = path.resolve(currentDir, '..', '..', '..', '..');
 
   return new Promise((resolve, reject) => {
@@ -125,83 +133,39 @@ void describe(
     let testDir: string;
 
     before(async () => {
-      // Create a temporary test directory with multiple files
       testDir = path.join(currentDir, 'worker-test-fixtures');
       await fs.mkdir(testDir, { recursive: true });
 
-      // Create test files with searchable content
-      for (let i = 0; i < 30; i++) {
+      const fixtures = Array.from({ length: 30 }, (_, index) => {
         const content =
-          i % 2 === 0
-            ? `File ${String(i)}\nThis file contains hello world\nEnd of file`
-            : `File ${String(i)}\nThis file has different content\nEnd of file`;
-        await fs.writeFile(
-          path.join(testDir, `test-${String(i)}.txt`),
-          content
-        );
-      }
+          index % 2 === 0
+            ? `File ${String(index)}\nThis file contains hello world\nEnd of file`
+            : `File ${String(index)}\nThis file has different content\nEnd of file`;
+        return {
+          filePath: path.join(testDir, `test-${String(index)}.txt`),
+          content,
+        };
+      });
+
+      await Promise.all(
+        fixtures.map((fixture) =>
+          fs.writeFile(fixture.filePath, fixture.content)
+        )
+      );
     });
 
     after(async () => {
-      // Clean up test directory
       await fs.rm(testDir, { recursive: true, force: true });
     });
 
-    void it('should work with workers disabled (baseline)', async () => {
-      const result = await runSearchWithWorkers(testDir, 'hello', 0);
-
-      assert.strictEqual(
-        result.success,
-        true,
-        `Expected success but got error: ${result.error ?? 'unknown'}`
-      );
-      assert.ok(
-        result.matches !== undefined && result.matches > 0,
-        'Should find matches'
-      );
-      assert.strictEqual(
-        result.filesMatched,
-        15,
-        'Should match 15 files (every other file)'
-      );
-    });
-
-    void it('should work with 1 worker thread', async () => {
-      const result = await runSearchWithWorkers(testDir, 'hello', 1);
-
-      assert.strictEqual(
-        result.success,
-        true,
-        `Expected success but got error: ${result.error ?? 'unknown'}`
-      );
-      assert.ok(
-        result.matches !== undefined && result.matches > 0,
-        'Should find matches'
-      );
-      assert.strictEqual(
-        result.filesMatched,
-        15,
-        'Should match 15 files (every other file)'
-      );
-    });
-
-    void it('should work with 2 worker threads', async () => {
-      const result = await runSearchWithWorkers(testDir, 'hello', 2);
-
-      assert.strictEqual(
-        result.success,
-        true,
-        `Expected success but got error: ${result.error ?? 'unknown'}`
-      );
-      assert.ok(
-        result.matches !== undefined && result.matches > 0,
-        'Should find matches'
-      );
-      assert.strictEqual(
-        result.filesMatched,
-        15,
-        'Should match 15 files (every other file)'
-      );
+    [
+      { label: 'workers disabled (baseline)', workers: 0 },
+      { label: '1 worker thread', workers: 1 },
+      { label: '2 worker threads', workers: 2 },
+    ].forEach(({ label, workers }) => {
+      void it(`should work with ${label}`, async () => {
+        await expectHelloMatches(testDir, workers);
+      });
     });
 
     void it('should return consistent results with and without workers', async () => {
