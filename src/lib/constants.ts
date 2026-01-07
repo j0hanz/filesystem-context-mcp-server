@@ -1,6 +1,6 @@
 import { availableParallelism } from 'node:os';
 
-// Helper for parsing environment variables (only used for 3 configurable values)
+// Helper for parsing environment variables (only used for configurable values)
 function parseEnvInt(
   envVar: string,
   defaultValue: number,
@@ -13,7 +13,7 @@ function parseEnvInt(
   const parsed = parseInt(value, 10);
   if (Number.isNaN(parsed) || parsed < min || parsed > max) {
     console.error(
-      `[WARNING] Invalid ${envVar} value: ${value} (must be ${min}-${max}). Using default: ${defaultValue}`
+      `[WARNING] Invalid ${envVar} value: ${value} (must be ${String(min)}-${String(max)}). Using default: ${String(defaultValue)}`
     );
     return defaultValue;
   }
@@ -47,6 +47,18 @@ export const DEFAULT_SEARCH_TIMEOUT_MS = parseEnvInt(
   30000,
   100,
   3600000
+);
+
+/**
+ * Number of search worker threads to use.
+ * Default: CPU cores (capped at 8 for optimal I/O performance).
+ * Configurable via FILESYSTEM_CONTEXT_SEARCH_WORKERS env var.
+ */
+export const SEARCH_WORKERS = parseEnvInt(
+  'FILESYSTEM_CONTEXT_SEARCH_WORKERS',
+  Math.min(availableParallelism(), 8),
+  1,
+  16
 );
 
 // Hardcoded defaults (use per-call tool params to override)

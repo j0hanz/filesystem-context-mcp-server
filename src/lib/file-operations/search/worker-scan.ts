@@ -1,111 +1,30 @@
+/**
+ * Worker-safe file scanning function.
+ *
+ * This module provides a file scanning function that can be used within
+ * worker threads. It doesn't rely on any shared state from the main thread.
+ */
 import * as fsp from 'node:fs/promises';
 import readline from 'node:readline';
 
-import RE2 from 're2';
-import safeRegex from 'safe-regex2';
-
 import type { ContentMatch } from '../../../config/types.js';
 import { MAX_LINE_CONTENT_LENGTH } from '../../constants.js';
-import { isProbablyBinary } from '../../fs-helpers.js';
+import type { Matcher, ScanFileOptions } from './scan-file.js';
 
-export interface MatcherOptions {
-  caseSensitive: boolean;
-  wholeWord: boolean;
-  isLiteral: boolean;
-}
+type BinaryDetector = (
+  path: string,
+  handle: fsp.FileHandle,
+  signal?: AbortSignal
+) => Promise<boolean>;
 
-export type Matcher = (line: string) => number;
-
-export interface ScanFileOptions {
-  maxFileSize: number;
-  skipBinary: boolean;
-  contextLines: number;
-}
-
-export interface ScanFileResult {
-  readonly matches: readonly ContentMatch[];
-  readonly matched: boolean;
-  readonly skippedTooLarge: boolean;
-  readonly skippedBinary: boolean;
-}
-
-/**
- * Validate a search pattern for safety (ReDoS protection).
- * Throws an error if the pattern is unsafe.
- * Call this before sending patterns to workers.
- */
-export function validatePattern(
-  pattern: string,
-  options: MatcherOptions
-): void {
-  // Literal patterns without wholeWord don't use regex, always safe
-  if (options.isLiteral && !options.wholeWord) {
-    return;
-  }
-
-  const escaped = options.isLiteral
-    ? pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    : pattern;
-  const final = options.wholeWord ? `\\b${escaped}\\b` : escaped;
-
-  if (!safeRegex(final)) {
-    throw new Error(
-      `Potentially unsafe regular expression (ReDoS risk): ${pattern}`
-    );
-  }
-}
-
-export function buildMatcher(
-  pattern: string,
-  options: MatcherOptions
-): Matcher {
-  if (options.isLiteral && !options.wholeWord) {
-    const needle = options.caseSensitive ? pattern : pattern.toLowerCase();
-    return (line: string): number => {
-      const hay = options.caseSensitive ? line : line.toLowerCase();
-      if (needle.length === 0 || hay.length === 0) return 0;
-      let count = 0;
-      let pos = hay.indexOf(needle);
-      while (pos !== -1) {
-        count++;
-        pos = hay.indexOf(needle, pos + needle.length);
-      }
-      return count;
-    };
-  }
-
-  const escaped = options.isLiteral
-    ? pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    : pattern;
-  const final = options.wholeWord ? `\\b${escaped}\\b` : escaped;
-  if (!safeRegex(final)) {
-    throw new Error(
-      `Potentially unsafe regular expression (ReDoS risk): ${pattern}`
-    );
-  }
-  const regex = new RE2(final, options.caseSensitive ? 'g' : 'gi');
-  return (line: string): number => {
-    regex.lastIndex = 0;
-    let count = 0;
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(line)) !== null) {
-      count++;
-      if (match[0].length === 0) {
-        regex.lastIndex++;
-      }
-    }
-    return count;
-  };
+interface ContextState {
+  before: string[];
+  pendingAfter: PendingAfter[];
 }
 
 interface PendingAfter {
   buffer: string[];
   left: number;
-}
-
-interface ContextState {
-  before: string[];
-  pendingAfter: PendingAfter[];
 }
 
 function makeContext(): ContextState {
@@ -130,14 +49,29 @@ function trimContent(line: string): string {
   return line.trimEnd().slice(0, MAX_LINE_CONTENT_LENGTH);
 }
 
-export async function scanFileResolved(
+export interface WorkerScanResult {
+  readonly matches: readonly ContentMatch[];
+  readonly matched: boolean;
+  readonly skippedTooLarge: boolean;
+  readonly skippedBinary: boolean;
+}
+
+/**
+ * Scans a file for content matches within a worker thread.
+ *
+ * This function is similar to scanFileResolved but designed for worker threads:
+ * - Takes a cancellation check function instead of AbortSignal
+ * - Takes binary detector as a parameter to avoid module-level state
+ */
+export async function scanFileInWorker(
   resolvedPath: string,
   requestedPath: string,
   matcher: Matcher,
   options: ScanFileOptions,
-  signal?: AbortSignal,
-  maxMatches: number = Number.POSITIVE_INFINITY
-): Promise<ScanFileResult> {
+  maxMatches: number,
+  isCancelled: () => boolean,
+  isProbablyBinary: BinaryDetector
+): Promise<WorkerScanResult> {
   const handle = await fsp.open(resolvedPath, 'r');
 
   try {
@@ -153,7 +87,7 @@ export async function scanFileResolved(
     }
 
     if (options.skipBinary) {
-      const binary = await isProbablyBinary(resolvedPath, handle, signal);
+      const binary = await isProbablyBinary(resolvedPath, handle);
       if (binary) {
         return {
           matches: [],
@@ -167,15 +101,17 @@ export async function scanFileResolved(
     const rl = readline.createInterface({
       input: handle.createReadStream({ encoding: 'utf-8', autoClose: false }),
       crlfDelay: Infinity,
-      signal,
     });
 
     const ctx = makeContext();
     const matches: ContentMatch[] = [];
     let lineNo = 0;
+
     try {
       for await (const line of rl) {
-        if (signal?.aborted) break;
+        // Check cancellation periodically
+        if (isCancelled()) break;
+
         lineNo++;
         const trimmedLine =
           options.contextLines > 0 ? trimContent(line) : undefined;
