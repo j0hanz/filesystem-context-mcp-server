@@ -9,7 +9,7 @@ import { MAX_LINE_CONTENT_LENGTH } from '../../constants.js';
 /**
  * Pending context lines to be added after a match.
  */
-export interface PendingAfter {
+interface PendingAfter {
   buffer: string[];
   left: number;
 }

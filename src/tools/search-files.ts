@@ -9,14 +9,8 @@ import {
   formatOperationSummary,
   joinLines,
 } from '../config/formatting.js';
-import {
-  DEFAULT_MAX_DEPTH,
-  DEFAULT_SEARCH_MAX_FILES,
-  DEFAULT_SEARCH_TIMEOUT_MS,
-} from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { searchFiles } from '../lib/file-operations/search-files.js';
-import { createTimedAbortSignal } from '../lib/fs-helpers.js';
 import { withToolDiagnostics } from '../lib/observability/diagnostics.js';
 import {
   SearchFilesInputSchema,
@@ -32,53 +26,36 @@ import {
 
 type SearchFilesArgs = z.infer<typeof SearchFilesInputSchema>;
 type SearchFilesStructuredResult = z.infer<typeof SearchFilesOutputSchema>;
-type SearchFilesStructuredEntry = NonNullable<
-  SearchFilesStructuredResult['results']
->[number];
-
-function formatSearchResultLine(
-  result: Awaited<ReturnType<typeof searchFiles>>['results'][number],
-  basePath: string
-): string {
-  const tag = result.type === 'directory' ? '[DIR]' : '[FILE]';
-  const size =
-    result.size !== undefined ? ` (${formatBytes(result.size)})` : '';
-  return `${tag} ${pathModule.relative(basePath, result.path)}${size}`;
-}
-
 function formatSearchResults(
   results: Awaited<ReturnType<typeof searchFiles>>['results'],
   basePath: string
 ): string {
   if (results.length === 0) return 'No matches';
 
-  const lines = results.map((result) =>
-    formatSearchResultLine(result, basePath)
-  );
+  const lines = results.map((result) => {
+    const tag = result.type === 'directory' ? '[DIR]' : '[FILE]';
+    const size =
+      result.size !== undefined ? ` (${formatBytes(result.size)})` : '';
+    return `${tag} ${pathModule.relative(basePath, result.path)}${size}`;
+  });
   return joinLines([`Found ${results.length}:`, ...lines]);
 }
 
-function buildStructuredEntry(
-  result: Awaited<ReturnType<typeof searchFiles>>['results'][number],
-  basePath: string
-): SearchFilesStructuredEntry {
-  return {
-    path: pathModule.relative(basePath, result.path),
-    type: result.type === 'directory' ? 'other' : result.type,
-    size: result.size,
-    modified: result.modified?.toISOString(),
-  };
-}
-
 function buildStructuredResult(
-  result: Awaited<ReturnType<typeof searchFiles>>
+  result: Awaited<ReturnType<typeof searchFiles>>,
+  args: SearchFilesArgs
 ): SearchFilesStructuredResult {
   const { basePath, pattern, results, summary } = result;
   return {
     ok: true,
     basePath,
     pattern,
-    results: results.map((entry) => buildStructuredEntry(entry, basePath)),
+    results: results.map((entry) => ({
+      path: pathModule.relative(basePath, entry.path),
+      type: entry.type === 'directory' ? 'other' : entry.type,
+      size: entry.size,
+      modified: entry.modified?.toISOString(),
+    })),
     summary: {
       matched: summary.matched,
       truncated: summary.truncated,
@@ -86,48 +63,40 @@ function buildStructuredResult(
       filesScanned: summary.filesScanned,
       stoppedReason: summary.stoppedReason,
     },
+    effectiveOptions: {
+      excludePatterns: [...args.excludePatterns],
+      maxResults: args.maxResults,
+    },
   };
-}
-
-function buildTruncationInfo(result: Awaited<ReturnType<typeof searchFiles>>): {
-  truncatedReason?: string;
-  tip?: string;
-} {
-  if (!result.summary.truncated) return {};
-  if (result.summary.stoppedReason === 'timeout') {
-    return {
-      truncatedReason: 'search timed out',
-      tip: 'Increase timeoutMs, use a more specific pattern, or add excludePatterns to narrow scope.',
-    };
-  }
-  if (result.summary.stoppedReason === 'maxResults') {
-    return {
-      truncatedReason: `reached max results limit (${result.summary.matched} returned)`,
-    };
-  }
-  if (result.summary.stoppedReason === 'maxFiles') {
-    return {
-      truncatedReason: `reached max files limit (${result.summary.filesScanned} scanned)`,
-    };
-  }
-  return {};
-}
-
-function buildSearchHeader(
-  result: Awaited<ReturnType<typeof searchFiles>>
-): string {
-  return joinLines([
-    `Base path: ${result.basePath}`,
-    `Pattern: ${result.pattern}`,
-  ]);
 }
 
 function buildTextResult(
   result: Awaited<ReturnType<typeof searchFiles>>
 ): string {
   const { summary, results } = result;
-  const { truncatedReason, tip } = buildTruncationInfo(result);
-  const header = buildSearchHeader(result);
+  let truncatedReason: string | undefined;
+  let tip: string | undefined;
+  if (summary.truncated) {
+    switch (summary.stoppedReason) {
+      case 'timeout':
+        truncatedReason = 'search timed out';
+        tip =
+          'Increase timeoutMs, use a more specific pattern, or add excludePatterns to narrow scope.';
+        break;
+      case 'maxResults':
+        truncatedReason = `reached max results limit (${summary.matched} returned)`;
+        break;
+      case 'maxFiles':
+        truncatedReason = `reached max files limit (${summary.filesScanned} scanned)`;
+        break;
+      default:
+        break;
+    }
+  }
+  const header = joinLines([
+    `Base path: ${result.basePath}`,
+    `Pattern: ${result.pattern}`,
+  ]);
   const body = formatSearchResults(results, result.basePath);
   let textOutput = joinLines([header, body]);
   if (results.length === 0) {
@@ -147,41 +116,19 @@ function buildTextResult(
   return textOutput;
 }
 
-function buildSearchOptions(
-  args: SearchFilesArgs,
-  signal?: AbortSignal
-): Parameters<typeof searchFiles>[3] {
-  return {
-    maxResults: args.maxResults,
-    sortBy: 'path' as const,
-    maxDepth: DEFAULT_MAX_DEPTH,
-    maxFilesScanned: DEFAULT_SEARCH_MAX_FILES,
-    timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-    baseNameMatch: false,
-    skipSymlinks: true,
-    includeHidden: false,
-    signal,
-  };
-}
-
 async function handleSearchFiles(
   args: SearchFilesArgs,
   signal?: AbortSignal
 ): Promise<ToolResponse<SearchFilesStructuredResult>> {
   const { path: searchBasePath, pattern, excludePatterns, maxResults } = args;
-  // Hardcode removed parameters with sensible defaults
-  const result = await searchFiles(
-    searchBasePath,
-    pattern,
-    excludePatterns,
-    buildSearchOptions(args, signal)
-  );
-  const structured = buildStructuredResult(result);
-  structured.effectiveOptions = {
-    excludePatterns: [...excludePatterns],
+  const result = await searchFiles(searchBasePath, pattern, excludePatterns, {
     maxResults,
-  };
-  return buildToolResponse(buildTextResult(result), structured);
+    signal,
+  });
+  return buildToolResponse(
+    buildTextResult(result),
+    buildStructuredResult(result, args)
+  );
 }
 
 const SEARCH_FILES_TOOL = {
@@ -205,23 +152,13 @@ type SearchFilesToolHandler = (
   extra: { signal: AbortSignal }
 ) => Promise<ToolResult<SearchFilesStructuredResult>>;
 
-function createSearchFilesHandler(): SearchFilesToolHandler {
-  return (args, extra) =>
+export function registerSearchFilesTool(server: McpServer): void {
+  server.registerTool('search_files', SEARCH_FILES_TOOL, ((args, extra) =>
     withToolDiagnostics(
       'search_files',
       () =>
         withToolErrorHandling(
-          async () => {
-            const { signal, cleanup } = createTimedAbortSignal(
-              extra.signal,
-              DEFAULT_SEARCH_TIMEOUT_MS
-            );
-            try {
-              return await handleSearchFiles(args, signal);
-            } finally {
-              cleanup();
-            }
-          },
+          async () => await handleSearchFiles(args, extra.signal),
           (error) =>
             buildToolErrorResponse(
               error,
@@ -230,13 +167,5 @@ function createSearchFilesHandler(): SearchFilesToolHandler {
             )
         ),
       { path: args.path }
-    );
-}
-
-export function registerSearchFilesTool(server: McpServer): void {
-  server.registerTool(
-    'search_files',
-    SEARCH_FILES_TOOL,
-    createSearchFilesHandler()
-  );
+    )) satisfies SearchFilesToolHandler);
 }

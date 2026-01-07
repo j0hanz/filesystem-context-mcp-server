@@ -1,6 +1,6 @@
 import type { SearchFilesResult, SearchResult } from '../../config/types.js';
 import { createTimedAbortSignal } from '../fs-helpers/abort.js';
-import { validateExistingDirectory } from '../path-validation.js';
+import { validateExistingDirectory } from '../path-validation/validate-existing.js';
 import {
   buildSearchSummary,
   collectSearchResults,
@@ -11,8 +11,6 @@ import {
   type SearchFilesOptions,
 } from './search-files-helpers.js';
 import { sortSearchResults } from './sorting.js';
-
-export type { SearchFilesOptions } from './search-files-helpers.js';
 
 async function runSearchFiles(
   root: string,

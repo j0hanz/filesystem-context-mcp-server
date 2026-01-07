@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 
 import { getMultipleFileInfo } from '../../../lib/file-operations/get-multiple-file-info.js';
-import { setAllowedDirectoriesResolved } from '../../../lib/path-validation.js';
+import { setAllowedDirectoriesResolved } from '../../../lib/path-validation/allowed-directories.js';
 
 void describe('getMultipleFileInfo', () => {
   let tempDir: string;

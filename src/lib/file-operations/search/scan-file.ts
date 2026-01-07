@@ -1,7 +1,7 @@
 import RE2 from 're2';
 import safeRegex from 'safe-regex2';
 
-import { isProbablyBinary } from '../../fs-helpers.js';
+import { isProbablyBinary } from '../../fs-helpers/binary-detect.js';
 import { scanFileWithMatcher } from './scan-runner.js';
 import type {
   Matcher,
@@ -10,12 +10,7 @@ import type {
   ScanFileResult,
 } from './scan-types.js';
 
-export type {
-  Matcher,
-  MatcherOptions,
-  ScanFileOptions,
-  ScanFileResult,
-} from './scan-types.js';
+export type { Matcher, MatcherOptions, ScanFileOptions } from './scan-types.js';
 
 /**
  * Validate a search pattern for safety (ReDoS protection).

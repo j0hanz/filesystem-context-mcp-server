@@ -8,8 +8,8 @@ import { normalizePath } from '../../lib/path-utils.js';
 import {
   getAllowedDirectories,
   setAllowedDirectoriesResolved,
-  validateExistingPath,
-} from '../../lib/path-validation.js';
+} from '../../lib/path-validation/allowed-directories.js';
+import { validateExistingPath } from '../../lib/path-validation/validate-existing.js';
 
 void describe('path-validation', () => {
   let testDir = '';

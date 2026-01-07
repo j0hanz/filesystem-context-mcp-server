@@ -6,7 +6,7 @@ import { joinLines } from '../config/formatting.js';
 import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { readMultipleFiles } from '../lib/file-operations/read-multiple-files.js';
-import { createTimedAbortSignal } from '../lib/fs-helpers.js';
+import { createTimedAbortSignal } from '../lib/fs-helpers/abort.js';
 import { assertLineRangeOptions } from '../lib/line-range.js';
 import { withToolDiagnostics } from '../lib/observability/diagnostics.js';
 import {
@@ -25,16 +25,8 @@ type ReadMultipleArgs = z.infer<typeof ReadMultipleFilesInputSchema>;
 type ReadMultipleStructuredResult = z.infer<
   typeof ReadMultipleFilesOutputSchema
 >;
-
-interface EffectiveReadMultipleOptions {
-  encoding: BufferEncoding;
-  maxSize: number;
-  maxTotalSize: number;
-  head?: number;
-  tail?: number;
-  lineStart?: number;
-  lineEnd?: number;
-}
+type ReadMultipleOptions = NonNullable<Parameters<typeof readMultipleFiles>[1]>;
+type EffectiveReadMultipleOptions = Omit<ReadMultipleOptions, 'signal'>;
 
 function buildStructuredResult(
   results: Awaited<ReturnType<typeof readMultipleFiles>>,
@@ -55,36 +47,6 @@ function buildStructuredResult(
   };
 }
 
-function buildEffectiveOptions(
-  args: ReadMultipleArgs
-): EffectiveReadMultipleOptions {
-  return {
-    encoding: 'utf-8',
-    maxSize: MAX_TEXT_FILE_SIZE,
-    maxTotalSize: 100 * 1024 * 1024,
-    head: args.head,
-    tail: args.tail,
-    lineStart: args.lineStart,
-    lineEnd: args.lineEnd,
-  };
-}
-
-function buildReadMultipleOptions(
-  effectiveOptions: EffectiveReadMultipleOptions,
-  signal?: AbortSignal
-): Parameters<typeof readMultipleFiles>[1] {
-  return {
-    encoding: effectiveOptions.encoding,
-    maxSize: effectiveOptions.maxSize,
-    maxTotalSize: effectiveOptions.maxTotalSize,
-    head: effectiveOptions.head,
-    tail: effectiveOptions.tail,
-    lineStart: effectiveOptions.lineStart,
-    lineEnd: effectiveOptions.lineEnd,
-    signal,
-  };
-}
-
 function formatReadMultipleResult(
   result: Awaited<ReturnType<typeof readMultipleFiles>>[number]
 ): string {
@@ -96,11 +58,7 @@ function formatReadMultipleResult(
 function formatSuccessResult(
   result: Awaited<ReturnType<typeof readMultipleFiles>>[number]
 ): string {
-  const note = buildReadMultipleNote(result);
-  const rangeNote = buildReadMultipleRangeNote(result);
-  const footer = [rangeNote, note].filter((value): value is string =>
-    Boolean(value)
-  );
+  const footer = buildReadMultipleFooter(result);
   const contentBlock = footer.length
     ? joinLines([result.content ?? '', ...footer])
     : (result.content ?? '');
@@ -111,38 +69,38 @@ function formatErrorResult(path: string, error: string | undefined): string {
   return joinLines([`=== ${path} ===`, `[Error: ${error ?? 'Unknown error'}]`]);
 }
 
-function buildReadMultipleNote(
-  result: Awaited<ReturnType<typeof readMultipleFiles>>[number]
-): string {
-  if (result.truncated !== true) return '';
-  if (result.totalLines !== undefined) {
-    return `[Truncated. Total lines: ${result.totalLines}]`;
-  }
-  return '[Truncated]';
-}
-
 type ReadMultipleResult = Awaited<ReturnType<typeof readMultipleFiles>>[number];
 
-function buildReadMultipleRangeNote(
-  result: ReadMultipleResult
-): string | undefined {
+function buildReadMultipleFooter(result: ReadMultipleResult): string[] {
+  const notes: string[] = [];
+  if (result.truncated === true) {
+    notes.push(
+      result.totalLines !== undefined
+        ? `[Truncated. Total lines: ${result.totalLines}]`
+        : '[Truncated]'
+    );
+  }
+
   switch (result.readMode) {
     case 'lineRange':
-      if (result.lineStart === undefined || result.lineEnd === undefined) {
-        return undefined;
+      if (result.lineStart !== undefined && result.lineEnd !== undefined) {
+        notes.push(`Showing lines ${result.lineStart}-${result.lineEnd}`);
       }
-      return `Showing lines ${result.lineStart}-${result.lineEnd}`;
+      break;
     case 'head':
-      return result.head !== undefined
-        ? `Showing first ${String(result.head)} lines`
-        : undefined;
+      if (result.head !== undefined) {
+        notes.push(`Showing first ${String(result.head)} lines`);
+      }
+      break;
     case 'tail':
-      return result.tail !== undefined
-        ? `Showing last ${String(result.tail)} lines`
-        : undefined;
+      if (result.tail !== undefined) {
+        notes.push(`Showing last ${String(result.tail)} lines`);
+      }
+      break;
     default:
-      return undefined;
+      break;
   }
+  return notes;
 }
 
 async function handleReadMultipleFiles(
@@ -159,11 +117,19 @@ async function handleReadMultipleFiles(
     },
     pathLabel
   );
-  const effectiveOptions = buildEffectiveOptions(args);
-  const results = await readMultipleFiles(
-    args.paths,
-    buildReadMultipleOptions(effectiveOptions, signal)
-  );
+  const effectiveOptions: EffectiveReadMultipleOptions = {
+    encoding: 'utf-8',
+    maxSize: MAX_TEXT_FILE_SIZE,
+    maxTotalSize: 100 * 1024 * 1024,
+    head: args.head,
+    tail: args.tail,
+    lineStart: args.lineStart,
+    lineEnd: args.lineEnd,
+  };
+  const results = await readMultipleFiles(args.paths, {
+    ...effectiveOptions,
+    signal,
+  });
 
   return buildToolResponse(
     joinLines(results.map(formatReadMultipleResult)),

@@ -3,7 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { normalizePath } from '../../../lib/path-utils.js';
-import { setAllowedDirectoriesResolved } from '../../../lib/path-validation.js';
+import { setAllowedDirectoriesResolved } from '../../../lib/path-validation/allowed-directories.js';
 
 interface FileOpsFixture {
   testDir: string;

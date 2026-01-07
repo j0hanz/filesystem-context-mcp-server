@@ -7,7 +7,7 @@ import type { z } from 'zod';
 import { joinLines } from '../config/formatting.js';
 import { ErrorCode, isNodeError } from '../lib/errors.js';
 import { withToolDiagnostics } from '../lib/observability/diagnostics.js';
-import { getAllowedDirectories } from '../lib/path-validation.js';
+import { getAllowedDirectories } from '../lib/path-validation/allowed-directories.js';
 import { ListAllowedDirectoriesOutputSchema } from '../schemas/index.js';
 import {
   buildToolErrorResponse,

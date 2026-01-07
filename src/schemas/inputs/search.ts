@@ -81,6 +81,16 @@ export const SearchFilesInputSchema = z.strictObject({
   ),
 });
 
+const ContextLinesSchema = z
+  .int({ error: 'contextLines must be an integer' })
+  .min(0, 'contextLines must be at least 0')
+  .max(10, 'contextLines cannot exceed 10')
+  .optional()
+  .default(2)
+  .describe(
+    'Number of lines to include before and after each match (0-10, default 2)'
+  );
+
 export const SearchContentInputSchema = z.strictObject({
   path: z
     .string()
@@ -111,6 +121,7 @@ export const SearchContentInputSchema = z.strictObject({
   ),
   caseSensitive: CaseSensitiveSchema,
   maxResults: MaxResultsSchema.describe('Maximum number of results'),
+  contextLines: ContextLinesSchema,
   isLiteral: z
     .boolean()
     .optional()

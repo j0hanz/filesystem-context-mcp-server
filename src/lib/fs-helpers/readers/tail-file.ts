@@ -46,65 +46,6 @@ function clampWindow(
 
   return { startPos, size };
 }
-async function alignWindow(
-  handle: fs.FileHandle,
-  window: TailReadWindow,
-  position: number,
-  maxBytesRead: number | undefined,
-  bytesReadTotal: number,
-  signal?: AbortSignal
-): Promise<TailReadWindow> {
-  if (window.startPos <= 0) return window;
-
-  const alignedPos = await findUTF8Boundary(handle, window.startPos, signal);
-  const alignedSize = position - alignedPos;
-
-  if (
-    maxBytesRead === undefined ||
-    alignedSize <= maxBytesRead - bytesReadTotal
-  ) {
-    return { startPos: alignedPos, size: alignedSize };
-  }
-
-  return window;
-}
-function applyChunkLines(
-  state: TailReadState,
-  chunkText: string,
-  numLines: number,
-  hasMoreBefore: boolean
-): void {
-  const chunkLines = chunkText.replace(/\r\n/g, '\n').split('\n');
-  updateRemainingText(state, chunkLines, hasMoreBefore);
-  appendLinesFromEnd(state, chunkLines, numLines);
-}
-
-function updateRemainingText(
-  state: TailReadState,
-  chunkLines: string[],
-  hasMoreBefore: boolean
-): void {
-  if (hasMoreBefore) {
-    state.remainingText = chunkLines.shift() ?? '';
-    return;
-  }
-  state.remainingText = '';
-}
-
-function appendLinesFromEnd(
-  state: TailReadState,
-  chunkLines: string[],
-  numLines: number
-): void {
-  for (let i = chunkLines.length - 1; i >= 0; i--) {
-    if (state.linesFound >= numLines) break;
-    const line = chunkLines[i];
-    if (line !== undefined) {
-      state.lines.push(line);
-      state.linesFound++;
-    }
-  }
-}
 
 async function readAlignedChunk(
   handle: fs.FileHandle,
@@ -125,10 +66,6 @@ async function readAlignedChunk(
   };
 }
 
-function resetPosition(state: TailReadState): void {
-  state.position = 0;
-}
-
 async function resolveAlignedWindow(
   handle: fs.FileHandle,
   state: TailReadState,
@@ -141,53 +78,37 @@ async function resolveAlignedWindow(
     state.bytesReadTotal
   );
   if (!window) return null;
-  return await alignWindow(
-    handle,
-    window,
-    state.position,
-    maxBytesRead,
-    state.bytesReadTotal,
-    signal
-  );
+  if (window.startPos <= 0) return window;
+
+  const alignedPos = await findUTF8Boundary(handle, window.startPos, signal);
+  const alignedSize = state.position - alignedPos;
+
+  if (
+    maxBytesRead === undefined ||
+    alignedSize <= maxBytesRead - state.bytesReadTotal
+  ) {
+    return { startPos: alignedPos, size: alignedSize };
+  }
+
+  return window;
 }
 
-function applyChunkResult(
+function applyChunkLines(
   state: TailReadState,
-  chunkResult: { data: string; bytesRead: number },
+  chunkText: string,
   numLines: number,
   hasMoreBefore: boolean
 ): void {
-  state.bytesReadTotal += chunkResult.bytesRead;
-  const combined = chunkResult.data + state.remainingText;
-  applyChunkLines(state, combined, numLines, hasMoreBefore);
-}
-
-async function readTailChunk(
-  handle: fs.FileHandle,
-  state: TailReadState,
-  numLines: number,
-  encoding: BufferEncoding,
-  maxBytesRead: number | undefined,
-  signal?: AbortSignal
-): Promise<void> {
-  assertNotAborted(signal);
-  const aligned = await resolveAlignedWindow(
-    handle,
-    state,
-    maxBytesRead,
-    signal
-  );
-  if (!aligned) {
-    resetPosition(state);
-    return;
+  const chunkLines = chunkText.replace(/\r\n/g, '\n').split('\n');
+  state.remainingText = hasMoreBefore ? (chunkLines.shift() ?? '') : '';
+  for (let i = chunkLines.length - 1; i >= 0; i--) {
+    if (state.linesFound >= numLines) break;
+    const line = chunkLines[i];
+    if (line !== undefined) {
+      state.lines.push(line);
+      state.linesFound++;
+    }
   }
-  state.position = aligned.startPos;
-  const chunkResult = await readAlignedChunk(handle, aligned, encoding, signal);
-  if (!chunkResult) {
-    resetPosition(state);
-    return;
-  }
-  applyChunkResult(state, chunkResult, numLines, state.position > 0);
 }
 
 async function readTailLoop(
@@ -199,17 +120,38 @@ async function readTailLoop(
   signal?: AbortSignal
 ): Promise<string> {
   while (state.position > 0 && state.linesFound < numLines) {
-    await readTailChunk(
+    assertNotAborted(signal);
+    const aligned = await resolveAlignedWindow(
       handle,
       state,
-      numLines,
-      encoding,
       maxBytesRead,
       signal
     );
+    if (!aligned) {
+      state.position = 0;
+      break;
+    }
+    state.position = aligned.startPos;
+    const chunkResult = await readAlignedChunk(
+      handle,
+      aligned,
+      encoding,
+      signal
+    );
+    if (!chunkResult) {
+      state.position = 0;
+      break;
+    }
+    state.bytesReadTotal += chunkResult.bytesRead;
+    applyChunkLines(
+      state,
+      chunkResult.data + state.remainingText,
+      numLines,
+      state.position > 0
+    );
   }
-  const reversedLines = [...state.lines].reverse();
-  return reversedLines.join('\n');
+  const reversed = [...state.lines].reverse();
+  return reversed.join('\n');
 }
 
 export async function tailFile(

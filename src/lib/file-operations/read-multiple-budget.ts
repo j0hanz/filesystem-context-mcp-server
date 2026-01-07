@@ -2,9 +2,9 @@ import * as fs from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 
 import { PARALLEL_CONCURRENCY } from '../constants.js';
-import { processInParallel } from '../fs-helpers.js';
 import { withAbort } from '../fs-helpers/abort.js';
-import { validateExistingPath } from '../path-validation.js';
+import { processInParallel } from '../fs-helpers/concurrency.js';
+import { validateExistingPath } from '../path-validation/validate-existing.js';
 
 export interface ValidatedFileInfo {
   index: number;

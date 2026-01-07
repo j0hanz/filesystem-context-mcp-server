@@ -5,7 +5,7 @@ import {
   BINARY_CHECK_BUFFER_SIZE,
   KNOWN_BINARY_EXTENSIONS,
 } from '../constants.js';
-import { validateExistingPath } from '../path-validation.js';
+import { validateExistingPath } from '../path-validation/validate-existing.js';
 import { withAbort } from './abort.js';
 
 function hasKnownBinaryExtension(filePath: string): boolean {

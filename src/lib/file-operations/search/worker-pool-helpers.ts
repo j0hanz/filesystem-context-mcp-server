@@ -5,7 +5,7 @@ import type { WorkerSlot } from './worker-pool-types.js';
 
 type LogFn = (message: string) => void;
 
-export function handleWorkerMessage(
+function handleWorkerMessage(
   slot: WorkerSlot,
   message: WorkerResponse,
   log: LogFn
@@ -25,11 +25,7 @@ export function handleWorkerMessage(
   }
 }
 
-export function handleWorkerError(
-  slot: WorkerSlot,
-  error: Error,
-  log: LogFn
-): void {
+function handleWorkerError(slot: WorkerSlot, error: Error, log: LogFn): void {
   log(`Worker ${String(slot.index)} error: ${error.message}`);
 
   for (const [, pending] of slot.pending) {
@@ -41,7 +37,7 @@ export function handleWorkerError(
   slot.worker = null;
 }
 
-export function handleWorkerExit(
+function handleWorkerExit(
   slot: WorkerSlot,
   code: number,
   isClosed: boolean,
