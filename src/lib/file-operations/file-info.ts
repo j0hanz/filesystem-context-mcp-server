@@ -1,5 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import type { Stats } from 'node:fs';
 
 import type { FileInfo } from '../../config/types.js';
 import { getMimeType } from '../constants.js';
@@ -47,6 +48,29 @@ async function resolveSymlinkTarget(
   return getSymlinkTarget(pathToRead, signal);
 }
 
+function buildFileInfoResult(
+  name: string,
+  requestedPath: string,
+  isSymlink: boolean,
+  stats: Stats,
+  mimeType: string | undefined,
+  symlinkTarget: string | undefined
+): FileInfo {
+  return {
+    name,
+    path: requestedPath,
+    type: isSymlink ? 'symlink' : getFileType(stats),
+    size: stats.size,
+    created: stats.birthtime,
+    modified: stats.mtime,
+    accessed: stats.atime,
+    permissions: getPermissions(stats.mode),
+    isHidden: isHidden(name),
+    mimeType,
+    symlinkTarget,
+  };
+}
+
 export async function getFileInfo(
   filePath: string,
   options: { includeMimeType?: boolean; signal?: AbortSignal } = {}
@@ -68,19 +92,14 @@ export async function getFileInfo(
 
   const stats = await withAbort(fs.stat(resolvedPath), signal);
 
-  return {
+  return buildFileInfoResult(
     name,
-    path: requestedPath,
-    type: isSymlink ? 'symlink' : getFileType(stats),
-    size: stats.size,
-    created: stats.birthtime,
-    modified: stats.mtime,
-    accessed: stats.atime,
-    permissions: getPermissions(stats.mode),
-    isHidden: isHidden(name),
+    requestedPath,
+    isSymlink,
+    stats,
     mimeType,
-    symlinkTarget,
-  };
+    symlinkTarget
+  );
 }
 
 async function getSymlinkTarget(

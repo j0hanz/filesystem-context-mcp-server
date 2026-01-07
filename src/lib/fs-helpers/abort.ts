@@ -1,17 +1,9 @@
-/**
- * Create an AbortError with the specified message.
- */
 export function createAbortError(message = 'Operation aborted'): Error {
   const error = new Error(message);
   error.name = 'AbortError';
   return error;
 }
 
-/**
- * Assert that the signal is not aborted, throwing if it is.
- *
- * @throws The signal's reason if aborted, or an AbortError
- */
 export function assertNotAborted(signal?: AbortSignal, message?: string): void {
   if (!signal?.aborted) return;
   const { reason } = signal as { reason?: unknown };
@@ -28,17 +20,6 @@ function getAbortError(signal: AbortSignal, message?: string): Error {
   }
   return createAbortError(message);
 }
-
-/**
- * Wrap a promise with abort signal support.
- *
- * If the signal is already aborted, throws immediately.
- * If the signal aborts during the promise, rejects with the abort reason.
- *
- * @param promise - The promise to wrap
- * @param signal - Optional abort signal
- * @returns Promise that rejects on abort
- */
 export function withAbort<T>(
   promise: Promise<T>,
   signal?: AbortSignal
@@ -66,44 +47,61 @@ export function withAbort<T>(
       });
   });
 }
-
-/**
- * Create a combined abort signal with optional timeout.
- *
- * Combines a base signal (if provided) with a timeout signal.
- * The cleanup function must be called to prevent timer leaks.
- *
- * Uses AbortSignal.any() when available (Node.js 20+) for cleaner
- * signal combination.
- *
- * @param baseSignal - Optional base signal to combine with timeout
- * @param timeoutMs - Optional timeout in milliseconds
- * @returns Combined signal and cleanup function
- */
 export function createTimedAbortSignal(
   baseSignal: AbortSignal | undefined,
   timeoutMs?: number
 ): { signal: AbortSignal; cleanup: () => void } {
   // Fast path: no timeout and no base signal
   if (!baseSignal && !timeoutMs) {
-    const controller = new AbortController();
-    return { signal: controller.signal, cleanup: () => {} };
+    return createNoopSignal();
   }
 
   // Fast path: no timeout, just forward the base signal
   if (!timeoutMs && baseSignal) {
-    return { signal: baseSignal, cleanup: () => {} };
+    return createForwardedSignal(baseSignal);
   }
 
   // Use AbortSignal.any() if available (Node.js 20+) for cleaner combination
-  if (typeof AbortSignal.any === 'function' && baseSignal && timeoutMs) {
-    const timeoutSignal = AbortSignal.timeout(timeoutMs);
-    const combined = AbortSignal.any([baseSignal, timeoutSignal]);
-    // AbortSignal.timeout handles its own cleanup, no manual cleanup needed
-    return { signal: combined, cleanup: () => {} };
+  if (typeof timeoutMs === 'number' && shouldUseAbortAny(baseSignal)) {
+    return createAnySignal(baseSignal, timeoutMs);
   }
 
   // Fallback: manual signal combination
+  return createManualSignal(baseSignal, timeoutMs);
+}
+
+function createNoopSignal(): { signal: AbortSignal; cleanup: () => void } {
+  const controller = new AbortController();
+  return { signal: controller.signal, cleanup: () => {} };
+}
+
+function createForwardedSignal(baseSignal: AbortSignal): {
+  signal: AbortSignal;
+  cleanup: () => void;
+} {
+  return { signal: baseSignal, cleanup: () => {} };
+}
+
+function shouldUseAbortAny(
+  baseSignal: AbortSignal | undefined
+): baseSignal is AbortSignal {
+  return typeof AbortSignal.any === 'function' && baseSignal !== undefined;
+}
+
+function createAnySignal(
+  baseSignal: AbortSignal,
+  timeoutMs: number
+): { signal: AbortSignal; cleanup: () => void } {
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const combined = AbortSignal.any([baseSignal, timeoutSignal]);
+  // AbortSignal.timeout handles its own cleanup, no manual cleanup needed
+  return { signal: combined, cleanup: () => {} };
+}
+
+function createManualSignal(
+  baseSignal: AbortSignal | undefined,
+  timeoutMs: number | undefined
+): { signal: AbortSignal; cleanup: () => void } {
   const controller = new AbortController();
 
   const forwardAbort = (): void => {
@@ -120,12 +118,7 @@ export function createTimedAbortSignal(
     }
   }
 
-  const timeoutId =
-    typeof timeoutMs === 'number' && Number.isFinite(timeoutMs)
-      ? setTimeout(() => {
-          controller.abort(createAbortError('Operation timed out'));
-        }, timeoutMs)
-      : undefined;
+  const timeoutId = createTimeout(controller, timeoutMs);
 
   const cleanup = (): void => {
     if (baseSignal) {
@@ -137,4 +130,17 @@ export function createTimedAbortSignal(
   };
 
   return { signal: controller.signal, cleanup };
+}
+
+function createTimeout(
+  controller: AbortController,
+  timeoutMs: number | undefined
+): ReturnType<typeof setTimeout> | undefined {
+  if (typeof timeoutMs !== 'number' || !Number.isFinite(timeoutMs)) {
+    return undefined;
+  }
+
+  return setTimeout(() => {
+    controller.abort(createAbortError('Operation timed out'));
+  }, timeoutMs);
 }

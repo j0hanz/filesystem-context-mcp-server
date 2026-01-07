@@ -1,10 +1,12 @@
+import type { FileHandle } from 'node:fs/promises';
+
 import { headFile } from './head-file.js';
 import { readLineRange } from './line-range.js';
 import { readFileBufferWithLimit } from './read-buffer.js';
 import { tailFile } from './tail-file.js';
 
 export async function readLineRangeContent(
-  filePath: string,
+  handle: FileHandle,
   lineRange: { start: number; end: number },
   options: { encoding: BufferEncoding; maxSize: number; signal?: AbortSignal }
 ): Promise<{
@@ -14,7 +16,7 @@ export async function readLineRangeContent(
   hasMoreLines: boolean;
 }> {
   const result = await readLineRange(
-    filePath,
+    handle,
     lineRange.start,
     lineRange.end,
     options.encoding,
@@ -46,7 +48,7 @@ function countLines(content: string): number {
 }
 
 export async function readHeadContent(
-  filePath: string,
+  handle: FileHandle,
   head: number,
   options: { encoding: BufferEncoding; maxSize: number; signal?: AbortSignal }
 ): Promise<{
@@ -56,7 +58,7 @@ export async function readHeadContent(
   hasMoreLines: boolean;
 }> {
   const content = await headFile(
-    filePath,
+    handle,
     head,
     options.encoding,
     options.maxSize,
@@ -73,7 +75,8 @@ export async function readHeadContent(
 }
 
 export async function readTailContent(
-  filePath: string,
+  handle: FileHandle,
+  fileSize: number,
   tail: number,
   options: { encoding: BufferEncoding; maxSize: number; signal?: AbortSignal }
 ): Promise<{
@@ -83,7 +86,8 @@ export async function readTailContent(
   hasMoreLines: boolean;
 }> {
   const content = await tailFile(
-    filePath,
+    handle,
+    fileSize,
     tail,
     options.encoding,
     options.maxSize,
@@ -100,14 +104,14 @@ export async function readTailContent(
 }
 
 export async function readFullContent(
-  filePath: string,
+  handle: FileHandle,
   encoding: BufferEncoding,
   maxSize: number,
-  requestedPath: string = filePath,
+  requestedPath: string,
   signal?: AbortSignal
 ): Promise<{ content: string; totalLines: number }> {
   const buffer = await readFileBufferWithLimit(
-    filePath,
+    handle,
     maxSize,
     requestedPath,
     signal

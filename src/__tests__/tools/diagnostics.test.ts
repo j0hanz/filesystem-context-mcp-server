@@ -9,12 +9,14 @@ import { registerListAllowedDirectoriesTool } from '../../tools/list-allowed-dir
 type ToolHandler = () => Promise<unknown>;
 
 const restoreEnv = (key: string, previous: string | undefined): void => {
-  void (previous === undefined
-    ? Reflect.deleteProperty(process.env, key)
-    : (process.env[key] = previous));
+  if (previous === undefined) {
+    Reflect.deleteProperty(process.env, key);
+    return;
+  }
+  process.env[key] = previous;
 };
 
-void it('publishes tool diagnostics events when enabled', async () => {
+await it('publishes tool diagnostics events when enabled', async () => {
   const previousEnabled = process.env.FILESYSTEM_CONTEXT_DIAGNOSTICS;
   const previousDetail = process.env.FILESYSTEM_CONTEXT_DIAGNOSTICS_DETAIL;
   process.env.FILESYSTEM_CONTEXT_DIAGNOSTICS = '1';

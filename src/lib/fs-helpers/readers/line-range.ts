@@ -1,7 +1,8 @@
 import * as readline from 'node:readline';
-import { createReadStream } from 'node:fs';
+import type { ReadStream } from 'node:fs';
+import type { FileHandle } from 'node:fs/promises';
 
-import { assertNotAborted, createAbortError } from '../abort.js';
+import { assertNotAborted } from '../abort.js';
 
 interface LineRangeState {
   lines: string[];
@@ -85,8 +86,54 @@ function buildLineRangeResult(state: LineRangeState): LineRangeResult {
   };
 }
 
+function setupAbortHandler(
+  fileStream: ReadStream,
+  signal?: AbortSignal
+): () => void {
+  const onAbort = (): void => {
+    fileStream.destroy(new Error('Operation aborted'));
+  };
+
+  if (signal?.aborted) {
+    onAbort();
+  } else {
+    signal?.addEventListener('abort', onAbort);
+  }
+
+  return (): void => {
+    signal?.removeEventListener('abort', onAbort);
+  };
+}
+
+function createLineRangeReader(
+  handle: FileHandle,
+  encoding: BufferEncoding,
+  signal?: AbortSignal
+): {
+  fileStream: ReadStream;
+  rl: readline.Interface;
+  cleanup: () => void;
+} {
+  const fileStream = handle.createReadStream({
+    encoding,
+    autoClose: false,
+    emitClose: false,
+  });
+  const rl = readline.createInterface({
+    input: fileStream,
+    crlfDelay: Infinity,
+  });
+  const abortCleanup = setupAbortHandler(fileStream, signal);
+  const cleanup = (): void => {
+    abortCleanup();
+    rl.close();
+  };
+
+  return { fileStream, rl, cleanup };
+}
+
 export async function readLineRange(
-  filePath: string,
+  handle: FileHandle,
   startLine: number,
   endLine: number,
   encoding: BufferEncoding,
@@ -94,21 +141,12 @@ export async function readLineRange(
   signal?: AbortSignal
 ): Promise<LineRangeResult> {
   assertNotAborted(signal);
-  const fileStream = createReadStream(filePath, { encoding });
-  const rl = readline.createInterface({
-    input: fileStream,
-    crlfDelay: Infinity,
-  });
-
+  const { fileStream, rl, cleanup } = createLineRangeReader(
+    handle,
+    encoding,
+    signal
+  );
   const state = initLineRangeState();
-  const onAbort = (): void => {
-    fileStream.destroy(createAbortError());
-  };
-  if (signal?.aborted) {
-    onAbort();
-  } else {
-    signal?.addEventListener('abort', onAbort, { once: true });
-  }
 
   try {
     await scanLineRange(
@@ -122,8 +160,6 @@ export async function readLineRange(
     );
     return buildLineRangeResult(state);
   } finally {
-    signal?.removeEventListener('abort', onAbort);
-    rl.close();
-    fileStream.destroy();
+    cleanup();
   }
 }

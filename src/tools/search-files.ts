@@ -32,6 +32,19 @@ import {
 
 type SearchFilesArgs = z.infer<typeof SearchFilesInputSchema>;
 type SearchFilesStructuredResult = z.infer<typeof SearchFilesOutputSchema>;
+type SearchFilesStructuredEntry = NonNullable<
+  SearchFilesStructuredResult['results']
+>[number];
+
+function formatSearchResultLine(
+  result: Awaited<ReturnType<typeof searchFiles>>['results'][number],
+  basePath: string
+): string {
+  const tag = result.type === 'directory' ? '[DIR]' : '[FILE]';
+  const size =
+    result.size !== undefined ? ` (${formatBytes(result.size)})` : '';
+  return `${tag} ${pathModule.relative(basePath, result.path)}${size}`;
+}
 
 function formatSearchResults(
   results: Awaited<ReturnType<typeof searchFiles>>['results'],
@@ -39,14 +52,22 @@ function formatSearchResults(
 ): string {
   if (results.length === 0) return 'No matches';
 
-  const lines = results.map((result) => {
-    const tag = result.type === 'directory' ? '[DIR]' : '[FILE]';
-    const size =
-      result.size !== undefined ? ` (${formatBytes(result.size)})` : '';
-    return `${tag} ${pathModule.relative(basePath, result.path)}${size}`;
-  });
-
+  const lines = results.map((result) =>
+    formatSearchResultLine(result, basePath)
+  );
   return joinLines([`Found ${results.length}:`, ...lines]);
+}
+
+function buildStructuredEntry(
+  result: Awaited<ReturnType<typeof searchFiles>>['results'][number],
+  basePath: string
+): SearchFilesStructuredEntry {
+  return {
+    path: pathModule.relative(basePath, result.path),
+    type: result.type === 'directory' ? 'other' : result.type,
+    size: result.size,
+    modified: result.modified?.toISOString(),
+  };
 }
 
 function buildStructuredResult(
@@ -57,12 +78,7 @@ function buildStructuredResult(
     ok: true,
     basePath,
     pattern,
-    results: results.map((r) => ({
-      path: pathModule.relative(basePath, r.path),
-      type: r.type === 'directory' ? 'other' : r.type,
-      size: r.size,
-      modified: r.modified?.toISOString(),
-    })),
+    results: results.map((entry) => buildStructuredEntry(entry, basePath)),
     summary: {
       matched: summary.matched,
       truncated: summary.truncated,
@@ -97,15 +113,21 @@ function buildTruncationInfo(result: Awaited<ReturnType<typeof searchFiles>>): {
   return {};
 }
 
+function buildSearchHeader(
+  result: Awaited<ReturnType<typeof searchFiles>>
+): string {
+  return joinLines([
+    `Base path: ${result.basePath}`,
+    `Pattern: ${result.pattern}`,
+  ]);
+}
+
 function buildTextResult(
   result: Awaited<ReturnType<typeof searchFiles>>
 ): string {
   const { summary, results } = result;
   const { truncatedReason, tip } = buildTruncationInfo(result);
-  const header = joinLines([
-    `Base path: ${result.basePath}`,
-    `Pattern: ${result.pattern}`,
-  ]);
+  const header = buildSearchHeader(result);
   const body = formatSearchResults(results, result.basePath);
   let textOutput = joinLines([header, body]);
   if (results.length === 0) {
@@ -125,14 +147,12 @@ function buildTextResult(
   return textOutput;
 }
 
-async function handleSearchFiles(
+function buildSearchOptions(
   args: SearchFilesArgs,
   signal?: AbortSignal
-): Promise<ToolResponse<SearchFilesStructuredResult>> {
-  const { path: searchBasePath, pattern, excludePatterns, maxResults } = args;
-  // Hardcode removed parameters with sensible defaults
-  const fullOptions = {
-    maxResults,
+): Parameters<typeof searchFiles>[3] {
+  return {
+    maxResults: args.maxResults,
     sortBy: 'path' as const,
     maxDepth: DEFAULT_MAX_DEPTH,
     maxFilesScanned: DEFAULT_SEARCH_MAX_FILES,
@@ -142,11 +162,19 @@ async function handleSearchFiles(
     includeHidden: false,
     signal,
   };
+}
+
+async function handleSearchFiles(
+  args: SearchFilesArgs,
+  signal?: AbortSignal
+): Promise<ToolResponse<SearchFilesStructuredResult>> {
+  const { path: searchBasePath, pattern, excludePatterns, maxResults } = args;
+  // Hardcode removed parameters with sensible defaults
   const result = await searchFiles(
     searchBasePath,
     pattern,
     excludePatterns,
-    fullOptions
+    buildSearchOptions(args, signal)
   );
   const structured = buildStructuredResult(result);
   structured.effectiveOptions = {
@@ -172,11 +200,13 @@ const SEARCH_FILES_TOOL = {
   },
 } as const;
 
-export function registerSearchFilesTool(server: McpServer): void {
-  const handler = (
-    args: SearchFilesArgs,
-    extra: { signal: AbortSignal }
-  ): Promise<ToolResult<SearchFilesStructuredResult>> =>
+type SearchFilesToolHandler = (
+  args: SearchFilesArgs,
+  extra: { signal: AbortSignal }
+) => Promise<ToolResult<SearchFilesStructuredResult>>;
+
+function createSearchFilesHandler(): SearchFilesToolHandler {
+  return (args, extra) =>
     withToolDiagnostics(
       'search_files',
       () =>
@@ -201,6 +231,12 @@ export function registerSearchFilesTool(server: McpServer): void {
         ),
       { path: args.path }
     );
+}
 
-  server.registerTool('search_files', SEARCH_FILES_TOOL, handler);
+export function registerSearchFilesTool(server: McpServer): void {
+  server.registerTool(
+    'search_files',
+    SEARCH_FILES_TOOL,
+    createSearchFilesHandler()
+  );
 }

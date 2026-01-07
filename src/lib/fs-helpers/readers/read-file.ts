@@ -13,14 +13,7 @@ import {
   type ReadFileResult,
 } from './read-options.js';
 
-async function readFileWithStatsInternal(
-  filePath: string,
-  validPath: string,
-  stats: Stats,
-  normalized: NormalizedOptions
-): Promise<ReadFileResult> {
-  assertNotAborted(normalized.signal);
-
+function assertFileStats(filePath: string, stats: Stats): void {
   if (!stats.isFile()) {
     throw new McpError(
       ErrorCode.E_NOT_FILE,
@@ -28,7 +21,12 @@ async function readFileWithStatsInternal(
       filePath
     );
   }
+}
 
+function assertSingleReadMode(
+  filePath: string,
+  normalized: NormalizedOptions
+): void {
   const optionsCount = [
     normalized.lineRange,
     normalized.head,
@@ -42,12 +40,31 @@ async function readFileWithStatsInternal(
       filePath
     );
   }
+}
+
+async function readFileWithStatsInternal(
+  filePath: string,
+  validPath: string,
+  stats: Stats,
+  normalized: NormalizedOptions
+): Promise<ReadFileResult> {
+  assertNotAborted(normalized.signal);
+
+  assertFileStats(filePath, stats);
+  assertSingleReadMode(filePath, normalized);
 
   if (normalized.skipBinary) {
     await assertNotBinary(validPath, filePath, normalized);
   }
   assertNotAborted(normalized.signal);
-  return await readByMode(validPath, filePath, stats, normalized);
+
+  // Open FileHandle once, use for all reads, close atomically
+  const handle = await withAbort(fs.open(validPath, 'r'), normalized.signal);
+  try {
+    return await readByMode(handle, validPath, filePath, stats, normalized);
+  } finally {
+    await handle.close();
+  }
 }
 
 export async function readFileWithStats(

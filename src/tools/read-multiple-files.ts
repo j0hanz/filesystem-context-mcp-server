@@ -26,17 +26,19 @@ type ReadMultipleStructuredResult = z.infer<
   typeof ReadMultipleFilesOutputSchema
 >;
 
+interface EffectiveReadMultipleOptions {
+  encoding: BufferEncoding;
+  maxSize: number;
+  maxTotalSize: number;
+  head?: number;
+  tail?: number;
+  lineStart?: number;
+  lineEnd?: number;
+}
+
 function buildStructuredResult(
   results: Awaited<ReturnType<typeof readMultipleFiles>>,
-  effectiveOptions: {
-    encoding: BufferEncoding;
-    maxSize: number;
-    maxTotalSize: number;
-    head?: number;
-    tail?: number;
-    lineStart?: number;
-    lineEnd?: number;
-  }
+  effectiveOptions: EffectiveReadMultipleOptions
 ): ReadMultipleStructuredResult {
   const succeeded = results.filter((r) => r.content !== undefined).length;
   const failed = results.filter((r) => r.error !== undefined).length;
@@ -53,24 +55,60 @@ function buildStructuredResult(
   };
 }
 
+function buildEffectiveOptions(
+  args: ReadMultipleArgs
+): EffectiveReadMultipleOptions {
+  return {
+    encoding: 'utf-8',
+    maxSize: MAX_TEXT_FILE_SIZE,
+    maxTotalSize: 100 * 1024 * 1024,
+    head: args.head,
+    tail: args.tail,
+    lineStart: args.lineStart,
+    lineEnd: args.lineEnd,
+  };
+}
+
+function buildReadMultipleOptions(
+  effectiveOptions: EffectiveReadMultipleOptions,
+  signal?: AbortSignal
+): Parameters<typeof readMultipleFiles>[1] {
+  return {
+    encoding: effectiveOptions.encoding,
+    maxSize: effectiveOptions.maxSize,
+    maxTotalSize: effectiveOptions.maxTotalSize,
+    head: effectiveOptions.head,
+    tail: effectiveOptions.tail,
+    lineStart: effectiveOptions.lineStart,
+    lineEnd: effectiveOptions.lineEnd,
+    signal,
+  };
+}
+
 function formatReadMultipleResult(
   result: Awaited<ReturnType<typeof readMultipleFiles>>[number]
 ): string {
-  if (result.content !== undefined) {
-    const note = buildReadMultipleNote(result);
-    const rangeNote = buildReadMultipleRangeNote(result);
-    const footer = [rangeNote, note].filter((value): value is string =>
-      Boolean(value)
-    );
-    const contentBlock = footer.length
-      ? joinLines([result.content, ...footer])
-      : result.content;
-    return joinLines([`=== ${result.path} ===`, contentBlock]);
-  }
-  return joinLines([
-    `=== ${result.path} ===`,
-    `[Error: ${result.error ?? 'Unknown error'}]`,
-  ]);
+  return result.content !== undefined
+    ? formatSuccessResult(result)
+    : formatErrorResult(result.path, result.error);
+}
+
+function formatSuccessResult(
+  result: Awaited<ReturnType<typeof readMultipleFiles>>[number]
+): string {
+  const note = buildReadMultipleNote(result);
+  const rangeNote = buildReadMultipleRangeNote(result);
+  const footer = [rangeNote, note].filter((value): value is string =>
+    Boolean(value)
+  );
+  const contentBlock = footer.length
+    ? joinLines([result.content ?? '', ...footer])
+    : (result.content ?? '');
+  return joinLines([`=== ${result.path} ===`, contentBlock]);
+}
+
+function formatErrorResult(path: string, error: string | undefined): string {
+  return joinLines([`=== ${path} ===`, `[Error: ${error ?? 'Unknown error'}]`]);
 }
 
 function buildReadMultipleNote(
@@ -108,16 +146,7 @@ function buildReadMultipleRangeNote(
 }
 
 async function handleReadMultipleFiles(
-  args: {
-    paths: string[];
-    encoding?: BufferEncoding;
-    maxSize?: number;
-    maxTotalSize?: number;
-    head?: number;
-    tail?: number;
-    lineStart?: number;
-    lineEnd?: number;
-  },
+  args: ReadMultipleArgs,
   signal?: AbortSignal
 ): Promise<ToolResponse<ReadMultipleStructuredResult>> {
   const pathLabel = args.paths[0] ?? '<paths>';
@@ -130,25 +159,11 @@ async function handleReadMultipleFiles(
     },
     pathLabel
   );
-  const effectiveOptions = {
-    encoding: args.encoding ?? 'utf-8',
-    maxSize: Math.min(args.maxSize ?? MAX_TEXT_FILE_SIZE, MAX_TEXT_FILE_SIZE),
-    maxTotalSize: args.maxTotalSize ?? 100 * 1024 * 1024,
-    head: args.head,
-    tail: args.tail,
-    lineStart: args.lineStart,
-    lineEnd: args.lineEnd,
-  };
-  const results = await readMultipleFiles(args.paths, {
-    encoding: effectiveOptions.encoding,
-    maxSize: effectiveOptions.maxSize,
-    maxTotalSize: effectiveOptions.maxTotalSize,
-    head: effectiveOptions.head,
-    tail: effectiveOptions.tail,
-    lineStart: effectiveOptions.lineStart,
-    lineEnd: effectiveOptions.lineEnd,
-    signal,
-  });
+  const effectiveOptions = buildEffectiveOptions(args);
+  const results = await readMultipleFiles(
+    args.paths,
+    buildReadMultipleOptions(effectiveOptions, signal)
+  );
 
   return buildToolResponse(
     joinLines(results.map(formatReadMultipleResult)),

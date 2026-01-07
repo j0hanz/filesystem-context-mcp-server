@@ -23,34 +23,16 @@ function buildReadFileNote(
   head: number | undefined,
   tail: number | undefined
 ): string | undefined {
-  const rangeNote =
-    result.readMode === 'lineRange' &&
-    result.lineStart !== undefined &&
-    result.lineEnd !== undefined
-      ? `Showing lines ${result.lineStart}-${result.lineEnd}`
-      : undefined;
-  const linesNote =
-    result.totalLines !== undefined
-      ? `Total lines: ${result.totalLines}`
-      : undefined;
+  const rangeNote = buildRangeNote(result);
+  const linesNote = buildLinesNote(result);
   if (result.truncated) {
-    const truncatedNote =
-      result.totalLines !== undefined
-        ? `Showing requested lines. Total lines in file: ${result.totalLines}`
-        : head !== undefined
-          ? `Showing first ${String(head)} lines`
-          : tail !== undefined
-            ? `Showing last ${String(tail)} lines`
-            : undefined;
-    return joinLines(
-      [truncatedNote, rangeNote, linesNote].filter((value): value is string =>
-        Boolean(value)
-      )
+    return joinNotes(
+      buildTruncatedNote(result, head, tail),
+      rangeNote,
+      linesNote
     );
   }
-  return joinLines(
-    [rangeNote, linesNote].filter((value): value is string => Boolean(value))
-  );
+  return joinNotes(rangeNote, linesNote);
 }
 
 type ReadFileArgs = z.infer<typeof ReadFileInputSchema>;
@@ -69,6 +51,44 @@ interface EffectiveReadOptions {
   tail?: number;
 }
 
+function buildRangeNote(
+  result: Awaited<ReturnType<typeof readFile>>
+): string | undefined {
+  if (
+    result.readMode === 'lineRange' &&
+    result.lineStart !== undefined &&
+    result.lineEnd !== undefined
+  ) {
+    return `Showing lines ${result.lineStart}-${result.lineEnd}`;
+  }
+  return undefined;
+}
+
+function buildLinesNote(
+  result: Awaited<ReturnType<typeof readFile>>
+): string | undefined {
+  return result.totalLines !== undefined
+    ? `Total lines: ${result.totalLines}`
+    : undefined;
+}
+
+function buildTruncatedNote(
+  result: Awaited<ReturnType<typeof readFile>>,
+  head: number | undefined,
+  tail: number | undefined
+): string | undefined {
+  if (result.totalLines !== undefined) {
+    return `Showing requested lines. Total lines in file: ${result.totalLines}`;
+  }
+  if (head !== undefined) return `Showing first ${String(head)} lines`;
+  if (tail !== undefined) return `Showing last ${String(tail)} lines`;
+  return undefined;
+}
+
+function joinNotes(...notes: (string | undefined)[]): string | undefined {
+  return joinLines(notes.filter((value): value is string => Boolean(value)));
+}
+
 function buildEffectiveReadOptions(
   args: ReadFileArgs,
   lineRange: { start: number; end: number } | undefined
@@ -80,6 +100,29 @@ function buildEffectiveReadOptions(
     lineRange,
     head: args.head,
     tail: args.tail,
+  };
+}
+
+function resolveLineRange(
+  args: ReadFileArgs
+): { start: number; end: number } | undefined {
+  return args.lineStart !== undefined && args.lineEnd !== undefined
+    ? { start: args.lineStart, end: args.lineEnd }
+    : undefined;
+}
+
+function buildReadOptions(
+  effectiveOptions: EffectiveReadOptions,
+  signal?: AbortSignal
+): Parameters<typeof readFile>[1] {
+  return {
+    encoding: effectiveOptions.encoding,
+    maxSize: effectiveOptions.maxSize,
+    lineRange: effectiveOptions.lineRange,
+    head: effectiveOptions.head,
+    tail: effectiveOptions.tail,
+    skipBinary: effectiveOptions.skipBinary,
+    signal,
   };
 }
 
@@ -122,20 +165,12 @@ async function handleReadFile(
     },
     args.path
   );
-  const lineRange =
-    args.lineStart !== undefined && args.lineEnd !== undefined
-      ? { start: args.lineStart, end: args.lineEnd }
-      : undefined;
+  const lineRange = resolveLineRange(args);
   const effectiveOptions = buildEffectiveReadOptions(args, lineRange);
-  const result = await readFile(args.path, {
-    encoding: effectiveOptions.encoding,
-    maxSize: effectiveOptions.maxSize,
-    lineRange: effectiveOptions.lineRange,
-    head: effectiveOptions.head,
-    tail: effectiveOptions.tail,
-    skipBinary: effectiveOptions.skipBinary,
-    signal,
-  });
+  const result = await readFile(
+    args.path,
+    buildReadOptions(effectiveOptions, signal)
+  );
 
   const note = buildReadFileNote(result, args.head, args.tail);
   const text = note ? joinLines([result.content, note]) : result.content;

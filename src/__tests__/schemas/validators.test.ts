@@ -157,7 +157,7 @@ void describe('validators', () => {
 
   void it('validateHeadTail accepts head only', () => {
     assert.doesNotThrow(() => {
-      validateHeadTail(10, undefined);
+      validateHeadTail(10);
     });
   });
 
@@ -169,7 +169,7 @@ void describe('validators', () => {
 
   void it('validateHeadTail accepts neither head nor tail', () => {
     assert.doesNotThrow(() => {
-      validateHeadTail(undefined, undefined);
+      validateHeadTail();
     });
   });
 

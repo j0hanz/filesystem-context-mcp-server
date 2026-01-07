@@ -44,7 +44,6 @@ function canUseNodeGlob(options: GlobEntriesOptions): boolean {
   if (options.includeHidden) return false;
   if (!options.caseSensitiveMatch) return false;
   if (options.suppressErrors) return false;
-  if (options.excludePatterns.length > 0) return false;
   return true;
 }
 
@@ -73,6 +72,104 @@ function direntFromStats(stats: Stats): DirentLike {
     isDirectory: () => stats.isDirectory(),
     isFile: () => stats.isFile(),
     isSymbolicLink: () => stats.isSymbolicLink(),
+  };
+}
+
+function resolveMatchPaths(
+  rawPath: string,
+  cwd: string
+): { fullPath: string; relative: string } {
+  const fullPath = path.isAbsolute(rawPath)
+    ? rawPath
+    : path.resolve(cwd, rawPath);
+  const relative = path.isAbsolute(rawPath)
+    ? path.relative(cwd, fullPath)
+    : rawPath;
+  return { fullPath, relative };
+}
+
+function shouldSkipHidden(
+  includeHidden: boolean,
+  relativePath: string
+): boolean {
+  return !includeHidden && isHiddenPath(relativePath);
+}
+
+async function readMatchStats(
+  fullPath: string,
+  followSymbolicLinks: boolean,
+  suppressErrors: boolean | undefined
+): Promise<Stats | null> {
+  try {
+    return followSymbolicLinks
+      ? await fsp.stat(fullPath)
+      : await fsp.lstat(fullPath);
+  } catch (error) {
+    if (suppressErrors) return null;
+    throw error;
+  }
+}
+
+function resolveEntryTypes(
+  dirent: DirentLike,
+  stats?: Stats
+): { isFile: boolean; isDirectory: boolean } {
+  return {
+    isFile: stats ? stats.isFile() : dirent.isFile(),
+    isDirectory: stats ? stats.isDirectory() : dirent.isDirectory(),
+  };
+}
+
+function isDepthExceeded(
+  maxDepth: number | undefined,
+  relativePath: string,
+  isDirectory: boolean
+): boolean {
+  if (typeof maxDepth !== 'number') return false;
+  const depth = depthFromRelative(relativePath, isDirectory);
+  return depth > maxDepth;
+}
+
+function buildGlobEntry(
+  fullPath: string,
+  stats: Stats,
+  includeStats: boolean
+): GlobEntry {
+  return {
+    path: fullPath,
+    dirent: direntFromStats(stats),
+    stats: includeStats ? stats : undefined,
+  };
+}
+
+async function resolveNodeStats(
+  fullPath: string,
+  dirent: DirentLike,
+  options: GlobEntriesOptions
+): Promise<Stats | undefined | null> {
+  const needStats =
+    options.stats || (options.followSymbolicLinks && dirent.isSymbolicLink());
+  if (!needStats) return undefined;
+  return await readMatchStats(
+    fullPath,
+    options.followSymbolicLinks,
+    options.suppressErrors
+  );
+}
+
+function buildNodeEntry(
+  fullPath: string,
+  dirent: DirentLike,
+  stats: Stats | undefined,
+  includeStats: boolean
+): GlobEntry {
+  if (stats) {
+    return buildGlobEntry(fullPath, stats, includeStats);
+  }
+  return {
+    path: fullPath,
+    dirent,
+    stats: undefined,
   };
 }
 
@@ -113,47 +210,29 @@ async function* nodeGlobEntries(
   const matches = fsp.glob(pattern, {
     cwd: options.cwd,
     exclude: options.excludePatterns,
+    withFileTypes: true,
   });
 
-  for await (const match of matches as AsyncIterable<string>) {
-    const rawPath = match;
-    const fullPath = path.isAbsolute(rawPath)
-      ? rawPath
-      : path.resolve(options.cwd, rawPath);
-    const relative = path.isAbsolute(rawPath)
-      ? path.relative(options.cwd, fullPath)
-      : rawPath;
+  for await (const dirent of matches as AsyncIterable<
+    DirentLike & { parentPath: string; name: string }
+  >) {
+    const fullPath = path.join(dirent.parentPath, dirent.name);
+    const { relative } = resolveMatchPaths(fullPath, options.cwd);
 
-    if (!options.includeHidden && isHiddenPath(relative)) {
+    if (shouldSkipHidden(options.includeHidden, relative)) {
       continue;
     }
 
-    let stats: Stats;
-    try {
-      stats = options.followSymbolicLinks
-        ? await fsp.stat(fullPath)
-        : await fsp.lstat(fullPath);
-    } catch (error) {
-      if (options.suppressErrors) continue;
-      throw error;
-    }
+    const statsResult = await resolveNodeStats(fullPath, dirent, options);
+    if (statsResult === null) continue;
+    const stats = statsResult ?? undefined;
+    const { isFile, isDirectory } = resolveEntryTypes(dirent, stats);
 
-    if (options.onlyFiles && !stats.isFile()) {
-      continue;
-    }
+    // Check onlyFiles using the resolved type
+    if (options.onlyFiles && !isFile) continue;
+    if (isDepthExceeded(options.maxDepth, relative, isDirectory)) continue;
 
-    if (typeof options.maxDepth === 'number') {
-      const depth = depthFromRelative(relative, stats.isDirectory());
-      if (depth > options.maxDepth) {
-        continue;
-      }
-    }
-
-    yield {
-      path: fullPath,
-      dirent: direntFromStats(stats),
-      stats: options.stats ? stats : undefined,
-    };
+    yield buildNodeEntry(fullPath, dirent, stats, options.stats);
   }
 }
 

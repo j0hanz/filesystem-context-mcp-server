@@ -5,13 +5,10 @@ import {
   getSuggestion,
 } from '../lib/errors.js';
 
-export function buildToolResponse<T>(
+function buildContentBlock<T>(
   text: string,
   structuredContent: T
-): {
-  content: { type: 'text'; text: string }[];
-  structuredContent: T;
-} {
+): { content: { type: 'text'; text: string }[]; structuredContent: T } {
   const json = JSON.stringify(structuredContent);
   return {
     content: [
@@ -20,6 +17,29 @@ export function buildToolResponse<T>(
     ],
     structuredContent,
   };
+}
+
+function resolveDetailedError(
+  error: unknown,
+  defaultCode: ErrorCode,
+  path?: string
+): ReturnType<typeof createDetailedError> {
+  const detailed = createDetailedError(error, path);
+  if (detailed.code === ErrorCode.E_UNKNOWN) {
+    detailed.code = defaultCode;
+    detailed.suggestion = getSuggestion(defaultCode);
+  }
+  return detailed;
+}
+
+export function buildToolResponse<T>(
+  text: string,
+  structuredContent: T
+): {
+  content: { type: 'text'; text: string }[];
+  structuredContent: T;
+} {
+  return buildContentBlock(text, structuredContent);
 }
 
 export type ToolResponse<T> = ReturnType<typeof buildToolResponse<T>>;
@@ -56,12 +76,7 @@ export function buildToolErrorResponse(
   structuredContent: ToolErrorStructuredContent;
   isError: true;
 } {
-  const detailed = createDetailedError(error, path);
-  if (detailed.code === ErrorCode.E_UNKNOWN) {
-    detailed.code = defaultCode;
-    detailed.suggestion = getSuggestion(defaultCode);
-  }
-
+  const detailed = resolveDetailedError(error, defaultCode, path);
   const text = formatDetailedError(detailed);
 
   const structuredContent: ToolErrorStructuredContent = {
@@ -73,15 +88,8 @@ export function buildToolErrorResponse(
       suggestion: detailed.suggestion,
     },
   };
-
-  const json = JSON.stringify(structuredContent);
-
   return {
-    content: [
-      { type: 'text', text },
-      { type: 'text', text: json },
-    ],
-    structuredContent,
+    ...buildContentBlock(text, structuredContent),
     isError: true,
   };
 }

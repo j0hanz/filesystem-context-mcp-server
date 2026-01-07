@@ -89,6 +89,33 @@ function getCachedMatcher(pattern: string, options: MatcherOptions): Matcher {
 // Track cancelled requests
 const cancelledRequests = new Set<number>();
 
+function consumeCancelled(id: number): boolean {
+  if (!cancelledRequests.has(id)) {
+    return false;
+  }
+  cancelledRequests.delete(id);
+  return true;
+}
+
+function buildScanResponse(
+  id: number,
+  result: ScanResult['result']
+): ScanResult {
+  return {
+    type: 'result',
+    id,
+    result,
+  };
+}
+
+function buildErrorResponse(id: number, error: unknown): ScanError {
+  return {
+    type: 'error',
+    id,
+    error: error instanceof Error ? error.message : String(error),
+  };
+}
+
 async function handleScanRequest(request: ScanRequest): Promise<void> {
   const {
     id,
@@ -101,10 +128,7 @@ async function handleScanRequest(request: ScanRequest): Promise<void> {
   } = request;
 
   // Check if already cancelled before starting
-  if (cancelledRequests.has(id)) {
-    cancelledRequests.delete(id);
-    return;
-  }
+  if (consumeCancelled(id)) return;
 
   try {
     const matcher = getCachedMatcher(pattern, matcherOptions);
@@ -123,30 +147,12 @@ async function handleScanRequest(request: ScanRequest): Promise<void> {
     );
 
     // Don't send result if cancelled
-    if (cancelledRequests.has(id)) {
-      cancelledRequests.delete(id);
-      return;
-    }
-
-    const response: ScanResult = {
-      type: 'result',
-      id,
-      result,
-    };
-    parentPort?.postMessage(response);
+    if (consumeCancelled(id)) return;
+    parentPort?.postMessage(buildScanResponse(id, result));
   } catch (err) {
     // Don't send error if cancelled
-    if (cancelledRequests.has(id)) {
-      cancelledRequests.delete(id);
-      return;
-    }
-
-    const response: ScanError = {
-      type: 'error',
-      id,
-      error: err instanceof Error ? err.message : String(err),
-    };
-    parentPort?.postMessage(response);
+    if (consumeCancelled(id)) return;
+    parentPort?.postMessage(buildErrorResponse(id, err));
   }
 }
 

@@ -46,8 +46,21 @@ function ensureNoNullBytes(requestedPath: string): void {
   }
 }
 
+function trimTrailingDotsAndSpaces(value: string): string {
+  let end = value.length;
+  while (end > 0) {
+    const char = value[end - 1];
+    if (char === ' ' || char === '.') {
+      end -= 1;
+      continue;
+    }
+    break;
+  }
+  return value.slice(0, end);
+}
+
 function getReservedDeviceName(segment: string): string | undefined {
-  const trimmed = segment.replace(/[ .]+$/g, '');
+  const trimmed = trimTrailingDotsAndSpaces(segment);
   const withoutStream = trimmed.split(':')[0] ?? '';
   const baseName = withoutStream.split('.')[0]?.toUpperCase();
   if (!baseName) return undefined;
@@ -72,13 +85,18 @@ function ensureNoReservedWindowsNames(requestedPath: string): void {
 
 function ensureNoWindowsDriveRelativePath(requestedPath: string): void {
   if (process.platform !== 'win32') return;
-  if (/^[a-zA-Z]:(?![\\/])/.test(requestedPath)) {
-    throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
-      'Windows drive-relative paths are not allowed. Use C:\\path or C:/path instead of C:path.',
-      requestedPath
-    );
-  }
+  const driveLetter = requestedPath.charCodeAt(0);
+  const isAsciiLetter =
+    (driveLetter >= 65 && driveLetter <= 90) ||
+    (driveLetter >= 97 && driveLetter <= 122);
+  if (!isAsciiLetter || requestedPath[1] !== ':') return;
+  const next = requestedPath[2];
+  if (next === '\\' || next === '/') return;
+  throw new McpError(
+    ErrorCode.E_INVALID_INPUT,
+    'Windows drive-relative paths are not allowed. Use C:\\path or C:/path instead of C:path.',
+    requestedPath
+  );
 }
 
 export function validateRequestedPath(requestedPath: string): string {

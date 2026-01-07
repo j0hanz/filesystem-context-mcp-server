@@ -1,4 +1,4 @@
-import { createReadStream } from 'node:fs';
+import type { FileHandle } from 'node:fs/promises';
 import { Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
@@ -56,13 +56,16 @@ class BufferCollector extends Writable {
 }
 
 export async function readFileBufferWithLimit(
-  filePath: string,
+  handle: FileHandle,
   maxSize: number,
-  requestedPath: string = filePath,
+  requestedPath: string,
   signal?: AbortSignal
 ): Promise<Buffer> {
-  const stream = createReadStream(filePath, {
+  const stream = handle.createReadStream({
+    start: 0,
     highWaterMark: STREAM_CHUNK_SIZE,
+    autoClose: false,
+    emitClose: false,
   });
   const collector = new BufferCollector(maxSize, requestedPath);
 

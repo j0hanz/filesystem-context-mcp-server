@@ -95,6 +95,36 @@ function formatContentMatches(matches: NormalizedMatch[]): string {
   return joinLines(lines);
 }
 
+function buildStructuredMatches(
+  matches: NormalizedMatch[]
+): SearchContentStructuredResult['matches'] {
+  return matches.map((match) => ({
+    file: match.relativeFile,
+    line: match.line,
+    content: match.content,
+    contextBefore: match.contextBefore ? [...match.contextBefore] : undefined,
+    contextAfter: match.contextAfter ? [...match.contextAfter] : undefined,
+    matchCount: match.matchCount,
+  }));
+}
+
+function buildStructuredSummary(
+  summary: SearchContentResult['summary']
+): SearchContentStructuredResult['summary'] {
+  return {
+    filesScanned: summary.filesScanned,
+    filesMatched: summary.filesMatched,
+    totalMatches: summary.matches,
+    truncated: summary.truncated,
+    skippedTooLarge: summary.skippedTooLarge || undefined,
+    skippedBinary: summary.skippedBinary || undefined,
+    skippedInaccessible: summary.skippedInaccessible || undefined,
+    linesSkippedDueToRegexTimeout:
+      summary.linesSkippedDueToRegexTimeout || undefined,
+    stoppedReason: summary.stoppedReason,
+  };
+}
+
 export function buildStructuredResult(
   result: SearchContentResult
 ): SearchContentStructuredResult {
@@ -105,26 +135,8 @@ export function buildStructuredResult(
     basePath,
     pattern,
     filePattern,
-    matches: normalizedMatches.map((m) => ({
-      file: m.relativeFile,
-      line: m.line,
-      content: m.content,
-      contextBefore: m.contextBefore ? [...m.contextBefore] : undefined,
-      contextAfter: m.contextAfter ? [...m.contextAfter] : undefined,
-      matchCount: m.matchCount,
-    })),
-    summary: {
-      filesScanned: summary.filesScanned,
-      filesMatched: summary.filesMatched,
-      totalMatches: summary.matches,
-      truncated: summary.truncated,
-      skippedTooLarge: summary.skippedTooLarge || undefined,
-      skippedBinary: summary.skippedBinary || undefined,
-      skippedInaccessible: summary.skippedInaccessible || undefined,
-      linesSkippedDueToRegexTimeout:
-        summary.linesSkippedDueToRegexTimeout || undefined,
-      stoppedReason: summary.stoppedReason,
-    },
+    matches: buildStructuredMatches(normalizedMatches),
+    summary: buildStructuredSummary(summary),
   };
 }
 

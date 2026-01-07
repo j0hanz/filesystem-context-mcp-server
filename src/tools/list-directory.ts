@@ -5,11 +5,6 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { z } from 'zod';
 
 import {
-  formatBytes,
-  formatOperationSummary,
-  joinLines,
-} from '../config/formatting.js';
-import {
   DEFAULT_LIST_MAX_ENTRIES,
   DEFAULT_MAX_DEPTH,
   DEFAULT_SEARCH_TIMEOUT_MS,
@@ -22,6 +17,7 @@ import {
   ListDirectoryInputSchema,
   ListDirectoryOutputSchema,
 } from '../schemas/index.js';
+import { buildTextResult } from './list-directory-formatting.js';
 import {
   buildToolErrorResponse,
   buildToolResponse,
@@ -32,49 +28,9 @@ import {
 
 type ListDirectoryArgs = z.infer<typeof ListDirectoryInputSchema>;
 type ListDirectoryStructuredResult = z.infer<typeof ListDirectoryOutputSchema>;
-
-function formatDirectoryListing(
-  entries: Awaited<ReturnType<typeof listDirectory>>['entries'],
-  basePath: string,
-  summary: Awaited<ReturnType<typeof listDirectory>>['summary']
-): string {
-  if (entries.length === 0) {
-    return formatEmptyDirectoryListing(summary);
-  }
-
-  let dirs = 0;
-  const entryLines = entries.map((entry) => {
-    const isDir = entry.type === 'directory';
-    if (isDir) dirs++;
-    const tag = isDir
-      ? '[DIR]'
-      : entry.type === 'symlink'
-        ? '[LINK]'
-        : '[FILE]';
-    const size =
-      entry.size !== undefined ? ` (${formatBytes(entry.size)})` : '';
-    const symlink = entry.symlinkTarget ? ` -> ${entry.symlinkTarget}` : '';
-    return `${tag} ${entry.relativePath}${isDir ? '' : size}${symlink}`;
-  });
-
-  const files = entries.length - dirs;
-  return joinLines([
-    `${basePath} (${dirs} dirs, ${files} files):`,
-    ...entryLines,
-  ]);
-}
-
-function formatEmptyDirectoryListing(
-  summary: Awaited<ReturnType<typeof listDirectory>>['summary']
-): string {
-  if (!summary.entriesScanned || summary.entriesScanned === 0) {
-    return 'Empty directory';
-  }
-  if (summary.entriesVisible === 0) {
-    return 'No entries matched visibility filters (hidden/excludePatterns).';
-  }
-  return 'No entries matched the provided pattern.';
-}
+type ListDirectoryStructuredEntry = NonNullable<
+  ListDirectoryStructuredResult['entries']
+>[number];
 
 const LIST_DIRECTORY_TOOL = {
   title: 'List Directory',
@@ -92,6 +48,40 @@ const LIST_DIRECTORY_TOOL = {
   },
 } as const;
 
+function buildStructuredEntry(
+  entry: Awaited<ReturnType<typeof listDirectory>>['entries'][number]
+): ListDirectoryStructuredEntry {
+  return {
+    name: entry.name,
+    relativePath: entry.relativePath,
+    type: entry.type,
+    extension:
+      entry.type === 'file'
+        ? pathModule.extname(entry.name).replace('.', '') || undefined
+        : undefined,
+    size: entry.size,
+    modified: entry.modified?.toISOString(),
+    symlinkTarget: entry.symlinkTarget,
+  };
+}
+
+function buildStructuredSummary(
+  summary: Awaited<ReturnType<typeof listDirectory>>['summary']
+): ListDirectoryStructuredResult['summary'] {
+  return {
+    totalEntries: summary.totalEntries,
+    totalFiles: summary.totalFiles,
+    totalDirectories: summary.totalDirectories,
+    maxDepthReached: summary.maxDepthReached,
+    truncated: summary.truncated,
+    stoppedReason: summary.stoppedReason,
+    skippedInaccessible: summary.skippedInaccessible,
+    symlinksNotFollowed: summary.symlinksNotFollowed,
+    entriesScanned: summary.entriesScanned,
+    entriesVisible: summary.entriesVisible,
+  };
+}
+
 function buildStructuredResult(
   result: Awaited<ReturnType<typeof listDirectory>>
 ): ListDirectoryStructuredResult {
@@ -99,64 +89,16 @@ function buildStructuredResult(
   return {
     ok: true,
     path,
-    entries: entries.map((e) => ({
-      name: e.name,
-      relativePath: e.relativePath,
-      type: e.type,
-      extension:
-        e.type === 'file'
-          ? pathModule.extname(e.name).replace('.', '') || undefined
-          : undefined,
-      size: e.size,
-      modified: e.modified?.toISOString(),
-      symlinkTarget: e.symlinkTarget,
-    })),
-    summary: {
-      totalEntries: summary.totalEntries,
-      totalFiles: summary.totalFiles,
-      totalDirectories: summary.totalDirectories,
-      maxDepthReached: summary.maxDepthReached,
-      truncated: summary.truncated,
-      stoppedReason: summary.stoppedReason,
-      skippedInaccessible: summary.skippedInaccessible,
-      symlinksNotFollowed: summary.symlinksNotFollowed,
-      entriesScanned: summary.entriesScanned,
-      entriesVisible: summary.entriesVisible,
-    },
+    entries: entries.map(buildStructuredEntry),
+    summary: buildStructuredSummary(summary),
   };
 }
 
-function buildTextResult(
-  result: Awaited<ReturnType<typeof listDirectory>>
-): string {
-  const { entries, summary, path } = result;
-  let textOutput = formatDirectoryListing(entries, path, summary);
-  const truncatedReason =
-    summary.stoppedReason === 'aborted'
-      ? 'operation aborted'
-      : summary.stoppedReason === 'maxEntries'
-        ? `reached max entries limit (${summary.totalEntries} returned)`
-        : undefined;
-  textOutput += formatOperationSummary({
-    truncated: summary.truncated,
-    truncatedReason,
-    tip:
-      summary.stoppedReason === 'maxEntries'
-        ? 'Increase maxEntries or reduce maxDepth to see more results.'
-        : undefined,
-    skippedInaccessible: summary.skippedInaccessible,
-    symlinksNotFollowed: summary.symlinksNotFollowed,
-  });
-  return textOutput;
-}
-
-async function handleListDirectory(
-  args: ListDirectoryArgs,
+function buildListDirectoryOptions(
+  options: Omit<ListDirectoryArgs, 'path'>,
   signal?: AbortSignal
-): Promise<ToolResponse<ListDirectoryStructuredResult>> {
-  const { path: dirPath, ...options } = args;
-  // Hardcode removed parameters with sensible defaults
-  const fullOptions = {
+): Parameters<typeof listDirectory>[1] {
+  return {
     ...options,
     includeHidden: false,
     maxDepth: DEFAULT_MAX_DEPTH,
@@ -167,7 +109,18 @@ async function handleListDirectory(
     pattern: undefined, // No pattern filtering
     signal,
   };
-  const result = await listDirectory(dirPath, fullOptions);
+}
+
+async function handleListDirectory(
+  args: ListDirectoryArgs,
+  signal?: AbortSignal
+): Promise<ToolResponse<ListDirectoryStructuredResult>> {
+  const { path: dirPath, ...options } = args;
+  // Hardcode removed parameters with sensible defaults
+  const result = await listDirectory(
+    dirPath,
+    buildListDirectoryOptions(options, signal)
+  );
   const structured = buildStructuredResult(result);
   structured.effectiveOptions = {
     recursive: options.recursive,

@@ -10,8 +10,8 @@ export default defineConfig(
     ignores: ['dist', 'node_modules', '*.config.mjs', '*.config.js'],
   },
 
-    eslint.configs.recommended,
-    sonarjs.configs.recommended,
+  eslint.configs.recommended,
+  sonarjs.configs.recommended,
 
   {
     files: ['src/**/*.ts'],

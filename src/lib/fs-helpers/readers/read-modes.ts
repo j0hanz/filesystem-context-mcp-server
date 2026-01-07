@@ -1,4 +1,5 @@
 import type { Stats } from 'node:fs';
+import type { FileHandle } from 'node:fs/promises';
 
 import { ErrorCode, McpError } from '../../errors.js';
 import {
@@ -91,6 +92,7 @@ function buildReadResult(
 }
 
 async function readLineRangeResult(
+  handle: FileHandle,
   validPath: string,
   filePath: string,
   normalized: NormalizedOptions
@@ -99,7 +101,7 @@ async function readLineRangeResult(
   validateLineRange(lineRange, filePath);
   assertLineRangeWithinLimit(lineRange, filePath);
   const { content, truncated, linesRead, hasMoreLines } =
-    await readLineRangeContent(validPath, lineRange, {
+    await readLineRangeContent(handle, lineRange, {
       encoding: normalized.encoding,
       maxSize: normalized.maxSize,
       signal: normalized.signal,
@@ -114,13 +116,16 @@ async function readLineRangeResult(
 }
 
 async function readTailResult(
+  handle: FileHandle,
+  fileSize: number,
   validPath: string,
   filePath: string,
   normalized: NormalizedOptions
 ): Promise<ReadFileResult> {
   const tail = requireOption(normalized.tail, 'tail', filePath);
   const { content, truncated, linesRead, hasMoreLines } = await readTailContent(
-    validPath,
+    handle,
+    fileSize,
     tail,
     {
       encoding: normalized.encoding,
@@ -137,13 +142,14 @@ async function readTailResult(
 }
 
 async function readHeadResult(
+  handle: FileHandle,
   validPath: string,
   filePath: string,
   normalized: NormalizedOptions
 ): Promise<ReadFileResult> {
   const head = requireOption(normalized.head, 'head', filePath);
   const { content, truncated, linesRead, hasMoreLines } = await readHeadContent(
-    validPath,
+    handle,
     head,
     {
       encoding: normalized.encoding,
@@ -160,6 +166,7 @@ async function readHeadResult(
 }
 
 async function readFullResult(
+  handle: FileHandle,
   validPath: string,
   filePath: string,
   stats: Stats,
@@ -167,7 +174,7 @@ async function readFullResult(
 ): Promise<ReadFileResult> {
   assertWithinMaxSize(stats, normalized.maxSize, filePath);
   const { content, totalLines } = await readFullContent(
-    validPath,
+    handle,
     normalized.encoding,
     normalized.maxSize,
     filePath,
@@ -181,6 +188,7 @@ async function readFullResult(
 }
 
 export async function readByMode(
+  handle: FileHandle,
   validPath: string,
   filePath: string,
   stats: Stats,
@@ -188,14 +196,20 @@ export async function readByMode(
 ): Promise<ReadFileResult> {
   const mode = resolveReadMode(normalized);
   if (mode === 'lineRange') {
-    return await readLineRangeResult(validPath, filePath, normalized);
+    return await readLineRangeResult(handle, validPath, filePath, normalized);
   }
   if (mode === 'tail') {
-    return await readTailResult(validPath, filePath, normalized);
+    return await readTailResult(
+      handle,
+      stats.size,
+      validPath,
+      filePath,
+      normalized
+    );
   }
   if (mode === 'head') {
-    return await readHeadResult(validPath, filePath, normalized);
+    return await readHeadResult(handle, validPath, filePath, normalized);
   }
 
-  return await readFullResult(validPath, filePath, stats, normalized);
+  return await readFullResult(handle, validPath, filePath, stats, normalized);
 }

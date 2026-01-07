@@ -46,7 +46,7 @@ const DEFAULTS: SearchOptions = {
 };
 
 export function mergeOptions(partial: SearchContentOptions): ResolvedOptions {
-  const { signal, ...rest } = partial;
-  void signal; // signal handled externally via createTimedAbortSignal
+  const rest = { ...partial };
+  delete rest.signal;
   return { ...DEFAULTS, ...rest };
 }

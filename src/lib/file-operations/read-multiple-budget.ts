@@ -13,6 +13,48 @@ export interface ValidatedFileInfo {
   stats: Stats;
 }
 
+async function validateFile(
+  filePath: string,
+  index: number,
+  signal?: AbortSignal
+): Promise<ValidatedFileInfo> {
+  const validPath = await validateExistingPath(filePath, signal);
+  const stats = await withAbort(fs.stat(validPath), signal);
+  return { filePath, index, validPath, stats };
+}
+
+type SizeEstimator = (stats: Stats) => number;
+
+function estimatePartialSize(stats: Stats, maxSize: number): number {
+  return Math.min(stats.size, maxSize);
+}
+
+function estimateFullSize(stats: Stats): number {
+  return stats.size;
+}
+
+function applyBudget(
+  orderedResults: ValidatedFileInfo[],
+  estimateSize: SizeEstimator,
+  maxTotalSize: number
+): { skippedBudget: Set<number>; validated: Map<number, ValidatedFileInfo> } {
+  const skippedBudget = new Set<number>();
+  const validated = new Map<number, ValidatedFileInfo>();
+  let totalSize = 0;
+
+  for (const result of orderedResults) {
+    validated.set(result.index, result);
+    const estimatedSize = estimateSize(result.stats);
+    if (totalSize + estimatedSize > maxTotalSize) {
+      skippedBudget.add(result.index);
+      continue;
+    }
+    totalSize += estimatedSize;
+  }
+
+  return { skippedBudget, validated };
+}
+
 export async function collectFileBudget(
   filePaths: readonly string[],
   partialRead: boolean,
@@ -23,39 +65,16 @@ export async function collectFileBudget(
   skippedBudget: Set<number>;
   validated: Map<number, ValidatedFileInfo>;
 }> {
-  const skippedBudget = new Set<number>();
-  const validated = new Map<number, ValidatedFileInfo>();
-
   const { results } = await processInParallel(
     filePaths.map((filePath, index) => ({ filePath, index })),
-    async ({ filePath, index }) => {
-      const validPath = await validateExistingPath(filePath, signal);
-      const stats = await withAbort(fs.stat(validPath), signal);
-      return { filePath, index, validPath, stats };
-    },
+    async ({ filePath, index }) => validateFile(filePath, index, signal),
     PARALLEL_CONCURRENCY,
     signal
   );
 
-  let totalSize = 0;
   const orderedResults = [...results].sort((a, b) => a.index - b.index);
-
-  for (const result of orderedResults) {
-    validated.set(result.index, {
-      index: result.index,
-      filePath: result.filePath,
-      validPath: result.validPath,
-      stats: result.stats,
-    });
-    const estimatedSize = partialRead
-      ? Math.min(result.stats.size, maxSize)
-      : result.stats.size;
-    if (totalSize + estimatedSize > maxTotalSize) {
-      skippedBudget.add(result.index);
-      continue;
-    }
-    totalSize += estimatedSize;
-  }
-
-  return { skippedBudget, validated };
+  const estimateSize = partialRead
+    ? (stats: Stats) => estimatePartialSize(stats, maxSize)
+    : estimateFullSize;
+  return applyBudget(orderedResults, estimateSize, maxTotalSize);
 }

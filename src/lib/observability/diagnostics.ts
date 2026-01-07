@@ -60,6 +60,69 @@ function normalizePathForDiagnostics(path: string): string | undefined {
   return hashPath(path);
 }
 
+function resolveDiagnosticsPath(options?: {
+  path?: string;
+}): string | undefined {
+  return options?.path ? normalizePathForDiagnostics(options.path) : undefined;
+}
+
+function resolveDurationMs(startNs: bigint): number {
+  const endNs = process.hrtime.bigint();
+  return Number(endNs - startNs) / 1_000_000;
+}
+
+function resolvePrimitiveErrorMessage(error: unknown): string | undefined {
+  if (typeof error === 'string') return error;
+  if (typeof error === 'number' || typeof error === 'boolean') {
+    return String(error);
+  }
+  if (typeof error === 'bigint') return error.toString();
+  if (typeof error === 'symbol') return error.description ?? 'symbol';
+  return undefined;
+}
+
+function resolveObjectErrorMessage(error: unknown): string | undefined {
+  if (error instanceof Error) return error.message;
+  if (isObject(error) && typeof error.message === 'string') {
+    return error.message;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveDiagnosticsErrorMessage(error?: unknown): string | undefined {
+  if (!error) return undefined;
+  return (
+    resolvePrimitiveErrorMessage(error) ?? resolveObjectErrorMessage(error)
+  );
+}
+
+function publishStartEvent(tool: string, options?: { path?: string }): void {
+  TOOL_CHANNEL.publish({
+    phase: 'start',
+    tool,
+    path: resolveDiagnosticsPath(options),
+  } satisfies ToolDiagnosticsEvent);
+}
+
+function publishEndEvent(
+  tool: string,
+  ok: boolean,
+  startNs: bigint,
+  error?: unknown
+): void {
+  TOOL_CHANNEL.publish({
+    phase: 'end',
+    tool,
+    ok,
+    error: resolveDiagnosticsErrorMessage(error),
+    durationMs: resolveDurationMs(startNs),
+  } satisfies ToolDiagnosticsEvent);
+}
+
 export async function withToolDiagnostics<T>(
   tool: string,
   run: () => Promise<T>,
@@ -71,32 +134,14 @@ export async function withToolDiagnostics<T>(
   }
 
   const startNs = process.hrtime.bigint();
-  TOOL_CHANNEL.publish({
-    phase: 'start',
-    tool,
-    path: options?.path ? normalizePathForDiagnostics(options.path) : undefined,
-  } satisfies ToolDiagnosticsEvent);
+  publishStartEvent(tool, options);
 
   try {
     const result = await run();
-    const endNs = process.hrtime.bigint();
-    const ok = resolveDiagnosticsOk(result);
-    TOOL_CHANNEL.publish({
-      phase: 'end',
-      tool,
-      ok: ok ?? true,
-      durationMs: Number(endNs - startNs) / 1_000_000,
-    } satisfies ToolDiagnosticsEvent);
+    publishEndEvent(tool, resolveDiagnosticsOk(result) ?? true, startNs);
     return result;
   } catch (error: unknown) {
-    const endNs = process.hrtime.bigint();
-    TOOL_CHANNEL.publish({
-      phase: 'end',
-      tool,
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-      durationMs: Number(endNs - startNs) / 1_000_000,
-    } satisfies ToolDiagnosticsEvent);
+    publishEndEvent(tool, false, startNs, error);
     throw error;
   }
 }

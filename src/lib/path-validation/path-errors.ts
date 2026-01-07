@@ -51,12 +51,13 @@ export function toMcpError(requestedPath: string, error: unknown): McpError {
       error
     );
   }
-  const message =
-    error instanceof Error
-      ? error.message
-      : typeof error === 'string'
-        ? error
-        : '';
+  let message = '';
+  if (error instanceof Error) {
+    const { message: errorMessage } = error;
+    message = errorMessage;
+  } else if (typeof error === 'string') {
+    message = error;
+  }
   return new McpError(
     ErrorCode.E_NOT_FOUND,
     `Path is not accessible: ${requestedPath}`,
