@@ -4,8 +4,6 @@ import type { z } from 'zod';
 
 import {
   DEFAULT_EXCLUDE_PATTERNS,
-  DEFAULT_SEARCH_MAX_FILES,
-  DEFAULT_SEARCH_TIMEOUT_MS,
   MAX_SEARCHABLE_FILE_SIZE,
 } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
@@ -46,20 +44,29 @@ async function handleSearchContent(
   signal?: AbortSignal
 ): Promise<ToolResponse<SearchContentStructuredResult>> {
   const basePath = resolvePathOrRoot(args.path);
+  const excludePatterns =
+    args.excludePatterns ??
+    (args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS);
+  const includeHidden = args.includeHidden || args.includeIgnored;
+  const maxFileSize =
+    typeof args.maxFileSize === 'number'
+      ? Math.min(args.maxFileSize, MAX_SEARCHABLE_FILE_SIZE)
+      : MAX_SEARCHABLE_FILE_SIZE;
   const fullOptions = {
     filePattern: args.filePattern,
-    excludePatterns: args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS,
-    caseSensitive: false,
-    isLiteral: true,
-    contextLines: 0,
-    maxFileSize: MAX_SEARCHABLE_FILE_SIZE,
-    maxFilesScanned: DEFAULT_SEARCH_MAX_FILES,
-    timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-    skipBinary: true,
-    includeHidden: args.includeIgnored,
-    wholeWord: false,
-    baseNameMatch: false,
-    caseSensitiveFileMatch: true,
+    excludePatterns,
+    caseSensitive: args.caseSensitive,
+    isLiteral: args.isLiteral,
+    contextLines: args.contextLines,
+    maxResults: args.maxResults,
+    maxFileSize,
+    maxFilesScanned: args.maxFilesScanned,
+    timeoutMs: args.timeoutMs,
+    skipBinary: args.skipBinary,
+    includeHidden,
+    wholeWord: args.wholeWord,
+    baseNameMatch: args.baseNameMatch,
+    caseSensitiveFileMatch: args.caseSensitiveFileMatch,
     signal,
   };
 
@@ -97,7 +104,7 @@ export function registerSearchContentTool(server: McpServer): void {
           async () => {
             const { signal, cleanup } = createTimedAbortSignal(
               extra.signal,
-              DEFAULT_SEARCH_TIMEOUT_MS
+              args.timeoutMs
             );
             try {
               return await handleSearchContent(args, signal);

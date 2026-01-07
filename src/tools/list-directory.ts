@@ -2,11 +2,6 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
-import {
-  DEFAULT_LIST_MAX_ENTRIES,
-  DEFAULT_MAX_DEPTH,
-  DEFAULT_SEARCH_TIMEOUT_MS,
-} from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { listDirectory } from '../lib/file-operations/list-directory.js';
 import { createTimedAbortSignal } from '../lib/fs-helpers/abort.js';
@@ -87,12 +82,14 @@ async function handleListDirectory(
 ): Promise<ToolResponse<ListDirectoryStructuredResult>> {
   const dirPath = resolvePathOrRoot(args.path);
   const result = await listDirectory(dirPath, {
-    includeHidden: false,
-    maxDepth: DEFAULT_MAX_DEPTH,
-    maxEntries: DEFAULT_LIST_MAX_ENTRIES,
-    timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-    sortBy: 'name',
-    includeSymlinkTargets: false,
+    includeHidden: args.includeHidden,
+    excludePatterns: args.excludePatterns,
+    pattern: args.pattern,
+    maxDepth: args.maxDepth,
+    maxEntries: args.maxEntries,
+    timeoutMs: args.timeoutMs,
+    sortBy: args.sortBy,
+    includeSymlinkTargets: args.includeSymlinkTargets,
     signal,
   });
   return buildToolResponse(
@@ -113,7 +110,7 @@ export function registerListDirectoryTool(server: McpServer): void {
           async () => {
             const { signal, cleanup } = createTimedAbortSignal(
               extra.signal,
-              DEFAULT_SEARCH_TIMEOUT_MS
+              args.timeoutMs
             );
             try {
               return await handleListDirectory(args, signal);

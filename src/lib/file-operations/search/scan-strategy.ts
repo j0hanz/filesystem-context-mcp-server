@@ -4,9 +4,9 @@ import type { ResolvedFile, ScanSummary } from './scan-collector.js';
 import type { MatcherOptions, ScanFileOptions } from './scan-file.js';
 import { buildMatcher, scanFileResolved } from './scan-file.js';
 import { getSearchWorkerPool } from './worker-pool-manager.js';
-import type { WorkerScanResult } from './worker-pool.js';
+import type { ScanTask, WorkerScanResult } from './worker-pool.js';
 
-type PendingScan = Promise<WorkerScanResult | null>;
+type PendingScan = ScanTask;
 
 function shouldStopOnSignalOrLimit(
   signal: AbortSignal,
@@ -40,7 +40,7 @@ function applyOutcome(
 }
 
 export async function scanFilesSequential(
-  files: readonly ResolvedFile[],
+  files: AsyncIterable<ResolvedFile>,
   pattern: string,
   matcherOptions: MatcherOptions,
   scanOptions: ScanFileOptions,
@@ -51,7 +51,7 @@ export async function scanFilesSequential(
   const matcher = buildMatcher(pattern, matcherOptions);
   const matches: ContentMatch[] = [];
 
-  for (const file of files) {
+  for await (const file of files) {
     if (
       shouldStopOnSignalOrLimit(signal, matches.length, maxResults, summary)
     ) {
@@ -81,7 +81,7 @@ export async function scanFilesSequential(
 }
 
 export async function scanFilesParallel(
-  files: readonly ResolvedFile[],
+  files: AsyncIterable<ResolvedFile>,
   pattern: string,
   matcherOptions: MatcherOptions,
   scanOptions: ScanFileOptions,
@@ -90,34 +90,36 @@ export async function scanFilesParallel(
   summary: ScanSummary
 ): Promise<ContentMatch[]> {
   const pool = getSearchWorkerPool(SEARCH_WORKERS);
-  const pendingScans: PendingScan[] = [];
-
-  for (const file of files) {
-    if (shouldStopOnSignalOrLimit(signal, 0, maxResults, summary)) {
-      break;
-    }
-    pendingScans.push(
-      pool
-        .scan({
-          resolvedPath: file.resolvedPath,
-          requestedPath: file.requestedPath,
-          pattern,
-          matcherOptions,
-          scanOptions,
-          maxMatches: maxResults,
-        })
-        .catch(() => null)
-    );
-  }
-
   const matches: ContentMatch[] = [];
-  const results = await Promise.all(pendingScans);
+  const inFlight = new Set<PendingScan>();
+  const iterator = files[Symbol.asyncIterator]();
+  let done = false;
+  let stoppedEarly = false;
+  const maxInFlight = Math.min(SEARCH_WORKERS, Math.max(1, maxResults));
 
-  for (const result of results) {
-    if (!result) {
-      summary.skippedInaccessible++;
-      continue;
+  const cancelInFlight = (): void => {
+    for (const task of inFlight) {
+      task.cancel();
+      void task.promise.catch(() => {});
     }
+    inFlight.clear();
+  };
+
+  const handleOutcome = (outcome: {
+    task: PendingScan;
+    result?: WorkerScanResult;
+    error?: Error;
+  }): void => {
+    inFlight.delete(outcome.task);
+    if (outcome.error) {
+      if (outcome.error.message === 'Scan cancelled') {
+        return;
+      }
+      summary.skippedInaccessible++;
+      return;
+    }
+    const { result } = outcome;
+    if (!result) return;
 
     applyOutcome(result, summary);
     if (result.matches.length > 0) {
@@ -125,15 +127,101 @@ export async function scanFilesParallel(
       if (remaining <= 0) {
         summary.truncated = true;
         summary.stoppedReason = 'maxResults';
-        break;
+        return;
       }
       matches.push(...result.matches.slice(0, remaining));
       if (matches.length >= maxResults) {
         summary.truncated = true;
         summary.stoppedReason = 'maxResults';
-        break;
       }
     }
+  };
+
+  const awaitNext = async (): Promise<{
+    task: PendingScan;
+    result?: WorkerScanResult;
+    error?: Error;
+  }> => {
+    const races = [...inFlight].map((task) =>
+      task.promise.then(
+        (result) => ({ task, result }),
+        (error: unknown) => ({
+          task,
+          error: error instanceof Error ? error : new Error(String(error)),
+        })
+      )
+    );
+    return await Promise.race(races);
+  };
+
+  const enqueue = async (): Promise<void> => {
+    while (!done && inFlight.size < maxInFlight) {
+      if (
+        shouldStopOnSignalOrLimit(signal, matches.length, maxResults, summary)
+      ) {
+        stoppedEarly = true;
+        done = true;
+        cancelInFlight();
+        return;
+      }
+
+      const next = await iterator.next();
+      if (next.done) {
+        done = true;
+        break;
+      }
+
+      const remaining = Math.max(1, maxResults - matches.length);
+      const task = pool.scan({
+        resolvedPath: next.value.resolvedPath,
+        requestedPath: next.value.requestedPath,
+        pattern,
+        matcherOptions,
+        scanOptions,
+        maxMatches: remaining,
+      });
+      inFlight.add(task);
+    }
+  };
+
+  const onAbort = (): void => {
+    stoppedEarly = true;
+    summary.truncated = true;
+    summary.stoppedReason = 'timeout';
+    cancelInFlight();
+  };
+  signal.addEventListener('abort', onAbort, { once: true });
+
+  try {
+    await enqueue();
+
+    while (inFlight.size > 0) {
+      if (
+        shouldStopOnSignalOrLimit(signal, matches.length, maxResults, summary)
+      ) {
+        stoppedEarly = true;
+        cancelInFlight();
+        break;
+      }
+
+      handleOutcome(await awaitNext());
+      if (
+        shouldStopOnSignalOrLimit(signal, matches.length, maxResults, summary)
+      ) {
+        stoppedEarly = true;
+        cancelInFlight();
+        break;
+      }
+
+      await enqueue();
+    }
+
+    if (stoppedEarly) {
+      cancelInFlight();
+      await iterator.return?.();
+    }
+  } finally {
+    signal.removeEventListener('abort', onAbort);
   }
 
   return matches;

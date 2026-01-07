@@ -6,6 +6,7 @@ import type { ScanRequest } from './search-worker.js';
 import { attachWorkerHandlers, selectSlot } from './worker-pool-helpers.js';
 import type {
   PoolOptions,
+  ScanTask,
   WorkerScanRequest,
   WorkerScanResult,
   WorkerSlot,
@@ -86,7 +87,7 @@ export class SearchWorkerPool {
   /**
    * Scan a file for content matches using a worker thread.
    */
-  async scan(request: WorkerScanRequest): Promise<WorkerScanResult> {
+  scan(request: WorkerScanRequest): ScanTask {
     if (this.closed) {
       throw new Error('Worker pool is closed');
     }
@@ -107,15 +108,37 @@ export class SearchWorkerPool {
       ...request,
     };
 
-    return new Promise<WorkerScanResult>((resolve, reject) => {
+    let settled = false;
+    const promise = new Promise<WorkerScanResult>((resolve, reject) => {
+      const safeResolve = (result: WorkerScanResult): void => {
+        if (settled) return;
+        settled = true;
+        resolve(result);
+      };
+      const safeReject = (error: Error): void => {
+        if (settled) return;
+        settled = true;
+        reject(error);
+      };
+
       slot.pending.set(id, {
-        resolve,
-        reject,
+        resolve: safeResolve,
+        reject: safeReject,
         request: scanRequest,
       });
 
       worker.postMessage(scanRequest);
     });
+
+    const cancel = (): void => {
+      const pending = slot.pending.get(id);
+      if (!pending) return;
+      slot.pending.delete(id);
+      worker.postMessage({ type: 'cancel', id });
+      pending.reject(new Error('Scan cancelled'));
+    };
+
+    return { id, promise, cancel };
   }
 
   /**
@@ -154,4 +177,4 @@ export function isWorkerPoolAvailable(): boolean {
   return !isSourceContext;
 }
 
-export type { WorkerScanResult } from './worker-pool-types.js';
+export type { ScanTask, WorkerScanResult } from './worker-pool-types.js';

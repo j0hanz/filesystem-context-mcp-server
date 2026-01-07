@@ -79,7 +79,7 @@ async function handleSearchFiles(
     searchBasePath,
     args.pattern,
     DEFAULT_EXCLUDE_PATTERNS,
-    { signal }
+    { maxResults: args.maxResults, signal }
   );
   return buildToolResponse(
     buildTextResult(result),

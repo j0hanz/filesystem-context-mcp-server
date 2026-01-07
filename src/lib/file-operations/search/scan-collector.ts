@@ -76,7 +76,7 @@ async function resolveEntryPath(
   }
 }
 
-async function collectFromStream(
+async function* collectFromStream(
   stream: AsyncIterable<{
     path: string;
     dirent: { isFile(): boolean; isSymbolicLink(): boolean };
@@ -85,9 +85,7 @@ async function collectFromStream(
   allowedDirs: readonly string[],
   signal: AbortSignal,
   summary: ScanSummary
-): Promise<ResolvedFile[]> {
-  const files: ResolvedFile[] = [];
-
+): AsyncGenerator<ResolvedFile> {
   for await (const entry of stream) {
     if (!entry.dirent.isFile()) continue;
     if (shouldStopCollecting(summary, opts.maxFilesScanned, signal)) {
@@ -100,22 +98,17 @@ async function collectFromStream(
       continue;
     }
 
-    files.push(resolved);
     summary.filesScanned++;
+    yield resolved;
   }
-
-  return files;
 }
 
-/**
- * Collect file entries for scanning, up to the configured limits.
- */
-export async function collectFiles(
+export function collectFilesStream(
   root: string,
   opts: ResolvedOptions,
   allowedDirs: readonly string[],
   signal: AbortSignal
-): Promise<{ files: ResolvedFile[]; summary: ScanSummary }> {
+): { stream: AsyncGenerator<ResolvedFile>; summary: ScanSummary } {
   const summary = createScanSummary();
 
   const stream = globEntries({
@@ -131,12 +124,30 @@ export async function collectFiles(
     suppressErrors: true,
   });
 
-  const files = await collectFromStream(
-    stream,
+  return {
+    stream: collectFromStream(stream, opts, allowedDirs, signal, summary),
+    summary,
+  };
+}
+
+/**
+ * Collect file entries for scanning, up to the configured limits.
+ */
+export async function collectFiles(
+  root: string,
+  opts: ResolvedOptions,
+  allowedDirs: readonly string[],
+  signal: AbortSignal
+): Promise<{ files: ResolvedFile[]; summary: ScanSummary }> {
+  const { stream, summary } = collectFilesStream(
+    root,
     opts,
     allowedDirs,
-    signal,
-    summary
+    signal
   );
+  const files: ResolvedFile[] = [];
+  for await (const file of stream) {
+    files.push(file);
+  }
   return { files, summary };
 }

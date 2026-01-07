@@ -73,8 +73,11 @@ function needsStatsForSort(sortBy: NormalizedOptions['sortBy']): boolean {
   return sortBy === 'size' || sortBy === 'modified';
 }
 
-function resolveMaxDepth(): number {
-  return 1; // Always shallow listing; use search_files for recursive
+function resolveMaxDepth(normalized: NormalizedOptions): number {
+  if (!normalized.pattern) {
+    return 1; // Always shallow listing unless a pattern is provided
+  }
+  return normalized.maxDepth;
 }
 
 function shouldStopScan(
@@ -174,7 +177,7 @@ export async function executeListDirectory(
   summary: ListDirectoryResult['summary'];
 }> {
   const needsStats = needsStatsForSort(normalized.sortBy);
-  const maxDepth = resolveMaxDepth();
+  const maxDepth = resolveMaxDepth(normalized);
   const { entries, totals, truncated, stoppedReason } = await collectEntries(
     basePath,
     normalized,

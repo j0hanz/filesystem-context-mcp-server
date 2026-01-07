@@ -1,12 +1,18 @@
 import type { SearchContentResult } from '../../../config/types.js';
 import { SEARCH_WORKERS } from '../../constants.js';
 import { createTimedAbortSignal } from '../../fs-helpers/abort.js';
+import {
+  publishOpsTraceEnd,
+  publishOpsTraceError,
+  publishOpsTraceStart,
+  shouldPublishOpsTrace,
+} from '../../observability/diagnostics.js';
 import { getAllowedDirectories } from '../../path-validation/allowed-directories.js';
 import { validateExistingDirectory } from '../../path-validation/validate-existing.js';
 import type { ResolvedOptions, SearchContentOptions } from './options.js';
 import { mergeOptions } from './options.js';
 import type { ResolvedFile, ScanSummary } from './scan-collector.js';
-import { collectFiles } from './scan-collector.js';
+import { collectFilesStream } from './scan-collector.js';
 import type { MatcherOptions, ScanFileOptions } from './scan-file.js';
 import { validatePattern } from './scan-file.js';
 import { scanFilesParallel, scanFilesSequential } from './scan-strategy.js';
@@ -33,7 +39,7 @@ function shouldUseWorkers(): boolean {
 }
 
 async function scanMatches(
-  files: readonly ResolvedFile[],
+  files: AsyncIterable<ResolvedFile>,
   pattern: string,
   matcherOptions: MatcherOptions,
   scanOptions: ScanFileOptions,
@@ -103,29 +109,45 @@ async function executeSearch(
   allowedDirs: readonly string[],
   signal: AbortSignal
 ): Promise<SearchContentResult> {
+  const traceContext = shouldPublishOpsTrace()
+    ? {
+        op: 'searchContent',
+        engine: shouldUseWorkers() ? 'workers' : 'sequential',
+        maxResults: opts.maxResults,
+      }
+    : undefined;
+  if (traceContext) publishOpsTraceStart(traceContext);
+
   const matcherOptions = buildMatcherOptions(opts);
   const scanOptions = buildScanOptions(opts);
 
-  // Validate pattern early before spawning workers
-  validatePattern(pattern, matcherOptions);
+  try {
+    // Validate pattern early before spawning workers
+    validatePattern(pattern, matcherOptions);
 
-  // Collect files first
-  const { files, summary } = await collectFiles(
-    root,
-    opts,
-    allowedDirs,
-    signal
-  );
-  const matches = await scanMatches(
-    files,
-    pattern,
-    matcherOptions,
-    scanOptions,
-    opts.maxResults,
-    signal,
-    summary
-  );
-  return buildSearchResult(root, pattern, opts.filePattern, matches, summary);
+    // Collect files as a stream for scanning
+    const { stream, summary } = collectFilesStream(
+      root,
+      opts,
+      allowedDirs,
+      signal
+    );
+    const matches = await scanMatches(
+      stream,
+      pattern,
+      matcherOptions,
+      scanOptions,
+      opts.maxResults,
+      signal,
+      summary
+    );
+    return buildSearchResult(root, pattern, opts.filePattern, matches, summary);
+  } catch (error: unknown) {
+    if (traceContext) publishOpsTraceError(traceContext, error);
+    throw error;
+  } finally {
+    if (traceContext) publishOpsTraceEnd(traceContext);
+  }
 }
 
 export async function searchContent(

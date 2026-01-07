@@ -37,3 +37,9 @@ export interface WorkerScanResult {
   skippedTooLarge: boolean;
   skippedBinary: boolean;
 }
+
+export interface ScanTask {
+  id: number;
+  promise: Promise<WorkerScanResult>;
+  cancel: () => void;
+}

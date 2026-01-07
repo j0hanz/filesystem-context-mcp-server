@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto';
-import { channel } from 'node:diagnostics_channel';
+import { channel, tracingChannel } from 'node:diagnostics_channel';
+
+import {
+  captureEventLoopUtilization,
+  diffEventLoopUtilization,
+} from './perf.js';
 
 type DiagnosticsDetail = 0 | 1 | 2;
 
@@ -12,7 +17,30 @@ interface ToolDiagnosticsEvent {
   path?: string;
 }
 
+interface PerfDiagnosticsEvent {
+  phase: 'end';
+  tool: string;
+  durationMs: number;
+  elu: {
+    idle: number;
+    active: number;
+    utilization: number;
+  };
+}
+
+export interface OpsTraceContext {
+  op: string;
+  engine?: string;
+  tool?: string;
+  path?: string;
+  [key: string]: unknown;
+}
+
 const TOOL_CHANNEL = channel('filesystem-context:tool');
+const PERF_CHANNEL = channel('filesystem-context:perf');
+const OPS_TRACE = tracingChannel<unknown, OpsTraceContext>(
+  'filesystem-context:ops'
+);
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -66,8 +94,15 @@ function resolveDiagnosticsPath(options?: {
   return options?.path ? normalizePathForDiagnostics(options.path) : undefined;
 }
 
-function resolveDurationMs(startNs: bigint): number {
-  const endNs = process.hrtime.bigint();
+function normalizeOpsTraceContext(context: OpsTraceContext): OpsTraceContext {
+  if (!context.path) return context;
+  return {
+    ...context,
+    path: normalizePathForDiagnostics(context.path),
+  };
+}
+
+function resolveDurationMsFrom(startNs: bigint, endNs: bigint): number {
   return Number(endNs - startNs) / 1_000_000;
 }
 
@@ -111,7 +146,7 @@ function publishStartEvent(tool: string, options?: { path?: string }): void {
 function publishEndEvent(
   tool: string,
   ok: boolean,
-  startNs: bigint,
+  durationMs: number,
   error?: unknown
 ): void {
   TOOL_CHANNEL.publish({
@@ -119,8 +154,47 @@ function publishEndEvent(
     tool,
     ok,
     error: resolveDiagnosticsErrorMessage(error),
-    durationMs: resolveDurationMs(startNs),
+    durationMs,
   } satisfies ToolDiagnosticsEvent);
+}
+
+function publishPerfEndEvent(
+  tool: string,
+  durationMs: number,
+  elu: ReturnType<typeof diffEventLoopUtilization>
+): void {
+  PERF_CHANNEL.publish({
+    phase: 'end',
+    tool,
+    durationMs,
+    elu: {
+      idle: elu.idle,
+      active: elu.active,
+      utilization: elu.utilization,
+    },
+  } satisfies PerfDiagnosticsEvent);
+}
+
+export function shouldPublishOpsTrace(): boolean {
+  return parseDiagnosticsEnabled() && OPS_TRACE.hasSubscribers;
+}
+
+export function publishOpsTraceStart(context: OpsTraceContext): void {
+  OPS_TRACE.start.publish(normalizeOpsTraceContext(context));
+}
+
+export function publishOpsTraceEnd(context: OpsTraceContext): void {
+  OPS_TRACE.end.publish(normalizeOpsTraceContext(context));
+}
+
+export function publishOpsTraceError(
+  context: OpsTraceContext,
+  error: unknown
+): void {
+  OPS_TRACE.error.publish({
+    ...normalizeOpsTraceContext(context),
+    error,
+  });
 }
 
 export async function withToolDiagnostics<T>(
@@ -129,19 +203,42 @@ export async function withToolDiagnostics<T>(
   options?: { path?: string }
 ): Promise<T> {
   const enabled = parseDiagnosticsEnabled();
-  if (!enabled || !TOOL_CHANNEL.hasSubscribers) {
+  if (!enabled) {
+    return await run();
+  }
+
+  const shouldPublishTool = TOOL_CHANNEL.hasSubscribers;
+  const shouldPublishPerf = PERF_CHANNEL.hasSubscribers;
+  if (!shouldPublishTool && !shouldPublishPerf) {
     return await run();
   }
 
   const startNs = process.hrtime.bigint();
-  publishStartEvent(tool, options);
+  const eluStart = shouldPublishPerf
+    ? captureEventLoopUtilization()
+    : undefined;
+  if (shouldPublishTool) publishStartEvent(tool, options);
 
   try {
     const result = await run();
-    publishEndEvent(tool, resolveDiagnosticsOk(result) ?? true, startNs);
+    const endNs = process.hrtime.bigint();
+    const durationMs = resolveDurationMsFrom(startNs, endNs);
+    if (shouldPublishPerf && eluStart) {
+      publishPerfEndEvent(tool, durationMs, diffEventLoopUtilization(eluStart));
+    }
+    if (shouldPublishTool) {
+      publishEndEvent(tool, resolveDiagnosticsOk(result) ?? true, durationMs);
+    }
     return result;
   } catch (error: unknown) {
-    publishEndEvent(tool, false, startNs, error);
+    const endNs = process.hrtime.bigint();
+    const durationMs = resolveDurationMsFrom(startNs, endNs);
+    if (shouldPublishPerf && eluStart) {
+      publishPerfEndEvent(tool, durationMs, diffEventLoopUtilization(eluStart));
+    }
+    if (shouldPublishTool) {
+      publishEndEvent(tool, false, durationMs, error);
+    }
     throw error;
   }
 }
