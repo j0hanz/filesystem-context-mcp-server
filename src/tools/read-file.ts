@@ -56,6 +56,10 @@ function buildReadFileNote(
 type ReadFileArgs = z.infer<typeof ReadFileInputSchema>;
 type ReadFileStructuredResult = z.infer<typeof ReadFileOutputSchema>;
 
+// Hardcoded defaults for removed parameters
+const DEFAULT_ENCODING: BufferEncoding = 'utf-8';
+const DEFAULT_SKIP_BINARY = true;
+
 interface EffectiveReadOptions {
   encoding: BufferEncoding;
   maxSize: number;
@@ -70,9 +74,9 @@ function buildEffectiveReadOptions(
   lineRange: { start: number; end: number } | undefined
 ): EffectiveReadOptions {
   return {
-    encoding: args.encoding,
-    maxSize: Math.min(args.maxSize, MAX_TEXT_FILE_SIZE),
-    skipBinary: args.skipBinary,
+    encoding: DEFAULT_ENCODING,
+    maxSize: MAX_TEXT_FILE_SIZE,
+    skipBinary: DEFAULT_SKIP_BINARY,
     lineRange,
     head: args.head,
     tail: args.tail,
@@ -81,8 +85,7 @@ function buildEffectiveReadOptions(
 
 function buildStructuredReadResult(
   result: Awaited<ReturnType<typeof readFile>>,
-  args: ReadFileArgs,
-  effectiveOptions: EffectiveReadOptions
+  args: ReadFileArgs
 ): ReadFileStructuredResult {
   return {
     ok: true,
@@ -98,9 +101,6 @@ function buildStructuredReadResult(
     linesRead: result.linesRead,
     hasMoreLines: result.hasMoreLines,
     effectiveOptions: {
-      encoding: effectiveOptions.encoding,
-      maxSize: effectiveOptions.maxSize,
-      skipBinary: effectiveOptions.skipBinary,
       lineStart: args.lineStart,
       lineEnd: args.lineEnd,
       head: args.head,
@@ -139,19 +139,15 @@ async function handleReadFile(
 
   const note = buildReadFileNote(result, args.head, args.tail);
   const text = note ? joinLines([result.content, note]) : result.content;
-  return buildToolResponse(
-    text,
-    buildStructuredReadResult(result, args, effectiveOptions)
-  );
+  return buildToolResponse(text, buildStructuredReadResult(result, args));
 }
 
 const READ_FILE_TOOL = {
   title: 'Read File',
   description:
     'Read the text contents of a single file. ' +
-    'Supports encodings and partial reads via head (first N lines), tail (last N lines), ' +
+    'Supports partial reads via head (first N lines), tail (last N lines), ' +
     'or lineStart/lineEnd (specific line range; mutually exclusive with head/tail). ' +
-    'Use skipBinary=true to reject binary files. ' +
     'For multiple files, use read_multiple_files for efficiency.',
   inputSchema: ReadFileInputSchema,
   outputSchema: ReadFileOutputSchema,

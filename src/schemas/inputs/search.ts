@@ -1,19 +1,10 @@
 import { z } from 'zod';
 
 import {
-  BaseNameMatchSchema,
   CaseSensitiveSchema,
-  ContextLinesSchema,
   ExcludePatternsSchema,
-  IncludeHiddenSchema,
   isSafeGlobPattern,
-  MaxDepthSchema,
-  MaxFileSizeSearchSchema,
-  MaxFilesScannedSchema,
   MaxResultsSchema,
-  SkipBinarySchema,
-  SortByFileSchema,
-  TimeoutMsSchema,
 } from '../input-helpers.js';
 
 export const SearchFilesInputSchema = z.strictObject({
@@ -48,30 +39,6 @@ export const SearchFilesInputSchema = z.strictObject({
   maxResults: MaxResultsSchema.describe(
     'Maximum number of matches to return (prevents huge responses)'
   ),
-  sortBy: SortByFileSchema,
-  maxDepth: MaxDepthSchema.describe(
-    'Maximum directory depth to search (lower values improve performance)'
-  ),
-  maxFilesScanned: MaxFilesScannedSchema,
-  timeoutMs: TimeoutMsSchema.describe(
-    'Timeout in milliseconds for the search operation'
-  ),
-  baseNameMatch: BaseNameMatchSchema.describe(
-    'If true, patterns without slashes match against basename of paths. Useful for finding config files like "*.json" in nested directories'
-  ),
-  skipSymlinks: z
-    .boolean()
-    .optional()
-    .default(true)
-    .refine((value) => value, {
-      error: 'Following symbolic links is not supported for security reasons',
-    })
-    .describe(
-      'Skip symbolic links for security and performance (must remain true)'
-    ),
-  includeHidden: IncludeHiddenSchema.describe(
-    'Include hidden files and directories (dotfiles) in the search'
-  ),
 });
 
 export const SearchContentInputSchema = z.strictObject({
@@ -104,36 +71,11 @@ export const SearchContentInputSchema = z.strictObject({
   ),
   caseSensitive: CaseSensitiveSchema,
   maxResults: MaxResultsSchema.describe('Maximum number of results'),
-  maxFileSize: MaxFileSizeSearchSchema,
-  maxFilesScanned: MaxFilesScannedSchema,
-  timeoutMs: TimeoutMsSchema.describe(
-    'Timeout in milliseconds for the search operation'
-  ),
-  skipBinary: SkipBinarySchema,
-  includeHidden: IncludeHiddenSchema.describe(
-    'Include hidden files and directories (dotfiles) in the search'
-  ),
-  contextLines: ContextLinesSchema,
-  wholeWord: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe(
-      'Match whole words only by adding \\b word boundaries to pattern. Useful for avoiding partial matches (e.g., searching "test" won\'t match "testing")'
-    ),
   isLiteral: z
     .boolean()
     .optional()
     .default(false)
     .describe(
       'Treat pattern as a literal string instead of regex. Special characters like ., *, ? will be escaped automatically. Use this when searching for exact text containing regex metacharacters.'
-    ),
-  baseNameMatch: BaseNameMatchSchema,
-  caseSensitiveFileMatch: z
-    .boolean()
-    .optional()
-    .default(true)
-    .describe(
-      'Case sensitive file pattern matching. Set to false for case-insensitive filename matching on case-insensitive filesystems'
     ),
 });

@@ -1,12 +1,6 @@
 import { z } from 'zod';
 
 import {
-  EncodingSchema,
-  ReadFileMaxSizeSchema,
-  ReadMultipleFilesMaxSizeSchema,
-  SkipBinarySchema,
-} from '../input-helpers.js';
-import {
   applyLineRangeIssues,
   HeadLinesSchema,
   LineEndSchema,
@@ -19,11 +13,8 @@ const ReadFileBaseSchema = z.strictObject({
     .string()
     .min(1, 'Path cannot be empty')
     .describe('Path to the file to read'),
-  encoding: EncodingSchema,
-  maxSize: ReadFileMaxSizeSchema,
   lineStart: LineStartSchema,
   lineEnd: LineEndSchema,
-  skipBinary: SkipBinarySchema,
   head: HeadLinesSchema.describe(
     'Read only the first N lines of the file (memory efficient for large files)'
   ),
@@ -52,17 +43,6 @@ const ReadMultipleFilesBaseSchema = z.strictObject({
     .min(1, 'At least one path is required')
     .max(100, 'Cannot read more than 100 files at once')
     .describe('Array of file paths to read'),
-  encoding: EncodingSchema,
-  maxSize: ReadMultipleFilesMaxSizeSchema,
-  maxTotalSize: z
-    .int({ error: 'maxTotalSize must be an integer' })
-    .min(1, 'maxTotalSize must be at least 1 byte')
-    .max(1024 * 1024 * 1024, 'maxTotalSize cannot exceed 1GB')
-    .optional()
-    .default(100 * 1024 * 1024)
-    .describe(
-      'Maximum total size in bytes for all files combined (default 100MB)'
-    ),
   head: HeadLinesSchema.describe('Read only the first N lines of each file'),
   tail: TailLinesSchema.describe('Read only the last N lines of each file'),
   lineStart: LineStartSchema.describe(

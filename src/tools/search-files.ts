@@ -9,6 +9,11 @@ import {
   formatOperationSummary,
   joinLines,
 } from '../config/formatting.js';
+import {
+  DEFAULT_MAX_DEPTH,
+  DEFAULT_SEARCH_MAX_FILES,
+  DEFAULT_SEARCH_TIMEOUT_MS,
+} from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { searchFiles } from '../lib/file-operations.js';
 import { createTimedAbortSignal } from '../lib/fs-helpers.js';
@@ -105,7 +110,7 @@ function buildTextResult(
   let textOutput = joinLines([header, body]);
   if (results.length === 0) {
     textOutput +=
-      '\n(Try a broader pattern, remove excludePatterns, or set includeHidden=true if searching dotfiles.)';
+      '\n(Try a broader pattern or remove excludePatterns to see more results.)';
   }
   textOutput += formatOperationSummary({
     truncated: summary.truncated,
@@ -124,15 +129,29 @@ async function handleSearchFiles(
   args: SearchFilesArgs,
   signal?: AbortSignal
 ): Promise<ToolResponse<SearchFilesStructuredResult>> {
-  const { path: searchBasePath, pattern, excludePatterns, ...options } = args;
-  const result = await searchFiles(searchBasePath, pattern, excludePatterns, {
-    ...options,
+  const { path: searchBasePath, pattern, excludePatterns, maxResults } = args;
+  // Hardcode removed parameters with sensible defaults
+  const fullOptions = {
+    maxResults,
+    sortBy: 'path' as const,
+    maxDepth: DEFAULT_MAX_DEPTH,
+    maxFilesScanned: DEFAULT_SEARCH_MAX_FILES,
+    timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
+    baseNameMatch: false,
+    skipSymlinks: true,
+    includeHidden: false,
     signal,
-  });
+  };
+  const result = await searchFiles(
+    searchBasePath,
+    pattern,
+    excludePatterns,
+    fullOptions
+  );
   const structured = buildStructuredResult(result);
   structured.effectiveOptions = {
-    ...options,
     excludePatterns: [...excludePatterns],
+    maxResults,
   };
   return buildToolResponse(buildTextResult(result), structured);
 }
@@ -143,8 +162,7 @@ const SEARCH_FILES_TOOL = {
     'Find files (not directories) matching a glob pattern within a directory tree. ' +
     'Pattern examples: "**/*.ts" (all TypeScript files), "src/**/*.{js,jsx}" (JS/JSX in src), ' +
     '"**/test/**" (all test directories). Returns paths, types, sizes, and modification dates. ' +
-    'excludePatterns defaults to common dependency/build dirs (pass [] to disable). ' +
-    'Symlink traversal is disabled (skipSymlinks must remain true).',
+    'excludePatterns defaults to common dependency/build dirs (pass [] to disable).',
   inputSchema: SearchFilesInputSchema,
   outputSchema: SearchFilesOutputSchema,
   annotations: {
@@ -166,7 +184,7 @@ export function registerSearchFilesTool(server: McpServer): void {
           async () => {
             const { signal, cleanup } = createTimedAbortSignal(
               extra.signal,
-              args.timeoutMs
+              DEFAULT_SEARCH_TIMEOUT_MS
             );
             try {
               return await handleSearchFiles(args, signal);

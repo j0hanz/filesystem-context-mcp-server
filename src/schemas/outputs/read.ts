@@ -18,9 +18,6 @@ export const ReadFileOutputSchema = z.object({
   hasMoreLines: z.boolean().optional(),
   effectiveOptions: z
     .object({
-      encoding: z.string(),
-      maxSize: z.number(),
-      skipBinary: z.boolean(),
       lineStart: z.number().optional(),
       lineEnd: z.number().optional(),
       head: z.number().optional(),
@@ -53,9 +50,6 @@ export const ReadMultipleFilesOutputSchema = z.object({
   summary: BatchSummarySchema.optional(),
   effectiveOptions: z
     .object({
-      encoding: z.string(),
-      maxSize: z.number(),
-      maxTotalSize: z.number(),
       head: z.number().optional(),
       tail: z.number().optional(),
       lineStart: z.number().optional(),

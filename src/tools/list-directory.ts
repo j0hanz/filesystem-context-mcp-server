@@ -9,6 +9,11 @@ import {
   formatOperationSummary,
   joinLines,
 } from '../config/formatting.js';
+import {
+  DEFAULT_LIST_MAX_ENTRIES,
+  DEFAULT_MAX_DEPTH,
+  DEFAULT_SEARCH_TIMEOUT_MS,
+} from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { listDirectory } from '../lib/file-operations.js';
 import { createTimedAbortSignal } from '../lib/fs-helpers.js';
@@ -76,9 +81,8 @@ const LIST_DIRECTORY_TOOL = {
   description:
     'List entries in a directory with optional recursion. ' +
     'Returns name (basename), relative path, type (file/directory/symlink), size, and modified date. ' +
-    'Use recursive=true with maxDepth to traverse nested folders. ' +
-    'Use excludePatterns to skip paths, or pattern to include only matches. ' +
-    'Symlinks are not followed; includeSymlinkTargets can show targets.',
+    'Use recursive=true to traverse nested folders. ' +
+    'Use excludePatterns to skip paths. For filtered file searches, use search_files instead.',
   inputSchema: ListDirectoryInputSchema,
   outputSchema: ListDirectoryOutputSchema,
   annotations: {
@@ -151,10 +155,22 @@ async function handleListDirectory(
   signal?: AbortSignal
 ): Promise<ToolResponse<ListDirectoryStructuredResult>> {
   const { path: dirPath, ...options } = args;
-  const result = await listDirectory(dirPath, { ...options, signal });
+  // Hardcode removed parameters with sensible defaults
+  const fullOptions = {
+    ...options,
+    includeHidden: false,
+    maxDepth: DEFAULT_MAX_DEPTH,
+    maxEntries: DEFAULT_LIST_MAX_ENTRIES,
+    timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
+    sortBy: 'name' as const,
+    includeSymlinkTargets: false,
+    pattern: undefined, // No pattern filtering
+    signal,
+  };
+  const result = await listDirectory(dirPath, fullOptions);
   const structured = buildStructuredResult(result);
   structured.effectiveOptions = {
-    ...options,
+    recursive: options.recursive,
     excludePatterns: [...options.excludePatterns],
   };
   const textOutput = buildTextResult(result);
@@ -173,7 +189,7 @@ export function registerListDirectoryTool(server: McpServer): void {
           async () => {
             const { signal, cleanup } = createTimedAbortSignal(
               extra.signal,
-              args.timeoutMs
+              DEFAULT_SEARCH_TIMEOUT_MS
             );
             try {
               return await handleListDirectory(args, signal);

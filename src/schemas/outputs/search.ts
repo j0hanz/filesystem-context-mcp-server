@@ -12,13 +12,6 @@ export const SearchFilesOutputSchema = z.object({
     .object({
       excludePatterns: z.array(z.string()),
       maxResults: z.number(),
-      sortBy: z.enum(['name', 'size', 'modified', 'path']),
-      maxDepth: z.number(),
-      maxFilesScanned: z.number(),
-      timeoutMs: z.number(),
-      baseNameMatch: z.boolean(),
-      skipSymlinks: z.boolean(),
-      includeHidden: z.boolean(),
     })
     .optional()
     .describe('Effective options used for the search'),
@@ -58,16 +51,7 @@ export const SearchContentOutputSchema = z.object({
       excludePatterns: z.array(z.string()),
       caseSensitive: z.boolean(),
       maxResults: z.number(),
-      maxFileSize: z.number(),
-      maxFilesScanned: z.number(),
-      timeoutMs: z.number(),
-      skipBinary: z.boolean(),
-      includeHidden: z.boolean(),
-      contextLines: z.number(),
-      wholeWord: z.boolean(),
       isLiteral: z.boolean(),
-      baseNameMatch: z.boolean(),
-      caseSensitiveFileMatch: z.boolean(),
     })
     .optional()
     .describe('Effective options used for the content search'),

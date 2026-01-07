@@ -2,6 +2,11 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
+import {
+  DEFAULT_SEARCH_MAX_FILES,
+  DEFAULT_SEARCH_TIMEOUT_MS,
+  MAX_SEARCHABLE_FILE_SIZE,
+} from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { searchContent } from '../lib/file-operations.js';
 import { createTimedAbortSignal } from '../lib/fs-helpers.js';
@@ -29,30 +34,34 @@ async function handleSearchContent(
   args: SearchContentArgs,
   signal?: AbortSignal
 ): Promise<ToolResponse<SearchContentStructuredResult>> {
-  const effectiveOptions = {
+  // User-provided options
+  const userOptions = {
     filePattern: args.filePattern,
     excludePatterns: args.excludePatterns,
     caseSensitive: args.caseSensitive,
     maxResults: args.maxResults,
-    maxFileSize: args.maxFileSize,
-    maxFilesScanned: args.maxFilesScanned,
-    timeoutMs: args.timeoutMs,
-    skipBinary: args.skipBinary,
-    includeHidden: args.includeHidden,
-    contextLines: args.contextLines,
-    wholeWord: args.wholeWord,
     isLiteral: args.isLiteral,
-    baseNameMatch: args.baseNameMatch,
-    caseSensitiveFileMatch: args.caseSensitiveFileMatch,
   };
 
-  const result = await searchContent(args.path, args.pattern, {
-    ...effectiveOptions,
+  // Hardcode removed parameters with sensible defaults
+  const fullOptions = {
+    ...userOptions,
+    contextLines: 2, // Hardcoded to always show 2 lines of context
+    maxFileSize: MAX_SEARCHABLE_FILE_SIZE,
+    maxFilesScanned: DEFAULT_SEARCH_MAX_FILES,
+    timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
+    skipBinary: true,
+    includeHidden: false,
+    wholeWord: false,
+    baseNameMatch: false,
+    caseSensitiveFileMatch: true,
     signal,
-  });
+  };
+
+  const result = await searchContent(args.path, args.pattern, fullOptions);
 
   const structured = buildStructuredResult(result);
-  structured.effectiveOptions = effectiveOptions;
+  structured.effectiveOptions = userOptions;
 
   return buildToolResponse(buildTextResult(result), structured);
 }
@@ -61,11 +70,10 @@ const SEARCH_CONTENT_TOOL = {
   title: 'Search Content',
   description:
     'Search for text patterns within file contents using regular expressions (grep-like). ' +
-    'Returns matching lines with optional context (contextLines parameter). ' +
-    'Use isLiteral=true for exact string matching, wholeWord=true to avoid partial matches. ' +
+    'Returns matching lines with 2 lines of context before and after. ' +
+    'Use isLiteral=true for exact string matching. ' +
     'Filter files with filePattern glob (e.g., "**/*.ts" for TypeScript only). ' +
-    'excludePatterns defaults to common dependency/build dirs (pass [] to disable). ' +
-    'Automatically skips binary files unless skipBinary=false.',
+    'excludePatterns defaults to common dependency/build dirs (pass [] to disable).',
   inputSchema: SearchContentInputSchema,
   outputSchema: SearchContentOutputSchema,
   annotations: {
@@ -87,7 +95,7 @@ export function registerSearchContentTool(server: McpServer): void {
           async () => {
             const { signal, cleanup } = createTimedAbortSignal(
               extra.signal,
-              args.timeoutMs
+              DEFAULT_SEARCH_TIMEOUT_MS
             );
             try {
               return await handleSearchContent(args, signal);
