@@ -8,46 +8,14 @@ import * as fsp from 'node:fs/promises';
 import readline from 'node:readline';
 
 import type { ContentMatch } from '../../../config/types.js';
-import { MAX_LINE_CONTENT_LENGTH } from '../../constants.js';
 import type { Matcher, ScanFileOptions } from './scan-file.js';
+import { makeContext, pushContext, trimContent } from './scan-helpers.js';
 
 type BinaryDetector = (
   path: string,
   handle: fsp.FileHandle,
   signal?: AbortSignal
 ) => Promise<boolean>;
-
-interface ContextState {
-  before: string[];
-  pendingAfter: PendingAfter[];
-}
-
-interface PendingAfter {
-  buffer: string[];
-  left: number;
-}
-
-function makeContext(): ContextState {
-  return { before: [], pendingAfter: [] };
-}
-
-function pushContext(ctx: ContextState, line: string, max: number): void {
-  if (max <= 0) return;
-  ctx.before.push(line);
-  if (ctx.before.length > max) ctx.before.shift();
-  for (const pending of ctx.pendingAfter) {
-    if (pending.left <= 0) continue;
-    pending.buffer.push(line);
-    pending.left -= 1;
-  }
-  while (ctx.pendingAfter.length > 0 && ctx.pendingAfter[0]?.left === 0) {
-    ctx.pendingAfter.shift();
-  }
-}
-
-function trimContent(line: string): string {
-  return line.trimEnd().slice(0, MAX_LINE_CONTENT_LENGTH);
-}
 
 export interface WorkerScanResult {
   readonly matches: readonly ContentMatch[];

@@ -65,7 +65,8 @@ async function readHeadChunks(
   maxBytesRead: number | undefined,
   signal?: AbortSignal
 ): Promise<void> {
-  const chunk = Buffer.alloc(CHUNK_SIZE);
+  // Use allocUnsafe since we immediately overwrite with file data
+  const chunk = Buffer.allocUnsafe(CHUNK_SIZE);
 
   while (state.lines.length < numLines) {
     assertNotAborted(signal);

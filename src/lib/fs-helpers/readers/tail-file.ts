@@ -114,7 +114,8 @@ async function readAlignedChunk(
   encoding: BufferEncoding,
   signal?: AbortSignal
 ): Promise<{ data: string; bytesRead: number } | null> {
-  const chunk = Buffer.alloc(aligned.size + 4);
+  // Use allocUnsafe since we immediately overwrite with file data
+  const chunk = Buffer.allocUnsafe(aligned.size + 4);
   const { bytesRead } = await withAbort(
     handle.read(chunk, 0, aligned.size, aligned.startPos),
     signal

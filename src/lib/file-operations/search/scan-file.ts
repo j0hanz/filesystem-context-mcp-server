@@ -5,8 +5,8 @@ import RE2 from 're2';
 import safeRegex from 'safe-regex2';
 
 import type { ContentMatch } from '../../../config/types.js';
-import { MAX_LINE_CONTENT_LENGTH } from '../../constants.js';
 import { isProbablyBinary } from '../../fs-helpers.js';
+import { makeContext, pushContext, trimContent } from './scan-helpers.js';
 
 export interface MatcherOptions {
   caseSensitive: boolean;
@@ -96,38 +96,6 @@ export function buildMatcher(
     }
     return count;
   };
-}
-
-interface PendingAfter {
-  buffer: string[];
-  left: number;
-}
-
-interface ContextState {
-  before: string[];
-  pendingAfter: PendingAfter[];
-}
-
-function makeContext(): ContextState {
-  return { before: [], pendingAfter: [] };
-}
-
-function pushContext(ctx: ContextState, line: string, max: number): void {
-  if (max <= 0) return;
-  ctx.before.push(line);
-  if (ctx.before.length > max) ctx.before.shift();
-  for (const pending of ctx.pendingAfter) {
-    if (pending.left <= 0) continue;
-    pending.buffer.push(line);
-    pending.left -= 1;
-  }
-  while (ctx.pendingAfter.length > 0 && ctx.pendingAfter[0]?.left === 0) {
-    ctx.pendingAfter.shift();
-  }
-}
-
-function trimContent(line: string): string {
-  return line.trimEnd().slice(0, MAX_LINE_CONTENT_LENGTH);
 }
 
 export async function scanFileResolved(
