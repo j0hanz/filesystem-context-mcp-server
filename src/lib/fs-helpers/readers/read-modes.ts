@@ -9,29 +9,25 @@ import {
   resolveReadMode,
 } from './read-options.js';
 
-async function readHeadResult(
-  handle: FileHandle,
-  validPath: string,
-  filePath: string,
-  normalized: NormalizedOptions
-): Promise<ReadFileResult> {
-  const { head } = normalized;
-  if (head === undefined) {
+function requireHead(normalized: NormalizedOptions, filePath: string): number {
+  if (normalized.head === undefined) {
     throw new McpError(
       ErrorCode.E_INVALID_INPUT,
       'Missing head option',
       filePath
     );
   }
-  const { content, truncated, linesRead, hasMoreLines } = await readHeadContent(
-    handle,
-    head,
-    {
-      encoding: normalized.encoding,
-      maxSize: normalized.maxSize,
-      signal: normalized.signal,
-    }
-  );
+  return normalized.head;
+}
+
+function buildHeadResult(
+  validPath: string,
+  content: string,
+  truncated: boolean,
+  head: number,
+  linesRead: number,
+  hasMoreLines: boolean
+): ReadFileResult {
   return {
     path: validPath,
     content,
@@ -44,28 +40,11 @@ async function readHeadResult(
   };
 }
 
-async function readFullResult(
-  handle: FileHandle,
+function buildFullResult(
   validPath: string,
-  filePath: string,
-  stats: Stats,
-  normalized: NormalizedOptions
-): Promise<ReadFileResult> {
-  if (stats.size > normalized.maxSize) {
-    throw new McpError(
-      ErrorCode.E_TOO_LARGE,
-      `File too large: ${stats.size} bytes (max: ${normalized.maxSize} bytes). Use head parameter to preview the first N lines.`,
-      filePath,
-      { size: stats.size, maxSize: normalized.maxSize }
-    );
-  }
-  const { content, totalLines } = await readFullContent(
-    handle,
-    normalized.encoding,
-    normalized.maxSize,
-    filePath,
-    normalized.signal
-  );
+  content: string,
+  totalLines: number
+): ReadFileResult {
   return {
     path: validPath,
     content,
@@ -75,6 +54,64 @@ async function readFullResult(
     linesRead: totalLines,
     hasMoreLines: false,
   };
+}
+
+function assertSizeWithinLimit(
+  size: number,
+  maxSize: number,
+  filePath: string
+): void {
+  if (size <= maxSize) return;
+  throw new McpError(
+    ErrorCode.E_TOO_LARGE,
+    `File too large: ${size} bytes (max: ${maxSize} bytes). Use head parameter to preview the first N lines.`,
+    filePath,
+    { size, maxSize }
+  );
+}
+
+async function readHeadResult(
+  handle: FileHandle,
+  validPath: string,
+  filePath: string,
+  normalized: NormalizedOptions
+): Promise<ReadFileResult> {
+  const head = requireHead(normalized, filePath);
+  const { content, truncated, linesRead, hasMoreLines } = await readHeadContent(
+    handle,
+    head,
+    {
+      encoding: normalized.encoding,
+      maxSize: normalized.maxSize,
+      signal: normalized.signal,
+    }
+  );
+  return buildHeadResult(
+    validPath,
+    content,
+    truncated,
+    head,
+    linesRead,
+    hasMoreLines
+  );
+}
+
+async function readFullResult(
+  handle: FileHandle,
+  validPath: string,
+  filePath: string,
+  stats: Stats,
+  normalized: NormalizedOptions
+): Promise<ReadFileResult> {
+  assertSizeWithinLimit(stats.size, normalized.maxSize, filePath);
+  const { content, totalLines } = await readFullContent(
+    handle,
+    normalized.encoding,
+    normalized.maxSize,
+    filePath,
+    normalized.signal
+  );
+  return buildFullResult(validPath, content, totalLines);
 }
 
 export async function readByMode(

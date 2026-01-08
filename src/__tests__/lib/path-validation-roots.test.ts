@@ -10,6 +10,38 @@ import type { Root } from '@modelcontextprotocol/sdk/types.js';
 import { normalizePath } from '../../lib/path-utils.js';
 import { getValidRootDirectories } from '../../lib/path-validation/roots.js';
 
+function toRoot(uri: string): Root {
+  return { uri };
+}
+
+function registerRootDirectoryTests(
+  getTestDir: () => string,
+  getTestFile: () => string
+): void {
+  void it('getValidRootDirectories returns only file roots that are directories', async () => {
+    const roots = [
+      toRoot(pathToFileURL(getTestDir()).toString()),
+      toRoot(pathToFileURL(getTestFile()).toString()),
+      toRoot('http://example.com'),
+    ];
+
+    const result = await getValidRootDirectories(roots);
+
+    assert.deepStrictEqual(result, [normalizePath(getTestDir())]);
+  });
+}
+
+function registerRootDirectoryMissingTests(getTestDir: () => string): void {
+  void it('getValidRootDirectories ignores invalid root directories', async () => {
+    const missing = path.join(getTestDir(), 'missing');
+    const roots = [toRoot(pathToFileURL(missing).toString())];
+
+    const result = await getValidRootDirectories(roots);
+
+    assert.deepStrictEqual(result, []);
+  });
+}
+
 void describe('getValidRootDirectories', () => {
   let testDir = '';
   let testFile = '';
@@ -28,29 +60,9 @@ void describe('getValidRootDirectories', () => {
     }
   });
 
-  function toRoot(uri: string): Root {
-    const root: Root = { uri };
-    return root;
-  }
-
-  void it('getValidRootDirectories returns only file roots that are directories', async () => {
-    const roots = [
-      toRoot(pathToFileURL(testDir).toString()),
-      toRoot(pathToFileURL(testFile).toString()),
-      toRoot('http://example.com'),
-    ];
-
-    const result = await getValidRootDirectories(roots);
-
-    assert.deepStrictEqual(result, [normalizePath(testDir)]);
-  });
-
-  void it('getValidRootDirectories ignores invalid root directories', async () => {
-    const missing = path.join(testDir, 'missing');
-    const roots = [toRoot(pathToFileURL(missing).toString())];
-
-    const result = await getValidRootDirectories(roots);
-
-    assert.deepStrictEqual(result, []);
-  });
+  registerRootDirectoryTests(
+    () => testDir,
+    () => testFile
+  );
+  registerRootDirectoryMissingTests(() => testDir);
 });

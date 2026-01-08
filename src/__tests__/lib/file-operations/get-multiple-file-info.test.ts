@@ -7,27 +7,31 @@ import { after, before, describe, it } from 'node:test';
 import { getMultipleFileInfo } from '../../../lib/file-operations/get-multiple-file-info.js';
 import { setAllowedDirectoriesResolved } from '../../../lib/path-validation/allowed-directories.js';
 
-void describe('getMultipleFileInfo', () => {
-  let tempDir: string;
-  let testFile1: string;
-  let testFile2: string;
+interface TestFixture {
+  tempDir: string;
+  testFile1: string;
+  testFile2: string;
+}
 
-  before(async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mfi-test-'));
-    testFile1 = path.join(tempDir, 'file1.txt');
-    testFile2 = path.join(tempDir, 'file2.json');
+async function setupFixture(): Promise<TestFixture> {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mfi-test-'));
+  const testFile1 = path.join(tempDir, 'file1.txt');
+  const testFile2 = path.join(tempDir, 'file2.json');
 
-    await fs.writeFile(testFile1, 'Hello World');
-    await fs.writeFile(testFile2, '{"key": "value"}');
+  await fs.writeFile(testFile1, 'Hello World');
+  await fs.writeFile(testFile2, '{"key": "value"}');
 
-    await setAllowedDirectoriesResolved([tempDir]);
-  });
+  await setAllowedDirectoriesResolved([tempDir]);
+  return { tempDir, testFile1, testFile2 };
+}
 
-  after(async () => {
-    await fs.rm(tempDir, { recursive: true, force: true });
-  });
+async function cleanupFixture(tempDir: string): Promise<void> {
+  await fs.rm(tempDir, { recursive: true, force: true });
+}
 
+function registerMultiFileInfoBasics(getFixture: () => TestFixture): void {
   void it('should return info for multiple files', async () => {
+    const { testFile1, testFile2 } = getFixture();
     const result = await getMultipleFileInfo([testFile1, testFile2]);
 
     assert.strictEqual(result.summary.total, 2);
@@ -40,8 +44,11 @@ void describe('getMultipleFileInfo', () => {
     assert.strictEqual(info1.name, 'file1.txt');
     assert.strictEqual(info1.type, 'file');
   });
+}
 
+function registerMultiFileInfoMissing(getFixture: () => TestFixture): void {
   void it('should handle non-existent files gracefully', async () => {
+    const { tempDir, testFile1 } = getFixture();
     const nonExistent = path.join(tempDir, 'nonexistent.txt');
     const result = await getMultipleFileInfo([testFile1, nonExistent]);
 
@@ -52,11 +59,30 @@ void describe('getMultipleFileInfo', () => {
     const errorResult = result.results.find((r) => r.path === nonExistent);
     assert.ok(errorResult?.error);
   });
+}
 
+function registerMultiFileInfoEmpty(): void {
   void it('should return empty result for empty array', async () => {
     const result = await getMultipleFileInfo([]);
 
     assert.strictEqual(result.summary.total, 0);
     assert.strictEqual(result.results.length, 0);
   });
+}
+
+void describe('getMultipleFileInfo', () => {
+  let fixture: TestFixture;
+
+  before(async () => {
+    fixture = await setupFixture();
+  });
+
+  after(async () => {
+    await cleanupFixture(fixture.tempDir);
+  });
+
+  const getFixture = (): TestFixture => fixture;
+  registerMultiFileInfoBasics(getFixture);
+  registerMultiFileInfoMissing(getFixture);
+  registerMultiFileInfoEmpty();
 });

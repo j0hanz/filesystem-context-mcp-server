@@ -62,16 +62,13 @@ function resolveDiagnosticsOk(result: unknown): boolean | undefined {
 }
 
 function parseDiagnosticsEnabled(): boolean {
-  const raw = process.env.FILESYSTEM_CONTEXT_DIAGNOSTICS;
-  if (!raw) return false;
-  const normalized = raw.trim().toLowerCase();
+  const normalized =
+    process.env.FILESYSTEM_CONTEXT_DIAGNOSTICS?.trim().toLowerCase();
   return normalized === '1' || normalized === 'true' || normalized === 'yes';
 }
 
 function parseDiagnosticsDetail(): DiagnosticsDetail {
-  const raw = process.env.FILESYSTEM_CONTEXT_DIAGNOSTICS_DETAIL;
-  if (!raw) return 0;
-  const normalized = raw.trim();
+  const normalized = process.env.FILESYSTEM_CONTEXT_DIAGNOSTICS_DETAIL?.trim();
   if (normalized === '2') return 2;
   if (normalized === '1') return 1;
   return 0;
@@ -89,21 +86,24 @@ function normalizePathForDiagnostics(path: string): string | undefined {
 }
 
 function normalizeOpsTraceContext(context: OpsTraceContext): OpsTraceContext {
-  if (!context.path) return context;
-  return {
-    ...context,
-    path: normalizePathForDiagnostics(context.path),
-  };
+  return context.path
+    ? { ...context, path: normalizePathForDiagnostics(context.path) }
+    : context;
 }
 
-function resolveDiagnosticsErrorMessage(error?: unknown): string | undefined {
-  if (error === undefined || error === null) return undefined;
+function resolvePrimitiveDiagnosticsMessage(
+  error: unknown
+): string | undefined {
   if (typeof error === 'string') return error;
   if (typeof error === 'number' || typeof error === 'boolean') {
     return String(error);
   }
   if (typeof error === 'bigint') return error.toString();
   if (typeof error === 'symbol') return error.description ?? 'symbol';
+  return undefined;
+}
+
+function resolveObjectDiagnosticsMessage(error: unknown): string | undefined {
   if (error instanceof Error) return error.message;
   if (isObject(error) && typeof error.message === 'string') {
     return error.message;
@@ -113,6 +113,14 @@ function resolveDiagnosticsErrorMessage(error?: unknown): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function resolveDiagnosticsErrorMessage(error?: unknown): string | undefined {
+  if (error === undefined || error === null) return undefined;
+  return (
+    resolvePrimitiveDiagnosticsMessage(error) ??
+    resolveObjectDiagnosticsMessage(error)
+  );
 }
 
 function publishStartEvent(tool: string, options?: { path?: string }): void {
@@ -155,6 +163,79 @@ function publishPerfEndEvent(
   } satisfies PerfDiagnosticsEvent);
 }
 
+function startToolDiagnostics(
+  tool: string,
+  options: { path?: string } | undefined,
+  shouldPublishTool: boolean,
+  shouldPublishPerf: boolean
+): {
+  startNs: bigint;
+  eluStart: ReturnType<typeof captureEventLoopUtilization> | undefined;
+} {
+  const startNs = process.hrtime.bigint();
+  const eluStart = shouldPublishPerf
+    ? captureEventLoopUtilization()
+    : undefined;
+  if (shouldPublishTool) publishStartEvent(tool, options);
+  return { startNs, eluStart };
+}
+
+function finalizeToolDiagnostics(
+  tool: string,
+  startNs: bigint,
+  options: {
+    ok: boolean;
+    error?: unknown;
+    shouldPublishTool: boolean;
+    shouldPublishPerf: boolean;
+    eluStart: ReturnType<typeof captureEventLoopUtilization> | undefined;
+  }
+): void {
+  const endNs = process.hrtime.bigint();
+  const durationMs = Number(endNs - startNs) / 1_000_000;
+  if (options.shouldPublishPerf && options.eluStart) {
+    publishPerfEndEvent(
+      tool,
+      durationMs,
+      diffEventLoopUtilization(options.eluStart)
+    );
+  }
+  if (options.shouldPublishTool) {
+    publishEndEvent(tool, options.ok, durationMs, options.error);
+  }
+}
+
+async function runWithDiagnostics<T>(
+  tool: string,
+  run: () => Promise<T>,
+  options: { path?: string } | undefined,
+  shouldPublishTool: boolean,
+  shouldPublishPerf: boolean
+): Promise<T> {
+  const { startNs, eluStart } = startToolDiagnostics(
+    tool,
+    options,
+    shouldPublishTool,
+    shouldPublishPerf
+  );
+  const finalizeOptions = { shouldPublishTool, shouldPublishPerf, eluStart };
+  try {
+    const result = await run();
+    finalizeToolDiagnostics(tool, startNs, {
+      ok: resolveDiagnosticsOk(result) ?? true,
+      ...finalizeOptions,
+    });
+    return result;
+  } catch (error: unknown) {
+    finalizeToolDiagnostics(tool, startNs, {
+      ok: false,
+      error,
+      ...finalizeOptions,
+    });
+    throw error;
+  }
+}
+
 export function shouldPublishOpsTrace(): boolean {
   return parseDiagnosticsEnabled() && OPS_TRACE.hasSubscribers;
 }
@@ -182,8 +263,7 @@ export async function withToolDiagnostics<T>(
   run: () => Promise<T>,
   options?: { path?: string }
 ): Promise<T> {
-  const enabled = parseDiagnosticsEnabled();
-  if (!enabled) {
+  if (!parseDiagnosticsEnabled()) {
     return await run();
   }
 
@@ -193,32 +273,11 @@ export async function withToolDiagnostics<T>(
     return await run();
   }
 
-  const startNs = process.hrtime.bigint();
-  const eluStart = shouldPublishPerf
-    ? captureEventLoopUtilization()
-    : undefined;
-  if (shouldPublishTool) publishStartEvent(tool, options);
-
-  try {
-    const result = await run();
-    const endNs = process.hrtime.bigint();
-    const durationMs = Number(endNs - startNs) / 1_000_000;
-    if (shouldPublishPerf && eluStart) {
-      publishPerfEndEvent(tool, durationMs, diffEventLoopUtilization(eluStart));
-    }
-    if (shouldPublishTool) {
-      publishEndEvent(tool, resolveDiagnosticsOk(result) ?? true, durationMs);
-    }
-    return result;
-  } catch (error: unknown) {
-    const endNs = process.hrtime.bigint();
-    const durationMs = Number(endNs - startNs) / 1_000_000;
-    if (shouldPublishPerf && eluStart) {
-      publishPerfEndEvent(tool, durationMs, diffEventLoopUtilization(eluStart));
-    }
-    if (shouldPublishTool) {
-      publishEndEvent(tool, false, durationMs, error);
-    }
-    throw error;
-  }
+  return await runWithDiagnostics(
+    tool,
+    run,
+    options,
+    shouldPublishTool,
+    shouldPublishPerf
+  );
 }

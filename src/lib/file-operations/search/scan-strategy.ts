@@ -1,28 +1,63 @@
 import type { ContentMatch } from '../../../config/types.js';
-import { SEARCH_WORKERS } from '../../constants.js';
 import type { ResolvedFile, ScanSummary } from './scan-collector.js';
 import type { MatcherOptions, ScanFileOptions } from './scan-file.js';
 import { buildMatcher, scanFileResolved } from './scan-file.js';
-import { getSearchWorkerPool } from './worker-pool-manager.js';
-import type { ScanTask, WorkerScanResult } from './worker-pool.js';
+import {
+  applyScanResult,
+  shouldStopOnSignalOrLimit,
+} from './scan-strategy-shared.js';
 
-function shouldStopOnSignalOrLimit(
+async function scanSequentialFile(
+  file: ResolvedFile,
+  matcher: ReturnType<typeof buildMatcher>,
+  scanOptions: ScanFileOptions,
   signal: AbortSignal,
-  matchesCount: number,
   maxResults: number,
+  matches: ContentMatch[],
   summary: ScanSummary
-): boolean {
-  if (signal.aborted) {
-    summary.truncated = true;
-    summary.stoppedReason = 'timeout';
-    return true;
+): Promise<void> {
+  try {
+    const remaining = maxResults - matches.length;
+    const result = await scanFileResolved(
+      file.resolvedPath,
+      file.requestedPath,
+      matcher,
+      scanOptions,
+      signal,
+      remaining
+    );
+    applyScanResult(result, matches, summary, remaining);
+  } catch {
+    summary.skippedInaccessible++;
   }
-  if (matchesCount >= maxResults) {
-    summary.truncated = true;
-    summary.stoppedReason = 'maxResults';
-    return true;
+}
+
+async function collectSequentialMatches(
+  files: AsyncIterable<ResolvedFile>,
+  matcher: ReturnType<typeof buildMatcher>,
+  scanOptions: ScanFileOptions,
+  maxResults: number,
+  signal: AbortSignal,
+  summary: ScanSummary
+): Promise<ContentMatch[]> {
+  const matches: ContentMatch[] = [];
+  for await (const file of files) {
+    if (
+      shouldStopOnSignalOrLimit(signal, matches.length, maxResults, summary)
+    ) {
+      break;
+    }
+    await scanSequentialFile(
+      file,
+      matcher,
+      scanOptions,
+      signal,
+      maxResults,
+      matches,
+      summary
+    );
   }
-  return false;
+  return matches;
 }
 
 export async function scanFilesSequential(
@@ -35,167 +70,12 @@ export async function scanFilesSequential(
   summary: ScanSummary
 ): Promise<ContentMatch[]> {
   const matcher = buildMatcher(pattern, matcherOptions);
-  const matches: ContentMatch[] = [];
-  for await (const file of files) {
-    if (
-      shouldStopOnSignalOrLimit(signal, matches.length, maxResults, summary)
-    ) {
-      break;
-    }
-    try {
-      const remaining = maxResults - matches.length;
-      const result = await scanFileResolved(
-        file.resolvedPath,
-        file.requestedPath,
-        matcher,
-        scanOptions,
-        signal,
-        remaining
-      );
-      if (result.skippedTooLarge) summary.skippedTooLarge++;
-      if (result.skippedBinary) summary.skippedBinary++;
-      if (result.matched) summary.filesMatched++;
-      if (result.matches.length > 0 && remaining > 0) {
-        matches.push(...result.matches.slice(0, remaining));
-      }
-    } catch {
-      summary.skippedInaccessible++;
-    }
-  }
-  return matches;
-}
-
-export async function scanFilesParallel(
-  files: AsyncIterable<ResolvedFile>,
-  pattern: string,
-  matcherOptions: MatcherOptions,
-  scanOptions: ScanFileOptions,
-  maxResults: number,
-  signal: AbortSignal,
-  summary: ScanSummary
-): Promise<ContentMatch[]> {
-  const pool = getSearchWorkerPool(SEARCH_WORKERS);
-  const matches: ContentMatch[] = [];
-  const inFlight = new Set<ScanTask>();
-  const iterator = files[Symbol.asyncIterator]();
-  let done = false;
-  let stoppedEarly = false;
-  const maxInFlight = Math.min(SEARCH_WORKERS, Math.max(1, maxResults));
-  const cancelInFlight = (): void => {
-    for (const task of inFlight) {
-      task.cancel();
-      void task.promise.catch(() => {});
-    }
-    inFlight.clear();
-  };
-  const handleOutcome = (outcome: {
-    task: ScanTask;
-    result?: WorkerScanResult;
-    error?: Error;
-  }): void => {
-    inFlight.delete(outcome.task);
-    if (outcome.error) {
-      if (outcome.error.message === 'Scan cancelled') {
-        return;
-      }
-      summary.skippedInaccessible++;
-      return;
-    }
-    const { result } = outcome;
-    if (!result) return;
-    if (result.skippedTooLarge) summary.skippedTooLarge++;
-    if (result.skippedBinary) summary.skippedBinary++;
-    if (result.matched) summary.filesMatched++;
-    if (result.matches.length > 0) {
-      const remaining = maxResults - matches.length;
-      if (remaining <= 0) {
-        summary.truncated = true;
-        summary.stoppedReason = 'maxResults';
-        return;
-      }
-      matches.push(...result.matches.slice(0, remaining));
-      if (matches.length >= maxResults) {
-        summary.truncated = true;
-        summary.stoppedReason = 'maxResults';
-      }
-    }
-  };
-  const awaitNext = async (): Promise<{
-    task: ScanTask;
-    result?: WorkerScanResult;
-    error?: Error;
-  }> => {
-    const races = [...inFlight].map((task) =>
-      task.promise.then(
-        (result) => ({ task, result }),
-        (error: unknown) => ({
-          task,
-          error: error instanceof Error ? error : new Error(String(error)),
-        })
-      )
-    );
-    return await Promise.race(races);
-  };
-  const enqueue = async (): Promise<void> => {
-    while (!done && inFlight.size < maxInFlight) {
-      if (
-        shouldStopOnSignalOrLimit(signal, matches.length, maxResults, summary)
-      ) {
-        stoppedEarly = true;
-        done = true;
-        cancelInFlight();
-        return;
-      }
-      const next = await iterator.next();
-      if (next.done) {
-        done = true;
-        break;
-      }
-      const remaining = Math.max(1, maxResults - matches.length);
-      const task = pool.scan({
-        resolvedPath: next.value.resolvedPath,
-        requestedPath: next.value.requestedPath,
-        pattern,
-        matcherOptions,
-        scanOptions,
-        maxMatches: remaining,
-      });
-      inFlight.add(task);
-    }
-  };
-  const onAbort = (): void => {
-    stoppedEarly = true;
-    summary.truncated = true;
-    summary.stoppedReason = 'timeout';
-    cancelInFlight();
-  };
-  signal.addEventListener('abort', onAbort, { once: true });
-  try {
-    await enqueue();
-    while (inFlight.size > 0) {
-      if (
-        shouldStopOnSignalOrLimit(signal, matches.length, maxResults, summary)
-      ) {
-        stoppedEarly = true;
-        cancelInFlight();
-        break;
-      }
-      handleOutcome(await awaitNext());
-      if (
-        shouldStopOnSignalOrLimit(signal, matches.length, maxResults, summary)
-      ) {
-        stoppedEarly = true;
-        cancelInFlight();
-        break;
-      }
-      await enqueue();
-    }
-    if (stoppedEarly) {
-      cancelInFlight();
-      await iterator.return?.();
-    }
-  } finally {
-    signal.removeEventListener('abort', onAbort);
-  }
-  return matches;
+  return await collectSequentialMatches(
+    files,
+    matcher,
+    scanOptions,
+    maxResults,
+    signal,
+    summary
+  );
 }

@@ -8,7 +8,6 @@ import {
 } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { searchContent } from '../lib/file-operations/search/engine.js';
-import { createTimedAbortSignal } from '../lib/fs-helpers/abort.js';
 import { withToolDiagnostics } from '../lib/observability/diagnostics.js';
 import { getAllowedDirectories } from '../lib/path-validation/allowed-directories.js';
 import {
@@ -19,6 +18,7 @@ import {
   buildStructuredResult,
   buildTextResult,
 } from './shared/search-formatting.js';
+import { withTimedSignal } from './shared/with-timed-signal.js';
 import {
   buildToolErrorResponse,
   buildToolResponse,
@@ -39,11 +39,10 @@ function resolvePathOrRoot(path: string | undefined): string {
   return firstRoot;
 }
 
-async function handleSearchContent(
+function buildSearchOptions(
   args: SearchContentArgs,
   signal?: AbortSignal
-): Promise<ToolResponse<SearchContentStructuredResult>> {
-  const basePath = resolvePathOrRoot(args.path);
+): Parameters<typeof searchContent>[2] {
   const excludePatterns =
     args.excludePatterns ??
     (args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS);
@@ -52,7 +51,7 @@ async function handleSearchContent(
     typeof args.maxFileSize === 'number'
       ? Math.min(args.maxFileSize, MAX_SEARCHABLE_FILE_SIZE)
       : MAX_SEARCHABLE_FILE_SIZE;
-  const fullOptions = {
+  return {
     filePattern: args.filePattern,
     excludePatterns,
     caseSensitive: args.caseSensitive,
@@ -69,12 +68,47 @@ async function handleSearchContent(
     caseSensitiveFileMatch: args.caseSensitiveFileMatch,
     signal,
   };
+}
 
+async function handleSearchContent(
+  args: SearchContentArgs,
+  signal?: AbortSignal
+): Promise<ToolResponse<SearchContentStructuredResult>> {
+  const basePath = resolvePathOrRoot(args.path);
+  const fullOptions = buildSearchOptions(args, signal);
   const result = await searchContent(basePath, args.pattern, fullOptions);
+  return buildToolResponse(
+    buildTextResult(result),
+    buildStructuredResult(result)
+  );
+}
 
-  const structured = buildStructuredResult(result);
+async function runSearchContentWithTimeout(
+  args: SearchContentArgs,
+  signal: AbortSignal
+): Promise<ToolResponse<SearchContentStructuredResult>> {
+  return await withTimedSignal(
+    signal,
+    args.timeoutMs,
+    handleSearchContent.bind(null, args)
+  );
+}
 
-  return buildToolResponse(buildTextResult(result), structured);
+function mapSearchContentError(
+  args: SearchContentArgs,
+  error: unknown
+): ToolResult<SearchContentStructuredResult> {
+  return buildToolErrorResponse(error, ErrorCode.E_UNKNOWN, args.path ?? '.');
+}
+
+async function runSearchContentWithErrorHandling(
+  args: SearchContentArgs,
+  extra: { signal: AbortSignal }
+): Promise<ToolResult<SearchContentStructuredResult>> {
+  return await withToolErrorHandling(
+    runSearchContentWithTimeout.bind(null, args, extra.signal),
+    mapSearchContentError.bind(null, args)
+  );
 }
 
 const SEARCH_CONTENT_TOOL = {
@@ -99,22 +133,7 @@ export function registerSearchContentTool(server: McpServer): void {
   ): Promise<ToolResult<SearchContentStructuredResult>> =>
     withToolDiagnostics(
       'grep',
-      () =>
-        withToolErrorHandling(
-          async () => {
-            const { signal, cleanup } = createTimedAbortSignal(
-              extra.signal,
-              args.timeoutMs
-            );
-            try {
-              return await handleSearchContent(args, signal);
-            } finally {
-              cleanup();
-            }
-          },
-          (error) =>
-            buildToolErrorResponse(error, ErrorCode.E_UNKNOWN, args.path ?? '.')
-        ),
+      runSearchContentWithErrorHandling.bind(null, args, extra),
       { path: args.path ?? '.' }
     );
 

@@ -84,32 +84,39 @@ export class SearchWorkerPool {
     return slot.worker;
   }
 
-  /**
-   * Scan a file for content matches using a worker thread.
-   */
-  scan(request: WorkerScanRequest): ScanTask {
+  private ensureOpen(): void {
     if (this.closed) {
       throw new Error('Worker pool is closed');
     }
+  }
 
+  private selectAvailableSlot(): WorkerSlot {
     const selection = selectSlot(this.slots, this.nextSlotIndex, MAX_RESPAWNS);
-    const { nextSlotIndex, slot } = selection;
-    this.nextSlotIndex = nextSlotIndex;
-    if (!slot) {
+    this.nextSlotIndex = selection.nextSlotIndex;
+    if (!selection.slot) {
       throw new Error('All worker slots are disabled');
     }
+    return selection.slot;
+  }
 
-    const worker = this.getWorker(slot);
-    const id = this.nextRequestId++;
-
-    const scanRequest: ScanRequest = {
+  private buildScanRequest(
+    id: number,
+    request: WorkerScanRequest
+  ): ScanRequest {
+    return {
       type: 'scan',
       id,
       ...request,
     };
+  }
 
+  private createScanPromise(
+    slot: WorkerSlot,
+    worker: Worker,
+    scanRequest: ScanRequest
+  ): Promise<WorkerScanResult> {
     let settled = false;
-    const promise = new Promise<WorkerScanResult>((resolve, reject) => {
+    return new Promise<WorkerScanResult>((resolve, reject) => {
       const safeResolve = (result: WorkerScanResult): void => {
         if (settled) return;
         settled = true;
@@ -121,7 +128,7 @@ export class SearchWorkerPool {
         reject(error);
       };
 
-      slot.pending.set(id, {
+      slot.pending.set(scanRequest.id, {
         resolve: safeResolve,
         reject: safeReject,
         request: scanRequest,
@@ -129,15 +136,33 @@ export class SearchWorkerPool {
 
       worker.postMessage(scanRequest);
     });
+  }
 
-    const cancel = (): void => {
+  private createCancel(
+    slot: WorkerSlot,
+    worker: Worker,
+    id: number
+  ): () => void {
+    return (): void => {
       const pending = slot.pending.get(id);
       if (!pending) return;
       slot.pending.delete(id);
       worker.postMessage({ type: 'cancel', id });
       pending.reject(new Error('Scan cancelled'));
     };
+  }
 
+  /**
+   * Scan a file for content matches using a worker thread.
+   */
+  scan(request: WorkerScanRequest): ScanTask {
+    this.ensureOpen();
+    const slot = this.selectAvailableSlot();
+    const worker = this.getWorker(slot);
+    const id = this.nextRequestId++;
+    const scanRequest = this.buildScanRequest(id, request);
+    const promise = this.createScanPromise(slot, worker, scanRequest);
+    const cancel = this.createCancel(slot, worker, id);
     return { id, promise, cancel };
   }
 

@@ -2,6 +2,7 @@ import type { SearchContentResult } from '../../../config/types.js';
 import { SEARCH_WORKERS } from '../../constants.js';
 import { createTimedAbortSignal } from '../../fs-helpers/abort.js';
 import {
+  type OpsTraceContext,
   publishOpsTraceEnd,
   publishOpsTraceError,
   publishOpsTraceStart,
@@ -15,7 +16,7 @@ import type { ResolvedFile, ScanSummary } from './scan-collector.js';
 import { collectFilesStream } from './scan-collector.js';
 import type { MatcherOptions, ScanFileOptions } from './scan-file.js';
 import { validatePattern } from './scan-file.js';
-import { scanFilesParallel, scanFilesSequential } from './scan-strategy.js';
+import { scanFilesSequential } from './scan-strategy.js';
 import { isWorkerPoolAvailable } from './worker-pool.js';
 
 function buildMatcherOptions(opts: ResolvedOptions): MatcherOptions {
@@ -38,6 +39,33 @@ function shouldUseWorkers(): boolean {
   return isWorkerPoolAvailable() && SEARCH_WORKERS > 0;
 }
 
+function buildTraceContext(opts: ResolvedOptions): OpsTraceContext | undefined {
+  if (!shouldPublishOpsTrace()) return undefined;
+  return {
+    op: 'searchContent',
+    engine: shouldUseWorkers() ? 'workers' : 'sequential',
+    maxResults: opts.maxResults,
+  };
+}
+
+async function withOpsTrace<T>(
+  context: OpsTraceContext | undefined,
+  run: () => Promise<T>
+): Promise<T> {
+  if (!context) {
+    return await run();
+  }
+  publishOpsTraceStart(context);
+  try {
+    return await run();
+  } catch (error: unknown) {
+    publishOpsTraceError(context, error);
+    throw error;
+  } finally {
+    publishOpsTraceEnd(context);
+  }
+}
+
 async function scanMatches(
   files: AsyncIterable<ResolvedFile>,
   pattern: string,
@@ -48,7 +76,7 @@ async function scanMatches(
   summary: ScanSummary
 ): Promise<SearchContentResult['matches']> {
   if (shouldUseWorkers()) {
-    return await scanFilesParallel(
+    return await scanMatchesParallel(
       files,
       pattern,
       matcherOptions,
@@ -58,6 +86,47 @@ async function scanMatches(
       summary
     );
   }
+  return await scanMatchesSequential(
+    files,
+    pattern,
+    matcherOptions,
+    scanOptions,
+    maxResults,
+    signal,
+    summary
+  );
+}
+
+async function scanMatchesParallel(
+  files: AsyncIterable<ResolvedFile>,
+  pattern: string,
+  matcherOptions: MatcherOptions,
+  scanOptions: ScanFileOptions,
+  maxResults: number,
+  signal: AbortSignal,
+  summary: ScanSummary
+): Promise<SearchContentResult['matches']> {
+  const { scanFilesParallel } = await import('./scan-strategy-parallel.js');
+  return await scanFilesParallel(
+    files,
+    pattern,
+    matcherOptions,
+    scanOptions,
+    maxResults,
+    signal,
+    summary
+  );
+}
+
+async function scanMatchesSequential(
+  files: AsyncIterable<ResolvedFile>,
+  pattern: string,
+  matcherOptions: MatcherOptions,
+  scanOptions: ScanFileOptions,
+  maxResults: number,
+  signal: AbortSignal,
+  summary: ScanSummary
+): Promise<SearchContentResult['matches']> {
   return await scanFilesSequential(
     files,
     pattern,
@@ -109,23 +178,12 @@ async function executeSearch(
   allowedDirs: readonly string[],
   signal: AbortSignal
 ): Promise<SearchContentResult> {
-  const traceContext = shouldPublishOpsTrace()
-    ? {
-        op: 'searchContent',
-        engine: shouldUseWorkers() ? 'workers' : 'sequential',
-        maxResults: opts.maxResults,
-      }
-    : undefined;
-  if (traceContext) publishOpsTraceStart(traceContext);
-
   const matcherOptions = buildMatcherOptions(opts);
   const scanOptions = buildScanOptions(opts);
+  const traceContext = buildTraceContext(opts);
 
-  try {
-    // Validate pattern early before spawning workers
+  return await withOpsTrace(traceContext, async () => {
     validatePattern(pattern, matcherOptions);
-
-    // Collect files as a stream for scanning
     const { stream, summary } = collectFilesStream(
       root,
       opts,
@@ -142,12 +200,7 @@ async function executeSearch(
       summary
     );
     return buildSearchResult(root, pattern, opts.filePattern, matches, summary);
-  } catch (error: unknown) {
-    if (traceContext) publishOpsTraceError(traceContext, error);
-    throw error;
-  } finally {
-    if (traceContext) publishOpsTraceEnd(traceContext);
-  }
+  });
 }
 
 export async function searchContent(

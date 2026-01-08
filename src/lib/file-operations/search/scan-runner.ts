@@ -70,6 +70,64 @@ function appendMatch(
   }
 }
 
+function recordLineMatch(
+  line: string,
+  matcher: Matcher,
+  options: ScanFileOptions,
+  requestedPath: string,
+  lineNo: number,
+  matches: ContentMatch[],
+  ctx: ReturnType<typeof makeContext>
+): void {
+  const trimmedLine = updateContext(line, options.contextLines, ctx);
+  const count = matcher(line);
+  if (count > 0) {
+    appendMatch(
+      matches,
+      requestedPath,
+      line,
+      trimmedLine,
+      lineNo,
+      count,
+      options.contextLines,
+      ctx
+    );
+  }
+}
+
+function buildSkipResult(
+  skippedTooLarge: boolean,
+  skippedBinary: boolean
+): ScanFileResult {
+  return {
+    matches: [],
+    matched: false,
+    skippedTooLarge,
+    skippedBinary,
+  };
+}
+
+function buildMatchResult(matches: ContentMatch[]): ScanFileResult {
+  return {
+    matches,
+    matched: matches.length > 0,
+    skippedTooLarge: false,
+    skippedBinary: false,
+  };
+}
+
+async function shouldSkipBinary(
+  scanOptions: ScanFileOptions,
+  resolvedPath: string,
+  handle: fsp.FileHandle,
+  options: ScanLoopOptions
+): Promise<boolean> {
+  return (
+    scanOptions.skipBinary &&
+    (await options.isProbablyBinary(resolvedPath, handle, options.signal))
+  );
+}
+
 async function readMatches(
   handle: fsp.FileHandle,
   requestedPath: string,
@@ -87,23 +145,15 @@ async function readMatches(
     for await (const line of rl) {
       if (isCancelled()) break;
       lineNo++;
-
-      const { contextLines } = options;
-      const trimmedLine = updateContext(line, contextLines, ctx);
-      const count = matcher(line);
-      if (count > 0) {
-        appendMatch(
-          matches,
-          requestedPath,
-          line,
-          trimmedLine,
-          lineNo,
-          count,
-          contextLines,
-          ctx
-        );
-      }
-
+      recordLineMatch(
+        line,
+        matcher,
+        options,
+        requestedPath,
+        lineNo,
+        matches,
+        ctx
+      );
       if (matches.length >= maxMatches) break;
     }
     return matches;
@@ -122,24 +172,11 @@ async function scanWithHandle(
   const stats = await handle.stat();
 
   if (stats.size > scanOptions.maxFileSize) {
-    return {
-      matches: [],
-      matched: false,
-      skippedTooLarge: true,
-      skippedBinary: false,
-    };
+    return buildSkipResult(true, false);
   }
 
-  if (
-    scanOptions.skipBinary &&
-    (await options.isProbablyBinary(resolvedPath, handle, options.signal))
-  ) {
-    return {
-      matches: [],
-      matched: false,
-      skippedTooLarge: false,
-      skippedBinary: true,
-    };
+  if (await shouldSkipBinary(scanOptions, resolvedPath, handle, options)) {
+    return buildSkipResult(false, true);
   }
 
   const matches = await readMatches(
@@ -151,12 +188,7 @@ async function scanWithHandle(
     options.isCancelled,
     options.signal
   );
-  return {
-    matches,
-    matched: matches.length > 0,
-    skippedTooLarge: false,
-    skippedBinary: false,
-  };
+  return buildMatchResult(matches);
 }
 
 export async function scanFileWithMatcher(

@@ -11,20 +11,29 @@ interface FileOpsFixture {
 
 const TEST_DIR_PREFIX = 'mcp-fileops-test-';
 
-async function populateTestDir(base: string): Promise<void> {
+async function ensureFixtureDirs(base: string): Promise<void> {
   await Promise.all([
     fs.mkdir(path.join(base, 'src')),
     fs.mkdir(path.join(base, 'docs')),
     fs.mkdir(path.join(base, '.hidden')),
   ]);
+}
 
-  const lines = Array.from({ length: 100 }, (_, i) => `Line ${i + 1}`).join(
-    '\n'
-  );
-  const binaryData = Buffer.from([
+function buildMultilineContent(): string {
+  return Array.from({ length: 100 }, (_, i) => `Line ${i + 1}`).join('\n');
+}
+
+function buildBinaryData(): Buffer {
+  return Buffer.from([
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00,
   ]);
+}
 
+async function writeFixtureFiles(
+  base: string,
+  lines: string,
+  binaryData: Buffer
+): Promise<void> {
   await Promise.all([
     fs.writeFile(
       path.join(base, 'README.md'),
@@ -46,6 +55,13 @@ async function populateTestDir(base: string): Promise<void> {
     fs.writeFile(path.join(base, 'multiline.txt'), lines),
     fs.writeFile(path.join(base, 'image.png'), binaryData),
   ]);
+}
+
+async function populateTestDir(base: string): Promise<void> {
+  await ensureFixtureDirs(base);
+  const lines = buildMultilineContent();
+  const binaryData = buildBinaryData();
+  await writeFixtureFiles(base, lines, binaryData);
 }
 
 async function createFixture(): Promise<FileOpsFixture> {

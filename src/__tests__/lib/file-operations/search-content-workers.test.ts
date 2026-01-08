@@ -2,6 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { after, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -49,6 +50,45 @@ interface TestResult {
   error?: string;
 }
 
+interface WorkerFixture {
+  filePath: string;
+  content: string;
+}
+
+type TestDirGetter = () => string;
+
+function buildWorkerFixtures(
+  testDir: string,
+  totalFiles: number
+): WorkerFixture[] {
+  return Array.from({ length: totalFiles }, (_, index) => {
+    const content =
+      index % 2 === 0
+        ? `File ${String(index)}\nThis file contains hello world\nEnd of file`
+        : `File ${String(index)}\nThis file has different content\nEnd of file`;
+    return {
+      filePath: path.join(testDir, `test-${String(index)}.txt`),
+      content,
+    };
+  });
+}
+
+async function writeWorkerFixtures(fixtures: WorkerFixture[]): Promise<void> {
+  await Promise.all(
+    fixtures.map((fixture) => fs.writeFile(fixture.filePath, fixture.content))
+  );
+}
+
+async function setupWorkerFixtures(testDir: string): Promise<void> {
+  await fs.mkdir(testDir, { recursive: true });
+  const fixtures = buildWorkerFixtures(testDir, 30);
+  await writeWorkerFixtures(fixtures);
+}
+
+async function cleanupWorkerFixtures(testDir: string): Promise<void> {
+  await fs.rm(testDir, { recursive: true, force: true });
+}
+
 async function expectHelloMatches(
   testDir: string,
   workers: number
@@ -71,27 +111,42 @@ async function expectHelloMatches(
   );
 }
 
-async function runSearchWithWorkers(
+function spawnSearchProcess(
+  projectRoot: string,
   testDir: string,
   pattern: string,
   workers: number
+): ChildProcessWithoutNullStreams {
+  return spawn(process.execPath, ['--eval', testScript, testDir, pattern], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      FILESYSTEM_CONTEXT_SEARCH_WORKERS: String(workers),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+function parseResultFromOutput(output: string): TestResult | null {
+  const trimmed = output.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const lines = trimmed.split('\n');
+  const lastLine = lines[lines.length - 1];
+
+  try {
+    return JSON.parse(lastLine ?? '{}') as TestResult;
+  } catch {
+    return null;
+  }
+}
+
+function collectProcessOutput(
+  child: ChildProcessWithoutNullStreams
 ): Promise<TestResult> {
-  const projectRoot = path.resolve(currentDir, '..', '..', '..', '..');
-
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      ['--eval', testScript, testDir, pattern],
-      {
-        cwd: projectRoot,
-        env: {
-          ...process.env,
-          FILESYSTEM_CONTEXT_SEARCH_WORKERS: String(workers),
-        },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      }
-    );
-
     let stdout = '';
     let stderr = '';
 
@@ -104,25 +159,83 @@ async function runSearchWithWorkers(
     });
 
     child.on('close', (code: number | null) => {
-      // Try to parse the JSON output
-      const lines = stdout.trim().split('\n');
-      const lastLine = lines[lines.length - 1];
-
-      try {
-        const result = JSON.parse(lastLine ?? '{}') as TestResult;
-        resolve(result);
-      } catch {
-        if (code !== 0) {
-          reject(
-            new Error(`Process exited with code ${String(code)}: ${stderr}`)
-          );
-        } else {
-          resolve({ success: false, error: 'Failed to parse output' });
-        }
+      const parsed = parseResultFromOutput(stdout);
+      if (parsed) {
+        resolve(parsed);
+        return;
       }
+
+      if (code !== 0) {
+        reject(
+          new Error(`Process exited with code ${String(code)}: ${stderr}`)
+        );
+        return;
+      }
+
+      resolve({ success: false, error: 'Failed to parse output' });
     });
 
     child.on('error', reject);
+  });
+}
+
+async function runSearchWithWorkers(
+  testDir: string,
+  pattern: string,
+  workers: number
+): Promise<TestResult> {
+  const projectRoot = path.resolve(currentDir, '..', '..', '..', '..');
+  const child = spawnSearchProcess(projectRoot, testDir, pattern, workers);
+  return collectProcessOutput(child);
+}
+
+function registerWorkerCountTests(getTestDir: TestDirGetter): void {
+  [
+    { label: 'workers disabled (baseline)', workers: 0 },
+    { label: '1 worker thread', workers: 1 },
+    { label: '2 worker threads', workers: 2 },
+  ].forEach(({ label, workers }) => {
+    void it(`should work with ${label}`, async () => {
+      await expectHelloMatches(getTestDir(), workers);
+    });
+  });
+}
+
+function registerWorkerConsistencyTest(getTestDir: TestDirGetter): void {
+  void it('should return consistent results with and without workers', async () => {
+    const resultNoWorkers = await runSearchWithWorkers(getTestDir(), 'file', 0);
+    const resultWithWorkers = await runSearchWithWorkers(
+      getTestDir(),
+      'file',
+      2
+    );
+
+    assert.strictEqual(resultNoWorkers.success, true);
+    assert.strictEqual(resultWithWorkers.success, true);
+
+    assert.strictEqual(
+      resultNoWorkers.filesScanned,
+      resultWithWorkers.filesScanned
+    );
+    assert.strictEqual(
+      resultNoWorkers.filesMatched,
+      resultWithWorkers.filesMatched
+    );
+    assert.strictEqual(resultNoWorkers.matches, resultWithWorkers.matches);
+  });
+}
+
+function registerWorkerNoMatchTest(getTestDir: TestDirGetter): void {
+  void it('should handle pattern that matches no files', async () => {
+    const result = await runSearchWithWorkers(
+      getTestDir(),
+      'nonexistent-pattern-xyz',
+      1
+    );
+
+    assert.strictEqual(result.success, true);
+    assert.strictEqual(result.matches, 0);
+    assert.strictEqual(result.filesMatched, 0);
   });
 }
 
@@ -131,73 +244,19 @@ void describe(
   { skip: shouldSkip ? 'Worker tests require compiled code' : false },
   () => {
     let testDir: string;
+    const getTestDir = (): string => testDir;
 
     before(async () => {
       testDir = path.join(currentDir, 'worker-test-fixtures');
-      await fs.mkdir(testDir, { recursive: true });
-
-      const fixtures = Array.from({ length: 30 }, (_, index) => {
-        const content =
-          index % 2 === 0
-            ? `File ${String(index)}\nThis file contains hello world\nEnd of file`
-            : `File ${String(index)}\nThis file has different content\nEnd of file`;
-        return {
-          filePath: path.join(testDir, `test-${String(index)}.txt`),
-          content,
-        };
-      });
-
-      await Promise.all(
-        fixtures.map((fixture) =>
-          fs.writeFile(fixture.filePath, fixture.content)
-        )
-      );
+      await setupWorkerFixtures(testDir);
     });
 
     after(async () => {
-      await fs.rm(testDir, { recursive: true, force: true });
+      await cleanupWorkerFixtures(testDir);
     });
 
-    [
-      { label: 'workers disabled (baseline)', workers: 0 },
-      { label: '1 worker thread', workers: 1 },
-      { label: '2 worker threads', workers: 2 },
-    ].forEach(({ label, workers }) => {
-      void it(`should work with ${label}`, async () => {
-        await expectHelloMatches(testDir, workers);
-      });
-    });
-
-    void it('should return consistent results with and without workers', async () => {
-      const resultNoWorkers = await runSearchWithWorkers(testDir, 'file', 0);
-      const resultWithWorkers = await runSearchWithWorkers(testDir, 'file', 2);
-
-      assert.strictEqual(resultNoWorkers.success, true);
-      assert.strictEqual(resultWithWorkers.success, true);
-
-      // Both should find all 30 files (every file has "File" or "file")
-      assert.strictEqual(
-        resultNoWorkers.filesScanned,
-        resultWithWorkers.filesScanned
-      );
-      assert.strictEqual(
-        resultNoWorkers.filesMatched,
-        resultWithWorkers.filesMatched
-      );
-      // Match counts should be equal
-      assert.strictEqual(resultNoWorkers.matches, resultWithWorkers.matches);
-    });
-
-    void it('should handle pattern that matches no files', async () => {
-      const result = await runSearchWithWorkers(
-        testDir,
-        'nonexistent-pattern-xyz',
-        1
-      );
-
-      assert.strictEqual(result.success, true);
-      assert.strictEqual(result.matches, 0);
-      assert.strictEqual(result.filesMatched, 0);
-    });
+    registerWorkerCountTests(getTestDir);
+    registerWorkerConsistencyTest(getTestDir);
+    registerWorkerNoMatchTest(getTestDir);
   }
 );

@@ -16,6 +16,13 @@ interface SearchEntry {
   stats?: Stats;
 }
 
+interface CollectState {
+  results: SearchResult[];
+  filesScanned: number;
+  truncated: boolean;
+  stoppedReason: SearchFilesResult['summary']['stoppedReason'];
+}
+
 function resolveEntryType(dirent: SearchEntry['dirent']): SearchEntryType {
   if (dirent.isDirectory()) return 'directory';
   if (dirent.isSymbolicLink()) return 'symlink';
@@ -46,6 +53,116 @@ function needsStatsForSort(sortBy: NormalizedOptions['sortBy']): boolean {
   return sortBy === 'size' || sortBy === 'modified';
 }
 
+function markStopped(
+  state: CollectState,
+  reason: SearchFilesResult['summary']['stoppedReason']
+): void {
+  state.truncated = true;
+  state.stoppedReason = reason;
+}
+
+function shouldStopCollecting(
+  state: CollectState,
+  normalized: NormalizedOptions,
+  signal: AbortSignal
+): boolean {
+  if (signal.aborted) {
+    markStopped(state, 'timeout');
+    return true;
+  }
+  if (state.filesScanned >= normalized.maxFilesScanned) {
+    markStopped(state, 'maxFiles');
+    return true;
+  }
+  return false;
+}
+
+function shouldIncludeEntry(
+  entryType: SearchEntryType,
+  normalized: NormalizedOptions
+): boolean {
+  return !(normalized.skipSymlinks && entryType === 'symlink');
+}
+
+function createCollectState(): CollectState {
+  return {
+    results: [],
+    filesScanned: 0,
+    truncated: false,
+    stoppedReason: undefined,
+  };
+}
+
+function buildSearchStream(
+  root: string,
+  pattern: string,
+  excludePatterns: readonly string[],
+  normalized: NormalizedOptions,
+  needsStats: boolean
+): AsyncIterable<SearchEntry> {
+  return globEntries({
+    cwd: root,
+    pattern,
+    excludePatterns,
+    includeHidden: normalized.includeHidden,
+    baseNameMatch: normalized.baseNameMatch,
+    caseSensitiveMatch: true,
+    maxDepth: normalized.maxDepth,
+    followSymbolicLinks: false,
+    onlyFiles: true,
+    stats: needsStats,
+  });
+}
+
+function buildCollectResult(state: CollectState): {
+  results: SearchResult[];
+  filesScanned: number;
+  truncated: boolean;
+  stoppedReason: SearchFilesResult['summary']['stoppedReason'];
+} {
+  return {
+    results: state.results,
+    filesScanned: state.filesScanned,
+    truncated: state.truncated,
+    stoppedReason: state.stoppedReason,
+  };
+}
+
+function handleEntry(
+  entry: SearchEntry,
+  entryType: SearchEntryType,
+  needsStats: boolean,
+  normalized: NormalizedOptions,
+  state: CollectState
+): void {
+  if (!shouldIncludeEntry(entryType, normalized)) return;
+  state.results.push(buildSearchResult(entry, entryType, needsStats));
+  if (state.results.length >= normalized.maxResults) {
+    markStopped(state, 'maxResults');
+  }
+}
+
+async function collectFromStream(
+  stream: AsyncIterable<SearchEntry>,
+  normalized: NormalizedOptions,
+  needsStats: boolean,
+  state: CollectState,
+  signal: AbortSignal
+): Promise<void> {
+  for await (const entry of stream) {
+    if (shouldStopCollecting(state, normalized, signal)) break;
+    state.filesScanned++;
+    handleEntry(
+      entry,
+      resolveEntryType(entry.dirent),
+      needsStats,
+      normalized,
+      state
+    );
+    if (state.truncated) break;
+  }
+}
+
 export async function collectSearchResults(
   root: string,
   pattern: string,
@@ -59,48 +176,16 @@ export async function collectSearchResults(
   stoppedReason: SearchFilesResult['summary']['stoppedReason'];
 }> {
   const needsStats = needsStatsForSort(normalized.sortBy);
-  const stream = globEntries({
-    cwd: root,
+  const stream = buildSearchStream(
+    root,
     pattern,
     excludePatterns,
-    includeHidden: normalized.includeHidden,
-    baseNameMatch: normalized.baseNameMatch,
-    caseSensitiveMatch: true,
-    maxDepth: normalized.maxDepth,
-    followSymbolicLinks: false,
-    onlyFiles: true,
-    stats: needsStats,
-  });
-  const results: SearchResult[] = [];
-  let filesScanned = 0;
-  let truncated = false;
-  let stoppedReason: SearchFilesResult['summary']['stoppedReason'];
-
-  for await (const entry of stream) {
-    if (signal.aborted) {
-      truncated = true;
-      stoppedReason = 'timeout';
-      break;
-    }
-    if (filesScanned >= normalized.maxFilesScanned) {
-      truncated = true;
-      stoppedReason = 'maxFiles';
-      break;
-    }
-
-    filesScanned++;
-    const entryType = resolveEntryType(entry.dirent);
-    if (!(normalized.skipSymlinks && entryType === 'symlink')) {
-      results.push(buildSearchResult(entry, entryType, needsStats));
-      if (results.length >= normalized.maxResults) {
-        truncated = true;
-        stoppedReason = 'maxResults';
-        break;
-      }
-    }
-  }
-
-  return { results, filesScanned, truncated, stoppedReason };
+    normalized,
+    needsStats
+  );
+  const state = createCollectState();
+  await collectFromStream(stream, normalized, needsStats, state, signal);
+  return buildCollectResult(state);
 }
 
 export function buildSearchSummary(
