@@ -1,5 +1,6 @@
 import eslint from '@eslint/js';
 import eslintConfigPrettier from 'eslint-config-prettier';
+import depend from 'eslint-plugin-depend';
 import sonarjs from 'eslint-plugin-sonarjs';
 import unusedImports from 'eslint-plugin-unused-imports';
 import { defineConfig } from 'eslint/config';
@@ -9,10 +10,9 @@ export default defineConfig(
   {
     ignores: ['dist', 'node_modules', '*.config.mjs', '*.config.js'],
   },
-
   eslint.configs.recommended,
   sonarjs.configs.recommended,
-
+  depend.configs['flat/recommended'],
   {
     files: ['src/**/*.ts'],
     extends: [
@@ -23,7 +23,7 @@ export default defineConfig(
       ecmaVersion: 2022,
       sourceType: 'module',
       parserOptions: {
-        project: ['./tsconfig.eslint.json'],
+         project: ['./tsconfig.eslint.json'],
         tsconfigRootDir: import.meta.dirname,
       },
     },
