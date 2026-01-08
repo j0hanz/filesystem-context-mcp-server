@@ -6,7 +6,10 @@ import { joinLines } from '../config/formatting.js';
 import { ErrorCode } from '../lib/errors.js';
 import { withToolDiagnostics } from '../lib/observability/diagnostics.js';
 import { getAllowedDirectories } from '../lib/path-validation/allowed-directories.js';
-import { ListAllowedDirectoriesOutputSchema } from '../schemas/index.js';
+import {
+  ListAllowedDirectoriesInputSchema,
+  ListAllowedDirectoriesOutputSchema,
+} from '../schemas/index.js';
 import {
   buildToolErrorResponse,
   buildToolResponse,
@@ -44,6 +47,7 @@ const LIST_ALLOWED_DIRECTORIES_TOOL = {
     'List the workspace roots this server can access. ' +
     'Call this first to see available directories. ' +
     'All other tools only work within these directories.',
+  inputSchema: ListAllowedDirectoriesInputSchema,
   outputSchema: ListAllowedDirectoriesOutputSchema,
   annotations: {
     readOnlyHint: true,

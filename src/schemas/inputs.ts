@@ -1,4 +1,5 @@
 export { ListDirectoryInputSchema } from './inputs/directory.js';
+export { ListAllowedDirectoriesInputSchema } from './inputs/roots.js';
 export {
   SearchContentInputSchema,
   SearchFilesInputSchema,

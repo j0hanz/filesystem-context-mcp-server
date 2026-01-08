@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
+import { assertNotAborted, withAbort } from '../fs-helpers/abort.js';
 import { isPathWithinRoot, normalizePath } from '../path-utils.js';
 
 const PATH_SEPARATOR = process.platform === 'win32' ? '\\' : '/';
@@ -51,7 +52,8 @@ export function isPathWithinDirectories(
 }
 
 async function expandAllowedDirectories(
-  dirs: readonly string[]
+  dirs: readonly string[],
+  signal?: AbortSignal
 ): Promise<string[]> {
   const expanded: string[] = [];
 
@@ -60,7 +62,7 @@ async function expandAllowedDirectories(
     if (!normalized) continue;
     expanded.push(normalized);
 
-    const normalizedReal = await resolveRealPath(normalized);
+    const normalizedReal = await resolveRealPath(normalized, signal);
     if (
       normalizedReal &&
       normalizeForComparison(normalizedReal) !==
@@ -73,9 +75,13 @@ async function expandAllowedDirectories(
   return [...new Set(expanded)];
 }
 
-async function resolveRealPath(normalized: string): Promise<string | null> {
+async function resolveRealPath(
+  normalized: string,
+  signal?: AbortSignal
+): Promise<string | null> {
   try {
-    const realPath = await fs.realpath(normalized);
+    assertNotAborted(signal);
+    const realPath = await withAbort(fs.realpath(normalized), signal);
     return normalizeAllowedDirectory(realPath);
   } catch {
     return null;
@@ -83,8 +89,9 @@ async function resolveRealPath(normalized: string): Promise<string | null> {
 }
 
 export async function setAllowedDirectoriesResolved(
-  dirs: readonly string[]
+  dirs: readonly string[],
+  signal?: AbortSignal
 ): Promise<void> {
-  const expanded = await expandAllowedDirectories(dirs);
+  const expanded = await expandAllowedDirectories(dirs, signal);
   setAllowedDirectories(expanded);
 }

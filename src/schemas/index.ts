@@ -1,6 +1,7 @@
 export {
   GetFileInfoInputSchema,
   GetMultipleFileInfoInputSchema,
+  ListAllowedDirectoriesInputSchema,
   ListDirectoryInputSchema,
   ReadFileInputSchema,
   ReadMultipleFilesInputSchema,

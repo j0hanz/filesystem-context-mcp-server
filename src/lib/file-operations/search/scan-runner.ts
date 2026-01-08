@@ -2,6 +2,7 @@ import * as fsp from 'node:fs/promises';
 import readline from 'node:readline';
 
 import type { ContentMatch } from '../../../config/types.js';
+import { assertNotAborted, withAbort } from '../../fs-helpers/abort.js';
 import { makeContext, pushContext, trimContent } from './scan-helpers.js';
 import type { Matcher, ScanFileOptions, ScanFileResult } from './scan-types.js';
 
@@ -169,7 +170,7 @@ async function scanWithHandle(
   options: ScanLoopOptions
 ): Promise<ScanFileResult> {
   const scanOptions = options.options;
-  const stats = await handle.stat();
+  const stats = await withAbort(handle.stat(), options.signal);
 
   if (stats.size > scanOptions.maxFileSize) {
     return buildSkipResult(true, false);
@@ -196,7 +197,8 @@ export async function scanFileWithMatcher(
   requestedPath: string,
   options: ScanLoopOptions
 ): Promise<ScanFileResult> {
-  const handle = await fsp.open(resolvedPath, 'r');
+  assertNotAborted(options.signal);
+  const handle = await withAbort(fsp.open(resolvedPath, 'r'), options.signal);
 
   try {
     return await scanWithHandle(handle, resolvedPath, requestedPath, options);

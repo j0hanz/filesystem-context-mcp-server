@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
+import { DEFAULT_SEARCH_TIMEOUT_MS } from './lib/constants.js';
+import { createTimedAbortSignal } from './lib/fs-helpers/abort.js';
 import { setAllowedDirectoriesResolved } from './lib/path-validation/allowed-directories.js';
 import { createServer, parseArgs, startServer } from './server.js';
 
@@ -35,7 +37,15 @@ async function main(): Promise<void> {
   const { allowedDirs, allowCwd } = await parseArgs();
 
   if (allowedDirs.length > 0) {
-    await setAllowedDirectoriesResolved(allowedDirs);
+    const { signal, cleanup } = createTimedAbortSignal(
+      undefined,
+      DEFAULT_SEARCH_TIMEOUT_MS
+    );
+    try {
+      await setAllowedDirectoriesResolved(allowedDirs, signal);
+    } finally {
+      cleanup();
+    }
     console.error('Allowed directories (from CLI):');
   } else {
     console.error(

@@ -7,6 +7,11 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { Root } from '@modelcontextprotocol/sdk/types.js';
 
+import {
+  assertNotAborted,
+  createTimedAbortSignal,
+  withAbort,
+} from '../lib/fs-helpers/abort.js';
 import { normalizePath } from '../lib/path-utils.js';
 import {
   getAllowedDirectories,
@@ -54,20 +59,28 @@ export async function recomputeAllowedDirectories(): Promise<void> {
   const allowCwd = serverOptions.allowCwd === true;
   const allowCwdDirs = allowCwd ? [normalizePath(process.cwd())] : [];
   const baseline = [...cliAllowedDirs, ...allowCwdDirs];
-  const rootsToInclude =
-    baseline.length > 0
-      ? await filterRootsWithinBaseline(rootDirectories, baseline)
-      : rootDirectories;
+  const { signal, cleanup } = createTimedAbortSignal(
+    undefined,
+    ROOTS_TIMEOUT_MS
+  );
+  try {
+    const rootsToInclude =
+      baseline.length > 0
+        ? await filterRootsWithinBaseline(rootDirectories, baseline, signal)
+        : rootDirectories;
 
-  const combined = [...baseline, ...rootsToInclude];
-  if (combined.length === 0 && rootDirectories.length === 0) {
-    console.error(
-      'No directories configured. Defaulting to current working directory.'
-    );
-    combined.push(normalizePath(process.cwd()));
+    const combined = [...baseline, ...rootsToInclude];
+    if (combined.length === 0 && rootDirectories.length === 0) {
+      console.error(
+        'No directories configured. Defaulting to current working directory.'
+      );
+      combined.push(normalizePath(process.cwd()));
+    }
+
+    await setAllowedDirectoriesResolved(combined, signal);
+  } finally {
+    cleanup();
   }
-
-  await setAllowedDirectoriesResolved(combined);
 }
 
 async function updateRootsFromClient(server: McpServer): Promise<void> {
@@ -84,8 +97,16 @@ async function updateRootsFromClient(server: McpServer): Promise<void> {
         : undefined;
     const roots = Array.isArray(rawRoots) ? rawRoots.filter(isRoot) : [];
 
-    rootDirectories =
-      roots.length > 0 ? await getValidRootDirectories(roots) : [];
+    const { signal, cleanup } = createTimedAbortSignal(
+      undefined,
+      ROOTS_TIMEOUT_MS
+    );
+    try {
+      rootDirectories =
+        roots.length > 0 ? await getValidRootDirectories(roots, signal) : [];
+    } finally {
+      cleanup();
+    }
   } catch (error) {
     rootDirectories = [];
     console.error(
@@ -108,7 +129,8 @@ function isRoot(value: unknown): value is Root {
 
 async function filterRootsWithinBaseline(
   roots: readonly string[],
-  baseline: readonly string[]
+  baseline: readonly string[],
+  signal?: AbortSignal
 ): Promise<string[]> {
   const normalizedBaseline = normalizeAllowedDirectories(baseline);
   const filtered: string[] = [];
@@ -117,7 +139,8 @@ async function filterRootsWithinBaseline(
     const normalizedRoot = normalizePath(root);
     const isValid = await isRootWithinBaseline(
       normalizedRoot,
-      normalizedBaseline
+      normalizedBaseline,
+      signal
     );
     if (isValid) filtered.push(normalizedRoot);
   }
@@ -127,14 +150,16 @@ async function filterRootsWithinBaseline(
 
 async function isRootWithinBaseline(
   normalizedRoot: string,
-  baseline: readonly string[]
+  baseline: readonly string[],
+  signal?: AbortSignal
 ): Promise<boolean> {
   if (!isPathWithinDirectories(normalizedRoot, baseline)) {
     return false;
   }
 
   try {
-    const realPath = await fs.realpath(normalizedRoot);
+    assertNotAborted(signal);
+    const realPath = await withAbort(fs.realpath(normalizedRoot), signal);
     const normalizedReal = normalizePath(realPath);
     return isPathWithinDirectories(normalizedReal, baseline);
   } catch {

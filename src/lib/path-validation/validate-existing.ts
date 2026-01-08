@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises';
 
 import { ErrorCode, McpError } from '../errors.js';
+import { assertNotAborted, withAbort } from '../fs-helpers/abort.js';
 import { normalizePath } from '../path-utils.js';
 import {
   getAllowedDirectories,
@@ -48,9 +49,12 @@ async function resolveRealPathOrThrow(options: {
 }): Promise<string> {
   const { requestedPath, normalizedRequested, signal } = options;
   try {
-    if (signal?.aborted) throw new Error('AbortError');
-    return await fs.realpath(normalizedRequested);
+    assertNotAborted(signal);
+    return await withAbort(fs.realpath(normalizedRequested), signal);
   } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw error;
+    }
     throw toMcpError(requestedPath, error);
   }
 }
@@ -114,8 +118,8 @@ export async function validateExistingDirectory(
     requestedPath,
     signal
   );
-  if (signal?.aborted) throw new Error('AbortError');
-  const stats = await fs.stat(details.resolvedPath);
+  assertNotAborted(signal);
+  const stats = await withAbort(fs.stat(details.resolvedPath), signal);
   if (!stats.isDirectory()) {
     throw new McpError(
       ErrorCode.E_NOT_DIRECTORY,
