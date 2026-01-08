@@ -3,24 +3,47 @@ import * as pathModule from 'node:path';
 import type { z } from 'zod';
 
 import { formatOperationSummary, joinLines } from '../../config/formatting.js';
-import type { SearchContentResult } from '../../config/types.js';
+import type { ContentMatch, SearchContentResult } from '../../config/types.js';
 import type { SearchContentOutputSchema } from '../../schemas/index.js';
 
 type SearchContentStructuredResult = z.infer<typeof SearchContentOutputSchema>;
 
 const LINE_NUMBER_PAD_WIDTH = 4;
 
-type NormalizedMatch = SearchContentResult['matches'][number] & {
-  relativeFile: string;
-  index: number;
-};
+interface NormalizedMatch extends ContentMatch {
+  readonly relativeFile: string;
+  readonly index: number;
+}
 
 function normalizeMatches(result: SearchContentResult): NormalizedMatch[] {
-  const normalized = result.matches.map((match, index) => ({
-    ...match,
-    relativeFile: pathModule.relative(result.basePath, match.file),
-    index,
-  }));
+  const { basePath, matches } = result;
+  const relativeByFile = new Map<string, string>();
+  const normalized: NormalizedMatch[] = [];
+
+  let index = 0;
+  for (const match of matches) {
+    const { file, line, content, contextBefore, contextAfter, matchCount } =
+      match;
+
+    let relativeFile = relativeByFile.get(file);
+    if (relativeFile === undefined) {
+      relativeFile = pathModule.relative(basePath, file);
+      relativeByFile.set(file, relativeFile);
+    }
+
+    normalized.push({
+      file,
+      line,
+      content,
+      contextBefore,
+      contextAfter,
+      matchCount,
+      relativeFile,
+      index,
+    });
+
+    index++;
+  }
 
   normalized.sort((a, b) => {
     const fileCompare = a.relativeFile.localeCompare(b.relativeFile);

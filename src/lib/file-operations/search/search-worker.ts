@@ -71,18 +71,26 @@ function getMatcherCacheKey(pattern: string, options: MatcherOptions): string {
 
 function getCachedMatcher(pattern: string, options: MatcherOptions): Matcher {
   const key = getMatcherCacheKey(pattern, options);
-  let matcher = matcherCache.get(key);
-  if (!matcher) {
-    matcher = buildMatcher(pattern, options);
-    matcherCache.set(key, matcher);
-    // Limit cache size to prevent memory leaks
-    if (matcherCache.size > 100) {
-      const firstKey = matcherCache.keys().next().value;
-      if (firstKey !== undefined) {
-        matcherCache.delete(firstKey);
-      }
+  const cached = matcherCache.get(key);
+
+  if (cached) {
+    // Refresh insertion order (simple LRU-ish behavior)
+    matcherCache.delete(key);
+    matcherCache.set(key, cached);
+    return cached;
+  }
+
+  const matcher = buildMatcher(pattern, options);
+  matcherCache.set(key, matcher);
+
+  // Limit cache size to prevent memory leaks
+  if (matcherCache.size > 100) {
+    const firstKey = matcherCache.keys().next().value;
+    if (firstKey !== undefined) {
+      matcherCache.delete(firstKey);
     }
   }
+
   return matcher;
 }
 
