@@ -2,143 +2,133 @@
 
 ## Project Overview
 
-- **Purpose**: Read-only MCP (Model Context Protocol) server for secure filesystem exploration, searching, and analysis
-- **Package**: `@j0hanz/fs-context-mcp` (npm)
-- **Stack**: TypeScript 5.9, Node.js 20+, ESM modules
-- **Dependencies**: `@modelcontextprotocol/sdk`, `zod`, `fast-glob`, `re2`, `safe-regex2`
+- Package: `@j0hanz/fs-context-mcp` (read-only filesystem exploration MCP server)
+- Language/runtime: TypeScript (ESM) on Node.js `>=20.0.0`
+- Entry points:
+  - Source entry: `src/index.ts`
+  - CLI bin: `fs-context-mcp` → `dist/index.js`
+- MCP SDK: `@modelcontextprotocol/sdk` (server)
 
 ## Repo Map / Structure
 
-```text
-src/
-  index.ts           # CLI entry point
-  server.ts          # MCP server wiring and roots handling
-  instructions.md    # Tool usage instructions (bundled in dist)
-  config/            # Shared types and formatting helpers
-  lib/               # Core logic and filesystem operations
-    constants/       # Binary extensions, exclude patterns, MIME types
-    file-operations/ # File info, directory listing, glob, read operations
-    fs-helpers/      # Abort handling, utilities
-    observability/   # Logging/observability utilities
-    path-validation/ # Security-focused path validation
-  schemas/           # Zod input/output schemas
-    inputs/          # Tool input schemas
-    outputs/         # Tool output schemas
-  server/            # CLI parsing and roots resolution
-  tools/             # MCP tool registration and handlers
-  __tests__/         # Tests (node:test + tsx)
-dist/                # Build output (generated, do not edit)
-docs/                # Documentation assets (logo)
-node-tests/          # Isolated Node.js checks
-scripts/             # Metrics and analysis scripts
-```
+- `src/`: TypeScript source
+  - `src/index.ts`: CLI entry; sets allowed roots from CLI/MCP Roots; starts stdio server
+  - `src/server.ts`: MCP server setup + CLI arg parsing
+  - `src/tools.ts`: tool registration and tool response helpers
+  - `src/schemas.ts`: Zod schemas for tool inputs/outputs
+  - `src/lib/`: core logic
+    - `src/lib/path-validation.ts`: allowed roots + boundary checks (incl. Windows path rules)
+    - `src/lib/file-operations/`: implementations for ls/find/grep/read/stat
+    - `src/lib/observability.ts`: tracing/diagnostics wrappers
+  - `src/__tests__/`: Node test runner tests (TypeScript via `tsx/esm`)
+- `node-tests/`: additional Node test runner tests (non-glob entry)
+- `docs/`: static docs assets (e.g., `docs/logo.png`)
+- `dist/`: build output (generated)
+- `scripts/` + `metrics/`: local quality/metrics artifacts
+- `.github/workflows/publish.yml`: release → publish pipeline
 
 ## Setup & Environment
 
-- **Install deps**: `npm install`
-- **Node version**: `>=20.0.0` (required)
-- **Package manager**: npm
-- **Module system**: ESM (`"type": "module"`)
+- Requirements:
+  - Node.js `>=20.0.0`
+  - npm (repo includes `package-lock.json`)
+
+- Install deps:
+  - `npm install`
+
+- Configuration docs:
+  - `CONFIGURATION.md`
+  - `README.md` (“Configuration” section)
+
+- Optional environment variables (bytes/ms):
+  - `MAX_FILE_SIZE`
+  - `MAX_SEARCH_SIZE`
+  - `DEFAULT_SEARCH_TIMEOUT`
+  - `FS_CONTEXT_SEARCH_WORKERS`
 
 ## Development Workflow
 
-| Command             | Description                           |
-| ------------------- | ------------------------------------- |
-| `npm run dev`       | Watch mode with tsx                   |
-| `npm run build`     | Compile TypeScript + copy assets      |
-| `npm run start`     | Run compiled server (`dist/index.js`) |
-| `npm run inspector` | Test with MCP Inspector               |
+- Dev (watch): `npm run dev`
+- Build: `npm run build`
+- Start (run compiled stdio server): `npm run start`
+- Format: `npm run format`
+- Lint: `npm run lint`
+- Type-check: `npm run type-check`
 
-### Build details
+Notes:
 
-- Build outputs to `dist/`
-- `src/instructions.md` is copied to `dist/instructions.md` during build
-- Uses `tsconfig.build.json` (excludes tests)
+- `npm run build` runs `tsc -p tsconfig.build.json`, validates `src/instructions.md` exists, then copies it to `dist/instructions.md`.
+- `src/index.ts` starts the MCP server on stdio; do not write non-MCP data to stdout.
 
 ## Testing
 
-| Command                 | Description                 |
-| ----------------------- | --------------------------- |
-| `npm run test`          | Run all tests               |
-| `npm run test:watch`    | Run tests in watch mode     |
-| `npm run test:coverage` | Run tests with coverage     |
-| `npm run test:node`     | Run isolated Node.js checks |
+- All tests: `npm run test`
+- Watch mode: `npm run test:watch`
+- Coverage: `npm run test:coverage`
+- Node-only targeted test: `npm run test:node`
 
-- **Test framework**: Node.js native test runner (`node --test`)
-- **Test pattern**: `src/__tests__/**/*.test.ts`
-- **Isolated tests**: `node-tests/` for Node.js-specific checks
+Test locations/patterns:
+
+- Main suite: `src/__tests__/**/*.test.ts` (executed via Node’s test runner with `--import tsx/esm`)
+- Additional suite: `node-tests/*.test.ts`
 
 ## Code Style & Conventions
 
-| Aspect     | Tool / Config                                |
-| ---------- | -------------------------------------------- |
-| Language   | TypeScript 5.9, ES2022 target                |
-| Lint       | `npm run lint` (ESLint with strict TS rules) |
-| Format     | `npm run format` (Prettier)                  |
-| Type-check | `npm run type-check`                         |
+- Formatting:
+  - Prettier: `npm run format`
+  - Prettier config: `.prettierrc` (includes import sorting plugin)
 
-### Key conventions
+- Linting:
+  - ESLint: `npm run lint`
+  - Config: `eslint.config.mjs` (TypeScript-aware linting; strict rules)
 
-- **Strict TypeScript**: `strict: true`, `noUncheckedIndexedAccess`, `verbatimModuleSyntax`
-- **Naming**:
-  - Variables/functions: `camelCase`
-  - Types/classes: `PascalCase`
-  - Constants: `UPPER_CASE` or `camelCase`
-- **Imports**: Use type-only imports (`import type { ... }`)
-- **Schemas**: Use Zod v4 for all input/output validation
-- **Unused imports**: Error (auto-cleaned by ESLint plugin)
-- **Explicit return types**: Required for functions
-
-### File layout
-
-- One tool per file in `tools/`
-- Schemas in `schemas/inputs/` and `schemas/outputs/`
-- Shared logic in `lib/`
+- TypeScript:
+  - Type-check: `npm run type-check` (uses `tsconfig.typecheck.json`)
+  - ESM/NodeNext: local imports use `.js` extensions in source (see existing patterns)
 
 ## Build / Release
 
-- **Build output**: `dist/`
-- **Release trigger**: GitHub release (tag `vX.Y.Z`)
-- **CI workflow**: `.github/workflows/publish.yml`
-  - Runs: lint → type-check → test → build → publish to npm
-  - Uses OIDC trusted publishing (no npm token needed)
-- **Versioning**: Semantic versioning via npm
-- **prepublishOnly**: `npm run lint && npm run type-check && npm run build`
+- Build output: `dist/`
+- Prepublish checks: `npm run prepublishOnly` (runs `lint`, `type-check`, then `build`)
+- Release automation:
+  - GitHub Actions workflow: `.github/workflows/publish.yml` publishes on GitHub Release “published”
+  - Workflow runs: `npm ci` → `npm run lint` → `npm run type-check` → `npm run test` → `npm run build` → `npm publish --access public`
 
 ## Security & Safety
 
-- **Read-only**: No filesystem writes, deletes, or modifications
-- **Path validation**: All paths validated before any operation
-- **Symlink protection**: Symlinks that escape allowed directories are blocked
-- **Path traversal prevention**: `..` escape attempts detected and blocked
-- **Safe regex**: RE2 engine prevents ReDoS attacks
-- **Size limits**: Configurable limits prevent resource exhaustion
-- **Binary detection**: Prevents accidental binary file reads
+- This server is read-only: tools should not modify the filesystem.
+- Path safety is enforced by “allowed roots” + boundary checks (see `src/lib/path-validation.ts`).
+- Symlinks are not followed outside allowed roots.
+
+Agent safety rules for changes:
+
+- Prefer extending existing tool patterns in `src/tools.ts` and schemas in `src/schemas.ts`.
+- Keep tool inputs bounded with Zod `.min()`/`.max()` and prefer `z.strictObject()`.
+- For stdio transport: never write non-protocol output to stdout (use `console.error()` for logs).
+
+## Pull Request / Commit Guidelines
+
+- No commit message convention is documented in this repo.
+- Before opening a PR, run at least:
+  - `npm run format`
+  - `npm run lint`
+  - `npm run type-check`
+  - `npm run build`
+  - `npm run test`
 
 ## Troubleshooting
 
-| Issue                          | Solution                                               |
-| ------------------------------ | ------------------------------------------------------ |
-| Build fails on instructions.md | Ensure `src/instructions.md` exists                    |
-| Type errors in tests           | Use `tsconfig.typecheck.json` (includes test files)    |
-| ESLint project errors          | Check `tsconfig.eslint.json` includes the target files |
-| Tests timing out               | Check for unclosed handles or increase timeout         |
-| "Access denied" at runtime     | Path is outside allowed directories; check CLI args    |
-| Invalid regex pattern          | Use `isLiteral=true` or simplify the regex             |
+- Build fails with missing instructions asset:
+  - `npm run build` requires `src/instructions.md` and copies it to `dist/instructions.md`.
 
-## Agent Operating Rules
+- Server/client communication issues:
+  - Ensure you are not writing to stdout (stdio transport).
+  - Use the inspector: `npx @modelcontextprotocol/inspector`
 
-1. **Search before edit**: Use `find` and `grep` tools to locate code before modifying
-2. **Read context first**: Use `read` or `read_many` to understand existing code
-3. **Validate changes**: Run `npm run lint && npm run type-check` after edits
-4. **Test changes**: Run `npm run test` before committing
-5. **Avoid destructive commands**: This is a read-only server; no file writes in production
-6. **Check allowed roots**: Use `roots` tool to verify accessible directories
+- Windows path issues:
+  - Drive-relative paths like `C:path` are rejected; use `C:\path` or `C:/path`.
 
-## Environment Variables (Runtime)
+## Open Questions / TODO
 
-| Variable                 | Default | Description                                   |
-| ------------------------ | ------- | --------------------------------------------- |
-| `MAX_FILE_SIZE`          | 10MB    | Max file size for read operations (1MB-100MB) |
-| `MAX_SEARCH_SIZE`        | 1MB     | Max file size for content search (100KB-10MB) |
-| `DEFAULT_SEARCH_TIMEOUT` | 30000   | Timeout for search/list ops (100-3600000ms)   |
+- `.vscode/mcp.json` contains provider configuration for local MCP tooling; ensure secrets are not committed (prefer `${input:...}` placeholders).
+- `.github/instructions/typescript-mcp-server.instructions.md` mentions Zod v3, but `package.json` depends on Zod v4; reconcile the instruction doc with the repo’s actual dependency.
