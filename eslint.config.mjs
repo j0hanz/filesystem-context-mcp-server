@@ -1,5 +1,6 @@
 import eslint from '@eslint/js';
 import eslintConfigPrettier from 'eslint-config-prettier';
+import deMorgan from 'eslint-plugin-de-morgan';
 import depend from 'eslint-plugin-depend';
 import sonarjs from 'eslint-plugin-sonarjs';
 import unusedImports from 'eslint-plugin-unused-imports';
@@ -12,6 +13,7 @@ export default defineConfig(
   },
   eslint.configs.recommended,
   sonarjs.configs.recommended,
+  deMorgan.configs.recommended,
   depend.configs['flat/recommended'],
   {
     files: ['src/**/*.ts'],
