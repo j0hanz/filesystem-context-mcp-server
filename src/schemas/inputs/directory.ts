@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { isSafeGlobPattern } from './helpers.js';
+import { isSafeGlobPattern } from './safe-glob.js';
 
 export const ListDirectoryInputSchema = z.strictObject({
   path: z

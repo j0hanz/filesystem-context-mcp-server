@@ -110,25 +110,31 @@ function registerSearchContentPatternTests(getTestDir: () => string): void {
 function registerSearchContentUnsafePatternTests(
   getTestDir: () => string
 ): void {
-  for (const pattern of unsafePatterns) {
-    void it(`searchContent rejects unsafe regex pattern "${pattern}"`, async () => {
-      await assert.rejects(
-        searchContent(getTestDir(), pattern, { isLiteral: false }),
-        /ReDoS|unsafe/i
-      );
-    });
-  }
+  unsafePatterns.forEach((pattern) => {
+    void it(
+      `searchContent rejects unsafe regex pattern "${pattern}"`,
+      async () => {
+        await assert.rejects(
+          searchContent(getTestDir(), pattern, { isLiteral: false }),
+          /ReDoS|unsafe/i
+        );
+      }
+    );
+  });
 }
 
 function registerSearchContentSafePatternTests(getTestDir: () => string): void {
-  for (const pattern of safePatterns) {
-    void it(`searchContent accepts safe regex pattern "${pattern}"`, async () => {
-      const result = await searchContent(getTestDir(), pattern, {
-        filePattern: '**/*.ts',
-      });
-      assert.ok(result);
-    });
-  }
+  safePatterns.forEach((pattern) => {
+    void it(
+      `searchContent accepts safe regex pattern "${pattern}"`,
+      async () => {
+        const result = await searchContent(getTestDir(), pattern, {
+          filePattern: '**/*.ts',
+        });
+        assert.ok(result);
+      }
+    );
+  });
 }
 
 function registerSearchContentContextTests(getTestDir: () => string): void {
