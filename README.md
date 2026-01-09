@@ -8,7 +8,7 @@ A secure, read-only MCP server for filesystem scanning, searching, and analysis 
 [![License](https://img.shields.io/npm/l/@j0hanz/fs-context-mcp)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9.3-blue)](https://www.typescriptlang.org/)
-[![MCP SDK](https://img.shields.io/badge/MCP%20SDK-1.25.1-purple)](https://modelcontextprotocol.io)
+[![MCP SDK](https://img.shields.io/badge/MCP%20SDK-1.25.2-purple)](https://modelcontextprotocol.io)
 
 ## One-Click Install
 
@@ -19,7 +19,7 @@ A secure, read-only MCP server for filesystem scanning, searching, and analysis 
 ## Features
 
 - Directory listing (immediate contents)
-- Path search with glob patterns (files and directories)
+- File search with glob patterns
 - Content search with regex and context lines
 - File reading with head previews (first N lines)
 - Batch reads and metadata lookups in parallel
@@ -30,7 +30,7 @@ A secure, read-only MCP server for filesystem scanning, searching, and analysis 
 | Task                            | Tool        |
 | ------------------------------- | ----------- |
 | Explore project structure       | `ls`        |
-| Find files or directories       | `find`      |
+| Find files                      | `find`      |
 | Search for code patterns/text   | `grep`      |
 | Read source code                | `read`      |
 | Batch read multiple files       | `read_many` |
@@ -149,7 +149,8 @@ Returns: Allowed directory paths. Structured output includes `ok` and
 ### `ls`
 
 List the immediate contents of a directory (non-recursive). Omit `path` to use
-the first allowed root.
+the first allowed root. If `pattern` is provided, listing is recursive up to
+`maxDepth`.
 
 | Parameter               | Type     | Required | Default      | Description                                              |
 | ----------------------- | -------- | -------- | ------------ | -------------------------------------------------------- |
@@ -170,9 +171,9 @@ Structured output includes `ok`, `path`, `entries`, and `totalEntries`.
 
 ### `find`
 
-Search for files using glob patterns. Automatically excludes common dependency/build
-directories (node_modules, dist, .git, etc.). Omit `path` to search from the
-first allowed root.
+Search for files using glob patterns. Omit `path` to search from the first
+allowed root. `find` does not apply a built-in exclude list; scope your pattern
+to avoid dependency/build directories (e.g., `src/**/*.ts`).
 
 | Parameter    | Type   | Required | Default      | Description                                            |
 | ------------ | ------ | -------- | ------------ | ------------------------------------------------------ |
@@ -197,7 +198,8 @@ Read the contents of a text file.
 Notes:
 
 - Reads are UTF-8 text only; binary files are rejected.
-- Max file size is capped by `MAX_FILE_SIZE` (default 10MB).
+- Full reads are capped by `MAX_FILE_SIZE` (default 10MB). When `head` is set,
+  output stops at the line limit or size budget, whichever comes first.
 
 Returns: File content plus structured metadata (`ok`, `path`, `content`,
 `truncated`, `totalLines`).
@@ -284,10 +286,11 @@ Matched line content is trimmed to 200 characters.
 
 ---
 
-Built-in exclude list includes common dependency/build/output directories and
-files: `node_modules`, `dist`, `build`, `coverage`, `.git`, `.vscode`, `.idea`,
-`.DS_Store`, `.next`, `.nuxt`, `.output`, `.svelte-kit`, `.cache`, `.yarn`,
-`jspm_packages`, `bower_components`, `out`, `tmp`, `.temp`,
+Built-in exclude list (used by `grep` when `excludePatterns` is not provided and
+`includeIgnored` is false) includes common dependency/build/output directories
+and files: `node_modules`, `dist`, `build`, `coverage`, `.git`, `.vscode`,
+`.idea`, `.DS_Store`, `.next`, `.nuxt`, `.output`, `.svelte-kit`, `.cache`,
+`.yarn`, `jspm_packages`, `bower_components`, `out`, `tmp`, `.temp`,
 `npm-debug.log`, `yarn-debug.log`, `yarn-error.log`, `Thumbs.db`. Pass
 `excludePatterns: []` or `includeIgnored: true` to disable it.
 
@@ -442,13 +445,15 @@ This server implements multiple layers of security:
 src/
   index.ts                 # CLI entry point
   server.ts                # MCP server wiring and roots handling
+  tools.ts                 # MCP tool registration + response helpers
+  schemas.ts               # Zod input/output schemas
+  config.ts                # Shared types and formatting helpers
   instructions.md          # Tool usage instructions (bundled in dist)
-  config/                  # Shared types and formatting helpers
   lib/                     # Core logic and filesystem operations
-  schemas/                 # Zod input/output schemas
-  tools/                   # MCP tool registration
   __tests__/               # node:test + tsx tests
-node-tests/                # Isolated Node.js checks
+node-tests/                # Additional Node.js checks
+docs/                      # Static docs assets
+dist/                      # Build output (generated)
 ```
 
 ## Troubleshooting
@@ -469,7 +474,7 @@ Contributions are welcome! Please follow these steps:
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Run tests and linting (`npm run lint && npm run test`)
+3. Run format, lint, type-check, build, and tests (`npm run format && npm run lint && npm run type-check && npm run build && npm run test`)
 4. Commit your changes (`git commit -m 'Add amazing feature'`)
 5. Push to the branch (`git push origin feature/amazing-feature`)
 6. Open a Pull Request
