@@ -30,16 +30,21 @@ export interface ReadFileResult {
 }
 
 export function normalizeOptions(options: ReadFileOptions): NormalizedOptions {
-  return {
+  const normalized: NormalizedOptions = {
     encoding: options.encoding ?? 'utf-8',
     maxSize: Math.min(
       options.maxSize ?? MAX_TEXT_FILE_SIZE,
       MAX_TEXT_FILE_SIZE
     ),
-    head: options.head,
     skipBinary: options.skipBinary ?? false,
-    signal: options.signal,
   };
+  if (options.head !== undefined) {
+    normalized.head = options.head;
+  }
+  if (options.signal) {
+    normalized.signal = options.signal;
+  }
+  return normalized;
 }
 
 export function resolveReadMode(options: NormalizedOptions): ReadMode {

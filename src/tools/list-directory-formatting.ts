@@ -36,8 +36,14 @@ function getTruncatedReason(summary: ListSummary): string | undefined {
 export function buildTextResult(result: ListResult): string {
   const { entries, summary, path } = result;
   const truncatedReason = getTruncatedReason(summary);
+  const summaryOptions: Parameters<typeof formatOperationSummary>[0] = {
+    truncated: summary.truncated,
+  };
+  if (truncatedReason !== undefined) {
+    summaryOptions.truncatedReason = truncatedReason;
+  }
   return (
     formatDirectoryListing(entries, path, summary) +
-    formatOperationSummary({ truncated: summary.truncated, truncatedReason })
+    formatOperationSummary(summaryOptions)
   );
 }

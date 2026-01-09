@@ -66,8 +66,8 @@ function buildFileInfoResult(
     accessed: stats.atime,
     permissions: getPermissions(stats.mode),
     isHidden: isHidden(name),
-    mimeType,
-    symlinkTarget,
+    ...(mimeType !== undefined ? { mimeType } : {}),
+    ...(symlinkTarget !== undefined ? { symlinkTarget } : {}),
   };
 }
 

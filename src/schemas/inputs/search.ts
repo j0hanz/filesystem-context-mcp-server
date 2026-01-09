@@ -1,19 +1,6 @@
 import { z } from 'zod';
 
-function isSafeGlobPattern(value: string): boolean {
-  if (value.length === 0) return false;
-
-  const absolutePattern = /^([/\\]|[A-Za-z]:[/\\]|\\\\)/u;
-  if (absolutePattern.test(value)) {
-    return false;
-  }
-
-  if (/[\\/]\.\.(?:[/\\]|$)/u.test(value) || value.startsWith('..')) {
-    return false;
-  }
-
-  return true;
-}
+import { isSafeGlobPattern } from './helpers.js';
 
 export const SearchFilesInputSchema = z.strictObject({
   path: z
@@ -69,7 +56,7 @@ export const SearchContentInputSchema = z.strictObject({
     .min(1, 'Pattern cannot be empty')
     .max(1000, 'Pattern is too long (max 1000 characters)')
     .describe(
-      'Text to search for. Examples: "TODO", "console.log", "import React"'
+      'Text to search for. Examples: "console.log", "import React", "className"'
     ),
   filePattern: z
     .string()

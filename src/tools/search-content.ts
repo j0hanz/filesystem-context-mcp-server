@@ -10,11 +10,11 @@ import { ErrorCode } from '../lib/errors.js';
 import { searchContent } from '../lib/file-operations/search/engine.js';
 import { createTimedAbortSignal } from '../lib/fs-helpers/abort.js';
 import { withToolDiagnostics } from '../lib/observability/diagnostics.js';
-import { getAllowedDirectories } from '../lib/path-validation/allowed-directories.js';
 import {
   SearchContentInputSchema,
   SearchContentOutputSchema,
 } from '../schemas/index.js';
+import { resolvePathOrRoot } from './shared/resolve-path.js';
 import {
   buildStructuredResult,
   buildTextResult,
@@ -28,36 +28,30 @@ import {
 
 type SearchContentArgs = z.infer<typeof SearchContentInputSchema>;
 type SearchContentStructuredResult = z.infer<typeof SearchContentOutputSchema>;
+type SearchOptions = Parameters<typeof searchContent>[2];
 
-function resolvePathOrRoot(path: string | undefined): string {
-  if (path && path.trim().length > 0) return path;
-  const firstRoot = getAllowedDirectories()[0];
-  if (!firstRoot) {
-    throw new Error('No workspace roots configured. Use roots to check.');
-  }
-  return firstRoot;
+function resolveExcludePatterns(args: SearchContentArgs): readonly string[] {
+  if (args.excludePatterns) return args.excludePatterns;
+  return args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
 }
 
-function buildSearchOptions(
-  args: SearchContentArgs,
-  signal?: AbortSignal
-): Parameters<typeof searchContent>[2] {
-  const excludePatterns =
-    args.excludePatterns ??
-    (args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS);
+function resolveMaxFileSize(args: SearchContentArgs): number {
+  if (typeof args.maxFileSize !== 'number') {
+    return MAX_SEARCHABLE_FILE_SIZE;
+  }
+  return Math.min(args.maxFileSize, MAX_SEARCHABLE_FILE_SIZE);
+}
+
+function buildSearchOptionsBase(args: SearchContentArgs): SearchOptions {
   const includeHidden = args.includeHidden || args.includeIgnored;
-  const maxFileSize =
-    typeof args.maxFileSize === 'number'
-      ? Math.min(args.maxFileSize, MAX_SEARCHABLE_FILE_SIZE)
-      : MAX_SEARCHABLE_FILE_SIZE;
   return {
     filePattern: args.filePattern,
-    excludePatterns,
+    excludePatterns: resolveExcludePatterns(args),
     caseSensitive: args.caseSensitive,
     isLiteral: args.isLiteral,
     contextLines: args.contextLines,
     maxResults: args.maxResults,
-    maxFileSize,
+    maxFileSize: resolveMaxFileSize(args),
     maxFilesScanned: args.maxFilesScanned,
     timeoutMs: args.timeoutMs,
     skipBinary: args.skipBinary,
@@ -65,8 +59,16 @@ function buildSearchOptions(
     wholeWord: args.wholeWord,
     baseNameMatch: args.baseNameMatch,
     caseSensitiveFileMatch: args.caseSensitiveFileMatch,
-    signal,
   };
+}
+
+function buildSearchOptions(
+  args: SearchContentArgs,
+  signal?: AbortSignal
+): SearchOptions {
+  const options = buildSearchOptionsBase(args);
+  if (signal) return { ...options, signal };
+  return options;
 }
 
 async function handleSearchContent(

@@ -28,10 +28,15 @@ async function processFileInfo(
   filePath: string,
   options: GetMultipleFileInfoOptions
 ): Promise<MultipleFileInfoResult> {
-  const info = await getFileInfo(filePath, {
-    includeMimeType: options.includeMimeType,
-    signal: options.signal,
-  });
+  const fileInfoOptions: { includeMimeType?: boolean; signal?: AbortSignal } =
+    {};
+  if (options.includeMimeType !== undefined) {
+    fileInfoOptions.includeMimeType = options.includeMimeType;
+  }
+  if (options.signal) {
+    fileInfoOptions.signal = options.signal;
+  }
+  const info = await getFileInfo(filePath, fileInfoOptions);
 
   return {
     path: filePath,

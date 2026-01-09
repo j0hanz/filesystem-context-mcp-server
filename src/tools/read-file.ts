@@ -39,13 +39,18 @@ async function handleReadFile(
   args: ReadFileArgs,
   signal?: AbortSignal
 ): Promise<ToolResponse<ReadFileStructuredResult>> {
-  const result = await readFile(args.path, {
+  const options: Parameters<typeof readFile>[1] = {
     encoding: 'utf-8',
     maxSize: MAX_TEXT_FILE_SIZE,
     skipBinary: true,
-    head: args.head,
-    signal,
-  });
+  };
+  if (args.head !== undefined) {
+    options.head = args.head;
+  }
+  if (signal) {
+    options.signal = signal;
+  }
+  const result = await readFile(args.path, options);
 
   return buildToolResponse(
     result.content,

@@ -15,43 +15,63 @@ interface NormalizedMatch extends ContentMatch {
   readonly index: number;
 }
 
+function getRelativeFile(
+  basePath: string,
+  file: string,
+  cache: Map<string, string>
+): string {
+  const cached = cache.get(file);
+  if (cached !== undefined) return cached;
+  const relative = pathModule.relative(basePath, file);
+  cache.set(file, relative);
+  return relative;
+}
+
+function buildNormalizedMatch(
+  match: ContentMatch,
+  relativeFile: string,
+  index: number
+): NormalizedMatch {
+  const base: NormalizedMatch = {
+    file: match.file,
+    line: match.line,
+    content: match.content,
+    matchCount: match.matchCount,
+    relativeFile,
+    index,
+  };
+  return {
+    ...base,
+    ...(match.contextBefore !== undefined
+      ? { contextBefore: match.contextBefore }
+      : {}),
+    ...(match.contextAfter !== undefined
+      ? { contextAfter: match.contextAfter }
+      : {}),
+  };
+}
+
+function compareNormalizedMatches(
+  a: NormalizedMatch,
+  b: NormalizedMatch
+): number {
+  const fileCompare = a.relativeFile.localeCompare(b.relativeFile);
+  if (fileCompare !== 0) return fileCompare;
+  if (a.line !== b.line) return a.line - b.line;
+  return a.index - b.index;
+}
+
 function normalizeMatches(result: SearchContentResult): NormalizedMatch[] {
   const { basePath, matches } = result;
   const relativeByFile = new Map<string, string>();
-  const normalized: NormalizedMatch[] = [];
-
-  let index = 0;
-  for (const match of matches) {
-    const { file, line, content, contextBefore, contextAfter, matchCount } =
-      match;
-
-    let relativeFile = relativeByFile.get(file);
-    if (relativeFile === undefined) {
-      relativeFile = pathModule.relative(basePath, file);
-      relativeByFile.set(file, relativeFile);
-    }
-
-    normalized.push({
-      file,
-      line,
-      content,
-      contextBefore,
-      contextAfter,
-      matchCount,
-      relativeFile,
-      index,
-    });
-
-    index++;
-  }
-
-  normalized.sort((a, b) => {
-    const fileCompare = a.relativeFile.localeCompare(b.relativeFile);
-    if (fileCompare !== 0) return fileCompare;
-    if (a.line !== b.line) return a.line - b.line;
-    return a.index - b.index;
-  });
-
+  const normalized = matches.map((match, index) =>
+    buildNormalizedMatch(
+      match,
+      getRelativeFile(basePath, match.file, relativeByFile),
+      index
+    )
+  );
+  normalized.sort(compareNormalizedMatches);
   return normalized;
 }
 
@@ -63,13 +83,26 @@ function formatMatchLine(match: NormalizedMatch): string {
 function buildStructuredMatches(
   matches: NormalizedMatch[]
 ): SearchContentStructuredResult['matches'] {
-  return matches.map((match) => ({
-    file: match.relativeFile,
-    line: match.line,
-    content: match.content,
-    contextBefore: match.contextBefore ? [...match.contextBefore] : undefined,
-    contextAfter: match.contextAfter ? [...match.contextAfter] : undefined,
-  }));
+  return matches.map((match) => {
+    const item: {
+      file: string;
+      line: number;
+      content: string;
+      contextBefore?: string[];
+      contextAfter?: string[];
+    } = {
+      file: match.relativeFile,
+      line: match.line,
+      content: match.content,
+    };
+    if (match.contextBefore !== undefined) {
+      item.contextBefore = [...match.contextBefore];
+    }
+    if (match.contextAfter !== undefined) {
+      item.contextAfter = [...match.contextAfter];
+    }
+    return item;
+  });
 }
 
 export function buildStructuredResult(
@@ -100,12 +133,17 @@ export function buildTextResult(result: SearchContentResult): string {
   if (normalizedMatches.length === 0) return 'No matches';
 
   const truncatedReason = getTruncatedReason(summary);
+  const summaryOptions: Parameters<typeof formatOperationSummary>[0] = {
+    truncated: summary.truncated,
+  };
+  if (truncatedReason !== undefined) {
+    summaryOptions.truncatedReason = truncatedReason;
+  }
 
   return (
     joinLines([
       `Found ${normalizedMatches.length}:`,
       ...normalizedMatches.map(formatMatchLine),
-    ]) +
-    formatOperationSummary({ truncated: summary.truncated, truncatedReason })
+    ]) + formatOperationSummary(summaryOptions)
   );
 }

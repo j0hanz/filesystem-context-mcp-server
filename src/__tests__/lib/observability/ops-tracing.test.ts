@@ -4,41 +4,16 @@ import { describe, it } from 'node:test';
 
 import { globEntries } from '../../../lib/file-operations/glob-engine.js';
 import type { GlobEntriesOptions } from '../../../lib/file-operations/glob-engine.js';
+import {
+  enableDiagnosticsEnv,
+  restoreDiagnosticsEnv,
+} from '../../shared/diagnostics-env.js';
 import { withFileOpsFixture } from '../fixtures/file-ops-hooks.js';
-
-interface DiagnosticsEnvSnapshot {
-  diagnostics?: string;
-  diagnosticsDetail?: string;
-}
 
 interface OpsTracingSubscription {
   publishedStart: unknown[];
   publishedEnd: unknown[];
   unsubscribe: () => void;
-}
-
-const restoreEnv = (key: string, previous: string | undefined): void => {
-  if (previous === undefined) {
-    Reflect.deleteProperty(process.env, key);
-    return;
-  }
-  process.env[key] = previous;
-};
-
-function enableDiagnosticsEnv(): DiagnosticsEnvSnapshot {
-  const previousEnabled = process.env.FS_CONTEXT_DIAGNOSTICS;
-  const previousDetail = process.env.FS_CONTEXT_DIAGNOSTICS_DETAIL;
-  process.env.FS_CONTEXT_DIAGNOSTICS = '1';
-  process.env.FS_CONTEXT_DIAGNOSTICS_DETAIL = '0';
-  return {
-    diagnostics: previousEnabled,
-    diagnosticsDetail: previousDetail,
-  };
-}
-
-function restoreDiagnosticsEnv(snapshot: DiagnosticsEnvSnapshot): void {
-  restoreEnv('FS_CONTEXT_DIAGNOSTICS', snapshot.diagnostics);
-  restoreEnv('FS_CONTEXT_DIAGNOSTICS_DETAIL', snapshot.diagnosticsDetail);
 }
 
 function subscribeOpsTracing(): OpsTracingSubscription {

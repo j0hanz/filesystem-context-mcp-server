@@ -83,30 +83,34 @@ export async function recomputeAllowedDirectories(): Promise<void> {
   }
 }
 
+function extractRoots(value: unknown): Root[] {
+  const rawRoots =
+    typeof value === 'object' && value !== null && 'roots' in value
+      ? (value as { roots?: unknown }).roots
+      : undefined;
+  return Array.isArray(rawRoots) ? rawRoots.filter(isRoot) : [];
+}
+
+async function resolveRootDirectories(roots: Root[]): Promise<string[]> {
+  if (roots.length === 0) return [];
+  const { signal, cleanup } = createTimedAbortSignal(
+    undefined,
+    ROOTS_TIMEOUT_MS
+  );
+  try {
+    return await getValidRootDirectories(roots, signal);
+  } finally {
+    cleanup();
+  }
+}
+
 async function updateRootsFromClient(server: McpServer): Promise<void> {
   try {
     const rootsResult = await server.server.listRoots(undefined, {
       timeout: ROOTS_TIMEOUT_MS,
     });
-    const rootsResultUnknown: unknown = rootsResult;
-    const rawRoots =
-      typeof rootsResultUnknown === 'object' &&
-      rootsResultUnknown !== null &&
-      'roots' in rootsResultUnknown
-        ? (rootsResultUnknown as { roots?: unknown }).roots
-        : undefined;
-    const roots = Array.isArray(rawRoots) ? rawRoots.filter(isRoot) : [];
-
-    const { signal, cleanup } = createTimedAbortSignal(
-      undefined,
-      ROOTS_TIMEOUT_MS
-    );
-    try {
-      rootDirectories =
-        roots.length > 0 ? await getValidRootDirectories(roots, signal) : [];
-    } finally {
-      cleanup();
-    }
+    const roots = extractRoots(rootsResult);
+    rootDirectories = await resolveRootDirectories(roots);
   } catch (error) {
     rootDirectories = [];
     console.error(

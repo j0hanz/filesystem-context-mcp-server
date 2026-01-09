@@ -43,7 +43,11 @@ async function handleGetFileInfo(
   },
   signal?: AbortSignal
 ): Promise<ToolResponse<GetFileInfoStructuredResult>> {
-  const info = await getFileInfo(path, { signal });
+  const options: { signal?: AbortSignal } = {};
+  if (signal) {
+    options.signal = signal;
+  }
+  const info = await getFileInfo(path, options);
   const structured = buildStructuredResult(info);
   return buildToolResponse(formatFileInfoDetails(info), structured);
 }

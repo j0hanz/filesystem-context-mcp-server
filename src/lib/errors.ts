@@ -141,14 +141,13 @@ export function createDetailedError(
   const message = error instanceof Error ? error.message : String(error);
   const code = classifyError(error);
   const suggestion = ERROR_SUGGESTIONS[code];
+  const resolvedPath = resolveErrorPath(error, path);
+  const details = mergeErrorDetails(error, additionalDetails);
 
-  return {
-    code,
-    message,
-    path: resolveErrorPath(error, path),
-    suggestion,
-    details: mergeErrorDetails(error, additionalDetails),
-  };
+  const result: DetailedError = { code, message, suggestion };
+  if (resolvedPath) result.path = resolvedPath;
+  if (details) result.details = details;
+  return result;
 }
 
 function resolveErrorPath(error: unknown, path?: string): string | undefined {

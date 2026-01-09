@@ -54,18 +54,21 @@ function appendMatch(
   contextLines: number,
   ctx: ReturnType<typeof makeContext>
 ): void {
-  const contextAfter = contextLines > 0 ? [] : undefined;
-  matches.push({
+  const contextBefore =
+    contextLines > 0 ? ([...ctx.before] as readonly string[]) : undefined;
+  const contextAfterBuffer = contextLines > 0 ? [] : undefined;
+  const match: ContentMatch = {
     file: requestedPath,
     line: lineNo,
     content: trimmedLine ?? trimContent(line),
-    contextBefore: contextLines > 0 ? [...ctx.before] : undefined,
-    contextAfter,
     matchCount: count,
-  });
-  if (contextAfter) {
+    ...(contextBefore ? { contextBefore } : {}),
+    ...(contextAfterBuffer ? { contextAfter: contextAfterBuffer } : {}),
+  };
+  matches.push(match);
+  if (contextAfterBuffer) {
     ctx.pendingAfter.push({
-      buffer: contextAfter,
+      buffer: contextAfterBuffer,
       left: contextLines,
     });
   }
@@ -93,6 +96,33 @@ function recordLineMatch(
       options.contextLines,
       ctx
     );
+  }
+}
+
+async function readLoop(
+  rl: readline.Interface,
+  matcher: Matcher,
+  options: ScanFileOptions,
+  requestedPath: string,
+  maxMatches: number,
+  isCancelled: () => boolean,
+  matches: ContentMatch[],
+  ctx: ReturnType<typeof makeContext>
+): Promise<void> {
+  let lineNo = 0;
+  for await (const line of rl) {
+    if (isCancelled()) break;
+    lineNo++;
+    recordLineMatch(
+      line,
+      matcher,
+      options,
+      requestedPath,
+      lineNo,
+      matches,
+      ctx
+    );
+    if (matches.length >= maxMatches) break;
   }
 }
 
@@ -141,22 +171,17 @@ async function readMatches(
   const rl = buildReadline(handle, signal);
   const ctx = makeContext();
   const matches: ContentMatch[] = [];
-  let lineNo = 0;
   try {
-    for await (const line of rl) {
-      if (isCancelled()) break;
-      lineNo++;
-      recordLineMatch(
-        line,
-        matcher,
-        options,
-        requestedPath,
-        lineNo,
-        matches,
-        ctx
-      );
-      if (matches.length >= maxMatches) break;
-    }
+    await readLoop(
+      rl,
+      matcher,
+      options,
+      requestedPath,
+      maxMatches,
+      isCancelled,
+      matches,
+      ctx
+    );
     return matches;
   } finally {
     rl.close();

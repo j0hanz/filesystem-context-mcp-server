@@ -40,16 +40,20 @@ function normalizePattern(pattern: string | undefined): string | undefined {
 export function normalizeOptions(
   options: ListDirectoryOptions
 ): NormalizedOptions {
-  return {
+  const pattern = normalizePattern(options.pattern);
+  const normalized: NormalizedOptions = {
     includeHidden: options.includeHidden ?? false,
     excludePatterns: options.excludePatterns ?? [],
     maxDepth: options.maxDepth ?? DEFAULT_MAX_DEPTH,
     maxEntries: options.maxEntries ?? DEFAULT_LIST_MAX_ENTRIES,
     sortBy: options.sortBy ?? 'name',
     includeSymlinkTargets: options.includeSymlinkTargets ?? false,
-    pattern: normalizePattern(options.pattern),
     timeoutMs: options.timeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS,
   };
+  if (pattern !== undefined) {
+    normalized.pattern = pattern;
+  }
+  return normalized;
 }
 
 function sortEntries(
@@ -119,9 +123,9 @@ function buildSummary(
   totals: EntryTotals,
   maxDepth: number,
   truncated: boolean,
-  stoppedReason: ListDirectoryResult['summary']['stoppedReason']
+  stoppedReason: ListDirectoryResult['summary']['stoppedReason'] | undefined
 ): ListDirectoryResult['summary'] {
-  return {
+  const baseSummary: ListDirectoryResult['summary'] = {
     totalEntries: entries.length,
     entriesScanned: entries.length,
     entriesVisible: entries.length,
@@ -129,9 +133,12 @@ function buildSummary(
     totalDirectories: totals.directories,
     maxDepthReached: maxDepth,
     truncated,
-    stoppedReason,
     skippedInaccessible: 0,
     symlinksNotFollowed: 0,
+  };
+  return {
+    ...baseSummary,
+    ...(stoppedReason !== undefined ? { stoppedReason } : {}),
   };
 }
 
@@ -145,12 +152,14 @@ async function collectEntries(
   entries: DirectoryEntry[];
   totals: EntryTotals;
   truncated: boolean;
-  stoppedReason: ListDirectoryResult['summary']['stoppedReason'];
+  stoppedReason: ListDirectoryResult['summary']['stoppedReason'] | undefined;
 }> {
   const entries: DirectoryEntry[] = [];
   const totals: EntryTotals = { files: 0, directories: 0 };
   let truncated = false;
-  let stoppedReason: ListDirectoryResult['summary']['stoppedReason'];
+  let stoppedReason:
+    | ListDirectoryResult['summary']['stoppedReason']
+    | undefined;
 
   const stream = createEntryStream(basePath, normalized, maxDepth, needsStats);
 

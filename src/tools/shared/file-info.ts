@@ -1,7 +1,7 @@
 import { formatBytes, joinLines } from '../../config/formatting.js';
 import type { FileInfo } from '../../config/types.js';
 
-export function buildFileInfoPayload(info: FileInfo): {
+interface FileInfoPayload {
   name: string;
   path: string;
   type: FileInfo['type'];
@@ -13,7 +13,9 @@ export function buildFileInfoPayload(info: FileInfo): {
   isHidden: boolean;
   mimeType?: string;
   symlinkTarget?: string;
-} {
+}
+
+export function buildFileInfoPayload(info: FileInfo): FileInfoPayload {
   return {
     name: info.name,
     path: info.path,
@@ -24,8 +26,10 @@ export function buildFileInfoPayload(info: FileInfo): {
     accessed: info.accessed.toISOString(),
     permissions: info.permissions,
     isHidden: info.isHidden,
-    mimeType: info.mimeType,
-    symlinkTarget: info.symlinkTarget,
+    ...(info.mimeType !== undefined ? { mimeType: info.mimeType } : {}),
+    ...(info.symlinkTarget !== undefined
+      ? { symlinkTarget: info.symlinkTarget }
+      : {}),
   };
 }
 

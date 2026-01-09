@@ -32,7 +32,6 @@ function buildHeadResult(
     path: validPath,
     content,
     truncated,
-    totalLines: undefined,
     readMode: 'head',
     head,
     linesRead,
@@ -77,14 +76,17 @@ async function readHeadResult(
   normalized: NormalizedOptions
 ): Promise<ReadFileResult> {
   const head = requireHead(normalized, filePath);
+  const readOptions: Parameters<typeof readHeadContent>[2] = {
+    encoding: normalized.encoding,
+    maxSize: normalized.maxSize,
+  };
+  if (normalized.signal) {
+    readOptions.signal = normalized.signal;
+  }
   const { content, truncated, linesRead, hasMoreLines } = await readHeadContent(
     handle,
     head,
-    {
-      encoding: normalized.encoding,
-      maxSize: normalized.maxSize,
-      signal: normalized.signal,
-    }
+    readOptions
   );
   return buildHeadResult(
     validPath,

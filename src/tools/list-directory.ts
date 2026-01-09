@@ -80,17 +80,18 @@ async function handleListDirectory(
   signal?: AbortSignal
 ): Promise<ToolResponse<ListDirectoryStructuredResult>> {
   const dirPath = resolvePathOrRoot(args.path);
-  const result = await listDirectory(dirPath, {
+  const options: Parameters<typeof listDirectory>[1] = {
     includeHidden: args.includeHidden,
     excludePatterns: args.excludePatterns,
-    pattern: args.pattern,
     maxDepth: args.maxDepth,
     maxEntries: args.maxEntries,
     timeoutMs: args.timeoutMs,
     sortBy: args.sortBy,
     includeSymlinkTargets: args.includeSymlinkTargets,
-    signal,
-  });
+    ...(args.pattern !== undefined ? { pattern: args.pattern } : {}),
+    ...(signal ? { signal } : {}),
+  };
+  const result = await listDirectory(dirPath, options);
   return buildToolResponse(
     buildTextResult(result),
     buildStructuredResult(result)

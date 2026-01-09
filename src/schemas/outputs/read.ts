@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { ErrorSchema } from '../error-schema.js';
+import { OperationSummarySchema } from '../output-helpers.js';
 
 export const ReadFileOutputSchema = z.object({
   ok: z.boolean(),
@@ -23,12 +24,6 @@ export const ReadMultipleFilesOutputSchema = z.object({
       })
     )
     .optional(),
-  summary: z
-    .object({
-      total: z.number(),
-      succeeded: z.number(),
-      failed: z.number(),
-    })
-    .optional(),
+  summary: OperationSummarySchema.optional(),
   error: ErrorSchema.optional(),
 });

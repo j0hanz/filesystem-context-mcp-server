@@ -9,11 +9,11 @@ import { DEFAULT_EXCLUDE_PATTERNS } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { searchFiles } from '../lib/file-operations/search-files.js';
 import { withToolDiagnostics } from '../lib/observability/diagnostics.js';
-import { getAllowedDirectories } from '../lib/path-validation/allowed-directories.js';
 import {
   SearchFilesInputSchema,
   SearchFilesOutputSchema,
 } from '../schemas/index.js';
+import { resolvePathOrRoot } from './shared/resolve-path.js';
 import {
   buildToolErrorResponse,
   buildToolResponse,
@@ -24,15 +24,6 @@ import {
 
 type SearchFilesArgs = z.infer<typeof SearchFilesInputSchema>;
 type SearchFilesStructuredResult = z.infer<typeof SearchFilesOutputSchema>;
-
-function resolvePathOrRoot(path: string | undefined): string {
-  if (path && path.trim().length > 0) return path;
-  const firstRoot = getAllowedDirectories()[0];
-  if (!firstRoot) {
-    throw new Error('No workspace roots configured. Use roots to check.');
-  }
-  return firstRoot;
-}
 
 function buildStructuredResult(
   result: Awaited<ReturnType<typeof searchFiles>>
@@ -64,9 +55,15 @@ function buildTextResult(
   const truncatedReason = summary.truncated
     ? `max results (${summary.matched})`
     : undefined;
+  const summaryOptions: Parameters<typeof formatOperationSummary>[0] = {
+    truncated: summary.truncated,
+  };
+  if (truncatedReason !== undefined) {
+    summaryOptions.truncatedReason = truncatedReason;
+  }
   return (
     joinLines([`Found ${results.length}:`, ...lines]) +
-    formatOperationSummary({ truncated: summary.truncated, truncatedReason })
+    formatOperationSummary(summaryOptions)
   );
 }
 
@@ -75,11 +72,17 @@ async function handleSearchFiles(
   signal?: AbortSignal
 ): Promise<ToolResponse<SearchFilesStructuredResult>> {
   const searchBasePath = resolvePathOrRoot(args.path);
+  const options: Parameters<typeof searchFiles>[3] = {
+    maxResults: args.maxResults,
+  };
+  if (signal) {
+    options.signal = signal;
+  }
   const result = await searchFiles(
     searchBasePath,
     args.pattern,
     DEFAULT_EXCLUDE_PATTERNS,
-    { maxResults: args.maxResults, signal }
+    options
   );
   return buildToolResponse(
     buildTextResult(result),

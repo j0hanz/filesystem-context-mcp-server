@@ -57,11 +57,12 @@ async function buildEntry(
     const stats = options.followSymbolicLinks
       ? await fs.stat(entryPath)
       : await fs.lstat(entryPath);
-    return {
+    const result: GlobEntry = {
       path: entryPath,
       dirent: stats,
-      stats: options.stats ? stats : undefined,
     };
+    if (options.stats) result.stats = stats;
+    return result;
   } catch (error) {
     if (options.suppressErrors) {
       return null;

@@ -15,3 +15,9 @@ export const FileInfoSchema = z.object({
   mimeType: z.string().optional(),
   symlinkTarget: z.string().optional(),
 });
+
+export const OperationSummarySchema = z.object({
+  total: z.number(),
+  succeeded: z.number(),
+  failed: z.number(),
+});

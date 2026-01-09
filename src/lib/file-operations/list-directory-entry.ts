@@ -59,14 +59,17 @@ function buildDirectoryEntry(
   needsStats: boolean,
   symlinkTarget: string | undefined
 ): DirectoryEntry {
+  const size =
+    needsStats && entry.stats?.isFile() ? entry.stats.size : undefined;
+  const modified = needsStats ? entry.stats?.mtime : undefined;
   return {
     name: path.basename(entry.path),
     path: entry.path,
     relativePath: resolveRelativePath(basePath, entry.path),
     type: entryType,
-    size: needsStats && entry.stats?.isFile() ? entry.stats.size : undefined,
-    modified: needsStats ? entry.stats?.mtime : undefined,
-    symlinkTarget,
+    ...(size !== undefined ? { size } : {}),
+    ...(modified !== undefined ? { modified } : {}),
+    ...(symlinkTarget !== undefined ? { symlinkTarget } : {}),
   };
 }
 

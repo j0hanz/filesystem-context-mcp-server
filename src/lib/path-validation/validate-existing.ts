@@ -75,7 +75,7 @@ async function validateExistingPathDetailsInternal(
   const realPath = await resolveRealPathOrThrow({
     requestedPath,
     normalizedRequested,
-    signal,
+    ...(signal ? { signal } : {}),
   });
   const normalizedReal = normalizePath(realPath);
 

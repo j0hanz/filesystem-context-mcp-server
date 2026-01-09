@@ -28,14 +28,17 @@ export type NormalizedOptions = Required<
 export function normalizeOptions(
   options: SearchFilesOptions
 ): NormalizedOptions {
-  return {
+  const normalized: NormalizedOptions = {
     maxResults: options.maxResults ?? INTERNAL_MAX_RESULTS,
     sortBy: options.sortBy ?? 'path',
-    maxDepth: options.maxDepth,
     maxFilesScanned: options.maxFilesScanned ?? DEFAULT_SEARCH_MAX_FILES,
     timeoutMs: options.timeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS,
     baseNameMatch: options.baseNameMatch ?? false,
     skipSymlinks: options.skipSymlinks ?? true,
     includeHidden: options.includeHidden ?? false,
   };
+  if (options.maxDepth !== undefined) {
+    normalized.maxDepth = options.maxDepth;
+  }
+  return normalized;
 }

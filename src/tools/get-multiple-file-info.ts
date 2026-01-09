@@ -70,10 +70,13 @@ async function handleGetMultipleFileInfo(
   signal?: AbortSignal
 ): Promise<ToolResponse<GetMultipleFileInfoStructuredResult>> {
   // Hardcode includeMimeType to true (always want MIME type)
-  const result = await getMultipleFileInfo(args.paths, {
+  const options: Parameters<typeof getMultipleFileInfo>[1] = {
     includeMimeType: true,
-    signal,
-  });
+  };
+  if (signal) {
+    options.signal = signal;
+  }
+  const result = await getMultipleFileInfo(args.paths, options);
 
   return buildToolResponse(
     buildTextResult(result),

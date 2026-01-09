@@ -63,13 +63,18 @@ async function handleReadMultipleFiles(
   args: ReadMultipleArgs,
   signal?: AbortSignal
 ): Promise<ToolResponse<ReadMultipleStructuredResult>> {
-  const results = await readMultipleFiles(args.paths, {
+  const options: Parameters<typeof readMultipleFiles>[1] = {
     encoding: 'utf-8',
     maxSize: MAX_TEXT_FILE_SIZE,
     maxTotalSize: 100 * 1024 * 1024,
-    head: args.head,
-    signal,
-  });
+  };
+  if (args.head !== undefined) {
+    options.head = args.head;
+  }
+  if (signal) {
+    options.signal = signal;
+  }
+  const results = await readMultipleFiles(args.paths, options);
 
   return buildToolResponse(
     joinLines(results.map(formatResult)),

@@ -5,41 +5,16 @@ import { it } from 'node:test';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { registerListAllowedDirectoriesTool } from '../../tools/list-allowed-dirs.js';
+import {
+  enableDiagnosticsEnv,
+  restoreDiagnosticsEnv,
+} from '../shared/diagnostics-env.js';
 
 type ToolHandler = () => Promise<unknown>;
-
-interface DiagnosticsEnvSnapshot {
-  diagnostics?: string;
-  diagnosticsDetail?: string;
-}
 
 interface DiagnosticsSubscription {
   published: unknown[];
   unsubscribe: () => void;
-}
-
-const restoreEnv = (key: string, previous: string | undefined): void => {
-  if (previous === undefined) {
-    Reflect.deleteProperty(process.env, key);
-    return;
-  }
-  process.env[key] = previous;
-};
-
-function enableDiagnosticsEnv(): DiagnosticsEnvSnapshot {
-  const previousEnabled = process.env.FS_CONTEXT_DIAGNOSTICS;
-  const previousDetail = process.env.FS_CONTEXT_DIAGNOSTICS_DETAIL;
-  process.env.FS_CONTEXT_DIAGNOSTICS = '1';
-  process.env.FS_CONTEXT_DIAGNOSTICS_DETAIL = '0';
-  return {
-    diagnostics: previousEnabled,
-    diagnosticsDetail: previousDetail,
-  };
-}
-
-function restoreDiagnosticsEnv(snapshot: DiagnosticsEnvSnapshot): void {
-  restoreEnv('FS_CONTEXT_DIAGNOSTICS', snapshot.diagnostics);
-  restoreEnv('FS_CONTEXT_DIAGNOSTICS_DETAIL', snapshot.diagnosticsDetail);
 }
 
 function subscribeDiagnostics(channel: string): DiagnosticsSubscription {

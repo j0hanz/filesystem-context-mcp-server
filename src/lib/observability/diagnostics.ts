@@ -2,6 +2,10 @@ import { createHash } from 'node:crypto';
 import { channel, tracingChannel } from 'node:diagnostics_channel';
 
 import {
+  resolveDiagnosticsErrorMessage,
+  resolveDiagnosticsOk,
+} from './diagnostics-helpers.js';
+import {
   captureEventLoopUtilization,
   diffEventLoopUtilization,
 } from './perf.js';
@@ -40,25 +44,6 @@ const TOOL_CHANNEL = channel('fs-context:tool');
 const PERF_CHANNEL = channel('fs-context:perf');
 const OPS_TRACE = tracingChannel<unknown, OpsTraceContext>('fs-context:ops');
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function hasBooleanOk(value: unknown): value is { ok: boolean } {
-  return isObject(value) && typeof value.ok === 'boolean';
-}
-
-function resolveDiagnosticsOk(result: unknown): boolean | undefined {
-  if (!isObject(result)) return undefined;
-  if (result.isError === true) return false;
-  if (hasBooleanOk(result)) return result.ok;
-
-  const structured = result.structuredContent;
-  if (hasBooleanOk(structured)) return structured.ok;
-
-  return undefined;
-}
-
 function parseDiagnosticsEnabled(): boolean {
   const normalized = process.env.FS_CONTEXT_DIAGNOSTICS?.trim().toLowerCase();
   return normalized === '1' || normalized === 'true' || normalized === 'yes';
@@ -83,49 +68,25 @@ function normalizePathForDiagnostics(path: string): string | undefined {
 }
 
 function normalizeOpsTraceContext(context: OpsTraceContext): OpsTraceContext {
-  return context.path
-    ? { ...context, path: normalizePathForDiagnostics(context.path) }
-    : context;
-}
-
-function resolvePrimitiveDiagnosticsMessage(
-  error: unknown
-): string | undefined {
-  if (typeof error === 'string') return error;
-  if (typeof error === 'number' || typeof error === 'boolean') {
-    return String(error);
+  if (!context.path) return context;
+  const normalizedPath = normalizePathForDiagnostics(context.path);
+  if (!normalizedPath) {
+    const sanitized: OpsTraceContext = { ...context };
+    delete sanitized.path;
+    return sanitized;
   }
-  if (typeof error === 'bigint') return error.toString();
-  if (typeof error === 'symbol') return error.description ?? 'symbol';
-  return undefined;
-}
-
-function resolveObjectDiagnosticsMessage(error: unknown): string | undefined {
-  if (error instanceof Error) return error.message;
-  if (isObject(error) && typeof error.message === 'string') {
-    return error.message;
-  }
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return undefined;
-  }
-}
-
-function resolveDiagnosticsErrorMessage(error?: unknown): string | undefined {
-  if (error === undefined || error === null) return undefined;
-  return (
-    resolvePrimitiveDiagnosticsMessage(error) ??
-    resolveObjectDiagnosticsMessage(error)
-  );
+  return { ...context, path: normalizedPath };
 }
 
 function publishStartEvent(tool: string, options?: { path?: string }): void {
-  TOOL_CHANNEL.publish({
-    phase: 'start',
-    tool,
-    path: options?.path ? normalizePathForDiagnostics(options.path) : undefined,
-  } satisfies ToolDiagnosticsEvent);
+  const event: ToolDiagnosticsEvent = { phase: 'start', tool };
+  const normalizedPath = options?.path
+    ? normalizePathForDiagnostics(options.path)
+    : undefined;
+  if (normalizedPath !== undefined) {
+    event.path = normalizedPath;
+  }
+  TOOL_CHANNEL.publish(event);
 }
 
 function publishEndEvent(
@@ -134,13 +95,17 @@ function publishEndEvent(
   durationMs: number,
   error?: unknown
 ): void {
-  TOOL_CHANNEL.publish({
+  const event: ToolDiagnosticsEvent = {
     phase: 'end',
     tool,
     ok,
-    error: resolveDiagnosticsErrorMessage(error),
     durationMs,
-  } satisfies ToolDiagnosticsEvent);
+  };
+  const message = resolveDiagnosticsErrorMessage(error);
+  if (message !== undefined) {
+    event.error = message;
+  }
+  TOOL_CHANNEL.publish(event);
 }
 
 function publishPerfEndEvent(

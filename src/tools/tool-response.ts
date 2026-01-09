@@ -79,14 +79,20 @@ export function buildToolErrorResponse(
   const detailed = resolveDetailedError(error, defaultCode, path);
   const text = formatDetailedError(detailed);
 
+  const errorContent: ToolErrorStructuredContent['error'] = {
+    code: detailed.code,
+    message: detailed.message,
+  };
+  if (detailed.path !== undefined) {
+    errorContent.path = detailed.path;
+  }
+  if (detailed.suggestion !== undefined) {
+    errorContent.suggestion = detailed.suggestion;
+  }
+
   const structuredContent: ToolErrorStructuredContent = {
     ok: false,
-    error: {
-      code: detailed.code,
-      message: detailed.message,
-      path: detailed.path,
-      suggestion: detailed.suggestion,
-    },
+    error: errorContent,
   };
   return {
     ...buildContentBlock(text, structuredContent),

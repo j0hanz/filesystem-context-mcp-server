@@ -78,17 +78,21 @@ function patchToolErrorHandling(server: McpServer): void {
 export function createServer(options: ServerOptions = {}): McpServer {
   setServerOptions(options);
 
+  const serverConfig: ConstructorParameters<typeof McpServer>[1] = {
+    capabilities: {
+      logging: {},
+    },
+  };
+  if (serverInstructions) {
+    serverConfig.instructions = serverInstructions;
+  }
+
   const server = new McpServer(
     {
       name: 'fs-context-mcp',
       version: SERVER_VERSION,
     },
-    {
-      instructions: serverInstructions || undefined,
-      capabilities: {
-        logging: {},
-      },
-    }
+    serverConfig
   );
 
   patchToolErrorHandling(server);

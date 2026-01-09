@@ -142,7 +142,7 @@ function buildSummary(
   summary: ScanSummary,
   matches: SearchContentResult['matches']
 ): SearchContentResult['summary'] {
-  return {
+  const baseSummary: SearchContentResult['summary'] = {
     filesScanned: summary.filesScanned,
     filesMatched: summary.filesMatched,
     matches: matches.length,
@@ -151,7 +151,12 @@ function buildSummary(
     skippedBinary: summary.skippedBinary,
     skippedInaccessible: summary.skippedInaccessible,
     linesSkippedDueToRegexTimeout: 0,
-    stoppedReason: summary.stoppedReason,
+  };
+  return {
+    ...baseSummary,
+    ...(summary.stoppedReason !== undefined
+      ? { stoppedReason: summary.stoppedReason }
+      : {}),
   };
 }
 

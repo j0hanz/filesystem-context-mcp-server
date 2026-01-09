@@ -110,12 +110,15 @@ export async function scanFileResolved(
   signal?: AbortSignal,
   maxMatches: number = Number.POSITIVE_INFINITY
 ): Promise<ScanFileResult> {
-  return scanFileWithMatcher(resolvedPath, requestedPath, {
+  const scanOptions: Parameters<typeof scanFileWithMatcher>[2] = {
     matcher,
     options,
     maxMatches,
     isCancelled: () => Boolean(signal?.aborted),
     isProbablyBinary,
-    signal,
-  });
+  };
+  if (signal) {
+    scanOptions.signal = signal;
+  }
+  return scanFileWithMatcher(resolvedPath, requestedPath, scanOptions);
 }

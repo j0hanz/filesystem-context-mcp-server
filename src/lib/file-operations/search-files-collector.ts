@@ -20,7 +20,7 @@ interface CollectState {
   results: SearchResult[];
   filesScanned: number;
   truncated: boolean;
-  stoppedReason: SearchFilesResult['summary']['stoppedReason'];
+  stoppedReason?: SearchFilesResult['summary']['stoppedReason'];
 }
 
 function resolveEntryType(dirent: SearchEntry['dirent']): SearchEntryType {
@@ -41,11 +41,14 @@ function buildSearchResult(
   } else if (entryType === 'file') {
     resolvedType = 'file';
   }
+  const size =
+    needsStats && entry.stats?.isFile() ? entry.stats.size : undefined;
+  const modified = needsStats ? entry.stats?.mtime : undefined;
   return {
     path: entry.path,
     type: resolvedType,
-    size: needsStats && entry.stats?.isFile() ? entry.stats.size : undefined,
-    modified: needsStats ? entry.stats?.mtime : undefined,
+    ...(size !== undefined ? { size } : {}),
+    ...(modified !== undefined ? { modified } : {}),
   };
 }
 
@@ -81,7 +84,7 @@ function shouldIncludeEntry(
   entryType: SearchEntryType,
   normalized: NormalizedOptions
 ): boolean {
-  return !(normalized.skipSymlinks && entryType === 'symlink');
+  return !normalized.skipSymlinks || entryType !== 'symlink';
 }
 
 function createCollectState(): CollectState {
@@ -89,7 +92,6 @@ function createCollectState(): CollectState {
     results: [],
     filesScanned: 0,
     truncated: false,
-    stoppedReason: undefined,
   };
 }
 
@@ -100,31 +102,39 @@ function buildSearchStream(
   normalized: NormalizedOptions,
   needsStats: boolean
 ): AsyncIterable<SearchEntry> {
-  return globEntries({
+  const options: Parameters<typeof globEntries>[0] = {
     cwd: root,
     pattern,
     excludePatterns,
     includeHidden: normalized.includeHidden,
     baseNameMatch: normalized.baseNameMatch,
     caseSensitiveMatch: true,
-    maxDepth: normalized.maxDepth,
     followSymbolicLinks: false,
     onlyFiles: true,
     stats: needsStats,
-  });
+  };
+  if (normalized.maxDepth !== undefined) {
+    options.maxDepth = normalized.maxDepth;
+  }
+  return globEntries(options);
 }
 
 function buildCollectResult(state: CollectState): {
   results: SearchResult[];
   filesScanned: number;
   truncated: boolean;
-  stoppedReason: SearchFilesResult['summary']['stoppedReason'];
+  stoppedReason?: SearchFilesResult['summary']['stoppedReason'];
 } {
-  return {
+  const baseResult = {
     results: state.results,
     filesScanned: state.filesScanned,
     truncated: state.truncated,
-    stoppedReason: state.stoppedReason,
+  };
+  return {
+    ...baseResult,
+    ...(state.stoppedReason !== undefined
+      ? { stoppedReason: state.stoppedReason }
+      : {}),
   };
 }
 
@@ -173,7 +183,7 @@ export async function collectSearchResults(
   results: SearchResult[];
   filesScanned: number;
   truncated: boolean;
-  stoppedReason: SearchFilesResult['summary']['stoppedReason'];
+  stoppedReason?: SearchFilesResult['summary']['stoppedReason'];
 }> {
   const needsStats = needsStatsForSort(normalized.sortBy);
   const stream = buildSearchStream(
@@ -192,13 +202,16 @@ export function buildSearchSummary(
   results: SearchResult[],
   filesScanned: number,
   truncated: boolean,
-  stoppedReason: SearchFilesResult['summary']['stoppedReason']
+  stoppedReason: SearchFilesResult['summary']['stoppedReason'] | undefined
 ): SearchFilesResult['summary'] {
-  return {
+  const baseSummary: SearchFilesResult['summary'] = {
     matched: results.length,
     truncated,
     skippedInaccessible: 0,
     filesScanned,
-    stoppedReason,
+  };
+  return {
+    ...baseSummary,
+    ...(stoppedReason !== undefined ? { stoppedReason } : {}),
   };
 }
