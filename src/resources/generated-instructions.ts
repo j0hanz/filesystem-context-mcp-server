@@ -7,32 +7,28 @@ import {
 } from './tool-info.js';
 import { buildWorkflowGuide } from './workflows.js';
 
-const INSTRUCTIONS_HEADER = `# FILESYSTEM-MCP INSTRUCTIONS
+const INSTRUCTIONS_HEADER = `# FILESYSTEM-MCP
 
-> Resource: \`internal://instructions\` | Prompt: \`get-help\`
+Operate ONLY within allowed roots. Always discover before acting — never guess paths.
 
-## CORE CAPABILITY
+## TOOLS
 
-- **Domain:** Safe local filesystem operations (read/write/diff/patch) within allowed roots.
-- **Tools:**
-  - READ: \`roots\`, \`ls\`, \`find\`, \`tree\`, \`read\`, \`read_many\`, \`stat\`, \`stat_many\`, \`grep\`, \`calculate_hash\`, \`diff_files\`.
-  - WRITE: \`mkdir\`, \`write\`, \`edit\`, \`mv\`, \`rm\`, \`apply_patch\`, \`search_and_replace\`.
+| Category | Tools |
+|----------|-------|
+| Navigate | \`roots\`, \`ls\`, \`tree\`, \`find\` |
+| Inspect  | \`stat\`, \`stat_many\`, \`grep\`, \`calculate_hash\` |
+| Read     | \`read\`, \`read_many\`, \`diff_files\` |
+| Write    | \`mkdir\`, \`write\`, \`edit\`, \`mv\`, \`rm\`, \`apply_patch\`, \`search_and_replace\` |
 
 ## RESOURCES
 
-- \`filesystem-mcp://result/{id}\`: Ephemeral cached output.
-- \`filesystem-mcp://metrics\`: Live tool stats.
-- **Tip:** If response has \`resourceUri\`, call \`resources/read\` to fetch full content.
+- \`filesystem-mcp://result/{id}\`: Large output is cached here. **If a response includes \`resourceUri\`, call \`resources/read\` immediately — results expire on process restart.**
+- \`filesystem-mcp://metrics\`: Live per-tool call/error stats.
 
-## PROGRESS & TASKS
+## TASK PROTOCOL
 
-- Support \`_meta.progressToken\` for updates.
-- Task tools: \`find\`, \`tree\`, \`read\`, \`read_many\`, \`stat_many\`, \`grep\`, \`mkdir\`, \`write\`, \`mv\`, \`rm\`, \`calculate_hash\`, \`apply_patch\`, \`search_and_replace\`.
-- Flow: \`tools/call\` (task) → \`tasks/get\` → \`tasks/result\`.
-
-## GOLDEN PATH WORKFLOWS
-
-See "Workflow Reference" below for detailed execution sequences.
+Long-running tools support async execution: provide \`_meta.progressToken\` in \`tools/call\`, poll \`tasks/get\`, then call \`tasks/result\`.
+Task-capable: \`find\`, \`tree\`, \`read\`, \`read_many\`, \`stat_many\`, \`grep\`, \`mkdir\`, \`write\`, \`mv\`, \`rm\`, \`calculate_hash\`, \`apply_patch\`, \`search_and_replace\`.
 
 `;
 

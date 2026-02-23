@@ -57,6 +57,6 @@ export function getSharedConstraints(): string[] {
     'Allowed roots only (negotiated via CLI).',
     'Sensitive files denylisted by default.',
     `Max file size (${Math.floor(MAX_TEXT_FILE_SIZE / 1024 / 1024)}MB) & search results (${MAX_SEARCH_RESULTS} files, ${DEFAULT_SEARCH_CONTENT_RESULTS} lines) enforced.`,
-    'Externalized results are ephemeral (in-memory).',
+    'If a response includes `resourceUri`, call `resources/read` immediately — results expire on process restart.',
   ];
 }

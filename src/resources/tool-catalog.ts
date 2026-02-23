@@ -1,12 +1,12 @@
 import { buildCoreContextPack } from './tool-info.js';
 
-const CATALOG_GUIDE = `## Tool Catalog Details
+const CATALOG_GUIDE = `## Tool Selection Guide
 
 ## Cross-Tool Data Flow
 
 \`\`\`
-find -> output_paths -> grep.paths
-diff_files -> output_patch -> apply_patch.patch
+find (results[].path) -> grep.paths
+diff_files (patch text) -> apply_patch.patch
 \`\`\`
 
 ## Search Strategy
@@ -14,6 +14,12 @@ diff_files -> output_patch -> apply_patch.patch
 - Use \`find\` for glob-based file discovery.
 - Use \`grep\` for content-based searches.
 - Use \`search_and_replace\` ONLY for bulk replacements, not for discovery.
+
+## Write Strategy
+
+- Use \`edit\` for precise, single-occurrence string replacements in existing files.
+- Use \`write\` to create new files or completely overwrite existing content.
+- Use \`search_and_replace\` for bulk regex replacements across multiple files.
 
 ## Patch Management
 

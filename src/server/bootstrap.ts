@@ -105,7 +105,7 @@ export async function createServer(
   if (serverInstructions) {
     serverConfig.instructions =
       'filesystem-mcp: Secure local filesystem MCP server. ' +
-      'Essential sequence: roots → ls/tree/find → read/grep. ' +
+      'Always begin with: roots → ls/find → stat → read. Never guess paths. ' +
       'Full reference: read the internal://instructions resource or invoke the get-help prompt.';
   }
 
