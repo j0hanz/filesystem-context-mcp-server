@@ -36,6 +36,7 @@ interface GlobDirentLike extends DirentLike {
 
 interface GlobEntry {
   path: string;
+  relativePath?: string;
   dirent: DirentLike;
   stats?: Stats;
 }
@@ -67,7 +68,7 @@ interface NormalizedGlob {
 
 const GLOB_MAGIC_RE = /[*?[\]{}!]/u;
 const DEFAULT_MAX_HIDDEN_DEPTH = 10;
-const GLOB_BATCH_CONCURRENCY = 32;
+const GLOB_BATCH_CONCURRENCY = 64;
 const SEP = '/';
 const DOT_CHAR_CODE = 46;
 const GLOB_BOOLEAN_OPTION_KEYS: readonly (keyof GlobEntriesOptions)[] = [
@@ -358,6 +359,9 @@ async function resolveStringMatch(
     if (onlyFiles && !stats.isFile()) return null;
 
     const entry: GlobEntry = { path: absolutePath, dirent: stats };
+    if (!path.isAbsolute(match)) {
+      entry.relativePath = match;
+    }
     if (returnStats) entry.stats = stats;
     return entry;
   } catch (error) {

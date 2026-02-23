@@ -67,6 +67,7 @@ type SearchEntryType = 'directory' | 'symlink' | 'file' | 'other';
 
 interface SearchEntry {
   path: string;
+  relativePath?: string;
   dirent: {
     isDirectory(): boolean;
     isSymbolicLink(): boolean;
@@ -233,7 +234,14 @@ async function collectFromStream(
       normalized.maxFilesScanned
     );
 
-    if (isEntryIgnoredByGitignore(gitignoreMatcher, root, entry.path)) {
+    if (
+      isEntryIgnoredByGitignore(
+        gitignoreMatcher,
+        root,
+        entry.path,
+        entry.relativePath
+      )
+    ) {
       continue;
     }
 
@@ -269,10 +277,16 @@ async function collectFromStream(
 function isEntryIgnoredByGitignore(
   matcher: Awaited<ReturnType<typeof loadRootGitignore>>,
   root: string,
-  entryPath: string
+  entryPath: string,
+  relativePath?: string
 ): boolean {
   if (!matcher) return false;
-  return isIgnoredByGitignore(matcher, root, entryPath);
+  return isIgnoredByGitignore(
+    matcher,
+    root,
+    entryPath,
+    relativePath ? { relativePath } : {}
+  );
 }
 
 async function isEntryAccessible(

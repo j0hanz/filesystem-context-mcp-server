@@ -14,6 +14,7 @@ const PATH_SEPARATOR = path.sep;
 
 const DRIVE_LETTER_REGEX = /^[A-Za-z]:/;
 const WINDOWS_DRIVE_REL_REGEX = /^[A-Za-z]:$/u;
+const LEADING_SEPARATORS_RE = /^[/\\]+/;
 
 const RESERVED_DEVICE_NAMES = new Set([
   'CON',
@@ -50,7 +51,7 @@ function expandHome(filepath: string): string {
   // Accept both "~/" and "~\\" for cross-platform UX.
   if (filepath.startsWith('~/') || filepath.startsWith('~\\')) {
     // Avoid `path.join(HOMEDIR, "/foo")` resetting to the filesystem root.
-    const rest = filepath.slice(2).replace(/^[/\\]+/, '');
+    const rest = filepath.slice(2).replace(LEADING_SEPARATORS_RE, '');
     return rest.length === 0 ? HOMEDIR : path.join(HOMEDIR, rest);
   }
 
@@ -83,7 +84,11 @@ function rethrowIfAborted(error: unknown): void {
 
 function isSamePath(left: string, right: string): boolean {
   if (left === right) return true;
-  return normalizeForComparison(left) === normalizeForComparison(right);
+  const leftResolved = path.resolve(left);
+  const rightResolved = path.resolve(right);
+  return IS_WINDOWS
+    ? leftResolved.toLowerCase() === rightResolved.toLowerCase()
+    : leftResolved === rightResolved;
 }
 
 function stripTrailingSeparator(normalized: string): string {

@@ -46,9 +46,10 @@ export function isIgnoredByGitignore(
   matcher: Ignore,
   root: string,
   absolutePath: string,
-  options: { isDirectory?: boolean } = {}
+  options: { isDirectory?: boolean; relativePath?: string } = {}
 ): boolean {
-  const relative = path.relative(root, absolutePath);
+  let relative = options.relativePath;
+  relative ??= path.relative(root, absolutePath);
   if (relative.length === 0) return false;
 
   const normalized = toPosixPath(relative);
