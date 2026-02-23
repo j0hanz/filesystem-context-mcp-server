@@ -29,12 +29,12 @@ export const WRITE_FILE_TOOL: ToolContract = {
   name: 'write',
   title: 'Write File',
   description:
-    'Write content to a file. Creates the file if it does not exist.',
+    'Write content to a file, OVERWRITING ALL existing content. Creates the file and parent directories if needed.',
   inputSchema: WriteFileInputSchema,
   outputSchema: WriteFileOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
-  nuances: [
-    'Creates parent directories automatically; overwrites existing content.',
+  gotchas: [
+    '`write` replaces ALL existing content — use `edit` for partial updates.',
   ],
 } as const;
 

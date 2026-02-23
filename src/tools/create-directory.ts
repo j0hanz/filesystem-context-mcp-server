@@ -31,10 +31,11 @@ import { registerToolTaskIfAvailable } from './task-support.js';
 export const CREATE_DIRECTORY_TOOL: ToolContract = {
   name: 'mkdir',
   title: 'Create Directory',
-  description: 'Create a new directory at the specified path (recursive)',
+  description: 'Create a new directory at the specified path (recursive).',
   inputSchema: CreateDirectoryInputSchema,
   outputSchema: CreateDirectoryOutputSchema,
   annotations: IDEMPOTENT_WRITE_TOOL_ANNOTATIONS,
+  nuances: ['Succeeds silently if the directory already exists (idempotent).'],
 } as const;
 
 async function handleCreateDirectory(

@@ -28,11 +28,13 @@ import { registerToolTaskIfAvailable } from './task-support.js';
 export const DELETE_FILE_TOOL: ToolContract = {
   name: 'rm',
   title: 'Delete File',
-  description: 'Delete a file or directory.',
+  description:
+    'Permanently delete a file or directory. This action is irreversible.',
   inputSchema: DeleteFileInputSchema,
   outputSchema: DeleteFileOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   gotchas: [
+    'Deletion is permanent — there is no undo or recycle bin.',
     'Non-empty directory delete requires `recursive=true`; else returns actionable input error.',
   ],
 } as const;

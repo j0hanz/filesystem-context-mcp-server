@@ -9,7 +9,7 @@ find -> output_paths -> grep.paths
 diff_files -> output_patch -> apply_patch.patch
 \`\`\`
 
-## Search Strategy Strategy
+## Search Strategy
 
 - Use \`find\` for glob-based file discovery.
 - Use \`grep\` for content-based searches.
@@ -23,7 +23,6 @@ diff_files -> output_patch -> apply_patch.patch
 `;
 
 export function buildToolCatalog(): string {
-  // Return combined view for standalone resource usage
   return `${buildCoreContextPack()}\n\n${CATALOG_GUIDE}`;
 }
 

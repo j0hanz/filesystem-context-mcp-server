@@ -54,20 +54,12 @@ ${getSharedConstraints()
 function formatToolSection(tool: ToolContract): string {
   const parts = [`${tool.name}: ${tool.description}`];
 
-  if (tool.annotations) {
-    const attrs: string[] = [];
-    if (tool.annotations.destructiveHint) attrs.push('[Destructive]');
-    if (tool.annotations.idempotentHint) attrs.push('[Idempotent]');
-    if (tool.annotations.readOnlyHint) attrs.push('[Read-Only]');
-    if (attrs.length > 0) parts.push(attrs.join(' '));
-  }
-
   if (tool.nuances && tool.nuances.length > 0) {
-    parts.push(...tool.nuances.map((n) => `! ${n}`));
+    parts.push(...tool.nuances.map((n) => `» ${n}`));
   }
 
   if (tool.gotchas && tool.gotchas.length > 0) {
-    parts.push(...tool.gotchas.map((g) => `! ${g}`));
+    parts.push(...tool.gotchas.map((g) => `⚠ ${g}`));
   }
 
   return parts.join('\n');

@@ -80,7 +80,7 @@ export function registerToolCatalogResource(
         mimeType: 'text/markdown',
         annotations: {
           audience: ['assistant'],
-          priority: 0.6,
+          priority: 0.7,
         },
       },
       iconInfo
@@ -111,7 +111,7 @@ export function registerWorkflowGuideResource(
         mimeType: 'text/markdown',
         annotations: {
           audience: ['assistant'],
-          priority: 0.7,
+          priority: 0.6,
         },
       },
       iconInfo

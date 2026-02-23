@@ -35,7 +35,8 @@ import { registerToolTaskIfAvailable } from './task-support.js';
 export const GET_MULTIPLE_FILE_INFO_TOOL: ToolContract = {
   name: 'stat_many',
   title: 'Get Multiple File Info',
-  description: 'Get metadata for multiple files or directories in one request.',
+  description:
+    'Get metadata (including tokenEstimate) for multiple files or directories in one request. Use tokenEstimate (size÷4) to pre-screen token cost before reading.',
   inputSchema: GetMultipleFileInfoInputSchema,
   outputSchema: GetMultipleFileInfoOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,

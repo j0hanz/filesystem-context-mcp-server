@@ -50,8 +50,14 @@ const FileTypeSchema = z.enum(['file', 'directory', 'symlink', 'other']);
 
 const ListDirectorySortSchema = z.enum(['name', 'size', 'modified', 'type']);
 const SearchFilesSortSchema = z.enum(['name', 'size', 'modified', 'path']);
-const SearchStopReasonSchema = z.enum(['maxResults', 'maxFiles', 'timeout']);
-const ListDirectoryStopReasonSchema = z.enum(['maxEntries', 'aborted']);
+const SearchStopReasonSchema = z
+  .enum(['maxResults', 'maxFiles', 'timeout'])
+  .describe(
+    'maxResults: result limit hit; maxFiles: file count limit hit; timeout: time limit exceeded'
+  );
+const ListDirectoryStopReasonSchema = z
+  .enum(['maxEntries', 'aborted'])
+  .describe('maxEntries: entry limit hit; aborted: operation was cancelled');
 
 interface TreeEntry {
   name: string;

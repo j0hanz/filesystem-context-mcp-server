@@ -19,7 +19,13 @@ function filterInstructionsByTopic(
   const match = sections.find((sec) =>
     sec.toLowerCase().startsWith(`## ${normalized}`)
   );
-  return match ?? instructions;
+  if (match !== undefined) return match;
+  const available = sections
+    .filter((sec) => sec.startsWith('## '))
+    .map((sec) => sec.split('\n')[0]?.replace(/^##\s*/u, '') ?? '')
+    .filter(Boolean)
+    .join(', ');
+  return `Section '${topic}' not found. Available sections: ${available}\n\n${instructions}`;
 }
 
 export function registerGetHelpPrompt(
