@@ -61,7 +61,7 @@ export const SEARCH_CONTENT_TOOL: ToolContract = {
   gotchas: [
     'Skips binary and oversized files silently — check file type with `stat` if no matches appear.',
   ],
-  taskSupport: 'required',
+  taskSupport: 'optional',
 } as const;
 
 function assertValidRegexPattern(pattern: string): void {

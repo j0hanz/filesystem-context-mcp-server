@@ -40,7 +40,7 @@ export const GET_MULTIPLE_FILE_INFO_TOOL: ToolContract = {
   inputSchema: GetMultipleFileInfoInputSchema,
   outputSchema: GetMultipleFileInfoOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
-  taskSupport: 'required',
+  taskSupport: 'optional',
   nuances: ['Use before read/search when file size/type uncertainty exists.'],
 } as const;
 

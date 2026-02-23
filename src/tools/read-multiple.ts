@@ -44,7 +44,7 @@ export const READ_MULTIPLE_FILES_TOOL: ToolContract = {
   inputSchema: ReadMultipleFilesInputSchema,
   outputSchema: ReadMultipleFilesOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
-  taskSupport: 'required',
+  taskSupport: 'optional',
   nuances: ['Total read budget is capped by `MAX_READ_MANY_TOTAL_SIZE`.'],
   gotchas: [
     'Per-file `truncationReason` can be `head`, `range`, or `externalized`.',

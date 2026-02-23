@@ -69,7 +69,7 @@ export const SEARCH_FILES_TOOL: ToolContract = {
     'Respects `.gitignore` unless `includeIgnored=true`.',
     'Returns relative paths plus metadata; may truncate.',
   ],
-  taskSupport: 'required',
+  taskSupport: 'optional',
 } as const;
 
 async function handleSearchFiles(
