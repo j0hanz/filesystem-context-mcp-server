@@ -59,7 +59,7 @@ export const SEARCH_CONTENT_TOOL: ToolContract = {
     'Skips binary and oversized files.',
   ],
   gotchas: [
-    'Inline match rows are capped (first 50); full structured results are externalized via `resourceUri`.',
+    'Skips binary and oversized files silently — check file type with `stat` if no matches appear.',
   ],
   taskSupport: 'required',
 } as const;

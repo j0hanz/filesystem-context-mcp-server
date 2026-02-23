@@ -36,9 +36,6 @@ export const WRITE_FILE_TOOL: ToolContract = {
   nuances: [
     'Creates parent directories automatically; overwrites existing content.',
   ],
-  gotchas: [
-    'Creates parent directories automatically; overwrites existing content.',
-  ],
 } as const;
 
 async function handleWriteFile(

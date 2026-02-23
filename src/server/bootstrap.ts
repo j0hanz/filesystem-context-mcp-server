@@ -249,6 +249,14 @@ function sendJsonRpcError(
   );
 }
 
+const LOCALHOST_ORIGIN_RE =
+  /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/u;
+
+function isAllowedOrigin(origin: string | undefined): boolean {
+  if (origin === undefined) return true; // Non-browser clients omit Origin.
+  return LOCALHOST_ORIGIN_RE.test(origin);
+}
+
 export async function startHttpServer(
   port: number,
   options: ServerOptions
@@ -261,6 +269,12 @@ export async function startHttpServer(
   ): Promise<void> {
     const { method } = req;
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
+
+    const { origin } = req.headers;
+    if (!isAllowedOrigin(origin)) {
+      sendJsonRpcError(res, 403, -32000, 'Forbidden: disallowed origin');
+      return;
+    }
 
     const apiKey = process.env['FILESYSTEM_MCP_API_KEY'];
     if (apiKey) {
@@ -360,10 +374,14 @@ export async function startHttpServer(
     }
   );
 
+  // Default to localhost-only binding to prevent DNS-rebinding and unintended
+  // external exposure. Override with FILESYSTEM_MCP_HTTP_HOST for remote setups.
+  const httpHost = process.env['FILESYSTEM_MCP_HTTP_HOST'] ?? '127.0.0.1';
+
   return new Promise<http.Server>((resolve, reject) => {
     httpServer.once('error', reject);
-    httpServer.listen(port, () => {
-      console.error(`MCP HTTP server listening on port ${port}`);
+    httpServer.listen(port, httpHost, () => {
+      console.error(`MCP HTTP server listening on ${httpHost}:${port}`);
       resolve(httpServer);
     });
   });
