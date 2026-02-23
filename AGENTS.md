@@ -1,115 +1,218 @@
 # AGENTS.md
 
-> Purpose: High-signal context and strict guidelines for AI agents working in this repository.
+MCP Server (`filesystem-mcp`) that enables LLMs to interact with the local filesystem via the Model Context Protocol — providing navigation, search, file management, and analysis tools strictly scoped to allowed root directories.
 
-## 1) Project Context
+**Package manager:** npm · **Node.js:** >=24 · **TypeScript:** strict, ESM/NodeNext
 
-- **Domain:** MCP (Model Context Protocol) server that enables LLMs to interact safely with the local filesystem — read, search, edit, diff, patch, and traverse directory trees. (see `package.json`)
-- **Tech Stack (Verified):**
-  - **Languages:** TypeScript 5.9.x targeting ES2022/NodeNext (see `tsconfig.json`, `package.json` devDependencies)
-  - **Runtime:** Node.js ≥ 24 required (see `package.json` `engines.node`)
-  - **Frameworks:** `@modelcontextprotocol/sdk` ^1.26.0 (MCP server + transports); no web framework (see `package.json` dependencies)
-  - **Key Libraries:** `zod` ^4.3.6 (schema validation + tool I/O), `re2` ^1.23.2 (safe regex engine), `diff` ^8.0.3 (unified diff generation), `ignore` ^7.0.5 (`.gitignore`-style filtering), `commander` ^14.0.3 (CLI arg parsing) (see `package.json` dependencies)
-- **Architecture:** Single-package Node.js MCP server. Dual-transport: stdio (default) and HTTP (`--port` flag). Tools follow a `ToolContract` interface declared in `src/tools/contract.ts`. Zod v4 schemas in `src/schemas.ts` govern all I/O. Environment variable-driven configuration in `src/lib/constants.ts`. Sensitive-file blocking enforced at the path-policy layer (`src/lib/path-policy.ts`).
+---
 
-## 2) Repository Map (High-Level)
+## Commands
 
-- `src/index.ts`: CLI entrypoint — parses args, sets allowed directories, starts stdio or HTTP transport
-- `src/server/`: MCP server bootstrap, capability declaration, roots-manager, logging state, and type definitions (see `src/server/bootstrap.ts`, `src/server/roots-manager.ts`)
-- `src/tools/`: 21 tool implementations (one file per tool) — read, write, edit, find, grep, tree, ls, stat, diff, patch, move, delete, hash, etc. (see `src/tools/`)
-- `src/tools/contract.ts`: `ToolContract` interface — every tool must declare `name`, `title`, `description`, `inputSchema`, `outputSchema`, `annotations`, `nuances`, `gotchas`
-- `src/schemas.ts`: Zod v4 schemas for all tool input/output types; uses `z.strictObject` (rejects unknown keys)
-- `src/lib/`: Shared utilities — `constants.ts` (env-configured limits), `errors.ts` (`ErrorCode` enum + `McpError`), `path-policy.ts` (sensitive-file deny/allow list), `path-validation.ts` (allowed directories), `fs-helpers.ts`, `path-format.ts`, `observability.ts`, `resource-store.ts`, `type-guards.ts`
-- `src/resources/`: MCP resource registrations (instructions, metrics, result cache)
-- `src/completions.ts`, `src/prompts.ts`, `src/resources.ts`: MCP completions, prompts, and resource registration entry points
-- `src/cli.ts`: CLI argument parsing using `commander`
-- `src/__tests__/`: All test files organized by subsystem (`tools/`, `lib/`, `server/`, `integration/`, `security/`, `shared/`)
-- `scripts/tasks.mjs`: Custom build/test pipeline (clean → compile → copy assets → make executable)
-- `.github/workflows/release.yml`: Only CI workflow — manual release trigger; validates lint + type-check + test + build before publishing
-- `docker-compose.yml`: Docker Compose definition (exists at repo root)
-- `assets/`: Static assets (logo.svg) copied to `dist/assets/` on build
-- `server.json`: MCP Registry manifest; version kept in sync with `package.json` on release
+```bash
+# Build (compiles src/ → dist/ via tsconfig.build.json)
+npm run build
 
-> Ignore generated/vendor dirs: `dist/`, `node_modules/`, `.tsbuildinfo`.
+# Type-check source only (fast)
+npm run type-check:src
 
-## 3) Operational Commands (Verified)
+# Type-check tests
+npm run type-check:tests
 
-**Source of truth:** `.github/workflows/release.yml` (`Install & validate` step) and `package.json` scripts.
+# Lint
+npm run lint
 
-- **Environment:** Node.js ≥ 24 required; no virtual env or container needed for local dev. (see `package.json` `engines`)
-- **Install:** `npm ci` (see release.yml line `npm ci`)
-- **Dev (watch):** `npm run dev` → `tsc --watch --preserveWatchOutput` (see `package.json` scripts)
-- **Dev (run built):** `npm run dev:run` → `node --env-file=.env --watch dist/index.js` (see `package.json` scripts)
-- **Test:** `npm run test` → `node scripts/tasks.mjs test` — **automatically runs a full build first**, then invokes `node --test --import tsx/esm <patterns>` (see `scripts/tasks.mjs` `TestTasks.test`)
-- **Test (fast, no rebuild):** `npm run test:fast` → `node --test --import tsx/esm src/__tests__/**/*.test.ts node-tests/**/*.test.ts` (see `package.json` scripts)
-- **Test (coverage):** `npm run test:coverage` → adds `--experimental-test-coverage` flag (see `package.json` scripts)
-- **Build:** `npm run build` → `node scripts/tasks.mjs build` (clean → tsc → copy assets → chmod 755 on executable) (see `scripts/tasks.mjs`)
-- **Lint:** `npm run lint` → `eslint .` (see `package.json` scripts)
-- **Lint (fix):** `npm run lint:fix` → `eslint . --fix`
-- **Format:** `npm run format` → `prettier --write .` (see `package.json` scripts)
-- **Type-check:** `npm run type-check` → checks `src/` with `tsconfig.json` and tests with `tsconfig.test.json`, both `--noEmit` (see `scripts/tasks.mjs` `TestTasks.typeCheck`)
-- **MCP Inspector:** `npm run inspector` → builds then opens `@modelcontextprotocol/inspector` (see `package.json` scripts)
+# Lint + auto-fix
+npm run lint:fix
 
-## 4) Coding Standards (Style & Patterns)
+# Format
+npm run format
 
-- **Naming:** `camelCase` for variables/functions/parameters; `PascalCase` for types, classes, interfaces, enum members; `UPPER_CASE` for module-level constants; `_`-prefixed names for intentionally unused values (see `eslint.config.mjs` `@typescript-eslint/naming-convention` rules)
-- **Structure:** Business logic in `src/lib/`; tool declarations in `src/tools/` (one file per tool); schemas centralized in `src/schemas.ts`; server wiring in `src/server/`; entrypoint in `src/index.ts`
-- **Imports:** `import type { ... }` required for type-only imports (enforced by `@typescript-eslint/consistent-type-imports` with `prefer: 'type-imports'`). All imports must use `.js` extension due to `verbatimModuleSyntax` + NodeNext module resolution (see `tsconfig.json`, `eslint.config.mjs`)
-- **Explicit return types:** All non-expression functions must declare return type (enforced: `@typescript-eslint/explicit-function-return-type: error`, see `eslint.config.mjs`)
-- **Typing/Strictness:** Full strict mode — `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride`, `noImplicitReturns` all enabled (see `tsconfig.json`)
-- **Zod schemas:** Use `z.strictObject` (not `z.object`) so unknown keys are rejected at parse time (observed in `src/schemas.ts`)
-- **Error handling:** Throw `McpError` with `ErrorCode` enum values; never throw plain strings (observed in `src/lib/errors.ts`, `src/lib/path-policy.ts`)
-- **Environment configuration:** All configurable limits live in `src/lib/constants.ts` with `parseEnvInt`/`parseEnvBool`/`parseEnvList` helpers; hard bounds enforced (observed in `src/lib/constants.ts`)
-- **Patterns Observed:**
-  - `ToolContract` interface in `src/tools/contract.ts` — every tool self-describes its annotations, nuances, and gotchas for auto-generated instructions
-  - WeakMap for server-scoped state (`rootsManagers` WeakMap) to avoid memory leaks (observed in `src/server/bootstrap.ts`)
-  - Timing-safe comparison (`timingSafeEqual`) for HTTP API key auth (observed in `src/server/bootstrap.ts`)
-  - `node:test` and `node:assert/strict` (no third-party test framework) — tests use `void it(...)` pattern (observed in `src/.__tests__/tools/tool-defaults.test.ts`)
-  - `tsx/esm` loader for running TypeScript tests without pre-compilation (observed in `scripts/tasks.mjs`, `package.json`)
-  - Long-running tools (`tree`, `search`, etc) implement manual progress reporting via `notifyProgress` and `createProgressReporter`, avoiding `wrapToolHandler`'s one-shot messages (observed in `src/tools/tree.ts`, `src/tools/search-files.ts`)
+# Run all tests
+npm test
 
-## 5) Agent Behavioral Rules (Do Nots)
+# Run tests fast (without coverage, no task runner)
+npm run test:fast
 
-- **Do not introduce new dependencies** without running `npm install <pkg>` (or `npm install --save-dev <pkg>`) to update both `package.json` and `package-lock.json`. (see `package-lock.json` presence)
-- **Do not edit `package-lock.json` manually.** Use `npm` commands only. (see `package-lock.json`)
-- **Do not commit secrets or print `.env` values.** The HTTP transport blocks unauthorized requests via `FILESYSTEM_MCP_API_KEY` env var using timing-safe comparison. Never log or expose this value. (see `src/server/bootstrap.ts`)
-- **Do not change public tool schemas or `ToolContract` fields** without updating `src/schemas.ts`, affected tool files, and verifying that the `internal://instructions` resource still builds correctly (`src/resources/generated-instructions.ts`). MCP clients depend on stable tool names and schemas.
-- **Do not use `z.object()`** in new schemas — use `z.strictObject()` to reject unknown keys consistently. (see `src/schemas.ts`)
-- **Do not write `import { Foo }` for type-only symbols** — always use `import type { Foo }`. ESLint enforces this and will fail CI. (see `eslint.config.mjs` `consistent-type-imports`)
-- **Do not omit `.js` extensions in import paths.** `verbatimModuleSyntax` + NodeNext require explicit `.js` extensions even for `.ts` source files. (see `tsconfig.json`)
-- **Do not add `any` types** — `@typescript-eslint/no-explicit-any: error` is enforced in `src/**/*.ts`. (see `eslint.config.mjs`)
-- **Do not disable or bypass lint/type rules** without an inline `// ts-expect-error <description>` comment of at least 10 characters. `ts-ignore` is allowed but also requires a description. `ts-nocheck` is banned. (see `eslint.config.mjs` `ban-ts-comment` rule)
-- **Do not modify `server.json` version manually.** It is kept in sync with `package.json` via the release workflow. (see `.github/workflows/release.yml`)
-- **Do not skip verification after changes.** The release pipeline enforces `lint → type-check → test → build` in that order. (see `.github/workflows/release.yml` `Install & validate` step)
+# Run a specific test file
+node --test --import tsx/esm src/__tests__/<path/to/file>.test.ts
 
-## 6) Testing Strategy (Verified)
+# Clean build artifacts
+npm run clean
 
-- **Framework:** Node.js built-in `node:test` runner with `node:assert/strict` assertions (no jest/vitest). (seen in `src/__tests__/tools/tool-defaults.test.ts`, `package.json`)
-- **TypeScript loader:** `tsx/esm` — tests run directly against `.ts` source files via `--import tsx/esm`. (see `scripts/tasks.mjs` `detectTestLoader`)
-- **Where tests live:**
-  - `src/__tests__/tools/` — per-tool unit/behavioral tests (17 files, e.g., `tool-defaults.test.ts`, `grep-regex-mode.test.ts`, `task-support.test.ts`)
-  - `src/__tests__/lib/` — library unit tests
-  - `src/__tests__/server/` — server unit tests
-  - `src/__tests__/integration/` — integration tests
-  - `src/__tests__/security/` — security/policy tests (e.g., `sensitive-policy.test.ts`)
-  - `src/__tests__/shared/` — shared test helpers and diagnostic utilities
-  - `tests/` and `node-tests/` — additional test directories (pattern-matched; only included if directories exist)
-- **Approach:** Unit tests use Zod schema `.parse()` and direct handler invocation via `createSingleToolCapture()` helper from `src/__tests__/shared/diagnostics-env.ts`. Integration tests exercise server lifecycle. Security tests verify sensitive-file policy enforcement. No external services or containers required (all in-process). (see `src/__tests__/tools/tool-defaults.test.ts`, `src/__tests__/security/`)
-- **Running tests fast (no rebuild):** Use `npm run test:fast` to skip the full build step during iteration.
-- **Coverage:** `npm run test:coverage` adds `--experimental-test-coverage` (Node.js built-in).
+# Dev mode (watch build)
+npm run dev
 
-## 7) Common Pitfalls (Verified)
+# Inspect server with MCP inspector
+npm run inspector
+```
 
-- **Missing `.js` extension in imports** → TypeScript compilation succeeds locally but Node.js ESM resolution fails at runtime. Always use `.js` extension in import paths (e.g., `import { foo } from './foo.js'`). (see `tsconfig.json` `verbatimModuleSyntax` + NodeNext)
-- **`npm run test` rebuilds on every run** → Use `npm run test:fast` during development to skip the `build` step and run tests directly against source via `tsx/esm`. (see `scripts/tasks.mjs` `TestTasks.test` which calls `Pipeline.fullBuild()` first)
-- **`z.object()` allows extra keys** → Use `z.strictObject()` for all MCP tool I/O schemas; existing tests assert `Unrecognized key` errors on schemas with unknown fields. (see `src/__tests__/tools/tool-defaults.test.ts`)
-- **`node:test` requires `void` prefix on top-level async tests** → Write `void it(...)` at the module top level to prevent floating promise warnings. (observed in `src/__tests__/tools/tool-defaults.test.ts`)
-- **`@typescript-eslint/no-non-null-assertion` vs non-nullable assertion style** → Use narrowing (`if (val !== undefined)`) instead of `!` or `as T` casts to avoid dual ESLint rule conflicts. (see user memory `patterns.md`)
+> `npm test` and `npm run build` are **slow** (full task runner). Prefer `test:fast` and `type-check:src` for iterative work.
 
-## 8) Evolution Rules
+---
 
-- If conventions change, include an `AGENTS.md` update in the same PR.
-- If a command is corrected after failures, record the final verified command here.
-- If a new critical path or pattern is discovered, add it to the relevant section with evidence (file path).
-- If a new tool is added to `src/tools/`, it must implement `ToolContract` and be registered in `src/tools.ts`; update this file's tool inventory note if the tool count changes.
-- If environment variables are added to `src/lib/constants.ts`, document them in Section 3 under the relevant command.
+## Safety and Permissions
+
+### Always
+
+- Run `npm run type-check:src` after every TypeScript change.
+- Run `npm run test:fast` (or the specific test file) after changes to `src/`.
+- Follow the tool pattern in [`src/tools/read.ts`](src/tools/read.ts) for any new or modified tool.
+- Use `z.strictObject()` for all Zod schemas; add `.describe()` to every field.
+- Use `.js` extensions in all local imports (NodeNext/ESM requirement).
+- Use named exports only; `import type` for type-only imports; explicit return types on exported functions.
+- Keep `ToolContract` metadata (`name`, `title`, `description`, `inputSchema`, `outputSchema`, `annotations`) complete in every tool file.
+
+### Ask first
+
+- Adding new npm dependencies.
+- Changing `src/lib/path-policy.ts` or `src/lib/path-validation.ts` — these are security-critical path boundary enforcement files.
+- Changing `src/server/bootstrap.ts` — transport initialization, task store, and HTTP server setup.
+- Running `npm run build` or `npm run prepublishOnly` (slow, triggers full compile + lint + type-check).
+- Any change to `Dockerfile`, `docker-compose.yml`, or publish-related scripts.
+- Bulk refactors across `src/tools/*.ts` that alter public tool behaviour visible to MCP clients.
+
+### Never
+
+- Edit files in `dist/` — always generated; changes are overwritten on next build.
+- Copy patterns from `node-tests/` into `src/__tests__/` (different runner setup; kept separate intentionally).
+- Commit secrets, `.env` files, or client-specific config.
+- Bypass strict TypeScript options (`strict`, `noUncheckedIndexedAccess`, `verbatimModuleSyntax`, `exactOptionalPropertyTypes`) — all must stay enabled.
+- Use default exports anywhere in the source.
+- Use single-backslash regex escape sequences without verifying ESLint (`sonarjs/duplicates-in-character-class`).
+
+---
+
+## Navigation
+
+| Path                 | Role                                                                                                                   |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `src/index.ts`       | CLI entrypoint (shebang, transport selection, shutdown)                                                                |
+| `src/server.ts`      | `McpServer` instance + capability registration                                                                         |
+| `src/tools/`         | One file per MCP tool; `shared.ts` = response builders and `wrapToolHandler`; `contract.ts` = `ToolContract` interface |
+| `src/schemas.ts`     | All Zod input/output schemas (re-exported to tools)                                                                    |
+| `src/lib/`           | Core utilities: `errors.ts`, `path-policy.ts`, `path-validation.ts`, `resource-store.ts`, `fs-helpers.ts`              |
+| `src/server/`        | `bootstrap.ts` (transport/task wiring), `roots-manager.ts`, `capabilities.ts`, `logging.ts`                            |
+| `src/resources/`     | MCP resource content: `generated-instructions.ts`, `tool-catalog.ts`, `tool-info.ts`, `workflows.ts`                   |
+| `src/completions.ts` | MCP completion handlers                                                                                                |
+| `src/prompts.ts`     | MCP prompt registration                                                                                                |
+| `src/__tests__/`     | Tests: `integration/`, `lib/`, `security/`, `server/`, `tools/`                                                        |
+| `node-tests/`        | Tests for Node-specific runtime features (search workers, `isNodeError`)                                               |
+| `scripts/tasks.mjs`  | Build orchestration (clean, compile, copy assets, run tests)                                                           |
+| `assets/`            | Static assets copied to `dist/assets/` on build                                                                        |
+
+---
+
+## Tool Implementation Pattern
+
+Every tool follows this contract (copy from `src/tools/read.ts`):
+
+```ts
+// 1. Define contract
+export const MY_TOOL: ToolContract = {
+  name: 'my_tool',
+  title: 'My Tool',
+  description: 'What it does and when to call it.',
+  inputSchema: MyInputSchema,       // z.strictObject(...)
+  outputSchema: MyOutputSchema,     // z.strictObject(...)
+  annotations: READ_ONLY_TOOL_ANNOTATIONS, // or DESTRUCTIVE_TOOL_ANNOTATIONS
+  nuances: ['Edge case note.'],
+} as const;
+
+// 2. Implement handler
+async function handleMyTool(
+  args: z.infer<typeof MyInputSchema>,
+  signal?: AbortSignal
+): Promise<ToolResponse<z.infer<typeof MyOutputSchema>>> {
+  // ...
+  return buildToolResponse({ ok: true, result: { ... } });
+}
+
+// 3. Register tool
+export function registerMyTool(server: McpServer, opts: ToolRegistrationOptions): void {
+  wrapToolHandler(server, MY_TOOL, withValidatedArgs(MY_TOOL, (args, extra) =>
+    handleMyTool(args, extra.signal)
+  ), opts);
+}
+```
+
+Key helpers from `src/tools/shared.ts`:
+
+- `wrapToolHandler` — wraps registration with diagnostics + error handling
+- `withValidatedArgs` — Zod parse + structured error on bad input
+- `buildToolResponse` / `buildToolErrorResponse` — canonical response shape
+- `maybeExternalizeTextContent` — offloads large output to `filesystem-mcp://result/{id}`
+- `READ_ONLY_TOOL_ANNOTATIONS` — `{ readOnlyHint: true, destructiveHint: false, openWorldHint: false }`
+
+For long-running tools, call `registerToolTaskIfAvailable` in the registration step (see `src/tools/search-content.ts`).
+
+---
+
+## Schema Conventions
+
+```ts
+// Input — always strictObject with .describe() on every field
+export const MyInputSchema = z.strictObject({
+  path: z.string().min(1).describe('Absolute path to the file.'),
+  limit: z.number().int().min(1).max(1000).optional().describe('Max results.'),
+});
+
+// Output — always strictObject
+export const MyOutputSchema = z.strictObject({
+  ok: z.boolean(),
+  result: z.strictObject({ ... }).optional(),
+});
+```
+
+Schemas live in `src/schemas.ts` and are re-exported for use in tools. Keep schema descriptions concise (token budget matters).
+
+---
+
+## Error Handling
+
+Use `src/lib/errors.ts` helpers:
+
+- `isNodeError(err)` — narrows `NodeJS.ErrnoException`
+- `formatUnknownErrorMessage(err)` — safe string extraction
+- Throw `McpError` with an `ErrorCode` for protocol-level tool errors
+- Return `buildToolErrorResponse(ErrorCode.Xxx, message)` for user-facing tool failures
+- Never let raw `Error` objects surface to MCP responses
+
+---
+
+## Examples to Follow
+
+- **Canonical tool**: [`src/tools/read.ts`](src/tools/read.ts) — contract, handler, registration, schema reference
+- **Destructive tool**: [`src/tools/delete-file.ts`](src/tools/delete-file.ts) — `destructiveHint: true`, confirmation patterns
+- **Task-enabled tool**: [`src/tools/search-content.ts`](src/tools/search-content.ts) — `registerToolTaskIfAvailable`, progress, cancellation
+- **Error classification**: [`src/lib/errors.ts`](src/lib/errors.ts)
+- **Path boundary enforcement**: [`src/lib/path-policy.ts`](src/lib/path-policy.ts) + [`src/lib/path-validation.ts`](src/lib/path-validation.ts)
+
+## Patterns to Avoid
+
+- Do **not** copy patterns from `node-tests/` into `src/__tests__/` (different bootstrap).
+- Do **not** use `z.object()` (strips unknown keys silently) — always use `z.strictObject()`.
+- Do **not** use `as` casts to bypass Zod parsing — use `withValidatedArgs` or narrow with type guards first.
+- Do **not** write tools that access paths without going through `validatePath` / `PathPolicy` — see security tests in `src/__tests__/security/`.
+
+---
+
+## PR / Change Checklist
+
+- [ ] `npm run type-check:src` passes (no type errors)
+- [ ] `npm run lint` passes (no ESLint errors)
+- [ ] Relevant tests pass: `node --test --import tsx/esm src/__tests__/<area>/**/*.test.ts`
+- [ ] New tool has `ToolContract` with `name`, `title`, `description`, `inputSchema`, `outputSchema`, `annotations`
+- [ ] Schemas use `z.strictObject()` with `.describe()` on every field
+- [ ] All local imports use `.js` extensions
+- [ ] No default exports introduced
+- [ ] Path operations go through path validation utilities (not raw `fs` calls on user input)
+- [ ] `dist/` not committed
+
+---
+
+## When Stuck
+
+1. Ask one clarifying question about scope before making wide edits.
+2. Read the relevant test files in `src/__tests__/tools/` or `src/__tests__/security/` — they document expected behaviour precisely.
+3. Check `src/tools/shared.ts` for existing helpers before writing new utilities.
+4. For MCP protocol questions, see `.github/instructions/typescript-mcp-server.instructions.md`.
