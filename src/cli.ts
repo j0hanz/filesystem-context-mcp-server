@@ -264,7 +264,7 @@ export async function parseArgs(): Promise<{
   }
 
   const options = cli.opts<{ allowCwd?: boolean; port?: string }>();
-  const allowCwd = options.allowCwd === true;
+  const allowCwd = Boolean(options.allowCwd);
   const port = parsePortOption(options.port);
   const positionals = getParsedAllowedDirs(cli);
 

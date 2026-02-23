@@ -174,7 +174,7 @@ export class RootsManager {
     const cliAllowedDirs = normalizeCLIDirectories(
       this.options.cliAllowedDirs ?? []
     );
-    const allowCwd = this.options.allowCwd === true;
+    const allowCwd = Boolean(this.options.allowCwd);
     const allowCwdDirs = allowCwd ? [normalizePath(process.cwd())] : [];
     const baseline = [...cliAllowedDirs, ...allowCwdDirs];
     const { signal, cleanup } = createTimedAbortSignal(

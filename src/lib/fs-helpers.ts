@@ -659,7 +659,7 @@ async function readRangeContent(
       if (hasEndLine && lineNumber === stopAt) {
         const peek = await iterator.next();
         hasMoreLines = !peek.done;
-        reachedEof = peek.done === true;
+        reachedEof = Boolean(peek.done);
         stoppedEarly = true;
         break;
       }
