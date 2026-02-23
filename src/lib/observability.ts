@@ -7,6 +7,7 @@ import {
   PerformanceObserver,
 } from 'node:perf_hooks';
 
+import { parseTrueEnvFlag } from './constants.js';
 import { isRecord } from './type-guards.js';
 
 // --- Configuration ---
@@ -23,15 +24,10 @@ let _cachedConfig: Config | undefined;
 
 function readConfig(): Config {
   return (_cachedConfig ??= {
-    enabled: isTrue(ENV['FS_CONTEXT_DIAGNOSTICS']),
+    enabled: parseTrueEnvFlag(ENV['FS_CONTEXT_DIAGNOSTICS']),
     detail: parseDetail(ENV['FS_CONTEXT_DIAGNOSTICS_DETAIL']),
-    logToolErrors: isTrue(ENV['FS_CONTEXT_TOOL_LOG_ERRORS']),
+    logToolErrors: parseTrueEnvFlag(ENV['FS_CONTEXT_TOOL_LOG_ERRORS']),
   });
-}
-
-function isTrue(val?: string): boolean {
-  const norm = val?.trim().toLowerCase();
-  return norm === '1' || norm === 'true' || norm === 'yes';
 }
 
 function parseDetail(val?: string): 0 | 1 | 2 {

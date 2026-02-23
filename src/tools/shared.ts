@@ -9,6 +9,7 @@ import type {
 import { z } from 'zod';
 
 import type { FileInfo } from '../config.js';
+import { parseTrueEnvFlag } from '../lib/constants.js';
 import {
   createDetailedError,
   ErrorCode,
@@ -28,7 +29,6 @@ const MAX_INLINE_CONTENT_CHARS =
   parseInt(process.env['FS_CONTEXT_MAX_INLINE_CHARS'] ?? '', 10) || 20_000;
 const MAX_INLINE_PREVIEW_CHARS = 4_000;
 const PROGRESS_RATE_LIMIT_MS = 50;
-const TRUE_ENV_VALUES = new Set(['1', 'true', 'yes']);
 
 interface ContextDiagnosticsEvent {
   phase: 'externalize_text';
@@ -66,9 +66,7 @@ export const IDEMPOTENT_WRITE_TOOL_ANNOTATIONS = {
 } as const;
 
 export function shouldStripStructuredOutput(): boolean {
-  const value = process.env['FS_CONTEXT_STRIP_STRUCTURED'];
-  if (value === undefined) return false;
-  return TRUE_ENV_VALUES.has(value.trim().toLowerCase());
+  return parseTrueEnvFlag(process.env['FS_CONTEXT_STRIP_STRUCTURED']);
 }
 
 export function maybeStripStructuredContentFromResult<T extends object>(

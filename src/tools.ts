@@ -56,58 +56,48 @@ import { registerWriteFileTool, WRITE_FILE_TOOL } from './tools/write-file.js';
 
 export { buildToolErrorResponse, buildToolResponse } from './tools/shared.js';
 
-export const ALL_TOOLS: ToolContract[] = [
-  LIST_ALLOWED_DIRECTORIES_TOOL,
-  LIST_DIRECTORY_TOOL,
-  SEARCH_FILES_TOOL,
-  TREE_TOOL,
-  READ_FILE_TOOL,
-  READ_MULTIPLE_FILES_TOOL,
-  GET_FILE_INFO_TOOL,
-  GET_MULTIPLE_FILE_INFO_TOOL,
-  SEARCH_CONTENT_TOOL,
-  CREATE_DIRECTORY_TOOL,
-  WRITE_FILE_TOOL,
-  EDIT_FILE_TOOL,
-  MOVE_FILE_TOOL,
-  DELETE_FILE_TOOL,
-  CALCULATE_HASH_TOOL,
-  DIFF_FILES_TOOL,
-  APPLY_PATCH_TOOL,
-  SEARCH_AND_REPLACE_TOOL,
+interface ToolEntry {
+  contract: ToolContract;
+  register: (server: McpServer, options?: ToolRegistrationOptions) => void;
+}
+
+const TOOL_ENTRIES: ToolEntry[] = [
+  {
+    contract: LIST_ALLOWED_DIRECTORIES_TOOL,
+    register: registerListAllowedDirectoriesTool,
+  },
+  { contract: LIST_DIRECTORY_TOOL, register: registerListDirectoryTool },
+  { contract: SEARCH_FILES_TOOL, register: registerSearchFilesTool },
+  { contract: TREE_TOOL, register: registerTreeTool },
+  { contract: READ_FILE_TOOL, register: registerReadFileTool },
+  {
+    contract: READ_MULTIPLE_FILES_TOOL,
+    register: registerReadMultipleFilesTool,
+  },
+  { contract: GET_FILE_INFO_TOOL, register: registerGetFileInfoTool },
+  {
+    contract: GET_MULTIPLE_FILE_INFO_TOOL,
+    register: registerGetMultipleFileInfoTool,
+  },
+  { contract: SEARCH_CONTENT_TOOL, register: registerSearchContentTool },
+  { contract: CREATE_DIRECTORY_TOOL, register: registerCreateDirectoryTool },
+  { contract: WRITE_FILE_TOOL, register: registerWriteFileTool },
+  { contract: EDIT_FILE_TOOL, register: registerEditFileTool },
+  { contract: MOVE_FILE_TOOL, register: registerMoveFileTool },
+  { contract: DELETE_FILE_TOOL, register: registerDeleteFileTool },
+  { contract: CALCULATE_HASH_TOOL, register: registerCalculateHashTool },
+  { contract: DIFF_FILES_TOOL, register: registerDiffFilesTool },
+  { contract: APPLY_PATCH_TOOL, register: registerApplyPatchTool },
+  { contract: SEARCH_AND_REPLACE_TOOL, register: registerSearchAndReplaceTool },
 ];
 
-type ToolRegistrar = (
-  server: McpServer,
-  options?: ToolRegistrationOptions
-) => void;
-
-const TOOL_REGISTRARS = [
-  registerListAllowedDirectoriesTool,
-  registerListDirectoryTool,
-  registerSearchFilesTool,
-  registerTreeTool,
-  registerReadFileTool,
-  registerReadMultipleFilesTool,
-  registerGetFileInfoTool,
-  registerGetMultipleFileInfoTool,
-  registerSearchContentTool,
-  registerCreateDirectoryTool,
-  registerWriteFileTool,
-  registerEditFileTool,
-  registerMoveFileTool,
-  registerDeleteFileTool,
-  registerCalculateHashTool,
-  registerDiffFilesTool,
-  registerApplyPatchTool,
-  registerSearchAndReplaceTool,
-] as const satisfies readonly ToolRegistrar[];
+export const ALL_TOOLS: ToolContract[] = TOOL_ENTRIES.map((e) => e.contract);
 
 export function registerAllTools(
   server: McpServer,
   options: ToolRegistrationOptions = {}
 ): void {
-  for (const registerTool of TOOL_REGISTRARS) {
-    registerTool(server, options);
+  for (const { register } of TOOL_ENTRIES) {
+    register(server, options);
   }
 }

@@ -2,6 +2,12 @@ import { availableParallelism } from 'node:os';
 
 const TRUE_ENV_VALUES = new Set(['1', 'true', 'yes', 'y', 'on']);
 const FALSE_ENV_VALUES = new Set(['0', 'false', 'no', 'n', 'off']);
+
+export function parseTrueEnvFlag(value: string | undefined): boolean {
+  if (value === undefined) return false;
+  return TRUE_ENV_VALUES.has(value.trim().toLowerCase());
+}
+
 const KIB = 1024;
 const MIB = 1024 * KIB;
 

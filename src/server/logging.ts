@@ -34,7 +34,7 @@ function canSendMcpLogs(server: McpServer): boolean {
   const capabilities = server.server.getClientCapabilities();
   if (!isRecord(capabilities)) return false;
   if (!('logging' in capabilities)) return false;
-  return (capabilities as { logging?: unknown }).logging !== null;
+  return !!capabilities['logging'];
 }
 
 export function logToMcp(

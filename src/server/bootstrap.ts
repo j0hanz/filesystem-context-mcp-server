@@ -56,10 +56,6 @@ function getRootsManager(server: McpServer): RootsManager {
   return manager;
 }
 
-function loadServerInstructions(): string {
-  return buildServerInstructions();
-}
-
 async function getLocalIconInfo(): Promise<IconInfo | undefined> {
   const name = 'logo.svg';
   const mime = 'image/svg+xml';
@@ -85,7 +81,7 @@ export async function createServer(
   options: ServerOptions = {}
 ): Promise<McpServer> {
   const resourceStore = createInMemoryResourceStore();
-  const serverInstructions = loadServerInstructions();
+  const serverInstructions = buildServerInstructions();
   const localIcon = await getLocalIconInfo();
   const taskToolSupport = supportsTaskToolRequests();
 
@@ -166,13 +162,40 @@ export async function startServer(server: McpServer): Promise<void> {
   rootsManager.logMissingDirectoriesIfNeeded(server);
 }
 
+const MAX_REQUEST_BODY_BYTES =
+  parseInt(process.env['FS_CONTEXT_MAX_REQUEST_BYTES'] ?? '', 10) ||
+  4 * 1024 * 1024; // 4 MB default
+
+class RequestBodyError extends Error {
+  constructor(
+    message: string,
+    readonly statusCode: number
+  ) {
+    super(message);
+    this.name = 'RequestBodyError';
+  }
+}
+
 async function readRequestBody(req: http.IncomingMessage): Promise<unknown> {
   return new Promise<unknown>((resolve, reject) => {
     const chunks: Buffer[] = [];
+    let totalBytes = 0;
+    let tooBig = false;
     req.on('data', (chunk: Buffer) => {
+      totalBytes += chunk.length;
+      if (totalBytes > MAX_REQUEST_BODY_BYTES) {
+        if (!tooBig) {
+          tooBig = true;
+          chunks.length = 0; // free accumulated memory
+          req.pause(); // stop emitting data events; TCP window fills naturally
+          reject(new RequestBodyError('Request body too large', 413));
+        }
+        return;
+      }
       chunks.push(chunk);
     });
     req.on('end', () => {
+      if (tooBig) return; // already rejected in 'data' handler
       const raw = Buffer.concat(chunks).toString('utf-8');
       if (!raw) {
         resolve(undefined);
@@ -181,7 +204,7 @@ async function readRequestBody(req: http.IncomingMessage): Promise<unknown> {
       try {
         resolve(JSON.parse(raw) as unknown);
       } catch {
-        resolve(undefined);
+        reject(new RequestBodyError('Invalid JSON in request body', 400));
       }
     });
     req.on('error', reject);
@@ -347,6 +370,12 @@ export async function startHttpServer(
         res.end('Method Not Allowed');
       }
     } catch (error: unknown) {
+      if (error instanceof RequestBodyError && !res.headersSent) {
+        const rpcCode = error.statusCode === 413 ? -32600 : -32700;
+        res.setHeader('Connection', 'close');
+        sendJsonRpcError(res, error.statusCode, rpcCode, error.message);
+        return;
+      }
       console.error(
         '[HTTP] Error handling request:',
         formatUnknownErrorMessage(error)
