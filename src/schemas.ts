@@ -579,13 +579,23 @@ export const GetMultipleFileInfoOutputSchema = z.strictObject({
   error: ErrorSchema.optional(),
 });
 
-export const CreateDirectoryInputSchema = z.strictObject({
-  path: RequiredPathSchema.describe(DESC_PATH_REQUIRED),
-});
+export const CreateDirectoryInputSchema = z
+  .strictObject({
+    path: RequiredPathSchema.optional().describe(DESC_PATH_REQUIRED),
+    paths: z
+      .array(RequiredPathSchema)
+      .optional()
+      .describe('Absolute paths to directories to create'),
+  })
+  .refine((data) => data.path !== undefined || data.paths !== undefined, {
+    message: "Either 'path' or 'paths' must be provided",
+    path: ['path'],
+  });
 
 export const CreateDirectoryOutputSchema = z.strictObject({
   ok: z.boolean(),
   path: z.string().optional(),
+  paths: z.array(z.string()).optional(),
   error: ErrorSchema.optional(),
 });
 
@@ -629,6 +639,13 @@ export const EditFileInputSchema = z.strictObject({
     .describe(
       'Preview edits without writing. Check unmatchedEdits in the response to verify all oldText values were found.'
     ),
+  ignoreWhitespace: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      'Ignore leading/trailing whitespace and treat all whitespace sequences as equivalent when matching oldText.'
+    ),
 });
 
 export const EditFileOutputSchema = z.strictObject({
@@ -646,15 +663,33 @@ export const EditFileOutputSchema = z.strictObject({
   error: ErrorSchema.optional(),
 });
 
-export const MoveFileInputSchema = z.strictObject({
-  source: RequiredPathSchema.describe('Path to move'),
-  destination: RequiredPathSchema.describe('New path'),
-});
+export const MoveFileInputSchema = z
+  .strictObject({
+    source: RequiredPathSchema.optional().describe(
+      'Path to move (deprecated: use sources)'
+    ),
+    sources: z.array(RequiredPathSchema).optional().describe('Paths to move'),
+    destination: RequiredPathSchema.describe('New path'),
+  })
+  .refine((data) => (data.source ?? data.sources) !== undefined, {
+    message: "Either 'source' or 'sources' must be provided",
+    path: ['source'],
+  });
 
 export const MoveFileOutputSchema = z.strictObject({
   ok: z.boolean(),
   source: z.string().optional(),
+  sources: z.array(z.string()).optional(),
   destination: z.string().optional(),
+  failed: z
+    .array(
+      z.strictObject({
+        source: z.string().describe('Source path'),
+        error: z.string().describe('Error message'),
+      })
+    )
+    .optional()
+    .describe('List of files that failed to move'),
   error: ErrorSchema.optional(),
 });
 
@@ -802,6 +837,12 @@ export const SearchAndReplaceInputSchema = z.strictObject({
     .optional()
     .describe(
       'Include files and directories ignored by .gitignore rules (e.g. node_modules, dist). Default: false.'
+    ),
+  returnDiff: z
+    .boolean()
+    .optional()
+    .describe(
+      'Return unified diff of changes even if dryRun is false. Default: false.'
     ),
 });
 

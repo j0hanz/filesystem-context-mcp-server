@@ -51,9 +51,14 @@ interface EditResult {
   lineRange?: [number, number];
 }
 
+function escapeRegExp(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function applyEdits(
   content: string,
-  edits: z.infer<typeof EditFileInputSchema>['edits']
+  edits: z.infer<typeof EditFileInputSchema>['edits'],
+  ignoreWhitespace: boolean
 ): EditResult {
   let newContent = content;
   let appliedEdits = 0;
@@ -62,22 +67,49 @@ function applyEdits(
   let maxLine: number | undefined;
 
   for (const edit of edits) {
-    if (!newContent.includes(edit.oldText)) {
-      unmatchedEdits.push(edit.oldText);
-      continue;
+    if (ignoreWhitespace) {
+      const pattern = escapeRegExp(edit.oldText).replace(/\s+/g, '\\s+');
+      const regex = new RegExp(pattern);
+      const match = regex.exec(newContent);
+
+      if (!match) {
+        unmatchedEdits.push(edit.oldText);
+        continue;
+      }
+
+      const { index } = match;
+      const matchLength = match[0].length;
+      const linesBefore = newContent.slice(0, index).split('\n').length;
+      const newTextLines = edit.newText.split('\n').length;
+      const startLine = linesBefore;
+      const endLine = linesBefore + newTextLines - 1;
+
+      if (minLine === undefined || startLine < minLine) minLine = startLine;
+      if (maxLine === undefined || endLine > maxLine) maxLine = endLine;
+
+      newContent =
+        newContent.slice(0, index) +
+        edit.newText +
+        newContent.slice(index + matchLength);
+      appliedEdits += 1;
+    } else {
+      if (!newContent.includes(edit.oldText)) {
+        unmatchedEdits.push(edit.oldText);
+        continue;
+      }
+
+      const index = newContent.indexOf(edit.oldText);
+      const linesBefore = newContent.slice(0, index).split('\n').length;
+      const newTextLines = edit.newText.split('\n').length;
+      const startLine = linesBefore;
+      const endLine = linesBefore + newTextLines - 1;
+
+      if (minLine === undefined || startLine < minLine) minLine = startLine;
+      if (maxLine === undefined || endLine > maxLine) maxLine = endLine;
+
+      newContent = newContent.replace(edit.oldText, () => edit.newText);
+      appliedEdits += 1;
     }
-
-    const index = newContent.indexOf(edit.oldText);
-    const linesBefore = newContent.slice(0, index).split('\n').length;
-    const newTextLines = edit.newText.split('\n').length;
-    const startLine = linesBefore;
-    const endLine = linesBefore + newTextLines - 1;
-
-    if (minLine === undefined || startLine < minLine) minLine = startLine;
-    if (maxLine === undefined || endLine > maxLine) maxLine = endLine;
-
-    newContent = newContent.replace(edit.oldText, () => edit.newText);
-    appliedEdits += 1;
   }
 
   const result: EditResult = {
@@ -93,7 +125,7 @@ function applyEdits(
   return result;
 }
 
-async function handleEditFile(
+export async function handleEditFile(
   args: z.infer<typeof EditFileInputSchema>,
   signal?: AbortSignal
 ): Promise<ToolResponse<z.infer<typeof EditFileOutputSchema>>> {
@@ -105,7 +137,7 @@ async function handleEditFile(
     appliedEdits,
     unmatchedEdits,
     lineRange,
-  } = applyEdits(content, args.edits);
+  } = applyEdits(content, args.edits, args.ignoreWhitespace);
 
   const structured: z.infer<typeof EditFileOutputSchema> = {
     ok: true,

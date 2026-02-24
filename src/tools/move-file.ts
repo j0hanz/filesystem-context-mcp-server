@@ -5,7 +5,12 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
-import { ErrorCode, isNodeError } from '../lib/errors.js';
+import {
+  ErrorCode,
+  formatUnknownErrorMessage,
+  isNodeError,
+  McpError,
+} from '../lib/errors.js';
 import { withAbort } from '../lib/fs-helpers.js';
 import {
   validateExistingPath,
@@ -41,45 +46,121 @@ export const MOVE_FILE_TOOL: ToolContract = {
   ],
 } as const;
 
-async function handleMoveFile(
+export async function handleMoveFile(
   args: z.infer<typeof MoveFileInputSchema>,
   signal?: AbortSignal
 ): Promise<ToolResponse<z.infer<typeof MoveFileOutputSchema>>> {
-  const validSource = await validateExistingPath(args.source, signal);
+  const sources = args.sources ?? (args.source ? [args.source] : []);
+  if (sources.length === 0) {
+    throw new McpError(ErrorCode.E_INVALID_INPUT, 'No sources provided.');
+  }
+
   const validDest = await validatePathForWrite(args.destination, signal);
 
-  // Ensure destination parent directory exists
-  await withAbort(
-    fs.mkdir(path.dirname(validDest), { recursive: true }),
-    signal
-  );
-
+  // Check if destination exists and is a directory
+  let destIsDirectory = false;
   try {
-    await withAbort(fs.rename(validSource, validDest), signal);
-  } catch (error: unknown) {
-    if (isNodeError(error) && error.code === 'EXDEV') {
-      // Cross-device link, fallback to copy + delete
-      await withAbort(
-        fs.cp(validSource, validDest, { recursive: true }),
-        signal
-      );
-      await withAbort(
-        fs.rm(validSource, { recursive: true, force: true }),
-        signal
-      );
-    } else {
+    const stats = await fs.stat(validDest);
+    destIsDirectory = stats.isDirectory();
+  } catch (error) {
+    if (isNodeError(error) && error.code !== 'ENOENT') {
       throw error;
     }
   }
 
-  return buildToolResponse(
-    `Successfully moved ${args.source} to ${args.destination}`,
-    {
-      ok: true,
-      source: validSource,
-      destination: validDest,
+  if (sources.length > 1 && !destIsDirectory) {
+    throw new McpError(
+      ErrorCode.E_INVALID_INPUT,
+      'Destination must be an existing directory when moving multiple files.'
+    );
+  }
+
+  // Ensure destination parent directory exists if it's not an existing directory
+  if (!destIsDirectory) {
+    await withAbort(
+      fs.mkdir(path.dirname(validDest), { recursive: true }),
+      signal
+    );
+  }
+
+  const movedSources: string[] = [];
+  const failed: { source: string; error: string }[] = [];
+
+  for (const src of sources) {
+    let validSource: string;
+    try {
+      validSource = await validateExistingPath(src, signal);
+    } catch (error) {
+      failed.push({
+        source: src,
+        error: formatUnknownErrorMessage(error),
+      });
+      continue;
     }
-  );
+
+    const targetPath = destIsDirectory
+      ? path.join(validDest, path.basename(validSource))
+      : validDest;
+
+    // Prevent moving a file onto itself
+    if (path.resolve(validSource) === path.resolve(targetPath)) {
+      continue;
+    }
+
+    // Prevent moving a directory into its own subdirectory
+    // Fixes "Missing validation for moving directory into its own subdirectory" finding
+    if (
+      path.resolve(targetPath).startsWith(path.resolve(validSource) + path.sep)
+    ) {
+      failed.push({
+        source: src,
+        error: `Cannot move directory '${src}' into its own subdirectory '${targetPath}'`,
+      });
+      continue;
+    }
+
+    try {
+      await withAbort(fs.rename(validSource, targetPath), signal);
+      movedSources.push(validSource);
+    } catch (error: unknown) {
+      if (isNodeError(error) && error.code === 'EXDEV') {
+        // Cross-device link, fallback to copy + delete
+        try {
+          await withAbort(
+            fs.cp(validSource, targetPath, { recursive: true }),
+            signal
+          );
+          await withAbort(
+            fs.rm(validSource, { recursive: true, force: true }),
+            signal
+          );
+          movedSources.push(validSource);
+        } catch (copyError) {
+          failed.push({
+            source: src,
+            error: formatUnknownErrorMessage(copyError),
+          });
+        }
+      } else {
+        failed.push({
+          source: src,
+          error: formatUnknownErrorMessage(error),
+        });
+      }
+    }
+  }
+
+  const message =
+    failed.length > 0
+      ? `Moved ${movedSources.length} item${movedSources.length === 1 ? '' : 's'}; failed to move ${failed.length} item${failed.length === 1 ? '' : 's'}`
+      : `Successfully moved ${movedSources.length} item${movedSources.length === 1 ? '' : 's'} to ${args.destination}`;
+
+  return buildToolResponse(message, {
+    ok: failed.length === 0,
+    sources: movedSources,
+    destination: validDest,
+    ...(failed.length > 0 ? { failed } : {}),
+  });
 }
 
 export function registerMoveFileTool(
@@ -94,21 +175,28 @@ export function registerMoveFileTool(
       toolName: 'mv',
       extra,
       timedSignal: {},
-      context: { path: args.source },
+      context: { path: args.source ?? args.sources?.[0] },
       run: (signal) => handleMoveFile(args, signal),
       onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.E_UNKNOWN, args.source),
+        buildToolErrorResponse(
+          error,
+          ErrorCode.E_UNKNOWN,
+          args.source ?? args.sources?.[0]
+        ),
     });
 
   const wrappedHandler = wrapToolHandler(handler, {
     guard: options.isInitialized,
-    progressMessage: (args) =>
-      `🛠 mv: ${path.basename(args.source)} → ${path.basename(args.destination)}`,
+    progressMessage: (args) => {
+      const count = (args.source ? 1 : 0) + (args.sources?.length ?? 0);
+      const dest = path.basename(args.destination);
+      return `🛠 mv: ${count} item${count === 1 ? '' : 's'} → ${dest}`;
+    },
     completionMessage: (args, result) => {
-      const src = path.basename(args.source);
-      const dst = path.basename(args.destination);
-      if (result.isError) return `🛠 mv: ${src} → ${dst} • failed`;
-      return `🛠 mv: ${src} → ${dst} • moved`;
+      const count = (args.source ? 1 : 0) + (args.sources?.length ?? 0);
+      const dest = path.basename(args.destination);
+      if (result.isError) return `🛠 mv: ${count} → ${dest} • failed`;
+      return `🛠 mv: ${count} → ${dest} • moved`;
     },
   });
 

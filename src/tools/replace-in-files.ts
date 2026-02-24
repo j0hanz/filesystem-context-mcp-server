@@ -198,7 +198,10 @@ async function processEntry(
         );
       }
 
-      if (args.dryRun && summary.diff.length < MAX_DIFF_SIZE) {
+      if (
+        (args.dryRun || args.returnDiff) &&
+        summary.diff.length < MAX_DIFF_SIZE
+      ) {
         const patch = createTwoFilesPatch(
           path.basename(validPath),
           path.basename(validPath),
@@ -321,7 +324,7 @@ function reportReplaceProgress(
   onProgress({ current });
 }
 
-async function handleSearchAndReplace(
+export async function handleSearchAndReplace(
   args: z.infer<typeof SearchAndReplaceInputSchema>,
   signal?: AbortSignal,
   onProgress: (progress: { total?: number; current: number }) => void = () => {}
@@ -373,7 +376,9 @@ async function handleSearchAndReplace(
         ? { changedFiles: summary.changedFiles }
         : {}),
       ...(summary.changedFilesTruncated ? { changedFilesTruncated: true } : {}),
-      ...(args.dryRun && summary.diff ? { diff: summary.diff } : {}),
+      ...((args.dryRun || args.returnDiff) && summary.diff
+        ? { diff: summary.diff }
+        : {}),
       dryRun: args.dryRun,
     }
   );
