@@ -129,7 +129,13 @@ function normalizeAllowedDirectories(dirs: readonly string[]): string[] {
   return dedupePreserveOrder(normalized);
 }
 
-// Cached module state (configured roots).
+// Process-global singleton state for allowed directory roots.
+//
+// These are set once at startup (via setAllowedDirectoriesResolved) and
+// mutated only through setAllowedDirectoriesState. In stdio mode there is a
+// single MCP session per process, so this is safe. In HTTP mode all HTTP
+// sessions within the same process share one policy — multi-tenant isolation
+// (different roots per session) requires separate server processes.
 let allowedDirectoriesExpanded: string[] = [];
 let allowedDirectoriesPrimary: string[] = [];
 

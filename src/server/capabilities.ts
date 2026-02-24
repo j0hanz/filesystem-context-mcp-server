@@ -48,6 +48,11 @@ export function buildServerCapabilities(
   };
 
   if (options.enableTaskToolRequests) {
+    // NOTE: enabling task tool requests requires the caller to configure
+    // an InMemoryTaskStore and InMemoryTaskMessageQueue on the McpServer.
+    // InMemoryTaskStore accumulates completed task records with no TTL eviction —
+    // suitable for short-lived stdio sessions. Long-running HTTP servers should
+    // replace it with a TTL-evicting store to avoid unbounded memory growth.
     capabilities.tasks = {
       list: {},
       cancel: {},

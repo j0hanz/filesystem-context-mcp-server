@@ -565,6 +565,7 @@ Set `FS_CONTEXT_STRIP_STRUCTURED=1` to strip `structuredContent` from tool resul
 - **Input limits**: Paths are bounded to 4,096 characters; patterns to 1,000 characters.
 - **Atomic writes**: File writes use an atomic write-then-rename strategy to prevent partial writes.
 - **Docker**: The container runs as a non-root user (`mcp`).
+- **HTTP host binding**: The HTTP transport binds to `127.0.0.1` by default. Setting `FILESYSTEM_MCP_HTTP_HOST=0.0.0.0` binds to all network interfaces and exposes the server externally — only do this behind a trusted reverse proxy with `FILESYSTEM_MCP_AUTH_TOKEN` configured.
 
 > [!IMPORTANT]
 > All diagnostic output goes to `stderr`. Tool handlers must never write to `stdout`, as doing so would corrupt the stdio transport.

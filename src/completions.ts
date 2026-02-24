@@ -14,8 +14,25 @@ import { isRecord } from './lib/type-guards.js';
 
 const MAX_COMPLETION_ITEMS = 100;
 const COMPLETION_RATE_LIMIT_MS = 100;
-const completionLastCallMs = new Map<string, number>();
-const completionLastResult = new Map<string, CompletionResult>();
+
+interface CompletionState {
+  lastCallMs: Map<string, number>;
+  lastResult: Map<string, CompletionResult>;
+}
+
+// WeakMap keyed by McpServer instance so that each HTTP session gets isolated
+// rate-limit state. In stdio mode there is a single server; in HTTP mode every
+// session creates its own McpServer, so cross-session cache pollution is avoided.
+const completionState = new WeakMap<McpServer, CompletionState>();
+
+function getCompletionState(server: McpServer): CompletionState {
+  let state = completionState.get(server);
+  if (state === undefined) {
+    state = { lastCallMs: new Map(), lastResult: new Map() };
+    completionState.set(server, state);
+  }
+  return state;
+}
 
 function extractTopicCompletions(instructions: string): string[] {
   const headers: string[] = [];
@@ -531,9 +548,10 @@ export function registerCompletions(
     }
 
     const now = Date.now();
-    const lastCallMs = completionLastCallMs.get(argName) ?? 0;
+    const sessionState = getCompletionState(server);
+    const lastCallMs = sessionState.lastCallMs.get(argName) ?? 0;
     if (now - lastCallMs < COMPLETION_RATE_LIMIT_MS) {
-      const lastResult = completionLastResult.get(argName);
+      const lastResult = sessionState.lastResult.get(argName);
       if (lastResult) {
         return {
           completion: {
@@ -545,7 +563,7 @@ export function registerCompletions(
       }
       return { completion: { values: [], total: 0, hasMore: false } };
     }
-    completionLastCallMs.set(argName, now);
+    sessionState.lastCallMs.set(argName, now);
 
     const contextArguments = extractContextArguments(params.context);
     const { value } = argument;
@@ -554,7 +572,7 @@ export function registerCompletions(
       ...(contextArguments ? { contextArguments } : {}),
     });
 
-    completionLastResult.set(argName, completions);
+    sessionState.lastResult.set(argName, completions);
 
     return {
       completion: {

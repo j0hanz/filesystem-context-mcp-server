@@ -291,7 +291,13 @@ export async function startHttpServer(
     res: http.ServerResponse
   ): Promise<void> {
     const { method } = req;
-    const sessionId = req.headers['mcp-session-id'] as string | undefined;
+    const MAX_SESSION_ID_LENGTH = 256;
+    const rawSessionId = req.headers['mcp-session-id'];
+    const sessionId =
+      typeof rawSessionId === 'string' &&
+      rawSessionId.length <= MAX_SESSION_ID_LENGTH
+        ? rawSessionId
+        : undefined;
 
     const { origin } = req.headers;
     if (!isAllowedOrigin(origin)) {
@@ -334,6 +340,13 @@ export async function startHttpServer(
         const body = await readRequestBody(req);
 
         if (sessionId && sessions.has(sessionId)) {
+          const protoVersion = req.headers['mcp-protocol-version'];
+          if (protoVersion !== '2025-11-25') {
+            console.error(
+              '[mcp-http] MCP-Protocol-Version header missing or unsupported:',
+              protoVersion
+            );
+          }
           const session = sessions.get(sessionId);
           if (session) {
             await session.transport.handleRequest(req, res, body);

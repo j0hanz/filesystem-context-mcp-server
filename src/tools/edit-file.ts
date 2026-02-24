@@ -5,6 +5,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
+import RE2 from 're2';
+
 import { ErrorCode } from '../lib/errors.js';
 import { atomicWriteFile } from '../lib/fs-helpers.js';
 import { validateExistingPath } from '../lib/path-validation.js';
@@ -69,7 +71,7 @@ function applyEdits(
   for (const edit of edits) {
     if (ignoreWhitespace) {
       const pattern = escapeRegExp(edit.oldText).replace(/\s+/g, '\\s+');
-      const regex = new RegExp(pattern);
+      const regex = new RE2(pattern);
       const match = regex.exec(newContent);
 
       if (!match) {
