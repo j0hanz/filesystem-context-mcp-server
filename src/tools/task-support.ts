@@ -224,12 +224,14 @@ function normalizeCallToolResult(value: Result): CallToolResult {
 
 function getToolResultErrorCode(result: Result): string | undefined {
   if (!isRecord(result) || result['isError'] !== true) return undefined;
-  const structured = result['structuredContent'];
-  if (!isRecord(structured)) return undefined;
-  const { error } = structured;
-  if (!isRecord(error)) return undefined;
-  const { code } = error;
-  return typeof code === 'string' ? code : undefined;
+  const { content } = result;
+  if (!Array.isArray(content) || content.length === 0) return undefined;
+  const first: unknown = content[0];
+  if (!isRecord(first) || first['type'] !== 'text') return undefined;
+  const { text } = first;
+  if (typeof text !== 'string') return undefined;
+  const match = /^Error \[([A-Z0-9_]+)\]:/.exec(text);
+  return match ? match[1] : undefined;
 }
 
 function isCancelledToolResult(result: Result): boolean {

@@ -330,6 +330,11 @@ export function registerSearchContentTool(
         };
 
         try {
+          if (signal) {
+            signal.addEventListener('abort', () => {
+              console.error('searchContent signal aborted!');
+            });
+          }
           const result = await handleSearchContent(
             args,
             signal,

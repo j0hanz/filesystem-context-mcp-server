@@ -233,14 +233,9 @@ await it('projects failed E_CANCELLED task results to cancelled status on getTas
 
   const handler = createToolTaskHandler(async () => {
     return {
-      content: [{ type: 'text', text: 'Operation cancelled' }],
-      structuredContent: {
-        ok: false,
-        error: {
-          code: ErrorCode.E_CANCELLED,
-          message: 'Operation cancelled',
-        },
-      },
+      content: [
+        { type: 'text', text: 'Error [E_CANCELLED]: Operation cancelled' },
+      ],
       isError: true,
     };
   });
@@ -260,14 +255,9 @@ await it('emits cancelled tasks/status notifications for E_CANCELLED task result
 
   const handler = createToolTaskHandler(async () => {
     return {
-      content: [{ type: 'text', text: 'Operation cancelled' }],
-      structuredContent: {
-        ok: false,
-        error: {
-          code: ErrorCode.E_CANCELLED,
-          message: 'Operation cancelled',
-        },
-      },
+      content: [
+        { type: 'text', text: 'Error [E_CANCELLED]: Operation cancelled' },
+      ],
       isError: true,
     };
   });
