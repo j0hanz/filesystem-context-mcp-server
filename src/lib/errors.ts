@@ -111,6 +111,12 @@ export function formatUnknownErrorMessage(error: unknown): string {
   }
 }
 
+export function normalizeUnknownError(error: unknown): Error {
+  return error instanceof Error
+    ? error
+    : new Error(formatUnknownErrorMessage(error));
+}
+
 const NODE_ERROR_CODE_MAP = {
   ENOENT: ErrorCode.E_NOT_FOUND,
   EACCES: ErrorCode.E_PERMISSION_DENIED,

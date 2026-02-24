@@ -139,17 +139,6 @@ export function buildResourceLink(params: {
   };
 }
 
-function buildContentBlock<T>(
-  text: string,
-  structuredContent: T,
-  extraContent: ContentBlock[] = []
-): { content: ContentBlock[]; structuredContent: T } {
-  return {
-    content: [{ type: 'text', text }, ...extraContent],
-    structuredContent,
-  };
-}
-
 function resolveDetailedError(
   error: unknown,
   defaultCode: ErrorCode,
@@ -177,7 +166,10 @@ export function buildToolResponse<T>(
   content: ContentBlock[];
   structuredContent: T;
 } {
-  return buildContentBlock(text, structuredContent, extraContent);
+  return {
+    content: [{ type: 'text', text }, ...extraContent],
+    structuredContent,
+  };
 }
 
 export type ToolResponse<T> = ReturnType<typeof buildToolResponse<T>> &
@@ -413,7 +405,8 @@ export function buildToolErrorResponse(
     error: errorContent,
   };
   return {
-    ...buildContentBlock(text, structuredContent),
+    content: [{ type: 'text', text }],
+    structuredContent,
     isError: true,
   };
 }

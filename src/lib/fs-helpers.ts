@@ -14,7 +14,7 @@ import {
   MAX_TEXT_FILE_SIZE,
   PARALLEL_CONCURRENCY,
 } from './constants.js';
-import { ErrorCode, formatUnknownErrorMessage, McpError } from './errors.js';
+import { ErrorCode, McpError, normalizeUnknownError } from './errors.js';
 import { assertAllowedFileAccess } from './path-policy.js';
 import { validateExistingPath } from './path-validation.js';
 
@@ -31,12 +31,6 @@ function normalizeAbortReason(reason: unknown, message?: string): Error {
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
-}
-
-function normalizeUnknownError(error: unknown): Error {
-  return error instanceof Error
-    ? error
-    : new Error(formatUnknownErrorMessage(error));
 }
 
 export function assertNotAborted(signal?: AbortSignal, message?: string): void {

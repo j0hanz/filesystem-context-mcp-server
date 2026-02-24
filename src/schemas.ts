@@ -146,6 +146,28 @@ const validateReadRange = (
   }
 };
 
+interface ReadRangeFieldDescriptions {
+  head: string;
+  startLine: string;
+  endLine: string;
+}
+
+interface ReadRangeInputFields {
+  head: typeof HeadLinesSchema;
+  startLine: z.ZodOptional<typeof LineNumberSchema>;
+  endLine: z.ZodOptional<typeof LineNumberSchema>;
+}
+
+function createReadRangeInputFields(
+  descriptions: ReadRangeFieldDescriptions
+): ReadRangeInputFields {
+  return {
+    head: HeadLinesSchema.describe(descriptions.head),
+    startLine: LineNumberSchema.optional().describe(descriptions.startLine),
+    endLine: LineNumberSchema.optional().describe(descriptions.endLine),
+  };
+}
+
 const FileInfoSchema = z.strictObject({
   name: z.string().describe('Name'),
   path: z.string().describe('Absolute path'),
@@ -366,13 +388,11 @@ export const SearchContentInputSchema = z.strictObject({
 export const ReadFileInputSchema = z
   .strictObject({
     path: RequiredPathSchema.describe(DESC_PATH_REQUIRED),
-    head: HeadLinesSchema.describe('Read first N lines (preview)'),
-    startLine: LineNumberSchema.optional().describe(
-      'Start line (1-based, inclusive)'
-    ),
-    endLine: LineNumberSchema.optional().describe(
-      'End line (1-based, inclusive). Requires startLine.'
-    ),
+    ...createReadRangeInputFields({
+      head: 'Read first N lines (preview)',
+      startLine: 'Start line (1-based, inclusive)',
+      endLine: 'End line (1-based, inclusive). Requires startLine.',
+    }),
   })
   .superRefine(validateReadRange);
 
@@ -383,13 +403,11 @@ export const ReadMultipleFilesInputSchema = z
       .min(1, 'Min 1 path required')
       .max(100, 'Max 100 files')
       .describe('Files to read. e.g. ["src/index.ts"]'),
-    head: HeadLinesSchema.describe('Read first N lines of each file'),
-    startLine: LineNumberSchema.optional().describe(
-      'Start line (1-based, inclusive) per file'
-    ),
-    endLine: LineNumberSchema.optional().describe(
-      'End line (1-based, inclusive) per file. Requires startLine.'
-    ),
+    ...createReadRangeInputFields({
+      head: 'Read first N lines of each file',
+      startLine: 'Start line (1-based, inclusive) per file',
+      endLine: 'End line (1-based, inclusive) per file. Requires startLine.',
+    }),
   })
   .superRefine(validateReadRange);
 
