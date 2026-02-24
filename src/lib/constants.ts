@@ -102,6 +102,8 @@ export const DEFAULT_LOG_LEVEL = parseEnvLogLevel(
   'debug'
 );
 
+export const REQUIRED_MCP_PROTOCOL_VERSION = '2025-11-25';
+
 // Auto-tuned parallelism based on CPU cores (no env override)
 const BYTES_PER_PARALLEL_TASK = 64 * MIB;
 const BYTES_PER_SEARCH_WORKER = 128 * MIB;

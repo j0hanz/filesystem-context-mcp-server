@@ -16,7 +16,10 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { registerCompletions } from '../completions.js';
-import { DEFAULT_LOG_LEVEL } from '../lib/constants.js';
+import {
+  DEFAULT_LOG_LEVEL,
+  REQUIRED_MCP_PROTOCOL_VERSION,
+} from '../lib/constants.js';
 import { formatUnknownErrorMessage } from '../lib/errors.js';
 import { createInMemoryResourceStore } from '../lib/resource-store.js';
 import { pkgInfo } from '../pkg-info.js';
@@ -280,6 +283,48 @@ function isAllowedOrigin(origin: string | undefined): boolean {
   return LOCALHOST_ORIGIN_RE.test(origin);
 }
 
+function getProtocolVersionHeader(
+  req: http.IncomingMessage
+): string | undefined {
+  const rawProtocolVersion = req.headers['mcp-protocol-version'];
+  if (typeof rawProtocolVersion === 'string') {
+    return rawProtocolVersion;
+  }
+
+  if (Array.isArray(rawProtocolVersion)) {
+    return rawProtocolVersion.find(
+      (value) => value === REQUIRED_MCP_PROTOCOL_VERSION
+    );
+  }
+
+  return undefined;
+}
+
+function ensureProtocolVersionHeader(
+  req: http.IncomingMessage,
+  res: http.ServerResponse
+): boolean {
+  const protocolVersion = getProtocolVersionHeader(req);
+  if (protocolVersion === REQUIRED_MCP_PROTOCOL_VERSION) {
+    return true;
+  }
+
+  sendJsonRpcError(
+    res,
+    400,
+    -32000,
+    'Bad Request: MCP-Protocol-Version header missing or unsupported'
+  );
+  return false;
+}
+
+function discardRequestBody(req: http.IncomingMessage): void {
+  req.on('error', () => {
+    // Best effort drain to avoid corrupting keep-alive pipelines.
+  });
+  req.resume();
+}
+
 export async function startHttpServer(
   port: number,
   options: ServerOptions
@@ -337,46 +382,62 @@ export async function startHttpServer(
 
     try {
       if (method === 'POST') {
-        const body = await readRequestBody(req);
-
-        if (sessionId && sessions.has(sessionId)) {
-          const protoVersion = req.headers['mcp-protocol-version'];
-          if (protoVersion !== '2025-11-25') {
-            console.error(
-              '[mcp-http] MCP-Protocol-Version header missing or unsupported:',
-              protoVersion
-            );
+        if (sessionId) {
+          if (!sessions.has(sessionId)) {
+            sendJsonRpcError(res, 404, -32000, 'Session not found');
+            discardRequestBody(req);
+            return;
           }
+
+          if (!ensureProtocolVersionHeader(req, res)) {
+            discardRequestBody(req);
+            return;
+          }
+
+          const body = await readRequestBody(req);
           const session = sessions.get(sessionId);
           if (session) {
             await session.transport.handleRequest(req, res, body);
+          } else {
+            sendJsonRpcError(res, 404, -32000, 'Session not found');
           }
-        } else if (!sessionId && isInitializeRequest(body)) {
-          const { transport } = await createHttpSession(options, sessions);
-          await transport.handleRequest(req, res, body);
-        } else if (sessionId) {
-          sendJsonRpcError(res, 400, -32000, 'Bad Request: Session not found');
-        } else {
-          sendJsonRpcError(
-            res,
-            400,
-            -32000,
-            'Bad Request: No valid session ID provided'
-          );
-        }
-      } else if (method === 'GET' || method === 'DELETE') {
-        if (!sessionId || !sessions.has(sessionId)) {
-          sendJsonRpcError(
-            res,
-            400,
-            -32000,
-            'Bad Request: Invalid or missing session ID'
-          );
           return;
         }
+
+        const body = await readRequestBody(req);
+        if (isInitializeRequest(body)) {
+          const { transport } = await createHttpSession(options, sessions);
+          await transport.handleRequest(req, res, body);
+          return;
+        }
+
+        sendJsonRpcError(
+          res,
+          400,
+          -32000,
+          'Bad Request: No valid session ID provided'
+        );
+        discardRequestBody(req);
+      } else if (method === 'GET' || method === 'DELETE') {
+        if (!sessionId) {
+          sendJsonRpcError(res, 400, -32000, 'Bad Request: Missing session ID');
+          return;
+        }
+
+        if (!sessions.has(sessionId)) {
+          sendJsonRpcError(res, 404, -32000, 'Session not found');
+          return;
+        }
+
+        if (!ensureProtocolVersionHeader(req, res)) {
+          return;
+        }
+
         const session = sessions.get(sessionId);
         if (session) {
           await session.transport.handleRequest(req, res);
+        } else {
+          sendJsonRpcError(res, 404, -32000, 'Session not found');
         }
       } else {
         res.writeHead(405, { Allow: 'GET, POST, DELETE' });

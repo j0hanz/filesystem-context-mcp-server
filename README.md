@@ -624,6 +624,21 @@ The [Glama](https://glama.ai/mcp/servers/j0hanz/filesystem-mcp) listing requires
 docker build -t filesystem-mcp .
 ```
 
+## HTTP Conformance Notes
+
+For Streamable HTTP clients, this server enforces the following behavior:
+
+- Session-bound requests must include `MCP-Protocol-Version: 2025-11-25`; missing or unsupported values return `400`.
+- Requests with invalid or expired `mcp-session-id` return `404`.
+- Initialize requests continue to be accepted without a session ID.
+
+## Backlog Hardening (Planned)
+
+The following hardening items are intentionally tracked as follow-up work:
+
+- Add a TTL-evicting task store for long-lived HTTP deployments to bound memory usage.
+- Add an optional per-session roots isolation mode for multi-tenant HTTP deployments.
+
 ## Troubleshooting
 
 **No directories configured**

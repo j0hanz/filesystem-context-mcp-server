@@ -7,6 +7,9 @@ import { it } from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
+import { REQUIRED_MCP_PROTOCOL_VERSION } from '../../lib/constants.js';
+import { startHttpServer } from '../../server.js';
+
 const EXPECTED_TOOL_NAMES = [
   'roots',
   'ls',
@@ -150,6 +153,148 @@ function resourceText(resourceResult: unknown): string {
   }
   return first.text;
 }
+
+await it('enforces HTTP session protocol headers and 404 invalid-session semantics', async () => {
+  const tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'fs-mcp-http-'));
+  const server = await startHttpServer(0, {
+    allowCwd: false,
+    cliAllowedDirs: [tmpRoot],
+  });
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  const endpoint = `http://127.0.0.1:${String(address.port)}/mcp`;
+
+  try {
+    const initResponse = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: REQUIRED_MCP_PROTOCOL_VERSION,
+          capabilities: {},
+          clientInfo: { name: 'http-e2e', version: '1.0.0' },
+        },
+      }),
+    });
+
+    assert.strictEqual(initResponse.status, 200);
+    const sessionId = initResponse.headers.get('mcp-session-id');
+    assert.ok(sessionId && sessionId.length > 0);
+
+    const missingProtocolHeader = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        'mcp-session-id': sessionId,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/list',
+        params: {},
+      }),
+    });
+
+    assert.strictEqual(missingProtocolHeader.status, 400);
+    const missingProtocolPayload = (await missingProtocolHeader.json()) as {
+      error?: { message?: string };
+    };
+    assert.match(
+      missingProtocolPayload.error?.message ?? '',
+      /MCP-Protocol-Version/i
+    );
+
+    const missingProtocolGet = await fetch(endpoint, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json, text/event-stream',
+        'mcp-session-id': sessionId,
+      },
+    });
+
+    assert.strictEqual(missingProtocolGet.status, 400);
+    const missingProtocolGetPayload = (await missingProtocolGet.json()) as {
+      error?: { message?: string };
+    };
+    assert.match(
+      missingProtocolGetPayload.error?.message ?? '',
+      /MCP-Protocol-Version/i
+    );
+
+    const missingProtocolDelete = await fetch(endpoint, {
+      method: 'DELETE',
+      headers: {
+        Accept: 'application/json, text/event-stream',
+        'mcp-session-id': sessionId,
+      },
+    });
+
+    assert.strictEqual(missingProtocolDelete.status, 400);
+    const missingProtocolDeletePayload =
+      (await missingProtocolDelete.json()) as {
+        error?: { message?: string };
+      };
+    assert.match(
+      missingProtocolDeletePayload.error?.message ?? '',
+      /MCP-Protocol-Version/i
+    );
+
+    const invalidSessionPost = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        'mcp-session-id': 'invalid-session-id',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 3,
+        method: 'tools/list',
+        params: {},
+      }),
+    });
+
+    assert.strictEqual(invalidSessionPost.status, 404);
+    const invalidSessionPostPayload = (await invalidSessionPost.json()) as {
+      error?: { message?: string };
+    };
+    assert.match(
+      invalidSessionPostPayload.error?.message ?? '',
+      /Session not found/i
+    );
+
+    const invalidSessionGet = await fetch(endpoint, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json, text/event-stream',
+        'mcp-session-id': 'invalid-session-id',
+      },
+    });
+
+    assert.strictEqual(invalidSessionGet.status, 404);
+    const invalidSessionGetPayload = (await invalidSessionGet.json()) as {
+      error?: { message?: string };
+    };
+    assert.match(
+      invalidSessionGetPayload.error?.message ?? '',
+      /Session not found/i
+    );
+  } finally {
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        resolve();
+      });
+    });
+    await fs.rm(tmpRoot, { recursive: true, force: true });
+  }
+});
 
 await it('runs protocol-level MCP regression coverage via SDK client', async () => {
   const tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'fs-mcp-protocol-'));
