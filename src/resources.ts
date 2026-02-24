@@ -6,12 +6,27 @@ import { ErrorCode, McpError } from './lib/errors.js';
 import { globalMetrics } from './lib/observability.js';
 import type { ResourceStore } from './lib/resource-store.js';
 import { buildToolCatalog } from './resources/tool-catalog.js';
+import { buildToolInfo, getToolContracts } from './resources/tool-info.js';
 import { buildWorkflowGuide } from './resources/workflows.js';
 import { type IconInfo, withDefaultIcons } from './tools/shared.js';
 
 const RESULT_TEMPLATE = new ResourceTemplate('filesystem-mcp://result/{id}', {
   list: undefined,
 });
+
+const TOOL_INFO_TEMPLATE = new ResourceTemplate('internal://tool-info/{name}', {
+  list: () => ({
+    resources: getToolContracts().map((contract) => ({
+      uri: `internal://tool-info/${contract.name}`,
+      name: contract.name,
+      mimeType: 'text/markdown',
+    })),
+  }),
+});
+const TOOL_INFO_RESOURCE_NAME = 'filesystem-mcp-tool-info';
+const TOOL_INFO_RESOURCE_DESCRIPTION =
+  'Per-tool contract details, nuances, and gotchas. Read internal://tool-info/{name} with a tool name such as "read", "ls", or "grep".';
+
 const INSTRUCTIONS_RESOURCE_NAME = 'filesystem-mcp-instructions';
 const INSTRUCTIONS_RESOURCE_URI = 'internal://instructions';
 const INSTRUCTIONS_RESOURCE_DESCRIPTION =
@@ -165,6 +180,50 @@ export function registerResultResources(
             uri: entry.uri,
             mimeType: entry.mimeType,
             text: entry.text,
+          },
+        ],
+      };
+    }
+  );
+}
+
+export function registerToolInfoResource(
+  server: McpServer,
+  iconInfo?: IconInfo
+): void {
+  server.registerResource(
+    TOOL_INFO_RESOURCE_NAME,
+    TOOL_INFO_TEMPLATE,
+    withDefaultIcons(
+      {
+        title: 'Tool Info',
+        description: TOOL_INFO_RESOURCE_DESCRIPTION,
+        mimeType: 'text/markdown',
+        annotations: {
+          audience: ['assistant'],
+          priority: 0.65,
+        },
+      },
+      iconInfo
+    ),
+    (uri, variables): ReadResourceResult => {
+      const { name } = variables;
+      if (typeof name !== 'string' || name.length === 0) {
+        throw new McpError(ErrorCode.E_INVALID_INPUT, 'Tool name is required');
+      }
+      const content = buildToolInfo(name);
+      if (content === undefined) {
+        throw new McpError(
+          ErrorCode.E_INVALID_INPUT,
+          `Tool not found: ${name}`
+        );
+      }
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: 'text/markdown',
+            text: content,
           },
         ],
       };

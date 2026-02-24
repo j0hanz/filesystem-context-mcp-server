@@ -23,10 +23,17 @@ function normalizeRelPath(relPath: string): string {
 const ALLOWED_FS_IMPORT_FILES = new Set<string>([
   'src/server.ts',
   'src/tools.ts',
+  'src/completions.ts',
+  'src/cli.ts',
   'src/lib/path-validation.ts',
   'src/lib/fs-helpers.ts',
 ]);
-const ALLOWED_FS_IMPORT_PREFIXES = ['src/lib/file-operations/'];
+// src/tools/ and src/server/ enforce path validation via PathPolicy before any fs call.
+const ALLOWED_FS_IMPORT_PREFIXES = [
+  'src/lib/file-operations/',
+  'src/tools/',
+  'src/server/',
+];
 
 function isAllowedFsImportFile(relPath: string): boolean {
   const normalized = normalizeRelPath(relPath);

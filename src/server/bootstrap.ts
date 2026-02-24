@@ -29,6 +29,7 @@ import {
   registerMetricsResource,
   registerResultResources,
   registerToolCatalogResource,
+  registerToolInfoResource,
   registerWorkflowGuideResource,
 } from '../resources.js';
 import { buildServerInstructions } from '../resources/generated-instructions.js';
@@ -97,6 +98,9 @@ export async function createServer(
     };
 
   if (taskToolSupport) {
+    // Note: InMemoryTaskStore has no TTL — tasks accumulate for the process
+    // lifetime. In HTTP mode this may grow unboundedly for long-lived servers.
+    // Use a custom TaskStore with eviction for production HTTP deployments.
     serverConfig.taskStore = new InMemoryTaskStore();
     serverConfig.taskMessageQueue = new InMemoryTaskMessageQueue();
   }
@@ -134,6 +138,7 @@ export async function createServer(
   registerInstructionResource(server, serverInstructions, localIcon);
   registerToolCatalogResource(server, localIcon);
   registerWorkflowGuideResource(server, localIcon);
+  registerToolInfoResource(server, localIcon);
   registerGetHelpPrompt(server, serverInstructions, localIcon);
   registerResultResources(server, resourceStore, localIcon);
   registerMetricsResource(server, localIcon);
@@ -406,6 +411,15 @@ export async function startHttpServer(
 
         const body = await readRequestBody(req);
         if (isInitializeRequest(body)) {
+          const maxSessions =
+            parseInt(
+              process.env['FILESYSTEM_MCP_MAX_HTTP_SESSIONS'] ?? '',
+              10
+            ) || 100;
+          if (sessions.size >= maxSessions) {
+            sendJsonRpcError(res, 503, -32000, 'Too many sessions');
+            return;
+          }
           const { transport } = await createHttpSession(options, sessions);
           await transport.handleRequest(req, res, body);
           return;

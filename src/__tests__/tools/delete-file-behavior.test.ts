@@ -43,15 +43,12 @@ await it('rm deletes empty directories without recursive and rejects non-empty d
       {}
     )) as {
       isError?: boolean;
-      structuredContent?: { ok?: boolean; error?: { code?: string } };
+      content: Array<{ text?: string }>;
     };
 
     assert.equal(nonEmptyResult.isError, true);
-    assert.equal(nonEmptyResult.structuredContent?.ok, false);
-    assert.equal(
-      nonEmptyResult.structuredContent?.error?.code,
-      ErrorCode.E_INVALID_INPUT
-    );
+    const nonEmptyText = nonEmptyResult.content[0]?.text ?? '';
+    assert.match(nonEmptyText, /\[E_INVALID_INPUT\]/u);
 
     const stillExists = await fs.stat(nonEmptyDir);
     assert.ok(stillExists.isDirectory());

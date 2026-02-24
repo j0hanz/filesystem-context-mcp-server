@@ -337,7 +337,7 @@ function getTaskId(extra: TaskToolExtra): string {
 }
 
 function isErrorResult(result: ToolResult<unknown>): boolean {
-  return 'isError' in result && result.isError === true;
+  return 'isError' in result && result.isError;
 }
 
 // Strips structuredContent from a tool result if present, without modifying the original object.  This is used when storing error results as 'completed' to prevent client-side output schema validation errors, while still allowing the human-readable error message in content[0].text to be returned to clients.

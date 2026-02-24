@@ -14,20 +14,11 @@ void it('rejects tool calls before notifications/initialized', async () => {
 
   const typed = result as {
     isError?: boolean;
-    structuredContent?: {
-      ok?: boolean;
-      error?: { code?: string; message?: string };
-    };
+    content: Array<{ text?: string }>;
   };
 
   assert.strictEqual(typed.isError, true);
-  assert.strictEqual(typed.structuredContent?.ok, false);
-  assert.strictEqual(
-    typed.structuredContent?.error?.code,
-    ErrorCode.E_INVALID_INPUT
-  );
-  assert.match(
-    typed.structuredContent?.error?.message ?? '',
-    /notifications\/initialized/i
-  );
+  const errorText = typed.content[0]?.text ?? '';
+  assert.match(errorText, /\[E_INVALID_INPUT\]/u);
+  assert.match(errorText, /notifications\/initialized/i);
 });

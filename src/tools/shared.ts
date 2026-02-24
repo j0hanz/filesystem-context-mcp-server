@@ -21,7 +21,6 @@ import { createTimedAbortSignal } from '../lib/fs-helpers.js';
 import { withToolDiagnostics } from '../lib/observability.js';
 import { getAllowedDirectories } from '../lib/path-validation.js';
 import type { ResourceStore } from '../lib/resource-store.js';
-import type { ToolErrorResponseSchema } from '../schemas.js';
 
 export { type ToolContract } from './contract.js';
 
@@ -172,14 +171,12 @@ export function buildToolResponse<T>(
   };
 }
 
-export type ToolResponse<T> = ReturnType<typeof buildToolResponse<T>> &
-  Record<string, unknown>;
-
-type ToolErrorStructuredContent = z.infer<typeof ToolErrorResponseSchema>;
+export type ToolResponse<T> = ReturnType<typeof buildToolResponse<T>> & {
+  isError?: never;
+} & Record<string, unknown>;
 
 interface ToolErrorResponse extends Record<string, unknown> {
   content: ContentBlock[];
-  structuredContent: ToolErrorStructuredContent;
   isError: true;
 }
 
@@ -388,25 +385,8 @@ export function buildToolErrorResponse(
 ): ToolErrorResponse {
   const detailed = resolveDetailedError(error, defaultCode, path);
   const text = formatDetailedError(detailed);
-
-  const errorContent: ToolErrorStructuredContent['error'] = {
-    code: detailed.code,
-    message: detailed.message,
-  };
-  if (detailed.path !== undefined) {
-    errorContent.path = detailed.path;
-  }
-  if (detailed.suggestion !== undefined) {
-    errorContent.suggestion = detailed.suggestion;
-  }
-
-  const structuredContent: ToolErrorStructuredContent = {
-    ok: false,
-    error: errorContent,
-  };
   return {
     content: [{ type: 'text', text }],
-    structuredContent,
     isError: true,
   };
 }

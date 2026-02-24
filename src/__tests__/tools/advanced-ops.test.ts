@@ -120,14 +120,10 @@ await it('advanced operations integration test', async () => {
         {}
       )) as any;
       assert.equal(stalePatchResult.isError, true);
-      assert.strictEqual(
-        stalePatchResult.structuredContent.error?.code,
-        ErrorCode.E_INVALID_INPUT
-      );
-      assert.match(
-        stalePatchResult.structuredContent.error?.message ?? '',
-        /diff_files/u
-      );
+      const stalePatchText =
+        (stalePatchResult.content as Array<{ text?: string }>)[0]?.text ?? '';
+      assert.match(stalePatchText, /\[E_INVALID_INPUT\]/u);
+      assert.match(stalePatchText, /diff_files/u);
     }
 
     // 4. Search and Replace

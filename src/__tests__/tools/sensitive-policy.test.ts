@@ -103,15 +103,9 @@ withAllToolsFixture((getHandler, getTestDir) => {
       {}
     )) as {
       isError?: boolean;
-      structuredContent?: { ok?: boolean; error?: { code?: string } };
+      content: Array<{ text?: string }>;
     };
     assert.strictEqual(statResult.isError, true);
-    assert.ok(statResult.structuredContent);
-    assert.strictEqual(statResult.structuredContent.ok, false);
-    assert.ok(statResult.structuredContent.error);
-    assert.strictEqual(
-      statResult.structuredContent.error.code,
-      ErrorCode.E_ACCESS_DENIED
-    );
+    assert.match(statResult.content[0]?.text ?? '', /\[E_ACCESS_DENIED\]/u);
   });
 });

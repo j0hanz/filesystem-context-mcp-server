@@ -41,6 +41,7 @@ export const LIST_DIRECTORY_TOOL: ToolContract = {
   inputSchema: ListDirectoryInputSchema,
   outputSchema: ListDirectoryOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
+  taskSupport: 'optional',
   nuances: ['`pattern` enables filtered recursive traversal up to `maxDepth`.'],
 } as const;
 

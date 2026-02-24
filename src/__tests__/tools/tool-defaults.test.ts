@@ -69,22 +69,11 @@ await it('ls returns E_ACCESS_DENIED when no roots configured', async () => {
 
     const result = (await handler({}, {})) as {
       isError?: unknown;
-      structuredContent?: unknown;
+      content: Array<{ text?: string }>;
     };
 
     assert.strictEqual(result.isError, true);
-    assert.ok(
-      typeof result.structuredContent === 'object' &&
-        result.structuredContent !== null
-    );
-
-    const structured = result.structuredContent as {
-      ok?: unknown;
-      error?: { code?: unknown };
-    };
-
-    assert.strictEqual(structured.ok, false);
-    assert.strictEqual(structured.error?.code, ErrorCode.E_ACCESS_DENIED);
+    assert.match(result.content[0]?.text ?? '', /\[E_ACCESS_DENIED\]/u);
   } finally {
     await setAllowedDirectoriesResolved(previousAllowed);
   }

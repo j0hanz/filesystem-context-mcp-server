@@ -60,3 +60,30 @@ export function getSharedConstraints(): string[] {
     'If a response includes `resourceUri`, call `resources/read` immediately — results expire on process restart.',
   ];
 }
+
+export function buildToolInfo(name: string): string | undefined {
+  const entry = ENTRIES[name];
+  if (!entry) return undefined;
+
+  const lines: string[] = [`## ${entry.name}`, '', entry.description];
+
+  if (entry.annotations && entry.annotations.length > 0) {
+    lines.push('', `**Annotations:** ${entry.annotations.join(', ')}`);
+  }
+
+  if (entry.nuances && entry.nuances.length > 0) {
+    lines.push('', '**Nuances:**');
+    for (const nuance of entry.nuances) {
+      lines.push(`- ${nuance}`);
+    }
+  }
+
+  if (entry.gotchas && entry.gotchas.length > 0) {
+    lines.push('', '**Gotchas:**');
+    for (const gotcha of entry.gotchas) {
+      lines.push(`- ${gotcha}`);
+    }
+  }
+
+  return lines.join('\n');
+}

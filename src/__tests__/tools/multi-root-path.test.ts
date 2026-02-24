@@ -42,17 +42,11 @@ await it('ls requires explicit path when multiple roots are configured', async (
 
   const result = (await handler({}, {})) as {
     isError?: boolean;
-    structuredContent?: { ok?: boolean; error?: { code?: string } };
+    content: Array<{ text?: string }>;
   };
 
   assert.strictEqual(result.isError, true);
-  assert.ok(result.structuredContent);
-  assert.strictEqual(result.structuredContent.ok, false);
-  assert.ok(result.structuredContent.error);
-  assert.strictEqual(
-    result.structuredContent.error.code,
-    ErrorCode.E_INVALID_INPUT
-  );
+  assert.match(result.content[0]?.text ?? '', /\[E_INVALID_INPUT\]/u);
 });
 
 await it('relative paths are rejected when multiple roots are configured', async () => {
@@ -68,15 +62,9 @@ await it('relative paths are rejected when multiple roots are configured', async
 
   const result = (await handler({ path: 'example.txt' }, {})) as {
     isError?: boolean;
-    structuredContent?: { ok?: boolean; error?: { code?: string } };
+    content: Array<{ text?: string }>;
   };
 
   assert.strictEqual(result.isError, true);
-  assert.ok(result.structuredContent);
-  assert.strictEqual(result.structuredContent.ok, false);
-  assert.ok(result.structuredContent.error);
-  assert.strictEqual(
-    result.structuredContent.error.code,
-    ErrorCode.E_INVALID_INPUT
-  );
+  assert.match(result.content[0]?.text ?? '', /\[E_INVALID_INPUT\]/u);
 });
