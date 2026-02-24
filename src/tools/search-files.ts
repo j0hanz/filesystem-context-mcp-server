@@ -159,7 +159,10 @@ async function handleSearchFiles(
     }
   }
 
-  const text = joinLines(textLines) + formatOperationSummary(summaryOptions);
+  let text = joinLines(textLines) + formatOperationSummary(summaryOptions);
+  if (nextCursor) {
+    text += `\n[Next page available. Use cursor: "${nextCursor}"]`;
+  }
   return buildToolResponse(text, structured);
 }
 

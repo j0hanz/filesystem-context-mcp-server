@@ -45,7 +45,8 @@ export const LIST_DIRECTORY_TOOL: ToolContract = {
 } as const;
 
 function buildListTextResult(
-  result: Awaited<ReturnType<typeof listDirectory>>
+  result: Awaited<ReturnType<typeof listDirectory>>,
+  nextCursor?: string
 ): string {
   const { entries, summary, path } = result;
   if (entries.length === 0) {
@@ -75,7 +76,11 @@ function buildListTextResult(
     ...(truncatedReason ? { truncatedReason } : {}),
   };
 
-  return joinLines(lines) + formatOperationSummary(summaryOptions);
+  let text = joinLines(lines) + formatOperationSummary(summaryOptions);
+  if (nextCursor) {
+    text += `\n[Next page available. Use cursor: "${nextCursor}"]`;
+  }
+  return text;
 }
 
 function buildStructuredListEntry(
@@ -167,7 +172,7 @@ async function handleListDirectory(
       : undefined;
   const displayResult = { ...result, entries: displayEntries };
   return buildToolResponse(
-    buildListTextResult(displayResult),
+    buildListTextResult(displayResult, nextCursor),
     buildStructuredListResult(displayResult, nextCursor)
   );
 }
