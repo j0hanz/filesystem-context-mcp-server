@@ -1,0 +1,140 @@
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+
+import { setAllowedDirectoriesResolved } from '../lib/path-validation.js';
+import { createInMemoryResourceStore } from '../lib/resource-store.js';
+import { registerAllTools } from '../tools.js';
+
+export interface TestContentBlock {
+  type: string;
+  text?: string;
+}
+
+export interface ToolResult {
+  isError?: boolean;
+  content: TestContentBlock[];
+  structuredContent?: unknown;
+}
+
+export interface TestEnv {
+  client: Client;
+  tmpDir: string;
+  cleanup: () => Promise<void>;
+}
+
+/**
+ * Create an isolated MCP test environment with a unique temp directory.
+ * Registers all tools with isInitialized=true and sets the allowed directory
+ * singleton to [tmpDir] so path validation works correctly.
+ */
+export async function createTestEnv(): Promise<TestEnv> {
+  const tmpDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), `fsmcp-${randomUUID().slice(0, 8)}-`)
+  );
+
+  await setAllowedDirectoriesResolved([tmpDir]);
+
+  const server = new McpServer(
+    { name: 'test-server', version: '0.0.0' },
+    {
+      capabilities: {
+        tools: {},
+        resources: {},
+        prompts: {},
+        logging: {},
+        completions: {},
+      },
+    }
+  );
+
+  const resourceStore = createInMemoryResourceStore();
+  registerAllTools(server, { resourceStore, isInitialized: () => true });
+
+  const client = new Client({ name: 'test-client', version: '1.0.0' });
+  const [ct, st] = InMemoryTransport.createLinkedPair();
+  await server.connect(st);
+  await client.connect(ct);
+
+  const cleanup = async (): Promise<void> => {
+    try {
+      await client.close();
+    } catch {
+      // ignore – transport may already be closed
+    }
+    try {
+      await server.close();
+    } catch {
+      // ignore
+    }
+    await fs.rm(tmpDir, { recursive: true, force: true });
+    try {
+      await setAllowedDirectoriesResolved([]);
+    } catch {
+      // ignore
+    }
+  };
+
+  return { client, tmpDir, cleanup };
+}
+
+/**
+ * Assert that a tool call returned an MCP-level error result.
+ * Optionally verifies the error code from "Error [CODE]: …" format.
+ */
+export function assertToolError(
+  result: ToolResult,
+  expectedCode?: string
+): void {
+  assert.equal(result.isError, true, 'Expected isError to be true');
+  const textBlock = result.content.find(
+    (b): b is { type: string; text: string } => typeof b.text === 'string'
+  );
+  assert.ok(textBlock, 'Error result must have a text block');
+  if (expectedCode !== undefined) {
+    const match = /Error \[(\w+)\]/.exec(textBlock.text);
+    assert.ok(
+      match,
+      `Expected "Error [${expectedCode}]" pattern in:\n${textBlock.text}`
+    );
+    assert.equal(match[1], expectedCode);
+  }
+}
+
+/**
+ * Assert that a tool call succeeded.
+ * Fails with the error text if the result has isError: true.
+ */
+export function assertOk(result: ToolResult): void {
+  if (result.isError === true) {
+    const textBlock = result.content.find(
+      (b): b is { type: string; text: string } => typeof b.text === 'string'
+    );
+    assert.fail(
+      `Expected success, got error: ${textBlock?.text ?? 'unknown error'}`
+    );
+  }
+  assert.ok(
+    result.content.length > 0,
+    'Result must have at least one content block'
+  );
+}
+
+/**
+ * Return structuredContent cast as a plain record.
+ * Asserts it is non-null and non-undefined.
+ */
+export function getStructured(result: ToolResult): Record<string, unknown> {
+  const sc = result.structuredContent;
+  assert.ok(
+    sc !== undefined && sc !== null,
+    'structuredContent must be present on success results'
+  );
+  return sc as Record<string, unknown>;
+}
