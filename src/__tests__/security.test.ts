@@ -125,7 +125,7 @@ describe('security: symlink escape attempt', () => {
       name: 'read',
       arguments: { path: linkPath },
     });
-    assertToolError(raw as unknown as ToolResult, 'E_PERMISSION_DENIED');
+    assertToolError(raw as unknown as ToolResult, 'E_ACCESS_DENIED');
   });
 
   it('stat: rejects symlink pointing outside allowed root', async () => {
@@ -139,7 +139,7 @@ describe('security: symlink escape attempt', () => {
       name: 'stat',
       arguments: { path: linkPath },
     });
-    assertToolError(raw as unknown as ToolResult, 'E_PERMISSION_DENIED');
+    assertToolError(raw as unknown as ToolResult, 'E_ACCESS_DENIED');
   });
 });
 
