@@ -1,38 +1,59 @@
 # AGENTS.md
 
-A TypeScript-based Model Context Protocol (MCP) server for secure local filesystem operations, built with Node.js (>=24), the MCP SDK, and Zod v4.
+MCP server for local filesystem access by LLM clients, built with TypeScript and Docker/GitHub Actions infrastructure.
 
 ## Tooling
 
 - **Manager**: npm
-- **Frameworks**: TypeScript 5.9+, Node.js (>=24), @modelcontextprotocol/sdk ^1.26, Zod ^4.3
-- **Infra**: Docker, GitHub Actions (release workflow)
+- **Frameworks**: TypeScript, Zod v4, @modelcontextprotocol/sdk, ESLint, Prettier
 
 ## Commands
 
-- **Dev**: `npm run dev` (watch mode) or `npm run dev:run`
-- **Test**: `npm run test` or `npm run test:fast`
+- **Dev**: `npm run dev`
+- **Test**: `npm run test`
 - **Lint**: `npm run lint`
-- **Format**: `npm run format`
-- **Type Check**: `npm run type-check`
-- **Build**: `npm run build`
-- **Dead Code**: `npm run knip`
+- **Deploy**: N/A
 
 ## Safety Boundaries
 
-- **Always**: Run `npm run test:fast`, `npm run lint`, and `npm run type-check` to verify changes.
-- **Ask First**: Installing dependencies, deleting files, running full builds (`npm run build`), generating coverage (`npm run test:coverage`), or deploying/releasing.
-- **Never**: Commit or expose secrets (e.g., `.mcpregistry_github_token`, `.mcpregistry_registry_token`), or edit generated directories (`dist/`).
+- **Always**: `npm run lint`, `npm run type-check`, `npm run test`
+- **Ask First**: `npm run test:coverage`, `npm run build`, release/publish workflow, Docker/infrastructure changes, deleting files
+- **Never**: commit or expose credentials; edit generated/vendor directories (`dist/`, `node_modules/`); commit sensitive token files (`.mcpregistry_github_token`, `.mcpregistry_registry_token`)
+
+## Directory Overview
+
+```text
+.
+├── src/                 # MCP server source (tools, schemas, runtime)
+├── node-tests/          # Node-level test cases
+├── scripts/             # Build/test task orchestrators
+├── assets/              # Static assets
+├── memory_db/           # Local memory storage artifacts
+├── .github/             # Workflows and repository automation
+├── package.json         # Scripts and dependencies
+├── server.json          # Published server metadata
+└── README.md            # Usage and integration docs
+```
 
 ## Navigation
 
-- **Entry Points**: `src/index.ts` (shebang/transport), `src/server.ts` (McpServer instance), `src/cli.ts` (CLI)
-- **Tool Files**: `src/tools.ts` (registry), `src/tools/*.ts` (one tool per file)
-- **Schemas**: `src/schemas.ts` (input/output Zod schemas)
-- **Key Configs**: `tsconfig.json`, `eslint.config.mjs`, `docker-compose.yml`, `Dockerfile`, `server.json`, `knip.json`
+- **Entry Points**: `src/index.ts`, `src/server.ts`, `package.json`, `README.md`, `docker-compose.yml`
+- **Key Configs**: TypeScript (`tsconfig*.json`), ESLint (`eslint.config.mjs`), Prettier (`.prettierrc`), Git (`.gitignore`)
+
+## Don'ts
+
+- Don't bypass lint/type-check rules without approval.
+- Don't ignore failing test results.
+- Don't add unapproved third-party packages without checking `package.json` impact.
+- Don't hardcode secrets or credentials in code, tests, docs, or config.
+- Don't commit or share `.mcpregistry_github_token` or `.mcpregistry_registry_token`.
+- Don't edit generated output in `dist/` or dependencies in `node_modules/`.
+- Don't run release/publish steps (`npm publish`, tag/release automation) without explicit approval.
 
 ## Change Checklist
 
-1. Run `npm run type-check` to ensure type safety.
-2. Run `npm run lint` to maintain code style.
-3. Run `npm run test:fast` to verify functionality.
+1. Run `npm run lint`.
+2. Run `npm run type-check`.
+3. Run `npm run test`.
+4. Run `npm run build` when touching runtime/server behavior.
+5. Update `README.md` or `server.json` when public behavior/metadata changes.
