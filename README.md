@@ -474,14 +474,14 @@ Replace text in all files matching a glob. Replaces **all** occurrences per file
 
 ### Resources
 
-| URI                            | Description                        | MIME Type       |
-| :----------------------------- | :--------------------------------- | :-------------- |
-| `internal://instructions`      | Usage guidance for models          | `text/markdown` |
-| `internal://tool-catalog`      | Tool routing and data-flow guide   | `text/markdown` |
-| `internal://workflows`         | Explore/search/edit/patch workflows | `text/markdown` |
-| `internal://tool-info/{name}`  | Per-tool nuances and gotchas       | `text/markdown` |
-| `filesystem-mcp://metrics`     | Live per-tool metrics snapshot     | `application/json` |
-| `filesystem-mcp://result/{id}` | Ephemeral cached large tool output | varies          |
+| URI                            | Description                         | MIME Type          |
+| :----------------------------- | :---------------------------------- | :----------------- |
+| `internal://instructions`      | Usage guidance for models           | `text/markdown`    |
+| `internal://tool-catalog`      | Tool routing and data-flow guide    | `text/markdown`    |
+| `internal://workflows`         | Explore/search/edit/patch workflows | `text/markdown`    |
+| `internal://tool-info/{name}`  | Per-tool nuances and gotchas        | `text/markdown`    |
+| `filesystem-mcp://metrics`     | Live per-tool metrics snapshot      | `application/json` |
+| `filesystem-mcp://result/{id}` | Ephemeral cached large tool output  | varies             |
 
 When a tool response includes a `resource_link`/`resourceUri`, treat it as authoritative for full payload retrieval and call `resources/read` with that URI.
 
