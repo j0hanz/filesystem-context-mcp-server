@@ -49,7 +49,7 @@ export function buildCoreContextPack(): string {
     const annotations = e.annotations ? ` ${e.annotations.join(' ')}` : '';
     return `| \`${e.name}\` | ${e.description}${annotations} |`;
   });
-  return `## Core Context Pack\n\n| Tool | Purpose |\n|------|---------|\n${rows.join('\n')}`;
+  return `<core_context>\n| Tool | Purpose |\n|------|---------|\n${rows.join('\n')}\n</core_context>`;
 }
 
 export function getSharedConstraints(): string[] {

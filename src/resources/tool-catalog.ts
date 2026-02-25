@@ -1,7 +1,6 @@
 import { buildCoreContextPack } from './tool-info.js';
 
-const CATALOG_GUIDE = `## Tool Selection Guide
-
+const CATALOG_GUIDE = `<tool_selection_guide>
 ## Cross-Tool Data Flow
 
 \`\`\`
@@ -26,6 +25,7 @@ diff_files (patch text) -> apply_patch.patch
 - Always generate a patch with \`diff_files\` first.
 - Always use \`dryRun: true\` with \`apply_patch\` to verify changes.
 - \`apply_patch\` works on unified diff format.
+</tool_selection_guide>
 `;
 
 export function buildToolCatalog(): string {

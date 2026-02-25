@@ -7,48 +7,46 @@ import {
 } from './tool-info.js';
 import { buildWorkflowGuide } from './workflows.js';
 
-const INSTRUCTIONS_HEADER = `# FILESYSTEM-MCP
+const INSTRUCTIONS_HEADER = `<role>
+Expert filesystem agent. Operate ONLY within allowed roots. Always discover before acting — never guess paths.
+</role>
 
-Operate ONLY within allowed roots. Always discover before acting — never guess paths.
-
-## TOOLS
-
+<tools_overview>
 | Category | Tools |
 |----------|-------|
 | Navigate | \`roots\`, \`ls\`, \`tree\`, \`find\` |
 | Inspect  | \`stat\`, \`stat_many\`, \`grep\`, \`calculate_hash\` |
 | Read     | \`read\`, \`read_many\`, \`diff_files\` |
 | Write    | \`mkdir\`, \`write\`, \`edit\`, \`mv\`, \`rm\`, \`apply_patch\`, \`search_and_replace\` |
+</tools_overview>
 
-## RESOURCES
+<resources>
+- \`filesystem-mcp://result/{id}\`: Large output cache. Call \`resources/read\` immediately if \`resourceUri\` is returned.
+- \`filesystem-mcp://metrics\`: Live per-tool stats.
+</resources>
 
-- \`filesystem-mcp://result/{id}\`: Large output is cached here. **If a response includes \`resourceUri\`, call \`resources/read\` immediately — results expire on process restart.**
-- \`filesystem-mcp://metrics\`: Live per-tool call/error stats.
-
-## TASK PROTOCOL
-
-Long-running tools support async execution: provide \`_meta.progressToken\` in \`tools/call\`, poll \`tasks/get\`, then call \`tasks/result\`.
+<task_protocol>
+Async execution: provide \`_meta.progressToken\` in \`tools/call\`, poll \`tasks/get\`, call \`tasks/result\`.
 Task-capable: \`find\`, \`tree\`, \`read\`, \`read_many\`, \`stat_many\`, \`grep\`, \`mkdir\`, \`write\`, \`mv\`, \`rm\`, \`calculate_hash\`, \`apply_patch\`, \`search_and_replace\`.
-
+</task_protocol>
 `;
 
-const INSTRUCTIONS_FOOTER = `
-## CONSTRAINTS
-
+const INSTRUCTIONS_FOOTER = `<constraints>
 ${getSharedConstraints()
   .map((c) => `- ${c}`)
   .join('\n')}
+</constraints>
 
-## ERROR HANDLING
-
+<error_handling>
 - \`E_ACCESS_DENIED\` → Call \`roots\`; use allowed path.
 - \`E_NOT_FOUND\`     → Call \`ls\`/\`find\`; verify spelling.
 - \`E_TOO_LARGE\`     → Use range/head or \`read_many\`.
 - \`E_TIMEOUT\`       → Reduce scope or result limits.
+</error_handling>
 `;
 
 function formatToolSection(tool: ToolContract): string {
-  const parts = [`${tool.name}: ${tool.description}`];
+  const parts = [`### ${tool.name}\n${tool.description}`];
 
   if (tool.nuances && tool.nuances.length > 0) {
     parts.push(...tool.nuances.map((n) => `» ${n}`));
@@ -69,13 +67,12 @@ export function buildServerInstructions(): string {
     '',
     buildToolCatalogDetailsOnly(),
     '',
-    '## TOOL REFERENCE',
-    '',
+    '<tool_reference>',
     toolSections,
+    '</tool_reference>',
     '',
     buildWorkflowGuide(),
     '',
-    '---',
     INSTRUCTIONS_FOOTER,
   ].join('\n');
 }

@@ -1,6 +1,5 @@
 export function buildWorkflowGuide(): string {
-  return `## Workflow Reference
-
+  return `<workflows>
 ### A: EXPLORE
 Use when: navigating an unfamiliar directory or reading file content.
 1. \`roots\` (List allowed paths).
@@ -30,5 +29,5 @@ Use when: applying structured diffs produced by \`diff_files\`.
 2. \`apply_patch\` (dryRun: true).
 3. \`apply_patch\` (dryRun: false).
    > **Tip:** Pass \`diff_files\` output directly into \`apply_patch\`.
-`;
+</workflows>`;
 }

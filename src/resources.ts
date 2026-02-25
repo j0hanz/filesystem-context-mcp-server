@@ -30,7 +30,7 @@ const TOOL_INFO_RESOURCE_DESCRIPTION =
 const INSTRUCTIONS_RESOURCE_NAME = 'filesystem-mcp-instructions';
 const INSTRUCTIONS_RESOURCE_URI = 'internal://instructions';
 const INSTRUCTIONS_RESOURCE_DESCRIPTION =
-  'Guidance for using the filesystem-mcp MCP tools effectively.';
+  'Comprehensive rules and guidelines for filesystem-mcp usage.';
 const RESULT_RESOURCE_NAME = 'filesystem-mcp-result';
 const RESULT_RESOURCE_DESCRIPTION =
   'Ephemeral cached tool output exposed as an MCP resource. Not guaranteed to be listed via resources/list.';
@@ -42,12 +42,12 @@ const METRICS_RESOURCE_DESCRIPTION =
 
 const CATALOG_RESOURCE_NAME = 'filesystem-mcp-catalog';
 const CATALOG_RESOURCE_URI = 'internal://tool-catalog';
-const CATALOG_RESOURCE_DESCRIPTION =
-  'Detailed catalog of tools and their inter-dependencies.';
+const CATALOG_RESOURCE_DESCRIPTION = 'Tool selection guide and data flow map.';
 
 const WORKFLOW_RESOURCE_NAME = 'filesystem-mcp-workflows';
 const WORKFLOW_RESOURCE_URI = 'internal://workflows';
-const WORKFLOW_RESOURCE_DESCRIPTION = 'Recommended workflows for common tasks.';
+const WORKFLOW_RESOURCE_DESCRIPTION =
+  'Standard operating procedures for exploration, search, edit, and patch.';
 
 export function registerInstructionResource(
   server: McpServer,

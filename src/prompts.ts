@@ -7,7 +7,8 @@ import { type IconInfo, withDefaultIcons } from './tools/shared.js';
 
 const HELP_PROMPT_NAME = 'get-help';
 const HELP_PROMPT_TITLE = 'Get Help';
-const HELP_PROMPT_DESCRIPTION = 'Return the filesystem-mcp usage instructions.';
+const HELP_PROMPT_DESCRIPTION =
+  'Retrieve the full filesystem-mcp XML usage guide.';
 
 function filterInstructionsByTopic(
   instructions: string,
