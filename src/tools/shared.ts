@@ -178,6 +178,7 @@ export type ToolResponse<T> = ReturnType<typeof buildToolResponse<T>> & {
 interface ToolErrorResponse extends Record<string, unknown> {
   content: ContentBlock[];
   isError: true;
+  errorCode?: string;
 }
 
 export type ToolResult<T> = ToolResponse<T> | ToolErrorResponse;
@@ -388,6 +389,7 @@ export function buildToolErrorResponse(
   return {
     content: [{ type: 'text', text }],
     isError: true,
+    errorCode: detailed.code,
   };
 }
 
@@ -465,10 +467,11 @@ export function createProgressReporter(
     // Enforce monotonic progress to prevent client confusion. Client behavior on
     // out-of-order progress is undefined in the MCP spec.
     if (current <= lastProgress) return;
-    // Enforce rate-limiting to prevent client flooding. Progress updates faster
-    // than PROGRESS_RATE_LIMIT_MS are silently dropped.
+    // Terminal notifications always bypass the rate limit so clients reliably
+    // receive the final state even when updates arrive in quick succession.
+    const isTerminal = total !== undefined && current >= total;
     const now = Date.now();
-    if (now - lastSentMs < PROGRESS_RATE_LIMIT_MS) return;
+    if (!isTerminal && now - lastSentMs < PROGRESS_RATE_LIMIT_MS) return;
     lastProgress = current;
     lastSentMs = now;
     void reportProgress(extra, {
@@ -498,11 +501,12 @@ async function withProgress<T>(
   }
 
   const total = 1;
-  await reportProgress(extra, {
-    current: 0,
-    total,
-    message,
-  });
+  // Emit the start notification only when a progressToken is present; for
+  // task-only mode the task status is already 'working' — a zero-progress
+  // notification would add unnecessary overhead without client value.
+  if (canSendProgress(extra)) {
+    await reportProgress(extra, { current: 0, total, message });
+  }
 
   try {
     const result = await run();
@@ -560,6 +564,15 @@ export function wrapToolHandler<Args, Result>(
   };
 }
 
+/**
+ * Returns `pathValue` if non-empty; otherwise resolves to the single allowed
+ * directory from module-level state managed by `RootsManager`. Throws when the
+ * path is ambiguous (multiple roots) or when no roots are configured.
+ *
+ * NOTE: Depends on `getAllowedDirectories()` which reads module-level state
+ * updated by `RootsManager`. Ensure the server is initialized before calling.
+ * See `src/server/roots-manager.ts` for the update lifecycle.
+ */
 export function resolvePathOrRoot(pathValue: string | undefined): string {
   if (pathValue && pathValue.trim().length > 0) return pathValue;
   const roots = getAllowedDirectories();

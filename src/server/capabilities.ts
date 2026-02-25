@@ -8,6 +8,9 @@ function detectTaskToolSupport(): boolean {
   }
 
   try {
+    // Instantiate a minimal, unconnected probe server to duck-type check for
+    // task tool support. The probe has no transport or active connections, so
+    // close() only releases in-memory state; fire-and-forget is safe here.
     const probe = new McpServer(
       {
         name: 'filesystem-mcp-capability-probe',
@@ -17,7 +20,7 @@ function detectTaskToolSupport(): boolean {
     );
     cachedTaskToolSupport =
       typeof probe.experimental.tasks.registerToolTask === 'function';
-    void probe.close().catch(() => {});
+    probe.close().catch(() => {});
   } catch {
     cachedTaskToolSupport = false;
   }

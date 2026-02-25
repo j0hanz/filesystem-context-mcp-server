@@ -127,6 +127,10 @@ export class RootsManager {
   private rootsUpdateTimeout: ReturnType<typeof setTimeout> | undefined;
   private rootDirectories: string[] = [];
   private clientInitialized = false;
+  // Set to true when an update is in progress, to prevent concurrent executions. If a change arrives while true, we queue a single retry after completion to ensure the last-known state is applied. This
+  private updatingRoots = false;
+  // If an update is in progress and a change arrives, we set this flag to ensure we run another update after completion to apply the latest state
+  private pendingRootsUpdate = false;
   private readonly options: ServerOptions;
   readonly loggingState: LoggingState;
 
@@ -231,18 +235,24 @@ export class RootsManager {
   }
 
   private async updateRootsFromClient(server: McpServer): Promise<void> {
+    // Guard against concurrent executions: if one is already running, queue a
+    // single retry so the last-known state is always applied after completion.
+    if (this.updatingRoots) {
+      this.pendingRootsUpdate = true;
+      return;
+    }
+    this.updatingRoots = true;
     try {
       const clientCapabilities = server.server.getClientCapabilities();
       if (!clientCapabilities?.roots) {
         this.rootDirectories = [];
-        return;
+      } else {
+        const rootsResult = await server.server.listRoots(undefined, {
+          timeout: ROOTS_TIMEOUT_MS,
+        });
+        const roots = extractRoots(rootsResult);
+        this.rootDirectories = await resolveRootDirectories(roots);
       }
-
-      const rootsResult = await server.server.listRoots(undefined, {
-        timeout: ROOTS_TIMEOUT_MS,
-      });
-      const roots = extractRoots(rootsResult);
-      this.rootDirectories = await resolveRootDirectories(roots);
     } catch (error) {
       logToMcp(
         server,
@@ -252,6 +262,12 @@ export class RootsManager {
       );
     } finally {
       await this.recomputeAllowedDirectories();
+      this.updatingRoots = false;
+      // If a change arrived while we were running, apply it now.
+      if (this.pendingRootsUpdate) {
+        this.pendingRootsUpdate = false;
+        void this.updateRootsFromClient(server);
+      }
     }
   }
 }

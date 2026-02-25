@@ -98,9 +98,7 @@ export async function createServer(
     };
 
   if (taskToolSupport) {
-    // Note: InMemoryTaskStore has no TTL — tasks accumulate for the process
-    // lifetime. In HTTP mode this may grow unboundedly for long-lived servers.
-    // Use a custom TaskStore with eviction for production HTTP deployments.
+    // Enabling task tool support requires configuring a task store and message queue on the server config. We use in-memory implementations which are suitable for short-lived stdio sessions. Long-running HTTP servers should replace these with TTL-evicting implementations to avoid unbounded memory growth.
     serverConfig.taskStore = new InMemoryTaskStore();
     serverConfig.taskMessageQueue = new InMemoryTaskMessageQueue();
   }
@@ -159,7 +157,6 @@ export async function startServer(server: McpServer): Promise<void> {
   rootsManager.registerHandlers(server);
   await rootsManager.recomputeAllowedDirectories();
   await server.connect(transport);
-
   const transportAny = transport as { onclose?: (() => void) | undefined };
   const sdkOnClose = transportAny.onclose;
   transportAny.onclose = () => {
@@ -239,9 +236,6 @@ async function createHttpSession(
     onsessioninitialized: (sessionId) => {
       sessions.set(sessionId, { server: mcpServer, transport });
       rootsManager.logMissingDirectoriesIfNeeded(mcpServer);
-    },
-    onsessionclosed: (sessionId) => {
-      sessions.delete(sessionId);
     },
   });
 

@@ -224,6 +224,9 @@ function normalizeCallToolResult(value: Result): CallToolResult {
 
 function getToolResultErrorCode(result: Result): string | undefined {
   if (!isRecord(result) || result['isError'] !== true) return undefined;
+  // First check for a dedicated errorCode property to avoid regex parsing of the content for structured error results produced by newer code.
+  if (typeof result['errorCode'] === 'string') return result['errorCode'];
+  // Fallback to regex parsing of the human-readable error message for older error results that lack a structured errorCode property.
   const { content } = result;
   if (!Array.isArray(content) || content.length === 0) return undefined;
   const first: unknown = content[0];
@@ -431,6 +434,21 @@ async function runTaskInBackground<
         `Failed to store task failure result for task ${taskId}:`,
         innerError
       );
+      // If storing the failure result also fails, there's not much we can do. The task will remain in 'working' status until it expires, which is not ideal but at least prevents clients from receiving incorrect results or hanging indefinitely waiting for a result that will never arrive. We log the error to aid debugging, and we attempt to notify the client of the failure if possible, but we don't want to throw further errors that could crash the server or cause cascading failures.
+      const syntheticTask: GetTaskResult = {
+        taskId,
+        status: 'failed',
+        ttl: null,
+        createdAt: new Date().toISOString(),
+        lastUpdatedAt: new Date().toISOString(),
+      };
+      const { sendNotification } = extra as { sendNotification?: unknown };
+      if (typeof sendNotification === 'function') {
+        void (sendNotification as TaskStatusNotificationSender)({
+          method: TASK_STATUS_NOTIFICATION_METHOD,
+          params: buildTaskStatusNotificationParams(syntheticTask),
+        });
+      }
     }
   }
 }
