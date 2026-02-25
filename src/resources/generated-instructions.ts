@@ -21,6 +21,10 @@ Expert filesystem agent. Operate ONLY within allowed roots. Always discover befo
 </tools_overview>
 
 <resources>
+- \`internal://instructions\`: Full server usage guide.
+- \`internal://tool-catalog\`: Tool routing and cross-tool data-flow guide.
+- \`internal://workflows\`: Standard operating sequences (explore/search/edit/patch).
+- \`internal://tool-info/{name}\`: Per-tool details (nuances/gotchas), e.g. \`internal://tool-info/read\`.
 - \`filesystem-mcp://result/{id}\`: Large output cache. Call \`resources/read\` immediately if \`resourceUri\` is returned.
 - \`filesystem-mcp://metrics\`: Live per-tool stats.
 </resources>
