@@ -44,9 +44,6 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Update npm
-        run: npm install -g npm@latest
-
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
@@ -69,13 +66,29 @@ jobs:
           echo "version=$NEW" >> "$GITHUB_OUTPUT"
           echo "### Version: $CURRENT → $NEW" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Bump package.json & server.json
+      - name: Bump package.json and server.json
         env:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
           npm version "$VERSION" --no-git-tag-version --allow-same-version
-          jq --arg v "$VERSION" '.version = $v | .packages[].version = $v' \
-            server.json > tmp.json && mv tmp.json server.json
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const path = 'server.json';
+          const data = JSON.parse(fs.readFileSync(path, 'utf8'));
+
+          data.version = process.env.VERSION;
+
+          if (Array.isArray(data.packages)) {
+            for (const pkg of data.packages) {
+              if (pkg && typeof pkg === 'object') {
+                pkg.version = process.env.VERSION;
+              }
+            }
+          }
+
+          fs.writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`);
+          NODE
           npm install --package-lock-only --ignore-scripts
 
       - name: Install & validate
@@ -101,21 +114,6 @@ jobs:
           VERSION: ${{ steps.ver.outputs.version }}
         run: gh release create "v$VERSION" --title "v$VERSION" --generate-notes
 
-      - name: Summary
-        env:
-          VERSION: ${{ steps.ver.outputs.version }}
-        run: |
-          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          ## 🏷️ Release v$VERSION
-          | | |
-          | --- | --- |
-          | **Tag** | \`v$VERSION\` |
-          | **npm** | auto (next job) |
-          | **Docker** | auto (next job) |
-          | **MCP Registry** | auto (next job) |
-          | **Glama** | ⚠️ Manual — [create release on Glama dashboard](https://glama.ai/mcp/servers/j0hanz/filesystem-mcp) |
-          EOF
-
   # ──────────────────────────────────────────────
   # 2. Publish to npm
   # ──────────────────────────────────────────────
@@ -136,15 +134,12 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Update npm
-        run: npm install -g npm@latest
-
       - name: Install & build
-        run: npm ci && npm run build
+        run: npm ci
 
       - name: Publish
         run: |
-          npm publish --access public --provenance || {
+          npm publish --access public --provenance --ignore-scripts || {
             if npm view "@j0hanz/filesystem-mcp@$VERSION" version 2>/dev/null; then
               echo "::notice::v$VERSION already on npm — skipped"
             else
@@ -186,7 +181,7 @@ jobs:
             | tar xz mcp-publisher
           chmod +x mcp-publisher
           ./mcp-publisher login github-oidc
-          ./mcp-publisher publish || echo "::notice::MCP Registry publish failed (may be duplicate) — continuing"
+          ./mcp-publisher publish
 
       - name: Summary
         run: |
