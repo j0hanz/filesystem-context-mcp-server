@@ -25,7 +25,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 logs/
-memory.db
+memory_db
 .tmp/
 
 # Editor directories and files
