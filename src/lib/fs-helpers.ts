@@ -174,11 +174,12 @@ export async function processInParallel<T, R>(
   concurrency: number = PARALLEL_CONCURRENCY,
   signal?: AbortSignal
 ): Promise<ParallelResult<R>> {
-  if (items.length === 0) return { results: [], errors: [] };
+  const itemCount = items.length;
+  if (itemCount === 0) return { results: [], errors: [] };
   const effectiveConcurrency = normalizeConcurrency(concurrency);
 
   // Pre-allocate slots by index to guarantee input-order output.
-  const resultSlots: (R | undefined)[] = new Array<R | undefined>(items.length);
+  const resultSlots: (R | undefined)[] = new Array<R | undefined>(itemCount);
   const errors: { index: number; error: Error }[] = [];
 
   if (signal?.aborted) throw createParallelAbortError();
@@ -186,12 +187,11 @@ export async function processInParallel<T, R>(
   let nextIndex = 0;
 
   const next = async (): Promise<void> => {
-    while (nextIndex < items.length) {
+    while (nextIndex < itemCount) {
       if (signal?.aborted) throw createParallelAbortError();
 
-      const index = nextIndex++;
-      // Check again because another worker might have incremented past length
-      if (index >= items.length) break;
+      const index = nextIndex;
+      nextIndex += 1;
 
       const item = items[index] as T;
 
@@ -210,7 +210,7 @@ export async function processInParallel<T, R>(
     }
   };
 
-  const workerCount = Math.min(items.length, effectiveConcurrency);
+  const workerCount = Math.min(itemCount, effectiveConcurrency);
   const workers: Promise<void>[] = new Array<Promise<void>>(workerCount);
   for (let index = 0; index < workerCount; index += 1) {
     workers[index] = next();

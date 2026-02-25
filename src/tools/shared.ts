@@ -490,6 +490,73 @@ export function notifyProgress(
   void reportProgress(extra, progress);
 }
 
+export interface ToolProgressSession {
+  update: (progress: {
+    current: number;
+    total?: number;
+    message: string;
+  }) => void;
+  increment: (messageForCurrent: (current: number) => string) => void;
+  complete: (message: string, minimumCurrent?: number) => void;
+  fail: (message: string, minimumCurrent?: number) => void;
+  getCurrent: () => number;
+}
+
+export function createToolProgressSession(
+  extra: ToolExtra,
+  startMessage: string
+): ToolProgressSession {
+  notifyProgress(extra, {
+    current: 0,
+    message: startMessage,
+  });
+
+  let cursor = 0;
+  const baseReporter = createProgressReporter(extra);
+
+  const setCursor = (value: number): number => {
+    if (value > cursor) cursor = value;
+    return cursor;
+  };
+
+  return {
+    update: ({ current, total, message }) => {
+      const normalized = setCursor(current);
+      baseReporter({
+        current: normalized,
+        ...(total !== undefined ? { total } : {}),
+        message,
+      });
+    },
+    increment: (messageForCurrent) => {
+      const next = setCursor(cursor + 1);
+      baseReporter({
+        current: next,
+        message: messageForCurrent(next),
+      });
+    },
+    complete: (message, minimumCurrent) => {
+      const finalCurrent = Math.max(cursor + 1, minimumCurrent ?? 1, 1);
+      notifyProgress(extra, {
+        current: finalCurrent,
+        total: finalCurrent,
+        message,
+      });
+      cursor = finalCurrent;
+    },
+    fail: (message, minimumCurrent) => {
+      const finalCurrent = Math.max(cursor + 1, minimumCurrent ?? 1, 1);
+      notifyProgress(extra, {
+        current: finalCurrent,
+        total: finalCurrent,
+        message,
+      });
+      cursor = finalCurrent;
+    },
+    getCurrent: () => cursor,
+  };
+}
+
 async function withProgress<T>(
   message: string,
   extra: ToolExtra,

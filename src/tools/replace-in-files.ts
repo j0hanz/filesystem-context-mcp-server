@@ -32,10 +32,9 @@ import {
 import {
   buildToolErrorResponse,
   buildToolResponse,
-  createProgressReporter,
+  createToolProgressSession,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   executeToolWithDiagnostics,
-  notifyProgress,
   resolvePathOrRoot,
   type ToolContract,
   type ToolExtra,
@@ -109,27 +108,50 @@ function createRegexMatcher(pattern: string): RE2 {
   }
 }
 
-function countRegexMatches(content: string, regex: RE2): number {
-  regex.lastIndex = 0;
-  let count = 0;
-  while (regex.exec(content) !== null) {
-    count++;
-    if (regex.lastIndex === 0) {
-      regex.lastIndex++;
-    }
-  }
-  return count;
+interface ReplacementMatcher {
+  count(content: string): number;
+  replace(content: string, replacement: string): string;
 }
 
-function countLiteralMatches(content: string, searchPattern: string): number {
-  let count = 0;
-  let pos = content.indexOf(searchPattern);
-  const patternLength = searchPattern.length;
-  while (pos !== -1) {
-    count++;
-    pos = content.indexOf(searchPattern, pos + patternLength);
-  }
-  return count;
+function createRegexReplacementMatcher(regex: RE2): ReplacementMatcher {
+  const count = (content: string): number => {
+    regex.lastIndex = 0;
+    let matchCount = 0;
+    while (regex.exec(content) !== null) {
+      matchCount++;
+      if (regex.lastIndex === 0) {
+        regex.lastIndex++;
+      }
+    }
+    return matchCount;
+  };
+
+  const replace = (content: string, replacement: string): string => {
+    regex.lastIndex = 0;
+    return content.replace(regex, replacement);
+  };
+
+  return { count, replace };
+}
+
+function createLiteralReplacementMatcher(
+  searchPattern: string
+): ReplacementMatcher {
+  const count = (content: string): number => {
+    let matchCount = 0;
+    let pos = content.indexOf(searchPattern);
+    const patternLength = searchPattern.length;
+    while (pos !== -1) {
+      matchCount++;
+      pos = content.indexOf(searchPattern, pos + patternLength);
+    }
+    return matchCount;
+  };
+
+  const replace = (content: string, replacement: string): string =>
+    content.replaceAll(searchPattern, () => replacement);
+
+  return { count, replace };
 }
 
 function formatFileTooLargeError(
@@ -142,8 +164,9 @@ function formatFileTooLargeError(
 
 async function processEntry(
   entryPath: string,
-  args: z.infer<typeof SearchAndReplaceInputSchema>,
-  regex: RE2 | undefined,
+  options: { dryRun: boolean; returnDiff: boolean },
+  replacement: string,
+  matcher: ReplacementMatcher,
   maxFileSize: number,
   signal: AbortSignal | undefined,
   summary: ReplaceSummary
@@ -176,10 +199,7 @@ async function processEntry(
       signal,
     });
 
-    const matchCount =
-      args.isRegex && regex
-        ? countRegexMatches(content, regex)
-        : countLiteralMatches(content, args.searchPattern);
+    const matchCount = matcher.count(content);
 
     if (matchCount > 0) {
       summary.totalMatches += matchCount;
@@ -187,19 +207,10 @@ async function processEntry(
 
       recordChangedFile(summary, validPath, matchCount);
 
-      let newContent: string;
-      if (args.isRegex && regex) {
-        regex.lastIndex = 0;
-        newContent = content.replace(regex, args.replacement);
-      } else {
-        newContent = content.replaceAll(
-          args.searchPattern,
-          () => args.replacement
-        );
-      }
+      const newContent = matcher.replace(content, replacement);
 
       if (
-        (args.dryRun || args.returnDiff) &&
+        (options.dryRun || options.returnDiff) &&
         summary.diff.length < MAX_DIFF_SIZE
       ) {
         const patch = createTwoFilesPatch(
@@ -216,7 +227,7 @@ async function processEntry(
         }
       }
 
-      if (!args.dryRun) {
+      if (!options.dryRun) {
         await atomicWriteFile(validPath, newContent, {
           encoding: 'utf-8',
           signal,
@@ -314,6 +325,16 @@ function createReplacementRegex(
   return createRegexMatcher(args.searchPattern);
 }
 
+function createReplacementMatcher(
+  args: z.infer<typeof SearchAndReplaceInputSchema>
+): ReplacementMatcher {
+  const regex = createReplacementRegex(args);
+  if (regex) {
+    return createRegexReplacementMatcher(regex);
+  }
+  return createLiteralReplacementMatcher(args.searchPattern);
+}
+
 function reportReplaceProgress(
   onProgress: (progress: { total?: number; current: number }) => void,
   current: number,
@@ -331,7 +352,7 @@ export async function handleSearchAndReplace(
 ): Promise<ToolResponse<z.infer<typeof SearchAndReplaceOutputSchema>>> {
   const maxFileSize = MAX_TEXT_FILE_SIZE;
   const root = await resolveSearchRoot(args.path, signal);
-  const regex = createReplacementRegex(args);
+  const matcher = createReplacementMatcher(args);
 
   const entries = globEntries({
     cwd: root,
@@ -355,7 +376,18 @@ export async function handleSearchAndReplace(
       reportReplaceProgress(onProgress, summary.processedFiles);
     },
     runEntry: async (entryPath: string) =>
-      processEntry(entryPath, args, regex, maxFileSize, signal, summary),
+      processEntry(
+        entryPath,
+        {
+          dryRun: args.dryRun,
+          returnDiff: args.returnDiff ?? false,
+        },
+        args.replacement,
+        matcher,
+        maxFileSize,
+        signal,
+        summary
+      ),
   });
 
   reportReplaceProgress(onProgress, summary.processedFiles, true);
@@ -400,13 +432,10 @@ export function registerSearchAndReplaceTool(
       run: async (signal) => {
         const dryLabel = args.dryRun ? ' [dry run]' : '';
         const context = `"${args.searchPattern}" in ${args.filePattern}${dryLabel}`;
-        let progressCursor = 0;
-        notifyProgress(extra, {
-          current: 0,
-          message: `🛠 search_and_replace: ${context}`,
-        });
-
-        const baseReporter = createProgressReporter(extra);
+        const progress = createToolProgressSession(
+          extra,
+          `🛠 search_and_replace: ${context}`
+        );
         const progressWithMessage = ({
           current,
           total,
@@ -414,8 +443,7 @@ export function registerSearchAndReplaceTool(
           total?: number;
           current: number;
         }): void => {
-          if (current > progressCursor) progressCursor = current;
-          baseReporter({
+          progress.update({
             current,
             ...(total !== undefined ? { total } : {}),
             message: `🛠 search_and_replace: ${args.searchPattern} [${current} files processed]`,
@@ -431,26 +459,20 @@ export function registerSearchAndReplaceTool(
           const sc = result.structuredContent;
           const finalCurrent = Math.max(
             (sc.processedFiles ?? 0) + 1,
-            progressCursor + 1
+            progress.getCurrent() + 1
           );
           const matchWord = (sc.matches ?? 0) === 1 ? 'match' : 'matches';
           const fileWord = (sc.filesChanged ?? 0) === 1 ? 'file' : 'files';
           let endSuffix = `${sc.matches ?? 0} ${matchWord} in ${sc.filesChanged ?? 0} ${fileWord}`;
           if (sc.failedFiles) endSuffix += `, ${sc.failedFiles} failed`;
           if (sc.dryRun) endSuffix += ' [dry run]';
-          notifyProgress(extra, {
-            current: finalCurrent,
-            total: finalCurrent,
-            message: `🛠 search_and_replace: ${context} • ${endSuffix}`,
-          });
+          progress.complete(
+            `🛠 search_and_replace: ${context} • ${endSuffix}`,
+            finalCurrent
+          );
           return result;
         } catch (error) {
-          const finalCurrent = Math.max(progressCursor + 1, 1);
-          notifyProgress(extra, {
-            current: finalCurrent,
-            total: finalCurrent,
-            message: `🛠 search_and_replace: ${context} • failed`,
-          });
+          progress.fail(`🛠 search_and_replace: ${context} • failed`);
           throw error;
         }
       },

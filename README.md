@@ -580,18 +580,16 @@ npm ci
 
 ### Scripts
 
-| Script          | Command                                                   | Purpose                             |
-| :-------------- | :-------------------------------------------------------- | :---------------------------------- |
-| `dev`           | `tsc --watch`                                             | Watch-mode TypeScript compilation   |
-| `dev:run`       | `node --watch dist/index.js`                              | Run built server with file watching |
-| `build`         | `node scripts/tasks.mjs build`                            | Production build                    |
-| `test`          | `node scripts/tasks.mjs test`                             | Run full test suite                 |
-| `test:fast`     | `node --test --import tsx/esm src/__tests__/**/*.test.ts` | Fast test runner (no build step)    |
-| `test:coverage` | `node scripts/tasks.mjs test --coverage`                  | Test with coverage                  |
-| `lint`          | `eslint .`                                                | Lint source files                   |
-| `lint:fix`      | `eslint . --fix`                                          | Auto-fix lint issues                |
-| `format`        | `prettier --write .`                                      | Format all files                    |
-| `type-check`    | `node scripts/tasks.mjs type-check`                       | TypeScript type checking            |
+| Script       | Command                             | Purpose                             |
+| :----------- | :---------------------------------- | :---------------------------------- |
+| `dev`        | `tsc --watch`                       | Watch-mode TypeScript compilation   |
+| `dev:run`    | `node --watch dist/index.js`        | Run built server with file watching |
+| `build`      | `node scripts/tasks.mjs build`      | Production build                    |
+| `test`       | `node scripts/tasks.mjs test`       | Run full test suite                 |
+| `lint`       | `eslint .`                          | Lint source files                   |
+| `lint:fix`   | `eslint . --fix`                    | Auto-fix lint issues                |
+| `format`     | `prettier --write .`                | Format all files                    |
+| `type-check` | `node scripts/tasks.mjs type-check` | TypeScript type checking            |
 
 ### MCP Inspector
 

@@ -17,9 +17,8 @@ import {
   buildFileInfoPayload,
   buildToolErrorResponse,
   buildToolResponse,
-  createProgressReporter,
+  createToolProgressSession,
   executeToolWithDiagnostics,
-  notifyProgress,
   READ_ONLY_TOOL_ANNOTATIONS,
   type ToolContract,
   type ToolExtra,
@@ -122,20 +121,15 @@ export function registerGetMultipleFileInfoTool(
             ? `, ${path.basename(args.paths[1] ?? '')}${args.paths.length > 2 ? '…' : ''}`
             : '';
         const context = `${args.paths.length} paths [${first}${extraPaths}]`;
-        let progressCursor = 0;
-
-        notifyProgress(extra, {
-          current: 0,
-          message: `🕮 stat_many: ${context}`,
-        });
-
-        const baseReporter = createProgressReporter(extra);
+        const progress = createToolProgressSession(
+          extra,
+          `🕮 stat_many: ${context}`
+        );
         const onProgress = (): void => {
-          progressCursor++;
-          baseReporter({
-            current: progressCursor,
-            message: `🕮 stat_many: ${context} [${progressCursor}/${args.paths.length} scanned]`,
-          });
+          progress.increment(
+            (current) =>
+              `🕮 stat_many: ${context} [${current}/${args.paths.length} scanned]`
+          );
         };
 
         try {
@@ -157,20 +151,14 @@ export function registerGetMultipleFileInfoTool(
             suffix = `${total} OK`;
           }
 
-          const finalCurrent = Math.max(total, progressCursor + 1);
-          notifyProgress(extra, {
-            current: finalCurrent,
-            total: finalCurrent,
-            message: `🕮 stat_many: ${context} • ${suffix}`,
-          });
+          const finalCurrent = Math.max(total, progress.getCurrent() + 1);
+          progress.complete(
+            `🕮 stat_many: ${context} • ${suffix}`,
+            finalCurrent
+          );
           return result;
         } catch (error) {
-          const finalCurrent = Math.max(progressCursor + 1, 1);
-          notifyProgress(extra, {
-            current: finalCurrent,
-            total: finalCurrent,
-            message: `🕮 stat_many: ${context} • failed`,
-          });
+          progress.fail(`🕮 stat_many: ${context} • failed`);
           throw error;
         }
       },

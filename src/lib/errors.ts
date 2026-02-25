@@ -144,15 +144,16 @@ function getNodeErrorCode(code: string): ErrorCode | undefined {
   return isKnownNodeErrorCode(code) ? NODE_ERROR_CODE_MAP[code] : undefined;
 }
 
-function walkErrorChain(
+function walkErrorChain<T>(
   error: unknown,
-  visitor: (value: unknown) => boolean
-): boolean {
+  visitor: (value: unknown) => T | undefined
+): T | undefined {
   let current: unknown = error;
   const visited = new Set<unknown>();
 
   while (current !== undefined && current !== null && !visited.has(current)) {
-    if (visitor(current)) return true;
+    const visitedResult = visitor(current);
+    if (visitedResult !== undefined) return visitedResult;
     if (!isNativeError(current)) break;
 
     visited.add(current);
@@ -161,7 +162,7 @@ function walkErrorChain(
     current = next;
   }
 
-  return false;
+  return undefined;
 }
 
 function isAbortErrorSingle(error: unknown): boolean {
@@ -173,7 +174,11 @@ function isAbortErrorSingle(error: unknown): boolean {
 }
 
 export function isAbortError(error: unknown): boolean {
-  return walkErrorChain(error, isAbortErrorSingle);
+  return (
+    walkErrorChain(error, (candidate) =>
+      isAbortErrorSingle(candidate) ? true : undefined
+    ) === true
+  );
 }
 
 function isTimeoutErrorSingle(error: unknown): boolean {
@@ -188,7 +193,11 @@ function isTimeoutErrorSingle(error: unknown): boolean {
 }
 
 export function isTimeoutLikeError(error: unknown): boolean {
-  return walkErrorChain(error, isTimeoutErrorSingle);
+  return (
+    walkErrorChain(error, (candidate) =>
+      isTimeoutErrorSingle(candidate) ? true : undefined
+    ) === true
+  );
 }
 
 export class McpError extends Error {
@@ -279,17 +288,25 @@ function classifyMessageError(error: unknown): ErrorCode | undefined {
 }
 
 function classifyError(error: unknown): ErrorCode {
-  if (isAbortError(error)) {
-    return ErrorCode.E_CANCELLED;
-  }
-  if (isTimeoutLikeError(error)) {
-    return ErrorCode.E_TIMEOUT;
-  }
-  const direct = getDirectErrorCode(error);
-  if (direct) return direct;
+  let timeoutCode: ErrorCode | undefined;
+  let fallbackCode: ErrorCode | undefined;
 
-  const messageCode = classifyMessageError(error);
-  return messageCode ?? ErrorCode.E_UNKNOWN;
+  const terminalCode = walkErrorChain<ErrorCode>(error, (candidate) => {
+    if (isAbortErrorSingle(candidate)) {
+      return ErrorCode.E_CANCELLED;
+    }
+
+    if (timeoutCode === undefined && isTimeoutErrorSingle(candidate)) {
+      timeoutCode = ErrorCode.E_TIMEOUT;
+    }
+
+    fallbackCode ??=
+      getDirectErrorCode(candidate) ?? classifyMessageError(candidate);
+
+    return undefined;
+  });
+
+  return terminalCode ?? timeoutCode ?? fallbackCode ?? ErrorCode.E_UNKNOWN;
 }
 
 export function createDetailedError(

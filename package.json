@@ -37,8 +37,6 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "node scripts/tasks.mjs test",
-    "test:fast": "node --test --import tsx/esm src/__tests__/**/*.test.ts node-tests/**/*.test.ts",
-    "test:coverage": "node scripts/tasks.mjs test --coverage",
     "knip": "knip",
     "knip:fix": "knip --fix",
     "inspector": "npm run build && npx -y @modelcontextprotocol/inspector node dist/index.js ${workspaceFolder}",

@@ -23,9 +23,8 @@ import {
   buildResourceLink,
   buildToolErrorResponse,
   buildToolResponse,
-  createProgressReporter,
+  createToolProgressSession,
   executeToolWithDiagnostics,
-  notifyProgress,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolvePathOrRoot,
   type ToolContract,
@@ -305,14 +304,10 @@ export function registerSearchContentTool(
       run: async (signal) => {
         const scope = args.filePattern;
         const { pattern } = args;
-        let progressCursor = 0;
-
-        notifyProgress(extra, {
-          current: 0,
-          message: `🔎︎ grep: ${pattern} in ${scope}`,
-        });
-
-        const baseReporter = createProgressReporter(extra);
+        const progress = createToolProgressSession(
+          extra,
+          `🔎︎ grep: ${pattern} in ${scope}`
+        );
         const progressWithMessage = ({
           current,
           total,
@@ -320,9 +315,8 @@ export function registerSearchContentTool(
           total?: number;
           current: number;
         }): void => {
-          if (current > progressCursor) progressCursor = current;
           const fileWord = current === 1 ? 'file' : 'files';
-          baseReporter({
+          progress.update({
             current,
             ...(total !== undefined ? { total } : {}),
             message: `🔎︎ grep: ${pattern} [${current} ${fileWord} scanned]`,
@@ -330,11 +324,6 @@ export function registerSearchContentTool(
         };
 
         try {
-          if (signal) {
-            signal.addEventListener('abort', () => {
-              console.error('searchContent signal aborted!');
-            });
-          }
           const result = await handleSearchContent(
             args,
             signal,
@@ -368,22 +357,13 @@ export function registerSearchContentTool(
 
           const finalCurrent = Math.max(
             (sc.filesScanned ?? 0) + 1,
-            progressCursor + 1
+            progress.getCurrent() + 1
           );
 
-          notifyProgress(extra, {
-            current: finalCurrent,
-            total: finalCurrent,
-            message: `🔎︎ grep: ${pattern} • ${suffix}`,
-          });
+          progress.complete(`🔎︎ grep: ${pattern} • ${suffix}`, finalCurrent);
           return result;
         } catch (error) {
-          const finalCurrent = Math.max(progressCursor + 1, 1);
-          notifyProgress(extra, {
-            current: finalCurrent,
-            total: finalCurrent,
-            message: `🔎︎ grep: ${pattern} in ${scope} • failed`,
-          });
+          progress.fail(`🔎︎ grep: ${pattern} in ${scope} • failed`);
           throw error;
         }
       },

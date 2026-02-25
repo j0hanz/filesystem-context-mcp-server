@@ -16,8 +16,7 @@ MCP server for local filesystem access by LLM clients, built with TypeScript and
 
 ## Safety Boundaries
 
-- **Always**: `npm run lint`, `npm run type-check`, `npm run test`
-- **Ask First**: `npm run test:coverage`, `npm run build`, release/publish workflow, Docker/infrastructure changes, deleting files
+- **Always**: `npm run lint`, `npm run type-check`, `npm run test`.
 - **Never**: commit or expose credentials; edit generated/vendor directories (`dist/`, `node_modules/`); commit sensitive token files (`.mcpregistry_github_token`, `.mcpregistry_registry_token`)
 
 ## Directory Overview

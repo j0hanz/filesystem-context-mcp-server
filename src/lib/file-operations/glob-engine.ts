@@ -196,6 +196,59 @@ function shouldUseGlobDirents(options: GlobEntriesOptions): boolean {
   return !options.stats && !options.followSymbolicLinks;
 }
 
+function assertOptionString(
+  options: Record<string, unknown>,
+  key: 'cwd' | 'pattern'
+): void {
+  if (typeof options[key] !== 'string') {
+    throw new TypeError(`globEntries: options.${key} must be a string`);
+  }
+}
+
+function assertExcludePatternsOption(options: Record<string, unknown>): void {
+  if (!Array.isArray(options.excludePatterns)) {
+    throw new TypeError(
+      'globEntries: options.excludePatterns must be an array'
+    );
+  }
+
+  for (const pattern of options.excludePatterns) {
+    if (typeof pattern !== 'string') {
+      throw new TypeError(
+        'globEntries: options.excludePatterns must contain only strings'
+      );
+    }
+  }
+}
+
+function assertBooleanOptions(options: Record<string, unknown>): void {
+  for (const key of GLOB_BOOLEAN_OPTION_KEYS) {
+    if (typeof options[key] !== 'boolean') {
+      throw new TypeError(`globEntries: options.${key} must be a boolean`);
+    }
+  }
+}
+
+function assertOptionalMaxDepth(options: Record<string, unknown>): void {
+  const { maxDepth } = options;
+  if (maxDepth === undefined) return;
+  if (typeof maxDepth !== 'number' || !Number.isFinite(maxDepth)) {
+    throw new TypeError(
+      'globEntries: options.maxDepth must be a finite number'
+    );
+  }
+}
+
+function assertOptionalSuppressErrors(options: Record<string, unknown>): void {
+  const { suppressErrors } = options;
+  if (suppressErrors === undefined) return;
+  if (typeof suppressErrors !== 'boolean') {
+    throw new TypeError(
+      'globEntries: options.suppressErrors must be a boolean'
+    );
+  }
+}
+
 function assertOptionsShape(options: GlobEntriesOptions): void {
   const unknownOptions: unknown = options;
 
@@ -204,46 +257,12 @@ function assertOptionsShape(options: GlobEntriesOptions): void {
   }
 
   const o = unknownOptions as Record<string, unknown>;
-
-  if (typeof o.cwd !== 'string') {
-    throw new TypeError('globEntries: options.cwd must be a string');
-  }
-  if (typeof o.pattern !== 'string') {
-    throw new TypeError('globEntries: options.pattern must be a string');
-  }
-
-  if (!Array.isArray(o.excludePatterns)) {
-    throw new TypeError(
-      'globEntries: options.excludePatterns must be an array'
-    );
-  }
-  for (const p of o.excludePatterns) {
-    if (typeof p !== 'string') {
-      throw new TypeError(
-        'globEntries: options.excludePatterns must contain only strings'
-      );
-    }
-  }
-
-  for (const key of GLOB_BOOLEAN_OPTION_KEYS) {
-    if (typeof o[key] !== 'boolean') {
-      throw new TypeError(`globEntries: options.${key} must be a boolean`);
-    }
-  }
-
-  if (o.maxDepth !== undefined) {
-    if (typeof o.maxDepth !== 'number' || !Number.isFinite(o.maxDepth)) {
-      throw new TypeError(
-        'globEntries: options.maxDepth must be a finite number'
-      );
-    }
-  }
-
-  if (o.suppressErrors !== undefined && typeof o.suppressErrors !== 'boolean') {
-    throw new TypeError(
-      'globEntries: options.suppressErrors must be a boolean'
-    );
-  }
+  assertOptionString(o, 'cwd');
+  assertOptionString(o, 'pattern');
+  assertExcludePatternsOption(o);
+  assertBooleanOptions(o);
+  assertOptionalMaxDepth(o);
+  assertOptionalSuppressErrors(o);
 }
 
 function normalizeOptions(options: GlobEntriesOptions): NormalizedGlob {

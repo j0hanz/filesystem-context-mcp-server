@@ -18,10 +18,9 @@ import {
   buildResourceLink,
   buildToolErrorResponse,
   buildToolResponse,
-  createProgressReporter,
+  createToolProgressSession,
   executeToolWithDiagnostics,
   maybeExternalizeTextContent,
-  notifyProgress,
   READ_ONLY_TOOL_ANNOTATIONS,
   type ToolContract,
   type ToolExtra,
@@ -50,6 +49,37 @@ export const READ_MULTIPLE_FILES_TOOL: ToolContract = {
     'Per-file `truncationReason` can be `head`, `range`, or `externalized`.',
   ],
 } as const;
+
+type ReadManyStructuredResult = z.infer<typeof ReadMultipleFilesOutputSchema>;
+type ReadManyStructuredResultItem = NonNullable<
+  ReadManyStructuredResult['results']
+>[number];
+
+function toStructuredReadManyResult(
+  result: Awaited<ReturnType<typeof readMultipleFiles>>[number] & {
+    resourceUri?: string;
+    truncationReason?: 'head' | 'range' | 'externalized';
+    maxTotalSize?: number;
+  }
+): ReadManyStructuredResultItem {
+  const structured: ReadManyStructuredResultItem = {
+    path: result.path,
+  };
+  if (result.content !== undefined) structured.content = result.content;
+  if (result.truncated) structured.truncated = result.truncated;
+  if (result.resourceUri) structured.resourceUri = result.resourceUri;
+  if (result.head !== undefined) structured.head = result.head;
+  if (result.startLine !== undefined) structured.startLine = result.startLine;
+  if (result.endLine !== undefined) structured.endLine = result.endLine;
+  if (result.hasMoreLines) structured.hasMoreLines = result.hasMoreLines;
+  if (result.totalLines !== undefined)
+    structured.totalLines = result.totalLines;
+  if (result.truncationReason) {
+    structured.truncationReason = result.truncationReason;
+  }
+  if (result.error) structured.error = result.error;
+  return structured;
+}
 
 async function handleReadMultipleFiles(
   args: z.infer<typeof ReadMultipleFilesInputSchema>,
@@ -122,25 +152,7 @@ async function handleReadMultipleFiles(
 
   const structured: z.infer<typeof ReadMultipleFilesOutputSchema> = {
     ok: true,
-    results: mappedResults.map((result) => ({
-      path: result.path,
-      ...(result.content !== undefined ? { content: result.content } : {}),
-      ...(result.truncated ? { truncated: result.truncated } : {}),
-      ...(result.resourceUri ? { resourceUri: result.resourceUri } : {}),
-      ...(result.head !== undefined ? { head: result.head } : {}),
-      ...(result.startLine !== undefined
-        ? { startLine: result.startLine }
-        : {}),
-      ...(result.endLine !== undefined ? { endLine: result.endLine } : {}),
-      ...(result.hasMoreLines ? { hasMoreLines: result.hasMoreLines } : {}),
-      ...(result.totalLines !== undefined
-        ? { totalLines: result.totalLines }
-        : {}),
-      ...(result.truncationReason
-        ? { truncationReason: result.truncationReason }
-        : {}),
-      ...(result.error ? { error: result.error } : {}),
-    })),
+    results: mappedResults.map((result) => toStructuredReadManyResult(result)),
     summary: {
       total: mappedResults.length,
       succeeded,
@@ -194,20 +206,15 @@ export function registerReadMultipleFilesTool(
             ? `, ${path.basename(args.paths[1] ?? '')}${args.paths.length > 2 ? '…' : ''}`
             : '';
         const context = `${args.paths.length} files [${first}${extraPaths}]`;
-        let progressCursor = 0;
-
-        notifyProgress(extra, {
-          current: 0,
-          message: `🕮 read_many: ${context}`,
-        });
-
-        const baseReporter = createProgressReporter(extra);
+        const progress = createToolProgressSession(
+          extra,
+          `🕮 read_many: ${context}`
+        );
         const onReadComplete = (): void => {
-          progressCursor++;
-          baseReporter({
-            current: progressCursor,
-            message: `🕮 read_many: ${context} [${progressCursor}/${args.paths.length} read]`,
-          });
+          progress.increment(
+            (current) =>
+              `🕮 read_many: ${context} [${current}/${args.paths.length} read]`
+          );
         };
 
         try {
@@ -230,20 +237,14 @@ export function registerReadMultipleFilesTool(
             suffix = `${total} files read`;
           }
 
-          const finalCurrent = Math.max(total, progressCursor + 1);
-          notifyProgress(extra, {
-            current: finalCurrent,
-            total: finalCurrent,
-            message: `🕮 read_many: ${context} • ${suffix}`,
-          });
+          const finalCurrent = Math.max(total, progress.getCurrent() + 1);
+          progress.complete(
+            `🕮 read_many: ${context} • ${suffix}`,
+            finalCurrent
+          );
           return result;
         } catch (error) {
-          const finalCurrent = Math.max(progressCursor + 1, 1);
-          notifyProgress(extra, {
-            current: finalCurrent,
-            total: finalCurrent,
-            message: `🕮 read_many: ${context} • failed`,
-          });
+          progress.fail(`🕮 read_many: ${context} • failed`);
           throw error;
         }
       },
