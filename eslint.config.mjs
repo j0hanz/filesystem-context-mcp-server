@@ -12,26 +12,26 @@ export default defineConfig(
       'dist',
       'node_modules',
       '.agents',
+      '.github/**',
+      'scripts/**',
       '.tmp/**',
       '*.config.mjs',
       '*.config.js',
-      'src/__tests__/**',
+      'node-tests/**',
       'tests/**',
-      '**/*.test.ts',
-      '**/*.spec.ts',
     ],
   },
   eslint.configs.recommended,
   deMorgan.configs.recommended,
   depend.configs['flat/recommended'],
   {
-    files: ['src/**/*.ts'],
+    files: ['src/**/*.ts', '!src/__tests__/**'],
     extends: [
       tseslint.configs.strictTypeChecked,
       tseslint.configs.stylisticTypeChecked,
     ],
     languageOptions: {
-      ecmaVersion: 2022,
+      ecmaVersion: 'latest',
       sourceType: 'module',
       parserOptions: {
         project: ['./tsconfig.json'],
@@ -197,6 +197,25 @@ export default defineConfig(
           minimumDescriptionLength: 10,
         },
       ],
+    },
+  },
+
+  {
+    files: ['src/__tests__/**/*.ts'],
+    extends: [tseslint.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      parserOptions: {
+        project: ['./tsconfig.test.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-floating-promises': 'off',
+      '@typescript-eslint/array-type': 'off',
+      'prefer-template': 'off',
+      '@typescript-eslint/restrict-plus-operands': 'off',
     },
   },
 

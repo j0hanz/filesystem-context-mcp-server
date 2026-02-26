@@ -53,17 +53,16 @@ function getExperimentalTaskRegistration(
 }
 
 function hasTaskToolCapability(server: McpServer): boolean {
-  const maybeServer = server as unknown as {
-    server?: { getCapabilities?: () => unknown };
-  };
-  const serverRuntime = maybeServer.server;
-  const capabilityGetter = serverRuntime?.getCapabilities;
-  if (typeof capabilityGetter !== 'function') {
+  const serverRecord = server as unknown as Record<string, unknown>;
+  const { server: serverRuntime } = serverRecord;
+  if (!isRecord(serverRuntime)) return true;
+  const { getCapabilities } = serverRuntime;
+  if (typeof getCapabilities !== 'function') {
     // Fallback for tests or custom wrappers that provide only registerTool/experimental.
     return true;
   }
 
-  const capabilities = capabilityGetter.call(serverRuntime);
+  const capabilities = (getCapabilities as () => unknown).call(serverRuntime);
   if (!isRecord(capabilities)) return false;
   const { tasks } = capabilities;
   if (!isRecord(tasks)) return false;

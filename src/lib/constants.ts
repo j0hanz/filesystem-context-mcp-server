@@ -23,7 +23,7 @@ function logInvalidEnvValue(
 }
 
 // Helper for parsing environment variables (only used for configurable values)
-function parseEnvInt(
+export function parseEnvInt(
   envVar: string,
   defaultValue: number,
   min: number,

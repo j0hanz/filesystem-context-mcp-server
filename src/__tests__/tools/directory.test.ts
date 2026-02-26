@@ -12,7 +12,6 @@ import {
   createTestEnv,
   getStructured,
   type TestEnv,
-  type ToolResult,
 } from '../helpers.js';
 
 // ─── roots ──────────────────────────────────────────────────────────────────
@@ -30,7 +29,7 @@ describe('roots tool', () => {
 
   it('returns ok:true with the allowed tmpDir', async () => {
     const raw = await env.client.callTool({ name: 'roots', arguments: {} });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
@@ -63,7 +62,7 @@ describe('ls tool', () => {
       name: 'ls',
       arguments: { path: env.tmpDir },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
@@ -81,7 +80,7 @@ describe('ls tool', () => {
       name: 'ls',
       arguments: { path: '/etc' },
     });
-    assertToolError(raw as unknown as ToolResult, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'E_ACCESS_DENIED');
   });
 });
 
@@ -106,7 +105,7 @@ describe('tree tool', () => {
       name: 'tree',
       arguments: { path: env.tmpDir },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
@@ -118,7 +117,7 @@ describe('tree tool', () => {
       name: 'tree',
       arguments: { path: env.tmpDir, maxDepth: 1 },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
@@ -144,7 +143,7 @@ describe('mkdir tool', () => {
       name: 'mkdir',
       arguments: { path: newDir },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
@@ -159,7 +158,7 @@ describe('mkdir tool', () => {
       name: 'mkdir',
       arguments: { path: existingDir },
     });
-    assertOk(raw as unknown as ToolResult);
+    assertOk(raw);
   });
 
   it('creates multiple directories via paths array', async () => {
@@ -169,7 +168,7 @@ describe('mkdir tool', () => {
       name: 'mkdir',
       arguments: { paths: [d1, d2] },
     });
-    assertOk(raw as unknown as ToolResult);
+    assertOk(raw);
     assert.ok((await fs.stat(d1)).isDirectory());
     assert.ok((await fs.stat(d2)).isDirectory());
   });
@@ -179,7 +178,7 @@ describe('mkdir tool', () => {
       name: 'mkdir',
       arguments: { path: '/tmp/escape-' + Date.now() },
     });
-    assertToolError(raw as unknown as ToolResult, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'E_ACCESS_DENIED');
   });
 });
 
@@ -203,7 +202,7 @@ describe('rm tool', () => {
       name: 'rm',
       arguments: { path: file },
     });
-    assertOk(raw as unknown as ToolResult);
+    assertOk(raw);
     await assert.rejects(() => fs.stat(file), /ENOENT/);
   });
 
@@ -215,7 +214,7 @@ describe('rm tool', () => {
       name: 'rm',
       arguments: { path: dir, recursive: true },
     });
-    assertOk(raw as unknown as ToolResult);
+    assertOk(raw);
     await assert.rejects(() => fs.stat(dir), /ENOENT/);
   });
 
@@ -224,7 +223,7 @@ describe('rm tool', () => {
       name: 'rm',
       arguments: { path: path.join(env.tmpDir, 'ghost.txt') },
     });
-    assertToolError(raw as unknown as ToolResult, 'E_NOT_FOUND');
+    assertToolError(raw, 'E_NOT_FOUND');
   });
 
   it('ignoreIfNotExists suppresses E_NOT_FOUND', async () => {
@@ -235,7 +234,7 @@ describe('rm tool', () => {
         ignoreIfNotExists: true,
       },
     });
-    assertOk(raw as unknown as ToolResult);
+    assertOk(raw);
   });
 });
 
@@ -260,7 +259,7 @@ describe('mv tool', () => {
       name: 'mv',
       arguments: { source: src, destination: dst },
     });
-    assertOk(raw as unknown as ToolResult);
+    assertOk(raw);
     await assert.rejects(() => fs.stat(src), /ENOENT/);
     const content = await fs.readFile(dst, 'utf8');
     assert.equal(content, 'move me');
@@ -275,7 +274,7 @@ describe('mv tool', () => {
       },
     });
     // mv collects per-source errors into a failed[] array; it does NOT set isError:true
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     const sc = getStructured(result);
     assert.equal(sc['ok'], false);
     const failed = sc['failed'] as Array<Record<string, unknown>>;

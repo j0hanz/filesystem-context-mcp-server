@@ -12,7 +12,6 @@ import {
   createTestEnv,
   getStructured,
   type TestEnv,
-  type ToolResult,
 } from '../helpers.js';
 
 describe('stat tool', () => {
@@ -34,14 +33,14 @@ describe('stat tool', () => {
       name: 'stat',
       arguments: { path: file },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
     const info = sc['info'] as Record<string, unknown>;
     assert.ok(info, 'Expected info field');
     assert.equal(info['type'], 'file');
-    assert.ok(typeof info['size'] === 'number' && (info['size'] as number) > 0);
+    assert.ok(typeof info['size'] === 'number' && info['size'] > 0);
     assert.equal(info['name'], 'stat-test.txt');
   });
 
@@ -50,7 +49,7 @@ describe('stat tool', () => {
       name: 'stat',
       arguments: { path: env.tmpDir },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
@@ -63,7 +62,7 @@ describe('stat tool', () => {
       name: 'stat',
       arguments: { path: path.join(env.tmpDir, 'does-not-exist.txt') },
     });
-    assertToolError(raw as unknown as ToolResult, 'E_NOT_FOUND');
+    assertToolError(raw, 'E_NOT_FOUND');
   });
 
   it('returns E_ACCESS_DENIED when path escapes allowed root', async () => {
@@ -71,7 +70,7 @@ describe('stat tool', () => {
       name: 'stat',
       arguments: { path: '/etc/passwd' },
     });
-    assertToolError(raw as unknown as ToolResult, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'E_ACCESS_DENIED');
   });
 });
 
@@ -97,7 +96,7 @@ describe('stat_many tool', () => {
       name: 'stat_many',
       arguments: { paths: [fileA, fileB] },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
@@ -116,7 +115,7 @@ describe('stat_many tool', () => {
       name: 'stat_many',
       arguments: { paths: [fileA, missing] },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     const results = sc['results'] as Array<Record<string, unknown>>;
@@ -133,6 +132,6 @@ describe('stat_many tool', () => {
       name: 'stat_many',
       arguments: { paths: [] },
     });
-    assertToolError(raw as unknown as ToolResult);
+    assertToolError(raw);
   });
 });

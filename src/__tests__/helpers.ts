@@ -88,12 +88,10 @@ export async function createTestEnv(): Promise<TestEnv> {
  * Assert that a tool call returned an MCP-level error result.
  * Optionally verifies the error code from "Error [CODE]: …" format.
  */
-export function assertToolError(
-  result: ToolResult,
-  expectedCode?: string
-): void {
-  assert.equal(result.isError, true, 'Expected isError to be true');
-  const textBlock = result.content.find(
+export function assertToolError(result: unknown, expectedCode?: string): void {
+  const r = result as ToolResult;
+  assert.equal(r.isError, true, 'Expected isError to be true');
+  const textBlock = r.content.find(
     (b): b is { type: string; text: string } => typeof b.text === 'string'
   );
   assert.ok(textBlock, 'Error result must have a text block');
@@ -111,9 +109,10 @@ export function assertToolError(
  * Assert that a tool call succeeded.
  * Fails with the error text if the result has isError: true.
  */
-export function assertOk(result: ToolResult): void {
-  if (result.isError === true) {
-    const textBlock = result.content.find(
+export function assertOk(result: unknown): void {
+  const r = result as ToolResult;
+  if (r.isError === true) {
+    const textBlock = r.content.find(
       (b): b is { type: string; text: string } => typeof b.text === 'string'
     );
     assert.fail(
@@ -121,7 +120,7 @@ export function assertOk(result: ToolResult): void {
     );
   }
   assert.ok(
-    result.content.length > 0,
+    r.content.length > 0,
     'Result must have at least one content block'
   );
 }
@@ -130,8 +129,9 @@ export function assertOk(result: ToolResult): void {
  * Return structuredContent cast as a plain record.
  * Asserts it is non-null and non-undefined.
  */
-export function getStructured(result: ToolResult): Record<string, unknown> {
-  const sc = result.structuredContent;
+export function getStructured(result: unknown): Record<string, unknown> {
+  const r = result as ToolResult;
+  const sc = r.structuredContent;
   assert.ok(
     sc !== undefined && sc !== null,
     'structuredContent must be present on success results'

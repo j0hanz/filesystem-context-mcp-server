@@ -1,6 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "tsBuildInfoFile": ".tmp/tsconfig.test.tsbuildinfo",
     "rootDir": ".",
     "noEmit": true
   },

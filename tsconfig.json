@@ -23,6 +23,7 @@
     "declarationMap": true,
     "sourceMap": true,
     "incremental": true,
+    "tsBuildInfoFile": ".tmp/tsconfig.tsbuildinfo",
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "types": ["node"]

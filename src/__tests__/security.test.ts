@@ -5,12 +5,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-import {
-  assertToolError,
-  createTestEnv,
-  type TestEnv,
-  type ToolResult,
-} from './helpers.js';
+import { assertToolError, createTestEnv, type TestEnv } from './helpers.js';
 
 // ─── Path boundary enforcement ───────────────────────────────────────────────
 
@@ -53,7 +48,7 @@ describe('security: path boundary enforcement', () => {
         name: tool,
         arguments: args(env.tmpDir),
       });
-      assertToolError(raw as unknown as ToolResult, 'E_ACCESS_DENIED');
+      assertToolError(raw, 'E_ACCESS_DENIED');
     });
   }
 });
@@ -78,7 +73,7 @@ describe('security: path traversal via ".."', () => {
       name: 'read',
       arguments: { path: escaped },
     });
-    assertToolError(raw as unknown as ToolResult, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'E_ACCESS_DENIED');
   });
 
   it('stat: rejects traversal above tmpDir', async () => {
@@ -87,7 +82,7 @@ describe('security: path traversal via ".."', () => {
       name: 'stat',
       arguments: { path: escaped },
     });
-    assertToolError(raw as unknown as ToolResult, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'E_ACCESS_DENIED');
   });
 
   it('write: rejects traversal above tmpDir', async () => {
@@ -96,7 +91,7 @@ describe('security: path traversal via ".."', () => {
       name: 'write',
       arguments: { path: escaped, content: 'exploit' },
     });
-    assertToolError(raw as unknown as ToolResult, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'E_ACCESS_DENIED');
   });
 });
 
@@ -125,7 +120,7 @@ describe('security: symlink escape attempt', () => {
       name: 'read',
       arguments: { path: linkPath },
     });
-    assertToolError(raw as unknown as ToolResult, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'E_ACCESS_DENIED');
   });
 
   it('stat: rejects symlink pointing outside allowed root', async () => {
@@ -139,7 +134,7 @@ describe('security: symlink escape attempt', () => {
       name: 'stat',
       arguments: { path: linkPath },
     });
-    assertToolError(raw as unknown as ToolResult, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'E_ACCESS_DENIED');
   });
 });
 
@@ -161,7 +156,7 @@ describe('security: schema validation rejects malformed input', () => {
       name: 'stat_many',
       arguments: { paths: [] },
     });
-    assertToolError(raw as unknown as ToolResult);
+    assertToolError(raw);
   });
 
   it('read_many: rejects empty paths array', async () => {
@@ -169,7 +164,7 @@ describe('security: schema validation rejects malformed input', () => {
       name: 'read_many',
       arguments: { paths: [] },
     });
-    assertToolError(raw as unknown as ToolResult);
+    assertToolError(raw);
   });
 
   it('mv: rejects missing both source and sources', async () => {
@@ -177,12 +172,12 @@ describe('security: schema validation rejects malformed input', () => {
       name: 'mv',
       arguments: { destination: path.join(env.tmpDir, 'dst.txt') },
     });
-    assertToolError(raw as unknown as ToolResult);
+    assertToolError(raw);
   });
 
   it('mkdir: rejects missing both path and paths', async () => {
     const raw = await env.client.callTool({ name: 'mkdir', arguments: {} });
-    assertToolError(raw as unknown as ToolResult);
+    assertToolError(raw);
   });
 
   it('write: rejects missing content field', async () => {
@@ -190,7 +185,7 @@ describe('security: schema validation rejects malformed input', () => {
       name: 'write',
       arguments: { path: path.join(env.tmpDir, 'f.txt') },
     });
-    assertToolError(raw as unknown as ToolResult);
+    assertToolError(raw);
   });
 
   it('diff_files: rejects when both paths are missing', async () => {
@@ -198,6 +193,6 @@ describe('security: schema validation rejects malformed input', () => {
       name: 'diff_files',
       arguments: {},
     });
-    assertToolError(raw as unknown as ToolResult);
+    assertToolError(raw);
   });
 });

@@ -16,6 +16,7 @@ const CONFIG = {
     assets: 'assets',
     executable: 'dist/index.js',
     tsBuildInfo: [
+      '.tmp',
       '.tsbuildinfo',
       'tsconfig.tsbuildinfo',
       'tsconfig.build.tsbuildinfo',

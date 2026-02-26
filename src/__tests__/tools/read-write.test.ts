@@ -12,7 +12,6 @@ import {
   createTestEnv,
   getStructured,
   type TestEnv,
-  type ToolResult,
 } from '../helpers.js';
 
 // ─── read ────────────────────────────────────────────────────────────────────
@@ -36,7 +35,7 @@ describe('read tool', () => {
       name: 'read',
       arguments: { path: file },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
@@ -50,7 +49,7 @@ describe('read tool', () => {
       name: 'read',
       arguments: { path: file, startLine: 2, endLine: 2 },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     assert.ok((sc['content'] as string).includes('line2'));
@@ -63,7 +62,7 @@ describe('read tool', () => {
       name: 'read',
       arguments: { path: path.join(env.tmpDir, 'missing.txt') },
     });
-    assertToolError(raw as unknown as ToolResult, 'E_NOT_FOUND');
+    assertToolError(raw, 'E_NOT_FOUND');
   });
 
   it('returns E_ACCESS_DENIED outside allowed root', async () => {
@@ -71,7 +70,7 @@ describe('read tool', () => {
       name: 'read',
       arguments: { path: '/etc/hostname' },
     });
-    assertToolError(raw as unknown as ToolResult, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'E_ACCESS_DENIED');
   });
 });
 
@@ -94,14 +93,11 @@ describe('write tool', () => {
       name: 'write',
       arguments: { path: file, content: 'hello world' },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
-    assert.ok(
-      typeof sc['bytesWritten'] === 'number' &&
-        (sc['bytesWritten'] as number) > 0
-    );
+    assert.ok(typeof sc['bytesWritten'] === 'number' && sc['bytesWritten'] > 0);
     const actual = await fs.readFile(file, 'utf8');
     assert.equal(actual, 'hello world');
   });
@@ -122,7 +118,7 @@ describe('write tool', () => {
       name: 'write',
       arguments: { path: '/tmp/escape.txt', content: 'bad' },
     });
-    assertToolError(raw as unknown as ToolResult, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'E_ACCESS_DENIED');
   });
 });
 
@@ -150,7 +146,7 @@ describe('read_many tool', () => {
       name: 'read_many',
       arguments: { paths: [fileA, fileB] },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
@@ -167,7 +163,7 @@ describe('read_many tool', () => {
       name: 'read_many',
       arguments: { paths: [fileA, missing] },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     const results = sc['results'] as Array<Record<string, unknown>>;
@@ -200,7 +196,7 @@ describe('edit tool', () => {
         edits: [{ oldText: 'bar', newText: 'BAR' }],
       },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const actual = await fs.readFile(file, 'utf8');
     assert.equal(actual, 'foo BAR baz\n');
@@ -217,7 +213,7 @@ describe('edit tool', () => {
         dryRun: true,
       },
     });
-    assertOk(raw as unknown as ToolResult);
+    assertOk(raw);
     const actual = await fs.readFile(file, 'utf8');
     assert.equal(
       actual,
@@ -236,7 +232,7 @@ describe('edit tool', () => {
         edits: [{ oldText: 'DOES NOT EXIST', newText: 'anything' }],
       },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     const unmatched = sc['unmatchedEdits'] as unknown[];
@@ -280,7 +276,7 @@ describe('apply_patch tool', () => {
       name: 'apply_patch',
       arguments: { path: file, patch },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
@@ -310,7 +306,7 @@ describe('apply_patch tool', () => {
       name: 'apply_patch',
       arguments: { path: file, patch, dryRun: true },
     });
-    assertOk(raw as unknown as ToolResult);
+    assertOk(raw);
     const actual = await fs.readFile(file, 'utf8');
     assert.equal(
       actual,

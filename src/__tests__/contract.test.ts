@@ -104,14 +104,14 @@ describe('Tool contract', () => {
     const { tools } = await env.client.listTools();
     for (const tool of tools) {
       if (!READ_ONLY_TOOLS.has(tool.name)) continue;
-      const ann = tool.annotations as Record<string, unknown> | undefined;
+      const ann = tool.annotations as Record<string, unknown>;
       assert.equal(
-        ann?.readOnlyHint,
+        ann['readOnlyHint'],
         true,
         `${tool.name}: expected readOnlyHint=true`
       );
       assert.equal(
-        ann?.destructiveHint,
+        ann['destructiveHint'],
         false,
         `${tool.name}: expected destructiveHint=false`
       );
@@ -122,9 +122,9 @@ describe('Tool contract', () => {
     const { tools } = await env.client.listTools();
     for (const tool of tools) {
       if (!DESTRUCTIVE_TOOLS.has(tool.name)) continue;
-      const ann = tool.annotations as Record<string, unknown> | undefined;
+      const ann = tool.annotations as Record<string, unknown>;
       assert.equal(
-        ann?.destructiveHint,
+        ann['destructiveHint'],
         true,
         `${tool.name}: expected destructiveHint=true`
       );
@@ -135,14 +135,14 @@ describe('Tool contract', () => {
     const { tools } = await env.client.listTools();
     const mkdir = tools.find((t) => t.name === 'mkdir');
     assert.ok(mkdir, 'mkdir tool must exist');
-    const ann = mkdir.annotations as Record<string, unknown> | undefined;
+    const ann = mkdir.annotations as Record<string, unknown>;
     assert.equal(
-      ann?.idempotentHint,
+      ann['idempotentHint'],
       true,
       'mkdir: expected idempotentHint=true'
     );
     assert.equal(
-      ann?.destructiveHint,
+      ann['destructiveHint'],
       false,
       'mkdir: expected destructiveHint=false'
     );
@@ -153,13 +153,9 @@ describe('Tool contract', () => {
       name: 'roots',
       arguments: {},
     });
-    const result = rawResult as unknown as ReturnType<
-      typeof getStructured
-    > extends never
-      ? never
-      : Parameters<typeof assertOk>[0];
-    assertOk(result as Parameters<typeof assertOk>[0]);
-    const sc = getStructured(result as Parameters<typeof getStructured>[0]);
+    const result = rawResult;
+    assertOk(result);
+    const sc = getStructured(result);
     assert.equal(sc['ok'], true);
     assert.ok(Array.isArray(sc['directories']), 'Expected directories array');
     const dirs = sc['directories'] as string[];

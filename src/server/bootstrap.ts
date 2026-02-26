@@ -18,6 +18,7 @@ import {
 import { registerCompletions } from '../completions.js';
 import {
   DEFAULT_LOG_LEVEL,
+  parseEnvInt,
   REQUIRED_MCP_PROTOCOL_VERSION,
 } from '../lib/constants.js';
 import { formatUnknownErrorMessage } from '../lib/errors.js';
@@ -157,9 +158,8 @@ export async function startServer(server: McpServer): Promise<void> {
   rootsManager.registerHandlers(server);
   await rootsManager.recomputeAllowedDirectories();
   await server.connect(transport);
-  const transportAny = transport as { onclose?: (() => void) | undefined };
-  const sdkOnClose = transportAny.onclose;
-  transportAny.onclose = () => {
+  const sdkOnClose = transport.onclose;
+  transport.onclose = () => {
     rootsManager.destroy();
     sdkOnClose?.();
   };
@@ -167,9 +167,12 @@ export async function startServer(server: McpServer): Promise<void> {
   rootsManager.logMissingDirectoriesIfNeeded(server);
 }
 
-const MAX_REQUEST_BODY_BYTES =
-  parseInt(process.env['FS_CONTEXT_MAX_REQUEST_BYTES'] ?? '', 10) ||
-  4 * 1024 * 1024; // 4 MB default
+const MAX_REQUEST_BODY_BYTES = parseEnvInt(
+  'FS_CONTEXT_MAX_REQUEST_BYTES',
+  4 * 1024 * 1024,
+  1024,
+  256 * 1024 * 1024
+);
 
 class RequestBodyError extends Error {
   constructor(

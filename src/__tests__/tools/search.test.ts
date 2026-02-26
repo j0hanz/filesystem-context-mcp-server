@@ -13,7 +13,6 @@ import {
   createTestEnv,
   getStructured,
   type TestEnv,
-  type ToolResult,
 } from '../helpers.js';
 
 // ─── grep (search_content) ───────────────────────────────────────────────────
@@ -51,7 +50,7 @@ describe('grep tool', () => {
       name: 'grep',
       arguments: { path: env.tmpDir, pattern: 'apple' },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
@@ -67,7 +66,7 @@ describe('grep tool', () => {
       name: 'grep',
       arguments: { path: env.tmpDir, pattern: '^a[a-z]+', isRegex: true },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     const matches = sc['matches'] as Array<Record<string, unknown>>;
@@ -82,7 +81,7 @@ describe('grep tool', () => {
       name: 'grep',
       arguments: { path: env.tmpDir, pattern: 'a', filePattern: '*.txt' },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
@@ -93,7 +92,7 @@ describe('grep tool', () => {
       name: 'grep',
       arguments: { path: env.tmpDir, pattern: 'ZZZNOMATCH' },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     const matches = sc['matches'] as Array<Record<string, unknown>>;
@@ -125,7 +124,7 @@ describe('find tool', () => {
       name: 'find',
       arguments: { path: env.tmpDir, pattern: '**/*.ts' },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
@@ -138,7 +137,7 @@ describe('find tool', () => {
       name: 'find',
       arguments: { path: env.tmpDir, pattern: '**/*.json' },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     const results = sc['results'] as Array<Record<string, unknown>>;
@@ -150,7 +149,7 @@ describe('find tool', () => {
       name: 'find',
       arguments: { path: env.tmpDir, pattern: '**/*.neverexists' },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     const results = sc['results'] as Array<Record<string, unknown>>;
@@ -191,7 +190,7 @@ describe('search_and_replace tool', () => {
         replacement: 'WORLD',
       },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
@@ -213,7 +212,7 @@ describe('search_and_replace tool', () => {
         dryRun: true,
       },
     });
-    assertOk(raw as unknown as ToolResult);
+    assertOk(raw);
     const actual = await fs.readFile(path.join(env.tmpDir, 'dry.txt'), 'utf8');
     assert.equal(actual, 'oldvalue\n', 'File must be unchanged in dryRun');
   });
@@ -231,13 +230,13 @@ describe('search_and_replace tool', () => {
         isRegex: true,
       },
     });
-    assertOk(raw as unknown as ToolResult);
+    assertOk(raw);
     const actual = await fs.readFile(file, 'utf8');
     assert.ok(
       actual.includes('NUM'),
       'Regex replacement should have substituted digits'
     );
-    assert.ok(!actual.match(/\d/), 'No digits should remain');
+    assert.ok(!/\d/.exec(actual), 'No digits should remain');
   });
 
   it('returns E_ACCESS_DENIED when path escapes allowed root', async () => {
@@ -250,6 +249,6 @@ describe('search_and_replace tool', () => {
         replacement: 'y',
       },
     });
-    assertToolError(raw as unknown as ToolResult, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'E_ACCESS_DENIED');
   });
 });

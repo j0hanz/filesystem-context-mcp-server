@@ -12,7 +12,6 @@ import {
   createTestEnv,
   getStructured,
   type TestEnv,
-  type ToolResult,
 } from '../helpers.js';
 
 describe('calculate_hash tool', () => {
@@ -34,7 +33,7 @@ describe('calculate_hash tool', () => {
       name: 'calculate_hash',
       arguments: { path: file },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
@@ -56,8 +55,8 @@ describe('calculate_hash tool', () => {
       arguments: { path: file2 },
     });
 
-    const sc1 = getStructured(raw1 as unknown as ToolResult);
-    const sc2 = getStructured(raw2 as unknown as ToolResult);
+    const sc1 = getStructured(raw1);
+    const sc2 = getStructured(raw2);
     assert.equal(
       sc1['hash'],
       sc2['hash'],
@@ -69,17 +68,17 @@ describe('calculate_hash tool', () => {
     const mutable = path.join(env.tmpDir, 'mutable.txt');
     await fs.writeFile(mutable, 'version 1', 'utf8');
     const r1 = getStructured(
-      (await env.client.callTool({
+      await env.client.callTool({
         name: 'calculate_hash',
         arguments: { path: mutable },
-      })) as unknown as ToolResult
+      })
     );
     await fs.writeFile(mutable, 'version 2', 'utf8');
     const r2 = getStructured(
-      (await env.client.callTool({
+      await env.client.callTool({
         name: 'calculate_hash',
         arguments: { path: mutable },
-      })) as unknown as ToolResult
+      })
     );
     assert.notEqual(
       r1['hash'],
@@ -93,7 +92,7 @@ describe('calculate_hash tool', () => {
       name: 'calculate_hash',
       arguments: { path: env.tmpDir },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['isDirectory'], true);
@@ -105,7 +104,7 @@ describe('calculate_hash tool', () => {
       name: 'calculate_hash',
       arguments: { path: path.join(env.tmpDir, 'ghost.txt') },
     });
-    assertToolError(raw as unknown as ToolResult, 'E_NOT_FOUND');
+    assertToolError(raw, 'E_NOT_FOUND');
   });
 });
 
@@ -138,7 +137,7 @@ describe('diff_files tool', () => {
       name: 'diff_files',
       arguments: { original, modified },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
@@ -152,7 +151,7 @@ describe('diff_files tool', () => {
       name: 'diff_files',
       arguments: { original, modified: identical },
     });
-    const result = raw as unknown as ToolResult;
+    const result = raw;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['isIdentical'], true);
@@ -166,6 +165,6 @@ describe('diff_files tool', () => {
         modified,
       },
     });
-    assertToolError(raw as unknown as ToolResult, 'E_NOT_FOUND');
+    assertToolError(raw, 'E_NOT_FOUND');
   });
 });
