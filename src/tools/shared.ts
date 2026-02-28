@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import { channel } from 'node:diagnostics_channel';
 
 import type {
@@ -663,4 +664,41 @@ export function resolvePathOrRoot(pathValue: string | undefined): string {
     );
   }
   return root;
+}
+
+export function encodeOffsetCursor(offset: number): string {
+  return Buffer.from(JSON.stringify({ offset })).toString('base64url');
+}
+
+export function decodeOffsetCursor(cursor: string): number {
+  try {
+    const parsed: unknown = JSON.parse(
+      Buffer.from(cursor, 'base64url').toString('utf-8')
+    );
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      typeof (parsed as { offset?: unknown }).offset === 'number'
+    ) {
+      const { offset } = parsed as { offset: number };
+      return Number.isInteger(offset) && offset >= 0 ? offset : 0;
+    }
+  } catch {
+    // ignore malformed cursor
+  }
+  return 0;
+}
+
+export function buildBatchPathContext(
+  paths: readonly string[],
+  unitLabel = 'paths'
+): string {
+  const normalizedLabel =
+    paths.length === 1 ? unitLabel.replace(/s$/i, '') : unitLabel;
+  const first = path.basename(paths[0] ?? '');
+  const extraPaths =
+    paths.length > 1
+      ? `, ${path.basename(paths[1] ?? '')}${paths.length > 2 ? '…' : ''}`
+      : '';
+  return `${paths.length} ${normalizedLabel} [${first}${extraPaths}]`;
 }

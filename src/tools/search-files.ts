@@ -16,6 +16,8 @@ import {
   buildToolErrorResponse,
   buildToolResponse,
   createProgressReporter,
+  decodeOffsetCursor,
+  encodeOffsetCursor,
   executeToolWithDiagnostics,
   notifyProgress,
   READ_ONLY_TOOL_ANNOTATIONS,
@@ -30,29 +32,6 @@ import {
   wrapToolHandler,
 } from './shared.js';
 import { registerToolTaskIfAvailable } from './task-support.js';
-
-function encodeCursor(offset: number): string {
-  return Buffer.from(JSON.stringify({ offset })).toString('base64url');
-}
-
-function decodeCursor(cursor: string): number {
-  try {
-    const parsed: unknown = JSON.parse(
-      Buffer.from(cursor, 'base64url').toString('utf-8')
-    );
-    if (
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      typeof (parsed as { offset?: unknown }).offset === 'number'
-    ) {
-      const { offset } = parsed as { offset: number };
-      return Number.isInteger(offset) && offset >= 0 ? offset : 0;
-    }
-  } catch {
-    // ignore malformed cursor
-  }
-  return 0;
-}
 
 export const SEARCH_FILES_TOOL: ToolContract = {
   name: 'find',
@@ -80,7 +59,7 @@ async function handleSearchFiles(
   const basePath = resolvePathOrRoot(args.path);
   const excludePatterns = args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
   const cursorOffset =
-    args.cursor !== undefined ? decodeCursor(args.cursor) : 0;
+    args.cursor !== undefined ? decodeOffsetCursor(args.cursor) : 0;
   const pageSize = args.maxResults;
   const fetchMax = cursorOffset + pageSize;
   const searchOptions: Parameters<typeof searchFiles>[3] = {
@@ -103,7 +82,7 @@ async function handleSearchFiles(
     cursorOffset > 0 ? allResults.slice(cursorOffset) : allResults;
   const nextCursor =
     result.summary.truncated && displayResults.length > 0
-      ? encodeCursor(cursorOffset + displayResults.length)
+      ? encodeOffsetCursor(cursorOffset + displayResults.length)
       : undefined;
   const relativeResults: z.infer<typeof SearchFilesOutputSchema>['results'] =
     [];

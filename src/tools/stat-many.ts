@@ -1,5 +1,3 @@
-import * as path from 'node:path';
-
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
@@ -14,6 +12,7 @@ import {
   GetMultipleFileInfoOutputSchema,
 } from '../schemas.js';
 import {
+  buildBatchPathContext,
   buildFileInfoPayload,
   buildToolErrorResponse,
   buildToolResponse,
@@ -42,6 +41,35 @@ export const GET_MULTIPLE_FILE_INFO_TOOL: ToolContract = {
   taskSupport: 'optional',
   nuances: ['Use before read/search when file size/type uncertainty exists.'],
 } as const;
+
+function buildStatManyCompletionSuffix(
+  summary: z.infer<typeof GetMultipleFileInfoOutputSchema>['summary']
+): string {
+  const total = summary?.total ?? 0;
+  const failed = summary?.failed ?? 0;
+  const succeeded = summary?.succeeded ?? 0;
+  if (failed) {
+    return `${succeeded}/${total} OK, ${failed} failed`;
+  }
+  return `${total} OK`;
+}
+
+function createStatManyProgressCallbacks(
+  extra: ToolExtra,
+  context: string,
+  totalPaths: number
+): {
+  progress: ReturnType<typeof createToolProgressSession>;
+  onProgress: () => void;
+} {
+  const progress = createToolProgressSession(extra, `🕮 stat_many: ${context}`);
+  const onProgress = (): void => {
+    progress.increment(
+      (current) => `🕮 stat_many: ${context} [${current}/${totalPaths} scanned]`
+    );
+  };
+  return { progress, onProgress };
+}
 
 function formatFileInfoDetail(info: FileInfo): string {
   const lines = [
@@ -115,22 +143,12 @@ export function registerGetMultipleFileInfoTool(
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: primaryPath },
       run: async (signal) => {
-        const first = path.basename(args.paths[0] ?? '');
-        const extraPaths =
-          args.paths.length > 1
-            ? `, ${path.basename(args.paths[1] ?? '')}${args.paths.length > 2 ? '…' : ''}`
-            : '';
-        const context = `${args.paths.length} paths [${first}${extraPaths}]`;
-        const progress = createToolProgressSession(
+        const context = buildBatchPathContext(args.paths);
+        const { progress, onProgress } = createStatManyProgressCallbacks(
           extra,
-          `🕮 stat_many: ${context}`
+          context,
+          args.paths.length
         );
-        const onProgress = (): void => {
-          progress.increment(
-            (current) =>
-              `🕮 stat_many: ${context} [${current}/${args.paths.length} scanned]`
-          );
-        };
 
         try {
           const result = await handleGetMultipleFileInfo(
@@ -140,16 +158,8 @@ export function registerGetMultipleFileInfoTool(
           );
 
           const sc = result.structuredContent;
+          const suffix = buildStatManyCompletionSuffix(sc.summary);
           const total = sc.summary?.total ?? 0;
-          const failed = sc.summary?.failed ?? 0;
-          const succeeded = sc.summary?.succeeded ?? 0;
-
-          let suffix: string;
-          if (failed) {
-            suffix = `${succeeded}/${total} OK, ${failed} failed`;
-          } else {
-            suffix = `${total} OK`;
-          }
 
           const finalCurrent = Math.max(total, progress.getCurrent() + 1);
           progress.complete(

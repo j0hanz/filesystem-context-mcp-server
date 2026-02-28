@@ -15,6 +15,8 @@ import {
 import {
   buildToolErrorResponse,
   buildToolResponse,
+  decodeOffsetCursor,
+  encodeOffsetCursor,
   executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolvePathOrRoot,
@@ -123,36 +125,13 @@ function buildStructuredListResult(
   };
 }
 
-function encodeCursor(offset: number): string {
-  return Buffer.from(JSON.stringify({ offset })).toString('base64url');
-}
-
-function decodeCursor(cursor: string): number {
-  try {
-    const parsed: unknown = JSON.parse(
-      Buffer.from(cursor, 'base64url').toString('utf-8')
-    );
-    if (
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      typeof (parsed as { offset?: unknown }).offset === 'number'
-    ) {
-      const { offset } = parsed as { offset: number };
-      return Number.isInteger(offset) && offset >= 0 ? offset : 0;
-    }
-  } catch {
-    // ignore malformed cursor
-  }
-  return 0;
-}
-
 async function handleListDirectory(
   args: z.infer<typeof ListDirectoryInputSchema>,
   signal?: AbortSignal
 ): Promise<ToolResponse<z.infer<typeof ListDirectoryOutputSchema>>> {
   const dirPath = resolvePathOrRoot(args.path);
   const cursorOffset =
-    args.cursor !== undefined ? decodeCursor(args.cursor) : 0;
+    args.cursor !== undefined ? decodeOffsetCursor(args.cursor) : 0;
   const pageSize = args.maxEntries;
   const options: Parameters<typeof listDirectory>[1] = {
     includeHidden: args.includeHidden,
@@ -169,7 +148,7 @@ async function handleListDirectory(
     cursorOffset > 0 ? result.entries.slice(cursorOffset) : result.entries;
   const nextCursor =
     result.summary.truncated && displayEntries.length > 0
-      ? encodeCursor(cursorOffset + displayEntries.length)
+      ? encodeOffsetCursor(cursorOffset + displayEntries.length)
       : undefined;
   const displayResult = { ...result, entries: displayEntries };
   return buildToolResponse(

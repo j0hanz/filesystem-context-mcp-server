@@ -15,6 +15,7 @@ import {
   ReadMultipleFilesOutputSchema,
 } from '../schemas.js';
 import {
+  buildBatchPathContext,
   buildResourceLink,
   buildToolErrorResponse,
   buildToolResponse,
@@ -54,6 +55,36 @@ type ReadManyStructuredResult = z.infer<typeof ReadMultipleFilesOutputSchema>;
 type ReadManyStructuredResultItem = NonNullable<
   ReadManyStructuredResult['results']
 >[number];
+
+function buildReadManyCompletionSuffix(
+  summary: ReadManyStructuredResult['summary']
+): string {
+  const total = summary?.total ?? 0;
+  const failed = summary?.failed ?? 0;
+  const succeeded = summary?.succeeded ?? 0;
+  if (failed) {
+    return `${succeeded}/${total} read, ${failed} failed`;
+  }
+  const label = total === 1 ? 'file' : 'files';
+  return `${total} ${label} read`;
+}
+
+function createReadManyProgressCallbacks(
+  extra: ToolExtra,
+  context: string,
+  totalPaths: number
+): {
+  progress: ReturnType<typeof createToolProgressSession>;
+  onReadComplete: () => void;
+} {
+  const progress = createToolProgressSession(extra, `🕮 read_many: ${context}`);
+  const onReadComplete = (): void => {
+    progress.increment(
+      (current) => `🕮 read_many: ${context} [${current}/${totalPaths} read]`
+    );
+  };
+  return { progress, onReadComplete };
+}
 
 function toStructuredReadManyResult(
   result: Awaited<ReturnType<typeof readMultipleFiles>>[number] & {
@@ -200,22 +231,12 @@ export function registerReadMultipleFilesTool(
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: primaryPath },
       run: async (signal) => {
-        const first = path.basename(args.paths[0] ?? '');
-        const extraPaths =
-          args.paths.length > 1
-            ? `, ${path.basename(args.paths[1] ?? '')}${args.paths.length > 2 ? '…' : ''}`
-            : '';
-        const context = `${args.paths.length} files [${first}${extraPaths}]`;
-        const progress = createToolProgressSession(
+        const context = buildBatchPathContext(args.paths, 'files');
+        const { progress, onReadComplete } = createReadManyProgressCallbacks(
           extra,
-          `🕮 read_many: ${context}`
+          context,
+          args.paths.length
         );
-        const onReadComplete = (): void => {
-          progress.increment(
-            (current) =>
-              `🕮 read_many: ${context} [${current}/${args.paths.length} read]`
-          );
-        };
 
         try {
           const result = await handleReadMultipleFiles(
@@ -226,16 +247,8 @@ export function registerReadMultipleFilesTool(
           );
 
           const sc = result.structuredContent;
+          const suffix = buildReadManyCompletionSuffix(sc.summary);
           const total = sc.summary?.total ?? 0;
-          const failed = sc.summary?.failed ?? 0;
-          const succeeded = sc.summary?.succeeded ?? 0;
-
-          let suffix: string;
-          if (failed) {
-            suffix = `${succeeded}/${total} read, ${failed} failed`;
-          } else {
-            suffix = `${total} files read`;
-          }
 
           const finalCurrent = Math.max(total, progress.getCurrent() + 1);
           progress.complete(
