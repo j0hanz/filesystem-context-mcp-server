@@ -13,6 +13,7 @@ import {
   withAbort,
 } from '../fs-helpers.js';
 import { validateExistingPath } from '../path-validation.js';
+import { applyIndexedErrors, applyIndexedValues } from './common.js';
 
 interface ReadMultipleResult {
   path: string;
@@ -353,15 +354,6 @@ function buildOutput(filePaths: readonly string[]): ReadMultipleResult[] {
   return output;
 }
 
-function applyResults(
-  output: ReadMultipleResult[],
-  results: { index: number; value: ReadMultipleResult }[]
-): void {
-  for (const result of results) {
-    output[result.index] = result.value;
-  }
-}
-
 function resolveErrorOriginalIndex(
   failureIndex: number,
   filesToProcess: { index: number }[],
@@ -381,27 +373,6 @@ function resolveErrorOriginalIndex(
     return failureIndex;
   }
   return undefined;
-}
-
-function applyErrors(
-  output: ReadMultipleResult[],
-  errors: { index: number; error: Error }[],
-  filesToProcess: { index: number }[],
-  filePaths: readonly string[]
-): void {
-  for (const failure of errors) {
-    const originalIndex = resolveErrorOriginalIndex(
-      failure.index,
-      filesToProcess,
-      filePaths.length
-    );
-    if (originalIndex === undefined) continue;
-    const filePath = filePaths[originalIndex] ?? UNKNOWN_PATH;
-    output[originalIndex] = {
-      path: filePath,
-      error: failure.error.message,
-    };
-  }
 }
 
 function buildFilesToProcess(
@@ -496,8 +467,17 @@ export async function readMultipleFiles(
     options.onReadComplete
   );
 
-  applyResults(output, results);
-  applyErrors(output, errors, filesToProcess, filePaths);
+  applyIndexedValues(output, results);
+  applyIndexedErrors({
+    output,
+    errors,
+    resolveIndex: (failureIndex) =>
+      resolveErrorOriginalIndex(failureIndex, filesToProcess, filePaths.length),
+    buildValue: (resolvedIndex, error) => ({
+      path: filePaths[resolvedIndex] ?? UNKNOWN_PATH,
+      error: error.message,
+    }),
+  });
   applySkippedBudget(output, skippedBudget, filePaths, normalized.maxTotalSize);
 
   return output;

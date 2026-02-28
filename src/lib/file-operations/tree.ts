@@ -13,7 +13,11 @@ import {
   validateExistingDirectory,
   validateExistingPathDetailed,
 } from '../path-validation.js';
-import { resolveEntryType } from './common.js';
+import {
+  isEntryAccessibleByType,
+  resolveEntryType,
+  resolveStopReason,
+} from './common.js';
 import type { DirentLike, EntryType } from './common.js';
 import { isIgnoredByGitignore, loadRootGitignore } from './gitignore.js';
 import { globEntries } from './glob-engine.js';
@@ -142,20 +146,6 @@ function getTreeTypeRank(type: EntryType): number {
   return 2;
 }
 
-function getStopReason(
-  signal: AbortSignal,
-  totalEntries: number,
-  maxEntries: number
-): 'aborted' | 'maxEntries' | undefined {
-  if (signal.aborted) {
-    return 'aborted';
-  }
-  if (totalEntries >= maxEntries) {
-    return 'maxEntries';
-  }
-  return undefined;
-}
-
 async function resolveTreeEntry(
   entry: {
     path: string;
@@ -164,30 +154,23 @@ async function resolveTreeEntry(
   root: string,
   rootDirectories: readonly string[],
   gitignoreMatcher: Awaited<ReturnType<typeof loadRootGitignore>>,
-  signal: AbortSignal
+  signal: AbortSignal,
+  accessDeps: Parameters<typeof isEntryAccessibleByType>[4]
 ): Promise<{
   type: EntryType;
   relativePosix: string;
   name: string;
 } | null> {
   const type = resolveEntryType(entry.dirent);
-  if (type !== 'symlink') {
-    const normalized = normalizePath(entry.path);
-    if (!isPathWithinDirectories(normalized, rootDirectories)) {
-      return null;
-    }
-    if (isSensitivePath(entry.path, normalized)) {
-      return null;
-    }
-  } else {
-    try {
-      const validated = await validateExistingPathDetailed(entry.path, signal);
-      if (isSensitivePath(validated.requestedPath, validated.resolvedPath)) {
-        return null;
-      }
-    } catch {
-      return null;
-    }
+  const isAccessible = await isEntryAccessibleByType(
+    entry.path,
+    type,
+    rootDirectories,
+    signal,
+    accessDeps
+  );
+  if (!isAccessible) {
+    return null;
   }
 
   if (
@@ -323,6 +306,12 @@ export async function treeDirectory(
   const root = await validateExistingDirectory(dirPath, signal);
   const rootNormalized = normalizePath(root);
   const rootDirectories = [rootNormalized];
+  const accessDeps = {
+    normalizePath,
+    isPathWithinDirectories,
+    isSensitivePath,
+    validateSymlinkPath: validateExistingPathDetailed,
+  };
 
   try {
     const excludePatterns = normalized.includeIgnored
@@ -360,11 +349,13 @@ export async function treeDirectory(
     });
 
     for await (const entry of stream) {
-      const stopReason = getStopReason(
+      const stopReason = resolveStopReason<'aborted' | 'maxEntries'>({
         signal,
-        totalEntries,
-        normalized.maxEntries
-      );
+        current: totalEntries,
+        max: normalized.maxEntries,
+        abortedReason: 'aborted',
+        maxReason: 'maxEntries',
+      });
       if (stopReason) {
         truncated = true;
         break;
@@ -375,7 +366,8 @@ export async function treeDirectory(
         root,
         rootDirectories,
         gitignoreMatcher,
-        signal
+        signal,
+        accessDeps
       );
       if (!resolved) {
         continue;

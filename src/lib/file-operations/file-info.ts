@@ -18,6 +18,7 @@ import {
 } from '../fs-helpers.js';
 import { assertAllowedFileAccess } from '../path-policy.js';
 import { validateExistingPathDetailed } from '../path-validation.js';
+import { applyIndexedErrors, applyIndexedValues } from './common.js';
 
 const PERM_STRINGS = [
   '---',
@@ -177,33 +178,6 @@ async function readFileInfoInParallel(
   );
 }
 
-function applyResults(
-  output: MultipleFileInfoResult[],
-  results: ParallelResult[]
-): void {
-  for (const result of results) {
-    output[result.index] = result.value;
-  }
-}
-
-function applyErrors(
-  output: MultipleFileInfoResult[],
-  errors: ParallelError[],
-  paths: readonly string[]
-): void {
-  for (const failure of errors) {
-    const { index } = failure;
-    if (!isValidOutputIndex(index, output.length)) continue;
-
-    const filePath = paths[index] ?? UNKNOWN_PATH;
-    output[index] = { path: filePath, error: failure.error.message };
-  }
-}
-
-function isValidOutputIndex(index: number, length: number): boolean {
-  return index >= 0 && index < length;
-}
-
 function calculateSummary(results: readonly MultipleFileInfoResult[]): {
   total: number;
   succeeded: number;
@@ -243,8 +217,19 @@ export async function getMultipleFileInfo(
   }
   const { results, errors } = await readFileInfoInParallel(paths, options);
 
-  applyResults(output, results);
-  applyErrors(output, errors, paths);
+  applyIndexedValues(output, results);
+  applyIndexedErrors({
+    output,
+    errors,
+    resolveIndex: (failureIndex) =>
+      failureIndex >= 0 && failureIndex < output.length
+        ? failureIndex
+        : undefined,
+    buildValue: (resolvedIndex, error) => ({
+      path: paths[resolvedIndex] ?? UNKNOWN_PATH,
+      error: error.message,
+    }),
+  });
 
   return {
     results: output,

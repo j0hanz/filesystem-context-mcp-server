@@ -23,8 +23,10 @@ import {
   validateExistingPathDetailed,
 } from '../path-validation.js';
 import {
+  isEntryAccessibleByType,
   needsStatsForSort,
   resolveEntryType,
+  resolveStopReason,
   withOptionalStoppedReason,
 } from './common.js';
 import type { DirentLike, EntryType } from './common.js';
@@ -118,16 +120,6 @@ function resolveMaxDepth(normalized: NormalizedOptions): number {
     return 1;
   }
   return normalized.maxDepth;
-}
-
-function getStopReason(
-  signal: AbortSignal,
-  acceptedCount: number,
-  maxEntries: number
-): StoppedReason | undefined {
-  if (signal.aborted) return 'aborted';
-  if (acceptedCount >= maxEntries) return 'maxEntries';
-  return undefined;
 }
 
 async function* readDirectoryEntries(
@@ -284,39 +276,6 @@ function trackSymlink(
   }
 }
 
-async function isEntryAccessible(
-  entryPath: string,
-  entryType: EntryType,
-  basePathDirectories: readonly string[],
-  signal: AbortSignal,
-  counters: Counters
-): Promise<boolean> {
-  if (entryType !== 'symlink') {
-    const normalized = normalizePath(entryPath);
-    if (!isPathWithinDirectories(normalized, basePathDirectories)) {
-      counters.skippedInaccessible += 1;
-      return false;
-    }
-    if (isSensitivePath(entryPath, normalized)) {
-      counters.skippedInaccessible += 1;
-      return false;
-    }
-    return true;
-  }
-
-  try {
-    const validated = await validateExistingPathDetailed(entryPath, signal);
-    if (isSensitivePath(validated.requestedPath, validated.resolvedPath)) {
-      counters.skippedInaccessible += 1;
-      return false;
-    }
-    return true;
-  } catch {
-    counters.skippedInaccessible += 1;
-    return false;
-  }
-}
-
 function appendEntry(
   entry: EntryCandidate,
   entryType: EntryType,
@@ -406,6 +365,12 @@ async function collectEntries(
   const totals: EntryTotals = { files: 0, directories: 0 };
   const counters: Counters = { skippedInaccessible: 0, symlinksNotFollowed: 0 };
   const basePathDirectories = [basePath];
+  const accessDeps = {
+    normalizePath,
+    isPathWithinDirectories,
+    isSensitivePath,
+    validateSymlinkPath: validateExistingPathDetailed,
+  };
 
   let truncated = false;
   let stoppedReason: StoppedReason | undefined;
@@ -435,11 +400,13 @@ async function collectEntries(
   };
 
   for await (const entry of stream) {
-    const stopReason = getStopReason(
+    const stopReason = resolveStopReason<Exclude<StoppedReason, undefined>>({
       signal,
-      acceptedCount,
-      normalized.maxEntries
-    );
+      current: acceptedCount,
+      max: normalized.maxEntries,
+      abortedReason: 'aborted',
+      maxReason: 'maxEntries',
+    });
     if (stopReason) {
       truncated = true;
       stoppedReason = stopReason;
@@ -449,14 +416,15 @@ async function collectEntries(
     const entryType = resolveEntryType(entry.dirent);
     trackSymlink(entryType, normalized.includeSymlinkTargets, counters);
 
-    const accessible = await isEntryAccessible(
+    const accessible = await isEntryAccessibleByType(
       entry.path,
       entryType,
       basePathDirectories,
       signal,
-      counters
+      accessDeps
     );
     if (!accessible) {
+      counters.skippedInaccessible += 1;
       continue;
     }
 

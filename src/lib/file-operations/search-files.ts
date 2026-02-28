@@ -15,8 +15,13 @@ import {
   validateExistingPathDetailed,
 } from '../path-validation.js';
 import {
+  compareOptionalNumberDesc,
+  compareStringValues,
+  isEntryAccessibleByType,
   needsStatsForSort,
   resolveEntryType,
+  resolveStopReason,
+  stableSortByDerivedString,
   withOptionalStoppedReason,
 } from './common.js';
 import type { DirentLike, EntryType } from './common.js';
@@ -113,22 +118,21 @@ function buildSearchResult(
   };
 }
 
-function markStopped(state: CollectState, reason: StopReason): void {
-  state.truncated = true;
-  state.stoppedReason = reason;
-}
-
 function shouldStopCollecting(
   state: CollectState,
   normalized: NormalizedOptions,
   signal: AbortSignal
 ): boolean {
-  if (signal.aborted) {
-    markStopped(state, 'timeout');
-    return true;
-  }
-  if (state.filesScanned >= normalized.maxFilesScanned) {
-    markStopped(state, 'maxFiles');
+  const stopReason = resolveStopReason<Exclude<StopReason, undefined>>({
+    signal,
+    current: state.filesScanned,
+    max: normalized.maxFilesScanned,
+    abortedReason: 'timeout',
+    maxReason: 'maxFiles',
+  });
+  if (stopReason !== undefined) {
+    state.truncated = true;
+    state.stoppedReason = stopReason;
     return true;
   }
   return false;
@@ -198,7 +202,8 @@ function handleEntry(
 ): void {
   state.results.push(buildSearchResult(entry, entryType, needsStats));
   if (state.results.length >= normalized.maxResults) {
-    markStopped(state, 'maxResults');
+    state.truncated = true;
+    state.stoppedReason = 'maxResults';
   }
 }
 
@@ -222,6 +227,7 @@ async function collectFromStream(
   needsStats: boolean,
   state: CollectState,
   signal: AbortSignal,
+  accessDeps: Parameters<typeof isEntryAccessibleByType>[4],
   onProgress?: (progress: { total?: number; current: number }) => void
 ): Promise<void> {
   for await (const entry of stream) {
@@ -250,11 +256,12 @@ async function collectFromStream(
       continue;
     }
 
-    const isAccessible = await isEntryAccessible(
-      entry,
+    const isAccessible = await isEntryAccessibleByType(
+      entry.path,
       entryType,
       rootDirectories,
-      signal
+      signal,
+      accessDeps
     );
     if (!isAccessible) {
       state.skippedInaccessible++;
@@ -288,28 +295,6 @@ function isEntryIgnoredByGitignore(
   );
 }
 
-async function isEntryAccessible(
-  entry: SearchEntry,
-  entryType: EntryType,
-  rootDirectories: readonly string[],
-  signal: AbortSignal
-): Promise<boolean> {
-  if (entryType === 'symlink') {
-    try {
-      const validated = await validateExistingPathDetailed(entry.path, signal);
-      return !isSensitivePath(validated.requestedPath, validated.resolvedPath);
-    } catch {
-      return false;
-    }
-  }
-
-  const resolvedPath = normalizePath(entry.path);
-  if (!isPathWithinDirectories(resolvedPath, rootDirectories)) {
-    return false;
-  }
-  return !isSensitivePath(entry.path, resolvedPath);
-}
-
 async function collectSearchResults(
   root: string,
   pattern: string,
@@ -328,6 +313,12 @@ async function collectSearchResults(
   );
   const state = createCollectState();
   const rootDirectories = [root];
+  const accessDeps = {
+    normalizePath,
+    isPathWithinDirectories,
+    isSensitivePath,
+    validateSymlinkPath: validateExistingPathDetailed,
+  };
 
   const gitignoreMatcher = normalized.respectGitignore
     ? await loadRootGitignore(root, signal)
@@ -342,6 +333,7 @@ async function collectSearchResults(
     needsStats,
     state,
     signal,
+    accessDeps,
     onProgress
   );
   return buildCollectResult(state);
@@ -370,32 +362,16 @@ interface Sortable {
   path?: string;
 }
 
-const collator = new Intl.Collator(undefined, { numeric: true });
-
-function compareString(a?: string, b?: string): number {
-  return collator.compare(a ?? '', b ?? '');
-}
-
 function compareNameThenPath(a: Sortable, b: Sortable): number {
-  const nameCompare = compareString(a.name, b.name);
+  const nameCompare = compareStringValues(a.name, b.name);
   if (nameCompare !== 0) return nameCompare;
-  return compareString(a.path, b.path);
+  return compareStringValues(a.path, b.path);
 }
 
 function comparePathThenName(a: Sortable, b: Sortable): number {
-  const pathCompare = compareString(a.path, b.path);
+  const pathCompare = compareStringValues(a.path, b.path);
   if (pathCompare !== 0) return pathCompare;
-  return compareString(a.name, b.name);
-}
-
-function compareOptionalNumberDesc(
-  left: number | undefined,
-  right: number | undefined,
-  tieBreak: () => number
-): number {
-  const diff = (right ?? 0) - (left ?? 0);
-  if (diff !== 0) return diff;
-  return tieBreak();
+  return compareStringValues(a.name, b.name);
 }
 
 const SORT_COMPARATORS: Readonly<
@@ -415,29 +391,11 @@ const SORT_COMPARATORS: Readonly<
 
 export function sortSearchResults(results: Sortable[], sortBy: SortBy): void {
   if (sortBy === 'name') {
-    const decorated: { item: Sortable; baseName: string; index: number }[] = [];
-    for (let index = 0; index < results.length; index += 1) {
-      const item = results[index];
-      if (!item) continue;
-      decorated.push({
-        item,
-        baseName: path.basename(item.path ?? ''),
-        index,
-      });
-    }
-    decorated.sort((a, b) => {
-      const baseCompare = compareString(a.baseName, b.baseName);
-      if (baseCompare !== 0) return baseCompare;
-      const pathCompare = compareString(a.item.path, b.item.path);
-      if (pathCompare !== 0) return pathCompare;
-      return a.index - b.index;
-    });
-    for (let index = 0; index < decorated.length; index += 1) {
-      const entry = decorated[index];
-      if (entry) {
-        results[index] = entry.item;
-      }
-    }
+    stableSortByDerivedString(
+      results,
+      (item) => path.basename(item.path ?? ''),
+      (left, right) => comparePathThenName(left, right)
+    );
     return;
   }
 
