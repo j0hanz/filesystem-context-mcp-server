@@ -1,33 +1,33 @@
 export function buildWorkflowGuide(): string {
   return `<workflows>
 ### A: EXPLORE
-Use when: navigating an unfamiliar directory or reading file content.
-1. \`roots\` (List allowed paths).
-2. \`ls\` (files) | \`tree\` (structure).
-3. \`stat\` | \`stat_many\` (size/type check).
-4. \`read\` | \`read_many\` (content).
-   > **Strict:** Never guess paths. Resolve first.
+Use when: you need directory layout or file content.
+1. \`roots\` (list allowed paths).
+2. \`ls\` (flat view) or \`tree\` (recursive view).
+3. \`stat\` or \`stat_many\` (type and size checks).
+4. \`read\` or \`read_many\` (read content).
+   > **Strict:** Resolve paths first. Never guess.
 
 ### B: SEARCH
-Use when: locating files by name pattern or by content match.
+Use when: you need files by pattern or content.
 1. \`find\` (glob candidates).
-2. \`grep\` (content search).
-3. \`read\` (verify context).
-   > **Strict:** Use \`grep\` for content search, not \`find\`.
+2. \`grep\` (content matches).
+3. \`read\` (verify matched context).
+   > **Strict:** Do content search with \`grep\`, not \`find\`.
 
 ### C: EDIT
-Use when: modifying existing files or reorganizing the filesystem.
-1. \`edit\` (precise string match).
-2. \`search_and_replace\` (bulk regex/glob).
-3. \`mv\` | \`rm\` (file layout).
-4. \`mkdir\` (create dirs).
+Use when: you need to modify files or layout.
+1. \`edit\` (targeted string replacement).
+2. \`search_and_replace\` (bulk replacements).
+3. \`mv\` or \`rm\` (layout changes).
+4. \`mkdir\` (directory creation).
    > **Strict:** Confirm destructive ops (\`write\`, \`mv\`, \`rm\`, bulk replace).
 
 ### D: PATCH
-Use when: applying structured diffs produced by \`diff_files\`.
+Use when: applying unified diffs from \`diff_files\`.
 1. \`diff_files\` (generate).
 2. \`apply_patch\` (dryRun: true).
 3. \`apply_patch\` (dryRun: false).
-   > **Tip:** Pass \`diff_files\` output directly into \`apply_patch\`.
+   > **Tip:** Feed \`diff_files\` output directly to \`apply_patch\`.
 </workflows>`;
 }

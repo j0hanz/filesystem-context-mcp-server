@@ -54,10 +54,10 @@ export function buildCoreContextPack(): string {
 
 export function getSharedConstraints(): string[] {
   return [
-    'Allowed roots only (negotiated via CLI).',
-    'Sensitive files denylisted by default.',
-    `Max file size (${Math.floor(MAX_TEXT_FILE_SIZE / 1024 / 1024)}MB) & search results (${MAX_SEARCH_RESULTS} files, ${DEFAULT_SEARCH_CONTENT_RESULTS} lines) enforced.`,
-    'If a response includes `resourceUri`, call `resources/read` immediately — results expire on process restart.',
+    'Use allowed roots only (provided by CLI negotiation).',
+    'Sensitive paths are denylisted by default.',
+    `Limits are enforced: max file size ${Math.floor(MAX_TEXT_FILE_SIZE / 1024 / 1024)}MB; search caps ${MAX_SEARCH_RESULTS} files and ${DEFAULT_SEARCH_CONTENT_RESULTS} lines.`,
+    'If a response includes `resourceUri`, call `resources/read` immediately; cached results expire on process restart.',
   ];
 }
 
@@ -68,7 +68,7 @@ export function buildToolInfo(name: string): string | undefined {
   const lines: string[] = [`## ${entry.name}`, '', entry.description];
 
   if (entry.annotations && entry.annotations.length > 0) {
-    lines.push('', `**Annotations:** ${entry.annotations.join(', ')}`);
+    lines.push('', `**Hints:** ${entry.annotations.join(', ')}`);
   }
 
   if (entry.nuances && entry.nuances.length > 0) {

@@ -10,21 +10,21 @@ diff_files (patch text) -> apply_patch.patch
 
 ## Search Strategy
 
-- Use \`find\` for glob-based file discovery.
-- Use \`grep\` for content-based searches.
-- Use \`search_and_replace\` ONLY for bulk replacements, not for discovery.
+- Use \`find\` for glob file discovery.
+- Use \`grep\` for text search.
+- Use \`search_and_replace\` only for replacement, never discovery.
 
 ## Write Strategy
 
-- Use \`edit\` for precise, single-occurrence string replacements in existing files.
-- Use \`write\` to create new files or completely overwrite existing content.
-- Use \`search_and_replace\` for bulk regex replacements across multiple files.
+- Use \`edit\` for precise, first-occurrence replacements in existing files.
+- Use \`write\` to create files or overwrite full contents.
+- Use \`search_and_replace\` for bulk multi-file replacements.
 
 ## Patch Management
 
-- Always generate a patch with \`diff_files\` first.
-- Always use \`dryRun: true\` with \`apply_patch\` to verify changes.
-- \`apply_patch\` works on unified diff format.
+- Generate patches with \`diff_files\` first.
+- Run \`apply_patch\` with \`dryRun: true\` before writing.
+- \`apply_patch\` accepts unified diffs only.
 </tool_selection_guide>
 `;
 

@@ -7,8 +7,7 @@ import { type IconInfo, withDefaultIcons } from './tools/shared.js';
 
 const HELP_PROMPT_NAME = 'get-help';
 const HELP_PROMPT_TITLE = 'Get Help';
-const HELP_PROMPT_DESCRIPTION =
-  'Retrieve the full filesystem-mcp XML usage guide.';
+const HELP_PROMPT_DESCRIPTION = 'Return filesystem-mcp usage instructions.';
 
 function filterInstructionsByTopic(
   instructions: string,
@@ -26,7 +25,7 @@ function filterInstructionsByTopic(
     .map((sec) => sec.split('\n')[0]?.replace(/^##\s*/u, '') ?? '')
     .filter(Boolean)
     .join(', ');
-  return `Section '${topic}' not found. Available sections: ${available}\n\n${instructions}`;
+  return `Section '${topic}' not found. Available: ${available}\n\n${instructions}`;
 }
 
 export function registerGetHelpPrompt(
@@ -48,7 +47,7 @@ export function registerGetHelpPrompt(
           .string()
           .optional()
           .describe(
-            'Section heading prefix to filter (e.g. "error handling strategy"). Omit for full instructions.'
+            'Optional section heading prefix (example: "error handling"). Omit to return full instructions.'
           ),
       },
     },
