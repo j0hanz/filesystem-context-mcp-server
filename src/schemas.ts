@@ -38,6 +38,12 @@ const DESC_PATH_ROOT =
 const DESC_PATH_REQUIRED =
   'Absolute path to file or directory. Examples: "src/index.ts", "README.md"';
 
+function defaultFalseBoolean(
+  description: string
+): z.ZodDefault<z.ZodOptional<z.ZodBoolean>> {
+  return z.boolean().optional().default(false).describe(description);
+}
+
 const PathSchemaBase = z
   .string()
   .max(MAX_PATH_LENGTH, `Path too long (max ${MAX_PATH_LENGTH} chars)`);
@@ -191,16 +197,10 @@ const OperationSummarySchema = z.strictObject({
 
 export const ListDirectoryInputSchema = z.strictObject({
   path: OptionalPathSchema.describe(DESC_PATH_ROOT),
-  includeHidden: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe('Include hidden items (starting with .)'),
-  includeIgnored: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe('Include ignored items (node_modules, .git, etc).'),
+  includeHidden: defaultFalseBoolean('Include hidden items (starting with .)'),
+  includeIgnored: defaultFalseBoolean(
+    'Include ignored items (node_modules, .git, etc).'
+  ),
   maxDepth: z
     .number()
     .int({ error: 'Must be integer' })
@@ -227,11 +227,9 @@ export const ListDirectoryInputSchema = z.strictObject({
     .max(1000, 'Max 1000 chars')
     .optional()
     .describe('Optional glob pattern filter (e.g. "**/*.ts")'),
-  includeSymlinkTargets: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe('Resolve and include symlink targets in results'),
+  includeSymlinkTargets: defaultFalseBoolean(
+    'Resolve and include symlink targets in results'
+  ),
   cursor: z
     .string()
     .optional()
@@ -262,16 +260,10 @@ export const SearchFilesInputSchema = z.strictObject({
     .describe(
       `Max results (1-${MAX_SEARCH_RESULTS}). Default: ${DEFAULT_SEARCH_RESULTS}`
     ),
-  includeIgnored: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe('Include ignored items (node_modules, etc).'),
-  includeHidden: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe('Include hidden items (starting with .)'),
+  includeIgnored: defaultFalseBoolean(
+    'Include ignored items (node_modules, etc).'
+  ),
+  includeHidden: defaultFalseBoolean('Include hidden items (starting with .)'),
   sortBy: SearchFilesSortSchema.optional()
     .default('path')
     .describe('Sort by path, name, size, or modified'),
@@ -308,16 +300,10 @@ export const TreeInputSchema = z.strictObject({
     .optional()
     .default(DEFAULT_TREE_ENTRIES)
     .describe(`Max entries. Default: ${DEFAULT_TREE_ENTRIES}`),
-  includeHidden: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe('Include hidden items (starting with .)'),
-  includeIgnored: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe('Include ignored items. Disables .gitignore.'),
+  includeHidden: defaultFalseBoolean('Include hidden items (starting with .)'),
+  includeIgnored: defaultFalseBoolean(
+    'Include ignored items. Disables .gitignore.'
+  ),
 });
 
 export const SearchContentInputSchema = z.strictObject({
@@ -329,25 +315,13 @@ export const SearchContentInputSchema = z.strictObject({
     .describe(
       'Literal text to search for by default; treated as RE2 regex when isRegex is true.'
     ),
-  isRegex: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe(
-      'Treat pattern as a RE2 regular expression. RE2 does not support lookahead, lookbehind, or backreferences.'
-    ),
-  caseSensitive: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe(
-      'Case-sensitive matching (default: false — searches are case-insensitive).'
-    ),
-  wholeWord: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe('Match whole words only'),
+  isRegex: defaultFalseBoolean(
+    'Treat pattern as a RE2 regular expression. RE2 does not support lookahead, lookbehind, or backreferences.'
+  ),
+  caseSensitive: defaultFalseBoolean(
+    'Case-sensitive matching (default: false — searches are case-insensitive).'
+  ),
+  wholeWord: defaultFalseBoolean('Match whole words only'),
   contextLines: z
     .number()
     .int({ error: 'Must be integer' })
@@ -373,16 +347,10 @@ export const SearchContentInputSchema = z.strictObject({
     .optional()
     .default('**/*')
     .describe('Glob for candidate files (e.g. "**/*.ts")'),
-  includeHidden: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe('Include hidden items (starting with .)'),
-  includeIgnored: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe('Include ignored items (node_modules, etc).'),
+  includeHidden: defaultFalseBoolean('Include hidden items (starting with .)'),
+  includeIgnored: defaultFalseBoolean(
+    'Include ignored items (node_modules, etc).'
+  ),
 });
 
 export const ReadFileInputSchema = z
@@ -650,20 +618,12 @@ export const EditFileInputSchema = z.strictObject({
     .describe(
       'List of replacements to apply sequentially. Each edit replaces the first occurrence of oldText.'
     ),
-  dryRun: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe(
-      'Preview edits without writing. Check unmatchedEdits in the response to verify all oldText values were found.'
-    ),
-  ignoreWhitespace: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe(
-      'Ignore leading/trailing whitespace and treat all whitespace sequences as equivalent when matching oldText.'
-    ),
+  dryRun: defaultFalseBoolean(
+    'Preview edits without writing. Check unmatchedEdits in the response to verify all oldText values were found.'
+  ),
+  ignoreWhitespace: defaultFalseBoolean(
+    'Ignore leading/trailing whitespace and treat all whitespace sequences as equivalent when matching oldText.'
+  ),
 });
 
 export const EditFileOutputSchema = z.strictObject({
@@ -713,16 +673,8 @@ export const MoveFileOutputSchema = z.strictObject({
 
 export const DeleteFileInputSchema = z.strictObject({
   path: RequiredPathSchema.describe(DESC_PATH_REQUIRED),
-  recursive: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe('Delete non-empty directories'),
-  ignoreIfNotExists: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe('No error if missing'),
+  recursive: defaultFalseBoolean('Delete non-empty directories'),
+  ignoreIfNotExists: defaultFalseBoolean('No error if missing'),
 });
 
 export const DeleteFileOutputSchema = z.strictObject({
@@ -830,20 +782,12 @@ export const SearchAndReplaceInputSchema = z.strictObject({
       'Text to search for. Matched literally by default; treated as RE2 regex when isRegex is true.'
     ),
   replacement: z.string().describe('Replacement text'),
-  isRegex: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe(
-      'Treat searchPattern as a RE2 regular expression. Supports capture group references ($1, $2) in replacement.'
-    ),
-  dryRun: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe(
-      'Preview matches without writing. Check changedFiles and matches in the response before committing.'
-    ),
+  isRegex: defaultFalseBoolean(
+    'Treat searchPattern as a RE2 regular expression. Supports capture group references ($1, $2) in replacement.'
+  ),
+  dryRun: defaultFalseBoolean(
+    'Preview matches without writing. Check changedFiles and matches in the response before committing.'
+  ),
   includeHidden: z
     .boolean()
     .optional()

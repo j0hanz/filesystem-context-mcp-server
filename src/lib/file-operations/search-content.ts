@@ -447,6 +447,34 @@ interface ScanSummary {
   stoppedReason: SearchContentResult['summary']['stoppedReason'];
 }
 
+interface ScanOutcome {
+  matched: boolean;
+  skippedTooLarge: boolean;
+  skippedBinary: boolean;
+}
+
+function buildScanFileOptions(opts: ResolvedOptions): ScanFileOptions {
+  return {
+    maxFileSize: opts.maxFileSize,
+    skipBinary: opts.skipBinary,
+    contextLines: opts.contextLines,
+  };
+}
+
+function applyScanOutcome(summary: ScanSummary, outcome: ScanOutcome): void {
+  if (outcome.matched) summary.filesMatched++;
+  if (outcome.skippedBinary) summary.skippedBinary++;
+  if (outcome.skippedTooLarge) summary.skippedTooLarge++;
+}
+
+function markTruncated(
+  summary: ScanSummary,
+  reason: NonNullable<SearchContentResult['summary']['stoppedReason']>
+): void {
+  summary.truncated = true;
+  summary.stoppedReason = reason;
+}
+
 function createScanSummary(): ScanSummary {
   return {
     filesScanned: 0,
@@ -740,21 +768,15 @@ async function executeSequential(
 ): Promise<ContentMatch[]> {
   const matches: ContentMatch[] = [];
   const matcher = buildMatcher(pattern, opts);
-  const scanOpts: ScanFileOptions = {
-    maxFileSize: opts.maxFileSize,
-    skipBinary: opts.skipBinary,
-    contextLines: opts.contextLines,
-  };
+  const scanOpts = buildScanFileOptions(opts);
 
   for await (const file of files) {
     if (signal.aborted) {
-      summary.truncated = true;
-      summary.stoppedReason = 'timeout';
+      markTruncated(summary, 'timeout');
       break;
     }
     if (matches.length >= opts.maxResults) {
-      summary.truncated = true;
-      summary.stoppedReason = 'maxResults';
+      markTruncated(summary, 'maxResults');
       break;
     }
 
@@ -770,9 +792,7 @@ async function executeSequential(
         remaining
       );
 
-      if (result.matched) summary.filesMatched++;
-      if (result.skippedBinary) summary.skippedBinary++;
-      if (result.skippedTooLarge) summary.skippedTooLarge++;
+      applyScanOutcome(summary, result);
 
       matches.push(...result.matches);
     } catch {
@@ -832,9 +852,7 @@ function processScanResult(
 
   if (winner.result) {
     const res = winner.result;
-    if (res.matched) summary.filesMatched++;
-    if (res.skippedBinary) summary.skippedBinary++;
-    if (res.skippedTooLarge) summary.skippedTooLarge++;
+    applyScanOutcome(summary, res);
 
     const remaining = maxResults - matches.length;
     if (remaining > 0 && res.matches.length > 0) {
@@ -895,11 +913,7 @@ async function executeParallel(
 ): Promise<ContentMatch[]> {
   const pool = getPool();
   const matches: ContentMatch[] = [];
-  const scanOpts: ScanFileOptions = {
-    maxFileSize: opts.maxFileSize,
-    skipBinary: opts.skipBinary,
-    contextLines: opts.contextLines,
-  };
+  const scanOpts = buildScanFileOptions(opts);
   const matcherOpts: MatcherOptions = {
     caseSensitive: opts.caseSensitive,
     wholeWord: opts.wholeWord,
@@ -911,8 +925,7 @@ async function executeParallel(
   let exhausted = false;
 
   const onAbort = (): void => {
-    summary.truncated = true;
-    summary.stoppedReason = 'timeout';
+    markTruncated(summary, 'timeout');
     for (const t of pending) t.cancel();
   };
   signal.addEventListener('abort', onAbort, { once: true });
@@ -956,11 +969,9 @@ async function executeParallel(
 
   // Update summary truncation
   if (signal.aborted) {
-    summary.truncated = true;
-    summary.stoppedReason = 'timeout';
+    markTruncated(summary, 'timeout');
   } else if (matches.length >= opts.maxResults) {
-    summary.truncated = true;
-    summary.stoppedReason = 'maxResults';
+    markTruncated(summary, 'maxResults');
   }
 
   return matches;
@@ -1010,9 +1021,7 @@ async function searchSingleFile(
     details.requestedPath,
     matcher,
     {
-      maxFileSize: opts.maxFileSize,
-      skipBinary: opts.skipBinary,
-      contextLines: opts.contextLines,
+      ...buildScanFileOptions(opts),
     },
     signal,
     opts.maxResults
@@ -1101,6 +1110,16 @@ async function searchDirectory(
   return buildSearchResult(root, pattern, opts.filePattern, matches, summary);
 }
 
+function buildTimeoutSearchResult(
+  basePath: string,
+  pattern: string,
+  filePattern: string
+): SearchContentResult {
+  const timeoutSummary = createScanSummary();
+  markTruncated(timeoutSummary, 'timeout');
+  return buildSearchResult(basePath, pattern, filePattern, [], timeoutSummary);
+}
+
 export async function searchContent(
   basePath: string,
   pattern: string,
@@ -1142,16 +1161,7 @@ export async function searchContent(
     );
   } catch (error: unknown) {
     if (isTimeoutLikeError(error)) {
-      const timeoutSummary = createScanSummary();
-      timeoutSummary.truncated = true;
-      timeoutSummary.stoppedReason = 'timeout';
-      return buildSearchResult(
-        basePath,
-        pattern,
-        opts.filePattern,
-        [],
-        timeoutSummary
-      );
+      return buildTimeoutSearchResult(basePath, pattern, opts.filePattern);
     }
     throw error;
   } finally {
