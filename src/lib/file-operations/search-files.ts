@@ -14,9 +14,14 @@ import {
   validateExistingDirectory,
   validateExistingPathDetailed,
 } from '../path-validation.js';
-import { needsStatsForSort, withOptionalStoppedReason } from './common.js';
+import {
+  needsStatsForSort,
+  resolveEntryType,
+  withOptionalStoppedReason,
+} from './common.js';
+import type { DirentLike, EntryType } from './common.js';
 import { isIgnoredByGitignore, loadRootGitignore } from './gitignore.js';
-import { globEntries, resolveEntryType } from './glob-engine.js';
+import { globEntries } from './glob-engine.js';
 
 // Internal default for find tool - not exposed to MCP users
 const INTERNAL_MAX_RESULTS = 1000;
@@ -63,16 +68,10 @@ function normalizeOptions(options: SearchFilesOptions): NormalizedOptions {
   return normalized;
 }
 
-type SearchEntryType = 'directory' | 'symlink' | 'file' | 'other';
-
 interface SearchEntry {
   path: string;
   relativePath?: string;
-  dirent: {
-    isDirectory(): boolean;
-    isSymbolicLink(): boolean;
-    isFile(): boolean;
-  };
+  dirent: DirentLike;
   stats?: Stats;
 }
 
@@ -94,7 +93,7 @@ interface CollectOutcome {
 
 function buildSearchResult(
   entry: { path: string; stats?: Stats },
-  entryType: SearchEntryType,
+  entryType: EntryType,
   needsStats: boolean
 ): SearchResult {
   let resolvedType: SearchResult['type'] = 'other';
@@ -136,7 +135,7 @@ function shouldStopCollecting(
 }
 
 function shouldIncludeEntry(
-  entryType: SearchEntryType,
+  entryType: EntryType,
   normalized: NormalizedOptions
 ): boolean {
   return !normalized.skipSymlinks || entryType !== 'symlink';
@@ -192,7 +191,7 @@ function buildCollectResult(state: CollectState): CollectOutcome {
 
 function handleEntry(
   entry: SearchEntry,
-  entryType: SearchEntryType,
+  entryType: EntryType,
   needsStats: boolean,
   normalized: NormalizedOptions,
   state: CollectState
@@ -291,7 +290,7 @@ function isEntryIgnoredByGitignore(
 
 async function isEntryAccessible(
   entry: SearchEntry,
-  entryType: SearchEntryType,
+  entryType: EntryType,
   rootDirectories: readonly string[],
   signal: AbortSignal
 ): Promise<boolean> {

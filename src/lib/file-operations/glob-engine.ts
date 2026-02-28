@@ -13,21 +13,7 @@ import {
 } from '../observability.js';
 import { toPosixPath } from '../path-format.js';
 import { isRecord } from '../type-guards.js';
-
-interface DirentLike {
-  isDirectory(): boolean;
-  isFile(): boolean;
-  isSymbolicLink(): boolean;
-}
-
-export function resolveEntryType(
-  dirent: DirentLike
-): 'file' | 'directory' | 'symlink' | 'other' {
-  if (dirent.isDirectory()) return 'directory';
-  if (dirent.isSymbolicLink()) return 'symlink';
-  if (dirent.isFile()) return 'file';
-  return 'other';
-}
+import type { DirentLike } from './common.js';
 
 interface GlobDirentLike extends DirentLike {
   name: string;

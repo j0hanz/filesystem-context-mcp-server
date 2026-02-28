@@ -11,6 +11,7 @@ import {
 } from '../constants.js';
 import {
   createTimedAbortSignal,
+  isHidden,
   processInParallel,
   withAbort,
 } from '../fs-helpers.js';
@@ -21,8 +22,13 @@ import {
   validateExistingDirectory,
   validateExistingPathDetailed,
 } from '../path-validation.js';
-import { needsStatsForSort, withOptionalStoppedReason } from './common.js';
-import { globEntries, resolveEntryType } from './glob-engine.js';
+import {
+  needsStatsForSort,
+  resolveEntryType,
+  withOptionalStoppedReason,
+} from './common.js';
+import type { DirentLike, EntryType } from './common.js';
+import { globEntries } from './glob-engine.js';
 
 interface ListDirectoryOptions {
   includeHidden?: boolean;
@@ -42,7 +48,6 @@ type NormalizedOptions = Required<
   pattern?: string;
 };
 
-type EntryType = DirectoryEntry['type'];
 type StoppedReason = ListDirectoryResult['summary']['stoppedReason'];
 
 interface EntryTotals {
@@ -57,11 +62,7 @@ interface Counters {
 
 interface EntryCandidate {
   path: string;
-  dirent: {
-    isDirectory(): boolean;
-    isSymbolicLink(): boolean;
-    isFile(): boolean;
-  };
+  dirent: DirentLike;
   stats?: Stats;
 }
 
@@ -142,7 +143,7 @@ async function* readDirectoryEntries(
 
   const entries: { dirent: (typeof dirents)[number]; entryPath: string }[] = [];
   for (const dirent of dirents) {
-    if (!normalized.includeHidden && dirent.name.startsWith('.')) {
+    if (!normalized.includeHidden && isHidden(dirent.name)) {
       continue;
     }
     entries.push({ dirent, entryPath: path.join(basePath, dirent.name) });

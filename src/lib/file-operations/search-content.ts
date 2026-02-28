@@ -995,6 +995,112 @@ export async function scanFileInWorker(
   };
 }
 
+async function searchSingleFile(
+  details: { resolvedPath: string; requestedPath: string },
+  opts: ResolvedOptions,
+  pattern: string,
+  signal: AbortSignal
+): Promise<SearchContentResult> {
+  const summary = createScanSummary();
+  summary.filesScanned = 1;
+
+  const matcher = buildMatcher(pattern, opts);
+  const result = await scanFileResolved(
+    details.resolvedPath,
+    details.requestedPath,
+    matcher,
+    {
+      maxFileSize: opts.maxFileSize,
+      skipBinary: opts.skipBinary,
+      contextLines: opts.contextLines,
+    },
+    signal,
+    opts.maxResults
+  );
+
+  if (result.matched) summary.filesMatched = 1;
+
+  return buildSearchResult(
+    path.dirname(details.resolvedPath),
+    pattern,
+    opts.filePattern,
+    result.matches as ContentMatch[],
+    summary
+  );
+}
+
+async function searchDirectory(
+  details: { resolvedPath: string; requestedPath: string },
+  opts: ResolvedOptions,
+  pattern: string,
+  signal: AbortSignal,
+  onProgress?: (progress: { total?: number; current: number }) => void
+): Promise<SearchContentResult> {
+  const root = await validateExistingDirectory(details.resolvedPath, signal);
+  const rootDirectories = [root];
+
+  const stream = globEntries({
+    cwd: root,
+    pattern: opts.filePattern,
+    excludePatterns: opts.excludePatterns,
+    includeHidden: opts.includeHidden,
+    baseNameMatch: opts.baseNameMatch,
+    caseSensitiveMatch: opts.caseSensitiveFileMatch,
+    followSymbolicLinks: false,
+    onlyFiles: true,
+    stats: false,
+    suppressErrors: true,
+  });
+
+  async function* fileGenerator(): AsyncGenerator<ResolvedFile> {
+    let scanned = 0;
+    for await (const entry of stream) {
+      if (signal.aborted) break;
+      if (scanned >= opts.maxFilesScanned) break;
+
+      if (!entry.dirent.isFile()) continue;
+
+      const normalized = normalizePath(entry.path);
+      if (!isPathWithinDirectories(normalized, rootDirectories)) continue;
+      if (isSensitivePath(entry.path, normalized)) continue;
+
+      scanned++;
+      reportSearchProgress(onProgress, scanned, opts.maxFilesScanned);
+
+      yield { resolvedPath: normalized, requestedPath: entry.path };
+    }
+
+    reportSearchProgress(onProgress, scanned, opts.maxFilesScanned, true);
+  }
+
+  const summary = createScanSummary();
+  const resolvedStream = fileGenerator();
+
+  async function* countingStream(): AsyncGenerator<ResolvedFile> {
+    for await (const f of resolvedStream) {
+      summary.filesScanned++;
+      yield f;
+    }
+    if (summary.filesScanned >= opts.maxFilesScanned) {
+      summary.truncated = true;
+      summary.stoppedReason = 'maxFiles';
+    }
+  }
+
+  const matcherOpts: MatcherOptions = {
+    caseSensitive: opts.caseSensitive,
+    wholeWord: opts.wholeWord,
+    isLiteral: opts.isLiteral,
+  };
+  validatePattern(pattern, matcherOpts);
+
+  const matches = shouldUseWorkers()
+    ? await executeParallel(countingStream(), pattern, opts, signal, summary)
+    : await executeSequential(countingStream(), pattern, opts, signal, summary);
+
+  return buildSearchResult(root, pattern, opts.filePattern, matches, summary);
+}
+
 export async function searchContent(
   basePath: string,
   pattern: string,
@@ -1015,126 +1121,25 @@ export async function searchContent(
     const details = await validateExistingPathDetailed(basePath, signal);
     const stats = await withAbort(fsp.stat(details.resolvedPath), signal);
 
-    // Check if simple file scan
     if (stats.isFile()) {
-      const summary = createScanSummary();
-      summary.filesScanned = 1;
-
-      // Single file execution
-      const matcher = buildMatcher(pattern, opts);
-      const result = await scanFileResolved(
-        details.resolvedPath,
-        details.requestedPath,
-        matcher,
-        {
-          maxFileSize: opts.maxFileSize,
-          skipBinary: opts.skipBinary,
-          contextLines: opts.contextLines,
-        },
-        signal,
-        opts.maxResults
-      );
-
-      if (result.matched) summary.filesMatched = 1;
-
-      return buildSearchResult(
-        path.dirname(details.resolvedPath),
-        pattern,
-        opts.filePattern,
-        result.matches as ContentMatch[],
-        summary
-      );
+      return await searchSingleFile(details, opts, pattern, signal);
     }
 
     if (!stats.isDirectory()) {
       throw new McpError(
         ErrorCode.E_INVALID_INPUT,
-        `Path must be file or directory`,
+        'Path must be file or directory',
         basePath
       );
     }
 
-    const root = await validateExistingDirectory(details.resolvedPath, signal);
-    const rootDirectories = [root];
-
-    // Glob
-    const stream = globEntries({
-      cwd: root,
-      pattern: opts.filePattern,
-      excludePatterns: opts.excludePatterns,
-      includeHidden: opts.includeHidden,
-      baseNameMatch: opts.baseNameMatch,
-      caseSensitiveMatch: opts.caseSensitiveFileMatch,
-      followSymbolicLinks: false,
-      onlyFiles: true,
-      stats: false,
-      suppressErrors: true,
-    });
-
-    // Generator adapter to resolve paths
-    async function* fileGenerator(): AsyncGenerator<ResolvedFile> {
-      let scanned = 0;
-      for await (const entry of stream) {
-        if (signal.aborted) break;
-        if (scanned >= opts.maxFilesScanned) break;
-
-        if (!entry.dirent.isFile()) continue;
-
-        // Helper to resolve
-        // We duplicate simple resolution logic to keep it fast
-        const normalized = normalizePath(entry.path);
-        if (!isPathWithinDirectories(normalized, rootDirectories)) continue;
-        if (isSensitivePath(entry.path, normalized)) continue;
-
-        scanned++;
-        reportSearchProgress(options.onProgress, scanned, opts.maxFilesScanned);
-
-        yield { resolvedPath: normalized, requestedPath: entry.path };
-      }
-
-      reportSearchProgress(
-        options.onProgress,
-        scanned,
-        opts.maxFilesScanned,
-        true
-      );
-    }
-
-    // Choose Strategy
-    // We recreate summary to track actual scans
-    const summary = createScanSummary();
-    const resolvedStream = fileGenerator();
-
-    // Wrap generator to count scanned files in summary
-    async function* countingStream(): AsyncGenerator<ResolvedFile> {
-      for await (const f of resolvedStream) {
-        summary.filesScanned++;
-        yield f;
-      }
-      if (summary.filesScanned >= opts.maxFilesScanned) {
-        summary.truncated = true;
-        summary.stoppedReason = 'maxFiles';
-      }
-    }
-
-    const matcherOpts: MatcherOptions = {
-      caseSensitive: opts.caseSensitive,
-      wholeWord: opts.wholeWord,
-      isLiteral: opts.isLiteral,
-    };
-    validatePattern(pattern, matcherOpts);
-
-    const matches = shouldUseWorkers()
-      ? await executeParallel(countingStream(), pattern, opts, signal, summary)
-      : await executeSequential(
-          countingStream(),
-          pattern,
-          opts,
-          signal,
-          summary
-        );
-
-    return buildSearchResult(root, pattern, opts.filePattern, matches, summary);
+    return await searchDirectory(
+      details,
+      opts,
+      pattern,
+      signal,
+      options.onProgress
+    );
   } catch (error: unknown) {
     if (isTimeoutLikeError(error)) {
       const timeoutSummary = createScanSummary();

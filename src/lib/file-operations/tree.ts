@@ -13,14 +13,14 @@ import {
   validateExistingDirectory,
   validateExistingPathDetailed,
 } from '../path-validation.js';
+import { resolveEntryType } from './common.js';
+import type { DirentLike, EntryType } from './common.js';
 import { isIgnoredByGitignore, loadRootGitignore } from './gitignore.js';
-import { globEntries, resolveEntryType } from './glob-engine.js';
-
-type TreeEntryType = 'file' | 'directory' | 'symlink' | 'other';
+import { globEntries } from './glob-engine.js';
 
 interface TreeEntry {
   name: string;
-  type: TreeEntryType;
+  type: EntryType;
   relativePath: string;
   children?: TreeEntry[];
 }
@@ -136,7 +136,7 @@ function compareTreeEntries(a: TreeEntry, b: TreeEntry): number {
   return a.name.localeCompare(b.name);
 }
 
-function getTreeTypeRank(type: TreeEntryType): number {
+function getTreeTypeRank(type: EntryType): number {
   if (type === 'directory') return 0;
   if (type === 'file') return 1;
   return 2;
@@ -159,18 +159,14 @@ function getStopReason(
 async function resolveTreeEntry(
   entry: {
     path: string;
-    dirent: {
-      isDirectory(): boolean;
-      isSymbolicLink(): boolean;
-      isFile(): boolean;
-    };
+    dirent: DirentLike;
   },
   root: string,
   rootDirectories: readonly string[],
   gitignoreMatcher: Awaited<ReturnType<typeof loadRootGitignore>>,
   signal: AbortSignal
 ): Promise<{
-  type: TreeEntryType;
+  type: EntryType;
   relativePosix: string;
   name: string;
 } | null> {
@@ -212,7 +208,7 @@ async function resolveTreeEntry(
 function upsertChildNode(
   parent: TreeEntry,
   nodeByPath: Map<string, TreeEntry>,
-  resolved: { type: TreeEntryType; relativePosix: string; name: string },
+  resolved: { type: EntryType; relativePosix: string; name: string },
   childPathIndexByParent: WeakMap<TreeEntry, Set<string>>
 ): void {
   const ensureDirectoryShape = (node: TreeEntry): void => {
@@ -223,10 +219,7 @@ function upsertChildNode(
     }
   };
 
-  const maybeUpdateType = (
-    existing: TreeEntry,
-    nextType: TreeEntryType
-  ): void => {
+  const maybeUpdateType = (existing: TreeEntry, nextType: EntryType): void => {
     if (existing.type === nextType) return;
 
     const preservePopulatedDirectory =

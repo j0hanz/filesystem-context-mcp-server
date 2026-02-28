@@ -11,3 +11,18 @@ export function withOptionalStoppedReason<T extends object, R extends string>(
   }
   return { ...summary, stoppedReason };
 }
+
+export interface DirentLike {
+  isDirectory(): boolean;
+  isFile(): boolean;
+  isSymbolicLink(): boolean;
+}
+
+export type EntryType = 'file' | 'directory' | 'symlink' | 'other';
+
+export function resolveEntryType(dirent: DirentLike): EntryType {
+  if (dirent.isSymbolicLink()) return 'symlink';
+  if (dirent.isDirectory()) return 'directory';
+  if (dirent.isFile()) return 'file';
+  return 'other';
+}
