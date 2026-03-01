@@ -9,14 +9,10 @@ const BIN_TSC = join('node_modules', 'typescript', 'bin', 'tsc');
 
 const PATHS = {
   dist: 'dist',
+  tmp: '.tmp',
   assets: 'assets',
   executable: 'dist/index.js',
   distAssets: join('dist', 'assets'),
-  tsBuildInfo: [
-    '.tsbuildinfo',
-    'tsconfig.tsbuildinfo',
-    'tsconfig.build.tsbuildinfo',
-  ],
 };
 
 const TEST_PATTERNS = [
@@ -81,7 +77,7 @@ const Tasks = {
   async clean() {
     await Promise.all([
       rm(PATHS.dist, { recursive: true, force: true }),
-      ...PATHS.tsBuildInfo.map((p) => rm(p, { force: true })),
+      rm(PATHS.tmp, { recursive: true, force: true }),
     ]);
   },
 
