@@ -13,11 +13,9 @@
   "quoteProps": "as-needed",
   "plugins": ["@trivago/prettier-plugin-sort-imports"],
   "importOrder": [
-    "^node:(.*)$",
-    "^@modelcontextprotocol/(.*)$",
-    "^(zod|glob)(.*)$",
-    "^(fs|path|os|crypto|util|stream|events|buffer|url|http|https|child_process)(/.*)?$",
-    "^[a-zA-Z@]",
+    "<BUILTIN_MODULES>",
+    "<THIRD_PARTY_MODULES>",
+    "^\\.\\.?/(lib|schemas)/(.*)$",
     "^[./]"
   ],
   "importOrderSeparation": true,
