@@ -3,6 +3,7 @@
   "compilerOptions": {
     "tsBuildInfoFile": ".tmp/tsconfig.build.tsbuildinfo",
     "sourceMap": false,
-    "declarationMap": false
+    "declarationMap": false,
+    "noEmitOnError": true
   }
 }
