@@ -503,6 +503,11 @@ export interface ToolProgressSession {
   getCurrent: () => number;
 }
 
+export interface BatchProgressCallbacks {
+  progress: ToolProgressSession;
+  onItemComplete: () => void;
+}
+
 export function createToolProgressSession(
   extra: ToolExtra,
   startMessage: string
@@ -550,6 +555,43 @@ export function createToolProgressSession(
     fail: finishProgress,
     getCurrent: () => cursor,
   };
+}
+
+export function createBatchProgressCallbacks(
+  extra: ToolExtra,
+  params: {
+    toolLabel: string;
+    context: string;
+    totalItems: number;
+    itemVerb: string;
+  }
+): BatchProgressCallbacks {
+  const progress = createToolProgressSession(
+    extra,
+    `${params.toolLabel}: ${params.context}`
+  );
+
+  const onItemComplete = (): void => {
+    progress.increment(
+      (current) =>
+        `${params.toolLabel}: ${params.context} [${current}/${params.totalItems} ${params.itemVerb}]`
+    );
+  };
+
+  return { progress, onItemComplete };
+}
+
+export function resolveFinalProgressCurrent(
+  progress: ToolProgressSession,
+  ...candidates: number[]
+): number {
+  let finalCurrent = progress.getCurrent() + 1;
+  for (const candidate of candidates) {
+    if (candidate > finalCurrent) {
+      finalCurrent = candidate;
+    }
+  }
+  return finalCurrent;
 }
 
 async function withProgress<T>(

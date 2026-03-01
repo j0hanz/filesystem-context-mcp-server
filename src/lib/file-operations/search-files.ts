@@ -6,7 +6,7 @@ import {
   DEFAULT_SEARCH_MAX_FILES,
   DEFAULT_SEARCH_TIMEOUT_MS,
 } from '../constants.js';
-import { createTimedAbortSignal } from '../fs-helpers.js';
+import { withTimedAbortSignal } from '../fs-helpers.js';
 import { isSensitivePath } from '../path-policy.js';
 import {
   isPathWithinDirectories,
@@ -14,6 +14,7 @@ import {
   validateExistingDirectory,
   validateExistingPathDetailed,
 } from '../path-validation.js';
+import { reportPeriodicProgress } from '../progress-reporting.js';
 import {
   compareOptionalNumberDesc,
   compareStringValues,
@@ -208,17 +209,6 @@ function handleEntry(
   }
 }
 
-function reportSearchFilesProgress(
-  onProgress: SearchFilesOptions['onProgress'],
-  current: number,
-  total: number,
-  force = false
-): void {
-  if (!onProgress || current === 0) return;
-  if (!force && current % 25 !== 0) return;
-  onProgress({ current, total });
-}
-
 async function collectFromStream(
   stream: AsyncIterable<SearchEntry>,
   root: string,
@@ -234,11 +224,10 @@ async function collectFromStream(
   for await (const entry of stream) {
     if (shouldStopCollecting(state, normalized, signal)) break;
     state.filesScanned++;
-    reportSearchFilesProgress(
-      onProgress,
-      state.filesScanned,
-      normalized.maxFilesScanned
-    );
+    reportPeriodicProgress(onProgress, state.filesScanned, {
+      total: normalized.maxFilesScanned,
+      throttleModulo: 25,
+    });
 
     if (
       isEntryIgnoredByGitignore(
@@ -273,12 +262,11 @@ async function collectFromStream(
     if (state.truncated) break;
   }
 
-  reportSearchFilesProgress(
-    onProgress,
-    state.filesScanned,
-    normalized.maxFilesScanned,
-    true
-  );
+  reportPeriodicProgress(onProgress, state.filesScanned, {
+    total: normalized.maxFilesScanned,
+    throttleModulo: 25,
+    force: true,
+  });
 }
 
 function isEntryIgnoredByGitignore(
@@ -448,29 +436,26 @@ export async function searchFiles(
   options: SearchFilesOptions = {}
 ): Promise<SearchFilesResult> {
   const normalized = normalizeOptions(options);
-  const { signal, cleanup } = createTimedAbortSignal(
+  return withTimedAbortSignal(
     options.signal,
-    normalized.timeoutMs
+    normalized.timeoutMs,
+    async (signal) => {
+      const root = await validateExistingDirectory(basePath, signal);
+      const { results, summary } = await runSearchFiles(
+        root,
+        pattern,
+        excludePatterns,
+        normalized,
+        signal,
+        options.onProgress
+      );
+
+      return {
+        basePath: root,
+        pattern,
+        results,
+        summary,
+      };
+    }
   );
-  const root = await validateExistingDirectory(basePath, signal);
-
-  try {
-    const { results, summary } = await runSearchFiles(
-      root,
-      pattern,
-      excludePatterns,
-      normalized,
-      signal,
-      options.onProgress
-    );
-
-    return {
-      basePath: root,
-      pattern,
-      results,
-      summary,
-    };
-  } finally {
-    cleanup();
-  }
 }

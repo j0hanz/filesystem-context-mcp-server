@@ -26,6 +26,7 @@ import {
   createToolProgressSession,
   executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
+  resolveFinalProgressCurrent,
   resolvePathOrRoot,
   type ToolContract,
   type ToolExtra,
@@ -355,9 +356,9 @@ export function registerSearchContentTool(
             }
           }
 
-          const finalCurrent = Math.max(
-            (sc.filesScanned ?? 0) + 1,
-            progress.getCurrent() + 1
+          const finalCurrent = resolveFinalProgressCurrent(
+            progress,
+            (sc.filesScanned ?? 0) + 1
           );
 
           progress.complete(`🔎︎ grep: ${pattern} • ${suffix}`, finalCurrent);

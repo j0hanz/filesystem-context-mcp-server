@@ -148,6 +148,19 @@ export function createTimedAbortSignal(
   return createNoopSignal();
 }
 
+export async function withTimedAbortSignal<T>(
+  baseSignal: AbortSignal | undefined,
+  timeoutMs: number | undefined,
+  run: (signal: AbortSignal) => Promise<T>
+): Promise<T> {
+  const { signal, cleanup } = createTimedAbortSignal(baseSignal, timeoutMs);
+  try {
+    return await run(signal);
+  } finally {
+    cleanup();
+  }
+}
+
 function createNoopSignal(): { signal: AbortSignal; cleanup: () => void } {
   return { signal: SHARED_NOOP_SIGNAL, cleanup: () => {} };
 }

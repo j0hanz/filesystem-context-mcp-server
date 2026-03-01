@@ -4,7 +4,7 @@ import {
   DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_SEARCH_TIMEOUT_MS,
 } from '../constants.js';
-import { createTimedAbortSignal } from '../fs-helpers.js';
+import { withTimedAbortSignal } from '../fs-helpers.js';
 import { toPosixPath } from '../path-format.js';
 import { isSensitivePath } from '../path-policy.js';
 import {
@@ -298,101 +298,98 @@ export async function treeDirectory(
   options: TreeOptions = {}
 ): Promise<TreeResult> {
   const normalized = normalizeOptions(options);
-  const { signal, cleanup } = createTimedAbortSignal(
+  return withTimedAbortSignal(
     options.signal,
-    normalized.timeoutMs
-  );
+    normalized.timeoutMs,
+    async (signal) => {
+      const root = await validateExistingDirectory(dirPath, signal);
+      const rootNormalized = normalizePath(root);
+      const rootDirectories = [rootNormalized];
+      const accessDeps = {
+        normalizePath,
+        isPathWithinDirectories,
+        isSensitivePath,
+        validateSymlinkPath: validateExistingPathDetailed,
+      };
 
-  const root = await validateExistingDirectory(dirPath, signal);
-  const rootNormalized = normalizePath(root);
-  const rootDirectories = [rootNormalized];
-  const accessDeps = {
-    normalizePath,
-    isPathWithinDirectories,
-    isSensitivePath,
-    validateSymlinkPath: validateExistingPathDetailed,
-  };
+      const excludePatterns = normalized.includeIgnored
+        ? []
+        : DEFAULT_EXCLUDE_PATTERNS;
 
-  try {
-    const excludePatterns = normalized.includeIgnored
-      ? []
-      : DEFAULT_EXCLUDE_PATTERNS;
+      const gitignoreMatcher = normalized.includeIgnored
+        ? null
+        : await loadRootGitignore(root, signal);
 
-    const gitignoreMatcher = normalized.includeIgnored
-      ? null
-      : await loadRootGitignore(root, signal);
+      const rootNode: TreeEntry = {
+        name: path.basename(root) || root,
+        type: 'directory',
+        relativePath: '.',
+        children: [],
+      };
 
-    const rootNode: TreeEntry = {
-      name: path.basename(root) || root,
-      type: 'directory',
-      relativePath: '.',
-      children: [],
-    };
+      const nodeByPath = new Map<string, TreeEntry>();
+      const childPathIndexByParent = new WeakMap<TreeEntry, Set<string>>();
+      let totalEntries = 0;
+      let truncated = false;
 
-    const nodeByPath = new Map<string, TreeEntry>();
-    const childPathIndexByParent = new WeakMap<TreeEntry, Set<string>>();
-    let totalEntries = 0;
-    let truncated = false;
-
-    const stream = globEntries({
-      cwd: root,
-      pattern: '**/*',
-      excludePatterns,
-      includeHidden: normalized.includeHidden,
-      baseNameMatch: false,
-      caseSensitiveMatch: true,
-      maxDepth: normalized.maxDepth,
-      followSymbolicLinks: false,
-      onlyFiles: false,
-      stats: false,
-      suppressErrors: true,
-    });
-
-    for await (const entry of stream) {
-      const stopReason = resolveStopReason<'aborted' | 'maxEntries'>({
-        signal,
-        current: totalEntries,
-        max: normalized.maxEntries,
-        abortedReason: 'aborted',
-        maxReason: 'maxEntries',
+      const stream = globEntries({
+        cwd: root,
+        pattern: '**/*',
+        excludePatterns,
+        includeHidden: normalized.includeHidden,
+        baseNameMatch: false,
+        caseSensitiveMatch: true,
+        maxDepth: normalized.maxDepth,
+        followSymbolicLinks: false,
+        onlyFiles: false,
+        stats: false,
+        suppressErrors: true,
       });
-      if (stopReason) {
-        truncated = true;
-        break;
+
+      for await (const entry of stream) {
+        const stopReason = resolveStopReason<'aborted' | 'maxEntries'>({
+          signal,
+          current: totalEntries,
+          max: normalized.maxEntries,
+          abortedReason: 'aborted',
+          maxReason: 'maxEntries',
+        });
+        if (stopReason) {
+          truncated = true;
+          break;
+        }
+
+        const resolved = await resolveTreeEntry(
+          entry,
+          root,
+          rootDirectories,
+          gitignoreMatcher,
+          signal,
+          accessDeps
+        );
+        if (!resolved) {
+          continue;
+        }
+
+        const parent = ensureParentNodes(
+          rootNode,
+          nodeByPath,
+          resolved.relativePosix
+        );
+
+        upsertChildNode(parent, nodeByPath, resolved, childPathIndexByParent);
+        totalEntries += 1;
+        options.onProgress?.({ current: totalEntries });
       }
 
-      const resolved = await resolveTreeEntry(
-        entry,
+      sortTree(rootNode);
+
+      return {
         root,
-        rootDirectories,
-        gitignoreMatcher,
-        signal,
-        accessDeps
-      );
-      if (!resolved) {
-        continue;
-      }
-
-      const parent = ensureParentNodes(
-        rootNode,
-        nodeByPath,
-        resolved.relativePosix
-      );
-
-      upsertChildNode(parent, nodeByPath, resolved, childPathIndexByParent);
-      totalEntries += 1;
-      options.onProgress?.({ current: totalEntries });
+        tree: rootNode,
+        truncated,
+        totalEntries,
+      };
     }
-
-    sortTree(rootNode);
-
-    return {
-      root,
-      tree: rootNode,
-      truncated,
-      totalEntries,
-    };
-  } finally {
-    cleanup();
-  }
+  );
 }

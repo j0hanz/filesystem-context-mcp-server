@@ -20,10 +20,11 @@ import {
   buildResourceLink,
   buildToolErrorResponse,
   buildToolResponse,
-  createToolProgressSession,
+  createBatchProgressCallbacks,
   executeToolWithDiagnostics,
   maybeExternalizeTextContent,
   READ_ONLY_TOOL_ANNOTATIONS,
+  resolveFinalProgressCurrent,
   type ToolContract,
   type ToolExtra,
   type ToolRegistrationOptions,
@@ -56,23 +57,6 @@ type ReadManyStructuredResult = z.infer<typeof ReadMultipleFilesOutputSchema>;
 type ReadManyStructuredResultItem = NonNullable<
   ReadManyStructuredResult['results']
 >[number];
-
-function createReadManyProgressCallbacks(
-  extra: ToolExtra,
-  context: string,
-  totalPaths: number
-): {
-  progress: ReturnType<typeof createToolProgressSession>;
-  onReadComplete: () => void;
-} {
-  const progress = createToolProgressSession(extra, `🕮 read_many: ${context}`);
-  const onReadComplete = (): void => {
-    progress.increment(
-      (current) => `🕮 read_many: ${context} [${current}/${totalPaths} read]`
-    );
-  };
-  return { progress, onReadComplete };
-}
 
 function toStructuredReadManyResult(
   result: Awaited<ReturnType<typeof readMultipleFiles>>[number] & {
@@ -220,10 +204,14 @@ export function registerReadMultipleFilesTool(
       context: { path: primaryPath },
       run: async (signal) => {
         const context = buildBatchPathContext(args.paths, 'files');
-        const { progress, onReadComplete } = createReadManyProgressCallbacks(
+        const { progress, onItemComplete } = createBatchProgressCallbacks(
           extra,
-          context,
-          args.paths.length
+          {
+            toolLabel: '🕮 read_many',
+            context,
+            totalItems: args.paths.length,
+            itemVerb: 'read',
+          }
         );
 
         try {
@@ -231,7 +219,7 @@ export function registerReadMultipleFilesTool(
             args,
             signal,
             options.resourceStore,
-            onReadComplete
+            onItemComplete
           );
 
           const sc = result.structuredContent;
@@ -242,7 +230,7 @@ export function registerReadMultipleFilesTool(
           );
           const total = sc.summary?.total ?? 0;
 
-          const finalCurrent = Math.max(total, progress.getCurrent() + 1);
+          const finalCurrent = resolveFinalProgressCurrent(progress, total);
           progress.complete(
             `🕮 read_many: ${context} • ${suffix}`,
             finalCurrent

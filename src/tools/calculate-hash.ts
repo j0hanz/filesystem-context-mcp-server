@@ -17,6 +17,7 @@ import {
 import { globEntries } from '../lib/file-operations/glob-engine.js';
 import { assertNotAborted, withAbort } from '../lib/fs-helpers.js';
 import { validateExistingPath } from '../lib/path-validation.js';
+import { reportPeriodicProgress } from '../lib/progress-reporting.js';
 import {
   CalculateHashInputSchema,
   CalculateHashOutputSchema,
@@ -27,6 +28,7 @@ import {
   createToolProgressSession,
   executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
+  resolveFinalProgressCurrent,
   type ToolContract,
   type ToolExtra,
   type ToolRegistrationOptions,
@@ -107,18 +109,6 @@ function updateCompositeHash(
   hasher.update(fileHash);
 }
 
-function reportHashProgress(
-  onProgress:
-    | ((progress: { total?: number; current: number }) => void)
-    | undefined,
-  current: number,
-  force = false
-): void {
-  if (!onProgress || current === 0) return;
-  if (!force && current % 25 !== 0) return;
-  onProgress({ current });
-}
-
 async function hashDirectory(
   dirPath: string,
   options: {
@@ -175,10 +165,13 @@ async function hashDirectory(
     );
     entries.push(...batchResults);
     filesHashed += batchResults.length;
-    reportHashProgress(onProgress, filesHashed);
+    reportPeriodicProgress(onProgress, filesHashed, { throttleModulo: 25 });
   }
 
-  reportHashProgress(onProgress, filesHashed, true);
+  reportPeriodicProgress(onProgress, filesHashed, {
+    throttleModulo: 25,
+    force: true,
+  });
 
   assertNotAborted(signal);
   // Sort by path with byte-wise semantics for deterministic ordering.
@@ -225,7 +218,10 @@ async function handleCalculateHash(
   } else {
     // Hash single file
     const hash = await hashFile(validPath, 'hex', signal);
-    reportHashProgress(onProgress, 1, true);
+    reportPeriodicProgress(onProgress, 1, {
+      throttleModulo: 25,
+      force: true,
+    });
 
     return buildToolResponse(hash, {
       ok: true,
@@ -278,9 +274,9 @@ export function registerCalculateHashTool(
           );
           const sc = result.structuredContent;
           const totalFiles = sc.ok ? (sc.fileCount ?? 1) : 1;
-          const finalCurrent = Math.max(
-            totalFiles + 1,
-            progress.getCurrent() + 1
+          const finalCurrent = resolveFinalProgressCurrent(
+            progress,
+            totalFiles + 1
           );
           let suffix: string;
           if (!sc.ok) {

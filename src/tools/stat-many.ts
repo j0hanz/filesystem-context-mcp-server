@@ -17,9 +17,10 @@ import {
   buildFileInfoPayload,
   buildToolErrorResponse,
   buildToolResponse,
-  createToolProgressSession,
+  createBatchProgressCallbacks,
   executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
+  resolveFinalProgressCurrent,
   type ToolContract,
   type ToolExtra,
   type ToolRegistrationOptions,
@@ -42,23 +43,6 @@ export const GET_MULTIPLE_FILE_INFO_TOOL: ToolContract = {
   taskSupport: 'optional',
   nuances: ['Use before read/search when file size/type uncertainty exists.'],
 } as const;
-
-function createStatManyProgressCallbacks(
-  extra: ToolExtra,
-  context: string,
-  totalPaths: number
-): {
-  progress: ReturnType<typeof createToolProgressSession>;
-  onProgress: () => void;
-} {
-  const progress = createToolProgressSession(extra, `🕮 stat_many: ${context}`);
-  const onProgress = (): void => {
-    progress.increment(
-      (current) => `🕮 stat_many: ${context} [${current}/${totalPaths} scanned]`
-    );
-  };
-  return { progress, onProgress };
-}
 
 function formatFileInfoDetail(info: FileInfo): string {
   const lines = [
@@ -133,24 +117,28 @@ export function registerGetMultipleFileInfoTool(
       context: { path: primaryPath },
       run: async (signal) => {
         const context = buildBatchPathContext(args.paths);
-        const { progress, onProgress } = createStatManyProgressCallbacks(
+        const { progress, onItemComplete } = createBatchProgressCallbacks(
           extra,
-          context,
-          args.paths.length
+          {
+            toolLabel: '🕮 stat_many',
+            context,
+            totalItems: args.paths.length,
+            itemVerb: 'scanned',
+          }
         );
 
         try {
           const result = await handleGetMultipleFileInfo(
             args,
             signal,
-            onProgress
+            onItemComplete
           );
 
           const sc = result.structuredContent;
           const suffix = buildBatchCompletionSuffix(sc.summary, 'OK');
           const total = sc.summary?.total ?? 0;
 
-          const finalCurrent = Math.max(total, progress.getCurrent() + 1);
+          const finalCurrent = resolveFinalProgressCurrent(progress, total);
           progress.complete(
             `🕮 stat_many: ${context} • ${suffix}`,
             finalCurrent

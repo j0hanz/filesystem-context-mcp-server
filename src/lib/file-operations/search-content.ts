@@ -22,10 +22,11 @@ import {
 } from '../errors.js';
 import {
   assertNotAborted,
-  createTimedAbortSignal,
   isProbablyBinary,
   withAbort,
+  withTimedAbortSignal,
 } from '../fs-helpers.js';
+import { mergeOptions, omitOptionKeys } from '../option-utils.js';
 import { assertAllowedFileAccess, isSensitivePath } from '../path-policy.js';
 import {
   isPathWithinDirectories,
@@ -33,6 +34,7 @@ import {
   validateExistingDirectory,
   validateExistingPathDetailed,
 } from '../path-validation.js';
+import { reportPeriodicProgress } from '../progress-reporting.js';
 import { withOptionalStoppedReason } from './common.js';
 import { globEntries } from './glob-engine.js';
 import { buildGlobOptions } from './glob-helpers.js';
@@ -96,10 +98,8 @@ const ERROR_WORKER_POOL_CLOSED = 'Worker pool closed';
 // --- Helpers ---
 
 function resolveOptions(options: SearchContentOptions): ResolvedOptions {
-  const rest = { ...options };
-  delete rest.signal;
-  delete rest.onProgress;
-  const merged = { ...DEFAULTS, ...rest };
+  const normalizedOptions = omitOptionKeys(options, ['signal', 'onProgress']);
+  const merged = mergeOptions(DEFAULTS, normalizedOptions);
   const result = SearchOptionsSchema.safeParse(merged);
 
   if (!result.success) {
@@ -771,17 +771,6 @@ function processScanResult(
   }
 }
 
-function reportSearchProgress(
-  onProgress: SearchContentOptions['onProgress'],
-  current: number,
-  total: number,
-  force = false
-): void {
-  if (!onProgress || current === 0) return;
-  if (!force && current % 25 !== 0) return;
-  onProgress({ current, total });
-}
-
 async function waitForWinner(pending: Set<ScanTask>): Promise<{
   task: ScanTask;
   result: WorkerScanResult | undefined;
@@ -982,12 +971,19 @@ async function searchDirectory(
       if (isSensitivePath(entry.path, normalized)) continue;
 
       scanned++;
-      reportSearchProgress(onProgress, scanned, opts.maxFilesScanned);
+      reportPeriodicProgress(onProgress, scanned, {
+        total: opts.maxFilesScanned,
+        throttleModulo: 25,
+      });
 
       yield { resolvedPath: normalized, requestedPath: entry.path };
     }
 
-    reportSearchProgress(onProgress, scanned, opts.maxFilesScanned, true);
+    reportPeriodicProgress(onProgress, scanned, {
+      total: opts.maxFilesScanned,
+      throttleModulo: 25,
+      force: true,
+    });
   }
 
   const summary = createScanSummary();
@@ -1039,40 +1035,39 @@ export async function searchContent(
     throw new McpError(ErrorCode.E_INVALID_INPUT, 'pattern required');
 
   const opts = resolveOptions(options);
-  const { signal, cleanup } = createTimedAbortSignal(
-    options.signal,
-    opts.timeoutMs
-  );
-
   try {
-    const details = await validateExistingPathDetailed(basePath, signal);
-    const stats = await withAbort(fsp.stat(details.resolvedPath), signal);
+    return await withTimedAbortSignal(
+      options.signal,
+      opts.timeoutMs,
+      async (signal) => {
+        const details = await validateExistingPathDetailed(basePath, signal);
+        const stats = await withAbort(fsp.stat(details.resolvedPath), signal);
 
-    if (stats.isFile()) {
-      return await searchSingleFile(details, opts, pattern, signal);
-    }
+        if (stats.isFile()) {
+          return searchSingleFile(details, opts, pattern, signal);
+        }
 
-    if (!stats.isDirectory()) {
-      throw new McpError(
-        ErrorCode.E_INVALID_INPUT,
-        'Path must be file or directory',
-        basePath
-      );
-    }
+        if (!stats.isDirectory()) {
+          throw new McpError(
+            ErrorCode.E_INVALID_INPUT,
+            'Path must be file or directory',
+            basePath
+          );
+        }
 
-    return await searchDirectory(
-      details,
-      opts,
-      pattern,
-      signal,
-      options.onProgress
+        return searchDirectory(
+          details,
+          opts,
+          pattern,
+          signal,
+          options.onProgress
+        );
+      }
     );
   } catch (error: unknown) {
     if (isTimeoutLikeError(error)) {
       return buildTimeoutSearchResult(basePath, pattern, opts.filePattern);
     }
     throw error;
-  } finally {
-    cleanup();
   }
 }

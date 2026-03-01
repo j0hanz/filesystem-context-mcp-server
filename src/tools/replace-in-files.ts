@@ -25,6 +25,7 @@ import {
   validateExistingPath,
   validatePathForWrite,
 } from '../lib/path-validation.js';
+import { reportPeriodicProgress } from '../lib/progress-reporting.js';
 import {
   SearchAndReplaceInputSchema,
   SearchAndReplaceOutputSchema,
@@ -35,6 +36,7 @@ import {
   createToolProgressSession,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   executeToolWithDiagnostics,
+  resolveFinalProgressCurrent,
   resolvePathOrRoot,
   type ToolContract,
   type ToolExtra,
@@ -335,16 +337,6 @@ function createReplacementMatcher(
   return createLiteralReplacementMatcher(args.searchPattern);
 }
 
-function reportReplaceProgress(
-  onProgress: (progress: { total?: number; current: number }) => void,
-  current: number,
-  force = false
-): void {
-  if (current === 0) return;
-  if (!force && current % 25 !== 0) return;
-  onProgress({ current });
-}
-
 export async function handleSearchAndReplace(
   args: z.infer<typeof SearchAndReplaceInputSchema>,
   signal?: AbortSignal,
@@ -373,7 +365,9 @@ export async function handleSearchAndReplace(
     concurrency: REPLACE_CONCURRENCY,
     onEntry: () => {
       summary.processedFiles++;
-      reportReplaceProgress(onProgress, summary.processedFiles);
+      reportPeriodicProgress(onProgress, summary.processedFiles, {
+        throttleModulo: 25,
+      });
     },
     runEntry: async (entryPath: string) =>
       processEntry(
@@ -390,7 +384,10 @@ export async function handleSearchAndReplace(
       ),
   });
 
-  reportReplaceProgress(onProgress, summary.processedFiles, true);
+  reportPeriodicProgress(onProgress, summary.processedFiles, {
+    throttleModulo: 25,
+    force: true,
+  });
 
   const failureSuffix =
     summary.failedFiles > 0 ? ` (${summary.failedFiles} failed)` : '';
@@ -457,9 +454,9 @@ export function registerSearchAndReplaceTool(
             progressWithMessage
           );
           const sc = result.structuredContent;
-          const finalCurrent = Math.max(
-            (sc.processedFiles ?? 0) + 1,
-            progress.getCurrent() + 1
+          const finalCurrent = resolveFinalProgressCurrent(
+            progress,
+            (sc.processedFiles ?? 0) + 1
           );
           const matchWord = (sc.matches ?? 0) === 1 ? 'match' : 'matches';
           const fileWord = (sc.filesChanged ?? 0) === 1 ? 'file' : 'files';

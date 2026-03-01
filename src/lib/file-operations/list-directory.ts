@@ -10,10 +10,10 @@ import {
   PARALLEL_CONCURRENCY,
 } from '../constants.js';
 import {
-  createTimedAbortSignal,
   isHidden,
   processInParallel,
   withAbort,
+  withTimedAbortSignal,
 } from '../fs-helpers.js';
 import { isSensitivePath } from '../path-policy.js';
 import {
@@ -479,20 +479,17 @@ export async function listDirectory(
   options: ListDirectoryOptions = {}
 ): Promise<ListDirectoryResult> {
   const normalized = normalizeOptions(options);
-  const { signal, cleanup } = createTimedAbortSignal(
+  return withTimedAbortSignal(
     options.signal,
-    normalized.timeoutMs
+    normalized.timeoutMs,
+    async (signal) => {
+      const basePath = await validateExistingDirectory(dirPath, signal);
+      const { entries, summary } = await executeListDirectory(
+        basePath,
+        normalized,
+        signal
+      );
+      return { path: basePath, entries, summary };
+    }
   );
-  const basePath = await validateExistingDirectory(dirPath, signal);
-
-  try {
-    const { entries, summary } = await executeListDirectory(
-      basePath,
-      normalized,
-      signal
-    );
-    return { path: basePath, entries, summary };
-  } finally {
-    cleanup();
-  }
 }
