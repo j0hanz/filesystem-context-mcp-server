@@ -1,11 +1,19 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": [
-    "src/lib/file-operations/search-worker.ts",
-    "src/__tests__/**/*.test.ts",
-    "node-tests/**/*.test.ts"
+  "project": ["src/**/*.ts!"],
+  "include": [
+    "files",
+    "dependencies",
+    "unlisted",
+    "unresolved",
+    "exports",
+    "nsExports",
+    "classMembers",
+    "types",
+    "nsTypes",
+    "enumMembers",
+    "duplicates"
   ],
-  "project": ["src/**/*.ts", "node-tests/**/*.ts"],
-  "ignore": ["src/__tests__/shared/**"],
-  "ignoreDependencies": ["jscpd"]
+  "includeEntryExports": true,
+  "treatConfigHintsAsErrors": true
 }
