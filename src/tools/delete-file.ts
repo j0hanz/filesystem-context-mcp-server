@@ -5,9 +5,12 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { z } from 'zod';
 
-import { ErrorCode, isNodeError } from '../lib/errors.js';
+import { ErrorCode, isNodeError, McpError } from '../lib/errors.js';
 import { withAbort } from '../lib/fs-helpers.js';
-import { validatePathForWrite } from '../lib/path-validation.js';
+import {
+  isAllowedDirectoryRoot,
+  validatePathForWrite,
+} from '../lib/path-validation.js';
 import { DeleteFileInputSchema, DeleteFileOutputSchema } from '../schemas.js';
 import {
   buildToolErrorResponse,
@@ -44,6 +47,13 @@ async function handleDeleteFile(
   signal?: AbortSignal
 ): Promise<ToolResponse<z.infer<typeof DeleteFileOutputSchema>>> {
   const validPath = await validatePathForWrite(args.path, signal);
+
+  if (isAllowedDirectoryRoot(validPath)) {
+    throw new McpError(
+      ErrorCode.E_ACCESS_DENIED,
+      `Deleting a workspace root directory is not allowed: ${args.path}`
+    );
+  }
 
   let stats: Awaited<ReturnType<typeof fs.lstat>> | undefined;
   try {

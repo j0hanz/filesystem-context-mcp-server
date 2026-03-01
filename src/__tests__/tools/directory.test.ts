@@ -236,6 +236,17 @@ describe('rm tool', () => {
     });
     assertOk(raw);
   });
+
+  it('returns E_ACCESS_DENIED when deleting workspace root', async () => {
+    const raw = await env.client.callTool({
+      name: 'rm',
+      arguments: { path: env.tmpDir, recursive: true },
+    });
+    assertToolError(raw, 'E_ACCESS_DENIED');
+    // Verify root still exists
+    const stats = await fs.stat(env.tmpDir);
+    assert.ok(stats.isDirectory());
+  });
 });
 
 // ─── mv ─────────────────────────────────────────────────────────────────────

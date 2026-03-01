@@ -151,6 +151,13 @@ export function getAllowedDirectories(): string[] {
   return [...allowedDirectoriesExpanded];
 }
 
+export function isAllowedDirectoryRoot(normalizedPath: string): boolean {
+  for (const dir of allowedDirectoriesExpanded) {
+    if (isSamePath(normalizedPath, dir)) return true;
+  }
+  return false;
+}
+
 function getAllowedDirectoriesForRelativeResolution(): readonly string[] {
   return allowedDirectoriesPrimary.length > 0
     ? allowedDirectoriesPrimary

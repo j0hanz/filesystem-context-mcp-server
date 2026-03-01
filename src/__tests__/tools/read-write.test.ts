@@ -314,4 +314,29 @@ describe('apply_patch tool', () => {
       'File must be unchanged in dryRun mode'
     );
   });
+
+  it('returns E_INVALID_INPUT when patch has no effect', async () => {
+    await fs.writeFile(file, ORIGINAL_CONTENT, 'utf8');
+    // Patch that targets content not present in the file — applyPatch returns
+    // the original string (not false) when context lines match but the removed
+    // line is absent, so the patched output equals the original.
+    const patch =
+      [
+        `--- a/patch-target.txt`,
+        `+++ b/patch-target.txt`,
+        `@@ -1,3 +1,3 @@`,
+        ` alpha`,
+        `-BETA`,
+        `+BETA`,
+        ` gamma`,
+      ].join('\n') + '\n';
+
+    const raw = await env.client.callTool({
+      name: 'apply_patch',
+      arguments: { path: file, patch },
+    });
+    assertToolError(raw, 'E_INVALID_INPUT');
+    const actual = await fs.readFile(file, 'utf8');
+    assert.equal(actual, ORIGINAL_CONTENT, 'File must be unchanged');
+  });
 });

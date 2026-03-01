@@ -94,6 +94,13 @@ async function handleApplyPatch(
     );
   }
 
+  if (patched === content) {
+    throw new McpError(
+      ErrorCode.E_INVALID_INPUT,
+      'Patch had no effect — the file content is unchanged after applying. The patch may not match the current file content. Generate a fresh patch via diff_files and retry.'
+    );
+  }
+
   if (args.dryRun) {
     return buildToolResponse('Dry run successful. Patch can be applied.', {
       ok: true,
