@@ -12,6 +12,7 @@ import {
   GetMultipleFileInfoOutputSchema,
 } from '../schemas.js';
 import {
+  buildBatchCompletionSuffix,
   buildBatchPathContext,
   buildFileInfoPayload,
   buildToolErrorResponse,
@@ -41,18 +42,6 @@ export const GET_MULTIPLE_FILE_INFO_TOOL: ToolContract = {
   taskSupport: 'optional',
   nuances: ['Use before read/search when file size/type uncertainty exists.'],
 } as const;
-
-function buildStatManyCompletionSuffix(
-  summary: z.infer<typeof GetMultipleFileInfoOutputSchema>['summary']
-): string {
-  const total = summary?.total ?? 0;
-  const failed = summary?.failed ?? 0;
-  const succeeded = summary?.succeeded ?? 0;
-  if (failed) {
-    return `${succeeded}/${total} OK, ${failed} failed`;
-  }
-  return `${total} OK`;
-}
 
 function createStatManyProgressCallbacks(
   extra: ToolExtra,
@@ -158,7 +147,7 @@ export function registerGetMultipleFileInfoTool(
           );
 
           const sc = result.structuredContent;
-          const suffix = buildStatManyCompletionSuffix(sc.summary);
+          const suffix = buildBatchCompletionSuffix(sc.summary, 'OK');
           const total = sc.summary?.total ?? 0;
 
           const finalCurrent = Math.max(total, progress.getCurrent() + 1);

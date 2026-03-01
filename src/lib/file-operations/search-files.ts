@@ -27,6 +27,7 @@ import {
 import type { DirentLike, EntryType } from './common.js';
 import { isIgnoredByGitignore, loadRootGitignore } from './gitignore.js';
 import { globEntries } from './glob-engine.js';
+import { buildGlobOptions } from './glob-helpers.js';
 
 // Internal default for find tool - not exposed to MCP users
 const INTERNAL_MAX_RESULTS = 1000;
@@ -161,7 +162,7 @@ function buildSearchStream(
   normalized: NormalizedOptions,
   needsStats: boolean
 ): AsyncIterable<SearchEntry> {
-  const options: Parameters<typeof globEntries>[0] = {
+  const options = buildGlobOptions({
     cwd: root,
     pattern,
     excludePatterns,
@@ -171,10 +172,10 @@ function buildSearchStream(
     followSymbolicLinks: false,
     onlyFiles: true,
     stats: needsStats,
-  };
-  if (normalized.maxDepth !== undefined) {
-    options.maxDepth = normalized.maxDepth;
-  }
+    ...(normalized.maxDepth !== undefined
+      ? { maxDepth: normalized.maxDepth }
+      : {}),
+  });
   return globEntries(options);
 }
 

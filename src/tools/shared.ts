@@ -520,6 +520,16 @@ export function createToolProgressSession(
     return cursor;
   };
 
+  const finishProgress = (message?: string, minimumCurrent?: number): void => {
+    const finalCurrent = Math.max(cursor + 1, minimumCurrent ?? 1, 1);
+    notifyProgress(extra, {
+      current: finalCurrent,
+      total: finalCurrent,
+      ...(message !== undefined ? { message } : {}),
+    });
+    cursor = finalCurrent;
+  };
+
   return {
     update: ({ current, total, message }) => {
       const normalized = setCursor(current);
@@ -536,24 +546,8 @@ export function createToolProgressSession(
         message: messageForCurrent(next),
       });
     },
-    complete: (message, minimumCurrent) => {
-      const finalCurrent = Math.max(cursor + 1, minimumCurrent ?? 1, 1);
-      notifyProgress(extra, {
-        current: finalCurrent,
-        total: finalCurrent,
-        message,
-      });
-      cursor = finalCurrent;
-    },
-    fail: (message, minimumCurrent) => {
-      const finalCurrent = Math.max(cursor + 1, minimumCurrent ?? 1, 1);
-      notifyProgress(extra, {
-        current: finalCurrent,
-        total: finalCurrent,
-        message,
-      });
-      cursor = finalCurrent;
-    },
+    complete: finishProgress,
+    fail: finishProgress,
     getCurrent: () => cursor,
   };
 }
@@ -701,4 +695,19 @@ export function buildBatchPathContext(
       ? `, ${path.basename(paths[1] ?? '')}${paths.length > 2 ? '…' : ''}`
       : '';
   return `${paths.length} ${normalizedLabel} [${first}${extraPaths}]`;
+}
+
+export function buildBatchCompletionSuffix(
+  summary: { total?: number; failed?: number; succeeded?: number } | undefined,
+  successWord: string,
+  singularWord?: string
+): string {
+  const total = summary?.total ?? 0;
+  const failed = summary?.failed ?? 0;
+  const succeeded = summary?.succeeded ?? 0;
+  if (failed) {
+    return `${succeeded}/${total} ${successWord}, ${failed} failed`;
+  }
+  const word = total === 1 && singularWord ? singularWord : successWord;
+  return `${total} ${word}`;
 }

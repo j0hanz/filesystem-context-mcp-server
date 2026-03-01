@@ -3,15 +3,15 @@ import { parentPort, threadId, workerData } from 'node:worker_threads';
 import { formatUnknownErrorMessage } from '../errors.js';
 import { isProbablyBinary } from '../fs-helpers.js';
 import { startPerfMeasure } from '../observability.js';
-import { buildMatcher, scanFileInWorker } from './search-content.js';
+import { scanFileInWorker } from './search-content.js';
 import type {
-  Matcher,
-  MatcherOptions,
   ScanError,
   ScanRequest,
   ScanResult,
   WorkerResponse,
 } from './search-content.js';
+import { buildMatcher } from './search-matcher.js';
+import { type Matcher, type MatcherOptions } from './search-matcher.js';
 
 interface CancelRequest {
   type: 'cancel';

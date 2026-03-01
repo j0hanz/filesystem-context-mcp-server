@@ -5,9 +5,6 @@ import { Worker } from 'node:worker_threads';
 
 import { z } from 'zod';
 
-import RE2 from 're2';
-import safeRegex from 'safe-regex2';
-
 import type { ContentMatch, SearchContentResult } from '../../config.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
@@ -38,17 +35,14 @@ import {
 } from '../path-validation.js';
 import { withOptionalStoppedReason } from './common.js';
 import { globEntries } from './glob-engine.js';
+import { buildGlobOptions } from './glob-helpers.js';
+import { buildMatcher, validatePattern } from './search-matcher.js';
+import type { Matcher, MatcherOptions } from './search-matcher.js';
 
 // --- Configuration & Schemas ---
 
 const INTERNAL_MAX_RESULTS = 500;
 
-export const MatcherOptionsSchema = z.strictObject({
-  caseSensitive: z.boolean(),
-  wholeWord: z.boolean(),
-  isLiteral: z.boolean(),
-});
-export type MatcherOptions = z.infer<typeof MatcherOptionsSchema>;
 export interface ScanFileOptions {
   maxFileSize: number;
   skipBinary: boolean;
@@ -117,94 +111,6 @@ function resolveOptions(options: SearchContentOptions): ResolvedOptions {
     );
   }
   return result.data;
-}
-
-// --- Matcher Logic ---
-
-export type Matcher = (line: string) => number;
-
-interface RegexLikeMatcher {
-  lastIndex: number;
-  exec(input: string): unknown;
-}
-
-function countRegexLineMatches(regex: RegexLikeMatcher, line: string): number {
-  regex.lastIndex = 0;
-  let count = 0;
-  while (regex.exec(line) !== null) {
-    count++;
-    if (regex.lastIndex === 0) regex.lastIndex++;
-  }
-  return count;
-}
-
-function escapeLiteral(pattern: string): string {
-  return pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function buildRegexPattern(pattern: string, options: MatcherOptions): string {
-  const escaped = options.isLiteral ? escapeLiteral(pattern) : pattern;
-  return options.wholeWord ? `\\b${escaped}\\b` : escaped;
-}
-
-function validatePattern(pattern: string, options: MatcherOptions): void {
-  if (options.isLiteral && pattern.length === 0) return;
-  if (options.isLiteral && !options.wholeWord) return;
-
-  const final = buildRegexPattern(pattern, options);
-  if (!safeRegex(final)) {
-    throw new Error(
-      `Potentially unsafe regular expression (ReDoS risk): ${pattern}`
-    );
-  }
-}
-
-function buildLiteralMatcher(
-  pattern: string,
-  options: MatcherOptions
-): Matcher {
-  if (!options.caseSensitive) {
-    const final = escapeLiteral(pattern);
-    const regex = new RegExp(final, 'gi');
-    return (line: string): number => countRegexLineMatches(regex, line);
-  }
-
-  // Fast path for case-sensitive literal
-  const needle = pattern;
-  if (needle.length === 0) return () => 0;
-
-  return (line: string): number => {
-    if (line.length === 0) return 0;
-
-    let count = 0;
-    let pos = line.indexOf(needle);
-    while (pos !== -1) {
-      count++;
-      pos = line.indexOf(needle, pos + needle.length);
-    }
-    return count;
-  };
-}
-
-function buildRegexMatcher(final: string, caseSensitive: boolean): Matcher {
-  const regex = new RE2(final, caseSensitive ? 'g' : 'gi');
-  return (line: string): number => countRegexLineMatches(regex, line);
-}
-
-export function buildMatcher(
-  pattern: string,
-  options: MatcherOptions
-): Matcher {
-  if (options.isLiteral && pattern.length === 0) return () => 0;
-
-  if (options.isLiteral && !options.wholeWord) {
-    // fast path for simple literal search
-    return buildLiteralMatcher(pattern, options);
-  }
-
-  const final = buildRegexPattern(pattern, options);
-  validatePattern(pattern, options); // Re-validate to be safe
-  return buildRegexMatcher(final, options.caseSensitive);
 }
 
 // --- Context Management ---
@@ -1048,18 +954,20 @@ async function searchDirectory(
   const root = await validateExistingDirectory(details.resolvedPath, signal);
   const rootDirectories = [root];
 
-  const stream = globEntries({
-    cwd: root,
-    pattern: opts.filePattern,
-    excludePatterns: opts.excludePatterns,
-    includeHidden: opts.includeHidden,
-    baseNameMatch: opts.baseNameMatch,
-    caseSensitiveMatch: opts.caseSensitiveFileMatch,
-    followSymbolicLinks: false,
-    onlyFiles: true,
-    stats: false,
-    suppressErrors: true,
-  });
+  const stream = globEntries(
+    buildGlobOptions({
+      cwd: root,
+      pattern: opts.filePattern,
+      excludePatterns: opts.excludePatterns,
+      includeHidden: opts.includeHidden,
+      baseNameMatch: opts.baseNameMatch,
+      caseSensitiveMatch: opts.caseSensitiveFileMatch,
+      followSymbolicLinks: false,
+      onlyFiles: true,
+      stats: false,
+      suppressErrors: true,
+    })
+  );
 
   async function* fileGenerator(): AsyncGenerator<ResolvedFile> {
     let scanned = 0;

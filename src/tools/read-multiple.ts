@@ -15,6 +15,7 @@ import {
   ReadMultipleFilesOutputSchema,
 } from '../schemas.js';
 import {
+  buildBatchCompletionSuffix,
   buildBatchPathContext,
   buildResourceLink,
   buildToolErrorResponse,
@@ -55,19 +56,6 @@ type ReadManyStructuredResult = z.infer<typeof ReadMultipleFilesOutputSchema>;
 type ReadManyStructuredResultItem = NonNullable<
   ReadManyStructuredResult['results']
 >[number];
-
-function buildReadManyCompletionSuffix(
-  summary: ReadManyStructuredResult['summary']
-): string {
-  const total = summary?.total ?? 0;
-  const failed = summary?.failed ?? 0;
-  const succeeded = summary?.succeeded ?? 0;
-  if (failed) {
-    return `${succeeded}/${total} read, ${failed} failed`;
-  }
-  const label = total === 1 ? 'file' : 'files';
-  return `${total} ${label} read`;
-}
 
 function createReadManyProgressCallbacks(
   extra: ToolExtra,
@@ -247,7 +235,11 @@ export function registerReadMultipleFilesTool(
           );
 
           const sc = result.structuredContent;
-          const suffix = buildReadManyCompletionSuffix(sc.summary);
+          const suffix = buildBatchCompletionSuffix(
+            sc.summary,
+            'files read',
+            'file read'
+          );
           const total = sc.summary?.total ?? 0;
 
           const finalCurrent = Math.max(total, progress.getCurrent() + 1);
