@@ -24,6 +24,7 @@ import type {
 
 import { ErrorCode, McpError } from '../lib/errors.js';
 import { isRecord } from '../lib/type-guards.js';
+
 import type { IconInfo, ToolExtra, ToolResult } from './shared.js';
 import {
   buildToolErrorResponse,

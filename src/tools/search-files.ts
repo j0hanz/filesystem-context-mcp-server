@@ -1,16 +1,16 @@
 import * as path from 'node:path';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
 import type { z } from 'zod';
 
-import { formatOperationSummary, joinLines } from '../config.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_SEARCH_TIMEOUT_MS,
 } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { searchFiles } from '../lib/file-operations/search-files.js';
+
+import { formatOperationSummary, joinLines } from '../config.js';
 import { SearchFilesInputSchema, SearchFilesOutputSchema } from '../schemas.js';
 import {
   buildToolErrorResponse,

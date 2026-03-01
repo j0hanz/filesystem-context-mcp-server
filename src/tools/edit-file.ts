@@ -2,14 +2,13 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
-import type { z } from 'zod';
-
 import RE2 from 're2';
+import type { z } from 'zod';
 
 import { ErrorCode } from '../lib/errors.js';
 import { atomicWriteFile } from '../lib/fs-helpers.js';
 import { validateExistingPath } from '../lib/path-validation.js';
+
 import { EditFileInputSchema, EditFileOutputSchema } from '../schemas.js';
 import {
   buildToolErrorResponse,

@@ -10,6 +10,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { setAllowedDirectoriesResolved } from '../lib/path-validation.js';
 import { createInMemoryResourceStore } from '../lib/resource-store.js';
+
 import { registerAllTools } from '../tools.js';
 
 export interface TestContentBlock {

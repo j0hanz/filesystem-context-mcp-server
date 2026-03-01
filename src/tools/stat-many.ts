@@ -1,12 +1,12 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
 import type { z } from 'zod';
 
-import { formatBytes, joinLines } from '../config.js';
-import type { FileInfo } from '../config.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { getMultipleFileInfo } from '../lib/file-operations/file-info.js';
+
+import { formatBytes, joinLines } from '../config.js';
+import type { FileInfo } from '../config.js';
 import {
   GetMultipleFileInfoInputSchema,
   GetMultipleFileInfoOutputSchema,

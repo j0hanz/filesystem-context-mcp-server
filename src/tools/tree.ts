@@ -1,12 +1,12 @@
 import * as path from 'node:path';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
 import type { z } from 'zod';
 
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { formatTreeAscii, treeDirectory } from '../lib/file-operations/tree.js';
+
 import { TreeInputSchema, TreeOutputSchema } from '../schemas.js';
 import {
   buildToolErrorResponse,

@@ -2,15 +2,14 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
-import type { z } from 'zod';
-
 import { createTwoFilesPatch } from 'diff';
+import type { z } from 'zod';
 
 import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
 import { withAbort } from '../lib/fs-helpers.js';
 import { validateExistingPath } from '../lib/path-validation.js';
+
 import { DiffFilesInputSchema, DiffFilesOutputSchema } from '../schemas.js';
 import {
   buildResourceLink,

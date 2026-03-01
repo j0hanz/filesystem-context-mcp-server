@@ -15,7 +15,6 @@ import {
   SetLevelRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
-import { registerCompletions } from '../completions.js';
 import {
   DEFAULT_LOG_LEVEL,
   parseEnvInt,
@@ -23,6 +22,8 @@ import {
 } from '../lib/constants.js';
 import { formatUnknownErrorMessage } from '../lib/errors.js';
 import { createInMemoryResourceStore } from '../lib/resource-store.js';
+
+import { registerCompletions } from '../completions.js';
 import { pkgInfo } from '../pkg-info.js';
 import { registerGetHelpPrompt } from '../prompts.js';
 import {

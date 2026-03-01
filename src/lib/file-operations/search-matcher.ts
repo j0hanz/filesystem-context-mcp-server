@@ -1,7 +1,6 @@
-import { z } from 'zod';
-
 import RE2 from 're2';
 import safeRegex from 'safe-regex2';
+import { z } from 'zod';
 
 export const MatcherOptionsSchema = z.strictObject({
   caseSensitive: z.boolean(),

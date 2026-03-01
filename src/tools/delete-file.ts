@@ -2,7 +2,6 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
 import type { z } from 'zod';
 
 import { ErrorCode, isNodeError, McpError } from '../lib/errors.js';
@@ -11,6 +10,7 @@ import {
   isAllowedDirectoryRoot,
   validatePathForWrite,
 } from '../lib/path-validation.js';
+
 import { DeleteFileInputSchema, DeleteFileOutputSchema } from '../schemas.js';
 import {
   buildToolErrorResponse,

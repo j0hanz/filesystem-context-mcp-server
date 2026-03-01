@@ -2,7 +2,6 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
 import type { z } from 'zod';
 
 import {
@@ -16,6 +15,7 @@ import {
   validateExistingPath,
   validatePathForWrite,
 } from '../lib/path-validation.js';
+
 import { MoveFileInputSchema, MoveFileOutputSchema } from '../schemas.js';
 import {
   buildToolErrorResponse,

@@ -6,10 +6,8 @@ import type {
   Icon,
   ProgressNotificationParams,
 } from '@modelcontextprotocol/sdk/types.js';
-
 import { z } from 'zod';
 
-import type { FileInfo } from '../config.js';
 import { parseTrueEnvFlag } from '../lib/constants.js';
 import {
   createDetailedError,
@@ -22,6 +20,8 @@ import { createTimedAbortSignal } from '../lib/fs-helpers.js';
 import { withToolDiagnostics } from '../lib/observability.js';
 import { getAllowedDirectories } from '../lib/path-validation.js';
 import type { ResourceStore } from '../lib/resource-store.js';
+
+import type { FileInfo } from '../config.js';
 
 export { type ToolContract } from './contract.js';
 

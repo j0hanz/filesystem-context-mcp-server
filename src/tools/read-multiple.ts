@@ -1,7 +1,6 @@
 import * as path from 'node:path';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
 import type { z } from 'zod';
 
 import {
@@ -10,6 +9,7 @@ import {
 } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { readMultipleFiles } from '../lib/file-operations/read-multiple-files.js';
+
 import {
   ReadMultipleFilesInputSchema,
   ReadMultipleFilesOutputSchema,

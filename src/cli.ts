@@ -11,6 +11,7 @@ import {
   normalizePath,
 } from './lib/path-validation.js';
 import { isRecord } from './lib/type-guards.js';
+
 import { pkgInfo } from './pkg-info.js';
 
 const { version: SERVER_VERSION } = pkgInfo;

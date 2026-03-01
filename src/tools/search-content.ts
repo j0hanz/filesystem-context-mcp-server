@@ -1,12 +1,9 @@
 import * as path from 'node:path';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
+import RE2 from 're2';
 import type { z } from 'zod';
 
-import RE2 from 're2';
-
-import { formatOperationSummary, joinLines } from '../config.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../lib/constants.js';
 import {
   ErrorCode,
@@ -15,6 +12,8 @@ import {
 } from '../lib/errors.js';
 import { searchContent } from '../lib/file-operations/search-content.js';
 import type { SearchContentOptions } from '../lib/file-operations/search-content.js';
+
+import { formatOperationSummary, joinLines } from '../config.js';
 import {
   SearchContentInputSchema,
   SearchContentOutputSchema,

@@ -1,13 +1,13 @@
 import * as path from 'node:path';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
 import type { z } from 'zod';
 
-import { formatOperationSummary, joinLines } from '../config.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { listDirectory } from '../lib/file-operations/list-directory.js';
+
+import { formatOperationSummary, joinLines } from '../config.js';
 import {
   ListDirectoryInputSchema,
   ListDirectoryOutputSchema,

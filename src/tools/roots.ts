@@ -1,10 +1,10 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
 import type { z } from 'zod';
 
-import { joinLines } from '../config.js';
 import { ErrorCode } from '../lib/errors.js';
 import { getAllowedDirectories } from '../lib/path-validation.js';
+
+import { joinLines } from '../config.js';
 import {
   ListAllowedDirectoriesInputSchema,
   ListAllowedDirectoriesOutputSchema,

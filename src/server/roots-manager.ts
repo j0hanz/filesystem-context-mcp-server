@@ -6,7 +6,6 @@ import {
   RootsListChangedNotificationSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { Root } from '@modelcontextprotocol/sdk/types.js';
-
 import { z } from 'zod';
 
 import { formatUnknownErrorMessage } from '../lib/errors.js';
@@ -23,6 +22,7 @@ import {
   setAllowedDirectoriesResolved,
 } from '../lib/path-validation.js';
 import { isRecord } from '../lib/type-guards.js';
+
 import { type LoggingState, logToMcp } from './logging.js';
 import type { ServerOptions } from './types.js';
 

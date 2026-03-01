@@ -5,6 +5,7 @@ import type { ReadResourceResult } from '@modelcontextprotocol/sdk/types.js';
 import { ErrorCode, McpError } from './lib/errors.js';
 import { globalMetrics } from './lib/observability.js';
 import type { ResourceStore } from './lib/resource-store.js';
+
 import { buildToolCatalog } from './resources/tool-catalog.js';
 import { buildToolInfo, getToolContracts } from './resources/tool-info.js';
 import { buildWorkflowGuide } from './resources/workflows.js';

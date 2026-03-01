@@ -2,12 +2,10 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
-import type { z } from 'zod';
-
 import { createTwoFilesPatch } from 'diff';
 import RE2 from 're2';
 import safeRegex from 'safe-regex2';
+import type { z } from 'zod';
 
 import {
   DEFAULT_EXCLUDE_PATTERNS,
@@ -26,6 +24,7 @@ import {
   validatePathForWrite,
 } from '../lib/path-validation.js';
 import { reportPeriodicProgress } from '../lib/progress-reporting.js';
+
 import {
   SearchAndReplaceInputSchema,
   SearchAndReplaceOutputSchema,
