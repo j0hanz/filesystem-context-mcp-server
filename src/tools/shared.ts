@@ -18,7 +18,7 @@ import {
 } from '../lib/errors.js';
 import { createTimedAbortSignal } from '../lib/fs-helpers.js';
 import { withToolDiagnostics } from '../lib/observability.js';
-import { getAllowedDirectories } from '../lib/path-validation.js';
+import { getAllowedDirectories } from '../lib/paths.js';
 import type { ResourceStore } from '../lib/resource-store.js';
 
 import type { FileInfo } from '../config.js';

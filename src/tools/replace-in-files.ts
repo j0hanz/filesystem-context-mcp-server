@@ -19,11 +19,8 @@ import {
 } from '../lib/errors.js';
 import { globEntries } from '../lib/file-operations/glob-engine.js';
 import { atomicWriteFile, withAbort } from '../lib/fs-helpers.js';
-import {
-  validateExistingPath,
-  validatePathForWrite,
-} from '../lib/path-validation.js';
-import { reportPeriodicProgress } from '../lib/progress-reporting.js';
+import { validateExistingPath, validatePathForWrite } from '../lib/paths.js';
+import { reportPeriodicProgress } from '../lib/utils.js';
 
 import {
   SearchAndReplaceInputSchema,

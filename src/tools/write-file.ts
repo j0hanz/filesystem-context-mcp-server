@@ -6,7 +6,7 @@ import type { z } from 'zod';
 
 import { ErrorCode } from '../lib/errors.js';
 import { atomicWriteFile, withAbort } from '../lib/fs-helpers.js';
-import { validatePathForWrite } from '../lib/path-validation.js';
+import { validatePathForWrite } from '../lib/paths.js';
 
 import { WriteFileInputSchema, WriteFileOutputSchema } from '../schemas.js';
 import {

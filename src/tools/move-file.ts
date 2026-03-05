@@ -11,10 +11,7 @@ import {
   McpError,
 } from '../lib/errors.js';
 import { withAbort } from '../lib/fs-helpers.js';
-import {
-  validateExistingPath,
-  validatePathForWrite,
-} from '../lib/path-validation.js';
+import { validateExistingPath, validatePathForWrite } from '../lib/paths.js';
 
 import { MoveFileInputSchema, MoveFileOutputSchema } from '../schemas.js';
 import {

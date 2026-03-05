@@ -16,8 +16,8 @@ import {
   processInParallel,
   withAbort,
 } from '../fs-helpers.js';
-import { assertAllowedFileAccess } from '../path-policy.js';
-import { validateExistingPathDetailed } from '../path-validation.js';
+import { assertAllowedFileAccess } from '../paths.js';
+import { validateExistingPathDetailed } from '../paths.js';
 import { applyIndexedErrors, applyIndexedValues } from './common.js';
 
 const PERM_STRINGS = [

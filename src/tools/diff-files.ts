@@ -8,7 +8,7 @@ import type { z } from 'zod';
 import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
 import { withAbort } from '../lib/fs-helpers.js';
-import { validateExistingPath } from '../lib/path-validation.js';
+import { validateExistingPath } from '../lib/paths.js';
 
 import { DiffFilesInputSchema, DiffFilesOutputSchema } from '../schemas.js';
 import {

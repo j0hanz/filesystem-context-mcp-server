@@ -5,7 +5,7 @@ import type {
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { formatUnknownErrorMessage } from '../lib/errors.js';
-import { isRecord } from '../lib/type-guards.js';
+import { isRecord } from '../lib/utils.js';
 
 const MCP_LOGGER_NAME = 'filesystem-mcp';
 

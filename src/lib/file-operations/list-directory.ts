@@ -15,13 +15,13 @@ import {
   withAbort,
   withTimedAbortSignal,
 } from '../fs-helpers.js';
-import { isSensitivePath } from '../path-policy.js';
+import { isSensitivePath } from '../paths.js';
 import {
   isPathWithinDirectories,
   normalizePath,
   validateExistingDirectory,
   validateExistingPathDetailed,
-} from '../path-validation.js';
+} from '../paths.js';
 import {
   isEntryAccessibleByType,
   needsStatsForSort,

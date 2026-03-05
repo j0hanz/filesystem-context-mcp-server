@@ -8,7 +8,7 @@ import {
 } from 'node:perf_hooks';
 
 import { parseTrueEnvFlag } from './constants.js';
-import { isRecord } from './type-guards.js';
+import { isRecord } from './utils.js';
 
 // --- Configuration ---
 

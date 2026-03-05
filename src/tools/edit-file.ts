@@ -7,7 +7,7 @@ import type { z } from 'zod';
 
 import { ErrorCode } from '../lib/errors.js';
 import { atomicWriteFile } from '../lib/fs-helpers.js';
-import { validateExistingPath } from '../lib/path-validation.js';
+import { validateExistingPath } from '../lib/paths.js';
 
 import { EditFileInputSchema, EditFileOutputSchema } from '../schemas.js';
 import {

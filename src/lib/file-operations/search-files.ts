@@ -7,14 +7,14 @@ import {
   DEFAULT_SEARCH_TIMEOUT_MS,
 } from '../constants.js';
 import { withTimedAbortSignal } from '../fs-helpers.js';
-import { isSensitivePath } from '../path-policy.js';
+import { isSensitivePath } from '../paths.js';
 import {
   isPathWithinDirectories,
   normalizePath,
   validateExistingDirectory,
   validateExistingPathDetailed,
-} from '../path-validation.js';
-import { reportPeriodicProgress } from '../progress-reporting.js';
+} from '../paths.js';
+import { reportPeriodicProgress } from '../utils.js';
 import {
   compareOptionalNumberDesc,
   compareStringValues,
@@ -28,7 +28,7 @@ import {
 import type { DirentLike, EntryType } from './common.js';
 import { isIgnoredByGitignore, loadRootGitignore } from './gitignore.js';
 import { globEntries } from './glob-engine.js';
-import { buildGlobOptions } from './glob-helpers.js';
+import { buildGlobOptions } from './glob-engine.js';
 
 // Internal default for find tool - not exposed to MCP users
 const INTERNAL_MAX_RESULTS = 1000;

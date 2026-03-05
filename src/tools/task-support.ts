@@ -23,7 +23,7 @@ import type {
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { ErrorCode, McpError } from '../lib/errors.js';
-import { isRecord } from '../lib/type-guards.js';
+import { isRecord } from '../lib/utils.js';
 
 import type { IconInfo, ToolExtra, ToolResult } from './shared.js';
 import {

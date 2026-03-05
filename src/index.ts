@@ -7,7 +7,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS } from './lib/constants.js';
 import { formatUnknownErrorMessage } from './lib/errors.js';
 import { createTimedAbortSignal } from './lib/fs-helpers.js';
-import { setAllowedDirectoriesResolved } from './lib/path-validation.js';
+import { setAllowedDirectoriesResolved } from './lib/paths.js';
 
 import { CliExitError, parseArgs } from './cli.js';
 import { createServer, startHttpServer, startServer } from './server.js';

@@ -8,7 +8,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import { setAllowedDirectoriesResolved } from '../lib/path-validation.js';
+import { setAllowedDirectoriesResolved } from '../lib/paths.js';
 import { createInMemoryResourceStore } from '../lib/resource-store.js';
 
 import { registerAllTools } from '../tools.js';

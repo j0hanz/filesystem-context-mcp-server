@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { z } from 'zod';
 
 import { ErrorCode } from '../lib/errors.js';
-import { getAllowedDirectories } from '../lib/path-validation.js';
+import { getAllowedDirectories } from '../lib/paths.js';
 
 import { joinLines } from '../config.js';
 import {

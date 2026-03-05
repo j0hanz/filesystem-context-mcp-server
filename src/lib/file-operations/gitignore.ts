@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import ignore, { type Ignore } from 'ignore';
 
 import { isNodeError } from '../errors.js';
-import { toPosixPath } from '../path-format.js';
+import { toPosixPath } from '../paths.js';
 
 function parseGitignoreLines(contents: string): string[] {
   const lines: string[] = [];

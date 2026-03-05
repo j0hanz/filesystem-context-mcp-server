@@ -6,10 +6,7 @@ import type { z } from 'zod';
 
 import { ErrorCode, isNodeError, McpError } from '../lib/errors.js';
 import { withAbort } from '../lib/fs-helpers.js';
-import {
-  isAllowedDirectoryRoot,
-  validatePathForWrite,
-} from '../lib/path-validation.js';
+import { isAllowedDirectoryRoot, validatePathForWrite } from '../lib/paths.js';
 
 import { DeleteFileInputSchema, DeleteFileOutputSchema } from '../schemas.js';
 import {

@@ -5,7 +5,7 @@ import type { z } from 'zod';
 
 import { ErrorCode, McpError } from '../lib/errors.js';
 import { withAbort } from '../lib/fs-helpers.js';
-import { validatePathForWrite } from '../lib/path-validation.js';
+import { validatePathForWrite } from '../lib/paths.js';
 
 import {
   CreateDirectoryInputSchema,

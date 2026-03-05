@@ -15,8 +15,8 @@ import {
 } from '../lib/file-operations/gitignore.js';
 import { globEntries } from '../lib/file-operations/glob-engine.js';
 import { assertNotAborted, withAbort } from '../lib/fs-helpers.js';
-import { validateExistingPath } from '../lib/path-validation.js';
-import { reportPeriodicProgress } from '../lib/progress-reporting.js';
+import { validateExistingPath } from '../lib/paths.js';
+import { reportPeriodicProgress } from '../lib/utils.js';
 
 import {
   CalculateHashInputSchema,

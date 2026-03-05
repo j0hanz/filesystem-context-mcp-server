@@ -26,18 +26,18 @@ import {
   withAbort,
   withTimedAbortSignal,
 } from '../fs-helpers.js';
-import { mergeOptions, omitOptionKeys } from '../option-utils.js';
-import { assertAllowedFileAccess, isSensitivePath } from '../path-policy.js';
+import { assertAllowedFileAccess, isSensitivePath } from '../paths.js';
 import {
   isPathWithinDirectories,
   normalizePath,
   validateExistingDirectory,
   validateExistingPathDetailed,
-} from '../path-validation.js';
-import { reportPeriodicProgress } from '../progress-reporting.js';
+} from '../paths.js';
+import { mergeOptions, omitOptionKeys } from '../utils.js';
+import { reportPeriodicProgress } from '../utils.js';
 import { withOptionalStoppedReason } from './common.js';
 import { globEntries } from './glob-engine.js';
-import { buildGlobOptions } from './glob-helpers.js';
+import { buildGlobOptions } from './glob-engine.js';
 import { buildMatcher, validatePattern } from './search-matcher.js';
 import type { Matcher, MatcherOptions } from './search-matcher.js';
 

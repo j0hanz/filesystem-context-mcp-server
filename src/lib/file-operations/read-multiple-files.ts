@@ -12,7 +12,7 @@ import {
   readFileWithStats,
   withAbort,
 } from '../fs-helpers.js';
-import { validateExistingPath } from '../path-validation.js';
+import { validateExistingPath } from '../paths.js';
 import { applyIndexedErrors, applyIndexedValues } from './common.js';
 
 interface ReadMultipleResult {

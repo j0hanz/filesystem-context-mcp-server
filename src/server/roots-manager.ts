@@ -20,8 +20,8 @@ import {
   isPathWithinDirectories,
   normalizePath,
   setAllowedDirectoriesResolved,
-} from '../lib/path-validation.js';
-import { isRecord } from '../lib/type-guards.js';
+} from '../lib/paths.js';
+import { isRecord } from '../lib/utils.js';
 
 import { type LoggingState, logToMcp } from './logging.js';
 import type { ServerOptions } from './types.js';
