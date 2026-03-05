@@ -26,14 +26,12 @@ MCP Server that enables LLMs to interact with the local filesystem. Provides too
 - **Security coverage**: `src/__tests__/security.test.ts` verifies boundary enforcement, traversal/symlink escape prevention, and malformed input rejection.
 - **Tool behavior coverage**: `src/__tests__/tools/*.test.ts` covers directory ops, file I/O, search/replace, stat/stat_many, and hash/diff behavior.
 - **Unit coverage**: `src/__tests__/unit/errors.test.ts` validates error typing and suggestion mapping.
-- **CI release gate**: `.github/workflows/release.yml` runs `npm run lint`, `npm run type-check`, `npm run test`, and `npm run build` before tagging/publishing.
 
 ## Commands
 
 - **Dev**: `npm run dev`
 - **Test**: `npm run test`
 - **Lint**: `npm run lint`
-- **Deploy**: `npm run prepublishOnly`
 
 ## Safety Boundaries
 
@@ -75,6 +73,7 @@ MCP Server that enables LLMs to interact with the local filesystem. Provides too
 - Don't ignore test failures in CI.
 - Don't use unapproved third-party packages without checking package manager manifests.
 - Don't hardcode secrets or sensitive info in code, tests, docs, or config.
+- Don't commit any changes without approval, especially to main branches.
 - Don't commit secrets/credentials to the repo.
 - Don't edit generated files directly.
 - Don't trigger releases without approval.
