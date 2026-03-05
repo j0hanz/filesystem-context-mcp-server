@@ -1,6 +1,6 @@
 {
   "name": "@j0hanz/filesystem-mcp",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "mcpName": "io.github.j0hanz/filesystem-mcp",
   "description": "MCP Server that enables LLMs to interact with the local filesystem.",
   "type": "module",
