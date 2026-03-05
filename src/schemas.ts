@@ -99,10 +99,7 @@ const HeadLinesSchema = z
   .optional()
   .describe('Read first N lines');
 
-const LineNumberSchema = z
-  .number()
-  .int({ error: 'Must be integer' })
-  .min(1, 'Min: 1');
+const LineNumberSchema = z.int({ error: 'Must be integer' }).min(1, 'Min: 1');
 
 interface ReadRangeValue {
   head?: number | undefined;
@@ -201,14 +198,12 @@ export const ListDirectoryInputSchema = z.strictObject({
     'Include ignored items (node_modules, .git, etc).'
   ),
   maxDepth: z
-    .number()
     .int({ error: 'Must be integer' })
     .min(1, 'Min: 1')
     .max(MAX_TREE_DEPTH, `Max: ${MAX_TREE_DEPTH}`)
     .optional()
     .describe('Max recursion depth when pattern is provided'),
   maxEntries: z
-    .number()
     .int({ error: 'Must be integer' })
     .min(1, 'Min: 1')
     .max(MAX_LIST_ENTRIES, `Max: ${MAX_LIST_ENTRIES}`)
@@ -250,7 +245,6 @@ export const SearchFilesInputSchema = z.strictObject({
     })
     .describe('Glob pattern (e.g. "**/*.ts", "src/*.js")'),
   maxResults: z
-    .number()
     .int({ error: 'Must be integer' })
     .min(1, 'Min: 1')
     .max(MAX_SEARCH_RESULTS, `Max: ${MAX_SEARCH_RESULTS}`)
@@ -267,7 +261,6 @@ export const SearchFilesInputSchema = z.strictObject({
     .default('path')
     .describe('Sort by path, name, size, or modified'),
   maxDepth: z
-    .number()
     .int({ error: 'Must be integer' })
     .min(0, 'Min: 0')
     .max(MAX_SEARCH_DEPTH, `Max: ${MAX_SEARCH_DEPTH}`)
@@ -282,7 +275,6 @@ export const SearchFilesInputSchema = z.strictObject({
 export const TreeInputSchema = z.strictObject({
   path: OptionalPathSchema.describe(DESC_PATH_ROOT),
   maxDepth: z
-    .number()
     .int({ error: 'Must be integer' })
     .min(0, 'Min: 0')
     .max(MAX_TREE_DEPTH, `Max: ${MAX_TREE_DEPTH}`)
@@ -292,7 +284,6 @@ export const TreeInputSchema = z.strictObject({
       `Depth (0=root node only, no children). Default: ${DEFAULT_TREE_DEPTH}`
     ),
   maxEntries: z
-    .number()
     .int({ error: 'Must be integer' })
     .min(1, 'Min: 1')
     .max(MAX_TREE_ENTRIES, `Max: ${MAX_TREE_ENTRIES}`)
@@ -320,7 +311,6 @@ export const SearchContentInputSchema = z.strictObject({
   ),
   wholeWord: defaultFalseBoolean('Match whole words only'),
   contextLines: z
-    .number()
     .int({ error: 'Must be integer' })
     .min(0, 'Min: 0')
     .max(50, 'Max: 50')
@@ -328,7 +318,6 @@ export const SearchContentInputSchema = z.strictObject({
     .default(0)
     .describe('Include N lines of context before/after matches'),
   maxResults: z
-    .number()
     .int({ error: 'Must be integer' })
     .min(0, 'Min: 0')
     .max(MAX_SEARCH_RESULTS, `Max: ${MAX_SEARCH_RESULTS}`)
@@ -571,7 +560,7 @@ export const CreateDirectoryInputSchema = z
       .describe('Absolute paths to directories to create'),
   })
   .refine((data) => data.path !== undefined || data.paths !== undefined, {
-    message: "Either 'path' or 'paths' must be provided",
+    error: "Either 'path' or 'paths' must be provided",
     path: ['path'],
   });
 
@@ -647,7 +636,7 @@ export const MoveFileInputSchema = z
     destination: RequiredPathSchema.describe('New path'),
   })
   .refine((data) => (data.source ?? data.sources) !== undefined, {
-    message: "Either 'source' or 'sources' must be provided",
+    error: "Either 'source' or 'sources' must be provided",
     path: ['source'],
   });
 
@@ -700,7 +689,6 @@ export const DiffFilesInputSchema = z.strictObject({
   original: RequiredPathSchema.describe('Path to original file'),
   modified: RequiredPathSchema.describe('Path to modified file'),
   context: z
-    .number()
     .int({ error: 'Must be integer' })
     .min(0, 'Min: 0')
     .max(10000, 'Max: 10,000')
@@ -733,7 +721,6 @@ export const ApplyPatchInputSchema = z.strictObject({
     .string()
     .describe('Unified diff with @@ hunk headers. Generate with `diff_files`.'),
   fuzzFactor: z
-    .number()
     .int({ error: 'Must be integer' })
     .min(0, 'Min: 0')
     .max(20, 'Max: 20')
