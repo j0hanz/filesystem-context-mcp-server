@@ -10,8 +10,8 @@ import {
   formatUnknownErrorMessage,
   McpError,
 } from '../lib/errors.js';
-import { searchContent } from '../lib/file-operations/search-content.js';
-import type { SearchContentOptions } from '../lib/file-operations/search-content.js';
+import type { SearchContentOptions } from '../lib/file-operations/search.js';
+import { searchContent } from '../lib/file-operations/search.js';
 
 import { formatOperationSummary, joinLines } from '../config.js';
 import {

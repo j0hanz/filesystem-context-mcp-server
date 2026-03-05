@@ -15,8 +15,7 @@ import {
   PARALLEL_CONCURRENCY,
 } from './constants.js';
 import { ErrorCode, McpError, normalizeUnknownError } from './errors.js';
-import { assertAllowedFileAccess } from './paths.js';
-import { validateExistingPath } from './paths.js';
+import { assertAllowedFileAccess, validateExistingPath } from './paths.js';
 
 function createAbortError(message = 'Operation aborted'): Error {
   return new DOMException(message, 'AbortError');

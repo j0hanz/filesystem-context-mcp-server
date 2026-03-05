@@ -5,7 +5,10 @@ import type { z } from 'zod';
 
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
-import { formatTreeAscii, treeDirectory } from '../lib/file-operations/tree.js';
+import {
+  formatTreeAscii,
+  treeDirectory,
+} from '../lib/file-operations/metadata.js';
 
 import { TreeInputSchema, TreeOutputSchema } from '../schemas.js';
 import {

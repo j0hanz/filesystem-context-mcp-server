@@ -8,7 +8,7 @@ import {
   DEFAULT_SEARCH_TIMEOUT_MS,
 } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
-import { searchFiles } from '../lib/file-operations/search-files.js';
+import { searchFiles } from '../lib/file-operations/search.js';
 
 import { formatOperationSummary, joinLines } from '../config.js';
 import { SearchFilesInputSchema, SearchFilesOutputSchema } from '../schemas.js';

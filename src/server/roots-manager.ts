@@ -1,11 +1,11 @@
 import * as fs from 'node:fs/promises';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { Root } from '@modelcontextprotocol/sdk/types.js';
 import {
   InitializedNotificationSchema,
   RootsListChangedNotificationSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import type { Root } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 
 import { formatUnknownErrorMessage } from '../lib/errors.js';

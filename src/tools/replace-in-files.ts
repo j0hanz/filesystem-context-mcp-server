@@ -17,7 +17,7 @@ import {
   formatUnknownErrorMessage,
   McpError,
 } from '../lib/errors.js';
-import { globEntries } from '../lib/file-operations/glob-engine.js';
+import { globEntries } from '../lib/file-operations/traversal.js';
 import { atomicWriteFile, withAbort } from '../lib/fs-helpers.js';
 import { validateExistingPath, validatePathForWrite } from '../lib/paths.js';
 import { reportPeriodicProgress } from '../lib/utils.js';

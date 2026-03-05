@@ -1,11 +1,19 @@
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
+import type { Stats } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { Worker } from 'node:worker_threads';
+import { parentPort, threadId, Worker, workerData } from 'node:worker_threads';
 
+import RE2 from 're2';
+import safeRegex from 'safe-regex2';
 import { z } from 'zod';
 
-import type { ContentMatch, SearchContentResult } from '../../config.js';
+import type {
+  ContentMatch,
+  SearchContentResult,
+  SearchFilesResult,
+  SearchResult,
+} from '../../config.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_SEARCH_MAX_FILES,
@@ -26,24 +34,134 @@ import {
   withAbort,
   withTimedAbortSignal,
 } from '../fs-helpers.js';
-import { assertAllowedFileAccess, isSensitivePath } from '../paths.js';
+import { startPerfMeasure } from '../observability.js';
 import {
+  assertAllowedFileAccess,
   isPathWithinDirectories,
+  isSensitivePath,
   normalizePath,
   validateExistingDirectory,
   validateExistingPathDetailed,
 } from '../paths.js';
-import { mergeOptions, omitOptionKeys } from '../utils.js';
-import { reportPeriodicProgress } from '../utils.js';
-import { withOptionalStoppedReason } from './common.js';
-import { globEntries } from './glob-engine.js';
-import { buildGlobOptions } from './glob-engine.js';
-import { buildMatcher, validatePattern } from './search-matcher.js';
-import type { Matcher, MatcherOptions } from './search-matcher.js';
+import {
+  mergeOptions,
+  omitOptionKeys,
+  reportPeriodicProgress,
+} from '../utils.js';
+import type { DirentLike, EntryType } from './core.js';
+import {
+  compareOptionalNumberDesc,
+  compareStringValues,
+  isEntryAccessibleByType,
+  isIgnoredByGitignore,
+  loadRootGitignore,
+  needsStatsForSort,
+  resolveEntryType,
+  resolveStopReason,
+  stableSortByDerivedString,
+  withOptionalStoppedReason,
+} from './core.js';
+import { buildGlobOptions, globEntries } from './traversal.js';
+
+export const MatcherOptionsSchema = z.strictObject({
+  caseSensitive: z.boolean(),
+  wholeWord: z.boolean(),
+  isLiteral: z.boolean(),
+});
+export type MatcherOptions = z.infer<typeof MatcherOptionsSchema>;
+
+export type Matcher = (line: string) => number;
+
+interface RegexLikeMatcher {
+  lastIndex: number;
+  exec(input: string): unknown;
+}
+
+function countRegexLineMatches(regex: RegexLikeMatcher, line: string): number {
+  regex.lastIndex = 0;
+  let count = 0;
+  while (regex.exec(line) !== null) {
+    count++;
+    if (regex.lastIndex === 0) regex.lastIndex++;
+  }
+  return count;
+}
+
+function escapeLiteral(pattern: string): string {
+  return pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildRegexPattern(pattern: string, options: MatcherOptions): string {
+  const escaped = options.isLiteral ? escapeLiteral(pattern) : pattern;
+  return options.wholeWord ? `\\b${escaped}\\b` : escaped;
+}
+
+export function validatePattern(
+  pattern: string,
+  options: MatcherOptions
+): void {
+  if (options.isLiteral && pattern.length === 0) return;
+  if (options.isLiteral && !options.wholeWord) return;
+
+  const final = buildRegexPattern(pattern, options);
+  if (!safeRegex(final)) {
+    throw new Error(
+      `Potentially unsafe regular expression (ReDoS risk): ${pattern}`
+    );
+  }
+}
+
+function buildLiteralMatcher(
+  pattern: string,
+  options: MatcherOptions
+): Matcher {
+  if (!options.caseSensitive) {
+    const final = escapeLiteral(pattern);
+    const regex = new RegExp(final, 'gi');
+    return (line: string): number => countRegexLineMatches(regex, line);
+  }
+
+  // Fast path for case-sensitive literal
+  const needle = pattern;
+  if (needle.length === 0) return () => 0;
+
+  return (line: string): number => {
+    if (line.length === 0) return 0;
+
+    let count = 0;
+    let pos = line.indexOf(needle);
+    while (pos !== -1) {
+      count++;
+      pos = line.indexOf(needle, pos + needle.length);
+    }
+    return count;
+  };
+}
+
+function buildRegexMatcher(final: string, caseSensitive: boolean): Matcher {
+  const regex = new RE2(final, caseSensitive ? 'g' : 'gi');
+  return (line: string): number => countRegexLineMatches(regex, line);
+}
+
+export function buildMatcher(
+  pattern: string,
+  options: MatcherOptions
+): Matcher {
+  if (options.isLiteral && pattern.length === 0) return () => 0;
+
+  if (options.isLiteral && !options.wholeWord) {
+    // fast path for simple literal search
+    return buildLiteralMatcher(pattern, options);
+  }
+
+  const final = buildRegexPattern(pattern, options);
+  validatePattern(pattern, options); // Re-validate to be safe
+  return buildRegexMatcher(final, options.caseSensitive);
+}
 
 // --- Configuration & Schemas ---
 
-const INTERNAL_MAX_RESULTS = 500;
+const SEARCH_CONTENT_MAX_RESULTS = 500;
 
 export interface ScanFileOptions {
   maxFileSize: number;
@@ -79,7 +197,7 @@ const DEFAULTS: ResolvedOptions = {
   filePattern: '**/*',
   excludePatterns: DEFAULT_EXCLUDE_PATTERNS,
   caseSensitive: false,
-  maxResults: INTERNAL_MAX_RESULTS,
+  maxResults: SEARCH_CONTENT_MAX_RESULTS,
   maxFileSize: MAX_SEARCHABLE_FILE_SIZE,
   maxFilesScanned: DEFAULT_SEARCH_MAX_FILES,
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
@@ -393,7 +511,7 @@ function createScanSummary(): ScanSummary {
   };
 }
 
-function buildSearchResult(
+function buildSearchContentResult(
   root: string,
   pattern: string,
   filePattern: string,
@@ -924,7 +1042,7 @@ async function searchSingleFile(
 
   if (result.matched) summary.filesMatched = 1;
 
-  return buildSearchResult(
+  return buildSearchContentResult(
     path.dirname(details.resolvedPath),
     pattern,
     opts.filePattern,
@@ -1011,7 +1129,13 @@ async function searchDirectory(
     ? await executeParallel(countingStream(), pattern, opts, signal, summary)
     : await executeSequential(countingStream(), pattern, opts, signal, summary);
 
-  return buildSearchResult(root, pattern, opts.filePattern, matches, summary);
+  return buildSearchContentResult(
+    root,
+    pattern,
+    opts.filePattern,
+    matches,
+    summary
+  );
 }
 
 function buildTimeoutSearchResult(
@@ -1021,7 +1145,13 @@ function buildTimeoutSearchResult(
 ): SearchContentResult {
   const timeoutSummary = createScanSummary();
   markTruncated(timeoutSummary, 'timeout');
-  return buildSearchResult(basePath, pattern, filePattern, [], timeoutSummary);
+  return buildSearchContentResult(
+    basePath,
+    pattern,
+    filePattern,
+    [],
+    timeoutSummary
+  );
 }
 
 export async function searchContent(
@@ -1069,5 +1199,606 @@ export async function searchContent(
       return buildTimeoutSearchResult(basePath, pattern, opts.filePattern);
     }
     throw error;
+  }
+}
+
+// Internal default for find tool - not exposed to MCP users
+const SEARCH_FILES_MAX_RESULTS = 1000;
+
+type SortBy = 'name' | 'size' | 'modified' | 'path';
+
+interface SearchFilesOptions {
+  maxResults?: number;
+  sortBy?: SortBy;
+  maxDepth?: number;
+  maxFilesScanned?: number;
+  timeoutMs?: number;
+  baseNameMatch?: boolean;
+  skipSymlinks?: boolean;
+  includeHidden?: boolean;
+  respectGitignore?: boolean;
+  signal?: AbortSignal;
+  onProgress?: (progress: { total?: number; current: number }) => void;
+}
+
+type NormalizedOptions = Required<
+  Omit<SearchFilesOptions, 'maxDepth' | 'sortBy' | 'signal' | 'onProgress'>
+> & {
+  maxDepth?: number;
+  sortBy: NonNullable<SearchFilesOptions['sortBy']>;
+};
+
+type StopReason = SearchFilesResult['summary']['stoppedReason'];
+
+function normalizeSearchFilesOptions(
+  options: SearchFilesOptions
+): NormalizedOptions {
+  const normalized: NormalizedOptions = {
+    maxResults: options.maxResults ?? SEARCH_FILES_MAX_RESULTS,
+    sortBy: options.sortBy ?? 'path',
+    maxFilesScanned: options.maxFilesScanned ?? DEFAULT_SEARCH_MAX_FILES,
+    timeoutMs: options.timeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS,
+    baseNameMatch: options.baseNameMatch ?? false,
+    skipSymlinks: options.skipSymlinks ?? true,
+    includeHidden: options.includeHidden ?? false,
+    respectGitignore: options.respectGitignore ?? false,
+  };
+  if (options.maxDepth !== undefined) {
+    normalized.maxDepth = options.maxDepth;
+  }
+  return normalized;
+}
+
+interface SearchEntry {
+  path: string;
+  relativePath?: string;
+  dirent: DirentLike;
+  stats?: Stats;
+}
+
+interface CollectState {
+  results: SearchResult[];
+  filesScanned: number;
+  truncated: boolean;
+  stoppedReason?: StopReason;
+  skippedInaccessible: number;
+}
+
+interface CollectOutcome {
+  results: SearchResult[];
+  filesScanned: number;
+  truncated: boolean;
+  stoppedReason?: StopReason;
+  skippedInaccessible: number;
+}
+
+function buildSearchFilesResult(
+  entry: { path: string; stats?: Stats },
+  entryType: EntryType,
+  needsStats: boolean
+): SearchResult {
+  let resolvedType: SearchResult['type'] = 'other';
+  if (entryType === 'directory') {
+    resolvedType = 'directory';
+  } else if (entryType === 'file') {
+    resolvedType = 'file';
+  }
+  const size =
+    needsStats && entry.stats?.isFile() ? entry.stats.size : undefined;
+  const modified = needsStats ? entry.stats?.mtime : undefined;
+  return {
+    path: entry.path,
+    type: resolvedType,
+    ...(size !== undefined ? { size } : {}),
+    ...(modified !== undefined ? { modified } : {}),
+  };
+}
+
+function shouldStopCollecting(
+  state: CollectState,
+  normalized: NormalizedOptions,
+  signal: AbortSignal
+): boolean {
+  const stopReason = resolveStopReason<Exclude<StopReason, undefined>>({
+    signal,
+    current: state.filesScanned,
+    max: normalized.maxFilesScanned,
+    abortedReason: 'timeout',
+    maxReason: 'maxFiles',
+  });
+  if (stopReason !== undefined) {
+    state.truncated = true;
+    state.stoppedReason = stopReason;
+    return true;
+  }
+  return false;
+}
+
+function shouldIncludeEntry(
+  entryType: EntryType,
+  normalized: NormalizedOptions
+): boolean {
+  return !normalized.skipSymlinks || entryType !== 'symlink';
+}
+
+function createCollectState(): CollectState {
+  return {
+    results: [],
+    filesScanned: 0,
+    truncated: false,
+    skippedInaccessible: 0,
+  };
+}
+
+function buildSearchStream(
+  root: string,
+  pattern: string,
+  excludePatterns: readonly string[],
+  normalized: NormalizedOptions,
+  needsStats: boolean
+): AsyncIterable<SearchEntry> {
+  const options = buildGlobOptions({
+    cwd: root,
+    pattern,
+    excludePatterns,
+    includeHidden: normalized.includeHidden,
+    baseNameMatch: normalized.baseNameMatch,
+    caseSensitiveMatch: true,
+    followSymbolicLinks: false,
+    onlyFiles: true,
+    stats: needsStats,
+    ...(normalized.maxDepth !== undefined
+      ? { maxDepth: normalized.maxDepth }
+      : {}),
+  });
+  return globEntries(options);
+}
+
+function buildCollectResult(state: CollectState): CollectOutcome {
+  const outcome: CollectOutcome = {
+    results: state.results,
+    filesScanned: state.filesScanned,
+    truncated: state.truncated,
+    skippedInaccessible: state.skippedInaccessible,
+  };
+
+  if (state.stoppedReason !== undefined) {
+    outcome.stoppedReason = state.stoppedReason;
+  }
+
+  return outcome;
+}
+
+function handleEntry(
+  entry: SearchEntry,
+  entryType: EntryType,
+  needsStats: boolean,
+  normalized: NormalizedOptions,
+  state: CollectState
+): void {
+  state.results.push(buildSearchFilesResult(entry, entryType, needsStats));
+  if (state.results.length >= normalized.maxResults) {
+    state.truncated = true;
+    state.stoppedReason = 'maxResults';
+  }
+}
+
+async function collectFromStream(
+  stream: AsyncIterable<SearchEntry>,
+  root: string,
+  rootDirectories: readonly string[],
+  gitignoreMatcher: Awaited<ReturnType<typeof loadRootGitignore>>,
+  normalized: NormalizedOptions,
+  needsStats: boolean,
+  state: CollectState,
+  signal: AbortSignal,
+  accessDeps: Parameters<typeof isEntryAccessibleByType>[4],
+  onProgress?: (progress: { total?: number; current: number }) => void
+): Promise<void> {
+  for await (const entry of stream) {
+    if (shouldStopCollecting(state, normalized, signal)) break;
+    state.filesScanned++;
+    reportPeriodicProgress(onProgress, state.filesScanned, {
+      total: normalized.maxFilesScanned,
+      throttleModulo: 25,
+    });
+
+    if (
+      isEntryIgnoredByGitignore(
+        gitignoreMatcher,
+        root,
+        entry.path,
+        entry.relativePath
+      )
+    ) {
+      continue;
+    }
+
+    const entryType = resolveEntryType(entry.dirent);
+
+    if (!shouldIncludeEntry(entryType, normalized)) {
+      continue;
+    }
+
+    const isAccessible = await isEntryAccessibleByType(
+      entry.path,
+      entryType,
+      rootDirectories,
+      signal,
+      accessDeps
+    );
+    if (!isAccessible) {
+      state.skippedInaccessible++;
+      continue;
+    }
+
+    handleEntry(entry, entryType, needsStats, normalized, state);
+    if (state.truncated) break;
+  }
+
+  reportPeriodicProgress(onProgress, state.filesScanned, {
+    total: normalized.maxFilesScanned,
+    throttleModulo: 25,
+    force: true,
+  });
+}
+
+function isEntryIgnoredByGitignore(
+  matcher: Awaited<ReturnType<typeof loadRootGitignore>>,
+  root: string,
+  entryPath: string,
+  relativePath?: string
+): boolean {
+  if (!matcher) return false;
+  return isIgnoredByGitignore(
+    matcher,
+    root,
+    entryPath,
+    relativePath ? { relativePath } : {}
+  );
+}
+
+async function collectSearchResults(
+  root: string,
+  pattern: string,
+  excludePatterns: readonly string[],
+  normalized: NormalizedOptions,
+  signal: AbortSignal,
+  onProgress?: (progress: { total?: number; current: number }) => void
+): Promise<CollectOutcome> {
+  const needsStats = needsStatsForSort(normalized.sortBy);
+  const stream = buildSearchStream(
+    root,
+    pattern,
+    excludePatterns,
+    normalized,
+    needsStats
+  );
+  const state = createCollectState();
+  const rootDirectories = [root];
+  const accessDeps = {
+    normalizePath,
+    isPathWithinDirectories,
+    isSensitivePath,
+    validateSymlinkPath: validateExistingPathDetailed,
+  };
+
+  const gitignoreMatcher = normalized.respectGitignore
+    ? await loadRootGitignore(root, signal)
+    : null;
+
+  await collectFromStream(
+    stream,
+    root,
+    rootDirectories,
+    gitignoreMatcher,
+    normalized,
+    needsStats,
+    state,
+    signal,
+    accessDeps,
+    onProgress
+  );
+  return buildCollectResult(state);
+}
+
+function buildSearchSummary(
+  results: SearchResult[],
+  filesScanned: number,
+  truncated: boolean,
+  stoppedReason: StopReason | undefined,
+  skippedInaccessible: number
+): SearchFilesResult['summary'] {
+  const summary = {
+    matched: results.length,
+    truncated,
+    skippedInaccessible,
+    filesScanned,
+  };
+  return withOptionalStoppedReason(summary, stoppedReason);
+}
+
+interface Sortable {
+  name?: string;
+  size?: number;
+  modified?: Date;
+  path?: string;
+}
+
+function compareNameThenPath(a: Sortable, b: Sortable): number {
+  const nameCompare = compareStringValues(a.name, b.name);
+  if (nameCompare !== 0) return nameCompare;
+  return compareStringValues(a.path, b.path);
+}
+
+function comparePathThenName(a: Sortable, b: Sortable): number {
+  const pathCompare = compareStringValues(a.path, b.path);
+  if (pathCompare !== 0) return pathCompare;
+  return compareStringValues(a.name, b.name);
+}
+
+const SORT_COMPARATORS: Readonly<
+  Record<SortBy, (a: Sortable, b: Sortable) => number>
+> = {
+  size: (a, b) =>
+    compareOptionalNumberDesc(a.size, b.size, () => compareNameThenPath(a, b)),
+  modified: (a, b) =>
+    compareOptionalNumberDesc(
+      a.modified?.getTime(),
+      b.modified?.getTime(),
+      () => compareNameThenPath(a, b)
+    ),
+  path: (a, b) => comparePathThenName(a, b),
+  name: (a, b) => compareNameThenPath(a, b),
+};
+
+export function sortSearchResults(results: Sortable[], sortBy: SortBy): void {
+  if (sortBy === 'name') {
+    stableSortByDerivedString(
+      results,
+      (item) => path.basename(item.path ?? ''),
+      (left, right) => comparePathThenName(left, right)
+    );
+    return;
+  }
+
+  const comparator = SORT_COMPARATORS[sortBy];
+  results.sort(comparator);
+}
+
+async function runSearchFiles(
+  root: string,
+  pattern: string,
+  excludePatterns: readonly string[],
+  normalized: NormalizedOptions,
+  signal: AbortSignal,
+  onProgress?: (progress: { total?: number; current: number }) => void
+): Promise<{ results: SearchResult[]; summary: SearchFilesResult['summary'] }> {
+  const {
+    results,
+    filesScanned,
+    truncated,
+    stoppedReason,
+    skippedInaccessible,
+  } = await collectSearchResults(
+    root,
+    pattern,
+    excludePatterns,
+    normalized,
+    signal,
+    onProgress
+  );
+
+  sortSearchResults(results, normalized.sortBy);
+
+  return {
+    results,
+    summary: buildSearchSummary(
+      results,
+      filesScanned,
+      truncated,
+      stoppedReason,
+      skippedInaccessible
+    ),
+  };
+}
+
+export async function searchFiles(
+  basePath: string,
+  pattern: string,
+  excludePatterns: readonly string[] = [],
+  options: SearchFilesOptions = {}
+): Promise<SearchFilesResult> {
+  const normalized = normalizeSearchFilesOptions(options);
+  return withTimedAbortSignal(
+    options.signal,
+    normalized.timeoutMs,
+    async (signal) => {
+      const root = await validateExistingDirectory(basePath, signal);
+      const { results, summary } = await runSearchFiles(
+        root,
+        pattern,
+        excludePatterns,
+        normalized,
+        signal,
+        options.onProgress
+      );
+
+      return {
+        basePath: root,
+        pattern,
+        results,
+        summary,
+      };
+    }
+  );
+}
+
+interface CancelRequest {
+  type: 'cancel';
+  id: number;
+}
+
+interface ShutdownRequest {
+  type: 'shutdown';
+}
+
+type WorkerRequest = ScanRequest | CancelRequest | ShutdownRequest;
+
+const matcherCache = new Map<string, Matcher>();
+const MAX_MATCHER_CACHE_SIZE = 100;
+
+function getMatcherCacheKey(pattern: string, options: MatcherOptions): string {
+  const cs = options.caseSensitive ? '1' : '0';
+  const ww = options.wholeWord ? '1' : '0';
+  const lit = options.isLiteral ? '1' : '0';
+  return `${pattern}|${cs}|${ww}|${lit}`;
+}
+
+function getCachedMatcher(pattern: string, options: MatcherOptions): Matcher {
+  const key = getMatcherCacheKey(pattern, options);
+  const cached = matcherCache.get(key);
+
+  if (cached) {
+    refreshMatcherCacheEntry(key, cached);
+    return cached;
+  }
+
+  const matcher = buildMatcher(pattern, options);
+  refreshMatcherCacheEntry(key, matcher);
+  evictOldestMatcherIfNeeded();
+
+  return matcher;
+}
+
+function refreshMatcherCacheEntry(key: string, matcher: Matcher): void {
+  matcherCache.delete(key);
+  matcherCache.set(key, matcher);
+}
+
+function evictOldestMatcherIfNeeded(): void {
+  if (matcherCache.size <= MAX_MATCHER_CACHE_SIZE) return;
+  const firstKey = matcherCache.keys().next().value;
+  if (firstKey !== undefined) {
+    matcherCache.delete(firstKey);
+  }
+}
+
+const cancelledRequests = new Set<number>();
+const activeRequests = new Set<number>();
+let shuttingDown = false;
+
+function maybeFinishShutdown(): void {
+  if (!shuttingDown) return;
+  if (activeRequests.size > 0) return;
+  parentPort?.close();
+}
+
+function consumeCancelled(id: number): boolean {
+  if (!cancelledRequests.has(id)) {
+    return false;
+  }
+  cancelledRequests.delete(id);
+  return true;
+}
+
+function markCancelledIfActive(id: number): void {
+  if (activeRequests.has(id)) {
+    cancelledRequests.add(id);
+  }
+}
+
+function buildScanResponse(
+  id: number,
+  result: ScanResult['result']
+): ScanResult {
+  return {
+    type: 'result',
+    id,
+    result,
+  };
+}
+
+function buildErrorResponse(id: number, error: unknown): ScanError {
+  return {
+    type: 'error',
+    id,
+    error: formatUnknownErrorMessage(error),
+  };
+}
+
+async function handleScanRequest(request: ScanRequest): Promise<void> {
+  const {
+    id,
+    resolvedPath,
+    requestedPath,
+    pattern,
+    matcherOptions,
+    scanOptions,
+    maxMatches,
+  } = request;
+
+  if (consumeCancelled(id)) return;
+  activeRequests.add(id);
+
+  const endMeasure = startPerfMeasure('searchWorker.scan', {
+    maxMatches,
+  });
+  let ok = false;
+
+  try {
+    const matcher = getCachedMatcher(pattern, matcherOptions);
+
+    const isCancelled = (): boolean => cancelledRequests.has(id);
+
+    const result = await scanFileInWorker(
+      resolvedPath,
+      requestedPath,
+      matcher,
+      scanOptions,
+      maxMatches,
+      isCancelled,
+      isProbablyBinary
+    );
+
+    if (consumeCancelled(id)) return;
+    parentPort?.postMessage(buildScanResponse(id, result));
+    ok = true;
+  } catch (err) {
+    if (consumeCancelled(id)) return;
+    parentPort?.postMessage(buildErrorResponse(id, err));
+  } finally {
+    activeRequests.delete(id);
+    cancelledRequests.delete(id);
+    endMeasure?.(ok);
+    maybeFinishShutdown();
+  }
+}
+
+function handleMessage(message: WorkerRequest): void {
+  switch (message.type) {
+    case 'scan':
+      if (shuttingDown) return;
+      void handleScanRequest(message);
+      break;
+    case 'cancel':
+      markCancelledIfActive(message.id);
+      break;
+    case 'shutdown':
+      shuttingDown = true;
+      for (const id of activeRequests) {
+        markCancelledIfActive(id);
+      }
+      maybeFinishShutdown();
+      break;
+  }
+}
+
+if (parentPort) {
+  parentPort.on('message', handleMessage);
+
+  const data = workerData as { debug?: boolean } | null;
+  if (data?.debug) {
+    console.error(`[SearchWorker] Started with threadId=${String(threadId)}`);
   }
 }

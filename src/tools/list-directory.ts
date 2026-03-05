@@ -5,7 +5,7 @@ import type { z } from 'zod';
 
 import { DEFAULT_EXCLUDE_PATTERNS } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
-import { listDirectory } from '../lib/file-operations/list-directory.js';
+import { listDirectory } from '../lib/file-operations/metadata.js';
 
 import { formatOperationSummary, joinLines } from '../config.js';
 import {

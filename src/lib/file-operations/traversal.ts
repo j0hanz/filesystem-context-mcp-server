@@ -13,7 +13,7 @@ import {
 } from '../observability.js';
 import { toPosixPath } from '../paths.js';
 import { isRecord } from '../utils.js';
-import type { DirentLike } from './common.js';
+import type { DirentLike } from './core.js';
 
 interface GlobDirentLike extends DirentLike {
   name: string;

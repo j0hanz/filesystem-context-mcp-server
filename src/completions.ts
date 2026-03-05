@@ -4,11 +4,11 @@ import * as path from 'node:path';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CompleteRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
-import { toPosixPath } from './lib/paths.js';
 import {
   getAllowedDirectories,
   isPathWithinDirectories,
   normalizePath,
+  toPosixPath,
 } from './lib/paths.js';
 import { isRecord } from './lib/utils.js';
 

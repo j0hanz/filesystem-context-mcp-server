@@ -8,7 +8,7 @@ import {
   DEFAULT_SEARCH_TIMEOUT_MS,
 } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
-import { readMultipleFiles } from '../lib/file-operations/read-multiple-files.js';
+import { readMultipleFiles } from '../lib/file-operations/metadata.js';
 
 import {
   ReadMultipleFilesInputSchema,

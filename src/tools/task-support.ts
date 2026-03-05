@@ -13,7 +13,6 @@ import type {
   ZodRawShapeCompat,
 } from '@modelcontextprotocol/sdk/server/zod-compat.js';
 import type { RequestTaskStore } from '@modelcontextprotocol/sdk/shared/protocol.js';
-import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 import type {
   CallToolResult,
   CreateTaskResult,
@@ -21,6 +20,7 @@ import type {
   Result,
   TaskStatusNotificationParams,
 } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
 import { ErrorCode, McpError } from '../lib/errors.js';
 import { isRecord } from '../lib/utils.js';

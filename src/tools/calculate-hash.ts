@@ -12,8 +12,8 @@ import { ErrorCode } from '../lib/errors.js';
 import {
   isIgnoredByGitignore,
   loadRootGitignore,
-} from '../lib/file-operations/gitignore.js';
-import { globEntries } from '../lib/file-operations/glob-engine.js';
+} from '../lib/file-operations/core.js';
+import { globEntries } from '../lib/file-operations/traversal.js';
 import { assertNotAborted, withAbort } from '../lib/fs-helpers.js';
 import { validateExistingPath } from '../lib/paths.js';
 import { reportPeriodicProgress } from '../lib/utils.js';
