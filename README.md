@@ -1,31 +1,35 @@
-# Filesystem MCP
+<!-- mcp-name: io.github.j0hanz/filesystem-mcp -->
+<p align="center">
+  <img src="assets/logo.svg" alt="@j0hanz/filesystem-mcp logo" width="160" />
+</p>
 
-![npm version](https://img.shields.io/npm/v/@j0hanz/filesystem-mcp) ![License](https://img.shields.io/npm/l/@j0hanz/filesystem-mcp) ![Node.js Version](https://img.shields.io/node/v/@j0hanz/filesystem-mcp) ![Docker Image](https://ghcr-badge.egpl.dev/j0hanz/filesystem-mcp/latest_tag?trim=major&label=docker)
+# @j0hanz/filesystem-mcp
 
-[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_Server-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=filesystem-mcp&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40j0hanz%2Ffilesystem-mcp%40latest%22%5D%7D) [![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_Server-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=filesystem-mcp&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40j0hanz%2Ffilesystem-mcp%40latest%22%5D%7D&quality=insiders)
+[![npm version](https://img.shields.io/npm/v/%40j0hanz%2Ffilesystem-mcp?style=flat-square&logo=npm)](https://www.npmjs.com/package/%40j0hanz%2Ffilesystem-mcp) [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](#contributing-and-license)
 
-[![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/deeplink/mcp-install?name=filesystem-mcp&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBqMGhhbnovZmlsZXN5c3RlbS1tY3BAbGF0ZXN0Il19)
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_Server-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=filesystem-mcp&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40j0hanz%2Ffilesystem-mcp%40latest%22%5D%7D) [![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_Server-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=filesystem-mcp&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40j0hanz%2Ffilesystem-mcp%40latest%22%5D%7D&quality=insiders) [![Install in Visual Studio](https://img.shields.io/badge/Visual_Studio-Install_Server-C16FDE?logo=visualstudio&logoColor=white)](https://vs-open.link/mcp-install?%7B%22filesystem-mcp%22%3A%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40j0hanz%2Ffilesystem-mcp%40latest%22%5D%7D%7D)
 
-MCP Server that enables LLMs to interact with the local filesystem. Provides tools for navigation, search, file management, and analysis — all scoped to allowed directories.
+[![Add to LM Studio](https://files.lmstudio.ai/deeplink/mcp-install-light.svg)](https://lmstudio.ai/install-mcp?name=filesystem-mcp&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBqMGhhbnovZmlsZXN5c3RlbS1tY3BAbGF0ZXN0Il19) [![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=filesystem-mcp&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBqMGhhbnovZmlsZXN5c3RlbS1tY3BAbGF0ZXN0Il19) [![Install in Goose](https://block.github.io/goose/img/extension-install-dark.svg)](https://block.github.io/goose/extension?cmd=npx&arg=-y&arg=%40j0hanz%2Ffilesystem-mcp%40latest&id=%40j0hanz%2Ffilesystem-mcp&name=filesystem-mcp&description=MCP%20Server%20that%20enables%20LLMs%20to%20interact%20with%20the%20local%20filesystem.)
+
+MCP Server that enables LLMs to interact with the local filesystem. Provides 18 tools for navigation, search, file management, and analysis — all scoped to allowed directories.
 
 ## Overview
 
-Filesystem MCP exposes a rich set of tools for reading, writing, searching, and inspecting files and directories. All operations are strictly bounded to the directories you provide at startup, preventing access to any path outside those roots.
+A secure, production-ready [Model Context Protocol](https://modelcontextprotocol.io) server that gives AI assistants controlled access to the local filesystem. All operations are sandboxed to explicitly allowed directories with path traversal prevention, sensitive file blocking, and optional Bearer token authentication.
+
+Supports **stdio** (default) and **Streamable HTTP + SSE** transports with per-session isolation.
 
 ## Key Features
 
-- **Navigation**: List directory contents (`ls`), render trees (`tree`), and query workspace roots (`roots`).
-- **File I/O**: Read single or multiple files (`read`, `read_many`); write, edit, move, and delete (`write`, `edit`, `mv`, `rm`).
-- **Search**: Find files by glob pattern (`find`) or search content with full regex support (`grep`).
-- **Analysis**: Metadata and token estimates (`stat`, `stat_many`), SHA-256 hashing (`calculate_hash`), and unified diffs (`diff_files`).
-- **Patch & Replace**: Apply unified patches (`apply_patch`) and bulk search-and-replace across files (`search_and_replace`).
-- **Tasks**: Long-running tools support background task execution with progress notifications and cancellation.
-- **Large Output Handling**: Oversized results are externalized to ephemeral resource URIs instead of truncating inline.
-- **Security**: Strict path validation, safe regex via RE2, `.gitignore`-aware operations, and atomic writes.
+- **18 filesystem tools** — read, write, search, diff, patch, hash, and bulk operations with structured output schemas
+- **Security-first** — path validation, symlink escape prevention, sensitive file denylist, localhost-only CORS, optional API key auth
+- **Dual transport** — stdio for local use, Streamable HTTP with SSE for networked/multi-session deployments
+- **Structured output** — all tools return typed `outputSchema` / `structuredContent` for reliable LLM parsing
+- **Self-documenting** — 6 built-in resources (`internal://instructions`, `internal://tool-catalog`, etc.) and a `get-help` prompt
 
 ## Requirements
 
-- **Node.js** `>= 24`
+- Node.js >= 24
 
 ## Quick Start
 
@@ -34,16 +38,48 @@ Filesystem MCP exposes a rich set of tools for reading, writing, searching, and 
   "mcpServers": {
     "filesystem-mcp": {
       "command": "npx",
-      "args": ["-y", "@j0hanz/filesystem-mcp@latest", "/path/to/allowed/dir"]
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
   }
 }
 ```
 
-Run directly:
+### Docker
 
 ```bash
-npx -y @j0hanz/filesystem-mcp@latest /path/to/allowed/dir
+docker run -i --rm -v /path/to/project:/workspace:ro ghcr.io/j0hanz/filesystem-mcp /workspace
+```
+
+Or using Docker Compose:
+
+```yaml
+services:
+  filesystem-mcp:
+    build: .
+    stdin_open: true
+    volumes:
+      - ./:/projects/workspace:ro
+    command: ['/projects/workspace']
+```
+
+### CLI Usage
+
+```
+filesystem-mcp [options] [allowedDirs...]
+
+Arguments:
+  allowedDirs              Directories the server can access
+
+Options:
+  --allow-cwd              Allow the current working directory as an additional root
+  --port <number>          Enable HTTP transport on the given port
+  -v, --version            Display server version
+  -h, --help               Display help
+
+Examples:
+  $ npx @j0hanz/filesystem-mcp@latest /path/to/project
+  $ npx @j0hanz/filesystem-mcp@latest --allow-cwd
+  $ npx @j0hanz/filesystem-mcp@latest --port 3000 /path/to/project
 ```
 
 ## Client Configuration
@@ -53,23 +89,23 @@ npx -y @j0hanz/filesystem-mcp@latest /path/to/allowed/dir
 
 [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_Server-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=filesystem-mcp&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40j0hanz%2Ffilesystem-mcp%40latest%22%5D%7D)
 
-Or add manually to `.vscode/mcp.json`:
+Add to `.vscode/mcp.json`:
 
 ```json
 {
   "servers": {
     "filesystem-mcp": {
       "command": "npx",
-      "args": ["-y", "@j0hanz/filesystem-mcp@latest", "${workspaceFolder}"]
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
   }
 }
 ```
 
-CLI:
+Or install via CLI:
 
-```bash
-code --add-mcp '{"name":"filesystem-mcp","command":"npx","args":["-y","@j0hanz/filesystem-mcp@latest","${workspaceFolder}"]}'
+```sh
+code --add-mcp '{"name":"filesystem-mcp","command":"npx","args":["-y","@j0hanz/filesystem-mcp@latest"]}'
 ```
 
 </details>
@@ -79,10 +115,23 @@ code --add-mcp '{"name":"filesystem-mcp","command":"npx","args":["-y","@j0hanz/f
 
 [![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_Server-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=filesystem-mcp&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40j0hanz%2Ffilesystem-mcp%40latest%22%5D%7D&quality=insiders)
 
-CLI:
+Add to `.vscode/mcp.json`:
 
-```bash
-code-insiders --add-mcp '{"name":"filesystem-mcp","command":"npx","args":["-y","@j0hanz/filesystem-mcp@latest","${workspaceFolder}"]}'
+```json
+{
+  "servers": {
+    "filesystem-mcp": {
+      "command": "npx",
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+    }
+  }
+}
+```
+
+Or install via CLI:
+
+```sh
+code-insiders --add-mcp '{"name":"filesystem-mcp","command":"npx","args":["-y","@j0hanz/filesystem-mcp@latest"]}'
 ```
 
 </details>
@@ -90,16 +139,70 @@ code-insiders --add-mcp '{"name":"filesystem-mcp","command":"npx","args":["-y","
 <details>
 <summary><b>Install in Cursor</b></summary>
 
-[![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/deeplink/mcp-install?name=filesystem-mcp&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBqMGhhbnovZmlsZXN5c3RlbS1tY3BAbGF0ZXN0Il19)
+[![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=filesystem-mcp&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBqMGhhbnovZmlsZXN5c3RlbS1tY3BAbGF0ZXN0Il19)
 
-Or add to `~/.cursor/mcp.json`:
+Add to `~/.cursor/mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "filesystem-mcp": {
       "command": "npx",
-      "args": ["-y", "@j0hanz/filesystem-mcp@latest", "/path/to/dir"]
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Install in Visual Studio</b></summary>
+
+[![Install in Visual Studio](https://img.shields.io/badge/Visual_Studio-Install_Server-C16FDE?logo=visualstudio&logoColor=white)](https://vs-open.link/mcp-install?%7B%22filesystem-mcp%22%3A%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40j0hanz%2Ffilesystem-mcp%40latest%22%5D%7D%7D)
+
+```json
+{
+  "mcpServers": {
+    "filesystem-mcp": {
+      "command": "npx",
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Install in Goose</b></summary>
+
+[![Install in Goose](https://block.github.io/goose/img/extension-install-dark.svg)](https://block.github.io/goose/extension?cmd=npx&arg=-y&arg=%40j0hanz%2Ffilesystem-mcp%40latest&id=%40j0hanz%2Ffilesystem-mcp&name=filesystem-mcp&description=MCP%20Server%20that%20enables%20LLMs%20to%20interact%20with%20the%20local%20filesystem.)
+
+```json
+{
+  "mcpServers": {
+    "filesystem-mcp": {
+      "command": "npx",
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Add to LM Studio</b></summary>
+
+[![Add to LM Studio](https://files.lmstudio.ai/deeplink/mcp-install-light.svg)](https://lmstudio.ai/install-mcp?name=filesystem-mcp&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBqMGhhbnovZmlsZXN5c3RlbS1tY3BAbGF0ZXN0Il19)
+
+```json
+{
+  "mcpServers": {
+    "filesystem-mcp": {
+      "command": "npx",
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
   }
 }
@@ -117,7 +220,7 @@ Add to `claude_desktop_config.json`:
   "mcpServers": {
     "filesystem-mcp": {
       "command": "npx",
-      "args": ["-y", "@j0hanz/filesystem-mcp@latest", "/path/to/dir"]
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
   }
 }
@@ -128,8 +231,21 @@ Add to `claude_desktop_config.json`:
 <details>
 <summary><b>Install in Claude Code</b></summary>
 
-```bash
-claude mcp add filesystem-mcp -- npx -y @j0hanz/filesystem-mcp@latest /path/to/dir
+```sh
+claude mcp add filesystem-mcp -- npx -y @j0hanz/filesystem-mcp@latest
+```
+
+Or add to config:
+
+```json
+{
+  "mcpServers": {
+    "filesystem-mcp": {
+      "command": "npx",
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+    }
+  }
+}
 ```
 
 </details>
@@ -137,12 +253,14 @@ claude mcp add filesystem-mcp -- npx -y @j0hanz/filesystem-mcp@latest /path/to/d
 <details>
 <summary><b>Install in Windsurf</b></summary>
 
+Add to `~/.codeium/windsurf/mcp_config.json`:
+
 ```json
 {
   "mcpServers": {
     "filesystem-mcp": {
       "command": "npx",
-      "args": ["-y", "@j0hanz/filesystem-mcp@latest", "/path/to/dir"]
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
   }
 }
@@ -151,42 +269,20 @@ claude mcp add filesystem-mcp -- npx -y @j0hanz/filesystem-mcp@latest /path/to/d
 </details>
 
 <details>
-<summary><b>Install in Codex</b></summary>
+<summary><b>Install in Amp</b></summary>
 
-```toml
-[mcp_servers.filesystem-mcp]
-command = "npx"
-args = ["-y", "@j0hanz/filesystem-mcp@latest", "${workspaceFolder}"]
+```sh
+amp mcp add filesystem-mcp -- npx -y @j0hanz/filesystem-mcp@latest
 ```
 
-</details>
-
-<details>
-<summary><b>Docker</b></summary>
-
-```bash
-docker run -i --rm \
-  -v /path/to/your/project:/projects/workspace:ro \
-  ghcr.io/j0hanz/filesystem-mcp:latest \
-  /projects/workspace
-```
-
-MCP config:
+Or add to config:
 
 ```json
 {
   "mcpServers": {
     "filesystem-mcp": {
-      "command": "docker",
-      "args": [
-        "run",
-        "-i",
-        "--rm",
-        "-v",
-        "/path/to/project:/projects/workspace:ro",
-        "ghcr.io/j0hanz/filesystem-mcp:latest",
-        "/projects/workspace"
-      ]
+      "command": "npx",
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
   }
 }
@@ -194,476 +290,643 @@ MCP config:
 
 </details>
 
+<details>
+<summary><b>Install in Cline</b></summary>
+
+Add to `cline_mcp_settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "filesystem-mcp": {
+      "command": "npx",
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Install in Codex CLI</b></summary>
+
+```json
+{
+  "mcpServers": {
+    "filesystem-mcp": {
+      "command": "npx",
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Install in GitHub Copilot</b></summary>
+
+Add to `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "filesystem-mcp": {
+      "command": "npx",
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Install in Warp</b></summary>
+
+```json
+{
+  "mcpServers": {
+    "filesystem-mcp": {
+      "command": "npx",
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Install in Kiro</b></summary>
+
+Add to `.kiro/settings/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "filesystem-mcp": {
+      "command": "npx",
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Install in Gemini CLI</b></summary>
+
+Add to `~/.gemini/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "filesystem-mcp": {
+      "command": "npx",
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Install in Zed</b></summary>
+
+Add to `~/.config/zed/settings.json`:
+
+```json
+{
+  "context_servers": {
+    "filesystem-mcp": {
+      "settings": {
+        "command": "npx",
+        "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+      }
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Install in Augment</b></summary>
+
+Add to VS Code `settings.json` under `augment.advanced`:
+
+```json
+{
+  "augment.advanced": {
+    "mcpServers": [
+      {
+        "id": "filesystem-mcp",
+        "command": "npx",
+        "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+      }
+    ]
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Install in Roo Code</b></summary>
+
+```json
+{
+  "mcpServers": {
+    "filesystem-mcp": {
+      "command": "npx",
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Install in Kilo Code</b></summary>
+
+```json
+{
+  "mcpServers": {
+    "filesystem-mcp": {
+      "command": "npx",
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+    }
+  }
+}
+```
+
+</details>
+
+## Use Cases
+
+### Explore and Understand a Codebase
+
+Discover project structure and navigate unfamiliar repositories. Start with `roots` to see allowed directories, use `tree` for an overview, `find` to locate files by pattern, and `read` or `read_many` to inspect contents.
+
+**Relevant tools:** `roots`, `ls`, `find`, `tree`, `read`, `read_many`, `stat`
+
+### Search Across Files
+
+Locate specific code patterns, function definitions, or configuration values across a project. Use `grep` for content search with regex support and `find` for file name matching.
+
+**Relevant tools:** `grep`, `find`
+
+### Edit and Refactor Code
+
+Make precise, targeted edits to source files. Use `edit` for surgical replacements with dry-run preview, or `search_and_replace` for bulk changes across multiple files matching a glob pattern.
+
+**Relevant tools:** `edit`, `search_and_replace`, `write`
+
+### Diff and Patch Workflow
+
+Compare file versions and apply patches. Generate a unified diff with `diff_files`, preview with `apply_patch(dryRun: true)`, then apply. Useful for code review assistance and conflict resolution.
+
+**Relevant tools:** `diff_files`, `apply_patch`
+
+### File Management
+
+Create directories, move/rename files, delete files, and verify file integrity via SHA-256 hashing.
+
+**Relevant tools:** `mkdir`, `mv`, `rm`, `calculate_hash`, `write`
+
+## Architecture
+
+```text
+[MCP Client]
+    |
+    | Transport: stdio (default) or Streamable HTTP + SSE (--port)
+    v
+[MCP Server: filesystem-mcp]
+    | Entry: src/index.ts -> src/server/bootstrap.ts
+    |
+    +-- initialize / initialized
+    |
+    +-- tools/call ──────────────────────────────────────────
+    |   +-- [roots]             — List allowed workspace roots
+    |   +-- [ls]                — List directory contents
+    |   +-- [find]              — Find files by glob
+    |   +-- [tree]              — Render directory tree
+    |   +-- [read]              — Read file contents
+    |   +-- [read_many]         — Read multiple files
+    |   +-- [stat]              — Get file metadata
+    |   +-- [stat_many]         — Get multiple file metadata
+    |   +-- [grep]              — Search file contents
+    |   +-- [mkdir]             — Create directory
+    |   +-- [write]             — Write file
+    |   +-- [edit]              — Edit file (string replacements)
+    |   +-- [mv]                — Move/rename file
+    |   +-- [rm]                — Delete file
+    |   +-- [calculate_hash]    — SHA-256 hash
+    |   +-- [diff_files]        — Unified diff
+    |   +-- [apply_patch]       — Apply unified patch
+    |   +-- [search_and_replace]— Bulk search & replace
+    |
+    +-- resources/read ──────────────────────────────────────
+    |   +-- internal://instructions
+    |   +-- internal://tool-catalog
+    |   +-- internal://workflows
+    |   +-- internal://tool-info/{name}
+    |   +-- filesystem-mcp://result/{id}
+    |   +-- filesystem-mcp://metrics
+    |
+    +-- prompts/get ─────────────────────────────────────────
+    |   +-- get-help (optional topic argument)
+    |
+    +-- Capabilities: logging, resources, tools, prompts, completions, tasks
+```
+
+### Request Lifecycle
+
+```text
+[Client] -- initialize {protocolVersion, capabilities} --> [Server]
+[Server] -- {protocolVersion, capabilities, serverInfo} --> [Client]
+[Client] -- notifications/initialized --> [Server]
+[Client] -- tools/call {name, arguments} --> [Server]
+[Server] -- validate(inputSchema) --> [Handler]
+[Handler] -- {content: [{type, text}], structuredContent?, isError?} --> [Client]
+```
+
 ## MCP Surface
 
 ### Tools
 
-| Tool                 | Description                                          |
-| :------------------- | :--------------------------------------------------- |
-| `roots`              | List workspace roots the server can access           |
-| `ls`                 | List directory contents (non-recursive)              |
-| `find`               | Find files by glob pattern                           |
-| `tree`               | Render a bounded directory tree                      |
-| `read`               | Read text content of a file                          |
-| `read_many`          | Read multiple files in one request                   |
-| `stat`               | Get file or directory metadata                       |
-| `stat_many`          | Get metadata for multiple paths                      |
-| `grep`               | Search file content by literal or RE2 regex          |
-| `calculate_hash`     | Compute SHA-256 hash of a file or directory          |
-| `diff_files`         | Generate a unified diff between two files            |
-| `mkdir`              | Create a directory (recursive)                       |
-| `write`              | Write content to a file (create or overwrite)        |
-| `edit`               | Edit a file via sequential string replacements       |
-| `mv`                 | Move or rename a file or directory                   |
-| `rm`                 | Delete a file or directory                           |
-| `apply_patch`        | Apply a unified diff patch to a file                 |
-| `search_and_replace` | Search and replace text across files matching a glob |
+#### `roots`
+
+List allowed workspace roots. Call first — all other tools are scoped to these directories.
+
+_No parameters._
 
 ---
 
-#### `roots` — List workspace roots
+#### `ls`
 
-Enumerate the directories the server is allowed to access. Call this first in any session.
+List immediate directory contents: name, path, type, size, modified date.
 
-No input parameters.
-
----
-
-#### `ls` — List directory contents
-
-List immediate directory contents (non-recursive). Returns name, type, size, and modified date per entry.
-
-| Parameter               | Type                               | Required | Default | Description                                               |
-| :---------------------- | :--------------------------------- | :------: | :------ | :-------------------------------------------------------- |
-| `path`                  | string                             |    No    | root    | Base directory                                            |
-| `includeHidden`         | boolean                            |    No    | `false` | Include hidden items (`.`)                                |
-| `includeIgnored`        | boolean                            |    No    | `false` | Include `node_modules`, `.git`, etc.                      |
-| `pattern`               | string                             |    No    | —       | Glob filter enabling recursive traversal (e.g. `**/*.ts`) |
-| `sortBy`                | `name`\|`size`\|`modified`\|`type` |    No    | `name`  | Sort field                                                |
-| `maxDepth`              | integer                            |    No    | —       | Max recursion depth when `pattern` is set (1–50)          |
-| `maxEntries`            | integer                            |    No    | —       | Truncation limit (1–20,000)                               |
-| `includeSymlinkTargets` | boolean                            |    No    | `false` | Resolve and include symlink targets                       |
+| Parameter               | Type    | Required | Description                                                  |
+| ----------------------- | ------- | -------- | ------------------------------------------------------------ |
+| `path`                  | string  | no       | Base directory (default: root)                               |
+| `includeHidden`         | boolean | no       | Include dotfiles. Default: `false`                           |
+| `includeIgnored`        | boolean | no       | Include ignored items (node_modules, .git). Default: `false` |
+| `maxDepth`              | integer | no       | Max recursion depth (1-100) when pattern is provided         |
+| `maxEntries`            | integer | no       | Max entries before truncation. Default: 1000, Max: 10000     |
+| `sortBy`                | enum    | no       | `name` \| `size` \| `modified` \| `type`. Default: `name`    |
+| `pattern`               | string  | no       | Glob filter (e.g. `**/*.ts`)                                 |
+| `includeSymlinkTargets` | boolean | no       | Resolve symlink targets. Default: `false`                    |
+| `cursor`                | string  | no       | Pagination cursor from a previous response                   |
 
 ---
 
-#### `find` — Find files by glob
+#### `find`
 
-Locate files matching a glob pattern. Returns relative paths and metadata.
+Find files by glob pattern. Returns matching files with metadata.
 
-| Parameter        | Type                               | Required | Default | Description                                         |
-| :--------------- | :--------------------------------- | :------: | :------ | :-------------------------------------------------- |
-| `pattern`        | string                             |   Yes    | —       | Glob pattern (e.g. `**/*.ts`, `src/*.js`)           |
-| `path`           | string                             |    No    | root    | Search root                                         |
-| `maxResults`     | integer                            |    No    | `100`   | Max results (1–10,000)                              |
-| `maxDepth`       | integer                            |    No    | —       | Max directory depth to scan (0–100)                 |
-| `sortBy`         | `name`\|`size`\|`modified`\|`path` |    No    | `path`  | Sort field                                          |
-| `includeHidden`  | boolean                            |    No    | `false` | Include hidden files                                |
-| `includeIgnored` | boolean                            |    No    | `false` | Include ignored directories (disables `.gitignore`) |
-
-> [!TIP]
-> Supports background task execution with progress reporting.
+| Parameter        | Type    | Required | Description                                               |
+| ---------------- | ------- | -------- | --------------------------------------------------------- |
+| `path`           | string  | no       | Base directory (default: root)                            |
+| `pattern`        | string  | **yes**  | Glob pattern (e.g. `**/*.ts`)                             |
+| `maxResults`     | integer | no       | Max results (1-100000). Default: 1000                     |
+| `includeIgnored` | boolean | no       | Include ignored items. Default: `false`                   |
+| `includeHidden`  | boolean | no       | Include dotfiles. Default: `false`                        |
+| `sortBy`         | enum    | no       | `path` \| `name` \| `size` \| `modified`. Default: `path` |
+| `maxDepth`       | integer | no       | Max directory depth (0-1000)                              |
+| `cursor`         | string  | no       | Pagination cursor                                         |
 
 ---
 
-#### `tree` — Render directory tree
+#### `tree`
 
-Returns both an ASCII tree (text) and a structured JSON tree.
+Render a directory tree with bounded recursion. Returns ASCII tree + structured JSON.
 
-| Parameter        | Type    | Required | Default | Description                                         |
-| :--------------- | :------ | :------: | :------ | :-------------------------------------------------- |
-| `path`           | string  |    No    | root    | Base directory                                      |
-| `maxDepth`       | integer |    No    | `5`     | Max depth (0–50); `0` = root node only, no children |
-| `maxEntries`     | integer |    No    | `1000`  | Max entries (1–20,000)                              |
-| `includeHidden`  | boolean |    No    | `false` | Include hidden items                                |
-| `includeIgnored` | boolean |    No    | `false` | Include ignored items (disables `.gitignore`)       |
-
----
-
-#### `read` — Read file content
-
-Read text content of a single file with optional line-range or head preview.
-
-| Parameter   | Type    | Required | Default | Description                                                                   |
-| :---------- | :------ | :------: | :------ | :---------------------------------------------------------------------------- |
-| `path`      | string  |   Yes    | —       | Absolute path to file                                                         |
-| `head`      | integer |    No    | —       | Read first N lines (1–100,000); mutually exclusive with `startLine`/`endLine` |
-| `startLine` | integer |    No    | —       | Start line (1-based, inclusive)                                               |
-| `endLine`   | integer |    No    | —       | End line (1-based, inclusive); requires `startLine`                           |
-
-Large files return a `resourceUri`; call `resources/read` on that URI for full content.
+| Parameter        | Type    | Required | Description                                       |
+| ---------------- | ------- | -------- | ------------------------------------------------- |
+| `path`           | string  | no       | Base directory (default: root)                    |
+| `maxDepth`       | integer | no       | Depth (0 = root node only). Default: 10, Max: 100 |
+| `maxEntries`     | integer | no       | Max entries. Default: 5000, Max: 100000           |
+| `includeHidden`  | boolean | no       | Include dotfiles. Default: `false`                |
+| `includeIgnored` | boolean | no       | Include ignored items. Default: `false`           |
 
 ---
 
-#### `read_many` — Read multiple files
+#### `read`
 
-Batch-read up to 100 files in a single request.
+Read text file contents. Use `head` to preview first N lines of large files.
 
-| Parameter   | Type     | Required | Default | Description                              |
-| :---------- | :------- | :------: | :------ | :--------------------------------------- |
-| `paths`     | string[] |   Yes    | —       | File paths (1–100 items)                 |
-| `head`      | integer  |    No    | —       | Read first N lines of each file          |
-| `startLine` | integer  |    No    | —       | Start line per file                      |
-| `endLine`   | integer  |    No    | —       | End line per file (requires `startLine`) |
-
-Per-file `truncationReason` can be `head`, `range`, or `externalized`. Total read budget is capped internally.
+| Parameter   | Type    | Required | Description                                         |
+| ----------- | ------- | -------- | --------------------------------------------------- |
+| `path`      | string  | **yes**  | Absolute path to file                               |
+| `head`      | integer | no       | Read first N lines (1-100000)                       |
+| `startLine` | integer | no       | Start line (1-based, inclusive)                     |
+| `endLine`   | integer | no       | End line (1-based, inclusive). Requires `startLine` |
 
 ---
 
-#### `stat` — Get file/directory metadata
+#### `read_many`
 
-Returns name, type, size, created/modified/accessed timestamps, permissions, MIME type, and a token estimate (`size ÷ 4`).
+Read multiple text files in one request.
 
-| Parameter | Type   | Required | Default | Description   |
-| :-------- | :----- | :------: | :------ | :------------ |
-| `path`    | string |   Yes    | —       | Absolute path |
-
----
-
-#### `stat_many` — Get metadata for multiple paths
-
-Batch version of `stat`.
-
-| Parameter | Type     | Required | Default | Description         |
-| :-------- | :------- | :------: | :------ | :------------------ |
-| `paths`   | string[] |   Yes    | —       | Paths (1–100 items) |
+| Parameter   | Type     | Required | Description                     |
+| ----------- | -------- | -------- | ------------------------------- |
+| `paths`     | string[] | **yes**  | Files to read (1-100 paths)     |
+| `head`      | integer  | no       | Read first N lines of each file |
+| `startLine` | integer  | no       | Start line (1-based) per file   |
+| `endLine`   | integer  | no       | End line (1-based) per file     |
 
 ---
 
-#### `grep` — Search file content
+#### `stat`
 
-Search for text within files using literal match or RE2 regex. Returns matching lines with optional context.
+Get file/directory metadata: size, modified, permissions, mime, tokenEstimate.
 
-| Parameter        | Type    | Required | Default | Description                                                         |
-| :--------------- | :------ | :------: | :------ | :------------------------------------------------------------------ |
-| `pattern`        | string  |   Yes    | —       | Text to search (literal by default, RE2 regex when `isRegex: true`) |
-| `path`           | string  |    No    | root    | Search root (file or directory)                                     |
-| `isRegex`        | boolean |    No    | `false` | Treat `pattern` as RE2 regex                                        |
-| `caseSensitive`  | boolean |    No    | `false` | Case-sensitive matching                                             |
-| `wholeWord`      | boolean |    No    | `false` | Match whole words only                                              |
-| `contextLines`   | integer |    No    | `0`     | Lines of context before/after each match (0–50)                     |
-| `maxResults`     | integer |    No    | `500`   | Max match rows returned (0–10,000)                                  |
-| `filePattern`    | string  |    No    | `**/*`  | Glob to restrict candidate files (e.g. `**/*.ts`)                   |
-| `includeHidden`  | boolean |    No    | `false` | Include hidden files                                                |
-| `includeIgnored` | boolean |    No    | `false` | Include ignored directories                                         |
-
-> [!NOTE]
-> RE2 does not support lookahead, lookbehind, or backreferences. Results exceeding 50 inline matches are externalized via `resourceUri`.
+| Parameter | Type   | Required | Description                        |
+| --------- | ------ | -------- | ---------------------------------- |
+| `path`    | string | **yes**  | Absolute path to file or directory |
 
 ---
 
-#### `calculate_hash` — SHA-256 hash
+#### `stat_many`
 
-Compute a SHA-256 hash. For directories, produces a deterministic composite hash of all contained files (lexicographically sorted, `.gitignore`-aware).
+Get metadata for multiple files/directories in one request.
 
-| Parameter | Type   | Required | Default | Description            |
-| :-------- | :----- | :------: | :------ | :--------------------- |
-| `path`    | string |   Yes    | —       | File or directory path |
-
----
-
-#### `diff_files` — Generate unified diff
-
-Create a unified diff between two files. Check `isIdentical` in the response — if `true`, the files match and no patch is needed.
-
-| Parameter          | Type    | Required | Default | Description                        |
-| :----------------- | :------ | :------: | :------ | :--------------------------------- |
-| `original`         | string  |   Yes    | —       | Original file path                 |
-| `modified`         | string  |   Yes    | —       | Modified file path                 |
-| `context`          | integer |    No    | —       | Lines of context in the diff       |
-| `ignoreWhitespace` | boolean |    No    | `false` | Ignore leading/trailing whitespace |
-| `stripTrailingCr`  | boolean |    No    | `false` | Strip trailing carriage returns    |
-
-Large diffs are externalized to a `resourceUri`.
+| Parameter | Type     | Required | Description                  |
+| --------- | -------- | -------- | ---------------------------- |
+| `paths`   | string[] | **yes**  | File/directory paths (1-100) |
 
 ---
 
-#### `mkdir` — Create directory
+#### `grep`
 
-Create a directory and all missing parent directories (recursive).
+Search file contents (grep-like). Returns matching lines with optional context.
 
-| Parameter | Type   | Required | Default | Description              |
-| :-------- | :----- | :------: | :------ | :----------------------- |
-| `path`    | string |   Yes    | —       | Directory path to create |
-
----
-
-#### `write` — Write file
-
-Create or overwrite a file. Parent directories are created automatically.
-
-| Parameter | Type   | Required | Default | Description      |
-| :-------- | :----- | :------: | :------ | :--------------- |
-| `path`    | string |   Yes    | —       | File path        |
-| `content` | string |   Yes    | —       | Content to write |
-
-> [!CAUTION]
-> Overwrites existing file content without confirmation.
+| Parameter        | Type    | Required | Description                                      |
+| ---------------- | ------- | -------- | ------------------------------------------------ |
+| `path`           | string  | no       | Base directory (default: root)                   |
+| `pattern`        | string  | **yes**  | Search text or RE2 regex when `isRegex=true`     |
+| `isRegex`        | boolean | no       | Treat pattern as RE2 regex. Default: `false`     |
+| `caseSensitive`  | boolean | no       | Case-sensitive matching. Default: `false`        |
+| `wholeWord`      | boolean | no       | Match whole words only. Default: `false`         |
+| `contextLines`   | integer | no       | Lines of context before/after (0-50). Default: 0 |
+| `maxResults`     | integer | no       | Max match rows (1-100000). Default: 100          |
+| `filePattern`    | string  | no       | Glob for candidate files (e.g. `**/*.ts`)        |
+| `includeHidden`  | boolean | no       | Include dotfiles. Default: `false`               |
+| `includeIgnored` | boolean | no       | Include ignored items. Default: `false`          |
 
 ---
 
-#### `edit` — Edit file
+#### `mkdir`
 
-Apply sequential literal string replacements to an existing file. Replaces the **first** occurrence of each `oldText`.
+Create a new directory (recursive). Idempotent.
 
-| Parameter | Type                   | Required | Default | Description                            |
-| :-------- | :--------------------- | :------: | :------ | :------------------------------------- |
-| `path`    | string                 |   Yes    | —       | File to edit                           |
-| `edits`   | `{oldText, newText}[]` |   Yes    | —       | Ordered list of replacement operations |
-| `dryRun`  | boolean                |    No    | `false` | Validate edits without writing         |
-
-Include 3–5 lines of surrounding context in `oldText` to uniquely target the location. Unmatched edits are reported in `unmatchedEdits`.
+| Parameter | Type     | Required | Description                                                       |
+| --------- | -------- | -------- | ----------------------------------------------------------------- |
+| `path`    | string   | no       | Absolute path to directory to create                              |
+| `paths`   | string[] | no       | Multiple directories to create. Either `path` or `paths` required |
 
 ---
 
-#### `mv` — Move or rename
+#### `write`
 
-Move or rename a file or directory. Parent directories of the destination are created automatically. Falls back to copy+delete for cross-device moves.
+Write content to a file, **overwriting all existing content**. Creates parent directories if needed.
 
-| Parameter     | Type   | Required | Default | Description      |
-| :------------ | :----- | :------: | :------ | :--------------- |
-| `source`      | string |   Yes    | —       | Source path      |
-| `destination` | string |   Yes    | —       | Destination path |
-
----
-
-#### `rm` — Delete file or directory
-
-Delete a file or directory.
-
-| Parameter           | Type    | Required | Default | Description                     |
-| :------------------ | :------ | :------: | :------ | :------------------------------ |
-| `path`              | string  |   Yes    | —       | Path to delete                  |
-| `recursive`         | boolean |    No    | `false` | Delete non-empty directories    |
-| `ignoreIfNotExists` | boolean |    No    | `false` | No error if the path is missing |
-
-> [!WARNING]
-> Non-empty directories with `recursive: false` return `E_INVALID_INPUT` with guidance to retry using `recursive: true`.
+| Parameter | Type   | Required | Description           |
+| --------- | ------ | -------- | --------------------- |
+| `path`    | string | **yes**  | Absolute path to file |
+| `content` | string | **yes**  | Content to write      |
 
 ---
 
-#### `apply_patch` — Apply unified patch
+#### `edit`
 
-Apply a unified diff patch to a file. Always validate with `dryRun: true` before writing.
+Apply sequential literal string replacements (first occurrence per edit). Use `dryRun` to preview.
 
-| Parameter                | Type    | Required | Default | Description                                            |
-| :----------------------- | :------ | :------: | :------ | :----------------------------------------------------- |
-| `path`                   | string  |   Yes    | —       | Target file path                                       |
-| `patch`                  | string  |   Yes    | —       | Unified diff patch content (must include hunk headers) |
-| `fuzzFactor`             | integer |    No    | `0`     | Fuzzy matching tolerance                               |
-| `autoConvertLineEndings` | boolean |    No    | `true`  | Auto-convert line endings to match the target file     |
-| `dryRun`                 | boolean |    No    | `false` | Validate without writing                               |
-
-If patch application fails, regenerate a fresh patch via `diff_files` against the current file content and retry.
+| Parameter          | Type    | Required | Description                                                |
+| ------------------ | ------- | -------- | ---------------------------------------------------------- |
+| `path`             | string  | **yes**  | Absolute path to file                                      |
+| `edits`            | array   | **yes**  | List of `{oldText, newText}` replacements                  |
+| `dryRun`           | boolean | no       | Preview edits without writing. Default: `false`            |
+| `ignoreWhitespace` | boolean | no       | Treat whitespace sequences as equivalent. Default: `false` |
 
 ---
 
-#### `search_and_replace` — Search and replace across files
+#### `mv`
 
-Replace text in all files matching a glob. Replaces **all** occurrences per file. Use `dryRun: true` to preview scope before writing.
+Move or rename a file or directory.
 
-| Parameter       | Type    | Required | Default | Description                                                              |
-| :-------------- | :------ | :------: | :------ | :----------------------------------------------------------------------- |
-| `filePattern`   | string  |   Yes    | —       | Glob for target files (e.g. `**/*.ts`)                                   |
-| `searchPattern` | string  |   Yes    | —       | Text to find                                                             |
-| `replacement`   | string  |   Yes    | —       | Replacement text                                                         |
-| `path`          | string  |    No    | root    | Search root directory                                                    |
-| `isRegex`       | boolean |    No    | `false` | Treat `searchPattern` as RE2 regex; supports capture groups (`$1`, `$2`) |
-| `dryRun`        | boolean |    No    | `false` | Preview matches without writing                                          |
+| Parameter     | Type     | Required | Description                                          |
+| ------------- | -------- | -------- | ---------------------------------------------------- |
+| `source`      | string   | no       | Single path to move (deprecated: use `sources`)      |
+| `sources`     | string[] | no       | Paths to move. Either `source` or `sources` required |
+| `destination` | string   | **yes**  | Destination path                                     |
 
 ---
+
+#### `rm`
+
+Permanently delete a file or directory. **Irreversible.**
+
+| Parameter           | Type    | Required | Description                                    |
+| ------------------- | ------- | -------- | ---------------------------------------------- |
+| `path`              | string  | **yes**  | Absolute path to file or directory             |
+| `recursive`         | boolean | no       | Delete non-empty directories. Default: `false` |
+| `ignoreIfNotExists` | boolean | no       | No error if missing. Default: `false`          |
+
+---
+
+#### `calculate_hash`
+
+Calculate SHA-256 hash of a file or directory.
+
+| Parameter | Type   | Required | Description                        |
+| --------- | ------ | -------- | ---------------------------------- |
+| `path`    | string | **yes**  | Absolute path to file or directory |
+
+---
+
+#### `diff_files`
+
+Generate a unified diff between two files. Output feeds directly into `apply_patch`.
+
+| Parameter          | Type    | Required | Description                                          |
+| ------------------ | ------- | -------- | ---------------------------------------------------- |
+| `original`         | string  | **yes**  | Path to original file                                |
+| `modified`         | string  | **yes**  | Path to modified file                                |
+| `context`          | integer | no       | Lines of context in diff output                      |
+| `ignoreWhitespace` | boolean | no       | Ignore leading/trailing whitespace. Default: `false` |
+| `stripTrailingCr`  | boolean | no       | Strip trailing carriage returns. Default: `false`    |
+
+---
+
+#### `apply_patch`
+
+Apply a unified diff patch to a file. Workflow: `diff_files` -> `apply_patch(dryRun)` -> `apply_patch`.
+
+| Parameter                | Type    | Required | Description                                |
+| ------------------------ | ------- | -------- | ------------------------------------------ |
+| `path`                   | string  | **yes**  | Path to file to patch                      |
+| `patch`                  | string  | **yes**  | Unified diff with `@@` hunk headers        |
+| `fuzzFactor`             | integer | no       | Max fuzzy mismatches per hunk (0-20)       |
+| `autoConvertLineEndings` | boolean | no       | Auto-convert line endings. Default: `true` |
+| `dryRun`                 | boolean | no       | Validate without writing. Default: `false` |
+
+---
+
+#### `search_and_replace`
+
+Bulk search-and-replace across files matching a glob. Replaces **all** occurrences per file. Always `dryRun: true` first.
+
+| Parameter        | Type    | Required | Description                                         |
+| ---------------- | ------- | -------- | --------------------------------------------------- |
+| `path`           | string  | no       | Base directory (default: root)                      |
+| `filePattern`    | string  | **yes**  | Glob pattern (e.g. `**/*.ts`)                       |
+| `searchPattern`  | string  | **yes**  | Text to search. RE2 regex when `isRegex=true`       |
+| `replacement`    | string  | **yes**  | Replacement text. Supports `$1`, `$2` with regex    |
+| `isRegex`        | boolean | no       | Treat as RE2 regex. Default: `false`                |
+| `dryRun`         | boolean | no       | Preview matches with diff. Default: `false`         |
+| `includeHidden`  | boolean | no       | Include dotfiles. Default: `false`                  |
+| `includeIgnored` | boolean | no       | Include ignored items. Default: `false`             |
+| `returnDiff`     | boolean | no       | Return diff even when not dry-run. Default: `false` |
 
 ### Resources
 
-| URI                            | Description                         | MIME Type          |
-| :----------------------------- | :---------------------------------- | :----------------- |
-| `internal://instructions`      | Usage guidance for models           | `text/markdown`    |
-| `internal://tool-catalog`      | Tool routing and data-flow guide    | `text/markdown`    |
-| `internal://workflows`         | Explore/search/edit/patch workflows | `text/markdown`    |
-| `internal://tool-info/{name}`  | Per-tool nuances and gotchas        | `text/markdown`    |
-| `filesystem-mcp://metrics`     | Live per-tool metrics snapshot      | `application/json` |
-| `filesystem-mcp://result/{id}` | Ephemeral cached large tool output  | varies             |
-
-When a tool response includes a `resource_link`/`resourceUri`, treat it as authoritative for full payload retrieval and call `resources/read` with that URI.
+| Resource     | URI                            | MIME Type     | Description                                                        |
+| ------------ | ------------------------------ | ------------- | ------------------------------------------------------------------ |
+| Instructions | `internal://instructions`      | text/markdown | Comprehensive usage rules and guidelines                           |
+| Tool Catalog | `internal://tool-catalog`      | text/markdown | Tool selection guide and data flow map                             |
+| Workflows    | `internal://workflows`         | text/markdown | Standard operating procedures for exploration, search, edit, patch |
+| Tool Info    | `internal://tool-info/{name}`  | text/markdown | Per-tool contract details, nuances, gotchas                        |
+| Result Cache | `filesystem-mcp://result/{id}` | text/markdown | Ephemeral cached tool output (large results externalized here)     |
+| Metrics      | `filesystem-mcp://metrics`     | text/markdown | Live per-tool call/error/avgDurationMs snapshot                    |
 
 ### Prompts
 
-| Prompt     | Description                               |
-| :--------- | :---------------------------------------- |
-| `get-help` | Returns usage instructions for the server |
+| Prompt     | Arguments          | Description                                                            |
+| ---------- | ------------------ | ---------------------------------------------------------------------- |
+| `get-help` | `topic` (optional) | Return usage instructions. Optionally filter by section heading prefix |
 
-### Tasks (Background Execution)
+## MCP Capabilities
 
-The server declares full task capabilities (`tasks/list`, `tasks/cancel`). The following tools support task-based invocation with progress notifications:
+| Capability    | Status    | Evidence                                                                   |
+| ------------- | --------- | -------------------------------------------------------------------------- |
+| `logging`     | confirmed | `src/server/bootstrap.ts` — registered in capabilities                     |
+| `resources`   | confirmed | `src/server/bootstrap.ts` — 6 resources registered                         |
+| `tools`       | confirmed | `src/server/bootstrap.ts` — 18 tools registered                            |
+| `prompts`     | confirmed | `src/server/bootstrap.ts` — `get-help` prompt registered                   |
+| `completions` | confirmed | `src/completions.ts` — path + topic auto-completion                        |
+| `tasks`       | confirmed | `src/server/bootstrap.ts` — optional task support (list, cancel, requests) |
 
-`find`, `tree`, `read`, `read_many`, `stat_many`, `grep`, `mkdir`, `write`, `mv`, `rm`, `calculate_hash`, `apply_patch`, `search_and_replace`
+### Tool Annotations
 
-Include `_meta.progressToken` in a `tools/call` request to receive `notifications/progress` updates. Use `tools/call` with a `task` field to invoke as a background task, then poll `tasks/get` and retrieve output via `tasks/result`.
+| Annotation              | Tools                                                                                                           | Value                                  |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `readOnlyHint: true`    | `roots`, `ls`, `find`, `tree`, `read`, `read_many`, `stat`, `stat_many`, `grep`, `calculate_hash`, `diff_files` | Read-only, idempotent, non-destructive |
+| `destructiveHint: true` | `write`, `edit`, `rm`, `mv`, `search_and_replace`, `apply_patch`                                                | Destructive writes, not idempotent     |
+| `idempotentHint: true`  | `mkdir`                                                                                                         | Idempotent write, non-destructive      |
 
-Recommended task follow-up loop:
+### Structured Output
 
-1. Start with `tools/call` + `task` (optional `_meta.progressToken`).
-2. Poll `tasks/get` until terminal status (`completed`, `failed`, `cancelled`).
-3. Fetch final payload with `tasks/result`.
-
-Task status notifications (`notifications/tasks/status`) are best-effort and emitted only when the transport/runtime provides a notification sender.
-
-Cancellation semantics:
-
-- `tasks/cancel` is the canonical cancellation API.
-- Clients should treat `E_CANCELLED` as cancellation even if a transport/client surfaces a terminal failure shape.
+All 18 tools define `outputSchema` (Zod -> JSON Schema) and return `structuredContent` alongside text `content`. Set `FS_CONTEXT_STRIP_STRUCTURED=true` to strip output schemas from tool definitions (reduces token usage for LLMs that don't use structured output).
 
 ## Configuration
 
-### CLI
+| Variable                           | Default          | Description                                                                    |
+| ---------------------------------- | ---------------- | ------------------------------------------------------------------------------ |
+| `FILESYSTEM_MCP_API_KEY`           | _(none)_         | Optional Bearer token for HTTP transport authentication                        |
+| `FILESYSTEM_MCP_MAX_HTTP_SESSIONS` | `100`            | Max concurrent HTTP sessions (1-10,000)                                        |
+| `FILESYSTEM_MCP_HTTP_HOST`         | `127.0.0.1`      | HTTP server bind address                                                       |
+| `FS_CONTEXT_MAX_REQUEST_BYTES`     | `4194304` (4 MB) | Max HTTP request body size (1 KB - 256 MB)                                     |
+| `FS_CONTEXT_MAX_INLINE_CHARS`      | _(auto)_         | Max inline result chars before externalizing to `filesystem-mcp://result/{id}` |
+| `FS_CONTEXT_MAX_INLINE_MATCHES`    | `50`             | Max inline search matches before truncation                                    |
+| `FS_CONTEXT_STRIP_STRUCTURED`      | `false`          | Strip `outputSchema` from tool definitions                                     |
+| `FS_CONTEXT_DIAGNOSTICS`           | `false`          | Enable diagnostic logging                                                      |
+| `FS_CONTEXT_DIAGNOSTICS_DETAIL`    | `false`          | Enable detailed diagnostic output                                              |
+| `FS_CONTEXT_TOOL_LOG_ERRORS`       | `false`          | Log tool errors to stderr                                                      |
+| `FS_CONTEXT_SEARCH_WORKERS_DEBUG`  | `false`          | Debug logging for search worker pool                                           |
 
-```text
-filesystem-mcp [options] [allowedDirs...]
-```
+## HTTP Endpoints
 
-| Option             | Description                                               |
-| :----------------- | :-------------------------------------------------------- |
-| `[allowedDirs...]` | Positional: one or more directories the server may access |
-| `--allow-cwd`      | Allow the current working directory as an additional root |
-| `-v, --version`    | Display server version                                    |
-| `-h, --help`       | Display help                                              |
+When started with `--port <number>`, the server exposes a single MCP endpoint:
 
-Examples:
+| Method   | Path   | Purpose                                               |
+| -------- | ------ | ----------------------------------------------------- |
+| `POST`   | `/mcp` | Initialize session or send requests (Streamable HTTP) |
+| `GET`    | `/mcp` | Server-Sent Events stream for a session               |
+| `DELETE` | `/mcp` | Terminate a session                                   |
 
-```bash
-# Single directory
-filesystem-mcp /project/src
+**Required headers:**
 
-# Multiple directories
-filesystem-mcp /project/src /project/tests
+- `mcp-protocol-version` — must match MCP v2025-11-25
+- `mcp-session-id` — required for `GET`/`DELETE` (returned by `POST` on initialize)
 
-# Current working directory
-filesystem-mcp --allow-cwd
+**Authentication:** If `FILESYSTEM_MCP_API_KEY` is set, requests must include `Authorization: Bearer <key>`. Uses SHA-256 timing-safe comparison.
 
-# Combined
-filesystem-mcp /project/src --allow-cwd
-```
-
-### Allowed Directories
-
-Directories are resolved from three sources, merged at runtime:
-
-1. **CLI arguments** — positional directory paths passed at startup.
-2. **MCP Roots protocol** — directories provided by the connected client after initialization (accepted only if they are within the CLI baseline when CLI directories are set).
-3. **`--allow-cwd`** — the current working directory is added automatically.
-
-> [!TIP]
-> If no directories are configured at startup and the connected client does not supply MCP Roots, all tool calls will fail. Pass at least one directory argument or use `--allow-cwd`.
-
-### Compatibility
-
-Set `FS_CONTEXT_STRIP_STRUCTURED=1` to strip `structuredContent` from tool results and `outputSchema` from tool definitions for compatibility with clients that only consume text content.
+**CORS:** Only localhost origins allowed (`127.0.0.1`, `::1`, `localhost`).
 
 ## Security
 
-- **Path validation**: All operations use `isPathWithinDirectories` to prevent path traversal attacks.
-- **Glob safety**: Glob patterns are validated to reject absolute paths and `..` traversal before execution.
-- **Safe regex**: `re2` executes regex (no catastrophic backtracking); `safe-regex2` rejects unsafe patterns before use.
-- **Hidden files**: Excluded from listings and searches by default; opt in with `includeHidden: true`.
-- **Ignored directories**: `node_modules`, `.git`, `dist`, and similar directories are excluded by default; opt in with `includeIgnored: true`.
-- **Windows safety**: Reserved device names (e.g. `CON`, `NUL`, `COM1`) and drive-relative paths (e.g. `C:path`) are rejected at the CLI.
-- **Input limits**: Paths are bounded to 4,096 characters; patterns to 1,000 characters.
-- **Atomic writes**: File writes use an atomic write-then-rename strategy to prevent partial writes.
-- **Docker**: The container runs as a non-root user (`mcp`).
-- **HTTP host binding**: The HTTP transport binds to `127.0.0.1` by default. Setting `FILESYSTEM_MCP_HTTP_HOST=0.0.0.0` binds to all network interfaces and exposes the server externally — only do this behind a trusted reverse proxy with `FILESYSTEM_MCP_API_KEY` configured.
-
-> [!IMPORTANT]
-> All diagnostic output goes to `stderr`. Tool handlers must never write to `stdout`, as doing so would corrupt the stdio transport.
+| Control                   | Status    | Evidence                                                                               |
+| ------------------------- | --------- | -------------------------------------------------------------------------------------- |
+| Path sandboxing           | confirmed | `src/lib/paths.ts` — all paths validated against allowed roots                         |
+| Traversal prevention      | confirmed | `src/lib/paths.ts` — resolved paths checked after normalization                        |
+| Symlink escape prevention | confirmed | `src/__tests__/security.test.ts` — symlink boundary enforcement                        |
+| Sensitive file denylist   | confirmed | `src/lib/constants.ts` — blocks `.git`, `.env*`, SSH keys, certs, secrets              |
+| Origin validation         | confirmed | `src/server/bootstrap.ts` — localhost-only CORS regex                                  |
+| Bearer auth               | confirmed | `src/server/bootstrap.ts` — optional `FILESYSTEM_MCP_API_KEY` with timing-safe compare |
+| Input validation          | confirmed | `src/schemas.ts` — Zod strict schemas on all tool inputs                               |
+| Request body limit        | confirmed | `src/server/bootstrap.ts` — configurable max request size (413 on overflow)            |
+| DNS rebinding protection  | confirmed | `src/server/bootstrap.ts` — Host header validation                                     |
 
 ## Development
 
-### Install
+| Script       | Command                                                   | Purpose                           |
+| ------------ | --------------------------------------------------------- | --------------------------------- |
+| `dev`        | `tsc --watch`                                             | Watch mode TypeScript compilation |
+| `dev:run`    | `node --env-file=.env --watch dist/index.js`              | Run server with auto-reload       |
+| `start`      | `node dist/index.js`                                      | Run production server             |
+| `build`      | `node scripts/tasks.mjs build`                            | Clean build                       |
+| `test`       | `node scripts/tasks.mjs test`                             | Build + run all tests             |
+| `test:fast`  | `node --test --import tsx/esm src/__tests__/**/*.test.ts` | Run tests without build           |
+| `lint`       | `eslint .`                                                | Lint source                       |
+| `type-check` | `node scripts/tasks.mjs type-check`                       | Type-check src + tests            |
+| `format`     | `prettier --write .`                                      | Format code                       |
+| `inspector`  | `npm run build && npx @modelcontextprotocol/inspector`    | Launch MCP Inspector              |
 
-```bash
-npm ci
-```
+## Build and Release
 
-### Scripts
-
-| Script       | Command                             | Purpose                             |
-| :----------- | :---------------------------------- | :---------------------------------- |
-| `dev`        | `tsc --watch`                       | Watch-mode TypeScript compilation   |
-| `dev:run`    | `node --watch dist/index.js`        | Run built server with file watching |
-| `build`      | `node scripts/tasks.mjs build`      | Production build                    |
-| `test`       | `node scripts/tasks.mjs test`       | Run full test suite                 |
-| `lint`       | `eslint .`                          | Lint source files                   |
-| `lint:fix`   | `eslint . --fix`                    | Auto-fix lint issues                |
-| `format`     | `prettier --write .`                | Format all files                    |
-| `type-check` | `node scripts/tasks.mjs type-check` | TypeScript type checking            |
-
-### MCP Inspector
-
-```bash
-npm run inspector
-```
-
-Or manually:
-
-```bash
-npx @modelcontextprotocol/inspector node dist/index.js /path/to/dir
-```
-
-## Build & Release
-
-Releases are triggered manually via [GitHub Actions](.github/workflows/release.yml) (`workflow_dispatch`). The pipeline:
-
-1. Bumps `package.json` and `server.json` to the selected version (patch / minor / major or custom).
-2. Runs lint, type-check, tests, and build.
-3. Commits, tags (`vX.Y.Z`), and creates a GitHub Release with auto-generated notes.
-4. Publishes to **npm** (`@j0hanz/filesystem-mcp`) with OIDC provenance.
-5. Publishes to the **MCP Registry** (`io.github.j0hanz/filesystem-mcp`).
-6. Builds and pushes the **Docker image** (`ghcr.io/j0hanz/filesystem-mcp`) for `linux/amd64` and `linux/arm64`.
-
-The [Glama](https://glama.ai/mcp/servers/j0hanz/filesystem-mcp) listing requires a separate manual release step on the Glama dashboard.
-
-### Docker Build (local)
-
-```bash
-docker build -t filesystem-mcp .
-```
-
-## HTTP Conformance Notes
-
-For Streamable HTTP clients, this server enforces the following behavior:
-
-- Session-bound requests must include `MCP-Protocol-Version: 2025-11-25`; missing or unsupported values return `400`.
-- Requests with invalid or expired `mcp-session-id` return `404`.
-- Initialize requests continue to be accepted without a session ID.
-
-## Backlog Hardening (Planned)
-
-The following hardening items are intentionally tracked as follow-up work:
-
-- Add a TTL-evicting task store for long-lived HTTP deployments to bound memory usage.
-- Add an optional per-session roots isolation mode for multi-tenant HTTP deployments.
+- **CI:** `.github/workflows/release.yml` — runs lint, type-check, test, build before tagging/publishing.
+- **Docker:** Multi-stage build with `node:24-alpine`. Builder compiles TypeScript + native modules (re2); release stage runs as non-root `mcp` user.
+- **npm:** `npm run prepublishOnly` runs lint + type-check + build.
 
 ## Troubleshooting
 
-**No directories configured**
-If no directories are provided at startup and the client doesn't supply MCP Roots, all tool calls fail with `E_ACCESS_DENIED`. Use `roots` to inspect configured roots.
+- **"No allowed directories"** — Pass at least one directory argument or use `--allow-cwd`.
+- **Sensitive file blocked** — Files matching the denylist (`.env*`, `.git`, SSH keys) are blocked by design. Check `src/lib/constants.ts` for the full list.
+- **Large result externalized** — When tool output exceeds inline limits, it's cached as a resource at `filesystem-mcp://result/{id}`. Read the resource URI to get the full content.
+- **Stdio: logs on stdout** — Keep logs on stderr only. The server uses `console.error` for diagnostics.
+- **HTTP 413** — Request body exceeds `FS_CONTEXT_MAX_REQUEST_BYTES`. Increase the limit or reduce payload size.
+- **HTTP 401** — `FILESYSTEM_MCP_API_KEY` is set but the request is missing or has an incorrect `Authorization: Bearer` header.
 
-**Path outside allowed directories**
-Tools return `E_ACCESS_DENIED` when a path is outside all allowed roots. Use `roots` first to see what is available.
+## Credits
 
-**Empty directory or no matches**
-`find` and `grep` return empty results rather than errors when nothing matches. Verify the pattern and root path.
+| Dependency                                                                           | Description                                   |
+| ------------------------------------------------------------------------------------ | --------------------------------------------- |
+| [@modelcontextprotocol/sdk](https://www.npmjs.com/package/@modelcontextprotocol/sdk) | MCP TypeScript SDK                            |
+| [commander](https://www.npmjs.com/package/commander)                                 | CLI argument parsing                          |
+| [diff](https://www.npmjs.com/package/diff)                                           | Unified diff generation and patch application |
+| [ignore](https://www.npmjs.com/package/ignore)                                       | `.gitignore` pattern matching                 |
+| [re2](https://www.npmjs.com/package/re2)                                             | Safe RE2 regex engine (no ReDoS)              |
+| [safe-regex2](https://www.npmjs.com/package/safe-regex2)                             | Regex safety validation                       |
+| [zod](https://www.npmjs.com/package/zod)                                             | Schema validation and JSON Schema generation  |
 
-**Pattern rejected (`E_INVALID_PATTERN`)**
-Glob patterns cannot be absolute or use `..` to traverse upward. RE2 patterns are validated before use.
+## Contributing and License
 
-**Non-empty directory delete fails**
-`rm` returns `E_INVALID_INPUT` for non-empty directories without `recursive: true`. Either set `recursive: true` or remove contents first.
-
-**Patch application failed**
-`apply_patch` requires valid unified hunk headers (`@@ -N,M +N,M @@`). Regenerate the patch with `diff_files` against the current file content and retry.
-
-**Stdout contamination**
-The server uses stdio transport. Never write to `stdout` in custom integrations. All diagnostic output goes to `stderr`. For Claude Desktop, check `~/Library/Logs/Claude/mcp*.log` (macOS) or the equivalent on Windows.
-
-## License
-
-[MIT](LICENSE)
+- **License:** MIT
+- Contributions welcome via pull requests.
