@@ -363,9 +363,11 @@ export async function startHttpServer(
         authHeader.startsWith(bearerPrefix)
       ) {
         const userKey = authHeader.slice(bearerPrefix.length);
-        const expectedHash = createHash('sha256').update(apiKey).digest();
-        const actualHash = createHash('sha256').update(userKey).digest();
-        authorized = timingSafeEqual(expectedHash, actualHash);
+        if (userKey.length <= 4096) {
+          const expectedHash = createHash('sha256').update(apiKey).digest();
+          const actualHash = createHash('sha256').update(userKey).digest();
+          authorized = timingSafeEqual(expectedHash, actualHash);
+        }
       }
       if (!authorized) {
         res.writeHead(401, {
@@ -409,11 +411,12 @@ export async function startHttpServer(
 
         const body = await readRequestBody(req);
         if (isInitializeRequest(body)) {
-          const maxSessions =
-            parseInt(
-              process.env['FILESYSTEM_MCP_MAX_HTTP_SESSIONS'] ?? '',
-              10
-            ) || 100;
+          const maxSessions = parseEnvInt(
+            'FILESYSTEM_MCP_MAX_HTTP_SESSIONS',
+            100,
+            1,
+            10_000
+          );
           if (sessions.size >= maxSessions) {
             sendJsonRpcError(res, 503, -32000, 'Too many sessions');
             return;
@@ -452,8 +455,17 @@ export async function startHttpServer(
           sendJsonRpcError(res, 404, -32000, 'Session not found');
         }
       } else {
-        res.writeHead(405, { Allow: 'GET, POST, DELETE' });
-        res.end('Method Not Allowed');
+        res.writeHead(405, {
+          Allow: 'GET, POST, DELETE',
+          'Content-Type': 'application/json',
+        });
+        res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            error: { code: -32000, message: 'Method Not Allowed' },
+            id: null,
+          })
+        );
       }
     } catch (error: unknown) {
       if (error instanceof RequestBodyError && !res.headersSent) {

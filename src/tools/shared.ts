@@ -54,6 +54,7 @@ export const READ_ONLY_TOOL_ANNOTATIONS = {
 
 export const DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS = {
   readOnlyHint: false,
+  idempotentHint: false,
   destructiveHint: true,
   openWorldHint: false,
 } as const;
