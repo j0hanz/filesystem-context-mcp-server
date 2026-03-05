@@ -5,9 +5,10 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import RE2 from 're2';
 import type { z } from 'zod';
 
-import { ErrorCode } from '../lib/errors.js';
-import { atomicWriteFile } from '../lib/fs-helpers.js';
-import { validateExistingPath } from '../lib/paths.js';
+import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
+import { ErrorCode, McpError } from '../lib/errors.js';
+import { atomicWriteFile, withAbort } from '../lib/fs-helpers.js';
+import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
 
 import { EditFileInputSchema, EditFileOutputSchema } from '../schemas.js';
 import {
@@ -131,6 +132,16 @@ export async function handleEditFile(
   signal?: AbortSignal
 ): Promise<ToolResponse<z.infer<typeof EditFileOutputSchema>>> {
   const validPath = await validateExistingPath(args.path, signal);
+  assertAllowedFileAccess(args.path, validPath);
+  const stats = await withAbort(fs.stat(validPath), signal);
+  if (stats.size > MAX_TEXT_FILE_SIZE) {
+    throw new McpError(
+      ErrorCode.E_TOO_LARGE,
+      `File too large for edit: ${args.path} (${stats.size} bytes > ${MAX_TEXT_FILE_SIZE} bytes)`,
+      args.path,
+      { size: stats.size, maxFileSize: MAX_TEXT_FILE_SIZE }
+    );
+  }
   const content = await fs.readFile(validPath, { encoding: 'utf-8', signal });
 
   const {

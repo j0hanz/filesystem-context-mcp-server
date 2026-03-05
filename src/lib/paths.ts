@@ -749,6 +749,8 @@ export async function validatePathForWrite(
     details: { normalizedPath: normalizedRequested },
   });
 
+  assertAllowedFileAccess(requestedPath, normalizedRequested);
+
   let current = normalizedRequested;
   for (;;) {
     try {

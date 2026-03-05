@@ -161,4 +161,41 @@ describe('Tool contract', () => {
     const dirs = sc['directories'] as string[];
     assert.ok(dirs.length > 0, 'Expected at least one allowed directory');
   });
+
+  it('structuredContent matches outputSchema shape for read-only tools', async () => {
+    // ls: returns ok, entries[]
+    const lsResult = await env.client.callTool({
+      name: 'ls',
+      arguments: { path: env.tmpDir },
+    });
+    assertOk(lsResult);
+    const lsSc = getStructured(lsResult);
+    assert.equal(lsSc['ok'], true);
+    assert.ok(Array.isArray(lsSc['entries']), 'ls: expected entries array');
+    assert.equal(typeof lsSc['totalEntries'], 'number');
+
+    // stat: returns ok, info.type, info.size, etc.
+    const statResult = await env.client.callTool({
+      name: 'stat',
+      arguments: { path: env.tmpDir },
+    });
+    assertOk(statResult);
+    const statSc = getStructured(statResult);
+    assert.equal(statSc['ok'], true);
+    const info = statSc['info'] as Record<string, unknown>;
+    assert.ok(info, 'stat: expected info object');
+    assert.equal(typeof info['type'], 'string');
+    assert.equal(typeof info['size'], 'number');
+
+    // tree: returns ok, ascii string, root
+    const treeResult = await env.client.callTool({
+      name: 'tree',
+      arguments: { path: env.tmpDir },
+    });
+    assertOk(treeResult);
+    const treeSc = getStructured(treeResult);
+    assert.equal(treeSc['ok'], true);
+    assert.equal(typeof treeSc['ascii'], 'string');
+    assert.equal(typeof treeSc['totalEntries'], 'number');
+  });
 });

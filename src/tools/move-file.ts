@@ -11,7 +11,11 @@ import {
   McpError,
 } from '../lib/errors.js';
 import { withAbort } from '../lib/fs-helpers.js';
-import { validateExistingPath, validatePathForWrite } from '../lib/paths.js';
+import {
+  assertAllowedFileAccess,
+  validateExistingPath,
+  validatePathForWrite,
+} from '../lib/paths.js';
 
 import { MoveFileInputSchema, MoveFileOutputSchema } from '../schemas.js';
 import {
@@ -87,6 +91,7 @@ export async function handleMoveFile(
     let validSource: string;
     try {
       validSource = await validateExistingPath(src, signal);
+      assertAllowedFileAccess(src, validSource);
     } catch (error) {
       failed.push({
         source: src,
