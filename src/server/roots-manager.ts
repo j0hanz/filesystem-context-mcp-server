@@ -15,11 +15,12 @@ import {
   withAbort,
 } from '../lib/fs-helpers.js';
 import {
-  getAllowedDirectories,
+  type AllowedDirectoriesState,
   getValidRootDirectories,
   isPathWithinDirectories,
   normalizePath,
-  setAllowedDirectoriesResolved,
+  resolveAllowedDirectoriesState,
+  setAllowedDirectoriesStateResolved,
 } from '../lib/paths.js';
 import { isRecord } from '../lib/utils.js';
 
@@ -126,6 +127,10 @@ async function filterRootsWithinBaseline(
 export class RootsManager {
   private rootsUpdateTimeout: ReturnType<typeof setTimeout> | undefined;
   private rootDirectories: string[] = [];
+  private allowedDirectoriesState: AllowedDirectoriesState = {
+    primary: [],
+    expanded: [],
+  };
   private clientInitialized = false;
   // Set to true when an update is in progress, to prevent concurrent executions. If a change arrives while true, we queue a single retry after completion to ensure the last-known state is applied. This
   private updatingRoots = false;
@@ -150,8 +155,15 @@ export class RootsManager {
     }
   }
 
+  getAllowedDirectoriesState(): AllowedDirectoriesState {
+    return {
+      primary: [...this.allowedDirectoriesState.primary],
+      expanded: [...this.allowedDirectoriesState.expanded],
+    };
+  }
+
   logMissingDirectoriesIfNeeded(server: McpServer): void {
-    if (getAllowedDirectories().length === 0) {
+    if (this.allowedDirectoriesState.expanded.length === 0) {
       this.logMissingDirectories(server);
     }
   }
@@ -196,7 +208,9 @@ export class RootsManager {
           : this.rootDirectories;
 
       const combined = [...baseline, ...rootsToInclude];
-      await setAllowedDirectoriesResolved(combined, signal);
+      const nextState = await resolveAllowedDirectoriesState(combined, signal);
+      this.allowedDirectoriesState = nextState;
+      setAllowedDirectoriesStateResolved(nextState);
     } finally {
       cleanup();
     }

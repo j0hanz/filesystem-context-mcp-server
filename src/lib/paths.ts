@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { platform } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
@@ -201,8 +202,27 @@ const RESERVED_DEVICE_NAMES = new Set([
   'LPT9',
 ]);
 
+export interface AllowedDirectoriesState {
+  primary: string[];
+  expanded: string[];
+}
+
+const allowedDirectoriesContext =
+  new AsyncLocalStorage<AllowedDirectoriesState>({
+    name: 'filesystem-mcp:allowed-directories',
+  });
+
 function dedupePreserveOrder<T>(items: readonly T[]): T[] {
   return [...new Set(items)];
+}
+
+function cloneAllowedDirectoriesState(
+  state: AllowedDirectoriesState
+): AllowedDirectoriesState {
+  return {
+    primary: [...state.primary],
+    expanded: [...state.expanded],
+  };
 }
 
 function expandHome(filepath: string): string {
@@ -296,32 +316,59 @@ function normalizeAllowedDirectories(dirs: readonly string[]): string[] {
 // single MCP session per process, so this is safe. In HTTP mode all HTTP
 // sessions within the same process share one policy — multi-tenant isolation
 // (different roots per session) requires separate server processes.
-let allowedDirectoriesExpanded: string[] = [];
-let allowedDirectoriesPrimary: string[] = [];
+let defaultAllowedDirectoriesState: AllowedDirectoriesState = {
+  primary: [],
+  expanded: [],
+};
 
 function setAllowedDirectoriesState(
   primary: readonly string[],
   expanded: readonly string[]
 ): void {
-  allowedDirectoriesPrimary = dedupePreserveOrder(primary);
-  allowedDirectoriesExpanded = dedupePreserveOrder(expanded);
+  defaultAllowedDirectoriesState = {
+    primary: dedupePreserveOrder(primary),
+    expanded: dedupePreserveOrder(expanded),
+  };
+}
+
+function getActiveAllowedDirectoriesState(): AllowedDirectoriesState {
+  return allowedDirectoriesContext.getStore() ?? defaultAllowedDirectoriesState;
+}
+
+export function withAllowedDirectoriesState<T>(
+  state: AllowedDirectoriesState,
+  run: () => T
+): T {
+  return allowedDirectoriesContext.run(
+    cloneAllowedDirectoriesState(state),
+    run
+  );
+}
+
+export function getAllowedDirectoriesState(): AllowedDirectoriesState {
+  return cloneAllowedDirectoriesState(getActiveAllowedDirectoriesState());
+}
+
+export function setAllowedDirectoriesStateResolved(
+  state: AllowedDirectoriesState
+): void {
+  setAllowedDirectoriesState(state.primary, state.expanded);
 }
 
 export function getAllowedDirectories(): string[] {
-  return [...allowedDirectoriesExpanded];
+  return [...getActiveAllowedDirectoriesState().expanded];
 }
 
 export function isAllowedDirectoryRoot(normalizedPath: string): boolean {
-  for (const dir of allowedDirectoriesExpanded) {
+  for (const dir of getActiveAllowedDirectoriesState().expanded) {
     if (isSamePath(normalizedPath, dir)) return true;
   }
   return false;
 }
 
 function getAllowedDirectoriesForRelativeResolution(): readonly string[] {
-  return allowedDirectoriesPrimary.length > 0
-    ? allowedDirectoriesPrimary
-    : allowedDirectoriesExpanded;
+  const state = getActiveAllowedDirectoriesState();
+  return state.primary.length > 0 ? state.primary : state.expanded;
 }
 
 function isPathInsideDirectory(
@@ -393,13 +440,21 @@ async function expandAllowedDirectories(
   return dedupePreserveOrder(expanded);
 }
 
+export async function resolveAllowedDirectoriesState(
+  dirs: readonly string[],
+  signal?: AbortSignal
+): Promise<AllowedDirectoriesState> {
+  const primary = normalizeAllowedDirectories(dirs);
+  const expanded = await expandAllowedDirectories(primary, signal);
+  return { primary, expanded };
+}
+
 export async function setAllowedDirectoriesResolved(
   dirs: readonly string[],
   signal?: AbortSignal
 ): Promise<void> {
-  const primary = normalizeAllowedDirectories(dirs);
-  const expanded = await expandAllowedDirectories(primary, signal);
-  setAllowedDirectoriesState(primary, expanded);
+  const state = await resolveAllowedDirectoriesState(dirs, signal);
+  setAllowedDirectoriesStateResolved(state);
 }
 
 function ensureNonEmptyPath(requestedPath: string): void {

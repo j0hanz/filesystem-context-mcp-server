@@ -11,7 +11,7 @@ MCP Server that enables LLMs to interact with the local filesystem. Provides too
 
 - **Runtime entry + transport**: `src/index.ts` parses CLI args (`src/cli.ts`), resolves allowed directories, and starts either stdio transport (`startServer`) or Streamable HTTP transport on `/mcp` (`startHttpServer` in `src/server/bootstrap.ts`).
 - **Server composition**: `createServer` builds one `McpServer` per process/session and registers capabilities, prompts, completions, resources, metrics, and all tools.
-- **Roots and access control**: `RootsManager` (`src/server/roots-manager.ts`) combines CLI roots, optional CWD, and MCP Roots updates into effective allowed directories; path checks/sensitive-file blocking are enforced in `src/lib/path-validation.ts` and `src/lib/path-policy.ts`.
+- **Roots and access control**: `RootsManager` (`src/server/roots-manager.ts`) combines CLI roots, optional CWD, and MCP Roots updates into effective allowed directories; path checks and sensitive-file blocking are enforced in `src/lib/paths.ts`.
 - **Tool contract layer**: `src/tools.ts` is the registry for 18 tools. Each tool module defines a `ToolContract`, Zod input/output schemas, and registration wiring.
 - **Shared execution pipeline**: `src/tools/shared.ts` centralizes argument validation, typed error mapping, timeout/abort handling, progress reporting, observability hooks, and large-result externalization into `filesystem-mcp://result/{id}` resources.
 - **Filesystem operation layer**: reusable primitives in `src/lib/file-operations/*` are consumed by tool handlers (read/write/search/stat/tree/hash/diff/patch).

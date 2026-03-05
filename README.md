@@ -834,7 +834,7 @@ All 18 tools define `outputSchema` (Zod -> JSON Schema) and return `structuredCo
 
 | Variable                           | Default          | Description                                                                    |
 | ---------------------------------- | ---------------- | ------------------------------------------------------------------------------ |
-| `FILESYSTEM_MCP_API_KEY`           | _(none)_         | Optional Bearer token for HTTP transport authentication                        |
+| `FILESYSTEM_MCP_API_KEY`           | _(none)_         | Bearer token required when binding HTTP to a non-loopback host                 |
 | `FILESYSTEM_MCP_MAX_HTTP_SESSIONS` | `100`            | Max concurrent HTTP sessions (1-10,000)                                        |
 | `FILESYSTEM_MCP_HTTP_HOST`         | `127.0.0.1`      | HTTP server bind address                                                       |
 | `FS_CONTEXT_MAX_REQUEST_BYTES`     | `4194304` (4 MB) | Max HTTP request body size (1 KB - 256 MB)                                     |
@@ -858,10 +858,10 @@ When started with `--port <number>`, the server exposes a single MCP endpoint:
 
 **Required headers:**
 
-- `mcp-protocol-version` — must match MCP v2025-11-25
+- `mcp-protocol-version` — use the negotiated MCP protocol version on post-initialize HTTP requests
 - `mcp-session-id` — required for `GET`/`DELETE` (returned by `POST` on initialize)
 
-**Authentication:** If `FILESYSTEM_MCP_API_KEY` is set, requests must include `Authorization: Bearer <key>`. Uses SHA-256 timing-safe comparison.
+**Authentication:** Requests to non-loopback HTTP binds require `FILESYSTEM_MCP_API_KEY`; clients must then send `Authorization: Bearer <key>`. Loopback-only binds may omit auth for local use. Uses SHA-256 timing-safe comparison.
 
 **CORS:** Only localhost origins allowed (`127.0.0.1`, `::1`, `localhost`).
 
@@ -873,11 +873,11 @@ When started with `--port <number>`, the server exposes a single MCP endpoint:
 | Traversal prevention      | confirmed | `src/lib/paths.ts` — resolved paths checked after normalization                        |
 | Symlink escape prevention | confirmed | `src/__tests__/security.test.ts` — symlink boundary enforcement                        |
 | Sensitive file denylist   | confirmed | `src/lib/constants.ts` — blocks `.git`, `.env*`, SSH keys, certs, secrets              |
-| Origin validation         | confirmed | `src/server/bootstrap.ts` — localhost-only CORS regex                                  |
+| Origin validation         | confirmed | `src/server/bootstrap.ts` — localhost-only Origin allowlist                            |
 | Bearer auth               | confirmed | `src/server/bootstrap.ts` — optional `FILESYSTEM_MCP_API_KEY` with timing-safe compare |
 | Input validation          | confirmed | `src/schemas.ts` — Zod strict schemas on all tool inputs                               |
 | Request body limit        | confirmed | `src/server/bootstrap.ts` — configurable max request size (413 on overflow)            |
-| DNS rebinding protection  | confirmed | `src/server/bootstrap.ts` — Host header validation                                     |
+| Remote bind guard         | confirmed | `src/server/bootstrap.ts` — refuses non-loopback bind without `FILESYSTEM_MCP_API_KEY` |
 
 ## Development
 

@@ -19,12 +19,9 @@ import {
   SetLevelRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
-import {
-  DEFAULT_LOG_LEVEL,
-  parseEnvInt,
-  REQUIRED_MCP_PROTOCOL_VERSION,
-} from '../lib/constants.js';
+import { DEFAULT_LOG_LEVEL, parseEnvInt } from '../lib/constants.js';
 import { formatUnknownErrorMessage } from '../lib/errors.js';
+import { withAllowedDirectoriesState } from '../lib/paths.js';
 import { createInMemoryResourceStore } from '../lib/resource-store.js';
 import { isRecord } from '../lib/utils.js';
 
@@ -354,13 +351,14 @@ async function readRequestBody(req: http.IncomingMessage): Promise<unknown> {
 
 interface HttpSession {
   server: McpServer;
+  rootsManager: RootsManager;
   transport: StreamableHTTPServerTransport;
 }
 
 async function createHttpSession(
   options: ServerOptions,
   sessions: Map<string, HttpSession>
-): Promise<{ server: McpServer; transport: StreamableHTTPServerTransport }> {
+): Promise<HttpSession> {
   const mcpServer = await createServer(options);
   const rootsManager = getRootsManager(mcpServer);
 
@@ -370,7 +368,7 @@ async function createHttpSession(
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: () => randomUUID(),
     onsessioninitialized: (sessionId) => {
-      sessions.set(sessionId, { server: mcpServer, transport });
+      sessions.set(sessionId, { server: mcpServer, rootsManager, transport });
       rootsManager.logMissingDirectoriesIfNeeded(mcpServer);
     },
   });
@@ -391,7 +389,7 @@ async function createHttpSession(
 
   await mcpServer.connect(transport as unknown as Transport);
 
-  return { server: mcpServer, transport };
+  return { server: mcpServer, rootsManager, transport };
 }
 
 function sendJsonRpcError(
@@ -418,41 +416,6 @@ function isAllowedOrigin(origin: string | undefined): boolean {
   return LOCALHOST_ORIGIN_RE.test(origin);
 }
 
-function getProtocolVersionHeader(
-  req: http.IncomingMessage
-): string | undefined {
-  const rawProtocolVersion = req.headers['mcp-protocol-version'];
-  if (typeof rawProtocolVersion === 'string') {
-    return rawProtocolVersion;
-  }
-
-  if (Array.isArray(rawProtocolVersion)) {
-    return rawProtocolVersion.find(
-      (value) => value === REQUIRED_MCP_PROTOCOL_VERSION
-    );
-  }
-
-  return undefined;
-}
-
-function ensureProtocolVersionHeader(
-  req: http.IncomingMessage,
-  res: http.ServerResponse
-): boolean {
-  const protocolVersion = getProtocolVersionHeader(req);
-  if (protocolVersion === REQUIRED_MCP_PROTOCOL_VERSION) {
-    return true;
-  }
-
-  sendJsonRpcError(
-    res,
-    400,
-    -32000,
-    'Bad Request: MCP-Protocol-Version header missing or unsupported'
-  );
-  return false;
-}
-
 function discardRequestBody(req: http.IncomingMessage): void {
   req.on('error', () => {
     // Best effort drain to avoid corrupting keep-alive pipelines.
@@ -460,11 +423,43 @@ function discardRequestBody(req: http.IncomingMessage): void {
   req.resume();
 }
 
+async function handleSessionTransportRequest(
+  session: HttpSession,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  body?: unknown
+): Promise<void> {
+  await withAllowedDirectoriesState(
+    session.rootsManager.getAllowedDirectoriesState(),
+    () => session.transport.handleRequest(req, res, body)
+  );
+}
+
+function isLoopbackHttpHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  return (
+    normalized === '127.0.0.1' ||
+    normalized === 'localhost' ||
+    normalized === '::1' ||
+    normalized === '[::1]'
+  );
+}
+
+function assertHttpBindingSecurity(host: string): void {
+  if (isLoopbackHttpHost(host)) return;
+  if (process.env['FILESYSTEM_MCP_API_KEY']) return;
+  throw new Error(
+    `Refusing to bind HTTP server to non-loopback host '${host}' without FILESYSTEM_MCP_API_KEY.`
+  );
+}
+
 export async function startHttpServer(
   port: number,
   options: ServerOptions
 ): Promise<http.Server> {
   const sessions = new Map<string, HttpSession>();
+  const httpHost = process.env['FILESYSTEM_MCP_HTTP_HOST'] ?? '127.0.0.1';
+  assertHttpBindingSecurity(httpHost);
 
   async function handleMcpRequest(
     req: http.IncomingMessage,
@@ -526,15 +521,10 @@ export async function startHttpServer(
             return;
           }
 
-          if (!ensureProtocolVersionHeader(req, res)) {
-            discardRequestBody(req);
-            return;
-          }
-
           const body = await readRequestBody(req);
           const session = sessions.get(sessionId);
           if (session) {
-            await session.transport.handleRequest(req, res, body);
+            await handleSessionTransportRequest(session, req, res, body);
           } else {
             sendJsonRpcError(res, 404, -32000, 'Session not found');
           }
@@ -553,8 +543,8 @@ export async function startHttpServer(
             sendJsonRpcError(res, 503, -32000, 'Too many sessions');
             return;
           }
-          const { transport } = await createHttpSession(options, sessions);
-          await transport.handleRequest(req, res, body);
+          const session = await createHttpSession(options, sessions);
+          await handleSessionTransportRequest(session, req, res, body);
           return;
         }
 
@@ -576,13 +566,9 @@ export async function startHttpServer(
           return;
         }
 
-        if (!ensureProtocolVersionHeader(req, res)) {
-          return;
-        }
-
         const session = sessions.get(sessionId);
         if (session) {
-          await session.transport.handleRequest(req, res);
+          await handleSessionTransportRequest(session, req, res);
         } else {
           sendJsonRpcError(res, 404, -32000, 'Session not found');
         }
@@ -632,10 +618,6 @@ export async function startHttpServer(
       }
     }
   );
-
-  // Default to localhost-only binding to prevent DNS-rebinding and unintended
-  // external exposure. Override with FILESYSTEM_MCP_HTTP_HOST for remote setups.
-  const httpHost = process.env['FILESYSTEM_MCP_HTTP_HOST'] ?? '127.0.0.1';
 
   return new Promise<http.Server>((resolve, reject) => {
     httpServer.once('error', reject);
