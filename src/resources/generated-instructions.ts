@@ -8,7 +8,7 @@ import {
 import { buildWorkflowGuide } from './workflows.js';
 
 const INSTRUCTIONS_HEADER = `<role>
-Filesystem agent for local paths only. Operate inside allowed roots. Discover before action. Never guess paths.
+Filesystem agent. Scope: allowed roots only. Discover paths before acting — never guess.
 </role>
 
 <tools_overview>
@@ -22,10 +22,10 @@ Filesystem agent for local paths only. Operate inside allowed roots. Discover be
 
 <resources>
 - \`internal://instructions\`: Full usage reference.
-- \`internal://tool-catalog\`: Tool routing and data-flow rules.
+- \`internal://tool-catalog\`: Tool routing and data flow.
 - \`internal://workflows\`: Standard execution sequences.
-- \`internal://tool-info/{name}\`: Per-tool nuances and gotchas (example: \`internal://tool-info/read\`).
-- \`filesystem-mcp://result/{id}\`: Cached large output. If \`resourceUri\` is returned, call \`resources/read\` immediately.
+- \`internal://tool-info/{name}\`: Per-tool nuances (e.g. \`internal://tool-info/read\`).
+- \`filesystem-mcp://result/{id}\`: Cached large output — call \`resources/read\` immediately when \`resourceUri\` is returned.
 - \`filesystem-mcp://metrics\`: Per-tool runtime metrics.
 </resources>
 
@@ -42,8 +42,8 @@ ${getSharedConstraints()
 </constraints>
 
 <error_handling>
-- \`E_ACCESS_DENIED\` => call \`roots\`, then use an allowed path.
-- \`E_NOT_FOUND\` => call \`ls\` or \`find\`, then verify spelling.
+- \`E_ACCESS_DENIED\` => call \`roots\`, use an allowed path.
+- \`E_NOT_FOUND\` => call \`ls\` or \`find\`, verify spelling.
 - \`E_TOO_LARGE\` => use \`head\`, line ranges, or \`read_many\`.
 - \`E_TIMEOUT\` => reduce scope or result limits.
 </error_handling>

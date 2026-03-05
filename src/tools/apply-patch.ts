@@ -32,8 +32,8 @@ export const APPLY_PATCH_TOOL: ToolContract = {
   title: 'Apply Patch',
   description:
     'Apply a unified diff patch to a file. ' +
-    'Generate the patch with `diff_files`, then validate with `dryRun: true` before writing. ' +
-    'On failure, regenerate a fresh patch via `diff_files` against the current file content and retry.',
+    'Workflow: `diff_files` \u2192 `apply_patch(dryRun:true)` \u2192 `apply_patch`. ' +
+    'On failure, regenerate the patch from current file content.',
   inputSchema: ApplyPatchInputSchema,
   outputSchema: ApplyPatchOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,

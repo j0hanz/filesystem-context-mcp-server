@@ -35,11 +35,9 @@ export const LIST_DIRECTORY_TOOL: ToolContract = {
   name: 'ls',
   title: 'List Directory',
   description:
-    'List the immediate contents of a directory (non-recursive). ' +
-    'Returns name, relative path, type (file/directory/symlink), size, and modified date. ' +
-    'Omit path to list the workspace root. ' +
-    'Use includeIgnored=true to include ignored directories like node_modules. ' +
-    'For recursive searches, use find instead.',
+    'List immediate directory contents (non-recursive): name, path, type, size, modified date. ' +
+    'Omit path for workspace root. `includeIgnored=true` for node_modules etc. ' +
+    'For recursive search, use `find`.',
   inputSchema: ListDirectoryInputSchema,
   outputSchema: ListDirectoryOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,

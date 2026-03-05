@@ -34,8 +34,8 @@ export const DELETE_FILE_TOOL: ToolContract = {
   outputSchema: DeleteFileOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   gotchas: [
-    'Deletion is permanent — there is no undo or recycle bin.',
-    'Non-empty directory delete requires `recursive=true`; else returns actionable input error.',
+    'No undo — deletion is permanent.',
+    'Non-empty directories require `recursive=true`.',
   ],
 } as const;
 

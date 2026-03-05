@@ -49,18 +49,16 @@ export const SEARCH_AND_REPLACE_TOOL: ToolContract = {
   name: 'search_and_replace',
   title: 'Search and Replace',
   description:
-    'Search and replace text across multiple files matching a glob pattern. ' +
-    'Replaces ALL occurrences in each file (unlike `edit` which replaces only the first). ' +
-    'Use `filePattern` to scope which files are touched. ' +
-    'Always run with `dryRun: true` first to verify matches before writing. ' +
-    'Returns a unified diff of changes in `dryRun` mode. ' +
-    'Literal mode (default) matches exact text; `isRegex: true` enables RE2 regex with capture groups ($1, $2).',
+    'Bulk search-and-replace across files matching a glob. ' +
+    'Replaces ALL occurrences per file (unlike `edit`: first only). ' +
+    'Always `dryRun:true` first \u2014 returns a unified diff. ' +
+    'Literal matching by default; `isRegex:true` enables RE2 with capture groups ($1, $2).',
   inputSchema: SearchAndReplaceInputSchema,
   outputSchema: SearchAndReplaceOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   taskSupport: 'optional',
   gotchas: [
-    'Literal mode is default; `isRegex=true` enables RE2 + capture replacements (`$1`, `$2`).',
+    'Replaces ALL occurrences — not just the first. Use `edit` for single replacements.',
   ],
   nuances: [
     'Changed-file sample and failure sample are capped/truncated in output.',

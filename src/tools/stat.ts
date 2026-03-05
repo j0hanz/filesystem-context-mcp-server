@@ -30,7 +30,8 @@ export const GET_FILE_INFO_TOOL: ToolContract = {
   name: 'stat',
   title: 'Get File Info',
   description:
-    'Get metadata (size, modified time, permissions, mime type, tokenEstimate) for a file or directory. Use tokenEstimate (size÷4) to pre-screen token cost before reading.',
+    'Get file/directory metadata: size, modified, permissions, mime, tokenEstimate. ' +
+    'Use `tokenEstimate` (size\u00f74) to pre-screen token cost before reading.',
   inputSchema: GetFileInfoInputSchema,
   outputSchema: GetFileInfoOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,

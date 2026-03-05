@@ -45,20 +45,18 @@ export const SEARCH_CONTENT_TOOL: ToolContract = {
   name: 'grep',
   title: 'Search Content',
   description:
-    'Search for text within file contents (grep-like). ' +
-    'Returns matching lines. ' +
-    'Path may be a directory or a single file. ' +
-    'Use `filePattern` to scope by file type (e.g. `**/*.ts`) and avoid noisy results. ' +
-    'Use includeHidden=true to include hidden files and directories.',
+    'Search file contents for text (grep-like). Returns matching lines. ' +
+    'Scope with `filePattern` (e.g. `**/*.ts`) to reduce noise. ' +
+    '`includeHidden=true` for dotfiles.',
   inputSchema: SearchContentInputSchema,
   outputSchema: SearchContentOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   nuances: [
-    'Inline match rows are capped (first 50); full structured results are externalized via `resourceUri`.',
+    'Inline results capped at 50 matches; full results via `resourceUri`.',
     'Skips binary and oversized files.',
   ],
   gotchas: [
-    'Skips binary and oversized files silently — check file type with `stat` if no matches appear.',
+    'Skips binary/oversized files silently — verify with `stat` if no matches.',
   ],
   taskSupport: 'optional',
 } as const;

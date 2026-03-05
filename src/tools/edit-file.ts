@@ -31,19 +31,14 @@ export const EDIT_FILE_TOOL: ToolContract = {
   name: 'edit',
   title: 'Edit File',
   description:
-    'Edit a file by replacing text. Sequentially applies a list of string replacements. ' +
-    'Replaces the first occurrence of each `oldText`. ' +
-    '`oldText` must match exactly — include 3–5 lines of surrounding context to uniquely target the location. ' +
-    'Use `dryRun: true` to validate edits before writing.',
+    'Apply sequential literal string replacements to a file (first occurrence per edit). ' +
+    '`oldText` must match exactly \u2014 include 3\u20135 lines of context for unique targeting. ' +
+    'Use `dryRun:true` to preview.',
   inputSchema: EditFileInputSchema,
   outputSchema: EditFileOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
-  nuances: [
-    'Apply sequential literal replacements (first occurrence per edit).',
-  ],
-  gotchas: [
-    '`oldText` must match exactly; unmatched items are reported in `unmatchedEdits`.',
-  ],
+  nuances: ['Each edit applies to the output of the previous edit.'],
+  gotchas: ['Unmatched `oldText` entries listed in `unmatchedEdits`.'],
 } as const;
 
 interface EditResult {

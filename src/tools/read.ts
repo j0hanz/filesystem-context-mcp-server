@@ -33,9 +33,9 @@ export const READ_FILE_TOOL: ToolContract = {
   name: 'read',
   title: 'Read File',
   description:
-    'Read the text contents of a file. ' +
-    'Use head parameter to preview the first N lines of large files. ' +
-    'For multiple files, use read_many for efficiency.',
+    'Read text file contents. ' +
+    'Use `head` to preview first N lines of large files. ' +
+    'For multiple files, use `read_many`.',
   inputSchema: ReadFileInputSchema,
   outputSchema: ReadFileOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,

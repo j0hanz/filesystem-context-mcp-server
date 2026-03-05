@@ -35,7 +35,7 @@ export const DIFF_FILES_TOOL: ToolContract = {
   description:
     'Generate a unified diff between two files. ' +
     'Output feeds directly into `apply_patch`. ' +
-    'Check `isIdentical` in the response — if true, the files are already in sync and no patch is needed.',
+    '`isIdentical=true` means files match \u2014 no patch needed.',
   inputSchema: DiffFilesInputSchema,
   outputSchema: DiffFilesOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,

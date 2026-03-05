@@ -37,10 +37,8 @@ export const SEARCH_FILES_TOOL: ToolContract = {
   name: 'find',
   title: 'Find Files',
   description:
-    'Find files by glob pattern (e.g., **/*.ts). ' +
-    'Returns a list of matching files with metadata. ' +
-    'For text search inside files, use grep. ' +
-    'To bulk-edit the matched files, pass the same glob pattern to search_and_replace.',
+    'Find files by glob pattern (e.g. `**/*.ts`). Returns matching files with metadata. ' +
+    'For content search, use `grep`. For bulk edits, pass the same glob to `search_and_replace`.',
   inputSchema: SearchFilesInputSchema,
   outputSchema: SearchFilesOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,

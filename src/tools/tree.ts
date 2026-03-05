@@ -34,9 +34,8 @@ export const TREE_TOOL: ToolContract = {
   name: 'tree',
   title: 'Tree',
   description:
-    'Render a directory tree (bounded recursion). ' +
-    'Returns an ASCII tree for quick scanning and a structured JSON tree for programmatic use. ' +
-    'Note: maxDepth=0 returns only the root node with empty children array.',
+    'Render a directory tree (bounded recursion). Returns ASCII tree + structured JSON. ' +
+    '`maxDepth=0` returns only the root node.',
   inputSchema: TreeInputSchema,
   outputSchema: TreeOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,

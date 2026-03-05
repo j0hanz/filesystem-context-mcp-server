@@ -55,10 +55,10 @@ export function buildCoreContextPack(): string {
 
 export function getSharedConstraints(): string[] {
   return [
-    'Use allowed roots only (provided by CLI negotiation).',
+    'Use allowed roots only (from CLI negotiation).',
     'Sensitive paths are denylisted by default.',
-    `Limits are enforced: max file size ${Math.floor(MAX_TEXT_FILE_SIZE / 1024 / 1024)}MB; search caps ${MAX_SEARCH_RESULTS} files and ${DEFAULT_SEARCH_CONTENT_RESULTS} lines.`,
-    'If a response includes `resourceUri`, call `resources/read` immediately; cached results expire on process restart.',
+    `Limits enforced: max file size ${Math.floor(MAX_TEXT_FILE_SIZE / 1024 / 1024)}MB; search caps ${MAX_SEARCH_RESULTS} files, ${DEFAULT_SEARCH_CONTENT_RESULTS} content matches.`,
+    'If response includes `resourceUri`, call `resources/read` immediately — cached results expire on restart.',
   ];
 }
 

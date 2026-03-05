@@ -4,26 +4,26 @@ const CATALOG_GUIDE = `<tool_selection_guide>
 ## Cross-Tool Data Flow
 
 \`\`\`
-find (results[].path) -> grep.paths
-diff_files (patch text) -> apply_patch.patch
+find(results[].path) -> grep.paths
+diff_files(patch) -> apply_patch.patch
 \`\`\`
 
 ## Search Strategy
 
-- Use \`find\` for glob file discovery.
-- Use \`grep\` for text search.
-- Use \`search_and_replace\` only for replacement, never discovery.
+- \`find\`: glob file discovery.
+- \`grep\`: text content search.
+- \`search_and_replace\`: replacement only, not discovery.
 
 ## Write Strategy
 
-- Use \`edit\` for precise, first-occurrence replacements in existing files.
-- Use \`write\` to create files or overwrite full contents.
-- Use \`search_and_replace\` for bulk multi-file replacements.
+- \`edit\`: precise first-occurrence replacements.
+- \`write\`: create files or overwrite full contents.
+- \`search_and_replace\`: bulk multi-file replacements.
 
 ## Patch Management
 
 - Generate patches with \`diff_files\` first.
-- Run \`apply_patch\` with \`dryRun: true\` before writing.
+- Validate with \`apply_patch(dryRun:true)\` before writing.
 - \`apply_patch\` accepts unified diffs only.
 </tool_selection_guide>
 `;

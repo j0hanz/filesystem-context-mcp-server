@@ -29,13 +29,11 @@ export const LIST_ALLOWED_DIRECTORIES_TOOL: ToolContract = {
   name: 'roots',
   title: 'Workspace Roots',
   description:
-    'List the workspace roots this server can access. ' +
-    'Call this first to see available directories. ' +
-    'All other tools only work within these directories.',
+    'List allowed workspace roots. Call first \u2014 all other tools are scoped to these directories.',
   inputSchema: ListAllowedDirectoriesInputSchema,
   outputSchema: ListAllowedDirectoriesOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
-  nuances: ['Other tools are constrained to these roots.'],
+  nuances: ['Returns absolute paths of all allowed directories.'],
 } as const;
 
 function buildTextRoots(dirs: string[]): string {

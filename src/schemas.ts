@@ -33,10 +33,9 @@ function isSafeGlobPattern(value: string): boolean {
 const MAX_PATH_LENGTH = 4096;
 
 const DESC_PATH_ROOT =
-  'Base directory (default: root). Absolute path required if multiple roots exist. Examples: "src", "src/components"';
+  'Base directory (default: root). Absolute path required if multiple roots.';
 
-const DESC_PATH_REQUIRED =
-  'Absolute path to file or directory. Examples: "src/index.ts", "README.md"';
+const DESC_PATH_REQUIRED = 'Absolute path to file or directory.';
 
 function defaultFalseBoolean(
   description: string
@@ -312,14 +311,12 @@ export const SearchContentInputSchema = z.strictObject({
     .string()
     .min(1, 'Pattern required')
     .max(1000, 'Max 1000 chars')
-    .describe(
-      'Literal text to search for by default; treated as RE2 regex when isRegex is true.'
-    ),
+    .describe('Search text. RE2 regex when `isRegex=true`.'),
   isRegex: defaultFalseBoolean(
-    'Treat pattern as a RE2 regular expression. RE2 does not support lookahead, lookbehind, or backreferences.'
+    'Treat pattern as RE2 regex (no lookahead/lookbehind/backrefs).'
   ),
   caseSensitive: defaultFalseBoolean(
-    'Case-sensitive matching (default: false — searches are case-insensitive).'
+    'Case-sensitive matching. Default: case-insensitive.'
   ),
   wholeWord: defaultFalseBoolean('Match whole words only'),
   contextLines: z
@@ -605,12 +602,12 @@ export const EditFileInputSchema = z.strictObject({
         oldText: z
           .string()
           .describe(
-            'Exact literal string to replace — must match character-for-character including whitespace and indentation. Include 3–5 lines of surrounding context to uniquely identify the location.'
+            'Exact literal string to replace (character-for-character). Include 3–5 lines of context for unique targeting.'
           ),
         newText: z
           .string()
           .describe(
-            'Replacement string — preserve the indentation style of surrounding code.'
+            'Replacement string. Preserve surrounding indentation style.'
           ),
       })
     )
@@ -619,10 +616,10 @@ export const EditFileInputSchema = z.strictObject({
       'List of replacements to apply sequentially. Each edit replaces the first occurrence of oldText.'
     ),
   dryRun: defaultFalseBoolean(
-    'Preview edits without writing. Check unmatchedEdits in the response to verify all oldText values were found.'
+    'Preview edits without writing. Check `unmatchedEdits` in response.'
   ),
   ignoreWhitespace: defaultFalseBoolean(
-    'Ignore leading/trailing whitespace and treat all whitespace sequences as equivalent when matching oldText.'
+    'Treat all whitespace sequences as equivalent when matching oldText.'
   ),
 });
 
@@ -734,9 +731,7 @@ export const ApplyPatchInputSchema = z.strictObject({
   path: RequiredPathSchema.describe('Path to file to patch'),
   patch: z
     .string()
-    .describe(
-      'Unified diff content to apply — must include @@ hunk headers. Generate with `diff_files`.'
-    ),
+    .describe('Unified diff with @@ hunk headers. Generate with `diff_files`.'),
   fuzzFactor: z
     .number()
     .int({ error: 'Must be integer' })
@@ -754,7 +749,7 @@ export const ApplyPatchInputSchema = z.strictObject({
     .optional()
     .default(false)
     .describe(
-      'Validate the patch can be applied without writing. Check `applied` in the response before committing.'
+      'Validate patch without writing. Check `applied` before committing.'
     ),
 });
 
@@ -779,11 +774,11 @@ export const SearchAndReplaceInputSchema = z.strictObject({
     .string()
     .min(1, 'Search pattern required')
     .describe(
-      'Text to search for. Matched literally by default; treated as RE2 regex when isRegex is true.'
+      'Text to search for. Literal by default; RE2 regex when `isRegex=true`.'
     ),
   replacement: z.string().describe('Replacement text'),
   isRegex: defaultFalseBoolean(
-    'Treat searchPattern as a RE2 regular expression. Supports capture group references ($1, $2) in replacement.'
+    'Treat searchPattern as RE2 regex. Supports capture groups ($1, $2) in replacement.'
   ),
   dryRun: defaultFalseBoolean(
     'Preview matches without writing. Check changedFiles and matches in the response before committing.'
@@ -792,13 +787,13 @@ export const SearchAndReplaceInputSchema = z.strictObject({
     .boolean()
     .optional()
     .describe(
-      'Include hidden files and directories (starting with .) in the search scope. Default: false.'
+      'Include hidden files/directories (starting with .). Default: false.'
     ),
   includeIgnored: z
     .boolean()
     .optional()
     .describe(
-      'Include files and directories ignored by .gitignore rules (e.g. node_modules, dist). Default: false.'
+      'Include .gitignore-ignored files (node_modules, dist). Default: false.'
     ),
   returnDiff: z
     .boolean()

@@ -40,9 +40,8 @@ export const READ_MULTIPLE_FILES_TOOL: ToolContract = {
   name: 'read_many',
   title: 'Read Multiple Files',
   description:
-    'Read multiple text files in a single request. ' +
-    'Returns contents and metadata for each file. ' +
-    'For single file, use read for simpler output.',
+    'Read multiple text files in one request with contents and metadata. ' +
+    'For a single file, use `read`.',
   inputSchema: ReadMultipleFilesInputSchema,
   outputSchema: ReadMultipleFilesOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
