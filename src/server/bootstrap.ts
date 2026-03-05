@@ -10,6 +10,10 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import type {
+  LoggingLevel,
+  LoggingMessageNotificationParams,
+} from '@modelcontextprotocol/sdk/types.js';
 import {
   isInitializeRequest,
   SetLevelRequestSchema,
@@ -22,6 +26,7 @@ import {
 } from '../lib/constants.js';
 import { formatUnknownErrorMessage } from '../lib/errors.js';
 import { createInMemoryResourceStore } from '../lib/resource-store.js';
+import { isRecord } from '../lib/utils.js';
 
 import { registerCompletions } from '../completions.js';
 import { pkgInfo } from '../pkg-info.js';
@@ -38,13 +43,140 @@ import { buildServerInstructions } from '../resources/generated-instructions.js'
 import { registerAllTools } from '../tools.js';
 import type { IconInfo } from '../tools/shared.js';
 import { withDefaultIcons } from '../tools/shared.js';
-import {
-  buildServerCapabilities,
-  supportsTaskToolRequests,
-} from './capabilities.js';
-import { createLoggingState } from './logging.js';
 import { RootsManager } from './roots-manager.js';
-import type { ServerOptions } from './types.js';
+
+export interface ServerOptions {
+  allowCwd?: boolean;
+  cliAllowedDirs?: string[];
+}
+
+let cachedTaskToolSupport: boolean | undefined;
+
+function detectTaskToolSupport(): boolean {
+  if (cachedTaskToolSupport !== undefined) {
+    return cachedTaskToolSupport;
+  }
+
+  try {
+    // Instantiate a minimal, unconnected probe server to duck-type check for
+    // task tool support. The probe has no transport or active connections, so
+    // close() only releases in-memory state; fire-and-forget is safe here.
+    const probe = new McpServer(
+      {
+        name: 'filesystem-mcp-capability-probe',
+        version: '0.0.0',
+      },
+      { capabilities: { tools: {} } }
+    );
+    cachedTaskToolSupport =
+      typeof probe.experimental.tasks.registerToolTask === 'function';
+    probe.close().catch(() => {});
+  } catch {
+    cachedTaskToolSupport = false;
+  }
+
+  return cachedTaskToolSupport;
+}
+
+interface CapabilityOptions {
+  enablePromptListChanged?: boolean;
+  enableTaskToolRequests?: boolean;
+}
+
+type ServerCapabilities = NonNullable<
+  ConstructorParameters<typeof McpServer>[1]
+>['capabilities'];
+
+type NonOptionalServerCapabilities = NonNullable<ServerCapabilities>;
+
+export function buildServerCapabilities(
+  options: CapabilityOptions = {}
+): NonOptionalServerCapabilities {
+  const capabilities: NonOptionalServerCapabilities = {
+    logging: {},
+    resources: {},
+    tools: {},
+    prompts: options.enablePromptListChanged ? { listChanged: true } : {},
+    completions: {},
+  };
+
+  if (options.enableTaskToolRequests) {
+    // NOTE: enabling task tool requests requires the caller to configure
+    // an InMemoryTaskStore and InMemoryTaskMessageQueue on the McpServer.
+    // InMemoryTaskStore accumulates completed task records with no TTL eviction —
+    // suitable for short-lived stdio sessions. Long-running HTTP servers should
+    // replace it with a TTL-evicting store to avoid unbounded memory growth.
+    capabilities.tasks = {
+      list: {},
+      cancel: {},
+      requests: { tools: { call: {} } },
+    };
+  }
+
+  return capabilities;
+}
+
+export function supportsTaskToolRequests(): boolean {
+  return detectTaskToolSupport();
+}
+
+const MCP_LOGGER_NAME = 'filesystem-mcp';
+
+const LOG_LEVEL_ORDER: Record<LoggingLevel, number> = {
+  debug: 0,
+  info: 1,
+  notice: 2,
+  warning: 3,
+  error: 4,
+  critical: 5,
+  alert: 6,
+  emergency: 7,
+};
+
+export interface LoggingState {
+  minimumLevel: LoggingLevel;
+}
+
+export function createLoggingState(
+  minimumLevel: LoggingLevel = 'debug'
+): LoggingState {
+  return { minimumLevel };
+}
+
+function canSendMcpLogs(server: McpServer): boolean {
+  const capabilities = server.server.getClientCapabilities();
+  if (!isRecord(capabilities)) return false;
+  if (!('logging' in capabilities)) return false;
+  return !!capabilities['logging'];
+}
+
+export function logToMcp(
+  server: McpServer | undefined,
+  level: LoggingLevel,
+  data: string,
+  minLevel: LoggingLevel = 'debug'
+): void {
+  if (LOG_LEVEL_ORDER[level] < LOG_LEVEL_ORDER[minLevel]) {
+    return;
+  }
+  if (!server || !canSendMcpLogs(server)) {
+    console.error(data);
+    return;
+  }
+
+  const params: LoggingMessageNotificationParams = {
+    level,
+    logger: MCP_LOGGER_NAME,
+    data,
+  };
+
+  void server.sendLoggingMessage(params).catch((error: unknown) => {
+    console.error(
+      `Failed to send MCP log: ${level} | ${data}`,
+      formatUnknownErrorMessage(error)
+    );
+  });
+}
 
 const {
   version: SERVER_VERSION,

@@ -23,8 +23,8 @@ import {
 } from '../lib/paths.js';
 import { isRecord } from '../lib/utils.js';
 
-import { type LoggingState, logToMcp } from './logging.js';
-import type { ServerOptions } from './types.js';
+import { type LoggingState, logToMcp } from './bootstrap.js';
+import type { ServerOptions } from './bootstrap.js';
 
 const ROOTS_TIMEOUT_MS = 5000;
 const ROOTS_DEBOUNCE_MS = 100;
