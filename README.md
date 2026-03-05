@@ -1,9 +1,4 @@
-<!-- mcp-name: io.github.j0hanz/filesystem-mcp -->
-<p align="center">
-  <img src="assets/logo.svg" alt="@j0hanz/filesystem-mcp logo" width="160" />
-</p>
-
-# @j0hanz/filesystem-mcp
+# Filesystem MCP Server
 
 [![npm version](https://img.shields.io/npm/v/%40j0hanz%2Ffilesystem-mcp?style=flat-square&logo=npm)](https://www.npmjs.com/package/%40j0hanz%2Ffilesystem-mcp) [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](#contributing-and-license)
 
