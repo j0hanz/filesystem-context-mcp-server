@@ -61,28 +61,16 @@ export const SEARCH_CONTENT_TOOL: ToolContract = {
   taskSupport: 'optional',
 } as const;
 
-function assertValidRegexPattern(pattern: string): void {
-  try {
-    new RE2(pattern);
-  } catch (error) {
-    throw new McpError(
-      ErrorCode.E_INVALID_PATTERN,
-      `Invalid regex pattern: ${formatUnknownErrorMessage(error)}`
-    );
-  }
-}
-
 function findColumnOffset(
   content: string,
   pattern: string,
-  isRegex: boolean,
+  matcher: RE2 | undefined,
   caseSensitive: boolean
 ): number | undefined {
   try {
-    if (isRegex) {
-      const flags = caseSensitive ? '' : 'i';
-      const regex = new RE2(pattern, flags);
-      const match = regex.exec(content);
+    if (matcher) {
+      matcher.lastIndex = 0;
+      const match = matcher.exec(content);
       return match ? match.index : undefined;
     }
     if (caseSensitive) {
@@ -153,7 +141,7 @@ type SearchMatchPayload = NonNullable<
 
 interface SearchMatchBuildContext {
   pattern: string;
-  isRegex: boolean;
+  matcher: RE2 | undefined;
   caseSensitive: boolean;
 }
 
@@ -164,7 +152,7 @@ function buildSearchMatchPayload(
   const column = findColumnOffset(
     match.content,
     context.pattern,
-    context.isRegex,
+    context.matcher,
     context.caseSensitive
   );
   return {
@@ -259,8 +247,18 @@ async function handleSearchContent(
   const excludePatterns = args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
   const patternType = args.isRegex ? 'regex' : 'literal';
 
+  let regexMatcher: RE2 | undefined;
   if (args.isRegex) {
-    assertValidRegexPattern(args.pattern);
+    try {
+      const flags =
+        (args.caseSensitive ? '' : 'i') + (args.multiline ? 'm' : '');
+      regexMatcher = new RE2(args.pattern, flags);
+    } catch (error) {
+      throw new McpError(
+        ErrorCode.E_INVALID_PATTERN,
+        `Invalid regex pattern: ${formatUnknownErrorMessage(error)}`
+      );
+    }
   }
 
   const options: SearchContentOptions = {
@@ -294,7 +292,7 @@ async function handleSearchContent(
   const normalizedMatches = normalizeSearchMatches(result);
   const searchContext: SearchMatchBuildContext = {
     pattern: args.pattern,
-    isRegex: args.isRegex,
+    matcher: regexMatcher,
     caseSensitive: args.caseSensitive,
   };
   const structuredFull = buildStructuredSearchResult(
