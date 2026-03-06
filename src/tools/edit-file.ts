@@ -47,11 +47,27 @@ interface EditResult {
   content: string;
   appliedEdits: number;
   unmatchedEdits: string[];
+  linesAdded: number;
+  linesRemoved: number;
   lineRange?: [number, number];
 }
 
 function escapeRegExp(string: string): string {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function computeDiffStats(
+  original: string,
+  modified: string
+): { linesAdded: number; linesRemoved: number } {
+  const patch = createTwoFilesPatch('a', 'b', original, modified);
+  let linesAdded = 0;
+  let linesRemoved = 0;
+  for (const line of patch.split('\n')) {
+    if (line.startsWith('+') && !line.startsWith('+++')) linesAdded++;
+    else if (line.startsWith('-') && !line.startsWith('---')) linesRemoved++;
+  }
+  return { linesAdded, linesRemoved };
 }
 
 function applyEdits(
@@ -111,10 +127,17 @@ function applyEdits(
     }
   }
 
+  const { linesAdded, linesRemoved } =
+    appliedEdits > 0
+      ? computeDiffStats(content, newContent)
+      : { linesAdded: 0, linesRemoved: 0 };
+
   const result: EditResult = {
     content: newContent,
     appliedEdits,
     unmatchedEdits,
+    linesAdded,
+    linesRemoved,
   };
 
   if (minLine !== undefined && maxLine !== undefined) {
@@ -145,6 +168,8 @@ export async function handleEditFile(
     content: newContent,
     appliedEdits,
     unmatchedEdits,
+    linesAdded,
+    linesRemoved,
     lineRange,
   } = applyEdits(content, args.edits, args.ignoreWhitespace);
 
@@ -152,6 +177,7 @@ export async function handleEditFile(
     ok: true,
     path: validPath,
     appliedEdits,
+    ...(appliedEdits > 0 ? { linesAdded, linesRemoved } : {}),
     ...(unmatchedEdits.length > 0 ? { unmatchedEdits } : {}),
     ...(lineRange ? { lineRange } : {}),
   };
@@ -215,9 +241,8 @@ export function registerEditFileTool(
     guard: options.isInitialized,
     progressMessage: (args) => {
       const name = path.basename(args.path);
-      const count = args.edits.length;
       const tag = args.dryRun ? ' [dry run]' : '';
-      return `🛠 edit: ${name} [${count} ${count === 1 ? 'edit' : 'edits'}]${tag}`;
+      return `🛠 edit: ${name}${tag}`;
     },
     completionMessage: (args, result) => {
       const name = path.basename(args.path);
@@ -226,12 +251,11 @@ export function registerEditFileTool(
       if (!sc.ok) return `🛠 edit: ${name} • failed`;
 
       const applied = sc.appliedEdits ?? 0;
-      const unmatched = sc.unmatchedEdits?.length ?? 0;
+      if (applied === 0) return `🛠 edit: ${name} • no changes`;
+      const added = sc.linesAdded ?? 0;
+      const removed = sc.linesRemoved ?? 0;
       const dry = args.dryRun ? 'dry run — ' : '';
-      if (unmatched > 0) {
-        return `🛠 edit: ${name} • ${dry}${applied} applied, ${unmatched} unmatched`;
-      }
-      return `🛠 edit: ${name} • ${dry}${applied} applied`;
+      return `🛠 edit: ${name} • ${dry} +${added} -${removed}`;
     },
   });
 

@@ -223,11 +223,11 @@ export function registerMoveFileTool(
       if (args.source && !args.sources?.length) {
         const src = path.basename(args.source);
         if (result.isError) return `🛠 mv: ${src} → ${dest} • failed`;
-        return `🛠 mv: ${src} → ${dest} • moved`;
+        return `🛠 mv: ${src} → ${dest}`;
       }
       const count = (args.source ? 1 : 0) + (args.sources?.length ?? 0);
       if (result.isError) return `🛠 mv: ${count} items → ${dest} • failed`;
-      return `🛠 mv: ${count} items → ${dest} • moved`;
+      return `🛠 mv: ${count} items → ${dest}`;
     },
   });
 

@@ -106,11 +106,11 @@ export function registerCreateDirectoryTool(
       if (args.path && !args.paths?.length) {
         const name = path.basename(args.path);
         if (result.isError) return `🛠 mkdir: ${name} • failed`;
-        return `🛠 mkdir: ${name} • created`;
+        return `🛠 mkdir: ${name}`;
       }
       const count = (args.path ? 1 : 0) + (args.paths?.length ?? 0);
       if (result.isError) return `🛠 mkdir: ${count} directories • failed`;
-      return `🛠 mkdir: ${count} directories • created`;
+      return `🛠 mkdir: ${count} directories`;
     },
   });
 

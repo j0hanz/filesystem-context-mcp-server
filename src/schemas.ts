@@ -656,6 +656,8 @@ export const EditFileOutputSchema = z.strictObject({
   ok: z.boolean(),
   path: z.string().optional(),
   appliedEdits: z.number().optional(),
+  linesAdded: z.number().optional().describe('Lines added'),
+  linesRemoved: z.number().optional().describe('Lines removed'),
   lineRange: z
     .tuple([z.number(), z.number()])
     .optional()

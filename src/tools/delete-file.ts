@@ -158,7 +158,7 @@ export function registerDeleteFileTool(
     completionMessage: (args, result) => {
       const name = path.basename(args.path);
       if (result.isError) return `🛠 rm: ${name} • failed`;
-      return `🛠 rm: ${name} • deleted`;
+      return `🛠 rm: ${name}`;
     },
   });
 

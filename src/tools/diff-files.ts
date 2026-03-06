@@ -184,7 +184,11 @@ export function registerDiffFilesTool(
       const sc = result.structuredContent;
       if (!sc.ok) return `🕮 diff: ${n1} ⟷ ${n2} • failed`;
       if (sc.isIdentical) return `🕮 diff: ${n1} ⟷ ${n2} • identical`;
-      return `🕮 diff: ${n1} ⟷ ${n2} • changed`;
+      const added = sc.linesAdded ?? 0;
+      const removed = sc.linesRemoved ?? 0;
+      if (added > 0 || removed > 0)
+        return `🕮 diff: ${n1} ⟷ ${n2} • +${added} -${removed}`;
+      return `🕮 diff: ${n1} ⟷ ${n2}`;
     },
   });
 

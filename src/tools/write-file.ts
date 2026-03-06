@@ -89,7 +89,7 @@ export function registerWriteFileTool(
       if (result.isError) return `🛠 write: ${name} • failed`;
       const sc = result.structuredContent;
       if (!sc.ok) return `🛠 write: ${name} • failed`;
-      return `🛠 write: ${name} • ${formatBytes(sc.bytesWritten ?? 0)} written`;
+      return `🛠 write: ${name} • ${formatBytes(sc.bytesWritten ?? 0)}`;
     },
   });
 

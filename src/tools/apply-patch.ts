@@ -292,8 +292,12 @@ export function registerApplyPatchTool(
       if (result.isError) return `🛠 patch: ${name} • failed`;
       const sc = result.structuredContent;
       if (!sc.ok) return `🛠 patch: ${name} • failed`;
-      if (args.dryRun) return `🛠 patch: ${name} • dry run OK`;
-      return `🛠 patch: ${name} • applied`;
+      const added = sc.linesAdded ?? 0;
+      const removed = sc.linesRemoved ?? 0;
+      const dry = args.dryRun ? 'dry run — ' : '';
+      if (added > 0 || removed > 0)
+        return `🛠 patch: ${name} • ${dry} +${added} -${removed}`;
+      return `🛠 patch: ${name} • ${dry}no changes`;
     },
   });
 
