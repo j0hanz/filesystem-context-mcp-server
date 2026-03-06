@@ -40,6 +40,11 @@ import { registerToolTaskIfAvailable } from './task-support.js';
 
 const MAX_INLINE_MATCHES =
   parseInt(process.env['FS_CONTEXT_MAX_INLINE_MATCHES'] ?? '', 10) || 50;
+const SEARCH_COMPLETION_REASON_LABELS = {
+  timeout: 'timeout',
+  maxResults: 'max results',
+  maxFiles: 'max files',
+} as const;
 
 export const SEARCH_CONTENT_TOOL: ToolContract = {
   name: 'grep',
@@ -87,36 +92,29 @@ function findColumnOffset(
 }
 
 function buildSearchTextResult(
-  result: Awaited<ReturnType<typeof searchContent>>,
-  normalizedMatches: NormalizedSearchMatch[]
+  heading: string,
+  normalizedMatches: readonly NormalizedSearchMatch[],
+  summary?: SearchContentSummary
 ): string {
-  const { summary } = result;
-
   if (normalizedMatches.length === 0) return 'No matches';
 
-  let truncatedReason: string | undefined;
-  if (summary.truncated) {
-    truncatedReason = resolveTruncatedReason(summary);
+  const text = buildMatchListText(heading, normalizedMatches);
+  if (!summary) {
+    return text;
   }
 
+  const truncatedReason = summary.truncated
+    ? resolveTruncatedReason(summary)
+    : undefined;
   const summaryOptions: Parameters<typeof formatOperationSummary>[0] = {
     truncated: summary.truncated,
     ...(truncatedReason ? { truncatedReason } : {}),
   };
 
-  return (
-    buildMatchListText(
-      `Found ${normalizedMatches.length}:`,
-      normalizedMatches
-    ) + formatOperationSummary(summaryOptions)
-  );
+  return text + formatOperationSummary(summaryOptions);
 }
 
-function resolveTruncatedReason(summary: {
-  stoppedReason?: 'timeout' | 'maxResults' | 'maxFiles';
-  filesScanned: number;
-  matches: number;
-}): string {
+function resolveTruncatedReason(summary: SearchContentSummary): string {
   if (summary.stoppedReason === 'timeout') return 'timeout';
   if (summary.stoppedReason === 'maxFiles') {
     return `max files (${summary.filesScanned})`;
@@ -145,6 +143,11 @@ interface SearchMatchBuildContext {
   caseSensitive: boolean;
 }
 
+type SearchContentResultValue = Awaited<ReturnType<typeof searchContent>>;
+type SearchContentSummary = SearchContentResultValue['summary'];
+type SearchPatternType = 'literal' | 'regex';
+type SearchStoppedReason = SearchContentSummary['stoppedReason'];
+
 function buildSearchMatchPayload(
   match: NormalizedSearchMatch,
   context: SearchMatchBuildContext
@@ -171,17 +174,18 @@ function formatSearchMatchLine(match: NormalizedSearchMatch): string {
   return `  ${match.relativeFile}:${lineNum}: ${match.content}`;
 }
 
-function buildStructuredSearchResult(
-  result: Awaited<ReturnType<typeof searchContent>>,
-  normalizedMatches: NormalizedSearchMatch[],
-  options: { patternType: 'literal' | 'regex'; caseSensitive: boolean },
+function buildSearchMatchPayloads(
+  matches: readonly NormalizedSearchMatch[],
   context: SearchMatchBuildContext
-): z.infer<typeof SearchContentOutputSchema> {
-  const { summary } = result;
-  const matches = normalizedMatches.map((match) =>
-    buildSearchMatchPayload(match, context)
-  );
+): SearchMatchPayload[] {
+  return matches.map((match) => buildSearchMatchPayload(match, context));
+}
 
+function buildStructuredSearchResult(
+  summary: SearchContentSummary,
+  matches: SearchMatchPayload[],
+  options: { patternType: SearchPatternType; caseSensitive: boolean }
+): z.infer<typeof SearchContentOutputSchema> {
   return {
     ok: true,
     patternType: options.patternType,
@@ -205,7 +209,6 @@ function buildStructuredSearchResult(
   };
 }
 
-type SearchContentResultValue = Awaited<ReturnType<typeof searchContent>>;
 type NormalizedSearchMatch = SearchContentResultValue['matches'][number] & {
   relativeFile: string;
   index: number;
@@ -295,27 +298,35 @@ async function handleSearchContent(
     matcher: regexMatcher,
     caseSensitive: args.caseSensitive,
   };
-  const structuredFull = buildStructuredSearchResult(
-    result,
+  const matchPayloads = buildSearchMatchPayloads(
     normalizedMatches,
+    searchContext
+  );
+  const structuredFull = buildStructuredSearchResult(
+    result.summary,
+    matchPayloads,
     {
       patternType,
       caseSensitive: args.caseSensitive,
-    },
-    searchContext
+    }
   );
   const needsExternalize = normalizedMatches.length > MAX_INLINE_MATCHES;
 
   if (!resourceStore || !needsExternalize) {
     return buildToolResponse(
-      buildSearchTextResult(result, normalizedMatches),
+      buildSearchTextResult(
+        `Found ${normalizedMatches.length}:`,
+        normalizedMatches,
+        result.summary
+      ),
       structuredFull
     );
   }
 
   const previewMatches = normalizedMatches.slice(0, MAX_INLINE_MATCHES);
-  const previewPayload = previewMatches.map((match) =>
-    buildSearchMatchPayload(match, searchContext)
+  const previewPayload = buildSearchMatchPayloads(
+    previewMatches,
+    searchContext
   );
   const previewStructured: z.infer<typeof SearchContentOutputSchema> = {
     ...structuredFull,
@@ -331,7 +342,7 @@ async function handleSearchContent(
   });
 
   previewStructured.resourceUri = entry.uri;
-  const text = buildMatchListText(
+  const text = buildSearchTextResult(
     `Found ${normalizedMatches.length} (showing first ${MAX_INLINE_MATCHES}):`,
     previewMatches
   );
@@ -415,31 +426,6 @@ export function registerSearchContentTool(
         buildToolErrorResponse(error, ErrorCode.E_UNKNOWN, args.path ?? '.'),
     });
 
-  function buildCompletionSuffix(params: {
-    count: number;
-    filesMatched: number;
-    scope: string;
-    stoppedReason: 'timeout' | 'maxResults' | 'maxFiles' | undefined;
-  }): string {
-    if (params.count === 0) {
-      return `No matches in ${params.scope}`;
-    }
-
-    const matchWord = params.count === 1 ? 'match' : 'matches';
-    const fileWord = params.filesMatched === 1 ? 'file' : 'files';
-    const reasonLabels: Record<'timeout' | 'maxResults' | 'maxFiles', string> =
-      {
-        timeout: 'timeout',
-        maxResults: 'max results',
-        maxFiles: 'max files',
-      };
-    const reasonSuffix =
-      params.stoppedReason !== undefined
-        ? ` [${reasonLabels[params.stoppedReason]}]`
-        : '';
-    return `${params.count} ${matchWord} in ${params.filesMatched} ${fileWord}${reasonSuffix}`;
-  }
-
   const { isInitialized } = options;
   const wrappedHandler = wrapToolHandler(handler, {
     guard: isInitialized,
@@ -466,4 +452,23 @@ export function registerSearchContentTool(
     withDefaultIcons({ ...SEARCH_CONTENT_TOOL }, options.iconInfo),
     validatedHandler
   );
+}
+
+function buildCompletionSuffix(params: {
+  count: number;
+  filesMatched: number;
+  scope: string;
+  stoppedReason: SearchStoppedReason;
+}): string {
+  if (params.count === 0) {
+    return `No matches in ${params.scope}`;
+  }
+
+  const matchWord = params.count === 1 ? 'match' : 'matches';
+  const fileWord = params.filesMatched === 1 ? 'file' : 'files';
+  const reasonSuffix =
+    params.stoppedReason !== undefined
+      ? ` [${SEARCH_COMPLETION_REASON_LABELS[params.stoppedReason]}]`
+      : '';
+  return `${params.count} ${matchWord} in ${params.filesMatched} ${fileWord}${reasonSuffix}`;
 }

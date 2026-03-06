@@ -111,6 +111,24 @@ interface ReplacementMatcher {
   replace(content: string, replacement: string): string;
 }
 
+type SearchAndReplaceArgs = z.infer<typeof SearchAndReplaceInputSchema>;
+type SearchAndReplaceOutput = z.infer<typeof SearchAndReplaceOutputSchema>;
+
+interface ProcessEntryContext {
+  options: { dryRun: boolean; returnDiff: boolean };
+  replacement: string;
+  matcher: ReplacementMatcher;
+  maxFileSize: number;
+  signal: AbortSignal | undefined;
+  summary: ReplaceSummary;
+}
+
+interface ReplacementPlan {
+  matchCount: number;
+  originalContent: string;
+  updatedContent: string;
+}
+
 function createRegexReplacementMatcher(regex: RE2): ReplacementMatcher {
   const count = (content: string): number => {
     regex.lastIndex = 0;
@@ -158,6 +176,23 @@ function createLiteralReplacementMatcher(
   return { count, replace };
 }
 
+function buildReplacementPlan(
+  content: string,
+  replacement: string,
+  matcher: ReplacementMatcher
+): ReplacementPlan | undefined {
+  const matchCount = matcher.count(content);
+  if (matchCount === 0) {
+    return undefined;
+  }
+
+  return {
+    matchCount,
+    originalContent: content,
+    updatedContent: matcher.replace(content, replacement),
+  };
+}
+
 function formatFileTooLargeError(
   filePath: string,
   size: number,
@@ -168,14 +203,7 @@ function formatFileTooLargeError(
 
 async function processEntry(
   entryPath: string,
-  context: {
-    options: { dryRun: boolean; returnDiff: boolean };
-    replacement: string;
-    matcher: ReplacementMatcher;
-    maxFileSize: number;
-    signal: AbortSignal | undefined;
-    summary: ReplaceSummary;
-  }
+  context: ProcessEntryContext
 ): Promise<void> {
   const { options, replacement, matcher, maxFileSize, signal, summary } =
     context;
@@ -193,44 +221,33 @@ async function processEntry(
   }
 
   try {
-    const stats = await withAbort(fs.stat(validPath), signal);
-    if (stats.size > maxFileSize) {
-      summary.failedFiles++;
-      recordFailure(summary.failures, {
-        path: validPath,
-        error: formatFileTooLargeError(validPath, stats.size, maxFileSize),
-      });
+    const plan = await readReplacementPlan(validPath, {
+      matcher,
+      replacement,
+      maxFileSize,
+      signal,
+    });
+    if (!plan) {
       return;
     }
 
-    const content = await fs.readFile(validPath, {
-      encoding: 'utf-8',
-      signal,
+    summary.totalMatches += plan.matchCount;
+    summary.filesChanged++;
+
+    recordChangedFile(summary, validPath, plan.matchCount);
+
+    maybeAppendPatchDiff(summary, {
+      filePath: validPath,
+      originalContent: plan.originalContent,
+      updatedContent: plan.updatedContent,
+      includeDiff: options.dryRun || options.returnDiff,
     });
 
-    const matchCount = matcher.count(content);
-
-    if (matchCount > 0) {
-      summary.totalMatches += matchCount;
-      summary.filesChanged++;
-
-      recordChangedFile(summary, validPath, matchCount);
-
-      const newContent = matcher.replace(content, replacement);
-
-      maybeAppendPatchDiff(summary, {
-        filePath: validPath,
-        originalContent: content,
-        updatedContent: newContent,
-        includeDiff: options.dryRun || options.returnDiff,
+    if (!options.dryRun) {
+      await atomicWriteFile(validPath, plan.updatedContent, {
+        encoding: 'utf-8',
+        signal,
       });
-
-      if (!options.dryRun) {
-        await atomicWriteFile(validPath, newContent, {
-          encoding: 'utf-8',
-          signal,
-        });
-      }
     }
   } catch (error) {
     summary.failedFiles++;
@@ -239,6 +256,30 @@ async function processEntry(
       error: formatUnknownErrorMessage(error),
     });
   }
+}
+
+async function readReplacementPlan(
+  validPath: string,
+  context: {
+    matcher: ReplacementMatcher;
+    replacement: string;
+    maxFileSize: number;
+    signal: AbortSignal | undefined;
+  }
+): Promise<ReplacementPlan | undefined> {
+  const stats = await withAbort(fs.stat(validPath), context.signal);
+  if (stats.size > context.maxFileSize) {
+    throw new Error(
+      formatFileTooLargeError(validPath, stats.size, context.maxFileSize)
+    );
+  }
+
+  const content = await fs.readFile(validPath, {
+    encoding: 'utf-8',
+    signal: context.signal,
+  });
+
+  return buildReplacementPlan(content, context.replacement, context.matcher);
 }
 
 function maybeAppendPatchDiff(
@@ -375,7 +416,7 @@ function createReplacementRegex(
 }
 
 function createReplacementMatcher(
-  args: z.infer<typeof SearchAndReplaceInputSchema>
+  args: SearchAndReplaceArgs
 ): ReplacementMatcher {
   const regex = createReplacementRegex(args);
   if (regex) {
@@ -388,10 +429,10 @@ function createReplacementMatcher(
 }
 
 export async function handleSearchAndReplace(
-  args: z.infer<typeof SearchAndReplaceInputSchema>,
+  args: SearchAndReplaceArgs,
   signal?: AbortSignal,
   onProgress: (progress: { total?: number; current: number }) => void = () => {}
-): Promise<ToolResponse<z.infer<typeof SearchAndReplaceOutputSchema>>> {
+): Promise<ToolResponse<SearchAndReplaceOutput>> {
   const maxFileSize = MAX_TEXT_FILE_SIZE;
   const root = await resolveSearchRoot(args.path, signal);
   const matcher = createReplacementMatcher(args);
@@ -442,31 +483,9 @@ export async function handleSearchAndReplace(
     force: true,
   });
 
-  const failureSuffix =
-    summary.failedFiles > 0 ? ` (${summary.failedFiles} failed)` : '';
-
   return buildToolResponse(
-    `Found ${summary.totalMatches} matches in ${summary.filesChanged} files${failureSuffix}.${args.dryRun ? ' (Dry run)' : ''}`,
-    {
-      ok: true,
-      matches: summary.totalMatches,
-      filesChanged: summary.filesChanged,
-      processedFiles: summary.processedFiles,
-      ...(summary.failedFiles > 0 ? { failedFiles: summary.failedFiles } : {}),
-      ...(summary.failures.length > 0 ? { failures: summary.failures } : {}),
-      ...(summary.changedFiles.length > 0
-        ? { changedFiles: summary.changedFiles }
-        : {}),
-      ...(summary.changedFilesTruncated ? { changedFilesTruncated: true } : {}),
-      ...((args.dryRun || args.returnDiff) && summary.diff
-        ? { diff: summary.diff }
-        : {}),
-      ...(summary.diffTruncated ? { diffTruncated: true } : {}),
-      ...(summary.stoppedReason
-        ? { stoppedReason: summary.stoppedReason }
-        : {}),
-      dryRun: args.dryRun,
-    }
+    buildSearchAndReplaceText(summary, args.dryRun),
+    buildSearchAndReplaceStructuredResult(summary, args)
   );
 }
 
@@ -560,4 +579,38 @@ export function registerSearchAndReplaceTool(
     withDefaultIcons({ ...SEARCH_AND_REPLACE_TOOL }, options.iconInfo),
     validatedHandler
   );
+}
+
+function buildSearchAndReplaceText(
+  summary: ReplaceSummary,
+  dryRun: boolean
+): string {
+  const failureSuffix =
+    summary.failedFiles > 0 ? ` (${summary.failedFiles} failed)` : '';
+  const dryRunSuffix = dryRun ? ' (Dry run)' : '';
+  return `Found ${summary.totalMatches} matches in ${summary.filesChanged} files${failureSuffix}.${dryRunSuffix}`;
+}
+
+function buildSearchAndReplaceStructuredResult(
+  summary: ReplaceSummary,
+  args: SearchAndReplaceArgs
+): SearchAndReplaceOutput {
+  return {
+    ok: true,
+    matches: summary.totalMatches,
+    filesChanged: summary.filesChanged,
+    processedFiles: summary.processedFiles,
+    ...(summary.failedFiles > 0 ? { failedFiles: summary.failedFiles } : {}),
+    ...(summary.failures.length > 0 ? { failures: summary.failures } : {}),
+    ...(summary.changedFiles.length > 0
+      ? { changedFiles: summary.changedFiles }
+      : {}),
+    ...(summary.changedFilesTruncated ? { changedFilesTruncated: true } : {}),
+    ...((args.dryRun || args.returnDiff) && summary.diff
+      ? { diff: summary.diff }
+      : {}),
+    ...(summary.diffTruncated ? { diffTruncated: true } : {}),
+    ...(summary.stoppedReason ? { stoppedReason: summary.stoppedReason } : {}),
+    dryRun: args.dryRun,
+  };
 }

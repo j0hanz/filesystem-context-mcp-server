@@ -3,10 +3,7 @@ import * as path from 'node:path';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { z } from 'zod';
 
-import {
-  DEFAULT_READ_MANY_MAX_TOTAL_SIZE,
-  DEFAULT_SEARCH_TIMEOUT_MS,
-} from '../lib/constants.js';
+import { DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { readMultipleFiles } from '../lib/file-operations/metadata.js';
 
@@ -56,33 +53,106 @@ type ReadManyStructuredResult = z.infer<typeof ReadMultipleFilesOutputSchema>;
 type ReadManyStructuredResultItem = NonNullable<
   ReadManyStructuredResult['results']
 >[number];
+type ReadManyResult = Awaited<ReturnType<typeof readMultipleFiles>>[number];
+type ReadManyTruncationReason = 'head' | 'tail' | 'range' | 'externalized';
+type ReadManyResultWithResource = ReadManyResult & {
+  resourceUri?: string;
+  truncationReason?: ReadManyTruncationReason;
+};
 
 function toStructuredReadManyResult(
-  result: Awaited<ReturnType<typeof readMultipleFiles>>[number] & {
-    resourceUri?: string;
-    truncationReason?: 'head' | 'tail' | 'range' | 'externalized';
-    maxTotalSize?: number;
-  }
+  result: ReadManyResultWithResource
 ): ReadManyStructuredResultItem {
-  const structured: ReadManyStructuredResultItem = {
+  return {
     path: result.path,
+    ...(result.content !== undefined ? { content: result.content } : {}),
+    ...(result.truncated ? { truncated: result.truncated } : {}),
+    ...(result.resourceUri ? { resourceUri: result.resourceUri } : {}),
+    ...(result.head !== undefined ? { head: result.head } : {}),
+    ...(result.tail !== undefined ? { tail: result.tail } : {}),
+    ...(result.startLine !== undefined ? { startLine: result.startLine } : {}),
+    ...(result.endLine !== undefined ? { endLine: result.endLine } : {}),
+    ...(result.hasMoreLines ? { hasMoreLines: result.hasMoreLines } : {}),
+    ...(result.totalLines !== undefined
+      ? { totalLines: result.totalLines }
+      : {}),
+    ...(result.linesRead !== undefined ? { linesRead: result.linesRead } : {}),
+    ...(result.truncationReason
+      ? { truncationReason: result.truncationReason }
+      : {}),
+    ...(result.error ? { error: result.error } : {}),
   };
-  if (result.content !== undefined) structured.content = result.content;
-  if (result.truncated) structured.truncated = result.truncated;
-  if (result.resourceUri) structured.resourceUri = result.resourceUri;
-  if (result.head !== undefined) structured.head = result.head;
-  if (result.tail !== undefined) structured.tail = result.tail;
-  if (result.startLine !== undefined) structured.startLine = result.startLine;
-  if (result.endLine !== undefined) structured.endLine = result.endLine;
-  if (result.hasMoreLines) structured.hasMoreLines = result.hasMoreLines;
-  if (result.totalLines !== undefined)
-    structured.totalLines = result.totalLines;
-  if (result.linesRead !== undefined) structured.linesRead = result.linesRead;
-  if (result.truncationReason) {
-    structured.truncationReason = result.truncationReason;
+}
+
+function resolveReadManyTruncationReason(
+  result: ReadManyResult
+): Exclude<ReadManyTruncationReason, 'externalized'> | undefined {
+  if (!result.truncated) return undefined;
+  if (result.readMode === 'head') return 'head';
+  if (result.readMode === 'tail') return 'tail';
+  if (result.readMode === 'range') return 'range';
+  return undefined;
+}
+
+function maybeExternalizeReadManyResult(
+  result: ReadManyResult,
+  resourceStore?: ToolRegistrationOptions['resourceStore']
+): ReadManyResultWithResource {
+  const truncationReason = resolveReadManyTruncationReason(result);
+  const baseResult: ReadManyResultWithResource = {
+    ...result,
+    ...(truncationReason ? { truncationReason } : {}),
+  };
+
+  if (!result.content) {
+    return baseResult;
   }
-  if (result.error) structured.error = result.error;
-  return structured;
+
+  const externalized = maybeExternalizeTextContent(
+    resourceStore,
+    result.content,
+    { name: `read:${path.basename(result.path)}`, mimeType: 'text/plain' }
+  );
+  if (!externalized) {
+    return baseResult;
+  }
+
+  return {
+    ...baseResult,
+    content: externalized.preview,
+    truncated: true,
+    resourceUri: externalized.entry.uri,
+    truncationReason: 'externalized',
+  };
+}
+
+function buildReadManyResourceLinks(
+  results: readonly ReadManyResultWithResource[]
+): ReturnType<typeof buildResourceLink>[] {
+  return results.flatMap((result) => {
+    if (!result.resourceUri) return [];
+    return [
+      buildResourceLink({
+        uri: result.resourceUri,
+        name: `read:${path.basename(result.path)}`,
+        description: 'Full file contents',
+      }),
+    ];
+  });
+}
+
+function buildReadManyTextResult(
+  results: readonly ReadManyResultWithResource[]
+): string {
+  return results
+    .map((result) => {
+      const header = `=== ${result.path} ===`;
+      if (result.error) {
+        return `${header}\nError: ${result.error}`;
+      }
+      return `${header}\n${result.content ?? ''}`;
+    })
+    .join('\n\n');
 }
 
 async function handleReadMultipleFiles(
@@ -101,54 +171,9 @@ async function handleReadMultipleFiles(
   };
   const results = await readMultipleFiles(args.paths, options);
 
-  const maxTotalSize = DEFAULT_READ_MANY_MAX_TOTAL_SIZE;
-
-  type ReadManyResult = Awaited<ReturnType<typeof readMultipleFiles>>[number];
-  type ReadManyResultWithResource = ReadManyResult & {
-    resourceUri?: string;
-    truncationReason?: 'head' | 'tail' | 'range' | 'externalized';
-    maxTotalSize?: number;
-  };
-
-  const mappedResults: ReadManyResultWithResource[] = results.map((result) => {
-    let baseTruncationReason: 'head' | 'tail' | 'range' | undefined;
-    if (result.truncated && result.readMode === 'head') {
-      baseTruncationReason = 'head';
-    } else if (result.truncated && result.readMode === 'tail') {
-      baseTruncationReason = 'tail';
-    } else if (result.truncated && result.readMode === 'range') {
-      baseTruncationReason = 'range';
-    }
-
-    const baseResult: ReadManyResultWithResource = {
-      ...result,
-      maxTotalSize,
-      ...(baseTruncationReason
-        ? { truncationReason: baseTruncationReason }
-        : {}),
-    };
-
-    if (!result.content) {
-      return baseResult;
-    }
-
-    const externalized = maybeExternalizeTextContent(
-      resourceStore,
-      result.content,
-      { name: `read:${path.basename(result.path)}`, mimeType: 'text/plain' }
-    );
-    if (!externalized) {
-      return baseResult;
-    }
-
-    return {
-      ...baseResult,
-      content: externalized.preview,
-      truncated: true,
-      resourceUri: externalized.entry.uri,
-      truncationReason: 'externalized',
-    };
-  });
+  const mappedResults = results.map((result) =>
+    maybeExternalizeReadManyResult(result, resourceStore)
+  );
 
   const succeeded = mappedResults.filter((r) => r.error === undefined).length;
   const failed = mappedResults.length - succeeded;
@@ -163,29 +188,11 @@ async function handleReadMultipleFiles(
     },
   };
 
-  const resourceLinks: ReturnType<typeof buildResourceLink>[] = [];
-  for (const result of mappedResults) {
-    if (!result.resourceUri) continue;
-    resourceLinks.push(
-      buildResourceLink({
-        uri: result.resourceUri,
-        name: `read:${path.basename(result.path)}`,
-        description: 'Full file contents',
-      })
-    );
-  }
-
-  const text = mappedResults
-    .map((result) => {
-      const header = `=== ${result.path} ===`;
-      if (result.error) {
-        return `${header}\nError: ${result.error}`;
-      }
-      return `${header}\n${result.content ?? ''}`;
-    })
-    .join('\n\n');
-
-  return buildToolResponse(text, structured, resourceLinks);
+  return buildToolResponse(
+    buildReadManyTextResult(mappedResults),
+    structured,
+    buildReadManyResourceLinks(mappedResults)
+  );
 }
 
 export function registerReadMultipleFilesTool(
