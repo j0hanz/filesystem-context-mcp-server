@@ -667,6 +667,11 @@ interface ValidatedPathDetails {
   isSymlink: boolean;
 }
 
+interface PreparedPathAccess {
+  allowedDirs: string[];
+  normalizedRequested: string;
+}
+
 function ensureWithinAllowedDirectories(options: {
   normalizedPath: string;
   requestedPath: string;
@@ -710,10 +715,7 @@ async function resolveRealPathOrThrow(options: {
   }
 }
 
-async function validateExistingPathDetailsInternal(
-  requestedPath: string,
-  signal?: AbortSignal
-): Promise<ValidatedPathDetails> {
+function preparePathAccess(requestedPath: string): PreparedPathAccess {
   const normalizedRequested = validateRequestedPath(requestedPath);
   const allowedDirs = getAllowedDirectories();
 
@@ -724,6 +726,69 @@ async function validateExistingPathDetailsInternal(
     details: { normalizedPath: normalizedRequested },
   });
 
+  return { allowedDirs, normalizedRequested };
+}
+
+function ensureResolvedPathAllowed(options: {
+  requestedPath: string;
+  resolvedPath: string;
+  normalizedResolved: string;
+  allowedDirs: readonly string[];
+}): void {
+  const { requestedPath, resolvedPath, normalizedResolved, allowedDirs } =
+    options;
+  if (isPathWithinDirectories(normalizedResolved, allowedDirs)) return;
+  throw toAccessDeniedWithHint(requestedPath, resolvedPath, normalizedResolved);
+}
+
+async function statPathOrThrow(
+  requestedPath: string,
+  resolvedPath: string,
+  signal?: AbortSignal
+): Promise<Awaited<ReturnType<typeof fs.stat>>> {
+  try {
+    assertNotAborted(signal);
+    return await withAbort(fs.stat(resolvedPath), signal);
+  } catch (error) {
+    rethrowIfAborted(error);
+    throw toMcpError(requestedPath, error);
+  }
+}
+
+async function resolveNearestExistingRealPathOrThrow(options: {
+  requestedPath: string;
+  startPath: string;
+  signal?: AbortSignal;
+}): Promise<string> {
+  const { requestedPath, startPath, signal } = options;
+
+  let current = startPath;
+  for (;;) {
+    try {
+      assertNotAborted(signal);
+      return await withAbort(fs.realpath(current), signal);
+    } catch (error) {
+      rethrowIfAborted(error);
+      const code = isNodeError(error) ? error.code : undefined;
+      if (code !== 'ENOENT') {
+        throw toMcpError(requestedPath, error);
+      }
+
+      const parent = path.dirname(current);
+      if (parent === current) {
+        throw toMcpError(requestedPath, error);
+      }
+      current = parent;
+    }
+  }
+}
+
+async function validateExistingPathDetailsInternal(
+  requestedPath: string,
+  signal?: AbortSignal
+): Promise<ValidatedPathDetails> {
+  const { allowedDirs, normalizedRequested } = preparePathAccess(requestedPath);
+
   const realPath = await resolveRealPathOrThrow({
     requestedPath,
     normalizedRequested,
@@ -731,10 +796,12 @@ async function validateExistingPathDetailsInternal(
   });
 
   const normalizedReal = normalizePath(realPath);
-
-  if (!isPathWithinDirectories(normalizedReal, allowedDirs)) {
-    throw toAccessDeniedWithHint(requestedPath, realPath, normalizedReal);
-  }
+  ensureResolvedPathAllowed({
+    requestedPath,
+    resolvedPath: realPath,
+    normalizedResolved: normalizedReal,
+    allowedDirs,
+  });
 
   return {
     requestedPath: normalizedRequested,
@@ -770,14 +837,11 @@ export async function validateExistingDirectory(
     signal
   );
 
-  let stats: Awaited<ReturnType<typeof fs.stat>>;
-  try {
-    assertNotAborted(signal);
-    stats = await withAbort(fs.stat(details.resolvedPath), signal);
-  } catch (error) {
-    rethrowIfAborted(error);
-    throw toMcpError(requestedPath, error);
-  }
+  const stats = await statPathOrThrow(
+    requestedPath,
+    details.resolvedPath,
+    signal
+  );
 
   if (!stats.isDirectory()) {
     throw new McpError(
@@ -794,44 +858,25 @@ export async function validatePathForWrite(
   requestedPath: string,
   signal?: AbortSignal
 ): Promise<string> {
-  const normalizedRequested = validateRequestedPath(requestedPath);
-  const allowedDirs = getAllowedDirectories();
-
-  ensureWithinAllowedDirectories({
-    normalizedPath: normalizedRequested,
-    requestedPath,
-    allowedDirs,
-    details: { normalizedPath: normalizedRequested },
-  });
+  const { allowedDirs, normalizedRequested } = preparePathAccess(requestedPath);
 
   assertAllowedFileAccess(requestedPath, normalizedRequested);
 
-  let current = normalizedRequested;
-  for (;;) {
-    try {
-      assertNotAborted(signal);
-      const realPath = await withAbort(fs.realpath(current), signal);
-      const normalizedReal = normalizePath(realPath);
+  const realPath = await resolveNearestExistingRealPathOrThrow({
+    requestedPath,
+    startPath: normalizedRequested,
+    ...(signal ? { signal } : {}),
+  });
+  const normalizedReal = normalizePath(realPath);
 
-      if (!isPathWithinDirectories(normalizedReal, allowedDirs)) {
-        throw toAccessDeniedWithHint(requestedPath, realPath, normalizedReal);
-      }
+  ensureResolvedPathAllowed({
+    requestedPath,
+    resolvedPath: realPath,
+    normalizedResolved: normalizedReal,
+    allowedDirs,
+  });
 
-      return normalizedRequested;
-    } catch (error) {
-      rethrowIfAborted(error);
-      const code = isNodeError(error) ? error.code : undefined;
-      if (code === 'ENOENT') {
-        const parent = path.dirname(current);
-        if (parent === current) {
-          throw toMcpError(requestedPath, error);
-        }
-        current = parent;
-        continue;
-      }
-      throw toMcpError(requestedPath, error);
-    }
-  }
+  return normalizedRequested;
 }
 
 function isFileRoot(root: Root): boolean {

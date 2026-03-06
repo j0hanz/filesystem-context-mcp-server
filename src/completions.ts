@@ -74,6 +74,10 @@ const PATH_ARGUMENTS = new Set([
   'cwd',
 ]);
 
+const DESTINATION_CONTEXT_KEYS = ['source', 'path', 'cwd', 'root'] as const;
+const PRIMARY_PATH_CONTEXT_KEYS = ['path', 'cwd', 'root'] as const;
+const DEFAULT_CONTEXT_KEYS = ['path', 'source', 'cwd', 'root'] as const;
+
 function isPathLikeArgumentName(argName: string): boolean {
   return (
     PATH_ARGUMENTS.has(argName) ||
@@ -84,6 +88,24 @@ function isPathLikeArgumentName(argName: string): boolean {
     argName.endsWith('dirs') ||
     argName.endsWith('dir')
   );
+}
+
+function isTemplateVariableChar(char: string): boolean {
+  const code = char.charCodeAt(0);
+  const isDigit = code >= 48 && code <= 57;
+  const isUpper = code >= 65 && code <= 90;
+  const isLower = code >= 97 && code <= 122;
+  return isDigit || isUpper || isLower || code === 95;
+}
+
+function normalizeTemplateVariable(raw: string): string {
+  let normalized = '';
+  for (const char of raw) {
+    if (isTemplateVariableChar(char)) {
+      normalized += char.toLowerCase();
+    }
+  }
+  return normalized;
 }
 
 function parseResourceReference(value: unknown): ResourceReference | undefined {
@@ -97,14 +119,6 @@ function parseResourceReference(value: unknown): ResourceReference | undefined {
 function extractTemplateVariables(uri: string): string[] {
   const vars: string[] = [];
 
-  const isVariableChar = (char: string): boolean => {
-    const code = char.charCodeAt(0);
-    const isDigit = code >= 48 && code <= 57;
-    const isUpper = code >= 65 && code <= 90;
-    const isLower = code >= 97 && code <= 122;
-    return isDigit || isUpper || isLower || code === 95;
-  };
-
   let index = 0;
   while (index < uri.length) {
     const start = uri.indexOf('{', index);
@@ -112,13 +126,7 @@ function extractTemplateVariables(uri: string): string[] {
     const end = uri.indexOf('}', start + 1);
     if (end === -1) break;
 
-    const raw = uri.slice(start + 1, end);
-    let normalized = '';
-    for (const char of raw) {
-      if (isVariableChar(char)) {
-        normalized += char.toLowerCase();
-      }
-    }
+    const normalized = normalizeTemplateVariable(uri.slice(start + 1, end));
     if (normalized.length > 0) vars.push(normalized);
     index = end + 1;
   }
@@ -313,7 +321,7 @@ function findAllowedRootByName(
 function chooseContextKeys(argumentName: string): string[] {
   const normalized = argumentName.toLowerCase();
   if (normalized === 'destination') {
-    return ['source', 'path', 'cwd', 'root'];
+    return [...DESTINATION_CONTEXT_KEYS];
   }
   if (
     normalized === 'path' ||
@@ -322,9 +330,17 @@ function chooseContextKeys(argumentName: string): string[] {
     normalized === 'modified' ||
     normalized === 'file'
   ) {
-    return ['path', 'cwd', 'root'];
+    return [...PRIMARY_PATH_CONTEXT_KEYS];
   }
-  return ['path', 'source', 'cwd', 'root'];
+  return [...DEFAULT_CONTEXT_KEYS];
+}
+
+function hasContextArguments(
+  contextArguments: Record<string, string> | undefined
+): contextArguments is Record<string, string> {
+  return (
+    contextArguments !== undefined && Object.keys(contextArguments).length > 0
+  );
 }
 
 function resolveContextCandidatePath(
@@ -366,17 +382,7 @@ async function resolveContextBaseDirectory(
   contextArguments: Record<string, string> | undefined,
   allowed: string[]
 ): Promise<string | undefined> {
-  if (!contextArguments) {
-    return undefined;
-  }
-
-  let hasContextArgument = false;
-  for (const key in contextArguments) {
-    if (!Object.prototype.hasOwnProperty.call(contextArguments, key)) continue;
-    hasContextArgument = true;
-    break;
-  }
-  if (!hasContextArgument) {
+  if (!hasContextArguments(contextArguments)) {
     return undefined;
   }
 
@@ -392,6 +398,67 @@ async function resolveContextBaseDirectory(
   }
 
   return undefined;
+}
+
+function withDirectorySeparator(value: string): string {
+  return value.endsWith(path.sep) ? value : `${value}${path.sep}`;
+}
+
+function buildCompletionResult(values: readonly string[]): CompletionResult {
+  return {
+    values: values.slice(0, MAX_COMPLETION_ITEMS),
+    total: values.length,
+    hasMore: values.length > MAX_COMPLETION_ITEMS,
+  };
+}
+
+function buildCompletionResponse(result: CompletionResult): {
+  completion: CompletionResult;
+} {
+  return { completion: result };
+}
+
+function sortCompletionMatches(matches: string[]): void {
+  matches.sort((left, right) => {
+    const leftIsDir = left.endsWith(path.sep);
+    const rightIsDir = right.endsWith(path.sep);
+    if (leftIsDir && !rightIsDir) return -1;
+    if (!leftIsDir && rightIsDir) return 1;
+    return left.localeCompare(right);
+  });
+}
+
+function mergeCompletionMatches(
+  ...matchGroups: readonly (readonly string[])[]
+): string[] {
+  const uniqueMatches = new Set<string>();
+  for (const group of matchGroups) {
+    for (const match of group) {
+      uniqueMatches.add(match);
+    }
+  }
+
+  const merged = [...uniqueMatches];
+  sortCompletionMatches(merged);
+  return merged;
+}
+
+function getRootPrefix(currentValue: string): string {
+  const normalizedInput = toPosixPath(currentValue);
+  return (normalizedInput.split('/')[0] ?? '').toLowerCase();
+}
+
+function collectAllowedRoots(
+  allowed: readonly string[],
+  predicate: (root: string) => boolean
+): string[] {
+  const matches: string[] = [];
+  for (const root of allowed) {
+    if (predicate(root)) {
+      matches.push(withDirectorySeparator(root));
+    }
+  }
+  return matches;
 }
 
 function getSearchContext(
@@ -466,21 +533,14 @@ function findRootPrefixMatches(
   currentValue: string,
   allowed: string[]
 ): string[] {
-  const normalizedInput = toPosixPath(currentValue);
-  const rootPrefix = (normalizedInput.split('/')[0] ?? '').toLowerCase();
+  const rootPrefix = getRootPrefix(currentValue);
   if (!rootPrefix) {
-    const matches: string[] = [];
-    for (const root of allowed) {
-      matches.push(`${root}${path.sep}`);
-    }
-    return matches;
+    return collectAllowedRoots(allowed, () => true);
   }
-  const matches: string[] = [];
-  for (const root of allowed) {
-    if (!path.basename(root).toLowerCase().startsWith(rootPrefix)) continue;
-    matches.push(`${root}${path.sep}`);
-  }
-  return matches;
+
+  return collectAllowedRoots(allowed, (root) =>
+    path.basename(root).toLowerCase().startsWith(rootPrefix)
+  );
 }
 
 function findMatchingRoots(
@@ -488,21 +548,15 @@ function findMatchingRoots(
   prefix: string,
   allowed: string[]
 ): string[] {
-  const matches: string[] = [];
   const lowerPrefix = prefix.toLowerCase();
   const normalizedSearchDir = normalizePath(searchDir);
 
-  for (const root of allowed) {
+  return collectAllowedRoots(allowed, (root) => {
     const rootDir = path.dirname(root);
     // Check if root is a direct child of searchDir
-    if (normalizePath(rootDir) === normalizedSearchDir) {
-      const rootName = path.basename(root);
-      if (rootName.toLowerCase().startsWith(lowerPrefix)) {
-        matches.push(`${root}${path.sep}`);
-      }
-    }
-  }
-  return matches;
+    if (normalizePath(rootDir) !== normalizedSearchDir) return false;
+    return path.basename(root).toLowerCase().startsWith(lowerPrefix);
+  });
 }
 
 export async function getPathCompletions(
@@ -520,49 +574,22 @@ export async function getPathCompletions(
 
     // If no value and no context base, suggest roots.
     if (!currentValue && !contextBase) {
-      return {
-        values: allowed,
-        total: allowed.length,
-        hasMore: false,
-      };
+      return buildCompletionResult(allowed);
     }
 
     const context = getSearchContext(currentValue, allowed, contextBase);
     if (!context) {
-      const rootMatches = findRootPrefixMatches(currentValue, allowed);
-      const sliced = rootMatches.slice(0, MAX_COMPLETION_ITEMS);
-      return {
-        values: sliced,
-        total: rootMatches.length,
-        hasMore: rootMatches.length > MAX_COMPLETION_ITEMS,
-      };
+      return buildCompletionResult(
+        findRootPrefixMatches(currentValue, allowed)
+      );
     }
 
     const { searchDir, prefix } = context;
     const dirMatches = await findMatchesInDirectory(searchDir, prefix, allowed);
     const rootMatches = findMatchingRoots(searchDir, prefix, allowed);
-
-    // Deduplicate and sort
-    const unique = new Set<string>();
-    for (const match of dirMatches) unique.add(match);
-    for (const match of rootMatches) unique.add(match);
-    const uniqueMatches = Array.from(unique);
-
-    uniqueMatches.sort((a, b) => {
-      const aIsDir = a.endsWith(path.sep);
-      const bIsDir = b.endsWith(path.sep);
-      if (aIsDir && !bIsDir) return -1;
-      if (!aIsDir && bIsDir) return 1;
-      return a.localeCompare(b);
-    });
-
-    const sliced = uniqueMatches.slice(0, MAX_COMPLETION_ITEMS);
-
-    return {
-      values: sliced,
-      total: uniqueMatches.length,
-      hasMore: uniqueMatches.length > MAX_COMPLETION_ITEMS,
-    };
+    return buildCompletionResult(
+      mergeCompletionMatches(dirMatches, rootMatches)
+    );
   } catch {
     return { values: [] };
   }
@@ -586,14 +613,7 @@ export function registerCompletions(
       const filtered = currentValue
         ? topicValues.filter((v) => v.startsWith(currentValue))
         : topicValues;
-      const sliced = filtered.slice(0, MAX_COMPLETION_ITEMS);
-      return {
-        completion: {
-          values: sliced,
-          total: filtered.length,
-          hasMore: filtered.length > MAX_COMPLETION_ITEMS,
-        },
-      };
+      return buildCompletionResponse(buildCompletionResult(filtered));
     }
 
     const isPathArg =
@@ -601,7 +621,7 @@ export function registerCompletions(
       isPathArgumentFromReference(argName, ref);
 
     if (!isPathArg) {
-      return { completion: { values: [], total: 0, hasMore: false } };
+      return buildCompletionResponse(buildCompletionResult([]));
     }
 
     const contextArguments = extractContextArguments(params.context);
@@ -617,15 +637,9 @@ export function registerCompletions(
     if (now - lastCallMs < COMPLETION_RATE_LIMIT_MS) {
       const lastResult = sessionState.lastResult.get(cacheKey);
       if (lastResult) {
-        return {
-          completion: {
-            values: lastResult.values,
-            total: lastResult.total,
-            hasMore: lastResult.hasMore,
-          },
-        };
+        return buildCompletionResponse(lastResult);
       }
-      return { completion: { values: [], total: 0, hasMore: false } };
+      return buildCompletionResponse(buildCompletionResult([]));
     }
     rememberCompletionCacheValue(sessionState.lastCallMs, cacheKey, now);
 
@@ -641,12 +655,6 @@ export function registerCompletions(
       completions
     );
 
-    return {
-      completion: {
-        values: completions.values,
-        total: completions.total,
-        hasMore: completions.hasMore,
-      },
-    };
+    return buildCompletionResponse(completions);
   });
 }
