@@ -11,6 +11,7 @@ export interface TextResourceEntry {
   hash: string;
   size: number;
   storedAt: string;
+  expiresAt: string;
 }
 
 export interface ResourceStore {
@@ -28,12 +29,14 @@ interface ResourceStoreOptions {
   maxEntries: number;
   maxTotalBytes: number;
   maxEntryBytes: number;
+  entryTtlMs: number;
 }
 
 const DEFAULT_RESOURCE_STORE_OPTIONS: ResourceStoreOptions = {
   maxEntries: 64,
   maxTotalBytes: 25 * 1024 * 1024,
   maxEntryBytes: 10 * 1024 * 1024,
+  entryTtlMs: 30 * 60 * 1000, // 30 minutes
 };
 
 interface ResourceStoreDiagnosticsEvent {
@@ -74,7 +77,9 @@ function createTextEntry(params: {
   name: string;
   mimeType: string;
   text: string;
+  ttlMs: number;
 }): TextResourceEntry {
+  const storedAt = new Date();
   return {
     uri: params.uri,
     name: params.name,
@@ -82,7 +87,8 @@ function createTextEntry(params: {
     text: params.text,
     hash: computeSha256(params.text),
     size: estimateBytes(params.text),
-    storedAt: new Date().toISOString(),
+    storedAt: storedAt.toISOString(),
+    expiresAt: new Date(storedAt.getTime() + params.ttlMs).toISOString(),
   };
 }
 
@@ -164,6 +170,7 @@ export function createInMemoryResourceStore(
       name: params.name,
       mimeType,
       text: params.text,
+      ttlMs: resolved.entryTtlMs,
     });
 
     byUri.set(uri, entry);

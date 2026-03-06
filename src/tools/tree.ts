@@ -54,6 +54,7 @@ async function handleTree(
     maxEntries: args.maxEntries,
     includeHidden: args.includeHidden,
     includeIgnored: args.includeIgnored,
+    includeSizes: args.includeSizes,
     ...(signal ? { signal } : {}),
     ...(onProgress ? { onProgress } : {}),
   });

@@ -72,6 +72,32 @@ function assertValidRegexPattern(pattern: string): void {
   }
 }
 
+function findColumnOffset(
+  content: string,
+  pattern: string,
+  isRegex: boolean,
+  caseSensitive: boolean
+): number | undefined {
+  try {
+    if (isRegex) {
+      const flags = caseSensitive ? '' : 'i';
+      const regex = new RE2(pattern, flags);
+      const match = regex.exec(content);
+      return match ? match.index : undefined;
+    }
+    if (caseSensitive) {
+      const idx = content.indexOf(pattern);
+      return idx >= 0 ? idx : undefined;
+    }
+    const lowerContent = content.toLowerCase();
+    const lowerPattern = pattern.toLowerCase();
+    const idx = lowerContent.indexOf(lowerPattern);
+    return idx >= 0 ? idx : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function buildSearchTextResult(
   result: Awaited<ReturnType<typeof searchContent>>,
   normalizedMatches: NormalizedSearchMatch[]
@@ -108,12 +134,26 @@ type SearchMatchPayload = NonNullable<
   z.infer<typeof SearchContentOutputSchema>['matches']
 >[number];
 
+interface SearchMatchBuildContext {
+  pattern: string;
+  isRegex: boolean;
+  caseSensitive: boolean;
+}
+
 function buildSearchMatchPayload(
-  match: NormalizedSearchMatch
+  match: NormalizedSearchMatch,
+  context: SearchMatchBuildContext
 ): SearchMatchPayload {
+  const column = findColumnOffset(
+    match.content,
+    context.pattern,
+    context.isRegex,
+    context.caseSensitive
+  );
   return {
     file: match.relativeFile,
     line: match.line,
+    ...(column !== undefined ? { column } : {}),
     content: match.content,
     matchCount: match.matchCount,
     ...(match.contextBefore ? { contextBefore: [...match.contextBefore] } : {}),
@@ -129,11 +169,12 @@ function formatSearchMatchLine(match: NormalizedSearchMatch): string {
 function buildStructuredSearchResult(
   result: Awaited<ReturnType<typeof searchContent>>,
   normalizedMatches: NormalizedSearchMatch[],
-  options: { patternType: 'literal' | 'regex'; caseSensitive: boolean }
+  options: { patternType: 'literal' | 'regex'; caseSensitive: boolean },
+  context: SearchMatchBuildContext
 ): z.infer<typeof SearchContentOutputSchema> {
   const { summary } = result;
   const matches = normalizedMatches.map((match) =>
-    buildSearchMatchPayload(match)
+    buildSearchMatchPayload(match, context)
   );
 
   return {
@@ -214,6 +255,7 @@ async function handleSearchContent(
     contextLines: args.contextLines,
     maxResults: args.maxResults,
     isLiteral: !args.isRegex,
+    multiline: args.multiline,
   };
   if (signal) {
     options.signal = signal;
@@ -233,13 +275,19 @@ async function handleSearchContent(
   }
 
   const normalizedMatches = normalizeSearchMatches(result);
+  const searchContext: SearchMatchBuildContext = {
+    pattern: args.pattern,
+    isRegex: args.isRegex,
+    caseSensitive: args.caseSensitive,
+  };
   const structuredFull = buildStructuredSearchResult(
     result,
     normalizedMatches,
     {
       patternType,
       caseSensitive: args.caseSensitive,
-    }
+    },
+    searchContext
   );
   const needsExternalize = normalizedMatches.length > MAX_INLINE_MATCHES;
 
@@ -252,7 +300,7 @@ async function handleSearchContent(
 
   const previewMatches = normalizedMatches.slice(0, MAX_INLINE_MATCHES);
   const previewPayload = previewMatches.map((match) =>
-    buildSearchMatchPayload(match)
+    buildSearchMatchPayload(match, searchContext)
   );
   const previewStructured: z.infer<typeof SearchContentOutputSchema> = {
     ...structuredFull,
@@ -283,6 +331,7 @@ async function handleSearchContent(
       name: entry.name,
       mimeType: entry.mimeType,
       description: 'Full grep results as JSON (structuredContent)',
+      expiresAt: entry.expiresAt,
     }),
   ]);
 }

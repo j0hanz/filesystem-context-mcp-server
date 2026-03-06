@@ -15,6 +15,6 @@ export function buildWorkflowGuide(): string {
 
 ### D: PATCH — apply unified diffs
 1. \`diff_files\` → \`apply_patch(dryRun:true)\` → \`apply_patch\`.
-   > **Tip:** Feed \`diff_files\` output directly to \`apply_patch\`.
+   > **Tip:** Feed \`diff_files\` output directly. Multi-file patches: \`path\` = base dir, results per file.
 </workflows>`;
 }

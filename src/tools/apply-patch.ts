@@ -2,11 +2,15 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { applyPatch } from 'diff';
+import { applyPatch, parsePatch, type StructuredPatch } from 'diff';
 import type { z } from 'zod';
 
 import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
-import { ErrorCode, McpError } from '../lib/errors.js';
+import {
+  ErrorCode,
+  formatUnknownErrorMessage,
+  McpError,
+} from '../lib/errors.js';
 import { atomicWriteFile, withAbort } from '../lib/fs-helpers.js';
 import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
 
@@ -31,12 +35,16 @@ export const APPLY_PATCH_TOOL: ToolContract = {
   name: 'apply_patch',
   title: 'Apply Patch',
   description:
-    'Apply a unified diff patch to a file. ' +
+    'Apply a unified diff patch to one or more files. ' +
+    'Single-file: throws on failure. Multi-file: best-effort per file with `results[]`. ' +
     'Workflow: `diff_files` \u2192 `apply_patch(dryRun:true)` \u2192 `apply_patch`. ' +
     'On failure, regenerate the patch from current file content.',
   inputSchema: ApplyPatchInputSchema,
   outputSchema: ApplyPatchOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
+  nuances: [
+    'Multi-file patches use `path` as base directory; per-file results in `results[]`.',
+  ],
   gotchas: ['Patch must include valid hunk headers; use `dryRun=true` first.'],
 } as const;
 
@@ -67,54 +75,190 @@ function assertPatchHasHunks(patch: string): void {
   }
 }
 
+function countStructuredPatchStats(diff: StructuredPatch): {
+  hunksApplied: number;
+  linesAdded: number;
+  linesRemoved: number;
+} {
+  let linesAdded = 0;
+  let linesRemoved = 0;
+  for (const hunk of diff.hunks) {
+    for (const line of hunk.lines) {
+      if (line.startsWith('+')) linesAdded++;
+      else if (line.startsWith('-')) linesRemoved++;
+    }
+  }
+  return { hunksApplied: diff.hunks.length, linesAdded, linesRemoved };
+}
+
+function stripGitPrefix(fileName: string): string {
+  return fileName.startsWith('a/') || fileName.startsWith('b/')
+    ? fileName.slice(2)
+    : fileName;
+}
+
+function extractPatchTargetPath(diff: StructuredPatch): string | undefined {
+  if (diff.newFileName) return stripGitPrefix(diff.newFileName);
+  if (diff.oldFileName) return stripGitPrefix(diff.oldFileName);
+  return undefined;
+}
+
+type PatchFileResult = NonNullable<
+  z.infer<typeof ApplyPatchOutputSchema>['results']
+>[number];
+
+async function applyPatchToFile(
+  filePath: string,
+  diff: StructuredPatch,
+  options: {
+    dryRun: boolean;
+    fuzzFactor: number;
+    autoConvertLineEndings: boolean;
+  },
+  signal?: AbortSignal
+): Promise<PatchFileResult> {
+  const validPath = await validateExistingPath(filePath, signal);
+  assertAllowedFileAccess(filePath, validPath);
+  const stats = await withAbort(fs.stat(validPath), signal);
+  assertPatchTargetSizeWithinLimit(validPath, stats.size, MAX_TEXT_FILE_SIZE);
+  const content = await fs.readFile(validPath, { encoding: 'utf-8', signal });
+
+  const patched = applyPatch(content, diff, {
+    fuzzFactor: options.fuzzFactor,
+    autoConvertLineEndings: options.autoConvertLineEndings,
+  });
+
+  if (patched === false) {
+    return {
+      path: validPath,
+      applied: false,
+      error: 'Patch application failed',
+    };
+  }
+  if (patched === content) {
+    return { path: validPath, applied: false, error: 'Patch had no effect' };
+  }
+
+  const patchStats = countStructuredPatchStats(diff);
+
+  if (!options.dryRun) {
+    await atomicWriteFile(validPath, patched, { encoding: 'utf-8', signal });
+  }
+
+  return { path: validPath, applied: true, ...patchStats };
+}
+
+async function handleMultiFilePatch(
+  basePath: string,
+  parsed: StructuredPatch[],
+  options: {
+    dryRun: boolean;
+    fuzzFactor: number;
+    autoConvertLineEndings: boolean;
+  },
+  signal?: AbortSignal
+): Promise<ToolResponse<z.infer<typeof ApplyPatchOutputSchema>>> {
+  const validBase = await validateExistingPath(basePath, signal);
+  const results: PatchFileResult[] = [];
+
+  for (const diff of parsed) {
+    const fileName = extractPatchTargetPath(diff);
+    if (!fileName) {
+      results.push({
+        path: '<unknown>',
+        applied: false,
+        error: 'Missing file name in patch header',
+      });
+      continue;
+    }
+
+    const filePath = path.resolve(validBase, fileName);
+    try {
+      const result = await applyPatchToFile(filePath, diff, options, signal);
+      results.push({ ...result, path: fileName });
+    } catch (error) {
+      results.push({
+        path: fileName,
+        applied: false,
+        error: formatUnknownErrorMessage(error),
+      });
+    }
+  }
+
+  const totals = results.reduce(
+    (acc, r) => {
+      if (r.applied) {
+        acc.applied++;
+        acc.hunks += r.hunksApplied ?? 0;
+        acc.added += r.linesAdded ?? 0;
+        acc.removed += r.linesRemoved ?? 0;
+      }
+      return acc;
+    },
+    { applied: 0, hunks: 0, added: 0, removed: 0 }
+  );
+
+  const label = options.dryRun ? ' (dry run)' : '';
+  const text = `Applied ${totals.applied}/${parsed.length} file patches${label}`;
+
+  return buildToolResponse(text, {
+    ok: totals.applied === parsed.length,
+    path: basePath,
+    applied: totals.applied > 0,
+    hunksApplied: totals.hunks,
+    linesAdded: totals.added,
+    linesRemoved: totals.removed,
+    results,
+  });
+}
+
 async function handleApplyPatch(
   args: z.infer<typeof ApplyPatchInputSchema>,
   signal?: AbortSignal
 ): Promise<ToolResponse<z.infer<typeof ApplyPatchOutputSchema>>> {
-  const maxFileSize = MAX_TEXT_FILE_SIZE;
-  const validPath = await validateExistingPath(args.path, signal);
-  assertAllowedFileAccess(args.path, validPath);
-  const stats = await withAbort(fs.stat(validPath), signal);
-  assertPatchTargetSizeWithinLimit(validPath, stats.size, maxFileSize);
-  const content = await fs.readFile(validPath, { encoding: 'utf-8', signal });
-
-  const fuzzFactor = args.fuzzFactor ?? 0;
-
   assertPatchHasHunks(args.patch);
 
-  const patched = applyPatch(content, args.patch, {
+  const fuzzFactor = args.fuzzFactor ?? 0;
+  const parsed = parsePatch(args.patch);
+  const options = {
+    dryRun: args.dryRun,
     fuzzFactor,
     autoConvertLineEndings: args.autoConvertLineEndings,
-  });
+  };
 
-  if (patched === false) {
+  // Multi-file patch: best-effort per file
+  if (parsed.length > 1) {
+    return handleMultiFilePatch(args.path, parsed, options, signal);
+  }
+
+  // Single-file patch: delegate to shared helper, then assert success
+  const diff = parsed[0];
+  if (!diff) {
+    throw new McpError(ErrorCode.E_INVALID_INPUT, 'No patch content found.');
+  }
+
+  const result = await applyPatchToFile(args.path, diff, options, signal);
+
+  if (!result.applied) {
     throw new McpError(
       ErrorCode.E_INVALID_INPUT,
-      'Patch application failed. The file content may have changed or patch context is insufficient. Generate a fresh patch via diff_files against the current file, then retry. If differences are minor, enable fuzzy matching with the fuzzFactor parameter.'
+      result.error === 'Patch had no effect'
+        ? 'Patch had no effect \u2014 the file content is unchanged after applying. The patch may not match the current file content. Generate a fresh patch via diff_files and retry.'
+        : 'Patch application failed. The file content may have changed or patch context is insufficient. Generate a fresh patch via diff_files against the current file, then retry. If differences are minor, enable fuzzy matching with the fuzzFactor parameter.'
     );
   }
 
-  if (patched === content) {
-    throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
-      'Patch had no effect — the file content is unchanged after applying. The patch may not match the current file content. Generate a fresh patch via diff_files and retry.'
-    );
-  }
+  const text = args.dryRun
+    ? 'Dry run successful. Patch can be applied.'
+    : `Successfully patched ${args.path}`;
 
-  if (args.dryRun) {
-    return buildToolResponse('Dry run successful. Patch can be applied.', {
-      ok: true,
-      path: validPath,
-      applied: true,
-    });
-  }
-
-  await atomicWriteFile(validPath, patched, { encoding: 'utf-8', signal });
-
-  return buildToolResponse(`Successfully patched ${args.path}`, {
+  return buildToolResponse(text, {
     ok: true,
-    path: validPath,
+    path: result.path,
     applied: true,
+    hunksApplied: result.hunksApplied,
+    linesAdded: result.linesAdded,
+    linesRemoved: result.linesRemoved,
   });
 }
 

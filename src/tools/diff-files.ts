@@ -42,6 +42,22 @@ export const DIFF_FILES_TOOL: ToolContract = {
   gotchas: ['`isIdentical=true` means no hunks (`@@`) and empty diff.'],
 } as const;
 
+function computeDiffStats(patch: string): {
+  linesAdded: number;
+  linesRemoved: number;
+  hunksCount: number;
+} {
+  let linesAdded = 0;
+  let linesRemoved = 0;
+  let hunksCount = 0;
+  for (const line of patch.split('\n')) {
+    if (line.startsWith('@@')) hunksCount++;
+    else if (line.startsWith('+') && !line.startsWith('+++')) linesAdded++;
+    else if (line.startsWith('-') && !line.startsWith('---')) linesRemoved++;
+  }
+  return { linesAdded, linesRemoved, hunksCount };
+}
+
 function assertDiffFileSizeWithinLimit(
   filePath: string,
   size: number,
@@ -96,6 +112,7 @@ async function handleDiffFiles(
 
   const isIdentical = !patch.includes('@@');
   const diffText = isIdentical ? '' : patch;
+  const stats = isIdentical ? undefined : computeDiffStats(patch);
 
   const externalized = maybeExternalizeTextContent(resourceStore, diffText, {
     name: 'diff:patch',
@@ -107,6 +124,7 @@ async function handleDiffFiles(
       ok: true,
       diff: diffText,
       isIdentical,
+      ...(stats ?? {}),
     });
   }
 
@@ -117,6 +135,7 @@ async function handleDiffFiles(
       ok: true,
       diff: preview,
       isIdentical,
+      ...(stats ?? {}),
       truncated: true,
       resourceUri: entry.uri,
     },
@@ -126,6 +145,7 @@ async function handleDiffFiles(
         name: entry.name,
         mimeType: entry.mimeType,
         description: 'Full diff content',
+        expiresAt: entry.expiresAt,
       }),
     ]
   );

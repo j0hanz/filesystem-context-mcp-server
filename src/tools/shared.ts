@@ -130,12 +130,17 @@ export function buildResourceLink(params: {
   name: string;
   mimeType?: string;
   description?: string;
+  expiresAt?: string;
 }): ContentBlock {
+  const descParts: string[] = [];
+  if (params.description) descParts.push(params.description);
+  if (params.expiresAt) descParts.push(`Expires: ${params.expiresAt}`);
+  const description = descParts.length > 0 ? descParts.join(' · ') : undefined;
   return {
     type: 'resource_link',
     uri: params.uri,
     name: params.name,
-    ...(params.description ? { description: params.description } : {}),
+    ...(description ? { description } : {}),
     ...(params.mimeType ? { mimeType: params.mimeType } : {}),
   };
 }

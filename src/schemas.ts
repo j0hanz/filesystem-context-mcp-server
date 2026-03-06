@@ -68,6 +68,7 @@ interface TreeEntry {
   name: string;
   type: z.infer<typeof FileTypeSchema>;
   relativePath: string;
+  size?: number | undefined;
   children?: TreeEntry[] | undefined;
 }
 
@@ -76,6 +77,7 @@ const TreeEntrySchema: z.ZodType<TreeEntry> = z.lazy(() =>
     name: z.string().describe('Name'),
     type: FileTypeSchema.describe('Type'),
     relativePath: z.string().describe('Relative path'),
+    size: z.number().optional().describe('File size bytes (when includeSizes)'),
     children: z.array(TreeEntrySchema).optional().describe('Children'),
   })
 );
@@ -99,10 +101,18 @@ const HeadLinesSchema = z
   .optional()
   .describe('Read first N lines');
 
+const TailLinesSchema = z
+  .int({ error: 'Must be integer' })
+  .min(1, 'Min: 1')
+  .max(100000, 'Max: 100,000')
+  .optional()
+  .describe('Read last N lines');
+
 const LineNumberSchema = z.int({ error: 'Must be integer' }).min(1, 'Min: 1');
 
 interface ReadRangeValue {
   head?: number | undefined;
+  tail?: number | undefined;
   startLine?: number | undefined;
   endLine?: number | undefined;
 }
@@ -124,6 +134,7 @@ const validateReadRange = (
   ctx: z.RefinementCtx
 ): void => {
   const hasHead = value.head !== undefined;
+  const hasTail = value.tail !== undefined;
   const hasStart = value.startLine !== undefined;
   const hasEnd = value.endLine !== undefined;
 
@@ -132,6 +143,14 @@ const validateReadRange = (
       ctx,
       'head',
       "Cannot use 'head' with 'startLine'/'endLine'"
+    );
+  }
+
+  if (hasTail && (hasHead || hasStart || hasEnd)) {
+    addReadRangeIssue(
+      ctx,
+      'tail',
+      "Cannot use 'tail' with 'head'/'startLine'/'endLine'"
     );
   }
 
@@ -150,12 +169,14 @@ const validateReadRange = (
 
 interface ReadRangeFieldDescriptions {
   head: string;
+  tail: string;
   startLine: string;
   endLine: string;
 }
 
 interface ReadRangeInputFields {
   head: typeof HeadLinesSchema;
+  tail: typeof TailLinesSchema;
   startLine: z.ZodOptional<typeof LineNumberSchema>;
   endLine: z.ZodOptional<typeof LineNumberSchema>;
 }
@@ -165,6 +186,7 @@ function createReadRangeInputFields(
 ): ReadRangeInputFields {
   return {
     head: HeadLinesSchema.describe(descriptions.head),
+    tail: TailLinesSchema.describe(descriptions.tail),
     startLine: LineNumberSchema.optional().describe(descriptions.startLine),
     endLine: LineNumberSchema.optional().describe(descriptions.endLine),
   };
@@ -294,6 +316,7 @@ export const TreeInputSchema = z.strictObject({
   includeIgnored: defaultFalseBoolean(
     'Include ignored items. Disables .gitignore.'
   ),
+  includeSizes: defaultFalseBoolean('Include file sizes in tree entries'),
 });
 
 export const SearchContentInputSchema = z.strictObject({
@@ -337,6 +360,9 @@ export const SearchContentInputSchema = z.strictObject({
   includeIgnored: defaultFalseBoolean(
     'Include ignored items (node_modules, etc).'
   ),
+  multiline: defaultFalseBoolean(
+    'Multi-line mode. ^ and $ match line boundaries when isRegex=true.'
+  ),
 });
 
 export const ReadFileInputSchema = z
@@ -344,9 +370,13 @@ export const ReadFileInputSchema = z
     path: RequiredPathSchema.describe(DESC_PATH_REQUIRED),
     ...createReadRangeInputFields({
       head: 'Read first N lines (preview)',
+      tail: 'Read last N lines',
       startLine: 'Start line (1-based, inclusive)',
       endLine: 'End line (1-based, inclusive). Requires startLine.',
     }),
+    includeHash: defaultFalseBoolean(
+      'Include SHA-256 hash of full file content'
+    ),
   })
   .superRefine(validateReadRange);
 
@@ -359,6 +389,7 @@ export const ReadMultipleFilesInputSchema = z
       .describe('Files to read. e.g. ["src/index.ts"]'),
     ...createReadRangeInputFields({
       head: 'Read first N lines of each file',
+      tail: 'Read last N lines of each file',
       startLine: 'Start line (1-based, inclusive) per file',
       endLine: 'End line (1-based, inclusive) per file. Requires startLine.',
     }),
@@ -461,6 +492,10 @@ export const SearchContentOutputSchema = SearchSummarySchema.extend({
       z.strictObject({
         file: z.string().describe('Relative path'),
         line: z.number(),
+        column: z
+          .number()
+          .optional()
+          .describe('Column of first match (0-based)'),
         content: z.string(),
         matchCount: z.number(),
         contextBefore: z.array(z.string()).optional(),
@@ -499,8 +534,12 @@ const ReadResultSchema = z.strictObject({
   truncated: z.boolean().optional().describe('Truncated?'),
   resourceUri: z.string().optional().describe('Full content URI'),
   totalLines: z.number().optional().describe('Total lines'),
-  readMode: z.enum(['full', 'head', 'range']).optional().describe('Mode'),
+  readMode: z
+    .enum(['full', 'head', 'tail', 'range'])
+    .optional()
+    .describe('Mode'),
   head: z.number().optional().describe('Head lines'),
+  tail: z.number().optional().describe('Tail lines'),
   startLine: z.number().optional().describe('Start line'),
   endLine: z.number().optional().describe('End line'),
   linesRead: z.number().optional().describe('Lines read'),
@@ -510,13 +549,14 @@ const ReadResultSchema = z.strictObject({
 export const ReadFileOutputSchema = ReadResultSchema.extend({
   ok: z.boolean(),
   path: z.string().optional(),
+  contentHash: z.string().optional().describe('SHA-256 of full file content'),
   error: ErrorSchema.optional(),
 });
 
 const ReadMultipleFileResultSchema = ReadResultSchema.extend({
   path: z.string().describe('File path'),
   truncationReason: z
-    .enum(['head', 'range', 'externalized'])
+    .enum(['head', 'tail', 'range', 'externalized'])
     .optional()
     .describe('Why content was truncated'),
   maxTotalSize: z.number().optional().describe('Max total size budget'),
@@ -624,6 +664,7 @@ export const EditFileOutputSchema = z.strictObject({
     .array(z.string())
     .optional()
     .describe('Edits that could not be applied'),
+  diff: z.string().optional().describe('Unified diff of changes (dryRun)'),
   error: ErrorSchema.optional(),
 });
 
@@ -710,6 +751,9 @@ export const DiffFilesOutputSchema = z.strictObject({
   ok: z.boolean(),
   diff: z.string().optional().describe('Unified diff content'),
   isIdentical: z.boolean().optional().describe('True if files are identical'),
+  linesAdded: z.number().optional().describe('Lines added'),
+  linesRemoved: z.number().optional().describe('Lines removed'),
+  hunksCount: z.number().optional().describe('Number of diff hunks'),
   truncated: z.boolean().optional().describe('Diff content truncated?'),
   resourceUri: z.string().optional().describe('Full diff content URI'),
   error: ErrorSchema.optional(),
@@ -744,6 +788,22 @@ export const ApplyPatchOutputSchema = z.strictObject({
   ok: z.boolean(),
   path: z.string().optional(),
   applied: z.boolean().optional(),
+  hunksApplied: z.number().optional().describe('Hunks applied'),
+  linesAdded: z.number().optional().describe('Lines added'),
+  linesRemoved: z.number().optional().describe('Lines removed'),
+  results: z
+    .array(
+      z.strictObject({
+        path: z.string().describe('File path'),
+        applied: z.boolean().describe('Patch applied successfully'),
+        hunksApplied: z.number().optional().describe('Hunks applied'),
+        linesAdded: z.number().optional().describe('Lines added'),
+        linesRemoved: z.number().optional().describe('Lines removed'),
+        error: z.string().optional().describe('Error message'),
+      })
+    )
+    .optional()
+    .describe('Per-file results for multi-file patches'),
   error: ErrorSchema.optional(),
 });
 
@@ -753,10 +813,12 @@ export const SearchAndReplaceInputSchema = z.strictObject({
     .string()
     .min(1, 'Pattern required')
     .max(1000, 'Max 1000 chars')
+    .optional()
+    .default('**/*')
     .refine((val) => isSafeGlobPattern(val), {
       error: 'Invalid glob or unsafe path (absolute/.. forbidden)',
     })
-    .describe('Glob pattern (e.g. "**/*.ts")'),
+    .describe('Glob to filter files. Default: **/*'),
   searchPattern: z
     .string()
     .min(1, 'Search pattern required')
@@ -767,6 +829,11 @@ export const SearchAndReplaceInputSchema = z.strictObject({
   isRegex: defaultFalseBoolean(
     'Treat searchPattern as RE2 regex. Supports capture groups ($1, $2) in replacement.'
   ),
+  caseSensitive: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe('Case-sensitive matching. Default: true.'),
   dryRun: defaultFalseBoolean(
     'Preview matches without writing. Check changedFiles and matches in the response before committing.'
   ),
@@ -788,6 +855,12 @@ export const SearchAndReplaceInputSchema = z.strictObject({
     .describe(
       'Return unified diff of changes even if dryRun is false. Default: false.'
     ),
+  maxFiles: z
+    .int({ error: 'Must be integer' })
+    .min(1, 'Min: 1')
+    .max(10000, 'Max: 10,000')
+    .optional()
+    .describe('Max files to process before stopping'),
 });
 
 export const SearchAndReplaceOutputSchema = z.strictObject({
@@ -819,6 +892,14 @@ export const SearchAndReplaceOutputSchema = z.strictObject({
     .optional()
     .describe('Changed file list truncated'),
   diff: z.string().optional().describe('Unified diff of changes (dryRun only)'),
+  diffTruncated: z
+    .boolean()
+    .optional()
+    .describe('Diff was truncated to fit size limit'),
+  stoppedReason: z
+    .enum(['maxFiles'])
+    .optional()
+    .describe('Why processing stopped early'),
   dryRun: z.boolean().optional(),
   error: ErrorSchema.optional(),
 });

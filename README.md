@@ -484,7 +484,7 @@ Make precise, targeted edits to source files. Use `edit` for surgical replacemen
 
 ### Diff and Patch Workflow
 
-Compare file versions and apply patches. Generate a unified diff with `diff_files`, preview with `apply_patch(dryRun: true)`, then apply. Useful for code review assistance and conflict resolution.
+Compare file versions and apply patches. Generate a unified diff with `diff_files`, preview with `apply_patch(dryRun: true)`, then apply. Supports both single-file and multi-file patches (best-effort per file with per-file `results[]`).
 
 **Relevant tools:** `diff_files`, `apply_patch`
 
@@ -762,15 +762,15 @@ Generate a unified diff between two files. Output feeds directly into `apply_pat
 
 #### `apply_patch`
 
-Apply a unified diff patch to a file. Workflow: `diff_files` -> `apply_patch(dryRun)` -> `apply_patch`.
+Apply a unified diff patch to one or more files. Single-file: throws on failure. Multi-file: best-effort per file with `results[]`. Workflow: `diff_files` -> `apply_patch(dryRun)` -> `apply_patch`.
 
-| Parameter                | Type    | Required | Description                                |
-| ------------------------ | ------- | -------- | ------------------------------------------ |
-| `path`                   | string  | **yes**  | Path to file to patch                      |
-| `patch`                  | string  | **yes**  | Unified diff with `@@` hunk headers        |
-| `fuzzFactor`             | integer | no       | Max fuzzy mismatches per hunk (0-20)       |
-| `autoConvertLineEndings` | boolean | no       | Auto-convert line endings. Default: `true` |
-| `dryRun`                 | boolean | no       | Validate without writing. Default: `false` |
+| Parameter                | Type    | Required | Description                                                |
+| ------------------------ | ------- | -------- | ---------------------------------------------------------- |
+| `path`                   | string  | **yes**  | Path to file (single) or base directory (multi-file patch) |
+| `patch`                  | string  | **yes**  | Unified diff with `@@` hunk headers (single or multi-file) |
+| `fuzzFactor`             | integer | no       | Max fuzzy mismatches per hunk (0-20)                       |
+| `autoConvertLineEndings` | boolean | no       | Auto-convert line endings. Default: `true`                 |
+| `dryRun`                 | boolean | no       | Validate without writing. Default: `false`                 |
 
 ---
 

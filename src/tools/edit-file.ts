@@ -2,6 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { createTwoFilesPatch } from 'diff';
 import RE2 from 're2';
 import type { z } from 'zod';
 
@@ -155,6 +156,16 @@ export async function handleEditFile(
   };
 
   if (args.dryRun) {
+    if (appliedEdits > 0) {
+      structured.diff = createTwoFilesPatch(
+        path.basename(validPath),
+        path.basename(validPath),
+        content,
+        newContent,
+        'Original',
+        'Modified'
+      );
+    }
     return buildToolResponse(
       `Dry run complete. ${appliedEdits} edits would be applied.`,
       structured

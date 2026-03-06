@@ -1,4 +1,6 @@
+import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { createHash } from 'node:crypto';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { z } from 'zod';
@@ -9,6 +11,7 @@ import {
 } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { readFile } from '../lib/fs-helpers.js';
+import { validateExistingPath } from '../lib/paths.js';
 
 import { ReadFileInputSchema, ReadFileOutputSchema } from '../schemas.js';
 import {
@@ -57,6 +60,9 @@ async function handleReadFile(
   if (args.head !== undefined) {
     options.head = args.head;
   }
+  if (args.tail !== undefined) {
+    options.tail = args.tail;
+  }
   if (args.startLine !== undefined) {
     options.startLine = args.startLine;
   }
@@ -77,6 +83,7 @@ async function handleReadFile(
       ? { totalLines: result.totalLines }
       : {}),
     ...(result.head !== undefined ? { head: result.head } : {}),
+    ...(result.tail !== undefined ? { tail: result.tail } : {}),
     ...(result.startLine !== undefined ? { startLine: result.startLine } : {}),
     ...(result.endLine !== undefined ? { endLine: result.endLine } : {}),
     ...(result.linesRead !== undefined ? { linesRead: result.linesRead } : {}),
@@ -88,6 +95,14 @@ async function handleReadFile(
     result.content,
     { name: `read:${path.basename(args.path)}`, mimeType: 'text/plain' }
   );
+
+  if (args.includeHash) {
+    const validPath = await validateExistingPath(args.path, signal);
+    const rawContent = await fs.readFile(validPath, { signal });
+    structured.contentHash = createHash('sha256')
+      .update(rawContent)
+      .digest('hex');
+  }
   if (!externalized) {
     return buildToolResponse(result.content, structured);
   }
@@ -112,6 +127,7 @@ async function handleReadFile(
       name: entry.name,
       mimeType: entry.mimeType,
       description: 'Full file contents',
+      expiresAt: entry.expiresAt,
     }),
   ]);
 }
@@ -143,6 +159,7 @@ export function registerReadFileTool(
         return `🕮 read: ${name} [lines ${args.startLine}–${end}]`;
       }
       if (args.head !== undefined) return `🕮 read: ${name} [head ${args.head}]`;
+      if (args.tail !== undefined) return `🕮 read: ${name} [tail ${args.tail}]`;
       return `🕮 read: ${name}`;
     },
     completionMessage: (args, result) => {
@@ -164,6 +181,12 @@ export function registerReadFileTool(
         return sc.hasMoreLines
           ? `🕮 read: ${name} • first ${lines ?? sc.head} lines`
           : `🕮 read: ${name} • ${lines ?? sc.head} lines`;
+      }
+
+      if (sc.tail !== undefined) {
+        return sc.hasMoreLines
+          ? `🕮 read: ${name} • last ${lines ?? sc.tail} lines`
+          : `🕮 read: ${name} • ${lines ?? sc.tail} lines`;
       }
 
       if (sc.truncated)

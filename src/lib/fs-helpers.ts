@@ -330,12 +330,13 @@ function isBinarySlice(slice: Buffer): boolean {
   return !isUtf8(slice);
 }
 
-type ReadMode = 'head' | 'full' | 'range';
+type ReadMode = 'head' | 'full' | 'range' | 'tail';
 
 interface ReadFileOptions {
   encoding?: BufferEncoding;
   maxSize?: number;
   head?: number;
+  tail?: number;
   startLine?: number;
   endLine?: number;
   skipBinary?: boolean;
@@ -346,6 +347,7 @@ interface NormalizedOptions {
   encoding: BufferEncoding;
   maxSize: number;
   head?: number;
+  tail?: number;
   startLine?: number;
   endLine?: number;
   skipBinary: boolean;
@@ -372,6 +374,7 @@ interface ReadFileResult {
   totalLines?: number;
   readMode: ReadMode;
   head?: number;
+  tail?: number;
   startLine?: number;
   endLine?: number;
   linesRead?: number;
@@ -380,6 +383,7 @@ interface ReadFileResult {
 
 function validateReadOptions(options: ReadFileOptions): void {
   const hasHead = options.head !== undefined;
+  const hasTail = options.tail !== undefined;
   const hasStart = options.startLine !== undefined;
   const hasEnd = options.endLine !== undefined;
 
@@ -392,6 +396,11 @@ function validateReadOptions(options: ReadFileOptions): void {
     'head',
     options.head,
     'head must be at least 1'
+  );
+  assertPositiveSafeIntegerOption(
+    'tail',
+    options.tail,
+    'tail must be at least 1'
   );
   assertPositiveSafeIntegerOption(
     'startLine',
@@ -408,6 +417,13 @@ function validateReadOptions(options: ReadFileOptions): void {
     throw new McpError(
       ErrorCode.E_INVALID_INPUT,
       'head cannot be used together with startLine/endLine'
+    );
+  }
+
+  if (hasTail && (hasHead || hasStart || hasEnd)) {
+    throw new McpError(
+      ErrorCode.E_INVALID_INPUT,
+      'tail cannot be used together with head/startLine/endLine'
     );
   }
 
@@ -442,6 +458,9 @@ function normalizeOptions(options: ReadFileOptions): NormalizedOptions {
   if (options.head !== undefined) {
     normalized.head = options.head;
   }
+  if (options.tail !== undefined) {
+    normalized.tail = options.tail;
+  }
   if (options.startLine !== undefined) {
     normalized.startLine = options.startLine;
   }
@@ -475,6 +494,7 @@ function buildReadContentOptions(
 
 function resolveReadMode(options: NormalizedOptions): ReadMode {
   if (options.head !== undefined) return 'head';
+  if (options.tail !== undefined) return 'tail';
   if (options.startLine !== undefined) return 'range';
   return 'full';
 }
@@ -695,6 +715,46 @@ async function readRangeContent(
   };
 }
 
+async function readTailContent(
+  handle: FileHandle,
+  tail: number,
+  options: ReadContentOptions
+): Promise<PartialReadResult> {
+  assertNotAborted(options.signal);
+
+  const ring: string[] = new Array<string>(tail);
+  let totalLines = 0;
+  let head = 0;
+  let size = 0;
+
+  for await (const line of handle.readLines({
+    encoding: options.encoding,
+    signal: options.signal,
+  })) {
+    ring[head] = line;
+    head = (head + 1) % tail;
+    if (size < tail) size++;
+    totalLines++;
+  }
+
+  const lines: string[] = new Array<string>(size);
+  const start = size < tail ? 0 : head;
+  for (let i = 0; i < size; i++) {
+    lines[i] = ring[(start + i) % tail] ?? '';
+  }
+
+  const content = lines.join('\n');
+  const linesRead = countLines(content);
+  const hasMoreLines = totalLines > tail;
+
+  return {
+    content,
+    truncated: hasMoreLines,
+    linesRead,
+    hasMoreLines,
+  };
+}
+
 async function readFullContent(
   handle: FileHandle,
   encoding: BufferEncoding,
@@ -801,6 +861,25 @@ function buildFullResult(
   };
 }
 
+function buildTailResult(
+  validPath: string,
+  content: string,
+  truncated: boolean,
+  tail: number,
+  linesRead: number,
+  hasMoreLines: boolean
+): ReadFileResult {
+  return {
+    path: validPath,
+    content,
+    truncated,
+    readMode: 'tail',
+    tail,
+    linesRead,
+    hasMoreLines,
+  };
+}
+
 function assertSizeWithinLimit(
   size: number,
   maxSize: number,
@@ -887,6 +966,35 @@ async function readFullResult(
   return buildFullResult(validPath, content, totalLines);
 }
 
+async function readTailResult(
+  handle: FileHandle,
+  validPath: string,
+  filePath: string,
+  normalized: NormalizedOptions
+): Promise<ReadFileResult> {
+  if (normalized.tail === undefined) {
+    throw new McpError(
+      ErrorCode.E_INVALID_INPUT,
+      'Missing tail option',
+      filePath
+    );
+  }
+  const readOptions = buildReadContentOptions(normalized);
+  const { content, truncated, linesRead, hasMoreLines } = await readTailContent(
+    handle,
+    normalized.tail,
+    readOptions
+  );
+  return buildTailResult(
+    validPath,
+    content,
+    truncated,
+    normalized.tail,
+    linesRead,
+    hasMoreLines
+  );
+}
+
 async function readByMode(
   handle: FileHandle,
   validPath: string,
@@ -897,6 +1005,9 @@ async function readByMode(
   const mode = resolveReadMode(normalized);
   if (mode === 'head') {
     return readHeadResult(handle, validPath, filePath, normalized);
+  }
+  if (mode === 'tail') {
+    return readTailResult(handle, validPath, filePath, normalized);
   }
   if (mode === 'range') {
     return readRangeResult(handle, validPath, filePath, normalized);

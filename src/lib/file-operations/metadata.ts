@@ -739,6 +739,7 @@ interface TreeEntry {
   name: string;
   type: EntryType;
   relativePath: string;
+  size?: number;
   children?: TreeEntry[];
 }
 
@@ -747,6 +748,7 @@ interface TreeOptions {
   maxEntries?: number;
   includeHidden?: boolean;
   includeIgnored?: boolean;
+  includeSizes?: boolean;
   timeoutMs?: number;
   signal?: AbortSignal;
   onProgress?: (progress: { total?: number; current: number }) => void;
@@ -757,6 +759,7 @@ interface TreeNormalizedOptions {
   maxEntries: number;
   includeHidden: boolean;
   includeIgnored: boolean;
+  includeSizes: boolean;
   timeoutMs: number;
 }
 
@@ -790,6 +793,7 @@ function normalizeTreeOptions(options: TreeOptions): TreeNormalizedOptions {
     maxEntries: toSafeNonNegativeInt(options.maxEntries, 1000),
     includeHidden: toSafeBoolean(options.includeHidden, false),
     includeIgnored: toSafeBoolean(options.includeIgnored, false),
+    includeSizes: toSafeBoolean(options.includeSizes, false),
     timeoutMs: toSafePositiveInt(options.timeoutMs, DEFAULT_SEARCH_TIMEOUT_MS),
   };
 }
@@ -1055,7 +1059,7 @@ export async function treeDirectory(
         maxDepth: normalized.maxDepth,
         followSymbolicLinks: false,
         onlyFiles: false,
-        stats: false,
+        stats: normalized.includeSizes,
         suppressErrors: true,
       });
 
@@ -1091,6 +1095,18 @@ export async function treeDirectory(
         );
 
         upsertChildNode(parent, nodeByPath, resolved, childPathIndexByParent);
+
+        if (
+          normalized.includeSizes &&
+          resolved.type === 'file' &&
+          entry.stats
+        ) {
+          const node = nodeByPath.get(resolved.relativePosix);
+          if (node) {
+            node.size = entry.stats.size;
+          }
+        }
+
         totalEntries += 1;
         options.onProgress?.({ current: totalEntries });
       }
@@ -1112,8 +1128,9 @@ interface ReadMultipleResult {
   content?: string;
   truncated?: boolean;
   totalLines?: number;
-  readMode?: 'full' | 'head' | 'range';
+  readMode?: 'full' | 'head' | 'tail' | 'range';
   head?: number;
+  tail?: number;
   startLine?: number;
   endLine?: number;
   linesRead?: number;
@@ -1126,6 +1143,7 @@ interface NormalizedReadMultipleOptions {
   maxSize: number;
   maxTotalSize: number;
   head?: number;
+  tail?: number;
   startLine?: number;
   endLine?: number;
 }
@@ -1135,6 +1153,7 @@ interface ReadMultipleOptions {
   maxSize?: number;
   maxTotalSize?: number;
   head?: number;
+  tail?: number;
   startLine?: number;
   endLine?: number;
   signal?: AbortSignal;
@@ -1150,6 +1169,7 @@ interface FileReadTask {
 
 interface LineSelectionOptions {
   head?: number;
+  tail?: number;
   startLine?: number;
   endLine?: number;
 }
@@ -1164,6 +1184,7 @@ function buildReadOptions(options: NormalizedReadMultipleOptions): {
   encoding: BufferEncoding;
   maxSize: number;
   head?: number;
+  tail?: number;
   startLine?: number;
   endLine?: number;
 } {
@@ -1171,6 +1192,7 @@ function buildReadOptions(options: NormalizedReadMultipleOptions): {
     encoding: BufferEncoding;
     maxSize: number;
     head?: number;
+    tail?: number;
     startLine?: number;
     endLine?: number;
   } = {
@@ -1193,6 +1215,7 @@ function buildReadMultipleResult(
   };
   if (result.totalLines !== undefined) output.totalLines = result.totalLines;
   if (result.head !== undefined) output.head = result.head;
+  if (result.tail !== undefined) output.tail = result.tail;
   if (result.startLine !== undefined) output.startLine = result.startLine;
   if (result.endLine !== undefined) output.endLine = result.endLine;
   if (result.linesRead !== undefined) output.linesRead = result.linesRead;
@@ -1263,6 +1286,7 @@ function applyLineSelection(
   source: LineSelectionOptions
 ): void {
   if (source.head !== undefined) target.head = source.head;
+  if (source.tail !== undefined) target.tail = source.tail;
   if (source.startLine !== undefined) target.startLine = source.startLine;
   if (source.endLine !== undefined) target.endLine = source.endLine;
 }

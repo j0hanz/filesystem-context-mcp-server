@@ -93,9 +93,10 @@ function recordChangedFile(
   summary.changedFilesTruncated = true;
 }
 
-function createRegexMatcher(pattern: string): RE2 {
+function createRegexMatcher(pattern: string, caseSensitive: boolean): RE2 {
+  const flags = caseSensitive ? 'g' : 'gi';
   try {
-    return new RE2(pattern, 'g');
+    return new RE2(pattern, flags);
   } catch (error) {
     throw new McpError(
       ErrorCode.E_INVALID_INPUT,
@@ -131,8 +132,14 @@ function createRegexReplacementMatcher(regex: RE2): ReplacementMatcher {
 }
 
 function createLiteralReplacementMatcher(
-  searchPattern: string
+  searchPattern: string,
+  caseSensitive: boolean
 ): ReplacementMatcher {
+  if (!caseSensitive) {
+    const escaped = searchPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RE2(escaped, 'gi');
+    return createRegexReplacementMatcher(regex);
+  }
   const count = (content: string): number => {
     let matchCount = 0;
     let pos = content.indexOf(searchPattern);
@@ -205,10 +212,11 @@ async function processEntry(
 
       const newContent = matcher.replace(content, replacement);
 
-      if (
-        (options.dryRun || options.returnDiff) &&
-        summary.diff.length < MAX_DIFF_SIZE
-      ) {
+      if (!options.dryRun && !options.returnDiff) {
+        // No diff requested — skip
+      } else if (summary.diff.length >= MAX_DIFF_SIZE) {
+        summary.diffTruncated = true;
+      } else {
         const patch = createTwoFilesPatch(
           path.basename(validPath),
           path.basename(validPath),
@@ -220,6 +228,8 @@ async function processEntry(
         // Only append if it won't exceed the limit too much
         if (summary.diff.length + patch.length <= MAX_DIFF_SIZE + 1024) {
           summary.diff += patch;
+        } else {
+          summary.diffTruncated = true;
         }
       }
 
@@ -244,12 +254,15 @@ async function processEntriesConcurrently(
   options: {
     signal: AbortSignal | undefined;
     concurrency: number;
+    maxEntries?: number;
     onEntry: () => void;
     runEntry: (entryPath: string) => Promise<void>;
   }
-): Promise<void> {
+): Promise<{ stoppedByLimit: boolean }> {
   const pending = new Set<Promise<void>>();
-  const { signal, concurrency, onEntry, runEntry } = options;
+  const { signal, concurrency, maxEntries, onEntry, runEntry } = options;
+  let dispatched = 0;
+  let stoppedByLimit = false;
 
   const waitForSlot = async (): Promise<void> => {
     if (pending.size < concurrency) return;
@@ -258,8 +271,13 @@ async function processEntriesConcurrently(
 
   for await (const entry of entries) {
     if (signal?.aborted) break;
+    if (maxEntries !== undefined && dispatched >= maxEntries) {
+      stoppedByLimit = true;
+      break;
+    }
     await waitForSlot();
     onEntry();
+    dispatched++;
 
     const task = runEntry(entry.path);
     pending.add(task);
@@ -271,6 +289,8 @@ async function processEntriesConcurrently(
   if (pending.size > 0) {
     await Promise.allSettled([...pending]);
   }
+
+  return { stoppedByLimit };
 }
 
 interface ReplaceSummary {
@@ -283,6 +303,8 @@ interface ReplaceSummary {
   changedFiles: { path: string; matches: number }[];
   changedFilesTruncated: boolean;
   diff: string;
+  diffTruncated: boolean;
+  stoppedReason?: 'maxFiles';
 }
 
 function createReplaceSummary(root: string): ReplaceSummary {
@@ -296,6 +318,7 @@ function createReplaceSummary(root: string): ReplaceSummary {
     changedFiles: [],
     changedFilesTruncated: false,
     diff: '',
+    diffTruncated: false,
   };
 }
 
@@ -318,7 +341,7 @@ function createReplacementRegex(
       `Unsafe regex pattern: ${args.searchPattern}`
     );
   }
-  return createRegexMatcher(args.searchPattern);
+  return createRegexMatcher(args.searchPattern, args.caseSensitive);
 }
 
 function createReplacementMatcher(
@@ -328,7 +351,10 @@ function createReplacementMatcher(
   if (regex) {
     return createRegexReplacementMatcher(regex);
   }
-  return createLiteralReplacementMatcher(args.searchPattern);
+  return createLiteralReplacementMatcher(
+    args.searchPattern,
+    args.caseSensitive
+  );
 }
 
 export async function handleSearchAndReplace(
@@ -354,9 +380,10 @@ export async function handleSearchAndReplace(
   });
 
   const summary = createReplaceSummary(root);
-  await processEntriesConcurrently(entries, {
+  const { stoppedByLimit } = await processEntriesConcurrently(entries, {
     signal,
     concurrency: REPLACE_CONCURRENCY,
+    ...(args.maxFiles !== undefined ? { maxEntries: args.maxFiles } : {}),
     onEntry: () => {
       summary.processedFiles++;
       reportPeriodicProgress(onProgress, summary.processedFiles, {
@@ -377,6 +404,9 @@ export async function handleSearchAndReplace(
         summary
       ),
   });
+  if (stoppedByLimit) {
+    summary.stoppedReason = 'maxFiles';
+  }
 
   reportPeriodicProgress(onProgress, summary.processedFiles, {
     throttleModulo: 25,
@@ -401,6 +431,10 @@ export async function handleSearchAndReplace(
       ...(summary.changedFilesTruncated ? { changedFilesTruncated: true } : {}),
       ...((args.dryRun || args.returnDiff) && summary.diff
         ? { diff: summary.diff }
+        : {}),
+      ...(summary.diffTruncated ? { diffTruncated: true } : {}),
+      ...(summary.stoppedReason
+        ? { stoppedReason: summary.stoppedReason }
         : {}),
       dryRun: args.dryRun,
     }

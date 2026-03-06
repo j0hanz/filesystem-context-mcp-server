@@ -48,7 +48,7 @@ export const READ_MULTIPLE_FILES_TOOL: ToolContract = {
   taskSupport: 'optional',
   nuances: ['Total read budget is capped by `MAX_READ_MANY_TOTAL_SIZE`.'],
   gotchas: [
-    'Per-file `truncationReason` can be `head`, `range`, or `externalized`.',
+    'Per-file `truncationReason` can be `head`, `tail`, `range`, or `externalized`.',
   ],
 } as const;
 
@@ -60,7 +60,7 @@ type ReadManyStructuredResultItem = NonNullable<
 function toStructuredReadManyResult(
   result: Awaited<ReturnType<typeof readMultipleFiles>>[number] & {
     resourceUri?: string;
-    truncationReason?: 'head' | 'range' | 'externalized';
+    truncationReason?: 'head' | 'tail' | 'range' | 'externalized';
     maxTotalSize?: number;
   }
 ): ReadManyStructuredResultItem {
@@ -71,6 +71,7 @@ function toStructuredReadManyResult(
   if (result.truncated) structured.truncated = result.truncated;
   if (result.resourceUri) structured.resourceUri = result.resourceUri;
   if (result.head !== undefined) structured.head = result.head;
+  if (result.tail !== undefined) structured.tail = result.tail;
   if (result.startLine !== undefined) structured.startLine = result.startLine;
   if (result.endLine !== undefined) structured.endLine = result.endLine;
   if (result.hasMoreLines) structured.hasMoreLines = result.hasMoreLines;
@@ -93,6 +94,7 @@ async function handleReadMultipleFiles(
   const options: Parameters<typeof readMultipleFiles>[1] = {
     ...(signal ? { signal } : {}),
     ...(args.head !== undefined ? { head: args.head } : {}),
+    ...(args.tail !== undefined ? { tail: args.tail } : {}),
     ...(args.startLine !== undefined ? { startLine: args.startLine } : {}),
     ...(args.endLine !== undefined ? { endLine: args.endLine } : {}),
     ...(onReadComplete ? { onReadComplete } : {}),
@@ -104,14 +106,16 @@ async function handleReadMultipleFiles(
   type ReadManyResult = Awaited<ReturnType<typeof readMultipleFiles>>[number];
   type ReadManyResultWithResource = ReadManyResult & {
     resourceUri?: string;
-    truncationReason?: 'head' | 'range' | 'externalized';
+    truncationReason?: 'head' | 'tail' | 'range' | 'externalized';
     maxTotalSize?: number;
   };
 
   const mappedResults: ReadManyResultWithResource[] = results.map((result) => {
-    let baseTruncationReason: 'head' | 'range' | undefined;
+    let baseTruncationReason: 'head' | 'tail' | 'range' | undefined;
     if (result.truncated && result.readMode === 'head') {
       baseTruncationReason = 'head';
+    } else if (result.truncated && result.readMode === 'tail') {
+      baseTruncationReason = 'tail';
     } else if (result.truncated && result.readMode === 'range') {
       baseTruncationReason = 'range';
     }
