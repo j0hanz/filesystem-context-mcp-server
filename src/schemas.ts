@@ -378,7 +378,10 @@ export const ReadFileInputSchema = z
       'Include SHA-256 hash of full file content'
     ),
   })
-  .superRefine(validateReadRange);
+  .superRefine(validateReadRange)
+  .describe(
+    "Use one read mode only: 'head', 'tail', or 'startLine'/'endLine'. 'endLine' requires 'startLine'."
+  );
 
 export const ReadMultipleFilesInputSchema = z
   .strictObject({
@@ -394,7 +397,10 @@ export const ReadMultipleFilesInputSchema = z
       endLine: 'End line (1-based, inclusive) per file. Requires startLine.',
     }),
   })
-  .superRefine(validateReadRange);
+  .superRefine(validateReadRange)
+  .describe(
+    "Use one read mode only: 'head', 'tail', or 'startLine'/'endLine'. 'endLine' requires 'startLine'."
+  );
 
 export const GetFileInfoInputSchema = z.strictObject({
   path: RequiredPathSchema.describe(DESC_PATH_REQUIRED),
@@ -602,7 +608,8 @@ export const CreateDirectoryInputSchema = z
   .refine((data) => data.path !== undefined || data.paths !== undefined, {
     error: "Either 'path' or 'paths' must be provided",
     path: ['path'],
-  });
+  })
+  .describe("Provide either 'path' or 'paths'.");
 
 export const CreateDirectoryOutputSchema = z.strictObject({
   ok: z.boolean(),
@@ -681,7 +688,8 @@ export const MoveFileInputSchema = z
   .refine((data) => (data.source ?? data.sources) !== undefined, {
     error: "Either 'source' or 'sources' must be provided",
     path: ['source'],
-  });
+  })
+  .describe("Provide either 'source' or 'sources'.");
 
 export const MoveFileOutputSchema = z.strictObject({
   ok: z.boolean(),

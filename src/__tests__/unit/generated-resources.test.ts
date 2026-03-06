@@ -40,11 +40,29 @@ describe('generated LLM resources', () => {
 
     assert.ok(toolInfo, 'Expected tool info for read');
     assert.match(toolInfo, /<input_fields>/u);
+    assert.match(toolInfo, /- Schema constraints: Use one read mode only:/u);
     assert.match(toolInfo, /- path \(string, required\):/u);
+    assert.match(toolInfo, /- includeHash \(boolean, optional\):/u);
     assert.match(toolInfo, /- taskSupport: forbidden/u);
     assert.match(
       toolInfo,
       /Protocol failures use JSON-RPC `error`; execution failures use tool result `isError: true`\./u
+    );
+  });
+
+  it('includes cross-field schema constraints for multi-path tools', () => {
+    const mkdirInfo = buildToolInfo('mkdir');
+    const moveInfo = buildToolInfo('mv');
+
+    assert.ok(mkdirInfo, 'Expected tool info for mkdir');
+    assert.ok(moveInfo, 'Expected tool info for mv');
+    assert.match(
+      mkdirInfo,
+      /- Schema constraints: Provide either 'path' or 'paths'\./u
+    );
+    assert.match(
+      moveInfo,
+      /- Schema constraints: Provide either 'source' or 'sources'\./u
     );
   });
 });

@@ -145,9 +145,12 @@ function formatAnnotationValue(value: boolean | undefined): string {
 }
 
 function toJsonSchemaObject(
-  schema: ToolContract['inputSchema']
+  schema: NonNullable<
+    ToolContract['inputSchema'] | ToolContract['outputSchema']
+  >,
+  io: 'input' | 'output' = 'output'
 ): JsonSchemaObject {
-  return z.toJSONSchema(schema) as JsonSchemaObject;
+  return z.toJSONSchema(schema, { io }) as JsonSchemaObject;
 }
 
 function summarizeSchemaType(schema: JsonSchemaObject): string {
@@ -185,17 +188,26 @@ function buildSchemaFieldLines(
     return [`<${label}>`, '- none', `</${label}>`];
   }
 
-  const jsonSchema = toJsonSchemaObject(schema);
+  const io = label === 'input_fields' ? 'input' : 'output';
+  const jsonSchema = toJsonSchemaObject(schema, io);
   const properties = jsonSchema.properties ?? {};
   const required = new Set(jsonSchema.required ?? []);
   const fieldNames = Object.keys(properties);
+  const lines = [`<${label}>`];
 
-  if (fieldNames.length === 0) {
-    return [`<${label}>`, '- object with no fields', `</${label}>`];
+  if (
+    typeof jsonSchema.description === 'string' &&
+    jsonSchema.description.length > 0
+  ) {
+    lines.push(`- Schema constraints: ${jsonSchema.description}`);
   }
 
-  return [
-    `<${label}>`,
+  if (fieldNames.length === 0) {
+    lines.push('- object with no fields', `</${label}>`);
+    return lines;
+  }
+
+  lines.push(
     ...fieldNames.map((fieldName) => {
       const fieldSchema = properties[fieldName] ?? {};
       const type = summarizeSchemaType(fieldSchema);
@@ -207,8 +219,10 @@ function buildSchemaFieldLines(
           : 'No description.';
       return `- ${fieldName} (${type}, ${requiredLabel}): ${description}`;
     }),
-    `</${label}>`,
-  ];
+    `</${label}>`
+  );
+
+  return lines;
 }
 
 function buildProtocolNotes(contract: ToolContract): string[] {
