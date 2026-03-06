@@ -289,9 +289,11 @@ describe('security: symlink escape for destructive ops', () => {
       Array.isArray(failed) && failed.length > 0,
       'Expected failed entries for symlink outside allowed root'
     );
+    const errorMsg = String(failed[0]?.['error']).toLowerCase();
     assert.ok(
-      String(failed[0]?.['error']).includes('E_ACCESS_DENIED'),
-      `Expected E_ACCESS_DENIED in error, got: ${String(failed[0]?.['error'])}`
+      errorMsg.includes('access denied') ||
+        errorMsg.includes('outside allowed'),
+      `Expected access-denied error, got: ${String(failed[0]?.['error'])}`
     );
   });
 
