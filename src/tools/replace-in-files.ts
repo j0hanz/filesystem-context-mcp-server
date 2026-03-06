@@ -1,5 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { Buffer } from 'node:buffer';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { createTwoFilesPatch } from 'diff';
@@ -18,7 +19,7 @@ import {
   McpError,
 } from '../lib/errors.js';
 import { globEntries } from '../lib/file-operations/traversal.js';
-import { atomicWriteFile, withAbort } from '../lib/fs-helpers.js';
+import { atomicWriteFile } from '../lib/fs-helpers.js';
 import { validateExistingPath, validatePathForWrite } from '../lib/paths.js';
 import { reportPeriodicProgress } from '../lib/utils.js';
 
@@ -109,6 +110,62 @@ function createRegexMatcher(pattern: string, caseSensitive: boolean): RE2 {
 interface ReplacementMatcher {
   count(content: string): number;
   replace(content: string, replacement: string): string;
+  testBuffer?(buffer: Buffer): boolean;
+}
+
+class RegexReplacementMatcher implements ReplacementMatcher {
+  constructor(private readonly regex: RE2) {}
+
+  count(content: string): number {
+    this.regex.lastIndex = 0;
+    let matchCount = 0;
+    while (this.regex.exec(content) !== null) {
+      matchCount++;
+      if (this.regex.lastIndex === 0) {
+        this.regex.lastIndex++;
+      }
+    }
+    return matchCount;
+  }
+
+  replace(content: string, replacement: string): string {
+    this.regex.lastIndex = 0;
+    return content.replace(this.regex, replacement);
+  }
+}
+
+class LiteralReplacementMatcher implements ReplacementMatcher {
+  private readonly patternLength: number;
+  private readonly searchBuffer: Buffer | null;
+
+  constructor(
+    private readonly searchPattern: string,
+    private readonly caseSensitive: boolean
+  ) {
+    this.patternLength = searchPattern.length;
+    this.searchBuffer = caseSensitive
+      ? Buffer.from(searchPattern, 'utf8')
+      : null;
+  }
+
+  testBuffer(buffer: Buffer): boolean {
+    if (!this.searchBuffer) return true;
+    return buffer.indexOf(this.searchBuffer) !== -1;
+  }
+
+  count(content: string): number {
+    let matchCount = 0;
+    let pos = content.indexOf(this.searchPattern);
+    while (pos !== -1) {
+      matchCount++;
+      pos = content.indexOf(this.searchPattern, pos + this.patternLength);
+    }
+    return matchCount;
+  }
+
+  replace(content: string, replacement: string): string {
+    return content.replaceAll(this.searchPattern, () => replacement);
+  }
 }
 
 type SearchAndReplaceArgs = z.infer<typeof SearchAndReplaceInputSchema>;
@@ -127,53 +184,6 @@ interface ReplacementPlan {
   matchCount: number;
   originalContent: string;
   updatedContent: string;
-}
-
-function createRegexReplacementMatcher(regex: RE2): ReplacementMatcher {
-  const count = (content: string): number => {
-    regex.lastIndex = 0;
-    let matchCount = 0;
-    while (regex.exec(content) !== null) {
-      matchCount++;
-      if (regex.lastIndex === 0) {
-        regex.lastIndex++;
-      }
-    }
-    return matchCount;
-  };
-
-  const replace = (content: string, replacement: string): string => {
-    regex.lastIndex = 0;
-    return content.replace(regex, replacement);
-  };
-
-  return { count, replace };
-}
-
-function createLiteralReplacementMatcher(
-  searchPattern: string,
-  caseSensitive: boolean
-): ReplacementMatcher {
-  if (!caseSensitive) {
-    const escaped = searchPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RE2(escaped, 'gi');
-    return createRegexReplacementMatcher(regex);
-  }
-  const count = (content: string): number => {
-    let matchCount = 0;
-    let pos = content.indexOf(searchPattern);
-    const patternLength = searchPattern.length;
-    while (pos !== -1) {
-      matchCount++;
-      pos = content.indexOf(searchPattern, pos + patternLength);
-    }
-    return matchCount;
-  };
-
-  const replace = (content: string, replacement: string): string =>
-    content.replaceAll(searchPattern, () => replacement);
-
-  return { count, replace };
 }
 
 function buildReplacementPlan(
@@ -267,19 +277,37 @@ async function readReplacementPlan(
     signal: AbortSignal | undefined;
   }
 ): Promise<ReplacementPlan | undefined> {
-  const stats = await withAbort(fs.stat(validPath), context.signal);
-  if (stats.size > context.maxFileSize) {
-    throw new Error(
-      formatFileTooLargeError(validPath, stats.size, context.maxFileSize)
-    );
+  let fileHandle: fs.FileHandle | undefined;
+  try {
+    const fd = await fs.open(validPath, 'r');
+    fileHandle = fd;
+    const stats = await fileHandle.stat();
+    if (stats.size > context.maxFileSize) {
+      throw new Error(
+        formatFileTooLargeError(validPath, stats.size, context.maxFileSize)
+      );
+    }
+
+    let content: string;
+    if (context.matcher.testBuffer) {
+      const buffer = await fileHandle.readFile({ signal: context.signal });
+      if (!context.matcher.testBuffer(buffer)) {
+        return undefined;
+      }
+      content = buffer.toString('utf-8');
+    } else {
+      content = await fileHandle.readFile({
+        encoding: 'utf-8',
+        signal: context.signal,
+      });
+    }
+
+    return buildReplacementPlan(content, context.replacement, context.matcher);
+  } finally {
+    if (fileHandle) {
+      await fileHandle.close();
+    }
   }
-
-  const content = await fs.readFile(validPath, {
-    encoding: 'utf-8',
-    signal: context.signal,
-  });
-
-  return buildReplacementPlan(content, context.replacement, context.matcher);
 }
 
 function maybeAppendPatchDiff(
@@ -420,12 +448,14 @@ function createReplacementMatcher(
 ): ReplacementMatcher {
   const regex = createReplacementRegex(args);
   if (regex) {
-    return createRegexReplacementMatcher(regex);
+    return new RegexReplacementMatcher(regex);
   }
-  return createLiteralReplacementMatcher(
-    args.searchPattern,
-    args.caseSensitive
-  );
+  if (!args.caseSensitive) {
+    const escaped = args.searchPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const caseInsensitiveRegex = new RE2(escaped, 'gi');
+    return new RegexReplacementMatcher(caseInsensitiveRegex);
+  }
+  return new LiteralReplacementMatcher(args.searchPattern, args.caseSensitive);
 }
 
 export async function handleSearchAndReplace(

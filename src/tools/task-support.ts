@@ -1,4 +1,7 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { channel } from 'node:diagnostics_channel';
+import { performance } from 'node:perf_hooks';
+import { format } from 'node:util';
 
 import type {
   CreateTaskRequestHandlerExtra,
@@ -37,10 +40,40 @@ import {
   withDefaultIcons,
 } from './shared.js';
 
+export interface TaskContext {
+  taskId: string;
+  toolName?: string | undefined;
+  startTime: number;
+}
+
+export const taskContext = new AsyncLocalStorage<TaskContext>();
+
+interface TaskDiagnosticsEvent {
+  phase:
+    | 'task_created'
+    | 'task_result_stored'
+    | 'task_status_notified'
+    | 'task_status_notify_failed';
+  taskId: string;
+  status?: GetTaskResult['status'] | 'completed' | 'failed';
+  toolName?: string | undefined;
+  durationMs?: number;
+}
+
+const TASK_DIAGNOSTICS_CHANNEL = channel('filesystem-mcp:tasks');
+
+function publishTaskDiagnostics(event: TaskDiagnosticsEvent): void {
+  if (TASK_DIAGNOSTICS_CHANNEL.hasSubscribers) {
+    TASK_DIAGNOSTICS_CHANNEL.publish(event);
+  }
+}
+
+// --- Type Guards & Helpers ---
+
 function isExperimentalTaskRegistration(
   value: unknown
 ): value is { registerToolTask?: (...args: unknown[]) => unknown } {
-  if (!value || typeof value !== 'object') return false;
+  if (!isRecord(value)) return false;
   const { registerToolTask } = value as { registerToolTask?: unknown };
   return (
     registerToolTask === undefined || typeof registerToolTask === 'function'
@@ -52,7 +85,7 @@ function getExperimentalTaskRegistration(
 ): { registerToolTask?: (...args: unknown[]) => unknown } | undefined {
   const serverWithExperimental = server as { experimental?: unknown };
   const { experimental } = serverWithExperimental;
-  if (!experimental || typeof experimental !== 'object') return undefined;
+  if (!isRecord(experimental)) return undefined;
   const { tasks } = experimental as { tasks?: unknown };
   if (!isExperimentalTaskRegistration(tasks)) return undefined;
   return tasks;
@@ -61,23 +94,20 @@ function getExperimentalTaskRegistration(
 function hasTaskToolCapability(server: McpServer): boolean {
   const serverRecord = server as unknown as Record<string, unknown>;
   const { server: serverRuntime } = serverRecord;
-  if (!isRecord(serverRuntime)) return true;
+  if (!isRecord(serverRuntime)) return true; // Assume capability if runtime structure is opaque
+
   const { getCapabilities } = serverRuntime;
-  if (typeof getCapabilities !== 'function') {
-    // Fallback for tests or custom wrappers that provide only registerTool/experimental.
-    return true;
-  }
+  if (typeof getCapabilities !== 'function') return true;
 
   const capabilities = (getCapabilities as () => unknown).call(serverRuntime);
   if (!isRecord(capabilities)) return false;
   const { tasks } = capabilities;
-  if (!isRecord(tasks)) return false;
-  const { requests } = tasks;
-  if (!isRecord(requests)) return false;
-  const { tools } = requests;
-  if (!isRecord(tools)) return false;
-  const { call } = tools;
-  return isRecord(call);
+  return (
+    isRecord(tasks) &&
+    isRecord(tasks.requests) &&
+    isRecord(tasks.requests.tools) &&
+    isRecord(tasks.requests.tools.call)
+  );
 }
 
 type TaskToolExtra = ToolExtra & {
@@ -95,45 +125,27 @@ type ToolArgs<Args extends ZodRawShapeCompat | AnySchema | undefined> =
 
 const TASK_STATUS_NOTIFICATION_METHOD = 'notifications/tasks/status';
 
-interface TaskDiagnosticsEvent {
-  phase:
-    | 'task_created'
-    | 'task_result_stored'
-    | 'task_status_notified'
-    | 'task_status_notify_failed';
-  taskId: string;
-  status?: GetTaskResult['status'] | 'completed' | 'failed';
-  toolName?: string;
-}
-
-const TASK_DIAGNOSTICS_CHANNEL = channel('filesystem-mcp:tasks');
-
-function publishTaskDiagnostics(event: TaskDiagnosticsEvent): void {
-  if (!TASK_DIAGNOSTICS_CHANNEL.hasSubscribers) return;
-  TASK_DIAGNOSTICS_CHANNEL.publish(event);
-}
-
 function isRequestTaskStore(value: unknown): value is RequestTaskStore {
-  if (!isRecord(value)) return false;
   return (
-    typeof value['createTask'] === 'function' &&
-    typeof value['getTask'] === 'function' &&
-    typeof value['storeTaskResult'] === 'function' &&
-    typeof value['getTaskResult'] === 'function'
+    isRecord(value) &&
+    typeof value.createTask === 'function' &&
+    typeof value.getTask === 'function' &&
+    typeof value.storeTaskResult === 'function' &&
+    typeof value.getTaskResult === 'function'
   );
 }
 
 function isCreateTaskExtra(
   value: unknown
 ): value is CreateTaskRequestHandlerExtra {
-  return isRecord(value) && isRequestTaskStore(value['taskStore']);
+  return isRecord(value) && isRequestTaskStore(value.taskStore);
 }
 
 function isTaskExtra(value: unknown): value is TaskRequestHandlerExtra {
   return (
     isCreateTaskExtra(value) &&
-    typeof value['taskId'] === 'string' &&
-    value['taskId'].length > 0
+    typeof value.taskId === 'string' &&
+    value.taskId.length > 0
   );
 }
 
@@ -172,46 +184,40 @@ function isTaskStatus(value: unknown): value is GetTaskResult['status'] {
   );
 }
 
-function parseTaskStatus(value: unknown): GetTaskResult['status'] | undefined {
-  return isTaskStatus(value) ? value : undefined;
-}
-
 function normalizeGetTaskResult(value: unknown): GetTaskResult {
-  if (!isRecord(value) || typeof value['taskId'] !== 'string') {
+  if (!isRecord(value) || typeof value.taskId !== 'string') {
     throw new McpError(ErrorCode.E_INVALID_INPUT, 'Invalid task object.');
   }
 
-  const status = parseTaskStatus(value['status']);
+  const status = isTaskStatus(value.status) ? value.status : undefined;
   if (!status) {
     throw new McpError(ErrorCode.E_INVALID_INPUT, 'Invalid task status.');
   }
 
   const createdAt =
-    typeof value['createdAt'] === 'string'
-      ? value['createdAt']
+    typeof value.createdAt === 'string'
+      ? value.createdAt
       : new Date().toISOString();
   const lastUpdatedAt =
-    typeof value['lastUpdatedAt'] === 'string'
-      ? value['lastUpdatedAt']
-      : createdAt;
-  const ttl = typeof value['ttl'] === 'number' ? value['ttl'] : null;
+    typeof value.lastUpdatedAt === 'string' ? value.lastUpdatedAt : createdAt;
+  const ttl = typeof value.ttl === 'number' ? value.ttl : null;
 
   const normalized: GetTaskResult = {
-    taskId: value['taskId'],
+    taskId: value.taskId,
     status,
     ttl,
     createdAt,
     lastUpdatedAt,
   };
 
-  if (typeof value['pollInterval'] === 'number') {
-    normalized.pollInterval = value['pollInterval'];
+  if (typeof value.pollInterval === 'number') {
+    normalized.pollInterval = value.pollInterval;
   }
-  if (typeof value['statusMessage'] === 'string') {
-    normalized.statusMessage = value['statusMessage'];
+  if (typeof value.statusMessage === 'string') {
+    normalized.statusMessage = value.statusMessage;
   }
-  if (isRecord(value['_meta'])) {
-    normalized._meta = value['_meta'];
+  if (isRecord(value._meta)) {
+    normalized._meta = value._meta;
   }
 
   return normalized;
@@ -227,14 +233,12 @@ function normalizeCallToolResult(value: Result): CallToolResult {
 }
 
 function getToolResultErrorCode(result: Result): string | undefined {
-  if (!isRecord(result) || result['isError'] !== true) return undefined;
-  // First check for a dedicated errorCode property to avoid regex parsing of the content for structured error results produced by newer code.
-  if (typeof result['errorCode'] === 'string') return result['errorCode'];
-  // Fallback to regex parsing of the human-readable error message for older error results that lack a structured errorCode property.
-  const { content } = result;
+  if (!isRecord(result) || result.isError !== true) return undefined;
+  if (typeof result.errorCode === 'string') return result.errorCode;
+  const { content } = result as { content?: unknown[] };
   if (!Array.isArray(content) || content.length === 0) return undefined;
-  const first: unknown = content[0];
-  if (!isRecord(first) || first['type'] !== 'text') return undefined;
+  const first = content[0];
+  if (!isRecord(first) || first.type !== 'text') return undefined;
   const { text } = first;
   if (typeof text !== 'string') return undefined;
   const match = /^Error \[([A-Z0-9_]+)\]:/.exec(text);
@@ -252,32 +256,19 @@ interface TaskResultStatuses {
 
 function resolveTaskResultStatuses(result: Result): TaskResultStatuses {
   if (isCancelledToolResult(result)) {
-    return {
-      storedStatus: 'failed',
-      reportedStatus: 'cancelled',
-    };
+    return { storedStatus: 'failed', reportedStatus: 'cancelled' };
   }
-
-  if (isRecord(result) && result['isError'] === true) {
-    return {
-      storedStatus: 'failed',
-      reportedStatus: 'failed',
-    };
+  if (isRecord(result) && result.isError === true) {
+    return { storedStatus: 'failed', reportedStatus: 'failed' };
   }
-
-  return {
-    storedStatus: 'completed',
-    reportedStatus: 'completed',
-  };
+  return { storedStatus: 'completed', reportedStatus: 'completed' };
 }
 
 function attachRelatedTaskMeta(
   result: CallToolResult,
   taskId: string
 ): CallToolResult {
-  const existingMeta = isRecord(result['_meta'])
-    ? (result['_meta'] as Record<string, unknown>)
-    : {};
+  const existingMeta = isRecord(result._meta) ? result._meta : {};
   return {
     ...result,
     _meta: {
@@ -347,13 +338,13 @@ async function notifyTaskStatusIfPossible(
       phase: 'task_status_notified',
       taskId,
       status: normalized.status,
-      ...(toolName !== undefined ? { toolName } : {}),
+      ...(toolName ? { toolName } : {}),
     });
   } catch {
     publishTaskDiagnostics({
       phase: 'task_status_notify_failed',
       taskId,
-      ...(toolName !== undefined ? { toolName } : {}),
+      ...(toolName ? { toolName } : {}),
     });
     // Never fail task execution because status notifications are optional.
   }
@@ -383,7 +374,7 @@ function isErrorResult(result: ToolResult<unknown>): boolean {
   return 'isError' in result && result.isError;
 }
 
-// Strips structuredContent from a tool result if present, without modifying the original object.  This is used when storing error results as 'completed' to prevent client-side output schema validation errors, while still allowing the human-readable error message in content[0].text to be returned to clients.
+// Strips structuredContent from a tool result if present, without modifying the original object.
 function withoutStructuredContent<T extends object>(result: T): T {
   if (!Object.hasOwn(result, 'structuredContent')) return result;
   const stripped = { ...(result as Record<string, unknown>) };
@@ -417,11 +408,11 @@ async function countActiveTasks(taskStore: RequestTaskStore): Promise<number> {
   const tasks = Array.isArray(listed.tasks) ? listed.tasks : [];
   let active = 0;
   for (const task of tasks) {
-    if (!isRecord(task) || typeof task['status'] !== 'string') continue;
+    if (!isRecord(task) || typeof task.status !== 'string') continue;
     if (
-      task['status'] !== 'completed' &&
-      task['status'] !== 'failed' &&
-      task['status'] !== 'cancelled'
+      task.status !== 'completed' &&
+      task.status !== 'failed' &&
+      task.status !== 'cancelled'
     ) {
       active += 1;
     }
@@ -451,7 +442,7 @@ function resolveRequestedTaskTtl(
   return Math.min(normalized, MAX_TASK_TTL_MS);
 }
 
-async function tryStoreTaskResult(
+async function safelyStoreTaskResult(
   taskStore: RequestTaskStore,
   taskId: string,
   storedStatus: 'completed' | 'failed',
@@ -460,6 +451,7 @@ async function tryStoreTaskResult(
   try {
     await taskStore.storeTaskResult(taskId, storedStatus, result);
   } catch (error) {
+    // If task was already cancelled/failed by another process, ignore the write error
     if (await isTaskAlreadyTerminal(taskStore, taskId)) return;
     throw error;
   }
@@ -478,80 +470,67 @@ async function runTaskInBackground<
   taskId: string,
   toolName?: string
 ): Promise<void> {
+  const start = performance.now();
+  let taskStatuses: TaskResultStatuses;
+  let result: Result;
+
   try {
-    const rawResult = await run(args, extra);
-    const taskStatuses = resolveTaskResultStatuses(rawResult);
-    const result = isErrorResult(rawResult)
+    const rawResult = await taskContext.run(
+      { taskId, toolName, startTime: start },
+      () => run(args, extra)
+    );
+
+    taskStatuses = resolveTaskResultStatuses(rawResult);
+    result = isErrorResult(rawResult)
       ? withoutStructuredContent(rawResult)
       : maybeStripStructuredContentFromResult(rawResult);
-
-    try {
-      await tryStoreTaskResult(
-        taskStore,
-        taskId,
-        taskStatuses.storedStatus,
-        result
-      );
-      publishTaskDiagnostics({
-        phase: 'task_result_stored',
-        taskId,
-        status: taskStatuses.reportedStatus,
-        ...(toolName !== undefined ? { toolName } : {}),
-      });
-      await notifyTaskStatusIfPossible(extra, taskStore, taskId, toolName);
-    } catch (innerError) {
-      console.error(
-        `Failed to store task result for task ${taskId}:`,
-        innerError
-      );
-      const syntheticTask: GetTaskResult = {
-        taskId,
-        status: taskStatuses.reportedStatus,
-        ttl: null,
-        createdAt: new Date().toISOString(),
-        lastUpdatedAt: new Date().toISOString(),
-      };
-      const { sendNotification } = extra as { sendNotification?: unknown };
-      if (typeof sendNotification === 'function') {
-        void (sendNotification as TaskStatusNotificationSender)({
-          method: TASK_STATUS_NOTIFICATION_METHOD,
-          params: buildTaskStatusNotificationParams(syntheticTask),
-        });
-      }
-    }
   } catch (error) {
-    const fallback = maybeStripStructuredContentFromResult(
+    taskStatuses = { storedStatus: 'failed', reportedStatus: 'failed' };
+    result = maybeStripStructuredContentFromResult(
       buildToolErrorResponse(error, ErrorCode.E_UNKNOWN)
     );
-    try {
-      await tryStoreTaskResult(taskStore, taskId, 'failed', fallback);
-      publishTaskDiagnostics({
-        phase: 'task_result_stored',
-        taskId,
-        status: 'failed',
-        ...(toolName !== undefined ? { toolName } : {}),
+  }
+
+  const durationMs = performance.now() - start;
+
+  try {
+    await safelyStoreTaskResult(
+      taskStore,
+      taskId,
+      taskStatuses.storedStatus,
+      result
+    );
+
+    publishTaskDiagnostics({
+      phase: 'task_result_stored',
+      taskId,
+      status: taskStatuses.reportedStatus,
+      toolName,
+      durationMs,
+    });
+    await notifyTaskStatusIfPossible(extra, taskStore, taskId, toolName);
+  } catch (innerError) {
+    console.error(
+      format('Failed to store task result for task %s:', taskId),
+      innerError
+    );
+
+    const syntheticTask: GetTaskResult = {
+      taskId,
+      status:
+        taskStatuses.reportedStatus === 'cancelled' ? 'cancelled' : 'failed',
+      ttl: null,
+      createdAt: new Date().toISOString(),
+      lastUpdatedAt: new Date().toISOString(),
+      statusMessage: 'Internal system error while storing result',
+    };
+
+    const { sendNotification } = extra as { sendNotification?: unknown };
+    if (typeof sendNotification === 'function') {
+      void (sendNotification as TaskStatusNotificationSender)({
+        method: TASK_STATUS_NOTIFICATION_METHOD,
+        params: buildTaskStatusNotificationParams(syntheticTask),
       });
-      await notifyTaskStatusIfPossible(extra, taskStore, taskId, toolName);
-    } catch (innerError) {
-      console.error(
-        `Failed to store task failure result for task ${taskId}:`,
-        innerError
-      );
-      // If storing the failure result also fails, there's not much we can do. The task will remain in 'working' status until it expires, which is not ideal but at least prevents clients from receiving incorrect results or hanging indefinitely waiting for a result that will never arrive. We log the error to aid debugging, and we attempt to notify the client of the failure if possible, but we don't want to throw further errors that could crash the server or cause cascading failures.
-      const syntheticTask: GetTaskResult = {
-        taskId,
-        status: 'failed',
-        ttl: null,
-        createdAt: new Date().toISOString(),
-        lastUpdatedAt: new Date().toISOString(),
-      };
-      const { sendNotification } = extra as { sendNotification?: unknown };
-      if (typeof sendNotification === 'function') {
-        void (sendNotification as TaskStatusNotificationSender)({
-          method: TASK_STATUS_NOTIFICATION_METHOD,
-          params: buildTaskStatusNotificationParams(syntheticTask),
-        });
-      }
     }
   }
 }
@@ -674,9 +653,7 @@ export function createToolTaskHandler<
       phase: 'task_created',
       taskId: task.taskId,
       status: task.status,
-      ...(options?.toolName !== undefined
-        ? { toolName: options.toolName }
-        : {}),
+      ...(options?.toolName ? { toolName: options.toolName } : {}),
     });
     const taskExtra: TaskToolExtra = {
       ...extra,
