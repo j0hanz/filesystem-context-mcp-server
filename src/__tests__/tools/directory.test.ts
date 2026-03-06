@@ -82,6 +82,51 @@ describe('ls tool', () => {
     });
     assertToolError(raw, 'E_ACCESS_DENIED');
   });
+
+  it('paginates with an opaque cursor across multiple pages', async () => {
+    for (let index = 0; index < 12; index += 1) {
+      await fs.writeFile(
+        path.join(env.tmpDir, `page-${String(index).padStart(2, '0')}.txt`),
+        String(index),
+        'utf8'
+      );
+    }
+
+    const firstPage = await env.client.callTool({
+      name: 'ls',
+      arguments: { path: env.tmpDir, maxEntries: 5 },
+    });
+    assertOk(firstPage);
+    const firstStructured = getStructured(firstPage);
+    const firstEntries = firstStructured['entries'] as Array<
+      Record<string, unknown>
+    >;
+    const firstCursor = firstStructured['nextCursor'];
+
+    assert.equal(firstEntries.length, 5);
+    assert.equal(typeof firstCursor, 'string');
+    assert.doesNotMatch(firstCursor as string, /"offset"|"snapshotId"/u);
+
+    const secondPage = await env.client.callTool({
+      name: 'ls',
+      arguments: {
+        path: env.tmpDir,
+        maxEntries: 5,
+        cursor: firstCursor,
+      },
+    });
+    assertOk(secondPage);
+    const secondStructured = getStructured(secondPage);
+    const secondEntries = secondStructured['entries'] as Array<
+      Record<string, unknown>
+    >;
+
+    assert.equal(secondEntries.length, 5);
+    assert.notDeepEqual(
+      firstEntries.map((entry) => entry['name']),
+      secondEntries.map((entry) => entry['name'])
+    );
+  });
 });
 
 // ─── tree ───────────────────────────────────────────────────────────────────

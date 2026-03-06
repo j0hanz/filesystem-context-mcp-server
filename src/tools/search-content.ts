@@ -298,21 +298,21 @@ async function handleSearchContent(
     matcher: regexMatcher,
     caseSensitive: args.caseSensitive,
   };
-  const matchPayloads = buildSearchMatchPayloads(
-    normalizedMatches,
-    searchContext
-  );
-  const structuredFull = buildStructuredSearchResult(
-    result.summary,
-    matchPayloads,
-    {
-      patternType,
-      caseSensitive: args.caseSensitive,
-    }
-  );
   const needsExternalize = normalizedMatches.length > MAX_INLINE_MATCHES;
 
   if (!resourceStore || !needsExternalize) {
+    const matchPayloads = buildSearchMatchPayloads(
+      normalizedMatches,
+      searchContext
+    );
+    const structuredFull = buildStructuredSearchResult(
+      result.summary,
+      matchPayloads,
+      {
+        patternType,
+        caseSensitive: args.caseSensitive,
+      }
+    );
     return buildToolResponse(
       buildSearchTextResult(
         `Found ${normalizedMatches.length}:`,
@@ -323,13 +323,22 @@ async function handleSearchContent(
     );
   }
 
-  const previewMatches = normalizedMatches.slice(0, MAX_INLINE_MATCHES);
-  const previewPayload = buildSearchMatchPayloads(
-    previewMatches,
+  const matchPayloads = buildSearchMatchPayloads(
+    normalizedMatches,
     searchContext
   );
+  const fullStructured = buildStructuredSearchResult(
+    result.summary,
+    matchPayloads,
+    {
+      patternType,
+      caseSensitive: args.caseSensitive,
+    }
+  );
+  const previewMatches = normalizedMatches.slice(0, MAX_INLINE_MATCHES);
+  const previewPayload = matchPayloads.slice(0, MAX_INLINE_MATCHES);
   const previewStructured: z.infer<typeof SearchContentOutputSchema> = {
-    ...structuredFull,
+    ...fullStructured,
     matches: previewPayload,
     truncated: true,
     resourceUri: undefined,
@@ -338,7 +347,7 @@ async function handleSearchContent(
   const entry = resourceStore.putText({
     name: 'grep:matches',
     mimeType: 'application/json',
-    text: JSON.stringify(structuredFull),
+    text: JSON.stringify(fullStructured),
   });
 
   previewStructured.resourceUri = entry.uri;

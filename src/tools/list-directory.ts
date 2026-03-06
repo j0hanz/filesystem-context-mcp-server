@@ -1,10 +1,14 @@
 import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { z } from 'zod';
 
-import { DEFAULT_EXCLUDE_PATTERNS } from '../lib/constants.js';
-import { ErrorCode } from '../lib/errors.js';
+import {
+  DEFAULT_EXCLUDE_PATTERNS,
+  MAX_LIST_ENTRIES,
+} from '../lib/constants.js';
+import { ErrorCode, McpError } from '../lib/errors.js';
 import { listDirectory } from '../lib/file-operations/metadata.js';
 
 import { formatOperationSummary, joinLines } from '../config.js';
@@ -15,8 +19,6 @@ import {
 import {
   buildToolErrorResponse,
   buildToolResponse,
-  decodeOffsetCursor,
-  encodeOffsetCursor,
   executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolvePathOrRoot,
@@ -44,6 +46,109 @@ export const LIST_DIRECTORY_TOOL: ToolContract = {
   taskSupport: 'optional',
   nuances: ['`pattern` enables filtered recursive traversal up to `maxDepth`.'],
 } as const;
+
+interface ListSnapshot {
+  entries: Awaited<ReturnType<typeof listDirectory>>['entries'];
+  summary: Awaited<ReturnType<typeof listDirectory>>['summary'];
+  path: string;
+  fingerprint: string;
+}
+
+interface ListCursorPayload {
+  snapshotId: string;
+  offset: number;
+}
+
+const LIST_CURSOR_TTL_MS =
+  parseInt(process.env['FS_CONTEXT_LIST_CURSOR_TTL_MS'] ?? '', 10) ||
+  5 * 60 * 1000;
+const listSnapshots = new Map<string, ListSnapshot>();
+const listSnapshotTimers = new Map<string, NodeJS.Timeout>();
+
+function buildListFingerprint(
+  args: z.infer<typeof ListDirectoryInputSchema>
+): string {
+  return JSON.stringify({
+    path: resolvePathOrRoot(args.path),
+    includeHidden: args.includeHidden,
+    includeIgnored: args.includeIgnored,
+    maxDepth: args.maxDepth,
+    sortBy: args.sortBy,
+    pattern: args.pattern,
+    includeSymlinkTargets: args.includeSymlinkTargets,
+  });
+}
+
+function deleteListSnapshot(snapshotId: string): void {
+  listSnapshots.delete(snapshotId);
+  const timer = listSnapshotTimers.get(snapshotId);
+  if (timer) {
+    clearTimeout(timer);
+    listSnapshotTimers.delete(snapshotId);
+  }
+}
+
+function storeListSnapshot(snapshot: ListSnapshot): string {
+  const snapshotId = randomUUID();
+  listSnapshots.set(snapshotId, snapshot);
+  const timer = setTimeout(() => {
+    deleteListSnapshot(snapshotId);
+  }, LIST_CURSOR_TTL_MS);
+  if (typeof timer.unref === 'function') {
+    timer.unref();
+  }
+  listSnapshotTimers.set(snapshotId, timer);
+  return snapshotId;
+}
+
+function encodeListCursor(payload: ListCursorPayload): string {
+  return Buffer.from(JSON.stringify(payload)).toString('base64url');
+}
+
+function decodeListCursor(cursor: string): ListCursorPayload {
+  try {
+    const parsed: unknown = JSON.parse(
+      Buffer.from(cursor, 'base64url').toString('utf-8')
+    );
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      typeof (parsed as { snapshotId?: unknown }).snapshotId === 'string' &&
+      typeof (parsed as { offset?: unknown }).offset === 'number'
+    ) {
+      const payload = parsed as { snapshotId: string; offset: number };
+      if (
+        payload.snapshotId.length > 0 &&
+        Number.isInteger(payload.offset) &&
+        payload.offset >= 0
+      ) {
+        return payload;
+      }
+    }
+  } catch {
+    // fall through to throw
+  }
+
+  throw new McpError(
+    ErrorCode.E_INVALID_INPUT,
+    'Invalid cursor: the cursor value is malformed or expired.'
+  );
+}
+
+function resolveNextListCursor(
+  snapshotId: string | undefined,
+  offset: number,
+  pageSize: number,
+  totalEntries: number
+): string | undefined {
+  if (!snapshotId) return undefined;
+  const nextOffset = offset + pageSize;
+  if (nextOffset >= totalEntries) {
+    deleteListSnapshot(snapshotId);
+    return undefined;
+  }
+  return encodeListCursor({ snapshotId, offset: nextOffset });
+}
 
 function buildListTextResult(
   result: Awaited<ReturnType<typeof listDirectory>>,
@@ -128,8 +233,6 @@ async function handleListDirectory(
   signal?: AbortSignal
 ): Promise<ToolResponse<z.infer<typeof ListDirectoryOutputSchema>>> {
   const dirPath = resolvePathOrRoot(args.path);
-  const cursorOffset =
-    args.cursor !== undefined ? decodeOffsetCursor(args.cursor) : 0;
   const pageSize = args.maxEntries;
   const options: Parameters<typeof listDirectory>[1] = {
     includeHidden: args.includeHidden,
@@ -137,17 +240,57 @@ async function handleListDirectory(
     sortBy: args.sortBy,
     includeSymlinkTargets: args.includeSymlinkTargets,
     ...(args.maxDepth !== undefined ? { maxDepth: args.maxDepth } : {}),
-    maxEntries: cursorOffset + pageSize,
+    maxEntries: MAX_LIST_ENTRIES,
     ...(args.pattern !== undefined ? { pattern: args.pattern } : {}),
     ...(signal ? { signal } : {}),
   };
-  const result = await listDirectory(dirPath, options);
-  const displayEntries =
-    cursorOffset > 0 ? result.entries.slice(cursorOffset) : result.entries;
-  const nextCursor =
-    result.summary.truncated && displayEntries.length > 0
-      ? encodeOffsetCursor(cursorOffset + displayEntries.length)
-      : undefined;
+  const fingerprint = buildListFingerprint(args);
+
+  let result: Awaited<ReturnType<typeof listDirectory>>;
+  let cursorOffset = 0;
+  let snapshotId: string | undefined;
+
+  if (args.cursor) {
+    const cursor = decodeListCursor(args.cursor);
+    const snapshot = listSnapshots.get(cursor.snapshotId);
+    if (snapshot?.fingerprint !== fingerprint) {
+      throw new McpError(
+        ErrorCode.E_INVALID_INPUT,
+        'Invalid cursor: the cursor value is malformed or expired.'
+      );
+    }
+
+    const { offset, snapshotId: storedSnapshotId } = cursor;
+    cursorOffset = offset;
+    snapshotId = storedSnapshotId;
+    result = {
+      path: snapshot.path,
+      entries: snapshot.entries,
+      summary: snapshot.summary,
+    };
+  } else {
+    result = await listDirectory(dirPath, options);
+  }
+
+  const displayEntries = result.entries.slice(
+    cursorOffset,
+    cursorOffset + pageSize
+  );
+  if (!args.cursor && displayEntries.length < result.entries.length) {
+    snapshotId = storeListSnapshot({
+      path: result.path,
+      entries: result.entries,
+      summary: result.summary,
+      fingerprint,
+    });
+  }
+
+  const nextCursor = resolveNextListCursor(
+    snapshotId,
+    cursorOffset,
+    displayEntries.length,
+    result.entries.length
+  );
   const displayResult = { ...result, entries: displayEntries };
   return buildToolResponse(
     buildListTextResult(displayResult, nextCursor),

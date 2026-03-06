@@ -22,7 +22,11 @@ import type {
 } from '@modelcontextprotocol/sdk/types.js';
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
-import { DEFAULT_TASK_TTL_MS } from '../lib/constants.js';
+import {
+  DEFAULT_TASK_TTL_MS,
+  MAX_CONCURRENT_TASKS,
+  MAX_TASK_TTL_MS,
+} from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
 import { isRecord } from '../lib/utils.js';
 
@@ -254,9 +258,32 @@ function resolveTaskResultStatuses(result: Result): TaskResultStatuses {
     };
   }
 
+  if (isRecord(result) && result['isError'] === true) {
+    return {
+      storedStatus: 'failed',
+      reportedStatus: 'failed',
+    };
+  }
+
   return {
     storedStatus: 'completed',
     reportedStatus: 'completed',
+  };
+}
+
+function attachRelatedTaskMeta(
+  result: CallToolResult,
+  taskId: string
+): CallToolResult {
+  const existingMeta = isRecord(result['_meta'])
+    ? (result['_meta'] as Record<string, unknown>)
+    : {};
+  return {
+    ...result,
+    _meta: {
+      ...existingMeta,
+      'io.modelcontextprotocol/related-task': { taskId },
+    },
   };
 }
 
@@ -384,6 +411,46 @@ async function isTaskAlreadyTerminal(
   }
 }
 
+async function countActiveTasks(taskStore: RequestTaskStore): Promise<number> {
+  if (typeof taskStore.listTasks !== 'function') return 0;
+  const listed = await taskStore.listTasks();
+  const tasks = Array.isArray(listed.tasks) ? listed.tasks : [];
+  let active = 0;
+  for (const task of tasks) {
+    if (!isRecord(task) || typeof task['status'] !== 'string') continue;
+    if (
+      task['status'] !== 'completed' &&
+      task['status'] !== 'failed' &&
+      task['status'] !== 'cancelled'
+    ) {
+      active += 1;
+    }
+  }
+  return active;
+}
+
+function resolveRequestedTaskTtl(
+  requestedTtl: number | null | undefined
+): number {
+  if (requestedTtl == null) return DEFAULT_TASK_TTL_MS;
+  if (!Number.isFinite(requestedTtl)) {
+    throw new McpError(
+      ErrorCode.E_INVALID_INPUT,
+      'Task ttl must be a finite number of milliseconds.'
+    );
+  }
+
+  const normalized = Math.trunc(requestedTtl);
+  if (normalized <= 0) {
+    throw new McpError(
+      ErrorCode.E_INVALID_INPUT,
+      'Task ttl must be greater than zero.'
+    );
+  }
+
+  return Math.min(normalized, MAX_TASK_TTL_MS);
+}
+
 async function tryStoreTaskResult(
   taskStore: RequestTaskStore,
   taskId: string,
@@ -414,10 +481,9 @@ async function runTaskInBackground<
   try {
     const rawResult = await run(args, extra);
     const taskStatuses = resolveTaskResultStatuses(rawResult);
-    const result =
-      isErrorResult(rawResult) && taskStatuses.storedStatus === 'completed'
-        ? withoutStructuredContent(rawResult)
-        : maybeStripStructuredContentFromResult(rawResult);
+    const result = isErrorResult(rawResult)
+      ? withoutStructuredContent(rawResult)
+      : maybeStripStructuredContentFromResult(rawResult);
 
     try {
       await tryStoreTaskResult(
@@ -595,8 +661,14 @@ export function createToolTaskHandler<
     }
 
     const taskStore = getTaskStore(extra);
+    if ((await countActiveTasks(taskStore)) >= MAX_CONCURRENT_TASKS) {
+      throw new McpError(
+        ErrorCode.E_INVALID_INPUT,
+        `Too many active tasks. Limit: ${String(MAX_CONCURRENT_TASKS)}.`
+      );
+    }
     const task = await taskStore.createTask({
-      ttl: extra.taskRequestedTtl ?? DEFAULT_TASK_TTL_MS,
+      ttl: resolveRequestedTaskTtl(extra.taskRequestedTtl),
     });
     publishTaskDiagnostics({
       phase: 'task_created',
@@ -647,7 +719,7 @@ export function createToolTaskHandler<
     const taskStore = getTaskStore(extra);
     const taskId = getTaskId(extra);
     const result = await taskStore.getTaskResult(taskId);
-    return normalizeCallToolResult(result);
+    return attachRelatedTaskMeta(normalizeCallToolResult(result), taskId);
   }) as ToolTaskHandler<Args>['getTaskResult'];
 
   return {

@@ -66,6 +66,45 @@ export const IDEMPOTENT_WRITE_TOOL_ANNOTATIONS = {
   openWorldHint: false,
 } as const;
 
+type TaskSupportLevel = 'optional' | 'required' | 'forbidden';
+
+function isTaskSupportLevel(value: unknown): value is TaskSupportLevel {
+  return value === 'optional' || value === 'required' || value === 'forbidden';
+}
+
+function normalizeToolExecution<T extends object>(tool: T): T {
+  const candidate = tool as Record<string, unknown>;
+  const topLevelTaskSupport = candidate['taskSupport'];
+  const existingExecution =
+    candidate['execution'] && typeof candidate['execution'] === 'object'
+      ? (candidate['execution'] as Record<string, unknown>)
+      : undefined;
+  const executionTaskSupport = existingExecution?.['taskSupport'];
+  const resolvedTaskSupport = isTaskSupportLevel(topLevelTaskSupport)
+    ? topLevelTaskSupport
+    : isTaskSupportLevel(executionTaskSupport)
+      ? executionTaskSupport
+      : undefined;
+
+  if (resolvedTaskSupport === undefined && topLevelTaskSupport === undefined) {
+    return tool;
+  }
+
+  const normalized = { ...candidate };
+  delete normalized['taskSupport'];
+
+  if (resolvedTaskSupport !== undefined || existingExecution !== undefined) {
+    normalized['execution'] = {
+      ...(existingExecution ?? {}),
+      ...(resolvedTaskSupport !== undefined
+        ? { taskSupport: resolvedTaskSupport }
+        : {}),
+    };
+  }
+
+  return normalized as T;
+}
+
 export function shouldStripStructuredOutput(): boolean {
   return parseTrueEnvFlag(process.env['FS_CONTEXT_STRIP_STRUCTURED']);
 }
@@ -263,17 +302,18 @@ export function withDefaultIcons<T extends object>(
   tool: T,
   iconInfo: IconInfo | undefined
 ): T & { icons?: Icon[] } {
+  const normalizedTool = normalizeToolExecution(tool);
   if (!iconInfo) {
-    return maybeStripOutputSchema(tool) as T & { icons?: Icon[] };
+    return maybeStripOutputSchema(normalizedTool) as T & { icons?: Icon[] };
   }
 
-  const existingIcons = (tool as { icons?: Icon[] }).icons;
+  const existingIcons = (normalizedTool as { icons?: Icon[] }).icons;
   if (existingIcons && existingIcons.length > 0) {
-    return maybeStripOutputSchema(tool) as T & { icons?: Icon[] };
+    return maybeStripOutputSchema(normalizedTool) as T & { icons?: Icon[] };
   }
 
   const withIcons = {
-    ...tool,
+    ...normalizedTool,
     icons: [
       {
         src: iconInfo.src,

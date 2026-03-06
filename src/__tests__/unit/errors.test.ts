@@ -13,6 +13,7 @@ import type {
   TaskStatusNotificationParams,
 } from '@modelcontextprotocol/sdk/types.js';
 
+import { MAX_CONCURRENT_TASKS, MAX_TASK_TTL_MS } from '../../lib/constants.js';
 import {
   ErrorCode,
   getSuggestion,
@@ -211,5 +212,103 @@ describe('task cancellation normalization', () => {
 
     assert.equal(reportedTask.status, 'cancelled');
     assert.equal((await handler.getTaskResult(taskExtra)).isError, true);
+  });
+});
+
+describe('task failure normalization', () => {
+  it('reports tool errors as failed and attaches related-task metadata', async () => {
+    const { taskStore, getStoredTask } = createMockTaskStore();
+    const handler = createToolTaskHandler(() =>
+      Promise.resolve({
+        content: [{ type: 'text', text: 'Error [E_NOT_FOUND]: missing file' }],
+        isError: true as const,
+        errorCode: ErrorCode.E_NOT_FOUND,
+      })
+    );
+
+    const { task } = await handler.createTask({
+      taskStore,
+    } as unknown as CreateTaskRequestHandlerExtra);
+
+    for (
+      let attempt = 0;
+      attempt < 20 && getStoredTask()?.status !== 'failed';
+      attempt += 1
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    const taskExtra = {
+      taskId: task.taskId,
+      taskStore,
+    } as unknown as TaskRequestHandlerExtra;
+
+    const reportedTask = await handler.getTask(taskExtra);
+    assert.equal(reportedTask.status, 'failed');
+
+    const result = await handler.getTaskResult(taskExtra);
+    assert.equal(result.isError, true);
+    assert.deepEqual(result._meta, {
+      'io.modelcontextprotocol/related-task': { taskId: task.taskId },
+    });
+  });
+
+  it('clamps requested task ttl to the server maximum', async () => {
+    const { taskStore } = createMockTaskStore();
+    const handler = createToolTaskHandler(() =>
+      Promise.resolve({
+        content: [{ type: 'text', text: 'ok' }],
+        structuredContent: {},
+      })
+    );
+
+    const { task } = await handler.createTask({
+      taskStore,
+      taskRequestedTtl: MAX_TASK_TTL_MS + 60_000,
+    } as unknown as CreateTaskRequestHandlerExtra);
+
+    assert.equal(task.ttl, MAX_TASK_TTL_MS);
+  });
+
+  it('rejects task creation when the active-task limit is reached', async () => {
+    const tasks = Array.from({ length: MAX_CONCURRENT_TASKS }, (_, index) => ({
+      taskId: `task-${index}`,
+      status: 'working' as const,
+      ttl: 1_000,
+      createdAt: new Date().toISOString(),
+      lastUpdatedAt: new Date().toISOString(),
+    }));
+    const taskStore = {
+      createTask() {
+        assert.fail('createTask should not be called when the limit is hit');
+      },
+      getTask() {
+        assert.fail('getTask should not be called in this test');
+      },
+      storeTaskResult() {
+        assert.fail('storeTaskResult should not be called in this test');
+      },
+      getTaskResult() {
+        assert.fail('getTaskResult should not be called in this test');
+      },
+      updateTaskStatus() {
+        assert.fail('updateTaskStatus should not be called in this test');
+      },
+      listTasks() {
+        return Promise.resolve({ tasks });
+      },
+    } satisfies RequestTaskStore;
+    const handler = createToolTaskHandler(() =>
+      Promise.resolve({
+        content: [{ type: 'text', text: 'ok' }],
+        structuredContent: {},
+      })
+    );
+
+    await assert.rejects(async () => {
+      await handler.createTask({
+        taskStore,
+      } as unknown as CreateTaskRequestHandlerExtra);
+    }, /Too many active tasks/u);
   });
 });
