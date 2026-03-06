@@ -1,8 +1,10 @@
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
+import { AsyncResource } from 'node:async_hooks';
 import type { Stats } from 'node:fs';
 import { existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { debuglog } from 'node:util';
 import { parentPort, threadId, Worker, workerData } from 'node:worker_threads';
 
 import RE2 from 're2';
@@ -222,6 +224,13 @@ const DEFAULTS: ResolvedOptions = {
 
 const ERROR_SCAN_CANCELLED = 'Scan cancelled';
 const ERROR_WORKER_POOL_CLOSED = 'Worker pool closed';
+const SEARCH_PROGRESS_THROTTLE_MODULO = 25;
+const SEARCH_WORKER_NAME_PREFIX = 'filesystem-search';
+const SEARCH_WORKER_RESOURCE_TYPE = 'SearchWorkerTask';
+
+type SearchContentStopReason = NonNullable<
+  SearchContentResult['summary']['stoppedReason']
+>;
 
 // --- Helpers ---
 
@@ -239,6 +248,14 @@ function resolveOptions(options: SearchContentOptions): ResolvedOptions {
     );
   }
   return result.data;
+}
+
+function getRemainingMatchCapacity(
+  maxMatches: number,
+  currentMatches: number,
+  minimum = 0
+): number {
+  return Math.max(minimum, maxMatches - currentMatches);
 }
 
 // --- Context Management ---
@@ -345,6 +362,10 @@ async function readMatches(
   isCancelled: () => boolean,
   signal?: AbortSignal
 ): Promise<ContentMatch[]> {
+  if (maxMatches <= 0) {
+    return [];
+  }
+
   const matches: ContentMatch[] = [];
   const hasContext = options.contextLines > 0;
   const ctx = hasContext ? new ContextBuffer(options.contextLines) : undefined;
@@ -414,54 +435,46 @@ async function scanFileResolved(
   injectedBinaryDetector?: BinaryDetector
 ): Promise<ScanFileResult> {
   assertNotAborted(signal);
-  const handle = await withAbort(fsp.open(resolvedPath, 'r'), signal);
+  await using handle = await withAbort(fsp.open(resolvedPath, 'r'), signal);
+  const stats = await withAbort(handle.stat(), signal);
 
-  try {
-    const stats = await withAbort(handle.stat(), signal);
+  if (stats.size > options.maxFileSize) {
+    return {
+      matches: [],
+      matched: false,
+      skippedTooLarge: true,
+      skippedBinary: false,
+    };
+  }
 
-    // 1. Size Check
-    if (stats.size > options.maxFileSize) {
+  if (options.skipBinary) {
+    const detect = injectedBinaryDetector ?? isProbablyBinary;
+    if (await detect(resolvedPath, handle, signal)) {
       return {
         matches: [],
         matched: false,
-        skippedTooLarge: true,
-        skippedBinary: false,
+        skippedTooLarge: false,
+        skippedBinary: true,
       };
     }
-
-    // 2. Binary Check
-    if (options.skipBinary) {
-      const detect = injectedBinaryDetector ?? isProbablyBinary;
-      if (await detect(resolvedPath, handle, signal)) {
-        return {
-          matches: [],
-          matched: false,
-          skippedTooLarge: false,
-          skippedBinary: true,
-        };
-      }
-    }
-
-    // 3. Scan Content
-    const matches = await readMatches(
-      handle,
-      requestedPath,
-      matcher,
-      options,
-      maxMatches,
-      () => Boolean(signal?.aborted),
-      signal
-    );
-
-    return {
-      matches,
-      matched: matches.length > 0,
-      skippedTooLarge: false,
-      skippedBinary: false,
-    };
-  } finally {
-    await handle.close();
   }
+
+  const matches = await readMatches(
+    handle,
+    requestedPath,
+    matcher,
+    options,
+    maxMatches,
+    () => Boolean(signal?.aborted),
+    signal
+  );
+
+  return {
+    matches,
+    matched: matches.length > 0,
+    skippedTooLarge: false,
+    skippedBinary: false,
+  };
 }
 
 // --- Orchestration (Single & Multi-threaded) ---
@@ -512,7 +525,7 @@ function applyScanOutcome(summary: ScanSummary, outcome: ScanOutcome): void {
 
 function markTruncated(
   summary: ScanSummary,
-  reason: NonNullable<SearchContentResult['summary']['stoppedReason']>
+  reason: SearchContentStopReason
 ): void {
   summary.truncated = true;
   summary.stoppedReason = reason;
@@ -607,6 +620,11 @@ interface ScanTask {
   id: number;
   promise: Promise<WorkerScanResult>;
   cancel: () => void;
+  racePromise?: Promise<{
+    task: ScanTask;
+    result: WorkerScanResult | undefined;
+    error: Error | undefined;
+  }>;
 }
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -620,16 +638,44 @@ const WORKER_SCRIPT_PATH = path.join(
 const WORKER_SCRIPT_URL = pathToFileURL(WORKER_SCRIPT_PATH);
 const hasWorkerScript = existsSync(WORKER_SCRIPT_PATH);
 
+class SearchWorkerTaskResource extends AsyncResource {
+  #settled = false;
+
+  constructor() {
+    super(SEARCH_WORKER_RESOURCE_TYPE);
+  }
+
+  resolve(
+    resolver: (result: WorkerScanResult) => void,
+    result: WorkerScanResult
+  ): void {
+    this.finish(resolver, result);
+  }
+
+  reject(rejector: (error: Error) => void, error: Error): void {
+    this.finish(rejector, error);
+  }
+
+  private finish<TArg>(callback: (value: TArg) => void, value: TArg): void {
+    if (this.#settled) {
+      return;
+    }
+
+    this.#settled = true;
+    this.runInAsyncScope(callback, undefined, value);
+    this.emitDestroy();
+  }
+}
+
+interface PendingWorkerRequest {
+  resolve: (result: WorkerScanResult) => void;
+  reject: (error: Error) => void;
+  workerIndex: number;
+}
+
 class SearchWorkerPool {
   private workers: (Worker | undefined)[];
-  private pending = new Map<
-    number,
-    {
-      resolve: (val: WorkerScanResult) => void;
-      reject: (err: Error) => void;
-      workerIndex: number;
-    }
-  >();
+  private pending = new Map<number, PendingWorkerRequest>();
   private nextRequestId = 0;
   private closed = false;
   private workerRoundRobin = 0;
@@ -681,6 +727,7 @@ class SearchWorkerPool {
 
   private initWorker(index: number): Worker {
     const worker = new Worker(WORKER_SCRIPT_URL, {
+      name: `${SEARCH_WORKER_NAME_PREFIX}-${String(index)}`,
       workerData: { debug: this.debug },
       execArgv: isSourceContext ? ['--import', 'tsx/esm'] : undefined,
     });
@@ -732,12 +779,24 @@ class SearchWorkerPool {
     this.workerRoundRobin++;
 
     const promise = new Promise<WorkerScanResult>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject, workerIndex });
+      const resource = new SearchWorkerTaskResource();
+      const pendingRequest: PendingWorkerRequest = {
+        resolve: (result) => {
+          resource.resolve(resolve, result);
+        },
+        reject: (error) => {
+          resource.reject(reject, error);
+        },
+        workerIndex,
+      };
+
+      this.pending.set(id, pendingRequest);
+
       try {
         worker.postMessage({ type: 'scan', id, ...req } as ScanRequest);
       } catch (error: unknown) {
         this.pending.delete(id);
-        reject(
+        pendingRequest.reject(
           this.normalizeWorkerError(
             error,
             `Failed to post scan request ${String(id)} to worker ${String(
@@ -811,7 +870,7 @@ async function executeSequential(
   summary: ScanSummary
 ): Promise<ContentMatch[]> {
   const matches: ContentMatch[] = [];
-  const matcher = buildMatcher(pattern, opts);
+  const matcher = buildMatcher(pattern, buildMatcherOptions(opts));
   const scanOpts = buildScanFileOptions(opts);
 
   for await (const file of files) {
@@ -826,7 +885,10 @@ async function executeSequential(
 
     try {
       assertAllowedFileAccess(file.requestedPath, file.resolvedPath);
-      const remaining = opts.maxResults - matches.length;
+      const remaining = getRemainingMatchCapacity(
+        opts.maxResults,
+        matches.length
+      );
       const result = await scanFileResolved(
         file.resolvedPath,
         file.requestedPath,
@@ -880,7 +942,11 @@ async function fillWorkerPool(
     if (result.done) return true;
 
     try {
-      const remaining = Math.max(1, maxResults - currentMatches);
+      const remaining = getRemainingMatchCapacity(
+        maxResults,
+        currentMatches,
+        1
+      );
       const task = pool.scan({
         resolvedPath: result.value.resolvedPath,
         requestedPath: result.value.requestedPath,
@@ -914,7 +980,7 @@ function processScanResult(
     const res = winner.result;
     applyScanOutcome(summary, res);
 
-    const remaining = maxResults - matches.length;
+    const remaining = getRemainingMatchCapacity(maxResults, matches.length);
     if (remaining > 0 && res.matches.length > 0) {
       const take = Math.min(remaining, res.matches.length);
       for (let index = 0; index < take; index += 1) {
@@ -936,19 +1002,18 @@ async function waitForWinner(pending: Set<ScanTask>): Promise<{
     error: Error | undefined;
   }>[] = [];
   for (const task of pending) {
-    raceCandidates.push(
-      task.promise.then(
-        (result) => ({ task, result, error: undefined }),
-        (err: unknown) => ({
-          task,
-          result: undefined,
-          error:
-            err instanceof Error
-              ? err
-              : new Error(formatUnknownErrorMessage(err)),
-        })
-      )
+    task.racePromise ??= task.promise.then(
+      (result) => ({ task, result, error: undefined }),
+      (err: unknown) => ({
+        task,
+        result: undefined,
+        error:
+          err instanceof Error
+            ? err
+            : new Error(formatUnknownErrorMessage(err)),
+      })
     );
+    raceCandidates.push(task.racePromise);
   }
   return Promise.race(raceCandidates);
 }
@@ -1133,7 +1198,7 @@ async function searchDirectory(
       scanned++;
       reportPeriodicProgress(onProgress, scanned, {
         total: opts.maxFilesScanned,
-        throttleModulo: 25,
+        throttleModulo: SEARCH_PROGRESS_THROTTLE_MODULO,
       });
 
       yield { resolvedPath: normalized, requestedPath: entry.path };
@@ -1141,7 +1206,7 @@ async function searchDirectory(
 
     reportPeriodicProgress(onProgress, scanned, {
       total: opts.maxFilesScanned,
-      throttleModulo: 25,
+      throttleModulo: SEARCH_PROGRESS_THROTTLE_MODULO,
       force: true,
     });
   }
@@ -1442,7 +1507,7 @@ async function collectFromStream(
     state.filesScanned++;
     reportPeriodicProgress(onProgress, state.filesScanned, {
       total: normalized.maxFilesScanned,
-      throttleModulo: 25,
+      throttleModulo: SEARCH_PROGRESS_THROTTLE_MODULO,
     });
 
     if (
@@ -1480,7 +1545,7 @@ async function collectFromStream(
 
   reportPeriodicProgress(onProgress, state.filesScanned, {
     total: normalized.maxFilesScanned,
-    throttleModulo: 25,
+    throttleModulo: SEARCH_PROGRESS_THROTTLE_MODULO,
     force: true,
   });
 }
@@ -1848,11 +1913,13 @@ function handleMessage(message: WorkerRequest): void {
   }
 }
 
+const log = debuglog('search-worker');
+
 if (parentPort) {
   parentPort.on('message', handleMessage);
 
   const data = workerData as { debug?: boolean } | null;
   if (data?.debug) {
-    console.error(`[SearchWorker] Started with threadId=${String(threadId)}`);
+    log(`Started with threadId=${String(threadId)}`);
   }
 }
