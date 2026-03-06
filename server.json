@@ -8,12 +8,12 @@
     "source": "github"
   },
   "websiteUrl": "https://github.com/j0hanz/filesystem-mcp#readme",
-  "version": "1.11.0",
+  "version": "1.10.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@j0hanz/filesystem-mcp",
-      "version": "1.11.0",
+      "version": "1.10.0",
       "transport": {
         "type": "stdio"
       },
@@ -31,7 +31,7 @@
     {
       "registryType": "npm",
       "identifier": "@j0hanz/filesystem-mcp",
-      "version": "1.11.0",
+      "version": "1.10.0",
       "transport": {
         "type": "http"
       },
