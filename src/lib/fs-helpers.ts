@@ -21,6 +21,7 @@ function createAbortError(message = 'Operation aborted'): Error {
   return new DOMException(message, 'AbortError');
 }
 
+const READ_ONLY_FILE_FLAG = 'r';
 const SHARED_NOOP_SIGNAL = new AbortController().signal;
 
 function normalizeAbortReason(reason: unknown, message?: string): Error {
@@ -257,6 +258,19 @@ function hasKnownBinaryExtension(filePath: string): boolean {
   return KNOWN_BINARY_EXTENSIONS.has(ext);
 }
 
+async function openReadableFileHandle(
+  filePath: string,
+  signal?: AbortSignal
+): Promise<FileHandle> {
+  return withAbort(fsp.open(filePath, READ_ONLY_FILE_FLAG), signal);
+}
+
+async function closeFileHandleQuietly(handle: FileHandle): Promise<void> {
+  await handle.close().catch((error: unknown) => {
+    console.error('Failed to close file handle:', error);
+  });
+}
+
 async function withFileHandle<T>(
   filePath: string,
   fn: (handle: fsp.FileHandle) => Promise<T>,
@@ -268,13 +282,11 @@ async function withFileHandle<T>(
   }
 
   const effectivePath = await validateExistingPath(filePath, signal);
-  const handle = await withAbort(fsp.open(effectivePath, 'r'), signal);
+  const handle = await openReadableFileHandle(effectivePath, signal);
   try {
     return await fn(handle);
   } finally {
-    await handle.close().catch((error: unknown) => {
-      console.error('Failed to close file handle:', error);
-    });
+    await closeFileHandleQuietly(handle);
   }
 }
 
@@ -564,6 +576,7 @@ async function readFileBufferWithLimit(
     highWaterMark: STREAM_CHUNK_SIZE,
     autoClose: false,
     emitClose: false,
+    signal,
   });
   const collector = new BufferCollector(maxSize, requestedPath);
 
@@ -791,95 +804,6 @@ async function assertNotBinary(
   );
 }
 
-function requireHead(normalized: NormalizedOptions, filePath: string): number {
-  if (normalized.head === undefined) {
-    throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
-      'Missing head option',
-      filePath
-    );
-  }
-  return normalized.head;
-}
-
-function buildHeadResult(
-  validPath: string,
-  content: string,
-  truncated: boolean,
-  head: number,
-  linesRead: number,
-  hasMoreLines: boolean
-): ReadFileResult {
-  return {
-    path: validPath,
-    content,
-    truncated,
-    readMode: 'head',
-    head,
-    linesRead,
-    hasMoreLines,
-  };
-}
-
-function buildRangeResult(
-  validPath: string,
-  content: string,
-  truncated: boolean,
-  startLine: number,
-  endLine: number | undefined,
-  linesRead: number,
-  hasMoreLines: boolean
-): ReadFileResult {
-  const result: ReadFileResult = {
-    path: validPath,
-    content,
-    truncated,
-    readMode: 'range',
-    startLine,
-    linesRead,
-    hasMoreLines,
-  };
-  if (endLine !== undefined) {
-    result.endLine = endLine;
-  }
-  return result;
-}
-
-function buildFullResult(
-  validPath: string,
-  content: string,
-  totalLines: number
-): ReadFileResult {
-  return {
-    path: validPath,
-    content,
-    truncated: false,
-    totalLines,
-    readMode: 'full',
-    linesRead: totalLines,
-    hasMoreLines: false,
-  };
-}
-
-function buildTailResult(
-  validPath: string,
-  content: string,
-  truncated: boolean,
-  tail: number,
-  linesRead: number,
-  hasMoreLines: boolean
-): ReadFileResult {
-  return {
-    path: validPath,
-    content,
-    truncated,
-    readMode: 'tail',
-    tail,
-    linesRead,
-    hasMoreLines,
-  };
-}
-
 function assertSizeWithinLimit(
   size: number,
   maxSize: number,
@@ -894,125 +818,142 @@ function assertSizeWithinLimit(
   );
 }
 
-async function readHeadResult(
-  handle: FileHandle,
-  validPath: string,
-  filePath: string,
-  normalized: NormalizedOptions
+type RequiredReadOption = 'head' | 'tail' | 'startLine';
+
+function requireReadOption<K extends RequiredReadOption>(
+  normalized: NormalizedOptions,
+  key: K,
+  filePath: string
+): NonNullable<NormalizedOptions[K]> {
+  const value = normalized[key];
+  if (value !== undefined) {
+    return value as NonNullable<NormalizedOptions[K]>;
+  }
+
+  throw new McpError(
+    ErrorCode.E_INVALID_INPUT,
+    `Missing ${key} option`,
+    filePath
+  );
+}
+
+interface ReadModeContext {
+  handle: FileHandle;
+  validPath: string;
+  filePath: string;
+  stats: Stats;
+  normalized: NormalizedOptions;
+}
+
+async function executeHeadRead(
+  context: ReadModeContext
 ): Promise<ReadFileResult> {
-  const head = requireHead(normalized, filePath);
-  const readOptions = buildReadContentOptions(normalized);
+  const head = requireReadOption(context.normalized, 'head', context.filePath);
+  const readOptions = buildReadContentOptions(context.normalized);
   const { content, truncated, linesRead, hasMoreLines } = await readHeadContent(
-    handle,
+    context.handle,
     head,
     readOptions
   );
-  return buildHeadResult(
-    validPath,
+
+  return {
+    path: context.validPath,
     content,
     truncated,
+    readMode: 'head',
     head,
     linesRead,
-    hasMoreLines
-  );
+    hasMoreLines,
+  };
 }
 
-async function readRangeResult(
-  handle: FileHandle,
-  validPath: string,
-  filePath: string,
-  normalized: NormalizedOptions
+async function executeRangeRead(
+  context: ReadModeContext
 ): Promise<ReadFileResult> {
-  const { startLine, endLine } = normalized;
-  if (startLine === undefined) {
-    throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
-      'Missing startLine option',
-      filePath
-    );
-  }
-
-  const readOptions = buildReadContentOptions(normalized);
-
+  const startLine = requireReadOption(
+    context.normalized,
+    'startLine',
+    context.filePath
+  );
+  const { endLine } = context.normalized;
+  const readOptions = buildReadContentOptions(context.normalized);
   const { content, truncated, linesRead, hasMoreLines } =
-    await readRangeContent(handle, startLine, endLine, readOptions);
+    await readRangeContent(context.handle, startLine, endLine, readOptions);
 
-  return buildRangeResult(
-    validPath,
+  return {
+    path: context.validPath,
     content,
     truncated,
+    readMode: 'range',
     startLine,
-    endLine,
+    ...(endLine !== undefined ? { endLine } : {}),
     linesRead,
-    hasMoreLines
-  );
+    hasMoreLines,
+  };
 }
 
-async function readFullResult(
-  handle: FileHandle,
-  validPath: string,
-  filePath: string,
-  stats: Stats,
-  normalized: NormalizedOptions
+async function executeFullRead(
+  context: ReadModeContext
 ): Promise<ReadFileResult> {
-  assertSizeWithinLimit(stats.size, normalized.maxSize, filePath);
+  assertSizeWithinLimit(
+    context.stats.size,
+    context.normalized.maxSize,
+    context.filePath
+  );
   const { content, totalLines } = await readFullContent(
-    handle,
-    normalized.encoding,
-    normalized.maxSize,
-    filePath,
-    normalized.signal
+    context.handle,
+    context.normalized.encoding,
+    context.normalized.maxSize,
+    context.filePath,
+    context.normalized.signal
   );
-  return buildFullResult(validPath, content, totalLines);
+
+  return {
+    path: context.validPath,
+    content,
+    truncated: false,
+    totalLines,
+    readMode: 'full',
+    linesRead: totalLines,
+    hasMoreLines: false,
+  };
 }
 
-async function readTailResult(
-  handle: FileHandle,
-  validPath: string,
-  filePath: string,
-  normalized: NormalizedOptions
+async function executeTailRead(
+  context: ReadModeContext
 ): Promise<ReadFileResult> {
-  if (normalized.tail === undefined) {
-    throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
-      'Missing tail option',
-      filePath
-    );
-  }
-  const readOptions = buildReadContentOptions(normalized);
+  const tail = requireReadOption(context.normalized, 'tail', context.filePath);
+  const readOptions = buildReadContentOptions(context.normalized);
   const { content, truncated, linesRead, hasMoreLines } = await readTailContent(
-    handle,
-    normalized.tail,
+    context.handle,
+    tail,
     readOptions
   );
-  return buildTailResult(
-    validPath,
+
+  return {
+    path: context.validPath,
     content,
     truncated,
-    normalized.tail,
+    readMode: 'tail',
+    tail,
     linesRead,
-    hasMoreLines
-  );
+    hasMoreLines,
+  };
 }
 
-async function readByMode(
-  handle: FileHandle,
-  validPath: string,
-  filePath: string,
-  stats: Stats,
-  normalized: NormalizedOptions
-): Promise<ReadFileResult> {
-  const mode = resolveReadMode(normalized);
-  if (mode === 'head') {
-    return readHeadResult(handle, validPath, filePath, normalized);
-  }
-  if (mode === 'tail') {
-    return readTailResult(handle, validPath, filePath, normalized);
-  }
-  if (mode === 'range') {
-    return readRangeResult(handle, validPath, filePath, normalized);
-  }
-  return readFullResult(handle, validPath, filePath, stats, normalized);
+const READ_MODE_HANDLERS = {
+  head: executeHeadRead,
+  range: executeRangeRead,
+  full: executeFullRead,
+  tail: executeTailRead,
+} as const satisfies Record<
+  ReadMode,
+  (context: ReadModeContext) => Promise<ReadFileResult>
+>;
+
+async function readByMode(context: ReadModeContext): Promise<ReadFileResult> {
+  const mode = resolveReadMode(context.normalized);
+  return READ_MODE_HANDLERS[mode](context);
 }
 
 function assertFileStats(filePath: string, stats: Stats): void {
@@ -1041,12 +982,17 @@ async function readFileWithStatsInternal(
   }
   assertNotAborted(normalized.signal);
 
-  const handle = await withAbort(fsp.open(validPath, 'r'), normalized.signal);
-  try {
-    return await readByMode(handle, validPath, filePath, stats, normalized);
-  } finally {
-    await handle.close();
-  }
+  await using handle = await openReadableFileHandle(
+    validPath,
+    normalized.signal
+  );
+  return await readByMode({
+    handle,
+    validPath,
+    filePath,
+    stats,
+    normalized,
+  });
 }
 
 export async function readFileWithStats(
