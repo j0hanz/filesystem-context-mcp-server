@@ -43,7 +43,7 @@ export const READ_FILE_TOOL: ToolContract = {
   nuances: [
     'Large content is externalized to `filesystem-mcp://result/{id}` and preview is returned inline.',
   ],
-  taskSupport: 'optional',
+  taskSupport: 'forbidden',
 } as const;
 
 async function handleReadFile(

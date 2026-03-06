@@ -48,7 +48,7 @@ export interface ToolContract {
   gotchas?: string[];
 
   /**
-   * Task support level for the tool. Defaults to 'optional'.
+   * Task support level for the tool. Defaults to 'forbidden'.
    */
   taskSupport?: 'optional' | 'required' | 'forbidden';
 }

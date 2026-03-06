@@ -15,16 +15,26 @@ interface ToolEntry {
   gotchas?: string[];
 }
 
+function getTaskSupportLabel(
+  taskSupport: ToolContract['taskSupport']
+): string | undefined {
+  switch (taskSupport) {
+    case 'optional':
+      return '[Task: Optional]';
+    case 'required':
+      return '[Task: Required]';
+    default:
+      return undefined;
+  }
+}
+
 function toEntry(contract: ToolContract): ToolEntry {
   const annotations: string[] = [];
   if (contract.annotations?.destructiveHint) annotations.push('[Destructive]');
   if (contract.annotations?.idempotentHint) annotations.push('[Idempotent]');
   if (contract.annotations?.readOnlyHint) annotations.push('[Read-Only]');
-  if (
-    contract.taskSupport === 'optional' ||
-    contract.taskSupport === 'required'
-  )
-    annotations.push('[Task]');
+  const taskLabel = getTaskSupportLabel(contract.taskSupport);
+  if (taskLabel) annotations.push(taskLabel);
 
   return {
     name: contract.name,
@@ -72,6 +82,14 @@ export function getTaskCapableToolNames(): string[] {
         contract.taskSupport === 'optional' ||
         contract.taskSupport === 'required'
     )
+    .map((contract) => contract.name);
+}
+
+export function getTaskToolNamesBySupport(
+  taskSupport: Extract<ToolContract['taskSupport'], 'optional' | 'required'>
+): string[] {
+  return getSortedToolContracts()
+    .filter((contract) => contract.taskSupport === taskSupport)
     .map((contract) => contract.name);
 }
 

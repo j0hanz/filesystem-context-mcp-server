@@ -16,8 +16,10 @@ describe('generated LLM resources', () => {
   it('derives task-capable guidance from tool contracts', () => {
     const instructions = buildServerInstructions();
 
-    assert.match(instructions, /Task-capable: .*`edit`/u);
-    assert.match(instructions, /Task-capable: .*`diff_files`/u);
-    assert.match(instructions, /Task-capable: .*`roots`/u);
+    assert.match(instructions, /Optional task mode: .*`grep`/u);
+    assert.match(instructions, /Optional task mode: .*`read_many`/u);
+    assert.match(instructions, /Optional task mode: .*`search_and_replace`/u);
+    assert.doesNotMatch(instructions, /Task-capable: .*`roots`/u);
+    assert.match(instructions, /Required task mode: none\./u);
   });
 });

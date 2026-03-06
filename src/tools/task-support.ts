@@ -468,7 +468,9 @@ function tryRegisterToolTask<
   const taskSupport =
     (def.taskSupport as string | undefined) ??
     (existingExecution.taskSupport as string | undefined) ??
-    'optional';
+    'forbidden';
+
+  if (taskSupport === 'forbidden') return false;
 
   tasks.registerToolTask(
     toolName,

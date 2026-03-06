@@ -36,7 +36,7 @@ export const GET_FILE_INFO_TOOL: ToolContract = {
   inputSchema: GetFileInfoInputSchema,
   outputSchema: GetFileInfoOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
-  taskSupport: 'optional',
+  taskSupport: 'forbidden',
   nuances: ['Use before read/search when file size/type uncertainty exists.'],
 } as const;
 
