@@ -295,3 +295,34 @@ describe('mv tool', () => {
     );
   });
 });
+
+// ─── invalid cursor ─────────────────────────────────────────────────────────
+
+describe('invalid cursor rejection', () => {
+  let env: TestEnv;
+
+  before(async () => {
+    env = await createTestEnv();
+    await fs.writeFile(path.join(env.tmpDir, 'a.txt'), 'a', 'utf8');
+  });
+
+  after(async () => {
+    await env.cleanup();
+  });
+
+  it('ls rejects a malformed cursor with E_INVALID_INPUT', async () => {
+    const raw = await env.client.callTool({
+      name: 'ls',
+      arguments: { path: env.tmpDir, cursor: 'not-a-valid-cursor' },
+    });
+    assertToolError(raw, 'E_INVALID_INPUT');
+  });
+
+  it('find rejects a malformed cursor with E_INVALID_INPUT', async () => {
+    const raw = await env.client.callTool({
+      name: 'find',
+      arguments: { path: env.tmpDir, pattern: '*.txt', cursor: 'garbage!!' },
+    });
+    assertToolError(raw, 'E_INVALID_INPUT');
+  });
+});

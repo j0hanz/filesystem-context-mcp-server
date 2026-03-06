@@ -753,12 +753,15 @@ export function decodeOffsetCursor(cursor: string): number {
       typeof (parsed as { offset?: unknown }).offset === 'number'
     ) {
       const { offset } = parsed as { offset: number };
-      return Number.isInteger(offset) && offset >= 0 ? offset : 0;
+      if (Number.isInteger(offset) && offset >= 0) return offset;
     }
   } catch {
-    // ignore malformed cursor
+    // fall through to throw
   }
-  return 0;
+  throw new McpError(
+    ErrorCode.E_INVALID_INPUT,
+    `Invalid cursor: the cursor value is malformed or corrupted. Request the first page without a cursor.`
+  );
 }
 
 export function buildBatchPathContext(
