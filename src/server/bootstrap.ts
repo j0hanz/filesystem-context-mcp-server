@@ -16,7 +16,9 @@ import type {
 } from '@modelcontextprotocol/sdk/types.js';
 import {
   isInitializeRequest,
+  LATEST_PROTOCOL_VERSION,
   SetLevelRequestSchema,
+  SUPPORTED_PROTOCOL_VERSIONS,
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { DEFAULT_LOG_LEVEL, parseEnvInt } from '../lib/constants.js';
@@ -359,11 +361,13 @@ interface HttpSession {
   server: McpServer;
   rootsManager: RootsManager;
   transport: StreamableHTTPServerTransport;
+  negotiatedProtocolVersion: string;
 }
 
 async function createHttpSession(
   options: ServerOptions,
-  sessions: Map<string, HttpSession>
+  sessions: Map<string, HttpSession>,
+  negotiatedProtocolVersion: string
 ): Promise<HttpSession> {
   const mcpServer = await createServer(options);
   const rootsManager = getRootsManager(mcpServer);
@@ -378,6 +382,7 @@ async function createHttpSession(
         server: mcpServer,
         rootsManager,
         transport,
+        negotiatedProtocolVersion,
       });
       rootsManager.logMissingDirectoriesIfNeeded(mcpServer);
     },
@@ -399,7 +404,12 @@ async function createHttpSession(
 
   await mcpServer.connect(transport as unknown as Transport);
 
-  return { server: mcpServer, rootsManager, transport };
+  return {
+    server: mcpServer,
+    rootsManager,
+    transport,
+    negotiatedProtocolVersion,
+  };
 }
 
 function sendJsonRpcError(
@@ -438,6 +448,50 @@ function getSessionId(req: http.IncomingMessage): string | undefined {
     rawSessionId.length <= MAX_SESSION_ID_LENGTH
     ? rawSessionId
     : undefined;
+}
+
+function getProtocolVersionHeader(
+  req: http.IncomingMessage
+): string | undefined {
+  const rawProtocolVersion = req.headers['mcp-protocol-version'];
+  return typeof rawProtocolVersion === 'string'
+    ? rawProtocolVersion
+    : undefined;
+}
+
+function resolveNegotiatedProtocolVersion(requestedVersion: string): string {
+  return SUPPORTED_PROTOCOL_VERSIONS.includes(requestedVersion)
+    ? requestedVersion
+    : LATEST_PROTOCOL_VERSION;
+}
+
+function ensureSessionProtocolVersion(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  session: HttpSession
+): boolean {
+  const protocolVersion = getProtocolVersionHeader(req);
+  if (!protocolVersion) {
+    sendJsonRpcError(
+      res,
+      400,
+      JSON_RPC_SERVER_ERROR,
+      'Bad Request: Missing MCP-Protocol-Version header'
+    );
+    return false;
+  }
+
+  if (protocolVersion !== session.negotiatedProtocolVersion) {
+    sendJsonRpcError(
+      res,
+      400,
+      JSON_RPC_SERVER_ERROR,
+      `Bad Request: MCP-Protocol-Version must match negotiated version ${session.negotiatedProtocolVersion}`
+    );
+    return false;
+  }
+
+  return true;
 }
 
 function isAuthorizedBearer(apiKey: string, authHeader: unknown): boolean {
@@ -567,6 +621,10 @@ export async function startHttpServer(
             discardRequestBody(req);
             return;
           }
+          if (!ensureSessionProtocolVersion(req, res, session)) {
+            discardRequestBody(req);
+            return;
+          }
 
           const body = await readRequestBody(req);
           await handleSessionTransportRequest(session, req, res, body);
@@ -590,7 +648,11 @@ export async function startHttpServer(
             );
             return;
           }
-          const session = await createHttpSession(options, sessions);
+          const session = await createHttpSession(
+            options,
+            sessions,
+            resolveNegotiatedProtocolVersion(body.params.protocolVersion)
+          );
           await handleSessionTransportRequest(session, req, res, body);
           return;
         }
@@ -615,6 +677,7 @@ export async function startHttpServer(
 
         const session = getSessionOrRespondNotFound(sessions, sessionId, res);
         if (!session) return;
+        if (!ensureSessionProtocolVersion(req, res, session)) return;
         await handleSessionTransportRequest(session, req, res);
       } else {
         res.writeHead(405, {

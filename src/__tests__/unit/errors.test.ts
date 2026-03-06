@@ -2,12 +2,24 @@ import assert from 'node:assert/strict';
 import { readdirSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
+import type {
+  CreateTaskRequestHandlerExtra,
+  TaskRequestHandlerExtra,
+} from '@modelcontextprotocol/sdk/experimental/tasks/interfaces.js';
+import type { RequestTaskStore } from '@modelcontextprotocol/sdk/shared/protocol.js';
+import type {
+  GetTaskResult,
+  Result,
+  TaskStatusNotificationParams,
+} from '@modelcontextprotocol/sdk/types.js';
+
 import {
   ErrorCode,
   getSuggestion,
   isNodeError,
   McpError,
 } from '../../lib/errors.js';
+import { createToolTaskHandler } from '../../tools/task-support.js';
 
 // ─── isNodeError ────────────────────────────────────────────────────────────
 
@@ -78,5 +90,126 @@ describe('getSuggestion', () => {
         `Expected non-empty suggestion for ${code}`
       );
     }
+  });
+});
+
+function createMockTaskStore(): {
+  taskStore: RequestTaskStore;
+  getStoredTask: () => GetTaskResult | undefined;
+  getStoredResult: () => Result | undefined;
+} {
+  let storedTask: GetTaskResult | undefined;
+  let storedResult: Result | undefined;
+  let taskCounter = 0;
+
+  const taskStore: RequestTaskStore = {
+    createTask(taskParams) {
+      taskCounter += 1;
+      const createdAt = new Date().toISOString();
+      storedTask = {
+        taskId: `task-${taskCounter}`,
+        status: 'working',
+        ttl: taskParams.ttl ?? null,
+        createdAt,
+        lastUpdatedAt: createdAt,
+        pollInterval: taskParams.pollInterval ?? 1000,
+      };
+      return Promise.resolve(storedTask);
+    },
+    getTask(taskId) {
+      assert.equal(storedTask?.taskId, taskId);
+      assert.ok(storedTask, 'Expected task to exist');
+      return Promise.resolve({ ...storedTask });
+    },
+    storeTaskResult(taskId, status, result) {
+      assert.equal(storedTask?.taskId, taskId);
+      assert.ok(storedTask, 'Expected task to exist before storing result');
+      storedResult = result;
+      storedTask = {
+        ...storedTask,
+        status,
+        lastUpdatedAt: new Date().toISOString(),
+      };
+      return Promise.resolve();
+    },
+    getTaskResult(taskId) {
+      assert.equal(storedTask?.taskId, taskId);
+      assert.ok(storedResult, 'Expected stored result to exist');
+      return Promise.resolve(storedResult);
+    },
+    updateTaskStatus(taskId, status, statusMessage) {
+      assert.equal(storedTask?.taskId, taskId);
+      assert.ok(storedTask, 'Expected task to exist before updating status');
+      storedTask = {
+        ...storedTask,
+        status,
+        ...(statusMessage ? { statusMessage } : {}),
+        lastUpdatedAt: new Date().toISOString(),
+      };
+      return Promise.resolve();
+    },
+    listTasks() {
+      return Promise.resolve({ tasks: storedTask ? [{ ...storedTask }] : [] });
+    },
+  };
+
+  return {
+    taskStore,
+    getStoredTask: () => storedTask,
+    getStoredResult: () => storedResult,
+  };
+}
+
+describe('task cancellation normalization', () => {
+  it('reports cancelled while storing failed for SDK task-store compatibility', async () => {
+    const notifications: TaskStatusNotificationParams[] = [];
+    const { taskStore, getStoredResult, getStoredTask } = createMockTaskStore();
+    const handler = createToolTaskHandler(() =>
+      Promise.resolve({
+        content: [{ type: 'text', text: 'Error [E_CANCELLED]: cancelled' }],
+        isError: true as const,
+        errorCode: ErrorCode.E_CANCELLED,
+      })
+    );
+
+    const createExtra = {
+      taskStore,
+      sendNotification: (notification: {
+        method: 'notifications/tasks/status';
+        params: TaskStatusNotificationParams;
+      }) => {
+        notifications.push(notification.params);
+        return Promise.resolve();
+      },
+    } as unknown as CreateTaskRequestHandlerExtra;
+
+    const { task } = await handler.createTask(createExtra);
+
+    for (
+      let attempt = 0;
+      attempt < 20 &&
+      (!getStoredResult() ||
+        !notifications.some(
+          (notification) => notification.status === 'cancelled'
+        ));
+      attempt += 1
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    assert.equal(getStoredTask()?.status, 'failed');
+    assert.ok(
+      notifications.some((notification) => notification.status === 'cancelled'),
+      `Expected a cancelled notification, got ${JSON.stringify(notifications)}`
+    );
+
+    const taskExtra = {
+      taskId: task.taskId,
+      taskStore,
+    } as unknown as TaskRequestHandlerExtra;
+    const reportedTask = await handler.getTask(taskExtra);
+
+    assert.equal(reportedTask.status, 'cancelled');
+    assert.equal((await handler.getTaskResult(taskExtra)).isError, true);
   });
 });

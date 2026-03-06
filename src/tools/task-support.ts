@@ -241,6 +241,25 @@ function isCancelledToolResult(result: Result): boolean {
   return getToolResultErrorCode(result) === ErrorCode.E_CANCELLED;
 }
 
+interface TaskResultStatuses {
+  storedStatus: 'completed' | 'failed';
+  reportedStatus: GetTaskResult['status'];
+}
+
+function resolveTaskResultStatuses(result: Result): TaskResultStatuses {
+  if (isCancelledToolResult(result)) {
+    return {
+      storedStatus: 'failed',
+      reportedStatus: 'cancelled',
+    };
+  }
+
+  return {
+    storedStatus: 'completed',
+    reportedStatus: 'completed',
+  };
+}
+
 async function projectCancelledTaskStatus(
   taskStore: RequestTaskStore,
   task: GetTaskResult
@@ -368,11 +387,11 @@ async function isTaskAlreadyTerminal(
 async function tryStoreTaskResult(
   taskStore: RequestTaskStore,
   taskId: string,
-  status: 'completed' | 'failed',
+  storedStatus: 'completed' | 'failed',
   result: Result
 ): Promise<void> {
   try {
-    await taskStore.storeTaskResult(taskId, status, result);
+    await taskStore.storeTaskResult(taskId, storedStatus, result);
   } catch (error) {
     if (await isTaskAlreadyTerminal(taskStore, taskId)) return;
     throw error;
@@ -394,19 +413,46 @@ async function runTaskInBackground<
 ): Promise<void> {
   try {
     const rawResult = await run(args, extra);
-    const status = isCancelledToolResult(rawResult) ? 'failed' : 'completed';
+    const taskStatuses = resolveTaskResultStatuses(rawResult);
     const result =
-      isErrorResult(rawResult) && status === 'completed'
+      isErrorResult(rawResult) && taskStatuses.storedStatus === 'completed'
         ? withoutStructuredContent(rawResult)
         : maybeStripStructuredContentFromResult(rawResult);
-    await tryStoreTaskResult(taskStore, taskId, status, result);
-    publishTaskDiagnostics({
-      phase: 'task_result_stored',
-      taskId,
-      status,
-      ...(toolName !== undefined ? { toolName } : {}),
-    });
-    await notifyTaskStatusIfPossible(extra, taskStore, taskId, toolName);
+
+    try {
+      await tryStoreTaskResult(
+        taskStore,
+        taskId,
+        taskStatuses.storedStatus,
+        result
+      );
+      publishTaskDiagnostics({
+        phase: 'task_result_stored',
+        taskId,
+        status: taskStatuses.reportedStatus,
+        ...(toolName !== undefined ? { toolName } : {}),
+      });
+      await notifyTaskStatusIfPossible(extra, taskStore, taskId, toolName);
+    } catch (innerError) {
+      console.error(
+        `Failed to store task result for task ${taskId}:`,
+        innerError
+      );
+      const syntheticTask: GetTaskResult = {
+        taskId,
+        status: taskStatuses.reportedStatus,
+        ttl: null,
+        createdAt: new Date().toISOString(),
+        lastUpdatedAt: new Date().toISOString(),
+      };
+      const { sendNotification } = extra as { sendNotification?: unknown };
+      if (typeof sendNotification === 'function') {
+        void (sendNotification as TaskStatusNotificationSender)({
+          method: TASK_STATUS_NOTIFICATION_METHOD,
+          params: buildTaskStatusNotificationParams(syntheticTask),
+        });
+      }
+    }
   } catch (error) {
     const fallback = maybeStripStructuredContentFromResult(
       buildToolErrorResponse(error, ErrorCode.E_UNKNOWN)

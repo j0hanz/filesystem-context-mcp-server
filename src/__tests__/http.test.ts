@@ -163,7 +163,7 @@ describe('HTTP transport', () => {
     assert.equal(initializedResponse.status, 202);
   });
 
-  it('accepts post-initialize HTTP requests without mcp-protocol-version', async () => {
+  it('rejects post-initialize HTTP requests without mcp-protocol-version', async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fsmcp-http-'));
     const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
     servers.push(server);
@@ -210,10 +210,10 @@ describe('HTTP transport', () => {
       }
     );
 
-    assert.equal(
-      missingHeaderResponse.status,
-      202,
-      `Expected missing protocol header to fall back to the negotiated version, got ${String(missingHeaderResponse.status)}`
+    assert.equal(missingHeaderResponse.status, 400);
+    assert.match(
+      await missingHeaderResponse.text(),
+      /Missing MCP-Protocol-Version header/
     );
   });
 
@@ -275,6 +275,61 @@ describe('HTTP transport', () => {
     );
 
     assert.equal(initializedResponse.status, 202);
+  });
+
+  it('rejects post-initialize requests with a mismatched negotiated protocol version', async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fsmcp-http-'));
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+
+    const port = getServerPort(server);
+    const initResponse = await fetch(`http://127.0.0.1:${String(port)}/mcp`, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: 'DRAFT-2026-v1',
+          capabilities: {},
+          clientInfo: { name: 'http-test', version: '1.0.0' },
+        },
+      }),
+    });
+
+    assert.equal(initResponse.status, 200);
+    const sessionId = initResponse.headers.get('mcp-session-id');
+    assert.ok(
+      sessionId,
+      'Expected initialize response to include Mcp-Session-Id'
+    );
+
+    const mismatchedHeaderResponse = await fetch(
+      `http://127.0.0.1:${String(port)}/mcp`,
+      {
+        method: 'POST',
+        headers: {
+          accept: 'application/json, text/event-stream',
+          'content-type': 'application/json',
+          'mcp-protocol-version': '2025-06-18',
+          'mcp-session-id': sessionId,
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'notifications/initialized',
+        }),
+      }
+    );
+
+    assert.equal(mismatchedHeaderResponse.status, 400);
+    assert.match(
+      await mismatchedHeaderResponse.text(),
+      /must match negotiated version 2025-11-25/
+    );
   });
 
   it('refuses non-loopback HTTP binding without an API key', async () => {
