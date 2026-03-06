@@ -40,7 +40,7 @@ import {
   validateExistingPath,
   validateExistingPathDetailed,
 } from '../paths.js';
-import type { DirentLike, EntryType } from './core.js';
+import type { DirentLike, EntryAccessDependencies, EntryType } from './core.js';
 import {
   applyIndexedErrors,
   applyIndexedValues,
@@ -53,6 +53,13 @@ import {
   withOptionalStoppedReason,
 } from './core.js';
 import { globEntries } from './traversal.js';
+
+const ACCESS_DEPS: EntryAccessDependencies = {
+  normalizePath,
+  isPathWithinDirectories,
+  isSensitivePath,
+  validateSymlinkPath: validateExistingPathDetailed,
+};
 
 const PERM_STRINGS = [
   '---',
@@ -74,15 +81,11 @@ interface FileInfoOptions {
 const UNKNOWN_PATH = '(unknown)';
 
 function getPermissions(mode: number): string {
-  const ownerIndex = (mode >> 6) & 0b111;
-  const groupIndex = (mode >> 3) & 0b111;
-  const otherIndex = mode & 0b111;
-
-  const owner = PERM_STRINGS[ownerIndex] ?? '---';
-  const group = PERM_STRINGS[groupIndex] ?? '---';
-  const other = PERM_STRINGS[otherIndex] ?? '---';
-
-  return `${owner}${group}${other}`;
+  return (
+    (PERM_STRINGS[(mode >> 6) & 0b111] ?? '---') +
+    (PERM_STRINGS[(mode >> 3) & 0b111] ?? '---') +
+    (PERM_STRINGS[mode & 0b111] ?? '---')
+  );
 }
 
 function buildFileInfoResult(
@@ -135,8 +138,8 @@ export async function getFileInfo(
 
   assertAllowedFileAccess(requestedPath, resolvedPath);
 
-  const name = path.basename(requestedPath);
-  const ext = path.extname(name).toLowerCase();
+  const { base: name, ext: rawExt } = path.parse(requestedPath);
+  const ext = rawExt.toLowerCase();
   const includeMimeType = options.includeMimeType !== false;
   const mimeType =
     includeMimeType && ext.length > 0 ? getMimeType(ext) : undefined;
@@ -166,24 +169,6 @@ function buildEmptyResult(): GetMultipleFileInfoResult {
   };
 }
 
-interface ParallelResult {
-  index: number;
-  value: MultipleFileInfoResult;
-}
-interface ParallelError {
-  index: number;
-  error: Error;
-}
-
-async function processFileInfo(
-  filePath: string,
-  options: GetMultipleFileInfoOptions
-): Promise<MultipleFileInfoResult> {
-  const info = await getFileInfo(filePath, options);
-
-  return { path: filePath, info };
-}
-
 function buildIndexedPathTasks(
   paths: readonly string[]
 ): { filePath: string; index: number }[] {
@@ -199,13 +184,16 @@ function buildIndexedPathTasks(
 async function readFileInfoInParallel(
   paths: readonly string[],
   options: GetMultipleFileInfoOptions
-): Promise<{ results: ParallelResult[]; errors: ParallelError[] }> {
+): Promise<{
+  results: { index: number; value: MultipleFileInfoResult }[];
+  errors: { index: number; error: Error }[];
+}> {
   return processInParallel(
     buildIndexedPathTasks(paths),
     async ({ filePath, index }) => {
-      const value = await processFileInfo(filePath, options);
+      const info = await getFileInfo(filePath, options);
       options.onProgress?.();
-      return { index, value };
+      return { index, value: { path: filePath, info } };
     },
     PARALLEL_CONCURRENCY,
     options.signal
@@ -245,10 +233,9 @@ export async function getMultipleFileInfo(
 ): Promise<GetMultipleFileInfoResult> {
   if (paths.length === 0) return buildEmptyResult();
 
-  const output = new Array<MultipleFileInfoResult>(paths.length);
-  for (let index = 0; index < paths.length; index += 1) {
-    output[index] = { path: paths[index] ?? UNKNOWN_PATH };
-  }
+  const output: MultipleFileInfoResult[] = Array.from(paths, (p) => ({
+    path: p,
+  }));
   const { results, errors } = await readFileInfoInParallel(paths, options);
 
   applyIndexedValues(output, results);
@@ -315,15 +302,9 @@ interface AppendContext {
   entries: DirectoryEntry[];
 }
 
-function normalizePattern(pattern: string | undefined): string | undefined {
-  if (!pattern || pattern.length === 0) return undefined;
-  return pattern;
-}
-
 function normalizeListOptions(
   options: ListDirectoryOptions
 ): ListDirectoryNormalizedOptions {
-  const pattern = normalizePattern(options.pattern);
   const normalized: ListDirectoryNormalizedOptions = {
     includeHidden: options.includeHidden ?? false,
     excludePatterns: options.excludePatterns ?? [],
@@ -332,35 +313,33 @@ function normalizeListOptions(
     sortBy: options.sortBy ?? 'name',
     includeSymlinkTargets: options.includeSymlinkTargets ?? false,
     timeoutMs: options.timeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS,
-    ...(pattern !== undefined ? { pattern } : {}),
   };
-
+  if (options.pattern && options.pattern.length > 0) {
+    normalized.pattern = options.pattern;
+  }
   return normalized;
 }
+
+const SORT_COMPARATORS: Record<
+  NonNullable<ListDirectoryOptions['sortBy']>,
+  (a: DirectoryEntry, b: DirectoryEntry) => number
+> = {
+  name: (a, b) => a.name.localeCompare(b.name),
+  type: (a, b) => a.type.localeCompare(b.type),
+  size: (a, b) => (a.size ?? 0) - (b.size ?? 0),
+  modified: (a, b) =>
+    (a.modified?.getTime() ?? 0) - (b.modified?.getTime() ?? 0),
+};
 
 function sortEntries(
   entries: DirectoryEntry[],
   sortBy: NonNullable<ListDirectoryOptions['sortBy']>
 ): void {
-  const compare = {
-    name: (a: DirectoryEntry, b: DirectoryEntry) =>
-      a.name.localeCompare(b.name),
-    type: (a: DirectoryEntry, b: DirectoryEntry) =>
-      a.type.localeCompare(b.type),
-    size: (a: DirectoryEntry, b: DirectoryEntry) =>
-      (a.size ?? 0) - (b.size ?? 0),
-    modified: (a: DirectoryEntry, b: DirectoryEntry) =>
-      (a.modified?.getTime() ?? 0) - (b.modified?.getTime() ?? 0),
-  }[sortBy];
-
-  entries.sort(compare);
+  entries.sort(SORT_COMPARATORS[sortBy]);
 }
 
 function resolveMaxDepth(normalized: ListDirectoryNormalizedOptions): number {
-  if (!normalized.pattern) {
-    return 1;
-  }
-  return normalized.maxDepth;
+  return normalized.pattern ? normalized.maxDepth : 1;
 }
 
 async function* readDirectoryEntries(
@@ -374,36 +353,28 @@ async function* readDirectoryEntries(
     signal
   );
 
-  const entries: { dirent: (typeof dirents)[number]; entryPath: string }[] = [];
-  for (const dirent of dirents) {
-    if (!normalized.includeHidden && isHidden(dirent.name)) {
-      continue;
-    }
-    entries.push({ dirent, entryPath: path.join(basePath, dirent.name) });
-  }
-
   if (!needsStats) {
-    for (const entry of entries) {
-      yield {
-        path: entry.entryPath,
-        dirent: entry.dirent,
-      };
+    for (const dirent of dirents) {
+      if (!normalized.includeHidden && isHidden(dirent.name)) continue;
+      yield { path: path.join(basePath, dirent.name), dirent };
     }
     return;
   }
 
+  const filtered: { dirent: (typeof dirents)[number]; entryPath: string }[] =
+    [];
+  for (const dirent of dirents) {
+    if (!normalized.includeHidden && isHidden(dirent.name)) continue;
+    filtered.push({ dirent, entryPath: path.join(basePath, dirent.name) });
+  }
+
   const { results, errors } = await processInParallel(
-    entries.map((_, index) => index),
-    async (index) => {
-      const candidate = entries[index];
-      if (!candidate) {
-        throw new Error(`Entry index out of range: ${String(index)}`);
-      }
-      return {
-        index,
-        stats: await withAbort(fsp.lstat(candidate.entryPath), signal),
-      };
-    },
+    filtered,
+    async ({ entryPath, dirent }): Promise<EntryCandidate> => ({
+      path: entryPath,
+      dirent,
+      stats: await withAbort(fsp.lstat(entryPath), signal),
+    }),
     PARALLEL_CONCURRENCY,
     signal
   );
@@ -412,21 +383,7 @@ async function* readDirectoryEntries(
     throw errors[0]?.error ?? new Error('Failed to read entry stats');
   }
 
-  const statsByIndex: (Stats | undefined)[] = [];
-  for (const result of results) {
-    statsByIndex[result.index] = result.stats;
-  }
-
-  for (let index = 0; index < entries.length; index += 1) {
-    const entry = entries[index];
-    if (!entry) continue;
-    const stats = statsByIndex[index];
-    yield {
-      path: entry.entryPath,
-      dirent: entry.dirent,
-      ...(stats ? { stats } : {}),
-    };
-  }
+  yield* results;
 }
 
 function createEntryStream(
@@ -548,18 +505,11 @@ async function enqueueAppendEntry(
     return;
   }
 
-  // Preserve the original behavior: resolve symlink targets in parallel
-  // when includeSymlinkTargets is enabled (bounded by PARALLEL_CONCURRENCY).
-  const task = (async (): Promise<void> => {
-    const symlinkTarget = await resolveSymlinkTarget(
-      entryType,
-      ctx.includeSymlinkTargets,
-      entry.path
-    );
-    appendEntry(entry, entryType, symlinkTarget, ctx);
-  })();
-
-  pending.push(task);
+  pending.push(
+    resolveSymlinkTarget(entryType, true, entry.path).then((target) => {
+      appendEntry(entry, entryType, target, ctx);
+    })
+  );
 
   if (pending.length >= PARALLEL_CONCURRENCY) {
     await flushPending();
@@ -606,12 +556,6 @@ async function collectEntries(
   const totals: EntryTotals = { files: 0, directories: 0 };
   const counters: Counters = { skippedInaccessible: 0, symlinksNotFollowed: 0 };
   const basePathDirectories = [basePath];
-  const accessDeps = {
-    normalizePath,
-    isPathWithinDirectories,
-    isSensitivePath,
-    validateSymlinkPath: validateExistingPathDetailed,
-  };
 
   let truncated = false;
   let stoppedReason: StoppedReason | undefined;
@@ -662,7 +606,7 @@ async function collectEntries(
       entryType,
       basePathDirectories,
       signal,
-      accessDeps
+      ACCESS_DEPS
     );
     if (!accessible) {
       counters.skippedInaccessible += 1;
@@ -770,31 +714,20 @@ interface TreeResult {
   totalEntries: number;
 }
 
-function toSafeNonNegativeInt(value: unknown, fallback: number): number {
+function clampInt(value: unknown, fallback: number, min: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
   const asInt = Math.floor(value);
-  return asInt >= 0 ? asInt : fallback;
-}
-
-function toSafePositiveInt(value: unknown, fallback: number): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
-  const asInt = Math.floor(value);
-  return asInt > 0 ? asInt : fallback;
-}
-
-function toSafeBoolean(value: unknown, fallback: boolean): boolean {
-  if (typeof value !== 'boolean') return fallback;
-  return value;
+  return asInt >= min ? asInt : fallback;
 }
 
 function normalizeTreeOptions(options: TreeOptions): TreeNormalizedOptions {
   return {
-    maxDepth: toSafeNonNegativeInt(options.maxDepth, 5),
-    maxEntries: toSafeNonNegativeInt(options.maxEntries, 1000),
-    includeHidden: toSafeBoolean(options.includeHidden, false),
-    includeIgnored: toSafeBoolean(options.includeIgnored, false),
-    includeSizes: toSafeBoolean(options.includeSizes, false),
-    timeoutMs: toSafePositiveInt(options.timeoutMs, DEFAULT_SEARCH_TIMEOUT_MS),
+    maxDepth: clampInt(options.maxDepth, 5, 0),
+    maxEntries: clampInt(options.maxEntries, 1000, 0),
+    includeHidden: options.includeHidden ?? false,
+    includeIgnored: options.includeIgnored ?? false,
+    includeSizes: options.includeSizes ?? false,
+    timeoutMs: clampInt(options.timeoutMs, DEFAULT_SEARCH_TIMEOUT_MS, 1),
   };
 }
 
@@ -857,10 +790,10 @@ function compareTreeEntries(a: TreeEntry, b: TreeEntry): number {
   return a.name.localeCompare(b.name);
 }
 
+const TREE_TYPE_RANKS: Record<string, number> = { directory: 0, file: 1 };
+
 function getTreeTypeRank(type: EntryType): number {
-  if (type === 'directory') return 0;
-  if (type === 'file') return 1;
-  return 2;
+  return TREE_TYPE_RANKS[type] ?? 2;
 }
 
 async function resolveTreeEntry(
@@ -872,7 +805,7 @@ async function resolveTreeEntry(
   rootDirectories: readonly string[],
   gitignoreMatcher: Awaited<ReturnType<typeof loadRootGitignore>>,
   signal: AbortSignal,
-  accessDeps: Parameters<typeof isEntryAccessibleByType>[4]
+  accessDeps: EntryAccessDependencies
 ): Promise<{
   type: EntryType;
   relativePosix: string;
@@ -899,8 +832,7 @@ async function resolveTreeEntry(
     return null;
   }
 
-  const relative = path.relative(root, entry.path) || path.basename(entry.path);
-  const relativePosix = toPosixPath(relative);
+  const relativePosix = toPosixPath(resolveRelativePath(root, entry.path));
   const name = path.basename(entry.path);
   return { type, relativePosix, name };
 }
@@ -1022,12 +954,6 @@ export async function treeDirectory(
       const root = await validateExistingDirectory(dirPath, signal);
       const rootNormalized = normalizePath(root);
       const rootDirectories = [rootNormalized];
-      const accessDeps = {
-        normalizePath,
-        isPathWithinDirectories,
-        isSensitivePath,
-        validateSymlinkPath: validateExistingPathDetailed,
-      };
 
       const excludePatterns = normalized.includeIgnored
         ? []
@@ -1082,7 +1008,7 @@ export async function treeDirectory(
           rootDirectories,
           gitignoreMatcher,
           signal,
-          accessDeps
+          ACCESS_DEPS
         );
         if (!resolved) {
           continue;
@@ -1180,22 +1106,15 @@ function estimateReadSize(stats: Stats, maxSize: number): number {
   return Math.min(stats.size, maxSize);
 }
 
-function buildReadOptions(options: NormalizedReadMultipleOptions): {
+type ReadFileOptions = LineSelectionOptions & {
   encoding: BufferEncoding;
   maxSize: number;
-  head?: number;
-  tail?: number;
-  startLine?: number;
-  endLine?: number;
-} {
-  const readOptions: {
-    encoding: BufferEncoding;
-    maxSize: number;
-    head?: number;
-    tail?: number;
-    startLine?: number;
-    endLine?: number;
-  } = {
+};
+
+function buildReadOptions(
+  options: NormalizedReadMultipleOptions
+): ReadFileOptions {
+  const readOptions: ReadFileOptions = {
     encoding: options.encoding,
     maxSize: options.maxSize,
   };
@@ -1291,15 +1210,19 @@ function applyLineSelection(
   if (source.endLine !== undefined) target.endLine = source.endLine;
 }
 
-function resolveListDirectoryNormalizedOptions(options: ReadMultipleOptions): {
+function resolveNormalizedReadOptions(options: ReadMultipleOptions): {
   normalized: NormalizedReadMultipleOptions;
   signal?: AbortSignal;
 } {
   const { signal, ...rest } = options;
-  return {
+  const result: {
+    normalized: NormalizedReadMultipleOptions;
+    signal?: AbortSignal;
+  } = {
     normalized: normalizeReadMultipleOptions(rest),
-    ...(signal ? { signal } : {}),
   };
+  if (signal) result.signal = signal;
+  return result;
 }
 
 interface ValidatedFileInfo {
@@ -1461,11 +1384,7 @@ async function collectFileBudget(
 }
 
 function buildOutput(filePaths: readonly string[]): ReadMultipleResult[] {
-  const output = new Array<ReadMultipleResult>(filePaths.length);
-  for (let index = 0; index < filePaths.length; index += 1) {
-    output[index] = { path: filePaths[index] ?? UNKNOWN_PATH };
-  }
-  return output;
+  return Array.from(filePaths, (fp) => ({ path: fp }));
 }
 
 function resolveErrorOriginalIndex(
@@ -1558,7 +1477,7 @@ export async function readMultipleFiles(
 ): Promise<ReadMultipleResult[]> {
   if (filePaths.length === 0) return [];
 
-  const { normalized, signal } = resolveListDirectoryNormalizedOptions(options);
+  const { normalized, signal } = resolveNormalizedReadOptions(options);
 
   const output = buildOutput(filePaths);
   const { skippedBudget, validated } = await collectFileBudget(
