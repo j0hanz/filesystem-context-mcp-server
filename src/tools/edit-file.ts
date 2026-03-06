@@ -1,5 +1,5 @@
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
+import { readFile, stat } from 'node:fs/promises';
+import { basename } from 'node:path';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { createTwoFilesPatch, diffLines } from 'diff';
@@ -33,7 +33,7 @@ export const EDIT_FILE_TOOL: ToolContract = {
   title: 'Edit File',
   description:
     'Apply sequential literal string replacements to a file (first occurrence per edit). ' +
-    '`oldText` must match exactly \u2014 include 3\u20135 lines of context for unique targeting. ' +
+    '`oldText` must match exactly — include 3–5 lines of context for unique targeting. ' +
     'Use `dryRun:true` to preview.',
   inputSchema: EditFileInputSchema,
   outputSchema: EditFileOutputSchema,
@@ -42,6 +42,14 @@ export const EDIT_FILE_TOOL: ToolContract = {
   gotchas: ['Unmatched `oldText` entries listed in `unmatchedEdits`.'],
   taskSupport: 'forbidden',
 } as const;
+
+type EditInput = z.infer<typeof EditFileInputSchema>;
+type EditOutput = z.infer<typeof EditFileOutputSchema>;
+
+interface TextRange {
+  startIndex: number;
+  length: number;
+}
 
 interface EditResult {
   content: string;
@@ -56,7 +64,7 @@ function escapeRegExp(string: string): string {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-export function getLineCount(
+function getLineNumberAtIndex(
   str: string,
   maxIndex: number = str.length
 ): number {
@@ -69,6 +77,10 @@ export function getLineCount(
     pos++;
   }
   return count;
+}
+
+function countLines(str: string): number {
+  return getLineNumberAtIndex(str);
 }
 
 function computeDiffStats(
@@ -90,151 +102,259 @@ function computeDiffStats(
   return { linesAdded, linesRemoved };
 }
 
+function findEditMatch(
+  content: string,
+  oldText: string,
+  ignoreWhitespace: boolean
+): TextRange | undefined {
+  if (ignoreWhitespace) {
+    const pattern = escapeRegExp(oldText).replace(/\s+/g, '\\s+');
+    const regex = new RE2(pattern);
+    const match = regex.exec(content);
+
+    if (!match) {
+      return undefined;
+    }
+
+    return {
+      startIndex: match.index,
+      length: match[0].length,
+    };
+  }
+
+  const index = content.indexOf(oldText);
+  if (index === -1) {
+    return undefined;
+  }
+
+  return {
+    startIndex: index,
+    length: oldText.length,
+  };
+}
+
+function replaceEditMatch(
+  content: string,
+  match: TextRange,
+  newText: string
+): string {
+  return (
+    content.slice(0, match.startIndex) +
+    newText +
+    content.slice(match.startIndex + match.length)
+  );
+}
+
+function mergeLineRange(
+  currentRange: EditResult['lineRange'],
+  content: string,
+  matchStartIndex: number,
+  newText: string
+): [number, number] {
+  const startLine = getLineNumberAtIndex(content, matchStartIndex);
+  const endLine = startLine + countLines(newText) - 1;
+
+  if (!currentRange) {
+    return [startLine, endLine];
+  }
+
+  return [
+    Math.min(currentRange[0], startLine),
+    Math.max(currentRange[1], endLine),
+  ];
+}
+
+function buildStructuredEditOutput(
+  validPath: string,
+  result: EditResult
+): EditOutput {
+  return {
+    ok: true,
+    path: validPath,
+    appliedEdits: result.appliedEdits,
+    ...(result.appliedEdits > 0
+      ? {
+          linesAdded: result.linesAdded,
+          linesRemoved: result.linesRemoved,
+        }
+      : {}),
+    ...(result.unmatchedEdits.length > 0
+      ? { unmatchedEdits: result.unmatchedEdits }
+      : {}),
+    ...(result.lineRange ? { lineRange: result.lineRange } : {}),
+  };
+}
+
+function finalizeEditResult(
+  originalContent: string,
+  updatedContent: string,
+  appliedEdits: number,
+  unmatchedEdits: string[],
+  lineRange: EditResult['lineRange']
+): EditResult {
+  const { linesAdded, linesRemoved } =
+    appliedEdits > 0
+      ? computeDiffStats(originalContent, updatedContent)
+      : { linesAdded: 0, linesRemoved: 0 };
+
+  return {
+    content: updatedContent,
+    appliedEdits,
+    unmatchedEdits,
+    linesAdded,
+    linesRemoved,
+    ...(lineRange ? { lineRange } : {}),
+  };
+}
+
+function buildDiff(
+  validPath: string,
+  original: string,
+  modified: string
+): string {
+  const fileName = basename(validPath);
+  return createTwoFilesPatch(
+    fileName,
+    fileName,
+    original,
+    modified,
+    'Original',
+    'Modified'
+  );
+}
+
+function formatUnmatchedEditsNote(unmatchedEdits: string[]): string {
+  if (unmatchedEdits.length === 0) {
+    return '';
+  }
+
+  return ` — ${unmatchedEdits.length} unmatched: [${unmatchedEdits
+    .map((text) =>
+      JSON.stringify(text.length > 40 ? `${text.slice(0, 40)}…` : text)
+    )
+    .join(', ')}]`;
+}
+
+function buildEditMessage(requestedPath: string, result: EditResult): string {
+  const unmatchedNote = formatUnmatchedEditsNote(result.unmatchedEdits);
+
+  if (result.appliedEdits === 0) {
+    return `No edits applied to ${requestedPath}${unmatchedNote}`;
+  }
+
+  return `Successfully applied ${result.appliedEdits} edits to ${requestedPath}${unmatchedNote}`;
+}
+
+async function loadEditableFile(
+  requestedPath: string,
+  signal?: AbortSignal
+): Promise<{ validPath: string; content: string }> {
+  const validPath = await validateExistingPath(requestedPath, signal);
+  assertAllowedFileAccess(requestedPath, validPath);
+  const stats = await withAbort(stat(validPath), signal);
+
+  if (stats.size > MAX_TEXT_FILE_SIZE) {
+    throw new McpError(
+      ErrorCode.E_TOO_LARGE,
+      `File too large for edit: ${requestedPath} (${stats.size} bytes > ${MAX_TEXT_FILE_SIZE} bytes)`,
+      requestedPath,
+      { size: stats.size, maxFileSize: MAX_TEXT_FILE_SIZE }
+    );
+  }
+
+  const content = await readFile(validPath, { encoding: 'utf-8', signal });
+  return { validPath, content };
+}
+
+function buildEditProgressMessage(args: EditInput): string {
+  const name = basename(args.path);
+  const tag = args.dryRun ? ' [dry run]' : '';
+  return `🛠 edit: ${name}${tag}`;
+}
+
+function buildEditCompletionMessage(
+  args: EditInput,
+  result: ToolResult<EditOutput>
+): string {
+  const name = basename(args.path);
+  if (result.isError) return `🛠 edit: ${name} • failed`;
+
+  const { structuredContent } = result;
+  if (!structuredContent.ok) return `🛠 edit: ${name} • failed`;
+
+  const applied = structuredContent.appliedEdits ?? 0;
+  if (applied === 0) return `🛠 edit: ${name} • no changes`;
+
+  const added = structuredContent.linesAdded ?? 0;
+  const removed = structuredContent.linesRemoved ?? 0;
+  const dry = args.dryRun ? 'dry run ' : '';
+  return `🛠 edit: ${name} • ${dry}+${added} -${removed}`;
+}
+
 function applyEdits(
   content: string,
-  edits: z.infer<typeof EditFileInputSchema>['edits'],
+  edits: EditInput['edits'],
   ignoreWhitespace: boolean
 ): EditResult {
   let newContent = content;
   let appliedEdits = 0;
   const unmatchedEdits: string[] = [];
-  let minLine: number | undefined;
-  let maxLine: number | undefined;
+  let lineRange: EditResult['lineRange'];
 
   for (const edit of edits) {
-    if (ignoreWhitespace) {
-      const pattern = escapeRegExp(edit.oldText).replace(/\s+/g, '\\s+');
-      const regex = new RE2(pattern);
-      const match = regex.exec(newContent);
+    const match = findEditMatch(newContent, edit.oldText, ignoreWhitespace);
 
-      if (!match) {
-        unmatchedEdits.push(edit.oldText);
-        continue;
-      }
-
-      const { index } = match;
-      const matchLength = match[0].length;
-      const startLine = getLineCount(newContent, index);
-      const newTextLines = getLineCount(edit.newText);
-      const endLine = startLine + newTextLines - 1;
-
-      if (minLine === undefined || startLine < minLine) minLine = startLine;
-      if (maxLine === undefined || endLine > maxLine) maxLine = endLine;
-
-      newContent =
-        newContent.slice(0, index) +
-        edit.newText +
-        newContent.slice(index + matchLength);
-      appliedEdits += 1;
-    } else {
-      if (!newContent.includes(edit.oldText)) {
-        unmatchedEdits.push(edit.oldText);
-        continue;
-      }
-
-      const index = newContent.indexOf(edit.oldText);
-      const startLine = getLineCount(newContent, index);
-      const newTextLines = getLineCount(edit.newText);
-      const endLine = startLine + newTextLines - 1;
-
-      if (minLine === undefined || startLine < minLine) minLine = startLine;
-      if (maxLine === undefined || endLine > maxLine) maxLine = endLine;
-
-      newContent = newContent.replace(edit.oldText, () => edit.newText);
-      appliedEdits += 1;
+    if (!match) {
+      unmatchedEdits.push(edit.oldText);
+      continue;
     }
+
+    lineRange = mergeLineRange(
+      lineRange,
+      newContent,
+      match.startIndex,
+      edit.newText
+    );
+    newContent = replaceEditMatch(newContent, match, edit.newText);
+    appliedEdits += 1;
   }
 
-  const { linesAdded, linesRemoved } =
-    appliedEdits > 0
-      ? computeDiffStats(content, newContent)
-      : { linesAdded: 0, linesRemoved: 0 };
-
-  const result: EditResult = {
-    content: newContent,
+  return finalizeEditResult(
+    content,
+    newContent,
     appliedEdits,
     unmatchedEdits,
-    linesAdded,
-    linesRemoved,
-  };
-
-  if (minLine !== undefined && maxLine !== undefined) {
-    result.lineRange = [minLine, maxLine];
-  }
-
-  return result;
+    lineRange
+  );
 }
 
 export async function handleEditFile(
-  args: z.infer<typeof EditFileInputSchema>,
+  args: EditInput,
   signal?: AbortSignal
-): Promise<ToolResponse<z.infer<typeof EditFileOutputSchema>>> {
-  const validPath = await validateExistingPath(args.path, signal);
-  assertAllowedFileAccess(args.path, validPath);
-  const stats = await withAbort(fs.stat(validPath), signal);
-  if (stats.size > MAX_TEXT_FILE_SIZE) {
-    throw new McpError(
-      ErrorCode.E_TOO_LARGE,
-      `File too large for edit: ${args.path} (${stats.size} bytes > ${MAX_TEXT_FILE_SIZE} bytes)`,
-      args.path,
-      { size: stats.size, maxFileSize: MAX_TEXT_FILE_SIZE }
-    );
-  }
-  const content = await fs.readFile(validPath, { encoding: 'utf-8', signal });
-
-  const {
-    content: newContent,
-    appliedEdits,
-    unmatchedEdits,
-    linesAdded,
-    linesRemoved,
-    lineRange,
-  } = applyEdits(content, args.edits, args.ignoreWhitespace);
-
-  const structured: z.infer<typeof EditFileOutputSchema> = {
-    ok: true,
-    path: validPath,
-    appliedEdits,
-    ...(appliedEdits > 0 ? { linesAdded, linesRemoved } : {}),
-    ...(unmatchedEdits.length > 0 ? { unmatchedEdits } : {}),
-    ...(lineRange ? { lineRange } : {}),
-  };
+): Promise<ToolResponse<EditOutput>> {
+  const { validPath, content } = await loadEditableFile(args.path, signal);
+  const editResult = applyEdits(content, args.edits, args.ignoreWhitespace);
+  const structured = buildStructuredEditOutput(validPath, editResult);
 
   if (args.dryRun) {
-    if (appliedEdits > 0) {
-      structured.diff = createTwoFilesPatch(
-        path.basename(validPath),
-        path.basename(validPath),
-        content,
-        newContent,
-        'Original',
-        'Modified'
-      );
+    if (editResult.appliedEdits > 0) {
+      structured.diff = buildDiff(validPath, content, editResult.content);
     }
+
     return buildToolResponse(
-      `Dry run complete. ${appliedEdits} edits would be applied.`,
+      `Dry run complete. ${editResult.appliedEdits} edits would be applied.`,
       structured
     );
   }
 
-  if (appliedEdits > 0) {
-    await atomicWriteFile(validPath, newContent, { encoding: 'utf-8', signal });
+  if (editResult.appliedEdits > 0) {
+    await atomicWriteFile(validPath, editResult.content, {
+      encoding: 'utf-8',
+      signal,
+    });
   }
 
-  const unmatchedNote =
-    unmatchedEdits.length > 0
-      ? ` — ${unmatchedEdits.length} unmatched: [${unmatchedEdits
-          .map((s) =>
-            JSON.stringify(s.length > 40 ? `${s.slice(0, 40)}\u2026` : s)
-          )
-          .join(', ')}]`
-      : '';
-  const message =
-    appliedEdits === 0
-      ? `No edits applied to ${args.path}${unmatchedNote}`
-      : `Successfully applied ${appliedEdits} edits to ${args.path}${unmatchedNote}`;
-
-  return buildToolResponse(message, structured);
+  return buildToolResponse(buildEditMessage(args.path, editResult), structured);
 }
 
 export function registerEditFileTool(
@@ -242,9 +362,9 @@ export function registerEditFileTool(
   options: ToolRegistrationOptions = {}
 ): void {
   const handler = (
-    args: z.infer<typeof EditFileInputSchema>,
+    args: EditInput,
     extra: ToolExtra
-  ): Promise<ToolResult<z.infer<typeof EditFileOutputSchema>>> =>
+  ): Promise<ToolResult<EditOutput>> =>
     executeToolWithDiagnostics({
       toolName: 'edit',
       extra,
@@ -257,24 +377,8 @@ export function registerEditFileTool(
 
   const wrappedHandler = wrapToolHandler(handler, {
     guard: options.isInitialized,
-    progressMessage: (args) => {
-      const name = path.basename(args.path);
-      const tag = args.dryRun ? ' [dry run]' : '';
-      return `🛠 edit: ${name}${tag}`;
-    },
-    completionMessage: (args, result) => {
-      const name = path.basename(args.path);
-      if (result.isError) return `🛠 edit: ${name} • failed`;
-      const sc = result.structuredContent;
-      if (!sc.ok) return `🛠 edit: ${name} • failed`;
-
-      const applied = sc.appliedEdits ?? 0;
-      if (applied === 0) return `🛠 edit: ${name} • no changes`;
-      const added = sc.linesAdded ?? 0;
-      const removed = sc.linesRemoved ?? 0;
-      const dry = args.dryRun ? 'dry run ' : '';
-      return `🛠 edit: ${name} • ${dry} +${added} -${removed}`;
-    },
+    progressMessage: buildEditProgressMessage,
+    completionMessage: buildEditCompletionMessage,
   });
 
   const validatedHandler = withValidatedArgs(
@@ -293,6 +397,7 @@ export function registerEditFileTool(
     )
   )
     return;
+
   server.registerTool(
     'edit',
     withDefaultIcons({ ...EDIT_FILE_TOOL }, options.iconInfo),
