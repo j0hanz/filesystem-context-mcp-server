@@ -74,12 +74,6 @@ function normalizePattern(pattern: string, baseNameMatch: boolean): string {
   return `**/${normalized}`;
 }
 
-function normalizeIgnorePatterns(
-  patterns: readonly string[]
-): readonly string[] {
-  return patterns.map(toPosixPath);
-}
-
 function splitPatternPrefix(normalizedPattern: string): {
   prefix: string;
   remainder: string;
@@ -89,28 +83,10 @@ function splitPatternPrefix(normalizedPattern: string): {
   }
 
   const segments = normalizedPattern.split(SEP);
-  const len = segments.length;
-  let splitIndex = len;
+  const splitIndex = segments.findIndex((seg) => GLOB_MAGIC_RE.test(seg));
 
-  for (let i = 0; i < len; i++) {
-    const seg = segments[i];
-    if (seg && GLOB_MAGIC_RE.test(seg)) {
-      splitIndex = i;
-      break;
-    }
-  }
-
-  if (splitIndex === 0) {
+  if (splitIndex <= 0) {
     return { prefix: '', remainder: normalizedPattern };
-  }
-
-  if (splitIndex >= len) {
-    const prefix = segments.slice(0, len - 1).join(SEP);
-    const last = segments[len - 1];
-    return {
-      prefix: prefix ? prefix + SEP : '',
-      remainder: last ?? '',
-    };
   }
 
   return {
@@ -119,136 +95,88 @@ function splitPatternPrefix(normalizedPattern: string): {
   };
 }
 
-function addDotfileCandidates(
-  patterns: Set<string>,
-  prefix: string,
-  remainderSegments: string[]
-): void {
-  const firstCandidateIndex = remainderSegments.findIndex(
-    (segment) => segment !== '**' && segment.length > 0
-  );
-
-  if (firstCandidateIndex !== -1) {
-    const original = remainderSegments[firstCandidateIndex];
-    if (original && original.charCodeAt(0) !== DOT_CHAR_CODE) {
-      const newSegments = remainderSegments.slice();
-      newSegments[firstCandidateIndex] = `.${original}`;
-      patterns.add(`${prefix}${newSegments.join(SEP)}`);
-    }
-  }
-}
-
-function addGlobstarCandidates(
-  patterns: Set<string>,
-  prefix: string,
-  remainder: string,
-  maxDepth: number
-): void {
-  const afterGlobstar = remainder.slice(3);
-  const addDotFile =
-    afterGlobstar.length > 0 && afterGlobstar.charCodeAt(0) !== DOT_CHAR_CODE;
-  let depthPrefix = '';
-  for (let depth = 0; depth <= maxDepth; depth++) {
-    patterns.add(`${prefix}${depthPrefix}.*/**/${afterGlobstar}`);
-    if (addDotFile) {
-      patterns.add(`${prefix}${depthPrefix}.${afterGlobstar}`);
-    }
-    depthPrefix += '*/';
-  }
-}
-
 function buildHiddenPatterns(
   normalizedPattern: string,
   maxDepth: number
 ): readonly string[] {
-  const patterns = new Set<string>();
-  patterns.add(normalizedPattern);
-
+  const patterns = new Set<string>([normalizedPattern]);
   const { prefix, remainder } = splitPatternPrefix(normalizedPattern);
 
   if (remainder.length > 0) {
-    const remainderSegments = remainder.split(SEP);
-    addDotfileCandidates(patterns, prefix, remainderSegments);
+    const segments = remainder.split(SEP);
+    const idx = segments.findIndex((seg) => seg !== '**' && seg.length > 0);
+
+    if (idx !== -1) {
+      const original = segments[idx];
+      if (original && original.charCodeAt(0) !== DOT_CHAR_CODE) {
+        const newSegments = [...segments];
+        newSegments[idx] = `.${original}`;
+        patterns.add(`${prefix}${newSegments.join(SEP)}`);
+      }
+    }
   }
 
   if (remainder.startsWith('**/')) {
-    addGlobstarCandidates(patterns, prefix, remainder, maxDepth);
+    const afterGlobstar = remainder.slice(3);
+    const addDotFile =
+      afterGlobstar.length > 0 && afterGlobstar.charCodeAt(0) !== DOT_CHAR_CODE;
+
+    let depthPrefix = '';
+    for (let depth = 0; depth <= maxDepth; depth++) {
+      patterns.add(`${prefix}${depthPrefix}.*/**/${afterGlobstar}`);
+      if (addDotFile) patterns.add(`${prefix}${depthPrefix}.${afterGlobstar}`);
+      depthPrefix += '*/';
+    }
   }
 
   return Array.from(patterns);
 }
 
-function shouldUseGlobDirents(options: GlobEntriesOptions): boolean {
-  return !options.stats && !options.followSymbolicLinks;
-}
-
-function assertOptionString(
-  options: Record<string, unknown>,
-  key: 'cwd' | 'pattern'
-): void {
-  if (typeof options[key] !== 'string') {
-    throw new TypeError(`globEntries: options.${key} must be a string`);
+function assertOptionsShape(options: GlobEntriesOptions): void {
+  const optsUnknown = options as unknown;
+  if (typeof optsUnknown !== 'object' || optsUnknown === null) {
+    throw new TypeError('globEntries: options must be an object');
   }
-}
 
-function assertExcludePatternsOption(options: Record<string, unknown>): void {
-  if (!Array.isArray(options.excludePatterns)) {
+  const opts = optsUnknown as Record<string, unknown>;
+
+  if (typeof opts.cwd !== 'string')
+    throw new TypeError('globEntries: options.cwd must be a string');
+  if (typeof opts.pattern !== 'string')
+    throw new TypeError('globEntries: options.pattern must be a string');
+
+  if (
+    !Array.isArray(opts.excludePatterns) ||
+    opts.excludePatterns.some((p) => typeof p !== 'string')
+  ) {
     throw new TypeError(
-      'globEntries: options.excludePatterns must be an array'
+      'globEntries: options.excludePatterns must be an array of strings'
     );
   }
 
-  for (const pattern of options.excludePatterns) {
-    if (typeof pattern !== 'string') {
-      throw new TypeError(
-        'globEntries: options.excludePatterns must contain only strings'
-      );
-    }
-  }
-}
-
-function assertBooleanOptions(options: Record<string, unknown>): void {
   for (const key of GLOB_BOOLEAN_OPTION_KEYS) {
-    if (typeof options[key] !== 'boolean') {
+    if (typeof opts[key] !== 'boolean') {
       throw new TypeError(`globEntries: options.${key} must be a boolean`);
     }
   }
-}
 
-function assertOptionalMaxDepth(options: Record<string, unknown>): void {
-  const { maxDepth } = options;
-  if (maxDepth === undefined) return;
-  if (typeof maxDepth !== 'number' || !Number.isFinite(maxDepth)) {
+  if (
+    opts.maxDepth !== undefined &&
+    (!Number.isFinite(opts.maxDepth) || typeof opts.maxDepth !== 'number')
+  ) {
     throw new TypeError(
       'globEntries: options.maxDepth must be a finite number'
     );
   }
-}
 
-function assertOptionalSuppressErrors(options: Record<string, unknown>): void {
-  const { suppressErrors } = options;
-  if (suppressErrors === undefined) return;
-  if (typeof suppressErrors !== 'boolean') {
+  if (
+    opts.suppressErrors !== undefined &&
+    typeof opts.suppressErrors !== 'boolean'
+  ) {
     throw new TypeError(
       'globEntries: options.suppressErrors must be a boolean'
     );
   }
-}
-
-function assertOptionsShape(options: GlobEntriesOptions): void {
-  const unknownOptions: unknown = options;
-
-  if (unknownOptions === null || typeof unknownOptions !== 'object') {
-    throw new TypeError('globEntries: options must be an object');
-  }
-
-  const o = unknownOptions as Record<string, unknown>;
-  assertOptionString(o, 'cwd');
-  assertOptionString(o, 'pattern');
-  assertExcludePatternsOption(o);
-  assertBooleanOptions(o);
-  assertOptionalMaxDepth(o);
-  assertOptionalSuppressErrors(o);
 }
 
 function normalizeOptions(options: GlobEntriesOptions): NormalizedGlob {
@@ -258,16 +186,18 @@ function normalizeOptions(options: GlobEntriesOptions): NormalizedGlob {
     options.baseNameMatch
   );
 
-  const maxHiddenDepth = options.maxDepth ?? DEFAULT_MAX_HIDDEN_DEPTH;
   const patterns = options.includeHidden
-    ? buildHiddenPatterns(normalizedPattern, maxHiddenDepth)
+    ? buildHiddenPatterns(
+        normalizedPattern,
+        options.maxDepth ?? DEFAULT_MAX_HIDDEN_DEPTH
+      )
     : [normalizedPattern];
 
   const normalized: NormalizedGlob = {
     cwd,
     patterns,
-    exclude: normalizeIgnorePatterns(options.excludePatterns),
-    useDirents: shouldUseGlobDirents(options),
+    exclude: options.excludePatterns.map(toPosixPath),
+    useDirents: !options.stats && !options.followSymbolicLinks,
     suppressErrors: options.suppressErrors ?? false,
   };
 
@@ -401,9 +331,11 @@ async function* processIterable(
 
   const flush = async function* (): AsyncGenerator<GlobEntry> {
     if (buffer.length === 0) return;
-    const requests: Promise<GlobEntry | null>[] = [];
-    for (const match of buffer) {
-      requests.push(
+
+    // Process buffer concurrently
+    const currentBuffer = buffer.splice(0, buffer.length);
+    const results = await Promise.all(
+      currentBuffer.map((match) =>
         resolveStringMatch(
           match,
           cwd,
@@ -414,10 +346,9 @@ async function* processIterable(
           returnStats,
           suppressErrors
         )
-      );
-    }
-    buffer.length = 0;
-    const results = await Promise.all(requests);
+      )
+    );
+
     for (const entry of results) {
       if (entry !== null) yield entry;
     }
