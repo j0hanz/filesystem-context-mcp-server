@@ -4,8 +4,6 @@ import { isUtf8 } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
 import type { Stats } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
-import { Writable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 
 import type { FileType } from '../config.js';
 import {
@@ -81,44 +79,30 @@ export function withAbort<T>(
   signal?: AbortSignal
 ): Promise<T> {
   if (!signal) return promise;
-  assertNotAborted(signal);
+  signal.throwIfAborted();
 
   return new Promise<T>((resolve, reject) => {
-    let settled = false;
-
-    const finish = (run: () => void): void => {
-      if (settled) return;
-      settled = true;
-      signal.removeEventListener('abort', onAbort);
-      run();
-    };
-
     const onAbort = (): void => {
-      finish(() => {
-        reject(getAbortError(signal));
-      });
+      reject(getAbortError(signal));
     };
 
-    signal.addEventListener('abort', onAbort, { once: true });
-
-    try {
-      signal.throwIfAborted();
-    } catch {
+    if (signal.aborted) {
       onAbort();
       return;
     }
 
-    promise
-      .then((value) => {
-        finish(() => {
-          resolve(value);
-        });
-      })
-      .catch((error: unknown) => {
-        finish(() => {
-          reject(normalizeUnknownError(error));
-        });
-      });
+    signal.addEventListener('abort', onAbort, { once: true });
+
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(normalizeUnknownError(error));
+      }
+    );
   });
 }
 
@@ -138,14 +122,14 @@ export function createTimedAbortSignal(
   }
 
   if (baseSignal) {
-    return createForwardedSignal(baseSignal);
+    return { signal: baseSignal, cleanup: () => {} };
   }
 
   if (timeoutSignal) {
     return { signal: timeoutSignal, cleanup: () => {} };
   }
 
-  return createNoopSignal();
+  return { signal: SHARED_NOOP_SIGNAL, cleanup: () => {} };
 }
 
 export async function withTimedAbortSignal<T>(
@@ -159,17 +143,6 @@ export async function withTimedAbortSignal<T>(
   } finally {
     cleanup();
   }
-}
-
-function createNoopSignal(): { signal: AbortSignal; cleanup: () => void } {
-  return { signal: SHARED_NOOP_SIGNAL, cleanup: () => {} };
-}
-
-function createForwardedSignal(baseSignal: AbortSignal): {
-  signal: AbortSignal;
-  cleanup: () => void;
-} {
-  return { signal: baseSignal, cleanup: () => {} };
 }
 
 interface ParallelResult<R> {
@@ -265,31 +238,6 @@ async function openReadableFileHandle(
   return withAbort(fsp.open(filePath, READ_ONLY_FILE_FLAG), signal);
 }
 
-async function closeFileHandleQuietly(handle: FileHandle): Promise<void> {
-  await handle.close().catch((error: unknown) => {
-    console.error('Failed to close file handle:', error);
-  });
-}
-
-async function withFileHandle<T>(
-  filePath: string,
-  fn: (handle: fsp.FileHandle) => Promise<T>,
-  existingHandle?: fsp.FileHandle,
-  signal?: AbortSignal
-): Promise<T> {
-  if (existingHandle) {
-    return fn(existingHandle);
-  }
-
-  const effectivePath = await validateExistingPath(filePath, signal);
-  const handle = await openReadableFileHandle(effectivePath, signal);
-  try {
-    return await fn(handle);
-  } finally {
-    await closeFileHandleQuietly(handle);
-  }
-}
-
 async function readProbe(
   handle: fsp.FileHandle,
   signal?: AbortSignal
@@ -324,15 +272,15 @@ export async function isProbablyBinary(
     return true;
   }
 
-  return withFileHandle(
-    filePath,
-    async (handle) => {
-      const slice = await readProbe(handle, signal);
-      return isBinarySlice(slice);
-    },
-    existingHandle,
-    signal
-  );
+  if (existingHandle) {
+    const slice = await readProbe(existingHandle, signal);
+    return isBinarySlice(slice);
+  }
+
+  const effectivePath = await validateExistingPath(filePath, signal);
+  await using handle = await openReadableFileHandle(effectivePath, signal);
+  const slice = await readProbe(handle, signal);
+  return isBinarySlice(slice);
 }
 
 function isBinarySlice(slice: Buffer): boolean {
@@ -526,45 +474,6 @@ function createTooLargeError(
   );
 }
 
-class BufferCollector extends Writable {
-  #chunks: Buffer[] = [];
-  #totalSize = 0;
-  #maxSize: number;
-  #requestedPath: string;
-
-  constructor(maxSize: number, requestedPath: string) {
-    super({ autoDestroy: true });
-    this.#maxSize = maxSize;
-    this.#requestedPath = requestedPath;
-  }
-
-  override _write(
-    chunk: Buffer | string,
-    _encoding: BufferEncoding,
-    callback: (error?: Error | null) => void
-  ): void {
-    const buffer = Buffer.isBuffer(chunk)
-      ? chunk
-      : Buffer.from(chunk, _encoding);
-
-    this.#totalSize += buffer.length;
-
-    if (this.#totalSize > this.#maxSize) {
-      callback(
-        createTooLargeError(this.#totalSize, this.#maxSize, this.#requestedPath)
-      );
-      return;
-    }
-
-    this.#chunks.push(buffer);
-    callback();
-  }
-
-  getResult(): Buffer {
-    return Buffer.concat(this.#chunks, this.#totalSize);
-  }
-}
-
 async function readFileBufferWithLimit(
   handle: FileHandle,
   maxSize: number,
@@ -578,10 +487,31 @@ async function readFileBufferWithLimit(
     emitClose: false,
     signal,
   });
-  const collector = new BufferCollector(maxSize, requestedPath);
 
-  await pipeline(stream, collector, { signal });
-  return collector.getResult();
+  const chunks: Buffer[] = [];
+  let totalSize = 0;
+
+  try {
+    for await (const chunk of stream) {
+      const buffer = Buffer.isBuffer(chunk)
+        ? chunk
+        : Buffer.from(chunk as ArrayBuffer);
+      totalSize += buffer.length;
+
+      if (totalSize > maxSize) {
+        stream.destroy();
+        throw createTooLargeError(totalSize, maxSize, requestedPath);
+      }
+
+      chunks.push(buffer);
+    }
+  } finally {
+    if (!stream.destroyed) {
+      stream.destroy();
+    }
+  }
+
+  return Buffer.concat(chunks, totalSize);
 }
 
 async function headFile(
@@ -1027,10 +957,7 @@ export async function atomicWriteFile(
 
   try {
     assertNotAborted(signal);
-    await withAbort(
-      fsp.writeFile(tempPath, content, { encoding, signal }),
-      signal
-    );
+    await fsp.writeFile(tempPath, content, { encoding, signal });
     await withAbort(fsp.rename(tempPath, filePath), signal);
   } catch (error) {
     // Attempt cleanup on error, but don't overwrite the original error
