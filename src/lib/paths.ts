@@ -35,6 +35,9 @@ interface CompiledPatternSet {
 
 const IS_WINDOWS = platform() === 'win32';
 const WINDOWS_ABSOLUTE_RE = /^[a-z]:\//iu;
+const HOME_PREFIX_LENGTH = 2;
+const CHAR_CODE_SPACE = 32;
+const CHAR_CODE_DOT = 46;
 
 function normalizePathForMatch(input: string): string {
   return toPosixPath(path.normalize(input));
@@ -231,7 +234,9 @@ function expandHome(filepath: string): string {
   // Accept both "~/" and "~\\" for cross-platform UX.
   if (filepath.startsWith('~/') || filepath.startsWith('~\\')) {
     // Avoid `path.join(HOMEDIR, "/foo")` resetting to the filesystem root.
-    const rest = filepath.slice(2).replace(LEADING_SEPARATORS_RE, '');
+    const rest = filepath
+      .slice(HOME_PREFIX_LENGTH)
+      .replace(LEADING_SEPARATORS_RE, '');
     return rest.length === 0 ? HOMEDIR : path.join(HOMEDIR, rest);
   }
 
@@ -254,8 +259,12 @@ export function normalizePath(p: string): string {
   return resolved;
 }
 
-function normalizeForComparison(value: string): string {
+function normalizeCaseForComparison(value: string): string {
   return IS_WINDOWS ? value.toLowerCase() : value;
+}
+
+function normalizeForComparison(value: string): string {
+  return normalizeCaseForComparison(value);
 }
 
 function rethrowIfAborted(error: unknown): void {
@@ -264,11 +273,9 @@ function rethrowIfAborted(error: unknown): void {
 
 function isSamePath(left: string, right: string): boolean {
   if (left === right) return true;
-  const leftResolved = path.resolve(left);
-  const rightResolved = path.resolve(right);
-  return IS_WINDOWS
-    ? leftResolved.toLowerCase() === rightResolved.toLowerCase()
-    : leftResolved === rightResolved;
+  const leftResolved = normalizeCaseForComparison(path.resolve(left));
+  const rightResolved = normalizeCaseForComparison(path.resolve(right));
+  return leftResolved === rightResolved;
 }
 
 function stripTrailingSeparator(normalized: string): string {
@@ -482,7 +489,7 @@ function getReservedDeviceName(segment: string): string | undefined {
   let end = segment.length;
   while (end > 0) {
     const c = segment.charCodeAt(end - 1);
-    if (c === 32 || c === 46)
+    if (c === CHAR_CODE_SPACE || c === CHAR_CODE_DOT)
       end--; // space or dot
     else break;
   }

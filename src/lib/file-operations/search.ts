@@ -495,6 +495,15 @@ function buildScanFileOptions(opts: ResolvedOptions): ScanFileOptions {
   };
 }
 
+function buildMatcherOptions(opts: ResolvedOptions): MatcherOptions {
+  return {
+    caseSensitive: opts.caseSensitive,
+    wholeWord: opts.wholeWord,
+    isLiteral: opts.isLiteral,
+    multiline: opts.multiline,
+  };
+}
+
 function applyScanOutcome(summary: ScanSummary, outcome: ScanOutcome): void {
   if (outcome.matched) summary.filesMatched++;
   if (outcome.skippedBinary) summary.skippedBinary++;
@@ -839,17 +848,33 @@ async function executeSequential(
 }
 
 // Helper to manage pool filling
+interface FillWorkerPoolContext {
+  pool: SearchWorkerPool;
+  pending: Set<ScanTask>;
+  iterator: AsyncIterator<ResolvedFile>;
+  pattern: string;
+  matcherOpts: MatcherOptions;
+  scanOpts: ScanFileOptions;
+  maxResults: number;
+  currentMatches: number;
+  summary: ScanSummary;
+}
+
 async function fillWorkerPool(
-  pool: SearchWorkerPool,
-  pending: Set<ScanTask>,
-  iterator: AsyncIterator<ResolvedFile>,
-  pattern: string,
-  matcherOpts: MatcherOptions,
-  scanOpts: ScanFileOptions,
-  maxResults: number,
-  currentMatches: number,
-  summary: ScanSummary
+  context: FillWorkerPoolContext
 ): Promise<boolean> {
+  const {
+    pool,
+    pending,
+    iterator,
+    pattern,
+    matcherOpts,
+    scanOpts,
+    maxResults,
+    currentMatches,
+    summary,
+  } = context;
+
   while (pending.size < SEARCH_WORKERS) {
     const result = await iterator.next();
     if (result.done) return true;
@@ -928,6 +953,21 @@ async function waitForWinner(pending: Set<ScanTask>): Promise<{
   return Promise.race(raceCandidates);
 }
 
+function updateParallelTruncation(
+  summary: ScanSummary,
+  signal: AbortSignal,
+  matchesLength: number,
+  maxResults: number
+): void {
+  if (signal.aborted) {
+    markTruncated(summary, 'timeout');
+    return;
+  }
+  if (matchesLength >= maxResults) {
+    markTruncated(summary, 'maxResults');
+  }
+}
+
 async function executeParallel(
   files: AsyncIterable<ResolvedFile>,
   pattern: string,
@@ -938,12 +978,7 @@ async function executeParallel(
   const pool = getPool();
   const matches: ContentMatch[] = [];
   const scanOpts = buildScanFileOptions(opts);
-  const matcherOpts: MatcherOptions = {
-    caseSensitive: opts.caseSensitive,
-    wholeWord: opts.wholeWord,
-    isLiteral: opts.isLiteral,
-    multiline: opts.multiline,
-  };
+  const matcherOpts = buildMatcherOptions(opts);
 
   const pending = new Set<ScanTask>();
   const iterator = files[Symbol.asyncIterator]();
@@ -962,17 +997,17 @@ async function executeParallel(
       }
 
       if (!exhausted) {
-        exhausted = await fillWorkerPool(
+        exhausted = await fillWorkerPool({
           pool,
           pending,
           iterator,
           pattern,
           matcherOpts,
           scanOpts,
-          opts.maxResults,
-          matches.length,
-          summary
-        );
+          maxResults: opts.maxResults,
+          currentMatches: matches.length,
+          summary,
+        });
       }
 
       if (pending.size === 0 && exhausted) {
@@ -992,12 +1027,7 @@ async function executeParallel(
     if (iterator.return) await iterator.return();
   }
 
-  // Update summary truncation
-  if (signal.aborted) {
-    markTruncated(summary, 'timeout');
-  } else if (matches.length >= opts.maxResults) {
-    markTruncated(summary, 'maxResults');
-  }
+  updateParallelTruncation(summary, signal, matches.length, opts.maxResults);
 
   return matches;
 }
@@ -1130,12 +1160,7 @@ async function searchDirectory(
     }
   }
 
-  const matcherOpts: MatcherOptions = {
-    caseSensitive: opts.caseSensitive,
-    wholeWord: opts.wholeWord,
-    isLiteral: opts.isLiteral,
-    multiline: opts.multiline,
-  };
+  const matcherOpts = buildMatcherOptions(opts);
   validatePattern(pattern, matcherOpts);
 
   const matches = shouldUseWorkers()
@@ -1398,16 +1423,20 @@ function handleEntry(
 
 async function collectFromStream(
   stream: AsyncIterable<SearchEntry>,
-  root: string,
-  rootDirectories: readonly string[],
-  gitignoreMatcher: Awaited<ReturnType<typeof loadRootGitignore>>,
-  normalized: NormalizedOptions,
-  needsStats: boolean,
-  state: CollectState,
   signal: AbortSignal,
-  accessDeps: Parameters<typeof isEntryAccessibleByType>[4],
-  onProgress?: (progress: { total?: number; current: number }) => void
+  context: CollectStreamContext
 ): Promise<void> {
+  const {
+    root,
+    rootDirectories,
+    gitignoreMatcher,
+    normalized,
+    needsStats,
+    state,
+    accessDeps,
+    onProgress,
+  } = context;
+
   for await (const entry of stream) {
     if (shouldStopCollecting(state, normalized, signal)) break;
     state.filesScanned++;
@@ -1456,6 +1485,19 @@ async function collectFromStream(
   });
 }
 
+type EntryAccessDeps = Parameters<typeof isEntryAccessibleByType>[4];
+
+interface CollectStreamContext {
+  root: string;
+  rootDirectories: readonly string[];
+  gitignoreMatcher: Awaited<ReturnType<typeof loadRootGitignore>>;
+  normalized: NormalizedOptions;
+  needsStats: boolean;
+  state: CollectState;
+  accessDeps: EntryAccessDeps;
+  onProgress?: (progress: { total?: number; current: number }) => void;
+}
+
 function isEntryIgnoredByGitignore(
   matcher: Awaited<ReturnType<typeof loadRootGitignore>>,
   root: string,
@@ -1489,7 +1531,7 @@ async function collectSearchResults(
   );
   const state = createCollectState();
   const rootDirectories = [root];
-  const accessDeps = {
+  const accessDeps: EntryAccessDeps = {
     normalizePath,
     isPathWithinDirectories,
     isSensitivePath,
@@ -1500,18 +1542,16 @@ async function collectSearchResults(
     ? await loadRootGitignore(root, signal)
     : null;
 
-  await collectFromStream(
-    stream,
+  await collectFromStream(stream, signal, {
     root,
     rootDirectories,
     gitignoreMatcher,
     normalized,
     needsStats,
     state,
-    signal,
     accessDeps,
-    onProgress
-  );
+    ...(onProgress ? { onProgress } : {}),
+  });
   return buildCollectResult(state);
 }
 

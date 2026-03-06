@@ -108,13 +108,7 @@ function buildSearchTextResult(
 
   let truncatedReason: string | undefined;
   if (summary.truncated) {
-    if (summary.stoppedReason === 'timeout') {
-      truncatedReason = 'timeout';
-    } else if (summary.stoppedReason === 'maxFiles') {
-      truncatedReason = `max files (${summary.filesScanned})`;
-    } else {
-      truncatedReason = `max results (${summary.matches})`;
-    }
+    truncatedReason = resolveTruncatedReason(summary);
   }
 
   const summaryOptions: Parameters<typeof formatOperationSummary>[0] = {
@@ -122,12 +116,35 @@ function buildSearchTextResult(
     ...(truncatedReason ? { truncatedReason } : {}),
   };
 
-  const lines: string[] = [`Found ${normalizedMatches.length}:`];
-  for (const match of normalizedMatches) {
+  return (
+    buildMatchListText(
+      `Found ${normalizedMatches.length}:`,
+      normalizedMatches
+    ) + formatOperationSummary(summaryOptions)
+  );
+}
+
+function resolveTruncatedReason(summary: {
+  stoppedReason?: 'timeout' | 'maxResults' | 'maxFiles';
+  filesScanned: number;
+  matches: number;
+}): string {
+  if (summary.stoppedReason === 'timeout') return 'timeout';
+  if (summary.stoppedReason === 'maxFiles') {
+    return `max files (${summary.filesScanned})`;
+  }
+  return `max results (${summary.matches})`;
+}
+
+function buildMatchListText(
+  heading: string,
+  matches: readonly NormalizedSearchMatch[]
+): string {
+  const lines: string[] = [heading];
+  for (const match of matches) {
     lines.push(formatSearchMatchLine(match));
   }
-
-  return joinLines(lines) + formatOperationSummary(summaryOptions);
+  return joinLines(lines);
 }
 
 type SearchMatchPayload = NonNullable<
@@ -316,14 +333,10 @@ async function handleSearchContent(
   });
 
   previewStructured.resourceUri = entry.uri;
-
-  const textLines: string[] = [
+  const text = buildMatchListText(
     `Found ${normalizedMatches.length} (showing first ${MAX_INLINE_MATCHES}):`,
-  ];
-  for (const match of previewMatches) {
-    textLines.push(formatSearchMatchLine(match));
-  }
-  const text = joinLines(textLines);
+    previewMatches
+  );
 
   return buildToolResponse(text, previewStructured, [
     buildResourceLink({
@@ -381,20 +394,12 @@ export function registerSearchContentTool(
           const count = sc.ok && sc.totalMatches ? sc.totalMatches : 0;
           const filesMatched = sc.ok ? (sc.filesMatched ?? 0) : 0;
           const stoppedReason = sc.ok ? sc.stoppedReason : undefined;
-
-          let suffix: string;
-          if (count === 0) {
-            suffix = `No matches in ${scope}`;
-          } else {
-            suffix = `${count} ${count === 1 ? 'match' : 'matches'} in ${filesMatched} ${filesMatched === 1 ? 'file' : 'files'}`;
-            if (stoppedReason === 'timeout') {
-              suffix += ' [timeout]';
-            } else if (stoppedReason === 'maxResults') {
-              suffix += ' [max results]';
-            } else if (stoppedReason === 'maxFiles') {
-              suffix += ' [max files]';
-            }
-          }
+          const suffix = buildCompletionSuffix({
+            count,
+            filesMatched,
+            scope,
+            stoppedReason,
+          });
 
           const finalCurrent = resolveFinalProgressCurrent(
             progress,
@@ -411,6 +416,31 @@ export function registerSearchContentTool(
       onError: (error) =>
         buildToolErrorResponse(error, ErrorCode.E_UNKNOWN, args.path ?? '.'),
     });
+
+  function buildCompletionSuffix(params: {
+    count: number;
+    filesMatched: number;
+    scope: string;
+    stoppedReason: 'timeout' | 'maxResults' | 'maxFiles' | undefined;
+  }): string {
+    if (params.count === 0) {
+      return `No matches in ${params.scope}`;
+    }
+
+    const matchWord = params.count === 1 ? 'match' : 'matches';
+    const fileWord = params.filesMatched === 1 ? 'file' : 'files';
+    const reasonLabels: Record<'timeout' | 'maxResults' | 'maxFiles', string> =
+      {
+        timeout: 'timeout',
+        maxResults: 'max results',
+        maxFiles: 'max files',
+      };
+    const reasonSuffix =
+      params.stoppedReason !== undefined
+        ? ` [${reasonLabels[params.stoppedReason]}]`
+        : '';
+    return `${params.count} ${matchWord} in ${params.filesMatched} ${fileWord}${reasonSuffix}`;
+  }
 
   const { isInitialized } = options;
   const wrappedHandler = wrapToolHandler(handler, {

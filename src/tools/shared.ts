@@ -76,18 +76,24 @@ export function maybeStripStructuredContentFromResult<T extends object>(
   if (!shouldStripStructuredOutput()) return result;
   if (!Object.hasOwn(result, 'structuredContent')) return result;
 
-  const rest = { ...(result as Record<string, unknown>) };
-  delete rest['structuredContent'];
-  return rest as T;
+  const stripped = Object.fromEntries(
+    Object.entries(result as Record<string, unknown>).filter(
+      ([key]) => key !== 'structuredContent'
+    )
+  );
+  return stripped as T;
 }
 
 function maybeStripOutputSchema<T extends object>(tool: T): T {
   if (!shouldStripStructuredOutput()) return tool;
   if (!Object.hasOwn(tool, 'outputSchema')) return tool;
 
-  const mutable = { ...(tool as Record<string, unknown>) };
-  delete mutable['outputSchema'];
-  return mutable as T;
+  const stripped = Object.fromEntries(
+    Object.entries(tool as Record<string, unknown>).filter(
+      ([key]) => key !== 'outputSchema'
+    )
+  );
+  return stripped as T;
 }
 
 type ResourceEntry = ReturnType<ResourceStore['putText']>;
@@ -411,6 +417,27 @@ async function reportProgress(
   extra: ToolExtra,
   progress: { current: number; total?: number; message?: string }
 ): Promise<void> {
+  await updateTaskStoreProgress(extra, progress);
+  await sendMcpProgressNotification(extra, progress);
+}
+
+function formatTaskStatusMessage(progress: {
+  current: number;
+  total?: number;
+  message?: string;
+}): string {
+  if (progress.total !== undefined) {
+    return progress.message
+      ? `${progress.message} (${progress.current}/${progress.total})`
+      : `${progress.current}/${progress.total}`;
+  }
+  return progress.message ?? `${progress.current}`;
+}
+
+async function updateTaskStoreProgress(
+  extra: ToolExtra,
+  progress: { current: number; total?: number; message?: string }
+): Promise<void> {
   const taskExtra = extra as Record<string, unknown>;
   if (
     typeof taskExtra.taskId === 'string' &&
@@ -420,27 +447,24 @@ async function reportProgress(
     const store = taskExtra.taskStore as Record<string, unknown>;
     if (typeof store.updateTaskStatus === 'function') {
       try {
-        let statusMessage = progress.message;
-        if (progress.total !== undefined) {
-          statusMessage = statusMessage
-            ? `${statusMessage} (${progress.current}/${progress.total})`
-            : `${progress.current}/${progress.total}`;
-        } else {
-          statusMessage ??= `${progress.current}`;
-        }
         await (
           store.updateTaskStatus as (
             taskId: string,
             status: string,
             message?: string
           ) => Promise<void>
-        )(taskExtra.taskId, 'working', statusMessage);
+        )(taskExtra.taskId, 'working', formatTaskStatusMessage(progress));
       } catch (error) {
         console.error('Failed to update task status message:', error);
       }
     }
   }
+}
 
+async function sendMcpProgressNotification(
+  extra: ToolExtra,
+  progress: { current: number; total?: number; message?: string }
+): Promise<void> {
   if (canSendProgress(extra)) {
     try {
       await extra.sendNotification({

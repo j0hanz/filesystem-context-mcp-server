@@ -414,10 +414,65 @@ function sendJsonRpcError(
 
 const LOCALHOST_ORIGIN_RE =
   /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/u;
+const MAX_SESSION_ID_LENGTH = 256;
+const MAX_BEARER_TOKEN_LENGTH = 4096;
+const JSON_RPC_SERVER_ERROR = -32000;
+const JSON_RPC_INVALID_REQUEST = -32600;
+const JSON_RPC_PARSE_ERROR = -32700;
+const JSON_RPC_INTERNAL_ERROR = -32603;
 
 function isAllowedOrigin(origin: string | undefined): boolean {
   if (origin === undefined) return true; // Non-browser clients omit Origin.
   return LOCALHOST_ORIGIN_RE.test(origin);
+}
+
+function getSessionId(req: http.IncomingMessage): string | undefined {
+  const rawSessionId = req.headers['mcp-session-id'];
+  return typeof rawSessionId === 'string' &&
+    rawSessionId.length <= MAX_SESSION_ID_LENGTH
+    ? rawSessionId
+    : undefined;
+}
+
+function isAuthorizedBearer(apiKey: string, authHeader: unknown): boolean {
+  const bearerPrefix = 'Bearer ';
+  if (typeof authHeader !== 'string' || !authHeader.startsWith(bearerPrefix)) {
+    return false;
+  }
+
+  const userKey = authHeader.slice(bearerPrefix.length);
+  if (userKey.length > MAX_BEARER_TOKEN_LENGTH) {
+    return false;
+  }
+
+  const expectedHash = createHash('sha256').update(apiKey).digest();
+  const actualHash = createHash('sha256').update(userKey).digest();
+  return timingSafeEqual(expectedHash, actualHash);
+}
+
+function writeUnauthorizedResponse(res: http.ServerResponse): void {
+  res.writeHead(401, {
+    'Content-Type': 'application/json',
+    'WWW-Authenticate': 'Bearer',
+  });
+  res.end(
+    JSON.stringify({
+      jsonrpc: '2.0',
+      error: { code: JSON_RPC_SERVER_ERROR, message: 'Unauthorized' },
+      id: null,
+    })
+  );
+}
+
+function ensureAuthorizedRequest(
+  req: http.IncomingMessage,
+  res: http.ServerResponse
+): boolean {
+  const apiKey = process.env['FILESYSTEM_MCP_API_KEY'];
+  if (!apiKey) return true;
+  if (isAuthorizedBearer(apiKey, req.headers['authorization'])) return true;
+  writeUnauthorizedResponse(res);
+  return false;
 }
 
 function discardRequestBody(req: http.IncomingMessage): void {
@@ -437,6 +492,19 @@ async function handleSessionTransportRequest(
     session.rootsManager.getAllowedDirectoriesState(),
     () => session.transport.handleRequest(req, res, body)
   );
+}
+
+function getSessionOrRespondNotFound(
+  sessions: Map<string, HttpSession>,
+  sessionId: string,
+  res: http.ServerResponse
+): HttpSession | undefined {
+  const session = sessions.get(sessionId);
+  if (!session) {
+    sendJsonRpcError(res, 404, JSON_RPC_SERVER_ERROR, 'Session not found');
+    return undefined;
+  }
+  return session;
 }
 
 function isLoopbackHttpHost(host: string): boolean {
@@ -470,68 +538,32 @@ export async function startHttpServer(
     res: http.ServerResponse
   ): Promise<void> {
     const { method } = req;
-    const MAX_SESSION_ID_LENGTH = 256;
-    const rawSessionId = req.headers['mcp-session-id'];
-    const sessionId =
-      typeof rawSessionId === 'string' &&
-      rawSessionId.length <= MAX_SESSION_ID_LENGTH
-        ? rawSessionId
-        : undefined;
+    const sessionId = getSessionId(req);
 
     const { origin } = req.headers;
     if (!isAllowedOrigin(origin)) {
-      sendJsonRpcError(res, 403, -32000, 'Forbidden: disallowed origin');
+      sendJsonRpcError(
+        res,
+        403,
+        JSON_RPC_SERVER_ERROR,
+        'Forbidden: disallowed origin'
+      );
       return;
     }
 
-    const apiKey = process.env['FILESYSTEM_MCP_API_KEY'];
-    if (apiKey) {
-      const authHeader = req.headers['authorization'];
-      const bearerPrefix = 'Bearer ';
-      let authorized = false;
-      if (
-        typeof authHeader === 'string' &&
-        authHeader.startsWith(bearerPrefix)
-      ) {
-        const userKey = authHeader.slice(bearerPrefix.length);
-        if (userKey.length <= 4096) {
-          const expectedHash = createHash('sha256').update(apiKey).digest();
-          const actualHash = createHash('sha256').update(userKey).digest();
-          authorized = timingSafeEqual(expectedHash, actualHash);
-        }
-      }
-      if (!authorized) {
-        res.writeHead(401, {
-          'Content-Type': 'application/json',
-          'WWW-Authenticate': 'Bearer',
-        });
-        res.end(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            error: { code: -32000, message: 'Unauthorized' },
-            id: null,
-          })
-        );
-        return;
-      }
-    }
+    if (!ensureAuthorizedRequest(req, res)) return;
 
     try {
       if (method === 'POST') {
         if (sessionId) {
-          if (!sessions.has(sessionId)) {
-            sendJsonRpcError(res, 404, -32000, 'Session not found');
+          const session = getSessionOrRespondNotFound(sessions, sessionId, res);
+          if (!session) {
             discardRequestBody(req);
             return;
           }
 
           const body = await readRequestBody(req);
-          const session = sessions.get(sessionId);
-          if (session) {
-            await handleSessionTransportRequest(session, req, res, body);
-          } else {
-            sendJsonRpcError(res, 404, -32000, 'Session not found');
-          }
+          await handleSessionTransportRequest(session, req, res, body);
           return;
         }
 
@@ -544,7 +576,12 @@ export async function startHttpServer(
             10_000
           );
           if (sessions.size >= maxSessions) {
-            sendJsonRpcError(res, 503, -32000, 'Too many sessions');
+            sendJsonRpcError(
+              res,
+              503,
+              JSON_RPC_SERVER_ERROR,
+              'Too many sessions'
+            );
             return;
           }
           const session = await createHttpSession(options, sessions);
@@ -555,27 +592,24 @@ export async function startHttpServer(
         sendJsonRpcError(
           res,
           400,
-          -32000,
+          JSON_RPC_SERVER_ERROR,
           'Bad Request: No valid session ID provided'
         );
         discardRequestBody(req);
       } else if (method === 'GET' || method === 'DELETE') {
         if (!sessionId) {
-          sendJsonRpcError(res, 400, -32000, 'Bad Request: Missing session ID');
+          sendJsonRpcError(
+            res,
+            400,
+            JSON_RPC_SERVER_ERROR,
+            'Bad Request: Missing session ID'
+          );
           return;
         }
 
-        if (!sessions.has(sessionId)) {
-          sendJsonRpcError(res, 404, -32000, 'Session not found');
-          return;
-        }
-
-        const session = sessions.get(sessionId);
-        if (session) {
-          await handleSessionTransportRequest(session, req, res);
-        } else {
-          sendJsonRpcError(res, 404, -32000, 'Session not found');
-        }
+        const session = getSessionOrRespondNotFound(sessions, sessionId, res);
+        if (!session) return;
+        await handleSessionTransportRequest(session, req, res);
       } else {
         res.writeHead(405, {
           Allow: 'GET, POST, DELETE',
@@ -584,14 +618,20 @@ export async function startHttpServer(
         res.end(
           JSON.stringify({
             jsonrpc: '2.0',
-            error: { code: -32000, message: 'Method Not Allowed' },
+            error: {
+              code: JSON_RPC_SERVER_ERROR,
+              message: 'Method Not Allowed',
+            },
             id: null,
           })
         );
       }
     } catch (error: unknown) {
       if (error instanceof RequestBodyError && !res.headersSent) {
-        const rpcCode = error.statusCode === 413 ? -32600 : -32700;
+        const rpcCode =
+          error.statusCode === 413
+            ? JSON_RPC_INVALID_REQUEST
+            : JSON_RPC_PARSE_ERROR;
         res.setHeader('Connection', 'close');
         sendJsonRpcError(res, error.statusCode, rpcCode, error.message);
         return;
@@ -601,7 +641,12 @@ export async function startHttpServer(
         formatUnknownErrorMessage(error)
       );
       if (!res.headersSent) {
-        sendJsonRpcError(res, 500, -32603, 'Internal Server Error');
+        sendJsonRpcError(
+          res,
+          500,
+          JSON_RPC_INTERNAL_ERROR,
+          'Internal Server Error'
+        );
       }
     }
   }

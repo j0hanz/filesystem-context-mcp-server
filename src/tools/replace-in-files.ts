@@ -69,6 +69,7 @@ const MAX_FAILURES = 20;
 const REPLACE_CONCURRENCY = Math.min(PARALLEL_CONCURRENCY, 8);
 const MAX_CHANGED_FILES = 100;
 const MAX_DIFF_SIZE = 20 * 1024; // 20KB limit for diff output
+const DIFF_APPEND_BUFFER = 1024;
 
 interface Failure {
   path: string;
@@ -167,13 +168,18 @@ function formatFileTooLargeError(
 
 async function processEntry(
   entryPath: string,
-  options: { dryRun: boolean; returnDiff: boolean },
-  replacement: string,
-  matcher: ReplacementMatcher,
-  maxFileSize: number,
-  signal: AbortSignal | undefined,
-  summary: ReplaceSummary
+  context: {
+    options: { dryRun: boolean; returnDiff: boolean };
+    replacement: string;
+    matcher: ReplacementMatcher;
+    maxFileSize: number;
+    signal: AbortSignal | undefined;
+    summary: ReplaceSummary;
+  }
 ): Promise<void> {
+  const { options, replacement, matcher, maxFileSize, signal, summary } =
+    context;
+
   let validPath: string;
   try {
     validPath = await validatePathForWrite(entryPath, signal);
@@ -212,26 +218,12 @@ async function processEntry(
 
       const newContent = matcher.replace(content, replacement);
 
-      if (!options.dryRun && !options.returnDiff) {
-        // No diff requested — skip
-      } else if (summary.diff.length >= MAX_DIFF_SIZE) {
-        summary.diffTruncated = true;
-      } else {
-        const patch = createTwoFilesPatch(
-          path.basename(validPath),
-          path.basename(validPath),
-          content,
-          newContent,
-          'Original',
-          'Modified'
-        );
-        // Only append if it won't exceed the limit too much
-        if (summary.diff.length + patch.length <= MAX_DIFF_SIZE + 1024) {
-          summary.diff += patch;
-        } else {
-          summary.diffTruncated = true;
-        }
-      }
+      maybeAppendPatchDiff(summary, {
+        filePath: validPath,
+        originalContent: content,
+        updatedContent: newContent,
+        includeDiff: options.dryRun || options.returnDiff,
+      });
 
       if (!options.dryRun) {
         await atomicWriteFile(validPath, newContent, {
@@ -247,6 +239,41 @@ async function processEntry(
       error: formatUnknownErrorMessage(error),
     });
   }
+}
+
+function maybeAppendPatchDiff(
+  summary: ReplaceSummary,
+  params: {
+    filePath: string;
+    originalContent: string;
+    updatedContent: string;
+    includeDiff: boolean;
+  }
+): void {
+  if (!params.includeDiff) return;
+  if (summary.diff.length >= MAX_DIFF_SIZE) {
+    summary.diffTruncated = true;
+    return;
+  }
+
+  const patch = createTwoFilesPatch(
+    path.basename(params.filePath),
+    path.basename(params.filePath),
+    params.originalContent,
+    params.updatedContent,
+    'Original',
+    'Modified'
+  );
+
+  if (
+    summary.diff.length + patch.length <=
+    MAX_DIFF_SIZE + DIFF_APPEND_BUFFER
+  ) {
+    summary.diff += patch;
+    return;
+  }
+
+  summary.diffTruncated = true;
 }
 
 async function processEntriesConcurrently(
@@ -391,18 +418,17 @@ export async function handleSearchAndReplace(
       });
     },
     runEntry: async (entryPath: string) =>
-      processEntry(
-        entryPath,
-        {
+      processEntry(entryPath, {
+        options: {
           dryRun: args.dryRun,
           returnDiff: args.returnDiff ?? false,
         },
-        args.replacement,
+        replacement: args.replacement,
         matcher,
         maxFileSize,
         signal,
-        summary
-      ),
+        summary,
+      }),
   });
   if (stoppedByLimit) {
     summary.stoppedReason = 'maxFiles';
