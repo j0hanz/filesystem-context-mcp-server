@@ -2,7 +2,7 @@
   "name": "@j0hanz/filesystem-mcp",
   "version": "1.9.1",
   "mcpName": "io.github.j0hanz/filesystem-mcp",
-  "description": "MCP server for local filesystem access — read, write, search, diff, patch, and manage files. Designed for LLMs and AI agents to interact with the filesystem safely and efficiently.",
+  "description": "A local filesystem MCP server that lets LLMs and AI agents read, write, search, diff, patch, and manage files safely and efficiently. Built for reliable, structured, and controlled filesystem interaction.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
