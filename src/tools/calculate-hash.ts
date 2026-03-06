@@ -52,6 +52,7 @@ export const CALCULATE_HASH_TOOL: ToolContract = {
   nuances: [
     'Directory hashing respects root `.gitignore` and sorts paths for stable output.',
   ],
+  taskSupport: 'optional',
 } as const;
 
 async function hashFile(

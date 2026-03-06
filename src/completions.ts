@@ -14,6 +14,7 @@ import { isRecord } from './lib/utils.js';
 
 const MAX_COMPLETION_ITEMS = 100;
 const COMPLETION_RATE_LIMIT_MS = 100;
+const MAX_COMPLETION_CACHE_KEYS = 128;
 
 interface CompletionState {
   lastCallMs: Map<string, number>;
@@ -168,6 +169,62 @@ function extractContextArguments(
   }
   if (count === 0) return undefined;
   return normalized;
+}
+
+function serializeCompletionRef(ref: unknown): {
+  type: string;
+  name?: string;
+  uri?: string;
+} {
+  if (!isRecord(ref) || typeof ref['type'] !== 'string') {
+    return { type: 'unknown' };
+  }
+  if (ref['type'] === 'ref/prompt' && typeof ref['name'] === 'string') {
+    return { type: ref['type'], name: ref['name'] };
+  }
+  if (ref['type'] === 'ref/resource' && typeof ref['uri'] === 'string') {
+    return { type: ref['type'], uri: ref['uri'] };
+  }
+  return { type: ref['type'] };
+}
+
+function serializeContextArguments(
+  contextArguments: Record<string, string> | undefined
+): [string, string][] {
+  if (!contextArguments) return [];
+  return Object.entries(contextArguments).sort(([left], [right]) =>
+    left.localeCompare(right)
+  );
+}
+
+function buildCompletionCacheKey(params: {
+  argumentName: string;
+  value: string;
+  ref: unknown;
+  contextArguments?: Record<string, string>;
+}): string {
+  return JSON.stringify({
+    argumentName: params.argumentName.toLowerCase(),
+    value: params.value,
+    ref: serializeCompletionRef(params.ref),
+    contextArguments: serializeContextArguments(params.contextArguments),
+  });
+}
+
+function rememberCompletionCacheValue<T>(
+  cache: Map<string, T>,
+  key: string,
+  value: T
+): void {
+  if (cache.has(key)) {
+    cache.delete(key);
+  }
+  cache.set(key, value);
+  while (cache.size > MAX_COMPLETION_CACHE_KEYS) {
+    const oldest = cache.keys().next();
+    if (oldest.done) break;
+    cache.delete(oldest.value);
+  }
 }
 
 function hasTrailingSeparator(value: string): boolean {
@@ -547,11 +604,18 @@ export function registerCompletions(
       return { completion: { values: [], total: 0, hasMore: false } };
     }
 
+    const contextArguments = extractContextArguments(params.context);
+    const cacheKey = buildCompletionCacheKey({
+      argumentName: argName,
+      value: argument.value,
+      ref,
+      ...(contextArguments ? { contextArguments } : {}),
+    });
     const now = Date.now();
     const sessionState = getCompletionState(server);
-    const lastCallMs = sessionState.lastCallMs.get(argName) ?? 0;
+    const lastCallMs = sessionState.lastCallMs.get(cacheKey) ?? 0;
     if (now - lastCallMs < COMPLETION_RATE_LIMIT_MS) {
-      const lastResult = sessionState.lastResult.get(argName);
+      const lastResult = sessionState.lastResult.get(cacheKey);
       if (lastResult) {
         return {
           completion: {
@@ -563,16 +627,19 @@ export function registerCompletions(
       }
       return { completion: { values: [], total: 0, hasMore: false } };
     }
-    sessionState.lastCallMs.set(argName, now);
+    rememberCompletionCacheValue(sessionState.lastCallMs, cacheKey, now);
 
-    const contextArguments = extractContextArguments(params.context);
     const { value } = argument;
     const completions = await getPathCompletions(value, {
       argumentName: argName,
       ...(contextArguments ? { contextArguments } : {}),
     });
 
-    sessionState.lastResult.set(argName, completions);
+    rememberCompletionCacheValue(
+      sessionState.lastResult,
+      cacheKey,
+      completions
+    );
 
     return {
       completion: {

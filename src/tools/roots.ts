@@ -34,6 +34,7 @@ export const LIST_ALLOWED_DIRECTORIES_TOOL: ToolContract = {
   outputSchema: ListAllowedDirectoriesOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   nuances: ['Returns absolute paths of all allowed directories.'],
+  taskSupport: 'optional',
 } as const;
 
 function buildTextRoots(dirs: string[]): string {

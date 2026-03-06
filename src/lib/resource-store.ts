@@ -50,7 +50,7 @@ interface ResourceStoreDiagnosticsEvent {
   uri?: string;
   name?: string;
   bytes?: number;
-  reason?: 'entry_too_large' | 'evicted_immediately' | 'not_found';
+  reason?: 'entry_too_large' | 'evicted_immediately' | 'expired' | 'not_found';
 }
 
 const RESOURCE_STORE_DIAGNOSTICS_CHANNEL = channel(
@@ -70,6 +70,15 @@ function estimateBytes(text: string): number {
 
 function computeSha256(text: string): string {
   return hash('sha256', text, 'hex');
+}
+
+function buildIndexKey(mimeType: string, contentHash: string): string {
+  return `${mimeType}:${contentHash}`;
+}
+
+function isExpired(entry: TextResourceEntry, now = Date.now()): boolean {
+  const expiresAt = Date.parse(entry.expiresAt);
+  return Number.isFinite(expiresAt) && expiresAt <= now;
 }
 
 function createTextEntry(params: {
@@ -101,24 +110,39 @@ export function createInMemoryResourceStore(
   };
 
   const byUri = new Map<string, TextResourceEntry>();
-  const byHashIndex = new Map<string, string>(); // sha256hex → uri
+  const byHashIndex = new Map<string, string>(); // mimeType:sha256hex -> uri
   let totalBytes = 0;
 
-  function evictOldest(): void {
-    const first = byUri.keys().next();
-    if (first.done) return;
-    const uri = first.value;
+  function removeEntry(
+    uri: string,
+    reason?: ResourceStoreDiagnosticsEvent['reason']
+  ): void {
     const existing = byUri.get(uri);
     if (!existing) return;
     totalBytes -= existing.size;
     byUri.delete(uri);
-    byHashIndex.delete(existing.hash);
+    byHashIndex.delete(buildIndexKey(existing.mimeType, existing.hash));
     publishResourceStoreDiagnostics({
       phase: 'cache_evict',
       uri,
       name: existing.name,
       bytes: existing.size,
+      ...(reason !== undefined ? { reason } : {}),
     });
+  }
+
+  function evictOldest(): void {
+    const first = byUri.keys().next();
+    if (first.done) return;
+    removeEntry(first.value);
+  }
+
+  function pruneExpiredEntries(now = Date.now()): void {
+    for (const [uri, entry] of byUri) {
+      if (isExpired(entry, now)) {
+        removeEntry(uri, 'expired');
+      }
+    }
   }
 
   function enforceLimits(): void {
@@ -134,6 +158,8 @@ export function createInMemoryResourceStore(
     mimeType?: string;
     text: string;
   }): TextResourceEntry {
+    pruneExpiredEntries();
+
     const mimeType = params.mimeType ?? 'text/plain';
     const entryBytes = estimateBytes(params.text);
     if (entryBytes > resolved.maxEntryBytes) {
@@ -149,17 +175,24 @@ export function createInMemoryResourceStore(
     }
 
     const contentHash = computeSha256(params.text);
-    const existingUri = byHashIndex.get(contentHash);
+    const indexKey = buildIndexKey(mimeType, contentHash);
+    const existingUri = byHashIndex.get(indexKey);
     if (existingUri !== undefined) {
       const cached = byUri.get(existingUri);
       if (cached !== undefined) {
-        publishResourceStoreDiagnostics({
-          phase: 'cache_hit',
-          uri: cached.uri,
-          name: cached.name,
-          bytes: cached.size,
-        });
-        return cached;
+        if (isExpired(cached)) {
+          removeEntry(existingUri, 'expired');
+        } else {
+          publishResourceStoreDiagnostics({
+            phase: 'cache_hit',
+            uri: cached.uri,
+            name: cached.name,
+            bytes: cached.size,
+          });
+          return cached;
+        }
+      } else {
+        byHashIndex.delete(indexKey);
       }
     }
 
@@ -174,7 +207,7 @@ export function createInMemoryResourceStore(
     });
 
     byUri.set(uri, entry);
-    byHashIndex.set(contentHash, uri);
+    byHashIndex.set(indexKey, uri);
     totalBytes += entryBytes;
     publishResourceStoreDiagnostics({
       phase: 'cache_store',
@@ -215,6 +248,18 @@ export function createInMemoryResourceStore(
         `Resource not found: ${uri}. The cached result may have been evicted. Re-run the originating tool to regenerate.`
       );
     }
+    if (isExpired(existing)) {
+      removeEntry(uri, 'expired');
+      publishResourceStoreDiagnostics({
+        phase: 'cache_miss',
+        uri,
+        reason: 'expired',
+      });
+      throw new McpError(
+        ErrorCode.E_NOT_FOUND,
+        `Resource expired: ${uri}. Re-run the originating tool to regenerate.`
+      );
+    }
     publishResourceStoreDiagnostics({
       phase: 'cache_hit',
       uri: existing.uri,
@@ -236,6 +281,7 @@ export function createInMemoryResourceStore(
   }
 
   function keys(): string[] {
+    pruneExpiredEntries();
     return Array.from(byUri.keys());
   }
 

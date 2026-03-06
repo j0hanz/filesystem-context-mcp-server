@@ -20,6 +20,11 @@ function toEntry(contract: ToolContract): ToolEntry {
   if (contract.annotations?.destructiveHint) annotations.push('[Destructive]');
   if (contract.annotations?.idempotentHint) annotations.push('[Idempotent]');
   if (contract.annotations?.readOnlyHint) annotations.push('[Read-Only]');
+  if (
+    contract.taskSupport === 'optional' ||
+    contract.taskSupport === 'required'
+  )
+    annotations.push('[Task]');
 
   return {
     name: contract.name,
@@ -38,14 +43,41 @@ const ENTRIES = Object.fromEntries(
   ALL_TOOLS.map((contract) => [contract.name, toEntry(contract)])
 ) as Record<string, ToolEntry>;
 
+const CONTRACTS_BY_NAME = new Map(
+  ALL_TOOLS.map((contract) => [contract.name, contract] as const)
+);
+
 export function getToolContracts(): ToolContract[] {
   return ALL_TOOLS;
 }
 
+export function getSortedToolContracts(): ToolContract[] {
+  return [...ALL_TOOLS].sort((left, right) =>
+    left.name.localeCompare(right.name)
+  );
+}
+
+export function pickAvailableToolNames(names: readonly string[]): string[] {
+  return names.filter((name) => CONTRACTS_BY_NAME.has(name));
+}
+
+export function formatToolNameList(names: readonly string[]): string {
+  return names.map((name) => `\`${name}\``).join(', ');
+}
+
+export function getTaskCapableToolNames(): string[] {
+  return getSortedToolContracts()
+    .filter(
+      (contract) =>
+        contract.taskSupport === 'optional' ||
+        contract.taskSupport === 'required'
+    )
+    .map((contract) => contract.name);
+}
+
 export function buildCoreContextPack(): string {
-  const names = Object.keys(ENTRIES).sort((a, b) => a.localeCompare(b));
-  const rows = names.map((name) => {
-    const e = ENTRIES[name];
+  const rows = getSortedToolContracts().map((contract) => {
+    const e = ENTRIES[contract.name];
     if (!e) return '';
     const annotations = e.annotations ? ` ${e.annotations.join(' ')}` : '';
     return `| \`${e.name}\` | ${e.description}${annotations} |`;

@@ -2,22 +2,55 @@ import type { ToolContract } from '../tools/contract.js';
 import { buildToolCatalogDetailsOnly } from './tool-catalog.js';
 import {
   buildCoreContextPack,
+  formatToolNameList,
   getSharedConstraints,
+  getTaskCapableToolNames,
   getToolContracts,
+  pickAvailableToolNames,
 } from './tool-info.js';
 import { buildWorkflowGuide } from './workflows.js';
 
-const INSTRUCTIONS_HEADER = `<role>
+function buildToolsOverview(): string {
+  const rows: [string, string[]][] = [
+    ['Navigate', pickAvailableToolNames(['roots', 'ls', 'tree', 'find'])],
+    [
+      'Inspect',
+      pickAvailableToolNames(['stat', 'stat_many', 'grep', 'calculate_hash']),
+    ],
+    ['Read', pickAvailableToolNames(['read', 'read_many', 'diff_files'])],
+    [
+      'Write',
+      pickAvailableToolNames([
+        'mkdir',
+        'write',
+        'edit',
+        'mv',
+        'rm',
+        'apply_patch',
+        'search_and_replace',
+      ]),
+    ],
+  ];
+
+  return rows
+    .filter(([, names]) => names.length > 0)
+    .map(
+      ([category, names]) => `| ${category} | ${formatToolNameList(names)} |`
+    )
+    .join('\n');
+}
+
+function buildInstructionsHeader(): string {
+  const taskCapable = formatToolNameList(getTaskCapableToolNames());
+
+  return `<role>
 Filesystem agent. Scope: allowed roots only. Discover paths before acting — never guess.
 </role>
 
 <tools_overview>
 | Category | Tools |
 |----------|-------|
-| Navigate | \`roots\`, \`ls\`, \`tree\`, \`find\` |
-| Inspect  | \`stat\`, \`stat_many\`, \`grep\`, \`calculate_hash\` |
-| Read     | \`read\`, \`read_many\`, \`diff_files\` |
-| Write    | \`mkdir\`, \`write\`, \`edit\`, \`mv\`, \`rm\`, \`apply_patch\`, \`search_and_replace\` |
+${buildToolsOverview()}
 </tools_overview>
 
 <resources>
@@ -31,9 +64,10 @@ Filesystem agent. Scope: allowed roots only. Discover paths before acting — ne
 
 <task_protocol>
 Async execution: pass \`_meta.progressToken\` in \`tools/call\`, poll \`tasks/get\`, then call \`tasks/result\`.
-Task-capable: \`find\`, \`tree\`, \`read\`, \`read_many\`, \`stat_many\`, \`grep\`, \`mkdir\`, \`write\`, \`mv\`, \`rm\`, \`calculate_hash\`, \`apply_patch\`, \`search_and_replace\`.
+Task-capable: ${taskCapable}.
 </task_protocol>
 `;
+}
 
 const INSTRUCTIONS_FOOTER = `<constraints>
 ${getSharedConstraints()
@@ -66,7 +100,7 @@ function formatToolSection(tool: ToolContract): string {
 export function buildServerInstructions(): string {
   const toolSections = getToolContracts().map(formatToolSection).join('\n\n');
   return [
-    INSTRUCTIONS_HEADER,
+    buildInstructionsHeader(),
     buildCoreContextPack(),
     '',
     buildToolCatalogDetailsOnly(),

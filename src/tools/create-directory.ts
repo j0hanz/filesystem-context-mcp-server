@@ -36,6 +36,7 @@ export const CREATE_DIRECTORY_TOOL: ToolContract = {
   outputSchema: CreateDirectoryOutputSchema,
   annotations: IDEMPOTENT_WRITE_TOOL_ANNOTATIONS,
   nuances: ['Succeeds silently if the directory already exists (idempotent).'],
+  taskSupport: 'optional',
 } as const;
 
 export async function handleCreateDirectory(

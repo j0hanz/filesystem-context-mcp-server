@@ -40,6 +40,7 @@ export const EDIT_FILE_TOOL: ToolContract = {
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   nuances: ['Each edit applies to the output of the previous edit.'],
   gotchas: ['Unmatched `oldText` entries listed in `unmatchedEdits`.'],
+  taskSupport: 'optional',
 } as const;
 
 interface EditResult {

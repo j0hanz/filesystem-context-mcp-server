@@ -37,6 +37,7 @@ export const WRITE_FILE_TOOL: ToolContract = {
   gotchas: [
     '`write` replaces ALL existing content — use `edit` for partial updates.',
   ],
+  taskSupport: 'optional',
 } as const;
 
 async function handleWriteFile(

@@ -45,6 +45,7 @@ export const MOVE_FILE_TOOL: ToolContract = {
   gotchas: [
     'On POSIX, an existing destination is silently overwritten; on Windows, rename fails with EEXIST if destination exists.',
   ],
+  taskSupport: 'optional',
 } as const;
 
 export async function handleMoveFile(

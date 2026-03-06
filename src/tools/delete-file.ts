@@ -37,6 +37,7 @@ export const DELETE_FILE_TOOL: ToolContract = {
     'No undo — deletion is permanent.',
     'Non-empty directories require `recursive=true`.',
   ],
+  taskSupport: 'optional',
 } as const;
 
 async function handleDeleteFile(

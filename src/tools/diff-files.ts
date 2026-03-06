@@ -40,6 +40,7 @@ export const DIFF_FILES_TOOL: ToolContract = {
   outputSchema: DiffFilesOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   gotchas: ['`isIdentical=true` means no hunks (`@@`) and empty diff.'],
+  taskSupport: 'optional',
 } as const;
 
 function computeDiffStats(patch: string): {
