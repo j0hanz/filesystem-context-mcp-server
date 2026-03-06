@@ -25,7 +25,7 @@ import {
 } from './tools/list-directory.js';
 import { MOVE_FILE_TOOL, registerMoveFileTool } from './tools/move-file.js';
 import {
-  READ_MULTIPLE_FILES_TOOL,
+  READ_MANY_TOOL,
   registerReadMultipleFilesTool,
 } from './tools/read-multiple.js';
 import { READ_FILE_TOOL, registerReadFileTool } from './tools/read.js';
@@ -71,7 +71,7 @@ const TOOL_ENTRIES: ToolEntry[] = [
   { contract: TREE_TOOL, register: registerTreeTool },
   { contract: READ_FILE_TOOL, register: registerReadFileTool },
   {
-    contract: READ_MULTIPLE_FILES_TOOL,
+    contract: READ_MANY_TOOL,
     register: registerReadMultipleFilesTool,
   },
   { contract: GET_FILE_INFO_TOOL, register: registerGetFileInfoTool },

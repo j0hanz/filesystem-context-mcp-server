@@ -33,8 +33,12 @@ import {
 } from './shared.js';
 import { registerToolTaskIfAvailable } from './task-support.js';
 
-export const READ_MULTIPLE_FILES_TOOL: ToolContract = {
-  name: 'read_many',
+const READ_MANY_TOOL_NAME = 'read_many';
+const READ_MANY_TOOL_LABEL = '🕮 read_many';
+const FULL_FILE_CONTENTS_DESCRIPTION = 'Full file contents';
+
+export const READ_MANY_TOOL: ToolContract = {
+  name: READ_MANY_TOOL_NAME,
   title: 'Read Multiple Files',
   description:
     'Read multiple text files in one request with contents and metadata. ' +
@@ -49,7 +53,9 @@ export const READ_MULTIPLE_FILES_TOOL: ToolContract = {
   ],
 } as const;
 
-type ReadManyStructuredResult = z.infer<typeof ReadMultipleFilesOutputSchema>;
+type ReadManyInput = z.infer<typeof ReadMultipleFilesInputSchema>;
+type ReadManyOutput = z.infer<typeof ReadMultipleFilesOutputSchema>;
+type ReadManyStructuredResult = ReadManyOutput;
 type ReadManyStructuredResultItem = NonNullable<
   ReadManyStructuredResult['results']
 >[number];
@@ -60,28 +66,39 @@ type ReadManyResultWithResource = ReadManyResult & {
   truncationReason?: ReadManyTruncationReason;
 };
 
+function buildReadManyResourceName(filePath: string): string {
+  return `read:${path.basename(filePath)}`;
+}
+
 function toStructuredReadManyResult(
   result: ReadManyResultWithResource
 ): ReadManyStructuredResultItem {
-  return {
+  const structuredResult: ReadManyStructuredResultItem = {
     path: result.path,
-    ...(result.content !== undefined ? { content: result.content } : {}),
-    ...(result.truncated ? { truncated: result.truncated } : {}),
-    ...(result.resourceUri ? { resourceUri: result.resourceUri } : {}),
-    ...(result.head !== undefined ? { head: result.head } : {}),
-    ...(result.tail !== undefined ? { tail: result.tail } : {}),
-    ...(result.startLine !== undefined ? { startLine: result.startLine } : {}),
-    ...(result.endLine !== undefined ? { endLine: result.endLine } : {}),
-    ...(result.hasMoreLines ? { hasMoreLines: result.hasMoreLines } : {}),
-    ...(result.totalLines !== undefined
-      ? { totalLines: result.totalLines }
-      : {}),
-    ...(result.linesRead !== undefined ? { linesRead: result.linesRead } : {}),
-    ...(result.truncationReason
-      ? { truncationReason: result.truncationReason }
-      : {}),
-    ...(result.error ? { error: result.error } : {}),
   };
+
+  if (result.content !== undefined) structuredResult.content = result.content;
+  if (result.truncated) structuredResult.truncated = true;
+  if (result.resourceUri) structuredResult.resourceUri = result.resourceUri;
+  if (result.head !== undefined) structuredResult.head = result.head;
+  if (result.tail !== undefined) structuredResult.tail = result.tail;
+  if (result.startLine !== undefined) {
+    structuredResult.startLine = result.startLine;
+  }
+  if (result.endLine !== undefined) structuredResult.endLine = result.endLine;
+  if (result.hasMoreLines) structuredResult.hasMoreLines = true;
+  if (result.totalLines !== undefined) {
+    structuredResult.totalLines = result.totalLines;
+  }
+  if (result.linesRead !== undefined) {
+    structuredResult.linesRead = result.linesRead;
+  }
+  if (result.truncationReason) {
+    structuredResult.truncationReason = result.truncationReason;
+  }
+  if (result.error) structuredResult.error = result.error;
+
+  return structuredResult;
 }
 
 function resolveReadManyTruncationReason(
@@ -111,7 +128,7 @@ function maybeExternalizeReadManyResult(
   const externalized = maybeExternalizeTextContent(
     resourceStore,
     result.content,
-    { name: `read:${path.basename(result.path)}`, mimeType: 'text/plain' }
+    { name: buildReadManyResourceName(result.path), mimeType: 'text/plain' }
   );
   if (!externalized) {
     return baseResult;
@@ -126,73 +143,94 @@ function maybeExternalizeReadManyResult(
   };
 }
 
-function buildReadManyResourceLinks(
-  results: readonly ReadManyResultWithResource[]
-): ReturnType<typeof buildResourceLink>[] {
-  return results.flatMap((result) => {
-    if (!result.resourceUri) return [];
-    return [
-      buildResourceLink({
-        uri: result.resourceUri,
-        name: `read:${path.basename(result.path)}`,
-        description: 'Full file contents',
-      }),
-    ];
-  });
+function buildReadManyTextSection(result: ReadManyResultWithResource): string {
+  const header = `=== ${result.path} ===`;
+  if (result.error) {
+    return `${header}\nError: ${result.error}`;
+  }
+
+  return `${header}\n${result.content ?? ''}`;
 }
 
-function buildReadManyTextResult(
-  results: readonly ReadManyResultWithResource[]
-): string {
-  return results
-    .map((result) => {
-      const header = `=== ${result.path} ===`;
-      if (result.error) {
-        return `${header}\nError: ${result.error}`;
-      }
-      return `${header}\n${result.content ?? ''}`;
-    })
-    .join('\n\n');
+function buildReadMultipleOptions(
+  args: ReadManyInput,
+  signal?: AbortSignal,
+  onReadComplete?: () => void
+): Parameters<typeof readMultipleFiles>[1] {
+  const options: Parameters<typeof readMultipleFiles>[1] = {};
+
+  if (signal) options.signal = signal;
+  if (args.head !== undefined) options.head = args.head;
+  if (args.tail !== undefined) options.tail = args.tail;
+  if (args.startLine !== undefined) options.startLine = args.startLine;
+  if (args.endLine !== undefined) options.endLine = args.endLine;
+  if (onReadComplete) options.onReadComplete = onReadComplete;
+
+  return options;
+}
+
+function buildReadManyResponsePayload(
+  results: readonly ReadManyResult[],
+  resourceStore?: ToolRegistrationOptions['resourceStore']
+): {
+  resourceLinks: ReturnType<typeof buildResourceLink>[];
+  structuredResults: ReadManyStructuredResultItem[];
+  summary: ReadManyStructuredResult['summary'];
+  text: string;
+} {
+  const resourceLinks: ReturnType<typeof buildResourceLink>[] = [];
+  const structuredResults: ReadManyStructuredResultItem[] = [];
+  const textSections: string[] = [];
+  let succeeded = 0;
+
+  for (const result of results) {
+    const mappedResult = maybeExternalizeReadManyResult(result, resourceStore);
+    structuredResults.push(toStructuredReadManyResult(mappedResult));
+    textSections.push(buildReadManyTextSection(mappedResult));
+
+    if (mappedResult.resourceUri) {
+      resourceLinks.push(
+        buildResourceLink({
+          uri: mappedResult.resourceUri,
+          name: buildReadManyResourceName(mappedResult.path),
+          description: FULL_FILE_CONTENTS_DESCRIPTION,
+        })
+      );
+    }
+
+    if (mappedResult.error === undefined) succeeded += 1;
+  }
+
+  const total = structuredResults.length;
+  return {
+    resourceLinks,
+    structuredResults,
+    summary: {
+      total,
+      succeeded,
+      failed: total - succeeded,
+    },
+    text: textSections.join('\n\n'),
+  };
 }
 
 async function handleReadMultipleFiles(
-  args: z.infer<typeof ReadMultipleFilesInputSchema>,
+  args: ReadManyInput,
   signal?: AbortSignal,
   resourceStore?: ToolRegistrationOptions['resourceStore'],
   onReadComplete?: () => void
-): Promise<ToolResponse<z.infer<typeof ReadMultipleFilesOutputSchema>>> {
-  const options: Parameters<typeof readMultipleFiles>[1] = {
-    ...(signal ? { signal } : {}),
-    ...(args.head !== undefined ? { head: args.head } : {}),
-    ...(args.tail !== undefined ? { tail: args.tail } : {}),
-    ...(args.startLine !== undefined ? { startLine: args.startLine } : {}),
-    ...(args.endLine !== undefined ? { endLine: args.endLine } : {}),
-    ...(onReadComplete ? { onReadComplete } : {}),
-  };
+): Promise<ToolResponse<ReadManyOutput>> {
+  const options = buildReadMultipleOptions(args, signal, onReadComplete);
   const results = await readMultipleFiles(args.paths, options);
+  const payload = buildReadManyResponsePayload(results, resourceStore);
 
-  const mappedResults = results.map((result) =>
-    maybeExternalizeReadManyResult(result, resourceStore)
-  );
-
-  const succeeded = mappedResults.filter((r) => r.error === undefined).length;
-  const failed = mappedResults.length - succeeded;
-
-  const structured: z.infer<typeof ReadMultipleFilesOutputSchema> = {
+  const structured: ReadManyOutput = {
     ok: true,
-    results: mappedResults.map((result) => toStructuredReadManyResult(result)),
-    summary: {
-      total: mappedResults.length,
-      succeeded,
-      failed,
-    },
+    results: payload.structuredResults,
+    summary: payload.summary,
   };
 
-  return buildToolResponse(
-    buildReadManyTextResult(mappedResults),
-    structured,
-    buildReadManyResourceLinks(mappedResults)
-  );
+  return buildToolResponse(payload.text, structured, payload.resourceLinks);
 }
 
 export function registerReadMultipleFilesTool(
@@ -200,12 +238,12 @@ export function registerReadMultipleFilesTool(
   options: ToolRegistrationOptions = {}
 ): void {
   const handler = (
-    args: z.infer<typeof ReadMultipleFilesInputSchema>,
+    args: ReadManyInput,
     extra: ToolExtra
-  ): Promise<ToolResult<z.infer<typeof ReadMultipleFilesOutputSchema>>> => {
+  ): Promise<ToolResult<ReadManyOutput>> => {
     const primaryPath = args.paths[0] ?? '';
     return executeToolWithDiagnostics({
-      toolName: 'read_many',
+      toolName: READ_MANY_TOOL_NAME,
       extra,
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: primaryPath },
@@ -214,7 +252,7 @@ export function registerReadMultipleFilesTool(
         const { progress, onItemComplete } = createBatchProgressCallbacks(
           extra,
           {
-            toolLabel: '🕮 read_many',
+            toolLabel: READ_MANY_TOOL_LABEL,
             context,
             totalItems: args.paths.length,
             itemVerb: 'read',
@@ -239,12 +277,12 @@ export function registerReadMultipleFilesTool(
 
           const finalCurrent = resolveFinalProgressCurrent(progress, total);
           progress.complete(
-            `🕮 read_many: ${context} • ${suffix}`,
+            `${READ_MANY_TOOL_LABEL}: ${context} • ${suffix}`,
             finalCurrent
           );
           return result;
         } catch (error) {
-          progress.fail(`🕮 read_many: ${context} • failed`);
+          progress.fail(`${READ_MANY_TOOL_LABEL}: ${context} • failed`);
           throw error;
         }
       },
@@ -265,8 +303,8 @@ export function registerReadMultipleFilesTool(
   if (
     registerToolTaskIfAvailable(
       server,
-      'read_many',
-      READ_MULTIPLE_FILES_TOOL,
+      READ_MANY_TOOL_NAME,
+      READ_MANY_TOOL,
       validatedHandler,
       options.iconInfo,
       options.isInitialized
@@ -274,8 +312,8 @@ export function registerReadMultipleFilesTool(
   )
     return;
   server.registerTool(
-    'read_many',
-    withDefaultIcons({ ...READ_MULTIPLE_FILES_TOOL }, options.iconInfo),
+    READ_MANY_TOOL_NAME,
+    withDefaultIcons({ ...READ_MANY_TOOL }, options.iconInfo),
     validatedHandler
   );
 }
