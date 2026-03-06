@@ -89,7 +89,6 @@ type ToolArgs<Args extends ZodRawShapeCompat | AnySchema | undefined> =
       ? SchemaOutput<Args>
       : undefined;
 
-const RELATED_TASK_META_KEY = 'io.modelcontextprotocol/related-task';
 const TASK_STATUS_NOTIFICATION_METHOD = 'notifications/tasks/status';
 
 interface TaskDiagnosticsEvent {
@@ -258,14 +257,6 @@ async function projectCancelledTaskStatus(
   return task;
 }
 
-function withRelatedTaskMeta(result: Result, taskId: string): Result {
-  const existingMeta = isRecord(result['_meta']) ? result['_meta'] : {};
-  return {
-    ...result,
-    _meta: { ...existingMeta, [RELATED_TASK_META_KEY]: { taskId } },
-  };
-}
-
 type TaskStatusNotificationSender = (notification: {
   method: typeof TASK_STATUS_NOTIFICATION_METHOD;
   params: TaskStatusNotificationParams;
@@ -380,9 +371,8 @@ async function tryStoreTaskResult(
   status: 'completed' | 'failed',
   result: Result
 ): Promise<void> {
-  const resultWithTaskMeta = withRelatedTaskMeta(result, taskId);
   try {
-    await taskStore.storeTaskResult(taskId, status, resultWithTaskMeta);
+    await taskStore.storeTaskResult(taskId, status, result);
   } catch (error) {
     if (await isTaskAlreadyTerminal(taskStore, taskId)) return;
     throw error;
@@ -609,7 +599,7 @@ export function createToolTaskHandler<
     const taskStore = getTaskStore(extra);
     const taskId = getTaskId(extra);
     const result = await taskStore.getTaskResult(taskId);
-    return normalizeCallToolResult(withRelatedTaskMeta(result, taskId));
+    return normalizeCallToolResult(result);
   }) as ToolTaskHandler<Args>['getTaskResult'];
 
   return {

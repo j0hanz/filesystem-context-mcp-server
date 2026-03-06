@@ -63,7 +63,8 @@ ${buildToolsOverview()}
 </resources>
 
 <task_protocol>
-Async execution: pass \`_meta.progressToken\` in \`tools/call\`, poll \`tasks/get\`, then call \`tasks/result\`.
+Task execution: Tools returning a task ID must be polled via \`tasks/get\`, then retrieved via \`tasks/result\`.
+Progress: Pass \`_meta.progressToken\` in \`tools/call\` to receive \`notifications/progress\`.
 Task-capable: ${taskCapable}.
 </task_protocol>
 `;
