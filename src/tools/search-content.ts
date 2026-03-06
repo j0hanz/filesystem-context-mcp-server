@@ -57,16 +57,105 @@ type SearchOutput = z.infer<typeof SearchContentOutputSchema>;
 type SearchMatchPayload = NonNullable<SearchOutput['matches']>[number];
 type SearchResultValue = Awaited<ReturnType<typeof searchContent>>;
 type SearchSummary = SearchResultValue['summary'];
+type SearchPatternType = SearchOutput['patternType'];
+type TruthySummaryField =
+  | 'filesMatched'
+  | 'skippedTooLarge'
+  | 'skippedBinary'
+  | 'skippedInaccessible'
+  | 'linesSkippedDueToRegexTimeout';
 
 type NormalizedSearchMatch = SearchResultValue['matches'][number] & {
   relativeFile: string;
   index: number;
 };
 
+interface SearchPreviewState {
+  needsExternalize: boolean;
+  visibleMatches: NormalizedSearchMatch[];
+  visiblePayloads: SearchMatchPayload[];
+  heading: string;
+}
+
 interface SearchContext {
   pattern: string;
   matcher?: RE2;
   caseSensitive: boolean;
+  foldedPattern?: string;
+}
+
+const TRUTHY_SUMMARY_FIELDS: readonly TruthySummaryField[] = [
+  'filesMatched',
+  'skippedTooLarge',
+  'skippedBinary',
+  'skippedInaccessible',
+  'linesSkippedDueToRegexTimeout',
+];
+
+function buildStructuredSummaryFields(
+  summary: SearchSummary
+): Partial<SearchOutput> {
+  const truthyFields = Object.fromEntries(
+    TRUTHY_SUMMARY_FIELDS.flatMap((key) => {
+      const value = summary[key];
+      return value ? [[key, value]] : [];
+    })
+  ) as Partial<SearchOutput>;
+
+  return {
+    ...truthyFields,
+    ...(summary.truncated ? { truncated: true } : {}),
+    ...(summary.stoppedReason ? { stoppedReason: summary.stoppedReason } : {}),
+  };
+}
+
+function buildCompletionSuffix(
+  count: number,
+  filesMatched: number,
+  scope: SearchInput['filePattern'],
+  stoppedReason?: SearchSummary['stoppedReason']
+): string {
+  if (count === 0) return `No matches in ${scope}`;
+
+  const matchWord = count === 1 ? 'match' : 'matches';
+  const fileWord = filesMatched === 1 ? 'file' : 'files';
+  const reasonSuffix =
+    stoppedReason !== undefined
+      ? ` [${CONFIG.COMPLETION_LABELS[stoppedReason]}]`
+      : '';
+
+  return `${count} ${matchWord} in ${filesMatched} ${fileWord}${reasonSuffix}`;
+}
+
+function compareNormalizedMatches(
+  left: NormalizedSearchMatch,
+  right: NormalizedSearchMatch
+): number {
+  const fileCompare = left.relativeFile.localeCompare(right.relativeFile);
+  if (fileCompare !== 0) return fileCompare;
+  if (left.line !== right.line) return left.line - right.line;
+  return left.index - right.index;
+}
+
+function buildSearchPreviewState(
+  matches: NormalizedSearchMatch[],
+  payloads: SearchMatchPayload[]
+): SearchPreviewState {
+  const needsExternalize = matches.length > CONFIG.MAX_INLINE_MATCHES;
+  const visibleCount = needsExternalize
+    ? CONFIG.MAX_INLINE_MATCHES
+    : matches.length;
+  const visibleMatches = matches.slice(0, visibleCount);
+
+  return {
+    needsExternalize,
+    visibleMatches,
+    visiblePayloads: payloads.slice(0, visibleCount),
+    heading: SearchResponseBuilder.buildHeading(
+      matches.length,
+      visibleMatches.length
+    ),
+  };
 }
 
 export const SEARCH_CONTENT_TOOL: ToolContract = {
@@ -93,6 +182,14 @@ export const SEARCH_CONTENT_TOOL: ToolContract = {
  * Handles formatting and building the search response.
  */
 const SearchResponseBuilder = {
+  buildHeading(totalMatches: number, visibleMatches: number): string {
+    if (visibleMatches >= totalMatches) {
+      return `Found ${totalMatches}:`;
+    }
+
+    return `Found ${totalMatches} (showing first ${visibleMatches}):`;
+  },
+
   buildText(
     heading: string,
     matches: readonly NormalizedSearchMatch[],
@@ -116,7 +213,7 @@ const SearchResponseBuilder = {
   buildStructured(
     summary: SearchSummary,
     matches: SearchMatchPayload[],
-    options: { patternType: 'literal' | 'regex'; caseSensitive: boolean }
+    options: { patternType: SearchPatternType; caseSensitive: boolean }
   ): SearchOutput {
     return {
       ok: true,
@@ -125,58 +222,31 @@ const SearchResponseBuilder = {
       matches,
       totalMatches: summary.matches,
       filesScanned: summary.filesScanned,
-      ...(summary.truncated ? { truncated: summary.truncated } : {}),
-      ...(summary.filesMatched ? { filesMatched: summary.filesMatched } : {}),
-      ...(summary.skippedTooLarge
-        ? { skippedTooLarge: summary.skippedTooLarge }
-        : {}),
-      ...(summary.skippedBinary
-        ? { skippedBinary: summary.skippedBinary }
-        : {}),
-      ...(summary.skippedInaccessible
-        ? { skippedInaccessible: summary.skippedInaccessible }
-        : {}),
-      ...(summary.linesSkippedDueToRegexTimeout
-        ? {
-            linesSkippedDueToRegexTimeout:
-              summary.linesSkippedDueToRegexTimeout,
-          }
-        : {}),
-      ...(summary.stoppedReason
-        ? { stoppedReason: summary.stoppedReason }
-        : {}),
+      ...buildStructuredSummaryFields(summary),
     };
   },
 
-  normalizeMatches(
-    result: SearchResultValue,
-    basePath: string
-  ): NormalizedSearchMatch[] {
+  normalizeMatches(result: SearchResultValue): NormalizedSearchMatch[] {
     const relativeByFile = new Map<string, string>();
-    const normalized: NormalizedSearchMatch[] = [];
 
-    // Pre-calculate relative paths efficiently
-    for (let i = 0; i < result.matches.length; i++) {
-      const match = result.matches[i];
-      if (!match) continue;
-      let relative = relativeByFile.get(match.file);
-      if (!relative) {
-        relative = path.relative(basePath, match.file);
-        relativeByFile.set(match.file, relative);
-      }
-      normalized.push({
-        ...match,
-        relativeFile: relative,
-        index: i,
-      } as NormalizedSearchMatch);
-    }
+    const getRelativeFile = (file: string): string => {
+      const cached = relativeByFile.get(file);
+      if (cached !== undefined) return cached;
 
-    return normalized.sort((a, b) => {
-      const fileCompare = a.relativeFile.localeCompare(b.relativeFile);
-      if (fileCompare !== 0) return fileCompare;
-      if (a.line !== b.line) return a.line - b.line;
-      return a.index - b.index;
-    });
+      const relative = path.relative(result.basePath, file);
+      relativeByFile.set(file, relative);
+      return relative;
+    };
+
+    return result.matches
+      .map(
+        (match, index): NormalizedSearchMatch => ({
+          ...match,
+          relativeFile: getRelativeFile(match.file),
+          index,
+        })
+      )
+      .sort(compareNormalizedMatches);
   },
 
   buildMatchPayloads(
@@ -236,7 +306,7 @@ const SearchResponseBuilder = {
         return idx >= 0 ? idx : undefined;
       }
       // Case-insensitive literal search
-      const idx = content.toLowerCase().indexOf(context.pattern.toLowerCase());
+      const idx = content.toLowerCase().indexOf(context.foldedPattern ?? '');
       return idx >= 0 ? idx : undefined;
     } catch {
       return undefined;
@@ -290,6 +360,20 @@ const SearchExecutor = {
       );
     }
   },
+
+  createSearchContext(
+    args: SearchInput,
+    matcher: RE2 | undefined
+  ): SearchContext {
+    return {
+      pattern: args.pattern,
+      caseSensitive: args.caseSensitive,
+      ...(matcher ? { matcher } : {}),
+      ...(!args.isRegex && !args.caseSensitive
+        ? { foldedPattern: args.pattern.toLowerCase() }
+        : {}),
+    };
+  },
 };
 
 async function handleSearchContent(
@@ -299,21 +383,13 @@ async function handleSearchContent(
   onProgress?: (progress: { total?: number; current: number }) => void
 ): Promise<ToolResponse<SearchOutput>> {
   const basePath = resolvePathOrRoot(args.path);
-  const patternType = args.isRegex ? 'regex' : 'literal';
+  const patternType: SearchPatternType = args.isRegex ? 'regex' : 'literal';
   const regexMatcher = SearchExecutor.createMatcher(args);
 
   const result = await SearchExecutor.run(args, basePath, signal, onProgress);
 
-  const normalizedMatches = SearchResponseBuilder.normalizeMatches(
-    result,
-    result.basePath // Use result.basePath which is the resolved absolute path
-  );
-
-  const searchContext: SearchContext = {
-    pattern: args.pattern,
-    caseSensitive: args.caseSensitive,
-    ...(regexMatcher ? { matcher: regexMatcher } : {}),
-  };
+  const normalizedMatches = SearchResponseBuilder.normalizeMatches(result);
+  const searchContext = SearchExecutor.createSearchContext(args, regexMatcher);
 
   const matchPayloads = SearchResponseBuilder.buildMatchPayloads(
     normalizedMatches,
@@ -326,18 +402,12 @@ async function handleSearchContent(
     { patternType, caseSensitive: args.caseSensitive }
   );
 
-  const needsExternalize = normalizedMatches.length > CONFIG.MAX_INLINE_MATCHES;
+  const preview = buildSearchPreviewState(normalizedMatches, matchPayloads);
 
-  if (resourceStore && needsExternalize) {
-    const previewMatches = normalizedMatches.slice(
-      0,
-      CONFIG.MAX_INLINE_MATCHES
-    );
-    const previewPayload = matchPayloads.slice(0, CONFIG.MAX_INLINE_MATCHES);
-
+  if (resourceStore && preview.needsExternalize) {
     const previewStructured: SearchOutput = {
       ...fullStructured,
-      matches: previewPayload,
+      matches: preview.visiblePayloads,
       truncated: true,
     };
 
@@ -349,9 +419,9 @@ async function handleSearchContent(
 
     previewStructured.resourceUri = entry.uri;
     const text = SearchResponseBuilder.buildText(
-      `Found ${normalizedMatches.length} (showing first ${CONFIG.MAX_INLINE_MATCHES}):`,
-      previewMatches
-    ); // No summary in text if externalized, or maybe simpler? Old logic just passed heading+matches.
+      preview.heading,
+      preview.visibleMatches
+    );
 
     return buildToolResponse(text, previewStructured, [
       buildResourceLink({
@@ -365,8 +435,8 @@ async function handleSearchContent(
   }
 
   const text = SearchResponseBuilder.buildText(
-    `Found ${normalizedMatches.length}:`,
-    normalizedMatches,
+    preview.heading,
+    preview.visibleMatches,
     result.summary
   );
 
@@ -387,10 +457,8 @@ export function registerSearchContentTool(
       context: { path: args.path ?? '.' },
       run: async (signal) => {
         const { pattern, filePattern: scope } = args;
-        const progress = createToolProgressSession(
-          extra,
-          `🔎︎ grep: ${pattern}`
-        );
+        const progressLabel = `🔎︎ grep: ${pattern}`;
+        const progress = createToolProgressSession(extra, progressLabel);
 
         const progressWithMessage = ({
           current,
@@ -402,7 +470,7 @@ export function registerSearchContentTool(
           progress.update({
             current,
             ...(total !== undefined ? { total } : {}),
-            message: `🔎︎ grep: ${pattern} [${current} files]`,
+            message: `${progressLabel} [${current} files]`,
           });
         };
 
@@ -418,28 +486,22 @@ export function registerSearchContentTool(
           const count = sc.ok && sc.totalMatches ? sc.totalMatches : 0;
           const filesMatched = sc.ok ? (sc.filesMatched ?? 0) : 0;
           const stoppedReason = sc.ok ? sc.stoppedReason : undefined;
-
-          // Helper logic for completion suffix
-          const suffix = (() => {
-            if (count === 0) return `No matches in ${scope}`;
-            const matchWord = count === 1 ? 'match' : 'matches';
-            const fileWord = filesMatched === 1 ? 'file' : 'files';
-            const reasonSuffix =
-              stoppedReason !== undefined
-                ? ` [${CONFIG.COMPLETION_LABELS[stoppedReason]}]`
-                : '';
-            return `${count} ${matchWord} in ${filesMatched} ${fileWord}${reasonSuffix}`;
-          })();
+          const suffix = buildCompletionSuffix(
+            count,
+            filesMatched,
+            scope,
+            stoppedReason
+          );
 
           const finalCurrent = resolveFinalProgressCurrent(
             progress,
             (sc.filesScanned ?? 0) + 1
           );
 
-          progress.complete(`🔎︎ grep: ${pattern} • ${suffix}`, finalCurrent);
+          progress.complete(`${progressLabel} • ${suffix}`, finalCurrent);
           return result;
         } catch (error) {
-          progress.fail(`🔎︎ grep: ${pattern} • failed`);
+          progress.fail(`${progressLabel} • failed`);
           throw error;
         }
       },
