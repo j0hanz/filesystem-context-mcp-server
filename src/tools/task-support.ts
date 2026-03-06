@@ -22,6 +22,7 @@ import type {
 } from '@modelcontextprotocol/sdk/types.js';
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
+import { DEFAULT_TASK_TTL_MS } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
 import { isRecord } from '../lib/utils.js';
 
@@ -557,7 +558,7 @@ export function createToolTaskHandler<
 
     const taskStore = getTaskStore(extra);
     const task = await taskStore.createTask({
-      ttl: extra.taskRequestedTtl ?? null,
+      ttl: extra.taskRequestedTtl ?? DEFAULT_TASK_TTL_MS,
     });
     publishTaskDiagnostics({
       phase: 'task_created',

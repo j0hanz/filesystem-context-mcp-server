@@ -98,6 +98,57 @@ describe('HTTP transport', () => {
     assert.equal(initializedResponse.status, 202);
   });
 
+  it('accepts the current protocol version (2025-11-25)', async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fsmcp-http-'));
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+
+    const port = getServerPort(server);
+    const initResponse = await fetch(`http://127.0.0.1:${String(port)}/mcp`, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-11-25',
+          capabilities: {},
+          clientInfo: { name: 'http-test', version: '1.0.0' },
+        },
+      }),
+    });
+
+    assert.equal(initResponse.status, 200);
+    const sessionId = initResponse.headers.get('mcp-session-id');
+    assert.ok(
+      sessionId,
+      'Expected initialize response to include Mcp-Session-Id'
+    );
+
+    const initializedResponse = await fetch(
+      `http://127.0.0.1:${String(port)}/mcp`,
+      {
+        method: 'POST',
+        headers: {
+          accept: 'application/json, text/event-stream',
+          'content-type': 'application/json',
+          'mcp-protocol-version': '2025-11-25',
+          'mcp-session-id': sessionId,
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'notifications/initialized',
+        }),
+      }
+    );
+
+    assert.equal(initializedResponse.status, 202);
+  });
+
   it('refuses non-loopback HTTP binding without an API key', async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fsmcp-http-'));
     const dir = tempDir;
