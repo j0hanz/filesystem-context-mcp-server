@@ -175,8 +175,9 @@ function buildIndexedPathTasks(
   const tasks: { filePath: string; index: number }[] = [];
   for (let index = 0; index < paths.length; index += 1) {
     const filePath = paths[index];
-    if (filePath === undefined) continue;
-    tasks.push({ filePath, index });
+    if (filePath !== undefined) {
+      tasks.push({ filePath, index });
+    }
   }
   return tasks;
 }
@@ -739,12 +740,7 @@ function ensureParentNodes(
   const normalized = toPosixPath(relativePath);
   if (normalized.length === 0 || normalized === '.') return rootNode;
 
-  const segments: string[] = [];
-  for (const segment of normalized.split('/')) {
-    if (segment.length > 0) {
-      segments.push(segment);
-    }
-  }
+  const segments = normalized.split('/').filter(Boolean);
   const parentSegmentCount = Math.max(0, segments.length - 1);
   let current = rootNode;
   let currentPath = '';
@@ -753,9 +749,7 @@ function ensureParentNodes(
     const segment = segments[index];
     if (!segment) continue;
     currentPath =
-      currentPath.length === 0
-        ? segment
-        : path.posix.join(currentPath, segment);
+      currentPath.length === 0 ? segment : `${currentPath}/${segment}`;
 
     let child = nodeByPath.get(currentPath);
     if (!child) {
