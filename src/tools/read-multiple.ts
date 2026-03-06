@@ -150,12 +150,8 @@ async function handleReadMultipleFiles(
     };
   });
 
-  let succeeded = 0;
-  let failed = 0;
-  for (const result of mappedResults) {
-    if (result.error === undefined) succeeded += 1;
-    else failed += 1;
-  }
+  const succeeded = mappedResults.filter((r) => r.error === undefined).length;
+  const failed = mappedResults.length - succeeded;
 
   const structured: z.infer<typeof ReadMultipleFilesOutputSchema> = {
     ok: true,

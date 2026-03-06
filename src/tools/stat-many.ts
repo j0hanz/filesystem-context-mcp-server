@@ -70,22 +70,21 @@ async function handleGetMultipleFileInfo(
 
   const structuredResults: z.infer<
     typeof GetMultipleFileInfoOutputSchema
-  >['results'] = [];
-  const textBlocks: string[] = [];
-  for (const entry of result.results) {
-    structuredResults.push({
-      path: entry.path,
-      info: entry.info ? buildFileInfoPayload(entry.info) : undefined,
-      error: entry.error,
-    });
-    if (entry.error) {
-      textBlocks.push(`${entry.path}: ${entry.error}`);
-    } else if (entry.info) {
-      textBlocks.push(formatFileInfoDetail(entry.info));
-    } else {
-      textBlocks.push(entry.path);
-    }
-  }
+  >['results'] = result.results.map((entry) => ({
+    path: entry.path,
+    info: entry.info ? buildFileInfoPayload(entry.info) : undefined,
+    error: entry.error,
+  }));
+
+  const text = result.results
+    .map((entry) =>
+      entry.error
+        ? `${entry.path}: ${entry.error}`
+        : entry.info
+          ? formatFileInfoDetail(entry.info)
+          : entry.path
+    )
+    .join('\n\n');
 
   const structured: z.infer<typeof GetMultipleFileInfoOutputSchema> = {
     ok: true,
@@ -96,8 +95,6 @@ async function handleGetMultipleFileInfo(
       failed: result.summary.failed,
     },
   };
-
-  const text = textBlocks.join('\n\n');
 
   return buildToolResponse(text, structured);
 }

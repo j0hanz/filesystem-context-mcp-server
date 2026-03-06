@@ -54,12 +54,12 @@ async function handleWriteFile(
 
   await atomicWriteFile(validPath, args.content, { encoding: 'utf-8', signal });
 
-  const stats = await withAbort(fs.stat(validPath), signal);
+  const bytesWritten = Buffer.byteLength(args.content, 'utf-8');
 
   return buildToolResponse(`Successfully wrote to file: ${args.path}`, {
     ok: true,
     path: validPath,
-    bytesWritten: stats.size,
+    bytesWritten,
   });
 }
 
