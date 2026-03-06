@@ -246,7 +246,7 @@ async function processEntry(
 
     recordChangedFile(summary, validPath, plan.matchCount);
 
-    maybeAppendPatchDiff(summary, {
+    await maybeAppendPatchDiff(summary, {
       filePath: validPath,
       originalContent: plan.originalContent,
       updatedContent: plan.updatedContent,
@@ -310,7 +310,7 @@ async function readReplacementPlan(
   }
 }
 
-function maybeAppendPatchDiff(
+async function maybeAppendPatchDiff(
   summary: ReplaceSummary,
   params: {
     filePath: string;
@@ -318,21 +318,28 @@ function maybeAppendPatchDiff(
     updatedContent: string;
     includeDiff: boolean;
   }
-): void {
+): Promise<void> {
   if (!params.includeDiff) return;
   if (summary.diff.length >= MAX_DIFF_SIZE) {
     summary.diffTruncated = true;
     return;
   }
 
-  const patch = createTwoFilesPatch(
-    path.basename(params.filePath),
-    path.basename(params.filePath),
-    params.originalContent,
-    params.updatedContent,
-    'Original',
-    'Modified'
-  );
+  const patch = await new Promise<string>((resolve) => {
+    createTwoFilesPatch(
+      path.basename(params.filePath),
+      path.basename(params.filePath),
+      params.originalContent,
+      params.updatedContent,
+      'Original',
+      'Modified',
+      {
+        callback: (res: string | undefined) => {
+          resolve(res ?? '');
+        },
+      }
+    );
+  });
 
   if (
     summary.diff.length + patch.length <=

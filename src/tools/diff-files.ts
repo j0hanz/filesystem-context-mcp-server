@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { createTwoFilesPatch } from 'diff';
+import { formatPatch, structuredPatch, type StructuredPatch } from 'diff';
 import type { z } from 'zod';
 
 import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
@@ -43,20 +43,22 @@ export const DIFF_FILES_TOOL: ToolContract = {
   taskSupport: 'forbidden',
 } as const;
 
-function computeDiffStats(patch: string): {
+function computeDiffStats(hunks: StructuredPatch['hunks']): {
   linesAdded: number;
   linesRemoved: number;
   hunksCount: number;
 } {
   let linesAdded = 0;
   let linesRemoved = 0;
-  let hunksCount = 0;
-  for (const line of patch.split('\n')) {
-    if (line.startsWith('@@')) hunksCount++;
-    else if (line.startsWith('+') && !line.startsWith('+++')) linesAdded++;
-    else if (line.startsWith('-') && !line.startsWith('---')) linesRemoved++;
+
+  for (const hunk of hunks) {
+    for (const line of hunk.lines) {
+      if (line.startsWith('+') && !line.startsWith('+++')) linesAdded++;
+      else if (line.startsWith('-') && !line.startsWith('---')) linesRemoved++;
+    }
   }
-  return { linesAdded, linesRemoved, hunksCount };
+
+  return { linesAdded, linesRemoved, hunksCount: hunks.length };
 }
 
 function assertDiffFileSizeWithinLimit(
@@ -97,23 +99,37 @@ async function handleDiffFiles(
     fs.readFile(modifiedPath, { encoding: 'utf-8', signal }),
   ]);
 
-  const patch = createTwoFilesPatch(
-    path.basename(originalPath),
-    path.basename(modifiedPath),
-    originalContent,
-    modifiedContent,
-    undefined,
-    undefined,
-    {
-      ...(args.context !== undefined ? { context: args.context } : {}),
-      ignoreWhitespace: args.ignoreWhitespace,
-      stripTrailingCr: args.stripTrailingCr,
-    }
-  );
+  const patchObj = await new Promise<StructuredPatch | undefined>((resolve) => {
+    structuredPatch(
+      path.basename(originalPath),
+      path.basename(modifiedPath),
+      originalContent,
+      modifiedContent,
+      undefined,
+      undefined,
+      {
+        ...(args.context !== undefined ? { context: args.context } : {}),
+        ignoreWhitespace: args.ignoreWhitespace,
+        stripTrailingCr: args.stripTrailingCr,
+        timeout: 10000,
+        callback: (res) => {
+          resolve(res);
+        },
+      }
+    );
+  });
 
-  const isIdentical = !patch.includes('@@');
-  const diffText = isIdentical ? '' : patch;
-  const stats = isIdentical ? undefined : computeDiffStats(patch);
+  if (!patchObj) {
+    throw new McpError(
+      ErrorCode.E_TIMEOUT,
+      `Diff computation timed out or failed due to complexity.`,
+      originalPath
+    );
+  }
+
+  const isIdentical = patchObj.hunks.length === 0;
+  const diffText = isIdentical ? '' : formatPatch(patchObj);
+  const stats = isIdentical ? undefined : computeDiffStats(patchObj.hunks);
 
   const externalized = maybeExternalizeTextContent(resourceStore, diffText, {
     name: 'diff:patch',

@@ -63,19 +63,6 @@ function assertPatchTargetSizeWithinLimit(
   );
 }
 
-function assertPatchHasHunks(patch: string): void {
-  if (!patch.trim()) {
-    throw new McpError(ErrorCode.E_INVALID_INPUT, 'Patch content is empty.');
-  }
-  const hasHunk = /@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/u.test(patch);
-  if (!hasHunk) {
-    throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
-      'Patch must include unified hunk headers (e.g., @@ -1,2 +1,2 @@).'
-    );
-  }
-}
-
 function countStructuredPatchStats(diff: StructuredPatch): {
   hunksApplied: number;
   linesAdded: number;
@@ -217,10 +204,21 @@ async function handleApplyPatch(
   args: z.infer<typeof ApplyPatchInputSchema>,
   signal?: AbortSignal
 ): Promise<ToolResponse<z.infer<typeof ApplyPatchOutputSchema>>> {
-  assertPatchHasHunks(args.patch);
+  if (!args.patch.trim()) {
+    throw new McpError(ErrorCode.E_INVALID_INPUT, 'Patch content is empty.');
+  }
 
   const fuzzFactor = args.fuzzFactor ?? 0;
   const parsed = parsePatch(args.patch);
+
+  const hasHunks = parsed.some((p) => p.hunks.length > 0);
+  if (!hasHunks) {
+    throw new McpError(
+      ErrorCode.E_INVALID_INPUT,
+      'Patch must include unified hunk headers (e.g., @@ -1,2 +1,2 @@).'
+    );
+  }
+
   const options: PatchOptions = {
     dryRun: args.dryRun,
     fuzzFactor,

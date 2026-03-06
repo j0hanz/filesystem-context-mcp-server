@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { createTwoFilesPatch } from 'diff';
+import { createTwoFilesPatch, diffLines } from 'diff';
 import RE2 from 're2';
 import type { z } from 'zod';
 
@@ -56,17 +56,37 @@ function escapeRegExp(string: string): string {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+export function getLineCount(
+  str: string,
+  maxIndex: number = str.length
+): number {
+  let count = 1;
+  let pos = 0;
+  while (pos < maxIndex) {
+    pos = str.indexOf('\n', pos);
+    if (pos === -1 || pos >= maxIndex) break;
+    count++;
+    pos++;
+  }
+  return count;
+}
+
 function computeDiffStats(
   original: string,
   modified: string
 ): { linesAdded: number; linesRemoved: number } {
-  const patch = createTwoFilesPatch('a', 'b', original, modified);
+  const changes = diffLines(original, modified);
   let linesAdded = 0;
   let linesRemoved = 0;
-  for (const line of patch.split('\n')) {
-    if (line.startsWith('+') && !line.startsWith('+++')) linesAdded++;
-    else if (line.startsWith('-') && !line.startsWith('---')) linesRemoved++;
+
+  for (const part of changes) {
+    if (part.added) {
+      linesAdded += part.count;
+    } else if (part.removed) {
+      linesRemoved += part.count;
+    }
   }
+
   return { linesAdded, linesRemoved };
 }
 
@@ -94,10 +114,9 @@ function applyEdits(
 
       const { index } = match;
       const matchLength = match[0].length;
-      const linesBefore = newContent.slice(0, index).split('\n').length;
-      const newTextLines = edit.newText.split('\n').length;
-      const startLine = linesBefore;
-      const endLine = linesBefore + newTextLines - 1;
+      const startLine = getLineCount(newContent, index);
+      const newTextLines = getLineCount(edit.newText);
+      const endLine = startLine + newTextLines - 1;
 
       if (minLine === undefined || startLine < minLine) minLine = startLine;
       if (maxLine === undefined || endLine > maxLine) maxLine = endLine;
@@ -114,10 +133,9 @@ function applyEdits(
       }
 
       const index = newContent.indexOf(edit.oldText);
-      const linesBefore = newContent.slice(0, index).split('\n').length;
-      const newTextLines = edit.newText.split('\n').length;
-      const startLine = linesBefore;
-      const endLine = linesBefore + newTextLines - 1;
+      const startLine = getLineCount(newContent, index);
+      const newTextLines = getLineCount(edit.newText);
+      const endLine = startLine + newTextLines - 1;
 
       if (minLine === undefined || startLine < minLine) minLine = startLine;
       if (maxLine === undefined || endLine > maxLine) maxLine = endLine;
