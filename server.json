@@ -8,32 +8,14 @@
     "source": "github"
   },
   "websiteUrl": "https://github.com/j0hanz/filesystem-mcp#readme",
-  "version": "1.11.0",
+  "version": "1.10.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@j0hanz/filesystem-mcp",
-      "version": "1.11.0",
+      "version": "1.10.0",
       "transport": {
         "type": "stdio"
-      },
-      "packageArguments": [
-        {
-          "type": "positional",
-          "valueHint": "directory",
-          "description": "Optional root directory path the MCP server is allowed to access. If omitted, roots can be provided by the MCP Roots protocol or --allow-cwd.",
-          "isRequired": false,
-          "format": "filepath",
-          "isRepeated": true
-        }
-      ]
-    },
-    {
-      "registryType": "npm",
-      "identifier": "@j0hanz/filesystem-mcp",
-      "version": "1.11.0",
-      "transport": {
-        "type": "http"
       },
       "packageArguments": [
         {
