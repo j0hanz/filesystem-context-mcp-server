@@ -196,3 +196,95 @@ describe('security: schema validation rejects malformed input', () => {
     assertToolError(raw);
   });
 });
+
+// ─── Symlink escape for destructive operations ───────────────────────────────
+
+describe('security: symlink escape for destructive ops', () => {
+  let env: TestEnv;
+  let outsideDir: string;
+
+  before(async () => {
+    env = await createTestEnv();
+    // Create a directory outside the allowed root to be a symlink target
+    outsideDir = path.join(path.dirname(env.tmpDir), `outside-${Date.now()}`);
+    await fs.mkdir(outsideDir, { recursive: true });
+    await fs.writeFile(
+      path.join(outsideDir, 'target.txt'),
+      'outside-content',
+      'utf8'
+    );
+  });
+
+  after(async () => {
+    await env.cleanup();
+    await fs.rm(outsideDir, { recursive: true, force: true });
+  });
+
+  async function createSymlink(
+    name: string,
+    target: string
+  ): Promise<string | null> {
+    const linkPath = path.join(env.tmpDir, name);
+    try {
+      await fs.symlink(target, linkPath);
+      return linkPath;
+    } catch {
+      return null; // symlink creation may fail on Windows without privileges
+    }
+  }
+
+  it('write: rejects writing through symlink to outside', async () => {
+    const linkPath = await createSymlink(
+      'write-escape.txt',
+      path.join(outsideDir, 'target.txt')
+    );
+    if (!linkPath) return;
+    const raw = await env.client.callTool({
+      name: 'write',
+      arguments: { path: linkPath, content: 'hacked' },
+    });
+    assertToolError(raw, 'E_ACCESS_DENIED');
+  });
+
+  it('edit: rejects editing through symlink to outside', async () => {
+    const linkPath = await createSymlink(
+      'edit-escape.txt',
+      path.join(outsideDir, 'target.txt')
+    );
+    if (!linkPath) return;
+    const raw = await env.client.callTool({
+      name: 'edit',
+      arguments: {
+        path: linkPath,
+        edits: [{ oldText: 'outside-content', newText: 'hacked' }],
+      },
+    });
+    assertToolError(raw, 'E_ACCESS_DENIED');
+  });
+
+  it('mv: rejects moving symlink target outside allowed root', async () => {
+    const linkPath = await createSymlink(
+      'mv-escape.txt',
+      path.join(outsideDir, 'target.txt')
+    );
+    if (!linkPath) return;
+    const raw = await env.client.callTool({
+      name: 'mv',
+      arguments: {
+        source: linkPath,
+        destination: path.join(env.tmpDir, 'moved.txt'),
+      },
+    });
+    assertToolError(raw, 'E_ACCESS_DENIED');
+  });
+
+  it('rm: rejects deleting through symlink to directory outside', async () => {
+    const linkPath = await createSymlink('rm-escape-dir', outsideDir);
+    if (!linkPath) return;
+    const raw = await env.client.callTool({
+      name: 'rm',
+      arguments: { path: linkPath },
+    });
+    assertToolError(raw, 'E_ACCESS_DENIED');
+  });
+});

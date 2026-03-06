@@ -27,7 +27,11 @@ import { isRecord } from '../lib/utils.js';
 
 import { registerCompletions } from '../completions.js';
 import { pkgInfo } from '../pkg-info.js';
-import { registerGetHelpPrompt } from '../prompts.js';
+import {
+  registerAnalyzePathPrompt,
+  registerCompareFilesPrompt,
+  registerGetHelpPrompt,
+} from '../prompts.js';
 import {
   registerInstructionResource,
   registerMetricsResource,
@@ -100,9 +104,7 @@ export function buildServerCapabilities(
   if (options.enableTaskToolRequests) {
     // NOTE: enabling task tool requests requires the caller to configure
     // an InMemoryTaskStore and InMemoryTaskMessageQueue on the McpServer.
-    // InMemoryTaskStore accumulates completed task records with no TTL eviction —
-    // suitable for short-lived stdio sessions. Long-running HTTP servers should
-    // replace it with a TTL-evicting store to avoid unbounded memory growth.
+    // InMemoryTaskStore auto-evicts tasks after TTL via setTimeout.
     capabilities.tasks = {
       list: {},
       cancel: {},
@@ -229,7 +231,7 @@ export async function createServer(
     };
 
   if (taskToolSupport) {
-    // Enabling task tool support requires configuring a task store and message queue on the server config. We use in-memory implementations which are suitable for short-lived stdio sessions. Long-running HTTP servers should replace these with TTL-evicting implementations to avoid unbounded memory growth.
+    // Enabling task tool support requires configuring a task store and message queue on the server config. We use in-memory implementations from the SDK which auto-evict tasks after their TTL expires (via setTimeout). Suitable for both stdio and HTTP sessions.
     serverConfig.taskStore = new InMemoryTaskStore();
     serverConfig.taskMessageQueue = new InMemoryTaskMessageQueue();
   }
@@ -269,6 +271,8 @@ export async function createServer(
   registerWorkflowGuideResource(server, localIcon);
   registerToolInfoResource(server, localIcon);
   registerGetHelpPrompt(server, serverInstructions, localIcon);
+  registerCompareFilesPrompt(server, localIcon);
+  registerAnalyzePathPrompt(server, localIcon);
   registerResultResources(server, resourceStore, localIcon);
   registerMetricsResource(server, localIcon);
   registerCompletions(server, serverInstructions);

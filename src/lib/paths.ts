@@ -45,7 +45,9 @@ function normalizePathForMatch(input: string): string {
 
 function normalizeForMatch(input: string): string {
   const normalized = normalizePathForMatch(input);
-  return IS_WINDOWS ? normalized.toLowerCase() : normalized;
+  // Always lowercase for case-insensitive denylist matching on all platforms.
+  // Prevents bypassing `.env` block with `.ENV` on case-sensitive filesystems.
+  return normalized.toLowerCase();
 }
 
 function compilePatternGlobs(normalizedPattern: string): readonly string[] {

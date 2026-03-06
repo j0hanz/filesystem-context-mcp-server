@@ -133,15 +133,35 @@ export async function handleMoveFile(
             fs.cp(validSource, targetPath, { recursive: true }),
             signal
           );
+        } catch (copyError) {
+          failed.push({
+            source: src,
+            error: formatUnknownErrorMessage(copyError),
+          });
+          continue;
+        }
+        // Copy succeeded — now remove source
+        try {
           await withAbort(
             fs.rm(validSource, { recursive: true, force: true }),
             signal
           );
           movedSources.push(validSource);
-        } catch (copyError) {
+        } catch (deleteError) {
+          // Source delete failed after copy — rollback by removing the copy
+          try {
+            await fs.rm(targetPath, { recursive: true, force: true });
+          } catch {
+            // Rollback failed — data exists in both locations
+            failed.push({
+              source: src,
+              error: `Cross-device move partially failed: data exists at both '${validSource}' and '${targetPath}'. ${formatUnknownErrorMessage(deleteError)}`,
+            });
+            continue;
+          }
           failed.push({
             source: src,
-            error: formatUnknownErrorMessage(copyError),
+            error: `Cross-device move failed: could not remove source. ${formatUnknownErrorMessage(deleteError)}`,
           });
         }
       } else {

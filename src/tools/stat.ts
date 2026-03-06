@@ -25,6 +25,7 @@ import {
   withValidatedArgs,
   wrapToolHandler,
 } from './shared.js';
+import { registerToolTaskIfAvailable } from './task-support.js';
 
 export const GET_FILE_INFO_TOOL: ToolContract = {
   name: 'stat',
@@ -35,6 +36,7 @@ export const GET_FILE_INFO_TOOL: ToolContract = {
   inputSchema: GetFileInfoInputSchema,
   outputSchema: GetFileInfoOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
+  taskSupport: 'optional',
   nuances: ['Use before read/search when file size/type uncertainty exists.'],
 } as const;
 
@@ -104,6 +106,17 @@ export function registerGetFileInfoTool(
     wrappedHandler
   );
 
+  if (
+    registerToolTaskIfAvailable(
+      server,
+      'stat',
+      GET_FILE_INFO_TOOL,
+      validatedHandler,
+      options.iconInfo,
+      options.isInitialized
+    )
+  )
+    return;
   server.registerTool(
     'stat',
     withDefaultIcons({ ...GET_FILE_INFO_TOOL }, options.iconInfo),

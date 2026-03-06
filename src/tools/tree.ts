@@ -91,9 +91,11 @@ export function registerTreeTool(
       run: async (signal) => {
         const context = args.path ? path.basename(args.path) : '.';
         let progressCursor = 0;
+        const knownTotal = args.maxEntries;
 
         notifyProgress(extra, {
           current: 0,
+          total: knownTotal,
           message: `≣ tree: ${context}`,
         });
 
@@ -103,6 +105,7 @@ export function registerTreeTool(
           if (current > progressCursor) progressCursor = current;
           baseReporter({
             current,
+            total: knownTotal,
             message: `≣ tree: ${context} [${current} entries]`,
           });
         };

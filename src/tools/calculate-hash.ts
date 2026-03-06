@@ -154,6 +154,7 @@ async function hashDirectory(
   const concurrency = Math.min(PARALLEL_CONCURRENCY, 8);
   const entries: { path: string; hash: Buffer }[] = [];
   let filesHashed = 0;
+  const totalFiles = filteredPaths.length;
 
   for (let i = 0; i < filteredPaths.length; i += concurrency) {
     assertNotAborted(signal);
@@ -166,11 +167,15 @@ async function hashDirectory(
     );
     entries.push(...batchResults);
     filesHashed += batchResults.length;
-    reportPeriodicProgress(onProgress, filesHashed, { throttleModulo: 25 });
+    reportPeriodicProgress(onProgress, filesHashed, {
+      throttleModulo: 25,
+      total: totalFiles,
+    });
   }
 
   reportPeriodicProgress(onProgress, filesHashed, {
     throttleModulo: 25,
+    total: totalFiles,
     force: true,
   });
 

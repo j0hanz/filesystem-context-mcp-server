@@ -540,10 +540,12 @@ export interface BatchProgressCallbacks {
 
 export function createToolProgressSession(
   extra: ToolExtra,
-  startMessage: string
+  startMessage: string,
+  initialTotal?: number
 ): ToolProgressSession {
   notifyProgress(extra, {
     current: 0,
+    ...(initialTotal !== undefined ? { total: initialTotal } : {}),
     message: startMessage,
   });
 
@@ -598,14 +600,18 @@ export function createBatchProgressCallbacks(
 ): BatchProgressCallbacks {
   const progress = createToolProgressSession(
     extra,
-    `${params.toolLabel}: ${params.context}`
+    `${params.toolLabel}: ${params.context}`,
+    params.totalItems
   );
 
+  let itemsDone = 0;
   const onItemComplete = (): void => {
-    progress.increment(
-      (current) =>
-        `${params.toolLabel}: ${params.context} [${current}/${params.totalItems} ${params.itemVerb}]`
-    );
+    itemsDone++;
+    progress.update({
+      current: itemsDone,
+      total: params.totalItems,
+      message: `${params.toolLabel}: ${params.context} [${itemsDone}/${params.totalItems} ${params.itemVerb}]`,
+    });
   };
 
   return { progress, onItemComplete };

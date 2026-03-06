@@ -287,6 +287,7 @@ async function processEntriesConcurrently(
   }
 ): Promise<{ stoppedByLimit: boolean }> {
   const pending = new Set<Promise<void>>();
+  const seen = new Set<string>();
   const { signal, concurrency, maxEntries, onEntry, runEntry } = options;
   let dispatched = 0;
   let stoppedByLimit = false;
@@ -302,6 +303,8 @@ async function processEntriesConcurrently(
       stoppedByLimit = true;
       break;
     }
+    if (seen.has(entry.path)) continue;
+    seen.add(entry.path);
     await waitForSlot();
     onEntry();
     dispatched++;

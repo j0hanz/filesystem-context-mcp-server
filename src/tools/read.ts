@@ -1,4 +1,3 @@
-import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 
@@ -11,7 +10,6 @@ import {
 } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { readFile } from '../lib/fs-helpers.js';
-import { validateExistingPath } from '../lib/paths.js';
 
 import { ReadFileInputSchema, ReadFileOutputSchema } from '../schemas.js';
 import {
@@ -98,10 +96,8 @@ async function handleReadFile(
   );
 
   if (args.includeHash) {
-    const validPath = await validateExistingPath(args.path, signal);
-    const rawContent = await fs.readFile(validPath, { signal });
     structured.contentHash = createHash('sha256')
-      .update(rawContent)
+      .update(result.content, 'utf-8')
       .digest('hex');
   }
   if (!externalized) {

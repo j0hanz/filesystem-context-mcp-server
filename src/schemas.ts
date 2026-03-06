@@ -763,6 +763,10 @@ export const ApplyPatchInputSchema = z.strictObject({
   path: RequiredPathSchema.describe('Path to file to patch'),
   patch: z
     .string()
+    .min(1, 'Patch content required')
+    .refine((val) => /@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/u.test(val), {
+      error: 'Patch must include hunk headers (e.g., @@ -1,2 +1,2 @@)',
+    })
     .describe('Unified diff with @@ hunk headers. Generate with `diff_files`.'),
   fuzzFactor: z
     .int({ error: 'Must be integer' })
@@ -822,6 +826,7 @@ export const SearchAndReplaceInputSchema = z.strictObject({
   searchPattern: z
     .string()
     .min(1, 'Search pattern required')
+    .max(1000, 'Max 1000 chars')
     .describe(
       'Text to search for. Literal by default; RE2 regex when `isRegex=true`.'
     ),
