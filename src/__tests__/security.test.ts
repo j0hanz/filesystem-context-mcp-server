@@ -3,9 +3,15 @@
  */
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 
-import { assertToolError, createTestEnv, type TestEnv } from './helpers.js';
+import {
+  assertToolError,
+  createTestEnv,
+  getStructured,
+  type TestEnv,
+} from './helpers.js';
 
 // ─── Path boundary enforcement ───────────────────────────────────────────────
 
@@ -275,7 +281,18 @@ describe('security: symlink escape for destructive ops', () => {
         destination: path.join(env.tmpDir, 'moved.txt'),
       },
     });
-    assertToolError(raw, 'E_ACCESS_DENIED');
+    // mv collects per-source errors into failed[] instead of setting isError
+    const sc = getStructured(raw);
+    assert.equal(sc['ok'], false);
+    const failed = sc['failed'] as Array<Record<string, unknown>>;
+    assert.ok(
+      Array.isArray(failed) && failed.length > 0,
+      'Expected failed entries for symlink outside allowed root'
+    );
+    assert.ok(
+      String(failed[0]?.['error']).includes('E_ACCESS_DENIED'),
+      `Expected E_ACCESS_DENIED in error, got: ${String(failed[0]?.['error'])}`
+    );
   });
 
   it('rm: rejects deleting through symlink to directory outside', async () => {
