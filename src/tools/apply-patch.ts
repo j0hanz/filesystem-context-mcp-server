@@ -294,7 +294,7 @@ export function registerApplyPatchTool(
       if (!sc.ok) return `🛠 patch: ${name} • failed`;
       const added = sc.linesAdded ?? 0;
       const removed = sc.linesRemoved ?? 0;
-      const dry = args.dryRun ? 'dry run — ' : '';
+      const dry = args.dryRun ? 'dry run ' : '';
       if (added > 0 || removed > 0)
         return `🛠 patch: ${name} • ${dry} +${added} -${removed}`;
       return `🛠 patch: ${name} • ${dry}no changes`;

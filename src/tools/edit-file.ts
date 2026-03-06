@@ -254,7 +254,7 @@ export function registerEditFileTool(
       if (applied === 0) return `🛠 edit: ${name} • no changes`;
       const added = sc.linesAdded ?? 0;
       const removed = sc.linesRemoved ?? 0;
-      const dry = args.dryRun ? 'dry run — ' : '';
+      const dry = args.dryRun ? 'dry run ' : '';
       return `🛠 edit: ${name} • ${dry} +${added} -${removed}`;
     },
   });
