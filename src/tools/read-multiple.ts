@@ -76,6 +76,7 @@ function toStructuredReadManyResult(
   if (result.hasMoreLines) structured.hasMoreLines = result.hasMoreLines;
   if (result.totalLines !== undefined)
     structured.totalLines = result.totalLines;
+  if (result.linesRead !== undefined) structured.linesRead = result.linesRead;
   if (result.truncationReason) {
     structured.truncationReason = result.truncationReason;
   }

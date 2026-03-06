@@ -79,6 +79,7 @@ async function handleReadFile(
     ...(result.head !== undefined ? { head: result.head } : {}),
     ...(result.startLine !== undefined ? { startLine: result.startLine } : {}),
     ...(result.endLine !== undefined ? { endLine: result.endLine } : {}),
+    ...(result.linesRead !== undefined ? { linesRead: result.linesRead } : {}),
     ...(result.hasMoreLines ? { hasMoreLines: result.hasMoreLines } : {}),
   };
 
@@ -148,10 +149,27 @@ export function registerReadFileTool(
       if (result.isError) return `🕮 read: ${name} • failed`;
       const sc = result.structuredContent;
       if (!sc.ok) return `🕮 read: ${name} • failed`;
-      if (sc.hasMoreLines)
-        return `🕮 read: ${name} • truncated [${sc.totalLines ?? '?'} lines]`;
-      if (sc.startLine !== undefined)
-        return `🕮 read: ${name} • lines ${sc.startLine}–${sc.endLine ?? '?'}`;
+
+      // Range read — show actual line range delivered
+      if (sc.startLine !== undefined) {
+        const end = sc.linesRead
+          ? sc.startLine + sc.linesRead - 1
+          : (sc.endLine ?? '…');
+        return `🕮 read: ${name} • lines ${sc.startLine}–${end}`;
+      }
+
+      // Head read
+      if (sc.head !== undefined) {
+        const count = sc.linesRead ?? sc.head;
+        return sc.hasMoreLines
+          ? `🕮 read: ${name} • first ${count} lines`
+          : `🕮 read: ${name} • ${count} lines`;
+      }
+
+      // Full read (totalLines always set) or externalized
+      if (sc.hasMoreLines) {
+        return `🕮 read: ${name} • truncated [${sc.totalLines ?? sc.linesRead ?? '?'} lines]`;
+      }
       return `🕮 read: ${name} • ${sc.totalLines ?? '?'} lines`;
     },
   });
