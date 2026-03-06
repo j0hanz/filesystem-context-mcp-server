@@ -124,7 +124,7 @@ export function registerGetMultipleFileInfoTool(
             toolLabel: '🕮 stat_many',
             context,
             totalItems: args.paths.length,
-            itemVerb: 'scanned',
+            itemVerb: 'done',
           }
         );
 

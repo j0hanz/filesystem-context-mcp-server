@@ -425,7 +425,7 @@ export function registerSearchAndReplaceTool(
         const context = `"${args.searchPattern}" in ${args.filePattern}${dryLabel}`;
         const progress = createToolProgressSession(
           extra,
-          `🛠 search_and_replace: ${context}`
+          `🛠 replace: ${context}`
         );
         const progressWithMessage = ({
           current,
@@ -437,7 +437,7 @@ export function registerSearchAndReplaceTool(
           progress.update({
             current,
             ...(total !== undefined ? { total } : {}),
-            message: `🛠 search_and_replace: ${args.searchPattern} [${current} files processed]`,
+            message: `🛠 replace: ${args.searchPattern} [${current} files]`,
           });
         };
 
@@ -456,14 +456,13 @@ export function registerSearchAndReplaceTool(
           const fileWord = (sc.filesChanged ?? 0) === 1 ? 'file' : 'files';
           let endSuffix = `${sc.matches ?? 0} ${matchWord} in ${sc.filesChanged ?? 0} ${fileWord}`;
           if (sc.failedFiles) endSuffix += `, ${sc.failedFiles} failed`;
-          if (sc.dryRun) endSuffix += ' [dry run]';
           progress.complete(
-            `🛠 search_and_replace: ${context} • ${endSuffix}`,
+            `🛠 replace: ${context} • ${endSuffix}`,
             finalCurrent
           );
           return result;
         } catch (error) {
-          progress.fail(`🛠 search_and_replace: ${context} • failed`);
+          progress.fail(`🛠 replace: ${context} • failed`);
           throw error;
         }
       },

@@ -249,7 +249,7 @@ export function registerCalculateHashTool(
         const baseName = path.basename(args.path);
         const progress = createToolProgressSession(
           extra,
-          `🕮 calculate_hash: ${baseName}`
+          `🕮 hash: ${baseName}`
         );
         const progressWithMessage = ({
           current,
@@ -258,11 +258,10 @@ export function registerCalculateHashTool(
           total?: number;
           current: number;
         }): void => {
-          const fileWord = current === 1 ? 'file' : 'files';
           progress.update({
             current,
             ...(total !== undefined ? { total } : {}),
-            message: `🕮 calculate_hash: ${baseName} [${current} ${fileWord} hashed]`,
+            message: `🕮 hash: ${baseName} [${current} files]`,
           });
         };
 
@@ -282,17 +281,14 @@ export function registerCalculateHashTool(
           if (!sc.ok) {
             suffix = 'failed';
           } else if (sc.fileCount !== undefined && sc.fileCount > 1) {
-            suffix = `${sc.fileCount} files • ${(sc.hash ?? '').slice(0, 8)}...`;
+            suffix = `${sc.fileCount} files • ${(sc.hash ?? '').slice(0, 8)}…`;
           } else {
-            suffix = `${(sc.hash ?? '').slice(0, 8)}...`;
+            suffix = `${(sc.hash ?? '').slice(0, 8)}…`;
           }
-          progress.complete(
-            `🕮 calculate_hash: ${baseName} • ${suffix}`,
-            finalCurrent
-          );
+          progress.complete(`🕮 hash: ${baseName} • ${suffix}`, finalCurrent);
           return result;
         } catch (error) {
-          progress.fail(`🕮 calculate_hash: ${baseName} • failed`);
+          progress.fail(`🕮 hash: ${baseName} • failed`);
           throw error;
         }
       },

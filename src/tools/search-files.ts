@@ -164,7 +164,7 @@ export function registerSearchFilesTool(
         let progressCursor = 0;
         notifyProgress(extra, {
           current: 0,
-          message: `🔎︎ find: ${context}`,
+          message: `🔎︎ find: ${pattern}`,
         });
 
         const baseReporter = createProgressReporter(extra);
@@ -176,11 +176,10 @@ export function registerSearchFilesTool(
           current: number;
         }): void => {
           if (current > progressCursor) progressCursor = current;
-          const fileWord = current === 1 ? 'file' : 'files';
           baseReporter({
             current,
             ...(total !== undefined ? { total } : {}),
-            message: `🔎︎ find: ${pattern} [${current} ${fileWord} scanned]`,
+            message: `🔎︎ find: ${pattern} [${current} files]`,
           });
         };
 
@@ -196,15 +195,15 @@ export function registerSearchFilesTool(
 
           let suffix: string;
           if (count === 0) {
-            suffix = `No matches in ${scopeLabel}`;
+            suffix = 'No matches';
           } else {
             suffix = `${count} ${count === 1 ? 'match' : 'matches'}`;
             if (stoppedReason === 'timeout') {
-              suffix += ' [stopped — timeout]';
+              suffix += ' [timeout]';
             } else if (stoppedReason === 'maxResults') {
-              suffix += ' [truncated — max results]';
+              suffix += ' [max results]';
             } else if (stoppedReason === 'maxFiles') {
-              suffix += ' [truncated — max files]';
+              suffix += ' [max files]';
             }
           }
 

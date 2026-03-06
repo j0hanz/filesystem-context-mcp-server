@@ -1,4 +1,5 @@
 import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { z } from 'zod';
@@ -94,13 +95,21 @@ export function registerCreateDirectoryTool(
   const wrappedHandler = wrapToolHandler(handler, {
     guard: options.isInitialized,
     progressMessage: (args) => {
+      if (args.path && !args.paths?.length) {
+        return `🛠 mkdir: ${path.basename(args.path)}`;
+      }
       const count = (args.path ? 1 : 0) + (args.paths?.length ?? 0);
-      return `🛠 mkdir: ${count} director${count === 1 ? 'y' : 'ies'}`;
+      return `🛠 mkdir: ${count} directories`;
     },
     completionMessage: (args, result) => {
+      if (args.path && !args.paths?.length) {
+        const name = path.basename(args.path);
+        if (result.isError) return `🛠 mkdir: ${name} • failed`;
+        return `🛠 mkdir: ${name} • created`;
+      }
       const count = (args.path ? 1 : 0) + (args.paths?.length ?? 0);
-      if (result.isError) return `🛠 mkdir: ${count} • failed`;
-      return `🛠 mkdir: ${count} • created`;
+      if (result.isError) return `🛠 mkdir: ${count} directories • failed`;
+      return `🛠 mkdir: ${count} directories • created`;
     },
   });
 

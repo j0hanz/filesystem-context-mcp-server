@@ -190,15 +190,23 @@ export function registerMoveFileTool(
   const wrappedHandler = wrapToolHandler(handler, {
     guard: options.isInitialized,
     progressMessage: (args) => {
-      const count = (args.source ? 1 : 0) + (args.sources?.length ?? 0);
       const dest = path.basename(args.destination);
-      return `🛠 mv: ${count} item${count === 1 ? '' : 's'} → ${dest}`;
+      if (args.source && !args.sources?.length) {
+        return `🛠 mv: ${path.basename(args.source)} → ${dest}`;
+      }
+      const count = (args.source ? 1 : 0) + (args.sources?.length ?? 0);
+      return `🛠 mv: ${count} items → ${dest}`;
     },
     completionMessage: (args, result) => {
-      const count = (args.source ? 1 : 0) + (args.sources?.length ?? 0);
       const dest = path.basename(args.destination);
-      if (result.isError) return `🛠 mv: ${count} → ${dest} • failed`;
-      return `🛠 mv: ${count} → ${dest} • moved`;
+      if (args.source && !args.sources?.length) {
+        const src = path.basename(args.source);
+        if (result.isError) return `🛠 mv: ${src} → ${dest} • failed`;
+        return `🛠 mv: ${src} → ${dest} • moved`;
+      }
+      const count = (args.source ? 1 : 0) + (args.sources?.length ?? 0);
+      if (result.isError) return `🛠 mv: ${count} items → ${dest} • failed`;
+      return `🛠 mv: ${count} items → ${dest} • moved`;
     },
   });
 

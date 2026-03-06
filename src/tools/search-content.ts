@@ -304,7 +304,7 @@ export function registerSearchContentTool(
         const { pattern } = args;
         const progress = createToolProgressSession(
           extra,
-          `🔎︎ grep: ${pattern} in ${scope}`
+          `🔎︎ grep: ${pattern}`
         );
         const progressWithMessage = ({
           current,
@@ -313,11 +313,10 @@ export function registerSearchContentTool(
           total?: number;
           current: number;
         }): void => {
-          const fileWord = current === 1 ? 'file' : 'files';
           progress.update({
             current,
             ...(total !== undefined ? { total } : {}),
-            message: `🔎︎ grep: ${pattern} [${current} ${fileWord} scanned]`,
+            message: `🔎︎ grep: ${pattern} [${current} files]`,
           });
         };
 
@@ -338,18 +337,13 @@ export function registerSearchContentTool(
           if (count === 0) {
             suffix = `No matches in ${scope}`;
           } else {
-            const matchWord = count === 1 ? 'match' : 'matches';
-            const fileInfo =
-              filesMatched > 0
-                ? ` in ${filesMatched} ${filesMatched === 1 ? 'file' : 'files'}`
-                : '';
-            suffix = `${count} ${matchWord}${fileInfo}`;
+            suffix = `${count} ${count === 1 ? 'match' : 'matches'} in ${filesMatched} ${filesMatched === 1 ? 'file' : 'files'}`;
             if (stoppedReason === 'timeout') {
-              suffix += ' [stopped — timeout]';
+              suffix += ' [timeout]';
             } else if (stoppedReason === 'maxResults') {
-              suffix += ' [truncated — max results]';
+              suffix += ' [max results]';
             } else if (stoppedReason === 'maxFiles') {
-              suffix += ' [truncated — max files]';
+              suffix += ' [max files]';
             }
           }
 
@@ -361,7 +355,7 @@ export function registerSearchContentTool(
           progress.complete(`🔎︎ grep: ${pattern} • ${suffix}`, finalCurrent);
           return result;
         } catch (error) {
-          progress.fail(`🔎︎ grep: ${pattern} in ${scope} • failed`);
+          progress.fail(`🔎︎ grep: ${pattern} • failed`);
           throw error;
         }
       },

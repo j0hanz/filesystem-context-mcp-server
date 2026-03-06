@@ -8,6 +8,7 @@ import { ErrorCode } from '../lib/errors.js';
 import { atomicWriteFile, withAbort } from '../lib/fs-helpers.js';
 import { validatePathForWrite } from '../lib/paths.js';
 
+import { formatBytes } from '../config.js';
 import { WriteFileInputSchema, WriteFileOutputSchema } from '../schemas.js';
 import {
   buildToolErrorResponse,
@@ -81,14 +82,13 @@ export function registerWriteFileTool(
 
   const wrappedHandler = wrapToolHandler(handler, {
     guard: options.isInitialized,
-    progressMessage: (args) =>
-      `🛠 write: ${path.basename(args.path)} [${args.content.length} chars]`,
+    progressMessage: (args) => `🛠 write: ${path.basename(args.path)}`,
     completionMessage: (args, result) => {
       const name = path.basename(args.path);
       if (result.isError) return `🛠 write: ${name} • failed`;
       const sc = result.structuredContent;
       if (!sc.ok) return `🛠 write: ${name} • failed`;
-      return `🛠 write: ${name} • ${sc.bytesWritten ?? 0} bytes`;
+      return `🛠 write: ${name} • ${formatBytes(sc.bytesWritten ?? 0)} written`;
     },
   });
 

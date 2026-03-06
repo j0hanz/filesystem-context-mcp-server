@@ -140,8 +140,9 @@ export function registerReadFileTool(
       const name = path.basename(args.path);
       if (args.startLine !== undefined) {
         const end = args.endLine ?? '…';
-        return `🕮 read: ${name} [${args.startLine}-${end}]`;
+        return `🕮 read: ${name} [lines ${args.startLine}–${end}]`;
       }
+      if (args.head !== undefined) return `🕮 read: ${name} [head ${args.head}]`;
       return `🕮 read: ${name}`;
     },
     completionMessage: (args, result) => {
@@ -150,7 +151,8 @@ export function registerReadFileTool(
       const sc = result.structuredContent;
       if (!sc.ok) return `🕮 read: ${name} • failed`;
 
-      // Range read — show actual line range delivered
+      const lines = sc.linesRead ?? sc.totalLines;
+
       if (sc.startLine !== undefined) {
         const end = sc.linesRead
           ? sc.startLine + sc.linesRead - 1
@@ -158,19 +160,15 @@ export function registerReadFileTool(
         return `🕮 read: ${name} • lines ${sc.startLine}–${end}`;
       }
 
-      // Head read
       if (sc.head !== undefined) {
-        const count = sc.linesRead ?? sc.head;
         return sc.hasMoreLines
-          ? `🕮 read: ${name} • first ${count} lines`
-          : `🕮 read: ${name} • ${count} lines`;
+          ? `🕮 read: ${name} • first ${lines ?? sc.head} lines`
+          : `🕮 read: ${name} • ${lines ?? sc.head} lines`;
       }
 
-      // Full read (totalLines always set) or externalized
-      if (sc.hasMoreLines) {
-        return `🕮 read: ${name} • truncated [${sc.totalLines ?? sc.linesRead ?? '?'} lines]`;
-      }
-      return `🕮 read: ${name} • ${sc.totalLines ?? '?'} lines`;
+      if (sc.truncated)
+        return `🕮 read: ${name} • truncated [${String(lines)} lines]`;
+      return `🕮 read: ${name} • ${String(lines)} lines`;
     },
   });
 

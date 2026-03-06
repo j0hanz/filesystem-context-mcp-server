@@ -178,12 +178,8 @@ export function registerListDirectoryTool(
 
   const wrappedHandler = wrapToolHandler(handler, {
     guard: options.isInitialized,
-    progressMessage: (args) => {
-      if (args.path) {
-        return `≣ ls: ${path.basename(args.path)}`;
-      }
-      return '≣ ls';
-    },
+    progressMessage: (args) =>
+      `≣ ls: ${args.path ? path.basename(args.path) : '.'}`,
     completionMessage: (args, result) => {
       const base = args.path ? path.basename(args.path) : '.';
       if (result.isError) return `≣ ls: ${base} • failed`;
