@@ -28,7 +28,7 @@ ENV NODE_ENV=production
 
 # Labels for Docker MCP Catalog
 LABEL org.opencontainers.image.title="Filesystem MCP" \
-      org.opencontainers.image.description="MCP Server that enables LLMs to interact with the local filesystem." \
+      org.opencontainers.image.description="MCP server for local filesystem access — read, write, search, diff, patch, and manage files. Designed for LLMs and AI agents to interact with the filesystem safely and efficiently." \
       org.opencontainers.image.source="https://github.com/j0hanz/filesystem-mcp" \
       org.opencontainers.image.licenses="MIT" \
       io.modelcontextprotocol.server.name="io.github.j0hanz/filesystem-mcp"
