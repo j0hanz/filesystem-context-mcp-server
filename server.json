@@ -27,6 +27,24 @@
           "isRepeated": true
         }
       ]
+    },
+    {
+      "registryType": "npm",
+      "identifier": "@j0hanz/filesystem-mcp",
+      "version": "1.9.1",
+      "transport": {
+        "type": "http"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "valueHint": "directory",
+          "description": "Optional root directory path the MCP server is allowed to access. If omitted, roots can be provided by the MCP Roots protocol or --allow-cwd.",
+          "isRequired": false,
+          "format": "filepath",
+          "isRepeated": true
+        }
+      ]
     }
   ]
 }

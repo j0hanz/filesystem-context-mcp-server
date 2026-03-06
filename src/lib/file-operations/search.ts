@@ -1,6 +1,7 @@
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import type { Stats } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parentPort, threadId, Worker, workerData } from 'node:worker_threads';
 
@@ -608,6 +609,7 @@ const WORKER_SCRIPT_PATH = path.join(
   isSourceContext ? 'search-worker.ts' : 'search-worker.js'
 );
 const WORKER_SCRIPT_URL = pathToFileURL(WORKER_SCRIPT_PATH);
+const hasWorkerScript = existsSync(WORKER_SCRIPT_PATH);
 
 class SearchWorkerPool {
   private workers: (Worker | undefined)[];
@@ -773,7 +775,7 @@ class SearchWorkerPool {
 }
 
 function isWorkerPoolAvailable(): boolean {
-  return !isSourceContext;
+  return !isSourceContext && hasWorkerScript;
 }
 
 function shouldUseWorkers(): boolean {

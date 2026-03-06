@@ -368,7 +368,11 @@ async function createHttpSession(
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: () => randomUUID(),
     onsessioninitialized: (sessionId) => {
-      sessions.set(sessionId, { server: mcpServer, rootsManager, transport });
+      sessions.set(sessionId, {
+        server: mcpServer,
+        rootsManager,
+        transport,
+      });
       rootsManager.logMissingDirectoriesIfNeeded(mcpServer);
     },
   });

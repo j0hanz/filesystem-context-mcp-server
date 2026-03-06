@@ -15,6 +15,20 @@ function getServerPort(server: Server): number {
   return address.port;
 }
 
+function parseSseJsonPayload(rawBody: string): unknown {
+  const dataLines = rawBody
+    .split(/\r?\n/u)
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).trimStart());
+
+  assert.ok(
+    dataLines.length > 0,
+    `Expected SSE response to include at least one data line, got ${JSON.stringify(rawBody)}`
+  );
+
+  return JSON.parse(dataLines.join('\n')) as unknown;
+}
+
 async function closeServer(server: Server): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     server.close((error) => {
@@ -127,6 +141,120 @@ describe('HTTP transport', () => {
     assert.ok(
       sessionId,
       'Expected initialize response to include Mcp-Session-Id'
+    );
+
+    const initializedResponse = await fetch(
+      `http://127.0.0.1:${String(port)}/mcp`,
+      {
+        method: 'POST',
+        headers: {
+          accept: 'application/json, text/event-stream',
+          'content-type': 'application/json',
+          'mcp-protocol-version': '2025-11-25',
+          'mcp-session-id': sessionId,
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'notifications/initialized',
+        }),
+      }
+    );
+
+    assert.equal(initializedResponse.status, 202);
+  });
+
+  it('accepts post-initialize HTTP requests without mcp-protocol-version', async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fsmcp-http-'));
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+
+    const port = getServerPort(server);
+    const initResponse = await fetch(`http://127.0.0.1:${String(port)}/mcp`, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-11-25',
+          capabilities: {},
+          clientInfo: { name: 'http-test', version: '1.0.0' },
+        },
+      }),
+    });
+
+    assert.equal(initResponse.status, 200);
+    const sessionId = initResponse.headers.get('mcp-session-id');
+    assert.ok(
+      sessionId,
+      'Expected initialize response to include Mcp-Session-Id'
+    );
+
+    const missingHeaderResponse = await fetch(
+      `http://127.0.0.1:${String(port)}/mcp`,
+      {
+        method: 'POST',
+        headers: {
+          accept: 'application/json, text/event-stream',
+          'content-type': 'application/json',
+          'mcp-session-id': sessionId,
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'notifications/initialized',
+        }),
+      }
+    );
+
+    assert.equal(
+      missingHeaderResponse.status,
+      202,
+      `Expected missing protocol header to fall back to the negotiated version, got ${String(missingHeaderResponse.status)}`
+    );
+  });
+
+  it('accepts the negotiated server protocol version after fallback', async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fsmcp-http-'));
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+
+    const port = getServerPort(server);
+    const initResponse = await fetch(`http://127.0.0.1:${String(port)}/mcp`, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: 'DRAFT-2026-v1',
+          capabilities: {},
+          clientInfo: { name: 'http-test', version: '1.0.0' },
+        },
+      }),
+    });
+
+    assert.equal(initResponse.status, 200);
+    const sessionId = initResponse.headers.get('mcp-session-id');
+    assert.ok(
+      sessionId,
+      'Expected initialize response to include Mcp-Session-Id'
+    );
+
+    const initPayload = parseSseJsonPayload(await initResponse.text()) as {
+      result?: { protocolVersion?: string };
+    };
+    assert.equal(
+      initPayload.result?.protocolVersion,
+      '2025-11-25',
+      `Expected the server to negotiate to its latest supported protocol version, got ${JSON.stringify(initPayload)}`
     );
 
     const initializedResponse = await fetch(
