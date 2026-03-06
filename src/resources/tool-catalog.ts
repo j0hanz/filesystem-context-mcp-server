@@ -1,4 +1,8 @@
-import { buildCoreContextPack, pickAvailableToolNames } from './tool-info.js';
+import {
+  buildCoreContextPack,
+  getTaskCapableToolNames,
+  pickAvailableToolNames,
+} from './tool-info.js';
 
 function buildCrossToolDataFlow(): string {
   const flows: string[] = [];
@@ -18,12 +22,60 @@ function buildCrossToolDataFlow(): string {
 }
 
 function buildCatalogGuide(): string {
-  return `<tool_selection_guide>
+  const taskCapable = getTaskCapableToolNames();
+
+  return (
+    `<tool_selection_guide>
+## Primitive Routing
+
+- ` +
+    '`tools`' +
+    `: model-controlled operations that inspect or mutate the allowed filesystem.
+- ` +
+    '`resources`' +
+    `: application-driven context such as ` +
+    '`internal://instructions`' +
+    `, ` +
+    '`internal://tool-info/{name}`' +
+    `, and cached ` +
+    '`filesystem-mcp://result/{id}`' +
+    ` output.
+- ` +
+    '`prompts`' +
+    `: user-controlled workflow templates for help, comparison, and guided inspection.
+- ` +
+    '`completion`' +
+    `: argument suggestions for prompts and resource templates; not a discovery mechanism.
+
 ## Cross-Tool Data Flow
 
 \`\`\`
 ${buildCrossToolDataFlow()}
 \`\`\`
+
+## Result Contract
+
+- Successful tools return ` +
+    '`content`' +
+    ` and usually ` +
+    '`structuredContent`' +
+    `.
+- Tool/business failures return ` +
+    '`isError: true`' +
+    ` inside the tool result, not a JSON-RPC protocol error.
+- When a tool returns ` +
+    '`resourceUri`' +
+    ` or a ` +
+    '`resource_link`' +
+    `, follow it with ` +
+    '`resources/read`' +
+    ` immediately.
+
+## Task Mode Routing
+
+- Inline first for fast operations.
+- Add task mode only when the caller needs durable polling, deferred retrieval, or cancellation after the initial response.
+- Task-capable tools: ${taskCapable.length > 0 ? taskCapable.map((name) => `\`${name}\``).join(', ') : 'none'}.
 
 ## Search Strategy
 
@@ -51,7 +103,8 @@ ${buildCrossToolDataFlow()}
 - \`apply_patch\` accepts unified diffs - single-file or multi-file.
 - Multi-file: \`path\` is base directory; each file is best-effort with per-file \`results[]\`.
 </tool_selection_guide>
-`;
+`
+  );
 }
 
 export function buildToolCatalog(): string {

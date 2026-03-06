@@ -20,6 +20,8 @@ const TOOL_INFO_TEMPLATE = new ResourceTemplate('internal://tool-info/{name}', {
     resources: getToolContracts().map((contract) => ({
       uri: `internal://tool-info/${contract.name}`,
       name: contract.name,
+      title: contract.title,
+      description: contract.description,
       mimeType: 'text/markdown',
     })),
   }),

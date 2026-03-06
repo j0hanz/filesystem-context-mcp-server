@@ -31,6 +31,7 @@ import {
   registerAnalyzePathPrompt,
   registerCompareFilesPrompt,
   registerGetHelpPrompt,
+  registerGetToolHelpPrompt,
 } from '../prompts.js';
 import {
   registerInstructionResource,
@@ -273,6 +274,7 @@ export async function createServer(
   registerGetHelpPrompt(server, serverInstructions, localIcon);
   registerCompareFilesPrompt(server, localIcon);
   registerAnalyzePathPrompt(server, localIcon);
+  registerGetToolHelpPrompt(server, localIcon);
   registerResultResources(server, resourceStore, localIcon);
   registerMetricsResource(server, localIcon);
   registerCompletions(server, serverInstructions);

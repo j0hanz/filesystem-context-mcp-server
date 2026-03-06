@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 import {
   DEFAULT_SEARCH_CONTENT_RESULTS,
   MAX_SEARCH_RESULTS,
@@ -9,10 +11,22 @@ import type { ToolContract } from '../tools/contract.js';
 
 interface ToolEntry {
   name: string;
+  title: string;
   description: string;
   annotations?: string[];
   nuances?: string[];
   gotchas?: string[];
+}
+
+interface JsonSchemaObject {
+  type?: unknown;
+  properties?: Record<string, JsonSchemaObject>;
+  required?: string[];
+  description?: unknown;
+  enum?: unknown[];
+  anyOf?: JsonSchemaObject[];
+  oneOf?: JsonSchemaObject[];
+  items?: JsonSchemaObject;
 }
 
 function getTaskSupportLabel(
@@ -38,6 +52,7 @@ function toEntry(contract: ToolContract): ToolEntry {
 
   return {
     name: contract.name,
+    title: contract.title,
     description: contract.description,
     ...(annotations.length > 0 ? { annotations } : {}),
     ...(contract.nuances && contract.nuances.length > 0
@@ -112,29 +127,174 @@ export function getSharedConstraints(): string[] {
   ];
 }
 
-export function buildToolInfo(name: string): string | undefined {
-  const entry = ENTRIES[name];
-  if (!entry) return undefined;
+function formatTaskSupportLabel(
+  taskSupport: ToolContract['taskSupport']
+): string {
+  switch (taskSupport) {
+    case 'optional':
+      return 'optional';
+    case 'required':
+      return 'required';
+    default:
+      return 'forbidden';
+  }
+}
 
-  const lines: string[] = [`## ${entry.name}`, '', entry.description];
+function formatAnnotationValue(value: boolean | undefined): string {
+  return value ? 'true' : 'false';
+}
+
+function toJsonSchemaObject(
+  schema: ToolContract['inputSchema']
+): JsonSchemaObject {
+  return z.toJSONSchema(schema) as JsonSchemaObject;
+}
+
+function summarizeSchemaType(schema: JsonSchemaObject): string {
+  if (Array.isArray(schema.enum) && schema.enum.length > 0) {
+    return `enum(${schema.enum.map((value) => JSON.stringify(value)).join(', ')})`;
+  }
+
+  if (Array.isArray(schema.anyOf) && schema.anyOf.length > 0) {
+    return schema.anyOf.map(summarizeSchemaType).join(' | ');
+  }
+
+  if (Array.isArray(schema.oneOf) && schema.oneOf.length > 0) {
+    return schema.oneOf.map(summarizeSchemaType).join(' | ');
+  }
+
+  if (schema.type === 'array') {
+    const itemType = schema.items
+      ? summarizeSchemaType(schema.items)
+      : 'unknown';
+    return `array<${itemType}>`;
+  }
+
+  if (typeof schema.type === 'string' && schema.type.length > 0) {
+    return schema.type;
+  }
+
+  return 'unknown';
+}
+
+function buildSchemaFieldLines(
+  label: string,
+  schema: ToolContract['inputSchema'] | ToolContract['outputSchema']
+): string[] {
+  if (!schema) {
+    return [`<${label}>`, '- none', `</${label}>`];
+  }
+
+  const jsonSchema = toJsonSchemaObject(schema);
+  const properties = jsonSchema.properties ?? {};
+  const required = new Set(jsonSchema.required ?? []);
+  const fieldNames = Object.keys(properties);
+
+  if (fieldNames.length === 0) {
+    return [`<${label}>`, '- object with no fields', `</${label}>`];
+  }
+
+  return [
+    `<${label}>`,
+    ...fieldNames.map((fieldName) => {
+      const fieldSchema = properties[fieldName] ?? {};
+      const type = summarizeSchemaType(fieldSchema);
+      const requiredLabel = required.has(fieldName) ? 'required' : 'optional';
+      const description =
+        typeof fieldSchema.description === 'string' &&
+        fieldSchema.description.length > 0
+          ? fieldSchema.description
+          : 'No description.';
+      return `- ${fieldName} (${type}, ${requiredLabel}): ${description}`;
+    }),
+    `</${label}>`,
+  ];
+}
+
+function buildProtocolNotes(contract: ToolContract): string[] {
+  const notes = [
+    '- Protocol failures use JSON-RPC `error`; execution failures use tool result `isError: true`.',
+  ];
+
+  if (contract.outputSchema) {
+    notes.push(
+      '- Successful responses include `structuredContent` that must match the declared output schema.'
+    );
+  }
+
+  if (contract.taskSupport === 'optional') {
+    notes.push(
+      '- Supports inline execution by default and task mode when durable polling or deferred results are needed.'
+    );
+  }
+
+  if (contract.taskSupport === 'required') {
+    notes.push(
+      '- Must run in task mode; callers should poll `tasks/get` and fetch the payload via `tasks/result`.'
+    );
+  }
+
+  if (contract.taskSupport === 'forbidden') {
+    notes.push(
+      '- Runs inline only; task augmentation is not supported for this tool.'
+    );
+  }
+
+  return notes;
+}
+
+export function buildToolInfo(name: string): string | undefined {
+  const contract = CONTRACTS_BY_NAME.get(name);
+  const entry = ENTRIES[name];
+  if (!entry || !contract) return undefined;
+
+  const lines: string[] = [
+    `<tool_info name="${entry.name}">`,
+    `## ${entry.name}`,
+    '',
+    `Title: ${entry.title}`,
+    `Description: ${entry.description}`,
+    '',
+    '<execution>',
+    `- taskSupport: ${formatTaskSupportLabel(contract.taskSupport)}`,
+    '</execution>',
+    '',
+    '<annotations>',
+    `- readOnlyHint: ${formatAnnotationValue(contract.annotations?.readOnlyHint)}`,
+    `- idempotentHint: ${formatAnnotationValue(contract.annotations?.idempotentHint)}`,
+    `- destructiveHint: ${formatAnnotationValue(contract.annotations?.destructiveHint)}`,
+    `- openWorldHint: ${formatAnnotationValue(contract.annotations?.openWorldHint)}`,
+    '</annotations>',
+    '',
+    ...buildSchemaFieldLines('input_fields', contract.inputSchema),
+    '',
+    ...buildSchemaFieldLines('output_fields', contract.outputSchema),
+    '',
+    '<protocol_notes>',
+    ...buildProtocolNotes(contract),
+    '</protocol_notes>',
+  ];
 
   if (entry.annotations && entry.annotations.length > 0) {
-    lines.push('', `**Hints:** ${entry.annotations.join(', ')}`);
+    lines.push('', `<quick_hints>${entry.annotations.join(' ')}</quick_hints>`);
   }
 
   if (entry.nuances && entry.nuances.length > 0) {
-    lines.push('', '**Nuances:**');
+    lines.push('', '<nuances>');
     for (const nuance of entry.nuances) {
       lines.push(`- ${nuance}`);
     }
+    lines.push('</nuances>');
   }
 
   if (entry.gotchas && entry.gotchas.length > 0) {
-    lines.push('', '**Gotchas:**');
+    lines.push('', '<gotchas>');
     for (const gotcha of entry.gotchas) {
       lines.push(`- ${gotcha}`);
     }
+    lines.push('</gotchas>');
   }
 
+  lines.push('</tool_info>');
   return lines.join('\n');
 }

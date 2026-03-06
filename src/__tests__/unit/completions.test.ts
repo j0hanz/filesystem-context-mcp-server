@@ -109,4 +109,62 @@ describe('completions', () => {
       await setAllowedDirectoriesResolved([]);
     }
   });
+
+  it('completes tool names for the get-tool-help prompt', async () => {
+    const server = new McpServer(
+      { name: 'test-server', version: '0.0.0' },
+      { capabilities: { completions: {} } }
+    );
+    registerCompletions(server, '');
+
+    const client = new Client({ name: 'test-client', version: '1.0.0' });
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+
+      const result = await client.complete({
+        ref: { type: 'ref/prompt', name: 'get-tool-help' },
+        argument: { name: 'name', value: 're' },
+      });
+
+      assert.ok(result.completion.values.includes('read'));
+      assert.ok(result.completion.values.includes('read_many'));
+      assert.ok(!result.completion.values.includes('write'));
+    } finally {
+      await client.close().catch(() => {});
+      await server.close().catch(() => {});
+    }
+  });
+
+  it('completes tool-info template names for resource references', async () => {
+    const server = new McpServer(
+      { name: 'test-server', version: '0.0.0' },
+      { capabilities: { completions: {} } }
+    );
+    registerCompletions(server, '');
+
+    const client = new Client({ name: 'test-client', version: '1.0.0' });
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+
+      const result = await client.complete({
+        ref: { type: 'ref/resource', uri: 'internal://tool-info/{name}' },
+        argument: { name: 'name', value: 'st' },
+      });
+
+      assert.ok(result.completion.values.includes('stat'));
+      assert.ok(result.completion.values.includes('stat_many'));
+      assert.ok(!result.completion.values.includes('read'));
+    } finally {
+      await client.close().catch(() => {});
+      await server.close().catch(() => {});
+    }
+  });
 });

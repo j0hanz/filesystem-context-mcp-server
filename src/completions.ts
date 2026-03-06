@@ -12,6 +12,8 @@ import {
 } from './lib/paths.js';
 import { isRecord } from './lib/utils.js';
 
+import { getSortedToolContracts } from './resources/tool-info.js';
+
 const MAX_COMPLETION_ITEMS = 100;
 const COMPLETION_RATE_LIMIT_MS = 100;
 const MAX_COMPLETION_CACHE_KEYS = 128;
@@ -44,6 +46,10 @@ function extractTopicCompletions(instructions: string): string[] {
     }
   }
   return headers;
+}
+
+function extractToolNameCompletions(): string[] {
+  return getSortedToolContracts().map((contract) => contract.name);
 }
 
 interface CompletionResult {
@@ -600,6 +606,7 @@ export function registerCompletions(
   instructions = ''
 ): void {
   const topicValues = extractTopicCompletions(instructions);
+  const toolNameValues = extractToolNameCompletions();
 
   server.server.setRequestHandler(CompleteRequestSchema, async (request) => {
     const { params } = request;
@@ -613,6 +620,32 @@ export function registerCompletions(
       const filtered = currentValue
         ? topicValues.filter((v) => v.startsWith(currentValue))
         : topicValues;
+      return buildCompletionResponse(buildCompletionResult(filtered));
+    }
+
+    if (
+      isRecord(ref) &&
+      ref['type'] === 'ref/prompt' &&
+      ref['name'] === 'get-tool-help' &&
+      argName === 'name'
+    ) {
+      const currentValue = argument.value.toLowerCase();
+      const filtered = currentValue
+        ? toolNameValues.filter((value) => value.startsWith(currentValue))
+        : toolNameValues;
+      return buildCompletionResponse(buildCompletionResult(filtered));
+    }
+
+    if (
+      isRecord(ref) &&
+      ref['type'] === 'ref/resource' &&
+      ref['uri'] === 'internal://tool-info/{name}' &&
+      argName === 'name'
+    ) {
+      const currentValue = argument.value.toLowerCase();
+      const filtered = currentValue
+        ? toolNameValues.filter((value) => value.startsWith(currentValue))
+        : toolNameValues;
       return buildCompletionResponse(buildCompletionResult(filtered));
     }
 

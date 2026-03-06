@@ -2,6 +2,12 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { GetPromptResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 
+import { ErrorCode, McpError } from './lib/errors.js';
+
+import {
+  buildToolInfo,
+  getSortedToolContracts,
+} from './resources/tool-info.js';
 import { type IconInfo, withDefaultIcons } from './tools/shared.js';
 
 const HELP_PROMPT_NAME = 'get-help';
@@ -17,6 +23,11 @@ const ANALYZE_PATH_PROMPT_NAME = 'analyze-path';
 const ANALYZE_PATH_PROMPT_TITLE = 'Analyze Path';
 const ANALYZE_PATH_PROMPT_DESCRIPTION =
   'Generate a workflow for analyzing a file or directory using stat, read, and tree.';
+
+const GET_TOOL_HELP_PROMPT_NAME = 'get-tool-help';
+const GET_TOOL_HELP_PROMPT_TITLE = 'Get Tool Help';
+const GET_TOOL_HELP_PROMPT_DESCRIPTION =
+  'Return a prompt with the authoritative contract for a specific filesystem-mcp tool.';
 
 function filterInstructionsByTopic(
   instructions: string,
@@ -35,6 +46,15 @@ function filterInstructionsByTopic(
     .filter(Boolean)
     .join(', ');
   return `Section '${topic}' not found. Available: ${available}\n\n${instructions}`;
+}
+
+function findKnownToolName(rawName: string): string | undefined {
+  const normalized = rawName.trim().toLowerCase();
+  if (!normalized) return undefined;
+
+  return getSortedToolContracts().find(
+    (contract) => contract.name.toLowerCase() === normalized
+  )?.name;
 }
 
 export function registerGetHelpPrompt(
@@ -144,5 +164,71 @@ export function registerAnalyzePathPrompt(
         },
       ],
     })
+  );
+}
+
+export function registerGetToolHelpPrompt(
+  server: McpServer,
+  iconInfo?: IconInfo
+): void {
+  server.registerPrompt(
+    GET_TOOL_HELP_PROMPT_NAME,
+    {
+      ...withDefaultIcons(
+        {
+          title: GET_TOOL_HELP_PROMPT_TITLE,
+          description: GET_TOOL_HELP_PROMPT_DESCRIPTION,
+        },
+        iconInfo
+      ),
+      argsSchema: {
+        name: z
+          .string()
+          .min(1)
+          .describe(
+            'Tool name from tools/list or internal://tool-info/{name}.'
+          ),
+      },
+    },
+    ({ name }): GetPromptResult => {
+      const toolName = findKnownToolName(name);
+      if (!toolName) {
+        throw new McpError(ErrorCode.E_INVALID_INPUT, `Unknown tool: ${name}`);
+      }
+
+      const toolInfo = buildToolInfo(toolName);
+      if (!toolInfo) {
+        throw new McpError(
+          ErrorCode.E_INVALID_INPUT,
+          `Unknown tool: ${toolName}`
+        );
+      }
+
+      return {
+        description: GET_TOOL_HELP_PROMPT_DESCRIPTION,
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text:
+                `Use the embedded contract for \`${toolName}\` as the authoritative reference. ` +
+                'Summarize when to use it, its key constraints, and the safest next action.',
+            },
+          },
+          {
+            role: 'user',
+            content: {
+              type: 'resource',
+              resource: {
+                uri: `internal://tool-info/${toolName}`,
+                mimeType: 'text/markdown',
+                text: toolInfo,
+              },
+            },
+          },
+        ],
+      };
+    }
   );
 }
