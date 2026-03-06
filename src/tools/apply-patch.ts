@@ -1,5 +1,5 @@
-import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { readFile, stat } from 'node:fs/promises';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { applyPatch, parsePatch, type StructuredPatch } from 'diff';
@@ -108,21 +108,25 @@ type PatchFileResult = NonNullable<
   z.infer<typeof ApplyPatchOutputSchema>['results']
 >[number];
 
-async function applyPatchToFile(
+interface PatchOptions {
+  dryRun: boolean;
+  fuzzFactor: number;
+  autoConvertLineEndings: boolean;
+}
+
+async function applyDiff(
   filePath: string,
   diff: StructuredPatch,
-  options: {
-    dryRun: boolean;
-    fuzzFactor: number;
-    autoConvertLineEndings: boolean;
-  },
+  options: PatchOptions,
   signal?: AbortSignal
 ): Promise<PatchFileResult> {
   const validPath = await validateExistingPath(filePath, signal);
   assertAllowedFileAccess(filePath, validPath);
-  const stats = await withAbort(fs.stat(validPath), signal);
+
+  const stats = await withAbort(stat(validPath), signal);
   assertPatchTargetSizeWithinLimit(validPath, stats.size, MAX_TEXT_FILE_SIZE);
-  const content = await fs.readFile(validPath, { encoding: 'utf-8', signal });
+
+  const content = await readFile(validPath, { encoding: 'utf-8', signal });
 
   const patched = applyPatch(content, diff, {
     fuzzFactor: options.fuzzFactor,
@@ -149,42 +153,38 @@ async function applyPatchToFile(
   return { path: validPath, applied: true, ...patchStats };
 }
 
-async function handleMultiFilePatch(
+async function processMultiFilePatch(
   basePath: string,
   parsed: StructuredPatch[],
-  options: {
-    dryRun: boolean;
-    fuzzFactor: number;
-    autoConvertLineEndings: boolean;
-  },
+  options: PatchOptions,
   signal?: AbortSignal
 ): Promise<ToolResponse<z.infer<typeof ApplyPatchOutputSchema>>> {
   const validBase = await validateExistingPath(basePath, signal);
-  const results: PatchFileResult[] = [];
 
-  for (const diff of parsed) {
+  const promises = parsed.map(async (diff) => {
     const fileName = extractPatchTargetPath(diff);
     if (!fileName) {
-      results.push({
+      return {
         path: '<unknown>',
         applied: false,
         error: 'Missing file name in patch header',
-      });
-      continue;
+      };
     }
 
     const filePath = path.resolve(validBase, fileName);
     try {
-      const result = await applyPatchToFile(filePath, diff, options, signal);
-      results.push({ ...result, path: fileName });
+      const result = await applyDiff(filePath, diff, options, signal);
+      return { ...result, path: fileName };
     } catch (error) {
-      results.push({
+      return {
         path: fileName,
         applied: false,
         error: formatUnknownErrorMessage(error),
-      });
+      };
     }
-  }
+  });
+
+  const results = await Promise.all(promises);
 
   const totals = results.reduce(
     (acc, r) => {
@@ -221,24 +221,20 @@ async function handleApplyPatch(
 
   const fuzzFactor = args.fuzzFactor ?? 0;
   const parsed = parsePatch(args.patch);
-  const options = {
+  const options: PatchOptions = {
     dryRun: args.dryRun,
     fuzzFactor,
     autoConvertLineEndings: args.autoConvertLineEndings,
   };
-
-  // Multi-file patch: best-effort per file
   if (parsed.length > 1) {
-    return handleMultiFilePatch(args.path, parsed, options, signal);
+    return processMultiFilePatch(args.path, parsed, options, signal);
   }
-
-  // Single-file patch: delegate to shared helper, then assert success
   const diff = parsed[0];
   if (!diff) {
     throw new McpError(ErrorCode.E_INVALID_INPUT, 'No patch content found.');
   }
 
-  const result = await applyPatchToFile(args.path, diff, options, signal);
+  const result = await applyDiff(args.path, diff, options, signal);
 
   if (!result.applied) {
     throw new McpError(
