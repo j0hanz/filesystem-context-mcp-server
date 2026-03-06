@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import type { BinaryToTextEncoding } from 'node:crypto';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { z } from 'zod';
@@ -70,17 +71,13 @@ async function hashFile(
   encoding: BinaryToTextEncoding | undefined,
   signal?: AbortSignal
 ): Promise<string | Buffer> {
-  assertNotAborted(signal);
-  const hashOp = createHash('sha256');
-  const stream = createReadStream(filePath, { signal });
-
-  for await (const chunk of stream) {
-    hashOp.update(chunk as Buffer | string);
-    assertNotAborted(signal);
-  }
-
-  assertNotAborted(signal);
-  return encoding === undefined ? hashOp.digest() : hashOp.digest(encoding);
+  const hasher = createHash('sha256');
+  await pipeline(
+    createReadStream(filePath, { signal, highWaterMark: 64 * 1024 }),
+    hasher,
+    { signal }
+  );
+  return encoding ? hasher.digest(encoding) : hasher.digest();
 }
 
 function toStableRelativePath(root: string, entryPath: string): string {
@@ -150,28 +147,30 @@ async function hashDirectory(
 
   assertNotAborted(signal);
 
-  // Phase 2: hash files concurrently with bounded pool.
   const concurrency = Math.min(PARALLEL_CONCURRENCY, 8);
   const entries: { path: string; hash: Buffer }[] = [];
   let filesHashed = 0;
   const totalFiles = filteredPaths.length;
+  const taskQueue = filteredPaths;
 
-  for (let i = 0; i < filteredPaths.length; i += concurrency) {
-    assertNotAborted(signal);
-    const batch = filteredPaths.slice(i, i + concurrency);
-    const batchResults = await Promise.all(
-      batch.map(async ({ filePath, relativePath }) => {
-        const fileHash = await hashFile(filePath, undefined, signal);
-        return { path: relativePath, hash: fileHash };
-      })
-    );
-    entries.push(...batchResults);
-    filesHashed += batchResults.length;
-    reportPeriodicProgress(onProgress, filesHashed, {
-      throttleModulo: 25,
-      total: totalFiles,
-    });
-  }
+  const worker = async (): Promise<void> => {
+    while (taskQueue.length > 0) {
+      const task = taskQueue.pop();
+      if (!task) break;
+
+      assertNotAborted(signal);
+      const fileHash = await hashFile(task.filePath, undefined, signal);
+      entries.push({ path: task.relativePath, hash: fileHash });
+
+      filesHashed++;
+      reportPeriodicProgress(onProgress, filesHashed, {
+        throttleModulo: 25,
+        total: totalFiles,
+      });
+    }
+  };
+
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
 
   reportPeriodicProgress(onProgress, filesHashed, {
     throttleModulo: 25,
