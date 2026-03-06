@@ -46,66 +46,76 @@ export const READ_FILE_TOOL: ToolContract = {
   taskSupport: 'forbidden',
 } as const;
 
-async function handleReadFile(
-  args: z.infer<typeof ReadFileInputSchema>,
-  signal?: AbortSignal,
-  resourceStore?: ToolRegistrationOptions['resourceStore']
-): Promise<ToolResponse<z.infer<typeof ReadFileOutputSchema>>> {
+type ReadFileInput = z.infer<typeof ReadFileInputSchema>;
+type ReadFileOutput = z.infer<typeof ReadFileOutputSchema>;
+type ReadFileHandlerResult = Awaited<ReturnType<typeof readFile>>;
+
+const READ_TOOL_NAME = 'read';
+const READ_TOOL_LABEL = '🕮 read';
+const FULL_FILE_CONTENTS_DESCRIPTION = 'Full file contents';
+
+function buildReadResourceName(filePath: string): string {
+  return `read:${path.basename(filePath)}`;
+}
+
+function buildReadOptions(
+  args: ReadFileInput,
+  signal?: AbortSignal
+): Parameters<typeof readFile>[1] {
   const options: Parameters<typeof readFile>[1] = {
     encoding: 'utf-8',
     maxSize: MAX_TEXT_FILE_SIZE,
     skipBinary: true,
   };
-  if (args.head !== undefined) {
-    options.head = args.head;
-  }
-  if (args.tail !== undefined) {
-    options.tail = args.tail;
-  }
-  if (args.startLine !== undefined) {
-    options.startLine = args.startLine;
-  }
-  if (args.endLine !== undefined) {
-    options.endLine = args.endLine;
-  }
-  if (signal) {
-    options.signal = signal;
-  }
-  const result = await readFile(args.path, options);
 
-  const structured: z.infer<typeof ReadFileOutputSchema> = {
+  if (signal) options.signal = signal;
+  if (args.head !== undefined) options.head = args.head;
+  if (args.tail !== undefined) options.tail = args.tail;
+  if (args.startLine !== undefined) options.startLine = args.startLine;
+  if (args.endLine !== undefined) options.endLine = args.endLine;
+
+  return options;
+}
+
+function toStructuredReadFileResult(
+  args: ReadFileInput,
+  result: ReadFileHandlerResult
+): ReadFileOutput {
+  const structured: ReadFileOutput = {
     ok: true,
     path: args.path,
     content: result.content,
-    ...(result.truncated ? { truncated: result.truncated } : {}),
-    ...(result.totalLines !== undefined
-      ? { totalLines: result.totalLines }
-      : {}),
-    ...(result.head !== undefined ? { head: result.head } : {}),
-    ...(result.tail !== undefined ? { tail: result.tail } : {}),
-    ...(result.startLine !== undefined ? { startLine: result.startLine } : {}),
-    ...(result.endLine !== undefined ? { endLine: result.endLine } : {}),
-    ...(result.linesRead !== undefined ? { linesRead: result.linesRead } : {}),
-    ...(result.hasMoreLines ? { hasMoreLines: result.hasMoreLines } : {}),
   };
 
-  const externalized = maybeExternalizeTextContent(
-    resourceStore,
-    result.content,
-    { name: `read:${path.basename(args.path)}`, mimeType: 'text/plain' }
-  );
+  if (result.truncated) structured.truncated = true;
+  if (result.totalLines !== undefined)
+    structured.totalLines = result.totalLines;
+  if (result.head !== undefined) structured.head = result.head;
+  if (result.tail !== undefined) structured.tail = result.tail;
+  if (result.startLine !== undefined) structured.startLine = result.startLine;
+  if (result.endLine !== undefined) structured.endLine = result.endLine;
+  if (result.linesRead !== undefined) structured.linesRead = result.linesRead;
+  if (result.hasMoreLines) structured.hasMoreLines = true;
 
-  if (args.includeHash) {
-    structured.contentHash = createHash('sha256')
-      .update(result.content, 'utf-8')
-      .digest('hex');
-  }
+  return structured;
+}
+
+function maybeBuildExternalizedReadResponse(
+  filePath: string,
+  content: string,
+  structured: ReadFileOutput,
+  resourceStore?: ToolRegistrationOptions['resourceStore']
+): ToolResponse<ReadFileOutput> | undefined {
+  const externalized = maybeExternalizeTextContent(resourceStore, content, {
+    name: buildReadResourceName(filePath),
+    mimeType: 'text/plain',
+  });
   if (!externalized) {
-    return buildToolResponse(result.content, structured);
+    return undefined;
   }
 
   const { entry, preview } = externalized;
-  const structuredWithResource: z.infer<typeof ReadFileOutputSchema> = {
+  const structuredWithResource: ReadFileOutput = {
     ...structured,
     content: preview,
     truncated: true,
@@ -113,7 +123,7 @@ async function handleReadFile(
   };
 
   const text = [
-    `Output too large to inline (${result.content.length} chars).`,
+    `Output too large to inline (${content.length} chars).`,
     'Preview:',
     preview,
   ].join('\n');
@@ -123,10 +133,89 @@ async function handleReadFile(
       uri: entry.uri,
       name: entry.name,
       mimeType: entry.mimeType,
-      description: 'Full file contents',
+      description: FULL_FILE_CONTENTS_DESCRIPTION,
       expiresAt: entry.expiresAt,
     }),
   ]);
+}
+
+function buildReadProgressMessage(args: ReadFileInput): string {
+  const name = path.basename(args.path);
+  if (args.startLine !== undefined) {
+    const end = args.endLine ?? '…';
+    return `${READ_TOOL_LABEL}: ${name} [lines ${args.startLine}–${end}]`;
+  }
+  if (args.head !== undefined)
+    return `${READ_TOOL_LABEL}: ${name} [head ${args.head}]`;
+  if (args.tail !== undefined)
+    return `${READ_TOOL_LABEL}: ${name} [tail ${args.tail}]`;
+  return `${READ_TOOL_LABEL}: ${name}`;
+}
+
+function buildReadCompletionMessage(
+  args: ReadFileInput,
+  result: ToolResult<ReadFileOutput>
+): string {
+  const name = path.basename(args.path);
+  if (result.isError) return `${READ_TOOL_LABEL}: ${name} • failed`;
+
+  const structured = result.structuredContent;
+  if (!structured.ok) return `${READ_TOOL_LABEL}: ${name} • failed`;
+
+  const lines = structured.linesRead ?? structured.totalLines;
+
+  if (structured.startLine !== undefined) {
+    const end = structured.linesRead
+      ? structured.startLine + structured.linesRead - 1
+      : (structured.endLine ?? '…');
+    return `${READ_TOOL_LABEL}: ${name} • lines ${structured.startLine}–${end}`;
+  }
+
+  if (structured.head !== undefined) {
+    return structured.hasMoreLines
+      ? `${READ_TOOL_LABEL}: ${name} • first ${String(lines ?? structured.head)} lines`
+      : `${READ_TOOL_LABEL}: ${name} • ${String(lines ?? structured.head)} lines`;
+  }
+
+  if (structured.tail !== undefined) {
+    return structured.hasMoreLines
+      ? `${READ_TOOL_LABEL}: ${name} • last ${String(lines ?? structured.tail)} lines`
+      : `${READ_TOOL_LABEL}: ${name} • ${String(lines ?? structured.tail)} lines`;
+  }
+
+  if (structured.truncated) {
+    return `${READ_TOOL_LABEL}: ${name} • truncated [${String(lines)} lines]`;
+  }
+
+  return `${READ_TOOL_LABEL}: ${name} • ${String(lines)} lines`;
+}
+
+async function handleReadFile(
+  args: ReadFileInput,
+  signal?: AbortSignal,
+  resourceStore?: ToolRegistrationOptions['resourceStore']
+): Promise<ToolResponse<ReadFileOutput>> {
+  const options = buildReadOptions(args, signal);
+  const result = await readFile(args.path, options);
+  const structured = toStructuredReadFileResult(args, result);
+
+  if (args.includeHash) {
+    structured.contentHash = createHash('sha256')
+      .update(result.content, 'utf-8')
+      .digest('hex');
+  }
+
+  const externalizedResponse = maybeBuildExternalizedReadResponse(
+    args.path,
+    result.content,
+    structured,
+    resourceStore
+  );
+  if (externalizedResponse) {
+    return externalizedResponse;
+  }
+
+  return buildToolResponse(result.content, structured);
 }
 
 export function registerReadFileTool(
@@ -134,11 +223,11 @@ export function registerReadFileTool(
   options: ToolRegistrationOptions = {}
 ): void {
   const handler = (
-    args: z.infer<typeof ReadFileInputSchema>,
+    args: ReadFileInput,
     extra: ToolExtra
-  ): Promise<ToolResult<z.infer<typeof ReadFileOutputSchema>>> =>
+  ): Promise<ToolResult<ReadFileOutput>> =>
     executeToolWithDiagnostics({
-      toolName: 'read',
+      toolName: READ_TOOL_NAME,
       extra,
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: args.path },
@@ -149,47 +238,8 @@ export function registerReadFileTool(
 
   const wrappedHandler = wrapToolHandler(handler, {
     guard: options.isInitialized,
-    progressMessage: (args) => {
-      const name = path.basename(args.path);
-      if (args.startLine !== undefined) {
-        const end = args.endLine ?? '…';
-        return `🕮 read: ${name} [lines ${args.startLine}–${end}]`;
-      }
-      if (args.head !== undefined) return `🕮 read: ${name} [head ${args.head}]`;
-      if (args.tail !== undefined) return `🕮 read: ${name} [tail ${args.tail}]`;
-      return `🕮 read: ${name}`;
-    },
-    completionMessage: (args, result) => {
-      const name = path.basename(args.path);
-      if (result.isError) return `🕮 read: ${name} • failed`;
-      const sc = result.structuredContent;
-      if (!sc.ok) return `🕮 read: ${name} • failed`;
-
-      const lines = sc.linesRead ?? sc.totalLines;
-
-      if (sc.startLine !== undefined) {
-        const end = sc.linesRead
-          ? sc.startLine + sc.linesRead - 1
-          : (sc.endLine ?? '…');
-        return `🕮 read: ${name} • lines ${sc.startLine}–${end}`;
-      }
-
-      if (sc.head !== undefined) {
-        return sc.hasMoreLines
-          ? `🕮 read: ${name} • first ${lines ?? sc.head} lines`
-          : `🕮 read: ${name} • ${lines ?? sc.head} lines`;
-      }
-
-      if (sc.tail !== undefined) {
-        return sc.hasMoreLines
-          ? `🕮 read: ${name} • last ${lines ?? sc.tail} lines`
-          : `🕮 read: ${name} • ${lines ?? sc.tail} lines`;
-      }
-
-      if (sc.truncated)
-        return `🕮 read: ${name} • truncated [${String(lines)} lines]`;
-      return `🕮 read: ${name} • ${String(lines)} lines`;
-    },
+    progressMessage: buildReadProgressMessage,
+    completionMessage: buildReadCompletionMessage,
   });
 
   const validatedHandler = withValidatedArgs(
@@ -200,7 +250,7 @@ export function registerReadFileTool(
   if (
     registerToolTaskIfAvailable(
       server,
-      'read',
+      READ_TOOL_NAME,
       READ_FILE_TOOL,
       validatedHandler,
       options.iconInfo,
@@ -209,7 +259,7 @@ export function registerReadFileTool(
   )
     return;
   server.registerTool(
-    'read',
+    READ_TOOL_NAME,
     withDefaultIcons({ ...READ_FILE_TOOL }, options.iconInfo),
     validatedHandler
   );
