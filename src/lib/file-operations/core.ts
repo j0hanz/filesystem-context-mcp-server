@@ -30,12 +30,12 @@ export interface DirentLike {
 
 export type EntryType = 'file' | 'directory' | 'symlink' | 'other';
 
-export interface IndexedValue<T> {
+interface IndexedValue<T> {
   index: number;
   value: T;
 }
 
-export interface IndexedError {
+interface IndexedError {
   index: number;
   error: Error;
 }

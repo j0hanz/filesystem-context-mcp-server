@@ -54,27 +54,15 @@ export function omitOptionKeys<T extends object, K extends keyof T>(
   return output as Omit<T, K>;
 }
 
-export function setIfDefined<T extends object, K extends keyof T>(
-  target: T,
-  key: K,
-  value: T[K] | undefined
-): void {
-  if (value !== undefined) {
-    target[key] = value;
-  }
-}
-
 // progress-reporting.ts
-export interface ProgressPayload {
+interface ProgressPayload {
   current: number;
   total?: number;
 }
 
-export type ProgressCallback =
-  | ((progress: ProgressPayload) => void)
-  | undefined;
+type ProgressCallback = ((progress: ProgressPayload) => void) | undefined;
 
-export interface PeriodicProgressOptions {
+interface PeriodicProgressOptions {
   total?: number;
   throttleModulo?: number;
   force?: boolean;

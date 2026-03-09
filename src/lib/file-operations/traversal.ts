@@ -27,7 +27,7 @@ interface GlobEntry {
   stats?: Stats;
 }
 
-export interface GlobEntriesOptions {
+interface GlobEntriesOptions {
   cwd: string;
   pattern: string;
   excludePatterns: readonly string[];
@@ -448,7 +448,7 @@ export async function* globEntries(
     endMeasure?.(ok);
   }
 }
-export interface GlobConfig {
+interface GlobConfig {
   cwd: string;
   pattern: string;
   excludePatterns?: readonly string[];

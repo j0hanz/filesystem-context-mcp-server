@@ -212,20 +212,6 @@ export class McpError extends Error {
     this.name = 'McpError';
     Object.setPrototypeOf(this, McpError.prototype);
   }
-
-  static fromError(
-    code: ErrorCode,
-    message: string,
-    originalError: unknown,
-    path?: string,
-    details?: Record<string, unknown>
-  ): McpError {
-    const mcpError = new McpError(code, message, path, details, originalError);
-    if (originalError instanceof Error && originalError.stack) {
-      mcpError.stack = `${String(mcpError.stack)}\nCaused by: ${originalError.stack}`;
-    }
-    return mcpError;
-  }
 }
 
 const ERROR_SUGGESTIONS: Readonly<Record<ErrorCode, string>> = {

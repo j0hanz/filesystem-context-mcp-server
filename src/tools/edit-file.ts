@@ -351,7 +351,7 @@ async function applyEdits(
   );
 }
 
-export async function handleEditFile(
+async function handleEditFile(
   args: EditInput,
   signal?: AbortSignal
 ): Promise<ToolResponse<EditOutput>> {

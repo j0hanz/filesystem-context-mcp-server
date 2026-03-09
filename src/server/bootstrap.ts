@@ -93,7 +93,7 @@ type ServerCapabilities = NonNullable<
 
 type NonOptionalServerCapabilities = NonNullable<ServerCapabilities>;
 
-export function buildServerCapabilities(
+function buildServerCapabilities(
   options: CapabilityOptions = {}
 ): NonOptionalServerCapabilities {
   const capabilities: NonOptionalServerCapabilities = {
@@ -118,7 +118,7 @@ export function buildServerCapabilities(
   return capabilities;
 }
 
-export function supportsTaskToolRequests(): boolean {
+function supportsTaskToolRequests(): boolean {
   return detectTaskToolSupport();
 }
 
@@ -139,7 +139,7 @@ export interface LoggingState {
   minimumLevel: LoggingLevel;
 }
 
-export function createLoggingState(
+function createLoggingState(
   minimumLevel: LoggingLevel = 'debug'
 ): LoggingState {
   return { minimumLevel };

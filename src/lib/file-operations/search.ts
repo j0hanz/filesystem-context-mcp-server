@@ -66,15 +66,14 @@ import {
 } from './core.js';
 import { buildGlobOptions, globEntries } from './traversal.js';
 
-export const MatcherOptionsSchema = z.strictObject({
-  caseSensitive: z.boolean(),
-  wholeWord: z.boolean(),
-  isLiteral: z.boolean(),
-  multiline: z.boolean(),
-});
-export type MatcherOptions = z.infer<typeof MatcherOptionsSchema>;
+interface MatcherOptions {
+  caseSensitive: boolean;
+  wholeWord: boolean;
+  isLiteral: boolean;
+  multiline: boolean;
+}
 
-export type Matcher = (line: string) => number;
+type Matcher = (line: string) => number;
 
 interface RegexLikeMatcher {
   lastIndex: number;
@@ -100,10 +99,7 @@ function buildRegexPattern(pattern: string, options: MatcherOptions): string {
   return options.wholeWord ? `\\b${escaped}\\b` : escaped;
 }
 
-export function validatePattern(
-  pattern: string,
-  options: MatcherOptions
-): void {
+function validatePattern(pattern: string, options: MatcherOptions): void {
   if (options.isLiteral && pattern.length === 0) return;
   if (options.isLiteral && !options.wholeWord) return;
 
@@ -153,10 +149,7 @@ function buildRegexMatcher(
   return (line: string): number => countRegexLineMatches(regex, line);
 }
 
-export function buildMatcher(
-  pattern: string,
-  options: MatcherOptions
-): Matcher {
+function buildMatcher(pattern: string, options: MatcherOptions): Matcher {
   if (options.isLiteral && pattern.length === 0) return () => 0;
 
   if (options.isLiteral && !options.wholeWord) {
@@ -173,7 +166,7 @@ export function buildMatcher(
 
 const SEARCH_CONTENT_MAX_RESULTS = 500;
 
-export interface ScanFileOptions {
+interface ScanFileOptions {
   maxFileSize: number;
   skipBinary: boolean;
   contextLines: number;
@@ -570,7 +563,7 @@ function buildSearchContentResult(
   };
 }
 
-export interface ScanRequest {
+interface ScanRequest {
   type: 'scan';
   id: number;
   resolvedPath: string;
@@ -581,7 +574,7 @@ export interface ScanRequest {
   maxMatches: number;
 }
 
-export interface ScanResult {
+interface ScanResult {
   type: 'result';
   id: number;
   result: {
@@ -592,13 +585,13 @@ export interface ScanResult {
   };
 }
 
-export interface ScanError {
+interface ScanError {
   type: 'error';
   id: number;
   error: string;
 }
 
-export type WorkerResponse = ScanResult | ScanError;
+type WorkerResponse = ScanResult | ScanError;
 
 interface WorkerScanRequest {
   resolvedPath: string;
@@ -1099,7 +1092,7 @@ async function executeParallel(
 
 // --- Entry Points ---
 
-export async function scanFileInWorker(
+async function scanFileInWorker(
   resolvedPath: string,
   requestedPath: string,
   matcher: Matcher,
@@ -1670,7 +1663,7 @@ const SORT_COMPARATORS: Readonly<
   name: (a, b) => compareNameThenPath(a, b),
 };
 
-export function sortSearchResults(results: Sortable[], sortBy: SortBy): void {
+function sortSearchResults(results: Sortable[], sortBy: SortBy): void {
   if (sortBy === 'name') {
     stableSortByDerivedString(
       results,

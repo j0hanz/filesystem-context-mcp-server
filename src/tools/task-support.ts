@@ -40,13 +40,13 @@ import {
   withDefaultIcons,
 } from './shared.js';
 
-export interface TaskContext {
+interface TaskContext {
   taskId: string;
   toolName?: string | undefined;
   startTime: number;
 }
 
-export const taskContext = new AsyncLocalStorage<TaskContext>();
+const taskContext = new AsyncLocalStorage<TaskContext>();
 
 interface TaskDiagnosticsEvent {
   phase:

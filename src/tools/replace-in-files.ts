@@ -465,7 +465,7 @@ function createReplacementMatcher(
   return new LiteralReplacementMatcher(args.searchPattern, args.caseSensitive);
 }
 
-export async function handleSearchAndReplace(
+async function handleSearchAndReplace(
   args: SearchAndReplaceArgs,
   signal?: AbortSignal,
   onProgress: (progress: { total?: number; current: number }) => void = () => {}

@@ -582,7 +582,7 @@ function findMatchingRoots(
   });
 }
 
-export async function getPathCompletions(
+async function getPathCompletions(
   currentValue: string,
   options: CompletionOptions = {}
 ): Promise<CompletionResult> {

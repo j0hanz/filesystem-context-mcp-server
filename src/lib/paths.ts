@@ -354,10 +354,6 @@ export function withAllowedDirectoriesState<T>(
   );
 }
 
-export function getAllowedDirectoriesState(): AllowedDirectoriesState {
-  return cloneAllowedDirectoriesState(getActiveAllowedDirectoriesState());
-}
-
 export function setAllowedDirectoriesStateResolved(
   state: AllowedDirectoriesState
 ): void {
@@ -656,7 +652,7 @@ function toMcpError(requestedPath: string, error: unknown): McpError {
   );
 }
 
-export function toAccessDeniedWithHint(
+function toAccessDeniedWithHint(
   requestedPath: string,
   resolvedPath: string,
   normalizedResolved: string

@@ -39,7 +39,7 @@ export const CREATE_DIRECTORY_TOOL: ToolContract = {
   taskSupport: 'forbidden',
 } as const;
 
-export async function handleCreateDirectory(
+async function handleCreateDirectory(
   args: z.infer<typeof CreateDirectoryInputSchema>,
   signal?: AbortSignal
 ): Promise<ToolResponse<z.infer<typeof CreateDirectoryOutputSchema>>> {

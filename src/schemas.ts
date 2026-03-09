@@ -89,11 +89,6 @@ const ErrorSchema = z.strictObject({
   suggestion: z.string().optional().describe('Fix suggestion'),
 });
 
-export const ToolErrorResponseSchema = z.strictObject({
-  ok: z.literal(false).describe('Operation failed'),
-  error: ErrorSchema.describe('Error details'),
-});
-
 const HeadLinesSchema = z
   .int({ error: 'Must be integer' })
   .min(1, 'Min: 1')

@@ -48,7 +48,7 @@ export const MOVE_FILE_TOOL: ToolContract = {
   taskSupport: 'forbidden',
 } as const;
 
-export async function handleMoveFile(
+async function handleMoveFile(
   args: z.infer<typeof MoveFileInputSchema>,
   signal?: AbortSignal
 ): Promise<ToolResponse<z.infer<typeof MoveFileOutputSchema>>> {

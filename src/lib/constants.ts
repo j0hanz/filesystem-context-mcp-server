@@ -102,8 +102,6 @@ export const DEFAULT_LOG_LEVEL = parseEnvLogLevel(
   'info'
 );
 
-export const REQUIRED_MCP_PROTOCOL_VERSION = '2025-11-25';
-
 // Default TTL for MCP tasks when the client does not specify one (5 minutes).
 export const DEFAULT_TASK_TTL_MS = 5 * 60 * 1000;
 export const MAX_TASK_TTL_MS = parseEnvInt(

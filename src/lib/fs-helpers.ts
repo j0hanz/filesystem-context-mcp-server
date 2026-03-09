@@ -969,5 +969,3 @@ export async function atomicWriteFile(
     throw error;
   }
 }
-
-export { headFile };

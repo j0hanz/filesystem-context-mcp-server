@@ -105,7 +105,7 @@ function normalizeToolExecution<T extends object>(tool: T): T {
   return normalized as T;
 }
 
-export function shouldStripStructuredOutput(): boolean {
+function shouldStripStructuredOutput(): boolean {
   return parseTrueEnvFlag(process.env['FS_CONTEXT_STRIP_STRUCTURED']);
 }
 
@@ -561,7 +561,7 @@ export function notifyProgress(
   void reportProgress(extra, progress);
 }
 
-export interface ToolProgressSession {
+interface ToolProgressSession {
   update: (progress: {
     current: number;
     total?: number;
@@ -573,7 +573,7 @@ export interface ToolProgressSession {
   getCurrent: () => number;
 }
 
-export interface BatchProgressCallbacks {
+interface BatchProgressCallbacks {
   progress: ToolProgressSession;
   onItemComplete: () => void;
 }
