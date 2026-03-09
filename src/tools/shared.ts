@@ -818,6 +818,23 @@ export function buildBatchPathContext(
   return `${paths.length} ${normalizedLabel} [${first}${extraPaths}]`;
 }
 
+export function truncateProgressPattern(
+  pattern: string,
+  maxLength = 40
+): string {
+  if (pattern.length <= maxLength) return pattern;
+  if (pattern.includes('|')) {
+    const segments = pattern.split('|');
+    const first = segments[0] ?? '';
+    const second = segments[1];
+    const preview = second !== undefined ? `${first}|${second}` : first;
+    return preview.length <= maxLength
+      ? `${preview}…`
+      : `${preview.slice(0, maxLength)}…`;
+  }
+  return `${pattern.slice(0, maxLength)}…`;
+}
+
 export function buildBatchCompletionSuffix(
   summary: { total?: number; failed?: number; succeeded?: number } | undefined,
   successWord: string,

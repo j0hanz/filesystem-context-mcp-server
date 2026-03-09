@@ -42,6 +42,7 @@ import {
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
+  truncateProgressPattern,
   withDefaultIcons,
   withValidatedArgs,
   wrapToolHandler,
@@ -560,7 +561,8 @@ export function registerSearchAndReplaceTool(
       ...(args.path ? { context: { path: args.path } } : {}),
       run: async (signal) => {
         const dryLabel = args.dryRun ? ' [dry run]' : '';
-        const context = `"${args.searchPattern}" in ${args.filePattern}${dryLabel}`;
+        const truncatedPattern = truncateProgressPattern(args.searchPattern);
+        const context = `"${truncatedPattern}" in ${args.filePattern}${dryLabel}`;
         const progress = createToolProgressSession(
           extra,
           `🛠 replace: ${context}`
@@ -575,7 +577,7 @@ export function registerSearchAndReplaceTool(
           progress.update({
             current,
             ...(total !== undefined ? { total } : {}),
-            message: `🛠 replace: ${args.searchPattern} [${current} files]`,
+            message: `🛠 replace: ${truncatedPattern} [${current} files]`,
           });
         };
 

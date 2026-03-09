@@ -33,6 +33,7 @@ import {
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
+  truncateProgressPattern,
   withDefaultIcons,
   withValidatedArgs,
   wrapToolHandler,
@@ -489,7 +490,7 @@ export function registerSearchContentTool(
       context: { path: args.path ?? '.' },
       run: async (signal) => {
         const { pattern, filePattern: scope } = args;
-        const progressLabel = `🔎︎ grep: ${pattern}`;
+        const progressLabel = `🔎︎ grep: ${truncateProgressPattern(pattern)}`;
         const progress = createToolProgressSession(extra, progressLabel);
 
         const progressWithMessage = ({

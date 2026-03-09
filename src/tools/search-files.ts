@@ -27,6 +27,7 @@ import {
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
+  truncateProgressPattern,
   withDefaultIcons,
   withValidatedArgs,
   wrapToolHandler,
@@ -160,11 +161,12 @@ export function registerSearchFilesTool(
         const rawScopeLabel = args.path ? path.basename(args.path) : '.';
         const scopeLabel = rawScopeLabel || '.';
         const { pattern } = args;
-        const context = `${pattern} in ${scopeLabel}`;
+        const truncatedPattern = truncateProgressPattern(pattern);
+        const context = `${truncatedPattern} in ${scopeLabel}`;
         let progressCursor = 0;
         notifyProgress(extra, {
           current: 0,
-          message: `🔎︎ find: ${pattern}`,
+          message: `🔎︎ find: ${truncatedPattern}`,
         });
 
         const baseReporter = createProgressReporter(extra);
@@ -179,7 +181,7 @@ export function registerSearchFilesTool(
           baseReporter({
             current,
             ...(total !== undefined ? { total } : {}),
-            message: `🔎︎ find: ${pattern} [${current} files]`,
+            message: `🔎︎ find: ${truncatedPattern} [${current} files]`,
           });
         };
 
