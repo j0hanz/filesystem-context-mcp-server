@@ -86,17 +86,17 @@
     "@eslint/js": "^10.0.1",
     "@trivago/prettier-plugin-sort-imports": "^6.0.2",
     "@types/node": "^24",
-    "eslint": "^10.0.2",
+    "eslint": "^10.0.3",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-de-morgan": "^2.1.1",
     "eslint-plugin-depend": "^1.5.0",
     "eslint-plugin-unused-imports": "^4.4.1",
     "jscpd": "^4.0.8",
-    "knip": "^5.85.0",
+    "knip": "^5.86.0",
     "prettier": "^3.8.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.56.1"
+    "typescript-eslint": "^8.57.0"
   },
   "engines": {
     "node": ">=24"
