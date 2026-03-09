@@ -24,9 +24,12 @@ interface JsonSchemaObject {
   required?: string[];
   description?: unknown;
   enum?: unknown[];
+  const?: unknown;
   anyOf?: JsonSchemaObject[];
   oneOf?: JsonSchemaObject[];
+  prefixItems?: JsonSchemaObject[];
   items?: JsonSchemaObject;
+  additionalProperties?: unknown;
 }
 
 function getTaskSupportLabel(
@@ -158,6 +161,10 @@ function summarizeSchemaType(schema: JsonSchemaObject): string {
     return `enum(${schema.enum.map((value) => JSON.stringify(value)).join(', ')})`;
   }
 
+  if (schema.const !== undefined) {
+    return `const(${JSON.stringify(schema.const)})`;
+  }
+
   if (Array.isArray(schema.anyOf) && schema.anyOf.length > 0) {
     return schema.anyOf.map(summarizeSchemaType).join(' | ');
   }
@@ -167,10 +174,19 @@ function summarizeSchemaType(schema: JsonSchemaObject): string {
   }
 
   if (schema.type === 'array') {
+    if (Array.isArray(schema.prefixItems) && schema.prefixItems.length > 0) {
+      const itemTypes = schema.prefixItems.map(summarizeSchemaType).join(', ');
+      return `tuple<${itemTypes}>`;
+    }
+
     const itemType = schema.items
       ? summarizeSchemaType(schema.items)
       : 'unknown';
     return `array<${itemType}>`;
+  }
+
+  if (schema.type === 'object' && schema.additionalProperties === false) {
+    return 'object (strict)';
   }
 
   if (typeof schema.type === 'string' && schema.type.length > 0) {
@@ -200,6 +216,12 @@ function buildSchemaFieldLines(
     jsonSchema.description.length > 0
   ) {
     lines.push(`- Schema constraints: ${jsonSchema.description}`);
+  }
+
+  if (jsonSchema.additionalProperties === false) {
+    lines.push(
+      '- Unknown fields are rejected (`additionalProperties: false`).'
+    );
   }
 
   if (fieldNames.length === 0) {

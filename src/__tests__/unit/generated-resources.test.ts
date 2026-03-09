@@ -41,6 +41,10 @@ describe('generated LLM resources', () => {
     assert.ok(toolInfo, 'Expected tool info for read');
     assert.match(toolInfo, /<input_fields>/u);
     assert.match(toolInfo, /- Schema constraints: Use one read mode only:/u);
+    assert.match(
+      toolInfo,
+      /- Unknown fields are rejected \(`additionalProperties: false`\)\./u
+    );
     assert.match(toolInfo, /- path \(string, required\):/u);
     assert.match(toolInfo, /- includeHash \(boolean, optional\):/u);
     assert.match(toolInfo, /- taskSupport: forbidden/u);
@@ -64,5 +68,18 @@ describe('generated LLM resources', () => {
       moveInfo,
       /- Schema constraints: Provide either 'source' or 'sources'\./u
     );
+  });
+
+  it('preserves tuple and literal detail from Zod v4 JSON Schema', () => {
+    const editInfo = buildToolInfo('edit');
+    const rootsInfo = buildToolInfo('roots');
+
+    assert.ok(editInfo, 'Expected tool info for edit');
+    assert.ok(rootsInfo, 'Expected tool info for roots');
+    assert.match(
+      editInfo,
+      /- lineRange \(tuple<number, number>, optional\): Line range modified \[start, end\] \(1-based\)/u
+    );
+    assert.match(rootsInfo, /- ok \(boolean, required\): No description\./u);
   });
 });
