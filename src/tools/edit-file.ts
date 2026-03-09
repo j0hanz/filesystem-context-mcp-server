@@ -305,7 +305,7 @@ function buildEditCompletionMessage(
   const added = structuredContent.linesAdded ?? 0;
   const removed = structuredContent.linesRemoved ?? 0;
   const dry = args.dryRun ? 'dry run ' : '';
-  return `🛠 edit: ${name} • ${dry}+${added} -${removed}`;
+  return `🛠 edit: ${name} • ${dry} +${added} -${removed}`;
 }
 
 async function applyEdits(

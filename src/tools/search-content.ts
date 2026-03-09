@@ -1,4 +1,5 @@
 import * as path from 'node:path';
+import { performance } from 'node:perf_hooks';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import RE2 from 're2';
@@ -51,6 +52,8 @@ const CONFIG = {
   } as const,
 } as const;
 
+let searchMetricSequence = 0;
+
 // Type Definitions
 type SearchInput = z.infer<typeof SearchContentInputSchema>;
 type SearchOutput = z.infer<typeof SearchContentOutputSchema>;
@@ -95,18 +98,20 @@ const TRUTHY_SUMMARY_FIELDS: readonly TruthySummaryField[] = [
 function buildStructuredSummaryFields(
   summary: SearchSummary
 ): Partial<SearchOutput> {
-  const truthyFields = Object.fromEntries(
-    TRUTHY_SUMMARY_FIELDS.flatMap((key) => {
-      const value = summary[key];
-      return value ? [[key, value]] : [];
-    })
-  ) as Partial<SearchOutput>;
-
-  return {
-    ...truthyFields,
-    ...(summary.truncated ? { truncated: true } : {}),
-    ...(summary.stoppedReason ? { stoppedReason: summary.stoppedReason } : {}),
-  };
+  const result: Partial<SearchOutput> = {};
+  for (const key of TRUTHY_SUMMARY_FIELDS) {
+    const value = summary[key];
+    if (value) {
+      result[key] = value as never;
+    }
+  }
+  if (summary.truncated) {
+    result.truncated = true;
+  }
+  if (summary.stoppedReason) {
+    result.stoppedReason = summary.stoppedReason;
+  }
+  return result;
 }
 
 function buildCompletionSuffix(
@@ -125,6 +130,21 @@ function buildCompletionSuffix(
       : '';
 
   return `${count} ${matchWord} in ${filesMatched} ${fileWord}${reasonSuffix}`;
+}
+
+function createSearchMetricNames(): {
+  timerStartName: string;
+  timerEndName: string;
+  metricName: string;
+} {
+  searchMetricSequence += 1;
+  const metricSuffix = `${Date.now()}_${searchMetricSequence}`;
+
+  return {
+    timerStartName: `searchContentStart_${metricSuffix}`,
+    timerEndName: `searchContentEnd_${metricSuffix}`,
+    metricName: `searchContent_${metricSuffix}`,
+  };
 }
 
 function compareNormalizedMatches(
@@ -276,34 +296,14 @@ const SearchResponseBuilder = {
     matches: readonly NormalizedSearchMatch[]
   ): string {
     if (matches.length === 0) return heading;
-
-    // Fast path: calculate exact byte length to avoid arrays and string concatenation in V8
-    // +1 for newline after heading. Each match gets: "  " (2) + relativeFile + ":" + line + ": " (2) + content + "\n"
-    let totalBytes = Buffer.byteLength(heading, 'utf8');
+    const parts: string[] = [heading];
     for (const match of matches) {
-      totalBytes +=
-        1 + // \n
-        2 + // "  "
-        Buffer.byteLength(match.relativeFile, 'utf8') +
-        1 + // ":"
-        Math.max(4, String(match.line).length) +
-        2 + // ": "
-        Buffer.byteLength(match.content, 'utf8');
+      parts.push(
+        `\n  ${match.relativeFile}:${String(match.line).padStart(4)}: ${match.content}`
+      );
     }
 
-    const buf = Buffer.allocUnsafe(totalBytes);
-    let offset = buf.write(heading, 0, 'utf8');
-
-    for (const match of matches) {
-      offset += buf.write('\n  ', offset, 'utf8');
-      offset += buf.write(match.relativeFile, offset, 'utf8');
-      offset += buf.write(':', offset, 'utf8');
-      offset += buf.write(String(match.line).padStart(4), offset, 'utf8');
-      offset += buf.write(': ', offset, 'utf8');
-      offset += buf.write(match.content, offset, 'utf8');
-    }
-
-    return buf.toString('utf8', 0, offset);
+    return parts.join('');
   },
 
   resolveTruncatedReason(summary: SearchSummary): string {
@@ -345,6 +345,8 @@ const SearchExecutor = {
     onProgress?: (progress: { total?: number; current: number }) => void
   ): Promise<SearchResultValue> {
     const excludePatterns = args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
+    const { timerStartName, timerEndName, metricName } =
+      createSearchMetricNames();
 
     const options: SearchContentOptions = {
       includeHidden: args.includeHidden,
@@ -360,6 +362,7 @@ const SearchExecutor = {
       ...(onProgress ? { onProgress } : {}),
     };
 
+    performance.mark(timerStartName);
     try {
       return await searchContent(basePath, args.pattern, options);
     } catch (error) {
@@ -367,6 +370,12 @@ const SearchExecutor = {
         throw new McpError(ErrorCode.E_INVALID_PATTERN, error.message);
       }
       throw error;
+    } finally {
+      performance.mark(timerEndName);
+      performance.measure(metricName, timerStartName, timerEndName);
+      performance.clearMarks(timerStartName);
+      performance.clearMarks(timerEndName);
+      performance.clearMeasures(metricName);
     }
   },
 
