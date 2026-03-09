@@ -241,6 +241,55 @@ describe('edit tool', () => {
       'Expected unmatchedEdits'
     );
   });
+
+  it('applies sequential edits against updated content', async () => {
+    const file = path.join(env.tmpDir, 'sequential.txt');
+    await fs.writeFile(file, 'alpha\nbeta\n', 'utf8');
+
+    const raw = await env.client.callTool({
+      name: 'edit',
+      arguments: {
+        path: file,
+        edits: [
+          { oldText: 'beta', newText: 'gamma' },
+          { oldText: 'gamma', newText: 'delta' },
+        ],
+      },
+    });
+
+    assertOk(raw);
+    const sc = getStructured(raw);
+    assert.equal(sc['appliedEdits'], 2);
+
+    const actual = await fs.readFile(file, 'utf8');
+    assert.equal(actual, 'alpha\ndelta\n');
+  });
+
+  it('returns diff and stats in dryRun mode without modifying the file', async () => {
+    const file = path.join(env.tmpDir, 'dry-diff.txt');
+    await fs.writeFile(file, 'alpha\nbeta\n', 'utf8');
+
+    const raw = await env.client.callTool({
+      name: 'edit',
+      arguments: {
+        path: file,
+        edits: [{ oldText: 'beta', newText: 'beta-1\nbeta-2' }],
+        dryRun: true,
+      },
+    });
+
+    assertOk(raw);
+    const sc = getStructured(raw);
+    assert.equal(sc['appliedEdits'], 1);
+    assert.equal(sc['linesAdded'], 2);
+    assert.equal(sc['linesRemoved'], 1);
+    assert.match(sc['diff'] as string, /^--- dry-diff\.txt/m);
+    assert.match(sc['diff'] as string, /^\+beta-1$/m);
+    assert.match(sc['diff'] as string, /^\+beta-2$/m);
+
+    const actual = await fs.readFile(file, 'utf8');
+    assert.equal(actual, 'alpha\nbeta\n');
+  });
 });
 
 // ─── apply_patch ─────────────────────────────────────────────────────────────

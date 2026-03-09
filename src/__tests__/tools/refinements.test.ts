@@ -66,6 +66,8 @@ describe('apply_patch multi-file', () => {
 
     const results = sc['results'] as Array<Record<string, unknown>>;
     assert.equal(results.length, 2);
+    assert.equal(results[0]?.['path'], 'alpha.txt');
+    assert.equal(results[1]?.['path'], 'beta.txt');
 
     const alphaResult = results.find((r) => r['path'] === 'alpha.txt');
     assert.ok(alphaResult, 'Expected result for alpha.txt');
@@ -118,6 +120,8 @@ describe('apply_patch multi-file', () => {
     assert.equal(sc['ok'], false);
     const results = sc['results'] as Array<Record<string, unknown>>;
     assert.equal(results.length, 2);
+    assert.equal(results[0]?.['path'], 'alpha.txt');
+    assert.equal(results[1]?.['path'], 'nonexistent.txt');
 
     const alphaResult = results.find((r) => r['path'] === 'alpha.txt');
     assert.ok(alphaResult);

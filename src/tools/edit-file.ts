@@ -83,33 +83,43 @@ function countLines(str: string): number {
   return getLineNumberAtIndex(str);
 }
 
-function computeDiffStats(
+async function computeDiffStats(
   original: string,
   modified: string
-): { linesAdded: number; linesRemoved: number } {
-  const changes = diffLines(original, modified);
-  let linesAdded = 0;
-  let linesRemoved = 0;
+): Promise<{ linesAdded: number; linesRemoved: number }> {
+  return new Promise((resolve) => {
+    diffLines(original, modified, {
+      callback: (changes) => {
+        let linesAdded = 0;
+        let linesRemoved = 0;
 
-  for (const part of changes) {
-    if (part.added) {
-      linesAdded += part.count;
-    } else if (part.removed) {
-      linesRemoved += part.count;
-    }
-  }
+        for (const part of changes) {
+          if (part.added) {
+            linesAdded += part.count;
+          } else if (part.removed) {
+            linesRemoved += part.count;
+          }
+        }
 
-  return { linesAdded, linesRemoved };
+        resolve({ linesAdded, linesRemoved });
+      },
+    });
+  });
 }
 
 function findEditMatch(
   content: string,
   oldText: string,
-  ignoreWhitespace: boolean
+  ignoreWhitespace: boolean,
+  regexCache?: Map<string, RE2>
 ): TextRange | undefined {
   if (ignoreWhitespace) {
     const pattern = escapeRegExp(oldText).replace(/\s+/g, '\\s+');
-    const regex = new RE2(pattern);
+    let regex = regexCache?.get(pattern);
+    if (!regex) {
+      regex = new RE2(pattern);
+      if (regexCache) regexCache.set(pattern, regex);
+    }
     const match = regex.exec(content);
 
     if (!match) {
@@ -185,16 +195,16 @@ function buildStructuredEditOutput(
   };
 }
 
-function finalizeEditResult(
+async function finalizeEditResult(
   originalContent: string,
   updatedContent: string,
   appliedEdits: number,
   unmatchedEdits: string[],
   lineRange: EditResult['lineRange']
-): EditResult {
+): Promise<EditResult> {
   const { linesAdded, linesRemoved } =
     appliedEdits > 0
-      ? computeDiffStats(originalContent, updatedContent)
+      ? await computeDiffStats(originalContent, updatedContent)
       : { linesAdded: 0, linesRemoved: 0 };
 
   return {
@@ -207,20 +217,27 @@ function finalizeEditResult(
   };
 }
 
-function buildDiff(
+async function buildDiff(
   validPath: string,
   original: string,
   modified: string
-): string {
+): Promise<string> {
   const fileName = basename(validPath);
-  return createTwoFilesPatch(
-    fileName,
-    fileName,
-    original,
-    modified,
-    'Original',
-    'Modified'
-  );
+  return new Promise<string>((resolve) => {
+    createTwoFilesPatch(
+      fileName,
+      fileName,
+      original,
+      modified,
+      'Original',
+      'Modified',
+      {
+        callback: (res: string | undefined) => {
+          resolve(res ?? '');
+        },
+      }
+    );
+  });
 }
 
 function formatUnmatchedEditsNote(unmatchedEdits: string[]): string {
@@ -291,18 +308,24 @@ function buildEditCompletionMessage(
   return `🛠 edit: ${name} • ${dry}+${added} -${removed}`;
 }
 
-function applyEdits(
+async function applyEdits(
   content: string,
   edits: EditInput['edits'],
   ignoreWhitespace: boolean
-): EditResult {
+): Promise<EditResult> {
   let newContent = content;
   let appliedEdits = 0;
   const unmatchedEdits: string[] = [];
   let lineRange: EditResult['lineRange'];
+  const regexCache = ignoreWhitespace ? new Map<string, RE2>() : undefined;
 
   for (const edit of edits) {
-    const match = findEditMatch(newContent, edit.oldText, ignoreWhitespace);
+    const match = findEditMatch(
+      newContent,
+      edit.oldText,
+      ignoreWhitespace,
+      regexCache
+    );
 
     if (!match) {
       unmatchedEdits.push(edit.oldText);
@@ -333,12 +356,16 @@ export async function handleEditFile(
   signal?: AbortSignal
 ): Promise<ToolResponse<EditOutput>> {
   const { validPath, content } = await loadEditableFile(args.path, signal);
-  const editResult = applyEdits(content, args.edits, args.ignoreWhitespace);
+  const editResult = await applyEdits(
+    content,
+    args.edits,
+    args.ignoreWhitespace
+  );
   const structured = buildStructuredEditOutput(validPath, editResult);
 
   if (args.dryRun) {
     if (editResult.appliedEdits > 0) {
-      structured.diff = buildDiff(validPath, content, editResult.content);
+      structured.diff = await buildDiff(validPath, content, editResult.content);
     }
 
     return buildToolResponse(

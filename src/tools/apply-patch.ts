@@ -5,13 +5,17 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { applyPatch, parsePatch, type StructuredPatch } from 'diff';
 import type { z } from 'zod';
 
-import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
+import { MAX_TEXT_FILE_SIZE, PARALLEL_CONCURRENCY } from '../lib/constants.js';
 import {
   ErrorCode,
   formatUnknownErrorMessage,
   McpError,
 } from '../lib/errors.js';
-import { atomicWriteFile, withAbort } from '../lib/fs-helpers.js';
+import {
+  atomicWriteFile,
+  processInParallel,
+  withAbort,
+} from '../lib/fs-helpers.js';
 import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
 
 import { ApplyPatchInputSchema, ApplyPatchOutputSchema } from '../schemas.js';
@@ -148,30 +152,38 @@ async function processMultiFilePatch(
 ): Promise<ToolResponse<z.infer<typeof ApplyPatchOutputSchema>>> {
   const validBase = await validateExistingPath(basePath, signal);
 
-  const promises = parsed.map(async (diff) => {
+  const promises = parsed.map((diff) => {
     const fileName = extractPatchTargetPath(diff);
     if (!fileName) {
-      return {
-        path: '<unknown>',
-        applied: false,
-        error: 'Missing file name in patch header',
-      };
+      return (): Promise<PatchFileResult> =>
+        Promise.resolve({
+          path: '<unknown>',
+          applied: false,
+          error: 'Missing file name in patch header',
+        });
     }
 
     const filePath = path.resolve(validBase, fileName);
-    try {
-      const result = await applyDiff(filePath, diff, options, signal);
-      return { ...result, path: fileName };
-    } catch (error) {
-      return {
-        path: fileName,
-        applied: false,
-        error: formatUnknownErrorMessage(error),
-      };
-    }
+    return async (): Promise<PatchFileResult> => {
+      try {
+        const result = await applyDiff(filePath, diff, options, signal);
+        return { ...result, path: fileName };
+      } catch (error) {
+        return {
+          path: fileName,
+          applied: false,
+          error: formatUnknownErrorMessage(error),
+        };
+      }
+    };
   });
 
-  const results = await Promise.all(promises);
+  const { results } = await processInParallel(
+    promises,
+    (task) => task(),
+    PARALLEL_CONCURRENCY,
+    signal
+  );
 
   const totals = results.reduce(
     (acc, r) => {

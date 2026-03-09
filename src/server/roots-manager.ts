@@ -22,7 +22,7 @@ import {
   resolveAllowedDirectoriesState,
   setAllowedDirectoriesStateResolved,
 } from '../lib/paths.js';
-import { isRecord } from '../lib/utils.js';
+import { debounce, isRecord } from '../lib/utils.js';
 
 import { type LoggingState, logToMcp } from './bootstrap.js';
 import type { ServerOptions } from './bootstrap.js';
@@ -125,7 +125,9 @@ async function filterRootsWithinBaseline(
 }
 
 export class RootsManager {
-  private rootsUpdateTimeout: ReturnType<typeof setTimeout> | undefined;
+  private _debouncedUpdate:
+    | { (server: McpServer): void; cancel: () => void }
+    | undefined;
   private rootDirectories: string[] = [];
   private allowedDirectoriesState: AllowedDirectoriesState = {
     primary: [],
@@ -149,9 +151,9 @@ export class RootsManager {
   }
 
   destroy(): void {
-    if (this.rootsUpdateTimeout) {
-      clearTimeout(this.rootsUpdateTimeout);
-      this.rootsUpdateTimeout = undefined;
+    if (this._debouncedUpdate) {
+      this._debouncedUpdate.cancel();
+      this._debouncedUpdate = undefined;
     }
   }
 
@@ -217,16 +219,10 @@ export class RootsManager {
   }
 
   private scheduleRootsUpdate(server: McpServer): void {
-    if (this.rootsUpdateTimeout) {
-      this.rootsUpdateTimeout.refresh();
-      return;
-    }
-
-    this.rootsUpdateTimeout = setTimeout(() => {
-      this.rootsUpdateTimeout = undefined;
-      void this.updateRootsFromClient(server);
+    this._debouncedUpdate ??= debounce((s: McpServer) => {
+      void this.updateRootsFromClient(s);
     }, ROOTS_DEBOUNCE_MS);
-    this.rootsUpdateTimeout.unref();
+    this._debouncedUpdate(server);
   }
 
   private logMissingDirectories(server?: McpServer): void {

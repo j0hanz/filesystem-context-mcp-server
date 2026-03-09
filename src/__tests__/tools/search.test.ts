@@ -13,6 +13,7 @@ import {
   createTestEnv,
   getStructured,
   type TestEnv,
+  type ToolResult,
 } from '../helpers.js';
 
 // ─── grep (search_content) ───────────────────────────────────────────────────
@@ -97,6 +98,28 @@ describe('grep tool', () => {
     const sc = getStructured(result);
     const matches = sc['matches'] as Array<Record<string, unknown>>;
     assert.equal(matches.length, 0, 'Should return empty matches array');
+  });
+
+  it('preserves UTF-8 match text in the rendered response body', async () => {
+    const file = path.join(env.tmpDir, 'utf8.txt');
+    await fs.writeFile(file, 'rocket 🚀 line\n', 'utf8');
+
+    const raw = await env.client.callTool({
+      name: 'grep',
+      arguments: { path: env.tmpDir, pattern: 'rocket' },
+    });
+
+    assertOk(raw);
+    const result = raw as ToolResult;
+    const textBlock = result.content.find(
+      (block: {
+        type: string;
+        text?: string;
+      }): block is { type: string; text: string } =>
+        typeof block.text === 'string'
+    );
+    assert.ok(textBlock, 'Expected text response content');
+    assert.match(textBlock.text, /utf8\.txt:\s+1: rocket 🚀 line/);
   });
 });
 

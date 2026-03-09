@@ -13,7 +13,7 @@ import {
 import type { SearchContentOptions } from '../lib/file-operations/search.js';
 import { searchContent } from '../lib/file-operations/search.js';
 
-import { formatOperationSummary, joinLines } from '../config.js';
+import { formatOperationSummary } from '../config.js';
 import {
   SearchContentInputSchema,
   SearchContentOutputSchema,
@@ -275,12 +275,35 @@ const SearchResponseBuilder = {
     heading: string,
     matches: readonly NormalizedSearchMatch[]
   ): string {
-    const lines = [heading];
+    if (matches.length === 0) return heading;
+
+    // Fast path: calculate exact byte length to avoid arrays and string concatenation in V8
+    // +1 for newline after heading. Each match gets: "  " (2) + relativeFile + ":" + line + ": " (2) + content + "\n"
+    let totalBytes = Buffer.byteLength(heading, 'utf8');
     for (const match of matches) {
-      const lineNum = String(match.line).padStart(4);
-      lines.push(`  ${match.relativeFile}:${lineNum}: ${match.content}`);
+      totalBytes +=
+        1 + // \n
+        2 + // "  "
+        Buffer.byteLength(match.relativeFile, 'utf8') +
+        1 + // ":"
+        Math.max(4, String(match.line).length) +
+        2 + // ": "
+        Buffer.byteLength(match.content, 'utf8');
     }
-    return joinLines(lines);
+
+    const buf = Buffer.allocUnsafe(totalBytes);
+    let offset = buf.write(heading, 0, 'utf8');
+
+    for (const match of matches) {
+      offset += buf.write('\n  ', offset, 'utf8');
+      offset += buf.write(match.relativeFile, offset, 'utf8');
+      offset += buf.write(':', offset, 'utf8');
+      offset += buf.write(String(match.line).padStart(4), offset, 'utf8');
+      offset += buf.write(': ', offset, 'utf8');
+      offset += buf.write(match.content, offset, 'utf8');
+    }
+
+    return buf.toString('utf8', 0, offset);
   },
 
   resolveTruncatedReason(summary: SearchSummary): string {
