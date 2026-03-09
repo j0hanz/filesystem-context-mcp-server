@@ -1,6 +1,8 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { Buffer } from 'node:buffer';
+import { performance } from 'node:perf_hooks';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { createTwoFilesPatch } from 'diff';
@@ -171,13 +173,21 @@ class LiteralReplacementMatcher implements ReplacementMatcher {
 type SearchAndReplaceArgs = z.infer<typeof SearchAndReplaceInputSchema>;
 type SearchAndReplaceOutput = z.infer<typeof SearchAndReplaceOutputSchema>;
 
-interface ProcessEntryContext {
+interface ReplaceContext {
   options: { dryRun: boolean; returnDiff: boolean };
   replacement: string;
   matcher: ReplacementMatcher;
   maxFileSize: number;
   signal: AbortSignal | undefined;
   summary: ReplaceSummary;
+}
+
+const replaceContextStorage = new AsyncLocalStorage<ReplaceContext>();
+
+function getReplaceContext(): ReplaceContext {
+  const ctx = replaceContextStorage.getStore();
+  if (!ctx) throw new Error('Replace context not found in AsyncLocalStorage');
+  return ctx;
 }
 
 interface ReplacementPlan {
@@ -211,12 +221,8 @@ function formatFileTooLargeError(
   return `File too large: ${filePath} (${size} bytes > ${maxFileSize} bytes)`;
 }
 
-async function processEntry(
-  entryPath: string,
-  context: ProcessEntryContext
-): Promise<void> {
-  const { options, replacement, matcher, maxFileSize, signal, summary } =
-    context;
+async function processEntry(entryPath: string): Promise<void> {
+  const { options, signal, summary } = getReplaceContext();
 
   let validPath: string;
   try {
@@ -231,12 +237,7 @@ async function processEntry(
   }
 
   try {
-    const plan = await readReplacementPlan(validPath, {
-      matcher,
-      replacement,
-      maxFileSize,
-      signal,
-    });
+    const plan = await readReplacementPlan(validPath);
     if (!plan) {
       return;
     }
@@ -269,40 +270,35 @@ async function processEntry(
 }
 
 async function readReplacementPlan(
-  validPath: string,
-  context: {
-    matcher: ReplacementMatcher;
-    replacement: string;
-    maxFileSize: number;
-    signal: AbortSignal | undefined;
-  }
+  validPath: string
 ): Promise<ReplacementPlan | undefined> {
+  const { matcher, replacement, maxFileSize, signal } = getReplaceContext();
   let fileHandle: fs.FileHandle | undefined;
   try {
     const fd = await fs.open(validPath, 'r');
     fileHandle = fd;
     const stats = await fileHandle.stat();
-    if (stats.size > context.maxFileSize) {
+    if (stats.size > maxFileSize) {
       throw new Error(
-        formatFileTooLargeError(validPath, stats.size, context.maxFileSize)
+        formatFileTooLargeError(validPath, stats.size, maxFileSize)
       );
     }
 
     let content: string;
-    if (context.matcher.testBuffer) {
-      const buffer = await fileHandle.readFile({ signal: context.signal });
-      if (!context.matcher.testBuffer(buffer)) {
+    if (matcher.testBuffer) {
+      const buffer = await fileHandle.readFile({ signal });
+      if (!matcher.testBuffer(buffer)) {
         return undefined;
       }
       content = buffer.toString('utf-8');
     } else {
       content = await fileHandle.readFile({
         encoding: 'utf-8',
-        signal: context.signal,
+        signal,
       });
     }
 
-    return buildReplacementPlan(content, context.replacement, context.matcher);
+    return buildReplacementPlan(content, replacement, matcher);
   } finally {
     if (fileHandle) {
       await fileHandle.close();
@@ -326,19 +322,22 @@ async function maybeAppendPatchDiff(
   }
 
   const patch = await new Promise<string>((resolve) => {
-    createTwoFilesPatch(
-      path.basename(params.filePath),
-      path.basename(params.filePath),
-      params.originalContent,
-      params.updatedContent,
-      'Original',
-      'Modified',
-      {
-        callback: (res: string | undefined) => {
-          resolve(res ?? '');
-        },
-      }
-    );
+    // Defer to event loop to avoid blocking on large diffs
+    setImmediate(() => {
+      createTwoFilesPatch(
+        path.basename(params.filePath),
+        path.basename(params.filePath),
+        params.originalContent,
+        params.updatedContent,
+        'Original',
+        'Modified',
+        {
+          callback: (res: string | undefined) => {
+            resolve(res ?? '');
+          },
+        }
+      );
+    });
   });
 
   if (
@@ -411,6 +410,7 @@ interface ReplaceSummary {
   diff: string;
   diffTruncated: boolean;
   stoppedReason?: 'maxFiles';
+  perfTimeMs?: number;
 }
 
 function createReplaceSummary(root: string): ReplaceSummary {
@@ -488,29 +488,48 @@ export async function handleSearchAndReplace(
   });
 
   const summary = createReplaceSummary(root);
-  const { stoppedByLimit } = await processEntriesConcurrently(entries, {
-    signal,
-    concurrency: REPLACE_CONCURRENCY,
-    ...(args.maxFiles !== undefined ? { maxEntries: args.maxFiles } : {}),
-    onEntry: () => {
-      summary.processedFiles++;
-      reportPeriodicProgress(onProgress, summary.processedFiles, {
-        throttleModulo: 25,
-      });
+
+  const timerStartName = `searchAndReplaceStart_${Date.now()}`;
+  const timerEndName = `searchAndReplaceEnd_${Date.now()}`;
+  const metricName = `searchAndReplace_${Date.now()}`;
+  performance.mark(timerStartName);
+
+  const context: ReplaceContext = {
+    options: {
+      dryRun: args.dryRun,
+      returnDiff: args.returnDiff ?? false,
     },
-    runEntry: async (entryPath: string) =>
-      processEntry(entryPath, {
-        options: {
-          dryRun: args.dryRun,
-          returnDiff: args.returnDiff ?? false,
-        },
-        replacement: args.replacement,
-        matcher,
-        maxFileSize,
-        signal,
-        summary,
-      }),
-  });
+    replacement: args.replacement,
+    matcher,
+    maxFileSize,
+    signal,
+    summary,
+  };
+
+  const { stoppedByLimit } = await replaceContextStorage.run(context, () =>
+    processEntriesConcurrently(entries, {
+      signal,
+      concurrency: REPLACE_CONCURRENCY,
+      ...(args.maxFiles !== undefined ? { maxEntries: args.maxFiles } : {}),
+      onEntry: () => {
+        summary.processedFiles++;
+        reportPeriodicProgress(onProgress, summary.processedFiles, {
+          throttleModulo: 25,
+        });
+      },
+      runEntry: processEntry,
+    })
+  );
+
+  performance.mark(timerEndName);
+  performance.measure(metricName, timerStartName, timerEndName);
+  const durationMs = performance.getEntriesByName(metricName)[0]?.duration ?? 0;
+  performance.clearMarks(timerStartName);
+  performance.clearMarks(timerEndName);
+  performance.clearMeasures(metricName);
+
+  summary.perfTimeMs = durationMs;
+
   if (stoppedByLimit) {
     summary.stoppedReason = 'maxFiles';
   }
@@ -625,7 +644,10 @@ function buildSearchAndReplaceText(
   const failureSuffix =
     summary.failedFiles > 0 ? ` (${summary.failedFiles} failed)` : '';
   const dryRunSuffix = dryRun ? ' (Dry run)' : '';
-  return `Found ${summary.totalMatches} matches in ${summary.filesChanged} files${failureSuffix}.${dryRunSuffix}`;
+  const timing = summary.perfTimeMs
+    ? ` [\u23F1\uFE0F ${summary.perfTimeMs.toFixed(0)}ms]`
+    : '';
+  return `Found ${summary.totalMatches} matches in ${summary.filesChanged} files${failureSuffix}.${dryRunSuffix}${timing}`;
 }
 
 function buildSearchAndReplaceStructuredResult(
