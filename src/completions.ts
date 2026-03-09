@@ -84,6 +84,10 @@ const DESTINATION_CONTEXT_KEYS = ['source', 'path', 'cwd', 'root'] as const;
 const PRIMARY_PATH_CONTEXT_KEYS = ['path', 'cwd', 'root'] as const;
 const DEFAULT_CONTEXT_KEYS = ['path', 'source', 'cwd', 'root'] as const;
 
+const ENUM_ARGUMENT_VALUES = new Map<string, readonly string[]>([
+  ['sortby', ['modified', 'name', 'path', 'size', 'type']],
+]);
+
 function isPathLikeArgumentName(argName: string): boolean {
   return (
     PATH_ARGUMENTS.has(argName) ||
@@ -94,6 +98,19 @@ function isPathLikeArgumentName(argName: string): boolean {
     argName.endsWith('dirs') ||
     argName.endsWith('dir')
   );
+}
+
+function getEnumCompletions(
+  argName: string,
+  currentValue: string
+): CompletionResult | undefined {
+  const values = ENUM_ARGUMENT_VALUES.get(argName);
+  if (!values) return undefined;
+  const prefix = currentValue.toLowerCase();
+  const filtered = prefix
+    ? values.filter((v) => v.startsWith(prefix))
+    : [...values];
+  return buildCompletionResult(filtered);
 }
 
 function isTemplateVariableChar(char: string): boolean {
@@ -647,6 +664,11 @@ export function registerCompletions(
         ? toolNameValues.filter((value) => value.startsWith(currentValue))
         : toolNameValues;
       return buildCompletionResponse(buildCompletionResult(filtered));
+    }
+
+    const enumResult = getEnumCompletions(argName, argument.value);
+    if (enumResult) {
+      return buildCompletionResponse(enumResult);
     }
 
     const isPathArg =

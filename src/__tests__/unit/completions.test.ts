@@ -167,4 +167,72 @@ describe('completions', () => {
       await server.close().catch(() => {});
     }
   });
+
+  it('completes enum values for sortBy argument', async () => {
+    const server = new McpServer(
+      { name: 'test-server', version: '0.0.0' },
+      { capabilities: { completions: {} } }
+    );
+    registerCompletions(server, '');
+
+    const client = new Client({ name: 'test-client', version: '1.0.0' });
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+
+      const all = await client.complete({
+        ref: { type: 'ref/prompt', name: 'get-help' },
+        argument: { name: 'sortBy', value: '' },
+      });
+
+      assert.deepEqual(all.completion.values, [
+        'modified',
+        'name',
+        'path',
+        'size',
+        'type',
+      ]);
+
+      const filtered = await client.complete({
+        ref: { type: 'ref/prompt', name: 'get-help' },
+        argument: { name: 'sortBy', value: 's' },
+      });
+
+      assert.deepEqual(filtered.completion.values, ['size']);
+      assert.equal(filtered.completion.hasMore, false);
+    } finally {
+      await client.close().catch(() => {});
+      await server.close().catch(() => {});
+    }
+  });
+
+  it('returns empty completions for unknown non-path arguments', async () => {
+    const server = new McpServer(
+      { name: 'test-server', version: '0.0.0' },
+      { capabilities: { completions: {} } }
+    );
+    registerCompletions(server, '');
+
+    const client = new Client({ name: 'test-client', version: '1.0.0' });
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+
+      const result = await client.complete({
+        ref: { type: 'ref/prompt', name: 'get-help' },
+        argument: { name: 'unknownArg', value: 'x' },
+      });
+
+      assert.deepEqual(result.completion.values, []);
+    } finally {
+      await client.close().catch(() => {});
+      await server.close().catch(() => {});
+    }
+  });
 });
