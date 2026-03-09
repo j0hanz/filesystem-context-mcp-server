@@ -68,13 +68,19 @@ function publishTaskDiagnostics(event: TaskDiagnosticsEvent): void {
   }
 }
 
+type CapabilityGetter = (this: object) => unknown;
+
+function getDynamicProperty(target: object, key: string): unknown {
+  return Reflect.get(target, key) as unknown;
+}
+
 // --- Type Guards & Helpers ---
 
 function isExperimentalTaskRegistration(
   value: unknown
 ): value is { registerToolTask?: (...args: unknown[]) => unknown } {
   if (!isRecord(value)) return false;
-  const { registerToolTask } = value as { registerToolTask?: unknown };
+  const { registerToolTask } = value;
   return (
     registerToolTask === undefined || typeof registerToolTask === 'function'
   );
@@ -83,23 +89,23 @@ function isExperimentalTaskRegistration(
 function getExperimentalTaskRegistration(
   server: McpServer
 ): { registerToolTask?: (...args: unknown[]) => unknown } | undefined {
-  const serverWithExperimental = server as { experimental?: unknown };
-  const { experimental } = serverWithExperimental;
+  const experimental = getDynamicProperty(server, 'experimental');
   if (!isRecord(experimental)) return undefined;
-  const { tasks } = experimental as { tasks?: unknown };
+  const { tasks } = experimental;
   if (!isExperimentalTaskRegistration(tasks)) return undefined;
   return tasks;
 }
 
 function hasTaskToolCapability(server: McpServer): boolean {
-  const serverRecord = server as unknown as Record<string, unknown>;
-  const { server: serverRuntime } = serverRecord;
+  const serverRuntime = getDynamicProperty(server, 'server');
   if (!isRecord(serverRuntime)) return true; // Assume capability if runtime structure is opaque
 
-  const { getCapabilities } = serverRuntime;
+  const getCapabilities = getDynamicProperty(serverRuntime, 'getCapabilities');
   if (typeof getCapabilities !== 'function') return true;
 
-  const capabilities = (getCapabilities as () => unknown).call(serverRuntime);
+  const capabilities = (getCapabilities as CapabilityGetter).call(
+    serverRuntime
+  );
   if (!isRecord(capabilities)) return false;
   const { tasks } = capabilities;
   return (

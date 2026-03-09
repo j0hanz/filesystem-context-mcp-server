@@ -18,13 +18,7 @@ export function debounce<Args extends unknown[]>(
       func(...args);
     }, waitMs);
     // Unref if in Node environment to not block process exit
-    const nodeTimeout = timeoutId as unknown as { unref?: () => void } | number;
-    if (
-      typeof nodeTimeout === 'object' &&
-      typeof nodeTimeout.unref === 'function'
-    ) {
-      nodeTimeout.unref();
-    }
+    timeoutId.unref();
   };
   debounced.cancel = () => {
     if (timeoutId !== undefined) {

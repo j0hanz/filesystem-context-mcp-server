@@ -54,8 +54,6 @@ import { GET_FILE_INFO_TOOL, registerGetFileInfoTool } from './tools/stat.js';
 import { registerTreeTool, TREE_TOOL } from './tools/tree.js';
 import { registerWriteFileTool, WRITE_FILE_TOOL } from './tools/write-file.js';
 
-export { buildToolErrorResponse, buildToolResponse } from './tools/shared.js';
-
 interface ToolEntry {
   contract: ToolContract;
   register: (server: McpServer, options?: ToolRegistrationOptions) => void;
