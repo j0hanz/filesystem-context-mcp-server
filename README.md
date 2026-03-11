@@ -12,7 +12,7 @@ A local filesystem MCP server that lets LLMs and AI agents read, write, search, 
 
 A secure, production-ready [Model Context Protocol](https://modelcontextprotocol.io) server that gives AI assistants controlled access to the local filesystem. All operations are sandboxed to explicitly allowed directories with path traversal prevention, sensitive file blocking, and optional Bearer token authentication.
 
-Supports **stdio** (default) and **Streamable HTTP + SSE** transports with per-session isolation.
+Supports stdio (default) and Streamable HTTP transport with SSE support. HTTP sessions are implemented with isolated per-session server state.
 
 ## Key Features
 
@@ -20,7 +20,7 @@ Supports **stdio** (default) and **Streamable HTTP + SSE** transports with per-s
 - **Security-first** — path validation, symlink escape prevention, sensitive file denylist, localhost-only CORS, optional API key auth
 - **Dual transport** — stdio for local use, Streamable HTTP with SSE for networked/multi-session deployments
 - **Structured output** — all tools return typed `outputSchema` / `structuredContent` for reliable LLM parsing
-- **Self-documenting** — 6 built-in resources (`internal://instructions`, `internal://tool-catalog`, etc.) and a `get-help` prompt
+- **Self-documenting** — 6 built-in resources (`internal://instructions`, `internal://tool-catalog`, etc.) and 4 built-in prompts (`get-help`, `compare-files`, `analyze-path`, `get-tool-help`)
 
 ## Requirements
 
@@ -543,6 +543,9 @@ Create directories, move/rename files, delete files, and verify file integrity v
     |
     +-- prompts/get ─────────────────────────────────────────
     |   +-- get-help (optional topic argument)
+    |   +-- compare-files (original, modified)
+    |   +-- analyze-path (path)
+    |   +-- get-tool-help (name)
     |
     +-- Capabilities: logging, resources, tools, prompts, completions, tasks
 ```
@@ -805,20 +808,23 @@ Bulk search-and-replace across files matching a glob. Replaces **all** occurrenc
 
 ### Resources
 
-| Resource     | URI                            | MIME Type     | Description                                                        |
-| ------------ | ------------------------------ | ------------- | ------------------------------------------------------------------ |
-| Instructions | `internal://instructions`      | text/markdown | Comprehensive usage rules and guidelines                           |
-| Tool Catalog | `internal://tool-catalog`      | text/markdown | Tool selection guide and data flow map                             |
-| Workflows    | `internal://workflows`         | text/markdown | Standard operating procedures for exploration, search, edit, patch |
-| Tool Info    | `internal://tool-info/{name}`  | text/markdown | Per-tool contract details, nuances, gotchas                        |
-| Result Cache | `filesystem-mcp://result/{id}` | text/markdown | Ephemeral cached tool output (large results externalized here)     |
-| Metrics      | `filesystem-mcp://metrics`     | text/markdown | Live per-tool call/error/avgDurationMs snapshot                    |
+| Resource     | URI                            | MIME Type        | Description                                                        |
+| ------------ | ------------------------------ | ---------------- | ------------------------------------------------------------------ |
+| Instructions | `internal://instructions`      | text/markdown    | Comprehensive usage rules and guidelines                           |
+| Tool Catalog | `internal://tool-catalog`      | text/markdown    | Tool selection guide and data flow map                             |
+| Workflows    | `internal://workflows`         | text/markdown    | Standard operating procedures for exploration, search, edit, patch |
+| Tool Info    | `internal://tool-info/{name}`  | text/markdown    | Per-tool contract details, nuances, gotchas                        |
+| Result Cache | `filesystem-mcp://result/{id}` | text/plain       | Ephemeral cached tool output (large results externalized here)     |
+| Metrics      | `filesystem-mcp://metrics`     | application/json | Live per-tool call/error/avgDurationMs snapshot                    |
 
 ### Prompts
 
-| Prompt     | Arguments          | Description                                                            |
-| ---------- | ------------------ | ---------------------------------------------------------------------- |
-| `get-help` | `topic` (optional) | Return usage instructions. Optionally filter by section heading prefix |
+| Prompt          | Arguments              | Description                                                            |
+| --------------- | ---------------------- | ---------------------------------------------------------------------- |
+| `get-help`      | `topic` (optional)     | Return usage instructions. Optionally filter by section heading prefix |
+| `compare-files` | `original`, `modified` | Generate a workflow for comparing two files using `diff_files`         |
+| `analyze-path`  | `path`                 | Generate a workflow for analyzing a file or directory                  |
+| `get-tool-help` | `name`                 | Return a prompt with the authoritative contract for a specific tool    |
 
 ## MCP Capabilities
 
@@ -827,8 +833,8 @@ Bulk search-and-replace across files matching a glob. Replaces **all** occurrenc
 | `logging`     | confirmed | `src/server/bootstrap.ts` — registered in capabilities                     |
 | `resources`   | confirmed | `src/server/bootstrap.ts` — 6 resources registered                         |
 | `tools`       | confirmed | `src/server/bootstrap.ts` — 18 tools registered                            |
-| `prompts`     | confirmed | `src/server/bootstrap.ts` — `get-help` prompt registered                   |
-| `completions` | confirmed | `src/completions.ts` — path + topic auto-completion                        |
+| `prompts`     | confirmed | `src/server/bootstrap.ts` — 4 prompts registered                           |
+| `completions` | confirmed | `src/completions.ts` — path, topic, and tool-name auto-completion          |
 | `tasks`       | confirmed | `src/server/bootstrap.ts` — optional task support (list, cancel, requests) |
 
 ### Tool Annotations
@@ -894,18 +900,16 @@ When started with `--port <number>`, the server exposes a single MCP endpoint:
 
 ## Development
 
-| Script       | Command                                                   | Purpose                           |
-| ------------ | --------------------------------------------------------- | --------------------------------- |
-| `dev`        | `tsc --watch`                                             | Watch mode TypeScript compilation |
-| `dev:run`    | `node --env-file=.env --watch dist/index.js`              | Run server with auto-reload       |
-| `start`      | `node dist/index.js`                                      | Run production server             |
-| `build`      | `node scripts/tasks.mjs build`                            | Clean build                       |
-| `test`       | `node scripts/tasks.mjs test`                             | Build + run all tests             |
-| `test:fast`  | `node --test --import tsx/esm src/__tests__/**/*.test.ts` | Run tests without build           |
-| `lint`       | `eslint .`                                                | Lint source                       |
-| `type-check` | `node scripts/tasks.mjs type-check`                       | Type-check src + tests            |
-| `format`     | `prettier --write .`                                      | Format code                       |
-| `inspector`  | `npm run build && npx @modelcontextprotocol/inspector`    | Launch MCP Inspector              |
+- `dev` — `tsc --watch --preserveWatchOutput` — Watch mode TypeScript compilation
+- `dev:run` — `node --env-file=.env --watch dist/index.js` — Run server with auto-reload
+- `start` — `node dist/index.js` — Run production server
+- `build` — `node scripts/tasks.mjs build` — Clean build
+- `test` — `node scripts/tasks.mjs test` — Build + run all tests
+- `test:fast` — `node --test --import tsx/esm src/__tests__/**/*.test.ts node-tests/**/*.test.ts` — Run tests without build
+- `lint` — `eslint .` — Lint source
+- `type-check` — `node scripts/tasks.mjs type-check` — Type-check src + tests
+- `format` — `prettier --write .` — Format code
+- `inspector` — `npm run build && npx -y @modelcontextprotocol/inspector node dist/index.js ${workspaceFolder}` — Launch MCP Inspector
 
 ## Build and Release
 
