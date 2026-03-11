@@ -387,19 +387,17 @@ function validateReadOptions(options: ReadFileOptions): void {
     );
   }
 
-  if (hasEnd && !hasStart) {
-    throw new McpError(ErrorCode.E_INVALID_INPUT, 'endLine requires startLine');
-  }
-
-  if (
-    options.startLine !== undefined &&
-    options.endLine !== undefined &&
-    options.endLine < options.startLine
-  ) {
-    throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
-      'endLine must be greater than or equal to startLine'
-    );
+  {
+    const effectiveStart = options.startLine ?? 1;
+    if (
+      options.endLine !== undefined &&
+      options.endLine < effectiveStart
+    ) {
+      throw new McpError(
+        ErrorCode.E_INVALID_INPUT,
+        'endLine must be greater than or equal to startLine (default: 1)'
+      );
+    }
   }
 }
 
@@ -421,11 +419,11 @@ function normalizeOptions(options: ReadFileOptions): NormalizedOptions {
   if (options.tail !== undefined) {
     normalized.tail = options.tail;
   }
-  if (options.startLine !== undefined) {
-    normalized.startLine = options.startLine;
-  }
   if (options.endLine !== undefined) {
+    normalized.startLine = options.startLine ?? 1;
     normalized.endLine = options.endLine;
+  } else if (options.startLine !== undefined) {
+    normalized.startLine = options.startLine;
   }
   if (options.signal) {
     normalized.signal = options.signal;
@@ -455,7 +453,7 @@ function buildReadContentOptions(
 function resolveReadMode(options: NormalizedOptions): ReadMode {
   if (options.head !== undefined) return 'head';
   if (options.tail !== undefined) return 'tail';
-  if (options.startLine !== undefined) return 'range';
+  if (options.startLine !== undefined || options.endLine !== undefined) return 'range';
   return 'full';
 }
 

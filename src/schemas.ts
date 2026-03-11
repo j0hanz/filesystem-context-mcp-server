@@ -138,14 +138,10 @@ const validateReadRange = (
     );
   }
 
-  if (hasEnd && !hasStart) {
-    addReadRangeIssue(ctx, value, 'endLine', "'endLine' requires 'startLine'");
-  }
-
+  const effectiveStart = value.startLine ?? 1;
   if (
-    value.startLine !== undefined &&
     value.endLine !== undefined &&
-    value.endLine < value.startLine
+    value.endLine < effectiveStart
   ) {
     addReadRangeIssue(
       ctx,
@@ -363,8 +359,8 @@ export const ReadFileInputSchema = z
     ...createReadRangeInputFields({
       head: 'Read first N lines (preview)',
       tail: 'Read last N lines',
-      startLine: 'Start line (1-based, inclusive)',
-      endLine: 'End line (1-based, inclusive). Requires startLine.',
+      startLine: 'Start line (1-based, inclusive). Defaults to 1 when endLine is set.',
+      endLine: 'End line (1-based, inclusive). Defaults to last line when startLine is set.',
     }),
     includeHash: defaultFalseBoolean(
       'Include SHA-256 hash of full file content'
@@ -372,7 +368,7 @@ export const ReadFileInputSchema = z
   })
   .superRefine(validateReadRange)
   .describe(
-    "Use one read mode only: 'head', 'tail', or 'startLine'/'endLine'. 'endLine' requires 'startLine'."
+    "Use one read mode only: 'head', 'tail', or 'startLine'/'endLine'."
   );
 
 export const ReadMultipleFilesInputSchema = z
@@ -385,13 +381,13 @@ export const ReadMultipleFilesInputSchema = z
     ...createReadRangeInputFields({
       head: 'Read first N lines of each file',
       tail: 'Read last N lines of each file',
-      startLine: 'Start line (1-based, inclusive) per file',
-      endLine: 'End line (1-based, inclusive) per file. Requires startLine.',
+      startLine: 'Start line (1-based, inclusive) per file. Defaults to 1 when endLine is set.',
+      endLine: 'End line (1-based, inclusive) per file. Defaults to last line when startLine is set.',
     }),
   })
   .superRefine(validateReadRange)
   .describe(
-    "Use one read mode only: 'head', 'tail', or 'startLine'/'endLine'. 'endLine' requires 'startLine'."
+    "Use one read mode only: 'head', 'tail', or 'startLine'/'endLine'."
   );
 
 export const GetFileInfoInputSchema = z.strictObject({

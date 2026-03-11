@@ -1202,8 +1202,12 @@ function applyLineSelection(
 ): void {
   if (source.head !== undefined) target.head = source.head;
   if (source.tail !== undefined) target.tail = source.tail;
-  if (source.startLine !== undefined) target.startLine = source.startLine;
-  if (source.endLine !== undefined) target.endLine = source.endLine;
+  if (source.endLine !== undefined) {
+    target.startLine = source.startLine ?? 1;
+    target.endLine = source.endLine;
+  } else if (source.startLine !== undefined) {
+    target.startLine = source.startLine;
+  }
 }
 
 function resolveNormalizedReadOptions(options: ReadMultipleOptions): {
