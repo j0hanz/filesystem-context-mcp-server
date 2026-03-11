@@ -241,7 +241,10 @@ const ERROR_SUGGESTIONS: Readonly<Record<ErrorCode, string>> = {
     'An unexpected error occurred. Check the error message for details.',
 } as const;
 
-const NOT_FOUND_PATTERNS = ['enoent', 'no such file or directory'] as const;
+const NOT_FOUND_PATTERNS = [
+  'no such file or directory',
+  'does not exist',
+] as const;
 const PERMISSION_DENIED_PATTERNS = [
   'permission denied',
   'not permitted',

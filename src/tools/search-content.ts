@@ -458,11 +458,9 @@ export function registerSearchContentTool(
           );
 
           const sc = result.structuredContent;
-          const count = sc.ok && sc.totalMatches ? sc.totalMatches : 0;
-          const filesMatched = sc.ok ? (sc.filesMatched ?? 0) : 0;
-          const stoppedReason = sc.ok ? sc.stoppedReason : undefined;
+          const { totalMatches = 0, filesMatched = 0, stoppedReason } = sc;
           const suffix = buildCompletionSuffix(
-            count,
+            totalMatches,
             filesMatched,
             scope,
             stoppedReason

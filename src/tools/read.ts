@@ -160,8 +160,6 @@ function buildReadCompletionMessage(
   if (result.isError) return `${READ_TOOL_LABEL}: ${name} • failed`;
 
   const structured = result.structuredContent;
-  if (!structured.ok) return `${READ_TOOL_LABEL}: ${name} • failed`;
-
   const lines = structured.linesRead ?? structured.totalLines;
 
   if (structured.startLine !== undefined) {

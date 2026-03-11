@@ -278,15 +278,13 @@ export function registerCalculateHashTool(
             progressWithMessage
           );
           const sc = result.structuredContent;
-          const totalFiles = sc.ok ? (sc.fileCount ?? 1) : 1;
+          const totalFiles = sc.fileCount ?? 1;
           const finalCurrent = resolveFinalProgressCurrent(
             progress,
             totalFiles + 1
           );
           let suffix: string;
-          if (!sc.ok) {
-            suffix = 'failed';
-          } else if (sc.fileCount !== undefined && sc.fileCount > 1) {
+          if (sc.fileCount !== undefined && sc.fileCount > 1) {
             suffix = `${sc.fileCount} files • ${(sc.hash ?? '').slice(0, 8)}…`;
           } else {
             suffix = `${(sc.hash ?? '').slice(0, 8)}…`;

@@ -28,6 +28,7 @@ import {
   SearchAndReplaceOutputSchema,
 } from '../schemas.js';
 import {
+  buildStructuredError,
   buildToolErrorResponse,
   buildToolResponse,
   createToolProgressSession,
@@ -69,7 +70,9 @@ const DIFF_APPEND_BUFFER = 1024;
 
 interface Failure {
   path: string;
-  error: string;
+  error: NonNullable<
+    z.infer<typeof SearchAndReplaceOutputSchema>['failures']
+  >[number]['error'];
 }
 
 function recordFailure(failures: Failure[], failure: Failure): void {
@@ -213,7 +216,7 @@ async function processEntry(
     summary.failedFiles++;
     recordFailure(summary.failures, {
       path: entryPath,
-      error: formatUnknownErrorMessage(error),
+      error: buildStructuredError(error, ErrorCode.E_UNKNOWN, entryPath),
     });
     return;
   }
@@ -246,7 +249,7 @@ async function processEntry(
     summary.failedFiles++;
     recordFailure(summary.failures, {
       path: validPath,
-      error: formatUnknownErrorMessage(error),
+      error: buildStructuredError(error, ErrorCode.E_UNKNOWN, validPath),
     });
   }
 }

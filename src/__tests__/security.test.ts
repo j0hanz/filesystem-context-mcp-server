@@ -320,11 +320,12 @@ describe('security: symlink escape for destructive ops', () => {
       Array.isArray(failed) && failed.length > 0,
       'Expected failed entries for symlink outside allowed root'
     );
-    const errorMsg = String(failed[0]?.['error']).toLowerCase();
+    const error = failed[0]?.['error'] as Record<string, unknown> | undefined;
+    const errorMsg = String(error?.['message']).toLowerCase();
     assert.ok(
       errorMsg.includes('access denied') ||
         errorMsg.includes('outside allowed'),
-      `Expected access-denied error, got: ${String(failed[0]?.['error'])}`
+      `Expected access-denied error, got: ${String(error?.['message'])}`
     );
   });
 

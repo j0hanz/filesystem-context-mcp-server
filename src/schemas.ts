@@ -28,6 +28,14 @@ function defaultFalseBoolean(
   return z.boolean().optional().default(false).describe(description);
 }
 
+const SuccessFlagSchema = z.literal(true);
+const NonNegativeIntegerSchema = z.int().min(0, 'Min: 0');
+const PositiveIntegerSchema = z.int().min(1, 'Min: 1');
+const IsoDateTimeSchema = z.iso.datetime();
+const Sha256HexSchema = z
+  .string()
+  .regex(/^[a-f0-9]{64}$/u, 'Expected SHA-256 hex digest');
+
 const PathSchemaBase = z
   .string()
   .max(MAX_PATH_LENGTH, `Path too long (max ${MAX_PATH_LENGTH} chars)`);
@@ -178,11 +186,13 @@ const FileInfoSchema = z.strictObject({
   name: z.string().describe('Name'),
   path: z.string().describe('Absolute path'),
   type: FileTypeSchema.describe('Type'),
-  size: z.number().describe('Size (bytes)'),
-  tokenEstimate: z.number().optional().describe('Est. tokens (size/4)'),
-  created: z.string().describe('Created'),
-  modified: z.string().describe('Modified'),
-  accessed: z.string().describe('Accessed'),
+  size: NonNegativeIntegerSchema.describe('Size (bytes)'),
+  tokenEstimate: NonNegativeIntegerSchema.optional().describe(
+    'Est. tokens (size/4)'
+  ),
+  created: IsoDateTimeSchema.describe('Created'),
+  modified: IsoDateTimeSchema.describe('Modified'),
+  accessed: IsoDateTimeSchema.describe('Accessed'),
   permissions: z.string().describe('Permissions'),
   isHidden: z.boolean().describe('Hidden?'),
   mimeType: z.string().optional().describe('MIME type'),
@@ -190,9 +200,9 @@ const FileInfoSchema = z.strictObject({
 });
 
 const OperationSummarySchema = z.strictObject({
-  total: z.number().describe('Total'),
-  succeeded: z.number().describe('Succeeded'),
-  failed: z.number().describe('Failed'),
+  total: NonNegativeIntegerSchema.describe('Total'),
+  succeeded: NonNegativeIntegerSchema.describe('Succeeded'),
+  failed: NonNegativeIntegerSchema.describe('Failed'),
 });
 
 export const ListDirectoryInputSchema = z.strictObject({
@@ -401,13 +411,12 @@ export const GetMultipleFileInfoInputSchema = z.strictObject({
 });
 
 export const ListAllowedDirectoriesOutputSchema = z.strictObject({
-  ok: z.boolean(),
+  ok: SuccessFlagSchema,
   directories: z.array(z.string()).optional().describe('Allowed directories'),
-  error: ErrorSchema.optional(),
 });
 
 export const ListDirectoryOutputSchema = z.strictObject({
-  ok: z.boolean(),
+  ok: SuccessFlagSchema,
   path: z.string().optional(),
   entries: z
     .array(
@@ -415,45 +424,46 @@ export const ListDirectoryOutputSchema = z.strictObject({
         name: z.string().describe('Entry name'),
         relativePath: z.string().optional(),
         type: FileTypeSchema,
-        size: z.number().optional(),
-        modified: z.string().optional(),
+        size: NonNegativeIntegerSchema.optional(),
+        modified: IsoDateTimeSchema.optional(),
       })
     )
     .optional(),
-  totalEntries: z.number().optional(),
+  totalEntries: NonNegativeIntegerSchema.optional(),
   truncated: z.boolean().optional(),
-  totalFiles: z.number().optional(),
-  totalDirectories: z.number().optional(),
+  totalFiles: NonNegativeIntegerSchema.optional(),
+  totalDirectories: NonNegativeIntegerSchema.optional(),
   stoppedReason: ListDirectoryStopReasonSchema.optional(),
-  skippedInaccessible: z.number().optional(),
+  skippedInaccessible: NonNegativeIntegerSchema.optional(),
   nextCursor: z
     .string()
     .optional()
     .describe('Cursor for the next page; absent on the final page'),
-  error: ErrorSchema.optional(),
 });
 
 const SearchSummarySchema = z.strictObject({
-  totalMatches: z.number().optional().describe('Total matches found'),
+  totalMatches: NonNegativeIntegerSchema.optional().describe(
+    'Total matches found'
+  ),
   truncated: z.boolean().optional().describe('Results truncated?'),
   resourceUri: z.string().optional().describe('Full results URI'),
-  error: ErrorSchema.optional(),
 });
 
 export const SearchFilesOutputSchema = SearchSummarySchema.extend({
-  ok: z.boolean(),
+  ok: SuccessFlagSchema,
   root: z.string().optional().describe('Search root'),
   results: z
     .array(
       z.strictObject({
         path: z.string().describe('Relative path'),
-        size: z.number().optional(),
-        modified: z.string().optional(),
+        size: NonNegativeIntegerSchema.optional(),
+        modified: IsoDateTimeSchema.optional(),
       })
     )
     .optional(),
-  filesScanned: z.number().optional().describe('Files scanned'),
-  skippedInaccessible: z.number().optional().describe('Inaccessible files'),
+  filesScanned: NonNegativeIntegerSchema.optional().describe('Files scanned'),
+  skippedInaccessible:
+    NonNegativeIntegerSchema.optional().describe('Inaccessible files'),
   stoppedReason:
     SearchStopReasonSchema.optional().describe('Why search stopped'),
   nextCursor: z
@@ -463,63 +473,66 @@ export const SearchFilesOutputSchema = SearchSummarySchema.extend({
 });
 
 export const SearchContentOutputSchema = SearchSummarySchema.extend({
-  ok: z.boolean(),
+  ok: SuccessFlagSchema,
   matches: z
     .array(
       z.strictObject({
         file: z.string().describe('Relative path'),
-        line: z.number(),
-        column: z
-          .number()
-          .optional()
-          .describe('Column of first match (0-based)'),
+        line: PositiveIntegerSchema,
+        column: NonNegativeIntegerSchema.optional().describe(
+          'Column of first match (0-based)'
+        ),
         content: z.string(),
-        matchCount: z.number(),
+        matchCount: PositiveIntegerSchema,
         contextBefore: z.array(z.string()).optional(),
         contextAfter: z.array(z.string()).optional(),
       })
     )
     .optional(),
-  filesScanned: z.number().optional().describe('Files scanned'),
-  filesMatched: z.number().optional().describe('Files with matches'),
-  skippedTooLarge: z.number().optional().describe('Files skipped: too large'),
-  skippedBinary: z.number().optional().describe('Files skipped: binary'),
-  skippedInaccessible: z
-    .number()
-    .optional()
-    .describe('Files skipped: inaccessible'),
+  filesScanned: NonNegativeIntegerSchema.optional().describe('Files scanned'),
+  filesMatched:
+    NonNegativeIntegerSchema.optional().describe('Files with matches'),
+  skippedTooLarge: NonNegativeIntegerSchema.optional().describe(
+    'Files skipped: too large'
+  ),
+  skippedBinary: NonNegativeIntegerSchema.optional().describe(
+    'Files skipped: binary'
+  ),
+  skippedInaccessible: NonNegativeIntegerSchema.optional().describe(
+    'Files skipped: inaccessible'
+  ),
   stoppedReason:
     SearchStopReasonSchema.optional().describe('Why search stopped'),
 });
 
 export const TreeOutputSchema = z.strictObject({
-  ok: z.boolean(),
+  ok: SuccessFlagSchema,
   root: z.string().optional(),
   tree: TreeEntrySchema.optional(),
   ascii: z.string().optional(),
   truncated: z.boolean().optional(),
-  totalEntries: z.number().optional(),
-  error: ErrorSchema.optional(),
+  totalEntries: NonNegativeIntegerSchema.optional(),
 });
 
 const ReadResultSchema = z.strictObject({
   content: z.string().optional().describe('Content'),
   truncated: z.boolean().optional().describe('Truncated?'),
   resourceUri: z.string().optional().describe('Full content URI'),
-  totalLines: z.number().optional().describe('Total lines'),
-  head: z.number().optional().describe('Head lines'),
-  tail: z.number().optional().describe('Tail lines'),
-  startLine: z.number().optional().describe('Start line'),
-  endLine: z.number().optional().describe('End line'),
-  linesRead: z.number().optional().describe('Lines read'),
+  totalLines: NonNegativeIntegerSchema.optional().describe('Total lines'),
+  head: PositiveIntegerSchema.optional().describe('Head lines'),
+  tail: PositiveIntegerSchema.optional().describe('Tail lines'),
+  startLine: PositiveIntegerSchema.optional().describe('Start line'),
+  endLine: PositiveIntegerSchema.optional().describe('End line'),
+  linesRead: NonNegativeIntegerSchema.optional().describe('Lines read'),
   hasMoreLines: z.boolean().optional().describe('More lines?'),
 });
 
 export const ReadFileOutputSchema = ReadResultSchema.extend({
-  ok: z.boolean(),
+  ok: SuccessFlagSchema,
   path: z.string().optional(),
-  contentHash: z.string().optional().describe('SHA-256 of full file content'),
-  error: ErrorSchema.optional(),
+  contentHash: Sha256HexSchema.optional().describe(
+    'SHA-256 of full file content'
+  ),
 });
 
 const ReadMultipleFileResultSchema = ReadResultSchema.extend({
@@ -528,35 +541,32 @@ const ReadMultipleFileResultSchema = ReadResultSchema.extend({
     .enum(['head', 'tail', 'range', 'externalized'])
     .optional()
     .describe('Why content was truncated'),
-  error: z.string().optional().describe('Error message'),
+  error: ErrorSchema.optional().describe('Structured error details'),
 });
 
 export const ReadMultipleFilesOutputSchema = z.strictObject({
-  ok: z.boolean(),
+  ok: SuccessFlagSchema,
   results: z.array(ReadMultipleFileResultSchema).optional(),
   summary: OperationSummarySchema.optional(),
-  error: ErrorSchema.optional(),
 });
 
 export const GetFileInfoOutputSchema = z.strictObject({
-  ok: z.boolean(),
+  ok: SuccessFlagSchema,
   info: FileInfoSchema.optional(),
-  error: ErrorSchema.optional(),
 });
 
 export const GetMultipleFileInfoOutputSchema = z.strictObject({
-  ok: z.boolean(),
+  ok: SuccessFlagSchema,
   results: z
     .array(
       z.strictObject({
         path: z.string(),
         info: FileInfoSchema.optional(),
-        error: z.string().optional(),
+        error: ErrorSchema.optional(),
       })
     )
     .optional(),
   summary: OperationSummarySchema.optional(),
-  error: ErrorSchema.optional(),
 });
 
 export const CreateDirectoryInputSchema = z
@@ -599,10 +609,9 @@ export const CreateDirectoryInputSchema = z
   .describe("Provide either 'path' or 'paths'.");
 
 export const CreateDirectoryOutputSchema = z.strictObject({
-  ok: z.boolean(),
+  ok: SuccessFlagSchema,
   path: z.string().optional(),
   paths: z.array(z.string()).optional(),
-  error: ErrorSchema.optional(),
 });
 
 export const WriteFileInputSchema = z.strictObject({
@@ -611,10 +620,9 @@ export const WriteFileInputSchema = z.strictObject({
 });
 
 export const WriteFileOutputSchema = z.strictObject({
-  ok: z.boolean(),
+  ok: SuccessFlagSchema,
   path: z.string().optional(),
-  bytesWritten: z.number().optional(),
-  error: ErrorSchema.optional(),
+  bytesWritten: NonNegativeIntegerSchema.optional(),
 });
 
 export const EditFileInputSchema = z.strictObject({
@@ -649,11 +657,11 @@ export const EditFileInputSchema = z.strictObject({
 export const EditFileOutputSchema = z.strictObject({
   ok: z.boolean(),
   path: z.string().optional(),
-  appliedEdits: z.number().optional(),
-  linesAdded: z.number().optional().describe('Lines added'),
-  linesRemoved: z.number().optional().describe('Lines removed'),
+  appliedEdits: NonNegativeIntegerSchema.optional(),
+  linesAdded: NonNegativeIntegerSchema.optional().describe('Lines added'),
+  linesRemoved: NonNegativeIntegerSchema.optional().describe('Lines removed'),
   lineRange: z
-    .tuple([z.number(), z.number()])
+    .tuple([PositiveIntegerSchema, PositiveIntegerSchema])
     .optional()
     .describe('Line range modified [start, end] (1-based)'),
   unmatchedEdits: z
@@ -661,7 +669,6 @@ export const EditFileOutputSchema = z.strictObject({
     .optional()
     .describe('Edits that could not be applied'),
   diff: z.string().optional().describe('Unified diff of changes (dryRun)'),
-  error: ErrorSchema.optional(),
 });
 
 export const MoveFileInputSchema = z
@@ -715,12 +722,11 @@ export const MoveFileOutputSchema = z.strictObject({
     .array(
       z.strictObject({
         source: z.string().describe('Source path'),
-        error: z.string().describe('Error message'),
+        error: ErrorSchema.describe('Structured error details'),
       })
     )
     .optional()
     .describe('List of files that failed to move'),
-  error: ErrorSchema.optional(),
 });
 
 export const DeleteFileInputSchema = z.strictObject({
@@ -730,9 +736,8 @@ export const DeleteFileInputSchema = z.strictObject({
 });
 
 export const DeleteFileOutputSchema = z.strictObject({
-  ok: z.boolean(),
+  ok: SuccessFlagSchema,
   path: z.string().optional(),
-  error: ErrorSchema.optional(),
 });
 
 export const CalculateHashInputSchema = z.strictObject({
@@ -740,15 +745,13 @@ export const CalculateHashInputSchema = z.strictObject({
 });
 
 export const CalculateHashOutputSchema = z.strictObject({
-  ok: z.boolean(),
+  ok: SuccessFlagSchema,
   path: z.string().optional(),
-  hash: z.string().optional().describe('SHA-256 hash'),
+  hash: Sha256HexSchema.optional().describe('SHA-256 hash'),
   isDirectory: z.boolean().optional().describe('True if path is a directory'),
-  fileCount: z
-    .number()
-    .optional()
-    .describe('Number of files hashed (directories only)'),
-  error: ErrorSchema.optional(),
+  fileCount: NonNegativeIntegerSchema.optional().describe(
+    'Number of files hashed (directories only)'
+  ),
 });
 
 export const DiffFilesInputSchema = z.strictObject({
@@ -773,15 +776,16 @@ export const DiffFilesInputSchema = z.strictObject({
 });
 
 export const DiffFilesOutputSchema = z.strictObject({
-  ok: z.boolean(),
+  ok: SuccessFlagSchema,
   diff: z.string().optional().describe('Unified diff content'),
   isIdentical: z.boolean().optional().describe('True if files are identical'),
-  linesAdded: z.number().optional().describe('Lines added'),
-  linesRemoved: z.number().optional().describe('Lines removed'),
-  hunksCount: z.number().optional().describe('Number of diff hunks'),
+  linesAdded: NonNegativeIntegerSchema.optional().describe('Lines added'),
+  linesRemoved: NonNegativeIntegerSchema.optional().describe('Lines removed'),
+  hunksCount: NonNegativeIntegerSchema.optional().describe(
+    'Number of diff hunks'
+  ),
   truncated: z.boolean().optional().describe('Diff content truncated?'),
   resourceUri: z.string().optional().describe('Full diff content URI'),
-  error: ErrorSchema.optional(),
 });
 
 export const ApplyPatchInputSchema = z.strictObject({
@@ -817,23 +821,24 @@ export const ApplyPatchOutputSchema = z.strictObject({
   ok: z.boolean(),
   path: z.string().optional(),
   applied: z.boolean().optional(),
-  hunksApplied: z.number().optional().describe('Hunks applied'),
-  linesAdded: z.number().optional().describe('Lines added'),
-  linesRemoved: z.number().optional().describe('Lines removed'),
+  hunksApplied: NonNegativeIntegerSchema.optional().describe('Hunks applied'),
+  linesAdded: NonNegativeIntegerSchema.optional().describe('Lines added'),
+  linesRemoved: NonNegativeIntegerSchema.optional().describe('Lines removed'),
   results: z
     .array(
       z.strictObject({
         path: z.string().describe('File path'),
         applied: z.boolean().describe('Patch applied successfully'),
-        hunksApplied: z.number().optional().describe('Hunks applied'),
-        linesAdded: z.number().optional().describe('Lines added'),
-        linesRemoved: z.number().optional().describe('Lines removed'),
-        error: z.string().optional().describe('Error message'),
+        hunksApplied:
+          NonNegativeIntegerSchema.optional().describe('Hunks applied'),
+        linesAdded: NonNegativeIntegerSchema.optional().describe('Lines added'),
+        linesRemoved:
+          NonNegativeIntegerSchema.optional().describe('Lines removed'),
+        error: ErrorSchema.optional().describe('Structured error details'),
       })
     )
     .optional()
     .describe('Per-file results for multi-file patches'),
-  error: ErrorSchema.optional(),
 });
 
 export const SearchAndReplaceInputSchema = z.strictObject({
@@ -894,16 +899,19 @@ export const SearchAndReplaceInputSchema = z.strictObject({
 });
 
 export const SearchAndReplaceOutputSchema = z.strictObject({
-  ok: z.boolean(),
-  matches: z.number().optional().describe('Total matches found'),
-  filesChanged: z.number().optional().describe('Files modified'),
-  processedFiles: z.number().optional().describe('Files processed'),
-  failedFiles: z.number().optional().describe('Files skipped due to errors'),
+  ok: SuccessFlagSchema,
+  matches: NonNegativeIntegerSchema.optional().describe('Total matches found'),
+  filesChanged: NonNegativeIntegerSchema.optional().describe('Files modified'),
+  processedFiles:
+    NonNegativeIntegerSchema.optional().describe('Files processed'),
+  failedFiles: NonNegativeIntegerSchema.optional().describe(
+    'Files skipped due to errors'
+  ),
   failures: z
     .array(
       z.strictObject({
         path: z.string().describe('File path'),
-        error: z.string().describe('Error message'),
+        error: ErrorSchema.describe('Structured error details'),
       })
     )
     .optional()
@@ -912,7 +920,7 @@ export const SearchAndReplaceOutputSchema = z.strictObject({
     .array(
       z.strictObject({
         path: z.string().describe('File path'),
-        matches: z.number().describe('Matches in file'),
+        matches: PositiveIntegerSchema.describe('Matches in file'),
       })
     )
     .optional()
@@ -930,5 +938,4 @@ export const SearchAndReplaceOutputSchema = z.strictObject({
     .enum(['maxFiles'])
     .optional()
     .describe('Why processing stopped early'),
-  error: ErrorSchema.optional(),
 });

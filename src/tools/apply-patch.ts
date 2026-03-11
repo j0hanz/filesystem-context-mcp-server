@@ -6,11 +6,7 @@ import { applyPatch, parsePatch, type StructuredPatch } from 'diff';
 import type { z } from 'zod';
 
 import { MAX_TEXT_FILE_SIZE, PARALLEL_CONCURRENCY } from '../lib/constants.js';
-import {
-  ErrorCode,
-  formatUnknownErrorMessage,
-  McpError,
-} from '../lib/errors.js';
+import { ErrorCode, McpError } from '../lib/errors.js';
 import {
   atomicWriteFile,
   processInParallel,
@@ -20,6 +16,7 @@ import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
 
 import { ApplyPatchInputSchema, ApplyPatchOutputSchema } from '../schemas.js';
 import {
+  buildStructuredError,
   buildToolErrorResponse,
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
@@ -127,11 +124,31 @@ async function applyDiff(
     return {
       path: validPath,
       applied: false,
-      error: 'Patch application failed',
+      error: buildStructuredError(
+        new McpError(
+          ErrorCode.E_INVALID_INPUT,
+          'Patch application failed',
+          validPath
+        ),
+        ErrorCode.E_INVALID_INPUT,
+        validPath
+      ),
     };
   }
   if (patched === content) {
-    return { path: validPath, applied: false, error: 'Patch had no effect' };
+    return {
+      path: validPath,
+      applied: false,
+      error: buildStructuredError(
+        new McpError(
+          ErrorCode.E_INVALID_INPUT,
+          'Patch had no effect',
+          validPath
+        ),
+        ErrorCode.E_INVALID_INPUT,
+        validPath
+      ),
+    };
   }
 
   const patchStats = countStructuredPatchStats(diff);
@@ -158,7 +175,13 @@ async function processMultiFilePatch(
         Promise.resolve({
           path: '<unknown>',
           applied: false,
-          error: 'Missing file name in patch header',
+          error: buildStructuredError(
+            new McpError(
+              ErrorCode.E_INVALID_INPUT,
+              'Missing file name in patch header'
+            ),
+            ErrorCode.E_INVALID_INPUT
+          ),
         });
     }
 
@@ -171,7 +194,11 @@ async function processMultiFilePatch(
         return {
           path: fileName,
           applied: false,
-          error: formatUnknownErrorMessage(error),
+          error: buildStructuredError(
+            error,
+            ErrorCode.E_INVALID_INPUT,
+            filePath
+          ),
         };
       }
     };
@@ -260,7 +287,7 @@ async function handleApplyPatch(
   if (!result.applied) {
     throw new McpError(
       ErrorCode.E_INVALID_INPUT,
-      result.error === 'Patch had no effect'
+      result.error?.message === 'Patch had no effect'
         ? 'Patch had no effect \u2014 the file content is unchanged after applying. The patch may not match the current file content. Generate a fresh patch via diff_files and retry.'
         : 'Patch application failed. The file content may have changed or patch context is insufficient. Generate a fresh patch via diff_files against the current file, then retry. If differences are minor, enable fuzzy matching with the fuzzFactor parameter.'
     );

@@ -314,7 +314,6 @@ export function registerListDirectoryTool(
       const base = args.path ? path.basename(args.path) : '.';
       if (result.isError) return `≣ ls: ${base} • failed`;
       const sc = result.structuredContent;
-      if (!sc.ok) return `≣ ls: ${base} • failed`;
       const count = sc.totalEntries ?? 0;
       return `≣ ls: ${base} • ${count} ${count === 1 ? 'entry' : 'entries'}`;
     },

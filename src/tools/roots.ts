@@ -79,7 +79,6 @@ export function registerListAllowedDirectoriesTool(
     completionMessage: (_args, result) => {
       if (result.isError) return `≣ roots • failed`;
       const sc = result.structuredContent;
-      if (!sc.ok) return `≣ roots • failed`;
       const count = sc.directories?.length ?? 0;
       return `≣ roots • ${count} ${count === 1 ? 'root' : 'roots'}`;
     },

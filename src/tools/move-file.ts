@@ -19,6 +19,7 @@ import {
 
 import { MoveFileInputSchema, MoveFileOutputSchema } from '../schemas.js';
 import {
+  buildStructuredError,
   buildToolErrorResponse,
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
@@ -46,6 +47,17 @@ export const MOVE_FILE_TOOL: ToolContract = {
   ],
   taskSupport: 'forbidden',
 } as const;
+
+function toMoveFailure(
+  source: string,
+  error: unknown,
+  defaultCode: ErrorCode = ErrorCode.E_UNKNOWN
+): NonNullable<z.infer<typeof MoveFileOutputSchema>['failed']>[number] {
+  return {
+    source,
+    error: buildStructuredError(error, defaultCode, source),
+  };
+}
 
 async function handleMoveFile(
   args: z.infer<typeof MoveFileInputSchema>,
@@ -85,7 +97,8 @@ async function handleMoveFile(
   }
 
   const movedSources: string[] = [];
-  const failed: { source: string; error: string }[] = [];
+  const failed: NonNullable<z.infer<typeof MoveFileOutputSchema>['failed']> =
+    [];
 
   for (const src of sources) {
     let validSource: string;
@@ -93,10 +106,7 @@ async function handleMoveFile(
       validSource = await validateExistingPath(src, signal);
       assertAllowedFileAccess(src, validSource);
     } catch (error) {
-      failed.push({
-        source: src,
-        error: formatUnknownErrorMessage(error),
-      });
+      failed.push(toMoveFailure(src, error, ErrorCode.E_ACCESS_DENIED));
       continue;
     }
 
@@ -114,10 +124,17 @@ async function handleMoveFile(
     if (
       path.resolve(targetPath).startsWith(path.resolve(validSource) + path.sep)
     ) {
-      failed.push({
-        source: src,
-        error: `Cannot move directory '${src}' into its own subdirectory '${targetPath}'`,
-      });
+      failed.push(
+        toMoveFailure(
+          src,
+          new McpError(
+            ErrorCode.E_INVALID_INPUT,
+            `Cannot move directory '${src}' into its own subdirectory '${targetPath}'`,
+            src
+          ),
+          ErrorCode.E_INVALID_INPUT
+        )
+      );
       continue;
     }
 
@@ -133,10 +150,7 @@ async function handleMoveFile(
             signal
           );
         } catch (copyError) {
-          failed.push({
-            source: src,
-            error: formatUnknownErrorMessage(copyError),
-          });
+          failed.push(toMoveFailure(src, copyError));
           continue;
         }
         // Copy succeeded — now remove source
@@ -152,22 +166,31 @@ async function handleMoveFile(
             await fs.rm(targetPath, { recursive: true, force: true });
           } catch {
             // Rollback failed — data exists in both locations
-            failed.push({
-              source: src,
-              error: `Cross-device move partially failed: data exists at both '${validSource}' and '${targetPath}'. ${formatUnknownErrorMessage(deleteError)}`,
-            });
+            failed.push(
+              toMoveFailure(
+                src,
+                new McpError(
+                  ErrorCode.E_UNKNOWN,
+                  `Cross-device move partially failed: data exists at both '${validSource}' and '${targetPath}'. ${formatUnknownErrorMessage(deleteError)}`,
+                  src
+                )
+              )
+            );
             continue;
           }
-          failed.push({
-            source: src,
-            error: `Cross-device move failed: could not remove source. ${formatUnknownErrorMessage(deleteError)}`,
-          });
+          failed.push(
+            toMoveFailure(
+              src,
+              new McpError(
+                ErrorCode.E_UNKNOWN,
+                `Cross-device move failed: could not remove source. ${formatUnknownErrorMessage(deleteError)}`,
+                src
+              )
+            )
+          );
         }
       } else {
-        failed.push({
-          source: src,
-          error: formatUnknownErrorMessage(error),
-        });
+        failed.push(toMoveFailure(src, error));
       }
     }
   }

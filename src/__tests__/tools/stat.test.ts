@@ -121,10 +121,10 @@ describe('stat_many tool', () => {
     const results = sc['results'] as Array<Record<string, unknown>>;
     const missingResult = results.find((r) => r['path'] === missing);
     assert.ok(missingResult, 'Expected result entry for the missing file');
-    assert.ok(
-      missingResult['error'],
-      'Expected error field on missing path result'
-    );
+    const error = missingResult['error'] as Record<string, unknown> | undefined;
+    assert.ok(error, 'Expected error field on missing path result');
+    assert.equal(error['code'], 'E_NOT_FOUND');
+    assert.equal(typeof error['message'], 'string');
   });
 
   it('rejects empty paths array (schema validation)', async () => {

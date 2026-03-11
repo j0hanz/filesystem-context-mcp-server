@@ -86,7 +86,6 @@ export function registerWriteFileTool(
       const name = path.basename(args.path);
       if (result.isError) return `🛠 write: ${name} • failed`;
       const sc = result.structuredContent;
-      if (!sc.ok) return `🛠 write: ${name} • failed`;
       return `🛠 write: ${name} • ${formatBytes(sc.bytesWritten ?? 0)}`;
     },
   });

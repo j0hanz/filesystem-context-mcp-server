@@ -15,6 +15,7 @@ import {
   buildBatchCompletionSuffix,
   buildBatchPathContext,
   buildResourceLink,
+  buildStructuredError,
   buildToolErrorResponse,
   buildToolResponse,
   createBatchProgressCallbacks,
@@ -57,7 +58,8 @@ type ReadManyStructuredResultItem = NonNullable<
 >[number];
 type ReadManyResult = Awaited<ReturnType<typeof readMultipleFiles>>[number];
 type ReadManyTruncationReason = 'head' | 'tail' | 'range' | 'externalized';
-type ReadManyResultWithResource = ReadManyResult & {
+type ReadManyResultWithResource = Omit<ReadManyResult, 'error'> & {
+  error?: ReadManyStructuredResultItem['error'];
   resourceUri?: string;
   truncationReason?: ReadManyTruncationReason;
   expiresAt?: string;
@@ -113,8 +115,12 @@ function maybeExternalizeReadManyResult(
   resourceStore?: ToolRegistrationOptions['resourceStore']
 ): ReadManyResultWithResource {
   const truncationReason = resolveReadManyTruncationReason(result);
+  const { error, ...rest } = result;
   const baseResult: ReadManyResultWithResource = {
-    ...result,
+    ...rest,
+    ...(error
+      ? { error: buildStructuredError(error, ErrorCode.E_UNKNOWN, result.path) }
+      : {}),
     ...(truncationReason ? { truncationReason } : {}),
   };
 
@@ -144,7 +150,7 @@ function maybeExternalizeReadManyResult(
 function buildReadManyTextSection(result: ReadManyResultWithResource): string {
   const header = `=== ${result.path} ===`;
   if (result.error) {
-    return `${header}\nError: ${result.error}`;
+    return `${header}\nError [${result.error.code}]: ${result.error.message}`;
   }
 
   return `${header}\n${result.content ?? ''}`;

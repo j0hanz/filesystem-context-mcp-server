@@ -169,7 +169,10 @@ describe('read_many tool', () => {
     const results = sc['results'] as Array<Record<string, unknown>>;
     const missingResult = results.find((r) => r['path'] === missing);
     assert.ok(missingResult, 'Expected entry for missing file');
-    assert.ok(missingResult['error'], 'Expected error field for missing file');
+    const error = missingResult['error'] as Record<string, unknown> | undefined;
+    assert.ok(error, 'Expected error field for missing file');
+    assert.equal(error['code'], 'E_NOT_FOUND');
+    assert.equal(typeof error['message'], 'string');
   });
 
   it('reads with startLine/endLine range', async () => {
@@ -209,7 +212,9 @@ describe('read_many tool', () => {
       (r['path'] as string).includes('binary.bin')
     );
     assert.ok(binResult, 'Expected entry for binary file');
-    assert.ok(binResult['error'], 'Expected error for binary file');
+    const binError = binResult['error'] as Record<string, unknown> | undefined;
+    assert.ok(binError, 'Expected error for binary file');
+    assert.equal(typeof binError['message'], 'string');
     // Text file should still succeed
     const textResult = results.find((r) =>
       (r['path'] as string).includes('a.txt')
@@ -254,8 +259,12 @@ describe('read_many tool budget enforcement', () => {
 
     // At least one file should be skipped due to budget
     const skipped = results.filter((r) => {
-      const err = r['error'];
-      return typeof err === 'string' && err.includes('maxTotalSize');
+      const err = r['error'] as Record<string, unknown> | undefined;
+      return (
+        err !== undefined &&
+        typeof err['message'] === 'string' &&
+        err['message'].includes('maxTotalSize')
+      );
     });
     assert.ok(
       skipped.length > 0,

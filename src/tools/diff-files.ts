@@ -198,7 +198,6 @@ export function registerDiffFilesTool(
       const n2 = path.basename(args.modified);
       if (result.isError) return `🕮 diff: ${n1} ⟷ ${n2} • failed`;
       const sc = result.structuredContent;
-      if (!sc.ok) return `🕮 diff: ${n1} ⟷ ${n2} • failed`;
       if (sc.isIdentical) return `🕮 diff: ${n1} ⟷ ${n2} • identical`;
       const added = sc.linesAdded ?? 0;
       const removed = sc.linesRemoved ?? 0;

@@ -73,8 +73,11 @@ describe('generated LLM resources', () => {
     assert.ok(rootsInfo, 'Expected tool info for roots');
     assert.match(
       editInfo,
-      /- lineRange \(tuple<number, number>, optional\): Line range modified \[start, end\] \(1-based\)/u
+      /- lineRange \(tuple<integer, integer>, optional\): Line range modified \[start, end\] \(1-based\)/u
     );
-    assert.match(rootsInfo, /- ok \(boolean, required\): No description\./u);
+    assert.match(
+      rootsInfo,
+      /- ok \(const\(true\), required\): No description\./u
+    );
   });
 });

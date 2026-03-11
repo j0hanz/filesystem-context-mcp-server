@@ -210,6 +210,27 @@ function resolveDetailedError(
   return detailed;
 }
 
+export function buildStructuredError(
+  error: unknown,
+  defaultCode: ErrorCode,
+  path?: string
+): {
+  code: ErrorCode;
+  message: string;
+  path?: string;
+  suggestion?: string;
+} {
+  const detailed = resolveDetailedError(error, defaultCode, path);
+  return {
+    code: detailed.code,
+    message: detailed.message,
+    ...(detailed.path !== undefined ? { path: detailed.path } : {}),
+    ...(detailed.suggestion !== undefined
+      ? { suggestion: detailed.suggestion }
+      : {}),
+  };
+}
+
 export function buildToolResponse<T>(
   text: string,
   structuredContent: T,

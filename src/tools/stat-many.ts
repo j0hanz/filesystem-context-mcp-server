@@ -15,6 +15,7 @@ import {
   buildBatchCompletionSuffix,
   buildBatchPathContext,
   buildFileInfoPayload,
+  buildStructuredError,
   buildToolErrorResponse,
   buildToolResponse,
   createBatchProgressCallbacks,
@@ -72,13 +73,15 @@ async function handleGetMultipleFileInfo(
   >['results'] = result.results.map((entry) => ({
     path: entry.path,
     info: entry.info ? buildFileInfoPayload(entry.info) : undefined,
-    error: entry.error,
+    error: entry.error
+      ? buildStructuredError(entry.error, ErrorCode.E_NOT_FOUND, entry.path)
+      : undefined,
   }));
 
   const text = result.results
     .map((entry) =>
       entry.error
-        ? `${entry.path}: ${entry.error}`
+        ? `${entry.path}: ${buildStructuredError(entry.error, ErrorCode.E_NOT_FOUND, entry.path).message}`
         : entry.info
           ? formatFileInfoDetail(entry.info)
           : entry.path

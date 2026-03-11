@@ -189,14 +189,13 @@ export function registerSearchFilesTool(
             progressWithMessage
           );
           const sc = result.structuredContent;
-          const count = sc.ok ? (sc.totalMatches ?? 0) : 0;
-          const stoppedReason = sc.ok ? sc.stoppedReason : undefined;
+          const { totalMatches = 0, stoppedReason } = sc;
 
           let suffix: string;
-          if (count === 0) {
+          if (totalMatches === 0) {
             suffix = 'No matches';
           } else {
-            suffix = `${count} ${count === 1 ? 'match' : 'matches'}`;
+            suffix = `${totalMatches} ${totalMatches === 1 ? 'match' : 'matches'}`;
             if (stoppedReason === 'timeout') {
               suffix += ' [timeout]';
             } else if (stoppedReason === 'maxResults') {
