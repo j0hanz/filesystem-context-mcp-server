@@ -84,7 +84,6 @@ export interface SearchContentResult {
     readonly skippedTooLarge: number;
     readonly skippedBinary: number;
     readonly skippedInaccessible: number;
-    readonly linesSkippedDueToRegexTimeout: number;
     readonly stoppedReason?: 'maxResults' | 'maxFiles' | 'timeout';
   };
 }

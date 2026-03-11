@@ -58,13 +58,11 @@ type SearchOutput = z.infer<typeof SearchContentOutputSchema>;
 type SearchMatchPayload = NonNullable<SearchOutput['matches']>[number];
 type SearchResultValue = Awaited<ReturnType<typeof searchContent>>;
 type SearchSummary = SearchResultValue['summary'];
-type SearchPatternType = SearchOutput['patternType'];
 type TruthySummaryField =
   | 'filesMatched'
   | 'skippedTooLarge'
   | 'skippedBinary'
-  | 'skippedInaccessible'
-  | 'linesSkippedDueToRegexTimeout';
+  | 'skippedInaccessible';
 
 type NormalizedSearchMatch = SearchResultValue['matches'][number] & {
   relativeFile: string;
@@ -90,7 +88,6 @@ const TRUTHY_SUMMARY_FIELDS: readonly TruthySummaryField[] = [
   'skippedTooLarge',
   'skippedBinary',
   'skippedInaccessible',
-  'linesSkippedDueToRegexTimeout',
 ];
 
 function buildStructuredSummaryFields(
@@ -207,13 +204,10 @@ function buildSearchText(
 
 function buildSearchStructured(
   summary: SearchSummary,
-  matches: SearchMatchPayload[],
-  options: { patternType: SearchPatternType; caseSensitive: boolean }
+  matches: SearchMatchPayload[]
 ): SearchOutput {
   return {
     ok: true,
-    patternType: options.patternType,
-    caseSensitive: options.caseSensitive,
     matches,
     totalMatches: summary.matches,
     filesScanned: summary.filesScanned,
@@ -326,7 +320,6 @@ async function executeSearch(
     contextLines: args.contextLines,
     maxResults: args.maxResults,
     isLiteral: !args.isRegex,
-    multiline: args.multiline,
     ...(signal ? { signal } : {}),
     ...(onProgress ? { onProgress } : {}),
   };
@@ -344,7 +337,7 @@ async function executeSearch(
 function createSearchMatcher(args: SearchInput): RE2 | undefined {
   if (!args.isRegex) return undefined;
   try {
-    const flags = (args.caseSensitive ? '' : 'i') + (args.multiline ? 'm' : '');
+    const flags = args.caseSensitive ? '' : 'i';
     return new RE2(args.pattern, flags);
   } catch (error) {
     throw new McpError(
@@ -375,7 +368,6 @@ async function handleSearchContent(
   onProgress?: (progress: { total?: number; current: number }) => void
 ): Promise<ToolResponse<SearchOutput>> {
   const basePath = resolvePathOrRoot(args.path);
-  const patternType: SearchPatternType = args.isRegex ? 'regex' : 'literal';
   const regexMatcher = createSearchMatcher(args);
 
   const result = await executeSearch(args, basePath, signal, onProgress);
@@ -385,10 +377,7 @@ async function handleSearchContent(
 
   const matchPayloads = buildMatchPayloads(normalizedMatches, searchContext);
 
-  const fullStructured = buildSearchStructured(result.summary, matchPayloads, {
-    patternType,
-    caseSensitive: args.caseSensitive,
-  });
+  const fullStructured = buildSearchStructured(result.summary, matchPayloads);
 
   const preview = buildSearchPreviewState(normalizedMatches, matchPayloads);
 

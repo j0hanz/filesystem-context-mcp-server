@@ -70,7 +70,6 @@ interface MatcherOptions {
   caseSensitive: boolean;
   wholeWord: boolean;
   isLiteral: boolean;
-  multiline: boolean;
 }
 
 type Matcher = (line: string) => number;
@@ -138,13 +137,8 @@ function buildLiteralMatcher(
   };
 }
 
-function buildRegexMatcher(
-  final: string,
-  caseSensitive: boolean,
-  multiline: boolean
-): Matcher {
-  let flags = caseSensitive ? 'g' : 'gi';
-  if (multiline) flags += 'm';
+function buildRegexMatcher(final: string, caseSensitive: boolean): Matcher {
+  const flags = caseSensitive ? 'g' : 'gi';
   const regex = new RE2(final, flags);
   return (line: string): number => countRegexLineMatches(regex, line);
 }
@@ -159,7 +153,7 @@ function buildMatcher(pattern: string, options: MatcherOptions): Matcher {
 
   const final = buildRegexPattern(pattern, options);
   validatePattern(pattern, options); // Re-validate to be safe
-  return buildRegexMatcher(final, options.caseSensitive, options.multiline);
+  return buildRegexMatcher(final, options.caseSensitive);
 }
 
 // --- Configuration & Schemas ---
@@ -184,7 +178,6 @@ const SearchOptionsSchema = z.strictObject({
   contextLines: z.int().min(0),
   wholeWord: z.boolean(),
   isLiteral: z.boolean(),
-  multiline: z.boolean(),
   includeHidden: z.boolean(),
   baseNameMatch: z.boolean(),
   caseSensitiveFileMatch: z.boolean(),
@@ -209,7 +202,6 @@ const DEFAULTS: ResolvedOptions = {
   contextLines: 0,
   wholeWord: false,
   isLiteral: true,
-  multiline: false,
   includeHidden: false,
   baseNameMatch: false,
   caseSensitiveFileMatch: true,
@@ -506,7 +498,6 @@ function buildMatcherOptions(opts: ResolvedOptions): MatcherOptions {
     caseSensitive: opts.caseSensitive,
     wholeWord: opts.wholeWord,
     isLiteral: opts.isLiteral,
-    multiline: opts.multiline,
   };
 }
 
@@ -551,7 +542,6 @@ function buildSearchContentResult(
     skippedTooLarge: summary.skippedTooLarge,
     skippedBinary: summary.skippedBinary,
     skippedInaccessible: summary.skippedInaccessible,
-    linesSkippedDueToRegexTimeout: 0,
   };
 
   return {
@@ -1763,8 +1753,7 @@ function getMatcherCacheKey(pattern: string, options: MatcherOptions): string {
   const cs = options.caseSensitive ? '1' : '0';
   const ww = options.wholeWord ? '1' : '0';
   const lit = options.isLiteral ? '1' : '0';
-  const ml = options.multiline ? '1' : '0';
-  return `${pattern}|${cs}|${ww}|${lit}|${ml}`;
+  return `${pattern}|${cs}|${ww}|${lit}`;
 }
 
 function getCachedMatcher(pattern: string, options: MatcherOptions): Matcher {

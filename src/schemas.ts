@@ -345,9 +345,6 @@ export const SearchContentInputSchema = z.strictObject({
   includeIgnored: defaultFalseBoolean(
     'Include ignored items (node_modules, etc).'
   ),
-  multiline: defaultFalseBoolean(
-    'Multi-line mode. ^ and $ match line boundaries when isRegex=true.'
-  ),
 });
 
 export const ReadFileInputSchema = z
@@ -477,11 +474,6 @@ export const SearchFilesOutputSchema = SearchSummarySchema.extend({
 
 export const SearchContentOutputSchema = SearchSummarySchema.extend({
   ok: z.boolean(),
-  patternType: z
-    .enum(['literal', 'regex'])
-    .optional()
-    .describe('Pattern interpretation'),
-  caseSensitive: z.boolean().optional().describe('Case-sensitive matching'),
   matches: z
     .array(
       z.strictObject({
@@ -506,10 +498,6 @@ export const SearchContentOutputSchema = SearchSummarySchema.extend({
     .number()
     .optional()
     .describe('Files skipped: inaccessible'),
-  linesSkippedDueToRegexTimeout: z
-    .number()
-    .optional()
-    .describe('Lines skipped due to regex timeout'),
   stoppedReason:
     SearchStopReasonSchema.optional().describe('Why search stopped'),
 });
