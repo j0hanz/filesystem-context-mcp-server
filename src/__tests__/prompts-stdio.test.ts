@@ -1,0 +1,115 @@
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import assert from 'node:assert/strict';
+import { afterEach, describe, it } from 'node:test';
+
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+
+interface PromptStdIoEnv {
+  client: Client;
+  tempDir: string;
+  cleanup: () => Promise<void>;
+}
+
+async function createPromptStdIoEnv(
+  setup?: (tempDir: string) => Promise<void>
+): Promise<PromptStdIoEnv> {
+  const tempDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), 'fsmcp-prompts-stdio-')
+  );
+  if (setup) {
+    await setup(tempDir);
+  }
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [path.resolve('dist/index.js'), tempDir],
+    cwd: path.resolve('.'),
+    stderr: 'pipe',
+  });
+  const client = new Client({
+    name: 'prompt-stdio-test-client',
+    version: '1.0.0',
+  });
+
+  await client.connect(transport);
+
+  return {
+    client,
+    tempDir,
+    cleanup: async () => {
+      await client.close().catch(() => {});
+      await transport.close().catch(() => {});
+      await fs.rm(tempDir, { recursive: true, force: true });
+    },
+  };
+}
+
+describe('prompts over stdio transport', () => {
+  const cleanups: Array<() => Promise<void>> = [];
+
+  afterEach(async () => {
+    while (cleanups.length > 0) {
+      const cleanup = cleanups.pop();
+      if (!cleanup) continue;
+      await cleanup();
+    }
+  });
+
+  it('returns analyze-path with required args over stdio transport', async (t) => {
+    try {
+      await fs.access(path.resolve('dist/index.js'));
+    } catch {
+      t.skip('dist runtime not present');
+      return;
+    }
+
+    const env = await createPromptStdIoEnv(async (tempDir) => {
+      await fs.writeFile(path.join(tempDir, 'sample.txt'), 'hello\n', 'utf8');
+    });
+    cleanups.push(env.cleanup);
+
+    const filePath = path.join(env.tempDir, 'sample.txt');
+
+    const result = await env.client.getPrompt({
+      name: 'analyze-path',
+      arguments: { path: filePath },
+    });
+
+    assert.equal(result.messages.length, 1);
+    const [message] = result.messages;
+    assert.ok(message);
+    assert.equal(message.content.type, 'text');
+    assert.match(message.content.text, /Analyze the path:/u);
+    assert.match(message.content.text, /sample\.txt/u);
+  });
+
+  it('returns get-tool-help with required args over stdio transport', async (t) => {
+    try {
+      await fs.access(path.resolve('dist/index.js'));
+    } catch {
+      t.skip('dist runtime not present');
+      return;
+    }
+
+    const env = await createPromptStdIoEnv();
+    cleanups.push(env.cleanup);
+
+    const result = await env.client.getPrompt({
+      name: 'get-tool-help',
+      arguments: { name: 'read_many' },
+    });
+
+    assert.equal(result.messages.length, 2);
+    const [summaryMessage, resourceMessage] = result.messages;
+    assert.ok(summaryMessage);
+    assert.ok(resourceMessage);
+    assert.equal(summaryMessage.content.type, 'text');
+    assert.equal(resourceMessage.content.type, 'resource');
+    assert.equal(
+      resourceMessage.content.resource.uri,
+      'internal://tool-info/read_many'
+    );
+  });
+});
