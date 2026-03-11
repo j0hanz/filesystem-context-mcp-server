@@ -1105,6 +1105,7 @@ function estimateReadSize(stats: Stats, maxSize: number): number {
 type ReadFileOptions = LineSelectionOptions & {
   encoding: BufferEncoding;
   maxSize: number;
+  skipBinary?: boolean;
 };
 
 function buildReadOptions(
@@ -1113,6 +1114,7 @@ function buildReadOptions(
   const readOptions: ReadFileOptions = {
     encoding: options.encoding,
     maxSize: options.maxSize,
+    skipBinary: true,
   };
   applyLineSelection(readOptions, options);
   return readOptions;

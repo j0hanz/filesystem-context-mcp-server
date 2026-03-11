@@ -139,10 +139,7 @@ const validateReadRange = (
   }
 
   const effectiveStart = value.startLine ?? 1;
-  if (
-    value.endLine !== undefined &&
-    value.endLine < effectiveStart
-  ) {
+  if (value.endLine !== undefined && value.endLine < effectiveStart) {
     addReadRangeIssue(
       ctx,
       value,
@@ -359,8 +356,10 @@ export const ReadFileInputSchema = z
     ...createReadRangeInputFields({
       head: 'Read first N lines (preview)',
       tail: 'Read last N lines',
-      startLine: 'Start line (1-based, inclusive). Defaults to 1 when endLine is set.',
-      endLine: 'End line (1-based, inclusive). Defaults to last line when startLine is set.',
+      startLine:
+        'Start line (1-based, inclusive). Defaults to 1 when endLine is set.',
+      endLine:
+        'End line (1-based, inclusive). Defaults to last line when startLine is set.',
     }),
     includeHash: defaultFalseBoolean(
       'Include SHA-256 hash of full file content'
@@ -381,8 +380,10 @@ export const ReadMultipleFilesInputSchema = z
     ...createReadRangeInputFields({
       head: 'Read first N lines of each file',
       tail: 'Read last N lines of each file',
-      startLine: 'Start line (1-based, inclusive) per file. Defaults to 1 when endLine is set.',
-      endLine: 'End line (1-based, inclusive) per file. Defaults to last line when startLine is set.',
+      startLine:
+        'Start line (1-based, inclusive) per file. Defaults to 1 when endLine is set.',
+      endLine:
+        'End line (1-based, inclusive) per file. Defaults to last line when startLine is set.',
     }),
   })
   .superRefine(validateReadRange)
@@ -553,7 +554,6 @@ const ReadMultipleFileResultSchema = ReadResultSchema.extend({
     .enum(['head', 'tail', 'range', 'externalized'])
     .optional()
     .describe('Why content was truncated'),
-  maxTotalSize: z.number().optional().describe('Max total size budget'),
   error: z.string().optional().describe('Error message'),
 });
 

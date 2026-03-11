@@ -171,6 +171,103 @@ describe('read_many tool', () => {
     assert.ok(missingResult, 'Expected entry for missing file');
     assert.ok(missingResult['error'], 'Expected error field for missing file');
   });
+
+  it('reads with startLine/endLine range', async () => {
+    const rangeFile = path.join(env.tmpDir, 'range.txt');
+    await fs.writeFile(rangeFile, 'L1\nL2\nL3\nL4\nL5\n', 'utf8');
+    const raw = await env.client.callTool({
+      name: 'read_many',
+      arguments: { paths: [rangeFile], startLine: 2, endLine: 4 },
+    });
+    assertOk(raw);
+    const sc = getStructured(raw);
+    const results = sc['results'] as Array<Record<string, unknown>>;
+    assert.equal(results.length, 1);
+    const first = results[0];
+    assert.ok(first, 'Expected first result');
+    const content = first['content'] as string;
+    assert.ok(content.includes('L2'), 'Should include L2');
+    assert.ok(content.includes('L4'), 'Should include L4');
+    assert.ok(!content.includes('L1'), 'Should not include L1');
+    assert.ok(!content.includes('L5'), 'Should not include L5');
+    assert.equal(first['startLine'], 2);
+    assert.equal(first['endLine'], 4);
+  });
+
+  it('rejects binary files with per-path error', async () => {
+    const binFile = path.join(env.tmpDir, 'binary.bin');
+    // Write bytes that include a null byte to trigger binary detection
+    await fs.writeFile(binFile, Buffer.from([0x89, 0x50, 0x00, 0x47, 0x0d]));
+    const raw = await env.client.callTool({
+      name: 'read_many',
+      arguments: { paths: [fileA, binFile] },
+    });
+    assertOk(raw);
+    const sc = getStructured(raw);
+    const results = sc['results'] as Array<Record<string, unknown>>;
+    const binResult = results.find((r) =>
+      (r['path'] as string).includes('binary.bin')
+    );
+    assert.ok(binResult, 'Expected entry for binary file');
+    assert.ok(binResult['error'], 'Expected error for binary file');
+    // Text file should still succeed
+    const textResult = results.find((r) =>
+      (r['path'] as string).includes('a.txt')
+    );
+    assert.ok(textResult, 'Expected entry for text file');
+    assert.ok(textResult['content'], 'Text file should have content');
+  });
+});
+
+// ─── read_many budget ────────────────────────────────────────────────────────
+
+describe('read_many tool budget enforcement', () => {
+  let env: TestEnv;
+
+  before(async () => {
+    env = await createTestEnv();
+  });
+
+  after(async () => {
+    await env.cleanup();
+  });
+
+  it('skips files that exceed maxTotalSize budget', async () => {
+    // DEFAULT_READ_MANY_MAX_TOTAL_SIZE is 512 KiB.
+    // Create 3 files of ~200 KiB each (600 KiB total > 512 KiB budget).
+    const bigContent = 'x'.repeat(200 * 1024) + '\n';
+    const paths: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const p = path.join(env.tmpDir, `big_${i}.txt`);
+      await fs.writeFile(p, bigContent, 'utf8');
+      paths.push(p);
+    }
+
+    const raw = await env.client.callTool({
+      name: 'read_many',
+      arguments: { paths },
+    });
+    assertOk(raw);
+    const sc = getStructured(raw);
+    const results = sc['results'] as Array<Record<string, unknown>>;
+    assert.equal(results.length, 3);
+
+    // At least one file should be skipped due to budget
+    const skipped = results.filter((r) => {
+      const err = r['error'];
+      return typeof err === 'string' && err.includes('maxTotalSize');
+    });
+    assert.ok(
+      skipped.length > 0,
+      'Expected at least one file skipped due to budget'
+    );
+
+    // First files should have succeeded
+    const succeeded = results.filter(
+      (r) => r['content'] !== undefined && r['error'] === undefined
+    );
+    assert.ok(succeeded.length > 0, 'Expected at least one file to succeed');
+  });
 });
 
 // ─── edit ────────────────────────────────────────────────────────────────────

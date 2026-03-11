@@ -389,10 +389,7 @@ function validateReadOptions(options: ReadFileOptions): void {
 
   {
     const effectiveStart = options.startLine ?? 1;
-    if (
-      options.endLine !== undefined &&
-      options.endLine < effectiveStart
-    ) {
+    if (options.endLine !== undefined && options.endLine < effectiveStart) {
       throw new McpError(
         ErrorCode.E_INVALID_INPUT,
         'endLine must be greater than or equal to startLine (default: 1)'
@@ -453,7 +450,8 @@ function buildReadContentOptions(
 function resolveReadMode(options: NormalizedOptions): ReadMode {
   if (options.head !== undefined) return 'head';
   if (options.tail !== undefined) return 'tail';
-  if (options.startLine !== undefined || options.endLine !== undefined) return 'range';
+  if (options.startLine !== undefined || options.endLine !== undefined)
+    return 'range';
   return 'full';
 }
 

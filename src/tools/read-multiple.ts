@@ -64,6 +64,7 @@ type ReadManyTruncationReason = 'head' | 'tail' | 'range' | 'externalized';
 type ReadManyResultWithResource = ReadManyResult & {
   resourceUri?: string;
   truncationReason?: ReadManyTruncationReason;
+  expiresAt?: string;
 };
 
 function buildReadManyResourceName(filePath: string): string {
@@ -140,6 +141,7 @@ function maybeExternalizeReadManyResult(
     truncated: true,
     resourceUri: externalized.entry.uri,
     truncationReason: 'externalized',
+    expiresAt: externalized.entry.expiresAt,
   };
 }
 
@@ -194,6 +196,9 @@ function buildReadManyResponsePayload(
           uri: mappedResult.resourceUri,
           name: buildReadManyResourceName(mappedResult.path),
           description: FULL_FILE_CONTENTS_DESCRIPTION,
+          ...(mappedResult.expiresAt
+            ? { expiresAt: mappedResult.expiresAt }
+            : {}),
         })
       );
     }
