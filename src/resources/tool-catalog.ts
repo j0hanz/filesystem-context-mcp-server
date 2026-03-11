@@ -40,7 +40,8 @@ ${buildCrossToolDataFlow()}
 
 ## Result Contract
 
-- Successful tools return \`content\` and usually \`structuredContent\`.
+- Successful tools return \`content\` and \`structuredContent\` (when \`outputSchema\` is declared).
+- When \`isError: true\`, \`structuredContent\` is omitted — parse the \`content\` text instead.
 - Tool/business failures return \`isError: true\` inside the tool result, not a JSON-RPC protocol error.
 - When a tool returns \`resourceUri\` or a \`resource_link\`, follow it with \`resources/read\` immediately.
 

@@ -29,7 +29,7 @@ describe('generated LLM resources', () => {
     assert.match(catalog, /## Primitive Routing/u);
     assert.match(
       catalog,
-      /Successful tools return `content` and usually `structuredContent`\./u
+      /Successful tools return `content` and `structuredContent` \(when `outputSchema` is declared\)\./u
     );
     assert.match(catalog, /Task-capable tools: .*`grep`/u);
   });

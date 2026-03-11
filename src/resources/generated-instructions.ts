@@ -60,8 +60,8 @@ ${buildToolsOverview()}
 </resources>
 
 <task_protocol>
-Task execution: Call task-capable tools inline by default; add \`task\` only when durable polling or deferred results are needed.
-Task results: When a task is requested, poll via \`tasks/get\`, then retrieve the final payload via \`tasks/result\`.
+Task execution: Check \`execution.taskSupport\` per tool — \`forbidden\` (default): never send \`task\`; \`optional\`: send \`task\` only when durable polling or deferred results are needed; \`required\`: always send \`task\`.
+Task results: Poll via \`tasks/get\`, then retrieve the final payload via \`tasks/result\`.
 Progress: Pass \`_meta.progressToken\` in \`tools/call\` to receive \`notifications/progress\`.
 </task_protocol>
 `;

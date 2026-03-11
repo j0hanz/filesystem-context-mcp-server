@@ -103,14 +103,6 @@ export function getTaskCapableToolNames(): string[] {
     .map((contract) => contract.name);
 }
 
-export function getTaskToolNamesBySupport(
-  taskSupport: Extract<ToolContract['taskSupport'], 'optional' | 'required'>
-): string[] {
-  return getSortedToolContracts()
-    .filter((contract) => contract.taskSupport === taskSupport)
-    .map((contract) => contract.name);
-}
-
 export function buildCoreContextPack(): string {
   const rows = getSortedToolContracts().map((contract) => {
     const e = ENTRIES[contract.name];
