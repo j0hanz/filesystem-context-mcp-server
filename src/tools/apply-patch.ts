@@ -280,6 +280,7 @@ export function registerApplyPatchTool(
     executeToolWithDiagnostics({
       toolName: 'apply_patch',
       extra,
+      outputSchema: ApplyPatchOutputSchema,
       timedSignal: {},
       context: { path: args.path },
       run: (signal) => handleApplyPatch(args, signal),

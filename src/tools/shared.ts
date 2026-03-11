@@ -20,6 +20,7 @@ import { createTimedAbortSignal } from '../lib/fs-helpers.js';
 import { withToolDiagnostics } from '../lib/observability.js';
 import { getAllowedDirectories } from '../lib/paths.js';
 import type { ResourceStore } from '../lib/resource-store.js';
+import { createBase64JsonCodec } from '../lib/zod-codecs.js';
 
 import type { FileInfo } from '../config.js';
 
@@ -235,6 +236,47 @@ interface ToolErrorResponse extends Record<string, unknown> {
 
 export type ToolResult<T> = ToolResponse<T> | ToolErrorResponse;
 
+function validateStructuredContent<T>(
+  toolName: string,
+  outputSchema: z.ZodType<T>,
+  structuredContent: unknown
+): T {
+  const parsed = outputSchema.safeParse(structuredContent);
+  if (parsed.success) {
+    return parsed.data;
+  }
+
+  throw new McpError(
+    ErrorCode.E_UNKNOWN,
+    `Tool "${toolName}" returned invalid structuredContent.`,
+    undefined,
+    { errors: z.treeifyError(parsed.error) }
+  );
+}
+
+function validateToolResponse<T>(
+  toolName: string,
+  result: ToolResponse<T>,
+  outputSchema?: z.ZodType<T>
+): ToolResponse<T> {
+  if (!outputSchema) return result;
+  if (!Object.hasOwn(result, 'structuredContent')) {
+    throw new McpError(
+      ErrorCode.E_UNKNOWN,
+      `Tool "${toolName}" returned success without structuredContent.`
+    );
+  }
+
+  return {
+    ...result,
+    structuredContent: validateStructuredContent(
+      toolName,
+      outputSchema,
+      result.structuredContent
+    ),
+  };
+}
+
 function parseToolArgs<Schema extends z.ZodType>(
   schema: Schema,
   args: unknown
@@ -386,6 +428,7 @@ async function withToolErrorHandling<T>(
 interface ToolExecutionOptions<T> {
   toolName: string;
   extra: ToolExtra;
+  outputSchema?: z.ZodType<T>;
   run: (
     signal: AbortSignal | undefined
   ) => ToolResponse<T> | Promise<ToolResponse<T>>;
@@ -423,7 +466,11 @@ export async function executeToolWithDiagnostics<T>(
           options.timedSignal
         );
         try {
-          return await options.run(signal);
+          return validateToolResponse(
+            options.toolName,
+            await options.run(signal),
+            options.outputSchema
+          );
         } finally {
           cleanup();
         }
@@ -778,23 +825,19 @@ export function resolvePathOrRoot(pathValue: string | undefined): string {
   return root;
 }
 
+const OffsetCursorSchema = z.strictObject({
+  offset: z.int().min(0),
+});
+
+const OffsetCursorCodec = createBase64JsonCodec(OffsetCursorSchema);
+
 export function encodeOffsetCursor(offset: number): string {
-  return Buffer.from(JSON.stringify({ offset })).toString('base64url');
+  return z.encode(OffsetCursorCodec, { offset });
 }
 
 export function decodeOffsetCursor(cursor: string): number {
   try {
-    const parsed: unknown = JSON.parse(
-      Buffer.from(cursor, 'base64url').toString('utf-8')
-    );
-    if (
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      typeof (parsed as { offset?: unknown }).offset === 'number'
-    ) {
-      const { offset } = parsed as { offset: number };
-      if (Number.isInteger(offset) && offset >= 0) return offset;
-    }
+    return OffsetCursorCodec.parse(cursor).offset;
   } catch {
     // fall through to throw
   }

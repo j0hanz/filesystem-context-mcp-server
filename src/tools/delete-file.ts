@@ -101,6 +101,7 @@ export function registerDeleteFileTool(
     executeToolWithDiagnostics({
       toolName: 'rm',
       extra,
+      outputSchema: DeleteFileOutputSchema,
       timedSignal: {},
       context: { path: args.path },
       run: (signal) => handleDeleteFile(args, signal),

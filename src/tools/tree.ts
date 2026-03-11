@@ -86,6 +86,7 @@ export function registerTreeTool(
     return executeToolWithDiagnostics({
       toolName: 'tree',
       extra,
+      outputSchema: TreeOutputSchema,
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: targetPath },
       run: async (signal) => {

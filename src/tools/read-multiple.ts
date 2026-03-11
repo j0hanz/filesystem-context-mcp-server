@@ -245,6 +245,7 @@ export function registerReadMultipleFilesTool(
     return executeToolWithDiagnostics({
       toolName: READ_MANY_TOOL_NAME,
       extra,
+      outputSchema: ReadMultipleFilesOutputSchema,
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: primaryPath },
       run: async (signal) => {

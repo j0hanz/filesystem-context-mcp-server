@@ -155,6 +155,7 @@ export function registerSearchFilesTool(
     executeToolWithDiagnostics({
       toolName: 'find',
       extra,
+      outputSchema: SearchFilesOutputSchema,
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: args.path ?? '.' },
       run: async (signal) => {

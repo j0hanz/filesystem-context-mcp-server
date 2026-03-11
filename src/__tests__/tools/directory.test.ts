@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 
+import { listDirectory } from '../../lib/file-operations/metadata.js';
 import {
   assertOk,
   assertToolError,
@@ -81,6 +82,16 @@ describe('ls tool', () => {
       arguments: { path: '/etc' },
     });
     assertToolError(raw, 'E_ACCESS_DENIED');
+  });
+
+  it('rejects unsafe glob patterns before traversal', async () => {
+    await assert.rejects(
+      () => listDirectory(env.tmpDir, { pattern: '../../*' }),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'E_INVALID_PATTERN'
+    );
   });
 
   it('paginates with an opaque cursor across multiple pages', async () => {

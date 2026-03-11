@@ -45,7 +45,7 @@ const RootSchema = z.strictObject({
   name: z.string().optional(),
 });
 
-const RootsResponseSchema = z.object({
+const RootsResponseSchema = z.strictObject({
   roots: z.array(RootSchema).optional(),
 });
 

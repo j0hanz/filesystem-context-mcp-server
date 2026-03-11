@@ -71,6 +71,7 @@ export function registerListAllowedDirectoriesTool(
     executeToolWithDiagnostics({
       toolName: 'roots',
       extra,
+      outputSchema: ListAllowedDirectoriesOutputSchema,
       run: () => handleListAllowedDirectories(),
       onError: (error) => buildToolErrorResponse(error, ErrorCode.E_UNKNOWN),
     });

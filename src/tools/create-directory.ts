@@ -82,6 +82,7 @@ export function registerCreateDirectoryTool(
     executeToolWithDiagnostics({
       toolName: 'mkdir',
       extra,
+      outputSchema: CreateDirectoryOutputSchema,
       timedSignal: {},
       context: { path: args.path ?? args.paths?.[0] },
       run: (signal) => handleCreateDirectory(args, signal),

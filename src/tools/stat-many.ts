@@ -111,6 +111,7 @@ export function registerGetMultipleFileInfoTool(
     return executeToolWithDiagnostics({
       toolName: 'stat_many',
       extra,
+      outputSchema: GetMultipleFileInfoOutputSchema,
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: primaryPath },
       run: async (signal) => {

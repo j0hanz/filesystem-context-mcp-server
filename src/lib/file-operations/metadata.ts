@@ -30,6 +30,7 @@ import {
   withAbort,
   withTimedAbortSignal,
 } from '../fs-helpers.js';
+import { assertSafeGlobPattern } from '../globs.js';
 import {
   assertAllowedFileAccess,
   isPathWithinDirectories,
@@ -316,6 +317,7 @@ function normalizeListOptions(
     timeoutMs: options.timeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS,
   };
   if (options.pattern && options.pattern.length > 0) {
+    assertSafeGlobPattern(options.pattern);
     normalized.pattern = options.pattern;
   }
   return normalized;

@@ -557,6 +557,7 @@ export function registerSearchAndReplaceTool(
     executeToolWithDiagnostics({
       toolName: 'search_and_replace',
       extra,
+      outputSchema: SearchAndReplaceOutputSchema,
       timedSignal: {},
       ...(args.path ? { context: { path: args.path } } : {}),
       run: async (signal) => {

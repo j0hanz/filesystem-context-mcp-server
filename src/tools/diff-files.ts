@@ -179,6 +179,7 @@ export function registerDiffFilesTool(
     executeToolWithDiagnostics({
       toolName: 'diff_files',
       extra,
+      outputSchema: DiffFilesOutputSchema,
       timedSignal: {},
       context: { path: args.original },
       run: (signal) => handleDiffFiles(args, signal, options.resourceStore),

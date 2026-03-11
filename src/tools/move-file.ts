@@ -197,6 +197,7 @@ export function registerMoveFileTool(
     executeToolWithDiagnostics({
       toolName: 'mv',
       extra,
+      outputSchema: MoveFileOutputSchema,
       timedSignal: {},
       context: { path: args.source ?? args.sources?.[0] },
       run: (signal) => handleMoveFile(args, signal),

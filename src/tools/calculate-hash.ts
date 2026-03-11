@@ -248,6 +248,7 @@ export function registerCalculateHashTool(
     executeToolWithDiagnostics({
       toolName: 'calculate_hash',
       extra,
+      outputSchema: CalculateHashOutputSchema,
       timedSignal: {},
       context: { path: args.path },
       run: async (signal) => {

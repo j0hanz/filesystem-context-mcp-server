@@ -181,8 +181,39 @@ describe('security: schema validation rejects malformed input', () => {
     assertToolError(raw);
   });
 
+  it('mv: rejects providing both source and sources', async () => {
+    const raw = await env.client.callTool({
+      name: 'mv',
+      arguments: {
+        source: path.join(env.tmpDir, 'a.txt'),
+        sources: [path.join(env.tmpDir, 'b.txt')],
+        destination: path.join(env.tmpDir, 'dst.txt'),
+      },
+    });
+    assertToolError(raw);
+  });
+
   it('mkdir: rejects missing both path and paths', async () => {
     const raw = await env.client.callTool({ name: 'mkdir', arguments: {} });
+    assertToolError(raw);
+  });
+
+  it('mkdir: rejects providing both path and paths', async () => {
+    const raw = await env.client.callTool({
+      name: 'mkdir',
+      arguments: {
+        path: path.join(env.tmpDir, 'one'),
+        paths: [path.join(env.tmpDir, 'two')],
+      },
+    });
+    assertToolError(raw);
+  });
+
+  it('ls: rejects unsafe recursive glob patterns', async () => {
+    const raw = await env.client.callTool({
+      name: 'ls',
+      arguments: { path: env.tmpDir, pattern: '../../*' },
+    });
     assertToolError(raw);
   });
 

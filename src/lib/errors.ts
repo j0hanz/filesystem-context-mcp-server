@@ -300,7 +300,7 @@ export function createDetailedError(
   path?: string,
   additionalDetails?: Record<string, unknown>
 ): DetailedError {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = formatUnknownErrorMessage(error);
   const code = classifyError(error);
   const suggestion = ERROR_SUGGESTIONS[code];
   const resolvedPath = resolveErrorPath(error, path);

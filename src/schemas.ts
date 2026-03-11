@@ -13,22 +13,7 @@ import {
   MAX_TREE_ENTRIES,
 } from './lib/constants.js';
 import { ErrorCode } from './lib/errors.js';
-
-function isSafeGlobPattern(value: string): boolean {
-  if (value.length === 0) return false;
-  if (value.includes('**/**/**')) return false;
-
-  const absolutePattern = /^([/\\]|[A-Za-z]:[/\\]|\\\\)/u;
-  if (absolutePattern.test(value)) {
-    return false;
-  }
-
-  if (/[\\/]\.\.(?:[/\\]|$)/u.test(value) || value.startsWith('..')) {
-    return false;
-  }
-
-  return true;
-}
+import { isSafeGlobPattern } from './lib/globs.js';
 
 const MAX_PATH_LENGTH = 4096;
 
@@ -236,6 +221,9 @@ export const ListDirectoryInputSchema = z.strictObject({
     .string()
     .min(1, 'Pattern required')
     .max(1000, 'Max 1000 chars')
+    .refine((val) => isSafeGlobPattern(val), {
+      error: 'Invalid glob or unsafe path (absolute/.. forbidden)',
+    })
     .optional()
     .describe('Optional glob pattern filter (e.g. "**/*.ts")'),
   includeSymlinkTargets: defaultFalseBoolean(
@@ -597,12 +585,34 @@ export const CreateDirectoryInputSchema = z
     path: RequiredPathSchema.optional().describe(DESC_PATH_REQUIRED),
     paths: z
       .array(RequiredPathSchema)
+      .min(1, 'Min 1 path required')
       .optional()
       .describe('Absolute paths to directories to create'),
   })
-  .refine((data) => data.path !== undefined || data.paths !== undefined, {
-    error: "Either 'path' or 'paths' must be provided",
-    path: ['path'],
+  .superRefine((data, ctx) => {
+    const hasPath = data.path !== undefined;
+    const hasPaths = data.paths !== undefined;
+
+    if (!hasPath && !hasPaths) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['path'],
+        message: "Either 'path' or 'paths' must be provided",
+      });
+    }
+
+    if (hasPath && hasPaths) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['path'],
+        message: "Provide either 'path' or 'paths', not both",
+      });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['paths'],
+        message: "Provide either 'path' or 'paths', not both",
+      });
+    }
   })
   .describe("Provide either 'path' or 'paths'.");
 
@@ -677,12 +687,37 @@ export const MoveFileInputSchema = z
     source: RequiredPathSchema.optional().describe(
       'Path to move (deprecated: use sources)'
     ),
-    sources: z.array(RequiredPathSchema).optional().describe('Paths to move'),
+    sources: z
+      .array(RequiredPathSchema)
+      .min(1, 'Min 1 source required')
+      .optional()
+      .describe('Paths to move'),
     destination: RequiredPathSchema.describe('New path'),
   })
-  .refine((data) => (data.source ?? data.sources) !== undefined, {
-    error: "Either 'source' or 'sources' must be provided",
-    path: ['source'],
+  .superRefine((data, ctx) => {
+    const hasSource = data.source !== undefined;
+    const hasSources = data.sources !== undefined;
+
+    if (!hasSource && !hasSources) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['source'],
+        message: "Either 'source' or 'sources' must be provided",
+      });
+    }
+
+    if (hasSource && hasSources) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['source'],
+        message: "Provide either 'source' or 'sources', not both",
+      });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['sources'],
+        message: "Provide either 'source' or 'sources', not both",
+      });
+    }
   })
   .describe("Provide either 'source' or 'sources'.");
 

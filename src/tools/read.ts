@@ -229,6 +229,7 @@ export function registerReadFileTool(
     executeToolWithDiagnostics({
       toolName: READ_TOOL_NAME,
       extra,
+      outputSchema: ReadFileOutputSchema,
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: args.path },
       run: (signal) => handleReadFile(args, signal, options.resourceStore),

@@ -395,6 +395,7 @@ export function registerEditFileTool(
     executeToolWithDiagnostics({
       toolName: 'edit',
       extra,
+      outputSchema: EditFileOutputSchema,
       timedSignal: {},
       context: { path: args.path },
       run: (signal) => handleEditFile(args, signal),

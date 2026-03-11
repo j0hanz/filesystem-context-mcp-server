@@ -74,6 +74,7 @@ export function registerWriteFileTool(
     executeToolWithDiagnostics({
       toolName: 'write',
       extra,
+      outputSchema: WriteFileOutputSchema,
       timedSignal: {},
       context: { path: args.path },
       run: (signal) => handleWriteFile(args, signal),

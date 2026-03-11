@@ -487,6 +487,7 @@ export function registerSearchContentTool(
     executeToolWithDiagnostics({
       toolName: 'grep',
       extra,
+      outputSchema: SearchContentOutputSchema,
       context: { path: args.path ?? '.' },
       run: async (signal) => {
         const { pattern, filePattern: scope } = args;

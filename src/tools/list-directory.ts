@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { z } from 'zod';
+import { z } from 'zod';
 
 import {
   DEFAULT_EXCLUDE_PATTERNS,
@@ -10,6 +10,7 @@ import {
 } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
 import { listDirectory } from '../lib/file-operations/metadata.js';
+import { createBase64JsonCodec } from '../lib/zod-codecs.js';
 
 import { formatOperationSummary, joinLines } from '../config.js';
 import {
@@ -54,16 +55,18 @@ interface ListSnapshot {
   fingerprint: string;
 }
 
-interface ListCursorPayload {
-  snapshotId: string;
-  offset: number;
-}
-
 const LIST_CURSOR_TTL_MS =
   parseInt(process.env['FS_CONTEXT_LIST_CURSOR_TTL_MS'] ?? '', 10) ||
   5 * 60 * 1000;
 const listSnapshots = new Map<string, ListSnapshot>();
 const listSnapshotTimers = new Map<string, NodeJS.Timeout>();
+const ListCursorPayloadSchema = z.strictObject({
+  snapshotId: z.string().min(1),
+  offset: z.int().min(0),
+});
+const ListCursorCodec = createBase64JsonCodec(ListCursorPayloadSchema);
+
+type ListCursorPayload = z.infer<typeof ListCursorPayloadSchema>;
 
 function buildListFingerprint(
   args: z.infer<typeof ListDirectoryInputSchema>
@@ -102,29 +105,12 @@ function storeListSnapshot(snapshot: ListSnapshot): string {
 }
 
 function encodeListCursor(payload: ListCursorPayload): string {
-  return Buffer.from(JSON.stringify(payload)).toString('base64url');
+  return z.encode(ListCursorCodec, payload);
 }
 
 function decodeListCursor(cursor: string): ListCursorPayload {
   try {
-    const parsed: unknown = JSON.parse(
-      Buffer.from(cursor, 'base64url').toString('utf-8')
-    );
-    if (
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      typeof (parsed as { snapshotId?: unknown }).snapshotId === 'string' &&
-      typeof (parsed as { offset?: unknown }).offset === 'number'
-    ) {
-      const payload = parsed as { snapshotId: string; offset: number };
-      if (
-        payload.snapshotId.length > 0 &&
-        Number.isInteger(payload.offset) &&
-        payload.offset >= 0
-      ) {
-        return payload;
-      }
-    }
+    return ListCursorCodec.parse(cursor);
   } catch {
     // fall through to throw
   }
@@ -309,6 +295,7 @@ export function registerListDirectoryTool(
     executeToolWithDiagnostics({
       toolName: 'ls',
       extra,
+      outputSchema: ListDirectoryOutputSchema,
       context: { path: args.path ?? '.' },
       run: (signal) => handleListDirectory(args, signal),
       onError: (error) =>

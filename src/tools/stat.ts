@@ -82,6 +82,7 @@ export function registerGetFileInfoTool(
     executeToolWithDiagnostics({
       toolName: 'stat',
       extra,
+      outputSchema: GetFileInfoOutputSchema,
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: args.path },
       run: (signal) => handleGetFileInfo(args, signal),
