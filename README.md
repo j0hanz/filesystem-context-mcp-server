@@ -609,26 +609,29 @@ Find files by glob pattern. Returns matching files with metadata.
 
 Render a directory tree with bounded recursion. Returns ASCII tree + structured JSON.
 
-| Parameter        | Type    | Required | Description                                       |
-| ---------------- | ------- | -------- | ------------------------------------------------- |
-| `path`           | string  | no       | Base directory (default: root)                    |
-| `maxDepth`       | integer | no       | Depth (0 = root node only). Default: 10, Max: 100 |
-| `maxEntries`     | integer | no       | Max entries. Default: 5000, Max: 100000           |
-| `includeHidden`  | boolean | no       | Include dotfiles. Default: `false`                |
-| `includeIgnored` | boolean | no       | Include ignored items. Default: `false`           |
+| Parameter        | Type    | Required | Description                                          |
+| ---------------- | ------- | -------- | ---------------------------------------------------- |
+| `path`           | string  | no       | Base directory (default: root)                       |
+| `maxDepth`       | integer | no       | Depth (0 = root node only). Default: 10, Max: 100    |
+| `maxEntries`     | integer | no       | Max entries. Default: 5000, Max: 100000              |
+| `includeHidden`  | boolean | no       | Include dotfiles. Default: `false`                   |
+| `includeIgnored` | boolean | no       | Include ignored items. Default: `false`              |
+| `includeSizes`   | boolean | no       | Include file sizes in tree entries. Default: `false` |
 
 ---
 
 #### `read`
 
-Read text file contents. Use `head` to preview first N lines of large files.
+Read text file contents. Use `head`/`tail` to preview first/last N lines of large files.
 
-| Parameter   | Type    | Required | Description                                         |
-| ----------- | ------- | -------- | --------------------------------------------------- |
-| `path`      | string  | **yes**  | Absolute path to file                               |
-| `head`      | integer | no       | Read first N lines (1-100000)                       |
-| `startLine` | integer | no       | Start line (1-based, inclusive)                     |
-| `endLine`   | integer | no       | End line (1-based, inclusive). Requires `startLine` |
+| Parameter     | Type    | Required | Description                                                 |
+| ------------- | ------- | -------- | ----------------------------------------------------------- |
+| `path`        | string  | **yes**  | Absolute path to file                                       |
+| `head`        | integer | no       | Read first N lines (1-100000)                               |
+| `tail`        | integer | no       | Read last N lines (1-100000)                                |
+| `startLine`   | integer | no       | Start line (1-based, inclusive)                             |
+| `endLine`     | integer | no       | End line (1-based, inclusive). Requires `startLine`         |
+| `includeHash` | boolean | no       | Include SHA-256 hash of full file content. Default: `false` |
 
 ---
 
@@ -640,6 +643,7 @@ Read multiple text files in one request.
 | ----------- | -------- | -------- | ------------------------------- |
 | `paths`     | string[] | **yes**  | Files to read (1-100 paths)     |
 | `head`      | integer  | no       | Read first N lines of each file |
+| `tail`      | integer  | no       | Read last N lines of each file  |
 | `startLine` | integer  | no       | Start line (1-based) per file   |
 | `endLine`   | integer  | no       | End line (1-based) per file     |
 
@@ -796,6 +800,8 @@ Bulk search-and-replace across files matching a glob. Replaces **all** occurrenc
 | `includeHidden`  | boolean | no       | Include dotfiles. Default: `false`                  |
 | `includeIgnored` | boolean | no       | Include ignored items. Default: `false`             |
 | `returnDiff`     | boolean | no       | Return diff even when not dry-run. Default: `false` |
+| `maxFiles`       | integer | no       | Max files to process before stopping (1-10000)      |
+| `caseSensitive`  | boolean | no       | Case-sensitive matching. Default: `true`            |
 
 ### Resources
 
