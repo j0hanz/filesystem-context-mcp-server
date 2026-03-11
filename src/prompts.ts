@@ -1,8 +1,10 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { GetPromptResult } from '@modelcontextprotocol/sdk/types.js';
+import {
+  type GetPromptResult,
+  ErrorCode as SdkErrorCode,
+  McpError as SdkMcpError,
+} from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-
-import { ErrorCode, McpError } from './lib/errors.js';
 
 import {
   buildToolInfo,
@@ -193,13 +195,16 @@ export function registerGetToolHelpPrompt(
     ({ name }): GetPromptResult => {
       const toolName = findKnownToolName(name);
       if (!toolName) {
-        throw new McpError(ErrorCode.E_INVALID_INPUT, `Unknown tool: ${name}`);
+        throw new SdkMcpError(
+          SdkErrorCode.InvalidParams,
+          `Unknown tool: ${name}`
+        );
       }
 
       const toolInfo = buildToolInfo(toolName);
       if (!toolInfo) {
-        throw new McpError(
-          ErrorCode.E_INVALID_INPUT,
+        throw new SdkMcpError(
+          SdkErrorCode.InvalidParams,
           `Unknown tool: ${toolName}`
         );
       }

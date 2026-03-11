@@ -329,14 +329,7 @@ describe('edit tool', () => {
         edits: [{ oldText: 'DOES NOT EXIST', newText: 'anything' }],
       },
     });
-    const result = raw;
-    assertOk(result);
-    const sc = getStructured(result);
-    const unmatched = sc['unmatchedEdits'] as unknown[];
-    assert.ok(
-      Array.isArray(unmatched) && unmatched.length > 0,
-      'Expected unmatchedEdits'
-    );
+    assertToolError(raw, 'E_INVALID_INPUT');
   });
 
   it('applies sequential edits against updated content', async () => {

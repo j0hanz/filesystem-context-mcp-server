@@ -198,6 +198,18 @@ async function processMultiFilePatch(
   );
 
   const label = options.dryRun ? ' (dry run)' : '';
+
+  if (totals.applied === 0) {
+    const failedPaths = results
+      .filter((r) => !r.applied)
+      .map((r) => r.path)
+      .join(', ');
+    throw new McpError(
+      ErrorCode.E_INVALID_INPUT,
+      `All ${parsed.length} file patches failed${label}. Files: ${failedPaths}. Generate fresh patches via diff_files and retry.`
+    );
+  }
+
   const text = `Applied ${totals.applied}/${parsed.length} file patches${label}`;
 
   return buildToolResponse(text, {

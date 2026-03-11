@@ -178,7 +178,7 @@ function buildStructuredEditOutput(
   result: EditResult
 ): EditOutput {
   return {
-    ok: true,
+    ok: result.appliedEdits > 0 || result.unmatchedEdits.length === 0,
     path: validPath,
     appliedEdits: result.appliedEdits,
     ...(result.appliedEdits > 0
@@ -370,6 +370,14 @@ async function handleEditFile(
     return buildToolResponse(
       `Dry run complete. ${editResult.appliedEdits} edits would be applied.`,
       structured
+    );
+  }
+
+  if (editResult.appliedEdits === 0 && editResult.unmatchedEdits.length > 0) {
+    throw new McpError(
+      ErrorCode.E_INVALID_INPUT,
+      `All ${editResult.unmatchedEdits.length} edits failed to match. Verify oldText includes exact content with surrounding context.`,
+      args.path
     );
   }
 
