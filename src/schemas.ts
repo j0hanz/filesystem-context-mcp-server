@@ -99,6 +99,7 @@ interface ReadRangeValue {
 
 function addReadRangeIssue(
   ctx: z.RefinementCtx,
+  input: ReadRangeValue,
   path: keyof ReadRangeValue,
   message: string
 ): void {
@@ -106,6 +107,7 @@ function addReadRangeIssue(
     code: 'custom',
     path: [path],
     message,
+    input,
   });
 }
 
@@ -121,6 +123,7 @@ const validateReadRange = (
   if (hasHead && (hasStart || hasEnd)) {
     addReadRangeIssue(
       ctx,
+      value,
       'head',
       "Cannot use 'head' with 'startLine'/'endLine'"
     );
@@ -129,13 +132,14 @@ const validateReadRange = (
   if (hasTail && (hasHead || hasStart || hasEnd)) {
     addReadRangeIssue(
       ctx,
+      value,
       'tail',
       "Cannot use 'tail' with 'head'/'startLine'/'endLine'"
     );
   }
 
   if (hasEnd && !hasStart) {
-    addReadRangeIssue(ctx, 'endLine', "'endLine' requires 'startLine'");
+    addReadRangeIssue(ctx, value, 'endLine', "'endLine' requires 'startLine'");
   }
 
   if (
@@ -143,7 +147,12 @@ const validateReadRange = (
     value.endLine !== undefined &&
     value.endLine < value.startLine
   ) {
-    addReadRangeIssue(ctx, 'endLine', "'endLine' must be >= 'startLine'");
+    addReadRangeIssue(
+      ctx,
+      value,
+      'endLine',
+      "'endLine' must be >= 'startLine'"
+    );
   }
 };
 
@@ -598,6 +607,7 @@ export const CreateDirectoryInputSchema = z
         code: 'custom',
         path: ['path'],
         message: "Either 'path' or 'paths' must be provided",
+        input: data,
       });
     }
 
@@ -606,11 +616,13 @@ export const CreateDirectoryInputSchema = z
         code: 'custom',
         path: ['path'],
         message: "Provide either 'path' or 'paths', not both",
+        input: data,
       });
       ctx.addIssue({
         code: 'custom',
         path: ['paths'],
         message: "Provide either 'path' or 'paths', not both",
+        input: data,
       });
     }
   })
@@ -703,6 +715,7 @@ export const MoveFileInputSchema = z
         code: 'custom',
         path: ['source'],
         message: "Either 'source' or 'sources' must be provided",
+        input: data,
       });
     }
 
@@ -711,11 +724,13 @@ export const MoveFileInputSchema = z
         code: 'custom',
         path: ['source'],
         message: "Provide either 'source' or 'sources', not both",
+        input: data,
       });
       ctx.addIssue({
         code: 'custom',
         path: ['sources'],
         message: "Provide either 'source' or 'sources', not both",
+        input: data,
       });
     }
   })

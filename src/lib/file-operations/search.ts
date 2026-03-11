@@ -235,7 +235,7 @@ function resolveOptions(options: SearchContentOptions): ResolvedOptions {
   if (!result.success) {
     throw new McpError(
       ErrorCode.E_INVALID_INPUT,
-      `Invalid search options: ${result.error.message}`,
+      `Invalid search options:\n${z.prettifyError(result.error)}`,
       undefined,
       { errors: z.treeifyError(result.error) }
     );
