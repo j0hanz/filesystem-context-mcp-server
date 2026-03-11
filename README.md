@@ -31,7 +31,7 @@ Supports **stdio** (default) and **Streamable HTTP + SSE** transports with per-s
 ```json
 {
   "mcpServers": {
-    "filesystem-mcp": {
+    "filesystem": {
       "command": "npx",
       "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
@@ -89,7 +89,7 @@ Add to `.vscode/mcp.json`:
 ```json
 {
   "servers": {
-    "filesystem-mcp": {
+    "filesystem": {
       "command": "npx",
       "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
@@ -100,7 +100,7 @@ Add to `.vscode/mcp.json`:
 Or install via CLI:
 
 ```sh
-code --add-mcp '{"name":"filesystem-mcp","command":"npx","args":["-y","@j0hanz/filesystem-mcp@latest"]}'
+code --add-mcp '{"name":"filesystem","command":"npx","args":["-y","@j0hanz/filesystem-mcp@latest"]}'
 ```
 
 </details>
@@ -115,7 +115,7 @@ Add to `.vscode/mcp.json`:
 ```json
 {
   "servers": {
-    "filesystem-mcp": {
+    "filesystem": {
       "command": "npx",
       "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
@@ -126,7 +126,7 @@ Add to `.vscode/mcp.json`:
 Or install via CLI:
 
 ```sh
-code-insiders --add-mcp '{"name":"filesystem-mcp","command":"npx","args":["-y","@j0hanz/filesystem-mcp@latest"]}'
+code-insiders --add-mcp '{"name":"filesystem","command":"npx","args":["-y","@j0hanz/filesystem-mcp@latest"]}'
 ```
 
 </details>
@@ -141,7 +141,7 @@ Add to `~/.cursor/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "filesystem-mcp": {
+    "filesystem": {
       "command": "npx",
       "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
@@ -159,7 +159,7 @@ Add to `~/.cursor/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "filesystem-mcp": {
+    "filesystem": {
       "command": "npx",
       "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
@@ -177,7 +177,7 @@ Add to `~/.cursor/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "filesystem-mcp": {
+    "filesystem": {
       "command": "npx",
       "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
@@ -195,7 +195,7 @@ Add to `~/.cursor/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "filesystem-mcp": {
+    "filesystem": {
       "command": "npx",
       "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
@@ -213,7 +213,7 @@ Add to `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "filesystem-mcp": {
+    "filesystem": {
       "command": "npx",
       "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
@@ -235,7 +235,7 @@ Or add to config:
 ```json
 {
   "mcpServers": {
-    "filesystem-mcp": {
+    "filesystem": {
       "command": "npx",
       "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
@@ -253,7 +253,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 ```json
 {
   "mcpServers": {
-    "filesystem-mcp": {
+    "filesystem": {
       "command": "npx",
       "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
@@ -275,7 +275,7 @@ Or add to config:
 ```json
 {
   "mcpServers": {
-    "filesystem-mcp": {
+    "filesystem": {
       "command": "npx",
       "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
@@ -293,7 +293,7 @@ Add to `cline_mcp_settings.json`:
 ```json
 {
   "mcpServers": {
-    "filesystem-mcp": {
+    "filesystem": {
       "command": "npx",
       "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
@@ -309,7 +309,7 @@ Add to `cline_mcp_settings.json`:
 ```json
 {
   "mcpServers": {
-    "filesystem-mcp": {
+    "filesystem": {
       "command": "npx",
       "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
@@ -327,7 +327,7 @@ Add to `.vscode/mcp.json`:
 ```json
 {
   "servers": {
-    "filesystem-mcp": {
+    "filesystem": {
       "command": "npx",
       "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
@@ -343,7 +343,7 @@ Add to `.vscode/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "filesystem-mcp": {
+    "filesystem": {
       "command": "npx",
       "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
@@ -361,7 +361,7 @@ Add to `.kiro/settings/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "filesystem-mcp": {
+    "filesystem": {
       "command": "npx",
       "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
@@ -379,7 +379,7 @@ Add to `~/.gemini/settings.json`:
 ```json
 {
   "mcpServers": {
-    "filesystem-mcp": {
+    "filesystem": {
       "command": "npx",
       "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
@@ -397,7 +397,7 @@ Add to `~/.config/zed/settings.json`:
 ```json
 {
   "context_servers": {
-    "filesystem-mcp": {
+    "filesystem": {
       "settings": {
         "command": "npx",
         "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
@@ -419,7 +419,7 @@ Add to VS Code `settings.json` under `augment.advanced`:
   "augment.advanced": {
     "mcpServers": [
       {
-        "id": "filesystem-mcp",
+        "id": "filesystem",
         "command": "npx",
         "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
       }
@@ -436,7 +436,7 @@ Add to VS Code `settings.json` under `augment.advanced`:
 ```json
 {
   "mcpServers": {
-    "filesystem-mcp": {
+    "filesystem": {
       "command": "npx",
       "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
@@ -452,7 +452,7 @@ Add to VS Code `settings.json` under `augment.advanced`:
 ```json
 {
   "mcpServers": {
-    "filesystem-mcp": {
+    "filesystem": {
       "command": "npx",
       "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
     }
