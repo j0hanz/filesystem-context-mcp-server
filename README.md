@@ -156,9 +156,11 @@ Add to `~/.cursor/mcp.json`:
 
 [![Install in Visual Studio](https://img.shields.io/badge/Visual_Studio-Install_Server-C16FDE?logo=visualstudio&logoColor=white)](https://vs-open.link/mcp-install?%7B%22filesystem-mcp%22%3A%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40j0hanz%2Ffilesystem-mcp%40latest%22%5D%7D%7D)
 
+Add to `<SOLUTIONDIR>.mcp.json` or `%USERPROFILE%\.mcp.json`:
+
 ```json
 {
-  "mcpServers": {
+  "servers": {
     "filesystem": {
       "command": "npx",
       "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
@@ -174,15 +176,18 @@ Add to `~/.cursor/mcp.json`:
 
 [![Install in Goose](https://block.github.io/goose/img/extension-install-dark.svg)](https://block.github.io/goose/extension?cmd=npx&arg=-y&arg=%40j0hanz%2Ffilesystem-mcp%40latest&id=%40j0hanz%2Ffilesystem-mcp&name=filesystem&description=MCP%20Server%20that%20enables%20LLMs%20to%20interact%20with%20the%20local%20filesystem.)
 
-```json
-{
-  "mcpServers": {
-    "filesystem": {
-      "command": "npx",
-      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
-    }
-  }
-}
+Add to `~/.config/goose/config.yaml`:
+
+```yaml
+extensions:
+  filesystem:
+    name: Filesystem MCP
+    cmd: npx
+    args:
+      - -y
+      - '@j0hanz/filesystem-mcp@latest'
+    enabled: true
+    type: stdio
 ```
 
 </details>
@@ -230,7 +235,7 @@ Add to `claude_desktop_config.json`:
 claude mcp add filesystem-mcp -- npx -y @j0hanz/filesystem-mcp@latest
 ```
 
-Or add to config:
+Or add a project-scoped `.mcp.json`:
 
 ```json
 {
@@ -270,11 +275,11 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 amp mcp add filesystem-mcp -- npx -y @j0hanz/filesystem-mcp@latest
 ```
 
-Or add to config:
+Or add to `settings.json`:
 
 ```json
 {
-  "mcpServers": {
+  "amp.mcpServers": {
     "filesystem": {
       "command": "npx",
       "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
@@ -304,32 +309,35 @@ Add to `cline_mcp_settings.json`:
 </details>
 
 <details>
-<summary><b>Install in Codex CLI</b></summary>
+<summary><b>Install in Codex</b></summary>
 
-```json
-{
-  "mcpServers": {
-    "filesystem": {
-      "command": "npx",
-      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
-    }
-  }
-}
+```sh
+codex mcp add filesystem -- npx -y @j0hanz/filesystem-mcp@latest
+```
+
+Or add to `~/.codex/config.toml` (or `.codex/config.toml` in a trusted project):
+
+```toml
+[mcp_servers.filesystem]
+command = "npx"
+args = ["-y", "@j0hanz/filesystem-mcp@latest"]
 ```
 
 </details>
 
 <details>
-<summary><b>Install in GitHub Copilot</b></summary>
+<summary><b>Install in GitHub Copilot Coding Agent</b></summary>
 
-Add to `.vscode/mcp.json`:
+Add this JSON in your repository's GitHub Copilot coding agent MCP configuration:
 
 ```json
 {
-  "servers": {
+  "mcpServers": {
     "filesystem": {
+      "type": "local",
       "command": "npx",
-      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"],
+      "tools": ["*"]
     }
   }
 }
@@ -398,10 +406,9 @@ Add to `~/.config/zed/settings.json`:
 {
   "context_servers": {
     "filesystem": {
-      "settings": {
-        "command": "npx",
-        "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
-      }
+      "command": "npx",
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"],
+      "env": {}
     }
   }
 }
