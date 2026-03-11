@@ -53,8 +53,6 @@ function handleListAllowedDirectories(): ToolResponse<
   const structured = {
     ok: true,
     directories: dirs,
-    rootsCount: dirs.length,
-    hasMultipleRoots: dirs.length > 1,
   } as const;
   return buildToolResponse(buildTextRoots(dirs), structured);
 }
@@ -82,7 +80,7 @@ export function registerListAllowedDirectoriesTool(
       if (result.isError) return `≣ roots • failed`;
       const sc = result.structuredContent;
       if (!sc.ok) return `≣ roots • failed`;
-      const count = sc.rootsCount ?? 0;
+      const count = sc.directories?.length ?? 0;
       return `≣ roots • ${count} ${count === 1 ? 'root' : 'roots'}`;
     },
   });

@@ -643,6 +643,5 @@ function buildSearchAndReplaceStructuredResult(
       : {}),
     ...(summary.diffTruncated ? { diffTruncated: true } : {}),
     ...(summary.stoppedReason ? { stoppedReason: summary.stoppedReason } : {}),
-    dryRun: args.dryRun,
   };
 }

@@ -403,11 +403,6 @@ export const GetMultipleFileInfoInputSchema = z.strictObject({
 export const ListAllowedDirectoriesOutputSchema = z.strictObject({
   ok: z.boolean(),
   directories: z.array(z.string()).optional().describe('Allowed directories'),
-  rootsCount: z.number().optional().describe('Number of roots'),
-  hasMultipleRoots: z
-    .boolean()
-    .optional()
-    .describe('Multiple roots configured'),
   error: ErrorSchema.optional(),
 });
 
@@ -427,14 +422,10 @@ export const ListDirectoryOutputSchema = z.strictObject({
     .optional(),
   totalEntries: z.number().optional(),
   truncated: z.boolean().optional(),
-  entriesScanned: z.number().optional(),
-  entriesVisible: z.number().optional(),
   totalFiles: z.number().optional(),
   totalDirectories: z.number().optional(),
-  maxDepthReached: z.number().optional(),
   stoppedReason: ListDirectoryStopReasonSchema.optional(),
   skippedInaccessible: z.number().optional(),
-  symlinksNotFollowed: z.number().optional(),
   nextCursor: z
     .string()
     .optional()
@@ -452,7 +443,6 @@ const SearchSummarySchema = z.strictObject({
 export const SearchFilesOutputSchema = SearchSummarySchema.extend({
   ok: z.boolean(),
   root: z.string().optional().describe('Search root'),
-  pattern: z.string().optional().describe('Glob pattern used'),
   results: z
     .array(
       z.strictObject({
@@ -517,10 +507,6 @@ const ReadResultSchema = z.strictObject({
   truncated: z.boolean().optional().describe('Truncated?'),
   resourceUri: z.string().optional().describe('Full content URI'),
   totalLines: z.number().optional().describe('Total lines'),
-  readMode: z
-    .enum(['full', 'head', 'tail', 'range'])
-    .optional()
-    .describe('Mode'),
   head: z.number().optional().describe('Head lines'),
   tail: z.number().optional().describe('Tail lines'),
   startLine: z.number().optional().describe('Start line'),
@@ -944,6 +930,5 @@ export const SearchAndReplaceOutputSchema = z.strictObject({
     .enum(['maxFiles'])
     .optional()
     .describe('Why processing stopped early'),
-  dryRun: z.boolean().optional(),
   error: ErrorSchema.optional(),
 });

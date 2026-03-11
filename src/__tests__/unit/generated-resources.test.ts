@@ -17,11 +17,10 @@ describe('generated LLM resources', () => {
   it('derives task-capable guidance from tool contracts', () => {
     const instructions = buildServerInstructions();
 
-    assert.match(instructions, /Optional task mode: .*`grep`/u);
-    assert.match(instructions, /Optional task mode: .*`read_many`/u);
-    assert.match(instructions, /Optional task mode: .*`search_and_replace`/u);
-    assert.doesNotMatch(instructions, /Task-capable: .*`roots`/u);
-    assert.match(instructions, /Required task mode: none\./u);
+    assert.match(instructions, /Task-capable tools: .*`grep`/u);
+    assert.match(instructions, /Task-capable tools: .*`read_many`/u);
+    assert.match(instructions, /Task-capable tools: .*`search_and_replace`/u);
+    assert.doesNotMatch(instructions, /Task-capable tools: .*`roots`/u);
   });
 
   it('includes primitive routing and result contract guidance in the catalog', () => {
@@ -35,7 +34,7 @@ describe('generated LLM resources', () => {
     assert.match(catalog, /Task-capable tools: .*`grep`/u);
   });
 
-  it('includes schema and protocol notes in tool info', () => {
+  it('includes schema fields and execution info in tool info', () => {
     const toolInfo = buildToolInfo('read');
 
     assert.ok(toolInfo, 'Expected tool info for read');
@@ -48,10 +47,6 @@ describe('generated LLM resources', () => {
     assert.match(toolInfo, /- path \(string, required\):/u);
     assert.match(toolInfo, /- includeHash \(boolean, optional\):/u);
     assert.match(toolInfo, /- taskSupport: forbidden/u);
-    assert.match(
-      toolInfo,
-      /Protocol failures use JSON-RPC `error`; execution failures use tool result `isError: true`\./u
-    );
   });
 
   it('includes cross-field schema constraints for multi-path tools', () => {

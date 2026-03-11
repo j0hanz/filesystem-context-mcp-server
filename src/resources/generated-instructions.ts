@@ -4,16 +4,10 @@ import {
   buildCoreContextPack,
   formatToolNameList,
   getSharedConstraints,
-  getTaskCapableToolNames,
-  getTaskToolNamesBySupport,
   getToolContracts,
   pickAvailableToolNames,
 } from './tool-info.js';
 import { buildWorkflowGuide } from './workflows.js';
-
-function formatTaskModeLine(label: string, names: readonly string[]): string {
-  return `${label}: ${names.length > 0 ? formatToolNameList(names) : 'none'}.`;
-}
 
 function buildToolsOverview(): string {
   const rows: [string, string[]][] = [
@@ -46,10 +40,6 @@ function buildToolsOverview(): string {
 }
 
 function buildInstructionsHeader(): string {
-  const taskCapable = formatToolNameList(getTaskCapableToolNames());
-  const optionalTaskTools = getTaskToolNamesBySupport('optional');
-  const requiredTaskTools = getTaskToolNamesBySupport('required');
-
   return `<role>
 Filesystem agent. Scope: allowed roots only. Discover paths before acting — never guess.
 </role>
@@ -73,9 +63,6 @@ ${buildToolsOverview()}
 Task execution: Call task-capable tools inline by default; add \`task\` only when durable polling or deferred results are needed.
 Task results: When a task is requested, poll via \`tasks/get\`, then retrieve the final payload via \`tasks/result\`.
 Progress: Pass \`_meta.progressToken\` in \`tools/call\` to receive \`notifications/progress\`.
-Task-capable: ${taskCapable || 'none'}.
-${formatTaskModeLine('Optional task mode', optionalTaskTools)}
-${formatTaskModeLine('Required task mode', requiredTaskTools)}
 </task_protocol>
 `;
 }

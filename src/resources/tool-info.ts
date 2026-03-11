@@ -143,10 +143,6 @@ function formatTaskSupportLabel(
   }
 }
 
-function formatAnnotationValue(value: boolean | undefined): string {
-  return value ? 'true' : 'false';
-}
-
 function toJsonSchemaObject(
   schema: NonNullable<
     ToolContract['inputSchema'] | ToolContract['outputSchema']
@@ -247,42 +243,20 @@ function buildSchemaFieldLines(
   return lines;
 }
 
-function buildProtocolNotes(contract: ToolContract): string[] {
-  const notes = [
-    '- Protocol failures use JSON-RPC `error`; execution failures use tool result `isError: true`.',
-  ];
-
-  if (contract.outputSchema) {
-    notes.push(
-      '- Successful responses include `structuredContent` that must match the declared output schema.'
-    );
-  }
-
-  if (contract.taskSupport === 'optional') {
-    notes.push(
-      '- Supports inline execution by default and task mode when durable polling or deferred results are needed.'
-    );
-  }
-
-  if (contract.taskSupport === 'required') {
-    notes.push(
-      '- Must run in task mode; callers should poll `tasks/get` and fetch the payload via `tasks/result`.'
-    );
-  }
-
-  if (contract.taskSupport === 'forbidden') {
-    notes.push(
-      '- Runs inline only; task augmentation is not supported for this tool.'
-    );
-  }
-
-  return notes;
-}
-
 export function buildToolInfo(name: string): string | undefined {
   const contract = CONTRACTS_BY_NAME.get(name);
   const entry = ENTRIES[name];
   if (!entry || !contract) return undefined;
+
+  const annotationLines: string[] = [];
+  if (contract.annotations?.readOnlyHint)
+    annotationLines.push('- readOnlyHint: true');
+  if (contract.annotations?.idempotentHint)
+    annotationLines.push('- idempotentHint: true');
+  if (contract.annotations?.destructiveHint)
+    annotationLines.push('- destructiveHint: true');
+  if (contract.annotations?.openWorldHint)
+    annotationLines.push('- openWorldHint: true');
 
   const lines: string[] = [
     `<tool_info name="${entry.name}">`,
@@ -295,24 +269,13 @@ export function buildToolInfo(name: string): string | undefined {
     `- taskSupport: ${formatTaskSupportLabel(contract.taskSupport)}`,
     '</execution>',
     '',
-    '<annotations>',
-    `- readOnlyHint: ${formatAnnotationValue(contract.annotations?.readOnlyHint)}`,
-    `- idempotentHint: ${formatAnnotationValue(contract.annotations?.idempotentHint)}`,
-    `- destructiveHint: ${formatAnnotationValue(contract.annotations?.destructiveHint)}`,
-    `- openWorldHint: ${formatAnnotationValue(contract.annotations?.openWorldHint)}`,
-    '</annotations>',
-    '',
     ...buildSchemaFieldLines('input_fields', contract.inputSchema),
     '',
     ...buildSchemaFieldLines('output_fields', contract.outputSchema),
-    '',
-    '<protocol_notes>',
-    ...buildProtocolNotes(contract),
-    '</protocol_notes>',
   ];
 
-  if (entry.annotations && entry.annotations.length > 0) {
-    lines.push('', `<quick_hints>${entry.annotations.join(' ')}</quick_hints>`);
+  if (annotationLines.length > 0) {
+    lines.push('', '<annotations>', ...annotationLines, '</annotations>');
   }
 
   if (entry.nuances && entry.nuances.length > 0) {

@@ -92,7 +92,6 @@ async function handleSearchFiles(
   const structured: z.infer<typeof SearchFilesOutputSchema> = {
     ok: true,
     root: basePath,
-    pattern: args.pattern,
     results: relativeResults,
     totalMatches: result.summary.matched,
     filesScanned: result.summary.filesScanned,

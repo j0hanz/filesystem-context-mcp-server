@@ -16,7 +16,14 @@ export function buildWorkflowGuide(): string {
     pickAvailableToolNames(['find', 'grep', 'read'])
   );
   const editTools = formatToolNameList(
-    pickAvailableToolNames(['edit', 'search_and_replace', 'mv', 'rm', 'mkdir'])
+    pickAvailableToolNames([
+      'edit',
+      'write',
+      'search_and_replace',
+      'mv',
+      'rm',
+      'mkdir',
+    ])
   );
 
   return `<workflows>
