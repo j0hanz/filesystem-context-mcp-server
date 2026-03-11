@@ -61,12 +61,6 @@ export const SEARCH_AND_REPLACE_TOOL: ToolContract = {
   outputSchema: SearchAndReplaceOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   taskSupport: 'optional',
-  gotchas: [
-    'Replaces ALL occurrences — not just the first. Use `edit` for single replacements.',
-  ],
-  nuances: [
-    'Changed-file sample and failure sample are capped/truncated in output.',
-  ],
 } as const;
 
 const MAX_FAILURES = 20;

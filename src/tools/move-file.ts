@@ -41,7 +41,6 @@ export const MOVE_FILE_TOOL: ToolContract = {
   inputSchema: MoveFileInputSchema,
   outputSchema: MoveFileOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
-  nuances: ['Cross-device moves fall back to copy+delete.'],
   gotchas: [
     'On POSIX, an existing destination is silently overwritten; on Windows, rename fails with EEXIST if destination exists.',
   ],

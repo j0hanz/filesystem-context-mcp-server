@@ -42,7 +42,6 @@ export const GET_MULTIPLE_FILE_INFO_TOOL: ToolContract = {
   outputSchema: GetMultipleFileInfoOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   taskSupport: 'optional',
-  nuances: ['Use before read/search when file size/type uncertainty exists.'],
 } as const;
 
 function formatFileInfoDetail(info: FileInfo): string {

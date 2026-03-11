@@ -191,7 +191,6 @@ export const SEARCH_CONTENT_TOOL: ToolContract = {
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   nuances: [
     'Inline results capped at 50 matches; full results via `resourceUri`.',
-    'Skips binary and oversized files.',
   ],
   gotchas: [
     'Skips binary/oversized files silently — verify with `stat` if no matches.',

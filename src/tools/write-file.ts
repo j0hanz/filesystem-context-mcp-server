@@ -34,9 +34,6 @@ export const WRITE_FILE_TOOL: ToolContract = {
   inputSchema: WriteFileInputSchema,
   outputSchema: WriteFileOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
-  gotchas: [
-    '`write` replaces ALL existing content — use `edit` for partial updates.',
-  ],
   taskSupport: 'forbidden',
 } as const;
 

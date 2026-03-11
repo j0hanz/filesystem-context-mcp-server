@@ -47,10 +47,6 @@ export const READ_MANY_TOOL: ToolContract = {
   outputSchema: ReadMultipleFilesOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   taskSupport: 'optional',
-  nuances: ['Total read budget is capped by `MAX_READ_MANY_TOTAL_SIZE`.'],
-  gotchas: [
-    'Per-file `truncationReason` can be `head`, `tail`, `range`, or `externalized`.',
-  ],
 } as const;
 
 type ReadManyInput = z.infer<typeof ReadMultipleFilesInputSchema>;

@@ -43,10 +43,7 @@ export const SEARCH_FILES_TOOL: ToolContract = {
   inputSchema: SearchFilesInputSchema,
   outputSchema: SearchFilesOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
-  nuances: [
-    'Respects `.gitignore` unless `includeIgnored=true`.',
-    'Returns relative paths plus metadata; may truncate.',
-  ],
+  nuances: ['Respects `.gitignore` unless `includeIgnored=true`.'],
   taskSupport: 'optional',
 } as const;
 

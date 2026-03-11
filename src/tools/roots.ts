@@ -33,7 +33,6 @@ export const LIST_ALLOWED_DIRECTORIES_TOOL: ToolContract = {
   inputSchema: ListAllowedDirectoriesInputSchema,
   outputSchema: ListAllowedDirectoriesOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
-  nuances: ['Returns absolute paths of all allowed directories.'],
   taskSupport: 'forbidden',
 } as const;
 

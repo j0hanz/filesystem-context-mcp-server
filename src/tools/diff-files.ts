@@ -39,7 +39,6 @@ export const DIFF_FILES_TOOL: ToolContract = {
   inputSchema: DiffFilesInputSchema,
   outputSchema: DiffFilesOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
-  gotchas: ['`isIdentical=true` means no hunks (`@@`) and empty diff.'],
   taskSupport: 'forbidden',
 } as const;
 
