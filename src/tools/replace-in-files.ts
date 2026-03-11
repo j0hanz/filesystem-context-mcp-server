@@ -1,8 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { Buffer } from 'node:buffer';
-import { performance } from 'node:perf_hooks';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { createTwoFilesPatch } from 'diff';
@@ -110,59 +108,53 @@ interface ReplacementMatcher {
   testBuffer?(buffer: Buffer): boolean;
 }
 
-class RegexReplacementMatcher implements ReplacementMatcher {
-  constructor(private readonly regex: RE2) {}
-
-  count(content: string): number {
-    this.regex.lastIndex = 0;
-    let matchCount = 0;
-    while (this.regex.exec(content) !== null) {
-      matchCount++;
-      if (this.regex.lastIndex === 0) {
-        this.regex.lastIndex++;
+function createRegexReplacementMatcher(regex: RE2): ReplacementMatcher {
+  return {
+    count(content: string): number {
+      regex.lastIndex = 0;
+      let matchCount = 0;
+      while (regex.exec(content) !== null) {
+        matchCount++;
+        if (regex.lastIndex === 0) {
+          regex.lastIndex++;
+        }
       }
-    }
-    return matchCount;
-  }
-
-  replace(content: string, replacement: string): string {
-    this.regex.lastIndex = 0;
-    return content.replace(this.regex, replacement);
-  }
+      return matchCount;
+    },
+    replace(content: string, replacement: string): string {
+      regex.lastIndex = 0;
+      return content.replace(regex, replacement);
+    },
+  };
 }
 
-class LiteralReplacementMatcher implements ReplacementMatcher {
-  private readonly patternLength: number;
-  private readonly searchBuffer: Buffer | null;
+function createLiteralReplacementMatcher(
+  searchPattern: string,
+  caseSensitive: boolean
+): ReplacementMatcher {
+  const patternLength = searchPattern.length;
+  const searchBuffer = caseSensitive
+    ? Buffer.from(searchPattern, 'utf8')
+    : null;
 
-  constructor(
-    private readonly searchPattern: string,
-    private readonly caseSensitive: boolean
-  ) {
-    this.patternLength = searchPattern.length;
-    this.searchBuffer = caseSensitive
-      ? Buffer.from(searchPattern, 'utf8')
-      : null;
-  }
-
-  testBuffer(buffer: Buffer): boolean {
-    if (!this.searchBuffer) return true;
-    return buffer.indexOf(this.searchBuffer) !== -1;
-  }
-
-  count(content: string): number {
-    let matchCount = 0;
-    let pos = content.indexOf(this.searchPattern);
-    while (pos !== -1) {
-      matchCount++;
-      pos = content.indexOf(this.searchPattern, pos + this.patternLength);
-    }
-    return matchCount;
-  }
-
-  replace(content: string, replacement: string): string {
-    return content.replaceAll(this.searchPattern, () => replacement);
-  }
+  return {
+    testBuffer(buffer: Buffer): boolean {
+      if (!searchBuffer) return true;
+      return buffer.indexOf(searchBuffer) !== -1;
+    },
+    count(content: string): number {
+      let matchCount = 0;
+      let pos = content.indexOf(searchPattern);
+      while (pos !== -1) {
+        matchCount++;
+        pos = content.indexOf(searchPattern, pos + patternLength);
+      }
+      return matchCount;
+    },
+    replace(content: string, replacement: string): string {
+      return content.replaceAll(searchPattern, () => replacement);
+    },
+  };
 }
 
 type SearchAndReplaceArgs = z.infer<typeof SearchAndReplaceInputSchema>;
@@ -175,14 +167,6 @@ interface ReplaceContext {
   maxFileSize: number;
   signal: AbortSignal | undefined;
   summary: ReplaceSummary;
-}
-
-const replaceContextStorage = new AsyncLocalStorage<ReplaceContext>();
-
-function getReplaceContext(): ReplaceContext {
-  const ctx = replaceContextStorage.getStore();
-  if (!ctx) throw new Error('Replace context not found in AsyncLocalStorage');
-  return ctx;
 }
 
 interface ReplacementPlan {
@@ -216,8 +200,11 @@ function formatFileTooLargeError(
   return `File too large: ${filePath} (${size} bytes > ${maxFileSize} bytes)`;
 }
 
-async function processEntry(entryPath: string): Promise<void> {
-  const { options, signal, summary } = getReplaceContext();
+async function processEntry(
+  entryPath: string,
+  ctx: ReplaceContext
+): Promise<void> {
+  const { options, signal, summary } = ctx;
 
   let validPath: string;
   try {
@@ -232,7 +219,7 @@ async function processEntry(entryPath: string): Promise<void> {
   }
 
   try {
-    const plan = await readReplacementPlan(validPath);
+    const plan = await readReplacementPlan(validPath, ctx);
     if (!plan) {
       return;
     }
@@ -265,9 +252,10 @@ async function processEntry(entryPath: string): Promise<void> {
 }
 
 async function readReplacementPlan(
-  validPath: string
+  validPath: string,
+  ctx: ReplaceContext
 ): Promise<ReplacementPlan | undefined> {
-  const { matcher, replacement, maxFileSize, signal } = getReplaceContext();
+  const { matcher, replacement, maxFileSize, signal } = ctx;
   let fileHandle: fs.FileHandle | undefined;
   try {
     const fd = await fs.open(validPath, 'r');
@@ -357,7 +345,6 @@ async function processEntriesConcurrently(
   }
 ): Promise<{ stoppedByLimit: boolean }> {
   const pending = new Set<Promise<void>>();
-  const seen = new Set<string>();
   const { signal, concurrency, maxEntries, onEntry, runEntry } = options;
   let dispatched = 0;
   let stoppedByLimit = false;
@@ -373,8 +360,6 @@ async function processEntriesConcurrently(
       stoppedByLimit = true;
       break;
     }
-    if (seen.has(entry.path)) continue;
-    seen.add(entry.path);
     await waitForSlot();
     onEntry();
     dispatched++;
@@ -450,14 +435,17 @@ function createReplacementMatcher(
 ): ReplacementMatcher {
   const regex = createReplacementRegex(args);
   if (regex) {
-    return new RegexReplacementMatcher(regex);
+    return createRegexReplacementMatcher(regex);
   }
   if (!args.caseSensitive) {
     const escaped = args.searchPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const caseInsensitiveRegex = new RE2(escaped, 'gi');
-    return new RegexReplacementMatcher(caseInsensitiveRegex);
+    return createRegexReplacementMatcher(caseInsensitiveRegex);
   }
-  return new LiteralReplacementMatcher(args.searchPattern, args.caseSensitive);
+  return createLiteralReplacementMatcher(
+    args.searchPattern,
+    args.caseSensitive
+  );
 }
 
 async function handleSearchAndReplace(
@@ -484,10 +472,7 @@ async function handleSearchAndReplace(
 
   const summary = createReplaceSummary(root);
 
-  const timerStartName = `searchAndReplaceStart_${Date.now()}`;
-  const timerEndName = `searchAndReplaceEnd_${Date.now()}`;
-  const metricName = `searchAndReplace_${Date.now()}`;
-  performance.mark(timerStartName);
+  const t0 = performance.now();
 
   const context: ReplaceContext = {
     options: {
@@ -501,29 +486,20 @@ async function handleSearchAndReplace(
     summary,
   };
 
-  const { stoppedByLimit } = await replaceContextStorage.run(context, () =>
-    processEntriesConcurrently(entries, {
-      signal,
-      concurrency: REPLACE_CONCURRENCY,
-      ...(args.maxFiles !== undefined ? { maxEntries: args.maxFiles } : {}),
-      onEntry: () => {
-        summary.processedFiles++;
-        reportPeriodicProgress(onProgress, summary.processedFiles, {
-          throttleModulo: 25,
-        });
-      },
-      runEntry: processEntry,
-    })
-  );
+  const { stoppedByLimit } = await processEntriesConcurrently(entries, {
+    signal,
+    concurrency: REPLACE_CONCURRENCY,
+    ...(args.maxFiles !== undefined ? { maxEntries: args.maxFiles } : {}),
+    onEntry: () => {
+      summary.processedFiles++;
+      reportPeriodicProgress(onProgress, summary.processedFiles, {
+        throttleModulo: 25,
+      });
+    },
+    runEntry: (entryPath) => processEntry(entryPath, context),
+  });
 
-  performance.mark(timerEndName);
-  performance.measure(metricName, timerStartName, timerEndName);
-  const durationMs = performance.getEntriesByName(metricName)[0]?.duration ?? 0;
-  performance.clearMarks(timerStartName);
-  performance.clearMarks(timerEndName);
-  performance.clearMeasures(metricName);
-
-  summary.perfTimeMs = durationMs;
+  summary.perfTimeMs = performance.now() - t0;
 
   if (stoppedByLimit) {
     summary.stoppedReason = 'maxFiles';

@@ -1,5 +1,4 @@
 import * as path from 'node:path';
-import { performance } from 'node:perf_hooks';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import RE2 from 're2';
@@ -52,8 +51,6 @@ const CONFIG = {
     maxFiles: 'max files',
   } as const,
 } as const;
-
-let searchMetricSequence = 0;
 
 // Type Definitions
 type SearchInput = z.infer<typeof SearchContentInputSchema>;
@@ -133,21 +130,6 @@ function buildCompletionSuffix(
   return `${count} ${matchWord} in ${filesMatched} ${fileWord}${reasonSuffix}`;
 }
 
-function createSearchMetricNames(): {
-  timerStartName: string;
-  timerEndName: string;
-  metricName: string;
-} {
-  searchMetricSequence += 1;
-  const metricSuffix = `${Date.now()}_${searchMetricSequence}`;
-
-  return {
-    timerStartName: `searchContentStart_${metricSuffix}`,
-    timerEndName: `searchContentEnd_${metricSuffix}`,
-    metricName: `searchContent_${metricSuffix}`,
-  };
-}
-
 function compareNormalizedMatches(
   left: NormalizedSearchMatch,
   right: NormalizedSearchMatch
@@ -172,10 +154,7 @@ function buildSearchPreviewState(
     needsExternalize,
     visibleMatches,
     visiblePayloads: payloads.slice(0, visibleCount),
-    heading: SearchResponseBuilder.buildHeading(
-      matches.length,
-      visibleMatches.length
-    ),
+    heading: buildHeading(matches.length, visibleMatches.length),
   };
 }
 
@@ -198,215 +177,196 @@ export const SEARCH_CONTENT_TOOL: ToolContract = {
   taskSupport: 'optional',
 } as const;
 
-/**
- * Handles formatting and building the search response.
- */
-const SearchResponseBuilder = {
-  buildHeading(totalMatches: number, visibleMatches: number): string {
-    if (visibleMatches >= totalMatches) {
-      return `Found ${totalMatches}:`;
-    }
+function buildHeading(totalMatches: number, visibleMatches: number): string {
+  if (visibleMatches >= totalMatches) {
+    return `Found ${totalMatches}:`;
+  }
 
-    return `Found ${totalMatches} (showing first ${visibleMatches}):`;
-  },
+  return `Found ${totalMatches} (showing first ${visibleMatches}):`;
+}
 
-  buildText(
-    heading: string,
-    matches: readonly NormalizedSearchMatch[],
-    summary?: SearchSummary
-  ): string {
-    if (matches.length === 0) return 'No matches';
+function buildSearchText(
+  heading: string,
+  matches: readonly NormalizedSearchMatch[],
+  summary?: SearchSummary
+): string {
+  if (matches.length === 0) return 'No matches';
 
-    const text = this.buildMatchList(heading, matches);
-    if (!summary) return text;
+  const text = buildMatchList(heading, matches);
+  if (!summary) return text;
 
-    const summaryOpts = {
-      truncated: summary.truncated,
-      ...(summary.truncated
-        ? { truncatedReason: this.resolveTruncatedReason(summary) }
-        : {}),
-    };
+  const summaryOpts = {
+    truncated: summary.truncated,
+    ...(summary.truncated
+      ? { truncatedReason: resolveTruncatedReason(summary) }
+      : {}),
+  };
 
-    return text + formatOperationSummary(summaryOpts);
-  },
+  return text + formatOperationSummary(summaryOpts);
+}
 
-  buildStructured(
-    summary: SearchSummary,
-    matches: SearchMatchPayload[],
-    options: { patternType: SearchPatternType; caseSensitive: boolean }
-  ): SearchOutput {
+function buildSearchStructured(
+  summary: SearchSummary,
+  matches: SearchMatchPayload[],
+  options: { patternType: SearchPatternType; caseSensitive: boolean }
+): SearchOutput {
+  return {
+    ok: true,
+    patternType: options.patternType,
+    caseSensitive: options.caseSensitive,
+    matches,
+    totalMatches: summary.matches,
+    filesScanned: summary.filesScanned,
+    ...buildStructuredSummaryFields(summary),
+  };
+}
+
+function normalizeMatches(result: SearchResultValue): NormalizedSearchMatch[] {
+  const relativeByFile = new Map<string, string>();
+
+  const getRelativeFile = (file: string): string => {
+    const cached = relativeByFile.get(file);
+    if (cached !== undefined) return cached;
+
+    const relative = path.relative(result.basePath, file);
+    relativeByFile.set(file, relative);
+    return relative;
+  };
+
+  return result.matches
+    .map(
+      (match, index): NormalizedSearchMatch => ({
+        ...match,
+        relativeFile: getRelativeFile(match.file),
+        index,
+      })
+    )
+    .sort(compareNormalizedMatches);
+}
+
+function buildMatchPayloads(
+  matches: readonly NormalizedSearchMatch[],
+  context: SearchContext
+): SearchMatchPayload[] {
+  return matches.map((match) => {
+    const column = findColumnOffset(match.content, context);
     return {
-      ok: true,
-      patternType: options.patternType,
-      caseSensitive: options.caseSensitive,
-      matches,
-      totalMatches: summary.matches,
-      filesScanned: summary.filesScanned,
-      ...buildStructuredSummaryFields(summary),
+      file: match.relativeFile,
+      line: match.line,
+      ...(column !== undefined ? { column } : {}),
+      content: match.content,
+      matchCount: match.matchCount,
+      ...(match.contextBefore
+        ? { contextBefore: [...match.contextBefore] }
+        : {}),
+      ...(match.contextAfter ? { contextAfter: [...match.contextAfter] } : {}),
     };
-  },
+  });
+}
 
-  normalizeMatches(result: SearchResultValue): NormalizedSearchMatch[] {
-    const relativeByFile = new Map<string, string>();
+function buildMatchList(
+  heading: string,
+  matches: readonly NormalizedSearchMatch[]
+): string {
+  if (matches.length === 0) return heading;
+  const parts: string[] = [heading];
+  for (const match of matches) {
+    parts.push(
+      `\n  ${match.relativeFile}:${String(match.line).padStart(4)}: ${match.content}`
+    );
+  }
 
-    const getRelativeFile = (file: string): string => {
-      const cached = relativeByFile.get(file);
-      if (cached !== undefined) return cached;
+  return parts.join('');
+}
 
-      const relative = path.relative(result.basePath, file);
-      relativeByFile.set(file, relative);
-      return relative;
-    };
+function resolveTruncatedReason(summary: SearchSummary): string {
+  if (summary.stoppedReason === 'timeout') return 'timeout';
+  if (summary.stoppedReason === 'maxFiles') {
+    return `max files (${summary.filesScanned})`;
+  }
+  return `max results (${summary.matches})`;
+}
 
-    return result.matches
-      .map(
-        (match, index): NormalizedSearchMatch => ({
-          ...match,
-          relativeFile: getRelativeFile(match.file),
-          index,
-        })
-      )
-      .sort(compareNormalizedMatches);
-  },
-
-  buildMatchPayloads(
-    matches: readonly NormalizedSearchMatch[],
-    context: SearchContext
-  ): SearchMatchPayload[] {
-    return matches.map((match) => {
-      const column = this.findColumnOffset(match.content, context);
-      return {
-        file: match.relativeFile,
-        line: match.line,
-        ...(column !== undefined ? { column } : {}),
-        content: match.content,
-        matchCount: match.matchCount,
-        ...(match.contextBefore
-          ? { contextBefore: [...match.contextBefore] }
-          : {}),
-        ...(match.contextAfter
-          ? { contextAfter: [...match.contextAfter] }
-          : {}),
-      };
-    });
-  },
-
-  buildMatchList(
-    heading: string,
-    matches: readonly NormalizedSearchMatch[]
-  ): string {
-    if (matches.length === 0) return heading;
-    const parts: string[] = [heading];
-    for (const match of matches) {
-      parts.push(
-        `\n  ${match.relativeFile}:${String(match.line).padStart(4)}: ${match.content}`
-      );
+function findColumnOffset(
+  content: string,
+  context: SearchContext
+): number | undefined {
+  try {
+    if (context.matcher) {
+      context.matcher.lastIndex = 0;
+      const match = context.matcher.exec(content);
+      return match ? match.index : undefined;
     }
-
-    return parts.join('');
-  },
-
-  resolveTruncatedReason(summary: SearchSummary): string {
-    if (summary.stoppedReason === 'timeout') return 'timeout';
-    if (summary.stoppedReason === 'maxFiles') {
-      return `max files (${summary.filesScanned})`;
-    }
-    return `max results (${summary.matches})`;
-  },
-
-  findColumnOffset(
-    content: string,
-    context: SearchContext
-  ): number | undefined {
-    try {
-      if (context.matcher) {
-        context.matcher.lastIndex = 0;
-        const match = context.matcher.exec(content);
-        return match ? match.index : undefined;
-      }
-      if (context.caseSensitive) {
-        const idx = content.indexOf(context.pattern);
-        return idx >= 0 ? idx : undefined;
-      }
-      // Case-insensitive literal search
-      const idx = content.toLowerCase().indexOf(context.foldedPattern ?? '');
+    if (context.caseSensitive) {
+      const idx = content.indexOf(context.pattern);
       return idx >= 0 ? idx : undefined;
-    } catch {
-      return undefined;
     }
-  },
-};
+    // Case-insensitive literal search
+    const idx = content.toLowerCase().indexOf(context.foldedPattern ?? '');
+    return idx >= 0 ? idx : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
-const SearchExecutor = {
-  async run(
-    args: SearchInput,
-    basePath: string,
-    signal?: AbortSignal,
-    onProgress?: (progress: { total?: number; current: number }) => void
-  ): Promise<SearchResultValue> {
-    const excludePatterns = args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
-    const { timerStartName, timerEndName, metricName } =
-      createSearchMetricNames();
+async function executeSearch(
+  args: SearchInput,
+  basePath: string,
+  signal?: AbortSignal,
+  onProgress?: (progress: { total?: number; current: number }) => void
+): Promise<SearchResultValue> {
+  const excludePatterns = args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
 
-    const options: SearchContentOptions = {
-      includeHidden: args.includeHidden,
-      excludePatterns,
-      filePattern: args.filePattern,
-      caseSensitive: args.caseSensitive,
-      wholeWord: args.wholeWord,
-      contextLines: args.contextLines,
-      maxResults: args.maxResults,
-      isLiteral: !args.isRegex,
-      multiline: args.multiline,
-      ...(signal ? { signal } : {}),
-      ...(onProgress ? { onProgress } : {}),
-    };
+  const options: SearchContentOptions = {
+    includeHidden: args.includeHidden,
+    excludePatterns,
+    filePattern: args.filePattern,
+    caseSensitive: args.caseSensitive,
+    wholeWord: args.wholeWord,
+    contextLines: args.contextLines,
+    maxResults: args.maxResults,
+    isLiteral: !args.isRegex,
+    multiline: args.multiline,
+    ...(signal ? { signal } : {}),
+    ...(onProgress ? { onProgress } : {}),
+  };
 
-    performance.mark(timerStartName);
-    try {
-      return await searchContent(basePath, args.pattern, options);
-    } catch (error) {
-      if (error instanceof Error && /regular expression/i.test(error.message)) {
-        throw new McpError(ErrorCode.E_INVALID_PATTERN, error.message);
-      }
-      throw error;
-    } finally {
-      performance.mark(timerEndName);
-      performance.measure(metricName, timerStartName, timerEndName);
-      performance.clearMarks(timerStartName);
-      performance.clearMarks(timerEndName);
-      performance.clearMeasures(metricName);
+  try {
+    return await searchContent(basePath, args.pattern, options);
+  } catch (error) {
+    if (error instanceof Error && /regular expression/i.test(error.message)) {
+      throw new McpError(ErrorCode.E_INVALID_PATTERN, error.message);
     }
-  },
+    throw error;
+  }
+}
 
-  createMatcher(args: SearchInput): RE2 | undefined {
-    if (!args.isRegex) return undefined;
-    try {
-      const flags =
-        (args.caseSensitive ? '' : 'i') + (args.multiline ? 'm' : '');
-      return new RE2(args.pattern, flags);
-    } catch (error) {
-      throw new McpError(
-        ErrorCode.E_INVALID_PATTERN,
-        `Invalid regex pattern: ${formatUnknownErrorMessage(error)}`
-      );
-    }
-  },
+function createSearchMatcher(args: SearchInput): RE2 | undefined {
+  if (!args.isRegex) return undefined;
+  try {
+    const flags = (args.caseSensitive ? '' : 'i') + (args.multiline ? 'm' : '');
+    return new RE2(args.pattern, flags);
+  } catch (error) {
+    throw new McpError(
+      ErrorCode.E_INVALID_PATTERN,
+      `Invalid regex pattern: ${formatUnknownErrorMessage(error)}`
+    );
+  }
+}
 
-  createSearchContext(
-    args: SearchInput,
-    matcher: RE2 | undefined
-  ): SearchContext {
-    return {
-      pattern: args.pattern,
-      caseSensitive: args.caseSensitive,
-      ...(matcher ? { matcher } : {}),
-      ...(!args.isRegex && !args.caseSensitive
-        ? { foldedPattern: args.pattern.toLowerCase() }
-        : {}),
-    };
-  },
-};
+function createSearchContext(
+  args: SearchInput,
+  matcher: RE2 | undefined
+): SearchContext {
+  return {
+    pattern: args.pattern,
+    caseSensitive: args.caseSensitive,
+    ...(matcher ? { matcher } : {}),
+    ...(!args.isRegex && !args.caseSensitive
+      ? { foldedPattern: args.pattern.toLowerCase() }
+      : {}),
+  };
+}
 
 async function handleSearchContent(
   args: SearchInput,
@@ -416,23 +376,19 @@ async function handleSearchContent(
 ): Promise<ToolResponse<SearchOutput>> {
   const basePath = resolvePathOrRoot(args.path);
   const patternType: SearchPatternType = args.isRegex ? 'regex' : 'literal';
-  const regexMatcher = SearchExecutor.createMatcher(args);
+  const regexMatcher = createSearchMatcher(args);
 
-  const result = await SearchExecutor.run(args, basePath, signal, onProgress);
+  const result = await executeSearch(args, basePath, signal, onProgress);
 
-  const normalizedMatches = SearchResponseBuilder.normalizeMatches(result);
-  const searchContext = SearchExecutor.createSearchContext(args, regexMatcher);
+  const normalizedMatches = normalizeMatches(result);
+  const searchContext = createSearchContext(args, regexMatcher);
 
-  const matchPayloads = SearchResponseBuilder.buildMatchPayloads(
-    normalizedMatches,
-    searchContext
-  );
+  const matchPayloads = buildMatchPayloads(normalizedMatches, searchContext);
 
-  const fullStructured = SearchResponseBuilder.buildStructured(
-    result.summary,
-    matchPayloads,
-    { patternType, caseSensitive: args.caseSensitive }
-  );
+  const fullStructured = buildSearchStructured(result.summary, matchPayloads, {
+    patternType,
+    caseSensitive: args.caseSensitive,
+  });
 
   const preview = buildSearchPreviewState(normalizedMatches, matchPayloads);
 
@@ -450,10 +406,7 @@ async function handleSearchContent(
     });
 
     previewStructured.resourceUri = entry.uri;
-    const text = SearchResponseBuilder.buildText(
-      preview.heading,
-      preview.visibleMatches
-    );
+    const text = buildSearchText(preview.heading, preview.visibleMatches);
 
     return buildToolResponse(text, previewStructured, [
       buildResourceLink({
@@ -466,7 +419,7 @@ async function handleSearchContent(
     ]);
   }
 
-  const text = SearchResponseBuilder.buildText(
+  const text = buildSearchText(
     preview.heading,
     preview.visibleMatches,
     result.summary
