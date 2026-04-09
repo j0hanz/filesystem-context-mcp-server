@@ -247,6 +247,7 @@ async function handleMoveFile(
     failed.length,
     args.destination
   );
+  const movedSource = sources.length === 1 ? movedSources[0] : undefined;
   const failedSuffix = failed.length > 0 ? ` (${failed.length} failed)` : '';
   Logger.info(
     `mv: ${movedSources.length} item(s) → ${args.destination}${failedSuffix}`
@@ -265,6 +266,7 @@ async function handleMoveFile(
 
   return buildToolResponse(message, {
     ok: failed.length === 0,
+    ...(movedSource ? { source: movedSource } : {}),
     sources: movedSources,
     destination: validDest,
     ...(failed.length > 0 ? { failed } : {}),

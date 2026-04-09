@@ -577,17 +577,17 @@ _No parameters._
 
 List immediate directory contents: name, path, type, size, modified date.
 
-| Parameter               | Type    | Required | Description                                                  |
-| ----------------------- | ------- | -------- | ------------------------------------------------------------ |
-| `path`                  | string  | no       | Base directory (default: root)                               |
-| `includeHidden`         | boolean | no       | Include dotfiles. Default: `false`                           |
-| `includeIgnored`        | boolean | no       | Include ignored items (node_modules, .git). Default: `false` |
-| `maxDepth`              | integer | no       | Max recursion depth (1-100) when pattern is provided         |
-| `maxEntries`            | integer | no       | Max entries before truncation. Default: 1000, Max: 10000     |
-| `sortBy`                | enum    | no       | `name` \| `size` \| `modified` \| `type`. Default: `name`    |
-| `pattern`               | string  | no       | Glob filter (e.g. `**/*.ts`)                                 |
-| `includeSymlinkTargets` | boolean | no       | Resolve symlink targets. Default: `false`                    |
-| `cursor`                | string  | no       | Pagination cursor from a previous response                   |
+| Parameter               | Type    | Required | Description                                                                 |
+| ----------------------- | ------- | -------- | --------------------------------------------------------------------------- |
+| `path`                  | string  | no       | Base directory (default: root)                                              |
+| `includeHidden`         | boolean | no       | Include dotfiles. Default: `false`                                          |
+| `includeIgnored`        | boolean | no       | Include ignored items (node_modules, .git). Default: `false`                |
+| `maxDepth`              | integer | no       | Max recursion depth (1-100) when pattern is provided                        |
+| `maxEntries`            | integer | no       | Max entries before truncation. Default: 1000, Max: 10000                    |
+| `sortBy`                | enum    | no       | `name` \| `size` \| `modified` \| `type`. Default: `name`                   |
+| `pattern`               | string  | no       | Relative glob filter (e.g. `**/*.ts`). Absolute paths and `..` are rejected |
+| `includeSymlinkTargets` | boolean | no       | Resolve symlink targets. Default: `false`                                   |
+| `cursor`                | string  | no       | Pagination cursor from a previous response                                  |
 
 ---
 
@@ -595,16 +595,16 @@ List immediate directory contents: name, path, type, size, modified date.
 
 Find files by glob pattern. Returns matching files with metadata.
 
-| Parameter        | Type    | Required | Description                                               |
-| ---------------- | ------- | -------- | --------------------------------------------------------- |
-| `path`           | string  | no       | Base directory (default: root)                            |
-| `pattern`        | string  | **yes**  | Glob pattern (e.g. `**/*.ts`)                             |
-| `maxResults`     | integer | no       | Max results (1-100000). Default: 1000                     |
-| `includeIgnored` | boolean | no       | Include ignored items. Default: `false`                   |
-| `includeHidden`  | boolean | no       | Include dotfiles. Default: `false`                        |
-| `sortBy`         | enum    | no       | `path` \| `name` \| `size` \| `modified`. Default: `path` |
-| `maxDepth`       | integer | no       | Max directory depth (0-1000)                              |
-| `cursor`         | string  | no       | Pagination cursor                                         |
+| Parameter        | Type    | Required | Description                                                                  |
+| ---------------- | ------- | -------- | ---------------------------------------------------------------------------- |
+| `path`           | string  | no       | Base directory (default: root)                                               |
+| `pattern`        | string  | **yes**  | Relative glob pattern (e.g. `**/*.ts`). Absolute paths and `..` are rejected |
+| `maxResults`     | integer | no       | Max results (1-100000). Default: 1000                                        |
+| `includeIgnored` | boolean | no       | Include ignored items. Default: `false`                                      |
+| `includeHidden`  | boolean | no       | Include dotfiles. Default: `false`                                           |
+| `sortBy`         | enum    | no       | `path` \| `name` \| `size` \| `modified`. Default: `path`                    |
+| `maxDepth`       | integer | no       | Max directory depth (0-1000)                                                 |
+| `cursor`         | string  | no       | Pagination cursor                                                            |
 
 ---
 
@@ -676,18 +676,18 @@ Get metadata for multiple files/directories in one request.
 
 Search file contents (grep-like). Returns matching lines with optional context.
 
-| Parameter        | Type    | Required | Description                                      |
-| ---------------- | ------- | -------- | ------------------------------------------------ |
-| `path`           | string  | no       | Base directory (default: root)                   |
-| `pattern`        | string  | **yes**  | Search text or RE2 regex when `isRegex=true`     |
-| `isRegex`        | boolean | no       | Treat pattern as RE2 regex. Default: `false`     |
-| `caseSensitive`  | boolean | no       | Case-sensitive matching. Default: `false`        |
-| `wholeWord`      | boolean | no       | Match whole words only. Default: `false`         |
-| `contextLines`   | integer | no       | Lines of context before/after (0-50). Default: 0 |
-| `maxResults`     | integer | no       | Max match rows (1-100000). Default: 100          |
-| `filePattern`    | string  | no       | Glob for candidate files (e.g. `**/*.ts`)        |
-| `includeHidden`  | boolean | no       | Include dotfiles. Default: `false`               |
-| `includeIgnored` | boolean | no       | Include ignored items. Default: `false`          |
+| Parameter        | Type    | Required | Description                                                                              |
+| ---------------- | ------- | -------- | ---------------------------------------------------------------------------------------- |
+| `path`           | string  | no       | Base directory (default: root)                                                           |
+| `pattern`        | string  | **yes**  | Search text or RE2 regex when `isRegex=true`                                             |
+| `isRegex`        | boolean | no       | Treat pattern as RE2 regex. Default: `false`                                             |
+| `caseSensitive`  | boolean | no       | Case-sensitive matching. Default: `false`                                                |
+| `wholeWord`      | boolean | no       | Match whole words only. Default: `false`                                                 |
+| `contextLines`   | integer | no       | Lines of context before/after (0-50). Default: 0                                         |
+| `maxResults`     | integer | no       | Max match rows (1-100000). Default: 100                                                  |
+| `filePattern`    | string  | no       | Relative glob for candidate files (e.g. `**/*.ts`). Absolute paths and `..` are rejected |
+| `includeHidden`  | boolean | no       | Include dotfiles. Default: `false`                                                       |
+| `includeIgnored` | boolean | no       | Include ignored items. Default: `false`                                                  |
 
 ---
 
@@ -720,7 +720,7 @@ Apply sequential literal string replacements (first occurrence per edit). Use `d
 | Parameter          | Type    | Required | Description                                                |
 | ------------------ | ------- | -------- | ---------------------------------------------------------- |
 | `path`             | string  | **yes**  | Absolute path to file                                      |
-| `edits`            | array   | **yes**  | List of `{oldText, newText}` replacements                  |
+| `edits`            | array   | **yes**  | List of non-empty `{oldText, newText}` replacements        |
 | `dryRun`           | boolean | no       | Preview edits without writing. Default: `false`            |
 | `ignoreWhitespace` | boolean | no       | Treat whitespace sequences as equivalent. Default: `false` |
 
@@ -792,19 +792,19 @@ Apply a unified diff patch to one or more files. Single-file: throws on failure.
 
 Bulk search-and-replace across files matching a glob. Replaces **all** occurrences per file. Always `dryRun: true` first.
 
-| Parameter        | Type    | Required | Description                                         |
-| ---------------- | ------- | -------- | --------------------------------------------------- |
-| `path`           | string  | no       | Base directory (default: root)                      |
-| `filePattern`    | string  | **yes**  | Glob pattern (e.g. `**/*.ts`)                       |
-| `searchPattern`  | string  | **yes**  | Text to search. RE2 regex when `isRegex=true`       |
-| `replacement`    | string  | **yes**  | Replacement text. Supports `$1`, `$2` with regex    |
-| `isRegex`        | boolean | no       | Treat as RE2 regex. Default: `false`                |
-| `dryRun`         | boolean | no       | Preview matches with diff. Default: `false`         |
-| `includeHidden`  | boolean | no       | Include dotfiles. Default: `false`                  |
-| `includeIgnored` | boolean | no       | Include ignored items. Default: `false`             |
-| `returnDiff`     | boolean | no       | Return diff even when not dry-run. Default: `false` |
-| `maxFiles`       | integer | no       | Max files to process before stopping (1-10000)      |
-| `caseSensitive`  | boolean | no       | Case-sensitive matching. Default: `true`            |
+| Parameter        | Type    | Required | Description                                                                  |
+| ---------------- | ------- | -------- | ---------------------------------------------------------------------------- |
+| `path`           | string  | no       | Base directory (default: root)                                               |
+| `filePattern`    | string  | **yes**  | Relative glob pattern (e.g. `**/*.ts`). Absolute paths and `..` are rejected |
+| `searchPattern`  | string  | **yes**  | Text to search. RE2 regex when `isRegex=true`                                |
+| `replacement`    | string  | **yes**  | Replacement text. Supports `$1`, `$2` with regex                             |
+| `isRegex`        | boolean | no       | Treat as RE2 regex. Default: `false`                                         |
+| `dryRun`         | boolean | no       | Preview matches with diff. Default: `false`                                  |
+| `includeHidden`  | boolean | no       | Include dotfiles. Default: `false`                                           |
+| `includeIgnored` | boolean | no       | Include ignored items. Default: `false`                                      |
+| `returnDiff`     | boolean | no       | Return diff even when not dry-run. Default: `false`                          |
+| `maxFiles`       | integer | no       | Max files to process before stopping (1-10000)                               |
+| `caseSensitive`  | boolean | no       | Case-sensitive matching. Default: `true`                                     |
 
 ### Resources
 

@@ -203,6 +203,11 @@ describe('mkdir tool', () => {
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
+    assert.equal((sc['path'] as string).toLowerCase(), newDir.toLowerCase());
+    assert.deepEqual(
+      (sc['paths'] as string[]).map((entry) => entry.toLowerCase()),
+      [newDir.toLowerCase()]
+    );
     const stat = await fs.stat(newDir);
     assert.ok(stat.isDirectory());
   });
@@ -327,6 +332,16 @@ describe('mv tool', () => {
       arguments: { source: src, destination: dst },
     });
     assertOk(raw);
+    const sc = getStructured(raw);
+    assert.equal((sc['source'] as string).toLowerCase(), src.toLowerCase());
+    assert.deepEqual(
+      (sc['sources'] as string[]).map((entry) => entry.toLowerCase()),
+      [src.toLowerCase()]
+    );
+    assert.equal(
+      (sc['destination'] as string).toLowerCase(),
+      dst.toLowerCase()
+    );
     await assert.rejects(() => fs.stat(src), /ENOENT/);
     const content = await fs.readFile(dst, 'utf8');
     assert.equal(content, 'move me');

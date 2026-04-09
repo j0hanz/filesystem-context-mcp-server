@@ -44,6 +44,14 @@ const OptionalPathSchema = PathSchemaBase.optional();
 
 const RequiredPathSchema = PathSchemaBase.min(1, 'Path required');
 
+const SafeGlobPatternSchema = z
+  .string()
+  .min(1, 'Pattern required')
+  .max(1000, 'Max 1000 chars')
+  .refine((val) => isSafeGlobPattern(val), {
+    error: 'Invalid glob or unsafe path (absolute/.. forbidden)',
+  });
+
 const FileTypeSchema = z.enum(['file', 'directory', 'symlink', 'other']);
 
 const ListDirectorySortSchema = z.enum(['name', 'size', 'modified', 'type']);
@@ -229,15 +237,9 @@ export const ListDirectoryInputSchema = z.strictObject({
   sortBy: ListDirectorySortSchema.optional()
     .default('name')
     .describe('Sort field (name, size, modified, type)'),
-  pattern: z
-    .string()
-    .min(1, 'Pattern required')
-    .max(1000, 'Max 1000 chars')
-    .refine((val) => isSafeGlobPattern(val), {
-      error: 'Invalid glob or unsafe path (absolute/.. forbidden)',
-    })
-    .optional()
-    .describe('Optional glob pattern filter (e.g. "**/*.ts")'),
+  pattern: SafeGlobPatternSchema.optional().describe(
+    'Optional glob pattern filter (e.g. "**/*.ts")'
+  ),
   includeSymlinkTargets: defaultFalseBoolean(
     'Resolve and include symlink targets in results'
   ),
@@ -253,14 +255,9 @@ export const ListAllowedDirectoriesInputSchema = z
 
 export const SearchFilesInputSchema = z.strictObject({
   path: OptionalPathSchema.describe(DESC_PATH_ROOT),
-  pattern: z
-    .string()
-    .min(1, 'Pattern required')
-    .max(1000, 'Max 1000 chars')
-    .refine((val) => isSafeGlobPattern(val), {
-      error: 'Invalid glob or unsafe path (absolute/.. forbidden)',
-    })
-    .describe('Glob pattern (e.g. "**/*.ts", "src/*.js")'),
+  pattern: SafeGlobPatternSchema.describe(
+    'Glob pattern (e.g. "**/*.ts", "src/*.js")'
+  ),
   maxResults: z
     .int({ error: 'Must be integer' })
     .min(1, 'Min: 1')
@@ -344,11 +341,7 @@ export const SearchContentInputSchema = z.strictObject({
     .describe(
       `Maximum match rows to return. Default: ${DEFAULT_SEARCH_CONTENT_RESULTS}`
     ),
-  filePattern: z
-    .string()
-    .min(1, 'Pattern required')
-    .max(1000, 'Max 1000 chars')
-    .optional()
+  filePattern: SafeGlobPatternSchema.optional()
     .default('**/*')
     .describe('Glob for candidate files (e.g. "**/*.ts")'),
   includeHidden: defaultFalseBoolean('Include hidden items (starting with .)'),
@@ -632,6 +625,7 @@ export const EditFileInputSchema = z.strictObject({
       z.strictObject({
         oldText: z
           .string()
+          .min(1, 'oldText required')
           .describe(
             'Exact literal string to replace (character-for-character). Include 3–5 lines of context for unique targeting.'
           ),
@@ -843,15 +837,8 @@ export const ApplyPatchOutputSchema = z.strictObject({
 
 export const SearchAndReplaceInputSchema = z.strictObject({
   path: OptionalPathSchema.describe(DESC_PATH_ROOT),
-  filePattern: z
-    .string()
-    .min(1, 'Pattern required')
-    .max(1000, 'Max 1000 chars')
-    .optional()
+  filePattern: SafeGlobPatternSchema.optional()
     .default('**/*')
-    .refine((val) => isSafeGlobPattern(val), {
-      error: 'Invalid glob or unsafe path (absolute/.. forbidden)',
-    })
     .describe('Glob to filter files. Default: **/*'),
   searchPattern: z
     .string()
@@ -872,24 +859,15 @@ export const SearchAndReplaceInputSchema = z.strictObject({
   dryRun: defaultFalseBoolean(
     'Preview matches without writing. Check changedFiles and matches in the response before committing.'
   ),
-  includeHidden: z
-    .boolean()
-    .optional()
-    .describe(
-      'Include hidden files/directories (starting with .). Default: false.'
-    ),
-  includeIgnored: z
-    .boolean()
-    .optional()
-    .describe(
-      'Include .gitignore-ignored files (node_modules, dist). Default: false.'
-    ),
-  returnDiff: z
-    .boolean()
-    .optional()
-    .describe(
-      'Return unified diff of changes even if dryRun is false. Default: false.'
-    ),
+  includeHidden: defaultFalseBoolean(
+    'Include hidden files/directories (starting with .). Default: false.'
+  ),
+  includeIgnored: defaultFalseBoolean(
+    'Include .gitignore-ignored files (node_modules, dist). Default: false.'
+  ),
+  returnDiff: defaultFalseBoolean(
+    'Return unified diff of changes even if dryRun is false. Default: false.'
+  ),
   maxFiles: z
     .int({ error: 'Must be integer' })
     .min(1, 'Min: 1')
@@ -929,7 +907,12 @@ export const SearchAndReplaceOutputSchema = z.strictObject({
     .boolean()
     .optional()
     .describe('Changed file list truncated'),
-  diff: z.string().optional().describe('Unified diff of changes (dryRun only)'),
+  diff: z
+    .string()
+    .optional()
+    .describe(
+      'Unified diff of changes when `dryRun` or `returnDiff` is enabled'
+    ),
   diffTruncated: z
     .boolean()
     .optional()

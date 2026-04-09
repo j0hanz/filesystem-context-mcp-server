@@ -88,6 +88,31 @@ describe('grep tool', () => {
     assert.equal(sc['ok'], true);
   });
 
+  it('rejects unsafe filePattern values before traversal', async () => {
+    const raw = await env.client.callTool({
+      name: 'grep',
+      arguments: {
+        path: env.tmpDir,
+        pattern: 'apple',
+        filePattern: '../*.txt',
+      },
+    });
+    assertToolError(raw);
+    const result = raw as ToolResult;
+    const textBlock = result.content.find(
+      (block: {
+        type: string;
+        text?: string;
+      }): block is { type: string; text: string } =>
+        typeof block.text === 'string'
+    );
+    assert.ok(textBlock, 'Expected text response content');
+    assert.match(
+      textBlock.text,
+      /Invalid glob or unsafe path \(absolute\/\.\. forbidden\)/u
+    );
+  });
+
   it('returns empty matches for a pattern that is not found', async () => {
     const raw = await env.client.callTool({
       name: 'grep',

@@ -62,10 +62,13 @@ async function handleCreateDirectory(
     validPaths.map((p) => withAbort(fs.mkdir(p, { recursive: true }), signal))
   );
 
+  const createdPath = validPaths.length === 1 ? validPaths[0] : undefined;
+
   return buildToolResponse(
     `Successfully created ${validPaths.length} director${validPaths.length === 1 ? 'y' : 'ies'}`,
     {
       ok: true,
+      ...(createdPath ? { path: createdPath } : {}),
       paths: validPaths,
     }
   );

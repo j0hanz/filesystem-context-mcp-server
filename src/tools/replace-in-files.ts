@@ -465,7 +465,7 @@ async function handleSearchAndReplace(
     cwd: root,
     pattern: args.filePattern,
     excludePatterns: args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS,
-    includeHidden: args.includeHidden ?? false,
+    includeHidden: args.includeHidden,
     baseNameMatch: false,
     caseSensitiveMatch: true, // Default to sensitive for file paths
     followSymbolicLinks: false,
@@ -481,7 +481,7 @@ async function handleSearchAndReplace(
   const context: ReplaceContext = {
     options: {
       dryRun: args.dryRun,
-      returnDiff: args.returnDiff ?? false,
+      returnDiff: args.returnDiff,
     },
     replacement: args.replacement,
     matcher,

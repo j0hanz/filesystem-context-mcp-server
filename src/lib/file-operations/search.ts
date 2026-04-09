@@ -32,6 +32,7 @@ import {
   McpError,
 } from '../errors.js';
 import { isProbablyBinary } from '../fs-helpers.js';
+import { isSafeGlobPattern } from '../globs.js';
 import { startPerfMeasure } from '../observability.js';
 import {
   assertAllowedFileAccess,
@@ -152,6 +153,14 @@ function buildMatcher(pattern: string, options: MatcherOptions): Matcher {
 
 const SEARCH_CONTENT_MAX_RESULTS = 500;
 
+const SafeFilePatternSchema = z
+  .string()
+  .min(1, 'Pattern required')
+  .max(1000, 'Max 1000 chars')
+  .refine((value) => isSafeGlobPattern(value), {
+    error: 'Invalid glob or unsafe path (absolute/.. forbidden)',
+  });
+
 interface ScanFileOptions {
   maxFileSize: number;
   skipBinary: boolean;
@@ -159,7 +168,7 @@ interface ScanFileOptions {
 }
 
 const SearchOptionsSchema = z.strictObject({
-  filePattern: z.string().min(1),
+  filePattern: SafeFilePatternSchema,
   excludePatterns: z.array(z.string()),
   caseSensitive: z.boolean(),
   maxResults: z.int().min(0),

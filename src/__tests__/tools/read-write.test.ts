@@ -328,6 +328,22 @@ describe('edit tool', () => {
     );
   });
 
+  it('rejects edits with an empty oldText target', async () => {
+    const file = path.join(env.tmpDir, 'empty-target.txt');
+    await fs.writeFile(file, 'content\n', 'utf8');
+    const raw = await env.client.callTool({
+      name: 'edit',
+      arguments: {
+        path: file,
+        edits: [{ oldText: '', newText: 'prefix' }],
+      },
+    });
+    assertToolError(raw);
+    const text = (raw as { content: Array<{ text?: string }> }).content[0]
+      ?.text;
+    assert.match(text ?? '', /oldText required/u);
+  });
+
   it('reports unmatched edits when oldText is not found', async () => {
     const file = path.join(env.tmpDir, 'no-match.txt');
     await fs.writeFile(file, 'some text\n', 'utf8');
