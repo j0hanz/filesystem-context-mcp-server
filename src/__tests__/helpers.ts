@@ -1,8 +1,5 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import {
-  InMemoryTaskMessageQueue,
-  InMemoryTaskStore,
-} from '@modelcontextprotocol/sdk/experimental/tasks/stores/in-memory.js';
+import { InMemoryTaskMessageQueue } from '@modelcontextprotocol/sdk/experimental/tasks/stores/in-memory.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
@@ -15,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { setAllowedDirectoriesResolved } from '../lib/paths.js';
 import { createInMemoryResourceStore } from '../lib/resource-store.js';
 
+import { createTaskStore } from '../server/task-store.js';
 import { registerAllTools } from '../tools.js';
 
 export interface TestContentBlock {
@@ -46,7 +44,7 @@ export async function createTestEnv(): Promise<TestEnv> {
 
   await setAllowedDirectoriesResolved([tmpDir]);
 
-  const taskStore = new InMemoryTaskStore();
+  const taskStore = createTaskStore();
 
   const server = new McpServer(
     { name: 'test-server', version: '0.0.0' },

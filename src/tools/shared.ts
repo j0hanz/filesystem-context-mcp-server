@@ -581,6 +581,13 @@ function formatTaskStatusMessage(progress: {
   return progress.message ?? `${progress.current}`;
 }
 
+function isBenignTaskStatusUpdateError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /Task .*not found|terminal status/iu.test(error.message)
+  );
+}
+
 async function updateTaskStoreProgress(
   extra: ToolExtra,
   progress: { current: number; total?: number; message?: string }
@@ -602,6 +609,7 @@ async function updateTaskStoreProgress(
           ) => Promise<void>
         )(taskExtra.taskId, 'working', formatTaskStatusMessage(progress));
       } catch (error) {
+        if (isBenignTaskStatusUpdateError(error)) return;
         Logger.error('Failed to update task status message:', error);
       }
     }

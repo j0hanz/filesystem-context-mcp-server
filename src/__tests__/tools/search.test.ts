@@ -2,6 +2,8 @@
  * Integration tests for search tools: grep (search_content), find (search_files),
  * and search_and_replace.
  */
+import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
+
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import assert from 'node:assert/strict';
@@ -15,6 +17,15 @@ import {
   type TestEnv,
   type ToolResult,
 } from '../helpers.js';
+
+function getResultText(result: ToolResult): string {
+  const textBlock = result.content.find(
+    (block): block is { type: string; text: string } =>
+      typeof block.text === 'string'
+  );
+  assert.ok(textBlock, 'Expected text response content');
+  return textBlock.text;
+}
 
 // ─── grep (search_content) ───────────────────────────────────────────────────
 
@@ -145,6 +156,66 @@ describe('grep tool', () => {
     );
     assert.ok(textBlock, 'Expected text response content');
     assert.match(textBlock.text, /utf8\.txt:\s+1: rocket 🚀 line/);
+  });
+
+  it('supports task-mode execution via the client tasks API', async () => {
+    const taskFile = path.join(env.tmpDir, 'task-grep.txt');
+    await fs.writeFile(taskFile, 'needle here\nanother line\n', 'utf8');
+
+    const events: string[] = [];
+    const statuses: string[] = [];
+    let taskId: string | undefined;
+    let finalResult: ToolResult | undefined;
+
+    const stream = env.client.experimental.tasks.callToolStream(
+      {
+        name: 'grep',
+        arguments: {
+          path: env.tmpDir,
+          pattern: 'needle',
+          filePattern: '*.txt',
+          maxResults: 10,
+        },
+      },
+      CallToolResultSchema,
+      { task: { ttl: 60_000 } }
+    );
+
+    for await (const message of stream) {
+      events.push(message.type);
+      if (message.type === 'taskCreated') {
+        taskId = message.task.taskId;
+      }
+      if (message.type === 'taskStatus') {
+        statuses.push(message.task.status);
+      }
+      if (message.type === 'result') {
+        finalResult = message.result as ToolResult;
+      }
+    }
+
+    assert.equal(events[0], 'taskCreated');
+    assert.ok(taskId, 'Expected task-mode execution to return a task id');
+    assert.ok(
+      statuses.some((status) => status === 'working' || status === 'completed'),
+      `Expected task status updates, got ${JSON.stringify(statuses)}`
+    );
+    assert.ok(finalResult, 'Expected a final task result');
+    assertOk(finalResult);
+
+    const sc = getStructured(finalResult);
+    const matches = sc['matches'] as Array<Record<string, unknown>>;
+    assert.ok(Array.isArray(matches) && matches.length > 0);
+    assert.equal(matches[0]?.['file'], 'task-grep.txt');
+
+    const storedTask = await env.client.experimental.tasks.getTask(taskId);
+    assert.equal(storedTask.status, 'completed');
+
+    const storedResult = await env.client.experimental.tasks.getTaskResult(
+      taskId,
+      CallToolResultSchema
+    );
+    assert.equal(storedResult.isError, undefined);
   });
 });
 

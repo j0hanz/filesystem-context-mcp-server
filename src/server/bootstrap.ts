@@ -1,7 +1,4 @@
-import {
-  InMemoryTaskMessageQueue,
-  InMemoryTaskStore,
-} from '@modelcontextprotocol/sdk/experimental/tasks/stores/in-memory.js';
+import { InMemoryTaskMessageQueue } from '@modelcontextprotocol/sdk/experimental/tasks/stores/in-memory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -51,6 +48,7 @@ import { buildServerInstructions } from '../resources/generated-instructions.js'
 import { registerAllTools } from '../tools.js';
 import { type IconInfo, withDefaultIcons } from '../tools/shared.js';
 import { RootsManager, type ServerOptions } from './roots-manager.js';
+import { createTaskStore } from './task-store.js';
 
 let cachedTaskToolSupport: boolean | undefined;
 
@@ -211,7 +209,7 @@ export async function createServer(
 
   if (taskToolSupport) {
     // Enabling task tool support requires configuring a task store and message queue on the server config. We use in-memory implementations from the SDK which auto-evict tasks after their TTL expires (via setTimeout). Suitable for both stdio and HTTP sessions.
-    serverConfig.taskStore = new InMemoryTaskStore();
+    serverConfig.taskStore = createTaskStore();
     serverConfig.taskMessageQueue = new InMemoryTaskMessageQueue();
   }
 

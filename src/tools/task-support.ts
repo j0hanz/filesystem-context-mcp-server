@@ -438,6 +438,13 @@ async function isTaskAlreadyTerminal(
   }
 }
 
+function isMissingTaskStoreError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /Task .*not found|not found after cancellation/iu.test(error.message)
+  );
+}
+
 async function countActiveTasks(taskStore: RequestTaskStore): Promise<number> {
   if (typeof taskStore.listTasks !== 'function') return 0;
   const listed = await taskStore.listTasks();
@@ -481,6 +488,7 @@ async function safelyStoreTaskResult(
   try {
     await taskStore.storeTaskResult(taskId, storedStatus, result);
   } catch (error) {
+    if (isMissingTaskStoreError(error)) return;
     // If task was already cancelled/failed by another process, ignore the write error
     if (await isTaskAlreadyTerminal(taskStore, taskId)) return;
     throw error;
@@ -582,10 +590,15 @@ async function runTaskInBackground<Args extends ToolSchema>(
 
     const { sendNotification } = extra as { sendNotification?: unknown };
     if (typeof sendNotification === 'function') {
-      void (sendNotification as TaskStatusNotificationSender)({
-        method: TASK_STATUS_NOTIFICATION_METHOD,
-        params: buildTaskStatusNotificationParams(syntheticTask),
-      });
+      try {
+        await (sendNotification as TaskStatusNotificationSender)({
+          method: TASK_STATUS_NOTIFICATION_METHOD,
+          params: buildTaskStatusNotificationParams(syntheticTask),
+        });
+      } catch {
+        // Best effort only: transport may already be closed while a cancelled
+        // task is still unwinding in the background.
+      }
     }
   }
 }
