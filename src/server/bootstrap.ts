@@ -102,6 +102,7 @@ function buildServerCapabilities(
     tools: {},
     prompts: options.enablePromptListChanged ? { listChanged: true } : {},
     completions: {},
+    extensions: {},
   };
 
   if (options.enableTaskToolRequests) {

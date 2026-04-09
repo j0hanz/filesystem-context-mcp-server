@@ -46,6 +46,12 @@ interface OpsTraceContext {
   [key: string]: unknown;
 }
 
+export interface TraceContext {
+  traceparent: string;
+  tracestate?: string;
+  baggage?: string;
+}
+
 interface ToolDiagnosticsEvent {
   phase: 'start' | 'end';
   tool: string;
@@ -53,11 +59,13 @@ interface ToolDiagnosticsEvent {
   ok?: boolean;
   error?: string;
   path?: string;
+  traceparent?: string;
 }
 
 interface ToolAsyncContext {
   tool: string;
   path?: string;
+  traceContext?: TraceContext;
 }
 
 interface PerfDiagnosticsEvent {
@@ -296,6 +304,10 @@ export function getToolContextSnapshot():
   return toolContext.getStore();
 }
 
+export function getTraceContext(): TraceContext | undefined {
+  return toolContext.getStore()?.traceContext;
+}
+
 function normalizeContext(ctx: OpsTraceContext): OpsTraceContext {
   if (!ctx.path) return ctx;
   const normalized = sanitizePathForDiagnostics(ctx.path);
@@ -356,9 +368,14 @@ export function startPerfMeasure(
   };
 }
 
-function publishToolStart(tool: string, pathVal?: string): void {
+function publishToolStart(
+  tool: string,
+  pathVal?: string,
+  traceparent?: string
+): void {
   const event: ToolDiagnosticsEvent = { phase: 'start', tool };
   if (pathVal) event.path = pathVal;
+  if (traceparent) event.traceparent = traceparent;
   CHANNELS.tool.publish(event);
 }
 
@@ -366,10 +383,12 @@ function publishToolEnd(
   tool: string,
   ok: boolean,
   durationMs: number,
-  errorMsg?: string
+  errorMsg?: string,
+  traceparent?: string
 ): void {
   const event: ToolDiagnosticsEvent = { phase: 'end', tool, ok, durationMs };
   if (errorMsg) event.error = errorMsg;
+  if (traceparent) event.traceparent = traceparent;
   CHANNELS.tool.publish(event);
 }
 
@@ -399,14 +418,15 @@ async function runAndObserve<T>(
   pubTool: boolean,
   pubPerf: boolean,
   logErrors: boolean,
-  pathVal?: string
+  pathVal?: string,
+  traceparent?: string
 ): Promise<T> {
   const startMs = performance.now();
   const eluStart = pubPerf ? performance.eventLoopUtilization() : undefined;
   const loopMonitor = pubPerf ? monitorEventLoopDelay() : undefined;
   loopMonitor?.enable();
 
-  if (pubTool) publishToolStart(tool, pathVal);
+  if (pubTool) publishToolStart(tool, pathVal, traceparent);
 
   let result: T;
   const obs = { ok: false, errorMsg: undefined as string | undefined };
@@ -425,7 +445,8 @@ async function runAndObserve<T>(
 
     if (pubPerf && eluStart)
       publishPerfEnd(tool, durationMs, eluStart, loopMonitor);
-    if (pubTool) publishToolEnd(tool, obs.ok, durationMs, obs.errorMsg);
+    if (pubTool)
+      publishToolEnd(tool, obs.ok, durationMs, obs.errorMsg, traceparent);
 
     updateMetrics(tool, obs.ok, durationMs);
 
@@ -438,7 +459,7 @@ async function runAndObserve<T>(
 export async function withToolDiagnostics<T>(
   tool: string,
   run: () => Promise<T>,
-  options?: { path?: string }
+  options?: { path?: string; traceContext?: TraceContext }
 ): Promise<T> {
   const config = readConfig();
   const normalizedPath = sanitizePathForDiagnostics(options?.path);
@@ -446,6 +467,7 @@ export async function withToolDiagnostics<T>(
   const context: ToolAsyncContext = {
     tool,
     ...(options?.path ? { path: options.path } : {}),
+    ...(options?.traceContext ? { traceContext: options.traceContext } : {}),
   };
 
   return toolContext.run(context, async () => {
@@ -487,7 +509,8 @@ export async function withToolDiagnostics<T>(
       pubTool,
       pubPerf,
       config.logToolErrors,
-      normalizedPath
+      normalizedPath,
+      options?.traceContext?.traceparent
     );
   });
 }

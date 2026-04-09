@@ -18,6 +18,7 @@ import {
 } from '../lib/errors.js';
 import { createTimedAbortSignal } from '../lib/fs-helpers.js';
 import { withToolDiagnostics } from '../lib/observability.js';
+import type { TraceContext } from '../lib/observability.js';
 import { getAllowedDirectories } from '../lib/paths.js';
 import type { ResourceStore } from '../lib/resource-store.js';
 import { createBase64JsonCodec } from '../lib/zod-codecs.js';
@@ -40,6 +41,23 @@ interface ContextDiagnosticsEvent {
 }
 
 const CONTEXT_DIAGNOSTICS_CHANNEL = channel('filesystem-mcp:context');
+
+// W3C Trace Context: version-traceid-parentid-traceflags
+const TRACEPARENT_RE = /^[\da-f]{2}-[\da-f]{32}-[\da-f]{16}-[\da-f]{2}$/i;
+
+function extractTraceContext(
+  meta: ToolExtra['_meta']
+): TraceContext | undefined {
+  const tp = meta?.traceparent;
+  if (typeof tp !== 'string' || !TRACEPARENT_RE.test(tp)) return undefined;
+  return {
+    traceparent: tp,
+    ...(typeof meta?.tracestate === 'string'
+      ? { tracestate: meta.tracestate }
+      : {}),
+    ...(typeof meta?.baggage === 'string' ? { baggage: meta.baggage } : {}),
+  };
+}
 
 function publishContextDiagnostics(event: ContextDiagnosticsEvent): void {
   if (!CONTEXT_DIAGNOSTICS_CHANNEL.hasSubscribers) return;
@@ -342,6 +360,9 @@ export interface ToolExtra {
   signal?: AbortSignal;
   _meta?: {
     progressToken?: ProgressToken | undefined;
+    traceparent?: string | undefined;
+    tracestate?: string | undefined;
+    baggage?: string | undefined;
   };
   sendNotification?: (notification: {
     method: 'notifications/progress';
@@ -488,6 +509,7 @@ function getToolSignal(
 export async function executeToolWithDiagnostics<T>(
   options: ToolExecutionOptions<T>
 ): Promise<ToolResult<T>> {
+  const traceContext = extractTraceContext(options.extra._meta);
   return withToolDiagnostics(
     options.toolName,
     () =>
@@ -506,7 +528,10 @@ export async function executeToolWithDiagnostics<T>(
           cleanup();
         }
       }, options.onError),
-    options.context
+    {
+      ...options.context,
+      ...(traceContext ? { traceContext } : {}),
+    }
   );
 }
 

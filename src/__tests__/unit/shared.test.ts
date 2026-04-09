@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import { z } from 'zod';
 
 import { ErrorCode } from '../../lib/errors.js';
+import { getTraceContext } from '../../lib/observability.js';
 import {
   buildToolErrorResponse,
   buildToolResponse,
@@ -43,5 +44,74 @@ describe('tool output validation', () => {
       /returned invalid structuredContent/u,
       'Expected invalid structuredContent message'
     );
+  });
+});
+
+describe('SEP-414 trace context propagation', () => {
+  const VALID_TRACEPARENT =
+    '00-0af7651916cd43dd8448eb211c80319c-00f067aa0ba902b7-01';
+
+  const outputSchema = z.strictObject({ ok: z.literal(true) });
+
+  it('exposes trace context via getTraceContext() inside tool execution', async () => {
+    let captured: ReturnType<typeof getTraceContext>;
+
+    await executeToolWithDiagnostics({
+      toolName: 'ctx_test',
+      extra: {
+        _meta: {
+          traceparent: VALID_TRACEPARENT,
+          tracestate: 'vendor=opaque',
+          baggage: 'userId=1234',
+        },
+      },
+      outputSchema,
+      run: () => {
+        captured = getTraceContext();
+        return buildToolResponse('ok', { ok: true as const });
+      },
+      onError: (error) => buildToolErrorResponse(error, ErrorCode.E_UNKNOWN),
+    });
+
+    assert.ok(captured, 'Expected trace context to be captured');
+    assert.equal(captured.traceparent, VALID_TRACEPARENT);
+    assert.equal(captured.tracestate, 'vendor=opaque');
+    assert.equal(captured.baggage, 'userId=1234');
+  });
+
+  it('silently drops invalid traceparent values', async () => {
+    let captured: ReturnType<typeof getTraceContext>;
+
+    await executeToolWithDiagnostics({
+      toolName: 'invalid_trace',
+      extra: {
+        _meta: { traceparent: 'not-a-valid-traceparent' },
+      },
+      outputSchema,
+      run: () => {
+        captured = getTraceContext();
+        return buildToolResponse('ok', { ok: true as const });
+      },
+      onError: (error) => buildToolErrorResponse(error, ErrorCode.E_UNKNOWN),
+    });
+
+    assert.equal(captured, undefined, 'Invalid traceparent should be dropped');
+  });
+
+  it('works without trace context (backward compatible)', async () => {
+    let captured: ReturnType<typeof getTraceContext>;
+
+    await executeToolWithDiagnostics({
+      toolName: 'no_trace',
+      extra: {},
+      outputSchema,
+      run: () => {
+        captured = getTraceContext();
+        return buildToolResponse('ok', { ok: true as const });
+      },
+      onError: (error) => buildToolErrorResponse(error, ErrorCode.E_UNKNOWN),
+    });
+
+    assert.equal(captured, undefined, 'No trace context when _meta is absent');
   });
 });
