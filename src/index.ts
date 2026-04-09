@@ -1,8 +1,8 @@
 #!/usr/bin/env node
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+
 import type * as http from 'node:http';
 import process from 'node:process';
-
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { DEFAULT_SEARCH_TIMEOUT_MS } from './lib/constants.js';
 import { formatUnknownErrorMessage } from './lib/errors.js';

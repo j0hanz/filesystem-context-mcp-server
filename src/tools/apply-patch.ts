@@ -1,7 +1,8 @@
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+
 import * as path from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { applyPatch, parsePatch, type StructuredPatch } from 'diff';
 import type { z } from 'zod';
 

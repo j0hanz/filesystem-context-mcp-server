@@ -1,12 +1,12 @@
-import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
-import { setTimeout as delay } from 'node:timers/promises';
-
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   InitializedNotificationSchema,
   RootsListChangedNotificationSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import { RootsManager } from '../../server/roots-manager.js';
 

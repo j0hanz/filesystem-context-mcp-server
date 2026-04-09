@@ -1,11 +1,11 @@
+import type { Root } from '@modelcontextprotocol/sdk/types.js';
+
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { platform } from 'node:os';
 import { fileURLToPath } from 'node:url';
-
-import type { Root } from '@modelcontextprotocol/sdk/types.js';
 
 import {
   SENSITIVE_FILE_ALLOWLIST,

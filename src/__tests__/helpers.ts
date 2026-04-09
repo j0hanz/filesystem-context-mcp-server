@@ -1,12 +1,12 @@
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { setAllowedDirectoriesResolved } from '../lib/paths.js';
 import { createInMemoryResourceStore } from '../lib/resource-store.js';

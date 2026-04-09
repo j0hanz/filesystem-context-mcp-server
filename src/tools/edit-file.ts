@@ -1,7 +1,8 @@
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+
 import { readFile, stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { createTwoFilesPatch, diffLines } from 'diff';
 import RE2 from 're2';
 import type { z } from 'zod';

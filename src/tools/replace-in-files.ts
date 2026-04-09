@@ -1,8 +1,9 @@
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { Buffer } from 'node:buffer';
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { createTwoFilesPatch } from 'diff';
 import RE2 from 're2';
 import safeRegex from 'safe-regex2';

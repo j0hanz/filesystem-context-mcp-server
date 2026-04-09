@@ -1,4 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+
 import type { z } from 'zod';
 
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';

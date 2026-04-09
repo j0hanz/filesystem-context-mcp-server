@@ -2,6 +2,7 @@ import { constants as osConstants } from 'node:os';
 import { getSystemErrorMap, getSystemErrorName, inspect } from 'node:util';
 
 import { ErrorCode, joinLines } from '../config.js';
+import { getTraceContext } from './observability.js';
 
 export { ErrorCode };
 
@@ -201,16 +202,71 @@ export function isTimeoutLikeError(error: unknown): boolean {
 }
 
 export class McpError extends Error {
+  details?: Record<string, unknown>;
+
   constructor(
     public code: ErrorCode,
     message: string,
     public path?: string,
-    public details?: Record<string, unknown>,
+    details?: Record<string, unknown>,
     cause?: unknown
   ) {
     super(message, { cause });
     this.name = 'McpError';
     Object.setPrototypeOf(this, McpError.prototype);
+
+    const trace = getTraceContext();
+    if (trace?.traceparent || details) {
+      this.details = { ...trace, ...details };
+    }
+  }
+
+  static notFound(
+    message: string,
+    path?: string,
+    details?: Record<string, unknown>,
+    cause?: unknown
+  ): McpError {
+    return new McpError(ErrorCode.E_NOT_FOUND, message, path, details, cause);
+  }
+
+  static invalidInput(
+    message: string,
+    path?: string,
+    details?: Record<string, unknown>,
+    cause?: unknown
+  ): McpError {
+    return new McpError(
+      ErrorCode.E_INVALID_INPUT,
+      message,
+      path,
+      details,
+      cause
+    );
+  }
+
+  static accessDenied(
+    message: string,
+    path?: string,
+    details?: Record<string, unknown>,
+    cause?: unknown
+  ): McpError {
+    return new McpError(
+      ErrorCode.E_ACCESS_DENIED,
+      message,
+      path,
+      details,
+      cause
+    );
+  }
+
+  static timeout(
+    message: string,
+    path?: string,
+    details?: Record<string, unknown>,
+    cause?: unknown
+  ): McpError {
+    return new McpError(ErrorCode.E_TIMEOUT, message, path, details, cause);
   }
 }
 

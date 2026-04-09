@@ -8,6 +8,7 @@ import {
 } from 'node:perf_hooks';
 
 import { parseTrueEnvFlag } from './constants.js';
+import { Logger } from './logger.js';
 import { isRecord } from './utils.js';
 
 // --- Configuration ---
@@ -517,7 +518,7 @@ export async function withToolDiagnostics<T>(
 
 function logError(tool: string, durationMs: number, msg?: string): void {
   const suffix = msg ? `: ${msg}` : '';
-  console.error(
+  Logger.error(
     `[ToolError] ${tool} failed in ${durationMs.toFixed(1)}ms${suffix}`
   );
 }

@@ -1,7 +1,3 @@
-import * as fs from 'node:fs/promises';
-import * as http from 'node:http';
-import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
-
 import {
   InMemoryTaskMessageQueue,
   InMemoryTaskStore,
@@ -21,8 +17,14 @@ import {
   SUPPORTED_PROTOCOL_VERSIONS,
 } from '@modelcontextprotocol/sdk/types.js';
 
+import * as fs from 'node:fs/promises';
+import * as http from 'node:http';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+import { channel } from 'node:diagnostics_channel';
+
 import { DEFAULT_LOG_LEVEL, parseEnvInt } from '../lib/constants.js';
 import { formatUnknownErrorMessage } from '../lib/errors.js';
+import { type LogEvent, Logger, SessionContext } from '../lib/logger.js';
 import { withAllowedDirectoriesState } from '../lib/paths.js';
 import { createInMemoryResourceStore } from '../lib/resource-store.js';
 import { isRecord } from '../lib/utils.js';
@@ -146,7 +148,7 @@ function createLoggingState(
   return { minimumLevel };
 }
 
-function canSendMcpLogs(server: McpServer): boolean {
+export function canSendMcpLogs(server: McpServer): boolean {
   const capabilities = server.server.getClientCapabilities();
   if (!isRecord(capabilities)) return false;
   if (!('logging' in capabilities)) return false;
@@ -163,7 +165,18 @@ export function logToMcp(
     return;
   }
   if (!server || !canSendMcpLogs(server)) {
-    console.error(data);
+    if (
+      level === 'error' ||
+      level === 'critical' ||
+      level === 'alert' ||
+      level === 'emergency'
+    ) {
+      console.error(`[${level.toUpperCase()}] ${data}`);
+    } else if (level === 'warning') {
+      console.warn(`[${level.toUpperCase()}] ${data}`);
+    } else {
+      console.log(`[${level.toUpperCase()}] ${data}`);
+    }
     return;
   }
 
@@ -180,6 +193,52 @@ export function logToMcp(
     );
   });
 }
+
+// Global map of all active servers by sessionId for routing logs
+export const activeServers = new Map<
+  string,
+  { server: McpServer; loggingState: LoggingState }
+>();
+// For stdio (single session without a specific ID)
+export let stdioServer:
+  | { server: McpServer; loggingState: LoggingState }
+  | undefined;
+
+channel('filesystem-mcp:log').subscribe((message) => {
+  const event = message as LogEvent;
+  const target = event.sessionId
+    ? activeServers.get(event.sessionId)
+    : stdioServer;
+  if (target) {
+    const dataStr = event.data
+      ? ` ${typeof event.data === 'string' ? event.data : JSON.stringify(event.data)}`
+      : '';
+    logToMcp(
+      target.server,
+      event.level,
+      `${event.message}${dataStr}`,
+      target.loggingState.minimumLevel
+    );
+  } else {
+    // Fallback if no server
+    const dataStr = event.data
+      ? ` ${typeof event.data === 'string' ? event.data : JSON.stringify(event.data)}`
+      : '';
+    const fullMsg = `${event.message}${dataStr}`;
+    if (
+      event.level === 'error' ||
+      event.level === 'critical' ||
+      event.level === 'alert' ||
+      event.level === 'emergency'
+    ) {
+      console.error(`[${event.level.toUpperCase()}] ${fullMsg}`);
+    } else if (event.level === 'warning') {
+      console.warn(`[${event.level.toUpperCase()}] ${fullMsg}`);
+    } else {
+      console.log(`[${event.level.toUpperCase()}] ${fullMsg}`);
+    }
+  }
+});
 
 const {
   version: SERVER_VERSION,
@@ -265,10 +324,15 @@ export async function createServer(
   const rootsManager = new RootsManager(options, loggingState);
   rootsManagers.set(server, rootsManager);
 
+  // Subscribe to Logger channel if not already done, but we need to route based on session or fallback to this server if it's stdio.
+  // Wait, in stdio there's only one server. In HTTP there are multiple.
   server.server.setRequestHandler(SetLevelRequestSchema, (req) => {
     loggingState.minimumLevel = req.params.level;
     return {};
   });
+
+  // Track stdio server by default, or it will be overwritten per HTTP session later
+  stdioServer ??= { server, loggingState };
 
   registerInstructionResource(server, serverInstructions, localIcon);
   registerToolCatalogResource(server, localIcon);
@@ -385,6 +449,10 @@ async function createHttpSession(
         transport,
         negotiatedProtocolVersion,
       });
+      activeServers.set(sessionId, {
+        server: mcpServer,
+        loggingState: rootsManager['loggingState'],
+      });
       rootsManager.logMissingDirectoriesIfNeeded(mcpServer);
     },
   });
@@ -393,10 +461,11 @@ async function createHttpSession(
     const { sessionId } = transport;
     if (sessionId) {
       sessions.delete(sessionId);
+      activeServers.delete(sessionId);
     }
     rootsManager.destroy();
     mcpServer.close().catch((err: unknown) => {
-      console.error(
+      Logger.error(
         '[HTTP] Error closing MCP server:',
         formatUnknownErrorMessage(err)
       );
@@ -549,10 +618,15 @@ async function handleSessionTransportRequest(
   res: http.ServerResponse,
   body?: unknown
 ): Promise<void> {
-  await withAllowedDirectoriesState(
-    session.rootsManager.getAllowedDirectoriesState(),
-    () => session.transport.handleRequest(req, res, body)
-  );
+  const store = session.transport.sessionId
+    ? { sessionId: session.transport.sessionId }
+    : {};
+  await SessionContext.run(store, async () => {
+    await withAllowedDirectoriesState(
+      session.rootsManager.getAllowedDirectoriesState(),
+      () => session.transport.handleRequest(req, res, body)
+    );
+  });
 }
 
 function getSessionOrRespondNotFound(
@@ -741,7 +815,7 @@ export async function startHttpServer(
   return new Promise<http.Server>((resolve, reject) => {
     httpServer.once('error', reject);
     httpServer.listen(port, httpHost, () => {
-      console.error(`MCP HTTP server listening on ${httpHost}:${port}`);
+      Logger.error(`MCP HTTP server listening on ${httpHost}:${port}`);
       resolve(httpServer);
     });
   });

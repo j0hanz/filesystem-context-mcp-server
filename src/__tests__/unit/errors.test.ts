@@ -1,7 +1,3 @@
-import assert from 'node:assert/strict';
-import { readdirSync } from 'node:fs';
-import { describe, it } from 'node:test';
-
 import type {
   CreateTaskRequestHandlerExtra,
   TaskRequestHandlerExtra,
@@ -12,6 +8,10 @@ import type {
   Result,
   TaskStatusNotificationParams,
 } from '@modelcontextprotocol/sdk/types.js';
+
+import assert from 'node:assert/strict';
+import { readdirSync } from 'node:fs';
+import { describe, it } from 'node:test';
 
 import { MAX_CONCURRENT_TASKS, MAX_TASK_TTL_MS } from '../../lib/constants.js';
 import {

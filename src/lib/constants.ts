@@ -1,5 +1,7 @@
 import { availableParallelism } from 'node:os';
 
+import { Logger } from './logger.js';
+
 const TRUE_ENV_VALUES = new Set(['1', 'true', 'yes', 'y', 'on']);
 const FALSE_ENV_VALUES = new Set(['0', 'false', 'no', 'n', 'off']);
 
@@ -17,8 +19,8 @@ function logInvalidEnvValue(
   expected: string,
   defaultValue: number | boolean
 ): void {
-  console.error(
-    `[WARNING] Invalid ${envVar} value: ${value} (must be ${expected}). Using default: ${String(defaultValue)}`
+  Logger.warn(
+    `Invalid ${envVar} value: ${value} (must be ${expected}). Using default: ${String(defaultValue)}`
   );
 }
 
@@ -91,8 +93,8 @@ function parseEnvLogLevel(
   if ((VALID_LOG_LEVELS as readonly string[]).includes(normalized)) {
     return normalized as ValidLogLevel;
   }
-  console.error(
-    `[WARNING] Invalid ${envVar} value: ${value} (must be ${VALID_LOG_LEVELS.join('|')}). Using default: ${defaultValue}`
+  Logger.warn(
+    `Invalid ${envVar} value: ${value} (must be ${VALID_LOG_LEVELS.join('|')}). Using default: ${defaultValue}`
   );
   return defaultValue;
 }

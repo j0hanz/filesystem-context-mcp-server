@@ -1,7 +1,8 @@
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 import {

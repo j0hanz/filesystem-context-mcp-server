@@ -1,8 +1,8 @@
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CompleteRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 
 import {
   getAllowedDirectories,

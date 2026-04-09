@@ -1,11 +1,12 @@
-import * as path from 'node:path';
-import { channel } from 'node:diagnostics_channel';
-
 import type {
   ContentBlock,
   Icon,
   ProgressNotificationParams,
 } from '@modelcontextprotocol/sdk/types.js';
+
+import * as path from 'node:path';
+import { channel } from 'node:diagnostics_channel';
+
 import { z } from 'zod';
 
 import { parseTrueEnvFlag } from '../lib/constants.js';
@@ -17,6 +18,7 @@ import {
   McpError,
 } from '../lib/errors.js';
 import { createTimedAbortSignal } from '../lib/fs-helpers.js';
+import { Logger } from '../lib/logger.js';
 import { withToolDiagnostics } from '../lib/observability.js';
 import type { TraceContext } from '../lib/observability.js';
 import { getAllowedDirectories } from '../lib/paths.js';
@@ -598,7 +600,7 @@ async function updateTaskStoreProgress(
           ) => Promise<void>
         )(taskExtra.taskId, 'working', formatTaskStatusMessage(progress));
       } catch (error) {
-        console.error('Failed to update task status message:', error);
+        Logger.error('Failed to update task status message:', error);
       }
     }
   }
@@ -622,7 +624,7 @@ async function sendMcpProgressNotification(
         },
       });
     } catch (error) {
-      console.error('Failed to send progress notification:', error);
+      Logger.error('Failed to send progress notification:', error);
     }
   }
 }

@@ -1,3 +1,5 @@
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { BinaryToTextEncoding } from 'node:crypto';
@@ -5,7 +7,6 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { z } from 'zod';
 
 import { PARALLEL_CONCURRENCY } from '../lib/constants.js';

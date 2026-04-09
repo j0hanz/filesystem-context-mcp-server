@@ -1,8 +1,3 @@
-import { AsyncLocalStorage } from 'node:async_hooks';
-import { channel } from 'node:diagnostics_channel';
-import { performance } from 'node:perf_hooks';
-import { format } from 'node:util';
-
 import type {
   CreateTaskRequestHandlerExtra,
   TaskRequestHandlerExtra,
@@ -25,12 +20,18 @@ import type {
 } from '@modelcontextprotocol/sdk/types.js';
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { channel } from 'node:diagnostics_channel';
+import { performance } from 'node:perf_hooks';
+import { format } from 'node:util';
+
 import {
   DEFAULT_TASK_TTL_MS,
   MAX_CONCURRENT_TASKS,
   MAX_TASK_TTL_MS,
 } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
+import { Logger } from '../lib/logger.js';
 import { isRecord } from '../lib/utils.js';
 
 import type { IconInfo, ToolExtra, ToolResult } from './shared.js';
@@ -555,7 +556,7 @@ async function runTaskInBackground<
     });
     await notifyTaskStatusIfPossible(extra, taskStore, taskId, toolName);
   } catch (innerError) {
-    console.error(
+    Logger.error(
       format('Failed to store task result for task %s:', taskId),
       innerError
     );

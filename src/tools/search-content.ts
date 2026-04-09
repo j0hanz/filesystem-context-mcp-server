@@ -1,6 +1,7 @@
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+
 import * as path from 'node:path';
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import RE2 from 're2';
 import type { z } from 'zod';
 
