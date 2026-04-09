@@ -1,6 +1,12 @@
-import * as fsp from 'node:fs/promises';
-import * as path from 'node:path';
-import type { Stats } from 'node:fs';
+import {
+  type Dirent,
+  lstat,
+  readdir,
+  readlink,
+  stat,
+  type Stats,
+} from 'node:fs';
+import { basename, join, parse, relative } from 'node:path';
 
 import type {
   DirectoryEntry,
@@ -54,6 +60,45 @@ import {
   withOptionalStoppedReason,
 } from './core.js';
 import { globEntries } from './traversal.js';
+
+function statAsync(filePath: string): Promise<Stats> {
+  return new Promise((resolve, reject) => {
+    stat(filePath, (err, stats) => {
+      if (err) reject(err);
+      else resolve(stats);
+    });
+  });
+}
+
+function readlinkAsync(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    readlink(filePath, (err, linkString) => {
+      if (err) reject(err);
+      else resolve(linkString);
+    });
+  });
+}
+
+function readdirAsync(
+  dirPath: string,
+  options: { withFileTypes: true }
+): Promise<Dirent[]> {
+  return new Promise((resolve, reject) => {
+    readdir(dirPath, options, (err, files) => {
+      if (err) reject(err);
+      else resolve(files);
+    });
+  });
+}
+
+function lstatAsync(filePath: string): Promise<Stats> {
+  return new Promise((resolve, reject) => {
+    lstat(filePath, (err, stats) => {
+      if (err) reject(err);
+      else resolve(stats);
+    });
+  });
+}
 
 const ACCESS_DEPS: EntryAccessDependencies = {
   normalizePath,
@@ -120,7 +165,7 @@ async function getSymlinkTarget(
 ): Promise<string | undefined> {
   assertNotAborted(signal);
   try {
-    return await withAbort(fsp.readlink(pathToRead), signal);
+    return await withAbort(readlinkAsync(pathToRead), signal);
   } catch (error) {
     if (isAbortError(error)) throw error;
     return undefined;
@@ -139,7 +184,7 @@ export async function getFileInfo(
 
   assertAllowedFileAccess(requestedPath, resolvedPath);
 
-  const { base: name, ext: rawExt } = path.parse(requestedPath);
+  const { base: name, ext: rawExt } = parse(requestedPath);
   const ext = rawExt.toLowerCase();
   const includeMimeType = options.includeMimeType !== false;
   const mimeType =
@@ -149,7 +194,7 @@ export async function getFileInfo(
     ? await getSymlinkTarget(requestedPath, signal)
     : undefined;
 
-  const stats = await withAbort(fsp.stat(resolvedPath), signal);
+  const stats = await withAbort(statAsync(resolvedPath), signal);
 
   return buildFileInfoResult(
     name,
@@ -352,14 +397,14 @@ async function* readDirectoryEntries(
   signal: AbortSignal
 ): AsyncGenerator<EntryCandidate> {
   const dirents = await withAbort(
-    fsp.readdir(basePath, { withFileTypes: true }),
+    readdirAsync(basePath, { withFileTypes: true }),
     signal
   );
 
   if (!needsStats) {
     for (const dirent of dirents) {
       if (!normalized.includeHidden && isHidden(dirent.name)) continue;
-      yield { path: path.join(basePath, dirent.name), dirent };
+      yield { path: join(basePath, dirent.name), dirent };
     }
     return;
   }
@@ -368,7 +413,7 @@ async function* readDirectoryEntries(
     [];
   for (const dirent of dirents) {
     if (!normalized.includeHidden && isHidden(dirent.name)) continue;
-    filtered.push({ dirent, entryPath: path.join(basePath, dirent.name) });
+    filtered.push({ dirent, entryPath: join(basePath, dirent.name) });
   }
 
   const { results, errors } = await processInParallel(
@@ -376,7 +421,7 @@ async function* readDirectoryEntries(
     async ({ entryPath, dirent }): Promise<EntryCandidate> => ({
       path: entryPath,
       dirent,
-      stats: await withAbort(fsp.lstat(entryPath), signal),
+      stats: await withAbort(lstatAsync(entryPath), signal),
     }),
     PARALLEL_CONCURRENCY,
     signal
@@ -426,7 +471,7 @@ function shouldUseFastPath(
 }
 
 function resolveRelativePath(basePath: string, entryPath: string): string {
-  return path.relative(basePath, entryPath) || path.basename(entryPath);
+  return relative(basePath, entryPath) || basename(entryPath);
 }
 
 async function resolveSymlinkTarget(
@@ -437,7 +482,7 @@ async function resolveSymlinkTarget(
   if (entryType !== 'symlink' || !includeSymlinkTargets) {
     return undefined;
   }
-  return fsp.readlink(entryPath).catch(() => undefined);
+  return readlinkAsync(entryPath).catch(() => undefined);
 }
 
 function updateTotals(entryType: EntryType, totals: EntryTotals): void {
@@ -457,7 +502,7 @@ function buildDirectoryEntry(
   const modified = needsStats ? entry.stats?.mtime : undefined;
 
   return {
-    name: path.basename(entry.path),
+    name: basename(entry.path),
     path: entry.path,
     relativePath: resolveRelativePath(basePath, entry.path),
     type: entryType,
@@ -829,7 +874,7 @@ async function resolveTreeEntry(
   }
 
   const relativePosix = toPosixPath(resolveRelativePath(root, entry.path));
-  const name = path.basename(entry.path);
+  const name = basename(entry.path);
   return { type, relativePosix, name };
 }
 
@@ -960,7 +1005,7 @@ export async function treeDirectory(
         : await loadRootGitignore(root, signal);
 
       const rootNode: TreeEntry = {
-        name: path.basename(root) || root,
+        name: basename(root) || root,
         type: 'directory',
         relativePath: '.',
         children: [],
@@ -1240,7 +1285,7 @@ async function validateFile(
   signal?: AbortSignal
 ): Promise<ValidatedFileInfo> {
   const validPath = await validateExistingPath(filePath, signal);
-  const stats = await withAbort(fsp.stat(validPath), signal);
+  const stats = await withAbort(statAsync(validPath), signal);
   return { filePath, index, validPath, stats };
 }
 
