@@ -95,7 +95,7 @@ async function handleMoveError(
             src,
             new McpError(
               ErrorCode.E_UNKNOWN,
-              `Cross-device move partially failed: data exists at both '${validSource}' and '${targetPath}'. ${formatUnknownErrorMessage(deleteError)}`,
+              `Cross-device move partially failed: data exists at both source and destination. ${formatUnknownErrorMessage(deleteError)}`,
               src
             )
           )
@@ -151,7 +151,7 @@ async function processSingleMove(
         src,
         new McpError(
           ErrorCode.E_INVALID_INPUT,
-          `Cannot move directory '${src}' into its own subdirectory '${targetPath}'`,
+          'Cannot move a directory into its own subdirectory',
           src
         ),
         ErrorCode.E_INVALID_INPUT

@@ -56,7 +56,7 @@ function assertPatchTargetSizeWithinLimit(
   if (size <= maxFileSize) return;
   throw new McpError(
     ErrorCode.E_TOO_LARGE,
-    `File too large for patch: ${filePath} (${size} bytes > ${maxFileSize} bytes).`,
+    `File too large for patch (${size} bytes > ${maxFileSize} bytes).`,
     filePath,
     { size, maxFileSize }
   );

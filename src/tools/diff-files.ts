@@ -69,7 +69,7 @@ function assertDiffFileSizeWithinLimit(
   if (size <= maxFileSize) return;
   throw new McpError(
     ErrorCode.E_TOO_LARGE,
-    `File too large for diff: ${filePath} (${size} bytes > ${maxFileSize} bytes).`,
+    `File too large for diff (${size} bytes > ${maxFileSize} bytes).`,
     filePath,
     { size, maxFileSize }
   );

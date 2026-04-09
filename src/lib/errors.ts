@@ -271,30 +271,24 @@ export class McpError extends Error {
 }
 
 const ERROR_SUGGESTIONS: Readonly<Record<ErrorCode, string>> = {
-  [ErrorCode.E_ACCESS_DENIED]:
-    'Check that the path is within an allowed directory. Use roots to see available workspace roots.',
-  [ErrorCode.E_NOT_FOUND]:
-    'Verify the path exists. Use ls to explore available files and directories.',
-  [ErrorCode.E_NOT_FILE]:
-    'The path points to a directory or other non-file. Use ls to explore its contents.',
-  [ErrorCode.E_NOT_DIRECTORY]:
-    'The path points to a file, not a directory. Use read to read file contents.',
+  [ErrorCode.E_ACCESS_DENIED]: 'Use roots to see available workspace roots.',
+  [ErrorCode.E_NOT_FOUND]: 'Use ls to explore available files and directories.',
+  [ErrorCode.E_NOT_FILE]: 'Use ls to explore the directory contents.',
+  [ErrorCode.E_NOT_DIRECTORY]: 'Use read to read file contents.',
   [ErrorCode.E_TOO_LARGE]:
-    'The file exceeds the size limit. Use head to read a partial preview, or narrow the scope of what you read.',
+    'Use head to read a partial preview, or narrow the scope.',
   [ErrorCode.E_TIMEOUT]:
-    'The operation timed out. Try a smaller scope (narrower path), fewer results (maxResults), or search fewer files.',
+    'Try a smaller scope, fewer results (maxResults), or search fewer files.',
   [ErrorCode.E_CANCELLED]:
-    'The operation was cancelled. This is not an error — no retry is needed unless you want to re-run the operation.',
-  [ErrorCode.E_INVALID_PATTERN]:
-    'The glob or regex pattern is invalid. Check syntax and escape special characters.',
+    'No retry needed unless you want to re-run the operation.',
+  [ErrorCode.E_INVALID_PATTERN]: 'Check syntax and escape special characters.',
   [ErrorCode.E_INVALID_INPUT]:
-    'One or more input parameters are invalid. Check the tool documentation for correct usage.',
+    'Check the tool documentation for correct usage.',
   [ErrorCode.E_PERMISSION_DENIED]:
-    'Permission denied by the operating system. Check file permissions.',
+    'Check file permissions on the operating system.',
   [ErrorCode.E_SYMLINK_NOT_ALLOWED]:
-    'Symbolic links that escape allowed directories are not permitted for security reasons.',
-  [ErrorCode.E_UNKNOWN]:
-    'An unexpected error occurred. Check the error message for details.',
+    'Symlinks escaping allowed directories are blocked for security.',
+  [ErrorCode.E_UNKNOWN]: 'Check the error message for details.',
 } as const;
 
 const NOT_FOUND_PATTERNS = [
@@ -393,7 +387,7 @@ function mergeErrorDetails(
 export function formatDetailedError(error: DetailedError): string {
   const lines: string[] = [`Error [${error.code}]: ${error.message}`];
 
-  if (error.path) {
+  if (error.path && !error.message.includes(error.path)) {
     lines.push(`Path: ${error.path}`);
   }
 

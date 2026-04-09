@@ -275,7 +275,7 @@ async function loadEditableFile(
   if (stats.size > MAX_TEXT_FILE_SIZE) {
     throw new McpError(
       ErrorCode.E_TOO_LARGE,
-      `File too large for edit: ${requestedPath} (${stats.size} bytes > ${MAX_TEXT_FILE_SIZE} bytes)`,
+      `File too large for edit (${stats.size} bytes > ${MAX_TEXT_FILE_SIZE} bytes)`,
       requestedPath,
       { size: stats.size, maxFileSize: MAX_TEXT_FILE_SIZE }
     );

@@ -173,7 +173,7 @@ export function assertAllowedFileAccess(
   );
   throw new McpError(
     ErrorCode.E_ACCESS_DENIED,
-    `Access denied: sensitive file blocked by policy (${requestedPath}). ` +
+    'Sensitive file blocked by policy. ' +
       'Set FS_CONTEXT_ALLOW_SENSITIVE=1 or use FS_CONTEXT_ALLOWLIST to override.',
     requestedPath
   );
@@ -596,26 +596,23 @@ const NODE_ERROR_MAP: Readonly<
 > = {
   ENOENT: {
     code: ErrorCode.E_NOT_FOUND,
-    message: (requestedPath) => `Path does not exist: ${requestedPath}`,
+    message: () => 'Path does not exist',
   },
   EACCES: {
     code: ErrorCode.E_PERMISSION_DENIED,
-    message: (requestedPath) =>
-      `Permission denied accessing path: ${requestedPath}`,
+    message: () => 'Permission denied',
   },
   EPERM: {
     code: ErrorCode.E_PERMISSION_DENIED,
-    message: (requestedPath) =>
-      `Permission denied accessing path: ${requestedPath}`,
+    message: () => 'Permission denied',
   },
   ELOOP: {
     code: ErrorCode.E_SYMLINK_NOT_ALLOWED,
-    message: (requestedPath) =>
-      `Too many symbolic links in path (possible circular reference): ${requestedPath}`,
+    message: () => 'Too many symbolic links (possible circular reference)',
   },
   ENAMETOOLONG: {
     code: ErrorCode.E_INVALID_INPUT,
-    message: (requestedPath) => `Path name too long: ${requestedPath}`,
+    message: () => 'Path name too long',
   },
 } as const;
 
@@ -649,7 +646,7 @@ function toMcpError(requestedPath: string, error: unknown): McpError {
 
   return new McpError(
     ErrorCode.E_NOT_FOUND,
-    `Path is not accessible: ${requestedPath}`,
+    'Path is not accessible',
     requestedPath,
     { originalCode: code, originalMessage },
     error
@@ -664,7 +661,7 @@ function toAccessDeniedWithHint(
   const suggestion = buildAllowedDirectoriesHint();
   return new McpError(
     ErrorCode.E_ACCESS_DENIED,
-    `Access denied: Path '${requestedPath}' is outside allowed directories.\n${suggestion}`,
+    `Outside allowed directories. ${suggestion}`,
     requestedPath,
     { resolvedPath, normalizedResolvedPath: normalizedResolved }
   );
@@ -695,7 +692,7 @@ function ensureWithinAllowedDirectories(options: {
     Logger.warn('Access denied: no allowed directories configured');
     throw new McpError(
       ErrorCode.E_ACCESS_DENIED,
-      'Access denied: No allowed directories configured. Use --allow-cwd or configure roots via the MCP Roots protocol.',
+      'No allowed directories configured. Use --allow-cwd or configure roots via the MCP Roots protocol.',
       requestedPath,
       details
     );
@@ -706,7 +703,7 @@ function ensureWithinAllowedDirectories(options: {
   );
   throw new McpError(
     ErrorCode.E_ACCESS_DENIED,
-    `Access denied: Path '${requestedPath}' is outside allowed directories`,
+    'Outside allowed directories',
     requestedPath,
     details
   );
@@ -859,7 +856,7 @@ export async function validateExistingDirectory(
   if (!stats.isDirectory()) {
     throw new McpError(
       ErrorCode.E_NOT_DIRECTORY,
-      `Not a directory: ${requestedPath}`,
+      'Not a directory',
       requestedPath
     );
   }

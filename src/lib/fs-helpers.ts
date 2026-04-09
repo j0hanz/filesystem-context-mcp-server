@@ -369,7 +369,7 @@ function createTooLargeError(
 ): McpError {
   return new McpError(
     ErrorCode.E_TOO_LARGE,
-    `File exceeds maximum size (${bytesRead} > ${maxSize}): ${requestedPath}`,
+    `File exceeds maximum size (${bytesRead} > ${maxSize} bytes)`,
     requestedPath,
     { size: bytesRead, maxSize }
   );
@@ -630,7 +630,7 @@ async function assertNotBinary(
   if (!isBinary) return;
   throw new McpError(
     ErrorCode.E_INVALID_INPUT,
-    `Binary file detected: ${filePath}. Refusing to read as text.`,
+    'Binary file detected. Refusing to read as text.',
     filePath
   );
 }
@@ -643,7 +643,7 @@ function assertSizeWithinLimit(
   if (size <= maxSize) return;
   throw new McpError(
     ErrorCode.E_TOO_LARGE,
-    `File too large: ${size} bytes (max: ${maxSize} bytes). Use head parameter to preview the first N lines.`,
+    `File too large (${size} bytes, max: ${maxSize} bytes). Use head to preview the first N lines.`,
     filePath,
     { size, maxSize }
   );
@@ -789,11 +789,7 @@ async function readByMode(context: ReadModeContext): Promise<ReadFileResult> {
 
 function assertFileStats(filePath: string, stats: Stats): void {
   if (!stats.isFile()) {
-    throw new McpError(
-      ErrorCode.E_NOT_FILE,
-      `Not a file: ${filePath}`,
-      filePath
-    );
+    throw new McpError(ErrorCode.E_NOT_FILE, 'Not a regular file', filePath);
   }
 }
 

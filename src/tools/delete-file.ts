@@ -48,7 +48,7 @@ async function handleDeleteFile(
   if (isAllowedDirectoryRoot(validPath)) {
     throw new McpError(
       ErrorCode.E_ACCESS_DENIED,
-      `Deleting a workspace root directory is not allowed: ${args.path}`
+      'Deleting a workspace root directory is not allowed'
     );
   }
 
@@ -118,7 +118,7 @@ export function registerDeleteFileTool(
           if (error.code === 'ENOTEMPTY') {
             return buildToolErrorResponse(
               new Error(
-                `Directory is not empty: ${args.path}. Use recursive: true to delete non-empty directories.`
+                'Directory is not empty. Use recursive: true to delete non-empty directories.'
               ),
               ErrorCode.E_INVALID_INPUT,
               args.path
@@ -127,7 +127,7 @@ export function registerDeleteFileTool(
           if (error.code === 'EISDIR') {
             return buildToolErrorResponse(
               new Error(
-                `Path is a directory: ${args.path}. Use recursive: true to delete directories.`
+                'Path is a directory. Use recursive: true to delete directories.'
               ),
               ErrorCode.E_INVALID_INPUT,
               args.path
@@ -136,7 +136,7 @@ export function registerDeleteFileTool(
           if (error.code === 'EEXIST') {
             return buildToolErrorResponse(
               new Error(
-                `Directory is not empty: ${args.path}. Use recursive: true to delete non-empty directories.`
+                'Directory is not empty. Use recursive: true to delete non-empty directories.'
               ),
               ErrorCode.E_INVALID_INPUT,
               args.path
