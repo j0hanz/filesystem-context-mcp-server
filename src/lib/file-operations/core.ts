@@ -1,5 +1,5 @@
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { join, relative } from 'node:path';
 
 import ignore, { type Ignore } from 'ignore';
 
@@ -78,8 +78,10 @@ export function stableSortByDerivedString<T>(
   derive: (item: T) => string,
   tieBreak: (left: T, right: T) => number
 ): void {
-  const decorated: { item: T; derived: string; index: number }[] = [];
-  for (let index = 0; index < items.length; index += 1) {
+  const decorated = [];
+  const len = items.length;
+
+  for (let index = 0; index < len; index++) {
     const item = items[index];
     if (item === undefined) continue;
     decorated.push({
@@ -99,7 +101,8 @@ export function stableSortByDerivedString<T>(
     return left.index - right.index;
   });
 
-  for (let index = 0; index < decorated.length; index += 1) {
+  const decoratedLen = decorated.length;
+  for (let index = 0; index < decoratedLen; index++) {
     const entry = decorated[index];
     if (!entry) continue;
     items[index] = entry.item;
@@ -122,14 +125,12 @@ export function applyIndexedErrors<T>(options: {
   resolveIndex: (failureIndex: number) => number | undefined;
   buildValue: (resolvedIndex: number, error: Error) => T;
 }): void {
-  for (const failure of options.errors) {
-    const resolvedIndex = options.resolveIndex(failure.index);
+  const { output, errors, resolveIndex, buildValue } = options;
+  for (const failure of errors) {
+    const resolvedIndex = resolveIndex(failure.index);
     if (resolvedIndex === undefined) continue;
-    if (resolvedIndex < 0 || resolvedIndex >= options.output.length) continue;
-    options.output[resolvedIndex] = options.buildValue(
-      resolvedIndex,
-      failure.error
-    );
+    if (resolvedIndex < 0 || resolvedIndex >= output.length) continue;
+    output[resolvedIndex] = buildValue(resolvedIndex, failure.error);
   }
 }
 
@@ -174,8 +175,9 @@ export async function isEntryAccessibleByType(
 
 function parseGitignoreLines(contents: string): string[] {
   const lines: string[] = [];
-  for (const line of contents.split(/\r?\n/u)) {
-    const trimmed = line.trim();
+  const parts = contents.split(/\r?\n/u);
+  for (const part of parts) {
+    const trimmed = part.trim();
     if (trimmed.length > 0) {
       lines.push(trimmed);
     }
@@ -187,25 +189,22 @@ export async function loadRootGitignore(
   root: string,
   signal?: AbortSignal
 ): Promise<Ignore | null> {
-  const gitignorePath = path.join(root, '.gitignore');
+  const gitignorePath = join(root, '.gitignore');
 
-  let contents: string;
   try {
-    contents = await fs.readFile(gitignorePath, {
+    const contents = await readFile(gitignorePath, {
       encoding: 'utf-8',
       signal,
     });
+    const matcher = ignore();
+    matcher.add(parseGitignoreLines(contents));
+    return matcher;
   } catch (error) {
     if (isNodeError(error) && error.code === 'ENOENT') {
       return null;
     }
     throw error;
   }
-
-  const matcher = ignore();
-  matcher.add(parseGitignoreLines(contents));
-
-  return matcher;
 }
 
 export function isIgnoredByGitignore(
@@ -214,11 +213,11 @@ export function isIgnoredByGitignore(
   absolutePath: string,
   options: { isDirectory?: boolean; relativePath?: string } = {}
 ): boolean {
-  let relative = options.relativePath;
-  relative ??= path.relative(root, absolutePath);
-  if (relative.length === 0) return false;
+  let { relativePath } = options;
+  relativePath ??= relative(root, absolutePath);
+  if (relativePath.length === 0) return false;
 
-  const normalized = toPosixPath(relative);
+  const normalized = toPosixPath(relativePath);
   if (options.isDirectory) {
     return matcher.ignores(
       normalized.endsWith('/') ? normalized : `${normalized}/`
