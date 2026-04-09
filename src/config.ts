@@ -91,7 +91,7 @@ export interface SearchContentResult {
 export interface MultipleFileInfoResult {
   readonly path: string;
   readonly info?: FileInfo;
-  readonly error?: string;
+  readonly error?: Error;
 }
 
 export interface GetMultipleFileInfoResult {

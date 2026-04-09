@@ -250,7 +250,7 @@ export async function getMultipleFileInfo(
         : undefined,
     buildValue: (resolvedIndex, error) => ({
       path: paths[resolvedIndex] ?? UNKNOWN_PATH,
-      error: error.message,
+      error,
     }),
   });
 
@@ -1057,7 +1057,7 @@ interface ReadMultipleResult {
   endLine?: number;
   linesRead?: number;
   hasMoreLines?: boolean;
-  error?: string;
+  error?: Error;
 }
 
 interface NormalizedReadMultipleOptions {
@@ -1468,7 +1468,9 @@ function applySkippedBudget(
     if (!filePath) continue;
     output[index] = {
       path: filePath,
-      error: `Skipped: combined estimated read would exceed maxTotalSize (${maxTotalSize} bytes)`,
+      error: new Error(
+        `Skipped: combined estimated read would exceed maxTotalSize (${maxTotalSize} bytes)`
+      ),
     };
   }
 }
@@ -1510,7 +1512,7 @@ export async function readMultipleFiles(
       resolveErrorOriginalIndex(failureIndex, filesToProcess, filePaths.length),
     buildValue: (resolvedIndex, error) => ({
       path: filePaths[resolvedIndex] ?? UNKNOWN_PATH,
-      error: error.message,
+      error,
     }),
   });
   applySkippedBudget(output, skippedBudget, filePaths, normalized.maxTotalSize);
