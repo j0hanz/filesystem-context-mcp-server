@@ -24,13 +24,16 @@ function buildCrossToolDataFlow(): string {
 function buildCatalogGuide(): string {
   const taskCapable = getTaskCapableToolNames();
 
-  return `<tool_selection_guide>
+  return `# Tool Selection Guide
+
 ## Primitive Routing
 
-- \`tools\`: model-controlled operations that inspect or mutate the allowed filesystem.
-- \`resources\`: application-driven context such as \`internal://instructions\`, \`internal://tool-info/{name}\`, and cached \`filesystem-mcp://result/{id}\` output.
-- \`prompts\`: user-controlled workflow templates for help, comparison, and guided inspection.
-- \`completion\`: argument suggestions for prompts and resource templates; not a discovery mechanism.
+| Primitive | Purpose |
+|-----------|---------|
+| \`tools\` | Model-controlled operations that inspect or mutate the filesystem within allowed roots. |
+| \`resources\` | Application-driven context: \`internal://instructions\`, \`internal://tool-info/{name}\`, cached \`filesystem-mcp://result/{id}\`. |
+| \`prompts\` | User-controlled workflow templates for help, comparison, and guided inspection. |
+| \`completion\` | Argument suggestions for prompts and resource templates (not a discovery mechanism). |
 
 ## Cross-Tool Data Flow
 
@@ -40,37 +43,40 @@ ${buildCrossToolDataFlow()}
 
 ## Result Contract
 
-- Successful tools return \`content\` and \`structuredContent\` (when \`outputSchema\` is declared).
-- When \`isError: true\`, \`structuredContent\` is omitted — parse the \`content\` text instead.
-- Tool/business failures return \`isError: true\` inside the tool result, not a JSON-RPC protocol error.
-- When a tool returns \`resourceUri\` or a \`resource_link\`, follow it with \`resources/read\` immediately.
+- Success: returns both \`content\` (JSON text) and \`structuredContent\` (when \`outputSchema\` is declared).
+- Error: \`isError: true\` in tool result, \`structuredContent\` omitted. Parse \`content\` text for error details.
+- Tool/business failures use \`isError: true\` inside the tool result, not JSON-RPC protocol errors.
+- When a response includes \`resourceUri\` or \`resource_link\`, follow up with \`resources/read\` immediately.
 
-## Task Mode Routing
+## Task Mode
 
-- Inline first for fast operations.
-- Add task mode only when the caller needs durable polling, deferred retrieval, or cancellation after the initial response.
-- Task-capable tools: ${taskCapable.length > 0 ? taskCapable.map((name) => `\`${name}\``).join(', ') : 'none'}.
+Use inline execution by default. Add task mode only when the caller needs durable polling, deferred retrieval, or cancellation.
+
+Task-capable tools: ${taskCapable.length > 0 ? taskCapable.map((name) => `\`${name}\``).join(', ') : 'none'}.
 
 ## Search Strategy
 
-- \`find\`: glob file discovery.
-- \`grep\`: text content search.
-- \`search_and_replace\`: replacement only, not discovery.
+| Goal | Tool |
+|------|------|
+| Find files by name/glob | \`find\` |
+| Search file contents | \`grep\` |
+| Replace across files | \`search_and_replace\` (not for discovery) |
 
 ## Write Strategy
 
-1. **Single file, targeted change?** -> \`edit\` (match exact text, replace first occurrence)
-2. **Single file, full rewrite?** -> \`write\` (overwrite entire content)
-3. **Multiple files, same change?** -> \`search_and_replace\` (glob + pattern across files)
-4. **Not sure what to change?** -> \`grep\` first, then decide
+| Scenario | Tool |
+|----------|------|
+| Single file, targeted edit | \`edit\` — match exact text, replace first occurrence |
+| Single file, full rewrite | \`write\` — overwrite entire content |
+| Multiple files, same change | \`search_and_replace\` — glob + pattern across files |
+| Unsure what to change | \`grep\` first, then decide |
 
-## Patch Management
+## Patch Strategy
 
-- Generate patches with \`diff_files\` first.
-- Validate with \`apply_patch(dryRun:true)\` before writing.
-- \`apply_patch\` accepts unified diffs - single-file or multi-file.
-- Multi-file: \`path\` is base directory; each file is best-effort with per-file \`results[]\`.
-</tool_selection_guide>
+1. Generate with \`diff_files\`.
+2. Validate with \`apply_patch(dryRun: true)\` before writing.
+3. Apply with \`apply_patch\`.
+4. Multi-file patches: set \`path\` to the base directory; results are per-file.
 `;
 }
 

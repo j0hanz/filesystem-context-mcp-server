@@ -110,15 +110,15 @@ export function buildCoreContextPack(): string {
     const annotations = e.annotations ? ` ${e.annotations.join(' ')}` : '';
     return `| \`${e.name}\` | ${e.description}${annotations} |`;
   });
-  return `<core_context>\n| Tool | Purpose |\n|------|---------|\n${rows.join('\n')}\n</core_context>`;
+  return `## Tool Summary\n\n| Tool | Purpose |\n|------|---------|\n${rows.join('\n')}`;
 }
 
 export function getSharedConstraints(): string[] {
   return [
-    'Use allowed roots only (from CLI negotiation).',
-    'Sensitive paths are denylisted by default.',
-    `Limits enforced: max file size ${Math.floor(MAX_TEXT_FILE_SIZE / 1024 / 1024)}MB; search caps ${MAX_SEARCH_RESULTS} files, ${DEFAULT_SEARCH_CONTENT_RESULTS} content matches.`,
-    'If response includes `resourceUri`, call `resources/read` immediately — cached results expire on restart.',
+    'Operate within allowed roots only (negotiated at startup via CLI).',
+    'Sensitive file paths (e.g. .env, *.pem, *id_rsa*) are denied by default.',
+    `Enforced limits: max file size ${Math.floor(MAX_TEXT_FILE_SIZE / 1024 / 1024)} MB, file search cap ${MAX_SEARCH_RESULTS} results, content search cap ${DEFAULT_SEARCH_CONTENT_RESULTS} matches.`,
+    'When a response includes `resourceUri`, call `resources/read` immediately — cached results expire on server restart.',
   ];
 }
 
@@ -186,12 +186,20 @@ function summarizeSchemaType(schema: JsonSchemaObject): string {
   return 'unknown';
 }
 
+function formatFieldLabel(label: string): string {
+  return label
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
 function buildSchemaFieldLines(
   label: string,
   schema: ToolContract['inputSchema'] | ToolContract['outputSchema']
 ): string[] {
+  const heading = `**${formatFieldLabel(label)}:**`;
   if (!schema) {
-    return [`<${label}>`, '- none', `</${label}>`];
+    return [heading, '- none'];
   }
 
   const io = label === 'input_fields' ? 'input' : 'output';
@@ -199,7 +207,7 @@ function buildSchemaFieldLines(
   const properties = jsonSchema.properties ?? {};
   const required = new Set(jsonSchema.required ?? []);
   const fieldNames = Object.keys(properties);
-  const lines = [`<${label}>`];
+  const lines = [heading];
 
   if (
     typeof jsonSchema.description === 'string' &&
@@ -215,7 +223,7 @@ function buildSchemaFieldLines(
   }
 
   if (fieldNames.length === 0) {
-    lines.push('- object with no fields', `</${label}>`);
+    lines.push('- object with no fields');
     return lines;
   }
 
@@ -230,8 +238,7 @@ function buildSchemaFieldLines(
           ? fieldSchema.description
           : 'No description.';
       return `- ${fieldName} (${type}, ${requiredLabel}): ${description}`;
-    }),
-    `</${label}>`
+    })
   );
 
   return lines;
@@ -253,15 +260,14 @@ export function buildToolInfo(name: string): string | undefined {
     annotationLines.push('- openWorldHint: true');
 
   const lines: string[] = [
-    `<tool_info name="${entry.name}">`,
-    `## ${entry.name}`,
+    `---`,
+    `# ${entry.name}`,
     '',
-    `Title: ${entry.title}`,
-    `Description: ${entry.description}`,
+    `**Title:** ${entry.title}`,
+    `**Description:** ${entry.description}`,
     '',
-    '<execution>',
+    '**Execution:**',
     `- taskSupport: ${formatTaskSupportLabel(contract.taskSupport)}`,
-    '</execution>',
     '',
     ...buildSchemaFieldLines('input_fields', contract.inputSchema),
     '',
@@ -269,25 +275,23 @@ export function buildToolInfo(name: string): string | undefined {
   ];
 
   if (annotationLines.length > 0) {
-    lines.push('', '<annotations>', ...annotationLines, '</annotations>');
+    lines.push('', '**Behavior:**', ...annotationLines);
   }
 
   if (entry.nuances && entry.nuances.length > 0) {
-    lines.push('', '<nuances>');
+    lines.push('', '**Usage Notes:**');
     for (const nuance of entry.nuances) {
       lines.push(`- ${nuance}`);
     }
-    lines.push('</nuances>');
   }
 
   if (entry.gotchas && entry.gotchas.length > 0) {
-    lines.push('', '<gotchas>');
+    lines.push('', '**Warnings:**');
     for (const gotcha of entry.gotchas) {
       lines.push(`- ${gotcha}`);
     }
-    lines.push('</gotchas>');
   }
 
-  lines.push('</tool_info>');
+  lines.push('---');
   return lines.join('\n');
 }

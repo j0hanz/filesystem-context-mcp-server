@@ -29,7 +29,7 @@ describe('generated LLM resources', () => {
     assert.match(catalog, /## Primitive Routing/u);
     assert.match(
       catalog,
-      /Successful tools return `content` and `structuredContent` \(when `outputSchema` is declared\)\./u
+      /Success: returns both `content` \(JSON text\) and `structuredContent` \(when `outputSchema` is declared\)\./u
     );
     assert.match(catalog, /Task-capable tools: .*`grep`/u);
   });
@@ -38,7 +38,7 @@ describe('generated LLM resources', () => {
     const toolInfo = buildToolInfo('read');
 
     assert.ok(toolInfo, 'Expected tool info for read');
-    assert.match(toolInfo, /<input_fields>/u);
+    assert.match(toolInfo, /\*\*Input Fields:\*\*/u);
     assert.match(toolInfo, /- Schema constraints: Use one read mode only:/u);
     assert.match(
       toolInfo,

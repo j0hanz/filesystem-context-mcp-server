@@ -40,56 +40,64 @@ function buildToolsOverview(): string {
 }
 
 function buildInstructionsHeader(): string {
-  return `<role>
-Filesystem agent. Scope: allowed roots only. Discover paths before acting — never guess.
-</role>
+  return `## Role
 
-<tools_overview>
+Secure filesystem agent. Operate strictly within allowed roots. Resolve paths before acting — never assume.
+
+## Tools Overview
+
 | Category | Tools |
 |----------|-------|
 ${buildToolsOverview()}
-</tools_overview>
 
-<resources>
-- \`internal://instructions\`: Full usage reference.
-- \`internal://tool-catalog\`: Tool routing and data flow.
-- \`internal://workflows\`: Standard execution sequences.
-- \`internal://tool-info/{name}\`: Per-tool nuances (e.g. \`internal://tool-info/read\`).
-- \`filesystem-mcp://result/{id}\`: Cached large output — call \`resources/read\` immediately when \`resourceUri\` is returned.
-- \`filesystem-mcp://metrics\`: Per-tool runtime metrics.
-</resources>
+## Resources
 
-<task_protocol>
-Task execution: Check \`execution.taskSupport\` per tool — \`forbidden\` (default): never send \`task\`; \`optional\`: send \`task\` only when durable polling or deferred results are needed; \`required\`: always send \`task\`.
-Task results: Poll via \`tasks/get\`, then retrieve the final payload via \`tasks/result\`.
-Progress: Pass \`_meta.progressToken\` in \`tools/call\` to receive \`notifications/progress\`.
-</task_protocol>
+| URI | Purpose |
+|-----|---------|
+| \`internal://instructions\` | Full usage reference (this document) |
+| \`internal://tool-catalog\` | Tool routing, data flow, and selection guide |
+| \`internal://workflows\` | Step-by-step execution sequences |
+| \`internal://tool-info/{name}\` | Per-tool contract (e.g. \`internal://tool-info/read\`) |
+| \`filesystem-mcp://result/{id}\` | Cached large output — fetch via \`resources/read\` immediately |
+| \`filesystem-mcp://metrics\` | Per-tool call count, error rate, and avg duration |
+
+## Task Protocol
+
+- Check \`execution.taskSupport\` before sending task metadata.
+  - \`forbidden\` (default): Do not send \`task\`.
+  - \`optional\`: Send \`task\` only when durable polling or deferred retrieval is needed.
+  - \`required\`: Always send \`task\`.
+- Poll status via \`tasks/get\`, retrieve final payload via \`tasks/result\`.
+- Pass \`_meta.progressToken\` in \`tools/call\` to receive \`notifications/progress\`.
 `;
 }
 
-const INSTRUCTIONS_FOOTER = `<constraints>
+const INSTRUCTIONS_FOOTER = `## Constraints
+
 ${getSharedConstraints()
   .map((c) => `- ${c}`)
   .join('\n')}
-</constraints>
 
-<error_handling>
-- \`E_ACCESS_DENIED\` => call \`roots\`, use an allowed path.
-- \`E_NOT_FOUND\` => call \`ls\` or \`find\`, verify spelling.
-- \`E_TOO_LARGE\` => use \`head\`, line ranges, or \`read_many\`.
-- \`E_TIMEOUT\` => reduce scope or result limits.
-</error_handling>
+## Error Recovery
+
+| Error Code | Action |
+|------------|--------|
+| \`E_ACCESS_DENIED\` | Call \`roots\` to list allowed directories, then retry with a valid path. |
+| \`E_NOT_FOUND\` | Call \`ls\` or \`find\` to verify the path exists and check spelling. |
+| \`E_TOO_LARGE\` | Use \`head\`/\`tail\`, line ranges, or split across \`read_many\`. |
+| \`E_TIMEOUT\` | Narrow scope: reduce depth, result limits, or file pattern. |
+| \`E_INVALID_INPUT\` | Re-read tool contract via \`internal://tool-info/{name}\`. |
 `;
 
 function formatToolSection(tool: ToolContract): string {
   const parts = [`### ${tool.name}\n${tool.description}`];
 
   if (tool.nuances && tool.nuances.length > 0) {
-    parts.push(...tool.nuances.map((n) => `- Nuance: ${n}`));
+    parts.push(...tool.nuances.map((n) => `- ${n}`));
   }
 
   if (tool.gotchas && tool.gotchas.length > 0) {
-    parts.push(...tool.gotchas.map((g) => `- Gotcha: ${g}`));
+    parts.push(...tool.gotchas.map((g) => `- ⚠ ${g}`));
   }
 
   return parts.join('\n');
@@ -103,9 +111,9 @@ export function buildServerInstructions(): string {
     '',
     buildToolCatalogDetailsOnly(),
     '',
-    '<tool_reference>',
+    '## Tool Reference',
+    '',
     toolSections,
-    '</tool_reference>',
     '',
     buildWorkflowGuide(),
     '',
