@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
+import { cp, mkdir, rename, rm, stat } from 'node:fs/promises';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 
 import type { z } from 'zod';
 
@@ -72,23 +72,20 @@ async function handleMoveError(
 ): Promise<void> {
   if (isNodeError(error) && error.code === 'EXDEV') {
     try {
-      await withAbort(
-        fs.cp(validSource, targetPath, { recursive: true }),
-        signal
-      );
+      await withAbort(cp(validSource, targetPath, { recursive: true }), signal);
     } catch (copyError) {
       failed.push(toMoveFailure(src, copyError));
       return;
     }
     try {
       await withAbort(
-        fs.rm(validSource, { recursive: true, force: true }),
+        rm(validSource, { recursive: true, force: true }),
         signal
       );
       movedSources.push(validSource);
     } catch (deleteError) {
       try {
-        await fs.rm(targetPath, { recursive: true, force: true });
+        await rm(targetPath, { recursive: true, force: true });
       } catch {
         failed.push(
           toMoveFailure(
@@ -136,16 +133,14 @@ async function processSingleMove(
   }
 
   const targetPath = destIsDirectory
-    ? path.join(validDest, path.basename(validSource))
+    ? join(validDest, basename(validSource))
     : validDest;
 
-  if (path.resolve(validSource) === path.resolve(targetPath)) {
+  if (resolve(validSource) === resolve(targetPath)) {
     return;
   }
 
-  if (
-    path.resolve(targetPath).startsWith(path.resolve(validSource) + path.sep)
-  ) {
+  if (resolve(targetPath).startsWith(resolve(validSource) + sep)) {
     failed.push(
       toMoveFailure(
         src,
@@ -161,7 +156,7 @@ async function processSingleMove(
   }
 
   try {
-    await withAbort(fs.rename(validSource, targetPath), signal);
+    await withAbort(rename(validSource, targetPath), signal);
     movedSources.push(validSource);
   } catch (error: unknown) {
     await handleMoveError(
@@ -178,7 +173,7 @@ async function processSingleMove(
 
 async function getDestinationStatus(validDest: string): Promise<boolean> {
   try {
-    const stats = await fs.stat(validDest);
+    const stats = await stat(validDest);
     return stats.isDirectory();
   } catch (error) {
     if (isNodeError(error) && error.code !== 'ENOENT') {
@@ -221,10 +216,7 @@ async function handleMoveFile(
   }
 
   if (!destIsDirectory) {
-    await withAbort(
-      fs.mkdir(path.dirname(validDest), { recursive: true }),
-      signal
-    );
+    await withAbort(mkdir(dirname(validDest), { recursive: true }), signal);
   }
 
   const movedSources: string[] = [];
@@ -299,17 +291,17 @@ export function registerMoveFileTool(
   const wrappedHandler = wrapToolHandler(handler, {
     guard: options.isInitialized,
     progressMessage: (args) => {
-      const dest = path.basename(args.destination);
+      const dest = basename(args.destination);
       if (args.source && !args.sources?.length) {
-        return `🛠 mv: ${path.basename(args.source)} → ${dest}`;
+        return `🛠 mv: ${basename(args.source)} → ${dest}`;
       }
       const count = (args.source ? 1 : 0) + (args.sources?.length ?? 0);
       return `🛠 mv: ${count} items → ${dest}`;
     },
     completionMessage: (args, result) => {
-      const dest = path.basename(args.destination);
+      const dest = basename(args.destination);
       if (args.source && !args.sources?.length) {
-        const src = path.basename(args.source);
+        const src = basename(args.source);
         if (result.isError) return `🛠 mv: ${src} → ${dest} • failed`;
         return `🛠 mv: ${src} → ${dest}`;
       }

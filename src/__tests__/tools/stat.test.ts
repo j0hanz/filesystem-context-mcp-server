@@ -1,9 +1,9 @@
 /**
  * Integration tests for stat and stat_many tools.
  */
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import assert from 'node:assert/strict';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import {
@@ -20,8 +20,8 @@ describe('stat tool', () => {
 
   before(async () => {
     env = await createTestEnv();
-    file = path.join(env.tmpDir, 'stat-test.txt');
-    await fs.writeFile(file, 'hello stat\n', 'utf8');
+    file = join(env.tmpDir, 'stat-test.txt');
+    await writeFile(file, 'hello stat\n', 'utf8');
   });
 
   after(async () => {
@@ -60,7 +60,7 @@ describe('stat tool', () => {
   it('returns NOT_FOUND for a missing path', async () => {
     const raw = await env.client.callTool({
       name: 'stat',
-      arguments: { path: path.join(env.tmpDir, 'does-not-exist.txt') },
+      arguments: { path: join(env.tmpDir, 'does-not-exist.txt') },
     });
     assertToolError(raw, 'NOT_FOUND');
   });
@@ -81,10 +81,10 @@ describe('stat_many tool', () => {
 
   before(async () => {
     env = await createTestEnv();
-    fileA = path.join(env.tmpDir, 'a.txt');
-    fileB = path.join(env.tmpDir, 'b.txt');
-    await fs.writeFile(fileA, 'file-a', 'utf8');
-    await fs.writeFile(fileB, 'file-b', 'utf8');
+    fileA = join(env.tmpDir, 'a.txt');
+    fileB = join(env.tmpDir, 'b.txt');
+    await writeFile(fileA, 'file-a', 'utf8');
+    await writeFile(fileB, 'file-b', 'utf8');
   });
 
   after(async () => {
@@ -110,7 +110,7 @@ describe('stat_many tool', () => {
   });
 
   it('includes per-path error for missing entries', async () => {
-    const missing = path.join(env.tmpDir, 'missing.txt');
+    const missing = join(env.tmpDir, 'missing.txt');
     const raw = await env.client.callTool({
       name: 'stat_many',
       arguments: { paths: [fileA, missing] },

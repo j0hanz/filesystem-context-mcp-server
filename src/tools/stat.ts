@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import * as path from 'node:path';
+import { basename } from 'node:path';
 
 import type { z } from 'zod';
 
@@ -91,9 +91,9 @@ export function registerGetFileInfoTool(
 
   const wrappedHandler = wrapToolHandler(handler, {
     guard: options.isInitialized,
-    progressMessage: (args) => `🕮 stat: ${path.basename(args.path)}`,
+    progressMessage: (args) => `🕮 stat: ${basename(args.path)}`,
     completionMessage: (args, result) => {
-      const name = path.basename(args.path);
+      const name = basename(args.path);
       if (result.isError) return `🕮 stat: ${name} • failed`;
       const sc = result.structuredContent;
       if (!sc.info) return `🕮 stat: ${name} • failed`;

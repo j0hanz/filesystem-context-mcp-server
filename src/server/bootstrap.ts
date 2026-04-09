@@ -10,10 +10,15 @@ import {
   SUPPORTED_PROTOCOL_VERSIONS,
 } from '@modelcontextprotocol/sdk/types.js';
 
-import * as fs from 'node:fs/promises';
-import * as http from 'node:http';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { channel } from 'node:diagnostics_channel';
+import { readFile } from 'node:fs/promises';
+import {
+  createServer as createHttpServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from 'node:http';
 
 import { DEFAULT_LOG_LEVEL, parseEnvInt } from '../lib/constants.js';
 import { formatUnknownErrorMessage } from '../lib/errors.js';
@@ -178,7 +183,7 @@ async function getLocalIconInfo(): Promise<IconInfo | undefined> {
   for (const candidate of candidates) {
     try {
       const iconPath = new URL(candidate, import.meta.url);
-      const buffer = await fs.readFile(iconPath);
+      const buffer = await readFile(iconPath);
       return {
         src: `data:${mime};base64,${buffer.toString('base64')}`,
         mimeType: mime,
@@ -302,7 +307,7 @@ class RequestBodyError extends Error {
   }
 }
 
-async function readRequestBody(req: http.IncomingMessage): Promise<unknown> {
+async function readRequestBody(req: IncomingMessage): Promise<unknown> {
   return new Promise<unknown>((resolve, reject) => {
     const chunks: Buffer[] = [];
     let totalBytes = 0;
@@ -398,7 +403,7 @@ async function createHttpSession(
 }
 
 function sendJsonRpcError(
-  res: http.ServerResponse,
+  res: ServerResponse,
   status: number,
   code: number,
   message: string
@@ -427,7 +432,7 @@ function isAllowedOrigin(origin: string | undefined): boolean {
   return LOCALHOST_ORIGIN_RE.test(origin);
 }
 
-function getSessionId(req: http.IncomingMessage): string | undefined {
+function getSessionId(req: IncomingMessage): string | undefined {
   const rawSessionId = req.headers['mcp-session-id'];
   return typeof rawSessionId === 'string' &&
     rawSessionId.length <= MAX_SESSION_ID_LENGTH
@@ -435,9 +440,7 @@ function getSessionId(req: http.IncomingMessage): string | undefined {
     : undefined;
 }
 
-function getProtocolVersionHeader(
-  req: http.IncomingMessage
-): string | undefined {
+function getProtocolVersionHeader(req: IncomingMessage): string | undefined {
   const rawProtocolVersion = req.headers['mcp-protocol-version'];
   return typeof rawProtocolVersion === 'string'
     ? rawProtocolVersion
@@ -451,8 +454,8 @@ function resolveNegotiatedProtocolVersion(requestedVersion: string): string {
 }
 
 function ensureSessionProtocolVersion(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
+  req: IncomingMessage,
+  res: ServerResponse,
   session: HttpSession
 ): boolean {
   const protocolVersion = getProtocolVersionHeader(req);
@@ -495,7 +498,7 @@ function isAuthorizedBearer(apiKey: string, authHeader: unknown): boolean {
   return timingSafeEqual(expectedHash, actualHash);
 }
 
-function writeUnauthorizedResponse(res: http.ServerResponse): void {
+function writeUnauthorizedResponse(res: ServerResponse): void {
   res.writeHead(401, {
     'Content-Type': 'application/json',
     'WWW-Authenticate': 'Bearer',
@@ -510,8 +513,8 @@ function writeUnauthorizedResponse(res: http.ServerResponse): void {
 }
 
 function ensureAuthorizedRequest(
-  req: http.IncomingMessage,
-  res: http.ServerResponse
+  req: IncomingMessage,
+  res: ServerResponse
 ): boolean {
   const apiKey = process.env['FILESYSTEM_MCP_API_KEY'];
   if (!apiKey) return true;
@@ -520,7 +523,7 @@ function ensureAuthorizedRequest(
   return false;
 }
 
-function discardRequestBody(req: http.IncomingMessage): void {
+function discardRequestBody(req: IncomingMessage): void {
   req.on('error', () => {
     // Best effort drain to avoid corrupting keep-alive pipelines.
   });
@@ -529,8 +532,8 @@ function discardRequestBody(req: http.IncomingMessage): void {
 
 async function handleSessionTransportRequest(
   session: HttpSession,
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
+  req: IncomingMessage,
+  res: ServerResponse,
   body?: unknown
 ): Promise<void> {
   const store = session.transport.sessionId
@@ -547,7 +550,7 @@ async function handleSessionTransportRequest(
 function getSessionOrRespondNotFound(
   sessions: Map<string, HttpSession>,
   sessionId: string,
-  res: http.ServerResponse
+  res: ServerResponse
 ): HttpSession | undefined {
   const session = sessions.get(sessionId);
   if (!session) {
@@ -578,14 +581,14 @@ function assertHttpBindingSecurity(host: string): void {
 export async function startHttpServer(
   port: number,
   options: ServerOptions
-): Promise<http.Server> {
+): Promise<Server> {
   const sessions = new Map<string, HttpSession>();
   const httpHost = process.env['FILESYSTEM_MCP_HTTP_HOST'] ?? '127.0.0.1';
   assertHttpBindingSecurity(httpHost);
 
   async function handlePostRequest(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
+    req: IncomingMessage,
+    res: ServerResponse,
     sessionId: string | undefined
   ): Promise<void> {
     if (sessionId) {
@@ -635,8 +638,8 @@ export async function startHttpServer(
   }
 
   async function handleGetDeleteRequest(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
+    req: IncomingMessage,
+    res: ServerResponse,
     sessionId: string | undefined
   ): Promise<void> {
     if (!sessionId) {
@@ -656,8 +659,8 @@ export async function startHttpServer(
   }
 
   async function handleMcpRequest(
-    req: http.IncomingMessage,
-    res: http.ServerResponse
+    req: IncomingMessage,
+    res: ServerResponse
   ): Promise<void> {
     const { method } = req;
     const sessionId = getSessionId(req);
@@ -721,8 +724,8 @@ export async function startHttpServer(
     }
   }
 
-  const httpServer = http.createServer(
-    (req: http.IncomingMessage, res: http.ServerResponse) => {
+  const httpServer = createHttpServer(
+    (req: IncomingMessage, res: ServerResponse) => {
       const urlPath = (req.url ?? '/').split('?')[0];
       if (urlPath === '/mcp') {
         handleMcpRequest(req, res).catch((err: unknown) => {
@@ -738,7 +741,7 @@ export async function startHttpServer(
     }
   );
 
-  return new Promise<http.Server>((resolve, reject) => {
+  return new Promise<Server>((resolve, reject) => {
     httpServer.once('error', reject);
     httpServer.listen(port, httpHost, () => {
       Logger.info(`MCP HTTP server listening on ${httpHost}:${port}`);

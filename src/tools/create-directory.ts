@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
+import { mkdir } from 'node:fs/promises';
+import { basename } from 'node:path';
 
 import type { z } from 'zod';
 
@@ -56,7 +56,7 @@ async function handleCreateDirectory(
   );
 
   await Promise.all(
-    validPaths.map((p) => withAbort(fs.mkdir(p, { recursive: true }), signal))
+    validPaths.map((p) => withAbort(mkdir(p, { recursive: true }), signal))
   );
 
   const createdPath = validPaths.length === 1 ? validPaths[0] : undefined;
@@ -98,14 +98,14 @@ export function registerCreateDirectoryTool(
     guard: options.isInitialized,
     progressMessage: (args) => {
       if (args.path && !args.paths?.length) {
-        return `🛠 mkdir: ${path.basename(args.path)}`;
+        return `🛠 mkdir: ${basename(args.path)}`;
       }
       const count = (args.path ? 1 : 0) + (args.paths?.length ?? 0);
       return `🛠 mkdir: ${count} directories`;
     },
     completionMessage: (args, result) => {
       if (args.path && !args.paths?.length) {
-        const name = path.basename(args.path);
+        const name = basename(args.path);
         if (result.isError) return `🛠 mkdir: ${name} • failed`;
         return `🛠 mkdir: ${name}`;
       }

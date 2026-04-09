@@ -1,8 +1,8 @@
-import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
 import type { Server } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 
 import { startHttpServer } from '../server/bootstrap.js';
@@ -53,7 +53,7 @@ describe('HTTP transport', () => {
     }
 
     if (tempDir) {
-      await fs.rm(tempDir, { recursive: true, force: true });
+      await rm(tempDir, { recursive: true, force: true });
       tempDir = undefined;
     }
 
@@ -62,7 +62,7 @@ describe('HTTP transport', () => {
   });
 
   it('accepts negotiated supported protocol versions after initialize', async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fsmcp-http-'));
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
     const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
     servers.push(server);
 
@@ -113,7 +113,7 @@ describe('HTTP transport', () => {
   });
 
   it('accepts the current protocol version (2025-11-25)', async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fsmcp-http-'));
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
     const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
     servers.push(server);
 
@@ -164,7 +164,7 @@ describe('HTTP transport', () => {
   });
 
   it('rejects post-initialize HTTP requests without mcp-protocol-version', async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fsmcp-http-'));
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
     const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
     servers.push(server);
 
@@ -218,7 +218,7 @@ describe('HTTP transport', () => {
   });
 
   it('accepts the negotiated server protocol version after fallback', async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fsmcp-http-'));
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
     const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
     servers.push(server);
 
@@ -278,7 +278,7 @@ describe('HTTP transport', () => {
   });
 
   it('rejects post-initialize requests with a mismatched negotiated protocol version', async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fsmcp-http-'));
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
     const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
     servers.push(server);
 
@@ -333,7 +333,7 @@ describe('HTTP transport', () => {
   });
 
   it('refuses non-loopback HTTP binding without an API key', async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fsmcp-http-'));
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
     const dir = tempDir;
     process.env['FILESYSTEM_MCP_HTTP_HOST'] = '0.0.0.0';
 

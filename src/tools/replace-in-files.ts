@@ -1,8 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import { Buffer } from 'node:buffer';
+import { type FileHandle, open } from 'node:fs/promises';
+import { basename, relative } from 'node:path';
 
 import { createTwoFilesPatch } from 'diff';
 import RE2 from 're2';
@@ -86,7 +86,7 @@ function recordChangedFile(
   filePath: string,
   matchCount: number
 ): void {
-  const relativePath = path.relative(summary.root, filePath);
+  const relativePath = relative(summary.root, filePath);
   if (summary.changedFiles.length < MAX_CHANGED_FILES) {
     summary.changedFiles.push({ path: relativePath, matches: matchCount });
     return;
@@ -260,9 +260,9 @@ async function readReplacementPlan(
   ctx: ReplaceContext
 ): Promise<ReplacementPlan | undefined> {
   const { matcher, replacement, maxFileSize, signal } = ctx;
-  let fileHandle: fs.FileHandle | undefined;
+  let fileHandle: FileHandle | undefined;
   try {
-    const fd = await fs.open(validPath, 'r');
+    const fd = await open(validPath, 'r');
     fileHandle = fd;
     const stats = await fileHandle.stat();
     if (stats.size > maxFileSize) {
@@ -312,8 +312,8 @@ async function maybeAppendPatchDiff(
     // Defer to event loop to avoid blocking on large diffs
     setImmediate(() => {
       createTwoFilesPatch(
-        path.basename(params.filePath),
-        path.basename(params.filePath),
+        basename(params.filePath),
+        basename(params.filePath),
         params.originalContent,
         params.updatedContent,
         'Original',

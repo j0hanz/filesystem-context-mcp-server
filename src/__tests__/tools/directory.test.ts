@@ -1,9 +1,9 @@
 /**
  * Integration tests for directory-oriented tools: roots, ls, tree, mkdir, rm, mv.
  */
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import assert from 'node:assert/strict';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import { listDirectory } from '../../lib/file-operations/metadata.js';
@@ -49,9 +49,9 @@ describe('ls tool', () => {
 
   before(async () => {
     env = await createTestEnv();
-    await fs.writeFile(path.join(env.tmpDir, 'alpha.txt'), 'a', 'utf8');
-    await fs.writeFile(path.join(env.tmpDir, 'beta.txt'), 'b', 'utf8');
-    await fs.mkdir(path.join(env.tmpDir, 'sub'));
+    await writeFile(join(env.tmpDir, 'alpha.txt'), 'a', 'utf8');
+    await writeFile(join(env.tmpDir, 'beta.txt'), 'b', 'utf8');
+    await mkdir(join(env.tmpDir, 'sub'));
   });
 
   after(async () => {
@@ -96,8 +96,8 @@ describe('ls tool', () => {
 
   it('paginates with an opaque cursor across multiple pages', async () => {
     for (let index = 0; index < 12; index += 1) {
-      await fs.writeFile(
-        path.join(env.tmpDir, `page-${String(index).padStart(2, '0')}.txt`),
+      await writeFile(
+        join(env.tmpDir, `page-${String(index).padStart(2, '0')}.txt`),
         String(index),
         'utf8'
       );
@@ -147,9 +147,9 @@ describe('tree tool', () => {
 
   before(async () => {
     env = await createTestEnv();
-    const sub = path.join(env.tmpDir, 'deep', 'dir');
-    await fs.mkdir(sub, { recursive: true });
-    await fs.writeFile(path.join(sub, 'nested.txt'), 'deep', 'utf8');
+    const sub = join(env.tmpDir, 'deep', 'dir');
+    await mkdir(sub, { recursive: true });
+    await writeFile(join(sub, 'nested.txt'), 'deep', 'utf8');
   });
 
   after(async () => {
@@ -194,7 +194,7 @@ describe('mkdir tool', () => {
   });
 
   it('creates a new directory', async () => {
-    const newDir = path.join(env.tmpDir, 'new-dir');
+    const newDir = join(env.tmpDir, 'new-dir');
     const raw = await env.client.callTool({
       name: 'mkdir',
       arguments: { path: newDir },
@@ -208,13 +208,13 @@ describe('mkdir tool', () => {
       (sc['paths'] as string[]).map((entry) => entry.toLowerCase()),
       [newDir.toLowerCase()]
     );
-    const stat = await fs.stat(newDir);
-    assert.ok(stat.isDirectory());
+    const statResult = await stat(newDir);
+    assert.ok(statResult.isDirectory());
   });
 
   it('is idempotent — creating an existing directory is not an error', async () => {
-    const existingDir = path.join(env.tmpDir, 'idempotent-dir');
-    await fs.mkdir(existingDir);
+    const existingDir = join(env.tmpDir, 'idempotent-dir');
+    await mkdir(existingDir);
     const raw = await env.client.callTool({
       name: 'mkdir',
       arguments: { path: existingDir },
@@ -223,15 +223,15 @@ describe('mkdir tool', () => {
   });
 
   it('creates multiple directories via paths array', async () => {
-    const d1 = path.join(env.tmpDir, 'batch-a');
-    const d2 = path.join(env.tmpDir, 'batch-b');
+    const d1 = join(env.tmpDir, 'batch-a');
+    const d2 = join(env.tmpDir, 'batch-b');
     const raw = await env.client.callTool({
       name: 'mkdir',
       arguments: { paths: [d1, d2] },
     });
     assertOk(raw);
-    assert.ok((await fs.stat(d1)).isDirectory());
-    assert.ok((await fs.stat(d2)).isDirectory());
+    assert.ok((await stat(d1)).isDirectory());
+    assert.ok((await stat(d2)).isDirectory());
   });
 
   it('rejects creation outside allowed root', async () => {
@@ -257,32 +257,32 @@ describe('rm tool', () => {
   });
 
   it('removes an existing file', async () => {
-    const file = path.join(env.tmpDir, 'to-delete.txt');
-    await fs.writeFile(file, 'bye', 'utf8');
+    const file = join(env.tmpDir, 'to-delete.txt');
+    await writeFile(file, 'bye', 'utf8');
     const raw = await env.client.callTool({
       name: 'rm',
       arguments: { path: file },
     });
     assertOk(raw);
-    await assert.rejects(() => fs.stat(file), /ENOENT/);
+    await assert.rejects(() => stat(file), /ENOENT/);
   });
 
   it('removes a directory recursively', async () => {
-    const dir = path.join(env.tmpDir, 'to-delete-dir');
-    await fs.mkdir(dir);
-    await fs.writeFile(path.join(dir, 'inner.txt'), 'inner', 'utf8');
+    const dir = join(env.tmpDir, 'to-delete-dir');
+    await mkdir(dir);
+    await writeFile(join(dir, 'inner.txt'), 'inner', 'utf8');
     const raw = await env.client.callTool({
       name: 'rm',
       arguments: { path: dir, recursive: true },
     });
     assertOk(raw);
-    await assert.rejects(() => fs.stat(dir), /ENOENT/);
+    await assert.rejects(() => stat(dir), /ENOENT/);
   });
 
   it('returns NOT_FOUND for missing file', async () => {
     const raw = await env.client.callTool({
       name: 'rm',
-      arguments: { path: path.join(env.tmpDir, 'ghost.txt') },
+      arguments: { path: join(env.tmpDir, 'ghost.txt') },
     });
     assertToolError(raw, 'NOT_FOUND');
   });
@@ -291,7 +291,7 @@ describe('rm tool', () => {
     const raw = await env.client.callTool({
       name: 'rm',
       arguments: {
-        path: path.join(env.tmpDir, 'definitely-not-here.txt'),
+        path: join(env.tmpDir, 'definitely-not-here.txt'),
         ignoreIfNotExists: true,
       },
     });
@@ -305,7 +305,7 @@ describe('rm tool', () => {
     });
     assertToolError(raw, 'ACCESS_DENIED');
     // Verify root still exists
-    const stats = await fs.stat(env.tmpDir);
+    const stats = await stat(env.tmpDir);
     assert.ok(stats.isDirectory());
   });
 });
@@ -324,9 +324,9 @@ describe('mv tool', () => {
   });
 
   it('moves a file to a new path', async () => {
-    const src = path.join(env.tmpDir, 'source.txt');
-    const dst = path.join(env.tmpDir, 'dest.txt');
-    await fs.writeFile(src, 'move me', 'utf8');
+    const src = join(env.tmpDir, 'source.txt');
+    const dst = join(env.tmpDir, 'dest.txt');
+    await writeFile(src, 'move me', 'utf8');
     const raw = await env.client.callTool({
       name: 'mv',
       arguments: { source: src, destination: dst },
@@ -342,8 +342,8 @@ describe('mv tool', () => {
       (sc['destination'] as string).toLowerCase(),
       dst.toLowerCase()
     );
-    await assert.rejects(() => fs.stat(src), /ENOENT/);
-    const content = await fs.readFile(dst, 'utf8');
+    await assert.rejects(() => stat(src), /ENOENT/);
+    const content = await readFile(dst, 'utf8');
     assert.equal(content, 'move me');
   });
 
@@ -351,8 +351,8 @@ describe('mv tool', () => {
     const raw = await env.client.callTool({
       name: 'mv',
       arguments: {
-        source: path.join(env.tmpDir, 'no-source.txt'),
-        destination: path.join(env.tmpDir, 'dst.txt'),
+        source: join(env.tmpDir, 'no-source.txt'),
+        destination: join(env.tmpDir, 'dst.txt'),
       },
     });
     assertToolError(raw, 'NOT_FOUND');
@@ -366,7 +366,7 @@ describe('invalid cursor rejection', () => {
 
   before(async () => {
     env = await createTestEnv();
-    await fs.writeFile(path.join(env.tmpDir, 'a.txt'), 'a', 'utf8');
+    await writeFile(join(env.tmpDir, 'a.txt'), 'a', 'utf8');
   });
 
   after(async () => {

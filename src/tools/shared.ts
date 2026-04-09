@@ -4,8 +4,8 @@ import type {
   ProgressNotificationParams,
 } from '@modelcontextprotocol/sdk/types.js';
 
-import * as path from 'node:path';
 import { channel } from 'node:diagnostics_channel';
+import { basename } from 'node:path';
 
 import { z } from 'zod';
 
@@ -921,10 +921,10 @@ export function buildBatchPathContext(
 ): string {
   const normalizedLabel =
     paths.length === 1 ? unitLabel.replace(/s$/i, '') : unitLabel;
-  const first = path.basename(paths[0] ?? '');
+  const first = basename(paths[0] ?? '');
   let extraPaths = '';
   if (paths.length > 1) {
-    const secondPath = path.basename(paths[1] ?? '');
+    const secondPath = basename(paths[1] ?? '');
     const ellipsis = paths.length > 2 ? '…' : '';
     extraPaths = `, ${secondPath}${ellipsis}`;
   }

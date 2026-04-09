@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { basename } from 'node:path';
 
 import { z } from 'zod';
 
@@ -303,10 +303,9 @@ export function registerListDirectoryTool(
 
   const wrappedHandler = wrapToolHandler(handler, {
     guard: options.isInitialized,
-    progressMessage: (args) =>
-      `≣ ls: ${args.path ? path.basename(args.path) : '.'}`,
+    progressMessage: (args) => `≣ ls: ${args.path ? basename(args.path) : '.'}`,
     completionMessage: (args, result) => {
-      const base = args.path ? path.basename(args.path) : '.';
+      const base = args.path ? basename(args.path) : '.';
       if (result.isError) return `≣ ls: ${base} • failed`;
       const sc = result.structuredContent;
       const count = sc.totalEntries ?? 0;

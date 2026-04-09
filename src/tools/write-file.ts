@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
+import { mkdir } from 'node:fs/promises';
+import { basename, dirname } from 'node:path';
 
 import type { z } from 'zod';
 
@@ -47,10 +47,7 @@ async function handleWriteFile(
   const validPath = await validatePathForWrite(args.path, signal);
 
   // Ensure parent directory exists
-  await withAbort(
-    fs.mkdir(path.dirname(validPath), { recursive: true }),
-    signal
-  );
+  await withAbort(mkdir(dirname(validPath), { recursive: true }), signal);
 
   await atomicWriteFile(validPath, args.content, { encoding: 'utf-8', signal });
 
@@ -86,9 +83,9 @@ export function registerWriteFileTool(
 
   const wrappedHandler = wrapToolHandler(handler, {
     guard: options.isInitialized,
-    progressMessage: (args) => `🛠 write: ${path.basename(args.path)}`,
+    progressMessage: (args) => `🛠 write: ${basename(args.path)}`,
     completionMessage: (args, result) => {
-      const name = path.basename(args.path);
+      const name = basename(args.path);
       if (result.isError) return `🛠 write: ${name} • failed`;
       const sc = result.structuredContent;
       return `🛠 write: ${name} • ${formatBytes(sc.bytesWritten ?? 0)}`;

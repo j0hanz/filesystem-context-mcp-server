@@ -5,7 +5,7 @@ import {
   RootsListChangedNotificationSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
-import * as fs from 'node:fs/promises';
+import { realpath } from 'node:fs/promises';
 
 import { z } from 'zod';
 
@@ -99,7 +99,7 @@ async function isRootWithinBaseline(
 
   try {
     assertNotAborted(signal);
-    const realPath = await withAbort(fs.realpath(normalizedRoot), signal);
+    const realPath = await withAbort(realpath(normalizedRoot), signal);
     const normalizedReal = normalizePath(realPath);
     return isPathWithinDirectories(normalizedReal, baseline);
   } catch {

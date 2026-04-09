@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
+import { lstat, rm, rmdir } from 'node:fs/promises';
+import { basename } from 'node:path';
 
 import type { z } from 'zod';
 
@@ -52,9 +52,9 @@ async function handleDeleteFile(
     );
   }
 
-  let stats: Awaited<ReturnType<typeof fs.lstat>> | undefined;
+  let stats: Awaited<ReturnType<typeof lstat>> | undefined;
   try {
-    stats = await withAbort(fs.lstat(validPath), signal);
+    stats = await withAbort(lstat(validPath), signal);
   } catch (error) {
     if (
       isNodeError(error) &&
@@ -72,10 +72,10 @@ async function handleDeleteFile(
   if (stats.isDirectory() && !args.recursive) {
     // Use rmdir for non-recursive directory deletes so non-empty directories
     // consistently return ENOTEMPTY-style errors with actionable guidance.
-    await withAbort(fs.rmdir(validPath), signal);
+    await withAbort(rmdir(validPath), signal);
   } else {
     await withAbort(
-      fs.rm(validPath, {
+      rm(validPath, {
         recursive: args.recursive,
         force: args.ignoreIfNotExists,
       }),
@@ -150,9 +150,9 @@ export function registerDeleteFileTool(
 
   const wrappedHandler = wrapToolHandler(handler, {
     guard: options.isInitialized,
-    progressMessage: (args) => `🛠 rm: ${path.basename(args.path)}`,
+    progressMessage: (args) => `🛠 rm: ${basename(args.path)}`,
     completionMessage: (args, result) => {
-      const name = path.basename(args.path);
+      const name = basename(args.path);
       if (result.isError) return `🛠 rm: ${name} • failed`;
       return `🛠 rm: ${name}`;
     },

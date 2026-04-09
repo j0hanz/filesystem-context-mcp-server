@@ -1,9 +1,9 @@
 /**
  * Integration tests for calculate_hash and diff_files tools.
  */
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import assert from 'node:assert/strict';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import {
@@ -20,8 +20,8 @@ describe('calculate_hash tool', () => {
 
   before(async () => {
     env = await createTestEnv();
-    file = path.join(env.tmpDir, 'hash-me.txt');
-    await fs.writeFile(file, 'deterministic content\n', 'utf8');
+    file = join(env.tmpDir, 'hash-me.txt');
+    await writeFile(file, 'deterministic content\n', 'utf8');
   });
 
   after(async () => {
@@ -43,8 +43,8 @@ describe('calculate_hash tool', () => {
   });
 
   it('returns the same hash for identical content', async () => {
-    const file2 = path.join(env.tmpDir, 'hash-copy.txt');
-    await fs.writeFile(file2, 'deterministic content\n', 'utf8');
+    const file2 = join(env.tmpDir, 'hash-copy.txt');
+    await writeFile(file2, 'deterministic content\n', 'utf8');
 
     const raw1 = await env.client.callTool({
       name: 'calculate_hash',
@@ -65,15 +65,15 @@ describe('calculate_hash tool', () => {
   });
 
   it('returns a different hash after file content changes', async () => {
-    const mutable = path.join(env.tmpDir, 'mutable.txt');
-    await fs.writeFile(mutable, 'version 1', 'utf8');
+    const mutable = join(env.tmpDir, 'mutable.txt');
+    await writeFile(mutable, 'version 1', 'utf8');
     const r1 = getStructured(
       await env.client.callTool({
         name: 'calculate_hash',
         arguments: { path: mutable },
       })
     );
-    await fs.writeFile(mutable, 'version 2', 'utf8');
+    await writeFile(mutable, 'version 2', 'utf8');
     const r2 = getStructured(
       await env.client.callTool({
         name: 'calculate_hash',
@@ -102,7 +102,7 @@ describe('calculate_hash tool', () => {
   it('returns NOT_FOUND for a missing path', async () => {
     const raw = await env.client.callTool({
       name: 'calculate_hash',
-      arguments: { path: path.join(env.tmpDir, 'ghost.txt') },
+      arguments: { path: join(env.tmpDir, 'ghost.txt') },
     });
     assertToolError(raw, 'NOT_FOUND');
   });
@@ -116,16 +116,16 @@ describe('diff_files tool', () => {
 
   before(async () => {
     env = await createTestEnv();
-    original = path.join(env.tmpDir, 'original.txt');
-    modified = path.join(env.tmpDir, 'modified.txt');
-    identical = path.join(env.tmpDir, 'identical.txt');
-    await fs.writeFile(original, 'line one\nline two\nline three\n', 'utf8');
-    await fs.writeFile(
+    original = join(env.tmpDir, 'original.txt');
+    modified = join(env.tmpDir, 'modified.txt');
+    identical = join(env.tmpDir, 'identical.txt');
+    await writeFile(original, 'line one\nline two\nline three\n', 'utf8');
+    await writeFile(
       modified,
       'line one\nline TWO CHANGED\nline three\n',
       'utf8'
     );
-    await fs.writeFile(identical, 'line one\nline two\nline three\n', 'utf8');
+    await writeFile(identical, 'line one\nline two\nline three\n', 'utf8');
   });
 
   after(async () => {
@@ -161,7 +161,7 @@ describe('diff_files tool', () => {
     const raw = await env.client.callTool({
       name: 'diff_files',
       arguments: {
-        original: path.join(env.tmpDir, 'no-such-file.txt'),
+        original: join(env.tmpDir, 'no-such-file.txt'),
         modified,
       },
     });

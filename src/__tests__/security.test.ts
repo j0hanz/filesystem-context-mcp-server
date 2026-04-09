@@ -1,9 +1,9 @@
 /**
  * Security tests: path traversal, boundary enforcement, symlink escape.
  */
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import assert from 'node:assert/strict';
+import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import {
@@ -34,7 +34,7 @@ describe('security: path boundary enforcement', () => {
     { tool: 'write', args: () => ({ path: '/tmp/escape.txt', content: 'x' }) },
     { tool: 'stat', args: () => ({ path: '/etc/hostname' }) },
     { tool: 'ls', args: () => ({ path: '/etc' }) },
-    { tool: 'rm', args: (d) => ({ path: path.join(d, '../escape.txt') }) },
+    { tool: 'rm', args: (d) => ({ path: join(d, '../escape.txt') }) },
     { tool: 'mkdir', args: () => ({ path: '/tmp/evil-dir-' + Date.now() }) },
     {
       tool: 'search_and_replace',
@@ -66,7 +66,7 @@ describe('security: path traversal via ".."', () => {
 
   before(async () => {
     env = await createTestEnv();
-    await fs.writeFile(path.join(env.tmpDir, 'inner.txt'), 'inner', 'utf8');
+    await writeFile(join(env.tmpDir, 'inner.txt'), 'inner', 'utf8');
   });
 
   after(async () => {
@@ -74,7 +74,7 @@ describe('security: path traversal via ".."', () => {
   });
 
   it('read: rejects traversal above tmpDir', async () => {
-    const escaped = path.join(env.tmpDir, '..', '..', 'etc', 'passwd');
+    const escaped = join(env.tmpDir, '..', '..', 'etc', 'passwd');
     const raw = await env.client.callTool({
       name: 'read',
       arguments: { path: escaped },
@@ -83,7 +83,7 @@ describe('security: path traversal via ".."', () => {
   });
 
   it('stat: rejects traversal above tmpDir', async () => {
-    const escaped = path.join(env.tmpDir, '..', 'some-other-dir');
+    const escaped = join(env.tmpDir, '..', 'some-other-dir');
     const raw = await env.client.callTool({
       name: 'stat',
       arguments: { path: escaped },
@@ -92,7 +92,7 @@ describe('security: path traversal via ".."', () => {
   });
 
   it('write: rejects traversal above tmpDir', async () => {
-    const escaped = path.join(env.tmpDir, '..', 'evil.txt');
+    const escaped = join(env.tmpDir, '..', 'evil.txt');
     const raw = await env.client.callTool({
       name: 'write',
       arguments: { path: escaped, content: 'exploit' },
@@ -115,9 +115,9 @@ describe('security: symlink escape attempt', () => {
   });
 
   it('read: rejects symlink pointing outside allowed root', async () => {
-    const linkPath = path.join(env.tmpDir, 'evil-link.txt');
+    const linkPath = join(env.tmpDir, 'evil-link.txt');
     try {
-      await fs.symlink('/etc/passwd', linkPath);
+      await symlink('/etc/passwd', linkPath);
     } catch {
       // If creating the symlink fails (e.g. permissions on Windows), skip
       return;
@@ -130,9 +130,9 @@ describe('security: symlink escape attempt', () => {
   });
 
   it('stat: rejects symlink pointing outside allowed root', async () => {
-    const linkPath = path.join(env.tmpDir, 'stat-evil-link');
+    const linkPath = join(env.tmpDir, 'stat-evil-link');
     try {
-      await fs.symlink('/etc', linkPath);
+      await symlink('/etc', linkPath);
     } catch {
       return;
     }
@@ -176,7 +176,7 @@ describe('security: schema validation rejects malformed input', () => {
   it('mv: rejects missing both source and sources', async () => {
     const raw = await env.client.callTool({
       name: 'mv',
-      arguments: { destination: path.join(env.tmpDir, 'dst.txt') },
+      arguments: { destination: join(env.tmpDir, 'dst.txt') },
     });
     assertToolError(raw);
   });
@@ -185,9 +185,9 @@ describe('security: schema validation rejects malformed input', () => {
     const raw = await env.client.callTool({
       name: 'mv',
       arguments: {
-        source: path.join(env.tmpDir, 'a.txt'),
-        sources: [path.join(env.tmpDir, 'b.txt')],
-        destination: path.join(env.tmpDir, 'dst.txt'),
+        source: join(env.tmpDir, 'a.txt'),
+        sources: [join(env.tmpDir, 'b.txt')],
+        destination: join(env.tmpDir, 'dst.txt'),
       },
     });
     assertToolError(raw);
@@ -202,8 +202,8 @@ describe('security: schema validation rejects malformed input', () => {
     const raw = await env.client.callTool({
       name: 'mkdir',
       arguments: {
-        path: path.join(env.tmpDir, 'one'),
-        paths: [path.join(env.tmpDir, 'two')],
+        path: join(env.tmpDir, 'one'),
+        paths: [join(env.tmpDir, 'two')],
       },
     });
     assertToolError(raw);
@@ -220,7 +220,7 @@ describe('security: schema validation rejects malformed input', () => {
   it('write: rejects missing content field', async () => {
     const raw = await env.client.callTool({
       name: 'write',
-      arguments: { path: path.join(env.tmpDir, 'f.txt') },
+      arguments: { path: join(env.tmpDir, 'f.txt') },
     });
     assertToolError(raw);
   });
@@ -243,27 +243,23 @@ describe('security: symlink escape for destructive ops', () => {
   before(async () => {
     env = await createTestEnv();
     // Create a directory outside the allowed root to be a symlink target
-    outsideDir = path.join(path.dirname(env.tmpDir), `outside-${Date.now()}`);
-    await fs.mkdir(outsideDir, { recursive: true });
-    await fs.writeFile(
-      path.join(outsideDir, 'target.txt'),
-      'outside-content',
-      'utf8'
-    );
+    outsideDir = join(dirname(env.tmpDir), `outside-${Date.now()}`);
+    await mkdir(outsideDir, { recursive: true });
+    await writeFile(join(outsideDir, 'target.txt'), 'outside-content', 'utf8');
   });
 
   after(async () => {
     await env.cleanup();
-    await fs.rm(outsideDir, { recursive: true, force: true });
+    await rm(outsideDir, { recursive: true, force: true });
   });
 
   async function createSymlink(
     name: string,
     target: string
   ): Promise<string | null> {
-    const linkPath = path.join(env.tmpDir, name);
+    const linkPath = join(env.tmpDir, name);
     try {
-      await fs.symlink(target, linkPath);
+      await symlink(target, linkPath);
       return linkPath;
     } catch {
       return null; // symlink creation may fail on Windows without privileges
@@ -273,7 +269,7 @@ describe('security: symlink escape for destructive ops', () => {
   it('write: rejects writing through symlink to outside', async () => {
     const linkPath = await createSymlink(
       'write-escape.txt',
-      path.join(outsideDir, 'target.txt')
+      join(outsideDir, 'target.txt')
     );
     if (!linkPath) return;
     const raw = await env.client.callTool({
@@ -286,7 +282,7 @@ describe('security: symlink escape for destructive ops', () => {
   it('edit: rejects editing through symlink to outside', async () => {
     const linkPath = await createSymlink(
       'edit-escape.txt',
-      path.join(outsideDir, 'target.txt')
+      join(outsideDir, 'target.txt')
     );
     if (!linkPath) return;
     const raw = await env.client.callTool({
@@ -302,14 +298,14 @@ describe('security: symlink escape for destructive ops', () => {
   it('mv: rejects moving symlink target outside allowed root', async () => {
     const linkPath = await createSymlink(
       'mv-escape.txt',
-      path.join(outsideDir, 'target.txt')
+      join(outsideDir, 'target.txt')
     );
     if (!linkPath) return;
     const raw = await env.client.callTool({
       name: 'mv',
       arguments: {
         source: linkPath,
-        destination: path.join(env.tmpDir, 'moved.txt'),
+        destination: join(env.tmpDir, 'moved.txt'),
       },
     });
     // mv collects per-source errors into failed[] instead of setting isError

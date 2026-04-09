@@ -4,9 +4,9 @@
  */
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import assert from 'node:assert/strict';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import {
@@ -34,23 +34,19 @@ describe('grep tool', () => {
 
   before(async () => {
     env = await createTestEnv();
-    await fs.writeFile(
-      path.join(env.tmpDir, 'fruits.txt'),
+    await writeFile(
+      join(env.tmpDir, 'fruits.txt'),
       'apple\nbanana\ncherry\n',
       'utf8'
     );
-    await fs.writeFile(
-      path.join(env.tmpDir, 'veggies.txt'),
+    await writeFile(
+      join(env.tmpDir, 'veggies.txt'),
       'carrot\napricot\ncucumber\n',
       'utf8'
     );
-    const sub = path.join(env.tmpDir, 'sub');
-    await fs.mkdir(sub);
-    await fs.writeFile(
-      path.join(sub, 'deep.txt'),
-      'another apple here\n',
-      'utf8'
-    );
+    const sub = join(env.tmpDir, 'sub');
+    await mkdir(sub);
+    await writeFile(join(sub, 'deep.txt'), 'another apple here\n', 'utf8');
   });
 
   after(async () => {
@@ -137,8 +133,8 @@ describe('grep tool', () => {
   });
 
   it('preserves UTF-8 match text in the rendered response body', async () => {
-    const file = path.join(env.tmpDir, 'utf8.txt');
-    await fs.writeFile(file, 'rocket 🚀 line\n', 'utf8');
+    const file = join(env.tmpDir, 'utf8.txt');
+    await writeFile(file, 'rocket 🚀 line\n', 'utf8');
 
     const raw = await env.client.callTool({
       name: 'grep',
@@ -159,8 +155,8 @@ describe('grep tool', () => {
   });
 
   it('supports task-mode execution via the client tasks API', async () => {
-    const taskFile = path.join(env.tmpDir, 'task-grep.txt');
-    await fs.writeFile(taskFile, 'needle here\nanother line\n', 'utf8');
+    const taskFile = join(env.tmpDir, 'task-grep.txt');
+    await writeFile(taskFile, 'needle here\nanother line\n', 'utf8');
 
     const events: string[] = [];
     const statuses: string[] = [];
@@ -226,12 +222,12 @@ describe('find tool', () => {
 
   before(async () => {
     env = await createTestEnv();
-    await fs.writeFile(path.join(env.tmpDir, 'match1.ts'), '', 'utf8');
-    await fs.writeFile(path.join(env.tmpDir, 'match2.ts'), '', 'utf8');
-    await fs.writeFile(path.join(env.tmpDir, 'other.json'), '{}', 'utf8');
-    const sub = path.join(env.tmpDir, 'src');
-    await fs.mkdir(sub);
-    await fs.writeFile(path.join(sub, 'match3.ts'), '', 'utf8');
+    await writeFile(join(env.tmpDir, 'match1.ts'), '', 'utf8');
+    await writeFile(join(env.tmpDir, 'match2.ts'), '', 'utf8');
+    await writeFile(join(env.tmpDir, 'other.json'), '{}', 'utf8');
+    const sub = join(env.tmpDir, 'src');
+    await mkdir(sub);
+    await writeFile(join(sub, 'match3.ts'), '', 'utf8');
   });
 
   after(async () => {
@@ -283,16 +279,12 @@ describe('search_and_replace tool', () => {
 
   before(async () => {
     env = await createTestEnv();
-    await fs.writeFile(
-      path.join(env.tmpDir, 'file1.txt'),
+    await writeFile(
+      join(env.tmpDir, 'file1.txt'),
       'hello world\nhello again\n',
       'utf8'
     );
-    await fs.writeFile(
-      path.join(env.tmpDir, 'file2.txt'),
-      'goodbye world\n',
-      'utf8'
-    );
+    await writeFile(join(env.tmpDir, 'file2.txt'), 'goodbye world\n', 'utf8');
   });
 
   after(async () => {
@@ -313,14 +305,14 @@ describe('search_and_replace tool', () => {
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
-    const file1 = await fs.readFile(path.join(env.tmpDir, 'file1.txt'), 'utf8');
+    const file1 = await readFile(join(env.tmpDir, 'file1.txt'), 'utf8');
     assert.ok(file1.includes('WORLD'), 'Expected replacement in file1');
-    const file2 = await fs.readFile(path.join(env.tmpDir, 'file2.txt'), 'utf8');
+    const file2 = await readFile(join(env.tmpDir, 'file2.txt'), 'utf8');
     assert.ok(file2.includes('WORLD'), 'Expected replacement in file2');
   });
 
   it('dryRun:true does not modify any files', async () => {
-    await fs.writeFile(path.join(env.tmpDir, 'dry.txt'), 'oldvalue\n', 'utf8');
+    await writeFile(join(env.tmpDir, 'dry.txt'), 'oldvalue\n', 'utf8');
     const raw = await env.client.callTool({
       name: 'search_and_replace',
       arguments: {
@@ -332,13 +324,13 @@ describe('search_and_replace tool', () => {
       },
     });
     assertOk(raw);
-    const actual = await fs.readFile(path.join(env.tmpDir, 'dry.txt'), 'utf8');
+    const actual = await readFile(join(env.tmpDir, 'dry.txt'), 'utf8');
     assert.equal(actual, 'oldvalue\n', 'File must be unchanged in dryRun');
   });
 
   it('supports regex replacement', async () => {
-    const file = path.join(env.tmpDir, 'regex-test.txt');
-    await fs.writeFile(file, 'cat123\ndog456\n', 'utf8');
+    const file = join(env.tmpDir, 'regex-test.txt');
+    await writeFile(file, 'cat123\ndog456\n', 'utf8');
     const raw = await env.client.callTool({
       name: 'search_and_replace',
       arguments: {
@@ -350,7 +342,7 @@ describe('search_and_replace tool', () => {
       },
     });
     assertOk(raw);
-    const actual = await fs.readFile(file, 'utf8');
+    const actual = await readFile(file, 'utf8');
     assert.ok(
       actual.includes('NUM'),
       'Regex replacement should have substituted digits'

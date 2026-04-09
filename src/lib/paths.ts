@@ -1,10 +1,20 @@
 import type { Root } from '@modelcontextprotocol/sdk/types.js';
 
-import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { platform } from 'node:os';
+import { realpath, stat } from 'node:fs/promises';
+import { homedir, platform } from 'node:os';
+import {
+  dirname,
+  isAbsolute,
+  join,
+  normalize,
+  parse,
+  posix,
+  relative,
+  resolve,
+  sep,
+  win32,
+} from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { assertNotAborted, withAbort } from './abort.js';
@@ -41,7 +51,7 @@ const CHAR_CODE_SPACE = 32;
 const CHAR_CODE_DOT = 46;
 
 function normalizePathForMatch(input: string): string {
-  return toPosixPath(path.normalize(input));
+  return toPosixPath(normalize(input));
 }
 
 function normalizeForMatch(input: string): string {
@@ -121,7 +131,7 @@ function matchesAnyGlobs(
 
   for (const candidate of candidates) {
     for (const glob of globs) {
-      if (path.posix.matchesGlob(candidate, glob)) return true;
+      if (posix.matchesGlob(candidate, glob)) return true;
     }
   }
 
@@ -146,8 +156,8 @@ export function isSensitivePath(
 
   const pathCandidates = uniquePair(normalizedRequested, normalizedResolved);
   const nameCandidates = uniquePair(
-    path.posix.basename(normalizedRequested),
-    normalizedResolved ? path.posix.basename(normalizedResolved) : undefined
+    posix.basename(normalizedRequested),
+    normalizedResolved ? posix.basename(normalizedResolved) : undefined
   );
 
   if (
@@ -178,8 +188,8 @@ export function assertAllowedFileAccess(
   );
 }
 
-const HOMEDIR = os.homedir();
-const PATH_SEPARATOR = path.sep;
+const HOMEDIR = homedir();
+const PATH_SEPARATOR = sep;
 
 const DRIVE_LETTER_REGEX = /^[A-Za-z]:/;
 const WINDOWS_DRIVE_REL_REGEX = /^[A-Za-z]:$/u;
@@ -238,11 +248,11 @@ function expandHome(filepath: string): string {
 
   // Accept both "~/" and "~\\" for cross-platform UX.
   if (filepath.startsWith('~/') || filepath.startsWith('~\\')) {
-    // Avoid `path.join(HOMEDIR, "/foo")` resetting to the filesystem root.
+    // Avoid `join(HOMEDIR, "/foo")` resetting to the filesystem root.
     const rest = filepath
       .slice(HOME_PREFIX_LENGTH)
       .replace(LEADING_SEPARATORS_RE, '');
-    return rest.length === 0 ? HOMEDIR : path.join(HOMEDIR, rest);
+    return rest.length === 0 ? HOMEDIR : join(HOMEDIR, rest);
   }
 
   return filepath;
@@ -255,7 +265,7 @@ function expandHome(filepath: string): string {
  * - Lowercases Windows drive letter for stable comparisons.
  */
 export function normalizePath(p: string): string {
-  const resolved = path.resolve(expandHome(p));
+  const resolved = resolve(expandHome(p));
 
   if (IS_WINDOWS && DRIVE_LETTER_REGEX.test(resolved)) {
     return resolved.charAt(0).toLowerCase() + resolved.slice(1);
@@ -278,8 +288,8 @@ function rethrowIfAborted(error: unknown): void {
 
 function isSamePath(left: string, right: string): boolean {
   if (left === right) return true;
-  const leftResolved = normalizeCaseForComparison(path.resolve(left));
-  const rightResolved = normalizeCaseForComparison(path.resolve(right));
+  const leftResolved = normalizeCaseForComparison(resolve(left));
+  const rightResolved = normalizeCaseForComparison(resolve(right));
   return leftResolved === rightResolved;
 }
 
@@ -298,7 +308,7 @@ function normalizeAllowedDirectory(dir: string): string {
   if (trimmed.length === 0) return '';
 
   const normalized = normalizePath(trimmed);
-  const { root } = path.parse(normalized);
+  const { root } = parse(normalized);
 
   // Keep filesystem roots as-is ("/", "c:\\", "\\\\server\\share\\").
   if (isFileSystemRootPath(normalized, root)) {
@@ -388,15 +398,11 @@ function isPathInsideDirectory(
 
   if (root === candidate) return true;
 
-  const relative = path.relative(root, candidate);
-  if (relative.length === 0) return true;
-  if (relative === '..') return false;
+  const rel = relative(root, candidate);
+  if (rel.length === 0) return true;
+  if (rel === '..') return false;
 
-  return (
-    !relative.startsWith('..\\') &&
-    !relative.startsWith('../') &&
-    !path.isAbsolute(relative)
-  );
+  return !rel.startsWith('..\\') && !rel.startsWith('../') && !isAbsolute(rel);
 }
 
 export function isPathWithinDirectories(
@@ -416,7 +422,7 @@ async function resolveRealPath(
 ): Promise<string | null> {
   try {
     assertNotAborted(signal);
-    const realPath = await withAbort(fs.realpath(normalized), signal);
+    const realPath = await withAbort(realpath(normalized), signal);
     return normalizeAllowedDirectory(realPath);
   } catch (error) {
     rethrowIfAborted(error);
@@ -541,9 +547,9 @@ function ensureNoReservedWindowsNames(requestedPath: string): void {
 export function isWindowsDriveRelativePath(requestedPath: string): boolean {
   if (!IS_WINDOWS) return false;
 
-  const parsed = path.win32.parse(requestedPath);
+  const parsed = win32.parse(requestedPath);
   if (!WINDOWS_DRIVE_REL_REGEX.test(parsed.root)) return false;
-  return !path.win32.isAbsolute(requestedPath);
+  return !win32.isAbsolute(requestedPath);
 }
 
 function ensureNoWindowsDriveRelativePath(requestedPath: string): void {
@@ -559,7 +565,7 @@ function ensureNoWindowsDriveRelativePath(requestedPath: string): void {
 function resolveRequestedPath(requestedPath: string): string {
   const expanded = expandHome(requestedPath);
 
-  if (!path.isAbsolute(expanded)) {
+  if (!isAbsolute(expanded)) {
     const roots = getAllowedDirectoriesForRelativeResolution();
 
     if (roots.length > 1) {
@@ -572,7 +578,7 @@ function resolveRequestedPath(requestedPath: string): string {
 
     const baseDir = roots[0];
     if (baseDir) {
-      return normalizePath(path.resolve(baseDir, expanded));
+      return normalizePath(resolve(baseDir, expanded));
     }
   }
 
@@ -717,7 +723,7 @@ async function resolveRealPathOrThrow(options: {
 
   try {
     assertNotAborted(signal);
-    return await withAbort(fs.realpath(normalizedRequested), signal);
+    return await withAbort(realpath(normalizedRequested), signal);
   } catch (error) {
     rethrowIfAborted(error);
     throw toMcpError(requestedPath, error);
@@ -754,10 +760,10 @@ async function statPathOrThrow(
   requestedPath: string,
   resolvedPath: string,
   signal?: AbortSignal
-): Promise<Awaited<ReturnType<typeof fs.stat>>> {
+): Promise<Awaited<ReturnType<typeof stat>>> {
   try {
     assertNotAborted(signal);
-    return await withAbort(fs.stat(resolvedPath), signal);
+    return await withAbort(stat(resolvedPath), signal);
   } catch (error) {
     rethrowIfAborted(error);
     throw toMcpError(requestedPath, error);
@@ -775,7 +781,7 @@ async function resolveNearestExistingRealPathOrThrow(options: {
   for (;;) {
     try {
       assertNotAborted(signal);
-      return await withAbort(fs.realpath(current), signal);
+      return await withAbort(realpath(current), signal);
     } catch (error) {
       rethrowIfAborted(error);
       const code = isNodeError(error) ? error.code : undefined;
@@ -783,7 +789,7 @@ async function resolveNearestExistingRealPathOrThrow(options: {
         throw toMcpError(requestedPath, error);
       }
 
-      const parent = path.dirname(current);
+      const parent = dirname(current);
       if (parent === current) {
         throw toMcpError(requestedPath, error);
       }
@@ -899,7 +905,7 @@ async function maybeAddRealPath(
 ): Promise<void> {
   try {
     assertNotAborted(signal);
-    const realPath = await withAbort(fs.realpath(normalizedPath), signal);
+    const realPath = await withAbort(realpath(normalizedPath), signal);
     const normalizedReal = normalizePath(realPath);
 
     if (!isSamePath(normalizedReal, normalizedPath)) {
@@ -919,7 +925,7 @@ async function resolveRootDirectory(
     const normalizedPath = normalizePath(dirPath);
 
     assertNotAborted(signal);
-    const stats = await withAbort(fs.stat(normalizedPath), signal);
+    const stats = await withAbort(stat(normalizedPath), signal);
 
     if (!stats.isDirectory()) return null;
     return normalizedPath;

@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
+import { readFile, stat } from 'node:fs/promises';
+import { basename } from 'node:path';
 
 import { formatPatch, structuredPatch, type StructuredPatch } from 'diff';
 import type { z } from 'zod';
@@ -87,22 +87,22 @@ async function handleDiffFiles(
   ]);
 
   const [originalStats, modifiedStats] = await Promise.all([
-    withAbort(fs.stat(originalPath), signal),
-    withAbort(fs.stat(modifiedPath), signal),
+    withAbort(stat(originalPath), signal),
+    withAbort(stat(modifiedPath), signal),
   ]);
 
   assertDiffFileSizeWithinLimit(originalPath, originalStats.size, maxFileSize);
   assertDiffFileSizeWithinLimit(modifiedPath, modifiedStats.size, maxFileSize);
 
   const [originalContent, modifiedContent] = await Promise.all([
-    fs.readFile(originalPath, { encoding: 'utf-8', signal }),
-    fs.readFile(modifiedPath, { encoding: 'utf-8', signal }),
+    readFile(originalPath, { encoding: 'utf-8', signal }),
+    readFile(modifiedPath, { encoding: 'utf-8', signal }),
   ]);
 
   const patchObj = await new Promise<StructuredPatch | undefined>((resolve) => {
     structuredPatch(
-      path.basename(originalPath),
-      path.basename(modifiedPath),
+      basename(originalPath),
+      basename(modifiedPath),
       originalContent,
       modifiedContent,
       undefined,
@@ -190,13 +190,13 @@ export function registerDiffFilesTool(
   const wrappedHandler = wrapToolHandler(handler, {
     guard: options.isInitialized,
     progressMessage: (args) => {
-      const n1 = path.basename(args.original);
-      const n2 = path.basename(args.modified);
+      const n1 = basename(args.original);
+      const n2 = basename(args.modified);
       return `🕮 diff: ${n1} ⟷ ${n2}`;
     },
     completionMessage: (args, result) => {
-      const n1 = path.basename(args.original);
-      const n2 = path.basename(args.modified);
+      const n1 = basename(args.original);
+      const n2 = basename(args.modified);
       if (result.isError) return `🕮 diff: ${n1} ⟷ ${n2} • failed`;
       const sc = result.structuredContent;
       if (sc.isIdentical) return `🕮 diff: ${n1} ⟷ ${n2} • identical`;

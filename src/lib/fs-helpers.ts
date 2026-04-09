@@ -1,9 +1,15 @@
-import * as fsp from 'node:fs/promises';
-import * as path from 'node:path';
 import { isUtf8 } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
 import type { Stats } from 'node:fs';
-import type { FileHandle } from 'node:fs/promises';
+import {
+  type FileHandle,
+  open,
+  rename,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
+import { extname } from 'node:path';
 
 import type { FileType } from '../config.js';
 import { assertNotAborted, withAbort } from './abort.js';
@@ -132,7 +138,7 @@ export function isHidden(name: string): boolean {
 }
 
 function hasKnownBinaryExtension(filePath: string): boolean {
-  const ext = path.extname(filePath).toLowerCase();
+  const ext = extname(filePath).toLowerCase();
   return KNOWN_BINARY_EXTENSIONS.has(ext);
 }
 
@@ -140,11 +146,11 @@ async function openReadableFileHandle(
   filePath: string,
   signal?: AbortSignal
 ): Promise<FileHandle> {
-  return withAbort(fsp.open(filePath, READ_ONLY_FILE_FLAG), signal);
+  return withAbort(open(filePath, READ_ONLY_FILE_FLAG), signal);
 }
 
 async function readProbe(
-  handle: fsp.FileHandle,
+  handle: FileHandle,
   signal?: AbortSignal
 ): Promise<Buffer> {
   const buffer = Buffer.alloc(BINARY_CHECK_BUFFER_SIZE);
@@ -170,7 +176,7 @@ function hasUtf16Bom(slice: Buffer): boolean {
 
 export async function isProbablyBinary(
   filePath: string,
-  existingHandle?: fsp.FileHandle,
+  existingHandle?: FileHandle,
   signal?: AbortSignal
 ): Promise<boolean> {
   if (hasKnownBinaryExtension(filePath)) {
@@ -416,7 +422,7 @@ async function readFileBufferWithLimit(
 }
 
 async function headFile(
-  handle: fsp.FileHandle,
+  handle: FileHandle,
   numLines: number,
   encoding: BufferEncoding = 'utf-8',
   maxBytesRead?: number,
@@ -839,7 +845,7 @@ export async function readFile(
   const normalized = prepareReadOptions(options);
   const validPath = await validateExistingPath(filePath, normalized.signal);
   assertNotAborted(normalized.signal);
-  const stats = await withAbort(fsp.stat(validPath), normalized.signal);
+  const stats = await withAbort(stat(validPath), normalized.signal);
 
   return readFileWithStatsInternal(filePath, validPath, stats, normalized);
 }
@@ -854,12 +860,12 @@ export async function atomicWriteFile(
 
   try {
     assertNotAborted(signal);
-    await fsp.writeFile(tempPath, content, { encoding, signal });
-    await withAbort(fsp.rename(tempPath, filePath), signal);
+    await writeFile(tempPath, content, { encoding, signal });
+    await withAbort(rename(tempPath, filePath), signal);
   } catch (error) {
     // Attempt cleanup on error, but don't overwrite the original error
     try {
-      await fsp.unlink(tempPath).catch(() => {});
+      await unlink(tempPath).catch(() => {});
     } catch {
       // Ignore cleanup errors
     }

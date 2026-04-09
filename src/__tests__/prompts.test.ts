@@ -1,10 +1,10 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
-import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 
 import { createServer } from '../server.js';
@@ -16,7 +16,7 @@ interface PromptEnv {
 }
 
 async function createPromptEnv(): Promise<PromptEnv> {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fsmcp-prompts-'));
+  const tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-prompts-'));
   const server = await createServer({ cliAllowedDirs: [tempDir] });
   const client = new Client({ name: 'prompt-test-client', version: '1.0.0' });
   const [clientTransport, serverTransport] =
@@ -31,7 +31,7 @@ async function createPromptEnv(): Promise<PromptEnv> {
     cleanup: async () => {
       await client.close().catch(() => {});
       await server.close().catch(() => {});
-      await fs.rm(tempDir, { recursive: true, force: true });
+      await rm(tempDir, { recursive: true, force: true });
     },
   };
 }
@@ -66,8 +66,8 @@ describe('prompts', () => {
     const env = await createPromptEnv();
     cleanups.push(env.cleanup);
 
-    const filePath = path.join(env.tempDir, 'sample.txt');
-    await fs.writeFile(filePath, 'hello\n', 'utf8');
+    const filePath = join(env.tempDir, 'sample.txt');
+    await writeFile(filePath, 'hello\n', 'utf8');
 
     const result = await env.client.getPrompt({
       name: 'analyze-path',
@@ -90,10 +90,10 @@ describe('prompts', () => {
     const env = await createPromptEnv();
     cleanups.push(env.cleanup);
 
-    const original = path.join(env.tempDir, 'original.txt');
-    const modified = path.join(env.tempDir, 'modified.txt');
-    await fs.writeFile(original, 'before\n', 'utf8');
-    await fs.writeFile(modified, 'after\n', 'utf8');
+    const original = join(env.tempDir, 'original.txt');
+    const modified = join(env.tempDir, 'modified.txt');
+    await writeFile(original, 'before\n', 'utf8');
+    await writeFile(modified, 'after\n', 'utf8');
 
     const result = await env.client.getPrompt({
       name: 'compare-files',

@@ -1,9 +1,9 @@
 /**
  * Integration tests for file I/O tools: read, write, read_many, edit, apply_patch.
  */
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import assert from 'node:assert/strict';
+import { readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import {
@@ -22,8 +22,8 @@ describe('read tool', () => {
 
   before(async () => {
     env = await createTestEnv();
-    file = path.join(env.tmpDir, 'read-test.txt');
-    await fs.writeFile(file, 'line1\nline2\nline3\n', 'utf8');
+    file = join(env.tmpDir, 'read-test.txt');
+    await writeFile(file, 'line1\nline2\nline3\n', 'utf8');
   });
 
   after(async () => {
@@ -60,7 +60,7 @@ describe('read tool', () => {
   it('returns NOT_FOUND for missing file', async () => {
     const raw = await env.client.callTool({
       name: 'read',
-      arguments: { path: path.join(env.tmpDir, 'missing.txt') },
+      arguments: { path: join(env.tmpDir, 'missing.txt') },
     });
     assertToolError(raw, 'NOT_FOUND');
   });
@@ -88,7 +88,7 @@ describe('write tool', () => {
   });
 
   it('creates a new file with content', async () => {
-    const file = path.join(env.tmpDir, 'written.txt');
+    const file = join(env.tmpDir, 'written.txt');
     const raw = await env.client.callTool({
       name: 'write',
       arguments: { path: file, content: 'hello world' },
@@ -98,18 +98,18 @@ describe('write tool', () => {
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
     assert.ok(typeof sc['bytesWritten'] === 'number' && sc['bytesWritten'] > 0);
-    const actual = await fs.readFile(file, 'utf8');
+    const actual = await readFile(file, 'utf8');
     assert.equal(actual, 'hello world');
   });
 
   it('overwrites an existing file', async () => {
-    const file = path.join(env.tmpDir, 'overwrite.txt');
-    await fs.writeFile(file, 'old content', 'utf8');
+    const file = join(env.tmpDir, 'overwrite.txt');
+    await writeFile(file, 'old content', 'utf8');
     await env.client.callTool({
       name: 'write',
       arguments: { path: file, content: 'new content' },
     });
-    const actual = await fs.readFile(file, 'utf8');
+    const actual = await readFile(file, 'utf8');
     assert.equal(actual, 'new content');
   });
 
@@ -131,10 +131,10 @@ describe('read_many tool', () => {
 
   before(async () => {
     env = await createTestEnv();
-    fileA = path.join(env.tmpDir, 'a.txt');
-    fileB = path.join(env.tmpDir, 'b.txt');
-    await fs.writeFile(fileA, 'content-a', 'utf8');
-    await fs.writeFile(fileB, 'content-b', 'utf8');
+    fileA = join(env.tmpDir, 'a.txt');
+    fileB = join(env.tmpDir, 'b.txt');
+    await writeFile(fileA, 'content-a', 'utf8');
+    await writeFile(fileB, 'content-b', 'utf8');
   });
 
   after(async () => {
@@ -158,7 +158,7 @@ describe('read_many tool', () => {
   });
 
   it('includes per-path error for missing files', async () => {
-    const missing = path.join(env.tmpDir, 'missing.txt');
+    const missing = join(env.tmpDir, 'missing.txt');
     const raw = await env.client.callTool({
       name: 'read_many',
       arguments: { paths: [fileA, missing] },
@@ -176,8 +176,8 @@ describe('read_many tool', () => {
   });
 
   it('reads with startLine/endLine range', async () => {
-    const rangeFile = path.join(env.tmpDir, 'range.txt');
-    await fs.writeFile(rangeFile, 'L1\nL2\nL3\nL4\nL5\n', 'utf8');
+    const rangeFile = join(env.tmpDir, 'range.txt');
+    await writeFile(rangeFile, 'L1\nL2\nL3\nL4\nL5\n', 'utf8');
     const raw = await env.client.callTool({
       name: 'read_many',
       arguments: { paths: [rangeFile], startLine: 2, endLine: 4 },
@@ -198,9 +198,9 @@ describe('read_many tool', () => {
   });
 
   it('rejects binary files with per-path error', async () => {
-    const binFile = path.join(env.tmpDir, 'binary.bin');
+    const binFile = join(env.tmpDir, 'binary.bin');
     // Write bytes that include a null byte to trigger binary detection
-    await fs.writeFile(binFile, Buffer.from([0x89, 0x50, 0x00, 0x47, 0x0d]));
+    await writeFile(binFile, Buffer.from([0x89, 0x50, 0x00, 0x47, 0x0d]));
     const raw = await env.client.callTool({
       name: 'read_many',
       arguments: { paths: [fileA, binFile] },
@@ -243,8 +243,8 @@ describe('read_many tool budget enforcement', () => {
     const bigContent = 'x'.repeat(200 * 1024) + '\n';
     const paths: string[] = [];
     for (let i = 0; i < 3; i++) {
-      const p = path.join(env.tmpDir, `big_${i}.txt`);
-      await fs.writeFile(p, bigContent, 'utf8');
+      const p = join(env.tmpDir, `big_${i}.txt`);
+      await writeFile(p, bigContent, 'utf8');
       paths.push(p);
     }
 
@@ -293,8 +293,8 @@ describe('edit tool', () => {
   });
 
   it('applies a text replacement', async () => {
-    const file = path.join(env.tmpDir, 'edit-me.txt');
-    await fs.writeFile(file, 'foo bar baz\n', 'utf8');
+    const file = join(env.tmpDir, 'edit-me.txt');
+    await writeFile(file, 'foo bar baz\n', 'utf8');
     const raw = await env.client.callTool({
       name: 'edit',
       arguments: {
@@ -304,13 +304,13 @@ describe('edit tool', () => {
     });
     const result = raw;
     assertOk(result);
-    const actual = await fs.readFile(file, 'utf8');
+    const actual = await readFile(file, 'utf8');
     assert.equal(actual, 'foo BAR baz\n');
   });
 
   it('dryRun:true does not modify the file', async () => {
-    const file = path.join(env.tmpDir, 'dry-edit.txt');
-    await fs.writeFile(file, 'original content\n', 'utf8');
+    const file = join(env.tmpDir, 'dry-edit.txt');
+    await writeFile(file, 'original content\n', 'utf8');
     const raw = await env.client.callTool({
       name: 'edit',
       arguments: {
@@ -320,7 +320,7 @@ describe('edit tool', () => {
       },
     });
     assertOk(raw);
-    const actual = await fs.readFile(file, 'utf8');
+    const actual = await readFile(file, 'utf8');
     assert.equal(
       actual,
       'original content\n',
@@ -329,8 +329,8 @@ describe('edit tool', () => {
   });
 
   it('rejects edits with an empty oldText target', async () => {
-    const file = path.join(env.tmpDir, 'empty-target.txt');
-    await fs.writeFile(file, 'content\n', 'utf8');
+    const file = join(env.tmpDir, 'empty-target.txt');
+    await writeFile(file, 'content\n', 'utf8');
     const raw = await env.client.callTool({
       name: 'edit',
       arguments: {
@@ -345,8 +345,8 @@ describe('edit tool', () => {
   });
 
   it('reports unmatched edits when oldText is not found', async () => {
-    const file = path.join(env.tmpDir, 'no-match.txt');
-    await fs.writeFile(file, 'some text\n', 'utf8');
+    const file = join(env.tmpDir, 'no-match.txt');
+    await writeFile(file, 'some text\n', 'utf8');
     const raw = await env.client.callTool({
       name: 'edit',
       arguments: {
@@ -358,8 +358,8 @@ describe('edit tool', () => {
   });
 
   it('applies sequential edits against updated content', async () => {
-    const file = path.join(env.tmpDir, 'sequential.txt');
-    await fs.writeFile(file, 'alpha\nbeta\n', 'utf8');
+    const file = join(env.tmpDir, 'sequential.txt');
+    await writeFile(file, 'alpha\nbeta\n', 'utf8');
 
     const raw = await env.client.callTool({
       name: 'edit',
@@ -376,13 +376,13 @@ describe('edit tool', () => {
     const sc = getStructured(raw);
     assert.equal(sc['appliedEdits'], 2);
 
-    const actual = await fs.readFile(file, 'utf8');
+    const actual = await readFile(file, 'utf8');
     assert.equal(actual, 'alpha\ndelta\n');
   });
 
   it('returns diff and stats in dryRun mode without modifying the file', async () => {
-    const file = path.join(env.tmpDir, 'dry-diff.txt');
-    await fs.writeFile(file, 'alpha\nbeta\n', 'utf8');
+    const file = join(env.tmpDir, 'dry-diff.txt');
+    await writeFile(file, 'alpha\nbeta\n', 'utf8');
 
     const raw = await env.client.callTool({
       name: 'edit',
@@ -402,7 +402,7 @@ describe('edit tool', () => {
     assert.match(sc['diff'] as string, /^\+beta-1$/m);
     assert.match(sc['diff'] as string, /^\+beta-2$/m);
 
-    const actual = await fs.readFile(file, 'utf8');
+    const actual = await readFile(file, 'utf8');
     assert.equal(actual, 'alpha\nbeta\n');
   });
 });
@@ -416,8 +416,8 @@ describe('apply_patch tool', () => {
 
   before(async () => {
     env = await createTestEnv();
-    file = path.join(env.tmpDir, 'patch-target.txt');
-    await fs.writeFile(file, ORIGINAL_CONTENT, 'utf8');
+    file = join(env.tmpDir, 'patch-target.txt');
+    await writeFile(file, ORIGINAL_CONTENT, 'utf8');
   });
 
   after(async () => {
@@ -444,7 +444,7 @@ describe('apply_patch tool', () => {
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
-    const actual = await fs.readFile(file, 'utf8');
+    const actual = await readFile(file, 'utf8');
     assert.ok(
       actual.includes('BETA'),
       'Patch should replace "beta" with "BETA"'
@@ -454,7 +454,7 @@ describe('apply_patch tool', () => {
 
   it('dryRun:true does not modify the file', async () => {
     // Reset file first
-    await fs.writeFile(file, ORIGINAL_CONTENT, 'utf8');
+    await writeFile(file, ORIGINAL_CONTENT, 'utf8');
     const patch =
       [
         `--- a/patch-target.txt`,
@@ -471,7 +471,7 @@ describe('apply_patch tool', () => {
       arguments: { path: file, patch, dryRun: true },
     });
     assertOk(raw);
-    const actual = await fs.readFile(file, 'utf8');
+    const actual = await readFile(file, 'utf8');
     assert.equal(
       actual,
       ORIGINAL_CONTENT,
@@ -480,7 +480,7 @@ describe('apply_patch tool', () => {
   });
 
   it('returns INVALID_INPUT when patch has no effect', async () => {
-    await fs.writeFile(file, ORIGINAL_CONTENT, 'utf8');
+    await writeFile(file, ORIGINAL_CONTENT, 'utf8');
     // Patch that targets content not present in the file — applyPatch returns
     // the original string (not false) when context lines match but the removed
     // line is absent, so the patched output equals the original.
@@ -500,7 +500,7 @@ describe('apply_patch tool', () => {
       arguments: { path: file, patch },
     });
     assertToolError(raw, 'INVALID_INPUT');
-    const actual = await fs.readFile(file, 'utf8');
+    const actual = await readFile(file, 'utf8');
     assert.equal(actual, ORIGINAL_CONTENT, 'File must be unchanged');
   });
 });

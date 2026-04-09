@@ -1,5 +1,5 @@
-import * as fs from 'node:fs/promises';
 import type { Stats } from 'node:fs';
+import { stat } from 'node:fs/promises';
 import { getSystemErrorMessage, getSystemErrorName } from 'node:util';
 
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
@@ -114,7 +114,7 @@ async function validateDirectoryPath(inputPath: string): Promise<string> {
   const normalized = normalizePath(inputPath);
 
   try {
-    const stats = await fs.stat(normalized);
+    const stats = await stat(normalized);
     assertDirectory(stats, inputPath);
     return normalized;
   } catch (error) {

@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import * as path from 'node:path';
+import { basename } from 'node:path';
 
 import type { z } from 'zod';
 
@@ -90,7 +90,7 @@ export function registerTreeTool(
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: targetPath },
       run: async (signal) => {
-        const context = args.path ? path.basename(args.path) : '.';
+        const context = args.path ? basename(args.path) : '.';
         let progressCursor = 0;
         const knownTotal = args.maxEntries;
 

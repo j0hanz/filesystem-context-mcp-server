@@ -1,8 +1,16 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CompleteRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
+import { readdir, stat } from 'node:fs/promises';
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  parse,
+  resolve,
+  sep,
+} from 'node:path';
 
 import {
   getAllowedDirectories,
@@ -259,14 +267,12 @@ function rememberCompletionCacheValue<T>(
 }
 
 function hasTrailingSeparator(value: string): boolean {
-  return (
-    value.endsWith(path.sep) || value.endsWith('/') || value.endsWith('\\')
-  );
+  return value.endsWith(sep) || value.endsWith('/') || value.endsWith('\\');
 }
 
 function isAbsolutePathInput(value: string): boolean {
   return (
-    path.isAbsolute(value) ||
+    isAbsolute(value) ||
     /^[A-Za-z]:[\\/]/u.test(value) ||
     value.startsWith('\\\\')
   );
@@ -280,13 +286,13 @@ function resolveFromBase(
   searchDir: string;
   prefix: string;
 } {
-  const normalizedValue = normalizePath(path.resolve(base, rawValue));
+  const normalizedValue = normalizePath(resolve(base, rawValue));
   if (trailingSeparator) {
     return { searchDir: normalizedValue, prefix: '' };
   }
   return {
-    searchDir: path.dirname(normalizedValue),
-    prefix: path.basename(normalizedValue),
+    searchDir: dirname(normalizedValue),
+    prefix: basename(normalizedValue),
   };
 }
 
@@ -319,7 +325,7 @@ function resolveNamedRootPath(
   const root = findAllowedRootByName(parsed.rootName, allowed);
   if (!root) return undefined;
 
-  return normalizePath(path.resolve(root, parsed.remainder));
+  return normalizePath(resolve(root, parsed.remainder));
 }
 
 function parseNamedRootInput(
@@ -328,7 +334,7 @@ function parseNamedRootInput(
   const normalizedInput = toPosixPath(value);
   const [rootName, ...rest] = normalizedInput.split('/');
   if (!rootName) return undefined;
-  return { rootName, remainder: rest.join(path.sep) };
+  return { rootName, remainder: rest.join(sep) };
 }
 
 function findAllowedRootByName(
@@ -337,7 +343,7 @@ function findAllowedRootByName(
 ): string | undefined {
   const normalizedRootName = rootName.toLowerCase();
   return allowed.find(
-    (candidate) => path.basename(candidate).toLowerCase() === normalizedRootName
+    (candidate) => basename(candidate).toLowerCase() === normalizedRootName
   );
 }
 
@@ -377,7 +383,7 @@ function resolveContextCandidatePath(
   if (allowed.length === 1) {
     const base = allowed[0];
     if (!base) return undefined;
-    return normalizePath(path.resolve(base, candidate));
+    return normalizePath(resolve(base, candidate));
   }
 
   return resolveNamedRootPath(candidate, allowed);
@@ -390,13 +396,13 @@ async function toAllowedContextDirectory(
   if (!isPathWithinDirectories(resolved, allowed)) return undefined;
 
   try {
-    const stats = await fs.stat(resolved);
+    const stats = await stat(resolved);
     if (stats.isDirectory()) return resolved;
   } catch {
     // Fall back to parent path best-effort resolution.
   }
 
-  const parent = path.dirname(resolved);
+  const parent = dirname(resolved);
   return isPathWithinDirectories(parent, allowed) ? parent : undefined;
 }
 
@@ -424,7 +430,7 @@ async function resolveContextBaseDirectory(
 }
 
 function withDirectorySeparator(value: string): string {
-  return value.endsWith(path.sep) ? value : `${value}${path.sep}`;
+  return value.endsWith(sep) ? value : `${value}${sep}`;
 }
 
 function buildCompletionResult(values: readonly string[]): CompletionResult {
@@ -443,8 +449,8 @@ function buildCompletionResponse(result: CompletionResult): {
 
 function sortCompletionMatches(matches: string[]): void {
   matches.sort((left, right) => {
-    const leftIsDir = left.endsWith(path.sep);
-    const rightIsDir = right.endsWith(path.sep);
+    const leftIsDir = left.endsWith(sep);
+    const rightIsDir = right.endsWith(sep);
     if (leftIsDir && !rightIsDir) return -1;
     if (!leftIsDir && rightIsDir) return 1;
     return left.localeCompare(right);
@@ -498,7 +504,7 @@ function getSearchContext(
 
   if (isAbsolutePathInput(currentValue)) {
     return resolveFromBase(
-      path.parse(currentValue).root || path.sep,
+      parse(currentValue).root || sep,
       currentValue,
       trailingSeparator
     );
@@ -536,14 +542,14 @@ async function findMatchesInDirectory(
   }
 
   try {
-    const entries = await fs.readdir(searchDir, { withFileTypes: true });
+    const entries = await readdir(searchDir, { withFileTypes: true });
     const lowerPrefix = prefix.toLowerCase();
 
     for (const entry of entries) {
       if (entry.name.toLowerCase().startsWith(lowerPrefix)) {
-        const fullPath = path.join(searchDir, entry.name);
+        const fullPath = join(searchDir, entry.name);
         const isDir = entry.isDirectory();
-        matches.push(isDir ? `${fullPath}${path.sep}` : fullPath);
+        matches.push(isDir ? `${fullPath}${sep}` : fullPath);
       }
     }
   } catch {
@@ -562,7 +568,7 @@ function findRootPrefixMatches(
   }
 
   return collectAllowedRoots(allowed, (root) =>
-    path.basename(root).toLowerCase().startsWith(rootPrefix)
+    basename(root).toLowerCase().startsWith(rootPrefix)
   );
 }
 
@@ -575,10 +581,10 @@ function findMatchingRoots(
   const normalizedSearchDir = normalizePath(searchDir);
 
   return collectAllowedRoots(allowed, (root) => {
-    const rootDir = path.dirname(root);
+    const rootDir = dirname(root);
     // Check if root is a direct child of searchDir
     if (normalizePath(rootDir) !== normalizedSearchDir) return false;
-    return path.basename(root).toLowerCase().startsWith(lowerPrefix);
+    return basename(root).toLowerCase().startsWith(lowerPrefix);
   });
 }
 

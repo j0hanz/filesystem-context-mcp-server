@@ -1,7 +1,7 @@
-import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 
 import { ErrorCode, McpError } from '../../lib/errors.js';
@@ -22,13 +22,13 @@ describe('allowed directories async context', () => {
     while (tempDirs.length > 0) {
       const dir = tempDirs.pop();
       if (!dir) continue;
-      await fs.rm(dir, { recursive: true, force: true });
+      await rm(dir, { recursive: true, force: true });
     }
   });
 
   it('isolates path validation within an async context override', async () => {
-    const dirA = await fs.mkdtemp(path.join(os.tmpdir(), 'fsmcp-root-a-'));
-    const dirB = await fs.mkdtemp(path.join(os.tmpdir(), 'fsmcp-root-b-'));
+    const dirA = await mkdtemp(join(tmpdir(), 'fsmcp-root-a-'));
+    const dirB = await mkdtemp(join(tmpdir(), 'fsmcp-root-b-'));
     tempDirs.push(dirA, dirB);
 
     await setAllowedDirectoriesResolved([dirA]);
@@ -59,8 +59,8 @@ describe('allowed directories async context', () => {
   });
 
   it('keeps concurrent async contexts separated', async () => {
-    const dirA = await fs.mkdtemp(path.join(os.tmpdir(), 'fsmcp-root-a-'));
-    const dirB = await fs.mkdtemp(path.join(os.tmpdir(), 'fsmcp-root-b-'));
+    const dirA = await mkdtemp(join(tmpdir(), 'fsmcp-root-a-'));
+    const dirB = await mkdtemp(join(tmpdir(), 'fsmcp-root-b-'));
     tempDirs.push(dirA, dirB);
 
     const stateA = await resolveAllowedDirectoriesState([dirA]);

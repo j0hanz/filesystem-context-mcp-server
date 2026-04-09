@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import * as path from 'node:path';
+import { relative } from 'node:path';
 
 import RE2 from 're2';
 import type { z } from 'zod';
@@ -225,9 +225,9 @@ function normalizeMatches(result: SearchResultValue): NormalizedSearchMatch[] {
     const cached = relativeByFile.get(file);
     if (cached !== undefined) return cached;
 
-    const relative = path.relative(result.basePath, file);
-    relativeByFile.set(file, relative);
-    return relative;
+    const rel = relative(result.basePath, file);
+    relativeByFile.set(file, rel);
+    return rel;
   };
 
   return result.matches

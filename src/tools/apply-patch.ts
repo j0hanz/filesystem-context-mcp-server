@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import * as path from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
+import { basename, resolve } from 'node:path';
 
 import { applyPatch, parsePatch, type StructuredPatch } from 'diff';
 import type { z } from 'zod';
@@ -180,7 +180,7 @@ async function processMultiFilePatch(
         });
     }
 
-    const filePath = path.resolve(validBase, fileName);
+    const filePath = resolve(validBase, fileName);
     return async (): Promise<PatchFileResult> => {
       try {
         const result = await applyDiff(filePath, diff, options, signal);
@@ -332,11 +332,11 @@ export function registerApplyPatchTool(
   const wrappedHandler = wrapToolHandler(handler, {
     guard: options.isInitialized,
     progressMessage: (args) => {
-      const name = path.basename(args.path);
+      const name = basename(args.path);
       return args.dryRun ? `🛠 patch: ${name} [dry run]` : `🛠 patch: ${name}`;
     },
     completionMessage: (args, result) => {
-      const name = path.basename(args.path);
+      const name = basename(args.path);
       if (result.isError) return `🛠 patch: ${name} • failed`;
       const sc = result.structuredContent;
       if (!sc.ok) return `🛠 patch: ${name} • failed`;

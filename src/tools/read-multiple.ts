@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import * as path from 'node:path';
+import { basename } from 'node:path';
 
 import type { z } from 'zod';
 
@@ -64,7 +64,7 @@ type ReadManyResultWithResource = Omit<ReadManyResult, 'error'> & {
 };
 
 function buildReadManyResourceName(filePath: string): string {
-  return `read:${path.basename(filePath)}`;
+  return `read:${basename(filePath)}`;
 }
 
 function toStructuredReadManyResult(

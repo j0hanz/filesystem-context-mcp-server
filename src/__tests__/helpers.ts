@@ -3,11 +3,11 @@ import { InMemoryTaskMessageQueue } from '@modelcontextprotocol/sdk/experimental
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { setAllowedDirectoriesResolved } from '../lib/paths.js';
 import { createInMemoryResourceStore } from '../lib/resource-store.js';
@@ -38,8 +38,8 @@ export interface TestEnv {
  * singleton to [tmpDir] so path validation works correctly.
  */
 export async function createTestEnv(): Promise<TestEnv> {
-  const tmpDir = await fs.mkdtemp(
-    path.join(os.tmpdir(), `fsmcp-${randomUUID().slice(0, 8)}-`)
+  const tmpDir = await mkdtemp(
+    join(tmpdir(), `fsmcp-${randomUUID().slice(0, 8)}-`)
   );
 
   await setAllowedDirectoriesResolved([tmpDir]);
@@ -86,7 +86,7 @@ export async function createTestEnv(): Promise<TestEnv> {
     } catch {
       // ignore
     }
-    await fs.rm(tmpDir, { recursive: true, force: true });
+    await rm(tmpDir, { recursive: true, force: true });
     try {
       await setAllowedDirectoriesResolved([]);
     } catch {

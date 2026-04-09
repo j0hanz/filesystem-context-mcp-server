@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import * as path from 'node:path';
 import { createHash } from 'node:crypto';
+import { basename } from 'node:path';
 
 import type { z } from 'zod';
 
@@ -56,7 +56,7 @@ const READ_TOOL_LABEL = '🕮 read';
 const FULL_FILE_CONTENTS_DESCRIPTION = 'Full file contents';
 
 function buildReadResourceName(filePath: string): string {
-  return `read:${path.basename(filePath)}`;
+  return `read:${basename(filePath)}`;
 }
 
 function buildReadOptions(
@@ -141,7 +141,7 @@ function maybeBuildExternalizedReadResponse(
 }
 
 function buildReadProgressMessage(args: ReadFileInput): string {
-  const name = path.basename(args.path);
+  const name = basename(args.path);
   if (args.startLine !== undefined) {
     const end = args.endLine ?? '…';
     return `${READ_TOOL_LABEL}: ${name} [lines ${args.startLine}–${end}]`;
@@ -157,7 +157,7 @@ function buildReadCompletionMessage(
   args: ReadFileInput,
   result: ToolResult<ReadFileOutput>
 ): string {
-  const name = path.basename(args.path);
+  const name = basename(args.path);
   if (result.isError) return `${READ_TOOL_LABEL}: ${name} • failed`;
 
   const structured = result.structuredContent;

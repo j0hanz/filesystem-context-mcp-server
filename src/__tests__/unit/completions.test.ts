@@ -2,11 +2,11 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 import { registerCompletions } from '../../completions.js';
@@ -17,11 +17,11 @@ import {
 
 describe('completions', () => {
   it('does not reuse stale path suggestions for a different prefix inside the rate limit window', async () => {
-    const tmpDir = await fs.mkdtemp(
-      path.join(os.tmpdir(), `fsmcp-complete-${randomUUID().slice(0, 8)}-`)
+    const tmpDir = await mkdtemp(
+      join(tmpdir(), `fsmcp-complete-${randomUUID().slice(0, 8)}-`)
     );
-    await fs.writeFile(path.join(tmpDir, 'alpha.txt'), 'alpha', 'utf8');
-    await fs.writeFile(path.join(tmpDir, 'beta.txt'), 'beta', 'utf8');
+    await writeFile(join(tmpDir, 'alpha.txt'), 'alpha', 'utf8');
+    await writeFile(join(tmpDir, 'beta.txt'), 'beta', 'utf8');
     await setAllowedDirectoriesResolved([tmpDir]);
 
     const server = new McpServer(
@@ -56,18 +56,18 @@ describe('completions', () => {
     } finally {
       await client.close().catch(() => {});
       await server.close().catch(() => {});
-      await fs.rm(tmpDir, { recursive: true, force: true });
+      await rm(tmpDir, { recursive: true, force: true });
       await setAllowedDirectoriesResolved([]);
     }
   });
 
   it('does not collide cache keys when context values contain delimiter characters', async () => {
-    const tmpDir = await fs.mkdtemp(
-      path.join(os.tmpdir(), `fsmcp-complete-${randomUUID().slice(0, 8)}-`)
+    const tmpDir = await mkdtemp(
+      join(tmpdir(), `fsmcp-complete-${randomUUID().slice(0, 8)}-`)
     );
-    const fooDir = path.join(tmpDir, 'foo');
-    await fs.mkdir(fooDir);
-    await fs.writeFile(path.join(fooDir, 'inside.txt'), 'inside', 'utf8');
+    const fooDir = join(tmpDir, 'foo');
+    await mkdir(fooDir);
+    await writeFile(join(fooDir, 'inside.txt'), 'inside', 'utf8');
     await setAllowedDirectoriesResolved([tmpDir]);
 
     const server = new McpServer(
@@ -105,7 +105,7 @@ describe('completions', () => {
     } finally {
       await client.close().catch(() => {});
       await server.close().catch(() => {});
-      await fs.rm(tmpDir, { recursive: true, force: true });
+      await rm(tmpDir, { recursive: true, force: true });
       await setAllowedDirectoriesResolved([]);
     }
   });

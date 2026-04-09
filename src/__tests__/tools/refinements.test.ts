@@ -1,6 +1,6 @@
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import assert from 'node:assert/strict';
+import { readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import {
@@ -20,10 +20,10 @@ describe('apply_patch multi-file', () => {
 
   before(async () => {
     env = await createTestEnv();
-    fileA = path.join(env.tmpDir, 'alpha.txt');
-    fileB = path.join(env.tmpDir, 'beta.txt');
-    await fs.writeFile(fileA, 'one\ntwo\nthree\n', 'utf8');
-    await fs.writeFile(fileB, 'AAA\nBBB\nCCC\n', 'utf8');
+    fileA = join(env.tmpDir, 'alpha.txt');
+    fileB = join(env.tmpDir, 'beta.txt');
+    await writeFile(fileA, 'one\ntwo\nthree\n', 'utf8');
+    await writeFile(fileB, 'AAA\nBBB\nCCC\n', 'utf8');
   });
 
   after(async () => {
@@ -79,11 +79,11 @@ describe('apply_patch multi-file', () => {
     assert.equal(betaResult['applied'], true);
     assert.equal(betaResult['hunksApplied'], 1);
 
-    const actualA = await fs.readFile(fileA, 'utf8');
+    const actualA = await readFile(fileA, 'utf8');
     assert.ok(actualA.includes('TWO'), 'alpha.txt should contain TWO');
     assert.ok(!actualA.includes('\ntwo\n'), 'alpha.txt original "two" gone');
 
-    const actualB = await fs.readFile(fileB, 'utf8');
+    const actualB = await readFile(fileB, 'utf8');
     assert.ok(
       actualB.includes('BBB_REPLACED'),
       'beta.txt should contain BBB_REPLACED'
@@ -91,7 +91,7 @@ describe('apply_patch multi-file', () => {
   });
 
   it('reports per-file errors when one file is missing', async () => {
-    await fs.writeFile(fileA, 'one\ntwo\nthree\n', 'utf8');
+    await writeFile(fileA, 'one\ntwo\nthree\n', 'utf8');
 
     const patch =
       [
@@ -134,8 +134,8 @@ describe('apply_patch multi-file', () => {
   });
 
   it('dryRun:true does not modify files in multi-file mode', async () => {
-    await fs.writeFile(fileA, 'one\ntwo\nthree\n', 'utf8');
-    await fs.writeFile(fileB, 'AAA\nBBB\nCCC\n', 'utf8');
+    await writeFile(fileA, 'one\ntwo\nthree\n', 'utf8');
+    await writeFile(fileB, 'AAA\nBBB\nCCC\n', 'utf8');
 
     const patch =
       [
@@ -161,9 +161,9 @@ describe('apply_patch multi-file', () => {
     });
     assertOk(raw);
 
-    const actualA = await fs.readFile(fileA, 'utf8');
+    const actualA = await readFile(fileA, 'utf8');
     assert.equal(actualA, 'one\ntwo\nthree\n', 'alpha.txt unchanged');
-    const actualB = await fs.readFile(fileB, 'utf8');
+    const actualB = await readFile(fileB, 'utf8');
     assert.equal(actualB, 'AAA\nBBB\nCCC\n', 'beta.txt unchanged');
   });
 });
@@ -176,12 +176,8 @@ describe('read tool tail parameter', () => {
 
   before(async () => {
     env = await createTestEnv();
-    file = path.join(env.tmpDir, 'lines.txt');
-    await fs.writeFile(
-      file,
-      'line1\nline2\nline3\nline4\nline5\nline6\n',
-      'utf8'
-    );
+    file = join(env.tmpDir, 'lines.txt');
+    await writeFile(file, 'line1\nline2\nline3\nline4\nline5\nline6\n', 'utf8');
   });
 
   after(async () => {
@@ -234,10 +230,10 @@ describe('read_many tool with tail parameter', () => {
 
   before(async () => {
     env = await createTestEnv();
-    fileA = path.join(env.tmpDir, 'a.txt');
-    fileB = path.join(env.tmpDir, 'b.txt');
-    await fs.writeFile(fileA, 'a1\na2\na3\na4\na5\n', 'utf8');
-    await fs.writeFile(fileB, 'b1\nb2\nb3\nb4\nb5\n', 'utf8');
+    fileA = join(env.tmpDir, 'a.txt');
+    fileB = join(env.tmpDir, 'b.txt');
+    await writeFile(fileA, 'a1\na2\na3\na4\na5\n', 'utf8');
+    await writeFile(fileB, 'b1\nb2\nb3\nb4\nb5\n', 'utf8');
   });
 
   after(async () => {
@@ -304,8 +300,8 @@ describe('grep externalization with expiresAt', () => {
       for (let j = 0; j < 10; j++) {
         lines.push(`FINDME_marker_${i}_${j} some text here`);
       }
-      await fs.writeFile(
-        path.join(env.tmpDir, `data_${String(i).padStart(3, '0')}.txt`),
+      await writeFile(
+        join(env.tmpDir, `data_${String(i).padStart(3, '0')}.txt`),
         lines.join('\n') + '\n',
         'utf8'
       );

@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import * as path from 'node:path';
+import { basename, relative } from 'node:path';
 
 import type { z } from 'zod';
 
@@ -70,7 +70,7 @@ function buildRelativeResults(
   > = [];
   for (const entry of displayResults) {
     relativeResults.push({
-      path: path.relative(basePath, entry.path),
+      path: relative(basePath, entry.path),
       size: entry.size,
       modified: entry.modified?.toISOString(),
     });
@@ -189,7 +189,7 @@ export function registerSearchFilesTool(
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: args.path ?? '.' },
       run: async (signal) => {
-        const rawScopeLabel = args.path ? path.basename(args.path) : '.';
+        const rawScopeLabel = args.path ? basename(args.path) : '.';
         const scopeLabel = rawScopeLabel || '.';
         const { pattern } = args;
         const truncatedPattern = truncateProgressPattern(pattern);

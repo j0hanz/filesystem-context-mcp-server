@@ -1,9 +1,9 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import { type BinaryToTextEncoding, createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
+import { basename, relative, win32 } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
 import type { z } from 'zod';
@@ -80,8 +80,8 @@ async function hashFile(
 }
 
 function toStableRelativePath(root: string, entryPath: string): string {
-  const relativePath = path.relative(root, entryPath);
-  return relativePath.includes(path.win32.sep)
+  const relativePath = relative(root, entryPath);
+  return relativePath.includes(win32.sep)
     ? relativePath.replace(WINDOWS_PATH_SEPARATOR, '/')
     : relativePath;
 }
@@ -196,7 +196,7 @@ async function handleCalculateHash(
   const validPath = await validateExistingPath(args.path, signal);
 
   // Check if path is a directory or file
-  const stats = await withAbort(fs.stat(validPath), signal);
+  const stats = await withAbort(stat(validPath), signal);
 
   if (stats.isDirectory()) {
     // Hash directory: composite hash of all files
@@ -241,7 +241,7 @@ export function registerCalculateHashTool(
       timedSignal: {},
       context: { path: args.path },
       run: async (signal) => {
-        const baseName = path.basename(args.path);
+        const baseName = basename(args.path);
         const progress = createToolProgressSession(
           extra,
           `🕮 hash: ${baseName}`
