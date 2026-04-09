@@ -1,8 +1,7 @@
-import * as fsp from 'node:fs/promises';
-import * as path from 'node:path';
 import { AsyncResource } from 'node:async_hooks';
-import { existsSync, type Stats } from 'node:fs';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import type { Stats } from 'node:fs';
+import { type FileHandle, open, stat } from 'node:fs/promises';
+import { basename, dirname } from 'node:path';
 import { debuglog } from 'node:util';
 import { parentPort, threadId, Worker, workerData } from 'node:worker_threads';
 
@@ -368,7 +367,7 @@ function processLineMatch(
 }
 
 async function readMatches(
-  handle: fsp.FileHandle,
+  handle: FileHandle,
   requestedPath: string,
   matcher: Matcher,
   options: ScanFileOptions,
@@ -427,7 +426,7 @@ async function readMatches(
 
 type BinaryDetector = (
   resolvedPath: string,
-  handle: fsp.FileHandle,
+  handle: FileHandle,
   signal?: AbortSignal
 ) => Promise<boolean>;
 
@@ -441,7 +440,7 @@ async function scanFileResolved(
   injectedBinaryDetector?: BinaryDetector
 ): Promise<ScanFileResult> {
   assertNotAborted(signal);
-  await using handle = await withAbort(fsp.open(resolvedPath, 'r'), signal);
+  await using handle = await withAbort(open(resolvedPath, 'r'), signal);
   const stats = await withAbort(handle.stat(), signal);
 
   if (stats.size > options.maxFileSize) {
@@ -631,16 +630,9 @@ interface ScanTask {
   }>;
 }
 
-const currentDir = path.dirname(fileURLToPath(import.meta.url));
-const isSourceContext =
-  currentDir.endsWith('src\\lib\\file-operations') ||
-  currentDir.endsWith('src/lib/file-operations');
-const WORKER_SCRIPT_PATH = path.join(
-  currentDir,
-  isSourceContext ? 'search-worker.ts' : 'search-worker.js'
-);
-const WORKER_SCRIPT_URL = pathToFileURL(WORKER_SCRIPT_PATH);
-const hasWorkerScript = existsSync(WORKER_SCRIPT_PATH);
+const isSourceContext = import.meta.url.endsWith('.ts');
+const WORKER_SCRIPT_URL = new URL(import.meta.url);
+const hasWorkerScript = true;
 
 class SearchWorkerTaskResource extends AsyncResource {
   #settled = false;
@@ -777,10 +769,23 @@ class SearchWorkerPool {
     if (this.closed) throw new Error(ERROR_WORKER_POOL_CLOSED);
 
     const id = this.nextRequestId++;
-    const workerIndex = this.workerRoundRobin % this.size;
-    const worker = this.getWorker(workerIndex);
+    let workerIndex = 0;
+    const workerPendingCounts = new Array<number>(this.size).fill(0);
+    for (const p of this.pending.values()) {
+      const idx = p.workerIndex;
+      workerPendingCounts[idx] = (workerPendingCounts[idx] ?? 0) + 1;
+    }
 
-    this.workerRoundRobin++;
+    let minPending = workerPendingCounts[0] ?? 0;
+    for (let i = 1; i < this.size; i++) {
+      const pendingCount = workerPendingCounts[i] ?? 0;
+      if (pendingCount < minPending) {
+        minPending = pendingCount;
+        workerIndex = i;
+      }
+    }
+
+    const worker = this.getWorker(workerIndex);
 
     const promise = new Promise<WorkerScanResult>((resolve, reject) => {
       const resource = new SearchWorkerTaskResource();
@@ -1154,7 +1159,7 @@ async function searchSingleFile(
   if (result.matched) summary.filesMatched = 1;
 
   return buildSearchContentResult(
-    path.dirname(details.resolvedPath),
+    dirname(details.resolvedPath),
     pattern,
     opts.filePattern,
     result.matches as ContentMatch[],
@@ -1187,11 +1192,12 @@ async function searchDirectory(
     })
   );
 
+  const summary = createScanSummary();
+
   async function* fileGenerator(): AsyncGenerator<ResolvedFile> {
-    let scanned = 0;
     for await (const entry of stream) {
       if (signal.aborted) break;
-      if (scanned >= opts.maxFilesScanned) break;
+      if (summary.filesScanned >= opts.maxFilesScanned) break;
 
       if (!entry.dirent.isFile()) continue;
 
@@ -1199,35 +1205,32 @@ async function searchDirectory(
       if (!isPathWithinDirectories(normalized, rootDirectories)) continue;
       if (isSensitivePath(entry.path, normalized)) continue;
 
-      scanned++;
-      onProgress?.({ current: scanned, total: opts.maxFilesScanned });
+      summary.filesScanned++;
+      onProgress?.({
+        current: summary.filesScanned,
+        total: opts.maxFilesScanned,
+      });
 
       yield { resolvedPath: normalized, requestedPath: entry.path };
     }
 
-    onProgress?.({ current: scanned, total: opts.maxFilesScanned });
-  }
-
-  const summary = createScanSummary();
-  const resolvedStream = fileGenerator();
-
-  async function* countingStream(): AsyncGenerator<ResolvedFile> {
-    for await (const f of resolvedStream) {
-      summary.filesScanned++;
-      yield f;
-    }
     if (summary.filesScanned >= opts.maxFilesScanned) {
       summary.truncated = true;
       summary.stoppedReason = 'maxFiles';
     }
+
+    onProgress?.({
+      current: summary.filesScanned,
+      total: opts.maxFilesScanned,
+    });
   }
 
   const matcherOpts = buildMatcherOptions(opts);
   validatePattern(pattern, matcherOpts);
 
   const matches = shouldUseWorkers()
-    ? await executeParallel(countingStream(), pattern, opts, signal, summary)
-    : await executeSequential(countingStream(), pattern, opts, signal, summary);
+    ? await executeParallel(fileGenerator(), pattern, opts, signal, summary)
+    : await executeSequential(fileGenerator(), pattern, opts, signal, summary);
 
   return buildSearchContentResult(
     root,
@@ -1271,7 +1274,7 @@ export async function searchContent(
       opts.timeoutMs,
       async (signal) => {
         const details = await validateExistingPathDetailed(basePath, signal);
-        const stats = await withAbort(fsp.stat(details.resolvedPath), signal);
+        const stats = await withAbort(stat(details.resolvedPath), signal);
 
         if (stats.isFile()) {
           return searchSingleFile(details, opts, pattern, signal);
@@ -1670,7 +1673,7 @@ function sortSearchResults(results: Sortable[], sortBy: SortBy): void {
   if (sortBy === 'name') {
     stableSortByDerivedString(
       results,
-      (item) => path.basename(item.path ?? ''),
+      (item) => basename(item.path ?? ''),
       (left, right) => comparePathThenName(left, right)
     );
     return;
