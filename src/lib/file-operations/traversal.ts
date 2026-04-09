@@ -1,7 +1,6 @@
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import type { Stats } from 'node:fs';
-import { glob as fsGlob } from 'node:fs/promises';
+import { glob as fsGlob, lstat, stat } from 'node:fs/promises';
+import { isAbsolute, relative, resolve } from 'node:path';
 
 import {
   getToolContextSnapshot,
@@ -180,7 +179,7 @@ function assertOptionsShape(options: GlobEntriesOptions): void {
 }
 
 function normalizeOptions(options: GlobEntriesOptions): NormalizedGlob {
-  const cwd = path.resolve(options.cwd);
+  const cwd = resolve(options.cwd);
   const normalizedPattern = normalizePattern(
     options.pattern,
     options.baseNameMatch
@@ -235,13 +234,11 @@ function resolveDirentBase(
   parentPath: string | undefined
 ): string {
   if (!parentPath) return cwd;
-  return path.isAbsolute(parentPath)
-    ? parentPath
-    : path.resolve(cwd, parentPath);
+  return isAbsolute(parentPath) ? parentPath : resolve(cwd, parentPath);
 }
 
 function resolveStringMatchPath(cwd: string, match: string): string {
-  return path.isAbsolute(match) ? match : path.resolve(cwd, match);
+  return isAbsolute(match) ? match : resolve(cwd, match);
 }
 
 function* processDirentMatch(
@@ -252,10 +249,10 @@ function* processDirentMatch(
   onlyFiles: boolean
 ): Generator<GlobEntry> {
   const base = resolveDirentBase(cwd, match.parentPath);
-  const absolutePath = path.resolve(base, match.name);
+  const absolutePath = resolve(base, match.name);
 
   if (maxDepth !== undefined) {
-    const rel = path.relative(cwd, absolutePath);
+    const rel = relative(cwd, absolutePath);
     if (getRelativeDepth(rel) > maxDepth) return;
   }
 
@@ -288,13 +285,13 @@ async function resolveStringMatch(
 
   try {
     const stats = followSymlinks
-      ? await fs.stat(absolutePath)
-      : await fs.lstat(absolutePath);
+      ? await stat(absolutePath)
+      : await lstat(absolutePath);
 
     if (onlyFiles && !stats.isFile()) return null;
 
     const entry: GlobEntry = { path: absolutePath, dirent: stats };
-    if (!path.isAbsolute(match)) {
+    if (!isAbsolute(match)) {
       entry.relativePath = match;
     }
     if (returnStats) entry.stats = stats;
@@ -327,13 +324,14 @@ async function* processIterable(
     suppressErrors,
   } = context;
 
-  const buffer: string[] = [];
+  let buffer: string[] = [];
 
   const flush = async function* (): AsyncGenerator<GlobEntry> {
     if (buffer.length === 0) return;
 
     // Process buffer concurrently
-    const currentBuffer = buffer.splice(0, buffer.length);
+    const currentBuffer = buffer;
+    buffer = [];
     const results = await Promise.all(
       currentBuffer.map((match) =>
         resolveStringMatch(
