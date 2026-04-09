@@ -17,7 +17,6 @@ import {
 } from '../lib/file-operations/core.js';
 import { globEntries } from '../lib/file-operations/traversal.js';
 import { validateExistingPath } from '../lib/paths.js';
-import { reportPeriodicProgress } from '../lib/utils.js';
 
 import {
   CalculateHashInputSchema,
@@ -163,20 +162,13 @@ async function hashDirectory(
       entries.push({ path: task.relativePath, hash: fileHash });
 
       filesHashed++;
-      reportPeriodicProgress(onProgress, filesHashed, {
-        throttleModulo: 25,
-        total: totalFiles,
-      });
+      onProgress?.({ current: filesHashed, total: totalFiles });
     }
   };
 
   await Promise.all(Array.from({ length: concurrency }, () => worker()));
 
-  reportPeriodicProgress(onProgress, filesHashed, {
-    throttleModulo: 25,
-    total: totalFiles,
-    force: true,
-  });
+  onProgress?.({ current: filesHashed, total: totalFiles });
 
   assertNotAborted(signal);
   // Sort by path with byte-wise semantics for deterministic ordering.
@@ -223,10 +215,7 @@ async function handleCalculateHash(
   } else {
     // Hash single file
     const hash = await hashFile(validPath, 'hex', signal);
-    reportPeriodicProgress(onProgress, 1, {
-      throttleModulo: 25,
-      force: true,
-    });
+    onProgress?.({ current: 1 });
 
     return buildToolResponse(hash, {
       ok: true,

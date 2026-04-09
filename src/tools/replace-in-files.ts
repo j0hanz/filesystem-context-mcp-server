@@ -23,7 +23,6 @@ import { globEntries } from '../lib/file-operations/traversal.js';
 import { atomicWriteFile } from '../lib/fs-helpers.js';
 import { Logger } from '../lib/logger.js';
 import { validateExistingPath, validatePathForWrite } from '../lib/paths.js';
-import { reportPeriodicProgress } from '../lib/utils.js';
 
 import {
   SearchAndReplaceInputSchema,
@@ -497,9 +496,7 @@ async function handleSearchAndReplace(
     ...(args.maxFiles !== undefined ? { maxEntries: args.maxFiles } : {}),
     onEntry: () => {
       summary.processedFiles++;
-      reportPeriodicProgress(onProgress, summary.processedFiles, {
-        throttleModulo: 25,
-      });
+      onProgress({ current: summary.processedFiles });
     },
     runEntry: (entryPath) => processEntry(entryPath, context),
   });
@@ -510,10 +507,7 @@ async function handleSearchAndReplace(
     summary.stoppedReason = 'maxFiles';
   }
 
-  reportPeriodicProgress(onProgress, summary.processedFiles, {
-    throttleModulo: 25,
-    force: true,
-  });
+  onProgress({ current: summary.processedFiles });
 
   if (!args.dryRun && summary.totalMatches > 0) {
     Logger.info(

@@ -41,11 +41,7 @@ import {
   validateExistingDirectory,
   validateExistingPathDetailed,
 } from '../paths.js';
-import {
-  mergeOptions,
-  omitOptionKeys,
-  reportPeriodicProgress,
-} from '../utils.js';
+import { mergeOptions, omitOptionKeys } from '../utils.js';
 import {
   compareOptionalNumberDesc,
   compareStringValues,
@@ -205,7 +201,6 @@ const DEFAULTS: ResolvedOptions = {
 
 const ERROR_SCAN_CANCELLED = 'Scan cancelled';
 const ERROR_WORKER_POOL_CLOSED = 'Worker pool closed';
-const SEARCH_PROGRESS_THROTTLE_MODULO = 25;
 const SEARCH_WORKER_NAME_PREFIX = 'filesystem-search';
 const SEARCH_WORKER_RESOURCE_TYPE = 'SearchWorkerTask';
 
@@ -1196,19 +1191,12 @@ async function searchDirectory(
       if (isSensitivePath(entry.path, normalized)) continue;
 
       scanned++;
-      reportPeriodicProgress(onProgress, scanned, {
-        total: opts.maxFilesScanned,
-        throttleModulo: SEARCH_PROGRESS_THROTTLE_MODULO,
-      });
+      onProgress?.({ current: scanned, total: opts.maxFilesScanned });
 
       yield { resolvedPath: normalized, requestedPath: entry.path };
     }
 
-    reportPeriodicProgress(onProgress, scanned, {
-      total: opts.maxFilesScanned,
-      throttleModulo: SEARCH_PROGRESS_THROTTLE_MODULO,
-      force: true,
-    });
+    onProgress?.({ current: scanned, total: opts.maxFilesScanned });
   }
 
   const summary = createScanSummary();
@@ -1505,9 +1493,9 @@ async function collectFromStream(
   for await (const entry of stream) {
     if (shouldStopCollecting(state, normalized, signal)) break;
     state.filesScanned++;
-    reportPeriodicProgress(onProgress, state.filesScanned, {
+    onProgress?.({
+      current: state.filesScanned,
       total: normalized.maxFilesScanned,
-      throttleModulo: SEARCH_PROGRESS_THROTTLE_MODULO,
     });
 
     if (
@@ -1543,10 +1531,9 @@ async function collectFromStream(
     if (state.truncated) break;
   }
 
-  reportPeriodicProgress(onProgress, state.filesScanned, {
+  onProgress?.({
+    current: state.filesScanned,
     total: normalized.maxFilesScanned,
-    throttleModulo: SEARCH_PROGRESS_THROTTLE_MODULO,
-    force: true,
   });
 }
 

@@ -198,4 +198,38 @@ describe('Tool contract', () => {
     assert.equal(typeof treeSc['ascii'], 'string');
     assert.equal(typeof treeSc['totalEntries'], 'number');
   });
+
+  it('task-capable tools expose execution.taskSupport in tools/list', async () => {
+    const TASK_OPTIONAL_TOOLS = new Set([
+      'calculate_hash',
+      'grep',
+      'find',
+      'ls',
+      'read_many',
+      'search_and_replace',
+      'stat_many',
+      'tree',
+    ]);
+
+    const { tools } = await env.client.listTools();
+    for (const tool of tools) {
+      const execution = (tool as Record<string, unknown>).execution as
+        | Record<string, unknown>
+        | undefined;
+      if (TASK_OPTIONAL_TOOLS.has(tool.name)) {
+        assert.equal(
+          execution?.taskSupport,
+          'optional',
+          `${tool.name}: expected execution.taskSupport='optional'`
+        );
+      } else {
+        // forbidden tools should not have taskSupport or have it as 'forbidden'
+        const taskSupport = execution?.taskSupport;
+        assert.ok(
+          taskSupport === undefined || taskSupport === 'forbidden',
+          `${tool.name}: expected taskSupport undefined or 'forbidden', got '${String(taskSupport)}'`
+        );
+      }
+    }
+  });
 });

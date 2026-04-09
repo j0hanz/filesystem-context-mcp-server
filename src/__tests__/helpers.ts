@@ -1,4 +1,8 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import {
+  InMemoryTaskMessageQueue,
+  InMemoryTaskStore,
+} from '@modelcontextprotocol/sdk/experimental/tasks/stores/in-memory.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
@@ -42,6 +46,8 @@ export async function createTestEnv(): Promise<TestEnv> {
 
   await setAllowedDirectoriesResolved([tmpDir]);
 
+  const taskStore = new InMemoryTaskStore();
+
   const server = new McpServer(
     { name: 'test-server', version: '0.0.0' },
     {
@@ -51,7 +57,14 @@ export async function createTestEnv(): Promise<TestEnv> {
         prompts: {},
         logging: {},
         completions: {},
+        tasks: {
+          list: {},
+          cancel: {},
+          requests: { tools: { call: {} } },
+        },
       },
+      taskStore,
+      taskMessageQueue: new InMemoryTaskMessageQueue(),
     }
   );
 
@@ -64,6 +77,7 @@ export async function createTestEnv(): Promise<TestEnv> {
   await client.connect(ct);
 
   const cleanup = async (): Promise<void> => {
+    taskStore.cleanup();
     try {
       await client.close();
     } catch {

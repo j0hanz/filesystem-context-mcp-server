@@ -29,6 +29,8 @@ import {
   DEFAULT_TASK_TTL_MS,
   MAX_CONCURRENT_TASKS,
   MAX_TASK_TTL_MS,
+  TASK_CANCEL_POLL_MS,
+  TASK_POLL_INTERVAL_MS,
 } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
 import { Logger } from '../lib/logger.js';
@@ -506,6 +508,18 @@ async function safelyStoreTaskResult(
   }
 }
 
+async function isTaskCancelled(
+  taskStore: RequestTaskStore,
+  taskId: string
+): Promise<boolean> {
+  try {
+    const task = await taskStore.getTask(taskId);
+    return isRecord(task) && task.status === 'cancelled';
+  } catch {
+    return false;
+  }
+}
+
 async function runTaskInBackground<Args extends ToolSchema>(
   run: (
     args: ToolArgs<Args>,
@@ -515,8 +529,21 @@ async function runTaskInBackground<Args extends ToolSchema>(
   extra: TaskToolExtra,
   taskStore: RequestTaskStore,
   taskId: string,
-  toolName?: string
+  toolName?: string,
+  cancelPollMs?: number
 ): Promise<void> {
+  // Create a dedicated AbortController for background execution.
+  // The original request signal is stale once createTask returns.
+  const taskAbort = new AbortController();
+  const taskExtra: TaskToolExtra = { ...extra, signal: taskAbort.signal };
+
+  // Poll the task store for client-initiated cancellation.
+  const cancelPoller = setInterval(() => {
+    void isTaskCancelled(taskStore, taskId).then((cancelled) => {
+      if (cancelled) taskAbort.abort(new Error('Task cancelled by client'));
+    });
+  }, cancelPollMs ?? TASK_CANCEL_POLL_MS);
+
   const start = performance.now();
   let taskStatuses: TaskResultStatuses;
   let result: Result;
@@ -524,7 +551,7 @@ async function runTaskInBackground<Args extends ToolSchema>(
   try {
     const rawResult = await taskContext.run(
       { taskId, toolName, startTime: start },
-      () => run(args, extra)
+      () => run(args, taskExtra)
     );
 
     taskStatuses = resolveTaskResultStatuses(rawResult);
@@ -536,6 +563,8 @@ async function runTaskInBackground<Args extends ToolSchema>(
     result = maybeStripStructuredContentFromResult(
       buildToolErrorResponse(error, ErrorCode.E_UNKNOWN)
     );
+  } finally {
+    clearInterval(cancelPoller);
   }
 
   const durationMs = performance.now() - start;
@@ -643,9 +672,16 @@ export function registerToolTaskIfAvailable<Args extends ToolSchema, Result>(
   );
 }
 
+interface TaskHandlerOptions {
+  guard?: () => boolean;
+  toolName?: string;
+  cancelPollMs?: number;
+  pollIntervalMs?: number;
+}
+
 export function createToolTaskHandler<Result>(
   run: (args: undefined, extra: TaskToolExtra) => Promise<ToolResult<Result>>,
-  options?: { guard?: () => boolean; toolName?: string }
+  options?: TaskHandlerOptions
 ): ToolTaskHandler;
 export function createToolTaskHandler<
   Args extends ZodRawShapeCompat | AnySchema,
@@ -655,14 +691,14 @@ export function createToolTaskHandler<
     args: ToolArgs<Args>,
     extra: TaskToolExtra
   ) => Promise<ToolResult<Result>>,
-  options?: { guard?: () => boolean; toolName?: string }
+  options?: TaskHandlerOptions
 ): ToolTaskHandler<Args>;
 export function createToolTaskHandler<Args extends ToolSchema, Result>(
   run: (
     args: ToolArgs<Args>,
     extra: TaskToolExtra
   ) => Promise<ToolResult<Result>>,
-  options?: { guard?: () => boolean; toolName?: string }
+  options?: TaskHandlerOptions
 ): ToolTaskHandler<Args> {
   const createTask = (async (
     argsOrExtra: ToolArgs<Args> | CreateTaskRequestHandlerExtra,
@@ -687,7 +723,20 @@ export function createToolTaskHandler<Args extends ToolSchema, Result>(
     }
     const task = await taskStore.createTask({
       ttl: resolveRequestedTaskTtl(extra.taskRequestedTtl),
+      pollInterval: options?.pollIntervalMs ?? TASK_POLL_INTERVAL_MS,
     });
+
+    const toolLabel = options?.toolName ?? 'tool';
+    try {
+      await taskStore.updateTaskStatus(
+        task.taskId,
+        'working',
+        `${toolLabel}: starting`
+      );
+    } catch {
+      // Best effort — status message is informational.
+    }
+
     publishTaskDiagnostics({
       phase: 'task_created',
       taskId: task.taskId,
@@ -712,7 +761,8 @@ export function createToolTaskHandler<Args extends ToolSchema, Result>(
       taskExtra,
       taskStore,
       task.taskId,
-      options?.toolName
+      options?.toolName,
+      options?.cancelPollMs
     );
     return { task };
   }) as ToolTaskHandler<Args>['createTask'];
