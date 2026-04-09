@@ -67,14 +67,8 @@ type TruthySummaryField =
   | 'skippedBinary'
   | 'skippedInaccessible';
 
-type NormalizedSearchMatch = SearchResultValue['matches'][number] & {
-  relativeFile: string;
-  index: number;
-};
-
 interface SearchPreviewState {
   needsExternalize: boolean;
-  visibleMatches: NormalizedSearchMatch[];
   visiblePayloads: SearchMatchPayload[];
   heading: string;
 }
@@ -130,31 +124,18 @@ function buildCompletionSuffix(
   return `${count} ${matchWord} in ${filesMatched} ${fileWord}${reasonSuffix}`;
 }
 
-function compareNormalizedMatches(
-  left: NormalizedSearchMatch,
-  right: NormalizedSearchMatch
-): number {
-  const fileCompare = left.relativeFile.localeCompare(right.relativeFile);
-  if (fileCompare !== 0) return fileCompare;
-  if (left.line !== right.line) return left.line - right.line;
-  return left.index - right.index;
-}
-
 function buildSearchPreviewState(
-  matches: NormalizedSearchMatch[],
   payloads: SearchMatchPayload[]
 ): SearchPreviewState {
-  const needsExternalize = matches.length > CONFIG.MAX_INLINE_MATCHES;
+  const needsExternalize = payloads.length > CONFIG.MAX_INLINE_MATCHES;
   const visibleCount = needsExternalize
     ? CONFIG.MAX_INLINE_MATCHES
-    : matches.length;
-  const visibleMatches = matches.slice(0, visibleCount);
+    : payloads.length;
 
   return {
     needsExternalize,
-    visibleMatches,
     visiblePayloads: payloads.slice(0, visibleCount),
-    heading: buildHeading(matches.length, visibleMatches.length),
+    heading: buildHeading(payloads.length, visibleCount),
   };
 }
 
@@ -187,7 +168,7 @@ function buildHeading(totalMatches: number, visibleMatches: number): string {
 
 function buildSearchText(
   heading: string,
-  matches: readonly NormalizedSearchMatch[],
+  matches: readonly SearchMatchPayload[],
   summary?: SearchSummary
 ): string {
   if (matches.length === 0) return 'No matches';
@@ -218,7 +199,10 @@ function buildSearchStructured(
   };
 }
 
-function normalizeMatches(result: SearchResultValue): NormalizedSearchMatch[] {
+function buildSortedPayloads(
+  result: SearchResultValue,
+  context: SearchContext
+): SearchMatchPayload[] {
   const relativeByFile = new Map<string, string>();
 
   const getRelativeFile = (file: string): string => {
@@ -230,25 +214,12 @@ function normalizeMatches(result: SearchResultValue): NormalizedSearchMatch[] {
     return rel;
   };
 
-  return result.matches
-    .map(
-      (match, index): NormalizedSearchMatch => ({
-        ...match,
-        relativeFile: getRelativeFile(match.file),
-        index,
-      })
-    )
-    .sort(compareNormalizedMatches);
-}
-
-function buildMatchPayloads(
-  matches: readonly NormalizedSearchMatch[],
-  context: SearchContext
-): SearchMatchPayload[] {
-  return matches.map((match) => {
+  const payloads = result.matches.map((match, originalIndex) => {
+    const relFile = getRelativeFile(match.file);
     const column = findColumnOffset(match.content, context);
-    return {
-      file: match.relativeFile,
+
+    const payload: SearchMatchPayload = {
+      file: relFile,
       line: match.line,
       ...(column !== undefined ? { column } : {}),
       content: match.content,
@@ -258,18 +229,30 @@ function buildMatchPayloads(
         : {}),
       ...(match.contextAfter ? { contextAfter: [...match.contextAfter] } : {}),
     };
+
+    return { payload, originalIndex };
   });
+
+  payloads.sort((left, right) => {
+    const fileCompare = left.payload.file.localeCompare(right.payload.file);
+    if (fileCompare !== 0) return fileCompare;
+    if (left.payload.line !== right.payload.line)
+      return left.payload.line - right.payload.line;
+    return left.originalIndex - right.originalIndex;
+  });
+
+  return payloads.map((p) => p.payload);
 }
 
 function buildMatchList(
   heading: string,
-  matches: readonly NormalizedSearchMatch[]
+  matches: readonly SearchMatchPayload[]
 ): string {
   if (matches.length === 0) return heading;
   const parts: string[] = [heading];
   for (const match of matches) {
     parts.push(
-      `\n  ${match.relativeFile}:${String(match.line).padStart(4)}: ${match.content}`
+      `\n  ${match.file}:${String(match.line).padStart(4)}: ${match.content}`
     );
   }
 
@@ -377,15 +360,13 @@ async function handleSearchContent(
   const regexMatcher = createSearchMatcher(args);
 
   const result = await executeSearch(args, basePath, signal, onProgress);
-
-  const normalizedMatches = normalizeMatches(result);
   const searchContext = createSearchContext(args, regexMatcher);
 
-  const matchPayloads = buildMatchPayloads(normalizedMatches, searchContext);
+  const matchPayloads = buildSortedPayloads(result, searchContext);
 
   const fullStructured = buildSearchStructured(result.summary, matchPayloads);
 
-  const preview = buildSearchPreviewState(normalizedMatches, matchPayloads);
+  const preview = buildSearchPreviewState(matchPayloads);
 
   if (resourceStore && preview.needsExternalize) {
     const previewStructured: SearchOutput = {
@@ -401,7 +382,7 @@ async function handleSearchContent(
     });
 
     previewStructured.resourceUri = entry.uri;
-    const text = buildSearchText(preview.heading, preview.visibleMatches);
+    const text = buildSearchText(preview.heading, preview.visiblePayloads);
 
     return buildToolResponse(text, previewStructured, [
       buildResourceLink({
@@ -416,7 +397,7 @@ async function handleSearchContent(
 
   const text = buildSearchText(
     preview.heading,
-    preview.visibleMatches,
+    preview.visiblePayloads,
     result.summary
   );
 
