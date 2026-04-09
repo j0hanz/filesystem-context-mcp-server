@@ -21,7 +21,7 @@ describe('decodeOffsetCursor', () => {
     assert.throws(
       () => decodeOffsetCursor('not-a-valid-cursor'),
       (err: unknown) =>
-        err instanceof McpError && err.code === ErrorCode.E_INVALID_INPUT
+        err instanceof McpError && err.code === ErrorCode.INVALID_INPUT
     );
   });
 
@@ -32,7 +32,7 @@ describe('decodeOffsetCursor', () => {
     assert.throws(
       () => decodeOffsetCursor(cursor),
       (err: unknown) =>
-        err instanceof McpError && err.code === ErrorCode.E_INVALID_INPUT
+        err instanceof McpError && err.code === ErrorCode.INVALID_INPUT
     );
   });
 
@@ -43,7 +43,7 @@ describe('decodeOffsetCursor', () => {
     assert.throws(
       () => decodeOffsetCursor(cursor),
       (err: unknown) =>
-        err instanceof McpError && err.code === ErrorCode.E_INVALID_INPUT
+        err instanceof McpError && err.code === ErrorCode.INVALID_INPUT
     );
   });
 
@@ -54,7 +54,7 @@ describe('decodeOffsetCursor', () => {
     assert.throws(
       () => decodeOffsetCursor(cursor),
       (err: unknown) =>
-        err instanceof McpError && err.code === ErrorCode.E_INVALID_INPUT
+        err instanceof McpError && err.code === ErrorCode.INVALID_INPUT
     );
   });
 
@@ -65,7 +65,7 @@ describe('decodeOffsetCursor', () => {
     assert.throws(
       () => decodeOffsetCursor(cursor),
       (err: unknown) =>
-        err instanceof McpError && err.code === ErrorCode.E_INVALID_INPUT
+        err instanceof McpError && err.code === ErrorCode.INVALID_INPUT
     );
   });
 });

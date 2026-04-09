@@ -48,10 +48,7 @@ async function handleCreateDirectory(
   if (args.paths) allPaths.push(...args.paths);
 
   if (allPaths.length === 0) {
-    throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
-      'No paths provided to create.'
-    );
+    throw new McpError(ErrorCode.INVALID_INPUT, 'No paths provided to create.');
   }
 
   const validPaths = await Promise.all(
@@ -92,7 +89,7 @@ export function registerCreateDirectoryTool(
       onError: (error) =>
         buildToolErrorResponse(
           error,
-          ErrorCode.E_UNKNOWN,
+          ErrorCode.UNKNOWN,
           args.path ?? args.paths?.[0]
         ),
     });

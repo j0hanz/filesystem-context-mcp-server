@@ -191,9 +191,9 @@ describe('createToolTaskHandler', () => {
       const handler = createToolTaskHandler(
         async () =>
           ({
-            content: [{ type: 'text', text: 'E_UNKNOWN: boom' }],
+            content: [{ type: 'text', text: 'UNKNOWN: boom' }],
             isError: true,
-            errorCode: ErrorCode.E_UNKNOWN,
+            errorCode: ErrorCode.UNKNOWN,
           }) as ToolResult<unknown>
       );
 
@@ -218,11 +218,11 @@ describe('createToolTaskHandler', () => {
             content: [
               {
                 type: 'text',
-                text: `Error [${ErrorCode.E_CANCELLED}]: aborted`,
+                text: `Error [${ErrorCode.CANCELLED}]: aborted`,
               },
             ],
             isError: true,
-            errorCode: ErrorCode.E_CANCELLED,
+            errorCode: ErrorCode.CANCELLED,
           }) as ToolResult<unknown>
       );
 

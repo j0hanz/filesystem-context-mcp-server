@@ -287,7 +287,7 @@ describe('search_and_replace tool', () => {
     assert.ok(!/\d/.exec(actual), 'No digits should remain');
   });
 
-  it('returns E_ACCESS_DENIED when path escapes allowed root', async () => {
+  it('returns ACCESS_DENIED when path escapes allowed root', async () => {
     const raw = await env.client.callTool({
       name: 'search_and_replace',
       arguments: {
@@ -297,6 +297,6 @@ describe('search_and_replace tool', () => {
         replacement: 'y',
       },
     });
-    assertToolError(raw, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'ACCESS_DENIED');
   });
 });

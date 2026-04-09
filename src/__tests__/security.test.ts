@@ -54,7 +54,7 @@ describe('security: path boundary enforcement', () => {
         name: tool,
         arguments: args(env.tmpDir),
       });
-      assertToolError(raw, 'E_ACCESS_DENIED');
+      assertToolError(raw, 'ACCESS_DENIED');
     });
   }
 });
@@ -79,7 +79,7 @@ describe('security: path traversal via ".."', () => {
       name: 'read',
       arguments: { path: escaped },
     });
-    assertToolError(raw, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'ACCESS_DENIED');
   });
 
   it('stat: rejects traversal above tmpDir', async () => {
@@ -88,7 +88,7 @@ describe('security: path traversal via ".."', () => {
       name: 'stat',
       arguments: { path: escaped },
     });
-    assertToolError(raw, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'ACCESS_DENIED');
   });
 
   it('write: rejects traversal above tmpDir', async () => {
@@ -97,7 +97,7 @@ describe('security: path traversal via ".."', () => {
       name: 'write',
       arguments: { path: escaped, content: 'exploit' },
     });
-    assertToolError(raw, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'ACCESS_DENIED');
   });
 });
 
@@ -126,7 +126,7 @@ describe('security: symlink escape attempt', () => {
       name: 'read',
       arguments: { path: linkPath },
     });
-    assertToolError(raw, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'ACCESS_DENIED');
   });
 
   it('stat: rejects symlink pointing outside allowed root', async () => {
@@ -140,7 +140,7 @@ describe('security: symlink escape attempt', () => {
       name: 'stat',
       arguments: { path: linkPath },
     });
-    assertToolError(raw, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'ACCESS_DENIED');
   });
 });
 
@@ -280,7 +280,7 @@ describe('security: symlink escape for destructive ops', () => {
       name: 'write',
       arguments: { path: linkPath, content: 'hacked' },
     });
-    assertToolError(raw, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'ACCESS_DENIED');
   });
 
   it('edit: rejects editing through symlink to outside', async () => {
@@ -296,7 +296,7 @@ describe('security: symlink escape for destructive ops', () => {
         edits: [{ oldText: 'outside-content', newText: 'hacked' }],
       },
     });
-    assertToolError(raw, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'ACCESS_DENIED');
   });
 
   it('mv: rejects moving symlink target outside allowed root', async () => {
@@ -336,6 +336,6 @@ describe('security: symlink escape for destructive ops', () => {
       name: 'rm',
       arguments: { path: linkPath },
     });
-    assertToolError(raw, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'ACCESS_DENIED');
   });
 });

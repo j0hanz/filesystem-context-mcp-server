@@ -52,7 +52,7 @@ describe('allowed directories async context', () => {
 
     assert.equal(result.validDir, normalizedDirB);
     assert.ok(result.deniedError instanceof McpError);
-    assert.equal(result.deniedError.code, ErrorCode.E_ACCESS_DENIED);
+    assert.equal(result.deniedError.code, ErrorCode.ACCESS_DENIED);
 
     assert.deepEqual(getAllowedDirectories(), [normalizedDirA]);
     await assert.doesNotReject(() => validateExistingDirectory(normalizedDirA));

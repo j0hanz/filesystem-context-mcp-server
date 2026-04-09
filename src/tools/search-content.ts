@@ -332,7 +332,7 @@ async function executeSearch(
   } catch (error) {
     if (error instanceof Error && /regular expression/i.test(error.message)) {
       throw new McpError(
-        ErrorCode.E_INVALID_PATTERN,
+        ErrorCode.INVALID_PATTERN,
         `Invalid regex pattern: ${formatUnknownErrorMessage(error)}`
       );
     }
@@ -347,7 +347,7 @@ function createSearchMatcher(args: SearchInput): RE2 | undefined {
     return new RE2(args.pattern, flags);
   } catch (error) {
     throw new McpError(
-      ErrorCode.E_INVALID_PATTERN,
+      ErrorCode.INVALID_PATTERN,
       `Invalid regex pattern: ${formatUnknownErrorMessage(error)}`
     );
   }
@@ -485,7 +485,7 @@ export function registerSearchContentTool(
         }
       },
       onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.E_UNKNOWN, args.path ?? '.'),
+        buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path ?? '.'),
     });
 
   const { isInitialized } = options;

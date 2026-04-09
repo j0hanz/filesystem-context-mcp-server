@@ -55,7 +55,7 @@ function assertPatchTargetSizeWithinLimit(
 ): void {
   if (size <= maxFileSize) return;
   throw new McpError(
-    ErrorCode.E_TOO_LARGE,
+    ErrorCode.TOO_LARGE,
     `File too large for patch (${size} bytes > ${maxFileSize} bytes).`,
     filePath,
     { size, maxFileSize }
@@ -125,11 +125,11 @@ async function applyDiff(
       applied: false,
       error: buildStructuredError(
         new McpError(
-          ErrorCode.E_INVALID_INPUT,
+          ErrorCode.INVALID_INPUT,
           'Patch application failed',
           validPath
         ),
-        ErrorCode.E_INVALID_INPUT,
+        ErrorCode.INVALID_INPUT,
         validPath
       ),
     };
@@ -139,12 +139,8 @@ async function applyDiff(
       path: validPath,
       applied: false,
       error: buildStructuredError(
-        new McpError(
-          ErrorCode.E_INVALID_INPUT,
-          'Patch had no effect',
-          validPath
-        ),
-        ErrorCode.E_INVALID_INPUT,
+        new McpError(ErrorCode.INVALID_INPUT, 'Patch had no effect', validPath),
+        ErrorCode.INVALID_INPUT,
         validPath
       ),
     };
@@ -176,10 +172,10 @@ async function processMultiFilePatch(
           applied: false,
           error: buildStructuredError(
             new McpError(
-              ErrorCode.E_INVALID_INPUT,
+              ErrorCode.INVALID_INPUT,
               'Missing file name in patch header'
             ),
-            ErrorCode.E_INVALID_INPUT
+            ErrorCode.INVALID_INPUT
           ),
         });
     }
@@ -193,11 +189,7 @@ async function processMultiFilePatch(
         return {
           path: fileName,
           applied: false,
-          error: buildStructuredError(
-            error,
-            ErrorCode.E_INVALID_INPUT,
-            filePath
-          ),
+          error: buildStructuredError(error, ErrorCode.INVALID_INPUT, filePath),
         };
       }
     };
@@ -231,7 +223,7 @@ async function processMultiFilePatch(
       .map((r) => r.path)
       .join(', ');
     throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
+      ErrorCode.INVALID_INPUT,
       `All ${parsed.length} file patches failed${label}. Files: ${failedPaths}. Generate fresh patches via diff_files and retry.`
     );
   }
@@ -260,7 +252,7 @@ async function handleApplyPatch(
   signal?: AbortSignal
 ): Promise<ToolResponse<z.infer<typeof ApplyPatchOutputSchema>>> {
   if (!args.patch.trim()) {
-    throw new McpError(ErrorCode.E_INVALID_INPUT, 'Patch content is empty.');
+    throw new McpError(ErrorCode.INVALID_INPUT, 'Patch content is empty.');
   }
 
   const fuzzFactor = args.fuzzFactor ?? 0;
@@ -269,7 +261,7 @@ async function handleApplyPatch(
   const hasHunks = parsed.some((p) => p.hunks.length > 0);
   if (!hasHunks) {
     throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
+      ErrorCode.INVALID_INPUT,
       'Patch must include unified hunk headers (e.g., @@ -1,2 +1,2 @@).'
     );
   }
@@ -284,14 +276,14 @@ async function handleApplyPatch(
   }
   const diff = parsed[0];
   if (!diff) {
-    throw new McpError(ErrorCode.E_INVALID_INPUT, 'No patch content found.');
+    throw new McpError(ErrorCode.INVALID_INPUT, 'No patch content found.');
   }
 
   const result = await applyDiff(args.path, diff, options, signal);
 
   if (!result.applied) {
     throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
+      ErrorCode.INVALID_INPUT,
       result.error?.message === 'Patch had no effect'
         ? 'Patch had no effect \u2014 the file content is unchanged after applying. The patch may not match the current file content. Generate a fresh patch via diff_files and retry.'
         : 'Patch application failed. The file content may have changed or patch context is insufficient. Generate a fresh patch via diff_files against the current file, then retry. If differences are minor, enable fuzzy matching with the fuzzFactor parameter.'
@@ -334,7 +326,7 @@ export function registerApplyPatchTool(
       context: { path: args.path },
       run: (signal) => handleApplyPatch(args, signal),
       onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.E_UNKNOWN, args.path),
+        buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
     });
 
   const wrappedHandler = wrapToolHandler(handler, {

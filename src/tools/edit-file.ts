@@ -274,7 +274,7 @@ async function loadEditableFile(
 
   if (stats.size > MAX_TEXT_FILE_SIZE) {
     throw new McpError(
-      ErrorCode.E_TOO_LARGE,
+      ErrorCode.TOO_LARGE,
       `File too large for edit (${stats.size} bytes > ${MAX_TEXT_FILE_SIZE} bytes)`,
       requestedPath,
       { size: stats.size, maxFileSize: MAX_TEXT_FILE_SIZE }
@@ -378,7 +378,7 @@ async function handleEditFile(
 
   if (editResult.appliedEdits === 0 && editResult.unmatchedEdits.length > 0) {
     throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
+      ErrorCode.INVALID_INPUT,
       `All ${editResult.unmatchedEdits.length} edits failed to match. Verify oldText includes exact content with surrounding context.`,
       args.path
     );
@@ -413,7 +413,7 @@ export function registerEditFileTool(
       context: { path: args.path },
       run: (signal) => handleEditFile(args, signal),
       onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.E_UNKNOWN, args.path),
+        buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
     });
 
   const wrappedHandler = wrapToolHandler(handler, {

@@ -233,7 +233,7 @@ export function registerReadFileTool(
       context: { path: args.path },
       run: (signal) => handleReadFile(args, signal, options.resourceStore),
       onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.E_NOT_FILE, args.path),
+        buildToolErrorResponse(error, ErrorCode.NOT_FILE, args.path),
     });
 
   const wrappedHandler = wrapToolHandler(handler, {

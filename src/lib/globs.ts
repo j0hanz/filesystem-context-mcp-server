@@ -16,6 +16,6 @@ export function assertSafeGlobPattern(
   message = 'Invalid glob or unsafe path (absolute/.. forbidden)'
 ): void {
   if (!isSafeGlobPattern(value)) {
-    throw new McpError(ErrorCode.E_INVALID_PATTERN, message);
+    throw new McpError(ErrorCode.INVALID_PATTERN, message);
   }
 }

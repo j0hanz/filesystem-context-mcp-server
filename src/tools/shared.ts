@@ -230,7 +230,7 @@ function resolveDetailedError(
   details?: Record<string, unknown>;
 } {
   const detailed = createDetailedError(error, path);
-  if (detailed.code === ErrorCode.E_UNKNOWN) {
+  if (detailed.code === ErrorCode.UNKNOWN) {
     detailed.code = defaultCode;
     detailed.suggestion = getSuggestion(defaultCode);
   }
@@ -295,7 +295,7 @@ function validateStructuredContent<T>(
   }
 
   throw new McpError(
-    ErrorCode.E_UNKNOWN,
+    ErrorCode.UNKNOWN,
     `Tool "${toolName}" returned invalid structuredContent.`,
     undefined,
     { errors: z.treeifyError(parsed.error) }
@@ -310,7 +310,7 @@ function validateToolResponse<T>(
   if (!outputSchema) return result;
   if (!Object.hasOwn(result, 'structuredContent')) {
     throw new McpError(
-      ErrorCode.E_UNKNOWN,
+      ErrorCode.UNKNOWN,
       `Tool "${toolName}" returned success without structuredContent.`
     );
   }
@@ -336,7 +336,7 @@ function parseToolArgs<Schema extends z.ZodType>(
   }
 
   throw new McpError(
-    ErrorCode.E_INVALID_INPUT,
+    ErrorCode.INVALID_INPUT,
     `Invalid tool arguments:\n${z.prettifyError(parsed.error)}`
   );
 }
@@ -350,11 +350,8 @@ export function withValidatedArgs<Args, Result>(
       const normalizedArgs = parseToolArgs(schema, args);
       return await handler(normalizedArgs, extra);
     } catch (error) {
-      if (
-        error instanceof McpError &&
-        error.code === ErrorCode.E_INVALID_INPUT
-      ) {
-        return buildToolErrorResponse(error, ErrorCode.E_INVALID_INPUT);
+      if (error instanceof McpError && error.code === ErrorCode.INVALID_INPUT) {
+        return buildToolErrorResponse(error, ErrorCode.INVALID_INPUT);
       }
       throw error;
     }
@@ -469,7 +466,7 @@ export function buildFileInfoPayload(info: FileInfo): FileInfoPayload {
 }
 
 const NOT_INITIALIZED_ERROR = new McpError(
-  ErrorCode.E_INVALID_INPUT,
+  ErrorCode.INVALID_INPUT,
   'Client not initialized; wait for notifications/initialized'
 );
 
@@ -557,10 +554,7 @@ export function buildToolErrorResponse(
 }
 
 function buildNotInitializedResult<T>(): ToolResult<T> {
-  return buildToolErrorResponse(
-    NOT_INITIALIZED_ERROR,
-    ErrorCode.E_INVALID_INPUT
-  );
+  return buildToolErrorResponse(NOT_INITIALIZED_ERROR, ErrorCode.INVALID_INPUT);
 }
 
 async function reportProgress(
@@ -868,20 +862,20 @@ export function resolvePathOrRoot(pathValue: string | undefined): string {
   const roots = getAllowedDirectories();
   if (roots.length === 0) {
     throw new McpError(
-      ErrorCode.E_ACCESS_DENIED,
+      ErrorCode.ACCESS_DENIED,
       'No workspace roots configured. Use the roots tool to check, or configure roots via the MCP Roots protocol (or start with --allow-cwd / CLI directories).'
     );
   }
   if (roots.length > 1) {
     throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
+      ErrorCode.INVALID_INPUT,
       'Multiple workspace roots configured. Provide an explicit path to disambiguate.'
     );
   }
   const root = roots[0];
   if (!root) {
     throw new McpError(
-      ErrorCode.E_ACCESS_DENIED,
+      ErrorCode.ACCESS_DENIED,
       'Workspace root is unexpectedly undefined'
     );
   }
@@ -905,7 +899,7 @@ export function decodeOffsetCursor(cursor: string): number {
     // fall through to throw
   }
   throw new McpError(
-    ErrorCode.E_INVALID_INPUT,
+    ErrorCode.INVALID_INPUT,
     `Invalid cursor: the cursor value is malformed or corrupted. Request the first page without a cursor.`
   );
 }

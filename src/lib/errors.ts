@@ -119,20 +119,20 @@ export function normalizeUnknownError(error: unknown): Error {
 }
 
 const NODE_ERROR_CODE_MAP = {
-  ENOENT: ErrorCode.E_NOT_FOUND,
-  EACCES: ErrorCode.E_PERMISSION_DENIED,
-  EPERM: ErrorCode.E_PERMISSION_DENIED,
-  ENOTDIR: ErrorCode.E_NOT_DIRECTORY,
-  EISDIR: ErrorCode.E_NOT_FILE,
-  ELOOP: ErrorCode.E_SYMLINK_NOT_ALLOWED,
-  ENAMETOOLONG: ErrorCode.E_INVALID_INPUT,
-  ETIMEDOUT: ErrorCode.E_TIMEOUT,
-  EMFILE: ErrorCode.E_TIMEOUT,
-  ENFILE: ErrorCode.E_TIMEOUT,
-  EBUSY: ErrorCode.E_PERMISSION_DENIED,
-  ENOTEMPTY: ErrorCode.E_NOT_DIRECTORY,
-  EEXIST: ErrorCode.E_INVALID_INPUT,
-  EINVAL: ErrorCode.E_INVALID_INPUT,
+  ENOENT: ErrorCode.NOT_FOUND,
+  EACCES: ErrorCode.PERMISSION_DENIED,
+  EPERM: ErrorCode.PERMISSION_DENIED,
+  ENOTDIR: ErrorCode.NOT_DIRECTORY,
+  EISDIR: ErrorCode.NOT_FILE,
+  ELOOP: ErrorCode.SYMLINK_NOT_ALLOWED,
+  ENAMETOOLONG: ErrorCode.INVALID_INPUT,
+  ETIMEDOUT: ErrorCode.TIMEOUT,
+  EMFILE: ErrorCode.TIMEOUT,
+  ENFILE: ErrorCode.TIMEOUT,
+  EBUSY: ErrorCode.PERMISSION_DENIED,
+  ENOTEMPTY: ErrorCode.NOT_DIRECTORY,
+  EEXIST: ErrorCode.INVALID_INPUT,
+  EINVAL: ErrorCode.INVALID_INPUT,
 } as const satisfies Readonly<Record<string, ErrorCode>>;
 
 type NodeErrorCode = keyof typeof NODE_ERROR_CODE_MAP;
@@ -227,7 +227,7 @@ export class McpError extends Error {
     details?: Record<string, unknown>,
     cause?: unknown
   ): McpError {
-    return new McpError(ErrorCode.E_NOT_FOUND, message, path, details, cause);
+    return new McpError(ErrorCode.NOT_FOUND, message, path, details, cause);
   }
 
   static invalidInput(
@@ -236,13 +236,7 @@ export class McpError extends Error {
     details?: Record<string, unknown>,
     cause?: unknown
   ): McpError {
-    return new McpError(
-      ErrorCode.E_INVALID_INPUT,
-      message,
-      path,
-      details,
-      cause
-    );
+    return new McpError(ErrorCode.INVALID_INPUT, message, path, details, cause);
   }
 
   static accessDenied(
@@ -251,13 +245,7 @@ export class McpError extends Error {
     details?: Record<string, unknown>,
     cause?: unknown
   ): McpError {
-    return new McpError(
-      ErrorCode.E_ACCESS_DENIED,
-      message,
-      path,
-      details,
-      cause
-    );
+    return new McpError(ErrorCode.ACCESS_DENIED, message, path, details, cause);
   }
 
   static timeout(
@@ -266,29 +254,28 @@ export class McpError extends Error {
     details?: Record<string, unknown>,
     cause?: unknown
   ): McpError {
-    return new McpError(ErrorCode.E_TIMEOUT, message, path, details, cause);
+    return new McpError(ErrorCode.TIMEOUT, message, path, details, cause);
   }
 }
 
 const ERROR_SUGGESTIONS: Readonly<Record<ErrorCode, string>> = {
-  [ErrorCode.E_ACCESS_DENIED]: 'Use roots to see available workspace roots.',
-  [ErrorCode.E_NOT_FOUND]: 'Use ls to explore available files and directories.',
-  [ErrorCode.E_NOT_FILE]: 'Use ls to explore the directory contents.',
-  [ErrorCode.E_NOT_DIRECTORY]: 'Use read to read file contents.',
-  [ErrorCode.E_TOO_LARGE]:
+  [ErrorCode.ACCESS_DENIED]: 'Use roots to see available workspace roots.',
+  [ErrorCode.NOT_FOUND]: 'Use ls to explore available files and directories.',
+  [ErrorCode.NOT_FILE]: 'Use ls to explore the directory contents.',
+  [ErrorCode.NOT_DIRECTORY]: 'Use read to read file contents.',
+  [ErrorCode.TOO_LARGE]:
     'Use head to read a partial preview, or narrow the scope.',
-  [ErrorCode.E_TIMEOUT]:
+  [ErrorCode.TIMEOUT]:
     'Try a smaller scope, fewer results (maxResults), or search fewer files.',
-  [ErrorCode.E_CANCELLED]:
+  [ErrorCode.CANCELLED]:
     'No retry needed unless you want to re-run the operation.',
-  [ErrorCode.E_INVALID_PATTERN]: 'Check syntax and escape special characters.',
-  [ErrorCode.E_INVALID_INPUT]:
-    'Check the tool documentation for correct usage.',
-  [ErrorCode.E_PERMISSION_DENIED]:
+  [ErrorCode.INVALID_PATTERN]: 'Check syntax and escape special characters.',
+  [ErrorCode.INVALID_INPUT]: 'Check the tool documentation for correct usage.',
+  [ErrorCode.PERMISSION_DENIED]:
     'Check file permissions on the operating system.',
-  [ErrorCode.E_SYMLINK_NOT_ALLOWED]:
+  [ErrorCode.SYMLINK_NOT_ALLOWED]:
     'Symlinks escaping allowed directories are blocked for security.',
-  [ErrorCode.E_UNKNOWN]: 'Check the error message for details.',
+  [ErrorCode.UNKNOWN]: 'Check the error message for details.',
 } as const;
 
 const NOT_FOUND_PATTERNS = [
@@ -312,16 +299,16 @@ function classifyMessageError(error: unknown): ErrorCode | undefined {
   const message = isNativeError(error) ? error.message : String(error);
   const lower = message.toLowerCase();
   if (messageIncludesAny(lower, NOT_FOUND_PATTERNS)) {
-    return ErrorCode.E_NOT_FOUND;
+    return ErrorCode.NOT_FOUND;
   }
   if (messageIncludesAny(lower, PERMISSION_DENIED_PATTERNS)) {
-    return ErrorCode.E_PERMISSION_DENIED;
+    return ErrorCode.PERMISSION_DENIED;
   }
   if (lower.includes('not a directory')) {
-    return ErrorCode.E_NOT_DIRECTORY;
+    return ErrorCode.NOT_DIRECTORY;
   }
   if (lower.includes('is a directory')) {
-    return ErrorCode.E_NOT_FILE;
+    return ErrorCode.NOT_FILE;
   }
   return undefined;
 }
@@ -332,11 +319,11 @@ function classifyError(error: unknown): ErrorCode {
 
   const terminalCode = walkErrorChain<ErrorCode>(error, (candidate) => {
     if (isAbortErrorSingle(candidate)) {
-      return ErrorCode.E_CANCELLED;
+      return ErrorCode.CANCELLED;
     }
 
     if (timeoutCode === undefined && isTimeoutErrorSingle(candidate)) {
-      timeoutCode = ErrorCode.E_TIMEOUT;
+      timeoutCode = ErrorCode.TIMEOUT;
     }
 
     fallbackCode ??=
@@ -345,7 +332,7 @@ function classifyError(error: unknown): ErrorCode {
     return undefined;
   });
 
-  return terminalCode ?? timeoutCode ?? fallbackCode ?? ErrorCode.E_UNKNOWN;
+  return terminalCode ?? timeoutCode ?? fallbackCode ?? ErrorCode.UNKNOWN;
 }
 
 export function createDetailedError(

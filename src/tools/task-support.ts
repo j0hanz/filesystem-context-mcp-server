@@ -165,7 +165,7 @@ function isTaskExtra(value: unknown): value is TaskRequestHandlerExtra {
 function asCreateTaskExtra(value: unknown): CreateTaskRequestHandlerExtra {
   if (!isCreateTaskExtra(value)) {
     throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
+      ErrorCode.INVALID_INPUT,
       'Task store not configured for task-capable tool.'
     );
   }
@@ -175,7 +175,7 @@ function asCreateTaskExtra(value: unknown): CreateTaskRequestHandlerExtra {
 function asTaskRequestExtra(value: unknown): TaskRequestHandlerExtra {
   if (!isTaskExtra(value)) {
     throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
+      ErrorCode.INVALID_INPUT,
       'Task id or task store missing for task operation.'
     );
   }
@@ -199,12 +199,12 @@ function isTaskStatus(value: unknown): value is GetTaskResult['status'] {
 
 function normalizeGetTaskResult(value: unknown): GetTaskResult {
   if (!isRecord(value) || typeof value.taskId !== 'string') {
-    throw new McpError(ErrorCode.E_INVALID_INPUT, 'Invalid task object.');
+    throw new McpError(ErrorCode.INVALID_INPUT, 'Invalid task object.');
   }
 
   const status = isTaskStatus(value.status) ? value.status : undefined;
   if (!status) {
-    throw new McpError(ErrorCode.E_INVALID_INPUT, 'Invalid task status.');
+    throw new McpError(ErrorCode.INVALID_INPUT, 'Invalid task status.');
   }
 
   const createdAt =
@@ -240,7 +240,7 @@ function normalizeCallToolResult(value: Result): CallToolResult {
   const parsed = CallToolResultSchema.safeParse(value);
   if (parsed.success) return parsed.data;
   throw new McpError(
-    ErrorCode.E_INVALID_INPUT,
+    ErrorCode.INVALID_INPUT,
     'Stored task result is not a valid tool result.'
   );
 }
@@ -259,7 +259,7 @@ function getToolResultErrorCode(result: Result): string | undefined {
 }
 
 function isCancelledToolResult(result: Result): boolean {
-  return getToolResultErrorCode(result) === ErrorCode.E_CANCELLED;
+  return getToolResultErrorCode(result) === ErrorCode.CANCELLED;
 }
 
 interface TaskResultStatuses {
@@ -404,7 +404,7 @@ async function notifyTaskStatusIfPossible(
 function getTaskStore(extra: TaskToolExtra): RequestTaskStore {
   if (!extra.taskStore) {
     throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
+      ErrorCode.INVALID_INPUT,
       'Task store not configured for task-capable tool.'
     );
   }
@@ -414,7 +414,7 @@ function getTaskStore(extra: TaskToolExtra): RequestTaskStore {
 function getTaskId(extra: TaskToolExtra): string {
   if (!extra.taskId) {
     throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
+      ErrorCode.INVALID_INPUT,
       'Task id missing for task operation.'
     );
   }
@@ -477,7 +477,7 @@ function resolveRequestedTaskTtl(
   if (requestedTtl == null) return DEFAULT_TASK_TTL_MS;
   if (!Number.isFinite(requestedTtl)) {
     throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
+      ErrorCode.INVALID_INPUT,
       'Task ttl must be a finite number of milliseconds.'
     );
   }
@@ -485,7 +485,7 @@ function resolveRequestedTaskTtl(
   const normalized = Math.trunc(requestedTtl);
   if (normalized <= 0) {
     throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
+      ErrorCode.INVALID_INPUT,
       'Task ttl must be greater than zero.'
     );
   }
@@ -561,7 +561,7 @@ async function runTaskInBackground<Args extends ToolSchema>(
   } catch (error) {
     taskStatuses = { storedStatus: 'failed', reportedStatus: 'failed' };
     result = maybeStripStructuredContentFromResult(
-      buildToolErrorResponse(error, ErrorCode.E_UNKNOWN)
+      buildToolErrorResponse(error, ErrorCode.UNKNOWN)
     );
   } finally {
     clearInterval(cancelPoller);
@@ -709,7 +709,7 @@ export function createToolTaskHandler<Args extends ToolSchema, Result>(
 
     if (options?.guard && !options.guard()) {
       throw new McpError(
-        ErrorCode.E_INVALID_INPUT,
+        ErrorCode.INVALID_INPUT,
         'Client not initialized; wait for notifications/initialized'
       );
     }
@@ -717,7 +717,7 @@ export function createToolTaskHandler<Args extends ToolSchema, Result>(
     const taskStore = getTaskStore(extra);
     if ((await countActiveTasks(taskStore)) >= MAX_CONCURRENT_TASKS) {
       throw new McpError(
-        ErrorCode.E_INVALID_INPUT,
+        ErrorCode.INVALID_INPUT,
         `Too many active tasks. Limit: ${String(MAX_CONCURRENT_TASKS)}.`
       );
     }

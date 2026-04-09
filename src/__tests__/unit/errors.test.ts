@@ -57,24 +57,24 @@ describe('isNodeError', () => {
 
 describe('McpError', () => {
   it('stores code, message, and is instanceof Error', () => {
-    const err = new McpError(ErrorCode.E_NOT_FOUND, 'file not found');
-    assert.equal(err.code, ErrorCode.E_NOT_FOUND);
+    const err = new McpError(ErrorCode.NOT_FOUND, 'file not found');
+    assert.equal(err.code, ErrorCode.NOT_FOUND);
     assert.equal(err.message, 'file not found');
     assert.ok(err instanceof Error);
   });
 
   it('has name "McpError"', () => {
-    const err = new McpError(ErrorCode.E_PERMISSION_DENIED, 'no access');
+    const err = new McpError(ErrorCode.PERMISSION_DENIED, 'no access');
     assert.equal(err.name, 'McpError');
   });
 
   it('stores optional path', () => {
-    const err = new McpError(ErrorCode.E_NOT_FOUND, 'msg', '/some/path');
+    const err = new McpError(ErrorCode.NOT_FOUND, 'msg', '/some/path');
     assert.equal(err.path, '/some/path');
   });
 
   it('stores no path when not provided', () => {
-    const err = new McpError(ErrorCode.E_NOT_FOUND, 'msg');
+    const err = new McpError(ErrorCode.NOT_FOUND, 'msg');
     assert.equal(err.path, undefined);
   });
 });
@@ -167,9 +167,9 @@ describe('task cancellation normalization', () => {
     const { taskStore, getStoredResult, getStoredTask } = createMockTaskStore();
     const handler = createToolTaskHandler(() =>
       Promise.resolve({
-        content: [{ type: 'text', text: 'E_CANCELLED: cancelled' }],
+        content: [{ type: 'text', text: 'CANCELLED: cancelled' }],
         isError: true as const,
-        errorCode: ErrorCode.E_CANCELLED,
+        errorCode: ErrorCode.CANCELLED,
       })
     );
 
@@ -220,9 +220,9 @@ describe('task failure normalization', () => {
     const { taskStore, getStoredTask } = createMockTaskStore();
     const handler = createToolTaskHandler(() =>
       Promise.resolve({
-        content: [{ type: 'text', text: 'E_NOT_FOUND: missing file' }],
+        content: [{ type: 'text', text: 'NOT_FOUND: missing file' }],
         isError: true as const,
-        errorCode: ErrorCode.E_NOT_FOUND,
+        errorCode: ErrorCode.NOT_FOUND,
       })
     );
 

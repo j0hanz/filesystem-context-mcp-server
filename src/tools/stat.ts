@@ -86,7 +86,7 @@ export function registerGetFileInfoTool(
       context: { path: args.path },
       run: (signal) => handleGetFileInfo(args, signal),
       onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.E_NOT_FOUND, args.path),
+        buildToolErrorResponse(error, ErrorCode.NOT_FOUND, args.path),
     });
 
   const wrappedHandler = wrapToolHandler(handler, {

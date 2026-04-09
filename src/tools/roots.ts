@@ -71,7 +71,7 @@ export function registerListAllowedDirectoriesTool(
       extra,
       outputSchema: ListAllowedDirectoriesOutputSchema,
       run: () => handleListAllowedDirectories(),
-      onError: (error) => buildToolErrorResponse(error, ErrorCode.E_UNKNOWN),
+      onError: (error) => buildToolErrorResponse(error, ErrorCode.UNKNOWN),
     });
 
   const wrappedHandler = wrapToolHandler(handler, {

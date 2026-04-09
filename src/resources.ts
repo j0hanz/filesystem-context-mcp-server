@@ -172,7 +172,7 @@ export function registerResultResources(
       const { id } = variables;
       if (typeof id !== 'string' || id.length === 0) {
         throw new McpError(
-          ErrorCode.E_NOT_FOUND,
+          ErrorCode.NOT_FOUND,
           'Cached result has expired — re-run the tool to regenerate.'
         );
       }
@@ -214,14 +214,11 @@ export function registerToolInfoResource(
     (uri, variables): ReadResourceResult => {
       const { name } = variables;
       if (typeof name !== 'string' || name.length === 0) {
-        throw new McpError(ErrorCode.E_INVALID_INPUT, 'Tool name is required');
+        throw new McpError(ErrorCode.INVALID_INPUT, 'Tool name is required');
       }
       const content = buildToolInfo(name);
       if (content === undefined) {
-        throw new McpError(
-          ErrorCode.E_INVALID_INPUT,
-          `Tool not found: ${name}`
-        );
+        throw new McpError(ErrorCode.INVALID_INPUT, `Tool not found: ${name}`);
       }
       return {
         contents: [

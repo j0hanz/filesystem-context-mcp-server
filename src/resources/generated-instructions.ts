@@ -83,11 +83,11 @@ ${getSharedConstraints()
 
 | Error Code          | Action                                                                    |
 | ------------------- | ------------------------------------------------------------------------- |
-| \`E_ACCESS_DENIED\` | Call \`roots\` to list allowed directories, then retry with a valid path. |
-| \`E_NOT_FOUND\`     | Call \`ls\` or \`find\` to verify the path exists and check spelling.     |
-| \`E_TOO_LARGE\`     | Use \`head\`/\`tail\`, line ranges, or split across \`read_many\`.        |
-| \`E_TIMEOUT\`       | Narrow scope: reduce depth, result limits, or file pattern.               |
-| \`E_INVALID_INPUT\` | Re-read tool contract via \`internal://tool-info/{name}\`.                |
+| \`ACCESS_DENIED\`   | Call \`roots\` to list allowed directories, then retry with a valid path. |
+| \`NOT_FOUND\`       | Call \`ls\` or \`find\` to verify the path exists and check spelling.     |
+| \`TOO_LARGE\`       | Use \`head\`/\`tail\`, line ranges, or split across \`read_many\`.        |
+| \`TIMEOUT\`         | Narrow scope: reduce depth, result limits, or file pattern.               |
+| \`INVALID_INPUT\`   | Re-read tool contract via \`internal://tool-info/{name}\`.                |
 `;
 
 function formatToolSection(tool: ToolContract): string {

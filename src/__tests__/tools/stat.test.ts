@@ -57,20 +57,20 @@ describe('stat tool', () => {
     assert.equal(info['type'], 'directory');
   });
 
-  it('returns E_NOT_FOUND for a missing path', async () => {
+  it('returns NOT_FOUND for a missing path', async () => {
     const raw = await env.client.callTool({
       name: 'stat',
       arguments: { path: path.join(env.tmpDir, 'does-not-exist.txt') },
     });
-    assertToolError(raw, 'E_NOT_FOUND');
+    assertToolError(raw, 'NOT_FOUND');
   });
 
-  it('returns E_ACCESS_DENIED when path escapes allowed root', async () => {
+  it('returns ACCESS_DENIED when path escapes allowed root', async () => {
     const raw = await env.client.callTool({
       name: 'stat',
       arguments: { path: '/etc/passwd' },
     });
-    assertToolError(raw, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'ACCESS_DENIED');
   });
 });
 
@@ -123,7 +123,7 @@ describe('stat_many tool', () => {
     assert.ok(missingResult, 'Expected result entry for the missing file');
     const error = missingResult['error'] as Record<string, unknown> | undefined;
     assert.ok(error, 'Expected error field on missing path result');
-    assert.equal(error['code'], 'E_NOT_FOUND');
+    assert.equal(error['code'], 'NOT_FOUND');
     assert.equal(typeof error['message'], 'string');
   });
 

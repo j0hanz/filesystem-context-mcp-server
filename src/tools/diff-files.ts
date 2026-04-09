@@ -68,7 +68,7 @@ function assertDiffFileSizeWithinLimit(
 ): void {
   if (size <= maxFileSize) return;
   throw new McpError(
-    ErrorCode.E_TOO_LARGE,
+    ErrorCode.TOO_LARGE,
     `File too large for diff (${size} bytes > ${maxFileSize} bytes).`,
     filePath,
     { size, maxFileSize }
@@ -121,7 +121,7 @@ async function handleDiffFiles(
 
   if (!patchObj) {
     throw new McpError(
-      ErrorCode.E_TIMEOUT,
+      ErrorCode.TIMEOUT,
       `Diff computation timed out or failed due to complexity.`,
       originalPath
     );
@@ -184,7 +184,7 @@ export function registerDiffFilesTool(
       context: { path: args.original },
       run: (signal) => handleDiffFiles(args, signal, options.resourceStore),
       onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.E_UNKNOWN, args.original),
+        buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.original),
     });
 
   const wrappedHandler = wrapToolHandler(handler, {

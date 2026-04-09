@@ -15,7 +15,7 @@ describe('resource store', () => {
       () => store.getText(entry.uri),
       (error: unknown) =>
         error instanceof McpError &&
-        error.code === ErrorCode.E_NOT_FOUND &&
+        error.code === ErrorCode.NOT_FOUND &&
         error.message.includes('Resource expired:')
     );
     assert.deepEqual(store.keys(), []);

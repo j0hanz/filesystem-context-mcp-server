@@ -57,20 +57,20 @@ describe('read tool', () => {
     assert.ok(!(sc['content'] as string).includes('line3'));
   });
 
-  it('returns E_NOT_FOUND for missing file', async () => {
+  it('returns NOT_FOUND for missing file', async () => {
     const raw = await env.client.callTool({
       name: 'read',
       arguments: { path: path.join(env.tmpDir, 'missing.txt') },
     });
-    assertToolError(raw, 'E_NOT_FOUND');
+    assertToolError(raw, 'NOT_FOUND');
   });
 
-  it('returns E_ACCESS_DENIED outside allowed root', async () => {
+  it('returns ACCESS_DENIED outside allowed root', async () => {
     const raw = await env.client.callTool({
       name: 'read',
       arguments: { path: '/etc/hostname' },
     });
-    assertToolError(raw, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'ACCESS_DENIED');
   });
 });
 
@@ -113,12 +113,12 @@ describe('write tool', () => {
     assert.equal(actual, 'new content');
   });
 
-  it('returns E_ACCESS_DENIED outside allowed root', async () => {
+  it('returns ACCESS_DENIED outside allowed root', async () => {
     const raw = await env.client.callTool({
       name: 'write',
       arguments: { path: '/tmp/escape.txt', content: 'bad' },
     });
-    assertToolError(raw, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'ACCESS_DENIED');
   });
 });
 
@@ -171,7 +171,7 @@ describe('read_many tool', () => {
     assert.ok(missingResult, 'Expected entry for missing file');
     const error = missingResult['error'] as Record<string, unknown> | undefined;
     assert.ok(error, 'Expected error field for missing file');
-    assert.equal(error['code'], 'E_NOT_FOUND');
+    assert.equal(error['code'], 'NOT_FOUND');
     assert.equal(typeof error['message'], 'string');
   });
 
@@ -354,7 +354,7 @@ describe('edit tool', () => {
         edits: [{ oldText: 'DOES NOT EXIST', newText: 'anything' }],
       },
     });
-    assertToolError(raw, 'E_INVALID_INPUT');
+    assertToolError(raw, 'INVALID_INPUT');
   });
 
   it('applies sequential edits against updated content', async () => {
@@ -479,7 +479,7 @@ describe('apply_patch tool', () => {
     );
   });
 
-  it('returns E_INVALID_INPUT when patch has no effect', async () => {
+  it('returns INVALID_INPUT when patch has no effect', async () => {
     await fs.writeFile(file, ORIGINAL_CONTENT, 'utf8');
     // Patch that targets content not present in the file — applyPatch returns
     // the original string (not false) when context lines match but the removed
@@ -499,7 +499,7 @@ describe('apply_patch tool', () => {
       name: 'apply_patch',
       arguments: { path: file, patch },
     });
-    assertToolError(raw, 'E_INVALID_INPUT');
+    assertToolError(raw, 'INVALID_INPUT');
     const actual = await fs.readFile(file, 'utf8');
     assert.equal(actual, ORIGINAL_CONTENT, 'File must be unchanged');
   });

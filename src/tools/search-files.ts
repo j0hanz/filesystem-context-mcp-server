@@ -260,7 +260,7 @@ export function registerSearchFilesTool(
         }
       },
       onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.E_UNKNOWN, args.path),
+        buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
     });
 
   const { isInitialized } = options;

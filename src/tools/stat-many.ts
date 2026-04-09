@@ -74,14 +74,14 @@ async function handleGetMultipleFileInfo(
     path: entry.path,
     info: entry.info ? buildFileInfoPayload(entry.info) : undefined,
     error: entry.error
-      ? buildStructuredError(entry.error, ErrorCode.E_NOT_FOUND, entry.path)
+      ? buildStructuredError(entry.error, ErrorCode.NOT_FOUND, entry.path)
       : undefined,
   }));
 
   const text = result.results
     .map((entry) => {
       if (entry.error) {
-        return `${entry.path}: ${buildStructuredError(entry.error, ErrorCode.E_NOT_FOUND, entry.path).message}`;
+        return `${entry.path}: ${buildStructuredError(entry.error, ErrorCode.NOT_FOUND, entry.path).message}`;
       }
       if (entry.info) {
         return formatFileInfoDetail(entry.info);
@@ -153,7 +153,7 @@ export function registerGetMultipleFileInfoTool(
         }
       },
       onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.E_NOT_FOUND, primaryPath),
+        buildToolErrorResponse(error, ErrorCode.NOT_FOUND, primaryPath),
     });
   };
 

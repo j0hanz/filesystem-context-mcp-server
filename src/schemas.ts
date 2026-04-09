@@ -84,7 +84,7 @@ const TreeEntrySchema: z.ZodType<TreeEntry> = z.lazy(() =>
 );
 
 const ErrorSchema = z.strictObject({
-  code: z.enum(ErrorCode).describe('Error code (e.g. E_NOT_FOUND)'),
+  code: z.enum(ErrorCode).describe('Error code (e.g. NOT_FOUND)'),
   message: z.string().describe('Human-readable message'),
   path: z.string().optional().describe('Relevant path'),
   suggestion: z.string().optional().describe('Fix suggestion'),

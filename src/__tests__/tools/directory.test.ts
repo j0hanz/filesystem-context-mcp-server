@@ -76,12 +76,12 @@ describe('ls tool', () => {
     assert.ok(names.includes('sub'));
   });
 
-  it('returns E_ACCESS_DENIED for paths outside allowed roots', async () => {
+  it('returns ACCESS_DENIED for paths outside allowed roots', async () => {
     const raw = await env.client.callTool({
       name: 'ls',
       arguments: { path: '/etc' },
     });
-    assertToolError(raw, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'ACCESS_DENIED');
   });
 
   it('rejects unsafe glob patterns before traversal', async () => {
@@ -90,7 +90,7 @@ describe('ls tool', () => {
       (error: unknown) =>
         error instanceof Error &&
         'code' in error &&
-        error.code === 'E_INVALID_PATTERN'
+        error.code === 'INVALID_PATTERN'
     );
   });
 
@@ -239,7 +239,7 @@ describe('mkdir tool', () => {
       name: 'mkdir',
       arguments: { path: '/tmp/escape-' + Date.now() },
     });
-    assertToolError(raw, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'ACCESS_DENIED');
   });
 });
 
@@ -279,15 +279,15 @@ describe('rm tool', () => {
     await assert.rejects(() => fs.stat(dir), /ENOENT/);
   });
 
-  it('returns E_NOT_FOUND for missing file', async () => {
+  it('returns NOT_FOUND for missing file', async () => {
     const raw = await env.client.callTool({
       name: 'rm',
       arguments: { path: path.join(env.tmpDir, 'ghost.txt') },
     });
-    assertToolError(raw, 'E_NOT_FOUND');
+    assertToolError(raw, 'NOT_FOUND');
   });
 
-  it('ignoreIfNotExists suppresses E_NOT_FOUND', async () => {
+  it('ignoreIfNotExists suppresses NOT_FOUND', async () => {
     const raw = await env.client.callTool({
       name: 'rm',
       arguments: {
@@ -298,12 +298,12 @@ describe('rm tool', () => {
     assertOk(raw);
   });
 
-  it('returns E_ACCESS_DENIED when deleting workspace root', async () => {
+  it('returns ACCESS_DENIED when deleting workspace root', async () => {
     const raw = await env.client.callTool({
       name: 'rm',
       arguments: { path: env.tmpDir, recursive: true },
     });
-    assertToolError(raw, 'E_ACCESS_DENIED');
+    assertToolError(raw, 'ACCESS_DENIED');
     // Verify root still exists
     const stats = await fs.stat(env.tmpDir);
     assert.ok(stats.isDirectory());
@@ -355,7 +355,7 @@ describe('mv tool', () => {
         destination: path.join(env.tmpDir, 'dst.txt'),
       },
     });
-    assertToolError(raw, 'E_NOT_FOUND');
+    assertToolError(raw, 'NOT_FOUND');
   });
 });
 
@@ -373,19 +373,19 @@ describe('invalid cursor rejection', () => {
     await env.cleanup();
   });
 
-  it('ls rejects a malformed cursor with E_INVALID_INPUT', async () => {
+  it('ls rejects a malformed cursor with INVALID_INPUT', async () => {
     const raw = await env.client.callTool({
       name: 'ls',
       arguments: { path: env.tmpDir, cursor: 'not-a-valid-cursor' },
     });
-    assertToolError(raw, 'E_INVALID_INPUT');
+    assertToolError(raw, 'INVALID_INPUT');
   });
 
-  it('find rejects a malformed cursor with E_INVALID_INPUT', async () => {
+  it('find rejects a malformed cursor with INVALID_INPUT', async () => {
     const raw = await env.client.callTool({
       name: 'find',
       arguments: { path: env.tmpDir, pattern: '*.txt', cursor: 'garbage!!' },
     });
-    assertToolError(raw, 'E_INVALID_INPUT');
+    assertToolError(raw, 'INVALID_INPUT');
   });
 });

@@ -53,7 +53,7 @@ export const MOVE_FILE_TOOL: ToolContract = {
 function toMoveFailure(
   source: string,
   error: unknown,
-  defaultCode: ErrorCode = ErrorCode.E_UNKNOWN
+  defaultCode: ErrorCode = ErrorCode.UNKNOWN
 ): NonNullable<z.infer<typeof MoveFileOutputSchema>['failed']>[number] {
   return {
     source,
@@ -94,7 +94,7 @@ async function handleMoveError(
           toMoveFailure(
             src,
             new McpError(
-              ErrorCode.E_UNKNOWN,
+              ErrorCode.UNKNOWN,
               `Cross-device move partially failed: data exists at both source and destination. ${formatUnknownErrorMessage(deleteError)}`,
               src
             )
@@ -106,7 +106,7 @@ async function handleMoveError(
         toMoveFailure(
           src,
           new McpError(
-            ErrorCode.E_UNKNOWN,
+            ErrorCode.UNKNOWN,
             `Cross-device move failed: could not remove source. ${formatUnknownErrorMessage(deleteError)}`,
             src
           )
@@ -131,7 +131,7 @@ async function processSingleMove(
     validSource = await validateExistingPath(src, signal);
     assertAllowedFileAccess(src, validSource);
   } catch (error) {
-    failed.push(toMoveFailure(src, error, ErrorCode.E_ACCESS_DENIED));
+    failed.push(toMoveFailure(src, error, ErrorCode.ACCESS_DENIED));
     return;
   }
 
@@ -150,11 +150,11 @@ async function processSingleMove(
       toMoveFailure(
         src,
         new McpError(
-          ErrorCode.E_INVALID_INPUT,
+          ErrorCode.INVALID_INPUT,
           'Cannot move a directory into its own subdirectory',
           src
         ),
-        ErrorCode.E_INVALID_INPUT
+        ErrorCode.INVALID_INPUT
       )
     );
     return;
@@ -207,7 +207,7 @@ async function handleMoveFile(
 ): Promise<ToolResponse<z.infer<typeof MoveFileOutputSchema>>> {
   const sources = args.sources ?? (args.source ? [args.source] : []);
   if (sources.length === 0) {
-    throw new McpError(ErrorCode.E_INVALID_INPUT, 'No sources provided.');
+    throw new McpError(ErrorCode.INVALID_INPUT, 'No sources provided.');
   }
 
   const validDest = await validatePathForWrite(args.destination, signal);
@@ -215,7 +215,7 @@ async function handleMoveFile(
 
   if (sources.length > 1 && !destIsDirectory) {
     throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
+      ErrorCode.INVALID_INPUT,
       'Destination must be an existing directory when moving multiple files.'
     );
   }
@@ -291,7 +291,7 @@ export function registerMoveFileTool(
       onError: (error) =>
         buildToolErrorResponse(
           error,
-          ErrorCode.E_UNKNOWN,
+          ErrorCode.UNKNOWN,
           args.source ?? args.sources?.[0]
         ),
     });

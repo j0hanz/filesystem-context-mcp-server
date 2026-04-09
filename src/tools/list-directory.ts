@@ -117,7 +117,7 @@ function decodeListCursor(cursor: string): ListCursorPayload {
   }
 
   throw new McpError(
-    ErrorCode.E_INVALID_INPUT,
+    ErrorCode.INVALID_INPUT,
     'Invalid cursor: the cursor value is malformed or expired.'
   );
 }
@@ -242,7 +242,7 @@ async function handleListDirectory(
     const snapshot = listSnapshots.get(cursor.snapshotId);
     if (snapshot?.fingerprint !== fingerprint) {
       throw new McpError(
-        ErrorCode.E_INVALID_INPUT,
+        ErrorCode.INVALID_INPUT,
         'Invalid cursor: the cursor value is malformed or expired.'
       );
     }
@@ -302,7 +302,7 @@ export function registerListDirectoryTool(
       onError: (error) =>
         buildToolErrorResponse(
           error,
-          ErrorCode.E_NOT_DIRECTORY,
+          ErrorCode.NOT_DIRECTORY,
           args.path ?? '.'
         ),
     });

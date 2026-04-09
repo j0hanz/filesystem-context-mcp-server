@@ -286,7 +286,7 @@ export function registerCalculateHashTool(
         }
       },
       onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.E_UNKNOWN, args.path),
+        buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
     });
 
   const wrappedHandler = wrapToolHandler(handler, {

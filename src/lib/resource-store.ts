@@ -169,7 +169,7 @@ export function createInMemoryResourceStore(
         reason: 'entry_too_large',
       });
       throw new McpError(
-        ErrorCode.E_TOO_LARGE,
+        ErrorCode.TOO_LARGE,
         `Resource too large to cache (${entryBytes} bytes)`
       );
     }
@@ -227,7 +227,7 @@ export function createInMemoryResourceStore(
         reason: 'evicted_immediately',
       });
       throw new McpError(
-        ErrorCode.E_TOO_LARGE,
+        ErrorCode.TOO_LARGE,
         'Resource cache full: entry evicted immediately'
       );
     }
@@ -244,7 +244,7 @@ export function createInMemoryResourceStore(
         reason: 'not_found',
       });
       throw new McpError(
-        ErrorCode.E_NOT_FOUND,
+        ErrorCode.NOT_FOUND,
         `Resource not found: ${uri}. The cached result may have been evicted. Re-run the originating tool to regenerate.`
       );
     }
@@ -256,7 +256,7 @@ export function createInMemoryResourceStore(
         reason: 'expired',
       });
       throw new McpError(
-        ErrorCode.E_NOT_FOUND,
+        ErrorCode.NOT_FOUND,
         `Resource expired: ${uri}. Re-run the originating tool to regenerate.`
       );
     }

@@ -39,7 +39,7 @@ function assertPositiveSafeIntegerOption(
     value < 1
   ) {
     throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
+      ErrorCode.INVALID_INPUT,
       message ?? `${name} must be a positive integer`
     );
   }
@@ -280,14 +280,14 @@ function validateReadOptions(options: ReadFileOptions): void {
 
   if (hasHead && (hasStart || hasEnd)) {
     throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
+      ErrorCode.INVALID_INPUT,
       'head cannot be used together with startLine/endLine'
     );
   }
 
   if (hasTail && (hasHead || hasStart || hasEnd)) {
     throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
+      ErrorCode.INVALID_INPUT,
       'tail cannot be used together with head/startLine/endLine'
     );
   }
@@ -296,7 +296,7 @@ function validateReadOptions(options: ReadFileOptions): void {
     const effectiveStart = options.startLine ?? 1;
     if (options.endLine !== undefined && options.endLine < effectiveStart) {
       throw new McpError(
-        ErrorCode.E_INVALID_INPUT,
+        ErrorCode.INVALID_INPUT,
         'endLine must be greater than or equal to startLine (default: 1)'
       );
     }
@@ -368,7 +368,7 @@ function createTooLargeError(
   requestedPath: string
 ): McpError {
   return new McpError(
-    ErrorCode.E_TOO_LARGE,
+    ErrorCode.TOO_LARGE,
     `File exceeds maximum size (${bytesRead} > ${maxSize} bytes)`,
     requestedPath,
     { size: bytesRead, maxSize }
@@ -629,7 +629,7 @@ async function assertNotBinary(
   );
   if (!isBinary) return;
   throw new McpError(
-    ErrorCode.E_INVALID_INPUT,
+    ErrorCode.INVALID_INPUT,
     'Binary file detected. Refusing to read as text.',
     filePath
   );
@@ -642,7 +642,7 @@ function assertSizeWithinLimit(
 ): void {
   if (size <= maxSize) return;
   throw new McpError(
-    ErrorCode.E_TOO_LARGE,
+    ErrorCode.TOO_LARGE,
     `File too large (${size} bytes, max: ${maxSize} bytes). Use head to preview the first N lines.`,
     filePath,
     { size, maxSize }
@@ -662,7 +662,7 @@ function requireReadOption<K extends RequiredReadOption>(
   }
 
   throw new McpError(
-    ErrorCode.E_INVALID_INPUT,
+    ErrorCode.INVALID_INPUT,
     `Missing ${key} option`,
     filePath
   );
@@ -789,7 +789,7 @@ async function readByMode(context: ReadModeContext): Promise<ReadFileResult> {
 
 function assertFileStats(filePath: string, stats: Stats): void {
   if (!stats.isFile()) {
-    throw new McpError(ErrorCode.E_NOT_FILE, 'Not a regular file', filePath);
+    throw new McpError(ErrorCode.NOT_FILE, 'Not a regular file', filePath);
   }
 }
 

@@ -100,7 +100,7 @@ function createRegexMatcher(pattern: string, caseSensitive: boolean): RE2 {
     return new RE2(pattern, flags);
   } catch (error) {
     throw new McpError(
-      ErrorCode.E_INVALID_PATTERN,
+      ErrorCode.INVALID_PATTERN,
       `Invalid regex pattern: ${formatUnknownErrorMessage(error)}`
     );
   }
@@ -217,7 +217,7 @@ async function processEntry(
     summary.failedFiles++;
     recordFailure(summary.failures, {
       path: entryPath,
-      error: buildStructuredError(error, ErrorCode.E_UNKNOWN, entryPath),
+      error: buildStructuredError(error, ErrorCode.UNKNOWN, entryPath),
     });
     return;
   }
@@ -250,7 +250,7 @@ async function processEntry(
     summary.failedFiles++;
     recordFailure(summary.failures, {
       path: validPath,
-      error: buildStructuredError(error, ErrorCode.E_UNKNOWN, validPath),
+      error: buildStructuredError(error, ErrorCode.UNKNOWN, validPath),
     });
   }
 }
@@ -427,7 +427,7 @@ function createReplacementRegex(
   if (!args.isRegex) return undefined;
   if (!safeRegex(args.searchPattern)) {
     throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
+      ErrorCode.INVALID_INPUT,
       `Unsafe regex pattern: ${args.searchPattern}`
     );
   }
@@ -583,7 +583,7 @@ export function registerSearchAndReplaceTool(
         }
       },
       onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.E_UNKNOWN, args.path),
+        buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
     });
 
   const { isInitialized } = options;

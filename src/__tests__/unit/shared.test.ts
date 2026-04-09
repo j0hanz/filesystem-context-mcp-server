@@ -26,13 +26,13 @@ describe('tool output validation', () => {
         buildToolResponse('ok', { ok: true, value: 42 } as unknown as z.infer<
           typeof outputSchema
         >),
-      onError: (error) => buildToolErrorResponse(error, ErrorCode.E_UNKNOWN),
+      onError: (error) => buildToolErrorResponse(error, ErrorCode.UNKNOWN),
     });
 
     if (result.isError !== true) {
       assert.fail('Expected tool error result');
     }
-    assert.equal(result.errorCode, ErrorCode.E_UNKNOWN);
+    assert.equal(result.errorCode, ErrorCode.UNKNOWN);
 
     const first = result.content[0];
     assert.ok(
@@ -70,7 +70,7 @@ describe('SEP-414 trace context propagation', () => {
         captured = getTraceContext();
         return buildToolResponse('ok', { ok: true as const });
       },
-      onError: (error) => buildToolErrorResponse(error, ErrorCode.E_UNKNOWN),
+      onError: (error) => buildToolErrorResponse(error, ErrorCode.UNKNOWN),
     });
 
     assert.ok(captured, 'Expected trace context to be captured');
@@ -92,7 +92,7 @@ describe('SEP-414 trace context propagation', () => {
         captured = getTraceContext();
         return buildToolResponse('ok', { ok: true as const });
       },
-      onError: (error) => buildToolErrorResponse(error, ErrorCode.E_UNKNOWN),
+      onError: (error) => buildToolErrorResponse(error, ErrorCode.UNKNOWN),
     });
 
     assert.equal(captured, undefined, 'Invalid traceparent should be dropped');
@@ -109,7 +109,7 @@ describe('SEP-414 trace context propagation', () => {
         captured = getTraceContext();
         return buildToolResponse('ok', { ok: true as const });
       },
-      onError: (error) => buildToolErrorResponse(error, ErrorCode.E_UNKNOWN),
+      onError: (error) => buildToolErrorResponse(error, ErrorCode.UNKNOWN),
     });
 
     assert.equal(captured, undefined, 'No trace context when _meta is absent');

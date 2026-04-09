@@ -117,7 +117,7 @@ function maybeExternalizeReadManyResult(
   const baseResult: ReadManyResultWithResource = {
     ...rest,
     ...(error
-      ? { error: buildStructuredError(error, ErrorCode.E_UNKNOWN, result.path) }
+      ? { error: buildStructuredError(error, ErrorCode.UNKNOWN, result.path) }
       : {}),
     ...(truncationReason ? { truncationReason } : {}),
   };
@@ -293,7 +293,7 @@ export function registerReadMultipleFilesTool(
         }
       },
       onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.E_NOT_FILE, primaryPath),
+        buildToolErrorResponse(error, ErrorCode.NOT_FILE, primaryPath),
     });
   };
 

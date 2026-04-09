@@ -226,7 +226,7 @@ function resolveOptions(options: SearchContentOptions): ResolvedOptions {
 
   if (!result.success) {
     throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
+      ErrorCode.INVALID_INPUT,
       `Invalid search options:\n${z.prettifyError(result.error)}`,
       undefined,
       { errors: z.treeifyError(result.error) }
@@ -1260,9 +1260,9 @@ export async function searchContent(
   options: SearchContentOptions = {}
 ): Promise<SearchContentResult> {
   if (!basePath.trim())
-    throw new McpError(ErrorCode.E_INVALID_INPUT, 'basePath required');
+    throw new McpError(ErrorCode.INVALID_INPUT, 'basePath required');
   if (typeof pattern !== 'string')
-    throw new McpError(ErrorCode.E_INVALID_INPUT, 'pattern required');
+    throw new McpError(ErrorCode.INVALID_INPUT, 'pattern required');
 
   const opts = resolveOptions(options);
   try {
@@ -1279,7 +1279,7 @@ export async function searchContent(
 
         if (!stats.isDirectory()) {
           throw new McpError(
-            ErrorCode.E_INVALID_INPUT,
+            ErrorCode.INVALID_INPUT,
             'Path must be file or directory',
             basePath
           );

@@ -81,7 +81,7 @@ export function registerWriteFileTool(
       context: { path: args.path },
       run: (signal) => handleWriteFile(args, signal),
       onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.E_UNKNOWN, args.path),
+        buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
     });
 
   const wrappedHandler = wrapToolHandler(handler, {

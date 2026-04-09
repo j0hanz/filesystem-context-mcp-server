@@ -111,7 +111,7 @@ export function assertToolError(result: unknown, expectedCode?: string): void {
   );
   assert.ok(textBlock, 'Error result must have a text block');
   if (expectedCode !== undefined) {
-    const match = /^(E_\w+):/.exec(textBlock.text);
+    const match = /^([A-Z][A-Z_]+):/.exec(textBlock.text);
     assert.ok(
       match,
       `Expected "${expectedCode}: …" pattern in:\n${textBlock.text}`

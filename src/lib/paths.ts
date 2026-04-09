@@ -172,7 +172,7 @@ export function assertAllowedFileAccess(
     `Access denied: sensitive file blocked by policy (${requestedPath})`
   );
   throw new McpError(
-    ErrorCode.E_ACCESS_DENIED,
+    ErrorCode.ACCESS_DENIED,
     'Sensitive file blocked by policy. ' +
       'Set FS_CONTEXT_ALLOW_SENSITIVE=1 or use FS_CONTEXT_ALLOWLIST to override.',
     requestedPath
@@ -469,7 +469,7 @@ export async function setAllowedDirectoriesResolved(
 function ensureNonEmptyPath(requestedPath: string): void {
   if (!requestedPath || requestedPath.trim().length === 0) {
     throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
+      ErrorCode.INVALID_INPUT,
       'Path cannot be empty or whitespace',
       requestedPath
     );
@@ -479,7 +479,7 @@ function ensureNonEmptyPath(requestedPath: string): void {
 function ensureNoNullBytes(requestedPath: string): void {
   if (requestedPath.includes('\0')) {
     throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
+      ErrorCode.INVALID_INPUT,
       'Path contains null bytes',
       requestedPath
     );
@@ -533,7 +533,7 @@ function ensureNoReservedWindowsNames(requestedPath: string): void {
   if (!reserved) return;
 
   throw new McpError(
-    ErrorCode.E_INVALID_INPUT,
+    ErrorCode.INVALID_INPUT,
     `Windows reserved device name not allowed: ${reserved}`,
     requestedPath
   );
@@ -551,7 +551,7 @@ function ensureNoWindowsDriveRelativePath(requestedPath: string): void {
   if (!isWindowsDriveRelativePath(requestedPath)) return;
 
   throw new McpError(
-    ErrorCode.E_INVALID_INPUT,
+    ErrorCode.INVALID_INPUT,
     'Windows drive-relative paths are not allowed. Use C:\\path or C:/path instead of C:path.',
     requestedPath
   );
@@ -565,7 +565,7 @@ function resolveRequestedPath(requestedPath: string): string {
 
     if (roots.length > 1) {
       throw new McpError(
-        ErrorCode.E_INVALID_INPUT,
+        ErrorCode.INVALID_INPUT,
         'Relative paths are ambiguous when multiple roots are configured. Provide an absolute path or specify the full root path.',
         requestedPath
       );
@@ -595,23 +595,23 @@ const NODE_ERROR_MAP: Readonly<
   >
 > = {
   ENOENT: {
-    code: ErrorCode.E_NOT_FOUND,
+    code: ErrorCode.NOT_FOUND,
     message: () => 'Path does not exist',
   },
   EACCES: {
-    code: ErrorCode.E_PERMISSION_DENIED,
+    code: ErrorCode.PERMISSION_DENIED,
     message: () => 'Permission denied',
   },
   EPERM: {
-    code: ErrorCode.E_PERMISSION_DENIED,
+    code: ErrorCode.PERMISSION_DENIED,
     message: () => 'Permission denied',
   },
   ELOOP: {
-    code: ErrorCode.E_SYMLINK_NOT_ALLOWED,
+    code: ErrorCode.SYMLINK_NOT_ALLOWED,
     message: () => 'Too many symbolic links (possible circular reference)',
   },
   ENAMETOOLONG: {
-    code: ErrorCode.E_INVALID_INPUT,
+    code: ErrorCode.INVALID_INPUT,
     message: () => 'Path name too long',
   },
 } as const;
@@ -645,7 +645,7 @@ function toMcpError(requestedPath: string, error: unknown): McpError {
   }
 
   return new McpError(
-    ErrorCode.E_NOT_FOUND,
+    ErrorCode.NOT_FOUND,
     'Path is not accessible',
     requestedPath,
     { originalCode: code, originalMessage },
@@ -660,7 +660,7 @@ function toAccessDeniedWithHint(
 ): McpError {
   const suggestion = buildAllowedDirectoriesHint();
   return new McpError(
-    ErrorCode.E_ACCESS_DENIED,
+    ErrorCode.ACCESS_DENIED,
     `Outside allowed directories. ${suggestion}`,
     requestedPath,
     { resolvedPath, normalizedResolvedPath: normalizedResolved }
@@ -691,7 +691,7 @@ function ensureWithinAllowedDirectories(options: {
   if (allowedDirs.length === 0) {
     Logger.warn('Access denied: no allowed directories configured');
     throw new McpError(
-      ErrorCode.E_ACCESS_DENIED,
+      ErrorCode.ACCESS_DENIED,
       'No allowed directories configured. Use --allow-cwd or configure roots via the MCP Roots protocol.',
       requestedPath,
       details
@@ -702,7 +702,7 @@ function ensureWithinAllowedDirectories(options: {
     `Access denied: path outside allowed directories (${requestedPath})`
   );
   throw new McpError(
-    ErrorCode.E_ACCESS_DENIED,
+    ErrorCode.ACCESS_DENIED,
     'Outside allowed directories',
     requestedPath,
     details
@@ -855,7 +855,7 @@ export async function validateExistingDirectory(
 
   if (!stats.isDirectory()) {
     throw new McpError(
-      ErrorCode.E_NOT_DIRECTORY,
+      ErrorCode.NOT_DIRECTORY,
       'Not a directory',
       requestedPath
     );

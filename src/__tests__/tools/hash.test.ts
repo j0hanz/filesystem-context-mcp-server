@@ -99,12 +99,12 @@ describe('calculate_hash tool', () => {
     assert.equal(typeof sc['fileCount'], 'number');
   });
 
-  it('returns E_NOT_FOUND for a missing path', async () => {
+  it('returns NOT_FOUND for a missing path', async () => {
     const raw = await env.client.callTool({
       name: 'calculate_hash',
       arguments: { path: path.join(env.tmpDir, 'ghost.txt') },
     });
-    assertToolError(raw, 'E_NOT_FOUND');
+    assertToolError(raw, 'NOT_FOUND');
   });
 });
 
@@ -157,7 +157,7 @@ describe('diff_files tool', () => {
     assert.equal(sc['isIdentical'], true);
   });
 
-  it('returns E_NOT_FOUND when a file does not exist', async () => {
+  it('returns NOT_FOUND when a file does not exist', async () => {
     const raw = await env.client.callTool({
       name: 'diff_files',
       arguments: {
@@ -165,6 +165,6 @@ describe('diff_files tool', () => {
         modified,
       },
     });
-    assertToolError(raw, 'E_NOT_FOUND');
+    assertToolError(raw, 'NOT_FOUND');
   });
 });

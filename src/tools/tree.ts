@@ -138,7 +138,7 @@ export function registerTreeTool(
         }
       },
       onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.E_NOT_DIRECTORY, targetPath),
+        buildToolErrorResponse(error, ErrorCode.NOT_DIRECTORY, targetPath),
     });
   };
 
