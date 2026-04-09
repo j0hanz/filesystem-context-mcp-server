@@ -28,12 +28,12 @@ function buildCatalogGuide(): string {
 
 ## Primitive Routing
 
-| Primitive | Purpose |
-|-----------|---------|
-| \`tools\` | Model-controlled operations that inspect or mutate the filesystem within allowed roots. |
-| \`resources\` | Application-driven context: \`internal://instructions\`, \`internal://tool-info/{name}\`, cached \`filesystem-mcp://result/{id}\`. |
-| \`prompts\` | User-controlled workflow templates for help, comparison, and guided inspection. |
-| \`completion\` | Argument suggestions for prompts and resource templates (not a discovery mechanism). |
+| Primitive      | Purpose                                                                                                                            |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| \`tools\`      | Model-controlled operations that inspect or mutate the filesystem within allowed roots.                                            |
+| \`resources\`  | Application-driven context: \`internal://instructions\`, \`internal://tool-info/{name}\`, cached \`filesystem-mcp://result/{id}\`. |
+| \`prompts\`    | User-controlled workflow templates for help, comparison, and guided inspection.                                                    |
+| \`completion\` | Argument suggestions for prompts and resource templates (not a discovery mechanism).                                               |
 
 ## Cross-Tool Data Flow
 
@@ -56,20 +56,20 @@ Task-capable tools: ${taskCapable.length > 0 ? taskCapable.map((name) => `\`${na
 
 ## Search Strategy
 
-| Goal | Tool |
-|------|------|
-| Find files by name/glob | \`find\` |
-| Search file contents | \`grep\` |
-| Replace across files | \`search_and_replace\` (not for discovery) |
+| Goal                    | Tool                                       |
+| ----------------------- | ------------------------------------------ |
+| Find files by name/glob | \`find\`                                   |
+| Search file contents    | \`grep\`                                   |
+| Replace across files    | \`search_and_replace\` (not for discovery) |
 
 ## Write Strategy
 
-| Scenario | Tool |
-|----------|------|
-| Single file, targeted edit | \`edit\` — match exact text, replace first occurrence |
-| Single file, full rewrite | \`write\` — overwrite entire content |
-| Multiple files, same change | \`search_and_replace\` — glob + pattern across files |
-| Unsure what to change | \`grep\` first, then decide |
+| Scenario                    | Tool                                                  |
+| --------------------------- | ----------------------------------------------------- |
+| Single file, targeted edit  | \`edit\` — match exact text, replace first occurrence |
+| Single file, full rewrite   | \`write\` — overwrite entire content                  |
+| Multiple files, same change | \`search_and_replace\` — glob + pattern across files  |
+| Unsure what to change       | \`grep\` first, then decide                           |
 
 ## Patch Strategy
 

@@ -47,19 +47,20 @@ Secure filesystem agent. Operate strictly within allowed roots. Resolve paths be
 ## Tools Overview
 
 | Category | Tools |
-|----------|-------|
+| -------- | ----- |
+
 ${buildToolsOverview()}
 
 ## Resources
 
-| URI | Purpose |
-|-----|---------|
-| \`internal://instructions\` | Full usage reference (this document) |
-| \`internal://tool-catalog\` | Tool routing, data flow, and selection guide |
-| \`internal://workflows\` | Step-by-step execution sequences |
-| \`internal://tool-info/{name}\` | Per-tool contract (e.g. \`internal://tool-info/read\`) |
+| URI                              | Purpose                                                        |
+| -------------------------------- | -------------------------------------------------------------- |
+| \`internal://instructions\`      | Full usage reference (this document)                           |
+| \`internal://tool-catalog\`      | Tool routing, data flow, and selection guide                   |
+| \`internal://workflows\`         | Step-by-step execution sequences                               |
+| \`internal://tool-info/{name}\`  | Per-tool contract (e.g. \`internal://tool-info/read\`)         |
 | \`filesystem-mcp://result/{id}\` | Cached large output — fetch via \`resources/read\` immediately |
-| \`filesystem-mcp://metrics\` | Per-tool call count, error rate, and avg duration |
+| \`filesystem-mcp://metrics\`     | Per-tool call count, error rate, and avg duration              |
 
 ## Task Protocol
 
@@ -80,13 +81,13 @@ ${getSharedConstraints()
 
 ## Error Recovery
 
-| Error Code | Action |
-|------------|--------|
+| Error Code          | Action                                                                    |
+| ------------------- | ------------------------------------------------------------------------- |
 | \`E_ACCESS_DENIED\` | Call \`roots\` to list allowed directories, then retry with a valid path. |
-| \`E_NOT_FOUND\` | Call \`ls\` or \`find\` to verify the path exists and check spelling. |
-| \`E_TOO_LARGE\` | Use \`head\`/\`tail\`, line ranges, or split across \`read_many\`. |
-| \`E_TIMEOUT\` | Narrow scope: reduce depth, result limits, or file pattern. |
-| \`E_INVALID_INPUT\` | Re-read tool contract via \`internal://tool-info/{name}\`. |
+| \`E_NOT_FOUND\`     | Call \`ls\` or \`find\` to verify the path exists and check spelling.     |
+| \`E_TOO_LARGE\`     | Use \`head\`/\`tail\`, line ranges, or split across \`read_many\`.        |
+| \`E_TIMEOUT\`       | Narrow scope: reduce depth, result limits, or file pattern.               |
+| \`E_INVALID_INPUT\` | Re-read tool contract via \`internal://tool-info/{name}\`.                |
 `;
 
 function formatToolSection(tool: ToolContract): string {
