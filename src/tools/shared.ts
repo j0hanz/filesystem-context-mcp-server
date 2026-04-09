@@ -232,7 +232,10 @@ function resolveDetailedError(
   const detailed = createDetailedError(error, path);
   if (detailed.code === ErrorCode.UNKNOWN) {
     detailed.code = defaultCode;
-    detailed.suggestion = getSuggestion(defaultCode);
+    const suggestion = getSuggestion(defaultCode);
+    if (suggestion) {
+      detailed.suggestion = suggestion;
+    }
   }
   return detailed;
 }
@@ -863,13 +866,13 @@ export function resolvePathOrRoot(pathValue: string | undefined): string {
   if (roots.length === 0) {
     throw new McpError(
       ErrorCode.ACCESS_DENIED,
-      'No workspace roots configured. Use the roots tool to check, or configure roots via the MCP Roots protocol (or start with --allow-cwd / CLI directories).'
+      'No roots configured. Use roots tool, --allow-cwd, or MCP Roots protocol.'
     );
   }
   if (roots.length > 1) {
     throw new McpError(
       ErrorCode.INVALID_INPUT,
-      'Multiple workspace roots configured. Provide an explicit path to disambiguate.'
+      'Multiple roots configured. Provide an explicit path.'
     );
   }
   const root = roots[0];
@@ -900,7 +903,7 @@ export function decodeOffsetCursor(cursor: string): number {
   }
   throw new McpError(
     ErrorCode.INVALID_INPUT,
-    `Invalid cursor: the cursor value is malformed or corrupted. Request the first page without a cursor.`
+    `Invalid cursor. Request the first page without a cursor.`
   );
 }
 

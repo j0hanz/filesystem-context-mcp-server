@@ -82,15 +82,26 @@ describe('McpError', () => {
 // ─── getSuggestion ──────────────────────────────────────────────────────────
 
 describe('getSuggestion', () => {
-  it('returns a non-empty string for every ErrorCode value', () => {
+  it('returns a string or undefined for every ErrorCode value', () => {
+    const withSuggestion: string[] = [];
+    const withoutSuggestion: string[] = [];
     for (const code of Object.values(ErrorCode)) {
       const suggestion = getSuggestion(code);
-      assert.equal(typeof suggestion, 'string');
-      assert.ok(
-        suggestion.length > 0,
-        `Expected non-empty suggestion for ${code}`
-      );
+      if (suggestion !== undefined) {
+        assert.equal(typeof suggestion, 'string');
+        assert.ok(
+          suggestion.length > 0,
+          `Expected non-empty suggestion for ${code}`
+        );
+        withSuggestion.push(code);
+      } else {
+        withoutSuggestion.push(code);
+      }
     }
+    assert.ok(
+      withSuggestion.length > 0,
+      'At least some codes should have suggestions'
+    );
   });
 });
 

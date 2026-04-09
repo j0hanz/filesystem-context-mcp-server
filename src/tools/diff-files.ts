@@ -122,7 +122,7 @@ async function handleDiffFiles(
   if (!patchObj) {
     throw new McpError(
       ErrorCode.TIMEOUT,
-      `Diff computation timed out or failed due to complexity.`,
+      `Diff timed out or too complex.`,
       originalPath
     );
   }

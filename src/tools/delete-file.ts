@@ -117,27 +117,21 @@ export function registerDeleteFileTool(
           }
           if (error.code === 'ENOTEMPTY') {
             return buildToolErrorResponse(
-              new Error(
-                'Directory is not empty. Use recursive: true to delete non-empty directories.'
-              ),
+              new Error('Directory not empty. Set recursive: true.'),
               ErrorCode.INVALID_INPUT,
               args.path
             );
           }
           if (error.code === 'EISDIR') {
             return buildToolErrorResponse(
-              new Error(
-                'Path is a directory. Use recursive: true to delete directories.'
-              ),
+              new Error('Path is a directory. Set recursive: true.'),
               ErrorCode.INVALID_INPUT,
               args.path
             );
           }
           if (error.code === 'EEXIST') {
             return buildToolErrorResponse(
-              new Error(
-                'Directory is not empty. Use recursive: true to delete non-empty directories.'
-              ),
+              new Error('Directory not empty. Set recursive: true.'),
               ErrorCode.INVALID_INPUT,
               args.path
             );

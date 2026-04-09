@@ -258,24 +258,19 @@ export class McpError extends Error {
   }
 }
 
-const ERROR_SUGGESTIONS: Readonly<Record<ErrorCode, string>> = {
-  [ErrorCode.ACCESS_DENIED]: 'Use roots to see available workspace roots.',
-  [ErrorCode.NOT_FOUND]: 'Use ls to explore available files and directories.',
-  [ErrorCode.NOT_FILE]: 'Use ls to explore the directory contents.',
-  [ErrorCode.NOT_DIRECTORY]: 'Use read to read file contents.',
-  [ErrorCode.TOO_LARGE]:
-    'Use head to read a partial preview, or narrow the scope.',
-  [ErrorCode.TIMEOUT]:
-    'Try a smaller scope, fewer results (maxResults), or search fewer files.',
-  [ErrorCode.CANCELLED]:
-    'No retry needed unless you want to re-run the operation.',
+const ERROR_SUGGESTIONS: Readonly<Record<ErrorCode, string | undefined>> = {
+  [ErrorCode.ACCESS_DENIED]: 'Run roots to list allowed directories.',
+  [ErrorCode.NOT_FOUND]: 'Run ls or find to verify the path.',
+  [ErrorCode.NOT_FILE]: 'Target is a directory, not a file.',
+  [ErrorCode.NOT_DIRECTORY]: 'Target is a file, not a directory.',
+  [ErrorCode.TOO_LARGE]: 'Use head/tail or line ranges to read partially.',
+  [ErrorCode.TIMEOUT]: 'Reduce scope, depth, or maxResults.',
+  [ErrorCode.CANCELLED]: undefined,
   [ErrorCode.INVALID_PATTERN]: 'Check syntax and escape special characters.',
-  [ErrorCode.INVALID_INPUT]: 'Check the tool documentation for correct usage.',
-  [ErrorCode.PERMISSION_DENIED]:
-    'Check file permissions on the operating system.',
-  [ErrorCode.SYMLINK_NOT_ALLOWED]:
-    'Symlinks escaping allowed directories are blocked for security.',
-  [ErrorCode.UNKNOWN]: 'Check the error message for details.',
+  [ErrorCode.INVALID_INPUT]: undefined,
+  [ErrorCode.PERMISSION_DENIED]: 'Check OS file permissions.',
+  [ErrorCode.SYMLINK_NOT_ALLOWED]: 'Symlink escapes allowed directories.',
+  [ErrorCode.UNKNOWN]: undefined,
 } as const;
 
 const NOT_FOUND_PATTERNS = [
@@ -346,7 +341,11 @@ export function createDetailedError(
   const resolvedPath = resolveErrorPath(error, path);
   const details = mergeErrorDetails(error, additionalDetails);
 
-  const result: DetailedError = { code, message, suggestion };
+  const result: DetailedError = {
+    code,
+    message,
+    ...(suggestion ? { suggestion } : {}),
+  };
   if (resolvedPath) result.path = resolvedPath;
   if (details) result.details = details;
   return result;
@@ -385,6 +384,6 @@ export function formatDetailedError(error: DetailedError): string {
   return joinLines(lines);
 }
 
-export function getSuggestion(code: ErrorCode): string {
+export function getSuggestion(code: ErrorCode): string | undefined {
   return ERROR_SUGGESTIONS[code];
 }

@@ -164,20 +164,14 @@ function isTaskExtra(value: unknown): value is TaskRequestHandlerExtra {
 
 function asCreateTaskExtra(value: unknown): CreateTaskRequestHandlerExtra {
   if (!isCreateTaskExtra(value)) {
-    throw new McpError(
-      ErrorCode.INVALID_INPUT,
-      'Task store not configured for task-capable tool.'
-    );
+    throw new McpError(ErrorCode.INVALID_INPUT, 'Task store not configured.');
   }
   return value;
 }
 
 function asTaskRequestExtra(value: unknown): TaskRequestHandlerExtra {
   if (!isTaskExtra(value)) {
-    throw new McpError(
-      ErrorCode.INVALID_INPUT,
-      'Task id or task store missing for task operation.'
-    );
+    throw new McpError(ErrorCode.INVALID_INPUT, 'Task id or store missing.');
   }
   return value;
 }
@@ -239,10 +233,7 @@ function normalizeGetTaskResult(value: unknown): GetTaskResult {
 function normalizeCallToolResult(value: Result): CallToolResult {
   const parsed = CallToolResultSchema.safeParse(value);
   if (parsed.success) return parsed.data;
-  throw new McpError(
-    ErrorCode.INVALID_INPUT,
-    'Stored task result is not a valid tool result.'
-  );
+  throw new McpError(ErrorCode.INVALID_INPUT, 'Invalid stored task result.');
 }
 
 function getToolResultErrorCode(result: Result): string | undefined {
@@ -403,20 +394,14 @@ async function notifyTaskStatusIfPossible(
 
 function getTaskStore(extra: TaskToolExtra): RequestTaskStore {
   if (!extra.taskStore) {
-    throw new McpError(
-      ErrorCode.INVALID_INPUT,
-      'Task store not configured for task-capable tool.'
-    );
+    throw new McpError(ErrorCode.INVALID_INPUT, 'Task store not configured.');
   }
   return extra.taskStore;
 }
 
 function getTaskId(extra: TaskToolExtra): string {
   if (!extra.taskId) {
-    throw new McpError(
-      ErrorCode.INVALID_INPUT,
-      'Task id missing for task operation.'
-    );
+    throw new McpError(ErrorCode.INVALID_INPUT, 'Task id missing.');
   }
   return extra.taskId;
 }
@@ -476,18 +461,12 @@ function resolveRequestedTaskTtl(
 ): number {
   if (requestedTtl == null) return DEFAULT_TASK_TTL_MS;
   if (!Number.isFinite(requestedTtl)) {
-    throw new McpError(
-      ErrorCode.INVALID_INPUT,
-      'Task ttl must be a finite number of milliseconds.'
-    );
+    throw new McpError(ErrorCode.INVALID_INPUT, 'Task TTL must be finite.');
   }
 
   const normalized = Math.trunc(requestedTtl);
   if (normalized <= 0) {
-    throw new McpError(
-      ErrorCode.INVALID_INPUT,
-      'Task ttl must be greater than zero.'
-    );
+    throw new McpError(ErrorCode.INVALID_INPUT, 'Task TTL must be > 0.');
   }
 
   return Math.min(normalized, MAX_TASK_TTL_MS);
@@ -718,7 +697,7 @@ export function createToolTaskHandler<Args extends ToolSchema, Result>(
     if ((await countActiveTasks(taskStore)) >= MAX_CONCURRENT_TASKS) {
       throw new McpError(
         ErrorCode.INVALID_INPUT,
-        `Too many active tasks. Limit: ${String(MAX_CONCURRENT_TASKS)}.`
+        `Too many active tasks (limit: ${String(MAX_CONCURRENT_TASKS)}).`
       );
     }
     const task = await taskStore.createTask({

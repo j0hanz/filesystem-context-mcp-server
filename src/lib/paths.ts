@@ -173,8 +173,7 @@ export function assertAllowedFileAccess(
   );
   throw new McpError(
     ErrorCode.ACCESS_DENIED,
-    'Sensitive file blocked by policy. ' +
-      'Set FS_CONTEXT_ALLOW_SENSITIVE=1 or use FS_CONTEXT_ALLOWLIST to override.',
+    'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
     requestedPath
   );
 }
@@ -552,7 +551,7 @@ function ensureNoWindowsDriveRelativePath(requestedPath: string): void {
 
   throw new McpError(
     ErrorCode.INVALID_INPUT,
-    'Windows drive-relative paths are not allowed. Use C:\\path or C:/path instead of C:path.',
+    'Drive-relative path not allowed. Use C:\\path instead of C:path.',
     requestedPath
   );
 }
@@ -566,7 +565,7 @@ function resolveRequestedPath(requestedPath: string): string {
     if (roots.length > 1) {
       throw new McpError(
         ErrorCode.INVALID_INPUT,
-        'Relative paths are ambiguous when multiple roots are configured. Provide an absolute path or specify the full root path.',
+        'Ambiguous relative path with multiple roots. Use an absolute path.',
         requestedPath
       );
     }
@@ -608,7 +607,7 @@ const NODE_ERROR_MAP: Readonly<
   },
   ELOOP: {
     code: ErrorCode.SYMLINK_NOT_ALLOWED,
-    message: () => 'Too many symbolic links (possible circular reference)',
+    message: () => 'Too many symbolic links (circular reference)',
   },
   ENAMETOOLONG: {
     code: ErrorCode.INVALID_INPUT,
@@ -692,7 +691,7 @@ function ensureWithinAllowedDirectories(options: {
     Logger.warn('Access denied: no allowed directories configured');
     throw new McpError(
       ErrorCode.ACCESS_DENIED,
-      'No allowed directories configured. Use --allow-cwd or configure roots via the MCP Roots protocol.',
+      'No allowed directories configured. Use --allow-cwd or configure roots.',
       requestedPath,
       details
     );

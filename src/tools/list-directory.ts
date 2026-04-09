@@ -116,10 +116,7 @@ function decodeListCursor(cursor: string): ListCursorPayload {
     // fall through to throw
   }
 
-  throw new McpError(
-    ErrorCode.INVALID_INPUT,
-    'Invalid cursor: the cursor value is malformed or expired.'
-  );
+  throw new McpError(ErrorCode.INVALID_INPUT, 'Invalid or expired cursor.');
 }
 
 function resolveNextListCursor(
@@ -241,10 +238,7 @@ async function handleListDirectory(
     const cursor = decodeListCursor(args.cursor);
     const snapshot = listSnapshots.get(cursor.snapshotId);
     if (snapshot?.fingerprint !== fingerprint) {
-      throw new McpError(
-        ErrorCode.INVALID_INPUT,
-        'Invalid cursor: the cursor value is malformed or expired.'
-      );
+      throw new McpError(ErrorCode.INVALID_INPUT, 'Invalid or expired cursor.');
     }
 
     const { offset, snapshotId: storedSnapshotId } = cursor;

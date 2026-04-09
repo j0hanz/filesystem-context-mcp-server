@@ -379,7 +379,7 @@ async function handleEditFile(
   if (editResult.appliedEdits === 0 && editResult.unmatchedEdits.length > 0) {
     throw new McpError(
       ErrorCode.INVALID_INPUT,
-      `All ${editResult.unmatchedEdits.length} edits failed to match. Verify oldText includes exact content with surrounding context.`,
+      `All ${editResult.unmatchedEdits.length} edits failed. Verify oldText matches exact file content.`,
       args.path
     );
   }

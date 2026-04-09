@@ -95,7 +95,7 @@ async function handleMoveError(
             src,
             new McpError(
               ErrorCode.UNKNOWN,
-              `Cross-device move partially failed: data exists at both source and destination. ${formatUnknownErrorMessage(deleteError)}`,
+              `Cross-device move partial: data at both source and destination. ${formatUnknownErrorMessage(deleteError)}`,
               src
             )
           )
@@ -107,7 +107,7 @@ async function handleMoveError(
           src,
           new McpError(
             ErrorCode.UNKNOWN,
-            `Cross-device move failed: could not remove source. ${formatUnknownErrorMessage(deleteError)}`,
+            `Cross-device move failed: source not removed. ${formatUnknownErrorMessage(deleteError)}`,
             src
           )
         )
@@ -216,7 +216,7 @@ async function handleMoveFile(
   if (sources.length > 1 && !destIsDirectory) {
     throw new McpError(
       ErrorCode.INVALID_INPUT,
-      'Destination must be an existing directory when moving multiple files.'
+      'Destination must be an existing directory for multiple sources.'
     );
   }
 

@@ -173,7 +173,7 @@ export function registerResultResources(
       if (typeof id !== 'string' || id.length === 0) {
         throw new McpError(
           ErrorCode.NOT_FOUND,
-          'Cached result has expired — re-run the tool to regenerate.'
+          'Cached result expired. Re-run the tool to regenerate.'
         );
       }
 

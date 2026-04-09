@@ -224,7 +224,7 @@ async function processMultiFilePatch(
       .join(', ');
     throw new McpError(
       ErrorCode.INVALID_INPUT,
-      `All ${parsed.length} file patches failed${label}. Files: ${failedPaths}. Generate fresh patches via diff_files and retry.`
+      `All ${parsed.length} patches failed${label}. Files: ${failedPaths}. Regenerate via diff_files.`
     );
   }
 
@@ -262,7 +262,7 @@ async function handleApplyPatch(
   if (!hasHunks) {
     throw new McpError(
       ErrorCode.INVALID_INPUT,
-      'Patch must include unified hunk headers (e.g., @@ -1,2 +1,2 @@).'
+      'Patch must include unified hunk headers (@@ -n,n +n,n @@).'
     );
   }
 
@@ -285,8 +285,8 @@ async function handleApplyPatch(
     throw new McpError(
       ErrorCode.INVALID_INPUT,
       result.error?.message === 'Patch had no effect'
-        ? 'Patch had no effect \u2014 the file content is unchanged after applying. The patch may not match the current file content. Generate a fresh patch via diff_files and retry.'
-        : 'Patch application failed. The file content may have changed or patch context is insufficient. Generate a fresh patch via diff_files against the current file, then retry. If differences are minor, enable fuzzy matching with the fuzzFactor parameter.'
+        ? 'Patch had no effect. Content unchanged. Regenerate via diff_files.'
+        : 'Patch failed. Content may have changed. Regenerate via diff_files. For minor diffs, use fuzzFactor.'
     );
   }
 

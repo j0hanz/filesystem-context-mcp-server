@@ -83,10 +83,10 @@ ${getSharedConstraints()
 
 | Error Code          | Action                                                                    |
 | ------------------- | ------------------------------------------------------------------------- |
-| \`ACCESS_DENIED\`   | Call \`roots\` to list allowed directories, then retry with a valid path. |
-| \`NOT_FOUND\`       | Call \`ls\` or \`find\` to verify the path exists and check spelling.     |
+| \`ACCESS_DENIED\`   | Run \`roots\` to list allowed directories, retry with a valid path.       |
+| \`NOT_FOUND\`       | Run \`ls\` or \`find\` to verify the path.                                |
 | \`TOO_LARGE\`       | Use \`head\`/\`tail\`, line ranges, or split across \`read_many\`.        |
-| \`TIMEOUT\`         | Narrow scope: reduce depth, result limits, or file pattern.               |
+| \`TIMEOUT\`         | Reduce scope, depth, or maxResults.                                       |
 | \`INVALID_INPUT\`   | Re-read tool contract via \`internal://tool-info/{name}\`.                |
 `;
 

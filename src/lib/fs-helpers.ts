@@ -369,7 +369,7 @@ function createTooLargeError(
 ): McpError {
   return new McpError(
     ErrorCode.TOO_LARGE,
-    `File exceeds maximum size (${bytesRead} > ${maxSize} bytes)`,
+    `File exceeds size limit (${bytesRead} > ${maxSize} bytes)`,
     requestedPath,
     { size: bytesRead, maxSize }
   );
@@ -630,7 +630,7 @@ async function assertNotBinary(
   if (!isBinary) return;
   throw new McpError(
     ErrorCode.INVALID_INPUT,
-    'Binary file detected. Refusing to read as text.',
+    'Binary file detected.',
     filePath
   );
 }
@@ -643,7 +643,7 @@ function assertSizeWithinLimit(
   if (size <= maxSize) return;
   throw new McpError(
     ErrorCode.TOO_LARGE,
-    `File too large (${size} bytes, max: ${maxSize} bytes). Use head to preview the first N lines.`,
+    `File too large (${size} > ${maxSize} bytes). Use head to preview.`,
     filePath,
     { size, maxSize }
   );
