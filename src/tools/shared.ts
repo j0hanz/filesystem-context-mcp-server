@@ -19,8 +19,10 @@ import {
   McpError,
 } from '../lib/errors.js';
 import { Logger } from '../lib/logger.js';
-import { withToolDiagnostics } from '../lib/observability.js';
-import type { TraceContext } from '../lib/observability.js';
+import {
+  type TraceContext,
+  withToolDiagnostics,
+} from '../lib/observability.js';
 import { getAllowedDirectories } from '../lib/paths.js';
 import type { ResourceStore } from '../lib/resource-store.js';
 import { createBase64JsonCodec } from '../lib/zod-codecs.js';
@@ -101,11 +103,12 @@ function normalizeToolExecution<T extends object>(tool: T): T {
       ? (candidate['execution'] as Record<string, unknown>)
       : undefined;
   const executionTaskSupport = existingExecution?.['taskSupport'];
-  const resolvedTaskSupport = isTaskSupportLevel(topLevelTaskSupport)
-    ? topLevelTaskSupport
-    : isTaskSupportLevel(executionTaskSupport)
-      ? executionTaskSupport
-      : undefined;
+  let resolvedTaskSupport: TaskSupportLevel | undefined;
+  if (isTaskSupportLevel(topLevelTaskSupport)) {
+    resolvedTaskSupport = topLevelTaskSupport;
+  } else if (isTaskSupportLevel(executionTaskSupport)) {
+    resolvedTaskSupport = executionTaskSupport;
+  }
 
   if (resolvedTaskSupport === undefined && topLevelTaskSupport === undefined) {
     return tool;
@@ -914,10 +917,12 @@ export function buildBatchPathContext(
   const normalizedLabel =
     paths.length === 1 ? unitLabel.replace(/s$/i, '') : unitLabel;
   const first = path.basename(paths[0] ?? '');
-  const extraPaths =
-    paths.length > 1
-      ? `, ${path.basename(paths[1] ?? '')}${paths.length > 2 ? '…' : ''}`
-      : '';
+  let extraPaths = '';
+  if (paths.length > 1) {
+    const secondPath = path.basename(paths[1] ?? '');
+    const ellipsis = paths.length > 2 ? '…' : '';
+    extraPaths = `, ${secondPath}${ellipsis}`;
+  }
   return `${paths.length} ${normalizedLabel} [${first}${extraPaths}]`;
 }
 

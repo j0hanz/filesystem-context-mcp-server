@@ -61,6 +61,146 @@ function toMoveFailure(
   };
 }
 
+async function handleMoveError(
+  error: unknown,
+  src: string,
+  validSource: string,
+  targetPath: string,
+  movedSources: string[],
+  failed: NonNullable<z.infer<typeof MoveFileOutputSchema>['failed']>,
+  signal?: AbortSignal
+): Promise<void> {
+  if (isNodeError(error) && error.code === 'EXDEV') {
+    try {
+      await withAbort(
+        fs.cp(validSource, targetPath, { recursive: true }),
+        signal
+      );
+    } catch (copyError) {
+      failed.push(toMoveFailure(src, copyError));
+      return;
+    }
+    try {
+      await withAbort(
+        fs.rm(validSource, { recursive: true, force: true }),
+        signal
+      );
+      movedSources.push(validSource);
+    } catch (deleteError) {
+      try {
+        await fs.rm(targetPath, { recursive: true, force: true });
+      } catch {
+        failed.push(
+          toMoveFailure(
+            src,
+            new McpError(
+              ErrorCode.E_UNKNOWN,
+              `Cross-device move partially failed: data exists at both '${validSource}' and '${targetPath}'. ${formatUnknownErrorMessage(deleteError)}`,
+              src
+            )
+          )
+        );
+        return;
+      }
+      failed.push(
+        toMoveFailure(
+          src,
+          new McpError(
+            ErrorCode.E_UNKNOWN,
+            `Cross-device move failed: could not remove source. ${formatUnknownErrorMessage(deleteError)}`,
+            src
+          )
+        )
+      );
+    }
+  } else {
+    failed.push(toMoveFailure(src, error));
+  }
+}
+
+async function processSingleMove(
+  src: string,
+  destIsDirectory: boolean,
+  validDest: string,
+  movedSources: string[],
+  failed: NonNullable<z.infer<typeof MoveFileOutputSchema>['failed']>,
+  signal?: AbortSignal
+): Promise<void> {
+  let validSource: string;
+  try {
+    validSource = await validateExistingPath(src, signal);
+    assertAllowedFileAccess(src, validSource);
+  } catch (error) {
+    failed.push(toMoveFailure(src, error, ErrorCode.E_ACCESS_DENIED));
+    return;
+  }
+
+  const targetPath = destIsDirectory
+    ? path.join(validDest, path.basename(validSource))
+    : validDest;
+
+  if (path.resolve(validSource) === path.resolve(targetPath)) {
+    return;
+  }
+
+  if (
+    path.resolve(targetPath).startsWith(path.resolve(validSource) + path.sep)
+  ) {
+    failed.push(
+      toMoveFailure(
+        src,
+        new McpError(
+          ErrorCode.E_INVALID_INPUT,
+          `Cannot move directory '${src}' into its own subdirectory '${targetPath}'`,
+          src
+        ),
+        ErrorCode.E_INVALID_INPUT
+      )
+    );
+    return;
+  }
+
+  try {
+    await withAbort(fs.rename(validSource, targetPath), signal);
+    movedSources.push(validSource);
+  } catch (error: unknown) {
+    await handleMoveError(
+      error,
+      src,
+      validSource,
+      targetPath,
+      movedSources,
+      failed,
+      signal
+    );
+  }
+}
+
+async function getDestinationStatus(validDest: string): Promise<boolean> {
+  try {
+    const stats = await fs.stat(validDest);
+    return stats.isDirectory();
+  } catch (error) {
+    if (isNodeError(error) && error.code !== 'ENOENT') {
+      throw error;
+    }
+  }
+  return false;
+}
+
+function formatMoveMessage(
+  moved: number,
+  failed: number,
+  destination: string
+): string {
+  const movedItemStr = `item${moved === 1 ? '' : 's'}`;
+  const failedItemStr = `item${failed === 1 ? '' : 's'}`;
+  if (failed > 0) {
+    return `Moved ${moved} ${movedItemStr}; failed to move ${failed} ${failedItemStr}`;
+  }
+  return `Successfully moved ${moved} ${movedItemStr} to ${destination}`;
+}
+
 async function handleMoveFile(
   args: z.infer<typeof MoveFileInputSchema>,
   signal?: AbortSignal
@@ -71,17 +211,7 @@ async function handleMoveFile(
   }
 
   const validDest = await validatePathForWrite(args.destination, signal);
-
-  // Check if destination exists and is a directory
-  let destIsDirectory = false;
-  try {
-    const stats = await fs.stat(validDest);
-    destIsDirectory = stats.isDirectory();
-  } catch (error) {
-    if (isNodeError(error) && error.code !== 'ENOENT') {
-      throw error;
-    }
-  }
+  const destIsDirectory = await getDestinationStatus(validDest);
 
   if (sources.length > 1 && !destIsDirectory) {
     throw new McpError(
@@ -90,7 +220,6 @@ async function handleMoveFile(
     );
   }
 
-  // Ensure destination parent directory exists if it's not an existing directory
   if (!destIsDirectory) {
     await withAbort(
       fs.mkdir(path.dirname(validDest), { recursive: true }),
@@ -103,107 +232,24 @@ async function handleMoveFile(
     [];
 
   for (const src of sources) {
-    let validSource: string;
-    try {
-      validSource = await validateExistingPath(src, signal);
-      assertAllowedFileAccess(src, validSource);
-    } catch (error) {
-      failed.push(toMoveFailure(src, error, ErrorCode.E_ACCESS_DENIED));
-      continue;
-    }
-
-    const targetPath = destIsDirectory
-      ? path.join(validDest, path.basename(validSource))
-      : validDest;
-
-    // Prevent moving a file onto itself
-    if (path.resolve(validSource) === path.resolve(targetPath)) {
-      continue;
-    }
-
-    // Prevent moving a directory into its own subdirectory
-    // Fixes "Missing validation for moving directory into its own subdirectory" finding
-    if (
-      path.resolve(targetPath).startsWith(path.resolve(validSource) + path.sep)
-    ) {
-      failed.push(
-        toMoveFailure(
-          src,
-          new McpError(
-            ErrorCode.E_INVALID_INPUT,
-            `Cannot move directory '${src}' into its own subdirectory '${targetPath}'`,
-            src
-          ),
-          ErrorCode.E_INVALID_INPUT
-        )
-      );
-      continue;
-    }
-
-    try {
-      await withAbort(fs.rename(validSource, targetPath), signal);
-      movedSources.push(validSource);
-    } catch (error: unknown) {
-      if (isNodeError(error) && error.code === 'EXDEV') {
-        // Cross-device link, fallback to copy + delete
-        try {
-          await withAbort(
-            fs.cp(validSource, targetPath, { recursive: true }),
-            signal
-          );
-        } catch (copyError) {
-          failed.push(toMoveFailure(src, copyError));
-          continue;
-        }
-        // Copy succeeded — now remove source
-        try {
-          await withAbort(
-            fs.rm(validSource, { recursive: true, force: true }),
-            signal
-          );
-          movedSources.push(validSource);
-        } catch (deleteError) {
-          // Source delete failed after copy — rollback by removing the copy
-          try {
-            await fs.rm(targetPath, { recursive: true, force: true });
-          } catch {
-            // Rollback failed — data exists in both locations
-            failed.push(
-              toMoveFailure(
-                src,
-                new McpError(
-                  ErrorCode.E_UNKNOWN,
-                  `Cross-device move partially failed: data exists at both '${validSource}' and '${targetPath}'. ${formatUnknownErrorMessage(deleteError)}`,
-                  src
-                )
-              )
-            );
-            continue;
-          }
-          failed.push(
-            toMoveFailure(
-              src,
-              new McpError(
-                ErrorCode.E_UNKNOWN,
-                `Cross-device move failed: could not remove source. ${formatUnknownErrorMessage(deleteError)}`,
-                src
-              )
-            )
-          );
-        }
-      } else {
-        failed.push(toMoveFailure(src, error));
-      }
-    }
+    await processSingleMove(
+      src,
+      destIsDirectory,
+      validDest,
+      movedSources,
+      failed,
+      signal
+    );
   }
 
-  const message =
-    failed.length > 0
-      ? `Moved ${movedSources.length} item${movedSources.length === 1 ? '' : 's'}; failed to move ${failed.length} item${failed.length === 1 ? '' : 's'}`
-      : `Successfully moved ${movedSources.length} item${movedSources.length === 1 ? '' : 's'} to ${args.destination}`;
-
+  const message = formatMoveMessage(
+    movedSources.length,
+    failed.length,
+    args.destination
+  );
+  const failedSuffix = failed.length > 0 ? ` (${failed.length} failed)` : '';
   Logger.info(
-    `mv: ${movedSources.length} item(s) → ${args.destination}${failed.length > 0 ? ` (${failed.length} failed)` : ''}`
+    `mv: ${movedSources.length} item(s) → ${args.destination}${failedSuffix}`
   );
 
   if (movedSources.length === 0 && failed.length > 0) {

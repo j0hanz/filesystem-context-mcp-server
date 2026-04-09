@@ -1,8 +1,7 @@
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import { AsyncResource } from 'node:async_hooks';
-import type { Stats } from 'node:fs';
-import { existsSync } from 'node:fs';
+import { existsSync, type Stats } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { debuglog } from 'node:util';
 import { parentPort, threadId, Worker, workerData } from 'node:worker_threads';
@@ -47,10 +46,11 @@ import {
   omitOptionKeys,
   reportPeriodicProgress,
 } from '../utils.js';
-import type { DirentLike, EntryType } from './core.js';
 import {
   compareOptionalNumberDesc,
   compareStringValues,
+  type DirentLike,
+  type EntryType,
   isEntryAccessibleByType,
   isIgnoredByGitignore,
   loadRootGitignore,
@@ -334,6 +334,35 @@ interface ScanFileResult {
   readonly skippedBinary: boolean;
 }
 
+function processLineMatch(
+  matches: ContentMatch[],
+  rawLine: string,
+  lineNumber: number,
+  matchCount: number,
+  requestedPath: string,
+  ctx?: ContextBuffer
+): string {
+  const trimmedLine = trimContent(rawLine);
+  if (ctx) {
+    matches.push({
+      file: requestedPath,
+      line: lineNumber,
+      content: trimmedLine,
+      matchCount,
+      contextBefore: ctx.snapshotBefore(),
+      contextAfter: ctx.scheduleAfter(),
+    });
+  } else {
+    matches.push({
+      file: requestedPath,
+      line: lineNumber,
+      content: trimmedLine,
+      matchCount,
+    });
+  }
+  return trimmedLine;
+}
+
 async function readMatches(
   handle: fsp.FileHandle,
   requestedPath: string,
@@ -361,27 +390,19 @@ async function readMatches(
       if (isCancelled()) break;
 
       const matchCount = matcher(rawLine);
-      const trimmedLine =
-        hasContext || matchCount > 0 ? trimContent(rawLine) : '';
+      let trimmedLine = '';
 
       if (matchCount > 0) {
-        if (ctx) {
-          matches.push({
-            file: requestedPath,
-            line: lineNumber,
-            content: trimmedLine,
-            matchCount,
-            contextBefore: ctx.snapshotBefore(),
-            contextAfter: ctx.scheduleAfter(),
-          });
-        } else {
-          matches.push({
-            file: requestedPath,
-            line: lineNumber,
-            content: trimmedLine,
-            matchCount,
-          });
-        }
+        trimmedLine = processLineMatch(
+          matches,
+          rawLine,
+          lineNumber,
+          matchCount,
+          requestedPath,
+          ctx
+        );
+      } else if (hasContext) {
+        trimmedLine = trimContent(rawLine);
       }
 
       if (ctx) {

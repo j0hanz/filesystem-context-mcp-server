@@ -8,8 +8,7 @@ import { DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { getFileInfo } from '../lib/file-operations/metadata.js';
 
-import type { FileInfo } from '../config.js';
-import { formatBytes, joinLines } from '../config.js';
+import { type FileInfo, formatBytes, joinLines } from '../config.js';
 import { GetFileInfoInputSchema, GetFileInfoOutputSchema } from '../schemas.js';
 import {
   buildFileInfoPayload,

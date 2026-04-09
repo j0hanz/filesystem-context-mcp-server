@@ -48,6 +48,63 @@ export const SEARCH_FILES_TOOL: ToolContract = {
   taskSupport: 'optional',
 } as const;
 
+function buildTruncatedReason(summary: {
+  truncated: boolean;
+  stoppedReason?: string;
+  filesScanned: number;
+  matched: number;
+}): string | undefined {
+  if (!summary.truncated) return undefined;
+  if (summary.stoppedReason === 'timeout') return 'timeout';
+  if (summary.stoppedReason === 'maxFiles')
+    return `max files (${summary.filesScanned})`;
+  return `max results (${summary.matched})`;
+}
+
+function buildRelativeResults(
+  basePath: string,
+  displayResults: readonly { path: string; size?: number; modified?: Date }[]
+): NonNullable<z.infer<typeof SearchFilesOutputSchema>['results']> {
+  const relativeResults: NonNullable<
+    z.infer<typeof SearchFilesOutputSchema>['results']
+  > = [];
+  for (const entry of displayResults) {
+    relativeResults.push({
+      path: path.relative(basePath, entry.path),
+      size: entry.size,
+      modified: entry.modified?.toISOString(),
+    });
+  }
+  return relativeResults;
+}
+
+function computeNextCursor(
+  summary: { truncated: boolean },
+  displayResultsCount: number,
+  cursorOffset: number
+): string | undefined {
+  if (summary.truncated && displayResultsCount > 0) {
+    return encodeOffsetCursor(cursorOffset + displayResultsCount);
+  }
+  return undefined;
+}
+
+function applySummaryFields(
+  structured: z.infer<typeof SearchFilesOutputSchema>,
+  summary: {
+    truncated: boolean;
+    skippedInaccessible: number;
+    stoppedReason?: 'timeout' | 'maxResults' | 'maxFiles';
+  },
+  nextCursor?: string
+): void {
+  if (summary.truncated) structured.truncated = true;
+  if (summary.skippedInaccessible)
+    structured.skippedInaccessible = summary.skippedInaccessible;
+  if (summary.stoppedReason) structured.stoppedReason = summary.stoppedReason;
+  if (nextCursor !== undefined) structured.nextCursor = nextCursor;
+}
+
 async function handleSearchFiles(
   args: z.infer<typeof SearchFilesInputSchema>,
   signal?: AbortSignal,
@@ -64,10 +121,10 @@ async function handleSearchFiles(
     includeHidden: args.includeHidden,
     sortBy: args.sortBy,
     respectGitignore: !args.includeIgnored,
-    ...(args.maxDepth !== undefined ? { maxDepth: args.maxDepth } : {}),
-    ...(onProgress ? { onProgress } : {}),
-    ...(signal ? { signal } : {}),
   };
+  if (args.maxDepth !== undefined) searchOptions.maxDepth = args.maxDepth;
+  if (onProgress) searchOptions.onProgress = onProgress;
+  if (signal) searchOptions.signal = signal;
   const result = await searchFiles(
     basePath,
     args.pattern,
@@ -75,54 +132,30 @@ async function handleSearchFiles(
     searchOptions
   );
   const allResults = result.results;
-  const displayResults =
-    cursorOffset > 0 ? allResults.slice(cursorOffset) : allResults;
-  const nextCursor =
-    result.summary.truncated && displayResults.length > 0
-      ? encodeOffsetCursor(cursorOffset + displayResults.length)
-      : undefined;
-  const relativeResults: z.infer<typeof SearchFilesOutputSchema>['results'] =
-    [];
-  for (const entry of displayResults) {
-    relativeResults.push({
-      path: path.relative(result.basePath, entry.path),
-      size: entry.size,
-      modified: entry.modified?.toISOString(),
-    });
-  }
+  let displayResults = allResults;
+  if (cursorOffset > 0) displayResults = allResults.slice(cursorOffset);
+
+  const nextCursor = computeNextCursor(
+    result.summary,
+    displayResults.length,
+    cursorOffset
+  );
+  const relativeResults = buildRelativeResults(result.basePath, displayResults);
   const structured: z.infer<typeof SearchFilesOutputSchema> = {
     ok: true,
     root: basePath,
     results: relativeResults,
     totalMatches: result.summary.matched,
     filesScanned: result.summary.filesScanned,
-    ...(result.summary.truncated
-      ? { truncated: result.summary.truncated }
-      : {}),
-    ...(result.summary.skippedInaccessible
-      ? { skippedInaccessible: result.summary.skippedInaccessible }
-      : {}),
-    ...(result.summary.stoppedReason
-      ? { stoppedReason: result.summary.stoppedReason }
-      : {}),
-    ...(nextCursor !== undefined ? { nextCursor } : {}),
   };
+  applySummaryFields(structured, result.summary, nextCursor);
 
-  let truncatedReason: string | undefined;
-  if (result.summary.truncated) {
-    if (result.summary.stoppedReason === 'timeout') {
-      truncatedReason = 'timeout';
-    } else if (result.summary.stoppedReason === 'maxFiles') {
-      truncatedReason = `max files (${result.summary.filesScanned})`;
-    } else {
-      truncatedReason = `max results (${result.summary.matched})`;
-    }
-  }
+  const truncatedReason = buildTruncatedReason(result.summary);
 
   const summaryOptions: Parameters<typeof formatOperationSummary>[0] = {
     truncated: result.summary.truncated,
-    ...(truncatedReason ? { truncatedReason } : {}),
   };
+  if (truncatedReason) summaryOptions.truncatedReason = truncatedReason;
 
   const textLines: string[] = [];
   if (relativeResults.length === 0) {

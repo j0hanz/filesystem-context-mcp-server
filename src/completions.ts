@@ -618,6 +618,48 @@ async function getPathCompletions(
   }
 }
 
+function handleTopicAndToolCompletions(
+  ref: unknown,
+  argName: string,
+  argumentValue: string,
+  topicValues: string[],
+  toolNameValues: string[]
+): ReturnType<typeof buildCompletionResponse> | undefined {
+  if (!isRecord(ref)) return undefined;
+  const currentValue = argumentValue.toLowerCase();
+
+  if (ref['type'] === 'ref/prompt' && argName === 'topic') {
+    const filtered = currentValue
+      ? topicValues.filter((v) => v.startsWith(currentValue))
+      : topicValues;
+    return buildCompletionResponse(buildCompletionResult(filtered));
+  }
+
+  if (
+    ref['type'] === 'ref/prompt' &&
+    ref['name'] === 'get-tool-help' &&
+    argName === 'name'
+  ) {
+    const filtered = currentValue
+      ? toolNameValues.filter((value) => value.startsWith(currentValue))
+      : toolNameValues;
+    return buildCompletionResponse(buildCompletionResult(filtered));
+  }
+
+  if (
+    ref['type'] === 'ref/resource' &&
+    ref['uri'] === 'internal://tool-info/{name}' &&
+    argName === 'name'
+  ) {
+    const filtered = currentValue
+      ? toolNameValues.filter((value) => value.startsWith(currentValue))
+      : toolNameValues;
+    return buildCompletionResponse(buildCompletionResult(filtered));
+  }
+
+  return undefined;
+}
+
 export function registerCompletions(
   server: McpServer,
   instructions = ''
@@ -631,40 +673,14 @@ export function registerCompletions(
 
     const argName = argument.name.toLowerCase();
 
-    // Handle prompt topic completions
-    if (isRecord(ref) && ref['type'] === 'ref/prompt' && argName === 'topic') {
-      const currentValue = argument.value.toLowerCase();
-      const filtered = currentValue
-        ? topicValues.filter((v) => v.startsWith(currentValue))
-        : topicValues;
-      return buildCompletionResponse(buildCompletionResult(filtered));
-    }
-
-    if (
-      isRecord(ref) &&
-      ref['type'] === 'ref/prompt' &&
-      ref['name'] === 'get-tool-help' &&
-      argName === 'name'
-    ) {
-      const currentValue = argument.value.toLowerCase();
-      const filtered = currentValue
-        ? toolNameValues.filter((value) => value.startsWith(currentValue))
-        : toolNameValues;
-      return buildCompletionResponse(buildCompletionResult(filtered));
-    }
-
-    if (
-      isRecord(ref) &&
-      ref['type'] === 'ref/resource' &&
-      ref['uri'] === 'internal://tool-info/{name}' &&
-      argName === 'name'
-    ) {
-      const currentValue = argument.value.toLowerCase();
-      const filtered = currentValue
-        ? toolNameValues.filter((value) => value.startsWith(currentValue))
-        : toolNameValues;
-      return buildCompletionResponse(buildCompletionResult(filtered));
-    }
+    const predef = handleTopicAndToolCompletions(
+      ref,
+      argName,
+      argument.value,
+      topicValues,
+      toolNameValues
+    );
+    if (predef) return predef;
 
     const enumResult = getEnumCompletions(argName, argument.value);
     if (enumResult) {

@@ -1,6 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { LoggingLevel } from '@modelcontextprotocol/sdk/types.js';
-import type { LoggingMessageNotificationParams } from '@modelcontextprotocol/sdk/types.js';
+import type {
+  LoggingLevel,
+  LoggingMessageNotificationParams,
+} from '@modelcontextprotocol/sdk/types.js';
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { channel } from 'node:diagnostics_channel';

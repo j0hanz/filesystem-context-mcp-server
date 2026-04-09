@@ -11,14 +11,14 @@ import type {
   ZodRawShapeCompat,
 } from '@modelcontextprotocol/sdk/server/zod-compat.js';
 import type { RequestTaskStore } from '@modelcontextprotocol/sdk/shared/protocol.js';
-import type {
-  CallToolResult,
-  CreateTaskResult,
-  GetTaskResult,
-  Result,
-  TaskStatusNotificationParams,
+import {
+  type CallToolResult,
+  CallToolResultSchema,
+  type CreateTaskResult,
+  type GetTaskResult,
+  type Result,
+  type TaskStatusNotificationParams,
 } from '@modelcontextprotocol/sdk/types.js';
-import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { channel } from 'node:diagnostics_channel';
@@ -34,10 +34,12 @@ import { ErrorCode, McpError } from '../lib/errors.js';
 import { Logger } from '../lib/logger.js';
 import { isRecord } from '../lib/utils.js';
 
-import type { IconInfo, ToolExtra, ToolResult } from './shared.js';
 import {
   buildToolErrorResponse,
+  type IconInfo,
   maybeStripStructuredContentFromResult,
+  type ToolExtra,
+  type ToolResult,
   withDefaultIcons,
 } from './shared.js';
 
@@ -123,12 +125,13 @@ type TaskToolExtra = ToolExtra & {
   taskRequestedTtl?: number | null;
 };
 
-type ToolArgs<Args extends ZodRawShapeCompat | AnySchema | undefined> =
-  Args extends ZodRawShapeCompat
-    ? ShapeOutput<Args>
-    : Args extends AnySchema
-      ? SchemaOutput<Args>
-      : undefined;
+export type ToolSchema = ZodRawShapeCompat | AnySchema | undefined;
+
+type ToolArgs<Args extends ToolSchema> = Args extends ZodRawShapeCompat
+  ? ShapeOutput<Args>
+  : Args extends AnySchema
+    ? SchemaOutput<Args>
+    : undefined;
 
 const TASK_STATUS_NOTIFICATION_METHOD = 'notifications/tasks/status';
 const TASK_CREATED_NOTIFICATION_METHOD = 'notifications/tasks/created';
@@ -503,9 +506,7 @@ async function safelyStoreTaskResult(
   }
 }
 
-async function runTaskInBackground<
-  Args extends ZodRawShapeCompat | AnySchema | undefined,
->(
+async function runTaskInBackground<Args extends ToolSchema>(
   run: (
     args: ToolArgs<Args>,
     extra: TaskToolExtra
@@ -586,9 +587,7 @@ async function runTaskInBackground<
  * returns `true`. Returns `false` so the caller can fall through to standard
  * `server.registerTool`.
  */
-function tryRegisterToolTask<
-  Args extends ZodRawShapeCompat | AnySchema | undefined,
->(
+function tryRegisterToolTask<Args extends ToolSchema>(
   server: McpServer,
   toolName: string,
   toolDef: object,
@@ -620,10 +619,7 @@ function tryRegisterToolTask<
   return true;
 }
 
-export function registerToolTaskIfAvailable<
-  Args extends ZodRawShapeCompat | AnySchema | undefined,
-  Result,
->(
+export function registerToolTaskIfAvailable<Args extends ToolSchema, Result>(
   server: McpServer,
   toolName: string,
   toolDef: object,
@@ -661,10 +657,7 @@ export function createToolTaskHandler<
   ) => Promise<ToolResult<Result>>,
   options?: { guard?: () => boolean; toolName?: string }
 ): ToolTaskHandler<Args>;
-export function createToolTaskHandler<
-  Args extends ZodRawShapeCompat | AnySchema | undefined,
-  Result,
->(
+export function createToolTaskHandler<Args extends ToolSchema, Result>(
   run: (
     args: ToolArgs<Args>,
     extra: TaskToolExtra

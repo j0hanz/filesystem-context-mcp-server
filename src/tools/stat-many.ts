@@ -6,8 +6,7 @@ import { DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { getMultipleFileInfo } from '../lib/file-operations/metadata.js';
 
-import type { FileInfo } from '../config.js';
-import { formatBytes, joinLines } from '../config.js';
+import { type FileInfo, formatBytes, joinLines } from '../config.js';
 import {
   GetMultipleFileInfoInputSchema,
   GetMultipleFileInfoOutputSchema,
@@ -80,13 +79,15 @@ async function handleGetMultipleFileInfo(
   }));
 
   const text = result.results
-    .map((entry) =>
-      entry.error
-        ? `${entry.path}: ${buildStructuredError(entry.error, ErrorCode.E_NOT_FOUND, entry.path).message}`
-        : entry.info
-          ? formatFileInfoDetail(entry.info)
-          : entry.path
-    )
+    .map((entry) => {
+      if (entry.error) {
+        return `${entry.path}: ${buildStructuredError(entry.error, ErrorCode.E_NOT_FOUND, entry.path).message}`;
+      }
+      if (entry.info) {
+        return formatFileInfoDetail(entry.info);
+      }
+      return entry.path;
+    })
     .join('\n\n');
 
   const structured: z.infer<typeof GetMultipleFileInfoOutputSchema> = {

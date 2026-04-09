@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { Root } from '@modelcontextprotocol/sdk/types.js';
 import {
   InitializedNotificationSchema,
+  type Root,
   RootsListChangedNotificationSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
@@ -15,8 +15,7 @@ import {
   withAbort,
 } from '../lib/abort.js';
 import { formatUnknownErrorMessage } from '../lib/errors.js';
-import { Logger } from '../lib/logger.js';
-import { type LoggingState, logToMcp } from '../lib/logger.js';
+import { Logger, type LoggingState, logToMcp } from '../lib/logger.js';
 import {
   type AllowedDirectoriesState,
   getValidRootDirectories,

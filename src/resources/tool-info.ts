@@ -144,6 +144,16 @@ function toJsonSchemaObject(
   return z.toJSONSchema(schema, { io }) as JsonSchemaObject;
 }
 
+function summarizeArrayType(schema: JsonSchemaObject): string {
+  if (Array.isArray(schema.prefixItems) && schema.prefixItems.length > 0) {
+    const itemTypes = schema.prefixItems.map(summarizeSchemaType).join(', ');
+    return `tuple<${itemTypes}>`;
+  }
+
+  const itemType = schema.items ? summarizeSchemaType(schema.items) : 'unknown';
+  return `array<${itemType}>`;
+}
+
 function summarizeSchemaType(schema: JsonSchemaObject): string {
   if (Array.isArray(schema.enum) && schema.enum.length > 0) {
     return `enum(${schema.enum.map((value) => JSON.stringify(value)).join(', ')})`;
@@ -162,15 +172,7 @@ function summarizeSchemaType(schema: JsonSchemaObject): string {
   }
 
   if (schema.type === 'array') {
-    if (Array.isArray(schema.prefixItems) && schema.prefixItems.length > 0) {
-      const itemTypes = schema.prefixItems.map(summarizeSchemaType).join(', ');
-      return `tuple<${itemTypes}>`;
-    }
-
-    const itemType = schema.items
-      ? summarizeSchemaType(schema.items)
-      : 'unknown';
-    return `array<${itemType}>`;
+    return summarizeArrayType(schema);
   }
 
   if (schema.type === 'object' && schema.additionalProperties === false) {

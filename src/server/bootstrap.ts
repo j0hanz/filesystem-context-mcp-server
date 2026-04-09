@@ -49,8 +49,7 @@ import {
 } from '../resources.js';
 import { buildServerInstructions } from '../resources/generated-instructions.js';
 import { registerAllTools } from '../tools.js';
-import type { IconInfo } from '../tools/shared.js';
-import { withDefaultIcons } from '../tools/shared.js';
+import { type IconInfo, withDefaultIcons } from '../tools/shared.js';
 import { RootsManager, type ServerOptions } from './roots-manager.js';
 
 let cachedTaskToolSupport: boolean | undefined;
@@ -132,15 +131,18 @@ export let stdioServer:
   | { server: McpServer; loggingState: LoggingState }
   | undefined;
 
+function stringifyData(data: unknown): string {
+  if (!data) return '';
+  return ` ${typeof data === 'string' ? data : JSON.stringify(data)}`;
+}
+
 channel('filesystem-mcp:log').subscribe((message) => {
   const event = message as LogEvent;
   const target = event.sessionId
     ? activeServers.get(event.sessionId)
     : stdioServer;
+  const dataStr = stringifyData(event.data);
   if (target) {
-    const dataStr = event.data
-      ? ` ${typeof event.data === 'string' ? event.data : JSON.stringify(event.data)}`
-      : '';
     logToMcp(
       target.server,
       event.level,
@@ -149,9 +151,6 @@ channel('filesystem-mcp:log').subscribe((message) => {
     );
   } else {
     // Fallback if no server
-    const dataStr = event.data
-      ? ` ${typeof event.data === 'string' ? event.data : JSON.stringify(event.data)}`
-      : '';
     const fullMsg = `${event.message}${dataStr}`;
     console.error(`[${event.level.toUpperCase()}] ${fullMsg}`);
   }
@@ -586,6 +585,78 @@ export async function startHttpServer(
   const httpHost = process.env['FILESYSTEM_MCP_HTTP_HOST'] ?? '127.0.0.1';
   assertHttpBindingSecurity(httpHost);
 
+  async function handlePostRequest(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    sessionId: string | undefined
+  ): Promise<void> {
+    if (sessionId) {
+      const session = getSessionOrRespondNotFound(sessions, sessionId, res);
+      if (!session) {
+        discardRequestBody(req);
+        return;
+      }
+      if (!ensureSessionProtocolVersion(req, res, session)) {
+        discardRequestBody(req);
+        return;
+      }
+
+      const body = await readRequestBody(req);
+      await handleSessionTransportRequest(session, req, res, body);
+      return;
+    }
+
+    const body = await readRequestBody(req);
+    if (isInitializeRequest(body)) {
+      const maxSessions = parseEnvInt(
+        'FILESYSTEM_MCP_MAX_HTTP_SESSIONS',
+        100,
+        1,
+        10_000
+      );
+      if (sessions.size >= maxSessions) {
+        sendJsonRpcError(res, 503, JSON_RPC_SERVER_ERROR, 'Too many sessions');
+        return;
+      }
+      const session = await createHttpSession(
+        options,
+        sessions,
+        resolveNegotiatedProtocolVersion(body.params.protocolVersion)
+      );
+      await handleSessionTransportRequest(session, req, res, body);
+      return;
+    }
+
+    sendJsonRpcError(
+      res,
+      400,
+      JSON_RPC_SERVER_ERROR,
+      'Bad Request: No valid session ID provided'
+    );
+    discardRequestBody(req);
+  }
+
+  async function handleGetDeleteRequest(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    sessionId: string | undefined
+  ): Promise<void> {
+    if (!sessionId) {
+      sendJsonRpcError(
+        res,
+        400,
+        JSON_RPC_SERVER_ERROR,
+        'Bad Request: Missing session ID'
+      );
+      return;
+    }
+
+    const session = getSessionOrRespondNotFound(sessions, sessionId, res);
+    if (!session) return;
+    if (!ensureSessionProtocolVersion(req, res, session)) return;
+    await handleSessionTransportRequest(session, req, res);
+  }
+
   async function handleMcpRequest(
     req: http.IncomingMessage,
     res: http.ServerResponse
@@ -608,70 +679,9 @@ export async function startHttpServer(
 
     try {
       if (method === 'POST') {
-        if (sessionId) {
-          const session = getSessionOrRespondNotFound(sessions, sessionId, res);
-          if (!session) {
-            discardRequestBody(req);
-            return;
-          }
-          if (!ensureSessionProtocolVersion(req, res, session)) {
-            discardRequestBody(req);
-            return;
-          }
-
-          const body = await readRequestBody(req);
-          await handleSessionTransportRequest(session, req, res, body);
-          return;
-        }
-
-        const body = await readRequestBody(req);
-        if (isInitializeRequest(body)) {
-          const maxSessions = parseEnvInt(
-            'FILESYSTEM_MCP_MAX_HTTP_SESSIONS',
-            100,
-            1,
-            10_000
-          );
-          if (sessions.size >= maxSessions) {
-            sendJsonRpcError(
-              res,
-              503,
-              JSON_RPC_SERVER_ERROR,
-              'Too many sessions'
-            );
-            return;
-          }
-          const session = await createHttpSession(
-            options,
-            sessions,
-            resolveNegotiatedProtocolVersion(body.params.protocolVersion)
-          );
-          await handleSessionTransportRequest(session, req, res, body);
-          return;
-        }
-
-        sendJsonRpcError(
-          res,
-          400,
-          JSON_RPC_SERVER_ERROR,
-          'Bad Request: No valid session ID provided'
-        );
-        discardRequestBody(req);
+        await handlePostRequest(req, res, sessionId);
       } else if (method === 'GET' || method === 'DELETE') {
-        if (!sessionId) {
-          sendJsonRpcError(
-            res,
-            400,
-            JSON_RPC_SERVER_ERROR,
-            'Bad Request: Missing session ID'
-          );
-          return;
-        }
-
-        const session = getSessionOrRespondNotFound(sessions, sessionId, res);
-        if (!session) return;
-        if (!ensureSessionProtocolVersion(req, res, session)) return;
-        await handleSessionTransportRequest(session, req, res);
+        await handleGetDeleteRequest(req, res, sessionId);
       } else {
         res.writeHead(405, {
           Allow: 'GET, POST, DELETE',

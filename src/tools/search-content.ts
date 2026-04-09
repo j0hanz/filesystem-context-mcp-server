@@ -11,8 +11,10 @@ import {
   formatUnknownErrorMessage,
   McpError,
 } from '../lib/errors.js';
-import type { SearchContentOptions } from '../lib/file-operations/search.js';
-import { searchContent } from '../lib/file-operations/search.js';
+import {
+  searchContent,
+  type SearchContentOptions,
+} from '../lib/file-operations/search.js';
 
 import { formatOperationSummary } from '../config.js';
 import {

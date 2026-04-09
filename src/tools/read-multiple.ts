@@ -53,14 +53,11 @@ export const READ_MANY_TOOL: ToolContract = {
 
 type ReadManyInput = z.infer<typeof ReadMultipleFilesInputSchema>;
 type ReadManyOutput = z.infer<typeof ReadMultipleFilesOutputSchema>;
-type ReadManyStructuredResult = ReadManyOutput;
-type ReadManyStructuredResultItem = NonNullable<
-  ReadManyStructuredResult['results']
->[number];
+type ReadManyOutputItem = NonNullable<ReadManyOutput['results']>[number];
 type ReadManyResult = Awaited<ReturnType<typeof readMultipleFiles>>[number];
 type ReadManyTruncationReason = 'head' | 'tail' | 'range' | 'externalized';
 type ReadManyResultWithResource = Omit<ReadManyResult, 'error'> & {
-  error?: ReadManyStructuredResultItem['error'];
+  error?: ReadManyOutputItem['error'];
   resourceUri?: string;
   truncationReason?: ReadManyTruncationReason;
   expiresAt?: string;
@@ -72,8 +69,8 @@ function buildReadManyResourceName(filePath: string): string {
 
 function toStructuredReadManyResult(
   result: ReadManyResultWithResource
-): ReadManyStructuredResultItem {
-  const structuredResult: ReadManyStructuredResultItem = {
+): ReadManyOutputItem {
+  const structuredResult: ReadManyOutputItem = {
     path: result.path,
   };
 
@@ -179,12 +176,12 @@ function buildReadManyResponsePayload(
   resourceStore?: ToolRegistrationOptions['resourceStore']
 ): {
   resourceLinks: ReturnType<typeof buildResourceLink>[];
-  structuredResults: ReadManyStructuredResultItem[];
-  summary: ReadManyStructuredResult['summary'];
+  structuredResults: ReadManyOutputItem[];
+  summary: ReadManyOutput['summary'];
   text: string;
 } {
   const resourceLinks: ReturnType<typeof buildResourceLink>[] = [];
-  const structuredResults: ReadManyStructuredResultItem[] = [];
+  const structuredResults: ReadManyOutputItem[] = [];
   const textSections: string[] = [];
   let succeeded = 0;
 

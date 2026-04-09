@@ -39,10 +39,12 @@ import {
   validateExistingPath,
   validateExistingPathDetailed,
 } from '../paths.js';
-import type { DirentLike, EntryAccessDependencies, EntryType } from './core.js';
 import {
   applyIndexedErrors,
   applyIndexedValues,
+  type DirentLike,
+  type EntryAccessDependencies,
+  type EntryType,
   isEntryAccessibleByType,
   isIgnoredByGitignore,
   loadRootGitignore,

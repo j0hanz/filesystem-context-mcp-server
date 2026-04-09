@@ -15,9 +15,9 @@ const collator = new Intl.Collator(undefined, { numeric: true });
 export function withOptionalStoppedReason<T extends object, R extends string>(
   summary: T,
   stoppedReason: R | undefined
-): T | (T & { stoppedReason: R }) {
+): T & { stoppedReason?: R } {
   if (stoppedReason === undefined) {
-    return summary;
+    return summary as T & { stoppedReason?: R };
   }
   return { ...summary, stoppedReason };
 }

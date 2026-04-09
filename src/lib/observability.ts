@@ -24,11 +24,12 @@ interface Config {
 let _cachedConfig: Config | undefined;
 
 function readConfig(): Config {
-  return (_cachedConfig ??= {
+  _cachedConfig ??= {
     enabled: parseTrueEnvFlag(ENV['FS_CONTEXT_DIAGNOSTICS']),
     detail: parseDetail(ENV['FS_CONTEXT_DIAGNOSTICS_DETAIL']),
     logToolErrors: parseTrueEnvFlag(ENV['FS_CONTEXT_TOOL_LOG_ERRORS']),
-  });
+  };
+  return _cachedConfig;
 }
 
 function parseDetail(val?: string): 0 | 1 | 2 {
