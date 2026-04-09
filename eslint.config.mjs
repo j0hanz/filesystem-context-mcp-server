@@ -2,6 +2,7 @@ import eslint from '@eslint/js';
 import eslintConfigPrettier from 'eslint-config-prettier';
 import deMorgan from 'eslint-plugin-de-morgan';
 import depend from 'eslint-plugin-depend';
+import sonarjs from 'eslint-plugin-sonarjs';
 import unusedImports from 'eslint-plugin-unused-imports';
 import { defineConfig } from 'eslint/config';
 import tseslint from 'typescript-eslint';
@@ -12,29 +13,30 @@ export default defineConfig(
       'dist',
       'node_modules',
       '.agents',
-      '.github/**',
-      'scripts/**',
       '.tmp/**',
       '*.config.mjs',
       '*.config.js',
-      'node-tests/**',
+      'src/__tests__/**',
       'tests/**',
+      '**/*.test.ts',
+      '**/*.spec.ts',
     ],
   },
   eslint.configs.recommended,
   deMorgan.configs.recommended,
   depend.configs['flat/recommended'],
+  sonarjs.configs.recommended,
   {
-    files: ['src/**/*.ts', '!src/__tests__/**'],
+    files: ['src/**/*.ts'],
     extends: [
       tseslint.configs.strictTypeChecked,
       tseslint.configs.stylisticTypeChecked,
     ],
     languageOptions: {
-      ecmaVersion: 'latest',
+      ecmaVersion: 2022,
       sourceType: 'module',
       parserOptions: {
-        project: ['./tsconfig.json'],
+        projectService: true,
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -177,7 +179,7 @@ export default defineConfig(
       'no-useless-computed-key': 'error',
       'no-useless-constructor': 'off',
       '@typescript-eslint/no-useless-constructor': 'error',
-      'no-duplicate-imports': 'off',
+      'no-duplicate-imports': 'error',
       'comma-dangle': 'off',
 
       '@typescript-eslint/no-empty-function': [
@@ -197,25 +199,6 @@ export default defineConfig(
           minimumDescriptionLength: 10,
         },
       ],
-    },
-  },
-
-  {
-    files: ['src/__tests__/**/*.ts'],
-    extends: [tseslint.configs.recommended],
-    languageOptions: {
-      ecmaVersion: 'latest',
-      sourceType: 'module',
-      parserOptions: {
-        project: ['./tsconfig.test.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-    },
-    rules: {
-      '@typescript-eslint/no-floating-promises': 'off',
-      '@typescript-eslint/array-type': 'off',
-      'prefer-template': 'off',
-      '@typescript-eslint/restrict-plus-operands': 'off',
     },
   },
 

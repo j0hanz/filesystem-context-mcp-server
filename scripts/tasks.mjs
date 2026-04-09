@@ -2,6 +2,7 @@
 import { spawn } from 'node:child_process';
 import { access, chmod, cp, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { parseArgs } from 'node:util';
 
 const TSC = join('node_modules', 'typescript', 'bin', 'tsc');
 
@@ -14,8 +15,8 @@ const PATHS = {
 };
 
 const TEST_PATTERNS = [
+  '__tests__/**/*.test.ts',
   'src/__tests__/**/*.test.ts',
-  'tests/**/*.test.ts',
   'node-tests/**/*.test.ts',
 ];
 
@@ -177,7 +178,8 @@ const ROUTES = {
   test: (restArgs) => test(restArgs),
 };
 
-const taskName = process.argv[2] ?? 'build';
+const { positionals } = parseArgs({ strict: false, allowPositionals: true });
+const taskName = positionals[0] ?? 'build';
 const action = ROUTES[taskName];
 
 if (!action) {
@@ -187,6 +189,7 @@ if (!action) {
   process.exitCode = 1;
 } else {
   try {
+    // Pass raw args to task runners (test command expects remaining args)
     await action(process.argv.slice(3));
   } catch {
     process.exitCode = 1;
