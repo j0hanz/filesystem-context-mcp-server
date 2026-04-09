@@ -11,6 +11,7 @@ import { withAbort } from '../lib/abort.js';
 import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
 import { atomicWriteFile } from '../lib/fs-helpers.js';
+import { Logger } from '../lib/logger.js';
 import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
 
 import { EditFileInputSchema, EditFileOutputSchema } from '../schemas.js';
@@ -388,6 +389,9 @@ async function handleEditFile(
       encoding: 'utf-8',
       signal,
     });
+    Logger.info(
+      `edit: ${args.path} (${editResult.appliedEdits} edits, +${editResult.linesAdded}/-${editResult.linesRemoved})`
+    );
   }
 
   return buildToolResponse(buildEditMessage(args.path, editResult), structured);

@@ -7,6 +7,7 @@ import type { z } from 'zod';
 
 import { withAbort } from '../lib/abort.js';
 import { ErrorCode, isNodeError, McpError } from '../lib/errors.js';
+import { Logger } from '../lib/logger.js';
 import { isAllowedDirectoryRoot, validatePathForWrite } from '../lib/paths.js';
 
 import { DeleteFileInputSchema, DeleteFileOutputSchema } from '../schemas.js';
@@ -81,6 +82,8 @@ async function handleDeleteFile(
       signal
     );
   }
+
+  Logger.info(`rm: ${args.path}`);
 
   return buildToolResponse(`Successfully deleted: ${args.path}`, {
     ok: true,

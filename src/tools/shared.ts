@@ -185,6 +185,10 @@ export function maybeExternalizeTextContent(
     uri: entry.uri,
   });
 
+  Logger.debug(
+    `Content externalized: ${params.name} (${content.length} chars) → ${entry.uri}`
+  );
+
   return {
     entry,
     preview: buildTextPreview(content),

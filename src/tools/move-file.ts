@@ -12,6 +12,7 @@ import {
   isNodeError,
   McpError,
 } from '../lib/errors.js';
+import { Logger } from '../lib/logger.js';
 import {
   assertAllowedFileAccess,
   validateExistingPath,
@@ -200,6 +201,10 @@ async function handleMoveFile(
     failed.length > 0
       ? `Moved ${movedSources.length} item${movedSources.length === 1 ? '' : 's'}; failed to move ${failed.length} item${failed.length === 1 ? '' : 's'}`
       : `Successfully moved ${movedSources.length} item${movedSources.length === 1 ? '' : 's'} to ${args.destination}`;
+
+  Logger.info(
+    `mv: ${movedSources.length} item(s) → ${args.destination}${failed.length > 0 ? ` (${failed.length} failed)` : ''}`
+  );
 
   return buildToolResponse(message, {
     ok: failed.length === 0,

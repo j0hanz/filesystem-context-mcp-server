@@ -15,6 +15,7 @@ import {
   withAbort,
 } from '../lib/abort.js';
 import { formatUnknownErrorMessage } from '../lib/errors.js';
+import { Logger } from '../lib/logger.js';
 import { type LoggingState, logToMcp } from '../lib/logger.js';
 import {
   type AllowedDirectoriesState,
@@ -277,6 +278,9 @@ export class RootsManager {
       );
     } finally {
       await this.recomputeAllowedDirectories();
+      Logger.info(
+        `Roots updated: ${this.rootDirectories.length} root(s), ${this.allowedDirectoriesState.expanded.length} allowed dir(s)`
+      );
       this.updatingRoots = false;
       // If a change arrived while we were running, apply it now.
       if (this.pendingRootsUpdate) {

@@ -21,6 +21,7 @@ import {
 } from '../lib/errors.js';
 import { globEntries } from '../lib/file-operations/traversal.js';
 import { atomicWriteFile } from '../lib/fs-helpers.js';
+import { Logger } from '../lib/logger.js';
 import { validateExistingPath, validatePathForWrite } from '../lib/paths.js';
 import { reportPeriodicProgress } from '../lib/utils.js';
 
@@ -513,6 +514,12 @@ async function handleSearchAndReplace(
     throttleModulo: 25,
     force: true,
   });
+
+  if (!args.dryRun && summary.totalMatches > 0) {
+    Logger.info(
+      `search_and_replace: ${summary.filesChanged} file(s), ${summary.totalMatches} match(es)`
+    );
+  }
 
   return buildToolResponse(
     buildSearchAndReplaceText(summary, args.dryRun),

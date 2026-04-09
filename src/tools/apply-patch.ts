@@ -10,6 +10,7 @@ import { withAbort } from '../lib/abort.js';
 import { MAX_TEXT_FILE_SIZE, PARALLEL_CONCURRENCY } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
 import { atomicWriteFile, processInParallel } from '../lib/fs-helpers.js';
+import { Logger } from '../lib/logger.js';
 import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
 
 import { ApplyPatchInputSchema, ApplyPatchOutputSchema } from '../schemas.js';
@@ -237,6 +238,12 @@ async function processMultiFilePatch(
 
   const text = `Applied ${totals.applied}/${parsed.length} file patches${label}`;
 
+  if (!options.dryRun) {
+    Logger.info(
+      `apply_patch: ${basePath} (${totals.applied} file(s), +${totals.added}/-${totals.removed})`
+    );
+  }
+
   return buildToolResponse(text, {
     ok: totals.applied === parsed.length,
     path: basePath,
@@ -294,6 +301,12 @@ async function handleApplyPatch(
   const text = args.dryRun
     ? 'Dry run successful. Patch can be applied.'
     : `Successfully patched ${args.path}`;
+
+  if (!args.dryRun) {
+    Logger.info(
+      `apply_patch: ${args.path} (+${result.linesAdded ?? 0}/-${result.linesRemoved ?? 0})`
+    );
+  }
 
   return buildToolResponse(text, {
     ok: true,

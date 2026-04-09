@@ -13,6 +13,7 @@ import {
   SENSITIVE_FILE_DENYLIST,
 } from './constants.js';
 import { ErrorCode, isAbortError, isNodeError, McpError } from './errors.js';
+import { Logger } from './logger.js';
 
 const WINDOWS_PATH_SEPARATOR = '\\';
 const POSIX_PATH_SEPARATOR = '/';
@@ -167,6 +168,9 @@ export function assertAllowedFileAccess(
   resolvedPath?: string
 ): void {
   if (!isSensitivePath(requestedPath, resolvedPath)) return;
+  Logger.warn(
+    `Access denied: sensitive file blocked by policy (${requestedPath})`
+  );
   throw new McpError(
     ErrorCode.E_ACCESS_DENIED,
     `Access denied: sensitive file blocked by policy (${requestedPath}). ` +
@@ -688,6 +692,7 @@ function ensureWithinAllowedDirectories(options: {
   if (isPathWithinDirectories(normalizedPath, allowedDirs)) return;
 
   if (allowedDirs.length === 0) {
+    Logger.warn('Access denied: no allowed directories configured');
     throw new McpError(
       ErrorCode.E_ACCESS_DENIED,
       'Access denied: No allowed directories configured. Use --allow-cwd or configure roots via the MCP Roots protocol.',
@@ -696,6 +701,9 @@ function ensureWithinAllowedDirectories(options: {
     );
   }
 
+  Logger.warn(
+    `Access denied: path outside allowed directories (${requestedPath})`
+  );
   throw new McpError(
     ErrorCode.E_ACCESS_DENIED,
     `Access denied: Path '${requestedPath}' is outside allowed directories`,

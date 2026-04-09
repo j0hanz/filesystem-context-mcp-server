@@ -245,6 +245,7 @@ export async function createServer(
   // Wait, in stdio there's only one server. In HTTP there are multiple.
   server.server.setRequestHandler(SetLevelRequestSchema, (req) => {
     loggingState.minimumLevel = req.params.level;
+    Logger.notice(`Log level set to ${req.params.level}`);
     return {};
   });
 
@@ -732,7 +733,7 @@ export async function startHttpServer(
   return new Promise<http.Server>((resolve, reject) => {
     httpServer.once('error', reject);
     httpServer.listen(port, httpHost, () => {
-      Logger.error(`MCP HTTP server listening on ${httpHost}:${port}`);
+      Logger.info(`MCP HTTP server listening on ${httpHost}:${port}`);
       resolve(httpServer);
     });
   });

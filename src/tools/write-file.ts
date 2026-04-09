@@ -8,6 +8,7 @@ import type { z } from 'zod';
 import { withAbort } from '../lib/abort.js';
 import { ErrorCode } from '../lib/errors.js';
 import { atomicWriteFile } from '../lib/fs-helpers.js';
+import { Logger } from '../lib/logger.js';
 import { validatePathForWrite } from '../lib/paths.js';
 
 import { formatBytes } from '../config.js';
@@ -54,6 +55,8 @@ async function handleWriteFile(
   await atomicWriteFile(validPath, args.content, { encoding: 'utf-8', signal });
 
   const bytesWritten = Buffer.byteLength(args.content, 'utf-8');
+
+  Logger.info(`write: ${args.path} (${bytesWritten} bytes)`);
 
   return buildToolResponse(`Successfully wrote to file: ${args.path}`, {
     ok: true,
