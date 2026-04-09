@@ -7,9 +7,10 @@ import { createTwoFilesPatch, diffLines } from 'diff';
 import RE2 from 're2';
 import type { z } from 'zod';
 
+import { withAbort } from '../lib/abort.js';
 import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
-import { atomicWriteFile, withAbort } from '../lib/fs-helpers.js';
+import { atomicWriteFile } from '../lib/fs-helpers.js';
 import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
 
 import { EditFileInputSchema, EditFileOutputSchema } from '../schemas.js';

@@ -5,8 +5,8 @@ import * as path from 'node:path';
 
 import type { z } from 'zod';
 
+import { withAbort } from '../lib/abort.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
-import { withAbort } from '../lib/fs-helpers.js';
 import { validatePathForWrite } from '../lib/paths.js';
 
 import {

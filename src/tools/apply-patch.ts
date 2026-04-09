@@ -6,13 +6,10 @@ import { readFile, stat } from 'node:fs/promises';
 import { applyPatch, parsePatch, type StructuredPatch } from 'diff';
 import type { z } from 'zod';
 
+import { withAbort } from '../lib/abort.js';
 import { MAX_TEXT_FILE_SIZE, PARALLEL_CONCURRENCY } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
-import {
-  atomicWriteFile,
-  processInParallel,
-  withAbort,
-} from '../lib/fs-helpers.js';
+import { atomicWriteFile, processInParallel } from '../lib/fs-helpers.js';
 import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
 
 import { ApplyPatchInputSchema, ApplyPatchOutputSchema } from '../schemas.js';

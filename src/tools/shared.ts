@@ -9,6 +9,7 @@ import { channel } from 'node:diagnostics_channel';
 
 import { z } from 'zod';
 
+import { createTimedAbortSignal } from '../lib/abort.js';
 import { parseTrueEnvFlag } from '../lib/constants.js';
 import {
   createDetailedError,
@@ -17,7 +18,6 @@ import {
   getSuggestion,
   McpError,
 } from '../lib/errors.js';
-import { createTimedAbortSignal } from '../lib/fs-helpers.js';
 import { Logger } from '../lib/logger.js';
 import { withToolDiagnostics } from '../lib/observability.js';
 import type { TraceContext } from '../lib/observability.js';

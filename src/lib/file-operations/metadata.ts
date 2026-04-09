@@ -9,6 +9,7 @@ import type {
   ListDirectoryResult,
   MultipleFileInfoResult,
 } from '../../config.js';
+import { assertNotAborted, withAbort, withTimedAbortSignal } from '../abort.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_LIST_MAX_ENTRIES,
@@ -21,14 +22,11 @@ import {
 } from '../constants.js';
 import { isAbortError } from '../errors.js';
 import {
-  assertNotAborted,
   getFileType,
   isHidden,
   processInParallel,
   readFile,
   readFileWithStats,
-  withAbort,
-  withTimedAbortSignal,
 } from '../fs-helpers.js';
 import { assertSafeGlobPattern } from '../globs.js';
 import {

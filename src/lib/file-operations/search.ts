@@ -17,6 +17,7 @@ import type {
   SearchFilesResult,
   SearchResult,
 } from '../../config.js';
+import { assertNotAborted, withAbort, withTimedAbortSignal } from '../abort.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_SEARCH_MAX_FILES,
@@ -31,12 +32,7 @@ import {
   isTimeoutLikeError,
   McpError,
 } from '../errors.js';
-import {
-  assertNotAborted,
-  isProbablyBinary,
-  withAbort,
-  withTimedAbortSignal,
-} from '../fs-helpers.js';
+import { isProbablyBinary } from '../fs-helpers.js';
 import { startPerfMeasure } from '../observability.js';
 import {
   assertAllowedFileAccess,

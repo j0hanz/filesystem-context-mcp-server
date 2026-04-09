@@ -6,9 +6,9 @@ import * as path from 'node:path';
 import { formatPatch, structuredPatch, type StructuredPatch } from 'diff';
 import type { z } from 'zod';
 
+import { withAbort } from '../lib/abort.js';
 import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
-import { withAbort } from '../lib/fs-helpers.js';
 import { validateExistingPath } from '../lib/paths.js';
 
 import { DiffFilesInputSchema, DiffFilesOutputSchema } from '../schemas.js';

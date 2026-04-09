@@ -4,9 +4,9 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type * as http from 'node:http';
 import process from 'node:process';
 
+import { createTimedAbortSignal } from './lib/abort.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS } from './lib/constants.js';
 import { formatUnknownErrorMessage } from './lib/errors.js';
-import { createTimedAbortSignal } from './lib/fs-helpers.js';
 import { setAllowedDirectoriesResolved } from './lib/paths.js';
 
 import { CliExitError, parseArgs } from './cli.js';

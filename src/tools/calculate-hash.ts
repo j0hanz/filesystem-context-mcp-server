@@ -9,6 +9,7 @@ import { pipeline } from 'node:stream/promises';
 
 import type { z } from 'zod';
 
+import { assertNotAborted, withAbort } from '../lib/abort.js';
 import { PARALLEL_CONCURRENCY } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import {
@@ -16,7 +17,6 @@ import {
   loadRootGitignore,
 } from '../lib/file-operations/core.js';
 import { globEntries } from '../lib/file-operations/traversal.js';
-import { assertNotAborted, withAbort } from '../lib/fs-helpers.js';
 import { validateExistingPath } from '../lib/paths.js';
 import { reportPeriodicProgress } from '../lib/utils.js';
 

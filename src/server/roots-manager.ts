@@ -9,12 +9,13 @@ import * as fs from 'node:fs/promises';
 
 import { z } from 'zod';
 
-import { formatUnknownErrorMessage } from '../lib/errors.js';
 import {
   assertNotAborted,
   createTimedAbortSignal,
   withAbort,
-} from '../lib/fs-helpers.js';
+} from '../lib/abort.js';
+import { formatUnknownErrorMessage } from '../lib/errors.js';
+import { type LoggingState, logToMcp } from '../lib/logger.js';
 import {
   type AllowedDirectoriesState,
   getValidRootDirectories,
@@ -25,11 +26,13 @@ import {
 } from '../lib/paths.js';
 import { debounce, isRecord } from '../lib/utils.js';
 
-import { type LoggingState, logToMcp } from './bootstrap.js';
-import type { ServerOptions } from './bootstrap.js';
-
 const ROOTS_TIMEOUT_MS = 5000;
 const ROOTS_DEBOUNCE_MS = 100;
+
+export interface ServerOptions {
+  allowCwd?: boolean;
+  cliAllowedDirs?: string[];
+}
 
 function normalizeCLIDirectories(dirs: readonly string[]): string[] {
   const normalized: string[] = [];
@@ -135,9 +138,10 @@ export class RootsManager {
     expanded: [],
   };
   private clientInitialized = false;
-  // Set to true when an update is in progress, to prevent concurrent executions. If a change arrives while true, we queue a single retry after completion to ensure the last-known state is applied. This
+  // Guard concurrent root refreshes; if one is already running we queue one
+  // replay so the last-known state still gets applied after completion.
   private updatingRoots = false;
-  // If an update is in progress and a change arrives, we set this flag to ensure we run another update after completion to apply the latest state
+  // Tracks whether a roots change arrived while the previous refresh ran.
   private pendingRootsUpdate = false;
   private readonly options: ServerOptions;
   readonly loggingState: LoggingState;

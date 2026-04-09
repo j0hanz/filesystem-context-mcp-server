@@ -5,8 +5,9 @@ import * as path from 'node:path';
 
 import type { z } from 'zod';
 
+import { withAbort } from '../lib/abort.js';
 import { ErrorCode } from '../lib/errors.js';
-import { atomicWriteFile, withAbort } from '../lib/fs-helpers.js';
+import { atomicWriteFile } from '../lib/fs-helpers.js';
 import { validatePathForWrite } from '../lib/paths.js';
 
 import { formatBytes } from '../config.js';

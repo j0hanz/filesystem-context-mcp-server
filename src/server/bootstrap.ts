@@ -6,10 +6,6 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import type {
-  LoggingLevel,
-  LoggingMessageNotificationParams,
-} from '@modelcontextprotocol/sdk/types.js';
 import {
   isInitializeRequest,
   LATEST_PROTOCOL_VERSION,
@@ -24,10 +20,16 @@ import { channel } from 'node:diagnostics_channel';
 
 import { DEFAULT_LOG_LEVEL, parseEnvInt } from '../lib/constants.js';
 import { formatUnknownErrorMessage } from '../lib/errors.js';
-import { type LogEvent, Logger, SessionContext } from '../lib/logger.js';
+import {
+  createLoggingState,
+  type LogEvent,
+  Logger,
+  type LoggingState,
+  logToMcp,
+  SessionContext,
+} from '../lib/logger.js';
 import { withAllowedDirectoriesState } from '../lib/paths.js';
 import { createInMemoryResourceStore } from '../lib/resource-store.js';
-import { isRecord } from '../lib/utils.js';
 
 import { registerCompletions } from '../completions.js';
 import { pkgInfo } from '../pkg-info.js';
@@ -49,12 +51,7 @@ import { buildServerInstructions } from '../resources/generated-instructions.js'
 import { registerAllTools } from '../tools.js';
 import type { IconInfo } from '../tools/shared.js';
 import { withDefaultIcons } from '../tools/shared.js';
-import { RootsManager } from './roots-manager.js';
-
-export interface ServerOptions {
-  allowCwd?: boolean;
-  cliAllowedDirs?: string[];
-}
+import { RootsManager, type ServerOptions } from './roots-manager.js';
 
 let cachedTaskToolSupport: boolean | undefined;
 
@@ -123,64 +120,6 @@ function buildServerCapabilities(
 
 function supportsTaskToolRequests(): boolean {
   return detectTaskToolSupport();
-}
-
-const MCP_LOGGER_NAME = 'filesystem-mcp';
-
-const LOG_LEVEL_ORDER: Record<LoggingLevel, number> = {
-  debug: 0,
-  info: 1,
-  notice: 2,
-  warning: 3,
-  error: 4,
-  critical: 5,
-  alert: 6,
-  emergency: 7,
-};
-
-export interface LoggingState {
-  minimumLevel: LoggingLevel;
-}
-
-function createLoggingState(
-  minimumLevel: LoggingLevel = 'debug'
-): LoggingState {
-  return { minimumLevel };
-}
-
-export function canSendMcpLogs(server: McpServer): boolean {
-  const capabilities = server.server.getClientCapabilities();
-  if (!isRecord(capabilities)) return false;
-  if (!('logging' in capabilities)) return false;
-  return !!capabilities['logging'];
-}
-
-export function logToMcp(
-  server: McpServer | undefined,
-  level: LoggingLevel,
-  data: string,
-  minLevel: LoggingLevel = 'debug'
-): void {
-  if (LOG_LEVEL_ORDER[level] < LOG_LEVEL_ORDER[minLevel]) {
-    return;
-  }
-  if (!server || !canSendMcpLogs(server)) {
-    console.error(`[${level.toUpperCase()}] ${data}`);
-    return;
-  }
-
-  const params: LoggingMessageNotificationParams = {
-    level,
-    logger: MCP_LOGGER_NAME,
-    data,
-  };
-
-  void server.sendLoggingMessage(params).catch((error: unknown) => {
-    console.error(
-      `Failed to send MCP log: ${level} | ${data}`,
-      formatUnknownErrorMessage(error)
-    );
-  });
 }
 
 // Global map of all active servers by sessionId for routing logs

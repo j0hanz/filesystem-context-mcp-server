@@ -7,12 +7,12 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { platform } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
+import { assertNotAborted, withAbort } from './abort.js';
 import {
   SENSITIVE_FILE_ALLOWLIST,
   SENSITIVE_FILE_DENYLIST,
 } from './constants.js';
 import { ErrorCode, isAbortError, isNodeError, McpError } from './errors.js';
-import { assertNotAborted, withAbort } from './fs-helpers.js';
 
 const WINDOWS_PATH_SEPARATOR = '\\';
 const POSIX_PATH_SEPARATOR = '/';
