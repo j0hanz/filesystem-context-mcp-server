@@ -385,14 +385,14 @@ function mergeErrorDetails(
 }
 
 export function formatDetailedError(error: DetailedError): string {
-  const lines: string[] = [`Error [${error.code}]: ${error.message}`];
+  const lines: string[] = [`${error.code}: ${error.message}`];
 
   if (error.path && !error.message.includes(error.path)) {
-    lines.push(`Path: ${error.path}`);
+    lines.push(error.path);
   }
 
   if (error.suggestion) {
-    lines.push(`Suggestion: ${error.suggestion}`);
+    lines.push(error.suggestion);
   }
 
   return joinLines(lines);

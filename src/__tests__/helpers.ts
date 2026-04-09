@@ -101,7 +101,7 @@ export async function createTestEnv(): Promise<TestEnv> {
 
 /**
  * Assert that a tool call returned an MCP-level error result.
- * Optionally verifies the error code from "Error [CODE]: …" format.
+ * Optionally verifies the error code from "CODE: …" format.
  */
 export function assertToolError(result: unknown, expectedCode?: string): void {
   const r = result as ToolResult;
@@ -111,10 +111,10 @@ export function assertToolError(result: unknown, expectedCode?: string): void {
   );
   assert.ok(textBlock, 'Error result must have a text block');
   if (expectedCode !== undefined) {
-    const match = /Error \[(\w+)\]/.exec(textBlock.text);
+    const match = /^(E_\w+):/.exec(textBlock.text);
     assert.ok(
       match,
-      `Expected "Error [${expectedCode}]" pattern in:\n${textBlock.text}`
+      `Expected "${expectedCode}: …" pattern in:\n${textBlock.text}`
     );
     assert.equal(match[1], expectedCode);
   }

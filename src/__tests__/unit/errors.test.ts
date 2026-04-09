@@ -167,7 +167,7 @@ describe('task cancellation normalization', () => {
     const { taskStore, getStoredResult, getStoredTask } = createMockTaskStore();
     const handler = createToolTaskHandler(() =>
       Promise.resolve({
-        content: [{ type: 'text', text: 'Error [E_CANCELLED]: cancelled' }],
+        content: [{ type: 'text', text: 'E_CANCELLED: cancelled' }],
         isError: true as const,
         errorCode: ErrorCode.E_CANCELLED,
       })
@@ -220,7 +220,7 @@ describe('task failure normalization', () => {
     const { taskStore, getStoredTask } = createMockTaskStore();
     const handler = createToolTaskHandler(() =>
       Promise.resolve({
-        content: [{ type: 'text', text: 'Error [E_NOT_FOUND]: missing file' }],
+        content: [{ type: 'text', text: 'E_NOT_FOUND: missing file' }],
         isError: true as const,
         errorCode: ErrorCode.E_NOT_FOUND,
       })

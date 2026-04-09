@@ -191,7 +191,7 @@ describe('createToolTaskHandler', () => {
       const handler = createToolTaskHandler(
         async () =>
           ({
-            content: [{ type: 'text', text: 'Error [E_UNKNOWN]: boom' }],
+            content: [{ type: 'text', text: 'E_UNKNOWN: boom' }],
             isError: true,
             errorCode: ErrorCode.E_UNKNOWN,
           }) as ToolResult<unknown>
