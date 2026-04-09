@@ -165,18 +165,7 @@ export function logToMcp(
     return;
   }
   if (!server || !canSendMcpLogs(server)) {
-    if (
-      level === 'error' ||
-      level === 'critical' ||
-      level === 'alert' ||
-      level === 'emergency'
-    ) {
-      console.error(`[${level.toUpperCase()}] ${data}`);
-    } else if (level === 'warning') {
-      console.warn(`[${level.toUpperCase()}] ${data}`);
-    } else {
-      console.log(`[${level.toUpperCase()}] ${data}`);
-    }
+    console.error(`[${level.toUpperCase()}] ${data}`);
     return;
   }
 
@@ -225,18 +214,7 @@ channel('filesystem-mcp:log').subscribe((message) => {
       ? ` ${typeof event.data === 'string' ? event.data : JSON.stringify(event.data)}`
       : '';
     const fullMsg = `${event.message}${dataStr}`;
-    if (
-      event.level === 'error' ||
-      event.level === 'critical' ||
-      event.level === 'alert' ||
-      event.level === 'emergency'
-    ) {
-      console.error(`[${event.level.toUpperCase()}] ${fullMsg}`);
-    } else if (event.level === 'warning') {
-      console.warn(`[${event.level.toUpperCase()}] ${fullMsg}`);
-    } else {
-      console.log(`[${event.level.toUpperCase()}] ${fullMsg}`);
-    }
+    console.error(`[${event.level.toUpperCase()}] ${fullMsg}`);
   }
 });
 
@@ -780,7 +758,7 @@ export async function startHttpServer(
         sendJsonRpcError(res, error.statusCode, rpcCode, error.message);
         return;
       }
-      console.error(
+      Logger.error(
         '[HTTP] Error handling request:',
         formatUnknownErrorMessage(error)
       );
@@ -800,7 +778,7 @@ export async function startHttpServer(
       const urlPath = (req.url ?? '/').split('?')[0];
       if (urlPath === '/mcp') {
         handleMcpRequest(req, res).catch((err: unknown) => {
-          console.error(
+          Logger.error(
             '[HTTP] Unhandled error in request handler:',
             formatUnknownErrorMessage(err)
           );

@@ -24,26 +24,15 @@ export const Logger = {
     const event: LogEvent = {
       level,
       message,
-      data,
-      sessionId: session?.sessionId,
+      ...(data !== undefined ? { data } : {}),
+      ...(session?.sessionId !== undefined ? { sessionId: session.sessionId } : {}),
     };
 
     if (LOG_CHANNEL.hasSubscribers) {
       LOG_CHANNEL.publish(event);
     } else {
       // Fallback if no subscribers
-      if (
-        level === 'error' ||
-        level === 'critical' ||
-        level === 'alert' ||
-        level === 'emergency'
-      ) {
-        console.error(`[${level.toUpperCase()}] ${message}`, data ?? '');
-      } else if (level === 'warning') {
-        console.warn(`[${level.toUpperCase()}] ${message}`, data ?? '');
-      } else {
-        console.log(`[${level.toUpperCase()}] ${message}`, data ?? '');
-      }
+      console.error(`[${level.toUpperCase()}] ${message}`, data ?? '');
     }
   },
 
