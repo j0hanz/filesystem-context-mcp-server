@@ -130,6 +130,7 @@ type ToolArgs<Args extends ZodRawShapeCompat | AnySchema | undefined> =
       : undefined;
 
 const TASK_STATUS_NOTIFICATION_METHOD = 'notifications/tasks/status';
+const TASK_CREATED_NOTIFICATION_METHOD = 'notifications/tasks/created';
 
 function isRequestTaskStore(value: unknown): value is RequestTaskStore {
   return (
@@ -319,6 +320,44 @@ function buildTaskStatusNotificationParams(
   if (task.statusMessage !== undefined)
     params.statusMessage = task.statusMessage;
   return params;
+}
+
+async function notifyTaskCreatedIfPossible(
+  extra: TaskToolExtra,
+  taskId: string,
+  toolName?: string
+): Promise<void> {
+  const { sendNotification } = extra as { sendNotification?: unknown };
+  if (typeof sendNotification !== 'function') return;
+  const notify = sendNotification as (notification: {
+    method: typeof TASK_CREATED_NOTIFICATION_METHOD;
+    params: {
+      _meta: {
+        'modelcontextprotocol.io/related-task': {
+          taskId: string;
+        };
+      };
+    };
+  }) => Promise<void>;
+
+  try {
+    await notify({
+      method: TASK_CREATED_NOTIFICATION_METHOD,
+      params: {
+        _meta: {
+          'modelcontextprotocol.io/related-task': {
+            taskId,
+          },
+        },
+      },
+    });
+  } catch {
+    publishTaskDiagnostics({
+      phase: 'task_status_notify_failed',
+      taskId,
+      ...(toolName ? { toolName } : {}),
+    });
+  }
 }
 
 async function notifyTaskStatusIfPossible(
@@ -666,6 +705,7 @@ export function createToolTaskHandler<
       taskStore,
       taskId: task.taskId,
     };
+    void notifyTaskCreatedIfPossible(taskExtra, task.taskId, options?.toolName);
     void notifyTaskStatusIfPossible(
       taskExtra,
       taskStore,

@@ -321,8 +321,18 @@ export function withValidatedArgs<Args, Result>(
   handler: (args: Args, extra: ToolExtra) => Promise<ToolResult<Result>>
 ): (args: unknown, extra: ToolExtra) => Promise<ToolResult<Result>> {
   return async (args, extra) => {
-    const normalizedArgs = parseToolArgs(schema, args);
-    return handler(normalizedArgs, extra);
+    try {
+      const normalizedArgs = parseToolArgs(schema, args);
+      return await handler(normalizedArgs, extra);
+    } catch (error) {
+      if (
+        error instanceof McpError &&
+        error.code === ErrorCode.E_INVALID_INPUT
+      ) {
+        return buildToolErrorResponse(error, ErrorCode.E_INVALID_INPUT);
+      }
+      throw error;
+    }
   };
 }
 
