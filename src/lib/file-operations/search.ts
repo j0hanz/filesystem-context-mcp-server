@@ -6,7 +6,6 @@ import { debuglog } from 'node:util';
 import { parentPort, threadId, Worker, workerData } from 'node:worker_threads';
 
 import RE2 from 're2';
-import safeRegex from 'safe-regex2';
 import { z } from 'zod';
 
 import type {
@@ -90,18 +89,6 @@ function buildRegexPattern(pattern: string, options: MatcherOptions): string {
   return options.wholeWord ? `\\b${escaped}\\b` : escaped;
 }
 
-function validatePattern(pattern: string, options: MatcherOptions): void {
-  if (options.isLiteral && pattern.length === 0) return;
-  if (options.isLiteral && !options.wholeWord) return;
-
-  const final = buildRegexPattern(pattern, options);
-  if (!safeRegex(final)) {
-    throw new Error(
-      `Potentially unsafe regular expression (ReDoS risk): ${pattern}`
-    );
-  }
-}
-
 function buildLiteralMatcher(
   pattern: string,
   options: MatcherOptions
@@ -144,7 +131,6 @@ function buildMatcher(pattern: string, options: MatcherOptions): Matcher {
   }
 
   const final = buildRegexPattern(pattern, options);
-  validatePattern(pattern, options); // Re-validate to be safe
   return buildRegexMatcher(final, options.caseSensitive);
 }
 
@@ -1224,9 +1210,6 @@ async function searchDirectory(
       total: opts.maxFilesScanned,
     });
   }
-
-  const matcherOpts = buildMatcherOptions(opts);
-  validatePattern(pattern, matcherOpts);
 
   const matches = shouldUseWorkers()
     ? await executeParallel(fileGenerator(), pattern, opts, signal, summary)

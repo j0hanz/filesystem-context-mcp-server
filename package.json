@@ -80,7 +80,6 @@
     "diff": "^8.0.4",
     "ignore": "^7.0.5",
     "re2": "^1.24.0",
-    "safe-regex2": "^5.1.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

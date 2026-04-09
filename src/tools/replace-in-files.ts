@@ -6,7 +6,6 @@ import { basename, relative } from 'node:path';
 
 import { createTwoFilesPatch } from 'diff';
 import RE2 from 're2';
-import safeRegex from 'safe-regex2';
 import type { z } from 'zod';
 
 import {
@@ -425,12 +424,6 @@ function createReplacementRegex(
   args: z.infer<typeof SearchAndReplaceInputSchema>
 ): RE2 | undefined {
   if (!args.isRegex) return undefined;
-  if (!safeRegex(args.searchPattern)) {
-    throw new McpError(
-      ErrorCode.INVALID_INPUT,
-      `Unsafe regex pattern: ${args.searchPattern}`
-    );
-  }
   return createRegexMatcher(args.searchPattern, args.caseSensitive);
 }
 
