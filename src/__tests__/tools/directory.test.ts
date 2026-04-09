@@ -332,7 +332,7 @@ describe('mv tool', () => {
     assert.equal(content, 'move me');
   });
 
-  it('returns ok:false with failed array when source is missing', async () => {
+  it('returns isError for total failure when source is missing', async () => {
     const raw = await env.client.callTool({
       name: 'mv',
       arguments: {
@@ -340,15 +340,7 @@ describe('mv tool', () => {
         destination: path.join(env.tmpDir, 'dst.txt'),
       },
     });
-    // mv collects per-source errors into a failed[] array; it does NOT set isError:true
-    const result = raw;
-    const sc = getStructured(result);
-    assert.equal(sc['ok'], false);
-    const failed = sc['failed'] as Array<Record<string, unknown>>;
-    assert.ok(
-      Array.isArray(failed) && failed.length > 0,
-      'Expected failed entries for missing source'
-    );
+    assertToolError(raw, 'E_NOT_FOUND');
   });
 });
 

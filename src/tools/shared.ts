@@ -334,9 +334,7 @@ function parseToolArgs<Schema extends z.ZodType>(
 
   throw new McpError(
     ErrorCode.E_INVALID_INPUT,
-    `Invalid tool arguments:\n${z.prettifyError(parsed.error)}`,
-    undefined,
-    { errors: z.treeifyError(parsed.error) }
+    `Invalid tool arguments:\n${z.prettifyError(parsed.error)}`
   );
 }
 

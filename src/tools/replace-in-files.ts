@@ -101,7 +101,7 @@ function createRegexMatcher(pattern: string, caseSensitive: boolean): RE2 {
     return new RE2(pattern, flags);
   } catch (error) {
     throw new McpError(
-      ErrorCode.E_INVALID_INPUT,
+      ErrorCode.E_INVALID_PATTERN,
       `Invalid regex pattern: ${formatUnknownErrorMessage(error)}`
     );
   }

@@ -206,6 +206,17 @@ async function handleMoveFile(
     `mv: ${movedSources.length} item(s) → ${args.destination}${failed.length > 0 ? ` (${failed.length} failed)` : ''}`
   );
 
+  if (movedSources.length === 0 && failed.length > 0) {
+    const firstFailure = failed[0];
+    if (firstFailure) {
+      throw new McpError(
+        firstFailure.error.code as ErrorCode,
+        message,
+        firstFailure.error.path
+      );
+    }
+  }
+
   return buildToolResponse(message, {
     ok: failed.length === 0,
     sources: movedSources,

@@ -329,7 +329,10 @@ async function executeSearch(
     return await searchContent(basePath, args.pattern, options);
   } catch (error) {
     if (error instanceof Error && /regular expression/i.test(error.message)) {
-      throw new McpError(ErrorCode.E_INVALID_PATTERN, error.message);
+      throw new McpError(
+        ErrorCode.E_INVALID_PATTERN,
+        `Invalid regex pattern: ${formatUnknownErrorMessage(error)}`
+      );
     }
     throw error;
   }
