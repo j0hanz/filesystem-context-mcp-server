@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import { mkdir } from 'node:fs/promises';
 import { basename, dirname } from 'node:path';
@@ -19,16 +19,13 @@ import {
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   executeToolWithDiagnostics,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const WRITE_FILE_TOOL: ToolContract = {
   name: 'write',
@@ -70,21 +67,27 @@ export function registerWriteFileTool(
 ): void {
   const handler = (
     args: z.infer<typeof WriteFileInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof WriteFileOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'write',
-      extra,
+      ctx,
       outputSchema: WriteFileOutputSchema,
       timedSignal: {},
       context: { path: args.path },
-      run: (signal) => handleWriteFile(args, signal),
+      run: async (signal) => {
+        const result = await handleWriteFile(args, signal);
+        void ctx.log?.(
+          'info',
+          `write: ${args.path} (${String(result.structuredContent.bytesWritten ?? 0)} bytes)`
+        );
+        return result;
+      },
       onError: (error) =>
         buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
     });
 
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: options.isInitialized,
+  registerStandardTool(server, WRITE_FILE_TOOL, handler, options, {
     progressMessage: (args) => `🛠 write: ${basename(args.path)}`,
     completionMessage: (args, result) => {
       const name = basename(args.path);
@@ -93,26 +96,4 @@ export function registerWriteFileTool(
       return `🛠 write: ${name} • ${formatBytes(sc.bytesWritten ?? 0)}`;
     },
   });
-
-  const validatedHandler = withValidatedArgs(
-    WriteFileInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'write',
-      WRITE_FILE_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      options.isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'write',
-    withDefaultIcons({ ...WRITE_FILE_TOOL }, options.iconInfo),
-    validatedHandler
-  );
 }

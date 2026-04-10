@@ -1,7 +1,8 @@
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTaskMessageQueue } from '@modelcontextprotocol/sdk/experimental/tasks/stores/in-memory.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Client } from '@modelcontextprotocol/client';
+import {
+  InMemoryTaskMessageQueue,
+  McpServer,
+} from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -14,6 +15,7 @@ import { createInMemoryResourceStore } from '../lib/resource-store.js';
 
 import { createTaskStore } from '../server/task-store.js';
 import { registerAllTools } from '../tools.js';
+import { LinkedTransport } from './linked-transport.js';
 
 export interface TestContentBlock {
   type: string;
@@ -59,10 +61,10 @@ export async function createTestEnv(): Promise<TestEnv> {
           list: {},
           cancel: {},
           requests: { tools: { call: {} } },
+          taskStore,
+          taskMessageQueue: new InMemoryTaskMessageQueue(),
         },
       },
-      taskStore,
-      taskMessageQueue: new InMemoryTaskMessageQueue(),
     }
   );
 
@@ -70,7 +72,7 @@ export async function createTestEnv(): Promise<TestEnv> {
   registerAllTools(server, { resourceStore, isInitialized: () => true });
 
   const client = new Client({ name: 'test-client', version: '1.0.0' });
-  const [ct, st] = InMemoryTransport.createLinkedPair();
+  const [ct, st] = LinkedTransport.createLinkedPair();
   await server.connect(st);
   await client.connect(ct);
 

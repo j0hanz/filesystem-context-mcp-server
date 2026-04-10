@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import { randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
@@ -25,16 +25,13 @@ import {
   executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolvePathOrRoot,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const LIST_DIRECTORY_TOOL: ToolContract = {
   name: 'ls',
@@ -287,11 +284,11 @@ export function registerListDirectoryTool(
 ): void {
   const handler = (
     args: z.infer<typeof ListDirectoryInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof ListDirectoryOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'ls',
-      extra,
+      ctx,
       outputSchema: ListDirectoryOutputSchema,
       context: { path: args.path ?? '.' },
       run: (signal) => handleListDirectory(args, signal),
@@ -303,8 +300,7 @@ export function registerListDirectoryTool(
         ),
     });
 
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: options.isInitialized,
+  registerStandardTool(server, LIST_DIRECTORY_TOOL, handler, options, {
     progressMessage: (args) => `≣ ls: ${args.path ? basename(args.path) : '.'}`,
     completionMessage: (args, result) => {
       const base = args.path ? basename(args.path) : '.';
@@ -314,26 +310,4 @@ export function registerListDirectoryTool(
       return `≣ ls: ${base} • ${count} ${count === 1 ? 'entry' : 'entries'}`;
     },
   });
-
-  const validatedHandler = withValidatedArgs(
-    ListDirectoryInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'ls',
-      LIST_DIRECTORY_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      options.isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'ls',
-    withDefaultIcons({ ...LIST_DIRECTORY_TOOL }, options.iconInfo),
-    validatedHandler
-  );
 }

@@ -1,9 +1,9 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   type GetPromptResult,
-  ErrorCode as SdkErrorCode,
-  McpError as SdkMcpError,
-} from '@modelcontextprotocol/sdk/types.js';
+  type McpServer,
+  ProtocolError,
+  ProtocolErrorCode,
+} from '@modelcontextprotocol/server';
 
 import { z } from 'zod';
 
@@ -74,14 +74,14 @@ export function registerGetHelpPrompt(
     HELP_PROMPT_NAME,
     {
       ...baseConfig,
-      argsSchema: {
+      argsSchema: z.object({
         topic: z
           .string()
           .optional()
           .describe(
             'Optional section heading prefix (example: "error handling"). Omit to return full instructions.'
           ),
-      },
+      }),
     },
     ({ topic }): GetPromptResult => {
       const text = topic
@@ -117,10 +117,10 @@ export function registerCompareFilesPrompt(
         },
         iconInfo
       ),
-      argsSchema: {
+      argsSchema: z.object({
         original: z.string().describe('Path to the original file.'),
         modified: z.string().describe('Path to the modified file.'),
-      },
+      }),
     },
     ({ original, modified }): GetPromptResult => ({
       description: COMPARE_FILES_PROMPT_DESCRIPTION,
@@ -151,9 +151,9 @@ export function registerAnalyzePathPrompt(
         },
         iconInfo
       ),
-      argsSchema: {
+      argsSchema: z.object({
         path: z.string().describe('Absolute path to analyze.'),
-      },
+      }),
     },
     ({ path: targetPath }): GetPromptResult => ({
       description: ANALYZE_PATH_PROMPT_DESCRIPTION,
@@ -184,28 +184,28 @@ export function registerGetToolHelpPrompt(
         },
         iconInfo
       ),
-      argsSchema: {
+      argsSchema: z.object({
         name: z
           .string()
           .min(1)
           .describe(
             'Tool name from tools/list or internal://tool-info/{name}.'
           ),
-      },
+      }),
     },
     ({ name }): GetPromptResult => {
       const toolName = findKnownToolName(name);
       if (!toolName) {
-        throw new SdkMcpError(
-          SdkErrorCode.InvalidParams,
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
           `Unknown tool: ${name}`
         );
       }
 
       const toolInfo = buildToolInfo(toolName);
       if (!toolInfo) {
-        throw new SdkMcpError(
-          SdkErrorCode.InvalidParams,
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
           `Unknown tool: ${toolName}`
         );
       }

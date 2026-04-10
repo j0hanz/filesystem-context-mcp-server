@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import { basename } from 'node:path';
 
@@ -17,16 +17,13 @@ import {
   buildToolResponse,
   executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const GET_FILE_INFO_TOOL: ToolContract = {
   name: 'stat',
@@ -78,11 +75,11 @@ export function registerGetFileInfoTool(
 ): void {
   const handler = (
     args: z.infer<typeof GetFileInfoInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof GetFileInfoOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'stat',
-      extra,
+      ctx,
       outputSchema: GetFileInfoOutputSchema,
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: args.path },
@@ -91,8 +88,7 @@ export function registerGetFileInfoTool(
         buildToolErrorResponse(error, ErrorCode.NOT_FOUND, args.path),
     });
 
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: options.isInitialized,
+  registerStandardTool(server, GET_FILE_INFO_TOOL, handler, options, {
     progressMessage: (args) => `🕮 stat: ${basename(args.path)}`,
     completionMessage: (args, result) => {
       const name = basename(args.path);
@@ -102,26 +98,4 @@ export function registerGetFileInfoTool(
       return `🕮 stat: ${sc.info.name} • ${sc.info.type}, ${formatBytes(sc.info.size)}`;
     },
   });
-
-  const validatedHandler = withValidatedArgs(
-    GetFileInfoInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'stat',
-      GET_FILE_INFO_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      options.isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'stat',
-    withDefaultIcons({ ...GET_FILE_INFO_TOOL }, options.iconInfo),
-    validatedHandler
-  );
 }

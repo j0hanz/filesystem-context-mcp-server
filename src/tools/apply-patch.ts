@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import { readFile, stat } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
@@ -21,16 +21,13 @@ import {
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   executeToolWithDiagnostics,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const APPLY_PATCH_TOOL: ToolContract = {
   name: 'apply_patch',
@@ -318,21 +315,30 @@ export function registerApplyPatchTool(
 ): void {
   const handler = (
     args: z.infer<typeof ApplyPatchInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof ApplyPatchOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'apply_patch',
-      extra,
+      ctx,
       outputSchema: ApplyPatchOutputSchema,
       timedSignal: {},
       context: { path: args.path },
-      run: (signal) => handleApplyPatch(args, signal),
+      run: async (signal) => {
+        const result = await handleApplyPatch(args, signal);
+        if (!args.dryRun) {
+          const sc = result.structuredContent;
+          void ctx.log?.(
+            'info',
+            `patch: ${args.path} (+${String(sc.linesAdded ?? 0)}/-${String(sc.linesRemoved ?? 0)})`
+          );
+        }
+        return result;
+      },
       onError: (error) =>
         buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
     });
 
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: options.isInitialized,
+  registerStandardTool(server, APPLY_PATCH_TOOL, handler, options, {
     progressMessage: (args) => {
       const name = basename(args.path);
       return args.dryRun ? `🛠 patch: ${name} [dry run]` : `🛠 patch: ${name}`;
@@ -350,26 +356,4 @@ export function registerApplyPatchTool(
       return `🛠 patch: ${name} • ${dry}no changes`;
     },
   });
-
-  const validatedHandler = withValidatedArgs(
-    ApplyPatchInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'apply_patch',
-      APPLY_PATCH_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      options.isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'apply_patch',
-    withDefaultIcons({ ...APPLY_PATCH_TOOL }, options.iconInfo),
-    validatedHandler
-  );
 }

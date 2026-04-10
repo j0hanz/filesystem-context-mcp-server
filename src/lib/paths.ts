@@ -1,4 +1,4 @@
-import type { Root } from '@modelcontextprotocol/sdk/types.js';
+import type { Root } from '@modelcontextprotocol/server';
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { realpath, stat } from 'node:fs/promises';

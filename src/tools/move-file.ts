@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import { cp, mkdir, rename, rm, stat } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
@@ -27,16 +27,13 @@ import {
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   executeToolWithDiagnostics,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const MOVE_FILE_TOOL: ToolContract = {
   name: 'mv',
@@ -273,15 +270,22 @@ export function registerMoveFileTool(
 ): void {
   const handler = (
     args: z.infer<typeof MoveFileInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof MoveFileOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'mv',
-      extra,
+      ctx,
       outputSchema: MoveFileOutputSchema,
       timedSignal: {},
       context: { path: args.source ?? args.sources?.[0] },
-      run: (signal) => handleMoveFile(args, signal),
+      run: async (signal) => {
+        const result = await handleMoveFile(args, signal);
+        void ctx.log?.(
+          'info',
+          `mv: ${args.source ?? args.sources?.join(', ') ?? ''} \u2192 ${args.destination}`
+        );
+        return result;
+      },
       onError: (error) =>
         buildToolErrorResponse(
           error,
@@ -290,8 +294,7 @@ export function registerMoveFileTool(
         ),
     });
 
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: options.isInitialized,
+  registerStandardTool(server, MOVE_FILE_TOOL, handler, options, {
     progressMessage: (args) => {
       const dest = basename(args.destination);
       if (args.source && !args.sources?.length) {
@@ -312,26 +315,4 @@ export function registerMoveFileTool(
       return `🛠 mv: ${count} items → ${dest}`;
     },
   });
-
-  const validatedHandler = withValidatedArgs(
-    MoveFileInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'mv',
-      MOVE_FILE_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      options.isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'mv',
-    withDefaultIcons({ ...MOVE_FILE_TOOL }, options.iconInfo),
-    validatedHandler
-  );
 }

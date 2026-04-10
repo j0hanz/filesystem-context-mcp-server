@@ -1,13 +1,13 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type {
   LoggingLevel,
   LoggingMessageNotificationParams,
-} from '@modelcontextprotocol/sdk/types.js';
+  McpServer,
+} from '@modelcontextprotocol/server';
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { channel } from 'node:diagnostics_channel';
 
-export interface SessionContextData {
+interface SessionContextData {
   sessionId?: string;
 }
 
@@ -44,7 +44,7 @@ export function createLoggingState(
   return { minimumLevel };
 }
 
-export function canSendMcpLogs(server: McpServer): boolean {
+function canSendMcpLogs(server: McpServer): boolean {
   const capabilities = server.server.getClientCapabilities();
   if (!capabilities || typeof capabilities !== 'object') return false;
   return 'logging' in capabilities && Boolean(capabilities.logging);

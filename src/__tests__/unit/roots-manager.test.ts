@@ -1,8 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import {
-  InitializedNotificationSchema,
-  RootsListChangedNotificationSchema,
-} from '@modelcontextprotocol/sdk/types.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { describe, it, mock } from 'node:test';
@@ -21,13 +17,13 @@ function createFakeServer(): {
   const server = {
     server: {
       setNotificationHandler: (
-        schema: unknown,
+        method: string,
         handler: (() => Promise<void>) | (() => void)
       ) => {
-        if (schema === InitializedNotificationSchema) {
+        if (method === 'notifications/initialized') {
           initializedHandler = handler as () => Promise<void>;
         }
-        if (schema === RootsListChangedNotificationSchema) {
+        if (method === 'notifications/roots/list_changed') {
           rootsChangedHandler = handler as () => void;
         }
       },

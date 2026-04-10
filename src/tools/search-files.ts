@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import { basename, relative } from 'node:path';
 
@@ -24,17 +24,14 @@ import {
   notifyProgress,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolvePathOrRoot,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
   truncateProgressPattern,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const SEARCH_FILES_TOOL: ToolContract = {
   name: 'find',
@@ -182,11 +179,11 @@ export function registerSearchFilesTool(
 ): void {
   const handler = (
     args: z.infer<typeof SearchFilesInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof SearchFilesOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'find',
-      extra,
+      ctx,
       outputSchema: SearchFilesOutputSchema,
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: args.path ?? '.' },
@@ -197,12 +194,12 @@ export function registerSearchFilesTool(
         const truncatedPattern = truncateProgressPattern(pattern);
         const context = `${truncatedPattern} in ${scopeLabel}`;
         let progressCursor = 0;
-        notifyProgress(extra, {
+        notifyProgress(ctx, {
           current: 0,
           message: `🔎︎ find: ${truncatedPattern}`,
         });
 
-        const baseReporter = createProgressReporter(extra);
+        const baseReporter = createProgressReporter(ctx);
         const progressWithMessage = ({
           current,
           total,
@@ -245,7 +242,7 @@ export function registerSearchFilesTool(
             (sc.filesScanned ?? 0) + 1,
             progressCursor + 1
           );
-          notifyProgress(extra, {
+          notifyProgress(ctx, {
             current: finalCurrent,
             total: finalCurrent,
             message: `🔎︎ find: ${context} • ${suffix}`,
@@ -253,7 +250,7 @@ export function registerSearchFilesTool(
           return result;
         } catch (error) {
           const finalCurrent = Math.max(progressCursor + 1, 1);
-          notifyProgress(extra, {
+          notifyProgress(ctx, {
             current: finalCurrent,
             total: finalCurrent,
             message: `🔎︎ find: ${context} • failed`,
@@ -265,31 +262,5 @@ export function registerSearchFilesTool(
         buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
     });
 
-  const { isInitialized } = options;
-
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: isInitialized,
-  });
-
-  const validatedHandler = withValidatedArgs(
-    SearchFilesInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'find',
-      SEARCH_FILES_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'find',
-    withDefaultIcons({ ...SEARCH_FILES_TOOL }, options.iconInfo),
-    validatedHandler
-  );
+  registerStandardTool(server, SEARCH_FILES_TOOL, handler, options);
 }

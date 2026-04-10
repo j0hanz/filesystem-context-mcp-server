@@ -173,7 +173,7 @@ function createCliProgram(output: string[]): Command {
     )
     .option(
       '--port <number>',
-      'Enable HTTP transport on the given port (MCP Streamable HTTP with SSE)'
+      'Enable HTTP transport on the given port (Node Streamable HTTP)'
     )
     .helpOption('-h, --help', 'Display command help')
     .version(SERVER_VERSION, '-v, --version', 'Display server version')

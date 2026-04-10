@@ -2,7 +2,7 @@
   "name": "@j0hanz/filesystem-mcp",
   "version": "1.16.2",
   "mcpName": "io.github.j0hanz/filesystem-mcp",
-  "description": "A local filesystem MCP server that lets LLMs and AI agents read, write, search, diff, patch, and manage files safely and efficiently. Built for reliable, structured, and controlled filesystem interaction.",
+  "description": "Secure filesystem MCP server for reading, writing, searching, diffing, and patching files.",
   "author": "j0hanz",
   "license": "MIT",
   "repository": {
@@ -68,14 +68,16 @@
     "security",
     "server",
     "stdio",
-    "sse",
     "typescript",
     "nodejs",
     "llm",
     "cli"
   ],
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@cfworker/json-schema": "^4.1.1",
+    "@modelcontextprotocol/client": "^2.0.0-alpha.2",
+    "@modelcontextprotocol/node": "^2.0.0-alpha.2",
+    "@modelcontextprotocol/server": "^2.0.0-alpha.2",
     "commander": "^14.0.3",
     "diff": "^8.0.4",
     "ignore": "^7.0.5",

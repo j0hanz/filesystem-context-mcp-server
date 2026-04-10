@@ -3,10 +3,10 @@
  * (tasks/create + tasks/get + tasks/result lifecycle).
  */
 import {
-  CallToolResultSchema,
-  CreateTaskResultSchema,
-  GetTaskResultSchema,
-} from '@modelcontextprotocol/sdk/types.js';
+  type CallToolResult,
+  type CreateTaskResult,
+  type GetTaskResult,
+} from '@modelcontextprotocol/client';
 
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
@@ -35,10 +35,10 @@ async function pollUntilDone(
 ): Promise<{ status: string }> {
   for (let i = 0; i < MAX_POLLS; i++) {
     await delay(POLL_INTERVAL_MS);
-    const got = await client.request(
-      { method: 'tasks/get' as const, params: { taskId } },
-      GetTaskResultSchema
-    );
+    const got = (await client.request({
+      method: 'tasks/get' as const,
+      params: { taskId },
+    })) as GetTaskResult;
     if (TERMINAL_STATUSES.has(got.status)) return { status: got.status };
   }
   assert.fail(
@@ -66,7 +66,7 @@ describe('task mode: diff_files', () => {
   });
 
   it('creates a task and completes with diff result', async () => {
-    const createResult = await env.client.request(
+    const createResult = (await env.client.request(
       {
         method: 'tools/call' as const,
         params: {
@@ -74,9 +74,8 @@ describe('task mode: diff_files', () => {
           arguments: { original: fileA, modified: fileB },
         },
       },
-      CreateTaskResultSchema,
       { task: {} }
-    );
+    )) as CreateTaskResult;
 
     const { taskId } = createResult.task;
     assert.ok(taskId, 'taskId must be non-empty');
@@ -88,10 +87,10 @@ describe('task mode: diff_files', () => {
     const taskState = await pollUntilDone(env.client, taskId);
     assert.equal(taskState.status, 'completed', 'task must complete');
 
-    const result = await env.client.request(
-      { method: 'tasks/result' as const, params: { taskId } },
-      CallToolResultSchema
-    );
+    const result = (await env.client.request({
+      method: 'tasks/result' as const,
+      params: { taskId },
+    })) as CallToolResult;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
@@ -99,7 +98,7 @@ describe('task mode: diff_files', () => {
   });
 
   it('tasks/get returns valid task metadata', async () => {
-    const createResult = await env.client.request(
+    const createResult = (await env.client.request(
       {
         method: 'tools/call' as const,
         params: {
@@ -107,9 +106,8 @@ describe('task mode: diff_files', () => {
           arguments: { original: fileA, modified: fileB },
         },
       },
-      CreateTaskResultSchema,
       { task: {} }
-    );
+    )) as CreateTaskResult;
 
     const { taskId } = createResult.task;
     const taskState = await pollUntilDone(env.client, taskId);
@@ -149,7 +147,7 @@ describe('task mode: apply_patch', () => {
       '',
     ].join('\n');
 
-    const createResult = await env.client.request(
+    const createResult = (await env.client.request(
       {
         method: 'tools/call' as const,
         params: {
@@ -157,9 +155,8 @@ describe('task mode: apply_patch', () => {
           arguments: { path: target, patch },
         },
       },
-      CreateTaskResultSchema,
       { task: {} }
-    );
+    )) as CreateTaskResult;
 
     const { taskId } = createResult.task;
     assert.ok(taskId, 'taskId must be non-empty');
@@ -167,10 +164,10 @@ describe('task mode: apply_patch', () => {
     const taskState = await pollUntilDone(env.client, taskId);
     assert.equal(taskState.status, 'completed', 'task must complete');
 
-    const result = await env.client.request(
-      { method: 'tasks/result' as const, params: { taskId } },
-      CallToolResultSchema
-    );
+    const result = (await env.client.request({
+      method: 'tasks/result' as const,
+      params: { taskId },
+    })) as CallToolResult;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
@@ -191,7 +188,7 @@ describe('task mode: apply_patch', () => {
       '',
     ].join('\n');
 
-    const createResult = await env.client.request(
+    const createResult = (await env.client.request(
       {
         method: 'tools/call' as const,
         params: {
@@ -199,18 +196,17 @@ describe('task mode: apply_patch', () => {
           arguments: { path: target, patch, dryRun: true },
         },
       },
-      CreateTaskResultSchema,
       { task: {} }
-    );
+    )) as CreateTaskResult;
 
     const { taskId } = createResult.task;
     const taskState = await pollUntilDone(env.client, taskId);
     assert.equal(taskState.status, 'completed', 'dry run task must complete');
 
-    const result = await env.client.request(
-      { method: 'tasks/result' as const, params: { taskId } },
-      CallToolResultSchema
-    );
+    const result = (await env.client.request({
+      method: 'tasks/result' as const,
+      params: { taskId },
+    })) as CallToolResult;
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);

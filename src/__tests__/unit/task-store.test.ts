@@ -1,5 +1,3 @@
-import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
-
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
@@ -24,13 +22,22 @@ describe('ResultAwareInMemoryTaskStore', () => {
         'test-session'
       );
 
-      const rawResult = await store.getTaskResult(task.taskId, 'test-session');
-      const result = CallToolResultSchema.parse(rawResult);
+      const result = (await store.getTaskResult(
+        task.taskId,
+        'test-session'
+      )) as {
+        isError?: boolean;
+        errorCode?: string;
+        content: Array<{ type: string; text?: string }>;
+      };
       assert.equal(result.isError, true);
       assert.equal(result.errorCode, ErrorCode.CANCELLED);
 
       const textBlock = result.content.find(
-        (block): block is { type: 'text'; text: string } =>
+        (block: {
+          type: string;
+          text?: string;
+        }): block is { type: 'text'; text: string } =>
           block.type === 'text' && typeof block.text === 'string'
       );
       assert.ok(textBlock, 'Expected a text error payload');

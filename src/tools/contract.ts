@@ -1,4 +1,4 @@
-import type { Icon } from '@modelcontextprotocol/sdk/types.js';
+import type { Icon } from '@modelcontextprotocol/server';
 
 import type { ZodType } from 'zod';
 

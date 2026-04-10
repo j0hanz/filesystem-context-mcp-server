@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import { Buffer } from 'node:buffer';
 import { type FileHandle, open } from 'node:fs/promises';
@@ -37,17 +37,14 @@ import {
   executeToolWithDiagnostics,
   resolveFinalProgressCurrent,
   resolvePathOrRoot,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
   truncateProgressPattern,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const SEARCH_AND_REPLACE_TOOL: ToolContract = {
   name: 'search_and_replace',
@@ -525,11 +522,11 @@ export function registerSearchAndReplaceTool(
 ): void {
   const handler = (
     args: z.infer<typeof SearchAndReplaceInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof SearchAndReplaceOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'search_and_replace',
-      extra,
+      ctx,
       outputSchema: SearchAndReplaceOutputSchema,
       timedSignal: {},
       ...(args.path ? { context: { path: args.path } } : {}),
@@ -538,7 +535,7 @@ export function registerSearchAndReplaceTool(
         const truncatedPattern = truncateProgressPattern(args.searchPattern);
         const context = `"${truncatedPattern}" in ${args.filePattern}${dryLabel}`;
         const progress = createToolProgressSession(
-          extra,
+          ctx,
           `🛠 replace: ${context}`
         );
         const progressWithMessage = ({
@@ -574,6 +571,12 @@ export function registerSearchAndReplaceTool(
             `🛠 replace: ${context} • ${endSuffix}`,
             finalCurrent
           );
+          if (!args.dryRun) {
+            void ctx.log?.(
+              'info',
+              `search_and_replace: ${String(sc.matches ?? 0)} matches in ${String(sc.filesChanged ?? 0)} files`
+            );
+          }
           return result;
         } catch (error) {
           progress.fail(`🛠 replace: ${context} • failed`);
@@ -584,33 +587,7 @@ export function registerSearchAndReplaceTool(
         buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
     });
 
-  const { isInitialized } = options;
-
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: isInitialized,
-  });
-
-  const validatedHandler = withValidatedArgs(
-    SearchAndReplaceInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'search_and_replace',
-      SEARCH_AND_REPLACE_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'search_and_replace',
-    withDefaultIcons({ ...SEARCH_AND_REPLACE_TOOL }, options.iconInfo),
-    validatedHandler
-  );
+  registerStandardTool(server, SEARCH_AND_REPLACE_TOOL, handler, options);
 }
 
 function buildSearchAndReplaceText(

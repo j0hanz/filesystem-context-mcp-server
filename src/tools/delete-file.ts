@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import { lstat, rm, rmdir } from 'node:fs/promises';
 import { basename } from 'node:path';
@@ -17,16 +17,13 @@ import {
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   executeToolWithDiagnostics,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const DELETE_FILE_TOOL: ToolContract = {
   name: 'rm',
@@ -99,15 +96,19 @@ export function registerDeleteFileTool(
 ): void {
   const handler = (
     args: z.infer<typeof DeleteFileInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof DeleteFileOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'rm',
-      extra,
+      ctx,
       outputSchema: DeleteFileOutputSchema,
       timedSignal: {},
       context: { path: args.path },
-      run: (signal) => handleDeleteFile(args, signal),
+      run: async (signal) => {
+        const result = await handleDeleteFile(args, signal);
+        void ctx.log?.('info', `rm: ${args.path}`);
+        return result;
+      },
       onError: (error) => {
         if (isNodeError(error)) {
           if (error.code === 'ENOENT') {
@@ -150,8 +151,7 @@ export function registerDeleteFileTool(
       },
     });
 
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: options.isInitialized,
+  registerStandardTool(server, DELETE_FILE_TOOL, handler, options, {
     progressMessage: (args) => `🛠 rm: ${basename(args.path)}`,
     completionMessage: (args, result) => {
       const name = basename(args.path);
@@ -159,26 +159,4 @@ export function registerDeleteFileTool(
       return `🛠 rm: ${name}`;
     },
   });
-
-  const validatedHandler = withValidatedArgs(
-    DeleteFileInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'rm',
-      DELETE_FILE_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      options.isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'rm',
-    withDefaultIcons({ ...DELETE_FILE_TOOL }, options.iconInfo),
-    validatedHandler
-  );
 }

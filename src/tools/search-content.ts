@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import { relative } from 'node:path';
 
@@ -31,17 +31,14 @@ import {
   READ_ONLY_TOOL_ANNOTATIONS,
   resolveFinalProgressCurrent,
   resolvePathOrRoot,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
   truncateProgressPattern,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 /**
  * Configuration constants for the Search Content tool.
@@ -412,17 +409,17 @@ export function registerSearchContentTool(
 ): void {
   const handler = (
     args: SearchInput,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<SearchOutput>> =>
     executeToolWithDiagnostics({
       toolName: 'grep',
-      extra,
+      ctx,
       outputSchema: SearchContentOutputSchema,
       context: { path: args.path ?? '.' },
       run: async (signal) => {
         const { pattern, filePattern: scope } = args;
         const progressLabel = `🔎︎ grep: ${truncateProgressPattern(pattern)}`;
-        const progress = createToolProgressSession(extra, progressLabel);
+        const progress = createToolProgressSession(ctx, progressLabel);
 
         const progressWithMessage = ({
           current,
@@ -471,30 +468,5 @@ export function registerSearchContentTool(
         buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path ?? '.'),
     });
 
-  const { isInitialized } = options;
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: isInitialized,
-  });
-
-  const validatedHandler = withValidatedArgs(
-    SearchContentInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'grep',
-      SEARCH_CONTENT_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'grep',
-    withDefaultIcons({ ...SEARCH_CONTENT_TOOL }, options.iconInfo),
-    validatedHandler
-  );
+  registerStandardTool(server, SEARCH_CONTENT_TOOL, handler, options);
 }

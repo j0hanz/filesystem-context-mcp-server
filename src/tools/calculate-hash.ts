@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import { type BinaryToTextEncoding, createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
@@ -30,16 +30,13 @@ import {
   executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolveFinalProgressCurrent,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 const WINDOWS_PATH_SEPARATOR = /\\/gu;
 
@@ -234,20 +231,17 @@ export function registerCalculateHashTool(
 ): void {
   const handler = (
     args: z.infer<typeof CalculateHashInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof CalculateHashOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'calculate_hash',
-      extra,
+      ctx,
       outputSchema: CalculateHashOutputSchema,
       timedSignal: {},
       context: { path: args.path },
       run: async (signal) => {
         const baseName = basename(args.path);
-        const progress = createToolProgressSession(
-          extra,
-          `🕮 hash: ${baseName}`
-        );
+        const progress = createToolProgressSession(ctx, `🕮 hash: ${baseName}`);
         const progressWithMessage = ({
           current,
           total,
@@ -291,29 +285,5 @@ export function registerCalculateHashTool(
         buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
     });
 
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: options.isInitialized,
-  });
-
-  const validatedHandler = withValidatedArgs(
-    CalculateHashInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'calculate_hash',
-      CALCULATE_HASH_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      options.isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'calculate_hash',
-    withDefaultIcons({ ...CALCULATE_HASH_TOOL }, options.iconInfo),
-    validatedHandler
-  );
+  registerStandardTool(server, CALCULATE_HASH_TOOL, handler, options);
 }

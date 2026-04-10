@@ -6,7 +6,7 @@
 
 [![Add to LM Studio](https://files.lmstudio.ai/deeplink/mcp-install-light.svg)](https://lmstudio.ai/install-mcp?name=filesystem&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBqMGhhbnovZmlsZXN5c3RlbS1tY3BAbGF0ZXN0Il19) [![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=filesystem&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBqMGhhbnovZmlsZXN5c3RlbS1tY3BAbGF0ZXN0Il19)
 
-A local filesystem MCP server that lets LLMs and AI agents read, write, search, diff, patch, and manage files safely and efficiently. Built for reliable, structured, and controlled filesystem interaction.
+Secure filesystem MCP server for reading, writing, searching, diffing, and patching files.
 
 ## Table of Contents
 
@@ -30,13 +30,13 @@ A local filesystem MCP server that lets LLMs and AI agents read, write, search, 
 
 A secure, production-ready [Model Context Protocol](https://modelcontextprotocol.io) server that gives AI assistants controlled access to the local filesystem. All operations are sandboxed to explicitly allowed directories with path traversal prevention, sensitive file blocking, and optional Bearer token authentication.
 
-Supports stdio (default) and Streamable HTTP transport with SSE support. HTTP sessions are implemented with isolated per-session server state.
+Supports stdio (default) and Node Streamable HTTP transport. HTTP sessions are implemented with isolated per-session server state. The HTTP transport is stateful by default and currently non-resumable; it does not persist an event store for `Last-Event-ID` replay.
 
 ## Key Features
 
 - **18 filesystem tools** — read, write, search, diff, patch, hash, and bulk operations with structured output schemas
-- **Security-first** — path validation, symlink escape prevention, sensitive file denylist, localhost-only CORS, optional API key auth
-- **Dual transport** — stdio for local use, Streamable HTTP with SSE for networked/multi-session deployments
+- **Security-first** — path validation, symlink escape prevention, sensitive file denylist, localhost-only CORS, Host header validation for loopback HTTP binds, optional API key auth
+- **Dual transport** — stdio for local use, Node Streamable HTTP for networked/multi-session deployments
 - **Structured output** — all tools return typed `outputSchema` / `structuredContent` for reliable LLM parsing
 - **Self-documenting** — 6 built-in resources (`internal://instructions`, `internal://tool-catalog`, etc.) and 4 built-in prompts (`get-help`, `compare-files`, `analyze-path`, `get-tool-help`)
 
@@ -524,7 +524,7 @@ Create directories, move/rename files, delete files, and verify file integrity v
 ```text
 [MCP Client]
     |
-    | Transport: stdio (default) or Streamable HTTP + SSE (--port)
+    | Transport: stdio (default) or Node Streamable HTTP (--port)
     v
 [MCP Server: filesystem-mcp]
     | Entry: src/index.ts -> src/server/bootstrap.ts
@@ -940,7 +940,7 @@ When started with `--port <number>`, the server exposes a single MCP endpoint:
 | Method   | Path   | Purpose                                               |
 | -------- | ------ | ----------------------------------------------------- |
 | `POST`   | `/mcp` | Initialize session or send requests (Streamable HTTP) |
-| `GET`    | `/mcp` | Server-Sent Events stream for a session               |
+| `GET`    | `/mcp` | HTTP streaming session endpoint                       |
 | `DELETE` | `/mcp` | Terminate a session                                   |
 
 **Required headers:**
@@ -951,6 +951,8 @@ When started with `--port <number>`, the server exposes a single MCP endpoint:
 **Authentication:** Requests to non-loopback HTTP binds require `FILESYSTEM_MCP_API_KEY`; clients must then send `Authorization: Bearer <key>`. Loopback-only binds may omit auth for local use. Uses SHA-256 timing-safe comparison.
 
 **CORS:** Only localhost origins allowed (`127.0.0.1`, `::1`, `localhost`).
+
+**Host validation:** Loopback HTTP binds validate the `Host` header (`localhost`, `127.0.0.1`, `[::1]`) to reduce DNS rebinding risk. Non-loopback binds still require `FILESYSTEM_MCP_API_KEY`.
 
 ## Security
 
@@ -998,14 +1000,16 @@ When started with `--port <number>`, the server exposes a single MCP endpoint:
 
 ## Credits
 
-| Dependency                                                                           | Description                                   |
-| ------------------------------------------------------------------------------------ | --------------------------------------------- |
-| [@modelcontextprotocol/sdk](https://www.npmjs.com/package/@modelcontextprotocol/sdk) | MCP TypeScript SDK                            |
-| [commander](https://www.npmjs.com/package/commander)                                 | CLI argument parsing                          |
-| [diff](https://www.npmjs.com/package/diff)                                           | Unified diff generation and patch application |
-| [ignore](https://www.npmjs.com/package/ignore)                                       | `.gitignore` pattern matching                 |
-| [re2](https://www.npmjs.com/package/re2)                                             | Safe RE2 regex engine (no ReDoS)              |
-| [zod](https://www.npmjs.com/package/zod)                                             | Schema validation and JSON Schema generation  |
+| Dependency                                                                                 | Description                                   |
+| ------------------------------------------------------------------------------------------ | --------------------------------------------- |
+| [@modelcontextprotocol/server](https://www.npmjs.com/package/@modelcontextprotocol/server) | MCP server SDK package                        |
+| [@modelcontextprotocol/client](https://www.npmjs.com/package/@modelcontextprotocol/client) | MCP client SDK package                        |
+| [@modelcontextprotocol/node](https://www.npmjs.com/package/@modelcontextprotocol/node)     | Node transport package for MCP runtime        |
+| [commander](https://www.npmjs.com/package/commander)                                       | CLI argument parsing                          |
+| [diff](https://www.npmjs.com/package/diff)                                                 | Unified diff generation and patch application |
+| [ignore](https://www.npmjs.com/package/ignore)                                             | `.gitignore` pattern matching                 |
+| [re2](https://www.npmjs.com/package/re2)                                                   | Safe RE2 regex engine (no ReDoS)              |
+| [zod](https://www.npmjs.com/package/zod)                                                   | Schema validation and JSON Schema generation  |
 
 ## License
 

@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { z } from 'zod';
 
@@ -23,16 +23,13 @@ import {
   executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolveFinalProgressCurrent,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const GET_MULTIPLE_FILE_INFO_TOOL: ToolContract = {
   name: 'stat_many',
@@ -111,26 +108,23 @@ export function registerGetMultipleFileInfoTool(
 ): void {
   const handler = (
     args: z.infer<typeof GetMultipleFileInfoInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof GetMultipleFileInfoOutputSchema>>> => {
     const primaryPath = args.paths[0] ?? '';
     return executeToolWithDiagnostics({
       toolName: 'stat_many',
-      extra,
+      ctx,
       outputSchema: GetMultipleFileInfoOutputSchema,
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: primaryPath },
       run: async (signal) => {
         const context = buildBatchPathContext(args.paths);
-        const { progress, onItemComplete } = createBatchProgressCallbacks(
-          extra,
-          {
-            toolLabel: '🕮 stat_many',
-            context,
-            totalItems: args.paths.length,
-            itemVerb: 'done',
-          }
-        );
+        const { progress, onItemComplete } = createBatchProgressCallbacks(ctx, {
+          toolLabel: '🕮 stat_many',
+          context,
+          totalItems: args.paths.length,
+          itemVerb: 'done',
+        });
 
         try {
           const result = await handleGetMultipleFileInfo(
@@ -159,29 +153,5 @@ export function registerGetMultipleFileInfoTool(
     });
   };
 
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: options.isInitialized,
-  });
-
-  const validatedHandler = withValidatedArgs(
-    GetMultipleFileInfoInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'stat_many',
-      GET_MULTIPLE_FILE_INFO_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      options.isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'stat_many',
-    withDefaultIcons({ ...GET_MULTIPLE_FILE_INFO_TOOL }, options.iconInfo),
-    validatedHandler
-  );
+  registerStandardTool(server, GET_MULTIPLE_FILE_INFO_TOOL, handler, options);
 }

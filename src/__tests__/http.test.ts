@@ -1,10 +1,17 @@
+import {
+  Client,
+  StreamableHTTPClientTransport,
+} from '@modelcontextprotocol/client';
+
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { request as httpRequest } from 'node:http';
 import type { Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 
+import { getToolContracts } from '../resources/tool-info.js';
 import { startHttpServer } from '../server/bootstrap.js';
 
 function getServerPort(server: Server): number {
@@ -29,6 +36,63 @@ function parseSseJsonPayload(rawBody: string): unknown {
   return JSON.parse(dataLines.join('\n')) as unknown;
 }
 
+async function rawHttpRequest(params: {
+  port: number;
+  method: string;
+  path?: string;
+  headers?: Record<string, string>;
+  body?: string;
+}): Promise<{
+  statusCode: number;
+  headers: Record<string, string | string[] | undefined>;
+  body: string;
+}> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(
+      {
+        host: '127.0.0.1',
+        port: params.port,
+        method: params.method,
+        path: params.path ?? '/mcp',
+        headers: params.headers,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk) => {
+          chunks.push(Buffer.from(chunk));
+        });
+        res.on('end', () => {
+          resolve({
+            statusCode: res.statusCode ?? 0,
+            headers: res.headers,
+            body: Buffer.concat(chunks).toString('utf8'),
+          });
+        });
+      }
+    );
+    req.on('error', reject);
+    if (params.body) {
+      req.write(params.body);
+    }
+    req.end();
+  });
+}
+
+async function createHttpClient(port: number): Promise<{
+  client: Client;
+  transport: StreamableHTTPClientTransport;
+}> {
+  const client = new Client({
+    name: 'http-transport-test',
+    version: '1.0.0',
+  });
+  const transport = new StreamableHTTPClientTransport(
+    new URL(`http://127.0.0.1:${String(port)}/mcp`)
+  );
+  await client.connect(transport);
+  return { client, transport };
+}
+
 async function closeServer(server: Server): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     server.close((error) => {
@@ -43,6 +107,12 @@ async function closeServer(server: Server): Promise<void> {
 
 describe('HTTP transport', () => {
   const servers: Server[] = [];
+  const staticResourceUris = [
+    'filesystem-mcp://metrics',
+    'internal://instructions',
+    'internal://tool-catalog',
+    'internal://workflows',
+  ];
   let tempDir: string | undefined;
 
   afterEach(async () => {
@@ -91,6 +161,24 @@ describe('HTTP transport', () => {
       sessionId,
       'Expected initialize response to include Mcp-Session-Id'
     );
+    const initPayload = parseSseJsonPayload(await initResponse.text()) as {
+      result?: {
+        protocolVersion?: string;
+        serverInfo?: { name?: string; version?: string };
+        instructions?: string;
+        capabilities?: Record<string, unknown>;
+      };
+    };
+    assert.equal(initPayload.result?.protocolVersion, '2025-06-18');
+    assert.equal(initPayload.result?.serverInfo?.name, 'filesystem-mcp');
+    assert.ok(initPayload.result?.serverInfo?.version);
+    assert.match(initPayload.result?.instructions ?? '', /Start with:/u);
+    assert.ok(initPayload.result?.capabilities?.['tools']);
+    assert.ok(initPayload.result?.capabilities?.['resources']);
+    assert.ok(initPayload.result?.capabilities?.['prompts']);
+    assert.ok(initPayload.result?.capabilities?.['completions']);
+    assert.ok(initPayload.result?.capabilities?.['tasks']);
+    assert.ok(initPayload.result?.capabilities?.['logging']);
 
     const initializedResponse = await fetch(
       `http://127.0.0.1:${String(port)}/mcp`,
@@ -361,6 +449,36 @@ describe('HTTP transport', () => {
     assert.match(await response.text(), /Forbidden: disallowed origin/u);
   });
 
+  it('rejects loopback requests with a disallowed Host header', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+
+    const port = getServerPort(server);
+    const response = await rawHttpRequest({
+      port,
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+        host: 'evil.test',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-11-25',
+          capabilities: {},
+          clientInfo: { name: 'http-test', version: '1.0.0' },
+        },
+      }),
+    });
+
+    assert.equal(response.statusCode, 403);
+    assert.match(response.body, /Forbidden: Invalid Host/u);
+  });
+
   it('returns 405 for unsupported HTTP methods on /mcp', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
     const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
@@ -394,5 +512,53 @@ describe('HTTP transport', () => {
       () => startHttpServer(0, { cliAllowedDirs: [dir] }),
       /Refusing to bind HTTP server to non-loopback host/
     );
+  });
+
+  it('supports discovery and session termination through the real v2 HTTP client transport', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+
+    const port = getServerPort(server);
+    const { client, transport } = await createHttpClient(port);
+
+    try {
+      const instructions = client.getInstructions();
+      assert.ok(instructions);
+      assert.match(instructions, /internal:\/\/instructions/u);
+
+      const { tools } = await client.listTools();
+      const { resources } = await client.listResources();
+      const { resourceTemplates } = await client.listResourceTemplates();
+      const { prompts } = await client.listPrompts();
+      const toolInfoUris = getToolContracts()
+        .map((contract) => `internal://tool-info/${contract.name}`)
+        .sort();
+      const resourceUris = resources.map((resource) => resource.uri).sort();
+
+      assert.equal(tools.length, 18);
+      assert.deepEqual(
+        resourceUris,
+        [...staticResourceUris, ...toolInfoUris].sort()
+      );
+      assert.deepEqual(
+        resourceTemplates.map((template) => template.uriTemplate).sort(),
+        ['filesystem-mcp://result/{id}', 'internal://tool-info/{name}']
+      );
+      assert.deepEqual(prompts.map((prompt) => prompt.name).sort(), [
+        'analyze-path',
+        'compare-files',
+        'get-help',
+        'get-tool-help',
+      ]);
+
+      const metrics = await client.readResource({
+        uri: 'filesystem-mcp://metrics',
+      });
+      assert.equal(metrics.contents.length, 1);
+    } finally {
+      await transport.terminateSession().catch(() => {});
+      await client.close().catch(() => {});
+    }
   });
 });

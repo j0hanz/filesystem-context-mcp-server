@@ -1,6 +1,10 @@
-import { InMemoryTaskStore } from '@modelcontextprotocol/sdk/experimental/tasks/stores/in-memory.js';
-import type { RequestTaskStore } from '@modelcontextprotocol/sdk/shared/protocol.js';
-import type { Task } from '@modelcontextprotocol/sdk/types.js';
+import {
+  type CreateTaskServerContext,
+  InMemoryTaskStore,
+  type RequestTaskStore,
+  type Task,
+  type TaskServerContext,
+} from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
@@ -61,21 +65,34 @@ function createTestTaskStore(): RequestTaskStore & { cleanup: () => void } {
   };
 }
 
-function createMockExtra(taskStore: RequestTaskStore) {
+function createMockExtra(taskStore: RequestTaskStore): CreateTaskServerContext {
+  const signal = new AbortController().signal;
   return {
-    signal: new AbortController().signal,
-    requestId: 1,
-    taskStore,
-    sendNotification: async () => {},
-    sendRequest: async () => ({}) as never,
-  };
+    mcpReq: {
+      id: 1,
+      method: 'tools/call',
+      signal,
+      notify: async () => {},
+      send: async () => ({}) as never,
+    },
+    sessionId: 'test-session',
+    task: {
+      store: taskStore,
+    },
+  } as unknown as CreateTaskServerContext;
 }
 
-function createMockTaskExtra(taskStore: RequestTaskStore, taskId: string) {
+function createMockTaskExtra(
+  taskStore: RequestTaskStore,
+  taskId: string
+): TaskServerContext {
   return {
     ...createMockExtra(taskStore),
-    taskId,
-  };
+    task: {
+      store: taskStore,
+      id: taskId,
+    },
+  } as unknown as TaskServerContext;
 }
 
 describe('createToolTaskHandler', () => {
@@ -267,11 +284,11 @@ describe('createToolTaskHandler', () => {
           }) as ToolResult<{ ok: boolean }>
       );
 
-      const extra = {
+      const ctx = {
         ...createMockExtra(store),
         taskRequestedTtl: MAX_TASK_TTL_MS + 999_999,
       };
-      const { task } = await handler.createTask(extra);
+      const { task } = await handler.createTask(ctx);
       assert.ok(
         task.ttl !== null && task.ttl <= MAX_TASK_TTL_MS,
         `ttl ${String(task.ttl)} should be clamped to ${String(MAX_TASK_TTL_MS)}`
@@ -332,14 +349,14 @@ describe('createToolTaskHandler', () => {
       let signalAborted = false;
 
       const handler = createToolTaskHandler(
-        async (_args: undefined, extra: { signal?: AbortSignal }) => {
+        async (_args: undefined, ctx: { signal?: AbortSignal }) => {
           // Simulate a long-running tool that respects the signal
           await new Promise<void>((resolve, reject) => {
             const timer = setTimeout(resolve, 10_000);
-            extra.signal?.addEventListener('abort', () => {
+            ctx.signal?.addEventListener('abort', () => {
               clearTimeout(timer);
               signalAborted = true;
-              reject(extra.signal?.reason as Error);
+              reject(ctx.signal?.reason as Error);
             });
           });
           return {

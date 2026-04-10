@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import { basename } from 'node:path';
 
@@ -25,16 +25,13 @@ import {
   maybeExternalizeTextContent,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolveFinalProgressCurrent,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 const READ_MANY_TOOL_NAME = 'read_many';
 const READ_MANY_TOOL_LABEL = '🕮 read_many';
@@ -246,26 +243,23 @@ export function registerReadMultipleFilesTool(
 ): void {
   const handler = (
     args: ReadManyInput,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<ReadManyOutput>> => {
     const primaryPath = args.paths[0] ?? '';
     return executeToolWithDiagnostics({
       toolName: READ_MANY_TOOL_NAME,
-      extra,
+      ctx,
       outputSchema: ReadMultipleFilesOutputSchema,
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: primaryPath },
       run: async (signal) => {
         const context = buildBatchPathContext(args.paths, 'files');
-        const { progress, onItemComplete } = createBatchProgressCallbacks(
-          extra,
-          {
-            toolLabel: READ_MANY_TOOL_LABEL,
-            context,
-            totalItems: args.paths.length,
-            itemVerb: 'read',
-          }
-        );
+        const { progress, onItemComplete } = createBatchProgressCallbacks(ctx, {
+          toolLabel: READ_MANY_TOOL_LABEL,
+          context,
+          totalItems: args.paths.length,
+          itemVerb: 'read',
+        });
 
         try {
           const result = await handleReadMultipleFiles(
@@ -299,29 +293,5 @@ export function registerReadMultipleFilesTool(
     });
   };
 
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: options.isInitialized,
-  });
-
-  const validatedHandler = withValidatedArgs(
-    ReadMultipleFilesInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      READ_MANY_TOOL_NAME,
-      READ_MANY_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      options.isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    READ_MANY_TOOL_NAME,
-    withDefaultIcons({ ...READ_MANY_TOOL }, options.iconInfo),
-    validatedHandler
-  );
+  registerStandardTool(server, READ_MANY_TOOL, handler, options);
 }

@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.j0hanz/filesystem-mcp",
   "title": "Filesystem MCP",
-  "description": "Filesystem MCP server enabling LLMs to read, write, search, diff, patch, and manage local files.",
+  "description": "Secure filesystem MCP server for reading, writing, searching, diffing, and patching files.",
   "repository": {
     "url": "https://github.com/j0hanz/filesystem-mcp",
     "source": "github"
@@ -46,7 +46,7 @@
         {
           "type": "named",
           "name": "--port",
-          "description": "Enable HTTP transport on the given port (MCP Streamable HTTP with SSE).",
+          "description": "Enable HTTP transport on the given port (Node Streamable HTTP).",
           "format": "number",
           "isRequired": false
         }
@@ -91,7 +91,7 @@
         {
           "type": "named",
           "name": "--port",
-          "description": "Enable HTTP transport on the given port (MCP Streamable HTTP with SSE).",
+          "description": "Enable HTTP transport on the given port (Node Streamable HTTP).",
           "format": "number",
           "isRequired": false
         }

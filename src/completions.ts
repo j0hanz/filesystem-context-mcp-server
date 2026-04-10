@@ -1,5 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { CompleteRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import { readdir, stat } from 'node:fs/promises';
 import {
@@ -60,7 +59,7 @@ function extractToolNameCompletions(): string[] {
   return getSortedToolContracts().map((contract) => contract.name);
 }
 
-interface CompletionResult {
+interface CompletionResult extends Record<string, unknown> {
   values: string[];
   total?: number;
   hasMore?: boolean;
@@ -673,7 +672,7 @@ export function registerCompletions(
   const topicValues = extractTopicCompletions(instructions);
   const toolNameValues = extractToolNameCompletions();
 
-  server.server.setRequestHandler(CompleteRequestSchema, async (request) => {
+  server.server.setRequestHandler('completion/complete', async (request) => {
     const { params } = request;
     const { argument, ref } = params;
 

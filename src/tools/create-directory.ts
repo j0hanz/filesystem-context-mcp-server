@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import { mkdir } from 'node:fs/promises';
 import { basename } from 'node:path';
@@ -19,16 +19,13 @@ import {
   buildToolResponse,
   executeToolWithDiagnostics,
   IDEMPOTENT_WRITE_TOOL_ANNOTATIONS,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const CREATE_DIRECTORY_TOOL: ToolContract = {
   name: 'mkdir',
@@ -79,11 +76,11 @@ export function registerCreateDirectoryTool(
 ): void {
   const handler = (
     args: z.infer<typeof CreateDirectoryInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof CreateDirectoryOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'mkdir',
-      extra,
+      ctx,
       outputSchema: CreateDirectoryOutputSchema,
       timedSignal: {},
       context: { path: args.path ?? args.paths?.[0] },
@@ -96,8 +93,7 @@ export function registerCreateDirectoryTool(
         ),
     });
 
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: options.isInitialized,
+  registerStandardTool(server, CREATE_DIRECTORY_TOOL, handler, options, {
     progressMessage: (args) => {
       if (args.path && !args.paths?.length) {
         return `🛠 mkdir: ${basename(args.path)}`;
@@ -116,26 +112,4 @@ export function registerCreateDirectoryTool(
       return `🛠 mkdir: ${count} directories`;
     },
   });
-
-  const validatedHandler = withValidatedArgs(
-    CreateDirectoryInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'mkdir',
-      CREATE_DIRECTORY_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      options.isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'mkdir',
-    withDefaultIcons({ ...CREATE_DIRECTORY_TOOL }, options.iconInfo),
-    validatedHandler
-  );
 }

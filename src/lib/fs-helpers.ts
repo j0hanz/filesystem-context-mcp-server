@@ -22,13 +22,6 @@ import {
 import { ErrorCode, McpError, normalizeUnknownError } from './errors.js';
 import { assertAllowedFileAccess, validateExistingPath } from './paths.js';
 
-export {
-  assertNotAborted,
-  createTimedAbortSignal,
-  withAbort,
-  withTimedAbortSignal,
-} from './abort.js';
-
 const READ_ONLY_FILE_FLAG = 'r';
 
 function assertPositiveSafeIntegerOption(
