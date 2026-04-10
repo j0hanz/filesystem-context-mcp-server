@@ -8,10 +8,18 @@
     "source": "github"
   },
   "websiteUrl": "https://github.com/j0hanz/filesystem-mcp",
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/j0hanz/filesystem-mcp/main/assets/logo.svg",
+      "mimeType": "image/svg+xml",
+      "sizes": ["any"]
+    }
+  ],
   "version": "1.15.1",
   "packages": [
     {
       "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@j0hanz/filesystem-mcp",
       "version": "1.15.1",
       "runtimeHint": "npx",
@@ -31,6 +39,53 @@
           "type": "named",
           "name": "--allow-cwd",
           "description": "Allow the current working directory as an additional root.",
+          "format": "boolean",
+          "default": "false",
+          "isRequired": false
+        },
+        {
+          "type": "named",
+          "name": "--port",
+          "description": "Enable HTTP transport on the given port (MCP Streamable HTTP with SSE).",
+          "format": "number",
+          "isRequired": false
+        }
+      ]
+    },
+    {
+      "registryType": "oci",
+      "registryBaseUrl": "https://ghcr.io",
+      "identifier": "ghcr.io/j0hanz/filesystem-mcp",
+      "version": "1.15.1",
+      "runtimeHint": "docker",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "-i",
+          "description": "Keep stdin open for stdio transport."
+        },
+        {
+          "type": "named",
+          "name": "--rm",
+          "description": "Remove container after exit."
+        }
+      ],
+      "packageArguments": [
+        {
+          "type": "positional",
+          "valueHint": "directory",
+          "description": "Root directory path inside the container the server is allowed to access.",
+          "isRequired": false,
+          "format": "filepath",
+          "isRepeated": true
+        },
+        {
+          "type": "named",
+          "name": "--allow-cwd",
+          "description": "Allow the container working directory as an additional root.",
           "format": "boolean",
           "default": "false",
           "isRequired": false
