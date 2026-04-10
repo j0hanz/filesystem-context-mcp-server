@@ -9,7 +9,7 @@
     "type": "git",
     "url": "https://github.com/j0hanz/filesystem-mcp.git"
   },
-  "homepage": "https://github.com/j0hanz/filesystem-mcp",
+  "homepage": "https://github.com/j0hanz/filesystem-mcp#readme",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
