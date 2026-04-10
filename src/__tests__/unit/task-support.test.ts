@@ -343,6 +343,79 @@ describe('createToolTaskHandler', () => {
     }
   });
 
+  it('serializes task creation so concurrent requests cannot bypass the active-task limit', async () => {
+    const real = createTestTaskStore();
+    let createdCount = 0;
+    let createCalls = 0;
+    let releaseFirstCreate!: () => void;
+    const firstCreateGate = new Promise<void>((resolve) => {
+      releaseFirstCreate = resolve;
+    });
+
+    const serializedStore: RequestTaskStore = {
+      async createTask(taskParams) {
+        createCalls++;
+        if (createCalls === 1) {
+          await firstCreateGate;
+        }
+        createdCount++;
+        return real.createTask(taskParams);
+      },
+      getTask: real.getTask.bind(real),
+      storeTaskResult: real.storeTaskResult.bind(real),
+      getTaskResult: real.getTaskResult.bind(real),
+      updateTaskStatus: real.updateTaskStatus.bind(real),
+      async listTasks() {
+        const tasks = Array.from(
+          { length: MAX_CONCURRENT_TASKS - 1 + createdCount },
+          (_, i) => ({
+            taskId: `fake-${String(i)}`,
+            status: 'working' as const,
+            ttl: null,
+            createdAt: new Date().toISOString(),
+            lastUpdatedAt: new Date().toISOString(),
+          })
+        );
+        return { tasks };
+      },
+    };
+
+    try {
+      const handler = createToolTaskHandler(
+        async () =>
+          ({
+            content: [{ type: 'text', text: 'ok' }],
+          }) as ToolResult<unknown>
+      );
+
+      const firstTaskPromise = handler.createTask(
+        createMockExtra(serializedStore)
+      );
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      const secondTaskPromise = handler.createTask(
+        createMockExtra(serializedStore)
+      );
+
+      releaseFirstCreate();
+
+      const firstTask = await firstTaskPromise;
+      assert.ok(firstTask.task.taskId.length > 0);
+
+      await assert.rejects(
+        async () => secondTaskPromise,
+        (error: unknown) => {
+          assert.ok(error instanceof Error);
+          assert.ok(error.message.includes('Too many active tasks'));
+          return true;
+        }
+      );
+      assert.equal(createCalls, 1);
+    } finally {
+      real.cleanup();
+    }
+  });
+
   it('propagates cancellation signal to running tool', async () => {
     const store = createTestTaskStore();
     try {

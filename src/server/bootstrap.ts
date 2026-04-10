@@ -20,6 +20,7 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http';
+import { inspect } from 'node:util';
 
 import {
   DEFAULT_LOG_LEVEL,
@@ -107,8 +108,17 @@ const activeServers = new Map<
 let stdioServer: { server: McpServer; loggingState: LoggingState } | undefined;
 
 function stringifyData(data: unknown): string {
-  if (!data) return '';
-  return ` ${typeof data === 'string' ? data : JSON.stringify(data)}`;
+  if (data === undefined) return '';
+  if (typeof data === 'string') return ` ${data}`;
+  if (
+    data === null ||
+    typeof data === 'number' ||
+    typeof data === 'boolean' ||
+    typeof data === 'bigint'
+  ) {
+    return ` ${String(data)}`;
+  }
+  return ` ${inspect(data, { depth: 4, colors: false, compact: 3 })}`;
 }
 
 channel('filesystem-mcp:log').subscribe((message) => {

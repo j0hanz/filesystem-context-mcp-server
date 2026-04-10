@@ -3,7 +3,7 @@ import { McpServer } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
@@ -110,6 +110,63 @@ describe('completions', () => {
     }
   });
 
+  it('does not enumerate completion entries through a linked directory outside allowed roots', async () => {
+    const tmpDir = await mkdtemp(
+      join(tmpdir(), `fsmcp-complete-${randomUUID().slice(0, 8)}-`)
+    );
+    const allowedDir = join(tmpDir, 'allowed');
+    const outsideDir = join(tmpDir, 'outside');
+    const linkedDir = join(allowedDir, 'linked');
+    await mkdir(allowedDir);
+    await mkdir(outsideDir);
+    await writeFile(join(outsideDir, 'secret.txt'), 'secret', 'utf8');
+    await symlink(
+      outsideDir,
+      linkedDir,
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
+    await setAllowedDirectoriesResolved([allowedDir]);
+
+    const server = new McpServer(
+      { name: 'test-server', version: '0.0.0' },
+      { capabilities: { completions: {} } }
+    );
+    registerCompletions(server, '');
+
+    const client = new Client({ name: 'test-client', version: '1.0.0' });
+    const [clientTransport, serverTransport] =
+      LinkedTransport.createLinkedPair();
+
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+
+      const direct = await client.complete({
+        ref: { type: 'ref/prompt', name: 'get-help' },
+        argument: { name: 'path', value: 'linked/' },
+      });
+      const fromContext = await client.complete({
+        ref: { type: 'ref/prompt', name: 'get-help' },
+        argument: { name: 'path', value: '' },
+        context: { arguments: { cwd: 'linked' } },
+      });
+
+      assert.ok(
+        !direct.completion.values.some((value) => value.endsWith('secret.txt'))
+      );
+      assert.ok(
+        !fromContext.completion.values.some((value) =>
+          value.endsWith('secret.txt')
+        )
+      );
+    } finally {
+      await client.close().catch(() => {});
+      await server.close().catch(() => {});
+      await rm(tmpDir, { recursive: true, force: true });
+      await setAllowedDirectoriesResolved([]);
+    }
+  });
+
   it('completes tool names for the get-tool-help prompt', async () => {
     const server = new McpServer(
       { name: 'test-server', version: '0.0.0' },
@@ -188,13 +245,7 @@ describe('completions', () => {
         argument: { name: 'sortBy', value: '' },
       });
 
-      assert.deepEqual(all.completion.values, [
-        'modified',
-        'name',
-        'path',
-        'size',
-        'type',
-      ]);
+      assert.deepEqual(all.completion.values, ['name', 'size', 'modified']);
 
       const filtered = await client.complete({
         ref: { type: 'ref/prompt', name: 'get-help' },
