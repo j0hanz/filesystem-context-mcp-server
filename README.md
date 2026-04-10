@@ -1009,7 +1009,8 @@ When started with `--port <number>`, the server exposes a single MCP endpoint:
 | [re2](https://www.npmjs.com/package/re2)                                             | Safe RE2 regex engine (no ReDoS)              |
 | [zod](https://www.npmjs.com/package/zod)                                             | Schema validation and JSON Schema generation  |
 
-## Contributing and License
+## License
 
-- **License:** MIT
-- Contributions welcome via pull requests.
+MIT License. See [LICENSE](LICENSE) for details.
+
+[↑ Back to top](#table-of-contents)
