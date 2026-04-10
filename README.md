@@ -582,8 +582,8 @@ List immediate directory contents: name, path, type, size, modified date.
 | `path`                  | string  | no       | Base directory (default: root)                                              |
 | `includeHidden`         | boolean | no       | Include dotfiles. Default: `false`                                          |
 | `includeIgnored`        | boolean | no       | Include ignored items (node_modules, .git). Default: `false`                |
-| `maxDepth`              | integer | no       | Max recursion depth (1-100) when pattern is provided                        |
-| `maxEntries`            | integer | no       | Max entries before truncation. Default: 1000, Max: 10000                    |
+| `maxDepth`              | integer | no       | Max recursion depth (1-50) when pattern is provided                         |
+| `maxEntries`            | integer | no       | Max entries before truncation. Default: 20000, Max: 20000                   |
 | `sortBy`                | enum    | no       | `name` \| `size` \| `modified` \| `type`. Default: `name`                   |
 | `pattern`               | string  | no       | Relative glob filter (e.g. `**/*.ts`). Absolute paths and `..` are rejected |
 | `includeSymlinkTargets` | boolean | no       | Resolve symlink targets. Default: `false`                                   |
@@ -599,11 +599,11 @@ Find files by glob pattern. Returns matching files with metadata.
 | ---------------- | ------- | -------- | ---------------------------------------------------------------------------- |
 | `path`           | string  | no       | Base directory (default: root)                                               |
 | `pattern`        | string  | **yes**  | Relative glob pattern (e.g. `**/*.ts`). Absolute paths and `..` are rejected |
-| `maxResults`     | integer | no       | Max results (1-100000). Default: 1000                                        |
+| `maxResults`     | integer | no       | Max results (1-10000). Default: 100                                          |
 | `includeIgnored` | boolean | no       | Include ignored items. Default: `false`                                      |
 | `includeHidden`  | boolean | no       | Include dotfiles. Default: `false`                                           |
 | `sortBy`         | enum    | no       | `path` \| `name` \| `size` \| `modified`. Default: `path`                    |
-| `maxDepth`       | integer | no       | Max directory depth (0-1000)                                                 |
+| `maxDepth`       | integer | no       | Max directory depth (0-100)                                                  |
 | `cursor`         | string  | no       | Pagination cursor                                                            |
 
 ---
@@ -615,8 +615,8 @@ Render a directory tree with bounded recursion. Returns ASCII tree + structured 
 | Parameter        | Type    | Required | Description                                          |
 | ---------------- | ------- | -------- | ---------------------------------------------------- |
 | `path`           | string  | no       | Base directory (default: root)                       |
-| `maxDepth`       | integer | no       | Depth (0 = root node only). Default: 10, Max: 100    |
-| `maxEntries`     | integer | no       | Max entries. Default: 5000, Max: 100000              |
+| `maxDepth`       | integer | no       | Depth (0 = root node only). Default: 5, Max: 50      |
+| `maxEntries`     | integer | no       | Max entries. Default: 1000, Max: 20000               |
 | `includeHidden`  | boolean | no       | Include dotfiles. Default: `false`                   |
 | `includeIgnored` | boolean | no       | Include ignored items. Default: `false`              |
 | `includeSizes`   | boolean | no       | Include file sizes in tree entries. Default: `false` |
@@ -676,18 +676,18 @@ Get metadata for multiple files/directories in one request.
 
 Search file contents (grep-like). Returns matching lines with optional context.
 
-| Parameter        | Type    | Required | Description                                                                              |
-| ---------------- | ------- | -------- | ---------------------------------------------------------------------------------------- |
-| `path`           | string  | no       | Base directory (default: root)                                                           |
-| `pattern`        | string  | **yes**  | Search text or RE2 regex when `isRegex=true`                                             |
-| `isRegex`        | boolean | no       | Treat pattern as RE2 regex. Default: `false`                                             |
-| `caseSensitive`  | boolean | no       | Case-sensitive matching. Default: `false`                                                |
-| `wholeWord`      | boolean | no       | Match whole words only. Default: `false`                                                 |
-| `contextLines`   | integer | no       | Lines of context before/after (0-50). Default: 0                                         |
-| `maxResults`     | integer | no       | Max match rows (1-100000). Default: 100                                                  |
-| `filePattern`    | string  | no       | Relative glob for candidate files (e.g. `**/*.ts`). Absolute paths and `..` are rejected |
-| `includeHidden`  | boolean | no       | Include dotfiles. Default: `false`                                                       |
-| `includeIgnored` | boolean | no       | Include ignored items. Default: `false`                                                  |
+| Parameter        | Type    | Required | Description                                                         |
+| ---------------- | ------- | -------- | ------------------------------------------------------------------- |
+| `path`           | string  | no       | Base directory (default: root)                                      |
+| `pattern`        | string  | **yes**  | Search text or RE2 regex when `isRegex=true`                        |
+| `isRegex`        | boolean | no       | Treat pattern as RE2 regex. Default: `false`                        |
+| `caseSensitive`  | boolean | no       | Case-sensitive matching. Default: `false`                           |
+| `wholeWord`      | boolean | no       | Match whole words only. Default: `false`                            |
+| `contextLines`   | integer | no       | Lines of context before/after (0-50). Default: 0                    |
+| `maxResults`     | integer | no       | Max match rows (0-10000). Default: 500                              |
+| `filePattern`    | string  | no       | Relative glob for candidate files (e.g. `**/*.ts`). Default: `**/*` |
+| `includeHidden`  | boolean | no       | Include dotfiles. Default: `false`                                  |
+| `includeIgnored` | boolean | no       | Include ignored items. Default: `false`                             |
 
 ---
 
@@ -792,19 +792,19 @@ Apply a unified diff patch to one or more files. Single-file: throws on failure.
 
 Bulk search-and-replace across files matching a glob. Replaces **all** occurrences per file. Always `dryRun: true` first.
 
-| Parameter        | Type    | Required | Description                                                                  |
-| ---------------- | ------- | -------- | ---------------------------------------------------------------------------- |
-| `path`           | string  | no       | Base directory (default: root)                                               |
-| `filePattern`    | string  | **yes**  | Relative glob pattern (e.g. `**/*.ts`). Absolute paths and `..` are rejected |
-| `searchPattern`  | string  | **yes**  | Text to search. RE2 regex when `isRegex=true`                                |
-| `replacement`    | string  | **yes**  | Replacement text. Supports `$1`, `$2` with regex                             |
-| `isRegex`        | boolean | no       | Treat as RE2 regex. Default: `false`                                         |
-| `dryRun`         | boolean | no       | Preview matches with diff. Default: `false`                                  |
-| `includeHidden`  | boolean | no       | Include dotfiles. Default: `false`                                           |
-| `includeIgnored` | boolean | no       | Include ignored items. Default: `false`                                      |
-| `returnDiff`     | boolean | no       | Return diff even when not dry-run. Default: `false`                          |
-| `maxFiles`       | integer | no       | Max files to process before stopping (1-10000)                               |
-| `caseSensitive`  | boolean | no       | Case-sensitive matching. Default: `true`                                     |
+| Parameter        | Type    | Required | Description                                             |
+| ---------------- | ------- | -------- | ------------------------------------------------------- |
+| `path`           | string  | no       | Base directory (default: root)                          |
+| `filePattern`    | string  | no       | Relative glob pattern (e.g. `**/*.ts`). Default: `**/*` |
+| `searchPattern`  | string  | **yes**  | Text to search. RE2 regex when `isRegex=true`           |
+| `replacement`    | string  | **yes**  | Replacement text. Supports `$1`, `$2` with regex        |
+| `isRegex`        | boolean | no       | Treat as RE2 regex. Default: `false`                    |
+| `dryRun`         | boolean | no       | Preview matches with diff. Default: `false`             |
+| `includeHidden`  | boolean | no       | Include dotfiles. Default: `false`                      |
+| `includeIgnored` | boolean | no       | Include ignored items. Default: `false`                 |
+| `returnDiff`     | boolean | no       | Return diff even when not dry-run. Default: `false`     |
+| `maxFiles`       | integer | no       | Max files to process before stopping (1-10000)          |
+| `caseSensitive`  | boolean | no       | Case-sensitive matching. Default: `true`                |
 
 ### Resources
 
@@ -851,19 +851,63 @@ All 18 tools define `outputSchema` (Zod -> JSON Schema) and return `structuredCo
 
 ## Configuration
 
-| Variable                           | Default          | Description                                                                    |
-| ---------------------------------- | ---------------- | ------------------------------------------------------------------------------ |
-| `FILESYSTEM_MCP_API_KEY`           | _(none)_         | Bearer token required when binding HTTP to a non-loopback host                 |
-| `FILESYSTEM_MCP_MAX_HTTP_SESSIONS` | `100`            | Max concurrent HTTP sessions (1-10,000)                                        |
-| `FILESYSTEM_MCP_HTTP_HOST`         | `127.0.0.1`      | HTTP server bind address                                                       |
-| `FS_CONTEXT_MAX_REQUEST_BYTES`     | `4194304` (4 MB) | Max HTTP request body size (1 KB - 256 MB)                                     |
-| `FS_CONTEXT_MAX_INLINE_CHARS`      | _(auto)_         | Max inline result chars before externalizing to `filesystem-mcp://result/{id}` |
-| `FS_CONTEXT_MAX_INLINE_MATCHES`    | `50`             | Max inline search matches before truncation                                    |
-| `FS_CONTEXT_STRIP_STRUCTURED`      | `false`          | Strip `outputSchema` from tool definitions                                     |
-| `FS_CONTEXT_DIAGNOSTICS`           | `false`          | Enable diagnostic logging                                                      |
-| `FS_CONTEXT_DIAGNOSTICS_DETAIL`    | `false`          | Enable detailed diagnostic output                                              |
-| `FS_CONTEXT_TOOL_LOG_ERRORS`       | `false`          | Log tool errors to stderr                                                      |
-| `FS_CONTEXT_SEARCH_WORKERS_DEBUG`  | `false`          | Debug logging for search worker pool                                           |
+### HTTP & Auth
+
+| Variable                           | Default          | Description                                                    |
+| ---------------------------------- | ---------------- | -------------------------------------------------------------- |
+| `FILESYSTEM_MCP_API_KEY`           | _(none)_         | Bearer token required when binding HTTP to a non-loopback host |
+| `FILESYSTEM_MCP_MAX_HTTP_SESSIONS` | `100`            | Max concurrent HTTP sessions (1-10,000)                        |
+| `FILESYSTEM_MCP_HTTP_HOST`         | `127.0.0.1`      | HTTP server bind address                                       |
+| `FS_CONTEXT_MAX_REQUEST_BYTES`     | `4194304` (4 MB) | Max HTTP request body size (1 KB - 256 MB)                     |
+
+### File Size Limits
+
+| Variable                   | Default            | Description                                                   |
+| -------------------------- | ------------------ | ------------------------------------------------------------- |
+| `MAX_FILE_SIZE`            | `10485760` (10 MB) | Max file size for text read operations (1 MB - 100 MB)        |
+| `MAX_SEARCH_SIZE`          | `1048576` (1 MB)   | Max file size for content search/grep (100 KB - 10 MB)        |
+| `MAX_READ_MANY_TOTAL_SIZE` | `524288` (512 KB)  | Max cumulative size for `read_many` requests (10 KB - 100 MB) |
+| `DEFAULT_SEARCH_TIMEOUT`   | `5000`             | Search operation timeout in ms (100 - 60,000)                 |
+
+### Access Control
+
+| Variable                     | Default  | Description                                                                     |
+| ---------------------------- | -------- | ------------------------------------------------------------------------------- |
+| `FS_CONTEXT_ALLOW_SENSITIVE` | `false`  | Allow reading sensitive files (.env, .key, credentials, tokens)                 |
+| `FS_CONTEXT_DENYLIST`        | _(none)_ | CSV/newline-separated glob patterns to block (in addition to built-in denylist) |
+| `FS_CONTEXT_ALLOWLIST`       | _(none)_ | CSV/newline-separated glob patterns to permit (overrides denylist)              |
+
+### Output & Inline Limits
+
+| Variable                        | Default | Description                                                                    |
+| ------------------------------- | ------- | ------------------------------------------------------------------------------ |
+| `FS_CONTEXT_MAX_INLINE_CHARS`   | `20000` | Max inline result chars before externalizing to `filesystem-mcp://result/{id}` |
+| `FS_CONTEXT_MAX_INLINE_MATCHES` | `50`    | Max inline search matches before truncation                                    |
+| `FS_CONTEXT_STRIP_STRUCTURED`   | `false` | Strip `outputSchema` from tool definitions (reduces tokens)                    |
+
+### Tasks
+
+| Variable                              | Default          | Description                                     |
+| ------------------------------------- | ---------------- | ----------------------------------------------- |
+| `FILESYSTEM_MCP_MAX_TASK_TTL_MS`      | `3600000` (1 hr) | Max task TTL before auto-eviction (1 s - 24 hr) |
+| `FILESYSTEM_MCP_MAX_CONCURRENT_TASKS` | `100`            | Max simultaneous task executions (1-10,000)     |
+
+### Logging & Diagnostics
+
+| Variable                          | Default | Description                                                                    |
+| --------------------------------- | ------- | ------------------------------------------------------------------------------ |
+| `FILESYSTEM_MCP_LOG_LEVEL`        | `info`  | MCP log level: debug, info, notice, warning, error, critical, alert, emergency |
+| `FS_CONTEXT_DIAGNOSTICS`          | `false` | Enable diagnostic logging                                                      |
+| `FS_CONTEXT_DIAGNOSTICS_DETAIL`   | `false` | Enable detailed diagnostic output                                              |
+| `FS_CONTEXT_TOOL_LOG_ERRORS`      | `false` | Log tool errors to stderr                                                      |
+| `FS_CONTEXT_SEARCH_WORKERS_DEBUG` | `false` | Debug logging for search worker pool                                           |
+
+### Performance
+
+| Variable                        | Default          | Description                              |
+| ------------------------------- | ---------------- | ---------------------------------------- |
+| `FS_CONTEXT_SEARCH_WORKERS`     | CPU cores (≤ 8)  | Concurrent search worker threads (1-16)  |
+| `FS_CONTEXT_LIST_CURSOR_TTL_MS` | `300000` (5 min) | Cursor TTL for `ls` pagination snapshots |
 
 ## HTTP Endpoints
 
@@ -935,7 +979,6 @@ When started with `--port <number>`, the server exposes a single MCP endpoint:
 | [diff](https://www.npmjs.com/package/diff)                                           | Unified diff generation and patch application |
 | [ignore](https://www.npmjs.com/package/ignore)                                       | `.gitignore` pattern matching                 |
 | [re2](https://www.npmjs.com/package/re2)                                             | Safe RE2 regex engine (no ReDoS)              |
-| [safe-regex2](https://www.npmjs.com/package/safe-regex2)                             | Regex safety validation                       |
 | [zod](https://www.npmjs.com/package/zod)                                             | Schema validation and JSON Schema generation  |
 
 ## Contributing and License
