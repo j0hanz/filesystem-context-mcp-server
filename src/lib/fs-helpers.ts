@@ -1,6 +1,6 @@
 import { isUtf8 } from 'node:buffer';
-import { randomUUID } from 'node:crypto';
-import type { Stats } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { createReadStream, type Stats } from 'node:fs';
 import {
   type FileHandle,
   open,
@@ -10,6 +10,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { extname } from 'node:path';
+import { pipeline } from 'node:stream/promises';
 
 import type { FileType } from '../config.js';
 import { assertNotAborted, withAbort } from './abort.js';
@@ -192,6 +193,19 @@ function isBinarySlice(slice: Buffer): boolean {
   if (hasUtf16Bom(slice)) return false;
   if (slice.includes(0)) return true;
   return !isUtf8(slice);
+}
+
+export async function calculateFileContentHash(
+  filePath: string,
+  signal?: AbortSignal
+): Promise<string> {
+  const hasher = createHash('sha256');
+  await pipeline(
+    createReadStream(filePath, { signal, highWaterMark: STREAM_CHUNK_SIZE }),
+    hasher,
+    { signal }
+  );
+  return hasher.digest('hex');
 }
 
 type ReadMode = 'head' | 'full' | 'range' | 'tail';
@@ -414,33 +428,6 @@ async function readFileBufferWithLimit(
   return Buffer.concat(chunks, totalSize);
 }
 
-async function headFile(
-  handle: FileHandle,
-  numLines: number,
-  encoding: BufferEncoding = 'utf-8',
-  maxBytesRead?: number,
-  signal?: AbortSignal
-): Promise<string> {
-  assertNotAborted(signal);
-
-  const lines: string[] = [];
-  let estimatedBytes = 0;
-  const hasMaxBytes = maxBytesRead !== undefined;
-  const newlineBytes = Buffer.byteLength('\n', encoding);
-
-  for await (const line of handle.readLines({ encoding, signal })) {
-    lines.push(line);
-
-    if (lines.length >= numLines) break;
-    if (!hasMaxBytes) continue;
-
-    estimatedBytes += Buffer.byteLength(line, encoding) + newlineBytes;
-    if (estimatedBytes >= maxBytesRead) break;
-  }
-
-  return lines.join('\n');
-}
-
 function countLines(content: string): number {
   if (content.length === 0) return 0;
   let count = 1;
@@ -455,15 +442,44 @@ async function readHeadContent(
   head: number,
   options: ReadContentOptions
 ): Promise<PartialReadResult> {
-  const content = await headFile(
-    handle,
-    head,
-    options.encoding,
-    options.maxSize,
-    options.signal
-  );
-  const linesRead = countLines(content);
-  const hasMoreLines = linesRead >= head;
+  assertNotAborted(options.signal);
+
+  const lines: string[] = [];
+  let estimatedBytes = 0;
+  const newlineBytes = Buffer.byteLength('\n', options.encoding);
+  const iterator = handle
+    .readLines({ encoding: options.encoding, signal: options.signal })
+    [Symbol.asyncIterator]();
+
+  let hasMoreLines = false;
+  let next = await iterator.next();
+
+  try {
+    while (!next.done) {
+      const line = next.value;
+      lines.push(line);
+
+      estimatedBytes +=
+        Buffer.byteLength(line, options.encoding) + newlineBytes;
+      if (estimatedBytes >= options.maxSize) {
+        hasMoreLines = true;
+        break;
+      }
+
+      if (lines.length === head) {
+        const peek = await iterator.next();
+        hasMoreLines = !peek.done;
+        break;
+      }
+
+      next = await iterator.next();
+    }
+  } finally {
+    await iterator.return?.();
+  }
+
+  const content = lines.join('\n');
+  const linesRead = lines.length;
   return {
     content,
     truncated: hasMoreLines,

@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 
-import { readFile, stat } from 'node:fs/promises';
+import { stat } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
 import { applyPatch, parsePatch, type StructuredPatch } from 'diff';
@@ -9,7 +9,11 @@ import type { z } from 'zod';
 import { withAbort } from '../lib/abort.js';
 import { MAX_TEXT_FILE_SIZE, PARALLEL_CONCURRENCY } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
-import { atomicWriteFile, processInParallel } from '../lib/fs-helpers.js';
+import {
+  atomicWriteFile,
+  processInParallel,
+  readFileWithStats,
+} from '../lib/fs-helpers.js';
 import { Logger } from '../lib/logger.js';
 import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
 
@@ -111,7 +115,12 @@ async function applyDiff(
   const stats = await withAbort(stat(validPath), signal);
   assertPatchTargetSizeWithinLimit(validPath, stats.size, MAX_TEXT_FILE_SIZE);
 
-  const content = await readFile(validPath, { encoding: 'utf-8', signal });
+  const { content } = await readFileWithStats(filePath, validPath, stats, {
+    encoding: 'utf-8',
+    maxSize: MAX_TEXT_FILE_SIZE,
+    skipBinary: true,
+    ...(signal ? { signal } : {}),
+  });
 
   const patched = applyPatch(content, diff, {
     fuzzFactor: options.fuzzFactor,

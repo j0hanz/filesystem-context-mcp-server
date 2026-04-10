@@ -129,6 +129,7 @@ describe('HTTP transport', () => {
 
     delete process.env['FILESYSTEM_MCP_HTTP_HOST'];
     delete process.env['FILESYSTEM_MCP_API_KEY'];
+    delete process.env['FS_INIT_HANDSHAKE_TIMEOUT_MS'];
   });
 
   it('accepts negotiated supported protocol versions after initialize', async () => {
@@ -560,5 +561,60 @@ describe('HTTP transport', () => {
       await transport.terminateSession().catch(() => {});
       await client.close().catch(() => {});
     }
+  });
+
+  it('evicts stale uninitialized sessions through the full cleanup path', async () => {
+    process.env['FS_INIT_HANDSHAKE_TIMEOUT_MS'] = '1000';
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+
+    const port = getServerPort(server);
+    const initResponse = await fetch(`http://127.0.0.1:${String(port)}/mcp`, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-11-25',
+          capabilities: {},
+          clientInfo: { name: 'http-test', version: '1.0.0' },
+        },
+      }),
+    });
+
+    assert.equal(initResponse.status, 200);
+    const sessionId = initResponse.headers.get('mcp-session-id');
+    assert.ok(
+      sessionId,
+      'Expected initialize response to include Mcp-Session-Id'
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+
+    const followUpResponse = await fetch(
+      `http://127.0.0.1:${String(port)}/mcp`,
+      {
+        method: 'POST',
+        headers: {
+          accept: 'application/json, text/event-stream',
+          'content-type': 'application/json',
+          'mcp-protocol-version': '2025-11-25',
+          'mcp-session-id': sessionId,
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'notifications/initialized',
+        }),
+      }
+    );
+
+    assert.equal(followUpResponse.status, 404);
+    assert.match(await followUpResponse.text(), /Session not found/u);
   });
 });

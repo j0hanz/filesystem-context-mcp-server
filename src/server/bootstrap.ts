@@ -23,7 +23,7 @@ import {
 
 import {
   DEFAULT_LOG_LEVEL,
-  INIT_HANDSHAKE_TIMEOUT_MS,
+  getInitHandshakeTimeoutMs,
   INIT_TIMEOUT_CLOSE,
   parseEnvInt,
 } from '../lib/constants.js';
@@ -813,18 +813,19 @@ export async function startHttpServer(
     }
   }
 
-  const SWEEP_INTERVAL_MS = INIT_HANDSHAKE_TIMEOUT_MS * 2;
+  const initHandshakeTimeoutMs = getInitHandshakeTimeoutMs();
+  const SWEEP_INTERVAL_MS = initHandshakeTimeoutMs * 2;
   const sweepTimer = setInterval(() => {
     const now = Date.now();
     for (const [sessionId, session] of sessions) {
       if (
         !session.rootsManager.isInitialized() &&
-        now - session.createdAt > INIT_HANDSHAKE_TIMEOUT_MS
+        now - session.createdAt > initHandshakeTimeoutMs
       ) {
         Logger.warn(
           `[HTTP] Evicting stale session ${sessionId}: client never sent notifications/initialized`
         );
-        session.server.close().catch((err: unknown) => {
+        session.close().catch((err: unknown) => {
           Logger.error(
             `[HTTP] Error closing stale session ${sessionId}:`,
             formatUnknownErrorMessage(err)
