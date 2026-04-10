@@ -281,7 +281,14 @@ export function registerMoveFileTool(
       outputSchema: MoveFileOutputSchema,
       timedSignal: {},
       context: { path: args.source ?? args.sources?.[0] },
-      run: (signal) => handleMoveFile(args, signal),
+      run: async (signal) => {
+        const result = await handleMoveFile(args, signal);
+        void ctx.log?.(
+          'info',
+          `mv: ${args.source ?? args.sources?.join(', ') ?? ''} \u2192 ${args.destination}`
+        );
+        return result;
+      },
       onError: (error) =>
         buildToolErrorResponse(
           error,

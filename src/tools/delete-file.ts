@@ -107,7 +107,11 @@ export function registerDeleteFileTool(
       outputSchema: DeleteFileOutputSchema,
       timedSignal: {},
       context: { path: args.path },
-      run: (signal) => handleDeleteFile(args, signal),
+      run: async (signal) => {
+        const result = await handleDeleteFile(args, signal);
+        void ctx.log?.('info', `rm: ${args.path}`);
+        return result;
+      },
       onError: (error) => {
         if (isNodeError(error)) {
           if (error.code === 'ENOENT') {

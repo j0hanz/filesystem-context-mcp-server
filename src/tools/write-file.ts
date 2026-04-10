@@ -78,7 +78,14 @@ export function registerWriteFileTool(
       outputSchema: WriteFileOutputSchema,
       timedSignal: {},
       context: { path: args.path },
-      run: (signal) => handleWriteFile(args, signal),
+      run: async (signal) => {
+        const result = await handleWriteFile(args, signal);
+        void ctx.log?.(
+          'info',
+          `write: ${args.path} (${String(result.structuredContent.bytesWritten ?? 0)} bytes)`
+        );
+        return result;
+      },
       onError: (error) =>
         buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
     });
