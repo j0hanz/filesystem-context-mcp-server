@@ -1,14 +1,14 @@
-import { InMemoryTaskMessageQueue } from '@modelcontextprotocol/sdk/experimental/tasks/stores/in-memory.js';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import {
+  InMemoryTaskMessageQueue,
   isInitializeRequest,
   LATEST_PROTOCOL_VERSION,
-  SetLevelRequestSchema,
+  McpServer,
+  type SetLevelRequest,
+  StdioServerTransport,
   SUPPORTED_PROTOCOL_VERSIONS,
-} from '@modelcontextprotocol/sdk/types.js';
+  type Transport,
+} from '@modelcontextprotocol/server';
 
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { channel } from 'node:diagnostics_channel';
@@ -208,20 +208,21 @@ export async function createServer(
   const serverInstructions = buildServerInstructions();
   const localIcon = await getLocalIconInfo();
   const taskToolSupport = supportsTaskToolRequests();
+  const capabilities = buildServerCapabilities({
+    enablePromptListChanged: false,
+    enableTaskToolRequests: taskToolSupport,
+  });
+
+  if (taskToolSupport && capabilities.tasks) {
+    capabilities.tasks = {
+      ...capabilities.tasks,
+      taskStore: createTaskStore(),
+      taskMessageQueue: new InMemoryTaskMessageQueue(),
+    };
+  }
 
   const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> =
-    {
-      capabilities: buildServerCapabilities({
-        enablePromptListChanged: false,
-        enableTaskToolRequests: taskToolSupport,
-      }),
-    };
-
-  if (taskToolSupport) {
-    // Enabling task tool support requires configuring a task store and message queue on the server config. We use in-memory implementations from the SDK which auto-evict tasks after their TTL expires (via setTimeout). Suitable for both stdio and HTTP sessions.
-    serverConfig.taskStore = createTaskStore();
-    serverConfig.taskMessageQueue = new InMemoryTaskMessageQueue();
-  }
+    { capabilities };
 
   if (serverInstructions) {
     serverConfig.instructions =
@@ -250,11 +251,14 @@ export async function createServer(
 
   // Subscribe to Logger channel if not already done, but we need to route based on session or fallback to this server if it's stdio.
   // Wait, in stdio there's only one server. In HTTP there are multiple.
-  server.server.setRequestHandler(SetLevelRequestSchema, (req) => {
-    loggingState.minimumLevel = req.params.level;
-    Logger.notice(`Log level set to ${req.params.level}`);
-    return {};
-  });
+  server.server.setRequestHandler(
+    'logging/setLevel',
+    (req: SetLevelRequest) => {
+      loggingState.minimumLevel = req.params.level;
+      Logger.notice(`Log level set to ${req.params.level}`);
+      return {};
+    }
+  );
 
   // Track stdio server by default, or it will be overwritten per HTTP session later
   stdioServer ??= { server, loggingState };
@@ -357,7 +361,7 @@ async function readRequestBody(req: IncomingMessage): Promise<unknown> {
 interface HttpSession {
   server: McpServer;
   rootsManager: RootsManager;
-  transport: StreamableHTTPServerTransport;
+  transport: NodeStreamableHTTPServerTransport;
   negotiatedProtocolVersion: string;
   createdAt: number;
 }
@@ -373,7 +377,7 @@ async function createHttpSession(
   rootsManager.registerHandlers(mcpServer);
   await rootsManager.recomputeAllowedDirectories();
 
-  const transport = new StreamableHTTPServerTransport({
+  const transport = new NodeStreamableHTTPServerTransport({
     sessionIdGenerator: () => randomUUID(),
     onsessioninitialized: (sessionId) => {
       sessions.set(sessionId, {

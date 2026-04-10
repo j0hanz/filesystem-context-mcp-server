@@ -1,5 +1,4 @@
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Client } from '@modelcontextprotocol/client';
 
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -8,6 +7,7 @@ import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 
 import { createServer } from '../server.js';
+import { LinkedTransport } from './linked-transport.js';
 
 interface PromptEnv {
   client: Client;
@@ -19,8 +19,7 @@ async function createPromptEnv(): Promise<PromptEnv> {
   const tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-prompts-'));
   const server = await createServer({ cliAllowedDirs: [tempDir] });
   const client = new Client({ name: 'prompt-test-client', version: '1.0.0' });
-  const [clientTransport, serverTransport] =
-    InMemoryTransport.createLinkedPair();
+  const [clientTransport, serverTransport] = LinkedTransport.createLinkedPair();
 
   await server.connect(serverTransport);
   await client.connect(clientTransport);

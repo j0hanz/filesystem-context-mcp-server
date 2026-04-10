@@ -1,6 +1,10 @@
-import { InMemoryTaskStore } from '@modelcontextprotocol/sdk/experimental/tasks/stores/in-memory.js';
-import type { RequestTaskStore } from '@modelcontextprotocol/sdk/shared/protocol.js';
-import type { Task } from '@modelcontextprotocol/sdk/types.js';
+import {
+  type CreateTaskServerContext,
+  InMemoryTaskStore,
+  type RequestTaskStore,
+  type Task,
+  type TaskServerContext,
+} from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
@@ -61,21 +65,34 @@ function createTestTaskStore(): RequestTaskStore & { cleanup: () => void } {
   };
 }
 
-function createMockExtra(taskStore: RequestTaskStore) {
+function createMockExtra(taskStore: RequestTaskStore): CreateTaskServerContext {
+  const signal = new AbortController().signal;
   return {
-    signal: new AbortController().signal,
-    requestId: 1,
-    taskStore,
-    sendNotification: async () => {},
-    sendRequest: async () => ({}) as never,
-  };
+    mcpReq: {
+      id: 1,
+      method: 'tools/call',
+      signal,
+      notify: async () => {},
+      send: async () => ({}) as never,
+    },
+    sessionId: 'test-session',
+    task: {
+      store: taskStore,
+    },
+  } as unknown as CreateTaskServerContext;
 }
 
-function createMockTaskExtra(taskStore: RequestTaskStore, taskId: string) {
+function createMockTaskExtra(
+  taskStore: RequestTaskStore,
+  taskId: string
+): TaskServerContext {
   return {
     ...createMockExtra(taskStore),
-    taskId,
-  };
+    task: {
+      store: taskStore,
+      id: taskId,
+    },
+  } as unknown as TaskServerContext;
 }
 
 describe('createToolTaskHandler', () => {

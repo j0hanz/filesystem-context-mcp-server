@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import { mkdir } from 'node:fs/promises';
 import { basename, dirname } from 'node:path';

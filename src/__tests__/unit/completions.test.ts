@@ -1,6 +1,5 @@
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Client } from '@modelcontextprotocol/client';
+import { McpServer } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -14,6 +13,7 @@ import {
   normalizePath,
   setAllowedDirectoriesResolved,
 } from '../../lib/paths.js';
+import { LinkedTransport } from '../linked-transport.js';
 
 describe('completions', () => {
   it('does not reuse stale path suggestions for a different prefix inside the rate limit window', async () => {
@@ -32,7 +32,7 @@ describe('completions', () => {
 
     const client = new Client({ name: 'test-client', version: '1.0.0' });
     const [clientTransport, serverTransport] =
-      InMemoryTransport.createLinkedPair();
+      LinkedTransport.createLinkedPair();
 
     try {
       await server.connect(serverTransport);
@@ -78,7 +78,7 @@ describe('completions', () => {
 
     const client = new Client({ name: 'test-client', version: '1.0.0' });
     const [clientTransport, serverTransport] =
-      InMemoryTransport.createLinkedPair();
+      LinkedTransport.createLinkedPair();
 
     try {
       await server.connect(serverTransport);
@@ -119,7 +119,7 @@ describe('completions', () => {
 
     const client = new Client({ name: 'test-client', version: '1.0.0' });
     const [clientTransport, serverTransport] =
-      InMemoryTransport.createLinkedPair();
+      LinkedTransport.createLinkedPair();
 
     try {
       await server.connect(serverTransport);
@@ -148,7 +148,7 @@ describe('completions', () => {
 
     const client = new Client({ name: 'test-client', version: '1.0.0' });
     const [clientTransport, serverTransport] =
-      InMemoryTransport.createLinkedPair();
+      LinkedTransport.createLinkedPair();
 
     try {
       await server.connect(serverTransport);
@@ -177,7 +177,7 @@ describe('completions', () => {
 
     const client = new Client({ name: 'test-client', version: '1.0.0' });
     const [clientTransport, serverTransport] =
-      InMemoryTransport.createLinkedPair();
+      LinkedTransport.createLinkedPair();
 
     try {
       await server.connect(serverTransport);
@@ -218,7 +218,7 @@ describe('completions', () => {
 
     const client = new Client({ name: 'test-client', version: '1.0.0' });
     const [clientTransport, serverTransport] =
-      InMemoryTransport.createLinkedPair();
+      LinkedTransport.createLinkedPair();
 
     try {
       await server.connect(serverTransport);

@@ -2,7 +2,8 @@ import type {
   ContentBlock,
   Icon,
   ProgressNotificationParams,
-} from '@modelcontextprotocol/sdk/types.js';
+  ServerContext,
+} from '@modelcontextprotocol/server';
 
 import { channel } from 'node:diagnostics_channel';
 import { basename } from 'node:path';
@@ -378,11 +379,14 @@ function parseToolArgs<Schema extends z.ZodType>(
 export function withValidatedArgs<Args, Result>(
   schema: z.ZodType<Args>,
   handler: (args: Args, extra: ToolExtra) => Promise<ToolResult<Result>>
-): (args: unknown, extra: ToolExtra) => Promise<ToolResult<Result>> {
+): (
+  args: unknown,
+  extra: ToolExtra | ServerContext
+) => Promise<ToolResult<Result>> {
   return async (args, extra) => {
     try {
       const normalizedArgs = parseToolArgs(schema, args);
-      return await handler(normalizedArgs, extra);
+      return await handler(normalizedArgs, toToolExtra(extra));
     } catch (error) {
       if (error instanceof McpError && error.code === ErrorCode.INVALID_INPUT) {
         return buildToolErrorResponse(error, ErrorCode.INVALID_INPUT);
@@ -396,16 +400,33 @@ type ProgressToken = string | number;
 
 export interface ToolExtra {
   signal?: AbortSignal;
-  _meta?: {
-    progressToken?: ProgressToken | undefined;
-    traceparent?: string | undefined;
-    tracestate?: string | undefined;
-    baggage?: string | undefined;
-  };
+  _meta?:
+    | {
+        progressToken?: ProgressToken | undefined;
+        traceparent?: string | undefined;
+        tracestate?: string | undefined;
+        baggage?: string | undefined;
+      }
+    | undefined;
   sendNotification?: (notification: {
     method: 'notifications/progress';
     params: ProgressNotificationParams;
   }) => Promise<void>;
+}
+
+function toToolExtra(extra?: ToolExtra | ServerContext): ToolExtra {
+  if (!extra) return {};
+  if ('mcpReq' in extra) {
+    return {
+      signal: extra.mcpReq.signal,
+      ...(extra.mcpReq._meta
+        ? { _meta: extra.mcpReq._meta as ToolExtra['_meta'] }
+        : {}),
+      sendNotification: async (notification) =>
+        extra.mcpReq.notify(notification),
+    };
+  }
+  return extra;
 }
 
 function canSendProgress(extra: ToolExtra): extra is ToolExtra & {
@@ -863,9 +884,12 @@ export function wrapToolHandler<Args, Result>(
       result: ToolResult<Result>
     ) => string | undefined;
   }
-): (args: Args, extra?: ToolExtra) => Promise<ToolResult<Result>> {
-  return async (args: Args, extra?: ToolExtra) => {
-    const resolvedExtra = extra ?? {};
+): (
+  args: Args,
+  extra?: ToolExtra | ServerContext
+) => Promise<ToolResult<Result>> {
+  return async (args: Args, extra?: ToolExtra | ServerContext) => {
+    const resolvedExtra = toToolExtra(extra);
     if (options.guard && !options.guard()) {
       return maybeStripStructuredContentFromResult(buildNotInitializedResult());
     }

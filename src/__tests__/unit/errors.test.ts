@@ -1,13 +1,11 @@
 import type {
-  CreateTaskRequestHandlerExtra,
-  TaskRequestHandlerExtra,
-} from '@modelcontextprotocol/sdk/experimental/tasks/interfaces.js';
-import type { RequestTaskStore } from '@modelcontextprotocol/sdk/shared/protocol.js';
-import type {
+  CreateTaskServerContext,
   GetTaskResult,
+  RequestTaskStore,
   Result,
+  TaskServerContext,
   TaskStatusNotificationParams,
-} from '@modelcontextprotocol/sdk/types.js';
+} from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { readdirSync } from 'node:fs';
@@ -172,6 +170,47 @@ function createMockTaskStore(): {
   };
 }
 
+function createCreateTaskContext(
+  taskStore: RequestTaskStore,
+  notifications: TaskStatusNotificationParams[] = [],
+  requestedTtl?: number
+): CreateTaskServerContext {
+  const signal = new AbortController().signal;
+  return {
+    mcpReq: {
+      id: 1,
+      method: 'tools/call',
+      signal,
+      notify: async (notification: { method: string; params?: unknown }) => {
+        if (notification.method === 'notifications/tasks/status') {
+          notifications.push(
+            notification.params as TaskStatusNotificationParams
+          );
+        }
+      },
+      send: async () => ({}) as never,
+    },
+    sessionId: 'test-session',
+    task: {
+      store: taskStore,
+      ...(requestedTtl !== undefined ? { requestedTtl } : {}),
+    },
+  } as unknown as CreateTaskServerContext;
+}
+
+function createTaskContext(
+  taskStore: RequestTaskStore,
+  taskId: string
+): TaskServerContext {
+  return {
+    ...createCreateTaskContext(taskStore),
+    task: {
+      store: taskStore,
+      id: taskId,
+    },
+  } as unknown as TaskServerContext;
+}
+
 describe('task cancellation normalization', () => {
   it('reports cancelled while storing failed for SDK task-store compatibility', async () => {
     const notifications: TaskStatusNotificationParams[] = [];
@@ -184,16 +223,7 @@ describe('task cancellation normalization', () => {
       })
     );
 
-    const createExtra = {
-      taskStore,
-      sendNotification: (notification: {
-        method: 'notifications/tasks/status';
-        params: TaskStatusNotificationParams;
-      }) => {
-        notifications.push(notification.params);
-        return Promise.resolve();
-      },
-    } as unknown as CreateTaskRequestHandlerExtra;
+    const createExtra = createCreateTaskContext(taskStore, notifications);
 
     const { task } = await handler.createTask(createExtra);
 
@@ -215,10 +245,7 @@ describe('task cancellation normalization', () => {
       `Expected a cancelled notification, got ${JSON.stringify(notifications)}`
     );
 
-    const taskExtra = {
-      taskId: task.taskId,
-      taskStore,
-    } as unknown as TaskRequestHandlerExtra;
+    const taskExtra = createTaskContext(taskStore, task.taskId);
     const reportedTask = await handler.getTask(taskExtra);
 
     assert.equal(reportedTask.status, 'cancelled');
@@ -237,9 +264,9 @@ describe('task failure normalization', () => {
       })
     );
 
-    const { task } = await handler.createTask({
-      taskStore,
-    } as unknown as CreateTaskRequestHandlerExtra);
+    const { task } = await handler.createTask(
+      createCreateTaskContext(taskStore)
+    );
 
     for (
       let attempt = 0;
@@ -249,10 +276,7 @@ describe('task failure normalization', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
 
-    const taskExtra = {
-      taskId: task.taskId,
-      taskStore,
-    } as unknown as TaskRequestHandlerExtra;
+    const taskExtra = createTaskContext(taskStore, task.taskId);
 
     const reportedTask = await handler.getTask(taskExtra);
     assert.equal(reportedTask.status, 'failed');
@@ -273,10 +297,9 @@ describe('task failure normalization', () => {
       })
     );
 
-    const { task } = await handler.createTask({
-      taskStore,
-      taskRequestedTtl: MAX_TASK_TTL_MS + 60_000,
-    } as unknown as CreateTaskRequestHandlerExtra);
+    const { task } = await handler.createTask(
+      createCreateTaskContext(taskStore, [], MAX_TASK_TTL_MS + 60_000)
+    );
 
     assert.equal(task.ttl, MAX_TASK_TTL_MS);
   });
@@ -317,9 +340,7 @@ describe('task failure normalization', () => {
     );
 
     await assert.rejects(async () => {
-      await handler.createTask({
-        taskStore,
-      } as unknown as CreateTaskRequestHandlerExtra);
+      await handler.createTask(createCreateTaskContext(taskStore));
     }, /Too many active tasks/u);
   });
 });

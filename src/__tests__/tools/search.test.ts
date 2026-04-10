@@ -2,8 +2,6 @@
  * Integration tests for search tools: grep (search_content), find (search_files),
  * and search_and_replace.
  */
-import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
-
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -173,7 +171,6 @@ describe('grep tool', () => {
           maxResults: 10,
         },
       },
-      CallToolResultSchema,
       { task: { ttl: 60_000 } }
     );
 
@@ -207,10 +204,8 @@ describe('grep tool', () => {
     const storedTask = await env.client.experimental.tasks.getTask(taskId);
     assert.equal(storedTask.status, 'completed');
 
-    const storedResult = await env.client.experimental.tasks.getTaskResult(
-      taskId,
-      CallToolResultSchema
-    );
+    const storedResult =
+      await env.client.experimental.tasks.getTaskResult(taskId);
     assert.equal(storedResult.isError, undefined);
   });
 });

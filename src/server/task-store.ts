@@ -1,5 +1,8 @@
-import { InMemoryTaskStore } from '@modelcontextprotocol/sdk/experimental/tasks/stores/in-memory.js';
-import type { Result, Task } from '@modelcontextprotocol/sdk/types.js';
+import {
+  InMemoryTaskStore,
+  type Result,
+  type Task,
+} from '@modelcontextprotocol/server';
 
 import { ErrorCode } from '../lib/errors.js';
 

@@ -1,9 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import {
-  InitializedNotificationSchema,
-  type Root,
-  RootsListChangedNotificationSchema,
-} from '@modelcontextprotocol/sdk/types.js';
+import { type McpServer, type Root } from '@modelcontextprotocol/server';
 
 import { channel } from 'node:diagnostics_channel';
 import { realpath } from 'node:fs/promises';
@@ -186,7 +181,7 @@ export class RootsManager {
 
   registerHandlers(server: McpServer, onInitTimeout?: () => void): void {
     server.server.setNotificationHandler(
-      InitializedNotificationSchema,
+      'notifications/initialized',
       async () => {
         if (this.initTimer) {
           clearTimeout(this.initTimer);
@@ -198,7 +193,7 @@ export class RootsManager {
     );
 
     server.server.setNotificationHandler(
-      RootsListChangedNotificationSchema,
+      'notifications/roots/list_changed',
       () => {
         if (!this.clientInitialized) return;
         this.scheduleRootsUpdate(server);

@@ -1,4 +1,4 @@
-import type { Icon } from '@modelcontextprotocol/sdk/types.js';
+import type { Icon } from '@modelcontextprotocol/server';
 
 const MIME = 'image/svg+xml';
 

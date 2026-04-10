@@ -46,7 +46,7 @@
         {
           "type": "named",
           "name": "--port",
-          "description": "Enable HTTP transport on the given port (MCP Streamable HTTP with SSE).",
+          "description": "Enable HTTP transport on the given port (Node Streamable HTTP).",
           "format": "number",
           "isRequired": false
         }
@@ -91,7 +91,7 @@
         {
           "type": "named",
           "name": "--port",
-          "description": "Enable HTTP transport on the given port (MCP Streamable HTTP with SSE).",
+          "description": "Enable HTTP transport on the given port (Node Streamable HTTP).",
           "format": "number",
           "isRequired": false
         }

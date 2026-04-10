@@ -1,6 +1,5 @@
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Client } from '@modelcontextprotocol/client';
+import { McpServer } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -8,6 +7,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 import { pathToFileURL } from 'node:url';
+
+import { LinkedTransport } from './linked-transport.js';
 
 interface DistToolsModule {
   registerAllTools: (
@@ -78,8 +79,7 @@ async function createDistEnv(): Promise<DistEnv> {
   });
 
   const client = new Client({ name: 'dist-test-client', version: '1.0.0' });
-  const [clientTransport, serverTransport] =
-    InMemoryTransport.createLinkedPair();
+  const [clientTransport, serverTransport] = LinkedTransport.createLinkedPair();
   await server.connect(serverTransport);
   await client.connect(clientTransport);
 

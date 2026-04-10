@@ -1,8 +1,8 @@
 import {
   type McpServer,
+  type ReadResourceResult,
   ResourceTemplate,
-} from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { ReadResourceResult } from '@modelcontextprotocol/sdk/types.js';
+} from '@modelcontextprotocol/server';
 
 import { ErrorCode, McpError } from './lib/errors.js';
 import { globalMetrics } from './lib/observability.js';
