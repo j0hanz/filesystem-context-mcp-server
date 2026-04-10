@@ -326,7 +326,17 @@ export function registerApplyPatchTool(
       outputSchema: ApplyPatchOutputSchema,
       timedSignal: {},
       context: { path: args.path },
-      run: (signal) => handleApplyPatch(args, signal),
+      run: async (signal) => {
+        const result = await handleApplyPatch(args, signal);
+        if (!args.dryRun) {
+          const sc = result.structuredContent;
+          void ctx.log?.(
+            'info',
+            `patch: ${args.path} (+${String(sc.linesAdded ?? 0)}/-${String(sc.linesRemoved ?? 0)})`
+          );
+        }
+        return result;
+      },
       onError: (error) =>
         buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
     });

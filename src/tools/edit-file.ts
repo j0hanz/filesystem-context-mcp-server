@@ -413,7 +413,14 @@ export function registerEditFileTool(
       outputSchema: EditFileOutputSchema,
       timedSignal: {},
       context: { path: args.path },
-      run: (signal) => handleEditFile(args, signal),
+      run: async (signal) => {
+        const result = await handleEditFile(args, signal);
+        void ctx.log?.(
+          'info',
+          `edit: ${args.path} (${String(result.structuredContent.appliedEdits ?? 0)} edits)`
+        );
+        return result;
+      },
       onError: (error) =>
         buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
     });

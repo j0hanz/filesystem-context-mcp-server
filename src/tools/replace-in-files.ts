@@ -574,6 +574,12 @@ export function registerSearchAndReplaceTool(
             `🛠 replace: ${context} • ${endSuffix}`,
             finalCurrent
           );
+          if (!args.dryRun) {
+            void ctx.log?.(
+              'info',
+              `search_and_replace: ${String(sc.matches ?? 0)} matches in ${String(sc.filesChanged ?? 0)} files`
+            );
+          }
           return result;
         } catch (error) {
           progress.fail(`🛠 replace: ${context} • failed`);
