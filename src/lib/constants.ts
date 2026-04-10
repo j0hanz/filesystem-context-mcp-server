@@ -119,11 +119,15 @@ export const MAX_CONCURRENT_TASKS = parseEnvInt(
   10_000
 );
 
-// How often (ms) a background task checks the store for client cancellation.
 export const TASK_CANCEL_POLL_MS = 2_000;
 
-// Suggested poll interval (ms) returned to the SDK/client for automatic task polling.
-// Filesystem operations complete quickly; a short interval avoids unnecessary latency.
+export const INIT_HANDSHAKE_TIMEOUT_MS = parseEnvInt(
+  'FS_INIT_HANDSHAKE_TIMEOUT_MS',
+  30_000,
+  1_000,
+  300_000
+);
+
 export const TASK_POLL_INTERVAL_MS = 100;
 
 // Auto-tuned parallelism based on CPU cores (no env override)

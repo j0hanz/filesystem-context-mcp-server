@@ -14,6 +14,7 @@ import {
   createTimedAbortSignal,
   withAbort,
 } from '../lib/abort.js';
+import { INIT_HANDSHAKE_TIMEOUT_MS } from '../lib/constants.js';
 import { formatUnknownErrorMessage } from '../lib/errors.js';
 import { Logger, type LoggingState, logToMcp } from '../lib/logger.js';
 import {
@@ -138,6 +139,7 @@ export class RootsManager {
     expanded: [],
   };
   private clientInitialized = false;
+  private initTimer: ReturnType<typeof setTimeout> | undefined;
   // Guard concurrent root refreshes; if one is already running we queue one
   // replay so the last-known state still gets applied after completion.
   private updatingRoots = false;
@@ -156,6 +158,10 @@ export class RootsManager {
   }
 
   destroy(): void {
+    if (this.initTimer) {
+      clearTimeout(this.initTimer);
+      this.initTimer = undefined;
+    }
     if (this._debouncedUpdate) {
       this._debouncedUpdate.cancel();
       this._debouncedUpdate = undefined;
@@ -179,6 +185,10 @@ export class RootsManager {
     server.server.setNotificationHandler(
       InitializedNotificationSchema,
       async () => {
+        if (this.initTimer) {
+          clearTimeout(this.initTimer);
+          this.initTimer = undefined;
+        }
         this.clientInitialized = true;
         await this.updateRootsFromClient(server);
       }
@@ -191,6 +201,19 @@ export class RootsManager {
         this.scheduleRootsUpdate(server);
       }
     );
+
+    this.initTimer = setTimeout(() => {
+      if (!this.clientInitialized) {
+        logToMcp(
+          server,
+          'warning',
+          `Client did not send notifications/initialized within ${String(INIT_HANDSHAKE_TIMEOUT_MS)}ms`,
+          this.loggingState.minimumLevel
+        );
+      }
+      this.initTimer = undefined;
+    }, INIT_HANDSHAKE_TIMEOUT_MS);
+    this.initTimer.unref();
   }
 
   async recomputeAllowedDirectories(): Promise<void> {

@@ -20,7 +20,11 @@ import {
   type ServerResponse,
 } from 'node:http';
 
-import { DEFAULT_LOG_LEVEL, parseEnvInt } from '../lib/constants.js';
+import {
+  DEFAULT_LOG_LEVEL,
+  INIT_HANDSHAKE_TIMEOUT_MS,
+  parseEnvInt,
+} from '../lib/constants.js';
 import { formatUnknownErrorMessage } from '../lib/errors.js';
 import {
   createLoggingState,
@@ -347,6 +351,7 @@ interface HttpSession {
   rootsManager: RootsManager;
   transport: StreamableHTTPServerTransport;
   negotiatedProtocolVersion: string;
+  createdAt: number;
 }
 
 async function createHttpSession(
@@ -368,6 +373,7 @@ async function createHttpSession(
         rootsManager,
         transport,
         negotiatedProtocolVersion,
+        createdAt: Date.now(),
       });
       activeServers.set(sessionId, {
         server: mcpServer,
@@ -399,6 +405,7 @@ async function createHttpSession(
     rootsManager,
     transport,
     negotiatedProtocolVersion,
+    createdAt: Date.now(),
   };
 }
 
@@ -752,6 +759,28 @@ export async function startHttpServer(
     }
   }
 
+  const SWEEP_INTERVAL_MS = INIT_HANDSHAKE_TIMEOUT_MS * 2;
+  const sweepTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [sessionId, session] of sessions) {
+      if (
+        !session.rootsManager.isInitialized() &&
+        now - session.createdAt > INIT_HANDSHAKE_TIMEOUT_MS
+      ) {
+        Logger.warn(
+          `[HTTP] Evicting stale session ${sessionId}: client never sent notifications/initialized`
+        );
+        session.server.close().catch((err: unknown) => {
+          Logger.error(
+            `[HTTP] Error closing stale session ${sessionId}:`,
+            formatUnknownErrorMessage(err)
+          );
+        });
+      }
+    }
+  }, SWEEP_INTERVAL_MS);
+  sweepTimer.unref();
+
   const httpServer = createHttpServer(
     (req: IncomingMessage, res: ServerResponse) => {
       const urlPath = (req.url ?? '/').split('?')[0];
@@ -768,6 +797,10 @@ export async function startHttpServer(
       }
     }
   );
+
+  httpServer.once('close', () => {
+    clearInterval(sweepTimer);
+  });
 
   return new Promise<Server>((resolve, reject) => {
     httpServer.once('error', reject);

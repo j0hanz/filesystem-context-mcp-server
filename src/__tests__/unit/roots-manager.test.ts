@@ -97,4 +97,68 @@ describe('RootsManager', () => {
     await delay(150);
     assert.equal(updateCalls, 0);
   });
+
+  it('clears init timer when initialized notification is received', async () => {
+    const manager = new RootsManager({}, { minimumLevel: 'debug' });
+    const fakeServer = createFakeServer();
+
+    (
+      manager as unknown as { updateRootsFromClient: () => Promise<void> }
+    ).updateRootsFromClient = () => Promise.resolve();
+
+    manager.registerHandlers(fakeServer.server);
+
+    // initTimer should be set after registerHandlers
+    const timerBefore = (
+      manager as unknown as { initTimer: ReturnType<typeof setTimeout> }
+    ).initTimer;
+    assert.ok(
+      timerBefore,
+      'Expected initTimer to be set after registerHandlers'
+    );
+
+    await fakeServer.getInitializedHandler()();
+
+    const timerAfter = (
+      manager as unknown as {
+        initTimer: ReturnType<typeof setTimeout> | undefined;
+      }
+    ).initTimer;
+    assert.equal(
+      timerAfter,
+      undefined,
+      'Expected initTimer to be cleared after initialized'
+    );
+
+    manager.destroy();
+  });
+
+  it('clears init timer on destroy before initialized', () => {
+    const manager = new RootsManager({}, { minimumLevel: 'debug' });
+    const fakeServer = createFakeServer();
+
+    (
+      manager as unknown as { updateRootsFromClient: () => Promise<void> }
+    ).updateRootsFromClient = () => Promise.resolve();
+
+    manager.registerHandlers(fakeServer.server);
+
+    const timerBefore = (
+      manager as unknown as { initTimer: ReturnType<typeof setTimeout> }
+    ).initTimer;
+    assert.ok(timerBefore, 'Expected initTimer to be set');
+
+    manager.destroy();
+
+    const timerAfter = (
+      manager as unknown as {
+        initTimer: ReturnType<typeof setTimeout> | undefined;
+      }
+    ).initTimer;
+    assert.equal(
+      timerAfter,
+      undefined,
+      'Expected initTimer to be cleared on destroy'
+    );
+  });
 });
