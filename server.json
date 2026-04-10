@@ -54,7 +54,6 @@
     },
     {
       "registryType": "oci",
-      "registryBaseUrl": "https://ghcr.io",
       "identifier": "ghcr.io/j0hanz/filesystem-mcp",
       "version": "1.15.1",
       "runtimeHint": "docker",
