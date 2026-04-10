@@ -82,7 +82,13 @@ jobs:
           if (Array.isArray(data.packages)) {
             for (const pkg of data.packages) {
               if (pkg && typeof pkg === 'object') {
-                pkg.version = process.env.VERSION;
+                if (pkg.registryType === 'oci') {
+                  const idBase = pkg.identifier.split(':')[0];
+                  pkg.identifier = `${idBase}:${process.env.VERSION}`;
+                  delete pkg.version;
+                } else {
+                  pkg.version = process.env.VERSION;
+                }
               }
             }
           }

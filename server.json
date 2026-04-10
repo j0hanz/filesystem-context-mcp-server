@@ -12,9 +12,7 @@
     {
       "src": "https://raw.githubusercontent.com/j0hanz/filesystem-mcp/main/assets/logo.svg",
       "mimeType": "image/svg+xml",
-      "sizes": [
-        "any"
-      ]
+      "sizes": ["any"]
     }
   ],
   "version": "1.15.3",
@@ -56,8 +54,7 @@
     },
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/j0hanz/filesystem-mcp",
-      "version": "1.15.3",
+      "identifier": "ghcr.io/j0hanz/filesystem-mcp:1.15.3",
       "runtimeHint": "docker",
       "transport": {
         "type": "stdio"
