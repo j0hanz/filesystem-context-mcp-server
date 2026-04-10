@@ -11,6 +11,7 @@ import { Logger } from '../lib/logger.js';
 import { isAllowedDirectoryRoot, validatePathForWrite } from '../lib/paths.js';
 
 import { DeleteFileInputSchema, DeleteFileOutputSchema } from '../schemas.js';
+import { FILE_DELETE_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,
   buildToolResponse,
@@ -35,6 +36,7 @@ export const DELETE_FILE_TOOL: ToolContract = {
   inputSchema: DeleteFileInputSchema,
   outputSchema: DeleteFileOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
+  icons: FILE_DELETE_ICONS,
   gotchas: ['Non-empty directories require `recursive=true`.'],
   taskSupport: 'forbidden',
 } as const;

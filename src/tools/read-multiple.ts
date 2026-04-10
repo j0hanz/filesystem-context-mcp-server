@@ -12,6 +12,7 @@ import {
   ReadMultipleFilesInputSchema,
   ReadMultipleFilesOutputSchema,
 } from '../schemas.js';
+import { FILE_READ_ICONS } from './icons.js';
 import {
   buildBatchCompletionSuffix,
   buildBatchPathContext,
@@ -48,6 +49,7 @@ export const READ_MANY_TOOL: ToolContract = {
   inputSchema: ReadMultipleFilesInputSchema,
   outputSchema: ReadMultipleFilesOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
+  icons: FILE_READ_ICONS,
   taskSupport: 'optional',
 } as const;
 

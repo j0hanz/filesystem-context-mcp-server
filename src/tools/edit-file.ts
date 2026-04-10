@@ -15,6 +15,7 @@ import { Logger } from '../lib/logger.js';
 import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
 
 import { EditFileInputSchema, EditFileOutputSchema } from '../schemas.js';
+import { FILE_EDIT_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,
   buildToolResponse,
@@ -41,6 +42,7 @@ export const EDIT_FILE_TOOL: ToolContract = {
   inputSchema: EditFileInputSchema,
   outputSchema: EditFileOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
+  icons: FILE_EDIT_ICONS,
   nuances: ['Each edit applies to the output of the previous edit.'],
   taskSupport: 'forbidden',
 } as const;

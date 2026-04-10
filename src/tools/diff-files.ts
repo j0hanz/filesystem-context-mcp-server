@@ -12,6 +12,7 @@ import { ErrorCode, McpError } from '../lib/errors.js';
 import { validateExistingPath } from '../lib/paths.js';
 
 import { DiffFilesInputSchema, DiffFilesOutputSchema } from '../schemas.js';
+import { FILE_READ_ICONS } from './icons.js';
 import {
   buildResourceLink,
   buildToolErrorResponse,
@@ -40,6 +41,7 @@ export const DIFF_FILES_TOOL: ToolContract = {
   inputSchema: DiffFilesInputSchema,
   outputSchema: DiffFilesOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
+  icons: FILE_READ_ICONS,
   taskSupport: 'optional',
 } as const;
 

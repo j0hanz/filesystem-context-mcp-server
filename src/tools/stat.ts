@@ -10,6 +10,7 @@ import { getFileInfo } from '../lib/file-operations/metadata.js';
 
 import { type FileInfo, formatBytes, joinLines } from '../config.js';
 import { GetFileInfoInputSchema, GetFileInfoOutputSchema } from '../schemas.js';
+import { FILE_READ_ICONS } from './icons.js';
 import {
   buildFileInfoPayload,
   buildToolErrorResponse,
@@ -36,6 +37,7 @@ export const GET_FILE_INFO_TOOL: ToolContract = {
   inputSchema: GetFileInfoInputSchema,
   outputSchema: GetFileInfoOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
+  icons: FILE_READ_ICONS,
   taskSupport: 'forbidden',
 } as const;
 

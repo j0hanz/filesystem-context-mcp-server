@@ -27,6 +27,7 @@ import {
   SearchAndReplaceInputSchema,
   SearchAndReplaceOutputSchema,
 } from '../schemas.js';
+import { FILE_EDIT_ICONS } from './icons.js';
 import {
   buildStructuredError,
   buildToolErrorResponse,
@@ -59,6 +60,7 @@ export const SEARCH_AND_REPLACE_TOOL: ToolContract = {
   inputSchema: SearchAndReplaceInputSchema,
   outputSchema: SearchAndReplaceOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
+  icons: FILE_EDIT_ICONS,
   taskSupport: 'optional',
 } as const;
 

@@ -21,6 +21,7 @@ import {
   SearchContentInputSchema,
   SearchContentOutputSchema,
 } from '../schemas.js';
+import { SEARCH_ICONS } from './icons.js';
 import {
   buildResourceLink,
   buildToolErrorResponse,
@@ -149,6 +150,7 @@ export const SEARCH_CONTENT_TOOL: ToolContract = {
   inputSchema: SearchContentInputSchema,
   outputSchema: SearchContentOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
+  icons: SEARCH_ICONS,
   nuances: [
     'Inline results capped at 50 matches; full results via `resourceUri`.',
   ],

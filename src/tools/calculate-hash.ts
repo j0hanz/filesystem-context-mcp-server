@@ -22,6 +22,7 @@ import {
   CalculateHashInputSchema,
   CalculateHashOutputSchema,
 } from '../schemas.js';
+import { FILE_READ_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,
   buildToolResponse,
@@ -49,6 +50,7 @@ export const CALCULATE_HASH_TOOL: ToolContract = {
   inputSchema: CalculateHashInputSchema,
   outputSchema: CalculateHashOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
+  icons: FILE_READ_ICONS,
   nuances: [
     'Directory hashing respects root `.gitignore` and sorts paths for stable output.',
   ],

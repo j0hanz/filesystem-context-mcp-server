@@ -12,6 +12,7 @@ import {
 } from '../lib/file-operations/metadata.js';
 
 import { TreeInputSchema, TreeOutputSchema } from '../schemas.js';
+import { DIRECTORY_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,
   buildToolResponse,
@@ -40,6 +41,7 @@ export const TREE_TOOL: ToolContract = {
   inputSchema: TreeInputSchema,
   outputSchema: TreeOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
+  icons: DIRECTORY_ICONS,
   taskSupport: 'optional',
 } as const;
 

@@ -13,6 +13,7 @@ import { searchFiles } from '../lib/file-operations/search.js';
 
 import { formatOperationSummary, joinLines } from '../config.js';
 import { SearchFilesInputSchema, SearchFilesOutputSchema } from '../schemas.js';
+import { DIRECTORY_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,
   buildToolResponse,
@@ -44,6 +45,7 @@ export const SEARCH_FILES_TOOL: ToolContract = {
   inputSchema: SearchFilesInputSchema,
   outputSchema: SearchFilesOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
+  icons: DIRECTORY_ICONS,
   nuances: ['Respects `.gitignore` unless `includeIgnored=true`.'],
   taskSupport: 'optional',
 } as const;

@@ -14,6 +14,7 @@ import { Logger } from '../lib/logger.js';
 import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
 
 import { ApplyPatchInputSchema, ApplyPatchOutputSchema } from '../schemas.js';
+import { FILE_EDIT_ICONS } from './icons.js';
 import {
   buildStructuredError,
   buildToolErrorResponse,
@@ -42,6 +43,7 @@ export const APPLY_PATCH_TOOL: ToolContract = {
   inputSchema: ApplyPatchInputSchema,
   outputSchema: ApplyPatchOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
+  icons: FILE_EDIT_ICONS,
   nuances: [
     'Multi-file patches use `path` as base directory; per-file results in `results[]`.',
   ],

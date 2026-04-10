@@ -11,6 +11,7 @@ import {
   GetMultipleFileInfoInputSchema,
   GetMultipleFileInfoOutputSchema,
 } from '../schemas.js';
+import { FILE_READ_ICONS } from './icons.js';
 import {
   buildBatchCompletionSuffix,
   buildBatchPathContext,
@@ -42,6 +43,7 @@ export const GET_MULTIPLE_FILE_INFO_TOOL: ToolContract = {
   inputSchema: GetMultipleFileInfoInputSchema,
   outputSchema: GetMultipleFileInfoOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
+  icons: FILE_READ_ICONS,
   taskSupport: 'optional',
 } as const;
 

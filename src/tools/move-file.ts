@@ -20,6 +20,7 @@ import {
 } from '../lib/paths.js';
 
 import { MoveFileInputSchema, MoveFileOutputSchema } from '../schemas.js';
+import { FILE_MOVE_ICONS } from './icons.js';
 import {
   buildStructuredError,
   buildToolErrorResponse,
@@ -44,6 +45,7 @@ export const MOVE_FILE_TOOL: ToolContract = {
   inputSchema: MoveFileInputSchema,
   outputSchema: MoveFileOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
+  icons: FILE_MOVE_ICONS,
   gotchas: [
     'On POSIX, an existing destination is silently overwritten; on Windows, rename fails with EEXIST if destination exists.',
   ],

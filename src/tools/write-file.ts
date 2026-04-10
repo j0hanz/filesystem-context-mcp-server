@@ -13,6 +13,7 @@ import { validatePathForWrite } from '../lib/paths.js';
 
 import { formatBytes } from '../config.js';
 import { WriteFileInputSchema, WriteFileOutputSchema } from '../schemas.js';
+import { FILE_EDIT_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,
   buildToolResponse,
@@ -37,6 +38,7 @@ export const WRITE_FILE_TOOL: ToolContract = {
   inputSchema: WriteFileInputSchema,
   outputSchema: WriteFileOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
+  icons: FILE_EDIT_ICONS,
   taskSupport: 'forbidden',
 } as const;
 

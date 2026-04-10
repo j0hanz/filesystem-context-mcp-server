@@ -13,6 +13,7 @@ import { ErrorCode } from '../lib/errors.js';
 import { readFile } from '../lib/fs-helpers.js';
 
 import { ReadFileInputSchema, ReadFileOutputSchema } from '../schemas.js';
+import { FILE_READ_ICONS } from './icons.js';
 import {
   buildResourceLink,
   buildToolErrorResponse,
@@ -41,6 +42,7 @@ export const READ_FILE_TOOL: ToolContract = {
   inputSchema: ReadFileInputSchema,
   outputSchema: ReadFileOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
+  icons: FILE_READ_ICONS,
   nuances: [
     'Large content is externalized to `filesystem-mcp://result/{id}` and preview is returned inline.',
   ],

@@ -18,6 +18,7 @@ import {
   ListDirectoryInputSchema,
   ListDirectoryOutputSchema,
 } from '../schemas.js';
+import { DIRECTORY_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,
   buildToolResponse,
@@ -45,6 +46,7 @@ export const LIST_DIRECTORY_TOOL: ToolContract = {
   inputSchema: ListDirectoryInputSchema,
   outputSchema: ListDirectoryOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
+  icons: DIRECTORY_ICONS,
   taskSupport: 'optional',
   nuances: ['`pattern` enables filtered recursive traversal up to `maxDepth`.'],
 } as const;

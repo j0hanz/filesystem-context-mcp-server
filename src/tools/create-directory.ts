@@ -13,6 +13,7 @@ import {
   CreateDirectoryInputSchema,
   CreateDirectoryOutputSchema,
 } from '../schemas.js';
+import { DIR_CREATE_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,
   buildToolResponse,
@@ -36,6 +37,7 @@ export const CREATE_DIRECTORY_TOOL: ToolContract = {
   inputSchema: CreateDirectoryInputSchema,
   outputSchema: CreateDirectoryOutputSchema,
   annotations: IDEMPOTENT_WRITE_TOOL_ANNOTATIONS,
+  icons: DIR_CREATE_ICONS,
   taskSupport: 'forbidden',
 } as const;
 
