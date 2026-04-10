@@ -8,6 +8,24 @@
 
 A local filesystem MCP server that lets LLMs and AI agents read, write, search, diff, patch, and manage files safely and efficiently. Built for reliable, structured, and controlled filesystem interaction.
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Quick Start](#quick-start) — [Docker](#docker) · [CLI Usage](#cli-usage)
+- [Client Configuration](#client-configuration)
+- [Use Cases](#use-cases)
+- [Architecture](#architecture)
+- [MCP Surface](#mcp-surface) — [Tools](#tools) · [Resources](#resources) · [Prompts](#prompts)
+- [MCP Capabilities](#mcp-capabilities) — [Tool Annotations](#tool-annotations) · [Structured Output](#structured-output)
+- [Configuration](#configuration) — [HTTP & Auth](#http--auth) · [File Size Limits](#file-size-limits) · [Access Control](#access-control) · [Output & Inline Limits](#output--inline-limits) · [Tasks](#tasks) · [Logging & Diagnostics](#logging--diagnostics) · [Performance](#performance)
+- [HTTP Endpoints](#http-endpoints)
+- [Security](#security)
+- [Development](#development)
+- [Troubleshooting](#troubleshooting)
+- [Credits](#credits)
+- [Contributing and License](#contributing-and-license)
+
 ## Overview
 
 A secure, production-ready [Model Context Protocol](https://modelcontextprotocol.io) server that gives AI assistants controlled access to the local filesystem. All operations are sandboxed to explicitly allowed directories with path traversal prevention, sensitive file blocking, and optional Bearer token authentication.
@@ -469,37 +487,39 @@ Add to VS Code `settings.json` under `augment.advanced`:
 
 </details>
 
+[↑ Back to top](#table-of-contents)
+
 ## Use Cases
 
 ### Explore and Understand a Codebase
 
 Discover project structure and navigate unfamiliar repositories. Start with `roots` to see allowed directories, use `tree` for an overview, `find` to locate files by pattern, and `read` or `read_many` to inspect contents.
 
-**Relevant tools:** `roots`, `ls`, `find`, `tree`, `read`, `read_many`, `stat`
+**Relevant tools:** [`roots`](#roots), [`ls`](#ls), [`find`](#find), [`tree`](#tree), [`read`](#read), [`read_many`](#read_many), [`stat`](#stat)
 
 ### Search Across Files
 
 Locate specific code patterns, function definitions, or configuration values across a project. Use `grep` for content search with regex support and `find` for file name matching.
 
-**Relevant tools:** `grep`, `find`
+**Relevant tools:** [`grep`](#grep), [`find`](#find)
 
 ### Edit and Refactor Code
 
 Make precise, targeted edits to source files. Use `edit` for surgical replacements with dry-run preview, or `search_and_replace` for bulk changes across multiple files matching a glob pattern.
 
-**Relevant tools:** `edit`, `search_and_replace`, `write`
+**Relevant tools:** [`edit`](#edit), [`search_and_replace`](#search_and_replace), [`write`](#write)
 
 ### Diff and Patch Workflow
 
 Compare file versions and apply patches. Generate a unified diff with `diff_files`, preview with `apply_patch(dryRun: true)`, then apply. Supports both single-file and multi-file patches (best-effort per file with per-file `results[]`).
 
-**Relevant tools:** `diff_files`, `apply_patch`
+**Relevant tools:** [`diff_files`](#diff_files), [`apply_patch`](#apply_patch)
 
 ### File Management
 
 Create directories, move/rename files, delete files, and verify file integrity via SHA-256 hashing.
 
-**Relevant tools:** `mkdir`, `mv`, `rm`, `calculate_hash`, `write`
+**Relevant tools:** [`mkdir`](#mkdir), [`mv`](#mv), [`rm`](#rm), [`calculate_hash`](#calculate_hash), [`write`](#write)
 
 ## Architecture
 
@@ -564,6 +584,8 @@ Create directories, move/rename files, delete files, and verify file integrity v
 ## MCP Surface
 
 ### Tools
+
+[`roots`](#roots) · [`ls`](#ls) · [`find`](#find) · [`tree`](#tree) · [`read`](#read) · [`read_many`](#read_many) · [`stat`](#stat) · [`stat_many`](#stat_many) · [`grep`](#grep) · [`mkdir`](#mkdir) · [`write`](#write) · [`edit`](#edit) · [`mv`](#mv) · [`rm`](#rm) · [`calculate_hash`](#calculate_hash) · [`diff_files`](#diff_files) · [`apply_patch`](#apply_patch) · [`search_and_replace`](#search_and_replace)
 
 #### `roots`
 
@@ -849,6 +871,8 @@ Bulk search-and-replace across files matching a glob. Replaces **all** occurrenc
 
 All 18 tools define `outputSchema` (Zod -> JSON Schema) and return `structuredContent` alongside text `content`. Set `FS_CONTEXT_STRIP_STRUCTURED=true` to strip output schemas from tool definitions (reduces token usage for LLMs that don't use structured output).
 
+[↑ Back to top](#table-of-contents)
+
 ## Configuration
 
 ### HTTP & Auth
@@ -909,6 +933,8 @@ All 18 tools define `outputSchema` (Zod -> JSON Schema) and return `structuredCo
 | `FS_CONTEXT_SEARCH_WORKERS`     | CPU cores (≤ 8)  | Concurrent search worker threads (1-16)  |
 | `FS_CONTEXT_LIST_CURSOR_TTL_MS` | `300000` (5 min) | Cursor TTL for `ls` pagination snapshots |
 
+[↑ Back to top](#table-of-contents)
+
 ## HTTP Endpoints
 
 When started with `--port <number>`, the server exposes a single MCP endpoint:
@@ -941,6 +967,8 @@ When started with `--port <number>`, the server exposes a single MCP endpoint:
 | Input validation          | confirmed | `src/schemas.ts` — Zod strict schemas on all tool inputs                               |
 | Request body limit        | confirmed | `src/server/bootstrap.ts` — configurable max request size (413 on overflow)            |
 | Remote bind guard         | confirmed | `src/server/bootstrap.ts` — refuses non-loopback bind without `FILESYSTEM_MCP_API_KEY` |
+
+[↑ Back to top](#table-of-contents)
 
 ## Development
 
