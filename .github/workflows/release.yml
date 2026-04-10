@@ -169,7 +169,7 @@ jobs:
   # ──────────────────────────────────────────────
   publish-mcp:
     name: MCP Registry
-    needs: [release, publish-npm]
+    needs: [release, publish-npm, publish-docker]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
