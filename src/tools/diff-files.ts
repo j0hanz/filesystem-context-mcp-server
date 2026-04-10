@@ -40,7 +40,7 @@ export const DIFF_FILES_TOOL: ToolContract = {
   inputSchema: DiffFilesInputSchema,
   outputSchema: DiffFilesOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
-  taskSupport: 'forbidden',
+  taskSupport: 'optional',
 } as const;
 
 function computeDiffStats(hunks: StructuredPatch['hunks']): {

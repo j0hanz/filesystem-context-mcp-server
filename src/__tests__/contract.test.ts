@@ -3,6 +3,8 @@
  * carry the right annotations, and perform a basic smoke call.
  */
 import assert from 'node:assert/strict';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import {
@@ -201,7 +203,9 @@ describe('Tool contract', () => {
 
   it('task-capable tools expose execution.taskSupport in tools/list', async () => {
     const TASK_OPTIONAL_TOOLS = new Set([
+      'apply_patch',
       'calculate_hash',
+      'diff_files',
       'grep',
       'find',
       'ls',
@@ -230,6 +234,39 @@ describe('Tool contract', () => {
           `${tool.name}: expected taskSupport undefined or 'forbidden', got '${String(taskSupport)}'`
         );
       }
+    }
+  });
+
+  it('all read-only tools return structuredContent with ok:true', async () => {
+    // Create a test file so file-dependent tools have a target
+    const testFile = join(env.tmpDir, 'contract-test.txt');
+    await writeFile(testFile, 'hello world\nline two\n');
+
+    const testCases: Array<{
+      name: string;
+      arguments: Record<string, unknown>;
+    }> = [
+      { name: 'roots', arguments: {} },
+      { name: 'ls', arguments: { path: env.tmpDir } },
+      { name: 'tree', arguments: { path: env.tmpDir } },
+      { name: 'find', arguments: { path: env.tmpDir, pattern: '**/*' } },
+      { name: 'stat', arguments: { path: testFile } },
+      { name: 'stat_many', arguments: { paths: [testFile] } },
+      { name: 'read', arguments: { path: testFile } },
+      { name: 'read_many', arguments: { paths: [testFile] } },
+      { name: 'grep', arguments: { path: env.tmpDir, pattern: 'hello' } },
+      { name: 'calculate_hash', arguments: { path: testFile } },
+    ];
+
+    for (const tc of testCases) {
+      const result = await env.client.callTool(tc);
+      assertOk(result);
+      const sc = getStructured(result);
+      assert.equal(
+        sc['ok'],
+        true,
+        `${tc.name}: expected structuredContent.ok === true`
+      );
     }
   });
 });

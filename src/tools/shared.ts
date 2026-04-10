@@ -313,7 +313,7 @@ export type ToolResponse<T> = ReturnType<typeof buildToolResponse<T>> & {
 interface ToolErrorResponse extends Record<string, unknown> {
   content: ContentBlock[];
   isError: true;
-  errorCode?: string;
+  errorCode?: ErrorCode;
 }
 
 export type ToolResult<T> = ToolResponse<T> | ToolErrorResponse;

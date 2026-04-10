@@ -1,3 +1,5 @@
+import type { Icon } from '@modelcontextprotocol/sdk/types.js';
+
 import type { ZodType } from 'zod';
 
 export interface ToolContract {
@@ -46,6 +48,11 @@ export interface ToolContract {
    * Common pitfalls or warnings for documentation.
    */
   gotchas?: string[];
+
+  /**
+   * Optional icons for display in user interfaces.
+   */
+  icons?: Icon[];
 
   /**
    * Task support level for the tool. Defaults to 'forbidden'.

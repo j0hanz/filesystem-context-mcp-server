@@ -45,7 +45,7 @@ export const APPLY_PATCH_TOOL: ToolContract = {
   nuances: [
     'Multi-file patches use `path` as base directory; per-file results in `results[]`.',
   ],
-  taskSupport: 'forbidden',
+  taskSupport: 'optional',
 } as const;
 
 function assertPatchTargetSizeWithinLimit(
