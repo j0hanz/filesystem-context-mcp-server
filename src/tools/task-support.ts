@@ -329,7 +329,7 @@ async function notifyTaskCreatedIfPossible(
     method: typeof TASK_CREATED_NOTIFICATION_METHOD;
     params: {
       _meta: {
-        'modelcontextprotocol.io/related-task': {
+        'io.modelcontextprotocol/related-task': {
           taskId: string;
         };
       };
@@ -341,7 +341,7 @@ async function notifyTaskCreatedIfPossible(
       method: TASK_CREATED_NOTIFICATION_METHOD,
       params: {
         _meta: {
-          'modelcontextprotocol.io/related-task': {
+          'io.modelcontextprotocol/related-task': {
             taskId,
           },
         },
@@ -752,7 +752,12 @@ export function createToolTaskHandler<Args extends ToolSchema, Result>(
       options?.toolName,
       options?.cancelPollMs
     );
-    return { task };
+    return {
+      task,
+      _meta: {
+        'io.modelcontextprotocol/model-immediate-response': `${toolLabel} task created — poll tasks/get for progress.`,
+      },
+    };
   }) as ToolTaskHandler<Args>['createTask'];
 
   const getTask = (async (

@@ -64,5 +64,17 @@ export function buildWorkflowGuide(): string {
 3. Apply: \`apply_patch(patch)\`.
 
 > Multi-file patches: set \`path\` to the base directory. Results are reported per file.
+
+### E: Task Mode — Deferred execution with polling
+
+Use task mode for long-running operations when durable polling or cancellation is needed.
+Only tools with \`execution.taskSupport: "optional"\` or \`"required"\` support this.
+
+1. Send \`tools/call\` with \`task: {}\` in the request to create a task.
+2. Poll \`tasks/get({ taskId })\` until status reaches \`completed\`, \`failed\`, or \`cancelled\`.
+3. Retrieve the final result via \`tasks/result({ taskId })\`.
+4. Cancel with \`tasks/cancel({ taskId })\` if no longer needed.
+
+> Do not send \`task\` metadata to tools with \`taskSupport: "forbidden"\` (the default).
 `;
 }

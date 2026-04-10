@@ -362,4 +362,64 @@ describe('createToolTaskHandler', () => {
       store.cleanup();
     }
   });
+
+  it('getTaskResult attaches io.modelcontextprotocol/related-task metadata', async () => {
+    const store = createTestTaskStore();
+    try {
+      const handler = createToolTaskHandler(
+        async () =>
+          ({
+            content: [{ type: 'text', text: 'done' }],
+            structuredContent: { ok: true },
+          }) as ToolResult<{ ok: boolean }>
+      );
+
+      const { task } = await handler.createTask(createMockExtra(store));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const result = await handler.getTaskResult(
+        createMockTaskExtra(store, task.taskId)
+      );
+      const meta = result._meta as Record<string, unknown> | undefined;
+      assert.ok(meta, 'result must include _meta');
+      const related = meta['io.modelcontextprotocol/related-task'] as
+        | Record<string, unknown>
+        | undefined;
+      assert.ok(related, 'must have io.modelcontextprotocol/related-task key');
+      assert.equal(related['taskId'], task.taskId);
+    } finally {
+      store.cleanup();
+    }
+  });
+
+  it('createTask returns model-immediate-response in _meta', async () => {
+    const store = createTestTaskStore();
+    try {
+      const handler = createToolTaskHandler(
+        async () =>
+          ({
+            content: [{ type: 'text', text: 'ok' }],
+            structuredContent: { ok: true },
+          }) as ToolResult<{ ok: boolean }>,
+        { toolName: 'grep' }
+      );
+
+      const result = await handler.createTask(createMockExtra(store));
+      const meta = result._meta as Record<string, unknown> | undefined;
+      assert.ok(meta, 'CreateTaskResult must include _meta');
+      const immediate =
+        meta['io.modelcontextprotocol/model-immediate-response'];
+      assert.equal(
+        typeof immediate,
+        'string',
+        'immediate response must be a string'
+      );
+      assert.ok(
+        (immediate as string).includes('grep'),
+        `immediate response should reference tool name, got: ${String(immediate)}`
+      );
+    } finally {
+      store.cleanup();
+    }
+  });
 });
