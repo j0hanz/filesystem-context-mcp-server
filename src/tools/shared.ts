@@ -95,20 +95,52 @@ function isTaskSupportLevel(value: unknown): value is TaskSupportLevel {
   return value === 'optional' || value === 'required' || value === 'forbidden';
 }
 
+function getExecutionConfig(
+  candidate: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  const { execution } = candidate;
+  return execution && typeof execution === 'object'
+    ? (execution as Record<string, unknown>)
+    : undefined;
+}
+
+function resolveTaskSupportLevel(
+  topLevelTaskSupport: unknown,
+  executionTaskSupport: unknown
+): TaskSupportLevel | undefined {
+  if (isTaskSupportLevel(topLevelTaskSupport)) {
+    return topLevelTaskSupport;
+  }
+
+  if (isTaskSupportLevel(executionTaskSupport)) {
+    return executionTaskSupport;
+  }
+
+  return undefined;
+}
+
+function buildNormalizedExecution(
+  existingExecution: Record<string, unknown> | undefined,
+  taskSupport: TaskSupportLevel | undefined
+): Record<string, unknown> | undefined {
+  if (taskSupport === undefined && existingExecution === undefined) {
+    return undefined;
+  }
+
+  return {
+    ...(existingExecution ?? {}),
+    ...(taskSupport !== undefined ? { taskSupport } : {}),
+  };
+}
+
 function normalizeToolExecution<T extends object>(tool: T): T {
   const candidate = tool as Record<string, unknown>;
   const topLevelTaskSupport = candidate['taskSupport'];
-  const existingExecution =
-    candidate['execution'] && typeof candidate['execution'] === 'object'
-      ? (candidate['execution'] as Record<string, unknown>)
-      : undefined;
-  const executionTaskSupport = existingExecution?.['taskSupport'];
-  let resolvedTaskSupport: TaskSupportLevel | undefined;
-  if (isTaskSupportLevel(topLevelTaskSupport)) {
-    resolvedTaskSupport = topLevelTaskSupport;
-  } else if (isTaskSupportLevel(executionTaskSupport)) {
-    resolvedTaskSupport = executionTaskSupport;
-  }
+  const existingExecution = getExecutionConfig(candidate);
+  const resolvedTaskSupport = resolveTaskSupportLevel(
+    topLevelTaskSupport,
+    existingExecution?.['taskSupport']
+  );
 
   if (resolvedTaskSupport === undefined && topLevelTaskSupport === undefined) {
     return tool;
@@ -117,13 +149,12 @@ function normalizeToolExecution<T extends object>(tool: T): T {
   const normalized = { ...candidate };
   delete normalized['taskSupport'];
 
-  if (resolvedTaskSupport !== undefined || existingExecution !== undefined) {
-    normalized['execution'] = {
-      ...(existingExecution ?? {}),
-      ...(resolvedTaskSupport !== undefined
-        ? { taskSupport: resolvedTaskSupport }
-        : {}),
-    };
+  const execution = buildNormalizedExecution(
+    existingExecution,
+    resolvedTaskSupport
+  );
+  if (execution !== undefined) {
+    normalized['execution'] = execution;
   }
 
   return normalized as T;

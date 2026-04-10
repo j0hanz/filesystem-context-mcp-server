@@ -332,6 +332,59 @@ describe('HTTP transport', () => {
     );
   });
 
+  it('rejects browser origins outside localhost', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+
+    const port = getServerPort(server);
+    const response = await fetch(`http://127.0.0.1:${String(port)}/mcp`, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+        origin: 'https://example.com',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-11-25',
+          capabilities: {},
+          clientInfo: { name: 'http-test', version: '1.0.0' },
+        },
+      }),
+    });
+
+    assert.equal(response.status, 403);
+    assert.match(await response.text(), /Forbidden: disallowed origin/u);
+  });
+
+  it('returns 405 for unsupported HTTP methods on /mcp', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+
+    const port = getServerPort(server);
+    const response = await fetch(`http://127.0.0.1:${String(port)}/mcp`, {
+      method: 'PUT',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    });
+
+    assert.equal(response.status, 405);
+    assert.equal(response.headers.get('allow'), 'GET, POST, DELETE');
+
+    const payload = JSON.parse(await response.text()) as {
+      error?: { message?: string };
+    };
+    assert.equal(payload.error?.message, 'Method Not Allowed');
+  });
+
   it('refuses non-loopback HTTP binding without an API key', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
     const dir = tempDir;

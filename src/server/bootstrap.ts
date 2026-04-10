@@ -523,6 +523,24 @@ function ensureAuthorizedRequest(
   return false;
 }
 
+function ensureAllowedOrigin(
+  req: IncomingMessage,
+  res: ServerResponse
+): boolean {
+  const { origin } = req.headers;
+  if (isAllowedOrigin(origin)) {
+    return true;
+  }
+
+  sendJsonRpcError(
+    res,
+    403,
+    JSON_RPC_SERVER_ERROR,
+    'Forbidden: disallowed origin'
+  );
+  return false;
+}
+
 function discardRequestBody(req: IncomingMessage): void {
   req.on('error', () => {
     // Best effort drain to avoid corrupting keep-alive pipelines.
@@ -576,6 +594,48 @@ function assertHttpBindingSecurity(host: string): void {
   throw new Error(
     `Refusing to bind HTTP server to non-loopback host '${host}' without FILESYSTEM_MCP_API_KEY.`
   );
+}
+
+function writeMethodNotAllowedResponse(res: ServerResponse): void {
+  res.writeHead(405, {
+    Allow: 'GET, POST, DELETE',
+    'Content-Type': 'application/json',
+  });
+  res.end(
+    JSON.stringify({
+      jsonrpc: '2.0',
+      error: {
+        code: JSON_RPC_SERVER_ERROR,
+        message: 'Method Not Allowed',
+      },
+      id: null,
+    })
+  );
+}
+
+function handleHttpRequestError(error: unknown, res: ServerResponse): void {
+  if (error instanceof RequestBodyError && !res.headersSent) {
+    const rpcCode =
+      error.statusCode === 413
+        ? JSON_RPC_INVALID_REQUEST
+        : JSON_RPC_PARSE_ERROR;
+    res.setHeader('Connection', 'close');
+    sendJsonRpcError(res, error.statusCode, rpcCode, error.message);
+    return;
+  }
+
+  Logger.error(
+    '[HTTP] Error handling request:',
+    formatUnknownErrorMessage(error)
+  );
+  if (!res.headersSent) {
+    sendJsonRpcError(
+      res,
+      500,
+      JSON_RPC_INTERNAL_ERROR,
+      'Internal Server Error'
+    );
+  }
 }
 
 export async function startHttpServer(
@@ -658,69 +718,37 @@ export async function startHttpServer(
     await handleSessionTransportRequest(session, req, res);
   }
 
+  async function dispatchMcpMethod(
+    method: string | undefined,
+    req: IncomingMessage,
+    res: ServerResponse,
+    sessionId: string | undefined
+  ): Promise<void> {
+    switch (method) {
+      case 'POST':
+        await handlePostRequest(req, res, sessionId);
+        return;
+      case 'GET':
+      case 'DELETE':
+        await handleGetDeleteRequest(req, res, sessionId);
+        return;
+      default:
+        writeMethodNotAllowedResponse(res);
+    }
+  }
+
   async function handleMcpRequest(
     req: IncomingMessage,
     res: ServerResponse
   ): Promise<void> {
-    const { method } = req;
     const sessionId = getSessionId(req);
-
-    const { origin } = req.headers;
-    if (!isAllowedOrigin(origin)) {
-      sendJsonRpcError(
-        res,
-        403,
-        JSON_RPC_SERVER_ERROR,
-        'Forbidden: disallowed origin'
-      );
-      return;
-    }
-
+    if (!ensureAllowedOrigin(req, res)) return;
     if (!ensureAuthorizedRequest(req, res)) return;
 
     try {
-      if (method === 'POST') {
-        await handlePostRequest(req, res, sessionId);
-      } else if (method === 'GET' || method === 'DELETE') {
-        await handleGetDeleteRequest(req, res, sessionId);
-      } else {
-        res.writeHead(405, {
-          Allow: 'GET, POST, DELETE',
-          'Content-Type': 'application/json',
-        });
-        res.end(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            error: {
-              code: JSON_RPC_SERVER_ERROR,
-              message: 'Method Not Allowed',
-            },
-            id: null,
-          })
-        );
-      }
+      await dispatchMcpMethod(req.method, req, res, sessionId);
     } catch (error: unknown) {
-      if (error instanceof RequestBodyError && !res.headersSent) {
-        const rpcCode =
-          error.statusCode === 413
-            ? JSON_RPC_INVALID_REQUEST
-            : JSON_RPC_PARSE_ERROR;
-        res.setHeader('Connection', 'close');
-        sendJsonRpcError(res, error.statusCode, rpcCode, error.message);
-        return;
-      }
-      Logger.error(
-        '[HTTP] Error handling request:',
-        formatUnknownErrorMessage(error)
-      );
-      if (!res.headersSent) {
-        sendJsonRpcError(
-          res,
-          500,
-          JSON_RPC_INTERNAL_ERROR,
-          'Internal Server Error'
-        );
-      }
+      handleHttpRequestError(error, res);
     }
   }
 
