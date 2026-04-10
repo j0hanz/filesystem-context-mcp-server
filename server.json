@@ -17,13 +17,13 @@
       ]
     }
   ],
-  "version": "1.15.4",
+  "version": "1.15.5",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@j0hanz/filesystem-mcp",
-      "version": "1.15.4",
+      "version": "1.15.5",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
@@ -56,7 +56,7 @@
     },
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/j0hanz/filesystem-mcp:1.15.4",
+      "identifier": "ghcr.io/j0hanz/filesystem-mcp:1.15.5",
       "runtimeHint": "docker",
       "transport": {
         "type": "stdio"
