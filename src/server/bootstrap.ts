@@ -55,10 +55,11 @@ import {
   registerWorkflowGuideResource,
 } from '../resources.js';
 import { buildServerInstructions } from '../resources/generated-instructions.js';
-import { registerAllTools } from '../tools.js';
+import { ALL_TOOLS, registerAllTools } from '../tools.js';
 import { type IconInfo, withDefaultIcons } from '../tools/shared.js';
 import { RootsManager, type ServerOptions } from './roots-manager.js';
 import { createTaskStore } from './task-store.js';
+import { patchToolListWithIcons } from './tool-icons-patch.js';
 
 let cachedTaskToolSupport: boolean | undefined;
 
@@ -275,6 +276,7 @@ export async function createServer(
     isInitialized: () => rootsManager.isInitialized(),
     ...(localIcon ? { iconInfo: localIcon } : {}),
   });
+  patchToolListWithIcons(server, ALL_TOOLS, localIcon);
 
   return server;
 }
