@@ -1,17 +1,11 @@
 /**
  * Security tests: path traversal, boundary enforcement, symlink escape.
  */
-import assert from 'node:assert/strict';
 import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-import {
-  assertToolError,
-  createTestEnv,
-  getStructured,
-  type TestEnv,
-} from './helpers.js';
+import { assertToolError, createTestEnv, type TestEnv } from './helpers.js';
 
 // ─── Path boundary enforcement ───────────────────────────────────────────────
 
@@ -308,21 +302,7 @@ describe('security: symlink escape for destructive ops', () => {
         destination: join(env.tmpDir, 'moved.txt'),
       },
     });
-    // mv collects per-source errors into failed[] instead of setting isError
-    const sc = getStructured(raw);
-    assert.equal(sc['ok'], false);
-    const failed = sc['failed'] as Array<Record<string, unknown>>;
-    assert.ok(
-      Array.isArray(failed) && failed.length > 0,
-      'Expected failed entries for symlink outside allowed root'
-    );
-    const error = failed[0]?.['error'] as Record<string, unknown> | undefined;
-    const errorMsg = String(error?.['message']).toLowerCase();
-    assert.ok(
-      errorMsg.includes('access denied') ||
-        errorMsg.includes('outside allowed'),
-      `Expected access-denied error, got: ${String(error?.['message'])}`
-    );
+    assertToolError(raw, 'ACCESS_DENIED');
   });
 
   it('rm: rejects deleting through symlink to directory outside', async () => {
