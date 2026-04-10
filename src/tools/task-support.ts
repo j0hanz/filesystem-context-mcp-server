@@ -176,19 +176,18 @@ function asTaskRequestExtra(value: unknown): TaskRequestHandlerExtra {
   return value;
 }
 
-const TASK_STATUSES = new Set<GetTaskResult['status']>([
+const TASK_STATUSES = new Set<string>([
+  'submitted',
   'working',
   'input_required',
   'completed',
   'failed',
   'cancelled',
+  'unknown',
 ]);
 
 function isTaskStatus(value: unknown): value is GetTaskResult['status'] {
-  return (
-    typeof value === 'string' &&
-    TASK_STATUSES.has(value as GetTaskResult['status'])
-  );
+  return typeof value === 'string' && TASK_STATUSES.has(value);
 }
 
 function normalizeGetTaskResult(value: unknown): GetTaskResult {
@@ -418,10 +417,11 @@ function withoutStructuredContent<T extends object>(result: T): T {
   return stripped as T;
 }
 
-const TERMINAL_TASK_STATUSES = new Set<GetTaskResult['status']>([
+const TERMINAL_TASK_STATUSES = new Set<string>([
   'completed',
   'failed',
   'cancelled',
+  'unknown',
 ]);
 
 async function isTaskAlreadyTerminal(
@@ -452,11 +452,7 @@ async function countActiveTasks(taskStore: RequestTaskStore): Promise<number> {
   let active = 0;
   for (const task of tasks) {
     if (!isRecord(task) || typeof task.status !== 'string') continue;
-    if (
-      task.status !== 'completed' &&
-      task.status !== 'failed' &&
-      task.status !== 'cancelled'
-    ) {
+    if (!TERMINAL_TASK_STATUSES.has(task.status)) {
       active += 1;
     }
   }

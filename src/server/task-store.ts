@@ -1,5 +1,5 @@
 import { InMemoryTaskStore } from '@modelcontextprotocol/sdk/experimental/tasks/stores/in-memory.js';
-import type { Result } from '@modelcontextprotocol/sdk/types.js';
+import type { Result, Task } from '@modelcontextprotocol/sdk/types.js';
 
 import { ErrorCode } from '../lib/errors.js';
 
@@ -73,7 +73,7 @@ export class ResultAwareInMemoryTaskStore extends InMemoryTaskStore {
 
   override async updateTaskStatus(
     taskId: string,
-    status: 'working' | 'input_required' | 'completed' | 'failed' | 'cancelled',
+    status: Task['status'],
     statusMessage?: string,
     sessionId?: string
   ): Promise<void> {
