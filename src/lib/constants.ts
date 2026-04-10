@@ -128,6 +128,10 @@ export const INIT_HANDSHAKE_TIMEOUT_MS = parseEnvInt(
   300_000
 );
 
+export const INIT_TIMEOUT_CLOSE = parseTrueEnvFlag(
+  process.env['FS_INIT_TIMEOUT_CLOSE']
+);
+
 export const TASK_POLL_INTERVAL_MS = 100;
 
 // Auto-tuned parallelism based on CPU cores (no env override)

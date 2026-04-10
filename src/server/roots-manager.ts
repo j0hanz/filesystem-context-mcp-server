@@ -5,6 +5,7 @@ import {
   RootsListChangedNotificationSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
+import { channel } from 'node:diagnostics_channel';
 import { realpath } from 'node:fs/promises';
 
 import { z } from 'zod';
@@ -29,6 +30,8 @@ import { debounce, isRecord } from '../lib/utils.js';
 
 const ROOTS_TIMEOUT_MS = 5000;
 const ROOTS_DEBOUNCE_MS = 100;
+
+const LIFECYCLE_CHANNEL = channel('filesystem-mcp:lifecycle');
 
 export interface ServerOptions {
   allowCwd?: boolean;
@@ -181,7 +184,7 @@ export class RootsManager {
     }
   }
 
-  registerHandlers(server: McpServer): void {
+  registerHandlers(server: McpServer, onInitTimeout?: () => void): void {
     server.server.setNotificationHandler(
       InitializedNotificationSchema,
       async () => {
@@ -204,12 +207,19 @@ export class RootsManager {
 
     this.initTimer = setTimeout(() => {
       if (!this.clientInitialized) {
+        if (LIFECYCLE_CHANNEL.hasSubscribers) {
+          LIFECYCLE_CHANNEL.publish({
+            phase: 'init_timeout',
+            timeoutMs: INIT_HANDSHAKE_TIMEOUT_MS,
+          });
+        }
         logToMcp(
           server,
           'warning',
           `Client did not send notifications/initialized within ${String(INIT_HANDSHAKE_TIMEOUT_MS)}ms`,
           this.loggingState.minimumLevel
         );
+        onInitTimeout?.();
       }
       this.initTimer = undefined;
     }, INIT_HANDSHAKE_TIMEOUT_MS);

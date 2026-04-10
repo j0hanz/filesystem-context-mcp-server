@@ -23,6 +23,7 @@ import {
 import {
   DEFAULT_LOG_LEVEL,
   INIT_HANDSHAKE_TIMEOUT_MS,
+  INIT_TIMEOUT_CLOSE,
   parseEnvInt,
 } from '../lib/constants.js';
 import { formatUnknownErrorMessage } from '../lib/errors.js';
@@ -282,7 +283,14 @@ export async function startServer(server: McpServer): Promise<void> {
   const transport = new StdioServerTransport();
   const rootsManager = getRootsManager(server);
 
-  rootsManager.registerHandlers(server);
+  rootsManager.registerHandlers(
+    server,
+    INIT_TIMEOUT_CLOSE
+      ? () => {
+          void server.close();
+        }
+      : undefined
+  );
   await rootsManager.recomputeAllowedDirectories();
   await server.connect(transport);
   const sdkOnClose = transport.onclose;

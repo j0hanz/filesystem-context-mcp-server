@@ -5,7 +5,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { describe, it, mock } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { RootsManager } from '../../server/roots-manager.js';
@@ -31,6 +31,7 @@ function createFakeServer(): {
           rootsChangedHandler = handler as () => void;
         }
       },
+      getClientCapabilities: () => ({}),
     },
   } as unknown as McpServer;
 
@@ -160,5 +161,64 @@ describe('RootsManager', () => {
       undefined,
       'Expected initTimer to be cleared on destroy'
     );
+  });
+
+  it('invokes onInitTimeout callback when client never initializes', () => {
+    mock.timers.enable({ apis: ['setTimeout'] });
+    try {
+      const manager = new RootsManager({}, { minimumLevel: 'debug' });
+      const fakeServer = createFakeServer();
+      let callbackInvoked = false;
+
+      (
+        manager as unknown as { updateRootsFromClient: () => Promise<void> }
+      ).updateRootsFromClient = () => Promise.resolve();
+
+      manager.registerHandlers(fakeServer.server, () => {
+        callbackInvoked = true;
+      });
+
+      assert.equal(
+        callbackInvoked,
+        false,
+        'Callback should not fire before timeout'
+      );
+
+      // Advance past the init handshake timeout (30s default)
+      mock.timers.tick(30_000);
+
+      assert.equal(callbackInvoked, true, 'Callback should fire after timeout');
+      manager.destroy();
+    } finally {
+      mock.timers.reset();
+    }
+  });
+
+  it('does not invoke onInitTimeout when initialized arrives first', async () => {
+    const manager = new RootsManager({}, { minimumLevel: 'debug' });
+    const fakeServer = createFakeServer();
+    let callbackInvoked = false;
+
+    (
+      manager as unknown as { updateRootsFromClient: () => Promise<void> }
+    ).updateRootsFromClient = () => Promise.resolve();
+
+    manager.registerHandlers(fakeServer.server, () => {
+      callbackInvoked = true;
+    });
+
+    // Simulate initialized arriving
+    await fakeServer.getInitializedHandler()();
+
+    // Timer should be cleared
+    const timer = (
+      manager as unknown as {
+        initTimer: ReturnType<typeof setTimeout> | undefined;
+      }
+    ).initTimer;
+    assert.equal(timer, undefined, 'Expected initTimer to be cleared');
+    assert.equal(callbackInvoked, false, 'Callback should not be invoked');
+
+    manager.destroy();
   });
 });
