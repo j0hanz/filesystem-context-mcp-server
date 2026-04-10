@@ -78,7 +78,7 @@ type TaskToolContext = ToolContext & {
   taskRequestedTtl?: number;
 };
 
-export type ToolSchema = StandardSchemaWithJSON | undefined;
+type ToolSchema = StandardSchemaWithJSON | undefined;
 
 type ToolArgs<Args extends ToolSchema> = Args extends StandardSchemaWithJSON
   ? StandardSchemaWithJSON.InferOutput<Args>

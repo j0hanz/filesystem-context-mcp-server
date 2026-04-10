@@ -99,14 +99,12 @@ function buildServerCapabilities(
 }
 
 // Global map of all active servers by sessionId for routing logs
-export const activeServers = new Map<
+const activeServers = new Map<
   string,
   { server: McpServer; loggingState: LoggingState }
 >();
 // For stdio (single session without a specific ID)
-export let stdioServer:
-  | { server: McpServer; loggingState: LoggingState }
-  | undefined;
+let stdioServer: { server: McpServer; loggingState: LoggingState } | undefined;
 
 function stringifyData(data: unknown): string {
   if (!data) return '';
