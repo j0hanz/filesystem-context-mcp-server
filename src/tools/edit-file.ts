@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 
-import { readFile, stat } from 'node:fs/promises';
+import { stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 
 import { createTwoFilesPatch, diffLines } from 'diff';
@@ -10,7 +10,7 @@ import type { z } from 'zod';
 import { withAbort } from '../lib/abort.js';
 import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
-import { atomicWriteFile } from '../lib/fs-helpers.js';
+import { atomicWriteFile, readFileWithStats } from '../lib/fs-helpers.js';
 import { Logger } from '../lib/logger.js';
 import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
 
@@ -280,7 +280,12 @@ async function loadEditableFile(
     );
   }
 
-  const content = await readFile(validPath, { encoding: 'utf-8', signal });
+  const { content } = await readFileWithStats(requestedPath, validPath, stats, {
+    encoding: 'utf-8',
+    maxSize: MAX_TEXT_FILE_SIZE,
+    skipBinary: true,
+    ...(signal ? { signal } : {}),
+  });
   return { validPath, content };
 }
 

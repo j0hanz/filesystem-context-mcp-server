@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 
-import { readdir, stat } from 'node:fs/promises';
+import { readdir, realpath, stat } from 'node:fs/promises';
 import {
   basename,
   dirname,
@@ -10,6 +10,8 @@ import {
   resolve,
   sep,
 } from 'node:path';
+
+import { z } from 'zod';
 
 import {
   getAllowedDirectories,
@@ -91,9 +93,80 @@ const DESTINATION_CONTEXT_KEYS = ['source', 'path', 'cwd', 'root'] as const;
 const PRIMARY_PATH_CONTEXT_KEYS = ['path', 'cwd', 'root'] as const;
 const DEFAULT_CONTEXT_KEYS = ['path', 'source', 'cwd', 'root'] as const;
 
-const ENUM_ARGUMENT_VALUES = new Map<string, readonly string[]>([
-  ['sortby', ['modified', 'name', 'path', 'size', 'type']],
-]);
+function extractEnumValuesFromSchema(
+  argumentName: string,
+  schema: z.ZodType
+): string[] | undefined {
+  const properties = getInputSchemaProperties(schema);
+  if (!properties || typeof properties !== 'object') return undefined;
+
+  for (const [key, value] of Object.entries(properties)) {
+    if (key.toLowerCase() !== argumentName) continue;
+    if (value === null || typeof value !== 'object' || !('enum' in value)) {
+      return undefined;
+    }
+
+    const enumValues = value.enum;
+    if (!Array.isArray(enumValues)) return undefined;
+    const stringValues = enumValues.filter(
+      (entry): entry is string => typeof entry === 'string'
+    );
+    return stringValues.length > 0 ? stringValues : undefined;
+  }
+
+  return undefined;
+}
+
+function getInputSchemaProperties(
+  schema: z.ZodType
+): Record<string, unknown> | undefined {
+  const { properties } = z.toJSONSchema(schema, { io: 'input' });
+  if (!properties || typeof properties !== 'object') return undefined;
+  return properties as Record<string, unknown>;
+}
+
+function intersectEnumValueSets(valueSets: readonly string[][]): string[] {
+  const [firstSet, ...restSets] = valueSets;
+  if (!firstSet) return [];
+  return firstSet.filter((value) =>
+    restSets.every((candidateSet) => candidateSet.includes(value))
+  );
+}
+
+function buildEnumArgumentValues(): Map<string, readonly string[]> {
+  const valuesByArgument = new Map<string, string[][]>();
+
+  for (const contract of getSortedToolContracts()) {
+    const properties = getInputSchemaProperties(contract.inputSchema);
+    if (!properties || typeof properties !== 'object') continue;
+
+    for (const key of Object.keys(properties)) {
+      const normalizedKey = key.toLowerCase();
+      const values = extractEnumValuesFromSchema(
+        normalizedKey,
+        contract.inputSchema
+      );
+      if (!values) continue;
+
+      const existing = valuesByArgument.get(normalizedKey) ?? [];
+      existing.push(values);
+      valuesByArgument.set(normalizedKey, existing);
+    }
+  }
+
+  const result = new Map<string, readonly string[]>();
+  for (const [argumentName, valueSets] of valuesByArgument) {
+    const values =
+      valueSets.length === 1
+        ? (valueSets[0] ?? [])
+        : intersectEnumValueSets(valueSets);
+    if (values.length > 0) {
+      result.set(argumentName, values);
+    }
+  }
+
+  return result;
+}
 
 function isPathLikeArgumentName(argName: string): boolean {
   return (
@@ -109,9 +182,10 @@ function isPathLikeArgumentName(argName: string): boolean {
 
 function getEnumCompletions(
   argName: string,
-  currentValue: string
+  currentValue: string,
+  enumArgumentValues: ReadonlyMap<string, readonly string[]>
 ): CompletionResult | undefined {
-  const values = ENUM_ARGUMENT_VALUES.get(argName);
+  const values = enumArgumentValues.get(argName);
   if (!values) return undefined;
   const prefix = currentValue.toLowerCase();
   const filtered = prefix
@@ -392,17 +466,31 @@ async function toAllowedContextDirectory(
   resolved: string,
   allowed: string[]
 ): Promise<string | undefined> {
-  if (!isPathWithinDirectories(resolved, allowed)) return undefined;
+  const parent = dirname(resolved);
+  if (await isAllowedCompletionDirectory(resolved, allowed)) {
+    return resolved;
+  }
+  return (await isAllowedCompletionDirectory(parent, allowed))
+    ? parent
+    : undefined;
+}
+
+async function isAllowedCompletionDirectory(
+  path: string,
+  allowed: string[]
+): Promise<boolean> {
+  if (!isPathWithinDirectories(path, allowed)) return false;
 
   try {
-    const stats = await stat(resolved);
-    if (stats.isDirectory()) return resolved;
+    const [stats, resolvedRealPath] = await Promise.all([
+      stat(path),
+      realpath(path),
+    ]);
+    if (!stats.isDirectory()) return false;
+    return isPathWithinDirectories(normalizePath(resolvedRealPath), allowed);
   } catch {
-    // Fall back to parent path best-effort resolution.
+    return false;
   }
-
-  const parent = dirname(resolved);
-  return isPathWithinDirectories(parent, allowed) ? parent : undefined;
 }
 
 async function resolveContextBaseDirectory(
@@ -536,7 +624,7 @@ async function findMatchesInDirectory(
   allowed: string[]
 ): Promise<string[]> {
   const matches: string[] = [];
-  if (!isPathWithinDirectories(searchDir, allowed)) {
+  if (!(await isAllowedCompletionDirectory(searchDir, allowed))) {
     return matches;
   }
 
@@ -671,6 +759,7 @@ export function registerCompletions(
 ): void {
   const topicValues = extractTopicCompletions(instructions);
   const toolNameValues = extractToolNameCompletions();
+  const enumArgumentValues = buildEnumArgumentValues();
 
   server.server.setRequestHandler('completion/complete', async (request) => {
     const { params } = request;
@@ -687,7 +776,11 @@ export function registerCompletions(
     );
     if (predef) return predef;
 
-    const enumResult = getEnumCompletions(argName, argument.value);
+    const enumResult = getEnumCompletions(
+      argName,
+      argument.value,
+      enumArgumentValues
+    );
     if (enumResult) {
       return buildCompletionResponse(enumResult);
     }

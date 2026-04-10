@@ -10,7 +10,7 @@ import {
   createTimedAbortSignal,
   withAbort,
 } from '../lib/abort.js';
-import { INIT_HANDSHAKE_TIMEOUT_MS } from '../lib/constants.js';
+import { getInitHandshakeTimeoutMs } from '../lib/constants.js';
 import { formatUnknownErrorMessage } from '../lib/errors.js';
 import { Logger, type LoggingState, logToMcp } from '../lib/logger.js';
 import {
@@ -180,6 +180,8 @@ export class RootsManager {
   }
 
   registerHandlers(server: McpServer, onInitTimeout?: () => void): void {
+    const initHandshakeTimeoutMs = getInitHandshakeTimeoutMs();
+
     server.server.setNotificationHandler(
       'notifications/initialized',
       async () => {
@@ -205,19 +207,19 @@ export class RootsManager {
         if (LIFECYCLE_CHANNEL.hasSubscribers) {
           LIFECYCLE_CHANNEL.publish({
             phase: 'init_timeout',
-            timeoutMs: INIT_HANDSHAKE_TIMEOUT_MS,
+            timeoutMs: initHandshakeTimeoutMs,
           });
         }
         logToMcp(
           server,
           'warning',
-          `Client did not send notifications/initialized within ${String(INIT_HANDSHAKE_TIMEOUT_MS)}ms`,
+          `Client did not send notifications/initialized within ${String(initHandshakeTimeoutMs)}ms`,
           this.loggingState.minimumLevel
         );
         onInitTimeout?.();
       }
       this.initTimer = undefined;
-    }, INIT_HANDSHAKE_TIMEOUT_MS);
+    }, initHandshakeTimeoutMs);
     this.initTimer.unref();
   }
 

@@ -1,6 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 
-import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
 
 import type { z } from 'zod';
@@ -10,7 +9,7 @@ import {
   MAX_TEXT_FILE_SIZE,
 } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
-import { readFile } from '../lib/fs-helpers.js';
+import { calculateFileContentHash, readFile } from '../lib/fs-helpers.js';
 
 import { ReadFileInputSchema, ReadFileOutputSchema } from '../schemas.js';
 import { FILE_READ_ICONS } from './icons.js';
@@ -198,9 +197,10 @@ async function handleReadFile(
   const structured = toStructuredReadFileResult(args, result);
 
   if (args.includeHash) {
-    structured.contentHash = createHash('sha256')
-      .update(result.content, 'utf-8')
-      .digest('hex');
+    structured.contentHash = await calculateFileContentHash(
+      result.path,
+      signal
+    );
   }
 
   const externalizedResponse = maybeBuildExternalizedReadResponse(

@@ -2,6 +2,7 @@
  * Integration tests for file I/O tools: read, write, read_many, edit, apply_patch.
  */
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
@@ -55,6 +56,35 @@ describe('read tool', () => {
     assert.ok((sc['content'] as string).includes('line2'));
     assert.ok(!(sc['content'] as string).includes('line1'));
     assert.ok(!(sc['content'] as string).includes('line3'));
+  });
+
+  it('hashes the full file content even for partial reads', async () => {
+    const expectedHash = createHash('sha256')
+      .update('line1\nline2\nline3\n', 'utf8')
+      .digest('hex');
+
+    const raw = await env.client.callTool({
+      name: 'read',
+      arguments: { path: file, head: 1, includeHash: true },
+    });
+
+    assertOk(raw);
+    const sc = getStructured(raw);
+    assert.equal(sc['content'], 'line1');
+    assert.equal(sc['contentHash'], expectedHash);
+  });
+
+  it('does not mark head reads as truncated when the file fits exactly', async () => {
+    const raw = await env.client.callTool({
+      name: 'read',
+      arguments: { path: file, head: 3 },
+    });
+
+    assertOk(raw);
+    const sc = getStructured(raw);
+    assert.equal(sc['content'], 'line1\nline2\nline3');
+    assert.equal(sc['truncated'], undefined);
+    assert.equal(sc['hasMoreLines'], undefined);
   });
 
   it('returns NOT_FOUND for missing file', async () => {
@@ -405,6 +435,23 @@ describe('edit tool', () => {
     const actual = await readFile(file, 'utf8');
     assert.equal(actual, 'alpha\nbeta\n');
   });
+
+  it('rejects binary files instead of rewriting them as text', async () => {
+    const file = join(env.tmpDir, 'binary-edit.bin');
+    await writeFile(file, Buffer.from([0x89, 0x50, 0x00, 0x47, 0x0d]));
+
+    const raw = await env.client.callTool({
+      name: 'edit',
+      arguments: {
+        path: file,
+        edits: [{ oldText: 'x', newText: 'y' }],
+      },
+    });
+
+    assertToolError(raw, 'INVALID_INPUT');
+    const actual = await readFile(file);
+    assert.deepEqual(actual, Buffer.from([0x89, 0x50, 0x00, 0x47, 0x0d]));
+  });
 });
 
 // ─── apply_patch ─────────────────────────────────────────────────────────────
@@ -502,5 +549,29 @@ describe('apply_patch tool', () => {
     assertToolError(raw, 'INVALID_INPUT');
     const actual = await readFile(file, 'utf8');
     assert.equal(actual, ORIGINAL_CONTENT, 'File must be unchanged');
+  });
+
+  it('rejects binary files instead of patching decoded bytes', async () => {
+    const binaryFile = join(env.tmpDir, 'patch-binary.bin');
+    const original = Buffer.from([0x89, 0x50, 0x00, 0x47, 0x0d]);
+    await writeFile(binaryFile, original);
+
+    const patch =
+      [
+        '--- a/patch-binary.bin',
+        '+++ b/patch-binary.bin',
+        '@@ -1 +1 @@',
+        '-x',
+        '+y',
+      ].join('\n') + '\n';
+
+    const raw = await env.client.callTool({
+      name: 'apply_patch',
+      arguments: { path: binaryFile, patch },
+    });
+
+    assertToolError(raw, 'INVALID_INPUT');
+    const actual = await readFile(binaryFile);
+    assert.deepEqual(actual, original);
   });
 });

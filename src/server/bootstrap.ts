@@ -20,10 +20,11 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http';
+import { inspect } from 'node:util';
 
 import {
   DEFAULT_LOG_LEVEL,
-  INIT_HANDSHAKE_TIMEOUT_MS,
+  getInitHandshakeTimeoutMs,
   INIT_TIMEOUT_CLOSE,
   parseEnvInt,
 } from '../lib/constants.js';
@@ -107,8 +108,17 @@ const activeServers = new Map<
 let stdioServer: { server: McpServer; loggingState: LoggingState } | undefined;
 
 function stringifyData(data: unknown): string {
-  if (!data) return '';
-  return ` ${typeof data === 'string' ? data : JSON.stringify(data)}`;
+  if (data === undefined) return '';
+  if (typeof data === 'string') return ` ${data}`;
+  if (
+    data === null ||
+    typeof data === 'number' ||
+    typeof data === 'boolean' ||
+    typeof data === 'bigint'
+  ) {
+    return ` ${String(data)}`;
+  }
+  return ` ${inspect(data, { depth: 4, colors: false, compact: 3 })}`;
 }
 
 channel('filesystem-mcp:log').subscribe((message) => {
@@ -813,18 +823,19 @@ export async function startHttpServer(
     }
   }
 
-  const SWEEP_INTERVAL_MS = INIT_HANDSHAKE_TIMEOUT_MS * 2;
+  const initHandshakeTimeoutMs = getInitHandshakeTimeoutMs();
+  const SWEEP_INTERVAL_MS = initHandshakeTimeoutMs * 2;
   const sweepTimer = setInterval(() => {
     const now = Date.now();
     for (const [sessionId, session] of sessions) {
       if (
         !session.rootsManager.isInitialized() &&
-        now - session.createdAt > INIT_HANDSHAKE_TIMEOUT_MS
+        now - session.createdAt > initHandshakeTimeoutMs
       ) {
         Logger.warn(
           `[HTTP] Evicting stale session ${sessionId}: client never sent notifications/initialized`
         );
-        session.server.close().catch((err: unknown) => {
+        session.close().catch((err: unknown) => {
           Logger.error(
             `[HTTP] Error closing stale session ${sessionId}:`,
             formatUnknownErrorMessage(err)

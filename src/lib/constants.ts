@@ -121,12 +121,9 @@ export const MAX_CONCURRENT_TASKS = parseEnvInt(
 
 export const TASK_CANCEL_POLL_MS = 2_000;
 
-export const INIT_HANDSHAKE_TIMEOUT_MS = parseEnvInt(
-  'FS_INIT_HANDSHAKE_TIMEOUT_MS',
-  30_000,
-  1_000,
-  300_000
-);
+export function getInitHandshakeTimeoutMs(): number {
+  return parseEnvInt('FS_INIT_HANDSHAKE_TIMEOUT_MS', 30_000, 1_000, 300_000);
+}
 
 export const INIT_TIMEOUT_CLOSE = parseTrueEnvFlag(
   process.env['FS_INIT_TIMEOUT_CLOSE']

@@ -411,6 +411,27 @@ const TERMINAL_TASK_STATUSES = new Set<string>([
   'unknown',
 ]);
 
+const taskCreationLocks = new WeakMap<RequestTaskStore, Promise<void>>();
+
+async function acquireTaskCreationLock(
+  taskStore: RequestTaskStore
+): Promise<() => void> {
+  const previous = taskCreationLocks.get(taskStore) ?? Promise.resolve();
+  let release!: () => void;
+  const next = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  taskCreationLocks.set(
+    taskStore,
+    previous.catch(() => {}).then(() => next)
+  );
+  await previous.catch(() => {});
+  return () => {
+    release();
+  };
+}
+
 async function isTaskAlreadyTerminal(
   taskStore: RequestTaskStore,
   taskId: string
@@ -739,16 +760,22 @@ export function createToolTaskHandler<Args extends ToolSchema, Result>(
     }
 
     const taskStore = getTaskStore(ctx);
-    if ((await countActiveTasks(taskStore)) >= MAX_CONCURRENT_TASKS) {
-      throw new McpError(
-        ErrorCode.INVALID_INPUT,
-        `Too many active tasks (limit: ${String(MAX_CONCURRENT_TASKS)}).`
-      );
+    const releaseCreationLock = await acquireTaskCreationLock(taskStore);
+    let task;
+    try {
+      if ((await countActiveTasks(taskStore)) >= MAX_CONCURRENT_TASKS) {
+        throw new McpError(
+          ErrorCode.INVALID_INPUT,
+          `Too many active tasks (limit: ${String(MAX_CONCURRENT_TASKS)}).`
+        );
+      }
+      task = await taskStore.createTask({
+        ttl: resolveRequestedTaskTtl(ctx.taskRequestedTtl),
+        pollInterval: options?.pollIntervalMs ?? TASK_POLL_INTERVAL_MS,
+      });
+    } finally {
+      releaseCreationLock();
     }
-    const task = await taskStore.createTask({
-      ttl: resolveRequestedTaskTtl(ctx.taskRequestedTtl),
-      pollInterval: options?.pollIntervalMs ?? TASK_POLL_INTERVAL_MS,
-    });
 
     const toolLabel = options?.toolName ?? 'tool';
     try {
