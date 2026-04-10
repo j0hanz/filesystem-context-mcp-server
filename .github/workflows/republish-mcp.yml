@@ -1,0 +1,64 @@
+name: Republish MCP Registry
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to publish (e.g. 1.15.2). Defaults to latest package.json version.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish-mcp:
+    name: MCP Registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Determine version
+        id: ver
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ver.outputs.version && format('v{0}', steps.ver.outputs.version) || '' }}
+
+      - name: Resolve version
+        id: resolve
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION=$(node -p "require('./package.json').version")
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "### Publishing v$VERSION to MCP Registry" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish
+        run: |
+          OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+          ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_${OS}_${ARCH}.tar.gz" \
+            | tar xz mcp-publisher
+          chmod +x mcp-publisher
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
+
+      - name: Summary
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## 📡 Published to MCP Registry
+          | | |
+          |---|---|
+          | **Server** | \`io.github.j0hanz/filesystem-mcp@$VERSION\` |
+          | **Registry** | [registry.modelcontextprotocol.io](https://registry.modelcontextprotocol.io) |
+          EOF
