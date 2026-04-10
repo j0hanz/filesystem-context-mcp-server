@@ -12,16 +12,18 @@
     {
       "src": "https://raw.githubusercontent.com/j0hanz/filesystem-mcp/main/assets/logo.svg",
       "mimeType": "image/svg+xml",
-      "sizes": ["any"]
+      "sizes": [
+        "any"
+      ]
     }
   ],
-  "version": "1.15.1",
+  "version": "1.15.2",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@j0hanz/filesystem-mcp",
-      "version": "1.15.1",
+      "version": "1.15.2",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
@@ -55,7 +57,7 @@
     {
       "registryType": "oci",
       "identifier": "ghcr.io/j0hanz/filesystem-mcp",
-      "version": "1.15.1",
+      "version": "1.15.2",
       "runtimeHint": "docker",
       "transport": {
         "type": "stdio"
