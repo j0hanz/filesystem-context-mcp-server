@@ -12,9 +12,7 @@
     {
       "src": "https://raw.githubusercontent.com/j0hanz/filesystem-mcp/main/assets/logo.svg",
       "mimeType": "image/svg+xml",
-      "sizes": [
-        "any"
-      ]
+      "sizes": ["any"]
     }
   ],
   "version": "1.16.0",

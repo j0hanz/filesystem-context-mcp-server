@@ -27,7 +27,7 @@ jobs:
             echo "version=" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ steps.ver.outputs.version && format('v{0}', steps.ver.outputs.version) || '' }}
 
