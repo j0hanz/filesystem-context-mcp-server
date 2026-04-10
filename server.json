@@ -7,13 +7,14 @@
     "url": "https://github.com/j0hanz/filesystem-mcp",
     "source": "github"
   },
-  "websiteUrl": "https://github.com/j0hanz/filesystem-mcp#readme",
+  "websiteUrl": "https://github.com/j0hanz/filesystem-mcp",
   "version": "1.15.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@j0hanz/filesystem-mcp",
       "version": "1.15.1",
+      "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
       },
@@ -25,6 +26,21 @@
           "isRequired": false,
           "format": "filepath",
           "isRepeated": true
+        },
+        {
+          "type": "named",
+          "name": "--allow-cwd",
+          "description": "Allow the current working directory as an additional root.",
+          "format": "boolean",
+          "default": "false",
+          "isRequired": false
+        },
+        {
+          "type": "named",
+          "name": "--port",
+          "description": "Enable HTTP transport on the given port (MCP Streamable HTTP with SSE).",
+          "format": "number",
+          "isRequired": false
         }
       ]
     }
