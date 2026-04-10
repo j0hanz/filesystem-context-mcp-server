@@ -21,8 +21,8 @@ import {
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   executeToolWithDiagnostics,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
@@ -405,11 +405,11 @@ export function registerEditFileTool(
 ): void {
   const handler = (
     args: EditInput,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<EditOutput>> =>
     executeToolWithDiagnostics({
       toolName: 'edit',
-      extra,
+      ctx,
       outputSchema: EditFileOutputSchema,
       timedSignal: {},
       context: { path: args.path },

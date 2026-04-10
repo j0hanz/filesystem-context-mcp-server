@@ -19,8 +19,8 @@ import {
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   executeToolWithDiagnostics,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
@@ -70,11 +70,11 @@ export function registerWriteFileTool(
 ): void {
   const handler = (
     args: z.infer<typeof WriteFileInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof WriteFileOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'write',
-      extra,
+      ctx,
       outputSchema: WriteFileOutputSchema,
       timedSignal: {},
       context: { path: args.path },

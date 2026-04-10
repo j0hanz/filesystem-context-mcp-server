@@ -19,8 +19,8 @@ import {
   buildToolResponse,
   executeToolWithDiagnostics,
   IDEMPOTENT_WRITE_TOOL_ANNOTATIONS,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
@@ -79,11 +79,11 @@ export function registerCreateDirectoryTool(
 ): void {
   const handler = (
     args: z.infer<typeof CreateDirectoryInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof CreateDirectoryOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'mkdir',
-      extra,
+      ctx,
       outputSchema: CreateDirectoryOutputSchema,
       timedSignal: {},
       context: { path: args.path ?? args.paths?.[0] },

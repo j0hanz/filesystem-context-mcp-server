@@ -30,8 +30,8 @@ import {
   executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolveFinalProgressCurrent,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
@@ -234,20 +234,17 @@ export function registerCalculateHashTool(
 ): void {
   const handler = (
     args: z.infer<typeof CalculateHashInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof CalculateHashOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'calculate_hash',
-      extra,
+      ctx,
       outputSchema: CalculateHashOutputSchema,
       timedSignal: {},
       context: { path: args.path },
       run: async (signal) => {
         const baseName = basename(args.path);
-        const progress = createToolProgressSession(
-          extra,
-          `🕮 hash: ${baseName}`
-        );
+        const progress = createToolProgressSession(ctx, `🕮 hash: ${baseName}`);
         const progressWithMessage = ({
           current,
           total,

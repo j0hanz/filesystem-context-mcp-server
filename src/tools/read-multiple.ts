@@ -25,8 +25,8 @@ import {
   maybeExternalizeTextContent,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolveFinalProgressCurrent,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
@@ -246,26 +246,23 @@ export function registerReadMultipleFilesTool(
 ): void {
   const handler = (
     args: ReadManyInput,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<ReadManyOutput>> => {
     const primaryPath = args.paths[0] ?? '';
     return executeToolWithDiagnostics({
       toolName: READ_MANY_TOOL_NAME,
-      extra,
+      ctx,
       outputSchema: ReadMultipleFilesOutputSchema,
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: primaryPath },
       run: async (signal) => {
         const context = buildBatchPathContext(args.paths, 'files');
-        const { progress, onItemComplete } = createBatchProgressCallbacks(
-          extra,
-          {
-            toolLabel: READ_MANY_TOOL_LABEL,
-            context,
-            totalItems: args.paths.length,
-            itemVerb: 'read',
-          }
-        );
+        const { progress, onItemComplete } = createBatchProgressCallbacks(ctx, {
+          toolLabel: READ_MANY_TOOL_LABEL,
+          context,
+          totalItems: args.paths.length,
+          itemVerb: 'read',
+        });
 
         try {
           const result = await handleReadMultipleFiles(

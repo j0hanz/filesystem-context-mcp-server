@@ -37,8 +37,8 @@ import {
   executeToolWithDiagnostics,
   resolveFinalProgressCurrent,
   resolvePathOrRoot,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
@@ -525,11 +525,11 @@ export function registerSearchAndReplaceTool(
 ): void {
   const handler = (
     args: z.infer<typeof SearchAndReplaceInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof SearchAndReplaceOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'search_and_replace',
-      extra,
+      ctx,
       outputSchema: SearchAndReplaceOutputSchema,
       timedSignal: {},
       ...(args.path ? { context: { path: args.path } } : {}),
@@ -538,7 +538,7 @@ export function registerSearchAndReplaceTool(
         const truncatedPattern = truncateProgressPattern(args.searchPattern);
         const context = `"${truncatedPattern}" in ${args.filePattern}${dryLabel}`;
         const progress = createToolProgressSession(
-          extra,
+          ctx,
           `🛠 replace: ${context}`
         );
         const progressWithMessage = ({

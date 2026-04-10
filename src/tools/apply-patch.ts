@@ -21,8 +21,8 @@ import {
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   executeToolWithDiagnostics,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
@@ -318,11 +318,11 @@ export function registerApplyPatchTool(
 ): void {
   const handler = (
     args: z.infer<typeof ApplyPatchInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof ApplyPatchOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'apply_patch',
-      extra,
+      ctx,
       outputSchema: ApplyPatchOutputSchema,
       timedSignal: {},
       context: { path: args.path },

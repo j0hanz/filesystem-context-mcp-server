@@ -27,8 +27,8 @@ import {
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   executeToolWithDiagnostics,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
@@ -273,11 +273,11 @@ export function registerMoveFileTool(
 ): void {
   const handler = (
     args: z.infer<typeof MoveFileInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof MoveFileOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'mv',
-      extra,
+      ctx,
       outputSchema: MoveFileOutputSchema,
       timedSignal: {},
       context: { path: args.source ?? args.sources?.[0] },

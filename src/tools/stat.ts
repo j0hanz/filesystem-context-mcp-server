@@ -17,8 +17,8 @@ import {
   buildToolResponse,
   executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
@@ -78,11 +78,11 @@ export function registerGetFileInfoTool(
 ): void {
   const handler = (
     args: z.infer<typeof GetFileInfoInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof GetFileInfoOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'stat',
-      extra,
+      ctx,
       outputSchema: GetFileInfoOutputSchema,
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: args.path },

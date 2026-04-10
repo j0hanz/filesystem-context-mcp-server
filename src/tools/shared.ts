@@ -1,6 +1,7 @@
 import type {
   ContentBlock,
   Icon,
+  LoggingLevel,
   ProgressNotificationParams,
   ServerContext,
 } from '@modelcontextprotocol/server';
@@ -51,7 +52,7 @@ const CONTEXT_DIAGNOSTICS_CHANNEL = channel('filesystem-mcp:context');
 const TRACEPARENT_RE = /^[\da-f]{2}-[\da-f]{32}-[\da-f]{16}-[\da-f]{2}$/i;
 
 function extractTraceContext(
-  meta: ToolExtra['_meta']
+  meta: ToolContext['_meta']
 ): TraceContext | undefined {
   const tp = meta?.traceparent;
   if (typeof tp !== 'string' || !TRACEPARENT_RE.test(tp)) return undefined;
@@ -378,15 +379,15 @@ function parseToolArgs<Schema extends z.ZodType>(
 
 export function withValidatedArgs<Args, Result>(
   schema: z.ZodType<Args>,
-  handler: (args: Args, extra: ToolExtra) => Promise<ToolResult<Result>>
+  handler: (args: Args, ctx: ToolContext) => Promise<ToolResult<Result>>
 ): (
   args: unknown,
-  extra: ToolExtra | ServerContext
+  ctx: ToolContext | ServerContext
 ) => Promise<ToolResult<Result>> {
-  return async (args, extra) => {
+  return async (args, ctx) => {
     try {
       const normalizedArgs = parseToolArgs(schema, args);
-      return await handler(normalizedArgs, toToolExtra(extra));
+      return await handler(normalizedArgs, toToolContext(ctx));
     } catch (error) {
       if (error instanceof McpError && error.code === ErrorCode.INVALID_INPUT) {
         return buildToolErrorResponse(error, ErrorCode.INVALID_INPUT);
@@ -398,7 +399,7 @@ export function withValidatedArgs<Args, Result>(
 
 type ProgressToken = string | number;
 
-export interface ToolExtra {
+export interface ToolContext {
   signal?: AbortSignal;
   _meta?:
     | {
@@ -412,38 +413,42 @@ export interface ToolExtra {
     method: 'notifications/progress';
     params: ProgressNotificationParams;
   }) => Promise<void>;
+  log?: (level: LoggingLevel, data: unknown, logger?: string) => Promise<void>;
 }
 
-function toToolExtra(extra?: ToolExtra | ServerContext): ToolExtra {
-  if (!extra) return {};
-  if ('mcpReq' in extra) {
+function toToolContext(ctx?: ToolContext | ServerContext): ToolContext {
+  if (!ctx) return {};
+  if ('mcpReq' in ctx) {
     return {
-      signal: extra.mcpReq.signal,
-      ...(extra.mcpReq._meta
-        ? { _meta: extra.mcpReq._meta as ToolExtra['_meta'] }
+      signal: ctx.mcpReq.signal,
+      ...(ctx.mcpReq._meta
+        ? { _meta: ctx.mcpReq._meta as ToolContext['_meta'] }
         : {}),
-      sendNotification: async (notification) =>
-        extra.mcpReq.notify(notification),
+      sendNotification: async (notification) => ctx.mcpReq.notify(notification),
+      log: async (level, data, logger) =>
+        ctx.mcpReq.notify({
+          method: 'notifications/message',
+          params: { level, data, ...(logger ? { logger } : {}) },
+        }),
     };
   }
-  return extra;
+  return ctx;
 }
 
-function canSendProgress(extra: ToolExtra): extra is ToolExtra & {
+function canSendProgress(ctx: ToolContext): ctx is ToolContext & {
   _meta: { progressToken: ProgressToken };
-  sendNotification: NonNullable<ToolExtra['sendNotification']>;
+  sendNotification: NonNullable<ToolContext['sendNotification']>;
 } {
   return (
-    extra._meta?.progressToken !== undefined &&
-    extra.sendNotification !== undefined
+    ctx._meta?.progressToken !== undefined && ctx.sendNotification !== undefined
   );
 }
 
-function canReportProgress(extra: ToolExtra): boolean {
-  const taskExtra = extra as Record<string, unknown>;
+function canReportProgress(ctx: ToolContext): boolean {
+  const taskExtra = ctx as Record<string, unknown>;
   const hasTask =
     taskExtra.taskId !== undefined && taskExtra.taskStore !== undefined;
-  return canSendProgress(extra) || hasTask;
+  return canSendProgress(ctx) || hasTask;
 }
 
 export interface IconInfo {
@@ -538,7 +543,7 @@ async function withToolErrorHandling<T>(
 
 interface ToolExecutionOptions<T> {
   toolName: string;
-  extra: ToolExtra;
+  ctx: ToolContext;
   outputSchema?: z.ZodType<T>;
   run: (
     signal: AbortSignal | undefined
@@ -568,13 +573,13 @@ function getToolSignal(
 export async function executeToolWithDiagnostics<T>(
   options: ToolExecutionOptions<T>
 ): Promise<ToolResult<T>> {
-  const traceContext = extractTraceContext(options.extra._meta);
+  const traceContext = extractTraceContext(options.ctx._meta);
   return withToolDiagnostics(
     options.toolName,
     () =>
       withToolErrorHandling(async () => {
         const { signal, cleanup } = getToolSignal(
-          options.extra.signal,
+          options.ctx.signal,
           options.timedSignal
         );
         try {
@@ -613,11 +618,11 @@ function buildNotInitializedResult<T>(): ToolResult<T> {
 }
 
 async function reportProgress(
-  extra: ToolExtra,
+  ctx: ToolContext,
   progress: { current: number; total?: number; message?: string }
 ): Promise<void> {
-  await updateTaskStoreProgress(extra, progress);
-  await sendMcpProgressNotification(extra, progress);
+  await updateTaskStoreProgress(ctx, progress);
+  await sendMcpProgressNotification(ctx, progress);
 }
 
 function formatTaskStatusMessage(progress: {
@@ -641,10 +646,10 @@ function isBenignTaskStatusUpdateError(error: unknown): boolean {
 }
 
 async function updateTaskStoreProgress(
-  extra: ToolExtra,
+  ctx: ToolContext,
   progress: { current: number; total?: number; message?: string }
 ): Promise<void> {
-  const taskExtra = extra as Record<string, unknown>;
+  const taskExtra = ctx as Record<string, unknown>;
   if (
     typeof taskExtra.taskId === 'string' &&
     taskExtra.taskStore !== undefined &&
@@ -669,15 +674,15 @@ async function updateTaskStoreProgress(
 }
 
 async function sendMcpProgressNotification(
-  extra: ToolExtra,
+  ctx: ToolContext,
   progress: { current: number; total?: number; message?: string }
 ): Promise<void> {
-  if (canSendProgress(extra)) {
+  if (canSendProgress(ctx)) {
     try {
-      await extra.sendNotification({
+      await ctx.sendNotification({
         method: 'notifications/progress',
         params: {
-          progressToken: extra._meta.progressToken,
+          progressToken: ctx._meta.progressToken,
           progress: progress.current,
           ...(progress.total !== undefined ? { total: progress.total } : {}),
           ...(progress.message !== undefined
@@ -692,9 +697,9 @@ async function sendMcpProgressNotification(
 }
 
 export function createProgressReporter(
-  extra: ToolExtra
+  ctx: ToolContext
 ): (progress: { total?: number; current: number; message?: string }) => void {
-  if (!canReportProgress(extra)) {
+  if (!canReportProgress(ctx)) {
     return () => {};
   }
   // State for monotonic enforcement and rate-limiting.
@@ -712,7 +717,7 @@ export function createProgressReporter(
     if (!isTerminal && now - lastSentMs < PROGRESS_RATE_LIMIT_MS) return;
     lastProgress = current;
     lastSentMs = now;
-    void reportProgress(extra, {
+    void reportProgress(ctx, {
       current,
       ...(total !== undefined ? { total } : {}),
       ...(message !== undefined ? { message } : {}),
@@ -721,11 +726,11 @@ export function createProgressReporter(
 }
 
 export function notifyProgress(
-  extra: ToolExtra,
+  ctx: ToolContext,
   progress: { current: number; total?: number; message?: string }
 ): void {
-  if (!canReportProgress(extra)) return;
-  void reportProgress(extra, progress);
+  if (!canReportProgress(ctx)) return;
+  void reportProgress(ctx, progress);
 }
 
 interface ToolProgressSession {
@@ -746,18 +751,18 @@ interface BatchProgressCallbacks {
 }
 
 export function createToolProgressSession(
-  extra: ToolExtra,
+  ctx: ToolContext,
   startMessage: string,
   initialTotal?: number
 ): ToolProgressSession {
-  notifyProgress(extra, {
+  notifyProgress(ctx, {
     current: 0,
     ...(initialTotal !== undefined ? { total: initialTotal } : {}),
     message: startMessage,
   });
 
   let cursor = 0;
-  const baseReporter = createProgressReporter(extra);
+  const baseReporter = createProgressReporter(ctx);
 
   const setCursor = (value: number): number => {
     if (value > cursor) cursor = value;
@@ -766,7 +771,7 @@ export function createToolProgressSession(
 
   const finishProgress = (message?: string, minimumCurrent?: number): void => {
     const finalCurrent = Math.max(cursor + 1, minimumCurrent ?? 1, 1);
-    notifyProgress(extra, {
+    notifyProgress(ctx, {
       current: finalCurrent,
       total: finalCurrent,
       ...(message !== undefined ? { message } : {}),
@@ -797,7 +802,7 @@ export function createToolProgressSession(
 }
 
 export function createBatchProgressCallbacks(
-  extra: ToolExtra,
+  ctx: ToolContext,
   params: {
     toolLabel: string;
     context: string;
@@ -806,7 +811,7 @@ export function createBatchProgressCallbacks(
   }
 ): BatchProgressCallbacks {
   const progress = createToolProgressSession(
-    extra,
+    ctx,
     `${params.toolLabel}: ${params.context}`,
     params.totalItems
   );
@@ -839,11 +844,11 @@ export function resolveFinalProgressCurrent(
 
 async function withProgress<T>(
   message: string,
-  extra: ToolExtra,
+  ctx: ToolContext,
   run: () => Promise<T>,
   getCompletionMessage?: (result: T) => string | undefined
 ): Promise<T> {
-  if (!canReportProgress(extra)) {
+  if (!canReportProgress(ctx)) {
     return run();
   }
 
@@ -851,21 +856,21 @@ async function withProgress<T>(
   // Emit the start notification only when a progressToken is present; for
   // task-only mode the task status is already 'working' — a zero-progress
   // notification would add unnecessary overhead without client value.
-  if (canSendProgress(extra)) {
-    await reportProgress(extra, { current: 0, total, message });
+  if (canSendProgress(ctx)) {
+    await reportProgress(ctx, { current: 0, total, message });
   }
 
   try {
     const result = await run();
     const endMessage = getCompletionMessage?.(result) ?? message;
-    await reportProgress(extra, {
+    await reportProgress(ctx, {
       current: total,
       total,
       message: endMessage,
     });
     return result;
   } catch (error) {
-    void reportProgress(extra, {
+    void reportProgress(ctx, {
       current: total,
       total,
       message: `${message} • failed`,
@@ -875,7 +880,7 @@ async function withProgress<T>(
 }
 
 export function wrapToolHandler<Args, Result>(
-  handler: (args: Args, extra: ToolExtra) => Promise<ToolResult<Result>>,
+  handler: (args: Args, ctx: ToolContext) => Promise<ToolResult<Result>>,
   options: {
     guard?: (() => boolean) | undefined;
     progressMessage?: (args: Args) => string;
@@ -886,10 +891,10 @@ export function wrapToolHandler<Args, Result>(
   }
 ): (
   args: Args,
-  extra?: ToolExtra | ServerContext
+  ctx?: ToolContext | ServerContext
 ) => Promise<ToolResult<Result>> {
-  return async (args: Args, extra?: ToolExtra | ServerContext) => {
-    const resolvedExtra = toToolExtra(extra);
+  return async (args: Args, ctx?: ToolContext | ServerContext) => {
+    const resolvedExtra = toToolContext(ctx);
     if (options.guard && !options.guard()) {
       return maybeStripStructuredContentFromResult(buildNotInitializedResult());
     }

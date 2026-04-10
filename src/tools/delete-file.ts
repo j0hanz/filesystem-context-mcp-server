@@ -17,8 +17,8 @@ import {
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   executeToolWithDiagnostics,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
@@ -99,11 +99,11 @@ export function registerDeleteFileTool(
 ): void {
   const handler = (
     args: z.infer<typeof DeleteFileInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof DeleteFileOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'rm',
-      extra,
+      ctx,
       outputSchema: DeleteFileOutputSchema,
       timedSignal: {},
       context: { path: args.path },

@@ -32,7 +32,7 @@ import {
   buildToolErrorResponse,
   type IconInfo,
   maybeStripStructuredContentFromResult,
-  type ToolExtra,
+  type ToolContext,
   type ToolResult,
   withDefaultIcons,
 } from './shared.js';
@@ -72,7 +72,7 @@ function hasTaskToolCapability(server: McpServer): boolean {
   return capabilities.tasks?.requests?.tools?.call !== undefined;
 }
 
-type TaskToolExtra = ToolExtra & {
+type TaskToolContext = ToolContext & {
   taskId?: string;
   taskStore?: RequestTaskStore;
   taskRequestedTtl?: number;
@@ -147,13 +147,13 @@ function asTaskRequestContext(
   };
 }
 
-function toTaskToolExtra(
+function toTaskToolContext(
   ctx: CreateTaskServerContext | TaskServerContext
-): TaskToolExtra {
+): TaskToolContext {
   return {
     signal: ctx.mcpReq.signal,
     ...(ctx.mcpReq._meta
-      ? { _meta: ctx.mcpReq._meta as ToolExtra['_meta'] }
+      ? { _meta: ctx.mcpReq._meta as ToolContext['_meta'] }
       : {}),
     sendNotification: async (notification) => ctx.mcpReq.notify(notification),
     ...(hasTaskStoreContext(ctx) ? { taskStore: ctx.task.store } : {}),
@@ -316,11 +316,11 @@ function buildTaskStatusNotificationParams(
 }
 
 async function notifyTaskCreatedIfPossible(
-  extra: TaskToolExtra,
+  ctx: TaskToolContext,
   taskId: string,
   toolName?: string
 ): Promise<void> {
-  const { sendNotification } = extra as { sendNotification?: unknown };
+  const { sendNotification } = ctx as { sendNotification?: unknown };
   if (typeof sendNotification !== 'function') return;
   const notify = sendNotification as (notification: {
     method: typeof TASK_CREATED_NOTIFICATION_METHOD;
@@ -354,12 +354,12 @@ async function notifyTaskCreatedIfPossible(
 }
 
 async function notifyTaskStatusIfPossible(
-  extra: TaskToolExtra,
+  ctx: TaskToolContext,
   taskStore: RequestTaskStore,
   taskId: string,
   toolName?: string
 ): Promise<void> {
-  const { sendNotification } = extra as { sendNotification?: unknown };
+  const { sendNotification } = ctx as { sendNotification?: unknown };
   if (typeof sendNotification !== 'function') return;
   const notify = sendNotification as TaskStatusNotificationSender;
   try {
@@ -388,18 +388,18 @@ async function notifyTaskStatusIfPossible(
   }
 }
 
-function getTaskStore(extra: TaskToolExtra): RequestTaskStore {
-  if (!extra.taskStore) {
+function getTaskStore(ctx: TaskToolContext): RequestTaskStore {
+  if (!ctx.taskStore) {
     throw new McpError(ErrorCode.INVALID_INPUT, 'Task store not configured.');
   }
-  return extra.taskStore;
+  return ctx.taskStore;
 }
 
-function getTaskId(extra: TaskToolExtra): string {
-  if (!extra.taskId) {
+function getTaskId(ctx: TaskToolContext): string {
+  if (!ctx.taskId) {
     throw new McpError(ErrorCode.INVALID_INPUT, 'Task id missing.');
   }
-  return extra.taskId;
+  return ctx.taskId;
 }
 
 function isErrorResult(result: ToolResult<unknown>): boolean {
@@ -501,10 +501,10 @@ async function isTaskCancelled(
 async function runTaskInBackground<Args extends ToolSchema>(
   run: (
     args: ToolArgs<Args>,
-    extra: TaskToolExtra
+    ctx: TaskToolContext
   ) => Promise<ToolResult<unknown>>,
   args: ToolArgs<Args>,
-  extra: TaskToolExtra,
+  ctx: TaskToolContext,
   taskStore: RequestTaskStore,
   taskId: string,
   toolName?: string,
@@ -513,7 +513,7 @@ async function runTaskInBackground<Args extends ToolSchema>(
   // Create a dedicated AbortController for background execution.
   // The original request signal is stale once createTask returns.
   const taskAbort = new AbortController();
-  const taskExtra: TaskToolExtra = { ...extra, signal: taskAbort.signal };
+  const taskExtra: TaskToolContext = { ...ctx, signal: taskAbort.signal };
 
   // Poll the task store for client-initiated cancellation.
   const cancelPoller = setInterval(() => {
@@ -562,7 +562,7 @@ async function runTaskInBackground<Args extends ToolSchema>(
       toolName,
       durationMs,
     });
-    await notifyTaskStatusIfPossible(extra, taskStore, taskId, toolName);
+    await notifyTaskStatusIfPossible(ctx, taskStore, taskId, toolName);
   } catch (innerError) {
     Logger.error(
       format('Failed to store task result for task %s:', taskId),
@@ -579,7 +579,7 @@ async function runTaskInBackground<Args extends ToolSchema>(
       statusMessage: 'Internal system error while storing result',
     };
 
-    const { sendNotification } = extra as { sendNotification?: unknown };
+    const { sendNotification } = ctx as { sendNotification?: unknown };
     if (typeof sendNotification === 'function') {
       try {
         await (sendNotification as TaskStatusNotificationSender)({
@@ -635,7 +635,7 @@ export function registerToolTaskIfAvailable<Args extends ToolSchema, Result>(
   toolDef: object,
   run: (
     args: ToolArgs<Args>,
-    extra: TaskToolExtra
+    ctx: TaskToolContext
   ) => Promise<ToolResult<Result>>,
   iconInfo: IconInfo | undefined,
   guard?: () => boolean
@@ -661,7 +661,7 @@ interface TaskHandlerOptions {
 }
 
 export function createToolTaskHandler<Result>(
-  run: (args: undefined, extra: TaskToolExtra) => Promise<ToolResult<Result>>,
+  run: (args: undefined, ctx: TaskToolContext) => Promise<ToolResult<Result>>,
   options?: TaskHandlerOptions
 ): ToolTaskHandler;
 export function createToolTaskHandler<
@@ -670,14 +670,14 @@ export function createToolTaskHandler<
 >(
   run: (
     args: ToolArgs<Args>,
-    extra: TaskToolExtra
+    ctx: TaskToolContext
   ) => Promise<ToolResult<Result>>,
   options?: TaskHandlerOptions
 ): ToolTaskHandler<Args>;
 export function createToolTaskHandler<Args extends ToolSchema, Result>(
   run: (
     args: ToolArgs<Args>,
-    extra: TaskToolExtra
+    ctx: TaskToolContext
   ) => Promise<ToolResult<Result>>,
   options?: TaskHandlerOptions
 ): ToolTaskHandler<Args> {
@@ -687,13 +687,13 @@ export function createToolTaskHandler<Args extends ToolSchema, Result>(
       | [CreateTaskServerContext]
   ): Promise<CreateTaskResult> => {
     let args!: ToolArgs<Args>;
-    let ctx: CreateTaskServerContext;
+    let serverCtx: CreateTaskServerContext;
     if (params.length === 1) {
-      ctx = params[0];
+      serverCtx = params[0];
     } else {
-      [args, ctx] = params;
+      [args, serverCtx] = params;
     }
-    const extra = toTaskToolExtra(asCreateTaskContext(ctx));
+    const ctx = toTaskToolContext(asCreateTaskContext(serverCtx));
 
     if (options?.guard && !options.guard()) {
       throw new McpError(
@@ -702,7 +702,7 @@ export function createToolTaskHandler<Args extends ToolSchema, Result>(
       );
     }
 
-    const taskStore = getTaskStore(extra);
+    const taskStore = getTaskStore(ctx);
     if ((await countActiveTasks(taskStore)) >= MAX_CONCURRENT_TASKS) {
       throw new McpError(
         ErrorCode.INVALID_INPUT,
@@ -710,7 +710,7 @@ export function createToolTaskHandler<Args extends ToolSchema, Result>(
       );
     }
     const task = await taskStore.createTask({
-      ttl: resolveRequestedTaskTtl(extra.taskRequestedTtl),
+      ttl: resolveRequestedTaskTtl(ctx.taskRequestedTtl),
       pollInterval: options?.pollIntervalMs ?? TASK_POLL_INTERVAL_MS,
     });
 
@@ -731,8 +731,8 @@ export function createToolTaskHandler<Args extends ToolSchema, Result>(
       status: task.status,
       ...(options?.toolName ? { toolName: options.toolName } : {}),
     });
-    const taskExtra: TaskToolExtra = {
-      ...extra,
+    const taskExtra: TaskToolContext = {
+      ...ctx,
       taskStore,
       taskId: task.taskId,
     };
@@ -763,10 +763,10 @@ export function createToolTaskHandler<Args extends ToolSchema, Result>(
   const getTask = (async (
     ...params: [ToolArgs<Args>, TaskServerContext] | [TaskServerContext]
   ): Promise<GetTaskResult> => {
-    const ctx = params.length === 1 ? params[0] : params[1];
-    const extra = toTaskToolExtra(asTaskRequestContext(ctx));
-    const taskStore = getTaskStore(extra);
-    const taskId = getTaskId(extra);
+    const serverCtx = params.length === 1 ? params[0] : params[1];
+    const ctx = toTaskToolContext(asTaskRequestContext(serverCtx));
+    const taskStore = getTaskStore(ctx);
+    const taskId = getTaskId(ctx);
     const task = await taskStore.getTask(taskId);
     return projectCancelledTaskStatus(taskStore, normalizeGetTaskResult(task));
   }) as ToolTaskHandler<Args>['getTask'];
@@ -774,10 +774,10 @@ export function createToolTaskHandler<Args extends ToolSchema, Result>(
   const getTaskResult = (async (
     ...params: [ToolArgs<Args>, TaskServerContext] | [TaskServerContext]
   ): Promise<CallToolResult> => {
-    const ctx = params.length === 1 ? params[0] : params[1];
-    const extra = toTaskToolExtra(asTaskRequestContext(ctx));
-    const taskStore = getTaskStore(extra);
-    const taskId = getTaskId(extra);
+    const serverCtx = params.length === 1 ? params[0] : params[1];
+    const ctx = toTaskToolContext(asTaskRequestContext(serverCtx));
+    const taskStore = getTaskStore(ctx);
+    const taskId = getTaskId(ctx);
     const result = await taskStore.getTaskResult(taskId);
     return attachRelatedTaskMeta(normalizeCallToolResult(result), taskId);
   }) as ToolTaskHandler<Args>['getTaskResult'];

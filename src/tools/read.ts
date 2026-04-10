@@ -21,8 +21,8 @@ import {
   executeToolWithDiagnostics,
   maybeExternalizeTextContent,
   READ_ONLY_TOOL_ANNOTATIONS,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
@@ -225,11 +225,11 @@ export function registerReadFileTool(
 ): void {
   const handler = (
     args: ReadFileInput,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<ReadFileOutput>> =>
     executeToolWithDiagnostics({
       toolName: READ_TOOL_NAME,
-      extra,
+      ctx,
       outputSchema: ReadFileOutputSchema,
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: args.path },

@@ -20,8 +20,8 @@ import {
   executeToolWithDiagnostics,
   maybeExternalizeTextContent,
   READ_ONLY_TOOL_ANNOTATIONS,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
@@ -176,11 +176,11 @@ export function registerDiffFilesTool(
 ): void {
   const handler = (
     args: z.infer<typeof DiffFilesInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof DiffFilesOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'diff_files',
-      extra,
+      ctx,
       outputSchema: DiffFilesOutputSchema,
       timedSignal: {},
       context: { path: args.original },

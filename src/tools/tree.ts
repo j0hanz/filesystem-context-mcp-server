@@ -21,8 +21,8 @@ import {
   notifyProgress,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolvePathOrRoot,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
@@ -82,12 +82,12 @@ export function registerTreeTool(
 ): void {
   const handler = (
     args: z.infer<typeof TreeInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof TreeOutputSchema>>> => {
     const targetPath = args.path ?? '.';
     return executeToolWithDiagnostics({
       toolName: 'tree',
-      extra,
+      ctx,
       outputSchema: TreeOutputSchema,
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: targetPath },
@@ -96,13 +96,13 @@ export function registerTreeTool(
         let progressCursor = 0;
         const knownTotal = args.maxEntries;
 
-        notifyProgress(extra, {
+        notifyProgress(ctx, {
           current: 0,
           total: knownTotal,
           message: `≣ tree: ${context}`,
         });
 
-        const baseReporter = createProgressReporter(extra);
+        const baseReporter = createProgressReporter(ctx);
         const onProgress = (progress: { current: number }): void => {
           const { current } = progress;
           if (current > progressCursor) progressCursor = current;
@@ -123,7 +123,7 @@ export function registerTreeTool(
           if (truncated) suffix += ' [truncated]';
 
           const finalCurrent = Math.max(count, progressCursor + 1);
-          notifyProgress(extra, {
+          notifyProgress(ctx, {
             current: finalCurrent,
             total: finalCurrent,
             message: `≣ tree: ${context} • ${suffix}`,
@@ -131,7 +131,7 @@ export function registerTreeTool(
           return result;
         } catch (error) {
           const finalCurrent = Math.max(progressCursor + 1, 1);
-          notifyProgress(extra, {
+          notifyProgress(ctx, {
             current: finalCurrent,
             total: finalCurrent,
             message: `≣ tree: ${context} • failed`,

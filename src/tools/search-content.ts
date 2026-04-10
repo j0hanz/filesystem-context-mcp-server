@@ -31,8 +31,8 @@ import {
   READ_ONLY_TOOL_ANNOTATIONS,
   resolveFinalProgressCurrent,
   resolvePathOrRoot,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
@@ -412,17 +412,17 @@ export function registerSearchContentTool(
 ): void {
   const handler = (
     args: SearchInput,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<SearchOutput>> =>
     executeToolWithDiagnostics({
       toolName: 'grep',
-      extra,
+      ctx,
       outputSchema: SearchContentOutputSchema,
       context: { path: args.path ?? '.' },
       run: async (signal) => {
         const { pattern, filePattern: scope } = args;
         const progressLabel = `🔎︎ grep: ${truncateProgressPattern(pattern)}`;
-        const progress = createToolProgressSession(extra, progressLabel);
+        const progress = createToolProgressSession(ctx, progressLabel);
 
         const progressWithMessage = ({
           current,

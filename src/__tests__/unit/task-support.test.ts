@@ -284,11 +284,11 @@ describe('createToolTaskHandler', () => {
           }) as ToolResult<{ ok: boolean }>
       );
 
-      const extra = {
+      const ctx = {
         ...createMockExtra(store),
         taskRequestedTtl: MAX_TASK_TTL_MS + 999_999,
       };
-      const { task } = await handler.createTask(extra);
+      const { task } = await handler.createTask(ctx);
       assert.ok(
         task.ttl !== null && task.ttl <= MAX_TASK_TTL_MS,
         `ttl ${String(task.ttl)} should be clamped to ${String(MAX_TASK_TTL_MS)}`
@@ -349,14 +349,14 @@ describe('createToolTaskHandler', () => {
       let signalAborted = false;
 
       const handler = createToolTaskHandler(
-        async (_args: undefined, extra: { signal?: AbortSignal }) => {
+        async (_args: undefined, ctx: { signal?: AbortSignal }) => {
           // Simulate a long-running tool that respects the signal
           await new Promise<void>((resolve, reject) => {
             const timer = setTimeout(resolve, 10_000);
-            extra.signal?.addEventListener('abort', () => {
+            ctx.signal?.addEventListener('abort', () => {
               clearTimeout(timer);
               signalAborted = true;
-              reject(extra.signal?.reason as Error);
+              reject(ctx.signal?.reason as Error);
             });
           });
           return {

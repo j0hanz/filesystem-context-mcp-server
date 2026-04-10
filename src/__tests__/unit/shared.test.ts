@@ -20,7 +20,7 @@ describe('tool output validation', () => {
 
     const result = await executeToolWithDiagnostics({
       toolName: 'example',
-      extra: {},
+      ctx: {},
       outputSchema,
       run: () =>
         buildToolResponse('ok', { ok: true, value: 42 } as unknown as z.infer<
@@ -58,7 +58,7 @@ describe('SEP-414 trace context propagation', () => {
 
     await executeToolWithDiagnostics({
       toolName: 'ctx_test',
-      extra: {
+      ctx: {
         _meta: {
           traceparent: VALID_TRACEPARENT,
           tracestate: 'vendor=opaque',
@@ -84,7 +84,7 @@ describe('SEP-414 trace context propagation', () => {
 
     await executeToolWithDiagnostics({
       toolName: 'invalid_trace',
-      extra: {
+      ctx: {
         _meta: { traceparent: 'not-a-valid-traceparent' },
       },
       outputSchema,
@@ -103,7 +103,7 @@ describe('SEP-414 trace context propagation', () => {
 
     await executeToolWithDiagnostics({
       toolName: 'no_trace',
-      extra: {},
+      ctx: {},
       outputSchema,
       run: () => {
         captured = getTraceContext();

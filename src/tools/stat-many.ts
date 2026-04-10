@@ -23,8 +23,8 @@ import {
   executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolveFinalProgressCurrent,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
@@ -111,26 +111,23 @@ export function registerGetMultipleFileInfoTool(
 ): void {
   const handler = (
     args: z.infer<typeof GetMultipleFileInfoInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof GetMultipleFileInfoOutputSchema>>> => {
     const primaryPath = args.paths[0] ?? '';
     return executeToolWithDiagnostics({
       toolName: 'stat_many',
-      extra,
+      ctx,
       outputSchema: GetMultipleFileInfoOutputSchema,
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: primaryPath },
       run: async (signal) => {
         const context = buildBatchPathContext(args.paths);
-        const { progress, onItemComplete } = createBatchProgressCallbacks(
-          extra,
-          {
-            toolLabel: '🕮 stat_many',
-            context,
-            totalItems: args.paths.length,
-            itemVerb: 'done',
-          }
-        );
+        const { progress, onItemComplete } = createBatchProgressCallbacks(ctx, {
+          toolLabel: '🕮 stat_many',
+          context,
+          totalItems: args.paths.length,
+          itemVerb: 'done',
+        });
 
         try {
           const result = await handleGetMultipleFileInfo(

@@ -16,8 +16,8 @@ import {
   buildToolResponse,
   executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
@@ -66,11 +66,11 @@ export function registerListAllowedDirectoriesTool(
 ): void {
   const handler = (
     _args: z.infer<typeof ListAllowedDirectoriesInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof ListAllowedDirectoriesOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'roots',
-      extra,
+      ctx,
       outputSchema: ListAllowedDirectoriesOutputSchema,
       run: () => handleListAllowedDirectories(),
       onError: (error) => buildToolErrorResponse(error, ErrorCode.UNKNOWN),

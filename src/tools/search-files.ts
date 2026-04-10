@@ -24,8 +24,8 @@ import {
   notifyProgress,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolvePathOrRoot,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
@@ -182,11 +182,11 @@ export function registerSearchFilesTool(
 ): void {
   const handler = (
     args: z.infer<typeof SearchFilesInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof SearchFilesOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'find',
-      extra,
+      ctx,
       outputSchema: SearchFilesOutputSchema,
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: args.path ?? '.' },
@@ -197,12 +197,12 @@ export function registerSearchFilesTool(
         const truncatedPattern = truncateProgressPattern(pattern);
         const context = `${truncatedPattern} in ${scopeLabel}`;
         let progressCursor = 0;
-        notifyProgress(extra, {
+        notifyProgress(ctx, {
           current: 0,
           message: `🔎︎ find: ${truncatedPattern}`,
         });
 
-        const baseReporter = createProgressReporter(extra);
+        const baseReporter = createProgressReporter(ctx);
         const progressWithMessage = ({
           current,
           total,
@@ -245,7 +245,7 @@ export function registerSearchFilesTool(
             (sc.filesScanned ?? 0) + 1,
             progressCursor + 1
           );
-          notifyProgress(extra, {
+          notifyProgress(ctx, {
             current: finalCurrent,
             total: finalCurrent,
             message: `🔎︎ find: ${context} • ${suffix}`,
@@ -253,7 +253,7 @@ export function registerSearchFilesTool(
           return result;
         } catch (error) {
           const finalCurrent = Math.max(progressCursor + 1, 1);
-          notifyProgress(extra, {
+          notifyProgress(ctx, {
             current: finalCurrent,
             total: finalCurrent,
             message: `🔎︎ find: ${context} • failed`,

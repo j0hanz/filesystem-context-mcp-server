@@ -25,8 +25,8 @@ import {
   executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolvePathOrRoot,
+  type ToolContext,
   type ToolContract,
-  type ToolExtra,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
@@ -287,11 +287,11 @@ export function registerListDirectoryTool(
 ): void {
   const handler = (
     args: z.infer<typeof ListDirectoryInputSchema>,
-    extra: ToolExtra
+    ctx: ToolContext
   ): Promise<ToolResult<z.infer<typeof ListDirectoryOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'ls',
-      extra,
+      ctx,
       outputSchema: ListDirectoryOutputSchema,
       context: { path: args.path ?? '.' },
       run: (signal) => handleListDirectory(args, signal),
