@@ -30,11 +30,8 @@ import {
   type ToolResponse,
   type ToolResult,
   truncateProgressPattern,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const SEARCH_FILES_TOOL: ToolContract = {
   name: 'find',
@@ -265,31 +262,5 @@ export function registerSearchFilesTool(
         buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
     });
 
-  const { isInitialized } = options;
-
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: isInitialized,
-  });
-
-  const validatedHandler = withValidatedArgs(
-    SearchFilesInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'find',
-      SEARCH_FILES_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'find',
-    withDefaultIcons({ ...SEARCH_FILES_TOOL }, options.iconInfo),
-    validatedHandler
-  );
+  registerStandardTool(server, SEARCH_FILES_TOOL, handler, options);
 }

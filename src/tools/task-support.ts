@@ -32,9 +32,14 @@ import {
   buildToolErrorResponse,
   type IconInfo,
   maybeStripStructuredContentFromResult,
+  resolveToolTaskSupportLevel,
   type ToolContext,
+  type ToolContract,
+  type ToolRegistrationOptions,
   type ToolResult,
   withDefaultIcons,
+  withValidatedArgs,
+  wrapToolHandler,
 } from './shared.js';
 
 interface TaskContext {
@@ -83,21 +88,6 @@ type ToolSchema = StandardSchemaWithJSON | undefined;
 type ToolArgs<Args extends ToolSchema> = Args extends StandardSchemaWithJSON
   ? StandardSchemaWithJSON.InferOutput<Args>
   : undefined;
-
-function resolveTaskSupportLevel(
-  topLevelTaskSupport: unknown,
-  executionTaskSupport: unknown
-): 'optional' | 'required' | 'forbidden' | undefined {
-  const candidate = topLevelTaskSupport ?? executionTaskSupport;
-  if (
-    candidate === 'optional' ||
-    candidate === 'required' ||
-    candidate === 'forbidden'
-  ) {
-    return candidate;
-  }
-  return undefined;
-}
 
 const TASK_STATUS_NOTIFICATION_METHOD = 'notifications/tasks/status';
 const TASK_CREATED_NOTIFICATION_METHOD = 'notifications/tasks/created';
@@ -611,7 +601,7 @@ function tryRegisterToolTask<Args extends ToolSchema>(
   const def = toolDef as Record<string, unknown>;
   const existingExecution =
     (def.execution as Record<string, unknown> | undefined) ?? {};
-  const taskSupport = resolveTaskSupportLevel(
+  const taskSupport = resolveToolTaskSupportLevel(
     def.taskSupport,
     existingExecution.taskSupport
   );
@@ -650,6 +640,52 @@ export function registerToolTaskIfAvailable<Args extends ToolSchema, Result>(
     toolDef,
     createToolTaskHandler(run as never, taskOptions) as ToolTaskHandler<Args>,
     iconInfo
+  );
+}
+
+export function registerStandardTool<
+  Args,
+  Result extends Record<string, unknown>,
+>(
+  server: McpServer,
+  toolDef: ToolContract,
+  handler: (args: Args, ctx: ToolContext) => Promise<ToolResult<Result>>,
+  options: ToolRegistrationOptions = {},
+  wrapOptions: {
+    guard?: (() => boolean) | undefined;
+    progressMessage?: (args: Args) => string;
+    completionMessage?: (
+      args: Args,
+      result: ToolResult<Result>
+    ) => string | undefined;
+  } = {}
+): void {
+  const wrappedHandler = wrapToolHandler(handler, {
+    guard: options.isInitialized,
+    ...wrapOptions,
+  });
+  const validatedHandler = withValidatedArgs(
+    toolDef.inputSchema as never,
+    wrappedHandler
+  );
+
+  if (
+    registerToolTaskIfAvailable(
+      server,
+      toolDef.name,
+      toolDef,
+      validatedHandler,
+      options.iconInfo,
+      options.isInitialized
+    )
+  ) {
+    return;
+  }
+
+  server.registerTool(
+    toolDef.name,
+    withDefaultIcons({ ...toolDef }, options.iconInfo),
+    validatedHandler
   );
 }
 

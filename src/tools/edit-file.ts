@@ -26,11 +26,8 @@ import {
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const EDIT_FILE_TOOL: ToolContract = {
   name: 'edit',
@@ -425,32 +422,8 @@ export function registerEditFileTool(
         buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
     });
 
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: options.isInitialized,
+  registerStandardTool(server, EDIT_FILE_TOOL, handler, options, {
     progressMessage: buildEditProgressMessage,
     completionMessage: buildEditCompletionMessage,
   });
-
-  const validatedHandler = withValidatedArgs(
-    EditFileInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'edit',
-      EDIT_FILE_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      options.isInitialized
-    )
-  )
-    return;
-
-  server.registerTool(
-    'edit',
-    withDefaultIcons({ ...EDIT_FILE_TOOL }, options.iconInfo),
-    validatedHandler
-  );
 }

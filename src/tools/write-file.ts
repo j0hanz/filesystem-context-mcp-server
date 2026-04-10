@@ -24,11 +24,8 @@ import {
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const WRITE_FILE_TOOL: ToolContract = {
   name: 'write',
@@ -90,8 +87,7 @@ export function registerWriteFileTool(
         buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
     });
 
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: options.isInitialized,
+  registerStandardTool(server, WRITE_FILE_TOOL, handler, options, {
     progressMessage: (args) => `🛠 write: ${basename(args.path)}`,
     completionMessage: (args, result) => {
       const name = basename(args.path);
@@ -100,26 +96,4 @@ export function registerWriteFileTool(
       return `🛠 write: ${name} • ${formatBytes(sc.bytesWritten ?? 0)}`;
     },
   });
-
-  const validatedHandler = withValidatedArgs(
-    WriteFileInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'write',
-      WRITE_FILE_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      options.isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'write',
-    withDefaultIcons({ ...WRITE_FILE_TOOL }, options.iconInfo),
-    validatedHandler
-  );
 }

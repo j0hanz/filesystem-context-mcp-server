@@ -30,11 +30,8 @@ import {
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 const READ_MANY_TOOL_NAME = 'read_many';
 const READ_MANY_TOOL_LABEL = '🕮 read_many';
@@ -296,29 +293,5 @@ export function registerReadMultipleFilesTool(
     });
   };
 
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: options.isInitialized,
-  });
-
-  const validatedHandler = withValidatedArgs(
-    ReadMultipleFilesInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      READ_MANY_TOOL_NAME,
-      READ_MANY_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      options.isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    READ_MANY_TOOL_NAME,
-    withDefaultIcons({ ...READ_MANY_TOOL }, options.iconInfo),
-    validatedHandler
-  );
+  registerStandardTool(server, READ_MANY_TOOL, handler, options);
 }

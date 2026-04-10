@@ -91,7 +91,7 @@ export const IDEMPOTENT_WRITE_TOOL_ANNOTATIONS = {
   openWorldHint: false,
 } as const;
 
-type TaskSupportLevel = 'optional' | 'required' | 'forbidden';
+export type TaskSupportLevel = 'optional' | 'required' | 'forbidden';
 
 function isTaskSupportLevel(value: unknown): value is TaskSupportLevel {
   return value === 'optional' || value === 'required' || value === 'forbidden';
@@ -106,7 +106,7 @@ function getExecutionConfig(
     : undefined;
 }
 
-function resolveTaskSupportLevel(
+export function resolveToolTaskSupportLevel(
   topLevelTaskSupport: unknown,
   executionTaskSupport: unknown
 ): TaskSupportLevel | undefined {
@@ -139,7 +139,7 @@ function normalizeToolExecution<T extends object>(tool: T): T {
   const candidate = tool as Record<string, unknown>;
   const topLevelTaskSupport = candidate['taskSupport'];
   const existingExecution = getExecutionConfig(candidate);
-  const resolvedTaskSupport = resolveTaskSupportLevel(
+  const resolvedTaskSupport = resolveToolTaskSupportLevel(
     topLevelTaskSupport,
     existingExecution?.['taskSupport']
   );

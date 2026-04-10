@@ -32,11 +32,8 @@ import {
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const MOVE_FILE_TOOL: ToolContract = {
   name: 'mv',
@@ -297,8 +294,7 @@ export function registerMoveFileTool(
         ),
     });
 
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: options.isInitialized,
+  registerStandardTool(server, MOVE_FILE_TOOL, handler, options, {
     progressMessage: (args) => {
       const dest = basename(args.destination);
       if (args.source && !args.sources?.length) {
@@ -319,26 +315,4 @@ export function registerMoveFileTool(
       return `🛠 mv: ${count} items → ${dest}`;
     },
   });
-
-  const validatedHandler = withValidatedArgs(
-    MoveFileInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'mv',
-      MOVE_FILE_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      options.isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'mv',
-    withDefaultIcons({ ...MOVE_FILE_TOOL }, options.iconInfo),
-    validatedHandler
-  );
 }

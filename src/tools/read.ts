@@ -26,11 +26,8 @@ import {
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const READ_FILE_TOOL: ToolContract = {
   name: 'read',
@@ -238,31 +235,8 @@ export function registerReadFileTool(
         buildToolErrorResponse(error, ErrorCode.NOT_FILE, args.path),
     });
 
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: options.isInitialized,
+  registerStandardTool(server, READ_FILE_TOOL, handler, options, {
     progressMessage: buildReadProgressMessage,
     completionMessage: buildReadCompletionMessage,
   });
-
-  const validatedHandler = withValidatedArgs(
-    ReadFileInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      READ_TOOL_NAME,
-      READ_FILE_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      options.isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    READ_TOOL_NAME,
-    withDefaultIcons({ ...READ_FILE_TOOL }, options.iconInfo),
-    validatedHandler
-  );
 }

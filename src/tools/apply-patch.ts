@@ -26,11 +26,8 @@ import {
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const APPLY_PATCH_TOOL: ToolContract = {
   name: 'apply_patch',
@@ -341,8 +338,7 @@ export function registerApplyPatchTool(
         buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
     });
 
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: options.isInitialized,
+  registerStandardTool(server, APPLY_PATCH_TOOL, handler, options, {
     progressMessage: (args) => {
       const name = basename(args.path);
       return args.dryRun ? `🛠 patch: ${name} [dry run]` : `🛠 patch: ${name}`;
@@ -360,26 +356,4 @@ export function registerApplyPatchTool(
       return `🛠 patch: ${name} • ${dry}no changes`;
     },
   });
-
-  const validatedHandler = withValidatedArgs(
-    ApplyPatchInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'apply_patch',
-      APPLY_PATCH_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      options.isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'apply_patch',
-    withDefaultIcons({ ...APPLY_PATCH_TOOL }, options.iconInfo),
-    validatedHandler
-  );
 }

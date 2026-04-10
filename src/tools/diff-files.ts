@@ -25,11 +25,8 @@ import {
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const DIFF_FILES_TOOL: ToolContract = {
   name: 'diff_files',
@@ -189,8 +186,7 @@ export function registerDiffFilesTool(
         buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.original),
     });
 
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: options.isInitialized,
+  registerStandardTool(server, DIFF_FILES_TOOL, handler, options, {
     progressMessage: (args) => {
       const n1 = basename(args.original);
       const n2 = basename(args.modified);
@@ -209,26 +205,4 @@ export function registerDiffFilesTool(
       return `🕮 diff: ${n1} ⟷ ${n2}`;
     },
   });
-
-  const validatedHandler = withValidatedArgs(
-    DiffFilesInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'diff_files',
-      DIFF_FILES_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      options.isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'diff_files',
-    withDefaultIcons({ ...DIFF_FILES_TOOL }, options.iconInfo),
-    validatedHandler
-  );
 }

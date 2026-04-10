@@ -43,11 +43,8 @@ import {
   type ToolResponse,
   type ToolResult,
   truncateProgressPattern,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const SEARCH_AND_REPLACE_TOOL: ToolContract = {
   name: 'search_and_replace',
@@ -590,33 +587,7 @@ export function registerSearchAndReplaceTool(
         buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
     });
 
-  const { isInitialized } = options;
-
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: isInitialized,
-  });
-
-  const validatedHandler = withValidatedArgs(
-    SearchAndReplaceInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'search_and_replace',
-      SEARCH_AND_REPLACE_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'search_and_replace',
-    withDefaultIcons({ ...SEARCH_AND_REPLACE_TOOL }, options.iconInfo),
-    validatedHandler
-  );
+  registerStandardTool(server, SEARCH_AND_REPLACE_TOOL, handler, options);
 }
 
 function buildSearchAndReplaceText(

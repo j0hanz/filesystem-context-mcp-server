@@ -26,11 +26,8 @@ import {
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const TREE_TOOL: ToolContract = {
   name: 'tree',
@@ -144,26 +141,5 @@ export function registerTreeTool(
     });
   };
 
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: options.isInitialized,
-  });
-
-  const validatedHandler = withValidatedArgs(TreeInputSchema, wrappedHandler);
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'tree',
-      TREE_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      options.isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'tree',
-    withDefaultIcons({ ...TREE_TOOL }, options.iconInfo),
-    validatedHandler
-  );
+  registerStandardTool(server, TREE_TOOL, handler, options);
 }

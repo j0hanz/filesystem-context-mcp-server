@@ -28,11 +28,8 @@ import {
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const GET_MULTIPLE_FILE_INFO_TOOL: ToolContract = {
   name: 'stat_many',
@@ -156,29 +153,5 @@ export function registerGetMultipleFileInfoTool(
     });
   };
 
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: options.isInitialized,
-  });
-
-  const validatedHandler = withValidatedArgs(
-    GetMultipleFileInfoInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'stat_many',
-      GET_MULTIPLE_FILE_INFO_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      options.isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'stat_many',
-    withDefaultIcons({ ...GET_MULTIPLE_FILE_INFO_TOOL }, options.iconInfo),
-    validatedHandler
-  );
+  registerStandardTool(server, GET_MULTIPLE_FILE_INFO_TOOL, handler, options);
 }

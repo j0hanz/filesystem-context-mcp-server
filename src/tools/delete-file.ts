@@ -22,11 +22,8 @@ import {
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const DELETE_FILE_TOOL: ToolContract = {
   name: 'rm',
@@ -154,8 +151,7 @@ export function registerDeleteFileTool(
       },
     });
 
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: options.isInitialized,
+  registerStandardTool(server, DELETE_FILE_TOOL, handler, options, {
     progressMessage: (args) => `🛠 rm: ${basename(args.path)}`,
     completionMessage: (args, result) => {
       const name = basename(args.path);
@@ -163,26 +159,4 @@ export function registerDeleteFileTool(
       return `🛠 rm: ${name}`;
     },
   });
-
-  const validatedHandler = withValidatedArgs(
-    DeleteFileInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'rm',
-      DELETE_FILE_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      options.isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'rm',
-    withDefaultIcons({ ...DELETE_FILE_TOOL }, options.iconInfo),
-    validatedHandler
-  );
 }

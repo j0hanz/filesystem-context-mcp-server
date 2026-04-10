@@ -21,11 +21,8 @@ import {
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 export const LIST_ALLOWED_DIRECTORIES_TOOL: ToolContract = {
   name: 'roots',
@@ -76,36 +73,19 @@ export function registerListAllowedDirectoriesTool(
       onError: (error) => buildToolErrorResponse(error, ErrorCode.UNKNOWN),
     });
 
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: options.isInitialized,
-    progressMessage: () => '≣ roots',
-    completionMessage: (_args, result) => {
-      if (result.isError) return `≣ roots • failed`;
-      const sc = result.structuredContent;
-      const count = sc.directories?.length ?? 0;
-      return `≣ roots • ${count} ${count === 1 ? 'root' : 'roots'}`;
-    },
-  });
-
-  const validatedHandler = withValidatedArgs(
-    ListAllowedDirectoriesInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'roots',
-      LIST_ALLOWED_DIRECTORIES_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      options.isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'roots',
-    withDefaultIcons({ ...LIST_ALLOWED_DIRECTORIES_TOOL }, options.iconInfo),
-    validatedHandler
+  registerStandardTool(
+    server,
+    LIST_ALLOWED_DIRECTORIES_TOOL,
+    handler,
+    options,
+    {
+      progressMessage: () => '≣ roots',
+      completionMessage: (_args, result) => {
+        if (result.isError) return `≣ roots • failed`;
+        const sc = result.structuredContent;
+        const count = sc.directories?.length ?? 0;
+        return `≣ roots • ${count} ${count === 1 ? 'root' : 'roots'}`;
+      },
+    }
   );
 }

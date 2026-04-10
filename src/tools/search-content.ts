@@ -37,11 +37,8 @@ import {
   type ToolResponse,
   type ToolResult,
   truncateProgressPattern,
-  withDefaultIcons,
-  withValidatedArgs,
-  wrapToolHandler,
 } from './shared.js';
-import { registerToolTaskIfAvailable } from './task-support.js';
+import { registerStandardTool } from './task-support.js';
 
 /**
  * Configuration constants for the Search Content tool.
@@ -471,30 +468,5 @@ export function registerSearchContentTool(
         buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path ?? '.'),
     });
 
-  const { isInitialized } = options;
-  const wrappedHandler = wrapToolHandler(handler, {
-    guard: isInitialized,
-  });
-
-  const validatedHandler = withValidatedArgs(
-    SearchContentInputSchema,
-    wrappedHandler
-  );
-
-  if (
-    registerToolTaskIfAvailable(
-      server,
-      'grep',
-      SEARCH_CONTENT_TOOL,
-      validatedHandler,
-      options.iconInfo,
-      isInitialized
-    )
-  )
-    return;
-  server.registerTool(
-    'grep',
-    withDefaultIcons({ ...SEARCH_CONTENT_TOOL }, options.iconInfo),
-    validatedHandler
-  );
+  registerStandardTool(server, SEARCH_CONTENT_TOOL, handler, options);
 }
