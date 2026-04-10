@@ -3,11 +3,12 @@ import {
   InMemoryTaskMessageQueue,
   isInitializeRequest,
   LATEST_PROTOCOL_VERSION,
+  localhostAllowedHostnames,
   McpServer,
   type SetLevelRequest,
   StdioServerTransport,
   SUPPORTED_PROTOCOL_VERSIONS,
-  type Transport,
+  validateHostHeader,
 } from '@modelcontextprotocol/server';
 
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -60,34 +61,6 @@ import { type IconInfo, withDefaultIcons } from '../tools/shared.js';
 import { RootsManager, type ServerOptions } from './roots-manager.js';
 import { createTaskStore } from './task-store.js';
 
-let cachedTaskToolSupport: boolean | undefined;
-
-function detectTaskToolSupport(): boolean {
-  if (cachedTaskToolSupport !== undefined) {
-    return cachedTaskToolSupport;
-  }
-
-  try {
-    // Instantiate a minimal, unconnected probe server to duck-type check for
-    // task tool support. The probe has no transport or active connections, so
-    // close() only releases in-memory state; fire-and-forget is safe here.
-    const probe = new McpServer(
-      {
-        name: 'filesystem-mcp-capability-probe',
-        version: '0.0.0',
-      },
-      { capabilities: { tools: {} } }
-    );
-    cachedTaskToolSupport =
-      typeof probe.experimental.tasks.registerToolTask === 'function';
-    probe.close().catch(() => {});
-  } catch {
-    cachedTaskToolSupport = false;
-  }
-
-  return cachedTaskToolSupport;
-}
-
 interface CapabilityOptions {
   enablePromptListChanged?: boolean;
   enableTaskToolRequests?: boolean;
@@ -123,10 +96,6 @@ function buildServerCapabilities(
   }
 
   return capabilities;
-}
-
-function supportsTaskToolRequests(): boolean {
-  return detectTaskToolSupport();
 }
 
 // Global map of all active servers by sessionId for routing logs
@@ -207,13 +176,12 @@ export async function createServer(
   const resourceStore = createInMemoryResourceStore();
   const serverInstructions = buildServerInstructions();
   const localIcon = await getLocalIconInfo();
-  const taskToolSupport = supportsTaskToolRequests();
   const capabilities = buildServerCapabilities({
     enablePromptListChanged: false,
-    enableTaskToolRequests: taskToolSupport,
+    enableTaskToolRequests: true,
   });
 
-  if (taskToolSupport && capabilities.tasks) {
+  if (capabilities.tasks) {
     capabilities.tasks = {
       ...capabilities.tasks,
       taskStore: createTaskStore(),
@@ -364,6 +332,8 @@ interface HttpSession {
   transport: NodeStreamableHTTPServerTransport;
   negotiatedProtocolVersion: string;
   createdAt: number;
+  cleanup: () => void;
+  close: () => Promise<void>;
 }
 
 async function createHttpSession(
@@ -377,6 +347,25 @@ async function createHttpSession(
   rootsManager.registerHandlers(mcpServer);
   await rootsManager.recomputeAllowedDirectories();
 
+  let cleanedUp = false;
+  const cleanup = (): void => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+
+    const { sessionId } = transport;
+    if (sessionId) {
+      sessions.delete(sessionId);
+      activeServers.delete(sessionId);
+    }
+
+    rootsManager.destroy();
+  };
+
+  const close = async (): Promise<void> => {
+    cleanup();
+    await mcpServer.close();
+  };
+
   const transport = new NodeStreamableHTTPServerTransport({
     sessionIdGenerator: () => randomUUID(),
     onsessioninitialized: (sessionId) => {
@@ -386,6 +375,8 @@ async function createHttpSession(
         transport,
         negotiatedProtocolVersion,
         createdAt: Date.now(),
+        cleanup,
+        close,
       });
       activeServers.set(sessionId, {
         server: mcpServer,
@@ -395,22 +386,9 @@ async function createHttpSession(
     },
   });
 
-  transport.onclose = () => {
-    const { sessionId } = transport;
-    if (sessionId) {
-      sessions.delete(sessionId);
-      activeServers.delete(sessionId);
-    }
-    rootsManager.destroy();
-    mcpServer.close().catch((err: unknown) => {
-      Logger.error(
-        '[HTTP] Error closing MCP server:',
-        formatUnknownErrorMessage(err)
-      );
-    });
-  };
+  transport.onclose = cleanup;
 
-  await mcpServer.connect(transport as unknown as Transport);
+  await mcpServer.connect(transport);
 
   return {
     server: mcpServer,
@@ -418,6 +396,8 @@ async function createHttpSession(
     transport,
     negotiatedProtocolVersion,
     createdAt: Date.now(),
+    cleanup,
+    close,
   };
 }
 
@@ -449,6 +429,29 @@ const JSON_RPC_INTERNAL_ERROR = -32603;
 function isAllowedOrigin(origin: string | undefined): boolean {
   if (origin === undefined) return true; // Non-browser clients omit Origin.
   return LOCALHOST_ORIGIN_RE.test(origin);
+}
+
+function normalizeAllowedHostname(host: string): string {
+  const trimmed = host.trim().toLowerCase();
+  if (trimmed === '::1') return '[::1]';
+  return trimmed;
+}
+
+function getAllowedHostnames(httpHost: string): string[] | undefined {
+  if (isLoopbackHttpHost(httpHost)) {
+    return localhostAllowedHostnames().map(normalizeAllowedHostname);
+  }
+
+  const normalizedHost = normalizeAllowedHostname(httpHost);
+  if (
+    normalizedHost === '0.0.0.0' ||
+    normalizedHost === '::' ||
+    normalizedHost === '[::]'
+  ) {
+    return undefined;
+  }
+
+  return [normalizedHost];
 }
 
 function getSessionId(req: IncomingMessage): string | undefined {
@@ -560,6 +563,30 @@ function ensureAllowedOrigin(
   return false;
 }
 
+function ensureAllowedHostHeader(
+  req: IncomingMessage,
+  res: ServerResponse,
+  httpHost: string
+): boolean {
+  const allowedHostnames = getAllowedHostnames(httpHost);
+  if (!allowedHostnames || allowedHostnames.length === 0) {
+    return true;
+  }
+
+  const hostHeader =
+    typeof req.headers['host'] === 'string' ? req.headers['host'] : undefined;
+  const result = validateHostHeader(hostHeader, allowedHostnames);
+  if (result.ok) return true;
+
+  sendJsonRpcError(
+    res,
+    403,
+    JSON_RPC_SERVER_ERROR,
+    `Forbidden: ${result.message}`
+  );
+  return false;
+}
+
 function discardRequestBody(req: IncomingMessage): void {
   req.on('error', () => {
     // Best effort drain to avoid corrupting keep-alive pipelines.
@@ -664,6 +691,22 @@ export async function startHttpServer(
   const sessions = new Map<string, HttpSession>();
   const httpHost = process.env['FILESYSTEM_MCP_HTTP_HOST'] ?? '127.0.0.1';
   assertHttpBindingSecurity(httpHost);
+  let closingSessions: Promise<void> | undefined;
+
+  async function closeAllSessions(): Promise<void> {
+    if (closingSessions) return closingSessions;
+
+    closingSessions = (async () => {
+      const activeSessions = [...sessions.values()];
+      sessions.clear();
+
+      await Promise.allSettled(
+        activeSessions.map((session) => session.close())
+      );
+    })();
+
+    await closingSessions;
+  }
 
   async function handlePostRequest(
     req: IncomingMessage,
@@ -762,6 +805,7 @@ export async function startHttpServer(
   ): Promise<void> {
     const sessionId = getSessionId(req);
     if (!ensureAllowedOrigin(req, res)) return;
+    if (!ensureAllowedHostHeader(req, res, httpHost)) return;
     if (!ensureAuthorizedRequest(req, res)) return;
 
     try {
@@ -813,6 +857,17 @@ export async function startHttpServer(
   httpServer.once('close', () => {
     clearInterval(sweepTimer);
   });
+
+  const originalClose = httpServer.close.bind(httpServer);
+  httpServer.close = ((callback?: (error?: Error) => void) => {
+    void closeAllSessions().catch((error: unknown) => {
+      Logger.error(
+        '[HTTP] Error closing sessions before server shutdown:',
+        formatUnknownErrorMessage(error)
+      );
+    });
+    return originalClose(callback);
+  }) as typeof httpServer.close;
 
   return new Promise<Server>((resolve, reject) => {
     httpServer.once('error', reject);

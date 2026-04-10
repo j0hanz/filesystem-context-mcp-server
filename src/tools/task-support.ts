@@ -65,52 +65,11 @@ function publishTaskDiagnostics(event: TaskDiagnosticsEvent): void {
   }
 }
 
-type CapabilityGetter = (this: object) => unknown;
-
-function getDynamicProperty(target: object, key: string): unknown {
-  return Reflect.get(target, key) as unknown;
-}
-
 // --- Type Guards & Helpers ---
 
-function isExperimentalTaskRegistration(
-  value: unknown
-): value is { registerToolTask?: (...args: unknown[]) => unknown } {
-  if (!isRecord(value)) return false;
-  const { registerToolTask } = value;
-  return (
-    registerToolTask === undefined || typeof registerToolTask === 'function'
-  );
-}
-
-function getExperimentalTaskRegistration(
-  server: McpServer
-): { registerToolTask?: (...args: unknown[]) => unknown } | undefined {
-  const experimental = getDynamicProperty(server, 'experimental');
-  if (!isRecord(experimental)) return undefined;
-  const { tasks } = experimental;
-  if (!isExperimentalTaskRegistration(tasks)) return undefined;
-  return tasks;
-}
-
 function hasTaskToolCapability(server: McpServer): boolean {
-  const serverRuntime = getDynamicProperty(server, 'server');
-  if (!isRecord(serverRuntime)) return true; // Assume capability if runtime structure is opaque
-
-  const getCapabilities = getDynamicProperty(serverRuntime, 'getCapabilities');
-  if (typeof getCapabilities !== 'function') return true;
-
-  const capabilities = (getCapabilities as CapabilityGetter).call(
-    serverRuntime
-  );
-  if (!isRecord(capabilities)) return false;
-  const { tasks } = capabilities;
-  return (
-    isRecord(tasks) &&
-    isRecord(tasks.requests) &&
-    isRecord(tasks.requests.tools) &&
-    isRecord(tasks.requests.tools.call)
-  );
+  const capabilities = server.server.getCapabilities();
+  return capabilities.tasks?.requests?.tools?.call !== undefined;
 }
 
 type TaskToolExtra = ToolExtra & {
@@ -124,6 +83,21 @@ export type ToolSchema = StandardSchemaWithJSON | undefined;
 type ToolArgs<Args extends ToolSchema> = Args extends StandardSchemaWithJSON
   ? StandardSchemaWithJSON.InferOutput<Args>
   : undefined;
+
+function resolveTaskSupportLevel(
+  topLevelTaskSupport: unknown,
+  executionTaskSupport: unknown
+): 'optional' | 'required' | 'forbidden' | undefined {
+  const candidate = topLevelTaskSupport ?? executionTaskSupport;
+  if (
+    candidate === 'optional' ||
+    candidate === 'required' ||
+    candidate === 'forbidden'
+  ) {
+    return candidate;
+  }
+  return undefined;
+}
 
 const TASK_STATUS_NOTIFICATION_METHOD = 'notifications/tasks/status';
 const TASK_CREATED_NOTIFICATION_METHOD = 'notifications/tasks/created';
@@ -633,26 +607,24 @@ function tryRegisterToolTask<Args extends ToolSchema>(
   iconInfo: IconInfo | undefined
 ): boolean {
   if (!hasTaskToolCapability(server)) return false;
-  const tasks = getExperimentalTaskRegistration(server);
-  if (!tasks?.registerToolTask) return false;
 
   const def = toolDef as Record<string, unknown>;
   const existingExecution =
     (def.execution as Record<string, unknown> | undefined) ?? {};
-  const taskSupport =
-    (def.taskSupport as string | undefined) ??
-    (existingExecution.taskSupport as string | undefined) ??
-    'forbidden';
+  const taskSupport = resolveTaskSupportLevel(
+    def.taskSupport,
+    existingExecution.taskSupport
+  );
 
-  if (taskSupport === 'forbidden') return false;
+  if (!taskSupport || taskSupport === 'forbidden') return false;
 
-  tasks.registerToolTask(
+  server.experimental.tasks.registerToolTask(
     toolName,
     withDefaultIcons(
       { ...toolDef, execution: { ...existingExecution, taskSupport } },
       iconInfo
-    ),
-    taskHandler
+    ) as never,
+    taskHandler as never
   );
   return true;
 }
