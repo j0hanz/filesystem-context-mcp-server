@@ -95,7 +95,7 @@ function buildLiteralMatcher(
 ): Matcher {
   if (!options.caseSensitive) {
     const final = escapeLiteral(pattern);
-    const regex = new RegExp(final, 'gi');
+    const regex = new RE2(final, 'gi');
     return (line: string): number => countRegexLineMatches(regex, line);
   }
 
@@ -310,7 +310,7 @@ class ContextBuffer {
 
 function trimContent(line: string): string {
   return line.length > MAX_LINE_CONTENT_LENGTH
-    ? line.slice(0, MAX_LINE_CONTENT_LENGTH)
+    ? `${line.slice(0, MAX_LINE_CONTENT_LENGTH)}\u2026`
     : line;
 }
 

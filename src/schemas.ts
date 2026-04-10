@@ -626,6 +626,7 @@ export const EditFileInputSchema = z.strictObject({
         oldText: z
           .string()
           .min(1, 'oldText required')
+          .max(102400, 'Max 100KB')
           .describe(
             'Exact literal string to replace (character-for-character). Include 3–5 lines of context for unique targeting.'
           ),

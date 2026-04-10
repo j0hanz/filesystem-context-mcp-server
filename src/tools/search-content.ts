@@ -316,7 +316,7 @@ async function executeSearch(
     if (error instanceof Error && /regular expression/i.test(error.message)) {
       throw new McpError(
         ErrorCode.INVALID_PATTERN,
-        `Invalid regex pattern: ${formatUnknownErrorMessage(error)}`
+        `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`
       );
     }
     throw error;
@@ -331,7 +331,7 @@ function createSearchMatcher(args: SearchInput): RE2 | undefined {
   } catch (error) {
     throw new McpError(
       ErrorCode.INVALID_PATTERN,
-      `Invalid regex pattern: ${formatUnknownErrorMessage(error)}`
+      `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`
     );
   }
 }

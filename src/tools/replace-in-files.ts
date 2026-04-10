@@ -100,7 +100,7 @@ function createRegexMatcher(pattern: string, caseSensitive: boolean): RE2 {
   } catch (error) {
     throw new McpError(
       ErrorCode.INVALID_PATTERN,
-      `Invalid regex pattern: ${formatUnknownErrorMessage(error)}`
+      `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`
     );
   }
 }
@@ -113,6 +113,9 @@ interface ReplacementMatcher {
 
 function createRegexReplacementMatcher(regex: RE2): ReplacementMatcher {
   return {
+    testBuffer(buffer: Buffer): boolean {
+      return regex.test(buffer);
+    },
     count(content: string): number {
       regex.lastIndex = 0;
       let matchCount = 0;
