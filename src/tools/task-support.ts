@@ -455,6 +455,7 @@ async function runTaskInBackground<Args extends ToolSchema>(
       if (cancelled) taskAbort.abort(new Error('Task cancelled by client'));
     });
   }, cancelPollMs ?? TASK_CANCEL_POLL_MS);
+  cancelPoller.unref();
 
   const start = performance.now();
   let taskStatuses: TaskResultStatuses;

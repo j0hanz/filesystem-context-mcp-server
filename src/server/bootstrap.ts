@@ -78,7 +78,7 @@ function buildServerCapabilities(
 ): NonOptionalServerCapabilities {
   const capabilities: NonOptionalServerCapabilities = {
     logging: {},
-    resources: {},
+    resources: { listChanged: true },
     tools: {},
     prompts: options.enablePromptListChanged ? { listChanged: true } : {},
     completions: {},
@@ -438,6 +438,26 @@ function isAllowedOrigin(origin: string | undefined): boolean {
   return LOCALHOST_ORIGIN_RE.test(origin);
 }
 
+const EXPOSED_HEADERS = [
+  'WWW-Authenticate',
+  'Mcp-Session-Id',
+  'Mcp-Protocol-Version',
+].join(', ');
+
+function setCorsHeaders(req: IncomingMessage, res: ServerResponse): void {
+  const { origin } = req.headers;
+  if (origin === undefined) return;
+
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization, Mcp-Session-Id, Last-Event-ID'
+  );
+  res.setHeader('Access-Control-Expose-Headers', EXPOSED_HEADERS);
+  res.setHeader('Access-Control-Max-Age', '86400');
+}
+
 function normalizeAllowedHostname(host: string): string {
   const trimmed = host.trim().toLowerCase();
   if (trimmed === '::1') return '[::1]';
@@ -609,7 +629,7 @@ function assertHttpBindingSecurity(host: string): void {
 
 function writeMethodNotAllowedResponse(res: ServerResponse): void {
   res.writeHead(405, {
-    Allow: 'GET, POST, DELETE',
+    Allow: 'GET, POST, DELETE, OPTIONS',
     'Content-Type': 'application/json',
   });
   res.end(
@@ -745,6 +765,10 @@ export async function startHttpServer(
     sessionId: string | undefined
   ): Promise<void> {
     switch (method) {
+      case 'OPTIONS':
+        res.writeHead(204);
+        res.end();
+        return;
       case 'POST':
         await handlePostRequest(req, res, sessionId);
         return;
@@ -763,6 +787,7 @@ export async function startHttpServer(
   ): Promise<void> {
     const sessionId = getSessionId(req);
     if (!ensureAllowedOrigin(req, res)) return;
+    setCorsHeaders(req, res);
     if (!ensureAllowedHostHeader(req, res, httpHost)) return;
     if (!ensureAuthorizedRequest(req, res)) return;
 
@@ -790,6 +815,8 @@ export async function startHttpServer(
             `[HTTP] Error closing stale session ${sessionId}:`,
             formatUnknownErrorMessage(err)
           );
+          // Ensure event store is cleaned even if session.close() fails
+          eventStore.delete(sessionId);
         });
       }
     }

@@ -492,7 +492,7 @@ describe('HTTP transport', () => {
     });
 
     assert.equal(response.status, 405);
-    assert.equal(response.headers.get('allow'), 'GET, POST, DELETE');
+    assert.equal(response.headers.get('allow'), 'GET, POST, DELETE, OPTIONS');
 
     const payload = JSON.parse(await response.text()) as {
       error?: { message?: string };
