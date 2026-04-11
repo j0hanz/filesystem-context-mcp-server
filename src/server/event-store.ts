@@ -1,5 +1,6 @@
-import { randomUUID } from 'node:crypto';
 import type { JSONRPCMessage } from '@modelcontextprotocol/server';
+
+import { randomUUID } from 'node:crypto';
 
 const MAX_EVENTS_PER_STREAM = 1000;
 
@@ -17,7 +18,7 @@ export class InMemoryEventStore {
   storeEvent(streamId: string, message: JSONRPCMessage): Promise<string> {
     const eventId = randomUUID();
     let stream = this.streams.get(streamId);
-    
+
     if (!stream) {
       stream = [];
       this.streams.set(streamId, stream);
@@ -60,7 +61,9 @@ export class InMemoryEventStore {
 
     const eventIndex = stream.findIndex((e) => e.id === lastEventId);
     if (eventIndex === -1) {
-      throw new Error(`Event ID ${lastEventId} not found in stream ${streamId}`);
+      throw new Error(
+        `Event ID ${lastEventId} not found in stream ${streamId}`
+      );
     }
 
     // Replay all events after the found index

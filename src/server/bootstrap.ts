@@ -38,8 +38,6 @@ import {
 import { withAllowedDirectoriesState } from '../lib/paths.js';
 import { createInMemoryResourceStore } from '../lib/resource-store.js';
 
-import { InMemoryEventStore } from './event-store.js';
-
 import { registerCompletions } from '../completions.js';
 import { pkgInfo } from '../pkg-info.js';
 import {
@@ -59,6 +57,7 @@ import {
 import { buildServerInstructions } from '../resources/generated-instructions.js';
 import { registerAllTools } from '../tools.js';
 import { type IconInfo, withDefaultIcons } from '../tools/shared.js';
+import { InMemoryEventStore } from './event-store.js';
 import { RootsManager, type ServerOptions } from './roots-manager.js';
 import { createTaskStore } from './task-store.js';
 

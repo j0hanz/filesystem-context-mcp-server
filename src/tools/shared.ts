@@ -3,6 +3,8 @@ import type {
   Icon,
   LoggingLevel,
   Notification,
+  ProgressNotification,
+  ProgressToken,
   RequestMeta,
   ServerContext,
 } from '@modelcontextprotocol/server';
@@ -399,8 +401,6 @@ export function withValidatedArgs<Args, Result>(
   };
 }
 
-type ProgressToken = string | number;
-
 /**
  * App-level tracing metadata passed through {@linkcode RequestMeta}.
  * These fields are preserved by the SDK's loose `RequestMeta` type.
@@ -689,7 +689,7 @@ async function sendMcpProgressNotification(
             ? { message: progress.message }
             : {}),
         },
-      });
+      } satisfies ProgressNotification);
     } catch (error) {
       Logger.error('Failed to send progress notification:', error);
     }

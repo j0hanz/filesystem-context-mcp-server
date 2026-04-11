@@ -11,6 +11,8 @@ import {
   type StandardSchemaWithJSON,
   type Task,
   type TaskServerContext,
+  type TaskStatus,
+  type TaskStatusNotification,
   type TaskStatusNotificationParams,
   type ToolTaskHandler,
 } from '@modelcontextprotocol/server';
@@ -97,7 +99,8 @@ type ToolArgs<Args extends ToolSchema> = Args extends StandardSchemaWithJSON
   ? StandardSchemaWithJSON.InferOutput<Args>
   : undefined;
 
-const TASK_STATUS_NOTIFICATION_METHOD = 'notifications/tasks/status';
+const TASK_STATUS_NOTIFICATION_METHOD: TaskStatusNotification['method'] =
+  'notifications/tasks/status';
 const TASK_CREATED_NOTIFICATION_METHOD = 'notifications/tasks/created';
 
 function assertCreateTaskContext(
@@ -210,10 +213,9 @@ async function projectCancelledTaskStatus(
   return task;
 }
 
-type TaskStatusNotificationSender = (notification: {
-  method: typeof TASK_STATUS_NOTIFICATION_METHOD;
-  params: TaskStatusNotificationParams;
-}) => Promise<void>;
+type TaskStatusNotificationSender = (
+  notification: TaskStatusNotification
+) => Promise<void>;
 
 function buildTaskStatusNotificationParams(
   task: GetTaskResult
@@ -326,10 +328,6 @@ function withoutStructuredContent<T extends object>(result: T): T {
   return stripped as T;
 }
 
-function isTerminalTaskStatus(status: string): boolean {
-  return isTerminal(status as GetTaskResult['status']);
-}
-
 const taskCreationLocks = new WeakMap<RequestTaskStore, Promise<void>>();
 
 async function acquireTaskCreationLock(
@@ -359,7 +357,7 @@ async function isTaskAlreadyTerminal(
     const task = await taskStore.getTask(taskId);
     if (!isRecord(task)) return false;
     const { status } = task;
-    return typeof status === 'string' && isTerminalTaskStatus(status);
+    return typeof status === 'string' && isTerminal(status as TaskStatus);
   } catch {
     return false;
   }
@@ -379,7 +377,7 @@ async function countActiveTasks(taskStore: RequestTaskStore): Promise<number> {
   let active = 0;
   for (const task of tasks) {
     if (!isRecord(task) || typeof task.status !== 'string') continue;
-    if (!isTerminalTaskStatus(task.status)) {
+    if (!isTerminal(task.status as TaskStatus)) {
       active += 1;
     }
   }
