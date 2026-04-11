@@ -57,6 +57,7 @@ import {
 import { buildServerInstructions } from '../resources/generated-instructions.js';
 import { registerAllTools } from '../tools.js';
 import { type IconInfo, withDefaultIcons } from '../tools/shared.js';
+import { InMemoryEventStore } from './event-store.js';
 import { RootsManager, type ServerOptions } from './roots-manager.js';
 import { createTaskStore } from './task-store.js';
 
@@ -343,7 +344,8 @@ interface HttpSession {
 
 async function createHttpSession(
   options: ServerOptions,
-  sessions: Map<string, HttpSession>
+  sessions: Map<string, HttpSession>,
+  eventStore: InMemoryEventStore
 ): Promise<HttpSession> {
   const mcpServer = await createServer(options);
   const rootsManager = getRootsManager(mcpServer);
@@ -360,6 +362,7 @@ async function createHttpSession(
     if (sessionId) {
       sessions.delete(sessionId);
       activeServers.delete(sessionId);
+      eventStore.delete(sessionId);
     }
 
     rootsManager.destroy();
@@ -372,6 +375,7 @@ async function createHttpSession(
 
   const transport = new NodeStreamableHTTPServerTransport({
     sessionIdGenerator: () => randomUUID(),
+    eventStore,
     onsessioninitialized: (sessionId) => {
       sessions.set(sessionId, {
         server: mcpServer,
@@ -649,6 +653,7 @@ export async function startHttpServer(
   options: ServerOptions
 ): Promise<Server> {
   const sessions = new Map<string, HttpSession>();
+  const eventStore = new InMemoryEventStore();
   const httpHost = process.env['FILESYSTEM_MCP_HTTP_HOST'] ?? '127.0.0.1';
   assertHttpBindingSecurity(httpHost);
   let closingSessions: Promise<void> | undefined;
@@ -659,6 +664,7 @@ export async function startHttpServer(
     closingSessions = (async () => {
       const activeSessions = [...sessions.values()];
       sessions.clear();
+      eventStore.clear();
 
       await Promise.allSettled(
         activeSessions.map((session) => session.close())
@@ -697,7 +703,7 @@ export async function startHttpServer(
         sendJsonRpcError(res, 503, JSON_RPC_SERVER_ERROR, 'Too many sessions');
         return;
       }
-      const session = await createHttpSession(options, sessions);
+      const session = await createHttpSession(options, sessions, eventStore);
       await handleSessionTransportRequest(session, req, res, body);
       return;
     }
