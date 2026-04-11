@@ -4,6 +4,7 @@ import {
   isInitializeRequest,
   localhostAllowedHostnames,
   McpServer,
+  ProtocolErrorCode,
   type SetLevelRequest,
   StdioServerTransport,
   validateHostHeader,
@@ -428,9 +429,9 @@ const LOCALHOST_ORIGIN_RE =
 const MAX_SESSION_ID_LENGTH = 256;
 const MAX_BEARER_TOKEN_LENGTH = 4096;
 const JSON_RPC_SERVER_ERROR = -32000;
-const JSON_RPC_INVALID_REQUEST = -32600;
-const JSON_RPC_PARSE_ERROR = -32700;
-const JSON_RPC_INTERNAL_ERROR = -32603;
+const JSON_RPC_INVALID_REQUEST = ProtocolErrorCode.InvalidRequest;
+const JSON_RPC_PARSE_ERROR = ProtocolErrorCode.ParseError;
+const JSON_RPC_INTERNAL_ERROR = ProtocolErrorCode.InternalError;
 
 function isAllowedOrigin(origin: string | undefined): boolean {
   if (origin === undefined) return true; // Non-browser clients omit Origin.
