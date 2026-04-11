@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { createTimedAbortSignal } from '../lib/abort.js';
 import { parseTrueEnvFlag } from '../lib/constants.js';
 import {
+  classifyError,
   createDetailedError,
   ErrorCode,
   formatDetailedError,
@@ -316,7 +317,7 @@ export type ToolResponse<T> = ReturnType<typeof buildToolResponse<T>> & {
 interface ToolErrorResponse extends Record<string, unknown> {
   content: ContentBlock[];
   isError: true;
-  errorCode?: ErrorCode;
+  errorCode: ErrorCode;
 }
 
 export type ToolResult<T> = ToolResponse<T> | ToolErrorResponse;
@@ -872,7 +873,7 @@ async function withProgress<T>(
     void reportProgress(ctx, {
       current: total,
       total,
-      message: `${message} • failed`,
+      message: `${message} • ${classifyError(error)}`,
     });
     throw error;
   }
@@ -1005,19 +1006,4 @@ export function truncateProgressPattern(
       : `${preview.slice(0, maxLength)}…`;
   }
   return `${pattern.slice(0, maxLength)}…`;
-}
-
-export function buildBatchCompletionSuffix(
-  summary: { total?: number; failed?: number; succeeded?: number } | undefined,
-  successWord: string,
-  singularWord?: string
-): string {
-  const total = summary?.total ?? 0;
-  const failed = summary?.failed ?? 0;
-  const succeeded = summary?.succeeded ?? 0;
-  if (failed) {
-    return `${succeeded}/${total} ${successWord}, ${failed} failed`;
-  }
-  const word = total === 1 && singularWord ? singularWord : successWord;
-  return `${total} ${word}`;
 }

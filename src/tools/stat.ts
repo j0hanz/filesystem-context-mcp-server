@@ -89,13 +89,15 @@ export function registerGetFileInfoTool(
     });
 
   registerStandardTool(server, GET_FILE_INFO_TOOL, handler, options, {
-    progressMessage: (args) => `🕮 stat: ${basename(args.path)}`,
+    progressMessage: (args) =>
+      `${GET_FILE_INFO_TOOL.title}: ${basename(args.path)}`,
     completionMessage: (args, result) => {
       const name = basename(args.path);
-      if (result.isError) return `🕮 stat: ${name} • failed`;
+      if (result.isError)
+        return `${GET_FILE_INFO_TOOL.title}: ${name} • ${result.errorCode}`;
       const sc = result.structuredContent;
-      if (!sc.info) return `🕮 stat: ${name} • failed`;
-      return `🕮 stat: ${sc.info.name} • ${sc.info.type}, ${formatBytes(sc.info.size)}`;
+      if (!sc.info) return `${GET_FILE_INFO_TOOL.title}: ${name} • failed`;
+      return `${GET_FILE_INFO_TOOL.title}: ${sc.info.name} • ${formatBytes(sc.info.size)}`;
     },
   });
 }

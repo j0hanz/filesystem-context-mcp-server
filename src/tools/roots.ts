@@ -79,12 +79,13 @@ export function registerListAllowedDirectoriesTool(
     handler,
     options,
     {
-      progressMessage: () => '≣ roots',
+      progressMessage: () => LIST_ALLOWED_DIRECTORIES_TOOL.title,
       completionMessage: (_args, result) => {
-        if (result.isError) return `≣ roots • failed`;
+        if (result.isError)
+          return `${LIST_ALLOWED_DIRECTORIES_TOOL.title} • ${result.errorCode}`;
         const sc = result.structuredContent;
         const count = sc.directories?.length ?? 0;
-        return `≣ roots • ${count} ${count === 1 ? 'root' : 'roots'}`;
+        return `${LIST_ALLOWED_DIRECTORIES_TOOL.title} • ${count} ${count === 1 ? 'root' : 'roots'}`;
       },
     }
   );

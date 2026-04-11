@@ -152,11 +152,13 @@ export function registerDeleteFileTool(
     });
 
   registerStandardTool(server, DELETE_FILE_TOOL, handler, options, {
-    progressMessage: (args) => `🛠 rm: ${basename(args.path)}`,
+    progressMessage: (args) =>
+      `${DELETE_FILE_TOOL.title}: ${basename(args.path)}`,
     completionMessage: (args, result) => {
       const name = basename(args.path);
-      if (result.isError) return `🛠 rm: ${name} • failed`;
-      return `🛠 rm: ${name}`;
+      if (result.isError)
+        return `${DELETE_FILE_TOOL.title}: ${name} • ${result.errorCode}`;
+      return `${DELETE_FILE_TOOL.title}: ${name}`;
     },
   });
 }

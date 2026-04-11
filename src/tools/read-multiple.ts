@@ -5,7 +5,7 @@ import { basename } from 'node:path';
 import type { z } from 'zod';
 
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
-import { ErrorCode } from '../lib/errors.js';
+import { classifyError, ErrorCode } from '../lib/errors.js';
 import { readMultipleFiles } from '../lib/file-operations/metadata.js';
 
 import {
@@ -14,7 +14,6 @@ import {
 } from '../schemas.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
-  buildBatchCompletionSuffix,
   buildBatchPathContext,
   buildResourceLink,
   buildStructuredError,
@@ -34,7 +33,6 @@ import {
 import { registerStandardTool } from './task-support.js';
 
 const READ_MANY_TOOL_NAME = 'read_many';
-const READ_MANY_TOOL_LABEL = '🕮 read_many';
 const FULL_FILE_CONTENTS_DESCRIPTION = 'Full file contents';
 
 export const READ_MANY_TOOL: ToolContract = {
@@ -49,6 +47,8 @@ export const READ_MANY_TOOL: ToolContract = {
   icons: FILE_READ_ICONS,
   taskSupport: 'optional',
 } as const;
+
+const READ_MANY_TOOL_LABEL = READ_MANY_TOOL.title;
 
 type ReadManyInput = z.infer<typeof ReadMultipleFilesInputSchema>;
 type ReadManyOutput = z.infer<typeof ReadMultipleFilesOutputSchema>;
@@ -270,12 +270,9 @@ export function registerReadMultipleFilesTool(
           );
 
           const sc = result.structuredContent;
-          const suffix = buildBatchCompletionSuffix(
-            sc.summary,
-            'files read',
-            'file read'
-          );
           const total = sc.summary?.total ?? 0;
+          const failed = sc.summary?.failed ?? 0;
+          const suffix = failed ? `${failed} failed` : 'done';
 
           const finalCurrent = resolveFinalProgressCurrent(progress, total);
           progress.complete(
@@ -284,7 +281,9 @@ export function registerReadMultipleFilesTool(
           );
           return result;
         } catch (error) {
-          progress.fail(`${READ_MANY_TOOL_LABEL}: ${context} • failed`);
+          progress.fail(
+            `${READ_MANY_TOOL_LABEL}: ${context} • ${classifyError(error)}`
+          );
           throw error;
         }
       },

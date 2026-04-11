@@ -10,7 +10,7 @@ import type { z } from 'zod';
 
 import { assertNotAborted, withAbort } from '../lib/abort.js';
 import { PARALLEL_CONCURRENCY } from '../lib/constants.js';
-import { ErrorCode } from '../lib/errors.js';
+import { classifyError, ErrorCode } from '../lib/errors.js';
 import {
   isIgnoredByGitignore,
   loadRootGitignore,
@@ -241,7 +241,10 @@ export function registerCalculateHashTool(
       context: { path: args.path },
       run: async (signal) => {
         const baseName = basename(args.path);
-        const progress = createToolProgressSession(ctx, `🕮 hash: ${baseName}`);
+        const progress = createToolProgressSession(
+          ctx,
+          `${CALCULATE_HASH_TOOL.title}: ${baseName}`
+        );
         const progressWithMessage = ({
           current,
           total,
@@ -252,7 +255,7 @@ export function registerCalculateHashTool(
           progress.update({
             current,
             ...(total !== undefined ? { total } : {}),
-            message: `🕮 hash: ${baseName} [${current} files]`,
+            message: `${CALCULATE_HASH_TOOL.title}: ${baseName} [${current} files]`,
           });
         };
 
@@ -274,10 +277,15 @@ export function registerCalculateHashTool(
           } else {
             suffix = `${(sc.hash ?? '').slice(0, 8)}…`;
           }
-          progress.complete(`🕮 hash: ${baseName} • ${suffix}`, finalCurrent);
+          progress.complete(
+            `${CALCULATE_HASH_TOOL.title}: ${baseName} • ${suffix}`,
+            finalCurrent
+          );
           return result;
         } catch (error) {
-          progress.fail(`🕮 hash: ${baseName} • failed`);
+          progress.fail(
+            `${CALCULATE_HASH_TOOL.title}: ${baseName} • ${classifyError(error)}`
+          );
           throw error;
         }
       },

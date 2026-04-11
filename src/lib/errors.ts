@@ -308,7 +308,7 @@ function classifyMessageError(error: unknown): ErrorCode | undefined {
   return undefined;
 }
 
-function classifyError(error: unknown): ErrorCode {
+export function classifyError(error: unknown): ErrorCode {
   let timeoutCode: ErrorCode | undefined;
   let fallbackCode: ErrorCode | undefined;
 

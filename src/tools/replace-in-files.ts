@@ -14,6 +14,7 @@ import {
   PARALLEL_CONCURRENCY,
 } from '../lib/constants.js';
 import {
+  classifyError,
   ErrorCode,
   formatUnknownErrorMessage,
   McpError,
@@ -536,7 +537,7 @@ export function registerSearchAndReplaceTool(
         const context = `"${truncatedPattern}" in ${args.filePattern}${dryLabel}`;
         const progress = createToolProgressSession(
           ctx,
-          `🛠 replace: ${context}`
+          `${SEARCH_AND_REPLACE_TOOL.title}: ${context}`
         );
         const progressWithMessage = ({
           current,
@@ -548,7 +549,7 @@ export function registerSearchAndReplaceTool(
           progress.update({
             current,
             ...(total !== undefined ? { total } : {}),
-            message: `🛠 replace: ${truncatedPattern} [${current} files]`,
+            message: `${SEARCH_AND_REPLACE_TOOL.title}: ${truncatedPattern} [${current} files]`,
           });
         };
 
@@ -568,7 +569,7 @@ export function registerSearchAndReplaceTool(
           let endSuffix = `${sc.matches ?? 0} ${matchWord} in ${sc.filesChanged ?? 0} ${fileWord}`;
           if (sc.failedFiles) endSuffix += `, ${sc.failedFiles} failed`;
           progress.complete(
-            `🛠 replace: ${context} • ${endSuffix}`,
+            `${SEARCH_AND_REPLACE_TOOL.title}: ${context} • ${endSuffix}`,
             finalCurrent
           );
           if (!args.dryRun) {
@@ -579,7 +580,9 @@ export function registerSearchAndReplaceTool(
           }
           return result;
         } catch (error) {
-          progress.fail(`🛠 replace: ${context} • failed`);
+          progress.fail(
+            `${SEARCH_AND_REPLACE_TOOL.title}: ${context} • ${classifyError(error)}`
+          );
           throw error;
         }
       },

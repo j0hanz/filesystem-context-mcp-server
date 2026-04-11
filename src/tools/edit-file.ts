@@ -292,7 +292,7 @@ async function loadEditableFile(
 function buildEditProgressMessage(args: EditInput): string {
   const name = basename(args.path);
   const tag = args.dryRun ? ' [dry run]' : '';
-  return `🛠 edit: ${name}${tag}`;
+  return `${EDIT_FILE_TOOL.title}: ${name}${tag}`;
 }
 
 function buildEditCompletionMessage(
@@ -300,18 +300,19 @@ function buildEditCompletionMessage(
   result: ToolResult<EditOutput>
 ): string {
   const name = basename(args.path);
-  if (result.isError) return `🛠 edit: ${name} • failed`;
+  if (result.isError)
+    return `${EDIT_FILE_TOOL.title}: ${name} • ${result.errorCode}`;
 
   const { structuredContent } = result;
-  if (!structuredContent.ok) return `🛠 edit: ${name} • failed`;
+  if (!structuredContent.ok) return `${EDIT_FILE_TOOL.title}: ${name} • failed`;
 
   const applied = structuredContent.appliedEdits ?? 0;
-  if (applied === 0) return `🛠 edit: ${name} • no changes`;
+  if (applied === 0) return `${EDIT_FILE_TOOL.title}: ${name} • no changes`;
 
   const added = structuredContent.linesAdded ?? 0;
   const removed = structuredContent.linesRemoved ?? 0;
   const dry = args.dryRun ? 'dry run ' : '';
-  return `🛠 edit: ${name} • ${dry} +${added} -${removed}`;
+  return `${EDIT_FILE_TOOL.title}: ${name} • ${dry} +${added} -${removed}`;
 }
 
 async function applyEdits(

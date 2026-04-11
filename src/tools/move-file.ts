@@ -298,21 +298,22 @@ export function registerMoveFileTool(
     progressMessage: (args) => {
       const dest = basename(args.destination);
       if (args.source && !args.sources?.length) {
-        return `🛠 mv: ${basename(args.source)} → ${dest}`;
+        return `${MOVE_FILE_TOOL.title}: ${basename(args.source)} → ${dest}`;
       }
       const count = (args.source ? 1 : 0) + (args.sources?.length ?? 0);
-      return `🛠 mv: ${count} items → ${dest}`;
+      return `${MOVE_FILE_TOOL.title}: ${count} items → ${dest}`;
     },
     completionMessage: (args, result) => {
       const dest = basename(args.destination);
       if (args.source && !args.sources?.length) {
         const src = basename(args.source);
-        if (result.isError) return `🛠 mv: ${src} → ${dest} • failed`;
-        return `🛠 mv: ${src} → ${dest}`;
+        if (result.isError)
+          return `${MOVE_FILE_TOOL.title}: ${src} → ${dest} • ${result.errorCode}`;
       }
       const count = (args.source ? 1 : 0) + (args.sources?.length ?? 0);
-      if (result.isError) return `🛠 mv: ${count} items → ${dest} • failed`;
-      return `🛠 mv: ${count} items → ${dest}`;
+      if (result.isError)
+        return `${MOVE_FILE_TOOL.title}: ${count} items → ${dest} • ${result.errorCode}`;
+      return `${MOVE_FILE_TOOL.title}: ${count} items → ${dest}`;
     },
   });
 }

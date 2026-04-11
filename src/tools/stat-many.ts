@@ -3,7 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import type { z } from 'zod';
 
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
-import { ErrorCode } from '../lib/errors.js';
+import { classifyError, ErrorCode } from '../lib/errors.js';
 import { getMultipleFileInfo } from '../lib/file-operations/metadata.js';
 
 import { type FileInfo, formatBytes, joinLines } from '../config.js';
@@ -13,7 +13,6 @@ import {
 } from '../schemas.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
-  buildBatchCompletionSuffix,
   buildBatchPathContext,
   buildFileInfoPayload,
   buildStructuredError,
@@ -120,7 +119,7 @@ export function registerGetMultipleFileInfoTool(
       run: async (signal) => {
         const context = buildBatchPathContext(args.paths);
         const { progress, onItemComplete } = createBatchProgressCallbacks(ctx, {
-          toolLabel: '🕮 stat_many',
+          toolLabel: GET_MULTIPLE_FILE_INFO_TOOL.title,
           context,
           totalItems: args.paths.length,
           itemVerb: 'done',
@@ -134,17 +133,20 @@ export function registerGetMultipleFileInfoTool(
           );
 
           const sc = result.structuredContent;
-          const suffix = buildBatchCompletionSuffix(sc.summary, 'OK');
           const total = sc.summary?.total ?? 0;
+          const failed = sc.summary?.failed ?? 0;
+          const suffix = failed ? `${failed} failed` : 'done';
 
           const finalCurrent = resolveFinalProgressCurrent(progress, total);
           progress.complete(
-            `🕮 stat_many: ${context} • ${suffix}`,
+            `${GET_MULTIPLE_FILE_INFO_TOOL.title}: ${context} • ${suffix}`,
             finalCurrent
           );
           return result;
         } catch (error) {
-          progress.fail(`🕮 stat_many: ${context} • failed`);
+          progress.fail(
+            `${GET_MULTIPLE_FILE_INFO_TOOL.title}: ${context} • ${classifyError(error)}`
+          );
           throw error;
         }
       },

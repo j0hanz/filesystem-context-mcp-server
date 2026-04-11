@@ -7,6 +7,7 @@ import type { z } from 'zod';
 
 import { DEFAULT_EXCLUDE_PATTERNS } from '../lib/constants.js';
 import {
+  classifyError,
   ErrorCode,
   formatUnknownErrorMessage,
   McpError,
@@ -418,7 +419,7 @@ export function registerSearchContentTool(
       context: { path: args.path ?? '.' },
       run: async (signal) => {
         const { pattern, filePattern: scope } = args;
-        const progressLabel = `🔎︎ grep: ${truncateProgressPattern(pattern)}`;
+        const progressLabel = `${SEARCH_CONTENT_TOOL.title}: ${truncateProgressPattern(pattern)}`;
         const progress = createToolProgressSession(ctx, progressLabel);
 
         const progressWithMessage = ({
@@ -460,7 +461,7 @@ export function registerSearchContentTool(
           progress.complete(`${progressLabel} • ${suffix}`, finalCurrent);
           return result;
         } catch (error) {
-          progress.fail(`${progressLabel} • failed`);
+          progress.fail(`${progressLabel} • ${classifyError(error)}`);
           throw error;
         }
       },

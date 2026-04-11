@@ -5,7 +5,7 @@ import { basename } from 'node:path';
 import type { z } from 'zod';
 
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
-import { ErrorCode } from '../lib/errors.js';
+import { classifyError, ErrorCode } from '../lib/errors.js';
 import {
   formatTreeAscii,
   treeDirectory,
@@ -96,7 +96,7 @@ export function registerTreeTool(
         notifyProgress(ctx, {
           current: 0,
           total: knownTotal,
-          message: `≣ tree: ${context}`,
+          message: `${TREE_TOOL.title}: ${context}`,
         });
 
         const baseReporter = createProgressReporter(ctx);
@@ -106,7 +106,7 @@ export function registerTreeTool(
           baseReporter({
             current,
             total: knownTotal,
-            message: `≣ tree: ${context} [${current} entries]`,
+            message: `${TREE_TOOL.title}: ${context} [${current} entries]`,
           });
         };
 
@@ -123,7 +123,7 @@ export function registerTreeTool(
           notifyProgress(ctx, {
             current: finalCurrent,
             total: finalCurrent,
-            message: `≣ tree: ${context} • ${suffix}`,
+            message: `${TREE_TOOL.title}: ${context} • ${suffix}`,
           });
           return result;
         } catch (error) {
@@ -131,7 +131,7 @@ export function registerTreeTool(
           notifyProgress(ctx, {
             current: finalCurrent,
             total: finalCurrent,
-            message: `≣ tree: ${context} • failed`,
+            message: `${TREE_TOOL.title}: ${context} • ${classifyError(error)}`,
           });
           throw error;
         }

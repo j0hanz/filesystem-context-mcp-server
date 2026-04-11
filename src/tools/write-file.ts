@@ -88,12 +88,14 @@ export function registerWriteFileTool(
     });
 
   registerStandardTool(server, WRITE_FILE_TOOL, handler, options, {
-    progressMessage: (args) => `🛠 write: ${basename(args.path)}`,
+    progressMessage: (args) =>
+      `${WRITE_FILE_TOOL.title}: ${basename(args.path)}`,
     completionMessage: (args, result) => {
       const name = basename(args.path);
-      if (result.isError) return `🛠 write: ${name} • failed`;
+      if (result.isError)
+        return `${WRITE_FILE_TOOL.title}: ${name} • ${result.errorCode}`;
       const sc = result.structuredContent;
-      return `🛠 write: ${name} • ${formatBytes(sc.bytesWritten ?? 0)}`;
+      return `${WRITE_FILE_TOOL.title}: ${name} • ${formatBytes(sc.bytesWritten ?? 0)}`;
     },
   });
 }

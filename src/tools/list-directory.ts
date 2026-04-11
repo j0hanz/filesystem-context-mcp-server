@@ -301,13 +301,15 @@ export function registerListDirectoryTool(
     });
 
   registerStandardTool(server, LIST_DIRECTORY_TOOL, handler, options, {
-    progressMessage: (args) => `≣ ls: ${args.path ? basename(args.path) : '.'}`,
+    progressMessage: (args) =>
+      `${LIST_DIRECTORY_TOOL.title}: ${args.path ? basename(args.path) : '.'}`,
     completionMessage: (args, result) => {
       const base = args.path ? basename(args.path) : '.';
-      if (result.isError) return `≣ ls: ${base} • failed`;
+      if (result.isError)
+        return `${LIST_DIRECTORY_TOOL.title}: ${base} • ${result.errorCode}`;
       const sc = result.structuredContent;
       const count = sc.totalEntries ?? 0;
-      return `≣ ls: ${base} • ${count} ${count === 1 ? 'entry' : 'entries'}`;
+      return `${LIST_DIRECTORY_TOOL.title}: ${base} • ${count} ${count === 1 ? 'entry' : 'entries'}`;
     },
   });
 }

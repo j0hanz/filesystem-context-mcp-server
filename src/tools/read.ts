@@ -50,7 +50,7 @@ type ReadFileOutput = z.infer<typeof ReadFileOutputSchema>;
 type ReadFileHandlerResult = Awaited<ReturnType<typeof readFile>>;
 
 const READ_TOOL_NAME = 'read';
-const READ_TOOL_LABEL = '🕮 read';
+const READ_TOOL_LABEL = READ_FILE_TOOL.title;
 const FULL_FILE_CONTENTS_DESCRIPTION = 'Full file contents';
 
 function buildReadResourceName(filePath: string): string {
@@ -156,7 +156,8 @@ function buildReadCompletionMessage(
   result: ToolResult<ReadFileOutput>
 ): string {
   const name = basename(args.path);
-  if (result.isError) return `${READ_TOOL_LABEL}: ${name} • failed`;
+  if (result.isError)
+    return `${READ_TOOL_LABEL}: ${name} • ${result.errorCode}`;
 
   const structured = result.structuredContent;
   const lines = structured.linesRead ?? structured.totalLines;

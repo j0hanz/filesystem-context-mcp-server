@@ -96,20 +96,21 @@ export function registerCreateDirectoryTool(
   registerStandardTool(server, CREATE_DIRECTORY_TOOL, handler, options, {
     progressMessage: (args) => {
       if (args.path && !args.paths?.length) {
-        return `🛠 mkdir: ${basename(args.path)}`;
+        return `${CREATE_DIRECTORY_TOOL.title}: ${basename(args.path)}`;
       }
       const count = (args.path ? 1 : 0) + (args.paths?.length ?? 0);
-      return `🛠 mkdir: ${count} directories`;
+      return `${CREATE_DIRECTORY_TOOL.title}: ${count} directories`;
     },
     completionMessage: (args, result) => {
       if (args.path && !args.paths?.length) {
         const name = basename(args.path);
-        if (result.isError) return `🛠 mkdir: ${name} • failed`;
-        return `🛠 mkdir: ${name}`;
+        if (result.isError)
+          return `${CREATE_DIRECTORY_TOOL.title}: ${name} • ${result.errorCode}`;
       }
       const count = (args.path ? 1 : 0) + (args.paths?.length ?? 0);
-      if (result.isError) return `🛠 mkdir: ${count} directories • failed`;
-      return `🛠 mkdir: ${count} directories`;
+      if (result.isError)
+        return `${CREATE_DIRECTORY_TOOL.title}: ${count} directories • ${result.errorCode}`;
+      return `${CREATE_DIRECTORY_TOOL.title}: ${count} directories`;
     },
   });
 }

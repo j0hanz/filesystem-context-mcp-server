@@ -350,19 +350,22 @@ export function registerApplyPatchTool(
   registerStandardTool(server, APPLY_PATCH_TOOL, handler, options, {
     progressMessage: (args) => {
       const name = basename(args.path);
-      return args.dryRun ? `🛠 patch: ${name} [dry run]` : `🛠 patch: ${name}`;
+      return args.dryRun
+        ? `${APPLY_PATCH_TOOL.title}: ${name} [dry run]`
+        : `${APPLY_PATCH_TOOL.title}: ${name}`;
     },
     completionMessage: (args, result) => {
       const name = basename(args.path);
-      if (result.isError) return `🛠 patch: ${name} • failed`;
+      if (result.isError)
+        return `${APPLY_PATCH_TOOL.title}: ${name} • ${result.errorCode}`;
       const sc = result.structuredContent;
-      if (!sc.ok) return `🛠 patch: ${name} • failed`;
+      if (!sc.ok) return `${APPLY_PATCH_TOOL.title}: ${name} • failed`;
       const added = sc.linesAdded ?? 0;
       const removed = sc.linesRemoved ?? 0;
       const dry = args.dryRun ? 'dry run ' : '';
       if (added > 0 || removed > 0)
-        return `🛠 patch: ${name} • ${dry} +${added} -${removed}`;
-      return `🛠 patch: ${name} • ${dry}no changes`;
+        return `${APPLY_PATCH_TOOL.title}: ${name} • ${dry} +${added} -${removed}`;
+      return `${APPLY_PATCH_TOOL.title}: ${name} • ${dry}no changes`;
     },
   });
 }

@@ -8,7 +8,7 @@ import {
   DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_SEARCH_TIMEOUT_MS,
 } from '../lib/constants.js';
-import { ErrorCode } from '../lib/errors.js';
+import { classifyError, ErrorCode } from '../lib/errors.js';
 import { searchFiles } from '../lib/file-operations/search.js';
 
 import { formatOperationSummary, joinLines } from '../config.js';
@@ -196,7 +196,7 @@ export function registerSearchFilesTool(
         let progressCursor = 0;
         notifyProgress(ctx, {
           current: 0,
-          message: `🔎︎ find: ${truncatedPattern}`,
+          message: `${SEARCH_FILES_TOOL.title}: ${truncatedPattern}`,
         });
 
         const baseReporter = createProgressReporter(ctx);
@@ -211,7 +211,7 @@ export function registerSearchFilesTool(
           baseReporter({
             current,
             ...(total !== undefined ? { total } : {}),
-            message: `🔎︎ find: ${truncatedPattern} [${current} files]`,
+            message: `${SEARCH_FILES_TOOL.title}: ${truncatedPattern} [${current} files]`,
           });
         };
 
@@ -245,7 +245,7 @@ export function registerSearchFilesTool(
           notifyProgress(ctx, {
             current: finalCurrent,
             total: finalCurrent,
-            message: `🔎︎ find: ${context} • ${suffix}`,
+            message: `${SEARCH_FILES_TOOL.title}: ${context} • ${suffix}`,
           });
           return result;
         } catch (error) {
@@ -253,7 +253,7 @@ export function registerSearchFilesTool(
           notifyProgress(ctx, {
             current: finalCurrent,
             total: finalCurrent,
-            message: `🔎︎ find: ${context} • failed`,
+            message: `${SEARCH_FILES_TOOL.title}: ${context} • ${classifyError(error)}`,
           });
           throw error;
         }
