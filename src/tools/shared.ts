@@ -2,7 +2,8 @@ import type {
   ContentBlock,
   Icon,
   LoggingLevel,
-  ProgressNotificationParams,
+  Notification,
+  RequestMeta,
   ServerContext,
 } from '@modelcontextprotocol/server';
 
@@ -399,37 +400,35 @@ export function withValidatedArgs<Args, Result>(
 
 type ProgressToken = string | number;
 
+/**
+ * App-level tracing metadata passed through {@linkcode RequestMeta}.
+ * These fields are preserved by the SDK's loose `RequestMeta` type.
+ */
+interface TracingMeta {
+  traceparent?: string | undefined;
+  tracestate?: string | undefined;
+  baggage?: string | undefined;
+}
+
 export interface ToolContext {
   signal?: AbortSignal;
-  _meta?:
-    | {
-        progressToken?: ProgressToken | undefined;
-        traceparent?: string | undefined;
-        tracestate?: string | undefined;
-        baggage?: string | undefined;
-      }
-    | undefined;
-  sendNotification?: (notification: {
-    method: 'notifications/progress';
-    params: ProgressNotificationParams;
-  }) => Promise<void>;
+  sessionId?: string;
+  _meta?: (RequestMeta & TracingMeta) | undefined;
+  sendNotification?: (notification: Notification) => Promise<void>;
   log?: (level: LoggingLevel, data: unknown, logger?: string) => Promise<void>;
 }
 
-function toToolContext(ctx?: ToolContext | ServerContext): ToolContext {
+export function toToolContext(ctx?: ToolContext | ServerContext): ToolContext {
   if (!ctx) return {};
   if ('mcpReq' in ctx) {
     return {
       signal: ctx.mcpReq.signal,
+      ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
       ...(ctx.mcpReq._meta
         ? { _meta: ctx.mcpReq._meta as ToolContext['_meta'] }
         : {}),
       sendNotification: async (notification) => ctx.mcpReq.notify(notification),
-      log: async (level, data, logger) =>
-        ctx.mcpReq.notify({
-          method: 'notifications/message',
-          params: { level, data, ...(logger ? { logger } : {}) },
-        }),
+      log: async (level, data, logger) => ctx.mcpReq.log(level, data, logger),
     };
   }
   return ctx;

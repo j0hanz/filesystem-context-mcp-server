@@ -37,6 +37,7 @@ import {
   type ToolContract,
   type ToolRegistrationOptions,
   type ToolResult,
+  toToolContext,
   withDefaultIcons,
   withValidatedArgs,
   wrapToolHandler,
@@ -92,61 +93,37 @@ type ToolArgs<Args extends ToolSchema> = Args extends StandardSchemaWithJSON
 const TASK_STATUS_NOTIFICATION_METHOD = 'notifications/tasks/status';
 const TASK_CREATED_NOTIFICATION_METHOD = 'notifications/tasks/created';
 
-function isRequestTaskStore(value: unknown): value is RequestTaskStore {
-  return (
-    isRecord(value) &&
-    typeof value.createTask === 'function' &&
-    typeof value.getTask === 'function' &&
-    typeof value.storeTaskResult === 'function' &&
-    typeof value.getTaskResult === 'function'
-  );
-}
-
-function hasTaskStoreContext(
+function assertCreateTaskContext(
   value: CreateTaskServerContext | TaskServerContext
-): value is (CreateTaskServerContext | TaskServerContext) & {
+): asserts value is CreateTaskServerContext & {
   task: { store: RequestTaskStore };
 } {
-  return isRecord(value.task) && isRequestTaskStore(value.task.store);
-}
-
-function asCreateTaskContext(
-  value: CreateTaskServerContext | TaskServerContext
-): CreateTaskServerContext & { task: { store: RequestTaskStore } } {
-  if (!hasTaskStoreContext(value)) {
+  if (!isRecord(value.task) || typeof value.task.store !== 'object') {
     throw new McpError(ErrorCode.INVALID_INPUT, 'Task store not configured.');
   }
-  return value as CreateTaskServerContext & {
-    task: { store: RequestTaskStore };
-  };
 }
 
-function asTaskRequestContext(
+function assertTaskRequestContext(
   value: TaskServerContext
-): TaskServerContext & { task: { store: RequestTaskStore; id: string } } {
+): asserts value is TaskServerContext & {
+  task: { store: RequestTaskStore; id: string };
+} {
   if (
-    !hasTaskStoreContext(value) ||
     !isRecord(value.task) ||
+    typeof value.task.store !== 'object' ||
     typeof value.task.id !== 'string' ||
     value.task.id.length === 0
   ) {
     throw new McpError(ErrorCode.INVALID_INPUT, 'Task id or store missing.');
   }
-  return value as TaskServerContext & {
-    task: { store: RequestTaskStore; id: string };
-  };
 }
 
 function toTaskToolContext(
   ctx: CreateTaskServerContext | TaskServerContext
 ): TaskToolContext {
   return {
-    signal: ctx.mcpReq.signal,
-    ...(ctx.mcpReq._meta
-      ? { _meta: ctx.mcpReq._meta as ToolContext['_meta'] }
-      : {}),
-    sendNotification: async (notification) => ctx.mcpReq.notify(notification),
-    ...(hasTaskStoreContext(ctx) ? { taskStore: ctx.task.store } : {}),
+    ...toToolContext(ctx),
+    taskStore: ctx.task.store,
     ...(typeof ctx.task.id === 'string' && ctx.task.id.length > 0
       ? { taskId: ctx.task.id }
       : {}),
@@ -750,7 +727,8 @@ export function createToolTaskHandler<Args extends ToolSchema, Result>(
     } else {
       [args, serverCtx] = params;
     }
-    const ctx = toTaskToolContext(asCreateTaskContext(serverCtx));
+    assertCreateTaskContext(serverCtx);
+    const ctx = toTaskToolContext(serverCtx);
 
     if (options?.guard && !options.guard()) {
       throw new McpError(
@@ -827,7 +805,8 @@ export function createToolTaskHandler<Args extends ToolSchema, Result>(
     ...params: [ToolArgs<Args>, TaskServerContext] | [TaskServerContext]
   ): Promise<GetTaskResult> => {
     const serverCtx = params.length === 1 ? params[0] : params[1];
-    const ctx = toTaskToolContext(asTaskRequestContext(serverCtx));
+    assertTaskRequestContext(serverCtx);
+    const ctx = toTaskToolContext(serverCtx);
     const taskStore = getTaskStore(ctx);
     const taskId = getTaskId(ctx);
     const task = await taskStore.getTask(taskId);
@@ -838,7 +817,8 @@ export function createToolTaskHandler<Args extends ToolSchema, Result>(
     ...params: [ToolArgs<Args>, TaskServerContext] | [TaskServerContext]
   ): Promise<CallToolResult> => {
     const serverCtx = params.length === 1 ? params[0] : params[1];
-    const ctx = toTaskToolContext(asTaskRequestContext(serverCtx));
+    assertTaskRequestContext(serverCtx);
+    const ctx = toTaskToolContext(serverCtx);
     const taskStore = getTaskStore(ctx);
     const taskId = getTaskId(ctx);
     const result = await taskStore.getTaskResult(taskId);
