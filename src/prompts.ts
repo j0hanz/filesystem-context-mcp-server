@@ -74,7 +74,7 @@ export function registerGetHelpPrompt(
     HELP_PROMPT_NAME,
     {
       ...baseConfig,
-      argsSchema: z.object({
+      argsSchema: z.strictObject({
         topic: z
           .string()
           .optional()
@@ -121,7 +121,7 @@ export function registerCompareFilesPrompt(
         },
         iconInfo
       ),
-      argsSchema: z.object({
+      argsSchema: z.strictObject({
         original: z.string().describe('Path to the original file.'),
         modified: z.string().describe('Path to the modified file.'),
       }),
@@ -159,7 +159,7 @@ export function registerAnalyzePathPrompt(
         },
         iconInfo
       ),
-      argsSchema: z.object({
+      argsSchema: z.strictObject({
         path: z.string().describe('Absolute path to analyze.'),
       }),
     },
@@ -196,7 +196,7 @@ export function registerGetToolHelpPrompt(
         },
         iconInfo
       ),
-      argsSchema: z.object({
+      argsSchema: z.strictObject({
         name: z
           .string()
           .min(1)
