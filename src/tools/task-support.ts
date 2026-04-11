@@ -52,9 +52,27 @@ interface TaskContext {
   taskId: string;
   toolName?: string | undefined;
   startTime: number;
+  taskStore: RequestTaskStore;
+  ctx: TaskToolContext;
 }
 
 const taskContext = new AsyncLocalStorage<TaskContext>();
+
+/**
+ * Report an intermediate 'working' status update for the current task.
+ * No-op when called outside of a task context.
+ */
+export async function reportTaskStatus(statusMessage: string): Promise<void> {
+  const store = taskContext.getStore();
+  if (!store) return;
+  const { taskId, taskStore, ctx, toolName } = store;
+  try {
+    await taskStore.updateTaskStatus(taskId, 'working', statusMessage);
+    await notifyTaskStatusIfPossible(ctx, taskStore, taskId, toolName);
+  } catch {
+    // Best-effort: never fail tool execution for status updates.
+  }
+}
 
 interface TaskDiagnosticsEvent {
   phase:
@@ -213,10 +231,6 @@ async function projectCancelledTaskStatus(
   return task;
 }
 
-type TaskStatusNotificationSender = (
-  notification: TaskStatusNotification
-) => Promise<void>;
-
 function buildTaskStatusNotificationParams(
   task: GetTaskResult
 ): TaskStatusNotificationParams {
@@ -238,17 +252,10 @@ async function notifyTaskCreatedIfPossible(
   taskId: string,
   toolName?: string
 ): Promise<void> {
-  const { sendNotification } = ctx as { sendNotification?: unknown };
-  if (typeof sendNotification !== 'function') return;
-  const notify = sendNotification as (notification: {
-    method: typeof TASK_CREATED_NOTIFICATION_METHOD;
-    params: {
-      _meta: Record<typeof RELATED_TASK_META_KEY, { taskId: string }>;
-    };
-  }) => Promise<void>;
+  if (!ctx.sendNotification) return;
 
   try {
-    await notify({
+    await ctx.sendNotification({
       method: TASK_CREATED_NOTIFICATION_METHOD,
       params: {
         _meta: {
@@ -273,16 +280,15 @@ async function notifyTaskStatusIfPossible(
   taskId: string,
   toolName?: string
 ): Promise<void> {
-  const { sendNotification } = ctx as { sendNotification?: unknown };
-  if (typeof sendNotification !== 'function') return;
-  const notify = sendNotification as TaskStatusNotificationSender;
+  if (!ctx.sendNotification) return;
+
   try {
     const task = await taskStore.getTask(taskId);
     const normalized = await projectCancelledTaskStatus(
       taskStore,
       toGetTaskResult(task)
     );
-    await notify({
+    await ctx.sendNotification({
       method: TASK_STATUS_NOTIFICATION_METHOD,
       params: buildTaskStatusNotificationParams(normalized),
     });
@@ -456,7 +462,7 @@ async function runTaskInBackground<Args extends ToolSchema>(
 
   try {
     const rawResult = await taskContext.run(
-      { taskId, toolName, startTime: start },
+      { taskId, toolName, startTime: start, taskStore, ctx: taskExtra },
       () => run(args, taskExtra)
     );
 
@@ -507,10 +513,9 @@ async function runTaskInBackground<Args extends ToolSchema>(
       statusMessage: 'Internal system error while storing result',
     };
 
-    const { sendNotification } = ctx as { sendNotification?: unknown };
-    if (typeof sendNotification === 'function') {
+    if (ctx.sendNotification) {
       try {
-        await (sendNotification as TaskStatusNotificationSender)({
+        await ctx.sendNotification({
           method: TASK_STATUS_NOTIFICATION_METHOD,
           params: buildTaskStatusNotificationParams(syntheticTask),
         });
@@ -735,9 +740,6 @@ export function createToolTaskHandler<Args extends ToolSchema, Result>(
     );
     return {
       task,
-      _meta: {
-        'io.modelcontextprotocol/model-immediate-response': `${toolLabel} task created — poll tasks/get for progress.`,
-      },
     };
   }) as ToolTaskHandler<Args>['createTask'];
 

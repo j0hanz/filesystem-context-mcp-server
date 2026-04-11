@@ -39,7 +39,7 @@ import {
   type ToolResult,
   truncateProgressPattern,
 } from './shared.js';
-import { registerStandardTool } from './task-support.js';
+import { registerStandardTool, reportTaskStatus } from './task-support.js';
 
 /**
  * Configuration constants for the Search Content tool.
@@ -434,6 +434,7 @@ export function registerSearchContentTool(
             ...(total !== undefined ? { total } : {}),
             message: `${progressLabel} [${current} files]`,
           });
+          void reportTaskStatus(`${progressLabel} ${current} files`);
         };
 
         try {

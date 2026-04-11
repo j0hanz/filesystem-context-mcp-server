@@ -483,7 +483,7 @@ describe('createToolTaskHandler', () => {
     }
   });
 
-  it('createTask returns model-immediate-response in _meta', async () => {
+  it('createTask does not include non-standard _meta keys', async () => {
     const store = createTestTaskStore();
     try {
       const handler = createToolTaskHandler(
@@ -497,18 +497,13 @@ describe('createToolTaskHandler', () => {
 
       const result = await handler.createTask(createMockExtra(store));
       const meta = result._meta as Record<string, unknown> | undefined;
-      assert.ok(meta, 'CreateTaskResult must include _meta');
-      const immediate =
-        meta['io.modelcontextprotocol/model-immediate-response'];
-      assert.equal(
-        typeof immediate,
-        'string',
-        'immediate response must be a string'
-      );
-      assert.ok(
-        (immediate as string).includes('grep'),
-        `immediate response should reference tool name, got: ${String(immediate)}`
-      );
+      if (meta) {
+        assert.equal(
+          meta['io.modelcontextprotocol/model-immediate-response'],
+          undefined,
+          '_meta must not contain non-standard model-immediate-response key'
+        );
+      }
     } finally {
       store.cleanup();
     }

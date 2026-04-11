@@ -4,9 +4,15 @@ import {
   type Task,
 } from '@modelcontextprotocol/server';
 
+import { CANCELLED_RESULT_TTL_MS } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 
 const DEFAULT_CANCELLED_STATUS_MESSAGE = 'Client cancelled task execution.';
+
+interface TimestampedResult {
+  result: Result;
+  createdAt: number;
+}
 
 function getTaskKey(taskId: string, sessionId?: string): string {
   return `${sessionId ?? ''}:${taskId}`;
@@ -26,12 +32,22 @@ function buildCancelledTaskResult(statusMessage?: string): Result {
 }
 
 export class ResultAwareInMemoryTaskStore extends InMemoryTaskStore {
-  private readonly cancelledResults = new Map<string, Result>();
+  private readonly cancelledResults = new Map<string, TimestampedResult>();
+
+  private evictExpired(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.cancelledResults) {
+      if (now - entry.createdAt > CANCELLED_RESULT_TTL_MS) {
+        this.cancelledResults.delete(key);
+      }
+    }
+  }
 
   override async getTaskResult(
     taskId: string,
     sessionId?: string
   ): Promise<Result> {
+    this.evictExpired();
     try {
       return await super.getTaskResult(taskId, sessionId);
     } catch (error) {
@@ -42,10 +58,10 @@ export class ResultAwareInMemoryTaskStore extends InMemoryTaskStore {
 
       const key = getTaskKey(taskId, sessionId);
       const existing = this.cancelledResults.get(key);
-      if (existing) return existing;
+      if (existing) return existing.result;
 
       const result = buildCancelledTaskResult(task.statusMessage);
-      this.cancelledResults.set(key, result);
+      this.cancelledResults.set(key, { result, createdAt: Date.now() });
       return result;
     }
   }
@@ -67,10 +83,12 @@ export class ResultAwareInMemoryTaskStore extends InMemoryTaskStore {
         throw error;
       }
 
-      this.cancelledResults.set(
-        getTaskKey(taskId, sessionId),
-        this.cancelledResults.get(getTaskKey(taskId, sessionId)) ?? result
-      );
+      const key = getTaskKey(taskId, sessionId);
+      const existing = this.cancelledResults.get(key);
+      this.cancelledResults.set(key, {
+        result: existing?.result ?? result,
+        createdAt: existing?.createdAt ?? Date.now(),
+      });
     }
   }
 
@@ -84,11 +102,11 @@ export class ResultAwareInMemoryTaskStore extends InMemoryTaskStore {
 
     const key = getTaskKey(taskId, sessionId);
     if (status === 'cancelled') {
-      this.cancelledResults.set(
-        key,
-        this.cancelledResults.get(key) ??
-          buildCancelledTaskResult(statusMessage)
-      );
+      const existing = this.cancelledResults.get(key);
+      this.cancelledResults.set(key, {
+        result: existing?.result ?? buildCancelledTaskResult(statusMessage),
+        createdAt: existing?.createdAt ?? Date.now(),
+      });
       return;
     }
 

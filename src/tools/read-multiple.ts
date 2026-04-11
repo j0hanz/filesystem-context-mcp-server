@@ -30,7 +30,7 @@ import {
   type ToolResponse,
   type ToolResult,
 } from './shared.js';
-import { registerStandardTool } from './task-support.js';
+import { registerStandardTool, reportTaskStatus } from './task-support.js';
 
 const READ_MANY_TOOL_NAME = 'read_many';
 const FULL_FILE_CONTENTS_DESCRIPTION = 'Full file contents';
@@ -254,12 +254,22 @@ export function registerReadMultipleFilesTool(
       context: { path: primaryPath },
       run: async (signal) => {
         const context = buildBatchPathContext(args.paths, 'files');
-        const { progress, onItemComplete } = createBatchProgressCallbacks(ctx, {
-          toolLabel: READ_MANY_TOOL_LABEL,
-          context,
-          totalItems: args.paths.length,
-          itemVerb: 'read',
-        });
+        const { progress, onItemComplete: rawOnItemComplete } =
+          createBatchProgressCallbacks(ctx, {
+            toolLabel: READ_MANY_TOOL_LABEL,
+            context,
+            totalItems: args.paths.length,
+            itemVerb: 'read',
+          });
+
+        let itemsDone = 0;
+        const onItemComplete = (): void => {
+          rawOnItemComplete();
+          itemsDone++;
+          void reportTaskStatus(
+            `${READ_MANY_TOOL_LABEL}: ${context} [${itemsDone}/${args.paths.length} read]`
+          );
+        };
 
         try {
           const result = await handleReadMultipleFiles(
