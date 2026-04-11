@@ -1,10 +1,11 @@
 import {
   type McpServer,
+  ProtocolError,
+  ProtocolErrorCode,
   type ReadResourceResult,
   ResourceTemplate,
 } from '@modelcontextprotocol/server';
 
-import { ErrorCode, McpError } from './lib/errors.js';
 import { globalMetrics } from './lib/observability.js';
 import type { ResourceStore } from './lib/resource-store.js';
 
@@ -171,8 +172,8 @@ export function registerResultResources(
     (uri, variables): ReadResourceResult => {
       const { id } = variables;
       if (typeof id !== 'string' || id.length === 0) {
-        throw new McpError(
-          ErrorCode.NOT_FOUND,
+        throw new ProtocolError(
+          ProtocolErrorCode.ResourceNotFound,
           'Cached result expired. Re-run the tool to regenerate.'
         );
       }
@@ -214,11 +215,17 @@ export function registerToolInfoResource(
     (uri, variables): ReadResourceResult => {
       const { name } = variables;
       if (typeof name !== 'string' || name.length === 0) {
-        throw new McpError(ErrorCode.INVALID_INPUT, 'Tool name is required');
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
+          'Tool name is required'
+        );
       }
       const content = buildToolInfo(name);
       if (content === undefined) {
-        throw new McpError(ErrorCode.INVALID_INPUT, `Tool not found: ${name}`);
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
+          `Tool not found: ${name}`
+        );
       }
       return {
         contents: [
