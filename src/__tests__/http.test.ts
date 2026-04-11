@@ -252,7 +252,7 @@ describe('HTTP transport', () => {
     assert.equal(initializedResponse.status, 202);
   });
 
-  it('rejects post-initialize HTTP requests without mcp-protocol-version', async () => {
+  it('accepts post-initialize HTTP requests without mcp-protocol-version header', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
     const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
     servers.push(server);
@@ -283,6 +283,8 @@ describe('HTTP transport', () => {
       'Expected initialize response to include Mcp-Session-Id'
     );
 
+    // SDK v2 transport accepts requests without MCP-Protocol-Version header,
+    // defaulting to the version negotiated at initialization.
     const missingHeaderResponse = await fetch(
       `http://127.0.0.1:${String(port)}/mcp`,
       {
@@ -299,11 +301,7 @@ describe('HTTP transport', () => {
       }
     );
 
-    assert.equal(missingHeaderResponse.status, 400);
-    assert.match(
-      await missingHeaderResponse.text(),
-      /Missing MCP-Protocol-Version header/
-    );
+    assert.equal(missingHeaderResponse.status, 202);
   });
 
   it('accepts the negotiated server protocol version after fallback', async () => {
@@ -366,7 +364,7 @@ describe('HTTP transport', () => {
     assert.equal(initializedResponse.status, 202);
   });
 
-  it('rejects post-initialize requests with a mismatched negotiated protocol version', async () => {
+  it('accepts post-initialize requests with any supported protocol version', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
     const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
     servers.push(server);
@@ -397,7 +395,9 @@ describe('HTTP transport', () => {
       'Expected initialize response to include Mcp-Session-Id'
     );
 
-    const mismatchedHeaderResponse = await fetch(
+    // SDK v2 transport accepts any supported protocol version on subsequent
+    // requests, not just the one negotiated at initialization.
+    const otherSupportedVersionResponse = await fetch(
       `http://127.0.0.1:${String(port)}/mcp`,
       {
         method: 'POST',
@@ -414,11 +414,7 @@ describe('HTTP transport', () => {
       }
     );
 
-    assert.equal(mismatchedHeaderResponse.status, 400);
-    assert.match(
-      await mismatchedHeaderResponse.text(),
-      /must match negotiated version 2025-11-25/
-    );
+    assert.equal(otherSupportedVersionResponse.status, 202);
   });
 
   it('rejects browser origins outside localhost', async () => {
