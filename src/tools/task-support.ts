@@ -3,7 +3,9 @@ import {
   type CreateTaskResult,
   type CreateTaskServerContext,
   type GetTaskResult,
+  isTerminal,
   type McpServer,
+  RELATED_TASK_META_KEY,
   type RequestTaskStore,
   type Result,
   type StandardSchemaWithJSON,
@@ -74,8 +76,12 @@ function publishTaskDiagnostics(event: TaskDiagnosticsEvent): void {
 // --- Type Guards & Helpers ---
 
 function hasTaskToolCapability(server: McpServer): boolean {
-  const capabilities = server.server.getCapabilities();
-  return capabilities.tasks?.requests?.tools?.call !== undefined;
+  try {
+    const capabilities = server.server.getCapabilities();
+    return capabilities.tasks?.requests?.tools?.call !== undefined;
+  } catch {
+    return false;
+  }
 }
 
 type TaskToolContext = ToolContext & {
@@ -240,7 +246,7 @@ function attachRelatedTaskMeta(
     ...result,
     _meta: {
       ...existingMeta,
-      'io.modelcontextprotocol/related-task': { taskId },
+      [RELATED_TASK_META_KEY]: { taskId },
     },
   };
 }
@@ -292,11 +298,7 @@ async function notifyTaskCreatedIfPossible(
   const notify = sendNotification as (notification: {
     method: typeof TASK_CREATED_NOTIFICATION_METHOD;
     params: {
-      _meta: {
-        'io.modelcontextprotocol/related-task': {
-          taskId: string;
-        };
-      };
+      _meta: Record<typeof RELATED_TASK_META_KEY, { taskId: string }>;
     };
   }) => Promise<void>;
 
@@ -305,7 +307,7 @@ async function notifyTaskCreatedIfPossible(
       method: TASK_CREATED_NOTIFICATION_METHOD,
       params: {
         _meta: {
-          'io.modelcontextprotocol/related-task': {
+          [RELATED_TASK_META_KEY]: {
             taskId,
           },
         },
@@ -381,12 +383,9 @@ function withoutStructuredContent<T extends object>(result: T): T {
   return stripped as T;
 }
 
-const TERMINAL_TASK_STATUSES = new Set<string>([
-  'completed',
-  'failed',
-  'cancelled',
-  'unknown',
-]);
+function isTerminalTaskStatus(status: string): boolean {
+  return isTerminal(status as GetTaskResult['status']) || status === 'unknown';
+}
 
 const taskCreationLocks = new WeakMap<RequestTaskStore, Promise<void>>();
 
@@ -417,7 +416,7 @@ async function isTaskAlreadyTerminal(
     const task = await taskStore.getTask(taskId);
     if (!isRecord(task)) return false;
     const { status } = task;
-    return typeof status === 'string' && TERMINAL_TASK_STATUSES.has(status);
+    return typeof status === 'string' && isTerminalTaskStatus(status);
   } catch {
     return false;
   }
@@ -437,7 +436,7 @@ async function countActiveTasks(taskStore: RequestTaskStore): Promise<number> {
   let active = 0;
   for (const task of tasks) {
     if (!isRecord(task) || typeof task.status !== 'string') continue;
-    if (!TERMINAL_TASK_STATUSES.has(task.status)) {
+    if (!isTerminalTaskStatus(task.status)) {
       active += 1;
     }
   }

@@ -1,6 +1,7 @@
 import {
   type CreateTaskServerContext,
   InMemoryTaskStore,
+  RELATED_TASK_META_KEY,
   type RequestTaskStore,
   type Task,
   type TaskServerContext,
@@ -472,10 +473,10 @@ describe('createToolTaskHandler', () => {
       );
       const meta = result._meta as Record<string, unknown> | undefined;
       assert.ok(meta, 'result must include _meta');
-      const related = meta['io.modelcontextprotocol/related-task'] as
+      const related = meta[RELATED_TASK_META_KEY] as
         | Record<string, unknown>
         | undefined;
-      assert.ok(related, 'must have io.modelcontextprotocol/related-task key');
+      assert.ok(related, `must have ${RELATED_TASK_META_KEY} key`);
       assert.equal(related['taskId'], task.taskId);
     } finally {
       store.cleanup();

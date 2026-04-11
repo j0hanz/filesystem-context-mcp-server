@@ -1,10 +1,11 @@
-import type {
-  CreateTaskServerContext,
-  GetTaskResult,
-  RequestTaskStore,
-  Result,
-  TaskServerContext,
-  TaskStatusNotificationParams,
+import {
+  type CreateTaskServerContext,
+  type GetTaskResult,
+  RELATED_TASK_META_KEY,
+  type RequestTaskStore,
+  type Result,
+  type TaskServerContext,
+  type TaskStatusNotificationParams,
 } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
@@ -284,7 +285,7 @@ describe('task failure normalization', () => {
     const result = await handler.getTaskResult(taskExtra);
     assert.equal(result.isError, true);
     assert.deepEqual(result._meta, {
-      'io.modelcontextprotocol/related-task': { taskId: task.taskId },
+      [RELATED_TASK_META_KEY]: { taskId: task.taskId },
     });
   });
 
