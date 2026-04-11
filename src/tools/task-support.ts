@@ -9,6 +9,7 @@ import {
   type RequestTaskStore,
   type Result,
   type StandardSchemaWithJSON,
+  type Task,
   type TaskServerContext,
   type TaskStatusNotificationParams,
   type ToolTaskHandler,
@@ -60,7 +61,7 @@ interface TaskDiagnosticsEvent {
     | 'task_status_notified'
     | 'task_status_notify_failed';
   taskId: string;
-  status?: GetTaskResult['status'] | 'completed' | 'failed';
+  status?: GetTaskResult['status'];
   toolName?: string | undefined;
   durationMs?: number;
 }
@@ -139,70 +140,12 @@ function toTaskToolContext(
   };
 }
 
-const TASK_STATUSES = new Set<string>([
-  'submitted',
-  'working',
-  'input_required',
-  'completed',
-  'failed',
-  'cancelled',
-  'unknown',
-]);
-
-function isTaskStatus(value: unknown): value is GetTaskResult['status'] {
-  return typeof value === 'string' && TASK_STATUSES.has(value);
+function toGetTaskResult(task: Task): GetTaskResult {
+  return task as GetTaskResult;
 }
 
-function normalizeGetTaskResult(value: unknown): GetTaskResult {
-  if (!isRecord(value) || typeof value.taskId !== 'string') {
-    throw new McpError(ErrorCode.INVALID_INPUT, 'Invalid task object.');
-  }
-
-  const status = isTaskStatus(value.status) ? value.status : undefined;
-  if (!status) {
-    throw new McpError(ErrorCode.INVALID_INPUT, 'Invalid task status.');
-  }
-
-  const createdAt =
-    typeof value.createdAt === 'string'
-      ? value.createdAt
-      : new Date().toISOString();
-  const lastUpdatedAt =
-    typeof value.lastUpdatedAt === 'string' ? value.lastUpdatedAt : createdAt;
-  const ttl = typeof value.ttl === 'number' ? value.ttl : null;
-
-  const normalized: GetTaskResult = {
-    taskId: value.taskId,
-    status,
-    ttl,
-    createdAt,
-    lastUpdatedAt,
-  };
-
-  if (typeof value.pollInterval === 'number') {
-    normalized.pollInterval = value.pollInterval;
-  }
-  if (typeof value.statusMessage === 'string') {
-    normalized.statusMessage = value.statusMessage;
-  }
-  if (isRecord(value._meta)) {
-    normalized._meta = value._meta;
-  }
-
-  return normalized;
-}
-
-function normalizeCallToolResult(value: Result): CallToolResult {
-  if (
-    isRecord(value) &&
-    Array.isArray(value.content) &&
-    value.content.every(
-      (entry) => isRecord(entry) && typeof entry.type === 'string'
-    )
-  ) {
-    return value as CallToolResult;
-  }
-  throw new McpError(ErrorCode.INVALID_INPUT, 'Invalid stored task result.');
+function toCallToolResult(value: Result): CallToolResult {
+  return value as CallToolResult;
 }
 
 function getToolResultErrorCode(result: Result): string | undefined {
@@ -335,7 +278,7 @@ async function notifyTaskStatusIfPossible(
     const task = await taskStore.getTask(taskId);
     const normalized = await projectCancelledTaskStatus(
       taskStore,
-      normalizeGetTaskResult(task)
+      toGetTaskResult(task)
     );
     await notify({
       method: TASK_STATUS_NOTIFICATION_METHOD,
@@ -384,7 +327,7 @@ function withoutStructuredContent<T extends object>(result: T): T {
 }
 
 function isTerminalTaskStatus(status: string): boolean {
-  return isTerminal(status as GetTaskResult['status']) || status === 'unknown';
+  return isTerminal(status as GetTaskResult['status']);
 }
 
 const taskCreationLocks = new WeakMap<RequestTaskStore, Promise<void>>();
@@ -809,7 +752,7 @@ export function createToolTaskHandler<Args extends ToolSchema, Result>(
     const taskStore = getTaskStore(ctx);
     const taskId = getTaskId(ctx);
     const task = await taskStore.getTask(taskId);
-    return projectCancelledTaskStatus(taskStore, normalizeGetTaskResult(task));
+    return projectCancelledTaskStatus(taskStore, toGetTaskResult(task));
   }) as ToolTaskHandler<Args>['getTask'];
 
   const getTaskResult = (async (
@@ -821,7 +764,7 @@ export function createToolTaskHandler<Args extends ToolSchema, Result>(
     const taskStore = getTaskStore(ctx);
     const taskId = getTaskId(ctx);
     const result = await taskStore.getTaskResult(taskId);
-    return attachRelatedTaskMeta(normalizeCallToolResult(result), taskId);
+    return attachRelatedTaskMeta(toCallToolResult(result), taskId);
   }) as ToolTaskHandler<Args>['getTaskResult'];
 
   return {
