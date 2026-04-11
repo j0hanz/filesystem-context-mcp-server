@@ -95,6 +95,10 @@ export function registerGetHelpPrompt(
             content: {
               type: 'text',
               text,
+              annotations: {
+                audience: ['assistant'],
+                priority: 1,
+              },
             },
           },
         ],
@@ -130,6 +134,10 @@ export function registerCompareFilesPrompt(
           content: {
             type: 'text',
             text: `Compare files and explain differences.\n\n1. Call \`diff_files\` with:\n   - original: ${original}\n   - modified: ${modified}\n2. Summarize: additions, deletions, and semantic changes.\n3. Flag any potential issues (conflicts, regressions, breaking changes).`,
+            annotations: {
+              audience: ['assistant'],
+              priority: 1,
+            },
           },
         },
       ],
@@ -163,6 +171,10 @@ export function registerAnalyzePathPrompt(
           content: {
             type: 'text',
             text: `Analyze the path: ${targetPath}\n\n1. Call \`stat\` to determine if it is a file or directory.\n2. If file: call \`read\` with \`includeHash: true\` and summarize contents.\n3. If directory: call \`tree\` (maxDepth: 3) and \`ls\` to summarize structure.\n4. Report: type, size, permissions, key observations.`,
+            annotations: {
+              audience: ['assistant'],
+              priority: 1,
+            },
           },
         },
       ],
@@ -220,6 +232,10 @@ export function registerGetToolHelpPrompt(
               text:
                 `Use the embedded contract for \`${toolName}\` as the authoritative reference. ` +
                 'Summarize when to use it, its key constraints, and the safest next action.',
+              annotations: {
+                audience: ['assistant'],
+                priority: 1,
+              },
             },
           },
           {
@@ -230,6 +246,10 @@ export function registerGetToolHelpPrompt(
                 uri: `internal://tool-info/${toolName}`,
                 mimeType: 'text/markdown',
                 text: toolInfo,
+              },
+              annotations: {
+                audience: ['assistant'],
+                priority: 1,
               },
             },
           },
