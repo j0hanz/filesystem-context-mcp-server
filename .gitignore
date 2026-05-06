@@ -30,6 +30,7 @@ memory_db
 
 # Editor directories and files
 .github/*
+.claude/
 !.github/workflows/
 .vscode/*
 !.vscode/extensions.json
