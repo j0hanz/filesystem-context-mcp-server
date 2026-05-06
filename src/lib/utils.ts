@@ -41,10 +41,9 @@ export function omitOptionKeys<T extends object, K extends keyof T>(
   input: T,
   keys: readonly K[]
 ): Omit<T, K> {
-  const output: Record<string, unknown> = { ...input };
-  for (const key of keys) {
-    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
-    delete output[key as string];
-  }
+  const keySet = new Set<PropertyKey>(keys as readonly PropertyKey[]);
+  const output = Object.fromEntries(
+    Object.entries(input).filter(([key]) => !keySet.has(key))
+  );
   return output as Omit<T, K>;
 }
