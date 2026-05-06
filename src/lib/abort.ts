@@ -69,23 +69,24 @@ export function createTimedAbortSignal(
   baseSignal: AbortSignal | undefined,
   timeoutMs?: number
 ): { signal: AbortSignal; cleanup: () => void } {
-  const timeoutSignal = isFiniteNumber(timeoutMs)
-    ? AbortSignal.timeout(timeoutMs)
-    : undefined;
+  if (isFiniteNumber(timeoutMs)) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort(
+        new DOMException('The operation timed out', 'TimeoutError')
+      );
+    }, timeoutMs);
+    timer.unref();
 
-  if (baseSignal && timeoutSignal) {
-    return {
-      signal: AbortSignal.any([baseSignal, timeoutSignal]),
-      cleanup: () => {},
-    };
+    const combined = baseSignal
+      ? AbortSignal.any([baseSignal, controller.signal])
+      : controller.signal;
+
+    return { signal: combined, cleanup: () => { clearTimeout(timer); } };
   }
 
   if (baseSignal) {
     return { signal: baseSignal, cleanup: () => {} };
-  }
-
-  if (timeoutSignal) {
-    return { signal: timeoutSignal, cleanup: () => {} };
   }
 
   return { signal: SHARED_NOOP_SIGNAL, cleanup: () => {} };
