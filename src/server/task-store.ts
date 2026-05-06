@@ -9,6 +9,12 @@ import { ErrorCode } from '../lib/errors.js';
 
 const DEFAULT_CANCELLED_STATUS_MESSAGE = 'Client cancelled task execution.';
 
+/**
+ * Gate O(n) eviction scan behind this threshold. Only scan when stored results exceed this count.
+ * Prevents performance regression from repeated linear scans during steady-state operation.
+ */
+const EVICTION_SIZE_THRESHOLD = 100;
+
 interface TimestampedResult {
   result: Result;
   createdAt: number;
@@ -35,6 +41,11 @@ export class ResultAwareInMemoryTaskStore extends InMemoryTaskStore {
   private readonly cancelledResults = new Map<string, TimestampedResult>();
 
   private evictExpired(): void {
+    // Gate O(n) eviction scan behind threshold to prevent performance regression
+    if (this.cancelledResults.size <= EVICTION_SIZE_THRESHOLD) {
+      return;
+    }
+
     const now = Date.now();
     for (const [key, entry] of this.cancelledResults) {
       if (now - entry.createdAt > CANCELLED_RESULT_TTL_MS) {
