@@ -96,9 +96,10 @@ export class ResultAwareInMemoryTaskStore extends InMemoryTaskStore {
 
       const key = getTaskKey(taskId, sessionId);
       const existing = this.cancelledResults.get(key);
+      const now = Date.now();
       this.cancelledResults.set(key, {
         result: existing?.result ?? result,
-        createdAt: existing?.createdAt ?? Date.now(),
+        createdAt: existing?.createdAt ?? now,
       });
     }
   }

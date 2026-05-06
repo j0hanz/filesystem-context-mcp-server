@@ -961,13 +961,15 @@ export async function getValidRootDirectories(
 
   // Build output preserving insertion order: [normalizedPath, realPath?] per root.
   const validDirs: string[] = [];
-  validPaths.forEach((p, i) => {
+  let i = 0;
+  for (const p of validPaths) {
     validDirs.push(p);
     const expanded = realExpansions[i];
     if (expanded !== null && expanded !== undefined) {
       validDirs.push(expanded);
     }
-  });
+    i++;
+  }
 
   return validDirs;
 }
