@@ -5,7 +5,7 @@ import { relative } from 'node:path';
 import RE2 from 're2';
 import type { z } from 'zod';
 
-import { DEFAULT_EXCLUDE_PATTERNS } from '../lib/constants.js';
+import { DEFAULT_EXCLUDE_PATTERNS, parseEnvInt } from '../lib/constants.js';
 import {
   classifyError,
   ErrorCode,
@@ -45,8 +45,7 @@ import { registerStandardTool, reportTaskStatus } from './task-support.js';
  * Configuration constants for the Search Content tool.
  */
 const CONFIG = {
-  MAX_INLINE_MATCHES:
-    parseInt(process.env['FS_CONTEXT_MAX_INLINE_MATCHES'] ?? '', 10) || 50,
+  MAX_INLINE_MATCHES: parseEnvInt('FS_CONTEXT_MAX_INLINE_MATCHES', 50, 1, 10_000),
   COMPLETION_LABELS: {
     timeout: 'timeout',
     maxResults: 'max results',
