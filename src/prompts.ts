@@ -98,12 +98,11 @@ export function registerGetHelpPrompt(
         topic: completable(
           z
             .string()
-            .optional()
             .describe(
               'Optional section heading prefix (example: "error handling"). Omit to return full instructions.'
             ),
-          (value) => filterByPrefix(topics, value ?? '')
-        ),
+          (value) => filterByPrefix(topics, value)
+        ).optional(),
       }),
     },
     ({ topic }): GetPromptResult => {

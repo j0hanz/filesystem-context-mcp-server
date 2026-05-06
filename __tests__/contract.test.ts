@@ -2,8 +2,13 @@
  * Contract tests: verify that all 18 tools are registered, named correctly,
  * carry the right annotations, and perform a basic smoke call.
  */
+import { Client } from '@modelcontextprotocol/client';
+import { McpServer } from '@modelcontextprotocol/server';
+
 import assert from 'node:assert/strict';
-import { writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
@@ -267,6 +272,180 @@ describe('Tool contract', () => {
         true,
         `${tc.name}: expected structuredContent.ok === true`
       );
+    }
+  });
+});
+
+describe('Completion contract', () => {
+  // Verify that all prompts and resource templates that declare completable
+  // args actually return completions — and that undeclared args return empty.
+  // A regression here means someone added a prompt arg without completable().
+
+  async function makeServer(): Promise<{
+    server: McpServer;
+    client: Client;
+    tmpDir: string;
+    teardown: () => Promise<void>;
+  }> {
+    const {
+      registerGetHelpPrompt,
+      registerGetToolHelpPrompt,
+      registerAnalyzePathPrompt,
+      registerCompareFilesPrompt,
+    } = await import('../src/prompts.js');
+    const { registerToolInfoResource } = await import('../src/resources.js');
+    const { buildServerInstructions } =
+      await import('../src/resources/generated-instructions.js');
+    const { setAllowedDirectoriesResolved } =
+      await import('../src/lib/paths.js');
+    const { LinkedTransport } = await import('./linked-transport.js');
+
+    const tmpDir = await mkdtemp(
+      join(tmpdir(), `fsmcp-cc-${randomUUID().slice(0, 8)}-`)
+    );
+    await writeFile(join(tmpDir, 'sample.txt'), 'sample');
+    await setAllowedDirectoriesResolved([tmpDir]);
+
+    const server = new McpServer(
+      { name: 'contract-completion-server', version: '0.0.0' },
+      { capabilities: { completions: {} } }
+    );
+
+    const instructions = buildServerInstructions();
+    registerGetHelpPrompt(server, instructions);
+    registerGetToolHelpPrompt(server);
+    registerAnalyzePathPrompt(server);
+    registerCompareFilesPrompt(server);
+    registerToolInfoResource(server);
+
+    const client = new Client({ name: 'contract-client', version: '1.0.0' });
+    const [ct, st] = LinkedTransport.createLinkedPair();
+    await server.connect(st);
+    await client.connect(ct);
+
+    return {
+      server,
+      client,
+      tmpDir,
+      teardown: async () => {
+        await client.close().catch(() => {});
+        await server.close().catch(() => {});
+        await rm(tmpDir, { recursive: true, force: true });
+        await setAllowedDirectoriesResolved([]);
+      },
+    };
+  }
+
+  it('analyze-path: path arg returns path completions', async () => {
+    const { client, tmpDir, teardown } = await makeServer();
+    try {
+      const result = await client.complete({
+        ref: { type: 'ref/prompt', name: 'analyze-path' },
+        argument: { name: 'path', value: tmpDir },
+      });
+      assert.ok(
+        result.completion.values.length > 0,
+        'analyze-path.path must return completions'
+      );
+    } finally {
+      await teardown();
+    }
+  });
+
+  it('compare-files: original arg returns path completions', async () => {
+    const { client, tmpDir, teardown } = await makeServer();
+    try {
+      const result = await client.complete({
+        ref: { type: 'ref/prompt', name: 'compare-files' },
+        argument: { name: 'original', value: tmpDir },
+      });
+      assert.ok(
+        result.completion.values.length > 0,
+        'compare-files.original must return completions'
+      );
+    } finally {
+      await teardown();
+    }
+  });
+
+  it('compare-files: modified arg returns path completions', async () => {
+    const { client, tmpDir, teardown } = await makeServer();
+    try {
+      const result = await client.complete({
+        ref: { type: 'ref/prompt', name: 'compare-files' },
+        argument: { name: 'modified', value: tmpDir },
+      });
+      assert.ok(
+        result.completion.values.length > 0,
+        'compare-files.modified must return completions'
+      );
+    } finally {
+      await teardown();
+    }
+  });
+
+  it('get-help: topic arg returns section completions', async () => {
+    const { client, teardown } = await makeServer();
+    try {
+      const result = await client.complete({
+        ref: { type: 'ref/prompt', name: 'get-help' },
+        argument: { name: 'topic', value: '' },
+      });
+      assert.ok(
+        result.completion.values.length > 0,
+        'get-help.topic must return at least one topic'
+      );
+    } finally {
+      await teardown();
+    }
+  });
+
+  it('get-help: undeclared arg returns empty', async () => {
+    const { client, teardown } = await makeServer();
+    try {
+      const result = await client.complete({
+        ref: { type: 'ref/prompt', name: 'get-help' },
+        argument: { name: 'path', value: '/any' },
+      });
+      assert.deepEqual(
+        result.completion.values,
+        [],
+        'get-help has no path arg — must return empty (strict SDK dispatch)'
+      );
+    } finally {
+      await teardown();
+    }
+  });
+
+  it('get-tool-help: name arg returns tool name completions', async () => {
+    const { client, teardown } = await makeServer();
+    try {
+      const result = await client.complete({
+        ref: { type: 'ref/prompt', name: 'get-tool-help' },
+        argument: { name: 'name', value: 'gr' },
+      });
+      assert.ok(
+        result.completion.values.includes('grep'),
+        'get-tool-help.name must include grep for prefix "gr"'
+      );
+    } finally {
+      await teardown();
+    }
+  });
+
+  it('internal://tool-info/{name}: name variable returns tool name completions', async () => {
+    const { client, teardown } = await makeServer();
+    try {
+      const result = await client.complete({
+        ref: { type: 'ref/resource', uri: 'internal://tool-info/{name}' },
+        argument: { name: 'name', value: 'wr' },
+      });
+      assert.ok(
+        result.completion.values.includes('write'),
+        'tool-info template must complete "wr" to include write'
+      );
+    } finally {
+      await teardown();
     }
   });
 });
