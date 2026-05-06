@@ -1,4 +1,5 @@
 import {
+  completable,
   type GetPromptResult,
   type McpServer,
   ProtocolError,
@@ -6,6 +7,8 @@ import {
 } from '@modelcontextprotocol/server';
 
 import { z } from 'zod';
+
+import { completePathCached } from './lib/path-completer.js';
 
 import {
   buildToolInfo,
@@ -60,11 +63,28 @@ function findKnownToolName(rawName: string): string | undefined {
   )?.name;
 }
 
+function extractTopics(instructions: string): string[] {
+  const headers: string[] = [];
+  for (const line of instructions.split('\n')) {
+    if (line.startsWith('## ')) {
+      const header = line.slice(3).trim().toLowerCase();
+      if (header) headers.push(header);
+    }
+  }
+  return headers;
+}
+
+function filterByPrefix(values: string[], prefix: string): string[] {
+  const lower = prefix.toLowerCase();
+  return lower ? values.filter((v) => v.startsWith(lower)) : [...values];
+}
+
 export function registerGetHelpPrompt(
   server: McpServer,
   instructions: string,
   iconInfo?: IconInfo
 ): void {
+  const topics = extractTopics(instructions);
   const baseConfig = withDefaultIcons(
     { title: HELP_PROMPT_TITLE, description: HELP_PROMPT_DESCRIPTION },
     iconInfo
@@ -75,12 +95,15 @@ export function registerGetHelpPrompt(
     {
       ...baseConfig,
       argsSchema: z.strictObject({
-        topic: z
-          .string()
-          .optional()
-          .describe(
-            'Optional section heading prefix (example: "error handling"). Omit to return full instructions.'
-          ),
+        topic: completable(
+          z
+            .string()
+            .optional()
+            .describe(
+              'Optional section heading prefix (example: "error handling"). Omit to return full instructions.'
+            ),
+          (value) => filterByPrefix(topics, value ?? '')
+        ),
       }),
     },
     ({ topic }): GetPromptResult => {
@@ -95,10 +118,7 @@ export function registerGetHelpPrompt(
             content: {
               type: 'text',
               text,
-              annotations: {
-                audience: ['assistant'],
-                priority: 1,
-              },
+              annotations: { audience: ['assistant'], priority: 1 },
             },
           },
         ],
@@ -122,8 +142,28 @@ export function registerCompareFilesPrompt(
         iconInfo
       ),
       argsSchema: z.strictObject({
-        original: z.string().describe('Path to the original file.'),
-        modified: z.string().describe('Path to the modified file.'),
+        original: completable(
+          z.string().describe('Path to the original file.'),
+          (value, ctx) => {
+            const opts: Parameters<typeof completePathCached>[1] = {
+              server,
+              argumentName: 'original',
+            };
+            if (ctx?.arguments) opts.contextArguments = ctx.arguments;
+            return completePathCached(value, opts);
+          }
+        ),
+        modified: completable(
+          z.string().describe('Path to the modified file.'),
+          (value, ctx) => {
+            const opts: Parameters<typeof completePathCached>[1] = {
+              server,
+              argumentName: 'modified',
+            };
+            if (ctx?.arguments) opts.contextArguments = ctx.arguments;
+            return completePathCached(value, opts);
+          }
+        ),
       }),
     },
     ({ original, modified }): GetPromptResult => ({
@@ -134,10 +174,7 @@ export function registerCompareFilesPrompt(
           content: {
             type: 'text',
             text: `Compare files and explain differences.\n\n1. Call \`diff_files\` with:\n   - original: ${original}\n   - modified: ${modified}\n2. Summarize: additions, deletions, and semantic changes.\n3. Flag any potential issues (conflicts, regressions, breaking changes).`,
-            annotations: {
-              audience: ['assistant'],
-              priority: 1,
-            },
+            annotations: { audience: ['assistant'], priority: 1 },
           },
         },
       ],
@@ -160,7 +197,17 @@ export function registerAnalyzePathPrompt(
         iconInfo
       ),
       argsSchema: z.strictObject({
-        path: z.string().describe('Absolute path to analyze.'),
+        path: completable(
+          z.string().describe('Absolute path to analyze.'),
+          (value, ctx) => {
+            const opts: Parameters<typeof completePathCached>[1] = {
+              server,
+              argumentName: 'path',
+            };
+            if (ctx?.arguments) opts.contextArguments = ctx.arguments;
+            return completePathCached(value, opts);
+          }
+        ),
       }),
     },
     ({ path: targetPath }): GetPromptResult => ({
@@ -171,10 +218,7 @@ export function registerAnalyzePathPrompt(
           content: {
             type: 'text',
             text: `Analyze the path: ${targetPath}\n\n1. Call \`stat\` to determine if it is a file or directory.\n2. If file: call \`read\` with \`includeHash: true\` and summarize contents.\n3. If directory: call \`tree\` (maxDepth: 3) and \`ls\` to summarize structure.\n4. Report: type, size, permissions, key observations.`,
-            annotations: {
-              audience: ['assistant'],
-              priority: 1,
-            },
+            annotations: { audience: ['assistant'], priority: 1 },
           },
         },
       ],
@@ -186,6 +230,8 @@ export function registerGetToolHelpPrompt(
   server: McpServer,
   iconInfo?: IconInfo
 ): void {
+  const toolNames = getSortedToolContracts().map((c) => c.name);
+
   server.registerPrompt(
     GET_TOOL_HELP_PROMPT_NAME,
     {
@@ -197,12 +243,15 @@ export function registerGetToolHelpPrompt(
         iconInfo
       ),
       argsSchema: z.strictObject({
-        name: z
-          .string()
-          .min(1)
-          .describe(
-            'Tool name from tools/list or internal://tool-info/{name}.'
-          ),
+        name: completable(
+          z
+            .string()
+            .min(1)
+            .describe(
+              'Tool name from tools/list or internal://tool-info/{name}.'
+            ),
+          (value) => filterByPrefix(toolNames, value)
+        ),
       }),
     },
     ({ name }): GetPromptResult => {
@@ -213,7 +262,6 @@ export function registerGetToolHelpPrompt(
           `Unknown tool: ${name}`
         );
       }
-
       const toolInfo = buildToolInfo(toolName);
       if (!toolInfo) {
         throw new ProtocolError(
@@ -221,7 +269,6 @@ export function registerGetToolHelpPrompt(
           `Unknown tool: ${toolName}`
         );
       }
-
       return {
         description: GET_TOOL_HELP_PROMPT_DESCRIPTION,
         messages: [
@@ -232,10 +279,7 @@ export function registerGetToolHelpPrompt(
               text:
                 `Use the embedded contract for \`${toolName}\` as the authoritative reference. ` +
                 'Summarize when to use it, its key constraints, and the safest next action.',
-              annotations: {
-                audience: ['assistant'],
-                priority: 1,
-              },
+              annotations: { audience: ['assistant'], priority: 1 },
             },
           },
           {
@@ -247,10 +291,7 @@ export function registerGetToolHelpPrompt(
                 mimeType: 'text/markdown',
                 text: toolInfo,
               },
-              annotations: {
-                audience: ['assistant'],
-                priority: 1,
-              },
+              annotations: { audience: ['assistant'], priority: 1 },
             },
           },
         ],

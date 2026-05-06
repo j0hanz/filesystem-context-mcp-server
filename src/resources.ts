@@ -10,9 +10,19 @@ import { globalMetrics } from './lib/observability.js';
 import type { ResourceStore } from './lib/resource-store.js';
 
 import { buildToolCatalog } from './resources/tool-catalog.js';
-import { buildToolInfo, getToolContracts } from './resources/tool-info.js';
+import {
+  buildToolInfo,
+  getSortedToolContracts,
+  getToolContracts,
+} from './resources/tool-info.js';
 import { buildWorkflowGuide } from './resources/workflows.js';
 import { type IconInfo, withDefaultIcons } from './tools/shared.js';
+
+function filterToolNames(value: string): string[] {
+  const toolNames = getSortedToolContracts().map((c) => c.name);
+  const lower = value.toLowerCase();
+  return lower ? toolNames.filter((n) => n.startsWith(lower)) : [...toolNames];
+}
 
 const RESULT_TEMPLATE = new ResourceTemplate('filesystem-mcp://result/{id}', {
   list: undefined,
@@ -28,6 +38,9 @@ const TOOL_INFO_TEMPLATE = new ResourceTemplate('internal://tool-info/{name}', {
       mimeType: 'text/markdown',
     })),
   }),
+  complete: {
+    name: (value) => filterToolNames(value),
+  },
 });
 const TOOL_INFO_RESOURCE_NAME = 'filesystem-mcp-tool-info';
 const TOOL_INFO_RESOURCE_DESCRIPTION =
