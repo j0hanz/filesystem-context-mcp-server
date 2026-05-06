@@ -91,10 +91,10 @@ export function createTimedAbortSignal(
   }
 
   if (baseSignal) {
-    return { signal: baseSignal, cleanup: () => {} };
+    return { signal: baseSignal, cleanup: () => undefined };
   }
 
-  return { signal: SHARED_NOOP_SIGNAL, cleanup: () => {} };
+  return { signal: SHARED_NOOP_SIGNAL, cleanup: () => undefined };
 }
 
 export async function withTimedAbortSignal<T>(

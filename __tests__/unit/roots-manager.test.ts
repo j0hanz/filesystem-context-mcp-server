@@ -9,10 +9,10 @@ import { RootsManager } from '../../src/server/roots-manager.js';
 function createFakeServer(): {
   server: McpServer;
   getInitializedHandler: () => () => Promise<void>;
-  getRootsChangedHandler: () => () => void;
+  getRootsChangedHandler: () => (() => Promise<void>) | (() => void);
 } {
   let initializedHandler: (() => Promise<void>) | undefined;
-  let rootsChangedHandler: (() => void) | undefined;
+  let rootsChangedHandler: (() => Promise<void>) | (() => void) | undefined;
 
   const server = {
     server: {
@@ -37,7 +37,7 @@ function createFakeServer(): {
       assert.ok(initializedHandler, 'Expected initialized handler');
       return initializedHandler;
     },
-    getRootsChangedHandler(): () => void {
+    getRootsChangedHandler(): (() => Promise<void>) | (() => void) {
       assert.ok(rootsChangedHandler, 'Expected roots changed handler');
       return rootsChangedHandler;
     },

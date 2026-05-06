@@ -16,15 +16,6 @@ import {
   type ToolResult,
 } from '../helpers.js';
 
-function getResultText(result: ToolResult): string {
-  const textBlock = result.content.find(
-    (block): block is { type: string; text: string } =>
-      typeof block.text === 'string'
-  );
-  assert.ok(textBlock, 'Expected text response content');
-  return textBlock.text;
-}
-
 // ─── grep (search_content) ───────────────────────────────────────────────────
 
 describe('grep tool', () => {

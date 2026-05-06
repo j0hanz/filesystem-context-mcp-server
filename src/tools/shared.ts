@@ -558,7 +558,7 @@ function getToolSignal(
   timedSignal: ToolExecutionOptions<unknown>['timedSignal']
 ): { signal: AbortSignal | undefined; cleanup: () => void } {
   if (!timedSignal) {
-    return { signal: extraSignal, cleanup: () => {} };
+    return { signal: extraSignal, cleanup: () => undefined };
   }
 
   const { signal, cleanup } = createTimedAbortSignal(
@@ -698,7 +698,7 @@ export function createProgressReporter(
   ctx: ToolContext
 ): (progress: { total?: number; current: number; message?: string }) => void {
   if (!canReportProgress(ctx)) {
-    return () => {};
+    return () => undefined;
   }
   // State for monotonic enforcement and rate-limiting.
   let lastProgress = -1;

@@ -55,14 +55,14 @@ describe('FS_CONTEXT_STRIP_STRUCTURED', () => {
 
   afterEach(() => {
     if (originalValue === undefined) {
-      delete process.env[ENV_KEY];
+      Reflect.deleteProperty(process.env, ENV_KEY);
     } else {
       process.env[ENV_KEY] = originalValue;
     }
   });
 
   it('passes through result unchanged when flag is unset', () => {
-    delete process.env[ENV_KEY];
+    Reflect.deleteProperty(process.env, ENV_KEY);
     const result = { content: [], structuredContent: { ok: true } };
     const stripped = maybeStripStructuredContentFromResult(result);
     assert.deepEqual(stripped, result);

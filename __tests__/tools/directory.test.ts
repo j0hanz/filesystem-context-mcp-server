@@ -239,7 +239,7 @@ describe('mkdir tool', () => {
   it('rejects creation outside allowed root', async () => {
     const raw = await env.client.callTool({
       name: 'mkdir',
-      arguments: { path: '/tmp/escape-' + Date.now() },
+      arguments: { path: `/tmp/escape-${Date.now()}` },
     });
     assertToolError(raw, 'ACCESS_DENIED');
   });

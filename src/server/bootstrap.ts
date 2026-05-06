@@ -776,6 +776,7 @@ export async function startHttpServer(
       case 'DELETE':
         await handleGetDeleteRequest(req, res, sessionId);
         return;
+      case undefined:
       default:
         writeMethodNotAllowedResponse(res);
     }

@@ -451,7 +451,8 @@ function createReplacementMatcher(
 async function handleSearchAndReplace(
   args: SearchAndReplaceArgs,
   signal?: AbortSignal,
-  onProgress: (progress: { total?: number; current: number }) => void = () => {}
+  onProgress: (progress: { total?: number; current: number }) => void = () =>
+    undefined
 ): Promise<ToolResponse<SearchAndReplaceOutput>> {
   const maxFileSize = MAX_TEXT_FILE_SIZE;
   const root = await resolveSearchRoot(args.path, signal);

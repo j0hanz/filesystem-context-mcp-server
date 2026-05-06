@@ -880,7 +880,7 @@ export async function atomicWriteFile(
   } catch (error) {
     // Attempt cleanup on error, but don't overwrite the original error
     try {
-      await unlink(tempPath).catch(() => {});
+      await unlink(tempPath).catch(() => undefined);
     } catch {
       // Ignore cleanup errors
     }

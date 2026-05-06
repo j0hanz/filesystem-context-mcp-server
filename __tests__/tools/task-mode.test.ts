@@ -5,7 +5,6 @@
 import {
   type CallToolResult,
   type CreateTaskResult,
-  type GetTaskResult,
 } from '@modelcontextprotocol/client';
 
 import assert from 'node:assert/strict';

@@ -660,7 +660,6 @@ class SearchWorkerPool {
   private pending = new Map<number, PendingWorkerRequest>();
   private nextRequestId = 0;
   private closed = false;
-  private workerRoundRobin = 0;
 
   constructor(
     private size: number,
@@ -1100,7 +1099,7 @@ async function scanFileInWorker(
   matcher: Matcher,
   options: ScanFileOptions,
   maxMatches: number,
-  isCancelled: () => boolean,
+  _isCancelled: () => boolean,
   isBinaryDetector: BinaryDetector
 ): Promise<WorkerScanResult> {
   // Direct scan used by worker script

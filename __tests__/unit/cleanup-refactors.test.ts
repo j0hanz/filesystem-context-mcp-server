@@ -139,7 +139,7 @@ describe('Cleanup Refactors', () => {
     const obj4: Record<string, number> = { a: 1, b: 2, c: 3 };
 
     for (const key of ['a', 'c']) {
-      delete obj3[key];
+      Reflect.deleteProperty(obj3, key);
     }
 
     for (const key of ['a', 'c']) {

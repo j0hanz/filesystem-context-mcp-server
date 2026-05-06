@@ -30,7 +30,7 @@ describe('isNodeError', () => {
   it('returns true for system errors with a string code', () => {
     let err: NodeJS.ErrnoException | undefined;
     try {
-      readdirSync('/nonexistent-path-that-cannot-exist-' + Date.now());
+      readdirSync(`/nonexistent-path-that-cannot-exist-${Date.now()}`);
     } catch (e: unknown) {
       err = e as NodeJS.ErrnoException;
     }

@@ -40,7 +40,8 @@ function getTaskSupportLabel(
       return '[Task: Optional]';
     case 'required':
       return '[Task: Required]';
-    default:
+    case 'forbidden':
+    case undefined:
       return undefined;
   }
 }
@@ -130,7 +131,8 @@ function formatTaskSupportLabel(
       return 'optional';
     case 'required':
       return 'required';
-    default:
+    case 'forbidden':
+    case undefined:
       return 'forbidden';
   }
 }

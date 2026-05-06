@@ -29,7 +29,7 @@ describe('security: path boundary enforcement', () => {
     { tool: 'stat', args: () => ({ path: '/etc/hostname' }) },
     { tool: 'ls', args: () => ({ path: '/etc' }) },
     { tool: 'rm', args: (d) => ({ path: join(d, '../escape.txt') }) },
-    { tool: 'mkdir', args: () => ({ path: '/tmp/evil-dir-' + Date.now() }) },
+    { tool: 'mkdir', args: () => ({ path: `/tmp/evil-dir-${Date.now()}` }) },
     {
       tool: 'search_and_replace',
       args: () => ({

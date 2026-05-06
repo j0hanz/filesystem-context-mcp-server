@@ -3,7 +3,6 @@ import {
   InMemoryTaskStore,
   RELATED_TASK_META_KEY,
   type RequestTaskStore,
-  type Task,
   type TaskServerContext,
 } from '@modelcontextprotocol/server';
 
@@ -101,11 +100,10 @@ describe('createToolTaskHandler', () => {
     const store = createTestTaskStore();
     try {
       const handler = createToolTaskHandler(
-        async () =>
-          ({
-            content: [{ type: 'text', text: 'done' }],
-            structuredContent: { ok: true },
-          }),
+        async () => ({
+          content: [{ type: 'text', text: 'done' }],
+          structuredContent: { ok: true },
+        }),
         { toolName: 'test_tool' }
       );
 
@@ -151,13 +149,10 @@ describe('createToolTaskHandler', () => {
   it('getTask returns normalized task state', async () => {
     const store = createTestTaskStore();
     try {
-      const handler = createToolTaskHandler(
-        async () =>
-          ({
-            content: [{ type: 'text', text: 'done' }],
-            structuredContent: { ok: true },
-          })
-      );
+      const handler = createToolTaskHandler(async () => ({
+        content: [{ type: 'text', text: 'done' }],
+        structuredContent: { ok: true },
+      }));
 
       const { task } = await handler.createTask(createMockExtra(store));
       // Allow background execution to complete
@@ -181,13 +176,10 @@ describe('createToolTaskHandler', () => {
   it('getTaskResult returns CallToolResult after completion', async () => {
     const store = createTestTaskStore();
     try {
-      const handler = createToolTaskHandler(
-        async () =>
-          ({
-            content: [{ type: 'text', text: 'hello' }],
-            structuredContent: { ok: true },
-          })
-      );
+      const handler = createToolTaskHandler(async () => ({
+        content: [{ type: 'text', text: 'hello' }],
+        structuredContent: { ok: true },
+      }));
 
       const { task } = await handler.createTask(createMockExtra(store));
       // Wait for background execution
@@ -206,14 +198,11 @@ describe('createToolTaskHandler', () => {
   it('error result projects to failed status', async () => {
     const store = createTestTaskStore();
     try {
-      const handler = createToolTaskHandler(
-        async () =>
-          ({
-            content: [{ type: 'text', text: 'UNKNOWN: boom' }],
-            isError: true,
-            errorCode: ErrorCode.UNKNOWN,
-          })
-      );
+      const handler = createToolTaskHandler(async () => ({
+        content: [{ type: 'text', text: 'UNKNOWN: boom' }],
+        isError: true,
+        errorCode: ErrorCode.UNKNOWN,
+      }));
 
       const { task } = await handler.createTask(createMockExtra(store));
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -230,19 +219,16 @@ describe('createToolTaskHandler', () => {
   it('cancelled error code projects to cancelled status', async () => {
     const store = createTestTaskStore();
     try {
-      const handler = createToolTaskHandler(
-        async () =>
-          ({
-            content: [
-              {
-                type: 'text',
-                text: `Error [${ErrorCode.CANCELLED}]: aborted`,
-              },
-            ],
-            isError: true,
-            errorCode: ErrorCode.CANCELLED,
-          })
-      );
+      const handler = createToolTaskHandler(async () => ({
+        content: [
+          {
+            type: 'text',
+            text: `Error [${ErrorCode.CANCELLED}]: aborted`,
+          },
+        ],
+        isError: true,
+        errorCode: ErrorCode.CANCELLED,
+      }));
 
       const { task } = await handler.createTask(createMockExtra(store));
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -259,13 +245,10 @@ describe('createToolTaskHandler', () => {
   it('applies default TTL when none is requested', async () => {
     const store = createTestTaskStore();
     try {
-      const handler = createToolTaskHandler(
-        async () =>
-          ({
-            content: [{ type: 'text', text: 'ok' }],
-            structuredContent: { ok: true },
-          })
-      );
+      const handler = createToolTaskHandler(async () => ({
+        content: [{ type: 'text', text: 'ok' }],
+        structuredContent: { ok: true },
+      }));
 
       const { task } = await handler.createTask(createMockExtra(store));
       assert.equal(task.ttl, DEFAULT_TASK_TTL_MS);
@@ -277,13 +260,10 @@ describe('createToolTaskHandler', () => {
   it('clamps oversized TTL to MAX_TASK_TTL_MS', async () => {
     const store = createTestTaskStore();
     try {
-      const handler = createToolTaskHandler(
-        async () =>
-          ({
-            content: [{ type: 'text', text: 'ok' }],
-            structuredContent: { ok: true },
-          })
-      );
+      const handler = createToolTaskHandler(async () => ({
+        content: [{ type: 'text', text: 'ok' }],
+        structuredContent: { ok: true },
+      }));
 
       const ctx = {
         ...createMockExtra(store),
@@ -457,13 +437,10 @@ describe('createToolTaskHandler', () => {
   it('getTaskResult attaches io.modelcontextprotocol/related-task metadata', async () => {
     const store = createTestTaskStore();
     try {
-      const handler = createToolTaskHandler(
-        async () =>
-          ({
-            content: [{ type: 'text', text: 'done' }],
-            structuredContent: { ok: true },
-          })
-      );
+      const handler = createToolTaskHandler(async () => ({
+        content: [{ type: 'text', text: 'done' }],
+        structuredContent: { ok: true },
+      }));
 
       const { task } = await handler.createTask(createMockExtra(store));
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -487,11 +464,10 @@ describe('createToolTaskHandler', () => {
     const store = createTestTaskStore();
     try {
       const handler = createToolTaskHandler(
-        async () =>
-          ({
-            content: [{ type: 'text', text: 'ok' }],
-            structuredContent: { ok: true },
-          }),
+        async () => ({
+          content: [{ type: 'text', text: 'ok' }],
+          structuredContent: { ok: true },
+        }),
         { toolName: 'grep' }
       );
 

@@ -11,7 +11,6 @@ import {
   type StandardSchemaWithJSON,
   type Task,
   type TaskServerContext,
-  type TaskStatus,
   type TaskStatusNotification,
   type TaskStatusNotificationParams,
   type ToolTaskHandler,
@@ -347,9 +346,9 @@ async function acquireTaskCreationLock(
 
   taskCreationLocks.set(
     taskStore,
-    previous.catch(() => {}).then(() => next)
+    previous.catch(() => undefined).then(() => next)
   );
-  await previous.catch(() => {});
+  await previous.catch(() => undefined);
   return () => {
     release();
   };
