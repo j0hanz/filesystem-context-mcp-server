@@ -613,4 +613,51 @@ describe('HTTP transport', () => {
     assert.equal(followUpResponse.status, 404);
     assert.match(await followUpResponse.text(), /Session not found/u);
   });
+
+  it('sets headersTimeout, requestTimeout, and keepAliveTimeout for Slowloris protection', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+
+    const s = server as import('node:http').Server & {
+      headersTimeout: number;
+      requestTimeout: number;
+      keepAliveTimeout: number;
+    };
+    assert.equal(s.headersTimeout, 10_000, 'headersTimeout must be 10s');
+    assert.equal(s.requestTimeout, 30_000, 'requestTimeout must be 30s');
+    assert.equal(s.keepAliveTimeout, 5_000, 'keepAliveTimeout must be 5s');
+  });
+
+  it('does not crash on post-startup HTTP server errors', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+
+    const listenerCount = server.listenerCount('error');
+    assert.ok(
+      listenerCount >= 1,
+      `Expected at least one persistent error listener, got ${listenerCount}`
+    );
+  });
+
+  it('returns 413 for request bodies exceeding the size limit', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+    const port = getServerPort(server);
+
+    const bigBody = 'x'.repeat(5 * 1024 * 1024);
+    const response = await rawHttpRequest({
+      port,
+      method: 'POST',
+      path: '/mcp',
+      headers: { 'content-type': 'application/json' },
+      body: bigBody,
+    });
+
+    assert.equal(response.statusCode, 413);
+    const parsed = JSON.parse(response.body) as { error?: { message?: string } };
+    assert.match(parsed.error?.message ?? '', /too large/iu);
+  });
 });

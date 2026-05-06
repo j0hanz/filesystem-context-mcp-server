@@ -310,7 +310,7 @@ async function readRequestBody(req: IncomingMessage): Promise<unknown> {
         if (!tooBig) {
           tooBig = true;
           chunks.length = 0; // free accumulated memory
-          req.pause(); // stop emitting data events; TCP window fills naturally
+          req.resume(); // drain so the connection can be cleanly closed
           reject(new RequestBodyError('Request body too large', 413));
         }
         return;
@@ -840,6 +840,11 @@ export async function startHttpServer(
     }
   );
 
+  // Slowloris / slow-body DoS protection
+  httpServer.headersTimeout = 10_000;
+  httpServer.requestTimeout = 30_000;
+  httpServer.keepAliveTimeout = 5_000;
+
   httpServer.once('close', () => {
     clearInterval(sweepTimer);
   });
@@ -859,6 +864,10 @@ export async function startHttpServer(
     httpServer.once('error', reject);
     httpServer.listen(port, httpHost, () => {
       Logger.info(`MCP HTTP server listening on ${httpHost}:${port}`);
+      // Persistent handler for errors after startup (once above is consumed on listen failure only).
+      httpServer.on('error', (err: Error) => {
+        Logger.error('[HTTP] Server runtime error:', err.message);
+      });
       resolve(httpServer);
     });
   });
