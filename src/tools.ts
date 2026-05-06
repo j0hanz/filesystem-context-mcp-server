@@ -8,7 +8,7 @@ import {
   CALCULATE_HASH_TOOL,
   registerCalculateHashTool,
 } from './tools/calculate-hash.js';
-import { type ToolContract } from './tools/contract.js';
+import type { ToolContract } from './tools/contract.js';
 import {
   CREATE_DIRECTORY_TOOL,
   registerCreateDirectoryTool,

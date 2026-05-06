@@ -388,7 +388,7 @@ async function createHttpSession(
       });
       activeServers.set(sessionId, {
         server: mcpServer,
-        loggingState: rootsManager['loggingState'],
+        loggingState: rootsManager.loggingState,
       });
       rootsManager.logMissingDirectoriesIfNeeded(mcpServer);
     },
@@ -523,9 +523,9 @@ function ensureAuthorizedRequest(
   req: IncomingMessage,
   res: ServerResponse
 ): boolean {
-  const apiKey = process.env['FILESYSTEM_MCP_API_KEY'];
+  const apiKey = process.env.FILESYSTEM_MCP_API_KEY;
   if (!apiKey) return true;
-  if (isAuthorizedBearer(apiKey, req.headers['authorization'])) return true;
+  if (isAuthorizedBearer(apiKey, req.headers.authorization)) return true;
   writeUnauthorizedResponse(res);
   return false;
 }
@@ -559,7 +559,7 @@ function ensureAllowedHostHeader(
   }
 
   const hostHeader =
-    typeof req.headers['host'] === 'string' ? req.headers['host'] : undefined;
+    typeof req.headers.host === 'string' ? req.headers.host : undefined;
   const result = validateHostHeader(hostHeader, allowedHostnames);
   if (result.ok) return true;
 
@@ -621,7 +621,7 @@ function isLoopbackHttpHost(host: string): boolean {
 
 function assertHttpBindingSecurity(host: string): void {
   if (isLoopbackHttpHost(host)) return;
-  if (process.env['FILESYSTEM_MCP_API_KEY']) return;
+  if (process.env.FILESYSTEM_MCP_API_KEY) return;
   throw new Error(
     `Refusing to bind HTTP server to non-loopback host '${host}' without FILESYSTEM_MCP_API_KEY.`
   );
@@ -675,7 +675,7 @@ export async function startHttpServer(
 ): Promise<Server> {
   const sessions = new Map<string, HttpSession>();
   const eventStore = new InMemoryEventStore();
-  const httpHost = process.env['FILESYSTEM_MCP_HTTP_HOST'] ?? '127.0.0.1';
+  const httpHost = process.env.FILESYSTEM_MCP_HTTP_HOST ?? '127.0.0.1';
   assertHttpBindingSecurity(httpHost);
   let closingSessions: Promise<void> | undefined;
 
@@ -858,7 +858,7 @@ export async function startHttpServer(
       );
     });
     return originalClose(callback);
-  }) as typeof httpServer.close;
+  });
 
   return new Promise<Server>((resolve, reject) => {
     httpServer.once('error', reject);

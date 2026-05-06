@@ -126,7 +126,7 @@ export function getInitHandshakeTimeoutMs(): number {
 }
 
 export const INIT_TIMEOUT_CLOSE = parseTrueEnvFlag(
-  process.env['FS_INIT_TIMEOUT_CLOSE']
+  process.env.FS_INIT_TIMEOUT_CLOSE
 );
 
 export const TASK_POLL_INTERVAL_MS = 500;

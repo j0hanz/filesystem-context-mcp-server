@@ -1,3 +1,6 @@
+# Git worktrees
+.worktrees/
+
 # Dependencies
 node_modules/
 yarn.lock
@@ -6,11 +9,22 @@ pnpm-lock.yaml
 # Build output
 dist/
 *.tsbuildinfo
+.tsbuildinfo.build
+.tsbuildinfo.examples
+.tsbuildinfo.tests
 
 # Environment variables
 .env
 .env.local
 .env.*.local
+
+# Tasks runner history
+.tasks-history.json
+.tasks-last-failure.json
+.tasks-test-hang.json
+
+# Test workspace-cache leftovers
+tmp-workspace-cache-*/
 
 # MCP Registry auth tokens
 .mcpregistry_*
@@ -25,13 +39,15 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 logs/
-memory_db
+memory_db/
 .tmp/
 
 # Editor directories and files
 .github/*
+.agents/*
 .claude/
 !.github/workflows/
+!.github/resources.md
 .vscode/*
 !.vscode/extensions.json
 !.vscode/tasks.json

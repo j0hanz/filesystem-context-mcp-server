@@ -1,4 +1,4 @@
-import { type McpServer, type Root } from '@modelcontextprotocol/server';
+import type { McpServer, Root } from '@modelcontextprotocol/server';
 
 import { channel } from 'node:diagnostics_channel';
 import { realpath } from 'node:fs/promises';
@@ -53,7 +53,7 @@ const RootsResponseSchema = z.strictObject({
 });
 
 function isRoot(value: unknown): value is Root {
-  return isRecord(value) && typeof value['uri'] === 'string';
+  return isRecord(value) && typeof value.uri === 'string';
 }
 
 function normalizeRoot(root: Root): Root {

@@ -3,7 +3,7 @@ import { channel } from 'node:diagnostics_channel';
 
 import { ErrorCode, McpError } from './errors.js';
 
-export interface TextResourceEntry {
+interface TextResourceEntry {
   uri: string;
   name: string;
   mimeType: string;

@@ -17,7 +17,7 @@ export function withOptionalStoppedReason<T extends object, R extends string>(
   stoppedReason: R | undefined
 ): T & { stoppedReason?: R } {
   if (stoppedReason === undefined) {
-    return summary as T & { stoppedReason?: R };
+    return summary;
   }
   return { ...summary, stoppedReason };
 }

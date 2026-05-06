@@ -1,197 +1,2244 @@
-/* eslint-disable */
+#!/usr/bin/env node
+/**
+ * tasks.mjs — orchestrates the dev-loop checks (format, lint, type-check, knip, test, rebuild).
+ *
+ * Modes:
+ *   default     format → [lint, type-check, knip] parallel → [test, rebuild] parallel  (fail-fast)
+ *   --fix       sequential, auto-fix format/lint/knip then re-run
+ *   --quick     skip test + rebuild
+ *   --all       continue past failures across all tasks
+ *   --json      machine-readable single-line JSON to stdout (suppresses human output)
+ *   --llm       append failure-detail JSON block to stdout (also written to .tasks-last-failure.json)
+ *   --detail N  post-mortem source-window for the Nth test failure of the previous run
+ *
+ * Side-effect files (both .gitignored):
+ *   .tasks-history.json       rolling window of the last MAX_DURATIONS=5 test durations per test name.
+ *                             Used to derive an adaptive silence timeout: max(MIN_SILENCE_MS, 10 × max-historical).
+ *   .tasks-last-failure.json  written on any non-zero exit, deleted on a green run.
+ *                             Schema: { ok, mode, wallMs, tasks[], slowestTests[], failureSummary[], timestamp }.
+ *
+ * Exit codes: 0 ok | 1 failed | 2 cli error | 130 SIGINT | 143 SIGTERM | 128+N other signals.
+ *
+ * Honors NO_COLOR (https://no-color.org) and non-TTY stdout — ANSI escapes are suppressed in CI logs.
+ *
+ * Concurrency: not safe to run two instances in parallel against the same workspace
+ * (history / failure JSON files race). Bounded internal parallelism is the static task list (≤3).
+ *
+ * Requires Node ≥22 (Promise.withResolvers, AbortSignal.any). Repo pins Node ≥24.
+ */
 import { spawn } from 'node:child_process';
-import { access, chmod, cp, mkdir, rm } from 'node:fs/promises';
-import { join } from 'node:path';
-import { parseArgs } from 'node:util';
+import { once } from 'node:events';
+import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { readFile, rename, rm, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import process from 'node:process';
+import readline from 'node:readline';
+import { setTimeout as delay } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
+import { parseArgs, stripVTControlCharacters } from 'node:util';
 
-const TSC = join('node_modules', 'typescript', 'bin', 'tsc');
+const runController = new AbortController();
 
-const PATHS = {
-  dist: 'dist',
-  tmp: '.tmp',
-  assets: 'assets',
-  executable: 'dist/index.js',
-  distAssets: join('dist', 'assets'),
+const Config = Object.freeze({
+  HISTORY_FILE: '.tasks-history.json',
+  FAILURE_FILE: '.tasks-last-failure.json',
+  MAX_DURATIONS: 5,
+  MIN_SILENCE_MS: 30_000,
+  STARTUP_MIN_MS: 30_000,
+  MAX_STDERR_CHARS: 256 * 1024,
+  MAX_STDOUT_CHARS: 1024 * 1024,
+  MAX_STDERR_CHARS_EXEC: 256 * 1024,
+  KILL_GRACE_MS: 5_000,
+  RAW_OUTPUT_MAX_LINES: 40,
+  MAX_ERRORS_IN_FILE: 1000,
+  MAX_FAILURE_CARDS: 50,
+  IS_WINDOWS: process.platform === 'win32',
+});
+
+const COLOR_ENABLED =
+  !!process.stdout.isTTY &&
+  !process.env.NO_COLOR &&
+  process.env.TERM !== 'dumb' &&
+  process.env.CI !== 'true';
+
+const ansi = (code) => (COLOR_ENABLED ? code : '');
+
+const Theme = Object.freeze({
+  R: ansi('\x1b[0m'),
+  BOLD: ansi('\x1b[1m'),
+  DIM: ansi('\x1b[2m'),
+  GREEN: ansi('\x1b[32m'),
+  RED: ansi('\x1b[31m'),
+  YELLOW: ansi('\x1b[33m'),
+  CYAN: ansi('\x1b[36m'),
+  BLUE: ansi('\x1b[34m'),
+  CLEAR_EOL: ansi('\x1b[K'),
+});
+
+const Icons = Object.freeze({
+  PASS: `${Theme.GREEN}✔${Theme.R}`,
+  FAIL: `${Theme.RED}✖${Theme.R}`,
+  RUN: `${Theme.BLUE}❯${Theme.R}`,
+  SKIP: `${Theme.YELLOW}⊘${Theme.R}`,
+  HANG: `${Theme.YELLOW}⧖${Theme.R}`,
+  FIX: `${Theme.CYAN}↻${Theme.R}`,
+});
+
+const SignalExitCodes = Object.freeze({ SIGINT: 130, SIGTERM: 143 });
+
+function signalExitCode(signalName) {
+  return SignalExitCodes[signalName] ?? 128;
+}
+
+const HELP_TEXT = [
+  'Usage: node scripts/tasks.mjs [flags]',
+  '',
+  '  --fix        Run lint:fix / knip --fix instead of check',
+  '  --quick      Skip test + rebuild',
+  '  --all        Run-all mode: continue past failures across all tasks',
+  '  --json       Emit single JSON object on stdout, suppress human output',
+  '  --llm        Echo failure detail to stdout (always written to .tasks-last-failure.json)',
+  '  --detail <n> Show source-window detail for test failure at index n',
+  '  --watch      Run node --test in watch mode (bypasses orchestration; stdio inherited)',
+  '  --test-timeout <ms>           Forward to node --test-timeout',
+  '  --test-name-pattern <regex>   Forward to node --test-name-pattern',
+  '  --test-shard <i/n>            Forward to node --test-shard',
+  '  --update-snapshots            Forward to node --test-update-snapshots',
+  '  --help       Show this help',
+  '',
+  'Note: when running under --permission, this script needs --allow-fs-read,',
+  '  --allow-fs-write, and --allow-child-process to spawn npm/npx/tsc/node test runs.',
+  '',
+].join('\n');
+
+const Text = {
+  normalizePath(value) {
+    return String(value || '').replaceAll('\\', '/');
+  },
+
+  joinOutput(stdout = '', stderr = '') {
+    return `${stdout || ''}\n${stderr || ''}`.trim();
+  },
+
+  cap(value, maxChars) {
+    const text = String(value || '');
+    return text.length > maxChars ? text.slice(0, maxChars) : text;
+  },
+
+  appendCapped(current, chunk, maxChars) {
+    if (current.length >= maxChars) return { value: current, truncated: true };
+    const remaining = maxChars - current.length;
+    if (chunk.length > remaining) {
+      return { value: current + chunk.slice(0, remaining), truncated: true };
+    }
+    return { value: current + chunk, truncated: false };
+  },
+
+  elapsed(ms) {
+    return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
+  },
+
+  plural(count, singular) {
+    return `${count} ${singular}${count === 1 ? '' : 's'}`;
+  },
 };
 
-const TEST_PATTERNS = [
-  '__tests__/**/*.test.ts',
-  'src/__tests__/**/*.test.ts',
-  'node-tests/**/*.test.ts',
-];
-
-// --- Helpers ---
-
-function pathExists(p) {
-  return access(p).then(
-    () => true,
-    () => false
-  );
-}
-
-function elapsed(start) {
-  return ((performance.now() - start) / 1000).toFixed(2);
-}
-
-function run(args, { stdio = 'inherit' } = {}) {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(process.execPath, args, {
-      stdio,
-      shell: false,
-      windowsHide: true,
-    });
-
-    const out = [];
-    const err = [];
-    if (stdio === 'pipe') {
-      proc.stdout.on('data', (d) => out.push(d));
-      proc.stderr.on('data', (d) => err.push(d));
+const Json = {
+  parse(value, fallback = null) {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return fallback;
     }
+  },
+};
 
-    proc.on('error', reject);
-    proc.on('close', (code) => {
-      if (code === 0) return resolve(Buffer.concat(out).toString());
-      const stderr = Buffer.concat(err).toString();
-      const stdout = Buffer.concat(out).toString();
-      reject(
-        new Error(
-          `node ${args[0]} exited with code ${code}\n${stderr || stdout}`
-        )
+const FileStore = {
+  async readJson(file, fallback) {
+    let raw;
+    try {
+      raw = await readFile(file, 'utf8');
+    } catch {
+      return fallback;
+    }
+    try {
+      return JSON.parse(raw);
+    } catch (err) {
+      process.stderr.write(
+        `${Theme.YELLOW}warning${Theme.R} corrupt JSON at ${file} (${err?.message || err}); using defaults\n`
       );
+      return fallback;
+    }
+  },
+
+  async writeJsonAtomic(file, payload) {
+    const tmp = `${file}.tmp`;
+    await writeFile(tmp, JSON.stringify(payload, null, 2) + '\n', 'utf8');
+    await rename(tmp, file);
+  },
+
+  writeJsonAtomicSync(file, payload) {
+    const tmp = `${file}.tmp`;
+    writeFileSync(tmp, JSON.stringify(payload, null, 2) + '\n', 'utf8');
+    renameSync(tmp, file);
+  },
+
+  removeSync(file) {
+    try {
+      rmSync(file, { force: true });
+    } catch {
+      // best-effort cleanup only
+    }
+  },
+};
+
+const Results = {
+  pass(extra = {}) {
+    return { ok: true, ...extra };
+  },
+
+  fail(extra = {}) {
+    return { ok: false, ...extra };
+  },
+
+  skip(reason = 'skipped') {
+    return { ok: null, skipped: true, skipReason: reason };
+  },
+
+  raw(stdout = '', stderr = '', prefix = '', meta = {}) {
+    const output = Text.joinOutput(stdout, stderr);
+    const rawOutput = prefix ? `${prefix}\n${output}`.trim() : output;
+    return this.fail({
+      rawOutput,
+      ...(meta.truncatedStdout ? { truncatedStdout: true } : {}),
+      ...(meta.truncatedStderr ? { truncatedStderr: true } : {}),
+      ...(meta.status !== undefined && meta.status !== null
+        ? { status: meta.status }
+        : {}),
+      ...(meta.signal ? { signal: meta.signal } : {}),
+      ...(meta.command ? { command: meta.command } : {}),
     });
+  },
+
+  diagnostics(errors) {
+    const counts = countDiagnostics(errors);
+    return this.fail({ errors, counts });
+  },
+};
+
+function countDiagnostics(errors) {
+  let errorCount = 0;
+  let warningCount = 0;
+  for (const diagnostic of errors || []) {
+    if (diagnostic.severity === 'warning') warningCount++;
+    else errorCount++;
+  }
+  return { errors: errorCount, warnings: warningCount };
+}
+
+function parseCliConfig(args) {
+  let values;
+  try {
+    ({ values } = parseArgs({
+      args,
+      options: {
+        fix: { type: 'boolean' },
+        quick: { type: 'boolean' },
+        all: { type: 'boolean' },
+        json: { type: 'boolean' },
+        llm: { type: 'boolean' },
+        watch: { type: 'boolean' },
+        detail: { type: 'string' },
+        'test-timeout': { type: 'string' },
+        'test-name-pattern': { type: 'string' },
+        'test-shard': { type: 'string' },
+        'update-snapshots': { type: 'boolean' },
+        help: { type: 'boolean', short: 'h' },
+      },
+      strict: true,
+      allowPositionals: false,
+    }));
+  } catch (err) {
+    process.stderr.write(`${err?.message || String(err)}\n\n${HELP_TEXT}`);
+    process.exitCode = 2;
+    return null;
+  }
+
+  if (values.help) {
+    process.stdout.write(HELP_TEXT);
+    process.exitCode = 0;
+    return null;
+  }
+
+  if (values.detail !== undefined) {
+    const n = Number(values.detail);
+    if (!Number.isInteger(n) || n < 1) {
+      process.stderr.write(
+        `--detail requires a positive integer (got: ${values.detail})\n\n${HELP_TEXT}`
+      );
+      process.exitCode = 2;
+      return null;
+    }
+  }
+
+  if (values['test-timeout'] !== undefined) {
+    const n = Number(values['test-timeout']);
+    if (!Number.isInteger(n) || n < 1) {
+      process.stderr.write(
+        `--test-timeout requires a positive integer ms (got: ${values['test-timeout']})\n\n${HELP_TEXT}`
+      );
+      process.exitCode = 2;
+      return null;
+    }
+  }
+
+  if (
+    values['test-shard'] !== undefined &&
+    !/^\d+\/\d+$/.test(values['test-shard'])
+  ) {
+    process.stderr.write(
+      `--test-shard requires <index>/<total> (got: ${values['test-shard']})\n\n${HELP_TEXT}`
+    );
+    process.exitCode = 2;
+    return null;
+  }
+
+  return Object.freeze({
+    fix: !!values.fix,
+    quick: !!values.quick,
+    all: !!values.all,
+    json: !!values.json,
+    llm: !!values.llm,
+    watch: !!values.watch,
+    detail: values.detail !== undefined ? Number(values.detail) : null,
+    testTimeout:
+      values['test-timeout'] !== undefined
+        ? Number(values['test-timeout'])
+        : null,
+    testNamePattern: values['test-name-pattern'] ?? null,
+    testShard: values['test-shard'] ?? null,
+    updateSnapshots: !!values['update-snapshots'],
   });
 }
 
-async function runTask(name, fn) {
-  const start = performance.now();
-  console.log(`> ${name}...`);
-  try {
-    await fn();
-    console.log(`> ${name} ✅ (${elapsed(start)}s)`);
-  } catch (err) {
-    console.error(`> ${name} ❌\n${err.message || err}`);
-    throw err;
+function describeSpawnError(err, cmd) {
+  const code = err?.code;
+  const base = err?.message || String(err);
+  if (code === 'ENOENT') {
+    return `${base}\nhint: '${cmd}' was not found on PATH. Run 'npm install' (or ensure Node ≥24 / corepack is set up).`;
   }
-}
-
-// --- Tasks ---
-
-function clean() {
-  return Promise.all([
-    rm(PATHS.dist, { recursive: true, force: true }),
-    rm(PATHS.tmp, { recursive: true, force: true }),
-  ]);
-}
-
-function compile() {
-  return run([TSC, '-p', 'tsconfig.build.json']);
-}
-
-async function copyAssets() {
-  await mkdir(PATHS.dist, { recursive: true });
-  if (await pathExists(PATHS.assets)) {
-    await cp(PATHS.assets, PATHS.distAssets, { recursive: true });
+  if (code === 'ERR_ACCESS_DENIED' || code === 'EACCES' || code === 'EPERM') {
+    return `${base}\nhint: spawn was denied. If running under --permission, pass --allow-fs-read --allow-fs-write --allow-child-process.`;
   }
+  return base;
 }
 
-function makeExecutable() {
-  return chmod(PATHS.executable, '755').catch(() => {});
-}
+const ProcessRunner = {
+  command(cmd, args) {
+    if (Config.IS_WINDOWS && (cmd === 'npm' || cmd === 'npx')) {
+      return {
+        cmd: 'cmd.exe',
+        args: ['/d', '/c', cmd, ...args],
+        windowsVerbatimArguments: true,
+      };
+    }
+    return { cmd, args, windowsVerbatimArguments: false };
+  },
 
-async function build() {
-  const start = performance.now();
-  console.log('🚀 Starting build...');
-  await runTask('Cleaning dist', clean);
-  await runTask('Compiling TypeScript', compile);
-  await runTask('Copying assets', copyAssets);
-  await runTask('Making executable', makeExecutable);
-  console.log(`\n✨ Build completed in ${elapsed(start)}s`);
-}
+  spawnOptions(
+    command,
+    { signal, stdio = ['ignore', 'pipe', 'pipe'], encoding } = {}
+  ) {
+    return {
+      ...(stdio ? { stdio } : {}),
+      ...(encoding ? { encoding } : {}),
+      ...(signal ? { signal } : {}),
+      ...(Config.IS_WINDOWS ? { windowsHide: true } : {}),
+      ...(command.windowsVerbatimArguments
+        ? { windowsVerbatimArguments: true }
+        : {}),
+    };
+  },
 
-async function typeCheck() {
-  const start = performance.now();
-  console.log('🚀 Starting concurrent type checks...');
+  async execAsync(cmd, args, options = {}) {
+    const {
+      signal = runController.signal,
+      maxStdout = Config.MAX_STDOUT_CHARS,
+      maxStderr = Config.MAX_STDERR_CHARS_EXEC,
+    } = options;
+    const command = this.command(cmd, args);
 
-  const results = await Promise.allSettled([
-    run([TSC, '-p', 'tsconfig.json', '--noEmit'], { stdio: 'pipe' }),
-    run([TSC, '-p', 'tsconfig.test.json', '--noEmit'], { stdio: 'pipe' }),
-  ]);
+    return new Promise((resolve) => {
+      let settled = false;
+      let stdout = '';
+      let stderr = '';
+      let truncatedStdout = false;
+      let truncatedStderr = false;
 
-  const labels = ['src', 'tests'];
-  let failed = false;
-  for (const [i, r] of results.entries()) {
-    if (r.status === 'rejected') {
-      console.error(
-        `\n❌ Type-check ${labels[i]} failed:\n${r.reason.message}`
+      const settle = (payload) => {
+        if (settled) return;
+        settled = true;
+        resolve(payload);
+      };
+
+      let child;
+      try {
+        child = spawn(
+          command.cmd,
+          command.args,
+          this.spawnOptions(command, { signal })
+        );
+      } catch (err) {
+        settle({
+          ok: false,
+          stdout: '',
+          stderr: describeSpawnError(err, cmd),
+          status: null,
+          signal: null,
+          truncatedStdout: false,
+          truncatedStderr: false,
+        });
+        return;
+      }
+
+      child.stdout?.setEncoding('utf8');
+      child.stderr?.setEncoding('utf8');
+      child.stdout?.on('data', (chunk) => {
+        const next = Text.appendCapped(stdout, chunk, maxStdout);
+        stdout = next.value;
+        truncatedStdout ||= next.truncated;
+      });
+      child.stderr?.on('data', (chunk) => {
+        const next = Text.appendCapped(stderr, chunk, maxStderr);
+        stderr = next.value;
+        truncatedStderr ||= next.truncated;
+      });
+      child.on('close', (code, signalName) => {
+        settle({
+          ok: code === 0,
+          stdout,
+          stderr,
+          status: code,
+          signal: signalName,
+          truncatedStdout,
+          truncatedStderr,
+        });
+      });
+      child.on('error', (err) => {
+        if (err?.name === 'AbortError') return;
+        settle({
+          ok: false,
+          stdout,
+          stderr: describeSpawnError(err, cmd),
+          status: null,
+          signal: null,
+          truncatedStdout,
+          truncatedStderr,
+        });
+      });
+    });
+  },
+};
+
+const HistoryManager = {
+  async load(file = Config.HISTORY_FILE) {
+    const parsed = await FileStore.readJson(file, null);
+    return this.sanitize(parsed);
+  },
+
+  sanitize(parsed) {
+    const test_durations = Object.create(null);
+    const src =
+      parsed && typeof parsed === 'object' ? parsed.test_durations : null;
+    if (!src || typeof src !== 'object') return { test_durations };
+
+    for (const key of Object.keys(src)) {
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype')
+        continue;
+      const value = src[key];
+      if (!Array.isArray(value)) continue;
+      test_durations[key] = value.filter(
+        (n) => typeof n === 'number' && Number.isFinite(n)
       );
-      failed = true;
+    }
+    return { test_durations };
+  },
+
+  async save(history, newDurations, file = Config.HISTORY_FILE) {
+    for (const [name, ms] of newDurations || []) {
+      const arr = history.test_durations[name] || [];
+      arr.push(ms);
+      history.test_durations[name] = arr.slice(-Config.MAX_DURATIONS);
+    }
+    await FileStore.writeJsonAtomic(file, history);
+  },
+
+  getSilenceTimeout(history) {
+    const all = Object.values(history.test_durations).flat();
+    if (all.length === 0) return Config.MIN_SILENCE_MS;
+    return Math.max(Config.MIN_SILENCE_MS, 10 * Math.max(...all));
+  },
+};
+
+const EslintParser = {
+  parse(jsonText, cwd) {
+    const results = Json.parse(jsonText, []);
+    if (!Array.isArray(results)) return [];
+
+    const errors = [];
+    for (const file of results) {
+      const messages = Array.isArray(file?.messages) ? file.messages : [];
+      if (messages.length === 0) continue;
+      const rel = Text.normalizePath(path.relative(cwd, file.filePath || ''));
+      for (const msg of messages) errors.push(this.toDiagnostic(msg, rel));
+    }
+    return errors;
+  },
+
+  toDiagnostic(msg, file) {
+    const col = msg.column || 1;
+    return {
+      file,
+      line: msg.line || 1,
+      col,
+      endCol: msg.endColumn || col + 3,
+      rule: msg.ruleId || 'unknown',
+      severity: msg.severity === 1 ? 'warning' : 'error',
+      message: msg.message,
+    };
+  },
+};
+
+const TscParser = {
+  RE: /^(.+?)\((\d+),(\d+)\): (error|warning) (TS\d+): (.+)$/,
+
+  parse(text) {
+    const errors = [];
+    for (const line of String(text || '').split('\n')) {
+      const match = this.RE.exec(line);
+      if (!match) continue;
+      errors.push({
+        file: Text.normalizePath(match[1]),
+        line: Number(match[2]),
+        col: Number(match[3]),
+        endCol: Number(match[3]) + 3,
+        rule: match[5],
+        severity: match[4],
+        message: match[6],
+      });
+    }
+    return errors;
+  },
+};
+
+const KnipParser = {
+  RULES: Object.freeze({
+    files: { rule: 'unused-file', label: 'unused file' },
+    dependencies: { rule: 'unused-dep', label: 'unused dependency' },
+    devDependencies: { rule: 'unused-dev-dep', label: 'unused devDependency' },
+    optionalPeerDependencies: {
+      rule: 'unused-peer-dep',
+      label: 'unused optional peer dependency',
+    },
+    unlisted: { rule: 'unlisted-dep', label: 'unlisted dependency' },
+    binaries: { rule: 'unlisted-binary', label: 'unlisted binary' },
+    unresolved: { rule: 'unresolved-import', label: 'unresolved import' },
+    exports: { rule: 'unused-export', label: 'unused export' },
+    types: { rule: 'unused-type', label: 'unused exported type' },
+    nsExports: {
+      rule: 'unused-ns-export',
+      label: 'unused export in namespace',
+    },
+    nsTypes: { rule: 'unused-ns-type', label: 'unused type in namespace' },
+    duplicates: { rule: 'duplicate-export', label: 'duplicate export' },
+    enumMembers: { rule: 'unused-enum-member', label: 'unused enum member' },
+    namespaceMembers: {
+      rule: 'unused-ns-member',
+      label: 'unused namespace member',
+    },
+    catalog: { rule: 'catalog-issue', label: 'catalog issue' },
+  }),
+
+  FIXABLE_RULES: new Set([
+    'unused-dep',
+    'unused-dev-dep',
+    'unused-peer-dep',
+    'unused-export',
+    'unused-ns-export',
+    'unused-enum-member',
+    'unused-ns-member',
+    'unused-type',
+    'unused-ns-type',
+  ]),
+
+  isFixable(errors) {
+    return (
+      Array.isArray(errors) &&
+      errors.some((error) => this.FIXABLE_RULES.has(error.rule))
+    );
+  },
+
+  parse(jsonText) {
+    const parsed = Json.parse(jsonText, {});
+    const rows = Array.isArray(parsed?.issues) ? parsed.issues : [];
+    const errors = [];
+    for (const row of rows) this.parseRow(row, errors);
+    return errors;
+  },
+
+  extractJson(stdout) {
+    const text = String(stdout || '').trim();
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    return start >= 0 && end > start ? text.slice(start, end + 1) : '';
+  },
+
+  parseRow(row, errors) {
+    const file = row?.file ? Text.normalizePath(row.file) : '';
+    if (!file) return;
+
+    for (const [category, meta] of Object.entries(this.RULES)) {
+      const list = row[category];
+      if (!Array.isArray(list) || list.length === 0) continue;
+      if (category === 'duplicates')
+        this.pushDuplicateErrors(errors, file, list);
+      else
+        for (const entry of list)
+          this.pushError(errors, file, category, meta, entry);
+    }
+  },
+
+  pushDuplicateErrors(errors, file, groups) {
+    for (const group of groups) {
+      if (!Array.isArray(group) || group.length === 0) continue;
+      const names = group
+        .map((item) => item?.name)
+        .filter(Boolean)
+        .join(', ');
+      const first = group[0] || {};
+      this.pushError(errors, file, 'duplicates', this.RULES.duplicates, {
+        name: names || 'duplicate',
+        line: first.line,
+        col: first.col,
+      });
+    }
+  },
+
+  parsePos(val) {
+    return Number.isInteger(val) && val > 0 ? val : 1;
+  },
+
+  normalizeEntry(entry) {
+    const line = this.parsePos(entry?.line);
+    const col = this.parsePos(entry?.col);
+    const name = entry?.name || '';
+    const namespace = entry?.namespace ? `${entry.namespace}.` : '';
+    return { line, col, name, namespace };
+  },
+
+  pushError(errors, file, category, meta, entry) {
+    const { line, col, name, namespace } = this.normalizeEntry(entry);
+    const message =
+      category === 'files'
+        ? 'Unused file (no references found)'
+        : `${meta.label}: ${namespace}${name}`;
+
+    errors.push({
+      file,
+      line,
+      col,
+      endCol: col + Math.max(3, String(name).length || 3),
+      rule: meta.rule,
+      severity: 'error',
+      message,
+    });
+  },
+};
+
+const TapParser = {
+  OK_RE: /^\s*ok \d+ - (.+?)(?:\s+#\s+time=(\S+))?$/,
+  NOT_OK_RE: /^\s*not ok \d+ - (.+)$/,
+  YAML_KV_RE: /^(\w+):\s*(.*)$/,
+  YAML_BLOCK_FRAME_RE: /(?:at\s+)?\S+\s+\(([^)]+:\d+:\d+)\)/,
+
+  parseLine(line) {
+    const indent = line.match(/^(\s*)/)?.[1]?.length || 0;
+    const ok = this.OK_RE.exec(line);
+    if (ok) {
+      return {
+        type: 'ok',
+        depth: indent,
+        name: ok[1].trim(),
+        duration: ok[2] ? parseFloat(ok[2]) : 0,
+      };
+    }
+
+    const notOk = this.NOT_OK_RE.exec(line);
+    if (notOk) return { type: 'not_ok', depth: indent, name: notOk[1].trim() };
+    if (/^\s+---\s*$/.test(line)) return { type: 'yaml_start' };
+    if (/^\s+\.\.\.\s*$/.test(line)) return { type: 'yaml_end' };
+    return { type: 'raw', line };
+  },
+
+  parseYaml(lines) {
+    const result = Object.create(null);
+    let multiKey = null;
+    const multiLines = [];
+
+    const flushMulti = () => {
+      if (multiKey === null) return;
+      result[multiKey] = multiLines.join('\n').trim();
+      multiKey = null;
+      multiLines.length = 0;
+    };
+
+    for (const raw of lines) {
+      const trimmed = raw.trim();
+      const kv = this.YAML_KV_RE.exec(trimmed);
+
+      if (kv) {
+        flushMulti();
+        this.writeYamlKv(result, kv, (key) => {
+          multiKey = key;
+        });
+      } else if (multiKey !== null) {
+        multiLines.push(trimmed);
+      }
+    }
+    flushMulti();
+
+    if (!result.at && result.stack) {
+      const match = this.YAML_BLOCK_FRAME_RE.exec(result.stack);
+      if (match && !match[1].startsWith('node:')) result.at = match[1];
+    }
+    if (!result.at && result.location) {
+      result.at = result.location.replace(/\\\\/g, '\\');
+    }
+    return result;
+  },
+
+  writeYamlKv(result, kv, setMultiKey) {
+    const [, key, value] = kv;
+    if (value === '|-' || value === '|') {
+      setMultiKey(key);
+      return;
+    }
+    result[key] = value.replace(/^'|'$/g, '');
+  },
+};
+
+class TestTapState {
+  constructor() {
+    this.seenFirstOk = false;
+    this.lastCompleted = null;
+    this.testDurations = new Map();
+    this.failures = [];
+    this.currentFailName = null;
+    this.currentFailIndex = -1;
+    this.currentOkName = null;
+    this.inYaml = false;
+    this.yamlLines = [];
+    this.stderrBuf = '';
+  }
+
+  appendStderr(chunk) {
+    const next = Text.appendCapped(
+      this.stderrBuf,
+      chunk,
+      Config.MAX_STDERR_CHARS
+    );
+    this.stderrBuf = next.value;
+  }
+
+  handleLine(line) {
+    const ev = TapParser.parseLine(line);
+    if (ev.type === 'ok') return this.handleOk(ev);
+    if (ev.type === 'not_ok') return this.handleNotOk(ev);
+    if (ev.type === 'yaml_start') return this.startYaml();
+    if (ev.type === 'yaml_end' && this.inYaml) return this.endYaml();
+    if (this.inYaml) this.yamlLines.push(line);
+  }
+
+  handleOk(ev) {
+    this.seenFirstOk = true;
+    this.lastCompleted = { name: ev.name, duration: ev.duration };
+    this.testDurations.set(ev.name, ev.duration);
+    this.currentOkName = ev.name;
+    this.currentFailName = null;
+    this.inYaml = false;
+    this.yamlLines.length = 0;
+  }
+
+  handleNotOk(ev) {
+    this.seenFirstOk = true;
+    this.currentFailName = ev.name;
+    this.currentOkName = null;
+    this.inYaml = false;
+    this.yamlLines.length = 0;
+    this.currentFailIndex = this.failures.length;
+    this.failures.push({
+      name: ev.name,
+      file: '',
+      expected: undefined,
+      actual: undefined,
+      errorMessage: undefined,
+      frame: null,
+    });
+  }
+
+  startYaml() {
+    this.inYaml = true;
+    this.yamlLines.length = 0;
+  }
+
+  endYaml() {
+    this.inYaml = false;
+    const yaml = TapParser.parseYaml([...this.yamlLines]);
+    if (this.currentFailName) this.enrichCurrentFailure(yaml);
+    else if (this.currentOkName && yaml.duration_ms !== undefined)
+      this.updateCurrentDuration(yaml);
+    this.yamlLines.length = 0;
+    this.currentFailName = null;
+    this.currentOkName = null;
+  }
+
+  enrichCurrentFailure(yaml) {
+    const enriched = {
+      name: this.currentFailName,
+      file: yaml.at ? yaml.at.replace(/:\d+:\d+$/, '') : '',
+      expected: yaml.expected,
+      actual: yaml.actual,
+      errorMessage: yaml.error,
+      frame: yaml.at || null,
+    };
+
+    if (
+      this.currentFailIndex >= 0 &&
+      this.failures[this.currentFailIndex].name === this.currentFailName
+    ) {
+      this.failures[this.currentFailIndex] = enriched;
     } else {
-      console.log(`> Type-check ${labels[i]} ✅`);
+      this.failures.push(enriched);
     }
   }
 
-  if (failed) throw new Error('Type checks failed');
-  console.log(`✨ Type checks passed in ${elapsed(start)}s`);
+  updateCurrentDuration(yaml) {
+    const ms = parseFloat(yaml.duration_ms);
+    if (!Number.isFinite(ms)) return;
+    this.testDurations.set(this.currentOkName, ms);
+    this.lastCompleted = { name: this.currentOkName, duration: ms };
+  }
 }
 
-async function test(args) {
-  await build();
+class TestRunner {
+  constructor({
+    historyManager = HistoryManager,
+    signal = runController.signal,
+    testConfig = {},
+  } = {}) {
+    this.historyManager = historyManager;
+    this.signal = signal;
+    this.testConfig = testConfig;
+  }
 
-  const dirResults = await Promise.all(
-    TEST_PATTERNS.map(async (p) => ({
-      pattern: p,
-      ok: await pathExists(p.split('/')[0]),
-    }))
-  );
-  const patterns = dirResults.filter((d) => d.ok).map((d) => d.pattern);
+  buildArgv() {
+    const argv = [
+      '--enable-source-maps',
+      '--import',
+      'tsx/esm',
+      '--env-file-if-exists=.env',
+      '--test',
+      '--no-warnings',
+      '--test-reporter=tap',
+    ];
+    if (!Config.IS_WINDOWS) {
+      argv.push(
+        '--report-on-signal',
+        '--report-signal=SIGUSR2',
+        '--report-filename=.tasks-test-hang.json',
+        '--report-exclude-env',
+        '--report-exclude-network'
+      );
+    }
+    if (this.testConfig.testTimeout) {
+      argv.push(`--test-timeout=${this.testConfig.testTimeout}`);
+    }
+    if (this.testConfig.testNamePattern) {
+      argv.push(`--test-name-pattern=${this.testConfig.testNamePattern}`);
+    }
+    if (this.testConfig.testShard) {
+      argv.push(`--test-shard=${this.testConfig.testShard}`);
+    }
+    if (this.testConfig.updateSnapshots) {
+      argv.push('--test-update-snapshots');
+    }
+    return argv;
+  }
 
-  if (patterns.length === 0) throw new Error('No test directories found.');
+  async run() {
+    const history = await this.historyManager.load();
+    const silenceMs = this.historyManager.getSilenceTimeout(history);
+    const startupMs = Math.max(silenceMs, Config.STARTUP_MIN_MS);
+    const abortController = new AbortController();
+    const state = new TestTapState();
 
-  const [hasTsx, hasTsNode] = await Promise.all([
-    pathExists('node_modules/tsx'),
-    pathExists('node_modules/ts-node'),
-  ]);
+    const child = spawn(
+      process.execPath,
+      this.buildArgv(),
+      ProcessRunner.spawnOptions(
+        {},
+        { signal: AbortSignal.any([abortController.signal, this.signal]) }
+      )
+    );
 
-  const loader = hasTsx
-    ? ['--import', 'tsx/esm']
-    : hasTsNode
-      ? ['--loader', 'ts-node/esm']
-      : [];
+    child.stdout?.on('error', noop);
+    child.stderr?.on('error', noop);
+    child.stderr?.setEncoding('utf8');
+    child.stderr?.on('data', (chunk) => state.appendStderr(chunk));
 
-  const coverage = args.includes('--coverage')
-    ? ['--experimental-test-coverage']
-    : [];
+    const lines = readline.createInterface({
+      input: child.stdout,
+      crlfDelay: Infinity,
+    });
+    lines.on('error', noop);
+    const { promise, resolve } = Promise.withResolvers();
+    let resolved = false;
+    let activeTimerMs = startupMs;
+    let silenceTimer;
 
-  await runTask('Running tests', () =>
-    run(['--test', ...loader, ...coverage, ...patterns])
-  );
+    const settle = (value) => {
+      if (resolved) return;
+      resolved = true;
+      if (silenceTimer) clearTimeout(silenceTimer);
+      lines.close();
+      resolve(value);
+    };
+
+    const forceKillAfterGrace = () => {
+      const timer = setTimeout(() => {
+        try {
+          if (Config.IS_WINDOWS) {
+            if (child.pid !== undefined) {
+              spawn('taskkill', ['/F', '/T', '/PID', String(child.pid)], {
+                stdio: 'ignore',
+                windowsHide: true,
+              }).on('error', noop);
+            } else {
+              child.kill();
+            }
+          } else {
+            child.kill('SIGKILL');
+          }
+        } catch {
+          // ignore kill errors
+        }
+      }, Config.KILL_GRACE_MS).unref();
+      return timer;
+    };
+
+    const handleTimeout = async () => {
+      const maxHistorical = Math.max(
+        0,
+        ...Object.values(history.test_durations).flat()
+      );
+      const phase = state.seenFirstOk ? 'between-tests' : 'startup';
+      const ms = state.seenFirstOk ? silenceMs : startupMs;
+
+      // Ask the test child to write its own diagnostic report (active handles, native stacks)
+      // via --report-on-signal=SIGUSR2 (POSIX only). Wait briefly for it to flush, then abort.
+      if (!Config.IS_WINDOWS && child.pid !== undefined) {
+        try {
+          child.kill('SIGUSR2');
+        } catch {
+          // ignore signal errors
+        }
+        try {
+          await Promise.race([
+            once(child, 'close'),
+            delay(500, undefined, { ref: false }),
+          ]);
+        } catch {
+          // ignore drain errors
+        }
+      }
+
+      try {
+        abortController.abort(new Error('test silence timeout'));
+      } catch {
+        // ignore abort errors
+      }
+
+      const killTimer = forceKillAfterGrace();
+      try {
+        await once(child, 'close');
+      } catch {
+        // ignore close errors
+      }
+      clearTimeout(killTimer);
+      settle({
+        ok: false,
+        timeout: true,
+        silenceMs: ms,
+        phase,
+        lastCompletedTest: state.lastCompleted,
+        suiteMaxHistoricalMs: maxHistorical,
+        rawOutput: state.stderrBuf || undefined,
+      });
+    };
+
+    silenceTimer = setTimeout(handleTimeout, activeTimerMs).unref();
+
+    const armTimer = () => {
+      if (state.seenFirstOk && activeTimerMs !== silenceMs) {
+        clearTimeout(silenceTimer);
+        activeTimerMs = silenceMs;
+        silenceTimer = setTimeout(handleTimeout, activeTimerMs).unref();
+        return;
+      }
+      silenceTimer.refresh();
+    };
+
+    lines.on('line', (line) => {
+      armTimer();
+      state.handleLine(line);
+    });
+
+    child.on('error', (err) => {
+      if (err?.name === 'AbortError') return;
+      settle(Results.fail({ rawOutput: err?.message || String(err) }));
+    });
+
+    child.on('close', async (code) => {
+      if (state.failures.length > 0) {
+        settle(
+          Results.fail({
+            failures: state.failures,
+            testDurations: state.testDurations,
+          })
+        );
+        return;
+      }
+
+      if (code !== 0) {
+        settle(
+          Results.fail({
+            rawOutput:
+              state.stderrBuf || `test runner exited with code ${code}`,
+          })
+        );
+        return;
+      }
+
+      try {
+        await this.historyManager.save(history, state.testDurations);
+      } catch {
+        // best-effort: history write must never fail a green run
+      }
+      settle(Results.pass({ testDurations: state.testDurations }));
+    });
+
+    return promise;
+  }
 }
 
-// --- Router ---
+const TaskCommands = {
+  format(config) {
+    return ['npm', ['run', config.fix ? 'format' : 'format:check']];
+  },
 
-const ROUTES = {
-  clean: () => runTask('Cleaning dist', clean),
-  'copy:assets': () => runTask('Copying assets', copyAssets),
-  'make-executable': () => runTask('Making executable', makeExecutable),
-  build,
-  'type-check': typeCheck,
-  test: (restArgs) => test(restArgs),
+  lintCheck() {
+    return ['npx', ['eslint', '.', '--max-warnings=0', '--format=json']];
+  },
+
+  lintFix() {
+    return ['npm', ['run', 'lint:fix']];
+  },
+
+  typeCheck() {
+    return [
+      'npx',
+      ['tsc', '-p', 'tsconfig.json', '--noEmit', '--pretty', 'false'],
+    ];
+  },
+
+  knipCheck() {
+    return ['npx', ['knip', '--reporter', 'json', '--no-progress']];
+  },
+
+  knipFix() {
+    // NOTE: knip ignores comma-separated values passed to a single `--fix-type` flag
+    // (it parses the whole string as one type and silently disables all fixes).
+    // Repeating the flag is the only reliable form, so keep this as multiple `--fix-type` args.
+    // `--format` is intentionally omitted: on Windows knip spawns `npx prettier`
+    // without a shell and crashes with ENOENT. We run `npm run format` ourselves
+    // after a successful knip --fix (see TaskOrchestrator.attemptAutoFix).
+    return [
+      'npx',
+      [
+        'knip',
+        '--fix',
+        '--fix-type',
+        'exports',
+        '--fix-type',
+        'types',
+        '--fix-type',
+        'dependencies',
+      ],
+    ];
+  },
+
+  build() {
+    return ['npm', ['run', 'build']];
+  },
 };
 
-const { positionals } = parseArgs({ strict: false, allowPositionals: true });
-const taskName = positionals[0] ?? 'build';
-const action = ROUTES[taskName];
+const TaskRunners = {
+  async command(cmd, args) {
+    const result = await ProcessRunner.execAsync(cmd, args);
+    if (result.ok) return Results.pass();
+    return Results.raw(result.stdout, result.stderr, '', {
+      truncatedStdout: result.truncatedStdout,
+      truncatedStderr: result.truncatedStderr,
+      status: result.status,
+      signal: result.signal,
+      command: `${cmd} ${args.join(' ')}`.trim(),
+    });
+  },
 
-if (!action) {
-  console.error(
-    `Unknown task: ${taskName}\nAvailable tasks: ${Object.keys(ROUTES).join(', ')}`
-  );
-  process.exitCode = 1;
-} else {
-  try {
-    // Pass raw args to task runners (test command expects remaining args)
-    await action(process.argv.slice(3));
-  } catch {
+  async diagnosticCommand({
+    command,
+    parse,
+    output = (result) => result.stdout,
+  }) {
+    const [cmd, args] = command;
+    const result = await ProcessRunner.execAsync(cmd, args);
+    if (result.ok) return Results.pass();
+
+    const text = output(result);
+    const errors = parse(text);
+    if (errors.length === 0) {
+      return Results.raw(result.stdout, result.stderr, '', {
+        truncatedStdout: result.truncatedStdout,
+        truncatedStderr: result.truncatedStderr,
+        status: result.status,
+        signal: result.signal,
+        command: `${cmd} ${args.join(' ')}`.trim(),
+      });
+    }
+    return Results.diagnostics(errors);
+  },
+
+  async runFormat(config) {
+    return this.command(...TaskCommands.format(config));
+  },
+
+  async runLint(fix) {
+    if (fix) {
+      const result = await this.command(...TaskCommands.lintFix());
+      if (!result.ok) return result;
+      // Validate after mutating so a green --fix cannot hide residual lint errors.
+    }
+    return this.diagnosticCommand({
+      command: TaskCommands.lintCheck(),
+      parse: (stdout) => EslintParser.parse(stdout || '[]', process.cwd()),
+    });
+  },
+
+  async runTypeCheck() {
+    return this.diagnosticCommand({
+      command: TaskCommands.typeCheck(),
+      parse: (text) => TscParser.parse(text),
+      output: (result) => Text.joinOutput(result.stdout, result.stderr),
+    });
+  },
+
+  async runKnip() {
+    return this.diagnosticCommand({
+      command: TaskCommands.knipCheck(),
+      parse: (stdout) => KnipParser.parse(KnipParser.extractJson(stdout)),
+      output: (result) => result.stdout,
+    });
+  },
+
+  async runBuild() {
+    try {
+      await rm('dist', { recursive: true, force: true });
+    } catch (err) {
+      return Results.fail({
+        rawOutput: `dist removal failed: ${err?.message || String(err)}`,
+      });
+    }
+    return this.command(...TaskCommands.build());
+  },
+
+  async runTest(testConfig = {}) {
+    return new TestRunner({ testConfig }).run();
+  },
+};
+
+function parseFrame(frame) {
+  let f = String(frame || '');
+  if (f.startsWith('file:')) {
+    const suffix = /(:\d+:\d+)$/.exec(f);
+    if (suffix) {
+      try {
+        f = fileURLToPath(f.slice(0, f.length - suffix[0].length)) + suffix[0];
+      } catch {
+        // not a valid file URL; fall through to plain path parsing
+      }
+    }
+  }
+  const m3 = /^(.+):(\d+):(\d+)$/.exec(f);
+  if (m3) return { file: m3[1], line: Number(m3[2]), col: Number(m3[3]) };
+  const m2 = /^(.+):(\d+)$/.exec(f);
+  if (m2) return { file: m2[1], line: Number(m2[2]), col: 1 };
+  return null;
+}
+
+class SourceCache {
+  constructor() {
+    this.cache = new Map();
+  }
+
+  clear() {
+    this.cache.clear();
+  }
+
+  lines(filePath) {
+    if (this.cache.has(filePath)) return this.cache.get(filePath);
+    let lines;
+    try {
+      lines = readFileSync(filePath, 'utf8').split('\n');
+    } catch {
+      lines = [];
+    }
+    this.cache.set(filePath, lines);
+    return lines;
+  }
+}
+
+const sourceCache = new SourceCache();
+
+const OutputRenderer = {
+  clearCache() {
+    sourceCache.clear();
+  },
+
+  renderSourceWindow(filePath, line, col) {
+    const src = filePath
+      ? sourceCache.lines(path.resolve(process.cwd(), filePath))
+      : [];
+    const BEFORE = 4;
+    const AFTER = 5;
+    const startLine = Math.max(1, line - BEFORE);
+    const endLine = Math.min(src.length || line, line + AFTER);
+    const gutterW = String(endLine).length;
+    const pad = ' '.repeat(gutterW);
+    const output = [];
+
+    output.push(`${Theme.DIM}${pad} |${Theme.R}`);
+    for (let n = startLine; n <= endLine; n++) {
+      const srcLine = src[n - 1] || '';
+      const gutter = String(n).padStart(gutterW);
+      if (n === line) {
+        output.push(
+          `${Theme.BOLD}${gutter}${Theme.R} ${Theme.DIM}│${Theme.R} ${srcLine}`
+        );
+        output.push(
+          `${Theme.DIM}${pad} │${Theme.R} ${' '.repeat(Math.max(0, col - 1))}${Theme.RED}^^^${Theme.R}`
+        );
+      } else {
+        output.push(`${Theme.DIM}${gutter} │ ${srcLine}${Theme.R}`);
+      }
+    }
+    output.push(`${Theme.DIM}${pad} |${Theme.R}`);
+    return output.join('\n');
+  },
+
+  renderDetailView(failure, index) {
+    const { name, frame, errorMessage, expected, actual } = failure;
+    let errorLabel;
+    if (expected !== undefined && actual !== undefined) {
+      errorLabel = 'AssertionError';
+    } else if (errorMessage) {
+      errorLabel = errorMessage;
+    } else {
+      errorLabel = 'unknown error';
+    }
+
+    process.stdout.write(
+      `\n  ${Theme.BOLD}Failure ${index}${Theme.R} — ${name}\n\n`
+    );
+    process.stdout.write(
+      `  ${Theme.RED}error${Theme.R}  ${Theme.DIM}${errorLabel}${Theme.R}\n`
+    );
+
+    if (frame) {
+      process.stdout.write(`    ${Theme.DIM}-->${Theme.R} ${frame}\n\n`);
+      const parsed = parseFrame(frame);
+      if (parsed) {
+        process.stdout.write(
+          this.renderSourceWindow(parsed.file, parsed.line, parsed.col)
+        );
+        process.stdout.write('\n');
+      }
+    } else {
+      process.stdout.write(
+        `  ${Theme.DIM}(no source location available)${Theme.R}\n`
+      );
+    }
+  },
+
+  renderDiagnostic(error, cwd = process.cwd()) {
+    const { file, line, col, endCol, rule, severity, message } = error;
+    const color = severity === 'warning' ? Theme.YELLOW : Theme.RED;
+    const output = [];
+
+    output.push(`${color}${severity}[${rule}]${Theme.R}  ${message}`);
+    output.push(`  ${Theme.DIM}-->${Theme.R} ${file}:${line}:${col}`);
+
+    const src = sourceCache.lines(path.resolve(cwd, file));
+    const gutterW = String(line + 1).length;
+    const pad = ' '.repeat(gutterW);
+    const underlineLen = Math.max(3, (endCol || col + 3) - col);
+    const underline = '^'.repeat(underlineLen);
+
+    output.push(`${Theme.DIM}${pad} |${Theme.R}`);
+    this.renderSourceContext(
+      output,
+      src,
+      line,
+      col,
+      pad,
+      gutterW,
+      color,
+      underline
+    );
+    return output.join('\n');
+  },
+
+  renderSourceContext(output, src, line, col, pad, gutterW, color, underline) {
+    if (line < 1 || line > src.length) {
+      output.push(
+        `${Theme.DIM}${pad} │${Theme.R} ${' '.repeat(col - 1)}${color}${underline}${Theme.R}`
+      );
+      return;
+    }
+
+    for (const n of [line - 1, line, line + 1]) {
+      if (n < 1 || n > src.length) continue;
+      const srcLine = src[n - 1] || '';
+      const gutter = String(n).padStart(gutterW);
+      if (n === line) {
+        output.push(
+          `${Theme.BOLD}${gutter}${Theme.R} ${Theme.DIM}│${Theme.R} ${srcLine}`
+        );
+        output.push(
+          `${Theme.DIM}${pad} │${Theme.R} ${' '.repeat(col - 1)}${color}${underline}${Theme.R}`
+        );
+      } else {
+        output.push(`${Theme.DIM}${gutter} │ ${srcLine}${Theme.R}`);
+      }
+    }
+  },
+
+  renderTestFailureCard(failure) {
+    const { name, file, expected, actual, errorMessage, frame } = failure;
+    const output = [];
+
+    output.push(`${Theme.RED}FAIL${Theme.R}  ${Theme.DIM}${file}${Theme.R}`);
+    output.push(`  ${Theme.RED}✗${Theme.R}  ${name}`);
+    output.push('');
+
+    if (expected !== undefined && actual !== undefined) {
+      output.push(`     ${Theme.DIM}AssertionError:${Theme.R}`);
+      output.push(`     ${Theme.RED}- Expected   ${expected}${Theme.R}`);
+      output.push(`     ${Theme.GREEN}+ Received   ${actual}${Theme.R}`);
+    } else if (errorMessage) {
+      output.push(`     ${Theme.RED}${errorMessage}${Theme.R}`);
+    }
+
+    if (frame) {
+      output.push('');
+      output.push(`     ${Theme.DIM}at ${frame}${Theme.R}`);
+    }
+    return output.join('\n');
+  },
+
+  renderDiagnosticsGrouped(errors, cwd = process.cwd()) {
+    const byFile = new Map();
+    for (const err of errors) {
+      const list = byFile.get(err.file) || [];
+      list.push(err);
+      byFile.set(err.file, list);
+    }
+
+    for (const [file, list] of byFile) {
+      process.stdout.write(`  ${Theme.BOLD}${file}${Theme.R}\n\n`);
+      for (const err of list) {
+        const block = this.renderDiagnostic(err, cwd)
+          .split('\n')
+          .map((line) => `    ${line}`)
+          .join('\n');
+        process.stdout.write(`${block}\n\n`);
+      }
+    }
+  },
+
+  emitLlmBlock(data) {
+    const HR = '─'.repeat(53);
+    process.stdout.write(
+      `\n${HR}\n## LLM CONTEXT\n\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\`\n${HR}\n\n`
+    );
+  },
+};
+
+class Aggregate {
+  constructor(mode) {
+    this.mode = mode;
+    this.tasks = [];
+    this.passed = 0;
+    this.failed = 0;
+    this.skipped = 0;
+    this.slowestTests = [];
+    this.wallStart = Date.now();
+  }
+
+  record(label, result, ms) {
+    if (result.skipped) return this.recordSkip(label, result.skipReason);
+    if (result.ok) return this.recordPass(label, ms, result.annotation);
+    return this.recordFail(label, result, ms);
+  }
+
+  recordPass(label, ms, annotation) {
+    this.tasks.push({
+      label,
+      ok: true,
+      ms,
+      skipped: false,
+      ...(annotation ? { annotation } : {}),
+    });
+    this.passed++;
+  }
+
+  recordFail(label, result, ms) {
+    this.tasks.push({
+      label,
+      ok: false,
+      ms,
+      skipped: false,
+      ...(result.counts ? { counts: result.counts } : {}),
+      ...(result.errors
+        ? { errors: result.errors.slice(0, Config.MAX_ERRORS_IN_FILE) }
+        : {}),
+      ...(result.failures
+        ? { failures: result.failures.slice(0, Config.MAX_ERRORS_IN_FILE) }
+        : {}),
+      ...(result.timeout
+        ? {
+            timeout: true,
+            phase: result.phase,
+            silenceMs: result.silenceMs,
+            ...(result.lastCompletedTest
+              ? { lastCompletedTest: result.lastCompletedTest }
+              : {}),
+            ...(result.suiteMaxHistoricalMs
+              ? { suiteMaxHistoricalMs: result.suiteMaxHistoricalMs }
+              : {}),
+          }
+        : {}),
+      ...(result.rawOutput
+        ? { rawOutput: Text.cap(result.rawOutput, 4000) }
+        : {}),
+      ...(result.truncatedStdout ? { truncatedStdout: true } : {}),
+      ...(result.truncatedStderr ? { truncatedStderr: true } : {}),
+      ...(result.status !== undefined && result.status !== null
+        ? { status: result.status }
+        : {}),
+      ...(result.signal ? { signal: result.signal } : {}),
+      ...(result.command ? { command: result.command } : {}),
+    });
+    this.failed++;
+  }
+
+  recordSkip(label, reason) {
+    this.tasks.push({
+      label,
+      ok: null,
+      ms: 0,
+      skipped: true,
+      skipReason: reason,
+    });
+    this.skipped++;
+  }
+
+  setSlowestTests(testDurations) {
+    if (!testDurations || testDurations.size === 0) return;
+    this.slowestTests = [...testDurations.entries()]
+      .map(([name, ms]) => ({ name, ms: typeof ms === 'number' ? ms : 0 }))
+      .sort((a, b) => b.ms - a.ms)
+      .slice(0, 5);
+  }
+
+  wallMs() {
+    return Date.now() - this.wallStart;
+  }
+
+  failures() {
+    return this.tasks.filter((task) => task.ok === false);
+  }
+
+  failureSummary() {
+    const failed = this.failures();
+    if (failed.length === 0) return null;
+    return failed
+      .map((task) => {
+        if (task.timeout) return `${task.label}: timeout`;
+        if (task.counts?.errors)
+          return `${task.label}: ${Text.plural(task.counts.errors, 'error')}`;
+        if (task.failures)
+          return `${task.label}: ${Text.plural(task.failures.length, 'failure')}`;
+        return `${task.label}: failed`;
+      })
+      .join(', ');
+  }
+}
+
+class BaseReporter {
+  constructor(config, colWidth) {
+    this.config = config;
+    this.col = colWidth;
+    this.tickerHandle = null;
+  }
+
+  header() {
+    // no-op
+  }
+  taskStart() {
+    // no-op
+  }
+  taskEnd() {
+    // no-op
+  }
+  groupStart() {
+    // no-op
+  }
+  groupTaskEnd() {
+    // no-op
+  }
+  groupEnd() {
+    // no-op
+  }
+  failureDetail() {
+    // no-op
+  }
+  summary() {
+    // no-op
+  }
+}
+
+class TtyReporter extends BaseReporter {
+  constructor(config, colWidth) {
+    super(config, colWidth);
+    this.useTicker = !!process.stdout.isTTY;
+    this.tickerStart = 0;
+    this.groupLabels = null;
+    this.groupDone = null;
+    this.groupStartMs = 0;
+  }
+
+  header() {
+    const flags = ['fix', 'quick', 'all']
+      .filter((flag) => this.config[flag])
+      .map((flag) => `${Theme.YELLOW}--${flag}${Theme.R}`);
+    const suffix = flags.length > 0 ? `  ${flags.join('  ')}` : '';
+    process.stdout.write(
+      `\n  ${Theme.BOLD}gemini-assistant${Theme.R}  ${Theme.DIM}checks${Theme.R}${suffix}\n\n`
+    );
+  }
+
+  taskStart(label) {
+    this.tickerStart = Date.now();
+    if (this.useTicker) {
+      this.writeTaskLine(Icons.RUN, label, '');
+      this.tickerHandle = setInterval(() => {
+        this.writeTaskLine(
+          Icons.RUN,
+          label,
+          `${Theme.DIM}${Text.elapsed(Date.now() - this.tickerStart)}${Theme.R}`
+        );
+      }, 1000).unref();
+    }
+    // In non-TTY mode we wait until taskEnd to emit a single final line.
+  }
+
+  taskEnd(label, result, ms) {
+    this.stopTicker();
+    const icon = this.resultIcon(result);
+    const right = this.resultRight(result, ms);
+    this.writeTaskLine(icon, label, right, true);
+  }
+
+  writeTaskLine(icon, label, right = '', newline = false) {
+    if (!this.useTicker) {
+      process.stdout.write(
+        `  ${icon}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}${right ? `  ${right}` : ''}\n`
+      );
+      return;
+    }
+    process.stdout.write(
+      `\r  ${icon}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}${right ? `  ${right}` : ''}${Theme.CLEAR_EOL}${newline ? '\n' : ''}`
+    );
+  }
+
+  resultIcon(result) {
+    if (result.skipped) return Icons.SKIP;
+    if (result.ok) return Icons.PASS;
+    if (result.timeout) return Icons.HANG;
+    return Icons.FAIL;
+  }
+
+  resultRight(result, ms) {
+    if (result.skipped)
+      return `${Theme.DIM}${result.skipReason || 'skipped'}${Theme.R}`;
+    const time = `${Theme.DIM}${Text.elapsed(ms)}${Theme.R}`;
+    const counts = this.formatCounts(result.counts);
+    let right = counts ? `${time}  ${counts}` : time;
+    if (result.annotation)
+      right += `  ${Theme.DIM}(${result.annotation})${Theme.R}`;
+    return right;
+  }
+
+  formatCounts(counts) {
+    if (!counts) return null;
+    const parts = [];
+    if (counts.errors)
+      parts.push(
+        `${Theme.RED}${Text.plural(counts.errors, 'error')}${Theme.R}`
+      );
+    if (counts.warnings)
+      parts.push(
+        `${Theme.YELLOW}${Text.plural(counts.warnings, 'warning')}${Theme.R}`
+      );
+    return parts.join(' · ') || null;
+  }
+
+  stopTicker() {
+    if (!this.tickerHandle) return;
+    clearInterval(this.tickerHandle);
+    this.tickerHandle = null;
+  }
+
+  groupStart(labels) {
+    this.groupLabels = [...labels];
+    this.groupDone = new Map();
+    this.groupStartMs = Date.now();
+    if (!this.useTicker) return;
+
+    for (const label of labels) {
+      process.stdout.write(
+        `  ${Icons.RUN}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}${Theme.CLEAR_EOL}\n`
+      );
+    }
+    this.tickerHandle = setInterval(() => this.redrawGroup(), 1000).unref();
+  }
+
+  groupTaskEnd(label, result, ms) {
+    const icon = this.resultIcon(result);
+    const right = this.resultRight(result, ms);
+    this.groupDone.set(label, { icon, right });
+    if (this.useTicker) {
+      this.redrawGroup();
+      return;
+    }
+    process.stdout.write(
+      `  ${icon}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}  ${right}${Theme.CLEAR_EOL}\n`
+    );
+  }
+
+  groupEnd() {
+    this.stopTicker();
+    if (this.useTicker && this.groupLabels) this.redrawGroup();
+    this.groupLabels = null;
+    this.groupDone = null;
+  }
+
+  redrawGroup() {
+    if (!this.groupLabels || !this.groupDone) return;
+    const elapsed = `${Theme.DIM}${Text.elapsed(Date.now() - this.groupStartMs)}${Theme.R}`;
+    process.stdout.write(`\x1b[${this.groupLabels.length}A`);
+    for (const label of this.groupLabels) {
+      const done = this.groupDone.get(label);
+      const icon = done?.icon || Icons.RUN;
+      const right = done?.right || elapsed;
+      process.stdout.write(
+        `  ${icon}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}  ${right}${Theme.CLEAR_EOL}\n`
+      );
+    }
+  }
+
+  failureDetail(failedTasks) {
+    for (const task of failedTasks) {
+      if (task.timeout) {
+        this.renderTimeout(task);
+        continue;
+      }
+      if (task.failures?.length > 0) {
+        this.renderTestFailures(task.failures);
+        continue;
+      }
+      if (task.errors?.length > 0) {
+        process.stdout.write('\n');
+        const total = task.errors.length;
+        const shown = task.errors.slice(0, Config.MAX_FAILURE_CARDS);
+        OutputRenderer.renderDiagnosticsGrouped(shown);
+        if (total > shown.length) {
+          process.stdout.write(
+            `  ${Theme.DIM}… ${total - shown.length} more diagnostics; full list in ${Config.FAILURE_FILE}${Theme.R}\n\n`
+          );
+        }
+        continue;
+      }
+      if (task.rawOutput) this.renderRawOutput(task.rawOutput, task);
+    }
+  }
+
+  renderTimeout(task) {
+    const startupPhase = task.phase === 'startup';
+    process.stdout.write('\n');
+    process.stdout.write(
+      `  ${Icons.HANG}  ${Theme.BOLD}TIMED OUT${Theme.R} — ${
+        startupPhase
+          ? `no TAP output during startup window (${Text.elapsed(task.silenceMs)})`
+          : `no TAP output for ${Text.elapsed(task.silenceMs)} between tests`
+      }\n\n`
+    );
+
+    if (task.lastCompletedTest) {
+      process.stdout.write(`  ${Theme.DIM}Last completed test:${Theme.R}\n`);
+      process.stdout.write(
+        `  ${Theme.GREEN}✔${Theme.R}  ${task.lastCompletedTest.name}\n\n`
+      );
+      process.stdout.write(
+        `  ${Theme.DIM}→ The hang likely occurred in the next test after this one.\n` +
+          `    Check for: unclosed handles, unresolved promises, missing mock teardown.${Theme.R}\n\n`
+      );
+    } else if (startupPhase) {
+      process.stdout.write(
+        `  ${Theme.DIM}→ Test process produced no TAP lines before the startup window expired.\n` +
+          `    Check for: top-level await deadlocks, missing .env / config, slow cold start.${Theme.R}\n\n`
+      );
+    }
+  }
+
+  renderTestFailures(failures) {
+    process.stdout.write('\n');
+    const total = failures.length;
+    const shown = failures.slice(0, Config.MAX_FAILURE_CARDS);
+    const maxIdx = String(total).length;
+    for (let i = 0; i < shown.length; i++) {
+      const f = shown[i];
+      const idx = String(i + 1).padStart(maxIdx);
+      const fileRef = f.frame
+        ? f.frame.replace(/:(\d+):(\d+)$/, ':$1')
+        : f.file || '';
+      const nameStr = Text.cap(f.name, 60);
+      process.stdout.write(
+        `    ${Theme.BOLD}${idx}${Theme.R}  ${nameStr.padEnd(62)}  ${Theme.DIM}${fileRef}${Theme.R}\n`
+      );
+    }
+    if (total > shown.length) {
+      process.stdout.write(
+        `    ${Theme.DIM}… ${total - shown.length} more failures; full list in ${Config.FAILURE_FILE}${Theme.R}\n`
+      );
+    }
+    process.stdout.write(
+      `\n  ${Theme.DIM}→ node scripts/tasks.mjs --detail <n>${Theme.R}\n\n`
+    );
+  }
+
+  renderRawOutput(rawOutput, task = {}) {
+    process.stdout.write('\n');
+    const cleanOutput = stripVTControlCharacters(rawOutput);
+    const lines = cleanOutput.trim().split('\n');
+    const shown = lines.slice(0, Config.RAW_OUTPUT_MAX_LINES);
+    for (const line of shown)
+      process.stdout.write(`      ${Theme.DIM}${line}${Theme.R}\n`);
+    if (lines.length > shown.length) {
+      process.stdout.write(
+        `      ${Theme.DIM}… ${lines.length - shown.length} more lines${Theme.R}\n`
+      );
+    }
+    if (task.truncatedStdout || task.truncatedStderr) {
+      const which = [
+        task.truncatedStdout ? 'stdout' : null,
+        task.truncatedStderr ? 'stderr' : null,
+      ]
+        .filter(Boolean)
+        .join(' + ');
+      process.stdout.write(
+        `      ${Theme.DIM}[${which} truncated]${Theme.R}\n`
+      );
+    }
+    process.stdout.write('\n');
+  }
+
+  summary(aggregate) {
+    process.stdout.write('\n');
+    this.renderSlowestTests(aggregate.slowestTests);
+
+    const total = aggregate.tasks.length - aggregate.skipped;
+    const wall = Text.elapsed(aggregate.wallMs());
+    if (aggregate.failed === 0) {
+      const skippedNote =
+        aggregate.skipped > 0
+          ? `  ${Theme.DIM}(${aggregate.skipped} skipped)${Theme.R}`
+          : '';
+      process.stdout.write(
+        `  ${Theme.GREEN}${Theme.BOLD}✓${Theme.R}  ${aggregate.passed}/${total} passed${skippedNote}  ${Theme.DIM}${wall}${Theme.R}\n\n`
+      );
+      return;
+    }
+
+    process.stdout.write(
+      `  ${Theme.RED}${Theme.BOLD}✗${Theme.R}  ${aggregate.failed} failed: ${aggregate.failureSummary() || 'failed'}  ${Theme.DIM}·${Theme.R}  ${aggregate.passed}/${total} ran  ${Theme.DIM}${wall}${Theme.R}\n`
+    );
+    process.stdout.write(
+      `  ${Theme.DIM}✎  failure details → ${Config.FAILURE_FILE}${Theme.R}\n\n`
+    );
+  }
+
+  renderSlowestTests(slowestTests) {
+    if (!slowestTests || slowestTests.length === 0) return;
+    process.stdout.write(`  ${Theme.DIM}Slowest tests:${Theme.R}\n`);
+    for (const test of slowestTests) {
+      process.stdout.write(
+        `    ${Text.elapsed(test.ms).padStart(5)}  ${Theme.DIM}${test.name}${Theme.R}\n`
+      );
+    }
+    process.stdout.write('\n');
+  }
+}
+
+const JSON_SCHEMA_VERSION = 1;
+
+class JsonReporter extends BaseReporter {
+  summary(aggregate) {
+    process.stdout.write(
+      JSON.stringify({
+        schemaVersion: JSON_SCHEMA_VERSION,
+        ok: aggregate.failed === 0,
+        mode: aggregate.mode,
+        wallMs: aggregate.wallMs(),
+        tasks: aggregate.tasks,
+        slowestTests: aggregate.slowestTests,
+        failureSummary: aggregate.failureSummary(),
+      }) + '\n'
+    );
+  }
+}
+
+function noop() {
+  // intentionally empty
+}
+
+async function renderDetailCommand(config) {
+  const { detail: index, llm, json } = config;
+
+  const data = await FileStore.readJson(Config.FAILURE_FILE, null);
+  if (!data) {
+    process.stderr.write(
+      `No failure data found. Run node scripts/tasks.mjs first.\n`
+    );
     process.exitCode = 1;
+    return;
+  }
+
+  const testTask = Array.isArray(data.tasks)
+    ? data.tasks.find(
+        (t) =>
+          t.label === 'test' &&
+          !t.ok &&
+          Array.isArray(t.failures) &&
+          t.failures.length > 0
+      )
+    : null;
+  const failures = testTask?.failures ?? [];
+
+  if (failures.length === 0) {
+    process.stderr.write(`No test failures in last run.\n`);
+    process.exitCode = 1;
+    return;
+  }
+
+  if (index < 1 || index > failures.length) {
+    process.stderr.write(
+      `Failure ${index} not found. Last run had ${Text.plural(failures.length, 'failure')}.\n`
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  const failure = failures[index - 1];
+
+  if (llm || json) {
+    const parsed = failure.frame ? parseFrame(failure.frame) : null;
+    const src = parsed
+      ? sourceCache.lines(path.resolve(process.cwd(), parsed.file))
+      : [];
+    const BEFORE = 4;
+    const AFTER = 5;
+    const startLine = parsed ? Math.max(1, parsed.line - BEFORE) : 1;
+    const endLine = parsed
+      ? Math.min(src.length || parsed.line, parsed.line + AFTER)
+      : 1;
+    const windowLines = src.slice(startLine - 1, endLine);
+
+    const payload = {
+      schemaVersion: JSON_SCHEMA_VERSION,
+      index,
+      name: failure.name,
+      file: failure.file || '',
+      frame: failure.frame || null,
+      errorMessage: failure.errorMessage ?? null,
+      expected: failure.expected ?? null,
+      actual: failure.actual ?? null,
+      sourceWindow: parsed
+        ? {
+            startLine,
+            highlightLine: parsed.line,
+            col: parsed.col,
+            lines: windowLines,
+          }
+        : null,
+    };
+
+    process.stdout.write(JSON.stringify(payload) + '\n');
+  } else {
+    OutputRenderer.renderDetailView(failure, index);
+    process.stdout.write('\n');
+  }
+}
+
+function writeFailureFile(aggregate, file = Config.FAILURE_FILE) {
+  const payload = {
+    ok: false,
+    mode: aggregate.mode,
+    wallMs: aggregate.wallMs(),
+    tasks: aggregate.tasks,
+    slowestTests: aggregate.slowestTests,
+    failureSummary: aggregate.failureSummary(),
+    timestamp: new Date().toISOString(),
+  };
+
+  try {
+    FileStore.writeJsonAtomicSync(file, payload);
+  } catch {
+    // best-effort: do not mask the actual task failure
+  }
+}
+
+function clearFailureFile(file = Config.FAILURE_FILE) {
+  FileStore.removeSync(file);
+}
+
+function installSignalHandlers(reporter, config) {
+  const signals = Config.IS_WINDOWS ? ['SIGINT'] : ['SIGINT', 'SIGTERM'];
+  let interrupted = false;
+
+  const handler = (signalName) => {
+    runController.abort();
+    const exitCode = signalExitCode(signalName);
+
+    if (interrupted) {
+      process.exit(exitCode);
+      return;
+    }
+    interrupted = true;
+
+    if (reporter?.tickerHandle) clearInterval(reporter.tickerHandle);
+    if (config?.json) {
+      process.stderr.write('\n  interrupted\n\n');
+      process.stdout.write(
+        JSON.stringify({
+          schemaVersion: JSON_SCHEMA_VERSION,
+          ok: false,
+          interrupted: true,
+        }) + '\n'
+      );
+    } else {
+      process.stdout.write('\x1b[?25h');
+      process.stdout.write(`\n  ${Theme.YELLOW}interrupted${Theme.R}\n\n`);
+    }
+    process.exitCode = exitCode;
+    // Allow tasks already in-flight to settle before truly exiting; second signal forces exit.
+  };
+
+  for (const signalName of signals) {
+    if (process.listenerCount(signalName) > 0) continue;
+    process.on(signalName, () => handler(signalName));
+  }
+}
+
+class TaskOrchestrator {
+  constructor(config) {
+    this.config = config;
+    this.tasks = this.createTasks(config);
+    this.col = Math.max(...this.tasks.map((task) => task.label.length)) + 2;
+  }
+
+  createTasks(config) {
+    return [
+      { label: 'format', runner: () => TaskRunners.runFormat(config) },
+      { label: 'lint', runner: () => TaskRunners.runLint(config.fix) },
+      { label: 'type-check', runner: () => TaskRunners.runTypeCheck() },
+      { label: 'knip', runner: () => TaskRunners.runKnip() },
+      {
+        label: 'test',
+        runner: () =>
+          TaskRunners.runTest({
+            testTimeout: config.testTimeout,
+            testNamePattern: config.testNamePattern,
+            testShard: config.testShard,
+            updateSnapshots: config.updateSnapshots,
+          }),
+        skip: config.quick,
+      },
+      {
+        label: 'rebuild',
+        runner: () => TaskRunners.runBuild(),
+        skip: config.quick,
+      },
+    ];
+  }
+
+  async run() {
+    const reporter = this.config.json
+      ? new JsonReporter(this.config, this.col)
+      : new TtyReporter(this.config, this.col);
+    installSignalHandlers(reporter, this.config);
+    reporter.header();
+
+    const aggregate = new Aggregate(this.config.all ? 'run-all' : 'fail-fast');
+    const testDurations = this.config.fix
+      ? await this.runSequential(aggregate, reporter)
+      : await this.runPhased(aggregate, reporter);
+
+    return this.finish(aggregate, reporter, testDurations);
+  }
+
+  async runSequential(aggregate, reporter) {
+    let testDurations = null;
+    for (const task of this.tasks) {
+      const result = await this.executeTask(task, aggregate, reporter, {
+        allowAutoFix: this.config.fix,
+      });
+      if (result?.testDurations) testDurations = result.testDurations;
+      if (!this.config.all && aggregate.failed > 0) break;
+    }
+    return testDurations;
+  }
+
+  async runPhased(aggregate, reporter) {
+    let testDurations = null;
+    const [formatTask, ...rest] = this.tasks;
+    const staticTasks = rest.slice(0, 3);
+    const deepTasks = rest.slice(3);
+
+    await this.executeTask(formatTask, aggregate, reporter, {
+      allowAutoFix: true,
+    });
+    if (this.shouldStop(aggregate)) return null;
+
+    await this.executeGroup(staticTasks, aggregate, reporter);
+    if (this.shouldStop(aggregate)) return null;
+
+    const results = await this.executeGroup(deepTasks, aggregate, reporter);
+    for (const result of results) {
+      if (result?.result?.testDurations)
+        testDurations = result.result.testDurations;
+    }
+    return testDurations;
+  }
+
+  shouldStop(aggregate) {
+    return aggregate.failed > 0 && !this.config.all;
+  }
+
+  shouldGate(task, aggregate) {
+    return (
+      !this.config.all &&
+      aggregate.failed > 0 &&
+      (task.label === 'test' || task.label === 'rebuild')
+    );
+  }
+
+  async executeTask(task, aggregate, reporter, options = {}) {
+    const result = await this.runTaskWithReporting(
+      task,
+      aggregate,
+      reporter,
+      options
+    );
+    aggregate.record(task.label, result, result.ms || 0);
+    return result;
+  }
+
+  _checkSkip(task, aggregate) {
+    if (task.skip) return Results.skip('skipped');
+    if (this.shouldGate(task, aggregate))
+      return Results.skip('gated on prior failure');
+    return null;
+  }
+
+  async runTaskWithReporting(task, aggregate, reporter, options = {}) {
+    const skipResult = this._checkSkip(task, aggregate);
+    if (skipResult) {
+      reporter.taskStart(task.label);
+      reporter.taskEnd(task.label, skipResult, 0);
+      return { ...skipResult, ms: 0 };
+    }
+
+    OutputRenderer.clearCache();
+    reporter.taskStart(task.label);
+    const { result, ms } = await this.runMeasured(task, options);
+    reporter.taskEnd(task.label, result, ms);
+    return { ...result, ms };
+  }
+
+  async executeGroup(tasks, aggregate, reporter) {
+    const activeTasks = [];
+    const completed = [];
+
+    for (const task of tasks) {
+      const skipResult = this._checkSkip(task, aggregate);
+      if (skipResult) {
+        reporter.taskStart(task.label);
+        reporter.taskEnd(task.label, skipResult, 0);
+        aggregate.record(task.label, skipResult, 0);
+        completed.push({ task, result: skipResult, ms: 0 });
+      } else {
+        activeTasks.push(task);
+      }
+    }
+
+    if (activeTasks.length === 0) return completed;
+
+    reporter.groupStart(activeTasks.map((task) => task.label));
+    const results = await Promise.all(
+      activeTasks.map(async (task) => {
+        OutputRenderer.clearCache();
+        const { result, ms } = await this.runMeasured(task, {
+          allowAutoFix: true,
+        });
+        reporter.groupTaskEnd(task.label, result, ms);
+        return { task, result, ms };
+      })
+    );
+    reporter.groupEnd();
+
+    for (const { task, result, ms } of results)
+      aggregate.record(task.label, result, ms);
+    return [...completed, ...results];
+  }
+
+  async runMeasured(task, options = {}) {
+    const start = Date.now();
+    let result = await task.runner();
+    if (!result.ok && options.allowAutoFix) {
+      const fixed = await this.attemptAutoFix(task, result);
+      if (fixed) result = fixed;
+    }
+    return { result, ms: Date.now() - start };
+  }
+
+  async _applyFixAndRerun(task, fixResult) {
+    if (!fixResult.ok) {
+      return Results.fail({
+        rawOutput:
+          `auto-fix failed:\n${Text.joinOutput(fixResult.stdout, fixResult.stderr)}`.trim(),
+      });
+    }
+    const rerun = await task.runner();
+    return rerun.ok ? Results.pass({ annotation: 'auto-fixed' }) : rerun;
+  }
+
+  async attemptAutoFix(task, result) {
+    if (task.label === 'format') {
+      const fixResult = await ProcessRunner.execAsync('npm', ['run', 'format']);
+      return this._applyFixAndRerun(task, fixResult);
+    }
+
+    if (!result.errors || result.errors.length === 0) return null;
+    if (task.label !== 'lint' && task.label !== 'knip') return null;
+    if (task.label === 'knip' && !KnipParser.isFixable(result.errors))
+      return null;
+
+    const fixResult =
+      task.label === 'lint'
+        ? await ProcessRunner.execAsync(...TaskCommands.lintFix())
+        : await ProcessRunner.execAsync(...TaskCommands.knipFix());
+
+    if (task.label === 'knip' && fixResult.ok) {
+      // knip --fix may leave files unformatted (we drop knip's own --format because
+      // it crashes on Windows). Format the workspace ourselves so the rerun passes.
+      const formatResult = await ProcessRunner.execAsync('npm', [
+        'run',
+        'format',
+      ]);
+      if (!formatResult.ok) return this._applyFixAndRerun(task, formatResult);
+    }
+
+    return this._applyFixAndRerun(task, fixResult);
+  }
+
+  finish(aggregate, reporter, testDurations = null) {
+    if (testDurations) aggregate.setSlowestTests(testDurations);
+    reporter.failureDetail(aggregate.failures());
+    reporter.summary(aggregate);
+
+    if (aggregate.failed > 0) {
+      writeFailureFile(aggregate);
+      if (this.config.llm && !this.config.json) {
+        OutputRenderer.emitLlmBlock({
+          ok: false,
+          mode: aggregate.mode,
+          tasks: aggregate.tasks,
+          failureSummary: aggregate.failureSummary(),
+        });
+      }
+    } else {
+      clearFailureFile();
+    }
+
+    return aggregate.failed === 0 ? 0 : 1;
+  }
+}
+
+if (import.meta.main) {
+  const config = parseCliConfig(process.argv.slice(2));
+  if (config !== null) {
+    if (config.detail !== null) {
+      await renderDetailCommand(config);
+    } else if (config.watch) {
+      const runner = new TestRunner({ testConfig: config });
+      const argv = [...runner.buildArgv(), '--watch'];
+      const command = ProcessRunner.command(process.execPath, argv);
+      const child = spawn(
+        command.cmd,
+        command.args,
+        ProcessRunner.spawnOptions(command, { stdio: 'inherit' })
+      );
+      child.on('error', (err) => {
+        process.stderr.write(`${describeSpawnError(err, 'node')}\n`);
+        process.exitCode = 1;
+      });
+      child.on('close', (code, signalName) => {
+        process.exitCode =
+          code ?? (signalName ? signalExitCode(signalName) : 1);
+      });
+    } else {
+      process.exitCode = await new TaskOrchestrator(config).run();
+    }
   }
 }

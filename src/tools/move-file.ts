@@ -248,7 +248,7 @@ async function handleMoveFile(
     const firstFailure = failed[0];
     if (firstFailure) {
       throw new McpError(
-        firstFailure.error.code as ErrorCode,
+        firstFailure.error.code,
         message,
         firstFailure.error.path
       );

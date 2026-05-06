@@ -25,9 +25,9 @@ let _cachedConfig: Config | undefined;
 
 function readConfig(): Config {
   _cachedConfig ??= {
-    enabled: parseTrueEnvFlag(ENV['FS_CONTEXT_DIAGNOSTICS']),
-    detail: parseDetail(ENV['FS_CONTEXT_DIAGNOSTICS_DETAIL']),
-    logToolErrors: parseTrueEnvFlag(ENV['FS_CONTEXT_TOOL_LOG_ERRORS']),
+    enabled: parseTrueEnvFlag(ENV.FS_CONTEXT_DIAGNOSTICS),
+    detail: parseDetail(ENV.FS_CONTEXT_DIAGNOSTICS_DETAIL),
+    logToolErrors: parseTrueEnvFlag(ENV.FS_CONTEXT_TOOL_LOG_ERRORS),
   };
   return _cachedConfig;
 }
@@ -132,19 +132,19 @@ function extractOutcome(result: unknown): { ok: boolean; error?: string } {
     return { ok: true };
   }
 
-  if (result['isError'] === true) {
+  if (result.isError === true) {
     const err = extractErrorMessage(result);
     return { ok: false, error: err };
   }
 
-  if (typeof result['ok'] === 'boolean') {
-    if (result['ok']) return { ok: true };
+  if (typeof result.ok === 'boolean') {
+    if (result.ok) return { ok: true };
     return { ok: false, error: extractErrorMessage(result) };
   }
 
-  const content = result['structuredContent'];
-  if (isRecord(content) && typeof content['ok'] === 'boolean') {
-    if (content['ok']) return { ok: true };
+  const content = result.structuredContent;
+  if (isRecord(content) && typeof content.ok === 'boolean') {
+    if (content.ok) return { ok: true };
     const err = extractResultError(content);
     return err ? { ok: false, error: err } : { ok: false };
   }
@@ -156,16 +156,16 @@ function extractErrorMessage(source: unknown): string {
   if (typeof source === 'string') return source;
   if (source instanceof Error) return source.message;
   if (isRecord(source)) {
-    const struct = source['structuredContent'];
+    const struct = source.structuredContent;
     if (isRecord(struct)) {
-      const err = struct['error'];
-      if (isRecord(err) && typeof err['message'] === 'string')
-        return err['message'];
+      const err = struct.error;
+      if (isRecord(err) && typeof err.message === 'string')
+        return err.message;
     }
-    if (typeof source['message'] === 'string') return source['message'];
-    const errObj = source['error'];
-    if (isRecord(errObj) && typeof errObj['message'] === 'string') {
-      return errObj['message'];
+    if (typeof source.message === 'string') return source.message;
+    const errObj = source.error;
+    if (isRecord(errObj) && typeof errObj.message === 'string') {
+      return errObj.message;
     }
   }
   try {
@@ -178,9 +178,9 @@ function extractErrorMessage(source: unknown): string {
 function extractResultError(
   structured: Record<string, unknown>
 ): string | undefined {
-  const err = structured['error'];
-  return isRecord(err) && typeof err['message'] === 'string'
-    ? err['message']
+  const err = structured.error;
+  return isRecord(err) && typeof err.message === 'string'
+    ? err.message
     : undefined;
 }
 

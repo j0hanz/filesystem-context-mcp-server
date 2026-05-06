@@ -788,7 +788,7 @@ class SearchWorkerPool {
       this.pending.set(id, pendingRequest);
 
       try {
-        worker.postMessage({ type: 'scan', id, ...req } as ScanRequest);
+        worker.postMessage({ type: 'scan', id, ...req });
       } catch (error: unknown) {
         this.pending.delete(id);
         pendingRequest.reject(
@@ -849,7 +849,7 @@ let poolInstance: SearchWorkerPool | null = null;
 
 function getPool(): SearchWorkerPool {
   if (!poolInstance) {
-    const debug = process.env['FS_CONTEXT_SEARCH_WORKERS_DEBUG'] === '1';
+    const debug = process.env.FS_CONTEXT_SEARCH_WORKERS_DEBUG === '1';
     poolInstance = new SearchWorkerPool(SEARCH_WORKERS, debug);
   }
   return poolInstance;

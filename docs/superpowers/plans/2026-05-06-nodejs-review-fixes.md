@@ -298,7 +298,6 @@ Add a new file `src/__tests__/unit/env-parsing.test.ts`:
 
 ```ts
 import assert from 'node:assert/strict';
-
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
 describe('FS_CONTEXT_MAX_INLINE_MATCHES parsing', () => {
@@ -404,9 +403,8 @@ Create `src/__tests__/unit/abort.test.ts`:
 
 ```ts
 import assert from 'node:assert/strict';
-import { setTimeout as sleep } from 'node:timers/promises';
-
 import { describe, it } from 'node:test';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import {
   assertNotAborted,
@@ -556,7 +554,6 @@ Create `src/__tests__/unit/fs-helpers.test.ts`:
 
 ```ts
 import assert from 'node:assert/strict';
-
 import { describe, it } from 'node:test';
 
 import { processInParallel } from '../../lib/fs-helpers.js';

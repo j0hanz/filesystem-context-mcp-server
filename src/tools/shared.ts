@@ -38,7 +38,7 @@ import type { FileInfo } from '../config.js';
 export { type ToolContract } from './contract.js';
 
 const MAX_INLINE_CONTENT_CHARS =
-  parseInt(process.env['FS_CONTEXT_MAX_INLINE_CHARS'] ?? '', 10) || 20_000;
+  parseInt(process.env.FS_CONTEXT_MAX_INLINE_CHARS ?? '', 10) || 20_000;
 const MAX_INLINE_PREVIEW_CHARS = 4_000;
 const PROGRESS_RATE_LIMIT_MS = 50;
 
@@ -141,11 +141,11 @@ function buildNormalizedExecution(
 
 function normalizeToolExecution<T extends object>(tool: T): T {
   const candidate = tool as Record<string, unknown>;
-  const topLevelTaskSupport = candidate['taskSupport'];
+  const topLevelTaskSupport = candidate.taskSupport;
   const existingExecution = getExecutionConfig(candidate);
   const resolvedTaskSupport = resolveToolTaskSupportLevel(
     topLevelTaskSupport,
-    existingExecution?.['taskSupport']
+    existingExecution?.taskSupport
   );
 
   if (resolvedTaskSupport === undefined && topLevelTaskSupport === undefined) {
@@ -153,21 +153,21 @@ function normalizeToolExecution<T extends object>(tool: T): T {
   }
 
   const normalized = { ...candidate };
-  delete normalized['taskSupport'];
+  delete normalized.taskSupport;
 
   const execution = buildNormalizedExecution(
     existingExecution,
     resolvedTaskSupport
   );
   if (execution !== undefined) {
-    normalized['execution'] = execution;
+    normalized.execution = execution;
   }
 
   return normalized as T;
 }
 
 function shouldStripStructuredOutput(): boolean {
-  return parseTrueEnvFlag(process.env['FS_CONTEXT_STRIP_STRUCTURED']);
+  return parseTrueEnvFlag(process.env.FS_CONTEXT_STRIP_STRUCTURED);
 }
 
 export function maybeStripStructuredContentFromResult<T extends object>(
@@ -426,7 +426,7 @@ export function toToolContext(ctx?: ToolContext | ServerContext): ToolContext {
       signal: ctx.mcpReq.signal,
       ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
       ...(ctx.mcpReq._meta
-        ? { _meta: ctx.mcpReq._meta as ToolContext['_meta'] }
+        ? { _meta: ctx.mcpReq._meta }
         : {}),
       sendNotification: async (notification) => ctx.mcpReq.notify(notification),
       log: async (level, data, logger) => ctx.mcpReq.log(level, data, logger),
@@ -462,12 +462,12 @@ export function withDefaultIcons<T extends object>(
 ): T & { icons?: Icon[] } {
   const normalizedTool = normalizeToolExecution(tool);
   if (!iconInfo) {
-    return maybeStripOutputSchema(normalizedTool) as T & { icons?: Icon[] };
+    return maybeStripOutputSchema(normalizedTool);
   }
 
   const existingIcons = (normalizedTool as { icons?: Icon[] }).icons;
   if (existingIcons && existingIcons.length > 0) {
-    return maybeStripOutputSchema(normalizedTool) as T & { icons?: Icon[] };
+    return maybeStripOutputSchema(normalizedTool);
   }
 
   const withIcons = {
@@ -479,7 +479,7 @@ export function withDefaultIcons<T extends object>(
       },
     ],
   };
-  return maybeStripOutputSchema(withIcons) as T & { icons?: Icon[] };
+  return maybeStripOutputSchema(withIcons);
 }
 
 export interface ToolRegistrationOptions {

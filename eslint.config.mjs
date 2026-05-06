@@ -1,204 +1,199 @@
+import { builtinModules } from 'node:module';
+
 import eslint from '@eslint/js';
-import eslintConfigPrettier from 'eslint-config-prettier';
-import deMorgan from 'eslint-plugin-de-morgan';
-import depend from 'eslint-plugin-depend';
-import sonarjs from 'eslint-plugin-sonarjs';
-import unusedImports from 'eslint-plugin-unused-imports';
-import { defineConfig } from 'eslint/config';
+import eslintConfigPrettier from 'eslint-config-prettier/flat';
 import tseslint from 'typescript-eslint';
 
-export default defineConfig(
+const sourceFiles = ['src/**/*.ts'];
+const testFiles = ['__tests__/**/*.ts'];
+const jsConfigFiles = ['**/*.js', '**/*.mjs'];
+
+// Dynamically filter builtin modules instead of hardcoding a massive array
+const nodeBuiltins = builtinModules.filter(
+  (m) => !m.startsWith('node:') && !m.startsWith('_')
+);
+
+export default tseslint.config(
   {
+    name: 'project/global-ignores',
     ignores: [
-      'dist',
-      'node_modules',
-      '.agents',
-      '.tmp/**',
-      '*.config.mjs',
-      '*.config.js',
-      'src/__tests__/**',
-      'tests/**',
-      '**/*.test.ts',
-      '**/*.spec.ts',
+      'dist/**',
+      'dist-test/**',
+      'coverage/**',
+      'node_modules/**',
+      '.agents/**',
+      '.claude/**',
+      'logs/**',
     ],
   },
-  eslint.configs.recommended,
-  deMorgan.configs.recommended,
-  depend.configs['flat/recommended'],
-  sonarjs.configs.recommended,
+
   {
-    files: ['src/**/*.ts'],
-    extends: [
-      tseslint.configs.strictTypeChecked,
-      tseslint.configs.stylisticTypeChecked,
-    ],
+    name: 'project/linter-options',
+    linterOptions: {
+      reportUnusedDisableDirectives: 'error',
+      reportUnusedInlineConfigs: 'error',
+    },
+  },
+
+  {
+    name: 'project/language-options',
     languageOptions: {
-      ecmaVersion: 2022,
+      ecmaVersion: 2024,
       sourceType: 'module',
+    },
+  },
+
+  eslint.configs.recommended,
+  tseslint.configs.strictTypeChecked,
+  tseslint.configs.stylisticTypeChecked,
+
+  // Project-wide rule defaults applied to both src and tests.
+  {
+    name: 'project/common-rules',
+    rules: {
+      // Catch blocks frequently use `unknown`; numbers are safe to interpolate.
+      '@typescript-eslint/restrict-template-expressions': [
+        'error',
+        { allowNumber: true },
+      ],
+
+      // Allow `_`-prefixed args/vars/caught-errors as the deliberate unused-marker convention.
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          args: 'all',
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+          ignoreRestSiblings: true,
+        },
+      ],
+    },
+  },
+
+  {
+    name: 'project/source',
+    files: sourceFiles,
+    languageOptions: {
       parserOptions: {
         projectService: true,
         tsconfigRootDir: import.meta.dirname,
       },
     },
-    plugins: {
-      'unused-imports': unusedImports,
-    },
     rules: {
-      'unused-imports/no-unused-imports': 'error',
-      'unused-imports/no-unused-vars': [
-        'warn',
-        {
-          vars: 'all',
-          varsIgnorePattern: '^_',
-          args: 'after-used',
-          argsIgnorePattern: '^_',
-        },
-      ],
+      // TypeScript already checks undefined identifiers; ESLint core no-undef adds noise in TS projects.
+      'no-undef': 'off',
 
-      '@typescript-eslint/consistent-type-assertions': [
+      // MCP stdio servers must not write protocol-breaking logs to stdout.
+      'no-console': ['error', { allow: ['error'] }],
+
+      // Enforce node: protocol for Node.js built-ins.
+      'no-restricted-imports': [
         'error',
         {
-          assertionStyle: 'as',
-          objectLiteralTypeAssertions: 'allow-as-parameter',
+          paths: nodeBuiltins.map((name) => ({
+            name,
+            message: `Use the node: protocol for Node.js built-ins, e.g. node:${name}.`,
+          })),
         },
       ],
 
+      // Catches accidental split value imports while still allowing separate type imports.
+      'no-duplicate-imports': [
+        'error',
+        {
+          includeExports: true,
+          allowSeparateTypeImports: true,
+        },
+      ],
+
+      // Low-noise correctness/style rules for server code.
+      curly: ['error', 'all'],
+      eqeqeq: ['error', 'always', { null: 'ignore' }],
+      'no-implicit-coercion': 'error',
+      'no-template-curly-in-string': 'error',
+      'no-var': 'error',
+      'object-shorthand': ['error', 'always'],
+      'prefer-const': ['error', { destructuring: 'all' }],
+      'prefer-object-has-own': 'error',
+      'no-useless-assignment': 'error',
+      'no-promise-executor-return': 'error',
+      'preserve-caught-error': 'error',
+
+      // TypeScript-specific discipline.
       '@typescript-eslint/consistent-type-imports': [
         'error',
         {
           prefer: 'type-imports',
-          fixStyle: 'inline-type-imports',
-          disallowTypeAnnotations: true,
+          fixStyle: 'separate-type-imports',
         },
       ],
-      '@typescript-eslint/consistent-type-exports': [
+      '@typescript-eslint/consistent-type-exports': 'error',
+      '@typescript-eslint/no-import-type-side-effects': 'error',
+
+      // Fire-and-forget promises must be explicit with void.
+      '@typescript-eslint/no-floating-promises': [
         'error',
-        { fixMixedExportsWithInlineTypeSpecifier: true },
+        { ignoreVoid: true, ignoreIIFE: true },
       ],
 
-      '@typescript-eslint/explicit-function-return-type': [
-        'error',
-        {
-          allowExpressions: true,
-          allowTypedFunctionExpressions: true,
-          allowHigherOrderFunctions: true,
-          allowDirectConstAssertionInArrowFunctions: true,
-        },
-      ],
-
-      '@typescript-eslint/explicit-member-accessibility': [
-        'error',
-        { accessibility: 'no-public' },
-      ],
-
-      '@typescript-eslint/naming-convention': [
-        'error',
-        {
-          selector: 'default',
-          format: ['camelCase'],
-          leadingUnderscore: 'allow',
-          trailingUnderscore: 'forbid',
-        },
-        {
-          selector: 'variable',
-          format: ['camelCase', 'UPPER_CASE', 'PascalCase'],
-          leadingUnderscore: 'allow',
-        },
-        {
-          selector: 'typeLike',
-          format: ['PascalCase'],
-        },
-        {
-          selector: 'enumMember',
-          format: ['PascalCase', 'UPPER_CASE'],
-        },
-        {
-          selector: 'property',
-          format: null,
-        },
-        {
-          selector: 'import',
-          format: ['camelCase', 'PascalCase'],
-        },
-      ],
-
-      '@typescript-eslint/no-non-null-assertion': 'warn',
-      '@typescript-eslint/dot-notation': 'off',
-      '@typescript-eslint/prefer-namespace-keyword': 'error',
-      '@typescript-eslint/prefer-nullish-coalescing': 'error',
-      '@typescript-eslint/prefer-optional-chain': 'error',
-
-      '@typescript-eslint/require-array-sort-compare': [
-        'error',
-        { ignoreStringArrays: true },
-      ],
-
-      '@typescript-eslint/restrict-template-expressions': [
-        'error',
-        {
-          allowNumber: true,
-          allowBoolean: false,
-          allowAny: false,
-          allowNullish: false,
-        },
-      ],
-
-      '@typescript-eslint/no-unnecessary-boolean-literal-compare': 'error',
-      '@typescript-eslint/no-unnecessary-type-arguments': 'error',
-      '@typescript-eslint/no-unnecessary-condition': 'error',
-      '@typescript-eslint/prefer-includes': 'error',
-      '@typescript-eslint/prefer-string-starts-ends-with': 'error',
-      '@typescript-eslint/prefer-for-of': 'error',
-      '@typescript-eslint/require-await': 'error',
-      '@typescript-eslint/no-floating-promises': 'error',
-      '@typescript-eslint/no-for-in-array': 'error',
-      '@typescript-eslint/no-implied-eval': 'error',
-      '@typescript-eslint/no-misused-new': 'error',
-
+      // Express/MCP route handlers often pass async callbacks to APIs typed as void callbacks.
       '@typescript-eslint/no-misused-promises': [
         'error',
-        { checksVoidReturn: { arguments: false } },
-      ],
-
-      '@typescript-eslint/only-throw-error': 'error',
-
-      'prefer-arrow-callback': 'error',
-      'prefer-const': 'error',
-      'no-var': 'error',
-      'object-shorthand': ['error', 'always'],
-
-      'prefer-destructuring': [
-        'warn',
         {
-          array: false,
-          object: true,
+          checksVoidReturn: {
+            arguments: false,
+            attributes: false,
+          },
         },
       ],
 
-      'prefer-template': 'error',
-      'no-useless-computed-key': 'error',
-      'no-useless-constructor': 'off',
-      '@typescript-eslint/no-useless-constructor': 'error',
-      'no-duplicate-imports': 'error',
-      'comma-dangle': 'off',
-
-      '@typescript-eslint/no-empty-function': [
-        'error',
-        { allow: ['arrowFunctions'] },
-      ],
-
-      '@typescript-eslint/no-explicit-any': 'error',
-
-      '@typescript-eslint/ban-ts-comment': [
+      // Useful for protocol enums, transport modes, Gemini finish reasons, tool profiles, etc.
+      // Allow default cases (this codebase uses `assertNever(...)` defensively).
+      '@typescript-eslint/switch-exhaustiveness-check': [
         'error',
         {
-          'ts-expect-error': 'allow-with-description',
-          'ts-ignore': 'allow-with-description',
-          'ts-nocheck': true,
-          'ts-check': false,
-          minimumDescriptionLength: 10,
+          allowDefaultCaseForExhaustiveSwitch: true,
+          requireDefaultForNonUnion: false,
         },
       ],
+    },
+  },
+
+  {
+    name: 'project/tests',
+    files: testFiles,
+    languageOptions: {
+      parserOptions: {
+        projectService: false,
+        project: './tsconfig.test.json',
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      'no-undef': 'off',
+
+      // Tests need looser ergonomics for mocks, fixtures, assertions, and deliberate edge cases.
+      '@typescript-eslint/no-floating-promises': 'off',
+      '@typescript-eslint/no-empty-function': 'off',
+      '@typescript-eslint/require-await': 'off',
+      '@typescript-eslint/dot-notation': 'off',
+      '@typescript-eslint/no-confusing-void-expression': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unnecessary-condition': 'off',
+    },
+  },
+
+  {
+    name: 'project/js-configs',
+    files: jsConfigFiles,
+    ...tseslint.configs.disableTypeChecked,
+    rules: {
+      ...tseslint.configs.disableTypeChecked.rules,
+      'no-undef': 'off',
     },
   },
 

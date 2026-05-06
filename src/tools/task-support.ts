@@ -162,7 +162,7 @@ function toTaskToolContext(
 }
 
 function toGetTaskResult(task: Task): GetTaskResult {
-  return task as GetTaskResult;
+  return task;
 }
 
 function toCallToolResult(value: Result): CallToolResult {
@@ -330,7 +330,7 @@ function isErrorResult(result: ToolResult<unknown>): boolean {
 function withoutStructuredContent<T extends object>(result: T): T {
   if (!Object.hasOwn(result, 'structuredContent')) return result;
   const stripped = { ...(result as Record<string, unknown>) };
-  delete stripped['structuredContent'];
+  delete stripped.structuredContent;
   return stripped as T;
 }
 
@@ -363,7 +363,7 @@ async function isTaskAlreadyTerminal(
     const task = await taskStore.getTask(taskId);
     if (!isRecord(task)) return false;
     const { status } = task;
-    return typeof status === 'string' && isTerminal(status as TaskStatus);
+    return typeof status === 'string' && isTerminal(status);
   } catch {
     return false;
   }
@@ -383,7 +383,7 @@ async function countActiveTasks(taskStore: RequestTaskStore): Promise<number> {
   let active = 0;
   for (const task of tasks) {
     if (!isRecord(task) || typeof task.status !== 'string') continue;
-    if (!isTerminal(task.status as TaskStatus)) {
+    if (!isTerminal(task.status)) {
       active += 1;
     }
   }
@@ -563,7 +563,7 @@ function tryRegisterToolTask<Args extends ToolSchema>(
   return true;
 }
 
-export function registerToolTaskIfAvailable<Args extends ToolSchema, Result>(
+function registerToolTaskIfAvailable<Args extends ToolSchema, Result>(
   server: McpServer,
   toolName: string,
   toolDef: object,

@@ -679,7 +679,7 @@ function requireReadOption<K extends RequiredReadOption>(
 ): NonNullable<NormalizedOptions[K]> {
   const value = normalized[key];
   if (value !== undefined) {
-    return value as NonNullable<NormalizedOptions[K]>;
+    return value;
   }
 
   throw new McpError(

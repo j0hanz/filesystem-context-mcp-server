@@ -56,7 +56,7 @@ interface ListSnapshot {
 }
 
 const LIST_CURSOR_TTL_MS =
-  parseInt(process.env['FS_CONTEXT_LIST_CURSOR_TTL_MS'] ?? '', 10) ||
+  parseInt(process.env.FS_CONTEXT_LIST_CURSOR_TTL_MS ?? '', 10) ||
   5 * 60 * 1000;
 const listSnapshots = new Map<string, ListSnapshot>();
 const listSnapshotTimers = new Map<string, NodeJS.Timeout>();

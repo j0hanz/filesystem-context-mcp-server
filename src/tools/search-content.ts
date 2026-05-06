@@ -45,7 +45,12 @@ import { registerStandardTool, reportTaskStatus } from './task-support.js';
  * Configuration constants for the Search Content tool.
  */
 const CONFIG = {
-  MAX_INLINE_MATCHES: parseEnvInt('FS_CONTEXT_MAX_INLINE_MATCHES', 50, 1, 10_000),
+  MAX_INLINE_MATCHES: parseEnvInt(
+    'FS_CONTEXT_MAX_INLINE_MATCHES',
+    50,
+    1,
+    10_000
+  ),
   COMPLETION_LABELS: {
     timeout: 'timeout',
     maxResults: 'max results',
@@ -92,7 +97,7 @@ function buildStructuredSummaryFields(
   for (const key of TRUTHY_SUMMARY_FIELDS) {
     const value = summary[key];
     if (value) {
-      result[key] = value as never;
+      result[key] = value;
     }
   }
   if (summary.truncated) {

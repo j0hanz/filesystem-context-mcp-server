@@ -82,7 +82,12 @@ export function createTimedAbortSignal(
       ? AbortSignal.any([baseSignal, controller.signal])
       : controller.signal;
 
-    return { signal: combined, cleanup: () => { clearTimeout(timer); } };
+    return {
+      signal: combined,
+      cleanup: () => {
+        clearTimeout(timer);
+      },
+    };
   }
 
   if (baseSignal) {

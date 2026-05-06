@@ -122,7 +122,7 @@ function getInputSchemaProperties(
 ): Record<string, unknown> | undefined {
   const { properties } = z.toJSONSchema(schema, { io: 'input' });
   if (!properties || typeof properties !== 'object') return undefined;
-  return properties as Record<string, unknown>;
+  return properties;
 }
 
 function intersectEnumValueSets(valueSets: readonly string[][]): string[] {
@@ -214,7 +214,7 @@ function normalizeTemplateVariable(raw: string): string {
 
 function parseResourceReference(value: unknown): ResourceReference | undefined {
   if (!isRecord(value)) return undefined;
-  if (value['type'] !== 'ref/resource') return undefined;
+  if (value.type !== 'ref/resource') return undefined;
   const { uri } = value;
   if (typeof uri !== 'string') return undefined;
   return { type: 'ref/resource', uri };
@@ -269,7 +269,7 @@ function extractContextArguments(
   value: unknown
 ): Record<string, string> | undefined {
   if (!isRecord(value)) return undefined;
-  const context = value['arguments'];
+  const context = value.arguments;
   if (!isRecord(context)) return undefined;
 
   const normalized: Record<string, string> = {};
@@ -288,16 +288,16 @@ function serializeCompletionRef(ref: unknown): {
   name?: string;
   uri?: string;
 } {
-  if (!isRecord(ref) || typeof ref['type'] !== 'string') {
+  if (!isRecord(ref) || typeof ref.type !== 'string') {
     return { type: 'unknown' };
   }
-  if (ref['type'] === 'ref/prompt' && typeof ref['name'] === 'string') {
-    return { type: ref['type'], name: ref['name'] };
+  if (ref.type === 'ref/prompt' && typeof ref.name === 'string') {
+    return { type: ref.type, name: ref.name };
   }
-  if (ref['type'] === 'ref/resource' && typeof ref['uri'] === 'string') {
-    return { type: ref['type'], uri: ref['uri'] };
+  if (ref.type === 'ref/resource' && typeof ref.uri === 'string') {
+    return { type: ref.type, uri: ref.uri };
   }
-  return { type: ref['type'] };
+  return { type: ref.type };
 }
 
 function serializeContextArguments(
@@ -721,7 +721,7 @@ function handleTopicAndToolCompletions(
   if (!isRecord(ref)) return undefined;
   const currentValue = argumentValue.toLowerCase();
 
-  if (ref['type'] === 'ref/prompt' && argName === 'topic') {
+  if (ref.type === 'ref/prompt' && argName === 'topic') {
     const filtered = currentValue
       ? topicValues.filter((v) => v.startsWith(currentValue))
       : topicValues;
@@ -729,8 +729,8 @@ function handleTopicAndToolCompletions(
   }
 
   if (
-    ref['type'] === 'ref/prompt' &&
-    ref['name'] === 'get-tool-help' &&
+    ref.type === 'ref/prompt' &&
+    ref.name === 'get-tool-help' &&
     argName === 'name'
   ) {
     const filtered = currentValue
@@ -740,8 +740,8 @@ function handleTopicAndToolCompletions(
   }
 
   if (
-    ref['type'] === 'ref/resource' &&
-    ref['uri'] === 'internal://tool-info/{name}' &&
+    ref.type === 'ref/resource' &&
+    ref.uri === 'internal://tool-info/{name}' &&
     argName === 'name'
   ) {
     const filtered = currentValue
