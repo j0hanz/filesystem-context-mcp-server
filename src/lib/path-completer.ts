@@ -342,7 +342,7 @@ export interface CompletePathOptions {
  * current allowed-directory state. Uses a per-McpServer WeakMap to isolate
  * rate-limit and cache state across HTTP sessions.
  */
-export async function completePath(
+async function completePath(
   value: string,
   options: CompletePathOptions = {}
 ): Promise<string[]> {
