@@ -850,7 +850,7 @@ export async function startHttpServer(
   });
 
   const originalClose = httpServer.close.bind(httpServer);
-  httpServer.close = ((callback?: (error?: Error) => void) => {
+  httpServer.close = (callback?: (error?: Error) => void) => {
     void closeAllSessions().catch((error: unknown) => {
       Logger.error(
         '[HTTP] Error closing sessions before server shutdown:',
@@ -858,7 +858,7 @@ export async function startHttpServer(
       );
     });
     return originalClose(callback);
-  });
+  };
 
   return new Promise<Server>((resolve, reject) => {
     httpServer.once('error', reject);

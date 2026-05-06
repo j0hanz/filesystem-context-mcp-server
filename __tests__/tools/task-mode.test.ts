@@ -35,10 +35,10 @@ async function pollUntilDone(
 ): Promise<{ status: string }> {
   for (let i = 0; i < MAX_POLLS; i++) {
     await delay(POLL_INTERVAL_MS);
-    const got = (await client.request({
+    const got = await client.request({
       method: 'tasks/get' as const,
       params: { taskId },
-    }));
+    });
     if (TERMINAL_STATUSES.has(got.status)) return { status: got.status };
   }
   assert.fail(

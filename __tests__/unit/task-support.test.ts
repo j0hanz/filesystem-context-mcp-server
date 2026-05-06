@@ -105,7 +105,7 @@ describe('createToolTaskHandler', () => {
           ({
             content: [{ type: 'text', text: 'done' }],
             structuredContent: { ok: true },
-          }) as ToolResult<{ ok: boolean }>,
+          }),
         { toolName: 'test_tool' }
       );
 
@@ -156,7 +156,7 @@ describe('createToolTaskHandler', () => {
           ({
             content: [{ type: 'text', text: 'done' }],
             structuredContent: { ok: true },
-          }) as ToolResult<{ ok: boolean }>
+          })
       );
 
       const { task } = await handler.createTask(createMockExtra(store));
@@ -186,7 +186,7 @@ describe('createToolTaskHandler', () => {
           ({
             content: [{ type: 'text', text: 'hello' }],
             structuredContent: { ok: true },
-          }) as ToolResult<{ ok: boolean }>
+          })
       );
 
       const { task } = await handler.createTask(createMockExtra(store));
@@ -212,7 +212,7 @@ describe('createToolTaskHandler', () => {
             content: [{ type: 'text', text: 'UNKNOWN: boom' }],
             isError: true,
             errorCode: ErrorCode.UNKNOWN,
-          }) as ToolResult<unknown>
+          })
       );
 
       const { task } = await handler.createTask(createMockExtra(store));
@@ -241,7 +241,7 @@ describe('createToolTaskHandler', () => {
             ],
             isError: true,
             errorCode: ErrorCode.CANCELLED,
-          }) as ToolResult<unknown>
+          })
       );
 
       const { task } = await handler.createTask(createMockExtra(store));
@@ -264,7 +264,7 @@ describe('createToolTaskHandler', () => {
           ({
             content: [{ type: 'text', text: 'ok' }],
             structuredContent: { ok: true },
-          }) as ToolResult<{ ok: boolean }>
+          })
       );
 
       const { task } = await handler.createTask(createMockExtra(store));
@@ -282,7 +282,7 @@ describe('createToolTaskHandler', () => {
           ({
             content: [{ type: 'text', text: 'ok' }],
             structuredContent: { ok: true },
-          }) as ToolResult<{ ok: boolean }>
+          })
       );
 
       const ctx = {
@@ -462,7 +462,7 @@ describe('createToolTaskHandler', () => {
           ({
             content: [{ type: 'text', text: 'done' }],
             structuredContent: { ok: true },
-          }) as ToolResult<{ ok: boolean }>
+          })
       );
 
       const { task } = await handler.createTask(createMockExtra(store));
@@ -491,7 +491,7 @@ describe('createToolTaskHandler', () => {
           ({
             content: [{ type: 'text', text: 'ok' }],
             structuredContent: { ok: true },
-          }) as ToolResult<{ ok: boolean }>,
+          }),
         { toolName: 'grep' }
       );
 

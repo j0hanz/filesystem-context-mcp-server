@@ -159,8 +159,7 @@ function extractErrorMessage(source: unknown): string {
     const struct = source.structuredContent;
     if (isRecord(struct)) {
       const err = struct.error;
-      if (isRecord(err) && typeof err.message === 'string')
-        return err.message;
+      if (isRecord(err) && typeof err.message === 'string') return err.message;
     }
     if (typeof source.message === 'string') return source.message;
     const errObj = source.error;

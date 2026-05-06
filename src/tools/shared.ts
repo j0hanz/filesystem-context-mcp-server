@@ -425,9 +425,7 @@ export function toToolContext(ctx?: ToolContext | ServerContext): ToolContext {
     return {
       signal: ctx.mcpReq.signal,
       ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
-      ...(ctx.mcpReq._meta
-        ? { _meta: ctx.mcpReq._meta }
-        : {}),
+      ...(ctx.mcpReq._meta ? { _meta: ctx.mcpReq._meta } : {}),
       sendNotification: async (notification) => ctx.mcpReq.notify(notification),
       log: async (level, data, logger) => ctx.mcpReq.log(level, data, logger),
     };

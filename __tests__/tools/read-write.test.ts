@@ -369,8 +369,7 @@ describe('edit tool', () => {
       },
     });
     assertToolError(raw);
-    const text = (raw as { content: { text?: string }[] }).content[0]
-      ?.text;
+    const text = (raw as { content: { text?: string }[] }).content[0]?.text;
     assert.match(text ?? '', /oldText required/u);
   });
 

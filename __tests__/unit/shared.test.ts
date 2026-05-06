@@ -22,8 +22,7 @@ describe('tool output validation', () => {
       toolName: 'example',
       ctx: {},
       outputSchema,
-      run: () =>
-        buildToolResponse('ok', { ok: true, value: 42 }),
+      run: () => buildToolResponse('ok', { ok: true, value: 42 }),
       onError: (error) => buildToolErrorResponse(error, ErrorCode.UNKNOWN),
     });
 

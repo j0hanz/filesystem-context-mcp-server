@@ -109,7 +109,10 @@ describe('ls tool', () => {
     });
     assertOk(firstPage);
     const firstStructured = getStructured(firstPage);
-    const firstEntries = firstStructured['entries'] as Record<string, unknown>[];
+    const firstEntries = firstStructured['entries'] as Record<
+      string,
+      unknown
+    >[];
     const firstCursor = firstStructured['nextCursor'];
 
     assert.equal(firstEntries.length, 5);
@@ -126,7 +129,10 @@ describe('ls tool', () => {
     });
     assertOk(secondPage);
     const secondStructured = getStructured(secondPage);
-    const secondEntries = secondStructured['entries'] as Record<string, unknown>[];
+    const secondEntries = secondStructured['entries'] as Record<
+      string,
+      unknown
+    >[];
 
     assert.equal(secondEntries.length, 5);
     assert.notDeepEqual(

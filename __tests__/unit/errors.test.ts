@@ -12,7 +12,10 @@ import assert from 'node:assert/strict';
 import { readdirSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
-import { MAX_CONCURRENT_TASKS, MAX_TASK_TTL_MS } from '../../src/lib/constants.js';
+import {
+  MAX_CONCURRENT_TASKS,
+  MAX_TASK_TTL_MS,
+} from '../../src/lib/constants.js';
 import {
   ErrorCode,
   getSuggestion,

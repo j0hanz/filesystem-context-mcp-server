@@ -12,7 +12,6 @@ import { join } from 'node:path';
 
 import { setAllowedDirectoriesResolved } from '../src/lib/paths.js';
 import { createInMemoryResourceStore } from '../src/lib/resource-store.js';
-
 import { createTaskStore } from '../src/server/task-store.js';
 import { registerAllTools } from '../src/tools.js';
 import { LinkedTransport } from './linked-transport.js';
