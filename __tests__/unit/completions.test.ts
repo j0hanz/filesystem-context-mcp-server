@@ -5,15 +5,52 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { describe, it } from 'node:test';
 
-import { registerCompletions } from '../../src/completions.js';
 import {
   normalizePath,
   setAllowedDirectoriesResolved,
 } from '../../src/lib/paths.js';
+import {
+  registerAnalyzePathPrompt,
+  registerCompareFilesPrompt,
+  registerGetHelpPrompt,
+  registerGetToolHelpPrompt,
+} from '../../src/prompts.js';
+import { registerToolInfoResource } from '../../src/resources.js';
+import { buildServerInstructions } from '../../src/resources/generated-instructions.js';
 import { LinkedTransport } from '../linked-transport.js';
+
+function makeCompletionServer(withInstructions = false): McpServer {
+  const server = new McpServer(
+    { name: 'test-server', version: '0.0.0' },
+    { capabilities: { completions: {} } }
+  );
+  const instructions = withInstructions ? buildServerInstructions() : '';
+  registerGetHelpPrompt(server, instructions);
+  registerGetToolHelpPrompt(server);
+  registerAnalyzePathPrompt(server);
+  registerCompareFilesPrompt(server);
+  registerToolInfoResource(server);
+  return server;
+}
+
+async function connectPair(
+  server: McpServer
+): Promise<{ client: Client; cleanup: () => Promise<void> }> {
+  const client = new Client({ name: 'test-client', version: '1.0.0' });
+  const [clientTransport, serverTransport] = LinkedTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  return {
+    client,
+    cleanup: async () => {
+      await client.close().catch(() => {});
+      await server.close().catch(() => {});
+    },
+  };
+}
 
 describe('completions', () => {
   it('does not reuse stale path suggestions for a different prefix inside the rate limit window', async () => {
@@ -24,38 +61,33 @@ describe('completions', () => {
     await writeFile(join(tmpDir, 'beta.txt'), 'beta', 'utf8');
     await setAllowedDirectoriesResolved([tmpDir]);
 
-    const server = new McpServer(
-      { name: 'test-server', version: '0.0.0' },
-      { capabilities: { completions: {} } }
-    );
-    registerCompletions(server, '');
-
-    const client = new Client({ name: 'test-client', version: '1.0.0' });
-    const [clientTransport, serverTransport] =
-      LinkedTransport.createLinkedPair();
+    const server = makeCompletionServer();
+    const { client, cleanup } = await connectPair(server);
 
     try {
-      await server.connect(serverTransport);
-      await client.connect(clientTransport);
-
       const first = await client.complete({
-        ref: { type: 'ref/prompt', name: 'get-help' },
-        argument: { name: 'path', value: 'a' },
+        ref: { type: 'ref/prompt', name: 'analyze-path' },
+        argument: { name: 'path', value: join(tmpDir, 'a') },
       });
       const second = await client.complete({
-        ref: { type: 'ref/prompt', name: 'get-help' },
-        argument: { name: 'path', value: 'b' },
+        ref: { type: 'ref/prompt', name: 'analyze-path' },
+        argument: { name: 'path', value: join(tmpDir, 'b') },
       });
 
-      const firstValues = first.completion.values;
-      const secondValues = second.completion.values;
-
-      assert.ok(firstValues.some((value) => value.endsWith('alpha.txt')));
-      assert.ok(secondValues.some((value) => value.endsWith('beta.txt')));
-      assert.ok(!secondValues.some((value) => value.endsWith('alpha.txt')));
+      assert.ok(
+        first.completion.values.some((v) => v.endsWith('alpha.txt')),
+        'first should include alpha.txt'
+      );
+      assert.ok(
+        second.completion.values.some((v) => v.endsWith('beta.txt')),
+        'second should include beta.txt'
+      );
+      assert.ok(
+        !second.completion.values.some((v) => v.endsWith('alpha.txt')),
+        'second should not include alpha.txt'
+      );
     } finally {
-      await client.close().catch(() => {});
-      await server.close().catch(() => {});
+      await cleanup();
       await rm(tmpDir, { recursive: true, force: true });
       await setAllowedDirectoriesResolved([]);
     }
@@ -70,41 +102,36 @@ describe('completions', () => {
     await writeFile(join(fooDir, 'inside.txt'), 'inside', 'utf8');
     await setAllowedDirectoriesResolved([tmpDir]);
 
-    const server = new McpServer(
-      { name: 'test-server', version: '0.0.0' },
-      { capabilities: { completions: {} } }
-    );
-    registerCompletions(server, '');
-
-    const client = new Client({ name: 'test-client', version: '1.0.0' });
-    const [clientTransport, serverTransport] =
-      LinkedTransport.createLinkedPair();
+    const server = makeCompletionServer();
+    const { client, cleanup } = await connectPair(server);
 
     try {
-      await server.connect(serverTransport);
-      await client.connect(clientTransport);
-
+      // context cwd=fooDir → resolves inside fooDir → finds inside.txt
       const fromContextDirectory = await client.complete({
-        ref: { type: 'ref/prompt', name: 'get-help' },
+        ref: { type: 'ref/prompt', name: 'analyze-path' },
         argument: { name: 'path', value: '' },
-        context: { arguments: { bar: '1', cwd: 'foo' } },
+        context: { arguments: { cwd: fooDir } },
       });
+      // context key looks like a combined value — resolves to rootDir
       const withoutContextDirectory = await client.complete({
-        ref: { type: 'ref/prompt', name: 'get-help' },
+        ref: { type: 'ref/prompt', name: 'analyze-path' },
         argument: { name: 'path', value: '' },
-        context: { arguments: { bar: '1&cwd=foo' } },
+        context: { arguments: { [`cwd&inside=${fooDir}`]: '1' } },
       });
 
-      const firstValues = fromContextDirectory.completion.values;
-      const secondValues = withoutContextDirectory.completion.values;
-
-      assert.ok(firstValues.some((value) => value.endsWith('inside.txt')));
-      assert.deepEqual(secondValues.map(normalizePath), [
-        normalizePath(tmpDir),
-      ]);
+      assert.ok(
+        fromContextDirectory.completion.values.some((v) =>
+          v.endsWith('inside.txt')
+        ),
+        'context cwd should resolve to fooDir'
+      );
+      assert.deepEqual(
+        withoutContextDirectory.completion.values.map(normalizePath),
+        [normalizePath(tmpDir)],
+        'mangled context key should fall back to root'
+      );
     } finally {
-      await client.close().catch(() => {});
-      await server.close().catch(() => {});
+      await cleanup();
       await rm(tmpDir, { recursive: true, force: true });
       await setAllowedDirectoriesResolved([]);
     }
@@ -127,163 +154,133 @@ describe('completions', () => {
     );
     await setAllowedDirectoriesResolved([allowedDir]);
 
-    const server = new McpServer(
-      { name: 'test-server', version: '0.0.0' },
-      { capabilities: { completions: {} } }
-    );
-    registerCompletions(server, '');
-
-    const client = new Client({ name: 'test-client', version: '1.0.0' });
-    const [clientTransport, serverTransport] =
-      LinkedTransport.createLinkedPair();
+    const server = makeCompletionServer();
+    const { client, cleanup } = await connectPair(server);
 
     try {
-      await server.connect(serverTransport);
-      await client.connect(clientTransport);
-
       const direct = await client.complete({
-        ref: { type: 'ref/prompt', name: 'get-help' },
-        argument: { name: 'path', value: 'linked/' },
+        ref: { type: 'ref/prompt', name: 'analyze-path' },
+        argument: { name: 'path', value: `${linkedDir}${sep}` },
       });
       const fromContext = await client.complete({
-        ref: { type: 'ref/prompt', name: 'get-help' },
+        ref: { type: 'ref/prompt', name: 'analyze-path' },
         argument: { name: 'path', value: '' },
-        context: { arguments: { cwd: 'linked' } },
+        context: { arguments: { cwd: linkedDir } },
       });
 
       assert.ok(
-        !direct.completion.values.some((value) => value.endsWith('secret.txt'))
+        !direct.completion.values.some((v) => v.endsWith('secret.txt')),
+        'symlink direct should not expose secret.txt'
       );
       assert.ok(
-        !fromContext.completion.values.some((value) =>
-          value.endsWith('secret.txt')
-        )
+        !fromContext.completion.values.some((v) => v.endsWith('secret.txt')),
+        'symlink via context should not expose secret.txt'
       );
     } finally {
-      await client.close().catch(() => {});
-      await server.close().catch(() => {});
+      await cleanup();
       await rm(tmpDir, { recursive: true, force: true });
       await setAllowedDirectoriesResolved([]);
     }
   });
 
   it('completes tool names for the get-tool-help prompt', async () => {
-    const server = new McpServer(
-      { name: 'test-server', version: '0.0.0' },
-      { capabilities: { completions: {} } }
-    );
-    registerCompletions(server, '');
-
-    const client = new Client({ name: 'test-client', version: '1.0.0' });
-    const [clientTransport, serverTransport] =
-      LinkedTransport.createLinkedPair();
+    const server = makeCompletionServer();
+    const { client, cleanup } = await connectPair(server);
 
     try {
-      await server.connect(serverTransport);
-      await client.connect(clientTransport);
-
       const result = await client.complete({
         ref: { type: 'ref/prompt', name: 'get-tool-help' },
         argument: { name: 'name', value: 're' },
       });
 
-      assert.ok(result.completion.values.includes('read'));
-      assert.ok(result.completion.values.includes('read_many'));
-      assert.ok(!result.completion.values.includes('write'));
+      assert.ok(
+        result.completion.values.includes('read'),
+        'should include read'
+      );
+      assert.ok(
+        result.completion.values.includes('read_many'),
+        'should include read_many'
+      );
+      assert.ok(
+        !result.completion.values.includes('write'),
+        'should not include write'
+      );
     } finally {
-      await client.close().catch(() => {});
-      await server.close().catch(() => {});
+      await cleanup();
     }
   });
 
   it('completes tool-info template names for resource references', async () => {
-    const server = new McpServer(
-      { name: 'test-server', version: '0.0.0' },
-      { capabilities: { completions: {} } }
-    );
-    registerCompletions(server, '');
-
-    const client = new Client({ name: 'test-client', version: '1.0.0' });
-    const [clientTransport, serverTransport] =
-      LinkedTransport.createLinkedPair();
+    const server = makeCompletionServer();
+    const { client, cleanup } = await connectPair(server);
 
     try {
-      await server.connect(serverTransport);
-      await client.connect(clientTransport);
-
       const result = await client.complete({
         ref: { type: 'ref/resource', uri: 'internal://tool-info/{name}' },
         argument: { name: 'name', value: 'st' },
       });
 
-      assert.ok(result.completion.values.includes('stat'));
-      assert.ok(result.completion.values.includes('stat_many'));
-      assert.ok(!result.completion.values.includes('read'));
+      assert.ok(
+        result.completion.values.includes('stat'),
+        'should include stat'
+      );
+      assert.ok(
+        result.completion.values.includes('stat_many'),
+        'should include stat_many'
+      );
+      assert.ok(
+        !result.completion.values.includes('read'),
+        'should not include read'
+      );
     } finally {
-      await client.close().catch(() => {});
-      await server.close().catch(() => {});
+      await cleanup();
     }
   });
 
-  it('completes enum values for sortBy argument', async () => {
-    const server = new McpServer(
-      { name: 'test-server', version: '0.0.0' },
-      { capabilities: { completions: {} } }
-    );
-    registerCompletions(server, '');
-
-    const client = new Client({ name: 'test-client', version: '1.0.0' });
-    const [clientTransport, serverTransport] =
-      LinkedTransport.createLinkedPair();
+  it('completes topic sections for the get-help prompt', async () => {
+    const server = makeCompletionServer(true);
+    const { client, cleanup } = await connectPair(server);
 
     try {
-      await server.connect(serverTransport);
-      await client.connect(clientTransport);
-
       const all = await client.complete({
         ref: { type: 'ref/prompt', name: 'get-help' },
-        argument: { name: 'sortBy', value: '' },
+        argument: { name: 'topic', value: '' },
       });
-
-      assert.deepEqual(all.completion.values, ['name', 'size', 'modified']);
-
       const filtered = await client.complete({
         ref: { type: 'ref/prompt', name: 'get-help' },
-        argument: { name: 'sortBy', value: 's' },
+        argument: { name: 'topic', value: 'er' },
       });
 
-      assert.deepEqual(filtered.completion.values, ['size']);
-      assert.equal(filtered.completion.hasMore, false);
+      assert.ok(
+        all.completion.values.length > 0,
+        'should return at least one topic'
+      );
+      assert.ok(
+        filtered.completion.values.every((v) => v.startsWith('er')),
+        'filtered topics should all start with "er"'
+      );
     } finally {
-      await client.close().catch(() => {});
-      await server.close().catch(() => {});
+      await cleanup();
     }
   });
 
-  it('returns empty completions for unknown non-path arguments', async () => {
-    const server = new McpServer(
-      { name: 'test-server', version: '0.0.0' },
-      { capabilities: { completions: {} } }
-    );
-    registerCompletions(server, '');
-
-    const client = new Client({ name: 'test-client', version: '1.0.0' });
-    const [clientTransport, serverTransport] =
-      LinkedTransport.createLinkedPair();
+  it('returns empty completions for arg names not declared by the prompt', async () => {
+    const server = makeCompletionServer();
+    const { client, cleanup } = await connectPair(server);
 
     try {
-      await server.connect(serverTransport);
-      await client.connect(clientTransport);
-
       const result = await client.complete({
         ref: { type: 'ref/prompt', name: 'get-help' },
-        argument: { name: 'unknownArg', value: 'x' },
+        argument: { name: 'path', value: 'x' },
       });
 
-      assert.deepEqual(result.completion.values, []);
+      assert.deepEqual(
+        result.completion.values,
+        [],
+        'get-help has no path arg — must return empty'
+      );
     } finally {
-      await client.close().catch(() => {});
-      await server.close().catch(() => {});
+      await cleanup();
     }
   });
 });

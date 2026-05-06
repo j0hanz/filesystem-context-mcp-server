@@ -39,7 +39,6 @@ import {
 import { withAllowedDirectoriesState } from '../lib/paths.js';
 import { createInMemoryResourceStore } from '../lib/resource-store.js';
 
-import { registerCompletions } from '../completions.js';
 import { pkgInfo } from '../pkg-info.js';
 import {
   registerAnalyzePathPrompt,
@@ -249,7 +248,6 @@ export async function createServer(
   registerGetToolHelpPrompt(server, localIcon);
   registerResultResources(server, resourceStore, localIcon);
   registerMetricsResource(server, localIcon);
-  registerCompletions(server, serverInstructions);
   registerAllTools(server, {
     resourceStore,
     isInitialized: () => rootsManager.isInitialized(),
