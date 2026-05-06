@@ -6,36 +6,38 @@ This file provides guidance to agents built on top of the filesystem MCP server 
 
 Secure filesystem MCP server (Model Context Protocol) — gives AI clients sandboxed access to the local filesystem via 18 tools, 6 resources, and 4 prompts. Published to npm as `@j0hanz/filesystem-mcp`. Requires **Node.js >= 24**.
 
-## Common Commands
+## Commands
 
-The build, type-check, and test scripts route through [scripts/tasks.mjs](scripts/tasks.mjs) — call them via npm rather than invoking `tsc` directly so the dist + tests stay in sync.
+Prefer `node scripts/tasks.mjs` over individual `npm run` commands for the dev loop — it runs checks in parallel, auto-fixes where possible, and writes structured failure output.
 
-| Task                                      | Command                        |
-| ----------------------------------------- | ------------------------------ |
-| Build (clean + tsc + copy assets + chmod) | `npm run build`                |
-| Watch-mode rebuild                        | `npm run dev`                  |
-| Run compiled server                       | `npm start`                    |
-| Type-check src **and** tests in parallel  | `npm run type-check`           |
-| Type-check src only                       | `npm run type-check:src`       |
-| Type-check tests only                     | `npm run type-check:tests`     |
-| Lint                                      | `npm run lint` (or `lint:fix`) |
-| Format                                    | `npm run format`               |
-| Tests (build first, then run)             | `npm test`                     |
-| Tests without rebuild                     | `npm run test:fast`            |
-| Coverage                                  | `npm run test:coverage`        |
-| Knip (unused exports)                     | `npm run knip`                 |
-| Run MCP Inspector against the server      | `npm run inspector`            |
+```bash
+node scripts/tasks.mjs           # format → [lint, type-check, knip] → [test, rebuild] (fail-fast)
+node scripts/tasks.mjs --fix     # auto-fix format/lint/knip, then re-run all checks
+node scripts/tasks.mjs --quick   # skip test + rebuild (fast static checks only)
+node scripts/tasks.mjs --all     # continue past failures instead of stopping at first
+node scripts/tasks.mjs --detail <n>  # show source window for the Nth test failure from last run
+node scripts/tasks.mjs --watch   # run node --test in watch mode
+```
+
+Individual commands (use when you need only one step):
+
+```bash
+npm run build          # Compile TypeScript to dist/
+npm run type-check     # Type-check without emitting
+npm run lint           # ESLint (0 warnings allowed)
+npm run inspector      # Launch MCP inspector for manual testing
+```
 
 **Run a single test file:**
 
 ```sh
-node --test --import tsx/esm src/__tests__/tools/read-write.test.ts
+node --test --import tsx/esm __tests__/tools/read-write.test.ts
 ```
 
 **Run a single test by name** (Node `node:test` filter):
 
 ```sh
-node --test --import tsx/esm --test-name-pattern="read returns content" src/__tests__/tools/read-write.test.ts
+node --test --import tsx/esm --test-name-pattern="read returns content" __tests__/tools/read-write.test.ts
 ```
 
 ## Architecture
@@ -73,7 +75,7 @@ All Zod input/output schemas are centralized in [src/schemas.ts](src/schemas.ts)
 
 ### Tests
 
-Tests in [src/**tests**/](src/__tests__/) use Node's native `node:test` runner via `tsx/esm`. Integration tests use [src/**tests**/linked-transport.ts](src/__tests__/linked-transport.ts) (an in-memory pair of MCP transports) with helpers in [src/**tests**/helpers.ts](src/__tests__/helpers.ts) (`createTestEnv`, `assertOk`, `assertToolError`, `getStructured`). Each test gets an isolated `mkdtemp` directory and resets `setAllowedDirectoriesResolved` on cleanup. The contract test [src/**tests**/contract.test.ts](src/__tests__/contract.test.ts) enforces that all 18 tools are registered with the correct annotations — update it when adding/removing tools.
+Tests in [src/**tests**/](__tests__/) use Node's native `node:test` runner via `tsx/esm`. Integration tests use [src/**tests**/linked-transport.ts](__tests__/linked-transport.ts) (an in-memory pair of MCP transports) with helpers in [src/**tests**/helpers.ts](__tests__/helpers.ts) (`createTestEnv`, `assertOk`, `assertToolError`, `getStructured`). Each test gets an isolated `mkdtemp` directory and resets `setAllowedDirectoriesResolved` on cleanup. The contract test [src/**tests**/contract.test.ts](__tests__/contract.test.ts) enforces that all 18 tools are registered with the correct annotations — update it when adding/removing tools.
 
 ## TypeScript Conventions
 
