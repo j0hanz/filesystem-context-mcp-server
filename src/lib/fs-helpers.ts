@@ -25,6 +25,9 @@ import { assertAllowedFileAccess, validateExistingPath } from './paths.js';
 
 const READ_ONLY_FILE_FLAG = 'r';
 
+const UNFILLED = Symbol('UNFILLED');
+type Unfilled = typeof UNFILLED;
+
 function assertPositiveSafeIntegerOption(
   name: string,
   value: unknown,
@@ -70,12 +73,15 @@ export async function processInParallel<T, R>(
   const effectiveConcurrency = normalizeConcurrency(concurrency);
 
   // Pre-allocate slots by index to guarantee input-order output.
-  const resultSlots: (R | undefined)[] = new Array<R | undefined>(itemCount);
+  // Use UNFILLED sentinel to distinguish "not yet filled" from "filled with undefined".
+  const resultSlots: (R | Unfilled)[] = new Array<R | Unfilled>(itemCount);
   const errors: { index: number; error: Error }[] = [];
 
   if (signal?.aborted) throw createParallelAbortError();
 
   let nextIndex = 0;
+
+  resultSlots.fill(UNFILLED);
 
   const next = async (): Promise<void> => {
     while (nextIndex < itemCount) {
@@ -113,7 +119,7 @@ export async function processInParallel<T, R>(
 
   const results: R[] = [];
   for (const slot of resultSlots) {
-    if (slot !== undefined) {
+    if (slot !== UNFILLED) {
       results.push(slot);
     }
   }
