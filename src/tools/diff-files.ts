@@ -4,7 +4,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 
 import { formatPatch, structuredPatch, type StructuredPatch } from 'diff';
-import type { z } from 'zod';
+import type { z } from 'zod/v4';
 
 import { withAbort } from '../lib/abort.js';
 import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';

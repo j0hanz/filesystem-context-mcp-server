@@ -3,7 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { relative } from 'node:path';
 
 import RE2 from 're2';
-import type { z } from 'zod';
+import type { z } from 'zod/v4';
 
 import { DEFAULT_EXCLUDE_PATTERNS, parseEnvInt } from '../lib/constants.js';
 import {

@@ -6,7 +6,7 @@ import { debuglog } from 'node:util';
 import { parentPort, threadId, Worker, workerData } from 'node:worker_threads';
 
 import RE2 from 're2';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 import type {
   ContentMatch,

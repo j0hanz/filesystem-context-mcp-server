@@ -12,7 +12,7 @@ import type {
 import { channel } from 'node:diagnostics_channel';
 import { basename } from 'node:path';
 
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 import { createTimedAbortSignal } from '../lib/abort.js';
 import { parseTrueEnvFlag } from '../lib/constants.js';

@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 
-import type { z } from 'zod';
+import type { z } from 'zod/v4';
 
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
 import { classifyError, ErrorCode } from '../lib/errors.js';

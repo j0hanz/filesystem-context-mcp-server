@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 
-import type { z } from 'zod';
+import type { z } from 'zod/v4';
 
 import { ErrorCode } from '../lib/errors.js';
 import { getAllowedDirectories } from '../lib/paths.js';

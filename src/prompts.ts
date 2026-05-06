@@ -6,7 +6,7 @@ import {
   ProtocolErrorCode,
 } from '@modelcontextprotocol/server';
 
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 import { completePathCached } from './lib/path-completer.js';
 

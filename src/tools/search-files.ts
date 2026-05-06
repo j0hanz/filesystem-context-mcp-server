@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 
 import { basename, relative } from 'node:path';
 
-import type { z } from 'zod';
+import type { z } from 'zod/v4';
 
 import {
   DEFAULT_EXCLUDE_PATTERNS,

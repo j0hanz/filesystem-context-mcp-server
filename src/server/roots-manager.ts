@@ -3,7 +3,7 @@ import type { McpServer, Root } from '@modelcontextprotocol/server';
 import { channel } from 'node:diagnostics_channel';
 import { realpath } from 'node:fs/promises';
 
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 import {
   assertNotAborted,

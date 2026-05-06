@@ -4,7 +4,7 @@ import { stat } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
 import { applyPatch, parsePatch, type StructuredPatch } from 'diff';
-import type { z } from 'zod';
+import type { z } from 'zod/v4';
 
 import { withAbort } from '../lib/abort.js';
 import { MAX_TEXT_FILE_SIZE, PARALLEL_CONCURRENCY } from '../lib/constants.js';

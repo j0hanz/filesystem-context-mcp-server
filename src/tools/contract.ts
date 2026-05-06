@@ -1,6 +1,6 @@
 import type { Icon } from '@modelcontextprotocol/server';
 
-import type { ZodType } from 'zod';
+import type { ZodType } from 'zod/v4';
 
 export interface ToolContract {
   /**

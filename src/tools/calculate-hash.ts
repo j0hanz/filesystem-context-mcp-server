@@ -6,7 +6,7 @@ import { stat } from 'node:fs/promises';
 import { basename, relative, win32 } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
-import type { z } from 'zod';
+import type { z } from 'zod/v4';
 
 import { assertNotAborted, withAbort } from '../lib/abort.js';
 import { PARALLEL_CONCURRENCY } from '../lib/constants.js';

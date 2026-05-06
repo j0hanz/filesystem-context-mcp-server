@@ -3,7 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
 
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 import {
   DEFAULT_EXCLUDE_PATTERNS,

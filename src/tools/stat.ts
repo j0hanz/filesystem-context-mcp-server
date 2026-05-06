@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 
 import { basename } from 'node:path';
 
-import type { z } from 'zod';
+import type { z } from 'zod/v4';
 
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';

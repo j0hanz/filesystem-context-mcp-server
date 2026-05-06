@@ -3,7 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { lstat, rm, rmdir } from 'node:fs/promises';
 import { basename } from 'node:path';
 
-import type { z } from 'zod';
+import type { z } from 'zod/v4';
 
 import { withAbort } from '../lib/abort.js';
 import { ErrorCode, isNodeError, McpError } from '../lib/errors.js';
