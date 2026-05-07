@@ -75,7 +75,7 @@ async function handleTree(
 
 export function registerTreeTool(
   server: McpServer,
-  options: ToolRegistrationOptions = {}
+  options: ToolRegistrationOptions
 ): void {
   const handler = (
     args: z.infer<typeof TreeInputSchema>,

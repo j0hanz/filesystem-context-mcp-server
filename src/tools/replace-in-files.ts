@@ -520,7 +520,7 @@ async function handleSearchAndReplace(
 
 export function registerSearchAndReplaceTool(
   server: McpServer,
-  options: ToolRegistrationOptions = {}
+  options: ToolRegistrationOptions
 ): void {
   const handler = (
     args: z.infer<typeof SearchAndReplaceInputSchema>,

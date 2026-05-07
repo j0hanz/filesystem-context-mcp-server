@@ -63,7 +63,7 @@ async function handleWriteFile(
 
 export function registerWriteFileTool(
   server: McpServer,
-  options: ToolRegistrationOptions = {}
+  options: ToolRegistrationOptions
 ): void {
   const handler = (
     args: z.infer<typeof WriteFileInputSchema>,

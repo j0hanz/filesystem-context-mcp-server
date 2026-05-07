@@ -219,7 +219,7 @@ async function handleReadFile(
 
 export function registerReadFileTool(
   server: McpServer,
-  options: ToolRegistrationOptions = {}
+  options: ToolRegistrationOptions
 ): void {
   const handler = (
     args: ReadFileInput,

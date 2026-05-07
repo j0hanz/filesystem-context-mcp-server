@@ -175,7 +175,7 @@ async function handleSearchFiles(
 
 export function registerSearchFilesTool(
   server: McpServer,
-  options: ToolRegistrationOptions = {}
+  options: ToolRegistrationOptions
 ): void {
   const handler = (
     args: z.infer<typeof SearchFilesInputSchema>,

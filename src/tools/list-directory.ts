@@ -280,7 +280,7 @@ async function handleListDirectory(
 
 export function registerListDirectoryTool(
   server: McpServer,
-  options: ToolRegistrationOptions = {}
+  options: ToolRegistrationOptions
 ): void {
   const handler = (
     args: z.infer<typeof ListDirectoryInputSchema>,

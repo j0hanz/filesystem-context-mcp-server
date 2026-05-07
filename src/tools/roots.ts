@@ -59,7 +59,7 @@ function handleListAllowedDirectories(): ToolResponse<
 
 export function registerListAllowedDirectoriesTool(
   server: McpServer,
-  options: ToolRegistrationOptions = {}
+  options: ToolRegistrationOptions
 ): void {
   const handler = (
     _args: z.infer<typeof ListAllowedDirectoriesInputSchema>,

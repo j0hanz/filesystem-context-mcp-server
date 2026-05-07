@@ -71,7 +71,7 @@ async function handleGetFileInfo(
 
 export function registerGetFileInfoTool(
   server: McpServer,
-  options: ToolRegistrationOptions = {}
+  options: ToolRegistrationOptions
 ): void {
   const handler = (
     args: z.infer<typeof GetFileInfoInputSchema>,

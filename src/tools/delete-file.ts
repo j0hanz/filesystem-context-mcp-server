@@ -125,7 +125,7 @@ async function handleDeleteFile(
 
 export function registerDeleteFileTool(
   server: McpServer,
-  options: ToolRegistrationOptions = {}
+  options: ToolRegistrationOptions
 ): void {
   const handler = (
     args: z.infer<typeof DeleteFileInputSchema>,

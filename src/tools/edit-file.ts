@@ -404,7 +404,7 @@ async function handleEditFile(
 
 export function registerEditFileTool(
   server: McpServer,
-  options: ToolRegistrationOptions = {}
+  options: ToolRegistrationOptions
 ): void {
   const handler = (
     args: EditInput,

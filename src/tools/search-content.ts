@@ -410,7 +410,7 @@ async function handleSearchContent(
 
 export function registerSearchContentTool(
   server: McpServer,
-  options: ToolRegistrationOptions = {}
+  options: ToolRegistrationOptions
 ): void {
   const handler = (
     args: SearchInput,

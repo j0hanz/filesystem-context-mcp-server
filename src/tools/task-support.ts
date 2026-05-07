@@ -593,7 +593,7 @@ export function registerStandardTool<
   server: McpServer,
   toolDef: ToolContract,
   handler: (args: Args, ctx: ToolContext) => Promise<ToolResult<Result>>,
-  options: ToolRegistrationOptions = {},
+  options: ToolRegistrationOptions,
   wrapOptions: {
     guard?: (() => boolean) | undefined;
     progressMessage?: (args: Args) => string;

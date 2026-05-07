@@ -56,7 +56,7 @@ import { registerWriteFileTool, WRITE_FILE_TOOL } from './tools/write-file.js';
 
 interface ToolEntry {
   contract: ToolContract;
-  register: (server: McpServer, options?: ToolRegistrationOptions) => void;
+  register: (server: McpServer, options: ToolRegistrationOptions) => void;
 }
 
 const TOOL_ENTRIES: ToolEntry[] = [

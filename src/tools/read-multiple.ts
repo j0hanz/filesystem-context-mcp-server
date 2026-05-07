@@ -239,7 +239,7 @@ async function handleReadMultipleFiles(
 
 export function registerReadMultipleFilesTool(
   server: McpServer,
-  options: ToolRegistrationOptions = {}
+  options: ToolRegistrationOptions
 ): void {
   const handler = (
     args: ReadManyInput,

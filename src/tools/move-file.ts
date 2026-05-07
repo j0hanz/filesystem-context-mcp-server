@@ -312,7 +312,7 @@ async function handleMoveFile(
 
 export function registerMoveFileTool(
   server: McpServer,
-  options: ToolRegistrationOptions = {}
+  options: ToolRegistrationOptions
 ): void {
   const handler = (
     args: z.infer<typeof MoveFileInputSchema>,

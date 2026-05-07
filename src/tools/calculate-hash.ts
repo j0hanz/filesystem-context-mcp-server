@@ -227,7 +227,7 @@ async function handleCalculateHash(
 
 export function registerCalculateHashTool(
   server: McpServer,
-  options: ToolRegistrationOptions = {}
+  options: ToolRegistrationOptions
 ): void {
   const handler = (
     args: z.infer<typeof CalculateHashInputSchema>,

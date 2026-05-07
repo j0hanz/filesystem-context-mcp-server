@@ -72,7 +72,7 @@ async function handleCreateDirectory(
 
 export function registerCreateDirectoryTool(
   server: McpServer,
-  options: ToolRegistrationOptions = {}
+  options: ToolRegistrationOptions
 ): void {
   const handler = (
     args: z.infer<typeof CreateDirectoryInputSchema>,

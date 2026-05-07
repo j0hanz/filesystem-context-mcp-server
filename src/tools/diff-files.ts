@@ -169,7 +169,7 @@ async function handleDiffFiles(
 
 export function registerDiffFilesTool(
   server: McpServer,
-  options: ToolRegistrationOptions = {}
+  options: ToolRegistrationOptions
 ): void {
   const handler = (
     args: z.infer<typeof DiffFilesInputSchema>,
