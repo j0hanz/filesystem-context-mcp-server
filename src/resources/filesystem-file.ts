@@ -19,7 +19,7 @@ import {
   type ResourceRegistrationOptions,
 } from './shared.js';
 
-const FILESYSTEM_FILE_URI_TEMPLATE = 'filesystem-mcp://file/{+path}';
+export const FILESYSTEM_FILE_URI_TEMPLATE = 'filesystem-mcp://file/{+path}';
 const FILE_URI_PREFIX = 'filesystem-mcp://file/';
 
 const FILE_TEMPLATE = new ResourceTemplate(FILESYSTEM_FILE_URI_TEMPLATE, {
@@ -36,7 +36,7 @@ function guessMimeType(filePath: string): string {
   return 'text/plain';
 }
 
-function createFileSubscription(
+export function createFileSubscription(
   notify: (uri: string) => void
 ): ResourceSubscriptionLifecycle {
   const watchers = new Map<string, FSWatcher>();
