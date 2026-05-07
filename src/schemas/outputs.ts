@@ -9,6 +9,7 @@ import {
 } from './fields.js';
 import { NextCursorSchema } from './pagination.js';
 import {
+  ContinuationSchema,
   FileInfoSchema,
   OperationSummarySchema,
   PerFileErrorSchema,
@@ -35,7 +36,6 @@ export const ListDirectoryOutputSchema = z.strictObject({
   totalEntries: NonNegInt.optional().describe('Total entries scanned'),
   totalFiles: NonNegInt.optional().describe('Total files'),
   totalDirectories: NonNegInt.optional().describe('Total directories'),
-  truncated: z.boolean().optional().describe('Results were truncated'),
   stoppedReason: z.string().optional().describe('Why enumeration stopped'),
   skippedInaccessible: NonNegInt.optional().describe(
     'Inaccessible entries skipped'
@@ -57,7 +57,6 @@ export const SearchFilesOutputSchema = z.strictObject({
     .describe('Matching files'),
   totalMatches: NonNegInt.optional().describe('Total matches found'),
   filesScanned: NonNegInt.optional().describe('Files scanned'),
-  truncated: z.boolean().optional().describe('Results truncated'),
   skippedInaccessible: NonNegInt.optional().describe(
     'Inaccessible entries skipped'
   ),
@@ -85,8 +84,10 @@ export const TreeOutputSchema = z.strictObject({
   root: z.string().describe('Root directory path'),
   tree: TreeNodeSchema.describe('Tree structure'),
   ascii: z.string().describe('ASCII tree representation'),
-  truncated: z.boolean().optional().describe('Tree was truncated'),
   totalEntries: NonNegInt.optional().describe('Total entries in tree'),
+  continuation: ContinuationSchema.optional().describe(
+    'Present when tree was cut; call the named tool with the given args to continue'
+  ),
   resourceUri: z
     .string()
     .optional()
@@ -99,11 +100,13 @@ export const ReadFileOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),
   path: z.string().describe('Resolved path'),
   content: z.string().optional().describe('File content'),
-  truncated: z.boolean().optional().describe('Content was truncated'),
   resourceUri: z
     .string()
     .optional()
-    .describe('Full content URI when truncated'),
+    .describe('Full content URI when externalized'),
+  continuation: ContinuationSchema.optional().describe(
+    'Present when file was cut; call the named tool with the given args to read next chunk'
+  ),
   totalLines: NonNegInt.optional().describe('Total lines in file'),
   linesRead: NonNegInt.optional().describe('Lines returned'),
   hasMoreLines: z.boolean().optional().describe('More lines available'),
@@ -124,7 +127,6 @@ export const ReadManyOutputSchema = z.strictObject({
       z.strictObject({
         path: z.string().describe('File path'),
         content: z.string().optional().describe('Content'),
-        truncated: z.boolean().optional().describe('Truncated?'),
         resourceUri: z.string().optional().describe('Full content URI'),
         totalLines: NonNegInt.optional().describe('Total lines'),
         linesRead: NonNegInt.optional().describe('Lines returned'),
@@ -133,10 +135,9 @@ export const ReadManyOutputSchema = z.strictObject({
         tail: PositiveInt.optional().describe('Tail lines requested'),
         startLine: PositiveInt.optional().describe('Start line'),
         endLine: PositiveInt.optional().describe('End line'),
-        truncationReason: z
-          .enum(['head', 'tail', 'range', 'externalized'])
-          .optional()
-          .describe('Why content was truncated'),
+        continuation: ContinuationSchema.optional().describe(
+          'Present when file was cut; call read with the given args to continue'
+        ),
         error: PerFileErrorSchema.optional().describe('Per-file error'),
       })
     )
