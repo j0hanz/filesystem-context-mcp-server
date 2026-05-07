@@ -1,3 +1,4 @@
+import { createMcpExpressApp } from '@modelcontextprotocol/express';
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import {
   InMemoryTaskMessageQueue,
@@ -8,12 +9,6 @@ import {
   type SetLevelRequest,
   StdioServerTransport,
 } from '@modelcontextprotocol/server';
-import { createMcpExpressApp } from '@modelcontextprotocol/express';
-import express, {
-  type NextFunction,
-  type Request,
-  type Response,
-} from 'express';
 
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { channel } from 'node:diagnostics_channel';
@@ -25,6 +20,12 @@ import {
   type ServerResponse,
 } from 'node:http';
 import { inspect } from 'node:util';
+
+import express, {
+  type NextFunction,
+  type Request,
+  type Response,
+} from 'express';
 
 import {
   DEFAULT_LOG_LEVEL,
@@ -445,7 +446,6 @@ function ensureAuthorizedRequest(
   return false;
 }
 
-
 async function handleSessionTransportRequest(
   session: HttpSession,
   req: IncomingMessage,
@@ -493,7 +493,6 @@ function assertHttpBindingSecurity(host: string): void {
   );
 }
 
-
 export async function startHttpServer(
   port: number,
   options: ServerOptions
@@ -508,6 +507,25 @@ export async function startHttpServer(
     allowedHosts: isLoopbackHttpHost(httpHost)
       ? localhostAllowedHostnames()
       : [httpHost],
+  });
+
+  // Origin validation middleware for browser CORS requests
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const origin = req.get('origin');
+    if (origin) {
+      // Only allow localhost origins
+      const allowedOriginPatterns = [
+        /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/u,
+      ];
+      const isAllowed = allowedOriginPatterns.some((pattern) =>
+        pattern.test(origin)
+      );
+      if (!isAllowed) {
+        res.status(403).send('Forbidden: disallowed origin');
+        return;
+      }
+    }
+    next();
   });
 
   // Bearer auth middleware — runs before all /mcp requests
@@ -607,6 +625,10 @@ export async function startHttpServer(
         if (session) await handleSessionTransportRequest(session, req, res);
         return;
       }
+
+      // Unsupported method
+      res.status(405).set('Allow', 'GET, POST, DELETE, OPTIONS');
+      sendJsonRpcError(res, 405, JSON_RPC_SERVER_ERROR, 'Method Not Allowed');
     } catch (error) {
       Logger.error(
         '[HTTP] Error handling request:',

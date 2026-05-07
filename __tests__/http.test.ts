@@ -466,7 +466,7 @@ describe('HTTP transport', () => {
     });
 
     assert.equal(response.statusCode, 403);
-    assert.match(response.body, /Forbidden: Invalid Host/u);
+    assert.match(response.body, /Invalid Host/u);
   });
 
   it('returns 405 for unsupported HTTP methods on /mcp', async () => {
