@@ -289,17 +289,13 @@ describe('Completion contract', () => {
   }> {
     const {
       registerGetHelpPrompt,
-      registerGetToolHelpPrompt,
       registerAnalyzePathPrompt,
       registerCompareFilesPrompt,
     } = await import('../src/prompts.js');
-    const { ALL_RESOURCES, registerAllResources } =
+    const { registerAllResources, serverInstructionsContent } =
       await import('../src/resources.js');
-    const { buildServerInstructions } =
-      await import('../src/resources/generated-instructions.js');
     const { setAllowedDirectoriesResolved } =
       await import('../src/lib/paths.js');
-    const { getDefaultPathGuard } = await import('../src/lib/path-guard.js');
     const { createInMemoryResourceStore } =
       await import('../src/lib/resource-store.js');
     const { LinkedTransport } = await import('./linked-transport.js');
@@ -316,17 +312,12 @@ describe('Completion contract', () => {
     );
 
     // Set up ResourceStore for resource registration
-    // PathGuard is already initialized globally by setAllowedDirectoriesResolved
     const resourceStore = createInMemoryResourceStore();
-    const pathGuard = getDefaultPathGuard();
 
-    const instructions = buildServerInstructions(ALL_RESOURCES);
-    registerGetHelpPrompt(server, instructions);
-    registerGetToolHelpPrompt(server);
+    registerGetHelpPrompt(server, serverInstructionsContent);
     registerAnalyzePathPrompt(server);
     registerCompareFilesPrompt(server);
     registerAllResources(server, {
-      pathGuard,
       resourceStore,
     });
 
