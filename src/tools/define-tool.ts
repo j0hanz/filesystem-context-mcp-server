@@ -1,5 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 
+import { basename } from 'node:path';
+
 import type { z } from 'zod/v4';
 
 import { ErrorCode } from '../lib/errors.js';
@@ -101,6 +103,36 @@ export function defineTool<Args, Output extends Record<string, unknown>>(
           ? { completionMessage: opts.completionMessage }
           : {}),
       });
+    },
+  };
+}
+
+/**
+ * Builds standard `progressMessage` and `completionMessage` callbacks for
+ * single-path tools that follow the pattern:
+ *   progress  → `<title>: <basename>`
+ *   error     → `<title>: <basename> • <errorCode>`
+ *   success   → `<title>: <basename> • <suffix>` (or just `<title>: <basename>`)
+ */
+export function buildPathMessages<
+  Args extends { path: string },
+  Out extends Record<string, unknown>,
+>(
+  title: string,
+  suffixForSuccess?: (sc: Out) => string | undefined
+): {
+  progressMessage: (args: Args) => string;
+  completionMessage: (args: Args, result: ToolResult<Out>) => string;
+} {
+  return {
+    progressMessage: (args) => `${title}: ${basename(args.path)}`,
+    completionMessage: (args, result) => {
+      const name = basename(args.path);
+      if (result.isError) return `${title}: ${name} \u2022 ${result.errorCode}`;
+      const suffix = suffixForSuccess?.(result.structuredContent);
+      return suffix !== undefined
+        ? `${title}: ${name} \u2022 ${suffix}`
+        : `${title}: ${name}`;
     },
   };
 }

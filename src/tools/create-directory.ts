@@ -4,7 +4,7 @@ import { basename } from 'node:path';
 import type { z } from 'zod/v4';
 
 import { withAbort } from '../lib/abort.js';
-import { ErrorCode } from '../lib/errors.js';
+import { ErrorCode, McpError } from '../lib/errors.js';
 import { validatePathForWrite } from '../lib/paths.js';
 import { CreateDirectoryInputSchema } from '../schemas/inputs.js';
 import { CreateDirectoryOutputSchema } from '../schemas/outputs.js';
@@ -12,6 +12,7 @@ import { CreateDirectoryOutputSchema } from '../schemas/outputs.js';
 import { defineTool } from './define-tool.js';
 import { DIR_CREATE_ICONS } from './icons.js';
 import {
+  buildStructuredError,
   buildToolResponse,
   IDEMPOTENT_WRITE_TOOL_ANNOTATIONS,
   type ToolContract,
@@ -20,7 +21,8 @@ import {
 const CREATE_DIRECTORY_TOOL: ToolContract = {
   name: 'mkdir',
   title: 'Create Directory',
-  description: 'Create a new directory at the specified path (recursive).',
+  description:
+    'Create one or more directories (recursive). Accepts a list of paths.',
   inputSchema: CreateDirectoryInputSchema,
   outputSchema: CreateDirectoryOutputSchema,
   annotations: IDEMPOTENT_WRITE_TOOL_ANNOTATIONS,
@@ -32,25 +34,44 @@ async function handleCreateDirectory(
   args: z.infer<typeof CreateDirectoryInputSchema>,
   signal?: AbortSignal
 ): Promise<z.infer<typeof CreateDirectoryOutputSchema>> {
-  const validPaths = await Promise.all(
-    args.paths.map((p) => validatePathForWrite(p, signal))
-  );
+  const created: { path: string; isNew: boolean }[] = [];
+  const failures: {
+    path: string;
+    error: {
+      code: string;
+      message: string;
+      path?: string;
+      suggestion?: string;
+    };
+  }[] = [];
 
-  const results = await Promise.all(
-    validPaths.map(async (p) => {
-      const isNew = await withAbort(mkdir(p, { recursive: true }), signal)
-        .then((created) => created !== undefined)
-        .catch(() => false);
-      return { path: p, isNew };
-    })
-  );
-
-  const succeeded = results.length;
+  for (const p of args.paths) {
+    try {
+      const validPath = await validatePathForWrite(p, signal);
+      const result = await withAbort(
+        mkdir(validPath, { recursive: true }),
+        signal
+      );
+      created.push({ path: validPath, isNew: result !== undefined });
+    } catch (error) {
+      // Re-throw McpErrors (e.g. ACCESS_DENIED) — security violations must not be silenced
+      if (error instanceof McpError) throw error;
+      failures.push({
+        path: p,
+        error: buildStructuredError(error, ErrorCode.UNKNOWN, p),
+      });
+    }
+  }
 
   return {
     ok: true,
-    created: results,
-    summary: { total: results.length, succeeded, failed: 0 },
+    created,
+    summary: {
+      total: args.paths.length,
+      succeeded: created.length,
+      failed: failures.length,
+    },
+    ...(failures.length > 0 ? { failures } : {}),
   };
 }
 
@@ -62,8 +83,12 @@ export const CREATE_DIRECTORY = defineTool<
   run: async (args, ctx) => {
     const structured = await handleCreateDirectory(args, ctx.signal);
     const succeeded = structured.summary.succeeded;
+    const failed = structured.summary.failed;
     const label = succeeded === 1 ? 'directory' : 'directories';
-    const text = `Created ${succeeded} ${label}`;
+    const text =
+      failed > 0
+        ? `Created ${succeeded} ${label}, ${failed} failed`
+        : `Created ${succeeded} ${label}`;
     return buildToolResponse(text, structured);
   },
   progressMessage: (args) => {

@@ -14,12 +14,15 @@ import { TreeOutputSchema } from '../schemas/outputs.js';
 import { defineTool } from './define-tool.js';
 import { DIRECTORY_ICONS } from './icons.js';
 import {
+  buildResourceLink,
   buildToolResponse,
+  maybeExternalizeTextContent,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolveFinalProgressCurrent,
   resolvePathOrRoot,
   runWithProgressSession,
   type ToolContract,
+  type ToolRegistrationOptions,
   type ToolResponse,
 } from './shared.js';
 
@@ -40,6 +43,7 @@ const TREE_TOOL: ToolContract = {
 async function handleTree(
   args: z.infer<typeof TreeInputSchema>,
   signal?: AbortSignal,
+  resourceStore?: ToolRegistrationOptions['resourceStore'],
   onProgress?: (progress: { current: number }) => void
 ): Promise<ToolResponse<z.infer<typeof TreeOutputSchema>>> {
   const basePath = resolvePathOrRoot(args.path);
@@ -54,6 +58,34 @@ async function handleTree(
   });
 
   const ascii = formatTreeAscii(result.tree);
+
+  const externalized = maybeExternalizeTextContent(resourceStore, ascii, {
+    name: `tree:${result.root}`,
+    mimeType: 'text/plain',
+  });
+
+  if (externalized) {
+    const { entry, preview } = externalized;
+    const structured: z.infer<typeof TreeOutputSchema> = {
+      ok: true,
+      root: result.root,
+      tree: result.tree,
+      ascii: preview,
+      truncated: result.truncated,
+      totalEntries: result.totalEntries,
+      resourceUri: entry.uri,
+    };
+    const text = result.truncated ? `${preview}\n[truncated]` : preview;
+    return buildToolResponse(text, structured, [
+      buildResourceLink({
+        uri: entry.uri,
+        name: entry.name,
+        mimeType: entry.mimeType,
+        description: 'Full ASCII tree',
+        expiresAt: entry.expiresAt,
+      }),
+    ]);
+  }
 
   const structured: z.infer<typeof TreeOutputSchema> = {
     ok: true,
@@ -91,7 +123,12 @@ export const TREE = defineTool<
           });
         };
 
-        const result = await handleTree(args, ctx.signal, onProgress);
+        const result = await handleTree(
+          args,
+          ctx.signal,
+          ctx.resourceStore,
+          onProgress
+        );
         const sc = result.structuredContent;
         const count = sc.totalEntries ?? 0;
         const { truncated } = sc;

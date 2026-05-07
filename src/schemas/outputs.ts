@@ -86,6 +86,10 @@ export const TreeOutputSchema = z.strictObject({
   ascii: z.string().optional().describe('ASCII tree representation'),
   truncated: z.boolean().optional().describe('Tree was truncated'),
   totalEntries: NonNegInt.optional().describe('Total entries in tree'),
+  resourceUri: z
+    .string()
+    .optional()
+    .describe('Full ascii tree URI when externalised'),
 });
 
 // --- Read group: read, read_many ---
@@ -275,6 +279,15 @@ export const ApplyPatchOutputSchema = z.strictObject({
     )
     .describe('Per-file patch results'),
   summary: OperationSummarySchema.describe('Operation summary'),
+  failures: z
+    .array(
+      z.strictObject({
+        path: z.string(),
+        error: PerFileErrorSchema,
+      })
+    )
+    .optional()
+    .describe('Per-file patch failures'),
 });
 
 export const RootsOutputSchema = z.strictObject({
@@ -325,6 +338,15 @@ export const CreateDirectoryOutputSchema = z.strictObject({
     )
     .describe('Created directories'),
   summary: OperationSummarySchema.describe('Operation summary'),
+  failures: z
+    .array(
+      z.strictObject({
+        path: z.string(),
+        error: PerFileErrorSchema,
+      })
+    )
+    .optional()
+    .describe('Per-path failures'),
 });
 
 export const MoveFileOutputSchema = z.strictObject({

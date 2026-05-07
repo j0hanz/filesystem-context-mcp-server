@@ -163,7 +163,7 @@ async function handleCalculateHash(
   signal?: AbortSignal,
   onProgress?: (progress: { total?: number; current: number }) => void
 ): Promise<ToolResponse<z.infer<typeof HashOutputSchema>>> {
-  const validPath = await validateExistingPath(args.path ?? '', signal);
+  const validPath = await validateExistingPath(args.path, signal);
 
   // Check if path is a directory or file
   const stats = await withAbort(stat(validPath), signal);
@@ -201,7 +201,7 @@ export const CALCULATE_HASH = defineTool<
   contract: CALCULATE_HASH_TOOL,
   defaultErrorCode: ErrorCode.UNKNOWN,
   run: async (args, ctx) => {
-    const baseName = basename(args.path ?? '');
+    const baseName = basename(args.path);
     const label = `${CALCULATE_HASH_TOOL.title}: ${baseName}`;
     return runWithProgressSession<
       ToolResponse<z.infer<typeof HashOutputSchema>>

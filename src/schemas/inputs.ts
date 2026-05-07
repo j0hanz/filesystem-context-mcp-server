@@ -94,7 +94,7 @@ const readRangeFields = createReadRangeFields({
 
 export const ReadFileInputSchema = z
   .strictObject({
-    path: OptionalPath,
+    path: RequiredPath,
     includeHash: defaultFalseBoolean('Include SHA-256 hash of the content'),
     ...readRangeFields,
   })
@@ -145,7 +145,9 @@ export const GrepInputSchema = z.strictObject({
     .string()
     .min(1)
     .max(10000)
-    .describe('Text or regex to search for'),
+    .describe(
+      'Text or regex to search for (RE2: no lookahead/lookbehind/backrefs when isRegex=true)'
+    ),
   isRegex: defaultFalseBoolean('Treat searchPattern as regex'),
   includeHidden: includeHiddenField(),
   includeIgnored: includeIgnoredField(),
@@ -194,7 +196,7 @@ export const SearchAndReplaceInputSchema = z.strictObject({
 // --- Stat group: stat, stat_many ---
 
 export const StatInputSchema = z.strictObject({
-  path: OptionalPath,
+  path: RequiredPath,
 });
 
 export const StatManyInputSchema = z.strictObject({
@@ -204,7 +206,7 @@ export const StatManyInputSchema = z.strictObject({
 // --- Misc: hash, diff, patch, roots ---
 
 export const HashInputSchema = z.strictObject({
-  path: OptionalPath,
+  path: RequiredPath,
 });
 
 export const DiffFilesInputSchema = z.strictObject({
@@ -242,7 +244,7 @@ export const WriteFileInputSchema = z.strictObject({
 });
 
 export const EditFileInputSchema = z.strictObject({
-  path: OptionalPath,
+  path: RequiredPath,
   edits: z
     .array(
       z.strictObject({
@@ -259,11 +261,17 @@ export const EditFileInputSchema = z.strictObject({
 });
 
 export const CreateDirectoryInputSchema = z.strictObject({
-  paths: z.array(RequiredPath).min(1),
+  paths: z
+    .array(RequiredPath)
+    .min(1)
+    .describe('One or more directory paths to create (recursive)'),
 });
 
 export const MoveFileInputSchema = z.strictObject({
-  sources: z.array(RequiredPath).min(1),
+  sources: z
+    .array(RequiredPath)
+    .min(1)
+    .describe('One or more source paths to move'),
   destination: RequiredPath,
 });
 

@@ -20,6 +20,7 @@ import { ApplyPatchOutputSchema } from '../schemas/outputs.js';
 import { defineTool } from './define-tool.js';
 import { FILE_EDIT_ICONS } from './icons.js';
 import {
+  buildStructuredError,
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   type ToolContract,
@@ -93,6 +94,7 @@ interface PatchFileResult {
   hunksApplied?: number;
   linesAdded?: number;
   linesRemoved?: number;
+  error?: { code: string; message: string; path?: string; suggestion?: string };
 }
 
 interface PatchOptions {
@@ -166,8 +168,12 @@ async function processMultiFilePatch(
       try {
         const r = await applyDiff(filePath, diff, options, signal);
         return { ...r, path: fileName };
-      } catch {
-        return { path: fileName, applied: false };
+      } catch (error) {
+        return {
+          path: fileName,
+          applied: false,
+          error: buildStructuredError(error, ErrorCode.UNKNOWN, filePath),
+        };
       }
     };
   });
@@ -199,6 +205,13 @@ async function processMultiFilePatch(
       ...(r.linesRemoved !== undefined ? { linesRemoved: r.linesRemoved } : {}),
     }));
 
+  const failures = results
+    .filter(
+      (r): r is typeof r & { error: NonNullable<typeof r.error> } =>
+        !r.applied && r.error !== undefined
+    )
+    .map((r) => ({ path: r.path, error: r.error }));
+
   if (!options.dryRun) {
     const added = files.reduce((s, f) => s + (f.linesAdded ?? 0), 0);
     const removed = files.reduce((s, f) => s + (f.linesRemoved ?? 0), 0);
@@ -217,6 +230,7 @@ async function processMultiFilePatch(
         succeeded,
         failed: results.length - succeeded,
       },
+      ...(failures.length > 0 ? { failures } : {}),
     }
   );
 }

@@ -1,5 +1,3 @@
-import { basename } from 'node:path';
-
 import type { z } from 'zod/v4';
 
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
@@ -9,7 +7,11 @@ import { StatInputSchema } from '../schemas/inputs.js';
 import { StatOutputSchema } from '../schemas/outputs.js';
 
 import { type FileInfo, formatBytes, joinLines } from '../config.js';
-import { defineTool, type ToolRunContext } from './define-tool.js';
+import {
+  buildPathMessages,
+  defineTool,
+  type ToolRunContext,
+} from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
   buildFileInfoPayload,
@@ -46,13 +48,18 @@ function formatFileInfoDetails(info: FileInfo): string {
   return joinLines(lines);
 }
 
-export const GET_FILE_INFO = defineTool<
-  z.infer<typeof StatInputSchema>,
-  z.infer<typeof StatOutputSchema>
->({
+type StatInput = z.infer<typeof StatInputSchema>;
+type StatOutput = z.infer<typeof StatOutputSchema>;
+
+const statMessages = buildPathMessages<StatInput, StatOutput>(
+  GET_FILE_INFO_TOOL.title,
+  (sc) => `${sc.file.name} \u2022 ${formatBytes(sc.file.size)}`
+);
+
+export const GET_FILE_INFO = defineTool<StatInput, StatOutput>({
   contract: GET_FILE_INFO_TOOL,
   run: async (args, ctx: ToolRunContext) => {
-    const info = await getFileInfo(args.path ?? '', {
+    const info = await getFileInfo(args.path, {
       includeMimeType: true,
       ...(ctx.signal ? { signal: ctx.signal } : {}),
     });
@@ -64,14 +71,6 @@ export const GET_FILE_INFO = defineTool<
 
     return buildToolResponse(formatFileInfoDetails(info), structured);
   },
-  progressMessage: (args) =>
-    `${GET_FILE_INFO_TOOL.title}: ${basename(args.path ?? '')}`,
-  completionMessage: (args, result) => {
-    const name = basename(args.path ?? '');
-    if (result.isError)
-      return `${GET_FILE_INFO_TOOL.title}: ${name} • ${result.errorCode}`;
-    const sc = result.structuredContent;
-    return `${GET_FILE_INFO_TOOL.title}: ${sc.file.name} • ${formatBytes(sc.file.size)}`;
-  },
   defaultErrorCode: ErrorCode.NOT_FOUND,
+  ...statMessages,
 });

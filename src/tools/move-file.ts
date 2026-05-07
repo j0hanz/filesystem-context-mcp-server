@@ -38,7 +38,7 @@ import {
 const MOVE_FILE_TOOL: ToolContract = {
   name: 'mv',
   title: 'Move File',
-  description: 'Move or rename a file or directory.',
+  description: 'Move or rename one or more files/directories to a destination.',
   inputSchema: MoveFileInputSchema,
   outputSchema: MoveFileOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,

@@ -284,7 +284,7 @@ async function loadEditableFile(
 }
 
 function buildEditProgressMessage(args: EditInput): string {
-  const name = basename(args.path ?? '');
+  const name = basename(args.path);
   const tag = args.dryRun ? ' [dry run]' : '';
   return `${EDIT_FILE_TOOL.title}: ${name}${tag}`;
 }
@@ -293,7 +293,7 @@ function buildEditCompletionMessage(
   args: EditInput,
   result: ToolResult<EditOutput>
 ): string {
-  const name = basename(args.path ?? '');
+  const name = basename(args.path);
   if (result.isError)
     return `${EDIT_FILE_TOOL.title}: ${name} • ${result.errorCode}`;
 
@@ -360,10 +360,7 @@ async function handleEditFile(
   args: EditInput,
   signal?: AbortSignal
 ): Promise<z.infer<typeof EditFileOutputSchema>> {
-  const { validPath, content } = await loadEditableFile(
-    args.path ?? '',
-    signal
-  );
+  const { validPath, content } = await loadEditableFile(args.path, signal);
   const editResult = await applyEdits(
     content,
     args.edits,
@@ -404,7 +401,7 @@ export const EDIT_FILE = defineTool<EditInput, EditOutput>({
   contract: EDIT_FILE_TOOL,
   run: async (args, ctx) => {
     const structured = await handleEditFile(args, ctx.signal);
-    const message = buildEditMessage(args.path ?? '', {
+    const message = buildEditMessage(args.path, {
       appliedEdits: structured.appliedEdits ?? 0,
       unmatchedEdits: structured.unmatchedEdits ?? [],
       content: '',

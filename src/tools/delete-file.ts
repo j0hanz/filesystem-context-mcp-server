@@ -4,7 +4,6 @@ import type {
 } from '@modelcontextprotocol/server';
 
 import { lstat, rm, rmdir } from 'node:fs/promises';
-import { basename } from 'node:path';
 
 import type { z } from 'zod/v4';
 
@@ -15,7 +14,7 @@ import { isAllowedDirectoryRoot, validatePathForWrite } from '../lib/paths.js';
 import { DeleteInputSchema } from '../schemas/inputs.js';
 import { DeleteOutputSchema } from '../schemas/outputs.js';
 
-import { defineTool } from './define-tool.js';
+import { buildPathMessages, defineTool } from './define-tool.js';
 import { FILE_DELETE_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,
@@ -127,10 +126,14 @@ async function handleDeleteFile(
   };
 }
 
-export const DELETE_FILE = defineTool<
-  z.infer<typeof DeleteInputSchema>,
-  z.infer<typeof DeleteOutputSchema>
->({
+type DeleteInput = z.infer<typeof DeleteInputSchema>;
+type DeleteOutput = z.infer<typeof DeleteOutputSchema>;
+
+const deleteMessages = buildPathMessages<DeleteInput, DeleteOutput>(
+  DELETE_FILE_TOOL.title
+);
+
+export const DELETE_FILE = defineTool<DeleteInput, DeleteOutput>({
   contract: DELETE_FILE_TOOL,
   run: async (args, ctx) => {
     const structured = await handleDeleteFile(
@@ -142,14 +145,7 @@ export const DELETE_FILE = defineTool<
     void ctx.log?.('info', `rm: ${args.path}`, 'rm');
     return buildToolResponse(text, structured);
   },
-  progressMessage: (args) =>
-    `${DELETE_FILE_TOOL.title}: ${basename(args.path)}`,
-  completionMessage: (args, result) => {
-    const name = basename(args.path);
-    if (result.isError)
-      return `${DELETE_FILE_TOOL.title}: ${name} • ${result.errorCode}`;
-    return `${DELETE_FILE_TOOL.title}: ${name}`;
-  },
+  ...deleteMessages,
   onError: (error, args) => {
     if (isNodeError(error)) {
       if (error.code === 'ENOENT') {

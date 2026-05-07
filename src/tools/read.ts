@@ -133,7 +133,7 @@ function maybeBuildExternalizedReadResponse(
 }
 
 function buildReadProgressMessage(args: ReadFileInput): string {
-  const name = basename(args.path ?? '');
+  const name = basename(args.path);
   if (args.startLine !== undefined) {
     const end = args.endLine ?? '…';
     return `${READ_TOOL_LABEL}: ${name} [lines ${args.startLine}–${end}]`;
@@ -149,7 +149,7 @@ function buildReadCompletionMessage(
   args: ReadFileInput,
   result: ToolResult<ReadFileOutput>
 ): string {
-  const name = basename(args.path ?? '');
+  const name = basename(args.path);
   if (result.isError)
     return `${READ_TOOL_LABEL}: ${name} • ${result.errorCode}`;
 
@@ -188,7 +188,7 @@ async function handleReadFile(
   resourceStore?: Parameters<typeof maybeExternalizeTextContent>[0]
 ): Promise<ToolResponse<ReadFileOutput>> {
   const options = buildReadOptions(args, signal);
-  const result = await readFile(args.path ?? '', options);
+  const result = await readFile(args.path, options);
   const structured = toStructuredReadFileResult(result);
 
   if (args.includeHash) {
@@ -199,7 +199,7 @@ async function handleReadFile(
   }
 
   const externalizedResponse = maybeBuildExternalizedReadResponse(
-    args.path ?? '',
+    args.path,
     result.content,
     structured,
     resourceStore

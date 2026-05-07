@@ -1,5 +1,5 @@
 import { mkdir } from 'node:fs/promises';
-import { basename, dirname } from 'node:path';
+import { dirname } from 'node:path';
 
 import type { z } from 'zod/v4';
 
@@ -12,7 +12,11 @@ import { WriteFileInputSchema } from '../schemas/inputs.js';
 import { WriteFileOutputSchema } from '../schemas/outputs.js';
 
 import { formatBytes } from '../config.js';
-import { defineTool, type ToolRunContext } from './define-tool.js';
+import {
+  buildPathMessages,
+  defineTool,
+  type ToolRunContext,
+} from './define-tool.js';
 import { FILE_EDIT_ICONS } from './icons.js';
 import {
   buildToolResponse,
@@ -32,10 +36,15 @@ const WRITE_FILE_TOOL: ToolContract = {
   taskSupport: 'forbidden',
 } as const;
 
-export const WRITE_FILE = defineTool<
-  z.infer<typeof WriteFileInputSchema>,
-  z.infer<typeof WriteFileOutputSchema>
->({
+type WriteInput = z.infer<typeof WriteFileInputSchema>;
+type WriteOutput = z.infer<typeof WriteFileOutputSchema>;
+
+const writeMessages = buildPathMessages<WriteInput, WriteOutput>(
+  WRITE_FILE_TOOL.title,
+  (sc) => formatBytes(sc.bytesWritten)
+);
+
+export const WRITE_FILE = defineTool<WriteInput, WriteOutput>({
   contract: WRITE_FILE_TOOL,
   run: async (args, ctx: ToolRunContext) => {
     const validPath = await validatePathForWrite(args.path, ctx.signal);
@@ -64,13 +73,6 @@ export const WRITE_FILE = defineTool<
       bytesWritten,
     });
   },
-  progressMessage: (args) => `${WRITE_FILE_TOOL.title}: ${basename(args.path)}`,
-  completionMessage: (args, result) => {
-    const name = basename(args.path);
-    if (result.isError)
-      return `${WRITE_FILE_TOOL.title}: ${name} • ${result.errorCode}`;
-    const sc = result.structuredContent;
-    return `${WRITE_FILE_TOOL.title}: ${name} • ${formatBytes(sc.bytesWritten)}`;
-  },
+  ...writeMessages,
   defaultErrorCode: ErrorCode.UNKNOWN,
 });
