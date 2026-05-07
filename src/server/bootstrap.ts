@@ -189,6 +189,9 @@ export async function createServer(
     };
   }
 
+  const hasTaskSupport =
+    capabilities.tasks?.requests?.tools?.call !== undefined;
+
   const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> =
     {
       capabilities,
@@ -244,6 +247,7 @@ export async function createServer(
     pathGuard: rootsManager.pathGuard,
     resourceStore,
     isInitialized: () => rootsManager.isInitialized(),
+    hasTaskSupport,
     ...(localIcon ? { iconInfo: localIcon } : {}),
   });
 

@@ -489,6 +489,7 @@ export interface ToolRegistrationOptions {
   pathGuard: PathGuard;
   resourceStore?: ResourceStore;
   isInitialized?: () => boolean;
+  hasTaskSupport?: boolean;
   serverIcon?: string;
   iconInfo?: IconInfo;
 }

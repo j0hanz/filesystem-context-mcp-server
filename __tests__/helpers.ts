@@ -77,6 +77,7 @@ export async function createTestEnv(): Promise<TestEnv> {
     pathGuard,
     resourceStore,
     isInitialized: () => true,
+    hasTaskSupport: true,
   });
 
   const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -150,6 +151,7 @@ export async function createTestEnvWithElicitation(
     pathGuard,
     resourceStore,
     isInitialized: () => true,
+    hasTaskSupport: true,
   });
 
   // Client advertises elicitation capability so the server will call elicitInput

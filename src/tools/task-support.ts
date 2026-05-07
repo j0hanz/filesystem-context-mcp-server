@@ -95,15 +95,6 @@ function publishTaskDiagnostics(event: TaskDiagnosticsEvent): void {
 
 // --- Type Guards & Helpers ---
 
-function hasTaskToolCapability(server: McpServer): boolean {
-  try {
-    const capabilities = server.server.getCapabilities();
-    return capabilities.tasks?.requests?.tools?.call !== undefined;
-  } catch {
-    return false;
-  }
-}
-
 type TaskToolContext = ToolContext & {
   taskId?: string;
   taskStore?: RequestTaskStore;
@@ -539,8 +530,6 @@ function tryRegisterToolTask<Args extends ToolSchema>(
   taskHandler: ToolTaskHandler<Args>,
   iconInfo: IconInfo | undefined
 ): boolean {
-  if (!hasTaskToolCapability(server)) return false;
-
   const def = toolDef as Record<string, unknown>;
   const existingExecution =
     (def.execution as Record<string, unknown> | undefined) ?? {};
@@ -570,11 +559,11 @@ function registerToolTaskIfAvailable<Args extends ToolSchema, Result>(
     args: ToolArgs<Args>,
     ctx: TaskToolContext
   ) => Promise<ToolResult<Result>>,
-  iconInfo: IconInfo | undefined,
-  guard?: () => boolean
+  options: ToolRegistrationOptions
 ): boolean {
+  if (!options.hasTaskSupport) return false;
   const taskOptions = {
-    ...(guard ? { guard } : {}),
+    ...(options.isInitialized ? { guard: options.isInitialized } : {}),
     toolName,
   };
   return tryRegisterToolTask(
@@ -582,7 +571,7 @@ function registerToolTaskIfAvailable<Args extends ToolSchema, Result>(
     toolName,
     toolDef,
     createToolTaskHandler(run as never, taskOptions) as ToolTaskHandler<Args>,
-    iconInfo
+    options.iconInfo
   );
 }
 
@@ -618,8 +607,7 @@ export function registerStandardTool<
       toolDef.name,
       toolDef,
       validatedHandler,
-      options.iconInfo,
-      options.isInitialized
+      options
     )
   ) {
     return;
