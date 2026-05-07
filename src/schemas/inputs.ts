@@ -164,7 +164,6 @@ export const GrepInputSchema = z.strictObject({
     .optional()
     .default(DEFAULT_SEARCH_RESULTS),
   maxDepth: z.int().min(0).max(MAX_SEARCH_DEPTH).optional(),
-  cursor: CursorSchema,
 });
 
 export const SearchAndReplaceInputSchema = z.strictObject({
@@ -189,7 +188,6 @@ export const SearchAndReplaceInputSchema = z.strictObject({
     .describe('Max matches across all files'),
   maxFiles: z.int().min(1).optional().describe('Max files to process'),
   maxDepth: z.int().min(0).max(MAX_SEARCH_DEPTH).optional(),
-  cursor: CursorSchema,
 });
 
 // --- Stat group: stat, stat_many ---

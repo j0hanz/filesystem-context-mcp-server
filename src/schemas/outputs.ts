@@ -210,7 +210,7 @@ export const SearchAndReplaceOutputSchema = z.strictObject({
     .describe('Unified diff (when returnDiff or dryRun)'),
   diffTruncated: z.boolean().optional().describe('Diff was truncated'),
   stoppedReason: z
-    .string()
+    .enum(['maxResults', 'maxFiles', 'timeout'])
     .optional()
     .describe('Why enumeration stopped early'),
 });
