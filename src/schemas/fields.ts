@@ -1,7 +1,7 @@
 // src/schemas/fields.ts
 import { z } from 'zod/v4';
 
-import { isSafeGlobPattern } from '../lib/paths.js';
+import { isSafeGlobSyntax } from '../lib/paths.js';
 
 // Runtime: full ISO-8601 UTC validation. Wire: format only (pattern stripped by post-processor).
 export const IsoDateTime = z.iso
@@ -45,7 +45,7 @@ export const SafeGlobPattern = z
   .string()
   .min(1, 'Pattern required')
   .max(1000, 'Max 1000 chars')
-  .refine((val) => isSafeGlobPattern(val), {
+  .refine((val) => isSafeGlobSyntax(val), {
     error: 'Invalid glob or unsafe path (absolute/.. forbidden)',
   })
   .describe('Glob pattern (e.g. "**/*.ts", "src/**/*.js")')

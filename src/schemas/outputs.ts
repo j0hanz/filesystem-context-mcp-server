@@ -65,7 +65,15 @@ export const SearchFilesOutputSchema = z.strictObject({
 });
 
 // Tree node recursive type for directory structure visualization
-const TreeNodeSchema: z.ZodType = z.lazy(() =>
+interface TreeNode {
+  name: string;
+  type: 'file' | 'directory' | 'symlink' | 'other';
+  relativePath?: string | undefined;
+  size?: number | undefined;
+  children?: TreeNode[] | undefined;
+}
+
+const TreeNodeSchema: z.ZodType<TreeNode> = z.lazy(() =>
   z.strictObject({
     name: z.string().describe('Name'),
     type: FileTypeEnum.describe('Type'),
@@ -114,10 +122,9 @@ export const ReadFileOutputSchema = z.strictObject({
   tail: PositiveInt.optional().describe('Tail lines requested'),
   startLine: PositiveInt.optional().describe('Start line'),
   endLine: PositiveInt.optional().describe('End line'),
-  contentHash: z
-    .string()
-    .optional()
-    .describe('SHA-256 of content (when includeHash)'),
+  contentHash: Sha256Hex.optional().describe(
+    'SHA-256 of content (when includeHash)'
+  ),
 });
 
 export const ReadManyOutputSchema = z.strictObject({

@@ -240,6 +240,20 @@ export function getDefaultPathGuard(): PathGuard {
   return defaultPathGuard;
 }
 
+/**
+ * Pure glob-syntax safety check that does not require an initialized PathGuard.
+ * Returns false for absolute paths and patterns containing traversal sequences (`..'`).
+ * This is the subset of safety enforcement suitable for schema-level validation.
+ * Operational path enforcement (allowed-root containment, symlink resolution) is
+ * handled by PathGuard.assertSafeGlob and the validateExistingPath family.
+ */
+export function isSafeGlobSyntax(pattern: string): boolean {
+  if (!pattern || pattern.trim().length === 0) return false;
+  if (isAbsolute(pattern)) return false;
+  if (pattern.includes('..')) return false;
+  return true;
+}
+
 export class PathGuard {
   private allowedDirectoriesState: AllowedDirectoriesState | undefined;
   private denyPatterns: CompiledPatternSet;

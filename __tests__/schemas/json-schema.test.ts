@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { Validator } from '@cfworker/json-schema';
 import { z } from 'zod/v4';
 
 import { IsoDateTime, NonNegInt } from '../../src/schemas/fields.js';
 import { toToolJsonSchema } from '../../src/schemas/json-schema.js';
+import { createTestEnv } from '../helpers.js';
 
 describe('toToolJsonSchema', () => {
   it('strips datetime pattern from $defs', () => {
@@ -50,5 +52,81 @@ describe('toToolJsonSchema', () => {
     }));
     assert.ok(result, 'augmented schema returns a result');
     assert.ok('~standard' in result);
+  });
+});
+
+// Helper: get the inputSchema JSON for a named tool from tools/list.
+async function getInputSchema(name: string): Promise<Record<string, unknown>> {
+  const env = await createTestEnv();
+  try {
+    const { tools } = await env.client.listTools();
+    const tool = tools.find((t) => t.name === name);
+    if (!tool) throw new Error(`Tool ${name} not found in tools/list`);
+    return tool.inputSchema;
+  } finally {
+    await env.cleanup();
+  }
+}
+
+describe('advertised schema constraints', () => {
+  it('read: rejects head + tail together', async () => {
+    const schema = await getInputSchema('read');
+    const v = new Validator(schema, '2020-12', false);
+    const result = v.validate({ path: '/tmp/f.txt', head: 10, tail: 5 });
+    assert.ok(
+      !result.valid,
+      'head+tail should be rejected by advertised schema'
+    );
+  });
+
+  it('read: rejects head + startLine together', async () => {
+    const schema = await getInputSchema('read');
+    const v = new Validator(schema, '2020-12', false);
+    const result = v.validate({
+      path: '/tmp/f.txt',
+      head: 10,
+      startLine: 1,
+    });
+    assert.ok(
+      !result.valid,
+      'head+startLine should be rejected by advertised schema'
+    );
+  });
+
+  it('grep: rejects absolute path in pattern', async () => {
+    const schema = await getInputSchema('grep');
+    const v = new Validator(schema, '2020-12', false);
+    const result = v.validate({
+      searchPattern: 'hello',
+      pattern: '/etc/passwd',
+    });
+    assert.ok(
+      !result.valid,
+      'absolute glob should be rejected by advertised schema'
+    );
+  });
+
+  it('grep: rejects traversal pattern', async () => {
+    const schema = await getInputSchema('grep');
+    const v = new Validator(schema, '2020-12', false);
+    const result = v.validate({ searchPattern: 'hello', pattern: '../*.ts' });
+    assert.ok(
+      !result.valid,
+      'traversal glob should be rejected by advertised schema'
+    );
+  });
+
+  it('search_and_replace: rejects absolute path in pattern', async () => {
+    const schema = await getInputSchema('search_and_replace');
+    const v = new Validator(schema, '2020-12', false);
+    const result = v.validate({
+      searchPattern: 'old',
+      replacement: 'new',
+      pattern: '/abs/path/*.ts',
+    });
+    assert.ok(
+      !result.valid,
+      'absolute glob should be rejected by advertised schema'
+    );
   });
 });

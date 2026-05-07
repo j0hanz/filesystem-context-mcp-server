@@ -10,6 +10,10 @@ import { ErrorCode } from '../lib/errors.js';
 import { readMultipleFiles } from '../lib/file-operations/metadata.js';
 import { assignDefined } from '../lib/utils.js';
 import { ReadManyInputSchema } from '../schemas/inputs.js';
+import {
+  readRangeConstraints,
+  toToolJsonSchema,
+} from '../schemas/json-schema.js';
 import { ReadManyOutputSchema } from '../schemas/outputs.js';
 import type { ContinuationSchema } from '../schemas/shared.js';
 
@@ -40,6 +44,13 @@ const READ_MANY_TOOL: ToolContract = {
     'Read multiple text files in one request with contents and metadata. ' +
     'For a single file, use `read`.',
   inputSchema: ReadManyInputSchema,
+  inputSchemaJson: toToolJsonSchema(ReadManyInputSchema, (s) => ({
+    ...s,
+    allOf: [
+      ...(Array.isArray(s.allOf) ? (s.allOf as unknown[]) : []),
+      ...readRangeConstraints(),
+    ],
+  })),
   outputSchema: ReadManyOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   icons: FILE_READ_ICONS,

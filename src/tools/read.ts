@@ -11,6 +11,10 @@ import { ErrorCode } from '../lib/errors.js';
 import { calculateFileContentHash, readFile } from '../lib/fs-helpers.js';
 import { assignDefined } from '../lib/utils.js';
 import { ReadFileInputSchema } from '../schemas/inputs.js';
+import {
+  readRangeConstraints,
+  toToolJsonSchema,
+} from '../schemas/json-schema.js';
 import { ReadFileOutputSchema } from '../schemas/outputs.js';
 import type { ContinuationSchema } from '../schemas/shared.js';
 
@@ -32,6 +36,13 @@ const READ_FILE_TOOL: ToolContract = {
   description:
     'Read a text file. Use head/tail/startLine/endLine for partial reads; use read_many for batches.',
   inputSchema: ReadFileInputSchema,
+  inputSchemaJson: toToolJsonSchema(ReadFileInputSchema, (s) => ({
+    ...s,
+    allOf: [
+      ...(Array.isArray(s.allOf) ? (s.allOf as unknown[]) : []),
+      ...readRangeConstraints(),
+    ],
+  })),
   outputSchema: ReadFileOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   icons: FILE_READ_ICONS,

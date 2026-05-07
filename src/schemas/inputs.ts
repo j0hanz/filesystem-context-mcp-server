@@ -3,6 +3,7 @@ import { z } from 'zod/v4';
 
 import {
   DEFAULT_LIST_MAX_ENTRIES,
+  DEFAULT_SEARCH_CONTENT_RESULTS,
   DEFAULT_SEARCH_RESULTS,
   DEFAULT_TREE_DEPTH,
   DEFAULT_TREE_ENTRIES,
@@ -181,7 +182,7 @@ export const GrepInputSchema = z.strictObject({
     .min(1)
     .max(MAX_SEARCH_RESULTS)
     .optional()
-    .default(DEFAULT_SEARCH_RESULTS)
+    .default(DEFAULT_SEARCH_CONTENT_RESULTS)
     .describe('Max matches to return per page'),
   maxDepth: z
     .uint32()

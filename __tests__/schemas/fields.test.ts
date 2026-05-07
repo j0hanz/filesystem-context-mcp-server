@@ -3,7 +3,12 @@ import { describe, it } from 'node:test';
 
 import { z } from 'zod/v4';
 
-import { IsoDateTime, NonNegInt } from '../../src/schemas/fields.js';
+import { isSafeGlobSyntax } from '../../src/lib/paths.js';
+import {
+  IsoDateTime,
+  NonNegInt,
+  SafeGlobPattern,
+} from '../../src/schemas/fields.js';
 
 describe('fields', () => {
   it('IsoDateTime is in globalRegistry', () => {
@@ -26,5 +31,50 @@ describe('fields', () => {
 
   it('NonNegInt is in globalRegistry', () => {
     assert.ok(z.globalRegistry.has(NonNegInt));
+  });
+
+  describe('isSafeGlobSyntax (pure, no PathGuard required)', () => {
+    it('accepts valid relative globs', () => {
+      assert.ok(isSafeGlobSyntax('**/*.ts'));
+      assert.ok(isSafeGlobSyntax('src/**/*.js'));
+      assert.ok(isSafeGlobSyntax('*.{ts,tsx}'));
+    });
+
+    it('rejects absolute POSIX paths', () => {
+      assert.ok(!isSafeGlobSyntax('/etc/passwd'));
+      assert.ok(!isSafeGlobSyntax('/abs/*.ts'));
+    });
+
+    it('rejects Windows absolute paths', () => {
+      assert.ok(!isSafeGlobSyntax('C:\\*.ts'));
+      assert.ok(!isSafeGlobSyntax('C:/Users/*.ts'));
+    });
+
+    it('rejects traversal patterns', () => {
+      assert.ok(!isSafeGlobSyntax('../*.ts'));
+      assert.ok(!isSafeGlobSyntax('src/../../*.ts'));
+    });
+
+    it('rejects empty patterns', () => {
+      assert.ok(!isSafeGlobSyntax(''));
+      assert.ok(!isSafeGlobSyntax('   '));
+    });
+  });
+
+  describe('SafeGlobPattern.safeParse (no PathGuard initialization needed)', () => {
+    it('accepts valid globs without server initialization', () => {
+      const r = SafeGlobPattern.safeParse('**/*.ts');
+      assert.ok(r.success, 'valid glob should parse successfully');
+    });
+
+    it('rejects absolute paths without server initialization', () => {
+      const r = SafeGlobPattern.safeParse('/etc/passwd');
+      assert.ok(!r.success, 'absolute path should fail safeParse');
+    });
+
+    it('rejects traversal patterns without server initialization', () => {
+      const r = SafeGlobPattern.safeParse('../*.ts');
+      assert.ok(!r.success, 'traversal should fail safeParse');
+    });
   });
 });

@@ -21,6 +21,10 @@ import { globEntries } from '../lib/file-operations/traversal.js';
 import { atomicWriteFile } from '../lib/fs-helpers.js';
 import { Logger } from '../lib/logger.js';
 import { validateExistingPath, validatePathForWrite } from '../lib/paths.js';
+import {
+  safeGlobConstraint,
+  toToolJsonSchema,
+} from '../schemas/json-schema.js';
 
 import {
   SearchAndReplaceInputSchema,
@@ -49,6 +53,13 @@ const SEARCH_AND_REPLACE_TOOL: ToolContract = {
     'Always `dryRun:true` first \u2014 returns a unified diff. ' +
     'Literal matching by default; `isRegex:true` enables RE2 with capture groups ($1, $2).',
   inputSchema: SearchAndReplaceInputSchema,
+  inputSchemaJson: toToolJsonSchema(SearchAndReplaceInputSchema, (s) => ({
+    ...s,
+    allOf: [
+      ...(Array.isArray(s.allOf) ? (s.allOf as unknown[]) : []),
+      safeGlobConstraint('pattern'),
+    ],
+  })),
   outputSchema: SearchAndReplaceOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   icons: FILE_EDIT_ICONS,

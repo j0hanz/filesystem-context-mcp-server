@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 import { ErrorCode } from '../../src/lib/errors.js';
 import { getTraceContext } from '../../src/lib/observability.js';
@@ -24,6 +24,7 @@ describe('tool output validation', () => {
       toolName: 'example',
       ctx: {},
       outputSchema,
+      // @ts-expect-error intentional type mismatch: value:42 (number) instead of string, to test schema validation
       run: () => buildToolResponse('ok', { ok: true, value: 42 }),
       onError: (error) => buildToolErrorResponse(error, ErrorCode.UNKNOWN),
     });

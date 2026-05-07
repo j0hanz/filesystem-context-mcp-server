@@ -18,6 +18,10 @@ import {
   type SearchContentOptions,
 } from '../lib/file-operations/search.js';
 import { GrepInputSchema } from '../schemas/inputs.js';
+import {
+  safeGlobConstraint,
+  toToolJsonSchema,
+} from '../schemas/json-schema.js';
 import { GrepOutputSchema } from '../schemas/outputs.js';
 
 import { formatOperationSummary } from '../config.js';
@@ -148,6 +152,13 @@ const SEARCH_CONTENT_TOOL: ToolContract = {
     'Scope with `pattern` (e.g. `**/*.ts`) to reduce noise. ' +
     '`includeHidden=true` for dotfiles.',
   inputSchema: GrepInputSchema,
+  inputSchemaJson: toToolJsonSchema(GrepInputSchema, (s) => ({
+    ...s,
+    allOf: [
+      ...(Array.isArray(s.allOf) ? (s.allOf as unknown[]) : []),
+      safeGlobConstraint('pattern'),
+    ],
+  })),
   outputSchema: GrepOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   icons: SEARCH_ICONS,

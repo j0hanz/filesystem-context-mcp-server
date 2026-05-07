@@ -15,6 +15,7 @@ import {
   getDefaultPathGuard,
   IS_WINDOWS,
   isPathWithinDirectories,
+  isSafeGlobSyntax,
   isSamePath,
   normalizeAllowedDirectory,
   normalizePath,
@@ -26,7 +27,12 @@ import {
 } from './path-guard.js';
 
 export type { AllowedDirectoriesState, PathGuard, ValidatedPathDetails };
-export { isPathWithinDirectories, normalizePath, toPosixPath };
+export {
+  isPathWithinDirectories,
+  isSafeGlobSyntax,
+  normalizePath,
+  toPosixPath,
+};
 
 // ALS for HTTP session isolation — payload is PathGuard, not raw dirs.
 // Each HTTP request runs inside withPathGuard() scoped to its session.

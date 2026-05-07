@@ -28,9 +28,15 @@ async function buildSnapshot(): Promise<Record<string, unknown>> {
   }
 }
 
+const UPDATE_SNAPSHOT = process.env['FS_UPDATE_SCHEMA_SNAPSHOT'] === '1';
+
 describe('tool schema snapshots', () => {
-  it('matches stored snapshot (update by deleting __snapshots__/tool-schemas.json)', async () => {
+  it('matches stored snapshot (set FS_UPDATE_SCHEMA_SNAPSHOT=1 to update)', async () => {
     const current = await buildSnapshot();
+    if (UPDATE_SNAPSHOT) {
+      await writeFile(SNAPSHOT_PATH, JSON.stringify(current, null, 2), 'utf-8');
+      return;
+    }
     let stored: Record<string, unknown>;
     try {
       stored = JSON.parse(await readFile(SNAPSHOT_PATH, 'utf-8')) as Record<
@@ -38,14 +44,14 @@ describe('tool schema snapshots', () => {
         unknown
       >;
     } catch {
-      // First run — write snapshot and pass
-      await writeFile(SNAPSHOT_PATH, JSON.stringify(current, null, 2), 'utf-8');
-      return;
+      throw new Error(
+        'No stored schema baseline found. Run with FS_UPDATE_SCHEMA_SNAPSHOT=1 to create it.'
+      );
     }
     assert.deepEqual(
       JSON.stringify(current, null, 2),
       JSON.stringify(stored, null, 2),
-      'Schema snapshot mismatch — delete __snapshots__/tool-schemas.json to update'
+      'Schema snapshot mismatch — set FS_UPDATE_SCHEMA_SNAPSHOT=1 to update'
     );
   });
 
@@ -54,6 +60,18 @@ describe('tool schema snapshots', () => {
     for (const [name, schemas] of Object.entries(snap)) {
       const s = schemas as Record<string, unknown>;
       assert.ok('inputSchema' in s, `${name} has inputSchema`);
+      const input = s['inputSchema'] as Record<string, unknown>;
+      assert.ok(
+        !('$schema' in input),
+        `${name} inputSchema must not have $schema at root`
+      );
+      if ('outputSchema' in s) {
+        const output = s['outputSchema'] as Record<string, unknown>;
+        assert.ok(
+          !('$schema' in output),
+          `${name} outputSchema must not have $schema at root`
+        );
+      }
     }
   });
 });

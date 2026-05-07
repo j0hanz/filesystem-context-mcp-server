@@ -126,7 +126,7 @@ describe('grep tool', () => {
     assert.ok(textBlock, 'Expected text response content');
     assert.match(
       textBlock.text,
-      /Invalid glob or unsafe path \(absolute\/\.\. forbidden\)/u
+      /Invalid glob or unsafe path \(absolute\/\.\. forbidden\)|data\/pattern must NOT be valid/u
     );
   });
 
