@@ -701,7 +701,7 @@ async function sendMcpProgressNotification(
   }
 }
 
-export function createProgressReporter(
+function createProgressReporter(
   ctx: ToolContext
 ): (progress: { total?: number; current: number; message?: string }) => void {
   if (!canReportProgress(ctx)) {
@@ -730,7 +730,7 @@ export function createProgressReporter(
   };
 }
 
-export function notifyProgress(
+function notifyProgress(
   ctx: ToolContext,
   progress: { current: number; total?: number; message?: string }
 ): void {
@@ -738,7 +738,7 @@ export function notifyProgress(
   void reportProgress(ctx, progress);
 }
 
-interface ToolProgressSession {
+export interface ToolProgressSession {
   update: (progress: {
     current: number;
     total?: number;
@@ -755,7 +755,7 @@ interface BatchProgressCallbacks {
   onItemComplete: () => void;
 }
 
-export function createToolProgressSession(
+function createToolProgressSession(
   ctx: ToolContext,
   startMessage: string,
   initialTotal?: number
@@ -845,6 +845,46 @@ export function resolveFinalProgressCurrent(
     }
   }
   return finalCurrent;
+}
+
+/**
+ * Completes `progress` with `${label} • ${suffix}` when `body` resolves, or
+ * fails it with `${label} • ${classifyError(error)}` if `body` throws. Use
+ * this when the caller already owns a {@link ToolProgressSession} (for
+ * example via {@link createBatchProgressCallbacks}); otherwise prefer
+ * {@link runWithProgressSession}.
+ */
+export async function completeProgressSession<T>(
+  progress: ToolProgressSession,
+  label: string,
+  body: () => Promise<{ value: T; suffix: string; finalCurrent?: number }>
+): Promise<T> {
+  try {
+    const { value, suffix, finalCurrent } = await body();
+    progress.complete(`${label} • ${suffix}`, finalCurrent);
+    return value;
+  } catch (error) {
+    progress.fail(`${label} • ${classifyError(error)}`);
+    throw error;
+  }
+}
+
+/**
+ * Runs `body` inside a tool progress session, automatically completing the
+ * session with `${label} • ${suffix}` on success or failing it with
+ * `${label} • ${classifyError(error)}` on thrown errors. Centralizes the
+ * try/catch + complete/fail boilerplate shared by long-running tools.
+ */
+export async function runWithProgressSession<T>(
+  ctx: ToolContext,
+  label: string,
+  body: (
+    progress: ToolProgressSession
+  ) => Promise<{ value: T; suffix: string; finalCurrent?: number }>,
+  initialTotal?: number
+): Promise<T> {
+  const progress = createToolProgressSession(ctx, label, initialTotal);
+  return completeProgressSession(progress, label, () => body(progress));
 }
 
 async function withProgress<T>(

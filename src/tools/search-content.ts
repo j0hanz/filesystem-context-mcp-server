@@ -7,7 +7,6 @@ import type { z } from 'zod/v4';
 
 import { DEFAULT_EXCLUDE_PATTERNS, parseEnvInt } from '../lib/constants.js';
 import {
-  classifyError,
   ErrorCode,
   formatUnknownErrorMessage,
   McpError,
@@ -25,11 +24,11 @@ import {
   buildResourceLink,
   buildToolErrorResponse,
   buildToolResponse,
-  createToolProgressSession,
   executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolveFinalProgressCurrent,
   resolvePathOrRoot,
+  runWithProgressSession,
   type ToolContext,
   type ToolContract,
   type ToolRegistrationOptions,
@@ -425,24 +424,23 @@ export function registerSearchContentTool(
         const pattern = args.searchPattern;
         const scope = args.pattern;
         const progressLabel = `${SEARCH_CONTENT_TOOL.title}: ${truncateProgressPattern(pattern)}`;
-        const progress = createToolProgressSession(ctx, progressLabel);
 
-        const progressWithMessage = ({
-          current,
-          total,
-        }: {
-          total?: number;
-          current: number;
-        }): void => {
-          progress.update({
+        return runWithProgressSession(ctx, progressLabel, async (progress) => {
+          const progressWithMessage = ({
             current,
-            ...(total !== undefined ? { total } : {}),
-            message: `${progressLabel} [${current} files]`,
-          });
-          void reportTaskStatus(`${progressLabel} ${current} files`);
-        };
+            total,
+          }: {
+            total?: number;
+            current: number;
+          }): void => {
+            progress.update({
+              current,
+              ...(total !== undefined ? { total } : {}),
+              message: `${progressLabel} [${current} files]`,
+            });
+            void reportTaskStatus(`${progressLabel} ${current} files`);
+          };
 
-        try {
           const result = await handleSearchContent(
             args,
             signal,
@@ -458,18 +456,12 @@ export function registerSearchContentTool(
             scope,
             stoppedReason
           );
-
           const finalCurrent = resolveFinalProgressCurrent(
             progress,
             (sc.filesScanned ?? 0) + 1
           );
-
-          progress.complete(`${progressLabel} • ${suffix}`, finalCurrent);
-          return result;
-        } catch (error) {
-          progress.fail(`${progressLabel} • ${classifyError(error)}`);
-          throw error;
-        }
+          return { value: result, suffix, finalCurrent };
+        });
       },
       onError: (error) =>
         buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path ?? '.'),

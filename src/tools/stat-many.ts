@@ -3,7 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import type { z } from 'zod/v4';
 
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
-import { classifyError, ErrorCode } from '../lib/errors.js';
+import { ErrorCode } from '../lib/errors.js';
 import { getMultipleFileInfo } from '../lib/file-operations/metadata.js';
 import { StatManyInputSchema } from '../schemas/inputs.js';
 import { StatManyOutputSchema } from '../schemas/outputs.js';
@@ -16,6 +16,7 @@ import {
   buildStructuredError,
   buildToolErrorResponse,
   buildToolResponse,
+  completeProgressSession,
   createBatchProgressCallbacks,
   executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
@@ -115,6 +116,7 @@ export function registerGetMultipleFileInfoTool(
       context: { path: primaryPath },
       run: async (signal) => {
         const context = buildBatchPathContext(args.paths);
+        const label = `${GET_MULTIPLE_FILE_INFO_TOOL.title}: ${context}`;
         const { progress, onItemComplete } = createBatchProgressCallbacks(ctx, {
           toolLabel: GET_MULTIPLE_FILE_INFO_TOOL.title,
           context,
@@ -122,7 +124,7 @@ export function registerGetMultipleFileInfoTool(
           itemVerb: 'done',
         });
 
-        try {
+        return completeProgressSession(progress, label, async () => {
           const result = await handleGetMultipleFileInfo(
             args,
             signal,
@@ -133,19 +135,9 @@ export function registerGetMultipleFileInfoTool(
           const total = sc.summary.total;
           const failed = sc.summary.failed;
           const suffix = failed ? `${failed} failed` : 'done';
-
           const finalCurrent = resolveFinalProgressCurrent(progress, total);
-          progress.complete(
-            `${GET_MULTIPLE_FILE_INFO_TOOL.title}: ${context} • ${suffix}`,
-            finalCurrent
-          );
-          return result;
-        } catch (error) {
-          progress.fail(
-            `${GET_MULTIPLE_FILE_INFO_TOOL.title}: ${context} • ${classifyError(error)}`
-          );
-          throw error;
-        }
+          return { value: result, suffix, finalCurrent };
+        });
       },
       onError: (error) =>
         buildToolErrorResponse(error, ErrorCode.NOT_FOUND, primaryPath),

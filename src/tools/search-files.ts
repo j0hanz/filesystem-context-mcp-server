@@ -8,7 +8,7 @@ import {
   DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_SEARCH_TIMEOUT_MS,
 } from '../lib/constants.js';
-import { classifyError, ErrorCode } from '../lib/errors.js';
+import { ErrorCode } from '../lib/errors.js';
 import { searchFiles } from '../lib/file-operations/search.js';
 
 import { formatOperationSummary, joinLines } from '../config.js';
@@ -17,13 +17,13 @@ import { DIRECTORY_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,
   buildToolResponse,
-  createProgressReporter,
   decodeOffsetCursor,
   encodeOffsetCursor,
   executeToolWithDiagnostics,
-  notifyProgress,
   READ_ONLY_TOOL_ANNOTATIONS,
+  resolveFinalProgressCurrent,
   resolvePathOrRoot,
+  runWithProgressSession,
   type ToolContext,
   type ToolContract,
   type ToolRegistrationOptions,
@@ -193,29 +193,23 @@ export function registerSearchFilesTool(
         const { pattern } = args;
         const truncatedPattern = truncateProgressPattern(pattern);
         const context = `${truncatedPattern} in ${scopeLabel}`;
-        let progressCursor = 0;
-        notifyProgress(ctx, {
-          current: 0,
-          message: `${SEARCH_FILES_TOOL.title}: ${truncatedPattern}`,
-        });
+        const label = `${SEARCH_FILES_TOOL.title}: ${context}`;
 
-        const baseReporter = createProgressReporter(ctx);
-        const progressWithMessage = ({
-          current,
-          total,
-        }: {
-          total?: number;
-          current: number;
-        }): void => {
-          if (current > progressCursor) progressCursor = current;
-          baseReporter({
+        return runWithProgressSession(ctx, label, async (progress) => {
+          const progressWithMessage = ({
             current,
-            ...(total !== undefined ? { total } : {}),
-            message: `${SEARCH_FILES_TOOL.title}: ${truncatedPattern} [${current} files]`,
-          });
-        };
+            total,
+          }: {
+            total?: number;
+            current: number;
+          }): void => {
+            progress.update({
+              current,
+              ...(total !== undefined ? { total } : {}),
+              message: `${SEARCH_FILES_TOOL.title}: ${truncatedPattern} [${current} files]`,
+            });
+          };
 
-        try {
           const result = await handleSearchFiles(
             args,
             signal,
@@ -238,25 +232,12 @@ export function registerSearchFilesTool(
             }
           }
 
-          const finalCurrent = Math.max(
-            (sc.filesScanned ?? 0) + 1,
-            progressCursor + 1
+          const finalCurrent = resolveFinalProgressCurrent(
+            progress,
+            (sc.filesScanned ?? 0) + 1
           );
-          notifyProgress(ctx, {
-            current: finalCurrent,
-            total: finalCurrent,
-            message: `${SEARCH_FILES_TOOL.title}: ${context} • ${suffix}`,
-          });
-          return result;
-        } catch (error) {
-          const finalCurrent = Math.max(progressCursor + 1, 1);
-          notifyProgress(ctx, {
-            current: finalCurrent,
-            total: finalCurrent,
-            message: `${SEARCH_FILES_TOOL.title}: ${context} • ${classifyError(error)}`,
-          });
-          throw error;
-        }
+          return { value: result, suffix, finalCurrent };
+        });
       },
       onError: (error) =>
         buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),

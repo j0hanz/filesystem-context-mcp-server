@@ -8,7 +8,7 @@ import type { z } from 'zod/v4';
 
 import { assertNotAborted, withAbort } from '../lib/abort.js';
 import { PARALLEL_CONCURRENCY } from '../lib/constants.js';
-import { classifyError, ErrorCode } from '../lib/errors.js';
+import { ErrorCode } from '../lib/errors.js';
 import {
   isIgnoredByGitignore,
   loadRootGitignore,
@@ -23,10 +23,10 @@ import { FILE_READ_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,
   buildToolResponse,
-  createToolProgressSession,
   executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolveFinalProgressCurrent,
+  runWithProgressSession,
   type ToolContext,
   type ToolContract,
   type ToolRegistrationOptions,
@@ -216,25 +216,22 @@ export function registerCalculateHashTool(
       context: { path: args.path },
       run: async (signal) => {
         const baseName = basename(args.path ?? '');
-        const progress = createToolProgressSession(
-          ctx,
-          `${CALCULATE_HASH_TOOL.title}: ${baseName}`
-        );
-        const progressWithMessage = ({
-          current,
-          total,
-        }: {
-          total?: number;
-          current: number;
-        }): void => {
-          progress.update({
+        const label = `${CALCULATE_HASH_TOOL.title}: ${baseName}`;
+        return runWithProgressSession(ctx, label, async (progress) => {
+          const progressWithMessage = ({
             current,
-            ...(total !== undefined ? { total } : {}),
-            message: `${CALCULATE_HASH_TOOL.title}: ${baseName} [${current} files]`,
-          });
-        };
+            total,
+          }: {
+            total?: number;
+            current: number;
+          }): void => {
+            progress.update({
+              current,
+              ...(total !== undefined ? { total } : {}),
+              message: `${label} [${current} files]`,
+            });
+          };
 
-        try {
           const result = await handleCalculateHash(
             args,
             signal,
@@ -246,23 +243,12 @@ export function registerCalculateHashTool(
             progress,
             totalFiles + 1
           );
-          let suffix: string;
-          if (sc.fileCount !== undefined && sc.fileCount > 1) {
-            suffix = `${sc.fileCount} files • ${sc.hash.slice(0, 8)}…`;
-          } else {
-            suffix = `${sc.hash.slice(0, 8)}…`;
-          }
-          progress.complete(
-            `${CALCULATE_HASH_TOOL.title}: ${baseName} • ${suffix}`,
-            finalCurrent
-          );
-          return result;
-        } catch (error) {
-          progress.fail(
-            `${CALCULATE_HASH_TOOL.title}: ${baseName} • ${classifyError(error)}`
-          );
-          throw error;
-        }
+          const suffix =
+            sc.fileCount !== undefined && sc.fileCount > 1
+              ? `${sc.fileCount} files • ${sc.hash.slice(0, 8)}…`
+              : `${sc.hash.slice(0, 8)}…`;
+          return { value: result, suffix, finalCurrent };
+        });
       },
       onError: (error) =>
         buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),

@@ -5,7 +5,7 @@ import { basename } from 'node:path';
 import type { z } from 'zod/v4';
 
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
-import { classifyError, ErrorCode } from '../lib/errors.js';
+import { ErrorCode } from '../lib/errors.js';
 import { readMultipleFiles } from '../lib/file-operations/metadata.js';
 import { ReadManyInputSchema } from '../schemas/inputs.js';
 import { ReadManyOutputSchema } from '../schemas/outputs.js';
@@ -17,6 +17,7 @@ import {
   buildStructuredError,
   buildToolErrorResponse,
   buildToolResponse,
+  completeProgressSession,
   createBatchProgressCallbacks,
   executeToolWithDiagnostics,
   maybeExternalizeTextContent,
@@ -252,6 +253,7 @@ export function registerReadMultipleFilesTool(
       context: { path: primaryPath },
       run: async (signal) => {
         const context = buildBatchPathContext(args.paths, 'files');
+        const label = `${READ_MANY_TOOL_LABEL}: ${context}`;
         const { progress, onItemComplete: rawOnItemComplete } =
           createBatchProgressCallbacks(ctx, {
             toolLabel: READ_MANY_TOOL_LABEL,
@@ -265,11 +267,11 @@ export function registerReadMultipleFilesTool(
           rawOnItemComplete();
           itemsDone++;
           void reportTaskStatus(
-            `${READ_MANY_TOOL_LABEL}: ${context} [${itemsDone}/${args.paths.length} read]`
+            `${label} [${itemsDone}/${args.paths.length} read]`
           );
         };
 
-        try {
+        return completeProgressSession(progress, label, async () => {
           const result = await handleReadMultipleFiles(
             args,
             signal,
@@ -281,19 +283,9 @@ export function registerReadMultipleFilesTool(
           const total = sc.summary.total;
           const failed = sc.summary.failed;
           const suffix = failed ? `${failed} failed` : 'done';
-
           const finalCurrent = resolveFinalProgressCurrent(progress, total);
-          progress.complete(
-            `${READ_MANY_TOOL_LABEL}: ${context} • ${suffix}`,
-            finalCurrent
-          );
-          return result;
-        } catch (error) {
-          progress.fail(
-            `${READ_MANY_TOOL_LABEL}: ${context} • ${classifyError(error)}`
-          );
-          throw error;
-        }
+          return { value: result, suffix, finalCurrent };
+        });
       },
       onError: (error) =>
         buildToolErrorResponse(error, ErrorCode.NOT_FILE, primaryPath),

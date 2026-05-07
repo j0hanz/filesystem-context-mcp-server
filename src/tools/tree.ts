@@ -5,7 +5,7 @@ import { basename } from 'node:path';
 import type { z } from 'zod/v4';
 
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
-import { classifyError, ErrorCode } from '../lib/errors.js';
+import { ErrorCode } from '../lib/errors.js';
 import {
   formatTreeAscii,
   treeDirectory,
@@ -17,11 +17,11 @@ import { DIRECTORY_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,
   buildToolResponse,
-  createProgressReporter,
   executeToolWithDiagnostics,
-  notifyProgress,
   READ_ONLY_TOOL_ANNOTATIONS,
+  resolveFinalProgressCurrent,
   resolvePathOrRoot,
+  runWithProgressSession,
   type ToolContext,
   type ToolContract,
   type ToolRegistrationOptions,
@@ -91,51 +91,34 @@ export function registerTreeTool(
       context: { path: targetPath },
       run: async (signal) => {
         const context = args.path ? basename(args.path) : '.';
-        let progressCursor = 0;
+        const label = `${TREE_TOOL.title}: ${context}`;
         const knownTotal = args.maxEntries;
 
-        notifyProgress(ctx, {
-          current: 0,
-          total: knownTotal,
-          message: `${TREE_TOOL.title}: ${context}`,
-        });
+        return runWithProgressSession(
+          ctx,
+          label,
+          async (progress) => {
+            const onProgress = ({ current }: { current: number }): void => {
+              progress.update({
+                current,
+                total: knownTotal,
+                message: `${label} [${current} entries]`,
+              });
+            };
 
-        const baseReporter = createProgressReporter(ctx);
-        const onProgress = (progress: { current: number }): void => {
-          const { current } = progress;
-          if (current > progressCursor) progressCursor = current;
-          baseReporter({
-            current,
-            total: knownTotal,
-            message: `${TREE_TOOL.title}: ${context} [${current} entries]`,
-          });
-        };
+            const result = await handleTree(args, signal, onProgress);
+            const sc = result.structuredContent;
+            const count = sc.totalEntries ?? 0;
+            const { truncated } = sc;
 
-        try {
-          const result = await handleTree(args, signal, onProgress);
-          const sc = result.structuredContent;
-          const count = sc.totalEntries ?? 0;
-          const { truncated } = sc;
+            let suffix = `${count} ${count === 1 ? 'entry' : 'entries'}`;
+            if (truncated) suffix += ' [truncated]';
 
-          let suffix = `${count} ${count === 1 ? 'entry' : 'entries'}`;
-          if (truncated) suffix += ' [truncated]';
-
-          const finalCurrent = Math.max(count, progressCursor + 1);
-          notifyProgress(ctx, {
-            current: finalCurrent,
-            total: finalCurrent,
-            message: `${TREE_TOOL.title}: ${context} • ${suffix}`,
-          });
-          return result;
-        } catch (error) {
-          const finalCurrent = Math.max(progressCursor + 1, 1);
-          notifyProgress(ctx, {
-            current: finalCurrent,
-            total: finalCurrent,
-            message: `${TREE_TOOL.title}: ${context} • ${classifyError(error)}`,
-          });
-          throw error;
-        }
+            const finalCurrent = resolveFinalProgressCurrent(progress, count);
+            return { value: result, suffix, finalCurrent };
+          },
+          knownTotal
+        );
       },
       onError: (error) =>
         buildToolErrorResponse(error, ErrorCode.NOT_DIRECTORY, targetPath),

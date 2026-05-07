@@ -14,7 +14,6 @@ import {
   PARALLEL_CONCURRENCY,
 } from '../lib/constants.js';
 import {
-  classifyError,
   ErrorCode,
   formatUnknownErrorMessage,
   McpError,
@@ -33,11 +32,11 @@ import {
   buildStructuredError,
   buildToolErrorResponse,
   buildToolResponse,
-  createToolProgressSession,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   executeToolWithDiagnostics,
   resolveFinalProgressCurrent,
   resolvePathOrRoot,
+  runWithProgressSession,
   type ToolContext,
   type ToolContract,
   type ToolRegistrationOptions,
@@ -536,25 +535,23 @@ export function registerSearchAndReplaceTool(
         const dryLabel = args.dryRun ? ' [dry run]' : '';
         const truncatedPattern = truncateProgressPattern(args.searchPattern);
         const context = `"${truncatedPattern}" in ${args.pattern ?? '**/*'}${dryLabel}`;
-        const progress = createToolProgressSession(
-          ctx,
-          `${SEARCH_AND_REPLACE_TOOL.title}: ${context}`
-        );
-        const progressWithMessage = ({
-          current,
-          total,
-        }: {
-          total?: number;
-          current: number;
-        }): void => {
-          progress.update({
-            current,
-            ...(total !== undefined ? { total } : {}),
-            message: `${SEARCH_AND_REPLACE_TOOL.title}: ${truncatedPattern} [${current} files]`,
-          });
-        };
+        const label = `${SEARCH_AND_REPLACE_TOOL.title}: ${context}`;
 
-        try {
+        return runWithProgressSession(ctx, label, async (progress) => {
+          const progressWithMessage = ({
+            current,
+            total,
+          }: {
+            total?: number;
+            current: number;
+          }): void => {
+            progress.update({
+              current,
+              ...(total !== undefined ? { total } : {}),
+              message: `${SEARCH_AND_REPLACE_TOOL.title}: ${truncatedPattern} [${current} files]`,
+            });
+          };
+
           const result = await handleSearchAndReplace(
             args,
             signal,
@@ -567,12 +564,8 @@ export function registerSearchAndReplaceTool(
           );
           const matchWord = sc.matches === 1 ? 'match' : 'matches';
           const fileWord = sc.filesChanged === 1 ? 'file' : 'files';
-          let endSuffix = `${sc.matches} ${matchWord} in ${sc.filesChanged} ${fileWord}`;
-          if (sc.failedFiles) endSuffix += `, ${sc.failedFiles} failed`;
-          progress.complete(
-            `${SEARCH_AND_REPLACE_TOOL.title}: ${context} • ${endSuffix}`,
-            finalCurrent
-          );
+          let suffix = `${sc.matches} ${matchWord} in ${sc.filesChanged} ${fileWord}`;
+          if (sc.failedFiles) suffix += `, ${sc.failedFiles} failed`;
           if (!args.dryRun) {
             void ctx.log?.(
               'info',
@@ -580,13 +573,8 @@ export function registerSearchAndReplaceTool(
               'search_and_replace'
             );
           }
-          return result;
-        } catch (error) {
-          progress.fail(
-            `${SEARCH_AND_REPLACE_TOOL.title}: ${context} • ${classifyError(error)}`
-          );
-          throw error;
-        }
+          return { value: result, suffix, finalCurrent };
+        });
       },
       onError: (error) =>
         buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
