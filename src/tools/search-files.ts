@@ -100,7 +100,6 @@ function applySummaryFields(
   nextCursor?: string
 ): void {
   assignDefined(structured, {
-    truncated: summary.truncated ? true : undefined,
     skippedInaccessible: summary.skippedInaccessible || undefined,
     stoppedReason: summary.stoppedReason,
     nextCursor,

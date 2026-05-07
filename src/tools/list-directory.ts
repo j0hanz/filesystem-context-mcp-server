@@ -193,7 +193,6 @@ function buildStructuredListResult(
     path: resultPath,
     entries: structuredEntries,
     totalEntries: summary.totalEntries,
-    ...(summary.truncated ? { truncated: summary.truncated } : {}),
     totalFiles: summary.totalFiles,
     totalDirectories: summary.totalDirectories,
     ...(summary.stoppedReason ? { stoppedReason: summary.stoppedReason } : {}),
