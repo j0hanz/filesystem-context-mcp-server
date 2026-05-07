@@ -48,7 +48,11 @@ import { z } from 'zod/v4';
 import { ErrorCode } from '../lib/errors.js';
 import { isSafeGlobPattern } from '../lib/paths.js';
 
-function reg<T extends z.ZodType>(schema: T, id: string, extra?: Record<string, unknown>): T {
+function reg<T extends z.ZodType>(
+  schema: T,
+  id: string,
+  extra?: Record<string, unknown>
+): T {
   z.globalRegistry.add(schema, { id, ...extra });
   return schema;
 }
@@ -56,7 +60,7 @@ function reg<T extends z.ZodType>(schema: T, id: string, extra?: Record<string, 
 // Runtime: full ISO-8601 UTC validation. Wire: format only (pattern stripped by post-processor).
 export const IsoDateTime = reg(
   z.iso.datetime().describe('ISO 8601 date-time (UTC)'),
-  'IsoDateTime',
+  'IsoDateTime'
 );
 
 export const Sha256Hex = reg(
@@ -64,22 +68,22 @@ export const Sha256Hex = reg(
     .string()
     .regex(/^[a-f0-9]{64}$/u, 'Expected SHA-256 hex digest')
     .describe('SHA-256 hex digest'),
-  'Sha256Hex',
+  'Sha256Hex'
 );
 
 export const NonNegInt = reg(
   z.int({ error: 'Must be integer' }).min(0, 'Min: 0'),
-  'NonNegInt',
+  'NonNegInt'
 );
 
 export const PositiveInt = reg(
   z.int({ error: 'Must be integer' }).min(1, 'Min: 1'),
-  'PositiveInt',
+  'PositiveInt'
 );
 
 export const FileType = reg(
   z.enum(['file', 'directory', 'symlink', 'other']),
-  'FileType',
+  'FileType'
 );
 
 // Unified across ls/find/grep/search_and_replace — replaces three separate enums.
@@ -87,19 +91,21 @@ export const StoppedReason = reg(
   z
     .enum(['maxResults', 'maxFiles', 'maxEntries', 'timeout', 'aborted'])
     .describe(
-      'maxResults: result limit hit; maxFiles: file count hit; maxEntries: entry limit hit; timeout: time limit exceeded; aborted: operation cancelled',
+      'maxResults: result limit hit; maxFiles: file count hit; maxEntries: entry limit hit; timeout: time limit exceeded; aborted: operation cancelled'
     ),
-  'StoppedReason',
+  'StoppedReason'
 );
 
 export const ErrorCodeEnum = reg(
   z.enum(ErrorCode).describe('Error code'),
-  'ErrorCodeEnum',
+  'ErrorCodeEnum'
 );
 
 export const MAX_PATH_LENGTH = 4096;
 
-const PathBase = z.string().max(MAX_PATH_LENGTH, `Path too long (max ${MAX_PATH_LENGTH} chars)`);
+const PathBase = z
+  .string()
+  .max(MAX_PATH_LENGTH, `Path too long (max ${MAX_PATH_LENGTH} chars)`);
 // OptionalPath and RequiredPath are not registered (used once per schema, $ref not worth it).
 export const OptionalPath = PathBase.optional();
 export const RequiredPath = PathBase.min(1, 'Path required');
@@ -116,7 +122,7 @@ export const SafeGlobPattern = reg(
     })
     .describe('Glob pattern (e.g. "**/*.ts", "src/**/*.js")'),
   'SafeGlobPattern',
-  { examples: ['**/*.ts', 'src/**/*.js', '*.{ts,tsx}'] },
+  { examples: ['**/*.ts', 'src/**/*.js', '*.{ts,tsx}'] }
 );
 ```
 
@@ -125,8 +131,8 @@ export const SafeGlobPattern = reg(
 ```ts
 // __tests__/schemas/fields.test.ts
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
 
+import { describe, it } from 'node:test';
 import { z } from 'zod/v4';
 
 import { IsoDateTime, NonNegInt } from '../../src/schemas/fields.js';
@@ -144,7 +150,10 @@ describe('fields', () => {
     const def = defs['IsoDateTime'] as Record<string, unknown>;
     assert.equal(def['format'], 'date-time');
     // Pattern still present here — stripped by post-processor in json-schema.ts (Task 3)
-    assert.ok('pattern' in def, 'raw output still has pattern (post-processor strips it)');
+    assert.ok(
+      'pattern' in def,
+      'raw output still has pattern (post-processor strips it)'
+    );
   });
 
   it('NonNegInt is in globalRegistry', () => {
@@ -182,7 +191,13 @@ git commit -m "feat(schemas): add primitive field builders with globalRegistry I
 // src/schemas/shared.ts
 import { z } from 'zod/v4';
 
-import { ErrorCodeEnum, FileType, IsoDateTime, NonNegInt, PositiveInt } from './fields.js';
+import {
+  ErrorCodeEnum,
+  FileType,
+  IsoDateTime,
+  NonNegInt,
+  PositiveInt,
+} from './fields.js';
 
 function reg<T extends z.ZodType>(schema: T, id: string): T {
   z.globalRegistry.add(schema, { id });
@@ -204,7 +219,7 @@ export const FileInfoSchema = reg(
     mimeType: z.string().optional().describe('MIME type'),
     symlinkTarget: z.string().optional().describe('Target (symlink)'),
   }),
-  'FileInfo',
+  'FileInfo'
 );
 
 export const ErrorSchema = reg(
@@ -214,7 +229,7 @@ export const ErrorSchema = reg(
     path: z.string().optional().describe('Relevant path'),
     suggestion: z.string().optional().describe('Fix suggestion'),
   }),
-  'Error',
+  'Error'
 );
 
 export const OperationSummarySchema = reg(
@@ -223,7 +238,7 @@ export const OperationSummarySchema = reg(
     succeeded: NonNegInt.describe('Succeeded'),
     failed: NonNegInt.describe('Failed'),
   }),
-  'OperationSummary',
+  'OperationSummary'
 );
 
 export const SearchSummarySchema = reg(
@@ -232,7 +247,7 @@ export const SearchSummarySchema = reg(
     truncated: z.boolean().optional().describe('Results truncated?'),
     resourceUri: z.string().optional().describe('Full results URI'),
   }),
-  'SearchSummary',
+  'SearchSummary'
 );
 
 // Common read-result fields shared by read and read_many item responses.
@@ -249,15 +264,31 @@ export const ReadResultSchema = reg(
     linesRead: NonNegInt.optional().describe('Lines read'),
     hasMoreLines: z.boolean().optional().describe('More lines?'),
   }),
-  'ReadResult',
+  'ReadResult'
 );
 
 // Shared read-range input fields (head/tail/startLine/endLine) used in read and read_many.
 export interface ReadRangeFields {
-  head: ReturnType<typeof z.int>['optional'] extends (...args: unknown[]) => infer R ? R : never;
-  tail: ReturnType<typeof z.int>['optional'] extends (...args: unknown[]) => infer R ? R : never;
-  startLine: ReturnType<typeof z.int>['optional'] extends (...args: unknown[]) => infer R ? R : never;
-  endLine: ReturnType<typeof z.int>['optional'] extends (...args: unknown[]) => infer R ? R : never;
+  head: ReturnType<typeof z.int>['optional'] extends (
+    ...args: unknown[]
+  ) => infer R
+    ? R
+    : never;
+  tail: ReturnType<typeof z.int>['optional'] extends (
+    ...args: unknown[]
+  ) => infer R
+    ? R
+    : never;
+  startLine: ReturnType<typeof z.int>['optional'] extends (
+    ...args: unknown[]
+  ) => infer R
+    ? R
+    : never;
+  endLine: ReturnType<typeof z.int>['optional'] extends (
+    ...args: unknown[]
+  ) => infer R
+    ? R
+    : never;
 }
 
 interface ReadRangeDescriptions {
@@ -297,7 +328,7 @@ export function createReadRangeFields(descs: ReadRangeDescriptions) {
 // Shared superRefine for read range mutual exclusion (runtime enforcement).
 export function validateReadRange(
   value: { head?: number; tail?: number; startLine?: number; endLine?: number },
-  ctx: z.RefinementCtx,
+  ctx: z.RefinementCtx
 ): void {
   const hasHead = value.head !== undefined;
   const hasTail = value.tail !== undefined;
@@ -305,14 +336,29 @@ export function validateReadRange(
   const hasEnd = value.endLine !== undefined;
 
   if (hasHead && (hasStart || hasEnd)) {
-    ctx.addIssue({ code: 'custom', path: ['head'], message: "Cannot use 'head' with 'startLine'/'endLine'", input: value });
+    ctx.addIssue({
+      code: 'custom',
+      path: ['head'],
+      message: "Cannot use 'head' with 'startLine'/'endLine'",
+      input: value,
+    });
   }
   if (hasTail && (hasHead || hasStart || hasEnd)) {
-    ctx.addIssue({ code: 'custom', path: ['tail'], message: "Cannot use 'tail' with 'head'/'startLine'/'endLine'", input: value });
+    ctx.addIssue({
+      code: 'custom',
+      path: ['tail'],
+      message: "Cannot use 'tail' with 'head'/'startLine'/'endLine'",
+      input: value,
+    });
   }
   const effectiveStart = value.startLine ?? 1;
   if (value.endLine !== undefined && value.endLine < effectiveStart) {
-    ctx.addIssue({ code: 'custom', path: ['endLine'], message: "'endLine' must be >= 'startLine'", input: value });
+    ctx.addIssue({
+      code: 'custom',
+      path: ['endLine'],
+      message: "'endLine' must be >= 'startLine'",
+      input: value,
+    });
   }
 }
 
@@ -376,6 +422,7 @@ export const NextCursorSchema = z
 ```ts
 // src/schemas/json-schema.ts
 import { fromJsonSchema } from '@modelcontextprotocol/server';
+
 import { z } from 'zod/v4';
 
 type JsonSchema = Record<string, unknown>;
@@ -384,7 +431,8 @@ type JsonSchema = Record<string, unknown>;
 // - Strip `pattern` from `format: "date-time"` nodes (eliminates the 340-char Zod datetime regex)
 // - Strip `maximum: Number.MAX_SAFE_INTEGER` from integer nodes (implicit, just noise)
 function walk(schema: unknown): unknown {
-  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return schema;
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema))
+    return schema;
   const obj = schema as JsonSchema;
   const result: JsonSchema = {};
   for (const [key, value] of Object.entries(obj)) {
@@ -393,7 +441,10 @@ function walk(schema: unknown): unknown {
   if (result['format'] === 'date-time' && 'pattern' in result) {
     delete result['pattern'];
   }
-  if (result['maximum'] === Number.MAX_SAFE_INTEGER && result['type'] === 'integer') {
+  if (
+    result['maximum'] === Number.MAX_SAFE_INTEGER &&
+    result['type'] === 'integer'
+  ) {
     delete result['maximum'];
   }
   return result;
@@ -404,7 +455,7 @@ function walk(schema: unknown): unknown {
 // JSON Schema constructs (e.g. `allOf` oneOf constraints) that Zod can't express natively.
 export function toToolJsonSchema(
   zodSchema: z.ZodType,
-  augment?: (schema: JsonSchema) => JsonSchema,
+  augment?: (schema: JsonSchema) => JsonSchema
 ): ReturnType<typeof fromJsonSchema> {
   const raw = z.toJSONSchema(zodSchema) as JsonSchema;
   const cleaned = walk(raw) as JsonSchema;
@@ -418,8 +469,8 @@ export function toToolJsonSchema(
 ```ts
 // __tests__/schemas/json-schema.test.ts
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
 
+import { describe, it } from 'node:test';
 import { z } from 'zod/v4';
 
 import { IsoDateTime, NonNegInt } from '../../src/schemas/fields.js';
@@ -428,9 +479,15 @@ import { toToolJsonSchema } from '../../src/schemas/json-schema.js';
 describe('toToolJsonSchema', () => {
   it('strips datetime pattern from $defs', () => {
     const schema = z.strictObject({ ts: IsoDateTime });
-    const result = toToolJsonSchema(schema) as unknown as Record<string, unknown>;
+    const result = toToolJsonSchema(schema) as unknown as Record<
+      string,
+      unknown
+    >;
     // fromJsonSchema wraps — access the underlying JSON via ~standard
-    const json = (result as Record<string, unknown>)['~standard'] as Record<string, unknown>;
+    const json = (result as Record<string, unknown>)['~standard'] as Record<
+      string,
+      unknown
+    >;
     // The wrapped schema should not contain 'pattern' string anywhere in $defs
     const str = JSON.stringify(result);
     assert.ok(!str.includes('"pattern"'), 'no pattern in output');
@@ -440,11 +497,17 @@ describe('toToolJsonSchema', () => {
   it('strips MAX_SAFE_INTEGER maximum from integer fields', () => {
     const schema = z.strictObject({ count: NonNegInt });
     const str = JSON.stringify(toToolJsonSchema(schema));
-    assert.ok(!str.includes('9007199254740991'), 'no MAX_SAFE_INTEGER in output');
+    assert.ok(
+      !str.includes('9007199254740991'),
+      'no MAX_SAFE_INTEGER in output'
+    );
   });
 
   it('augment function can inject allOf constraints', () => {
-    const schema = z.strictObject({ a: z.string().optional(), b: z.string().optional() });
+    const schema = z.strictObject({
+      a: z.string().optional(),
+      b: z.string().optional(),
+    });
     const result = toToolJsonSchema(schema, (s) => ({
       ...s,
       allOf: [{ if: { required: ['a'] }, then: { not: { required: ['b'] } } }],
@@ -546,12 +609,16 @@ Add this helper function before `tryRegisterToolTask`:
 // Uses inputSchemaJson when provided (pre-augmented schema, e.g. with oneOf).
 function convertSchemasToWire(
   toolDef: Record<string, unknown>,
-  inputSchemaJson?: ReturnType<typeof toToolJsonSchema>,
+  inputSchemaJson?: ReturnType<typeof toToolJsonSchema>
 ): Record<string, unknown> {
   const result = { ...toolDef };
-  result['inputSchema'] = inputSchemaJson ?? toToolJsonSchema(result['inputSchema'] as import('zod/v4').ZodType);
+  result['inputSchema'] =
+    inputSchemaJson ??
+    toToolJsonSchema(result['inputSchema'] as import('zod/v4').ZodType);
   if (result['outputSchema'] != null) {
-    result['outputSchema'] = toToolJsonSchema(result['outputSchema'] as import('zod/v4').ZodType);
+    result['outputSchema'] = toToolJsonSchema(
+      result['outputSchema'] as import('zod/v4').ZodType
+    );
   }
   // Remove the helper field — not part of MCP wire protocol
   delete result['inputSchemaJson'];
@@ -568,11 +635,11 @@ server.experimental.tasks.registerToolTask(
   convertSchemasToWire(
     withDefaultIcons(
       { ...toolDef, execution: { ...existingExecution, taskSupport } },
-      iconInfo,
+      iconInfo
     ),
-    (toolDef as ToolContract).inputSchemaJson,
+    (toolDef as ToolContract).inputSchemaJson
   ) as never,
-  taskHandler as never,
+  taskHandler as never
 );
 ```
 
@@ -584,9 +651,9 @@ server.registerTool(
   toolDef.name,
   convertSchemasToWire(
     withDefaultIcons({ ...toolDef }, options.iconInfo),
-    toolDef.inputSchemaJson,
+    toolDef.inputSchemaJson
   ),
-  validatedHandler,
+  validatedHandler
 );
 ```
 
@@ -629,21 +696,26 @@ This captures the tool wire schemas BEFORE migration. After migration they'll be
 // __tests__/schemas/snapshot.test.ts
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
-import { describe, it } from 'node:test';
 
+import { describe, it } from 'node:test';
 import { z } from 'zod/v4';
 
-import { ALL_TOOLS } from '../../src/tools.js';
 import { toToolJsonSchema } from '../../src/schemas/json-schema.js';
+import { ALL_TOOLS } from '../../src/tools.js';
 
-const SNAPSHOT_PATH = new URL('./__snapshots__/tool-schemas.json', import.meta.url);
+const SNAPSHOT_PATH = new URL(
+  './__snapshots__/tool-schemas.json',
+  import.meta.url
+);
 
 async function buildSnapshot(): Promise<Record<string, unknown>> {
   const result: Record<string, unknown> = {};
   for (const tool of ALL_TOOLS) {
     result[tool.name] = {
       inputSchema: toToolJsonSchema(tool.inputSchema),
-      ...(tool.outputSchema ? { outputSchema: toToolJsonSchema(tool.outputSchema) } : {}),
+      ...(tool.outputSchema
+        ? { outputSchema: toToolJsonSchema(tool.outputSchema) }
+        : {}),
     };
   }
   return result;
@@ -654,7 +726,10 @@ describe('tool schema snapshots', () => {
     const current = await buildSnapshot();
     let stored: Record<string, unknown>;
     try {
-      stored = JSON.parse(await readFile(SNAPSHOT_PATH, 'utf-8')) as Record<string, unknown>;
+      stored = JSON.parse(await readFile(SNAPSHOT_PATH, 'utf-8')) as Record<
+        string,
+        unknown
+      >;
     } catch {
       // First run — write snapshot and pass
       await writeFile(SNAPSHOT_PATH, JSON.stringify(current, null, 2), 'utf-8');
@@ -663,7 +738,7 @@ describe('tool schema snapshots', () => {
     assert.deepEqual(
       JSON.stringify(current, null, 2),
       JSON.stringify(stored, null, 2),
-      'Schema snapshot mismatch — delete __snapshots__/tool-schemas.json to update',
+      'Schema snapshot mismatch — delete __snapshots__/tool-schemas.json to update'
     );
   });
 
@@ -719,16 +794,18 @@ import {
   MAX_TREE_DEPTH,
 } from '../../lib/constants.js';
 import { isSafeGlobPattern } from '../../lib/paths.js';
+import { OptionalPath, SafeGlobPattern } from '../fields.js';
+import { CursorSchema, NextCursorSchema } from '../pagination.js';
 import {
   defaultFalseBoolean,
   includeHiddenField,
   includeIgnoredField,
 } from '../shared.js';
-import { CursorSchema, NextCursorSchema } from '../pagination.js';
-import { OptionalPath, SafeGlobPattern } from '../fields.js';
 
 export const ListDirectoryInputSchema = z.strictObject({
-  path: OptionalPath.describe('Base directory (default: root). Absolute path required if multiple roots.'),
+  path: OptionalPath.describe(
+    'Base directory (default: root). Absolute path required if multiple roots.'
+  ),
   includeHidden: includeHiddenField(),
   includeIgnored: includeIgnoredField(),
   maxDepth: z
@@ -743,14 +820,20 @@ export const ListDirectoryInputSchema = z.strictObject({
     .max(MAX_LIST_ENTRIES, `Max: ${MAX_LIST_ENTRIES}`)
     .optional()
     .default(DEFAULT_LIST_MAX_ENTRIES)
-    .describe(`Maximum entries to return before truncation. Default: ${DEFAULT_LIST_MAX_ENTRIES}`),
+    .describe(
+      `Maximum entries to return before truncation. Default: ${DEFAULT_LIST_MAX_ENTRIES}`
+    ),
   sortBy: z
     .enum(['name', 'size', 'modified', 'type'])
     .optional()
     .default('name')
     .describe('Sort field (name, size, modified, type)'),
-  pattern: SafeGlobPattern.optional().describe('Optional glob pattern filter (e.g. "**/*.ts")'),
-  includeSymlinkTargets: defaultFalseBoolean('Resolve and include symlink targets in results'),
+  pattern: SafeGlobPattern.optional().describe(
+    'Optional glob pattern filter (e.g. "**/*.ts")'
+  ),
+  includeSymlinkTargets: defaultFalseBoolean(
+    'Resolve and include symlink targets in results'
+  ),
   cursor: CursorSchema,
 });
 ```
@@ -775,7 +858,7 @@ export const ListDirectoryOutputSchema = z.strictObject({
         type: FileType,
         size: NonNegInt.optional(),
         modified: IsoDateTime.optional(),
-      }),
+      })
     )
     .optional(),
   totalEntries: NonNegInt.optional(),
@@ -800,20 +883,26 @@ import {
   MAX_SEARCH_RESULTS,
 } from '../../lib/constants.js';
 import { isSafeGlobPattern } from '../../lib/paths.js';
-import { includeHiddenField, includeIgnoredField } from '../shared.js';
-import { CursorSchema } from '../pagination.js';
 import { OptionalPath, SafeGlobPattern } from '../fields.js';
+import { CursorSchema } from '../pagination.js';
+import { includeHiddenField, includeIgnoredField } from '../shared.js';
 
 export const SearchFilesInputSchema = z.strictObject({
-  path: OptionalPath.describe('Base directory (default: root). Absolute path required if multiple roots.'),
-  pattern: SafeGlobPattern.describe('Glob pattern (e.g. "**/*.ts", "src/*.js")'),
+  path: OptionalPath.describe(
+    'Base directory (default: root). Absolute path required if multiple roots.'
+  ),
+  pattern: SafeGlobPattern.describe(
+    'Glob pattern (e.g. "**/*.ts", "src/*.js")'
+  ),
   maxResults: z
     .int({ error: 'Must be integer' })
     .min(1, 'Min: 1')
     .max(MAX_SEARCH_RESULTS, `Max: ${MAX_SEARCH_RESULTS}`)
     .optional()
     .default(DEFAULT_SEARCH_RESULTS)
-    .describe(`Max results (1-${MAX_SEARCH_RESULTS}). Default: ${DEFAULT_SEARCH_RESULTS}`),
+    .describe(
+      `Max results (1-${MAX_SEARCH_RESULTS}). Default: ${DEFAULT_SEARCH_RESULTS}`
+    ),
   includeIgnored: includeIgnoredField(),
   includeHidden: includeHiddenField(),
   sortBy: z
@@ -850,7 +939,7 @@ export const SearchFilesOutputSchema = SearchSummarySchema.extend({
         path: z.string().describe('Relative path'),
         size: NonNegInt.optional(),
         modified: IsoDateTime.optional(),
-      }),
+      })
     )
     .optional(),
   filesScanned: NonNegInt.optional().describe('Files scanned'),
@@ -872,18 +961,26 @@ import {
   MAX_TREE_DEPTH,
   MAX_TREE_ENTRIES,
 } from '../../lib/constants.js';
-import { includeHiddenField, includeIgnoredField, defaultFalseBoolean } from '../shared.js';
 import { OptionalPath } from '../fields.js';
+import {
+  defaultFalseBoolean,
+  includeHiddenField,
+  includeIgnoredField,
+} from '../shared.js';
 
 export const TreeInputSchema = z.strictObject({
-  path: OptionalPath.describe('Base directory (default: root). Absolute path required if multiple roots.'),
+  path: OptionalPath.describe(
+    'Base directory (default: root). Absolute path required if multiple roots.'
+  ),
   maxDepth: z
     .int({ error: 'Must be integer' })
     .min(0, 'Min: 0')
     .max(MAX_TREE_DEPTH, `Max: ${MAX_TREE_DEPTH}`)
     .optional()
     .default(DEFAULT_TREE_DEPTH)
-    .describe(`Depth (0=root node only, no children). Default: ${DEFAULT_TREE_DEPTH}`),
+    .describe(
+      `Depth (0=root node only, no children). Default: ${DEFAULT_TREE_DEPTH}`
+    ),
   maxEntries: z
     .int({ error: 'Must be integer' })
     .min(1, 'Min: 1')
@@ -920,7 +1017,7 @@ const TreeEntrySchema: z.ZodType<TreeEntry> = z.lazy(() =>
     relativePath: z.string().describe('Relative path'),
     size: z.number().optional().describe('File size bytes (when includeSizes)'),
     children: z.array(TreeEntrySchema).optional().describe('Children'),
-  }),
+  })
 );
 
 export const TreeOutputSchema = z.strictObject({
@@ -964,9 +1061,13 @@ git commit -m "feat(schemas): add list-group (ls/find/tree) input and output sch
 // src/schemas/inputs/read.ts
 import { z } from 'zod/v4';
 
-import { toToolJsonSchema } from '../json-schema.js';
-import { createReadRangeFields, defaultFalseBoolean, validateReadRange } from '../shared.js';
 import { RequiredPath } from '../fields.js';
+import { toToolJsonSchema } from '../json-schema.js';
+import {
+  createReadRangeFields,
+  defaultFalseBoolean,
+  validateReadRange,
+} from '../shared.js';
 
 export const ReadFileInputSchema = z
   .strictObject({
@@ -974,30 +1075,55 @@ export const ReadFileInputSchema = z
     ...createReadRangeFields({
       head: 'Read first N lines (preview)',
       tail: 'Read last N lines',
-      startLine: 'Start line (1-based, inclusive). Defaults to 1 when endLine is set.',
-      endLine: 'End line (1-based, inclusive). Defaults to last line when startLine is set.',
+      startLine:
+        'Start line (1-based, inclusive). Defaults to 1 when endLine is set.',
+      endLine:
+        'End line (1-based, inclusive). Defaults to last line when startLine is set.',
     }),
-    includeHash: defaultFalseBoolean('Include SHA-256 hash of full file content'),
+    includeHash: defaultFalseBoolean(
+      'Include SHA-256 hash of full file content'
+    ),
   })
   .superRefine(validateReadRange)
-  .describe("Use one read mode only: 'head', 'tail', or 'startLine'/'endLine'.");
+  .describe(
+    "Use one read mode only: 'head', 'tail', or 'startLine'/'endLine'."
+  );
 
 // Pre-built wire schema with allOf oneOf constraint for client-side validation.
 // superRefine above remains the authoritative runtime check.
-export const ReadFileInputSchemaJson = toToolJsonSchema(ReadFileInputSchema, (s) => ({
-  ...s,
-  allOf: [
-    ...(Array.isArray(s['allOf']) ? (s['allOf'] as unknown[]) : []),
-    {
-      if: { required: ['head'] },
-      then: { not: { anyOf: [{ required: ['tail'] }, { required: ['startLine'] }, { required: ['endLine'] }] } },
-    },
-    {
-      if: { required: ['tail'] },
-      then: { not: { anyOf: [{ required: ['head'] }, { required: ['startLine'] }, { required: ['endLine'] }] } },
-    },
-  ],
-}));
+export const ReadFileInputSchemaJson = toToolJsonSchema(
+  ReadFileInputSchema,
+  (s) => ({
+    ...s,
+    allOf: [
+      ...(Array.isArray(s['allOf']) ? (s['allOf'] as unknown[]) : []),
+      {
+        if: { required: ['head'] },
+        then: {
+          not: {
+            anyOf: [
+              { required: ['tail'] },
+              { required: ['startLine'] },
+              { required: ['endLine'] },
+            ],
+          },
+        },
+      },
+      {
+        if: { required: ['tail'] },
+        then: {
+          not: {
+            anyOf: [
+              { required: ['head'] },
+              { required: ['startLine'] },
+              { required: ['endLine'] },
+            ],
+          },
+        },
+      },
+    ],
+  })
+);
 ```
 
 - [ ] **Step 2: Create `src/schemas/outputs/read.ts`**
@@ -1024,9 +1150,9 @@ Note: `path` is now **required** (not optional) — the handler always sets it.
 // src/schemas/inputs/read-many.ts
 import { z } from 'zod/v4';
 
+import { RequiredPath } from '../fields.js';
 import { toToolJsonSchema } from '../json-schema.js';
 import { createReadRangeFields, validateReadRange } from '../shared.js';
-import { RequiredPath } from '../fields.js';
 
 export const ReadMultipleFilesInputSchema = z
   .strictObject({
@@ -1038,12 +1164,16 @@ export const ReadMultipleFilesInputSchema = z
     ...createReadRangeFields({
       head: 'Read first N lines of each file',
       tail: 'Read last N lines of each file',
-      startLine: 'Start line (1-based, inclusive) per file. Defaults to 1 when endLine is set.',
-      endLine: 'End line (1-based, inclusive) per file. Defaults to last line when startLine is set.',
+      startLine:
+        'Start line (1-based, inclusive) per file. Defaults to 1 when endLine is set.',
+      endLine:
+        'End line (1-based, inclusive) per file. Defaults to last line when startLine is set.',
     }),
   })
   .superRefine(validateReadRange)
-  .describe("Use one read mode only: 'head', 'tail', or 'startLine'/'endLine'.");
+  .describe(
+    "Use one read mode only: 'head', 'tail', or 'startLine'/'endLine'."
+  );
 
 export const ReadMultipleFilesInputSchemaJson = toToolJsonSchema(
   ReadMultipleFilesInputSchema,
@@ -1053,14 +1183,30 @@ export const ReadMultipleFilesInputSchemaJson = toToolJsonSchema(
       ...(Array.isArray(s['allOf']) ? (s['allOf'] as unknown[]) : []),
       {
         if: { required: ['head'] },
-        then: { not: { anyOf: [{ required: ['tail'] }, { required: ['startLine'] }, { required: ['endLine'] }] } },
+        then: {
+          not: {
+            anyOf: [
+              { required: ['tail'] },
+              { required: ['startLine'] },
+              { required: ['endLine'] },
+            ],
+          },
+        },
       },
       {
         if: { required: ['tail'] },
-        then: { not: { anyOf: [{ required: ['head'] }, { required: ['startLine'] }, { required: ['endLine'] }] } },
+        then: {
+          not: {
+            anyOf: [
+              { required: ['head'] },
+              { required: ['startLine'] },
+              { required: ['endLine'] },
+            ],
+          },
+        },
       },
     ],
-  }),
+  })
 );
 ```
 
@@ -1070,7 +1216,11 @@ export const ReadMultipleFilesInputSchemaJson = toToolJsonSchema(
 // src/schemas/outputs/read-many.ts
 import { z } from 'zod/v4';
 
-import { ErrorSchema, OperationSummarySchema, ReadResultSchema } from '../shared.js';
+import {
+  ErrorSchema,
+  OperationSummarySchema,
+  ReadResultSchema,
+} from '../shared.js';
 
 const ReadManyItemSchema = ReadResultSchema.extend({
   path: z.string().describe('File path'),
@@ -1096,20 +1246,26 @@ In [src/tools/read.ts](src/tools/read.ts), update the imports and the contract:
 
 ```ts
 // Replace the imports at top:
-import { ReadFileInputSchema, ReadFileInputSchemaJson } from '../schemas/inputs/read.js';
+import {
+  ReadFileInputSchema,
+  ReadFileInputSchemaJson,
+} from '../schemas/inputs/read.js';
 import { ReadFileOutputSchema } from '../schemas/outputs/read.js';
 
 // Update the contract:
 export const READ_FILE_TOOL: ToolContract = {
   name: 'read',
   title: 'Read File',
-  description: 'Read text file contents. Use `head` to preview first N lines of large files. For multiple files, use `read_many`.',
+  description:
+    'Read text file contents. Use `head` to preview first N lines of large files. For multiple files, use `read_many`.',
   inputSchema: ReadFileInputSchema,
   inputSchemaJson: ReadFileInputSchemaJson,
   outputSchema: ReadFileOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   icons: FILE_READ_ICONS,
-  nuances: ['Large content is externalized to `filesystem-mcp://result/{id}` and preview is returned inline.'],
+  nuances: [
+    'Large content is externalized to `filesystem-mcp://result/{id}` and preview is returned inline.',
+  ],
   taskSupport: 'forbidden',
 } as const;
 ```
@@ -1154,19 +1310,29 @@ import {
   DEFAULT_SEARCH_CONTENT_RESULTS,
   MAX_SEARCH_RESULTS,
 } from '../../lib/constants.js';
-import { defaultFalseBoolean, includeHiddenField, includeIgnoredField } from '../shared.js';
-import { OptionalPath, SafeGlobPattern } from '../fields.js';
 import { isSafeGlobPattern } from '../../lib/paths.js';
+import { OptionalPath, SafeGlobPattern } from '../fields.js';
+import {
+  defaultFalseBoolean,
+  includeHiddenField,
+  includeIgnoredField,
+} from '../shared.js';
 
 export const SearchContentInputSchema = z.strictObject({
-  path: OptionalPath.describe('Base directory (default: root). Absolute path required if multiple roots.'),
+  path: OptionalPath.describe(
+    'Base directory (default: root). Absolute path required if multiple roots.'
+  ),
   pattern: z
     .string()
     .min(1, 'Pattern required')
     .max(1000, 'Max 1000 chars')
     .describe('Search text. RE2 regex when `isRegex=true`.'),
-  isRegex: defaultFalseBoolean('Treat pattern as RE2 regex (no lookahead/lookbehind/backrefs).'),
-  caseSensitive: defaultFalseBoolean('Case-sensitive matching. Default: case-insensitive.'),
+  isRegex: defaultFalseBoolean(
+    'Treat pattern as RE2 regex (no lookahead/lookbehind/backrefs).'
+  ),
+  caseSensitive: defaultFalseBoolean(
+    'Case-sensitive matching. Default: case-insensitive.'
+  ),
   wholeWord: defaultFalseBoolean('Match whole words only'),
   contextLines: z
     .int({ error: 'Must be integer' })
@@ -1181,7 +1347,9 @@ export const SearchContentInputSchema = z.strictObject({
     .max(MAX_SEARCH_RESULTS, `Max: ${MAX_SEARCH_RESULTS}`)
     .optional()
     .default(DEFAULT_SEARCH_CONTENT_RESULTS)
-    .describe(`Maximum match rows to return. Default: ${DEFAULT_SEARCH_CONTENT_RESULTS}`),
+    .describe(
+      `Maximum match rows to return. Default: ${DEFAULT_SEARCH_CONTENT_RESULTS}`
+    ),
   filePattern: SafeGlobPattern.optional()
     .default('**/*')
     .describe('Glob for candidate files (e.g. "**/*.ts")'),
@@ -1206,19 +1374,23 @@ export const SearchContentOutputSchema = SearchSummarySchema.extend({
       z.strictObject({
         file: z.string().describe('Relative path'),
         line: PositiveInt,
-        column: NonNegInt.optional().describe('Column of first match (0-based)'),
+        column: NonNegInt.optional().describe(
+          'Column of first match (0-based)'
+        ),
         content: z.string(),
         matchCount: PositiveInt,
         contextBefore: z.array(z.string()).optional(),
         contextAfter: z.array(z.string()).optional(),
-      }),
+      })
     )
     .optional(),
   filesScanned: NonNegInt.optional().describe('Files scanned'),
   filesMatched: NonNegInt.optional().describe('Files with matches'),
   skippedTooLarge: NonNegInt.optional().describe('Files skipped: too large'),
   skippedBinary: NonNegInt.optional().describe('Files skipped: binary'),
-  skippedInaccessible: NonNegInt.optional().describe('Files skipped: inaccessible'),
+  skippedInaccessible: NonNegInt.optional().describe(
+    'Files skipped: inaccessible'
+  ),
   stoppedReason: StoppedReason.optional().describe('Why search stopped'),
 });
 ```
@@ -1230,11 +1402,17 @@ export const SearchContentOutputSchema = SearchSummarySchema.extend({
 import { z } from 'zod/v4';
 
 import { isSafeGlobPattern } from '../../lib/paths.js';
-import { defaultFalseBoolean, includeHiddenField, includeIgnoredField } from '../shared.js';
 import { OptionalPath, SafeGlobPattern } from '../fields.js';
+import {
+  defaultFalseBoolean,
+  includeHiddenField,
+  includeIgnoredField,
+} from '../shared.js';
 
 export const SearchAndReplaceInputSchema = z.strictObject({
-  path: OptionalPath.describe('Base directory (default: root). Absolute path required if multiple roots.'),
+  path: OptionalPath.describe(
+    'Base directory (default: root). Absolute path required if multiple roots.'
+  ),
   filePattern: SafeGlobPattern.refine(isSafeGlobPattern, {
     error: 'Invalid glob or unsafe path (absolute/.. forbidden)',
   })
@@ -1245,10 +1423,12 @@ export const SearchAndReplaceInputSchema = z.strictObject({
     .string()
     .min(1, 'Search pattern required')
     .max(1000, 'Max 1000 chars')
-    .describe('Text to search for. Literal by default; RE2 regex when `isRegex=true`.'),
+    .describe(
+      'Text to search for. Literal by default; RE2 regex when `isRegex=true`.'
+    ),
   replacement: z.string().describe('Replacement text'),
   isRegex: defaultFalseBoolean(
-    'Treat searchPattern as RE2 regex. Supports capture groups ($1, $2) in replacement.',
+    'Treat searchPattern as RE2 regex. Supports capture groups ($1, $2) in replacement.'
   ),
   caseSensitive: z
     .boolean()
@@ -1256,12 +1436,12 @@ export const SearchAndReplaceInputSchema = z.strictObject({
     .default(true)
     .describe('Case-sensitive matching. Default: true.'),
   dryRun: defaultFalseBoolean(
-    'Preview matches without writing. Check changedFiles and matches in the response before committing.',
+    'Preview matches without writing. Check changedFiles and matches in the response before committing.'
   ),
   includeHidden: includeHiddenField(),
   includeIgnored: includeIgnoredField(),
   returnDiff: defaultFalseBoolean(
-    'Return unified diff of changes even if dryRun is false. Default: false.',
+    'Return unified diff of changes even if dryRun is false. Default: false.'
   ),
   maxFiles: z
     .int({ error: 'Must be integer' })
@@ -1292,7 +1472,7 @@ export const SearchAndReplaceOutputSchema = z.strictObject({
       z.strictObject({
         path: z.string().describe('File path'),
         error: ErrorSchema.describe('Structured error details'),
-      }),
+      })
     )
     .optional()
     .describe('Sample of per-file errors'),
@@ -1301,17 +1481,27 @@ export const SearchAndReplaceOutputSchema = z.strictObject({
       z.strictObject({
         path: z.string().describe('File path'),
         matches: PositiveInt.describe('Matches in file'),
-      }),
+      })
     )
     .optional()
     .describe('Sample of changed files'),
-  changedFilesTruncated: z.boolean().optional().describe('Changed file list truncated'),
+  changedFilesTruncated: z
+    .boolean()
+    .optional()
+    .describe('Changed file list truncated'),
   diff: z
     .string()
     .optional()
-    .describe('Unified diff of changes when `dryRun` or `returnDiff` is enabled'),
-  diffTruncated: z.boolean().optional().describe('Diff was truncated to fit size limit'),
-  stoppedReason: StoppedReason.optional().describe('Why processing stopped early'),
+    .describe(
+      'Unified diff of changes when `dryRun` or `returnDiff` is enabled'
+    ),
+  diffTruncated: z
+    .boolean()
+    .optional()
+    .describe('Diff was truncated to fit size limit'),
+  stoppedReason: StoppedReason.optional().describe(
+    'Why processing stopped early'
+  ),
 });
 ```
 
@@ -1345,6 +1535,7 @@ git commit -m "feat(schemas): add content-search (grep/search_and_replace) schem
 ```ts
 // src/schemas/inputs/stat.ts
 import { z } from 'zod/v4';
+
 import { RequiredPath } from '../fields.js';
 
 export const GetFileInfoInputSchema = z.strictObject({
@@ -1357,6 +1548,7 @@ export const GetFileInfoInputSchema = z.strictObject({
 ```ts
 // src/schemas/outputs/stat.ts
 import { z } from 'zod/v4';
+
 import { FileInfoSchema } from '../shared.js';
 
 export const GetFileInfoOutputSchema = z.strictObject({
@@ -1372,6 +1564,7 @@ Note: `info` is now **required** — the handler always returns it on success.
 ```ts
 // src/schemas/inputs/stat-many.ts
 import { z } from 'zod/v4';
+
 import { RequiredPath } from '../fields.js';
 
 export const GetMultipleFileInfoInputSchema = z.strictObject({
@@ -1388,7 +1581,12 @@ export const GetMultipleFileInfoInputSchema = z.strictObject({
 ```ts
 // src/schemas/outputs/stat-many.ts
 import { z } from 'zod/v4';
-import { ErrorSchema, FileInfoSchema, OperationSummarySchema } from '../shared.js';
+
+import {
+  ErrorSchema,
+  FileInfoSchema,
+  OperationSummarySchema,
+} from '../shared.js';
 
 export const GetMultipleFileInfoOutputSchema = z.strictObject({
   ok: z.literal(true),
@@ -1397,7 +1595,7 @@ export const GetMultipleFileInfoOutputSchema = z.strictObject({
       path: z.string(),
       info: FileInfoSchema.optional(),
       error: ErrorSchema.optional(),
-    }),
+    })
   ),
   summary: OperationSummarySchema.optional(),
 });
@@ -1433,6 +1631,7 @@ export const ListAllowedDirectoriesOutputSchema = z.strictObject({
 ```ts
 // src/schemas/inputs/hash.ts
 import { z } from 'zod/v4';
+
 import { RequiredPath } from '../fields.js';
 
 export const CalculateHashInputSchema = z.strictObject({
@@ -1445,6 +1644,7 @@ export const CalculateHashInputSchema = z.strictObject({
 ```ts
 // src/schemas/outputs/hash.ts
 import { z } from 'zod/v4';
+
 import { NonNegInt, Sha256Hex } from '../fields.js';
 
 export const CalculateHashOutputSchema = z.strictObject({
@@ -1452,7 +1652,9 @@ export const CalculateHashOutputSchema = z.strictObject({
   path: z.string(),
   hash: Sha256Hex.optional().describe('SHA-256 hash'),
   isDirectory: z.boolean().optional().describe('True if path is a directory'),
-  fileCount: NonNegInt.optional().describe('Number of files hashed (directories only)'),
+  fileCount: NonNegInt.optional().describe(
+    'Number of files hashed (directories only)'
+  ),
 });
 ```
 
@@ -1463,6 +1665,7 @@ Note: `path` is required on output.
 ```ts
 // src/schemas/inputs/diff.ts
 import { z } from 'zod/v4';
+
 import { RequiredPath } from '../fields.js';
 
 export const DiffFilesInputSchema = z.strictObject({
@@ -1492,6 +1695,7 @@ export const DiffFilesInputSchema = z.strictObject({
 ```ts
 // src/schemas/outputs/diff.ts
 import { z } from 'zod/v4';
+
 import { NonNegInt } from '../fields.js';
 
 export const DiffFilesOutputSchema = z.strictObject({
@@ -1511,6 +1715,7 @@ export const DiffFilesOutputSchema = z.strictObject({
 ```ts
 // src/schemas/inputs/patch.ts
 import { z } from 'zod/v4';
+
 import { RequiredPath } from '../fields.js';
 
 export const ApplyPatchInputSchema = z.strictObject({
@@ -1537,7 +1742,9 @@ export const ApplyPatchInputSchema = z.strictObject({
     .boolean()
     .optional()
     .default(false)
-    .describe('Validate patch without writing. Check `applied` before committing.'),
+    .describe(
+      'Validate patch without writing. Check `applied` before committing.'
+    ),
 });
 ```
 
@@ -1546,6 +1753,7 @@ export const ApplyPatchInputSchema = z.strictObject({
 ```ts
 // src/schemas/outputs/patch.ts
 import { z } from 'zod/v4';
+
 import { NonNegInt } from '../fields.js';
 import { ErrorSchema } from '../shared.js';
 
@@ -1565,7 +1773,7 @@ export const ApplyPatchOutputSchema = z.strictObject({
         linesAdded: NonNegInt.optional().describe('Lines added'),
         linesRemoved: NonNegInt.optional().describe('Lines removed'),
         error: ErrorSchema.optional().describe('Structured error details'),
-      }),
+      })
     )
     .optional()
     .describe('Per-file results for multi-file patches'),
@@ -1602,6 +1810,7 @@ git commit -m "feat(schemas): add stat-group and misc (roots/hash/diff/patch) sc
 ```ts
 // src/schemas/inputs/write.ts
 import { z } from 'zod/v4';
+
 import { RequiredPath } from '../fields.js';
 
 export const WriteFileInputSchema = z.strictObject({
@@ -1615,6 +1824,7 @@ export const WriteFileInputSchema = z.strictObject({
 ```ts
 // src/schemas/outputs/write.ts
 import { z } from 'zod/v4';
+
 import { NonNegInt } from '../fields.js';
 
 export const WriteFileOutputSchema = z.strictObject({
@@ -1631,8 +1841,9 @@ Note: `path` is required on output.
 ```ts
 // src/schemas/inputs/edit.ts
 import { z } from 'zod/v4';
-import { defaultFalseBoolean } from '../shared.js';
+
 import { RequiredPath } from '../fields.js';
+import { defaultFalseBoolean } from '../shared.js';
 
 export const EditFileInputSchema = z.strictObject({
   path: RequiredPath.describe('Absolute path to file or directory.'),
@@ -1644,16 +1855,24 @@ export const EditFileInputSchema = z.strictObject({
           .min(1, 'oldText required')
           .max(102400, 'Max 100KB')
           .describe(
-            'Exact literal string to replace (character-for-character). Include 3–5 lines of context for unique targeting.',
+            'Exact literal string to replace (character-for-character). Include 3–5 lines of context for unique targeting.'
           ),
-        newText: z.string().describe('Replacement string. Preserve surrounding indentation style.'),
-      }),
+        newText: z
+          .string()
+          .describe(
+            'Replacement string. Preserve surrounding indentation style.'
+          ),
+      })
     )
     .min(1, 'Min 1 edit required')
-    .describe('List of replacements to apply sequentially. Each edit replaces the first occurrence of oldText.'),
-  dryRun: defaultFalseBoolean('Preview edits without writing. Check `unmatchedEdits` in response.'),
+    .describe(
+      'List of replacements to apply sequentially. Each edit replaces the first occurrence of oldText.'
+    ),
+  dryRun: defaultFalseBoolean(
+    'Preview edits without writing. Check `unmatchedEdits` in response.'
+  ),
   ignoreWhitespace: defaultFalseBoolean(
-    'Treat all whitespace sequences as equivalent when matching oldText.',
+    'Treat all whitespace sequences as equivalent when matching oldText.'
   ),
 });
 ```
@@ -1663,6 +1882,7 @@ export const EditFileInputSchema = z.strictObject({
 ```ts
 // src/schemas/outputs/edit.ts
 import { z } from 'zod/v4';
+
 import { NonNegInt, PositiveInt } from '../fields.js';
 
 export const EditFileOutputSchema = z.strictObject({
@@ -1675,7 +1895,10 @@ export const EditFileOutputSchema = z.strictObject({
     .tuple([PositiveInt, PositiveInt])
     .optional()
     .describe('Line range modified [start, end] (1-based)'),
-  unmatchedEdits: z.array(z.string()).optional().describe('Edits that could not be applied'),
+  unmatchedEdits: z
+    .array(z.string())
+    .optional()
+    .describe('Edits that could not be applied'),
   diff: z.string().optional().describe('Unified diff of changes (dryRun)'),
 });
 ```
@@ -1687,6 +1910,7 @@ Note: `ok` is now `z.literal(true)` (was `z.boolean()` — fixes discriminator i
 ```ts
 // src/schemas/inputs/mkdir.ts
 import { z } from 'zod/v4';
+
 import { RequiredPath } from '../fields.js';
 
 // NOTE: singular `path` is intentionally removed (breaking change — Task 12).
@@ -1718,6 +1942,7 @@ Note: `paths` is required; singular `path` is removed.
 ```ts
 // src/schemas/inputs/mv.ts
 import { z } from 'zod/v4';
+
 import { RequiredPath } from '../fields.js';
 
 // NOTE: singular `source` is intentionally removed (breaking change — Task 12).
@@ -1736,6 +1961,7 @@ export const MoveFileInputSchema = z.strictObject({
 ```ts
 // src/schemas/outputs/mv.ts
 import { z } from 'zod/v4';
+
 import { ErrorSchema } from '../shared.js';
 
 export const MoveFileOutputSchema = z.strictObject({
@@ -1747,7 +1973,7 @@ export const MoveFileOutputSchema = z.strictObject({
       z.strictObject({
         source: z.string().describe('Source path'),
         error: ErrorSchema.describe('Structured error details'),
-      }),
+      })
     )
     .optional()
     .describe('List of files that failed to move'),
@@ -1761,8 +1987,9 @@ Note: `ok` is `z.literal(true)`, `sources` and `destination` required, singular 
 ```ts
 // src/schemas/inputs/rm.ts
 import { z } from 'zod/v4';
-import { defaultFalseBoolean } from '../shared.js';
+
 import { RequiredPath } from '../fields.js';
+import { defaultFalseBoolean } from '../shared.js';
 
 export const DeleteFileInputSchema = z.strictObject({
   path: RequiredPath.describe('Absolute path to file or directory.'),
@@ -1984,9 +2211,15 @@ For every test call found in Step 1, change:
 
 ```ts
 // mv:
-await client.callTool({ name: 'mv', arguments: { source: '/a/b', destination: '/c/d' } });
+await client.callTool({
+  name: 'mv',
+  arguments: { source: '/a/b', destination: '/c/d' },
+});
 // to:
-await client.callTool({ name: 'mv', arguments: { sources: ['/a/b'], destination: '/c/d' } });
+await client.callTool({
+  name: 'mv',
+  arguments: { sources: ['/a/b'], destination: '/c/d' },
+});
 
 // mkdir:
 await client.callTool({ name: 'mkdir', arguments: { path: '/some/dir' } });
@@ -2046,6 +2279,7 @@ Add the following assertions to the existing contract test:
 
 ```ts
 import { z } from 'zod/v4';
+
 import { toToolJsonSchema } from '../src/schemas/json-schema.js';
 
 // Add inside the contract test suite:
@@ -2054,13 +2288,17 @@ it('all success output schemas have ok: literal(true)', () => {
   for (const tool of ALL_TOOLS) {
     if (!tool.outputSchema) continue;
     const schema = tool.outputSchema as z.ZodObject<{ ok: z.ZodType }>;
-    const shape = (schema as unknown as { _zod: { def: { shape: Record<string, z.ZodType> } } })._zod?.def?.shape;
+    const shape = (
+      schema as unknown as {
+        _zod: { def: { shape: Record<string, z.ZodType> } };
+      }
+    )._zod?.def?.shape;
     if (!shape?.['ok']) continue;
     const okJson = z.toJSONSchema(shape['ok']) as Record<string, unknown>;
     assert.equal(
       okJson['const'],
       true,
-      `Tool "${tool.name}" outputSchema.ok should be z.literal(true), got: ${JSON.stringify(okJson)}`,
+      `Tool "${tool.name}" outputSchema.ok should be z.literal(true), got: ${JSON.stringify(okJson)}`
     );
   }
 });
@@ -2069,21 +2307,38 @@ it('mv and mkdir input schemas have no singular source/path field', () => {
   const mvTool = ALL_TOOLS.find((t) => t.name === 'mv');
   const mkdirTool = ALL_TOOLS.find((t) => t.name === 'mkdir');
   assert.ok(mvTool && mkdirTool);
-  const mvJson = toToolJsonSchema(mvTool.inputSchema) as unknown as Record<string, unknown>;
-  const mkdirJson = toToolJsonSchema(mkdirTool.inputSchema) as unknown as Record<string, unknown>;
+  const mvJson = toToolJsonSchema(mvTool.inputSchema) as unknown as Record<
+    string,
+    unknown
+  >;
+  const mkdirJson = toToolJsonSchema(
+    mkdirTool.inputSchema
+  ) as unknown as Record<string, unknown>;
   const mvStr = JSON.stringify(mvJson);
   const mkdirStr = JSON.stringify(mkdirJson);
-  assert.ok(!mvStr.includes('"source"') || mvStr.includes('"sources"'), 'mv has no singular source field');
-  assert.ok(!mkdirStr.includes('"path"') || mkdirStr.includes('"paths"'), 'mkdir has no singular path field');
+  assert.ok(
+    !mvStr.includes('"source"') || mvStr.includes('"sources"'),
+    'mv has no singular source field'
+  );
+  assert.ok(
+    !mkdirStr.includes('"path"') || mkdirStr.includes('"paths"'),
+    'mkdir has no singular path field'
+  );
 });
 
 it('no datetime pattern strings in any tool wire schema', () => {
   for (const tool of ALL_TOOLS) {
     const inputStr = JSON.stringify(toToolJsonSchema(tool.inputSchema));
-    assert.ok(!inputStr.includes('"pattern"'), `Tool "${tool.name}" inputSchema has datetime pattern`);
+    assert.ok(
+      !inputStr.includes('"pattern"'),
+      `Tool "${tool.name}" inputSchema has datetime pattern`
+    );
     if (tool.outputSchema) {
       const outputStr = JSON.stringify(toToolJsonSchema(tool.outputSchema));
-      assert.ok(!outputStr.includes('"pattern"'), `Tool "${tool.name}" outputSchema has datetime pattern`);
+      assert.ok(
+        !outputStr.includes('"pattern"'),
+        `Tool "${tool.name}" outputSchema has datetime pattern`
+      );
     }
   }
 });
