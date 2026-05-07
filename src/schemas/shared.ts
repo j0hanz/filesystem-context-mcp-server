@@ -17,7 +17,7 @@ export const FileInfoSchema = z
     mimeType: z.string().optional().describe('MIME type'),
     symlinkTarget: z.string().optional().describe('Target (symlink)'),
   })
-  .meta({ id: 'FileInfo' });
+  .meta({ id: 'FileInfo', title: 'File Info' });
 
 export const OperationSummarySchema = z
   .strictObject({
@@ -25,7 +25,7 @@ export const OperationSummarySchema = z
     succeeded: NonNegInt.describe('Succeeded'),
     failed: NonNegInt.describe('Failed'),
   })
-  .meta({ id: 'OperationSummary' });
+  .meta({ id: 'OperationSummary', title: 'Operation Summary' });
 
 export const PerFileErrorSchema = z
   .strictObject({
@@ -34,7 +34,7 @@ export const PerFileErrorSchema = z
     path: z.string().optional().describe('Path involved'),
     suggestion: z.string().optional().describe('Suggested fix'),
   })
-  .meta({ id: 'PerFileError' });
+  .meta({ id: 'PerFileError', title: 'Per-File Error' });
 
 interface ReadRangeDescriptions {
   head: string;
@@ -121,4 +121,4 @@ export const ContinuationSchema = z
     args: z.record(z.string(), z.unknown()).describe('Ready-to-use arguments'),
     hint: z.string().describe('One sentence: what data remains'),
   })
-  .meta({ id: 'Continuation' });
+  .meta({ id: 'Continuation', title: 'Continuation' });

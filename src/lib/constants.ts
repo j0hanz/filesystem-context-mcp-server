@@ -1,13 +1,14 @@
 import { availableParallelism } from 'node:os';
 
+import { z } from 'zod/v4';
+
 import { Logger } from './logger.js';
 
-const TRUE_ENV_VALUES = new Set(['1', 'true', 'yes', 'y', 'on']);
-const FALSE_ENV_VALUES = new Set(['0', 'false', 'no', 'n', 'off']);
+const STRING_BOOL_SCHEMA = z.stringbool();
 
 export function parseTrueEnvFlag(value: string | undefined): boolean {
   if (value === undefined) return false;
-  return TRUE_ENV_VALUES.has(value.trim().toLowerCase());
+  return STRING_BOOL_SCHEMA.safeParse(value.trim().toLowerCase()).data === true;
 }
 
 const KIB = 1024;
@@ -51,10 +52,12 @@ function parseEnvBool(envVar: string, defaultValue: boolean): boolean {
   const value = process.env[envVar];
   if (value === undefined) return defaultValue;
   const normalized = value.trim().toLowerCase();
-  if (TRUE_ENV_VALUES.has(normalized)) return true;
-  if (FALSE_ENV_VALUES.has(normalized)) return false;
-  logInvalidEnvValue(envVar, value, 'true/false', defaultValue);
-  return defaultValue;
+  const result = STRING_BOOL_SCHEMA.safeParse(normalized);
+  if (!result.success) {
+    logInvalidEnvValue(envVar, value, 'true/false', defaultValue);
+    return defaultValue;
+  }
+  return result.data;
 }
 
 function parseEnvList(envVar: string): string[] {

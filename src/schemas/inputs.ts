@@ -165,7 +165,8 @@ export const GrepInputSchema = z.strictObject({
     .max(10000)
     .describe(
       'Text or regex to search for (RE2: no lookahead/lookbehind/backrefs when isRegex=true)'
-    ),
+    )
+    .meta({ examples: ['TODO', 'function\\s+(\\w+)', 'import.*from'] }),
   isRegex: defaultFalseBoolean('Treat searchPattern as regex'),
   includeHidden: includeHiddenField(),
   includeIgnored: includeIgnoredField(),
@@ -204,8 +205,13 @@ export const SearchAndReplaceInputSchema = z.strictObject({
     .max(10000)
     .describe(
       'Text or regex to find (RE2: no lookahead/lookbehind/backrefs when isRegex=true)'
-    ),
-  replacement: z.string().max(10000).describe('Replacement text'),
+    )
+    .meta({ examples: ['TODO', 'function\\s+(\\w+)', 'import.*from'] }),
+  replacement: z
+    .string()
+    .max(10000)
+    .describe('Replacement text')
+    .meta({ examples: ['$1_renamed', '', 'TODO: fix'] }),
   isRegex: defaultFalseBoolean('Treat searchPattern as regex'),
   includeHidden: includeHiddenField(),
   includeIgnored: includeIgnoredField(),
@@ -270,7 +276,14 @@ export const ApplyPatchInputSchema = z.strictObject({
     .string()
     .min(1)
     .max(MAX_TEXT_FILE_SIZE)
-    .describe('Unified diff patch content'),
+    .describe(
+      'Unified diff patch content (unified format with --- a/ +++ b/ headers)'
+    )
+    .meta({
+      examples: [
+        '--- a/src/foo.ts\n+++ b/src/foo.ts\n@@ -1,3 +1,3 @@\n-const x = 1;\n+const x = 2;\n',
+      ],
+    }),
   dryRun: defaultFalseBoolean('Validate patch without applying'),
   fuzzFactor: z
     .int32()
@@ -296,8 +309,15 @@ export const EditFileInputSchema = z.strictObject({
   edits: z
     .array(
       z.strictObject({
-        oldText: z.string().min(1, 'oldText required'),
-        newText: z.string(),
+        oldText: z
+          .string()
+          .min(1, 'oldText required')
+          .describe('Exact text to find (must match literally)')
+          .meta({ examples: ['const x = 1;', 'function oldName('] }),
+        newText: z
+          .string()
+          .describe('Replacement text (empty string to delete)')
+          .meta({ examples: ['const x = 2;', 'function newName(', ''] }),
       })
     )
     .min(1)

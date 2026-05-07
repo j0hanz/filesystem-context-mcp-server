@@ -4,29 +4,31 @@ import { z } from 'zod/v4';
 import { isSafeGlobSyntax } from '../lib/paths.js';
 
 // Runtime: full ISO-8601 UTC validation. Wire: format only (pattern stripped by post-processor).
-export const IsoDateTime = z.iso
-  .datetime()
-  .describe('ISO 8601 date-time (UTC)')
-  .meta({ id: 'IsoDateTime' });
+export const IsoDateTime = z.iso.datetime().meta({
+  id: 'IsoDateTime',
+  title: 'ISO Date-Time',
+  description: 'ISO 8601 date-time (UTC)',
+});
 
-export const Sha256Hex = z
-  .hash('sha256')
-  .describe('SHA-256 hex digest')
-  .meta({ id: 'Sha256Hex' });
+export const Sha256Hex = z.hash('sha256').meta({
+  id: 'Sha256Hex',
+  title: 'SHA-256 Hash',
+  description: 'SHA-256 hex digest',
+});
 
 export const NonNegInt = z
   .int({ error: 'Must be integer' })
   .min(0, 'Min: 0')
-  .meta({ id: 'NonNegInt' });
+  .meta({ id: 'NonNegInt', title: 'Non-Negative Integer' });
 
 export const PositiveInt = z
   .int({ error: 'Must be integer' })
   .min(1, 'Min: 1')
-  .meta({ id: 'PositiveInt' });
+  .meta({ id: 'PositiveInt', title: 'Positive Integer' });
 
 export const FileType = z
   .enum(['file', 'directory', 'symlink', 'other'])
-  .meta({ id: 'FileType' });
+  .meta({ id: 'FileType', title: 'File Type' });
 
 const MAX_PATH_LENGTH = 4096;
 
@@ -51,5 +53,6 @@ export const SafeGlobPattern = z
   .describe('Glob pattern (e.g. "**/*.ts", "src/**/*.js")')
   .meta({
     id: 'SafeGlobPattern',
+    title: 'Glob Pattern',
     examples: ['**/*.ts', 'src/**/*.js', '*.{ts,tsx}'],
   });
