@@ -420,35 +420,4 @@ describe('Completion contract', () => {
     }
   });
 
-  it('get-tool-help: name arg returns tool name completions', async () => {
-    const { client, teardown } = await makeServer();
-    try {
-      const result = await client.complete({
-        ref: { type: 'ref/prompt', name: 'get-tool-help' },
-        argument: { name: 'name', value: 'gr' },
-      });
-      assert.ok(
-        result.completion.values.includes('grep'),
-        'get-tool-help.name must include grep for prefix "gr"'
-      );
-    } finally {
-      await teardown();
-    }
-  });
-
-  it('internal://tool-info/{name}: name variable returns tool name completions', async () => {
-    const { client, teardown } = await makeServer();
-    try {
-      const result = await client.complete({
-        ref: { type: 'ref/resource', uri: 'internal://tool-info/{name}' },
-        argument: { name: 'name', value: 'wr' },
-      });
-      assert.ok(
-        result.completion.values.includes('write'),
-        'tool-info template must complete "wr" to include write'
-      );
-    } finally {
-      await teardown();
-    }
-  });
 });

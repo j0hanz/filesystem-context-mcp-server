@@ -18,7 +18,10 @@ import {
   registerCompareFilesPrompt,
   registerGetHelpPrompt,
 } from '../../src/prompts.js';
-import { registerAllResources, serverInstructionsContent } from '../../src/resources.js';
+import {
+  registerAllResources,
+  serverInstructionsContent,
+} from '../../src/resources.js';
 import { LinkedTransport } from '../linked-transport.js';
 
 function makeCompletionServer(withInstructions = false): McpServer {

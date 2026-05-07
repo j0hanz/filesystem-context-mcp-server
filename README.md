@@ -823,29 +823,29 @@ Bulk search-and-replace across files matching a glob. Replaces **all** occurrenc
 
 ### Resources
 
-| Resource     | URI                            | MIME Type     | Description                                                   |
-| ------------ | ------------------------------ | ------------- | ------------------------------------------------------------- |
-| Instructions | `internal://instructions`      | text/markdown | Navigation guide: role, tool overview, constraints, recovery  |
-| Result Cache | `filesystem-mcp://result/{id}` | text/plain    | Ephemeral cached tool output (large results externalized here)|
+| Resource     | URI                            | MIME Type     | Description                                                    |
+| ------------ | ------------------------------ | ------------- | -------------------------------------------------------------- |
+| Instructions | `internal://instructions`      | text/markdown | Navigation guide: role, tool overview, constraints, recovery   |
+| Result Cache | `filesystem-mcp://result/{id}` | text/plain    | Ephemeral cached tool output (large results externalized here) |
 
 ### Prompts
 
-| Prompt          | Arguments              | Description                                                       |
-| --------------- | ---------------------- | ----------------------------------------------------------------- |
-| `get-help`      | `topic` (optional)     | Return usage instructions. Optionally filter by section heading   |
-| `compare-files` | `original`, `modified` | Generate a workflow for comparing two files using `diff_files`    |
-| `analyze-path`  | `path`                 | Generate a workflow for analyzing a file or directory             |
+| Prompt          | Arguments              | Description                                                     |
+| --------------- | ---------------------- | --------------------------------------------------------------- |
+| `get-help`      | `topic` (optional)     | Return usage instructions. Optionally filter by section heading |
+| `compare-files` | `original`, `modified` | Generate a workflow for comparing two files using `diff_files`  |
+| `analyze-path`  | `path`                 | Generate a workflow for analyzing a file or directory           |
 
 ## MCP Capabilities
 
-| Capability    | Status    | Evidence                                                                        |
-| ------------- | --------- | ------------------------------------------------------------------------------- |
-| `logging`     | confirmed | `src/server/bootstrap.ts` — registered in capabilities                          |
-| `resources`   | confirmed | `src/server/bootstrap.ts` — 2 resources registered, no subscribe/listChanged    |
-| `tools`       | confirmed | `src/server/bootstrap.ts` — 18 tools registered                                 |
-| `prompts`     | confirmed | `src/server/bootstrap.ts` — 3 prompts registered                                |
-| `completions` | confirmed | `src/completions.ts` — path, topic, and tool-name auto-completion               |
-| `tasks`       | confirmed | `src/server/bootstrap.ts` — optional task support (list, cancel, requests)      |
+| Capability    | Status    | Evidence                                                                     |
+| ------------- | --------- | ---------------------------------------------------------------------------- |
+| `logging`     | confirmed | `src/server/bootstrap.ts` — registered in capabilities                       |
+| `resources`   | confirmed | `src/server/bootstrap.ts` — 2 resources registered, no subscribe/listChanged |
+| `tools`       | confirmed | `src/server/bootstrap.ts` — 18 tools registered                              |
+| `prompts`     | confirmed | `src/server/bootstrap.ts` — 3 prompts registered                             |
+| `completions` | confirmed | `src/completions.ts` — path, topic, and tool-name auto-completion            |
+| `tasks`       | confirmed | `src/server/bootstrap.ts` — optional task support (list, cancel, requests)   |
 
 ### Tool Annotations
 
