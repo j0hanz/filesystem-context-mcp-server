@@ -252,15 +252,14 @@ async function handleMoveFile(
           elicitResult.action !== 'accept' ||
           elicitResult.content?.confirmOverwrite !== true
         ) {
-          // Return early — do not move.
-          return {
-            ok: true as const,
-            cancelled: true,
-            sources: [],
-            destination: validDest,
-          };
+          // User declined — surface as a cancellation error.
+          throw new McpError(
+            ErrorCode.CANCELLED,
+            `Move cancelled: "${destination}" already exists and overwrite was declined.`
+          );
         }
-      } catch {
+      } catch (err) {
+        if (err instanceof McpError) throw err;
         // Client doesn't support form elicitation, proceed without asking.
       }
     }
@@ -319,14 +318,11 @@ export const MOVE_FILE = defineTool<MoveInput, MoveOutput>({
   contract: MOVE_FILE_TOOL,
   run: async (args, ctx) => {
     const structured = await handleMoveFile(args, ctx.signal, ctx.elicitInput);
-    const isCancelled = structured.cancelled === true;
-    const message = isCancelled
-      ? `Move cancelled: ${args.sources[0] ?? ''}`
-      : formatMoveMessage(
-          structured.sources.length,
-          structured.failed?.length ?? 0,
-          args.destination
-        );
+    const message = formatMoveMessage(
+      structured.sources.length,
+      structured.failed?.length ?? 0,
+      args.destination
+    );
     void ctx.log?.(
       'info',
       `mv: ${args.sources.join(', ')} \u2192 ${args.destination}`,

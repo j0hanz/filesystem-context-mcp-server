@@ -21,10 +21,10 @@ import { defineTool } from './define-tool.js';
 import { FILE_EDIT_ICONS } from './icons.js';
 import {
   buildStructuredError,
+  buildToolErrorResponse,
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   type ToolContract,
-  type ToolResponse,
   type ToolResult,
 } from './shared.js';
 
@@ -33,7 +33,7 @@ const APPLY_PATCH_TOOL: ToolContract = {
   title: 'Apply Patch',
   description:
     'Apply a unified diff patch to one or more files. ' +
-    'Single-file: throws on failure. Multi-file: best-effort per file. ' +
+    'Failures are reported per-file via isError:true. ' +
     'Workflow: `diff_files` → `apply_patch(dryRun:true)` → `apply_patch`. ' +
     'On failure, regenerate the patch from current file content.',
   inputSchema: ApplyPatchInputSchema,
@@ -154,7 +154,7 @@ async function processMultiFilePatch(
   parsed: StructuredPatch[],
   options: PatchOptions,
   signal?: AbortSignal
-): Promise<ToolResponse<z.infer<typeof ApplyPatchOutputSchema>>> {
+): Promise<ToolResult<z.infer<typeof ApplyPatchOutputSchema>>> {
   const validBase = await validateExistingPath(basePath, signal);
 
   const tasks = parsed.map((diff) => {
@@ -190,9 +190,12 @@ async function processMultiFilePatch(
 
   if (succeeded === 0) {
     const failedPaths = results.map((r) => r.path).join(', ');
-    throw new McpError(
-      ErrorCode.INVALID_INPUT,
-      `All ${parsed.length} patches failed${label}. Files: ${failedPaths}. Regenerate via diff_files.`
+    return buildToolErrorResponse(
+      new McpError(
+        ErrorCode.INVALID_INPUT,
+        `All ${parsed.length} patches failed${label}. Files: ${failedPaths}. Regenerate via diff_files.`
+      ),
+      ErrorCode.INVALID_INPUT
     );
   }
 
@@ -238,7 +241,7 @@ async function processMultiFilePatch(
 async function handleApplyPatch(
   args: z.infer<typeof ApplyPatchInputSchema>,
   signal?: AbortSignal
-): Promise<ToolResponse<z.infer<typeof ApplyPatchOutputSchema>>> {
+): Promise<ToolResult<z.infer<typeof ApplyPatchOutputSchema>>> {
   if (!args.patch.trim()) {
     throw new McpError(ErrorCode.INVALID_INPUT, 'Patch content is empty.');
   }
@@ -270,12 +273,21 @@ async function handleApplyPatch(
     throw new McpError(ErrorCode.INVALID_INPUT, 'No patch content found.');
   }
 
-  const result = await applyDiff(targetPath, diff, options, signal);
+  let result: PatchFileResult;
+  try {
+    result = await applyDiff(targetPath, diff, options, signal);
+  } catch (error) {
+    return buildToolErrorResponse(error, ErrorCode.UNKNOWN, targetPath);
+  }
 
   if (!result.applied) {
-    throw new McpError(
+    return buildToolErrorResponse(
+      new McpError(
+        ErrorCode.INVALID_INPUT,
+        'Patch failed or had no effect. Content may have changed. Regenerate via diff_files.'
+      ),
       ErrorCode.INVALID_INPUT,
-      'Patch failed or had no effect. Content may have changed. Regenerate via diff_files.'
+      targetPath
     );
   }
 
@@ -315,7 +327,7 @@ export const APPLY_PATCH = defineTool<PatchInput, PatchOutput>({
   defaultErrorCode: ErrorCode.UNKNOWN,
   run: async (args, ctx) => {
     const result = await handleApplyPatch(args, ctx.signal);
-    if (!args.dryRun) {
+    if (!result.isError && !args.dryRun) {
       const sc = result.structuredContent;
       const added = sc.files.reduce((s, f) => s + (f.linesAdded ?? 0), 0);
       const removed = sc.files.reduce((s, f) => s + (f.linesRemoved ?? 0), 0);

@@ -75,8 +75,8 @@ async function handleDiffFiles(
   signal?: AbortSignal,
   resourceStore?: ToolRegistrationOptions['resourceStore']
 ): Promise<ToolResponse<z.infer<typeof DiffFilesOutputSchema>>> {
-  const originalInput = args.paths[0] ?? '';
-  const modifiedInput = args.paths[1] ?? '';
+  const originalInput = args.paths[0];
+  const modifiedInput = args.paths[1];
 
   const [originalPath, modifiedPath] = await Promise.all([
     validateExistingPath(originalInput, signal),
@@ -186,19 +186,19 @@ type DiffOutput = z.infer<typeof DiffFilesOutputSchema>;
 export const DIFF_FILES = defineTool<DiffInput, DiffOutput>({
   contract: DIFF_FILES_TOOL,
   defaultErrorCode: ErrorCode.UNKNOWN,
-  diagnosticsContext: (args) => ({ path: args.paths[0] ?? '' }),
+  diagnosticsContext: (args) => ({ path: args.paths[0] }),
   run: (args, ctx) => handleDiffFiles(args, ctx.signal, ctx.resourceStore),
   progressMessage: (args) => {
-    const n1 = basename(args.paths[0] ?? '');
-    const n2 = basename(args.paths[1] ?? '');
+    const n1 = basename(args.paths[0]);
+    const n2 = basename(args.paths[1]);
     return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2}`;
   },
   completionMessage: (
     args: DiffInput,
     result: ToolResult<DiffOutput>
   ): string => {
-    const n1 = basename(args.paths[0] ?? '');
-    const n2 = basename(args.paths[1] ?? '');
+    const n1 = basename(args.paths[0]);
+    const n2 = basename(args.paths[1]);
     if (result.isError)
       return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2} • ${result.errorCode}`;
     const sc = result.structuredContent;

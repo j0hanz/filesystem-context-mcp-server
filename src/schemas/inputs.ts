@@ -9,6 +9,7 @@ import {
   MAX_LIST_ENTRIES,
   MAX_SEARCH_DEPTH,
   MAX_SEARCH_RESULTS,
+  MAX_TEXT_FILE_SIZE,
   MAX_TREE_DEPTH,
   MAX_TREE_ENTRIES,
 } from '../lib/constants.js';
@@ -29,17 +30,24 @@ export const ListDirectoryInputSchema = z.strictObject({
   path: OptionalPath.describe('Base directory (default: root)'),
   includeHidden: includeHiddenField(),
   includeIgnored: includeIgnoredField(),
-  maxDepth: z.int().min(1).max(MAX_TREE_DEPTH).optional(),
+  maxDepth: z
+    .int()
+    .min(1)
+    .max(MAX_TREE_DEPTH)
+    .optional()
+    .describe('Max directory depth (default: flat listing)'),
   maxEntries: z
     .int()
     .min(1)
     .max(MAX_LIST_ENTRIES)
     .optional()
-    .default(DEFAULT_LIST_MAX_ENTRIES),
+    .default(DEFAULT_LIST_MAX_ENTRIES)
+    .describe('Max entries to return per page'),
   sortBy: z
     .enum(['name', 'size', 'modified', 'type'])
     .optional()
-    .default('name'),
+    .default('name')
+    .describe('Sort order'),
   pattern: SafeGlobPattern.optional(),
   includeSymlinkTargets: defaultFalseBoolean('Resolve symlink targets'),
   cursor: CursorSchema,
@@ -53,14 +61,21 @@ export const SearchFilesInputSchema = z.strictObject({
     .min(1)
     .max(MAX_SEARCH_RESULTS)
     .optional()
-    .default(DEFAULT_SEARCH_RESULTS),
+    .default(DEFAULT_SEARCH_RESULTS)
+    .describe('Max files to return'),
   includeIgnored: includeIgnoredField(),
   includeHidden: includeHiddenField(),
   sortBy: z
     .enum(['name', 'size', 'modified', 'path'])
     .optional()
-    .default('path'),
-  maxDepth: z.int().min(0).max(MAX_SEARCH_DEPTH).optional(),
+    .default('path')
+    .describe('Sort order'),
+  maxDepth: z
+    .int()
+    .min(0)
+    .max(MAX_SEARCH_DEPTH)
+    .optional()
+    .describe('Max directory depth'),
   cursor: CursorSchema,
 });
 
@@ -71,13 +86,15 @@ export const TreeInputSchema = z.strictObject({
     .min(0)
     .max(MAX_TREE_DEPTH)
     .optional()
-    .default(DEFAULT_TREE_DEPTH),
+    .default(DEFAULT_TREE_DEPTH)
+    .describe('Max depth (default: 4)'),
   maxEntries: z
     .int()
     .min(1)
     .max(MAX_TREE_ENTRIES)
     .optional()
-    .default(DEFAULT_TREE_ENTRIES),
+    .default(DEFAULT_TREE_ENTRIES)
+    .describe('Max total entries (default: 1000)'),
   includeHidden: includeHiddenField(),
   includeIgnored: includeIgnoredField(),
   includeSizes: defaultFalseBoolean('Include file sizes'),
@@ -164,8 +181,14 @@ export const GrepInputSchema = z.strictObject({
     .min(1)
     .max(MAX_SEARCH_RESULTS)
     .optional()
-    .default(DEFAULT_SEARCH_RESULTS),
-  maxDepth: z.int().min(0).max(MAX_SEARCH_DEPTH).optional(),
+    .default(DEFAULT_SEARCH_RESULTS)
+    .describe('Max matches to return'),
+  maxDepth: z
+    .int()
+    .min(0)
+    .max(MAX_SEARCH_DEPTH)
+    .optional()
+    .describe('Max directory depth'),
 });
 
 export const SearchAndReplaceInputSchema = z.strictObject({
@@ -173,7 +196,13 @@ export const SearchAndReplaceInputSchema = z.strictObject({
   pattern: SafeGlobPattern.optional().describe(
     'File glob filter (default: **/* text files)'
   ),
-  searchPattern: z.string().min(1).max(10000).describe('Text or regex to find'),
+  searchPattern: z
+    .string()
+    .min(1)
+    .max(10000)
+    .describe(
+      'Text or regex to find (RE2: no lookahead/lookbehind/backrefs when isRegex=true)'
+    ),
   replacement: z.string().max(10000).describe('Replacement text'),
   isRegex: defaultFalseBoolean('Treat searchPattern as regex'),
   includeHidden: includeHiddenField(),
@@ -189,8 +218,18 @@ export const SearchAndReplaceInputSchema = z.strictObject({
     .optional()
     .default(DEFAULT_SEARCH_RESULTS)
     .describe('Max matches across all files'),
-  maxFiles: z.int().min(1).optional().describe('Max files to process'),
-  maxDepth: z.int().min(0).max(MAX_SEARCH_DEPTH).optional(),
+  maxFiles: z
+    .int()
+    .min(1)
+    .max(MAX_SEARCH_RESULTS)
+    .optional()
+    .describe('Max files to process'),
+  maxDepth: z
+    .int()
+    .min(0)
+    .max(MAX_SEARCH_DEPTH)
+    .optional()
+    .describe('Max directory depth'),
 });
 
 // --- Stat group: stat, stat_many ---
@@ -200,7 +239,7 @@ export const StatInputSchema = z.strictObject({
 });
 
 export const StatManyInputSchema = z.strictObject({
-  paths: z.array(RequiredPath).min(1),
+  paths: z.array(RequiredPath).min(1).describe('Paths to stat'),
 });
 
 // --- Misc: hash, diff, patch, roots ---
@@ -211,18 +250,25 @@ export const HashInputSchema = z.strictObject({
 
 export const DiffFilesInputSchema = z.strictObject({
   paths: z
-    .array(RequiredPath)
-    .min(2)
-    .max(2)
-    .describe('Exactly two paths: [original, modified]'),
+    .tuple([
+      RequiredPath.describe('Original file path'),
+      RequiredPath.describe('Modified file path'),
+    ])
+    .describe('Two paths: [original, modified]'),
   context: z.int().min(0).optional().describe('Context lines (default 3)'),
   ignoreWhitespace: defaultFalseBoolean('Ignore whitespace changes'),
   stripTrailingCr: defaultFalseBoolean('Strip trailing carriage returns'),
 });
 
 export const ApplyPatchInputSchema = z.strictObject({
-  path: OptionalPath,
-  patch: z.string().min(1).describe('Unified diff patch content'),
+  path: OptionalPath.describe(
+    'Required for single-file patches without a/ b/ headers; ignored for multi-file patches'
+  ),
+  patch: z
+    .string()
+    .min(1)
+    .max(MAX_TEXT_FILE_SIZE)
+    .describe('Unified diff patch content'),
   dryRun: defaultFalseBoolean('Validate patch without applying'),
   fuzzFactor: z
     .int()
@@ -240,7 +286,7 @@ export const RootsInputSchema = z.strictObject({});
 
 export const WriteFileInputSchema = z.strictObject({
   path: RequiredPath.describe('Target file path'),
-  content: z.string(),
+  content: z.string().max(MAX_TEXT_FILE_SIZE).describe('File content to write'),
 });
 
 export const EditFileInputSchema = z.strictObject({
@@ -272,7 +318,7 @@ export const MoveFileInputSchema = z.strictObject({
     .array(RequiredPath)
     .min(1)
     .describe('One or more source paths to move'),
-  destination: RequiredPath,
+  destination: RequiredPath.describe('Destination path'),
 });
 
 export const DeleteInputSchema = z.strictObject({

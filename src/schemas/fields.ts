@@ -45,10 +45,12 @@ const MAX_PATH_LENGTH = 4096;
 
 const PathBase = z
   .string()
-  .max(MAX_PATH_LENGTH, `Path too long (max ${MAX_PATH_LENGTH} chars)`);
+  .min(1, 'Path required')
+  .max(MAX_PATH_LENGTH, `Path too long (max ${MAX_PATH_LENGTH} chars)`)
+  .describe('Path inside an allowed root');
 // OptionalPath and RequiredPath are not registered (used once per schema, $ref not worth it).
 export const OptionalPath = PathBase.optional();
-export const RequiredPath = PathBase.min(1, 'Path required');
+export const RequiredPath = PathBase;
 
 // SafeGlobPattern: includes runtime safety check + examples for discoverability.
 // Usage sites do NOT need to add .refine() again — it's baked in here.

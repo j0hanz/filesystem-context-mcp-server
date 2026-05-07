@@ -555,7 +555,7 @@ const NOT_INITIALIZED_ERROR = new McpError(
 );
 
 async function withToolErrorHandling<T>(
-  run: () => Promise<ToolResponse<T>>,
+  run: () => Promise<ToolResult<T>>,
   onError: (error: unknown) => ToolResult<T>
 ): Promise<ToolResult<T>> {
   try {
@@ -571,7 +571,7 @@ interface ToolExecutionOptions<T> {
   outputSchema?: z.ZodType<T>;
   run: (
     signal: AbortSignal | undefined
-  ) => ToolResponse<T> | Promise<ToolResponse<T>>;
+  ) => ToolResult<T> | Promise<ToolResult<T>>;
   onError: (error: unknown) => ToolResult<T>;
   context?: Record<string, unknown>;
   timedSignal?: {
@@ -607,9 +607,14 @@ export async function executeToolWithDiagnostics<T>(
           options.timedSignal
         );
         try {
+          const rawResult = await options.run(signal);
+          // If run() returned a ToolErrorResponse directly, skip output validation.
+          if (!Object.hasOwn(rawResult, 'structuredContent')) {
+            return rawResult;
+          }
           return validateToolResponse(
             options.toolName,
-            await options.run(signal),
+            rawResult as ToolResponse<T>,
             options.outputSchema
           );
         } finally {

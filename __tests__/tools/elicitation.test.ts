@@ -6,6 +6,7 @@ import { after, before, describe, it } from 'node:test';
 
 import {
   assertOk,
+  assertToolError,
   createTestEnv,
   createTestEnvWithElicitation,
   type TestEnv,
@@ -157,12 +158,12 @@ describe('mv: client declines elicitation (destination exists)', () => {
     await env.cleanup();
   });
 
-  it('returns success without moving when user declines overwrite', async () => {
+  it('returns CANCELLED error without moving when user declines overwrite', async () => {
     const result = await env.client.callTool({
       name: 'mv',
       arguments: { sources: [src], destination: dest },
     });
-    assertOk(result);
+    assertToolError(result, 'CANCELLED');
     const { readFileSync } = await import('node:fs');
     // destination unchanged
     assert.equal(readFileSync(dest, 'utf8'), 'original dest');

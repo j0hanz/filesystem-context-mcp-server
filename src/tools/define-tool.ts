@@ -12,7 +12,6 @@ import {
   executeToolWithDiagnostics,
   type ToolContext,
   type ToolRegistrationOptions,
-  type ToolResponse,
   type ToolResult,
 } from './shared.js';
 import { registerStandardTool } from './task-support.js';
@@ -27,7 +26,7 @@ export interface DefineToolOptions<
   Output extends Record<string, unknown>,
 > {
   contract: ToolContract;
-  run: (args: Args, ctx: ToolRunContext) => Promise<ToolResponse<Output>>;
+  run: (args: Args, ctx: ToolRunContext) => Promise<ToolResult<Output>>;
   progressMessage?: (args: Args) => string;
   completionMessage?: (
     args: Args,

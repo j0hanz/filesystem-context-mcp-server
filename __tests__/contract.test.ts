@@ -274,6 +274,24 @@ describe('Tool contract', () => {
       );
     }
   });
+
+  it('all input schema properties have descriptions', async () => {
+    const { tools } = await env.client.listTools();
+    for (const tool of tools) {
+      const schema = tool.inputSchema as {
+        properties?: Record<string, { description?: string; $ref?: string }>;
+      };
+      if (!schema.properties) continue;
+      for (const [propName, prop] of Object.entries(schema.properties)) {
+        // $ref properties are described at their definition site
+        if (prop['$ref']) continue;
+        assert.ok(
+          prop.description && prop.description.length > 0,
+          `${tool.name}.${propName}: missing description`
+        );
+      }
+    }
+  });
 });
 
 describe('Completion contract', () => {

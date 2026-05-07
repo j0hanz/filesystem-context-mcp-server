@@ -299,12 +299,12 @@ function buildEditCompletionMessage(
 
   const { structuredContent } = result;
   if (
-    (structuredContent.appliedEdits ?? 0) === 0 &&
+    structuredContent.appliedEdits === 0 &&
     (structuredContent.unmatchedEdits?.length ?? 0) > 0
   )
     return `${EDIT_FILE_TOOL.title}: ${name} • failed`;
 
-  const applied = structuredContent.appliedEdits ?? 0;
+  const applied = structuredContent.appliedEdits;
   if (applied === 0) return `${EDIT_FILE_TOOL.title}: ${name} • no changes`;
 
   const added = structuredContent.linesAdded ?? 0;
@@ -402,7 +402,7 @@ export const EDIT_FILE = defineTool<EditInput, EditOutput>({
   run: async (args, ctx) => {
     const structured = await handleEditFile(args, ctx.signal);
     const message = buildEditMessage(args.path, {
-      appliedEdits: structured.appliedEdits ?? 0,
+      appliedEdits: structured.appliedEdits,
       unmatchedEdits: structured.unmatchedEdits ?? [],
       content: '',
       linesAdded: structured.linesAdded ?? 0,
@@ -410,7 +410,7 @@ export const EDIT_FILE = defineTool<EditInput, EditOutput>({
     });
     void ctx.log?.(
       'info',
-      `edit: ${args.path} (${String(structured.appliedEdits ?? 0)} edits)`,
+      `edit: ${args.path} (${String(structured.appliedEdits)} edits)`,
       'edit'
     );
     return buildToolResponse(message, structured);

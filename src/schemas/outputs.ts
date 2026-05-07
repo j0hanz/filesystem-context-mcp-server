@@ -18,7 +18,7 @@ import {
 
 export const ListDirectoryOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),
-  path: z.string().optional().describe('Listed directory path'),
+  path: z.string().describe('Listed directory path'),
   entries: z
     .array(
       z.strictObject({
@@ -45,7 +45,7 @@ export const ListDirectoryOutputSchema = z.strictObject({
 
 export const SearchFilesOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),
-  root: z.string().optional().describe('Search root path'),
+  root: z.string().describe('Search root path'),
   results: z
     .array(
       z.strictObject({
@@ -78,12 +78,13 @@ const TreeNodeSchema: z.ZodType = z.lazy(() =>
       .describe('Child nodes (directories/symlinks)'),
   })
 );
+z.globalRegistry.add(TreeNodeSchema, { id: 'TreeNode' });
 
 export const TreeOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),
-  root: z.string().optional().describe('Root directory path'),
-  tree: TreeNodeSchema.optional().describe('Tree structure'),
-  ascii: z.string().optional().describe('ASCII tree representation'),
+  root: z.string().describe('Root directory path'),
+  tree: TreeNodeSchema.describe('Tree structure'),
+  ascii: z.string().describe('ASCII tree representation'),
   truncated: z.boolean().optional().describe('Tree was truncated'),
   totalEntries: NonNegInt.optional().describe('Total entries in tree'),
   resourceUri: z
@@ -96,7 +97,7 @@ export const TreeOutputSchema = z.strictObject({
 
 export const ReadFileOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),
-  path: z.string().optional().describe('Resolved path'),
+  path: z.string().describe('Resolved path'),
   content: z.string().optional().describe('File content'),
   truncated: z.boolean().optional().describe('Content was truncated'),
   resourceUri: z
@@ -152,7 +153,7 @@ export const GrepOutputSchema = z.strictObject({
       z.strictObject({
         file: z.string().describe('Relative file path'),
         line: PositiveInt.describe('Line number'),
-        column: NonNegInt.optional().describe('Column offset'),
+        column: NonNegInt.optional().describe('Column (0-indexed)'),
         content: z.string().describe('Matched line content'),
         matchCount: NonNegInt.optional().describe('Match count on this line'),
         contextBefore: z
@@ -306,14 +307,14 @@ export const RootsOutputSchema = z.strictObject({
 
 export const WriteFileOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),
-  path: z.string().optional().describe('Written file path'),
+  path: z.string().describe('Written file path'),
   bytesWritten: NonNegInt.describe('Bytes written'),
 });
 
 export const EditFileOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),
   path: z.string().describe('File path'),
-  appliedEdits: NonNegInt.optional().describe('Edits applied'),
+  appliedEdits: NonNegInt.describe('Edits applied'),
   linesAdded: NonNegInt.optional().describe('Lines added'),
   linesRemoved: NonNegInt.optional().describe('Lines removed'),
   diff: z.string().optional().describe('Unified diff of changes'),
@@ -351,10 +352,6 @@ export const CreateDirectoryOutputSchema = z.strictObject({
 
 export const MoveFileOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),
-  cancelled: z
-    .boolean()
-    .optional()
-    .describe('True when user declined an overwrite prompt'),
   source: z
     .string()
     .optional()
