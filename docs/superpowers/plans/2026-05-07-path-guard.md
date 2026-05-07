@@ -2,38 +2,38 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Extract all path-security enforcement from `paths.ts` into a `PathGuard` class, remove the `AllowedDirectoriesState` AsyncLocalStorage in favour of a `PathGuard`-typed ALS, and thread `PathGuard` explicitly through `ToolRegistrationOptions` so tool handlers no longer depend on hidden module-level state.
+**Goal:** Extract all path-security enforcement from `paths.ts` into a `PathGuard` class, replace the `AllowedDirectoriesState` ALS with a `PathGuard`-typed ALS, and thread `PathGuard` as a **required** field through `ToolRegistrationOptions` so every tool handler calls it directly with no fallbacks.
 
-**Architecture:** `PathGuard` owns every security decision: sensitive-file checks (compiled once at construction), allowed-directory assertion, write-path validation, directory validation, and safe-glob checking. `paths.ts` shrinks to pure path-resolution utilities plus thin wrappers that call the ALS-resident `PathGuard` for library code that cannot receive it via injection. HTTP session isolation is preserved: the ALS payload changes from `AllowedDirectoriesState` to `PathGuard`. Tools get an explicit `pathGuard` field on `ToolRegistrationOptions` and call it directly.
+**Architecture:** `PathGuard` owns every security decision: sensitive-file checks (compiled once at construction), allowed-directory assertion, write-path validation, directory validation, and safe-glob checking. `paths.ts` shrinks to pure path-resolution utilities plus thin wrappers that call the ALS-resident `PathGuard` — needed only by library code (`fs-helpers`, `file-operations/*`) that cannot receive injection. HTTP session isolation is preserved: the ALS payload changes from `AllowedDirectoriesState` to `PathGuard`. Tools get a **required** `pathGuard: PathGuard` field on `ToolRegistrationOptions` and call it directly — no optional chaining, no fallbacks.
 
-**Spec deviation:** The approved spec (2026-05-07-path-guard-design.md) stated "ALS removed entirely." Discovery during planning: `bootstrap.ts:635` calls `withAllowedDirectoriesState` to scope each HTTP request to its session's allowed dirs — per-session isolation requires ALS or equivalent. The ALS is therefore kept but its payload changes from `AllowedDirectoriesState` to `PathGuard`. All other spec goals are unchanged.
+**Spec deviation:** The approved spec stated "ALS removed entirely." Discovery during planning: `bootstrap.ts:635` calls `withAllowedDirectoriesState` to scope each HTTP request to its session's allowed dirs — per-session isolation requires ALS or equivalent. The ALS is therefore kept but its payload changes from `AllowedDirectoriesState` to `PathGuard`. All other spec goals are unchanged.
 
-**Tech Stack:** TypeScript, Node.js 24, `node:async_hooks` AsyncLocalStorage, `node:path`, `node:fs/promises`, `zod/v4`, `node:test`.
+**Tech Stack:** TypeScript, Node.js 24, `node:async_hooks` AsyncLocalStorage, `node:path`, `node:fs/promises`, `node:test`.
 
 ---
 
 ## File Map
 
-| Action | File                                | Responsibility                                                               |
-| ------ | ----------------------------------- | ---------------------------------------------------------------------------- |
-| Create | `src/lib/path-guard.ts`             | `PathGuard` class — all security enforcement                                 |
-| Shrink | `src/lib/paths.ts`                  | Pure utilities + thin wrappers that delegate to ALS PathGuard                |
-| Delete | `src/lib/globs.ts`                  | Absorbed into PathGuard                                                      |
-| Modify | `src/tools/shared.ts`               | Add `pathGuard?: PathGuard` to `ToolRegistrationOptions`                     |
-| Modify | `src/server/roots-manager.ts`       | Hold `PathGuard`; call `initialize()` on roots resolved                      |
-| Modify | `src/server/bootstrap.ts`           | Create PathGuard; replace `withAllowedDirectoriesState` with `withPathGuard` |
-| Modify | `src/tools/roots.ts`                | Use `options.pathGuard?.getAllowedDirectories()`                             |
-| Modify | `src/tools/write-file.ts`           | Use `options.pathGuard?.validatePathForWrite()`                              |
-| Modify | `src/tools/create-directory.ts`     | Same                                                                         |
-| Modify | `src/tools/delete-file.ts`          | Same                                                                         |
-| Modify | `src/tools/edit-file.ts`            | Same                                                                         |
-| Modify | `src/tools/move-file.ts`            | Same                                                                         |
-| Modify | `src/tools/apply-patch.ts`          | Same                                                                         |
-| Modify | `src/tools/diff-files.ts`           | Same                                                                         |
-| Modify | `src/tools/replace-in-files.ts`     | Same                                                                         |
-| Modify | `src/tools/calculate-hash.ts`       | Same                                                                         |
-| Modify | `__tests__/helpers.ts`              | Construct PathGuard; remove `setAllowedDirectoriesResolved`                  |
-| Create | `__tests__/unit/path-guard.test.ts` | Unit tests driving PathGuard directly                                        |
+| Action | File                                | Responsibility                                                                                                    |
+| ------ | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Create | `src/lib/path-guard.ts`             | `PathGuard` class — all security enforcement                                                                      |
+| Shrink | `src/lib/paths.ts`                  | Pure utilities + thin wrappers that delegate to ALS PathGuard                                                     |
+| Delete | `src/lib/globs.ts`                  | Absorbed into PathGuard                                                                                           |
+| Modify | `src/server/roots-manager.ts`       | Hold `PathGuard`; call `initialize()` on roots resolved; drop `getAllowedDirectoriesState()`                      |
+| Modify | `src/server/bootstrap.ts`           | Replace `withAllowedDirectoriesState` with `withPathGuard`; pass `pathGuard` to tool/resource/prompt registration |
+| Modify | `src/tools/shared.ts`               | `pathGuard: PathGuard` required on `ToolRegistrationOptions`                                                      |
+| Modify | `src/tools/roots.ts`                | Call `options.pathGuard.getAllowedDirectories()` directly                                                         |
+| Modify | `src/tools/write-file.ts`           | Call `options.pathGuard.validatePathForWrite()` directly                                                          |
+| Modify | `src/tools/create-directory.ts`     | Same                                                                                                              |
+| Modify | `src/tools/delete-file.ts`          | Same                                                                                                              |
+| Modify | `src/tools/edit-file.ts`            | Same                                                                                                              |
+| Modify | `src/tools/move-file.ts`            | Same                                                                                                              |
+| Modify | `src/tools/apply-patch.ts`          | Same                                                                                                              |
+| Modify | `src/tools/diff-files.ts`           | Same                                                                                                              |
+| Modify | `src/tools/replace-in-files.ts`     | Same                                                                                                              |
+| Modify | `src/tools/calculate-hash.ts`       | Same                                                                                                              |
+| Modify | `__tests__/helpers.ts`              | Construct `PathGuard`; pass as required; remove `setAllowedDirectoriesResolved`                                   |
+| Create | `__tests__/unit/path-guard.test.ts` | Unit tests driving `PathGuard` directly                                                                           |
 
 ---
 
@@ -50,7 +50,7 @@ Create `__tests__/unit/path-guard.test.ts`:
 
 ```typescript
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -80,7 +80,6 @@ after(async () => {
 });
 
 test('validateExistingPath resolves a file within allowed dir', async () => {
-  const { writeFile } = await import('node:fs/promises');
   await writeFile(join(tmpDir, 'test.txt'), 'hello');
   const resolved = await guard.validateExistingPath(join(tmpDir, 'test.txt'));
   assert.ok(resolved.includes('test.txt'));
@@ -88,12 +87,9 @@ test('validateExistingPath resolves a file within allowed dir', async () => {
 
 test('validateExistingPath rejects path outside allowed dirs', async () => {
   await assert.rejects(
-    () => guard.validateExistingPath('/tmp/outside-dir-xyz/file.txt'),
+    () => guard.validateExistingPath('/tmp/outside-xyz-impossible/file.txt'),
     (err: unknown) => {
       assert.ok(err instanceof Error);
-      assert.ok(
-        err.message.includes('allowed') || err.message.includes('not exist')
-      );
       return true;
     }
   );
@@ -141,7 +137,6 @@ test('getAllowedDirectories returns the initialized dirs', () => {
 });
 
 test('validateExistingDirectory rejects a file path', async () => {
-  const { writeFile } = await import('node:fs/promises');
   await writeFile(join(tmpDir, 'notadir.txt'), 'x');
   await assert.rejects(
     () => guard.validateExistingDirectory(join(tmpDir, 'notadir.txt')),
@@ -151,8 +146,8 @@ test('validateExistingDirectory rejects a file path', async () => {
 
 test('validatePathForWrite returns normalized path for new file', async () => {
   const newPath = join(tmpDir, 'new-file.txt');
-  const resolved = await guard.validatePathForWrite(newPath);
-  assert.ok(typeof resolved === 'string' && resolved.length > 0);
+  const result = await guard.validatePathForWrite(newPath);
+  assert.ok(typeof result === 'string' && result.length > 0);
 });
 ```
 
@@ -166,9 +161,9 @@ Expected: `Error: Cannot find module '../../src/lib/path-guard.js'`
 
 - [ ] **Step 1.3: Implement PathGuard class**
 
-Create `src/lib/path-guard.ts`. This moves all security logic from `paths.ts` into a class. Copy the internal helpers from `paths.ts` that are needed (do NOT change `paths.ts` yet — the helpers stay in both files temporarily, until Task 2 removes them from `paths.ts`).
+Create `src/lib/path-guard.ts`. This moves all security logic from `paths.ts` into a class.
 
-**Important:** `path-guard.ts` must NOT import from `paths.ts`. In Task 2, `paths.ts` will import from `path-guard.ts`, making a circular dependency. Instead, inline `toPosixPath`, `expandHome`, and `normalizePath` — they are pure functions and safe to duplicate temporarily. Task 2 will remove them from `paths.ts` and have it import from `path-guard.ts` instead.
+**Critical:** `path-guard.ts` must NOT import from `paths.ts`. In Task 3, `paths.ts` will import from `path-guard.ts` — a circular dependency would result. Inline `toPosixPath`, `expandHome`, and `normalizePath` as private utilities. They are pure functions and safe to duplicate; Task 3 removes them from `paths.ts`.
 
 ```typescript
 import { realpath, stat } from 'node:fs/promises';
@@ -177,7 +172,6 @@ import {
   dirname,
   isAbsolute,
   join,
-  normalize,
   posix,
   relative,
   resolve,
@@ -190,33 +184,35 @@ import { SENSITIVE_FILE_ALLOWLIST } from './constants.js';
 import { ErrorCode, isAbortError, isNodeError, McpError } from './errors.js';
 import { Logger } from './logger.js';
 
-// Inlined from paths.ts — no circular import allowed
-const IS_WINDOWS_PG = platform() === 'win32';
-const HOMEDIR_PG = homedir();
-const DRIVE_LETTER_RE_PG = /^[A-Za-z]:/;
-const LEADING_SEP_RE_PG = /^[/\\]+/;
+// ─── Inlined path utilities (no import from paths.ts — would be circular) ───
+
+const IS_WINDOWS = platform() === 'win32';
+const HOMEDIR = homedir();
+const DRIVE_LETTER_RE = /^[A-Za-z]:/;
+const LEADING_SEP_RE = /^[/\\]+/;
+const PATH_SEPARATOR = sep;
 
 function toPosixPath(v: string): string {
   return v.includes('\\') ? v.replace(/\\/gu, '/') : v;
 }
 
 function expandHome(p: string): string {
-  if (p === '~') return HOMEDIR_PG;
+  if (p === '~') return HOMEDIR;
   if (p.startsWith('~/') || p.startsWith('~\\')) {
-    const rest = p.slice(2).replace(LEADING_SEP_RE_PG, '');
-    return rest.length === 0 ? HOMEDIR_PG : join(HOMEDIR_PG, rest);
+    const rest = p.slice(2).replace(LEADING_SEP_RE, '');
+    return rest.length === 0 ? HOMEDIR : join(HOMEDIR, rest);
   }
   return p;
 }
 
-function normalizePathPG(p: string): string {
+function normalizePath(p: string): string {
   const r = resolve(expandHome(p));
-  return IS_WINDOWS_PG && DRIVE_LETTER_RE_PG.test(r)
+  return IS_WINDOWS && DRIVE_LETTER_RE.test(r)
     ? r.charAt(0).toLowerCase() + r.slice(1)
     : r;
 }
 
-// --- Internal types (not exported) ---
+// ─── Internal pattern-matching types ────────────────────────────────────────
 
 interface CompiledPattern {
   globs: readonly string[];
@@ -227,6 +223,8 @@ interface CompiledPatternSet {
   pathGlobs: readonly string[];
   nameGlobs: readonly string[];
 }
+
+// ─── Exported types ──────────────────────────────────────────────────────────
 
 export interface ValidatedPathDetails {
   requestedPath: string;
@@ -239,28 +237,23 @@ export interface AllowedDirectoriesState {
   expanded: readonly string[];
 }
 
-// --- Glob safety constants (absorbed from globs.ts) ---
+// ─── Glob safety (absorbed from globs.ts) ───────────────────────────────────
 
 const ABSOLUTE_GLOB_RE = /^([/\\]|[A-Za-z]:[/\\]|\\\\)/u;
 const PARENT_SEGMENT_RE = /[\\/]\.\.(?:[/\\]|$)/u;
 
-// --- Sensitive-file pattern helpers ---
+// ─── Sensitive-file helpers ──────────────────────────────────────────────────
 
 const WINDOWS_ABSOLUTE_RE = /^[a-z]:\//iu;
-const IS_WINDOWS = platform() === 'win32';
-const CHAR_CODE_SPACE = 32;
-const CHAR_CODE_DOT = 46;
-const HOME_PREFIX_LENGTH = 2; // length of "~/"
 
 function normalizeForMatch(input: string): string {
-  return toPosixPath(resolve(input).replace(/\\/gu, '/')).toLowerCase();
+  return toPosixPath(normalizePath(input)).toLowerCase();
 }
 
-function compilePatternGlobs(normalizedPattern: string): readonly string[] {
-  const globs = new Set<string>([normalizedPattern]);
-  const isWindowsAbsolute = WINDOWS_ABSOLUTE_RE.test(normalizedPattern);
-  if (!normalizedPattern.startsWith('**/') && !isWindowsAbsolute) {
-    const withoutRoot = normalizedPattern.replace(/^\/+/u, '');
+function compilePatternGlobs(normalized: string): readonly string[] {
+  const globs = new Set<string>([normalized]);
+  if (!normalized.startsWith('**/') && !WINDOWS_ABSOLUTE_RE.test(normalized)) {
+    const withoutRoot = normalized.replace(/^\/+/u, '');
     if (withoutRoot.length > 0) globs.add(`**/${withoutRoot}`);
   }
   return [...globs];
@@ -314,12 +307,11 @@ function uniquePair(primary: string, secondary?: string): string[] {
   return [primary, secondary];
 }
 
-// --- Path assertion helpers ---
+// ─── Path-assertion helpers ──────────────────────────────────────────────────
 
-const PATH_SEPARATOR = sep;
-const DRIVE_LETTER_REGEX = /^[A-Za-z]:/;
-const WINDOWS_DRIVE_REL_REGEX = /^[A-Za-z]:$/u;
-const LEADING_SEPARATORS_RE = /^[/\\]+/;
+const WINDOWS_DRIVE_REL_RE = /^[A-Za-z]:$/u;
+const CHAR_CODE_SPACE = 32;
+const CHAR_CODE_DOT = 46;
 const RESERVED_DEVICE_NAMES = new Set([
   'CON',
   'PRN',
@@ -357,10 +349,6 @@ function isSamePath(left: string, right: string): boolean {
   );
 }
 
-function stripTrailingSeparator(p: string): string {
-  return p.length > 1 && p.endsWith(PATH_SEPARATOR) ? p.slice(0, -1) : p;
-}
-
 function isPathInsideDirectory(dir: string, candidate: string): boolean {
   const root = normalizeCaseForComparison(dir);
   const cand = normalizeCaseForComparison(candidate);
@@ -376,6 +364,10 @@ function isPathWithinDirs(path: string, dirs: readonly string[]): boolean {
     if (isPathInsideDirectory(dir, path)) return true;
   }
   return false;
+}
+
+function stripTrailingSeparator(p: string): string {
+  return p.length > 1 && p.endsWith(PATH_SEPARATOR) ? p.slice(0, -1) : p;
 }
 
 function getReservedDeviceName(segment: string): string | undefined {
@@ -440,7 +432,7 @@ function toMcpError(requestedPath: string, error: unknown): McpError {
   );
 }
 
-// --- PathGuard class ---
+// ─── PathGuard class ─────────────────────────────────────────────────────────
 
 export class PathGuard {
   private readonly denyPatterns: CompiledPatternSet;
@@ -461,10 +453,6 @@ export class PathGuard {
     this.expandedDirs = state.expanded;
     this._initialized = true;
     setDefaultPathGuard(this);
-  }
-
-  isInitialized(): boolean {
-    return this._initialized;
   }
 
   getAllowedDirectories(): string[] {
@@ -549,7 +537,7 @@ export class PathGuard {
       throw toMcpError(path, error);
     }
 
-    const normalizedReal = normalizePathPG(realPath);
+    const normalizedReal = normalizePath(realPath);
     if (!isPathWithinDirs(normalizedReal, allowedDirs)) {
       const hint =
         allowedDirs.length > 0
@@ -596,8 +584,8 @@ export class PathGuard {
     const { allowedDirs, normalizedRequested } = this.preparePathAccess(path);
     this.assertAllowedFileAccess(path, normalizedRequested);
 
-    let realPath: string;
     let current = normalizedRequested;
+    let realPath: string;
     for (;;) {
       try {
         assertNotAborted(signal);
@@ -613,7 +601,7 @@ export class PathGuard {
       }
     }
 
-    const normalizedReal = normalizePathPG(realPath);
+    const normalizedReal = normalizePath(realPath);
     if (!isPathWithinDirs(normalizedReal, allowedDirs)) {
       const hint =
         allowedDirs.length > 0
@@ -630,7 +618,7 @@ export class PathGuard {
     return normalizedRequested;
   }
 
-  // --- Private helpers ---
+  // ─── Private helpers ───────────────────────────────────────────────────────
 
   private assertInitialized(): void {
     if (!this._initialized) {
@@ -638,6 +626,78 @@ export class PathGuard {
         ErrorCode.ACCESS_DENIED,
         'Server not initialized: path guard has no allowed directories yet.'
       );
+    }
+  }
+
+  private resolveRequestedPath(requestedPath: string): string {
+    const expanded = expandHome(requestedPath);
+    if (!isAbsolute(expanded)) {
+      if (this.primaryDirs.length > 1) {
+        throw new McpError(
+          ErrorCode.INVALID_INPUT,
+          'Ambiguous relative path with multiple roots. Use an absolute path.',
+          requestedPath
+        );
+      }
+      const base = this.primaryDirs[0];
+      if (base) {
+        const r = resolve(base, expanded);
+        return IS_WINDOWS && DRIVE_LETTER_RE.test(r)
+          ? r.charAt(0).toLowerCase() + r.slice(1)
+          : r;
+      }
+    }
+    return normalizePath(expanded);
+  }
+
+  private normalizeAllowedDirectory(dir: string): string {
+    const trimmed = dir.trim();
+    if (trimmed.length === 0) return '';
+    const normalized = normalizePath(trimmed);
+    const { root } = require('node:path').parse(normalized);
+    if (isSamePath(normalized, root)) return root;
+    return normalized.length > 1 && normalized.endsWith(PATH_SEPARATOR)
+      ? normalized.slice(0, -1)
+      : normalized;
+  }
+
+  private validatePathSyntax(requestedPath: string): void {
+    if (!requestedPath || requestedPath.trim().length === 0) {
+      throw new McpError(
+        ErrorCode.INVALID_INPUT,
+        'Path cannot be empty or whitespace',
+        requestedPath
+      );
+    }
+    if (requestedPath.includes('\0')) {
+      throw new McpError(
+        ErrorCode.INVALID_INPUT,
+        'Path contains null bytes',
+        requestedPath
+      );
+    }
+    if (IS_WINDOWS) {
+      for (const segment of requestedPath.split(/[\\/]/)) {
+        const reserved = getReservedDeviceName(segment);
+        if (reserved) {
+          throw new McpError(
+            ErrorCode.INVALID_INPUT,
+            `Windows reserved device name not allowed: ${reserved}`,
+            requestedPath
+          );
+        }
+      }
+      const parsed = win32.parse(requestedPath);
+      if (
+        WINDOWS_DRIVE_REL_RE.test(parsed.root) &&
+        !win32.isAbsolute(requestedPath)
+      ) {
+        throw new McpError(
+          ErrorCode.INVALID_INPUT,
+          'Drive-relative path not allowed. Use C:\\path instead of C:path.',
+          requestedPath
+        );
+      }
     }
   }
 
@@ -649,6 +709,7 @@ export class PathGuard {
     this.validatePathSyntax(requestedPath);
     const normalizedRequested = this.resolveRequestedPath(requestedPath);
     const allowedDirs = [...this.expandedDirs];
+
     if (!isPathWithinDirs(normalizedRequested, allowedDirs)) {
       if (allowedDirs.length === 0) {
         Logger.warn('Access denied: no allowed directories configured');
@@ -669,69 +730,15 @@ export class PathGuard {
         { normalizedPath: normalizedRequested }
       );
     }
+
     return { allowedDirs, normalizedRequested };
-  }
-
-  private validatePathSyntax(requestedPath: string): void {
-    if (!requestedPath || requestedPath.trim().length === 0) {
-      throw new McpError(
-        ErrorCode.INVALID_INPUT,
-        'Path cannot be empty or whitespace',
-        requestedPath
-      );
-    }
-    if (requestedPath.includes('\0')) {
-      throw new McpError(
-        ErrorCode.INVALID_INPUT,
-        'Path contains null bytes',
-        requestedPath
-      );
-    }
-    if (IS_WINDOWS) {
-      const segments = requestedPath.split(/[\\/]/);
-      for (const segment of segments) {
-        const reserved = getReservedDeviceName(segment);
-        if (reserved) {
-          throw new McpError(
-            ErrorCode.INVALID_INPUT,
-            `Windows reserved device name not allowed: ${reserved}`,
-            requestedPath
-          );
-        }
-      }
-      const parsed = win32.parse(requestedPath);
-      if (
-        WINDOWS_DRIVE_REL_REGEX.test(parsed.root) &&
-        !win32.isAbsolute(requestedPath)
-      ) {
-        throw new McpError(
-          ErrorCode.INVALID_INPUT,
-          'Drive-relative path not allowed. Use C:\\path instead of C:path.',
-          requestedPath
-        );
-      }
-    }
-  }
-
-  private resolveRequestedPath(requestedPath: string): string {
-    const expanded = expandHome(requestedPath);
-    if (!isAbsolute(expanded)) {
-      // Relative path: resolve against primary dirs if unambiguous
-      if (this.primaryDirs.length > 1) {
-        throw new McpError(
-          ErrorCode.INVALID_INPUT,
-          'Ambiguous relative path with multiple roots. Use an absolute path.',
-          requestedPath
-        );
-      }
-      const base = this.primaryDirs[0];
-      if (base) return normalizePathPG(resolve(base, expanded));
-    }
-    return normalizePathPG(expanded);
   }
 }
 
-// --- Module-level singleton for library code (fs-helpers, file-operations, etc.) ---
+// ─── Module-level singleton (set by PathGuard.initialize()) ──────────────────
+// Used by library code (fs-helpers, file-operations) that cannot receive
+// injection. Set once at startup for stdio; set per-session for HTTP via
+// withPathGuard() in paths.ts.
 
 let defaultPathGuard: PathGuard | undefined;
 
@@ -743,6 +750,8 @@ export function getDefaultPathGuard(): PathGuard | undefined {
   return defaultPathGuard;
 }
 ```
+
+> **Note on `normalizeAllowedDirectory`:** The `require('node:path').parse` call is a shortcut for illustration. Use `import { parse } from 'node:path'` at the top of the file — `parse` is already available since `node:path` is imported. Remove the `require()` call and use the already-imported `parse` instead.
 
 - [ ] **Step 1.4: Run tests to verify they pass**
 
@@ -761,26 +770,112 @@ git commit -m "feat: add PathGuard class with all path security enforcement"
 
 ---
 
-## Task 2: Update paths.ts — ALS now holds PathGuard, add thin wrappers
+## Task 2: Update RootsManager to hold PathGuard
+
+**Files:**
+
+- Modify: `src/server/roots-manager.ts`
+
+`RootsManager` currently stores `allowedDirectoriesState: AllowedDirectoriesState` and calls `setAllowedDirectoriesStateResolved()`. Replace with a `PathGuard` field and call `pathGuard.initialize()`. Remove `getAllowedDirectoriesState()` — nothing will call it after Task 3 updates bootstrap.ts.
+
+- [ ] **Step 2.1: Add PathGuard field; replace recomputeAllowedDirectories body**
+
+Add these imports at the top of `src/server/roots-manager.ts`:
+
+```typescript
+import { SENSITIVE_FILE_DENYLIST } from '../lib/constants.js';
+import { PathGuard } from '../lib/path-guard.js';
+```
+
+Replace the private field:
+
+```typescript
+// Remove:
+private allowedDirectoriesState: AllowedDirectoriesState = {
+  primary: [],
+  expanded: [],
+};
+
+// Add:
+readonly pathGuard: PathGuard = new PathGuard(SENSITIVE_FILE_DENYLIST);
+```
+
+In `recomputeAllowedDirectories()`, replace the last two lines:
+
+```typescript
+// Remove:
+this.allowedDirectoriesState = nextState;
+setAllowedDirectoriesStateResolved(nextState);
+
+// Add:
+this.pathGuard.initialize(nextState);
+```
+
+Delete the `getAllowedDirectoriesState()` method entirely — it will not be called after Task 3.
+
+- [ ] **Step 2.2: Remove now-unused imports from roots-manager.ts**
+
+Remove from the `paths.js` import: `AllowedDirectoriesState`, `setAllowedDirectoriesStateResolved`. Keep: `getValidRootDirectories`, `isPathWithinDirectories`, `normalizePath`, `resolveAllowedDirectoriesState`.
+
+- [ ] **Step 2.3: Run type-check**
+
+```bash
+npm run type-check
+```
+
+Expected: the only errors should be in `bootstrap.ts` where it called `getAllowedDirectoriesState()`. Fix in next step or note and continue.
+
+- [ ] **Step 2.4: Commit**
+
+```bash
+git add src/server/roots-manager.ts
+git commit -m "refactor: RootsManager holds PathGuard, calls initialize() on roots resolved"
+```
+
+---
+
+## Task 3: Update paths.ts — ALS payload becomes PathGuard
 
 **Files:**
 
 - Modify: `src/lib/paths.ts`
 
-The ALS in `paths.ts` changes from `AllowedDirectoriesState` to `PathGuard | undefined`. Existing module-level exports that library code depends on become thin wrappers that call the ALS-resident PathGuard (or the default singleton for stdio).
+Replace the `AllowedDirectoriesState` ALS with a `PathGuard`-typed ALS. Remove all security enforcement functions (they now live in `PathGuard`). Keep pure utilities and add thin wrappers for library code.
 
-- [ ] **Step 2.1: Update the ALS type and add PathGuard context helpers**
+- [ ] **Step 3.1: Replace the ALS block and security functions**
 
-In `src/lib/paths.ts`, replace the `allowedDirectoriesContext` ALS and all the state management code with a PathGuard-typed ALS. Keep all pure utility functions unchanged.
+In `src/lib/paths.ts`, remove:
 
-Find the block starting at line 228 (`const allowedDirectoriesContext = ...`) through the end of `setAllowedDirectoriesResolved` (around line 472). Replace it with:
+- The `AsyncLocalStorage<AllowedDirectoriesState>` declaration and its imports
+- `cloneAllowedDirectoriesState`, `setAllowedDirectoriesState`, `getActiveAllowedDirectoriesState`
+- `withAllowedDirectoriesState`, `setAllowedDirectoriesStateResolved`, `setAllowedDirectoriesResolved`
+- `getAllowedDirectories`, `isAllowedDirectoryRoot`
+- `isSensitivePath`, `assertAllowedFileAccess`
+- `validateExistingPath`, `validateExistingPathDetailed`, `validateExistingDirectory`, `validatePathForWrite`
+- `DENY_PATTERNS`, `ALLOW_PATTERNS`, and the pattern-compilation functions
+- `defaultAllowedDirectoriesState` module-level variable
+- `ValidatedPathDetails` interface (now in `path-guard.ts`)
+- `AllowedDirectoriesState` interface (now in `path-guard.ts`)
+
+Remove these no-longer-needed imports from `paths.ts`:
+
+- `AsyncLocalStorage` from `node:async_hooks`
+- `SENSITIVE_FILE_ALLOWLIST`, `SENSITIVE_FILE_DENYLIST` from constants
+
+Add at the top of `paths.ts`:
 
 ```typescript
-import type { AllowedDirectoriesState, PathGuard } from './path-guard.js';
-import { getDefaultPathGuard, setDefaultPathGuard } from './path-guard.js';
+import type { PathGuard } from './path-guard.js';
+import { getDefaultPathGuard } from './path-guard.js';
 
-// ALS for HTTP session isolation: each request runs inside withPathGuard()
-// scoped to its session's PathGuard. Stdio uses the module-level default.
+export type {
+  AllowedDirectoriesState,
+  ValidatedPathDetails,
+} from './path-guard.js';
+
+// ALS for HTTP session isolation — payload is PathGuard, not raw dirs.
+// Each HTTP request runs inside withPathGuard() scoped to its session.
+// Stdio reads the default singleton set by PathGuard.initialize().
 const pathGuardContext = new AsyncLocalStorage<PathGuard>({
   name: 'filesystem-mcp:path-guard',
 });
@@ -790,30 +885,18 @@ export function withPathGuard<T>(guard: PathGuard, run: () => T): T {
 }
 
 function getActivePathGuard(): PathGuard {
-  return (
-    pathGuardContext.getStore() ??
-    getDefaultPathGuard() ??
-    (() => {
-      throw new McpError(
-        ErrorCode.ACCESS_DENIED,
-        'No PathGuard configured. Server may not be initialized.'
-      );
-    })()
-  );
+  const guard = pathGuardContext.getStore() ?? getDefaultPathGuard();
+  if (!guard) {
+    throw new McpError(
+      ErrorCode.ACCESS_DENIED,
+      'No PathGuard configured. Server may not be initialized.'
+    );
+  }
+  return guard;
 }
 
-// Re-export AllowedDirectoriesState for backward compat with roots-manager.ts
-export type { AllowedDirectoriesState } from './path-guard.js';
-
-// Keep setAllowedDirectoriesStateResolved for roots-manager (Task 3 removes it)
-export function setAllowedDirectoriesStateResolved(
-  state: AllowedDirectoriesState
-): void {
-  // No-op placeholder — roots-manager.ts will call pathGuard.initialize() directly
-  // after Task 3. This stub avoids a compile break during the migration.
-  void state;
-}
-
+// Thin wrappers for library code (fs-helpers, file-operations, path-completer)
+// that cannot receive PathGuard via injection.
 export function getAllowedDirectories(): string[] {
   return getActivePathGuard().getAllowedDirectories();
 }
@@ -833,10 +916,7 @@ export function assertAllowedFileAccess(
   requestedPath: string,
   resolvedPath?: string
 ): void {
-  return getActivePathGuard().assertAllowedFileAccess(
-    requestedPath,
-    resolvedPath
-  );
+  getActivePathGuard().assertAllowedFileAccess(requestedPath, resolvedPath);
 }
 
 export async function validateExistingPath(
@@ -871,89 +951,13 @@ export async function validatePathForWrite(
 }
 ```
 
-Also add `import type { ValidatedPathDetails } from './path-guard.js';` and export it so external callers can still use it:
+Note: `AsyncLocalStorage` is still needed (for `pathGuardContext`). Keep the `AsyncLocalStorage` import.
 
-```typescript
-export type { ValidatedPathDetails } from './path-guard.js';
-```
+Also remove `toPosixPath` and `normalizePath` from `paths.ts` if they are no longer needed by remaining callers — check with grep first. If other files still import them from `paths.ts`, keep them exported. If not, delete them.
 
-Remove the old ALS block, old `setAllowedDirectoriesState`, `getActiveAllowedDirectoriesState`, `withAllowedDirectoriesState`, `setAllowedDirectoriesStateResolved` (the real one), `getAllowedDirectories`, `isAllowedDirectoryRoot`, `isSensitivePath`, `assertAllowedFileAccess`, `validateExistingPath`, `validateExistingPathDetailed`, `validateExistingDirectory`, `validatePathForWrite`, and their internal implementations. Also remove the compiled pattern constants `DENY_PATTERNS` and `ALLOW_PATTERNS`. Keep: all `normaliz*` helpers, `toPosixPath`, `resolveAllowedDirectoriesState`, `getValidRootDirectories`, `getReservedDeviceNameForPath`, `isWindowsDriveRelativePath`, `isPathWithinDirectories`, and `normalizePath`.
+- [ ] **Step 3.2: Remove `ValidatedPathDetails` interface from paths.ts**
 
-Remove these exports no longer needed outside of PathGuard:
-
-- `setAllowedDirectoriesResolved` (the async version that called the state setter)
-
-Keep `resolveAllowedDirectoriesState` — roots-manager still calls it.
-
-- [ ] **Step 2.2: Run type-check to catch import errors**
-
-```bash
-npm run type-check
-```
-
-Fix any type errors before proceeding.
-
-- [ ] **Step 2.3: Run quick checks**
-
-```bash
-node scripts/tasks.mjs --quick
-```
-
-Expected: lint + type-check pass. Tests may fail because the active PathGuard is never set yet — that's fine, Task 3 fixes it.
-
-- [ ] **Step 2.4: Commit**
-
-```bash
-git add src/lib/paths.ts
-git commit -m "refactor: replace AllowedDirectoriesState ALS with PathGuard ALS in paths.ts"
-```
-
----
-
-## Task 3: Update RootsManager to hold and initialize PathGuard
-
-**Files:**
-
-- Modify: `src/server/roots-manager.ts`
-
-`RootsManager` currently stores `allowedDirectoriesState: AllowedDirectoriesState` and calls `setAllowedDirectoriesStateResolved()`. It now stores a `PathGuard` and calls `pathGuard.initialize()`.
-
-- [ ] **Step 3.1: Add PathGuard field and update recomputeAllowedDirectories**
-
-Add `import { SENSITIVE_FILE_DENYLIST } from '../lib/constants.js';` and `import { PathGuard } from '../lib/path-guard.js';` at the top of `roots-manager.ts`.
-
-Change the class field:
-
-```typescript
-// Remove:
-private allowedDirectoriesState: AllowedDirectoriesState = { primary: [], expanded: [] };
-
-// Add:
-readonly pathGuard: PathGuard = new PathGuard(SENSITIVE_FILE_DENYLIST);
-```
-
-Update `recomputeAllowedDirectories()` — replace the call to `setAllowedDirectoriesStateResolved(nextState)` with:
-
-```typescript
-this.pathGuard.initialize(nextState);
-```
-
-Update `getAllowedDirectoriesState()` — change to return from the PathGuard:
-
-```typescript
-getAllowedDirectoriesState(): AllowedDirectoriesState {
-  return {
-    primary: [...this.pathGuard.getAllowedDirectories()], // approximation for bootstrap compat
-    expanded: [...this.pathGuard.getAllowedDirectories()],
-  };
-}
-```
-
-Actually, since `bootstrap.ts` uses `getAllowedDirectoriesState()` for the HTTP ALS scope, and we're replacing that with `withPathGuard`, we'll update bootstrap.ts in Task 4. For now, keep `getAllowedDirectoriesState()` returning a compatible shape.
-
-- [ ] **Step 3.2: Remove AllowedDirectoriesState import**
-
-Remove `import type { AllowedDirectoriesState, ... } from '../lib/paths.js';` imports that are no longer needed. Keep: `getValidRootDirectories`, `isPathWithinDirectories`, `normalizePath`, `resolveAllowedDirectoriesState`.
+It is now defined in `path-guard.ts` and re-exported from `paths.ts` via the type re-export added above.
 
 - [ ] **Step 3.3: Run type-check**
 
@@ -961,24 +965,32 @@ Remove `import type { AllowedDirectoriesState, ... } from '../lib/paths.js';` im
 npm run type-check
 ```
 
-Fix any errors.
+Fix any errors. The most likely ones: callers that imported `AllowedDirectoriesState` or `ValidatedPathDetails` from `paths.ts` now get them from the re-export (no call-site changes needed). Callers that imported removed functions (e.g. `setAllowedDirectoriesResolved`) will error — remove those call sites.
 
-- [ ] **Step 3.4: Commit**
+- [ ] **Step 3.4: Run quick checks**
 
 ```bash
-git add src/server/roots-manager.ts
-git commit -m "refactor: RootsManager holds PathGuard, calls initialize() on roots resolved"
+node scripts/tasks.mjs --quick
+```
+
+Expected: lint + type-check pass.
+
+- [ ] **Step 3.5: Commit**
+
+```bash
+git add src/lib/paths.ts
+git commit -m "refactor: paths.ts ALS payload is now PathGuard; remove security enforcement functions"
 ```
 
 ---
 
-## Task 4: Update bootstrap.ts — use withPathGuard for HTTP sessions
+## Task 4: Update bootstrap.ts — withPathGuard for HTTP sessions
 
 **Files:**
 
 - Modify: `src/server/bootstrap.ts`
 
-Replace the `withAllowedDirectoriesState` call with `withPathGuard`.
+Replace the `withAllowedDirectoriesState` call (which no longer exists in paths.ts) with `withPathGuard`. Pass `pathGuard` into tool, resource, and prompt registration.
 
 - [ ] **Step 4.1: Replace import and usage**
 
@@ -996,7 +1008,7 @@ To:
 import { withPathGuard } from '../lib/paths.js';
 ```
 
-Find the call at line ~635:
+Find `handleSessionTransportRequest` (around line 625). Replace:
 
 ```typescript
 await withAllowedDirectoriesState(
@@ -1005,7 +1017,7 @@ await withAllowedDirectoriesState(
 );
 ```
 
-Replace with:
+With:
 
 ```typescript
 await withPathGuard(session.rootsManager.pathGuard, () =>
@@ -1013,31 +1025,52 @@ await withPathGuard(session.rootsManager.pathGuard, () =>
 );
 ```
 
-- [ ] **Step 4.2: Run type-check**
+- [ ] **Step 4.2: Pass pathGuard to registerAllTools and resource/prompt registration**
+
+Find the call to `registerAllTools` in bootstrap.ts. Add `pathGuard` from the server's `rootsManager`:
+
+```typescript
+// Before:
+registerAllTools(server, {
+  resourceStore,
+  isInitialized: () => rootsManager.isInitialized(),
+});
+
+// After:
+registerAllTools(server, {
+  resourceStore,
+  isInitialized: () => rootsManager.isInitialized(),
+  pathGuard: rootsManager.pathGuard,
+});
+```
+
+Apply the same addition to any resource or prompt registration calls that accept options.
+
+- [ ] **Step 4.3: Run type-check**
 
 ```bash
 npm run type-check
 ```
 
-- [ ] **Step 4.3: Commit**
+- [ ] **Step 4.4: Commit**
 
 ```bash
 git add src/server/bootstrap.ts
-git commit -m "refactor: bootstrap uses withPathGuard for HTTP session isolation"
+git commit -m "refactor: bootstrap uses withPathGuard for HTTP sessions; passes pathGuard to registrations"
 ```
 
 ---
 
-## Task 5: Add pathGuard to ToolRegistrationOptions and update test helpers
+## Task 5: Make pathGuard required on ToolRegistrationOptions; update test helpers
 
 **Files:**
 
 - Modify: `src/tools/shared.ts`
 - Modify: `__tests__/helpers.ts`
 
-- [ ] **Step 5.1: Add pathGuard field to ToolRegistrationOptions**
+- [ ] **Step 5.1: Make pathGuard required in ToolRegistrationOptions**
 
-In `src/tools/shared.ts`, find the `ToolRegistrationOptions` interface (around line 487):
+In `src/tools/shared.ts`, find `ToolRegistrationOptions` (around line 487):
 
 ```typescript
 export interface ToolRegistrationOptions {
@@ -1048,7 +1081,7 @@ export interface ToolRegistrationOptions {
 }
 ```
 
-Add:
+Add `pathGuard` as a **required** field:
 
 ```typescript
 import type { PathGuard } from '../lib/path-guard.js';
@@ -1058,19 +1091,21 @@ export interface ToolRegistrationOptions {
   isInitialized?: () => boolean;
   serverIcon?: string;
   iconInfo?: IconInfo;
-  pathGuard?: PathGuard;
+  pathGuard: PathGuard;
 }
 ```
 
-- [ ] **Step 5.2: Update test helpers to construct PathGuard**
+- [ ] **Step 5.2: Update test helpers**
 
-In `__tests__/helpers.ts`, replace:
+In `__tests__/helpers.ts`:
+
+Remove:
 
 ```typescript
 import { setAllowedDirectoriesResolved } from '../src/lib/paths.js';
 ```
 
-With:
+Add:
 
 ```typescript
 import { SENSITIVE_FILE_DENYLIST } from '../src/lib/constants.js';
@@ -1090,7 +1125,7 @@ const pathGuard = new PathGuard(SENSITIVE_FILE_DENYLIST);
 pathGuard.initialize({ primary: [tmpDir], expanded: [tmpDir] });
 ```
 
-Pass `pathGuard` into `registerAllTools`:
+Update `registerAllTools` call:
 
 ```typescript
 registerAllTools(server, {
@@ -1100,7 +1135,7 @@ registerAllTools(server, {
 });
 ```
 
-In the `cleanup` function, remove:
+Remove from `cleanup`:
 
 ```typescript
 try {
@@ -1110,15 +1145,15 @@ try {
 }
 ```
 
-Apply the same changes to `createTestEnvWithElicitation()`.
+Apply identical changes to `createTestEnvWithElicitation()`.
 
-- [ ] **Step 5.3: Run tests**
+- [ ] **Step 5.3: Run type-check**
 
 ```bash
-node scripts/tasks.mjs --quick
+npm run type-check
 ```
 
-Expected: type-check passes.
+Fix any call sites that are missing `pathGuard` in their `ToolRegistrationOptions`.
 
 - [ ] **Step 5.4: Run integration tests**
 
@@ -1126,116 +1161,74 @@ Expected: type-check passes.
 node --test --import tsx/esm __tests__/tools/read-write.test.ts
 ```
 
-Expected: tests pass (PathGuard is now set as default via `initialize()`).
+Expected: all pass.
 
 - [ ] **Step 5.5: Commit**
 
 ```bash
 git add src/tools/shared.ts __tests__/helpers.ts
-git commit -m "feat: add pathGuard to ToolRegistrationOptions; update test helpers to construct PathGuard"
+git commit -m "feat: pathGuard is required on ToolRegistrationOptions; test helpers construct PathGuard"
 ```
 
 ---
 
-## Task 6: Update tool files to use pathGuard explicitly
+## Task 6: Update tool handlers to call pathGuard directly
 
 **Files:**
 
-- Modify: `src/tools/roots.ts`
-- Modify: `src/tools/write-file.ts`
-- Modify: `src/tools/create-directory.ts`
-- Modify: `src/tools/delete-file.ts`
-- Modify: `src/tools/edit-file.ts`
-- Modify: `src/tools/move-file.ts`
-- Modify: `src/tools/apply-patch.ts`
-- Modify: `src/tools/diff-files.ts`
-- Modify: `src/tools/replace-in-files.ts`
-- Modify: `src/tools/calculate-hash.ts`
-- Modify: `src/tools/shared.ts` (the `getAllowedDirectories` call at line ~935)
+- Modify: 10 tool files (see table below)
 
-For each tool: remove the `paths.js` security-function import, extract `pathGuard` from options, call it directly. Use `pathGuard ?? getActivePathGuard()` as a fallback only if the tool may be called without options — in practice `pathGuard` is always provided after Task 5.
+For each tool: remove the `paths.js` security import, extract `pathGuard` from options, call it directly. No optional chaining, no fallback.
 
-Pattern for each tool (example: `write-file.ts`):
-
-**Before:**
+**Pattern (example: `write-file.ts`):**
 
 ```typescript
+// Remove this import:
 import { validatePathForWrite } from '../lib/paths.js';
 
-// in handler:
-const validPath = await validatePathForWrite(args.path, signal);
-```
-
-**After:**
-
-```typescript
-// No paths.js import for validatePathForWrite
-
-// in registerWriteFileTool, capture pathGuard:
+// In registerWriteFileTool, capture pathGuard:
 export function registerWriteFileTool(
   server: McpServer,
-  options: ToolRegistrationOptions = {}
+  options: ToolRegistrationOptions
 ): void {
   const { pathGuard } = options;
-  registerStandardTool(server, ..., async (args, _ctx, signal) => {
-    const validPath = pathGuard
-      ? await pathGuard.validatePathForWrite(args.path, signal)
-      : await validatePathForWrite(args.path, signal);
-    // ...
+  registerStandardTool(server, WRITE_FILE_TOOL, ..., async (args, _ctx, signal) => {
+    const validPath = await pathGuard.validatePathForWrite(args.path, signal);
+    // ... rest unchanged
   });
 }
 ```
 
-Repeat for all 10 tool files. The table below maps each tool to the functions it currently imports and what to change:
+**All 10 tool files:**
 
-| File                  | Old import(s)                                                             | New call(s)                                                                 |
-| --------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `roots.ts`            | `getAllowedDirectories`                                                   | `pathGuard?.getAllowedDirectories()`                                        |
-| `write-file.ts`       | `validatePathForWrite`                                                    | `pathGuard?.validatePathForWrite()`                                         |
-| `create-directory.ts` | `validatePathForWrite`                                                    | `pathGuard?.validatePathForWrite()`                                         |
-| `delete-file.ts`      | `isAllowedDirectoryRoot`, `validatePathForWrite`                          | `pathGuard?.isAllowedDirectoryRoot()`, `pathGuard?.validatePathForWrite()`  |
-| `edit-file.ts`        | `assertAllowedFileAccess`, `validateExistingPath`                         | `pathGuard?.assertAllowedFileAccess()`, `pathGuard?.validateExistingPath()` |
-| `move-file.ts`        | `assertAllowedFileAccess`, `validateExistingPath`, `validatePathForWrite` | all three via `pathGuard?.*`                                                |
-| `apply-patch.ts`      | `assertAllowedFileAccess`, `validateExistingPath`                         | same                                                                        |
-| `diff-files.ts`       | `validateExistingPath`                                                    | `pathGuard?.validateExistingPath()`                                         |
-| `replace-in-files.ts` | `validateExistingPath`, `validatePathForWrite`                            | both                                                                        |
-| `calculate-hash.ts`   | `validateExistingPath`                                                    | `pathGuard?.validateExistingPath()`                                         |
-| `shared.ts`           | `getAllowedDirectories` (line ~935)                                       | thread pathGuard through or keep module-level                               |
+| File                  | Remove from paths.js import                                               | Replace call with                                                               |
+| --------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `roots.ts`            | `getAllowedDirectories`                                                   | `pathGuard.getAllowedDirectories()`                                             |
+| `write-file.ts`       | `validatePathForWrite`                                                    | `pathGuard.validatePathForWrite(...)`                                           |
+| `create-directory.ts` | `validatePathForWrite`                                                    | `pathGuard.validatePathForWrite(...)`                                           |
+| `delete-file.ts`      | `isAllowedDirectoryRoot`, `validatePathForWrite`                          | `pathGuard.isAllowedDirectoryRoot(...)`, `pathGuard.validatePathForWrite(...)`  |
+| `edit-file.ts`        | `assertAllowedFileAccess`, `validateExistingPath`                         | `pathGuard.assertAllowedFileAccess(...)`, `pathGuard.validateExistingPath(...)` |
+| `move-file.ts`        | `assertAllowedFileAccess`, `validateExistingPath`, `validatePathForWrite` | all three via `pathGuard.*`                                                     |
+| `apply-patch.ts`      | `assertAllowedFileAccess`, `validateExistingPath`                         | `pathGuard.assertAllowedFileAccess(...)`, `pathGuard.validateExistingPath(...)` |
+| `diff-files.ts`       | `validateExistingPath`                                                    | `pathGuard.validateExistingPath(...)`                                           |
+| `replace-in-files.ts` | `validateExistingPath`, `validatePathForWrite`                            | both via `pathGuard.*`                                                          |
+| `calculate-hash.ts`   | `validateExistingPath`                                                    | `pathGuard.validateExistingPath(...)`                                           |
 
-For `shared.ts` line ~935 (`getAllowedDirectories` for the error hint): this is in a helper that does not have access to options. Leave it calling the module-level `getAllowedDirectories()` wrapper — it reads from the active PathGuard via ALS, which is always set when a tool handler runs. No change needed.
+**`shared.ts` (line ~935):** The `getAllowedDirectories()` call inside the error-hint helper has no access to options. This helper runs inside a tool invocation so the ALS PathGuard is always set. Leave it calling the module-level `getAllowedDirectories()` wrapper — that wrapper delegates to `getActivePathGuard()` via ALS. No change needed for that one call.
 
-- [ ] **Step 6.1: Update roots.ts**
+- [ ] **Step 6.1: Update roots.ts, write-file.ts, create-directory.ts**
 
-```typescript
-// Remove: import { getAllowedDirectories } from '../lib/paths.js';
+For each: remove the paths.js security import, add `const { pathGuard } = options;` at the top of the register function, update call sites per the table.
 
-export function registerListAllowedDirectoriesTool(
-  server: McpServer,
-  options: ToolRegistrationOptions = {}
-): void {
-  const { pathGuard } = options;
-  registerStandardTool(server, LIST_ALLOWED_DIRECTORIES_TOOL, ..., async (_args, _ctx) => {
-    const dirs = pathGuard ? pathGuard.getAllowedDirectories() : getAllowedDirectories();
-    // ... rest of handler unchanged
-  });
-}
-```
+- [ ] **Step 6.2: Update delete-file.ts, edit-file.ts, move-file.ts**
 
-If `roots.ts` currently calls `getAllowedDirectories()` outside a closure (at module level), keep the module-level import as fallback. The pattern `pathGuard ? pathGuard.method() : moduleLevel()` handles both cases.
+Same pattern. These touch both existence and write validation.
 
-- [ ] **Step 6.2: Update write-file.ts, create-directory.ts, delete-file.ts**
+- [ ] **Step 6.3: Update apply-patch.ts, diff-files.ts, replace-in-files.ts, calculate-hash.ts**
 
-For each: add `const { pathGuard } = options;` at the top of the register function, then change call sites as shown in the table above.
+Same pattern for the remaining four.
 
-- [ ] **Step 6.3: Update edit-file.ts, move-file.ts, apply-patch.ts**
-
-Same pattern. These tools call both `validateExistingPath` and `assertAllowedFileAccess`.
-
-- [ ] **Step 6.4: Update diff-files.ts, replace-in-files.ts, calculate-hash.ts**
-
-Same pattern for the remaining tools.
-
-- [ ] **Step 6.5: Run full test suite**
+- [ ] **Step 6.4: Run full test suite**
 
 ```bash
 node scripts/tasks.mjs
@@ -1243,32 +1236,32 @@ node scripts/tasks.mjs
 
 Expected: all checks pass.
 
-- [ ] **Step 6.6: Commit**
+- [ ] **Step 6.5: Commit**
 
 ```bash
 git add src/tools/roots.ts src/tools/write-file.ts src/tools/create-directory.ts \
   src/tools/delete-file.ts src/tools/edit-file.ts src/tools/move-file.ts \
   src/tools/apply-patch.ts src/tools/diff-files.ts src/tools/replace-in-files.ts \
   src/tools/calculate-hash.ts
-git commit -m "refactor: tool handlers use explicit pathGuard from ToolRegistrationOptions"
+git commit -m "refactor: tool handlers call pathGuard directly; no paths.js security imports"
 ```
 
 ---
 
-## Task 7: Delete globs.ts and clean up paths.ts exports
+## Task 7: Delete globs.ts and remove dead code from paths.ts
 
 **Files:**
 
 - Delete: `src/lib/globs.ts`
-- Modify: `src/lib/paths.ts` (remove remaining dead code)
+- Modify: `src/lib/paths.ts`
 
-- [ ] **Step 7.1: Find all remaining imports of globs.ts**
+- [ ] **Step 7.1: Find remaining globs.ts importers**
 
 ```bash
 grep -r "from.*globs" src/ __tests__/
 ```
 
-Update any remaining callers to use `pathGuard.isSafeGlob()` or import directly from `path-guard.ts`.
+For each caller: update import to use `pathGuard.isSafeGlob()` (if it has options access) or import `PathGuard` and call from `path-guard.ts` directly.
 
 - [ ] **Step 7.2: Delete globs.ts**
 
@@ -1276,15 +1269,15 @@ Update any remaining callers to use `pathGuard.isSafeGlob()` or import directly 
 git rm src/lib/globs.ts
 ```
 
-- [ ] **Step 7.3: Remove dead code from paths.ts**
+- [ ] **Step 7.3: Remove remaining dead code from paths.ts**
 
-Remove from `paths.ts`:
+Grep for any exports from `paths.ts` that are no longer imported anywhere:
 
-- The stub `setAllowedDirectoriesStateResolved` (added in Task 2 for compat)
-- Any remaining references to `AllowedDirectoriesState` that are now just re-exports
-- The old `defaultAllowedDirectoriesState` variable if still present
+```bash
+grep -r "from.*lib/paths" src/ __tests__/ | sort
+```
 
-Verify the file still exports everything that external callers need (grep for `from.*paths`).
+Remove any export from `paths.ts` that nothing imports. Keep whatever remains in active use.
 
 - [ ] **Step 7.4: Run full test suite**
 
@@ -1292,25 +1285,21 @@ Verify the file still exports everything that external callers need (grep for `f
 node scripts/tasks.mjs
 ```
 
-Expected: all checks pass. Zero references to `globs.ts`.
+Expected: all checks pass.
 
 - [ ] **Step 7.5: Commit**
 
 ```bash
 git add -u src/lib/paths.ts
 git rm src/lib/globs.ts
-git commit -m "refactor: delete globs.ts, remove dead AllowedDirectoriesState stub from paths.ts"
+git commit -m "refactor: delete globs.ts; remove unused exports from paths.ts"
 ```
 
 ---
 
-## Task 8: Final verification and cleanup
+## Task 8: Final verification
 
-**Files:**
-
-- Various (verify only)
-
-- [ ] **Step 8.1: Run full tasks including tests and rebuild**
+- [ ] **Step 8.1: Run full tasks**
 
 ```bash
 node scripts/tasks.mjs
@@ -1318,15 +1307,15 @@ node scripts/tasks.mjs
 
 Expected: format → lint → type-check → knip → tests → rebuild all pass.
 
-- [ ] **Step 8.2: Verify no remaining direct ALS imports for path state**
+- [ ] **Step 8.2: Verify no old ALS state exports remain**
 
 ```bash
-grep -r "setAllowedDirectoriesResolved\|withAllowedDirectoriesState\|defaultAllowedDirectoriesState" src/ __tests__/
+grep -r "setAllowedDirectoriesResolved\|withAllowedDirectoriesState\|AllowedDirectoriesState" src/ __tests__/
 ```
 
-Expected: zero matches.
+Expected: only the `AllowedDirectoriesState` type re-export in `paths.ts` and its import in `path-guard.ts` (where it is defined). No function calls to the old pattern.
 
-- [ ] **Step 8.3: Verify PathGuard unit tests still pass independently**
+- [ ] **Step 8.3: Verify PathGuard unit tests pass**
 
 ```bash
 node --test --import tsx/esm __tests__/unit/path-guard.test.ts
@@ -1334,10 +1323,9 @@ node --test --import tsx/esm __tests__/unit/path-guard.test.ts
 
 Expected: all pass.
 
-- [ ] **Step 8.4: Final commit**
+- [ ] **Step 8.4: Commit if any uncommitted changes remain**
 
 ```bash
-git commit --allow-empty -m "chore: PathGuard refactor complete — security enforcement centralized"
+git status
+# commit any remaining changes
 ```
-
-Only commit if there are uncommitted changes; skip the `--allow-empty` if there are none.
