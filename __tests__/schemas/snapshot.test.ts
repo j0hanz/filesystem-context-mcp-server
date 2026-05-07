@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
-
 import { describe, it } from 'node:test';
-import { z } from 'zod/v4';
 
 import { toToolJsonSchema } from '../../src/schemas/json-schema.js';
 import { ALL_TOOLS } from '../../src/tools.js';

@@ -43,7 +43,7 @@ export const FileType = reg(
 );
 
 // Unified across ls/find/grep/search_and_replace — replaces three separate enums.
-export const StoppedReason = reg(
+const StoppedReason = reg(
   z
     .enum(['maxResults', 'maxFiles', 'maxEntries', 'timeout', 'aborted'])
     .describe(
@@ -57,7 +57,7 @@ export const ErrorCodeEnum = reg(
   'ErrorCodeEnum'
 );
 
-export const MAX_PATH_LENGTH = 4096;
+const MAX_PATH_LENGTH = 4096;
 
 const PathBase = z
   .string()

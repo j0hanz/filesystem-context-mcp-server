@@ -15,14 +15,11 @@ function walk(schema: unknown): unknown {
   for (const [key, value] of Object.entries(obj)) {
     result[key] = walk(value);
   }
-  if (result['format'] === 'date-time' && 'pattern' in result) {
-    delete result['pattern'];
+  if (result.format === 'date-time' && 'pattern' in result) {
+    delete result.pattern;
   }
-  if (
-    result['maximum'] === Number.MAX_SAFE_INTEGER &&
-    result['type'] === 'integer'
-  ) {
-    delete result['maximum'];
+  if (result.maximum === Number.MAX_SAFE_INTEGER && result.type === 'integer') {
+    delete result.maximum;
   }
   return result;
 }

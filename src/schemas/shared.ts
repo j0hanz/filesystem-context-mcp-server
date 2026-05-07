@@ -32,7 +32,7 @@ export const FileInfoSchema = reg(
   'FileInfo'
 );
 
-export const ErrorSchema = reg(
+const ErrorSchema = reg(
   z.strictObject({
     code: ErrorCodeEnum.describe('Error code (e.g. NOT_FOUND)'),
     message: z.string().describe('Human-readable message'),
@@ -78,7 +78,7 @@ export const ReadResultSchema = reg(
 );
 
 // Shared read-range input fields (head/tail/startLine/endLine) used in read and read_many.
-export interface ReadRangeFields {
+interface ReadRangeFields {
   head: ReturnType<typeof z.int>['optional'] extends (
     ...args: unknown[]
   ) => infer R

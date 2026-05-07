@@ -1,0 +1,305 @@
+// Centralized input schemas for all 18 tools
+import { z } from 'zod/v4';
+
+import {
+  DEFAULT_LIST_MAX_ENTRIES,
+  DEFAULT_SEARCH_RESULTS,
+  DEFAULT_TREE_DEPTH,
+  DEFAULT_TREE_ENTRIES,
+  MAX_LIST_ENTRIES,
+  MAX_SEARCH_DEPTH,
+  MAX_SEARCH_RESULTS,
+  MAX_TREE_DEPTH,
+  MAX_TREE_ENTRIES,
+} from '../lib/constants.js';
+
+import { OptionalPath, RequiredPath, SafeGlobPattern } from './fields.js';
+import { toToolJsonSchema } from './json-schema.js';
+import { CursorSchema } from './pagination.js';
+import {
+  createReadRangeFields,
+  defaultFalseBoolean,
+  includeHiddenField,
+  includeIgnoredField,
+  validateReadRange,
+} from './shared.js';
+
+// --- List group: ls, find, tree ---
+
+export const ListDirectoryInputSchema = z.strictObject({
+  path: OptionalPath.describe('Base directory (default: root)'),
+  includeHidden: includeHiddenField(),
+  includeIgnored: includeIgnoredField(),
+  maxDepth: z.int().min(1).max(MAX_TREE_DEPTH).optional(),
+  maxEntries: z
+    .int()
+    .min(1)
+    .max(MAX_LIST_ENTRIES)
+    .optional()
+    .default(DEFAULT_LIST_MAX_ENTRIES),
+  sortBy: z
+    .enum(['name', 'size', 'modified', 'type'])
+    .optional()
+    .default('name'),
+  pattern: SafeGlobPattern.optional(),
+  includeSymlinkTargets: defaultFalseBoolean('Resolve symlink targets'),
+  cursor: CursorSchema,
+});
+
+export const SearchFilesInputSchema = z.strictObject({
+  path: OptionalPath.describe('Base directory (default: root)'),
+  pattern: SafeGlobPattern.describe('Glob pattern to search'),
+  maxResults: z
+    .int()
+    .min(1)
+    .max(MAX_SEARCH_RESULTS)
+    .optional()
+    .default(DEFAULT_SEARCH_RESULTS),
+  includeIgnored: includeIgnoredField(),
+  includeHidden: includeHiddenField(),
+  sortBy: z
+    .enum(['name', 'size', 'modified', 'path'])
+    .optional()
+    .default('path'),
+  maxDepth: z.int().min(0).max(MAX_SEARCH_DEPTH).optional(),
+  cursor: CursorSchema,
+});
+
+export const TreeInputSchema = z.strictObject({
+  path: OptionalPath.describe('Base directory (default: root)'),
+  maxDepth: z
+    .int()
+    .min(0)
+    .max(MAX_TREE_DEPTH)
+    .optional()
+    .default(DEFAULT_TREE_DEPTH),
+  maxEntries: z
+    .int()
+    .min(1)
+    .max(MAX_TREE_ENTRIES)
+    .optional()
+    .default(DEFAULT_TREE_ENTRIES),
+  includeHidden: includeHiddenField(),
+  includeIgnored: includeIgnoredField(),
+  includeSizes: defaultFalseBoolean('Include file sizes'),
+});
+
+// --- Read group: read, read_many ---
+
+const readRangeFields = createReadRangeFields({
+  head: 'Return first N lines',
+  tail: 'Return last N lines',
+  startLine: 'Start line (1-indexed)',
+  endLine: 'End line (1-indexed)',
+});
+
+export const ReadFileInputSchema = z
+  .strictObject({
+    path: OptionalPath,
+    ...readRangeFields,
+  })
+  .superRefine((value, ctx) => {
+    validateReadRange(
+      {
+        head: value.head,
+        tail: value.tail,
+        startLine: value.startLine,
+        endLine: value.endLine,
+      },
+      ctx
+    );
+  });
+
+const ReadFileInputSchemaJson = toToolJsonSchema(ReadFileInputSchema, (s) => ({
+  ...s,
+  allOf: [
+    ...(Array.isArray(s.allOf) ? (s.allOf as unknown[]) : []),
+    {
+      if: { required: ['head'] },
+      then: {
+        not: {
+          anyOf: [
+            { required: ['tail'] },
+            { required: ['startLine'] },
+            { required: ['endLine'] },
+          ],
+        },
+      },
+    },
+    {
+      if: { required: ['tail'] },
+      then: {
+        not: {
+          anyOf: [
+            { required: ['head'] },
+            { required: ['startLine'] },
+            { required: ['endLine'] },
+          ],
+        },
+      },
+    },
+    {
+      if: { required: ['startLine'] },
+      then: {
+        not: { anyOf: [{ required: ['head'] }, { required: ['tail'] }] },
+      },
+    },
+  ],
+}));
+
+const readManyRangeFields = createReadRangeFields({
+  head: 'Return first N lines from each',
+  tail: 'Return last N lines from each',
+  startLine: 'Start line (1-indexed)',
+  endLine: 'End line (1-indexed)',
+});
+
+const ReadManyInputSchema = z
+  .strictObject({
+    paths: z.array(RequiredPath).min(1).describe('File paths to read'),
+    ...readManyRangeFields,
+  })
+  .superRefine((value, ctx) => {
+    validateReadRange(
+      {
+        head: value.head,
+        tail: value.tail,
+        startLine: value.startLine,
+        endLine: value.endLine,
+      },
+      ctx
+    );
+  });
+
+const ReadManyInputSchemaJson = toToolJsonSchema(ReadManyInputSchema, (s) => ({
+  ...s,
+  allOf: [
+    ...(Array.isArray(s.allOf) ? (s.allOf as unknown[]) : []),
+    {
+      if: { required: ['head'] },
+      then: {
+        not: {
+          anyOf: [
+            { required: ['tail'] },
+            { required: ['startLine'] },
+            { required: ['endLine'] },
+          ],
+        },
+      },
+    },
+    {
+      if: { required: ['tail'] },
+      then: {
+        not: {
+          anyOf: [
+            { required: ['head'] },
+            { required: ['startLine'] },
+            { required: ['endLine'] },
+          ],
+        },
+      },
+    },
+    {
+      if: { required: ['startLine'] },
+      then: {
+        not: { anyOf: [{ required: ['head'] }, { required: ['tail'] }] },
+      },
+    },
+  ],
+}));
+
+// --- Content search: grep, search_and_replace ---
+
+const GrepInputSchema = z.strictObject({
+  path: OptionalPath,
+  pattern: SafeGlobPattern.optional().describe('File glob filter'),
+  searchPattern: z.string().min(1).max(10000),
+  isRegex: defaultFalseBoolean('Treat searchPattern as regex'),
+  includeHidden: includeHiddenField(),
+  includeIgnored: includeIgnoredField(),
+  caseSensitive: defaultFalseBoolean('Case-sensitive'),
+  maxResults: z
+    .int()
+    .min(1)
+    .max(MAX_SEARCH_RESULTS)
+    .optional()
+    .default(DEFAULT_SEARCH_RESULTS),
+  maxDepth: z.int().min(0).max(MAX_SEARCH_DEPTH).optional(),
+  cursor: CursorSchema,
+});
+
+export const SearchAndReplaceInputSchema = z.strictObject({
+  path: OptionalPath,
+  pattern: SafeGlobPattern.optional().describe('File glob filter'),
+  searchPattern: z.string().min(1).max(10000),
+  replacement: z.string().max(10000),
+  isRegex: defaultFalseBoolean('Treat searchPattern as regex'),
+  includeHidden: includeHiddenField(),
+  includeIgnored: includeIgnoredField(),
+  caseSensitive: defaultFalseBoolean('Case-sensitive'),
+  dryRun: defaultFalseBoolean('Preview without writing'),
+  maxResults: z
+    .int()
+    .min(1)
+    .max(MAX_SEARCH_RESULTS)
+    .optional()
+    .default(DEFAULT_SEARCH_RESULTS),
+  maxDepth: z.int().min(0).max(MAX_SEARCH_DEPTH).optional(),
+  cursor: CursorSchema,
+});
+
+// --- Stat group: stat, stat_many ---
+
+const StatInputSchema = z.strictObject({
+  path: OptionalPath,
+});
+
+const StatManyInputSchema = z.strictObject({
+  paths: z.array(RequiredPath).min(1),
+});
+
+// --- Misc: hash, diff, patch, roots ---
+
+const HashInputSchema = z.strictObject({
+  path: OptionalPath,
+});
+
+export const DiffFilesInputSchema = z.strictObject({
+  paths: z.array(RequiredPath).min(2).max(2),
+});
+
+export const ApplyPatchInputSchema = z.strictObject({
+  path: OptionalPath,
+  patch: z.string().min(1),
+  dryRun: z.boolean().optional().default(false),
+});
+
+const RootsInputSchema = z.strictObject({});
+
+// --- Write group: write, edit, mkdir, mv, rm ---
+
+export const WriteFileInputSchema = z.strictObject({
+  path: OptionalPath,
+  content: z.string(),
+});
+
+export const EditFileInputSchema = z.strictObject({
+  path: OptionalPath,
+  edits: z
+    .array(z.strictObject({ oldText: z.string(), newText: z.string() }))
+    .min(1),
+});
+
+export const CreateDirectoryInputSchema = z.strictObject({
+  paths: z.array(RequiredPath).min(1),
+});
+
+export const MoveFileInputSchema = z.strictObject({
+  sources: z.array(RequiredPath).min(1),
+  destination: RequiredPath,
+});
+
+const DeleteInputSchema = z.strictObject({
+  path: RequiredPath,
+  force: z.boolean().optional().default(false),
+});
