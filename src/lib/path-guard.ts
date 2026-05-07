@@ -324,7 +324,11 @@ export class PathGuard {
     requestedPath: string
   ): Promise<ValidatedPathDetails> {
     if (!this.allowedDirectoriesState) {
-      throw new Error('PathGuard not initialized. Call initialize() first.');
+      throw new McpError(
+        ErrorCode.UNKNOWN,
+        'PathGuard not initialized. Call initialize() first.',
+        requestedPath
+      );
     }
 
     // Normalize and validate the path
@@ -333,7 +337,15 @@ export class PathGuard {
 
     // Check if within allowed directories
     if (!isPathWithinDirectories(normalizedRequested, allowedDirs)) {
-      throw new Error(`Path outside allowed directories: ${requestedPath}`);
+      const hint =
+        allowedDirs.length > 0
+          ? `Allowed: ${allowedDirs.join(', ')}`
+          : 'No allowed directories configured.';
+      throw new McpError(
+        ErrorCode.ACCESS_DENIED,
+        `Outside allowed directories. ${hint}`,
+        requestedPath
+      );
     }
 
     // Resolve the real path
@@ -341,15 +353,41 @@ export class PathGuard {
     try {
       realPath = await realpath(normalizedRequested);
     } catch (error) {
-      throw new Error(`Cannot access path: ${requestedPath}`, { cause: error });
+      if (
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'ENOENT'
+      ) {
+        throw new McpError(
+          ErrorCode.NOT_FOUND,
+          'Path not found',
+          requestedPath,
+          { originalError: error.message },
+          error
+        );
+      }
+      throw new McpError(
+        ErrorCode.UNKNOWN,
+        'Cannot access path',
+        requestedPath,
+        { originalError: error instanceof Error ? error.message : String(error) },
+        error instanceof Error ? error : undefined
+      );
     }
 
     const normalizedReal = normalizePath(realPath);
 
     // Check if the resolved path is still within allowed directories
     if (!isPathWithinDirectories(normalizedReal, allowedDirs)) {
-      throw new Error(
-        `Resolved path outside allowed directories: ${requestedPath}`
+      const hint =
+        allowedDirs.length > 0
+          ? `Allowed: ${allowedDirs.join(', ')}`
+          : 'No allowed directories configured.';
+      throw new McpError(
+        ErrorCode.ACCESS_DENIED,
+        `Outside allowed directories. ${hint}`,
+        requestedPath,
+        { resolvedPath: realPath, normalizedResolvedPath: normalizedReal }
       );
     }
 

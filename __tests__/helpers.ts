@@ -12,11 +12,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { SENSITIVE_FILE_DENYLIST } from '../src/lib/constants.js';
-import { PathGuard } from '../src/lib/path-guard.js';
-import {
-  resolveAllowedDirectoriesState,
-  setAllowedDirectoriesResolved,
-} from '../src/lib/paths.js';
+import { PathGuard, setDefaultPathGuard } from '../src/lib/path-guard.js';
+import { resolveAllowedDirectoriesState } from '../src/lib/paths.js';
 import { createInMemoryResourceStore } from '../src/lib/resource-store.js';
 import { createTaskStore } from '../src/server/task-store.js';
 import { registerAllTools } from '../src/tools.js';
@@ -49,8 +46,6 @@ export async function createTestEnv(): Promise<TestEnv> {
     join(tmpdir(), `fsmcp-${randomUUID().slice(0, 8)}-`)
   );
 
-  await setAllowedDirectoriesResolved([tmpDir]);
-
   const taskStore = createTaskStore();
 
   const server = new McpServer(
@@ -77,6 +72,7 @@ export async function createTestEnv(): Promise<TestEnv> {
   const pathGuard = new PathGuard(SENSITIVE_FILE_DENYLIST);
   const state = await resolveAllowedDirectoriesState([tmpDir]);
   pathGuard.initialize(state);
+  setDefaultPathGuard(pathGuard);
   registerAllTools(server, { pathGuard, resourceStore, isInitialized: () => true });
 
   const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -97,11 +93,6 @@ export async function createTestEnv(): Promise<TestEnv> {
       // ignore
     }
     await rm(tmpDir, { recursive: true, force: true });
-    try {
-      await setAllowedDirectoriesResolved([]);
-    } catch {
-      // ignore
-    }
   };
 
   return { client, tmpDir, cleanup };
@@ -124,8 +115,6 @@ export async function createTestEnvWithElicitation(
     join(tmpdir(), `fsmcp-${randomUUID().slice(0, 8)}-`)
   );
 
-  await setAllowedDirectoriesResolved([tmpDir]);
-
   const taskStore = createTaskStore();
 
   const server = new McpServer(
@@ -152,6 +141,7 @@ export async function createTestEnvWithElicitation(
   const pathGuard = new PathGuard(SENSITIVE_FILE_DENYLIST);
   const state = await resolveAllowedDirectoriesState([tmpDir]);
   pathGuard.initialize(state);
+  setDefaultPathGuard(pathGuard);
   registerAllTools(server, { pathGuard, resourceStore, isInitialized: () => true });
 
   // Client advertises elicitation capability so the server will call elicitInput
@@ -188,11 +178,6 @@ export async function createTestEnvWithElicitation(
       /* ignore */
     }
     await rm(tmpDir, { recursive: true, force: true });
-    try {
-      await setAllowedDirectoriesResolved([]);
-    } catch {
-      /* ignore */
-    }
   };
 
   return { client, tmpDir, cleanup };
