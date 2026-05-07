@@ -1,10 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 
 import { APPLY_PATCH } from './tools/apply-patch.js';
-import {
-  CALCULATE_HASH_TOOL,
-  registerCalculateHashTool,
-} from './tools/calculate-hash.js';
+import { CALCULATE_HASH } from './tools/calculate-hash.js';
 import type { ToolContract } from './tools/contract.js';
 import { CREATE_DIRECTORY } from './tools/create-directory.js';
 import { DELETE_FILE } from './tools/delete-file.js';
@@ -44,7 +41,7 @@ const TOOL_ENTRIES: ToolEntry[] = [
   DELETE_FILE,
   EDIT_FILE,
   MOVE_FILE,
-  { contract: CALCULATE_HASH_TOOL, register: registerCalculateHashTool },
+  CALCULATE_HASH,
   DIFF_FILES,
   APPLY_PATCH,
   SEARCH_AND_REPLACE,

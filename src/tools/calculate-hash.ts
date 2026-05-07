@@ -1,5 +1,3 @@
-import type { McpServer } from '@modelcontextprotocol/server';
-
 import { createHash } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { basename, relative, win32 } from 'node:path';
@@ -19,25 +17,20 @@ import { validateExistingPath } from '../lib/paths.js';
 import { HashInputSchema } from '../schemas/inputs.js';
 import { HashOutputSchema } from '../schemas/outputs.js';
 
+import { defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
-  buildToolErrorResponse,
   buildToolResponse,
-  executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolveFinalProgressCurrent,
   runWithProgressSession,
-  type ToolContext,
   type ToolContract,
-  type ToolRegistrationOptions,
   type ToolResponse,
-  type ToolResult,
 } from './shared.js';
-import { registerStandardTool } from './task-support.js';
 
 const WINDOWS_PATH_SEPARATOR = /\\/gu;
 
-export const CALCULATE_HASH_TOOL: ToolContract = {
+const CALCULATE_HASH_TOOL: ToolContract = {
   name: 'calculate_hash',
   title: 'Calculate Hash',
   description: 'Calculate SHA-256 hash of a file or directory.',
@@ -201,59 +194,44 @@ async function handleCalculateHash(
   }
 }
 
-export function registerCalculateHashTool(
-  server: McpServer,
-  options: ToolRegistrationOptions
-): void {
-  const handler = (
-    args: z.infer<typeof HashInputSchema>,
-    ctx: ToolContext
-  ): Promise<ToolResult<z.infer<typeof HashOutputSchema>>> =>
-    executeToolWithDiagnostics({
-      toolName: 'calculate_hash',
-      ctx,
-      outputSchema: HashOutputSchema,
-      timedSignal: {},
-      context: { path: args.path },
-      run: async (signal) => {
-        const baseName = basename(args.path ?? '');
-        const label = `${CALCULATE_HASH_TOOL.title}: ${baseName}`;
-        return runWithProgressSession(ctx, label, async (progress) => {
-          const progressWithMessage = ({
-            current,
-            total,
-          }: {
-            total?: number;
-            current: number;
-          }): void => {
-            progress.update({
-              current,
-              ...(total !== undefined ? { total } : {}),
-              message: `${label} [${current} files]`,
-            });
-          };
-
-          const result = await handleCalculateHash(
-            args,
-            signal,
-            progressWithMessage
-          );
-          const sc = result.structuredContent;
-          const totalFiles = sc.fileCount ?? 1;
-          const finalCurrent = resolveFinalProgressCurrent(
-            progress,
-            totalFiles + 1
-          );
-          const suffix =
-            sc.fileCount !== undefined && sc.fileCount > 1
-              ? `${sc.fileCount} files • ${sc.hash.slice(0, 8)}…`
-              : `${sc.hash.slice(0, 8)}…`;
-          return { value: result, suffix, finalCurrent };
+export const CALCULATE_HASH = defineTool<
+  z.infer<typeof HashInputSchema>,
+  z.infer<typeof HashOutputSchema>
+>({
+  contract: CALCULATE_HASH_TOOL,
+  defaultErrorCode: ErrorCode.UNKNOWN,
+  run: async (args, ctx) => {
+    const baseName = basename(args.path ?? '');
+    const label = `${CALCULATE_HASH_TOOL.title}: ${baseName}`;
+    return runWithProgressSession<
+      ToolResponse<z.infer<typeof HashOutputSchema>>
+    >(ctx, label, async (progress) => {
+      const onProgress = ({
+        current,
+        total,
+      }: {
+        total?: number;
+        current: number;
+      }): void => {
+        progress.update({
+          current,
+          ...(total !== undefined ? { total } : {}),
+          message: `${label} [${current} files]`,
         });
-      },
-      onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
-    });
+      };
 
-  registerStandardTool(server, CALCULATE_HASH_TOOL, handler, options);
-}
+      const result = await handleCalculateHash(args, ctx.signal, onProgress);
+      const sc = result.structuredContent;
+      const totalFiles = sc.fileCount ?? 1;
+      const finalCurrent = resolveFinalProgressCurrent(
+        progress,
+        totalFiles + 1
+      );
+      const suffix =
+        sc.fileCount !== undefined && sc.fileCount > 1
+          ? `${sc.fileCount} files • ${sc.hash.slice(0, 8)}…`
+          : `${sc.hash.slice(0, 8)}…`;
+      return { value: result, suffix, finalCurrent };
+    });
+  },
+});
