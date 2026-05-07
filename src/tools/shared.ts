@@ -32,6 +32,7 @@ import {
   withToolDiagnostics,
 } from '../lib/observability.js';
 import { getAllowedDirectories } from '../lib/paths.js';
+import type { PathGuard } from '../lib/path-guard.js';
 import type { ResourceStore } from '../lib/resource-store.js';
 import { createBase64JsonCodec } from '../lib/zod-codecs.js';
 
@@ -485,6 +486,7 @@ export function withDefaultIcons<T extends object>(
 }
 
 export interface ToolRegistrationOptions {
+  pathGuard: PathGuard;
   resourceStore?: ResourceStore;
   isInitialized?: () => boolean;
   serverIcon?: string;

@@ -265,6 +265,7 @@ export async function createServer(
   registerResultResources(server, resourceStore, localIcon);
   registerMetricsResource(server, localIcon);
   registerAllTools(server, {
+    pathGuard: rootsManager.pathGuard,
     resourceStore,
     isInitialized: () => rootsManager.isInitialized(),
     ...(localIcon ? { iconInfo: localIcon } : {}),
