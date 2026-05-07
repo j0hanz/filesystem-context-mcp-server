@@ -174,7 +174,7 @@ function buildStructuredEditOutput(
   result: EditResult
 ): EditOutput {
   return {
-    ok: result.appliedEdits > 0 || result.unmatchedEdits.length === 0,
+    ok: true as const,
     path: validPath,
     appliedEdits: result.appliedEdits,
     ...(result.appliedEdits > 0
@@ -298,7 +298,11 @@ function buildEditCompletionMessage(
     return `${EDIT_FILE_TOOL.title}: ${name} • ${result.errorCode}`;
 
   const { structuredContent } = result;
-  if (!structuredContent.ok) return `${EDIT_FILE_TOOL.title}: ${name} • failed`;
+  if (
+    (structuredContent.appliedEdits ?? 0) === 0 &&
+    (structuredContent.unmatchedEdits?.length ?? 0) > 0
+  )
+    return `${EDIT_FILE_TOOL.title}: ${name} • failed`;
 
   const applied = structuredContent.appliedEdits ?? 0;
   if (applied === 0) return `${EDIT_FILE_TOOL.title}: ${name} • no changes`;

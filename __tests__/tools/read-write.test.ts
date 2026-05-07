@@ -435,6 +435,34 @@ describe('edit tool', () => {
     assert.equal(actual, 'alpha\nbeta\n');
   });
 
+  it('returns ok:true even when some edits are unmatched', async () => {
+    const file = join(env.tmpDir, 'partial-edit.txt');
+    await writeFile(file, 'hello world\n', 'utf8');
+
+    const raw = await env.client.callTool({
+      name: 'edit',
+      arguments: {
+        path: file,
+        edits: [
+          { oldText: 'hello', newText: 'goodbye' },
+          { oldText: 'DOES_NOT_EXIST', newText: 'x' },
+        ],
+      },
+    });
+    assertOk(raw);
+    const sc = getStructured(raw);
+    assert.strictEqual(
+      sc['ok'],
+      true,
+      'ok must be literal true even for partial edits'
+    );
+    assert.ok(
+      Array.isArray(sc['unmatchedEdits']),
+      'unmatchedEdits must be present'
+    );
+    assert.strictEqual((sc['unmatchedEdits'] as string[]).length, 1);
+  });
+
   it('rejects binary files instead of rewriting them as text', async () => {
     const file = join(env.tmpDir, 'binary-edit.bin');
     await writeFile(file, Buffer.from([0x89, 0x50, 0x00, 0x47, 0x0d]));

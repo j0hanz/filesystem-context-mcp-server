@@ -298,7 +298,7 @@ export const WriteFileOutputSchema = z.strictObject({
 });
 
 export const EditFileOutputSchema = z.strictObject({
-  ok: z.boolean().describe('Success indicator'),
+  ok: z.literal(true).describe('Success indicator'),
   path: z.string().describe('File path'),
   appliedEdits: NonNegInt.optional().describe('Edits applied'),
   linesAdded: NonNegInt.optional().describe('Lines added'),
