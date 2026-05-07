@@ -76,6 +76,71 @@ function toDeleteFailure(path: string, error: unknown): DeleteFailure {
   return { path, error: buildStructuredError(error, ErrorCode.UNKNOWN, path) };
 }
 
+function resolveItemType(
+  itemStats: Awaited<ReturnType<typeof lstat>>
+): 'directory' | 'symlink' | 'file' | 'other' {
+  if (itemStats.isDirectory()) return 'directory';
+  if (itemStats.isSymbolicLink()) return 'symlink';
+  if (itemStats.isFile()) return 'file';
+  return 'other';
+}
+
+async function tryElicitConfirmation(
+  inputPath: string,
+  args: Pick<DeleteInput, 'recursive'>,
+  itemStats: Awaited<ReturnType<typeof lstat>>,
+  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>
+): Promise<boolean> {
+  if (!elicitInput || !args.recursive || !itemStats.isDirectory()) {
+    return true; // Proceed if not applicable
+  }
+
+  try {
+    const elicitResult = await elicitInput({
+      mode: 'form',
+      message: `Permanently delete "${inputPath}" and all its contents? This cannot be undone.`,
+      requestedSchema: {
+        type: 'object',
+        properties: {
+          confirm: { type: 'boolean', title: 'Yes, delete permanently' },
+        },
+        required: ['confirm'],
+      },
+    });
+
+    return (
+      elicitResult.action === 'accept' && elicitResult.content?.confirm === true
+    );
+  } catch (err) {
+    if (
+      err instanceof SdkError &&
+      err.code === SdkErrorCode.CapabilityNotSupported
+    ) {
+      return true; // Proceed if client doesn't support elicitation
+    }
+    return false; // Fail closed for unknown transport errors
+  }
+}
+
+async function performDeletion(
+  validPath: string,
+  args: Pick<DeleteInput, 'recursive' | 'ignoreIfNotExists'>,
+  isDirectory: boolean,
+  signal?: AbortSignal
+): Promise<void> {
+  if (isDirectory && !args.recursive) {
+    await withAbort(rmdir(validPath), signal);
+  } else {
+    await withAbort(
+      rm(validPath, {
+        recursive: args.recursive,
+        force: args.ignoreIfNotExists,
+      }),
+      signal
+    );
+  }
+}
+
 async function deleteSinglePath(
   inputPath: string,
   args: Pick<DeleteInput, 'recursive' | 'ignoreIfNotExists'>,
@@ -119,61 +184,21 @@ async function deleteSinglePath(
     return { failure: toDeleteFailure(inputPath, error) };
   }
 
-  const itemType = itemStats.isDirectory()
-    ? ('directory' as const)
-    : itemStats.isSymbolicLink()
-      ? ('symlink' as const)
-      : itemStats.isFile()
-        ? ('file' as const)
-        : ('other' as const);
+  const itemType = resolveItemType(itemStats);
+  const shouldProceed = await tryElicitConfirmation(
+    inputPath,
+    args,
+    itemStats,
+    elicitInput
+  );
 
-  // Ask for confirmation when deleting a directory recursively and client supports it.
-  if (elicitInput && args.recursive && itemStats.isDirectory()) {
-    try {
-      const elicitResult = await elicitInput({
-        mode: 'form',
-        message: `Permanently delete "${inputPath}" and all its contents? This cannot be undone.`,
-        requestedSchema: {
-          type: 'object',
-          properties: {
-            confirm: { type: 'boolean', title: 'Yes, delete permanently' },
-          },
-          required: ['confirm'],
-        },
-      });
-
-      if (
-        elicitResult.action !== 'accept' ||
-        elicitResult.content?.confirm !== true
-      ) {
-        // User declined — skip this path without deleting.
-        return { item: { path: validPath, type: itemType } };
-      }
-    } catch (err) {
-      if (
-        err instanceof SdkError &&
-        err.code === SdkErrorCode.CapabilityNotSupported
-      ) {
-        // Client doesn't support elicitation — proceed without asking.
-      } else {
-        // Transport or unexpected failure — fail closed, don't delete.
-        return { item: { path: validPath, type: itemType } };
-      }
-    }
+  if (!shouldProceed) {
+    // User declined or transport failed — skip without deleting.
+    return { item: { path: validPath, type: itemType } };
   }
 
   try {
-    if (itemStats.isDirectory() && !args.recursive) {
-      await withAbort(rmdir(validPath), signal);
-    } else {
-      await withAbort(
-        rm(validPath, {
-          recursive: args.recursive,
-          force: args.ignoreIfNotExists,
-        }),
-        signal
-      );
-    }
+    await performDeletion(validPath, args, itemStats.isDirectory(), signal);
   } catch (error) {
     return { failure: toDeleteFailure(inputPath, error) };
   }

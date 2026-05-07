@@ -238,15 +238,12 @@ async function processMultiFilePatch(
   );
 }
 
-async function handleApplyPatch(
-  args: z.infer<typeof ApplyPatchInputSchema>,
-  signal?: AbortSignal
-): Promise<ToolResult<z.infer<typeof ApplyPatchOutputSchema>>> {
-  if (!args.patch.trim()) {
+function parseAndValidatePatch(patch: string): ReturnType<typeof parsePatch> {
+  if (!patch.trim()) {
     throw new McpError(ErrorCode.INVALID_INPUT, 'Patch content is empty.');
   }
 
-  const parsed = parsePatch(args.patch);
+  const parsed = parsePatch(patch);
 
   const hasHunks = parsed.some((p) => p.hunks.length > 0);
   if (!hasHunks) {
@@ -256,23 +253,16 @@ async function handleApplyPatch(
     );
   }
 
-  const options: PatchOptions = {
-    dryRun: args.dryRun,
-    fuzzFactor: args.fuzzFactor,
-    autoConvertLineEndings: args.autoConvertLineEndings,
-  };
+  return parsed;
+}
 
-  const targetPath = args.path ?? '';
-
-  if (parsed.length > 1) {
-    return processMultiFilePatch(targetPath, parsed, options, signal);
-  }
-
-  const diff = parsed[0];
-  if (!diff) {
-    throw new McpError(ErrorCode.INVALID_INPUT, 'No patch content found.');
-  }
-
+async function handleSingleFilePatch(
+  targetPath: string,
+  diff: ReturnType<typeof parsePatch>[number],
+  options: PatchOptions,
+  signal?: AbortSignal
+): Promise<ToolResult<z.infer<typeof ApplyPatchOutputSchema>>> {
+  // diff cannot be undefined here if we got past validation, but TS checking is permissive
   let result: PatchFileResult;
   try {
     result = await applyDiff(targetPath, diff, options, signal);
@@ -291,11 +281,11 @@ async function handleApplyPatch(
     );
   }
 
-  const text = args.dryRun
+  const text = options.dryRun
     ? 'Dry run successful. Patch can be applied.'
     : `Successfully patched ${targetPath}`;
 
-  if (!args.dryRun) {
+  if (!options.dryRun) {
     Logger.info(
       `apply_patch: ${targetPath} (+${result.linesAdded ?? 0}/-${result.linesRemoved ?? 0})`
     );
@@ -317,6 +307,32 @@ async function handleApplyPatch(
     ],
     summary: { total: 1, succeeded: 1, failed: 0 },
   });
+}
+
+async function handleApplyPatch(
+  args: z.infer<typeof ApplyPatchInputSchema>,
+  signal?: AbortSignal
+): Promise<ToolResult<z.infer<typeof ApplyPatchOutputSchema>>> {
+  const parsed = parseAndValidatePatch(args.patch);
+
+  const options: PatchOptions = {
+    dryRun: args.dryRun,
+    fuzzFactor: args.fuzzFactor,
+    autoConvertLineEndings: args.autoConvertLineEndings,
+  };
+
+  const targetPath = args.path ?? '';
+
+  if (parsed.length > 1) {
+    return processMultiFilePatch(targetPath, parsed, options, signal);
+  }
+
+  const diff = parsed[0];
+  if (!diff) {
+    throw new McpError(ErrorCode.INVALID_INPUT, 'No patch content found.');
+  }
+
+  return handleSingleFilePatch(targetPath, diff, options, signal);
 }
 
 type PatchInput = z.infer<typeof ApplyPatchInputSchema>;

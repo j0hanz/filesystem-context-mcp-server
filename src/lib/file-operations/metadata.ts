@@ -1,4 +1,4 @@
-import type { Stats } from 'node:fs';
+import type { Dirent, Stats } from 'node:fs';
 import { lstat, readdir, readlink, stat } from 'node:fs/promises';
 import { basename, join, parse, relative } from 'node:path';
 
@@ -346,6 +346,19 @@ function resolveMaxDepth(normalized: ListDirectoryNormalizedOptions): number {
   return normalized.pattern ? normalized.maxDepth : 1;
 }
 
+function filterDirents(
+  dirents: Dirent[],
+  basePath: string,
+  includeHidden: boolean
+) {
+  const filtered: { dirent: Dirent; entryPath: string }[] = [];
+  for (const dirent of dirents) {
+    if (!includeHidden && isHidden(dirent.name)) continue;
+    filtered.push({ dirent, entryPath: join(basePath, dirent.name) });
+  }
+  return filtered;
+}
+
 async function* readDirectoryEntries(
   basePath: string,
   normalized: ListDirectoryNormalizedOptions,
@@ -357,19 +370,13 @@ async function* readDirectoryEntries(
     signal
   );
 
+  const filtered = filterDirents(dirents, basePath, normalized.includeHidden);
+
   if (!needsStats) {
-    for (const dirent of dirents) {
-      if (!normalized.includeHidden && isHidden(dirent.name)) continue;
-      yield { path: join(basePath, dirent.name), dirent };
+    for (const { dirent, entryPath } of filtered) {
+      yield { path: entryPath, dirent };
     }
     return;
-  }
-
-  const filtered: { dirent: (typeof dirents)[number]; entryPath: string }[] =
-    [];
-  for (const dirent of dirents) {
-    if (!normalized.includeHidden && isHidden(dirent.name)) continue;
-    filtered.push({ dirent, entryPath: join(basePath, dirent.name) });
   }
 
   const { results, errors } = await processInParallel(

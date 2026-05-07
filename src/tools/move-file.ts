@@ -61,6 +61,52 @@ function toMoveFailure(
   };
 }
 
+async function handleCrossDeviceMove(
+  src: string,
+  validSource: string,
+  targetPath: string,
+  movedSources: string[],
+  failed: NonNullable<z.infer<typeof MoveFileOutputSchema>['failed']>,
+  signal?: AbortSignal
+): Promise<void> {
+  try {
+    await withAbort(cp(validSource, targetPath, { recursive: true }), signal);
+  } catch (copyError) {
+    failed.push(toMoveFailure(src, copyError));
+    return;
+  }
+  try {
+    await withAbort(rm(validSource, { recursive: true, force: true }), signal);
+    movedSources.push(validSource);
+  } catch (deleteError) {
+    try {
+      await rm(targetPath, { recursive: true, force: true });
+    } catch {
+      failed.push(
+        toMoveFailure(
+          src,
+          new McpError(
+            ErrorCode.UNKNOWN,
+            `Cross-device move partial: data at both source and destination. ${formatUnknownErrorMessage(deleteError)}`,
+            src
+          )
+        )
+      );
+      return;
+    }
+    failed.push(
+      toMoveFailure(
+        src,
+        new McpError(
+          ErrorCode.UNKNOWN,
+          `Cross-device move failed: source not removed. ${formatUnknownErrorMessage(deleteError)}`,
+          src
+        )
+      )
+    );
+  }
+}
+
 async function handleMoveError(
   error: unknown,
   src: string,
@@ -71,45 +117,14 @@ async function handleMoveError(
   signal?: AbortSignal
 ): Promise<void> {
   if (isNodeError(error) && error.code === 'EXDEV') {
-    try {
-      await withAbort(cp(validSource, targetPath, { recursive: true }), signal);
-    } catch (copyError) {
-      failed.push(toMoveFailure(src, copyError));
-      return;
-    }
-    try {
-      await withAbort(
-        rm(validSource, { recursive: true, force: true }),
-        signal
-      );
-      movedSources.push(validSource);
-    } catch (deleteError) {
-      try {
-        await rm(targetPath, { recursive: true, force: true });
-      } catch {
-        failed.push(
-          toMoveFailure(
-            src,
-            new McpError(
-              ErrorCode.UNKNOWN,
-              `Cross-device move partial: data at both source and destination. ${formatUnknownErrorMessage(deleteError)}`,
-              src
-            )
-          )
-        );
-        return;
-      }
-      failed.push(
-        toMoveFailure(
-          src,
-          new McpError(
-            ErrorCode.UNKNOWN,
-            `Cross-device move failed: source not removed. ${formatUnknownErrorMessage(deleteError)}`,
-            src
-          )
-        )
-      );
-    }
+    await handleCrossDeviceMove(
+      src,
+      validSource,
+      targetPath,
+      movedSources,
+      failed,
+      signal
+    );
   } else {
     failed.push(toMoveFailure(src, error));
   }
@@ -196,6 +211,66 @@ function formatMoveMessage(
   return `Successfully moved ${moved} ${movedItemStr} to ${destination}`;
 }
 
+async function tryElicitOverwriteConfirmation(
+  destination: string,
+  validDest: string,
+  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>
+): Promise<void> {
+  if (!elicitInput) return;
+
+  let destExists = false;
+  try {
+    await stat(validDest);
+    destExists = true;
+  } catch {
+    // Destination does not exist — no confirmation needed.
+  }
+
+  if (!destExists) return;
+
+  try {
+    const elicitResult = await elicitInput({
+      mode: 'form',
+      message: `"${destination}" already exists. Overwrite it?`,
+      requestedSchema: {
+        type: 'object',
+        properties: {
+          confirmOverwrite: {
+            type: 'boolean',
+            title: 'Yes, overwrite',
+          },
+        },
+        required: ['confirmOverwrite'],
+      },
+    });
+
+    if (
+      elicitResult.action !== 'accept' ||
+      elicitResult.content?.confirmOverwrite !== true
+    ) {
+      // User declined — surface as a cancellation error.
+      throw new McpError(
+        ErrorCode.CANCELLED,
+        `Move cancelled: "${destination}" already exists and overwrite was declined.`
+      );
+    }
+  } catch (err) {
+    if (err instanceof McpError) throw err;
+    if (
+      err instanceof SdkError &&
+      err.code === SdkErrorCode.CapabilityNotSupported
+    ) {
+      // Client doesn't support elicitation — proceed without asking.
+    } else {
+      // Transport or unexpected failure — fail closed, don't move.
+      throw new McpError(
+        ErrorCode.CANCELLED,
+        `Move cancelled: could not confirm overwrite of "${destination}".`
+      );
+    }
+  }
+}
+
 async function handleMoveFile(
   args: z.infer<typeof MoveFileInputSchema>,
   signal?: AbortSignal,
@@ -220,61 +295,12 @@ async function handleMoveFile(
     await withAbort(mkdir(dirname(validDest), { recursive: true }), signal);
   }
 
-  // For single-source moves, check if destination exists and elicit confirmation.
-  // TODO: batch mv elicitation (sources.length > 1 path is deferred)
-  if (elicitInput && sources.length === 1 && !destIsDirectory) {
-    let destExists = false;
-    try {
-      await stat(validDest);
-      destExists = true;
-    } catch {
-      // Destination does not exist — no confirmation needed.
-    }
-
-    if (destExists) {
-      const destination = args.destination;
-      try {
-        const elicitResult = await elicitInput({
-          mode: 'form',
-          message: `"${destination}" already exists. Overwrite it?`,
-          requestedSchema: {
-            type: 'object',
-            properties: {
-              confirmOverwrite: {
-                type: 'boolean',
-                title: 'Yes, overwrite',
-              },
-            },
-            required: ['confirmOverwrite'],
-          },
-        });
-
-        if (
-          elicitResult.action !== 'accept' ||
-          elicitResult.content?.confirmOverwrite !== true
-        ) {
-          // User declined — surface as a cancellation error.
-          throw new McpError(
-            ErrorCode.CANCELLED,
-            `Move cancelled: "${destination}" already exists and overwrite was declined.`
-          );
-        }
-      } catch (err) {
-        if (err instanceof McpError) throw err;
-        if (
-          err instanceof SdkError &&
-          err.code === SdkErrorCode.CapabilityNotSupported
-        ) {
-          // Client doesn't support elicitation — proceed without asking.
-        } else {
-          // Transport or unexpected failure — fail closed, don't move.
-          throw new McpError(
-            ErrorCode.CANCELLED,
-            `Move cancelled: could not confirm overwrite of "${args.destination}".`
-          );
-        }
-      }
-    }
+  if (sources.length === 1 && !destIsDirectory) {
+    await tryElicitOverwriteConfirmation(
+      args.destination,
+      validDest,
+      elicitInput
+    );
   }
 
   const movedSources: string[] = [];
