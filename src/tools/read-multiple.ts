@@ -27,11 +27,10 @@ import {
 } from './shared.js';
 import { reportTaskStatus } from './task-support.js';
 
-const READ_MANY_TOOL_NAME = 'read_many';
 const FULL_FILE_CONTENTS_DESCRIPTION = 'Full file contents';
 
 const READ_MANY_TOOL: ToolContract = {
-  name: READ_MANY_TOOL_NAME,
+  name: 'read_many',
   title: 'Read Multiple Files',
   description:
     'Read multiple text files in one request with contents and metadata. ' +
@@ -40,6 +39,12 @@ const READ_MANY_TOOL: ToolContract = {
   outputSchema: ReadManyOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   icons: FILE_READ_ICONS,
+  nuances: [
+    'Per-file failures land in `results[].error`; the call still returns `isError:false`.',
+  ],
+  gotchas: [
+    'One `defaultTimeoutMs` covers the whole batch — slow disks may starve later files.',
+  ],
   taskSupport: 'optional',
   defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
 } as const;

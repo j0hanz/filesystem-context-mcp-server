@@ -36,6 +36,10 @@ const TREE_TOOL: ToolContract = {
   outputSchema: TreeOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   icons: DIRECTORY_ICONS,
+  nuances: [
+    '`maxDepth=0` returns only the root node.',
+    'Result is bounded by both `maxDepth` and `maxEntries`.',
+  ],
   taskSupport: 'optional',
   defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
 } as const;

@@ -5,7 +5,10 @@ import { basename, relative, win32 } from 'node:path';
 import type { z } from 'zod/v4';
 
 import { assertNotAborted, withAbort } from '../lib/abort.js';
-import { PARALLEL_CONCURRENCY } from '../lib/constants.js';
+import {
+  DEFAULT_SEARCH_TIMEOUT_MS,
+  PARALLEL_CONCURRENCY,
+} from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import {
   isIgnoredByGitignore,
@@ -43,6 +46,7 @@ const CALCULATE_HASH_TOOL: ToolContract = {
     'Hidden files (names starting with `.`) are excluded from directory hashing.',
   ],
   taskSupport: 'optional',
+  defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
 } as const;
 
 function toStableRelativePath(root: string, entryPath: string): string {

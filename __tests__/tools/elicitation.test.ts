@@ -205,3 +205,73 @@ describe('mv: client accepts elicitation (destination exists)', () => {
     assert.ok(!existsSync(src), 'source must be gone after move');
   });
 });
+
+// ─── rm: elicitation handler throws (transport/capability error) ──────────────
+
+describe('rm: elicitation handler throws', () => {
+  let env: TestEnv;
+  let dir: string;
+
+  before(async () => {
+    env = await createTestEnvWithElicitation(async () => {
+      throw new Error('transport failure');
+    });
+    dir = join(env.tmpDir, 'throw-dir');
+    await mkdir(dir);
+    await writeFile(join(dir, 'file.txt'), 'precious');
+  });
+
+  after(async () => {
+    await env.cleanup();
+  });
+
+  it('does NOT delete when elicitInput throws', async () => {
+    const result = await env.client.callTool({
+      name: 'rm',
+      arguments: { path: dir, recursive: true },
+    });
+    // Must succeed (fail-closed returns ok:true, no deletion)
+    assertOk(result);
+    // Directory must still exist with its content intact
+    const entries = await readdir(dir);
+    assert.ok(
+      entries.length > 0,
+      'directory contents must be intact when elicitation throws'
+    );
+  });
+});
+
+// ─── mv: elicitation handler throws (transport/capability error) ──────────────
+
+describe('mv: elicitation handler throws', () => {
+  let env: TestEnv;
+  let src: string;
+  let dest: string;
+
+  before(async () => {
+    env = await createTestEnvWithElicitation(async () => {
+      throw new Error('transport failure');
+    });
+    src = join(env.tmpDir, 'throw-src.txt');
+    dest = join(env.tmpDir, 'throw-dest.txt');
+    await writeFile(src, 'source content');
+    await writeFile(dest, 'original dest');
+  });
+
+  after(async () => {
+    await env.cleanup();
+  });
+
+  it('does NOT move when elicitInput throws', async () => {
+    const result = await env.client.callTool({
+      name: 'mv',
+      arguments: { sources: [src], destination: dest },
+    });
+    assertToolError(result, 'CANCELLED');
+    const { readFileSync } = await import('node:fs');
+    // destination must be unchanged
+    assert.equal(readFileSync(dest, 'utf8'), 'original dest');
+    // source must still exist
+    assert.equal(readFileSync(src, 'utf8'), 'source content');
+  });
+});

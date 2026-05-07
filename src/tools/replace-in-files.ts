@@ -8,6 +8,7 @@ import type { z } from 'zod/v4';
 
 import {
   DEFAULT_EXCLUDE_PATTERNS,
+  DEFAULT_SEARCH_TIMEOUT_MS,
   MAX_TEXT_FILE_SIZE,
   PARALLEL_CONCURRENCY,
 } from '../lib/constants.js';
@@ -51,7 +52,12 @@ const SEARCH_AND_REPLACE_TOOL: ToolContract = {
   outputSchema: SearchAndReplaceOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   icons: FILE_EDIT_ICONS,
+  gotchas: [
+    'RE2 dialect: no lookahead, lookbehind, or backreferences.',
+    'Replaces ALL occurrences per file; use `edit` for first-only replacement.',
+  ],
   taskSupport: 'optional',
+  defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
 } as const;
 
 const MAX_FAILURES = 20;

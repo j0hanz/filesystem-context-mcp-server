@@ -405,6 +405,7 @@ describe('search_and_replace wholeWord', () => {
         replacement: 'dog',
         wholeWord: true,
         caseSensitive: true,
+        dryRun: false,
       },
     });
     assertOk(raw);

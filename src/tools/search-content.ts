@@ -3,7 +3,11 @@ import { relative } from 'node:path';
 import RE2 from 're2';
 import type { z } from 'zod/v4';
 
-import { DEFAULT_EXCLUDE_PATTERNS, parseEnvInt } from '../lib/constants.js';
+import {
+  DEFAULT_EXCLUDE_PATTERNS,
+  DEFAULT_SEARCH_TIMEOUT_MS,
+  parseEnvInt,
+} from '../lib/constants.js';
 import {
   ErrorCode,
   formatUnknownErrorMessage,
@@ -149,9 +153,12 @@ const SEARCH_CONTENT_TOOL: ToolContract = {
     'Inline results capped at 50 matches; full results via `resourceUri`.',
   ],
   gotchas: [
+    'RE2 dialect: no lookahead, lookbehind, or backreferences.',
+    'Use filePattern to scope; without it, scans every text file.',
     'Skips binary/oversized files silently — verify with `stat` if no matches.',
   ],
   taskSupport: 'optional',
+  defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
 } as const;
 
 function buildHeading(totalMatches: number, visibleMatches: number): string {

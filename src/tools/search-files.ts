@@ -37,7 +37,13 @@ const SEARCH_FILES_TOOL: ToolContract = {
   outputSchema: SearchFilesOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   icons: DIRECTORY_ICONS,
-  nuances: ['Respects `.gitignore` unless `includeIgnored=true`.'],
+  nuances: [
+    'Respects `.gitignore` unless `includeIgnored=true`.',
+    'Result paths are relative to the search root, not the workspace root.',
+  ],
+  gotchas: [
+    'Bare names match only at the root; use `**/README.md` for recursive match.',
+  ],
   taskSupport: 'optional',
   defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
 } as const;

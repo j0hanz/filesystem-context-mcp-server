@@ -2,6 +2,7 @@ import type {
   ElicitRequestFormParams,
   ElicitResult,
 } from '@modelcontextprotocol/server';
+import { SdkError, SdkErrorCode } from '@modelcontextprotocol/server';
 
 import { cp, mkdir, rename, rm, stat } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
@@ -260,7 +261,18 @@ async function handleMoveFile(
         }
       } catch (err) {
         if (err instanceof McpError) throw err;
-        // Client doesn't support form elicitation, proceed without asking.
+        if (
+          err instanceof SdkError &&
+          err.code === SdkErrorCode.CapabilityNotSupported
+        ) {
+          // Client doesn't support elicitation — proceed without asking.
+        } else {
+          // Transport or unexpected failure — fail closed, don't move.
+          throw new McpError(
+            ErrorCode.CANCELLED,
+            `Move cancelled: could not confirm overwrite of "${args.destination}".`
+          );
+        }
       }
     }
   }

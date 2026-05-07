@@ -2,6 +2,7 @@ import type {
   ElicitRequestFormParams,
   ElicitResult,
 } from '@modelcontextprotocol/server';
+import { SdkError, SdkErrorCode } from '@modelcontextprotocol/server';
 
 import { lstat, rm, rmdir } from 'node:fs/promises';
 
@@ -100,8 +101,20 @@ async function handleDeleteFile(
           type: itemType,
         };
       }
-    } catch {
-      // Client doesn't support form elicitation, proceed without asking
+    } catch (err) {
+      if (
+        err instanceof SdkError &&
+        err.code === SdkErrorCode.CapabilityNotSupported
+      ) {
+        // Client doesn't support elicitation — proceed without asking.
+      } else {
+        // Transport or unexpected failure — fail closed, don't delete.
+        return {
+          ok: true,
+          path: validPath,
+          type: itemType,
+        };
+      }
     }
   }
 

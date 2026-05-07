@@ -5,10 +5,12 @@ import { z } from 'zod';
 
 import { ErrorCode } from '../../src/lib/errors.js';
 import { getTraceContext } from '../../src/lib/observability.js';
+import { createInMemoryResourceStore } from '../../src/lib/resource-store.js';
 import {
   buildToolErrorResponse,
   buildToolResponse,
   executeToolWithDiagnostics,
+  maybeExternalizeTextContent,
 } from '../../src/tools/shared.js';
 
 describe('tool output validation', () => {
@@ -110,5 +112,40 @@ describe('SEP-414 trace context propagation', () => {
     });
 
     assert.equal(captured, undefined, 'No trace context when _meta is absent');
+  });
+});
+
+describe('inline preview threshold (TASK-013)', () => {
+  // Default MAX_INLINE_CONTENT_CHARS is 20_000 (env-overridable).
+  // After the fix MAX_INLINE_PREVIEW_CHARS === MAX_INLINE_CONTENT_CHARS, so
+  // a content string of MAX+1 chars should produce a preview whose leading
+  // portion is MAX chars long, NOT the old 4_000-char cap.
+  const MAX =
+    parseInt(process.env.FS_CONTEXT_MAX_INLINE_CHARS ?? '', 10) || 20_000;
+
+  it('content at exactly MAX chars is returned inline (not externalized)', () => {
+    const store = createInMemoryResourceStore();
+    const content = 'x'.repeat(MAX);
+    const result = maybeExternalizeTextContent(store, content, {
+      name: 'test',
+    });
+    assert.equal(
+      result,
+      undefined,
+      'Content at MAX chars must NOT be externalized'
+    );
+  });
+
+  it('content of MAX+1 chars is externalized with a preview of MAX leading chars', () => {
+    const store = createInMemoryResourceStore();
+    const content = 'a'.repeat(MAX) + 'Z'; // MAX+1 chars, last char distinct
+    const result = maybeExternalizeTextContent(store, content, {
+      name: 'test-preview',
+    });
+    assert.ok(result !== undefined, 'Content above MAX must be externalized');
+    assert.ok(
+      result.preview.startsWith('a'.repeat(MAX)),
+      `Preview must start with the first ${MAX.toString()} chars of content`
+    );
   });
 });

@@ -43,7 +43,7 @@ export { type ToolContract } from './contract.js';
 
 const MAX_INLINE_CONTENT_CHARS =
   parseInt(process.env.FS_CONTEXT_MAX_INLINE_CHARS ?? '', 10) || 20_000;
-const MAX_INLINE_PREVIEW_CHARS = 4_000;
+const MAX_INLINE_PREVIEW_CHARS = MAX_INLINE_CONTENT_CHARS;
 const PROGRESS_RATE_LIMIT_MS = 50;
 
 interface ContextDiagnosticsEvent {

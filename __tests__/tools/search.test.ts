@@ -285,6 +285,7 @@ describe('search_and_replace tool', () => {
         pattern: '*.txt',
         searchPattern: 'world',
         replacement: 'WORLD',
+        dryRun: false,
       },
     });
     const result = raw;
@@ -325,6 +326,7 @@ describe('search_and_replace tool', () => {
         searchPattern: '\\d+',
         replacement: 'NUM',
         isRegex: true,
+        dryRun: false,
       },
     });
     assertOk(raw);

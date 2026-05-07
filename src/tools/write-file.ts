@@ -33,6 +33,10 @@ const WRITE_FILE_TOOL: ToolContract = {
   outputSchema: WriteFileOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   icons: FILE_EDIT_ICONS,
+  gotchas: [
+    'Overwrites silently — read existing content first if you need to merge.',
+    'Use `edit` for partial changes.',
+  ],
   taskSupport: 'forbidden',
 } as const;
 
