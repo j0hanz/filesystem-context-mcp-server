@@ -1,4 +1,5 @@
 import type { ToolContract } from '../tools/contract.js';
+import type { ResourceContract } from './contract.js';
 import { buildToolCatalogDetailsOnly } from './tool-catalog.js';
 import {
   buildCoreContextPack,
@@ -39,7 +40,22 @@ function buildToolsOverview(): string {
     .join('\n');
 }
 
-function buildInstructionsHeader(): string {
+function buildResourceTable(
+  contracts: ReadonlyArray<Pick<ResourceContract, 'uri' | 'uriTemplate' | 'description'>>
+): string {
+  const header = '| URI | Purpose |\n| --- | ------- |';
+  const rows = contracts.map((r) => {
+    const uri = r.uriTemplate ?? r.uri ?? '';
+    return `| \`${uri}\` | ${r.description} |`;
+  });
+  return `${header}\n${rows.join('\n')}`;
+}
+
+function buildInstructionsHeader(
+  resourceContracts: ReadonlyArray<
+    Pick<ResourceContract, 'uri' | 'uriTemplate' | 'description'>
+  >
+): string {
   return `## Role
 
 Secure filesystem agent. Operate strictly within allowed roots. Resolve paths before acting — never assume.
@@ -53,14 +69,7 @@ ${buildToolsOverview()}
 
 ## Resources
 
-| URI                              | Purpose                                                        |
-| -------------------------------- | -------------------------------------------------------------- |
-| \`internal://instructions\`      | Full usage reference (this document)                           |
-| \`internal://tool-catalog\`      | Tool routing, data flow, and selection guide                   |
-| \`internal://workflows\`         | Step-by-step execution sequences                               |
-| \`internal://tool-info/{name}\`  | Per-tool contract (e.g. \`internal://tool-info/read\`)         |
-| \`filesystem-mcp://result/{id}\` | Cached large output — fetch via \`resources/read\` immediately |
-| \`filesystem-mcp://metrics\`     | Per-tool call count, error rate, and avg duration              |
+${buildResourceTable(resourceContracts)}
 
 ## Task Protocol
 
@@ -104,10 +113,14 @@ function formatToolSection(tool: ToolContract): string {
   return parts.join('\n');
 }
 
-export function buildServerInstructions(): string {
+export function buildServerInstructions(
+  resourceContracts: ReadonlyArray<
+    Pick<ResourceContract, 'uri' | 'uriTemplate' | 'description'>
+  >
+): string {
   const toolSections = getToolContracts().map(formatToolSection).join('\n\n');
   return [
-    buildInstructionsHeader(),
+    buildInstructionsHeader(resourceContracts),
     buildCoreContextPack(),
     '',
     buildToolCatalogDetailsOnly(),
