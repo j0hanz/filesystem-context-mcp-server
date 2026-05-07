@@ -175,6 +175,22 @@
       }
     }
   },
+  "rm": {
+    "inputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    },
+    "outputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    }
+  },
   "edit": {
     "inputSchema": {
       "~standard": {
@@ -192,22 +208,6 @@
     }
   },
   "mv": {
-    "inputSchema": {
-      "~standard": {
-        "version": 1,
-        "vendor": "mcp",
-        "jsonSchema": {}
-      }
-    },
-    "outputSchema": {
-      "~standard": {
-        "version": 1,
-        "vendor": "mcp",
-        "jsonSchema": {}
-      }
-    }
-  },
-  "rm": {
     "inputSchema": {
       "~standard": {
         "version": 1,

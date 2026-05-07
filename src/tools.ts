@@ -10,12 +10,9 @@ import {
 } from './tools/calculate-hash.js';
 import type { ToolContract } from './tools/contract.js';
 import { CREATE_DIRECTORY } from './tools/create-directory.js';
-import {
-  DELETE_FILE_TOOL,
-  registerDeleteFileTool,
-} from './tools/delete-file.js';
+import { DELETE_FILE } from './tools/delete-file.js';
 import { DIFF_FILES_TOOL, registerDiffFilesTool } from './tools/diff-files.js';
-import { EDIT_FILE_TOOL, registerEditFileTool } from './tools/edit-file.js';
+import { EDIT_FILE } from './tools/edit-file.js';
 import {
   LIST_DIRECTORY_TOOL,
   registerListDirectoryTool,
@@ -65,9 +62,9 @@ const TOOL_ENTRIES: ToolEntry[] = [
   { contract: SEARCH_CONTENT_TOOL, register: registerSearchContentTool },
   CREATE_DIRECTORY,
   WRITE_FILE,
-  { contract: EDIT_FILE_TOOL, register: registerEditFileTool },
+  DELETE_FILE,
+  EDIT_FILE,
   { contract: MOVE_FILE_TOOL, register: registerMoveFileTool },
-  { contract: DELETE_FILE_TOOL, register: registerDeleteFileTool },
   { contract: CALCULATE_HASH_TOOL, register: registerCalculateHashTool },
   { contract: DIFF_FILES_TOOL, register: registerDiffFilesTool },
   { contract: APPLY_PATCH_TOOL, register: registerApplyPatchTool },

@@ -33,8 +33,12 @@ export interface DefineToolOptions<
   ) => string | undefined;
   /** Default: `{ path: (args as { path?: string }).path }`. */
   diagnosticsContext?: (args: Args) => Record<string, unknown>;
-  /** Default: `ErrorCode.UNKNOWN`. */
+  /** Default: `ErrorCode.UNKNOWN`. If onError is provided, this is ignored. */
   defaultErrorCode?: ErrorCode;
+  /** Optional custom error handler. If provided, overrides defaultErrorCode.
+   * Can return either success or error responses. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onError?: (error: unknown, args: Args) => ToolResult<any>;
 }
 
 export interface DefinedTool {
@@ -80,11 +84,13 @@ export function defineTool<Args, Output extends Record<string, unknown>>(
             return run(args, runCtx);
           },
           onError: (error) =>
-            buildToolErrorResponse(
-              error,
-              errorCode,
-              diagnosticsContext(args).path as string | undefined
-            ),
+            opts.onError
+              ? opts.onError(error, args)
+              : buildToolErrorResponse(
+                  error,
+                  errorCode,
+                  diagnosticsContext(args).path as string | undefined
+                ),
         });
 
       registerStandardTool(server, contract, handler, options, {

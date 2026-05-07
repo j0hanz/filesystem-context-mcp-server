@@ -1,5 +1,3 @@
-import type { McpServer } from '@modelcontextprotocol/server';
-
 import { stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 
@@ -16,21 +14,16 @@ import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
 import { EditFileInputSchema } from '../schemas/inputs.js';
 import { EditFileOutputSchema } from '../schemas/outputs.js';
 
+import { defineTool } from './define-tool.js';
 import { FILE_EDIT_ICONS } from './icons.js';
 import {
-  buildToolErrorResponse,
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
-  executeToolWithDiagnostics,
-  type ToolContext,
   type ToolContract,
-  type ToolRegistrationOptions,
-  type ToolResponse,
   type ToolResult,
 } from './shared.js';
-import { registerStandardTool } from './task-support.js';
 
-export const EDIT_FILE_TOOL: ToolContract = {
+const EDIT_FILE_TOOL: ToolContract = {
   name: 'edit',
   title: 'Edit File',
   description:
@@ -362,7 +355,7 @@ async function applyEdits(
 async function handleEditFile(
   args: EditInput,
   signal?: AbortSignal
-): Promise<ToolResponse<EditOutput>> {
+): Promise<z.infer<typeof EditFileOutputSchema>> {
   const { validPath, content } = await loadEditableFile(
     args.path ?? '',
     signal
@@ -379,10 +372,7 @@ async function handleEditFile(
       structured.diff = await buildDiff(validPath, content, editResult.content);
     }
 
-    return buildToolResponse(
-      `Dry run complete. ${editResult.appliedEdits} edits would be applied.`,
-      structured
-    );
+    return structured;
   }
 
   if (editResult.appliedEdits === 0 && editResult.unmatchedEdits.length > 0) {
@@ -403,41 +393,27 @@ async function handleEditFile(
     );
   }
 
-  return buildToolResponse(
-    buildEditMessage(args.path ?? '', editResult),
-    structured
-  );
+  return structured;
 }
 
-export function registerEditFileTool(
-  server: McpServer,
-  options: ToolRegistrationOptions
-): void {
-  const handler = (
-    args: EditInput,
-    ctx: ToolContext
-  ): Promise<ToolResult<EditOutput>> =>
-    executeToolWithDiagnostics({
-      toolName: 'edit',
-      ctx,
-      outputSchema: EditFileOutputSchema,
-      timedSignal: {},
-      context: { path: args.path },
-      run: async (signal) => {
-        const result = await handleEditFile(args, signal);
-        void ctx.log?.(
-          'info',
-          `edit: ${args.path} (${String(result.structuredContent.appliedEdits ?? 0)} edits)`,
-          'edit'
-        );
-        return result;
-      },
-      onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
+export const EDIT_FILE = defineTool<EditInput, EditOutput>({
+  contract: EDIT_FILE_TOOL,
+  run: async (args, ctx) => {
+    const structured = await handleEditFile(args, ctx.signal);
+    const message = buildEditMessage(args.path ?? '', {
+      appliedEdits: structured.appliedEdits ?? 0,
+      unmatchedEdits: structured.unmatchedEdits ?? [],
+      content: '',
+      linesAdded: structured.linesAdded ?? 0,
+      linesRemoved: structured.linesRemoved ?? 0,
     });
-
-  registerStandardTool(server, EDIT_FILE_TOOL, handler, options, {
-    progressMessage: buildEditProgressMessage,
-    completionMessage: buildEditCompletionMessage,
-  });
-}
+    void ctx.log?.(
+      'info',
+      `edit: ${args.path} (${String(structured.appliedEdits ?? 0)} edits)`,
+      'edit'
+    );
+    return buildToolResponse(message, structured);
+  },
+  progressMessage: buildEditProgressMessage,
+  completionMessage: buildEditCompletionMessage,
+});

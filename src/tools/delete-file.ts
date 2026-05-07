@@ -1,7 +1,6 @@
 import type {
   ElicitRequestFormParams,
   ElicitResult,
-  McpServer,
 } from '@modelcontextprotocol/server';
 
 import { lstat, rm, rmdir } from 'node:fs/promises';
@@ -16,21 +15,16 @@ import { isAllowedDirectoryRoot, validatePathForWrite } from '../lib/paths.js';
 import { DeleteInputSchema } from '../schemas/inputs.js';
 import { DeleteOutputSchema } from '../schemas/outputs.js';
 
+import { defineTool } from './define-tool.js';
 import { FILE_DELETE_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
-  executeToolWithDiagnostics,
-  type ToolContext,
   type ToolContract,
-  type ToolRegistrationOptions,
-  type ToolResponse,
-  type ToolResult,
 } from './shared.js';
-import { registerStandardTool } from './task-support.js';
 
-export const DELETE_FILE_TOOL: ToolContract = {
+const DELETE_FILE_TOOL: ToolContract = {
   name: 'rm',
   title: 'Delete File',
   description:
@@ -47,7 +41,7 @@ async function handleDeleteFile(
   args: z.infer<typeof DeleteInputSchema>,
   signal?: AbortSignal,
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>
-): Promise<ToolResponse<z.infer<typeof DeleteOutputSchema>>> {
+): Promise<z.infer<typeof DeleteOutputSchema>> {
   const validPath = await validatePathForWrite(args.path, signal);
 
   if (isAllowedDirectoryRoot(validPath)) {
@@ -66,10 +60,10 @@ async function handleDeleteFile(
       error.code === 'ENOENT' &&
       args.ignoreIfNotExists
     ) {
-      return buildToolResponse(`Not found (ignored): ${args.path}`, {
+      return {
         ok: true,
         path: validPath,
-      });
+      };
     }
     throw error;
   }
@@ -84,27 +78,31 @@ async function handleDeleteFile(
 
   // Ask for confirmation when deleting a directory recursively and client supports it.
   if (elicitInput && args.recursive && itemStats.isDirectory()) {
-    const elicitResult = await elicitInput({
-      mode: 'form',
-      message: `Permanently delete "${args.path}" and all its contents? This cannot be undone.`,
-      requestedSchema: {
-        type: 'object',
-        properties: {
-          confirm: { type: 'boolean', title: 'Yes, delete permanently' },
+    try {
+      const elicitResult = await elicitInput({
+        mode: 'form',
+        message: `Permanently delete "${args.path}" and all its contents? This cannot be undone.`,
+        requestedSchema: {
+          type: 'object',
+          properties: {
+            confirm: { type: 'boolean', title: 'Yes, delete permanently' },
+          },
+          required: ['confirm'],
         },
-        required: ['confirm'],
-      },
-    });
-
-    if (
-      elicitResult.action !== 'accept' ||
-      elicitResult.content?.confirm !== true
-    ) {
-      return buildToolResponse(`Deletion cancelled: ${args.path}`, {
-        ok: true,
-        path: validPath,
-        type: itemType,
       });
+
+      if (
+        elicitResult.action !== 'accept' ||
+        elicitResult.content?.confirm !== true
+      ) {
+        return {
+          ok: true,
+          path: validPath,
+          type: itemType,
+        };
+      }
+    } catch {
+      // Client doesn't support form elicitation, proceed without asking
     }
   }
 
@@ -122,86 +120,70 @@ async function handleDeleteFile(
 
   Logger.info(`rm: ${args.path}`);
 
-  return buildToolResponse(`Successfully deleted: ${args.path}`, {
+  return {
     ok: true,
     path: validPath,
     type: itemType,
-  });
+  };
 }
 
-export function registerDeleteFileTool(
-  server: McpServer,
-  options: ToolRegistrationOptions
-): void {
-  const handler = (
-    args: z.infer<typeof DeleteInputSchema>,
-    ctx: ToolContext
-  ): Promise<ToolResult<z.infer<typeof DeleteOutputSchema>>> =>
-    executeToolWithDiagnostics({
-      toolName: 'rm',
-      ctx,
-      outputSchema: DeleteOutputSchema,
-      timedSignal: {},
-      context: { path: args.path },
-      run: async (signal) => {
-        // Only pass elicitInput when the connected client advertised elicitation support.
-        const caps = server.server.getClientCapabilities();
-        const elicitFn =
-          caps?.elicitation && ctx.elicitInput ? ctx.elicitInput : undefined;
-        const result = await handleDeleteFile(args, signal, elicitFn);
-        void ctx.log?.('info', `rm: ${args.path}`, 'rm');
-        return result;
-      },
-      onError: (error) => {
-        if (isNodeError(error)) {
-          if (error.code === 'ENOENT') {
-            return buildToolErrorResponse(
-              error,
-              ErrorCode.NOT_FOUND,
-              args.path
-            );
-          }
-          if (error.code === 'ENOTEMPTY') {
-            return buildToolErrorResponse(
-              new Error('Directory not empty. Set recursive: true.'),
-              ErrorCode.INVALID_INPUT,
-              args.path
-            );
-          }
-          if (error.code === 'EISDIR') {
-            return buildToolErrorResponse(
-              new Error('Path is a directory. Set recursive: true.'),
-              ErrorCode.INVALID_INPUT,
-              args.path
-            );
-          }
-          if (error.code === 'EEXIST') {
-            return buildToolErrorResponse(
-              new Error('Directory not empty. Set recursive: true.'),
-              ErrorCode.INVALID_INPUT,
-              args.path
-            );
-          }
-          if (error.code === 'EPERM' || error.code === 'EACCES') {
-            return buildToolErrorResponse(
-              error,
-              ErrorCode.PERMISSION_DENIED,
-              args.path
-            );
-          }
-        }
-        return buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path);
-      },
-    });
-
-  registerStandardTool(server, DELETE_FILE_TOOL, handler, options, {
-    progressMessage: (args) =>
-      `${DELETE_FILE_TOOL.title}: ${basename(args.path)}`,
-    completionMessage: (args, result) => {
-      const name = basename(args.path);
-      if (result.isError)
-        return `${DELETE_FILE_TOOL.title}: ${name} • ${result.errorCode}`;
-      return `${DELETE_FILE_TOOL.title}: ${name}`;
-    },
-  });
-}
+export const DELETE_FILE = defineTool<
+  z.infer<typeof DeleteInputSchema>,
+  z.infer<typeof DeleteOutputSchema>
+>({
+  contract: DELETE_FILE_TOOL,
+  run: async (args, ctx) => {
+    const structured = await handleDeleteFile(
+      args,
+      ctx.signal,
+      ctx.elicitInput
+    );
+    const text = `Successfully deleted: ${args.path}`;
+    void ctx.log?.('info', `rm: ${args.path}`, 'rm');
+    return buildToolResponse(text, structured);
+  },
+  progressMessage: (args) =>
+    `${DELETE_FILE_TOOL.title}: ${basename(args.path)}`,
+  completionMessage: (args, result) => {
+    const name = basename(args.path);
+    if (result.isError)
+      return `${DELETE_FILE_TOOL.title}: ${name} • ${result.errorCode}`;
+    return `${DELETE_FILE_TOOL.title}: ${name}`;
+  },
+  onError: (error, args) => {
+    if (isNodeError(error)) {
+      if (error.code === 'ENOENT') {
+        return buildToolErrorResponse(error, ErrorCode.NOT_FOUND, args.path);
+      }
+      if (error.code === 'ENOTEMPTY') {
+        return buildToolErrorResponse(
+          new Error('Directory not empty. Set recursive: true.'),
+          ErrorCode.INVALID_INPUT,
+          args.path
+        );
+      }
+      if (error.code === 'EISDIR') {
+        return buildToolErrorResponse(
+          new Error('Path is a directory. Set recursive: true.'),
+          ErrorCode.INVALID_INPUT,
+          args.path
+        );
+      }
+      if (error.code === 'EEXIST') {
+        return buildToolErrorResponse(
+          new Error('Directory not empty. Set recursive: true.'),
+          ErrorCode.INVALID_INPUT,
+          args.path
+        );
+      }
+      if (error.code === 'EPERM' || error.code === 'EACCES') {
+        return buildToolErrorResponse(
+          error,
+          ErrorCode.PERMISSION_DENIED,
+          args.path
+        );
+      }
+    }
+    return buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path);
+  },
+});
