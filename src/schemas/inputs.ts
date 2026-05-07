@@ -87,7 +87,7 @@ export const TreeInputSchema = z.strictObject({
     .max(MAX_TREE_DEPTH)
     .optional()
     .default(DEFAULT_TREE_DEPTH)
-    .describe('Max depth (default: 4)'),
+    .describe(`Max depth (default: ${String(DEFAULT_TREE_DEPTH)})`),
   maxEntries: z
     .uint32()
     .min(1)

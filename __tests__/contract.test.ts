@@ -292,6 +292,36 @@ describe('Tool contract', () => {
       }
     }
   });
+
+  it('tree.maxDepth default is 5 and description matches constant', async () => {
+    const { tools } = await env.client.listTools();
+    const tree = tools.find((t) => t.name === 'tree');
+    assert.ok(tree, 'tree tool must exist');
+    const schema = tree.inputSchema as {
+      properties?: Record<string, { default?: number; description?: string }>;
+    };
+    const maxDepthProp = schema.properties?.['maxDepth'];
+    assert.ok(maxDepthProp, 'tree must expose maxDepth property');
+    assert.equal(maxDepthProp.default, 5, 'tree.maxDepth default must be 5');
+    assert.ok(
+      maxDepthProp.description?.includes('5'),
+      `tree.maxDepth description must mention 5, got: "${String(maxDepthProp.description)}"`
+    );
+    assert.ok(
+      !maxDepthProp.description?.includes('default: 4'),
+      `tree.maxDepth description must not say "default: 4"`
+    );
+  });
+
+  it('no tool description references filePattern', async () => {
+    const { tools } = await env.client.listTools();
+    for (const tool of tools) {
+      assert.ok(
+        !tool.description?.includes('filePattern'),
+        `${tool.name}: description must not reference stale "filePattern" parameter name`
+      );
+    }
+  });
 });
 
 describe('Completion contract', () => {

@@ -344,14 +344,17 @@ async function processEntriesConcurrently(
     signal: AbortSignal | undefined;
     concurrency: number;
     maxEntries?: number;
+    shouldStop?: () => boolean;
     onEntry: () => void;
     runEntry: (entryPath: string) => Promise<void>;
   }
-): Promise<{ stoppedByLimit: boolean }> {
+): Promise<{ stoppedByLimit: boolean; stoppedByMatchCap: boolean }> {
   const pending = new Set<Promise<void>>();
-  const { signal, concurrency, maxEntries, onEntry, runEntry } = options;
+  const { signal, concurrency, maxEntries, shouldStop, onEntry, runEntry } =
+    options;
   let dispatched = 0;
   let stoppedByLimit = false;
+  let stoppedByMatchCap = false;
 
   const waitForSlot = async (): Promise<void> => {
     if (pending.size < concurrency) return;
@@ -365,6 +368,10 @@ async function processEntriesConcurrently(
       break;
     }
     await waitForSlot();
+    if (shouldStop?.()) {
+      stoppedByMatchCap = true;
+      break;
+    }
     onEntry();
     dispatched++;
 
@@ -379,7 +386,7 @@ async function processEntriesConcurrently(
     await Promise.allSettled([...pending]);
   }
 
-  return { stoppedByLimit };
+  return { stoppedByLimit, stoppedByMatchCap };
 }
 
 interface ReplaceSummary {
@@ -393,7 +400,7 @@ interface ReplaceSummary {
   changedFilesTruncated: boolean;
   diff: string;
   diffTruncated: boolean;
-  stoppedReason?: 'maxFiles';
+  stoppedReason?: 'maxFiles' | 'maxResults';
   perfTimeMs?: number;
 }
 
@@ -467,6 +474,7 @@ async function handleSearchAndReplace(
     onlyFiles: true,
     stats: false,
     suppressErrors: true,
+    ...(args.maxDepth !== undefined ? { maxDepth: args.maxDepth } : {}),
   });
 
   const summary = createReplaceSummary(root);
@@ -485,21 +493,25 @@ async function handleSearchAndReplace(
     summary,
   };
 
-  const { stoppedByLimit } = await processEntriesConcurrently(entries, {
-    signal,
-    concurrency: REPLACE_CONCURRENCY,
-    ...(args.maxFiles !== undefined ? { maxEntries: args.maxFiles } : {}),
-    onEntry: () => {
-      summary.processedFiles++;
-      onProgress({ current: summary.processedFiles });
-    },
-    runEntry: (entryPath) => processEntry(entryPath, context),
-  });
+  const { stoppedByLimit, stoppedByMatchCap } =
+    await processEntriesConcurrently(entries, {
+      signal,
+      concurrency: REPLACE_CONCURRENCY,
+      ...(args.maxFiles !== undefined ? { maxEntries: args.maxFiles } : {}),
+      shouldStop: () => summary.totalMatches >= args.maxResults,
+      onEntry: () => {
+        summary.processedFiles++;
+        onProgress({ current: summary.processedFiles });
+      },
+      runEntry: (entryPath) => processEntry(entryPath, context),
+    });
 
   summary.perfTimeMs = performance.now() - t0;
 
   if (stoppedByLimit) {
     summary.stoppedReason = 'maxFiles';
+  } else if (stoppedByMatchCap) {
+    summary.stoppedReason = 'maxResults';
   }
 
   onProgress({ current: summary.processedFiles });

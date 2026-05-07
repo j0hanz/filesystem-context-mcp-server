@@ -54,7 +54,7 @@ Full schemas, descriptions, and annotations are in \`tools/list\`.
 - Operate within allowed roots only (negotiated at startup via CLI).
 - Sensitive file paths (.env, *.pem, *id_rsa*) are denied by default.
 - Enforced limits: max file size ${maxFileMb} MB, file search cap ${MAX_SEARCH_RESULTS} results, content search cap ${DEFAULT_SEARCH_CONTENT_RESULTS} matches.
-- When a tool returns \`resourceUri\`, call \`resources/read\` immediately — cached results expire on server restart.
+- When a tool returns \`resourceUri\`, call \`resources/read\` immediately — cached results are ephemeral and expire after 30 min, eviction, or restart.
 
 ## Error Recovery
 

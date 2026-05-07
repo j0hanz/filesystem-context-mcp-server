@@ -41,6 +41,14 @@ describe('buildSlimInstructions', () => {
     assert.match(content, /resources\/read/u);
   });
 
+  it('describes cache expiry with TTL and eviction, not just restart', () => {
+    const content = buildSlimInstructions();
+    assert.match(content, /ephemeral/u);
+    assert.match(content, /30 min/u);
+    assert.match(content, /eviction/u);
+    assert.doesNotMatch(content, /expire on server restart/u);
+  });
+
   it('returns a non-empty string on every call (idempotent)', () => {
     assert.ok(buildSlimInstructions().length > 200);
     assert.strictEqual(buildSlimInstructions(), buildSlimInstructions());

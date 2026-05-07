@@ -32,6 +32,7 @@ const SEARCH_FILES_TOOL: ToolContract = {
   title: 'Find Files',
   description:
     'Find files by glob pattern (e.g. `**/*.ts`). Returns matching files with metadata. ' +
+    'Cursors are offset-based: each page re-runs the query from the stored offset. ' +
     'For content search, use `grep`. For bulk edits, pass the same glob to `search_and_replace`.',
   inputSchema: SearchFilesInputSchema,
   outputSchema: SearchFilesOutputSchema,

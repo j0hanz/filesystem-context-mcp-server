@@ -2,8 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { describe, it } from 'node:test';
 
-import { toToolJsonSchema } from '../../src/schemas/json-schema.js';
-import { ALL_TOOLS } from '../../src/tools.js';
+import { createTestEnv } from '../helpers.js';
 
 const SNAPSHOT_PATH = new URL(
   './__snapshots__/tool-schemas.json',
@@ -11,16 +10,22 @@ const SNAPSHOT_PATH = new URL(
 );
 
 async function buildSnapshot(): Promise<Record<string, unknown>> {
-  const result: Record<string, unknown> = {};
-  for (const tool of ALL_TOOLS) {
-    result[tool.name] = {
-      inputSchema: toToolJsonSchema(tool.inputSchema),
-      ...(tool.outputSchema
-        ? { outputSchema: toToolJsonSchema(tool.outputSchema) }
-        : {}),
-    };
+  const env = await createTestEnv();
+  try {
+    const { tools } = await env.client.listTools();
+    const result: Record<string, unknown> = {};
+    for (const tool of tools
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))) {
+      result[tool.name] = {
+        inputSchema: tool.inputSchema,
+        ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
+      };
+    }
+    return result;
+  } finally {
+    await env.cleanup();
   }
-  return result;
 }
 
 describe('tool schema snapshots', () => {

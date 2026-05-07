@@ -143,7 +143,7 @@ const SEARCH_CONTENT_TOOL: ToolContract = {
   title: 'Search Content',
   description:
     'Search file contents for text (grep-like). Returns matching lines. ' +
-    'Scope with `filePattern` (e.g. `**/*.ts`) to reduce noise. ' +
+    'Scope with `pattern` (e.g. `**/*.ts`) to reduce noise. ' +
     '`includeHidden=true` for dotfiles.',
   inputSchema: GrepInputSchema,
   outputSchema: GrepOutputSchema,
@@ -154,7 +154,7 @@ const SEARCH_CONTENT_TOOL: ToolContract = {
   ],
   gotchas: [
     'RE2 dialect: no lookahead, lookbehind, or backreferences.',
-    'Use filePattern to scope; without it, scans every text file.',
+    'Use `pattern` to scope to specific files; without it, scans every text file.',
     'Skips binary/oversized files silently — verify with `stat` if no matches.',
   ],
   taskSupport: 'optional',
@@ -311,6 +311,7 @@ async function executeSearch(
       : {}),
     maxResults: args.maxResults,
     isLiteral: !args.isRegex,
+    ...(args.maxDepth !== undefined ? { maxDepth: args.maxDepth } : {}),
     ...(signal ? { signal } : {}),
     ...(onProgress ? { onProgress } : {}),
   };

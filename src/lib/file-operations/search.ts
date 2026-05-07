@@ -174,6 +174,7 @@ type ResolvedOptions = z.infer<typeof SearchOptionsSchema>;
 export interface SearchContentOptions extends Partial<ResolvedOptions> {
   signal?: AbortSignal;
   onProgress?: (progress: { total?: number; current: number }) => void;
+  maxDepth?: number;
 }
 
 const DEFAULTS: ResolvedOptions = {
@@ -205,7 +206,11 @@ type SearchContentStopReason = NonNullable<
 // --- Helpers ---
 
 function resolveOptions(options: SearchContentOptions): ResolvedOptions {
-  const normalizedOptions = omitOptionKeys(options, ['signal', 'onProgress']);
+  const normalizedOptions = omitOptionKeys(options, [
+    'signal',
+    'onProgress',
+    'maxDepth',
+  ]);
   const merged = mergeOptions(DEFAULTS, normalizedOptions);
   const result = SearchOptionsSchema.safeParse(merged);
 
@@ -1157,7 +1162,8 @@ async function searchDirectory(
   opts: ResolvedOptions,
   pattern: string,
   signal: AbortSignal,
-  onProgress?: (progress: { total?: number; current: number }) => void
+  onProgress?: (progress: { total?: number; current: number }) => void,
+  maxDepth?: number
 ): Promise<SearchContentResult> {
   const root = await validateExistingDirectory(details.resolvedPath, signal);
   const rootDirectories = [root];
@@ -1174,6 +1180,7 @@ async function searchDirectory(
       onlyFiles: true,
       stats: false,
       suppressErrors: true,
+      ...(maxDepth !== undefined ? { maxDepth } : {}),
     })
   );
 
@@ -1275,7 +1282,8 @@ export async function searchContent(
           opts,
           pattern,
           signal,
-          options.onProgress
+          options.onProgress,
+          options.maxDepth
         );
       }
     );

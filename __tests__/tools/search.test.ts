@@ -84,6 +84,27 @@ describe('grep tool', () => {
     assert.equal(sc['ok'], true);
   });
 
+  it('maxDepth:0 excludes nested matches', async () => {
+    // sub/deep.txt contains 'another apple here' but is 1 level deep
+    const raw = await env.client.callTool({
+      name: 'grep',
+      arguments: {
+        path: env.tmpDir,
+        searchPattern: 'apple',
+        maxDepth: 0,
+      },
+    });
+    assertOk(raw);
+    const sc = getStructured(raw);
+    const matches = sc['matches'] as Record<string, unknown>[];
+    assert.ok(Array.isArray(matches), 'Expected matches array');
+    const files = matches.map((m) => m['file'] as string);
+    assert.ok(
+      !files.some((f) => f.includes('deep')),
+      `maxDepth:0 should exclude sub/deep.txt, got: ${JSON.stringify(files)}`
+    );
+  });
+
   it('rejects unsafe filePattern values before traversal', async () => {
     const raw = await env.client.callTool({
       name: 'grep',
@@ -349,5 +370,64 @@ describe('search_and_replace tool', () => {
       },
     });
     assertToolError(raw, 'ACCESS_DENIED');
+  });
+
+  it('maxDepth:0 excludes nested files', async () => {
+    const sub = join(env.tmpDir, 'nested');
+    await mkdir(sub, { recursive: true });
+    await writeFile(join(sub, 'deep.txt'), 'hello world\n', 'utf8');
+
+    const raw = await env.client.callTool({
+      name: 'search_and_replace',
+      arguments: {
+        path: env.tmpDir,
+        pattern: '**/*.txt',
+        searchPattern: 'world',
+        replacement: 'WORLD',
+        dryRun: true,
+        maxDepth: 0,
+      },
+    });
+    assertOk(raw);
+    const sc = getStructured(raw);
+    const changedFiles = (sc['changedFiles'] ?? []) as Record<
+      string,
+      unknown
+    >[];
+    assert.ok(
+      !changedFiles.some((f) => (f['path'] as string).includes('deep')),
+      `maxDepth:0 should exclude nested/deep.txt, got: ${JSON.stringify(changedFiles)}`
+    );
+  });
+
+  it('maxResults cap stops early and sets stoppedReason', async () => {
+    // Create 12 files with 3 matches each = 36 total.
+    // With concurrency=8 the first 8 files dispatch before any wait.
+    // After those complete (24 matches), the 9th dispatch waits for a slot;
+    // shouldStop fires because 24 >= maxResults:5.
+    const capDir = join(env.tmpDir, 'captest');
+    await mkdir(capDir, { recursive: true });
+    for (let i = 0; i < 12; i++) {
+      await writeFile(
+        join(capDir, `cap${String(i)}.txt`),
+        'hit\nhit\nhit\n',
+        'utf8'
+      );
+    }
+
+    const raw = await env.client.callTool({
+      name: 'search_and_replace',
+      arguments: {
+        path: capDir,
+        pattern: '*.txt',
+        searchPattern: 'hit',
+        replacement: 'HIT',
+        dryRun: true,
+        maxResults: 5,
+      },
+    });
+    assertOk(raw);
+    const sc = getStructured(raw);
+    assert.equal(sc['stoppedReason'], 'maxResults');
   });
 });
