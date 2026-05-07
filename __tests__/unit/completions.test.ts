@@ -8,7 +8,6 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { describe, it } from 'node:test';
 
-import { getDefaultPathGuard } from '../../src/lib/path-guard.js';
 import {
   normalizePath,
   setAllowedDirectoriesResolved,
@@ -18,10 +17,8 @@ import {
   registerAnalyzePathPrompt,
   registerCompareFilesPrompt,
   registerGetHelpPrompt,
-  registerGetToolHelpPrompt,
 } from '../../src/prompts.js';
-import { ALL_RESOURCES, registerAllResources } from '../../src/resources.js';
-import { buildServerInstructions } from '../../src/resources/generated-instructions.js';
+import { registerAllResources, serverInstructionsContent } from '../../src/resources.js';
 import { LinkedTransport } from '../linked-transport.js';
 
 function makeCompletionServer(withInstructions = false): McpServer {
@@ -29,23 +26,14 @@ function makeCompletionServer(withInstructions = false): McpServer {
     { name: 'test-server', version: '0.0.0' },
     { capabilities: { completions: {} } }
   );
-  const instructions = withInstructions
-    ? buildServerInstructions(ALL_RESOURCES)
-    : '';
+  const instructions = withInstructions ? serverInstructionsContent : '';
   registerGetHelpPrompt(server, instructions);
-  registerGetToolHelpPrompt(server);
   registerAnalyzePathPrompt(server);
   registerCompareFilesPrompt(server);
 
-  // Set up PathGuard and ResourceStore for resource registration
-  // PathGuard is already initialized globally by setAllowedDirectoriesResolved
   const resourceStore = createInMemoryResourceStore();
-  const pathGuard = getDefaultPathGuard();
 
-  registerAllResources(server, {
-    pathGuard,
-    resourceStore,
-  });
+  registerAllResources(server, { resourceStore });
   return server;
 }
 
@@ -193,60 +181,6 @@ describe('completions', () => {
       await cleanup();
       await rm(tmpDir, { recursive: true, force: true });
       await setAllowedDirectoriesResolved([]);
-    }
-  });
-
-  it('completes tool names for the get-tool-help prompt', async () => {
-    const server = makeCompletionServer();
-    const { client, cleanup } = await connectPair(server);
-
-    try {
-      const result = await client.complete({
-        ref: { type: 'ref/prompt', name: 'get-tool-help' },
-        argument: { name: 'name', value: 're' },
-      });
-
-      assert.ok(
-        result.completion.values.includes('read'),
-        'should include read'
-      );
-      assert.ok(
-        result.completion.values.includes('read_many'),
-        'should include read_many'
-      );
-      assert.ok(
-        !result.completion.values.includes('write'),
-        'should not include write'
-      );
-    } finally {
-      await cleanup();
-    }
-  });
-
-  it('completes tool-info template names for resource references', async () => {
-    const server = makeCompletionServer();
-    const { client, cleanup } = await connectPair(server);
-
-    try {
-      const result = await client.complete({
-        ref: { type: 'ref/resource', uri: 'internal://tool-info/{name}' },
-        argument: { name: 'name', value: 'st' },
-      });
-
-      assert.ok(
-        result.completion.values.includes('stat'),
-        'should include stat'
-      );
-      assert.ok(
-        result.completion.values.includes('stat_many'),
-        'should include stat_many'
-      );
-      assert.ok(
-        !result.completion.values.includes('read'),
-        'should not include read'
-      );
-    } finally {
-      await cleanup();
     }
   });
 
