@@ -30,10 +30,14 @@ function walk(schema: unknown): unknown {
     typeof result.properties === 'object'
   ) {
     const props = result.properties as Record<string, JsonSchema>;
-    result.required = (result.required as string[]).filter(
+    const required = (result.required as string[]).filter(
       (name) => !('default' in (props[name] ?? {}))
     );
-    if ((result.required as string[]).length === 0) delete result.required;
+    if (required.length === 0) {
+      delete result.required;
+    } else {
+      result.required = required;
+    }
   }
   return result;
 }

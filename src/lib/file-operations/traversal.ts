@@ -132,6 +132,10 @@ function buildHiddenPatterns(
 }
 
 function assertOptionsShape(options: GlobEntriesOptions): void {
+  // Defense-in-depth runtime validation against malformed callers (e.g. JS
+  // consumers or future internal refactors). The double-cast is required to
+  // re-narrow a typed parameter back to `unknown` so the property checks below
+  // remain meaningful and ESLint-clean.
   const optsUnknown = options as unknown;
   if (typeof optsUnknown !== 'object' || optsUnknown === null) {
     throw new TypeError('globEntries: options must be an object');

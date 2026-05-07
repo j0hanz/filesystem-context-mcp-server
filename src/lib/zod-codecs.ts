@@ -14,6 +14,9 @@ export function createBase64JsonCodec<Schema extends z.ZodType>(
         });
       }
 
+      // Cast to the codec's declared decode return type. The downstream
+      // schema runs immediately after `decode` and validates the actual shape,
+      // so this assertion only satisfies the codec contract — it is not trusted.
       return parsed as z.input<Schema>;
     },
     encode: (value) => Buffer.from(JSON.stringify(value)).toString('base64url'),

@@ -408,7 +408,10 @@ async function runAndObserve<T>(
   if (pubTool) publishToolStart(tool, pathVal, traceparent);
 
   let result: T;
-  const obs = { ok: false, errorMsg: undefined as string | undefined };
+  const obs: { ok: boolean; errorMsg: string | undefined } = {
+    ok: false,
+    errorMsg: undefined,
+  };
 
   try {
     result = await run();

@@ -8,6 +8,7 @@ import type {
   ProgressNotification,
   ProgressToken,
   RequestMeta,
+  RequestTaskStore,
   ServerContext,
 } from '@modelcontextprotocol/server';
 
@@ -423,6 +424,27 @@ export interface ToolContext {
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>;
 }
 
+/**
+ * `ToolContext` augmented with optional task-execution metadata. Populated by
+ * the task handler in `task-support.ts`; absent for non-task tool calls.
+ */
+export type TaskToolContext = ToolContext & {
+  taskId?: string;
+  taskStore?: RequestTaskStore;
+  taskRequestedTtl?: number;
+};
+
+function isTaskToolContext(
+  ctx: ToolContext
+): ctx is ToolContext & { taskId: string; taskStore: RequestTaskStore } {
+  const candidate = ctx as TaskToolContext;
+  return (
+    typeof candidate.taskId === 'string' &&
+    candidate.taskId.length > 0 &&
+    candidate.taskStore !== undefined
+  );
+}
+
 export function toToolContext(ctx?: ToolContext | ServerContext): ToolContext {
   if (!ctx) return {};
   if ('mcpReq' in ctx) {
@@ -448,10 +470,7 @@ function canSendProgress(ctx: ToolContext): ctx is ToolContext & {
 }
 
 function canReportProgress(ctx: ToolContext): boolean {
-  const taskExtra = ctx as Record<string, unknown>;
-  const hasTask =
-    taskExtra.taskId !== undefined && taskExtra.taskStore !== undefined;
-  return canSendProgress(ctx) || hasTask;
+  return canSendProgress(ctx) || isTaskToolContext(ctx);
 }
 
 export interface IconInfo {
@@ -654,27 +673,16 @@ async function updateTaskStoreProgress(
   ctx: ToolContext,
   progress: { current: number; total?: number; message?: string }
 ): Promise<void> {
-  const taskExtra = ctx as Record<string, unknown>;
-  if (
-    typeof taskExtra.taskId === 'string' &&
-    taskExtra.taskStore !== undefined &&
-    taskExtra.taskStore !== null
-  ) {
-    const store = taskExtra.taskStore as Record<string, unknown>;
-    if (typeof store.updateTaskStatus === 'function') {
-      try {
-        await (
-          store.updateTaskStatus as (
-            taskId: string,
-            status: string,
-            message?: string
-          ) => Promise<void>
-        )(taskExtra.taskId, 'working', formatTaskStatusMessage(progress));
-      } catch (error) {
-        if (isBenignTaskStatusUpdateError(error)) return;
-        Logger.error('Failed to update task status message:', error);
-      }
-    }
+  if (!isTaskToolContext(ctx)) return;
+  try {
+    await ctx.taskStore.updateTaskStatus(
+      ctx.taskId,
+      'working',
+      formatTaskStatusMessage(progress)
+    );
+  } catch (error) {
+    if (isBenignTaskStatusUpdateError(error)) return;
+    Logger.error('Failed to update task status message:', error);
   }
 }
 

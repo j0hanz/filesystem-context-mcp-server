@@ -90,6 +90,8 @@ export async function processInParallel<T, R>(
       const index = nextIndex;
       nextIndex += 1;
 
+      // Safe: `index < itemCount === items.length`, so `items[index]` is defined.
+      // Cast bypasses `noUncheckedIndexedAccess` widening to `T | undefined`.
       const item = items[index] as T;
 
       try {

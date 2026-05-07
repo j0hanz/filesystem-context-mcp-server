@@ -40,6 +40,7 @@ import {
   type IconInfo,
   maybeStripStructuredContentFromResult,
   resolveToolTaskSupportLevel,
+  type TaskToolContext,
   type ToolContext,
   type ToolContract,
   type ToolRegistrationOptions,
@@ -97,12 +98,6 @@ function publishTaskDiagnostics(event: TaskDiagnosticsEvent): void {
 }
 
 // --- Type Guards & Helpers ---
-
-type TaskToolContext = ToolContext & {
-  taskId?: string;
-  taskStore?: RequestTaskStore;
-  taskRequestedTtl?: number;
-};
 
 type ToolSchema = StandardSchemaWithJSON | undefined;
 
@@ -560,6 +555,10 @@ function tryRegisterToolTask<Args extends ToolSchema>(
 
   if (!taskSupport || taskSupport === 'forbidden') return false;
 
+  // `as never`: the MCP SDK uses `StandardSchema` generics for tool registration,
+  // but we hand it a JSON-Schema-shaped object produced by `convertSchemasToWire`.
+  // The runtime shape is verified by the SDK's own validation; the cast bridges
+  // the structural gap without disabling type-checking elsewhere.
   server.experimental.tasks.registerToolTask(
     toolName,
     convertSchemasToWire(
@@ -593,6 +592,8 @@ function registerToolTaskIfAvailable<Args extends ToolSchema, Result>(
     server,
     toolName,
     toolDef,
+    // `as never`: bridges the Zod-typed `run` to the SDK's structural
+    // `ToolTaskHandler<Args>`; argument shape is enforced by `withValidatedArgs`.
     createToolTaskHandler(run as never, taskOptions) as ToolTaskHandler<Args>,
     options.iconInfo
   );
@@ -620,6 +621,8 @@ export function registerStandardTool<
     ...wrapOptions,
   });
   const validatedHandler = withValidatedArgs(
+    // `as never`: `inputSchema` is a Zod schema but typed loosely on `ToolContract`;
+    // `withValidatedArgs` will re-narrow at runtime via `safeParse`.
     toolDef.inputSchema as never,
     wrappedHandler
   );
@@ -638,6 +641,7 @@ export function registerStandardTool<
 
   server.registerTool(
     toolDef.name,
+    // `as never`: see `tryRegisterToolTask` — same StandardSchema/JSON-Schema bridge.
     convertSchemasToWire(
       withDefaultIcons({ ...toolDef }, options.iconInfo),
       toolDef.inputSchemaJson
