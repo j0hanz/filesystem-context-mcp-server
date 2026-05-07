@@ -1,124 +1,76 @@
-import type { McpServer } from '@modelcontextprotocol/server';
+import {
+  type McpServer,
+  ProtocolError,
+  ProtocolErrorCode,
+  type ReadResourceResult,
+  ResourceTemplate,
+} from '@modelcontextprotocol/server';
 
-import type { ResourceContract } from './resources/contract.js';
-import {
-  FILESYSTEM_FILE_RESOURCE,
-  registerFilesystemFileResource,
-} from './resources/filesystem-file.js';
-import { buildServerInstructions } from './resources/generated-instructions.js';
-import {
-  INSTRUCTIONS_RESOURCE,
-  registerInstructionResource,
-} from './resources/instructions.js';
-import {
-  METRICS_RESOURCE,
-  registerMetricsResource,
-} from './resources/metrics.js';
-import { registerResultResource, RESULT_RESOURCE } from './resources/result.js';
-import type { ResourceRegistrationOptions } from './resources/shared.js';
-import {
-  registerToolCatalogResource,
-  TOOL_CATALOG_RESOURCE,
-} from './resources/tool-catalog-resource.js';
-import {
-  registerToolInfoResource,
-  TOOL_INFO_RESOURCE,
-} from './resources/tool-info-resource.js';
-import {
-  registerWorkflowGuideResource,
-  WORKFLOW_GUIDE_RESOURCE,
-} from './resources/workflows-resource.js';
+import type { ResourceStore } from './lib/resource-store.js';
+import { SLIM_INSTRUCTIONS_CONTENT } from './resources/instructions-content.js';
+import { type IconInfo, withDefaultIcons } from './tools/shared.js';
 
-export type { ResourceRegistrationOptions };
-
-interface ResourceEntry {
-  contract: ResourceContract;
-  register: (server: McpServer, options: ResourceRegistrationOptions) => void;
+export interface ResourceRegistrationOptions {
+  resourceStore: ResourceStore;
+  iconInfo?: IconInfo;
 }
 
-// Build instructions content with all resource contracts so the
-// resource table in the instructions doc is auto-derived.
-const ALL_RESOURCE_CONTRACTS: ResourceContract[] = [
-  INSTRUCTIONS_RESOURCE,
-  TOOL_CATALOG_RESOURCE,
-  WORKFLOW_GUIDE_RESOURCE,
-  TOOL_INFO_RESOURCE,
-  RESULT_RESOURCE,
-  METRICS_RESOURCE,
-  FILESYSTEM_FILE_RESOURCE,
-];
+export { SLIM_INSTRUCTIONS_CONTENT as serverInstructionsContent };
 
-const SERVER_INSTRUCTIONS_CONTENT = buildServerInstructions(
-  ALL_RESOURCE_CONTRACTS
-);
-
-export const ALL_RESOURCES: ResourceContract[] = ALL_RESOURCE_CONTRACTS;
-
-const RESOURCE_ENTRIES: ResourceEntry[] = [
-  {
-    contract: INSTRUCTIONS_RESOURCE,
-    register: (server, options) => {
-      registerInstructionResource(server, SERVER_INSTRUCTIONS_CONTENT, options);
-    },
-  },
-  { contract: TOOL_CATALOG_RESOURCE, register: registerToolCatalogResource },
-  {
-    contract: WORKFLOW_GUIDE_RESOURCE,
-    register: registerWorkflowGuideResource,
-  },
-  { contract: TOOL_INFO_RESOURCE, register: registerToolInfoResource },
-  { contract: RESULT_RESOURCE, register: registerResultResource },
-  { contract: METRICS_RESOURCE, register: registerMetricsResource },
-  {
-    contract: FILESYSTEM_FILE_RESOURCE,
-    register: registerFilesystemFileResource,
-  },
-];
-
-export interface ResourcesHandle {
-  destroy(): void;
-}
+const INSTRUCTIONS_URI = 'internal://instructions';
+const RESULT_TEMPLATE = new ResourceTemplate('filesystem-mcp://result/{id}', {
+  list: undefined,
+});
 
 export function registerAllResources(
   server: McpServer,
   options: ResourceRegistrationOptions
-): ResourcesHandle {
-  const notify = (uri: string): void => {
-    void server.server.sendResourceUpdated({ uri }).catch(() => {
-      // Transport may already be closed — best effort.
-    });
-  };
-
-  const lifecycles = RESOURCE_ENTRIES.flatMap(({ contract, register }) => {
-    register(server, options);
-    return contract.createSubscription
-      ? [contract.createSubscription(notify)]
-      : [];
-  });
-
-  // Single subscription router for all resources.
-  // Each lifecycle's onSubscribe/onUnsubscribe ignores URIs that don't belong to it.
-  server.server.setRequestHandler(
-    'resources/subscribe',
-    (req: { params: { uri: string } }) => {
-      for (const lc of lifecycles) lc.onSubscribe(req.params.uri);
-      return {};
-    }
+): void {
+  server.registerResource(
+    'filesystem-mcp-instructions',
+    INSTRUCTIONS_URI,
+    withDefaultIcons(
+      {
+        title: 'Server Instructions',
+        description:
+          'Navigation guide for filesystem-mcp tools and constraints.',
+        mimeType: 'text/markdown',
+        annotations: { audience: ['assistant'], priority: 0.8 },
+      },
+      options.iconInfo
+    ),
+    (uri): ReadResourceResult => ({
+      contents: [
+        { uri: uri.href, mimeType: 'text/markdown', text: SLIM_INSTRUCTIONS_CONTENT },
+      ],
+    })
   );
 
-  server.server.setRequestHandler(
-    'resources/unsubscribe',
-    (req: { params: { uri: string } }) => {
-      for (const lc of lifecycles) lc.onUnsubscribe(req.params.uri);
-      return {};
+  server.registerResource(
+    'filesystem-mcp-result',
+    RESULT_TEMPLATE,
+    withDefaultIcons(
+      {
+        title: 'Cached Tool Result',
+        description:
+          'Ephemeral cached tool output. Not listed via resources/list.',
+        mimeType: 'text/plain',
+        annotations: { audience: ['assistant'], priority: 0.3 },
+      },
+      options.iconInfo
+    ),
+    (uri, variables): ReadResourceResult => {
+      const { id } = variables;
+      if (typeof id !== 'string' || id.length === 0) {
+        throw new ProtocolError(
+          ProtocolErrorCode.ResourceNotFound,
+          'Cached result expired. Re-run the tool to regenerate.'
+        );
+      }
+      const entry = options.resourceStore.getText(uri.toString());
+      return {
+        contents: [{ uri: entry.uri, mimeType: entry.mimeType, text: entry.text }],
+      };
     }
   );
-
-  return {
-    destroy: () => {
-      for (const lc of lifecycles) lc.destroy();
-    },
-  };
 }
-
-export { SERVER_INSTRUCTIONS_CONTENT as serverInstructionsContent };

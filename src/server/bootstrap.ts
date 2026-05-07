@@ -44,11 +44,9 @@ import {
   registerAnalyzePathPrompt,
   registerCompareFilesPrompt,
   registerGetHelpPrompt,
-  registerGetToolHelpPrompt,
 } from '../prompts.js';
 import {
   registerAllResources,
-  type ResourcesHandle,
   serverInstructionsContent,
 } from '../resources.js';
 import { registerAllTools } from '../tools.js';
@@ -73,7 +71,7 @@ function buildServerCapabilities(
 ): NonOptionalServerCapabilities {
   const capabilities: NonOptionalServerCapabilities = {
     logging: {},
-    resources: { listChanged: true, subscribe: true },
+    resources: {},
     tools: {},
     prompts: options.enablePromptListChanged ? { listChanged: true } : {},
     completions: {},
@@ -175,7 +173,7 @@ async function getLocalIconInfo(): Promise<IconInfo | undefined> {
 
 export async function createServer(
   options: ServerOptions = {}
-): Promise<{ server: McpServer; resourcesHandle: ResourcesHandle }> {
+): Promise<{ server: McpServer }> {
   const resourceStore = createInMemoryResourceStore();
   const localIcon = await getLocalIconInfo();
   const capabilities = buildServerCapabilities({
@@ -195,10 +193,6 @@ export async function createServer(
     {
       capabilities,
       enforceStrictCapabilities: true,
-      debouncedNotificationMethods: [
-        'notifications/resources/list_changed',
-        'notifications/resources/updated',
-      ],
     };
 
   serverConfig.instructions =
@@ -238,8 +232,7 @@ export async function createServer(
   // Track stdio server by default, or it will be overwritten per HTTP session later
   stdioServer ??= { server, loggingState };
 
-  const resourcesHandle = registerAllResources(server, {
-    pathGuard: rootsManager.pathGuard,
+  registerAllResources(server, {
     resourceStore,
     ...(localIcon ? { iconInfo: localIcon } : {}),
   });
@@ -247,7 +240,6 @@ export async function createServer(
   registerGetHelpPrompt(server, serverInstructionsContent, localIcon);
   registerCompareFilesPrompt(server, localIcon);
   registerAnalyzePathPrompt(server, localIcon);
-  registerGetToolHelpPrompt(server, localIcon);
   registerAllTools(server, {
     pathGuard: rootsManager.pathGuard,
     resourceStore,
@@ -255,14 +247,13 @@ export async function createServer(
     ...(localIcon ? { iconInfo: localIcon } : {}),
   });
 
-  return { server, resourcesHandle };
+  return { server };
 }
 
 export async function startServer(serverAndHandle: {
   server: McpServer;
-  resourcesHandle: ResourcesHandle;
 }): Promise<void> {
-  const { server, resourcesHandle } = serverAndHandle;
+  const { server } = serverAndHandle;
   const transport = new StdioServerTransport();
   const rootsManager = getRootsManager(server);
 
@@ -278,7 +269,6 @@ export async function startServer(serverAndHandle: {
   await server.connect(transport);
   const sdkOnClose = transport.onclose;
   transport.onclose = () => {
-    resourcesHandle.destroy();
     rootsManager.destroy();
     sdkOnClose?.();
   };
@@ -341,7 +331,6 @@ async function readRequestBody(req: IncomingMessage): Promise<unknown> {
 interface HttpSession {
   server: McpServer;
   rootsManager: RootsManager;
-  resourcesHandle: ResourcesHandle;
   transport: NodeStreamableHTTPServerTransport;
   createdAt: number;
   cleanup: () => void;
@@ -353,7 +342,7 @@ async function createHttpSession(
   sessions: Map<string, HttpSession>,
   eventStore: InMemoryEventStore
 ): Promise<HttpSession> {
-  const { server: mcpServer, resourcesHandle } = await createServer(options);
+  const { server: mcpServer } = await createServer(options);
   const rootsManager = getRootsManager(mcpServer);
 
   rootsManager.registerHandlers(mcpServer);
@@ -371,7 +360,6 @@ async function createHttpSession(
       eventStore.delete(sessionId);
     }
 
-    resourcesHandle.destroy();
     rootsManager.destroy();
   };
 
@@ -388,7 +376,6 @@ async function createHttpSession(
       sessions.set(sessionId, {
         server: mcpServer,
         rootsManager,
-        resourcesHandle,
         transport,
         createdAt: Date.now(),
         cleanup,
@@ -415,7 +402,6 @@ async function createHttpSession(
   return {
     server: mcpServer,
     rootsManager,
-    resourcesHandle,
     transport,
     createdAt: Date.now(),
     cleanup,
