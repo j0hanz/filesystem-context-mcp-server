@@ -73,12 +73,11 @@ function buildReadOptions(
 }
 
 function toStructuredReadFileResult(
-  args: ReadFileInput,
   result: ReadFileHandlerResult
 ): ReadFileOutput {
   const structured: ReadFileOutput = {
     ok: true,
-    path: args.path,
+    path: result.path,
     content: result.content,
   };
 
@@ -190,7 +189,7 @@ async function handleReadFile(
 ): Promise<ToolResponse<ReadFileOutput>> {
   const options = buildReadOptions(args, signal);
   const result = await readFile(args.path ?? '', options);
-  const structured = toStructuredReadFileResult(args, result);
+  const structured = toStructuredReadFileResult(result);
 
   if (args.includeHash) {
     structured.contentHash = await calculateFileContentHash(

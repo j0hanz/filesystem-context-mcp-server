@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Integration tests for file I/O tools: read, write, read_many, edit, apply_patch.
  */
 import assert from 'node:assert/strict';
@@ -102,6 +102,22 @@ describe('read tool', () => {
     });
     assertToolError(raw, 'ACCESS_DENIED');
   });
+
+  it('returns the resolved absolute path, not the input path', async () => {
+    const absPath = join(env.tmpDir, 'read-test.txt');
+    await writeFile(absPath, 'hello\n', 'utf8');
+    const raw = await env.client.callTool({
+      name: 'read',
+      arguments: { path: absPath },
+    });
+    assertOk(raw);
+    const sc = getStructured(raw);
+    assert.strictEqual(
+      (sc['path'] as string).toLowerCase(),
+      absPath.toLowerCase(),
+      'path in output must be the resolved absolute path'
+    );
+  });
 });
 
 // ─── write ───────────────────────────────────────────────────────────────────
@@ -149,6 +165,15 @@ describe('write tool', () => {
       arguments: { path: '/tmp/escape.txt', content: 'bad' },
     });
     assertToolError(raw, 'ACCESS_DENIED');
+  });
+
+  it('returns an error when path is omitted', async () => {
+    const raw = await env.client.callTool({
+      name: 'write',
+      // intentionally no path
+      arguments: { content: 'hello' },
+    });
+    assert.ok(raw.isError, 'write without path must return an error');
   });
 });
 
