@@ -2,18 +2,12 @@ import {
   completable,
   type GetPromptResult,
   type McpServer,
-  ProtocolError,
-  ProtocolErrorCode,
 } from '@modelcontextprotocol/server';
 
 import { z } from 'zod/v4';
 
 import { completePathCached } from './lib/path-completer.js';
 
-import {
-  buildToolInfo,
-  getSortedToolContracts,
-} from './resources/tool-info.js';
 import { type IconInfo, withDefaultIcons } from './tools/shared.js';
 
 const HELP_PROMPT_NAME = 'get-help';
@@ -29,11 +23,6 @@ const ANALYZE_PATH_PROMPT_NAME = 'analyze-path';
 const ANALYZE_PATH_PROMPT_TITLE = 'Analyze Path';
 const ANALYZE_PATH_PROMPT_DESCRIPTION =
   'Generate a workflow for analyzing a file or directory using stat, read, and tree.';
-
-const GET_TOOL_HELP_PROMPT_NAME = 'get-tool-help';
-const GET_TOOL_HELP_PROMPT_TITLE = 'Get Tool Help';
-const GET_TOOL_HELP_PROMPT_DESCRIPTION =
-  'Return a prompt with the authoritative contract for a specific filesystem-mcp tool.';
 
 function filterInstructionsByTopic(
   instructions: string,
@@ -52,15 +41,6 @@ function filterInstructionsByTopic(
     .filter(Boolean)
     .join(', ');
   return `Section '${topic}' not found. Available: ${available}\n\n${instructions}`;
-}
-
-function findKnownToolName(rawName: string): string | undefined {
-  const normalized = rawName.trim().toLowerCase();
-  if (!normalized) return undefined;
-
-  return getSortedToolContracts().find(
-    (contract) => contract.name.toLowerCase() === normalized
-  )?.name;
 }
 
 function extractTopics(instructions: string): string[] {
@@ -225,76 +205,3 @@ export function registerAnalyzePathPrompt(
   );
 }
 
-export function registerGetToolHelpPrompt(
-  server: McpServer,
-  iconInfo?: IconInfo
-): void {
-  const toolNames = getSortedToolContracts().map((c) => c.name);
-
-  server.registerPrompt(
-    GET_TOOL_HELP_PROMPT_NAME,
-    {
-      ...withDefaultIcons(
-        {
-          title: GET_TOOL_HELP_PROMPT_TITLE,
-          description: GET_TOOL_HELP_PROMPT_DESCRIPTION,
-        },
-        iconInfo
-      ),
-      argsSchema: z.strictObject({
-        name: completable(
-          z
-            .string()
-            .min(1)
-            .describe(
-              'Tool name from tools/list or internal://tool-info/{name}.'
-            ),
-          (value) => filterByPrefix(toolNames, value)
-        ),
-      }),
-    },
-    ({ name }): GetPromptResult => {
-      const toolName = findKnownToolName(name);
-      if (!toolName) {
-        throw new ProtocolError(
-          ProtocolErrorCode.InvalidParams,
-          `Unknown tool: ${name}`
-        );
-      }
-      const toolInfo = buildToolInfo(toolName);
-      if (!toolInfo) {
-        throw new ProtocolError(
-          ProtocolErrorCode.InvalidParams,
-          `Unknown tool: ${toolName}`
-        );
-      }
-      return {
-        description: GET_TOOL_HELP_PROMPT_DESCRIPTION,
-        messages: [
-          {
-            role: 'user',
-            content: {
-              type: 'text',
-              text:
-                `Use the embedded contract for \`${toolName}\` as the authoritative reference. ` +
-                'Summarize when to use it, its key constraints, and the safest next action.',
-              annotations: { audience: ['assistant'], priority: 1 },
-            },
-          },
-          {
-            role: 'user',
-            content: {
-              type: 'resource',
-              resource: {
-                uri: `internal://tool-info/${toolName}`,
-                mimeType: 'text/markdown',
-                text: toolInfo,
-              },
-              annotations: { audience: ['assistant'], priority: 1 },
-            },
-          },
-        ],
-      };
-    }
-  );
-}
