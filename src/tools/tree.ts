@@ -10,7 +10,7 @@ import {
 } from '../lib/file-operations/metadata.js';
 import { TreeInputSchema } from '../schemas/inputs.js';
 import { TreeOutputSchema } from '../schemas/outputs.js';
-import { ContinuationSchema } from '../schemas/shared.js';
+import type { ContinuationSchema } from '../schemas/shared.js';
 
 import { defineTool } from './define-tool.js';
 import { DIRECTORY_ICONS } from './icons.js';
@@ -48,7 +48,7 @@ const TREE_TOOL: ToolContract = {
 function buildTreeContinuation(
   basePath: string,
   truncated: boolean,
-  totalEntries: number,
+  totalEntries: number
 ): z.infer<typeof ContinuationSchema> | undefined {
   if (!truncated) return undefined;
   return {
@@ -84,7 +84,11 @@ async function handleTree(
 
   if (externalized) {
     const { entry, preview } = externalized;
-    const continuation = buildTreeContinuation(basePath, result.truncated, result.totalEntries ?? 0);
+    const continuation = buildTreeContinuation(
+      basePath,
+      result.truncated,
+      result.totalEntries
+    );
     const structured: z.infer<typeof TreeOutputSchema> = {
       ok: true,
       root: result.root,
@@ -106,7 +110,11 @@ async function handleTree(
     ]);
   }
 
-  const continuation = buildTreeContinuation(basePath, result.truncated, result.totalEntries ?? 0);
+  const continuation = buildTreeContinuation(
+    basePath,
+    result.truncated,
+    result.totalEntries
+  );
   const structured: z.infer<typeof TreeOutputSchema> = {
     ok: true,
     root: result.root,
