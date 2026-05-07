@@ -5,7 +5,7 @@ export function getToolContracts(): ToolContract[] {
   return ALL_TOOLS;
 }
 
-function getSortedToolContracts(): ToolContract[] {
+export function getSortedToolContracts(): ToolContract[] {
   return [...ALL_TOOLS].sort((left, right) =>
     left.name.localeCompare(right.name)
   );
