@@ -61,7 +61,7 @@ The current resource layer (introduced in commit `2414420`) added `ResourceContr
 ```text
 src/resources/
   instructions-content.ts   ← NEW: buildSlimInstructions() → ~80 lines markdown
-  result.ts                 ← UNCHANGED: getText() handler (but no contract wrapper)
+  result.ts                 ← DELETED: handler inlined into resources.ts directly
 
 src/resources.ts            ← REPLACED: ~30 LOC, two direct registerResource() calls
 
@@ -148,7 +148,7 @@ Delete from this file:
 - `getTaskSupportLabel()`
 - `toEntry()`
 - `ENTRIES`
-- `CONTRACTS_BY_NAME` (if only used by deleted functions)
+- `CONTRACTS_BY_NAME` — only consumers are deleted functions, delete it
 - `getTaskCapableToolNames()`
 - `buildCoreContextPack()`
 - `getSharedConstraints()` — **move to `instructions-content.ts`** where it's the only consumer
