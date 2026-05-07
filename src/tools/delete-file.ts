@@ -1,4 +1,8 @@
-import type { McpServer } from '@modelcontextprotocol/server';
+import type {
+  ElicitRequestFormParams,
+  ElicitResult,
+  McpServer,
+} from '@modelcontextprotocol/server';
 
 import { lstat, rm, rmdir } from 'node:fs/promises';
 import { basename } from 'node:path';
@@ -40,7 +44,8 @@ export const DELETE_FILE_TOOL: ToolContract = {
 
 async function handleDeleteFile(
   args: z.infer<typeof DeleteFileInputSchema>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>
 ): Promise<ToolResponse<z.infer<typeof DeleteFileOutputSchema>>> {
   const validPath = await validatePathForWrite(args.path, signal);
 
@@ -66,6 +71,34 @@ async function handleDeleteFile(
       });
     }
     throw error;
+  }
+
+  // Ask for confirmation when deleting a directory recursively and client supports it.
+  if (elicitInput && args.recursive && stats.isDirectory()) {
+    const elicitResult = await elicitInput({
+      mode: 'form',
+      message: `Permanently delete "${args.path}" and all its contents? This cannot be undone.`,
+      requestedSchema: {
+        type: 'object',
+        properties: {
+          confirm: {
+            type: 'boolean',
+            title: 'Yes, delete permanently',
+          },
+        },
+        required: ['confirm'],
+      },
+    });
+
+    if (
+      elicitResult.action !== 'accept' ||
+      elicitResult.content?.confirm !== true
+    ) {
+      return buildToolResponse(`Deletion cancelled: ${args.path}`, {
+        ok: true,
+        path: validPath,
+      });
+    }
   }
 
   if (stats.isDirectory() && !args.recursive) {
@@ -105,7 +138,11 @@ export function registerDeleteFileTool(
       timedSignal: {},
       context: { path: args.path },
       run: async (signal) => {
-        const result = await handleDeleteFile(args, signal);
+        // Only pass elicitInput when the connected client advertised elicitation support.
+        const caps = server.server.getClientCapabilities();
+        const elicitFn =
+          caps?.elicitation && ctx.elicitInput ? ctx.elicitInput : undefined;
+        const result = await handleDeleteFile(args, signal, elicitFn);
         void ctx.log?.('info', `rm: ${args.path}`, 'rm');
         return result;
       },
