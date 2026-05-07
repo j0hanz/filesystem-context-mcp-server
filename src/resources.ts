@@ -7,6 +7,7 @@ import {
 } from '@modelcontextprotocol/server';
 
 import type { ResourceStore } from './lib/resource-store.js';
+
 import { SLIM_INSTRUCTIONS_CONTENT } from './resources/instructions-content.js';
 import { type IconInfo, withDefaultIcons } from './tools/shared.js';
 
@@ -41,7 +42,11 @@ export function registerAllResources(
     ),
     (uri): ReadResourceResult => ({
       contents: [
-        { uri: uri.href, mimeType: 'text/markdown', text: SLIM_INSTRUCTIONS_CONTENT },
+        {
+          uri: uri.href,
+          mimeType: 'text/markdown',
+          text: SLIM_INSTRUCTIONS_CONTENT,
+        },
       ],
     })
   );
@@ -69,7 +74,9 @@ export function registerAllResources(
       }
       const entry = options.resourceStore.getText(uri.toString());
       return {
-        contents: [{ uri: entry.uri, mimeType: entry.mimeType, text: entry.text }],
+        contents: [
+          { uri: entry.uri, mimeType: entry.mimeType, text: entry.text },
+        ],
       };
     }
   );

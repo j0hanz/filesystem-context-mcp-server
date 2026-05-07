@@ -12,36 +12,36 @@
 
 ## File Map
 
-| Status | Path | Responsibility |
-|--------|------|----------------|
-| CREATE | `src/resources/instructions-content.ts` | `buildSlimInstructions()` → slim markdown, exported constant |
-| REPLACE | `src/resources.ts` | Two direct `registerResource()` calls, `ResourceRegistrationOptions`, no lifecycle |
-| MODIFY | `src/resources/tool-info.ts` | Keep 4 nav helpers only — delete ~250 LOC of schema rendering |
-| MODIFY | `src/lib/observability.ts` | Remove `globalMetrics`, `onMetricsUpdate`, `metricsListeners`, `updateMetrics` |
-| MODIFY | `src/server/bootstrap.ts` | No `ResourcesHandle`, `resources: {}` caps, no `debouncedNotificationMethods`, no `get-tool-help` call |
-| MODIFY | `src/prompts.ts` | Remove `registerGetToolHelpPrompt` and helpers |
-| DELETE | `src/resources/contract.ts` | Types no longer needed |
-| DELETE | `src/resources/shared.ts` | Helpers no longer needed |
-| DELETE | `src/resources/result.ts` | Handler inlined into `resources.ts` |
-| DELETE | `src/resources/instructions.ts` | Replaced by `instructions-content.ts` |
-| DELETE | `src/resources/generated-instructions.ts` | Replaced by slim version |
-| DELETE | `src/resources/filesystem-file.ts` | Resource removed |
-| DELETE | `src/resources/metrics.ts` | Resource removed |
-| DELETE | `src/resources/tool-catalog.ts` | Content no longer used |
-| DELETE | `src/resources/tool-catalog-resource.ts` | Resource removed |
-| DELETE | `src/resources/workflows.ts` | Content no longer used |
-| DELETE | `src/resources/workflows-resource.ts` | Resource removed |
-| DELETE | `src/resources/tool-info-resource.ts` | Resource removed |
-| CREATE | `__tests__/resources/instructions-content.test.ts` | Unit tests for `buildSlimInstructions()` |
-| MODIFY | `__tests__/resources.test.ts` | Expect 1 static + 1 template, 3 prompts |
-| DELETE | `__tests__/resources/contract.test.ts` | Tests deleted resource types |
-| DELETE | `__tests__/resources/filesystem-file.test.ts` | Tests deleted resource |
-| DELETE | `__tests__/resources/metrics.test.ts` | Tests deleted resource |
-| MODIFY | `__tests__/prompts.test.ts` | Remove two `get-tool-help` tests, update prompt list |
-| MODIFY | `__tests__/prompts-stdio.test.ts` | Remove `get-tool-help` test |
-| MODIFY | `__tests__/unit/completions.test.ts` | Remove two tests, update imports and `makeCompletionServer` |
-| MODIFY | `__tests__/http.test.ts` | Remove stale resource/prompt assertions in discovery test |
-| MODIFY | `README.md` | 2 resources, 3 prompts, updated tables |
+| Status  | Path                                               | Responsibility                                                                                         |
+| ------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| CREATE  | `src/resources/instructions-content.ts`            | `buildSlimInstructions()` → slim markdown, exported constant                                           |
+| REPLACE | `src/resources.ts`                                 | Two direct `registerResource()` calls, `ResourceRegistrationOptions`, no lifecycle                     |
+| MODIFY  | `src/resources/tool-info.ts`                       | Keep 4 nav helpers only — delete ~250 LOC of schema rendering                                          |
+| MODIFY  | `src/lib/observability.ts`                         | Remove `globalMetrics`, `onMetricsUpdate`, `metricsListeners`, `updateMetrics`                         |
+| MODIFY  | `src/server/bootstrap.ts`                          | No `ResourcesHandle`, `resources: {}` caps, no `debouncedNotificationMethods`, no `get-tool-help` call |
+| MODIFY  | `src/prompts.ts`                                   | Remove `registerGetToolHelpPrompt` and helpers                                                         |
+| DELETE  | `src/resources/contract.ts`                        | Types no longer needed                                                                                 |
+| DELETE  | `src/resources/shared.ts`                          | Helpers no longer needed                                                                               |
+| DELETE  | `src/resources/result.ts`                          | Handler inlined into `resources.ts`                                                                    |
+| DELETE  | `src/resources/instructions.ts`                    | Replaced by `instructions-content.ts`                                                                  |
+| DELETE  | `src/resources/generated-instructions.ts`          | Replaced by slim version                                                                               |
+| DELETE  | `src/resources/filesystem-file.ts`                 | Resource removed                                                                                       |
+| DELETE  | `src/resources/metrics.ts`                         | Resource removed                                                                                       |
+| DELETE  | `src/resources/tool-catalog.ts`                    | Content no longer used                                                                                 |
+| DELETE  | `src/resources/tool-catalog-resource.ts`           | Resource removed                                                                                       |
+| DELETE  | `src/resources/workflows.ts`                       | Content no longer used                                                                                 |
+| DELETE  | `src/resources/workflows-resource.ts`              | Resource removed                                                                                       |
+| DELETE  | `src/resources/tool-info-resource.ts`              | Resource removed                                                                                       |
+| CREATE  | `__tests__/resources/instructions-content.test.ts` | Unit tests for `buildSlimInstructions()`                                                               |
+| MODIFY  | `__tests__/resources.test.ts`                      | Expect 1 static + 1 template, 3 prompts                                                                |
+| DELETE  | `__tests__/resources/contract.test.ts`             | Tests deleted resource types                                                                           |
+| DELETE  | `__tests__/resources/filesystem-file.test.ts`      | Tests deleted resource                                                                                 |
+| DELETE  | `__tests__/resources/metrics.test.ts`              | Tests deleted resource                                                                                 |
+| MODIFY  | `__tests__/prompts.test.ts`                        | Remove two `get-tool-help` tests, update prompt list                                                   |
+| MODIFY  | `__tests__/prompts-stdio.test.ts`                  | Remove `get-tool-help` test                                                                            |
+| MODIFY  | `__tests__/unit/completions.test.ts`               | Remove two tests, update imports and `makeCompletionServer`                                            |
+| MODIFY  | `__tests__/http.test.ts`                           | Remove stale resource/prompt assertions in discovery test                                              |
+| MODIFY  | `README.md`                                        | 2 resources, 3 prompts, updated tables                                                                 |
 
 **Unchanged:** `src/lib/resource-store.ts`, `src/tools/shared.ts` (`maybeExternalizeTextContent`, `buildResourceLink`), all tool files, `src/lib/paths.ts`, `src/lib/path-guard.ts`.
 
@@ -50,6 +50,7 @@
 ### Task 1: Write failing test for `instructions-content.ts`
 
 **Files:**
+
 - Create: `__tests__/resources/instructions-content.test.ts`
 
 The file does not exist yet — this test will fail at import time.
@@ -120,6 +121,7 @@ Expected: `ERR_MODULE_NOT_FOUND` — `instructions-content.js` does not exist ye
 ### Task 2: Create `src/resources/instructions-content.ts`
 
 **Files:**
+
 - Create: `src/resources/instructions-content.ts`
 
 - [ ] **Step 1: Create `src/resources/instructions-content.ts`**
@@ -130,12 +132,16 @@ import {
   MAX_SEARCH_RESULTS,
   MAX_TEXT_FILE_SIZE,
 } from '../lib/constants.js';
+
 import { formatToolNameList, pickAvailableToolNames } from './tool-info.js';
 
 function buildToolsOverview(): string {
   const rows: [string, string[]][] = [
     ['Navigate', pickAvailableToolNames(['roots', 'ls', 'tree', 'find'])],
-    ['Inspect', pickAvailableToolNames(['stat', 'stat_many', 'grep', 'calculate_hash'])],
+    [
+      'Inspect',
+      pickAvailableToolNames(['stat', 'stat_many', 'grep', 'calculate_hash']),
+    ],
     ['Read', pickAvailableToolNames(['read', 'read_many', 'diff_files'])],
     [
       'Write',
@@ -214,6 +220,7 @@ git commit -m "feat: add slim instructions content builder with tests"
 ### Task 3: Update `__tests__/resources.test.ts` to expect 2 resources
 
 **Files:**
+
 - Modify: `__tests__/resources.test.ts`
 
 These assertions will fail until `src/resources.ts` is replaced in Task 4.
@@ -295,10 +302,9 @@ describe('resources and metadata', () => {
     assert.equal(resources.length, 1);
     assert.equal(resources[0]?.uri, 'internal://instructions');
 
-    assert.deepEqual(
-      resourceTemplates.map((t) => t.uriTemplate).sort(),
-      ['filesystem-mcp://result/{id}']
-    );
+    assert.deepEqual(resourceTemplates.map((t) => t.uriTemplate).sort(), [
+      'filesystem-mcp://result/{id}',
+    ]);
   });
 
   it('reads instructions resource and exposes instructions through initialize metadata', async () => {
@@ -307,7 +313,10 @@ describe('resources and metadata', () => {
 
     const instructions = env.client.getInstructions();
     assert.ok(instructions, 'Expected initialize instructions to be present');
-    assert.match(instructions, /Start with: roots -> ls\/find -> stat -> read/u);
+    assert.match(
+      instructions,
+      /Start with: roots -> ls\/find -> stat -> read/u
+    );
 
     const instructionsResource = await env.client.readResource({
       uri: 'internal://instructions',
@@ -364,6 +373,7 @@ Expected: "lists exactly 1 static resource" FAILS — currently 7 resources are 
 These two files are replaced together because `bootstrap.ts` imports `ResourcesHandle` from `resources.ts` — if they're not updated atomically the code won't compile.
 
 **Files:**
+
 - Replace: `src/resources.ts`
 - Modify: `src/server/bootstrap.ts`
 
@@ -379,6 +389,7 @@ import {
 } from '@modelcontextprotocol/server';
 
 import type { ResourceStore } from './lib/resource-store.js';
+
 import { SLIM_INSTRUCTIONS_CONTENT } from './resources/instructions-content.js';
 import { type IconInfo, withDefaultIcons } from './tools/shared.js';
 
@@ -404,7 +415,8 @@ export function registerAllResources(
     withDefaultIcons(
       {
         title: 'Server Instructions',
-        description: 'Navigation guide for filesystem-mcp tools and constraints.',
+        description:
+          'Navigation guide for filesystem-mcp tools and constraints.',
         mimeType: 'text/markdown',
         annotations: { audience: ['assistant'], priority: 0.8 },
       },
@@ -412,7 +424,11 @@ export function registerAllResources(
     ),
     (uri): ReadResourceResult => ({
       contents: [
-        { uri: uri.href, mimeType: 'text/markdown', text: SLIM_INSTRUCTIONS_CONTENT },
+        {
+          uri: uri.href,
+          mimeType: 'text/markdown',
+          text: SLIM_INSTRUCTIONS_CONTENT,
+        },
       ],
     })
   );
@@ -423,7 +439,8 @@ export function registerAllResources(
     withDefaultIcons(
       {
         title: 'Cached Tool Result',
-        description: 'Ephemeral cached tool output. Not listed via resources/list.',
+        description:
+          'Ephemeral cached tool output. Not listed via resources/list.',
         mimeType: 'text/plain',
         annotations: { audience: ['assistant'], priority: 0.3 },
       },
@@ -439,7 +456,9 @@ export function registerAllResources(
       }
       const entry = options.resourceStore.getText(uri.toString());
       return {
-        contents: [{ uri: entry.uri, mimeType: entry.mimeType, text: entry.text }],
+        contents: [
+          { uri: entry.uri, mimeType: entry.mimeType, text: entry.text },
+        ],
       };
     }
   );
@@ -545,7 +564,7 @@ return { server };
 **2f. Update `registerGetToolHelpPrompt` call** — delete this one line from `createServer`:
 
 ```typescript
-registerGetToolHelpPrompt(server, localIcon);  // DELETE THIS LINE
+registerGetToolHelpPrompt(server, localIcon); // DELETE THIS LINE
 ```
 
 **2g. Update `startServer()`** — remove `resourcesHandle` from param and cleanup:
@@ -677,6 +696,7 @@ git commit -m "feat: replace resources.ts with 2-resource slim version; update b
 These must happen together — deleting the files removes the consumers of the exports being dropped from `tool-info.ts`.
 
 **Files:**
+
 - Delete: 11 files in `src/resources/`
 - Modify: `src/resources/tool-info.ts`
 
@@ -742,6 +762,7 @@ git commit -m "feat: delete 12 dead resource files; slim tool-info.ts to 4 nav h
 ### Task 6: Remove `globalMetrics` and metrics listener from `src/lib/observability.ts`
 
 **Files:**
+
 - Modify: `src/lib/observability.ts`
 
 - [ ] **Step 1: Delete the metrics state block** — find and remove these lines (approximately lines 92–136 in the original):
@@ -898,6 +919,7 @@ git commit -m "feat: remove globalMetrics, onMetricsUpdate, metricsListeners fro
 ### Task 7: Remove `get-tool-help` from `src/prompts.ts`
 
 **Files:**
+
 - Modify: `src/prompts.ts`
 
 - [ ] **Step 1: Remove the tool-info import line entirely**
@@ -966,6 +988,7 @@ git commit -m "feat: remove get-tool-help prompt and buildToolInfo dependency"
 ### Task 8: Delete three dead test files
 
 **Files:**
+
 - Delete: `__tests__/resources/contract.test.ts`
 - Delete: `__tests__/resources/filesystem-file.test.ts`
 - Delete: `__tests__/resources/metrics.test.ts`
@@ -991,6 +1014,7 @@ git commit -m "test: delete contract, filesystem-file, and metrics resource test
 ### Task 9: Update `__tests__/prompts.test.ts` and `__tests__/prompts-stdio.test.ts`
 
 **Files:**
+
 - Modify: `__tests__/prompts.test.ts`
 - Modify: `__tests__/prompts-stdio.test.ts`
 
@@ -1006,11 +1030,7 @@ assert.deepEqual(names, [
 ]);
 
 // AFTER:
-assert.deepEqual(names, [
-  'analyze-path',
-  'compare-files',
-  'get-help',
-]);
+assert.deepEqual(names, ['analyze-path', 'compare-files', 'get-help']);
 ```
 
 - [ ] **Step 2: In `__tests__/prompts.test.ts`, delete the two `get-tool-help` test cases** — find and remove the two `it(...)` blocks that start with these lines:
@@ -1018,7 +1038,9 @@ assert.deepEqual(names, [
 ```
 it('returns get-tool-help with embedded resource content', async () => {
 ```
+
 and
+
 ```
 it('returns an invalid-input error for an unknown get-tool-help target', async () => {
 ```
@@ -1053,6 +1075,7 @@ git commit -m "test: remove get-tool-help prompt tests"
 ### Task 10: Update `__tests__/unit/completions.test.ts`
 
 **Files:**
+
 - Modify: `__tests__/unit/completions.test.ts`
 
 - [ ] **Step 1: Remove the three stale imports at the top of the file**
@@ -1073,6 +1096,9 @@ import { registerAllResources } from '../../src/resources.js';
 - [ ] **Step 2: Update `makeCompletionServer()`** — remove `registerGetToolHelpPrompt`, fix `registerAllResources` call (no `pathGuard`), and fix instructions build:
 
 ```typescript
+// AFTER:
+import { serverInstructionsContent } from '../../src/resources.js';
+
 // BEFORE:
 function makeCompletionServer(withInstructions = false): McpServer {
   const server = new McpServer(
@@ -1097,8 +1123,6 @@ function makeCompletionServer(withInstructions = false): McpServer {
   return server;
 }
 
-// AFTER:
-import { serverInstructionsContent } from '../../src/resources.js';
 // (add this import at the top with the other resources.js import)
 
 function makeCompletionServer(withInstructions = false): McpServer {
@@ -1123,11 +1147,13 @@ function makeCompletionServer(withInstructions = false): McpServer {
 ```
 it('completes tool names for the get-tool-help prompt', async () => {
 ```
+
 (~25 lines, delete to its closing `});`)
 
 ```
 it('completes tool-info template names for resource references', async () => {
 ```
+
 (~25 lines, delete to its closing `});`)
 
 - [ ] **Step 4: Remove unused import of `getDefaultPathGuard`** if it is now unused (grep the file first):
@@ -1158,6 +1184,7 @@ git commit -m "test: update completions test — remove get-tool-help and tool-i
 ### Task 11: Update `__tests__/http.test.ts`
 
 **Files:**
+
 - Modify: `__tests__/http.test.ts`
 
 - [ ] **Step 1: Remove stale imports at the top**
@@ -1256,6 +1283,7 @@ git commit -m "test: update HTTP discovery test — 1 resource, 1 template, 3 pr
 ### Task 12: Update `README.md`
 
 **Files:**
+
 - Modify: `README.md`
 
 - [ ] **Step 1: Update the headline bullet** — find and replace:
@@ -1273,10 +1301,10 @@ git commit -m "test: update HTTP discovery test — 1 resource, 1 template, 3 pr
 ```markdown
 ### Resources
 
-| Resource     | URI                            | MIME Type     | Description                                                   |
-| ------------ | ------------------------------ | ------------- | ------------------------------------------------------------- |
-| Instructions | `internal://instructions`      | text/markdown | Navigation guide: role, tool overview, constraints, recovery  |
-| Result Cache | `filesystem-mcp://result/{id}` | text/plain    | Ephemeral cached tool output (large results externalized here)|
+| Resource     | URI                            | MIME Type     | Description                                                    |
+| ------------ | ------------------------------ | ------------- | -------------------------------------------------------------- |
+| Instructions | `internal://instructions`      | text/markdown | Navigation guide: role, tool overview, constraints, recovery   |
+| Result Cache | `filesystem-mcp://result/{id}` | text/plain    | Ephemeral cached tool output (large results externalized here) |
 ```
 
 - [ ] **Step 3: Update the `### Prompts` table** — remove the `get-tool-help` row:
@@ -1284,11 +1312,11 @@ git commit -m "test: update HTTP discovery test — 1 resource, 1 template, 3 pr
 ```markdown
 ### Prompts
 
-| Prompt          | Arguments              | Description                                                       |
-| --------------- | ---------------------- | ----------------------------------------------------------------- |
-| `get-help`      | `topic` (optional)     | Return usage instructions. Optionally filter by section heading   |
-| `compare-files` | `original`, `modified` | Generate a workflow for comparing two files using `diff_files`    |
-| `analyze-path`  | `path`                 | Generate a workflow for analyzing a file or directory             |
+| Prompt          | Arguments              | Description                                                     |
+| --------------- | ---------------------- | --------------------------------------------------------------- |
+| `get-help`      | `topic` (optional)     | Return usage instructions. Optionally filter by section heading |
+| `compare-files` | `original`, `modified` | Generate a workflow for comparing two files using `diff_files`  |
+| `analyze-path`  | `path`                 | Generate a workflow for analyzing a file or directory           |
 ```
 
 - [ ] **Step 4: Update the MCP Capabilities table** — find the `resources` row and update its evidence note:
@@ -1371,26 +1399,26 @@ git commit -m "fix: address final verification failures"
 
 **Spec coverage check:**
 
-| Spec requirement | Covered by |
-|---|---|
-| Cut to 2 resources (instructions + result cache) | Tasks 3, 4 |
-| Delete 11 dead resource files | Task 5 |
-| Slim `tool-info.ts` to 4 nav helpers | Task 5 |
-| Create `instructions-content.ts` with slim markdown | Tasks 1, 2 |
-| `resources.ts` → flat 2-resource module | Task 4 |
-| Drop `subscribe: true` / `listChanged: true` from capabilities | Task 4 (bootstrap) |
-| Remove `debouncedNotificationMethods` | Task 4 (bootstrap) |
-| `createServer()` returns `{ server }` only | Task 4 (bootstrap) |
-| Remove `ResourcesHandle` type and lifecycle | Task 4 (bootstrap, resources.ts) |
-| Remove `globalMetrics`, `onMetricsUpdate`, `metricsListeners`, `updateMetrics` | Task 6 |
-| Remove `get-tool-help` prompt | Task 7 |
-| Remove `registerGetToolHelpPrompt` from bootstrap | Task 4 step 2f |
-| Delete 3 dead test files | Task 8 |
-| Update `resources.test.ts` | Task 3 |
-| Update `prompts.test.ts` + `prompts-stdio.test.ts` | Task 9 |
-| Update `completions.test.ts` | Task 10 |
-| Update `http.test.ts` | Task 11 |
-| Update `README.md` | Task 12 |
+| Spec requirement                                                               | Covered by                       |
+| ------------------------------------------------------------------------------ | -------------------------------- |
+| Cut to 2 resources (instructions + result cache)                               | Tasks 3, 4                       |
+| Delete 11 dead resource files                                                  | Task 5                           |
+| Slim `tool-info.ts` to 4 nav helpers                                           | Task 5                           |
+| Create `instructions-content.ts` with slim markdown                            | Tasks 1, 2                       |
+| `resources.ts` → flat 2-resource module                                        | Task 4                           |
+| Drop `subscribe: true` / `listChanged: true` from capabilities                 | Task 4 (bootstrap)               |
+| Remove `debouncedNotificationMethods`                                          | Task 4 (bootstrap)               |
+| `createServer()` returns `{ server }` only                                     | Task 4 (bootstrap)               |
+| Remove `ResourcesHandle` type and lifecycle                                    | Task 4 (bootstrap, resources.ts) |
+| Remove `globalMetrics`, `onMetricsUpdate`, `metricsListeners`, `updateMetrics` | Task 6                           |
+| Remove `get-tool-help` prompt                                                  | Task 7                           |
+| Remove `registerGetToolHelpPrompt` from bootstrap                              | Task 4 step 2f                   |
+| Delete 3 dead test files                                                       | Task 8                           |
+| Update `resources.test.ts`                                                     | Task 3                           |
+| Update `prompts.test.ts` + `prompts-stdio.test.ts`                             | Task 9                           |
+| Update `completions.test.ts`                                                   | Task 10                          |
+| Update `http.test.ts`                                                          | Task 11                          |
+| Update `README.md`                                                             | Task 12                          |
 
 No gaps found.
 

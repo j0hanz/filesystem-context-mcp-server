@@ -72,10 +72,9 @@ describe('resources and metadata', () => {
     assert.equal(resources.length, 1);
     assert.equal(resources[0]?.uri, 'internal://instructions');
 
-    assert.deepEqual(
-      resourceTemplates.map((t) => t.uriTemplate).sort(),
-      ['filesystem-mcp://result/{id}']
-    );
+    assert.deepEqual(resourceTemplates.map((t) => t.uriTemplate).sort(), [
+      'filesystem-mcp://result/{id}',
+    ]);
   });
 
   it('reads instructions resource and exposes instructions through initialize metadata', async () => {
@@ -84,7 +83,10 @@ describe('resources and metadata', () => {
 
     const instructions = env.client.getInstructions();
     assert.ok(instructions, 'Expected initialize instructions to be present');
-    assert.match(instructions, /Start with: roots -> ls\/find -> stat -> read/u);
+    assert.match(
+      instructions,
+      /Start with: roots -> ls\/find -> stat -> read/u
+    );
 
     const instructionsResource = await env.client.readResource({
       uri: 'internal://instructions',

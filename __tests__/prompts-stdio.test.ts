@@ -81,32 +81,4 @@ describe('prompts over stdio transport', () => {
     assert.match(message.content.text, /Analyze the path:/u);
     assert.match(message.content.text, /sample\.txt/u);
   });
-
-  it('returns get-tool-help with required args over stdio transport', async (t) => {
-    try {
-      await access(resolve('dist/index.js'));
-    } catch {
-      t.skip('dist runtime not present');
-      return;
-    }
-
-    const env = await createPromptStdIoEnv();
-    cleanups.push(env.cleanup);
-
-    const result = await env.client.getPrompt({
-      name: 'get-tool-help',
-      arguments: { name: 'read_many' },
-    });
-
-    assert.equal(result.messages.length, 2);
-    const [summaryMessage, resourceMessage] = result.messages;
-    assert.ok(summaryMessage);
-    assert.ok(resourceMessage);
-    assert.equal(summaryMessage.content.type, 'text');
-    assert.equal(resourceMessage.content.type, 'resource');
-    assert.equal(
-      resourceMessage.content.resource.uri,
-      'internal://tool-info/read_many'
-    );
-  });
 });

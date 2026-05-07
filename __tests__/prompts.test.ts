@@ -56,12 +56,7 @@ describe('prompts', () => {
     const result = await env.client.listPrompts();
     const names = result.prompts.map((prompt) => prompt.name).sort();
 
-    assert.deepEqual(names, [
-      'analyze-path',
-      'compare-files',
-      'get-help',
-      'get-tool-help',
-    ]);
+    assert.deepEqual(names, ['analyze-path', 'compare-files', 'get-help']);
   });
 
   it('returns analyze-path with required args', async () => {
@@ -109,41 +104,5 @@ describe('prompts', () => {
     assert.match(message.content.text, /Call `diff_files`/u);
     assert.match(message.content.text, /original\.txt/u);
     assert.match(message.content.text, /modified\.txt/u);
-  });
-
-  it('returns get-tool-help with embedded resource content', async () => {
-    const env = await createPromptEnv();
-    cleanups.push(env.cleanup);
-
-    const result = await env.client.getPrompt({
-      name: 'get-tool-help',
-      arguments: { name: 'read' },
-    });
-
-    assert.equal(result.messages.length, 2);
-    const [summaryMessage, resourceMessage] = result.messages;
-    assert.ok(summaryMessage);
-    assert.ok(resourceMessage);
-    assert.equal(summaryMessage.content.type, 'text');
-    assert.equal(resourceMessage.content.type, 'resource');
-    assert.equal(
-      resourceMessage.content.resource.uri,
-      'internal://tool-info/read'
-    );
-    assert.equal(resourceMessage.content.resource.mimeType, 'text/markdown');
-  });
-
-  it('returns an invalid-input error for an unknown get-tool-help target', async () => {
-    const env = await createPromptEnv();
-    cleanups.push(env.cleanup);
-
-    await assert.rejects(
-      () =>
-        env.client.getPrompt({
-          name: 'get-tool-help',
-          arguments: { name: 'missing-tool' },
-        }),
-      /Unknown tool: missing-tool/u
-    );
   });
 });

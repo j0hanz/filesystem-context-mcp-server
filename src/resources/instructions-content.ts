@@ -3,12 +3,16 @@ import {
   MAX_SEARCH_RESULTS,
   MAX_TEXT_FILE_SIZE,
 } from '../lib/constants.js';
+
 import { formatToolNameList, pickAvailableToolNames } from './tool-info.js';
 
 function buildToolsOverview(): string {
   const rows: [string, string[]][] = [
     ['Navigate', pickAvailableToolNames(['roots', 'ls', 'tree', 'find'])],
-    ['Inspect', pickAvailableToolNames(['stat', 'stat_many', 'grep', 'calculate_hash'])],
+    [
+      'Inspect',
+      pickAvailableToolNames(['stat', 'stat_many', 'grep', 'calculate_hash']),
+    ],
     ['Read', pickAvailableToolNames(['read', 'read_many', 'diff_files'])],
     [
       'Write',
