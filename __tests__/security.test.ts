@@ -1,11 +1,17 @@
 /**
  * Security tests: path traversal, boundary enforcement, symlink escape.
  */
+import assert from 'node:assert/strict';
 import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-import { assertToolError, createTestEnv, type TestEnv } from './helpers.js';
+import {
+  assertOk,
+  assertToolError,
+  createTestEnv,
+  type TestEnv,
+} from './helpers.js';
 
 // ─── Path boundary enforcement ───────────────────────────────────────────────
 
@@ -28,7 +34,7 @@ describe('security: path boundary enforcement', () => {
     { tool: 'write', args: () => ({ path: '/tmp/escape.txt', content: 'x' }) },
     { tool: 'stat', args: () => ({ path: '/etc/hostname' }) },
     { tool: 'ls', args: () => ({ path: '/etc' }) },
-    { tool: 'rm', args: (d) => ({ path: join(d, '../escape.txt') }) },
+    { tool: 'rm', args: (d) => ({ paths: [join(d, '../escape.txt')] }) },
     { tool: 'mkdir', args: () => ({ paths: [`/tmp/evil-dir-${Date.now()}`] }) },
     {
       tool: 'search_and_replace',
@@ -48,7 +54,22 @@ describe('security: path boundary enforcement', () => {
         name: tool,
         arguments: args(env.tmpDir),
       });
-      assertToolError(raw, 'ACCESS_DENIED');
+      // rm returns ok:true with failures[] for per-path errors; all others return isError
+      if (tool === 'rm') {
+        assertOk(raw);
+        const sc = (raw as { structuredContent?: Record<string, unknown> })
+          .structuredContent;
+        assert.ok(
+          Array.isArray(sc?.['failures']) && sc['failures'].length > 0,
+          'rm must report ACCESS_DENIED in failures[]'
+        );
+        assert.equal(
+          (sc?.['failures'] as { error: { code: string } }[])[0]?.error?.code,
+          'ACCESS_DENIED'
+        );
+      } else {
+        assertToolError(raw, 'ACCESS_DENIED');
+      }
     });
   }
 });
@@ -310,8 +331,18 @@ describe('security: symlink escape for destructive ops', () => {
     if (!linkPath) return;
     const raw = await env.client.callTool({
       name: 'rm',
-      arguments: { path: linkPath },
+      arguments: { paths: [linkPath] },
     });
-    assertToolError(raw, 'ACCESS_DENIED');
+    assertOk(raw);
+    const sc = (raw as { structuredContent?: Record<string, unknown> })
+      .structuredContent;
+    assert.ok(
+      Array.isArray(sc?.['failures']) && sc['failures'].length > 0,
+      'rm must report ACCESS_DENIED in failures[]'
+    );
+    assert.equal(
+      (sc?.['failures'] as { error: { code: string } }[])[0]?.error?.code,
+      'ACCESS_DENIED'
+    );
   });
 });

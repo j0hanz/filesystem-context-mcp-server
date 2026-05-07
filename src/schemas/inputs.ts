@@ -182,13 +182,14 @@ export const GrepInputSchema = z.strictObject({
     .max(MAX_SEARCH_RESULTS)
     .optional()
     .default(DEFAULT_SEARCH_RESULTS)
-    .describe('Max matches to return'),
+    .describe('Max matches to return per page'),
   maxDepth: z
     .uint32()
     .min(0)
     .max(MAX_SEARCH_DEPTH)
     .optional()
     .describe('Max directory depth'),
+  cursor: CursorSchema,
 });
 
 export const SearchAndReplaceInputSchema = z.strictObject({
@@ -253,12 +254,8 @@ export const HashInputSchema = z.strictObject({
 });
 
 export const DiffFilesInputSchema = z.strictObject({
-  paths: z
-    .tuple([
-      RequiredPath.describe('Original file path'),
-      RequiredPath.describe('Modified file path'),
-    ])
-    .describe('Two paths: [original, modified]'),
+  original: RequiredPath.describe('Original file path'),
+  modified: RequiredPath.describe('Modified file path'),
   context: z.int32().min(0).optional().describe('Context lines (default 3)'),
   ignoreWhitespace: defaultFalseBoolean('Ignore whitespace changes'),
   stripTrailingCr: defaultFalseBoolean('Strip trailing carriage returns'),
@@ -326,7 +323,7 @@ export const MoveFileInputSchema = z.strictObject({
 });
 
 export const DeleteInputSchema = z.strictObject({
-  path: RequiredPath,
+  paths: z.array(RequiredPath).min(1).describe('One or more paths to delete'),
   recursive: defaultFalseBoolean('Delete directories recursively'),
   ignoreIfNotExists: defaultFalseBoolean('No error if path does not exist'),
 });

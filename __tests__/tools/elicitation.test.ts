@@ -32,7 +32,7 @@ describe('rm: client without elicitation capability', () => {
   it('deletes directory immediately without elicitation when capability absent', async () => {
     const result = await env.client.callTool({
       name: 'rm',
-      arguments: { path: dir, recursive: true },
+      arguments: { paths: [dir], recursive: true },
     });
     assertOk(result);
     // Directory must be gone
@@ -62,7 +62,7 @@ describe('rm: client declines elicitation', () => {
   it('returns success without deleting when user declines', async () => {
     const result = await env.client.callTool({
       name: 'rm',
-      arguments: { path: dir, recursive: true },
+      arguments: { paths: [dir], recursive: true },
     });
     assertOk(result);
     const sc = (result as { structuredContent?: { ok?: unknown } })
@@ -100,7 +100,7 @@ describe('rm: client accepts elicitation', () => {
   it('deletes directory when user accepts elicitation', async () => {
     const result = await env.client.callTool({
       name: 'rm',
-      arguments: { path: dir, recursive: true },
+      arguments: { paths: [dir], recursive: true },
     });
     assertOk(result);
     await assert.rejects(readdir(dir), { code: 'ENOENT' });
@@ -228,7 +228,7 @@ describe('rm: elicitation handler throws', () => {
   it('does NOT delete when elicitInput throws', async () => {
     const result = await env.client.callTool({
       name: 'rm',
-      arguments: { path: dir, recursive: true },
+      arguments: { paths: [dir], recursive: true },
     });
     // Must succeed (fail-closed returns ok:true, no deletion)
     assertOk(result);

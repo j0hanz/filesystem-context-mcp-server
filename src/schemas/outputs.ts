@@ -184,6 +184,7 @@ export const GrepOutputSchema = z.strictObject({
     .string()
     .optional()
     .describe('Full results URI when truncated'),
+  nextCursor: NextCursorSchema,
 });
 
 export const SearchAndReplaceOutputSchema = z.strictObject({
@@ -371,6 +372,22 @@ export const MoveFileOutputSchema = z.strictObject({
 
 export const DeleteOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),
-  path: z.string().describe('Deleted path'),
-  type: FileTypeEnum.optional().describe('Deleted item type'),
+  deleted: z
+    .array(
+      z.strictObject({
+        path: z.string().describe('Deleted path'),
+        type: FileTypeEnum.optional().describe('Deleted item type'),
+      })
+    )
+    .describe('Successfully deleted items'),
+  summary: OperationSummarySchema.describe('Operation summary'),
+  failures: z
+    .array(
+      z.strictObject({
+        path: z.string(),
+        error: PerFileErrorSchema,
+      })
+    )
+    .optional()
+    .describe('Per-path failures'),
 });

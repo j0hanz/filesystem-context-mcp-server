@@ -26,6 +26,8 @@ import { SEARCH_ICONS } from './icons.js';
 import {
   buildResourceLink,
   buildToolResponse,
+  decodeOffsetCursor,
+  encodeOffsetCursor,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolveFinalProgressCurrent,
   resolvePathOrRoot,
@@ -365,12 +367,32 @@ async function handleSearchContent(
   const basePath = resolvePathOrRoot(args.path);
   const regexMatcher = createSearchMatcher(args);
 
-  const result = await executeSearch(args, basePath, signal, onProgress);
+  const cursorOffset =
+    args.cursor !== undefined ? decodeOffsetCursor(args.cursor) : 0;
+  const pageSize = args.maxResults;
+  const fetchMax = cursorOffset + pageSize;
+
+  const result = await executeSearch(
+    { ...args, maxResults: fetchMax },
+    basePath,
+    signal,
+    onProgress
+  );
   const searchContext = createSearchContext(args, regexMatcher);
 
-  const matchPayloads = buildSortedPayloads(result, searchContext);
+  const allPayloads = buildSortedPayloads(result, searchContext);
+  const matchPayloads =
+    cursorOffset > 0 ? allPayloads.slice(cursorOffset) : allPayloads;
 
-  const fullStructured = buildSearchStructured(result.summary, matchPayloads);
+  const nextCursor =
+    result.summary.truncated && matchPayloads.length > 0
+      ? encodeOffsetCursor(cursorOffset + matchPayloads.length)
+      : undefined;
+
+  const fullStructured: SearchOutput = {
+    ...buildSearchStructured(result.summary, matchPayloads),
+    ...(nextCursor !== undefined ? { nextCursor } : {}),
+  };
 
   const preview = buildSearchPreviewState(matchPayloads);
 

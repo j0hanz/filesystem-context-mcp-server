@@ -5,6 +5,7 @@ import type {
 import { SdkError, SdkErrorCode } from '@modelcontextprotocol/server';
 
 import { lstat, rm, rmdir } from 'node:fs/promises';
+import { basename } from 'node:path';
 
 import type { z } from 'zod/v4';
 
@@ -15,20 +16,21 @@ import { isAllowedDirectoryRoot, validatePathForWrite } from '../lib/paths.js';
 import { DeleteInputSchema } from '../schemas/inputs.js';
 import { DeleteOutputSchema } from '../schemas/outputs.js';
 
-import { buildPathMessages, defineTool } from './define-tool.js';
+import { defineTool } from './define-tool.js';
 import { FILE_DELETE_ICONS } from './icons.js';
 import {
-  buildToolErrorResponse,
+  buildStructuredError,
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   type ToolContract,
+  type ToolResult,
 } from './shared.js';
 
 const DELETE_FILE_TOOL: ToolContract = {
   name: 'rm',
   title: 'Delete File',
   description:
-    'Permanently delete a file or directory. This action is irreversible.',
+    'Permanently delete one or more files or directories. This action is irreversible.',
   inputSchema: DeleteInputSchema,
   outputSchema: DeleteOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
@@ -37,18 +39,70 @@ const DELETE_FILE_TOOL: ToolContract = {
   taskSupport: 'forbidden',
 } as const;
 
-async function handleDeleteFile(
-  args: z.infer<typeof DeleteInputSchema>,
+type DeleteInput = z.infer<typeof DeleteInputSchema>;
+type DeleteOutput = z.infer<typeof DeleteOutputSchema>;
+type DeleteFailure = NonNullable<DeleteOutput['failures']>[number];
+type DeletedItem = DeleteOutput['deleted'][number];
+
+function toDeleteFailure(path: string, error: unknown): DeleteFailure {
+  if (isNodeError(error)) {
+    if (error.code === 'ENOENT') {
+      return {
+        path,
+        error: buildStructuredError(error, ErrorCode.NOT_FOUND, path),
+      };
+    }
+    if (
+      error.code === 'ENOTEMPTY' ||
+      error.code === 'EISDIR' ||
+      error.code === 'EEXIST'
+    ) {
+      return {
+        path,
+        error: buildStructuredError(
+          new Error('Directory not empty. Set recursive: true.'),
+          ErrorCode.INVALID_INPUT,
+          path
+        ),
+      };
+    }
+    if (error.code === 'EPERM' || error.code === 'EACCES') {
+      return {
+        path,
+        error: buildStructuredError(error, ErrorCode.PERMISSION_DENIED, path),
+      };
+    }
+  }
+  return { path, error: buildStructuredError(error, ErrorCode.UNKNOWN, path) };
+}
+
+async function deleteSinglePath(
+  inputPath: string,
+  args: Pick<DeleteInput, 'recursive' | 'ignoreIfNotExists'>,
   signal?: AbortSignal,
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>
-): Promise<z.infer<typeof DeleteOutputSchema>> {
-  const validPath = await validatePathForWrite(args.path, signal);
+): Promise<{ item: DeletedItem } | { failure: DeleteFailure }> {
+  let validPath: string;
+  try {
+    validPath = await validatePathForWrite(inputPath, signal);
+  } catch (error) {
+    return { failure: toDeleteFailure(inputPath, error) };
+  }
 
   if (isAllowedDirectoryRoot(validPath)) {
-    throw new McpError(
-      ErrorCode.ACCESS_DENIED,
-      'Deleting a workspace root directory is not allowed'
-    );
+    return {
+      failure: {
+        path: validPath,
+        error: buildStructuredError(
+          new McpError(
+            ErrorCode.ACCESS_DENIED,
+            'Deleting a workspace root directory is not allowed'
+          ),
+          ErrorCode.ACCESS_DENIED,
+          validPath
+        ),
+      },
+    };
   }
 
   let itemStats: Awaited<ReturnType<typeof lstat>> | undefined;
@@ -60,28 +114,25 @@ async function handleDeleteFile(
       error.code === 'ENOENT' &&
       args.ignoreIfNotExists
     ) {
-      return {
-        ok: true,
-        path: validPath,
-      };
+      return { item: { path: validPath } };
     }
-    throw error;
+    return { failure: toDeleteFailure(inputPath, error) };
   }
 
   const itemType = itemStats.isDirectory()
-    ? 'directory'
+    ? ('directory' as const)
     : itemStats.isSymbolicLink()
-      ? 'symlink'
+      ? ('symlink' as const)
       : itemStats.isFile()
-        ? 'file'
-        : 'other';
+        ? ('file' as const)
+        : ('other' as const);
 
   // Ask for confirmation when deleting a directory recursively and client supports it.
   if (elicitInput && args.recursive && itemStats.isDirectory()) {
     try {
       const elicitResult = await elicitInput({
         mode: 'form',
-        message: `Permanently delete "${args.path}" and all its contents? This cannot be undone.`,
+        message: `Permanently delete "${inputPath}" and all its contents? This cannot be undone.`,
         requestedSchema: {
           type: 'object',
           properties: {
@@ -95,11 +146,8 @@ async function handleDeleteFile(
         elicitResult.action !== 'accept' ||
         elicitResult.content?.confirm !== true
       ) {
-        return {
-          ok: true,
-          path: validPath,
-          type: itemType,
-        };
+        // User declined — skip this path without deleting.
+        return { item: { path: validPath, type: itemType } };
       }
     } catch (err) {
       if (
@@ -109,90 +157,90 @@ async function handleDeleteFile(
         // Client doesn't support elicitation — proceed without asking.
       } else {
         // Transport or unexpected failure — fail closed, don't delete.
-        return {
-          ok: true,
-          path: validPath,
-          type: itemType,
-        };
+        return { item: { path: validPath, type: itemType } };
       }
     }
   }
 
-  if (itemStats.isDirectory() && !args.recursive) {
-    await withAbort(rmdir(validPath), signal);
-  } else {
-    await withAbort(
-      rm(validPath, {
-        recursive: args.recursive,
-        force: args.ignoreIfNotExists,
-      }),
-      signal
-    );
+  try {
+    if (itemStats.isDirectory() && !args.recursive) {
+      await withAbort(rmdir(validPath), signal);
+    } else {
+      await withAbort(
+        rm(validPath, {
+          recursive: args.recursive,
+          force: args.ignoreIfNotExists,
+        }),
+        signal
+      );
+    }
+  } catch (error) {
+    return { failure: toDeleteFailure(inputPath, error) };
   }
 
-  Logger.info(`rm: ${args.path}`);
+  Logger.info(`rm: ${inputPath}`);
+  return { item: { path: validPath, type: itemType } };
+}
+
+async function handleDelete(
+  args: DeleteInput,
+  signal?: AbortSignal,
+  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>
+): Promise<DeleteOutput> {
+  const deleted: DeletedItem[] = [];
+  const failures: DeleteFailure[] = [];
+
+  for (const inputPath of args.paths) {
+    const result = await deleteSinglePath(inputPath, args, signal, elicitInput);
+    if ('item' in result) {
+      deleted.push(result.item);
+    } else {
+      failures.push(result.failure);
+    }
+  }
 
   return {
     ok: true,
-    path: validPath,
-    type: itemType,
+    deleted,
+    summary: {
+      total: args.paths.length,
+      succeeded: deleted.length,
+      failed: failures.length,
+    },
+    ...(failures.length > 0 ? { failures } : {}),
   };
 }
 
-type DeleteInput = z.infer<typeof DeleteInputSchema>;
-type DeleteOutput = z.infer<typeof DeleteOutputSchema>;
-
-const deleteMessages = buildPathMessages<DeleteInput, DeleteOutput>(
-  DELETE_FILE_TOOL.title
-);
+function formatDeleteMessage(deleted: number, failed: number): string {
+  if (failed > 0 && deleted === 0)
+    return `Failed to delete ${failed} item${failed === 1 ? '' : 's'}`;
+  if (failed > 0)
+    return `Deleted ${deleted} item${deleted === 1 ? '' : 's'}; ${failed} failed`;
+  return `Successfully deleted ${deleted} item${deleted === 1 ? '' : 's'}`;
+}
 
 export const DELETE_FILE = defineTool<DeleteInput, DeleteOutput>({
   contract: DELETE_FILE_TOOL,
-  run: async (args, ctx) => {
-    const structured = await handleDeleteFile(
-      args,
-      ctx.signal,
-      ctx.elicitInput
-    );
-    const text = `Successfully deleted: ${args.path}`;
-    void ctx.log?.('info', `rm: ${args.path}`, 'rm');
-    return buildToolResponse(text, structured);
+  defaultErrorCode: ErrorCode.UNKNOWN,
+  diagnosticsContext: (args) => ({ path: args.paths[0] ?? '' }),
+  progressMessage: (args) => {
+    const names = args.paths.map((p) => basename(p)).join(', ');
+    return `${DELETE_FILE_TOOL.title}: ${names}`;
   },
-  ...deleteMessages,
-  onError: (error, args) => {
-    if (isNodeError(error)) {
-      if (error.code === 'ENOENT') {
-        return buildToolErrorResponse(error, ErrorCode.NOT_FOUND, args.path);
-      }
-      if (error.code === 'ENOTEMPTY') {
-        return buildToolErrorResponse(
-          new Error('Directory not empty. Set recursive: true.'),
-          ErrorCode.INVALID_INPUT,
-          args.path
-        );
-      }
-      if (error.code === 'EISDIR') {
-        return buildToolErrorResponse(
-          new Error('Path is a directory. Set recursive: true.'),
-          ErrorCode.INVALID_INPUT,
-          args.path
-        );
-      }
-      if (error.code === 'EEXIST') {
-        return buildToolErrorResponse(
-          new Error('Directory not empty. Set recursive: true.'),
-          ErrorCode.INVALID_INPUT,
-          args.path
-        );
-      }
-      if (error.code === 'EPERM' || error.code === 'EACCES') {
-        return buildToolErrorResponse(
-          error,
-          ErrorCode.PERMISSION_DENIED,
-          args.path
-        );
-      }
-    }
-    return buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path);
+  completionMessage: (args, result: ToolResult<DeleteOutput>) => {
+    const names = args.paths.map((p) => basename(p)).join(', ');
+    if (result.isError)
+      return `${DELETE_FILE_TOOL.title}: ${names} \u2022 ${result.errorCode}`;
+    const { summary } = result.structuredContent;
+    return `${DELETE_FILE_TOOL.title}: ${names} \u2022 ${summary.succeeded}/${summary.total} deleted`;
+  },
+  run: async (args, ctx) => {
+    const structured = await handleDelete(args, ctx.signal, ctx.elicitInput);
+    const text = formatDeleteMessage(
+      structured.summary.succeeded,
+      structured.summary.failed
+    );
+    void ctx.log?.('info', `rm: ${args.paths.join(', ')}`, 'rm');
+    return buildToolResponse(text, structured);
   },
 });

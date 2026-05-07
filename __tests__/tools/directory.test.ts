@@ -260,7 +260,7 @@ describe('rm tool', () => {
     await writeFile(file, 'bye', 'utf8');
     const raw = await env.client.callTool({
       name: 'rm',
-      arguments: { path: file },
+      arguments: { paths: [file] },
     });
     assertOk(raw);
     await assert.rejects(() => stat(file), /ENOENT/);
@@ -272,7 +272,7 @@ describe('rm tool', () => {
     await writeFile(join(dir, 'inner.txt'), 'inner', 'utf8');
     const raw = await env.client.callTool({
       name: 'rm',
-      arguments: { path: dir, recursive: true },
+      arguments: { paths: [dir], recursive: true },
     });
     assertOk(raw);
     await assert.rejects(() => stat(dir), /ENOENT/);
@@ -281,16 +281,19 @@ describe('rm tool', () => {
   it('returns NOT_FOUND for missing file', async () => {
     const raw = await env.client.callTool({
       name: 'rm',
-      arguments: { path: join(env.tmpDir, 'ghost.txt') },
+      arguments: { paths: [join(env.tmpDir, 'ghost.txt')] },
     });
-    assertToolError(raw, 'NOT_FOUND');
+    assertOk(raw);
+    const sc = getStructured(raw);
+    assert.ok(Array.isArray(sc['failures']), 'failures must be present');
+    assert.equal(sc['failures']?.[0]?.error?.code, 'NOT_FOUND');
   });
 
   it('ignoreIfNotExists suppresses NOT_FOUND', async () => {
     const raw = await env.client.callTool({
       name: 'rm',
       arguments: {
-        path: join(env.tmpDir, 'definitely-not-here.txt'),
+        paths: [join(env.tmpDir, 'definitely-not-here.txt')],
         ignoreIfNotExists: true,
       },
     });
@@ -300,9 +303,12 @@ describe('rm tool', () => {
   it('returns ACCESS_DENIED when deleting workspace root', async () => {
     const raw = await env.client.callTool({
       name: 'rm',
-      arguments: { path: env.tmpDir, recursive: true },
+      arguments: { paths: [env.tmpDir], recursive: true },
     });
-    assertToolError(raw, 'ACCESS_DENIED');
+    assertOk(raw);
+    const sc = getStructured(raw);
+    assert.ok(Array.isArray(sc['failures']), 'failures must be present');
+    assert.equal(sc['failures']?.[0]?.error?.code, 'ACCESS_DENIED');
     // Verify root still exists
     const stats = await stat(env.tmpDir);
     assert.ok(stats.isDirectory());

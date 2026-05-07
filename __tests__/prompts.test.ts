@@ -103,21 +103,21 @@ describe('prompts', () => {
     assert.match(message.content.text, /Call `diff_files`/u);
     assert.match(message.content.text, /original\.txt/u);
     assert.match(message.content.text, /modified\.txt/u);
-    // Verify correct argument shape: paths: [...] not original:/modified: named args
+    // Verify correct argument shape: original:/modified: named args not paths: array
     assert.match(
       message.content.text,
-      /paths:/u,
-      'compare-files prompt must use paths: array not named original:/modified: args'
-    );
-    assert.doesNotMatch(
-      message.content.text,
       /- original:/u,
-      'compare-files prompt must not use stale "- original:" named arg'
+      'compare-files prompt must use named original: arg'
     );
-    assert.doesNotMatch(
+    assert.match(
       message.content.text,
       /- modified:/u,
-      'compare-files prompt must not use stale "- modified:" named arg'
+      'compare-files prompt must use named modified: arg'
+    );
+    assert.doesNotMatch(
+      message.content.text,
+      /paths:/u,
+      'compare-files prompt must not use old paths: array format'
     );
   });
 });

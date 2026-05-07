@@ -152,7 +152,7 @@ export function registerCompareFilesPrompt(
           role: 'user',
           content: {
             type: 'text',
-            text: `Compare files and explain differences.\n\n1. Call \`diff_files\` with:\n   - paths: ["${original}", "${modified}"]\n2. Summarize: additions, deletions, and semantic changes.\n3. Flag any potential issues (conflicts, regressions, breaking changes).`,
+            text: `Compare files and explain differences.\n\n1. Call \`diff_files\` with:\n   - original: "${original}"\n   - modified: "${modified}"\n2. Summarize: additions, deletions, and semantic changes.\n3. Flag any potential issues (conflicts, regressions, breaking changes).`,
             annotations: { audience: ['assistant'], priority: 1 },
           },
         },

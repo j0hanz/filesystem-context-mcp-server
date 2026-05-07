@@ -70,7 +70,7 @@ describe('task mode: diff_files', () => {
         method: 'tools/call' as const,
         params: {
           name: 'diff_files',
-          arguments: { paths: [fileA, fileB] },
+          arguments: { original: fileA, modified: fileB },
         },
       },
       { task: {} }
@@ -102,7 +102,7 @@ describe('task mode: diff_files', () => {
         method: 'tools/call' as const,
         params: {
           name: 'diff_files',
-          arguments: { paths: [fileA, fileB] },
+          arguments: { original: fileA, modified: fileB },
         },
       },
       { task: {} }
