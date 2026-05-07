@@ -177,6 +177,7 @@ export const SearchAndReplaceInputSchema = z.strictObject({
   includeHidden: includeHiddenField(),
   includeIgnored: includeIgnoredField(),
   caseSensitive: defaultFalseBoolean('Case-sensitive'),
+  wholeWord: defaultFalseBoolean('Match whole words only'),
   dryRun: defaultFalseBoolean('Preview without writing'),
   returnDiff: defaultFalseBoolean('Include unified diff in output'),
   maxResults: z

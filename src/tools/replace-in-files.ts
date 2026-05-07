@@ -1,4 +1,4 @@
-import { Buffer } from 'node:buffer';
+﻿import { Buffer } from 'node:buffer';
 import { type FileHandle, open } from 'node:fs/promises';
 import { basename, relative } from 'node:path';
 
@@ -415,24 +415,24 @@ async function resolveSearchRoot(
     : resolvePathOrRoot(pathValue);
 }
 
-function createReplacementRegex(
-  args: z.infer<typeof SearchAndReplaceInputSchema>
-): RE2 | undefined {
-  if (!args.isRegex) return undefined;
-  return createRegexMatcher(args.searchPattern, args.caseSensitive);
+function buildSearchPattern(args: SearchAndReplaceArgs): string {
+  if (args.isRegex) {
+    return args.wholeWord
+      ? `\\b(?:${args.searchPattern})\\b`
+      : args.searchPattern;
+  }
+  const escaped = args.searchPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return args.wholeWord ? `\\b(?:${escaped})\\b` : escaped;
 }
 
 function createReplacementMatcher(
   args: SearchAndReplaceArgs
 ): ReplacementMatcher {
-  const regex = createReplacementRegex(args);
-  if (regex) {
+  // Use regex when isRegex, wholeWord, or case-insensitive (all require RE2)
+  if (args.isRegex || args.wholeWord || !args.caseSensitive) {
+    const pattern = buildSearchPattern(args);
+    const regex = createRegexMatcher(pattern, args.caseSensitive);
     return createRegexReplacementMatcher(regex);
-  }
-  if (!args.caseSensitive) {
-    const escaped = args.searchPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const caseInsensitiveRegex = new RE2(escaped, 'gi');
-    return createRegexReplacementMatcher(caseInsensitiveRegex);
   }
   return createLiteralReplacementMatcher(
     args.searchPattern,

@@ -381,3 +381,42 @@ describe('mv partial success', () => {
     );
   });
 });
+
+describe('search_and_replace wholeWord', () => {
+  let env: TestEnv;
+
+  before(async () => {
+    env = await createTestEnv();
+  });
+  after(async () => {
+    await env.cleanup();
+  });
+
+  it('only replaces whole-word matches when wholeWord:true', async () => {
+    const file = join(env.tmpDir, 'words.txt');
+    await writeFile(file, 'cat concatenate cats\n', 'utf8');
+
+    const raw = await env.client.callTool({
+      name: 'search_and_replace',
+      arguments: {
+        path: env.tmpDir,
+        pattern: '*.txt',
+        searchPattern: 'cat',
+        replacement: 'dog',
+        wholeWord: true,
+        caseSensitive: true,
+      },
+    });
+    assertOk(raw);
+
+    const { readFileSync } = await import('node:fs');
+    const content = readFileSync(file, 'utf8');
+    // 'cat' (standalone) -> 'dog'; 'concatenate', 'cats' must be unchanged
+    assert.ok(content.includes('dog'), 'standalone "cat" must be replaced');
+    assert.ok(
+      content.includes('concatenate'),
+      '"concatenate" must be unchanged'
+    );
+    assert.ok(content.includes('cats'), '"cats" must be unchanged');
+  });
+});
