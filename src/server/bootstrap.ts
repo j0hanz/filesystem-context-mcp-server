@@ -7,8 +7,13 @@ import {
   ProtocolErrorCode,
   type SetLevelRequest,
   StdioServerTransport,
-  validateHostHeader,
 } from '@modelcontextprotocol/server';
+import { createMcpExpressApp } from '@modelcontextprotocol/express';
+import express, {
+  type NextFunction,
+  type Request,
+  type Response,
+} from 'express';
 
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { channel } from 'node:diagnostics_channel';
@@ -287,51 +292,6 @@ const MAX_REQUEST_BODY_BYTES = parseEnvInt(
   256 * 1024 * 1024
 );
 
-class RequestBodyError extends Error {
-  constructor(
-    message: string,
-    readonly statusCode: number
-  ) {
-    super(message);
-    this.name = 'RequestBodyError';
-  }
-}
-
-async function readRequestBody(req: IncomingMessage): Promise<unknown> {
-  return new Promise<unknown>((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let totalBytes = 0;
-    let tooBig = false;
-    req.on('data', (chunk: Buffer) => {
-      totalBytes += chunk.length;
-      if (totalBytes > MAX_REQUEST_BODY_BYTES) {
-        if (!tooBig) {
-          tooBig = true;
-          chunks.length = 0; // free accumulated memory
-          req.resume(); // drain so the connection can be cleanly closed
-          reject(new RequestBodyError('Request body too large', 413));
-        }
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => {
-      if (tooBig) return; // already rejected in 'data' handler
-      const raw = Buffer.concat(chunks).toString('utf-8');
-      if (!raw) {
-        resolve(undefined);
-        return;
-      }
-      try {
-        resolve(JSON.parse(raw) as unknown);
-      } catch {
-        reject(new RequestBodyError('Invalid JSON in request body', 400));
-      }
-    });
-    req.on('error', reject);
-  });
-}
-
 interface HttpSession {
   server: McpServer;
   rootsManager: RootsManager;
@@ -429,62 +389,12 @@ function sendJsonRpcError(
   );
 }
 
-const LOCALHOST_ORIGIN_RE =
-  /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/u;
 const MAX_SESSION_ID_LENGTH = 256;
 const MAX_BEARER_TOKEN_LENGTH = 4096;
 const JSON_RPC_SERVER_ERROR = -32000;
 const JSON_RPC_INVALID_REQUEST = ProtocolErrorCode.InvalidRequest;
 const JSON_RPC_PARSE_ERROR = ProtocolErrorCode.ParseError;
 const JSON_RPC_INTERNAL_ERROR = ProtocolErrorCode.InternalError;
-
-function isAllowedOrigin(origin: string | undefined): boolean {
-  if (origin === undefined) return true; // Non-browser clients omit Origin.
-  return LOCALHOST_ORIGIN_RE.test(origin);
-}
-
-const EXPOSED_HEADERS = [
-  'WWW-Authenticate',
-  'Mcp-Session-Id',
-  'Mcp-Protocol-Version',
-].join(', ');
-
-function setCorsHeaders(req: IncomingMessage, res: ServerResponse): void {
-  const { origin } = req.headers;
-  if (origin === undefined) return;
-
-  res.setHeader('Access-Control-Allow-Origin', origin);
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'Content-Type, Authorization, Mcp-Session-Id, Last-Event-ID'
-  );
-  res.setHeader('Access-Control-Expose-Headers', EXPOSED_HEADERS);
-  res.setHeader('Access-Control-Max-Age', '86400');
-}
-
-function normalizeAllowedHostname(host: string): string {
-  const trimmed = host.trim().toLowerCase();
-  if (trimmed === '::1') return '[::1]';
-  return trimmed;
-}
-
-function getAllowedHostnames(httpHost: string): string[] | undefined {
-  if (isLoopbackHttpHost(httpHost)) {
-    return localhostAllowedHostnames().map(normalizeAllowedHostname);
-  }
-
-  const normalizedHost = normalizeAllowedHostname(httpHost);
-  if (
-    normalizedHost === '0.0.0.0' ||
-    normalizedHost === '::' ||
-    normalizedHost === '[::]'
-  ) {
-    return undefined;
-  }
-
-  return [normalizedHost];
-}
 
 function getSessionId(req: IncomingMessage): string | undefined {
   const rawSessionId = req.headers['mcp-session-id'];
@@ -535,54 +445,6 @@ function ensureAuthorizedRequest(
   return false;
 }
 
-function ensureAllowedOrigin(
-  req: IncomingMessage,
-  res: ServerResponse
-): boolean {
-  const { origin } = req.headers;
-  if (isAllowedOrigin(origin)) {
-    return true;
-  }
-
-  sendJsonRpcError(
-    res,
-    403,
-    JSON_RPC_SERVER_ERROR,
-    'Forbidden: disallowed origin'
-  );
-  return false;
-}
-
-function ensureAllowedHostHeader(
-  req: IncomingMessage,
-  res: ServerResponse,
-  httpHost: string
-): boolean {
-  const allowedHostnames = getAllowedHostnames(httpHost);
-  if (!allowedHostnames || allowedHostnames.length === 0) {
-    return true;
-  }
-
-  const hostHeader =
-    typeof req.headers.host === 'string' ? req.headers.host : undefined;
-  const result = validateHostHeader(hostHeader, allowedHostnames);
-  if (result.ok) return true;
-
-  sendJsonRpcError(
-    res,
-    403,
-    JSON_RPC_SERVER_ERROR,
-    `Forbidden: ${result.message}`
-  );
-  return false;
-}
-
-function discardRequestBody(req: IncomingMessage): void {
-  req.on('error', () => {
-    // Best effort drain to avoid corrupting keep-alive pipelines.
-  });
-  req.resume();
-}
 
 async function handleSessionTransportRequest(
   session: HttpSession,
@@ -631,47 +493,6 @@ function assertHttpBindingSecurity(host: string): void {
   );
 }
 
-function writeMethodNotAllowedResponse(res: ServerResponse): void {
-  res.writeHead(405, {
-    Allow: 'GET, POST, DELETE, OPTIONS',
-    'Content-Type': 'application/json',
-  });
-  res.end(
-    JSON.stringify({
-      jsonrpc: '2.0',
-      error: {
-        code: JSON_RPC_SERVER_ERROR,
-        message: 'Method Not Allowed',
-      },
-      id: null,
-    })
-  );
-}
-
-function handleHttpRequestError(error: unknown, res: ServerResponse): void {
-  if (error instanceof RequestBodyError && !res.headersSent) {
-    const rpcCode =
-      error.statusCode === 413
-        ? JSON_RPC_INVALID_REQUEST
-        : JSON_RPC_PARSE_ERROR;
-    res.setHeader('Connection', 'close');
-    sendJsonRpcError(res, error.statusCode, rpcCode, error.message);
-    return;
-  }
-
-  Logger.error(
-    '[HTTP] Error handling request:',
-    formatUnknownErrorMessage(error)
-  );
-  if (!res.headersSent) {
-    sendJsonRpcError(
-      res,
-      500,
-      JSON_RPC_INTERNAL_ERROR,
-      'Internal Server Error'
-    );
-  }
-}
 
 export async function startHttpServer(
   port: number,
@@ -681,128 +502,133 @@ export async function startHttpServer(
   const eventStore = new InMemoryEventStore();
   const httpHost = process.env.FILESYSTEM_MCP_HTTP_HOST ?? '127.0.0.1';
   assertHttpBindingSecurity(httpHost);
-  let closingSessions: Promise<void> | undefined;
 
-  async function closeAllSessions(): Promise<void> {
-    if (closingSessions) return closingSessions;
+  const app = createMcpExpressApp({
+    host: httpHost,
+    allowedHosts: isLoopbackHttpHost(httpHost)
+      ? localhostAllowedHostnames()
+      : [httpHost],
+  });
 
-    closingSessions = (async () => {
-      const activeSessions = [...sessions.values()];
-      sessions.clear();
-      eventStore.clear();
-
-      await Promise.allSettled(
-        activeSessions.map((session) => session.close())
-      );
-    })();
-
-    await closingSessions;
-  }
-
-  async function handlePostRequest(
-    req: IncomingMessage,
-    res: ServerResponse,
-    sessionId: string | undefined
-  ): Promise<void> {
-    if (sessionId) {
-      const session = getSessionOrRespondNotFound(sessions, sessionId, res);
-      if (!session) {
-        discardRequestBody(req);
-        return;
-      }
-
-      const body = await readRequestBody(req);
-      await handleSessionTransportRequest(session, req, res, body);
-      return;
-    }
-
-    const body = await readRequestBody(req);
-    if (isInitializeRequest(body)) {
-      const maxSessions = parseEnvInt(
-        'FILESYSTEM_MCP_MAX_HTTP_SESSIONS',
-        100,
-        1,
-        10_000
-      );
-      if (sessions.size >= maxSessions) {
-        sendJsonRpcError(res, 503, JSON_RPC_SERVER_ERROR, 'Too many sessions');
-        return;
-      }
-      const session = await createHttpSession(options, sessions, eventStore);
-      await handleSessionTransportRequest(session, req, res, body);
-      return;
-    }
-
-    sendJsonRpcError(
-      res,
-      400,
-      JSON_RPC_SERVER_ERROR,
-      'Bad Request: No valid session ID provided'
-    );
-    discardRequestBody(req);
-  }
-
-  async function handleGetDeleteRequest(
-    req: IncomingMessage,
-    res: ServerResponse,
-    sessionId: string | undefined
-  ): Promise<void> {
-    if (!sessionId) {
-      sendJsonRpcError(
-        res,
-        400,
-        JSON_RPC_SERVER_ERROR,
-        'Bad Request: Missing session ID'
-      );
-      return;
-    }
-
-    const session = getSessionOrRespondNotFound(sessions, sessionId, res);
-    if (!session) return;
-    await handleSessionTransportRequest(session, req, res);
-  }
-
-  async function dispatchMcpMethod(
-    method: string | undefined,
-    req: IncomingMessage,
-    res: ServerResponse,
-    sessionId: string | undefined
-  ): Promise<void> {
-    switch (method) {
-      case 'OPTIONS':
-        res.writeHead(204);
-        res.end();
-        return;
-      case 'POST':
-        await handlePostRequest(req, res, sessionId);
-        return;
-      case 'GET':
-      case 'DELETE':
-        await handleGetDeleteRequest(req, res, sessionId);
-        return;
-      case undefined:
-      default:
-        writeMethodNotAllowedResponse(res);
-    }
-  }
-
-  async function handleMcpRequest(
-    req: IncomingMessage,
-    res: ServerResponse
-  ): Promise<void> {
-    const sessionId = getSessionId(req);
-    if (!ensureAllowedOrigin(req, res)) return;
-    setCorsHeaders(req, res);
-    if (!ensureAllowedHostHeader(req, res, httpHost)) return;
+  // Bearer auth middleware — runs before all /mcp requests
+  app.use('/mcp', (req: Request, res: Response, next: NextFunction) => {
     if (!ensureAuthorizedRequest(req, res)) return;
+    next();
+  });
 
-    try {
-      await dispatchMcpMethod(req.method, req, res, sessionId);
-    } catch (error: unknown) {
-      handleHttpRequestError(error, res);
+  // Body parsing with size cap
+  app.use(express.json({ limit: MAX_REQUEST_BODY_BYTES, strict: false }));
+
+  // Body-parse error handler — translate to JSON-RPC error format
+  app.use(
+    (
+      err: Error & { status?: number },
+      _req: Request,
+      res: Response,
+      next: NextFunction
+    ) => {
+      if (err.status === 413) {
+        sendJsonRpcError(
+          res,
+          413,
+          JSON_RPC_INVALID_REQUEST,
+          'Request body too large'
+        );
+        return;
+      }
+      if (err.status === 400) {
+        sendJsonRpcError(
+          res,
+          400,
+          JSON_RPC_PARSE_ERROR,
+          'Invalid JSON in request body'
+        );
+        return;
+      }
+      next(err);
     }
-  }
+  );
 
+  app.all('/mcp', async (req: Request, res: Response) => {
+    try {
+      const sessionId = getSessionId(req);
+
+      if (req.method === 'POST') {
+        if (sessionId) {
+          const session = getSessionOrRespondNotFound(sessions, sessionId, res);
+          if (session)
+            await handleSessionTransportRequest(session, req, res, req.body);
+          return;
+        }
+        if (isInitializeRequest(req.body)) {
+          const maxSessions = parseEnvInt(
+            'FILESYSTEM_MCP_MAX_HTTP_SESSIONS',
+            100,
+            1,
+            10_000
+          );
+          if (sessions.size >= maxSessions) {
+            sendJsonRpcError(
+              res,
+              503,
+              JSON_RPC_SERVER_ERROR,
+              'Too many sessions'
+            );
+            return;
+          }
+          const session = await createHttpSession(
+            options,
+            sessions,
+            eventStore
+          );
+          await handleSessionTransportRequest(session, req, res, req.body);
+          return;
+        }
+        sendJsonRpcError(
+          res,
+          400,
+          JSON_RPC_SERVER_ERROR,
+          'Bad Request: No valid session ID provided'
+        );
+        return;
+      }
+
+      if (req.method === 'GET' || req.method === 'DELETE') {
+        if (!sessionId) {
+          sendJsonRpcError(
+            res,
+            400,
+            JSON_RPC_SERVER_ERROR,
+            'Bad Request: Missing session ID'
+          );
+          return;
+        }
+        const session = getSessionOrRespondNotFound(sessions, sessionId, res);
+        if (session) await handleSessionTransportRequest(session, req, res);
+        return;
+      }
+    } catch (error) {
+      Logger.error(
+        '[HTTP] Error handling request:',
+        formatUnknownErrorMessage(error)
+      );
+      if (!res.headersSent) {
+        sendJsonRpcError(
+          res,
+          500,
+          JSON_RPC_INTERNAL_ERROR,
+          'Internal Server Error'
+        );
+      }
+    }
+  });
+
+  const httpServer = createHttpServer(app);
+  httpServer.headersTimeout = 10_000;
+  httpServer.requestTimeout = 30_000;
+  httpServer.keepAliveTimeout = 5_000;
+
+  // Stale session sweep — unchanged
   const initHandshakeTimeoutMs = getInitHandshakeTimeoutMs();
   const SWEEP_INTERVAL_MS = initHandshakeTimeoutMs * 2;
   const sweepTimer = setInterval(() => {
@@ -812,15 +638,12 @@ export async function startHttpServer(
         !session.rootsManager.isInitialized() &&
         now - session.createdAt > initHandshakeTimeoutMs
       ) {
-        Logger.warn(
-          `[HTTP] Evicting stale session ${sessionId}: client never sent notifications/initialized`
-        );
+        Logger.warn(`[HTTP] Evicting stale session ${sessionId}`);
         session.close().catch((err: unknown) => {
           Logger.error(
             `[HTTP] Error closing stale session ${sessionId}:`,
             formatUnknownErrorMessage(err)
           );
-          // Ensure event store is cleaned even if session.close() fails
           eventStore.delete(sessionId);
         });
       }
@@ -828,52 +651,38 @@ export async function startHttpServer(
   }, SWEEP_INTERVAL_MS);
   sweepTimer.unref();
 
-  const httpServer = createHttpServer(
-    (req: IncomingMessage, res: ServerResponse) => {
-      const urlPath = (req.url ?? '/').split('?')[0];
-      if (urlPath === '/mcp') {
-        handleMcpRequest(req, res).catch((err: unknown) => {
-          Logger.error(
-            '[HTTP] Unhandled error in request handler:',
-            formatUnknownErrorMessage(err)
-          );
-        });
-      } else {
-        res.writeHead(404);
-        res.end('Not Found');
-      }
-    }
-  );
-
-  // Slowloris / slow-body DoS protection
-  httpServer.headersTimeout = 10_000;
-  httpServer.requestTimeout = 30_000;
-  httpServer.keepAliveTimeout = 5_000;
-
   httpServer.once('close', () => {
     clearInterval(sweepTimer);
+    for (const session of sessions.values()) {
+      session.close().catch((err: unknown) => {
+        Logger.error(
+          '[HTTP] Error closing session on shutdown:',
+          formatUnknownErrorMessage(err)
+        );
+      });
+    }
+    eventStore.clear();
   });
 
   const originalClose = httpServer.close.bind(httpServer);
-  httpServer.close = (callback?: (error?: Error) => void) => {
-    void closeAllSessions().catch((error: unknown) => {
-      Logger.error(
-        '[HTTP] Error closing sessions before server shutdown:',
-        formatUnknownErrorMessage(error)
-      );
-    });
+  httpServer.close = function (callback?: (error?: Error) => void) {
+    for (const session of sessions.values()) {
+      session.close().catch((err: unknown) => {
+        Logger.error(
+          '[HTTP] Error closing session:',
+          formatUnknownErrorMessage(err)
+        );
+      });
+    }
     return originalClose(callback);
   };
 
-  return new Promise<Server>((resolve, reject) => {
-    httpServer.once('error', reject);
-    httpServer.listen(port, httpHost, () => {
-      Logger.info(`MCP HTTP server listening on ${httpHost}:${port}`);
-      // Persistent handler for errors after startup (once above is consumed on listen failure only).
-      httpServer.on('error', (err: Error) => {
-        Logger.error('[HTTP] Server runtime error:', err.message);
-      });
-      resolve(httpServer);
-    });
+  return new Promise((resolve, reject) => {
+    httpServer
+      .listen(port, httpHost, () => {
+        Logger.info(`[HTTP] Server listening on http://${httpHost}:${port}`);
+        resolve(httpServer);
+      })
+      .on('error', reject);
   });
 }
