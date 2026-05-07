@@ -2,13 +2,16 @@ import { basename } from 'node:path';
 
 import type { z } from 'zod/v4';
 
-import { DEFAULT_CONTINUATION_CHUNK_SIZE, DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
+import {
+  DEFAULT_CONTINUATION_CHUNK_SIZE,
+  DEFAULT_SEARCH_TIMEOUT_MS,
+} from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { readMultipleFiles } from '../lib/file-operations/metadata.js';
 import { assignDefined } from '../lib/utils.js';
 import { ReadManyInputSchema } from '../schemas/inputs.js';
 import { ReadManyOutputSchema } from '../schemas/outputs.js';
-import { ContinuationSchema } from '../schemas/shared.js';
+import type { ContinuationSchema } from '../schemas/shared.js';
 
 import { defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';

@@ -12,7 +12,7 @@ import { calculateFileContentHash, readFile } from '../lib/fs-helpers.js';
 import { assignDefined } from '../lib/utils.js';
 import { ReadFileInputSchema } from '../schemas/inputs.js';
 import { ReadFileOutputSchema } from '../schemas/outputs.js';
-import { ContinuationSchema } from '../schemas/shared.js';
+import type { ContinuationSchema } from '../schemas/shared.js';
 
 import { defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
