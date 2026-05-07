@@ -210,7 +210,6 @@ function matchesAnyGlobs(
   return false;
 }
 
-
 export interface AllowedDirectoriesState {
   primary: string[];
   expanded: string[];
@@ -230,7 +229,9 @@ export function setDefaultPathGuard(guard: PathGuard): void {
 
 export function getDefaultPathGuard(): PathGuard {
   if (!defaultPathGuard) {
-    throw new Error('PathGuard not initialized. Call setDefaultPathGuard first.');
+    throw new Error(
+      'PathGuard not initialized. Call setDefaultPathGuard first.'
+    );
   }
   return defaultPathGuard;
 }
@@ -267,8 +268,10 @@ export class PathGuard {
   }
 
   isSensitive(filePath: string): boolean {
-    if (this.denyPatterns.pathGlobs.length === 0 &&
-        this.denyPatterns.nameGlobs.length === 0) {
+    if (
+      this.denyPatterns.pathGlobs.length === 0 &&
+      this.denyPatterns.nameGlobs.length === 0
+    ) {
       return false;
     }
 
@@ -319,9 +322,7 @@ export class PathGuard {
 
     // Check if within allowed directories
     if (!isPathWithinDirectories(normalizedRequested, allowedDirs)) {
-      throw new Error(
-        `Path outside allowed directories: ${requestedPath}`
-      );
+      throw new Error(`Path outside allowed directories: ${requestedPath}`);
     }
 
     // Resolve the real path
@@ -329,10 +330,7 @@ export class PathGuard {
     try {
       realPath = await realpath(normalizedRequested);
     } catch (error) {
-      throw new Error(
-        `Cannot access path: ${requestedPath}`,
-        { cause: error }
-      );
+      throw new Error(`Cannot access path: ${requestedPath}`, { cause: error });
     }
 
     const normalizedReal = normalizePath(realPath);
@@ -364,7 +362,9 @@ export class PathGuard {
       if (error instanceof Error && error.message.includes('Not a directory')) {
         throw error;
       }
-      throw new Error(`Cannot access directory: ${requestedPath}`, { cause: error });
+      throw new Error(`Cannot access directory: ${requestedPath}`, {
+        cause: error,
+      });
     }
 
     return details.resolvedPath;
@@ -377,19 +377,18 @@ export class PathGuard {
 
     // Check if path is sensitive
     const normalizedRequested = normalizePath(requestedPath);
-    if (this.isSensitive(requestedPath) || this.isSensitive(normalizedRequested)) {
-      throw new Error(
-        `Sensitive file blocked by policy: ${requestedPath}`
-      );
+    if (
+      this.isSensitive(requestedPath) ||
+      this.isSensitive(normalizedRequested)
+    ) {
+      throw new Error(`Sensitive file blocked by policy: ${requestedPath}`);
     }
 
     const allowedDirs = this.allowedDirectoriesState.expanded;
 
     // Check if within allowed directories
     if (!isPathWithinDirectories(normalizedRequested, allowedDirs)) {
-      throw new Error(
-        `Path outside allowed directories: ${requestedPath}`
-      );
+      throw new Error(`Path outside allowed directories: ${requestedPath}`);
     }
 
     // Resolve the nearest existing real path
@@ -403,7 +402,9 @@ export class PathGuard {
       } catch (_error) {
         const parent = dirname(current);
         if (parent === current) {
-          throw new Error(`Cannot resolve path: ${requestedPath}`, { cause: _error });
+          throw new Error(`Cannot resolve path: ${requestedPath}`, {
+            cause: _error,
+          });
         }
         current = parent;
       }

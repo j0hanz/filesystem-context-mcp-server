@@ -4,12 +4,9 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { realpath, stat } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
 import {
-  dirname,
   isAbsolute,
   join,
-  normalize,
   parse,
-  posix,
   relative,
   resolve,
   sep,
@@ -18,12 +15,27 @@ import {
 import { fileURLToPath } from 'node:url';
 
 import { assertNotAborted, withAbort } from './abort.js';
-import {
-  SENSITIVE_FILE_ALLOWLIST,
-  SENSITIVE_FILE_DENYLIST,
-} from './constants.js';
-import { ErrorCode, isAbortError, isNodeError, McpError } from './errors.js';
+import { SENSITIVE_FILE_DENYLIST } from './constants.js';
+import { ErrorCode, isAbortError, McpError } from './errors.js';
 import { Logger } from './logger.js';
+import {
+  getDefaultPathGuard,
+  PathGuard as PathGuardClass,
+  setDefaultPathGuard,
+} from './path-guard.js';
+ 
+import type {
+  AllowedDirectoriesState,
+  PathGuard,
+  ValidatedPathDetails,
+} from './path-guard.js';
+
+// eslint-disable-next-line no-duplicate-imports
+export type {
+  AllowedDirectoriesState,
+  PathGuard,
+  ValidatedPathDetails,
+} from './path-guard.js';
 
 const WINDOWS_PATH_SEPARATOR = '\\';
 const POSIX_PATH_SEPARATOR = '/';
@@ -34,213 +46,105 @@ export function toPosixPath(value: string): string {
     : value;
 }
 
-interface CompiledPattern {
-  globs: readonly string[];
-  matchesPath: boolean;
-}
-
-interface CompiledPatternSet {
-  pathGlobs: readonly string[];
-  nameGlobs: readonly string[];
-}
-
 const IS_WINDOWS = platform() === 'win32';
-const WINDOWS_ABSOLUTE_RE = /^[a-z]:\//iu;
 const HOME_PREFIX_LENGTH = 2;
-const CHAR_CODE_SPACE = 32;
-const CHAR_CODE_DOT = 46;
-
-function normalizePathForMatch(input: string): string {
-  return toPosixPath(normalize(input));
-}
-
-function normalizeForMatch(input: string): string {
-  const normalized = normalizePathForMatch(input);
-  // Always lowercase for case-insensitive denylist matching on all platforms.
-  // Prevents bypassing `.env` block with `.ENV` on case-sensitive filesystems.
-  return normalized.toLowerCase();
-}
-
-function compilePatternGlobs(normalizedPattern: string): readonly string[] {
-  const globs = new Set<string>([normalizedPattern]);
-  const isWindowsAbsolute = WINDOWS_ABSOLUTE_RE.test(normalizedPattern);
-
-  if (!normalizedPattern.startsWith('**/') && !isWindowsAbsolute) {
-    const withoutRoot = normalizedPattern.replace(/^\/+/u, '');
-    if (withoutRoot.length > 0) {
-      globs.add(`**/${withoutRoot}`);
-    }
-  }
-
-  return [...globs];
-}
-
-function compilePatterns(patterns: readonly string[]): CompiledPattern[] {
-  const unique = new Set<string>();
-  for (const pattern of patterns) {
-    const trimmed = pattern.trim();
-    if (trimmed.length > 0) {
-      unique.add(trimmed);
-    }
-  }
-
-  const compiled: CompiledPattern[] = [];
-  for (const pattern of unique) {
-    const normalized = normalizeForMatch(pattern);
-    const matchesPath = normalized.includes('/');
-    compiled.push({
-      globs: matchesPath ? compilePatternGlobs(normalized) : [normalized],
-      matchesPath,
-    });
-  }
-  return compiled;
-}
-
-function toPatternSet(
-  patterns: readonly CompiledPattern[]
-): CompiledPatternSet {
-  const pathGlobs = new Set<string>();
-  const nameGlobs = new Set<string>();
-
-  for (const pattern of patterns) {
-    const target = pattern.matchesPath ? pathGlobs : nameGlobs;
-    for (const glob of pattern.globs) {
-      target.add(glob);
-    }
-  }
-
-  return {
-    pathGlobs: [...pathGlobs],
-    nameGlobs: [...nameGlobs],
-  };
-}
-
-const DENY_PATTERNS = toPatternSet(compilePatterns(SENSITIVE_FILE_DENYLIST));
-const ALLOW_PATTERNS = toPatternSet(compilePatterns(SENSITIVE_FILE_ALLOWLIST));
-
-function uniquePair(primary: string, secondary?: string): string[] {
-  if (!secondary || secondary === primary) return [primary];
-  return [primary, secondary];
-}
-
-function matchesAnyGlobs(
-  globs: readonly string[],
-  candidates: readonly string[]
-): boolean {
-  if (globs.length === 0 || candidates.length === 0) return false;
-
-  for (const candidate of candidates) {
-    for (const glob of globs) {
-      if (posix.matchesGlob(candidate, glob)) return true;
-    }
-  }
-
-  return false;
-}
-
-export function isSensitivePath(
-  requestedPath: string,
-  resolvedPath?: string
-): boolean {
-  if (
-    DENY_PATTERNS.pathGlobs.length === 0 &&
-    DENY_PATTERNS.nameGlobs.length === 0
-  ) {
-    return false;
-  }
-
-  const normalizedRequested = normalizeForMatch(requestedPath);
-  const normalizedResolved = resolvedPath
-    ? normalizeForMatch(resolvedPath)
-    : undefined;
-
-  const pathCandidates = uniquePair(normalizedRequested, normalizedResolved);
-  const nameCandidates = uniquePair(
-    posix.basename(normalizedRequested),
-    normalizedResolved ? posix.basename(normalizedResolved) : undefined
-  );
-
-  if (
-    matchesAnyGlobs(ALLOW_PATTERNS.pathGlobs, pathCandidates) ||
-    matchesAnyGlobs(ALLOW_PATTERNS.nameGlobs, nameCandidates)
-  ) {
-    return false;
-  }
-
-  return (
-    matchesAnyGlobs(DENY_PATTERNS.pathGlobs, pathCandidates) ||
-    matchesAnyGlobs(DENY_PATTERNS.nameGlobs, nameCandidates)
-  );
-}
-
-export function assertAllowedFileAccess(
-  requestedPath: string,
-  resolvedPath?: string
-): void {
-  if (!isSensitivePath(requestedPath, resolvedPath)) return;
-  Logger.warn(
-    `Access denied: sensitive file blocked by policy (${requestedPath})`
-  );
-  throw new McpError(
-    ErrorCode.ACCESS_DENIED,
-    'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
-    requestedPath
-  );
-}
 
 const HOMEDIR = homedir();
 const PATH_SEPARATOR = sep;
 
 const DRIVE_LETTER_REGEX = /^[A-Za-z]:/;
-const WINDOWS_DRIVE_REL_REGEX = /^[A-Za-z]:$/u;
 const LEADING_SEPARATORS_RE = /^[/\\]+/;
 
-const RESERVED_DEVICE_NAMES = new Set([
-  'CON',
-  'PRN',
-  'AUX',
-  'NUL',
-  'COM1',
-  'COM2',
-  'COM3',
-  'COM4',
-  'COM5',
-  'COM6',
-  'COM7',
-  'COM8',
-  'COM9',
-  'LPT1',
-  'LPT2',
-  'LPT3',
-  'LPT4',
-  'LPT5',
-  'LPT6',
-  'LPT7',
-  'LPT8',
-  'LPT9',
-]);
+// ALS for HTTP session isolation — payload is PathGuard, not raw dirs.
+// Each HTTP request runs inside withPathGuard() scoped to its session.
+// Stdio reads the default singleton set by PathGuard.initialize().
+const pathGuardContext = new AsyncLocalStorage<PathGuard>({
+  name: 'filesystem-mcp:path-guard',
+});
 
-export interface AllowedDirectoriesState {
-  primary: string[];
-  expanded: string[];
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function withPathGuard<T>(guard: PathGuard, run: () => T): T {
+  return pathGuardContext.run(guard, run);
 }
 
-const allowedDirectoriesContext =
-  new AsyncLocalStorage<AllowedDirectoriesState>({
-    name: 'filesystem-mcp:allowed-directories',
-  });
-
-function dedupePreserveOrder<T>(items: readonly T[]): T[] {
-  return [...new Set(items)];
+function getActivePathGuard(): PathGuard {
+  return pathGuardContext.getStore() ?? getDefaultPathGuard();
 }
 
-function cloneAllowedDirectoriesState(
-  state: AllowedDirectoriesState
-): AllowedDirectoriesState {
-  return {
-    primary: [...state.primary],
-    expanded: [...state.expanded],
-  };
+// Thin wrappers for library code (fs-helpers, file-operations, path-completer)
+// that cannot receive PathGuard via injection.
+export function getAllowedDirectories(): string[] {
+  return getActivePathGuard().getAllowedDirectories();
+}
+
+export function isAllowedDirectoryRoot(normalizedPath: string): boolean {
+  for (const dir of getActivePathGuard().getAllowedDirectories()) {
+    if (isSamePath(normalizedPath, dir)) return true;
+  }
+  return false;
+}
+
+export function isSensitivePath(
+  requestedPath: string,
+  _resolvedPath?: string
+): boolean {
+  return getActivePathGuard().isSensitive(requestedPath);
+}
+
+export function assertAllowedFileAccess(
+  requestedPath: string,
+  _resolvedPath?: string
+): void {
+  if (getActivePathGuard().isSensitive(requestedPath)) {
+    Logger.warn(
+      `Access denied: sensitive file blocked by policy (${requestedPath})`
+    );
+    throw new McpError(
+      ErrorCode.ACCESS_DENIED,
+      'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
+      requestedPath
+    );
+  }
+}
+
+export async function validateExistingPath(
+  requestedPath: string,
+  signal?: AbortSignal
+): Promise<string> {
+  if (signal) {
+    assertNotAborted(signal);
+  }
+  return getActivePathGuard().validateExistingPath(requestedPath);
+}
+
+export async function validateExistingPathDetailed(
+  requestedPath: string,
+  signal?: AbortSignal
+): Promise<ValidatedPathDetails> {
+  if (signal) {
+    assertNotAborted(signal);
+  }
+  return getActivePathGuard().validateExistingPathDetailed(requestedPath);
+}
+
+export async function validateExistingDirectory(
+  requestedPath: string,
+  signal?: AbortSignal
+): Promise<string> {
+  if (signal) {
+    assertNotAborted(signal);
+  }
+  return getActivePathGuard().validateExistingDirectory(requestedPath);
+}
+
+export async function validatePathForWrite(
+  requestedPath: string,
+  signal?: AbortSignal
+): Promise<string> {
+  if (signal) {
+    assertNotAborted(signal);
+  }
+  return getActivePathGuard().validatePathForWrite(requestedPath);
 }
 
 function expandHome(filepath: string): string {
@@ -318,6 +222,10 @@ function normalizeAllowedDirectory(dir: string): string {
   return stripTrailingSeparator(normalized);
 }
 
+function dedupePreserveOrder<T>(items: readonly T[]): T[] {
+  return [...new Set(items)];
+}
+
 function normalizeAllowedDirectories(dirs: readonly string[]): string[] {
   const normalized: string[] = [];
   for (const dir of dirs) {
@@ -329,64 +237,6 @@ function normalizeAllowedDirectories(dirs: readonly string[]): string[] {
 
   // Preserve first-seen order while deduping.
   return dedupePreserveOrder(normalized);
-}
-
-// Process-global singleton state for allowed directory roots.
-//
-// These are set once at startup (via setAllowedDirectoriesResolved) and
-// mutated only through setAllowedDirectoriesState. In stdio mode there is a
-// single MCP session per process, so this is safe. In HTTP mode all HTTP
-// sessions within the same process share one policy — multi-tenant isolation
-// (different roots per session) requires separate server processes.
-let defaultAllowedDirectoriesState: AllowedDirectoriesState = {
-  primary: [],
-  expanded: [],
-};
-
-function setAllowedDirectoriesState(
-  primary: readonly string[],
-  expanded: readonly string[]
-): void {
-  defaultAllowedDirectoriesState = {
-    primary: dedupePreserveOrder(primary),
-    expanded: dedupePreserveOrder(expanded),
-  };
-}
-
-function getActiveAllowedDirectoriesState(): AllowedDirectoriesState {
-  return allowedDirectoriesContext.getStore() ?? defaultAllowedDirectoriesState;
-}
-
-export function withAllowedDirectoriesState<T>(
-  state: AllowedDirectoriesState,
-  run: () => T
-): T {
-  return allowedDirectoriesContext.run(
-    cloneAllowedDirectoriesState(state),
-    run
-  );
-}
-
-export function setAllowedDirectoriesStateResolved(
-  state: AllowedDirectoriesState
-): void {
-  setAllowedDirectoriesState(state.primary, state.expanded);
-}
-
-export function getAllowedDirectories(): string[] {
-  return [...getActiveAllowedDirectoriesState().expanded];
-}
-
-export function isAllowedDirectoryRoot(normalizedPath: string): boolean {
-  for (const dir of getActiveAllowedDirectoriesState().expanded) {
-    if (isSamePath(normalizedPath, dir)) return true;
-  }
-  return false;
-}
-
-function getAllowedDirectoriesForRelativeResolution(): readonly string[] {
-  const state = getActiveAllowedDirectoriesState();
-  return state.primary.length > 0 ? state.primary : state.expanded;
 }
 
 function isPathInsideDirectory(
@@ -468,36 +318,19 @@ export async function setAllowedDirectoriesResolved(
   signal?: AbortSignal
 ): Promise<void> {
   const state = await resolveAllowedDirectoriesState(dirs, signal);
-  setAllowedDirectoriesStateResolved(state);
-}
-
-function ensureNonEmptyPath(requestedPath: string): void {
-  if (!requestedPath || requestedPath.trim().length === 0) {
-    throw new McpError(
-      ErrorCode.INVALID_INPUT,
-      'Path cannot be empty or whitespace',
-      requestedPath
-    );
-  }
-}
-
-function ensureNoNullBytes(requestedPath: string): void {
-  if (requestedPath.includes('\0')) {
-    throw new McpError(
-      ErrorCode.INVALID_INPUT,
-      'Path contains null bytes',
-      requestedPath
-    );
-  }
+  const guard = new PathGuardClass(SENSITIVE_FILE_DENYLIST);
+  guard.initialize(state);
+  setDefaultPathGuard(guard);
 }
 
 function getReservedDeviceName(segment: string): string | undefined {
   // Trim trailing dots/spaces (Windows ignores these in path segments).
+  const CHAR_CODE_SPACE = 32;
+  const CHAR_CODE_DOT = 46;
   let end = segment.length;
   while (end > 0) {
     const c = segment.charCodeAt(end - 1);
-    if (c === CHAR_CODE_SPACE || c === CHAR_CODE_DOT)
-      end--; // space or dot
+    if (c === CHAR_CODE_SPACE || c === CHAR_CODE_DOT) end--;
     else break;
   }
 
@@ -513,6 +346,31 @@ function getReservedDeviceName(segment: string): string | undefined {
   const baseName = (
     dotIdx !== -1 ? withoutStream.slice(0, dotIdx) : withoutStream
   ).toUpperCase();
+
+  const RESERVED_DEVICE_NAMES = new Set([
+    'CON',
+    'PRN',
+    'AUX',
+    'NUL',
+    'COM1',
+    'COM2',
+    'COM3',
+    'COM4',
+    'COM5',
+    'COM6',
+    'COM7',
+    'COM8',
+    'COM9',
+    'LPT1',
+    'LPT2',
+    'LPT3',
+    'LPT4',
+    'LPT5',
+    'LPT6',
+    'LPT7',
+    'LPT8',
+    'LPT9',
+  ]);
 
   return RESERVED_DEVICE_NAMES.has(baseName) ? baseName : undefined;
 }
@@ -531,367 +389,13 @@ export function getReservedDeviceNameForPath(
   return undefined;
 }
 
-function ensureNoReservedWindowsNames(requestedPath: string): void {
-  if (!IS_WINDOWS) return;
-
-  const reserved = getReservedDeviceNameForPath(requestedPath);
-  if (!reserved) return;
-
-  throw new McpError(
-    ErrorCode.INVALID_INPUT,
-    `Windows reserved device name not allowed: ${reserved}`,
-    requestedPath
-  );
-}
-
 export function isWindowsDriveRelativePath(requestedPath: string): boolean {
   if (!IS_WINDOWS) return false;
 
+  const WINDOWS_DRIVE_REL_REGEX = /^[A-Za-z]:$/u;
   const parsed = win32.parse(requestedPath);
   if (!WINDOWS_DRIVE_REL_REGEX.test(parsed.root)) return false;
   return !win32.isAbsolute(requestedPath);
-}
-
-function ensureNoWindowsDriveRelativePath(requestedPath: string): void {
-  if (!isWindowsDriveRelativePath(requestedPath)) return;
-
-  throw new McpError(
-    ErrorCode.INVALID_INPUT,
-    'Drive-relative path not allowed. Use C:\\path instead of C:path.',
-    requestedPath
-  );
-}
-
-function resolveRequestedPath(requestedPath: string): string {
-  const expanded = expandHome(requestedPath);
-
-  if (!isAbsolute(expanded)) {
-    const roots = getAllowedDirectoriesForRelativeResolution();
-
-    if (roots.length > 1) {
-      throw new McpError(
-        ErrorCode.INVALID_INPUT,
-        'Ambiguous relative path with multiple roots. Use an absolute path.',
-        requestedPath
-      );
-    }
-
-    const baseDir = roots[0];
-    if (baseDir) {
-      return normalizePath(resolve(baseDir, expanded));
-    }
-  }
-
-  return normalizePath(expanded);
-}
-
-function validateRequestedPath(requestedPath: string): string {
-  ensureNonEmptyPath(requestedPath);
-  ensureNoNullBytes(requestedPath);
-  ensureNoReservedWindowsNames(requestedPath);
-  ensureNoWindowsDriveRelativePath(requestedPath);
-  return resolveRequestedPath(requestedPath);
-}
-
-const NODE_ERROR_MAP: Readonly<
-  Record<
-    string,
-    { code: ErrorCode; message: (requestedPath: string) => string }
-  >
-> = {
-  ENOENT: {
-    code: ErrorCode.NOT_FOUND,
-    message: () => 'Path does not exist',
-  },
-  EACCES: {
-    code: ErrorCode.PERMISSION_DENIED,
-    message: () => 'Permission denied',
-  },
-  EPERM: {
-    code: ErrorCode.PERMISSION_DENIED,
-    message: () => 'Permission denied',
-  },
-  ELOOP: {
-    code: ErrorCode.SYMLINK_NOT_ALLOWED,
-    message: () => 'Too many symbolic links (circular reference)',
-  },
-  ENAMETOOLONG: {
-    code: ErrorCode.INVALID_INPUT,
-    message: () => 'Path name too long',
-  },
-} as const;
-
-function buildAllowedDirectoriesHint(): string {
-  const dirs = getAllowedDirectories();
-  return dirs.length > 0
-    ? `Allowed: ${dirs.join(', ')}`
-    : 'No allowed directories configured.';
-}
-
-function toMcpError(requestedPath: string, error: unknown): McpError {
-  const code = isNodeError(error) ? error.code : undefined;
-  const mapping = code ? NODE_ERROR_MAP[code] : undefined;
-
-  if (mapping) {
-    return new McpError(
-      mapping.code,
-      mapping.message(requestedPath),
-      requestedPath,
-      { originalCode: code },
-      error
-    );
-  }
-
-  let originalMessage = '';
-  if (error instanceof Error) {
-    originalMessage = error.message;
-  } else if (typeof error === 'string') {
-    originalMessage = error;
-  }
-
-  return new McpError(
-    ErrorCode.NOT_FOUND,
-    'Path is not accessible',
-    requestedPath,
-    { originalCode: code, originalMessage },
-    error
-  );
-}
-
-function toAccessDeniedWithHint(
-  requestedPath: string,
-  resolvedPath: string,
-  normalizedResolved: string
-): McpError {
-  const suggestion = buildAllowedDirectoriesHint();
-  return new McpError(
-    ErrorCode.ACCESS_DENIED,
-    `Outside allowed directories. ${suggestion}`,
-    requestedPath,
-    { resolvedPath, normalizedResolvedPath: normalizedResolved }
-  );
-}
-
-interface ValidatedPathDetails {
-  requestedPath: string;
-  resolvedPath: string;
-  isSymlink: boolean;
-}
-
-interface PreparedPathAccess {
-  allowedDirs: string[];
-  normalizedRequested: string;
-}
-
-function ensureWithinAllowedDirectories(options: {
-  normalizedPath: string;
-  requestedPath: string;
-  allowedDirs: readonly string[];
-  details?: Record<string, unknown>;
-}): void {
-  const { normalizedPath, requestedPath, allowedDirs, details } = options;
-
-  if (isPathWithinDirectories(normalizedPath, allowedDirs)) return;
-
-  if (allowedDirs.length === 0) {
-    Logger.warn('Access denied: no allowed directories configured');
-    throw new McpError(
-      ErrorCode.ACCESS_DENIED,
-      'No allowed directories configured. Use --allow-cwd or configure roots.',
-      requestedPath,
-      details
-    );
-  }
-
-  Logger.warn(
-    `Access denied: path outside allowed directories (${requestedPath})`
-  );
-  throw new McpError(
-    ErrorCode.ACCESS_DENIED,
-    'Outside allowed directories',
-    requestedPath,
-    details
-  );
-}
-
-async function resolveRealPathOrThrow(options: {
-  requestedPath: string;
-  normalizedRequested: string;
-  signal?: AbortSignal;
-}): Promise<string> {
-  const { requestedPath, normalizedRequested, signal } = options;
-
-  try {
-    assertNotAborted(signal);
-    return await withAbort(realpath(normalizedRequested), signal);
-  } catch (error) {
-    rethrowIfAborted(error);
-    throw toMcpError(requestedPath, error);
-  }
-}
-
-function preparePathAccess(requestedPath: string): PreparedPathAccess {
-  const normalizedRequested = validateRequestedPath(requestedPath);
-  const allowedDirs = getAllowedDirectories();
-
-  ensureWithinAllowedDirectories({
-    normalizedPath: normalizedRequested,
-    requestedPath,
-    allowedDirs,
-    details: { normalizedPath: normalizedRequested },
-  });
-
-  return { allowedDirs, normalizedRequested };
-}
-
-function ensureResolvedPathAllowed(options: {
-  requestedPath: string;
-  resolvedPath: string;
-  normalizedResolved: string;
-  allowedDirs: readonly string[];
-}): void {
-  const { requestedPath, resolvedPath, normalizedResolved, allowedDirs } =
-    options;
-  if (isPathWithinDirectories(normalizedResolved, allowedDirs)) return;
-  throw toAccessDeniedWithHint(requestedPath, resolvedPath, normalizedResolved);
-}
-
-async function statPathOrThrow(
-  requestedPath: string,
-  resolvedPath: string,
-  signal?: AbortSignal
-): Promise<Awaited<ReturnType<typeof stat>>> {
-  try {
-    assertNotAborted(signal);
-    return await withAbort(stat(resolvedPath), signal);
-  } catch (error) {
-    rethrowIfAborted(error);
-    throw toMcpError(requestedPath, error);
-  }
-}
-
-async function resolveNearestExistingRealPathOrThrow(options: {
-  requestedPath: string;
-  startPath: string;
-  signal?: AbortSignal;
-}): Promise<string> {
-  const { requestedPath, startPath, signal } = options;
-
-  let current = startPath;
-  for (;;) {
-    try {
-      assertNotAborted(signal);
-      return await withAbort(realpath(current), signal);
-    } catch (error) {
-      rethrowIfAborted(error);
-      const code = isNodeError(error) ? error.code : undefined;
-      if (code !== 'ENOENT') {
-        throw toMcpError(requestedPath, error);
-      }
-
-      const parent = dirname(current);
-      if (parent === current) {
-        throw toMcpError(requestedPath, error);
-      }
-      current = parent;
-    }
-  }
-}
-
-async function validateExistingPathDetailsInternal(
-  requestedPath: string,
-  signal?: AbortSignal
-): Promise<ValidatedPathDetails> {
-  const { allowedDirs, normalizedRequested } = preparePathAccess(requestedPath);
-
-  const realPath = await resolveRealPathOrThrow({
-    requestedPath,
-    normalizedRequested,
-    ...(signal ? { signal } : {}),
-  });
-
-  const normalizedReal = normalizePath(realPath);
-  ensureResolvedPathAllowed({
-    requestedPath,
-    resolvedPath: realPath,
-    normalizedResolved: normalizedReal,
-    allowedDirs,
-  });
-
-  return {
-    requestedPath: normalizedRequested,
-    resolvedPath: normalizedReal,
-    isSymlink: !isSamePath(normalizedRequested, normalizedReal),
-  };
-}
-
-export async function validateExistingPathDetailed(
-  requestedPath: string,
-  signal?: AbortSignal
-): Promise<ValidatedPathDetails> {
-  return validateExistingPathDetailsInternal(requestedPath, signal);
-}
-
-export async function validateExistingPath(
-  requestedPath: string,
-  signal?: AbortSignal
-): Promise<string> {
-  const details = await validateExistingPathDetailsInternal(
-    requestedPath,
-    signal
-  );
-  return details.resolvedPath;
-}
-
-export async function validateExistingDirectory(
-  requestedPath: string,
-  signal?: AbortSignal
-): Promise<string> {
-  const details = await validateExistingPathDetailsInternal(
-    requestedPath,
-    signal
-  );
-
-  const stats = await statPathOrThrow(
-    requestedPath,
-    details.resolvedPath,
-    signal
-  );
-
-  if (!stats.isDirectory()) {
-    throw new McpError(
-      ErrorCode.NOT_DIRECTORY,
-      'Not a directory',
-      requestedPath
-    );
-  }
-
-  return details.resolvedPath;
-}
-
-export async function validatePathForWrite(
-  requestedPath: string,
-  signal?: AbortSignal
-): Promise<string> {
-  const { allowedDirs, normalizedRequested } = preparePathAccess(requestedPath);
-
-  assertAllowedFileAccess(requestedPath, normalizedRequested);
-
-  const realPath = await resolveNearestExistingRealPathOrThrow({
-    requestedPath,
-    startPath: normalizedRequested,
-    ...(signal ? { signal } : {}),
-  });
-  const normalizedReal = normalizePath(realPath);
-
-  ensureResolvedPathAllowed({
-    requestedPath,
-    resolvedPath: realPath,
-    normalizedResolved: normalizedReal,
-    allowedDirs,
-  });
-
-  return normalizedRequested;
 }
 
 function isFileRoot(root: Root): boolean {

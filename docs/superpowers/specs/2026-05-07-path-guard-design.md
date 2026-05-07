@@ -40,22 +40,22 @@ One `PathGuard` instance per server session:
 
 ```typescript
 class PathGuard {
-  constructor(sensitivePatterns: readonly string[])
+  constructor(sensitivePatterns: readonly string[]);
 
   // Called by RootsManager when allowed dirs are resolved.
-  initialize(allowedDirs: readonly string[]): void
+  initialize(allowedDirs: readonly string[]): void;
 
   // Normalizes path, calls realpath, asserts within allowed dirs.
   // Returns resolved path. Throws McpError if uninitialized or path escapes roots.
-  assertAllowed(path: string): Promise<string>
+  assertAllowed(path: string): Promise<string>;
 
   // Returns true if path matches any sensitive-file pattern.
   // Safe to call before initialize() — patterns compiled at construction.
-  isSensitive(path: string): boolean
+  isSensitive(path: string): boolean;
 
   // Returns true if glob pattern is safe (no traversal, no absolute escapes).
   // Stateless — no allowed dirs needed.
-  isSafeGlob(pattern: string): boolean
+  isSafeGlob(pattern: string): boolean;
 }
 ```
 
@@ -176,16 +176,16 @@ No changes — tests tool registration shape, not path security.
 
 ## File Change Summary
 
-| File | Change |
-|------|--------|
-| `src/lib/path-guard.ts` | **New** — `PathGuard` class |
-| `src/lib/paths.ts` | Loses ~675 LOC (ALS + security functions); keeps ~300 LOC utilities |
-| `src/lib/globs.ts` | **Deleted** — absorbed into `PathGuard` |
-| `src/tools/contract.ts` | `ToolRegistrationOptions` gains `pathGuard: PathGuard` |
-| `src/server/bootstrap.ts` | Creates `PathGuard`, wires `initialize` into roots callback, passes through |
-| `src/server/roots-manager.ts` | Calls `pathGuard.initialize()` on roots resolved |
-| `src/tools/*.ts` (18 files) | Call-site updates: `assertWithinAllowedDirectories` → `pathGuard.assertAllowed` |
-| `src/resources/*.ts` | Same call-site updates |
-| `src/prompts.ts` | Same call-site updates |
-| `__tests__/helpers.ts` | Constructs `PathGuard`, removes ALS setup/teardown |
-| `__tests__/unit/path-guard.test.ts` | **New** — unit tests |
+| File                                | Change                                                                          |
+| ----------------------------------- | ------------------------------------------------------------------------------- |
+| `src/lib/path-guard.ts`             | **New** — `PathGuard` class                                                     |
+| `src/lib/paths.ts`                  | Loses ~675 LOC (ALS + security functions); keeps ~300 LOC utilities             |
+| `src/lib/globs.ts`                  | **Deleted** — absorbed into `PathGuard`                                         |
+| `src/tools/contract.ts`             | `ToolRegistrationOptions` gains `pathGuard: PathGuard`                          |
+| `src/server/bootstrap.ts`           | Creates `PathGuard`, wires `initialize` into roots callback, passes through     |
+| `src/server/roots-manager.ts`       | Calls `pathGuard.initialize()` on roots resolved                                |
+| `src/tools/*.ts` (18 files)         | Call-site updates: `assertWithinAllowedDirectories` → `pathGuard.assertAllowed` |
+| `src/resources/*.ts`                | Same call-site updates                                                          |
+| `src/prompts.ts`                    | Same call-site updates                                                          |
+| `__tests__/helpers.ts`              | Constructs `PathGuard`, removes ALS setup/teardown                              |
+| `__tests__/unit/path-guard.test.ts` | **New** — unit tests                                                            |

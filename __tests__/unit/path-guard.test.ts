@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-
 import { after, before, test } from 'node:test';
 
 import { SENSITIVE_FILE_DENYLIST } from '../../src/lib/constants.js';
@@ -81,9 +80,7 @@ test('validateExistingPath throws before initialize()', async () => {
 test('getAllowedDirectories returns the initialized dirs', () => {
   const dirs = guard.getAllowedDirectories();
   assert.ok(
-    dirs.some(
-      (d) => d === tmpDir || d.toLowerCase() === tmpDir.toLowerCase()
-    )
+    dirs.some((d) => d === tmpDir || d.toLowerCase() === tmpDir.toLowerCase())
   );
 });
 

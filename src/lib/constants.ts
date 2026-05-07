@@ -258,7 +258,7 @@ export const SENSITIVE_FILE_DENYLIST = [
   ...ENV_DENYLIST,
 ];
 
-export const SENSITIVE_FILE_ALLOWLIST = [...ENV_ALLOWLIST];
+const SENSITIVE_FILE_ALLOWLIST = [...ENV_ALLOWLIST];
 
 export const KNOWN_BINARY_EXTENSIONS = new Set([
   '.png',
