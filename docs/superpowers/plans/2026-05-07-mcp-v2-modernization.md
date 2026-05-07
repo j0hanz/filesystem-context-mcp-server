@@ -48,7 +48,6 @@
 import { McpServer } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
-
 import { describe, it } from 'node:test';
 
 import { createServer } from '../../src/server/bootstrap.js';
@@ -354,7 +353,6 @@ git commit -m "feat: add tool name as logger field to all ctx.log calls for rich
 ```ts
 // __tests__/unit/observability-metrics.test.ts (new file)
 import assert from 'node:assert/strict';
-
 import { describe, it } from 'node:test';
 
 import {
@@ -811,7 +809,6 @@ The `rm` tool must ask for user confirmation when `recursive: true` and the targ
 import assert from 'node:assert/strict';
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-
 import { after, before, describe, it } from 'node:test';
 
 import {
