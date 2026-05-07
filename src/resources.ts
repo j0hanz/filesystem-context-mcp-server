@@ -55,7 +55,7 @@ const RESULT_RESOURCE_DESCRIPTION =
   'Ephemeral cached tool output exposed as an MCP resource. Not guaranteed to be listed via resources/list.';
 
 const METRICS_RESOURCE_NAME = 'filesystem-mcp-metrics';
-const METRICS_RESOURCE_URI = 'filesystem-mcp://metrics';
+export const METRICS_RESOURCE_URI = 'filesystem-mcp://metrics';
 const METRICS_RESOURCE_DESCRIPTION =
   'Live per-tool call/error/avgDurationMs metrics snapshot.';
 

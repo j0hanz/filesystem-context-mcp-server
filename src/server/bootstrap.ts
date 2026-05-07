@@ -36,6 +36,7 @@ import {
   logToMcp,
   SessionContext,
 } from '../lib/logger.js';
+import { onMetricsUpdate } from '../lib/observability.js';
 import { withAllowedDirectoriesState } from '../lib/paths.js';
 import { createInMemoryResourceStore } from '../lib/resource-store.js';
 
@@ -47,6 +48,7 @@ import {
   registerGetToolHelpPrompt,
 } from '../prompts.js';
 import {
+  METRICS_RESOURCE_URI,
   registerInstructionResource,
   registerMetricsResource,
   registerResultResources,
@@ -77,7 +79,7 @@ function buildServerCapabilities(
 ): NonOptionalServerCapabilities {
   const capabilities: NonOptionalServerCapabilities = {
     logging: {},
-    resources: { listChanged: true },
+    resources: { listChanged: true, subscribe: true },
     tools: {},
     prompts: options.enablePromptListChanged ? { listChanged: true } : {},
     completions: {},
@@ -147,6 +149,13 @@ const {
 } = pkgInfo;
 
 const rootsManagers = new WeakMap<McpServer, RootsManager>();
+
+const metricsUnsubscribers = new WeakMap<McpServer, () => void>();
+
+function cleanupServerMetrics(server: McpServer): void {
+  metricsUnsubscribers.get(server)?.();
+  metricsUnsubscribers.delete(server);
+}
 
 function getRootsManager(server: McpServer): RootsManager {
   const manager = rootsManagers.get(server);
@@ -261,6 +270,26 @@ export async function createServer(
     ...(localIcon ? { iconInfo: localIcon } : {}),
   });
 
+  // Subscribe to metrics updates and push resource notifications to this server instance.
+  // The debounce (500 ms) prevents notification floods during batch tool runs.
+  let metricsNotifyTimer: ReturnType<typeof setTimeout> | undefined;
+  const unsubscribeMetrics = onMetricsUpdate(() => {
+    clearTimeout(metricsNotifyTimer);
+    metricsNotifyTimer = setTimeout(() => {
+      void server.server
+        .sendResourceUpdated({ uri: METRICS_RESOURCE_URI })
+        .catch(() => {
+          // Transport may already be closed — best effort.
+        });
+    }, 500);
+  });
+
+  // Store unsubscribe so HTTP session cleanup and stdio shutdown can call it.
+  metricsUnsubscribers.set(server, () => {
+    clearTimeout(metricsNotifyTimer);
+    unsubscribeMetrics();
+  });
+
   return server;
 }
 
@@ -280,6 +309,7 @@ export async function startServer(server: McpServer): Promise<void> {
   await server.connect(transport);
   const sdkOnClose = transport.onclose;
   transport.onclose = () => {
+    cleanupServerMetrics(server);
     rootsManager.destroy();
     sdkOnClose?.();
   };
@@ -371,6 +401,7 @@ async function createHttpSession(
       eventStore.delete(sessionId);
     }
 
+    cleanupServerMetrics(mcpServer);
     rootsManager.destroy();
   };
 

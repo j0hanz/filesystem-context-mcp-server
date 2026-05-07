@@ -98,6 +98,22 @@ interface ToolMetrics {
 
 export const globalMetrics = new Map<string, ToolMetrics>();
 
+// --- Metrics update listeners ---
+
+type MetricsListener = () => void;
+const metricsListeners = new Set<MetricsListener>();
+
+/**
+ * Register a callback invoked after every tool call updates globalMetrics.
+ * Returns an unsubscribe function. Zero-overhead when no listeners are registered.
+ */
+export function onMetricsUpdate(listener: MetricsListener): () => void {
+  metricsListeners.add(listener);
+  return (): void => {
+    metricsListeners.delete(listener);
+  };
+}
+
 function updateMetrics(tool: string, ok: boolean, durationMs: number): void {
   const current = globalMetrics.get(tool) ?? {
     calls: 0,
@@ -108,6 +124,15 @@ function updateMetrics(tool: string, ok: boolean, durationMs: number): void {
   if (!ok) current.errors++;
   current.totalDurationMs += durationMs;
   globalMetrics.set(tool, current);
+
+  // Notify listeners — best effort, never break tool execution
+  for (const listener of metricsListeners) {
+    try {
+      listener();
+    } catch {
+      // Intentionally swallowed: observability must not interrupt tool execution.
+    }
+  }
 }
 
 // --- Channels & Observability State ---
@@ -473,15 +498,20 @@ export async function withToolDiagnostics<T>(
 
   return toolContext.run(context, async () => {
     if (!config.enabled) {
-      if (!config.logToolErrors) return run();
+      if (!config.logToolErrors && metricsListeners.size === 0) return run();
       const start = performance.now();
       try {
         const res = await run();
+        const duration = performance.now() - start;
         const { ok, error } = extractOutcome(res);
-        if (!ok) logError(tool, performance.now() - start, error);
+        updateMetrics(tool, ok, duration);
+        if (!ok && config.logToolErrors) logError(tool, duration, error);
         return res;
       } catch (e) {
-        logError(tool, performance.now() - start, extractErrorMessage(e));
+        const duration = performance.now() - start;
+        updateMetrics(tool, false, duration);
+        if (config.logToolErrors)
+          logError(tool, duration, extractErrorMessage(e));
         throw e;
       }
     }
