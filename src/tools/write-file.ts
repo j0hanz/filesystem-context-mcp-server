@@ -10,10 +10,10 @@ import { ErrorCode } from '../lib/errors.js';
 import { atomicWriteFile } from '../lib/fs-helpers.js';
 import { Logger } from '../lib/logger.js';
 import { validatePathForWrite } from '../lib/paths.js';
-
-import { formatBytes } from '../config.js';
 import { WriteFileInputSchema } from '../schemas/inputs.js';
 import { WriteFileOutputSchema } from '../schemas/outputs.js';
+
+import { formatBytes } from '../config.js';
 import { FILE_EDIT_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,
@@ -44,7 +44,7 @@ async function handleWriteFile(
   args: z.infer<typeof WriteFileInputSchema>,
   signal?: AbortSignal
 ): Promise<ToolResponse<z.infer<typeof WriteFileOutputSchema>>> {
-  const validPath = await validatePathForWrite(args.path, signal);
+  const validPath = await validatePathForWrite(args.path ?? '', signal);
 
   // Ensure parent directory exists
   await withAbort(mkdir(dirname(validPath), { recursive: true }), signal);
@@ -80,7 +80,7 @@ export function registerWriteFileTool(
         const result = await handleWriteFile(args, signal);
         void ctx.log?.(
           'info',
-          `write: ${args.path} (${String(result.structuredContent.bytesWritten ?? 0)} bytes)`,
+          `write: ${args.path} (${String(result.structuredContent.bytesWritten)} bytes)`,
           'write'
         );
         return result;
@@ -91,13 +91,13 @@ export function registerWriteFileTool(
 
   registerStandardTool(server, WRITE_FILE_TOOL, handler, options, {
     progressMessage: (args) =>
-      `${WRITE_FILE_TOOL.title}: ${basename(args.path)}`,
+      `${WRITE_FILE_TOOL.title}: ${basename(args.path ?? '')}`,
     completionMessage: (args, result) => {
-      const name = basename(args.path);
+      const name = basename(args.path ?? '');
       if (result.isError)
         return `${WRITE_FILE_TOOL.title}: ${name} • ${result.errorCode}`;
       const sc = result.structuredContent;
-      return `${WRITE_FILE_TOOL.title}: ${name} • ${formatBytes(sc.bytesWritten ?? 0)}`;
+      return `${WRITE_FILE_TOOL.title}: ${name} • ${formatBytes(sc.bytesWritten)}`;
     },
   });
 }

@@ -16,12 +16,10 @@ import {
   searchContent,
   type SearchContentOptions,
 } from '../lib/file-operations/search.js';
+import { GrepInputSchema } from '../schemas/inputs.js';
+import { GrepOutputSchema } from '../schemas/outputs.js';
 
 import { formatOperationSummary } from '../config.js';
-import {
-  SearchContentInputSchema,
-  SearchContentOutputSchema,
-} from '../schemas.js';
 import { SEARCH_ICONS } from './icons.js';
 import {
   buildResourceLink,
@@ -59,8 +57,8 @@ const CONFIG = {
 } as const;
 
 // Type Definitions
-type SearchInput = z.infer<typeof SearchContentInputSchema>;
-type SearchOutput = z.infer<typeof SearchContentOutputSchema>;
+type SearchInput = z.infer<typeof GrepInputSchema>;
+type SearchOutput = z.infer<typeof GrepOutputSchema>;
 type SearchMatchPayload = NonNullable<SearchOutput['matches']>[number];
 type SearchResultValue = Awaited<ReturnType<typeof searchContent>>;
 type SearchSummary = SearchResultValue['summary'];
@@ -112,7 +110,7 @@ function buildStructuredSummaryFields(
 function buildCompletionSuffix(
   count: number,
   filesMatched: number,
-  scope: SearchInput['filePattern'],
+  scope: SearchInput['pattern'],
   stoppedReason?: SearchSummary['stoppedReason']
 ): string {
   if (count === 0) return `No matches in ${scope}`;
@@ -149,8 +147,8 @@ export const SEARCH_CONTENT_TOOL: ToolContract = {
     'Search file contents for text (grep-like). Returns matching lines. ' +
     'Scope with `filePattern` (e.g. `**/*.ts`) to reduce noise. ' +
     '`includeHidden=true` for dotfiles.',
-  inputSchema: SearchContentInputSchema,
-  outputSchema: SearchContentOutputSchema,
+  inputSchema: GrepInputSchema,
+  outputSchema: GrepOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   icons: SEARCH_ICONS,
   nuances: [
@@ -304,10 +302,12 @@ async function executeSearch(
   const options: SearchContentOptions = {
     includeHidden: args.includeHidden,
     excludePatterns,
-    filePattern: args.filePattern,
+    filePattern: args.pattern ?? '**/*',
     caseSensitive: args.caseSensitive,
     wholeWord: args.wholeWord,
-    contextLines: args.contextLines,
+    ...(args.contextLines !== undefined
+      ? { contextLines: args.contextLines }
+      : {}),
     maxResults: args.maxResults,
     isLiteral: !args.isRegex,
     ...(signal ? { signal } : {}),
@@ -315,7 +315,7 @@ async function executeSearch(
   };
 
   try {
-    return await searchContent(basePath, args.pattern, options);
+    return await searchContent(basePath, args.searchPattern, options);
   } catch (error) {
     if (error instanceof Error && /regular expression/i.test(error.message)) {
       throw new McpError(
@@ -331,7 +331,7 @@ function createSearchMatcher(args: SearchInput): RE2 | undefined {
   if (!args.isRegex) return undefined;
   try {
     const flags = args.caseSensitive ? '' : 'i';
-    return new RE2(args.pattern, flags);
+    return new RE2(args.searchPattern, flags);
   } catch (error) {
     throw new McpError(
       ErrorCode.INVALID_PATTERN,
@@ -345,11 +345,11 @@ function createSearchContext(
   matcher: RE2 | undefined
 ): SearchContext {
   return {
-    pattern: args.pattern,
+    pattern: args.searchPattern,
     caseSensitive: args.caseSensitive,
     ...(matcher ? { matcher } : {}),
     ...(!args.isRegex && !args.caseSensitive
-      ? { foldedPattern: args.pattern.toLowerCase() }
+      ? { foldedPattern: args.searchPattern.toLowerCase() }
       : {}),
   };
 }
@@ -419,10 +419,11 @@ export function registerSearchContentTool(
     executeToolWithDiagnostics({
       toolName: 'grep',
       ctx,
-      outputSchema: SearchContentOutputSchema,
+      outputSchema: GrepOutputSchema,
       context: { path: args.path ?? '.' },
       run: async (signal) => {
-        const { pattern, filePattern: scope } = args;
+        const pattern = args.searchPattern;
+        const scope = args.pattern;
         const progressLabel = `${SEARCH_CONTENT_TOOL.title}: ${truncateProgressPattern(pattern)}`;
         const progress = createToolProgressSession(ctx, progressLabel);
 

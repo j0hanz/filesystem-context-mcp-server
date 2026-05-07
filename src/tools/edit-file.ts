@@ -13,9 +13,9 @@ import { ErrorCode, McpError } from '../lib/errors.js';
 import { atomicWriteFile, readFileWithStats } from '../lib/fs-helpers.js';
 import { Logger } from '../lib/logger.js';
 import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
-
 import { EditFileInputSchema } from '../schemas/inputs.js';
 import { EditFileOutputSchema } from '../schemas/outputs.js';
+
 import { FILE_EDIT_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,
@@ -291,7 +291,7 @@ async function loadEditableFile(
 }
 
 function buildEditProgressMessage(args: EditInput): string {
-  const name = basename(args.path);
+  const name = basename(args.path ?? '');
   const tag = args.dryRun ? ' [dry run]' : '';
   return `${EDIT_FILE_TOOL.title}: ${name}${tag}`;
 }
@@ -300,7 +300,7 @@ function buildEditCompletionMessage(
   args: EditInput,
   result: ToolResult<EditOutput>
 ): string {
-  const name = basename(args.path);
+  const name = basename(args.path ?? '');
   if (result.isError)
     return `${EDIT_FILE_TOOL.title}: ${name} • ${result.errorCode}`;
 
@@ -363,7 +363,10 @@ async function handleEditFile(
   args: EditInput,
   signal?: AbortSignal
 ): Promise<ToolResponse<EditOutput>> {
-  const { validPath, content } = await loadEditableFile(args.path, signal);
+  const { validPath, content } = await loadEditableFile(
+    args.path ?? '',
+    signal
+  );
   const editResult = await applyEdits(
     content,
     args.edits,
@@ -400,7 +403,10 @@ async function handleEditFile(
     );
   }
 
-  return buildToolResponse(buildEditMessage(args.path, editResult), structured);
+  return buildToolResponse(
+    buildEditMessage(args.path ?? '', editResult),
+    structured
+  );
 }
 
 export function registerEditFileTool(

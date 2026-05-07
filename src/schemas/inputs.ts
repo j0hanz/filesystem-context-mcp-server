@@ -14,7 +14,6 @@ import {
 } from '../lib/constants.js';
 
 import { OptionalPath, RequiredPath, SafeGlobPattern } from './fields.js';
-import { toToolJsonSchema } from './json-schema.js';
 import { CursorSchema } from './pagination.js';
 import {
   createReadRangeFields,
@@ -96,6 +95,7 @@ const readRangeFields = createReadRangeFields({
 export const ReadFileInputSchema = z
   .strictObject({
     path: OptionalPath,
+    includeHash: defaultFalseBoolean('Include SHA-256 hash of the content'),
     ...readRangeFields,
   })
   .superRefine((value, ctx) => {
@@ -110,43 +110,6 @@ export const ReadFileInputSchema = z
     );
   });
 
-const ReadFileInputSchemaJson = toToolJsonSchema(ReadFileInputSchema, (s) => ({
-  ...s,
-  allOf: [
-    ...(Array.isArray(s.allOf) ? (s.allOf as unknown[]) : []),
-    {
-      if: { required: ['head'] },
-      then: {
-        not: {
-          anyOf: [
-            { required: ['tail'] },
-            { required: ['startLine'] },
-            { required: ['endLine'] },
-          ],
-        },
-      },
-    },
-    {
-      if: { required: ['tail'] },
-      then: {
-        not: {
-          anyOf: [
-            { required: ['head'] },
-            { required: ['startLine'] },
-            { required: ['endLine'] },
-          ],
-        },
-      },
-    },
-    {
-      if: { required: ['startLine'] },
-      then: {
-        not: { anyOf: [{ required: ['head'] }, { required: ['tail'] }] },
-      },
-    },
-  ],
-}));
-
 const readManyRangeFields = createReadRangeFields({
   head: 'Return first N lines from each',
   tail: 'Return last N lines from each',
@@ -154,7 +117,7 @@ const readManyRangeFields = createReadRangeFields({
   endLine: 'End line (1-indexed)',
 });
 
-const ReadManyInputSchema = z
+export const ReadManyInputSchema = z
   .strictObject({
     paths: z.array(RequiredPath).min(1).describe('File paths to read'),
     ...readManyRangeFields,
@@ -171,53 +134,29 @@ const ReadManyInputSchema = z
     );
   });
 
-const ReadManyInputSchemaJson = toToolJsonSchema(ReadManyInputSchema, (s) => ({
-  ...s,
-  allOf: [
-    ...(Array.isArray(s.allOf) ? (s.allOf as unknown[]) : []),
-    {
-      if: { required: ['head'] },
-      then: {
-        not: {
-          anyOf: [
-            { required: ['tail'] },
-            { required: ['startLine'] },
-            { required: ['endLine'] },
-          ],
-        },
-      },
-    },
-    {
-      if: { required: ['tail'] },
-      then: {
-        not: {
-          anyOf: [
-            { required: ['head'] },
-            { required: ['startLine'] },
-            { required: ['endLine'] },
-          ],
-        },
-      },
-    },
-    {
-      if: { required: ['startLine'] },
-      then: {
-        not: { anyOf: [{ required: ['head'] }, { required: ['tail'] }] },
-      },
-    },
-  ],
-}));
-
 // --- Content search: grep, search_and_replace ---
 
-const GrepInputSchema = z.strictObject({
+export const GrepInputSchema = z.strictObject({
   path: OptionalPath,
-  pattern: SafeGlobPattern.optional().describe('File glob filter'),
-  searchPattern: z.string().min(1).max(10000),
+  pattern: SafeGlobPattern.optional().describe(
+    'File glob filter (default: all text files)'
+  ),
+  searchPattern: z
+    .string()
+    .min(1)
+    .max(10000)
+    .describe('Text or regex to search for'),
   isRegex: defaultFalseBoolean('Treat searchPattern as regex'),
   includeHidden: includeHiddenField(),
   includeIgnored: includeIgnoredField(),
   caseSensitive: defaultFalseBoolean('Case-sensitive'),
+  wholeWord: defaultFalseBoolean('Match whole words only'),
+  contextLines: z
+    .int()
+    .min(0)
+    .max(20)
+    .optional()
+    .describe('Lines of context around each match'),
   maxResults: z
     .int()
     .min(1)
@@ -230,51 +169,71 @@ const GrepInputSchema = z.strictObject({
 
 export const SearchAndReplaceInputSchema = z.strictObject({
   path: OptionalPath,
-  pattern: SafeGlobPattern.optional().describe('File glob filter'),
-  searchPattern: z.string().min(1).max(10000),
-  replacement: z.string().max(10000),
+  pattern: SafeGlobPattern.optional().describe(
+    'File glob filter (default: **/* text files)'
+  ),
+  searchPattern: z.string().min(1).max(10000).describe('Text or regex to find'),
+  replacement: z.string().max(10000).describe('Replacement text'),
   isRegex: defaultFalseBoolean('Treat searchPattern as regex'),
   includeHidden: includeHiddenField(),
   includeIgnored: includeIgnoredField(),
   caseSensitive: defaultFalseBoolean('Case-sensitive'),
   dryRun: defaultFalseBoolean('Preview without writing'),
+  returnDiff: defaultFalseBoolean('Include unified diff in output'),
   maxResults: z
     .int()
     .min(1)
     .max(MAX_SEARCH_RESULTS)
     .optional()
-    .default(DEFAULT_SEARCH_RESULTS),
+    .default(DEFAULT_SEARCH_RESULTS)
+    .describe('Max matches across all files'),
+  maxFiles: z.int().min(1).optional().describe('Max files to process'),
   maxDepth: z.int().min(0).max(MAX_SEARCH_DEPTH).optional(),
   cursor: CursorSchema,
 });
 
 // --- Stat group: stat, stat_many ---
 
-const StatInputSchema = z.strictObject({
+export const StatInputSchema = z.strictObject({
   path: OptionalPath,
 });
 
-const StatManyInputSchema = z.strictObject({
+export const StatManyInputSchema = z.strictObject({
   paths: z.array(RequiredPath).min(1),
 });
 
 // --- Misc: hash, diff, patch, roots ---
 
-const HashInputSchema = z.strictObject({
+export const HashInputSchema = z.strictObject({
   path: OptionalPath,
 });
 
 export const DiffFilesInputSchema = z.strictObject({
-  paths: z.array(RequiredPath).min(2).max(2),
+  paths: z
+    .array(RequiredPath)
+    .min(2)
+    .max(2)
+    .describe('Exactly two paths: [original, modified]'),
+  context: z.int().min(0).optional().describe('Context lines (default 3)'),
+  ignoreWhitespace: defaultFalseBoolean('Ignore whitespace changes'),
+  stripTrailingCr: defaultFalseBoolean('Strip trailing carriage returns'),
 });
 
 export const ApplyPatchInputSchema = z.strictObject({
   path: OptionalPath,
-  patch: z.string().min(1),
-  dryRun: z.boolean().optional().default(false),
+  patch: z.string().min(1).describe('Unified diff patch content'),
+  dryRun: defaultFalseBoolean('Validate patch without applying'),
+  fuzzFactor: z
+    .int()
+    .min(0)
+    .max(10)
+    .optional()
+    .default(0)
+    .describe('Lines of context allowed to differ (0–10)'),
+  autoConvertLineEndings: defaultFalseBoolean('Auto-convert line endings'),
 });
 
-const RootsInputSchema = z.strictObject({});
+export const RootsInputSchema = z.strictObject({});
 
 // --- Write group: write, edit, mkdir, mv, rm ---
 
@@ -286,8 +245,18 @@ export const WriteFileInputSchema = z.strictObject({
 export const EditFileInputSchema = z.strictObject({
   path: OptionalPath,
   edits: z
-    .array(z.strictObject({ oldText: z.string(), newText: z.string() }))
-    .min(1),
+    .array(
+      z.strictObject({
+        oldText: z.string().min(1, 'oldText required'),
+        newText: z.string(),
+      })
+    )
+    .min(1)
+    .describe('List of text substitutions'),
+  dryRun: defaultFalseBoolean('Preview changes without writing'),
+  ignoreWhitespace: defaultFalseBoolean(
+    'Ignore leading/trailing whitespace when matching'
+  ),
 });
 
 export const CreateDirectoryInputSchema = z.strictObject({
@@ -299,7 +268,8 @@ export const MoveFileInputSchema = z.strictObject({
   destination: RequiredPath,
 });
 
-const DeleteInputSchema = z.strictObject({
+export const DeleteInputSchema = z.strictObject({
   path: RequiredPath,
-  force: z.boolean().optional().default(false),
+  recursive: defaultFalseBoolean('Delete directories recursively'),
+  ignoreIfNotExists: defaultFalseBoolean('No error if path does not exist'),
 });

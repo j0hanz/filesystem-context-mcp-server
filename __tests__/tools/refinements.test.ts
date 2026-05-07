@@ -57,27 +57,20 @@ describe('apply_patch multi-file', () => {
     const sc = getStructured(raw);
 
     assert.equal(sc['ok'], true);
-    assert.equal(sc['applied'], true);
-    assert.equal(sc['hunksApplied'], 2);
-    assert.equal(typeof sc['linesAdded'], 'number');
-    assert.equal(typeof sc['linesRemoved'], 'number');
-    assert.ok((sc['linesAdded'] as number) >= 2);
-    assert.ok((sc['linesRemoved'] as number) >= 2);
+    const summary = sc['summary'] as Record<string, unknown>;
+    assert.equal(summary['succeeded'], 2);
+    assert.equal(summary['total'], 2);
 
-    const results = sc['results'] as Record<string, unknown>[];
-    assert.equal(results.length, 2);
-    assert.equal(results[0]?.['path'], 'alpha.txt');
-    assert.equal(results[1]?.['path'], 'beta.txt');
+    const files = sc['files'] as Record<string, unknown>[];
+    assert.equal(files.length, 2);
 
-    const alphaResult = results.find((r) => r['path'] === 'alpha.txt');
-    assert.ok(alphaResult, 'Expected result for alpha.txt');
-    assert.equal(alphaResult['applied'], true);
-    assert.equal(alphaResult['hunksApplied'], 1);
+    const alphaFile = files.find((f) => f['path'] === 'alpha.txt');
+    assert.ok(alphaFile, 'Expected file result for alpha.txt');
+    assert.equal(alphaFile['hunks'], 1);
 
-    const betaResult = results.find((r) => r['path'] === 'beta.txt');
-    assert.ok(betaResult, 'Expected result for beta.txt');
-    assert.equal(betaResult['applied'], true);
-    assert.equal(betaResult['hunksApplied'], 1);
+    const betaFile = files.find((f) => f['path'] === 'beta.txt');
+    assert.ok(betaFile, 'Expected file result for beta.txt');
+    assert.equal(betaFile['hunks'], 1);
 
     const actualA = await readFile(fileA, 'utf8');
     assert.ok(actualA.includes('TWO'), 'alpha.txt should contain TWO');
@@ -116,21 +109,16 @@ describe('apply_patch multi-file', () => {
     assertOk(raw);
     const sc = getStructured(raw);
 
-    // ok is false because not all files succeeded
-    assert.equal(sc['ok'], false);
-    const results = sc['results'] as Record<string, unknown>[];
-    assert.equal(results.length, 2);
-    assert.equal(results[0]?.['path'], 'alpha.txt');
-    assert.equal(results[1]?.['path'], 'nonexistent.txt');
+    // summary shows partial success
+    const summary = sc['summary'] as Record<string, unknown>;
+    assert.equal(summary['succeeded'], 1);
+    assert.equal(summary['failed'], 1);
+    assert.equal(summary['total'], 2);
 
-    const alphaResult = results.find((r) => r['path'] === 'alpha.txt');
-    assert.ok(alphaResult);
-    assert.equal(alphaResult['applied'], true);
-
-    const missingResult = results.find((r) => r['path'] === 'nonexistent.txt');
-    assert.ok(missingResult);
-    assert.equal(missingResult['applied'], false);
-    assert.ok(missingResult['error'], 'Expected error for missing file');
+    const files = sc['files'] as Record<string, unknown>[];
+    assert.equal(files.length, 1, 'Only successful patches in files array');
+    const alphaFile = files.find((f) => f['path'] === 'alpha.txt');
+    assert.ok(alphaFile, 'Expected file result for alpha.txt');
   });
 
   it('dryRun:true does not modify files in multi-file mode', async () => {
@@ -317,8 +305,8 @@ describe('grep externalization with expiresAt', () => {
       name: 'grep',
       arguments: {
         path: env.tmpDir,
-        pattern: 'FINDME_marker',
-        filePattern: '**/*.txt',
+        searchPattern: 'FINDME_marker',
+        pattern: '**/*.txt',
       },
     });
     assertOk(raw);

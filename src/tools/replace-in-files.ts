@@ -460,7 +460,7 @@ async function handleSearchAndReplace(
 
   const entries = globEntries({
     cwd: root,
-    pattern: args.filePattern,
+    pattern: args.pattern ?? '**/*',
     excludePatterns: args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS,
     includeHidden: args.includeHidden,
     baseNameMatch: false,
@@ -535,7 +535,7 @@ export function registerSearchAndReplaceTool(
       run: async (signal) => {
         const dryLabel = args.dryRun ? ' [dry run]' : '';
         const truncatedPattern = truncateProgressPattern(args.searchPattern);
-        const context = `"${truncatedPattern}" in ${args.filePattern}${dryLabel}`;
+        const context = `"${truncatedPattern}" in ${args.pattern ?? '**/*'}${dryLabel}`;
         const progress = createToolProgressSession(
           ctx,
           `${SEARCH_AND_REPLACE_TOOL.title}: ${context}`
@@ -563,11 +563,11 @@ export function registerSearchAndReplaceTool(
           const sc = result.structuredContent;
           const finalCurrent = resolveFinalProgressCurrent(
             progress,
-            (sc.processedFiles ?? 0) + 1
+            sc.processedFiles + 1
           );
-          const matchWord = (sc.matches ?? 0) === 1 ? 'match' : 'matches';
-          const fileWord = (sc.filesChanged ?? 0) === 1 ? 'file' : 'files';
-          let endSuffix = `${sc.matches ?? 0} ${matchWord} in ${sc.filesChanged ?? 0} ${fileWord}`;
+          const matchWord = sc.matches === 1 ? 'match' : 'matches';
+          const fileWord = sc.filesChanged === 1 ? 'file' : 'files';
+          let endSuffix = `${sc.matches} ${matchWord} in ${sc.filesChanged} ${fileWord}`;
           if (sc.failedFiles) endSuffix += `, ${sc.failedFiles} failed`;
           progress.complete(
             `${SEARCH_AND_REPLACE_TOOL.title}: ${context} • ${endSuffix}`,
@@ -576,7 +576,7 @@ export function registerSearchAndReplaceTool(
           if (!args.dryRun) {
             void ctx.log?.(
               'info',
-              `search_and_replace: ${String(sc.matches ?? 0)} matches in ${String(sc.filesChanged ?? 0)} files`,
+              `search_and_replace: ${String(sc.matches)} matches in ${String(sc.filesChanged)} files`,
               'search_and_replace'
             );
           }

@@ -1,13 +1,7 @@
 import type { ZodType } from 'zod/v4';
 import { z } from 'zod/v4';
 
-import {
-  ErrorCodeEnum,
-  FileType as FileTypeEnum,
-  IsoDateTime,
-  NonNegInt,
-  PositiveInt,
-} from './fields.js';
+import { FileType as FileTypeEnum, IsoDateTime, NonNegInt } from './fields.js';
 
 function reg<T extends ZodType>(schema: T, id: string): T {
   z.globalRegistry.add(schema, { id });
@@ -32,16 +26,6 @@ export const FileInfoSchema = reg(
   'FileInfo'
 );
 
-const ErrorSchema = reg(
-  z.strictObject({
-    code: ErrorCodeEnum.describe('Error code (e.g. NOT_FOUND)'),
-    message: z.string().describe('Human-readable message'),
-    path: z.string().optional().describe('Relevant path'),
-    suggestion: z.string().optional().describe('Fix suggestion'),
-  }),
-  'Error'
-);
-
 export const OperationSummarySchema = reg(
   z.strictObject({
     total: NonNegInt.describe('Total'),
@@ -50,56 +34,6 @@ export const OperationSummarySchema = reg(
   }),
   'OperationSummary'
 );
-
-export const SearchSummarySchema = reg(
-  z.strictObject({
-    totalMatches: NonNegInt.optional().describe('Total matches found'),
-    truncated: z.boolean().optional().describe('Results truncated?'),
-    resourceUri: z.string().optional().describe('Full results URI'),
-  }),
-  'SearchSummary'
-);
-
-// Common read-result fields shared by read and read_many item responses.
-export const ReadResultSchema = reg(
-  z.strictObject({
-    content: z.string().optional().describe('Content'),
-    truncated: z.boolean().optional().describe('Truncated?'),
-    resourceUri: z.string().optional().describe('Full content URI'),
-    totalLines: NonNegInt.optional().describe('Total lines'),
-    head: PositiveInt.optional().describe('Head lines'),
-    tail: PositiveInt.optional().describe('Tail lines'),
-    startLine: PositiveInt.optional().describe('Start line'),
-    endLine: PositiveInt.optional().describe('End line'),
-    linesRead: NonNegInt.optional().describe('Lines read'),
-    hasMoreLines: z.boolean().optional().describe('More lines?'),
-  }),
-  'ReadResult'
-);
-
-// Shared read-range input fields (head/tail/startLine/endLine) used in read and read_many.
-interface ReadRangeFields {
-  head: ReturnType<typeof z.int>['optional'] extends (
-    ...args: unknown[]
-  ) => infer R
-    ? R
-    : never;
-  tail: ReturnType<typeof z.int>['optional'] extends (
-    ...args: unknown[]
-  ) => infer R
-    ? R
-    : never;
-  startLine: ReturnType<typeof z.int>['optional'] extends (
-    ...args: unknown[]
-  ) => infer R
-    ? R
-    : never;
-  endLine: ReturnType<typeof z.int>['optional'] extends (
-    ...args: unknown[]
-  ) => infer R
-    ? R
-    : never;
-}
 
 interface ReadRangeDescriptions {
   head: string;

@@ -135,7 +135,7 @@ describe('diff_files tool', () => {
   it('returns a diff for two different files', async () => {
     const raw = await env.client.callTool({
       name: 'diff_files',
-      arguments: { original, modified },
+      arguments: { paths: [original, modified] },
     });
     const result = raw;
     assertOk(result);
@@ -149,7 +149,7 @@ describe('diff_files tool', () => {
   it('returns isIdentical:true for identical files', async () => {
     const raw = await env.client.callTool({
       name: 'diff_files',
-      arguments: { original, modified: identical },
+      arguments: { paths: [original, identical] },
     });
     const result = raw;
     assertOk(result);
@@ -161,8 +161,7 @@ describe('diff_files tool', () => {
     const raw = await env.client.callTool({
       name: 'diff_files',
       arguments: {
-        original: join(env.tmpDir, 'no-such-file.txt'),
-        modified,
+        paths: [join(env.tmpDir, 'no-such-file.txt'), modified],
       },
     });
     assertToolError(raw, 'NOT_FOUND');

@@ -70,7 +70,7 @@ describe('task mode: diff_files', () => {
         method: 'tools/call' as const,
         params: {
           name: 'diff_files',
-          arguments: { original: fileA, modified: fileB },
+          arguments: { paths: [fileA, fileB] },
         },
       },
       { task: {} }
@@ -102,7 +102,7 @@ describe('task mode: diff_files', () => {
         method: 'tools/call' as const,
         params: {
           name: 'diff_files',
-          arguments: { original: fileA, modified: fileB },
+          arguments: { paths: [fileA, fileB] },
         },
       },
       { task: {} }
@@ -170,7 +170,8 @@ describe('task mode: apply_patch', () => {
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
-    assert.equal(sc['applied'], true);
+    const summary = sc['summary'] as Record<string, unknown>;
+    assert.equal(summary['succeeded'], 1);
   });
 
   it('dry run task completes without modifying file', async () => {
@@ -209,7 +210,8 @@ describe('task mode: apply_patch', () => {
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
-    assert.equal(sc['applied'], true);
+    const summary = sc['summary'] as Record<string, unknown>;
+    assert.ok(typeof summary['total'] === 'number');
 
     // Verify file was not modified
     const { readFile } = await import('node:fs/promises');

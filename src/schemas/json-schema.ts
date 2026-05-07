@@ -7,6 +7,8 @@ type JsonSchema = Record<string, unknown>;
 // Recursively clean up JSON Schema output produced by z.toJSONSchema():
 // - Strip `pattern` from `format: "date-time"` nodes (eliminates the 340-char Zod datetime regex)
 // - Strip `maximum: Number.MAX_SAFE_INTEGER` from integer nodes (implicit, just noise)
+// - Remove fields with `default` from `required` (Zod marks defaulted fields required, but
+//   clients omit them legitimately and Zod fills in the default at parse time)
 function walk(schema: unknown): unknown {
   if (!schema || typeof schema !== 'object' || Array.isArray(schema))
     return schema;
@@ -20,6 +22,18 @@ function walk(schema: unknown): unknown {
   }
   if (result.maximum === Number.MAX_SAFE_INTEGER && result.type === 'integer') {
     delete result.maximum;
+  }
+  // Remove from `required` any property that has a `default` value — it's optional at input.
+  if (
+    Array.isArray(result.required) &&
+    result.properties &&
+    typeof result.properties === 'object'
+  ) {
+    const props = result.properties as Record<string, JsonSchema>;
+    result.required = (result.required as string[]).filter(
+      (name) => !('default' in (props[name] ?? {}))
+    );
+    if ((result.required as string[]).length === 0) delete result.required;
   }
   return result;
 }

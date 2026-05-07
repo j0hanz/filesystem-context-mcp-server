@@ -6,13 +6,11 @@ import { basename } from 'node:path';
 import type { z } from 'zod/v4';
 
 import { withAbort } from '../lib/abort.js';
-import { ErrorCode, McpError } from '../lib/errors.js';
+import { ErrorCode } from '../lib/errors.js';
 import { validatePathForWrite } from '../lib/paths.js';
+import { CreateDirectoryInputSchema } from '../schemas/inputs.js';
+import { CreateDirectoryOutputSchema } from '../schemas/outputs.js';
 
-import {
-  CreateDirectoryInputSchema,
-  CreateDirectoryOutputSchema,
-} from '../schemas.js';
 import { DIR_CREATE_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,
@@ -42,32 +40,27 @@ async function handleCreateDirectory(
   args: z.infer<typeof CreateDirectoryInputSchema>,
   signal?: AbortSignal
 ): Promise<ToolResponse<z.infer<typeof CreateDirectoryOutputSchema>>> {
-  const allPaths: string[] = [];
-  if (args.path) allPaths.push(args.path);
-  if (args.paths) allPaths.push(...args.paths);
-
-  if (allPaths.length === 0) {
-    throw new McpError(ErrorCode.INVALID_INPUT, 'No paths provided to create.');
-  }
-
   const validPaths = await Promise.all(
-    allPaths.map((p) => validatePathForWrite(p, signal))
+    args.paths.map((p) => validatePathForWrite(p, signal))
   );
 
-  await Promise.all(
-    validPaths.map((p) => withAbort(mkdir(p, { recursive: true }), signal))
+  const results = await Promise.all(
+    validPaths.map(async (p) => {
+      const isNew = await withAbort(mkdir(p, { recursive: true }), signal)
+        .then((created) => created !== undefined)
+        .catch(() => false);
+      return { path: p, isNew };
+    })
   );
 
-  const createdPath = validPaths.length === 1 ? validPaths[0] : undefined;
+  const succeeded = results.length;
+  const label = succeeded === 1 ? 'directory' : 'directories';
 
-  return buildToolResponse(
-    `Successfully created ${validPaths.length} director${validPaths.length === 1 ? 'y' : 'ies'}`,
-    {
-      ok: true,
-      ...(createdPath ? { path: createdPath } : {}),
-      paths: validPaths,
-    }
-  );
+  return buildToolResponse(`Created ${succeeded} ${label}`, {
+    ok: true,
+    created: results,
+    summary: { total: results.length, succeeded, failed: 0 },
+  });
 }
 
 export function registerCreateDirectoryTool(
@@ -83,34 +76,29 @@ export function registerCreateDirectoryTool(
       ctx,
       outputSchema: CreateDirectoryOutputSchema,
       timedSignal: {},
-      context: { path: args.path ?? args.paths?.[0] },
+      context: { path: args.paths[0] ?? '' },
       run: (signal) => handleCreateDirectory(args, signal),
       onError: (error) =>
-        buildToolErrorResponse(
-          error,
-          ErrorCode.UNKNOWN,
-          args.path ?? args.paths?.[0]
-        ),
+        buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.paths[0] ?? ''),
     });
 
   registerStandardTool(server, CREATE_DIRECTORY_TOOL, handler, options, {
     progressMessage: (args) => {
-      if (args.path && !args.paths?.length) {
-        return `${CREATE_DIRECTORY_TOOL.title}: ${basename(args.path)}`;
+      if (args.paths.length === 1) {
+        return `${CREATE_DIRECTORY_TOOL.title}: ${basename(args.paths[0] ?? '')}`;
       }
-      const count = (args.path ? 1 : 0) + (args.paths?.length ?? 0);
-      return `${CREATE_DIRECTORY_TOOL.title}: ${count} directories`;
+      return `${CREATE_DIRECTORY_TOOL.title}: ${args.paths.length} directories`;
     },
     completionMessage: (args, result) => {
-      if (args.path && !args.paths?.length) {
-        const name = basename(args.path);
+      if (args.paths.length === 1) {
+        const name = basename(args.paths[0] ?? '');
         if (result.isError)
           return `${CREATE_DIRECTORY_TOOL.title}: ${name} • ${result.errorCode}`;
+        return `${CREATE_DIRECTORY_TOOL.title}: ${name}`;
       }
-      const count = (args.path ? 1 : 0) + (args.paths?.length ?? 0);
       if (result.isError)
-        return `${CREATE_DIRECTORY_TOOL.title}: ${count} directories • ${result.errorCode}`;
-      return `${CREATE_DIRECTORY_TOOL.title}: ${count} directories`;
+        return `${CREATE_DIRECTORY_TOOL.title}: ${args.paths.length} directories • ${result.errorCode}`;
+      return `${CREATE_DIRECTORY_TOOL.title}: ${args.paths.length} directories`;
     },
   });
 }

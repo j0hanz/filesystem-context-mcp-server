@@ -37,8 +37,8 @@ describe('stat tool', () => {
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
-    const info = sc['info'] as Record<string, unknown>;
-    assert.ok(info, 'Expected info field');
+    const info = sc['file'] as Record<string, unknown>;
+    assert.ok(info, 'Expected file field');
     assert.equal(info['type'], 'file');
     assert.ok(typeof info['size'] === 'number' && info['size'] > 0);
     assert.equal(info['name'], 'stat-test.txt');
@@ -53,7 +53,7 @@ describe('stat tool', () => {
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
-    const info = sc['info'] as Record<string, unknown>;
+    const info = sc['file'] as Record<string, unknown>;
     assert.equal(info['type'], 'directory');
   });
 

@@ -16,11 +16,9 @@ import {
 import { globEntries } from '../lib/file-operations/traversal.js';
 import { calculateFileContentHash } from '../lib/fs-helpers.js';
 import { validateExistingPath } from '../lib/paths.js';
+import { HashInputSchema } from '../schemas/inputs.js';
+import { HashOutputSchema } from '../schemas/outputs.js';
 
-import {
-  CalculateHashInputSchema,
-  CalculateHashOutputSchema,
-} from '../schemas.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,
@@ -43,8 +41,8 @@ export const CALCULATE_HASH_TOOL: ToolContract = {
   name: 'calculate_hash',
   title: 'Calculate Hash',
   description: 'Calculate SHA-256 hash of a file or directory.',
-  inputSchema: CalculateHashInputSchema,
-  outputSchema: CalculateHashOutputSchema,
+  inputSchema: HashInputSchema,
+  outputSchema: HashOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   icons: FILE_READ_ICONS,
   nuances: [
@@ -167,17 +165,16 @@ async function hashDirectory(
 }
 
 async function handleCalculateHash(
-  args: z.infer<typeof CalculateHashInputSchema>,
+  args: z.infer<typeof HashInputSchema>,
   signal?: AbortSignal,
   onProgress?: (progress: { total?: number; current: number }) => void
-): Promise<ToolResponse<z.infer<typeof CalculateHashOutputSchema>>> {
-  const validPath = await validateExistingPath(args.path, signal);
+): Promise<ToolResponse<z.infer<typeof HashOutputSchema>>> {
+  const validPath = await validateExistingPath(args.path ?? '', signal);
 
   // Check if path is a directory or file
   const stats = await withAbort(stat(validPath), signal);
 
   if (stats.isDirectory()) {
-    // Hash directory: composite hash of all files
     const { hash, fileCount } = await hashDirectory(validPath, {
       ...(signal ? { signal } : {}),
       ...(onProgress ? { onProgress } : {}),
@@ -185,20 +182,19 @@ async function handleCalculateHash(
 
     return buildToolResponse(`${hash} (${fileCount} files)`, {
       ok: true,
-      path: validPath,
       hash,
+      path: validPath,
       isDirectory: true,
       fileCount,
     });
   } else {
-    // Hash single file
     const hash = await calculateFileContentHash(validPath, signal);
     onProgress?.({ current: 1 });
 
     return buildToolResponse(hash, {
       ok: true,
-      path: validPath,
       hash,
+      path: validPath,
       isDirectory: false,
     });
   }
@@ -209,17 +205,17 @@ export function registerCalculateHashTool(
   options: ToolRegistrationOptions
 ): void {
   const handler = (
-    args: z.infer<typeof CalculateHashInputSchema>,
+    args: z.infer<typeof HashInputSchema>,
     ctx: ToolContext
-  ): Promise<ToolResult<z.infer<typeof CalculateHashOutputSchema>>> =>
+  ): Promise<ToolResult<z.infer<typeof HashOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'calculate_hash',
       ctx,
-      outputSchema: CalculateHashOutputSchema,
+      outputSchema: HashOutputSchema,
       timedSignal: {},
       context: { path: args.path },
       run: async (signal) => {
-        const baseName = basename(args.path);
+        const baseName = basename(args.path ?? '');
         const progress = createToolProgressSession(
           ctx,
           `${CALCULATE_HASH_TOOL.title}: ${baseName}`
@@ -252,9 +248,9 @@ export function registerCalculateHashTool(
           );
           let suffix: string;
           if (sc.fileCount !== undefined && sc.fileCount > 1) {
-            suffix = `${sc.fileCount} files • ${(sc.hash ?? '').slice(0, 8)}…`;
+            suffix = `${sc.fileCount} files • ${sc.hash.slice(0, 8)}…`;
           } else {
-            suffix = `${(sc.hash ?? '').slice(0, 8)}…`;
+            suffix = `${sc.hash.slice(0, 8)}…`;
           }
           progress.complete(
             `${CALCULATE_HASH_TOOL.title}: ${baseName} • ${suffix}`,

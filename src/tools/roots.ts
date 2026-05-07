@@ -4,12 +4,10 @@ import type { z } from 'zod/v4';
 
 import { ErrorCode } from '../lib/errors.js';
 import { getAllowedDirectories } from '../lib/paths.js';
+import { RootsInputSchema } from '../schemas/inputs.js';
+import { RootsOutputSchema } from '../schemas/outputs.js';
 
 import { joinLines } from '../config.js';
-import {
-  RootsInputSchema,
-  RootsOutputSchema,
-} from '../schemas.js';
 import { DIRECTORY_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,
@@ -52,7 +50,7 @@ function handleListAllowedDirectories(): ToolResponse<
   const dirs = getAllowedDirectories();
   const structured = {
     ok: true,
-    roots: dirs.map(uri => ({ uri })),
+    roots: dirs.map((uri) => ({ uri })),
   } as const;
   return buildToolResponse(buildTextRoots(dirs), structured);
 }
@@ -84,7 +82,7 @@ export function registerListAllowedDirectoriesTool(
         if (result.isError)
           return `${LIST_ALLOWED_DIRECTORIES_TOOL.title} • ${result.errorCode}`;
         const sc = result.structuredContent;
-        const count = sc.roots?.length ?? 0;
+        const count = sc.roots.length;
         return `${LIST_ALLOWED_DIRECTORIES_TOOL.title} • ${count} ${count === 1 ? 'root' : 'roots'}`;
       },
     }

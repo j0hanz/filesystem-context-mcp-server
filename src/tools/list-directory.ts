@@ -12,12 +12,10 @@ import {
 import { ErrorCode, McpError } from '../lib/errors.js';
 import { listDirectory } from '../lib/file-operations/metadata.js';
 import { createBase64JsonCodec } from '../lib/zod-codecs.js';
+import { ListDirectoryInputSchema } from '../schemas/inputs.js';
+import { ListDirectoryOutputSchema } from '../schemas/outputs.js';
 
 import { formatOperationSummary, joinLines } from '../config.js';
-import {
-  ListDirectoryInputSchema,
-} from '../schemas/inputs.js';
-import { ListDirectoryOutputSchema } from '../schemas/outputs.js';
 import { DIRECTORY_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,

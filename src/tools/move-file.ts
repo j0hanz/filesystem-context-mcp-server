@@ -22,9 +22,9 @@ import {
   validateExistingPath,
   validatePathForWrite,
 } from '../lib/paths.js';
-
 import { MoveFileInputSchema } from '../schemas/inputs.js';
 import { MoveFileOutputSchema } from '../schemas/outputs.js';
+
 import { FILE_MOVE_ICONS } from './icons.js';
 import {
   buildStructuredError,
@@ -205,7 +205,7 @@ async function handleMoveFile(
   signal?: AbortSignal,
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>
 ): Promise<ToolResponse<z.infer<typeof MoveFileOutputSchema>>> {
-  const sources = args.sources ?? (args.source ? [args.source] : []);
+  const sources = args.sources;
   if (sources.length === 0) {
     throw new McpError(ErrorCode.INVALID_INPUT, 'No sources provided.');
   }
@@ -259,7 +259,9 @@ async function handleMoveFile(
       ) {
         // Return early — do not move.
         return buildToolResponse(`Move cancelled: ${source}`, {
-          ok: true,
+          ok: false,
+          sources: [],
+          destination: validDest,
         });
       }
     }
@@ -295,7 +297,7 @@ async function handleMoveFile(
     const firstFailure = failed[0];
     if (firstFailure) {
       throw new McpError(
-        firstFailure.error.code,
+        firstFailure.error.code as ErrorCode,
         message,
         firstFailure.error.path
       );
@@ -324,7 +326,7 @@ export function registerMoveFileTool(
       ctx,
       outputSchema: MoveFileOutputSchema,
       timedSignal: {},
-      context: { path: args.source ?? args.sources?.[0] },
+      context: { path: args.sources[0] ?? '' },
       run: async (signal) => {
         const caps = server.server.getClientCapabilities();
         const elicitFn =
@@ -332,39 +334,34 @@ export function registerMoveFileTool(
         const result = await handleMoveFile(args, signal, elicitFn);
         void ctx.log?.(
           'info',
-          `mv: ${args.source ?? args.sources?.join(', ') ?? ''} \u2192 ${args.destination}`,
+          `mv: ${args.sources.join(', ')} \u2192 ${args.destination}`,
           'mv'
         );
         return result;
       },
       onError: (error) =>
-        buildToolErrorResponse(
-          error,
-          ErrorCode.UNKNOWN,
-          args.source ?? args.sources?.[0]
-        ),
+        buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.sources[0] ?? ''),
     });
 
   registerStandardTool(server, MOVE_FILE_TOOL, handler, options, {
     progressMessage: (args) => {
       const dest = basename(args.destination);
-      if (args.source && !args.sources?.length) {
-        return `${MOVE_FILE_TOOL.title}: ${basename(args.source)} → ${dest}`;
+      if (args.sources.length === 1) {
+        return `${MOVE_FILE_TOOL.title}: ${basename(args.sources[0] ?? '')} → ${dest}`;
       }
-      const count = (args.source ? 1 : 0) + (args.sources?.length ?? 0);
-      return `${MOVE_FILE_TOOL.title}: ${count} items → ${dest}`;
+      return `${MOVE_FILE_TOOL.title}: ${args.sources.length} items → ${dest}`;
     },
     completionMessage: (args, result) => {
       const dest = basename(args.destination);
-      if (args.source && !args.sources?.length) {
-        const src = basename(args.source);
+      if (args.sources.length === 1) {
+        const src = basename(args.sources[0] ?? '');
         if (result.isError)
           return `${MOVE_FILE_TOOL.title}: ${src} → ${dest} • ${result.errorCode}`;
+        return `${MOVE_FILE_TOOL.title}: ${src} → ${dest}`;
       }
-      const count = (args.source ? 1 : 0) + (args.sources?.length ?? 0);
       if (result.isError)
-        return `${MOVE_FILE_TOOL.title}: ${count} items → ${dest} • ${result.errorCode}`;
-      return `${MOVE_FILE_TOOL.title}: ${count} items → ${dest}`;
+        return `${MOVE_FILE_TOOL.title}: ${args.sources.length} items → ${dest} • ${result.errorCode}`;
+      return `${MOVE_FILE_TOOL.title}: ${args.sources.length} items → ${dest}`;
     },
   });
 }

@@ -16,12 +16,11 @@ import {
 } from '../lib/fs-helpers.js';
 import { Logger } from '../lib/logger.js';
 import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
-
 import { ApplyPatchInputSchema } from '../schemas/inputs.js';
 import { ApplyPatchOutputSchema } from '../schemas/outputs.js';
+
 import { FILE_EDIT_ICONS } from './icons.js';
 import {
-  buildStructuredError,
   buildToolErrorResponse,
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
@@ -39,15 +38,15 @@ export const APPLY_PATCH_TOOL: ToolContract = {
   title: 'Apply Patch',
   description:
     'Apply a unified diff patch to one or more files. ' +
-    'Single-file: throws on failure. Multi-file: best-effort per file with `results[]`. ' +
-    'Workflow: `diff_files` \u2192 `apply_patch(dryRun:true)` \u2192 `apply_patch`. ' +
+    'Single-file: throws on failure. Multi-file: best-effort per file. ' +
+    'Workflow: `diff_files` → `apply_patch(dryRun:true)` → `apply_patch`. ' +
     'On failure, regenerate the patch from current file content.',
   inputSchema: ApplyPatchInputSchema,
   outputSchema: ApplyPatchOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   icons: FILE_EDIT_ICONS,
   nuances: [
-    'Multi-file patches use `path` as base directory; per-file results in `results[]`.',
+    'Multi-file patches use `path` as base directory; per-file results in `files[]`.',
   ],
   taskSupport: 'optional',
 } as const;
@@ -94,9 +93,13 @@ function extractPatchTargetPath(diff: StructuredPatch): string | undefined {
   return undefined;
 }
 
-type PatchFileResult = NonNullable<
-  z.infer<typeof ApplyPatchOutputSchema>['results']
->[number];
+interface PatchFileResult {
+  path: string;
+  applied: boolean;
+  hunksApplied?: number;
+  linesAdded?: number;
+  linesRemoved?: number;
+}
 
 interface PatchOptions {
   dryRun: boolean;
@@ -113,10 +116,14 @@ async function applyDiff(
   const validPath = await validateExistingPath(filePath, signal);
   assertAllowedFileAccess(filePath, validPath);
 
-  const stats = await withAbort(stat(validPath), signal);
-  assertPatchTargetSizeWithinLimit(validPath, stats.size, MAX_TEXT_FILE_SIZE);
+  const fileStats = await withAbort(stat(validPath), signal);
+  assertPatchTargetSizeWithinLimit(
+    validPath,
+    fileStats.size,
+    MAX_TEXT_FILE_SIZE
+  );
 
-  const { content } = await readFileWithStats(filePath, validPath, stats, {
+  const { content } = await readFileWithStats(filePath, validPath, fileStats, {
     encoding: 'utf-8',
     maxSize: MAX_TEXT_FILE_SIZE,
     skipBinary: true,
@@ -129,30 +136,10 @@ async function applyDiff(
   });
 
   if (patched === false) {
-    return {
-      path: validPath,
-      applied: false,
-      error: buildStructuredError(
-        new McpError(
-          ErrorCode.INVALID_INPUT,
-          'Patch application failed',
-          validPath
-        ),
-        ErrorCode.INVALID_INPUT,
-        validPath
-      ),
-    };
+    return { path: validPath, applied: false };
   }
   if (patched === content) {
-    return {
-      path: validPath,
-      applied: false,
-      error: buildStructuredError(
-        new McpError(ErrorCode.INVALID_INPUT, 'Patch had no effect', validPath),
-        ErrorCode.INVALID_INPUT,
-        validPath
-      ),
-    };
+    return { path: validPath, applied: false };
   }
 
   const patchStats = countStructuredPatchStats(diff);
@@ -164,6 +151,8 @@ async function applyDiff(
   return { path: validPath, applied: true, ...patchStats };
 }
 
+type OutputFiles = z.infer<typeof ApplyPatchOutputSchema>['files'];
+
 async function processMultiFilePatch(
   basePath: string,
   parsed: StructuredPatch[],
@@ -172,88 +161,70 @@ async function processMultiFilePatch(
 ): Promise<ToolResponse<z.infer<typeof ApplyPatchOutputSchema>>> {
   const validBase = await validateExistingPath(basePath, signal);
 
-  const promises = parsed.map((diff) => {
+  const tasks = parsed.map((diff) => {
     const fileName = extractPatchTargetPath(diff);
     if (!fileName) {
       return (): Promise<PatchFileResult> =>
-        Promise.resolve({
-          path: '<unknown>',
-          applied: false,
-          error: buildStructuredError(
-            new McpError(
-              ErrorCode.INVALID_INPUT,
-              'Missing file name in patch header'
-            ),
-            ErrorCode.INVALID_INPUT
-          ),
-        });
+        Promise.resolve({ path: '<unknown>', applied: false });
     }
-
     const filePath = resolve(validBase, fileName);
     return async (): Promise<PatchFileResult> => {
       try {
-        const result = await applyDiff(filePath, diff, options, signal);
-        return { ...result, path: fileName };
-      } catch (error) {
-        return {
-          path: fileName,
-          applied: false,
-          error: buildStructuredError(error, ErrorCode.INVALID_INPUT, filePath),
-        };
+        const r = await applyDiff(filePath, diff, options, signal);
+        return { ...r, path: fileName };
+      } catch {
+        return { path: fileName, applied: false };
       }
     };
   });
 
   const { results } = await processInParallel(
-    promises,
+    tasks,
     (task) => task(),
     PARALLEL_CONCURRENCY,
     signal
   );
 
-  const totals = results.reduce(
-    (acc, r) => {
-      if (r.applied) {
-        acc.applied++;
-        acc.hunks += r.hunksApplied ?? 0;
-        acc.added += r.linesAdded ?? 0;
-        acc.removed += r.linesRemoved ?? 0;
-      }
-      return acc;
-    },
-    { applied: 0, hunks: 0, added: 0, removed: 0 }
-  );
-
+  const succeeded = results.filter((r) => r.applied).length;
   const label = options.dryRun ? ' (dry run)' : '';
 
-  if (totals.applied === 0) {
-    const failedPaths = results
-      .filter((r) => !r.applied)
-      .map((r) => r.path)
-      .join(', ');
+  if (succeeded === 0) {
+    const failedPaths = results.map((r) => r.path).join(', ');
     throw new McpError(
       ErrorCode.INVALID_INPUT,
       `All ${parsed.length} patches failed${label}. Files: ${failedPaths}. Regenerate via diff_files.`
     );
   }
 
-  const text = `Applied ${totals.applied}/${parsed.length} file patches${label}`;
+  const files: OutputFiles = results
+    .filter((r) => r.applied)
+    .map((r) => ({
+      path: r.path,
+      hunks: r.hunksApplied ?? 0,
+      ...(r.linesAdded !== undefined ? { linesAdded: r.linesAdded } : {}),
+      ...(r.linesRemoved !== undefined ? { linesRemoved: r.linesRemoved } : {}),
+    }));
 
   if (!options.dryRun) {
+    const added = files.reduce((s, f) => s + (f.linesAdded ?? 0), 0);
+    const removed = files.reduce((s, f) => s + (f.linesRemoved ?? 0), 0);
     Logger.info(
-      `apply_patch: ${basePath} (${totals.applied} file(s), +${totals.added}/-${totals.removed})`
+      `apply_patch: ${basePath} (${succeeded} file(s), +${added}/-${removed})`
     );
   }
 
-  return buildToolResponse(text, {
-    ok: totals.applied === parsed.length,
-    path: basePath,
-    applied: totals.applied > 0,
-    hunksApplied: totals.hunks,
-    linesAdded: totals.added,
-    linesRemoved: totals.removed,
-    results,
-  });
+  return buildToolResponse(
+    `Applied ${succeeded}/${parsed.length} file patches${label}`,
+    {
+      ok: true,
+      files,
+      summary: {
+        total: results.length,
+        succeeded,
+        failed: results.length - succeeded,
+      },
+    }
+  );
 }
 
 async function handleApplyPatch(
@@ -264,7 +235,6 @@ async function handleApplyPatch(
     throw new McpError(ErrorCode.INVALID_INPUT, 'Patch content is empty.');
   }
 
-  const fuzzFactor = args.fuzzFactor ?? 0;
   const parsed = parsePatch(args.patch);
 
   const hasHunks = parsed.some((p) => p.hunks.length > 0);
@@ -277,45 +247,55 @@ async function handleApplyPatch(
 
   const options: PatchOptions = {
     dryRun: args.dryRun,
-    fuzzFactor,
+    fuzzFactor: args.fuzzFactor,
     autoConvertLineEndings: args.autoConvertLineEndings,
   };
+
+  const targetPath = args.path ?? '';
+
   if (parsed.length > 1) {
-    return processMultiFilePatch(args.path, parsed, options, signal);
+    return processMultiFilePatch(targetPath, parsed, options, signal);
   }
+
   const diff = parsed[0];
   if (!diff) {
     throw new McpError(ErrorCode.INVALID_INPUT, 'No patch content found.');
   }
 
-  const result = await applyDiff(args.path, diff, options, signal);
+  const result = await applyDiff(targetPath, diff, options, signal);
 
   if (!result.applied) {
     throw new McpError(
       ErrorCode.INVALID_INPUT,
-      result.error?.message === 'Patch had no effect'
-        ? 'Patch had no effect. Content unchanged. Regenerate via diff_files.'
-        : 'Patch failed. Content may have changed. Regenerate via diff_files. For minor diffs, use fuzzFactor.'
+      'Patch failed or had no effect. Content may have changed. Regenerate via diff_files.'
     );
   }
 
   const text = args.dryRun
     ? 'Dry run successful. Patch can be applied.'
-    : `Successfully patched ${args.path}`;
+    : `Successfully patched ${targetPath}`;
 
   if (!args.dryRun) {
     Logger.info(
-      `apply_patch: ${args.path} (+${result.linesAdded ?? 0}/-${result.linesRemoved ?? 0})`
+      `apply_patch: ${targetPath} (+${result.linesAdded ?? 0}/-${result.linesRemoved ?? 0})`
     );
   }
 
   return buildToolResponse(text, {
     ok: true,
-    path: result.path,
-    applied: true,
-    hunksApplied: result.hunksApplied,
-    linesAdded: result.linesAdded,
-    linesRemoved: result.linesRemoved,
+    files: [
+      {
+        path: result.path,
+        hunks: result.hunksApplied ?? 0,
+        ...(result.linesAdded !== undefined
+          ? { linesAdded: result.linesAdded }
+          : {}),
+        ...(result.linesRemoved !== undefined
+          ? { linesRemoved: result.linesRemoved }
+          : {}),
+      },
+    ],
+    summary: { total: 1, succeeded: 1, failed: 0 },
   });
 }
 
@@ -337,9 +317,14 @@ export function registerApplyPatchTool(
         const result = await handleApplyPatch(args, signal);
         if (!args.dryRun) {
           const sc = result.structuredContent;
+          const added = sc.files.reduce((s, f) => s + (f.linesAdded ?? 0), 0);
+          const removed = sc.files.reduce(
+            (s, f) => s + (f.linesRemoved ?? 0),
+            0
+          );
           void ctx.log?.(
             'info',
-            `patch: ${args.path} (+${String(sc.linesAdded ?? 0)}/-${String(sc.linesRemoved ?? 0)})`,
+            `patch: ${args.path ?? ''} (+${String(added)}/-${String(removed)})`,
             'apply_patch'
           );
         }
@@ -351,22 +336,21 @@ export function registerApplyPatchTool(
 
   registerStandardTool(server, APPLY_PATCH_TOOL, handler, options, {
     progressMessage: (args) => {
-      const name = basename(args.path);
+      const name = basename(args.path ?? '');
       return args.dryRun
         ? `${APPLY_PATCH_TOOL.title}: ${name} [dry run]`
         : `${APPLY_PATCH_TOOL.title}: ${name}`;
     },
     completionMessage: (args, result) => {
-      const name = basename(args.path);
+      const name = basename(args.path ?? '');
       if (result.isError)
         return `${APPLY_PATCH_TOOL.title}: ${name} • ${result.errorCode}`;
       const sc = result.structuredContent;
-      if (!sc.ok) return `${APPLY_PATCH_TOOL.title}: ${name} • failed`;
-      const added = sc.linesAdded ?? 0;
-      const removed = sc.linesRemoved ?? 0;
+      const added = sc.files.reduce((s, f) => s + (f.linesAdded ?? 0), 0);
+      const removed = sc.files.reduce((s, f) => s + (f.linesRemoved ?? 0), 0);
       const dry = args.dryRun ? 'dry run ' : '';
       if (added > 0 || removed > 0)
-        return `${APPLY_PATCH_TOOL.title}: ${name} • ${dry} +${added} -${removed}`;
+        return `${APPLY_PATCH_TOOL.title}: ${name} • ${dry}+${added} -${removed}`;
       return `${APPLY_PATCH_TOOL.title}: ${name} • ${dry}no changes`;
     },
   });

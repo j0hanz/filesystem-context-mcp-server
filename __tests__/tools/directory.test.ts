@@ -34,9 +34,9 @@ describe('roots tool', () => {
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
-    const dirs = sc['directories'] as string[];
+    const roots = sc['roots'] as { uri: string }[];
     assert.ok(
-      Array.isArray(dirs) && dirs.length > 0,
+      Array.isArray(roots) && roots.length > 0,
       'Expected at least one directory'
     );
   });
@@ -199,17 +199,14 @@ describe('mkdir tool', () => {
     const newDir = join(env.tmpDir, 'new-dir');
     const raw = await env.client.callTool({
       name: 'mkdir',
-      arguments: { path: newDir },
+      arguments: { paths: [newDir] },
     });
-    const result = raw;
-    assertOk(result);
-    const sc = getStructured(result);
+    assertOk(raw);
+    const sc = getStructured(raw);
     assert.equal(sc['ok'], true);
-    assert.equal((sc['path'] as string).toLowerCase(), newDir.toLowerCase());
-    assert.deepEqual(
-      (sc['paths'] as string[]).map((entry) => entry.toLowerCase()),
-      [newDir.toLowerCase()]
-    );
+    const created = sc['created'] as { path: string; isNew: boolean }[];
+    assert.ok(Array.isArray(created));
+    assert.equal(created[0]?.path.toLowerCase(), newDir.toLowerCase());
     const statResult = await stat(newDir);
     assert.ok(statResult.isDirectory());
   });
@@ -219,7 +216,7 @@ describe('mkdir tool', () => {
     await mkdir(existingDir);
     const raw = await env.client.callTool({
       name: 'mkdir',
-      arguments: { path: existingDir },
+      arguments: { paths: [existingDir] },
     });
     assertOk(raw);
   });
@@ -239,7 +236,7 @@ describe('mkdir tool', () => {
   it('rejects creation outside allowed root', async () => {
     const raw = await env.client.callTool({
       name: 'mkdir',
-      arguments: { path: `/tmp/escape-${Date.now()}` },
+      arguments: { paths: [`/tmp/escape-${Date.now()}`] },
     });
     assertToolError(raw, 'ACCESS_DENIED');
   });
@@ -331,11 +328,10 @@ describe('mv tool', () => {
     await writeFile(src, 'move me', 'utf8');
     const raw = await env.client.callTool({
       name: 'mv',
-      arguments: { source: src, destination: dst },
+      arguments: { sources: [src], destination: dst },
     });
     assertOk(raw);
     const sc = getStructured(raw);
-    assert.equal((sc['source'] as string).toLowerCase(), src.toLowerCase());
     assert.deepEqual(
       (sc['sources'] as string[]).map((entry) => entry.toLowerCase()),
       [src.toLowerCase()]
@@ -353,7 +349,7 @@ describe('mv tool', () => {
     const raw = await env.client.callTool({
       name: 'mv',
       arguments: {
-        source: join(env.tmpDir, 'no-source.txt'),
+        sources: [join(env.tmpDir, 'no-source.txt')],
         destination: join(env.tmpDir, 'dst.txt'),
       },
     });

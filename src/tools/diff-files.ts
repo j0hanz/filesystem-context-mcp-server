@@ -10,9 +10,9 @@ import { withAbort } from '../lib/abort.js';
 import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
 import { validateExistingPath } from '../lib/paths.js';
-
 import { DiffFilesInputSchema } from '../schemas/inputs.js';
 import { DiffFilesOutputSchema } from '../schemas/outputs.js';
+
 import { FILE_READ_ICONS } from './icons.js';
 import {
   buildResourceLink,
@@ -80,10 +80,12 @@ async function handleDiffFiles(
   signal?: AbortSignal,
   resourceStore?: ToolRegistrationOptions['resourceStore']
 ): Promise<ToolResponse<z.infer<typeof DiffFilesOutputSchema>>> {
-  const maxFileSize = MAX_TEXT_FILE_SIZE;
+  const originalInput = args.paths[0] ?? '';
+  const modifiedInput = args.paths[1] ?? '';
+
   const [originalPath, modifiedPath] = await Promise.all([
-    validateExistingPath(args.original, signal),
-    validateExistingPath(args.modified, signal),
+    validateExistingPath(originalInput, signal),
+    validateExistingPath(modifiedInput, signal),
   ]);
 
   const [originalStats, modifiedStats] = await Promise.all([
@@ -91,8 +93,16 @@ async function handleDiffFiles(
     withAbort(stat(modifiedPath), signal),
   ]);
 
-  assertDiffFileSizeWithinLimit(originalPath, originalStats.size, maxFileSize);
-  assertDiffFileSizeWithinLimit(modifiedPath, modifiedStats.size, maxFileSize);
+  assertDiffFileSizeWithinLimit(
+    originalPath,
+    originalStats.size,
+    MAX_TEXT_FILE_SIZE
+  );
+  assertDiffFileSizeWithinLimit(
+    modifiedPath,
+    modifiedStats.size,
+    MAX_TEXT_FILE_SIZE
+  );
 
   const [originalContent, modifiedContent] = await Promise.all([
     readFile(originalPath, { encoding: 'utf-8', signal }),
@@ -129,7 +139,14 @@ async function handleDiffFiles(
 
   const isIdentical = patchObj.hunks.length === 0;
   const diffText = isIdentical ? '' : formatPatch(patchObj);
-  const stats = isIdentical ? undefined : computeDiffStats(patchObj.hunks);
+  const rawStats = isIdentical ? undefined : computeDiffStats(patchObj.hunks);
+  const mappedStats = rawStats
+    ? {
+        additions: rawStats.linesAdded,
+        deletions: rawStats.linesRemoved,
+        hunks: rawStats.hunksCount,
+      }
+    : undefined;
 
   const externalized = maybeExternalizeTextContent(resourceStore, diffText, {
     name: 'diff:patch',
@@ -141,7 +158,7 @@ async function handleDiffFiles(
       ok: true,
       diff: diffText,
       isIdentical,
-      ...(stats ?? {}),
+      ...(mappedStats ? { stats: mappedStats } : {}),
     });
   }
 
@@ -152,7 +169,7 @@ async function handleDiffFiles(
       ok: true,
       diff: preview,
       isIdentical,
-      ...(stats ?? {}),
+      ...(mappedStats ? { stats: mappedStats } : {}),
       truncated: true,
       resourceUri: entry.uri,
     },
@@ -181,28 +198,28 @@ export function registerDiffFilesTool(
       ctx,
       outputSchema: DiffFilesOutputSchema,
       timedSignal: {},
-      context: { path: args.original },
+      context: { path: args.paths[0] ?? '' },
       run: (signal) => handleDiffFiles(args, signal, options.resourceStore),
       onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.original),
+        buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.paths[0] ?? ''),
     });
 
   registerStandardTool(server, DIFF_FILES_TOOL, handler, options, {
     progressMessage: (args) => {
-      const n1 = basename(args.original);
-      const n2 = basename(args.modified);
+      const n1 = basename(args.paths[0] ?? '');
+      const n2 = basename(args.paths[1] ?? '');
       return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2}`;
     },
     completionMessage: (args, result) => {
-      const n1 = basename(args.original);
-      const n2 = basename(args.modified);
+      const n1 = basename(args.paths[0] ?? '');
+      const n2 = basename(args.paths[1] ?? '');
       if (result.isError)
         return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2} • ${result.errorCode}`;
       const sc = result.structuredContent;
       if (sc.isIdentical)
         return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2} • identical`;
-      const added = sc.linesAdded ?? 0;
-      const removed = sc.linesRemoved ?? 0;
+      const added = sc.stats?.additions ?? 0;
+      const removed = sc.stats?.deletions ?? 0;
       if (added > 0 || removed > 0)
         return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2} • +${added} -${removed}`;
       return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2}`;

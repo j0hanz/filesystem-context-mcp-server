@@ -10,9 +10,9 @@ import {
   formatTreeAscii,
   treeDirectory,
 } from '../lib/file-operations/metadata.js';
-
 import { TreeInputSchema } from '../schemas/inputs.js';
 import { TreeOutputSchema } from '../schemas/outputs.js';
+
 import { DIRECTORY_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,

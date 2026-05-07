@@ -370,7 +370,7 @@ describe('edit tool', () => {
     });
     assertToolError(raw);
     const text = (raw as { content: { text?: string }[] }).content[0]?.text;
-    assert.match(text ?? '', /oldText required/u);
+    assert.match(text ?? '', /oldText/u);
   });
 
   it('reports unmatched edits when oldText is not found', async () => {

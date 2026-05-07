@@ -7,11 +7,9 @@ import type { z } from 'zod/v4';
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
 import { classifyError, ErrorCode } from '../lib/errors.js';
 import { readMultipleFiles } from '../lib/file-operations/metadata.js';
+import { ReadManyInputSchema } from '../schemas/inputs.js';
+import { ReadManyOutputSchema } from '../schemas/outputs.js';
 
-import {
-  ReadMultipleFilesInputSchema,
-  ReadMultipleFilesOutputSchema,
-} from '../schemas.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
   buildBatchPathContext,
@@ -41,8 +39,8 @@ export const READ_MANY_TOOL: ToolContract = {
   description:
     'Read multiple text files in one request with contents and metadata. ' +
     'For a single file, use `read`.',
-  inputSchema: ReadMultipleFilesInputSchema,
-  outputSchema: ReadMultipleFilesOutputSchema,
+  inputSchema: ReadManyInputSchema,
+  outputSchema: ReadManyOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   icons: FILE_READ_ICONS,
   taskSupport: 'optional',
@@ -50,8 +48,8 @@ export const READ_MANY_TOOL: ToolContract = {
 
 const READ_MANY_TOOL_LABEL = READ_MANY_TOOL.title;
 
-type ReadManyInput = z.infer<typeof ReadMultipleFilesInputSchema>;
-type ReadManyOutput = z.infer<typeof ReadMultipleFilesOutputSchema>;
+type ReadManyInput = z.infer<typeof ReadManyInputSchema>;
+type ReadManyOutput = z.infer<typeof ReadManyOutputSchema>;
 type ReadManyOutputItem = NonNullable<ReadManyOutput['results']>[number];
 type ReadManyResult = Awaited<ReturnType<typeof readMultipleFiles>>[number];
 type ReadManyTruncationReason = 'head' | 'tail' | 'range' | 'externalized';
@@ -249,7 +247,7 @@ export function registerReadMultipleFilesTool(
     return executeToolWithDiagnostics({
       toolName: READ_MANY_TOOL_NAME,
       ctx,
-      outputSchema: ReadMultipleFilesOutputSchema,
+      outputSchema: ReadManyOutputSchema,
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: primaryPath },
       run: async (signal) => {
@@ -280,8 +278,8 @@ export function registerReadMultipleFilesTool(
           );
 
           const sc = result.structuredContent;
-          const total = sc.summary?.total ?? 0;
-          const failed = sc.summary?.failed ?? 0;
+          const total = sc.summary.total;
+          const failed = sc.summary.failed;
           const suffix = failed ? `${failed} failed` : 'done';
 
           const finalCurrent = resolveFinalProgressCurrent(progress, total);

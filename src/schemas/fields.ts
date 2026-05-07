@@ -1,7 +1,6 @@
 // src/schemas/fields.ts
 import { z } from 'zod/v4';
 
-import { ErrorCode } from '../lib/errors.js';
 import { isSafeGlobPattern } from '../lib/paths.js';
 
 function reg<T extends z.ZodType>(
@@ -40,21 +39,6 @@ export const PositiveInt = reg(
 export const FileType = reg(
   z.enum(['file', 'directory', 'symlink', 'other']),
   'FileType'
-);
-
-// Unified across ls/find/grep/search_and_replace — replaces three separate enums.
-const StoppedReason = reg(
-  z
-    .enum(['maxResults', 'maxFiles', 'maxEntries', 'timeout', 'aborted'])
-    .describe(
-      'maxResults: result limit hit; maxFiles: file count hit; maxEntries: entry limit hit; timeout: time limit exceeded; aborted: operation cancelled'
-    ),
-  'StoppedReason'
-);
-
-export const ErrorCodeEnum = reg(
-  z.enum(ErrorCode).describe('Error code'),
-  'ErrorCodeEnum'
 );
 
 const MAX_PATH_LENGTH = 4096;

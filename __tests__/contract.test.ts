@@ -164,9 +164,9 @@ describe('Tool contract', () => {
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
-    assert.ok(Array.isArray(sc['directories']), 'Expected directories array');
-    const dirs = sc['directories'] as string[];
-    assert.ok(dirs.length > 0, 'Expected at least one allowed directory');
+    assert.ok(Array.isArray(sc['roots']), 'Expected roots array');
+    const roots = sc['roots'] as { uri: string }[];
+    assert.ok(roots.length > 0, 'Expected at least one allowed root');
   });
 
   it('structuredContent matches outputSchema shape for read-only tools', async () => {
@@ -189,10 +189,10 @@ describe('Tool contract', () => {
     assertOk(statResult);
     const statSc = getStructured(statResult);
     assert.equal(statSc['ok'], true);
-    const info = statSc['info'] as Record<string, unknown>;
-    assert.ok(info, 'stat: expected info object');
-    assert.equal(typeof info['type'], 'string');
-    assert.equal(typeof info['size'], 'number');
+    const file = statSc['file'] as Record<string, unknown>;
+    assert.ok(file, 'stat: expected file object');
+    assert.equal(typeof file['type'], 'string');
+    assert.equal(typeof file['size'], 'number');
 
     // tree: returns ok, ascii string, root
     const treeResult = await env.client.callTool({
@@ -259,7 +259,7 @@ describe('Tool contract', () => {
       { name: 'stat_many', arguments: { paths: [testFile] } },
       { name: 'read', arguments: { path: testFile } },
       { name: 'read_many', arguments: { paths: [testFile] } },
-      { name: 'grep', arguments: { path: env.tmpDir, pattern: 'hello' } },
+      { name: 'grep', arguments: { path: env.tmpDir, searchPattern: 'hello' } },
       { name: 'calculate_hash', arguments: { path: testFile } },
     ];
 

@@ -13,8 +13,9 @@ import { withAbort } from '../lib/abort.js';
 import { ErrorCode, isNodeError, McpError } from '../lib/errors.js';
 import { Logger } from '../lib/logger.js';
 import { isAllowedDirectoryRoot, validatePathForWrite } from '../lib/paths.js';
+import { DeleteInputSchema } from '../schemas/inputs.js';
+import { DeleteOutputSchema } from '../schemas/outputs.js';
 
-import { DeleteFileInputSchema, DeleteFileOutputSchema } from '../schemas.js';
 import { FILE_DELETE_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,
@@ -34,8 +35,8 @@ export const DELETE_FILE_TOOL: ToolContract = {
   title: 'Delete File',
   description:
     'Permanently delete a file or directory. This action is irreversible.',
-  inputSchema: DeleteFileInputSchema,
-  outputSchema: DeleteFileOutputSchema,
+  inputSchema: DeleteInputSchema,
+  outputSchema: DeleteOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   icons: FILE_DELETE_ICONS,
   gotchas: ['Non-empty directories require `recursive=true`.'],
@@ -43,10 +44,10 @@ export const DELETE_FILE_TOOL: ToolContract = {
 } as const;
 
 async function handleDeleteFile(
-  args: z.infer<typeof DeleteFileInputSchema>,
+  args: z.infer<typeof DeleteInputSchema>,
   signal?: AbortSignal,
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>
-): Promise<ToolResponse<z.infer<typeof DeleteFileOutputSchema>>> {
+): Promise<ToolResponse<z.infer<typeof DeleteOutputSchema>>> {
   const validPath = await validatePathForWrite(args.path, signal);
 
   if (isAllowedDirectoryRoot(validPath)) {
@@ -56,16 +57,16 @@ async function handleDeleteFile(
     );
   }
 
-  let stats: Awaited<ReturnType<typeof lstat>> | undefined;
+  let itemStats: Awaited<ReturnType<typeof lstat>> | undefined;
   try {
-    stats = await withAbort(lstat(validPath), signal);
+    itemStats = await withAbort(lstat(validPath), signal);
   } catch (error) {
     if (
       isNodeError(error) &&
       error.code === 'ENOENT' &&
       args.ignoreIfNotExists
     ) {
-      return buildToolResponse(`Successfully deleted: ${args.path}`, {
+      return buildToolResponse(`Not found (ignored): ${args.path}`, {
         ok: true,
         path: validPath,
       });
@@ -73,18 +74,23 @@ async function handleDeleteFile(
     throw error;
   }
 
+  const itemType = itemStats.isDirectory()
+    ? 'directory'
+    : itemStats.isSymbolicLink()
+      ? 'symlink'
+      : itemStats.isFile()
+        ? 'file'
+        : 'other';
+
   // Ask for confirmation when deleting a directory recursively and client supports it.
-  if (elicitInput && args.recursive && stats.isDirectory()) {
+  if (elicitInput && args.recursive && itemStats.isDirectory()) {
     const elicitResult = await elicitInput({
       mode: 'form',
       message: `Permanently delete "${args.path}" and all its contents? This cannot be undone.`,
       requestedSchema: {
         type: 'object',
         properties: {
-          confirm: {
-            type: 'boolean',
-            title: 'Yes, delete permanently',
-          },
+          confirm: { type: 'boolean', title: 'Yes, delete permanently' },
         },
         required: ['confirm'],
       },
@@ -97,13 +103,12 @@ async function handleDeleteFile(
       return buildToolResponse(`Deletion cancelled: ${args.path}`, {
         ok: true,
         path: validPath,
+        type: itemType,
       });
     }
   }
 
-  if (stats.isDirectory() && !args.recursive) {
-    // Use rmdir for non-recursive directory deletes so non-empty directories
-    // consistently return ENOTEMPTY-style errors with actionable guidance.
+  if (itemStats.isDirectory() && !args.recursive) {
     await withAbort(rmdir(validPath), signal);
   } else {
     await withAbort(
@@ -120,6 +125,7 @@ async function handleDeleteFile(
   return buildToolResponse(`Successfully deleted: ${args.path}`, {
     ok: true,
     path: validPath,
+    type: itemType,
   });
 }
 
@@ -128,13 +134,13 @@ export function registerDeleteFileTool(
   options: ToolRegistrationOptions
 ): void {
   const handler = (
-    args: z.infer<typeof DeleteFileInputSchema>,
+    args: z.infer<typeof DeleteInputSchema>,
     ctx: ToolContext
-  ): Promise<ToolResult<z.infer<typeof DeleteFileOutputSchema>>> =>
+  ): Promise<ToolResult<z.infer<typeof DeleteOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'rm',
       ctx,
-      outputSchema: DeleteFileOutputSchema,
+      outputSchema: DeleteOutputSchema,
       timedSignal: {},
       context: { path: args.path },
       run: async (signal) => {

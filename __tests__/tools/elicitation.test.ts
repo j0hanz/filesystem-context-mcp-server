@@ -128,7 +128,7 @@ describe('mv: client without elicitation capability', () => {
   it('overwrites destination immediately when capability absent', async () => {
     const result = await env.client.callTool({
       name: 'mv',
-      arguments: { source: src, destination: dest },
+      arguments: { sources: [src], destination: dest },
     });
     assertOk(result);
     const { readFileSync } = await import('node:fs');
@@ -160,7 +160,7 @@ describe('mv: client declines elicitation (destination exists)', () => {
   it('returns success without moving when user declines overwrite', async () => {
     const result = await env.client.callTool({
       name: 'mv',
-      arguments: { source: src, destination: dest },
+      arguments: { sources: [src], destination: dest },
     });
     assertOk(result);
     const { readFileSync } = await import('node:fs');
@@ -196,7 +196,7 @@ describe('mv: client accepts elicitation (destination exists)', () => {
   it('moves and overwrites when user accepts', async () => {
     const result = await env.client.callTool({
       name: 'mv',
-      arguments: { source: src, destination: dest },
+      arguments: { sources: [src], destination: dest },
     });
     assertOk(result);
     const { readFileSync, existsSync } = await import('node:fs');

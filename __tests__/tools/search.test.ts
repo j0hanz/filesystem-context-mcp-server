@@ -45,7 +45,7 @@ describe('grep tool', () => {
   it('finds literal matches across files', async () => {
     const raw = await env.client.callTool({
       name: 'grep',
-      arguments: { path: env.tmpDir, pattern: 'apple' },
+      arguments: { path: env.tmpDir, searchPattern: 'apple' },
     });
     const result = raw;
     assertOk(result);
@@ -61,7 +61,7 @@ describe('grep tool', () => {
   it('finds regex matches', async () => {
     const raw = await env.client.callTool({
       name: 'grep',
-      arguments: { path: env.tmpDir, pattern: '^a[a-z]+', isRegex: true },
+      arguments: { path: env.tmpDir, searchPattern: '^a[a-z]+', isRegex: true },
     });
     const result = raw;
     assertOk(result);
@@ -76,7 +76,7 @@ describe('grep tool', () => {
   it('restricts search using filePattern', async () => {
     const raw = await env.client.callTool({
       name: 'grep',
-      arguments: { path: env.tmpDir, pattern: 'a', filePattern: '*.txt' },
+      arguments: { path: env.tmpDir, searchPattern: 'a', pattern: '*.txt' },
     });
     const result = raw;
     assertOk(result);
@@ -89,8 +89,8 @@ describe('grep tool', () => {
       name: 'grep',
       arguments: {
         path: env.tmpDir,
-        pattern: 'apple',
-        filePattern: '../*.txt',
+        searchPattern: 'apple',
+        pattern: '../*.txt',
       },
     });
     assertToolError(raw);
@@ -112,7 +112,7 @@ describe('grep tool', () => {
   it('returns empty matches for a pattern that is not found', async () => {
     const raw = await env.client.callTool({
       name: 'grep',
-      arguments: { path: env.tmpDir, pattern: 'ZZZNOMATCH' },
+      arguments: { path: env.tmpDir, searchPattern: 'ZZZNOMATCH' },
     });
     const result = raw;
     assertOk(result);
@@ -127,7 +127,7 @@ describe('grep tool', () => {
 
     const raw = await env.client.callTool({
       name: 'grep',
-      arguments: { path: env.tmpDir, pattern: 'rocket' },
+      arguments: { path: env.tmpDir, searchPattern: 'rocket' },
     });
 
     assertOk(raw);
@@ -157,8 +157,8 @@ describe('grep tool', () => {
         name: 'grep',
         arguments: {
           path: env.tmpDir,
-          pattern: 'needle',
-          filePattern: '*.txt',
+          searchPattern: 'needle',
+          pattern: '*.txt',
           maxResults: 10,
         },
       },
@@ -282,7 +282,7 @@ describe('search_and_replace tool', () => {
       name: 'search_and_replace',
       arguments: {
         path: env.tmpDir,
-        filePattern: '*.txt',
+        pattern: '*.txt',
         searchPattern: 'world',
         replacement: 'WORLD',
       },
@@ -303,7 +303,7 @@ describe('search_and_replace tool', () => {
       name: 'search_and_replace',
       arguments: {
         path: env.tmpDir,
-        filePattern: 'dry.txt',
+        pattern: 'dry.txt',
         searchPattern: 'oldvalue',
         replacement: 'newvalue',
         dryRun: true,
@@ -321,7 +321,7 @@ describe('search_and_replace tool', () => {
       name: 'search_and_replace',
       arguments: {
         path: env.tmpDir,
-        filePattern: 'regex-test.txt',
+        pattern: 'regex-test.txt',
         searchPattern: '\\d+',
         replacement: 'NUM',
         isRegex: true,
@@ -341,7 +341,7 @@ describe('search_and_replace tool', () => {
       name: 'search_and_replace',
       arguments: {
         path: '/tmp',
-        filePattern: '*.txt',
+        pattern: '*.txt',
         searchPattern: 'x',
         replacement: 'y',
       },

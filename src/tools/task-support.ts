@@ -642,7 +642,7 @@ export function registerStandardTool<
       withDefaultIcons({ ...toolDef }, options.iconInfo),
       toolDef.inputSchemaJson
     ),
-    validatedHandler
+    validatedHandler as never
   );
 }
 

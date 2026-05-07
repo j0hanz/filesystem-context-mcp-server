@@ -5,12 +5,10 @@ import type { z } from 'zod/v4';
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
 import { classifyError, ErrorCode } from '../lib/errors.js';
 import { getMultipleFileInfo } from '../lib/file-operations/metadata.js';
+import { StatManyInputSchema } from '../schemas/inputs.js';
+import { StatManyOutputSchema } from '../schemas/outputs.js';
 
 import { type FileInfo, formatBytes, joinLines } from '../config.js';
-import {
-  GetMultipleFileInfoInputSchema,
-  GetMultipleFileInfoOutputSchema,
-} from '../schemas.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
   buildBatchPathContext,
@@ -36,8 +34,8 @@ export const GET_MULTIPLE_FILE_INFO_TOOL: ToolContract = {
   description:
     'Get metadata for multiple files/directories in one request. ' +
     'Use `tokenEstimate` (size\u00f74) to pre-screen token cost before reading.',
-  inputSchema: GetMultipleFileInfoInputSchema,
-  outputSchema: GetMultipleFileInfoOutputSchema,
+  inputSchema: StatManyInputSchema,
+  outputSchema: StatManyOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   icons: FILE_READ_ICONS,
   taskSupport: 'optional',
@@ -56,25 +54,24 @@ function formatFileInfoDetail(info: FileInfo): string {
 }
 
 async function handleGetMultipleFileInfo(
-  args: z.infer<typeof GetMultipleFileInfoInputSchema>,
+  args: z.infer<typeof StatManyInputSchema>,
   signal?: AbortSignal,
   onProgress?: () => void
-): Promise<ToolResponse<z.infer<typeof GetMultipleFileInfoOutputSchema>>> {
+): Promise<ToolResponse<z.infer<typeof StatManyOutputSchema>>> {
   const result = await getMultipleFileInfo(args.paths, {
     includeMimeType: true,
     ...(signal ? { signal } : {}),
     ...(onProgress ? { onProgress } : {}),
   });
 
-  const structuredResults: z.infer<
-    typeof GetMultipleFileInfoOutputSchema
-  >['results'] = result.results.map((entry) => ({
-    path: entry.path,
-    info: entry.info ? buildFileInfoPayload(entry.info) : undefined,
-    error: entry.error
-      ? buildStructuredError(entry.error, ErrorCode.NOT_FOUND, entry.path)
-      : undefined,
-  }));
+  const structuredResults: z.infer<typeof StatManyOutputSchema>['results'] =
+    result.results.map((entry) => ({
+      path: entry.path,
+      info: entry.info ? buildFileInfoPayload(entry.info) : undefined,
+      error: entry.error
+        ? buildStructuredError(entry.error, ErrorCode.NOT_FOUND, entry.path)
+        : undefined,
+    }));
 
   const text = result.results
     .map((entry) => {
@@ -88,7 +85,7 @@ async function handleGetMultipleFileInfo(
     })
     .join('\n\n');
 
-  const structured: z.infer<typeof GetMultipleFileInfoOutputSchema> = {
+  const structured: z.infer<typeof StatManyOutputSchema> = {
     ok: true,
     results: structuredResults,
     summary: {
@@ -106,14 +103,14 @@ export function registerGetMultipleFileInfoTool(
   options: ToolRegistrationOptions
 ): void {
   const handler = (
-    args: z.infer<typeof GetMultipleFileInfoInputSchema>,
+    args: z.infer<typeof StatManyInputSchema>,
     ctx: ToolContext
-  ): Promise<ToolResult<z.infer<typeof GetMultipleFileInfoOutputSchema>>> => {
+  ): Promise<ToolResult<z.infer<typeof StatManyOutputSchema>>> => {
     const primaryPath = args.paths[0] ?? '';
     return executeToolWithDiagnostics({
       toolName: 'stat_many',
       ctx,
-      outputSchema: GetMultipleFileInfoOutputSchema,
+      outputSchema: StatManyOutputSchema,
       timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
       context: { path: primaryPath },
       run: async (signal) => {
@@ -133,8 +130,8 @@ export function registerGetMultipleFileInfoTool(
           );
 
           const sc = result.structuredContent;
-          const total = sc.summary?.total ?? 0;
-          const failed = sc.summary?.failed ?? 0;
+          const total = sc.summary.total;
+          const failed = sc.summary.failed;
           const suffix = failed ? `${failed} failed` : 'done';
 
           const finalCurrent = resolveFinalProgressCurrent(progress, total);
