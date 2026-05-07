@@ -16,8 +16,8 @@ import { createBase64JsonCodec } from '../lib/zod-codecs.js';
 import { formatOperationSummary, joinLines } from '../config.js';
 import {
   ListDirectoryInputSchema,
-  ListDirectoryOutputSchema,
-} from '../schemas.js';
+} from '../schemas/inputs.js';
+import { ListDirectoryOutputSchema } from '../schemas/outputs.js';
 import { DIRECTORY_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,

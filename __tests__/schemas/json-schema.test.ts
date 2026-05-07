@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-
 import { describe, it } from 'node:test';
+
 import { z } from 'zod/v4';
 
 import { IsoDateTime, NonNegInt } from '../../src/schemas/fields.js';

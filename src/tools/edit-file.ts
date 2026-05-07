@@ -14,7 +14,8 @@ import { atomicWriteFile, readFileWithStats } from '../lib/fs-helpers.js';
 import { Logger } from '../lib/logger.js';
 import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
 
-import { EditFileInputSchema, EditFileOutputSchema } from '../schemas.js';
+import { EditFileInputSchema } from '../schemas/inputs.js';
+import { EditFileOutputSchema } from '../schemas/outputs.js';
 import { FILE_EDIT_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,

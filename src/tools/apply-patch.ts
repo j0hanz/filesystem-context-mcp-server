@@ -17,7 +17,8 @@ import {
 import { Logger } from '../lib/logger.js';
 import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
 
-import { ApplyPatchInputSchema, ApplyPatchOutputSchema } from '../schemas.js';
+import { ApplyPatchInputSchema } from '../schemas/inputs.js';
+import { ApplyPatchOutputSchema } from '../schemas/outputs.js';
 import { FILE_EDIT_ICONS } from './icons.js';
 import {
   buildStructuredError,

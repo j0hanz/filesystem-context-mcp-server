@@ -11,7 +11,8 @@ import {
 import { ErrorCode } from '../lib/errors.js';
 import { calculateFileContentHash, readFile } from '../lib/fs-helpers.js';
 
-import { ReadFileInputSchema, ReadFileOutputSchema } from '../schemas.js';
+import { ReadFileInputSchema } from '../schemas/inputs.js';
+import { ReadFileOutputSchema } from '../schemas/outputs.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
   buildResourceLink,

@@ -7,8 +7,8 @@ import { getAllowedDirectories } from '../lib/paths.js';
 
 import { joinLines } from '../config.js';
 import {
-  ListAllowedDirectoriesInputSchema,
-  ListAllowedDirectoriesOutputSchema,
+  RootsInputSchema,
+  RootsOutputSchema,
 } from '../schemas.js';
 import { DIRECTORY_ICONS } from './icons.js';
 import {
@@ -29,8 +29,8 @@ export const LIST_ALLOWED_DIRECTORIES_TOOL: ToolContract = {
   title: 'Workspace Roots',
   description:
     'List allowed workspace roots. Call first \u2014 all other tools are scoped to these directories.',
-  inputSchema: ListAllowedDirectoriesInputSchema,
-  outputSchema: ListAllowedDirectoriesOutputSchema,
+  inputSchema: RootsInputSchema,
+  outputSchema: RootsOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   icons: DIRECTORY_ICONS,
   taskSupport: 'forbidden',
@@ -47,12 +47,12 @@ function buildTextRoots(dirs: string[]): string {
 }
 
 function handleListAllowedDirectories(): ToolResponse<
-  z.infer<typeof ListAllowedDirectoriesOutputSchema>
+  z.infer<typeof RootsOutputSchema>
 > {
   const dirs = getAllowedDirectories();
   const structured = {
     ok: true,
-    directories: dirs,
+    roots: dirs.map(uri => ({ uri })),
   } as const;
   return buildToolResponse(buildTextRoots(dirs), structured);
 }
@@ -62,13 +62,13 @@ export function registerListAllowedDirectoriesTool(
   options: ToolRegistrationOptions
 ): void {
   const handler = (
-    _args: z.infer<typeof ListAllowedDirectoriesInputSchema>,
+    _args: z.infer<typeof RootsInputSchema>,
     ctx: ToolContext
-  ): Promise<ToolResult<z.infer<typeof ListAllowedDirectoriesOutputSchema>>> =>
+  ): Promise<ToolResult<z.infer<typeof RootsOutputSchema>>> =>
     executeToolWithDiagnostics({
       toolName: 'roots',
       ctx,
-      outputSchema: ListAllowedDirectoriesOutputSchema,
+      outputSchema: RootsOutputSchema,
       run: () => handleListAllowedDirectories(),
       onError: (error) => buildToolErrorResponse(error, ErrorCode.UNKNOWN),
     });
@@ -84,7 +84,7 @@ export function registerListAllowedDirectoriesTool(
         if (result.isError)
           return `${LIST_ALLOWED_DIRECTORIES_TOOL.title} • ${result.errorCode}`;
         const sc = result.structuredContent;
-        const count = sc.directories?.length ?? 0;
+        const count = sc.roots?.length ?? 0;
         return `${LIST_ALLOWED_DIRECTORIES_TOOL.title} • ${count} ${count === 1 ? 'root' : 'roots'}`;
       },
     }

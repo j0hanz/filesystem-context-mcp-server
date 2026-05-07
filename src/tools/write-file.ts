@@ -12,7 +12,8 @@ import { Logger } from '../lib/logger.js';
 import { validatePathForWrite } from '../lib/paths.js';
 
 import { formatBytes } from '../config.js';
-import { WriteFileInputSchema, WriteFileOutputSchema } from '../schemas.js';
+import { WriteFileInputSchema } from '../schemas/inputs.js';
+import { WriteFileOutputSchema } from '../schemas/outputs.js';
 import { FILE_EDIT_ICONS } from './icons.js';
 import {
   buildToolErrorResponse,

@@ -23,7 +23,8 @@ import {
   validatePathForWrite,
 } from '../lib/paths.js';
 
-import { MoveFileInputSchema, MoveFileOutputSchema } from '../schemas.js';
+import { MoveFileInputSchema } from '../schemas/inputs.js';
+import { MoveFileOutputSchema } from '../schemas/outputs.js';
 import { FILE_MOVE_ICONS } from './icons.js';
 import {
   buildStructuredError,

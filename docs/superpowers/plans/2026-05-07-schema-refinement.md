@@ -131,8 +131,8 @@ export const SafeGlobPattern = reg(
 ```ts
 // __tests__/schemas/fields.test.ts
 import assert from 'node:assert/strict';
-
 import { describe, it } from 'node:test';
+
 import { z } from 'zod/v4';
 
 import { IsoDateTime, NonNegInt } from '../../src/schemas/fields.js';
@@ -469,8 +469,8 @@ export function toToolJsonSchema(
 ```ts
 // __tests__/schemas/json-schema.test.ts
 import assert from 'node:assert/strict';
-
 import { describe, it } from 'node:test';
+
 import { z } from 'zod/v4';
 
 import { IsoDateTime, NonNegInt } from '../../src/schemas/fields.js';
@@ -696,8 +696,8 @@ This captures the tool wire schemas BEFORE migration. After migration they'll be
 // __tests__/schemas/snapshot.test.ts
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
-
 import { describe, it } from 'node:test';
+
 import { z } from 'zod/v4';
 
 import { toToolJsonSchema } from '../../src/schemas/json-schema.js';
