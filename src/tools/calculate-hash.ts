@@ -47,6 +47,7 @@ export const CALCULATE_HASH_TOOL: ToolContract = {
   icons: FILE_READ_ICONS,
   nuances: [
     'Directory hashing respects root `.gitignore` and sorts paths for stable output.',
+    'Hidden files (names starting with `.`) are excluded from directory hashing.',
   ],
   taskSupport: 'optional',
 } as const;
