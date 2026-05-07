@@ -88,53 +88,6 @@ interface PerfDiagnosticsEvent {
   detail?: unknown;
 }
 
-// --- Metrics State ---
-
-interface ToolMetrics {
-  calls: number;
-  errors: number;
-  totalDurationMs: number;
-}
-
-export const globalMetrics = new Map<string, ToolMetrics>();
-
-// --- Metrics update listeners ---
-
-type MetricsListener = () => void;
-const metricsListeners = new Set<MetricsListener>();
-
-/**
- * Register a callback invoked after every tool call updates globalMetrics.
- * Returns an unsubscribe function. Zero-overhead when no listeners are registered.
- */
-export function onMetricsUpdate(listener: MetricsListener): () => void {
-  metricsListeners.add(listener);
-  return (): void => {
-    metricsListeners.delete(listener);
-  };
-}
-
-function updateMetrics(tool: string, ok: boolean, durationMs: number): void {
-  const current = globalMetrics.get(tool) ?? {
-    calls: 0,
-    errors: 0,
-    totalDurationMs: 0,
-  };
-  current.calls++;
-  if (!ok) current.errors++;
-  current.totalDurationMs += durationMs;
-  globalMetrics.set(tool, current);
-
-  // Notify listeners — best effort, never break tool execution
-  for (const listener of metricsListeners) {
-    try {
-      listener();
-    } catch {
-      // Intentionally swallowed: observability must not interrupt tool execution.
-    }
-  }
-}
-
 // --- Channels & Observability State ---
 
 const CHANNELS = {
@@ -474,8 +427,6 @@ async function runAndObserve<T>(
     if (pubTool)
       publishToolEnd(tool, obs.ok, durationMs, obs.errorMsg, traceparent);
 
-    updateMetrics(tool, obs.ok, durationMs);
-
     if (logErrors && !obs.ok) logError(tool, durationMs, obs.errorMsg);
   }
 
@@ -498,20 +449,18 @@ export async function withToolDiagnostics<T>(
 
   return toolContext.run(context, async () => {
     if (!config.enabled) {
-      if (!config.logToolErrors && metricsListeners.size === 0) return run();
+      if (!config.logToolErrors) return run();
+
       const start = performance.now();
       try {
         const res = await run();
         const duration = performance.now() - start;
         const { ok, error } = extractOutcome(res);
-        updateMetrics(tool, ok, duration);
-        if (!ok && config.logToolErrors) logError(tool, duration, error);
+        if (!ok) logError(tool, duration, error);
         return res;
       } catch (e) {
         const duration = performance.now() - start;
-        updateMetrics(tool, false, duration);
-        if (config.logToolErrors)
-          logError(tool, duration, extractErrorMessage(e));
+        logError(tool, duration, extractErrorMessage(e));
         throw e;
       }
     }
@@ -519,20 +468,7 @@ export async function withToolDiagnostics<T>(
     const pubTool = CHANNELS.tool.hasSubscribers;
     const pubPerf = CHANNELS.perf.hasSubscribers;
 
-    if (!pubTool && !pubPerf) {
-      const start = performance.now();
-      try {
-        const res = await run();
-        const duration = performance.now() - start;
-        const { ok } = extractOutcome(res);
-        updateMetrics(tool, ok, duration);
-        return res;
-      } catch (e) {
-        const duration = performance.now() - start;
-        updateMetrics(tool, false, duration);
-        throw e;
-      }
-    }
+    if (!pubTool && !pubPerf) return run();
 
     return runAndObserve(
       tool,
