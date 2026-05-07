@@ -1,9 +1,15 @@
-import { type McpServer, type ReadResourceResult } from '@modelcontextprotocol/server';
+import type {
+  McpServer,
+  ReadResourceResult,
+} from '@modelcontextprotocol/server';
 
 import { withDefaultIcons } from '../tools/shared.js';
 import type { ResourceContract } from './contract.js';
+import {
+  resourceMetadata,
+  type ResourceRegistrationOptions,
+} from './shared.js';
 import { buildToolCatalog } from './tool-catalog.js';
-import { resourceMetadata, type ResourceRegistrationOptions } from './shared.js';
 
 const TOOL_CATALOG_URI = 'internal://tool-catalog';
 
@@ -24,7 +30,10 @@ export function registerToolCatalogResource(
   server.registerResource(
     TOOL_CATALOG_RESOURCE.name,
     TOOL_CATALOG_URI,
-    withDefaultIcons({ ...resourceMetadata(TOOL_CATALOG_RESOURCE) }, options.iconInfo),
+    withDefaultIcons(
+      { ...resourceMetadata(TOOL_CATALOG_RESOURCE) },
+      options.iconInfo
+    ),
     (uri): ReadResourceResult => ({
       contents: [{ uri: uri.href, mimeType: 'text/markdown', text: content }],
     })

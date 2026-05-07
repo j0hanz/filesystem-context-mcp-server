@@ -41,7 +41,10 @@ function buildToolsOverview(): string {
 }
 
 function buildResourceTable(
-  contracts: ReadonlyArray<Pick<ResourceContract, 'uri' | 'uriTemplate' | 'description'>>
+  contracts: readonly Pick<
+    ResourceContract,
+    'uri' | 'uriTemplate' | 'description'
+  >[]
 ): string {
   const header = '| URI | Purpose |\n| --- | ------- |';
   const rows = contracts.map((r) => {
@@ -52,9 +55,10 @@ function buildResourceTable(
 }
 
 function buildInstructionsHeader(
-  resourceContracts: ReadonlyArray<
-    Pick<ResourceContract, 'uri' | 'uriTemplate' | 'description'>
-  >
+  resourceContracts: readonly Pick<
+    ResourceContract,
+    'uri' | 'uriTemplate' | 'description'
+  >[]
 ): string {
   return `## Role
 
@@ -114,9 +118,10 @@ function formatToolSection(tool: ToolContract): string {
 }
 
 export function buildServerInstructions(
-  resourceContracts: ReadonlyArray<
-    Pick<ResourceContract, 'uri' | 'uriTemplate' | 'description'>
-  >
+  resourceContracts: readonly Pick<
+    ResourceContract,
+    'uri' | 'uriTemplate' | 'description'
+  >[]
 ): string {
   const toolSections = getToolContracts().map(formatToolSection).join('\n\n');
   return [

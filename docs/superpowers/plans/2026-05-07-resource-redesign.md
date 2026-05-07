@@ -12,23 +12,23 @@
 
 ## File Map
 
-| Status | Path | Responsibility |
-|--------|------|---------------|
-| CREATE | `src/resources/contract.ts` | `ResourceContract`, `ResourceSubscriptionLifecycle` types |
-| CREATE | `src/resources/shared.ts` | `ResourceRegistrationOptions`, `resourceMetadata()` |
-| CREATE | `src/resources/tool-catalog-resource.ts` | `TOOL_CATALOG_RESOURCE` contract + register fn |
-| CREATE | `src/resources/workflows-resource.ts` | `WORKFLOW_GUIDE_RESOURCE` contract + register fn |
-| CREATE | `src/resources/tool-info-resource.ts` | `TOOL_INFO_RESOURCE` contract + register fn |
-| CREATE | `src/resources/result.ts` | `RESULT_RESOURCE` contract + register fn |
-| CREATE | `src/resources/metrics.ts` | `METRICS_RESOURCE` contract + register fn (owns debounce) |
-| CREATE | `src/resources/instructions.ts` | `INSTRUCTIONS_RESOURCE` contract + register fn |
-| CREATE | `src/resources/filesystem-file.ts` | `FILESYSTEM_FILE_RESOURCE`, `createFileSubscription`, register fn |
-| REPLACE | `src/resources.ts` | Registry table, `ALL_RESOURCES`, `registerAllResources`, `ResourcesHandle` |
-| MODIFY | `src/resources/generated-instructions.ts` | Accept resource list param; auto-derive resource table |
-| MODIFY | `src/server/bootstrap.ts` | Use `registerAllResources`; remove WeakMap/debounce/6 individual calls |
-| CREATE | `__tests__/resources/contract.test.ts` | Structural tests: all 7 resources have required fields |
-| CREATE | `__tests__/resources/filesystem-file.test.ts` | Read, PathGuard rejection, watcher fires |
-| CREATE | `__tests__/resources/metrics.test.ts` | Subscription lifecycle, debounce, destroy |
+| Status  | Path                                          | Responsibility                                                             |
+| ------- | --------------------------------------------- | -------------------------------------------------------------------------- |
+| CREATE  | `src/resources/contract.ts`                   | `ResourceContract`, `ResourceSubscriptionLifecycle` types                  |
+| CREATE  | `src/resources/shared.ts`                     | `ResourceRegistrationOptions`, `resourceMetadata()`                        |
+| CREATE  | `src/resources/tool-catalog-resource.ts`      | `TOOL_CATALOG_RESOURCE` contract + register fn                             |
+| CREATE  | `src/resources/workflows-resource.ts`         | `WORKFLOW_GUIDE_RESOURCE` contract + register fn                           |
+| CREATE  | `src/resources/tool-info-resource.ts`         | `TOOL_INFO_RESOURCE` contract + register fn                                |
+| CREATE  | `src/resources/result.ts`                     | `RESULT_RESOURCE` contract + register fn                                   |
+| CREATE  | `src/resources/metrics.ts`                    | `METRICS_RESOURCE` contract + register fn (owns debounce)                  |
+| CREATE  | `src/resources/instructions.ts`               | `INSTRUCTIONS_RESOURCE` contract + register fn                             |
+| CREATE  | `src/resources/filesystem-file.ts`            | `FILESYSTEM_FILE_RESOURCE`, `createFileSubscription`, register fn          |
+| REPLACE | `src/resources.ts`                            | Registry table, `ALL_RESOURCES`, `registerAllResources`, `ResourcesHandle` |
+| MODIFY  | `src/resources/generated-instructions.ts`     | Accept resource list param; auto-derive resource table                     |
+| MODIFY  | `src/server/bootstrap.ts`                     | Use `registerAllResources`; remove WeakMap/debounce/6 individual calls     |
+| CREATE  | `__tests__/resources/contract.test.ts`        | Structural tests: all 7 resources have required fields                     |
+| CREATE  | `__tests__/resources/filesystem-file.test.ts` | Read, PathGuard rejection, watcher fires                                   |
+| CREATE  | `__tests__/resources/metrics.test.ts`         | Subscription lifecycle, debounce, destroy                                  |
 
 **Unchanged:** `src/resources/tool-catalog.ts`, `src/resources/tool-info.ts`, `src/resources/workflows.ts`, `src/lib/resource-store.ts`, `src/lib/observability.ts`
 
@@ -37,6 +37,7 @@
 ### Task 1: Core types — `contract.ts` and `shared.ts`
 
 **Files:**
+
 - Create: `src/resources/contract.ts`
 - Create: `src/resources/shared.ts`
 
@@ -76,8 +77,8 @@ export interface ResourceContract {
 ```typescript
 import type { PathGuard } from '../lib/path-guard.js';
 import type { ResourceStore } from '../lib/resource-store.js';
-import type { IconInfo } from '../tools/shared.js';
 
+import type { IconInfo } from '../tools/shared.js';
 import type { ResourceContract } from './contract.js';
 
 export interface ResourceRegistrationOptions {
@@ -121,6 +122,7 @@ git commit -m "feat: add ResourceContract and ResourceRegistrationOptions types"
 ### Task 2: Simple static resource files — tool-catalog, workflows, tool-info, result
 
 **Files:**
+
 - Create: `src/resources/tool-catalog-resource.ts`
 - Create: `src/resources/workflows-resource.ts`
 - Create: `src/resources/tool-info-resource.ts`
@@ -131,12 +133,18 @@ These extract the four simplest resources from `src/resources.ts` into standalon
 - [ ] **Step 1: Create `src/resources/tool-catalog-resource.ts`**
 
 ```typescript
-import { type McpServer, type ReadResourceResult } from '@modelcontextprotocol/server';
+import {
+  type McpServer,
+  type ReadResourceResult,
+} from '@modelcontextprotocol/server';
 
 import { withDefaultIcons } from '../tools/shared.js';
 import type { ResourceContract } from './contract.js';
+import {
+  resourceMetadata,
+  type ResourceRegistrationOptions,
+} from './shared.js';
 import { buildToolCatalog } from './tool-catalog.js';
-import { resourceMetadata, type ResourceRegistrationOptions } from './shared.js';
 
 const TOOL_CATALOG_URI = 'internal://tool-catalog';
 
@@ -157,7 +165,10 @@ export function registerToolCatalogResource(
   server.registerResource(
     TOOL_CATALOG_RESOURCE.name,
     TOOL_CATALOG_URI,
-    withDefaultIcons({ ...resourceMetadata(TOOL_CATALOG_RESOURCE) }, options.iconInfo),
+    withDefaultIcons(
+      { ...resourceMetadata(TOOL_CATALOG_RESOURCE) },
+      options.iconInfo
+    ),
     (uri): ReadResourceResult => ({
       contents: [{ uri: uri.href, mimeType: 'text/markdown', text: content }],
     })
@@ -168,11 +179,17 @@ export function registerToolCatalogResource(
 - [ ] **Step 2: Create `src/resources/workflows-resource.ts`**
 
 ```typescript
-import { type McpServer, type ReadResourceResult } from '@modelcontextprotocol/server';
+import {
+  type McpServer,
+  type ReadResourceResult,
+} from '@modelcontextprotocol/server';
 
 import { withDefaultIcons } from '../tools/shared.js';
 import type { ResourceContract } from './contract.js';
-import { resourceMetadata, type ResourceRegistrationOptions } from './shared.js';
+import {
+  resourceMetadata,
+  type ResourceRegistrationOptions,
+} from './shared.js';
 import { buildWorkflowGuide } from './workflows.js';
 
 const WORKFLOW_GUIDE_URI = 'internal://workflows';
@@ -181,7 +198,8 @@ export const WORKFLOW_GUIDE_RESOURCE: ResourceContract = {
   name: 'filesystem-mcp-workflows',
   uri: WORKFLOW_GUIDE_URI,
   title: 'Workflow Guide',
-  description: 'Standard operating procedures for exploration, search, edit, and patch.',
+  description:
+    'Standard operating procedures for exploration, search, edit, and patch.',
   mimeType: 'text/markdown',
   annotations: { audience: ['assistant'], priority: 0.6 },
 };
@@ -194,7 +212,10 @@ export function registerWorkflowGuideResource(
   server.registerResource(
     WORKFLOW_GUIDE_RESOURCE.name,
     WORKFLOW_GUIDE_URI,
-    withDefaultIcons({ ...resourceMetadata(WORKFLOW_GUIDE_RESOURCE) }, options.iconInfo),
+    withDefaultIcons(
+      { ...resourceMetadata(WORKFLOW_GUIDE_RESOURCE) },
+      options.iconInfo
+    ),
     (uri): ReadResourceResult => ({
       contents: [{ uri: uri.href, mimeType: 'text/markdown', text: content }],
     })
@@ -215,11 +236,14 @@ import {
 
 import { withDefaultIcons } from '../tools/shared.js';
 import type { ResourceContract } from './contract.js';
-import { resourceMetadata, type ResourceRegistrationOptions } from './shared.js';
+import {
+  resourceMetadata,
+  type ResourceRegistrationOptions,
+} from './shared.js';
 import {
   buildToolInfo,
-  getToolContracts,
   getSortedToolContracts,
+  getToolContracts,
 } from './tool-info.js';
 
 const TOOL_INFO_URI_TEMPLATE = 'internal://tool-info/{name}';
@@ -262,15 +286,24 @@ export function registerToolInfoResource(
   server.registerResource(
     TOOL_INFO_RESOURCE.name,
     TOOL_INFO_TEMPLATE,
-    withDefaultIcons({ ...resourceMetadata(TOOL_INFO_RESOURCE) }, options.iconInfo),
+    withDefaultIcons(
+      { ...resourceMetadata(TOOL_INFO_RESOURCE) },
+      options.iconInfo
+    ),
     (uri, variables): ReadResourceResult => {
       const { name } = variables;
       if (typeof name !== 'string' || name.length === 0) {
-        throw new ProtocolError(ProtocolErrorCode.InvalidParams, 'Tool name is required');
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
+          'Tool name is required'
+        );
       }
       const content = buildToolInfo(name);
       if (content === undefined) {
-        throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Tool not found: ${name}`);
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
+          `Tool not found: ${name}`
+        );
       }
       return {
         contents: [{ uri: uri.href, mimeType: 'text/markdown', text: content }],
@@ -293,7 +326,10 @@ import {
 
 import { withDefaultIcons } from '../tools/shared.js';
 import type { ResourceContract } from './contract.js';
-import { resourceMetadata, type ResourceRegistrationOptions } from './shared.js';
+import {
+  resourceMetadata,
+  type ResourceRegistrationOptions,
+} from './shared.js';
 
 const RESULT_URI_TEMPLATE = 'filesystem-mcp://result/{id}';
 
@@ -318,7 +354,10 @@ export function registerResultResource(
   server.registerResource(
     RESULT_RESOURCE.name,
     RESULT_TEMPLATE,
-    withDefaultIcons({ ...resourceMetadata(RESULT_RESOURCE) }, options.iconInfo),
+    withDefaultIcons(
+      { ...resourceMetadata(RESULT_RESOURCE) },
+      options.iconInfo
+    ),
     (uri, variables): ReadResourceResult => {
       const { id } = variables;
       if (typeof id !== 'string' || id.length === 0) {
@@ -329,7 +368,9 @@ export function registerResultResource(
       }
       const entry = options.resourceStore.getText(uri.toString());
       return {
-        contents: [{ uri: entry.uri, mimeType: entry.mimeType, text: entry.text }],
+        contents: [
+          { uri: entry.uri, mimeType: entry.mimeType, text: entry.text },
+        ],
       };
     }
   );
@@ -356,6 +397,7 @@ git commit -m "feat: extract tool-catalog, workflows, tool-info, result resource
 ### Task 3: Metrics resource — `src/resources/metrics.ts`
 
 **Files:**
+
 - Create: `src/resources/metrics.ts`
 
 Extracts the metrics resource and moves the `onMetricsUpdate` + debounce wiring out of `bootstrap.ts` and into the contract's `createSubscription` factory.
@@ -363,12 +405,22 @@ Extracts the metrics resource and moves the `onMetricsUpdate` + debounce wiring 
 - [ ] **Step 1: Create `src/resources/metrics.ts`**
 
 ```typescript
-import { type McpServer, type ReadResourceResult } from '@modelcontextprotocol/server';
+import {
+  type McpServer,
+  type ReadResourceResult,
+} from '@modelcontextprotocol/server';
+
+import { globalMetrics, onMetricsUpdate } from '../lib/observability.js';
 
 import { withDefaultIcons } from '../tools/shared.js';
-import { globalMetrics, onMetricsUpdate } from '../lib/observability.js';
-import type { ResourceContract, ResourceSubscriptionLifecycle } from './contract.js';
-import { resourceMetadata, type ResourceRegistrationOptions } from './shared.js';
+import type {
+  ResourceContract,
+  ResourceSubscriptionLifecycle,
+} from './contract.js';
+import {
+  resourceMetadata,
+  type ResourceRegistrationOptions,
+} from './shared.js';
 
 export const METRICS_RESOURCE_URI = 'filesystem-mcp://metrics';
 
@@ -405,7 +457,10 @@ export function registerMetricsResource(
   server.registerResource(
     METRICS_RESOURCE.name,
     METRICS_RESOURCE_URI,
-    withDefaultIcons({ ...resourceMetadata(METRICS_RESOURCE) }, options.iconInfo),
+    withDefaultIcons(
+      { ...resourceMetadata(METRICS_RESOURCE) },
+      options.iconInfo
+    ),
     (uri): ReadResourceResult => {
       const snapshot: Record<
         string,
@@ -455,6 +510,7 @@ git commit -m "feat: extract metrics resource; createSubscription owns debounce 
 ### Task 4: Update `generated-instructions.ts` + create `instructions.ts`
 
 **Files:**
+
 - Modify: `src/resources/generated-instructions.ts`
 - Create: `src/resources/instructions.ts`
 
@@ -472,7 +528,9 @@ import type { ResourceContract } from './contract.js';
 
 // New helper — replaces the hardcoded table:
 function buildResourceTable(
-  contracts: ReadonlyArray<Pick<ResourceContract, 'uri' | 'uriTemplate' | 'description'>>
+  contracts: ReadonlyArray<
+    Pick<ResourceContract, 'uri' | 'uriTemplate' | 'description'>
+  >
 ): string {
   const header = '| URI | Purpose |\n| --- | ------- |';
   const rows = contracts.map((r) => {
@@ -521,7 +579,7 @@ export function buildServerInstructions(
 }
 ```
 
-The exact diff: remove the hardcoded `| \`internal://instructions\` |…` rows from `buildInstructionsHeader`; replace with `${buildResourceTable(resourceContracts)}`.
+The exact diff: remove the hardcoded `| \`internal://instructions\` |…`rows from`buildInstructionsHeader`; replace with `${buildResourceTable(resourceContracts)}`.
 
 - [ ] **Step 2: Run type-check to confirm the signature change is safe**
 
@@ -536,11 +594,17 @@ Expected: type error at the call site in `bootstrap.ts` (currently calls `buildS
 The register function receives pre-built content as a parameter (built by `resources.ts` using `buildServerInstructions(ALL_RESOURCE_CONTRACTS)`).
 
 ```typescript
-import { type McpServer, type ReadResourceResult } from '@modelcontextprotocol/server';
+import {
+  type McpServer,
+  type ReadResourceResult,
+} from '@modelcontextprotocol/server';
 
 import { withDefaultIcons } from '../tools/shared.js';
 import type { ResourceContract } from './contract.js';
-import { resourceMetadata, type ResourceRegistrationOptions } from './shared.js';
+import {
+  resourceMetadata,
+  type ResourceRegistrationOptions,
+} from './shared.js';
 
 const INSTRUCTIONS_URI = 'internal://instructions';
 
@@ -561,7 +625,10 @@ export function registerInstructionResource(
   server.registerResource(
     INSTRUCTIONS_RESOURCE.name,
     INSTRUCTIONS_URI,
-    withDefaultIcons({ ...resourceMetadata(INSTRUCTIONS_RESOURCE) }, options.iconInfo),
+    withDefaultIcons(
+      { ...resourceMetadata(INSTRUCTIONS_RESOURCE) },
+      options.iconInfo
+    ),
     (uri): ReadResourceResult => ({
       contents: [{ uri: uri.href, mimeType: 'text/markdown', text: content }],
     })
@@ -581,6 +648,7 @@ git commit -m "feat: buildServerInstructions accepts resource contracts; extract
 ### Task 5: Filesystem file resource — `src/resources/filesystem-file.ts`
 
 **Files:**
+
 - Create: `src/resources/filesystem-file.ts`
 
 New resource: `filesystem-mcp://file/{+path}`. Reads any file within allowed roots via PathGuard. Subscription lifecycle sets up `node:fs.watch` per subscribed URI, cleaned up on unsubscribe or `destroy()`.
@@ -595,12 +663,19 @@ import {
   type ReadResourceResult,
   ResourceTemplate,
 } from '@modelcontextprotocol/server';
-import { watch, type FSWatcher } from 'node:fs';
+
+import { type FSWatcher, watch } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 
 import { withDefaultIcons } from '../tools/shared.js';
-import type { ResourceContract, ResourceSubscriptionLifecycle } from './contract.js';
-import { resourceMetadata, type ResourceRegistrationOptions } from './shared.js';
+import type {
+  ResourceContract,
+  ResourceSubscriptionLifecycle,
+} from './contract.js';
+import {
+  resourceMetadata,
+  type ResourceRegistrationOptions,
+} from './shared.js';
 
 export const FILESYSTEM_FILE_URI_TEMPLATE = 'filesystem-mcp://file/{+path}';
 const FILE_URI_PREFIX = 'filesystem-mcp://file/';
@@ -612,8 +687,10 @@ const FILE_TEMPLATE = new ResourceTemplate(FILESYSTEM_FILE_URI_TEMPLATE, {
 function guessMimeType(filePath: string): string {
   if (filePath.endsWith('.json')) return 'application/json';
   if (filePath.endsWith('.md')) return 'text/markdown';
-  if (filePath.endsWith('.html') || filePath.endsWith('.htm')) return 'text/html';
-  if (filePath.endsWith('.ts') || filePath.endsWith('.js')) return 'text/javascript';
+  if (filePath.endsWith('.html') || filePath.endsWith('.htm'))
+    return 'text/html';
+  if (filePath.endsWith('.ts') || filePath.endsWith('.js'))
+    return 'text/javascript';
   return 'text/plain';
 }
 
@@ -671,18 +748,26 @@ export function registerFilesystemFileResource(
   server.registerResource(
     FILESYSTEM_FILE_RESOURCE.name,
     FILE_TEMPLATE,
-    withDefaultIcons({ ...resourceMetadata(FILESYSTEM_FILE_RESOURCE) }, options.iconInfo),
+    withDefaultIcons(
+      { ...resourceMetadata(FILESYSTEM_FILE_RESOURCE) },
+      options.iconInfo
+    ),
     async (uri, variables): Promise<ReadResourceResult> => {
       const rawPath = variables['path'];
       if (typeof rawPath !== 'string' || rawPath.length === 0) {
-        throw new ProtocolError(ProtocolErrorCode.InvalidParams, 'path is required');
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
+          'path is required'
+        );
       }
       const safePath = await options.pathGuard.validateExistingPath(
         decodeURIComponent(rawPath)
       );
       const content = await readFile(safePath, 'utf-8');
       return {
-        contents: [{ uri: uri.href, mimeType: guessMimeType(safePath), text: content }],
+        contents: [
+          { uri: uri.href, mimeType: guessMimeType(safePath), text: content },
+        ],
       };
     }
   );
@@ -709,6 +794,7 @@ git commit -m "feat: add filesystem-mcp://file/{+path} resource with fs.watch su
 ### Task 6: Build the registry — replace `src/resources.ts`
 
 **Files:**
+
 - Replace: `src/resources.ts`
 
 The entire current contents are deleted. The new file is the registry table + `registerAllResources`. The instructions resource gets its content from `buildServerInstructions` called with all resource contracts.
@@ -719,11 +805,11 @@ The entire current contents are deleted. The new file is the registry table + `r
 import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { ResourceContract } from './resources/contract.js';
-import { buildServerInstructions } from './resources/generated-instructions.js';
 import {
   FILESYSTEM_FILE_RESOURCE,
   registerFilesystemFileResource,
 } from './resources/filesystem-file.js';
+import { buildServerInstructions } from './resources/generated-instructions.js';
 import {
   INSTRUCTIONS_RESOURCE,
   registerInstructionResource,
@@ -732,21 +818,19 @@ import {
   METRICS_RESOURCE,
   registerMetricsResource,
 } from './resources/metrics.js';
-import { RESULT_RESOURCE, registerResultResource } from './resources/result.js';
+import { registerResultResource, RESULT_RESOURCE } from './resources/result.js';
+import { type ResourceRegistrationOptions } from './resources/shared.js';
 import {
-  type ResourceRegistrationOptions,
-} from './resources/shared.js';
-import {
-  TOOL_CATALOG_RESOURCE,
   registerToolCatalogResource,
+  TOOL_CATALOG_RESOURCE,
 } from './resources/tool-catalog-resource.js';
 import {
-  TOOL_INFO_RESOURCE,
   registerToolInfoResource,
+  TOOL_INFO_RESOURCE,
 } from './resources/tool-info-resource.js';
 import {
-  WORKFLOW_GUIDE_RESOURCE,
   registerWorkflowGuideResource,
+  WORKFLOW_GUIDE_RESOURCE,
 } from './resources/workflows-resource.js';
 
 export type { ResourceRegistrationOptions };
@@ -768,7 +852,9 @@ const ALL_RESOURCE_CONTRACTS: ResourceContract[] = [
   FILESYSTEM_FILE_RESOURCE,
 ];
 
-const SERVER_INSTRUCTIONS_CONTENT = buildServerInstructions(ALL_RESOURCE_CONTRACTS);
+const SERVER_INSTRUCTIONS_CONTENT = buildServerInstructions(
+  ALL_RESOURCE_CONTRACTS
+);
 
 const RESOURCE_ENTRIES: ResourceEntry[] = [
   {
@@ -777,14 +863,22 @@ const RESOURCE_ENTRIES: ResourceEntry[] = [
       registerInstructionResource(server, SERVER_INSTRUCTIONS_CONTENT, options),
   },
   { contract: TOOL_CATALOG_RESOURCE, register: registerToolCatalogResource },
-  { contract: WORKFLOW_GUIDE_RESOURCE, register: registerWorkflowGuideResource },
+  {
+    contract: WORKFLOW_GUIDE_RESOURCE,
+    register: registerWorkflowGuideResource,
+  },
   { contract: TOOL_INFO_RESOURCE, register: registerToolInfoResource },
   { contract: RESULT_RESOURCE, register: registerResultResource },
   { contract: METRICS_RESOURCE, register: registerMetricsResource },
-  { contract: FILESYSTEM_FILE_RESOURCE, register: registerFilesystemFileResource },
+  {
+    contract: FILESYSTEM_FILE_RESOURCE,
+    register: registerFilesystemFileResource,
+  },
 ];
 
-export const ALL_RESOURCES: ResourceContract[] = RESOURCE_ENTRIES.map((e) => e.contract);
+export const ALL_RESOURCES: ResourceContract[] = RESOURCE_ENTRIES.map(
+  (e) => e.contract
+);
 
 export interface ResourcesHandle {
   destroy(): void;
@@ -802,7 +896,9 @@ export function registerAllResources(
 
   const lifecycles = RESOURCE_ENTRIES.flatMap(({ contract, register }) => {
     register(server, options);
-    return contract.createSubscription ? [contract.createSubscription(notify)] : [];
+    return contract.createSubscription
+      ? [contract.createSubscription(notify)]
+      : [];
   });
 
   // Single subscription router for all resources.
@@ -851,6 +947,7 @@ git commit -m "feat: replace resources.ts with ResourceContract registry and reg
 ### Task 7: Update `src/server/bootstrap.ts`
 
 **Files:**
+
 - Modify: `src/server/bootstrap.ts`
 
 Replace the 6 individual `register*Resource` calls, the `metricsUnsubscribers` WeakMap, `cleanupServerMetrics`, and the `onMetricsUpdate` debounce block with a single `registerAllResources` call. Wire `resourcesHandle.destroy()` into transport close.
@@ -858,31 +955,41 @@ Replace the 6 individual `register*Resource` calls, the `metricsUnsubscribers` W
 - [ ] **Step 1: Update imports in `bootstrap.ts`**
 
 Remove these imports:
+
 ```typescript
-import { onMetricsUpdate } from '../lib/observability.js';   // remove
+import { onMetricsUpdate } from '../lib/observability.js';
+
+// remove
 import {
-  METRICS_RESOURCE_URI,              // remove
-  registerInstructionResource,       // remove
-  registerMetricsResource,           // remove
-  registerResultResources,           // remove
-  registerToolCatalogResource,       // remove
-  registerToolInfoResource,          // remove
-  registerWorkflowGuideResource,     // remove
+  METRICS_RESOURCE_URI,
+  // remove
+  registerInstructionResource,
+  // remove
+  registerMetricsResource,
+  // remove
+  registerResultResources,
+  // remove
+  registerToolCatalogResource,
+  // remove
+  registerToolInfoResource,
+  // remove
+  registerWorkflowGuideResource, // remove
 } from '../resources.js';
-import { buildServerInstructions } from '../resources/generated-instructions.js';  // remove
+import { buildServerInstructions } from '../resources/generated-instructions.js';
+
+// remove
 ```
 
 Add:
+
 ```typescript
-import {
-  registerAllResources,
-  type ResourcesHandle,
-} from '../resources.js';
+import { registerAllResources, type ResourcesHandle } from '../resources.js';
 ```
 
 - [ ] **Step 2: Remove `metricsUnsubscribers` WeakMap and `cleanupServerMetrics` function**
 
 Delete these from `bootstrap.ts`:
+
 ```typescript
 const metricsUnsubscribers = new WeakMap<McpServer, () => void>();
 
@@ -895,6 +1002,7 @@ function cleanupServerMetrics(server: McpServer): void {
 - [ ] **Step 3: Update `createServer` — replace individual register calls and metrics wiring**
 
 In `createServer`, remove:
+
 ```typescript
 const serverInstructions = buildServerInstructions();
 // and the serverInstructions usage in serverConfig.instructions
@@ -949,21 +1057,24 @@ serverConfig.instructions =
 For the prompts that need `serverInstructions` content (`registerGetHelpPrompt`): import `ALL_RESOURCES` and regenerate — or more practically, build it locally before registering. Since `resources.ts` already builds instructions internally, the cleanest fix is to re-export it:
 
 Add to `src/resources.ts`:
+
 ```typescript
 export const SERVER_INSTRUCTIONS_CONTENT = SERVER_INSTRUCTIONS_CONTENT; // re-export
 ```
 
 Actually, rename to avoid the duplicate:
+
 ```typescript
 export { SERVER_INSTRUCTIONS_CONTENT as serverInstructionsContent };
 ```
 
 Then in `bootstrap.ts`:
+
 ```typescript
 import {
   registerAllResources,
-  serverInstructionsContent,
   type ResourcesHandle,
+  serverInstructionsContent,
 } from '../resources.js';
 
 // Use serverInstructionsContent wherever serverInstructions was used:
@@ -973,10 +1084,11 @@ registerGetHelpPrompt(server, serverInstructionsContent, localIcon);
 - [ ] **Step 4: Wire `resourcesHandle` into cleanup**
 
 In `startServer` (stdio path), in the transport `onclose` handler:
+
 ```typescript
 const sdkOnClose = transport.onclose;
 transport.onclose = () => {
-  resourcesHandle.destroy();   // add this line
+  resourcesHandle.destroy(); // add this line
   cleanupServerMetrics(server); // this line is removed (cleanupServerMetrics is deleted)
   rootsManager.destroy();
   sdkOnClose?.();
@@ -984,12 +1096,13 @@ transport.onclose = () => {
 ```
 
 In `createHttpSession`, in the `cleanup` function:
+
 ```typescript
 const cleanup = (): void => {
   if (cleanedUp) return;
   cleanedUp = true;
   // ... existing session/eventStore cleanup ...
-  resourcesHandle.destroy();     // add
+  resourcesHandle.destroy(); // add
   // cleanupServerMetrics(mcpServer);  // remove
   rootsManager.destroy();
 };
@@ -998,6 +1111,7 @@ const cleanup = (): void => {
 Since `resourcesHandle` is returned from `registerAllResources` called inside `createServer`, and `createHttpSession` calls `createServer`, `resourcesHandle` needs to be accessible. The simplest approach: return it from `createServer` alongside the server:
 
 Change `createServer` return type:
+
 ```typescript
 export async function createServer(
   options: ServerOptions = {}
@@ -1034,6 +1148,7 @@ git commit -m "feat: wire registerAllResources in bootstrap; remove WeakMap/debo
 ### Task 8: Contract tests — `__tests__/resources/contract.test.ts`
 
 **Files:**
+
 - Create: `__tests__/resources/contract.test.ts`
 
 - [ ] **Step 1: Write the failing test**
@@ -1058,7 +1173,10 @@ describe('resource contracts', () => {
     for (const r of ALL_RESOURCES) {
       assert.ok(r.name.length > 0, `${r.name}: name must be non-empty`);
       assert.ok(r.title.length > 0, `${r.name}: title must be non-empty`);
-      assert.ok(r.description.length > 0, `${r.name}: description must be non-empty`);
+      assert.ok(
+        r.description.length > 0,
+        `${r.name}: description must be non-empty`
+      );
       assert.ok(r.mimeType.length > 0, `${r.name}: mimeType must be non-empty`);
       assert.ok(
         r.uri !== undefined || r.uriTemplate !== undefined,
@@ -1076,7 +1194,9 @@ describe('resource contracts', () => {
   });
 
   it('only metrics and filesystem-file have createSubscription', () => {
-    const withSub = ALL_RESOURCES.filter((r) => r.createSubscription !== undefined);
+    const withSub = ALL_RESOURCES.filter(
+      (r) => r.createSubscription !== undefined
+    );
     const names = withSub.map((r) => r.name).sort();
     assert.deepStrictEqual(names, [
       'filesystem-mcp-file',
@@ -1099,7 +1219,10 @@ describe('resource contracts', () => {
 
     for (const r of ALL_RESOURCES) {
       if (staticNames.includes(r.name)) {
-        assert.ok(r.uri !== undefined, `${r.name}: static resource must have uri`);
+        assert.ok(
+          r.uri !== undefined,
+          `${r.name}: static resource must have uri`
+        );
       } else if (templateNames.includes(r.name)) {
         assert.ok(
           r.uriTemplate !== undefined,
@@ -1131,6 +1254,7 @@ git commit -m "test: add resource contract structural tests"
 ### Task 9: Filesystem file tests — `__tests__/resources/filesystem-file.test.ts`
 
 **Files:**
+
 - Create: `__tests__/resources/filesystem-file.test.ts`
 
 Tests cover: successful read, PathGuard rejection (out-of-root path), watcher fires `notify` on file change, `destroy()` closes all watchers.
@@ -1191,7 +1315,10 @@ describe('createFileSubscription', () => {
       }, 10);
     });
 
-    assert.ok(notified.includes(uri), 'expected notify to be called with the file URI');
+    assert.ok(
+      notified.includes(uri),
+      'expected notify to be called with the file URI'
+    );
     lc.destroy();
   });
 
@@ -1217,7 +1344,11 @@ describe('createFileSubscription', () => {
     await writeFile(filePath, 'changed');
     await new Promise<void>((resolve) => setTimeout(resolve, 100));
 
-    assert.strictEqual(notified.length, 0, 'no notifications after unsubscribe');
+    assert.strictEqual(
+      notified.length,
+      0,
+      'no notifications after unsubscribe'
+    );
     lc.destroy();
   });
 
@@ -1308,6 +1439,7 @@ git commit -m "test: add filesystem-file resource unit tests"
 ### Task 10: Metrics subscription tests — `__tests__/resources/metrics.test.ts`
 
 **Files:**
+
 - Create: `__tests__/resources/metrics.test.ts`
 
 Tests cover: `createSubscription` fires `notify` after a metrics update (with debounce), `destroy()` stops notifications.
@@ -1367,7 +1499,11 @@ describe('METRICS_RESOURCE.createSubscription', () => {
     // Fire another metrics update (simulate via external listener):
     const preDestroy = notified.length;
     await new Promise<void>((resolve) => setTimeout(resolve, 600));
-    assert.strictEqual(notified.length, preDestroy, 'no notifications after destroy');
+    assert.strictEqual(
+      notified.length,
+      preDestroy,
+      'no notifications after destroy'
+    );
 
     unsub();
   });
@@ -1439,27 +1575,28 @@ git commit -m "chore: full resource layer redesign — all checks pass"
 
 **Spec coverage:**
 
-| Spec requirement | Task |
-|---|---|
-| `ResourceContract` + `ResourceSubscriptionLifecycle` types | Task 1 |
-| `ResourceRegistrationOptions` + `resourceMetadata()` | Task 1 |
-| `RESOURCE_ENTRIES`, `ALL_RESOURCES`, `registerAllResources`, `ResourcesHandle` | Task 6 |
-| `tool-catalog` + `workflows` resources with memoized content | Task 2 |
-| `tool-info` resource (template + list + complete) | Task 2 |
-| `result` resource (template, list: undefined) | Task 2 |
-| `metrics` resource — owns debounce, `createSubscription` | Task 3 |
-| `generated-instructions.ts` accepts resource list | Task 4 |
-| `instructions` resource (content param, uniform register signature) | Task 4 |
-| `filesystem-mcp://file/{+path}` resource, PathGuard, `fs.watch` | Task 5 |
-| `bootstrap.ts` — single `registerAllResources`, `resourcesHandle.destroy()` | Task 7 |
-| Contract structural tests | Task 8 |
-| Filesystem file tests (read, PathGuard, watcher) | Task 9 |
-| Metrics subscription tests | Task 10 |
-| `node scripts/tasks.mjs` passes | Task 11 |
+| Spec requirement                                                               | Task    |
+| ------------------------------------------------------------------------------ | ------- |
+| `ResourceContract` + `ResourceSubscriptionLifecycle` types                     | Task 1  |
+| `ResourceRegistrationOptions` + `resourceMetadata()`                           | Task 1  |
+| `RESOURCE_ENTRIES`, `ALL_RESOURCES`, `registerAllResources`, `ResourcesHandle` | Task 6  |
+| `tool-catalog` + `workflows` resources with memoized content                   | Task 2  |
+| `tool-info` resource (template + list + complete)                              | Task 2  |
+| `result` resource (template, list: undefined)                                  | Task 2  |
+| `metrics` resource — owns debounce, `createSubscription`                       | Task 3  |
+| `generated-instructions.ts` accepts resource list                              | Task 4  |
+| `instructions` resource (content param, uniform register signature)            | Task 4  |
+| `filesystem-mcp://file/{+path}` resource, PathGuard, `fs.watch`                | Task 5  |
+| `bootstrap.ts` — single `registerAllResources`, `resourcesHandle.destroy()`    | Task 7  |
+| Contract structural tests                                                      | Task 8  |
+| Filesystem file tests (read, PathGuard, watcher)                               | Task 9  |
+| Metrics subscription tests                                                     | Task 10 |
+| `node scripts/tasks.mjs` passes                                                | Task 11 |
 
 **No gaps found.**
 
 **Type consistency check:**
+
 - `ResourceSubscriptionLifecycle.onSubscribe/onUnsubscribe/destroy` — defined Task 1, used in Tasks 3, 5, 6 ✓
 - `ResourceRegistrationOptions.pathGuard/resourceStore/iconInfo` — defined Task 1, used Tasks 2–6 ✓
 - `resourceMetadata(contract)` — defined Task 1, used Tasks 2–5 ✓

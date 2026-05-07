@@ -36,7 +36,6 @@ import {
   logToMcp,
   SessionContext,
 } from '../lib/logger.js';
-import { onMetricsUpdate } from '../lib/observability.js';
 import { withPathGuard } from '../lib/paths.js';
 import { createInMemoryResourceStore } from '../lib/resource-store.js';
 
@@ -48,15 +47,10 @@ import {
   registerGetToolHelpPrompt,
 } from '../prompts.js';
 import {
-  METRICS_RESOURCE_URI,
-  registerInstructionResource,
-  registerMetricsResource,
-  registerResultResources,
-  registerToolCatalogResource,
-  registerToolInfoResource,
-  registerWorkflowGuideResource,
+  registerAllResources,
+  type ResourcesHandle,
+  serverInstructionsContent,
 } from '../resources.js';
-import { buildServerInstructions } from '../resources/generated-instructions.js';
 import { registerAllTools } from '../tools.js';
 import { type IconInfo, withDefaultIcons } from '../tools/shared.js';
 import { InMemoryEventStore } from './event-store.js';
@@ -150,13 +144,6 @@ const {
 
 const rootsManagers = new WeakMap<McpServer, RootsManager>();
 
-const metricsUnsubscribers = new WeakMap<McpServer, () => void>();
-
-function cleanupServerMetrics(server: McpServer): void {
-  metricsUnsubscribers.get(server)?.();
-  metricsUnsubscribers.delete(server);
-}
-
 function getRootsManager(server: McpServer): RootsManager {
   const manager = rootsManagers.get(server);
   if (!manager) {
@@ -188,9 +175,8 @@ async function getLocalIconInfo(): Promise<IconInfo | undefined> {
 
 export async function createServer(
   options: ServerOptions = {}
-): Promise<McpServer> {
+): Promise<{ server: McpServer; resourcesHandle: ResourcesHandle }> {
   const resourceStore = createInMemoryResourceStore();
-  const serverInstructions = buildServerInstructions();
   const localIcon = await getLocalIconInfo();
   const capabilities = buildServerCapabilities({
     enablePromptListChanged: false,
@@ -215,12 +201,10 @@ export async function createServer(
       ],
     };
 
-  if (serverInstructions) {
-    serverConfig.instructions =
-      'filesystem-mcp: Secure local filesystem MCP server. ' +
-      'Start with: roots -> ls/find -> stat -> read. Never guess paths. ' +
-      'For full guidance, read internal://instructions or run the get-help prompt.';
-  }
+  serverConfig.instructions =
+    'filesystem-mcp: Secure local filesystem MCP server. ' +
+    'Start with: roots -> ls/find -> stat -> read. Never guess paths. ' +
+    'For full guidance, read internal://instructions or run the get-help prompt.';
 
   const server = new McpServer(
     withDefaultIcons(
@@ -254,16 +238,16 @@ export async function createServer(
   // Track stdio server by default, or it will be overwritten per HTTP session later
   stdioServer ??= { server, loggingState };
 
-  registerInstructionResource(server, serverInstructions, localIcon);
-  registerToolCatalogResource(server, localIcon);
-  registerWorkflowGuideResource(server, localIcon);
-  registerToolInfoResource(server, localIcon);
-  registerGetHelpPrompt(server, serverInstructions, localIcon);
+  const resourcesHandle = registerAllResources(server, {
+    pathGuard: rootsManager.pathGuard,
+    resourceStore,
+    ...(localIcon ? { iconInfo: localIcon } : {}),
+  });
+
+  registerGetHelpPrompt(server, serverInstructionsContent, localIcon);
   registerCompareFilesPrompt(server, localIcon);
   registerAnalyzePathPrompt(server, localIcon);
   registerGetToolHelpPrompt(server, localIcon);
-  registerResultResources(server, resourceStore, localIcon);
-  registerMetricsResource(server, localIcon);
   registerAllTools(server, {
     pathGuard: rootsManager.pathGuard,
     resourceStore,
@@ -271,30 +255,14 @@ export async function createServer(
     ...(localIcon ? { iconInfo: localIcon } : {}),
   });
 
-  // Subscribe to metrics updates and push resource notifications to this server instance.
-  // The debounce (500 ms) prevents notification floods during batch tool runs.
-  let metricsNotifyTimer: ReturnType<typeof setTimeout> | undefined;
-  const unsubscribeMetrics = onMetricsUpdate(() => {
-    clearTimeout(metricsNotifyTimer);
-    metricsNotifyTimer = setTimeout(() => {
-      void server.server
-        .sendResourceUpdated({ uri: METRICS_RESOURCE_URI })
-        .catch(() => {
-          // Transport may already be closed — best effort.
-        });
-    }, 500);
-  });
-
-  // Store unsubscribe so HTTP session cleanup and stdio shutdown can call it.
-  metricsUnsubscribers.set(server, () => {
-    clearTimeout(metricsNotifyTimer);
-    unsubscribeMetrics();
-  });
-
-  return server;
+  return { server, resourcesHandle };
 }
 
-export async function startServer(server: McpServer): Promise<void> {
+export async function startServer(serverAndHandle: {
+  server: McpServer;
+  resourcesHandle: ResourcesHandle;
+}): Promise<void> {
+  const { server, resourcesHandle } = serverAndHandle;
   const transport = new StdioServerTransport();
   const rootsManager = getRootsManager(server);
 
@@ -310,7 +278,7 @@ export async function startServer(server: McpServer): Promise<void> {
   await server.connect(transport);
   const sdkOnClose = transport.onclose;
   transport.onclose = () => {
-    cleanupServerMetrics(server);
+    resourcesHandle.destroy();
     rootsManager.destroy();
     sdkOnClose?.();
   };
@@ -373,6 +341,7 @@ async function readRequestBody(req: IncomingMessage): Promise<unknown> {
 interface HttpSession {
   server: McpServer;
   rootsManager: RootsManager;
+  resourcesHandle: ResourcesHandle;
   transport: NodeStreamableHTTPServerTransport;
   createdAt: number;
   cleanup: () => void;
@@ -384,7 +353,7 @@ async function createHttpSession(
   sessions: Map<string, HttpSession>,
   eventStore: InMemoryEventStore
 ): Promise<HttpSession> {
-  const mcpServer = await createServer(options);
+  const { server: mcpServer, resourcesHandle } = await createServer(options);
   const rootsManager = getRootsManager(mcpServer);
 
   rootsManager.registerHandlers(mcpServer);
@@ -402,7 +371,7 @@ async function createHttpSession(
       eventStore.delete(sessionId);
     }
 
-    cleanupServerMetrics(mcpServer);
+    resourcesHandle.destroy();
     rootsManager.destroy();
   };
 
@@ -419,6 +388,7 @@ async function createHttpSession(
       sessions.set(sessionId, {
         server: mcpServer,
         rootsManager,
+        resourcesHandle,
         transport,
         createdAt: Date.now(),
         cleanup,
@@ -445,6 +415,7 @@ async function createHttpSession(
   return {
     server: mcpServer,
     rootsManager,
+    resourcesHandle,
     transport,
     createdAt: Date.now(),
     cleanup,

@@ -5,14 +5,21 @@ import {
   type ReadResourceResult,
   ResourceTemplate,
 } from '@modelcontextprotocol/server';
-import { watch, type FSWatcher } from 'node:fs';
+
+import { type FSWatcher, watch } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 
 import { withDefaultIcons } from '../tools/shared.js';
-import type { ResourceContract, ResourceSubscriptionLifecycle } from './contract.js';
-import { resourceMetadata, type ResourceRegistrationOptions } from './shared.js';
+import type {
+  ResourceContract,
+  ResourceSubscriptionLifecycle,
+} from './contract.js';
+import {
+  resourceMetadata,
+  type ResourceRegistrationOptions,
+} from './shared.js';
 
-export const FILESYSTEM_FILE_URI_TEMPLATE = 'filesystem-mcp://file/{+path}';
+const FILESYSTEM_FILE_URI_TEMPLATE = 'filesystem-mcp://file/{+path}';
 const FILE_URI_PREFIX = 'filesystem-mcp://file/';
 
 const FILE_TEMPLATE = new ResourceTemplate(FILESYSTEM_FILE_URI_TEMPLATE, {
@@ -22,12 +29,14 @@ const FILE_TEMPLATE = new ResourceTemplate(FILESYSTEM_FILE_URI_TEMPLATE, {
 function guessMimeType(filePath: string): string {
   if (filePath.endsWith('.json')) return 'application/json';
   if (filePath.endsWith('.md')) return 'text/markdown';
-  if (filePath.endsWith('.html') || filePath.endsWith('.htm')) return 'text/html';
-  if (filePath.endsWith('.ts') || filePath.endsWith('.js')) return 'text/javascript';
+  if (filePath.endsWith('.html') || filePath.endsWith('.htm'))
+    return 'text/html';
+  if (filePath.endsWith('.ts') || filePath.endsWith('.js'))
+    return 'text/javascript';
   return 'text/plain';
 }
 
-export function createFileSubscription(
+function createFileSubscription(
   notify: (uri: string) => void
 ): ResourceSubscriptionLifecycle {
   const watchers = new Map<string, FSWatcher>();
@@ -81,18 +90,26 @@ export function registerFilesystemFileResource(
   server.registerResource(
     FILESYSTEM_FILE_RESOURCE.name,
     FILE_TEMPLATE,
-    withDefaultIcons({ ...resourceMetadata(FILESYSTEM_FILE_RESOURCE) }, options.iconInfo),
+    withDefaultIcons(
+      { ...resourceMetadata(FILESYSTEM_FILE_RESOURCE) },
+      options.iconInfo
+    ),
     async (uri, variables): Promise<ReadResourceResult> => {
-      const rawPath = variables['path'];
+      const rawPath = variables.path;
       if (typeof rawPath !== 'string' || rawPath.length === 0) {
-        throw new ProtocolError(ProtocolErrorCode.InvalidParams, 'path is required');
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
+          'path is required'
+        );
       }
       const safePath = await options.pathGuard.validateExistingPath(
         decodeURIComponent(rawPath)
       );
       const content = await readFile(safePath, 'utf-8');
       return {
-        contents: [{ uri: uri.href, mimeType: guessMimeType(safePath), text: content }],
+        contents: [
+          { uri: uri.href, mimeType: guessMimeType(safePath), text: content },
+        ],
       };
     }
   );

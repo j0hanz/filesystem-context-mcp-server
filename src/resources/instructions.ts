@@ -1,8 +1,14 @@
-import { type McpServer, type ReadResourceResult } from '@modelcontextprotocol/server';
+import type {
+  McpServer,
+  ReadResourceResult,
+} from '@modelcontextprotocol/server';
 
 import { withDefaultIcons } from '../tools/shared.js';
 import type { ResourceContract } from './contract.js';
-import { resourceMetadata, type ResourceRegistrationOptions } from './shared.js';
+import {
+  resourceMetadata,
+  type ResourceRegistrationOptions,
+} from './shared.js';
 
 const INSTRUCTIONS_URI = 'internal://instructions';
 
@@ -23,7 +29,10 @@ export function registerInstructionResource(
   server.registerResource(
     INSTRUCTIONS_RESOURCE.name,
     INSTRUCTIONS_URI,
-    withDefaultIcons({ ...resourceMetadata(INSTRUCTIONS_RESOURCE) }, options.iconInfo),
+    withDefaultIcons(
+      { ...resourceMetadata(INSTRUCTIONS_RESOURCE) },
+      options.iconInfo
+    ),
     (uri): ReadResourceResult => ({
       contents: [{ uri: uri.href, mimeType: 'text/markdown', text: content }],
     })

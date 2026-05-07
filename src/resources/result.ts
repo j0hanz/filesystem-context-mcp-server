@@ -8,7 +8,10 @@ import {
 
 import { withDefaultIcons } from '../tools/shared.js';
 import type { ResourceContract } from './contract.js';
-import { resourceMetadata, type ResourceRegistrationOptions } from './shared.js';
+import {
+  resourceMetadata,
+  type ResourceRegistrationOptions,
+} from './shared.js';
 
 const RESULT_URI_TEMPLATE = 'filesystem-mcp://result/{id}';
 
@@ -33,7 +36,10 @@ export function registerResultResource(
   server.registerResource(
     RESULT_RESOURCE.name,
     RESULT_TEMPLATE,
-    withDefaultIcons({ ...resourceMetadata(RESULT_RESOURCE) }, options.iconInfo),
+    withDefaultIcons(
+      { ...resourceMetadata(RESULT_RESOURCE) },
+      options.iconInfo
+    ),
     (uri, variables): ReadResourceResult => {
       const { id } = variables;
       if (typeof id !== 'string' || id.length === 0) {
@@ -44,7 +50,9 @@ export function registerResultResource(
       }
       const entry = options.resourceStore.getText(uri.toString());
       return {
-        contents: [{ uri: entry.uri, mimeType: entry.mimeType, text: entry.text }],
+        contents: [
+          { uri: entry.uri, mimeType: entry.mimeType, text: entry.text },
+        ],
       };
     }
   );

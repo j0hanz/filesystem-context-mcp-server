@@ -1,7 +1,7 @@
 import type { PathGuard } from '../lib/path-guard.js';
 import type { ResourceStore } from '../lib/resource-store.js';
-import type { IconInfo } from '../tools/shared.js';
 
+import type { IconInfo } from '../tools/shared.js';
 import type { ResourceContract } from './contract.js';
 
 export interface ResourceRegistrationOptions {

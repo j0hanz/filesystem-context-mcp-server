@@ -1,11 +1,21 @@
-import { type McpServer, type ReadResourceResult } from '@modelcontextprotocol/server';
+import type {
+  McpServer,
+  ReadResourceResult,
+} from '@modelcontextprotocol/server';
+
+import { globalMetrics, onMetricsUpdate } from '../lib/observability.js';
 
 import { withDefaultIcons } from '../tools/shared.js';
-import { globalMetrics, onMetricsUpdate } from '../lib/observability.js';
-import type { ResourceContract, ResourceSubscriptionLifecycle } from './contract.js';
-import { resourceMetadata, type ResourceRegistrationOptions } from './shared.js';
+import type {
+  ResourceContract,
+  ResourceSubscriptionLifecycle,
+} from './contract.js';
+import {
+  resourceMetadata,
+  type ResourceRegistrationOptions,
+} from './shared.js';
 
-export const METRICS_RESOURCE_URI = 'filesystem-mcp://metrics';
+const METRICS_RESOURCE_URI = 'filesystem-mcp://metrics';
 
 export const METRICS_RESOURCE: ResourceContract = {
   name: 'filesystem-mcp-metrics',
@@ -23,7 +33,9 @@ export const METRICS_RESOURCE: ResourceContract = {
       }, 500);
     });
     return {
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
       onSubscribe: () => {},
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
       onUnsubscribe: () => {},
       destroy: () => {
         clearTimeout(debounceTimer);
@@ -40,7 +52,10 @@ export function registerMetricsResource(
   server.registerResource(
     METRICS_RESOURCE.name,
     METRICS_RESOURCE_URI,
-    withDefaultIcons({ ...resourceMetadata(METRICS_RESOURCE) }, options.iconInfo),
+    withDefaultIcons(
+      { ...resourceMetadata(METRICS_RESOURCE) },
+      options.iconInfo
+    ),
     (uri): ReadResourceResult => {
       const snapshot: Record<
         string,

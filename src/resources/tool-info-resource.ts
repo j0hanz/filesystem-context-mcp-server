@@ -8,11 +8,14 @@ import {
 
 import { withDefaultIcons } from '../tools/shared.js';
 import type { ResourceContract } from './contract.js';
-import { resourceMetadata, type ResourceRegistrationOptions } from './shared.js';
+import {
+  resourceMetadata,
+  type ResourceRegistrationOptions,
+} from './shared.js';
 import {
   buildToolInfo,
-  getToolContracts,
   getSortedToolContracts,
+  getToolContracts,
 } from './tool-info.js';
 
 const TOOL_INFO_URI_TEMPLATE = 'internal://tool-info/{name}';
@@ -55,15 +58,24 @@ export function registerToolInfoResource(
   server.registerResource(
     TOOL_INFO_RESOURCE.name,
     TOOL_INFO_TEMPLATE,
-    withDefaultIcons({ ...resourceMetadata(TOOL_INFO_RESOURCE) }, options.iconInfo),
+    withDefaultIcons(
+      { ...resourceMetadata(TOOL_INFO_RESOURCE) },
+      options.iconInfo
+    ),
     (uri, variables): ReadResourceResult => {
       const { name } = variables;
       if (typeof name !== 'string' || name.length === 0) {
-        throw new ProtocolError(ProtocolErrorCode.InvalidParams, 'Tool name is required');
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
+          'Tool name is required'
+        );
       }
       const content = buildToolInfo(name);
       if (content === undefined) {
-        throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Tool not found: ${name}`);
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
+          `Tool not found: ${name}`
+        );
       }
       return {
         contents: [{ uri: uri.href, mimeType: 'text/markdown', text: content }],

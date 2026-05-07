@@ -79,7 +79,9 @@ export interface ResourceContract {
     audience: ('user' | 'assistant')[];
     priority: number;
   };
-  createSubscription?: (notify: (uri: string) => void) => ResourceSubscriptionLifecycle;
+  createSubscription?: (
+    notify: (uri: string) => void
+  ) => ResourceSubscriptionLifecycle;
 }
 // Exactly one of `uri` or `uriTemplate` must be set on each contract.
 ```
@@ -92,6 +94,7 @@ export interface ResourceContract {
 ```typescript
 import type { PathGuard } from '../lib/path-guard.js';
 import type { ResourceStore } from '../lib/resource-store.js';
+
 import type { IconInfo } from '../tools/shared.js';
 
 export interface ResourceRegistrationOptions {
@@ -128,16 +131,24 @@ interface ResourceEntry {
 }
 
 const RESOURCE_ENTRIES: ResourceEntry[] = [
-  { contract: INSTRUCTIONS_RESOURCE,    register: registerInstructionResource },
-  { contract: TOOL_CATALOG_RESOURCE,    register: registerToolCatalogResource },
-  { contract: WORKFLOW_GUIDE_RESOURCE,  register: registerWorkflowGuideResource },
-  { contract: TOOL_INFO_RESOURCE,       register: registerToolInfoResource },
-  { contract: RESULT_RESOURCE,          register: registerResultResource },
-  { contract: METRICS_RESOURCE,         register: registerMetricsResource },
-  { contract: FILESYSTEM_FILE_RESOURCE, register: registerFilesystemFileResource },
+  { contract: INSTRUCTIONS_RESOURCE, register: registerInstructionResource },
+  { contract: TOOL_CATALOG_RESOURCE, register: registerToolCatalogResource },
+  {
+    contract: WORKFLOW_GUIDE_RESOURCE,
+    register: registerWorkflowGuideResource,
+  },
+  { contract: TOOL_INFO_RESOURCE, register: registerToolInfoResource },
+  { contract: RESULT_RESOURCE, register: registerResultResource },
+  { contract: METRICS_RESOURCE, register: registerMetricsResource },
+  {
+    contract: FILESYSTEM_FILE_RESOURCE,
+    register: registerFilesystemFileResource,
+  },
 ];
 
-export const ALL_RESOURCES: ResourceContract[] = RESOURCE_ENTRIES.map((e) => e.contract);
+export const ALL_RESOURCES: ResourceContract[] = RESOURCE_ENTRIES.map(
+  (e) => e.contract
+);
 ```
 
 ### `registerAllResources`
@@ -157,7 +168,9 @@ export function registerAllResources(
 
   const lifecycles = RESOURCE_ENTRIES.flatMap(({ contract, register }) => {
     register(server, options);
-    return contract.createSubscription ? [contract.createSubscription(notify)] : [];
+    return contract.createSubscription
+      ? [contract.createSubscription(notify)]
+      : [];
   });
 
   server.server.setRequestHandler('resources/subscribe', async (req) => {
@@ -181,6 +194,7 @@ export function registerAllResources(
 ### Impact on `bootstrap.ts`
 
 **Removed:**
+
 - Six individual `register*Resource(server, ...)` calls
 - `metricsUnsubscribers` WeakMap
 - `cleanupServerMetrics` function
@@ -213,7 +227,8 @@ The `{+path}` reserved expansion (RFC 6570) allows `/` characters in the path wi
 **Contract:**
 
 ```typescript
-export const FILESYSTEM_FILE_RESOURCE_URI_TEMPLATE = 'filesystem-mcp://file/{+path}';
+export const FILESYSTEM_FILE_RESOURCE_URI_TEMPLATE =
+  'filesystem-mcp://file/{+path}';
 
 export const FILESYSTEM_FILE_RESOURCE: ResourceContract = {
   name: 'filesystem-mcp-file',
@@ -231,9 +246,12 @@ export const FILESYSTEM_FILE_RESOURCE: ResourceContract = {
 **Registration:**
 
 ```typescript
-const FILE_TEMPLATE = new ResourceTemplate(FILESYSTEM_FILE_RESOURCE_URI_TEMPLATE, {
-  list: undefined,
-});
+const FILE_TEMPLATE = new ResourceTemplate(
+  FILESYSTEM_FILE_RESOURCE_URI_TEMPLATE,
+  {
+    list: undefined,
+  }
+);
 
 export function registerFilesystemFileResource(
   server: McpServer,
@@ -242,18 +260,26 @@ export function registerFilesystemFileResource(
   server.registerResource(
     FILESYSTEM_FILE_RESOURCE.name,
     FILE_TEMPLATE,
-    withDefaultIcons({ ...resourceMetadata(FILESYSTEM_FILE_RESOURCE) }, options.iconInfo),
+    withDefaultIcons(
+      { ...resourceMetadata(FILESYSTEM_FILE_RESOURCE) },
+      options.iconInfo
+    ),
     async (uri, variables): Promise<ReadResourceResult> => {
       const rawPath = variables['path'];
       if (typeof rawPath !== 'string' || rawPath.length === 0) {
-        throw new ProtocolError(ProtocolErrorCode.InvalidParams, 'path is required');
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
+          'path is required'
+        );
       }
       const safePath = await options.pathGuard.assertWithinAllowedDirectories(
         decodeURIComponent(rawPath)
       );
       const content = await readFile(safePath, 'utf-8');
       return {
-        contents: [{ uri: uri.href, mimeType: guessMimeType(safePath), text: content }],
+        contents: [
+          { uri: uri.href, mimeType: guessMimeType(safePath), text: content },
+        ],
       };
     }
   );
@@ -270,10 +296,15 @@ function createFileSubscription(
 
   function onSubscribe(uri: string): void {
     if (watchers.has(uri) || !uri.startsWith('filesystem-mcp://file/')) return;
-    const decoded = decodeURIComponent(uri.slice('filesystem-mcp://file/'.length));
+    const decoded = decodeURIComponent(
+      uri.slice('filesystem-mcp://file/'.length)
+    );
     try {
       const watcher = watch(decoded, { persistent: false }, () => notify(uri));
-      watcher.once('error', () => { watcher.close(); watchers.delete(uri); });
+      watcher.once('error', () => {
+        watcher.close();
+        watchers.delete(uri);
+      });
       watchers.set(uri, watcher);
     } catch {
       // Not watchable — silent. Client gets ResourceNotFound on next read.
@@ -298,8 +329,8 @@ function createFileSubscription(
 
 ```typescript
 function guessMimeType(path: string): string {
-  if (path.endsWith('.json'))                       return 'application/json';
-  if (path.endsWith('.md'))                         return 'text/markdown';
+  if (path.endsWith('.json')) return 'application/json';
+  if (path.endsWith('.md')) return 'text/markdown';
   if (path.endsWith('.html') || path.endsWith('.htm')) return 'text/html';
   if (path.endsWith('.ts') || path.endsWith('.js')) return 'text/javascript';
   return 'text/plain';
@@ -324,12 +355,15 @@ Static builders are called once at registration time:
 ```typescript
 // src/resources/tool-catalog-resource.ts
 export function registerToolCatalogResource(server, options): void {
-  const content = buildToolCatalog();  // once
+  const content = buildToolCatalog(); // once
 
   server.registerResource(
     TOOL_CATALOG_RESOURCE.name,
     TOOL_CATALOG_RESOURCE_URI,
-    withDefaultIcons({ ...resourceMetadata(TOOL_CATALOG_RESOURCE) }, options.iconInfo),
+    withDefaultIcons(
+      { ...resourceMetadata(TOOL_CATALOG_RESOURCE) },
+      options.iconInfo
+    ),
     (uri): ReadResourceResult => ({
       contents: [{ uri: uri.href, mimeType: 'text/markdown', text: content }],
     })
@@ -380,7 +414,10 @@ export const METRICS_RESOURCE: ResourceContract = {
     return {
       onSubscribe: () => {},
       onUnsubscribe: () => {},
-      destroy: () => { clearTimeout(debounceTimer); unsubscribe(); },
+      destroy: () => {
+        clearTimeout(debounceTimer);
+        unsubscribe();
+      },
     };
   },
 };

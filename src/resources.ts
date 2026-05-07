@@ -1,11 +1,11 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { ResourceContract } from './resources/contract.js';
-import { buildServerInstructions } from './resources/generated-instructions.js';
 import {
   FILESYSTEM_FILE_RESOURCE,
   registerFilesystemFileResource,
 } from './resources/filesystem-file.js';
+import { buildServerInstructions } from './resources/generated-instructions.js';
 import {
   INSTRUCTIONS_RESOURCE,
   registerInstructionResource,
@@ -14,21 +14,19 @@ import {
   METRICS_RESOURCE,
   registerMetricsResource,
 } from './resources/metrics.js';
-import { RESULT_RESOURCE, registerResultResource } from './resources/result.js';
+import { registerResultResource, RESULT_RESOURCE } from './resources/result.js';
+import type { ResourceRegistrationOptions } from './resources/shared.js';
 import {
-  type ResourceRegistrationOptions,
-} from './resources/shared.js';
-import {
-  TOOL_CATALOG_RESOURCE,
   registerToolCatalogResource,
+  TOOL_CATALOG_RESOURCE,
 } from './resources/tool-catalog-resource.js';
 import {
-  TOOL_INFO_RESOURCE,
   registerToolInfoResource,
+  TOOL_INFO_RESOURCE,
 } from './resources/tool-info-resource.js';
 import {
-  WORKFLOW_GUIDE_RESOURCE,
   registerWorkflowGuideResource,
+  WORKFLOW_GUIDE_RESOURCE,
 } from './resources/workflows-resource.js';
 
 export type { ResourceRegistrationOptions };
@@ -50,23 +48,32 @@ const ALL_RESOURCE_CONTRACTS: ResourceContract[] = [
   FILESYSTEM_FILE_RESOURCE,
 ];
 
-const SERVER_INSTRUCTIONS_CONTENT = buildServerInstructions(ALL_RESOURCE_CONTRACTS);
+const SERVER_INSTRUCTIONS_CONTENT = buildServerInstructions(
+  ALL_RESOURCE_CONTRACTS
+);
+
+const ALL_RESOURCES: ResourceContract[] = ALL_RESOURCE_CONTRACTS;
 
 const RESOURCE_ENTRIES: ResourceEntry[] = [
   {
     contract: INSTRUCTIONS_RESOURCE,
-    register: (server, options) =>
-      registerInstructionResource(server, SERVER_INSTRUCTIONS_CONTENT, options),
+    register: (server, options) => {
+      registerInstructionResource(server, SERVER_INSTRUCTIONS_CONTENT, options);
+    },
   },
   { contract: TOOL_CATALOG_RESOURCE, register: registerToolCatalogResource },
-  { contract: WORKFLOW_GUIDE_RESOURCE, register: registerWorkflowGuideResource },
+  {
+    contract: WORKFLOW_GUIDE_RESOURCE,
+    register: registerWorkflowGuideResource,
+  },
   { contract: TOOL_INFO_RESOURCE, register: registerToolInfoResource },
   { contract: RESULT_RESOURCE, register: registerResultResource },
   { contract: METRICS_RESOURCE, register: registerMetricsResource },
-  { contract: FILESYSTEM_FILE_RESOURCE, register: registerFilesystemFileResource },
+  {
+    contract: FILESYSTEM_FILE_RESOURCE,
+    register: registerFilesystemFileResource,
+  },
 ];
-
-export const ALL_RESOURCES: ResourceContract[] = RESOURCE_ENTRIES.map((e) => e.contract);
 
 export interface ResourcesHandle {
   destroy(): void;
@@ -84,14 +91,16 @@ export function registerAllResources(
 
   const lifecycles = RESOURCE_ENTRIES.flatMap(({ contract, register }) => {
     register(server, options);
-    return contract.createSubscription ? [contract.createSubscription(notify)] : [];
+    return contract.createSubscription
+      ? [contract.createSubscription(notify)]
+      : [];
   });
 
   // Single subscription router for all resources.
   // Each lifecycle's onSubscribe/onUnsubscribe ignores URIs that don't belong to it.
   server.server.setRequestHandler(
     'resources/subscribe',
-    async (req: { params: { uri: string } }) => {
+    (req: { params: { uri: string } }) => {
       for (const lc of lifecycles) lc.onSubscribe(req.params.uri);
       return {};
     }
@@ -99,7 +108,7 @@ export function registerAllResources(
 
   server.server.setRequestHandler(
     'resources/unsubscribe',
-    async (req: { params: { uri: string } }) => {
+    (req: { params: { uri: string } }) => {
       for (const lc of lifecycles) lc.onUnsubscribe(req.params.uri);
       return {};
     }
