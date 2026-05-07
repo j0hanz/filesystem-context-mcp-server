@@ -3,6 +3,7 @@ import { basename } from 'node:path';
 import type { z } from 'zod/v4';
 
 import {
+  DEFAULT_CONTINUATION_CHUNK_SIZE,
   DEFAULT_SEARCH_TIMEOUT_MS,
   MAX_TEXT_FILE_SIZE,
 } from '../lib/constants.js';
@@ -11,6 +12,7 @@ import { calculateFileContentHash, readFile } from '../lib/fs-helpers.js';
 import { assignDefined } from '../lib/utils.js';
 import { ReadFileInputSchema } from '../schemas/inputs.js';
 import { ReadFileOutputSchema } from '../schemas/outputs.js';
+import { ContinuationSchema } from '../schemas/shared.js';
 
 import { defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
@@ -70,6 +72,37 @@ function buildReadOptions(
   });
 }
 
+function buildReadContinuation(result: {
+  path: string;
+  hasMoreLines?: boolean;
+  linesRead?: number;
+  startLine?: number;
+  endLine?: number;
+  head?: number;
+  totalLines?: number;
+}): z.infer<typeof ContinuationSchema> | undefined {
+  if (!result.hasMoreLines) return undefined;
+  const linesRead = result.linesRead ?? 0;
+  const nextStart = (result.startLine ?? 1) + linesRead;
+  let chunkSize: number;
+  if (result.head !== undefined) {
+    chunkSize = result.head;
+  } else if (result.startLine !== undefined && result.endLine !== undefined) {
+    chunkSize = result.endLine - result.startLine + 1;
+  } else {
+    chunkSize = DEFAULT_CONTINUATION_CHUNK_SIZE;
+  }
+  const nextEnd = nextStart + chunkSize - 1;
+  const hint = result.totalLines
+    ? `${result.totalLines - nextStart + 1} lines remain (${nextStart}–${result.totalLines}). Read next chunk with these args.`
+    : 'File was truncated. Read next chunk with these args.';
+  return {
+    tool: 'read',
+    args: { path: result.path, startLine: nextStart, endLine: nextEnd },
+    hint,
+  };
+}
+
 function toStructuredReadFileResult(
   result: ReadFileHandlerResult
 ): ReadFileOutput {
@@ -80,7 +113,7 @@ function toStructuredReadFileResult(
   };
 
   return assignDefined(structured, {
-    truncated: result.truncated ? true : undefined,
+    continuation: buildReadContinuation(result),
     totalLines: result.totalLines,
     head: result.head,
     tail: result.tail,
@@ -109,7 +142,6 @@ function maybeBuildExternalizedReadResponse(
   const structuredWithResource: ReadFileOutput = {
     ...structured,
     content: preview,
-    truncated: true,
     resourceUri: entry.uri,
   };
 
@@ -173,7 +205,7 @@ function buildReadCompletionMessage(
       : `${READ_TOOL_LABEL}: ${name} • ${String(lines ?? structured.tail)} lines`;
   }
 
-  if (structured.truncated) {
+  if (structured.continuation) {
     return `${READ_TOOL_LABEL}: ${name} • truncated [${String(lines)} lines]`;
   }
 
