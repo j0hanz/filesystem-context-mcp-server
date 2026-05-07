@@ -328,7 +328,11 @@ export const CreateDirectoryOutputSchema = z.strictObject({
 });
 
 export const MoveFileOutputSchema = z.strictObject({
-  ok: z.boolean().describe('Success indicator'),
+  ok: z.literal(true).describe('Success indicator'),
+  cancelled: z
+    .boolean()
+    .optional()
+    .describe('True when user declined an overwrite prompt'),
   source: z
     .string()
     .optional()

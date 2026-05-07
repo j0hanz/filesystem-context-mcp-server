@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
@@ -342,5 +342,42 @@ describe('grep externalization with expiresAt', () => {
         `resource_link description should include "Expires:": ${description}`
       );
     }
+  });
+});
+
+describe('mv partial success', () => {
+  let env: TestEnv;
+
+  before(async () => {
+    env = await createTestEnv();
+  });
+  after(async () => {
+    await env.cleanup();
+  });
+
+  it('returns ok:true even when some sources fail to move', async () => {
+    const src = join(env.tmpDir, 'exists.txt');
+    const dest = join(env.tmpDir, 'moved-dir');
+    await mkdir(dest, { recursive: true });
+    await writeFile(src, 'content', 'utf8');
+
+    const raw = await env.client.callTool({
+      name: 'mv',
+      arguments: {
+        sources: [src, join(env.tmpDir, 'DOES_NOT_EXIST.txt')],
+        destination: dest,
+      },
+    });
+    assertOk(raw);
+    const sc = getStructured(raw);
+    assert.strictEqual(
+      sc['ok'],
+      true,
+      'ok must be literal true even for partial moves'
+    );
+    assert.ok(
+      Array.isArray(sc['failed']),
+      'failed must be present for partial moves'
+    );
   });
 });

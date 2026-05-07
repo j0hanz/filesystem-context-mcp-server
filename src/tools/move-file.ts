@@ -254,7 +254,8 @@ async function handleMoveFile(
         ) {
           // Return early — do not move.
           return {
-            ok: false,
+            ok: true as const,
+            cancelled: true,
             sources: [],
             destination: validDest,
           };
@@ -303,7 +304,7 @@ async function handleMoveFile(
   }
 
   return {
-    ok: failed.length === 0,
+    ok: true as const,
     ...(movedSource ? { source: movedSource } : {}),
     sources: movedSources,
     destination: validDest,
@@ -318,8 +319,7 @@ export const MOVE_FILE = defineTool<MoveInput, MoveOutput>({
   contract: MOVE_FILE_TOOL,
   run: async (args, ctx) => {
     const structured = await handleMoveFile(args, ctx.signal, ctx.elicitInput);
-    const isCancelled =
-      !structured.ok && structured.sources.length === 0 && !structured.failed;
+    const isCancelled = structured.cancelled === true;
     const message = isCancelled
       ? `Move cancelled: ${args.sources[0] ?? ''}`
       : formatMoveMessage(
