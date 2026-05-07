@@ -29,9 +29,10 @@ const LIST_DIRECTORY_TOOL: ToolContract = {
   name: 'ls',
   title: 'List Directory',
   description:
-    'List immediate directory contents (non-recursive): name, path, type, size, modified date. ' +
+    'List directory contents with optional bounded recursion via `maxDepth`. ' +
+    'Returns name, path, type, size, modified date. ' +
     'Omit path for workspace root. `includeIgnored=true` for node_modules etc. ' +
-    'For recursive search, use `find`.',
+    'For glob-based recursive search, use `find`.',
   inputSchema: ListDirectoryInputSchema,
   outputSchema: ListDirectoryOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
