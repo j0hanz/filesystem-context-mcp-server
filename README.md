@@ -38,7 +38,7 @@ Supports stdio (default) and Node Streamable HTTP transport. HTTP sessions are i
 - **Security-first** — path validation, symlink escape prevention, sensitive file denylist, localhost-only CORS, Host header validation for loopback HTTP binds, optional API key auth
 - **Dual transport** — stdio for local use, Node Streamable HTTP for networked/multi-session deployments
 - **Structured output** — all tools return typed `outputSchema` / `structuredContent` for reliable LLM parsing
-- **Self-documenting** — 7 built-in resources (`internal://instructions`, `internal://tool-catalog`, etc.) and 4 built-in prompts (`get-help`, `compare-files`, `analyze-path`, `get-tool-help`)
+- **Self-documenting** — 2 built-in resources (`internal://instructions`, `filesystem-mcp://result/{id}`) and 3 built-in prompts (`get-help`, `compare-files`, `analyze-path`)
 
 ## Requirements
 
@@ -553,17 +553,12 @@ Create directories, move/rename files, delete files, and verify file integrity v
     |
     +-- resources/read ──────────────────────────────────────
     |   +-- internal://instructions
-    |   +-- internal://tool-catalog
-    |   +-- internal://workflows
-    |   +-- internal://tool-info/{name}
     |   +-- filesystem-mcp://result/{id}
-    |   +-- filesystem-mcp://metrics
     |
     +-- prompts/get ─────────────────────────────────────────
     |   +-- get-help (optional topic argument)
     |   +-- compare-files (original, modified)
     |   +-- analyze-path (path)
-    |   +-- get-tool-help (name)
     |
     +-- Capabilities: logging, resources, tools, prompts, completions, tasks
 ```
@@ -828,34 +823,29 @@ Bulk search-and-replace across files matching a glob. Replaces **all** occurrenc
 
 ### Resources
 
-| Resource     | URI                            | MIME Type        | Description                                                        |
-| ------------ | ------------------------------ | ---------------- | ------------------------------------------------------------------ |
-| Instructions | `internal://instructions`      | text/markdown    | Comprehensive usage rules and guidelines                           |
-| Tool Catalog | `internal://tool-catalog`      | text/markdown    | Tool selection guide and data flow map                             |
-| Workflows    | `internal://workflows`         | text/markdown    | Standard operating procedures for exploration, search, edit, patch |
-| Tool Info    | `internal://tool-info/{name}`  | text/markdown    | Per-tool contract details, nuances, gotchas                        |
-| Result Cache | `filesystem-mcp://result/{id}` | text/plain       | Ephemeral cached tool output (large results externalized here)     |
-| Metrics      | `filesystem-mcp://metrics`     | application/json | Live per-tool call/error/avgDurationMs snapshot                    |
+| Resource     | URI                            | MIME Type     | Description                                                   |
+| ------------ | ------------------------------ | ------------- | ------------------------------------------------------------- |
+| Instructions | `internal://instructions`      | text/markdown | Navigation guide: role, tool overview, constraints, recovery  |
+| Result Cache | `filesystem-mcp://result/{id}` | text/plain    | Ephemeral cached tool output (large results externalized here)|
 
 ### Prompts
 
-| Prompt          | Arguments              | Description                                                            |
-| --------------- | ---------------------- | ---------------------------------------------------------------------- |
-| `get-help`      | `topic` (optional)     | Return usage instructions. Optionally filter by section heading prefix |
-| `compare-files` | `original`, `modified` | Generate a workflow for comparing two files using `diff_files`         |
-| `analyze-path`  | `path`                 | Generate a workflow for analyzing a file or directory                  |
-| `get-tool-help` | `name`                 | Return a prompt with the authoritative contract for a specific tool    |
+| Prompt          | Arguments              | Description                                                       |
+| --------------- | ---------------------- | ----------------------------------------------------------------- |
+| `get-help`      | `topic` (optional)     | Return usage instructions. Optionally filter by section heading   |
+| `compare-files` | `original`, `modified` | Generate a workflow for comparing two files using `diff_files`    |
+| `analyze-path`  | `path`                 | Generate a workflow for analyzing a file or directory             |
 
 ## MCP Capabilities
 
-| Capability    | Status    | Evidence                                                                   |
-| ------------- | --------- | -------------------------------------------------------------------------- |
-| `logging`     | confirmed | `src/server/bootstrap.ts` — registered in capabilities                     |
-| `resources`   | confirmed | `src/server/bootstrap.ts` — 6 resources registered                         |
-| `tools`       | confirmed | `src/server/bootstrap.ts` — 18 tools registered                            |
-| `prompts`     | confirmed | `src/server/bootstrap.ts` — 4 prompts registered                           |
-| `completions` | confirmed | `src/completions.ts` — path, topic, and tool-name auto-completion          |
-| `tasks`       | confirmed | `src/server/bootstrap.ts` — optional task support (list, cancel, requests) |
+| Capability    | Status    | Evidence                                                                        |
+| ------------- | --------- | ------------------------------------------------------------------------------- |
+| `logging`     | confirmed | `src/server/bootstrap.ts` — registered in capabilities                          |
+| `resources`   | confirmed | `src/server/bootstrap.ts` — 2 resources registered, no subscribe/listChanged    |
+| `tools`       | confirmed | `src/server/bootstrap.ts` — 18 tools registered                                 |
+| `prompts`     | confirmed | `src/server/bootstrap.ts` — 3 prompts registered                                |
+| `completions` | confirmed | `src/completions.ts` — path, topic, and tool-name auto-completion               |
+| `tasks`       | confirmed | `src/server/bootstrap.ts` — optional task support (list, cancel, requests)      |
 
 ### Tool Annotations
 
