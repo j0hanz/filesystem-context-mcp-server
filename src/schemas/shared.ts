@@ -1,14 +1,15 @@
+import type { ZodType } from 'zod/v4';
 import { z } from 'zod/v4';
 
 import {
   ErrorCodeEnum,
-  FileType,
+  FileType as FileTypeEnum,
   IsoDateTime,
   NonNegInt,
   PositiveInt,
 } from './fields.js';
 
-function reg<T extends z.ZodType>(schema: T, id: string): T {
+function reg<T extends ZodType>(schema: T, id: string): T {
   z.globalRegistry.add(schema, { id });
   return schema;
 }
@@ -17,7 +18,7 @@ export const FileInfoSchema = reg(
   z.strictObject({
     name: z.string().describe('Name'),
     path: z.string().describe('Absolute path'),
-    type: FileType.describe('Type'),
+    type: FileTypeEnum.describe('Type'),
     size: NonNegInt.describe('Size (bytes)'),
     tokenEstimate: NonNegInt.optional().describe('Est. tokens (size÷4)'),
     created: IsoDateTime.describe('Created'),
@@ -136,7 +137,12 @@ export function createReadRangeFields(descs: ReadRangeDescriptions) {
 
 // Shared superRefine for read range mutual exclusion (runtime enforcement).
 export function validateReadRange(
-  value: { head?: number; tail?: number; startLine?: number; endLine?: number },
+  value: {
+    head?: number | undefined;
+    tail?: number | undefined;
+    startLine?: number | undefined;
+    endLine?: number | undefined;
+  },
   ctx: z.RefinementCtx
 ): void {
   const hasHead = value.head !== undefined;
