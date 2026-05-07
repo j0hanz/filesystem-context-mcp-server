@@ -38,7 +38,7 @@ export const WRITE_FILE = defineTool<
 >({
   contract: WRITE_FILE_TOOL,
   run: async (args, ctx: ToolRunContext) => {
-    const validPath = await validatePathForWrite(args.path ?? '', ctx.signal);
+    const validPath = await validatePathForWrite(args.path, ctx.signal);
 
     // Ensure parent directory exists
     await withAbort(mkdir(dirname(validPath), { recursive: true }), ctx.signal);
@@ -64,10 +64,9 @@ export const WRITE_FILE = defineTool<
       bytesWritten,
     });
   },
-  progressMessage: (args) =>
-    `${WRITE_FILE_TOOL.title}: ${basename(args.path ?? '')}`,
+  progressMessage: (args) => `${WRITE_FILE_TOOL.title}: ${basename(args.path)}`,
   completionMessage: (args, result) => {
-    const name = basename(args.path ?? '');
+    const name = basename(args.path);
     if (result.isError)
       return `${WRITE_FILE_TOOL.title}: ${name} • ${result.errorCode}`;
     const sc = result.structuredContent;

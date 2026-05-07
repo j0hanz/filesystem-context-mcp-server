@@ -236,7 +236,7 @@ export const RootsInputSchema = z.strictObject({});
 // --- Write group: write, edit, mkdir, mv, rm ---
 
 export const WriteFileInputSchema = z.strictObject({
-  path: OptionalPath,
+  path: RequiredPath.describe('Target file path'),
   content: z.string(),
 });
 
