@@ -13,7 +13,7 @@ import {
   MAX_TREE_ENTRIES,
 } from './lib/constants.js';
 import { ErrorCode } from './lib/errors.js';
-import { isSafeGlobPattern } from './lib/globs.js';
+import { isSafeGlobPattern } from './lib/paths.js';
 
 const MAX_PATH_LENGTH = 4096;
 

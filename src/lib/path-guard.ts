@@ -12,6 +12,8 @@ import {
   sep,
 } from 'node:path';
 
+import { ErrorCode, McpError } from './errors.js';
+
 // Inline utilities to avoid circular imports from paths.ts
 const WINDOWS_PATH_SEPARATOR = '\\';
 const POSIX_PATH_SEPARATOR = '/';
@@ -302,6 +304,15 @@ export class PathGuard {
     }
 
     return true;
+  }
+
+  assertSafeGlob(
+    pattern: string,
+    message = 'Invalid glob or unsafe path (absolute/.. forbidden)'
+  ): void {
+    if (!this.isSafeGlob(pattern)) {
+      throw new McpError(ErrorCode.INVALID_PATTERN, message);
+    }
   }
 
   async validateExistingPath(requestedPath: string): Promise<string> {

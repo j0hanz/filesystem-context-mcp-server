@@ -30,11 +30,11 @@ import {
   McpError,
 } from '../errors.js';
 import { isProbablyBinary } from '../fs-helpers.js';
-import { isSafeGlobPattern } from '../globs.js';
 import { startPerfMeasure } from '../observability.js';
 import {
   assertAllowedFileAccess,
   isPathWithinDirectories,
+  isSafeGlobPattern,
   isSensitivePath,
   normalizePath,
   validateExistingDirectory,

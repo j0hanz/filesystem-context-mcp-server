@@ -34,9 +34,9 @@ import {
   readFile,
   readFileWithStats,
 } from '../fs-helpers.js';
-import { assertSafeGlobPattern } from '../globs.js';
 import {
   assertAllowedFileAccess,
+  assertSafeGlobPattern,
   isPathWithinDirectories,
   isSensitivePath,
   normalizePath,

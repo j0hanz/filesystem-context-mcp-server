@@ -476,3 +476,14 @@ export async function getValidRootDirectories(
 
   return validDirs;
 }
+
+export function isSafeGlobPattern(pattern: string): boolean {
+  return getActivePathGuard().isSafeGlob(pattern);
+}
+
+export function assertSafeGlobPattern(
+  pattern: string,
+  message?: string
+): void {
+  getActivePathGuard().assertSafeGlob(pattern, message);
+}
