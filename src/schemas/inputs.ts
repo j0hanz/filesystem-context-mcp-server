@@ -31,13 +31,13 @@ export const ListDirectoryInputSchema = z.strictObject({
   includeHidden: includeHiddenField(),
   includeIgnored: includeIgnoredField(),
   maxDepth: z
-    .int()
+    .uint32()
     .min(1)
     .max(MAX_TREE_DEPTH)
     .optional()
     .describe('Max directory depth (default: flat listing)'),
   maxEntries: z
-    .int()
+    .uint32()
     .min(1)
     .max(MAX_LIST_ENTRIES)
     .optional()
@@ -57,7 +57,7 @@ export const SearchFilesInputSchema = z.strictObject({
   path: OptionalPath.describe('Base directory (default: root)'),
   pattern: SafeGlobPattern.describe('Glob pattern to search'),
   maxResults: z
-    .int()
+    .uint32()
     .min(1)
     .max(MAX_SEARCH_RESULTS)
     .optional()
@@ -71,7 +71,7 @@ export const SearchFilesInputSchema = z.strictObject({
     .default('path')
     .describe('Sort order'),
   maxDepth: z
-    .int()
+    .uint32()
     .min(0)
     .max(MAX_SEARCH_DEPTH)
     .optional()
@@ -82,14 +82,14 @@ export const SearchFilesInputSchema = z.strictObject({
 export const TreeInputSchema = z.strictObject({
   path: OptionalPath.describe('Base directory (default: root)'),
   maxDepth: z
-    .int()
+    .uint32()
     .min(0)
     .max(MAX_TREE_DEPTH)
     .optional()
     .default(DEFAULT_TREE_DEPTH)
     .describe('Max depth (default: 4)'),
   maxEntries: z
-    .int()
+    .uint32()
     .min(1)
     .max(MAX_TREE_ENTRIES)
     .optional()
@@ -171,20 +171,20 @@ export const GrepInputSchema = z.strictObject({
   caseSensitive: defaultFalseBoolean('Case-sensitive'),
   wholeWord: defaultFalseBoolean('Match whole words only'),
   contextLines: z
-    .int()
+    .int32()
     .min(0)
     .max(20)
     .optional()
     .describe('Lines of context around each match'),
   maxResults: z
-    .int()
+    .uint32()
     .min(1)
     .max(MAX_SEARCH_RESULTS)
     .optional()
     .default(DEFAULT_SEARCH_RESULTS)
     .describe('Max matches to return'),
   maxDepth: z
-    .int()
+    .uint32()
     .min(0)
     .max(MAX_SEARCH_DEPTH)
     .optional()
@@ -216,20 +216,20 @@ export const SearchAndReplaceInputSchema = z.strictObject({
     .describe('Preview without writing \u2014 set false to apply'),
   returnDiff: defaultFalseBoolean('Include unified diff in output'),
   maxResults: z
-    .int()
+    .uint32()
     .min(1)
     .max(MAX_SEARCH_RESULTS)
     .optional()
     .default(DEFAULT_SEARCH_RESULTS)
     .describe('Max matches across all files'),
   maxFiles: z
-    .int()
+    .uint32()
     .min(1)
     .max(MAX_SEARCH_RESULTS)
     .optional()
     .describe('Max files to process'),
   maxDepth: z
-    .int()
+    .uint32()
     .min(0)
     .max(MAX_SEARCH_DEPTH)
     .optional()
@@ -259,7 +259,7 @@ export const DiffFilesInputSchema = z.strictObject({
       RequiredPath.describe('Modified file path'),
     ])
     .describe('Two paths: [original, modified]'),
-  context: z.int().min(0).optional().describe('Context lines (default 3)'),
+  context: z.int32().min(0).optional().describe('Context lines (default 3)'),
   ignoreWhitespace: defaultFalseBoolean('Ignore whitespace changes'),
   stripTrailingCr: defaultFalseBoolean('Strip trailing carriage returns'),
 });
@@ -275,7 +275,7 @@ export const ApplyPatchInputSchema = z.strictObject({
     .describe('Unified diff patch content'),
   dryRun: defaultFalseBoolean('Validate patch without applying'),
   fuzzFactor: z
-    .int()
+    .int32()
     .min(0)
     .max(10)
     .optional()

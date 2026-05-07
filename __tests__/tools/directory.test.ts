@@ -382,7 +382,11 @@ describe('invalid cursor rejection', () => {
   it('find rejects a malformed cursor with INVALID_INPUT', async () => {
     const raw = await env.client.callTool({
       name: 'find',
-      arguments: { path: env.tmpDir, pattern: '*.txt', cursor: 'garbage!!' },
+      arguments: {
+        path: env.tmpDir,
+        pattern: '*.txt',
+        cursor: 'not-a-valid-cursor',
+      },
     });
     assertToolError(raw, 'INVALID_INPUT');
   });

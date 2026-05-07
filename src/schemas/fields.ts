@@ -3,43 +3,30 @@ import { z } from 'zod/v4';
 
 import { isSafeGlobPattern } from '../lib/paths.js';
 
-function reg<T extends z.ZodType>(
-  schema: T,
-  id: string,
-  extra?: Record<string, unknown>
-): T {
-  z.globalRegistry.add(schema, { id, ...extra });
-  return schema;
-}
-
 // Runtime: full ISO-8601 UTC validation. Wire: format only (pattern stripped by post-processor).
-export const IsoDateTime = reg(
-  z.iso.datetime().describe('ISO 8601 date-time (UTC)'),
-  'IsoDateTime'
-);
+export const IsoDateTime = z.iso
+  .datetime()
+  .describe('ISO 8601 date-time (UTC)')
+  .meta({ id: 'IsoDateTime' });
 
-export const Sha256Hex = reg(
-  z
-    .string()
-    .regex(/^[a-f0-9]{64}$/u, 'Expected SHA-256 hex digest')
-    .describe('SHA-256 hex digest'),
-  'Sha256Hex'
-);
+export const Sha256Hex = z
+  .hash('sha256')
+  .describe('SHA-256 hex digest')
+  .meta({ id: 'Sha256Hex' });
 
-export const NonNegInt = reg(
-  z.int({ error: 'Must be integer' }).min(0, 'Min: 0'),
-  'NonNegInt'
-);
+export const NonNegInt = z
+  .int({ error: 'Must be integer' })
+  .min(0, 'Min: 0')
+  .meta({ id: 'NonNegInt' });
 
-export const PositiveInt = reg(
-  z.int({ error: 'Must be integer' }).min(1, 'Min: 1'),
-  'PositiveInt'
-);
+export const PositiveInt = z
+  .int({ error: 'Must be integer' })
+  .min(1, 'Min: 1')
+  .meta({ id: 'PositiveInt' });
 
-export const FileType = reg(
-  z.enum(['file', 'directory', 'symlink', 'other']),
-  'FileType'
-);
+export const FileType = z
+  .enum(['file', 'directory', 'symlink', 'other'])
+  .meta({ id: 'FileType' });
 
 const MAX_PATH_LENGTH = 4096;
 
@@ -54,15 +41,15 @@ export const RequiredPath = PathBase;
 
 // SafeGlobPattern: includes runtime safety check + examples for discoverability.
 // Usage sites do NOT need to add .refine() again — it's baked in here.
-export const SafeGlobPattern = reg(
-  z
-    .string()
-    .min(1, 'Pattern required')
-    .max(1000, 'Max 1000 chars')
-    .refine((val) => isSafeGlobPattern(val), {
-      error: 'Invalid glob or unsafe path (absolute/.. forbidden)',
-    })
-    .describe('Glob pattern (e.g. "**/*.ts", "src/**/*.js")'),
-  'SafeGlobPattern',
-  { examples: ['**/*.ts', 'src/**/*.js', '*.{ts,tsx}'] }
-);
+export const SafeGlobPattern = z
+  .string()
+  .min(1, 'Pattern required')
+  .max(1000, 'Max 1000 chars')
+  .refine((val) => isSafeGlobPattern(val), {
+    error: 'Invalid glob or unsafe path (absolute/.. forbidden)',
+  })
+  .describe('Glob pattern (e.g. "**/*.ts", "src/**/*.js")')
+  .meta({
+    id: 'SafeGlobPattern',
+    examples: ['**/*.ts', 'src/**/*.js', '*.{ts,tsx}'],
+  });

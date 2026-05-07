@@ -1,15 +1,9 @@
-import type { ZodType } from 'zod/v4';
 import { z } from 'zod/v4';
 
 import { FileType as FileTypeEnum, IsoDateTime, NonNegInt } from './fields.js';
 
-function reg<T extends ZodType>(schema: T, id: string): T {
-  z.globalRegistry.add(schema, { id });
-  return schema;
-}
-
-export const FileInfoSchema = reg(
-  z.strictObject({
+export const FileInfoSchema = z
+  .strictObject({
     name: z.string().describe('Name'),
     path: z.string().describe('Absolute path'),
     type: FileTypeEnum.describe('Type'),
@@ -22,28 +16,25 @@ export const FileInfoSchema = reg(
     isHidden: z.boolean().describe('Hidden?'),
     mimeType: z.string().optional().describe('MIME type'),
     symlinkTarget: z.string().optional().describe('Target (symlink)'),
-  }),
-  'FileInfo'
-);
+  })
+  .meta({ id: 'FileInfo' });
 
-export const OperationSummarySchema = reg(
-  z.strictObject({
+export const OperationSummarySchema = z
+  .strictObject({
     total: NonNegInt.describe('Total'),
     succeeded: NonNegInt.describe('Succeeded'),
     failed: NonNegInt.describe('Failed'),
-  }),
-  'OperationSummary'
-);
+  })
+  .meta({ id: 'OperationSummary' });
 
-export const PerFileErrorSchema = reg(
-  z.strictObject({
+export const PerFileErrorSchema = z
+  .strictObject({
     code: z.string().describe('Error code'),
     message: z.string().describe('Error message'),
     path: z.string().optional().describe('Path involved'),
     suggestion: z.string().optional().describe('Suggested fix'),
-  }),
-  'PerFileError'
-);
+  })
+  .meta({ id: 'PerFileError' });
 
 interface ReadRangeDescriptions {
   head: string;
@@ -55,27 +46,19 @@ interface ReadRangeDescriptions {
 export function createReadRangeFields(descs: ReadRangeDescriptions) {
   return {
     head: z
-      .int({ error: 'Must be integer' })
+      .int32()
       .min(1, 'Min: 1')
       .max(100000, 'Max: 100,000')
       .optional()
       .describe(descs.head),
     tail: z
-      .int({ error: 'Must be integer' })
+      .int32()
       .min(1, 'Min: 1')
       .max(100000, 'Max: 100,000')
       .optional()
       .describe(descs.tail),
-    startLine: z
-      .int({ error: 'Must be integer' })
-      .min(1, 'Min: 1')
-      .optional()
-      .describe(descs.startLine),
-    endLine: z
-      .int({ error: 'Must be integer' })
-      .min(1, 'Min: 1')
-      .optional()
-      .describe(descs.endLine),
+    startLine: z.int32().min(1, 'Min: 1').optional().describe(descs.startLine),
+    endLine: z.int32().min(1, 'Min: 1').optional().describe(descs.endLine),
   };
 }
 
