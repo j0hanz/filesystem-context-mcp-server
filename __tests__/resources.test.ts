@@ -29,7 +29,9 @@ function getTextContent(
 
 async function createDiscoveryEnv(): Promise<DiscoveryEnv> {
   const tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-discovery-'));
-  const server = await createServer({ cliAllowedDirs: [tempDir] });
+  const { server, resourcesHandle } = await createServer({
+    cliAllowedDirs: [tempDir],
+  });
   const client = new Client({
     name: 'discovery-test-client',
     version: '1.0.0',
@@ -42,6 +44,7 @@ async function createDiscoveryEnv(): Promise<DiscoveryEnv> {
   return {
     client,
     cleanup: async () => {
+      resourcesHandle.destroy();
       await client.close().catch(() => {});
       await server.close().catch(() => {});
       await rm(tempDir, { recursive: true, force: true });
@@ -88,7 +91,11 @@ describe('resources and metadata', () => {
 
     assert.deepEqual(
       resourceTemplates.map((template) => template.uriTemplate).sort(),
-      ['filesystem-mcp://result/{id}', 'internal://tool-info/{name}']
+      [
+        'filesystem-mcp://file/{+path}',
+        'filesystem-mcp://result/{id}',
+        'internal://tool-info/{name}',
+      ]
     );
   });
 
@@ -164,7 +171,7 @@ describe('resources and metadata', () => {
     const resourceUris = resources.map((resource) => resource.uri).sort();
 
     assert.match(readme, /\*\*18 filesystem tools\*\*/u);
-    assert.match(readme, /\*\*Self-documenting\*\* — 6 built-in resources/u);
+    assert.match(readme, /\*\*Self-documenting\*\* — 7 built-in resources/u);
     assert.match(readme, /4 built-in prompts/u);
 
     assert.equal(tools.length, 18);
@@ -172,7 +179,7 @@ describe('resources and metadata', () => {
       resourceUris,
       [...staticResourceUris, ...toolInfoUris].sort()
     );
-    assert.equal(staticResourceUris.length + resourceTemplates.length, 6);
+    assert.equal(staticResourceUris.length + resourceTemplates.length, 7);
     assert.equal(prompts.length, 4);
 
     assert.equal(serverJson.title, 'Filesystem MCP');

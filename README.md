@@ -38,7 +38,7 @@ Supports stdio (default) and Node Streamable HTTP transport. HTTP sessions are i
 - **Security-first** — path validation, symlink escape prevention, sensitive file denylist, localhost-only CORS, Host header validation for loopback HTTP binds, optional API key auth
 - **Dual transport** — stdio for local use, Node Streamable HTTP for networked/multi-session deployments
 - **Structured output** — all tools return typed `outputSchema` / `structuredContent` for reliable LLM parsing
-- **Self-documenting** — 6 built-in resources (`internal://instructions`, `internal://tool-catalog`, etc.) and 4 built-in prompts (`get-help`, `compare-files`, `analyze-path`, `get-tool-help`)
+- **Self-documenting** — 7 built-in resources (`internal://instructions`, `internal://tool-catalog`, etc.) and 4 built-in prompts (`get-help`, `compare-files`, `analyze-path`, `get-tool-help`)
 
 ## Requirements
 

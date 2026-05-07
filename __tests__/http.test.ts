@@ -540,7 +540,11 @@ describe('HTTP transport', () => {
       );
       assert.deepEqual(
         resourceTemplates.map((template) => template.uriTemplate).sort(),
-        ['filesystem-mcp://result/{id}', 'internal://tool-info/{name}']
+        [
+          'filesystem-mcp://file/{+path}',
+          'filesystem-mcp://result/{id}',
+          'internal://tool-info/{name}',
+        ]
       );
       assert.deepEqual(prompts.map((prompt) => prompt.name).sort(), [
         'analyze-path',

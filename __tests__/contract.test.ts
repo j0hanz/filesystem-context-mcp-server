@@ -293,11 +293,15 @@ describe('Completion contract', () => {
       registerAnalyzePathPrompt,
       registerCompareFilesPrompt,
     } = await import('../src/prompts.js');
-    const { registerToolInfoResource } = await import('../src/resources.js');
+    const { ALL_RESOURCES, registerAllResources } =
+      await import('../src/resources.js');
     const { buildServerInstructions } =
       await import('../src/resources/generated-instructions.js');
     const { setAllowedDirectoriesResolved } =
       await import('../src/lib/paths.js');
+    const { getDefaultPathGuard } = await import('../src/lib/path-guard.js');
+    const { createInMemoryResourceStore } =
+      await import('../src/lib/resource-store.js');
     const { LinkedTransport } = await import('./linked-transport.js');
 
     const tmpDir = await mkdtemp(
@@ -311,12 +315,20 @@ describe('Completion contract', () => {
       { capabilities: { completions: {} } }
     );
 
-    const instructions = buildServerInstructions();
+    // Set up ResourceStore for resource registration
+    // PathGuard is already initialized globally by setAllowedDirectoriesResolved
+    const resourceStore = createInMemoryResourceStore();
+    const pathGuard = getDefaultPathGuard();
+
+    const instructions = buildServerInstructions(ALL_RESOURCES);
     registerGetHelpPrompt(server, instructions);
     registerGetToolHelpPrompt(server);
     registerAnalyzePathPrompt(server);
     registerCompareFilesPrompt(server);
-    registerToolInfoResource(server);
+    registerAllResources(server, {
+      pathGuard,
+      resourceStore,
+    });
 
     const client = new Client({ name: 'contract-client', version: '1.0.0' });
     const [ct, st] = LinkedTransport.createLinkedPair();

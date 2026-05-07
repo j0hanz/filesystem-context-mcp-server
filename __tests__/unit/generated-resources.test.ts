@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { ALL_RESOURCES } from '../../src/resources.js';
 import { buildServerInstructions } from '../../src/resources/generated-instructions.js';
 import { buildToolCatalog } from '../../src/resources/tool-catalog.js';
 import { buildToolInfo } from '../../src/resources/tool-info.js';
@@ -15,7 +16,7 @@ describe('generated LLM resources', () => {
   });
 
   it('derives task-capable guidance from tool contracts', () => {
-    const instructions = buildServerInstructions();
+    const instructions = buildServerInstructions(ALL_RESOURCES);
 
     assert.match(instructions, /Task-capable tools: .*`grep`/u);
     assert.match(instructions, /Task-capable tools: .*`read_many`/u);

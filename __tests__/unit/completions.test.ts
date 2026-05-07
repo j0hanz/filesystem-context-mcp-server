@@ -8,17 +8,19 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { describe, it } from 'node:test';
 
+import { getDefaultPathGuard } from '../../src/lib/path-guard.js';
 import {
   normalizePath,
   setAllowedDirectoriesResolved,
 } from '../../src/lib/paths.js';
+import { createInMemoryResourceStore } from '../../src/lib/resource-store.js';
 import {
   registerAnalyzePathPrompt,
   registerCompareFilesPrompt,
   registerGetHelpPrompt,
   registerGetToolHelpPrompt,
 } from '../../src/prompts.js';
-import { registerToolInfoResource } from '../../src/resources.js';
+import { ALL_RESOURCES, registerAllResources } from '../../src/resources.js';
 import { buildServerInstructions } from '../../src/resources/generated-instructions.js';
 import { LinkedTransport } from '../linked-transport.js';
 
@@ -27,12 +29,23 @@ function makeCompletionServer(withInstructions = false): McpServer {
     { name: 'test-server', version: '0.0.0' },
     { capabilities: { completions: {} } }
   );
-  const instructions = withInstructions ? buildServerInstructions() : '';
+  const instructions = withInstructions
+    ? buildServerInstructions(ALL_RESOURCES)
+    : '';
   registerGetHelpPrompt(server, instructions);
   registerGetToolHelpPrompt(server);
   registerAnalyzePathPrompt(server);
   registerCompareFilesPrompt(server);
-  registerToolInfoResource(server);
+
+  // Set up PathGuard and ResourceStore for resource registration
+  // PathGuard is already initialized globally by setAllowedDirectoriesResolved
+  const resourceStore = createInMemoryResourceStore();
+  const pathGuard = getDefaultPathGuard();
+
+  registerAllResources(server, {
+    pathGuard,
+    resourceStore,
+  });
   return server;
 }
 
