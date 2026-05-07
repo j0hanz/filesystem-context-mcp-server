@@ -419,5 +419,4 @@ describe('Completion contract', () => {
       await teardown();
     }
   });
-
 });
