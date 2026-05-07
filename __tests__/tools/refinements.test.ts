@@ -324,9 +324,9 @@ describe('grep externalization with expiresAt', () => {
         'resourceUri should point to result store'
       );
       assert.equal(
-        sc['truncated'],
-        true,
-        'Should be truncated when externalized'
+        sc['continuation'],
+        undefined,
+        'Externalized files should have no continuation'
       );
 
       // Verify the resource_link content block includes expiresAt

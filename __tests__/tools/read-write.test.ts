@@ -83,7 +83,7 @@ describe('read tool', () => {
     assertOk(raw);
     const sc = getStructured(raw);
     assert.equal(sc['content'], 'line1\nline2\nline3');
-    assert.equal(sc['truncated'], undefined);
+    assert.equal(sc['continuation'], undefined);
     assert.equal(sc['hasMoreLines'], undefined);
   });
 
