@@ -31,8 +31,8 @@ import {
   type TraceContext,
   withToolDiagnostics,
 } from '../lib/observability.js';
-import { getAllowedDirectories } from '../lib/paths.js';
 import type { PathGuard } from '../lib/path-guard.js';
+import { getAllowedDirectories } from '../lib/paths.js';
 import type { ResourceStore } from '../lib/resource-store.js';
 import { createBase64JsonCodec } from '../lib/zod-codecs.js';
 

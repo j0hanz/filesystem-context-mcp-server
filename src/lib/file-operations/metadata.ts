@@ -1,11 +1,5 @@
-import {
-  type Dirent,
-  lstat,
-  readdir,
-  readlink,
-  stat,
-  type Stats,
-} from 'node:fs';
+import type { Stats } from 'node:fs';
+import { lstat, readdir, readlink, stat } from 'node:fs/promises';
 import { basename, join, parse, relative } from 'node:path';
 
 import type {
@@ -60,45 +54,6 @@ import {
   withOptionalStoppedReason,
 } from './core.js';
 import { globEntries } from './traversal.js';
-
-function statAsync(filePath: string): Promise<Stats> {
-  return new Promise((resolve, reject) => {
-    stat(filePath, (err, stats) => {
-      if (err) reject(err);
-      else resolve(stats);
-    });
-  });
-}
-
-function readlinkAsync(filePath: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    readlink(filePath, (err, linkString) => {
-      if (err) reject(err);
-      else resolve(linkString);
-    });
-  });
-}
-
-function readdirAsync(
-  dirPath: string,
-  options: { withFileTypes: true }
-): Promise<Dirent[]> {
-  return new Promise((resolve, reject) => {
-    readdir(dirPath, options, (err, files) => {
-      if (err) reject(err);
-      else resolve(files);
-    });
-  });
-}
-
-function lstatAsync(filePath: string): Promise<Stats> {
-  return new Promise((resolve, reject) => {
-    lstat(filePath, (err, stats) => {
-      if (err) reject(err);
-      else resolve(stats);
-    });
-  });
-}
 
 const ACCESS_DEPS: EntryAccessDependencies = {
   normalizePath,
@@ -165,7 +120,7 @@ async function getSymlinkTarget(
 ): Promise<string | undefined> {
   assertNotAborted(signal);
   try {
-    return await withAbort(readlinkAsync(pathToRead), signal);
+    return await withAbort(readlink(pathToRead), signal);
   } catch (error) {
     if (isAbortError(error)) throw error;
     return undefined;
@@ -194,7 +149,7 @@ export async function getFileInfo(
     ? await getSymlinkTarget(requestedPath, signal)
     : undefined;
 
-  const stats = await withAbort(statAsync(resolvedPath), signal);
+  const stats = await withAbort(stat(resolvedPath), signal);
 
   return buildFileInfoResult(
     name,
@@ -397,7 +352,7 @@ async function* readDirectoryEntries(
   signal: AbortSignal
 ): AsyncGenerator<EntryCandidate> {
   const dirents = await withAbort(
-    readdirAsync(basePath, { withFileTypes: true }),
+    readdir(basePath, { withFileTypes: true }),
     signal
   );
 
@@ -421,7 +376,7 @@ async function* readDirectoryEntries(
     async ({ entryPath, dirent }): Promise<EntryCandidate> => ({
       path: entryPath,
       dirent,
-      stats: await withAbort(lstatAsync(entryPath), signal),
+      stats: await withAbort(lstat(entryPath), signal),
     }),
     PARALLEL_CONCURRENCY,
     signal
@@ -482,7 +437,7 @@ async function resolveSymlinkTarget(
   if (entryType !== 'symlink' || !includeSymlinkTargets) {
     return undefined;
   }
-  return readlinkAsync(entryPath).catch(() => undefined);
+  return readlink(entryPath).catch(() => undefined);
 }
 
 function updateTotals(entryType: EntryType, totals: EntryTotals): void {
@@ -1285,7 +1240,7 @@ async function validateFile(
   signal?: AbortSignal
 ): Promise<ValidatedFileInfo> {
   const validPath = await validateExistingPath(filePath, signal);
-  const stats = await withAbort(statAsync(validPath), signal);
+  const stats = await withAbort(stat(validPath), signal);
   return { filePath, index, validPath, stats };
 }
 

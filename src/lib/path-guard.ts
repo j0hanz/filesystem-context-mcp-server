@@ -14,17 +14,19 @@ import {
 
 import { ErrorCode, McpError } from './errors.js';
 
-// Inline utilities to avoid circular imports from paths.ts
+// Path utility primitives. Owned by path-guard.ts to avoid a circular
+// dependency with paths.ts (which depends on PathGuard). paths.ts re-exports
+// the public ones.
 const WINDOWS_PATH_SEPARATOR = '\\';
 const POSIX_PATH_SEPARATOR = '/';
-const IS_WINDOWS = platform() === 'win32';
+export const IS_WINDOWS = platform() === 'win32';
 const HOMEDIR = homedir();
 const PATH_SEPARATOR = sep;
 const HOME_PREFIX_LENGTH = 2;
 const LEADING_SEPARATORS_RE = /^[/\\]+/;
 const DRIVE_LETTER_REGEX = /^[A-Za-z]:/;
 
-function toPosixPath(value: string): string {
+export function toPosixPath(value: string): string {
   return value.includes(WINDOWS_PATH_SEPARATOR)
     ? value.replace(/\\/gu, POSIX_PATH_SEPARATOR)
     : value;
@@ -54,7 +56,7 @@ function expandHome(filepath: string): string {
   return filepath;
 }
 
-function normalizePath(p: string): string {
+export function normalizePath(p: string): string {
   const resolved = resolve(expandHome(p));
 
   if (IS_WINDOWS && DRIVE_LETTER_REGEX.test(resolved)) {
@@ -68,7 +70,7 @@ function normalizeCaseForComparison(value: string): string {
   return IS_WINDOWS ? value.toLowerCase() : value;
 }
 
-function isSamePath(left: string, right: string): boolean {
+export function isSamePath(left: string, right: string): boolean {
   if (left === right) return true;
   const leftResolved = normalizeCaseForComparison(resolve(left));
   const rightResolved = normalizeCaseForComparison(resolve(right));
@@ -85,7 +87,7 @@ function isFileSystemRootPath(normalized: string, root: string): boolean {
   return isSamePath(normalized, root);
 }
 
-function normalizeAllowedDirectory(dir: string): string {
+export function normalizeAllowedDirectory(dir: string): string {
   const trimmed = dir.trim();
   if (trimmed.length === 0) return '';
 
@@ -100,7 +102,7 @@ function normalizeAllowedDirectory(dir: string): string {
   return stripTrailingSeparator(normalized);
 }
 
-function dedupePreserveOrder<T>(items: readonly T[]): T[] {
+export function dedupePreserveOrder<T>(items: readonly T[]): T[] {
   return [...new Set(items)];
 }
 
@@ -120,7 +122,7 @@ function isPathInsideDirectory(
   return !rel.startsWith('..\\') && !rel.startsWith('../') && !isAbsolute(rel);
 }
 
-function isPathWithinDirectories(
+export function isPathWithinDirectories(
   normalizedPath: string,
   allowedDirs: readonly string[]
 ): boolean {
@@ -370,7 +372,9 @@ export class PathGuard {
         ErrorCode.UNKNOWN,
         'Cannot access path',
         requestedPath,
-        { originalError: error instanceof Error ? error.message : String(error) },
+        {
+          originalError: error instanceof Error ? error.message : String(error),
+        },
         error instanceof Error ? error : undefined
       );
     }

@@ -1,5 +1,5 @@
 import { isUtf8 } from 'node:buffer';
-import { createHash, randomUUID } from 'node:crypto';
+import { type BinaryToTextEncoding, createHash, randomUUID } from 'node:crypto';
 import { createReadStream, type Stats } from 'node:fs';
 import {
   type FileHandle,
@@ -204,14 +204,29 @@ function isBinarySlice(slice: Buffer): boolean {
 export async function calculateFileContentHash(
   filePath: string,
   signal?: AbortSignal
-): Promise<string> {
+): Promise<string>;
+export async function calculateFileContentHash(
+  filePath: string,
+  signal: AbortSignal | undefined,
+  encoding: BinaryToTextEncoding
+): Promise<string>;
+export async function calculateFileContentHash(
+  filePath: string,
+  signal: AbortSignal | undefined,
+  encoding: null
+): Promise<Buffer>;
+export async function calculateFileContentHash(
+  filePath: string,
+  signal?: AbortSignal,
+  encoding: BinaryToTextEncoding | null = 'hex'
+): Promise<string | Buffer> {
   const hasher = createHash('sha256');
   await pipeline(
     createReadStream(filePath, { signal, highWaterMark: STREAM_CHUNK_SIZE }),
     hasher,
     { signal }
   );
-  return hasher.digest('hex');
+  return encoding === null ? hasher.digest() : hasher.digest(encoding);
 }
 
 type ReadMode = 'head' | 'full' | 'range' | 'tail';

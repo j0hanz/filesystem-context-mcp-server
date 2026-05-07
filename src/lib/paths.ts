@@ -2,16 +2,7 @@ import type { Root } from '@modelcontextprotocol/server';
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { realpath, stat } from 'node:fs/promises';
-import { homedir, platform } from 'node:os';
-import {
-  isAbsolute,
-  join,
-  parse,
-  relative,
-  resolve,
-  sep,
-  win32,
-} from 'node:path';
+import { win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { assertNotAborted, withAbort } from './abort.js';
@@ -19,41 +10,23 @@ import { SENSITIVE_FILE_DENYLIST } from './constants.js';
 import { ErrorCode, isAbortError, McpError } from './errors.js';
 import { Logger } from './logger.js';
 import {
+  type AllowedDirectoriesState,
+  dedupePreserveOrder,
   getDefaultPathGuard,
+  IS_WINDOWS,
+  isPathWithinDirectories,
+  isSamePath,
+  normalizeAllowedDirectory,
+  normalizePath,
+  type PathGuard,
   PathGuard as PathGuardClass,
   setDefaultPathGuard,
-} from './path-guard.js';
- 
-import type {
-  AllowedDirectoriesState,
-  PathGuard,
-  ValidatedPathDetails,
+  toPosixPath,
+  type ValidatedPathDetails,
 } from './path-guard.js';
 
-// eslint-disable-next-line no-duplicate-imports
-export type {
-  AllowedDirectoriesState,
-  PathGuard,
-  ValidatedPathDetails,
-} from './path-guard.js';
-
-const WINDOWS_PATH_SEPARATOR = '\\';
-const POSIX_PATH_SEPARATOR = '/';
-
-export function toPosixPath(value: string): string {
-  return value.includes(WINDOWS_PATH_SEPARATOR)
-    ? value.replace(/\\/gu, POSIX_PATH_SEPARATOR)
-    : value;
-}
-
-const IS_WINDOWS = platform() === 'win32';
-const HOME_PREFIX_LENGTH = 2;
-
-const HOMEDIR = homedir();
-const PATH_SEPARATOR = sep;
-
-const DRIVE_LETTER_REGEX = /^[A-Za-z]:/;
-const LEADING_SEPARATORS_RE = /^[/\\]+/;
+export type { AllowedDirectoriesState, PathGuard, ValidatedPathDetails };
+export { isPathWithinDirectories, normalizePath, toPosixPath };
 
 // ALS for HTTP session isolation — payload is PathGuard, not raw dirs.
 // Each HTTP request runs inside withPathGuard() scoped to its session.
@@ -110,9 +83,7 @@ export async function validateExistingPath(
   requestedPath: string,
   signal?: AbortSignal
 ): Promise<string> {
-  if (signal) {
-    assertNotAborted(signal);
-  }
+  if (signal) assertNotAborted(signal);
   return getActivePathGuard().validateExistingPath(requestedPath);
 }
 
@@ -120,9 +91,7 @@ export async function validateExistingPathDetailed(
   requestedPath: string,
   signal?: AbortSignal
 ): Promise<ValidatedPathDetails> {
-  if (signal) {
-    assertNotAborted(signal);
-  }
+  if (signal) assertNotAborted(signal);
   return getActivePathGuard().validateExistingPathDetailed(requestedPath);
 }
 
@@ -130,9 +99,7 @@ export async function validateExistingDirectory(
   requestedPath: string,
   signal?: AbortSignal
 ): Promise<string> {
-  if (signal) {
-    assertNotAborted(signal);
-  }
+  if (signal) assertNotAborted(signal);
   return getActivePathGuard().validateExistingDirectory(requestedPath);
 }
 
@@ -140,89 +107,12 @@ export async function validatePathForWrite(
   requestedPath: string,
   signal?: AbortSignal
 ): Promise<string> {
-  if (signal) {
-    assertNotAborted(signal);
-  }
+  if (signal) assertNotAborted(signal);
   return getActivePathGuard().validatePathForWrite(requestedPath);
-}
-
-function expandHome(filepath: string): string {
-  if (filepath === '~') return HOMEDIR;
-
-  // Accept both "~/" and "~\\" for cross-platform UX.
-  if (filepath.startsWith('~/') || filepath.startsWith('~\\')) {
-    // Avoid `join(HOMEDIR, "/foo")` resetting to the filesystem root.
-    const rest = filepath
-      .slice(HOME_PREFIX_LENGTH)
-      .replace(LEADING_SEPARATORS_RE, '');
-    return rest.length === 0 ? HOMEDIR : join(HOMEDIR, rest);
-  }
-
-  return filepath;
-}
-
-/**
- * Normalizes any path-like input to an absolute path suitable for comparisons.
- * - Expands "~" home directory shorthand.
- * - Resolves against process CWD if relative.
- * - Lowercases Windows drive letter for stable comparisons.
- */
-export function normalizePath(p: string): string {
-  const resolved = resolve(expandHome(p));
-
-  if (IS_WINDOWS && DRIVE_LETTER_REGEX.test(resolved)) {
-    return resolved.charAt(0).toLowerCase() + resolved.slice(1);
-  }
-
-  return resolved;
-}
-
-function normalizeCaseForComparison(value: string): string {
-  return IS_WINDOWS ? value.toLowerCase() : value;
-}
-
-function normalizeForComparison(value: string): string {
-  return normalizeCaseForComparison(value);
 }
 
 function rethrowIfAborted(error: unknown): void {
   if (isAbortError(error)) throw error;
-}
-
-function isSamePath(left: string, right: string): boolean {
-  if (left === right) return true;
-  const leftResolved = normalizeCaseForComparison(resolve(left));
-  const rightResolved = normalizeCaseForComparison(resolve(right));
-  return leftResolved === rightResolved;
-}
-
-function stripTrailingSeparator(normalized: string): string {
-  return normalized.length > 1 && normalized.endsWith(PATH_SEPARATOR)
-    ? normalized.slice(0, -1)
-    : normalized;
-}
-
-function isFileSystemRootPath(normalized: string, root: string): boolean {
-  return isSamePath(normalized, root);
-}
-
-function normalizeAllowedDirectory(dir: string): string {
-  const trimmed = dir.trim();
-  if (trimmed.length === 0) return '';
-
-  const normalized = normalizePath(trimmed);
-  const { root } = parse(normalized);
-
-  // Keep filesystem roots as-is ("/", "c:\\", "\\\\server\\share\\").
-  if (isFileSystemRootPath(normalized, root)) {
-    return root;
-  }
-
-  return stripTrailingSeparator(normalized);
-}
-
-function dedupePreserveOrder<T>(items: readonly T[]): T[] {
-  return [...new Set(items)];
 }
 
 function normalizeAllowedDirectories(dirs: readonly string[]): string[] {
@@ -236,33 +126,6 @@ function normalizeAllowedDirectories(dirs: readonly string[]): string[] {
 
   // Preserve first-seen order while deduping.
   return dedupePreserveOrder(normalized);
-}
-
-function isPathInsideDirectory(
-  normalizedDirectory: string,
-  normalizedCandidate: string
-): boolean {
-  const root = normalizeForComparison(normalizedDirectory);
-  const candidate = normalizeForComparison(normalizedCandidate);
-
-  if (root === candidate) return true;
-
-  const rel = relative(root, candidate);
-  if (rel.length === 0) return true;
-  if (rel === '..') return false;
-
-  return !rel.startsWith('..\\') && !rel.startsWith('../') && !isAbsolute(rel);
-}
-
-export function isPathWithinDirectories(
-  normalizedPath: string,
-  allowedDirs: readonly string[]
-): boolean {
-  for (const allowedDir of allowedDirs) {
-    if (isPathInsideDirectory(allowedDir, normalizedPath)) return true;
-  }
-
-  return false;
 }
 
 async function resolveRealPath(
@@ -481,9 +344,6 @@ export function isSafeGlobPattern(pattern: string): boolean {
   return getActivePathGuard().isSafeGlob(pattern);
 }
 
-export function assertSafeGlobPattern(
-  pattern: string,
-  message?: string
-): void {
+export function assertSafeGlobPattern(pattern: string, message?: string): void {
   getActivePathGuard().assertSafeGlob(pattern, message);
 }

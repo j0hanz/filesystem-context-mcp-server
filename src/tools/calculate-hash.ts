@@ -1,10 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 
-import { type BinaryToTextEncoding, createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { basename, relative, win32 } from 'node:path';
-import { pipeline } from 'node:stream/promises';
 
 import type { z } from 'zod/v4';
 
@@ -16,6 +14,7 @@ import {
   loadRootGitignore,
 } from '../lib/file-operations/core.js';
 import { globEntries } from '../lib/file-operations/traversal.js';
+import { calculateFileContentHash } from '../lib/fs-helpers.js';
 import { validateExistingPath } from '../lib/paths.js';
 
 import {
@@ -53,30 +52,6 @@ export const CALCULATE_HASH_TOOL: ToolContract = {
   ],
   taskSupport: 'optional',
 } as const;
-
-async function hashFile(
-  filePath: string,
-  encoding: BinaryToTextEncoding,
-  signal?: AbortSignal
-): Promise<string>;
-async function hashFile(
-  filePath: string,
-  encoding: undefined,
-  signal?: AbortSignal
-): Promise<Buffer>;
-async function hashFile(
-  filePath: string,
-  encoding: BinaryToTextEncoding | undefined,
-  signal?: AbortSignal
-): Promise<string | Buffer> {
-  const hasher = createHash('sha256');
-  await pipeline(
-    createReadStream(filePath, { signal, highWaterMark: 64 * 1024 }),
-    hasher,
-    { signal }
-  );
-  return encoding ? hasher.digest(encoding) : hasher.digest();
-}
 
 function toStableRelativePath(root: string, entryPath: string): string {
   const relativePath = relative(root, entryPath);
@@ -157,7 +132,11 @@ async function hashDirectory(
       if (!task) break;
 
       assertNotAborted(signal);
-      const fileHash = await hashFile(task.filePath, undefined, signal);
+      const fileHash = await calculateFileContentHash(
+        task.filePath,
+        signal,
+        null
+      );
       entries.push({ path: task.relativePath, hash: fileHash });
 
       filesHashed++;
@@ -213,7 +192,7 @@ async function handleCalculateHash(
     });
   } else {
     // Hash single file
-    const hash = await hashFile(validPath, 'hex', signal);
+    const hash = await calculateFileContentHash(validPath, signal);
     onProgress?.({ current: 1 });
 
     return buildToolResponse(hash, {

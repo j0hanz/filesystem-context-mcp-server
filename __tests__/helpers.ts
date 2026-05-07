@@ -73,7 +73,11 @@ export async function createTestEnv(): Promise<TestEnv> {
   const state = await resolveAllowedDirectoriesState([tmpDir]);
   pathGuard.initialize(state);
   setDefaultPathGuard(pathGuard);
-  registerAllTools(server, { pathGuard, resourceStore, isInitialized: () => true });
+  registerAllTools(server, {
+    pathGuard,
+    resourceStore,
+    isInitialized: () => true,
+  });
 
   const client = new Client({ name: 'test-client', version: '1.0.0' });
   const [ct, st] = LinkedTransport.createLinkedPair();
@@ -142,7 +146,11 @@ export async function createTestEnvWithElicitation(
   const state = await resolveAllowedDirectoriesState([tmpDir]);
   pathGuard.initialize(state);
   setDefaultPathGuard(pathGuard);
-  registerAllTools(server, { pathGuard, resourceStore, isInitialized: () => true });
+  registerAllTools(server, {
+    pathGuard,
+    resourceStore,
+    isInitialized: () => true,
+  });
 
   // Client advertises elicitation capability so the server will call elicitInput
   const client = new Client(
