@@ -10,6 +10,7 @@ import {
 } from '../lib/file-operations/metadata.js';
 import { TreeInputSchema } from '../schemas/inputs.js';
 import { TreeOutputSchema } from '../schemas/outputs.js';
+import { ContinuationSchema } from '../schemas/shared.js';
 
 import { defineTool } from './define-tool.js';
 import { DIRECTORY_ICONS } from './icons.js';
@@ -44,6 +45,19 @@ const TREE_TOOL: ToolContract = {
   defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
 } as const;
 
+function buildTreeContinuation(
+  basePath: string,
+  truncated: boolean,
+  totalEntries: number,
+): z.infer<typeof ContinuationSchema> | undefined {
+  if (!truncated) return undefined;
+  return {
+    tool: 'ls',
+    args: { path: basePath },
+    hint: `Tree was cut at ${String(totalEntries)} entries. Use ls to navigate directories individually.`,
+  };
+}
+
 async function handleTree(
   args: z.infer<typeof TreeInputSchema>,
   signal?: AbortSignal,
@@ -70,12 +84,13 @@ async function handleTree(
 
   if (externalized) {
     const { entry, preview } = externalized;
+    const continuation = buildTreeContinuation(basePath, result.truncated, result.totalEntries ?? 0);
     const structured: z.infer<typeof TreeOutputSchema> = {
       ok: true,
       root: result.root,
       tree: result.tree,
       ascii: preview,
-      truncated: result.truncated,
+      ...(continuation ? { continuation } : {}),
       totalEntries: result.totalEntries,
       resourceUri: entry.uri,
     };
@@ -91,12 +106,13 @@ async function handleTree(
     ]);
   }
 
+  const continuation = buildTreeContinuation(basePath, result.truncated, result.totalEntries ?? 0);
   const structured: z.infer<typeof TreeOutputSchema> = {
     ok: true,
     root: result.root,
     tree: result.tree,
     ascii,
-    truncated: result.truncated,
+    ...(continuation ? { continuation } : {}),
     totalEntries: result.totalEntries,
   };
 
@@ -135,10 +151,9 @@ export const TREE = defineTool<
         );
         const sc = result.structuredContent;
         const count = sc.totalEntries ?? 0;
-        const { truncated } = sc;
 
         let suffix = `${count} ${count === 1 ? 'entry' : 'entries'}`;
-        if (truncated) suffix += ' [truncated]';
+        if (sc.continuation) suffix += ' [truncated]';
 
         const finalCurrent = resolveFinalProgressCurrent(progress, count);
         return { value: result, suffix, finalCurrent };
