@@ -1,0 +1,290 @@
+{
+  "roots": {
+    "inputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    },
+    "outputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    }
+  },
+  "ls": {
+    "inputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    },
+    "outputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    }
+  },
+  "find": {
+    "inputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    },
+    "outputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    }
+  },
+  "tree": {
+    "inputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    },
+    "outputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    }
+  },
+  "read": {
+    "inputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    },
+    "outputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    }
+  },
+  "read_many": {
+    "inputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    },
+    "outputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    }
+  },
+  "stat": {
+    "inputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    },
+    "outputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    }
+  },
+  "stat_many": {
+    "inputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    },
+    "outputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    }
+  },
+  "grep": {
+    "inputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    },
+    "outputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    }
+  },
+  "mkdir": {
+    "inputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    },
+    "outputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    }
+  },
+  "write": {
+    "inputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    },
+    "outputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    }
+  },
+  "edit": {
+    "inputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    },
+    "outputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    }
+  },
+  "mv": {
+    "inputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    },
+    "outputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    }
+  },
+  "rm": {
+    "inputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    },
+    "outputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    }
+  },
+  "calculate_hash": {
+    "inputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    },
+    "outputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    }
+  },
+  "diff_files": {
+    "inputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    },
+    "outputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    }
+  },
+  "apply_patch": {
+    "inputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    },
+    "outputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    }
+  },
+  "search_and_replace": {
+    "inputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    },
+    "outputSchema": {
+      "~standard": {
+        "version": 1,
+        "vendor": "mcp",
+        "jsonSchema": {}
+      }
+    }
+  }
+}
