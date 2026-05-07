@@ -39,6 +39,20 @@ export function withPathGuard<T>(guard: PathGuard, run: () => T): T {
   return pathGuardContext.run(guard, run);
 }
 
+/**
+ * Run `fn` inside an async context scoped to the given allowed-directories
+ * state. Builds a transient PathGuard from `state` so callers don't need to
+ * touch PathGuard directly.
+ */
+export function withAllowedDirectoriesState<T>(
+  state: AllowedDirectoriesState,
+  fn: () => T
+): T {
+  const guard = new PathGuardClass(SENSITIVE_FILE_DENYLIST);
+  guard.initialize(state);
+  return pathGuardContext.run(guard, fn);
+}
+
 function getActivePathGuard(): PathGuard {
   return pathGuardContext.getStore() ?? getDefaultPathGuard();
 }

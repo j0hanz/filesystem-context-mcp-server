@@ -405,19 +405,27 @@ export class PathGuard {
   async validateExistingDirectory(requestedPath: string): Promise<string> {
     const details = await this.validateExistingPathDetailed(requestedPath);
 
-    // Check if it's a directory
+    let stats;
     try {
-      const stats = await stat(details.resolvedPath);
-      if (!stats.isDirectory()) {
-        throw new Error(`Not a directory: ${requestedPath}`);
-      }
+      stats = await stat(details.resolvedPath);
     } catch (error) {
-      if (error instanceof Error && error.message.includes('Not a directory')) {
-        throw error;
-      }
-      throw new Error(`Cannot access directory: ${requestedPath}`, {
-        cause: error,
-      });
+      throw new McpError(
+        ErrorCode.UNKNOWN,
+        'Cannot access directory',
+        requestedPath,
+        {
+          originalError: error instanceof Error ? error.message : String(error),
+        },
+        error instanceof Error ? error : undefined
+      );
+    }
+
+    if (!stats.isDirectory()) {
+      throw new McpError(
+        ErrorCode.NOT_DIRECTORY,
+        'Not a directory',
+        requestedPath
+      );
     }
 
     return details.resolvedPath;
@@ -425,23 +433,37 @@ export class PathGuard {
 
   async validatePathForWrite(requestedPath: string): Promise<string> {
     if (!this.allowedDirectoriesState) {
-      throw new Error('PathGuard not initialized. Call initialize() first.');
+      throw new McpError(
+        ErrorCode.UNKNOWN,
+        'PathGuard not initialized. Call initialize() first.',
+        requestedPath
+      );
     }
 
-    // Check if path is sensitive
     const normalizedRequested = normalizePath(requestedPath);
     if (
       this.isSensitive(requestedPath) ||
       this.isSensitive(normalizedRequested)
     ) {
-      throw new Error(`Sensitive file blocked by policy: ${requestedPath}`);
+      throw new McpError(
+        ErrorCode.ACCESS_DENIED,
+        'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
+        requestedPath
+      );
     }
 
     const allowedDirs = this.allowedDirectoriesState.expanded;
+    const accessDeniedHint =
+      allowedDirs.length > 0
+        ? `Allowed: ${allowedDirs.join(', ')}`
+        : 'No allowed directories configured.';
 
-    // Check if within allowed directories
     if (!isPathWithinDirectories(normalizedRequested, allowedDirs)) {
-      throw new Error(`Path outside allowed directories: ${requestedPath}`);
+      throw new McpError(
+        ErrorCode.ACCESS_DENIED,
+        `Outside allowed directories. ${accessDeniedHint}`,
+        requestedPath
+      );
     }
 
     // Resolve the nearest existing real path
@@ -452,12 +474,19 @@ export class PathGuard {
       try {
         realPath = await realpath(current);
         break;
-      } catch (_error) {
+      } catch (error) {
         const parent = dirname(current);
         if (parent === current) {
-          throw new Error(`Cannot resolve path: ${requestedPath}`, {
-            cause: _error,
-          });
+          throw new McpError(
+            ErrorCode.UNKNOWN,
+            'Cannot resolve path',
+            requestedPath,
+            {
+              originalError:
+                error instanceof Error ? error.message : String(error),
+            },
+            error instanceof Error ? error : undefined
+          );
         }
         current = parent;
       }
@@ -465,10 +494,12 @@ export class PathGuard {
 
     const normalizedReal = normalizePath(realPath);
 
-    // Check if the resolved path is still within allowed directories
     if (!isPathWithinDirectories(normalizedReal, allowedDirs)) {
-      throw new Error(
-        `Resolved path outside allowed directories: ${requestedPath}`
+      throw new McpError(
+        ErrorCode.ACCESS_DENIED,
+        `Outside allowed directories. ${accessDeniedHint}`,
+        requestedPath,
+        { resolvedPath: realPath, normalizedResolvedPath: normalizedReal }
       );
     }
 
