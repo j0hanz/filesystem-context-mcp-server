@@ -79,7 +79,8 @@ export function registerWriteFileTool(
         const result = await handleWriteFile(args, signal);
         void ctx.log?.(
           'info',
-          `write: ${args.path} (${String(result.structuredContent.bytesWritten ?? 0)} bytes)`
+          `write: ${args.path} (${String(result.structuredContent.bytesWritten ?? 0)} bytes)`,
+          'write'
         );
         return result;
       },

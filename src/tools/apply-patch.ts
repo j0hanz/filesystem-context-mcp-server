@@ -338,7 +338,8 @@ export function registerApplyPatchTool(
           const sc = result.structuredContent;
           void ctx.log?.(
             'info',
-            `patch: ${args.path} (+${String(sc.linesAdded ?? 0)}/-${String(sc.linesRemoved ?? 0)})`
+            `patch: ${args.path} (+${String(sc.linesAdded ?? 0)}/-${String(sc.linesRemoved ?? 0)})`,
+            'apply_patch'
           );
         }
         return result;

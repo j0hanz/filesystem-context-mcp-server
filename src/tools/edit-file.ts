@@ -420,7 +420,8 @@ export function registerEditFileTool(
         const result = await handleEditFile(args, signal);
         void ctx.log?.(
           'info',
-          `edit: ${args.path} (${String(result.structuredContent.appliedEdits ?? 0)} edits)`
+          `edit: ${args.path} (${String(result.structuredContent.appliedEdits ?? 0)} edits)`,
+          'edit'
         );
         return result;
       },

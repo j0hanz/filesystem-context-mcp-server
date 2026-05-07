@@ -282,7 +282,8 @@ export function registerMoveFileTool(
         const result = await handleMoveFile(args, signal);
         void ctx.log?.(
           'info',
-          `mv: ${args.source ?? args.sources?.join(', ') ?? ''} \u2192 ${args.destination}`
+          `mv: ${args.source ?? args.sources?.join(', ') ?? ''} \u2192 ${args.destination}`,
+          'mv'
         );
         return result;
       },

@@ -576,7 +576,8 @@ export function registerSearchAndReplaceTool(
           if (!args.dryRun) {
             void ctx.log?.(
               'info',
-              `search_and_replace: ${String(sc.matches ?? 0)} matches in ${String(sc.filesChanged ?? 0)} files`
+              `search_and_replace: ${String(sc.matches ?? 0)} matches in ${String(sc.filesChanged ?? 0)} files`,
+              'search_and_replace'
             );
           }
           return result;

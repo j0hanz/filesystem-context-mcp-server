@@ -106,7 +106,7 @@ export function registerDeleteFileTool(
       context: { path: args.path },
       run: async (signal) => {
         const result = await handleDeleteFile(args, signal);
-        void ctx.log?.('info', `rm: ${args.path}`);
+        void ctx.log?.('info', `rm: ${args.path}`, 'rm');
         return result;
       },
       onError: (error) => {
