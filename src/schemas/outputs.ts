@@ -8,7 +8,11 @@ import {
   Sha256Hex,
 } from './fields.js';
 import { NextCursorSchema } from './pagination.js';
-import { FileInfoSchema, OperationSummarySchema } from './shared.js';
+import {
+  FileInfoSchema,
+  OperationSummarySchema,
+  PerFileErrorSchema,
+} from './shared.js';
 
 // --- List group: ls, find, tree ---
 
@@ -128,15 +132,7 @@ export const ReadManyOutputSchema = z.strictObject({
           .enum(['head', 'tail', 'range', 'externalized'])
           .optional()
           .describe('Why content was truncated'),
-        error: z
-          .strictObject({
-            code: z.string(),
-            message: z.string(),
-            path: z.string().optional(),
-            suggestion: z.string().optional(),
-          })
-          .optional()
-          .describe('Per-file error'),
+        error: PerFileErrorSchema.optional().describe('Per-file error'),
       })
     )
     .describe('Per-file read results'),
@@ -195,12 +191,7 @@ export const SearchAndReplaceOutputSchema = z.strictObject({
     .array(
       z.strictObject({
         path: z.string(),
-        error: z.strictObject({
-          code: z.string(),
-          message: z.string(),
-          path: z.string().optional(),
-          suggestion: z.string().optional(),
-        }),
+        error: PerFileErrorSchema,
       })
     )
     .optional()
@@ -238,15 +229,7 @@ export const StatManyOutputSchema = z.strictObject({
       z.strictObject({
         path: z.string().describe('Requested path'),
         info: FileInfoSchema.optional().describe('File info (when successful)'),
-        error: z
-          .strictObject({
-            code: z.string(),
-            message: z.string(),
-            path: z.string().optional(),
-            suggestion: z.string().optional(),
-          })
-          .optional()
-          .describe('Error (when failed)'),
+        error: PerFileErrorSchema.optional().describe('Error (when failed)'),
       })
     )
     .describe('Per-path results'),
@@ -356,14 +339,7 @@ export const MoveFileOutputSchema = z.strictObject({
     .array(
       z.strictObject({
         source: z.string().describe('Failed source path'),
-        error: z
-          .strictObject({
-            code: z.string(),
-            message: z.string(),
-            path: z.string().optional(),
-            suggestion: z.string().optional(),
-          })
-          .describe('Failure details'),
+        error: PerFileErrorSchema.describe('Failure details'),
       })
     )
     .optional()

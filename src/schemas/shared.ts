@@ -35,6 +35,16 @@ export const OperationSummarySchema = reg(
   'OperationSummary'
 );
 
+export const PerFileErrorSchema = reg(
+  z.strictObject({
+    code: z.string().describe('Error code'),
+    message: z.string().describe('Error message'),
+    path: z.string().optional().describe('Path involved'),
+    suggestion: z.string().optional().describe('Suggested fix'),
+  }),
+  'PerFileError'
+);
+
 interface ReadRangeDescriptions {
   head: string;
   tail: string;
