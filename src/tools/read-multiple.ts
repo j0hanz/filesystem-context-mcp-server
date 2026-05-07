@@ -5,6 +5,7 @@ import type { z } from 'zod/v4';
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { readMultipleFiles } from '../lib/file-operations/metadata.js';
+import { assignDefined } from '../lib/utils.js';
 import { ReadManyInputSchema } from '../schemas/inputs.js';
 import { ReadManyOutputSchema } from '../schemas/outputs.js';
 
@@ -68,28 +69,20 @@ function toStructuredReadManyResult(
     path: result.path,
   };
 
-  if (result.content !== undefined) structuredResult.content = result.content;
-  if (result.truncated) structuredResult.truncated = true;
-  if (result.resourceUri) structuredResult.resourceUri = result.resourceUri;
-  if (result.head !== undefined) structuredResult.head = result.head;
-  if (result.tail !== undefined) structuredResult.tail = result.tail;
-  if (result.startLine !== undefined) {
-    structuredResult.startLine = result.startLine;
-  }
-  if (result.endLine !== undefined) structuredResult.endLine = result.endLine;
-  if (result.hasMoreLines) structuredResult.hasMoreLines = true;
-  if (result.totalLines !== undefined) {
-    structuredResult.totalLines = result.totalLines;
-  }
-  if (result.linesRead !== undefined) {
-    structuredResult.linesRead = result.linesRead;
-  }
-  if (result.truncationReason) {
-    structuredResult.truncationReason = result.truncationReason;
-  }
-  if (result.error) structuredResult.error = result.error;
-
-  return structuredResult;
+  return assignDefined(structuredResult, {
+    content: result.content,
+    truncated: result.truncated ? true : undefined,
+    resourceUri: result.resourceUri,
+    head: result.head,
+    tail: result.tail,
+    startLine: result.startLine,
+    endLine: result.endLine,
+    hasMoreLines: result.hasMoreLines ? true : undefined,
+    totalLines: result.totalLines,
+    linesRead: result.linesRead,
+    truncationReason: result.truncationReason,
+    error: result.error,
+  });
 }
 
 function resolveReadManyTruncationReason(
@@ -155,14 +148,14 @@ function buildReadMultipleOptions(
 ): Parameters<typeof readMultipleFiles>[1] {
   const options: Parameters<typeof readMultipleFiles>[1] = {};
 
-  if (signal) options.signal = signal;
-  if (args.head !== undefined) options.head = args.head;
-  if (args.tail !== undefined) options.tail = args.tail;
-  if (args.startLine !== undefined) options.startLine = args.startLine;
-  if (args.endLine !== undefined) options.endLine = args.endLine;
-  if (onReadComplete) options.onReadComplete = onReadComplete;
-
-  return options;
+  return assignDefined(options, {
+    signal,
+    head: args.head,
+    tail: args.tail,
+    startLine: args.startLine,
+    endLine: args.endLine,
+    onReadComplete,
+  });
 }
 
 function buildReadManyResponsePayload(

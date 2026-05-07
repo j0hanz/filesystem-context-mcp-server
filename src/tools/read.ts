@@ -8,6 +8,7 @@ import {
 } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { calculateFileContentHash, readFile } from '../lib/fs-helpers.js';
+import { assignDefined } from '../lib/utils.js';
 import { ReadFileInputSchema } from '../schemas/inputs.js';
 import { ReadFileOutputSchema } from '../schemas/outputs.js';
 
@@ -62,13 +63,13 @@ function buildReadOptions(
     skipBinary: true,
   };
 
-  if (signal) options.signal = signal;
-  if (args.head !== undefined) options.head = args.head;
-  if (args.tail !== undefined) options.tail = args.tail;
-  if (args.startLine !== undefined) options.startLine = args.startLine;
-  if (args.endLine !== undefined) options.endLine = args.endLine;
-
-  return options;
+  return assignDefined(options, {
+    signal,
+    head: args.head,
+    tail: args.tail,
+    startLine: args.startLine,
+    endLine: args.endLine,
+  });
 }
 
 function toStructuredReadFileResult(
@@ -81,17 +82,16 @@ function toStructuredReadFileResult(
     content: result.content,
   };
 
-  if (result.truncated) structured.truncated = true;
-  if (result.totalLines !== undefined)
-    structured.totalLines = result.totalLines;
-  if (result.head !== undefined) structured.head = result.head;
-  if (result.tail !== undefined) structured.tail = result.tail;
-  if (result.startLine !== undefined) structured.startLine = result.startLine;
-  if (result.endLine !== undefined) structured.endLine = result.endLine;
-  if (result.linesRead !== undefined) structured.linesRead = result.linesRead;
-  if (result.hasMoreLines) structured.hasMoreLines = true;
-
-  return structured;
+  return assignDefined(structured, {
+    truncated: result.truncated ? true : undefined,
+    totalLines: result.totalLines,
+    head: result.head,
+    tail: result.tail,
+    startLine: result.startLine,
+    endLine: result.endLine,
+    linesRead: result.linesRead,
+    hasMoreLines: result.hasMoreLines ? true : undefined,
+  });
 }
 
 function maybeBuildExternalizedReadResponse(

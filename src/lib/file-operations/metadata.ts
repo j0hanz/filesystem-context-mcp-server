@@ -39,6 +39,7 @@ import {
   validateExistingPath,
   validateExistingPathDetailed,
 } from '../paths.js';
+import { assignDefined } from '../utils.js';
 import {
   applyIndexedErrors,
   applyIndexedValues,
@@ -1130,16 +1131,15 @@ function buildReadMultipleResult(
     truncated: result.truncated,
     readMode: result.readMode,
   };
-  if (result.totalLines !== undefined) output.totalLines = result.totalLines;
-  if (result.head !== undefined) output.head = result.head;
-  if (result.tail !== undefined) output.tail = result.tail;
-  if (result.startLine !== undefined) output.startLine = result.startLine;
-  if (result.endLine !== undefined) output.endLine = result.endLine;
-  if (result.linesRead !== undefined) output.linesRead = result.linesRead;
-  if (result.hasMoreLines !== undefined) {
-    output.hasMoreLines = result.hasMoreLines;
-  }
-  return output;
+  return assignDefined(output, {
+    totalLines: result.totalLines,
+    head: result.head,
+    tail: result.tail,
+    startLine: result.startLine,
+    endLine: result.endLine,
+    linesRead: result.linesRead,
+    hasMoreLines: result.hasMoreLines,
+  });
 }
 
 async function readSingleFile(
@@ -1202,8 +1202,7 @@ function applyLineSelection(
   target: LineSelectionOptions,
   source: LineSelectionOptions
 ): void {
-  if (source.head !== undefined) target.head = source.head;
-  if (source.tail !== undefined) target.tail = source.tail;
+  assignDefined(target, { head: source.head, tail: source.tail });
   if (source.endLine !== undefined) {
     target.startLine = source.startLine ?? 1;
     target.endLine = source.endLine;

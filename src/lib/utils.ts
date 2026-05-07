@@ -47,3 +47,22 @@ export function omitOptionKeys<T extends object, K extends keyof T>(
   );
   return output as Omit<T, K>;
 }
+
+/**
+ * Mutates `target` by copying every property from `source` whose value is not
+ * `undefined`. Designed for assembling structured tool outputs under
+ * `exactOptionalPropertyTypes`, where `undefined` cannot be assigned to
+ * optional properties.
+ */
+export function assignDefined<T extends object>(
+  target: T,
+  source: { [K in keyof T]?: T[K] | undefined }
+): T {
+  for (const key of Object.keys(source) as (keyof T)[]) {
+    const value = source[key];
+    if (value !== undefined) {
+      (target as Record<PropertyKey, unknown>)[key] = value;
+    }
+  }
+  return target;
+}

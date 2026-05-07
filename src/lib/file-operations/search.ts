@@ -1493,11 +1493,12 @@ async function collectFromStream(
     });
 
     if (
-      isEntryIgnoredByGitignore(
+      gitignoreMatcher &&
+      isIgnoredByGitignore(
         gitignoreMatcher,
         root,
         entry.path,
-        entry.relativePath
+        entry.relativePath ? { relativePath: entry.relativePath } : {}
       )
     ) {
       continue;
@@ -1542,21 +1543,6 @@ interface CollectStreamContext {
   state: CollectState;
   accessDeps: EntryAccessDeps;
   onProgress?: (progress: { total?: number; current: number }) => void;
-}
-
-function isEntryIgnoredByGitignore(
-  matcher: Awaited<ReturnType<typeof loadRootGitignore>>,
-  root: string,
-  entryPath: string,
-  relativePath?: string
-): boolean {
-  if (!matcher) return false;
-  return isIgnoredByGitignore(
-    matcher,
-    root,
-    entryPath,
-    relativePath ? { relativePath } : {}
-  );
 }
 
 async function collectSearchResults(

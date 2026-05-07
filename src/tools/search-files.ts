@@ -8,6 +8,7 @@ import {
 } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { searchFiles } from '../lib/file-operations/search.js';
+import { assignDefined } from '../lib/utils.js';
 
 import { formatOperationSummary, joinLines } from '../config.js';
 import { SearchFilesInputSchema, SearchFilesOutputSchema } from '../schemas.js';
@@ -91,11 +92,12 @@ function applySummaryFields(
   },
   nextCursor?: string
 ): void {
-  if (summary.truncated) structured.truncated = true;
-  if (summary.skippedInaccessible)
-    structured.skippedInaccessible = summary.skippedInaccessible;
-  if (summary.stoppedReason) structured.stoppedReason = summary.stoppedReason;
-  if (nextCursor !== undefined) structured.nextCursor = nextCursor;
+  assignDefined(structured, {
+    truncated: summary.truncated ? true : undefined,
+    skippedInaccessible: summary.skippedInaccessible || undefined,
+    stoppedReason: summary.stoppedReason,
+    nextCursor,
+  });
 }
 
 async function handleSearchFiles(
@@ -115,9 +117,11 @@ async function handleSearchFiles(
     sortBy: args.sortBy,
     respectGitignore: !args.includeIgnored,
   };
-  if (args.maxDepth !== undefined) searchOptions.maxDepth = args.maxDepth;
-  if (onProgress) searchOptions.onProgress = onProgress;
-  if (signal) searchOptions.signal = signal;
+  assignDefined(searchOptions, {
+    maxDepth: args.maxDepth,
+    onProgress,
+    signal,
+  });
   const result = await searchFiles(
     basePath,
     args.pattern,

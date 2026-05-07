@@ -32,7 +32,7 @@ import {
 } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
 import { Logger } from '../lib/logger.js';
-import { isRecord } from '../lib/utils.js';
+import { assignDefined, isRecord } from '../lib/utils.js';
 import { toToolJsonSchema } from '../schemas/json-schema.js';
 
 import {
@@ -229,10 +229,10 @@ function buildTaskStatusNotificationParams(
     createdAt: task.createdAt,
     lastUpdatedAt: task.lastUpdatedAt,
   };
-  if (task.pollInterval !== undefined) params.pollInterval = task.pollInterval;
-  if (task.statusMessage !== undefined)
-    params.statusMessage = task.statusMessage;
-  return params;
+  return assignDefined(params, {
+    pollInterval: task.pollInterval,
+    statusMessage: task.statusMessage,
+  });
 }
 
 async function notifyTaskCreatedIfPossible(
