@@ -52,7 +52,7 @@ const SERVER_INSTRUCTIONS_CONTENT = buildServerInstructions(
   ALL_RESOURCE_CONTRACTS
 );
 
-const ALL_RESOURCES: ResourceContract[] = ALL_RESOURCE_CONTRACTS;
+export const ALL_RESOURCES: ResourceContract[] = ALL_RESOURCE_CONTRACTS;
 
 const RESOURCE_ENTRIES: ResourceEntry[] = [
   {
