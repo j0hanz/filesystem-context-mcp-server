@@ -1,301 +1,115 @@
+import type { McpServer } from '@modelcontextprotocol/server';
+
+import type { ResourceContract } from './resources/contract.js';
+import { buildServerInstructions } from './resources/generated-instructions.js';
 import {
-  type McpServer,
-  ProtocolError,
-  ProtocolErrorCode,
-  type ReadResourceResult,
-  ResourceTemplate,
-} from '@modelcontextprotocol/server';
-
-import { globalMetrics } from './lib/observability.js';
-import type { ResourceStore } from './lib/resource-store.js';
-
-import { buildToolCatalog } from './resources/tool-catalog.js';
+  FILESYSTEM_FILE_RESOURCE,
+  registerFilesystemFileResource,
+} from './resources/filesystem-file.js';
 import {
-  buildToolInfo,
-  getSortedToolContracts,
-  getToolContracts,
-} from './resources/tool-info.js';
-import { buildWorkflowGuide } from './resources/workflows.js';
-import { type IconInfo, withDefaultIcons } from './tools/shared.js';
+  INSTRUCTIONS_RESOURCE,
+  registerInstructionResource,
+} from './resources/instructions.js';
+import {
+  METRICS_RESOURCE,
+  registerMetricsResource,
+} from './resources/metrics.js';
+import { RESULT_RESOURCE, registerResultResource } from './resources/result.js';
+import {
+  type ResourceRegistrationOptions,
+} from './resources/shared.js';
+import {
+  TOOL_CATALOG_RESOURCE,
+  registerToolCatalogResource,
+} from './resources/tool-catalog-resource.js';
+import {
+  TOOL_INFO_RESOURCE,
+  registerToolInfoResource,
+} from './resources/tool-info-resource.js';
+import {
+  WORKFLOW_GUIDE_RESOURCE,
+  registerWorkflowGuideResource,
+} from './resources/workflows-resource.js';
 
-function filterToolNames(value: string): string[] {
-  const toolNames = getSortedToolContracts().map((c) => c.name);
-  const lower = value.toLowerCase();
-  return lower ? toolNames.filter((n) => n.startsWith(lower)) : [...toolNames];
+export type { ResourceRegistrationOptions };
+
+interface ResourceEntry {
+  contract: ResourceContract;
+  register: (server: McpServer, options: ResourceRegistrationOptions) => void;
 }
 
-const RESULT_TEMPLATE = new ResourceTemplate('filesystem-mcp://result/{id}', {
-  list: undefined,
-});
+// Build instructions content with all resource contracts so the
+// resource table in the instructions doc is auto-derived.
+const ALL_RESOURCE_CONTRACTS: ResourceContract[] = [
+  INSTRUCTIONS_RESOURCE,
+  TOOL_CATALOG_RESOURCE,
+  WORKFLOW_GUIDE_RESOURCE,
+  TOOL_INFO_RESOURCE,
+  RESULT_RESOURCE,
+  METRICS_RESOURCE,
+  FILESYSTEM_FILE_RESOURCE,
+];
 
-const TOOL_INFO_TEMPLATE = new ResourceTemplate('internal://tool-info/{name}', {
-  list: () => ({
-    resources: getToolContracts().map((contract) => ({
-      uri: `internal://tool-info/${contract.name}`,
-      name: contract.name,
-      title: contract.title,
-      description: contract.description,
-      mimeType: 'text/markdown',
-    })),
-  }),
-  complete: {
-    name: (value) => filterToolNames(value),
+const SERVER_INSTRUCTIONS_CONTENT = buildServerInstructions(ALL_RESOURCE_CONTRACTS);
+
+const RESOURCE_ENTRIES: ResourceEntry[] = [
+  {
+    contract: INSTRUCTIONS_RESOURCE,
+    register: (server, options) =>
+      registerInstructionResource(server, SERVER_INSTRUCTIONS_CONTENT, options),
   },
-});
-const TOOL_INFO_RESOURCE_NAME = 'filesystem-mcp-tool-info';
-const TOOL_INFO_RESOURCE_DESCRIPTION =
-  'Per-tool contract details, nuances, and gotchas. Read internal://tool-info/{name} with a tool name such as "read", "ls", or "grep".';
+  { contract: TOOL_CATALOG_RESOURCE, register: registerToolCatalogResource },
+  { contract: WORKFLOW_GUIDE_RESOURCE, register: registerWorkflowGuideResource },
+  { contract: TOOL_INFO_RESOURCE, register: registerToolInfoResource },
+  { contract: RESULT_RESOURCE, register: registerResultResource },
+  { contract: METRICS_RESOURCE, register: registerMetricsResource },
+  { contract: FILESYSTEM_FILE_RESOURCE, register: registerFilesystemFileResource },
+];
 
-const INSTRUCTIONS_RESOURCE_NAME = 'filesystem-mcp-instructions';
-const INSTRUCTIONS_RESOURCE_URI = 'internal://instructions';
-const INSTRUCTIONS_RESOURCE_DESCRIPTION =
-  'Comprehensive rules and guidelines for filesystem-mcp usage.';
-const RESULT_RESOURCE_NAME = 'filesystem-mcp-result';
-const RESULT_RESOURCE_DESCRIPTION =
-  'Ephemeral cached tool output exposed as an MCP resource. Not guaranteed to be listed via resources/list.';
+export const ALL_RESOURCES: ResourceContract[] = RESOURCE_ENTRIES.map((e) => e.contract);
 
-const METRICS_RESOURCE_NAME = 'filesystem-mcp-metrics';
-export const METRICS_RESOURCE_URI = 'filesystem-mcp://metrics';
-const METRICS_RESOURCE_DESCRIPTION =
-  'Live per-tool call/error/avgDurationMs metrics snapshot.';
-
-const CATALOG_RESOURCE_NAME = 'filesystem-mcp-catalog';
-const CATALOG_RESOURCE_URI = 'internal://tool-catalog';
-const CATALOG_RESOURCE_DESCRIPTION = 'Tool selection guide and data flow map.';
-
-const WORKFLOW_RESOURCE_NAME = 'filesystem-mcp-workflows';
-const WORKFLOW_RESOURCE_URI = 'internal://workflows';
-const WORKFLOW_RESOURCE_DESCRIPTION =
-  'Standard operating procedures for exploration, search, edit, and patch.';
-
-export function registerInstructionResource(
-  server: McpServer,
-  instructions: string,
-  iconInfo?: IconInfo
-): void {
-  server.registerResource(
-    INSTRUCTIONS_RESOURCE_NAME,
-    INSTRUCTIONS_RESOURCE_URI,
-    withDefaultIcons(
-      {
-        title: 'Server Instructions',
-        description: INSTRUCTIONS_RESOURCE_DESCRIPTION,
-        mimeType: 'text/markdown',
-        annotations: {
-          audience: ['assistant'],
-          priority: 0.8,
-        },
-      },
-      iconInfo
-    ),
-    (uri): ReadResourceResult => ({
-      contents: [
-        {
-          uri: uri.href,
-          mimeType: 'text/markdown',
-          text: instructions,
-        },
-      ],
-    })
-  );
+export interface ResourcesHandle {
+  destroy(): void;
 }
 
-export function registerToolCatalogResource(
+export function registerAllResources(
   server: McpServer,
-  iconInfo?: IconInfo
-): void {
-  server.registerResource(
-    CATALOG_RESOURCE_NAME,
-    CATALOG_RESOURCE_URI,
-    withDefaultIcons(
-      {
-        title: 'Tool Catalog',
-        description: CATALOG_RESOURCE_DESCRIPTION,
-        mimeType: 'text/markdown',
-        annotations: {
-          audience: ['assistant'],
-          priority: 0.7,
-        },
-      },
-      iconInfo
-    ),
-    (uri): ReadResourceResult => ({
-      contents: [
-        {
-          uri: uri.href,
-          mimeType: 'text/markdown',
-          text: buildToolCatalog(),
-        },
-      ],
-    })
-  );
-}
+  options: ResourceRegistrationOptions
+): ResourcesHandle {
+  const notify = (uri: string): void => {
+    void server.server.sendResourceUpdated({ uri }).catch(() => {
+      // Transport may already be closed — best effort.
+    });
+  };
 
-export function registerWorkflowGuideResource(
-  server: McpServer,
-  iconInfo?: IconInfo
-): void {
-  server.registerResource(
-    WORKFLOW_RESOURCE_NAME,
-    WORKFLOW_RESOURCE_URI,
-    withDefaultIcons(
-      {
-        title: 'Workflow Guide',
-        description: WORKFLOW_RESOURCE_DESCRIPTION,
-        mimeType: 'text/markdown',
-        annotations: {
-          audience: ['assistant'],
-          priority: 0.6,
-        },
-      },
-      iconInfo
-    ),
-    (uri): ReadResourceResult => ({
-      contents: [
-        {
-          uri: uri.href,
-          mimeType: 'text/markdown',
-          text: buildWorkflowGuide(),
-        },
-      ],
-    })
-  );
-}
+  const lifecycles = RESOURCE_ENTRIES.flatMap(({ contract, register }) => {
+    register(server, options);
+    return contract.createSubscription ? [contract.createSubscription(notify)] : [];
+  });
 
-export function registerResultResources(
-  server: McpServer,
-  store: ResourceStore,
-  iconInfo?: IconInfo
-): void {
-  server.registerResource(
-    RESULT_RESOURCE_NAME,
-    RESULT_TEMPLATE,
-    withDefaultIcons(
-      {
-        title: 'Cached Tool Result',
-        description: RESULT_RESOURCE_DESCRIPTION,
-        mimeType: 'text/plain',
-        annotations: {
-          audience: ['assistant'],
-          priority: 0.3,
-        },
-      },
-      iconInfo
-    ),
-    (uri, variables): ReadResourceResult => {
-      const { id } = variables;
-      if (typeof id !== 'string' || id.length === 0) {
-        throw new ProtocolError(
-          ProtocolErrorCode.ResourceNotFound,
-          'Cached result expired. Re-run the tool to regenerate.'
-        );
-      }
-
-      const entry = store.getText(uri.toString());
-
-      return {
-        contents: [
-          {
-            uri: entry.uri,
-            mimeType: entry.mimeType,
-            text: entry.text,
-          },
-        ],
-      };
+  // Single subscription router for all resources.
+  // Each lifecycle's onSubscribe/onUnsubscribe ignores URIs that don't belong to it.
+  server.server.setRequestHandler(
+    'resources/subscribe',
+    async (req: { params: { uri: string } }) => {
+      for (const lc of lifecycles) lc.onSubscribe(req.params.uri);
+      return {};
     }
   );
-}
 
-export function registerToolInfoResource(
-  server: McpServer,
-  iconInfo?: IconInfo
-): void {
-  server.registerResource(
-    TOOL_INFO_RESOURCE_NAME,
-    TOOL_INFO_TEMPLATE,
-    withDefaultIcons(
-      {
-        title: 'Tool Info',
-        description: TOOL_INFO_RESOURCE_DESCRIPTION,
-        mimeType: 'text/markdown',
-        annotations: {
-          audience: ['assistant'],
-          priority: 0.65,
-        },
-      },
-      iconInfo
-    ),
-    (uri, variables): ReadResourceResult => {
-      const { name } = variables;
-      if (typeof name !== 'string' || name.length === 0) {
-        throw new ProtocolError(
-          ProtocolErrorCode.InvalidParams,
-          'Tool name is required'
-        );
-      }
-      const content = buildToolInfo(name);
-      if (content === undefined) {
-        throw new ProtocolError(
-          ProtocolErrorCode.InvalidParams,
-          `Tool not found: ${name}`
-        );
-      }
-      return {
-        contents: [
-          {
-            uri: uri.href,
-            mimeType: 'text/markdown',
-            text: content,
-          },
-        ],
-      };
+  server.server.setRequestHandler(
+    'resources/unsubscribe',
+    async (req: { params: { uri: string } }) => {
+      for (const lc of lifecycles) lc.onUnsubscribe(req.params.uri);
+      return {};
     }
   );
+
+  return {
+    destroy: () => {
+      for (const lc of lifecycles) lc.destroy();
+    },
+  };
 }
 
-export function registerMetricsResource(
-  server: McpServer,
-  iconInfo?: IconInfo
-): void {
-  server.registerResource(
-    METRICS_RESOURCE_NAME,
-    METRICS_RESOURCE_URI,
-    withDefaultIcons(
-      {
-        title: 'Tool Metrics',
-        description: METRICS_RESOURCE_DESCRIPTION,
-        mimeType: 'application/json',
-        annotations: {
-          audience: ['assistant'],
-          priority: 0.5,
-        },
-      },
-      iconInfo
-    ),
-    (uri): ReadResourceResult => {
-      const snapshot: Record<
-        string,
-        { calls: number; errors: number; avgDurationMs: number }
-      > = {};
-      for (const [tool, m] of globalMetrics) {
-        snapshot[tool] = {
-          calls: m.calls,
-          errors: m.errors,
-          avgDurationMs:
-            m.calls > 0
-              ? parseFloat((m.totalDurationMs / m.calls).toFixed(2))
-              : 0,
-        };
-      }
-      return {
-        contents: [
-          {
-            uri: uri.href,
-            mimeType: 'application/json',
-            text: JSON.stringify({ ok: true, metrics: snapshot }, null, 2),
-          },
-        ],
-      };
-    }
-  );
-}
+export { SERVER_INSTRUCTIONS_CONTENT as serverInstructionsContent };
