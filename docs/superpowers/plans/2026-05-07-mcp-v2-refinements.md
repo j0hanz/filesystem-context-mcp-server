@@ -12,14 +12,14 @@
 
 ## File Map
 
-| File | What changes |
-|---|---|
-| `src/tools/shared.ts` | Add `hasTaskSupport?: boolean` to `ToolRegistrationOptions` |
-| `src/tools/task-support.ts` | Delete `hasTaskToolCapability`; remove capability check from `tryRegisterToolTask`; update `registerToolTaskIfAvailable` signature (iconInfo+guard → options) |
-| `src/server/bootstrap.ts` | Derive `hasTaskSupport` from built capabilities; pass in `registerAllTools`; rewrite `startHttpServer` with Express; delete ~10 functions |
-| `package.json` | Add runtime + dev dependencies |
-| `__tests__/http.test.ts` | Possibly update 403 error-message assertions; add/adjust 405 assertion if needed |
-| `__tests__/contract.test.ts` | No changes expected — task flags already set, test already correct |
+| File                         | What changes                                                                                                                                                  |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/tools/shared.ts`        | Add `hasTaskSupport?: boolean` to `ToolRegistrationOptions`                                                                                                   |
+| `src/tools/task-support.ts`  | Delete `hasTaskToolCapability`; remove capability check from `tryRegisterToolTask`; update `registerToolTaskIfAvailable` signature (iconInfo+guard → options) |
+| `src/server/bootstrap.ts`    | Derive `hasTaskSupport` from built capabilities; pass in `registerAllTools`; rewrite `startHttpServer` with Express; delete ~10 functions                     |
+| `package.json`               | Add runtime + dev dependencies                                                                                                                                |
+| `__tests__/http.test.ts`     | Possibly update 403 error-message assertions; add/adjust 405 assertion if needed                                                                              |
+| `__tests__/contract.test.ts` | No changes expected — task flags already set, test already correct                                                                                            |
 
 ---
 
@@ -27,7 +27,7 @@
 
 **Files:** (read-only)
 
-- [ ] **Step 1: Run the full test suite to confirm a clean baseline**
+- [x] **Step 1: Run the full test suite to confirm a clean baseline**
 
 ```powershell
 cd c:/filesystem-mcp && node scripts/tasks.mjs
@@ -40,9 +40,10 @@ Expected: all checks pass (format, lint, type-check, knip, tests, rebuild). If a
 ## Task 2: Add `hasTaskSupport` to `ToolRegistrationOptions`
 
 **Files:**
+
 - Modify: `src/tools/shared.ts` (around line 488)
 
-- [ ] **Step 1: Add the field**
+- [x] **Step 1: Add the field**
 
 In `src/tools/shared.ts`, locate `ToolRegistrationOptions` (currently at line 488):
 
@@ -67,7 +68,7 @@ export interface ToolRegistrationOptions {
 }
 ```
 
-- [ ] **Step 2: Type-check only — no behaviour change yet**
+- [x] **Step 2: Type-check only — no behaviour change yet**
 
 ```powershell
 npm run type-check
@@ -80,13 +81,15 @@ Expected: passes.
 ## Task 3: Refactor `task-support.ts` — remove `server.server` access
 
 **Files:**
+
 - Modify: `src/tools/task-support.ts`
 
-- [ ] **Step 1: Delete `hasTaskToolCapability` and update `tryRegisterToolTask`**
+- [x] **Step 1: Delete `hasTaskToolCapability` and update `tryRegisterToolTask`**
 
 Locate `hasTaskToolCapability` (line 98) and `tryRegisterToolTask` (line 535). Make these changes:
 
 **Delete the entire `hasTaskToolCapability` function** (lines 98–105):
+
 ```ts
 // DELETE THIS:
 function hasTaskToolCapability(server: McpServer): boolean {
@@ -100,6 +103,7 @@ function hasTaskToolCapability(server: McpServer): boolean {
 ```
 
 **Remove the capability guard from `tryRegisterToolTask`** — delete only the first line of the function body:
+
 ```ts
 // BEFORE (line 542):
 if (!hasTaskToolCapability(server)) return false;
@@ -108,6 +112,7 @@ if (!hasTaskToolCapability(server)) return false;
 ```
 
 `tryRegisterToolTask` after the change:
+
 ```ts
 function tryRegisterToolTask<Args extends ToolSchema>(
   server: McpServer,
@@ -138,9 +143,10 @@ function tryRegisterToolTask<Args extends ToolSchema>(
 }
 ```
 
-- [ ] **Step 2: Update `registerToolTaskIfAvailable` signature — replace `iconInfo + guard` with `options`**
+- [x] **Step 2: Update `registerToolTaskIfAvailable` signature — replace `iconInfo + guard` with `options`**
 
 Current signature (line 565):
+
 ```ts
 function registerToolTaskIfAvailable<Args extends ToolSchema, Result>(
   server: McpServer,
@@ -168,6 +174,7 @@ function registerToolTaskIfAvailable<Args extends ToolSchema, Result>(
 ```
 
 Replace with:
+
 ```ts
 function registerToolTaskIfAvailable<Args extends ToolSchema, Result>(
   server: McpServer,
@@ -194,7 +201,7 @@ function registerToolTaskIfAvailable<Args extends ToolSchema, Result>(
 }
 ```
 
-- [ ] **Step 3: Update the call site in `registerStandardTool`**
+- [x] **Step 3: Update the call site in `registerStandardTool`**
 
 Locate the call to `registerToolTaskIfAvailable` inside `registerStandardTool` (around line 616):
 
@@ -227,13 +234,14 @@ if (
 }
 ```
 
-- [ ] **Step 4: Type-check**
+- [x] **Step 4: Type-check**
 
 ```powershell
 npm run type-check
 ```
 
 Expected: passes. If `ToolRegistrationOptions` import is missing from task-support.ts, add it:
+
 ```ts
 import type { ..., ToolRegistrationOptions } from './shared.js';
 ```
@@ -243,9 +251,10 @@ import type { ..., ToolRegistrationOptions } from './shared.js';
 ## Task 4: Thread `hasTaskSupport` from `bootstrap.ts`
 
 **Files:**
+
 - Modify: `src/server/bootstrap.ts` (inside `createServer`)
 
-- [ ] **Step 1: Derive `hasTaskSupport` after building capabilities and pass it to `registerAllTools`**
+- [x] **Step 1: Derive `hasTaskSupport` after building capabilities and pass it to `registerAllTools`**
 
 Locate the block in `createServer()` where `registerAllTools` is called (around line 243). The capabilities are built at line 179. Make the following change:
 
@@ -257,8 +266,7 @@ const capabilities = buildServerCapabilities({
 });
 
 // Add this derivation:
-const hasTaskSupport =
-  capabilities.tasks?.requests?.tools?.call !== undefined;
+const hasTaskSupport = capabilities.tasks?.requests?.tools?.call !== undefined;
 ```
 
 Then update the `registerAllTools` call (around line 243):
@@ -282,7 +290,7 @@ registerAllTools(server, {
 });
 ```
 
-- [ ] **Step 2: Type-check and run tests**
+- [x] **Step 2: Type-check and run tests**
 
 ```powershell
 npm run type-check && node --test --import tsx/esm "__tests__/**/*.test.ts"
@@ -290,7 +298,7 @@ npm run type-check && node --test --import tsx/esm "__tests__/**/*.test.ts"
 
 Expected: all tests pass. The behaviour is unchanged — task registration still happens for the same tools. Only the mechanism for capability detection changed (startup state instead of runtime `server.server` call).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```powershell
 git add src/tools/shared.ts src/tools/task-support.ts src/server/bootstrap.ts
@@ -305,7 +313,7 @@ git commit -m "refactor: thread hasTaskSupport flag — remove server.server.get
 
 The five bulk tools (`grep`, `find`, `tree`, `stat_many`, `read_many`) already have `taskSupport: 'optional'` set in their contracts, and the contract test already expects them in `TASK_OPTIONAL_TOOLS`. Confirm this is working correctly after Task 4.
 
-- [ ] **Step 1: Run contract test only**
+- [x] **Step 1: Run contract test only**
 
 ```powershell
 node --test --import tsx/esm __tests__/contract.test.ts
@@ -318,21 +326,22 @@ Expected: passes, including `'task-capable tools expose execution.taskSupport in
 ## Task 6: Install Express dependencies
 
 **Files:**
+
 - Modify: `package.json`
 
-- [ ] **Step 1: Install runtime dependencies**
+- [x] **Step 1: Install runtime dependencies**
 
 ```powershell
 npm install @modelcontextprotocol/express@^2.0.0-alpha.2 express@^5
 ```
 
-- [ ] **Step 2: Install dev dependency**
+- [x] **Step 2: Install dev dependency**
 
 ```powershell
 npm install --save-dev @types/express@^5
 ```
 
-- [ ] **Step 3: Verify imports resolve**
+- [x] **Step 3: Verify imports resolve**
 
 ```powershell
 node -e "import('@modelcontextprotocol/express').then(m => console.log('ok:', Object.keys(m)))"
@@ -345,16 +354,18 @@ Expected: prints `ok:` with exported names including `createMcpExpressApp`.
 ## Task 7: Rewrite `startHttpServer` with Express
 
 **Files:**
+
 - Modify: `src/server/bootstrap.ts`
 
 This is the largest single change. Do it in two sub-steps: first add the new implementation alongside the old one, then delete the old functions.
 
-- [ ] **Step 1: Add new imports at the top of `bootstrap.ts`**
+- [x] **Step 1: Add new imports at the top of `bootstrap.ts`**
 
 Add after the existing `@modelcontextprotocol/*` imports:
 
 ```ts
 import { createMcpExpressApp } from '@modelcontextprotocol/express';
+
 import express, {
   type NextFunction,
   type Request,
@@ -364,7 +375,7 @@ import express, {
 
 Remove the import of `LOCALHOST_ORIGIN_RE` usage sites won't be needed after deletion, but keep it until the functions are deleted in Step 3.
 
-- [ ] **Step 2: Replace the body of `startHttpServer` with the Express version**
+- [x] **Step 2: Replace the body of `startHttpServer` with the Express version**
 
 The full new function body (replace everything from `const sessions = new Map` to the closing `}`):
 
@@ -501,7 +512,11 @@ export async function startHttpServer(
           res as never
         );
         if (session) {
-          await handleSessionTransportRequest(session, req as never, res as never);
+          await handleSessionTransportRequest(
+            session,
+            req as never,
+            res as never
+          );
         }
         return;
       }
@@ -606,13 +621,14 @@ export async function startHttpServer(
 
 Note on type casts: `req as never` and `res as never` are used because helper functions typed against `IncomingMessage`/`ServerResponse` are called with Express's `Request`/`Response`. At runtime these are compatible (Express types extend Node.js types). If TypeScript strict mode makes these casts difficult, import `IncomingMessage` and `ServerResponse` from `node:http` and use `req as unknown as IncomingMessage` etc. instead.
 
-- [ ] **Step 3: Type-check**
+- [x] **Step 3: Type-check**
 
 ```powershell
 npm run type-check
 ```
 
 Fix any type errors before proceeding. Common issues:
+
 - Missing imports for `createMcpExpressApp`, `express`, Express types
 - `createHttpServer` needs `app as never` if types don't align — use the cast shown above
 - `sendJsonRpcError` expects `ServerResponse` — use `res as never` or cast explicitly
@@ -622,9 +638,10 @@ Fix any type errors before proceeding. Common issues:
 ## Task 8: Delete the removed functions from `bootstrap.ts`
 
 **Files:**
+
 - Modify: `src/server/bootstrap.ts`
 
-- [ ] **Step 1: Delete the following functions and constants** (they are now dead code):
+- [x] **Step 1: Delete the following functions and constants** (they are now dead code):
 
 - `LOCALHOST_ORIGIN_RE` constant
 - `EXPOSED_HEADERS` constant
@@ -646,7 +663,7 @@ Fix any type errors before proceeding. Common issues:
 
 Also check `MAX_BEARER_TOKEN_LENGTH` — it's used by `isAuthorizedBearer`, keep it.
 
-- [ ] **Step 2: Run lint to find any remaining references**
+- [x] **Step 2: Run lint to find any remaining references**
 
 ```powershell
 npm run lint
@@ -655,12 +672,13 @@ npm run lint
 If lint reports unused variables or imports, remove them. Common leftover: `LOCALHOST_ORIGIN_RE`, `IncomingMessage` import (still needed for types in remaining functions), `ServerResponse` import (same).
 
 Check which `node:http` imports are still needed:
+
 - `createServer as createHttpServer` — still needed ✓
 - `type IncomingMessage` — still needed by `getSessionId`, `handleSessionTransportRequest`, `sendJsonRpcError`, etc. ✓
 - `type Server` — still needed for return type ✓
 - `type ServerResponse` — still needed ✓
 
-- [ ] **Step 3: Type-check and run lint clean**
+- [x] **Step 3: Type-check and run lint clean**
 
 ```powershell
 npm run type-check && npm run lint
@@ -673,9 +691,10 @@ Expected: both pass with 0 errors/warnings.
 ## Task 9: Run HTTP tests and fix any failures
 
 **Files:**
+
 - Modify: `__tests__/http.test.ts` (only if assertions need updating)
 
-- [ ] **Step 1: Run only the HTTP tests**
+- [x] **Step 1: Run only the HTTP tests**
 
 ```powershell
 node --test --import tsx/esm __tests__/http.test.ts
@@ -684,6 +703,7 @@ node --test --import tsx/esm __tests__/http.test.ts
 Expected: most tests pass. The tests most likely to need attention:
 
 **403 origin rejection** (`'rejects browser origins outside localhost'`):
+
 - Current assertion: `assert.match(await response.text(), /Forbidden: disallowed origin/u)`
 - `createMcpExpressApp()` handles this internally. If the response body does not contain the phrase `Forbidden: disallowed origin`, update the assertion to match whatever the SDK sends. Run the test, read the actual response body in the failure output, then update:
   ```ts
@@ -694,17 +714,20 @@ Expected: most tests pass. The tests most likely to need attention:
   ```
 
 **403 Host header rejection** (`'rejects loopback requests with a disallowed Host header'`):
+
 - Current assertion: `assert.match(response.body, /Forbidden: Invalid Host/u)`
 - Same approach: run test, read actual response, update regex if needed.
 
 **405 unsupported method** (`'returns 405 for unsupported HTTP methods on /mcp'`):
+
 - Should pass as-is — the route handler explicitly returns 405 with the correct `Allow` header and JSON-RPC body.
 - If it fails, verify that the `app.all('/mcp', ...)` handler reaches the unsupported-method branch for PUT.
 
 **413 oversized body** (`'returns 413 for request bodies exceeding the size limit'`):
+
 - Should pass — Express body-parser 413 → our error middleware → `'Request body too large'` matches `/too large/iu`. ✓
 
-- [ ] **Step 2: Commit once HTTP tests pass**
+- [x] **Step 2: Commit once HTTP tests pass**
 
 ```powershell
 git add src/server/bootstrap.ts package.json package-lock.json __tests__/http.test.ts
@@ -715,7 +738,7 @@ git commit -m "feat: migrate HTTP layer to createMcpExpressApp() — remove hand
 
 ## Task 10: Full suite and final commit
 
-- [ ] **Step 1: Run the full task pipeline**
+- [x] **Step 1: Run the full task pipeline**
 
 ```powershell
 node scripts/tasks.mjs
@@ -723,7 +746,7 @@ node scripts/tasks.mjs
 
 Expected: format → lint → type-check → knip → tests → rebuild, all green. If knip reports unused exports from the deleted functions, remove them from `bootstrap.ts`. If any test fails, fix it before committing.
 
-- [ ] **Step 2: Final commit if anything was adjusted**
+- [x] **Step 2: Final commit if anything was adjusted**
 
 If Step 1 required any fixes:
 
@@ -736,22 +759,22 @@ git commit -m "fix: address post-migration lint/test issues"
 
 ## Quick Reference — Functions deleted vs kept
 
-| Deleted | Kept |
-|---|---|
-| `setCorsHeaders` | `assertHttpBindingSecurity` |
-| `isAllowedOrigin` | `isLoopbackHttpHost` |
-| `ensureAllowedOrigin` | `isAuthorizedBearer` |
-| `ensureAllowedHostHeader` | `ensureAuthorizedRequest` |
-| `normalizeAllowedHostname` | `writeUnauthorizedResponse` |
-| `getAllowedHostnames` | `getSessionId` |
-| `writeMethodNotAllowedResponse` | `sendJsonRpcError` |
-| `dispatchMcpMethod` | `createHttpSession` |
-| `handlePostRequest` | `handleSessionTransportRequest` |
-| `handleGetDeleteRequest` | `getSessionOrRespondNotFound` |
-| `RequestBodyError` | session `Map` + stale sweep |
-| `readRequestBody` | `InMemoryEventStore` usage |
-| `handleHttpRequestError` | `closeAllSessions` |
-| `discardRequestBody` | `httpServer` timeouts + close override |
-| `LOCALHOST_ORIGIN_RE` | `MAX_BEARER_TOKEN_LENGTH` |
-| `EXPOSED_HEADERS` | `MAX_SESSION_ID_LENGTH` |
-| `hasTaskToolCapability` | — |
+| Deleted                         | Kept                                   |
+| ------------------------------- | -------------------------------------- |
+| `setCorsHeaders`                | `assertHttpBindingSecurity`            |
+| `isAllowedOrigin`               | `isLoopbackHttpHost`                   |
+| `ensureAllowedOrigin`           | `isAuthorizedBearer`                   |
+| `ensureAllowedHostHeader`       | `ensureAuthorizedRequest`              |
+| `normalizeAllowedHostname`      | `writeUnauthorizedResponse`            |
+| `getAllowedHostnames`           | `getSessionId`                         |
+| `writeMethodNotAllowedResponse` | `sendJsonRpcError`                     |
+| `dispatchMcpMethod`             | `createHttpSession`                    |
+| `handlePostRequest`             | `handleSessionTransportRequest`        |
+| `handleGetDeleteRequest`        | `getSessionOrRespondNotFound`          |
+| `RequestBodyError`              | session `Map` + stale sweep            |
+| `readRequestBody`               | `InMemoryEventStore` usage             |
+| `handleHttpRequestError`        | `closeAllSessions`                     |
+| `discardRequestBody`            | `httpServer` timeouts + close override |
+| `LOCALHOST_ORIGIN_RE`           | `MAX_BEARER_TOKEN_LENGTH`              |
+| `EXPOSED_HEADERS`               | `MAX_SESSION_ID_LENGTH`                |
+| `hasTaskToolCapability`         | —                                      |
