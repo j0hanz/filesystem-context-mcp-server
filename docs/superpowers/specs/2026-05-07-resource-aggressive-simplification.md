@@ -34,19 +34,19 @@ The current resource layer (introduced in commit `2414420`) added `ResourceContr
 
 ### Resources (2)
 
-| Resource | URI | Type | Description |
-|---|---|---|---|
-| Instructions | `internal://instructions` | static | Slim navigation: role, tools-overview table, constraints, error-recovery. |
-| Result Cache | `filesystem-mcp://result/{id}` | template | Externalized large tool output. Hash-dedup, TTL, byte caps unchanged. |
+| Resource     | URI                            | Type     | Description                                                               |
+| ------------ | ------------------------------ | -------- | ------------------------------------------------------------------------- |
+| Instructions | `internal://instructions`      | static   | Slim navigation: role, tools-overview table, constraints, error-recovery. |
+| Result Cache | `filesystem-mcp://result/{id}` | template | Externalized large tool output. Hash-dedup, TTL, byte caps unchanged.     |
 
 ### Prompts (3 — down from 4)
 
-| Prompt | Status |
-|---|---|
-| `get-help` | Keep — reads slim instructions, topic-filters by `##` heading. |
-| `compare-files` | Keep — independent of resources. |
-| `analyze-path` | Keep — independent of resources. |
-| `get-tool-help` | **Delete** — depends on removed `buildToolInfo()`. |
+| Prompt          | Status                                                         |
+| --------------- | -------------------------------------------------------------- |
+| `get-help`      | Keep — reads slim instructions, topic-filters by `##` heading. |
+| `compare-files` | Keep — independent of resources.                               |
+| `analyze-path`  | Keep — independent of resources.                               |
+| `get-tool-help` | **Delete** — depends on removed `buildToolInfo()`.             |
 
 ### Capabilities
 
@@ -89,34 +89,38 @@ Content structure:
 
 ```markdown
 ## Role
+
 Secure filesystem agent. Operate strictly within allowed roots.
 Resolve paths before acting — never assume.
 
 ## Tools Overview
-| Category | Tools |
-| -------- | ----- |
-| Navigate | `roots`, `ls`, `tree`, `find` |
-| Inspect  | `stat`, `stat_many`, `grep`, `calculate_hash` |
-| Read     | `read`, `read_many`, `diff_files` |
+
+| Category | Tools                                                                     |
+| -------- | ------------------------------------------------------------------------- |
+| Navigate | `roots`, `ls`, `tree`, `find`                                             |
+| Inspect  | `stat`, `stat_many`, `grep`, `calculate_hash`                             |
+| Read     | `read`, `read_many`, `diff_files`                                         |
 | Write    | `mkdir`, `write`, `edit`, `mv`, `rm`, `apply_patch`, `search_and_replace` |
 
 Full schemas, descriptions, and annotations are in `tools/list`.
 
 ## Constraints
+
 - Operate within allowed roots only (negotiated at startup via CLI).
-- Sensitive file paths (.env, *.pem, *id_rsa*) are denied by default.
+- Sensitive file paths (.env, *.pem, *id_rsa\*) are denied by default.
 - Enforced limits: max file size 10 MB, file search cap 500 results, content search cap 100 matches.
 - When a tool returns `resourceUri`, call `resources/read` immediately —
   cached results expire on server restart.
 
 ## Error Recovery
-| Error Code      | Action |
-| --------------- | ------ |
+
+| Error Code      | Action                                                            |
+| --------------- | ----------------------------------------------------------------- |
 | `ACCESS_DENIED` | Run `roots` to list allowed directories, retry with a valid path. |
-| `NOT_FOUND`     | Run `ls` or `find` to verify the path. |
-| `TOO_LARGE`     | Use head/tail, line ranges, or split across `read_many`. |
-| `TIMEOUT`       | Reduce scope, depth, or maxResults. |
-| `INVALID_INPUT` | Re-read the tool schema in `tools/list`. |
+| `NOT_FOUND`     | Run `ls` or `find` to verify the path.                            |
+| `TOO_LARGE`     | Use head/tail, line ranges, or split across `read_many`.          |
+| `TIMEOUT`       | Reduce scope, depth, or maxResults.                               |
+| `INVALID_INPUT` | Re-read the tool schema in `tools/list`.                          |
 ```
 
 Implementation:
@@ -127,7 +131,8 @@ import {
   MAX_SEARCH_RESULTS,
   MAX_TEXT_FILE_SIZE,
 } from '../lib/constants.js';
-import { pickAvailableToolNames, formatToolNameList } from './tool-info.js';
+
+import { formatToolNameList, pickAvailableToolNames } from './tool-info.js';
 
 export function buildSlimInstructions(): string {
   // ... build the markdown table rows from available tool names, inline constraints
@@ -143,6 +148,7 @@ Constants come from `../lib/constants.js` — same as today. Tool name lists com
 ## Section 2: `src/resources/tool-info.ts` (slimmed)
 
 Delete from this file:
+
 - `interface ToolEntry`
 - `interface JsonSchemaObject`
 - `getTaskSupportLabel()`
@@ -161,6 +167,7 @@ Delete from this file:
 - `buildToolInfo()`
 
 Keep in this file (used by slim instructions and completions):
+
 - `getToolContracts()`
 - `getSortedToolContracts()`
 - `pickAvailableToolNames()`
@@ -182,6 +189,7 @@ import {
 } from '@modelcontextprotocol/server';
 
 import type { ResourceStore } from './lib/resource-store.js';
+
 import { SLIM_INSTRUCTIONS_CONTENT } from './resources/instructions-content.js';
 import { type IconInfo, withDefaultIcons } from './tools/shared.js';
 
@@ -193,7 +201,9 @@ export interface ResourceRegistrationOptions {
 export { SLIM_INSTRUCTIONS_CONTENT as serverInstructionsContent };
 
 const INSTRUCTIONS_URI = 'internal://instructions';
-const RESULT_TEMPLATE = new ResourceTemplate('filesystem-mcp://result/{id}', { list: undefined });
+const RESULT_TEMPLATE = new ResourceTemplate('filesystem-mcp://result/{id}', {
+  list: undefined,
+});
 
 export function registerAllResources(
   server: McpServer,
@@ -205,14 +215,21 @@ export function registerAllResources(
     withDefaultIcons(
       {
         title: 'Server Instructions',
-        description: 'Navigation guide for filesystem-mcp tools and constraints.',
+        description:
+          'Navigation guide for filesystem-mcp tools and constraints.',
         mimeType: 'text/markdown',
         annotations: { audience: ['assistant'], priority: 0.8 },
       },
       options.iconInfo
     ),
     (uri): ReadResourceResult => ({
-      contents: [{ uri: uri.href, mimeType: 'text/markdown', text: SLIM_INSTRUCTIONS_CONTENT }],
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: 'text/markdown',
+          text: SLIM_INSTRUCTIONS_CONTENT,
+        },
+      ],
     })
   );
 
@@ -222,7 +239,8 @@ export function registerAllResources(
     withDefaultIcons(
       {
         title: 'Cached Tool Result',
-        description: 'Ephemeral cached tool output. Not listed via resources/list.',
+        description:
+          'Ephemeral cached tool output. Not listed via resources/list.',
         mimeType: 'text/plain',
         annotations: { audience: ['assistant'], priority: 0.3 },
       },
@@ -237,7 +255,11 @@ export function registerAllResources(
         );
       }
       const entry = options.resourceStore.getText(uri.toString());
-      return { contents: [{ uri: entry.uri, mimeType: entry.mimeType, text: entry.text }] };
+      return {
+        contents: [
+          { uri: entry.uri, mimeType: entry.mimeType, text: entry.text },
+        ],
+      };
     }
   );
 }
@@ -252,6 +274,7 @@ No return value — nothing to destroy.
 **`createServer()` return type:** `Promise<{ server: McpServer }>` — remove `ResourcesHandle`.
 
 **`buildServerCapabilities()`:** Drop `subscribe: true` and `listChanged: true` from `resources`:
+
 ```typescript
 resources: {},  // was: { listChanged: true, subscribe: true }
 ```
@@ -269,6 +292,7 @@ resources: {},  // was: { listChanged: true, subscribe: true }
 ## Section 5: `src/lib/observability.ts` changes
 
 Remove:
+
 - `interface ToolMetrics`
 - `export const globalMetrics`
 - `type MetricsListener`
@@ -278,6 +302,7 @@ Remove:
 - All calls to `updateMetrics()` inside `runAndObserve()` and `withToolDiagnostics()` fallback paths
 
 Keep:
+
 - All `node:diagnostics_channel` publishing (`CHANNELS.tool`, `CHANNELS.perf`, `CHANNELS.ops`)
 - `withToolDiagnostics()` — still wraps tool execution for diagnostics
 - `startPerfMeasure()`, `publishOpsTrace*()`, `getTraceContext()` — all unchanged
@@ -289,6 +314,7 @@ No changes to tool wiring — `withToolDiagnostics` is still called from every t
 ## Section 6: `src/prompts.ts` changes
 
 Remove `registerGetToolHelpPrompt()` and everything it depends on:
+
 - Import of `buildToolInfo` from `./resources/tool-info.js`
 - `findKnownToolName()` helper
 - The `GET_TOOL_HELP_PROMPT_*` constants
@@ -303,6 +329,7 @@ Update `bootstrap.ts`: remove the `registerGetToolHelpPrompt(server, localIcon)`
 ## Section 7: Test changes
 
 ### Files to delete
+
 - `__tests__/resources/contract.test.ts`
 - `__tests__/resources/filesystem-file.test.ts`
 - `__tests__/resources/metrics.test.ts`
@@ -311,32 +338,40 @@ Update `bootstrap.ts`: remove the `registerGetToolHelpPrompt(server, localIcon)`
 ### `__tests__/resources.test.ts` — update 4 tests
 
 **`lists fixed resources and dynamic resource templates`:**
+
 - Expect 1 static resource: `internal://instructions`
 - Expect 1 template: `filesystem-mcp://result/{id}`
 - Remove `staticResourceUris`, `toolInfoUris` variables
 
 **`reads built-in resources and exposes instructions through initialize metadata`:**
+
 - Keep: instructions resource check, `serverConfig.instructions` blurb check
 - Remove: metrics resource read
 
 **`reads tool-info template instances and get-tool-help embeds the same resource URI`:**
+
 - Delete this test entirely
 
 **`keeps README and server metadata in sync`:**
+
 - Update assertion: 2 static resources (instructions + 0 listed templates)
 - Update: 3 prompts
 - Update README line matches (see Section 8)
 
 ### `__tests__/contract.test.ts`
+
 - Remove or update any assertion on resource count (was 18 tools + resource counts)
 
 ### `__tests__/prompts.test.ts` and `__tests__/prompts-stdio.test.ts`
+
 - Remove tests for `get-tool-help` prompt
 
 ### `__tests__/unit/completions.test.ts`
+
 - Remove: completions for `internal://tool-info/{name}`, `get-tool-help` name argument
 
 ### `__tests__/http.test.ts`
+
 - Remove: assertions referencing `internal://tool-info`, `filesystem-mcp://metrics`, `internal://workflows`, `internal://tool-catalog`
 
 ---
@@ -354,17 +389,17 @@ Update `bootstrap.ts`: remove the `registerGetToolHelpPrompt(server, localIcon)`
 
 ## Estimated Impact
 
-| Metric | Before | After |
-|---|---|---|
-| Resources | 7 | 2 |
-| Prompts | 4 | 3 |
-| `src/resources/` files | 13 | 2 |
-| `src/resources/*.ts` LOC | ~1,126 | ~150 |
-| `src/lib/observability.ts` LOC removed | — | ~40 |
-| `src/resources.ts` LOC | 124 | ~45 |
-| `src/prompts.ts` LOC removed | — | ~75 |
-| `__tests__/resources/` test files | 3 | 0 |
-| Net LOC removed | — | ~1,200+ |
+| Metric                                 | Before | After   |
+| -------------------------------------- | ------ | ------- |
+| Resources                              | 7      | 2       |
+| Prompts                                | 4      | 3       |
+| `src/resources/` files                 | 13     | 2       |
+| `src/resources/*.ts` LOC               | ~1,126 | ~150    |
+| `src/lib/observability.ts` LOC removed | —      | ~40     |
+| `src/resources.ts` LOC                 | 124    | ~45     |
+| `src/prompts.ts` LOC removed           | —      | ~75     |
+| `__tests__/resources/` test files      | 3      | 0       |
+| Net LOC removed                        | —      | ~1,200+ |
 
 ---
 
