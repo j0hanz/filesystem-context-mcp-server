@@ -398,6 +398,12 @@ async function createHttpSession(
       });
       rootsManager.logMissingDirectoriesIfNeeded(mcpServer);
     },
+    onsessionclosed: async (sessionId) => {
+      const session = sessions.get(sessionId);
+      if (session) {
+        await session.close();
+      }
+    },
   });
 
   transport.onclose = cleanup;
