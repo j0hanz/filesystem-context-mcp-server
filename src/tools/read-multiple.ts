@@ -2,12 +2,13 @@ import { basename } from 'node:path';
 
 import type { z } from 'zod/v4';
 
-import { DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
+import { DEFAULT_CONTINUATION_CHUNK_SIZE, DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { readMultipleFiles } from '../lib/file-operations/metadata.js';
 import { assignDefined } from '../lib/utils.js';
 import { ReadManyInputSchema } from '../schemas/inputs.js';
 import { ReadManyOutputSchema } from '../schemas/outputs.js';
+import { ContinuationSchema } from '../schemas/shared.js';
 
 import { defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
@@ -55,16 +56,45 @@ type ReadManyInput = z.infer<typeof ReadManyInputSchema>;
 type ReadManyOutput = z.infer<typeof ReadManyOutputSchema>;
 type ReadManyOutputItem = NonNullable<ReadManyOutput['results']>[number];
 type ReadManyResult = Awaited<ReturnType<typeof readMultipleFiles>>[number];
-type ReadManyTruncationReason = 'head' | 'tail' | 'range' | 'externalized';
 type ReadManyResultWithResource = Omit<ReadManyResult, 'error'> & {
   error?: ReadManyOutputItem['error'];
   resourceUri?: string;
-  truncationReason?: ReadManyTruncationReason;
   expiresAt?: string;
 };
 
 function buildReadManyResourceName(filePath: string): string {
   return `read:${basename(filePath)}`;
+}
+
+function buildReadContinuation(result: {
+  path: string;
+  hasMoreLines?: boolean;
+  linesRead?: number;
+  startLine?: number;
+  endLine?: number;
+  head?: number;
+  totalLines?: number;
+}): z.infer<typeof ContinuationSchema> | undefined {
+  if (!result.hasMoreLines) return undefined;
+  const linesRead = result.linesRead ?? 0;
+  const nextStart = (result.startLine ?? 1) + linesRead;
+  let chunkSize: number;
+  if (result.head !== undefined) {
+    chunkSize = result.head;
+  } else if (result.startLine !== undefined && result.endLine !== undefined) {
+    chunkSize = result.endLine - result.startLine + 1;
+  } else {
+    chunkSize = DEFAULT_CONTINUATION_CHUNK_SIZE;
+  }
+  const nextEnd = nextStart + chunkSize - 1;
+  const hint = result.totalLines
+    ? `${result.totalLines - nextStart + 1} lines remain (${nextStart}–${result.totalLines}). Read next chunk with these args.`
+    : 'File was truncated. Read next chunk with these args.';
+  return {
+    tool: 'read',
+    args: { path: result.path, startLine: nextStart, endLine: nextEnd },
+    hint,
+  };
 }
 
 function toStructuredReadManyResult(
@@ -76,7 +106,6 @@ function toStructuredReadManyResult(
 
   return assignDefined(structuredResult, {
     content: result.content,
-    truncated: result.truncated ? true : undefined,
     resourceUri: result.resourceUri,
     head: result.head,
     tail: result.tail,
@@ -85,33 +114,21 @@ function toStructuredReadManyResult(
     hasMoreLines: result.hasMoreLines ? true : undefined,
     totalLines: result.totalLines,
     linesRead: result.linesRead,
-    truncationReason: result.truncationReason,
+    continuation: buildReadContinuation(result),
     error: result.error,
   });
-}
-
-function resolveReadManyTruncationReason(
-  result: ReadManyResult
-): Exclude<ReadManyTruncationReason, 'externalized'> | undefined {
-  if (!result.truncated) return undefined;
-  if (result.readMode === 'head') return 'head';
-  if (result.readMode === 'tail') return 'tail';
-  if (result.readMode === 'range') return 'range';
-  return undefined;
 }
 
 function maybeExternalizeReadManyResult(
   result: ReadManyResult,
   resourceStore?: ToolRegistrationOptions['resourceStore']
 ): ReadManyResultWithResource {
-  const truncationReason = resolveReadManyTruncationReason(result);
   const { error, ...rest } = result;
   const baseResult: ReadManyResultWithResource = {
     ...rest,
     ...(error
       ? { error: buildStructuredError(error, ErrorCode.UNKNOWN, result.path) }
       : {}),
-    ...(truncationReason ? { truncationReason } : {}),
   };
 
   if (!result.content) {
@@ -130,9 +147,7 @@ function maybeExternalizeReadManyResult(
   return {
     ...baseResult,
     content: externalized.preview,
-    truncated: true,
     resourceUri: externalized.entry.uri,
-    truncationReason: 'externalized',
     expiresAt: externalized.entry.expiresAt,
   };
 }
