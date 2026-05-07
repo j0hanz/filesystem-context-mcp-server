@@ -67,4 +67,10 @@ export interface ToolContract {
    * Task support level for the tool. Defaults to 'forbidden'.
    */
   taskSupport?: 'optional' | 'required' | 'forbidden';
+
+  /**
+   * Default timeout in ms applied by the registration builder. If omitted,
+   * no timeout is wired (tool's own `signal` lifetime applies).
+   */
+  defaultTimeoutMs?: number;
 }
