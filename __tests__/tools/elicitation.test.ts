@@ -105,3 +105,102 @@ describe('rm: client accepts elicitation', () => {
     await assert.rejects(readdir(dir), { code: 'ENOENT' });
   });
 });
+
+// ─── mv: backward-compat (no elicitation capability) ─────────────────────────
+
+describe('mv: client without elicitation capability', () => {
+  let env: TestEnv;
+  let src: string;
+  let dest: string;
+
+  before(async () => {
+    env = await createTestEnv();
+    src = join(env.tmpDir, 'src.txt');
+    dest = join(env.tmpDir, 'dest.txt');
+    await writeFile(src, 'source content');
+    await writeFile(dest, 'original dest');
+  });
+
+  after(async () => {
+    await env.cleanup();
+  });
+
+  it('overwrites destination immediately when capability absent', async () => {
+    const result = await env.client.callTool({
+      name: 'mv',
+      arguments: { source: src, destination: dest },
+    });
+    assertOk(result);
+    const { readFileSync } = await import('node:fs');
+    assert.equal(readFileSync(dest, 'utf8'), 'source content');
+  });
+});
+
+// ─── mv: client declines when destination would be overwritten ────────────────
+
+describe('mv: client declines elicitation (destination exists)', () => {
+  let env: TestEnv;
+  let src: string;
+  let dest: string;
+
+  before(async () => {
+    env = await createTestEnvWithElicitation(async () => ({
+      action: 'decline' as const,
+    }));
+    src = join(env.tmpDir, 'mv-src.txt');
+    dest = join(env.tmpDir, 'mv-dest.txt');
+    await writeFile(src, 'new content');
+    await writeFile(dest, 'original dest');
+  });
+
+  after(async () => {
+    await env.cleanup();
+  });
+
+  it('returns success without moving when user declines overwrite', async () => {
+    const result = await env.client.callTool({
+      name: 'mv',
+      arguments: { source: src, destination: dest },
+    });
+    assertOk(result);
+    const { readFileSync } = await import('node:fs');
+    // destination unchanged
+    assert.equal(readFileSync(dest, 'utf8'), 'original dest');
+    // source still present
+    assert.equal(readFileSync(src, 'utf8'), 'new content');
+  });
+});
+
+// ─── mv: client accepts overwrite ────────────────────────────────────────────
+
+describe('mv: client accepts elicitation (destination exists)', () => {
+  let env: TestEnv;
+  let src: string;
+  let dest: string;
+
+  before(async () => {
+    env = await createTestEnvWithElicitation(async () => ({
+      action: 'accept' as const,
+      content: { confirmOverwrite: true },
+    }));
+    src = join(env.tmpDir, 'mv-accept-src.txt');
+    dest = join(env.tmpDir, 'mv-accept-dest.txt');
+    await writeFile(src, 'new content');
+    await writeFile(dest, 'original dest');
+  });
+
+  after(async () => {
+    await env.cleanup();
+  });
+
+  it('moves and overwrites when user accepts', async () => {
+    const result = await env.client.callTool({
+      name: 'mv',
+      arguments: { source: src, destination: dest },
+    });
+    assertOk(result);
+    const { readFileSync, existsSync } = await import('node:fs');
+    assert.equal(readFileSync(dest, 'utf8'), 'new content');
+    assert.ok(!existsSync(src), 'source must be gone after move');
+  });
+});

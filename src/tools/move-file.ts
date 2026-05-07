@@ -1,4 +1,8 @@
-import type { McpServer } from '@modelcontextprotocol/server';
+import type {
+  ElicitRequestFormParams,
+  ElicitResult,
+  McpServer,
+} from '@modelcontextprotocol/server';
 
 import { cp, mkdir, rename, rm, stat } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
@@ -197,7 +201,8 @@ function formatMoveMessage(
 
 async function handleMoveFile(
   args: z.infer<typeof MoveFileInputSchema>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>
 ): Promise<ToolResponse<z.infer<typeof MoveFileOutputSchema>>> {
   const sources = args.sources ?? (args.source ? [args.source] : []);
   if (sources.length === 0) {
@@ -216,6 +221,47 @@ async function handleMoveFile(
 
   if (!destIsDirectory) {
     await withAbort(mkdir(dirname(validDest), { recursive: true }), signal);
+  }
+
+  // For single-source moves, check if destination exists and elicit confirmation.
+  // TODO: batch mv elicitation (sources.length > 1 path is deferred)
+  if (elicitInput && sources.length === 1 && !destIsDirectory) {
+    let destExists = false;
+    try {
+      await stat(validDest);
+      destExists = true;
+    } catch {
+      // Destination does not exist — no confirmation needed.
+    }
+
+    if (destExists) {
+      const destination = args.destination;
+      const source = sources[0] ?? '';
+      const elicitResult = await elicitInput({
+        mode: 'form',
+        message: `"${destination}" already exists. Overwrite it?`,
+        requestedSchema: {
+          type: 'object',
+          properties: {
+            confirmOverwrite: {
+              type: 'boolean',
+              title: 'Yes, overwrite',
+            },
+          },
+          required: ['confirmOverwrite'],
+        },
+      });
+
+      if (
+        elicitResult.action !== 'accept' ||
+        elicitResult.content?.confirmOverwrite !== true
+      ) {
+        // Return early — do not move.
+        return buildToolResponse(`Move cancelled: ${source}`, {
+          ok: true,
+        });
+      }
+    }
   }
 
   const movedSources: string[] = [];
@@ -279,7 +325,10 @@ export function registerMoveFileTool(
       timedSignal: {},
       context: { path: args.source ?? args.sources?.[0] },
       run: async (signal) => {
-        const result = await handleMoveFile(args, signal);
+        const caps = server.server.getClientCapabilities();
+        const elicitFn =
+          caps?.elicitation && ctx.elicitInput ? ctx.elicitInput : undefined;
+        const result = await handleMoveFile(args, signal, elicitFn);
         void ctx.log?.(
           'info',
           `mv: ${args.source ?? args.sources?.join(', ') ?? ''} \u2192 ${args.destination}`,
