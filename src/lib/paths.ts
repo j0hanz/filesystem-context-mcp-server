@@ -62,7 +62,6 @@ const pathGuardContext = new AsyncLocalStorage<PathGuard>({
   name: 'filesystem-mcp:path-guard',
 });
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function withPathGuard<T>(guard: PathGuard, run: () => T): T {
   return pathGuardContext.run(guard, run);
 }

@@ -198,7 +198,6 @@ export const DEFAULT_SEARCH_TIMEOUT_MS = parseEnvInt(
 
 const ALLOW_SENSITIVE_FILES = parseEnvBool('FS_CONTEXT_ALLOW_SENSITIVE', false);
 const ENV_DENYLIST = parseEnvList('FS_CONTEXT_DENYLIST');
-const ENV_ALLOWLIST = parseEnvList('FS_CONTEXT_ALLOWLIST');
 
 /**
  * Number of search worker threads to use.
@@ -257,8 +256,6 @@ export const SENSITIVE_FILE_DENYLIST = [
   ...(ALLOW_SENSITIVE_FILES ? [] : DEFAULT_SENSITIVE_PATTERNS),
   ...ENV_DENYLIST,
 ];
-
-const SENSITIVE_FILE_ALLOWLIST = [...ENV_ALLOWLIST];
 
 export const KNOWN_BINARY_EXTENSIONS = new Set([
   '.png',

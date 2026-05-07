@@ -37,7 +37,7 @@ import {
   SessionContext,
 } from '../lib/logger.js';
 import { onMetricsUpdate } from '../lib/observability.js';
-import { withAllowedDirectoriesState } from '../lib/paths.js';
+import { withPathGuard } from '../lib/paths.js';
 import { createInMemoryResourceStore } from '../lib/resource-store.js';
 
 import { pkgInfo } from '../pkg-info.js';
@@ -632,9 +632,8 @@ async function handleSessionTransportRequest(
     ? { sessionId: session.transport.sessionId }
     : {};
   await SessionContext.run(store, async () => {
-    await withAllowedDirectoriesState(
-      session.rootsManager.getAllowedDirectoriesState(),
-      () => session.transport.handleRequest(req, res, body)
+    await withPathGuard(session.rootsManager.pathGuard, () =>
+      session.transport.handleRequest(req, res, body)
     );
   });
 }
