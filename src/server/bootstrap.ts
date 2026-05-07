@@ -197,7 +197,14 @@ export async function createServer(
   }
 
   const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> =
-    { capabilities };
+    {
+      capabilities,
+      enforceStrictCapabilities: true,
+      debouncedNotificationMethods: [
+        'notifications/resources/list_changed',
+        'notifications/resources/updated',
+      ],
+    };
 
   if (serverInstructions) {
     serverConfig.instructions =
@@ -375,6 +382,7 @@ async function createHttpSession(
   const transport = new NodeStreamableHTTPServerTransport({
     sessionIdGenerator: () => randomUUID(),
     eventStore,
+    retryInterval: 2_000,
     onsessioninitialized: (sessionId) => {
       sessions.set(sessionId, {
         server: mcpServer,
