@@ -1,6 +1,8 @@
-import type { Icon } from '@modelcontextprotocol/server';
+import type { fromJsonSchema, Icon } from '@modelcontextprotocol/server';
 
 import type { ZodType } from 'zod/v4';
+
+type StandardSchema = ReturnType<typeof fromJsonSchema>;
 
 export interface ToolContract {
   /**
@@ -23,6 +25,13 @@ export interface ToolContract {
    * Zod schema for the tool's input arguments.
    */
   inputSchema: ZodType;
+
+  /**
+   * Pre-built Standard Schema for the wire format. When set, used instead of
+   * converting `inputSchema` at registration time. Use this to inject JSON Schema
+   * constructs (e.g. oneOf/allOf) that Zod can't express natively.
+   */
+  inputSchemaJson?: StandardSchema;
 
   /**
    * Zod schema for the tool's output result (optional).

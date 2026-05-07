@@ -21,6 +21,8 @@ import { channel } from 'node:diagnostics_channel';
 import { performance } from 'node:perf_hooks';
 import { format } from 'node:util';
 
+import type { ZodType } from 'zod/v4';
+
 import {
   DEFAULT_TASK_TTL_MS,
   MAX_CONCURRENT_TASKS,
@@ -31,6 +33,7 @@ import {
 import { ErrorCode, McpError } from '../lib/errors.js';
 import { Logger } from '../lib/logger.js';
 import { isRecord } from '../lib/utils.js';
+import { toToolJsonSchema } from '../schemas/json-schema.js';
 
 import {
   buildToolErrorResponse,
@@ -523,6 +526,23 @@ async function runTaskInBackground<Args extends ToolSchema>(
  * returns `true`. Returns `false` so the caller can fall through to standard
  * `server.registerTool`.
  */
+// Convert Zod schemas in a tool definition to Standard Schemas for MCP wire format.
+// Uses inputSchemaJson when provided (pre-augmented schema, e.g. with oneOf).
+function convertSchemasToWire(
+  toolDef: Record<string, unknown>,
+  inputSchemaJson?: ReturnType<typeof toToolJsonSchema>
+): Record<string, unknown> {
+  const result = { ...toolDef };
+  result.inputSchema =
+    inputSchemaJson ?? toToolJsonSchema(result.inputSchema as ZodType);
+  if (result.outputSchema != null) {
+    result.outputSchema = toToolJsonSchema(result.outputSchema as ZodType);
+  }
+  // Remove the helper field — not part of MCP wire protocol
+  delete result.inputSchemaJson;
+  return result;
+}
+
 function tryRegisterToolTask<Args extends ToolSchema>(
   server: McpServer,
   toolName: string,
@@ -542,9 +562,12 @@ function tryRegisterToolTask<Args extends ToolSchema>(
 
   server.experimental.tasks.registerToolTask(
     toolName,
-    withDefaultIcons(
-      { ...toolDef, execution: { ...existingExecution, taskSupport } },
-      iconInfo
+    convertSchemasToWire(
+      withDefaultIcons(
+        { ...toolDef, execution: { ...existingExecution, taskSupport } },
+        iconInfo
+      ),
+      (toolDef as ToolContract).inputSchemaJson
     ) as never,
     taskHandler as never
   );
@@ -615,7 +638,10 @@ export function registerStandardTool<
 
   server.registerTool(
     toolDef.name,
-    withDefaultIcons({ ...toolDef }, options.iconInfo),
+    convertSchemasToWire(
+      withDefaultIcons({ ...toolDef }, options.iconInfo),
+      toolDef.inputSchemaJson
+    ),
     validatedHandler
   );
 }
