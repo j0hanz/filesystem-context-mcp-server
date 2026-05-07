@@ -114,3 +114,11 @@ export const includeHiddenField = () =>
   defaultFalseBoolean('Include hidden items (starting with .)');
 export const includeIgnoredField = () =>
   defaultFalseBoolean('Include ignored items (node_modules, .git, etc).');
+
+export const ContinuationSchema = z
+  .strictObject({
+    tool: z.string().describe('Tool name to call'),
+    args: z.record(z.string(), z.unknown()).describe('Ready-to-use arguments'),
+    hint: z.string().describe('One sentence: what data remains'),
+  })
+  .meta({ id: 'Continuation' });

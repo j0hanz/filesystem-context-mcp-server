@@ -189,6 +189,10 @@ export const DEFAULT_READ_MANY_MAX_TOTAL_SIZE = parseEnvInt(
   10 * KIB,
   100 * MIB
 );
+
+/** Default line chunk size for read continuation when no explicit range was given. */
+export const DEFAULT_CONTINUATION_CHUNK_SIZE = 200;
+
 export const DEFAULT_SEARCH_TIMEOUT_MS = parseEnvInt(
   'DEFAULT_SEARCH_TIMEOUT',
   5000,
