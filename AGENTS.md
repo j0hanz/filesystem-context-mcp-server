@@ -4,7 +4,7 @@ This file provides guidance to agents built on top of the filesystem MCP server 
 
 ## Project
 
-Secure filesystem MCP server (Model Context Protocol) — gives AI clients sandboxed access to the local filesystem via 18 tools, 6 resources, and 4 prompts. Published to npm as `@j0hanz/filesystem-mcp`. Requires **Node.js >= 24**.
+Secure filesystem MCP server (Model Context Protocol) — gives AI clients sandboxed access to the local filesystem via 18 tools, 2 resources (`internal://instructions`, `filesystem-mcp://result/{id}`), and 3 prompts (`get-help`, `compare-files`, `analyze-path`). Published to npm as `@j0hanz/filesystem-mcp`. Requires **Node.js >= 24**.
 
 ## Commands
 
@@ -55,7 +55,7 @@ Each tool lives in [src/tools/](src/tools/) and exports two things:
 1. A `<NAME>_TOOL: ToolContract` (see [src/tools/contract.ts](src/tools/contract.ts)) — name, title, description, Zod input/output schemas, annotations (`readOnlyHint`/`destructiveHint`/`idempotentHint`), `taskSupport` level, optional `nuances`/`gotchas` strings used to generate help docs.
 2. A `register<Name>Tool(server, options)` function.
 
-[src/tools.ts](src/tools.ts) is the registry — adding a new tool means appending one entry to `TOOL_ENTRIES` and exporting the contract + register fn from the tool file. The contract is also consumed by [src/resources/tool-info.ts](src/resources/tool-info.ts) and [src/resources/tool-catalog.ts](src/resources/tool-catalog.ts) to auto-generate `internal://` documentation resources, so writing accurate `description`/`nuances`/`gotchas` is **load-bearing for the runtime help system**, not just dev docs.
+[src/tools.ts](src/tools.ts) is the registry — adding a new tool means appending one entry to `TOOL_ENTRIES` and exporting the contract + register fn from the tool file. The contract is also consumed by [src/resources/tool-info.ts](src/resources/tool-info.ts) (and surfaced via the `internal://instructions` resource built from [src/resources/instructions-content.ts](src/resources/instructions-content.ts)) to auto-generate runtime help docs, so writing accurate `description`/`nuances`/`gotchas` is **load-bearing for the runtime help system**, not just dev docs.
 
 ### Schemas
 
@@ -75,7 +75,7 @@ All Zod input/output schemas are centralized in [src/schemas.ts](src/schemas.ts)
 
 ### Tests
 
-Tests in [src/**tests**/](__tests__/) use Node's native `node:test` runner via `tsx/esm`. Integration tests use [src/**tests**/linked-transport.ts](__tests__/linked-transport.ts) (an in-memory pair of MCP transports) with helpers in [src/**tests**/helpers.ts](__tests__/helpers.ts) (`createTestEnv`, `assertOk`, `assertToolError`, `getStructured`). Each test gets an isolated `mkdtemp` directory and resets `setAllowedDirectoriesResolved` on cleanup. The contract test [src/**tests**/contract.test.ts](__tests__/contract.test.ts) enforces that all 18 tools are registered with the correct annotations — update it when adding/removing tools.
+Tests in [`__tests__/`](__tests__/) use Node's native `node:test` runner via `tsx/esm`. Integration tests use [`linked-transport.ts`](__tests__/linked-transport.ts) (an in-memory pair of MCP transports) with helpers in [`helpers.ts`](__tests__/helpers.ts) (`createTestEnv`, `assertOk`, `assertToolError`, `getStructured`). Each test gets an isolated `mkdtemp` directory and resets `setAllowedDirectoriesResolved` on cleanup. The contract test [`contract.test.ts`](__tests__/contract.test.ts) enforces that all 18 tools are registered with the correct annotations — update it when adding/removing tools.
 
 ## TypeScript Conventions
 
@@ -97,4 +97,4 @@ When adding HTTP behavior, preserve these guarantees from `bootstrap.ts`:
 
 ## Release
 
-CI in [.github/workflows/release.yml](.github/workflows/release.yml) is `workflow_dispatch`-triggered (patch/minor/major/custom). It runs `prepublishOnly` (lint + type-check + build) before tagging and publishing to npm and GHCR. Do not bypass it for releases.
+CI in [.github/workflows/release.yml](.github/workflows/release.yml) is `workflow_dispatch`-triggered (patch/minor/major/custom version). It runs `npm run lint`, `npm run type-check`, `npm run test`, and `npm run build` before tagging and publishing to npm and GHCR. Do not bypass it for releases.
