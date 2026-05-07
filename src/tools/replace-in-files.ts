@@ -1,5 +1,3 @@
-import type { McpServer } from '@modelcontextprotocol/server';
-
 import { Buffer } from 'node:buffer';
 import { type FileHandle, open } from 'node:fs/promises';
 import { basename, relative } from 'node:path';
@@ -27,26 +25,21 @@ import {
   SearchAndReplaceInputSchema,
   SearchAndReplaceOutputSchema,
 } from '../schemas.js';
+import { defineTool } from './define-tool.js';
 import { FILE_EDIT_ICONS } from './icons.js';
 import {
   buildStructuredError,
-  buildToolErrorResponse,
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
-  executeToolWithDiagnostics,
   resolveFinalProgressCurrent,
   resolvePathOrRoot,
   runWithProgressSession,
-  type ToolContext,
   type ToolContract,
-  type ToolRegistrationOptions,
   type ToolResponse,
-  type ToolResult,
   truncateProgressPattern,
 } from './shared.js';
-import { registerStandardTool } from './task-support.js';
 
-export const SEARCH_AND_REPLACE_TOOL: ToolContract = {
+const SEARCH_AND_REPLACE_TOOL: ToolContract = {
   name: 'search_and_replace',
   title: 'Search and Replace',
   description:
@@ -517,71 +510,59 @@ async function handleSearchAndReplace(
   );
 }
 
-export function registerSearchAndReplaceTool(
-  server: McpServer,
-  options: ToolRegistrationOptions
-): void {
-  const handler = (
-    args: z.infer<typeof SearchAndReplaceInputSchema>,
-    ctx: ToolContext
-  ): Promise<ToolResult<z.infer<typeof SearchAndReplaceOutputSchema>>> =>
-    executeToolWithDiagnostics({
-      toolName: 'search_and_replace',
-      ctx,
-      outputSchema: SearchAndReplaceOutputSchema,
-      timedSignal: {},
-      ...(args.path ? { context: { path: args.path } } : {}),
-      run: async (signal) => {
-        const dryLabel = args.dryRun ? ' [dry run]' : '';
-        const truncatedPattern = truncateProgressPattern(args.searchPattern);
-        const context = `"${truncatedPattern}" in ${args.pattern ?? '**/*'}${dryLabel}`;
-        const label = `${SEARCH_AND_REPLACE_TOOL.title}: ${context}`;
+export const SEARCH_AND_REPLACE = defineTool<
+  SearchAndReplaceArgs,
+  SearchAndReplaceOutput
+>({
+  contract: SEARCH_AND_REPLACE_TOOL,
+  defaultErrorCode: ErrorCode.UNKNOWN,
+  diagnosticsContext: (args) => (args.path ? { path: args.path } : {}),
+  run: async (args, ctx) => {
+    const dryLabel = args.dryRun ? ' [dry run]' : '';
+    const truncatedPattern = truncateProgressPattern(args.searchPattern);
+    const context = `"${truncatedPattern}" in ${args.pattern ?? '**/*'}${dryLabel}`;
+    const label = `${SEARCH_AND_REPLACE_TOOL.title}: ${context}`;
 
-        return runWithProgressSession(ctx, label, async (progress) => {
-          const progressWithMessage = ({
-            current,
-            total,
-          }: {
-            total?: number;
-            current: number;
-          }): void => {
-            progress.update({
-              current,
-              ...(total !== undefined ? { total } : {}),
-              message: `${SEARCH_AND_REPLACE_TOOL.title}: ${truncatedPattern} [${current} files]`,
-            });
-          };
-
-          const result = await handleSearchAndReplace(
-            args,
-            signal,
-            progressWithMessage
-          );
-          const sc = result.structuredContent;
-          const finalCurrent = resolveFinalProgressCurrent(
-            progress,
-            sc.processedFiles + 1
-          );
-          const matchWord = sc.matches === 1 ? 'match' : 'matches';
-          const fileWord = sc.filesChanged === 1 ? 'file' : 'files';
-          let suffix = `${sc.matches} ${matchWord} in ${sc.filesChanged} ${fileWord}`;
-          if (sc.failedFiles) suffix += `, ${sc.failedFiles} failed`;
-          if (!args.dryRun) {
-            void ctx.log?.(
-              'info',
-              `search_and_replace: ${String(sc.matches)} matches in ${String(sc.filesChanged)} files`,
-              'search_and_replace'
-            );
-          }
-          return { value: result, suffix, finalCurrent };
+    return runWithProgressSession(ctx, label, async (progress) => {
+      const progressWithMessage = ({
+        current,
+        total,
+      }: {
+        total?: number;
+        current: number;
+      }): void => {
+        progress.update({
+          current,
+          ...(total !== undefined ? { total } : {}),
+          message: `${SEARCH_AND_REPLACE_TOOL.title}: ${truncatedPattern} [${current} files]`,
         });
-      },
-      onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
-    });
+      };
 
-  registerStandardTool(server, SEARCH_AND_REPLACE_TOOL, handler, options);
-}
+      const result = await handleSearchAndReplace(
+        args,
+        ctx.signal,
+        progressWithMessage
+      );
+      const sc = result.structuredContent;
+      const finalCurrent = resolveFinalProgressCurrent(
+        progress,
+        sc.processedFiles + 1
+      );
+      const matchWord = sc.matches === 1 ? 'match' : 'matches';
+      const fileWord = sc.filesChanged === 1 ? 'file' : 'files';
+      let suffix = `${sc.matches} ${matchWord} in ${sc.filesChanged} ${fileWord}`;
+      if (sc.failedFiles) suffix += `, ${sc.failedFiles} failed`;
+      if (!args.dryRun) {
+        void ctx.log?.(
+          'info',
+          `search_and_replace: ${String(sc.matches)} matches in ${String(sc.filesChanged)} files`,
+          'search_and_replace'
+        );
+      }
+      return { value: result, suffix, finalCurrent };
+    });
+  },
+});
 
 function buildSearchAndReplaceText(
   summary: ReplaceSummary,

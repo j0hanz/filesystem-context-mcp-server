@@ -1,5 +1,3 @@
-import type { McpServer } from '@modelcontextprotocol/server';
-
 import { basename, relative } from 'node:path';
 
 import type { z } from 'zod/v4';
@@ -13,27 +11,22 @@ import { searchFiles } from '../lib/file-operations/search.js';
 
 import { formatOperationSummary, joinLines } from '../config.js';
 import { SearchFilesInputSchema, SearchFilesOutputSchema } from '../schemas.js';
+import { defineTool } from './define-tool.js';
 import { DIRECTORY_ICONS } from './icons.js';
 import {
-  buildToolErrorResponse,
   buildToolResponse,
   decodeOffsetCursor,
   encodeOffsetCursor,
-  executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolveFinalProgressCurrent,
   resolvePathOrRoot,
   runWithProgressSession,
-  type ToolContext,
   type ToolContract,
-  type ToolRegistrationOptions,
   type ToolResponse,
-  type ToolResult,
   truncateProgressPattern,
 } from './shared.js';
-import { registerStandardTool } from './task-support.js';
 
-export const SEARCH_FILES_TOOL: ToolContract = {
+const SEARCH_FILES_TOOL: ToolContract = {
   name: 'find',
   title: 'Find Files',
   description:
@@ -45,6 +38,7 @@ export const SEARCH_FILES_TOOL: ToolContract = {
   icons: DIRECTORY_ICONS,
   nuances: ['Respects `.gitignore` unless `includeIgnored=true`.'],
   taskSupport: 'optional',
+  defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
 } as const;
 
 function buildTruncatedReason(summary: {
@@ -173,75 +167,63 @@ async function handleSearchFiles(
   return buildToolResponse(text, structured);
 }
 
-export function registerSearchFilesTool(
-  server: McpServer,
-  options: ToolRegistrationOptions
-): void {
-  const handler = (
-    args: z.infer<typeof SearchFilesInputSchema>,
-    ctx: ToolContext
-  ): Promise<ToolResult<z.infer<typeof SearchFilesOutputSchema>>> =>
-    executeToolWithDiagnostics({
-      toolName: 'find',
-      ctx,
-      outputSchema: SearchFilesOutputSchema,
-      timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
-      context: { path: args.path ?? '.' },
-      run: async (signal) => {
-        const rawScopeLabel = args.path ? basename(args.path) : '.';
-        const scopeLabel = rawScopeLabel || '.';
-        const { pattern } = args;
-        const truncatedPattern = truncateProgressPattern(pattern);
-        const context = `${truncatedPattern} in ${scopeLabel}`;
-        const label = `${SEARCH_FILES_TOOL.title}: ${context}`;
+export const SEARCH_FILES = defineTool<
+  z.infer<typeof SearchFilesInputSchema>,
+  z.infer<typeof SearchFilesOutputSchema>
+>({
+  contract: SEARCH_FILES_TOOL,
+  defaultErrorCode: ErrorCode.UNKNOWN,
+  diagnosticsContext: (args) => ({ path: args.path ?? '.' }),
+  run: async (args, ctx) => {
+    const rawScopeLabel = args.path ? basename(args.path) : '.';
+    const scopeLabel = rawScopeLabel || '.';
+    const { pattern } = args;
+    const truncatedPattern = truncateProgressPattern(pattern);
+    const context = `${truncatedPattern} in ${scopeLabel}`;
+    const label = `${SEARCH_FILES_TOOL.title}: ${context}`;
 
-        return runWithProgressSession(ctx, label, async (progress) => {
-          const progressWithMessage = ({
-            current,
-            total,
-          }: {
-            total?: number;
-            current: number;
-          }): void => {
-            progress.update({
-              current,
-              ...(total !== undefined ? { total } : {}),
-              message: `${SEARCH_FILES_TOOL.title}: ${truncatedPattern} [${current} files]`,
-            });
-          };
-
-          const result = await handleSearchFiles(
-            args,
-            signal,
-            progressWithMessage
-          );
-          const sc = result.structuredContent;
-          const { totalMatches = 0, stoppedReason } = sc;
-
-          let suffix: string;
-          if (totalMatches === 0) {
-            suffix = 'No matches';
-          } else {
-            suffix = `${totalMatches} ${totalMatches === 1 ? 'match' : 'matches'}`;
-            if (stoppedReason === 'timeout') {
-              suffix += ' [timeout]';
-            } else if (stoppedReason === 'maxResults') {
-              suffix += ' [max results]';
-            } else if (stoppedReason === 'maxFiles') {
-              suffix += ' [max files]';
-            }
-          }
-
-          const finalCurrent = resolveFinalProgressCurrent(
-            progress,
-            (sc.filesScanned ?? 0) + 1
-          );
-          return { value: result, suffix, finalCurrent };
+    return runWithProgressSession(ctx, label, async (progress) => {
+      const progressWithMessage = ({
+        current,
+        total,
+      }: {
+        total?: number;
+        current: number;
+      }): void => {
+        progress.update({
+          current,
+          ...(total !== undefined ? { total } : {}),
+          message: `${SEARCH_FILES_TOOL.title}: ${truncatedPattern} [${current} files]`,
         });
-      },
-      onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
-    });
+      };
 
-  registerStandardTool(server, SEARCH_FILES_TOOL, handler, options);
-}
+      const result = await handleSearchFiles(
+        args,
+        ctx.signal,
+        progressWithMessage
+      );
+      const sc = result.structuredContent;
+      const { totalMatches = 0, stoppedReason } = sc;
+
+      let suffix: string;
+      if (totalMatches === 0) {
+        suffix = 'No matches';
+      } else {
+        suffix = `${totalMatches} ${totalMatches === 1 ? 'match' : 'matches'}`;
+        if (stoppedReason === 'timeout') {
+          suffix += ' [timeout]';
+        } else if (stoppedReason === 'maxResults') {
+          suffix += ' [max results]';
+        } else if (stoppedReason === 'maxFiles') {
+          suffix += ' [max files]';
+        }
+      }
+
+      const finalCurrent = resolveFinalProgressCurrent(
+        progress,
+        (sc.filesScanned ?? 0) + 1
+      );
+      return { value: result, suffix, finalCurrent };
+    });
+  },
+});

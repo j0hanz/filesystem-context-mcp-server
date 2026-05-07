@@ -1,5 +1,3 @@
-import type { McpServer } from '@modelcontextprotocol/server';
-
 import { relative } from 'node:path';
 
 import RE2 from 're2';
@@ -19,24 +17,21 @@ import { GrepInputSchema } from '../schemas/inputs.js';
 import { GrepOutputSchema } from '../schemas/outputs.js';
 
 import { formatOperationSummary } from '../config.js';
+import { defineTool } from './define-tool.js';
 import { SEARCH_ICONS } from './icons.js';
 import {
   buildResourceLink,
-  buildToolErrorResponse,
   buildToolResponse,
-  executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolveFinalProgressCurrent,
   resolvePathOrRoot,
   runWithProgressSession,
-  type ToolContext,
   type ToolContract,
   type ToolRegistrationOptions,
   type ToolResponse,
-  type ToolResult,
   truncateProgressPattern,
 } from './shared.js';
-import { registerStandardTool, reportTaskStatus } from './task-support.js';
+import { reportTaskStatus } from './task-support.js';
 
 /**
  * Configuration constants for the Search Content tool.
@@ -139,7 +134,7 @@ function buildSearchPreviewState(
   };
 }
 
-export const SEARCH_CONTENT_TOOL: ToolContract = {
+const SEARCH_CONTENT_TOOL: ToolContract = {
   name: 'grep',
   title: 'Search Content',
   description:
@@ -407,65 +402,51 @@ async function handleSearchContent(
   return buildToolResponse(text, fullStructured);
 }
 
-export function registerSearchContentTool(
-  server: McpServer,
-  options: ToolRegistrationOptions
-): void {
-  const handler = (
-    args: SearchInput,
-    ctx: ToolContext
-  ): Promise<ToolResult<SearchOutput>> =>
-    executeToolWithDiagnostics({
-      toolName: 'grep',
-      ctx,
-      outputSchema: GrepOutputSchema,
-      context: { path: args.path ?? '.' },
-      run: async (signal) => {
-        const pattern = args.searchPattern;
-        const scope = args.pattern;
-        const progressLabel = `${SEARCH_CONTENT_TOOL.title}: ${truncateProgressPattern(pattern)}`;
+export const SEARCH_CONTENT = defineTool<SearchInput, SearchOutput>({
+  contract: SEARCH_CONTENT_TOOL,
+  defaultErrorCode: ErrorCode.UNKNOWN,
+  diagnosticsContext: (args) => ({ path: args.path ?? '.' }),
+  run: async (args, ctx) => {
+    const pattern = args.searchPattern;
+    const scope = args.pattern;
+    const progressLabel = `${SEARCH_CONTENT_TOOL.title}: ${truncateProgressPattern(pattern)}`;
 
-        return runWithProgressSession(ctx, progressLabel, async (progress) => {
-          const progressWithMessage = ({
-            current,
-            total,
-          }: {
-            total?: number;
-            current: number;
-          }): void => {
-            progress.update({
-              current,
-              ...(total !== undefined ? { total } : {}),
-              message: `${progressLabel} [${current} files]`,
-            });
-            void reportTaskStatus(`${progressLabel} ${current} files`);
-          };
-
-          const result = await handleSearchContent(
-            args,
-            signal,
-            options.resourceStore,
-            progressWithMessage
-          );
-
-          const sc = result.structuredContent;
-          const { totalMatches = 0, filesMatched = 0, stoppedReason } = sc;
-          const suffix = buildCompletionSuffix(
-            totalMatches,
-            filesMatched,
-            scope,
-            stoppedReason
-          );
-          const finalCurrent = resolveFinalProgressCurrent(
-            progress,
-            (sc.filesScanned ?? 0) + 1
-          );
-          return { value: result, suffix, finalCurrent };
+    return runWithProgressSession(ctx, progressLabel, async (progress) => {
+      const progressWithMessage = ({
+        current,
+        total,
+      }: {
+        total?: number;
+        current: number;
+      }): void => {
+        progress.update({
+          current,
+          ...(total !== undefined ? { total } : {}),
+          message: `${progressLabel} [${current} files]`,
         });
-      },
-      onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path ?? '.'),
-    });
+        void reportTaskStatus(`${progressLabel} ${current} files`);
+      };
 
-  registerStandardTool(server, SEARCH_CONTENT_TOOL, handler, options);
-}
+      const result = await handleSearchContent(
+        args,
+        ctx.signal,
+        ctx.resourceStore,
+        progressWithMessage
+      );
+
+      const sc = result.structuredContent;
+      const { totalMatches = 0, filesMatched = 0, stoppedReason } = sc;
+      const suffix = buildCompletionSuffix(
+        totalMatches,
+        filesMatched,
+        scope,
+        stoppedReason
+      );
+      const finalCurrent = resolveFinalProgressCurrent(
+        progress,
+        (sc.filesScanned ?? 0) + 1
+      );
+      return { value: result, suffix, finalCurrent };
+    });
+  },
+});

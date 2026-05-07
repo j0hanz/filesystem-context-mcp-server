@@ -1,5 +1,3 @@
-import type { McpServer } from '@modelcontextprotocol/server';
-
 import { readFile, stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 
@@ -13,23 +11,20 @@ import { validateExistingPath } from '../lib/paths.js';
 import { DiffFilesInputSchema } from '../schemas/inputs.js';
 import { DiffFilesOutputSchema } from '../schemas/outputs.js';
 
+import { defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
   buildResourceLink,
-  buildToolErrorResponse,
   buildToolResponse,
-  executeToolWithDiagnostics,
   maybeExternalizeTextContent,
   READ_ONLY_TOOL_ANNOTATIONS,
-  type ToolContext,
   type ToolContract,
   type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
 } from './shared.js';
-import { registerStandardTool } from './task-support.js';
 
-export const DIFF_FILES_TOOL: ToolContract = {
+const DIFF_FILES_TOOL: ToolContract = {
   name: 'diff_files',
   title: 'Diff Files',
   description:
@@ -185,44 +180,34 @@ async function handleDiffFiles(
   );
 }
 
-export function registerDiffFilesTool(
-  server: McpServer,
-  options: ToolRegistrationOptions
-): void {
-  const handler = (
-    args: z.infer<typeof DiffFilesInputSchema>,
-    ctx: ToolContext
-  ): Promise<ToolResult<z.infer<typeof DiffFilesOutputSchema>>> =>
-    executeToolWithDiagnostics({
-      toolName: 'diff_files',
-      ctx,
-      outputSchema: DiffFilesOutputSchema,
-      timedSignal: {},
-      context: { path: args.paths[0] ?? '' },
-      run: (signal) => handleDiffFiles(args, signal, options.resourceStore),
-      onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.paths[0] ?? ''),
-    });
+type DiffInput = z.infer<typeof DiffFilesInputSchema>;
+type DiffOutput = z.infer<typeof DiffFilesOutputSchema>;
 
-  registerStandardTool(server, DIFF_FILES_TOOL, handler, options, {
-    progressMessage: (args) => {
-      const n1 = basename(args.paths[0] ?? '');
-      const n2 = basename(args.paths[1] ?? '');
-      return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2}`;
-    },
-    completionMessage: (args, result) => {
-      const n1 = basename(args.paths[0] ?? '');
-      const n2 = basename(args.paths[1] ?? '');
-      if (result.isError)
-        return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2} • ${result.errorCode}`;
-      const sc = result.structuredContent;
-      if (sc.isIdentical)
-        return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2} • identical`;
-      const added = sc.stats?.additions ?? 0;
-      const removed = sc.stats?.deletions ?? 0;
-      if (added > 0 || removed > 0)
-        return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2} • +${added} -${removed}`;
-      return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2}`;
-    },
-  });
-}
+export const DIFF_FILES = defineTool<DiffInput, DiffOutput>({
+  contract: DIFF_FILES_TOOL,
+  defaultErrorCode: ErrorCode.UNKNOWN,
+  diagnosticsContext: (args) => ({ path: args.paths[0] ?? '' }),
+  run: (args, ctx) => handleDiffFiles(args, ctx.signal, ctx.resourceStore),
+  progressMessage: (args) => {
+    const n1 = basename(args.paths[0] ?? '');
+    const n2 = basename(args.paths[1] ?? '');
+    return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2}`;
+  },
+  completionMessage: (
+    args: DiffInput,
+    result: ToolResult<DiffOutput>
+  ): string => {
+    const n1 = basename(args.paths[0] ?? '');
+    const n2 = basename(args.paths[1] ?? '');
+    if (result.isError)
+      return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2} • ${result.errorCode}`;
+    const sc = result.structuredContent;
+    if (sc.isIdentical)
+      return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2} • identical`;
+    const added = sc.stats?.additions ?? 0;
+    const removed = sc.stats?.deletions ?? 0;
+    if (added > 0 || removed > 0)
+      return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2} • +${added} -${removed}`;
+    return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2}`;
+  },
+});

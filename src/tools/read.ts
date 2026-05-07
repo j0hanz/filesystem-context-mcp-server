@@ -1,5 +1,3 @@
-import type { McpServer } from '@modelcontextprotocol/server';
-
 import { basename } from 'node:path';
 
 import type { z } from 'zod/v4';
@@ -13,23 +11,19 @@ import { calculateFileContentHash, readFile } from '../lib/fs-helpers.js';
 import { ReadFileInputSchema } from '../schemas/inputs.js';
 import { ReadFileOutputSchema } from '../schemas/outputs.js';
 
+import { defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
   buildResourceLink,
-  buildToolErrorResponse,
   buildToolResponse,
-  executeToolWithDiagnostics,
   maybeExternalizeTextContent,
   READ_ONLY_TOOL_ANNOTATIONS,
-  type ToolContext,
   type ToolContract,
-  type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
 } from './shared.js';
-import { registerStandardTool } from './task-support.js';
 
-export const READ_FILE_TOOL: ToolContract = {
+const READ_FILE_TOOL: ToolContract = {
   name: 'read',
   title: 'Read File',
   description:
@@ -44,13 +38,13 @@ export const READ_FILE_TOOL: ToolContract = {
     'Large content is externalized to `filesystem-mcp://result/{id}` and preview is returned inline.',
   ],
   taskSupport: 'forbidden',
+  defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
 } as const;
 
 type ReadFileInput = z.infer<typeof ReadFileInputSchema>;
 type ReadFileOutput = z.infer<typeof ReadFileOutputSchema>;
 type ReadFileHandlerResult = Awaited<ReturnType<typeof readFile>>;
 
-const READ_TOOL_NAME = 'read';
 const READ_TOOL_LABEL = READ_FILE_TOOL.title;
 const FULL_FILE_CONTENTS_DESCRIPTION = 'Full file contents';
 
@@ -104,7 +98,7 @@ function maybeBuildExternalizedReadResponse(
   filePath: string,
   content: string,
   structured: ReadFileOutput,
-  resourceStore?: ToolRegistrationOptions['resourceStore']
+  resourceStore?: Parameters<typeof maybeExternalizeTextContent>[0]
 ): ToolResponse<ReadFileOutput> | undefined {
   const externalized = maybeExternalizeTextContent(resourceStore, content, {
     name: buildReadResourceName(filePath),
@@ -192,7 +186,7 @@ function buildReadCompletionMessage(
 async function handleReadFile(
   args: ReadFileInput,
   signal?: AbortSignal,
-  resourceStore?: ToolRegistrationOptions['resourceStore']
+  resourceStore?: Parameters<typeof maybeExternalizeTextContent>[0]
 ): Promise<ToolResponse<ReadFileOutput>> {
   const options = buildReadOptions(args, signal);
   const result = await readFile(args.path ?? '', options);
@@ -218,27 +212,10 @@ async function handleReadFile(
   return buildToolResponse(result.content, structured);
 }
 
-export function registerReadFileTool(
-  server: McpServer,
-  options: ToolRegistrationOptions
-): void {
-  const handler = (
-    args: ReadFileInput,
-    ctx: ToolContext
-  ): Promise<ToolResult<ReadFileOutput>> =>
-    executeToolWithDiagnostics({
-      toolName: READ_TOOL_NAME,
-      ctx,
-      outputSchema: ReadFileOutputSchema,
-      timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
-      context: { path: args.path },
-      run: (signal) => handleReadFile(args, signal, options.resourceStore),
-      onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.NOT_FILE, args.path),
-    });
-
-  registerStandardTool(server, READ_FILE_TOOL, handler, options, {
-    progressMessage: buildReadProgressMessage,
-    completionMessage: buildReadCompletionMessage,
-  });
-}
+export const READ_FILE = defineTool<ReadFileInput, ReadFileOutput>({
+  contract: READ_FILE_TOOL,
+  defaultErrorCode: ErrorCode.NOT_FILE,
+  run: (args, ctx) => handleReadFile(args, ctx.signal, ctx.resourceStore),
+  progressMessage: buildReadProgressMessage,
+  completionMessage: buildReadCompletionMessage,
+});

@@ -1,5 +1,3 @@
-import type { McpServer } from '@modelcontextprotocol/server';
-
 import { basename } from 'node:path';
 
 import type { z } from 'zod/v4';
@@ -10,31 +8,28 @@ import { readMultipleFiles } from '../lib/file-operations/metadata.js';
 import { ReadManyInputSchema } from '../schemas/inputs.js';
 import { ReadManyOutputSchema } from '../schemas/outputs.js';
 
+import { defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
   buildBatchPathContext,
   buildResourceLink,
   buildStructuredError,
-  buildToolErrorResponse,
   buildToolResponse,
   completeProgressSession,
   createBatchProgressCallbacks,
-  executeToolWithDiagnostics,
   maybeExternalizeTextContent,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolveFinalProgressCurrent,
-  type ToolContext,
   type ToolContract,
   type ToolRegistrationOptions,
   type ToolResponse,
-  type ToolResult,
 } from './shared.js';
-import { registerStandardTool, reportTaskStatus } from './task-support.js';
+import { reportTaskStatus } from './task-support.js';
 
 const READ_MANY_TOOL_NAME = 'read_many';
 const FULL_FILE_CONTENTS_DESCRIPTION = 'Full file contents';
 
-export const READ_MANY_TOOL: ToolContract = {
+const READ_MANY_TOOL: ToolContract = {
   name: READ_MANY_TOOL_NAME,
   title: 'Read Multiple Files',
   description:
@@ -45,6 +40,7 @@ export const READ_MANY_TOOL: ToolContract = {
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   icons: FILE_READ_ICONS,
   taskSupport: 'optional',
+  defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
 } as const;
 
 const READ_MANY_TOOL_LABEL = READ_MANY_TOOL.title;
@@ -236,61 +232,44 @@ async function handleReadMultipleFiles(
   return buildToolResponse(payload.text, structured, payload.resourceLinks);
 }
 
-export function registerReadMultipleFilesTool(
-  server: McpServer,
-  options: ToolRegistrationOptions
-): void {
-  const handler = (
-    args: ReadManyInput,
-    ctx: ToolContext
-  ): Promise<ToolResult<ReadManyOutput>> => {
-    const primaryPath = args.paths[0] ?? '';
-    return executeToolWithDiagnostics({
-      toolName: READ_MANY_TOOL_NAME,
-      ctx,
-      outputSchema: ReadManyOutputSchema,
-      timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
-      context: { path: primaryPath },
-      run: async (signal) => {
-        const context = buildBatchPathContext(args.paths, 'files');
-        const label = `${READ_MANY_TOOL_LABEL}: ${context}`;
-        const { progress, onItemComplete: rawOnItemComplete } =
-          createBatchProgressCallbacks(ctx, {
-            toolLabel: READ_MANY_TOOL_LABEL,
-            context,
-            totalItems: args.paths.length,
-            itemVerb: 'read',
-          });
+export const READ_MANY = defineTool<ReadManyInput, ReadManyOutput>({
+  contract: READ_MANY_TOOL,
+  defaultErrorCode: ErrorCode.NOT_FILE,
+  diagnosticsContext: (args) => ({ path: args.paths[0] ?? '' }),
+  run: async (args, ctx) => {
+    const context = buildBatchPathContext(args.paths, 'files');
+    const label = `${READ_MANY_TOOL_LABEL}: ${context}`;
+    const { progress, onItemComplete: rawOnItemComplete } =
+      createBatchProgressCallbacks(ctx, {
+        toolLabel: READ_MANY_TOOL_LABEL,
+        context,
+        totalItems: args.paths.length,
+        itemVerb: 'read',
+      });
 
-        let itemsDone = 0;
-        const onItemComplete = (): void => {
-          rawOnItemComplete();
-          itemsDone++;
-          void reportTaskStatus(
-            `${label} [${itemsDone}/${args.paths.length} read]`
-          );
-        };
+    let itemsDone = 0;
+    const onItemComplete = (): void => {
+      rawOnItemComplete();
+      itemsDone++;
+      void reportTaskStatus(
+        `${label} [${itemsDone}/${args.paths.length} read]`
+      );
+    };
 
-        return completeProgressSession(progress, label, async () => {
-          const result = await handleReadMultipleFiles(
-            args,
-            signal,
-            options.resourceStore,
-            onItemComplete
-          );
+    return completeProgressSession(progress, label, async () => {
+      const result = await handleReadMultipleFiles(
+        args,
+        ctx.signal,
+        ctx.resourceStore,
+        onItemComplete
+      );
 
-          const sc = result.structuredContent;
-          const total = sc.summary.total;
-          const failed = sc.summary.failed;
-          const suffix = failed ? `${failed} failed` : 'done';
-          const finalCurrent = resolveFinalProgressCurrent(progress, total);
-          return { value: result, suffix, finalCurrent };
-        });
-      },
-      onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.NOT_FILE, primaryPath),
+      const sc = result.structuredContent;
+      const total = sc.summary.total;
+      const failed = sc.summary.failed;
+      const suffix = failed ? `${failed} failed` : 'done';
+      const finalCurrent = resolveFinalProgressCurrent(progress, total);
+      return { value: result, suffix, finalCurrent };
     });
-  };
-
-  registerStandardTool(server, READ_MANY_TOOL, handler, options);
-}
+  },
+});

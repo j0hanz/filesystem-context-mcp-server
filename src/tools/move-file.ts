@@ -1,7 +1,6 @@
 import type {
   ElicitRequestFormParams,
   ElicitResult,
-  McpServer,
 } from '@modelcontextprotocol/server';
 
 import { cp, mkdir, rename, rm, stat } from 'node:fs/promises';
@@ -25,22 +24,18 @@ import {
 import { MoveFileInputSchema } from '../schemas/inputs.js';
 import { MoveFileOutputSchema } from '../schemas/outputs.js';
 
+import { defineTool } from './define-tool.js';
 import { FILE_MOVE_ICONS } from './icons.js';
 import {
   buildStructuredError,
   buildToolErrorResponse,
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
-  executeToolWithDiagnostics,
-  type ToolContext,
   type ToolContract,
-  type ToolRegistrationOptions,
-  type ToolResponse,
   type ToolResult,
 } from './shared.js';
-import { registerStandardTool } from './task-support.js';
 
-export const MOVE_FILE_TOOL: ToolContract = {
+const MOVE_FILE_TOOL: ToolContract = {
   name: 'mv',
   title: 'Move File',
   description: 'Move or rename a file or directory.',
@@ -204,7 +199,7 @@ async function handleMoveFile(
   args: z.infer<typeof MoveFileInputSchema>,
   signal?: AbortSignal,
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>
-): Promise<ToolResponse<z.infer<typeof MoveFileOutputSchema>>> {
+): Promise<z.infer<typeof MoveFileOutputSchema>> {
   const sources = args.sources;
   if (sources.length === 0) {
     throw new McpError(ErrorCode.INVALID_INPUT, 'No sources provided.');
@@ -237,32 +232,35 @@ async function handleMoveFile(
 
     if (destExists) {
       const destination = args.destination;
-      const source = sources[0] ?? '';
-      const elicitResult = await elicitInput({
-        mode: 'form',
-        message: `"${destination}" already exists. Overwrite it?`,
-        requestedSchema: {
-          type: 'object',
-          properties: {
-            confirmOverwrite: {
-              type: 'boolean',
-              title: 'Yes, overwrite',
+      try {
+        const elicitResult = await elicitInput({
+          mode: 'form',
+          message: `"${destination}" already exists. Overwrite it?`,
+          requestedSchema: {
+            type: 'object',
+            properties: {
+              confirmOverwrite: {
+                type: 'boolean',
+                title: 'Yes, overwrite',
+              },
             },
+            required: ['confirmOverwrite'],
           },
-          required: ['confirmOverwrite'],
-        },
-      });
-
-      if (
-        elicitResult.action !== 'accept' ||
-        elicitResult.content?.confirmOverwrite !== true
-      ) {
-        // Return early — do not move.
-        return buildToolResponse(`Move cancelled: ${source}`, {
-          ok: false,
-          sources: [],
-          destination: validDest,
         });
+
+        if (
+          elicitResult.action !== 'accept' ||
+          elicitResult.content?.confirmOverwrite !== true
+        ) {
+          // Return early — do not move.
+          return {
+            ok: false,
+            sources: [],
+            destination: validDest,
+          };
+        }
+      } catch {
+        // Client doesn't support form elicitation, proceed without asking.
       }
     }
   }
@@ -304,64 +302,60 @@ async function handleMoveFile(
     }
   }
 
-  return buildToolResponse(message, {
+  return {
     ok: failed.length === 0,
     ...(movedSource ? { source: movedSource } : {}),
     sources: movedSources,
     destination: validDest,
     ...(failed.length > 0 ? { failed } : {}),
-  });
+  };
 }
 
-export function registerMoveFileTool(
-  server: McpServer,
-  options: ToolRegistrationOptions
-): void {
-  const handler = (
-    args: z.infer<typeof MoveFileInputSchema>,
-    ctx: ToolContext
-  ): Promise<ToolResult<z.infer<typeof MoveFileOutputSchema>>> =>
-    executeToolWithDiagnostics({
-      toolName: 'mv',
-      ctx,
-      outputSchema: MoveFileOutputSchema,
-      timedSignal: {},
-      context: { path: args.sources[0] ?? '' },
-      run: async (signal) => {
-        const caps = server.server.getClientCapabilities();
-        const elicitFn =
-          caps?.elicitation && ctx.elicitInput ? ctx.elicitInput : undefined;
-        const result = await handleMoveFile(args, signal, elicitFn);
-        void ctx.log?.(
-          'info',
-          `mv: ${args.sources.join(', ')} \u2192 ${args.destination}`,
-          'mv'
+type MoveInput = z.infer<typeof MoveFileInputSchema>;
+type MoveOutput = z.infer<typeof MoveFileOutputSchema>;
+
+export const MOVE_FILE = defineTool<MoveInput, MoveOutput>({
+  contract: MOVE_FILE_TOOL,
+  run: async (args, ctx) => {
+    const structured = await handleMoveFile(args, ctx.signal, ctx.elicitInput);
+    const isCancelled =
+      !structured.ok && structured.sources.length === 0 && !structured.failed;
+    const message = isCancelled
+      ? `Move cancelled: ${args.sources[0] ?? ''}`
+      : formatMoveMessage(
+          structured.sources.length,
+          structured.failed?.length ?? 0,
+          args.destination
         );
-        return result;
-      },
-      onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.sources[0] ?? ''),
-    });
-
-  registerStandardTool(server, MOVE_FILE_TOOL, handler, options, {
-    progressMessage: (args) => {
-      const dest = basename(args.destination);
-      if (args.sources.length === 1) {
-        return `${MOVE_FILE_TOOL.title}: ${basename(args.sources[0] ?? '')} → ${dest}`;
-      }
-      return `${MOVE_FILE_TOOL.title}: ${args.sources.length} items → ${dest}`;
-    },
-    completionMessage: (args, result) => {
-      const dest = basename(args.destination);
-      if (args.sources.length === 1) {
-        const src = basename(args.sources[0] ?? '');
-        if (result.isError)
-          return `${MOVE_FILE_TOOL.title}: ${src} → ${dest} • ${result.errorCode}`;
-        return `${MOVE_FILE_TOOL.title}: ${src} → ${dest}`;
-      }
+    void ctx.log?.(
+      'info',
+      `mv: ${args.sources.join(', ')} \u2192 ${args.destination}`,
+      'mv'
+    );
+    return buildToolResponse(message, structured);
+  },
+  progressMessage: (args) => {
+    const dest = basename(args.destination);
+    if (args.sources.length === 1) {
+      return `${MOVE_FILE_TOOL.title}: ${basename(args.sources[0] ?? '')} \u2192 ${dest}`;
+    }
+    return `${MOVE_FILE_TOOL.title}: ${args.sources.length} items \u2192 ${dest}`;
+  },
+  completionMessage: (
+    args: MoveInput,
+    result: ToolResult<MoveOutput>
+  ): string => {
+    const dest = basename(args.destination);
+    if (args.sources.length === 1) {
+      const src = basename(args.sources[0] ?? '');
       if (result.isError)
-        return `${MOVE_FILE_TOOL.title}: ${args.sources.length} items → ${dest} • ${result.errorCode}`;
-      return `${MOVE_FILE_TOOL.title}: ${args.sources.length} items → ${dest}`;
-    },
-  });
-}
+        return `${MOVE_FILE_TOOL.title}: ${src} \u2192 ${dest} \u2022 ${result.errorCode}`;
+      return `${MOVE_FILE_TOOL.title}: ${src} \u2192 ${dest}`;
+    }
+    if (result.isError)
+      return `${MOVE_FILE_TOOL.title}: ${args.sources.length} items \u2192 ${dest} \u2022 ${result.errorCode}`;
+    return `${MOVE_FILE_TOOL.title}: ${args.sources.length} items \u2192 ${dest}`;
+  },
+  onError: (error, args) =>
+    buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.sources[0] ?? ''),
+});

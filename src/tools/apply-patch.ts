@@ -1,5 +1,3 @@
-import type { McpServer } from '@modelcontextprotocol/server';
-
 import { stat } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
@@ -19,21 +17,17 @@ import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
 import { ApplyPatchInputSchema } from '../schemas/inputs.js';
 import { ApplyPatchOutputSchema } from '../schemas/outputs.js';
 
+import { defineTool } from './define-tool.js';
 import { FILE_EDIT_ICONS } from './icons.js';
 import {
-  buildToolErrorResponse,
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
-  executeToolWithDiagnostics,
-  type ToolContext,
   type ToolContract,
-  type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
 } from './shared.js';
-import { registerStandardTool } from './task-support.js';
 
-export const APPLY_PATCH_TOOL: ToolContract = {
+const APPLY_PATCH_TOOL: ToolContract = {
   name: 'apply_patch',
   title: 'Apply Patch',
   description:
@@ -299,59 +293,45 @@ async function handleApplyPatch(
   });
 }
 
-export function registerApplyPatchTool(
-  server: McpServer,
-  options: ToolRegistrationOptions
-): void {
-  const handler = (
-    args: z.infer<typeof ApplyPatchInputSchema>,
-    ctx: ToolContext
-  ): Promise<ToolResult<z.infer<typeof ApplyPatchOutputSchema>>> =>
-    executeToolWithDiagnostics({
-      toolName: 'apply_patch',
-      ctx,
-      outputSchema: ApplyPatchOutputSchema,
-      timedSignal: {},
-      context: { path: args.path },
-      run: async (signal) => {
-        const result = await handleApplyPatch(args, signal);
-        if (!args.dryRun) {
-          const sc = result.structuredContent;
-          const added = sc.files.reduce((s, f) => s + (f.linesAdded ?? 0), 0);
-          const removed = sc.files.reduce(
-            (s, f) => s + (f.linesRemoved ?? 0),
-            0
-          );
-          void ctx.log?.(
-            'info',
-            `patch: ${args.path ?? ''} (+${String(added)}/-${String(removed)})`,
-            'apply_patch'
-          );
-        }
-        return result;
-      },
-      onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.path),
-    });
+type PatchInput = z.infer<typeof ApplyPatchInputSchema>;
+type PatchOutput = z.infer<typeof ApplyPatchOutputSchema>;
 
-  registerStandardTool(server, APPLY_PATCH_TOOL, handler, options, {
-    progressMessage: (args) => {
-      const name = basename(args.path ?? '');
-      return args.dryRun
-        ? `${APPLY_PATCH_TOOL.title}: ${name} [dry run]`
-        : `${APPLY_PATCH_TOOL.title}: ${name}`;
-    },
-    completionMessage: (args, result) => {
-      const name = basename(args.path ?? '');
-      if (result.isError)
-        return `${APPLY_PATCH_TOOL.title}: ${name} • ${result.errorCode}`;
+export const APPLY_PATCH = defineTool<PatchInput, PatchOutput>({
+  contract: APPLY_PATCH_TOOL,
+  defaultErrorCode: ErrorCode.UNKNOWN,
+  run: async (args, ctx) => {
+    const result = await handleApplyPatch(args, ctx.signal);
+    if (!args.dryRun) {
       const sc = result.structuredContent;
       const added = sc.files.reduce((s, f) => s + (f.linesAdded ?? 0), 0);
       const removed = sc.files.reduce((s, f) => s + (f.linesRemoved ?? 0), 0);
-      const dry = args.dryRun ? 'dry run ' : '';
-      if (added > 0 || removed > 0)
-        return `${APPLY_PATCH_TOOL.title}: ${name} • ${dry}+${added} -${removed}`;
-      return `${APPLY_PATCH_TOOL.title}: ${name} • ${dry}no changes`;
-    },
-  });
-}
+      void ctx.log?.(
+        'info',
+        `patch: ${args.path ?? ''} (+${String(added)}/-${String(removed)})`,
+        'apply_patch'
+      );
+    }
+    return result;
+  },
+  progressMessage: (args) => {
+    const name = basename(args.path ?? '');
+    return args.dryRun
+      ? `${APPLY_PATCH_TOOL.title}: ${name} [dry run]`
+      : `${APPLY_PATCH_TOOL.title}: ${name}`;
+  },
+  completionMessage: (
+    args: PatchInput,
+    result: ToolResult<PatchOutput>
+  ): string => {
+    const name = basename(args.path ?? '');
+    if (result.isError)
+      return `${APPLY_PATCH_TOOL.title}: ${name} • ${result.errorCode}`;
+    const sc = result.structuredContent;
+    const added = sc.files.reduce((s, f) => s + (f.linesAdded ?? 0), 0);
+    const removed = sc.files.reduce((s, f) => s + (f.linesRemoved ?? 0), 0);
+    const dry = args.dryRun ? 'dry run ' : '';
+    if (added > 0 || removed > 0)
+      return `${APPLY_PATCH_TOOL.title}: ${name} • ${dry}+${added} -${removed}`;
+    return `${APPLY_PATCH_TOOL.title}: ${name} • ${dry}no changes`;
+  },
+});

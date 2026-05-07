@@ -1,5 +1,3 @@
-import type { McpServer } from '@modelcontextprotocol/server';
-
 import { randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
 
@@ -16,22 +14,18 @@ import { ListDirectoryInputSchema } from '../schemas/inputs.js';
 import { ListDirectoryOutputSchema } from '../schemas/outputs.js';
 
 import { formatOperationSummary, joinLines } from '../config.js';
+import { defineTool } from './define-tool.js';
 import { DIRECTORY_ICONS } from './icons.js';
 import {
-  buildToolErrorResponse,
   buildToolResponse,
-  executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolvePathOrRoot,
-  type ToolContext,
   type ToolContract,
-  type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
 } from './shared.js';
-import { registerStandardTool } from './task-support.js';
 
-export const LIST_DIRECTORY_TOOL: ToolContract = {
+const LIST_DIRECTORY_TOOL: ToolContract = {
   name: 'ls',
   title: 'List Directory',
   description:
@@ -276,38 +270,24 @@ async function handleListDirectory(
   );
 }
 
-export function registerListDirectoryTool(
-  server: McpServer,
-  options: ToolRegistrationOptions
-): void {
-  const handler = (
-    args: z.infer<typeof ListDirectoryInputSchema>,
-    ctx: ToolContext
-  ): Promise<ToolResult<z.infer<typeof ListDirectoryOutputSchema>>> =>
-    executeToolWithDiagnostics({
-      toolName: 'ls',
-      ctx,
-      outputSchema: ListDirectoryOutputSchema,
-      context: { path: args.path ?? '.' },
-      run: (signal) => handleListDirectory(args, signal),
-      onError: (error) =>
-        buildToolErrorResponse(
-          error,
-          ErrorCode.NOT_DIRECTORY,
-          args.path ?? '.'
-        ),
-    });
+type ListDirInput = z.infer<typeof ListDirectoryInputSchema>;
+type ListDirOutput = z.infer<typeof ListDirectoryOutputSchema>;
 
-  registerStandardTool(server, LIST_DIRECTORY_TOOL, handler, options, {
-    progressMessage: (args) =>
-      `${LIST_DIRECTORY_TOOL.title}: ${args.path ? basename(args.path) : '.'}`,
-    completionMessage: (args, result) => {
-      const base = args.path ? basename(args.path) : '.';
-      if (result.isError)
-        return `${LIST_DIRECTORY_TOOL.title}: ${base} • ${result.errorCode}`;
-      const sc = result.structuredContent;
-      const count = sc.totalEntries ?? 0;
-      return `${LIST_DIRECTORY_TOOL.title}: ${base} • ${count} ${count === 1 ? 'entry' : 'entries'}`;
-    },
-  });
-}
+export const LIST_DIRECTORY = defineTool<ListDirInput, ListDirOutput>({
+  contract: LIST_DIRECTORY_TOOL,
+  defaultErrorCode: ErrorCode.NOT_DIRECTORY,
+  run: (args, ctx) => handleListDirectory(args, ctx.signal),
+  progressMessage: (args) =>
+    `${LIST_DIRECTORY_TOOL.title}: ${args.path ? basename(args.path) : '.'}`,
+  completionMessage: (
+    args: ListDirInput,
+    result: ToolResult<ListDirOutput>
+  ): string => {
+    const base = args.path ? basename(args.path) : '.';
+    if (result.isError)
+      return `${LIST_DIRECTORY_TOOL.title}: ${base} • ${result.errorCode}`;
+    const sc = result.structuredContent;
+    const count = sc.totalEntries ?? 0;
+    return `${LIST_DIRECTORY_TOOL.title}: ${base} • ${count} ${count === 1 ? 'entry' : 'entries'}`;
+  },
+});

@@ -1,5 +1,3 @@
-import type { McpServer } from '@modelcontextprotocol/server';
-
 import { basename } from 'node:path';
 
 import type { z } from 'zod/v4';
@@ -13,24 +11,19 @@ import {
 import { TreeInputSchema } from '../schemas/inputs.js';
 import { TreeOutputSchema } from '../schemas/outputs.js';
 
+import { defineTool } from './define-tool.js';
 import { DIRECTORY_ICONS } from './icons.js';
 import {
-  buildToolErrorResponse,
   buildToolResponse,
-  executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
   resolveFinalProgressCurrent,
   resolvePathOrRoot,
   runWithProgressSession,
-  type ToolContext,
   type ToolContract,
-  type ToolRegistrationOptions,
   type ToolResponse,
-  type ToolResult,
 } from './shared.js';
-import { registerStandardTool } from './task-support.js';
 
-export const TREE_TOOL: ToolContract = {
+const TREE_TOOL: ToolContract = {
   name: 'tree',
   title: 'Tree',
   description:
@@ -41,6 +34,7 @@ export const TREE_TOOL: ToolContract = {
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   icons: DIRECTORY_ICONS,
   taskSupport: 'optional',
+  defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
 } as const;
 
 async function handleTree(
@@ -74,56 +68,41 @@ async function handleTree(
   return buildToolResponse(text, structured);
 }
 
-export function registerTreeTool(
-  server: McpServer,
-  options: ToolRegistrationOptions
-): void {
-  const handler = (
-    args: z.infer<typeof TreeInputSchema>,
-    ctx: ToolContext
-  ): Promise<ToolResult<z.infer<typeof TreeOutputSchema>>> => {
-    const targetPath = args.path ?? '.';
-    return executeToolWithDiagnostics({
-      toolName: 'tree',
+export const TREE = defineTool<
+  z.infer<typeof TreeInputSchema>,
+  z.infer<typeof TreeOutputSchema>
+>({
+  contract: TREE_TOOL,
+  defaultErrorCode: ErrorCode.NOT_DIRECTORY,
+  run: async (args, ctx) => {
+    const context = args.path ? basename(args.path) : '.';
+    const label = `${TREE_TOOL.title}: ${context}`;
+    const knownTotal = args.maxEntries;
+
+    return runWithProgressSession(
       ctx,
-      outputSchema: TreeOutputSchema,
-      timedSignal: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
-      context: { path: targetPath },
-      run: async (signal) => {
-        const context = args.path ? basename(args.path) : '.';
-        const label = `${TREE_TOOL.title}: ${context}`;
-        const knownTotal = args.maxEntries;
+      label,
+      async (progress) => {
+        const onProgress = ({ current }: { current: number }): void => {
+          progress.update({
+            current,
+            total: knownTotal,
+            message: `${label} [${current} entries]`,
+          });
+        };
 
-        return runWithProgressSession(
-          ctx,
-          label,
-          async (progress) => {
-            const onProgress = ({ current }: { current: number }): void => {
-              progress.update({
-                current,
-                total: knownTotal,
-                message: `${label} [${current} entries]`,
-              });
-            };
+        const result = await handleTree(args, ctx.signal, onProgress);
+        const sc = result.structuredContent;
+        const count = sc.totalEntries ?? 0;
+        const { truncated } = sc;
 
-            const result = await handleTree(args, signal, onProgress);
-            const sc = result.structuredContent;
-            const count = sc.totalEntries ?? 0;
-            const { truncated } = sc;
+        let suffix = `${count} ${count === 1 ? 'entry' : 'entries'}`;
+        if (truncated) suffix += ' [truncated]';
 
-            let suffix = `${count} ${count === 1 ? 'entry' : 'entries'}`;
-            if (truncated) suffix += ' [truncated]';
-
-            const finalCurrent = resolveFinalProgressCurrent(progress, count);
-            return { value: result, suffix, finalCurrent };
-          },
-          knownTotal
-        );
+        const finalCurrent = resolveFinalProgressCurrent(progress, count);
+        return { value: result, suffix, finalCurrent };
       },
-      onError: (error) =>
-        buildToolErrorResponse(error, ErrorCode.NOT_DIRECTORY, targetPath),
-    });
-  };
-
-  registerStandardTool(server, TREE_TOOL, handler, options);
-}
+      knownTotal
+    );
+  },
+});
