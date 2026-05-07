@@ -1,5 +1,3 @@
-import type { McpServer } from '@modelcontextprotocol/server';
-
 import type { z } from 'zod/v4';
 
 import { ErrorCode } from '../lib/errors.js';
@@ -8,21 +6,15 @@ import { RootsInputSchema } from '../schemas/inputs.js';
 import { RootsOutputSchema } from '../schemas/outputs.js';
 
 import { joinLines } from '../config.js';
+import { defineTool } from './define-tool.js';
 import { DIRECTORY_ICONS } from './icons.js';
 import {
-  buildToolErrorResponse,
   buildToolResponse,
-  executeToolWithDiagnostics,
   READ_ONLY_TOOL_ANNOTATIONS,
-  type ToolContext,
   type ToolContract,
-  type ToolRegistrationOptions,
-  type ToolResponse,
-  type ToolResult,
 } from './shared.js';
-import { registerStandardTool } from './task-support.js';
 
-export const LIST_ALLOWED_DIRECTORIES_TOOL: ToolContract = {
+const LIST_ALLOWED_DIRECTORIES_TOOL: ToolContract = {
   name: 'roots',
   title: 'Workspace Roots',
   description:
@@ -44,47 +36,26 @@ function buildTextRoots(dirs: string[]): string {
   ]);
 }
 
-function handleListAllowedDirectories(): ToolResponse<
+export const LIST_ALLOWED_DIRECTORIES = defineTool<
+  z.infer<typeof RootsInputSchema>,
   z.infer<typeof RootsOutputSchema>
-> {
-  const dirs = getAllowedDirectories();
-  const structured = {
-    ok: true,
-    roots: dirs.map((uri) => ({ uri })),
-  } as const;
-  return buildToolResponse(buildTextRoots(dirs), structured);
-}
-
-export function registerListAllowedDirectoriesTool(
-  server: McpServer,
-  options: ToolRegistrationOptions
-): void {
-  const handler = (
-    _args: z.infer<typeof RootsInputSchema>,
-    ctx: ToolContext
-  ): Promise<ToolResult<z.infer<typeof RootsOutputSchema>>> =>
-    executeToolWithDiagnostics({
-      toolName: 'roots',
-      ctx,
-      outputSchema: RootsOutputSchema,
-      run: () => handleListAllowedDirectories(),
-      onError: (error) => buildToolErrorResponse(error, ErrorCode.UNKNOWN),
-    });
-
-  registerStandardTool(
-    server,
-    LIST_ALLOWED_DIRECTORIES_TOOL,
-    handler,
-    options,
-    {
-      progressMessage: () => LIST_ALLOWED_DIRECTORIES_TOOL.title,
-      completionMessage: (_args, result) => {
-        if (result.isError)
-          return `${LIST_ALLOWED_DIRECTORIES_TOOL.title} • ${result.errorCode}`;
-        const sc = result.structuredContent;
-        const count = sc.roots.length;
-        return `${LIST_ALLOWED_DIRECTORIES_TOOL.title} • ${count} ${count === 1 ? 'root' : 'roots'}`;
-      },
-    }
-  );
-}
+>({
+  contract: LIST_ALLOWED_DIRECTORIES_TOOL,
+  run: () => {
+    const dirs = getAllowedDirectories();
+    const structured = {
+      ok: true,
+      roots: dirs.map((uri) => ({ uri })),
+    } as const;
+    return Promise.resolve(buildToolResponse(buildTextRoots(dirs), structured));
+  },
+  progressMessage: () => LIST_ALLOWED_DIRECTORIES_TOOL.title,
+  completionMessage: (_args, result) => {
+    if (result.isError)
+      return `${LIST_ALLOWED_DIRECTORIES_TOOL.title} • ${result.errorCode}`;
+    const sc = result.structuredContent;
+    const count = sc.roots.length;
+    return `${LIST_ALLOWED_DIRECTORIES_TOOL.title} • ${count} ${count === 1 ? 'root' : 'roots'}`;
+  },
+  defaultErrorCode: ErrorCode.UNKNOWN,
+});

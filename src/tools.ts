@@ -9,10 +9,7 @@ import {
   registerCalculateHashTool,
 } from './tools/calculate-hash.js';
 import type { ToolContract } from './tools/contract.js';
-import {
-  CREATE_DIRECTORY_TOOL,
-  registerCreateDirectoryTool,
-} from './tools/create-directory.js';
+import { CREATE_DIRECTORY } from './tools/create-directory.js';
 import {
   DELETE_FILE_TOOL,
   registerDeleteFileTool,
@@ -33,10 +30,7 @@ import {
   registerSearchAndReplaceTool,
   SEARCH_AND_REPLACE_TOOL,
 } from './tools/replace-in-files.js';
-import {
-  LIST_ALLOWED_DIRECTORIES_TOOL,
-  registerListAllowedDirectoriesTool,
-} from './tools/roots.js';
+import { LIST_ALLOWED_DIRECTORIES } from './tools/roots.js';
 import {
   registerSearchContentTool,
   SEARCH_CONTENT_TOOL,
@@ -46,13 +40,10 @@ import {
   SEARCH_FILES_TOOL,
 } from './tools/search-files.js';
 import type { ToolRegistrationOptions } from './tools/shared.js';
-import {
-  GET_MULTIPLE_FILE_INFO_TOOL,
-  registerGetMultipleFileInfoTool,
-} from './tools/stat-many.js';
-import { GET_FILE_INFO_TOOL, registerGetFileInfoTool } from './tools/stat.js';
+import { GET_MULTIPLE_FILE_INFO } from './tools/stat-many.js';
+import { GET_FILE_INFO } from './tools/stat.js';
 import { registerTreeTool, TREE_TOOL } from './tools/tree.js';
-import { registerWriteFileTool, WRITE_FILE_TOOL } from './tools/write-file.js';
+import { WRITE_FILE } from './tools/write-file.js';
 
 interface ToolEntry {
   contract: ToolContract;
@@ -60,10 +51,7 @@ interface ToolEntry {
 }
 
 const TOOL_ENTRIES: ToolEntry[] = [
-  {
-    contract: LIST_ALLOWED_DIRECTORIES_TOOL,
-    register: registerListAllowedDirectoriesTool,
-  },
+  LIST_ALLOWED_DIRECTORIES,
   { contract: LIST_DIRECTORY_TOOL, register: registerListDirectoryTool },
   { contract: SEARCH_FILES_TOOL, register: registerSearchFilesTool },
   { contract: TREE_TOOL, register: registerTreeTool },
@@ -72,14 +60,11 @@ const TOOL_ENTRIES: ToolEntry[] = [
     contract: READ_MANY_TOOL,
     register: registerReadMultipleFilesTool,
   },
-  { contract: GET_FILE_INFO_TOOL, register: registerGetFileInfoTool },
-  {
-    contract: GET_MULTIPLE_FILE_INFO_TOOL,
-    register: registerGetMultipleFileInfoTool,
-  },
+  GET_FILE_INFO,
+  GET_MULTIPLE_FILE_INFO,
   { contract: SEARCH_CONTENT_TOOL, register: registerSearchContentTool },
-  { contract: CREATE_DIRECTORY_TOOL, register: registerCreateDirectoryTool },
-  { contract: WRITE_FILE_TOOL, register: registerWriteFileTool },
+  CREATE_DIRECTORY,
+  WRITE_FILE,
   { contract: EDIT_FILE_TOOL, register: registerEditFileTool },
   { contract: MOVE_FILE_TOOL, register: registerMoveFileTool },
   { contract: DELETE_FILE_TOOL, register: registerDeleteFileTool },
