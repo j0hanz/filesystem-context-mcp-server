@@ -10,16 +10,18 @@ import {
   createTimedAbortSignal,
   withAbort,
 } from '../lib/abort.js';
-import { getInitHandshakeTimeoutMs } from '../lib/constants.js';
+import {
+  getInitHandshakeTimeoutMs,
+  SENSITIVE_FILE_DENYLIST,
+} from '../lib/constants.js';
 import { formatUnknownErrorMessage } from '../lib/errors.js';
 import { Logger, type LoggingState, logToMcp } from '../lib/logger.js';
+import { PathGuard } from '../lib/path-guard.js';
 import {
-  type AllowedDirectoriesState,
   getValidRootDirectories,
   isPathWithinDirectories,
   normalizePath,
   resolveAllowedDirectoriesState,
-  setAllowedDirectoriesStateResolved,
 } from '../lib/paths.js';
 import { debounce, isRecord } from '../lib/utils.js';
 
@@ -132,10 +134,7 @@ export class RootsManager {
     | { (server: McpServer): void; cancel: () => void }
     | undefined;
   private rootDirectories: string[] = [];
-  private allowedDirectoriesState: AllowedDirectoriesState = {
-    primary: [],
-    expanded: [],
-  };
+  readonly pathGuard: PathGuard = new PathGuard(SENSITIVE_FILE_DENYLIST);
   private clientInitialized = false;
   private initTimer: ReturnType<typeof setTimeout> | undefined;
   // Guard concurrent root refreshes; if one is already running we queue one
@@ -166,15 +165,8 @@ export class RootsManager {
     }
   }
 
-  getAllowedDirectoriesState(): AllowedDirectoriesState {
-    return {
-      primary: [...this.allowedDirectoriesState.primary],
-      expanded: [...this.allowedDirectoriesState.expanded],
-    };
-  }
-
   logMissingDirectoriesIfNeeded(server: McpServer): void {
-    if (this.allowedDirectoriesState.expanded.length === 0) {
+    if (this.pathGuard.getAllowedDirectories().length === 0) {
       this.logMissingDirectories(server);
     }
   }
@@ -246,8 +238,7 @@ export class RootsManager {
 
       const combined = [...baseline, ...rootsToInclude];
       const nextState = await resolveAllowedDirectoriesState(combined, signal);
-      this.allowedDirectoriesState = nextState;
-      setAllowedDirectoriesStateResolved(nextState);
+      this.pathGuard.initialize(nextState);
     } finally {
       cleanup();
     }
@@ -308,7 +299,7 @@ export class RootsManager {
     } finally {
       await this.recomputeAllowedDirectories();
       Logger.info(
-        `Roots updated: ${this.rootDirectories.length} root(s), ${this.allowedDirectoriesState.expanded.length} allowed dir(s)`
+        `Roots updated: ${this.rootDirectories.length} root(s), ${this.pathGuard.getAllowedDirectories().length} allowed dir(s)`
       );
       this.updatingRoots = false;
       // If a change arrived while we were running, apply it now.
