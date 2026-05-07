@@ -136,7 +136,7 @@ export const ReadManyOutputSchema = z.strictObject({
         startLine: PositiveInt.optional().describe('Start line'),
         endLine: PositiveInt.optional().describe('End line'),
         continuation: ContinuationSchema.optional().describe(
-          'Present when file was cut; call read with the given args to continue'
+          'Present when file was cut; call the named tool with the given args to continue'
         ),
         error: PerFileErrorSchema.optional().describe('Per-file error'),
       })
