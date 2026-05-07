@@ -1,5 +1,7 @@
 import type {
   ContentBlock,
+  ElicitRequestFormParams,
+  ElicitResult,
   Icon,
   LoggingLevel,
   Notification,
@@ -417,6 +419,7 @@ export interface ToolContext {
   _meta?: (RequestMeta & TracingMeta) | undefined;
   sendNotification?: (notification: Notification) => Promise<void>;
   log?: (level: LoggingLevel, data: unknown, logger?: string) => Promise<void>;
+  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>;
 }
 
 export function toToolContext(ctx?: ToolContext | ServerContext): ToolContext {
@@ -428,6 +431,7 @@ export function toToolContext(ctx?: ToolContext | ServerContext): ToolContext {
       ...(ctx.mcpReq._meta ? { _meta: ctx.mcpReq._meta } : {}),
       sendNotification: async (notification) => ctx.mcpReq.notify(notification),
       log: async (level, data, logger) => ctx.mcpReq.log(level, data, logger),
+      elicitInput: (params) => ctx.mcpReq.elicitInput(params),
     };
   }
   return ctx;

@@ -1,4 +1,5 @@
 import { Client } from '@modelcontextprotocol/client';
+import type { ElicitResult } from '@modelcontextprotocol/client';
 import {
   InMemoryTaskMessageQueue,
   McpServer,
@@ -92,6 +93,94 @@ export async function createTestEnv(): Promise<TestEnv> {
       await setAllowedDirectoriesResolved([]);
     } catch {
       // ignore
+    }
+  };
+
+  return { client, tmpDir, cleanup };
+}
+
+export type ElicitationHandler = (params: {
+  mode: string;
+  message: string;
+  requestedSchema: unknown;
+}) => Promise<ElicitResult>;
+
+/**
+ * Like createTestEnv but the MCP client advertises `elicitation: {}` capability
+ * and delegates all elicitation/create requests to `handler`.
+ */
+export async function createTestEnvWithElicitation(
+  handler: ElicitationHandler
+): Promise<TestEnv> {
+  const tmpDir = await mkdtemp(
+    join(tmpdir(), `fsmcp-${randomUUID().slice(0, 8)}-`)
+  );
+
+  await setAllowedDirectoriesResolved([tmpDir]);
+
+  const taskStore = createTaskStore();
+
+  const server = new McpServer(
+    { name: 'test-server', version: '0.0.0' },
+    {
+      capabilities: {
+        tools: {},
+        resources: {},
+        prompts: {},
+        logging: {},
+        completions: {},
+        tasks: {
+          list: {},
+          cancel: {},
+          requests: { tools: { call: {} } },
+          taskStore,
+          taskMessageQueue: new InMemoryTaskMessageQueue(),
+        },
+      },
+    }
+  );
+
+  const resourceStore = createInMemoryResourceStore();
+  registerAllTools(server, { resourceStore, isInitialized: () => true });
+
+  // Client advertises elicitation capability so the server will call elicitInput
+  const client = new Client(
+    { name: 'test-client', version: '1.0.0' },
+    { capabilities: { elicitation: {} } }
+  );
+
+  // Register the elicitation handler for server→client elicitation/create requests.
+  client.setRequestHandler('elicitation/create', (request) =>
+    handler(
+      request.params as {
+        mode: string;
+        message: string;
+        requestedSchema: unknown;
+      }
+    )
+  );
+
+  const [ct, st] = LinkedTransport.createLinkedPair();
+  await server.connect(st);
+  await client.connect(ct);
+
+  const cleanup = async (): Promise<void> => {
+    taskStore.cleanup();
+    try {
+      await client.close();
+    } catch {
+      /* ignore */
+    }
+    try {
+      await server.close();
+    } catch {
+      /* ignore */
+    }
+    await rm(tmpDir, { recursive: true, force: true });
+    try {
+      await setAllowedDirectoriesResolved([]);
+    } catch {
+      /* ignore */
     }
   };
 
