@@ -11,7 +11,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 
-import { getToolContracts } from '../src/resources/tool-info.js';
 import { startHttpServer } from '../src/server/bootstrap.js';
 
 function getServerPort(server: Server): number {
@@ -107,12 +106,6 @@ async function closeServer(server: Server): Promise<void> {
 
 describe('HTTP transport', () => {
   const servers: Server[] = [];
-  const staticResourceUris = [
-    'filesystem-mcp://metrics',
-    'internal://instructions',
-    'internal://tool-catalog',
-    'internal://workflows',
-  ];
   let tempDir: string | undefined;
 
   afterEach(async () => {
@@ -528,35 +521,19 @@ describe('HTTP transport', () => {
       const { resources } = await client.listResources();
       const { resourceTemplates } = await client.listResourceTemplates();
       const { prompts } = await client.listPrompts();
-      const toolInfoUris = getToolContracts()
-        .map((contract) => `internal://tool-info/${contract.name}`)
-        .sort();
-      const resourceUris = resources.map((resource) => resource.uri).sort();
 
       assert.equal(tools.length, 18);
-      assert.deepEqual(
-        resourceUris,
-        [...staticResourceUris, ...toolInfoUris].sort()
-      );
+      assert.equal(resources.length, 1);
+      assert.equal(resources[0]?.uri, 'internal://instructions');
       assert.deepEqual(
         resourceTemplates.map((template) => template.uriTemplate).sort(),
-        [
-          'filesystem-mcp://file/{+path}',
-          'filesystem-mcp://result/{id}',
-          'internal://tool-info/{name}',
-        ]
+        ['filesystem-mcp://result/{id}']
       );
       assert.deepEqual(prompts.map((prompt) => prompt.name).sort(), [
         'analyze-path',
         'compare-files',
         'get-help',
-        'get-tool-help',
       ]);
-
-      const metrics = await client.readResource({
-        uri: 'filesystem-mcp://metrics',
-      });
-      assert.equal(metrics.contents.length, 1);
     } finally {
       await transport.terminateSession().catch(() => {});
       await client.close().catch(() => {});
