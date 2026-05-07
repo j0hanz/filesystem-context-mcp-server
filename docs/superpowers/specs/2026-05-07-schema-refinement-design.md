@@ -27,7 +27,7 @@ The package version is **not** bumped as part of this work.
 
 ### File/module layout
 
-```
+```text
 src/schemas/
   index.ts          barrel re-exports of tool input/output schemas
   fields.ts         primitive builders: Path, Sha256Hex, IsoDateTime,
