@@ -33,9 +33,7 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "patch"
-      ],
+      "required": ["patch"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     },
@@ -69,10 +67,7 @@
                 "$ref": "#/$defs/NonNegInt"
               }
             },
-            "required": [
-              "path",
-              "hunks"
-            ],
+            "required": ["path", "hunks"],
             "additionalProperties": false
           },
           "description": "Per-file patch results"
@@ -94,19 +89,12 @@
                 "$ref": "#/$defs/PerFileError"
               }
             },
-            "required": [
-              "path",
-              "error"
-            ],
+            "required": ["path", "error"],
             "additionalProperties": false
           }
         }
       },
-      "required": [
-        "ok",
-        "files",
-        "summary"
-      ],
+      "required": ["ok", "files", "summary"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
@@ -130,11 +118,7 @@
               "$ref": "#/$defs/NonNegInt"
             }
           },
-          "required": [
-            "total",
-            "succeeded",
-            "failed"
-          ],
+          "required": ["total", "succeeded", "failed"],
           "additionalProperties": false
         },
         "PerFileError": {
@@ -157,10 +141,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "code",
-            "message"
-          ],
+          "required": ["code", "message"],
           "additionalProperties": false
         }
       }
@@ -177,9 +158,7 @@
           "description": "Path inside an allowed root"
         }
       },
-      "required": [
-        "path"
-      ],
+      "required": ["path"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     },
@@ -208,12 +187,7 @@
           "$ref": "#/$defs/NonNegInt"
         }
       },
-      "required": [
-        "ok",
-        "hash",
-        "path",
-        "isDirectory"
-      ],
+      "required": ["ok", "hash", "path", "isDirectory"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
@@ -263,10 +237,7 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "original",
-        "modified"
-      ],
+      "required": ["original", "modified"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     },
@@ -303,11 +274,7 @@
               "$ref": "#/$defs/NonNegInt"
             }
           },
-          "required": [
-            "additions",
-            "deletions",
-            "hunks"
-          ],
+          "required": ["additions", "deletions", "hunks"],
           "additionalProperties": false
         },
         "truncated": {
@@ -319,11 +286,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "ok",
-        "diff",
-        "isIdentical"
-      ],
+      "required": ["ok", "diff", "isIdentical"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
@@ -358,10 +321,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "oldText",
-              "newText"
-            ],
+            "required": ["oldText", "newText"],
             "additionalProperties": false
           },
           "description": "List of text substitutions"
@@ -377,10 +337,7 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "path",
-        "edits"
-      ],
+      "required": ["path", "edits"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     },
@@ -432,11 +389,7 @@
           ]
         }
       },
-      "required": [
-        "ok",
-        "path",
-        "appliedEdits"
-      ],
+      "required": ["ok", "path", "appliedEdits"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
@@ -486,12 +439,7 @@
           "default": "path",
           "description": "Sort order",
           "type": "string",
-          "enum": [
-            "name",
-            "size",
-            "modified",
-            "path"
-          ]
+          "enum": ["name", "size", "modified", "path"]
         },
         "maxDepth": {
           "description": "Max directory depth",
@@ -507,9 +455,7 @@
           "pattern": "^[A-Za-z0-9_-]*$"
         }
       },
-      "required": [
-        "pattern"
-      ],
+      "required": ["pattern"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
@@ -518,11 +464,7 @@
           "minLength": 1,
           "maxLength": 1000,
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
-          "examples": [
-            "**/*.ts",
-            "src/**/*.js",
-            "*.{ts,tsx}"
-          ]
+          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
         }
       }
     },
@@ -556,9 +498,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "path"
-            ],
+            "required": ["path"],
             "additionalProperties": false
           },
           "description": "Matching files"
@@ -591,11 +531,7 @@
           "pattern": "^[A-Za-z0-9_-]*$"
         }
       },
-      "required": [
-        "ok",
-        "root",
-        "results"
-      ],
+      "required": ["ok", "root", "results"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
@@ -678,9 +614,7 @@
           "pattern": "^[A-Za-z0-9_-]*$"
         }
       },
-      "required": [
-        "searchPattern"
-      ],
+      "required": ["searchPattern"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
@@ -689,11 +623,7 @@
           "minLength": 1,
           "maxLength": 1000,
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
-          "examples": [
-            "**/*.ts",
-            "src/**/*.js",
-            "*.{ts,tsx}"
-          ]
+          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
         }
       }
     },
@@ -745,11 +675,7 @@
                 }
               }
             },
-            "required": [
-              "file",
-              "line",
-              "content"
-            ],
+            "required": ["file", "line", "content"],
             "additionalProperties": false
           },
           "description": "Flat list of matches (sorted by file then line)"
@@ -785,11 +711,7 @@
         "stoppedReason": {
           "description": "Why search stopped early",
           "type": "string",
-          "enum": [
-            "maxResults",
-            "maxFiles",
-            "timeout"
-          ]
+          "enum": ["maxResults", "maxFiles", "timeout"]
         },
         "resourceUri": {
           "description": "Full results URI when truncated",
@@ -803,10 +725,7 @@
           "pattern": "^[A-Za-z0-9_-]*$"
         }
       },
-      "required": [
-        "ok",
-        "matches"
-      ],
+      "required": ["ok", "matches"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
@@ -858,12 +777,7 @@
           "default": "name",
           "description": "Sort order",
           "type": "string",
-          "enum": [
-            "name",
-            "size",
-            "modified",
-            "type"
-          ]
+          "enum": ["name", "size", "modified", "type"]
         },
         "pattern": {
           "$ref": "#/$defs/SafeGlobPattern"
@@ -889,11 +803,7 @@
           "minLength": 1,
           "maxLength": 1000,
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
-          "examples": [
-            "**/*.ts",
-            "src/**/*.js",
-            "*.{ts,tsx}"
-          ]
+          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
         }
       }
     },
@@ -935,11 +845,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "name",
-              "relativePath",
-              "type"
-            ],
+            "required": ["name", "relativePath", "type"],
             "additionalProperties": false
           },
           "description": "Directory entries"
@@ -976,22 +882,13 @@
           "pattern": "^[A-Za-z0-9_-]*$"
         }
       },
-      "required": [
-        "ok",
-        "path",
-        "entries"
-      ],
+      "required": ["ok", "path", "entries"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
         "FileType": {
           "type": "string",
-          "enum": [
-            "file",
-            "directory",
-            "symlink",
-            "other"
-          ]
+          "enum": ["file", "directory", "symlink", "other"]
         },
         "NonNegInt": {
           "type": "integer",
@@ -1016,9 +913,7 @@
           "description": "One or more directory paths to create (recursive)"
         }
       },
-      "required": [
-        "paths"
-      ],
+      "required": ["paths"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     },
@@ -1044,10 +939,7 @@
                 "description": "Was directory newly created"
               }
             },
-            "required": [
-              "path",
-              "isNew"
-            ],
+            "required": ["path", "isNew"],
             "additionalProperties": false
           },
           "description": "Created directories"
@@ -1069,19 +961,12 @@
                 "$ref": "#/$defs/PerFileError"
               }
             },
-            "required": [
-              "path",
-              "error"
-            ],
+            "required": ["path", "error"],
             "additionalProperties": false
           }
         }
       },
-      "required": [
-        "ok",
-        "created",
-        "summary"
-      ],
+      "required": ["ok", "created", "summary"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
@@ -1105,11 +990,7 @@
               "$ref": "#/$defs/NonNegInt"
             }
           },
-          "required": [
-            "total",
-            "succeeded",
-            "failed"
-          ],
+          "required": ["total", "succeeded", "failed"],
           "additionalProperties": false
         },
         "PerFileError": {
@@ -1132,10 +1013,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "code",
-            "message"
-          ],
+          "required": ["code", "message"],
           "additionalProperties": false
         }
       }
@@ -1163,10 +1041,7 @@
           "description": "Destination path"
         }
       },
-      "required": [
-        "sources",
-        "destination"
-      ],
+      "required": ["sources", "destination"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     },
@@ -1208,19 +1083,12 @@
                 "$ref": "#/$defs/PerFileError"
               }
             },
-            "required": [
-              "source",
-              "error"
-            ],
+            "required": ["source", "error"],
             "additionalProperties": false
           }
         }
       },
-      "required": [
-        "ok",
-        "sources",
-        "destination"
-      ],
+      "required": ["ok", "sources", "destination"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
@@ -1244,10 +1112,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "code",
-            "message"
-          ],
+          "required": ["code", "message"],
           "additionalProperties": false
         }
       }
@@ -1293,9 +1158,7 @@
           "maximum": 2147483647
         }
       },
-      "required": [
-        "path"
-      ],
+      "required": ["path"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     },
@@ -1356,10 +1219,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "ok",
-        "path"
-      ],
+      "required": ["ok", "path"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
@@ -1414,9 +1274,7 @@
           "maximum": 2147483647
         }
       },
-      "required": [
-        "paths"
-      ],
+      "required": ["paths"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     },
@@ -1480,21 +1338,14 @@
               "truncationReason": {
                 "description": "Why content was truncated",
                 "type": "string",
-                "enum": [
-                  "head",
-                  "tail",
-                  "range",
-                  "externalized"
-                ]
+                "enum": ["head", "tail", "range", "externalized"]
               },
               "error": {
                 "description": "Per-file error",
                 "$ref": "#/$defs/PerFileError"
               }
             },
-            "required": [
-              "path"
-            ],
+            "required": ["path"],
             "additionalProperties": false
           },
           "description": "Per-file read results"
@@ -1504,11 +1355,7 @@
           "$ref": "#/$defs/OperationSummary"
         }
       },
-      "required": [
-        "ok",
-        "results",
-        "summary"
-      ],
+      "required": ["ok", "results", "summary"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
@@ -1540,10 +1387,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "code",
-            "message"
-          ],
+          "required": ["code", "message"],
           "additionalProperties": false
         },
         "OperationSummary": {
@@ -1562,11 +1406,7 @@
               "$ref": "#/$defs/NonNegInt"
             }
           },
-          "required": [
-            "total",
-            "succeeded",
-            "failed"
-          ],
+          "required": ["total", "succeeded", "failed"],
           "additionalProperties": false
         }
       }
@@ -1598,9 +1438,7 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "paths"
-      ],
+      "required": ["paths"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     },
@@ -1626,9 +1464,7 @@
                 "$ref": "#/$defs/FileType"
               }
             },
-            "required": [
-              "path"
-            ],
+            "required": ["path"],
             "additionalProperties": false
           },
           "description": "Successfully deleted items"
@@ -1650,30 +1486,18 @@
                 "$ref": "#/$defs/PerFileError"
               }
             },
-            "required": [
-              "path",
-              "error"
-            ],
+            "required": ["path", "error"],
             "additionalProperties": false
           }
         }
       },
-      "required": [
-        "ok",
-        "deleted",
-        "summary"
-      ],
+      "required": ["ok", "deleted", "summary"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
         "FileType": {
           "type": "string",
-          "enum": [
-            "file",
-            "directory",
-            "symlink",
-            "other"
-          ]
+          "enum": ["file", "directory", "symlink", "other"]
         },
         "NonNegInt": {
           "type": "integer",
@@ -1695,11 +1519,7 @@
               "$ref": "#/$defs/NonNegInt"
             }
           },
-          "required": [
-            "total",
-            "succeeded",
-            "failed"
-          ],
+          "required": ["total", "succeeded", "failed"],
           "additionalProperties": false
         },
         "PerFileError": {
@@ -1722,10 +1542,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "code",
-            "message"
-          ],
+          "required": ["code", "message"],
           "additionalProperties": false
         }
       }
@@ -1760,18 +1577,13 @@
                 "type": "string"
               }
             },
-            "required": [
-              "uri"
-            ],
+            "required": ["uri"],
             "additionalProperties": false
           },
           "description": "Allowed root directories"
         }
       },
-      "required": [
-        "ok",
-        "roots"
-      ],
+      "required": ["ok", "roots"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     }
@@ -1856,10 +1668,7 @@
           "maximum": 100
         }
       },
-      "required": [
-        "searchPattern",
-        "replacement"
-      ],
+      "required": ["searchPattern", "replacement"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
@@ -1868,11 +1677,7 @@
           "minLength": 1,
           "maxLength": 1000,
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
-          "examples": [
-            "**/*.ts",
-            "src/**/*.js",
-            "*.{ts,tsx}"
-          ]
+          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
         }
       }
     },
@@ -1913,10 +1718,7 @@
                 "$ref": "#/$defs/PerFileError"
               }
             },
-            "required": [
-              "path",
-              "error"
-            ],
+            "required": ["path", "error"],
             "additionalProperties": false
           }
         },
@@ -1933,10 +1735,7 @@
                 "$ref": "#/$defs/NonNegInt"
               }
             },
-            "required": [
-              "path",
-              "matches"
-            ],
+            "required": ["path", "matches"],
             "additionalProperties": false
           }
         },
@@ -1955,19 +1754,10 @@
         "stoppedReason": {
           "description": "Why enumeration stopped early",
           "type": "string",
-          "enum": [
-            "maxResults",
-            "maxFiles",
-            "timeout"
-          ]
+          "enum": ["maxResults", "maxFiles", "timeout"]
         }
       },
-      "required": [
-        "ok",
-        "matches",
-        "filesChanged",
-        "processedFiles"
-      ],
+      "required": ["ok", "matches", "filesChanged", "processedFiles"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
@@ -1995,10 +1785,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "code",
-            "message"
-          ],
+          "required": ["code", "message"],
           "additionalProperties": false
         }
       }
@@ -2015,9 +1802,7 @@
           "description": "Path inside an allowed root"
         }
       },
-      "required": [
-        "path"
-      ],
+      "required": ["path"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     },
@@ -2034,21 +1819,13 @@
           "$ref": "#/$defs/FileInfo"
         }
       },
-      "required": [
-        "ok",
-        "file"
-      ],
+      "required": ["ok", "file"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
         "FileType": {
           "type": "string",
-          "enum": [
-            "file",
-            "directory",
-            "symlink",
-            "other"
-          ]
+          "enum": ["file", "directory", "symlink", "other"]
         },
         "NonNegInt": {
           "type": "integer",
@@ -2143,9 +1920,7 @@
           "description": "Paths to stat"
         }
       },
-      "required": [
-        "paths"
-      ],
+      "required": ["paths"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     },
@@ -2175,9 +1950,7 @@
                 "$ref": "#/$defs/PerFileError"
               }
             },
-            "required": [
-              "path"
-            ],
+            "required": ["path"],
             "additionalProperties": false
           },
           "description": "Per-path results"
@@ -2187,11 +1960,7 @@
           "$ref": "#/$defs/OperationSummary"
         }
       },
-      "required": [
-        "ok",
-        "results",
-        "summary"
-      ],
+      "required": ["ok", "results", "summary"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
@@ -2262,12 +2031,7 @@
         },
         "FileType": {
           "type": "string",
-          "enum": [
-            "file",
-            "directory",
-            "symlink",
-            "other"
-          ]
+          "enum": ["file", "directory", "symlink", "other"]
         },
         "NonNegInt": {
           "type": "integer",
@@ -2298,10 +2062,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "code",
-            "message"
-          ],
+          "required": ["code", "message"],
           "additionalProperties": false
         },
         "OperationSummary": {
@@ -2320,11 +2081,7 @@
               "$ref": "#/$defs/NonNegInt"
             }
           },
-          "required": [
-            "total",
-            "succeeded",
-            "failed"
-          ],
+          "required": ["total", "succeeded", "failed"],
           "additionalProperties": false
         }
       }
@@ -2406,12 +2163,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "ok",
-        "root",
-        "tree",
-        "ascii"
-      ],
+      "required": ["ok", "root", "tree", "ascii"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
@@ -2442,20 +2194,12 @@
               }
             }
           },
-          "required": [
-            "name",
-            "type"
-          ],
+          "required": ["name", "type"],
           "additionalProperties": false
         },
         "FileType": {
           "type": "string",
-          "enum": [
-            "file",
-            "directory",
-            "symlink",
-            "other"
-          ]
+          "enum": ["file", "directory", "symlink", "other"]
         },
         "NonNegInt": {
           "type": "integer",
@@ -2483,10 +2227,7 @@
           "description": "File content to write"
         }
       },
-      "required": [
-        "path",
-        "content"
-      ],
+      "required": ["path", "content"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     },
@@ -2507,11 +2248,7 @@
           "$ref": "#/$defs/NonNegInt"
         }
       },
-      "required": [
-        "ok",
-        "path",
-        "bytesWritten"
-      ],
+      "required": ["ok", "path", "bytesWritten"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
