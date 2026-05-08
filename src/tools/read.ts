@@ -34,7 +34,7 @@ const READ_FILE_TOOL: ToolContract = {
   name: 'read',
   title: 'Read File',
   description:
-    'Read a text file. Use head/tail/startLine/endLine for partial reads; use read_many for batches.',
+    'Read a text file. Use head/tail/startLine/endLine for partial line reads; use offset/length for byte-range reads; use read_many for batches.',
   inputSchema: ReadFileInputSchema,
   inputSchemaJson: toToolJsonSchema(ReadFileInputSchema, (s) => ({
     ...s,
@@ -80,6 +80,8 @@ function buildReadOptions(
     tail: args.tail,
     startLine: args.startLine,
     endLine: args.endLine,
+    offset: args.offset,
+    length: args.length,
   });
 }
 
@@ -132,6 +134,9 @@ function toStructuredReadFileResult(
     endLine: result.endLine,
     linesRead: result.linesRead,
     hasMoreLines: result.hasMoreLines ? true : undefined,
+    offset: result.offset,
+    bytesRead: result.bytesRead,
+    reachedEOF: result.reachedEOF,
   });
 }
 
@@ -175,6 +180,10 @@ function maybeBuildExternalizedReadResponse(
 
 function buildReadProgressMessage(args: ReadFileInput): string {
   const name = basename(args.path);
+  if (args.offset !== undefined) {
+    const end = args.length !== undefined ? args.offset + args.length - 1 : '…';
+    return `${READ_TOOL_LABEL}: ${name} [bytes ${args.offset}–${String(end)}]`;
+  }
   if (args.startLine !== undefined) {
     const end = args.endLine ?? '…';
     return `${READ_TOOL_LABEL}: ${name} [lines ${args.startLine}–${end}]`;
@@ -195,6 +204,11 @@ function buildReadCompletionMessage(
     return `${READ_TOOL_LABEL}: ${name} • ${result.errorCode}`;
 
   const structured = result.structuredContent;
+
+  if (structured.offset !== undefined) {
+    return `${READ_TOOL_LABEL}: ${name} • ${String(structured.bytesRead ?? 0)} bytes @ ${String(structured.offset)}`;
+  }
+
   const lines = structured.linesRead ?? structured.totalLines;
 
   if (structured.startLine !== undefined) {
