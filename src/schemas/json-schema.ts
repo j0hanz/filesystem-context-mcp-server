@@ -85,6 +85,15 @@ export function readRangeConstraints(): JsonSchema[] {
     // head cannot be combined with startLine or endLine
     { not: { required: ['head', 'startLine'] } },
     { not: { required: ['head', 'endLine'] } },
+    // byte range is mutually exclusive with all line params
+    { not: { required: ['offset', 'head'] } },
+    { not: { required: ['offset', 'tail'] } },
+    { not: { required: ['offset', 'startLine'] } },
+    { not: { required: ['offset', 'endLine'] } },
+    { not: { required: ['length', 'head'] } },
+    { not: { required: ['length', 'tail'] } },
+    { not: { required: ['length', 'startLine'] } },
+    { not: { required: ['length', 'endLine'] } },
   ];
 }
 

@@ -69,6 +69,8 @@ export function validateReadRange(
     tail?: number | undefined;
     startLine?: number | undefined;
     endLine?: number | undefined;
+    offset?: number | undefined;
+    length?: number | undefined;
   },
   ctx: z.RefinementCtx
 ): void {
@@ -76,6 +78,7 @@ export function validateReadRange(
   const hasTail = value.tail !== undefined;
   const hasStart = value.startLine !== undefined;
   const hasEnd = value.endLine !== undefined;
+  const hasByteRange = value.offset !== undefined || value.length !== undefined;
 
   if (hasHead && (hasStart || hasEnd)) {
     ctx.addIssue({
@@ -99,6 +102,15 @@ export function validateReadRange(
       code: 'custom',
       path: ['endLine'],
       message: "'endLine' must be >= 'startLine'",
+      input: value,
+    });
+  }
+  if (hasByteRange && (hasHead || hasTail || hasStart || hasEnd)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['offset'],
+      message:
+        "Cannot use 'offset'/'length' with line-based params (head/tail/startLine/endLine)",
       input: value,
     });
   }

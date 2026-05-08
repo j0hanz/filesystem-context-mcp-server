@@ -115,6 +115,19 @@ export const ReadFileInputSchema = z
     path: RequiredPath,
     includeHash: defaultFalseBoolean('Include SHA-256 hash of the content'),
     ...readRangeFields,
+    offset: z
+      .uint32()
+      .optional()
+      .describe(
+        'Byte offset to start reading (mutually exclusive with line params)'
+      ),
+    length: z
+      .uint32()
+      .min(1)
+      .optional()
+      .describe(
+        'Number of bytes to read (used with offset; reads to EOF if omitted)'
+      ),
   })
   .superRefine((value, ctx) => {
     validateReadRange(
@@ -123,6 +136,8 @@ export const ReadFileInputSchema = z
         tail: value.tail,
         startLine: value.startLine,
         endLine: value.endLine,
+        offset: value.offset,
+        length: value.length,
       },
       ctx
     );

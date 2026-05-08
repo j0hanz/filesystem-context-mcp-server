@@ -125,6 +125,10 @@ export const ReadFileOutputSchema = z.strictObject({
   contentHash: Sha256Hex.optional().describe(
     'SHA-256 of content (when includeHash)'
   ),
+  // Byte-range fields
+  offset: NonNegInt.optional().describe('Byte offset used'),
+  bytesRead: NonNegInt.optional().describe('Bytes returned'),
+  reachedEOF: z.boolean().optional().describe('Read reached end of file'),
 });
 
 export const ReadManyOutputSchema = z.strictObject({
