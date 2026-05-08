@@ -231,7 +231,7 @@ export async function calculateFileContentHash(
   return encoding === null ? hasher.digest() : hasher.digest(encoding);
 }
 
-type ReadMode = 'head' | 'full' | 'range' | 'tail';
+type ReadMode = 'head' | 'full' | 'range' | 'tail' | 'byteRange';
 
 interface ReadFileOptions {
   encoding?: BufferEncoding;
@@ -242,6 +242,8 @@ interface ReadFileOptions {
   endLine?: number;
   skipBinary?: boolean;
   signal?: AbortSignal;
+  offset?: number;
+  length?: number;
 }
 
 interface NormalizedOptions {
@@ -253,6 +255,8 @@ interface NormalizedOptions {
   endLine?: number;
   skipBinary: boolean;
   signal?: AbortSignal;
+  offset?: number;
+  length?: number;
 }
 
 interface ReadContentOptions {
@@ -280,6 +284,10 @@ interface ReadFileResult {
   endLine?: number;
   linesRead?: number;
   hasMoreLines?: boolean;
+  // Byte-range fields
+  offset?: number;
+  bytesRead?: number;
+  reachedEOF?: boolean;
 }
 
 function validateReadOptions(options: ReadFileOptions): void {
@@ -328,6 +336,22 @@ function validateReadOptions(options: ReadFileOptions): void {
     );
   }
 
+  // validate offset/length
+  if (options.offset !== undefined && options.offset < 0) {
+    throw new McpError(ErrorCode.INVALID_INPUT, 'offset must be >= 0');
+  }
+  if (options.length !== undefined && options.length < 1) {
+    throw new McpError(ErrorCode.INVALID_INPUT, 'length must be >= 1');
+  }
+  const hasByteRange =
+    options.offset !== undefined || options.length !== undefined;
+  if (hasByteRange && (hasHead || hasTail || hasStart || hasEnd)) {
+    throw new McpError(
+      ErrorCode.INVALID_INPUT,
+      "Cannot use 'offset'/'length' with line-based params"
+    );
+  }
+
   {
     const effectiveStart = options.startLine ?? 1;
     if (options.endLine !== undefined && options.endLine < effectiveStart) {
@@ -366,6 +390,12 @@ function normalizeOptions(options: ReadFileOptions): NormalizedOptions {
   if (options.signal) {
     normalized.signal = options.signal;
   }
+  if (options.offset !== undefined) {
+    normalized.offset = options.offset;
+  }
+  if (options.length !== undefined) {
+    normalized.length = options.length;
+  }
   return normalized;
 }
 
@@ -389,6 +419,8 @@ function buildReadContentOptions(
 }
 
 function resolveReadMode(options: NormalizedOptions): ReadMode {
+  if (options.offset !== undefined || options.length !== undefined)
+    return 'byteRange';
   if (options.head !== undefined) return 'head';
   if (options.tail !== undefined) return 'tail';
   if (options.startLine !== undefined || options.endLine !== undefined)
@@ -810,11 +842,76 @@ async function executeTailRead(
   };
 }
 
+async function executeByteRangeRead(
+  context: ReadModeContext
+): Promise<ReadFileResult> {
+  const start = context.normalized.offset ?? 0;
+  const fileSize = context.stats.size;
+
+  // Past EOF — return empty immediately
+  if (start >= fileSize) {
+    return {
+      path: context.validPath,
+      content: '',
+      truncated: false,
+      readMode: 'byteRange',
+      offset: start,
+      bytesRead: 0,
+      reachedEOF: true,
+    };
+  }
+
+  const { length } = context.normalized;
+  let end: number | undefined;
+  let reachedEOF: boolean;
+
+  if (length !== undefined) {
+    const requestedEnd = start + length - 1; // createReadStream end is inclusive
+    if (requestedEnd >= fileSize) {
+      end = fileSize - 1;
+      reachedEOF = true;
+    } else {
+      end = requestedEnd;
+      reachedEOF = false;
+    }
+  } else {
+    // No length → read to EOF
+    reachedEOF = true;
+  }
+
+  const stream = context.handle.createReadStream({
+    encoding: context.normalized.encoding,
+    start,
+    ...(end !== undefined ? { end } : {}),
+  });
+
+  const chunks: string[] = [];
+  for await (const chunk of stream) {
+    chunks.push(chunk as string);
+    assertNotAborted(context.normalized.signal);
+  }
+
+  const content = chunks.join('');
+  const actualEnd = end ?? fileSize - 1;
+  const bytesRead = actualEnd - start + 1;
+
+  return {
+    path: context.validPath,
+    content,
+    truncated: false,
+    readMode: 'byteRange',
+    offset: start,
+    bytesRead,
+    reachedEOF,
+  };
+}
+
 const READ_MODE_HANDLERS = {
   head: executeHeadRead,
   range: executeRangeRead,
   full: executeFullRead,
   tail: executeTailRead,
+  byteRange: executeByteRangeRead,
 } as const satisfies Record<
   ReadMode,
   (context: ReadModeContext) => Promise<ReadFileResult>

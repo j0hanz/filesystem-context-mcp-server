@@ -1058,7 +1058,7 @@ interface ReadMultipleResult {
   content?: string;
   truncated?: boolean;
   totalLines?: number;
-  readMode?: 'full' | 'head' | 'tail' | 'range';
+  readMode?: 'full' | 'head' | 'tail' | 'range' | 'byteRange';
   head?: number;
   tail?: number;
   startLine?: number;
