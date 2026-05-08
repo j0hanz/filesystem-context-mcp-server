@@ -1,15 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 
 import { readdir, realpath, stat } from 'node:fs/promises';
-import {
-  basename,
-  dirname,
-  isAbsolute,
-  join,
-  parse,
-  resolve,
-  sep,
-} from 'node:path';
+import { basename, dirname, isAbsolute, parse, resolve, sep } from 'node:path';
 
 import {
   getAllowedDirectories,
@@ -68,9 +60,9 @@ const DESTINATION_CONTEXT_KEYS = ['source', 'path', 'cwd', 'root'] as const;
 const PRIMARY_PATH_CONTEXT_KEYS = ['path', 'cwd', 'root'] as const;
 const DEFAULT_CONTEXT_KEYS = ['path', 'source', 'cwd', 'root'] as const;
 
-function chooseContextKeys(argumentName: string): string[] {
+function chooseContextKeys(argumentName: string): readonly string[] {
   const normalized = argumentName.toLowerCase();
-  if (normalized === 'destination') return [...DESTINATION_CONTEXT_KEYS];
+  if (normalized === 'destination') return DESTINATION_CONTEXT_KEYS;
   if (
     normalized === 'path' ||
     normalized === 'source' ||
@@ -78,9 +70,9 @@ function chooseContextKeys(argumentName: string): string[] {
     normalized === 'modified' ||
     normalized === 'file'
   ) {
-    return [...PRIMARY_PATH_CONTEXT_KEYS];
+    return PRIMARY_PATH_CONTEXT_KEYS;
   }
-  return [...DEFAULT_CONTEXT_KEYS];
+  return DEFAULT_CONTEXT_KEYS;
 }
 
 function hasTrailingSeparator(value: string): boolean {
@@ -288,9 +280,10 @@ async function findMatchesInDirectory(
   try {
     const entries = await readdir(searchDir, { withFileTypes: true });
     const lowerPrefix = prefix.toLowerCase();
+    const dirSep = searchDir.endsWith(sep) ? '' : sep;
     for (const entry of entries) {
       if (entry.name.toLowerCase().startsWith(lowerPrefix)) {
-        const fullPath = join(searchDir, entry.name);
+        const fullPath = `${searchDir}${dirSep}${entry.name}`;
         const isDir = entry.isDirectory();
         matches.push(isDir ? `${fullPath}${sep}` : fullPath);
       }

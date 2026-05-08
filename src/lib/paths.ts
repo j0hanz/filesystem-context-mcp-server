@@ -70,8 +70,10 @@ export function getAllowedDirectories(): string[] {
 }
 
 export function isAllowedDirectoryRoot(normalizedPath: string): boolean {
+  const target = IS_WINDOWS ? normalizedPath.toLowerCase() : normalizedPath;
   for (const dir of getActivePathGuard().getAllowedDirectories()) {
-    if (isSamePath(normalizedPath, dir)) return true;
+    const d = IS_WINDOWS ? dir.toLowerCase() : dir;
+    if (target === d) return true;
   }
   return false;
 }

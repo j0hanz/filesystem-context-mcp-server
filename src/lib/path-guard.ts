@@ -7,7 +7,6 @@ import {
   normalize,
   parse,
   posix,
-  relative,
   resolve,
   sep,
 } from 'node:path';
@@ -115,11 +114,16 @@ function isPathInsideDirectory(
 
   if (root === candidate) return true;
 
-  const rel = relative(root, candidate);
-  if (rel.length === 0) return true;
-  if (rel === '..') return false;
+  if (!candidate.startsWith(root)) return false;
+  const rootEndsWithSep =
+    root.endsWith(POSIX_PATH_SEPARATOR) ||
+    root.endsWith(WINDOWS_PATH_SEPARATOR);
+  if (rootEndsWithSep) return true;
 
-  return !rel.startsWith('..\\') && !rel.startsWith('../') && !isAbsolute(rel);
+  const nextChar = candidate[root.length];
+  return (
+    nextChar === POSIX_PATH_SEPARATOR || nextChar === WINDOWS_PATH_SEPARATOR
+  );
 }
 
 export function isPathWithinDirectories(
