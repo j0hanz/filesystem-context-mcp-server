@@ -31,27 +31,50 @@ function filterInstructionsByTopic(
 ): string {
   const normalized = topic.trim().toLowerCase();
   if (!normalized) return instructions;
-  const sections = instructions.split(/\n(?=## )/u);
-  const match = sections.find((sec) =>
+
+  // Try matching markdown headers first
+  const mdSections = instructions.split(/\n(?=## )/u);
+  const mdMatch = mdSections.find((sec) =>
     sec.toLowerCase().startsWith(`## ${normalized}`)
   );
-  if (match !== undefined) return match;
-  const available = sections
+  if (mdMatch !== undefined) return mdMatch;
+
+  // Try matching XML tags
+  const xmlRegex = new RegExp(`<(${normalized})>([\\s\\S]*?)</\\1>`, 'i');
+  const xmlMatch = instructions.match(xmlRegex);
+  if (xmlMatch?.[2]) {
+    return `<${normalized}>\n${xmlMatch[2].trim()}\n</${normalized}>`;
+  }
+
+  const availableMd = mdSections
     .filter((sec) => sec.startsWith('## '))
     .map((sec) => sec.split('\n')[0]?.replace(/^##\s*/u, '') ?? '')
-    .filter(Boolean)
-    .join(', ');
+    .filter(Boolean);
+
+  const availableXml = Array.from(instructions.matchAll(/<([a-z_]+)>/gi)).map(
+    (m) => m[1]
+  );
+
+  const available = [...availableMd, ...availableXml].join(', ');
   return `Section '${topic}' not found. Available: ${available}\n\n${instructions}`;
 }
 
 function extractTopics(instructions: string): string[] {
   const headers: string[] = [];
+
+  // Extract Markdown headers
   for (const line of instructions.split('\n')) {
     if (line.startsWith('## ')) {
       const header = line.slice(3).trim().toLowerCase();
       if (header) headers.push(header);
     }
   }
+
+  // Extract XML tags
+  for (const match of instructions.matchAll(/<([a-z_]+)>/gi)) {
+    if (match[1]) headers.push(match[1].toLowerCase());
+  }
+
   return headers;
 }
 

@@ -8,7 +8,10 @@ import uriTemplate from 'uri-templates';
 
 import type { ResourceContract } from './resources/contract.js';
 import { createFilesystemResource } from './resources/filesystem.js';
-import { createInstructionsResource } from './resources/instructions.js';
+import {
+  createInstructionsResource,
+  SERVER_INSTRUCTIONS_CONTENT as serverInstructionsContent,
+} from './resources/instructions.js';
 import { createResultResource } from './resources/result.js';
 import type {
   ResourceRegistrationOptions,
@@ -16,7 +19,7 @@ import type {
 } from './resources/shared.js';
 import { withDefaultIcons } from './tools/shared.js';
 
-export { SLIM_INSTRUCTIONS_CONTENT as serverInstructionsContent } from './resources/instructions-content.js';
+export { serverInstructionsContent };
 export type { ResourceRegistrationOptions, ResourcesHandle };
 
 export function registerAllResources(
