@@ -1,5 +1,5 @@
-import { mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { mkdir, stat } from 'node:fs/promises';
+import { basename, dirname } from 'node:path';
 
 import { z } from 'zod/v4';
 
@@ -8,14 +8,17 @@ import { atomicWriteFile } from '../lib/atomic-write.js';
 import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { Logger } from '../lib/logger.js';
+import { detectMimeType } from '../lib/mime.js';
 import { NonNegInt, RequiredPath } from '../schemas/fields.js';
 
 import { formatBytes } from '../config.js';
 import { buildPathMessages, defineTool } from './define-tool.js';
 import { FILE_EDIT_ICONS } from './icons.js';
 import {
+  buildResourceResponse,
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
+  putResource,
   type ToolContract,
 } from './shared.js';
 
@@ -27,7 +30,15 @@ const WriteFileInputSchema = z.strictObject({
 const WriteFileOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),
   path: z.string().describe('Written file path'),
-  bytesWritten: NonNegInt.describe('Bytes written'),
+  size: NonNegInt.describe('File size in bytes'),
+  lineCount: NonNegInt.describe('Number of lines in file'),
+  mimeType: z.string().describe('MIME type of the file'),
+  kind: z
+    .enum(['text', 'binary', 'image', 'audio', 'pdf'])
+    .describe('File kind'),
+  resourceUri: z.string().describe('Full content URI in resource store'),
+  created: z.string().describe('Creation timestamp (ISO 8601)'),
+  modified: z.string().describe('Last modification timestamp (ISO 8601)'),
 });
 
 const WRITE_FILE_TOOL: ToolContract = {
@@ -51,7 +62,7 @@ type WriteOutput = z.infer<typeof WriteFileOutputSchema>;
 
 const writeMessages = buildPathMessages<WriteInput, WriteOutput>(
   WRITE_FILE_TOOL.title,
-  (sc) => formatBytes(sc.bytesWritten)
+  (sc) => formatBytes(sc.size)
 );
 
 export const WRITE_FILE = defineTool<WriteInput, WriteOutput>({
@@ -77,10 +88,61 @@ export const WRITE_FILE = defineTool<WriteInput, WriteOutput>({
       'write'
     );
 
-    return buildToolResponse(`Successfully wrote to file: ${args.path}`, {
+    // Get file stats and MIME type
+    const fileStats = await withAbort(stat(validPath), ctx.signal);
+    const mimeInfo = detectMimeType(validPath, Buffer.from(args.content));
+
+    // Count lines in content
+    const lineCount = args.content.split('\n').length;
+
+    // Return basic response if no resource store
+    if (!ctx.resourceStore) {
+      return buildToolResponse(`Successfully wrote to file: ${args.path}`, {
+        ok: true,
+        path: validPath,
+        size: bytesWritten,
+        lineCount,
+        mimeType: mimeInfo.mimeType,
+        kind: mimeInfo.kind,
+        resourceUri: '',
+        created: fileStats.birthtime.toISOString(),
+        modified: fileStats.mtime.toISOString(),
+      });
+    }
+
+    // Store content in resource store
+    const { entry, link } = putResource({
+      store: ctx.resourceStore,
+      name: basename(validPath),
+      mimeType: mimeInfo.mimeType,
+      kind: mimeInfo.kind,
+      content: args.content,
+    });
+
+    // Build summary message
+    const summary = [
+      `write: ${basename(validPath)}`,
+      formatBytes(bytesWritten),
+      `${lineCount} lines`,
+    ].join(' · ');
+
+    // Build structured response
+    const structured: WriteOutput = {
       ok: true,
       path: validPath,
-      bytesWritten,
+      size: bytesWritten,
+      lineCount,
+      mimeType: mimeInfo.mimeType,
+      kind: mimeInfo.kind,
+      resourceUri: entry.uri,
+      created: fileStats.birthtime.toISOString(),
+      modified: fileStats.mtime.toISOString(),
+    };
+
+    return buildResourceResponse({
+      summary,
+      resources: [link],
+      structured,
     });
   },
   ...writeMessages,

@@ -245,7 +245,31 @@ describe('write tool', () => {
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
-    assert.ok(typeof sc['bytesWritten'] === 'number' && sc['bytesWritten'] > 0);
+    assert.equal(typeof sc['size'], 'number');
+    assert.equal(sc['size'], 11); // "hello world" is 11 bytes
+    assert.equal(sc['lineCount'], 1);
+    assert.ok(typeof sc['mimeType'] === 'string');
+    assert.ok(typeof sc['kind'] === 'string');
+    assert.ok(typeof sc['resourceUri'] === 'string');
+    assert.ok(
+      (sc['resourceUri']).includes('filesystem-mcp://result/')
+    );
+    assert.ok(typeof sc['created'] === 'string');
+    assert.ok(typeof sc['modified'] === 'string');
+
+    // Verify summary includes "write:" and filename
+    assert.equal(result.content.length, 2);
+    assert.equal(result.content[0].type, 'text');
+    const summary = (result.content[0] as Record<string, unknown>)
+      .text as string;
+    assert.ok(summary.includes('write:'));
+    assert.ok(summary.includes('written.txt'));
+
+    // Verify resource_link
+    assert.equal(result.content[1].type, 'resource_link');
+    const link = result.content[1] as Record<string, unknown>;
+    assert.ok((link.uri as string).includes('filesystem-mcp://result/'));
+
     const actual = await readFile(file, 'utf8');
     assert.equal(actual, 'hello world');
   });
@@ -253,12 +277,44 @@ describe('write tool', () => {
   it('overwrites an existing file', async () => {
     const file = join(env.tmpDir, 'overwrite.txt');
     await writeFile(file, 'old content', 'utf8');
-    await env.client.callTool({
+    const raw = await env.client.callTool({
       name: 'write',
       arguments: { path: file, content: 'new content' },
     });
+    const result = raw;
+    assertOk(result);
+    const sc = getStructured(result);
+    assert.equal(sc['ok'], true);
+    assert.equal(sc['size'], 11); // "new content" is 11 bytes
+    assert.equal(sc['lineCount'], 1);
+    assert.ok(typeof sc['resourceUri'] === 'string');
+
+    // Verify summary includes "write:"
+    const summary = (result.content[0] as Record<string, unknown>)
+      .text as string;
+    assert.ok(summary.includes('write:'));
+
     const actual = await readFile(file, 'utf8');
     assert.equal(actual, 'new content');
+  });
+
+  it('creates parent directories and stores resource', async () => {
+    const file = join(env.tmpDir, 'nested', 'deep', 'file.txt');
+    const raw = await env.client.callTool({
+      name: 'write',
+      arguments: { path: file, content: 'nested' },
+    });
+    const result = raw;
+    assertOk(result);
+    const sc = getStructured(result);
+    assert.ok(sc['resourceUri']);
+    assert.ok(
+      (result.content[1] as Record<string, unknown>).uri
+        ?.toString()
+        .includes('filesystem-mcp://result/')
+    );
+    const actual = await readFile(file, 'utf8');
+    assert.equal(actual, 'nested');
   });
 
   it('returns ACCESS_DENIED outside allowed root', async () => {
