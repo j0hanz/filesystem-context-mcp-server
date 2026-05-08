@@ -5,6 +5,7 @@ import { z } from 'zod/v4';
 
 import { ErrorCode } from '../../src/config.js';
 import { classify, Problem, zodErrorToProblem } from '../../src/lib/problem.js';
+import { resolveSuggestion } from '../../src/lib/error-suggestions.js';
 
 describe('classify', () => {
   it('returns UNKNOWN for non-Error values', () => {
@@ -134,7 +135,8 @@ describe('zodErrorToProblem', () => {
     const p = zodErrorToProblem(result.error);
     assert.equal(p.code, ErrorCode.VALIDATION_FAILED);
     assert.ok(p.issues && p.issues.length >= 1);
-    const first = p.issues[0]!;
+    const first = p.issues.at(0);
+    assert.ok(first);
     assert.deepEqual([...first.path], ['name']);
     assert.equal(first.code, 'too_small');
   });
@@ -172,5 +174,56 @@ describe('zodErrorToProblem', () => {
     const result = schema.safeParse({ x: 'nope' });
     if (result.success) return;
     assert.equal(classify(result.error).code, ErrorCode.VALIDATION_FAILED);
+  });
+});
+
+describe('resolveSuggestion', () => {
+  it('returns per-code default when no issues and no schema', () => {
+    const s = resolveSuggestion({ code: ErrorCode.NOT_FOUND, issues: [] });
+    assert.equal(typeof s, 'string');
+    assert.ok(s !== undefined && s.length > 0);
+  });
+
+  it('returns undefined for VALIDATION_FAILED with no issues + no schema', () => {
+    assert.equal(
+      resolveSuggestion({ code: ErrorCode.VALIDATION_FAILED, issues: [] }),
+      undefined,
+    );
+  });
+
+  it('rule-params suggestion wins over per-code default', () => {
+    const s = resolveSuggestion({
+      code: ErrorCode.VALIDATION_FAILED,
+      issues: [
+        {
+          path: ['head'],
+          code: 'custom',
+          message: 'conflict',
+          params: { suggestion: 'Use line ranges OR head, not both.' },
+        },
+      ],
+    });
+    assert.equal(s, 'Use line ranges OR head, not both.');
+  });
+
+  it('schema-meta suggestion wins over rule-params and default', () => {
+    const schema = z.strictObject({
+      pattern: z.string().min(1).meta({ suggestion: 'meta wins' }),
+    });
+    const s = resolveSuggestion(
+      {
+        code: ErrorCode.VALIDATION_FAILED,
+        issues: [
+          {
+            path: ['pattern'],
+            code: 'too_small',
+            message: 'min',
+            params: { suggestion: 'rule loses' },
+          },
+        ],
+      },
+      schema,
+    );
+    assert.equal(s, 'meta wins');
   });
 });

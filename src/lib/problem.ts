@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
 
 import { ErrorCode } from '../config.js';
+import { resolveSuggestion } from './error-suggestions.js';
 
 export interface Problem {
   readonly code: ErrorCode;
@@ -192,16 +193,16 @@ function buildProblemFromSignal(
 function toProblemIssue(issue: z.core.$ZodIssue): ProblemIssue {
   const base: ProblemIssue = {
     path: issue.path.map(String),
-    code: issue.code ?? 'custom',
+    code: issue.code,
     message: issue.message,
   };
-  const expected = (issue as { expected?: unknown }).expected;
-  const received = (issue as { received?: unknown }).received;
+  const expected = (issue as { expected?: string }).expected;
+  const received = (issue as { received?: string }).received;
   const params = (issue as { params?: unknown }).params;
   return {
     ...base,
-    ...(expected !== undefined ? { expected: String(expected) } : {}),
-    ...(received !== undefined ? { received: String(received) } : {}),
+    ...(expected !== undefined ? { expected } : {}),
+    ...(received !== undefined ? { received } : {}),
     ...(params !== null && typeof params === 'object'
       ? { params: params as Record<string, unknown> }
       : {}),
@@ -212,9 +213,15 @@ export function zodErrorToProblem(
   err: z.ZodError,
   schema?: z.ZodType,
 ): Problem {
-  void schema;
   const issues = err.issues.map(toProblemIssue);
-  return build(ErrorCode.VALIDATION_FAILED, z.prettifyError(err), { issues });
+  const suggestion = resolveSuggestion(
+    { code: ErrorCode.VALIDATION_FAILED, issues },
+    schema,
+  );
+  return build(ErrorCode.VALIDATION_FAILED, z.prettifyError(err), {
+    issues,
+    ...(suggestion !== undefined ? { suggestion } : {}),
+  });
 }
 
 export function classify(error: unknown): Problem {
