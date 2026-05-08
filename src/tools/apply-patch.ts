@@ -343,7 +343,10 @@ async function processMultiFilePatch(
   const bytesWritten = Buffer.byteLength(patchedContent, 'utf-8');
   const lineCount = patchedContent.split('\n').length;
   const mimeInfo = primaryResult
-    ? detectMimeType(primaryResult.path, Buffer.from(patchedContent))
+    ? detectMimeType(
+        primaryResult.path,
+        Buffer.from(patchedContent.slice(0, 512))
+      )
     : { mimeType: 'text/plain', kind: 'text' as const };
 
   let resourceUri = '';
@@ -456,7 +459,10 @@ async function handleSingleFilePatch(
   const patchedContent = result.content ?? '';
   const bytesWritten = Buffer.byteLength(patchedContent, 'utf-8');
   const lineCount = patchedContent.split('\n').length;
-  const mimeInfo = detectMimeType(result.path, Buffer.from(patchedContent));
+  const mimeInfo = detectMimeType(
+    result.path,
+    Buffer.from(patchedContent.slice(0, 512))
+  );
 
   let resourceUri = '';
   if (!options.dryRun && resourceStore) {

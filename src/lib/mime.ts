@@ -218,6 +218,8 @@ function looksLikeText(buffer: Buffer): boolean {
 /**
  * Detect MIME type by checking magic signatures in buffer.
  */
+const WEBP_MARKER_BYTES = Buffer.from([0x57, 0x45, 0x42, 0x50]);
+
 function detectByMagic(buffer: Buffer): MimeInfo | null {
   for (const sig of MAGIC_SIGNATURES) {
     if (buffer.length >= sig.offset + sig.bytes.length) {
@@ -227,7 +229,7 @@ function detectByMagic(buffer: Buffer): MimeInfo | null {
         if (sig.mimeType === 'image/webp') {
           if (buffer.length >= 12) {
             const webpMarker = buffer.subarray(8, 12);
-            if (webpMarker.equals(Buffer.from([0x57, 0x45, 0x42, 0x50]))) {
+            if (webpMarker.equals(WEBP_MARKER_BYTES)) {
               return { mimeType: 'image/webp', kind: 'image' };
             }
           }

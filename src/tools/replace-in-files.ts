@@ -686,7 +686,10 @@ async function handleSearchAndReplace(
         }
       })();
 
-      const mimeInfo = detectMimeType(fullPath, Buffer.from(content));
+      const mimeInfo = detectMimeType(
+        fullPath,
+        Buffer.from(content.slice(0, 512))
+      );
       const lineCount = content.split('\n').length;
       const size = Buffer.byteLength(content, 'utf-8');
 

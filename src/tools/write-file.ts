@@ -90,7 +90,10 @@ export const WRITE_FILE = defineTool<WriteInput, WriteOutput>({
 
     // Get file stats and MIME type
     const fileStats = await withAbort(stat(validPath), ctx.signal);
-    const mimeInfo = detectMimeType(validPath, Buffer.from(args.content));
+    const mimeInfo = detectMimeType(
+      validPath,
+      Buffer.from(args.content.slice(0, 512))
+    );
 
     // Count lines in content
     const lineCount = args.content.split('\n').length;

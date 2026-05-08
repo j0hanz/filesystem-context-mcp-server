@@ -486,7 +486,10 @@ async function handleEditFile(
     // For dryRun, calculate stats and optionally store in resource store
     const bytesWritten = Buffer.byteLength(editResult.content, 'utf-8');
     const lineCount = editResult.content.split('\n').length;
-    const mimeInfo = detectMimeType(validPath, Buffer.from(editResult.content));
+    const mimeInfo = detectMimeType(
+      validPath,
+      Buffer.from(editResult.content.slice(0, 512))
+    );
 
     let resourceUri = '';
     // For dryRun with changes, store the hypothetical edited content in resource
@@ -539,7 +542,10 @@ async function handleEditFile(
   const fileStats = await withAbort(stat(validPath), signal);
   const bytesWritten = Buffer.byteLength(editResult.content, 'utf-8');
   const lineCount = editResult.content.split('\n').length;
-  const mimeInfo = detectMimeType(validPath, Buffer.from(editResult.content));
+  const mimeInfo = detectMimeType(
+    validPath,
+    Buffer.from(editResult.content.slice(0, 512))
+  );
 
   // Store in resource store if available and edits were made
   let resourceUri = '';

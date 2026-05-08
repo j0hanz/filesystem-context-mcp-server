@@ -295,7 +295,10 @@ async function handleReadFile(
 ): Promise<ToolResponse<ReadFileOutput>> {
   const options = buildReadOptions(args, signal);
   const result = await readFile(args.path, options, pathGuard);
-  const mimeInfo = detectMimeType(result.path, Buffer.from(result.content));
+  const mimeInfo = detectMimeType(
+    result.path,
+    Buffer.from(result.content.slice(0, 512))
+  );
   const structured = toStructuredReadFileResult(
     result.path,
     result,
