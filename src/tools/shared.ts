@@ -10,7 +10,6 @@ import type {
   ServerContext,
 } from '@modelcontextprotocol/server';
 
-import { channel } from 'node:diagnostics_channel';
 import { basename } from 'node:path';
 
 import { z } from 'zod/v4';
@@ -24,7 +23,7 @@ import {
   McpError,
   zodErrorToProblem,
 } from '../lib/errors.js';
-import { Logger } from '../lib/logger.js';
+import type { MimeKind } from '../lib/mime.js';
 import {
   type TraceContext,
   withToolDiagnostics,
@@ -36,20 +35,6 @@ import { createBase64JsonCodec } from '../lib/zod-codecs.js';
 import type { FileInfo } from '../config.js';
 
 export { type ToolContract } from './contract.js';
-
-const MAX_INLINE_CONTENT_CHARS =
-  parseInt(process.env.FS_CONTEXT_MAX_INLINE_CHARS ?? '', 10) || 20_000;
-const MAX_INLINE_PREVIEW_CHARS = MAX_INLINE_CONTENT_CHARS;
-
-interface ContextDiagnosticsEvent {
-  phase: 'externalize_text';
-  name: string;
-  mimeType?: string;
-  chars: number;
-  uri: string;
-}
-
-const CONTEXT_DIAGNOSTICS_CHANNEL = channel('filesystem-mcp:context');
 
 // W3C Trace Context: version-traceid-parentid-traceflags
 const TRACEPARENT_RE = /^[\da-f]{2}-[\da-f]{32}-[\da-f]{16}-[\da-f]{2}$/i;
@@ -66,11 +51,6 @@ function extractTraceContext(
       : {}),
     ...(typeof meta?.baggage === 'string' ? { baggage: meta.baggage } : {}),
   };
-}
-
-function publishContextDiagnostics(event: ContextDiagnosticsEvent): void {
-  if (!CONTEXT_DIAGNOSTICS_CHANNEL.hasSubscribers) return;
-  CONTEXT_DIAGNOSTICS_CHANNEL.publish(event);
 }
 
 export const READ_ONLY_TOOL_ANNOTATIONS = {
@@ -176,45 +156,6 @@ function maybeStripOutputSchema<T extends object>(tool: T): T {
     )
   );
   return stripped as T;
-}
-
-type ResourceEntry = ReturnType<ResourceStore['putText']>;
-
-function buildTextPreview(text: string): string {
-  if (text.length <= MAX_INLINE_PREVIEW_CHARS) return text;
-  return `${text.slice(0, MAX_INLINE_PREVIEW_CHARS)}\n… [truncated preview]`;
-}
-
-export function maybeExternalizeTextContent(
-  resourceStore: ResourceStore | undefined,
-  content: string,
-  params: { name: string; mimeType?: string }
-): { entry: ResourceEntry; preview: string } | undefined {
-  if (!resourceStore) return undefined;
-  if (content.length <= MAX_INLINE_CONTENT_CHARS) return undefined;
-
-  const entry = resourceStore.putText({
-    name: params.name,
-    ...(params.mimeType !== undefined ? { mimeType: params.mimeType } : {}),
-    text: content,
-  });
-
-  publishContextDiagnostics({
-    phase: 'externalize_text',
-    name: params.name,
-    ...(params.mimeType !== undefined ? { mimeType: params.mimeType } : {}),
-    chars: content.length,
-    uri: entry.uri,
-  });
-
-  Logger.debug(
-    `Content externalized: ${params.name} (${content.length} chars) → ${entry.uri}`
-  );
-
-  return {
-    entry,
-    preview: buildTextPreview(content),
-  };
 }
 
 export function buildResourceLink(params: {
@@ -665,4 +606,127 @@ export function truncateProgressPattern(
       : `${preview.slice(0, maxLength)}…`;
   }
   return `${pattern.slice(0, maxLength)}…`;
+}
+
+/**
+ * @deprecated Removed in resource-store-first refactor. Use putResource instead.
+ */
+export function maybeExternalizeTextContent(
+  _resourceStore?: ResourceStore,
+  _content?: string,
+  _params?: { name: string; mimeType?: string }
+):
+  | {
+      entry: {
+        uri: string;
+        name: string;
+        size: number;
+        mimeType: string;
+        expiresAt: string;
+      };
+      preview: string;
+    }
+  | undefined {
+  return undefined;
+}
+
+interface BuildResourceResponseParams<T> {
+  summary: string;
+  resources: ContentBlock[];
+  structured: T;
+}
+
+interface PutResourceParams {
+  store: ResourceStore;
+  name: string;
+  mimeType: string;
+  kind: MimeKind;
+  content: string | Buffer;
+  audience?: ('user' | 'assistant')[];
+  title?: string;
+  description?: string;
+}
+
+interface PutResourceResult {
+  entry: { uri: string; size: number; mimeType: string; expiresAt: string };
+  link: ContentBlock;
+}
+
+export function buildResourceResponse<T>(
+  params: BuildResourceResponseParams<T>
+): {
+  content: ContentBlock[];
+  structuredContent: T;
+} {
+  return {
+    content: [{ type: 'text', text: params.summary }, ...params.resources],
+    structuredContent: params.structured,
+  };
+}
+
+function buildLinkBlock(
+  uri: string,
+  name: string,
+  mimeType: string,
+  size: number,
+  params?: {
+    audience?: ('user' | 'assistant')[];
+    title?: string;
+    description?: string;
+  }
+): ContentBlock {
+  const audience = params?.audience ?? ['user'];
+  return {
+    type: 'resource_link',
+    uri,
+    name,
+    mimeType,
+    size,
+    ...(params?.title ? { title: params.title } : {}),
+    ...(params?.description ? { description: params.description } : {}),
+    annotations: {
+      audience,
+    },
+  };
+}
+
+export function putResource(params: PutResourceParams): PutResourceResult {
+  const entry =
+    params.kind === 'text'
+      ? params.store.putText({
+          name: params.name,
+          mimeType: params.mimeType,
+          text: params.content as string,
+        })
+      : params.store.putBlob({
+          name: params.name,
+          mimeType: params.mimeType,
+          data: params.content as Buffer,
+        });
+
+  const linkParams = {
+    ...(params.audience !== undefined ? { audience: params.audience } : {}),
+    ...(params.title !== undefined ? { title: params.title } : {}),
+    ...(params.description !== undefined
+      ? { description: params.description }
+      : {}),
+  };
+
+  const link = buildLinkBlock(
+    entry.uri,
+    entry.name,
+    entry.mimeType,
+    entry.size,
+    linkParams
+  );
+
+  return {
+    entry: {
+      uri: entry.uri,
+      size: entry.size,
+      mimeType: entry.mimeType,
+      expiresAt: entry.expiresAt,
+    },
+    link,
+  };
 }
