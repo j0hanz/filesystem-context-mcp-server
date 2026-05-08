@@ -60,11 +60,13 @@ async function rawHttpRequest(params: {
         res.on('data', (chunk) => {
           chunks.push(Buffer.from(chunk));
         });
+        res.on('error', reject);
         res.on('end', () => {
+          const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
           resolve({
             statusCode: res.statusCode ?? 0,
             headers: res.headers,
-            body: Buffer.concat(chunks).toString('utf8'),
+            body: Buffer.concat(chunks, totalLength).toString('utf8'),
           });
         });
       }
