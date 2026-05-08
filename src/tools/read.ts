@@ -81,8 +81,6 @@ const ReadFileInputSchema = z
   });
 
 const ReadFileOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Success indicator'),
-  path: z.string().describe('Resolved path'),
   content: z.string().optional().describe('File content'),
   resourceUri: z
     .string()
@@ -197,8 +195,6 @@ function toStructuredReadFileResult(
   result: ReadFileHandlerResult
 ): ReadFileOutput {
   const structured: ReadFileOutput = {
-    ok: true,
-    path: result.path,
     content: result.content,
   };
 
