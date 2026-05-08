@@ -248,10 +248,27 @@ describe('find tool', () => {
     });
     const result = raw;
     assertOk(result);
+
+    // Verify summary text and resource link
+    assert.ok(
+      result.content.length >= 2,
+      'Expected summary text and resource link'
+    );
+    const summaryBlock = result.content[0];
+    assert.equal(summaryBlock.type, 'text');
+    assert.match(
+      (summaryBlock as { text: string }).text,
+      /search-files:.*match/
+    );
+
+    const linkBlock = result.content[1];
+    assert.equal(linkBlock.type, 'resource_link');
+
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
     const results = sc['results'] as Record<string, unknown>[];
     assert.ok(results.length >= 3, 'Expected at least 3 .ts files');
+    assert.ok(sc['resourceUri'], 'Expected resourceUri in structured content');
   });
 
   it('excludes non-matching files', async () => {
@@ -261,6 +278,12 @@ describe('find tool', () => {
     });
     const result = raw;
     assertOk(result);
+
+    // Verify resource link structure
+    assert.ok(result.content.length >= 2, 'Expected summary and resource link');
+    const linkBlock = result.content[1];
+    assert.equal(linkBlock.type, 'resource_link');
+
     const sc = getStructured(result);
     const results = sc['results'] as Record<string, unknown>[];
     assert.ok(results.every((r) => (r['path'] as string).endsWith('.json')));
@@ -276,6 +299,44 @@ describe('find tool', () => {
     const sc = getStructured(result);
     const results = sc['results'] as Record<string, unknown>[];
     assert.equal(results.length, 0);
+  });
+
+  it('search-files with many results stores in resource', async () => {
+    // Create multiple files to generate substantial results
+    const subDir = join(env.tmpDir, 'manyfiles');
+    await mkdir(subDir);
+    for (let i = 0; i < 5; i++) {
+      await writeFile(join(subDir, `file${i}.ts`), '', 'utf8');
+    }
+
+    const raw = await env.client.callTool({
+      name: 'find',
+      arguments: { path: env.tmpDir, pattern: '**/*.ts' },
+    });
+    const result = raw;
+    assertOk(result);
+
+    // Verify content structure: summary text + resource link
+    assert.equal(result.content.length >= 2, true);
+    const summaryBlock = result.content[0];
+    assert.equal(summaryBlock.type, 'text');
+    const summaryText = (summaryBlock as { text: string }).text;
+    assert.match(summaryText, /search-files:/);
+    assert.match(summaryText, /matches/);
+
+    const linkBlock = result.content[1];
+    assert.equal(linkBlock.type, 'resource_link');
+    assert.ok(
+      (linkBlock as { uri: string }).uri.startsWith('filesystem-mcp://result/')
+    );
+    assert.equal((linkBlock as { name: string }).name, 'search-results.json');
+
+    const sc = getStructured(result);
+    assert.equal(sc['ok'], true);
+    const results = sc['results'] as Record<string, unknown>[];
+    assert.ok(results.length > 0, 'Expected some matching files');
+    assert.ok(sc['resourceUri'], 'Expected resourceUri in structured content');
+    assert.equal(sc['resourceUri'], (linkBlock as { uri: string }).uri);
   });
 });
 

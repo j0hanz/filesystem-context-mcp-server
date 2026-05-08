@@ -32,6 +32,7 @@ import {
 } from '../lib/fs-walk.js';
 import { isPathWithinDirectories, normalizePath } from '../lib/path-guard.js';
 import type { PathGuard } from '../lib/path-guard.js';
+import type { ResourceStore } from '../lib/resource-store.js';
 import { assignDefined } from '../lib/utils.js';
 import { NonNegInt, OptionalPath, SafeGlobPattern } from '../schemas/fields.js';
 import {
@@ -46,9 +47,11 @@ import { formatOperationSummary, joinLines } from '../config.js';
 import { defineTool } from './define-tool.js';
 import { DIRECTORY_ICONS } from './icons.js';
 import {
+  buildResourceResponse,
   buildToolResponse,
   decodeOffsetCursor,
   encodeOffsetCursor,
+  putResource,
   READ_ONLY_TOOL_ANNOTATIONS,
   type ToolContract,
   type ToolResponse,
@@ -544,6 +547,10 @@ const SearchFilesOutputSchema = z.strictObject({
     'Inaccessible entries skipped'
   ),
   stoppedReason: z.string().optional().describe('Why search stopped early'),
+  resourceUri: z
+    .string()
+    .optional()
+    .describe('URI to stored search results JSON'),
   nextCursor: NextCursorSchema,
 });
 
@@ -630,7 +637,8 @@ async function handleSearchFiles(
   args: z.infer<typeof SearchFilesInputSchema>,
   pathGuard: PathGuard,
   signal?: AbortSignal,
-  onProgress?: (progress: { total?: number; current: number }) => void
+  onProgress?: (progress: { total?: number; current: number }) => void,
+  resourceStore?: ResourceStore
 ): Promise<ToolResponse<z.infer<typeof SearchFilesOutputSchema>>> {
   const basePath = pathGuard.resolvePathOrRoot(args.path);
   const excludePatterns = args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
@@ -677,6 +685,35 @@ async function handleSearchFiles(
 
   const truncatedReason = buildTruncatedReason(result.summary);
 
+  // If resourceStore is available, store results as JSON and build resource response
+  if (resourceStore !== undefined && relativeResults.length > 0) {
+    const resultsJson = JSON.stringify(relativeResults, null, 2);
+    const { entry, link } = putResource({
+      store: resourceStore,
+      name: 'search-results.json',
+      mimeType: 'application/json',
+      kind: 'text',
+      content: resultsJson,
+    });
+
+    const summary = [
+      `search-files: '${args.pattern}'`,
+      `${relativeResults.length} ${relativeResults.length === 1 ? 'match' : 'matches'}`,
+    ].join(' · ');
+
+    const structuredWithResource = {
+      ...structured,
+      resourceUri: entry.uri,
+    };
+
+    return buildResourceResponse({
+      summary,
+      resources: [link],
+      structured: structuredWithResource,
+    });
+  }
+
+  // Fallback: build traditional text response when no results or no resourceStore
   const summaryOptions: Parameters<typeof formatOperationSummary>[0] = {
     truncated: result.summary.truncated,
   };
@@ -733,7 +770,8 @@ export const SEARCH_FILES = defineTool<
         args,
         ctx.pathGuard,
         ctx.signal,
-        progressWithMessage
+        progressWithMessage,
+        ctx.resourceStore
       );
       const sc = result.structuredContent;
       const { totalMatches = 0, stoppedReason } = sc;
