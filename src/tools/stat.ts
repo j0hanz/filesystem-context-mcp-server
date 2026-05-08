@@ -1,8 +1,17 @@
+import type { Stats } from 'node:fs';
+import { readlink, stat } from 'node:fs/promises';
+import { parse } from 'node:path';
+
 import type { z } from 'zod/v4';
 
-import { DEFAULT_SEARCH_TIMEOUT_MS } from '../lib/constants.js';
-import { ErrorCode } from '../lib/errors.js';
-import { getFileInfo } from '../lib/file-operations/metadata.js';
+import { assertNotAborted, withAbort } from '../lib/abort.js';
+import { DEFAULT_SEARCH_TIMEOUT_MS, getMimeType } from '../lib/constants.js';
+import { ErrorCode, isAbortError } from '../lib/errors.js';
+import { getFileType, isHidden } from '../lib/fs-walk.js';
+import {
+  assertAllowedFileAccess,
+  validateExistingPathDetailed,
+} from '../lib/paths.js';
 import { StatInputSchema } from '../schemas/inputs.js';
 import { StatOutputSchema } from '../schemas/outputs.js';
 
@@ -33,6 +42,102 @@ const GET_FILE_INFO_TOOL: ToolContract = {
   taskSupport: 'forbidden',
   defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
 } as const;
+
+const PERM_STRINGS = [
+  '---',
+  '--x',
+  '-w-',
+  '-wx',
+  'r--',
+  'r-x',
+  'rw-',
+  'rwx',
+] as const satisfies readonly string[];
+
+function getPermissions(mode: number): string {
+  return (
+    (PERM_STRINGS[(mode >> 6) & 0b111] ?? '---') +
+    (PERM_STRINGS[(mode >> 3) & 0b111] ?? '---') +
+    (PERM_STRINGS[mode & 0b111] ?? '---')
+  );
+}
+
+function buildFileInfoResult(
+  name: string,
+  requestedPath: string,
+  isSymlink: boolean,
+  stats: Stats,
+  mimeType: string | undefined,
+  symlinkTarget: string | undefined
+): FileInfo {
+  const tokenEstimate = stats.isFile() ? Math.ceil(stats.size / 4) : undefined;
+  return {
+    name,
+    path: requestedPath,
+    type: isSymlink ? 'symlink' : getFileType(stats),
+    size: stats.size,
+    ...(tokenEstimate !== undefined ? { tokenEstimate } : {}),
+    created: stats.birthtime,
+    modified: stats.mtime,
+    accessed: stats.atime,
+    permissions: getPermissions(stats.mode),
+    isHidden: isHidden(name),
+    ...(mimeType !== undefined ? { mimeType } : {}),
+    ...(symlinkTarget !== undefined ? { symlinkTarget } : {}),
+  };
+}
+
+async function getSymlinkTarget(
+  pathToRead: string,
+  signal?: AbortSignal
+): Promise<string | undefined> {
+  assertNotAborted(signal);
+  try {
+    return await withAbort(readlink(pathToRead), signal);
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    return undefined;
+  }
+}
+
+interface FileInfoOptions {
+  includeMimeType?: boolean | undefined;
+  signal?: AbortSignal | undefined;
+}
+
+async function getFileInfo(
+  filePath: string,
+  options: FileInfoOptions = {}
+): Promise<FileInfo> {
+  const { signal } = options;
+  assertNotAborted(signal);
+
+  const { requestedPath, resolvedPath, isSymlink } =
+    await validateExistingPathDetailed(filePath, signal);
+
+  assertAllowedFileAccess(requestedPath, resolvedPath);
+
+  const { base: name, ext: rawExt } = parse(requestedPath);
+  const ext = rawExt.toLowerCase();
+  const includeMimeType = options.includeMimeType !== false;
+  const mimeType =
+    includeMimeType && ext.length > 0 ? getMimeType(ext) : undefined;
+
+  const symlinkTarget = isSymlink
+    ? await getSymlinkTarget(requestedPath, signal)
+    : undefined;
+
+  const stats = await withAbort(stat(resolvedPath), signal);
+
+  return buildFileInfoResult(
+    name,
+    requestedPath,
+    isSymlink,
+    stats,
+    mimeType,
+    symlinkTarget
+  );
+}
 
 function formatFileInfoDetails(info: FileInfo): string {
   const lines = [

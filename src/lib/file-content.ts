@@ -1,32 +1,23 @@
 import { isUtf8 } from 'node:buffer';
-import { type BinaryToTextEncoding, createHash, randomUUID } from 'node:crypto';
+import { type BinaryToTextEncoding, createHash } from 'node:crypto';
 import { createReadStream, type Stats } from 'node:fs';
-import {
-  type FileHandle,
-  open,
-  rename,
-  stat,
-  unlink,
-  writeFile,
-} from 'node:fs/promises';
+import { type FileHandle, open, stat } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
-import type { FileType } from '../config.js';
 import { assertNotAborted, withAbort } from './abort.js';
 import {
   BINARY_CHECK_BUFFER_SIZE,
   KNOWN_BINARY_EXTENSIONS,
   MAX_TEXT_FILE_SIZE,
-  PARALLEL_CONCURRENCY,
 } from './constants.js';
-import { ErrorCode, McpError, normalizeUnknownError } from './errors.js';
+import { ErrorCode, McpError } from './errors.js';
 import { assertAllowedFileAccess, validateExistingPath } from './paths.js';
 
 const READ_ONLY_FILE_FLAG = 'r';
+const STREAM_CHUNK_SIZE = 64 * 1024;
 
-const UNFILLED = Symbol('UNFILLED');
-type Unfilled = typeof UNFILLED;
+// ─── Input validation ────────────────────────────────────────────────────────
 
 function assertPositiveSafeIntegerOption(
   name: string,
@@ -34,7 +25,6 @@ function assertPositiveSafeIntegerOption(
   message?: string
 ): void {
   if (value === undefined) return;
-
   if (
     typeof value !== 'number' ||
     !Number.isFinite(value) ||
@@ -48,96 +38,7 @@ function assertPositiveSafeIntegerOption(
   }
 }
 
-function normalizeConcurrency(concurrency: number): number {
-  assertPositiveSafeIntegerOption('concurrency', concurrency);
-  return concurrency;
-}
-
-interface ParallelResult<R> {
-  results: R[];
-  errors: { index: number; error: Error }[];
-}
-
-function createParallelAbortError(): Error {
-  return new DOMException('Operation aborted', 'AbortError');
-}
-
-export async function processInParallel<T, R>(
-  items: T[],
-  processor: (item: T) => Promise<R>,
-  concurrency: number = PARALLEL_CONCURRENCY,
-  signal?: AbortSignal
-): Promise<ParallelResult<R>> {
-  const itemCount = items.length;
-  if (itemCount === 0) return { results: [], errors: [] };
-  const effectiveConcurrency = normalizeConcurrency(concurrency);
-
-  // Pre-allocate slots by index to guarantee input-order output.
-  // Use UNFILLED sentinel to distinguish "not yet filled" from "filled with undefined".
-  const resultSlots: (R | Unfilled)[] = new Array<R | Unfilled>(itemCount);
-  const errors: { index: number; error: Error }[] = [];
-
-  if (signal?.aborted) throw createParallelAbortError();
-
-  let nextIndex = 0;
-
-  resultSlots.fill(UNFILLED);
-
-  const next = async (): Promise<void> => {
-    while (nextIndex < itemCount) {
-      if (signal?.aborted) throw createParallelAbortError();
-
-      const index = nextIndex;
-      nextIndex += 1;
-
-      // Safe: `index < itemCount === items.length`, so `items[index]` is defined.
-      // Cast bypasses `noUncheckedIndexedAccess` widening to `T | undefined`.
-      const item = items[index] as T;
-
-      try {
-        const result = await processor(item);
-        if (signal?.aborted) throw createParallelAbortError();
-        resultSlots[index] = result;
-      } catch (error) {
-        if (signal?.aborted) throw createParallelAbortError();
-
-        errors.push({
-          index,
-          error: normalizeUnknownError(error),
-        });
-      }
-    }
-  };
-
-  const workerCount = Math.min(itemCount, effectiveConcurrency);
-  const workers: Promise<void>[] = new Array<Promise<void>>(workerCount);
-  for (let index = 0; index < workerCount; index += 1) {
-    workers[index] = next();
-  }
-
-  await Promise.allSettled(workers);
-
-  if (signal?.aborted) throw createParallelAbortError();
-
-  const results: R[] = [];
-  for (const slot of resultSlots) {
-    if (slot !== UNFILLED) {
-      results.push(slot);
-    }
-  }
-  return { results, errors };
-}
-
-export function getFileType(stats: Stats): FileType {
-  if (stats.isFile()) return 'file';
-  if (stats.isDirectory()) return 'directory';
-  if (stats.isSymbolicLink()) return 'symlink';
-  return 'other';
-}
-
-export function isHidden(name: string): boolean {
-  return name.startsWith('.');
-}
+// ─── Binary detection ────────────────────────────────────────────────────────
 
 function hasKnownBinaryExtension(filePath: string): boolean {
   const ext = extname(filePath).toLowerCase();
@@ -176,6 +77,13 @@ function hasUtf16Bom(slice: Buffer): boolean {
   );
 }
 
+function isBinarySlice(slice: Buffer): boolean {
+  if (slice.length === 0) return false;
+  if (hasUtf16Bom(slice)) return false;
+  if (slice.includes(0)) return true;
+  return !isUtf8(slice);
+}
+
 export async function isProbablyBinary(
   filePath: string,
   existingHandle?: FileHandle,
@@ -196,12 +104,7 @@ export async function isProbablyBinary(
   return isBinarySlice(slice);
 }
 
-function isBinarySlice(slice: Buffer): boolean {
-  if (slice.length === 0) return false;
-  if (hasUtf16Bom(slice)) return false;
-  if (slice.includes(0)) return true;
-  return !isUtf8(slice);
-}
+// ─── File hashing ────────────────────────────────────────────────────────────
 
 export async function calculateFileContentHash(
   filePath: string,
@@ -230,6 +133,8 @@ export async function calculateFileContentHash(
   );
   return encoding === null ? hasher.digest() : hasher.digest(encoding);
 }
+
+// ─── File reading ────────────────────────────────────────────────────────────
 
 type ReadMode = 'head' | 'full' | 'range' | 'tail' | 'byteRange';
 
@@ -272,7 +177,7 @@ interface PartialReadResult {
   hasMoreLines: boolean;
 }
 
-interface ReadFileResult {
+export interface ReadFileResult {
   path: string;
   content: string;
   truncated: boolean;
@@ -427,8 +332,6 @@ function resolveReadMode(options: NormalizedOptions): ReadMode {
     return 'range';
   return 'full';
 }
-
-const STREAM_CHUNK_SIZE = 64 * 1024;
 
 function createTooLargeError(
   bytesRead: number,
@@ -977,27 +880,4 @@ export async function readFile(
   const stats = await withAbort(stat(validPath), normalized.signal);
 
   return readFileWithStatsInternal(filePath, validPath, stats, normalized);
-}
-
-export async function atomicWriteFile(
-  filePath: string,
-  content: string,
-  options: { encoding?: BufferEncoding; signal?: AbortSignal | undefined } = {}
-): Promise<void> {
-  const { encoding = 'utf-8', signal } = options;
-  const tempPath = `${filePath}.${randomUUID()}.tmp`;
-
-  try {
-    assertNotAborted(signal);
-    await writeFile(tempPath, content, { encoding, signal });
-    await withAbort(rename(tempPath, filePath), signal);
-  } catch (error) {
-    // Attempt cleanup on error, but don't overwrite the original error
-    try {
-      await unlink(tempPath).catch(() => undefined);
-    } catch {
-      // Ignore cleanup errors
-    }
-    throw error;
-  }
 }

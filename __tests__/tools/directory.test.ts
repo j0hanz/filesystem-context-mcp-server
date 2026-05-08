@@ -6,7 +6,6 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-import { listDirectory } from '../../src/lib/file-operations/metadata.js';
 import {
   assertOk,
   assertToolError,
@@ -85,13 +84,11 @@ describe('ls tool', () => {
   });
 
   it('rejects unsafe glob patterns before traversal', async () => {
-    await assert.rejects(
-      () => listDirectory(env.tmpDir, { pattern: '../../*' }),
-      (error: unknown) =>
-        error instanceof Error &&
-        'code' in error &&
-        error.code === 'INVALID_PATTERN'
-    );
+    const raw = await env.client.callTool({
+      name: 'ls',
+      arguments: { path: env.tmpDir, pattern: '../../*' },
+    });
+    assertToolError(raw);
   });
 
   it('paginates with an opaque cursor across multiple pages', async () => {

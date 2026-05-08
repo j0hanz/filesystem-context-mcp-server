@@ -4,7 +4,7 @@ import { getSystemErrorMessage, getSystemErrorName } from 'node:util';
 
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
 
-import { processInParallel } from './lib/fs-helpers.js';
+import { processInParallel } from './lib/parallel.js';
 import {
   getReservedDeviceNameForPath,
   isWindowsDriveRelativePath,

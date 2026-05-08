@@ -61,6 +61,13 @@ Each tool lives in [src/tools/](src/tools/) and exports two things:
 
 All Zod input/output schemas are centralized in [src/schemas.ts](src/schemas.ts). Tools use `z.strictObject` (recent migration — see commit `86f6fe8`). Every tool defines `outputSchema` and returns `structuredContent`; the schema-to-JSON-Schema conversion is what clients see in `tools/list`. Setting `FS_CONTEXT_STRIP_STRUCTURED=true` strips output schemas at runtime.
 
+### Shared filesystem libraries
+
+- [src/lib/atomic-write.ts](src/lib/atomic-write.ts) — Atomic file write via temp-file-then-rename; used by `write-file`, `edit-file`, `apply-patch`.
+- [src/lib/parallel.ts](src/lib/parallel.ts) — `processInParallel()` helper with configurable concurrency; used by `list-directory`, `stat-many`.
+- [src/lib/file-content.ts](src/lib/file-content.ts) — Binary detection, SHA-256 hashing, multi-mode file reading; used by `calculate-hash`, `read-file`, `search-content`.
+- [src/lib/fs-walk.ts](src/lib/fs-walk.ts) — Unified glob/traversal engine (merged from the former `file-operations/core.ts` + `file-operations/traversal.ts`); exports `globEntries`, `DirentLike`, `EntryType`, `resolveEntryType`, `isIgnoredByGitignore`, and related helpers. All directory-walking tools import from here.
+
 ### Path security model
 
 [src/lib/paths.ts](src/lib/paths.ts) holds the trusted-path invariant: every path passed into a tool is normalized, resolved with `realpath`, and asserted to be inside an allowed root. The set of allowed directories lives in **AsyncLocalStorage** (`withAllowedDirectoriesState`) so HTTP sessions don't leak roots to each other; stdio uses a single global state. Symlink escapes, sensitive-file denylist (`.env*`, `.git`, SSH keys — [src/lib/constants.ts](src/lib/constants.ts)), and Windows-specific edge cases (drive-relative paths, reserved device names) are enforced here. Never bypass `getAllowedDirectories()`/`assertWithinAllowedDirectories()` when adding filesystem code.

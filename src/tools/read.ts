@@ -8,7 +8,7 @@ import {
   MAX_TEXT_FILE_SIZE,
 } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
-import { calculateFileContentHash, readFile } from '../lib/fs-helpers.js';
+import { calculateFileContentHash, readFile } from '../lib/file-content.js';
 import { assignDefined } from '../lib/utils.js';
 import { ReadFileInputSchema } from '../schemas/inputs.js';
 import {

@@ -5,14 +5,12 @@ import { applyPatch, parsePatch, type StructuredPatch } from 'diff';
 import type { z } from 'zod/v4';
 
 import { withAbort } from '../lib/abort.js';
+import { atomicWriteFile } from '../lib/atomic-write.js';
 import { MAX_TEXT_FILE_SIZE, PARALLEL_CONCURRENCY } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
-import {
-  atomicWriteFile,
-  processInParallel,
-  readFileWithStats,
-} from '../lib/fs-helpers.js';
+import { readFileWithStats } from '../lib/file-content.js';
 import { Logger } from '../lib/logger.js';
+import { processInParallel } from '../lib/parallel.js';
 import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
 import { ApplyPatchInputSchema } from '../schemas/inputs.js';
 import { ApplyPatchOutputSchema } from '../schemas/outputs.js';

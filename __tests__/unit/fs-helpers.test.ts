@@ -1,7 +1,7 @@
 import assert from 'node:assert';
 import { describe, it } from 'node:test';
 
-import { processInParallel } from '../../src/lib/fs-helpers.js';
+import { processInParallel } from '../../src/lib/parallel.js';
 
 describe('processInParallel', () => {
   it('correctly handles results containing undefined', async () => {

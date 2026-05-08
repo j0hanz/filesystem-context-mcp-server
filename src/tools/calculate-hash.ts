@@ -10,12 +10,12 @@ import {
   PARALLEL_CONCURRENCY,
 } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
+import { calculateFileContentHash } from '../lib/file-content.js';
 import {
+  globEntries,
   isIgnoredByGitignore,
   loadRootGitignore,
-} from '../lib/file-operations/core.js';
-import { globEntries } from '../lib/file-operations/traversal.js';
-import { calculateFileContentHash } from '../lib/fs-helpers.js';
+} from '../lib/fs-walk.js';
 import { validateExistingPath } from '../lib/paths.js';
 import { HashInputSchema } from '../schemas/inputs.js';
 import { HashOutputSchema } from '../schemas/outputs.js';

@@ -6,9 +6,10 @@ import RE2 from 're2';
 import type { z } from 'zod/v4';
 
 import { withAbort } from '../lib/abort.js';
+import { atomicWriteFile } from '../lib/atomic-write.js';
 import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
-import { atomicWriteFile, readFileWithStats } from '../lib/fs-helpers.js';
+import { readFileWithStats } from '../lib/file-content.js';
 import { Logger } from '../lib/logger.js';
 import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
 import { EditFileInputSchema } from '../schemas/inputs.js';

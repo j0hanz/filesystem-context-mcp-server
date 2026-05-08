@@ -6,6 +6,7 @@ import { createTwoFilesPatch } from 'diff';
 import RE2 from 're2';
 import type { z } from 'zod/v4';
 
+import { atomicWriteFile } from '../lib/atomic-write.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_SEARCH_TIMEOUT_MS,
@@ -17,8 +18,7 @@ import {
   formatUnknownErrorMessage,
   McpError,
 } from '../lib/errors.js';
-import { globEntries } from '../lib/file-operations/traversal.js';
-import { atomicWriteFile } from '../lib/fs-helpers.js';
+import { globEntries } from '../lib/fs-walk.js';
 import { Logger } from '../lib/logger.js';
 import { validateExistingPath, validatePathForWrite } from '../lib/paths.js';
 import {

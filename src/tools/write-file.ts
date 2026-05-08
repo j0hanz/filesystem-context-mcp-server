@@ -4,8 +4,8 @@ import { dirname } from 'node:path';
 import type { z } from 'zod/v4';
 
 import { withAbort } from '../lib/abort.js';
+import { atomicWriteFile } from '../lib/atomic-write.js';
 import { ErrorCode } from '../lib/errors.js';
-import { atomicWriteFile } from '../lib/fs-helpers.js';
 import { Logger } from '../lib/logger.js';
 import { validatePathForWrite } from '../lib/paths.js';
 import { WriteFileInputSchema } from '../schemas/inputs.js';
