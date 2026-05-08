@@ -303,54 +303,6 @@ test('defineTool: handler returns not-initialized error when guard fails', async
   assert.equal(result.errorCode, ErrorCode.INVALID_INPUT);
 });
 
-test('defineTool: handler validates input schema and returns VALIDATION_FAILED on failure', async (): Promise<void> => {
-  const tool = defineTool<TestInput, TestOutput>({
-    contract: TEST_CONTRACT,
-    run: async () => buildToolResponse('test', { ok: true, result: 'success' }),
-  });
-
-  let capturedHandler:
-    | ((
-        args: unknown,
-        ctx: Record<string, unknown>
-      ) => Promise<ToolResult<TestOutput>>)
-    | undefined;
-  const mockServer = {
-    registerTool: (
-      _name: string,
-      _schema: unknown,
-      handler: (
-        args: unknown,
-        ctx: Record<string, unknown>
-      ) => Promise<ToolResult<TestOutput>>
-    ): void => {
-      capturedHandler = handler;
-    },
-  } as unknown as McpServer;
-
-  tool.register(mockServer, {
-    pathGuard: null as unknown as PathGuard,
-    isInitialized: () => true,
-    hasTaskSupport: false,
-  });
-
-  assert.ok(capturedHandler, 'handler was captured');
-
-  const result = await capturedHandler(
-    {
-      message: 123,
-    },
-    {
-      log: undefined,
-      signal: new AbortController().signal,
-      _meta: {},
-    }
-  );
-
-  assert.ok(result.isError, 'result is an error');
-  assert.equal(result.errorCode, ErrorCode.VALIDATION_FAILED);
-});
-
 test('defineTool: handler validates output schema', async (): Promise<void> => {
   const tool = defineTool<TestInput, TestOutput>({
     contract: TEST_CONTRACT,

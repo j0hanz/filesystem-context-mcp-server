@@ -50,7 +50,6 @@ import {
   type ToolResult,
   toToolContext,
   withDefaultIcons,
-  withValidatedArgs,
 } from './shared.js';
 
 // === Section A: Task Support Metadata ===
@@ -1039,19 +1038,14 @@ export function registerStandardTool<
     guard: options.isInitialized,
     ...wrapOptions,
   });
-  const validatedHandler = withValidatedArgs(
-    // `as never`: `inputSchema` is a Zod schema but typed loosely on `ToolContract`;
-    // `withValidatedArgs` will re-narrow at runtime via `safeParse`.
-    toolDef.inputSchema as never,
-    wrappedHandler
-  );
+  const validatedHandler = wrappedHandler;
 
   if (
     registerToolTaskIfAvailable(
       server,
       toolDef.name,
       toolDef,
-      validatedHandler,
+      validatedHandler as never,
       options
     )
   ) {

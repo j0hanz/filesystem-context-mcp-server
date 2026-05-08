@@ -21,7 +21,6 @@ import {
   formatDetailedError,
   getSuggestion,
   McpError,
-  zodErrorToProblem,
 } from '../lib/errors.js';
 import type { MimeKind } from '../lib/mime.js';
 import {
@@ -277,43 +276,6 @@ function validateToolResponse<T>(
       outputSchema,
       result.structuredContent
     ),
-  };
-}
-
-function parseToolArgs<Schema extends z.ZodType>(
-  schema: Schema,
-  args: unknown
-): z.infer<Schema> {
-  const candidate = args === undefined ? {} : args;
-  const parsed = schema.safeParse(candidate);
-  if (parsed.success) {
-    return parsed.data;
-  }
-
-  throw new McpError(zodErrorToProblem(parsed.error, schema));
-}
-
-export function withValidatedArgs<Args, Result>(
-  schema: z.ZodType<Args>,
-  handler: (args: Args, ctx: ToolContext) => Promise<ToolResult<Result>>
-): (
-  args: unknown,
-  ctx: ToolContext | ServerContext
-) => Promise<ToolResult<Result>> {
-  return async (args, ctx) => {
-    try {
-      const normalizedArgs = parseToolArgs(schema, args);
-      return await handler(normalizedArgs, toToolContext(ctx));
-    } catch (error) {
-      if (
-        error instanceof McpError &&
-        (error.code === ErrorCode.INVALID_INPUT ||
-          error.code === ErrorCode.VALIDATION_FAILED)
-      ) {
-        return buildToolErrorResponse(error, error.code);
-      }
-      throw error;
-    }
   };
 }
 

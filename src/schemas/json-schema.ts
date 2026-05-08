@@ -1,4 +1,4 @@
-import { fromJsonSchema } from '@modelcontextprotocol/server';
+import type { StandardSchemaWithJSON } from '@modelcontextprotocol/server';
 
 import { z } from 'zod/v4';
 
@@ -105,7 +105,7 @@ export function safeGlobConstraint(propertyName: string): JsonSchema {
 export function toToolJsonSchema(
   zodSchema: z.ZodType,
   augment?: (schema: JsonSchema) => JsonSchema
-): ReturnType<typeof fromJsonSchema> {
+): StandardSchemaWithJSON {
   const raw = z.toJSONSchema(zodSchema, {
     io: 'input',
     unrepresentable: 'any',
@@ -115,5 +115,18 @@ export function toToolJsonSchema(
     stripRootSchema(raw)
   ) as JsonSchema;
   const final = augment ? augment(cleaned) : cleaned;
-  return fromJsonSchema(final);
+
+  // Clone the ~standard object and remove its built-in jsonSchema builder
+  // Override the ~standard object's built-in jsonSchema builder
+  // so the MCP SDK uses our cleaned `final` schema for tools/list.
+  const std = { ...zodSchema['~standard'] } as Record<string, unknown>;
+  std.jsonSchema = {
+    input: () => final,
+    output: () => final,
+  };
+
+  return {
+    '~standard': std,
+    jsonSchema: final,
+  } as unknown as StandardSchemaWithJSON;
 }
