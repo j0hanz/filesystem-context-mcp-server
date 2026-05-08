@@ -685,12 +685,17 @@ export function putResource(params: PutResourceParams): PutResourceResult {
       ? params.store.putText({
           name: params.name,
           mimeType: params.mimeType,
-          text: params.content as string,
+          text:
+            typeof params.content === 'string'
+              ? params.content
+              : params.content.toString('utf-8'),
         })
       : params.store.putBlob({
           name: params.name,
           mimeType: params.mimeType,
-          data: params.content as Buffer,
+          data: Buffer.isBuffer(params.content)
+            ? params.content
+            : Buffer.from(params.content),
         });
 
   const linkParams = {

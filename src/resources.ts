@@ -72,10 +72,21 @@ export function registerAllResources(
           'Cached result expired. Re-run the tool to regenerate.'
         );
       }
-      const entry = options.resourceStore.getText(uri.toString());
+      const entry = options.resourceStore.getEntry(uri.toString());
+      if (entry.kind === 'text') {
+        return {
+          contents: [
+            { uri: entry.uri, mimeType: entry.mimeType, text: entry.text },
+          ],
+        };
+      }
       return {
         contents: [
-          { uri: entry.uri, mimeType: entry.mimeType, text: entry.text },
+          {
+            uri: entry.uri,
+            mimeType: entry.mimeType,
+            blob: entry.data.toString('base64'),
+          },
         ],
       };
     }

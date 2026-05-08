@@ -38,6 +38,7 @@ export interface ResourceStore {
     data: Buffer;
   }): BlobResourceEntry;
   getBlob(uri: string): BlobResourceEntry;
+  getEntry(uri: string): StoredEntry;
   clear(): void;
   keys(): string[];
 }
@@ -425,6 +426,40 @@ export function createInMemoryResourceStore(
     return existing;
   }
 
+  function getEntry(uri: string): StoredEntry {
+    const existing = byUri.get(uri);
+    if (!existing) {
+      publishResourceStoreDiagnostics({
+        phase: 'cache_miss',
+        uri,
+        reason: 'not_found',
+      });
+      throw new McpError(
+        ErrorCode.NOT_FOUND,
+        `Resource not found: ${uri}. Re-run the tool to regenerate.`
+      );
+    }
+    if (isExpired(existing)) {
+      removeEntry(uri, 'expired');
+      publishResourceStoreDiagnostics({
+        phase: 'cache_miss',
+        uri,
+        reason: 'expired',
+      });
+      throw new McpError(
+        ErrorCode.NOT_FOUND,
+        `Resource expired: ${uri}. Re-run the tool to regenerate.`
+      );
+    }
+    publishResourceStoreDiagnostics({
+      phase: 'cache_hit',
+      uri: existing.uri,
+      name: existing.name,
+      bytes: existing.size,
+    });
+    return existing;
+  }
+
   function clear(): void {
     const bytesBeforeClear = totalBytes;
     byUri.clear();
@@ -441,5 +476,5 @@ export function createInMemoryResourceStore(
     return Array.from(byUri.keys());
   }
 
-  return { putText, getText, putBlob, getBlob, clear, keys };
+  return { putText, getText, putBlob, getBlob, getEntry, clear, keys };
 }
