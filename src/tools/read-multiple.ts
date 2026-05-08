@@ -33,16 +33,18 @@ import {
   buildResourceLink,
   buildStructuredError,
   buildToolResponse,
-  completeProgressSession,
-  createBatchProgressCallbacks,
   maybeExternalizeTextContent,
   READ_ONLY_TOOL_ANNOTATIONS,
-  resolveFinalProgressCurrent,
   type ToolContract,
   type ToolRegistrationOptions,
   type ToolResponse,
 } from './shared.js';
-import { reportTaskStatus } from './task-support.js';
+import {
+  completeProgressSession,
+  createBatchProgressCallbacks,
+  reportTaskStatus,
+  resolveFinalProgressCurrent,
+} from './tool-execution.js';
 
 // ---------------------------------------------------------------------------
 // readMultipleFiles implementation (inlined from file-operations/metadata.ts)

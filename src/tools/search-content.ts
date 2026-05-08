@@ -57,15 +57,17 @@ import {
   decodeOffsetCursor,
   encodeOffsetCursor,
   READ_ONLY_TOOL_ANNOTATIONS,
-  resolveFinalProgressCurrent,
   resolvePathOrRoot,
-  runWithProgressSession,
   type ToolContract,
   type ToolRegistrationOptions,
   type ToolResponse,
   truncateProgressPattern,
 } from './shared.js';
-import { reportTaskStatus } from './task-support.js';
+import {
+  reportTaskStatus,
+  resolveFinalProgressCurrent,
+  runWithProgressSession,
+} from './tool-execution.js';
 
 // ---------------------------------------------------------------------------
 // Private searchContent implementation (inlined from lib/file-operations/search.ts)

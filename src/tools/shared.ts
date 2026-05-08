@@ -5,8 +5,6 @@ import type {
   Icon,
   LoggingLevel,
   Notification,
-  ProgressNotification,
-  ProgressToken,
   RequestMeta,
   RequestTaskStore,
   ServerContext,
@@ -18,9 +16,7 @@ import { basename } from 'node:path';
 import { z } from 'zod/v4';
 
 import { createTimedAbortSignal } from '../lib/abort.js';
-import { parseTrueEnvFlag } from '../lib/constants.js';
 import {
-  classifyError,
   createDetailedError,
   ErrorCode,
   formatDetailedError,
@@ -44,7 +40,6 @@ export { type ToolContract } from './contract.js';
 const MAX_INLINE_CONTENT_CHARS =
   parseInt(process.env.FS_CONTEXT_MAX_INLINE_CHARS ?? '', 10) || 20_000;
 const MAX_INLINE_PREVIEW_CHARS = MAX_INLINE_CONTENT_CHARS;
-const PROGRESS_RATE_LIMIT_MS = 50;
 
 interface ContextDiagnosticsEvent {
   phase: 'externalize_text';
@@ -99,55 +94,11 @@ export const IDEMPOTENT_WRITE_TOOL_ANNOTATIONS = {
   openWorldHint: false,
 } as const;
 
-export type TaskSupportLevel = 'optional' | 'required' | 'forbidden';
-
-function isTaskSupportLevel(value: unknown): value is TaskSupportLevel {
-  return value === 'optional' || value === 'required' || value === 'forbidden';
-}
-
-function getExecutionConfig(
-  candidate: Record<string, unknown>
-): Record<string, unknown> | undefined {
-  const { execution } = candidate;
-  return execution && typeof execution === 'object'
-    ? (execution as Record<string, unknown>)
-    : undefined;
-}
-
-export function resolveToolTaskSupportLevel(
-  topLevelTaskSupport: unknown,
-  executionTaskSupport: unknown
-): TaskSupportLevel | undefined {
-  if (isTaskSupportLevel(topLevelTaskSupport)) {
-    return topLevelTaskSupport;
-  }
-
-  if (isTaskSupportLevel(executionTaskSupport)) {
-    return executionTaskSupport;
-  }
-
-  return undefined;
-}
-
-function buildNormalizedExecution(
-  existingExecution: Record<string, unknown> | undefined,
-  taskSupport: TaskSupportLevel | undefined
-): Record<string, unknown> | undefined {
-  if (taskSupport === undefined && existingExecution === undefined) {
-    return undefined;
-  }
-
-  return {
-    ...(existingExecution ?? {}),
-    ...(taskSupport !== undefined ? { taskSupport } : {}),
-  };
-}
-
 function normalizeToolExecution<T extends object>(tool: T): T {
   const candidate = tool as Record<string, unknown>;
   const topLevelTaskSupport = candidate.taskSupport;
-  const existingExecution = getExecutionConfig(candidate);
-  const resolvedTaskSupport = resolveToolTaskSupportLevel(
+  const existingExecution = getExecutionConfigForToolNormalization(candidate);
+  const resolvedTaskSupport = resolveTaskSupportForNormalization(
     topLevelTaskSupport,
     existingExecution?.taskSupport
   );
@@ -159,7 +110,7 @@ function normalizeToolExecution<T extends object>(tool: T): T {
   const normalized = { ...candidate };
   delete normalized.taskSupport;
 
-  const execution = buildNormalizedExecution(
+  const execution = buildNormalizedExecutionForTool(
     existingExecution,
     resolvedTaskSupport
   );
@@ -170,26 +121,53 @@ function normalizeToolExecution<T extends object>(tool: T): T {
   return normalized as T;
 }
 
-function shouldStripStructuredOutput(): boolean {
-  return parseTrueEnvFlag(process.env.FS_CONTEXT_STRIP_STRUCTURED);
+function getExecutionConfigForToolNormalization(
+  candidate: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  const { execution } = candidate;
+  return execution && typeof execution === 'object'
+    ? (execution as Record<string, unknown>)
+    : undefined;
 }
 
-export function maybeStripStructuredContentFromResult<T extends object>(
-  result: T
-): T {
-  if (!shouldStripStructuredOutput()) return result;
-  if (!Object.hasOwn(result, 'structuredContent')) return result;
+function resolveTaskSupportForNormalization(
+  topLevelTaskSupport: unknown,
+  executionTaskSupport: unknown
+): string | undefined {
+  if (
+    topLevelTaskSupport === 'optional' ||
+    topLevelTaskSupport === 'required' ||
+    topLevelTaskSupport === 'forbidden'
+  ) {
+    return topLevelTaskSupport;
+  }
 
-  const stripped = Object.fromEntries(
-    Object.entries(result as Record<string, unknown>).filter(
-      ([key]) => key !== 'structuredContent'
-    )
-  );
-  return stripped as T;
+  if (
+    executionTaskSupport === 'optional' ||
+    executionTaskSupport === 'required' ||
+    executionTaskSupport === 'forbidden'
+  ) {
+    return executionTaskSupport;
+  }
+
+  return undefined;
+}
+
+function buildNormalizedExecutionForTool(
+  existingExecution: Record<string, unknown> | undefined,
+  taskSupport: string | undefined
+): Record<string, unknown> | undefined {
+  if (taskSupport === undefined && existingExecution === undefined) {
+    return undefined;
+  }
+
+  return {
+    ...(existingExecution ?? {}),
+    ...(taskSupport !== undefined ? { taskSupport } : {}),
+  };
 }
 
 function maybeStripOutputSchema<T extends object>(tool: T): T {
-  if (!shouldStripStructuredOutput()) return tool;
   if (!Object.hasOwn(tool, 'outputSchema')) return tool;
 
   const stripped = Object.fromEntries(
@@ -434,17 +412,6 @@ export type TaskToolContext = ToolContext & {
   taskRequestedTtl?: number;
 };
 
-function isTaskToolContext(
-  ctx: ToolContext
-): ctx is ToolContext & { taskId: string; taskStore: RequestTaskStore } {
-  const candidate = ctx as TaskToolContext;
-  return (
-    typeof candidate.taskId === 'string' &&
-    candidate.taskId.length > 0 &&
-    candidate.taskStore !== undefined
-  );
-}
-
 export function toToolContext(ctx?: ToolContext | ServerContext): ToolContext {
   if (!ctx) return {};
   if ('mcpReq' in ctx) {
@@ -458,19 +425,6 @@ export function toToolContext(ctx?: ToolContext | ServerContext): ToolContext {
     };
   }
   return ctx;
-}
-
-function canSendProgress(ctx: ToolContext): ctx is ToolContext & {
-  _meta: { progressToken: ProgressToken };
-  sendNotification: NonNullable<ToolContext['sendNotification']>;
-} {
-  return (
-    ctx._meta?.progressToken !== undefined && ctx.sendNotification !== undefined
-  );
-}
-
-function canReportProgress(ctx: ToolContext): boolean {
-  return canSendProgress(ctx) || isTaskToolContext(ctx);
 }
 
 export interface IconInfo {
@@ -548,11 +502,6 @@ export function buildFileInfoPayload(info: FileInfo): FileInfoPayload {
       : {}),
   };
 }
-
-const NOT_INITIALIZED_ERROR = new McpError(
-  ErrorCode.INVALID_INPUT,
-  'Client not initialized; wait for notifications/initialized'
-);
 
 async function withToolErrorHandling<T>(
   run: () => Promise<ToolResult<T>>,
@@ -639,341 +588,6 @@ export function buildToolErrorResponse(
     content: [{ type: 'text', text }],
     isError: true,
     errorCode: detailed.code,
-  };
-}
-
-function buildNotInitializedResult<T>(): ToolResult<T> {
-  return buildToolErrorResponse(NOT_INITIALIZED_ERROR, ErrorCode.INVALID_INPUT);
-}
-
-async function reportProgress(
-  ctx: ToolContext,
-  progress: { current: number; total?: number; message?: string }
-): Promise<void> {
-  await updateTaskStoreProgress(ctx, progress);
-  await sendMcpProgressNotification(ctx, progress);
-}
-
-function formatTaskStatusMessage(progress: {
-  current: number;
-  total?: number;
-  message?: string;
-}): string {
-  if (progress.total !== undefined) {
-    return progress.message
-      ? `${progress.message} (${progress.current}/${progress.total})`
-      : `${progress.current}/${progress.total}`;
-  }
-  return progress.message ?? `${progress.current}`;
-}
-
-function isBenignTaskStatusUpdateError(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    /Task .*not found|terminal status/iu.test(error.message)
-  );
-}
-
-async function updateTaskStoreProgress(
-  ctx: ToolContext,
-  progress: { current: number; total?: number; message?: string }
-): Promise<void> {
-  if (!isTaskToolContext(ctx)) return;
-  try {
-    await ctx.taskStore.updateTaskStatus(
-      ctx.taskId,
-      'working',
-      formatTaskStatusMessage(progress)
-    );
-  } catch (error) {
-    if (isBenignTaskStatusUpdateError(error)) return;
-    Logger.error('Failed to update task status message:', error);
-  }
-}
-
-async function sendMcpProgressNotification(
-  ctx: ToolContext,
-  progress: { current: number; total?: number; message?: string }
-): Promise<void> {
-  if (canSendProgress(ctx)) {
-    try {
-      await ctx.sendNotification({
-        method: 'notifications/progress',
-        params: {
-          progressToken: ctx._meta.progressToken,
-          progress: progress.current,
-          ...(progress.total !== undefined ? { total: progress.total } : {}),
-          ...(progress.message !== undefined
-            ? { message: progress.message }
-            : {}),
-        },
-      } satisfies ProgressNotification);
-    } catch (error) {
-      Logger.error('Failed to send progress notification:', error);
-    }
-  }
-}
-
-function createProgressReporter(
-  ctx: ToolContext
-): (progress: { total?: number; current: number; message?: string }) => void {
-  if (!canReportProgress(ctx)) {
-    return () => undefined;
-  }
-  // State for monotonic enforcement and rate-limiting.
-  let lastProgress = -1;
-  let lastSentMs = 0;
-  return (progress) => {
-    const { current, total, message } = progress;
-    // Enforce monotonic progress to prevent client confusion. Client behavior on
-    // out-of-order progress is undefined in the MCP spec.
-    if (current <= lastProgress) return;
-    // Terminal notifications always bypass the rate limit so clients reliably
-    // receive the final state even when updates arrive in quick succession.
-    const isTerminal = total !== undefined && current >= total;
-    const now = Date.now();
-    if (!isTerminal && now - lastSentMs < PROGRESS_RATE_LIMIT_MS) return;
-    lastProgress = current;
-    lastSentMs = now;
-    void reportProgress(ctx, {
-      current,
-      ...(total !== undefined ? { total } : {}),
-      ...(message !== undefined ? { message } : {}),
-    });
-  };
-}
-
-function notifyProgress(
-  ctx: ToolContext,
-  progress: { current: number; total?: number; message?: string }
-): void {
-  if (!canReportProgress(ctx)) return;
-  void reportProgress(ctx, progress);
-}
-
-export interface ToolProgressSession {
-  update: (progress: {
-    current: number;
-    total?: number;
-    message: string;
-  }) => void;
-  increment: (messageForCurrent: (current: number) => string) => void;
-  complete: (message: string, minimumCurrent?: number) => void;
-  fail: (message: string, minimumCurrent?: number) => void;
-  getCurrent: () => number;
-}
-
-interface BatchProgressCallbacks {
-  progress: ToolProgressSession;
-  onItemComplete: () => void;
-}
-
-function createToolProgressSession(
-  ctx: ToolContext,
-  startMessage: string,
-  initialTotal?: number
-): ToolProgressSession {
-  notifyProgress(ctx, {
-    current: 0,
-    ...(initialTotal !== undefined ? { total: initialTotal } : {}),
-    message: startMessage,
-  });
-
-  let cursor = 0;
-  const baseReporter = createProgressReporter(ctx);
-
-  const setCursor = (value: number): number => {
-    if (value > cursor) cursor = value;
-    return cursor;
-  };
-
-  const finishProgress = (message?: string, minimumCurrent?: number): void => {
-    const finalCurrent = Math.max(cursor + 1, minimumCurrent ?? 1, 1);
-    notifyProgress(ctx, {
-      current: finalCurrent,
-      total: finalCurrent,
-      ...(message !== undefined ? { message } : {}),
-    });
-    cursor = finalCurrent;
-  };
-
-  return {
-    update: ({ current, total, message }) => {
-      const normalized = setCursor(current);
-      baseReporter({
-        current: normalized,
-        ...(total !== undefined ? { total } : {}),
-        message,
-      });
-    },
-    increment: (messageForCurrent) => {
-      const next = setCursor(cursor + 1);
-      baseReporter({
-        current: next,
-        message: messageForCurrent(next),
-      });
-    },
-    complete: finishProgress,
-    fail: finishProgress,
-    getCurrent: () => cursor,
-  };
-}
-
-export function createBatchProgressCallbacks(
-  ctx: ToolContext,
-  params: {
-    toolLabel: string;
-    context: string;
-    totalItems: number;
-    itemVerb: string;
-  }
-): BatchProgressCallbacks {
-  const progress = createToolProgressSession(
-    ctx,
-    `${params.toolLabel}: ${params.context}`,
-    params.totalItems
-  );
-
-  let itemsDone = 0;
-  const onItemComplete = (): void => {
-    itemsDone++;
-    progress.update({
-      current: itemsDone,
-      total: params.totalItems,
-      message: `${params.toolLabel}: ${params.context} [${itemsDone}/${params.totalItems} ${params.itemVerb}]`,
-    });
-  };
-
-  return { progress, onItemComplete };
-}
-
-export function resolveFinalProgressCurrent(
-  progress: ToolProgressSession,
-  ...candidates: number[]
-): number {
-  let finalCurrent = progress.getCurrent() + 1;
-  for (const candidate of candidates) {
-    if (candidate > finalCurrent) {
-      finalCurrent = candidate;
-    }
-  }
-  return finalCurrent;
-}
-
-/**
- * Completes `progress` with `${label} • ${suffix}` when `body` resolves, or
- * fails it with `${label} • ${classifyError(error)}` if `body` throws. Use
- * this when the caller already owns a {@link ToolProgressSession} (for
- * example via {@link createBatchProgressCallbacks}); otherwise prefer
- * {@link runWithProgressSession}.
- */
-export async function completeProgressSession<T>(
-  progress: ToolProgressSession,
-  label: string,
-  body: () => Promise<{ value: T; suffix: string; finalCurrent?: number }>
-): Promise<T> {
-  try {
-    const { value, suffix, finalCurrent } = await body();
-    progress.complete(`${label} • ${suffix}`, finalCurrent);
-    return value;
-  } catch (error) {
-    progress.fail(`${label} • ${classifyError(error)}`);
-    throw error;
-  }
-}
-
-/**
- * Runs `body` inside a tool progress session, automatically completing the
- * session with `${label} • ${suffix}` on success or failing it with
- * `${label} • ${classifyError(error)}` on thrown errors. Centralizes the
- * try/catch + complete/fail boilerplate shared by long-running tools.
- */
-export async function runWithProgressSession<T>(
-  ctx: ToolContext,
-  label: string,
-  body: (
-    progress: ToolProgressSession
-  ) => Promise<{ value: T; suffix: string; finalCurrent?: number }>,
-  initialTotal?: number
-): Promise<T> {
-  const progress = createToolProgressSession(ctx, label, initialTotal);
-  return completeProgressSession(progress, label, () => body(progress));
-}
-
-async function withProgress<T>(
-  message: string,
-  ctx: ToolContext,
-  run: () => Promise<T>,
-  getCompletionMessage?: (result: T) => string | undefined
-): Promise<T> {
-  if (!canReportProgress(ctx)) {
-    return run();
-  }
-
-  const total = 1;
-  // Emit the start notification only when a progressToken is present; for
-  // task-only mode the task status is already 'working' — a zero-progress
-  // notification would add unnecessary overhead without client value.
-  if (canSendProgress(ctx)) {
-    await reportProgress(ctx, { current: 0, total, message });
-  }
-
-  try {
-    const result = await run();
-    const endMessage = getCompletionMessage?.(result) ?? message;
-    await reportProgress(ctx, {
-      current: total,
-      total,
-      message: endMessage,
-    });
-    return result;
-  } catch (error) {
-    void reportProgress(ctx, {
-      current: total,
-      total,
-      message: `${message} • ${classifyError(error)}`,
-    });
-    throw error;
-  }
-}
-
-export function wrapToolHandler<Args, Result>(
-  handler: (args: Args, ctx: ToolContext) => Promise<ToolResult<Result>>,
-  options: {
-    guard?: (() => boolean) | undefined;
-    progressMessage?: (args: Args) => string;
-    completionMessage?: (
-      args: Args,
-      result: ToolResult<Result>
-    ) => string | undefined;
-  }
-): (
-  args: Args,
-  ctx?: ToolContext | ServerContext
-) => Promise<ToolResult<Result>> {
-  return async (args: Args, ctx?: ToolContext | ServerContext) => {
-    const resolvedExtra = toToolContext(ctx);
-    if (options.guard && !options.guard()) {
-      return maybeStripStructuredContentFromResult(buildNotInitializedResult());
-    }
-
-    if (options.progressMessage) {
-      const message = options.progressMessage(args);
-      const { completionMessage } = options;
-      const completionFn = completionMessage
-        ? (result: ToolResult<Result>) => completionMessage(args, result)
-        : undefined;
-      const result = await withProgress(
-        message,
-        resolvedExtra,
-        () => handler(args, resolvedExtra),
-        completionFn
-      );
-      return maybeStripStructuredContentFromResult(result);
-    }
-
-    const result = await handler(args, resolvedExtra);
-    return maybeStripStructuredContentFromResult(result);
   };
 }
 

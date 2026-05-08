@@ -38,13 +38,15 @@ import {
   buildToolResponse,
   maybeExternalizeTextContent,
   READ_ONLY_TOOL_ANNOTATIONS,
-  resolveFinalProgressCurrent,
   resolvePathOrRoot,
-  runWithProgressSession,
   type ToolContract,
   type ToolRegistrationOptions,
   type ToolResponse,
 } from './shared.js';
+import {
+  resolveFinalProgressCurrent,
+  runWithProgressSession,
+} from './tool-execution.js';
 
 // ---------------------------------------------------------------------------
 // Private tree implementation (inlined from lib/file-operations/metadata.ts)

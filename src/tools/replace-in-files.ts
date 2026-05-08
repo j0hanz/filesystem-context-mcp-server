@@ -37,13 +37,15 @@ import {
   buildStructuredError,
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
-  resolveFinalProgressCurrent,
   resolvePathOrRoot,
-  runWithProgressSession,
   type ToolContract,
   type ToolResponse,
   truncateProgressPattern,
 } from './shared.js';
+import {
+  resolveFinalProgressCurrent,
+  runWithProgressSession,
+} from './tool-execution.js';
 
 const SEARCH_AND_REPLACE_TOOL: ToolContract = {
   name: 'search_and_replace',

@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 
-import {
-  maybeStripStructuredContentFromResult,
-  withDefaultIcons,
-} from '../../src/tools/shared.js';
+import { withDefaultIcons } from '../../src/tools/shared.js';
+import { maybeStripStructuredContentFromResult } from '../../src/tools/tool-execution.js';
 
 describe('tool registration shape', () => {
   it('normalizes top-level taskSupport into execution.taskSupport', () => {

@@ -45,13 +45,15 @@ import {
   decodeOffsetCursor,
   encodeOffsetCursor,
   READ_ONLY_TOOL_ANNOTATIONS,
-  resolveFinalProgressCurrent,
   resolvePathOrRoot,
-  runWithProgressSession,
   type ToolContract,
   type ToolResponse,
   truncateProgressPattern,
 } from './shared.js';
+import {
+  resolveFinalProgressCurrent,
+  runWithProgressSession,
+} from './tool-execution.js';
 
 // ---------------------------------------------------------------------------
 // Private searchFiles implementation (inlined from lib/file-operations/search.ts)

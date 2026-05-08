@@ -14,7 +14,7 @@ import {
   type ToolRegistrationOptions,
   type ToolResult,
 } from './shared.js';
-import { registerStandardTool } from './task-support.js';
+import { registerStandardTool } from './tool-execution.js';
 
 export interface ToolRunContext extends ToolContext {
   signal?: AbortSignal;

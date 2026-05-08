@@ -22,7 +22,7 @@ import {
   isNodeError,
   McpError,
 } from '../../src/lib/errors.js';
-import { createToolTaskHandler } from '../../src/tools/task-support.js';
+import { createToolTaskHandler } from '../../src/tools/tool-execution.js';
 
 // ─── isNodeError ────────────────────────────────────────────────────────────
 

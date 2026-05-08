@@ -16,7 +16,7 @@ import {
 } from '../../src/lib/constants.js';
 import { ErrorCode } from '../../src/lib/errors.js';
 import type { ToolResult } from '../../src/tools/shared.js';
-import { createToolTaskHandler } from '../../src/tools/task-support.js';
+import { createToolTaskHandler } from '../../src/tools/tool-execution.js';
 
 /**
  * Build a minimal RequestTaskStore backed by InMemoryTaskStore.
@@ -312,10 +312,13 @@ describe('createToolTaskHandler', () => {
         async () => handler.createTask(createMockExtra(saturatedStore)),
         (error: unknown) => {
           assert.ok(error instanceof Error);
-          assert.ok(
-            error.message.includes('Too many active tasks'),
-            `Expected "Too many active tasks" in: ${error.message}`
-          );
+          if (error instanceof Error) {
+            assert.ok(
+              error.message.includes('Too many active tasks'),
+              `Expected "Too many active tasks" in: ${error.message}`
+            );
+          }
+
           return true;
         }
       );
@@ -387,7 +390,10 @@ describe('createToolTaskHandler', () => {
         async () => secondTaskPromise,
         (error: unknown) => {
           assert.ok(error instanceof Error);
-          assert.ok(error.message.includes('Too many active tasks'));
+          if (error instanceof Error) {
+            assert.ok(error.message.includes('Too many active tasks'));
+          }
+
           return true;
         }
       );

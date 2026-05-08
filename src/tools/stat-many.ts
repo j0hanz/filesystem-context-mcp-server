@@ -39,12 +39,14 @@ import {
   buildFileInfoPayload,
   buildStructuredError,
   buildToolResponse,
-  completeProgressSession,
-  createBatchProgressCallbacks,
   READ_ONLY_TOOL_ANNOTATIONS,
-  resolveFinalProgressCurrent,
   type ToolContract,
 } from './shared.js';
+import {
+  completeProgressSession,
+  createBatchProgressCallbacks,
+  resolveFinalProgressCurrent,
+} from './tool-execution.js';
 
 const GET_MULTIPLE_FILE_INFO_TOOL: ToolContract = {
   name: 'stat_many',

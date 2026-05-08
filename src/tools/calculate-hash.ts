@@ -25,11 +25,13 @@ import { FILE_READ_ICONS } from './icons.js';
 import {
   buildToolResponse,
   READ_ONLY_TOOL_ANNOTATIONS,
-  resolveFinalProgressCurrent,
-  runWithProgressSession,
   type ToolContract,
   type ToolResponse,
 } from './shared.js';
+import {
+  resolveFinalProgressCurrent,
+  runWithProgressSession,
+} from './tool-execution.js';
 
 const WINDOWS_PATH_SEPARATOR = /\\/gu;
 
