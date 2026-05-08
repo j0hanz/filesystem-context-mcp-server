@@ -150,6 +150,8 @@ interface ScanFileOptions {
   maxFileSize: number;
   skipBinary: boolean;
   contextLines: number;
+  contextBefore: number;
+  contextAfter: number;
 }
 
 const SearchOptionsSchema = z.strictObject({
@@ -162,6 +164,8 @@ const SearchOptionsSchema = z.strictObject({
   timeoutMs: z.int().min(0),
   skipBinary: z.boolean(),
   contextLines: z.int().min(0),
+  contextBefore: z.int32().min(0).max(20).optional(),
+  contextAfter: z.int32().min(0).max(20).optional(),
   wholeWord: z.boolean(),
   isLiteral: z.boolean(),
   includeHidden: z.boolean(),
@@ -497,10 +501,14 @@ interface ScanOutcome {
 }
 
 function buildScanFileOptions(opts: ResolvedOptions): ScanFileOptions {
+  const ctxBefore: number | undefined = opts.contextBefore;
+  const ctxAfter: number | undefined = opts.contextAfter;
   return {
     maxFileSize: opts.maxFileSize,
     skipBinary: opts.skipBinary,
     contextLines: opts.contextLines,
+    contextBefore: ctxBefore ?? opts.contextLines,
+    contextAfter: ctxAfter ?? opts.contextLines,
   };
 }
 

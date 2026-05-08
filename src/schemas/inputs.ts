@@ -192,7 +192,26 @@ export const GrepInputSchema = z.strictObject({
     .min(0)
     .max(20)
     .optional()
-    .describe('Lines of context around each match'),
+    .describe(
+      'Lines of context before AND after each match (symmetric; overridden by contextBefore/contextAfter)'
+    ),
+  contextBefore: z
+    .int32()
+    .min(0)
+    .max(20)
+    .optional()
+    .describe(
+      'Lines of context before each match (overrides contextLines for before)'
+    ),
+  contextAfter: z
+    .int32()
+    .min(0)
+    .max(20)
+    .optional()
+    .describe(
+      'Lines of context after each match (overrides contextLines for after)'
+    ),
+
   maxResults: z
     .uint32()
     .min(1)
