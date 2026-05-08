@@ -19,7 +19,7 @@ export interface ResourceContract {
 
   read: (
     uri: URL,
-    variables: Record<string, string>,
+    variables: Record<string, string | string[]>,
     ctx: ServerContext
   ) => Promise<ReadResourceResult> | ReadResourceResult;
   complete?: (

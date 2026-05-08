@@ -1,142 +1,108 @@
 import {
   type McpServer,
-  ProtocolError,
-  ProtocolErrorCode,
-  type ReadResourceResult,
   ResourceTemplate,
+  type ServerContext,
 } from '@modelcontextprotocol/server';
 
-import { type FSWatcher, watch } from 'node:fs';
+import uriTemplate from 'uri-templates';
 
-import type { PathGuard } from './lib/path-guard.js';
-import type { ResourceStore } from './lib/resource-store.js';
+import type { ResourceContract } from './resources/contract.js';
+import { createFilesystemResource } from './resources/filesystem.js';
+import { createInstructionsResource } from './resources/instructions.js';
+import { createResultResource } from './resources/result.js';
+import type {
+  ResourceRegistrationOptions,
+  ResourcesHandle,
+} from './resources/shared.js';
+import { withDefaultIcons } from './tools/shared.js';
 
-import { SLIM_INSTRUCTIONS_CONTENT } from './resources/instructions-content.js';
-import { type IconInfo, withDefaultIcons } from './tools/shared.js';
-
-export interface ResourceRegistrationOptions {
-  resourceStore: ResourceStore;
-  iconInfo?: IconInfo;
-  pathGuard?: PathGuard;
-}
-
-export interface ResourcesHandle {
-  destroy(): void;
-}
-
-export { SLIM_INSTRUCTIONS_CONTENT as serverInstructionsContent };
-
-const INSTRUCTIONS_URI = 'internal://instructions';
-const RESULT_TEMPLATE = new ResourceTemplate('filesystem-mcp://result/{id}', {
-  list: undefined,
-});
-
-// ─── File-watch subscription helpers ─────────────────────────────────────────
-
-const FILE_URI_PREFIX = 'filesystem-mcp://file';
-
-function uriToAbsoluteFilePath(uri: string): string | undefined {
-  if (!uri.startsWith(FILE_URI_PREFIX)) return undefined;
-  const rawPath = uri.slice(FILE_URI_PREFIX.length);
-  if (!rawPath.startsWith('/')) return undefined;
-  try {
-    return decodeURIComponent(rawPath.slice(1));
-  } catch {
-    return undefined;
-  }
-}
+export { SLIM_INSTRUCTIONS_CONTENT as serverInstructionsContent } from './resources/instructions-content.js';
+export type { ResourceRegistrationOptions, ResourcesHandle };
 
 export function registerAllResources(
   server: McpServer,
   options: ResourceRegistrationOptions
 ): ResourcesHandle {
-  server.registerResource(
-    'filesystem-mcp-instructions',
-    INSTRUCTIONS_URI,
-    withDefaultIcons(
-      {
-        title: 'Server Instructions',
-        description:
-          'Navigation guide for filesystem-mcp tools and constraints.',
-        mimeType: 'text/markdown',
-        annotations: { audience: ['assistant'], priority: 0.8 },
-      },
-      options.iconInfo
-    ),
-    (uri): ReadResourceResult => ({
-      contents: [
-        {
-          uri: uri.href,
-          mimeType: 'text/markdown',
-          text: SLIM_INSTRUCTIONS_CONTENT,
-        },
-      ],
-    })
-  );
+  const ALL_RESOURCES: ResourceContract[] = [
+    createInstructionsResource(),
+    createResultResource(options),
+    createFilesystemResource(options),
+  ];
 
-  server.registerResource(
-    'filesystem-mcp-result',
-    RESULT_TEMPLATE,
-    withDefaultIcons(
+  for (const contract of ALL_RESOURCES) {
+    const config = withDefaultIcons(
       {
-        title: 'Cached Tool Result',
-        description:
-          'Ephemeral cached tool output. Not listed via resources/list.',
-        mimeType: 'text/plain',
-        annotations: { audience: ['assistant'], priority: 0.3 },
+        title: contract.title,
+        description: contract.description,
+        mimeType: contract.mimeType,
+        annotations: contract.annotations,
       },
       options.iconInfo
-    ),
-    (uri, variables): ReadResourceResult => {
-      const { id } = variables;
-      if (typeof id !== 'string' || id.length === 0) {
-        throw new ProtocolError(
-          ProtocolErrorCode.ResourceNotFound,
-          'Cached result expired. Re-run the tool to regenerate.'
-        );
-      }
-      const entry = options.resourceStore.getEntry(uri.toString());
-      if (entry.kind === 'text') {
-        return {
-          contents: [
-            { uri: entry.uri, mimeType: entry.mimeType, text: entry.text },
-          ],
-        };
-      }
-      return {
-        contents: [
-          {
-            uri: entry.uri,
-            mimeType: entry.mimeType,
-            blob: entry.data.toString('base64'),
-          },
-        ],
-      };
+    );
+
+    if (contract.uriTemplate) {
+      const template = new ResourceTemplate(contract.uriTemplate, {
+        list: undefined,
+        ...(contract.complete
+          ? {
+              complete: Object.fromEntries(
+                uriTemplate(contract.uriTemplate).varNames.map((varName) => [
+                  varName,
+                  (
+                    value: string,
+                    ctx?: { arguments?: Record<string, string> }
+                  ) => {
+                    const completeFn = contract.complete;
+                    return completeFn ? completeFn(varName, value, ctx) : [];
+                  },
+                ])
+              ),
+            }
+          : {}),
+      });
+
+      server.registerResource(
+        contract.name,
+        template,
+        config,
+        (
+          uri: URL,
+          variables: Record<string, string | string[]>,
+          ctx: ServerContext
+        ) => contract.read(uri, variables, ctx)
+      );
+    } else if (contract.uri) {
+      server.registerResource(contract.name, contract.uri, config, (uri, ctx) =>
+        contract.read(uri, {}, ctx)
+      );
     }
-  );
+  }
 
-  // ─── File-watch subscriptions ─────────────────────────────────────────────
-
-  const watchers = new Map<string, FSWatcher>();
-
+  // Hook into subscriptions routing
   server.server.setRequestHandler(
     'resources/subscribe',
-    async (req: { params: { uri: string } }) => {
+    (req: { params: { uri: string } }) => {
       const { uri } = req.params;
-      if (options.pathGuard && !watchers.has(uri)) {
-        const filePath = uriToAbsoluteFilePath(uri);
-        if (filePath) {
-          try {
-            const resolved =
-              await options.pathGuard.validateExistingPath(filePath);
-            const watcher = watch(resolved, () => {
-              void server.server.sendResourceUpdated({ uri }).catch(() => {
-                // Transport may already be closed — best effort.
-              });
+      for (const contract of ALL_RESOURCES) {
+        if (contract.subscribe) {
+          // Simplistic routing - normally we'd check if URI matches template or exact URI
+          let matches = false;
+          if (contract.uri && uri === contract.uri) matches = true;
+          if (contract.uriTemplate) {
+            // Check if URI matches the template prefix (e.g. filesystem-mcp://file/)
+            const prefix = contract.uriTemplate.split('{')[0];
+            if (prefix && uri.startsWith(prefix)) matches = true;
+          }
+
+          if (matches) {
+            contract.subscribe(uri, (updatedUri) => {
+              void server.server
+                .sendResourceUpdated({ uri: updatedUri })
+                .catch(() => {
+                  /* Transport may be closed */
+                });
             });
-            watchers.set(uri, watcher);
-          } catch {
-            // Path not allowed or does not exist — silently ignore.
+            break;
           }
         }
       }
@@ -147,10 +113,11 @@ export function registerAllResources(
   server.server.setRequestHandler(
     'resources/unsubscribe',
     (req: { params: { uri: string } }) => {
-      const watcher = watchers.get(req.params.uri);
-      if (watcher) {
-        watcher.close();
-        watchers.delete(req.params.uri);
+      const { uri } = req.params;
+      for (const contract of ALL_RESOURCES) {
+        if (contract.unsubscribe) {
+          contract.unsubscribe(uri);
+        }
       }
       return {};
     }
@@ -158,10 +125,11 @@ export function registerAllResources(
 
   return {
     destroy(): void {
-      for (const watcher of watchers.values()) {
-        watcher.close();
+      for (const contract of ALL_RESOURCES) {
+        if (contract.destroy) {
+          contract.destroy();
+        }
       }
-      watchers.clear();
     },
   };
 }

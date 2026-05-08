@@ -9,7 +9,7 @@ import { completePathCached } from '../lib/path-completer.js';
 import type { ResourceContract } from './contract.js';
 import type { ResourceRegistrationOptions } from './shared.js';
 
-export const FILESYSTEM_FILE_URI_TEMPLATE = 'filesystem-mcp://file/{+path}';
+const FILESYSTEM_FILE_URI_TEMPLATE = 'filesystem-mcp://file/{+path}';
 const FILE_URI_PREFIX = 'filesystem-mcp://file';
 
 function extractPath(uri: string): string | undefined {
@@ -44,10 +44,10 @@ export function createFilesystemResource(
         );
       }
       const rawPath = variables.path;
-      if (!rawPath) {
+      if (typeof rawPath !== 'string') {
         throw new ProtocolError(
           ProtocolErrorCode.InvalidParams,
-          'Path variable is required'
+          'Path variable is required and must be a string'
         );
       }
       await options.pathGuard.validateExistingPath(rawPath);
