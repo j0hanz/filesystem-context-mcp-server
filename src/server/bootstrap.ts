@@ -82,9 +82,6 @@ function buildServerCapabilities(
   };
 
   if (options.enableTaskToolRequests) {
-    // NOTE: enabling task tool requests requires the caller to configure
-    // an InMemoryTaskStore and InMemoryTaskMessageQueue on the McpServer.
-    // InMemoryTaskStore auto-evicts tasks after TTL via setTimeout.
     capabilities.tasks = {
       list: {},
       cancel: {},
