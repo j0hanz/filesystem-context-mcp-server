@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Integration tests for file I/O tools: read, write, read_many, edit, apply_patch.
  */
 import assert from 'node:assert/strict';
@@ -331,6 +331,107 @@ describe('read_many tool budget enforcement', () => {
       (r) => r['content'] !== undefined && r['error'] === undefined
     );
     assert.ok(succeeded.length > 0, 'Expected at least one file to succeed');
+  });
+});
+
+// ─── read byte-range ─────────────────────────────────────────────────────────
+
+describe('read tool — byte-range', () => {
+  it('reads middle bytes with offset and length', async () => {
+    const env = await createTestEnv();
+    try {
+      await writeFile(join(env.tmpDir, 'bytes.txt'), 'ABCDEFGHIJ');
+      const res = await env.client.callTool({
+        name: 'read',
+        arguments: {
+          path: join(env.tmpDir, 'bytes.txt'),
+          offset: 2,
+          length: 3,
+        },
+      });
+      assertOk(res);
+      const sc = getStructured(res);
+      assert.strictEqual(sc['content'], 'CDE');
+      assert.strictEqual(sc['bytesRead'], 3);
+      assert.strictEqual(sc['reachedEOF'], false);
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  it('clamps length to file end and sets reachedEOF', async () => {
+    const env = await createTestEnv();
+    try {
+      await writeFile(join(env.tmpDir, 'bytes.txt'), 'ABCDEFGHIJ');
+      const res = await env.client.callTool({
+        name: 'read',
+        arguments: {
+          path: join(env.tmpDir, 'bytes.txt'),
+          offset: 8,
+          length: 100,
+        },
+      });
+      assertOk(res);
+      const sc = getStructured(res);
+      assert.strictEqual(sc['content'], 'IJ');
+      assert.strictEqual(sc['bytesRead'], 2);
+      assert.strictEqual(sc['reachedEOF'], true);
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  it('reads to EOF when no length given', async () => {
+    const env = await createTestEnv();
+    try {
+      await writeFile(join(env.tmpDir, 'bytes.txt'), 'ABCDEFGHIJ');
+      const res = await env.client.callTool({
+        name: 'read',
+        arguments: { path: join(env.tmpDir, 'bytes.txt'), offset: 5 },
+      });
+      assertOk(res);
+      const sc = getStructured(res);
+      assert.strictEqual(sc['content'], 'FGHIJ');
+      assert.strictEqual(sc['reachedEOF'], true);
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  it('returns empty when offset is past EOF', async () => {
+    const env = await createTestEnv();
+    try {
+      await writeFile(join(env.tmpDir, 'bytes.txt'), 'ABCDEFGHIJ');
+      const res = await env.client.callTool({
+        name: 'read',
+        arguments: { path: join(env.tmpDir, 'bytes.txt'), offset: 999 },
+      });
+      assertOk(res);
+      const sc = getStructured(res);
+      assert.strictEqual(sc['content'], '');
+      assert.strictEqual(sc['bytesRead'], 0);
+      assert.strictEqual(sc['reachedEOF'], true);
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  it('rejects offset combined with startLine', async () => {
+    const env = await createTestEnv();
+    try {
+      await writeFile(join(env.tmpDir, 'bytes.txt'), 'ABCDEFGHIJ');
+      const res = await env.client.callTool({
+        name: 'read',
+        arguments: {
+          path: join(env.tmpDir, 'bytes.txt'),
+          offset: 0,
+          startLine: 1,
+        },
+      });
+      assertToolError(res);
+    } finally {
+      await env.cleanup();
+    }
   });
 });
 
