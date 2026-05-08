@@ -97,10 +97,10 @@ describe('resources and metadata', () => {
     assert.ok(instructionsContent);
     assert.equal(instructionsContent.mimeType, 'text/markdown');
     const text = getTextContent(instructionsContent);
-    assert.match(text, /<guidelines>/u);
-    assert.match(text, /<tools_overview>/u);
-    assert.match(text, /<constraints>/u);
-    assert.match(text, /<error_recovery>/u);
+    assert.match(text, /## Guidelines/u);
+    assert.match(text, /## Tools Overview/u);
+    assert.match(text, /## Constraints/u);
+    assert.match(text, /## Error Recovery/u);
   });
 
   it('keeps README and server metadata in sync with the advertised discovery surface', async () => {

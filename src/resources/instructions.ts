@@ -39,25 +39,25 @@ function buildToolsOverview(): string {
 export function buildServerInstructions(): string {
   const maxFileMb = Math.floor(MAX_TEXT_FILE_SIZE / 1024 / 1024);
 
-  return `<guidelines>
+  return `## Guidelines
 When using filesystem tools, operate strictly within allowed roots.
 Always resolve paths before acting — never assume.
-</guidelines>
 
-<tools_overview>
+## Tools Overview
+
 ${buildToolsOverview()}
 
 Full schemas, descriptions, and annotations are in \`tools/list\`.
-</tools_overview>
 
-<constraints>
+## Constraints
+
 - Operate within allowed roots only (negotiated at startup via CLI).
 - Sensitive file paths (.env, *.pem, *id_rsa*) are denied by default.
 - Enforced limits: max file size ${maxFileMb} MB, file search cap ${MAX_SEARCH_RESULTS} results, content search cap ${DEFAULT_SEARCH_CONTENT_RESULTS} matches.
 - When a tool returns \`resourceUri\`, call \`resources/read\` immediately — cached results are ephemeral and expire after 30 min, eviction, or restart.
-</constraints>
 
-<error_recovery>
+## Error Recovery
+
 | Error Code | Action |
 | --- | --- |
 | \`ACCESS_DENIED\` | Run \`roots\` to list allowed directories, retry with a valid path. |
@@ -65,7 +65,7 @@ Full schemas, descriptions, and annotations are in \`tools/list\`.
 | \`TOO_LARGE\` | Use head/tail, line ranges, or split across \`read_many\`. |
 | \`TIMEOUT\` | Reduce scope, depth, or maxResults. |
 | \`INVALID_INPUT\` | Re-read the tool schema in \`tools/list\`. |
-</error_recovery>`;
+`;
 }
 
 export const SERVER_INSTRUCTIONS_CONTENT = buildServerInstructions();
