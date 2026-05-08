@@ -16,7 +16,10 @@ import {
   PathGuard,
   resolveAllowedDirectoriesState,
 } from '../src/lib/path-guard.js';
-import { createInMemoryResourceStore } from '../src/lib/resource-store.js';
+import {
+  createInMemoryResourceStore,
+  type ResourceStore,
+} from '../src/lib/resource-store.js';
 import { createTaskStore } from '../src/server/task-store.js';
 import { registerAllTools } from '../src/tools.js';
 import type { HandlerContext } from '../src/tools/shared.js';
@@ -264,4 +267,53 @@ export function makeHandlerContext(
     resourceStore: undefined,
     ...overrides,
   };
+}
+
+/**
+ * Read a resource link from a tool response (for testing).
+ * Fetches the resource via the ResourceStore.
+ * @param store ResourceStore instance
+ * @param result Tool result with content blocks
+ * @returns Promise with decoded content and metadata, or null if no resource_link found
+ */
+export async function readResourceLink(
+  store: ResourceStore,
+  result: {
+    content?: {
+      type: string;
+      uri?: string;
+      [key: string]: unknown;
+    }[];
+  }
+): Promise<{
+  text?: string;
+  blob?: Buffer;
+  mimeType?: string;
+  size?: number;
+} | null> {
+  if (!result.content) return null;
+
+  // Find first resource_link block
+  const linkBlock = result.content.find((b) => b.type === 'resource_link');
+  if (!linkBlock?.uri) return null;
+
+  const uri = linkBlock.uri;
+
+  // Try to read as text first
+  try {
+    const entry = store.getText(uri);
+    return { text: entry.text, mimeType: entry.mimeType, size: entry.size };
+  } catch {
+    // Not a text entry, try blob
+  }
+
+  // Try to read as blob
+  try {
+    const entry = store.getBlob(uri);
+    return { blob: entry.data, mimeType: entry.mimeType, size: entry.size };
+  } catch {
+    // Not found
+  }
+
+  return null;
 }
