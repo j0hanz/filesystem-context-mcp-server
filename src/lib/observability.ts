@@ -105,14 +105,22 @@ let traceCounter = 0;
 
 // --- Helpers: Result Analysis ---
 
-function extractOutcome(result: unknown): { ok: boolean; error?: string } {
-  if (!isRecord(result)) {
-    return { ok: true };
+function extractStructuredOutcome(
+  content: Record<string, unknown>
+): { ok: boolean; error?: string } | undefined {
+  if (typeof content.ok === 'boolean') {
+    if (content.ok) return { ok: true };
+    const err = extractResultError(content);
+    return err ? { ok: false, error: err } : { ok: false };
   }
+  return undefined;
+}
 
+function extractRecordOutcome(
+  result: Record<string, unknown>
+): { ok: boolean; error?: string } | undefined {
   if (result.isError === true) {
-    const err = extractErrorMessage(result);
-    return { ok: false, error: err };
+    return { ok: false, error: extractErrorMessage(result) };
   }
 
   if (typeof result.ok === 'boolean') {
@@ -120,36 +128,65 @@ function extractOutcome(result: unknown): { ok: boolean; error?: string } {
     return { ok: false, error: extractErrorMessage(result) };
   }
 
-  const content = result.structuredContent;
-  if (isRecord(content) && typeof content.ok === 'boolean') {
-    if (content.ok) return { ok: true };
-    const err = extractResultError(content);
-    return err ? { ok: false, error: err } : { ok: false };
+  if (isRecord(result.structuredContent)) {
+    return extractStructuredOutcome(result.structuredContent);
   }
 
+  return undefined;
+}
+
+function extractOutcome(result: unknown): { ok: boolean; error?: string } {
+  if (!isRecord(result)) return { ok: true };
+
+  const outcome = extractRecordOutcome(result);
+  if (outcome) return outcome;
+
   return { ok: true };
+}
+
+function getMessage(obj: Record<string, unknown>): string | undefined {
+  if (typeof obj.message === 'string') return obj.message;
+  return undefined;
+}
+
+function extractMessageFromResultError(
+  record: Record<string, unknown>
+): string | undefined {
+  if (isRecord(record.error)) {
+    const msg = getMessage(record.error);
+    if (msg) return msg;
+  }
+  return undefined;
+}
+
+function extractErrorMessageFromRecord(
+  record: Record<string, unknown>
+): string | undefined {
+  const struct = record.structuredContent;
+  if (isRecord(struct)) {
+    const msg = extractMessageFromResultError(struct);
+    if (msg) return msg;
+  }
+  if (typeof record.message === 'string') return record.message;
+  return extractMessageFromResultError(record);
+}
+
+function safeStringify(source: unknown): string {
+  try {
+    return String(source);
+  } catch {
+    return 'Unknown error';
+  }
 }
 
 function extractErrorMessage(source: unknown): string {
   if (typeof source === 'string') return source;
   if (source instanceof Error) return source.message;
   if (isRecord(source)) {
-    const struct = source.structuredContent;
-    if (isRecord(struct)) {
-      const err = struct.error;
-      if (isRecord(err) && typeof err.message === 'string') return err.message;
-    }
-    if (typeof source.message === 'string') return source.message;
-    const errObj = source.error;
-    if (isRecord(errObj) && typeof errObj.message === 'string') {
-      return errObj.message;
-    }
+    const msg = extractErrorMessageFromRecord(source);
+    if (msg) return msg;
   }
-  try {
-    return String(source);
-  } catch {
-    return 'Unknown error';
-  }
+  return safeStringify(source);
 }
 
 function extractResultError(
@@ -170,6 +207,14 @@ function sanitizePathForDiagnostics(
   return hash('sha256', path, 'hex').slice(0, 16);
 }
 
+function getNormalizedPathForContext(
+  currentPath?: string,
+  existingPath?: unknown
+): string | undefined {
+  if (existingPath !== undefined) return undefined;
+  return sanitizePathForDiagnostics(currentPath);
+}
+
 function enrichWithToolContext(
   detail?: Record<string, unknown>
 ): Record<string, unknown> | undefined {
@@ -177,12 +222,12 @@ function enrichWithToolContext(
   if (!current) return detail;
 
   const merged: Record<string, unknown> = { ...(detail ?? {}) };
-  if (!Object.hasOwn(merged, 'tool')) {
+  if (merged.tool === undefined) {
     merged.tool = current.tool;
   }
 
-  const normalizedPath = sanitizePathForDiagnostics(current.path);
-  if (normalizedPath && !Object.hasOwn(merged, 'path')) {
+  const normalizedPath = getNormalizedPathForContext(current.path, merged.path);
+  if (normalizedPath) {
     merged.path = normalizedPath;
   }
 
@@ -391,21 +436,50 @@ function publishPerfEnd(
   CHANNELS.perf.publish(event);
 }
 
+interface ObserveOptions {
+  pubTool: boolean;
+  pubPerf: boolean;
+  logErrors: boolean;
+  pathVal?: string;
+  traceparent?: string;
+}
+
+function finalizeObservation(
+  tool: string,
+  options: ObserveOptions,
+  durationMs: number,
+  obs: { ok: boolean; errorMsg: string | undefined },
+  eluStart?: ReturnType<typeof performance.eventLoopUtilization>,
+  loopMonitor?: ReturnType<typeof monitorEventLoopDelay>
+): void {
+  loopMonitor?.disable();
+
+  if (options.pubPerf && eluStart) {
+    publishPerfEnd(tool, durationMs, eluStart, loopMonitor);
+  }
+  if (options.pubTool) {
+    publishToolEnd(tool, obs.ok, durationMs, obs.errorMsg, options.traceparent);
+  }
+
+  if (options.logErrors && !obs.ok) {
+    logError(tool, durationMs, obs.errorMsg);
+  }
+}
+
 async function runAndObserve<T>(
   tool: string,
   run: () => Promise<T>,
-  pubTool: boolean,
-  pubPerf: boolean,
-  logErrors: boolean,
-  pathVal?: string,
-  traceparent?: string
+  options: ObserveOptions
 ): Promise<T> {
   const startMs = performance.now();
-  const eluStart = pubPerf ? performance.eventLoopUtilization() : undefined;
-  const loopMonitor = pubPerf ? monitorEventLoopDelay() : undefined;
+  const eluStart = options.pubPerf
+    ? performance.eventLoopUtilization()
+    : undefined;
+  const loopMonitor = options.pubPerf ? monitorEventLoopDelay() : undefined;
   loopMonitor?.enable();
 
-  if (pubTool) publishToolStart(tool, pathVal, traceparent);
+  if (options.pubTool)
+    publishToolStart(tool, options.pathVal, options.traceparent);
 
   let result: T;
   const obs: { ok: boolean; errorMsg: string | undefined } = {
@@ -423,17 +497,71 @@ async function runAndObserve<T>(
     throw err;
   } finally {
     const durationMs = performance.now() - startMs;
-    loopMonitor?.disable();
-
-    if (pubPerf && eluStart)
-      publishPerfEnd(tool, durationMs, eluStart, loopMonitor);
-    if (pubTool)
-      publishToolEnd(tool, obs.ok, durationMs, obs.errorMsg, traceparent);
-
-    if (logErrors && !obs.ok) logError(tool, durationMs, obs.errorMsg);
+    finalizeObservation(tool, options, durationMs, obs, eluStart, loopMonitor);
   }
 
   return result;
+}
+
+async function runWithBasicErrorLogging<T>(
+  tool: string,
+  run: () => Promise<T>
+): Promise<T> {
+  const start = performance.now();
+  try {
+    const res = await run();
+    const duration = performance.now() - start;
+    const { ok, error } = extractOutcome(res);
+    if (!ok) logError(tool, duration, error);
+    return res;
+  } catch (e) {
+    const duration = performance.now() - start;
+    logError(tool, duration, extractErrorMessage(e));
+    throw e;
+  }
+}
+
+function buildObserveOptions(
+  pubTool: boolean,
+  pubPerf: boolean,
+  logErrors: boolean,
+  normalizedPath?: string,
+  traceparent?: string
+): ObserveOptions {
+  return {
+    pubTool,
+    pubPerf,
+    logErrors,
+    ...(normalizedPath ? { pathVal: normalizedPath } : {}),
+    ...(traceparent ? { traceparent } : {}),
+  };
+}
+
+async function executeInContext<T>(
+  tool: string,
+  run: () => Promise<T>,
+  config: Config,
+  normalizedPath?: string,
+  traceparent?: string
+): Promise<T> {
+  if (!config.enabled) {
+    return config.logToolErrors ? runWithBasicErrorLogging(tool, run) : run();
+  }
+
+  const pubTool = CHANNELS.tool.hasSubscribers;
+  const pubPerf = CHANNELS.perf.hasSubscribers;
+
+  if (!pubTool && !pubPerf) return run();
+
+  const options = buildObserveOptions(
+    pubTool,
+    pubPerf,
+    config.logToolErrors,
+    normalizedPath,
+    traceparent
+  );
+
+  return runAndObserve(tool, run, options);
 }
 
 export async function withToolDiagnostics<T>(
@@ -450,39 +578,15 @@ export async function withToolDiagnostics<T>(
     ...(options?.traceContext ? { traceContext: options.traceContext } : {}),
   };
 
-  return toolContext.run(context, async () => {
-    if (!config.enabled) {
-      if (!config.logToolErrors) return run();
-
-      const start = performance.now();
-      try {
-        const res = await run();
-        const duration = performance.now() - start;
-        const { ok, error } = extractOutcome(res);
-        if (!ok) logError(tool, duration, error);
-        return res;
-      } catch (e) {
-        const duration = performance.now() - start;
-        logError(tool, duration, extractErrorMessage(e));
-        throw e;
-      }
-    }
-
-    const pubTool = CHANNELS.tool.hasSubscribers;
-    const pubPerf = CHANNELS.perf.hasSubscribers;
-
-    if (!pubTool && !pubPerf) return run();
-
-    return runAndObserve(
+  return toolContext.run(context, () =>
+    executeInContext(
       tool,
       run,
-      pubTool,
-      pubPerf,
-      config.logToolErrors,
+      config,
       normalizedPath,
       options?.traceContext?.traceparent
-    );
-  });
+    )
+  );
 }
 
 function logError(tool: string, durationMs: number, msg?: string): void {
