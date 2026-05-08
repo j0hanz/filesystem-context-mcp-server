@@ -218,6 +218,41 @@ export const SEARCH_WORKERS = parseEnvInt(
   16
 );
 
+const WORKER_POOL_MAX_DEFAULT = Math.min(
+  4,
+  Math.max(1, availableParallelism() - 1)
+);
+
+export const WORKER_POOL_MAX = parseEnvInt(
+  'FS_WORKER_POOL_MAX',
+  WORKER_POOL_MAX_DEFAULT,
+  1,
+  16
+);
+
+export const WORKER_IDLE_TIMEOUT_MS = parseEnvInt(
+  'FS_WORKER_IDLE_MS',
+  30_000,
+  1_000,
+  10 * 60_000
+);
+
+export const WORKER_OFFLOAD_THRESHOLD_BYTES = parseEnvInt(
+  'FS_WORKER_OFFLOAD_THRESHOLD',
+  256 * KIB,
+  KIB,
+  100 * MIB
+);
+
+export const WORKER_CANCEL_GRACE_MS = parseEnvInt(
+  'FS_WORKER_CANCEL_GRACE_MS',
+  500,
+  0,
+  60_000
+);
+
+export const WORKERS_DISABLED = parseEnvBool('FS_DISABLE_WORKERS', false);
+
 // Hardcoded defaults
 export const DEFAULT_MAX_DEPTH = 10;
 export const DEFAULT_LIST_MAX_ENTRIES = 20000;

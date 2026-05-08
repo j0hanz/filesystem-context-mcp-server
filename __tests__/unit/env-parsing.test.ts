@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { afterEach, describe, it } from 'node:test';
+import { afterEach, describe, it, test } from 'node:test';
 
 describe('FS_CONTEXT_MAX_INLINE_MATCHES parsing', () => {
   const ORIG = process.env['FS_CONTEXT_MAX_INLINE_MATCHES'];
@@ -27,4 +27,19 @@ describe('FS_CONTEXT_MAX_INLINE_MATCHES parsing', () => {
     delete process.env['FS_CONTEXT_TEST_INLINE'];
     assert.equal(result, 25);
   });
+});
+import {
+  WORKER_CANCEL_GRACE_MS,
+  WORKER_IDLE_TIMEOUT_MS,
+  WORKER_OFFLOAD_THRESHOLD_BYTES,
+  WORKER_POOL_MAX,
+  WORKERS_DISABLED,
+} from '../../src/lib/constants.js';
+
+test('worker constants are within sensible bounds', () => {
+  assert.ok(WORKER_POOL_MAX >= 1 && WORKER_POOL_MAX <= 4);
+  assert.equal(WORKER_IDLE_TIMEOUT_MS, 30_000);
+  assert.equal(WORKER_OFFLOAD_THRESHOLD_BYTES, 256 * 1024);
+  assert.equal(WORKER_CANCEL_GRACE_MS, 500);
+  assert.equal(typeof WORKERS_DISABLED, 'boolean');
 });
