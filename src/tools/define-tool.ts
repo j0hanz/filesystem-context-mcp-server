@@ -84,6 +84,7 @@ export function defineTool<Args, Output extends Record<string, unknown>>(
             const onProgress = toolContextToOnProgress(ctx);
             const handlerCtx: HandlerContext = {
               ...(signal !== undefined ? { signal } : {}),
+              pathGuard: options.pathGuard,
               resourceStore: options.resourceStore,
               ...(ctx.elicitInput ? { elicitInput: ctx.elicitInput } : {}),
               ...(ctx.log ? { log: ctx.log } : {}),

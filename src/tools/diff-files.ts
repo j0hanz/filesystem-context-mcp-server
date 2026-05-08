@@ -7,7 +7,7 @@ import { z } from 'zod/v4';
 import { withAbort } from '../lib/abort.js';
 import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
-import { validateExistingPath } from '../lib/paths.js';
+import type { PathGuard } from '../lib/path-guard.js';
 import { runInWorker, shouldOffload } from '../lib/worker-pool.js';
 import { NonNegInt, RequiredPath } from '../schemas/fields.js';
 import { defaultFalseBoolean } from '../schemas/shared.js';
@@ -97,6 +97,7 @@ function assertDiffFileSizeWithinLimit(
 
 async function handleDiffFiles(
   args: z.infer<typeof DiffFilesInputSchema>,
+  pathGuard: PathGuard,
   signal?: AbortSignal,
   resourceStore?: ToolRegistrationOptions['resourceStore']
 ): Promise<ToolResponse<z.infer<typeof DiffFilesOutputSchema>>> {
@@ -104,8 +105,8 @@ async function handleDiffFiles(
   const modifiedInput = args.modified;
 
   const [originalPath, modifiedPath] = await Promise.all([
-    validateExistingPath(originalInput, signal),
-    validateExistingPath(modifiedInput, signal),
+    pathGuard.validateExistingPath(originalInput),
+    pathGuard.validateExistingPath(modifiedInput),
   ]);
 
   const [originalStats, modifiedStats] = await Promise.all([
@@ -232,7 +233,8 @@ export const DIFF_FILES = defineTool<DiffInput, DiffOutput>({
   contract: DIFF_FILES_TOOL,
   defaultErrorCode: ErrorCode.UNKNOWN,
   diagnosticsContext: (args) => ({ path: args.original }),
-  run: (args, ctx) => handleDiffFiles(args, ctx.signal, ctx.resourceStore),
+  run: (args, ctx) =>
+    handleDiffFiles(args, ctx.pathGuard, ctx.signal, ctx.resourceStore),
   progressMessage: (args) => {
     const n1 = basename(args.original);
     const n2 = basename(args.modified);

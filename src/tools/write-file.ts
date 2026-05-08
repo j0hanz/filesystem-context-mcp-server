@@ -8,7 +8,6 @@ import { atomicWriteFile } from '../lib/atomic-write.js';
 import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { Logger } from '../lib/logger.js';
-import { validatePathForWrite } from '../lib/paths.js';
 import { NonNegInt, RequiredPath } from '../schemas/fields.js';
 
 import { formatBytes } from '../config.js';
@@ -58,7 +57,7 @@ const writeMessages = buildPathMessages<WriteInput, WriteOutput>(
 export const WRITE_FILE = defineTool<WriteInput, WriteOutput>({
   contract: WRITE_FILE_TOOL,
   run: async (args, ctx) => {
-    const validPath = await validatePathForWrite(args.path, ctx.signal);
+    const validPath = await ctx.pathGuard.validatePathForWrite(args.path);
 
     // Ensure parent directory exists
     await withAbort(mkdir(dirname(validPath), { recursive: true }), ctx.signal);

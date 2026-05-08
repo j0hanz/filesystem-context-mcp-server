@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { z } from 'zod/v4';
 
-import { isSafeGlobSyntax } from '../../src/lib/paths.js';
+import { isSafeGlobSyntax } from '../../src/lib/path-guard.js';
 import {
   IsoDateTime,
   NonNegInt,

@@ -29,14 +29,8 @@ import {
   withOptionalStoppedReason,
 } from '../lib/fs-walk.js';
 import { processInParallel } from '../lib/parallel.js';
-import {
-  assertSafeGlobPattern,
-  isPathWithinDirectories,
-  isSensitivePath,
-  normalizePath,
-  validateExistingDirectory,
-  validateExistingPathDetailed,
-} from '../lib/paths.js';
+import { isPathWithinDirectories, normalizePath } from '../lib/path-guard.js';
+import type { PathGuard } from '../lib/path-guard.js';
 import { createBase64JsonCodec } from '../lib/zod-codecs.js';
 import {
   FileType as FileTypeEnum,
@@ -59,7 +53,6 @@ import { DIRECTORY_ICONS } from './icons.js';
 import {
   buildToolResponse,
   READ_ONLY_TOOL_ANNOTATIONS,
-  resolvePathOrRoot,
   type ToolContract,
   type ToolResponse,
   type ToolResult,
@@ -69,11 +62,9 @@ import {
 // Private listDirectory implementation (inlined from lib/file-operations/metadata.ts)
 // ---------------------------------------------------------------------------
 
-const LIST_ACCESS_DEPS: EntryAccessDependencies = {
+const LIST_ACCESS_DEPS_BASE = {
   normalizePath,
   isPathWithinDirectories,
-  isSensitivePath,
-  validateSymlinkPath: validateExistingPathDetailed,
 };
 
 interface ListDirectoryOptions {
@@ -119,7 +110,8 @@ interface AppendContext {
 }
 
 function normalizeListOptions(
-  options: ListDirectoryOptions
+  options: ListDirectoryOptions,
+  pathGuard: PathGuard
 ): ListDirectoryNormalizedOptions {
   const normalized: ListDirectoryNormalizedOptions = {
     includeHidden: options.includeHidden ?? false,
@@ -131,7 +123,7 @@ function normalizeListOptions(
     timeoutMs: options.timeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS,
   };
   if (options.pattern && options.pattern.length > 0) {
-    assertSafeGlobPattern(options.pattern);
+    pathGuard.assertSafeGlob(options.pattern);
     normalized.pattern = options.pattern;
   }
   return normalized;
@@ -361,7 +353,8 @@ async function collectListEntries(
   normalized: ListDirectoryNormalizedOptions,
   signal: AbortSignal,
   needsStats: boolean,
-  maxDepth: number
+  maxDepth: number,
+  deps: EntryAccessDependencies
 ): Promise<{
   entries: DirectoryEntry[];
   totals: EntryTotals;
@@ -426,7 +419,7 @@ async function collectListEntries(
       entryType,
       basePathDirectories,
       signal,
-      LIST_ACCESS_DEPS
+      deps
     );
     if (!accessible) {
       counters.skippedInaccessible += 1;
@@ -453,7 +446,8 @@ async function collectListEntries(
 async function executeListDirectory(
   basePath: string,
   normalized: ListDirectoryNormalizedOptions,
-  signal: AbortSignal
+  signal: AbortSignal,
+  deps: EntryAccessDependencies
 ): Promise<{
   entries: DirectoryEntry[];
   summary: ListDirectoryResult['summary'];
@@ -466,7 +460,8 @@ async function executeListDirectory(
       normalized,
       signal,
       needsStats,
-      maxDepth
+      maxDepth,
+      deps
     );
   sortListEntries(entries, normalized.sortBy);
   return {
@@ -484,18 +479,25 @@ async function executeListDirectory(
 
 async function listDirectory(
   dirPath: string,
+  pathGuard: PathGuard,
   options: ListDirectoryOptions = {}
 ): Promise<ListDirectoryResult> {
-  const normalized = normalizeListOptions(options);
+  const normalized = normalizeListOptions(options, pathGuard);
+  const deps: EntryAccessDependencies = {
+    ...LIST_ACCESS_DEPS_BASE,
+    isSensitivePath: (p) => pathGuard.isSensitive(p),
+    validateSymlinkPath: (p) => pathGuard.validateExistingPathDetailed(p),
+  };
   return withTimedAbortSignal(
     options.signal,
     normalized.timeoutMs,
     async (signal) => {
-      const basePath = await validateExistingDirectory(dirPath, signal);
+      const basePath = await pathGuard.validateExistingDirectory(dirPath);
       const { entries, summary } = await executeListDirectory(
         basePath,
         normalized,
-        signal
+        signal,
+        deps
       );
       return { path: basePath, entries, summary };
     }
@@ -594,10 +596,11 @@ const ListCursorCodec = createBase64JsonCodec(ListCursorPayloadSchema);
 type ListCursorPayload = z.infer<typeof ListCursorPayloadSchema>;
 
 function buildListFingerprint(
-  args: z.infer<typeof ListDirectoryInputSchema>
+  args: z.infer<typeof ListDirectoryInputSchema>,
+  pathGuard: PathGuard
 ): string {
   return JSON.stringify({
-    path: resolvePathOrRoot(args.path),
+    path: pathGuard.resolvePathOrRoot(args.path),
     includeHidden: args.includeHidden,
     includeIgnored: args.includeIgnored,
     maxDepth: args.maxDepth,
@@ -737,11 +740,12 @@ function buildStructuredListResult(
 
 async function handleListDirectory(
   args: z.infer<typeof ListDirectoryInputSchema>,
+  pathGuard: PathGuard,
   signal?: AbortSignal
 ): Promise<ToolResponse<z.infer<typeof ListDirectoryOutputSchema>>> {
-  const dirPath = resolvePathOrRoot(args.path);
+  const dirPath = pathGuard.resolvePathOrRoot(args.path);
   const pageSize = args.maxEntries;
-  const options: Parameters<typeof listDirectory>[1] = {
+  const options: ListDirectoryOptions = {
     includeHidden: args.includeHidden,
     excludePatterns: args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS,
     sortBy: args.sortBy,
@@ -751,7 +755,7 @@ async function handleListDirectory(
     ...(args.pattern !== undefined ? { pattern: args.pattern } : {}),
     ...(signal ? { signal } : {}),
   };
-  const fingerprint = buildListFingerprint(args);
+  const fingerprint = buildListFingerprint(args, pathGuard);
 
   let result: Awaited<ReturnType<typeof listDirectory>>;
   let cursorOffset = 0;
@@ -773,7 +777,7 @@ async function handleListDirectory(
       summary: snapshot.summary,
     };
   } else {
-    result = await listDirectory(dirPath, options);
+    result = await listDirectory(dirPath, pathGuard, options);
   }
 
   const displayEntries = result.entries.slice(
@@ -808,7 +812,7 @@ type ListDirOutput = z.infer<typeof ListDirectoryOutputSchema>;
 export const LIST_DIRECTORY = defineTool<ListDirInput, ListDirOutput>({
   contract: LIST_DIRECTORY_TOOL,
   defaultErrorCode: ErrorCode.NOT_DIRECTORY,
-  run: (args, ctx) => handleListDirectory(args, ctx.signal),
+  run: (args, ctx) => handleListDirectory(args, ctx.pathGuard, ctx.signal),
   progressMessage: (args) =>
     `${LIST_DIRECTORY_TOOL.title}: ${args.path ? basename(args.path) : '.'}`,
   completionMessage: (

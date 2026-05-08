@@ -85,7 +85,6 @@ test('defineTool: registers a standard tool with server.registerTool', (): void 
 
   tool.register(mockServer, {
     pathGuard: null as unknown as PathGuard,
-    resourceStore: undefined,
     isInitialized: () => true,
     hasTaskSupport: false,
   });
@@ -112,7 +111,6 @@ test('defineTool: run receives args and HandlerContext with signal', async (): P
 
   tool.register(mockServer, {
     pathGuard: null as unknown as PathGuard,
-    resourceStore: undefined,
     isInitialized: () => true,
     hasTaskSupport: false,
   });
@@ -135,7 +133,9 @@ test('defineTool: run receives args and HandlerContext with signal', async (): P
   assert.equal(runInputs.length, 1);
   assert.deepEqual(runInputs[0], { message: 'test message' });
   assert.ok(runContexts.length > 0);
-  assert.ok(runContexts[0].signal, 'context has signal');
+  const firstCtx = runContexts[0];
+  assert.ok(firstCtx);
+  assert.ok(firstCtx.signal, 'context has signal');
 });
 
 test('defineTool: default diagnosticsContext extracts path from args', async (): Promise<void> => {
@@ -149,7 +149,6 @@ test('defineTool: default diagnosticsContext extracts path from args', async ():
 
   tool.register(mockServer, {
     pathGuard: null as unknown as PathGuard,
-    resourceStore: undefined,
     isInitialized: () => true,
     hasTaskSupport: false,
   });
@@ -204,7 +203,6 @@ test('defineTool: custom diagnosticsContext is used', async (): Promise<void> =>
 
   tool.register(mockServer, {
     pathGuard: null as unknown as PathGuard,
-    resourceStore: undefined,
     isInitialized: () => true,
     hasTaskSupport: false,
   });
@@ -243,7 +241,6 @@ test('defineTool: progressMessage is forwarded to registerStandardTool', (): voi
 
   tool.register(mockServer, {
     pathGuard: null as unknown as PathGuard,
-    resourceStore: undefined,
     isInitialized: () => true,
     hasTaskSupport: false,
   });
@@ -269,7 +266,6 @@ test('defineTool: completionMessage is forwarded to registerStandardTool', (): v
 
   tool.register(mockServer, {
     pathGuard: null as unknown as PathGuard,
-    resourceStore: undefined,
     isInitialized: () => true,
     hasTaskSupport: false,
   });
@@ -286,7 +282,6 @@ test('defineTool: handler returns not-initialized error when guard fails', async
 
   tool.register(mockServer, {
     pathGuard: null as unknown as PathGuard,
-    resourceStore: undefined,
     isInitialized: () => false,
     hasTaskSupport: false,
   });
@@ -335,7 +330,6 @@ test('defineTool: handler validates input schema and returns INVALID_INPUT on fa
 
   tool.register(mockServer, {
     pathGuard: null as unknown as PathGuard,
-    resourceStore: undefined,
     isInitialized: () => true,
     hasTaskSupport: false,
   });
@@ -373,7 +367,6 @@ test('defineTool: handler validates output schema', async (): Promise<void> => {
 
   tool.register(mockServer, {
     pathGuard: null as unknown as PathGuard,
-    resourceStore: undefined,
     isInitialized: () => true,
     hasTaskSupport: false,
   });
@@ -407,7 +400,6 @@ test('defineTool: handler returns formatted error on thrown exception', async ()
 
   tool.register(mockServer, {
     pathGuard: null as unknown as PathGuard,
-    resourceStore: undefined,
     isInitialized: () => true,
     hasTaskSupport: false,
   });
@@ -443,7 +435,6 @@ test('defineTool: defaultErrorCode is used in error responses', async (): Promis
 
   tool.register(mockServer, {
     pathGuard: null as unknown as PathGuard,
-    resourceStore: undefined,
     isInitialized: () => true,
     hasTaskSupport: false,
   });
@@ -519,7 +510,7 @@ test('defineTool: handle is callable directly without MCP server setup', async (
   // Call handle directly without any MCP machinery
   const result = await tool.handle(
     { message: 'hello' },
-    { resourceStore: undefined }
+    { pathGuard: null as unknown as PathGuard, resourceStore: undefined }
   );
 
   assert.ok(!result.isError, 'result should not be an error');

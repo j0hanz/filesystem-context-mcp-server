@@ -4,10 +4,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import type * as http from 'node:http';
 import process from 'node:process';
 
-import { createTimedAbortSignal } from './lib/abort.js';
-import { DEFAULT_SEARCH_TIMEOUT_MS } from './lib/constants.js';
 import { formatUnknownErrorMessage } from './lib/errors.js';
-import { setAllowedDirectoriesResolved } from './lib/paths.js';
 import { shutdownWorkerPool } from './lib/worker-pool.js';
 
 import { CliExitError, parseArgs } from './cli.js';
@@ -90,15 +87,6 @@ async function main(): Promise<void> {
   }
 
   if (allowedDirs.length > 0) {
-    const { signal, cleanup } = createTimedAbortSignal(
-      undefined,
-      DEFAULT_SEARCH_TIMEOUT_MS
-    );
-    try {
-      await setAllowedDirectoriesResolved(allowedDirs, signal);
-    } finally {
-      cleanup();
-    }
     console.error('Allowed directories (from CLI):');
     for (const dir of allowedDirs) {
       console.error(`- ${dir}`);

@@ -12,7 +12,7 @@ import {
   MAX_TEXT_FILE_SIZE,
 } from './constants.js';
 import { ErrorCode, McpError } from './errors.js';
-import { assertAllowedFileAccess, validateExistingPath } from './paths.js';
+import type { PathGuard } from './path-guard.js';
 
 const READ_ONLY_FILE_FLAG = 'r';
 const STREAM_CHUNK_SIZE = 64 * 1024;
@@ -98,7 +98,7 @@ export async function isProbablyBinary(
     return isBinarySlice(slice);
   }
 
-  const effectivePath = await validateExistingPath(filePath, signal);
+  const effectivePath = filePath;
   await using handle = await openReadableFileHandle(effectivePath, signal);
   const slice = await readProbe(handle, signal);
   return isBinarySlice(slice);
@@ -834,10 +834,11 @@ async function readFileWithStatsInternal(
   filePath: string,
   validPath: string,
   stats: Stats,
-  normalized: NormalizedOptions
+  normalized: NormalizedOptions,
+  pathGuard: PathGuard
 ): Promise<ReadFileResult> {
   assertNotAborted(normalized.signal);
-  assertAllowedFileAccess(filePath, validPath);
+  pathGuard.assertAllowedFileAccess(filePath);
 
   assertFileStats(filePath, stats);
 
@@ -864,20 +865,34 @@ export async function readFileWithStats(
   filePath: string,
   validPath: string,
   stats: Stats,
-  options: ReadFileOptions = {}
+  options: ReadFileOptions = {},
+  pathGuard: PathGuard
 ): Promise<ReadFileResult> {
   const normalized = prepareReadOptions(options);
-  return readFileWithStatsInternal(filePath, validPath, stats, normalized);
+  return readFileWithStatsInternal(
+    filePath,
+    validPath,
+    stats,
+    normalized,
+    pathGuard
+  );
 }
 
 export async function readFile(
   filePath: string,
-  options: ReadFileOptions = {}
+  options: ReadFileOptions = {},
+  pathGuard: PathGuard
 ): Promise<ReadFileResult> {
   const normalized = prepareReadOptions(options);
-  const validPath = await validateExistingPath(filePath, normalized.signal);
+  const validPath = await pathGuard.validateExistingPath(filePath);
   assertNotAborted(normalized.signal);
   const stats = await withAbort(stat(validPath), normalized.signal);
 
-  return readFileWithStatsInternal(filePath, validPath, stats, normalized);
+  return readFileWithStatsInternal(
+    filePath,
+    validPath,
+    stats,
+    normalized,
+    pathGuard
+  );
 }

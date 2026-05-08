@@ -40,7 +40,6 @@ import {
   type LogTarget,
   SessionContext,
 } from '../lib/logger.js';
-import { withPathGuard } from '../lib/paths.js';
 import { createInMemoryResourceStore } from '../lib/resource-store.js';
 
 import { pkgInfo } from '../pkg-info.js';
@@ -205,8 +204,8 @@ export async function createServer(
   });
 
   registerGetHelpPrompt(server, serverInstructionsContent, localIcon);
-  registerCompareFilesPrompt(server, localIcon);
-  registerAnalyzePathPrompt(server, localIcon);
+  registerCompareFilesPrompt(server, rootsManager.pathGuard, localIcon);
+  registerAnalyzePathPrompt(server, rootsManager.pathGuard, localIcon);
   registerAllTools(server, {
     pathGuard: rootsManager.pathGuard,
     resourceStore,
@@ -575,9 +574,7 @@ async function handleSessionTransportRequest(
     ? { sessionId: session.transport.sessionId }
     : {};
   await SessionContext.run(store, async () => {
-    await withPathGuard(session.rootsManager.pathGuard, () =>
-      session.transport.handleRequest(req, res, body)
-    );
+    await session.transport.handleRequest(req, res, body);
   });
 }
 

@@ -9,7 +9,7 @@ import {
   getReservedDeviceNameForPath,
   isWindowsDriveRelativePath,
   normalizePath,
-} from './lib/paths.js';
+} from './lib/path-guard.js';
 import { isRecord } from './lib/utils.js';
 
 import { pkgInfo } from './pkg-info.js';

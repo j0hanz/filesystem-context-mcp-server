@@ -8,10 +8,7 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { describe, it } from 'node:test';
 
-import {
-  normalizePath,
-  setAllowedDirectoriesResolved,
-} from '../../src/lib/paths.js';
+import { normalizePath, PathGuard } from '../../src/lib/path-guard.js';
 import { createInMemoryResourceStore } from '../../src/lib/resource-store.js';
 import {
   registerAnalyzePathPrompt,
@@ -24,15 +21,20 @@ import {
 } from '../../src/resources.js';
 import { LinkedTransport } from '../linked-transport.js';
 
-function makeCompletionServer(withInstructions = false): McpServer {
+function makeCompletionServer(
+  withInstructions = false,
+  pathGuard?: PathGuard
+): McpServer {
   const server = new McpServer(
     { name: 'test-server', version: '0.0.0' },
     { capabilities: { completions: {} } }
   );
   const instructions = withInstructions ? serverInstructionsContent : '';
   registerGetHelpPrompt(server, instructions);
-  registerAnalyzePathPrompt(server);
-  registerCompareFilesPrompt(server);
+  if (pathGuard) {
+    registerAnalyzePathPrompt(server, pathGuard);
+    registerCompareFilesPrompt(server, pathGuard);
+  }
 
   const resourceStore = createInMemoryResourceStore();
 
@@ -63,9 +65,9 @@ describe('completions', () => {
     );
     await writeFile(join(tmpDir, 'alpha.txt'), 'alpha', 'utf8');
     await writeFile(join(tmpDir, 'beta.txt'), 'beta', 'utf8');
-    await setAllowedDirectoriesResolved([tmpDir]);
+    const pathGuard = await PathGuard.fromAllowedDirectories([tmpDir]);
 
-    const server = makeCompletionServer();
+    const server = makeCompletionServer(false, pathGuard);
     const { client, cleanup } = await connectPair(server);
 
     try {
@@ -93,7 +95,6 @@ describe('completions', () => {
     } finally {
       await cleanup();
       await rm(tmpDir, { recursive: true, force: true });
-      await setAllowedDirectoriesResolved([]);
     }
   });
 
@@ -104,9 +105,9 @@ describe('completions', () => {
     const fooDir = join(tmpDir, 'foo');
     await mkdir(fooDir);
     await writeFile(join(fooDir, 'inside.txt'), 'inside', 'utf8');
-    await setAllowedDirectoriesResolved([tmpDir]);
+    const pathGuard = await PathGuard.fromAllowedDirectories([tmpDir]);
 
-    const server = makeCompletionServer();
+    const server = makeCompletionServer(false, pathGuard);
     const { client, cleanup } = await connectPair(server);
 
     try {
@@ -137,7 +138,6 @@ describe('completions', () => {
     } finally {
       await cleanup();
       await rm(tmpDir, { recursive: true, force: true });
-      await setAllowedDirectoriesResolved([]);
     }
   });
 
@@ -156,9 +156,9 @@ describe('completions', () => {
       linkedDir,
       process.platform === 'win32' ? 'junction' : 'dir'
     );
-    await setAllowedDirectoriesResolved([allowedDir]);
+    const pathGuard = await PathGuard.fromAllowedDirectories([allowedDir]);
 
-    const server = makeCompletionServer();
+    const server = makeCompletionServer(false, pathGuard);
     const { client, cleanup } = await connectPair(server);
 
     try {
@@ -183,7 +183,6 @@ describe('completions', () => {
     } finally {
       await cleanup();
       await rm(tmpDir, { recursive: true, force: true });
-      await setAllowedDirectoriesResolved([]);
     }
   });
 

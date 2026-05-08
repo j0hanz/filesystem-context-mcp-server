@@ -16,7 +16,7 @@ import {
   isIgnoredByGitignore,
   loadRootGitignore,
 } from '../lib/fs-walk.js';
-import { validateExistingPath } from '../lib/paths.js';
+import type { PathGuard } from '../lib/path-guard.js';
 import { NonNegInt, RequiredPath, Sha256Hex } from '../schemas/fields.js';
 
 import { defineTool } from './define-tool.js';
@@ -177,10 +177,11 @@ async function hashDirectory(
 
 async function handleCalculateHash(
   args: z.infer<typeof HashInputSchema>,
+  pathGuard: PathGuard,
   signal?: AbortSignal,
   onProgress?: (progress: { total?: number; current: number }) => void
 ): Promise<ToolResponse<z.infer<typeof HashOutputSchema>>> {
-  const validPath = await validateExistingPath(args.path, signal);
+  const validPath = await pathGuard.validateExistingPath(args.path);
 
   // Check if path is a directory or file
   const stats = await withAbort(stat(validPath), signal);
@@ -237,7 +238,12 @@ export const CALCULATE_HASH = defineTool<
         });
       };
 
-      const result = await handleCalculateHash(args, ctx.signal, onProgress);
+      const result = await handleCalculateHash(
+        args,
+        ctx.pathGuard,
+        ctx.signal,
+        onProgress
+      );
       const sc = result.structuredContent;
       const totalFiles = sc.fileCount ?? 1;
       const finalCurrent = resolveFinalProgressCurrent(

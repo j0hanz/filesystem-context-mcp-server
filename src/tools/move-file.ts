@@ -17,11 +17,7 @@ import {
   McpError,
 } from '../lib/errors.js';
 import { Logger } from '../lib/logger.js';
-import {
-  assertAllowedFileAccess,
-  validateExistingPath,
-  validatePathForWrite,
-} from '../lib/paths.js';
+import type { PathGuard } from '../lib/path-guard.js';
 import { RequiredPath } from '../schemas/fields.js';
 import { PerFileErrorSchema } from '../schemas/shared.js';
 
@@ -163,12 +159,13 @@ async function processSingleMove(
   validDest: string,
   movedSources: string[],
   failed: NonNullable<z.infer<typeof MoveFileOutputSchema>['failed']>,
+  pathGuard: PathGuard,
   signal?: AbortSignal
 ): Promise<void> {
   let validSource: string;
   try {
-    validSource = await validateExistingPath(src, signal);
-    assertAllowedFileAccess(src, validSource);
+    validSource = await pathGuard.validateExistingPath(src);
+    pathGuard.assertAllowedFileAccess(src);
   } catch (error) {
     failed.push(toMoveFailure(src, error, ErrorCode.ACCESS_DENIED));
     return;
@@ -300,6 +297,7 @@ async function tryElicitOverwriteConfirmation(
 
 async function handleMoveFile(
   args: z.infer<typeof MoveFileInputSchema>,
+  pathGuard: PathGuard,
   signal?: AbortSignal,
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>
 ): Promise<z.infer<typeof MoveFileOutputSchema>> {
@@ -308,7 +306,7 @@ async function handleMoveFile(
     throw new McpError(ErrorCode.INVALID_INPUT, 'No sources provided.');
   }
 
-  const validDest = await validatePathForWrite(args.destination, signal);
+  const validDest = await pathGuard.validatePathForWrite(args.destination);
   const destIsDirectory = await getDestinationStatus(validDest);
 
   if (sources.length > 1 && !destIsDirectory) {
@@ -341,6 +339,7 @@ async function handleMoveFile(
       validDest,
       movedSources,
       failed,
+      pathGuard,
       signal
     );
   }
@@ -382,7 +381,12 @@ type MoveOutput = z.infer<typeof MoveFileOutputSchema>;
 export const MOVE_FILE = defineTool<MoveInput, MoveOutput>({
   contract: MOVE_FILE_TOOL,
   run: async (args, ctx) => {
-    const structured = await handleMoveFile(args, ctx.signal, ctx.elicitInput);
+    const structured = await handleMoveFile(
+      args,
+      ctx.pathGuard,
+      ctx.signal,
+      ctx.elicitInput
+    );
     const message = formatMoveMessage(
       structured.sources.length,
       structured.failed?.length ?? 0,

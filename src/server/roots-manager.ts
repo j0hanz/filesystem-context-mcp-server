@@ -16,13 +16,13 @@ import {
 } from '../lib/constants.js';
 import { formatUnknownErrorMessage } from '../lib/errors.js';
 import { Logger, type LoggingState, logToMcp } from '../lib/logger.js';
-import { PathGuard } from '../lib/path-guard.js';
 import {
   getValidRootDirectories,
   isPathWithinDirectories,
   normalizePath,
+  PathGuard,
   resolveAllowedDirectoriesState,
-} from '../lib/paths.js';
+} from '../lib/path-guard.js';
 import { debounce, isRecord } from '../lib/utils.js';
 
 const ROOTS_TIMEOUT_MS = 5000;

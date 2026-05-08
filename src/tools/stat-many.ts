@@ -18,10 +18,7 @@ import {
   isHidden,
 } from '../lib/fs-walk.js';
 import { processInParallel } from '../lib/parallel.js';
-import {
-  assertAllowedFileAccess,
-  validateExistingPathDetailed,
-} from '../lib/paths.js';
+import type { PathGuard } from '../lib/path-guard.js';
 import { RequiredPath } from '../schemas/fields.js';
 import {
   FileInfoSchema,
@@ -147,19 +144,20 @@ interface FileInfoOptions {
   includeMimeType?: boolean | undefined;
   signal?: AbortSignal | undefined;
   onProgress?: () => void;
+  pathGuard: PathGuard;
 }
 
 async function getFileInfo(
   filePath: string,
-  options: FileInfoOptions = {}
+  options: FileInfoOptions
 ): Promise<FileInfo> {
-  const { signal } = options;
+  const { signal, pathGuard } = options;
   assertNotAborted(signal);
 
   const { requestedPath, resolvedPath, isSymlink } =
-    await validateExistingPathDetailed(filePath, signal);
+    await pathGuard.validateExistingPathDetailed(filePath);
 
-  assertAllowedFileAccess(requestedPath, resolvedPath);
+  pathGuard.assertAllowedFileAccess(requestedPath);
 
   const { base: name, ext: rawExt } = parse(requestedPath);
   const ext = rawExt.toLowerCase();
@@ -251,7 +249,7 @@ function calculateSummary(results: readonly MultipleFileInfoResult[]): {
 
 async function getMultipleFileInfo(
   paths: readonly string[],
-  options: FileInfoOptions = {}
+  options: FileInfoOptions
 ): Promise<GetMultipleFileInfoResult> {
   if (paths.length === 0) return buildEmptyResult();
 
@@ -294,11 +292,13 @@ function formatFileInfoDetail(info: FileInfo): string {
 
 async function handleGetMultipleFileInfo(
   args: z.infer<typeof StatManyInputSchema>,
+  pathGuard: PathGuard,
   signal?: AbortSignal,
   onProgress?: () => void
 ): Promise<{ text: string; structured: z.infer<typeof StatManyOutputSchema> }> {
   const result = await getMultipleFileInfo(args.paths, {
     includeMimeType: true,
+    pathGuard,
     ...(signal !== undefined ? { signal } : {}),
     ...(onProgress !== undefined ? { onProgress } : {}),
   });
@@ -355,6 +355,7 @@ export const GET_MULTIPLE_FILE_INFO = defineTool<
     const result = await completeProgressSession(progress, label, async () => {
       const { text, structured } = await handleGetMultipleFileInfo(
         args,
+        ctx.pathGuard,
         ctx.signal,
         onItemComplete
       );

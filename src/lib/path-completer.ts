@@ -4,11 +4,11 @@ import { readdir, realpath, stat } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, parse, resolve, sep } from 'node:path';
 
 import {
-  getAllowedDirectories,
   isPathWithinDirectories,
   normalizePath,
   toPosixPath,
-} from './paths.js';
+} from './path-guard.js';
+import type { PathGuard } from './path-guard.js';
 
 const MAX_COMPLETION_ITEMS = 100;
 const COMPLETION_RATE_LIMIT_MS = 100;
@@ -324,6 +324,8 @@ function getSearchContext(
 export interface CompletePathOptions {
   /** McpServer instance for WeakMap cache key. Cache disabled when absent. */
   server?: McpServer;
+  /** PathGuard for the current session (provides allowed directories). */
+  pathGuard: PathGuard;
   /** Argument name — drives context-key selection (e.g. 'path', 'modified'). */
   argumentName?: string;
   /** Sibling argument values from the completion ctx.arguments field. */
@@ -337,9 +339,9 @@ export interface CompletePathOptions {
  */
 async function completePath(
   value: string,
-  options: CompletePathOptions = {}
+  options: CompletePathOptions
 ): Promise<string[]> {
-  const allowed = getAllowedDirectories();
+  const allowed = options.pathGuard.getAllowedDirectories();
   const argName = options.argumentName ?? '';
 
   try {
@@ -379,7 +381,7 @@ async function completePath(
  */
 export async function completePathCached(
   value: string,
-  options: CompletePathOptions = {}
+  options: CompletePathOptions
 ): Promise<string[]> {
   if (!options.server) return completePath(value, options);
 

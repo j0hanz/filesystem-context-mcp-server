@@ -12,7 +12,7 @@ import { z } from 'zod/v4';
 import { withAbort } from '../lib/abort.js';
 import { ErrorCode, isNodeError, McpError } from '../lib/errors.js';
 import { Logger } from '../lib/logger.js';
-import { isAllowedDirectoryRoot, validatePathForWrite } from '../lib/paths.js';
+import type { PathGuard } from '../lib/path-guard.js';
 import { FileType as FileTypeEnum, RequiredPath } from '../schemas/fields.js';
 import {
   defaultFalseBoolean,
@@ -176,17 +176,18 @@ async function performDeletion(
 async function deleteSinglePath(
   inputPath: string,
   args: Pick<DeleteInput, 'recursive' | 'ignoreIfNotExists'>,
+  pathGuard: PathGuard,
   signal?: AbortSignal,
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>
 ): Promise<{ item: DeletedItem } | { failure: DeleteFailure }> {
   let validPath: string;
   try {
-    validPath = await validatePathForWrite(inputPath, signal);
+    validPath = await pathGuard.validatePathForWrite(inputPath);
   } catch (error) {
     return { failure: toDeleteFailure(inputPath, error) };
   }
 
-  if (isAllowedDirectoryRoot(validPath)) {
+  if (pathGuard.isAllowedRoot(validPath)) {
     return {
       failure: {
         path: validPath,
@@ -241,6 +242,7 @@ async function deleteSinglePath(
 
 async function handleDelete(
   args: DeleteInput,
+  pathGuard: PathGuard,
   signal?: AbortSignal,
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>
 ): Promise<DeleteOutput> {
@@ -248,7 +250,13 @@ async function handleDelete(
   const failures: DeleteFailure[] = [];
 
   for (const inputPath of args.paths) {
-    const result = await deleteSinglePath(inputPath, args, signal, elicitInput);
+    const result = await deleteSinglePath(
+      inputPath,
+      args,
+      pathGuard,
+      signal,
+      elicitInput
+    );
     if ('item' in result) {
       deleted.push(result.item);
     } else {
@@ -292,7 +300,12 @@ export const DELETE_FILE = defineTool<DeleteInput, DeleteOutput>({
     return `${DELETE_FILE_TOOL.title}: ${names} \u2022 ${summary.succeeded}/${summary.total} deleted`;
   },
   run: async (args, ctx) => {
-    const structured = await handleDelete(args, ctx.signal, ctx.elicitInput);
+    const structured = await handleDelete(
+      args,
+      ctx.pathGuard,
+      ctx.signal,
+      ctx.elicitInput
+    );
     const text = formatDeleteMessage(
       structured.summary.succeeded,
       structured.summary.failed

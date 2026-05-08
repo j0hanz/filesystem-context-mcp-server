@@ -342,8 +342,7 @@ describe('Completion contract', () => {
     } = await import('../src/prompts.js');
     const { registerAllResources, serverInstructionsContent } =
       await import('../src/resources.js');
-    const { setAllowedDirectoriesResolved } =
-      await import('../src/lib/paths.js');
+    const { PathGuard } = await import('../src/lib/path-guard.js');
     const { createInMemoryResourceStore } =
       await import('../src/lib/resource-store.js');
     const { LinkedTransport } = await import('./linked-transport.js');
@@ -352,7 +351,7 @@ describe('Completion contract', () => {
       join(tmpdir(), `fsmcp-cc-${randomUUID().slice(0, 8)}-`)
     );
     await writeFile(join(tmpDir, 'sample.txt'), 'sample');
-    await setAllowedDirectoriesResolved([tmpDir]);
+    const pathGuard = await PathGuard.fromAllowedDirectories([tmpDir]);
 
     const server = new McpServer(
       { name: 'contract-completion-server', version: '0.0.0' },
@@ -363,8 +362,8 @@ describe('Completion contract', () => {
     const resourceStore = createInMemoryResourceStore();
 
     registerGetHelpPrompt(server, serverInstructionsContent);
-    registerAnalyzePathPrompt(server);
-    registerCompareFilesPrompt(server);
+    registerAnalyzePathPrompt(server, pathGuard);
+    registerCompareFilesPrompt(server, pathGuard);
     registerAllResources(server, {
       resourceStore,
     });
@@ -382,7 +381,6 @@ describe('Completion contract', () => {
         await client.close().catch(() => {});
         await server.close().catch(() => {});
         await rm(tmpDir, { recursive: true, force: true });
-        await setAllowedDirectoriesResolved([]);
       },
     };
   }

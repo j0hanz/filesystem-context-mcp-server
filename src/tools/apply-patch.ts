@@ -16,7 +16,7 @@ import { ErrorCode, McpError } from '../lib/errors.js';
 import { readFileWithStats } from '../lib/file-content.js';
 import { Logger } from '../lib/logger.js';
 import { processInParallel } from '../lib/parallel.js';
-import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
+import type { PathGuard } from '../lib/path-guard.js';
 import { runInWorker, shouldOffload } from '../lib/worker-pool.js';
 import { NonNegInt, OptionalPath } from '../schemas/fields.js';
 import {
@@ -166,10 +166,11 @@ async function applyDiff(
   filePath: string,
   diff: StructuredPatch,
   options: PatchOptions,
+  pathGuard: PathGuard,
   signal?: AbortSignal
 ): Promise<PatchFileResult> {
-  const validPath = await validateExistingPath(filePath, signal);
-  assertAllowedFileAccess(filePath, validPath);
+  const validPath = await pathGuard.validateExistingPath(filePath);
+  pathGuard.assertAllowedFileAccess(filePath);
 
   const fileStats = await withAbort(stat(validPath), signal);
   assertPatchTargetSizeWithinLimit(
@@ -178,12 +179,18 @@ async function applyDiff(
     MAX_TEXT_FILE_SIZE
   );
 
-  const { content } = await readFileWithStats(filePath, validPath, fileStats, {
-    encoding: 'utf-8',
-    maxSize: MAX_TEXT_FILE_SIZE,
-    skipBinary: true,
-    ...(signal ? { signal } : {}),
-  });
+  const { content } = await readFileWithStats(
+    filePath,
+    validPath,
+    fileStats,
+    {
+      encoding: 'utf-8',
+      maxSize: MAX_TEXT_FILE_SIZE,
+      skipBinary: true,
+      ...(signal ? { signal } : {}),
+    },
+    pathGuard
+  );
 
   const patched = await (async (): Promise<string | false> => {
     const patchText = formatPatch(diff);
@@ -229,9 +236,10 @@ async function processMultiFilePatch(
   basePath: string,
   parsed: StructuredPatch[],
   options: PatchOptions,
+  pathGuard: PathGuard,
   signal?: AbortSignal
 ): Promise<ToolResult<z.infer<typeof ApplyPatchOutputSchema>>> {
-  const validBase = await validateExistingPath(basePath, signal);
+  const validBase = await pathGuard.validateExistingPath(basePath);
 
   const tasks = parsed.map((diff) => {
     const fileName = extractPatchTargetPath(diff);
@@ -242,7 +250,7 @@ async function processMultiFilePatch(
     const filePath = resolve(validBase, fileName);
     return async (): Promise<PatchFileResult> => {
       try {
-        const r = await applyDiff(filePath, diff, options, signal);
+        const r = await applyDiff(filePath, diff, options, pathGuard, signal);
         return { ...r, path: fileName };
       } catch (error) {
         return {
@@ -336,12 +344,13 @@ async function handleSingleFilePatch(
   targetPath: string,
   diff: ReturnType<typeof parsePatch>[number],
   options: PatchOptions,
+  pathGuard: PathGuard,
   signal?: AbortSignal
 ): Promise<ToolResult<z.infer<typeof ApplyPatchOutputSchema>>> {
   // diff cannot be undefined here if we got past validation, but TS checking is permissive
   let result: PatchFileResult;
   try {
-    result = await applyDiff(targetPath, diff, options, signal);
+    result = await applyDiff(targetPath, diff, options, pathGuard, signal);
   } catch (error) {
     return buildToolErrorResponse(error, ErrorCode.UNKNOWN, targetPath);
   }
@@ -387,6 +396,7 @@ async function handleSingleFilePatch(
 
 async function handleApplyPatch(
   args: z.infer<typeof ApplyPatchInputSchema>,
+  pathGuard: PathGuard,
   signal?: AbortSignal
 ): Promise<ToolResult<z.infer<typeof ApplyPatchOutputSchema>>> {
   const parsed = parseAndValidatePatch(args.patch);
@@ -400,7 +410,13 @@ async function handleApplyPatch(
   const targetPath = args.path ?? '';
 
   if (parsed.length > 1) {
-    return processMultiFilePatch(targetPath, parsed, options, signal);
+    return processMultiFilePatch(
+      targetPath,
+      parsed,
+      options,
+      pathGuard,
+      signal
+    );
   }
 
   const diff = parsed[0];
@@ -408,7 +424,7 @@ async function handleApplyPatch(
     throw new McpError(ErrorCode.INVALID_INPUT, 'No patch content found.');
   }
 
-  return handleSingleFilePatch(targetPath, diff, options, signal);
+  return handleSingleFilePatch(targetPath, diff, options, pathGuard, signal);
 }
 
 type PatchInput = z.infer<typeof ApplyPatchInputSchema>;
@@ -418,7 +434,7 @@ export const APPLY_PATCH = defineTool<PatchInput, PatchOutput>({
   contract: APPLY_PATCH_TOOL,
   defaultErrorCode: ErrorCode.UNKNOWN,
   run: async (args, ctx) => {
-    const result = await handleApplyPatch(args, ctx.signal);
+    const result = await handleApplyPatch(args, ctx.pathGuard, ctx.signal);
     if (!result.isError && !args.dryRun) {
       const sc = result.structuredContent;
       const added = sc.files.reduce((s, f) => s + (f.linesAdded ?? 0), 0);

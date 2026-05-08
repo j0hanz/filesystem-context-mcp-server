@@ -29,7 +29,6 @@ import {
   withToolDiagnostics,
 } from '../lib/observability.js';
 import type { PathGuard } from '../lib/path-guard.js';
-import { getAllowedDirectories } from '../lib/paths.js';
 import type { ResourceStore } from '../lib/resource-store.js';
 import { createBase64JsonCodec } from '../lib/zod-codecs.js';
 
@@ -433,6 +432,7 @@ export function toToolContext(ctx?: ToolContext | ServerContext): ToolContext {
  */
 export interface HandlerContext {
   signal?: AbortSignal;
+  pathGuard: PathGuard;
   resourceStore: ResourceStore | undefined;
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>;
   log?: (level: LoggingLevel, data: unknown, logger?: string) => Promise<void>;
@@ -605,40 +605,6 @@ export function buildToolErrorResponse(
     isError: true,
     errorCode: detailed.code,
   };
-}
-
-/**
- * Returns `pathValue` if non-empty; otherwise resolves to the single allowed
- * directory from module-level state managed by `RootsManager`. Throws when the
- * path is ambiguous (multiple roots) or when no roots are configured.
- *
- * NOTE: Depends on `getAllowedDirectories()` which reads module-level state
- * updated by `RootsManager`. Ensure the server is initialized before calling.
- * See `src/server/roots-manager.ts` for the update lifecycle.
- */
-export function resolvePathOrRoot(pathValue: string | undefined): string {
-  if (pathValue && pathValue.trim().length > 0) return pathValue;
-  const roots = getAllowedDirectories();
-  if (roots.length === 0) {
-    throw new McpError(
-      ErrorCode.ACCESS_DENIED,
-      'No roots configured. Use roots tool, --allow-cwd, or MCP Roots protocol.'
-    );
-  }
-  if (roots.length > 1) {
-    throw new McpError(
-      ErrorCode.INVALID_INPUT,
-      'Multiple roots configured. Provide an explicit path.'
-    );
-  }
-  const root = roots[0];
-  if (!root) {
-    throw new McpError(
-      ErrorCode.ACCESS_DENIED,
-      'Workspace root is unexpectedly undefined'
-    );
-  }
-  return root;
 }
 
 const OffsetCursorSchema = z.strictObject({

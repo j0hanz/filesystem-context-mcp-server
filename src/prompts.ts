@@ -7,6 +7,7 @@ import {
 import { z } from 'zod/v4';
 
 import { completePathCached } from './lib/path-completer.js';
+import type { PathGuard } from './lib/path-guard.js';
 
 import { type IconInfo, withDefaultIcons } from './tools/shared.js';
 
@@ -108,6 +109,7 @@ export function registerGetHelpPrompt(
 
 export function registerCompareFilesPrompt(
   server: McpServer,
+  pathGuard: PathGuard,
   iconInfo?: IconInfo
 ): void {
   server.registerPrompt(
@@ -126,6 +128,7 @@ export function registerCompareFilesPrompt(
           (value, ctx) => {
             const opts: Parameters<typeof completePathCached>[1] = {
               server,
+              pathGuard,
               argumentName: 'original',
             };
             if (ctx?.arguments) opts.contextArguments = ctx.arguments;
@@ -137,6 +140,7 @@ export function registerCompareFilesPrompt(
           (value, ctx) => {
             const opts: Parameters<typeof completePathCached>[1] = {
               server,
+              pathGuard,
               argumentName: 'modified',
             };
             if (ctx?.arguments) opts.contextArguments = ctx.arguments;
@@ -163,6 +167,7 @@ export function registerCompareFilesPrompt(
 
 export function registerAnalyzePathPrompt(
   server: McpServer,
+  pathGuard: PathGuard,
   iconInfo?: IconInfo
 ): void {
   server.registerPrompt(
@@ -181,6 +186,7 @@ export function registerAnalyzePathPrompt(
           (value, ctx) => {
             const opts: Parameters<typeof completePathCached>[1] = {
               server,
+              pathGuard,
               argumentName: 'path',
             };
             if (ctx?.arguments) opts.contextArguments = ctx.arguments;

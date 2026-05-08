@@ -5,7 +5,7 @@ import { z } from 'zod/v4';
 
 import { withAbort } from '../lib/abort.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
-import { validatePathForWrite } from '../lib/paths.js';
+import type { PathGuard } from '../lib/path-guard.js';
 import { RequiredPath } from '../schemas/fields.js';
 import {
   OperationSummarySchema,
@@ -64,6 +64,7 @@ const CREATE_DIRECTORY_TOOL: ToolContract = {
 
 async function handleCreateDirectory(
   args: z.infer<typeof CreateDirectoryInputSchema>,
+  pathGuard: PathGuard,
   signal?: AbortSignal
 ): Promise<z.infer<typeof CreateDirectoryOutputSchema>> {
   const created: { path: string; isNew: boolean }[] = [];
@@ -79,7 +80,7 @@ async function handleCreateDirectory(
 
   for (const p of args.paths) {
     try {
-      const validPath = await validatePathForWrite(p, signal);
+      const validPath = await pathGuard.validatePathForWrite(p);
       const result = await withAbort(
         mkdir(validPath, { recursive: true }),
         signal
@@ -113,7 +114,11 @@ export const CREATE_DIRECTORY = defineTool<
 >({
   contract: CREATE_DIRECTORY_TOOL,
   run: async (args, ctx) => {
-    const structured = await handleCreateDirectory(args, ctx.signal);
+    const structured = await handleCreateDirectory(
+      args,
+      ctx.pathGuard,
+      ctx.signal
+    );
     const succeeded = structured.summary.succeeded;
     const failed = structured.summary.failed;
     const label = succeeded === 1 ? 'directory' : 'directories';

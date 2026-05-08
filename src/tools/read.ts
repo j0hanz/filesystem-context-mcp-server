@@ -9,6 +9,7 @@ import {
 } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { calculateFileContentHash, readFile } from '../lib/file-content.js';
+import type { PathGuard } from '../lib/path-guard.js';
 import { assignDefined } from '../lib/utils.js';
 import {
   NonNegInt,
@@ -315,11 +316,12 @@ function buildReadCompletionMessage(
 
 async function handleReadFile(
   args: ReadFileInput,
+  pathGuard: PathGuard,
   signal?: AbortSignal,
   resourceStore?: Parameters<typeof maybeExternalizeTextContent>[0]
 ): Promise<ToolResponse<ReadFileOutput>> {
   const options = buildReadOptions(args, signal);
-  const result = await readFile(args.path, options);
+  const result = await readFile(args.path, options, pathGuard);
   const structured = toStructuredReadFileResult(result);
 
   if (args.includeHash) {
@@ -345,7 +347,8 @@ async function handleReadFile(
 export const READ_FILE = defineTool<ReadFileInput, ReadFileOutput>({
   contract: READ_FILE_TOOL,
   defaultErrorCode: ErrorCode.NOT_FILE,
-  run: (args, ctx) => handleReadFile(args, ctx.signal, ctx.resourceStore),
+  run: (args, ctx) =>
+    handleReadFile(args, ctx.pathGuard, ctx.signal, ctx.resourceStore),
   progressMessage: buildReadProgressMessage,
   completionMessage: buildReadCompletionMessage,
 });

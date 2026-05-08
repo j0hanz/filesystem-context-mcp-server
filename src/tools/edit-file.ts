@@ -11,7 +11,7 @@ import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
 import { readFileWithStats } from '../lib/file-content.js';
 import { Logger } from '../lib/logger.js';
-import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
+import type { PathGuard } from '../lib/path-guard.js';
 import { runInWorker, shouldOffload } from '../lib/worker-pool.js';
 import { NonNegInt, PositiveInt, RequiredPath } from '../schemas/fields.js';
 import { defaultFalseBoolean } from '../schemas/shared.js';
@@ -312,10 +312,11 @@ function buildEditMessage(requestedPath: string, result: EditResult): string {
 
 async function loadEditableFile(
   requestedPath: string,
+  pathGuard: PathGuard,
   signal?: AbortSignal
 ): Promise<{ validPath: string; content: string }> {
-  const validPath = await validateExistingPath(requestedPath, signal);
-  assertAllowedFileAccess(requestedPath, validPath);
+  const validPath = await pathGuard.validateExistingPath(requestedPath);
+  pathGuard.assertAllowedFileAccess(requestedPath);
   const stats = await withAbort(stat(validPath), signal);
 
   if (stats.size > MAX_TEXT_FILE_SIZE) {
@@ -327,12 +328,18 @@ async function loadEditableFile(
     );
   }
 
-  const { content } = await readFileWithStats(requestedPath, validPath, stats, {
-    encoding: 'utf-8',
-    maxSize: MAX_TEXT_FILE_SIZE,
-    skipBinary: true,
-    ...(signal ? { signal } : {}),
-  });
+  const { content } = await readFileWithStats(
+    requestedPath,
+    validPath,
+    stats,
+    {
+      encoding: 'utf-8',
+      maxSize: MAX_TEXT_FILE_SIZE,
+      skipBinary: true,
+      ...(signal ? { signal } : {}),
+    },
+    pathGuard
+  );
   return { validPath, content };
 }
 
@@ -411,9 +418,14 @@ async function applyEdits(
 
 async function handleEditFile(
   args: EditInput,
+  pathGuard: PathGuard,
   signal?: AbortSignal
 ): Promise<z.infer<typeof EditFileOutputSchema>> {
-  const { validPath, content } = await loadEditableFile(args.path, signal);
+  const { validPath, content } = await loadEditableFile(
+    args.path,
+    pathGuard,
+    signal
+  );
   const editResult = await applyEdits(
     content,
     args.edits,
@@ -453,7 +465,7 @@ async function handleEditFile(
 export const EDIT_FILE = defineTool<EditInput, EditOutput>({
   contract: EDIT_FILE_TOOL,
   run: async (args, ctx) => {
-    const structured = await handleEditFile(args, ctx.signal);
+    const structured = await handleEditFile(args, ctx.pathGuard, ctx.signal);
     const message = buildEditMessage(args.path, {
       appliedEdits: structured.appliedEdits,
       unmatchedEdits: structured.unmatchedEdits ?? [],

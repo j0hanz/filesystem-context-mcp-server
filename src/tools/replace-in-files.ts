@@ -23,7 +23,7 @@ import {
 } from '../lib/errors.js';
 import { globEntries } from '../lib/fs-walk.js';
 import { Logger } from '../lib/logger.js';
-import { validateExistingPath, validatePathForWrite } from '../lib/paths.js';
+import type { PathGuard } from '../lib/path-guard.js';
 import { runInWorker, shouldOffload } from '../lib/worker-pool.js';
 import { NonNegInt, OptionalPath, SafeGlobPattern } from '../schemas/fields.js';
 import {
@@ -43,7 +43,6 @@ import {
   buildStructuredError,
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
-  resolvePathOrRoot,
   type ToolContract,
   type ToolResponse,
   truncateProgressPattern,
@@ -275,6 +274,7 @@ interface ReplaceContext {
   maxFileSize: number;
   signal: AbortSignal | undefined;
   summary: ReplaceSummary;
+  pathGuard: PathGuard;
 }
 
 interface ReplacementPlan {
@@ -316,7 +316,7 @@ async function processEntry(
 
   let validPath: string;
   try {
-    validPath = await validatePathForWrite(entryPath, signal);
+    validPath = await ctx.pathGuard.validatePathForWrite(entryPath);
   } catch (error) {
     summary.failedFiles++;
     recordFailure(summary.failures, {
@@ -539,11 +539,11 @@ function createReplaceSummary(root: string): ReplaceSummary {
 
 async function resolveSearchRoot(
   pathValue: string | undefined,
-  signal?: AbortSignal
+  pathGuard: PathGuard
 ): Promise<string> {
   return pathValue
-    ? validateExistingPath(pathValue, signal)
-    : resolvePathOrRoot(pathValue);
+    ? pathGuard.validateExistingPath(pathValue)
+    : pathGuard.resolvePathOrRoot(pathValue);
 }
 
 function buildSearchPattern(args: SearchAndReplaceArgs): string {
@@ -573,12 +573,13 @@ function createReplacementMatcher(
 
 async function handleSearchAndReplace(
   args: SearchAndReplaceArgs,
+  pathGuard: PathGuard,
   signal?: AbortSignal,
   onProgress: (progress: { total?: number; current: number }) => void = () =>
     undefined
 ): Promise<ToolResponse<SearchAndReplaceOutput>> {
   const maxFileSize = MAX_TEXT_FILE_SIZE;
-  const root = await resolveSearchRoot(args.path, signal);
+  const root = await resolveSearchRoot(args.path, pathGuard);
   const matcher = createReplacementMatcher(args);
 
   const entries = globEntries({
@@ -609,6 +610,7 @@ async function handleSearchAndReplace(
     maxFileSize,
     signal,
     summary,
+    pathGuard,
   };
 
   const { stoppedByLimit, stoppedByMatchCap } =
@@ -676,6 +678,7 @@ export const SEARCH_AND_REPLACE = defineTool<
 
       const result = await handleSearchAndReplace(
         args,
+        ctx.pathGuard,
         ctx.signal,
         progressWithMessage
       );

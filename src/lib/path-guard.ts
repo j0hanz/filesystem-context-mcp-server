@@ -1,3 +1,5 @@
+import type { Root } from '@modelcontextprotocol/server';
+
 import { realpath, stat } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
 import {
@@ -9,16 +11,20 @@ import {
   posix,
   resolve,
   sep,
+  win32,
 } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { ErrorCode, McpError } from './errors.js';
+import { assertNotAborted, withAbort } from './abort.js';
+import { SENSITIVE_FILE_DENYLIST } from './constants.js';
+import { ErrorCode, isAbortError, McpError } from './errors.js';
 
 // Path utility primitives. Owned by path-guard.ts to avoid a circular
 // dependency with paths.ts (which depends on PathGuard). paths.ts re-exports
 // the public ones.
 const WINDOWS_PATH_SEPARATOR = '\\';
 const POSIX_PATH_SEPARATOR = '/';
-export const IS_WINDOWS = platform() === 'win32';
+const IS_WINDOWS = platform() === 'win32';
 const HOMEDIR = homedir();
 const PATH_SEPARATOR = sep;
 const HOME_PREFIX_LENGTH = 2;
@@ -69,7 +75,7 @@ function normalizeCaseForComparison(value: string): string {
   return IS_WINDOWS ? value.toLowerCase() : value;
 }
 
-export function isSamePath(left: string, right: string): boolean {
+function isSamePath(left: string, right: string): boolean {
   if (left === right) return true;
   const leftResolved = normalizeCaseForComparison(resolve(left));
   const rightResolved = normalizeCaseForComparison(resolve(right));
@@ -86,7 +92,7 @@ function isFileSystemRootPath(normalized: string, root: string): boolean {
   return isSamePath(normalized, root);
 }
 
-export function normalizeAllowedDirectory(dir: string): string {
+function normalizeAllowedDirectory(dir: string): string {
   const trimmed = dir.trim();
   if (trimmed.length === 0) return '';
 
@@ -101,7 +107,7 @@ export function normalizeAllowedDirectory(dir: string): string {
   return stripTrailingSeparator(normalized);
 }
 
-export function dedupePreserveOrder<T>(items: readonly T[]): T[] {
+function dedupePreserveOrder<T>(items: readonly T[]): T[] {
   return [...new Set(items)];
 }
 
@@ -223,25 +229,148 @@ export interface AllowedDirectoriesState {
   expanded: string[];
 }
 
-export interface ValidatedPathDetails {
+interface ValidatedPathDetails {
   requestedPath: string;
   resolvedPath: string;
   isSymlink: boolean;
 }
 
-let defaultPathGuard: PathGuard | undefined;
+// ---------------------------------------------------------------------------
+// Resolver pipeline (moved from paths.ts)
+// ---------------------------------------------------------------------------
 
-export function setDefaultPathGuard(guard: PathGuard): void {
-  defaultPathGuard = guard;
+function normalizeAllowedDirectories(dirs: readonly string[]): string[] {
+  const normalized: string[] = [];
+  for (const dir of dirs) {
+    const entry = normalizeAllowedDirectory(dir);
+    if (entry.length > 0) {
+      normalized.push(entry);
+    }
+  }
+  return dedupePreserveOrder(normalized);
 }
 
-export function getDefaultPathGuard(): PathGuard {
-  if (!defaultPathGuard) {
-    throw new Error(
-      'PathGuard not initialized. Call setDefaultPathGuard first.'
-    );
+async function resolveRealPath(
+  normalized: string,
+  signal?: AbortSignal
+): Promise<string | null> {
+  try {
+    assertNotAborted(signal);
+    const realPath = await withAbort(realpath(normalized), signal);
+    return normalizeAllowedDirectory(realPath);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.name === 'AbortError' ||
+        ('code' in error &&
+          (error as NodeJS.ErrnoException).code === 'ERR_ABORTED'))
+    ) {
+      throw error;
+    }
+    return null;
   }
-  return defaultPathGuard;
+}
+
+async function expandAllowedDirectories(
+  primaryDirs: readonly string[],
+  signal?: AbortSignal
+): Promise<string[]> {
+  const realPaths = await Promise.all(
+    primaryDirs.map((dir) => resolveRealPath(dir, signal))
+  );
+
+  const expanded: string[] = [];
+  for (let i = 0; i < primaryDirs.length; i++) {
+    const primary = primaryDirs[i];
+    if (!primary) continue;
+
+    expanded.push(primary);
+
+    const real = realPaths[i];
+    if (real && !isSamePath(real, primary)) {
+      expanded.push(real);
+    }
+  }
+
+  return dedupePreserveOrder(expanded);
+}
+
+export async function resolveAllowedDirectoriesState(
+  dirs: readonly string[],
+  signal?: AbortSignal
+): Promise<AllowedDirectoriesState> {
+  const primary = normalizeAllowedDirectories(dirs);
+  const expanded = await expandAllowedDirectories(primary, signal);
+  return { primary, expanded };
+}
+
+// ---------------------------------------------------------------------------
+// Windows helpers (moved from paths.ts)
+// ---------------------------------------------------------------------------
+
+function getReservedDeviceName(segment: string): string | undefined {
+  const CHAR_CODE_SPACE = 32;
+  const CHAR_CODE_DOT = 46;
+  let end = segment.length;
+  while (end > 0) {
+    const c = segment.charCodeAt(end - 1);
+    if (c === CHAR_CODE_SPACE || c === CHAR_CODE_DOT) end--;
+    else break;
+  }
+  const trimmed = segment.slice(0, end);
+  const streamIdx = trimmed.indexOf(':');
+  const withoutStream =
+    streamIdx !== -1 ? trimmed.slice(0, streamIdx) : trimmed;
+  const dotIdx = withoutStream.indexOf('.');
+  const baseName = (
+    dotIdx !== -1 ? withoutStream.slice(0, dotIdx) : withoutStream
+  ).toUpperCase();
+
+  const RESERVED_DEVICE_NAMES = new Set([
+    'CON',
+    'PRN',
+    'AUX',
+    'NUL',
+    'COM1',
+    'COM2',
+    'COM3',
+    'COM4',
+    'COM5',
+    'COM6',
+    'COM7',
+    'COM8',
+    'COM9',
+    'LPT1',
+    'LPT2',
+    'LPT3',
+    'LPT4',
+    'LPT5',
+    'LPT6',
+    'LPT7',
+    'LPT8',
+    'LPT9',
+  ]);
+  return RESERVED_DEVICE_NAMES.has(baseName) ? baseName : undefined;
+}
+
+export function getReservedDeviceNameForPath(
+  requestedPath: string
+): string | undefined {
+  if (!IS_WINDOWS) return undefined;
+  const segments = requestedPath.split(/[\\/]/u);
+  for (const segment of segments) {
+    const reserved = getReservedDeviceName(segment);
+    if (reserved) return reserved;
+  }
+  return undefined;
+}
+
+export function isWindowsDriveRelativePath(requestedPath: string): boolean {
+  if (!IS_WINDOWS) return false;
+  const WINDOWS_DRIVE_REL_REGEX = /^[A-Za-z]:$/u;
+  const parsed = win32.parse(requestedPath);
+  if (!WINDOWS_DRIVE_REL_REGEX.test(parsed.root)) return false;
+  return !win32.isAbsolute(requestedPath);
 }
 
 /**
@@ -264,6 +393,21 @@ export class PathGuard {
 
   constructor(sensitivePatterns: readonly string[]) {
     this.denyPatterns = toPatternSet(compilePatterns(sensitivePatterns));
+  }
+
+  /**
+   * Resolve `dirs`, construct an initialized PathGuard, and return it.
+   * Reads `SENSITIVE_FILE_DENYLIST` (which already incorporates
+   * `FS_CONTEXT_ALLOW_SENSITIVE`) from constants.
+   */
+  static async fromAllowedDirectories(
+    dirs: readonly string[],
+    signal?: AbortSignal
+  ): Promise<PathGuard> {
+    const state = await resolveAllowedDirectoriesState(dirs, signal);
+    const guard = new PathGuard(SENSITIVE_FILE_DENYLIST);
+    guard.initialize(state);
+    return guard;
   }
 
   initialize(state: AllowedDirectoriesState): void {
@@ -449,6 +593,60 @@ export class PathGuard {
     return details.resolvedPath;
   }
 
+  /**
+   * Returns `pathValue` when non-empty; otherwise returns the single allowed
+   * root. Throws when the path is ambiguous (multiple roots) or no roots.
+   */
+  resolvePathOrRoot(pathValue: string | undefined): string {
+    if (pathValue && pathValue.trim().length > 0) return pathValue;
+    const roots = this.getAllowedDirectories();
+    if (roots.length === 0) {
+      throw new McpError(
+        ErrorCode.ACCESS_DENIED,
+        'No roots configured. Use roots tool, --allow-cwd, or MCP Roots protocol.'
+      );
+    }
+    if (roots.length > 1) {
+      throw new McpError(
+        ErrorCode.INVALID_INPUT,
+        'Multiple roots configured. Provide an explicit path.'
+      );
+    }
+    const root = roots[0];
+    if (!root) {
+      throw new McpError(
+        ErrorCode.ACCESS_DENIED,
+        'Workspace root is unexpectedly undefined'
+      );
+    }
+    return root;
+  }
+
+  /**
+   * True when `normalizedPath` equals one of the primary allowed roots exactly.
+   */
+  isAllowedRoot(normalizedPath: string): boolean {
+    const target = IS_WINDOWS ? normalizedPath.toLowerCase() : normalizedPath;
+    for (const dir of this.getAllowedDirectories()) {
+      const d = IS_WINDOWS ? dir.toLowerCase() : dir;
+      if (target === d) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Throws `ACCESS_DENIED` if `requestedPath` matches the sensitive-file denylist.
+   */
+  assertAllowedFileAccess(requestedPath: string): void {
+    if (this.isSensitive(requestedPath)) {
+      throw new McpError(
+        ErrorCode.ACCESS_DENIED,
+        'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
+        requestedPath
+      );
+    }
+  }
+
   async validatePathForWrite(requestedPath: string): Promise<string> {
     if (!this.allowedDirectoriesState) {
       throw new McpError(
@@ -523,4 +721,82 @@ export class PathGuard {
 
     return normalizedRequested;
   }
+}
+
+// ─── Root directory resolution (used by RootsManager) ───────────────────────
+
+function isFileRoot(root: Root): boolean {
+  return root.uri.startsWith('file://');
+}
+
+function rethrowIfAborted(error: unknown): void {
+  if (isAbortError(error)) throw error;
+}
+
+async function maybeAddRealPath(
+  normalizedPath: string,
+  validDirs: string[],
+  signal?: AbortSignal
+): Promise<void> {
+  try {
+    assertNotAborted(signal);
+    const realPath = await withAbort(realpath(normalizedPath), signal);
+    const normalizedReal = normalizePath(realPath);
+    if (!isSamePath(normalizedReal, normalizedPath)) {
+      validDirs.push(normalizedReal);
+    }
+  } catch (error) {
+    rethrowIfAborted(error);
+  }
+}
+
+async function resolveRootDirectory(
+  root: Root,
+  signal?: AbortSignal
+): Promise<string | null> {
+  try {
+    const dirPath = fileURLToPath(root.uri);
+    const normalizedPath = normalizePath(dirPath);
+    assertNotAborted(signal);
+    const stats = await withAbort(stat(normalizedPath), signal);
+    if (!stats.isDirectory()) return null;
+    return normalizedPath;
+  } catch (error) {
+    rethrowIfAborted(error);
+    return null;
+  }
+}
+
+export async function getValidRootDirectories(
+  roots: Root[],
+  signal?: AbortSignal
+): Promise<string[]> {
+  const fileRoots = roots.filter(isFileRoot);
+  if (fileRoots.length === 0) return [];
+
+  const resolvedResults = await Promise.all(
+    fileRoots.map((root) => resolveRootDirectory(root, signal))
+  );
+  const validPaths = resolvedResults.filter((p): p is string => p !== null);
+  if (validPaths.length === 0) return [];
+
+  const realExpansions = await Promise.all(
+    validPaths.map(async (normalizedPath) => {
+      const extra: string[] = [];
+      await maybeAddRealPath(normalizedPath, extra, signal);
+      return extra[0] ?? null;
+    })
+  );
+
+  const validDirs: string[] = [];
+  let i = 0;
+  for (const p of validPaths) {
+    validDirs.push(p);
+    const expanded = realExpansions[i];
+    if (expanded !== null && expanded !== undefined) {
+      validDirs.push(expanded);
+    }
+    i++;
+  }
+  return validDirs;
 }

@@ -1,7 +1,6 @@
 import { z } from 'zod/v4';
 
 import { ErrorCode } from '../lib/errors.js';
-import { getAllowedDirectories } from '../lib/paths.js';
 
 import { joinLines } from '../config.js';
 import { defineTool } from './define-tool.js';
@@ -53,8 +52,8 @@ export const LIST_ALLOWED_DIRECTORIES = defineTool<
   z.infer<typeof RootsOutputSchema>
 >({
   contract: LIST_ALLOWED_DIRECTORIES_TOOL,
-  run: () => {
-    const dirs = getAllowedDirectories();
+  run: (_args, ctx) => {
+    const dirs = ctx.pathGuard.getAllowedDirectories();
     const structured = {
       ok: true,
       roots: dirs.map((uri) => ({ uri })),

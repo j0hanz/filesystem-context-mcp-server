@@ -8,10 +8,7 @@ import { assertNotAborted, withAbort } from '../lib/abort.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, getMimeType } from '../lib/constants.js';
 import { ErrorCode, isAbortError } from '../lib/errors.js';
 import { getFileType, isHidden } from '../lib/fs-walk.js';
-import {
-  assertAllowedFileAccess,
-  validateExistingPathDetailed,
-} from '../lib/paths.js';
+import type { PathGuard } from '../lib/path-guard.js';
 import { RequiredPath } from '../schemas/fields.js';
 import { FileInfoSchema } from '../schemas/shared.js';
 
@@ -108,19 +105,20 @@ async function getSymlinkTarget(
 interface FileInfoOptions {
   includeMimeType?: boolean | undefined;
   signal?: AbortSignal | undefined;
+  pathGuard: PathGuard;
 }
 
 async function getFileInfo(
   filePath: string,
-  options: FileInfoOptions = {}
+  options: FileInfoOptions
 ): Promise<FileInfo> {
-  const { signal } = options;
+  const { signal, pathGuard } = options;
   assertNotAborted(signal);
 
   const { requestedPath, resolvedPath, isSymlink } =
-    await validateExistingPathDetailed(filePath, signal);
+    await pathGuard.validateExistingPathDetailed(filePath);
 
-  assertAllowedFileAccess(requestedPath, resolvedPath);
+  pathGuard.assertAllowedFileAccess(requestedPath);
 
   const { base: name, ext: rawExt } = parse(requestedPath);
   const ext = rawExt.toLowerCase();
@@ -171,6 +169,7 @@ export const GET_FILE_INFO = defineTool<StatInput, StatOutput>({
   run: async (args, ctx) => {
     const info = await getFileInfo(args.path, {
       includeMimeType: true,
+      pathGuard: ctx.pathGuard,
       ...(ctx.signal ? { signal: ctx.signal } : {}),
     });
 

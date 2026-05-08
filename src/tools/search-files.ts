@@ -18,6 +18,7 @@ import {
   compareOptionalNumberDesc,
   compareStringValues,
   type DirentLike,
+  type EntryAccessDependencies,
   type EntryType,
   globEntries,
   isEntryAccessibleByType,
@@ -29,13 +30,8 @@ import {
   stableSortByDerivedString,
   withOptionalStoppedReason,
 } from '../lib/fs-walk.js';
-import {
-  isPathWithinDirectories,
-  isSensitivePath,
-  normalizePath,
-  validateExistingDirectory,
-  validateExistingPathDetailed,
-} from '../lib/paths.js';
+import { isPathWithinDirectories, normalizePath } from '../lib/path-guard.js';
+import type { PathGuard } from '../lib/path-guard.js';
 import { assignDefined } from '../lib/utils.js';
 import { NonNegInt, OptionalPath, SafeGlobPattern } from '../schemas/fields.js';
 import {
@@ -54,7 +50,6 @@ import {
   decodeOffsetCursor,
   encodeOffsetCursor,
   READ_ONLY_TOOL_ANNOTATIONS,
-  resolvePathOrRoot,
   type ToolContract,
   type ToolResponse,
   truncateProgressPattern,
@@ -68,11 +63,9 @@ import {
 // Private searchFiles implementation (inlined from lib/file-operations/search.ts)
 // ---------------------------------------------------------------------------
 
-const SEARCH_FILES_ACCESS_DEPS = {
+const SEARCH_FILES_ACCESS_DEPS_BASE = {
   normalizePath,
   isPathWithinDirectories,
-  isSensitivePath,
-  validateSymlinkPath: validateExistingPathDetailed,
 } as const;
 
 // Internal default for find tool - not exposed to MCP users
@@ -261,7 +254,7 @@ interface CollectStreamContext {
   normalized: SearchFilesNormalized;
   needsStats: boolean;
   state: CollectState;
-  accessDeps: typeof SEARCH_FILES_ACCESS_DEPS;
+  accessDeps: EntryAccessDependencies;
   onProgress?: (progress: { total?: number; current: number }) => void;
 }
 
@@ -332,6 +325,7 @@ async function collectSearchResults(
   excludePatterns: readonly string[],
   normalized: SearchFilesNormalized,
   signal: AbortSignal,
+  pathGuard: PathGuard,
   onProgress?: (progress: { total?: number; current: number }) => void
 ): Promise<CollectOutcome> {
   const needsStats = needsStatsForSort(normalized.sortBy);
@@ -349,6 +343,13 @@ async function collectSearchResults(
     ? await loadRootGitignore(root, signal)
     : null;
 
+  const accessDeps = {
+    ...SEARCH_FILES_ACCESS_DEPS_BASE,
+    isSensitivePath: (p: string) => pathGuard.isSensitive(p),
+    validateSymlinkPath: (p: string) =>
+      pathGuard.validateExistingPathDetailed(p),
+  };
+
   await collectFromStream(stream, signal, {
     root,
     rootDirectories,
@@ -356,7 +357,7 @@ async function collectSearchResults(
     normalized,
     needsStats,
     state,
-    accessDeps: SEARCH_FILES_ACCESS_DEPS,
+    accessDeps,
     ...(onProgress ? { onProgress } : {}),
   });
   return buildCollectResult(state);
@@ -431,8 +432,12 @@ async function runSearchFiles(
   excludePatterns: readonly string[],
   normalized: SearchFilesNormalized,
   signal: AbortSignal,
-  onProgress?: (progress: { total?: number; current: number }) => void
+  onProgress?: (progress: { total?: number; current: number }) => void,
+  pathGuard?: PathGuard
 ): Promise<{ results: SearchResult[]; summary: SearchFilesResult['summary'] }> {
+  if (!pathGuard) {
+    throw new Error('pathGuard is required in runSearchFiles');
+  }
   const {
     results,
     filesScanned,
@@ -445,6 +450,7 @@ async function runSearchFiles(
     excludePatterns,
     normalized,
     signal,
+    pathGuard,
     onProgress
   );
 
@@ -466,21 +472,26 @@ async function searchFiles(
   basePath: string,
   pattern: string,
   excludePatterns: readonly string[] = [],
-  options: SearchFilesOptions = {}
+  options: SearchFilesOptions = {},
+  pathGuard?: PathGuard
 ): Promise<SearchFilesResult> {
+  if (!pathGuard) {
+    throw new Error('pathGuard is required in searchFiles');
+  }
   const normalized = normalizeSearchFilesOptions(options);
   return withTimedAbortSignal(
     options.signal,
     normalized.timeoutMs,
     async (signal) => {
-      const root = await validateExistingDirectory(basePath, signal);
+      const root = await pathGuard.validateExistingDirectory(basePath);
       const { results, summary } = await runSearchFiles(
         root,
         pattern,
         excludePatterns,
         normalized,
         signal,
-        options.onProgress
+        options.onProgress,
+        pathGuard
       );
       return { basePath: root, pattern, results, summary };
     }
@@ -617,10 +628,11 @@ function applySummaryFields(
 
 async function handleSearchFiles(
   args: z.infer<typeof SearchFilesInputSchema>,
+  pathGuard: PathGuard,
   signal?: AbortSignal,
   onProgress?: (progress: { total?: number; current: number }) => void
 ): Promise<ToolResponse<z.infer<typeof SearchFilesOutputSchema>>> {
-  const basePath = resolvePathOrRoot(args.path);
+  const basePath = pathGuard.resolvePathOrRoot(args.path);
   const excludePatterns = args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
   const cursorOffset =
     args.cursor !== undefined ? decodeOffsetCursor(args.cursor) : 0;
@@ -641,7 +653,8 @@ async function handleSearchFiles(
     basePath,
     args.pattern,
     excludePatterns,
-    searchOptions
+    searchOptions,
+    pathGuard
   );
   const allResults = result.results;
   let displayResults = allResults;
@@ -718,6 +731,7 @@ export const SEARCH_FILES = defineTool<
 
       const result = await handleSearchFiles(
         args,
+        ctx.pathGuard,
         ctx.signal,
         progressWithMessage
       );

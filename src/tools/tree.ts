@@ -25,12 +25,10 @@ import {
 } from '../lib/fs-walk.js';
 import {
   isPathWithinDirectories,
-  isSensitivePath,
   normalizePath,
   toPosixPath,
-  validateExistingDirectory,
-  validateExistingPathDetailed,
-} from '../lib/paths.js';
+} from '../lib/path-guard.js';
+import type { PathGuard } from '../lib/path-guard.js';
 import {
   FileType as FileTypeEnum,
   NonNegInt,
@@ -50,7 +48,6 @@ import {
   buildToolResponse,
   maybeExternalizeTextContent,
   READ_ONLY_TOOL_ANNOTATIONS,
-  resolvePathOrRoot,
   type ToolContract,
   type ToolRegistrationOptions,
   type ToolResponse,
@@ -64,11 +61,9 @@ import {
 // Private tree implementation (inlined from lib/file-operations/metadata.ts)
 // ---------------------------------------------------------------------------
 
-const TREE_ACCESS_DEPS: EntryAccessDependencies = {
+const TREE_ACCESS_DEPS_BASE = {
   normalizePath,
   isPathWithinDirectories,
-  isSensitivePath,
-  validateSymlinkPath: validateExistingPathDetailed,
 };
 
 interface TreeEntry {
@@ -190,7 +185,8 @@ async function resolveTreeEntry(
   root: string,
   rootDirectories: readonly string[],
   gitignoreMatcher: Awaited<ReturnType<typeof loadRootGitignore>>,
-  signal: AbortSignal
+  signal: AbortSignal,
+  deps: EntryAccessDependencies
 ): Promise<{ type: EntryType; relativePosix: string; name: string } | null> {
   const type = resolveEntryType(entry.dirent);
   const isAccessible = await isEntryAccessibleByType(
@@ -198,7 +194,7 @@ async function resolveTreeEntry(
     type,
     rootDirectories,
     signal,
-    TREE_ACCESS_DEPS
+    deps
   );
   if (!isAccessible) return null;
 
@@ -318,14 +314,20 @@ function formatTreeAscii(tree: TreeEntry): string {
 
 async function treeDirectory(
   dirPath: string,
+  pathGuard: PathGuard,
   options: TreeOptions = {}
 ): Promise<TreeResult> {
   const normalized = normalizeTreeOptions(options);
+  const deps: EntryAccessDependencies = {
+    ...TREE_ACCESS_DEPS_BASE,
+    isSensitivePath: (p) => pathGuard.isSensitive(p),
+    validateSymlinkPath: (p) => pathGuard.validateExistingPathDetailed(p),
+  };
   return withTimedAbortSignal(
     options.signal,
     normalized.timeoutMs,
     async (signal) => {
-      const root = await validateExistingDirectory(dirPath, signal);
+      const root = await pathGuard.validateExistingDirectory(dirPath);
       const rootNormalized = normalizePath(root);
       const rootDirectories = [rootNormalized];
 
@@ -381,7 +383,8 @@ async function treeDirectory(
           root,
           rootDirectories,
           gitignoreMatcher,
-          signal
+          signal,
+          deps
         );
         if (!resolved) continue;
 
@@ -502,12 +505,13 @@ function buildTreeContinuation(
 
 async function handleTree(
   args: z.infer<typeof TreeInputSchema>,
+  pathGuard: PathGuard,
   signal?: AbortSignal,
   resourceStore?: ToolRegistrationOptions['resourceStore'],
   onProgress?: (progress: { current: number }) => void
 ): Promise<ToolResponse<z.infer<typeof TreeOutputSchema>>> {
-  const basePath = resolvePathOrRoot(args.path);
-  const result = await treeDirectory(basePath, {
+  const basePath = pathGuard.resolvePathOrRoot(args.path);
+  const result = await treeDirectory(basePath, pathGuard, {
     maxDepth: args.maxDepth,
     maxEntries: args.maxEntries,
     includeHidden: args.includeHidden,
@@ -595,6 +599,7 @@ export const TREE = defineTool<
 
         const result = await handleTree(
           args,
+          ctx.pathGuard,
           ctx.signal,
           ctx.resourceStore,
           onProgress

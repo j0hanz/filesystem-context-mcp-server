@@ -12,8 +12,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { SENSITIVE_FILE_DENYLIST } from '../src/lib/constants.js';
-import { PathGuard, setDefaultPathGuard } from '../src/lib/path-guard.js';
-import { resolveAllowedDirectoriesState } from '../src/lib/paths.js';
+import {
+  PathGuard,
+  resolveAllowedDirectoriesState,
+} from '../src/lib/path-guard.js';
 import { createInMemoryResourceStore } from '../src/lib/resource-store.js';
 import { createTaskStore } from '../src/server/task-store.js';
 import { registerAllTools } from '../src/tools.js';
@@ -76,7 +78,6 @@ export async function createTestEnv(): Promise<TestEnv> {
   const pathGuard = new PathGuard(SENSITIVE_FILE_DENYLIST);
   const state = await resolveAllowedDirectoriesState([tmpDir]);
   pathGuard.initialize(state);
-  setDefaultPathGuard(pathGuard);
   registerAllTools(server, {
     pathGuard,
     resourceStore,
@@ -150,7 +151,6 @@ export async function createTestEnvWithElicitation(
   const pathGuard = new PathGuard(SENSITIVE_FILE_DENYLIST);
   const state = await resolveAllowedDirectoriesState([tmpDir]);
   pathGuard.initialize(state);
-  setDefaultPathGuard(pathGuard);
   registerAllTools(server, {
     pathGuard,
     resourceStore,
@@ -260,6 +260,7 @@ export function makeHandlerContext(
   overrides?: Partial<HandlerContext>
 ): HandlerContext {
   return {
+    pathGuard: new PathGuard(SENSITIVE_FILE_DENYLIST),
     resourceStore: undefined,
     ...overrides,
   };

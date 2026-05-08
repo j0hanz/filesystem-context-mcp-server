@@ -16,7 +16,7 @@ import { ErrorCode } from '../lib/errors.js';
 import { readFile, readFileWithStats } from '../lib/file-content.js';
 import { applyIndexedErrors, applyIndexedValues } from '../lib/fs-walk.js';
 import { processInParallel } from '../lib/parallel.js';
-import { validateExistingPath } from '../lib/paths.js';
+import type { PathGuard } from '../lib/path-guard.js';
 import { assignDefined } from '../lib/utils.js';
 import { NonNegInt, PositiveInt, RequiredPath } from '../schemas/fields.js';
 import {
@@ -92,6 +92,7 @@ interface ReadMultipleOptions {
   endLine?: number;
   signal?: AbortSignal;
   onReadComplete?: () => void;
+  pathGuard?: PathGuard;
 }
 
 interface FileReadTask {
@@ -166,13 +167,20 @@ function buildReadMultipleResult(
 
 async function readSingleFile(
   task: FileReadTask,
-  readOptions: Parameters<typeof readFile>[1]
+  readOptions: Parameters<typeof readFile>[1],
+  pathGuard: PathGuard
 ): Promise<{ index: number; value: ReadMultipleResult }> {
   const { filePath, index, validPath, stats } = task;
   const result =
     validPath && stats
-      ? await readFileWithStats(filePath, validPath, stats, readOptions)
-      : await readFile(filePath, readOptions);
+      ? await readFileWithStats(
+          filePath,
+          validPath,
+          stats,
+          readOptions,
+          pathGuard
+        )
+      : await readFile(filePath, readOptions, pathGuard);
 
   return {
     index,
@@ -183,6 +191,7 @@ async function readSingleFile(
 async function readFilesInParallel(
   filesToProcess: FileReadTask[],
   options: NormalizedReadMultipleOptions,
+  pathGuard: PathGuard,
   signal?: AbortSignal,
   onReadComplete?: () => void
 ): Promise<{
@@ -196,7 +205,7 @@ async function readFilesInParallel(
   return processInParallel(
     filesToProcess,
     async (task) => {
-      const result = await readSingleFile(task, readOptions);
+      const result = await readSingleFile(task, readOptions, pathGuard);
       onReadComplete?.();
       return result;
     },
@@ -245,9 +254,10 @@ interface ValidatedFileInfo {
 async function validateFile(
   filePath: string,
   index: number,
+  pathGuard: PathGuard,
   signal?: AbortSignal
 ): Promise<ValidatedFileInfo> {
-  const validPath = await validateExistingPath(filePath, signal);
+  const validPath = await pathGuard.validateExistingPath(filePath);
   const stats = await withAbort(stat(validPath), signal);
   return { filePath, index, validPath, stats };
 }
@@ -265,10 +275,11 @@ function markRemainingSkipped(
 async function tryValidateFile(
   filePath: string,
   index: number,
+  pathGuard: PathGuard,
   signal?: AbortSignal
 ): Promise<ValidatedFileInfo | undefined> {
   try {
-    return await validateFile(filePath, index, signal);
+    return await validateFile(filePath, index, pathGuard, signal);
   } catch {
     return undefined;
   }
@@ -276,13 +287,15 @@ async function tryValidateFile(
 
 async function validateBatch(
   tasks: { filePath: string; index: number }[],
+  pathGuard: PathGuard,
   signal?: AbortSignal
 ): Promise<Map<number, ValidatedFileInfo>> {
   if (tasks.length === 0) return new Map<number, ValidatedFileInfo>();
 
   const { results } = await processInParallel(
     tasks,
-    async (task) => tryValidateFile(task.filePath, task.index, signal),
+    async (task) =>
+      tryValidateFile(task.filePath, task.index, pathGuard, signal),
     PARALLEL_CONCURRENCY,
     signal
   );
@@ -358,6 +371,7 @@ async function collectFileBudget(
   filePaths: readonly string[],
   maxTotalSize: number,
   maxSize: number,
+  pathGuard: PathGuard,
   signal?: AbortSignal
 ): Promise<{
   skippedBudget: Set<number>;
@@ -383,7 +397,7 @@ async function collectFileBudget(
       batchTasks.push({ filePath, index });
     }
 
-    const batchInfos = await validateBatch(batchTasks, signal);
+    const batchInfos = await validateBatch(batchTasks, pathGuard, signal);
     for (const [index, info] of batchInfos) {
       validated.set(index, info);
     }
@@ -482,12 +496,18 @@ async function readMultipleFiles(
   if (filePaths.length === 0) return [];
 
   const { normalized, signal } = resolveNormalizedReadOptions(options);
+  const { pathGuard } = options;
+
+  if (!pathGuard) {
+    throw new Error('pathGuard is required in ReadMultipleOptions');
+  }
 
   const output = buildOutput(filePaths);
   const { skippedBudget, validated } = await collectFileBudget(
     filePaths,
     normalized.maxTotalSize,
     normalized.maxSize,
+    pathGuard,
     signal
   );
 
@@ -500,6 +520,7 @@ async function readMultipleFiles(
   const { results, errors } = await readFilesInParallel(
     filesToProcess,
     normalized,
+    pathGuard,
     signal,
     options.onReadComplete
   );
@@ -780,11 +801,13 @@ function buildReadManyResponsePayload(
 
 async function handleReadMultipleFiles(
   args: ReadManyInput,
+  pathGuard: PathGuard,
   signal?: AbortSignal,
   resourceStore?: ToolRegistrationOptions['resourceStore'],
   onReadComplete?: () => void
 ): Promise<ToolResponse<ReadManyOutput>> {
   const options = buildReadMultipleOptions(args, signal, onReadComplete);
+  options.pathGuard = pathGuard;
   const results = await readMultipleFiles(args.paths, options);
   const payload = buildReadManyResponsePayload(results, resourceStore);
 
@@ -824,6 +847,7 @@ export const READ_MANY = defineTool<ReadManyInput, ReadManyOutput>({
     return completeProgressSession(progress, label, async () => {
       const result = await handleReadMultipleFiles(
         args,
+        ctx.pathGuard,
         ctx.signal,
         ctx.resourceStore,
         onItemComplete

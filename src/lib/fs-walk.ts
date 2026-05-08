@@ -14,7 +14,7 @@ import {
   shouldPublishOpsTrace,
   startPerfMeasure,
 } from './observability.js';
-import { toPosixPath } from './paths.js';
+import { toPosixPath } from './path-guard.js';
 import { isRecord } from './utils.js';
 
 export function getFileType(stats: Stats): FileType {

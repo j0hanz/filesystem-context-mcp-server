@@ -34,14 +34,11 @@ import { isProbablyBinary } from '../lib/file-content.js';
 import { buildGlobOptions, globEntries } from '../lib/fs-walk.js';
 import { startPerfMeasure } from '../lib/observability.js';
 import {
-  assertAllowedFileAccess,
   isPathWithinDirectories,
-  isSafeGlobPattern,
-  isSensitivePath,
+  isSafeGlobSyntax,
   normalizePath,
-  validateExistingDirectory,
-  validateExistingPathDetailed,
-} from '../lib/paths.js';
+} from '../lib/path-guard.js';
+import type { PathGuard } from '../lib/path-guard.js';
 import { mergeOptions, omitOptionKeys } from '../lib/utils.js';
 import {
   NonNegInt,
@@ -71,7 +68,6 @@ import {
   decodeOffsetCursor,
   encodeOffsetCursor,
   READ_ONLY_TOOL_ANNOTATIONS,
-  resolvePathOrRoot,
   type ToolContract,
   type ToolRegistrationOptions,
   type ToolResponse,
@@ -202,7 +198,7 @@ const SafeFilePatternSchema = z
   .string()
   .min(1, 'Pattern required')
   .max(1000, 'Max 1000 chars')
-  .refine((value) => isSafeGlobPattern(value), {
+  .refine((value) => isSafeGlobSyntax(value), {
     error: 'Invalid glob or unsafe path (absolute/.. forbidden)',
   });
 
@@ -909,7 +905,8 @@ async function executeSequential(
   pattern: string,
   opts: ResolvedOptions,
   signal: AbortSignal,
-  summary: ScanSummary
+  summary: ScanSummary,
+  pathGuard: PathGuard
 ): Promise<ContentMatch[]> {
   const matches: ContentMatch[] = [];
   const matcher = buildMatcher(pattern, buildMatcherOptions(opts));
@@ -926,7 +923,7 @@ async function executeSequential(
     }
 
     try {
-      assertAllowedFileAccess(file.requestedPath, file.resolvedPath);
+      pathGuard.assertAllowedFileAccess(file.requestedPath);
       const remaining = getRemainingMatchCapacity(
         opts.maxResults,
         matches.length
@@ -1171,10 +1168,11 @@ async function searchDirectory(
   opts: ResolvedOptions,
   pattern: string,
   signal: AbortSignal,
+  pathGuard: PathGuard,
   onProgress?: (progress: { total?: number; current: number }) => void,
   maxDepth?: number
 ): Promise<SearchContentResult> {
-  const root = await validateExistingDirectory(details.resolvedPath, signal);
+  const root = await pathGuard.validateExistingDirectory(details.resolvedPath);
   const rootDirectories = [root];
 
   const stream = globEntries(
@@ -1203,7 +1201,7 @@ async function searchDirectory(
 
       const normalized = normalizePath(entry.path);
       if (!isPathWithinDirectories(normalized, rootDirectories)) continue;
-      if (isSensitivePath(entry.path, normalized)) continue;
+      if (pathGuard.isSensitive(entry.path)) continue;
 
       summary.filesScanned++;
       if (opts.fuzzy === true && summary.filesScanned > MAX_FUZZY_FILES) {
@@ -1233,7 +1231,14 @@ async function searchDirectory(
 
   const matches = shouldUseWorkers()
     ? await executeParallel(fileGenerator(), pattern, opts, signal, summary)
-    : await executeSequential(fileGenerator(), pattern, opts, signal, summary);
+    : await executeSequential(
+        fileGenerator(),
+        pattern,
+        opts,
+        signal,
+        summary,
+        pathGuard
+      );
 
   return buildSearchContentResult(
     root,
@@ -1263,8 +1268,12 @@ function buildTimeoutSearchResult(
 async function searchContent(
   basePath: string,
   pattern: string,
-  options: SearchContentOptions = {}
+  options: SearchContentOptions = {},
+  pathGuard?: PathGuard
 ): Promise<SearchContentResult> {
+  if (!pathGuard) {
+    throw new Error('pathGuard is required in searchContent');
+  }
   if (!basePath.trim())
     throw new McpError(ErrorCode.INVALID_INPUT, 'basePath required');
   if (typeof pattern !== 'string')
@@ -1292,7 +1301,7 @@ async function searchContent(
       options.signal,
       opts.timeoutMs,
       async (signal) => {
-        const details = await validateExistingPathDetailed(basePath, signal);
+        const details = await pathGuard.validateExistingPathDetailed(basePath);
         const fileStats = await withAbort(stat(details.resolvedPath), signal);
 
         if (fileStats.isFile()) {
@@ -1312,6 +1321,7 @@ async function searchContent(
           opts,
           pattern,
           signal,
+          pathGuard,
           options.onProgress,
           options.maxDepth
         );
@@ -1698,6 +1708,7 @@ function findColumnOffset(
 async function executeSearch(
   args: SearchInput,
   basePath: string,
+  pathGuard: PathGuard,
   signal?: AbortSignal,
   onProgress?: (progress: { total?: number; current: number }) => void
 ): Promise<SearchResultValue> {
@@ -1727,7 +1738,12 @@ async function executeSearch(
   };
 
   try {
-    return await searchContent(basePath, args.searchPattern, options);
+    return await searchContent(
+      basePath,
+      args.searchPattern,
+      options,
+      pathGuard
+    );
   } catch (error) {
     if (error instanceof Error && /regular expression/i.test(error.message)) {
       throw new McpError(
@@ -1768,11 +1784,12 @@ function createSearchContext(
 
 async function handleSearchContent(
   args: SearchInput,
+  pathGuard: PathGuard,
   signal?: AbortSignal,
   resourceStore?: ToolRegistrationOptions['resourceStore'],
   onProgress?: (progress: { total?: number; current: number }) => void
 ): Promise<ToolResponse<SearchOutput>> {
-  const basePath = resolvePathOrRoot(args.path);
+  const basePath = pathGuard.resolvePathOrRoot(args.path);
   const regexMatcher = createSearchMatcher(args);
 
   const cursorOffset =
@@ -1783,6 +1800,7 @@ async function handleSearchContent(
   const result = await executeSearch(
     { ...args, maxResults: fetchMax },
     basePath,
+    pathGuard,
     signal,
     onProgress
   );
@@ -1867,6 +1885,7 @@ export const SEARCH_CONTENT = defineTool<SearchInput, SearchOutput>({
 
       const result = await handleSearchContent(
         args,
+        ctx.pathGuard,
         ctx.signal,
         ctx.resourceStore,
         progressWithMessage
