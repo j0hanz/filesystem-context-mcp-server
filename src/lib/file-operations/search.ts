@@ -261,31 +261,36 @@ class ContextBuffer {
     this.buffer = new Array<string>(this.beforeCapacity);
   }
 
-  add(line: string): void {
-    // 1. Fill Pending 'After' Contexts
-    if (this.pending.length > 0) {
-      let writeIndex = 0;
-      for (const p of this.pending) {
-        if (p.remaining > 0) {
-          p.buffer.push(line);
-          p.remaining--;
-        }
-        if (p.remaining > 0) {
-          this.pending[writeIndex] = p;
-          writeIndex++;
-        }
+  /** Fill pending after-context entries without updating the before-buffer. */
+  flushPending(line: string): void {
+    if (this.pending.length === 0) return;
+    let writeIndex = 0;
+    for (const p of this.pending) {
+      if (p.remaining > 0) {
+        p.buffer.push(line);
+        p.remaining--;
       }
-      this.pending.length = writeIndex;
+      if (p.remaining > 0) {
+        this.pending[writeIndex] = p;
+        writeIndex++;
+      }
     }
+    this.pending.length = writeIndex;
+  }
 
-    // 2. Maintain 'Before' Buffer
-    if (this.beforeCapacity > 0) {
-      this.buffer[this.head] = line;
-      this.head = (this.head + 1) % this.beforeCapacity;
-      if (this.size < this.beforeCapacity) {
-        this.size++;
-      }
+  /** Update the before-context ring buffer without touching pending entries. */
+  updateBefore(line: string): void {
+    if (this.beforeCapacity === 0) return;
+    this.buffer[this.head] = line;
+    this.head = (this.head + 1) % this.beforeCapacity;
+    if (this.size < this.beforeCapacity) {
+      this.size++;
     }
+  }
+
+  add(line: string): void {
+    this.flushPending(line);
+    this.updateBefore(line);
   }
 
   snapshotBefore(): string[] {
@@ -336,13 +341,12 @@ interface ScanFileResult {
 
 function processLineMatch(
   matches: ContentMatch[],
-  rawLine: string,
+  trimmedLine: string,
   lineNumber: number,
   matchCount: number,
   requestedPath: string,
   ctx?: ContextBuffer
-): string {
-  const trimmedLine = trimContent(rawLine);
+): void {
   if (ctx) {
     matches.push({
       file: requestedPath,
@@ -360,7 +364,6 @@ function processLineMatch(
       matchCount,
     });
   }
-  return trimmedLine;
 }
 
 async function readMatches(
@@ -395,20 +398,24 @@ async function readMatches(
       let trimmedLine = '';
 
       if (matchCount > 0) {
-        trimmedLine = processLineMatch(
+        trimmedLine = trimContent(rawLine);
+        // Fill previous pending after-contexts with the matched line before
+        // snapshotting before-context or scheduling new after-context.
+        ctx?.flushPending(trimmedLine);
+        processLineMatch(
           matches,
-          rawLine,
+          trimmedLine,
           lineNumber,
           matchCount,
           requestedPath,
           ctx
         );
+        // Add matched line to before-buffer so subsequent matches can see it
+        // as context, but do NOT fill the after-context just scheduled above.
+        ctx?.updateBefore(trimmedLine);
       } else if (hasContext) {
         trimmedLine = trimContent(rawLine);
-      }
-
-      if (ctx) {
-        ctx.add(trimmedLine);
+        ctx?.add(trimmedLine);
       }
       lineNumber++;
     }

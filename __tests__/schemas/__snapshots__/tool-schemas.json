@@ -662,7 +662,19 @@
           "type": "boolean"
         },
         "contextLines": {
-          "description": "Lines of context around each match",
+          "description": "Lines of context before AND after each match (symmetric; overridden by contextBefore/contextAfter)",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20
+        },
+        "contextBefore": {
+          "description": "Lines of context before each match (overrides contextLines for before)",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20
+        },
+        "contextAfter": {
+          "description": "Lines of context after each match (overrides contextLines for after)",
           "type": "integer",
           "minimum": 0,
           "maximum": 20

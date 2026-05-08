@@ -431,3 +431,105 @@ describe('search_and_replace tool', () => {
     assert.equal(sc['stoppedReason'], 'maxResults');
   });
 });
+
+// ─── grep tool — asymmetric context ──────────────────────────────────────────
+
+describe('grep tool — asymmetric context', () => {
+  it('contextBefore only: includes lines before match but not after', async () => {
+    const env = await createTestEnv();
+    try {
+      const filePath = join(env.tmpDir, 'ctx.txt');
+      await writeFile(filePath, 'line1\nline2\nMATCH\nline4\nline5', 'utf8');
+      const res = await env.client.callTool({
+        name: 'grep',
+        arguments: {
+          path: filePath,
+          searchPattern: 'MATCH',
+          contextBefore: 1,
+          contextAfter: 0,
+        },
+      });
+      assertOk(res);
+      const structured = getStructured(res);
+      const matches = structured['matches'] as Record<string, unknown>[];
+      assert.ok(Array.isArray(matches) && matches.length > 0, 'Expected match');
+      const before = matches[0]?.['contextBefore'] as string[] | undefined;
+      const after = matches[0]?.['contextAfter'] as string[] | undefined;
+      assert.ok(
+        Array.isArray(before) && before.includes('line2'),
+        'Should include line before match'
+      );
+      assert.ok(
+        !Array.isArray(after) || after.length === 0,
+        'Should not include lines after match'
+      );
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  it('contextAfter only: includes lines after match but not before', async () => {
+    const env = await createTestEnv();
+    try {
+      const filePath = join(env.tmpDir, 'ctx2.txt');
+      await writeFile(filePath, 'line1\nline2\nMATCH\nline4\nline5', 'utf8');
+      const res = await env.client.callTool({
+        name: 'grep',
+        arguments: {
+          path: filePath,
+          searchPattern: 'MATCH',
+          contextBefore: 0,
+          contextAfter: 1,
+        },
+      });
+      assertOk(res);
+      const structured = getStructured(res);
+      const matches = structured['matches'] as Record<string, unknown>[];
+      assert.ok(Array.isArray(matches) && matches.length > 0, 'Expected match');
+      const before = matches[0]?.['contextBefore'] as string[] | undefined;
+      const after = matches[0]?.['contextAfter'] as string[] | undefined;
+      assert.ok(
+        !Array.isArray(before) || before.length === 0,
+        'Should not include lines before match'
+      );
+      assert.ok(
+        Array.isArray(after) && after.includes('line4'),
+        'Should include line after match'
+      );
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  it('contextBefore overrides contextLines for before', async () => {
+    const env = await createTestEnv();
+    try {
+      const filePath = join(env.tmpDir, 'ctx3.txt');
+      await writeFile(filePath, 'line1\nline2\nMATCH\nline4\nline5', 'utf8');
+      const res = await env.client.callTool({
+        name: 'grep',
+        arguments: {
+          path: filePath,
+          searchPattern: 'MATCH',
+          contextLines: 0,
+          contextBefore: 2,
+        },
+      });
+      assertOk(res);
+      const structured = getStructured(res);
+      const matches = structured['matches'] as Record<string, unknown>[];
+      assert.ok(Array.isArray(matches) && matches.length > 0, 'Expected match');
+      const before = matches[0]?.['contextBefore'] as string[] | undefined;
+      assert.ok(
+        Array.isArray(before) && before.includes('line1'),
+        'Should include line1 (2 lines before)'
+      );
+      assert.ok(
+        Array.isArray(before) && before.includes('line2'),
+        'Should include line2 (1 line before)'
+      );
+    } finally {
+      await env.cleanup();
+    }
+  });
+});

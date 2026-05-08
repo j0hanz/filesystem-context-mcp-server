@@ -322,6 +322,12 @@ async function executeSearch(
     ...(args.contextLines !== undefined
       ? { contextLines: args.contextLines }
       : {}),
+    ...(args.contextBefore !== undefined
+      ? { contextBefore: args.contextBefore }
+      : {}),
+    ...(args.contextAfter !== undefined
+      ? { contextAfter: args.contextAfter }
+      : {}),
     maxResults: args.maxResults,
     isLiteral: !args.isRegex,
     ...(args.maxDepth !== undefined ? { maxDepth: args.maxDepth } : {}),
