@@ -36,14 +36,15 @@ Expected: all checks pass (tests, lint, type-check, knip, format, build).
 Append to `__tests__/unit/env-parsing.test.ts` inside an existing `describe('constants', ...)` block (or create a new `describe`):
 
 ```ts
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { test } from 'node:test';
+
 import {
-  WORKER_POOL_MAX,
+  WORKER_CANCEL_GRACE_MS,
   WORKER_IDLE_TIMEOUT_MS,
   WORKER_OFFLOAD_THRESHOLD_BYTES,
-  WORKER_CANCEL_GRACE_MS,
+  WORKER_POOL_MAX,
   WORKERS_DISABLED,
 } from '../../src/lib/constants.js';
 
@@ -154,12 +155,12 @@ import { isMainThread, parentPort } from 'node:worker_threads';
 
 import {
   applyPatch,
+  type Change,
   createTwoFilesPatch,
   diffLines,
   formatPatch,
   parsePatch,
   structuredPatch,
-  type Change,
   type StructuredPatch,
 } from 'diff';
 
@@ -262,7 +263,13 @@ type TaskResponse = TaskResponseSuccess | TaskResponseFailure;
 
 function isMcpErrorLike(
   e: unknown
-): e is { name: string; code: ErrorCode; message: string; path?: string; details?: Record<string, unknown> } {
+): e is {
+  name: string;
+  code: ErrorCode;
+  message: string;
+  path?: string;
+  details?: Record<string, unknown>;
+} {
   return (
     typeof e === 'object' &&
     e !== null &&
@@ -374,12 +381,12 @@ if (!isMainThread && parentPort) {
 Create `__tests__/unit/worker-dispatch.test.ts`:
 
 ```ts
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Worker } from 'node:worker_threads';
 import { fileURLToPath } from 'node:url';
+import { Worker } from 'node:worker_threads';
 
 import type { StructuredPatch } from 'diff';
+import { test } from 'node:test';
 
 const workerUrl = new URL('../../src/lib/worker.ts', import.meta.url);
 
@@ -425,7 +432,11 @@ test('worker dispatch handles diff task', async () => {
 test('worker dispatch reports error for unknown task', async () => {
   const w = new Worker(fileURLToPath(workerUrl));
   try {
-    const msg = once<{ id: number; ok: false; error: { kind: string; message: string } }>(w);
+    const msg = once<{
+      id: number;
+      ok: false;
+      error: { kind: string; message: string };
+    }>(w);
     w.postMessage({ id: 2, name: 'nope', payload: {} });
     const response = await msg;
     assert.equal(response.ok, false);
@@ -463,8 +474,9 @@ git commit -m "feat(worker): add worker-thread dispatch loop and handlers"
 Create `__tests__/unit/worker-pool.test.ts`:
 
 ```ts
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
+
+import { test } from 'node:test';
 
 import {
   runInWorker,
@@ -503,8 +515,18 @@ test('runInWorker dispatches diff task and returns StructuredPatch', async () =>
 });
 
 test('runInWorker reuses idle workers across tasks', async () => {
-  await runInWorker('diff', { oldStr: 'a', newStr: 'b', oldHeader: 'o', newHeader: 'n' });
-  await runInWorker('diff', { oldStr: 'c', newStr: 'd', oldHeader: 'o', newHeader: 'n' });
+  await runInWorker('diff', {
+    oldStr: 'a',
+    newStr: 'b',
+    oldHeader: 'o',
+    newHeader: 'n',
+  });
+  await runInWorker('diff', {
+    oldStr: 'c',
+    newStr: 'd',
+    oldHeader: 'o',
+    newHeader: 'n',
+  });
   // No assertion possible from the public surface beyond "both completed".
   // Pool internals are tested indirectly via leak detection in afterEach.
 });
@@ -536,17 +558,16 @@ Replace the placeholder comment block at the bottom of `src/lib/worker.ts` (the 
 
 ```ts
 // ---- main-side: WorkerPool ---------------------------------------------
-
 import { Worker } from 'node:worker_threads';
 
+import { ErrorCode as ErrorCodeRuntime } from '../config.js';
 import {
-  WORKER_POOL_MAX,
+  WORKER_CANCEL_GRACE_MS,
   WORKER_IDLE_TIMEOUT_MS,
   WORKER_OFFLOAD_THRESHOLD_BYTES,
-  WORKER_CANCEL_GRACE_MS,
+  WORKER_POOL_MAX,
   WORKERS_DISABLED,
 } from './constants.js';
-import { ErrorCode as ErrorCodeRuntime } from '../config.js';
 import { McpError } from './errors.js';
 
 export function shouldOffload(payloadBytes: number): boolean {
@@ -757,7 +778,11 @@ export function runInWorker<N extends WorkerTaskName>(
           if (idx >= 0) queue.splice(idx, 1);
         }
         const reason = opts.signal?.reason;
-        reject(reason instanceof Error ? reason : new DOMException('Operation aborted', 'AbortError'));
+        reject(
+          reason instanceof Error
+            ? reason
+            : new DOMException('Operation aborted', 'AbortError')
+        );
       };
       entry.abortHandler = handler;
       if (opts.signal.aborted) {
@@ -791,7 +816,9 @@ export async function shutdownWorkerPool(): Promise<void> {
     const qt = queue.shift();
     if (!qt) break;
     cleanupEntry(qt.entry);
-    qt.entry.reject(new McpError(ErrorCodeRuntime.UNKNOWN, 'Worker pool shutting down'));
+    qt.entry.reject(
+      new McpError(ErrorCodeRuntime.UNKNOWN, 'Worker pool shutting down')
+    );
   }
   // Reject in-flight tasks; terminate workers.
   const toTerminate = [...pool];
@@ -804,7 +831,9 @@ export async function shutdownWorkerPool(): Promise<void> {
     toTerminate.map(async (pw) => {
       if (pw.current) {
         cleanupEntry(pw.current);
-        pw.current.reject(new McpError(ErrorCodeRuntime.UNKNOWN, 'Worker pool shutting down'));
+        pw.current.reject(
+          new McpError(ErrorCodeRuntime.UNKNOWN, 'Worker pool shutting down')
+        );
       }
       try {
         await pw.worker.terminate();
@@ -884,7 +913,12 @@ test('runInWorker rejects already-aborted signal synchronously', async () => {
 });
 
 test('shutdownWorkerPool is idempotent', async () => {
-  await runInWorker('diff', { oldStr: 'a', newStr: 'b', oldHeader: 'o', newHeader: 'n' });
+  await runInWorker('diff', {
+    oldStr: 'a',
+    newStr: 'b',
+    oldHeader: 'o',
+    newHeader: 'n',
+  });
   await shutdownWorkerPool();
   await shutdownWorkerPool(); // second call must not throw
 });
@@ -977,7 +1011,9 @@ async function shutdown(reason: string, exitCode = 0): Promise<void> {
   shutdownStarted = true;
   // ...existing code...
   try {
-    if (activeHttpServer) { /* ... */ }
+    if (activeHttpServer) {
+      /* ... */
+    }
     if (activeServer) {
       await activeServer.close();
     }
@@ -997,11 +1033,11 @@ import { shutdownWorkerPool } from './lib/worker.js';
 And inside the `try` block, **after** `activeServer.close()`:
 
 ```ts
-    if (activeServer) {
-      await activeServer.close();
-    }
-    await shutdownWorkerPool();
-    keepForceExitTimer = false;
+if (activeServer) {
+  await activeServer.close();
+}
+await shutdownWorkerPool();
+keepForceExitTimer = false;
 ```
 
 - [ ] **Step 2: Verify build still passes**
@@ -1038,7 +1074,7 @@ At the top of `__tests__/helpers.ts`, immediately after the imports, add a modul
 process.env.FS_DISABLE_WORKERS ??= '1';
 ```
 
-This is set at module load; constants in `src/lib/constants.ts` read it at their own load time. Both files are loaded via the test runner before any test runs. Tests that need workers (worker-dispatch, worker-pool) load the worker module *before* `helpers.ts` would set the flag — which is the desired ordering, but to be safe, those test files should explicitly delete the env var at the top of the file:
+This is set at module load; constants in `src/lib/constants.ts` read it at their own load time. Both files are loaded via the test runner before any test runs. Tests that need workers (worker-dispatch, worker-pool) load the worker module _before_ `helpers.ts` would set the flag — which is the desired ordering, but to be safe, those test files should explicitly delete the env var at the top of the file:
 
 In **both** `__tests__/unit/worker-dispatch.test.ts` and `__tests__/unit/worker-pool.test.ts`, add at the very top, before any imports:
 
@@ -1169,7 +1205,7 @@ Replace the inline call with:
 ```ts
 const totalBytes = source.length + patchText.length;
 let applied: string | false;
-let patch: typeof parsed[0] | null;
+let patch: (typeof parsed)[0] | null;
 
 if (shouldOffload(totalBytes)) {
   const result = await runInWorker(
@@ -1189,7 +1225,11 @@ if (shouldOffload(totalBytes)) {
   applied =
     patch === null
       ? false
-      : applyPatch(source, patch, fuzzFactor !== undefined ? { fuzzFactor } : {});
+      : applyPatch(
+          source,
+          patch,
+          fuzzFactor !== undefined ? { fuzzFactor } : {}
+        );
 }
 ```
 
@@ -1225,6 +1265,7 @@ Add imports:
 
 ```ts
 import { Buffer } from 'node:buffer';
+
 import { runInWorker, shouldOffload } from '../lib/worker.js';
 ```
 
@@ -1235,16 +1276,18 @@ const totalBytes =
   Buffer.byteLength(originalContent) + Buffer.byteLength(modifiedContent);
 
 const unifiedDiff = shouldOffload(totalBytes)
-  ? (await runInWorker(
-      'diffLines',
-      {
-        oldStr: originalContent,
-        newStr: modifiedContent,
-        oldHeader: basename(filePath),
-        newHeader: basename(filePath),
-      },
-      signal ? { signal } : {}
-    )).unifiedDiff
+  ? (
+      await runInWorker(
+        'diffLines',
+        {
+          oldStr: originalContent,
+          newStr: modifiedContent,
+          oldHeader: basename(filePath),
+          newHeader: basename(filePath),
+        },
+        signal ? { signal } : {}
+      )
+    ).unifiedDiff
   : createTwoFilesPatch(
       basename(filePath),
       basename(filePath),
@@ -1296,16 +1339,18 @@ const totalBytes =
   Buffer.byteLength(originalContent) + Buffer.byteLength(modifiedContent);
 
 const fileDiff = shouldOffload(totalBytes)
-  ? (await runInWorker(
-      'diffLines',
-      {
-        oldStr: originalContent,
-        newStr: modifiedContent,
-        oldHeader: relativePath,
-        newHeader: relativePath,
-      },
-      signal ? { signal } : {}
-    )).unifiedDiff
+  ? (
+      await runInWorker(
+        'diffLines',
+        {
+          oldStr: originalContent,
+          newStr: modifiedContent,
+          oldHeader: relativePath,
+          newHeader: relativePath,
+        },
+        signal ? { signal } : {}
+      )
+    ).unifiedDiff
   : createTwoFilesPatch(
       relativePath,
       relativePath,
@@ -1350,21 +1395,21 @@ Create `__tests__/tools/worker-offload.test.ts`:
 //
 // IMPORTANT: do NOT import from helpers.ts (which sets FS_DISABLE_WORKERS=1
 // at module load). This test spawns its own server.
-
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  runInWorker,
-  shouldOffload,
-  shutdownWorkerPool,
-} from '../../src/lib/worker.js';
 import {
   applyPatch,
   createTwoFilesPatch,
   parsePatch,
   structuredPatch,
 } from 'diff';
+import { test } from 'node:test';
+
+import {
+  runInWorker,
+  shouldOffload,
+  shutdownWorkerPool,
+} from '../../src/lib/worker.js';
 
 test.afterEach(async () => {
   await shutdownWorkerPool();
@@ -1435,10 +1480,11 @@ git commit -m "test(worker): assert byte-identical output across worker and inli
 Open `__tests__/dist-runtime.test.ts`. Find the existing block that walks `dist/`. Add a new test:
 
 ```ts
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { access } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+
+import { test } from 'node:test';
 
 test('dist/lib/worker.js exists after build', async () => {
   const distWorker = fileURLToPath(
@@ -1503,7 +1549,11 @@ const handler = (): void => {
     if (idx >= 0) queue.splice(idx, 1);
   }
   const reason = opts.signal?.reason;
-  reject(reason instanceof Error ? reason : new DOMException('Operation aborted', 'AbortError'));
+  reject(
+    reason instanceof Error
+      ? reason
+      : new DOMException('Operation aborted', 'AbortError')
+  );
 };
 ```
 
