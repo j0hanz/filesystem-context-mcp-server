@@ -270,6 +270,8 @@ const ERROR_SUGGESTIONS: Readonly<Record<ErrorCode, string | undefined>> = {
   [ErrorCode.INVALID_INPUT]: undefined,
   [ErrorCode.PERMISSION_DENIED]: 'Check OS file permissions.',
   [ErrorCode.SYMLINK_NOT_ALLOWED]: 'Symlink escapes allowed directories.',
+  [ErrorCode.VALIDATION_FAILED]: undefined,
+  [ErrorCode.IO_ERROR]: undefined,
   [ErrorCode.UNKNOWN]: undefined,
 } as const;
 
