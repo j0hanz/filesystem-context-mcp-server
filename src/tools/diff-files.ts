@@ -96,6 +96,56 @@ function assertDiffFileSizeWithinLimit(
   );
 }
 
+async function computeDiff(
+  args: z.infer<typeof DiffFilesInputSchema>,
+  originalPath: string,
+  modifiedPath: string,
+  originalContent: string,
+  modifiedContent: string,
+  totalBytes: number,
+  signal?: AbortSignal
+): Promise<StructuredPatch | undefined> {
+  if (shouldOffload(totalBytes)) {
+    return runInWorker(
+      'diff',
+      {
+        oldStr: originalContent,
+        newStr: modifiedContent,
+        oldHeader: basename(originalPath),
+        newHeader: basename(modifiedPath),
+        ...(args.context !== undefined ? { context: args.context } : {}),
+        ...(args.ignoreWhitespace
+          ? { ignoreWhitespace: args.ignoreWhitespace }
+          : {}),
+        ...(args.stripTrailingCr
+          ? { stripTrailingCr: args.stripTrailingCr }
+          : {}),
+      },
+      signal ? { signal } : {}
+    );
+  }
+
+  return new Promise<StructuredPatch | undefined>((resolve) => {
+    structuredPatch(
+      basename(originalPath),
+      basename(modifiedPath),
+      originalContent,
+      modifiedContent,
+      undefined,
+      undefined,
+      {
+        ...(args.context !== undefined ? { context: args.context } : {}),
+        ignoreWhitespace: args.ignoreWhitespace,
+        stripTrailingCr: args.stripTrailingCr,
+        timeout: 10000,
+        callback: (res) => {
+          resolve(res);
+        },
+      }
+    );
+  });
+}
+
 async function handleDiffFiles(
   args: z.infer<typeof DiffFilesInputSchema>,
   pathGuard: PathGuard,
@@ -133,43 +183,15 @@ async function handleDiffFiles(
 
   const totalBytes = originalStats.size + modifiedStats.size;
 
-  const patchObj = shouldOffload(totalBytes)
-    ? await runInWorker(
-        'diff',
-        {
-          oldStr: originalContent,
-          newStr: modifiedContent,
-          oldHeader: basename(originalPath),
-          newHeader: basename(modifiedPath),
-          ...(args.context !== undefined ? { context: args.context } : {}),
-          ...(args.ignoreWhitespace
-            ? { ignoreWhitespace: args.ignoreWhitespace }
-            : {}),
-          ...(args.stripTrailingCr
-            ? { stripTrailingCr: args.stripTrailingCr }
-            : {}),
-        },
-        signal ? { signal } : {}
-      )
-    : await new Promise<StructuredPatch | undefined>((resolve) => {
-        structuredPatch(
-          basename(originalPath),
-          basename(modifiedPath),
-          originalContent,
-          modifiedContent,
-          undefined,
-          undefined,
-          {
-            ...(args.context !== undefined ? { context: args.context } : {}),
-            ignoreWhitespace: args.ignoreWhitespace,
-            stripTrailingCr: args.stripTrailingCr,
-            timeout: 10000,
-            callback: (res) => {
-              resolve(res);
-            },
-          }
-        );
-      });
+  const patchObj = await computeDiff(
+    args,
+    originalPath,
+    modifiedPath,
+    originalContent,
+    modifiedContent,
+    totalBytes,
+    signal
+  );
 
   if (!patchObj) {
     throw new McpError(

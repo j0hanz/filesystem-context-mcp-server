@@ -195,6 +195,59 @@ export interface ReadFileResult {
   reachedEOF?: boolean;
 }
 
+function validateLineBasedOptions(
+  hasHead: boolean,
+  hasTail: boolean,
+  hasStart: boolean,
+  hasEnd: boolean,
+  options: ReadFileOptions
+): void {
+  if (hasHead && (hasStart || hasEnd)) {
+    throw new McpError(
+      ErrorCode.INVALID_INPUT,
+      'head cannot be used together with startLine/endLine'
+    );
+  }
+
+  if (hasTail && (hasHead || hasStart || hasEnd)) {
+    throw new McpError(
+      ErrorCode.INVALID_INPUT,
+      'tail cannot be used together with head/startLine/endLine'
+    );
+  }
+
+  const effectiveStart = options.startLine ?? 1;
+  if (options.endLine !== undefined && options.endLine < effectiveStart) {
+    throw new McpError(
+      ErrorCode.INVALID_INPUT,
+      'endLine must be greater than or equal to startLine (default: 1)'
+    );
+  }
+}
+
+function validateByteBasedOptions(
+  hasHead: boolean,
+  hasTail: boolean,
+  hasStart: boolean,
+  hasEnd: boolean,
+  options: ReadFileOptions
+): void {
+  if (options.offset !== undefined && options.offset < 0) {
+    throw new McpError(ErrorCode.INVALID_INPUT, 'offset must be >= 0');
+  }
+  if (options.length !== undefined && options.length < 1) {
+    throw new McpError(ErrorCode.INVALID_INPUT, 'length must be >= 1');
+  }
+  const hasByteRange =
+    options.offset !== undefined || options.length !== undefined;
+  if (hasByteRange && (hasHead || hasTail || hasStart || hasEnd)) {
+    throw new McpError(
+      ErrorCode.INVALID_INPUT,
+      "Cannot use 'offset'/'length' with line-based params"
+    );
+  }
+}
+
 function validateReadOptions(options: ReadFileOptions): void {
   const hasHead = options.head !== undefined;
   const hasTail = options.tail !== undefined;
@@ -227,45 +280,8 @@ function validateReadOptions(options: ReadFileOptions): void {
     'endLine must be at least 1'
   );
 
-  if (hasHead && (hasStart || hasEnd)) {
-    throw new McpError(
-      ErrorCode.INVALID_INPUT,
-      'head cannot be used together with startLine/endLine'
-    );
-  }
-
-  if (hasTail && (hasHead || hasStart || hasEnd)) {
-    throw new McpError(
-      ErrorCode.INVALID_INPUT,
-      'tail cannot be used together with head/startLine/endLine'
-    );
-  }
-
-  // validate offset/length
-  if (options.offset !== undefined && options.offset < 0) {
-    throw new McpError(ErrorCode.INVALID_INPUT, 'offset must be >= 0');
-  }
-  if (options.length !== undefined && options.length < 1) {
-    throw new McpError(ErrorCode.INVALID_INPUT, 'length must be >= 1');
-  }
-  const hasByteRange =
-    options.offset !== undefined || options.length !== undefined;
-  if (hasByteRange && (hasHead || hasTail || hasStart || hasEnd)) {
-    throw new McpError(
-      ErrorCode.INVALID_INPUT,
-      "Cannot use 'offset'/'length' with line-based params"
-    );
-  }
-
-  {
-    const effectiveStart = options.startLine ?? 1;
-    if (options.endLine !== undefined && options.endLine < effectiveStart) {
-      throw new McpError(
-        ErrorCode.INVALID_INPUT,
-        'endLine must be greater than or equal to startLine (default: 1)'
-      );
-    }
-  }
+  validateLineBasedOptions(hasHead, hasTail, hasStart, hasEnd, options);
+  validateByteBasedOptions(hasHead, hasTail, hasStart, hasEnd, options);
 }
 
 function normalizeOptions(options: ReadFileOptions): NormalizedOptions {
