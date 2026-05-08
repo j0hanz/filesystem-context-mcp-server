@@ -37,7 +37,6 @@ Append to `__tests__/unit/env-parsing.test.ts` inside an existing `describe('con
 
 ```ts
 import assert from 'node:assert/strict';
-
 import { test } from 'node:test';
 
 import {
@@ -261,9 +260,7 @@ type TaskResponse = TaskResponseSuccess | TaskResponseFailure;
 
 // ---- worker-side: dispatch loop ----------------------------------------
 
-function isMcpErrorLike(
-  e: unknown
-): e is {
+function isMcpErrorLike(e: unknown): e is {
   name: string;
   code: ErrorCode;
   message: string;
@@ -382,11 +379,11 @@ Create `__tests__/unit/worker-dispatch.test.ts`:
 
 ```ts
 import assert from 'node:assert/strict';
+import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 
 import type { StructuredPatch } from 'diff';
-import { test } from 'node:test';
 
 const workerUrl = new URL('../../src/lib/worker.ts', import.meta.url);
 
@@ -475,7 +472,6 @@ Create `__tests__/unit/worker-pool.test.ts`:
 
 ```ts
 import assert from 'node:assert/strict';
-
 import { test } from 'node:test';
 
 import {
@@ -1396,6 +1392,7 @@ Create `__tests__/tools/worker-offload.test.ts`:
 // IMPORTANT: do NOT import from helpers.ts (which sets FS_DISABLE_WORKERS=1
 // at module load). This test spawns its own server.
 import assert from 'node:assert/strict';
+import { test } from 'node:test';
 
 import {
   applyPatch,
@@ -1403,7 +1400,6 @@ import {
   parsePatch,
   structuredPatch,
 } from 'diff';
-import { test } from 'node:test';
 
 import {
   runInWorker,
@@ -1482,9 +1478,8 @@ Open `__tests__/dist-runtime.test.ts`. Find the existing block that walks `dist/
 ```ts
 import assert from 'node:assert/strict';
 import { access } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
-
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 test('dist/lib/worker.js exists after build', async () => {
   const distWorker = fileURLToPath(
