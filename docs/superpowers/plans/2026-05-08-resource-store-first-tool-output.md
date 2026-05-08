@@ -33,7 +33,6 @@
 ```ts
 // __tests__/unit/mime.test.ts
 import { strict as assert } from 'node:assert';
-
 import { test } from 'node:test';
 
 import { detectMimeType } from '../../src/lib/mime.js';
@@ -275,7 +274,6 @@ git commit -m "feat: add mime detection helper (extension map + magic bytes)"
 ```ts
 // __tests__/unit/resource-store-blob.test.ts
 import { strict as assert } from 'node:assert';
-
 import { test } from 'node:test';
 
 import { createInMemoryResourceStore } from '../../src/lib/resource-store.js';
@@ -616,7 +614,6 @@ git commit -m "feat(resource-store): add binary blob support and lower TTL to 60
 ```ts
 // __tests__/unit/shared-resource-response.test.ts
 import { strict as assert } from 'node:assert';
-
 import { test } from 'node:test';
 
 import { createInMemoryResourceStore } from '../../src/lib/resource-store.js';

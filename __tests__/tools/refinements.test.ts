@@ -266,9 +266,7 @@ describe('read_many tool with tail parameter', () => {
     assert.ok(resultB['resourceUri'], 'Result B should have resourceUri');
 
     // Verify resource_link content block is present
-    const contentLinks = raw.content.filter(
-      (b) => b.type === 'resource_link'
-    );
+    const contentLinks = raw.content.filter((b) => b.type === 'resource_link');
     assert.ok(contentLinks.length >= 2, 'Expected at least 2 resource links');
   });
 
@@ -325,10 +323,7 @@ describe('grep externalization with expiresAt', () => {
 
     // When externalized, resourceUri should be present
     const resourceUri = sc['resourceUri'] as string | undefined;
-    assert.ok(
-      resourceUri,
-      'resourceUri should be present for large results'
-    );
+    assert.ok(resourceUri, 'resourceUri should be present for large results');
     assert.ok(
       resourceUri.startsWith('filesystem-mcp://result/'),
       'resourceUri should point to result store'
