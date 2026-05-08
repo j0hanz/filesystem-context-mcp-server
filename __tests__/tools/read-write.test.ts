@@ -939,6 +939,30 @@ describe('apply_patch tool', () => {
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
+
+    // Verify structured content has required fields
+    assert.equal(typeof sc['size'], 'number');
+    assert.equal(typeof sc['lineCount'], 'number');
+    assert.equal(typeof sc['mimeType'], 'string');
+    assert.equal(typeof sc['kind'], 'string');
+    assert.equal(typeof sc['resourceUri'], 'string');
+    assert.ok(
+      (sc['resourceUri'] as string).includes('filesystem-mcp://result/')
+    );
+
+    // Verify summary includes "apply-patch:" and file path
+    assert.equal(result.content.length, 2);
+    assert.equal(result.content[0].type, 'text');
+    const summary = (result.content[0] as Record<string, unknown>)
+      .text as string;
+    assert.ok(summary.includes('apply-patch:'));
+    assert.ok(summary.includes('patch-target.txt'));
+
+    // Verify resource_link
+    assert.equal(result.content[1].type, 'resource_link');
+    const link = result.content[1] as Record<string, unknown>;
+    assert.ok((link.uri as string).includes('filesystem-mcp://result/'));
+
     const actual = await readFile(file, 'utf8');
     assert.ok(
       actual.includes('BETA'),
