@@ -69,7 +69,6 @@ Create `__tests__/unit/problem.test.ts`:
 
 ```ts
 import assert from 'node:assert/strict';
-
 import { describe, it } from 'node:test';
 
 import { ErrorCode } from '../../src/config.js';
@@ -1646,7 +1645,6 @@ Replace the entire content of `__tests__/unit/errors.test.ts` with:
 ```ts
 import assert from 'node:assert/strict';
 import { readdirSync } from 'node:fs';
-
 import { describe, it } from 'node:test';
 
 import {

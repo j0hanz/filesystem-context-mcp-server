@@ -13,9 +13,9 @@ import {
   isNodeError,
   isTimeoutLikeError,
   McpError,
+  type Problem,
   zodErrorToProblem,
 } from '../../src/lib/errors.js';
-import type { Problem } from '../../src/lib/problem.js';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 

@@ -4,8 +4,12 @@ import { describe, it } from 'node:test';
 import { z } from 'zod/v4';
 
 import { ErrorCode } from '../../src/config.js';
-import { resolveSuggestion } from '../../src/lib/error-suggestions.js';
-import { classify, Problem, zodErrorToProblem } from '../../src/lib/problem.js';
+import {
+  classify,
+  Problem,
+  resolveSuggestion,
+  zodErrorToProblem,
+} from '../../src/lib/errors.js';
 
 describe('classify', () => {
   it('returns UNKNOWN for non-Error values', () => {
