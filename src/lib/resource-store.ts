@@ -14,6 +14,17 @@ interface TextResourceEntry {
   expiresAt: string;
 }
 
+interface BlobResourceEntry {
+  uri: string;
+  name: string;
+  mimeType: string;
+  data: Buffer;
+  hash: string;
+  size: number;
+  storedAt: string;
+  expiresAt: string;
+}
+
 export interface ResourceStore {
   putText(params: {
     name: string;
@@ -21,6 +32,12 @@ export interface ResourceStore {
     text: string;
   }): TextResourceEntry;
   getText(uri: string): TextResourceEntry;
+  putBlob(params: {
+    name: string;
+    mimeType: string;
+    data: Buffer;
+  }): BlobResourceEntry;
+  getBlob(uri: string): BlobResourceEntry;
   clear(): void;
   keys(): string[];
 }
@@ -36,8 +53,12 @@ const DEFAULT_RESOURCE_STORE_OPTIONS: ResourceStoreOptions = {
   maxEntries: 64,
   maxTotalBytes: 25 * 1024 * 1024,
   maxEntryBytes: 10 * 1024 * 1024,
-  entryTtlMs: 30 * 60 * 1000, // 30 minutes
+  entryTtlMs: 60 * 1000, // 60 seconds — anti-leak window
 };
+
+type StoredEntry =
+  | (TextResourceEntry & { kind: 'text' })
+  | (BlobResourceEntry & { kind: 'blob' });
 
 interface ResourceStoreDiagnosticsEvent {
   phase:
@@ -64,19 +85,25 @@ function publishResourceStoreDiagnostics(
   RESOURCE_STORE_DIAGNOSTICS_CHANNEL.publish(event);
 }
 
-function estimateBytes(text: string): number {
+function estimateBytes(text: string | Buffer): number {
+  if (Buffer.isBuffer(text)) {
+    return text.length;
+  }
   return Buffer.byteLength(text, 'utf8');
 }
 
-function computeSha256(text: string): string {
-  return hash('sha256', text, 'hex');
+function computeSha256(data: string | Buffer): string {
+  return hash('sha256', data, 'hex');
 }
 
 function buildIndexKey(mimeType: string, contentHash: string): string {
   return `${mimeType}:${contentHash}`;
 }
 
-function isExpired(entry: TextResourceEntry, now = Date.now()): boolean {
+function isExpired(
+  entry: TextResourceEntry | BlobResourceEntry,
+  now = Date.now()
+): boolean {
   const expiresAt = Date.parse(entry.expiresAt);
   return Number.isFinite(expiresAt) && expiresAt <= now;
 }
@@ -101,6 +128,26 @@ function createTextEntry(params: {
   };
 }
 
+function createBlobEntry(params: {
+  uri: string;
+  name: string;
+  mimeType: string;
+  data: Buffer;
+  ttlMs: number;
+}): BlobResourceEntry {
+  const storedAt = new Date();
+  return {
+    uri: params.uri,
+    name: params.name,
+    mimeType: params.mimeType,
+    data: params.data,
+    hash: computeSha256(params.data),
+    size: estimateBytes(params.data),
+    storedAt: storedAt.toISOString(),
+    expiresAt: new Date(storedAt.getTime() + params.ttlMs).toISOString(),
+  };
+}
+
 export function createInMemoryResourceStore(
   options: Partial<ResourceStoreOptions> = {}
 ): ResourceStore {
@@ -109,7 +156,7 @@ export function createInMemoryResourceStore(
     ...options,
   };
 
-  const byUri = new Map<string, TextResourceEntry>();
+  const byUri = new Map<string, StoredEntry>();
   const byHashIndex = new Map<string, string>(); // mimeType:sha256hex -> uri
   let totalBytes = 0;
 
@@ -182,7 +229,7 @@ export function createInMemoryResourceStore(
       if (cached !== undefined) {
         if (isExpired(cached)) {
           removeEntry(existingUri, 'expired');
-        } else {
+        } else if (cached.kind === 'text') {
           publishResourceStoreDiagnostics({
             phase: 'cache_hit',
             uri: cached.uri,
@@ -206,7 +253,7 @@ export function createInMemoryResourceStore(
       ttlMs: resolved.entryTtlMs,
     });
 
-    byUri.set(uri, entry);
+    byUri.set(uri, { ...entry, kind: 'text' });
     byHashIndex.set(indexKey, uri);
     totalBytes += entryBytes;
     publishResourceStoreDiagnostics({
@@ -234,7 +281,119 @@ export function createInMemoryResourceStore(
 
   function getText(uri: string): TextResourceEntry {
     const existing = byUri.get(uri);
-    if (!existing) {
+    if (!existing?.kind || existing.kind !== 'text') {
+      publishResourceStoreDiagnostics({
+        phase: 'cache_miss',
+        uri,
+        reason: 'not_found',
+      });
+      throw new McpError(
+        ErrorCode.NOT_FOUND,
+        `Resource not found: ${uri}. Re-run the tool to regenerate.`
+      );
+    }
+    if (isExpired(existing)) {
+      removeEntry(uri, 'expired');
+      publishResourceStoreDiagnostics({
+        phase: 'cache_miss',
+        uri,
+        reason: 'expired',
+      });
+      throw new McpError(
+        ErrorCode.NOT_FOUND,
+        `Resource expired: ${uri}. Re-run the tool to regenerate.`
+      );
+    }
+    publishResourceStoreDiagnostics({
+      phase: 'cache_hit',
+      uri: existing.uri,
+      name: existing.name,
+      bytes: existing.size,
+    });
+    return existing;
+  }
+
+  function putBlob(params: {
+    name: string;
+    mimeType: string;
+    data: Buffer;
+  }): BlobResourceEntry {
+    pruneExpiredEntries();
+
+    const entryBytes = estimateBytes(params.data);
+    if (entryBytes > resolved.maxEntryBytes) {
+      publishResourceStoreDiagnostics({
+        phase: 'cache_reject',
+        bytes: entryBytes,
+        reason: 'entry_too_large',
+      });
+      throw new McpError(
+        ErrorCode.TOO_LARGE,
+        `Resource too large to cache (${entryBytes} bytes).`
+      );
+    }
+
+    const contentHash = computeSha256(params.data);
+    const indexKey = buildIndexKey(params.mimeType, contentHash);
+    const existingUri = byHashIndex.get(indexKey);
+    if (existingUri !== undefined) {
+      const cached = byUri.get(existingUri);
+      if (cached !== undefined) {
+        if (isExpired(cached)) {
+          removeEntry(existingUri, 'expired');
+        } else if (cached.kind === 'blob') {
+          publishResourceStoreDiagnostics({
+            phase: 'cache_hit',
+            uri: cached.uri,
+            name: cached.name,
+            bytes: cached.size,
+          });
+          return cached;
+        }
+      } else {
+        byHashIndex.delete(indexKey);
+      }
+    }
+
+    const id = randomUUID();
+    const uri = `filesystem-mcp://result/${id}`;
+    const entry = createBlobEntry({
+      uri,
+      name: params.name,
+      mimeType: params.mimeType,
+      data: params.data,
+      ttlMs: resolved.entryTtlMs,
+    });
+
+    byUri.set(uri, { ...entry, kind: 'blob' });
+    byHashIndex.set(indexKey, uri);
+    totalBytes += entryBytes;
+    publishResourceStoreDiagnostics({
+      phase: 'cache_store',
+      uri: entry.uri,
+      name: entry.name,
+      bytes: entry.size,
+    });
+
+    enforceLimits();
+
+    if (!byUri.has(uri)) {
+      publishResourceStoreDiagnostics({
+        phase: 'cache_reject',
+        uri,
+        name: entry.name,
+        bytes: entry.size,
+        reason: 'evicted_immediately',
+      });
+      throw new McpError(ErrorCode.TOO_LARGE, 'Cache full: entry evicted.');
+    }
+
+    return entry;
+  }
+
+  function getBlob(uri: string): BlobResourceEntry {
+    const existing = byUri.get(uri);
+    if (!existing?.kind || existing.kind !== 'blob') {
       publishResourceStoreDiagnostics({
         phase: 'cache_miss',
         uri,
@@ -282,5 +441,5 @@ export function createInMemoryResourceStore(
     return Array.from(byUri.keys());
   }
 
-  return { putText, getText, clear, keys };
+  return { putText, getText, putBlob, getBlob, clear, keys };
 }
