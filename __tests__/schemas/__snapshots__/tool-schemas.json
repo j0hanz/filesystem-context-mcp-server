@@ -36,9 +36,7 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "patch"
-      ],
+      "required": ["patch"],
       "additionalProperties": false
     }
   },
@@ -53,9 +51,7 @@
           "description": "Path inside an allowed root"
         }
       },
-      "required": [
-        "path"
-      ],
+      "required": ["path"],
       "additionalProperties": false
     }
   },
@@ -92,10 +88,7 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "original",
-        "modified"
-      ],
+      "required": ["original", "modified"],
       "additionalProperties": false
     }
   },
@@ -119,25 +112,15 @@
                 "type": "string",
                 "minLength": 1,
                 "description": "Exact text to find (must match literally)",
-                "examples": [
-                  "const x = 1;",
-                  "function oldName("
-                ]
+                "examples": ["const x = 1;", "function oldName("]
               },
               "newText": {
                 "type": "string",
                 "description": "Replacement text (empty string to delete)",
-                "examples": [
-                  "const x = 2;",
-                  "function newName(",
-                  ""
-                ]
+                "examples": ["const x = 2;", "function newName(", ""]
               }
             },
-            "required": [
-              "oldText",
-              "newText"
-            ],
+            "required": ["oldText", "newText"],
             "additionalProperties": false
           },
           "description": "List of text substitutions"
@@ -153,10 +136,7 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "path",
-        "edits"
-      ],
+      "required": ["path", "edits"],
       "additionalProperties": false
     }
   },
@@ -195,12 +175,7 @@
           "default": "path",
           "description": "Sort order",
           "type": "string",
-          "enum": [
-            "name",
-            "size",
-            "modified",
-            "path"
-          ]
+          "enum": ["name", "size", "modified", "path"]
         },
         "maxDepth": {
           "description": "Max directory depth",
@@ -214,9 +189,7 @@
           "pattern": "^[A-Za-z0-9_-]*$"
         }
       },
-      "required": [
-        "pattern"
-      ],
+      "required": ["pattern"],
       "additionalProperties": false,
       "$defs": {
         "SafeGlobPattern": {
@@ -225,11 +198,7 @@
           "maxLength": 1000,
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
-          "examples": [
-            "**/*.ts",
-            "src/**/*.js",
-            "*.{ts,tsx}"
-          ]
+          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
         }
       }
     }
@@ -253,11 +222,7 @@
           "minLength": 1,
           "maxLength": 10000,
           "description": "Text or regex to search for (RE2: no lookahead/lookbehind/backrefs when isRegex=true)",
-          "examples": [
-            "TODO",
-            "function\\s+(\\w+)",
-            "import.*from"
-          ]
+          "examples": ["TODO", "function\\s+(\\w+)", "import.*from"]
         },
         "isRegex": {
           "default": false,
@@ -325,9 +290,7 @@
           "pattern": "^[A-Za-z0-9_-]*$"
         }
       },
-      "required": [
-        "searchPattern"
-      ],
+      "required": ["searchPattern"],
       "additionalProperties": false,
       "$defs": {
         "SafeGlobPattern": {
@@ -336,19 +299,13 @@
           "maxLength": 1000,
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
-          "examples": [
-            "**/*.ts",
-            "src/**/*.js",
-            "*.{ts,tsx}"
-          ]
+          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
         }
       },
       "allOf": [
         {
           "if": {
-            "required": [
-              "pattern"
-            ]
+            "required": ["pattern"]
           },
           "then": {
             "properties": {
@@ -410,12 +367,7 @@
           "default": "name",
           "description": "Sort order",
           "type": "string",
-          "enum": [
-            "name",
-            "size",
-            "modified",
-            "type"
-          ]
+          "enum": ["name", "size", "modified", "type"]
         },
         "pattern": {
           "$ref": "#/$defs/SafeGlobPattern"
@@ -439,11 +391,7 @@
           "maxLength": 1000,
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
-          "examples": [
-            "**/*.ts",
-            "src/**/*.js",
-            "*.{ts,tsx}"
-          ]
+          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
         }
       }
     }
@@ -464,9 +412,7 @@
           "description": "One or more directory paths to create (recursive)"
         }
       },
-      "required": [
-        "paths"
-      ],
+      "required": ["paths"],
       "additionalProperties": false
     }
   },
@@ -492,10 +438,7 @@
           "description": "Destination path"
         }
       },
-      "required": [
-        "sources",
-        "destination"
-      ],
+      "required": ["sources", "destination"],
       "additionalProperties": false
     }
   },
@@ -551,113 +494,72 @@
           "maximum": 4294967295
         }
       },
-      "required": [
-        "path"
-      ],
+      "required": ["path"],
       "additionalProperties": false,
       "allOf": [
         {
           "not": {
-            "required": [
-              "head",
-              "tail"
-            ]
+            "required": ["head", "tail"]
           }
         },
         {
           "not": {
-            "required": [
-              "tail",
-              "startLine"
-            ]
+            "required": ["tail", "startLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "tail",
-              "endLine"
-            ]
+            "required": ["tail", "endLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "head",
-              "startLine"
-            ]
+            "required": ["head", "startLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "head",
-              "endLine"
-            ]
+            "required": ["head", "endLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "offset",
-              "head"
-            ]
+            "required": ["offset", "head"]
           }
         },
         {
           "not": {
-            "required": [
-              "offset",
-              "tail"
-            ]
+            "required": ["offset", "tail"]
           }
         },
         {
           "not": {
-            "required": [
-              "offset",
-              "startLine"
-            ]
+            "required": ["offset", "startLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "offset",
-              "endLine"
-            ]
+            "required": ["offset", "endLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "length",
-              "head"
-            ]
+            "required": ["length", "head"]
           }
         },
         {
           "not": {
-            "required": [
-              "length",
-              "tail"
-            ]
+            "required": ["length", "tail"]
           }
         },
         {
           "not": {
-            "required": [
-              "length",
-              "startLine"
-            ]
+            "required": ["length", "startLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "length",
-              "endLine"
-            ]
+            "required": ["length", "endLine"]
           }
         }
       ]
@@ -703,113 +605,72 @@
           "maximum": 2147483647
         }
       },
-      "required": [
-        "paths"
-      ],
+      "required": ["paths"],
       "additionalProperties": false,
       "allOf": [
         {
           "not": {
-            "required": [
-              "head",
-              "tail"
-            ]
+            "required": ["head", "tail"]
           }
         },
         {
           "not": {
-            "required": [
-              "tail",
-              "startLine"
-            ]
+            "required": ["tail", "startLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "tail",
-              "endLine"
-            ]
+            "required": ["tail", "endLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "head",
-              "startLine"
-            ]
+            "required": ["head", "startLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "head",
-              "endLine"
-            ]
+            "required": ["head", "endLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "offset",
-              "head"
-            ]
+            "required": ["offset", "head"]
           }
         },
         {
           "not": {
-            "required": [
-              "offset",
-              "tail"
-            ]
+            "required": ["offset", "tail"]
           }
         },
         {
           "not": {
-            "required": [
-              "offset",
-              "startLine"
-            ]
+            "required": ["offset", "startLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "offset",
-              "endLine"
-            ]
+            "required": ["offset", "endLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "length",
-              "head"
-            ]
+            "required": ["length", "head"]
           }
         },
         {
           "not": {
-            "required": [
-              "length",
-              "tail"
-            ]
+            "required": ["length", "tail"]
           }
         },
         {
           "not": {
-            "required": [
-              "length",
-              "startLine"
-            ]
+            "required": ["length", "startLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "length",
-              "endLine"
-            ]
+            "required": ["length", "endLine"]
           }
         }
       ]
@@ -841,9 +702,7 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "paths"
-      ],
+      "required": ["paths"],
       "additionalProperties": false
     }
   },
@@ -873,21 +732,13 @@
           "minLength": 1,
           "maxLength": 10000,
           "description": "Text or regex to find (RE2: no lookahead/lookbehind/backrefs when isRegex=true)",
-          "examples": [
-            "TODO",
-            "function\\s+(\\w+)",
-            "import.*from"
-          ]
+          "examples": ["TODO", "function\\s+(\\w+)", "import.*from"]
         },
         "replacement": {
           "type": "string",
           "maxLength": 10000,
           "description": "Replacement text",
-          "examples": [
-            "$1_renamed",
-            "",
-            "TODO: fix"
-          ]
+          "examples": ["$1_renamed", "", "TODO: fix"]
         },
         "isRegex": {
           "default": false,
@@ -944,10 +795,7 @@
           "maximum": 100
         }
       },
-      "required": [
-        "searchPattern",
-        "replacement"
-      ],
+      "required": ["searchPattern", "replacement"],
       "additionalProperties": false,
       "$defs": {
         "SafeGlobPattern": {
@@ -956,19 +804,13 @@
           "maxLength": 1000,
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
-          "examples": [
-            "**/*.ts",
-            "src/**/*.js",
-            "*.{ts,tsx}"
-          ]
+          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
         }
       },
       "allOf": [
         {
           "if": {
-            "required": [
-              "pattern"
-            ]
+            "required": ["pattern"]
           },
           "then": {
             "properties": {
@@ -1004,9 +846,7 @@
           "description": "Path inside an allowed root"
         }
       },
-      "required": [
-        "path"
-      ],
+      "required": ["path"],
       "additionalProperties": false
     }
   },
@@ -1026,9 +866,7 @@
           "description": "Paths to stat"
         }
       },
-      "required": [
-        "paths"
-      ],
+      "required": ["paths"],
       "additionalProperties": false
     }
   },
@@ -1091,10 +929,7 @@
           "description": "File content to write"
         }
       },
-      "required": [
-        "path",
-        "content"
-      ],
+      "required": ["path", "content"],
       "additionalProperties": false
     }
   }
