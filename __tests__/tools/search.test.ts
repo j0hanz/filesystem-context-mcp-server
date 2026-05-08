@@ -403,6 +403,30 @@ describe('search_and_replace tool', () => {
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
+    assert.ok(sc['filesModified'] !== undefined, 'Expected filesModified');
+    assert.ok(sc['totalMatches'] !== undefined, 'Expected totalMatches');
+    assert.ok(sc['primaryFile'], 'Expected primaryFile in structured content');
+
+    // Verify primary file has required fields
+    const pf = sc['primaryFile'] as Record<string, unknown>;
+    assert.ok(pf['path'], 'Primary file should have path');
+    assert.ok(pf['size'] !== undefined, 'Primary file should have size');
+    assert.ok(
+      pf['lineCount'] !== undefined,
+      'Primary file should have lineCount'
+    );
+    assert.ok(pf['mimeType'], 'Primary file should have mimeType');
+    assert.ok(pf['kind'], 'Primary file should have kind');
+    assert.ok(pf['resourceUri'], 'Primary file should have resourceUri');
+
+    // Verify summary includes resource link
+    assert.ok(
+      result.content.length >= 2,
+      'Expected summary text and resource link'
+    );
+    const linkBlock = result.content[1];
+    assert.equal(linkBlock.type, 'resource_link');
+
     const file1 = await readFile(join(env.tmpDir, 'file1.txt'), 'utf8');
     assert.ok(file1.includes('WORLD'), 'Expected replacement in file1');
     const file2 = await readFile(join(env.tmpDir, 'file2.txt'), 'utf8');
@@ -480,13 +504,10 @@ describe('search_and_replace tool', () => {
     });
     assertOk(raw);
     const sc = getStructured(raw);
-    const changedFiles = (sc['changedFiles'] ?? []) as Record<
-      string,
-      unknown
-    >[];
+    const results = (sc['results'] ?? []) as Record<string, unknown>[];
     assert.ok(
-      !changedFiles.some((f) => (f['path'] as string).includes('deep')),
-      `maxDepth:0 should exclude nested/deep.txt, got: ${JSON.stringify(changedFiles)}`
+      !results.some((f) => (f['path'] as string).includes('deep')),
+      `maxDepth:0 should exclude nested/deep.txt, got: ${JSON.stringify(results)}`
     );
   });
 

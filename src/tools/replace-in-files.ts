@@ -23,7 +23,9 @@ import {
 } from '../lib/errors.js';
 import { globEntries } from '../lib/fs-walk.js';
 import { Logger } from '../lib/logger.js';
+import { detectMimeType } from '../lib/mime.js';
 import type { PathGuard } from '../lib/path-guard.js';
+import type { ResourceStore } from '../lib/resource-store.js';
 import { runInWorker, shouldOffload } from '../lib/worker-pool.js';
 import { NonNegInt, OptionalPath, SafeGlobPattern } from '../schemas/fields.js';
 import {
@@ -40,9 +42,11 @@ import {
 import { defineTool } from './define-tool.js';
 import { FILE_EDIT_ICONS } from './icons.js';
 import {
+  buildResourceResponse,
   buildStructuredError,
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
+  putResource,
   type ToolContract,
   type ToolResponse,
   truncateProgressPattern,
@@ -104,8 +108,8 @@ const SearchAndReplaceInputSchema = z.strictObject({
 
 const SearchAndReplaceOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),
-  matches: NonNegInt.describe('Total match count'),
-  filesChanged: NonNegInt.describe('Files changed'),
+  filesModified: NonNegInt.describe('Files changed'),
+  totalMatches: NonNegInt.describe('Total match count'),
   processedFiles: NonNegInt.describe('Files scanned'),
   failedFiles: NonNegInt.optional().describe('Files that failed'),
   failures: z
@@ -117,14 +121,25 @@ const SearchAndReplaceOutputSchema = z.strictObject({
     )
     .optional()
     .describe('Per-file failures'),
-  changedFiles: z
+  primaryFile: z
+    .strictObject({
+      path: z.string(),
+      size: NonNegInt,
+      lineCount: NonNegInt,
+      mimeType: z.string(),
+      kind: z.enum(['text', 'binary', 'image', 'audio', 'pdf']),
+      resourceUri: z.string(),
+    })
+    .optional()
+    .describe('Primary file with resource link'),
+  results: z
     .array(z.strictObject({ path: z.string(), matches: NonNegInt }))
     .optional()
     .describe('Changed files with match counts'),
-  changedFilesTruncated: z
+  resultsTruncated: z
     .boolean()
     .optional()
-    .describe('changedFiles list was truncated'),
+    .describe('results list was truncated'),
   diff: z
     .string()
     .optional()
@@ -576,7 +591,8 @@ async function handleSearchAndReplace(
   pathGuard: PathGuard,
   signal?: AbortSignal,
   onProgress: (progress: { total?: number; current: number }) => void = () =>
-    undefined
+    undefined,
+  resourceStore?: ResourceStore
 ): Promise<ToolResponse<SearchAndReplaceOutput>> {
   const maxFileSize = MAX_TEXT_FILE_SIZE;
   const root = await resolveSearchRoot(args.path, pathGuard);
@@ -642,9 +658,78 @@ async function handleSearchAndReplace(
     );
   }
 
+  const structured = buildSearchAndReplaceStructuredResult(summary, args);
+
+  // Store primary file in resource store if available
+  if (
+    resourceStore &&
+    summary.changedFiles.length > 0 &&
+    summary.filesChanged > 0
+  ) {
+    const primaryFile = summary.changedFiles[0];
+    if (!primaryFile)
+      return buildToolResponse(
+        buildSearchAndReplaceText(summary, args.dryRun),
+        structured
+      );
+
+    const primaryFilePath = primaryFile.path;
+    const fullPath = `${summary.root}/${primaryFilePath}`;
+
+    try {
+      const content = await (async (): Promise<string> => {
+        const fd = await open(fullPath, 'r');
+        try {
+          return await fd.readFile({ encoding: 'utf-8', signal });
+        } finally {
+          await fd.close();
+        }
+      })();
+
+      const mimeInfo = detectMimeType(fullPath, Buffer.from(content));
+      const lineCount = content.split('\n').length;
+      const size = Buffer.byteLength(content, 'utf-8');
+
+      const { entry, link } = putResource({
+        store: resourceStore,
+        name: basename(fullPath),
+        mimeType: mimeInfo.mimeType,
+        kind: mimeInfo.kind,
+        content,
+      });
+
+      structured.primaryFile = {
+        path: primaryFilePath,
+        size,
+        lineCount,
+        mimeType: mimeInfo.mimeType,
+        kind: mimeInfo.kind,
+        resourceUri: entry.uri,
+      };
+
+      const summary_text = buildSearchAndReplaceText(
+        summary,
+        args.dryRun,
+        primaryFilePath,
+        size
+      );
+
+      return buildResourceResponse({
+        summary: summary_text,
+        resources: [link],
+        structured,
+      });
+    } catch (error) {
+      // Gracefully fall back if resource storage fails
+      Logger.error(
+        `Failed to store primary file in resource store: ${formatUnknownErrorMessage(error)}`
+      );
+    }
+  }
+
   return buildToolResponse(
     buildSearchAndReplaceText(summary, args.dryRun),
-    buildSearchAndReplaceStructuredResult(summary, args)
+    structured
   );
 }
 
@@ -680,21 +765,22 @@ export const SEARCH_AND_REPLACE = defineTool<
         args,
         ctx.pathGuard,
         ctx.signal,
-        progressWithMessage
+        progressWithMessage,
+        ctx.resourceStore
       );
       const sc = result.structuredContent;
       const finalCurrent = resolveFinalProgressCurrent(
         progress,
         sc.processedFiles + 1
       );
-      const matchWord = sc.matches === 1 ? 'match' : 'matches';
-      const fileWord = sc.filesChanged === 1 ? 'file' : 'files';
-      let suffix = `${sc.matches} ${matchWord} in ${sc.filesChanged} ${fileWord}`;
+      const matchWord = sc.totalMatches === 1 ? 'match' : 'matches';
+      const fileWord = sc.filesModified === 1 ? 'file' : 'files';
+      let suffix = `${sc.totalMatches} ${matchWord} in ${sc.filesModified} ${fileWord}`;
       if (sc.failedFiles) suffix += `, ${sc.failedFiles} failed`;
       if (!args.dryRun) {
         void ctx.log?.(
           'info',
-          `search_and_replace: ${String(sc.matches)} matches in ${String(sc.filesChanged)} files`,
+          `search_and_replace: ${String(sc.totalMatches)} matches in ${String(sc.filesModified)} files`,
           'search_and_replace'
         );
       }
@@ -705,15 +791,29 @@ export const SEARCH_AND_REPLACE = defineTool<
 
 function buildSearchAndReplaceText(
   summary: ReplaceSummary,
-  dryRun: boolean
+  dryRun: boolean,
+  primaryFilePath?: string,
+  primaryFileSize?: number
 ): string {
+  const parts = [
+    `replace-in-files: replaced in ${summary.filesChanged} files`,
+    `${summary.totalMatches} match${summary.totalMatches === 1 ? '' : 'es'}`,
+  ];
+
+  if (primaryFilePath && primaryFileSize !== undefined) {
+    const sizeKb =
+      primaryFileSize >= 1024
+        ? `${(primaryFileSize / 1024).toFixed(1)} KB`
+        : `${primaryFileSize} B`;
+    parts.push(primaryFilePath);
+    parts.push(sizeKb);
+  }
+
+  const text = parts.join(' · ');
   const failureSuffix =
     summary.failedFiles > 0 ? ` (${summary.failedFiles} failed)` : '';
-  const dryRunSuffix = dryRun ? ' (Dry run)' : '';
-  const timing = summary.perfTimeMs
-    ? ` [\u23F1\uFE0F ${summary.perfTimeMs.toFixed(0)}ms]`
-    : '';
-  return `Found ${summary.totalMatches} matches in ${summary.filesChanged} files${failureSuffix}.${dryRunSuffix}${timing}`;
+  const dryRunSuffix = dryRun ? ' (dry run)' : '';
+  return text + failureSuffix + dryRunSuffix;
 }
 
 function buildSearchAndReplaceStructuredResult(
@@ -722,15 +822,15 @@ function buildSearchAndReplaceStructuredResult(
 ): SearchAndReplaceOutput {
   return {
     ok: true,
-    matches: summary.totalMatches,
-    filesChanged: summary.filesChanged,
+    filesModified: summary.filesChanged,
+    totalMatches: summary.totalMatches,
     processedFiles: summary.processedFiles,
     ...(summary.failedFiles > 0 ? { failedFiles: summary.failedFiles } : {}),
     ...(summary.failures.length > 0 ? { failures: summary.failures } : {}),
     ...(summary.changedFiles.length > 0
-      ? { changedFiles: summary.changedFiles }
+      ? { results: summary.changedFiles }
       : {}),
-    ...(summary.changedFilesTruncated ? { changedFilesTruncated: true } : {}),
+    ...(summary.changedFilesTruncated ? { resultsTruncated: true } : {}),
     ...((args.dryRun || args.returnDiff) && summary.diff
       ? { diff: summary.diff }
       : {}),
