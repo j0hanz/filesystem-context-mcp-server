@@ -6,6 +6,7 @@ import type {
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { channel } from 'node:diagnostics_channel';
+import { inspect } from 'node:util';
 
 interface SessionContextData {
   sessionId?: string;
@@ -13,7 +14,7 @@ interface SessionContextData {
 
 export const SessionContext = new AsyncLocalStorage<SessionContextData>();
 
-export interface LogEvent {
+interface LogEvent {
   level: LoggingLevel;
   message: string;
   data?: unknown;
@@ -128,3 +129,84 @@ export const Logger = {
     this.emit('critical', message, data);
   },
 };
+
+/**
+ * Routes log events from the `filesystem-mcp:log` diagnostics channel to the
+ * correct McpServer. Stdio uses a single fallback target; HTTP attaches one
+ * target per session keyed by `sessionId`. Subscribes to the channel exactly
+ * once on first construction.
+ */
+export interface LogTarget {
+  server: McpServer;
+  loggingState: LoggingState;
+}
+
+function stringifyLogData(data: unknown): string {
+  if (data === undefined) return '';
+  if (typeof data === 'string') return ` ${data}`;
+  if (
+    data === null ||
+    typeof data === 'number' ||
+    typeof data === 'boolean' ||
+    typeof data === 'bigint'
+  ) {
+    return ` ${String(data)}`;
+  }
+  return ` ${inspect(data, { depth: 4, colors: false, compact: 3 })}`;
+}
+
+export class LogRouter {
+  private static instance: LogRouter | undefined;
+  private stdio: LogTarget | undefined;
+  private readonly sessions = new Map<string, LogTarget>();
+
+  private constructor() {
+    LOG_CHANNEL.subscribe((message) => {
+      this.dispatch(message as LogEvent);
+    });
+  }
+
+  static global(): LogRouter {
+    LogRouter.instance ??= new LogRouter();
+    return LogRouter.instance;
+  }
+
+  attachStdio(target: LogTarget): void {
+    this.stdio ??= target;
+  }
+
+  detachStdio(): void {
+    this.stdio = undefined;
+  }
+
+  attachSession(sessionId: string, target: LogTarget): void {
+    this.sessions.set(sessionId, target);
+  }
+
+  detachSession(sessionId: string): void {
+    this.sessions.delete(sessionId);
+  }
+
+  /** For tests: forget all routing state without unsubscribing the channel. */
+  reset(): void {
+    this.stdio = undefined;
+    this.sessions.clear();
+  }
+
+  private dispatch(event: LogEvent): void {
+    const target = event.sessionId
+      ? this.sessions.get(event.sessionId)
+      : this.stdio;
+    const dataStr = stringifyLogData(event.data);
+    if (target) {
+      logToMcp(
+        target.server,
+        event.level,
+        `${event.message}${dataStr}`,
+        target.loggingState.minimumLevel
+      );
+      return;
+    }
+    console.error(`[${event.level.toUpperCase()}] ${event.message}${dataStr}`);
+  }
+}

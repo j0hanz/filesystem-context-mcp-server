@@ -11,7 +11,6 @@ import {
 } from '@modelcontextprotocol/server';
 
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
-import { channel } from 'node:diagnostics_channel';
 import { readFile } from 'node:fs/promises';
 import {
   createServer as createHttpServer,
@@ -19,11 +18,11 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http';
-import { inspect } from 'node:util';
 
 import express, {
   type NextFunction,
   type Request,
+  type RequestHandler,
   type Response,
 } from 'express';
 
@@ -36,10 +35,9 @@ import {
 import { formatUnknownErrorMessage } from '../lib/errors.js';
 import {
   createLoggingState,
-  type LogEvent,
   Logger,
-  type LoggingState,
-  logToMcp,
+  LogRouter,
+  type LogTarget,
   SessionContext,
 } from '../lib/logger.js';
 import { withPathGuard } from '../lib/paths.js';
@@ -98,47 +96,7 @@ function buildServerCapabilities(
   return capabilities;
 }
 
-// Global map of all active servers by sessionId for routing logs
-const activeServers = new Map<
-  string,
-  { server: McpServer; loggingState: LoggingState }
->();
-// For stdio (single session without a specific ID)
-let stdioServer: { server: McpServer; loggingState: LoggingState } | undefined;
-
-function stringifyData(data: unknown): string {
-  if (data === undefined) return '';
-  if (typeof data === 'string') return ` ${data}`;
-  if (
-    data === null ||
-    typeof data === 'number' ||
-    typeof data === 'boolean' ||
-    typeof data === 'bigint'
-  ) {
-    return ` ${String(data)}`;
-  }
-  return ` ${inspect(data, { depth: 4, colors: false, compact: 3 })}`;
-}
-
-channel('filesystem-mcp:log').subscribe((message) => {
-  const event = message as LogEvent;
-  const target = event.sessionId
-    ? activeServers.get(event.sessionId)
-    : stdioServer;
-  const dataStr = stringifyData(event.data);
-  if (target) {
-    logToMcp(
-      target.server,
-      event.level,
-      `${event.message}${dataStr}`,
-      target.loggingState.minimumLevel
-    );
-  } else {
-    // Fallback if no server
-    const fullMsg = `${event.message}${dataStr}`;
-    console.error(`[${event.level.toUpperCase()}] ${fullMsg}`);
-  }
-});
+const logRouter = LogRouter.global();
 
 const {
   version: SERVER_VERSION,
@@ -238,8 +196,8 @@ export async function createServer(
     }
   );
 
-  // Track stdio server by default, or it will be overwritten per HTTP session later
-  stdioServer ??= { server, loggingState };
+  // Track stdio server by default; HTTP overrides per-session via the registry.
+  logRouter.attachStdio({ server, loggingState });
 
   registerAllResources(server, {
     resourceStore,
@@ -280,99 +238,23 @@ export async function startServer(serverAndHandle: {
   const sdkOnClose = transport.onclose;
   transport.onclose = () => {
     rootsManager.destroy();
+    logRouter.detachStdio();
     sdkOnClose?.();
   };
 
   rootsManager.logMissingDirectoriesIfNeeded(server);
 }
 
-const MAX_REQUEST_BODY_BYTES = parseEnvInt(
-  'FS_CONTEXT_MAX_REQUEST_BYTES',
-  4 * 1024 * 1024,
-  1024,
-  256 * 1024 * 1024
-);
+const MAX_SESSION_ID_LENGTH = 256;
+const MAX_BEARER_TOKEN_LENGTH = 4096;
+const JSON_RPC_SERVER_ERROR = -32000;
+const JSON_RPC_INVALID_REQUEST = ProtocolErrorCode.InvalidRequest;
+const JSON_RPC_PARSE_ERROR = ProtocolErrorCode.ParseError;
+const JSON_RPC_INTERNAL_ERROR = ProtocolErrorCode.InternalError;
 
-interface HttpSession {
-  server: McpServer;
-  rootsManager: RootsManager;
-  transport: NodeStreamableHTTPServerTransport;
-  createdAt: number;
-  cleanup: () => void;
-  close: () => Promise<void>;
-}
-
-async function createHttpSession(
-  options: ServerOptions,
-  sessions: Map<string, HttpSession>,
-  eventStore: InMemoryEventStore
-): Promise<HttpSession> {
-  const { server: mcpServer } = await createServer(options);
-  const rootsManager = getRootsManager(mcpServer);
-
-  rootsManager.registerHandlers(mcpServer);
-  await rootsManager.recomputeAllowedDirectories();
-
-  let cleanedUp = false;
-  const cleanup = (): void => {
-    if (cleanedUp) return;
-    cleanedUp = true;
-
-    const { sessionId } = transport;
-    if (sessionId) {
-      sessions.delete(sessionId);
-      activeServers.delete(sessionId);
-      eventStore.delete(sessionId);
-    }
-
-    rootsManager.destroy();
-  };
-
-  const close = async (): Promise<void> => {
-    cleanup();
-    await mcpServer.close();
-  };
-
-  const transport = new NodeStreamableHTTPServerTransport({
-    sessionIdGenerator: () => randomUUID(),
-    eventStore,
-    retryInterval: 2_000,
-    onsessioninitialized: (sessionId) => {
-      sessions.set(sessionId, {
-        server: mcpServer,
-        rootsManager,
-        transport,
-        createdAt: Date.now(),
-        cleanup,
-        close,
-      });
-      activeServers.set(sessionId, {
-        server: mcpServer,
-        loggingState: rootsManager.loggingState,
-      });
-      rootsManager.logMissingDirectoriesIfNeeded(mcpServer);
-    },
-    onsessionclosed: async (sessionId) => {
-      const session = sessions.get(sessionId);
-      if (session) {
-        await session.close();
-      }
-    },
-  });
-
-  transport.onclose = cleanup;
-
-  await mcpServer.connect(transport);
-
-  return {
-    server: mcpServer,
-    rootsManager,
-    transport,
-    createdAt: Date.now(),
-    cleanup,
-    close,
-  };
-}
+const ALLOWED_ORIGIN_PATTERNS: readonly RegExp[] = [
+  /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/u,
+];
 
 function sendJsonRpcError(
   res: ServerResponse,
@@ -390,13 +272,6 @@ function sendJsonRpcError(
   );
 }
 
-const MAX_SESSION_ID_LENGTH = 256;
-const MAX_BEARER_TOKEN_LENGTH = 4096;
-const JSON_RPC_SERVER_ERROR = -32000;
-const JSON_RPC_INVALID_REQUEST = ProtocolErrorCode.InvalidRequest;
-const JSON_RPC_PARSE_ERROR = ProtocolErrorCode.ParseError;
-const JSON_RPC_INTERNAL_ERROR = ProtocolErrorCode.InternalError;
-
 function getSessionId(req: IncomingMessage): string | undefined {
   const rawSessionId = req.headers['mcp-session-id'];
   return typeof rawSessionId === 'string' &&
@@ -405,45 +280,289 @@ function getSessionId(req: IncomingMessage): string | undefined {
     : undefined;
 }
 
-function isAuthorizedBearer(apiKey: string, authHeader: unknown): boolean {
+// ---------------------------------------------------------------------------
+// HttpAuthGuard — pure auth + binding policy
+// ---------------------------------------------------------------------------
+
+/**
+ * Pure HTTP auth and binding policy. Holds no state; all functions are
+ * directly testable without spinning up a server.
+ */
+export function isLoopbackHttpHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  return (
+    normalized === '127.0.0.1' ||
+    normalized === 'localhost' ||
+    normalized === '::1' ||
+    normalized === '[::1]'
+  );
+}
+
+export function isAllowedLocalhostOrigin(origin: string): boolean {
+  return ALLOWED_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin));
+}
+
+export function validateBearerAuthorization(
+  apiKey: string,
+  authHeader: unknown
+): boolean {
   const bearerPrefix = 'Bearer ';
   if (typeof authHeader !== 'string' || !authHeader.startsWith(bearerPrefix)) {
     return false;
   }
-
   const userKey = authHeader.slice(bearerPrefix.length);
   if (userKey.length > MAX_BEARER_TOKEN_LENGTH) {
     return false;
   }
-
   const expectedHash = createHash('sha256').update(apiKey).digest();
   const actualHash = createHash('sha256').update(userKey).digest();
   return timingSafeEqual(expectedHash, actualHash);
 }
 
-function writeUnauthorizedResponse(res: ServerResponse): void {
-  res.writeHead(401, {
-    'Content-Type': 'application/json',
-    'WWW-Authenticate': 'Bearer',
-  });
-  res.end(
-    JSON.stringify({
-      jsonrpc: '2.0',
-      error: { code: JSON_RPC_SERVER_ERROR, message: 'Unauthorized' },
-      id: null,
-    })
+/**
+ * Refuse to bind to a non-loopback host without an API key. Throws on
+ * policy violation; returns silently when allowed.
+ */
+export function assertHttpBindingPolicy(
+  host: string,
+  apiKey: string | undefined
+): void {
+  if (isLoopbackHttpHost(host)) return;
+  if (apiKey) return;
+  throw new Error(
+    `Refusing to bind HTTP server to non-loopback host '${host}' without FILESYSTEM_MCP_API_KEY.`
   );
 }
 
-function ensureAuthorizedRequest(
-  req: IncomingMessage,
-  res: ServerResponse
-): boolean {
-  const apiKey = process.env.FILESYSTEM_MCP_API_KEY;
-  if (!apiKey) return true;
-  if (isAuthorizedBearer(apiKey, req.headers.authorization)) return true;
-  writeUnauthorizedResponse(res);
-  return false;
+/** Express middleware: reject browser origins outside localhost. */
+function originGuardMiddleware(): RequestHandler {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const origin = req.get('origin');
+    if (origin && !isAllowedLocalhostOrigin(origin)) {
+      res.status(403).send('Forbidden: disallowed origin');
+      return;
+    }
+    next();
+  };
+}
+
+/**
+ * Express middleware: when `FILESYSTEM_MCP_API_KEY` is set, require a
+ * matching bearer token. No key set = open access (loopback dev mode).
+ */
+function bearerAuthMiddleware(): RequestHandler {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const apiKey = process.env.FILESYSTEM_MCP_API_KEY;
+    if (!apiKey) {
+      next();
+      return;
+    }
+    if (validateBearerAuthorization(apiKey, req.headers.authorization)) {
+      next();
+      return;
+    }
+    res.writeHead(401, {
+      'Content-Type': 'application/json',
+      'WWW-Authenticate': 'Bearer',
+    });
+    res.end(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        error: { code: JSON_RPC_SERVER_ERROR, message: 'Unauthorized' },
+        id: null,
+      })
+    );
+  };
+}
+
+// ---------------------------------------------------------------------------
+// HttpSessionRegistry — owns session map, sweep timer, log-router wiring
+// ---------------------------------------------------------------------------
+
+interface HttpSession {
+  server: McpServer;
+  rootsManager: RootsManager;
+  transport: NodeStreamableHTTPServerTransport;
+  createdAt: number;
+  close: () => Promise<void>;
+}
+
+export type { HttpSession };
+
+interface HttpSessionRegistryOptions {
+  eventStore: InMemoryEventStore;
+  logRouter: LogRouter;
+  handshakeTimeoutMs: number;
+  sweepIntervalMs?: number;
+}
+
+/**
+ * Single source of truth for the live HTTP session set. Replaces the previous
+ * pair of parallel maps (`sessions` + `activeServers`) and the inline sweep
+ * timer in `startHttpServer`. HTTP-specific by design — stdio has no sessions.
+ */
+export class HttpSessionRegistry {
+  private readonly sessions = new Map<string, HttpSession>();
+  private readonly eventStore: InMemoryEventStore;
+  private readonly logRouter: LogRouter;
+  private readonly handshakeTimeoutMs: number;
+  private readonly sweepIntervalMs: number;
+  private sweepTimer: NodeJS.Timeout | undefined;
+
+  constructor(opts: HttpSessionRegistryOptions) {
+    this.eventStore = opts.eventStore;
+    this.logRouter = opts.logRouter;
+    this.handshakeTimeoutMs = opts.handshakeTimeoutMs;
+    this.sweepIntervalMs = opts.sweepIntervalMs ?? opts.handshakeTimeoutMs * 2;
+  }
+
+  size(): number {
+    return this.sessions.size;
+  }
+
+  get(sessionId: string): HttpSession | undefined {
+    return this.sessions.get(sessionId);
+  }
+
+  add(sessionId: string, session: HttpSession, logTarget: LogTarget): void {
+    this.sessions.set(sessionId, session);
+    this.logRouter.attachSession(sessionId, logTarget);
+  }
+
+  remove(sessionId: string): void {
+    this.sessions.delete(sessionId);
+    this.logRouter.detachSession(sessionId);
+    this.eventStore.delete(sessionId);
+  }
+
+  getOrRespondNotFound(
+    sessionId: string,
+    res: ServerResponse
+  ): HttpSession | undefined {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      sendJsonRpcError(res, 404, JSON_RPC_SERVER_ERROR, 'Session not found');
+      return undefined;
+    }
+    return session;
+  }
+
+  startSweep(): void {
+    if (this.sweepTimer) return;
+    this.sweepTimer = setInterval(() => {
+      this.sweepStale();
+    }, this.sweepIntervalMs);
+    this.sweepTimer.unref();
+  }
+
+  private sweepStale(): void {
+    const now = Date.now();
+    for (const [sessionId, session] of this.sessions) {
+      if (
+        !session.rootsManager.isInitialized() &&
+        now - session.createdAt > this.handshakeTimeoutMs
+      ) {
+        Logger.warn(`[HTTP] Evicting stale session ${sessionId}`);
+        session.close().catch((err: unknown) => {
+          Logger.error(
+            `[HTTP] Error closing stale session ${sessionId}:`,
+            formatUnknownErrorMessage(err)
+          );
+          this.eventStore.delete(sessionId);
+        });
+      }
+    }
+  }
+
+  async closeAll(): Promise<void> {
+    if (this.sweepTimer) {
+      clearInterval(this.sweepTimer);
+      this.sweepTimer = undefined;
+    }
+    const closes = Array.from(this.sessions.values()).map((session) =>
+      session.close().catch((err: unknown) => {
+        Logger.error(
+          '[HTTP] Error closing session on shutdown:',
+          formatUnknownErrorMessage(err)
+        );
+      })
+    );
+    await Promise.allSettled(closes);
+    this.eventStore.clear();
+  }
+}
+
+const MAX_REQUEST_BODY_BYTES = parseEnvInt(
+  'FS_CONTEXT_MAX_REQUEST_BYTES',
+  4 * 1024 * 1024,
+  1024,
+  256 * 1024 * 1024
+);
+
+async function createHttpSession(
+  options: ServerOptions,
+  registry: HttpSessionRegistry,
+  eventStore: InMemoryEventStore
+): Promise<HttpSession> {
+  const { server: mcpServer } = await createServer(options);
+  const rootsManager = getRootsManager(mcpServer);
+
+  rootsManager.registerHandlers(mcpServer);
+  await rootsManager.recomputeAllowedDirectories();
+
+  let cleanedUp = false;
+  const cleanup = (): void => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    const { sessionId } = transport;
+    if (sessionId) {
+      registry.remove(sessionId);
+    }
+    rootsManager.destroy();
+  };
+
+  const close = async (): Promise<void> => {
+    cleanup();
+    await mcpServer.close();
+  };
+
+  const transport = new NodeStreamableHTTPServerTransport({
+    sessionIdGenerator: () => randomUUID(),
+    eventStore,
+    retryInterval: 2_000,
+    onsessioninitialized: (sessionId) => {
+      registry.add(
+        sessionId,
+        {
+          server: mcpServer,
+          rootsManager,
+          transport,
+          createdAt: Date.now(),
+          close,
+        },
+        { server: mcpServer, loggingState: rootsManager.loggingState }
+      );
+      rootsManager.logMissingDirectoriesIfNeeded(mcpServer);
+    },
+    onsessionclosed: async (sessionId) => {
+      const session = registry.get(sessionId);
+      if (session) {
+        await session.close();
+      }
+    },
+  });
+
+  transport.onclose = cleanup;
+
+  await mcpServer.connect(transport);
+
+  return {
+    server: mcpServer,
+    rootsManager,
+    transport,
+    createdAt: Date.now(),
+    close,
+  };
 }
 
 async function handleSessionTransportRequest(
@@ -462,45 +581,19 @@ async function handleSessionTransportRequest(
   });
 }
 
-function getSessionOrRespondNotFound(
-  sessions: Map<string, HttpSession>,
-  sessionId: string,
-  res: ServerResponse
-): HttpSession | undefined {
-  const session = sessions.get(sessionId);
-  if (!session) {
-    sendJsonRpcError(res, 404, JSON_RPC_SERVER_ERROR, 'Session not found');
-    return undefined;
-  }
-  return session;
-}
-
-function isLoopbackHttpHost(host: string): boolean {
-  const normalized = host.trim().toLowerCase();
-  return (
-    normalized === '127.0.0.1' ||
-    normalized === 'localhost' ||
-    normalized === '::1' ||
-    normalized === '[::1]'
-  );
-}
-
-function assertHttpBindingSecurity(host: string): void {
-  if (isLoopbackHttpHost(host)) return;
-  if (process.env.FILESYSTEM_MCP_API_KEY) return;
-  throw new Error(
-    `Refusing to bind HTTP server to non-loopback host '${host}' without FILESYSTEM_MCP_API_KEY.`
-  );
-}
-
 export async function startHttpServer(
   port: number,
   options: ServerOptions
 ): Promise<Server> {
-  const sessions = new Map<string, HttpSession>();
   const eventStore = new InMemoryEventStore();
   const httpHost = process.env.FILESYSTEM_MCP_HTTP_HOST ?? '127.0.0.1';
-  assertHttpBindingSecurity(httpHost);
+  assertHttpBindingPolicy(httpHost, process.env.FILESYSTEM_MCP_API_KEY);
+
+  const registry = new HttpSessionRegistry({
+    eventStore,
+    logRouter,
+    handshakeTimeoutMs: getInitHandshakeTimeoutMs(),
+  });
 
   const app = createMcpExpressApp({
     host: httpHost,
@@ -509,32 +602,9 @@ export async function startHttpServer(
       : [httpHost],
   });
 
-  // Origin validation middleware for browser CORS requests
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    const origin = req.get('origin');
-    if (origin) {
-      // Only allow localhost origins
-      const allowedOriginPatterns = [
-        /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/u,
-      ];
-      const isAllowed = allowedOriginPatterns.some((pattern) =>
-        pattern.test(origin)
-      );
-      if (!isAllowed) {
-        res.status(403).send('Forbidden: disallowed origin');
-        return;
-      }
-    }
-    next();
-  });
+  app.use(originGuardMiddleware());
+  app.use('/mcp', bearerAuthMiddleware());
 
-  // Bearer auth middleware — runs before all /mcp requests
-  app.use('/mcp', (req: Request, res: Response, next: NextFunction) => {
-    if (!ensureAuthorizedRequest(req, res)) return;
-    next();
-  });
-
-  // Body parsing with size cap
   app.use(express.json({ limit: MAX_REQUEST_BODY_BYTES, strict: false }));
 
   // Body-parse error handler — translate to JSON-RPC error format
@@ -573,7 +643,7 @@ export async function startHttpServer(
 
       if (req.method === 'POST') {
         if (sessionId) {
-          const session = getSessionOrRespondNotFound(sessions, sessionId, res);
+          const session = registry.getOrRespondNotFound(sessionId, res);
           if (session)
             await handleSessionTransportRequest(session, req, res, req.body);
           return;
@@ -585,7 +655,7 @@ export async function startHttpServer(
             1,
             10_000
           );
-          if (sessions.size >= maxSessions) {
+          if (registry.size() >= maxSessions) {
             sendJsonRpcError(
               res,
               503,
@@ -596,7 +666,7 @@ export async function startHttpServer(
           }
           const session = await createHttpSession(
             options,
-            sessions,
+            registry,
             eventStore
           );
           await handleSessionTransportRequest(session, req, res, req.body);
@@ -621,7 +691,7 @@ export async function startHttpServer(
           );
           return;
         }
-        const session = getSessionOrRespondNotFound(sessions, sessionId, res);
+        const session = registry.getOrRespondNotFound(sessionId, res);
         if (session) await handleSessionTransportRequest(session, req, res);
         return;
       }
@@ -650,52 +720,15 @@ export async function startHttpServer(
   httpServer.requestTimeout = 30_000;
   httpServer.keepAliveTimeout = 5_000;
 
-  // Stale session sweep — unchanged
-  const initHandshakeTimeoutMs = getInitHandshakeTimeoutMs();
-  const SWEEP_INTERVAL_MS = initHandshakeTimeoutMs * 2;
-  const sweepTimer = setInterval(() => {
-    const now = Date.now();
-    for (const [sessionId, session] of sessions) {
-      if (
-        !session.rootsManager.isInitialized() &&
-        now - session.createdAt > initHandshakeTimeoutMs
-      ) {
-        Logger.warn(`[HTTP] Evicting stale session ${sessionId}`);
-        session.close().catch((err: unknown) => {
-          Logger.error(
-            `[HTTP] Error closing stale session ${sessionId}:`,
-            formatUnknownErrorMessage(err)
-          );
-          eventStore.delete(sessionId);
-        });
-      }
-    }
-  }, SWEEP_INTERVAL_MS);
-  sweepTimer.unref();
+  registry.startSweep();
 
   httpServer.once('close', () => {
-    clearInterval(sweepTimer);
-    for (const session of sessions.values()) {
-      session.close().catch((err: unknown) => {
-        Logger.error(
-          '[HTTP] Error closing session on shutdown:',
-          formatUnknownErrorMessage(err)
-        );
-      });
-    }
-    eventStore.clear();
+    void registry.closeAll();
   });
 
   const originalClose = httpServer.close.bind(httpServer);
   httpServer.close = function (callback?: (error?: Error) => void) {
-    for (const session of sessions.values()) {
-      session.close().catch((err: unknown) => {
-        Logger.error(
-          '[HTTP] Error closing session:',
-          formatUnknownErrorMessage(err)
-        );
-      });
-    }
+    void registry.closeAll();
     return originalClose(callback);
   };
 

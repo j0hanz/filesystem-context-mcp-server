@@ -494,6 +494,8 @@ describe('HTTP transport', () => {
   });
 
   it('refuses non-loopback HTTP binding without an API key', async () => {
+    // Smoke-only: full policy matrix is unit-tested in
+    // `__tests__/unit/http-auth-guard.test.ts`.
     tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
     const dir = tempDir;
     process.env['FILESYSTEM_MCP_HTTP_HOST'] = '0.0.0.0';
@@ -541,6 +543,9 @@ describe('HTTP transport', () => {
   });
 
   it('evicts stale uninitialized sessions through the full cleanup path', async () => {
+    // Smoke-only: full sweep semantics tested in
+    // `__tests__/unit/http-session-registry.test.ts`. This case exists to
+    // confirm the timer is wired into startHttpServer's lifecycle.
     process.env['FS_INIT_HANDSHAKE_TIMEOUT_MS'] = '1000';
     tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
     const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
