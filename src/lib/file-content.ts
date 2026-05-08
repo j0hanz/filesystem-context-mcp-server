@@ -1,7 +1,12 @@
 import { isUtf8 } from 'node:buffer';
 import { type BinaryToTextEncoding, createHash } from 'node:crypto';
 import { createReadStream, type Stats } from 'node:fs';
-import { type FileHandle, open, stat } from 'node:fs/promises';
+import {
+  type FileHandle,
+  open,
+  readFile as readFilePromises,
+  stat,
+} from 'node:fs/promises';
 import { extname } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
@@ -12,6 +17,7 @@ import {
   MAX_TEXT_FILE_SIZE,
 } from './constants.js';
 import { ErrorCode, McpError } from './errors.js';
+import { detectMimeType } from './mime.js';
 import type { PathGuard } from './path-guard.js';
 
 const READ_ONLY_FILE_FLAG = 'r';
@@ -881,11 +887,59 @@ async function readFileWithStatsInternal(
 
 export async function readFileWithStats(
   filePath: string,
+  pathGuard: PathGuard,
+  options?: { signal?: AbortSignal }
+): Promise<{ content: Buffer; mimeType: string; isBinary: boolean }>;
+export async function readFileWithStats(
+  filePath: string,
   validPath: string,
   stats: Stats,
-  options: ReadFileOptions = {},
+  options: ReadFileOptions | undefined,
   pathGuard: PathGuard
-): Promise<ReadFileResult> {
+): Promise<ReadFileResult>;
+export async function readFileWithStats(
+  filePath: string,
+  arg2: string | PathGuard,
+  arg3?: Stats | { signal?: AbortSignal },
+  arg4?: ReadFileOptions,
+  arg5?: PathGuard
+): Promise<
+  ReadFileResult | { content: Buffer; mimeType: string; isBinary: boolean }
+> {
+  if (typeof arg2 !== 'string') {
+    // 2-arg/3-arg version (filePath, pathGuard, options?)
+    const pathGuard = arg2;
+    const options = arg3 as { signal?: AbortSignal } | undefined;
+    const validPath = await pathGuard.validateExistingPath(filePath);
+    pathGuard.assertAllowedFileAccess(filePath);
+    const stats = await withAbort(stat(validPath), options?.signal);
+    assertFileStats(filePath, stats);
+
+    const content = await withAbort(
+      readFilePromises(validPath),
+      options?.signal
+    );
+    const mimeInfo = detectMimeType(validPath, content.subarray(0, 512));
+    return {
+      content,
+      mimeType: mimeInfo.mimeType,
+      isBinary: mimeInfo.kind !== 'text',
+    };
+  }
+
+  // 5-arg version (filePath, validPath, stats, options, pathGuard)
+  const validPath = arg2;
+  const stats = arg3 as Stats;
+  const options = arg4 ?? {};
+  const pathGuard = arg5;
+
+  if (!pathGuard) {
+    throw new McpError(
+      ErrorCode.UNKNOWN,
+      'PathGuard must be provided to readFileWithStats'
+    );
+  }
+
   const normalized = prepareReadOptions(options);
   return readFileWithStatsInternal(
     filePath,

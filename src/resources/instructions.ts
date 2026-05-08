@@ -1,5 +1,5 @@
-import { SLIM_INSTRUCTIONS_CONTENT } from './instructions-content.js';
 import type { ResourceContract } from './contract.js';
+import { SLIM_INSTRUCTIONS_CONTENT } from './instructions-content.js';
 
 export function createInstructionsResource(): ResourceContract {
   return {
@@ -11,12 +11,14 @@ export function createInstructionsResource(): ResourceContract {
     annotations: { audience: ['assistant'], priority: 0.8 },
     read(uri) {
       return {
-        contents: [{
-          uri: uri.href,
-          mimeType: 'text/markdown',
-          text: SLIM_INSTRUCTIONS_CONTENT,
-        }],
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: 'text/markdown',
+            text: SLIM_INSTRUCTIONS_CONTENT,
+          },
+        ],
       };
-    }
+    },
   };
 }

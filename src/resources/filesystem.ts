@@ -2,10 +2,9 @@ import { ProtocolError, ProtocolErrorCode } from '@modelcontextprotocol/server';
 import type { ServerContext } from '@modelcontextprotocol/server';
 
 import { type FSWatcher, watch } from 'node:fs';
-import { readFile as readFilePromises } from 'node:fs/promises';
 
+import { readFileWithStats } from '../lib/file-content.js';
 import { completePathCached } from '../lib/path-completer.js';
-import { detectMimeType } from '../lib/mime.js';
 
 import type { ResourceContract } from './contract.js';
 import type { ResourceRegistrationOptions } from './shared.js';
@@ -51,35 +50,25 @@ export function createFilesystemResource(
           'Path variable is required'
         );
       }
-      const targetPath = '/' + rawPath;
-      const resolved = await options.pathGuard.validateExistingPath(targetPath);
-
-      const content = await readFilePromises(resolved);
-      const mimeInfo = detectMimeType(resolved, content.subarray(0, 512));
-      const isBinary = mimeInfo.kind !== 'text';
+      await options.pathGuard.validateExistingPath(rawPath);
+      const readResult = await readFileWithStats(rawPath, options.pathGuard);
 
       return {
         contents: [
-          isBinary
-            ? {
-                uri: uri.href,
-                mimeType: mimeInfo.mimeType,
-                blob: content.toString('base64'),
-              }
-            : {
-                uri: uri.href,
-                mimeType: mimeInfo.mimeType,
-                text: content.toString('utf-8'),
-              },
+          {
+            uri: uri.href,
+            mimeType: readResult.mimeType || 'application/octet-stream',
+            ...(readResult.isBinary
+              ? { blob: readResult.content.toString('base64') }
+              : { text: readResult.content.toString('utf-8') }),
+          },
         ],
       };
     },
 
     async complete(variable, value) {
       if (variable === 'path' && options.pathGuard) {
-        // value doesn't have the leading '/' because the template expands as {+path} (without root slash if typed as relative)
-        // path-completer expects absolute paths starting with /, but we must handle relative typing
-        return completePathCached('/' + value, { pathGuard: options.pathGuard });
+        return completePathCached(value, { pathGuard: options.pathGuard });
       }
       return [];
     },
