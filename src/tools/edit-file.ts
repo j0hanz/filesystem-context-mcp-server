@@ -11,16 +11,21 @@ import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
 import { readFileWithStats } from '../lib/file-content.js';
 import { Logger } from '../lib/logger.js';
+import { detectMimeType } from '../lib/mime.js';
 import type { PathGuard } from '../lib/path-guard.js';
+import type { ResourceStore } from '../lib/resource-store.js';
 import { runInWorker, shouldOffload } from '../lib/worker-pool.js';
 import { NonNegInt, PositiveInt, RequiredPath } from '../schemas/fields.js';
 import { defaultFalseBoolean } from '../schemas/shared.js';
 
+import { formatBytes } from '../config.js';
 import { defineTool } from './define-tool.js';
 import { FILE_EDIT_ICONS } from './icons.js';
 import {
+  buildResourceResponse,
   buildToolResponse,
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
+  putResource,
   type ToolContract,
   type ToolResult,
 } from './shared.js';
@@ -52,7 +57,15 @@ const EditFileInputSchema = z.strictObject({
 const EditFileOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),
   path: z.string().describe('File path'),
-  appliedEdits: NonNegInt.describe('Edits applied'),
+  size: NonNegInt.describe('File size in bytes'),
+  lineCount: NonNegInt.describe('Number of lines in file'),
+  mimeType: z.string().describe('MIME type of the file'),
+  kind: z
+    .enum(['text', 'binary', 'image', 'audio', 'pdf'])
+    .describe('File kind'),
+  resourceUri: z.string().describe('Full content URI in resource store'),
+  modified: z.string().describe('Last modification timestamp (ISO 8601)'),
+  appliedEdits: NonNegInt.optional().describe('Edits applied'),
   linesAdded: NonNegInt.optional().describe('Lines added'),
   linesRemoved: NonNegInt.optional().describe('Lines removed'),
   diff: z.string().optional().describe('Unified diff of changes'),
@@ -95,6 +108,7 @@ interface EditResult {
   unmatchedEdits: string[];
   linesAdded: number;
   linesRemoved: number;
+  diff?: string;
   lineRange?: [number, number];
 }
 
@@ -212,23 +226,50 @@ function mergeLineRange(
   ];
 }
 
+interface BuildStructuredEditOutputParams {
+  validPath: string;
+  size: number;
+  lineCount: number;
+  mimeType: string;
+  kind: 'text' | 'binary' | 'image' | 'audio' | 'pdf';
+  resourceUri: string;
+  modified: string;
+  result: EditResult;
+}
+
 function buildStructuredEditOutput(
-  validPath: string,
-  result: EditResult
+  params: BuildStructuredEditOutputParams
 ): EditOutput {
+  const {
+    validPath,
+    size,
+    lineCount,
+    mimeType,
+    kind,
+    resourceUri,
+    modified,
+    result,
+  } = params;
   return {
     ok: true as const,
     path: validPath,
-    appliedEdits: result.appliedEdits,
+    size,
+    lineCount,
+    mimeType,
+    kind,
+    resourceUri,
+    modified,
     ...(result.appliedEdits > 0
       ? {
+          appliedEdits: result.appliedEdits,
           linesAdded: result.linesAdded,
           linesRemoved: result.linesRemoved,
         }
-      : {}),
+      : { appliedEdits: 0 }),
     ...(result.unmatchedEdits.length > 0
       ? { unmatchedEdits: result.unmatchedEdits }
       : {}),
+    ...(result.diff ? { diff: result.diff } : {}),
     ...(result.lineRange ? { lineRange: result.lineRange } : {}),
   };
 }
@@ -419,8 +460,13 @@ async function applyEdits(
 async function handleEditFile(
   args: EditInput,
   pathGuard: PathGuard,
+  resourceStore: ResourceStore | undefined,
   signal?: AbortSignal
-): Promise<z.infer<typeof EditFileOutputSchema>> {
+): Promise<{
+  structured: EditOutput;
+  editedContent: string;
+  validPath: string;
+}> {
   const { validPath, content } = await loadEditableFile(
     args.path,
     pathGuard,
@@ -431,14 +477,44 @@ async function handleEditFile(
     args.edits,
     args.ignoreWhitespace
   );
-  const structured = buildStructuredEditOutput(validPath, editResult);
 
   if (args.dryRun) {
     if (editResult.appliedEdits > 0) {
-      structured.diff = await buildDiff(validPath, content, editResult.content);
+      editResult.diff = await buildDiff(validPath, content, editResult.content);
     }
 
-    return structured;
+    // For dryRun, calculate stats and optionally store in resource store
+    const bytesWritten = Buffer.byteLength(editResult.content, 'utf-8');
+    const lineCount = editResult.content.split('\n').length;
+    const mimeInfo = detectMimeType(validPath, Buffer.from(editResult.content));
+
+    let resourceUri = '';
+    // For dryRun with changes, store the hypothetical edited content in resource
+    if (editResult.appliedEdits > 0 && resourceStore) {
+      const { entry } = putResource({
+        store: resourceStore,
+        name: basename(validPath),
+        mimeType: mimeInfo.mimeType,
+        kind: mimeInfo.kind,
+        content: editResult.content,
+      });
+      resourceUri = entry.uri;
+    }
+
+    return {
+      structured: buildStructuredEditOutput({
+        validPath,
+        size: bytesWritten,
+        lineCount,
+        mimeType: mimeInfo.mimeType,
+        kind: mimeInfo.kind,
+        resourceUri,
+        modified: new Date().toISOString(),
+        result: editResult,
+      }),
+      editedContent: editResult.content,
+      validPath,
+    };
   }
 
   if (editResult.appliedEdits === 0 && editResult.unmatchedEdits.length > 0) {
@@ -459,25 +535,91 @@ async function handleEditFile(
     );
   }
 
-  return structured;
+  // Get file stats after writing
+  const fileStats = await withAbort(stat(validPath), signal);
+  const bytesWritten = Buffer.byteLength(editResult.content, 'utf-8');
+  const lineCount = editResult.content.split('\n').length;
+  const mimeInfo = detectMimeType(validPath, Buffer.from(editResult.content));
+
+  // Store in resource store if available and edits were made
+  let resourceUri = '';
+  if (editResult.appliedEdits > 0 && resourceStore) {
+    const { entry } = putResource({
+      store: resourceStore,
+      name: basename(validPath),
+      mimeType: mimeInfo.mimeType,
+      kind: mimeInfo.kind,
+      content: editResult.content,
+    });
+    resourceUri = entry.uri;
+  }
+
+  return {
+    structured: buildStructuredEditOutput({
+      validPath,
+      size: bytesWritten,
+      lineCount,
+      mimeType: mimeInfo.mimeType,
+      kind: mimeInfo.kind,
+      resourceUri,
+      modified: fileStats.mtime.toISOString(),
+      result: editResult,
+    }),
+    editedContent: editResult.content,
+    validPath,
+  };
 }
 
 export const EDIT_FILE = defineTool<EditInput, EditOutput>({
   contract: EDIT_FILE_TOOL,
   run: async (args, ctx) => {
-    const structured = await handleEditFile(args, ctx.pathGuard, ctx.signal);
+    const { structured } = await handleEditFile(
+      args,
+      ctx.pathGuard,
+      ctx.resourceStore,
+      ctx.signal
+    );
+
+    void ctx.log?.(
+      'info',
+      `edit: ${args.path} (${String(structured.appliedEdits ?? 0)} edits)`,
+      'edit'
+    );
+
+    // If resource was already stored in handler, use resource response
+    if (structured.resourceUri) {
+      const summary = [
+        `edit-file: edited ${basename(structured.path)}`,
+        formatBytes(structured.size),
+        `${structured.lineCount} lines`,
+      ].join(' · ');
+
+      const link = {
+        type: 'resource_link' as const,
+        uri: structured.resourceUri,
+        name: basename(structured.path),
+        mimeType: structured.mimeType,
+        size: structured.size,
+        annotations: {
+          audience: ['user' as const],
+        },
+      };
+
+      return buildResourceResponse({
+        summary,
+        resources: [link],
+        structured,
+      });
+    }
+
+    // Otherwise return basic tool response
     const message = buildEditMessage(args.path, {
-      appliedEdits: structured.appliedEdits,
+      appliedEdits: structured.appliedEdits ?? 0,
       unmatchedEdits: structured.unmatchedEdits ?? [],
       content: '',
       linesAdded: structured.linesAdded ?? 0,
       linesRemoved: structured.linesRemoved ?? 0,
     });
-    void ctx.log?.(
-      'info',
-      `edit: ${args.path} (${String(structured.appliedEdits)} edits)`,
-      'edit'
-    );
     return buildToolResponse(message, structured);
   },
   progressMessage: buildEditProgressMessage,

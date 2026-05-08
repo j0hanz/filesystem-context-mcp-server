@@ -251,9 +251,7 @@ describe('write tool', () => {
     assert.ok(typeof sc['mimeType'] === 'string');
     assert.ok(typeof sc['kind'] === 'string');
     assert.ok(typeof sc['resourceUri'] === 'string');
-    assert.ok(
-      (sc['resourceUri']).includes('filesystem-mcp://result/')
-    );
+    assert.ok(sc['resourceUri'].includes('filesystem-mcp://result/'));
     assert.ok(typeof sc['created'] === 'string');
     assert.ok(typeof sc['modified'] === 'string');
 
@@ -701,11 +699,39 @@ describe('edit tool', () => {
     });
     const result = raw;
     assertOk(result);
+    const sc = getStructured(result);
+
+    // Verify structured content has required fields
+    assert.equal(sc['ok'], true);
+    assert.equal(typeof sc['size'], 'number');
+    assert.equal(typeof sc['lineCount'], 'number');
+    assert.equal(typeof sc['mimeType'], 'string');
+    assert.equal(typeof sc['kind'], 'string');
+    assert.equal(typeof sc['resourceUri'], 'string');
+    assert.ok(
+      (sc['resourceUri'] as string).includes('filesystem-mcp://result/')
+    );
+    assert.equal(typeof sc['modified'], 'string');
+    assert.equal(sc['appliedEdits'], 1);
+
+    // Verify summary includes "edit-file:" and file path
+    assert.equal(result.content.length, 2);
+    assert.equal(result.content[0].type, 'text');
+    const summary = (result.content[0] as Record<string, unknown>)
+      .text as string;
+    assert.ok(summary.includes('edit-file:'));
+    assert.ok(summary.includes('edit-me.txt'));
+
+    // Verify resource_link
+    assert.equal(result.content[1].type, 'resource_link');
+    const link = result.content[1] as Record<string, unknown>;
+    assert.ok((link.uri as string).includes('filesystem-mcp://result/'));
+
     const actual = await readFile(file, 'utf8');
     assert.equal(actual, 'foo BAR baz\n');
   });
 
-  it('dryRun:true does not modify the file', async () => {
+  it('dryRun:true does not modify the file but stores in resource', async () => {
     const file = join(env.tmpDir, 'dry-edit.txt');
     await writeFile(file, 'original content\n', 'utf8');
     const raw = await env.client.callTool({
@@ -717,6 +743,20 @@ describe('edit tool', () => {
       },
     });
     assertOk(raw);
+    const sc = getStructured(raw);
+
+    // Verify structured content
+    assert.equal(sc['ok'], true);
+    assert.equal(sc['appliedEdits'], 1);
+    assert.equal(typeof sc['resourceUri'], 'string');
+    assert.ok(
+      (sc['resourceUri'] as string).includes('filesystem-mcp://result/')
+    );
+
+    // Verify diff is present in dryRun
+    assert.equal(typeof sc['diff'], 'string');
+
+    // File should not be modified
     const actual = await readFile(file, 'utf8');
     assert.equal(
       actual,
@@ -771,6 +811,16 @@ describe('edit tool', () => {
     assertOk(raw);
     const sc = getStructured(raw);
     assert.equal(sc['appliedEdits'], 2);
+    assert.equal(typeof sc['resourceUri'], 'string');
+    assert.ok(
+      (sc['resourceUri'] as string).includes('filesystem-mcp://result/')
+    );
+    assert.equal(typeof sc['mimeType'], 'string');
+    assert.equal(typeof sc['lineCount'], 'number');
+
+    // Verify summary includes "edit-file:"
+    const summary = (raw.content[0] as Record<string, unknown>).text as string;
+    assert.ok(summary.includes('edit-file:'));
 
     const actual = await readFile(file, 'utf8');
     assert.equal(actual, 'alpha\ndelta\n');
@@ -794,6 +844,10 @@ describe('edit tool', () => {
     assert.equal(sc['appliedEdits'], 1);
     assert.equal(sc['linesAdded'], 2);
     assert.equal(sc['linesRemoved'], 1);
+    assert.equal(typeof sc['resourceUri'], 'string');
+    assert.ok(
+      (sc['resourceUri'] as string).includes('filesystem-mcp://result/')
+    );
     assert.match(sc['diff'] as string, /^--- dry-diff\.txt/m);
     assert.match(sc['diff'] as string, /^\+beta-1$/m);
     assert.match(sc['diff'] as string, /^\+beta-2$/m);
