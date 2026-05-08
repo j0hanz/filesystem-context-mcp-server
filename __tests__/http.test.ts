@@ -62,7 +62,10 @@ async function rawHttpRequest(params: {
         });
         res.on('error', reject);
         res.on('end', () => {
-          const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
+          const totalLength = chunks.reduce(
+            (acc, chunk) => acc + chunk.length,
+            0
+          );
           resolve({
             statusCode: res.statusCode ?? 0,
             headers: res.headers,

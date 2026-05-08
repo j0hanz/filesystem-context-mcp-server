@@ -6,6 +6,9 @@ import {
   ResourceTemplate,
 } from '@modelcontextprotocol/server';
 
+import { type FSWatcher, watch } from 'node:fs';
+
+import type { PathGuard } from './lib/path-guard.js';
 import type { ResourceStore } from './lib/resource-store.js';
 
 import { SLIM_INSTRUCTIONS_CONTENT } from './resources/instructions-content.js';
@@ -14,6 +17,11 @@ import { type IconInfo, withDefaultIcons } from './tools/shared.js';
 export interface ResourceRegistrationOptions {
   resourceStore: ResourceStore;
   iconInfo?: IconInfo;
+  pathGuard?: PathGuard;
+}
+
+export interface ResourcesHandle {
+  destroy(): void;
 }
 
 export { SLIM_INSTRUCTIONS_CONTENT as serverInstructionsContent };
@@ -23,10 +31,25 @@ const RESULT_TEMPLATE = new ResourceTemplate('filesystem-mcp://result/{id}', {
   list: undefined,
 });
 
+// ─── File-watch subscription helpers ─────────────────────────────────────────
+
+const FILE_URI_PREFIX = 'filesystem-mcp://file';
+
+function uriToAbsoluteFilePath(uri: string): string | undefined {
+  if (!uri.startsWith(FILE_URI_PREFIX)) return undefined;
+  const rawPath = uri.slice(FILE_URI_PREFIX.length);
+  if (!rawPath.startsWith('/')) return undefined;
+  try {
+    return decodeURIComponent(rawPath.slice(1));
+  } catch {
+    return undefined;
+  }
+}
+
 export function registerAllResources(
   server: McpServer,
   options: ResourceRegistrationOptions
-): void {
+): ResourcesHandle {
   server.registerResource(
     'filesystem-mcp-instructions',
     INSTRUCTIONS_URI,
@@ -91,4 +114,54 @@ export function registerAllResources(
       };
     }
   );
+
+  // ─── File-watch subscriptions ─────────────────────────────────────────────
+
+  const watchers = new Map<string, FSWatcher>();
+
+  server.server.setRequestHandler(
+    'resources/subscribe',
+    async (req: { params: { uri: string } }) => {
+      const { uri } = req.params;
+      if (options.pathGuard && !watchers.has(uri)) {
+        const filePath = uriToAbsoluteFilePath(uri);
+        if (filePath) {
+          try {
+            const resolved =
+              await options.pathGuard.validateExistingPath(filePath);
+            const watcher = watch(resolved, () => {
+              void server.server.sendResourceUpdated({ uri }).catch(() => {
+                // Transport may already be closed — best effort.
+              });
+            });
+            watchers.set(uri, watcher);
+          } catch {
+            // Path not allowed or does not exist — silently ignore.
+          }
+        }
+      }
+      return {};
+    }
+  );
+
+  server.server.setRequestHandler(
+    'resources/unsubscribe',
+    (req: { params: { uri: string } }) => {
+      const watcher = watchers.get(req.params.uri);
+      if (watcher) {
+        watcher.close();
+        watchers.delete(req.params.uri);
+      }
+      return {};
+    }
+  );
+
+  return {
+    destroy(): void {
+      for (const watcher of watchers.values()) {
+        watcher.close();
+      }
+      watchers.clear();
+    },
+  };
 }

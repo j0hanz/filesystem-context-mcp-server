@@ -50,6 +50,7 @@ import {
 } from '../prompts.js';
 import {
   registerAllResources,
+  type ResourcesHandle,
   serverInstructionsContent,
 } from '../resources.js';
 import { registerAllTools } from '../tools.js';
@@ -74,7 +75,7 @@ function buildServerCapabilities(
 ): NonOptionalServerCapabilities {
   const capabilities: NonOptionalServerCapabilities = {
     logging: {},
-    resources: {},
+    resources: { subscribe: true, listChanged: true },
     tools: {},
     prompts: options.enablePromptListChanged ? { listChanged: true } : {},
     completions: {},
@@ -101,6 +102,7 @@ const {
 } = pkgInfo;
 
 const rootsManagers = new WeakMap<McpServer, RootsManager>();
+const resourceHandles = new WeakMap<McpServer, ResourcesHandle>();
 
 function getRootsManager(server: McpServer): RootsManager {
   const manager = rootsManagers.get(server);
@@ -195,10 +197,12 @@ export async function createServer(
   // Track stdio server by default; HTTP overrides per-session via the registry.
   logRouter.attachStdio({ server, loggingState });
 
-  registerAllResources(server, {
+  const resourcesHandle = registerAllResources(server, {
     resourceStore,
+    pathGuard: rootsManager.pathGuard,
     ...(localIcon ? { iconInfo: localIcon } : {}),
   });
+  resourceHandles.set(server, resourcesHandle);
 
   registerGetHelpPrompt(server, serverInstructionsContent, localIcon);
   registerCompareFilesPrompt(server, rootsManager.pathGuard, localIcon);
@@ -233,6 +237,7 @@ export async function startServer(serverAndHandle: {
   await server.connect(transport);
   const sdkOnClose = transport.onclose;
   transport.onclose = () => {
+    resourceHandles.get(server)?.destroy();
     rootsManager.destroy();
     logRouter.detachStdio();
     sdkOnClose?.();
@@ -510,6 +515,7 @@ async function createHttpSession(
   const cleanup = (): void => {
     if (cleanedUp) return;
     cleanedUp = true;
+    resourceHandles.get(mcpServer)?.destroy();
     const { sessionId } = transport;
     if (sessionId) {
       registry.remove(sessionId);
