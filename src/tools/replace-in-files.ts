@@ -21,6 +21,7 @@ import {
 import { globEntries } from '../lib/fs-walk.js';
 import { Logger } from '../lib/logger.js';
 import { validateExistingPath, validatePathForWrite } from '../lib/paths.js';
+import { runInWorker, shouldOffload } from '../lib/worker-pool.js';
 import {
   safeGlobConstraint,
   toToolJsonSchema,
@@ -319,24 +320,38 @@ async function maybeAppendPatchDiff(
     return;
   }
 
-  const patch = await new Promise<string>((resolve) => {
-    // Defer to event loop to avoid blocking on large diffs
-    setImmediate(() => {
-      createTwoFilesPatch(
-        basename(params.filePath),
-        basename(params.filePath),
-        params.originalContent,
-        params.updatedContent,
-        'Original',
-        'Modified',
-        {
-          callback: (res: string | undefined) => {
-            resolve(res ?? '');
-          },
-        }
-      );
+  const patch = await (async (): Promise<string> => {
+    const totalBytes =
+      Buffer.byteLength(params.originalContent) +
+      Buffer.byteLength(params.updatedContent);
+    if (shouldOffload(totalBytes)) {
+      const result = await runInWorker('diffLines', {
+        oldStr: params.originalContent,
+        newStr: params.updatedContent,
+        oldHeader: basename(params.filePath),
+        newHeader: basename(params.filePath),
+      });
+      return result.unifiedDiff;
+    }
+    return new Promise<string>((resolve) => {
+      // Defer to event loop to avoid blocking on large diffs
+      setImmediate(() => {
+        createTwoFilesPatch(
+          basename(params.filePath),
+          basename(params.filePath),
+          params.originalContent,
+          params.updatedContent,
+          'Original',
+          'Modified',
+          {
+            callback: (res: string | undefined) => {
+              resolve(res ?? '');
+            },
+          }
+        );
+      });
     });
-  });
+  })();
 
   if (
     summary.diff.length + patch.length <=

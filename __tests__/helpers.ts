@@ -19,6 +19,9 @@ import { createTaskStore } from '../src/server/task-store.js';
 import { registerAllTools } from '../src/tools.js';
 import { LinkedTransport } from './linked-transport.js';
 
+// Disable worker threads in integration tests — workers are tested separately.
+process.env.FS_DISABLE_WORKERS ??= '1';
+
 interface TestContentBlock {
   type: string;
   text?: string;

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
+import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 
 import type { StructuredPatch } from 'diff';
-import { test } from 'node:test';
 
 const workerUrl = new URL('../../src/lib/worker.ts', import.meta.url);
 
@@ -23,9 +23,7 @@ function once<T>(w: Worker): Promise<T> {
 }
 
 test('worker dispatch handles diff task', async () => {
-  const w = new Worker(fileURLToPath(workerUrl), {
-    execArgv: ['--import', 'tsx/esm'],
-  });
+  const w = new Worker(fileURLToPath(workerUrl));
   try {
     const msg = once<SuccessResponse>(w);
     w.postMessage({
@@ -49,9 +47,7 @@ test('worker dispatch handles diff task', async () => {
 });
 
 test('worker dispatch reports error for unknown task', async () => {
-  const w = new Worker(fileURLToPath(workerUrl), {
-    execArgv: ['--import', 'tsx/esm'],
-  });
+  const w = new Worker(fileURLToPath(workerUrl));
   try {
     const msg = once<{
       id: number;

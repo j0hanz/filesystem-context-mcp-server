@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it, test } from 'node:test';
 
+import {
+  WORKER_CANCEL_GRACE_MS,
+  WORKER_IDLE_TIMEOUT_MS,
+  WORKER_OFFLOAD_THRESHOLD_BYTES,
+  WORKER_POOL_MAX,
+  WORKERS_DISABLED,
+} from '../../src/lib/constants.js';
+
 describe('FS_CONTEXT_MAX_INLINE_MATCHES parsing', () => {
   const ORIG = process.env['FS_CONTEXT_MAX_INLINE_MATCHES'];
 
@@ -28,13 +36,6 @@ describe('FS_CONTEXT_MAX_INLINE_MATCHES parsing', () => {
     assert.equal(result, 25);
   });
 });
-import {
-  WORKER_CANCEL_GRACE_MS,
-  WORKER_IDLE_TIMEOUT_MS,
-  WORKER_OFFLOAD_THRESHOLD_BYTES,
-  WORKER_POOL_MAX,
-  WORKERS_DISABLED,
-} from '../../src/lib/constants.js';
 
 test('worker constants are within sensible bounds', () => {
   assert.ok(WORKER_POOL_MAX >= 1 && WORKER_POOL_MAX <= 4);

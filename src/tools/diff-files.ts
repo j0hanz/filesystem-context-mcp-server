@@ -8,6 +8,7 @@ import { withAbort } from '../lib/abort.js';
 import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
 import { validateExistingPath } from '../lib/paths.js';
+import { runInWorker, shouldOffload } from '../lib/worker-pool.js';
 import { DiffFilesInputSchema } from '../schemas/inputs.js';
 import { DiffFilesOutputSchema } from '../schemas/outputs.js';
 
@@ -104,25 +105,45 @@ async function handleDiffFiles(
     readFile(modifiedPath, { encoding: 'utf-8', signal }),
   ]);
 
-  const patchObj = await new Promise<StructuredPatch | undefined>((resolve) => {
-    structuredPatch(
-      basename(originalPath),
-      basename(modifiedPath),
-      originalContent,
-      modifiedContent,
-      undefined,
-      undefined,
-      {
-        ...(args.context !== undefined ? { context: args.context } : {}),
-        ignoreWhitespace: args.ignoreWhitespace,
-        stripTrailingCr: args.stripTrailingCr,
-        timeout: 10000,
-        callback: (res) => {
-          resolve(res);
+  const totalBytes = originalStats.size + modifiedStats.size;
+
+  const patchObj = shouldOffload(totalBytes)
+    ? await runInWorker(
+        'diff',
+        {
+          oldStr: originalContent,
+          newStr: modifiedContent,
+          oldHeader: basename(originalPath),
+          newHeader: basename(modifiedPath),
+          ...(args.context !== undefined ? { context: args.context } : {}),
+          ...(args.ignoreWhitespace
+            ? { ignoreWhitespace: args.ignoreWhitespace }
+            : {}),
+          ...(args.stripTrailingCr
+            ? { stripTrailingCr: args.stripTrailingCr }
+            : {}),
         },
-      }
-    );
-  });
+        signal ? { signal } : {}
+      )
+    : await new Promise<StructuredPatch | undefined>((resolve) => {
+        structuredPatch(
+          basename(originalPath),
+          basename(modifiedPath),
+          originalContent,
+          modifiedContent,
+          undefined,
+          undefined,
+          {
+            ...(args.context !== undefined ? { context: args.context } : {}),
+            ignoreWhitespace: args.ignoreWhitespace,
+            stripTrailingCr: args.stripTrailingCr,
+            timeout: 10000,
+            callback: (res) => {
+              resolve(res);
+            },
+          }
+        );
+      });
 
   if (!patchObj) {
     throw new McpError(

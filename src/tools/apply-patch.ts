@@ -1,7 +1,12 @@
 import { stat } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
-import { applyPatch, parsePatch, type StructuredPatch } from 'diff';
+import {
+  applyPatch,
+  formatPatch,
+  parsePatch,
+  type StructuredPatch,
+} from 'diff';
 import type { z } from 'zod/v4';
 
 import { withAbort } from '../lib/abort.js';
@@ -12,6 +17,7 @@ import { readFileWithStats } from '../lib/file-content.js';
 import { Logger } from '../lib/logger.js';
 import { processInParallel } from '../lib/parallel.js';
 import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
+import { runInWorker, shouldOffload } from '../lib/worker-pool.js';
 import { ApplyPatchInputSchema } from '../schemas/inputs.js';
 import { ApplyPatchOutputSchema } from '../schemas/outputs.js';
 
@@ -124,10 +130,27 @@ async function applyDiff(
     ...(signal ? { signal } : {}),
   });
 
-  const patched = applyPatch(content, diff, {
-    fuzzFactor: options.fuzzFactor,
-    autoConvertLineEndings: options.autoConvertLineEndings,
-  });
+  const patched = await (async (): Promise<string | false> => {
+    const patchText = formatPatch(diff);
+    const totalBytes = content.length + patchText.length;
+    if (shouldOffload(totalBytes)) {
+      const result = await runInWorker(
+        'applyPatch',
+        {
+          source: content,
+          patchText,
+          fuzzFactor: options.fuzzFactor,
+          autoConvertLineEndings: options.autoConvertLineEndings,
+        },
+        signal ? { signal } : {}
+      );
+      return result.applied;
+    }
+    return applyPatch(content, diff, {
+      fuzzFactor: options.fuzzFactor,
+      autoConvertLineEndings: options.autoConvertLineEndings,
+    });
+  })();
 
   if (patched === false) {
     return { path: validPath, applied: false };

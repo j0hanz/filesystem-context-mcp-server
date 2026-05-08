@@ -8,6 +8,7 @@ import { createTimedAbortSignal } from './lib/abort.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS } from './lib/constants.js';
 import { formatUnknownErrorMessage } from './lib/errors.js';
 import { setAllowedDirectoriesResolved } from './lib/paths.js';
+import { shutdownWorkerPool } from './lib/worker-pool.js';
 
 import { CliExitError, parseArgs } from './cli.js';
 import { createServer, startHttpServer, startServer } from './server.js';
@@ -56,6 +57,7 @@ async function shutdown(reason: string, exitCode = 0): Promise<void> {
     if (activeServer) {
       await activeServer.close();
     }
+    await shutdownWorkerPool();
     keepForceExitTimer = false;
   } catch (error: unknown) {
     console.error(

@@ -1,19 +1,21 @@
 /**
- * Single-file worker offload primitive.
+ * Worker-thread entry point and shared types.
  *
- * Main-thread side: lazy WorkerPool, threshold gate, abort handling, error
- *   rehydration. Used by tools that hand large diff/patch payloads to a
- *   worker via runInWorker().
+ * This file is loaded as a Worker thread entry by worker-pool.ts. It MUST NOT
+ * import from project TypeScript files (only npm packages + built-ins) because
+ * tsx's module.register() hooks are async and not active during the worker's
+ * static import phase. Only `import type` (erased at runtime) is allowed for
+ * project types.
  *
  * Worker-thread side: dispatch loop. Receives { id, name, payload }, runs
  *   the matching handler from the diff package, posts back { id, ok, value }
  *   or { id, ok: false, error }. No I/O, no path validation, no allowed-
- *   directories state — those stay on the main thread.
+ *   directories state — those stay on the main thread (worker-pool.ts).
  *
- * Security note: this pool is process-global. Workers receive only the
- *   strings they need (oldStr, newStr, patchText) — never paths, session
- *   tokens, or AsyncLocalStorage state. Path validation always runs on the
- *   main thread before runInWorker is called.
+ * Security note: workers receive only the strings they need (oldStr, newStr,
+ *   patchText) — never paths, session tokens, or AsyncLocalStorage state.
+ *   Path validation always runs on the main thread before runInWorker is
+ *   called.
  */
 import { isMainThread, parentPort } from 'node:worker_threads';
 
@@ -30,6 +32,9 @@ import {
 
 import type { ErrorCode } from '../config.js';
 
+/** URL of this file — used by worker-pool.ts to spawn worker threads. */
+export const WORKER_ENTRY_URL = new URL(import.meta.url);
+
 // ---- shared types (used by both sides) ---------------------------------
 
 export type WorkerTaskName =
@@ -44,6 +49,8 @@ export interface DiffPayload {
   oldHeader: string;
   newHeader: string;
   context?: number;
+  ignoreWhitespace?: boolean;
+  stripTrailingCr?: boolean;
 }
 
 export interface FormatPatchPayload {
@@ -54,6 +61,7 @@ export interface ApplyPatchPayload {
   source: string;
   patchText: string;
   fuzzFactor?: number;
+  autoConvertLineEndings?: boolean;
 }
 
 export interface DiffLinesPayload {
@@ -93,7 +101,7 @@ interface TaskRequest {
   payload: TaskPayloadMap[WorkerTaskName];
 }
 
-interface SerializedMcpError {
+export interface SerializedMcpError {
   kind: 'mcp';
   code: ErrorCode;
   message: string;
@@ -101,33 +109,31 @@ interface SerializedMcpError {
   details?: Record<string, unknown>;
 }
 
-interface SerializedGenericError {
+export interface SerializedGenericError {
   kind: 'generic';
   message: string;
   stack?: string;
 }
 
-type SerializedError = SerializedMcpError | SerializedGenericError;
+export type SerializedError = SerializedMcpError | SerializedGenericError;
 
-interface TaskResponseSuccess {
+export interface TaskResponseSuccess {
   id: number;
   ok: true;
   value: TaskResultMap[WorkerTaskName];
 }
 
-interface TaskResponseFailure {
+export interface TaskResponseFailure {
   id: number;
   ok: false;
   error: SerializedError;
 }
 
-type TaskResponse = TaskResponseSuccess | TaskResponseFailure;
+export type TaskResponse = TaskResponseSuccess | TaskResponseFailure;
 
 // ---- worker-side: dispatch loop ----------------------------------------
 
-function isMcpErrorLike(
-  e: unknown
-): e is {
+function isMcpErrorLike(e: unknown): e is {
   name: string;
   code: ErrorCode;
   message: string;
@@ -176,7 +182,13 @@ function runHandler<N extends WorkerTaskName>(
         p.newStr,
         '',
         '',
-        p.context !== undefined ? { context: p.context } : undefined
+        {
+          ...(p.context !== undefined ? { context: p.context } : {}),
+          ...(p.ignoreWhitespace
+            ? { ignoreWhitespace: p.ignoreWhitespace }
+            : {}),
+          ...(p.stripTrailingCr ? { stripTrailingCr: p.stripTrailingCr } : {}),
+        }
       );
       return result as TaskResultMap[N];
     }
@@ -191,11 +203,14 @@ function runHandler<N extends WorkerTaskName>(
       const applied =
         patch === null
           ? false
-          : applyPatch(
-              p.source,
-              patch,
-              p.fuzzFactor !== undefined ? { fuzzFactor: p.fuzzFactor } : {}
-            );
+          : applyPatch(p.source, patch, {
+              ...(p.fuzzFactor !== undefined
+                ? { fuzzFactor: p.fuzzFactor }
+                : {}),
+              ...(p.autoConvertLineEndings !== undefined
+                ? { autoConvertLineEndings: p.autoConvertLineEndings }
+                : {}),
+            });
       const result: ApplyPatchResult = { applied, patch };
       return result as TaskResultMap[N];
     }
@@ -233,8 +248,3 @@ if (!isMainThread && parentPort) {
     port.postMessage(response);
   });
 }
-
-// ---- main-side exports (placeholder; pool added in Task 3) -------------
-
-// Intentionally empty in this task. Task 3 fills in shouldOffload(),
-// runInWorker(), and shutdownWorkerPool().

@@ -12,6 +12,7 @@ import { ErrorCode, McpError } from '../lib/errors.js';
 import { readFileWithStats } from '../lib/file-content.js';
 import { Logger } from '../lib/logger.js';
 import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
+import { runInWorker, shouldOffload } from '../lib/worker-pool.js';
 import { EditFileInputSchema } from '../schemas/inputs.js';
 import { EditFileOutputSchema } from '../schemas/outputs.js';
 
@@ -219,6 +220,16 @@ async function buildDiff(
   modified: string
 ): Promise<string> {
   const fileName = basename(validPath);
+  const totalBytes = Buffer.byteLength(original) + Buffer.byteLength(modified);
+  if (shouldOffload(totalBytes)) {
+    const result = await runInWorker('diffLines', {
+      oldStr: original,
+      newStr: modified,
+      oldHeader: fileName,
+      newHeader: fileName,
+    });
+    return result.unifiedDiff;
+  }
   return new Promise<string>((resolve) => {
     createTwoFilesPatch(
       fileName,
