@@ -1,3 +1,5 @@
+import type { ContentBlock } from '@modelcontextprotocol/server';
+
 import { basename, relative } from 'node:path';
 
 import { z } from 'zod/v4';
@@ -44,9 +46,8 @@ import {
 import { defineTool } from './define-tool.js';
 import { DIRECTORY_ICONS } from './icons.js';
 import {
-  buildResourceLink,
-  buildToolResponse,
-  maybeExternalizeTextContent,
+  buildResourceResponse,
+  putResource,
   READ_ONLY_TOOL_ANNOTATIONS,
   type ToolContract,
   type ToolRegistrationOptions,
@@ -312,6 +313,28 @@ function formatTreeAscii(tree: TreeEntry): string {
   return lines.join('\n');
 }
 
+function countTreeEntries(node: TreeEntry): number {
+  let count = 1;
+  if (node.children) {
+    for (const child of node.children) {
+      count += countTreeEntries(child);
+    }
+  }
+  return count;
+}
+
+function calculateMaxDepth(node: TreeEntry, currentDepth = 0): number {
+  if (!node.children || node.children.length === 0) {
+    return currentDepth;
+  }
+  let maxDepth = currentDepth;
+  for (const child of node.children) {
+    const childDepth = calculateMaxDepth(child, currentDepth + 1);
+    maxDepth = Math.max(maxDepth, childDepth);
+  }
+  return maxDepth;
+}
+
 async function treeDirectory(
   dirPath: string,
   pathGuard: PathGuard,
@@ -463,13 +486,15 @@ const TreeOutputSchema = z.strictObject({
   tree: TreeNodeSchema.describe('Tree structure'),
   ascii: z.string().describe('ASCII tree representation'),
   totalEntries: NonNegInt.optional().describe('Total entries in tree'),
+  entryCount: NonNegInt.optional().describe('Entry count in tree'),
+  maxDepth: NonNegInt.optional().describe('Maximum depth of tree'),
   continuation: ContinuationSchema.optional().describe(
     'Present when tree was cut; call the named tool with the given args to continue'
   ),
   resourceUri: z
     .string()
     .optional()
-    .describe('Full ascii tree URI when externalised'),
+    .describe('Resource URI for full ASCII tree when stored'),
 });
 
 const TREE_TOOL: ToolContract = {
@@ -523,55 +548,53 @@ async function handleTree(
 
   const ascii = formatTreeAscii(result.tree);
 
-  const externalized = maybeExternalizeTextContent(resourceStore, ascii, {
-    name: `tree:${result.root}`,
-    mimeType: 'text/plain',
-  });
-
-  if (externalized) {
-    const { entry, preview } = externalized;
-    const continuation = buildTreeContinuation(
-      basePath,
-      result.truncated,
-      result.totalEntries
-    );
-    const structured: z.infer<typeof TreeOutputSchema> = {
-      ok: true,
-      root: result.root,
-      tree: result.tree,
-      ascii: preview,
-      ...(continuation ? { continuation } : {}),
-      totalEntries: result.totalEntries,
-      resourceUri: entry.uri,
-    };
-    const text = result.truncated ? `${preview}\n[truncated]` : preview;
-    return buildToolResponse(text, structured, [
-      buildResourceLink({
-        uri: entry.uri,
-        name: entry.name,
-        mimeType: entry.mimeType,
-        description: 'Full ASCII tree',
-        expiresAt: entry.expiresAt,
-      }),
-    ]);
-  }
+  // Calculate entry count and max depth from tree
+  const entryCount = countTreeEntries(result.tree);
+  const maxDepth = calculateMaxDepth(result.tree);
 
   const continuation = buildTreeContinuation(
     basePath,
     result.truncated,
     result.totalEntries
   );
+
+  let resourceUri: string | undefined;
+  let resources: ContentBlock[] = [];
+
+  if (resourceStore) {
+    const { entry, link } = putResource({
+      store: resourceStore,
+      name: `${basename(result.root)}-tree.txt`,
+      mimeType: 'text/plain',
+      kind: 'text',
+      content: ascii,
+    });
+    resourceUri = entry.uri;
+    resources = [link];
+  }
+
+  const dirname = basename(result.root) || result.root;
+  const depthLabel = maxDepth === 1 ? '1 level' : `${maxDepth} levels`;
+  const entriesLabel = entryCount === 1 ? '1 entry' : `${entryCount} entries`;
+  const summaryText = `tree: ${dirname} · ${entriesLabel} · ${depthLabel} deep`;
+
   const structured: z.infer<typeof TreeOutputSchema> = {
     ok: true,
     root: result.root,
     tree: result.tree,
     ascii,
+    entryCount,
+    maxDepth,
     ...(continuation ? { continuation } : {}),
     totalEntries: result.totalEntries,
+    ...(resourceUri ? { resourceUri } : {}),
   };
 
-  const text = result.truncated ? `${ascii}\n[truncated]` : ascii;
-  return buildToolResponse(text, structured);
+  return buildResourceResponse({
+    summary: summaryText,
+    resources,
+    structured,
+  });
 }
 
 export const TREE = defineTool<

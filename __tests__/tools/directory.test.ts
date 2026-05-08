@@ -212,16 +212,43 @@ describe('tree tool', () => {
     await env.cleanup();
   });
 
-  it('returns a tree structure with ok:true', async () => {
+  it('generates tree view with resource link', async () => {
     const raw = await env.client.callTool({
       name: 'tree',
       arguments: { path: env.tmpDir },
     });
     const result = raw;
     assertOk(result);
+
+    // Verify content blocks: first is summary text, second is resource_link
+    assert.equal(result.content.length, 2);
+    assert.equal(result.content[0].type, 'text');
+    const summaryText = (result.content[0] as Record<string, unknown>)
+      .text as string;
+    assert.ok(summaryText.includes('tree:'));
+    assert.ok(summaryText.includes('entries'));
+    assert.ok(summaryText.includes('deep'));
+
+    assert.equal(result.content[1].type, 'resource_link');
+    const resourceLink = result.content[1] as Record<string, unknown>;
+    assert.ok(
+      (resourceLink.uri as string).includes('filesystem-mcp://result/')
+    );
+    assert.ok((resourceLink.name as string).includes('-tree.txt'));
+    assert.equal(resourceLink.mimeType, 'text/plain');
+
+    // Verify structured content
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
     assert.ok(sc['tree'] !== undefined, 'Expected tree field');
+    assert.ok(sc['resourceUri']);
+    assert.ok(
+      (sc['resourceUri'] as string).includes('filesystem-mcp://result/')
+    );
+    assert.ok(typeof sc['entryCount'] === 'number');
+    assert.ok(typeof sc['maxDepth'] === 'number');
+    assert.ok(sc['entryCount'] > 0);
+    assert.ok(sc['maxDepth'] > 0);
   });
 
   it('respects maxDepth:1 to limit nesting', async () => {
@@ -233,6 +260,36 @@ describe('tree tool', () => {
     assertOk(result);
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
+  });
+
+  it('calculates max depth for large directory structure', async () => {
+    // Create a deeper nested structure
+    const deep1 = join(env.tmpDir, 'level1');
+    const deep2 = join(deep1, 'level2');
+    const deep3 = join(deep2, 'level3');
+    const deep4 = join(deep3, 'level4');
+    const deep5 = join(deep4, 'level5');
+    await mkdir(deep5, { recursive: true });
+    await writeFile(join(deep5, 'deep-file.txt'), 'very deep', 'utf8');
+
+    const raw = await env.client.callTool({
+      name: 'tree',
+      arguments: { path: env.tmpDir },
+    });
+    const result = raw;
+    assertOk(result);
+    const sc = getStructured(result);
+    assert.equal(sc['ok'], true);
+
+    // Verify max depth is calculated correctly (should be at least 5 for our structure)
+    const maxDepth = sc['maxDepth'] as number;
+    assert.ok(maxDepth >= 5, `Expected maxDepth >= 5, got ${maxDepth}`);
+
+    // Verify summary includes depth info
+    const summaryText = (result.content[0] as Record<string, unknown>)
+      .text as string;
+    assert.ok(summaryText.includes('deep'));
+    assert.ok(summaryText.includes('level'));
   });
 });
 
