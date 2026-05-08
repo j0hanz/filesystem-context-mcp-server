@@ -17,10 +17,6 @@ import {
 import { toPosixPath } from './paths.js';
 import { isRecord } from './utils.js';
 
-// ---------------------------------------------------------------------------
-// File-type helpers (previously in fs-helpers.ts)
-// ---------------------------------------------------------------------------
-
 export function getFileType(stats: Stats): FileType {
   if (stats.isFile()) return 'file';
   if (stats.isDirectory()) return 'directory';
@@ -31,10 +27,6 @@ export function getFileType(stats: Stats): FileType {
 export function isHidden(name: string): boolean {
   return name.startsWith('.');
 }
-
-// ---------------------------------------------------------------------------
-// Core types and utilities (previously in file-operations/core.ts)
-// ---------------------------------------------------------------------------
 
 export function needsStatsForSort(sortBy: string): boolean {
   return sortBy === 'size' || sortBy === 'modified';
@@ -256,10 +248,6 @@ export function isIgnoredByGitignore(
   return matcher.ignores(normalized);
 }
 
-// ---------------------------------------------------------------------------
-// Glob/traversal helpers (previously in file-operations/traversal.ts)
-// ---------------------------------------------------------------------------
-
 interface GlobDirentLike extends DirentLike {
   name: string;
   parentPath?: string;
@@ -393,10 +381,6 @@ function buildHiddenPatterns(
 }
 
 function assertOptionsShape(options: GlobEntriesOptions): void {
-  // Defense-in-depth runtime validation against malformed callers (e.g. JS
-  // consumers or future internal refactors). The double-cast is required to
-  // re-narrow a typed parameter back to `unknown` so the property checks below
-  // remain meaningful and ESLint-clean.
   const optsUnknown = options as unknown;
   if (typeof optsUnknown !== 'object' || optsUnknown === null) {
     throw new TypeError('globEntries: options must be an object');
