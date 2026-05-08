@@ -224,11 +224,21 @@ export function zodErrorToProblem(
   });
 }
 
-export function classify(error: unknown): Problem {
+function isMcpError(error: unknown): error is { problem: Problem } {
+  return (
+    error instanceof Error &&
+    error.name === 'McpError' &&
+    'problem' in error &&
+    typeof (error as { problem?: unknown }).problem === 'object'
+  );
+}
+
+export function classify(error: unknown, ctx?: { schema?: z.ZodType }): Problem {
   if (error === null || error === undefined) {
     return Problem.unknown('Unknown error');
   }
-  if (error instanceof z.ZodError) return zodErrorToProblem(error);
+  if (isMcpError(error)) return error.problem;
+  if (error instanceof z.ZodError) return zodErrorToProblem(error, ctx?.schema);
   if (!(error instanceof Error)) {
     return Problem.unknown(
       typeof error === 'string' ? error : '[non-Error thrown]',

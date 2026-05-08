@@ -1,10 +1,22 @@
-import { constants as osConstants } from 'node:os';
-import { getSystemErrorMap, getSystemErrorName, inspect } from 'node:util';
-
 import { ErrorCode, joinLines } from '../config.js';
+
+import {
+  classify as classifyProblem,
+  zodErrorToProblem,
+  type Problem,
+  type ProblemDetails,
+  type ProblemIssue,
+} from './problem.js';
+import {
+  DEFAULT_SUGGESTIONS,
+  resolveSuggestion,
+} from './error-suggestions.js';
 import { getTraceContext } from './observability.js';
 
 export { ErrorCode };
+export { type Problem, type ProblemIssue, type ProblemDetails };
+
+// ─── Type guard helpers ───────────────────────────────────────────────────────
 
 interface ErrorConstructorWithIsError extends ErrorConstructor {
   isError?: (value: unknown) => boolean;
@@ -18,14 +30,6 @@ function isNativeError(error: unknown): error is Error {
   return error instanceof Error;
 }
 
-interface DetailedError {
-  code: ErrorCode;
-  message: string;
-  path?: string;
-  suggestion?: string;
-  details?: Record<string, unknown>;
-}
-
 export function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   if (!isNativeError(error)) return false;
   if (!('code' in error)) return false;
@@ -33,80 +37,38 @@ export function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return typeof code === 'string';
 }
 
-function getNodeErrno(error: unknown): number | undefined {
-  if (!isNativeError(error)) return undefined;
-  if (!('errno' in error)) return undefined;
-  const { errno } = error as { errno?: unknown };
-  if (typeof errno !== 'number' || !Number.isInteger(errno)) return undefined;
-  return errno;
+export function isAbortError(error: unknown): boolean {
+  return classifyProblem(error).code === ErrorCode.CANCELLED;
 }
 
-function messageIncludesAny(
-  message: string,
-  patterns: readonly string[]
-): boolean {
-  return patterns.some((pattern) => message.includes(pattern));
+export function isTimeoutLikeError(error: unknown): boolean {
+  return classifyProblem(error).code === ErrorCode.TIMEOUT;
 }
 
-const ERRNO_CODE_BY_VALUE = new Map<number, string>();
-const SYSTEM_ERROR_MAP = getSystemErrorMap();
-
-for (const [name, value] of Object.entries(osConstants.errno)) {
-  if (typeof value !== 'number') continue;
-  if (!ERRNO_CODE_BY_VALUE.has(value)) {
-    ERRNO_CODE_BY_VALUE.set(value, name);
-  }
+export function classifyError(error: unknown): ErrorCode {
+  return classifyProblem(error).code;
 }
 
-const ERROR_CODE_RE = /^[A-Z][A-Z0-9_]+$/u;
-
-function getSystemErrorNameFromMap(errno: number): string | undefined {
-  const direct = SYSTEM_ERROR_MAP.get(errno);
-  if (direct) return direct[0];
-
-  const normalized = SYSTEM_ERROR_MAP.get(-Math.abs(errno));
-  if (normalized) return normalized[0];
-
-  return undefined;
+export function getSuggestion(code: ErrorCode): string | undefined {
+  return DEFAULT_SUGGESTIONS[code];
 }
 
-function getNodeErrorCodeFromErrno(errno: number): string | undefined {
-  const direct = ERRNO_CODE_BY_VALUE.get(errno);
-  if (direct) return direct;
+// ─── DetailedError (kept for existing tool-response callers) ─────────────────
 
-  const normalized = ERRNO_CODE_BY_VALUE.get(Math.abs(errno));
-  if (normalized) return normalized;
-
-  const fromMap = getSystemErrorNameFromMap(errno);
-  if (fromMap && ERROR_CODE_RE.test(fromMap)) return fromMap;
-
-  try {
-    const fromSystem = getSystemErrorName(errno <= 0 ? errno : -errno);
-    return ERROR_CODE_RE.test(fromSystem) ? fromSystem : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function getNodeErrorCodeLabel(error: unknown): string | undefined {
-  if (isNodeError(error)) return error.code;
-  const errno = getNodeErrno(error);
-  if (errno === undefined) return undefined;
-  return getNodeErrorCodeFromErrno(errno);
+interface DetailedError {
+  code: ErrorCode;
+  message: string;
+  path?: string;
+  suggestion?: string;
+  details?: Record<string, unknown>;
+  issues?: readonly ProblemIssue[];
 }
 
 export function formatUnknownErrorMessage(error: unknown): string {
   if (typeof error === 'string') return error;
   if (isNativeError(error)) return error.message;
   try {
-    return inspect(error, {
-      depth: 3,
-      colors: false,
-      compact: 3,
-      breakLength: 80,
-      maxArrayLength: 50,
-      maxStringLength: 2000,
-    });
+    return JSON.stringify(error);
   } catch {
     return String(error);
   }
@@ -118,114 +80,133 @@ export function normalizeUnknownError(error: unknown): Error {
     : new Error(formatUnknownErrorMessage(error));
 }
 
-const NODE_ERROR_CODE_MAP = {
-  ENOENT: ErrorCode.NOT_FOUND,
-  EACCES: ErrorCode.PERMISSION_DENIED,
-  EPERM: ErrorCode.PERMISSION_DENIED,
-  ENOTDIR: ErrorCode.NOT_DIRECTORY,
-  EISDIR: ErrorCode.NOT_FILE,
-  ELOOP: ErrorCode.SYMLINK_NOT_ALLOWED,
-  ENAMETOOLONG: ErrorCode.INVALID_INPUT,
-  ETIMEDOUT: ErrorCode.TIMEOUT,
-  EMFILE: ErrorCode.TIMEOUT,
-  ENFILE: ErrorCode.TIMEOUT,
-  EBUSY: ErrorCode.PERMISSION_DENIED,
-  ENOTEMPTY: ErrorCode.NOT_DIRECTORY,
-  EEXIST: ErrorCode.INVALID_INPUT,
-  EINVAL: ErrorCode.INVALID_INPUT,
-} as const satisfies Readonly<Record<string, ErrorCode>>;
-
-type NodeErrorCode = keyof typeof NODE_ERROR_CODE_MAP;
-
-function isKnownNodeErrorCode(code: string): code is NodeErrorCode {
-  return code in NODE_ERROR_CODE_MAP;
-}
-
-function getNodeErrorCode(code: string): ErrorCode | undefined {
-  return isKnownNodeErrorCode(code) ? NODE_ERROR_CODE_MAP[code] : undefined;
-}
-
-function walkErrorChain<T>(
+export function createDetailedError(
   error: unknown,
-  visitor: (value: unknown) => T | undefined
-): T | undefined {
-  let current: unknown = error;
-  const visited = new Set<unknown>();
+  path?: string,
+  additionalDetails?: Record<string, unknown>,
+): DetailedError {
+  const problem = classifyProblem(error);
+  const trace = getTraceContext();
+  const merged: Record<string, unknown> = {
+    ...(trace ?? {}),
+    ...(problem.details ?? {}),
+    ...(additionalDetails ?? {}),
+  };
+  const resolvedPath = path ?? problem.path;
+  const suggestion =
+    problem.suggestion ??
+    resolveSuggestion({ code: problem.code, issues: problem.issues ?? [] });
 
-  while (current !== undefined && current !== null && !visited.has(current)) {
-    const visitedResult = visitor(current);
-    if (visitedResult !== undefined) return visitedResult;
-    if (!isNativeError(current)) break;
+  return {
+    code: problem.code,
+    message: problem.message,
+    ...(resolvedPath !== undefined ? { path: resolvedPath } : {}),
+    ...(suggestion !== undefined ? { suggestion } : {}),
+    ...(Object.keys(merged).length > 0 ? { details: merged } : {}),
+    ...(problem.issues && problem.issues.length > 0
+      ? { issues: problem.issues }
+      : {}),
+  };
+}
 
-    visited.add(current);
-
-    const next = (current as { cause?: unknown }).cause;
-    current = next;
+export function formatDetailedError(error: DetailedError): string {
+  const lines: string[] = [`${error.code}: ${error.message}`];
+  if (error.path && !error.message.includes(error.path)) {
+    lines.push(error.path);
   }
-
-  return undefined;
+  if (error.suggestion) {
+    lines.push(error.suggestion);
+  }
+  return joinLines(lines);
 }
 
-function isAbortErrorSingle(error: unknown): boolean {
-  if (!isNativeError(error)) return false;
-  if (error.name === 'AbortError') return true;
-
-  const code = getNodeErrorCodeLabel(error);
-  return code === 'ABORT_ERR';
-}
-
-export function isAbortError(error: unknown): boolean {
-  return (
-    walkErrorChain(error, (candidate) =>
-      isAbortErrorSingle(candidate) ? true : undefined
-    ) === true
-  );
-}
-
-function isTimeoutErrorSingle(error: unknown): boolean {
-  if (!isNativeError(error)) return false;
-  if (error.name === 'TimeoutError') return true;
-
-  const code = getNodeErrorCodeLabel(error);
-  if (code === 'ETIMEDOUT') return true;
-
-  const message = error.message.toLowerCase();
-  return message.includes('timed out') || message.includes('timeout');
-}
-
-export function isTimeoutLikeError(error: unknown): boolean {
-  return (
-    walkErrorChain(error, (candidate) =>
-      isTimeoutErrorSingle(candidate) ? true : undefined
-    ) === true
-  );
-}
+// ─── McpError ────────────────────────────────────────────────────────────────
 
 export class McpError extends Error {
-  details?: Record<string, unknown>;
+  readonly problem: Problem;
 
+  // Overload 1: new McpError(problem, cause?)
+  constructor(problem: Problem, cause?: unknown);
+  // Overload 2 (legacy): new McpError(code, message, path?, details?, cause?)
   constructor(
-    public code: ErrorCode,
+    code: ErrorCode,
     message: string,
-    public path?: string,
+    path?: string,
     details?: Record<string, unknown>,
-    cause?: unknown
+    cause?: unknown,
+  );
+  constructor(
+    arg1: Problem | ErrorCode,
+    arg2?: unknown,
+    arg3?: string,
+    arg4?: Record<string, unknown>,
+    arg5?: unknown,
   ) {
-    super(message, { cause });
+    if (typeof arg1 === 'string') {
+      // Legacy positional form
+      const code = arg1;
+      const message = (arg2 as string | undefined) ?? '';
+      const path = arg3;
+      const detailsArg = arg4;
+      const cause = arg5;
+      const trace = getTraceContext();
+      const traceDetails: Partial<ProblemDetails> = {
+        ...(trace?.traceparent !== undefined ? { traceparent: trace.traceparent } : {}),
+        ...(trace?.tracestate !== undefined ? { tracestate: trace.tracestate } : {}),
+        ...(trace?.baggage !== undefined ? { baggage: trace.baggage } : {}),
+      };
+
+      const details: ProblemDetails | undefined =
+        Object.keys(traceDetails).length > 0 || detailsArg !== undefined
+          ? {
+              ...traceDetails,
+              ...(detailsArg !== undefined
+                ? { extra: detailsArg }
+                : {}),
+            }
+          : undefined;
+
+      const suggestion = DEFAULT_SUGGESTIONS[code];
+      const problem: Problem = {
+        code,
+        message,
+        ...(path !== undefined ? { path } : {}),
+        ...(details !== undefined ? { details } : {}),
+        ...(suggestion !== undefined ? { suggestion } : {}),
+      };
+      super(message, cause === undefined ? {} : { cause });
+      this.problem = problem;
+    } else {
+      // New Problem constructor form
+      const problem = arg1;
+      const cause = arg2;
+      super(problem.message, cause === undefined ? {} : { cause });
+      this.problem = problem;
+    }
     this.name = 'McpError';
     Object.setPrototypeOf(this, McpError.prototype);
+  }
 
-    const trace = getTraceContext();
-    if (trace?.traceparent || details) {
-      this.details = { ...trace, ...details };
-    }
+  get code(): ErrorCode {
+    return this.problem.code;
+  }
+
+  get path(): string | undefined {
+    return this.problem.path;
+  }
+
+  get details(): Record<string, unknown> | undefined {
+    if (!this.problem.details) return undefined;
+    const { extra, ...rest } = this.problem.details;
+    if (!extra) return Object.keys(rest).length > 0 ? rest : undefined;
+    return { ...rest, ...extra };
   }
 
   static notFound(
     message: string,
     path?: string,
     details?: Record<string, unknown>,
-    cause?: unknown
+    cause?: unknown,
   ): McpError {
     return new McpError(ErrorCode.NOT_FOUND, message, path, details, cause);
   }
@@ -234,7 +215,7 @@ export class McpError extends Error {
     message: string,
     path?: string,
     details?: Record<string, unknown>,
-    cause?: unknown
+    cause?: unknown,
   ): McpError {
     return new McpError(ErrorCode.INVALID_INPUT, message, path, details, cause);
   }
@@ -243,7 +224,7 @@ export class McpError extends Error {
     message: string,
     path?: string,
     details?: Record<string, unknown>,
-    cause?: unknown
+    cause?: unknown,
   ): McpError {
     return new McpError(ErrorCode.ACCESS_DENIED, message, path, details, cause);
   }
@@ -252,140 +233,10 @@ export class McpError extends Error {
     message: string,
     path?: string,
     details?: Record<string, unknown>,
-    cause?: unknown
+    cause?: unknown,
   ): McpError {
     return new McpError(ErrorCode.TIMEOUT, message, path, details, cause);
   }
 }
 
-const ERROR_SUGGESTIONS: Readonly<Record<ErrorCode, string | undefined>> = {
-  [ErrorCode.ACCESS_DENIED]: 'Run roots to list allowed directories.',
-  [ErrorCode.NOT_FOUND]: 'Run ls or find to verify the path.',
-  [ErrorCode.NOT_FILE]: 'Target is a directory, not a file.',
-  [ErrorCode.NOT_DIRECTORY]: 'Target is a file, not a directory.',
-  [ErrorCode.TOO_LARGE]: 'Use head/tail or line ranges to read partially.',
-  [ErrorCode.TIMEOUT]: 'Reduce scope, depth, or maxResults.',
-  [ErrorCode.CANCELLED]: undefined,
-  [ErrorCode.INVALID_PATTERN]: 'Check syntax and escape special characters.',
-  [ErrorCode.INVALID_INPUT]: undefined,
-  [ErrorCode.PERMISSION_DENIED]: 'Check OS file permissions.',
-  [ErrorCode.SYMLINK_NOT_ALLOWED]: 'Symlink escapes allowed directories.',
-  [ErrorCode.VALIDATION_FAILED]: undefined,
-  [ErrorCode.IO_ERROR]: undefined,
-  [ErrorCode.UNKNOWN]: undefined,
-} as const;
-
-const NOT_FOUND_PATTERNS = [
-  'no such file or directory',
-  'does not exist',
-] as const;
-const PERMISSION_DENIED_PATTERNS = [
-  'permission denied',
-  'not permitted',
-] as const;
-
-function getDirectErrorCode(error: unknown): ErrorCode | undefined {
-  if (error instanceof McpError) {
-    return error.code;
-  }
-  const code = getNodeErrorCodeLabel(error);
-  return code ? getNodeErrorCode(code) : undefined;
-}
-
-function classifyMessageError(error: unknown): ErrorCode | undefined {
-  const message = isNativeError(error) ? error.message : String(error);
-  const lower = message.toLowerCase();
-  if (messageIncludesAny(lower, NOT_FOUND_PATTERNS)) {
-    return ErrorCode.NOT_FOUND;
-  }
-  if (messageIncludesAny(lower, PERMISSION_DENIED_PATTERNS)) {
-    return ErrorCode.PERMISSION_DENIED;
-  }
-  if (lower.includes('not a directory')) {
-    return ErrorCode.NOT_DIRECTORY;
-  }
-  if (lower.includes('is a directory')) {
-    return ErrorCode.NOT_FILE;
-  }
-  return undefined;
-}
-
-export function classifyError(error: unknown): ErrorCode {
-  let timeoutCode: ErrorCode | undefined;
-  let fallbackCode: ErrorCode | undefined;
-
-  const terminalCode = walkErrorChain<ErrorCode>(error, (candidate) => {
-    if (isAbortErrorSingle(candidate)) {
-      return ErrorCode.CANCELLED;
-    }
-
-    if (timeoutCode === undefined && isTimeoutErrorSingle(candidate)) {
-      timeoutCode = ErrorCode.TIMEOUT;
-    }
-
-    fallbackCode ??=
-      getDirectErrorCode(candidate) ?? classifyMessageError(candidate);
-
-    return undefined;
-  });
-
-  return terminalCode ?? timeoutCode ?? fallbackCode ?? ErrorCode.UNKNOWN;
-}
-
-export function createDetailedError(
-  error: unknown,
-  path?: string,
-  additionalDetails?: Record<string, unknown>
-): DetailedError {
-  const message = formatUnknownErrorMessage(error);
-  const code = classifyError(error);
-  const suggestion = ERROR_SUGGESTIONS[code];
-  const resolvedPath = resolveErrorPath(error, path);
-  const details = mergeErrorDetails(error, additionalDetails);
-
-  const result: DetailedError = {
-    code,
-    message,
-    ...(suggestion ? { suggestion } : {}),
-  };
-  if (resolvedPath) result.path = resolvedPath;
-  if (details) result.details = details;
-  return result;
-}
-
-function resolveErrorPath(error: unknown, path?: string): string | undefined {
-  if (path) return path;
-  if (error instanceof McpError) return error.path;
-  return undefined;
-}
-
-function mergeErrorDetails(
-  error: unknown,
-  additionalDetails?: Record<string, unknown>
-): Record<string, unknown> | undefined {
-  const mcpDetails = error instanceof McpError ? error.details : undefined;
-  const mergedDetails: Record<string, unknown> = {
-    ...mcpDetails,
-    ...additionalDetails,
-  };
-  if (Object.keys(mergedDetails).length === 0) return undefined;
-  return mergedDetails;
-}
-
-export function formatDetailedError(error: DetailedError): string {
-  const lines: string[] = [`${error.code}: ${error.message}`];
-
-  if (error.path && !error.message.includes(error.path)) {
-    lines.push(error.path);
-  }
-
-  if (error.suggestion) {
-    lines.push(error.suggestion);
-  }
-
-  return joinLines(lines);
-}
-
-export function getSuggestion(code: ErrorCode): string | undefined {
-  return ERROR_SUGGESTIONS[code];
-}
+export { resolveSuggestion, zodErrorToProblem };

@@ -248,7 +248,10 @@ function resolveDetailedError(
   details?: Record<string, unknown>;
 } {
   const detailed = createDetailedError(error, path);
-  if (detailed.code === ErrorCode.UNKNOWN) {
+  if (
+    detailed.code === ErrorCode.UNKNOWN ||
+    detailed.code === ErrorCode.IO_ERROR
+  ) {
     detailed.code = defaultCode;
     const suggestion = getSuggestion(defaultCode);
     if (suggestion) {
