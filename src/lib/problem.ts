@@ -41,7 +41,7 @@ interface ProblemFactoryOptions {
 function build(
   code: ErrorCode,
   message: string,
-  opts: ProblemFactoryOptions = {},
+  opts: ProblemFactoryOptions = {}
 ): Problem {
   return {
     code,
@@ -137,7 +137,7 @@ function readSignalSingle(value: unknown): ClassificationSignal | undefined {
   return undefined;
 }
 
-export function walkCauseChain(error: unknown): ClassificationSignal {
+function walkCauseChain(error: unknown): ClassificationSignal {
   let current: unknown = error;
   const visited = new Set<unknown>();
   let abortSeen = false;
@@ -166,7 +166,7 @@ export function walkCauseChain(error: unknown): ClassificationSignal {
 
 function buildProblemFromSignal(
   signal: ClassificationSignal,
-  error: unknown,
+  error: unknown
 ): Problem {
   const message = error instanceof Error ? error.message : String(error);
   switch (signal.kind) {
@@ -211,12 +211,12 @@ function toProblemIssue(issue: z.core.$ZodIssue): ProblemIssue {
 
 export function zodErrorToProblem(
   err: z.ZodError,
-  schema?: z.ZodType,
+  schema?: z.ZodType
 ): Problem {
   const issues = err.issues.map(toProblemIssue);
   const suggestion = resolveSuggestion(
     { code: ErrorCode.VALIDATION_FAILED, issues },
-    schema,
+    schema
   );
   return build(ErrorCode.VALIDATION_FAILED, z.prettifyError(err), {
     issues,
@@ -233,7 +233,10 @@ function isMcpError(error: unknown): error is { problem: Problem } {
   );
 }
 
-export function classify(error: unknown, ctx?: { schema?: z.ZodType }): Problem {
+export function classify(
+  error: unknown,
+  ctx?: { schema?: z.ZodType }
+): Problem {
   if (error === null || error === undefined) {
     return Problem.unknown('Unknown error');
   }
@@ -241,7 +244,7 @@ export function classify(error: unknown, ctx?: { schema?: z.ZodType }): Problem 
   if (error instanceof z.ZodError) return zodErrorToProblem(error, ctx?.schema);
   if (!(error instanceof Error)) {
     return Problem.unknown(
-      typeof error === 'string' ? error : '[non-Error thrown]',
+      typeof error === 'string' ? error : '[non-Error thrown]'
     );
   }
   const signal = walkCauseChain(error);

@@ -4,8 +4,8 @@ import { describe, it } from 'node:test';
 import { z } from 'zod/v4';
 
 import { ErrorCode } from '../../src/config.js';
-import { classify, Problem, zodErrorToProblem } from '../../src/lib/problem.js';
 import { resolveSuggestion } from '../../src/lib/error-suggestions.js';
+import { classify, Problem, zodErrorToProblem } from '../../src/lib/problem.js';
 
 describe('classify', () => {
   it('returns UNKNOWN for non-Error values', () => {
@@ -23,15 +23,15 @@ describe('classify', () => {
     // Locks the no-sniffing property.
     assert.equal(
       classify(new Error('permission denied')).code,
-      ErrorCode.IO_ERROR,
+      ErrorCode.IO_ERROR
     );
     assert.equal(
       classify(new Error('no such file or directory')).code,
-      ErrorCode.IO_ERROR,
+      ErrorCode.IO_ERROR
     );
     assert.equal(
       classify(new Error('operation timed out')).code,
-      ErrorCode.IO_ERROR,
+      ErrorCode.IO_ERROR
     );
   });
 });
@@ -187,7 +187,7 @@ describe('resolveSuggestion', () => {
   it('returns undefined for VALIDATION_FAILED with no issues + no schema', () => {
     assert.equal(
       resolveSuggestion({ code: ErrorCode.VALIDATION_FAILED, issues: [] }),
-      undefined,
+      undefined
     );
   });
 
@@ -222,7 +222,7 @@ describe('resolveSuggestion', () => {
           },
         ],
       },
-      schema,
+      schema
     );
     assert.equal(s, 'meta wins');
   });

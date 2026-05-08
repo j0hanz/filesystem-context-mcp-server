@@ -1,21 +1,15 @@
 import { ErrorCode, joinLines } from '../config.js';
-
+import { DEFAULT_SUGGESTIONS, resolveSuggestion } from './error-suggestions.js';
+import { getTraceContext } from './observability.js';
 import {
   classify as classifyProblem,
-  zodErrorToProblem,
   type Problem,
   type ProblemDetails,
   type ProblemIssue,
+  zodErrorToProblem,
 } from './problem.js';
-import {
-  DEFAULT_SUGGESTIONS,
-  resolveSuggestion,
-} from './error-suggestions.js';
-import { getTraceContext } from './observability.js';
 
 export { ErrorCode };
-export { type Problem, type ProblemIssue, type ProblemDetails };
-
 // ─── Type guard helpers ───────────────────────────────────────────────────────
 
 interface ErrorConstructorWithIsError extends ErrorConstructor {
@@ -83,7 +77,7 @@ export function normalizeUnknownError(error: unknown): Error {
 export function createDetailedError(
   error: unknown,
   path?: string,
-  additionalDetails?: Record<string, unknown>,
+  additionalDetails?: Record<string, unknown>
 ): DetailedError {
   const problem = classifyProblem(error);
   const trace = getTraceContext();
@@ -133,14 +127,14 @@ export class McpError extends Error {
     message: string,
     path?: string,
     details?: Record<string, unknown>,
-    cause?: unknown,
+    cause?: unknown
   );
   constructor(
     arg1: Problem | ErrorCode,
     arg2?: unknown,
     arg3?: string,
     arg4?: Record<string, unknown>,
-    arg5?: unknown,
+    arg5?: unknown
   ) {
     if (typeof arg1 === 'string') {
       // Legacy positional form
@@ -151,8 +145,12 @@ export class McpError extends Error {
       const cause = arg5;
       const trace = getTraceContext();
       const traceDetails: Partial<ProblemDetails> = {
-        ...(trace?.traceparent !== undefined ? { traceparent: trace.traceparent } : {}),
-        ...(trace?.tracestate !== undefined ? { tracestate: trace.tracestate } : {}),
+        ...(trace?.traceparent !== undefined
+          ? { traceparent: trace.traceparent }
+          : {}),
+        ...(trace?.tracestate !== undefined
+          ? { tracestate: trace.tracestate }
+          : {}),
         ...(trace?.baggage !== undefined ? { baggage: trace.baggage } : {}),
       };
 
@@ -160,9 +158,7 @@ export class McpError extends Error {
         Object.keys(traceDetails).length > 0 || detailsArg !== undefined
           ? {
               ...traceDetails,
-              ...(detailsArg !== undefined
-                ? { extra: detailsArg }
-                : {}),
+              ...(detailsArg !== undefined ? { extra: detailsArg } : {}),
             }
           : undefined;
 
@@ -206,7 +202,7 @@ export class McpError extends Error {
     message: string,
     path?: string,
     details?: Record<string, unknown>,
-    cause?: unknown,
+    cause?: unknown
   ): McpError {
     return new McpError(ErrorCode.NOT_FOUND, message, path, details, cause);
   }
@@ -215,7 +211,7 @@ export class McpError extends Error {
     message: string,
     path?: string,
     details?: Record<string, unknown>,
-    cause?: unknown,
+    cause?: unknown
   ): McpError {
     return new McpError(ErrorCode.INVALID_INPUT, message, path, details, cause);
   }
@@ -224,7 +220,7 @@ export class McpError extends Error {
     message: string,
     path?: string,
     details?: Record<string, unknown>,
-    cause?: unknown,
+    cause?: unknown
   ): McpError {
     return new McpError(ErrorCode.ACCESS_DENIED, message, path, details, cause);
   }
@@ -233,10 +229,10 @@ export class McpError extends Error {
     message: string,
     path?: string,
     details?: Record<string, unknown>,
-    cause?: unknown,
+    cause?: unknown
   ): McpError {
     return new McpError(ErrorCode.TIMEOUT, message, path, details, cause);
   }
 }
 
-export { resolveSuggestion, zodErrorToProblem };
+export { zodErrorToProblem };

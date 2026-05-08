@@ -1,22 +1,20 @@
 import { z } from 'zod/v4';
 
 import { ErrorCode } from '../config.js';
-
 import type { Problem, ProblemIssue } from './problem.js';
 
-export const DEFAULT_SUGGESTIONS: Readonly<
-  Partial<Record<ErrorCode, string>>
-> = {
-  [ErrorCode.ACCESS_DENIED]: 'Run roots to list allowed directories.',
-  [ErrorCode.NOT_FOUND]: 'Run ls or find to verify the path.',
-  [ErrorCode.NOT_FILE]: 'Target is a directory, not a file.',
-  [ErrorCode.NOT_DIRECTORY]: 'Target is a file, not a directory.',
-  [ErrorCode.TOO_LARGE]: 'Use head/tail or line ranges to read partially.',
-  [ErrorCode.TIMEOUT]: 'Reduce scope, depth, or maxResults.',
-  [ErrorCode.INVALID_PATTERN]: 'Check syntax and escape special characters.',
-  [ErrorCode.PERMISSION_DENIED]: 'Check OS file permissions.',
-  [ErrorCode.SYMLINK_NOT_ALLOWED]: 'Symlink escapes allowed directories.',
-};
+export const DEFAULT_SUGGESTIONS: Readonly<Partial<Record<ErrorCode, string>>> =
+  {
+    [ErrorCode.ACCESS_DENIED]: 'Run roots to list allowed directories.',
+    [ErrorCode.NOT_FOUND]: 'Run ls or find to verify the path.',
+    [ErrorCode.NOT_FILE]: 'Target is a directory, not a file.',
+    [ErrorCode.NOT_DIRECTORY]: 'Target is a file, not a directory.',
+    [ErrorCode.TOO_LARGE]: 'Use head/tail or line ranges to read partially.',
+    [ErrorCode.TIMEOUT]: 'Reduce scope, depth, or maxResults.',
+    [ErrorCode.INVALID_PATTERN]: 'Check syntax and escape special characters.',
+    [ErrorCode.PERMISSION_DENIED]: 'Check OS file permissions.',
+    [ErrorCode.SYMLINK_NOT_ALLOWED]: 'Symlink escapes allowed directories.',
+  };
 
 function readSuggestionMeta(schema: z.ZodType | undefined): string | undefined {
   if (!schema) return undefined;
@@ -29,7 +27,7 @@ function readSuggestionMeta(schema: z.ZodType | undefined): string | undefined {
 
 function descend(
   schema: z.ZodType,
-  segment: string | number,
+  segment: string | number
 ): z.ZodType | undefined {
   const def = (schema as unknown as { _def?: unknown })._def as
     | { shape?: Record<string, z.ZodType>; type?: z.ZodType }
@@ -48,7 +46,7 @@ function descend(
 
 function suggestionFromIssueMeta(
   schema: z.ZodType,
-  issue: ProblemIssue,
+  issue: ProblemIssue
 ): string | undefined {
   let cursor: z.ZodType | undefined = schema;
   const trail: (z.ZodType | undefined)[] = [cursor];
@@ -66,7 +64,7 @@ function suggestionFromIssueMeta(
 
 export function resolveSuggestion(
   p: Pick<Problem, 'code' | 'issues'>,
-  schema?: z.ZodType,
+  schema?: z.ZodType
 ): string | undefined {
   if (p.issues && p.issues.length > 0 && schema) {
     for (const issue of p.issues) {
