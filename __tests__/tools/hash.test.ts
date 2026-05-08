@@ -28,18 +28,69 @@ describe('calculate_hash tool', () => {
     await env.cleanup();
   });
 
-  it('returns ok:true and a non-empty hash for a file', async () => {
+  it('calculates file hash and stores in resource', async () => {
     const raw = await env.client.callTool({
       name: 'calculate_hash',
       arguments: { path: file },
     });
-    const result = raw;
-    assertOk(result);
-    const sc = getStructured(result);
-    assert.equal(sc['ok'], true);
-    assert.equal(typeof sc['hash'], 'string');
-    assert.ok((sc['hash'] as string).length > 0);
+    assertOk(raw);
+    const sc = getStructured(raw);
+
+    // Verify structured content
+    assert.equal(typeof sc['filePath'], 'string');
+    assert(sc['filePath'].includes('hash-me.txt'));
+    assert.deepEqual(sc['algorithms'], ['sha256']);
+    assert(typeof sc['hashes'] === 'object');
+    assert.equal(typeof sc['hashes']['sha256'], 'string');
+    assert.ok((sc['hashes']['sha256'] as string).length > 0);
     assert.equal(sc['isDirectory'], false);
+    assert.equal(typeof sc['resourceUri'], 'string');
+    assert(
+      (sc['resourceUri'] as string).startsWith('filesystem-mcp://result/')
+    );
+
+    // Verify summary contains file name and algorithm
+    const summary = raw.content[0];
+    assert(summary && 'text' in summary);
+    const text = (summary as { type: string; text: string }).text;
+    assert(text.includes('hash-me.txt'));
+    assert(text.includes('SHA-256'));
+    assert(text.includes(':'));
+
+    // Verify resource link
+    const resourceLink = raw.content.find(
+      (c) => c && 'type' in c && c.type === 'resource_link'
+    );
+    assert(resourceLink, 'Should have a resource_link');
+    assert.equal((resourceLink as { name: string }).name, 'hashes.json');
+  });
+
+  it('calculate-hash with multiple algorithms', async () => {
+    const raw = await env.client.callTool({
+      name: 'calculate_hash',
+      arguments: { path: file, algorithms: ['sha256', 'md5'] },
+    });
+    assertOk(raw);
+    const sc = getStructured(raw);
+
+    // Verify both algorithms are computed
+    assert.deepEqual(sc['algorithms'], ['sha256', 'md5']);
+    assert.equal(typeof sc['hashes']['sha256'], 'string');
+    assert.equal(typeof sc['hashes']['md5'], 'string');
+    assert.ok((sc['hashes']['sha256'] as string).length > 0);
+    assert.ok((sc['hashes']['md5'] as string).length > 0);
+
+    // Verify summary shows primary algorithm (sha256)
+    const summary = raw.content[0];
+    assert(summary && 'text' in summary);
+    const text = (summary as { type: string; text: string }).text;
+    assert(text.includes('SHA-256'));
+
+    // Verify resource link still present
+    const resourceLink = raw.content.find(
+      (c) => c && 'type' in c && c.type === 'resource_link'
+    );
+    assert(resourceLink, 'Should have a resource_link');
   });
 
   it('returns the same hash for identical content', async () => {
@@ -58,8 +109,8 @@ describe('calculate_hash tool', () => {
     const sc1 = getStructured(raw1);
     const sc2 = getStructured(raw2);
     assert.equal(
-      sc1['hash'],
-      sc2['hash'],
+      sc1['hashes']['sha256'],
+      sc2['hashes']['sha256'],
       'Same content should produce same hash'
     );
   });
@@ -81,8 +132,8 @@ describe('calculate_hash tool', () => {
       })
     );
     assert.notEqual(
-      r1['hash'],
-      r2['hash'],
+      r1['hashes']['sha256'],
+      r2['hashes']['sha256'],
       'Different content should produce different hash'
     );
   });
@@ -92,11 +143,12 @@ describe('calculate_hash tool', () => {
       name: 'calculate_hash',
       arguments: { path: env.tmpDir },
     });
-    const result = raw;
-    assertOk(result);
-    const sc = getStructured(result);
+    assertOk(raw);
+    const sc = getStructured(raw);
     assert.equal(sc['isDirectory'], true);
     assert.equal(typeof sc['fileCount'], 'number');
+    assert.equal(sc['algorithms'][0], 'sha256');
+    assert.equal(typeof sc['hashes']['sha256'], 'string');
   });
 
   it('returns NOT_FOUND for a missing path', async () => {
