@@ -19,29 +19,29 @@ import {
 } from '../lib/fs-walk.js';
 import { processInParallel } from '../lib/parallel.js';
 import type { PathGuard } from '../lib/path-guard.js';
-import { RequiredPath } from '../schemas/fields.js';
+import { NonNegInt, RequiredPath } from '../schemas/fields.js';
 import {
   FileInfoSchema,
   OperationSummarySchema,
   PerFileErrorSchema,
 } from '../schemas/shared.js';
 
-import {
-  type FileInfo,
-  formatBytes,
-  type GetMultipleFileInfoResult,
-  joinLines,
-  type MultipleFileInfoResult,
+import type {
+  FileInfo,
+  GetMultipleFileInfoResult,
+  MultipleFileInfoResult,
 } from '../config.js';
 import { defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
   buildBatchPathContext,
   buildFileInfoPayload,
+  buildResourceResponse,
   buildStructuredError,
-  buildToolResponse,
+  putResource,
   READ_ONLY_TOOL_ANNOTATIONS,
   type ToolContract,
+  type ToolRegistrationOptions,
 } from './shared.js';
 import {
   completeProgressSession,
@@ -65,6 +65,9 @@ const StatManyOutputSchema = z.strictObject({
     )
     .describe('Per-path results'),
   summary: OperationSummarySchema.describe('Operation summary'),
+  fileCount: NonNegInt.describe('Number of files'),
+  dirCount: NonNegInt.describe('Number of directories'),
+  resourceUri: z.string().describe('URI to stats.json resource'),
 });
 
 const GET_MULTIPLE_FILE_INFO_TOOL: ToolContract = {
@@ -278,24 +281,37 @@ async function getMultipleFileInfo(
   };
 }
 
-function formatFileInfoDetail(info: FileInfo): string {
-  const lines = [
-    `${info.name} (${info.type})`,
-    `  Path: ${info.path}`,
-    `  Size: ${formatBytes(info.size)}`,
-    `  Modified: ${info.modified.toISOString()}`,
-  ];
-  if (info.mimeType) lines.push(`  Type: ${info.mimeType}`);
-  if (info.symlinkTarget) lines.push(`  Target: ${info.symlinkTarget}`);
-  return joinLines(lines);
+function countFilesAndDirs(results: readonly MultipleFileInfoResult[]): {
+  fileCount: number;
+  dirCount: number;
+} {
+  let fileCount = 0;
+  let dirCount = 0;
+
+  for (const result of results) {
+    if (result.info !== undefined) {
+      if (result.info.type === 'directory') {
+        dirCount++;
+      } else {
+        fileCount++;
+      }
+    }
+  }
+
+  return { fileCount, dirCount };
 }
 
 async function handleGetMultipleFileInfo(
   args: z.infer<typeof StatManyInputSchema>,
   pathGuard: PathGuard,
+  resourceStore: ToolRegistrationOptions['resourceStore'],
   signal?: AbortSignal,
   onProgress?: () => void
-): Promise<{ text: string; structured: z.infer<typeof StatManyOutputSchema> }> {
+): Promise<{
+  text: string;
+  structured: z.infer<typeof StatManyOutputSchema>;
+  resourceLink: ReturnType<typeof putResource>['link'];
+}> {
   const result = await getMultipleFileInfo(args.paths, {
     includeMimeType: true,
     pathGuard,
@@ -312,17 +328,37 @@ async function handleGetMultipleFileInfo(
         : undefined,
     }));
 
-  const text = result.results
-    .map((entry) => {
-      if (entry.error) {
-        return `${entry.path}: ${buildStructuredError(entry.error, ErrorCode.NOT_FOUND, entry.path).message}`;
-      }
-      if (entry.info) {
-        return formatFileInfoDetail(entry.info);
-      }
-      return entry.path;
-    })
-    .join('\n\n');
+  const { fileCount, dirCount } = countFilesAndDirs(result.results);
+
+  // Serialize stats to JSON for resource storage
+  const statsData = result.results.map((entry) => ({
+    path: entry.path,
+    info: entry.info ? buildFileInfoPayload(entry.info) : undefined,
+    error: entry.error
+      ? buildStructuredError(entry.error, ErrorCode.NOT_FOUND, entry.path)
+      : undefined,
+  }));
+  const statsJson = JSON.stringify(statsData, null, 2);
+
+  // Store stats JSON as a resource
+  if (!resourceStore) {
+    throw new Error('ResourceStore is required for stat-many tool');
+  }
+  const { entry: statsEntry, link: statsLink } = putResource({
+    store: resourceStore,
+    name: 'stats.json',
+    mimeType: 'application/json',
+    kind: 'text',
+    content: statsJson,
+  });
+
+  // Build summary with file and directory counts
+  const summary =
+    fileCount === 1 && dirCount === 0
+      ? 'stat-many: 1 file'
+      : fileCount === 0 && dirCount === 1
+        ? 'stat-many: 1 directory'
+        : `stat-many: ${fileCount} file${fileCount === 1 ? '' : 's'} · ${dirCount} director${dirCount === 1 ? 'y' : 'ies'}`;
 
   const structured: z.infer<typeof StatManyOutputSchema> = {
     ok: true,
@@ -332,9 +368,12 @@ async function handleGetMultipleFileInfo(
       succeeded: result.summary.succeeded,
       failed: result.summary.failed,
     },
+    fileCount,
+    dirCount,
+    resourceUri: statsEntry.uri,
   };
 
-  return { text, structured };
+  return { text: summary, structured, resourceLink: statsLink };
 }
 
 export const GET_MULTIPLE_FILE_INFO = defineTool<
@@ -353,19 +392,25 @@ export const GET_MULTIPLE_FILE_INFO = defineTool<
     });
 
     const result = await completeProgressSession(progress, label, async () => {
-      const { text, structured } = await handleGetMultipleFileInfo(
-        args,
-        ctx.pathGuard,
-        ctx.signal,
-        onItemComplete
-      );
+      const { text, structured, resourceLink } =
+        await handleGetMultipleFileInfo(
+          args,
+          ctx.pathGuard,
+          ctx.resourceStore,
+          ctx.signal,
+          onItemComplete
+        );
       const total = structured.summary.total;
       const failed = structured.summary.failed;
       const suffix = failed ? `${failed} failed` : 'done';
       const finalCurrent = resolveFinalProgressCurrent(progress, total);
 
       return {
-        value: buildToolResponse(text, structured),
+        value: buildResourceResponse({
+          summary: text,
+          resources: [resourceLink],
+          structured,
+        }),
         suffix,
         finalCurrent,
       };
@@ -378,10 +423,8 @@ export const GET_MULTIPLE_FILE_INFO = defineTool<
     if (result.isError)
       return `${GET_MULTIPLE_FILE_INFO_TOOL.title} • ${result.errorCode}`;
     const sc = result.structuredContent;
-    const total = sc.summary.total;
-    const failed = sc.summary.failed;
-    const suffix = failed ? ` • ${failed} failed` : '';
-    return `${GET_MULTIPLE_FILE_INFO_TOOL.title} • ${total} ${total === 1 ? 'file' : 'files'}${suffix}`;
+    const { fileCount, dirCount } = sc;
+    return `${GET_MULTIPLE_FILE_INFO_TOOL.title} • ${fileCount} file${fileCount === 1 ? '' : 's'} · ${dirCount} director${dirCount === 1 ? 'y' : 'ies'}`;
   },
   defaultErrorCode: ErrorCode.NOT_FOUND,
 });
