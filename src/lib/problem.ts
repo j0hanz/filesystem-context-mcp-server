@@ -1,3 +1,5 @@
+import { z } from 'zod/v4';
+
 import { ErrorCode } from '../config.js';
 
 export interface Problem {
@@ -187,10 +189,39 @@ function buildProblemFromSignal(
   }
 }
 
+function toProblemIssue(issue: z.core.$ZodIssue): ProblemIssue {
+  const base: ProblemIssue = {
+    path: issue.path.map(String),
+    code: issue.code ?? 'custom',
+    message: issue.message,
+  };
+  const expected = (issue as { expected?: unknown }).expected;
+  const received = (issue as { received?: unknown }).received;
+  const params = (issue as { params?: unknown }).params;
+  return {
+    ...base,
+    ...(expected !== undefined ? { expected: String(expected) } : {}),
+    ...(received !== undefined ? { received: String(received) } : {}),
+    ...(params !== null && typeof params === 'object'
+      ? { params: params as Record<string, unknown> }
+      : {}),
+  };
+}
+
+export function zodErrorToProblem(
+  err: z.ZodError,
+  schema?: z.ZodType,
+): Problem {
+  void schema;
+  const issues = err.issues.map(toProblemIssue);
+  return build(ErrorCode.VALIDATION_FAILED, z.prettifyError(err), { issues });
+}
+
 export function classify(error: unknown): Problem {
   if (error === null || error === undefined) {
     return Problem.unknown('Unknown error');
   }
+  if (error instanceof z.ZodError) return zodErrorToProblem(error);
   if (!(error instanceof Error)) {
     return Problem.unknown(
       typeof error === 'string' ? error : '[non-Error thrown]',

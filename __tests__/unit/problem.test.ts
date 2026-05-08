@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { z } from 'zod/v4';
+
 import { ErrorCode } from '../../src/config.js';
-import { classify, Problem } from '../../src/lib/problem.js';
+import { classify, Problem, zodErrorToProblem } from '../../src/lib/problem.js';
 
 describe('classify', () => {
   it('returns UNKNOWN for non-Error values', () => {
@@ -119,5 +121,56 @@ describe('classify — Problem details propagate errno', () => {
     const p = classify(e);
     assert.equal(p.details?.errno, 'ENOENT');
     assert.equal(p.details?.syscall, 'open');
+  });
+});
+
+describe('zodErrorToProblem', () => {
+  it('maps a Zod validation error to VALIDATION_FAILED with issues[]', () => {
+    const schema = z.strictObject({ name: z.string().min(3) });
+    const result = schema.safeParse({ name: 'a' });
+    assert.equal(result.success, false);
+    if (result.success) return;
+
+    const p = zodErrorToProblem(result.error);
+    assert.equal(p.code, ErrorCode.VALIDATION_FAILED);
+    assert.ok(p.issues && p.issues.length >= 1);
+    const first = p.issues[0]!;
+    assert.deepEqual([...first.path], ['name']);
+    assert.equal(first.code, 'too_small');
+  });
+
+  it('preserves custom params from superRefine issues', () => {
+    const schema = z
+      .strictObject({ a: z.string().optional(), b: z.string().optional() })
+      .superRefine((value, ctx) => {
+        if (value.a !== undefined && value.b !== undefined) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['a'],
+            message: "Cannot use 'a' with 'b'",
+            params: {
+              rule: 'mutually_exclusive',
+              conflictsWith: ['b'],
+              suggestion: 'Pick one.',
+            },
+          });
+        }
+      });
+    const result = schema.safeParse({ a: 'x', b: 'y' });
+    assert.equal(result.success, false);
+    if (result.success) return;
+
+    const p = zodErrorToProblem(result.error);
+    const issue = p.issues?.[0];
+    assert.equal(issue?.code, 'custom');
+    assert.equal(issue?.params?.['rule'], 'mutually_exclusive');
+    assert.deepEqual(issue?.params?.['conflictsWith'], ['b']);
+  });
+
+  it('classify(ZodError) routes through zodErrorToProblem', () => {
+    const schema = z.strictObject({ x: z.number() });
+    const result = schema.safeParse({ x: 'nope' });
+    if (result.success) return;
+    assert.equal(classify(result.error).code, ErrorCode.VALIDATION_FAILED);
   });
 });
