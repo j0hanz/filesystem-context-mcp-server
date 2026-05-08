@@ -36,7 +36,11 @@ const PathBase = z
   .string()
   .min(1, 'Path required')
   .max(MAX_PATH_LENGTH, `Path too long (max ${MAX_PATH_LENGTH} chars)`)
-  .describe('Path inside an allowed root');
+  .describe('Path inside an allowed root')
+  .meta({
+    suggestion:
+      'Path must be inside an allowed root. Run the roots tool to list allowed directories.',
+  });
 // OptionalPath and RequiredPath are not registered (used once per schema, $ref not worth it).
 export const OptionalPath = PathBase.optional();
 export const RequiredPath = PathBase;
@@ -55,4 +59,6 @@ export const SafeGlobPattern = z
     id: 'SafeGlobPattern',
     title: 'Glob Pattern',
     examples: ['**/*.ts', 'src/**/*.js', '*.{ts,tsx}'],
+    suggestion:
+      'Use forward-slash globs; absolute paths and ".." are forbidden.',
   });

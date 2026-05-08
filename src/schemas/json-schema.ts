@@ -28,6 +28,8 @@ const JSON_SCHEMA_OVERRIDE: NonNullable<
   }
   // Strip contentEncoding when a concrete pattern already encodes the constraint
   if ('contentEncoding' in out && 'pattern' in out) delete out.contentEncoding;
+  // Strip suggestion — runtime metadata only, must not appear in JSON Schema
+  if ('suggestion' in out) delete out.suggestion;
 };
 
 // Remove from `required` any property that has a `default` value.
@@ -47,7 +49,7 @@ function removeDefaultedFromRequired(schema: unknown): unknown {
   ) {
     const props = out.properties as Record<string, JsonSchema>;
     const filtered = (out.required as string[]).filter(
-      (n) => !('default' in (props[n] ?? {})),
+      (n) => !('default' in (props[n] ?? {}))
     );
     if (filtered.length === 0) delete out.required;
     else out.required = filtered;
@@ -102,7 +104,7 @@ export function safeGlobConstraint(propertyName: string): JsonSchema {
 
 export function toToolJsonSchema(
   zodSchema: z.ZodType,
-  augment?: (schema: JsonSchema) => JsonSchema,
+  augment?: (schema: JsonSchema) => JsonSchema
 ): ReturnType<typeof fromJsonSchema> {
   const raw = z.toJSONSchema(zodSchema, {
     io: 'input',
@@ -110,7 +112,7 @@ export function toToolJsonSchema(
     override: JSON_SCHEMA_OVERRIDE,
   }) as JsonSchema;
   const cleaned = removeDefaultedFromRequired(
-    stripRootSchema(raw),
+    stripRootSchema(raw)
   ) as JsonSchema;
   const final = augment ? augment(cleaned) : cleaned;
   return fromJsonSchema(final);
