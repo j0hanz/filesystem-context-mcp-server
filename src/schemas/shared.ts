@@ -85,6 +85,12 @@ export function validateReadRange(
       code: 'custom',
       path: ['head'],
       message: "Cannot use 'head' with 'startLine'/'endLine'",
+      params: {
+        rule: 'head_no_line_range',
+        conflictsWith: ['startLine', 'endLine'],
+        suggestion:
+          "Use either 'head' alone or 'startLine'/'endLine' together.",
+      },
       input: value,
     });
   }
@@ -93,6 +99,12 @@ export function validateReadRange(
       code: 'custom',
       path: ['tail'],
       message: "Cannot use 'tail' with 'head'/'startLine'/'endLine'",
+      params: {
+        rule: 'tail_exclusive',
+        conflictsWith: ['head', 'startLine', 'endLine'],
+        suggestion:
+          "Use 'tail' alone or use 'startLine'/'endLine' without 'tail'.",
+      },
       input: value,
     });
   }
@@ -102,6 +114,12 @@ export function validateReadRange(
       code: 'custom',
       path: ['endLine'],
       message: "'endLine' must be >= 'startLine'",
+      params: {
+        rule: 'endLine_gte_startLine',
+        conflictsWith: ['startLine'],
+        suggestion:
+          'Set endLine to a value greater than or equal to startLine.',
+      },
       input: value,
     });
   }
@@ -111,6 +129,12 @@ export function validateReadRange(
       path: ['offset'],
       message:
         "Cannot use 'offset'/'length' with line-based params (head/tail/startLine/endLine)",
+      params: {
+        rule: 'byte_range_no_line_params',
+        conflictsWith: ['head', 'tail', 'startLine', 'endLine'],
+        suggestion:
+          "Use 'offset'/'length' alone; do not combine with line-based params.",
+      },
       input: value,
     });
   }

@@ -22,6 +22,7 @@ import {
   formatDetailedError,
   getSuggestion,
   McpError,
+  zodErrorToProblem,
 } from '../lib/errors.js';
 import { Logger } from '../lib/logger.js';
 import {
@@ -359,10 +360,7 @@ function parseToolArgs<Schema extends z.ZodType>(
     return parsed.data;
   }
 
-  throw new McpError(
-    ErrorCode.INVALID_INPUT,
-    `Invalid tool arguments:\n${z.prettifyError(parsed.error)}`
-  );
+  throw new McpError(zodErrorToProblem(parsed.error, schema));
 }
 
 export function withValidatedArgs<Args, Result>(
@@ -377,8 +375,12 @@ export function withValidatedArgs<Args, Result>(
       const normalizedArgs = parseToolArgs(schema, args);
       return await handler(normalizedArgs, toToolContext(ctx));
     } catch (error) {
-      if (error instanceof McpError && error.code === ErrorCode.INVALID_INPUT) {
-        return buildToolErrorResponse(error, ErrorCode.INVALID_INPUT);
+      if (
+        error instanceof McpError &&
+        (error.code === ErrorCode.INVALID_INPUT ||
+          error.code === ErrorCode.VALIDATION_FAILED)
+      ) {
+        return buildToolErrorResponse(error, error.code);
       }
       throw error;
     }
