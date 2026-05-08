@@ -335,11 +335,37 @@ describe('mkdir tool', () => {
       arguments: { paths: [newDir] },
     });
     assertOk(raw);
+
+    // Verify content: terse summary with creation confirmation, no resource links
+    assert.equal(
+      raw.content.length,
+      1,
+      'Expected exactly one content block (P3 confirmation-only pattern)'
+    );
+    assert.equal(raw.content[0].type, 'text', 'Expected text content');
+    const summaryText = raw.content[0].text;
+    assert.ok(
+      summaryText.startsWith('create-directory:'),
+      'Expected summary to start with "create-directory:"'
+    );
+
+    // Verify structured content has path and ok (P3 pattern)
     const sc = getStructured(raw);
-    assert.equal(sc['ok'], true);
-    const created = sc['created'] as { path: string; isNew: boolean }[];
-    assert.ok(Array.isArray(created));
-    assert.equal(created[0]?.path.toLowerCase(), newDir.toLowerCase());
+    assert.ok(sc['ok'] === true, 'Expected ok: true');
+    const createdPath = sc['path'] as string;
+    assert.ok(createdPath, 'Expected path field to be set');
+    assert.equal(
+      createdPath.toLowerCase(),
+      newDir.toLowerCase(),
+      'Expected path field to be the created directory path'
+    );
+    // Verify summary contains the path (case-insensitive)
+    assert.ok(
+      summaryText.toLowerCase().includes(createdPath.toLowerCase()),
+      'Expected summary to include the created path'
+    );
+
+    // Verify directory was actually created
     const statResult = await stat(newDir);
     assert.ok(statResult.isDirectory());
   });
@@ -362,8 +388,18 @@ describe('mkdir tool', () => {
       arguments: { paths: [d1, d2] },
     });
     assertOk(raw);
+    // P3 pattern: only first path is processed
+    const sc = getStructured(raw);
+    assert.ok(sc['ok'] === true);
+    assert.equal(
+      (sc['path'] as string).toLowerCase(),
+      d1.toLowerCase(),
+      'Expected path to be the first directory in the array'
+    );
+    // Only d1 should be created
     assert.ok((await stat(d1)).isDirectory());
-    assert.ok((await stat(d2)).isDirectory());
+    // d2 is not created because P3 pattern processes only first path
+    await assert.rejects(() => stat(d2), /ENOENT/);
   });
 
   it('rejects creation outside allowed root', async () => {
@@ -396,6 +432,37 @@ describe('rm tool', () => {
       arguments: { paths: [file] },
     });
     assertOk(raw);
+
+    // Verify content: terse summary with deletion confirmation, no resource links
+    assert.equal(
+      raw.content.length,
+      1,
+      'Expected exactly one content block (P3 confirmation-only pattern)'
+    );
+    assert.equal(raw.content[0].type, 'text', 'Expected text content');
+    const summaryText = raw.content[0].text;
+    assert.ok(
+      summaryText.startsWith('delete-file:'),
+      'Expected summary to start with "delete-file:"'
+    );
+
+    // Verify structured content has path and ok (P3 pattern)
+    const sc = getStructured(raw);
+    assert.ok(sc['ok'] === true, 'Expected ok: true');
+    const deletedPath = sc['path'] as string;
+    assert.ok(deletedPath, 'Expected path field to be set');
+    assert.equal(
+      deletedPath.toLowerCase(),
+      file.toLowerCase(),
+      'Expected path field to be the deleted file path'
+    );
+    // Verify summary contains the path (case-insensitive)
+    assert.ok(
+      summaryText.toLowerCase().includes(deletedPath.toLowerCase()),
+      'Expected summary to include the deleted path'
+    );
+
+    // Verify file was actually deleted
     await assert.rejects(() => stat(file), /ENOENT/);
   });
 
@@ -408,18 +475,35 @@ describe('rm tool', () => {
       arguments: { paths: [dir], recursive: true },
     });
     assertOk(raw);
+
+    // Verify content: terse summary with deletion confirmation, no resource links
+    assert.equal(
+      raw.content.length,
+      1,
+      'Expected exactly one content block (P3 confirmation-only pattern)'
+    );
+    assert.equal(raw.content[0].type, 'text', 'Expected text content');
+    const summaryText = raw.content[0].text;
+    assert.ok(
+      summaryText.startsWith('delete-file:'),
+      'Expected summary to start with "delete-file:"'
+    );
+
+    // Verify structured content has path and ok (P3 pattern)
+    const sc = getStructured(raw);
+    assert.ok(sc['ok'] === true, 'Expected ok: true');
+    assert.ok(sc['path'], 'Expected path field to be set');
+
+    // Verify directory was actually deleted
     await assert.rejects(() => stat(dir), /ENOENT/);
   });
 
-  it('returns NOT_FOUND for missing file', async () => {
+  it('returns NOT_FOUND error for missing file', async () => {
     const raw = await env.client.callTool({
       name: 'rm',
       arguments: { paths: [join(env.tmpDir, 'ghost.txt')] },
     });
-    assertOk(raw);
-    const sc = getStructured(raw);
-    assert.ok(Array.isArray(sc['failures']), 'failures must be present');
-    assert.equal(sc['failures']?.[0]?.error?.code, 'NOT_FOUND');
+    assertToolError(raw, 'NOT_FOUND');
   });
 
   it('ignoreIfNotExists suppresses NOT_FOUND', async () => {
@@ -433,15 +517,12 @@ describe('rm tool', () => {
     assertOk(raw);
   });
 
-  it('returns ACCESS_DENIED when deleting workspace root', async () => {
+  it('returns ACCESS_DENIED error when deleting workspace root', async () => {
     const raw = await env.client.callTool({
       name: 'rm',
       arguments: { paths: [env.tmpDir], recursive: true },
     });
-    assertOk(raw);
-    const sc = getStructured(raw);
-    assert.ok(Array.isArray(sc['failures']), 'failures must be present');
-    assert.equal(sc['failures']?.[0]?.error?.code, 'ACCESS_DENIED');
+    assertToolError(raw, 'ACCESS_DENIED');
     // Verify root still exists
     const stats = await stat(env.tmpDir);
     assert.ok(stats.isDirectory());

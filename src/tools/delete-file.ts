@@ -13,12 +13,8 @@ import { withAbort } from '../lib/abort.js';
 import { ErrorCode, isNodeError, McpError } from '../lib/errors.js';
 import { Logger } from '../lib/logger.js';
 import type { PathGuard } from '../lib/path-guard.js';
-import { FileType as FileTypeEnum, RequiredPath } from '../schemas/fields.js';
-import {
-  defaultFalseBoolean,
-  OperationSummarySchema,
-  PerFileErrorSchema,
-} from '../schemas/shared.js';
+import { RequiredPath } from '../schemas/fields.js';
+import { defaultFalseBoolean } from '../schemas/shared.js';
 
 import { defineTool } from './define-tool.js';
 import { FILE_DELETE_ICONS } from './icons.js';
@@ -37,25 +33,8 @@ const DeleteInputSchema = z.strictObject({
 });
 
 const DeleteOutputSchema = z.strictObject({
+  path: z.string().describe('Deleted path'),
   ok: z.literal(true).describe('Success indicator'),
-  deleted: z
-    .array(
-      z.strictObject({
-        path: z.string().describe('Deleted path'),
-        type: FileTypeEnum.optional().describe('Deleted item type'),
-      })
-    )
-    .describe('Successfully deleted items'),
-  summary: OperationSummarySchema.describe('Operation summary'),
-  failures: z
-    .array(
-      z.strictObject({
-        path: z.string(),
-        error: PerFileErrorSchema,
-      })
-    )
-    .optional()
-    .describe('Per-path failures'),
 });
 
 const DELETE_FILE_TOOL: ToolContract = {
@@ -73,8 +52,21 @@ const DELETE_FILE_TOOL: ToolContract = {
 
 type DeleteInput = z.infer<typeof DeleteInputSchema>;
 type DeleteOutput = z.infer<typeof DeleteOutputSchema>;
-type DeleteFailure = NonNullable<DeleteOutput['failures']>[number];
-type DeletedItem = DeleteOutput['deleted'][number];
+
+// Internal types for error handling
+interface DeletedItem {
+  path: string;
+  type?: 'directory' | 'symlink' | 'file' | 'other';
+}
+interface DeleteFailure {
+  path: string;
+  error: {
+    code: string;
+    message: string;
+    path?: string;
+    suggestion?: string;
+  };
+}
 
 function toDeleteFailure(path: string, error: unknown): DeleteFailure {
   if (isNodeError(error)) {
@@ -246,42 +238,32 @@ async function handleDelete(
   signal?: AbortSignal,
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>
 ): Promise<DeleteOutput> {
-  const deleted: DeletedItem[] = [];
-  const failures: DeleteFailure[] = [];
+  // P3 confirmation-only pattern: process single path (use first path)
+  const inputPath = args.paths[0];
+  if (!inputPath) {
+    throw new McpError(ErrorCode.INVALID_INPUT, 'No paths provided.');
+  }
 
-  for (const inputPath of args.paths) {
-    const result = await deleteSinglePath(
-      inputPath,
-      args,
-      pathGuard,
-      signal,
-      elicitInput
+  const result = await deleteSinglePath(
+    inputPath,
+    args,
+    pathGuard,
+    signal,
+    elicitInput
+  );
+
+  if ('failure' in result) {
+    throw new McpError(
+      result.failure.error.code as ErrorCode,
+      `Failed to delete ${inputPath}`,
+      inputPath
     );
-    if ('item' in result) {
-      deleted.push(result.item);
-    } else {
-      failures.push(result.failure);
-    }
   }
 
   return {
-    ok: true,
-    deleted,
-    summary: {
-      total: args.paths.length,
-      succeeded: deleted.length,
-      failed: failures.length,
-    },
-    ...(failures.length > 0 ? { failures } : {}),
+    ok: true as const,
+    path: result.item.path,
   };
-}
-
-function formatDeleteMessage(deleted: number, failed: number): string {
-  if (failed > 0 && deleted === 0)
-    return `Failed to delete ${failed} item${failed === 1 ? '' : 's'}`;
-  if (failed > 0)
-    return `Deleted ${deleted} item${deleted === 1 ? '' : 's'}; ${failed} failed`;
-  return `Successfully deleted ${deleted} item${deleted === 1 ? '' : 's'}`;
 }
 
 export const DELETE_FILE = defineTool<DeleteInput, DeleteOutput>({
@@ -296,8 +278,7 @@ export const DELETE_FILE = defineTool<DeleteInput, DeleteOutput>({
     const names = args.paths.map((p) => basename(p)).join(', ');
     if (result.isError)
       return `${DELETE_FILE_TOOL.title}: ${names} \u2022 ${result.errorCode}`;
-    const { summary } = result.structuredContent;
-    return `${DELETE_FILE_TOOL.title}: ${names} \u2022 ${summary.succeeded}/${summary.total} deleted`;
+    return `${DELETE_FILE_TOOL.title}: deleted ${result.structuredContent.path}`;
   },
   run: async (args, ctx) => {
     const structured = await handleDelete(
@@ -306,11 +287,9 @@ export const DELETE_FILE = defineTool<DeleteInput, DeleteOutput>({
       ctx.signal,
       ctx.elicitInput
     );
-    const text = formatDeleteMessage(
-      structured.summary.succeeded,
-      structured.summary.failed
-    );
-    void ctx.log?.('info', `rm: ${args.paths.join(', ')}`, 'rm');
-    return buildToolResponse(text, structured);
+    // P3 confirmation-only pattern: terse summary with deletion confirmation
+    const summary = `delete-file: deleted ${structured.path}`;
+    void ctx.log?.('info', `rm: ${args.paths[0]}`, 'rm');
+    return buildToolResponse(summary, structured);
   },
 });
