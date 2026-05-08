@@ -62,7 +62,7 @@ describe('resources and metadata', () => {
     }
   });
 
-  it('lists exactly 1 static resource and 1 resource template', async () => {
+  it('lists exactly 1 static resource and 2 resource templates', async () => {
     const env = await createDiscoveryEnv();
     cleanups.push(env.cleanup);
 
@@ -73,6 +73,7 @@ describe('resources and metadata', () => {
     assert.equal(resources[0]?.uri, 'internal://instructions');
 
     assert.deepEqual(resourceTemplates.map((t) => t.uriTemplate).sort(), [
+      'filesystem-mcp://file/{+path}',
       'filesystem-mcp://result/{id}',
     ]);
   });
@@ -113,12 +114,12 @@ describe('resources and metadata', () => {
     const { prompts } = await env.client.listPrompts();
 
     assert.match(readme, /\*\*18 filesystem tools\*\*/u);
-    assert.match(readme, /\*\*Self-documenting\*\* — 2 built-in resources/u);
+    assert.match(readme, /\*\*Self-documenting\*\* — 3 built-in resources/u);
     assert.match(readme, /3 built-in prompts/u);
 
     assert.equal(tools.length, 18);
     assert.equal(resources.length, 1);
-    assert.equal(resourceTemplates.length, 1);
+    assert.equal(resourceTemplates.length, 2);
     assert.equal(prompts.length, 3);
 
     assert.equal(serverJson.title, 'Filesystem MCP');

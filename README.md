@@ -38,7 +38,7 @@ Supports stdio (default) and Node Streamable HTTP transport. HTTP sessions are i
 - **Security-first** — path validation, symlink escape prevention, sensitive file denylist, localhost-only CORS, Host header validation for loopback HTTP binds, optional API key auth
 - **Dual transport** — stdio for local use, Node Streamable HTTP for networked/multi-session deployments
 - **Structured output** — all tools return typed `outputSchema` / `structuredContent` for reliable LLM parsing
-- **Self-documenting** — 2 built-in resources (`internal://instructions`, `filesystem-mcp://result/{id}`) and 3 built-in prompts (`get-help`, `compare-files`, `analyze-path`)
+- **Self-documenting** — 3 built-in resources (`internal://instructions`, `filesystem-mcp://result/{id}`, `filesystem-mcp://file/{+path}`) and 3 built-in prompts (`get-help`, `compare-files`, `analyze-path`)
 
 ## Requirements
 
@@ -838,14 +838,14 @@ Bulk search-and-replace across files matching a glob. Replaces **all** occurrenc
 
 ## MCP Capabilities
 
-| Capability    | Status    | Evidence                                                                     |
-| ------------- | --------- | ---------------------------------------------------------------------------- |
-| `logging`     | confirmed | `src/server/bootstrap.ts` — registered in capabilities                       |
-| `resources`   | confirmed | `src/server/bootstrap.ts` — 2 resources registered, no subscribe/listChanged |
-| `tools`       | confirmed | `src/server/bootstrap.ts` — 18 tools registered                              |
-| `prompts`     | confirmed | `src/server/bootstrap.ts` — 3 prompts registered                             |
-| `completions` | confirmed | `src/completions.ts` — path, topic, and tool-name auto-completion            |
-| `tasks`       | confirmed | `src/server/bootstrap.ts` — optional task support (list, cancel, requests)   |
+| Capability    | Status    | Evidence                                                                   |
+| ------------- | --------- | -------------------------------------------------------------------------- |
+| `logging`     | confirmed | `src/server/bootstrap.ts` — registered in capabilities                     |
+| `resources`   | confirmed | `src/resources.ts` — 3 resources registered, with subscriptions support    |
+| `tools`       | confirmed | `src/server/bootstrap.ts` — 18 tools registered                            |
+| `prompts`     | confirmed | `src/server/bootstrap.ts` — 3 prompts registered                           |
+| `completions` | confirmed | `src/completions.ts` — path, topic, and tool-name auto-completion          |
+| `tasks`       | confirmed | `src/server/bootstrap.ts` — optional task support (list, cancel, requests) |
 
 ### Tool Annotations
 
