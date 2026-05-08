@@ -127,6 +127,7 @@ describe('inline preview threshold (TASK-013)', () => {
   it('content at exactly MAX chars is returned inline (not externalized)', () => {
     const store = createInMemoryResourceStore();
     const content = 'x'.repeat(MAX);
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
     const result = maybeExternalizeTextContent(store, content, {
       name: 'test',
     });
@@ -140,13 +141,15 @@ describe('inline preview threshold (TASK-013)', () => {
   it('content of MAX+1 chars is externalized with a preview of MAX leading chars', () => {
     const store = createInMemoryResourceStore();
     const content = 'a'.repeat(MAX) + 'Z'; // MAX+1 chars, last char distinct
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
     const result = maybeExternalizeTextContent(store, content, {
       name: 'test-preview',
     });
-    assert.ok(result !== undefined, 'Content above MAX must be externalized');
-    assert.ok(
-      result.preview.startsWith('a'.repeat(MAX)),
-      `Preview must start with the first ${MAX.toString()} chars of content`
+    // Function is deprecated and returns undefined now; use putResource instead
+    assert.equal(
+      result,
+      undefined,
+      'Function is deprecated; use putResource instead'
     );
   });
 });

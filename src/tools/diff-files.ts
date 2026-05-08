@@ -8,6 +8,7 @@ import { withAbort } from '../lib/abort.js';
 import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
 import type { PathGuard } from '../lib/path-guard.js';
+import type { ResourceStore } from '../lib/resource-store.js';
 import { runInWorker, shouldOffload } from '../lib/worker-pool.js';
 import { NonNegInt, RequiredPath } from '../schemas/fields.js';
 import { defaultFalseBoolean } from '../schemas/shared.js';
@@ -15,12 +16,11 @@ import { defaultFalseBoolean } from '../schemas/shared.js';
 import { defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
-  buildResourceLink,
+  buildResourceResponse,
   buildToolResponse,
-  maybeExternalizeTextContent,
+  putResource,
   READ_ONLY_TOOL_ANNOTATIONS,
   type ToolContract,
-  type ToolRegistrationOptions,
   type ToolResponse,
   type ToolResult,
 } from './shared.js';
@@ -37,6 +37,7 @@ const DiffFilesOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),
   diff: z.string().describe('Unified diff output (empty when identical)'),
   isIdentical: z.boolean().describe('True when files are identical'),
+  changeCount: z.number().optional().describe('Total lines added + deleted'),
   stats: z
     .strictObject({
       additions: NonNegInt.describe('Lines added'),
@@ -99,7 +100,7 @@ async function handleDiffFiles(
   args: z.infer<typeof DiffFilesInputSchema>,
   pathGuard: PathGuard,
   signal?: AbortSignal,
-  resourceStore?: ToolRegistrationOptions['resourceStore']
+  resourceStore?: ResourceStore
 ): Promise<ToolResponse<z.infer<typeof DiffFilesOutputSchema>>> {
   const originalInput = args.original;
   const modifiedInput = args.modified;
@@ -189,41 +190,54 @@ async function handleDiffFiles(
       }
     : undefined;
 
-  const externalized = maybeExternalizeTextContent(resourceStore, diffText, {
-    name: 'diff:patch',
-    mimeType: 'text/x-diff',
-  });
-
-  if (!externalized) {
-    return buildToolResponse(isIdentical ? 'No differences' : diffText, {
+  // If files are identical, return early with no resource
+  if (isIdentical) {
+    return buildToolResponse('No differences', {
       ok: true,
-      diff: diffText,
-      isIdentical,
-      ...(mappedStats ? { stats: mappedStats } : {}),
+      diff: '',
+      isIdentical: true,
     });
   }
 
-  const { preview, entry } = externalized;
-  return buildToolResponse(
-    preview,
-    {
-      ok: true,
-      diff: preview,
-      isIdentical,
-      ...(mappedStats ? { stats: mappedStats } : {}),
-      truncated: true,
-      resourceUri: entry.uri,
-    },
-    [
-      buildResourceLink({
-        uri: entry.uri,
-        name: entry.name,
-        mimeType: entry.mimeType,
-        description: 'Full diff content',
-        expiresAt: entry.expiresAt,
-      }),
-    ]
-  );
+  // Store diff in resource and return resource link
+  const changeCount =
+    (mappedStats?.additions ?? 0) + (mappedStats?.deletions ?? 0);
+  const originalName = basename(originalPath);
+  const modifiedName = basename(modifiedPath);
+
+  if (resourceStore) {
+    const { entry, link } = putResource({
+      store: resourceStore,
+      name: 'diff.patch',
+      mimeType: 'text/x-patch',
+      kind: 'text',
+      content: diffText,
+    });
+
+    const summary = `diff-files: ${originalName} vs ${modifiedName} · ${changeCount} change${changeCount === 1 ? '' : 's'}`;
+
+    return buildResourceResponse({
+      summary,
+      resources: [link],
+      structured: {
+        ok: true,
+        diff: diffText,
+        isIdentical: false,
+        changeCount,
+        ...(mappedStats ? { stats: mappedStats } : {}),
+        resourceUri: entry.uri,
+      },
+    });
+  }
+
+  // Fallback if resource store is unavailable
+  return buildToolResponse(diffText, {
+    ok: true,
+    diff: diffText,
+    isIdentical: false,
+    changeCount,
+    ...(mappedStats ? { stats: mappedStats } : {}),
+  });
 }
 
 type DiffInput = z.infer<typeof DiffFilesInputSchema>;
