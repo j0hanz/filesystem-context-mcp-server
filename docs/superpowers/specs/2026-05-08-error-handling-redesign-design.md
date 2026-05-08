@@ -18,13 +18,13 @@ Three classification bugs are also baked in: `EMFILE`/`ENFILE` map to `TIMEOUT` 
 
 ## 2. Constraints
 
-| Constraint | Source |
-|---|---|
-| The 8 wire `ErrorCode` strings (`NOT_FOUND`, `ACCESS_DENIED`, `INVALID_INPUT`, `CANCELLED`, `PERMISSION_DENIED`, `TIMEOUT`, `TOO_LARGE`, `UNKNOWN`) are **stable** | ~50+ test assertions across `__tests__/security.test.ts`, `__tests__/tools/*.test.ts`, `__tests__/unit/*.test.ts` |
-| Additions to `ErrorCode` are allowed | Test assertions only check exact string match; no exhaustiveness check on the wire side |
-| `McpError` must remain throwable (`extends Error`) | Used across `path-guard.ts`, `resource-store.ts`, `move-file.ts`, `replace-in-files.ts`; `try/catch` patterns rely on `instanceof McpError` |
-| `__tests__/contract.test.ts` annotations and tool registration shape unchanged | Ouf of scope |
-| No major version bump | Per user direction |
+| Constraint                                                                                                                                                         | Source                                                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| The 8 wire `ErrorCode` strings (`NOT_FOUND`, `ACCESS_DENIED`, `INVALID_INPUT`, `CANCELLED`, `PERMISSION_DENIED`, `TIMEOUT`, `TOO_LARGE`, `UNKNOWN`) are **stable** | ~50+ test assertions across `__tests__/security.test.ts`, `__tests__/tools/*.test.ts`, `__tests__/unit/*.test.ts`                           |
+| Additions to `ErrorCode` are allowed                                                                                                                               | Test assertions only check exact string match; no exhaustiveness check on the wire side                                                     |
+| `McpError` must remain throwable (`extends Error`)                                                                                                                 | Used across `path-guard.ts`, `resource-store.ts`, `move-file.ts`, `replace-in-files.ts`; `try/catch` patterns rely on `instanceof McpError` |
+| `__tests__/contract.test.ts` annotations and tool registration shape unchanged                                                                                     | Ouf of scope                                                                                                                                |
+| No major version bump                                                                                                                                              | Per user direction                                                                                                                          |
 
 ## 3. Architecture
 
@@ -74,7 +74,7 @@ export interface Problem {
 
 export interface ProblemIssue {
   readonly path: ReadonlyArray<string | number>;
-  readonly code: string;          // Zod issue.code OR custom rule (e.g. 'mutually_exclusive')
+  readonly code: string; // Zod issue.code OR custom rule (e.g. 'mutually_exclusive')
   readonly message: string;
   readonly expected?: string;
   readonly received?: string;
@@ -85,8 +85,8 @@ export interface ProblemDetails {
   readonly traceparent?: string;
   readonly tracestate?: string;
   readonly baggage?: string;
-  readonly errno?: string;        // 'ENOENT', 'EACCES', …
-  readonly syscall?: string;      // 'open', 'stat', …
+  readonly errno?: string; // 'ENOENT', 'EACCES', …
+  readonly syscall?: string; // 'open', 'stat', …
   readonly tool?: string;
   readonly extra?: Readonly<Record<string, unknown>>;
 }
@@ -96,26 +96,35 @@ export interface ProblemDetails {
 
 ```ts
 export class McpError extends Error {
-  constructor(public readonly problem: Problem, cause?: unknown) {
+  constructor(
+    public readonly problem: Problem,
+    cause?: unknown
+  ) {
     super(problem.message, cause === undefined ? {} : { cause });
     this.name = 'McpError';
   }
-  get code(): ErrorCode { return this.problem.code; }
-  get path(): string | undefined { return this.problem.path; }
-  get details(): ProblemDetails | undefined { return this.problem.details; }
+  get code(): ErrorCode {
+    return this.problem.code;
+  }
+  get path(): string | undefined {
+    return this.problem.path;
+  }
+  get details(): ProblemDetails | undefined {
+    return this.problem.details;
+  }
 }
 ```
 
-The pre-existing positional constructor (`new McpError(code, msg, path, details, cause)`) is kept as an **overload** that delegates to the new shape, so call sites in `path-guard.ts`, `resource-store.ts`, `move-file.ts`, and `replace-in-files.ts` keep compiling without per-file edits during the rollout. The overload is *not* deprecated — it's a forwarding constructor.
+The pre-existing positional constructor (`new McpError(code, msg, path, details, cause)`) is kept as an **overload** that delegates to the new shape, so call sites in `path-guard.ts`, `resource-store.ts`, `move-file.ts`, and `replace-in-files.ts` keep compiling without per-file edits during the rollout. The overload is _not_ deprecated — it's a forwarding constructor.
 
 ### `ErrorCode` — additive
 
 Existing 8 wire-stable codes preserved verbatim. Added:
 
-| Code | Meaning |
-|---|---|
+| Code                | Meaning                                                                                                                                        |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `VALIDATION_FAILED` | Zod schema rejection. Carries `issues[]`. Distinct from `INVALID_INPUT` (which becomes "input was structurally valid but semantically wrong"). |
-| `IO_ERROR` | Unclassified `NodeJS.ErrnoException`. Replaces the message-sniffing fallback. |
+| `IO_ERROR`          | Unclassified `NodeJS.ErrnoException`. Replaces the message-sniffing fallback.                                                                  |
 
 Plus three internal codes that were already unused (`NOT_FILE`, `NOT_DIRECTORY`, `INVALID_PATTERN`, `SYMLINK_NOT_ALLOWED`) — no change.
 
@@ -123,7 +132,10 @@ Plus three internal codes that were already unused (`NOT_FILE`, `NOT_DIRECTORY`,
 
 ```ts
 // src/lib/problem.ts
-export function classify(error: unknown, ctx?: { schema?: z.ZodType }): Problem {
+export function classify(
+  error: unknown,
+  ctx?: { schema?: z.ZodType }
+): Problem {
   if (error instanceof McpError) return error.problem;
   if (error instanceof z.ZodError) return zodErrorToProblem(error, ctx?.schema);
   const signal = walkCauseChain(error);
@@ -135,9 +147,9 @@ export function classify(error: unknown, ctx?: { schema?: z.ZodType }): Problem 
 
 ```ts
 type ClassificationSignal =
-  | { kind: 'abort';   reason?: string }
+  | { kind: 'abort'; reason?: string }
   | { kind: 'timeout'; errno?: string }
-  | { kind: 'errno';   errno: string; syscall?: string; path?: string }
+  | { kind: 'errno'; errno: string; syscall?: string; path?: string }
   | { kind: 'unknown' };
 ```
 
@@ -152,20 +164,20 @@ Detection precedence (terminates on first match while walking `.cause`):
 
 ```ts
 const ERRNO_MAP: Readonly<Record<string, ErrorCode>> = {
-  ENOENT:       ErrorCode.NOT_FOUND,
-  EACCES:       ErrorCode.PERMISSION_DENIED,
-  EPERM:        ErrorCode.PERMISSION_DENIED,
-  ENOTDIR:      ErrorCode.NOT_DIRECTORY,
-  EISDIR:       ErrorCode.NOT_FILE,
-  ELOOP:        ErrorCode.SYMLINK_NOT_ALLOWED,
+  ENOENT: ErrorCode.NOT_FOUND,
+  EACCES: ErrorCode.PERMISSION_DENIED,
+  EPERM: ErrorCode.PERMISSION_DENIED,
+  ENOTDIR: ErrorCode.NOT_DIRECTORY,
+  EISDIR: ErrorCode.NOT_FILE,
+  ELOOP: ErrorCode.SYMLINK_NOT_ALLOWED,
   ENAMETOOLONG: ErrorCode.INVALID_INPUT,
-  ETIMEDOUT:    ErrorCode.TIMEOUT,
-  EMFILE:       ErrorCode.IO_ERROR,    // FIX: was TIMEOUT
-  ENFILE:       ErrorCode.IO_ERROR,    // FIX: was TIMEOUT
-  EBUSY:        ErrorCode.IO_ERROR,    // FIX: was PERMISSION_DENIED
-  ENOTEMPTY:    ErrorCode.NOT_DIRECTORY,
-  EEXIST:       ErrorCode.INVALID_INPUT,
-  EINVAL:       ErrorCode.INVALID_INPUT,
+  ETIMEDOUT: ErrorCode.TIMEOUT,
+  EMFILE: ErrorCode.IO_ERROR, // FIX: was TIMEOUT
+  ENFILE: ErrorCode.IO_ERROR, // FIX: was TIMEOUT
+  EBUSY: ErrorCode.IO_ERROR, // FIX: was PERMISSION_DENIED
+  ENOTEMPTY: ErrorCode.NOT_DIRECTORY,
+  EEXIST: ErrorCode.INVALID_INPUT,
+  EINVAL: ErrorCode.INVALID_INPUT,
 };
 ```
 
@@ -184,7 +196,10 @@ function zodErrorToProblem(err: z.ZodError, schema?: z.ZodType): Problem {
     code: ErrorCode.VALIDATION_FAILED,
     message: z.prettifyError(err),
     issues,
-    suggestion: resolveSuggestion({ code: ErrorCode.VALIDATION_FAILED, issues }, schema),
+    suggestion: resolveSuggestion(
+      { code: ErrorCode.VALIDATION_FAILED, issues },
+      schema
+    ),
   };
 }
 ```
@@ -214,8 +229,13 @@ Clients can branch on `issue.params.rule` instead of parsing English.
 const JSON_SCHEMA_OVERRIDE: z.core.JSONSchemaOverride = (ctx) => {
   const out = ctx.jsonSchema;
   if (out.format === 'date-time' && 'pattern' in out) delete out.pattern;
-  if (out.type === 'integer' && out.maximum === Number.MAX_SAFE_INTEGER) delete out.maximum;
-  if (typeof out.format === 'string' && NONSTANDARD_FORMATS.has(out.format) && 'pattern' in out) {
+  if (out.type === 'integer' && out.maximum === Number.MAX_SAFE_INTEGER)
+    delete out.maximum;
+  if (
+    typeof out.format === 'string' &&
+    NONSTANDARD_FORMATS.has(out.format) &&
+    'pattern' in out
+  ) {
     delete out.format;
   }
   if ('contentEncoding' in out && 'pattern' in out) delete out.contentEncoding;
@@ -227,7 +247,7 @@ export function toToolJsonSchema(zodSchema, augment?) {
     unrepresentable: 'any',
     override: JSON_SCHEMA_OVERRIDE,
   }) as JsonSchema;
-  const cleaned = postProcessRoot(raw);   // strips $schema + defaulted-required
+  const cleaned = postProcessRoot(raw); // strips $schema + defaulted-required
   return fromJsonSchema(augment ? augment(cleaned) : cleaned);
 }
 ```
@@ -245,7 +265,7 @@ The static `ERROR_SUGGESTIONS` map becomes the **last** of three sources:
 ```ts
 export function resolveSuggestion(
   p: Pick<Problem, 'code' | 'issues'>,
-  schema?: z.ZodType,
+  schema?: z.ZodType
 ): string | undefined {
   // 1. Schema metadata: walk schema by issue path → .meta().suggestion
   if (p.issues?.length && schema) {
@@ -269,14 +289,16 @@ export function resolveSuggestion(
 Schema-attached suggestions live in `.meta()`:
 
 ```ts
-export const SafeGlobPattern = z.string()
+export const SafeGlobPattern = z
+  .string()
   .min(1, 'Pattern required')
   .refine((v) => isSafeGlobSyntax(v), { error: 'Invalid glob or unsafe path' })
   .meta({
     id: 'SafeGlobPattern',
     title: 'Glob Pattern',
     examples: ['**/*.ts', 'src/**/*.js'],
-    suggestion: 'Use forward-slash globs; absolute paths and ".." are forbidden.',
+    suggestion:
+      'Use forward-slash globs; absolute paths and ".." are forbidden.',
   });
 ```
 
@@ -287,16 +309,20 @@ export const SafeGlobPattern = z.string()
 ### Throwing
 
 Old:
+
 ```ts
-throw new McpError(ErrorCode.NOT_FOUND, 'File not found', path, { tool: 'read' });
+throw new McpError(ErrorCode.NOT_FOUND, 'File not found', path, {
+  tool: 'read',
+});
 ```
 
 New (preferred):
+
 ```ts
 throw Problem.notFound('File not found', { path });
 throw Problem.invalidInput('Pattern too short', { path });
 throw Problem.from(zodError, { schema: ReadFileInputSchema });
-throw Problem.fromNode(nodeError, { path });   // errno-classified
+throw Problem.fromNode(nodeError, { path }); // errno-classified
 ```
 
 `Problem.notFound(...)` etc. construct the `Problem` and wrap in `McpError` so `throw` works.
@@ -304,7 +330,10 @@ throw Problem.fromNode(nodeError, { path });   // errno-classified
 ### Argument validation
 
 ```ts
-function parseToolArgs<S extends z.ZodType>(schema: S, args: unknown): z.infer<S> {
+function parseToolArgs<S extends z.ZodType>(
+  schema: S,
+  args: unknown
+): z.infer<S> {
   const result = schema.safeParse(args ?? {});
   if (result.success) return result.data;
   throw new McpError(zodErrorToProblem(result.error, schema));
@@ -320,14 +349,23 @@ Wire output for an invalid arg:
       "code": "VALIDATION_FAILED",
       "message": "✖ Pattern required\n  → at pattern",
       "issues": [
-        { "path": ["pattern"], "code": "too_small", "message": "Pattern required",
-          "params": { "minimum": 1 } }
+        {
+          "path": ["pattern"],
+          "code": "too_small",
+          "message": "Pattern required",
+          "params": { "minimum": 1 },
+        },
       ],
-      "suggestion": "Use forward-slash globs; absolute paths and \"..\" are forbidden."
-    }
+      "suggestion": "Use forward-slash globs; absolute paths and \"..\" are forbidden.",
+    },
   },
-  "content": [{ "type": "text", "text": "VALIDATION_FAILED: ✖ Pattern required\n  → at pattern\n\nUse forward-slash globs..." }],
-  "isError": true
+  "content": [
+    {
+      "type": "text",
+      "text": "VALIDATION_FAILED: ✖ Pattern required\n  → at pattern\n\nUse forward-slash globs...",
+    },
+  ],
+  "isError": true,
 }
 ```
 
@@ -344,6 +382,7 @@ Add `z.config(z.locales.en())` once in `src/index.ts` bootstrap. No runtime beha
 ## 10. Testing strategy
 
 ### Replaced
+
 - **`__tests__/unit/errors.test.ts`** rewritten (~270 LOC out, ~250 LOC in):
   - Construction: each `Problem.*` factory produces correct shape
   - `McpError` carrier: back-compat getters work, `cause` propagates
@@ -354,6 +393,7 @@ Add `z.config(z.locales.en())` once in `src/index.ts` bootstrap. No runtime beha
   - **No-sniffing property locked in**: `new Error('permission denied')` → `UNKNOWN`, NOT `PERMISSION_DENIED`
 
 ### New
+
 - **`__tests__/unit/problem.test.ts`** (~150 LOC):
   - `zodErrorToProblem` maps each `ZodIssue` correctly (path normalization, expected/received, params passthrough)
   - Custom `superRefine` issue with `params: { rule, conflictsWith, suggestion }` round-trips intact
@@ -361,12 +401,14 @@ Add `z.config(z.locales.en())` once in `src/index.ts` bootstrap. No runtime beha
   - Wire serialization: `problemToWire(p)` includes `issues` only when non-empty; omits `details` when empty
 
 ### Updated
+
 - `__tests__/unit/define-tool.test.ts`, `__tests__/unit/shared.test.ts` — `ErrorCode.X` constants pass through unchanged
 - `__tests__/tools/read-write.test.ts` lines 512, 604, 702, 726 — flip `'INVALID_INPUT'` → `'VALIDATION_FAILED'` (verify each is actually a Zod failure first)
 - `__tests__/tools/directory.test.ts` lines 382, 394 — same flip
 - `__tests__/schemas/snapshot.test.ts` — expected byte-identical; if drift, update once
 
 ### Unchanged
+
 - `__tests__/contract.test.ts`
 
 ## 11. Rollout sequence (single PR, ordered commits)
@@ -404,14 +446,14 @@ Add `z.config(z.locales.en())` once in `src/index.ts` bootstrap. No runtime beha
 
 ## 12. Risks
 
-| Risk | Mitigation |
-|---|---|
-| `walk()` replacement subtly changes a JSON Schema field | Snapshot test catches; manual diff review of one snapshot before merging |
-| `define-tool.test.ts:456` relies on message-sniffing | Verified: it doesn't (plain Error → UNKNOWN → default upgrade) |
-| Production code throws `Error('timed out')` and relies on `TIMEOUT` classification | Grep at step 2; convert to `Problem.timeout(...)` |
-| `path-guard.ts` ~10 throws use 4-arg constructor | Constructor overload keeps them compiling |
-| `resource-store.ts` 4 throws | Same |
-| Errno fixes (`EMFILE`/`EBUSY`) break a downstream consumer | No test pins these; documented in PR description |
+| Risk                                                                               | Mitigation                                                               |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `walk()` replacement subtly changes a JSON Schema field                            | Snapshot test catches; manual diff review of one snapshot before merging |
+| `define-tool.test.ts:456` relies on message-sniffing                               | Verified: it doesn't (plain Error → UNKNOWN → default upgrade)           |
+| Production code throws `Error('timed out')` and relies on `TIMEOUT` classification | Grep at step 2; convert to `Problem.timeout(...)`                        |
+| `path-guard.ts` ~10 throws use 4-arg constructor                                   | Constructor overload keeps them compiling                                |
+| `resource-store.ts` 4 throws                                                       | Same                                                                     |
+| Errno fixes (`EMFILE`/`EBUSY`) break a downstream consumer                         | No test pins these; documented in PR description                         |
 
 ## 13. Out of scope
 
