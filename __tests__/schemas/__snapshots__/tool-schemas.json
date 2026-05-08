@@ -36,8 +36,188 @@
           "type": "boolean"
         }
       },
-      "required": ["patch"],
+      "required": [
+        "patch"
+      ],
       "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true,
+          "description": "Success indicator"
+        },
+        "path": {
+          "description": "Primary patched file path",
+          "type": "string"
+        },
+        "size": {
+          "description": "Primary file size in bytes",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "lineCount": {
+          "description": "Primary file line count",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "mimeType": {
+          "description": "MIME type of primary file",
+          "type": "string"
+        },
+        "kind": {
+          "description": "File kind of primary file",
+          "type": "string",
+          "enum": [
+            "text",
+            "binary",
+            "image",
+            "audio",
+            "pdf"
+          ]
+        },
+        "resourceUri": {
+          "description": "Resource URI for primary file",
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "File path"
+              },
+              "hunks": {
+                "maximum": 9007199254740991,
+                "description": "Hunks applied",
+                "$ref": "#/$defs/NonNegInt"
+              },
+              "linesAdded": {
+                "description": "Lines added",
+                "$ref": "#/$defs/NonNegInt"
+              },
+              "linesRemoved": {
+                "description": "Lines removed",
+                "$ref": "#/$defs/NonNegInt"
+              }
+            },
+            "required": [
+              "path",
+              "hunks"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Per-file patch results"
+        },
+        "appliedHunks": {
+          "description": "Total hunks applied (primary file)",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "rejectedHunks": {
+          "description": "Total hunks rejected (primary file)",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "filesPatched": {
+          "description": "List of patched file paths",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "summary": {
+          "description": "Operation summary",
+          "$ref": "#/$defs/OperationSummary"
+        },
+        "failures": {
+          "description": "Per-file patch failures",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "error": {
+                "$ref": "#/$defs/PerFileError"
+              }
+            },
+            "required": [
+              "path",
+              "error"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "ok",
+        "files",
+        "summary"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "NonNegInt": {
+          "type": "integer",
+          "minimum": 0,
+          "title": "Non-Negative Integer"
+        },
+        "OperationSummary": {
+          "type": "object",
+          "properties": {
+            "total": {
+              "maximum": 9007199254740991,
+              "description": "Total",
+              "$ref": "#/$defs/NonNegInt"
+            },
+            "succeeded": {
+              "maximum": 9007199254740991,
+              "description": "Succeeded",
+              "$ref": "#/$defs/NonNegInt"
+            },
+            "failed": {
+              "maximum": 9007199254740991,
+              "description": "Failed",
+              "$ref": "#/$defs/NonNegInt"
+            }
+          },
+          "required": [
+            "total",
+            "succeeded",
+            "failed"
+          ],
+          "additionalProperties": false,
+          "title": "Operation Summary"
+        },
+        "PerFileError": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Error code"
+            },
+            "message": {
+              "type": "string",
+              "description": "Error message"
+            },
+            "path": {
+              "description": "Path involved",
+              "type": "string"
+            },
+            "suggestion": {
+              "description": "Suggested fix",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false,
+          "title": "Per-File Error"
+        }
+      }
     }
   },
   "calculate_hash": {
@@ -51,17 +231,91 @@
           "description": "Path inside an allowed root"
         },
         "algorithms": {
-          "default": ["sha256"],
+          "default": [
+            "sha256"
+          ],
           "description": "Hash algorithms to compute (default: sha256)",
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["sha256", "md5", "sha1", "sha512"]
+            "enum": [
+              "sha256",
+              "md5",
+              "sha1",
+              "sha512"
+            ]
           }
         }
       },
-      "required": ["path"],
+      "required": [
+        "path"
+      ],
       "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true,
+          "description": "Success indicator"
+        },
+        "filePath": {
+          "type": "string",
+          "description": "Resolved file or directory path"
+        },
+        "algorithms": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "sha256",
+              "md5",
+              "sha1",
+              "sha512"
+            ]
+          },
+          "description": "Algorithms computed"
+        },
+        "hashes": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Algorithm → hex digest mapping"
+        },
+        "resourceUri": {
+          "type": "string",
+          "description": "URI to hashes.json resource"
+        },
+        "isDirectory": {
+          "type": "boolean",
+          "description": "True when hashing a directory"
+        },
+        "fileCount": {
+          "description": "Files hashed (directories only)",
+          "$ref": "#/$defs/NonNegInt"
+        }
+      },
+      "required": [
+        "ok",
+        "filePath",
+        "algorithms",
+        "hashes",
+        "resourceUri",
+        "isDirectory"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "NonNegInt": {
+          "type": "integer",
+          "minimum": 0,
+          "title": "Non-Negative Integer"
+        }
+      }
     }
   },
   "diff_files": {
@@ -97,8 +351,81 @@
           "type": "boolean"
         }
       },
-      "required": ["original", "modified"],
+      "required": [
+        "original",
+        "modified"
+      ],
       "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true,
+          "description": "Success indicator"
+        },
+        "diff": {
+          "type": "string",
+          "description": "Unified diff output (empty when identical)"
+        },
+        "isIdentical": {
+          "type": "boolean",
+          "description": "True when files are identical"
+        },
+        "changeCount": {
+          "description": "Total lines added + deleted",
+          "type": "number"
+        },
+        "stats": {
+          "description": "Diff statistics (absent when identical)",
+          "type": "object",
+          "properties": {
+            "additions": {
+              "maximum": 9007199254740991,
+              "description": "Lines added",
+              "$ref": "#/$defs/NonNegInt"
+            },
+            "deletions": {
+              "maximum": 9007199254740991,
+              "description": "Lines deleted",
+              "$ref": "#/$defs/NonNegInt"
+            },
+            "hunks": {
+              "maximum": 9007199254740991,
+              "description": "Hunk count",
+              "$ref": "#/$defs/NonNegInt"
+            }
+          },
+          "required": [
+            "additions",
+            "deletions",
+            "hunks"
+          ],
+          "additionalProperties": false
+        },
+        "truncated": {
+          "description": "Diff was truncated to resource",
+          "type": "boolean"
+        },
+        "resourceUri": {
+          "description": "Full diff URI when truncated",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "diff",
+        "isIdentical"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "NonNegInt": {
+          "type": "integer",
+          "minimum": 0,
+          "title": "Non-Negative Integer"
+        }
+      }
     }
   },
   "edit": {
@@ -121,15 +448,25 @@
                 "type": "string",
                 "minLength": 1,
                 "description": "Exact text to find (must match literally)",
-                "examples": ["const x = 1;", "function oldName("]
+                "examples": [
+                  "const x = 1;",
+                  "function oldName("
+                ]
               },
               "newText": {
                 "type": "string",
                 "description": "Replacement text (empty string to delete)",
-                "examples": ["const x = 2;", "function newName(", ""]
+                "examples": [
+                  "const x = 2;",
+                  "function newName(",
+                  ""
+                ]
               }
             },
-            "required": ["oldText", "newText"],
+            "required": [
+              "oldText",
+              "newText"
+            ],
             "additionalProperties": false
           },
           "description": "List of text substitutions"
@@ -145,8 +482,116 @@
           "type": "boolean"
         }
       },
-      "required": ["path", "edits"],
+      "required": [
+        "path",
+        "edits"
+      ],
       "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true,
+          "description": "Success indicator"
+        },
+        "path": {
+          "type": "string",
+          "description": "File path"
+        },
+        "size": {
+          "maximum": 9007199254740991,
+          "description": "File size in bytes",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "lineCount": {
+          "maximum": 9007199254740991,
+          "description": "Number of lines in file",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "mimeType": {
+          "type": "string",
+          "description": "MIME type of the file"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "text",
+            "binary",
+            "image",
+            "audio",
+            "pdf"
+          ],
+          "description": "File kind"
+        },
+        "resourceUri": {
+          "type": "string",
+          "description": "Full content URI in resource store"
+        },
+        "modified": {
+          "type": "string",
+          "description": "Last modification timestamp (ISO 8601)"
+        },
+        "appliedEdits": {
+          "description": "Edits applied",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "linesAdded": {
+          "description": "Lines added",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "linesRemoved": {
+          "description": "Lines removed",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "diff": {
+          "description": "Unified diff of changes",
+          "type": "string"
+        },
+        "unmatchedEdits": {
+          "description": "oldText strings that had no match",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "lineRange": {
+          "description": "[firstLine, lastLine] range modified",
+          "type": "array",
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/PositiveInt"
+            },
+            {
+              "$ref": "#/$defs/PositiveInt"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ok",
+        "path",
+        "size",
+        "lineCount",
+        "mimeType",
+        "kind",
+        "resourceUri",
+        "modified"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "NonNegInt": {
+          "type": "integer",
+          "minimum": 0,
+          "title": "Non-Negative Integer"
+        },
+        "PositiveInt": {
+          "type": "integer",
+          "minimum": 1,
+          "title": "Positive Integer"
+        }
+      }
     }
   },
   "find": {
@@ -184,7 +629,12 @@
           "default": "path",
           "description": "Sort order",
           "type": "string",
-          "enum": ["name", "size", "modified", "path"]
+          "enum": [
+            "name",
+            "size",
+            "modified",
+            "path"
+          ]
         },
         "maxDepth": {
           "description": "Max directory depth",
@@ -198,7 +648,9 @@
           "pattern": "^[A-Za-z0-9_-]*$"
         }
       },
-      "required": ["pattern"],
+      "required": [
+        "pattern"
+      ],
       "additionalProperties": false,
       "$defs": {
         "SafeGlobPattern": {
@@ -207,7 +659,88 @@
           "maxLength": 1000,
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
-          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
+          "examples": [
+            "**/*.ts",
+            "src/**/*.js",
+            "*.{ts,tsx}"
+          ]
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true,
+          "description": "Success indicator"
+        },
+        "root": {
+          "type": "string",
+          "description": "Search root path"
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Relative path from search root"
+              },
+              "size": {
+                "description": "Size in bytes",
+                "$ref": "#/$defs/NonNegInt"
+              },
+              "modified": {
+                "description": "ISO 8601 last modified time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Matching files"
+        },
+        "totalMatches": {
+          "description": "Total matches found",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "filesScanned": {
+          "description": "Files scanned",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "skippedInaccessible": {
+          "description": "Inaccessible entries skipped",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "stoppedReason": {
+          "description": "Why search stopped early",
+          "type": "string"
+        },
+        "resourceUri": {
+          "description": "URI to stored search results JSON",
+          "type": "string"
+        },
+        "nextCursor": {
+          "description": "Cursor for the next page; absent on the final page.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]*$"
+        }
+      },
+      "required": [
+        "ok",
+        "root",
+        "results"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "NonNegInt": {
+          "type": "integer",
+          "minimum": 0,
+          "title": "Non-Negative Integer"
         }
       }
     }
@@ -231,7 +764,11 @@
           "minLength": 1,
           "maxLength": 10000,
           "description": "Text or regex to search for (RE2: no lookahead/lookbehind/backrefs when isRegex=true)",
-          "examples": ["TODO", "function\\s+(\\w+)", "import.*from"]
+          "examples": [
+            "TODO",
+            "function\\s+(\\w+)",
+            "import.*from"
+          ]
         },
         "isRegex": {
           "default": false,
@@ -299,7 +836,9 @@
           "pattern": "^[A-Za-z0-9_-]*$"
         }
       },
-      "required": ["searchPattern"],
+      "required": [
+        "searchPattern"
+      ],
       "additionalProperties": false,
       "$defs": {
         "SafeGlobPattern": {
@@ -308,13 +847,19 @@
           "maxLength": 1000,
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
-          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
+          "examples": [
+            "**/*.ts",
+            "src/**/*.js",
+            "*.{ts,tsx}"
+          ]
         }
       },
       "allOf": [
         {
           "if": {
-            "required": ["pattern"]
+            "required": [
+              "pattern"
+            ]
           },
           "then": {
             "properties": {
@@ -337,6 +882,129 @@
           }
         }
       ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true,
+          "description": "Success indicator"
+        },
+        "matches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string",
+                "description": "Relative file path"
+              },
+              "line": {
+                "maximum": 9007199254740991,
+                "description": "Line number",
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "column": {
+                "description": "Column (0-indexed)",
+                "$ref": "#/$defs/NonNegInt"
+              },
+              "content": {
+                "type": "string",
+                "description": "Matched line content"
+              },
+              "matchCount": {
+                "description": "Match count on this line",
+                "$ref": "#/$defs/NonNegInt"
+              },
+              "contextBefore": {
+                "description": "Context lines before",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "contextAfter": {
+                "description": "Context lines after",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "file",
+              "line",
+              "content"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Flat list of matches (sorted by file then line)"
+        },
+        "totalMatches": {
+          "description": "Total match count",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "filesMatched": {
+          "description": "Files with matches",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "filesScanned": {
+          "description": "Files scanned",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "skippedTooLarge": {
+          "description": "Files skipped (too large)",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "skippedBinary": {
+          "description": "Files skipped (binary)",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "skippedInaccessible": {
+          "description": "Files skipped (inaccessible)",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "truncated": {
+          "description": "Results truncated",
+          "type": "boolean"
+        },
+        "stoppedReason": {
+          "description": "Why search stopped early",
+          "type": "string",
+          "enum": [
+            "maxResults",
+            "maxFiles",
+            "timeout"
+          ]
+        },
+        "resourceUri": {
+          "description": "Full results URI when truncated",
+          "type": "string"
+        },
+        "nextCursor": {
+          "description": "Cursor for the next page; absent on the final page.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]*$"
+        }
+      },
+      "required": [
+        "ok",
+        "matches"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "PositiveInt": {
+          "type": "integer",
+          "minimum": 1,
+          "title": "Positive Integer"
+        },
+        "NonNegInt": {
+          "type": "integer",
+          "minimum": 0,
+          "title": "Non-Negative Integer"
+        }
+      }
     }
   },
   "ls": {
@@ -376,7 +1044,12 @@
           "default": "name",
           "description": "Sort order",
           "type": "string",
-          "enum": ["name", "size", "modified", "type"]
+          "enum": [
+            "name",
+            "size",
+            "modified",
+            "type"
+          ]
         },
         "pattern": {
           "$ref": "#/$defs/SafeGlobPattern"
@@ -400,7 +1073,116 @@
           "maxLength": 1000,
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
-          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
+          "examples": [
+            "**/*.ts",
+            "src/**/*.js",
+            "*.{ts,tsx}"
+          ]
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true,
+          "description": "Success indicator"
+        },
+        "path": {
+          "type": "string",
+          "description": "Listed directory path"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Entry name"
+              },
+              "relativePath": {
+                "type": "string",
+                "description": "Relative path from listed directory"
+              },
+              "type": {
+                "description": "Entry type",
+                "$ref": "#/$defs/FileType"
+              },
+              "size": {
+                "description": "Size in bytes",
+                "$ref": "#/$defs/NonNegInt"
+              },
+              "modified": {
+                "description": "ISO 8601 last modified time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "relativePath",
+              "type"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Directory entries"
+        },
+        "entryCount": {
+          "description": "Total number of entries",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "resourceUri": {
+          "description": "Resource URI for full JSON listing",
+          "type": "string"
+        },
+        "totalEntries": {
+          "description": "Total entries scanned",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "totalFiles": {
+          "description": "Total files",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "totalDirectories": {
+          "description": "Total directories",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "stoppedReason": {
+          "description": "Why enumeration stopped",
+          "type": "string"
+        },
+        "skippedInaccessible": {
+          "description": "Inaccessible entries skipped",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "nextCursor": {
+          "description": "Cursor for the next page; absent on the final page.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]*$"
+        }
+      },
+      "required": [
+        "ok",
+        "path",
+        "entries"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "FileType": {
+          "type": "string",
+          "enum": [
+            "file",
+            "directory",
+            "symlink",
+            "other"
+          ],
+          "title": "File Type"
+        },
+        "NonNegInt": {
+          "type": "integer",
+          "minimum": 0,
+          "title": "Non-Negative Integer"
         }
       }
     }
@@ -421,7 +1203,28 @@
           "description": "One or more directory paths to create (recursive)"
         }
       },
-      "required": ["paths"],
+      "required": [
+        "paths"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Created directory path"
+        },
+        "ok": {
+          "type": "boolean",
+          "const": true,
+          "description": "Success indicator"
+        }
+      },
+      "required": [
+        "path",
+        "ok"
+      ],
       "additionalProperties": false
     }
   },
@@ -447,7 +1250,34 @@
           "description": "Destination path"
         }
       },
-      "required": ["sources", "destination"],
+      "required": [
+        "sources",
+        "destination"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "description": "Resolved source path"
+        },
+        "to": {
+          "type": "string",
+          "description": "Resolved destination path"
+        },
+        "ok": {
+          "type": "boolean",
+          "const": true,
+          "description": "Success indicator"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "ok"
+      ],
       "additionalProperties": false
     }
   },
@@ -503,75 +1333,254 @@
           "maximum": 4294967295
         }
       },
-      "required": ["path"],
+      "required": [
+        "path"
+      ],
       "additionalProperties": false,
       "allOf": [
         {
           "not": {
-            "required": ["head", "tail"]
+            "required": [
+              "head",
+              "tail"
+            ]
           }
         },
         {
           "not": {
-            "required": ["tail", "startLine"]
+            "required": [
+              "tail",
+              "startLine"
+            ]
           }
         },
         {
           "not": {
-            "required": ["tail", "endLine"]
+            "required": [
+              "tail",
+              "endLine"
+            ]
           }
         },
         {
           "not": {
-            "required": ["head", "startLine"]
+            "required": [
+              "head",
+              "startLine"
+            ]
           }
         },
         {
           "not": {
-            "required": ["head", "endLine"]
+            "required": [
+              "head",
+              "endLine"
+            ]
           }
         },
         {
           "not": {
-            "required": ["offset", "head"]
+            "required": [
+              "offset",
+              "head"
+            ]
           }
         },
         {
           "not": {
-            "required": ["offset", "tail"]
+            "required": [
+              "offset",
+              "tail"
+            ]
           }
         },
         {
           "not": {
-            "required": ["offset", "startLine"]
+            "required": [
+              "offset",
+              "startLine"
+            ]
           }
         },
         {
           "not": {
-            "required": ["offset", "endLine"]
+            "required": [
+              "offset",
+              "endLine"
+            ]
           }
         },
         {
           "not": {
-            "required": ["length", "head"]
+            "required": [
+              "length",
+              "head"
+            ]
           }
         },
         {
           "not": {
-            "required": ["length", "tail"]
+            "required": [
+              "length",
+              "tail"
+            ]
           }
         },
         {
           "not": {
-            "required": ["length", "startLine"]
+            "required": [
+              "length",
+              "startLine"
+            ]
           }
         },
         {
           "not": {
-            "required": ["length", "endLine"]
+            "required": [
+              "length",
+              "endLine"
+            ]
           }
         }
       ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "default": true,
+          "description": "Always true for successful read",
+          "type": "boolean",
+          "const": true
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Resolved absolute path to the file"
+        },
+        "content": {
+          "description": "File content",
+          "type": "string"
+        },
+        "mimeType": {
+          "description": "MIME type of the file (e.g., text/plain, text/x-typescript)",
+          "type": "string"
+        },
+        "kind": {
+          "description": "File kind: text, binary, image, audio, or pdf",
+          "type": "string",
+          "enum": [
+            "text",
+            "binary",
+            "image",
+            "audio",
+            "pdf"
+          ]
+        },
+        "resourceUri": {
+          "description": "Full content URI in resource store",
+          "type": "string"
+        },
+        "continuation": {
+          "description": "Present when file was cut; call the named tool with the given args to read next chunk",
+          "$ref": "#/$defs/Continuation"
+        },
+        "totalLines": {
+          "description": "Total lines in file",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "linesRead": {
+          "description": "Lines returned",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "hasMoreLines": {
+          "description": "More lines available",
+          "type": "boolean"
+        },
+        "head": {
+          "description": "Head lines requested",
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "tail": {
+          "description": "Tail lines requested",
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "startLine": {
+          "description": "Start line",
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "endLine": {
+          "description": "End line",
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "contentHash": {
+          "description": "SHA-256 of content (when includeHash)",
+          "$ref": "#/$defs/Sha256Hex"
+        },
+        "offset": {
+          "description": "Byte offset used",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "bytesRead": {
+          "description": "Bytes returned",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "reachedEOF": {
+          "description": "Read reached end of file",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "Continuation": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string",
+              "description": "Tool name to call"
+            },
+            "args": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {},
+              "description": "Ready-to-use arguments"
+            },
+            "hint": {
+              "type": "string",
+              "description": "One sentence: what data remains"
+            }
+          },
+          "required": [
+            "tool",
+            "args",
+            "hint"
+          ],
+          "additionalProperties": false,
+          "title": "Continuation"
+        },
+        "NonNegInt": {
+          "type": "integer",
+          "minimum": 0,
+          "title": "Non-Negative Integer"
+        },
+        "PositiveInt": {
+          "type": "integer",
+          "minimum": 1,
+          "title": "Positive Integer"
+        },
+        "Sha256Hex": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$",
+          "title": "SHA-256 Hash",
+          "description": "SHA-256 hex digest"
+        }
+      }
     }
   },
   "read_many": {
@@ -614,75 +1623,302 @@
           "maximum": 2147483647
         }
       },
-      "required": ["paths"],
+      "required": [
+        "paths"
+      ],
       "additionalProperties": false,
       "allOf": [
         {
           "not": {
-            "required": ["head", "tail"]
+            "required": [
+              "head",
+              "tail"
+            ]
           }
         },
         {
           "not": {
-            "required": ["tail", "startLine"]
+            "required": [
+              "tail",
+              "startLine"
+            ]
           }
         },
         {
           "not": {
-            "required": ["tail", "endLine"]
+            "required": [
+              "tail",
+              "endLine"
+            ]
           }
         },
         {
           "not": {
-            "required": ["head", "startLine"]
+            "required": [
+              "head",
+              "startLine"
+            ]
           }
         },
         {
           "not": {
-            "required": ["head", "endLine"]
+            "required": [
+              "head",
+              "endLine"
+            ]
           }
         },
         {
           "not": {
-            "required": ["offset", "head"]
+            "required": [
+              "offset",
+              "head"
+            ]
           }
         },
         {
           "not": {
-            "required": ["offset", "tail"]
+            "required": [
+              "offset",
+              "tail"
+            ]
           }
         },
         {
           "not": {
-            "required": ["offset", "startLine"]
+            "required": [
+              "offset",
+              "startLine"
+            ]
           }
         },
         {
           "not": {
-            "required": ["offset", "endLine"]
+            "required": [
+              "offset",
+              "endLine"
+            ]
           }
         },
         {
           "not": {
-            "required": ["length", "head"]
+            "required": [
+              "length",
+              "head"
+            ]
           }
         },
         {
           "not": {
-            "required": ["length", "tail"]
+            "required": [
+              "length",
+              "tail"
+            ]
           }
         },
         {
           "not": {
-            "required": ["length", "startLine"]
+            "required": [
+              "length",
+              "startLine"
+            ]
           }
         },
         {
           "not": {
-            "required": ["length", "endLine"]
+            "required": [
+              "length",
+              "endLine"
+            ]
           }
         }
       ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true,
+          "description": "Success indicator"
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "File path"
+              },
+              "resourceUri": {
+                "description": "Full content URI",
+                "type": "string"
+              },
+              "mimeType": {
+                "description": "MIME type of the file",
+                "type": "string"
+              },
+              "kind": {
+                "description": "File kind: text, binary, image, audio, or pdf",
+                "type": "string",
+                "enum": [
+                  "text",
+                  "binary",
+                  "image",
+                  "audio",
+                  "pdf"
+                ]
+              },
+              "totalLines": {
+                "description": "Total lines",
+                "$ref": "#/$defs/NonNegInt"
+              },
+              "linesRead": {
+                "description": "Lines returned",
+                "$ref": "#/$defs/NonNegInt"
+              },
+              "hasMoreLines": {
+                "description": "More lines available",
+                "type": "boolean"
+              },
+              "head": {
+                "description": "Head lines requested",
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "tail": {
+                "description": "Tail lines requested",
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "startLine": {
+                "description": "Start line",
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "endLine": {
+                "description": "End line",
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "continuation": {
+                "description": "Present when file was cut; call the named tool with the given args to continue",
+                "$ref": "#/$defs/Continuation"
+              },
+              "error": {
+                "description": "Per-file error",
+                "$ref": "#/$defs/PerFileError"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Per-file read results"
+        },
+        "summary": {
+          "description": "Operation summary",
+          "$ref": "#/$defs/OperationSummary"
+        }
+      },
+      "required": [
+        "ok",
+        "results",
+        "summary"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "NonNegInt": {
+          "type": "integer",
+          "minimum": 0,
+          "title": "Non-Negative Integer"
+        },
+        "PositiveInt": {
+          "type": "integer",
+          "minimum": 1,
+          "title": "Positive Integer"
+        },
+        "Continuation": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string",
+              "description": "Tool name to call"
+            },
+            "args": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {},
+              "description": "Ready-to-use arguments"
+            },
+            "hint": {
+              "type": "string",
+              "description": "One sentence: what data remains"
+            }
+          },
+          "required": [
+            "tool",
+            "args",
+            "hint"
+          ],
+          "additionalProperties": false,
+          "title": "Continuation"
+        },
+        "PerFileError": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Error code"
+            },
+            "message": {
+              "type": "string",
+              "description": "Error message"
+            },
+            "path": {
+              "description": "Path involved",
+              "type": "string"
+            },
+            "suggestion": {
+              "description": "Suggested fix",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false,
+          "title": "Per-File Error"
+        },
+        "OperationSummary": {
+          "type": "object",
+          "properties": {
+            "total": {
+              "maximum": 9007199254740991,
+              "description": "Total",
+              "$ref": "#/$defs/NonNegInt"
+            },
+            "succeeded": {
+              "maximum": 9007199254740991,
+              "description": "Succeeded",
+              "$ref": "#/$defs/NonNegInt"
+            },
+            "failed": {
+              "maximum": 9007199254740991,
+              "description": "Failed",
+              "$ref": "#/$defs/NonNegInt"
+            }
+          },
+          "required": [
+            "total",
+            "succeeded",
+            "failed"
+          ],
+          "additionalProperties": false,
+          "title": "Operation Summary"
+        }
+      }
     }
   },
   "rm": {
@@ -711,7 +1947,28 @@
           "type": "boolean"
         }
       },
-      "required": ["paths"],
+      "required": [
+        "paths"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Deleted path"
+        },
+        "ok": {
+          "type": "boolean",
+          "const": true,
+          "description": "Success indicator"
+        }
+      },
+      "required": [
+        "path",
+        "ok"
+      ],
       "additionalProperties": false
     }
   },
@@ -719,6 +1976,28 @@
     "inputSchema": {
       "type": "object",
       "properties": {},
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true,
+          "description": "Success indicator"
+        },
+        "roots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Allowed root directory paths"
+        }
+      },
+      "required": [
+        "ok",
+        "roots"
+      ],
       "additionalProperties": false
     }
   },
@@ -741,13 +2020,21 @@
           "minLength": 1,
           "maxLength": 10000,
           "description": "Text or regex to find (RE2: no lookahead/lookbehind/backrefs when isRegex=true)",
-          "examples": ["TODO", "function\\s+(\\w+)", "import.*from"]
+          "examples": [
+            "TODO",
+            "function\\s+(\\w+)",
+            "import.*from"
+          ]
         },
         "replacement": {
           "type": "string",
           "maxLength": 10000,
           "description": "Replacement text",
-          "examples": ["$1_renamed", "", "TODO: fix"]
+          "examples": [
+            "$1_renamed",
+            "",
+            "TODO: fix"
+          ]
         },
         "isRegex": {
           "default": false,
@@ -804,7 +2091,10 @@
           "maximum": 100
         }
       },
-      "required": ["searchPattern", "replacement"],
+      "required": [
+        "searchPattern",
+        "replacement"
+      ],
       "additionalProperties": false,
       "$defs": {
         "SafeGlobPattern": {
@@ -813,13 +2103,19 @@
           "maxLength": 1000,
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
-          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
+          "examples": [
+            "**/*.ts",
+            "src/**/*.js",
+            "*.{ts,tsx}"
+          ]
         }
       },
       "allOf": [
         {
           "if": {
-            "required": ["pattern"]
+            "required": [
+              "pattern"
+            ]
           },
           "then": {
             "properties": {
@@ -842,6 +2138,177 @@
           }
         }
       ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true,
+          "description": "Success indicator"
+        },
+        "filesModified": {
+          "maximum": 9007199254740991,
+          "description": "Files changed",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "totalMatches": {
+          "maximum": 9007199254740991,
+          "description": "Total match count",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "processedFiles": {
+          "maximum": 9007199254740991,
+          "description": "Files scanned",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "failedFiles": {
+          "description": "Files that failed",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "failures": {
+          "description": "Per-file failures",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "error": {
+                "$ref": "#/$defs/PerFileError"
+              }
+            },
+            "required": [
+              "path",
+              "error"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "primaryFile": {
+          "description": "Primary file with resource link",
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "size": {
+              "$ref": "#/$defs/NonNegInt"
+            },
+            "lineCount": {
+              "$ref": "#/$defs/NonNegInt"
+            },
+            "mimeType": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "text",
+                "binary",
+                "image",
+                "audio",
+                "pdf"
+              ]
+            },
+            "resourceUri": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "size",
+            "lineCount",
+            "mimeType",
+            "kind",
+            "resourceUri"
+          ],
+          "additionalProperties": false
+        },
+        "results": {
+          "description": "Changed files with match counts",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "matches": {
+                "$ref": "#/$defs/NonNegInt"
+              }
+            },
+            "required": [
+              "path",
+              "matches"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "resultsTruncated": {
+          "description": "results list was truncated",
+          "type": "boolean"
+        },
+        "diff": {
+          "description": "Unified diff (when returnDiff or dryRun)",
+          "type": "string"
+        },
+        "diffTruncated": {
+          "description": "Diff was truncated",
+          "type": "boolean"
+        },
+        "stoppedReason": {
+          "description": "Why enumeration stopped early",
+          "type": "string",
+          "enum": [
+            "maxResults",
+            "maxFiles",
+            "timeout"
+          ]
+        }
+      },
+      "required": [
+        "ok",
+        "filesModified",
+        "totalMatches",
+        "processedFiles"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "NonNegInt": {
+          "type": "integer",
+          "minimum": 0,
+          "title": "Non-Negative Integer"
+        },
+        "PerFileError": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Error code"
+            },
+            "message": {
+              "type": "string",
+              "description": "Error message"
+            },
+            "path": {
+              "description": "Path involved",
+              "type": "string"
+            },
+            "suggestion": {
+              "description": "Suggested fix",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false,
+          "title": "Per-File Error"
+        }
+      }
     }
   },
   "stat": {
@@ -855,8 +2322,122 @@
           "description": "Path inside an allowed root"
         }
       },
-      "required": ["path"],
+      "required": [
+        "path"
+      ],
       "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true,
+          "description": "Success indicator"
+        },
+        "file": {
+          "description": "File info",
+          "$ref": "#/$defs/FileInfo"
+        }
+      },
+      "required": [
+        "ok",
+        "file"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "FileType": {
+          "type": "string",
+          "enum": [
+            "file",
+            "directory",
+            "symlink",
+            "other"
+          ],
+          "title": "File Type"
+        },
+        "NonNegInt": {
+          "type": "integer",
+          "minimum": 0,
+          "title": "Non-Negative Integer"
+        },
+        "IsoDateTime": {
+          "type": "string",
+          "format": "date-time",
+          "title": "ISO Date-Time",
+          "description": "ISO 8601 date-time (UTC)"
+        },
+        "FileInfo": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Name"
+            },
+            "path": {
+              "type": "string",
+              "description": "Absolute path"
+            },
+            "type": {
+              "description": "Type",
+              "$ref": "#/$defs/FileType"
+            },
+            "size": {
+              "maximum": 9007199254740991,
+              "description": "Size (bytes)",
+              "$ref": "#/$defs/NonNegInt"
+            },
+            "tokenEstimate": {
+              "description": "Est. tokens (size÷4)",
+              "$ref": "#/$defs/NonNegInt"
+            },
+            "created": {
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "description": "Created",
+              "$ref": "#/$defs/IsoDateTime"
+            },
+            "modified": {
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "description": "Modified",
+              "$ref": "#/$defs/IsoDateTime"
+            },
+            "accessed": {
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "description": "Accessed",
+              "$ref": "#/$defs/IsoDateTime"
+            },
+            "permissions": {
+              "type": "string",
+              "description": "Permissions"
+            },
+            "isHidden": {
+              "type": "boolean",
+              "description": "Hidden?"
+            },
+            "mimeType": {
+              "description": "MIME type",
+              "type": "string"
+            },
+            "symlinkTarget": {
+              "description": "Target (symlink)",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "path",
+            "type",
+            "size",
+            "created",
+            "modified",
+            "accessed",
+            "permissions",
+            "isHidden"
+          ],
+          "additionalProperties": false,
+          "title": "File Info"
+        }
+      }
     }
   },
   "stat_many": {
@@ -875,8 +2456,219 @@
           "description": "Paths to stat"
         }
       },
-      "required": ["paths"],
+      "required": [
+        "paths"
+      ],
       "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true,
+          "description": "Success indicator"
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Requested path"
+              },
+              "info": {
+                "description": "File info (when successful)",
+                "$ref": "#/$defs/FileInfo"
+              },
+              "error": {
+                "description": "Error (when failed)",
+                "$ref": "#/$defs/PerFileError"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Per-path results"
+        },
+        "summary": {
+          "description": "Operation summary",
+          "$ref": "#/$defs/OperationSummary"
+        },
+        "fileCount": {
+          "maximum": 9007199254740991,
+          "description": "Number of files",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "dirCount": {
+          "maximum": 9007199254740991,
+          "description": "Number of directories",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "resourceUri": {
+          "type": "string",
+          "description": "URI to stats.json resource"
+        }
+      },
+      "required": [
+        "ok",
+        "results",
+        "summary",
+        "fileCount",
+        "dirCount",
+        "resourceUri"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "FileInfo": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Name"
+            },
+            "path": {
+              "type": "string",
+              "description": "Absolute path"
+            },
+            "type": {
+              "description": "Type",
+              "$ref": "#/$defs/FileType"
+            },
+            "size": {
+              "maximum": 9007199254740991,
+              "description": "Size (bytes)",
+              "$ref": "#/$defs/NonNegInt"
+            },
+            "tokenEstimate": {
+              "description": "Est. tokens (size÷4)",
+              "$ref": "#/$defs/NonNegInt"
+            },
+            "created": {
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "description": "Created",
+              "$ref": "#/$defs/IsoDateTime"
+            },
+            "modified": {
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "description": "Modified",
+              "$ref": "#/$defs/IsoDateTime"
+            },
+            "accessed": {
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "description": "Accessed",
+              "$ref": "#/$defs/IsoDateTime"
+            },
+            "permissions": {
+              "type": "string",
+              "description": "Permissions"
+            },
+            "isHidden": {
+              "type": "boolean",
+              "description": "Hidden?"
+            },
+            "mimeType": {
+              "description": "MIME type",
+              "type": "string"
+            },
+            "symlinkTarget": {
+              "description": "Target (symlink)",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "path",
+            "type",
+            "size",
+            "created",
+            "modified",
+            "accessed",
+            "permissions",
+            "isHidden"
+          ],
+          "additionalProperties": false,
+          "title": "File Info"
+        },
+        "FileType": {
+          "type": "string",
+          "enum": [
+            "file",
+            "directory",
+            "symlink",
+            "other"
+          ],
+          "title": "File Type"
+        },
+        "NonNegInt": {
+          "type": "integer",
+          "minimum": 0,
+          "title": "Non-Negative Integer"
+        },
+        "IsoDateTime": {
+          "type": "string",
+          "format": "date-time",
+          "title": "ISO Date-Time",
+          "description": "ISO 8601 date-time (UTC)"
+        },
+        "PerFileError": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Error code"
+            },
+            "message": {
+              "type": "string",
+              "description": "Error message"
+            },
+            "path": {
+              "description": "Path involved",
+              "type": "string"
+            },
+            "suggestion": {
+              "description": "Suggested fix",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false,
+          "title": "Per-File Error"
+        },
+        "OperationSummary": {
+          "type": "object",
+          "properties": {
+            "total": {
+              "maximum": 9007199254740991,
+              "description": "Total",
+              "$ref": "#/$defs/NonNegInt"
+            },
+            "succeeded": {
+              "maximum": 9007199254740991,
+              "description": "Succeeded",
+              "$ref": "#/$defs/NonNegInt"
+            },
+            "failed": {
+              "maximum": 9007199254740991,
+              "description": "Failed",
+              "$ref": "#/$defs/NonNegInt"
+            }
+          },
+          "required": [
+            "total",
+            "succeeded",
+            "failed"
+          ],
+          "additionalProperties": false,
+          "title": "Operation Summary"
+        }
+      }
     }
   },
   "tree": {
@@ -920,6 +2712,136 @@
         }
       },
       "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true,
+          "description": "Success indicator"
+        },
+        "root": {
+          "type": "string",
+          "description": "Root directory path"
+        },
+        "tree": {
+          "description": "Tree structure",
+          "$ref": "#/$defs/TreeNode"
+        },
+        "ascii": {
+          "type": "string",
+          "description": "ASCII tree representation"
+        },
+        "totalEntries": {
+          "description": "Total entries in tree",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "entryCount": {
+          "description": "Entry count in tree",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "maxDepth": {
+          "description": "Maximum depth of tree",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "continuation": {
+          "description": "Present when tree was cut; call the named tool with the given args to continue",
+          "$ref": "#/$defs/Continuation"
+        },
+        "resourceUri": {
+          "description": "Resource URI for full ASCII tree when stored",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "root",
+        "tree",
+        "ascii"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "__schema0": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Name"
+            },
+            "type": {
+              "description": "Type",
+              "$ref": "#/$defs/FileType"
+            },
+            "relativePath": {
+              "description": "Relative path from root",
+              "type": "string"
+            },
+            "size": {
+              "description": "Size (bytes)",
+              "$ref": "#/$defs/NonNegInt"
+            },
+            "children": {
+              "description": "Child nodes (directories/symlinks)",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/TreeNode"
+              }
+            }
+          },
+          "required": [
+            "name",
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        "FileType": {
+          "type": "string",
+          "enum": [
+            "file",
+            "directory",
+            "symlink",
+            "other"
+          ],
+          "title": "File Type"
+        },
+        "NonNegInt": {
+          "type": "integer",
+          "minimum": 0,
+          "title": "Non-Negative Integer"
+        },
+        "TreeNode": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "Continuation": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string",
+              "description": "Tool name to call"
+            },
+            "args": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {},
+              "description": "Ready-to-use arguments"
+            },
+            "hint": {
+              "type": "string",
+              "description": "One sentence: what data remains"
+            }
+          },
+          "required": [
+            "tool",
+            "args",
+            "hint"
+          ],
+          "additionalProperties": false,
+          "title": "Continuation"
+        }
+      }
     }
   },
   "write": {
@@ -938,8 +2860,81 @@
           "description": "File content to write"
         }
       },
-      "required": ["path", "content"],
+      "required": [
+        "path",
+        "content"
+      ],
       "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true,
+          "description": "Success indicator"
+        },
+        "path": {
+          "type": "string",
+          "description": "Written file path"
+        },
+        "size": {
+          "maximum": 9007199254740991,
+          "description": "File size in bytes",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "lineCount": {
+          "maximum": 9007199254740991,
+          "description": "Number of lines in file",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "mimeType": {
+          "type": "string",
+          "description": "MIME type of the file"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "text",
+            "binary",
+            "image",
+            "audio",
+            "pdf"
+          ],
+          "description": "File kind"
+        },
+        "resourceUri": {
+          "type": "string",
+          "description": "Full content URI in resource store"
+        },
+        "created": {
+          "type": "string",
+          "description": "Creation timestamp (ISO 8601)"
+        },
+        "modified": {
+          "type": "string",
+          "description": "Last modification timestamp (ISO 8601)"
+        }
+      },
+      "required": [
+        "ok",
+        "path",
+        "size",
+        "lineCount",
+        "mimeType",
+        "kind",
+        "resourceUri",
+        "created",
+        "modified"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "NonNegInt": {
+          "type": "integer",
+          "minimum": 0,
+          "title": "Non-Negative Integer"
+        }
+      }
     }
   }
 }

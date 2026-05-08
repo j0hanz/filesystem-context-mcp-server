@@ -147,17 +147,6 @@ function buildNormalizedExecutionForTool(
   };
 }
 
-function maybeStripOutputSchema<T extends object>(tool: T): T {
-  if (!Object.hasOwn(tool, 'outputSchema')) return tool;
-
-  const stripped = Object.fromEntries(
-    Object.entries(tool as Record<string, unknown>).filter(
-      ([key]) => key !== 'outputSchema'
-    )
-  );
-  return stripped as T;
-}
-
 export function buildResourceLink(params: {
   uri: string;
   name: string;
@@ -400,12 +389,12 @@ export function withDefaultIcons<T extends object>(
 ): T & { icons?: Icon[] } {
   const normalizedTool = normalizeToolExecution(tool);
   if (!iconInfo) {
-    return maybeStripOutputSchema(normalizedTool);
+    return normalizedTool;
   }
 
   const existingIcons = (normalizedTool as { icons?: Icon[] }).icons;
   if (existingIcons && existingIcons.length > 0) {
-    return maybeStripOutputSchema(normalizedTool);
+    return normalizedTool;
   }
 
   const withIcons = {
@@ -417,7 +406,7 @@ export function withDefaultIcons<T extends object>(
       },
     ],
   };
-  return maybeStripOutputSchema(withIcons);
+  return withIcons;
 }
 
 export interface ToolRegistrationOptions {
