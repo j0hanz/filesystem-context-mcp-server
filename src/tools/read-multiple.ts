@@ -15,6 +15,7 @@ import {
 import { ErrorCode } from '../lib/errors.js';
 import { readFile, readFileWithStats } from '../lib/file-content.js';
 import { applyIndexedErrors, applyIndexedValues } from '../lib/fs-walk.js';
+import { detectMimeType } from '../lib/mime.js';
 import { processInParallel } from '../lib/parallel.js';
 import type { PathGuard } from '../lib/path-guard.js';
 import { assignDefined } from '../lib/utils.js';
@@ -36,9 +37,9 @@ import { FILE_READ_ICONS } from './icons.js';
 import {
   buildBatchPathContext,
   buildResourceLink,
+  buildResourceResponse,
   buildStructuredError,
-  buildToolResponse,
-  maybeExternalizeTextContent,
+  putResource,
   READ_ONLY_TOOL_ANNOTATIONS,
   type ToolContract,
   type ToolRegistrationOptions,
@@ -545,8 +546,6 @@ async function readMultipleFiles(
 // Tool definition
 // ---------------------------------------------------------------------------
 
-const FULL_FILE_CONTENTS_DESCRIPTION = 'Full file contents';
-
 const readManyRangeFields = createReadRangeFields({
   head: 'Return first N lines from each',
   tail: 'Return last N lines from each',
@@ -577,8 +576,12 @@ const ReadManyOutputSchema = z.strictObject({
     .array(
       z.strictObject({
         path: z.string().describe('File path'),
-        content: z.string().optional().describe('Content'),
         resourceUri: z.string().optional().describe('Full content URI'),
+        mimeType: z.string().optional().describe('MIME type of the file'),
+        kind: z
+          .enum(['text', 'binary', 'image', 'audio', 'pdf'])
+          .optional()
+          .describe('File kind: text, binary, image, audio, or pdf'),
         totalLines: NonNegInt.optional().describe('Total lines'),
         linesRead: NonNegInt.optional().describe('Lines returned'),
         hasMoreLines: z.boolean().optional().describe('More lines available'),
@@ -632,12 +635,9 @@ type ReadManyResult = ReadMultipleResult;
 type ReadManyResultWithResource = Omit<ReadManyResult, 'error'> & {
   error?: ReadManyOutputItem['error'];
   resourceUri?: string;
-  expiresAt?: string;
+  mimeType?: string;
+  kind?: 'text' | 'binary' | 'image' | 'audio' | 'pdf';
 };
-
-function buildReadManyResourceName(filePath: string): string {
-  return `read:${basename(filePath)}`;
-}
 
 function buildReadContinuation(result: {
   path: string;
@@ -678,8 +678,9 @@ function toStructuredReadManyResult(
   };
 
   return assignDefined(structuredResult, {
-    content: result.content,
     resourceUri: result.resourceUri,
+    mimeType: result.mimeType,
+    kind: result.kind,
     head: result.head,
     tail: result.tail,
     startLine: result.startLine,
@@ -708,30 +709,41 @@ function maybeExternalizeReadManyResult(
     return baseResult;
   }
 
-  const externalized = maybeExternalizeTextContent(
-    resourceStore,
-    result.content,
-    { name: buildReadManyResourceName(result.path), mimeType: 'text/plain' }
-  );
-  if (!externalized) {
+  if (!resourceStore) {
     return baseResult;
   }
 
+  // Detect MIME type from file path and content sample
+  const contentSample = Buffer.from(result.content.slice(0, 512));
+  const mimeInfo = detectMimeType(result.path, contentSample);
+
+  // Store the content in the resource store
+  const { entry } = putResource({
+    store: resourceStore,
+    name: basename(result.path),
+    mimeType: mimeInfo.mimeType,
+    kind: mimeInfo.kind,
+    content: result.content,
+  });
+
   return {
     ...baseResult,
-    content: externalized.preview,
-    resourceUri: externalized.entry.uri,
-    expiresAt: externalized.entry.expiresAt,
+    resourceUri: entry.uri,
+    mimeType: mimeInfo.mimeType,
+    kind: mimeInfo.kind,
   };
 }
 
 function buildReadManyTextSection(result: ReadManyResultWithResource): string {
-  const header = `=== ${result.path} ===`;
   if (result.error) {
-    return `${header}\nError [${result.error.code}]: ${result.error.message}`;
+    return `${result.path} [ERROR: ${result.error.code}]`;
   }
 
-  return `${header}\n${result.content ?? ''}`;
+  const parts: string[] = [basename(result.path)];
+  if (result.totalLines !== undefined) {
+    parts.push(`${result.totalLines} lines`);
+  }
+  return parts.join(' · ');
 }
 
 function buildReadMultipleOptions(
@@ -762,23 +774,20 @@ function buildReadManyResponsePayload(
 } {
   const resourceLinks: ReturnType<typeof buildResourceLink>[] = [];
   const structuredResults: ReadManyOutputItem[] = [];
-  const textSections: string[] = [];
+  const textLines: string[] = [];
   let succeeded = 0;
 
   for (const result of results) {
     const mappedResult = maybeExternalizeReadManyResult(result, resourceStore);
     structuredResults.push(toStructuredReadManyResult(mappedResult));
-    textSections.push(buildReadManyTextSection(mappedResult));
+    textLines.push(buildReadManyTextSection(mappedResult));
 
-    if (mappedResult.resourceUri) {
+    if (mappedResult.resourceUri && !mappedResult.error) {
       resourceLinks.push(
         buildResourceLink({
           uri: mappedResult.resourceUri,
-          name: buildReadManyResourceName(mappedResult.path),
-          description: FULL_FILE_CONTENTS_DESCRIPTION,
-          ...(mappedResult.expiresAt
-            ? { expiresAt: mappedResult.expiresAt }
-            : {}),
+          name: basename(mappedResult.path),
+          ...(mappedResult.mimeType ? { mimeType: mappedResult.mimeType } : {}),
         })
       );
     }
@@ -787,6 +796,8 @@ function buildReadManyResponsePayload(
   }
 
   const total = structuredResults.length;
+  const summaryText = `read_many: ${total} files\n- ${textLines.join('\n- ')}`;
+
   return {
     resourceLinks,
     structuredResults,
@@ -795,7 +806,7 @@ function buildReadManyResponsePayload(
       succeeded,
       failed: total - succeeded,
     },
-    text: textSections.join('\n\n'),
+    text: summaryText,
   };
 }
 
@@ -817,7 +828,11 @@ async function handleReadMultipleFiles(
     summary: payload.summary,
   };
 
-  return buildToolResponse(payload.text, structured, payload.resourceLinks);
+  return buildResourceResponse({
+    summary: payload.text,
+    resources: payload.resourceLinks,
+    structured,
+  });
 }
 
 export const READ_MANY = defineTool<ReadManyInput, ReadManyOutput>({

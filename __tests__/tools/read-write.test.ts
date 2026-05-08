@@ -305,13 +305,37 @@ describe('read_many tool', () => {
     });
     const result = raw;
     assertOk(result);
+
+    // Check content blocks: first is summary text, rest are resource_links
+    assert.equal(result.content.length, 3); // 1 summary + 2 resource_links
+    assert.equal(result.content[0].type, 'text');
+    assert.ok(
+      (result.content[0] as Record<string, unknown>).text
+        ?.toString()
+        .includes('read_many:')
+    );
+    assert.equal(result.content[1].type, 'resource_link');
+    assert.equal(result.content[2].type, 'resource_link');
+
+    // Check structured content
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
     const results = sc['results'] as Record<string, unknown>[];
     assert.equal(results.length, 2);
-    const contents = results.map((r) => r['content'] as string);
-    assert.ok(contents.some((c) => c.includes('content-a')));
-    assert.ok(contents.some((c) => c.includes('content-b')));
+
+    // Each result should have resourceUri instead of content
+    for (const r of results) {
+      assert.ok(r['resourceUri'], 'Expected resourceUri for each result');
+      assert.equal(r['content'], undefined, 'Content should not be inline');
+    }
+
+    // Verify resource_links have correct names
+    const linkNames = [
+      (result.content[1] as Record<string, unknown>).name as string,
+      (result.content[2] as Record<string, unknown>).name as string,
+    ];
+    assert.ok(linkNames.some((n) => n.includes('a.txt')));
+    assert.ok(linkNames.some((n) => n.includes('b.txt')));
   });
 
   it('includes per-path error for missing files', async () => {
@@ -340,18 +364,23 @@ describe('read_many tool', () => {
       arguments: { paths: [rangeFile], startLine: 2, endLine: 4 },
     });
     assertOk(raw);
+
+    // Check for resource_link in content
+    assert.equal(raw.content.length, 2); // summary + resource_link
+    assert.equal(raw.content[0].type, 'text');
+    assert.equal(raw.content[1].type, 'resource_link');
+
     const sc = getStructured(raw);
     const results = sc['results'] as Record<string, unknown>[];
     assert.equal(results.length, 1);
     const first = results[0];
     assert.ok(first, 'Expected first result');
-    const content = first['content'] as string;
-    assert.ok(content.includes('L2'), 'Should include L2');
-    assert.ok(content.includes('L4'), 'Should include L4');
-    assert.ok(!content.includes('L1'), 'Should not include L1');
-    assert.ok(!content.includes('L5'), 'Should not include L5');
+
+    // Verify line range metadata
     assert.equal(first['startLine'], 2);
     assert.equal(first['endLine'], 4);
+    assert.ok(first['resourceUri'], 'Expected resourceUri');
+    assert.equal(first['content'], undefined, 'Content should not be inline');
   });
 
   it('rejects binary files with per-path error', async () => {
@@ -377,7 +406,61 @@ describe('read_many tool', () => {
       (r['path'] as string).includes('a.txt')
     );
     assert.ok(textResult, 'Expected entry for text file');
-    assert.ok(textResult['content'], 'Text file should have content');
+    assert.ok(textResult['resourceUri'], 'Text file should have resourceUri');
+  });
+
+  it('read_many with large file list creates proper resource links', async () => {
+    // Create 5 small files
+    const paths: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const p = join(env.tmpDir, `file_${i}.txt`);
+      await writeFile(p, `content-${i}\nline2`, 'utf8');
+      paths.push(p);
+    }
+
+    const raw = await env.client.callTool({
+      name: 'read_many',
+      arguments: { paths },
+    });
+    assertOk(raw);
+
+    // Check content structure: 1 summary + 5 resource_links
+    assert.equal(raw.content.length, 6);
+    assert.equal(raw.content[0].type, 'text');
+    assert.ok(
+      (raw.content[0] as Record<string, unknown>).text
+        ?.toString()
+        .includes('read_many: 5 files')
+    );
+
+    // Verify all resource_links
+    for (let i = 1; i < 6; i++) {
+      assert.equal(raw.content[i].type, 'resource_link');
+    }
+
+    const sc = getStructured(raw);
+    const results = sc['results'] as Record<string, unknown>[];
+    assert.equal(results.length, 5);
+
+    // Each result should have resourceUri and no content
+    for (let i = 0; i < 5; i++) {
+      const result = results[i];
+      assert.ok(result, `Expected result at index ${i}`);
+      assert.equal(result['path'], paths[i], `Path mismatch at index ${i}`);
+      assert.ok(result['resourceUri'], `Expected resourceUri for file ${i}`);
+      assert.equal(
+        result['content'],
+        undefined,
+        `Content should be absent for file ${i}`
+      );
+      assert.equal(result['totalLines'], 2, `Expected 2 lines for file ${i}`);
+    }
+
+    // Verify summary
+    const summary = sc['summary'] as Record<string, unknown>;
+    assert.equal(summary['total'], 5);
+    assert.equal(summary['succeeded'], 5);
+    assert.equal(summary['failed'], 0);
   });
 });
 
