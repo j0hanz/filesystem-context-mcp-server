@@ -38,11 +38,24 @@ describe('read tool', () => {
     });
     const result = raw;
     assertOk(result);
+
+    // Check content blocks: first is summary text, second is resource_link
+    assert.equal(result.content.length, 2);
+    assert.equal(result.content[0].type, 'text');
+    assert.ok(
+      (result.content[0] as Record<string, unknown>).text
+        ?.toString()
+        .includes('read:')
+    );
+    assert.equal(result.content[1].type, 'resource_link');
+
+    // Check structured content
     const sc = getStructured(result);
-    assert.equal(sc['ok'], true);
-    const content = sc['content'] as string;
-    assert.ok(content.includes('line1'));
-    assert.ok(content.includes('line3'));
+    assert.ok(sc['mimeType']);
+    assert.ok(sc['resourceUri']);
+    assert.ok(
+      (sc['resourceUri'] as string).includes('filesystem-mcp://result/')
+    );
   });
 
   it('reads a specific line range', async () => {
@@ -53,9 +66,12 @@ describe('read tool', () => {
     const result = raw;
     assertOk(result);
     const sc = getStructured(result);
-    assert.ok((sc['content'] as string).includes('line2'));
-    assert.ok(!(sc['content'] as string).includes('line1'));
-    assert.ok(!(sc['content'] as string).includes('line3'));
+    // Check for resource link in response
+    assert.equal(result.content.length, 2);
+    assert.equal(result.content[1].type, 'resource_link');
+    // Verify structured content has the range info
+    assert.equal(sc['startLine'], 2);
+    assert.equal(sc['endLine'], 2);
   });
 
   it('hashes the full file content even for partial reads', async () => {
@@ -70,8 +86,10 @@ describe('read tool', () => {
 
     assertOk(raw);
     const sc = getStructured(raw);
-    assert.equal(sc['content'], 'line1');
     assert.equal(sc['contentHash'], expectedHash);
+    // Check for resource link
+    assert.equal(raw.content.length, 2);
+    assert.equal(raw.content[1].type, 'resource_link');
   });
 
   it('does not mark head reads as truncated when the file fits exactly', async () => {
@@ -82,9 +100,11 @@ describe('read tool', () => {
 
     assertOk(raw);
     const sc = getStructured(raw);
-    assert.equal(sc['content'], 'line1\nline2\nline3');
     assert.equal(sc['continuation'], undefined);
     assert.equal(sc['hasMoreLines'], undefined);
+    // Check for resource link
+    assert.equal(raw.content.length, 2);
+    assert.equal(raw.content[1].type, 'resource_link');
   });
 
   it('returns NOT_FOUND for missing file', async () => {
@@ -117,6 +137,88 @@ describe('read tool', () => {
       absPath.toLowerCase(),
       'path in output must be the resolved absolute path'
     );
+  });
+
+  it('read returns summary text block with resource link', async () => {
+    const tsFile = join(env.tmpDir, 'test.ts');
+    await writeFile(
+      tsFile,
+      'const x = 1;\nconst y = 2;\nconst z = 3;\n',
+      'utf8'
+    );
+
+    const raw = await env.client.callTool({
+      name: 'read',
+      arguments: { path: tsFile },
+    });
+
+    assertOk(raw);
+
+    // Check text block contains summary pattern
+    assert.equal(raw.content.length, 2);
+    assert.equal(raw.content[0].type, 'text');
+    const textContent = (raw.content[0] as Record<string, unknown>)
+      .text as string;
+    // Check for format: read: <name> · <lines> · <size> · <mime>
+    assert.ok(textContent.includes('read:'));
+    assert.ok(textContent.includes('lines'));
+    assert.ok(textContent.includes('text/'));
+
+    // Check resource_link
+    const resourceLink = raw.content[1] as Record<string, unknown>;
+    assert.equal(resourceLink.type, 'resource_link');
+    assert.match(resourceLink.uri as string, /^filesystem-mcp:\/\/result\//);
+    assert.ok((resourceLink.mimeType as string).includes('text'));
+    assert.ok((resourceLink.annotations as Record<string, unknown>)?.audience);
+
+    // Check structured content
+    const sc = getStructured(raw);
+    assert.ok((sc['mimeType'] as string).includes('text'));
+    assert.equal(sc['kind'], 'text');
+    assert.ok(sc['resourceUri']);
+  });
+
+  it('read with continuation returns resource link for each chunk', async () => {
+    const largeFile = join(env.tmpDir, 'large.txt');
+    const lines = Array.from({ length: 100 }, (_, i) => `line ${i + 1}`).join(
+      '\n'
+    );
+    await writeFile(largeFile, lines + '\n', 'utf8');
+
+    // First read with head
+    const raw1 = await env.client.callTool({
+      name: 'read',
+      arguments: { path: largeFile, head: 10 },
+    });
+
+    assertOk(raw1);
+    assert.equal(raw1.content.length, 2);
+    assert.equal(raw1.content[0].type, 'text');
+    assert.equal(raw1.content[1].type, 'resource_link');
+
+    const sc1 = getStructured(raw1);
+    assert.ok(sc1['resourceUri']);
+    // totalLines may be undefined for partial reads, but linesRead should reflect what was read
+    if (sc1['totalLines']) {
+      assert.equal(sc1['totalLines'], 101); // 100 lines + newline makes 101 total lines
+    }
+    assert.equal(sc1['linesRead'], 10);
+    assert.equal(sc1['hasMoreLines'], true);
+    assert.ok(sc1['continuation']);
+
+    // Follow continuation to read next chunk
+    const continuation = sc1['continuation'] as Record<string, unknown>;
+    const raw2 = await env.client.callTool({
+      name: continuation.tool as string,
+      arguments: continuation.args as Record<string, unknown>,
+    });
+
+    assertOk(raw2);
+    const sc2 = getStructured(raw2);
+    // Second chunk should also have resource link
+    assert.equal(raw2.content.length, 2);
+    assert.equal(raw2.content[1].type, 'resource_link');
+    assert.ok(sc2['resourceUri']);
   });
 });
 

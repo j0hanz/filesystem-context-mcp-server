@@ -9,7 +9,9 @@ import {
 } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { calculateFileContentHash, readFile } from '../lib/file-content.js';
+import { detectMimeType } from '../lib/mime.js';
 import type { PathGuard } from '../lib/path-guard.js';
+import type { ResourceStore } from '../lib/resource-store.js';
 import { assignDefined } from '../lib/utils.js';
 import {
   NonNegInt,
@@ -28,12 +30,13 @@ import {
   validateReadRange,
 } from '../schemas/shared.js';
 
+import { formatBytes } from '../config.js';
 import { defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
-  buildResourceLink,
+  buildResourceResponse,
   buildToolResponse,
-  maybeExternalizeTextContent,
+  putResource,
   READ_ONLY_TOOL_ANNOTATIONS,
   type ToolContract,
   type ToolResponse,
@@ -81,11 +84,24 @@ const ReadFileInputSchema = z
   });
 
 const ReadFileOutputSchema = z.strictObject({
+  ok: z
+    .literal(true)
+    .default(true)
+    .describe('Always true for successful read'),
+  path: RequiredPath.describe('Resolved absolute path to the file'),
   content: z.string().optional().describe('File content'),
+  mimeType: z
+    .string()
+    .optional()
+    .describe('MIME type of the file (e.g., text/plain, text/x-typescript)'),
+  kind: z
+    .enum(['text', 'binary', 'image', 'audio', 'pdf'])
+    .optional()
+    .describe('File kind: text, binary, image, audio, or pdf'),
   resourceUri: z
     .string()
     .optional()
-    .describe('Full content URI when externalized'),
+    .describe('Full content URI in resource store'),
   continuation: ContinuationSchema.optional().describe(
     'Present when file was cut; call the named tool with the given args to read next chunk'
   ),
@@ -133,11 +149,6 @@ type ReadFileOutput = z.infer<typeof ReadFileOutputSchema>;
 type ReadFileHandlerResult = Awaited<ReturnType<typeof readFile>>;
 
 const READ_TOOL_LABEL = READ_FILE_TOOL.title;
-const FULL_FILE_CONTENTS_DESCRIPTION = 'Full file contents';
-
-function buildReadResourceName(filePath: string): string {
-  return `read:${basename(filePath)}`;
-}
 
 function buildReadOptions(
   args: ReadFileInput,
@@ -192,10 +203,17 @@ function buildReadContinuation(result: {
 }
 
 function toStructuredReadFileResult(
-  result: ReadFileHandlerResult
+  filePath: string,
+  result: ReadFileHandlerResult,
+  mimeType: string,
+  kind: string
 ): ReadFileOutput {
   const structured: ReadFileOutput = {
+    ok: true,
+    path: filePath,
     content: result.content,
+    mimeType,
+    kind: kind as 'text' | 'binary' | 'image' | 'audio' | 'pdf',
   };
 
   return assignDefined(structured, {
@@ -211,44 +229,6 @@ function toStructuredReadFileResult(
     bytesRead: result.bytesRead,
     reachedEOF: result.reachedEOF,
   });
-}
-
-function maybeBuildExternalizedReadResponse(
-  filePath: string,
-  content: string,
-  structured: ReadFileOutput,
-  resourceStore?: Parameters<typeof maybeExternalizeTextContent>[0]
-): ToolResponse<ReadFileOutput> | undefined {
-  const externalized = maybeExternalizeTextContent(resourceStore, content, {
-    name: buildReadResourceName(filePath),
-    mimeType: 'text/plain',
-  });
-  if (!externalized) {
-    return undefined;
-  }
-
-  const { entry, preview } = externalized;
-  const structuredWithResource: ReadFileOutput = {
-    ...structured,
-    content: preview,
-    resourceUri: entry.uri,
-  };
-
-  const text = [
-    `Output too large to inline (${content.length} chars).`,
-    'Preview:',
-    preview,
-  ].join('\n');
-
-  return buildToolResponse(text, structuredWithResource, [
-    buildResourceLink({
-      uri: entry.uri,
-      name: entry.name,
-      mimeType: entry.mimeType,
-      description: FULL_FILE_CONTENTS_DESCRIPTION,
-      expiresAt: entry.expiresAt,
-    }),
-  ]);
 }
 
 function buildReadProgressMessage(args: ReadFileInput): string {
@@ -314,11 +294,17 @@ async function handleReadFile(
   args: ReadFileInput,
   pathGuard: PathGuard,
   signal?: AbortSignal,
-  resourceStore?: Parameters<typeof maybeExternalizeTextContent>[0]
+  resourceStore?: ResourceStore
 ): Promise<ToolResponse<ReadFileOutput>> {
   const options = buildReadOptions(args, signal);
   const result = await readFile(args.path, options, pathGuard);
-  const structured = toStructuredReadFileResult(result);
+  const mimeInfo = detectMimeType(result.path, Buffer.from(result.content));
+  const structured = toStructuredReadFileResult(
+    result.path,
+    result,
+    mimeInfo.mimeType,
+    mimeInfo.kind
+  );
 
   if (args.includeHash) {
     structured.contentHash = await calculateFileContentHash(
@@ -327,14 +313,33 @@ async function handleReadFile(
     );
   }
 
-  const externalizedResponse = maybeBuildExternalizedReadResponse(
-    args.path,
-    result.content,
-    structured,
-    resourceStore
-  );
-  if (externalizedResponse) {
-    return externalizedResponse;
+  // Always store content in resource store and return summary + link
+  if (resourceStore) {
+    const { entry, link } = putResource({
+      store: resourceStore,
+      name: basename(result.path),
+      mimeType: mimeInfo.mimeType,
+      kind: mimeInfo.kind,
+      content: result.content,
+    });
+
+    const structuredWithResource: ReadFileOutput = {
+      ...structured,
+      resourceUri: entry.uri,
+    };
+
+    const summary = [
+      `read: ${basename(result.path)}`,
+      `${structured.totalLines ?? 0} lines`,
+      formatBytes(entry.size),
+      mimeInfo.mimeType,
+    ].join(' · ');
+
+    return buildResourceResponse({
+      summary,
+      resources: [link],
+      structured: structuredWithResource,
+    });
   }
 
   return buildToolResponse(result.content, structured);
