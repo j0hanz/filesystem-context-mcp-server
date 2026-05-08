@@ -340,6 +340,45 @@ function splitPatternPrefix(normalizedPattern: string): {
   };
 }
 
+function addFirstDotSegment(
+  patterns: Set<string>,
+  prefix: string,
+  remainder: string
+): void {
+  if (remainder.length === 0) return;
+  const segments = remainder.split(SEP);
+  const idx = segments.findIndex((seg) => seg !== '**' && seg.length > 0);
+
+  if (idx !== -1) {
+    const original = segments[idx];
+    if (original && original.charCodeAt(0) !== DOT_CHAR_CODE) {
+      const newSegments = [...segments];
+      newSegments[idx] = `.${original}`;
+      patterns.add(`${prefix}${newSegments.join(SEP)}`);
+    }
+  }
+}
+
+function expandHiddenGlobstars(
+  patterns: Set<string>,
+  prefix: string,
+  remainder: string,
+  maxDepth: number
+): void {
+  if (!remainder.startsWith('**/')) return;
+
+  const afterGlobstar = remainder.slice(3);
+  const addDotFile =
+    afterGlobstar.length > 0 && afterGlobstar.charCodeAt(0) !== DOT_CHAR_CODE;
+
+  let depthPrefix = '';
+  for (let depth = 0; depth <= maxDepth; depth++) {
+    patterns.add(`${prefix}${depthPrefix}.*/**/${afterGlobstar}`);
+    if (addDotFile) patterns.add(`${prefix}${depthPrefix}.${afterGlobstar}`);
+    depthPrefix += '*/';
+  }
+}
+
 function buildHiddenPatterns(
   normalizedPattern: string,
   maxDepth: number
@@ -347,32 +386,8 @@ function buildHiddenPatterns(
   const patterns = new Set<string>([normalizedPattern]);
   const { prefix, remainder } = splitPatternPrefix(normalizedPattern);
 
-  if (remainder.length > 0) {
-    const segments = remainder.split(SEP);
-    const idx = segments.findIndex((seg) => seg !== '**' && seg.length > 0);
-
-    if (idx !== -1) {
-      const original = segments[idx];
-      if (original && original.charCodeAt(0) !== DOT_CHAR_CODE) {
-        const newSegments = [...segments];
-        newSegments[idx] = `.${original}`;
-        patterns.add(`${prefix}${newSegments.join(SEP)}`);
-      }
-    }
-  }
-
-  if (remainder.startsWith('**/')) {
-    const afterGlobstar = remainder.slice(3);
-    const addDotFile =
-      afterGlobstar.length > 0 && afterGlobstar.charCodeAt(0) !== DOT_CHAR_CODE;
-
-    let depthPrefix = '';
-    for (let depth = 0; depth <= maxDepth; depth++) {
-      patterns.add(`${prefix}${depthPrefix}.*/**/${afterGlobstar}`);
-      if (addDotFile) patterns.add(`${prefix}${depthPrefix}.${afterGlobstar}`);
-      depthPrefix += '*/';
-    }
-  }
+  addFirstDotSegment(patterns, prefix, remainder);
+  expandHiddenGlobstars(patterns, prefix, remainder, maxDepth);
 
   return Array.from(patterns);
 }
@@ -552,75 +567,96 @@ async function resolveStringMatch(
   }
 }
 
-async function* processIterable(
-  iterable: AsyncIterable<GlobMatch>,
-  context: {
-    cwd: string;
-    maxDepth: number | undefined;
-    seen: Set<string>;
-    onlyFiles: boolean;
-    followSymlinks: boolean;
-    returnStats: boolean;
-    suppressErrors: boolean;
+interface ProcessContext {
+  cwd: string;
+  maxDepth: number | undefined;
+  seen: Set<string>;
+  onlyFiles: boolean;
+  followSymlinks: boolean;
+  returnStats: boolean;
+  suppressErrors: boolean;
+}
+
+class AsyncGlobBatchQueue {
+  private buffer: string[] = [];
+
+  constructor(private readonly context: ProcessContext) {}
+
+  add(match: string): void {
+    this.buffer.push(match);
   }
-): AsyncGenerator<GlobEntry> {
-  const {
-    cwd,
-    maxDepth,
-    seen,
-    onlyFiles,
-    followSymlinks,
-    returnStats,
-    suppressErrors,
-  } = context;
 
-  let buffer: string[] = [];
+  isFull(): boolean {
+    return this.buffer.length >= GLOB_BATCH_CONCURRENCY;
+  }
 
-  const flush = async function* (): AsyncGenerator<GlobEntry> {
-    if (buffer.length === 0) return;
+  hasItems(): boolean {
+    return this.buffer.length > 0;
+  }
 
-    // Process buffer concurrently
-    const currentBuffer = buffer;
-    buffer = [];
-    const results = await Promise.all(
-      currentBuffer.map((match) =>
+  async *flush(): AsyncGenerator<GlobEntry> {
+    if (this.buffer.length === 0) return;
+
+    const currentBuffer = this.buffer;
+    this.buffer = [];
+
+    const promises: Promise<GlobEntry | null>[] = [];
+    for (const match of currentBuffer) {
+      promises.push(
         resolveStringMatch(
           match,
-          cwd,
-          maxDepth,
-          seen,
-          onlyFiles,
-          followSymlinks,
-          returnStats,
-          suppressErrors
+          this.context.cwd,
+          this.context.maxDepth,
+          this.context.seen,
+          this.context.onlyFiles,
+          this.context.followSymlinks,
+          this.context.returnStats,
+          this.context.suppressErrors
         )
-      )
-    );
+      );
+    }
+
+    const results = await Promise.all(promises);
 
     for (const entry of results) {
       if (entry !== null) yield entry;
     }
-  };
+  }
+}
+
+async function* processIterable(
+  iterable: AsyncIterable<GlobMatch>,
+  context: ProcessContext
+): AsyncGenerator<GlobEntry> {
+  const queue = new AsyncGlobBatchQueue(context);
 
   try {
     for await (const match of iterable) {
       if (typeof match === 'string') {
-        buffer.push(match);
-        if (buffer.length >= GLOB_BATCH_CONCURRENCY) {
-          yield* flush();
+        queue.add(match);
+        if (queue.isFull()) {
+          yield* queue.flush();
         }
         continue;
       }
 
-      if (buffer.length > 0) yield* flush();
+      if (queue.hasItems()) {
+        yield* queue.flush();
+      }
 
       if (isGlobDirentLike(match)) {
-        yield* processDirentMatch(match, cwd, maxDepth, seen, onlyFiles);
+        yield* processDirentMatch(
+          match,
+          context.cwd,
+          context.maxDepth,
+          context.seen,
+          context.onlyFiles
+        );
       }
     }
-    yield* flush();
+    yield* queue.flush();
   } catch (error) {
-    if (!suppressErrors) throw error;
+    if (!context.suppressErrors) throw error;
   }
 }
 
