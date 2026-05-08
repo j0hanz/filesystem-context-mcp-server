@@ -2,7 +2,6 @@ import { z } from 'zod/v4';
 
 import { ErrorCode } from '../lib/errors.js';
 
-import { joinLines } from '../config.js';
 import { defineTool } from './define-tool.js';
 import { DIRECTORY_ICONS } from './icons.js';
 import {
@@ -14,15 +13,7 @@ import {
 const RootsInputSchema = z.strictObject({});
 
 const RootsOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Success indicator'),
-  roots: z
-    .array(
-      z.strictObject({
-        uri: z.string().describe('Root URI'),
-        name: z.string().optional().describe('Display name'),
-      })
-    )
-    .describe('Allowed root directories'),
+  roots: z.array(z.string()).describe('Allowed root directory paths'),
 });
 
 const LIST_ALLOWED_DIRECTORIES_TOOL: ToolContract = {
@@ -37,14 +28,8 @@ const LIST_ALLOWED_DIRECTORIES_TOOL: ToolContract = {
   taskSupport: 'forbidden',
 } as const;
 
-function buildTextRoots(dirs: string[]): string {
-  if (dirs.length === 0) {
-    return 'No directories configured';
-  }
-  return joinLines([
-    `${dirs.length} workspace roots:`,
-    ...dirs.map((d) => `  ${d}`),
-  ]);
+function buildTextRoots(count: number): string {
+  return `roots: ${count} allowed ${count === 1 ? 'directory' : 'directories'}`;
 }
 
 export const LIST_ALLOWED_DIRECTORIES = defineTool<
@@ -54,11 +39,12 @@ export const LIST_ALLOWED_DIRECTORIES = defineTool<
   contract: LIST_ALLOWED_DIRECTORIES_TOOL,
   run: (_args, ctx) => {
     const dirs = ctx.pathGuard.getAllowedDirectories();
-    const structured = {
-      ok: true,
-      roots: dirs.map((uri) => ({ uri })),
-    } as const;
-    return Promise.resolve(buildToolResponse(buildTextRoots(dirs), structured));
+    const structured: z.infer<typeof RootsOutputSchema> = {
+      roots: dirs,
+    };
+    return Promise.resolve(
+      buildToolResponse(buildTextRoots(dirs.length), structured)
+    );
   },
   progressMessage: () => LIST_ALLOWED_DIRECTORIES_TOOL.title,
   completionMessage: (_args, result) => {

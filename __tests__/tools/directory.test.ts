@@ -27,16 +27,38 @@ describe('roots tool', () => {
     await env.cleanup();
   });
 
-  it('returns ok:true with the allowed tmpDir', async () => {
+  it('lists allowed roots with terse summary', async () => {
     const raw = await env.client.callTool({ name: 'roots', arguments: {} });
     const result = raw;
     assertOk(result);
+
+    // Verify content: terse summary, no resource links
+    assert.equal(
+      result.content.length,
+      1,
+      'Expected exactly one content block'
+    );
+    assert.equal(result.content[0].type, 'text', 'Expected text content');
+    const summaryText = result.content[0].text;
+    assert.ok(
+      summaryText.startsWith('roots:'),
+      'Expected summary to start with "roots:"'
+    );
+    assert.ok(
+      summaryText.includes('allowed'),
+      'Expected summary to include "allowed"'
+    );
+
+    // Verify structured content
     const sc = getStructured(result);
-    assert.equal(sc['ok'], true);
-    const roots = sc['roots'] as { uri: string }[];
+    const roots = sc['roots'] as string[];
     assert.ok(
       Array.isArray(roots) && roots.length > 0,
-      'Expected at least one directory'
+      'Expected at least one root directory path'
+    );
+    assert.ok(
+      roots.every((r) => typeof r === 'string'),
+      'Expected all roots to be strings'
     );
   });
 });
