@@ -248,15 +248,17 @@ interface PendingContext {
  * Manages a sliding window of lines and pending context-after buffers.
  */
 class ContextBuffer {
-  private readonly capacity: number;
+  private readonly beforeCapacity: number;
+  private readonly afterCapacity: number;
   private buffer: string[]; // Ring buffer fixed size
   private head = 0; // Next write index
   private size = 0; // Current count of items
   private pending: PendingContext[] = [];
 
-  constructor(contextLines: number) {
-    this.capacity = Math.max(0, contextLines);
-    this.buffer = new Array<string>(this.capacity);
+  constructor(contextBefore: number, contextAfter: number) {
+    this.beforeCapacity = Math.max(0, contextBefore);
+    this.afterCapacity = Math.max(0, contextAfter);
+    this.buffer = new Array<string>(this.beforeCapacity);
   }
 
   add(line: string): void {
@@ -277,10 +279,10 @@ class ContextBuffer {
     }
 
     // 2. Maintain 'Before' Buffer
-    if (this.capacity > 0) {
+    if (this.beforeCapacity > 0) {
       this.buffer[this.head] = line;
-      this.head = (this.head + 1) % this.capacity;
-      if (this.size < this.capacity) {
+      this.head = (this.head + 1) % this.beforeCapacity;
+      if (this.size < this.beforeCapacity) {
         this.size++;
       }
     }
@@ -290,7 +292,7 @@ class ContextBuffer {
     if (this.size === 0) return [];
     const result = new Array<string>(this.size);
 
-    if (this.size < this.capacity) {
+    if (this.size < this.beforeCapacity) {
       for (let i = 0; i < this.size; i++) {
         result[i] = this.buffer[i] ?? '';
       }
@@ -298,7 +300,7 @@ class ContextBuffer {
     }
 
     let outIndex = 0;
-    for (let i = this.head; i < this.capacity; i++) {
+    for (let i = this.head; i < this.beforeCapacity; i++) {
       result[outIndex] = this.buffer[i] ?? '';
       outIndex++;
     }
@@ -310,9 +312,9 @@ class ContextBuffer {
   }
 
   scheduleAfter(): string[] {
-    if (this.capacity === 0) return [];
+    if (this.afterCapacity === 0) return [];
     const buffer: string[] = [];
-    this.pending.push({ buffer, remaining: this.capacity });
+    this.pending.push({ buffer, remaining: this.afterCapacity });
     return buffer;
   }
 }
@@ -375,8 +377,10 @@ async function readMatches(
   }
 
   const matches: ContentMatch[] = [];
-  const hasContext = options.contextLines > 0;
-  const ctx = hasContext ? new ContextBuffer(options.contextLines) : undefined;
+  const hasContext = options.contextBefore > 0 || options.contextAfter > 0;
+  const ctx = hasContext
+    ? new ContextBuffer(options.contextBefore, options.contextAfter)
+    : undefined;
   let lineNumber = 1;
 
   // Use for-await with readLines for memory efficiency
