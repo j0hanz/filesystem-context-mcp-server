@@ -39,6 +39,7 @@ import {
   normalizePath,
 } from '../lib/path-guard.js';
 import type { PathGuard } from '../lib/path-guard.js';
+import type { ResourceStore } from '../lib/resource-store.js';
 import { mergeOptions, omitOptionKeys } from '../lib/utils.js';
 import {
   NonNegInt,
@@ -63,13 +64,13 @@ import { formatOperationSummary } from '../config.js';
 import { defineTool } from './define-tool.js';
 import { SEARCH_ICONS } from './icons.js';
 import {
-  buildResourceLink,
+  buildResourceResponse,
   buildToolResponse,
   decodeOffsetCursor,
   encodeOffsetCursor,
+  putResource,
   READ_ONLY_TOOL_ANNOTATIONS,
   type ToolContract,
-  type ToolRegistrationOptions,
   type ToolResponse,
   truncateProgressPattern,
 } from './shared.js';
@@ -1786,7 +1787,7 @@ async function handleSearchContent(
   args: SearchInput,
   pathGuard: PathGuard,
   signal?: AbortSignal,
-  resourceStore?: ToolRegistrationOptions['resourceStore'],
+  resourceStore?: ResourceStore,
   onProgress?: (progress: { total?: number; current: number }) => void
 ): Promise<ToolResponse<SearchOutput>> {
   const basePath = pathGuard.resolvePathOrRoot(args.path);
@@ -1822,33 +1823,49 @@ async function handleSearchContent(
 
   const preview = buildSearchPreviewState(matchPayloads);
 
-  if (resourceStore && preview.needsExternalize) {
-    const previewStructured: SearchOutput = {
-      ...fullStructured,
-      matches: preview.visiblePayloads,
-      truncated: true,
-    };
-
-    const entry = resourceStore.putText({
-      name: 'grep:matches',
+  // If resourceStore is available and there are matches, store results and use resource response
+  if (resourceStore && matchPayloads.length > 0) {
+    // Serialize full results to JSON
+    const resultsJson = JSON.stringify(fullStructured, null, 2);
+    const { entry, link } = putResource({
+      store: resourceStore,
+      name: 'search-results.json',
       mimeType: 'application/json',
-      text: JSON.stringify(fullStructured),
+      kind: 'text',
+      content: resultsJson,
     });
 
-    previewStructured.resourceUri = entry.uri;
-    const text = buildSearchText(preview.heading, preview.visiblePayloads);
+    // Count unique files in the matches
+    const uniqueFiles = new Set(matchPayloads.map((m) => m.file));
+    const fileCount = uniqueFiles.size;
 
-    return buildToolResponse(text, previewStructured, [
-      buildResourceLink({
-        uri: entry.uri,
-        name: entry.name,
-        mimeType: entry.mimeType,
-        description: 'Full grep results as JSON (structuredContent)',
-        expiresAt: entry.expiresAt,
-      }),
-    ]);
+    // Build summary: "search-content: 'pattern' · N matches in M files"
+    const summary = [
+      `search-content: '${args.searchPattern}'`,
+      `${matchPayloads.length} ${matchPayloads.length === 1 ? 'match' : 'matches'} in ${fileCount} ${fileCount === 1 ? 'file' : 'files'}`,
+    ].join(' · ');
+
+    // For externalized results, show truncation info if needed
+    const structuredForResponse: SearchOutput = preview.needsExternalize
+      ? {
+          ...fullStructured,
+          matches: preview.visiblePayloads,
+          truncated: true,
+          resourceUri: entry.uri,
+        }
+      : {
+          ...fullStructured,
+          resourceUri: entry.uri,
+        };
+
+    return buildResourceResponse({
+      summary,
+      resources: [link],
+      structured: structuredForResponse,
+    });
   }
 
+  // Fallback: traditional text response when no resourceStore or no matches
   const text = buildSearchText(
     preview.heading,
     preview.visiblePayloads,

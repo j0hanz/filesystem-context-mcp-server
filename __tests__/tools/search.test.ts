@@ -49,6 +49,21 @@ describe('grep tool', () => {
     });
     const result = raw;
     assertOk(result);
+
+    // Verify summary text and resource link
+    assert.ok(
+      result.content.length >= 2,
+      'Expected summary text and resource link'
+    );
+    const summaryBlock = result.content[0];
+    assert.equal(summaryBlock.type, 'text');
+    const summaryText = (summaryBlock as { text: string }).text;
+    assert.match(summaryText, /search-content: 'apple'/);
+    assert.match(summaryText, /matches in.*files/);
+
+    const linkBlock = result.content[1];
+    assert.equal(linkBlock.type, 'resource_link');
+
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
     const matches = sc['matches'] as Record<string, unknown>[];
@@ -56,6 +71,7 @@ describe('grep tool', () => {
       Array.isArray(matches) && matches.length >= 2,
       'Should match apple in at least 2 files'
     );
+    assert.ok(sc['resourceUri'], 'Expected resourceUri in structured content');
   });
 
   it('finds regex matches', async () => {
@@ -65,12 +81,19 @@ describe('grep tool', () => {
     });
     const result = raw;
     assertOk(result);
+
+    // Verify resource link structure
+    assert.ok(result.content.length >= 2, 'Expected summary and resource link');
+    const linkBlock = result.content[1];
+    assert.equal(linkBlock.type, 'resource_link');
+
     const sc = getStructured(result);
     const matches = sc['matches'] as Record<string, unknown>[];
     assert.ok(
       Array.isArray(matches) && matches.length > 0,
       'Should find lines starting with "a"'
     );
+    assert.ok(sc['resourceUri'], 'Expected resourceUri in structured content');
   });
 
   it('restricts search using filePattern', async () => {
@@ -153,15 +176,21 @@ describe('grep tool', () => {
 
     assertOk(raw);
     const result = raw as ToolResult;
-    const textBlock = result.content.find(
-      (block: {
-        type: string;
-        text?: string;
-      }): block is { type: string; text: string } =>
-        typeof block.text === 'string'
+
+    // Verify summary text contains the search query
+    const summaryBlock = result.content[0];
+    assert.equal(summaryBlock.type, 'text');
+    assert.match(
+      (summaryBlock as { text: string }).text,
+      /search-content: 'rocket'/
     );
-    assert.ok(textBlock, 'Expected text response content');
-    assert.match(textBlock.text, /utf8\.txt:\s+1: rocket 🚀 line/);
+
+    // Verify UTF-8 content is preserved in matches
+    const sc = getStructured(result);
+    const matches = sc['matches'] as Record<string, unknown>[];
+    assert.ok(matches.length > 0, 'Expected at least one match');
+    const match = matches[0];
+    assert.match(match['content'] as string, /rocket 🚀 line/);
   });
 
   it('supports task-mode execution via the client tasks API', async () => {
