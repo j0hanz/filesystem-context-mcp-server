@@ -170,15 +170,25 @@ function extractPatchTargetPath(diff: StructuredPatch): string | undefined {
   return undefined;
 }
 
-interface PatchFileResult {
-  path: string;
-  applied: boolean;
-  content?: string;
-  hunksApplied?: number;
-  linesAdded?: number;
-  linesRemoved?: number;
-  error?: { code: string; message: string; path?: string; suggestion?: string };
-}
+type PatchFileResult =
+  | {
+      path: string;
+      applied: true;
+      content: string;
+      hunksApplied: number;
+      linesAdded: number;
+      linesRemoved: number;
+    }
+  | {
+      path: string;
+      applied: false;
+      error: {
+        code: string;
+        message: string;
+        path?: string;
+        suggestion?: string;
+      };
+    };
 
 interface PatchOptions {
   dryRun: boolean;
@@ -239,10 +249,24 @@ async function applyDiff(
   })();
 
   if (patched === false) {
-    return { path: validPath, applied: false };
+    return {
+      path: validPath,
+      applied: false,
+      error: {
+        code: ErrorCode.VALIDATION_FAILED,
+        message: 'Patch conflicts or had no effect.',
+      },
+    };
   }
   if (patched === content) {
-    return { path: validPath, applied: false };
+    return {
+      path: validPath,
+      applied: false,
+      error: {
+        code: ErrorCode.VALIDATION_FAILED,
+        message: 'Patch was empty or redundant.',
+      },
+    };
   }
 
   const patchStats = countStructuredPatchStats(diff);
@@ -275,7 +299,14 @@ async function processMultiFilePatch(
     const fileName = extractPatchTargetPath(diff);
     if (!fileName) {
       return (): Promise<PatchFileResult> =>
-        Promise.resolve({ path: '<unknown>', applied: false });
+        Promise.resolve({
+          path: '<unknown>',
+          applied: false,
+          error: {
+            code: ErrorCode.INVALID_INPUT,
+            message: 'Could not extract target path',
+          },
+        });
     }
     const filePath = resolve(validBase, fileName);
     return async (): Promise<PatchFileResult> => {
@@ -313,21 +344,22 @@ async function processMultiFilePatch(
     );
   }
 
-  const files: OutputFiles = results
-    .filter((r) => r.applied)
-    .map((r) => ({
-      path: r.path,
-      hunks: r.hunksApplied ?? 0,
-      ...(r.linesAdded !== undefined ? { linesAdded: r.linesAdded } : {}),
-      ...(r.linesRemoved !== undefined ? { linesRemoved: r.linesRemoved } : {}),
-    }));
+  const files: OutputFiles = results.flatMap((r) =>
+    r.applied
+      ? [
+          {
+            path: r.path,
+            hunks: r.hunksApplied,
+            linesAdded: r.linesAdded,
+            linesRemoved: r.linesRemoved,
+          },
+        ]
+      : []
+  );
 
-  const failures = results
-    .filter(
-      (r): r is typeof r & { error: NonNullable<typeof r.error> } =>
-        !r.applied && r.error !== undefined
-    )
-    .map((r) => ({ path: r.path, error: r.error }));
+  const failures = results.flatMap((r) =>
+    !r.applied ? [{ path: r.path, error: r.error }] : []
+  );
 
   if (!options.dryRun) {
     const added = files.reduce((s, f) => s + (f.linesAdded ?? 0), 0);
@@ -451,12 +483,12 @@ async function handleSingleFilePatch(
 
   if (!options.dryRun) {
     Logger.info(
-      `apply_patch: ${targetPath} (+${result.linesAdded ?? 0}/-${result.linesRemoved ?? 0})`
+      `apply_patch: ${targetPath} (+${result.linesAdded}/-${result.linesRemoved})`
     );
   }
 
   // Store patched content in resource store if available
-  const patchedContent = result.content ?? '';
+  const patchedContent = result.content;
   const bytesWritten = Buffer.byteLength(patchedContent, 'utf-8');
   const lineCount = patchedContent.split('\n').length;
   const mimeInfo = detectMimeType(
@@ -507,13 +539,9 @@ async function handleSingleFilePatch(
       files: [
         {
           path: result.path,
-          hunks: result.hunksApplied ?? 0,
-          ...(result.linesAdded !== undefined
-            ? { linesAdded: result.linesAdded }
-            : {}),
-          ...(result.linesRemoved !== undefined
-            ? { linesRemoved: result.linesRemoved }
-            : {}),
+          hunks: result.hunksApplied,
+          linesAdded: result.linesAdded,
+          linesRemoved: result.linesRemoved,
         },
       ],
       appliedHunks: result.hunksApplied,

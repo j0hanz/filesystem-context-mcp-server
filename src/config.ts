@@ -88,11 +88,13 @@ export interface SearchContentResult {
   };
 }
 
-export interface MultipleFileInfoResult {
-  readonly path: string;
-  readonly info?: FileInfo;
-  readonly error?: Error;
-}
+export type MultipleFileInfoResult =
+  | {
+      readonly path: string;
+      readonly status: 'success';
+      readonly info: FileInfo;
+    }
+  | { readonly path: string; readonly status: 'error'; readonly error: Error };
 
 export interface GetMultipleFileInfoResult {
   readonly results: readonly MultipleFileInfoResult[];

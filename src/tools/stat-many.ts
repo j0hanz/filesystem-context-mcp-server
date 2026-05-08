@@ -11,12 +11,7 @@ import {
   PARALLEL_CONCURRENCY,
 } from '../lib/constants.js';
 import { ErrorCode, isAbortError } from '../lib/errors.js';
-import {
-  applyIndexedErrors,
-  applyIndexedValues,
-  getFileType,
-  isHidden,
-} from '../lib/fs-walk.js';
+import { getFileType, isHidden } from '../lib/fs-walk.js';
 import { processInParallel } from '../lib/parallel.js';
 import type { PathGuard } from '../lib/path-guard.js';
 import { NonNegInt, RequiredPath } from '../schemas/fields.js';
@@ -216,7 +211,7 @@ async function readFileInfoInParallel(
     async ({ filePath, index }) => {
       const info = await getFileInfo(filePath, options);
       options.onProgress?.();
-      return { index, value: { path: filePath, info } };
+      return { index, value: { path: filePath, status: 'success', info } };
     },
     PARALLEL_CONCURRENCY,
     options.signal
@@ -234,7 +229,7 @@ function calculateSummary(results: readonly MultipleFileInfoResult[]): {
   let totalSize = 0;
 
   for (const result of results) {
-    if (result.info !== undefined) {
+    if (result.status === 'success') {
       succeeded++;
       totalSize += result.info.size;
     } else {
@@ -256,24 +251,30 @@ async function getMultipleFileInfo(
 ): Promise<GetMultipleFileInfoResult> {
   if (paths.length === 0) return buildEmptyResult();
 
-  const output: MultipleFileInfoResult[] = Array.from(paths, (p) => ({
-    path: p,
-  }));
+  const output = new Array<MultipleFileInfoResult>(paths.length);
   const { results, errors } = await readFileInfoInParallel(paths, options);
 
-  applyIndexedValues(output, results);
-  applyIndexedErrors({
-    output,
-    errors,
-    resolveIndex: (failureIndex) =>
-      failureIndex >= 0 && failureIndex < output.length
-        ? failureIndex
-        : undefined,
-    buildValue: (resolvedIndex, error) => ({
-      path: paths[resolvedIndex] ?? UNKNOWN_PATH,
-      error,
-    }),
-  });
+  for (const { index, value } of results) {
+    output[index] = value;
+  }
+  for (const { index, error } of errors) {
+    if (index >= 0 && index < output.length) {
+      output[index] = {
+        path: paths[index] ?? UNKNOWN_PATH,
+        status: 'error',
+        error,
+      };
+    }
+  }
+
+  // Fallback for missing entries if any
+  for (let i = 0; i < output.length; i++) {
+    output[i] ??= {
+      path: paths[i] ?? UNKNOWN_PATH,
+      status: 'error',
+      error: new Error('Unknown error'),
+    };
+  }
 
   return {
     results: output,
@@ -289,7 +290,7 @@ function countFilesAndDirs(results: readonly MultipleFileInfoResult[]): {
   let dirCount = 0;
 
   for (const result of results) {
-    if (result.info !== undefined) {
+    if (result.status === 'success') {
       if (result.info.type === 'directory') {
         dirCount++;
       } else {
@@ -322,10 +323,14 @@ async function handleGetMultipleFileInfo(
   const structuredResults: z.infer<typeof StatManyOutputSchema>['results'] =
     result.results.map((entry) => ({
       path: entry.path,
-      info: entry.info ? buildFileInfoPayload(entry.info) : undefined,
-      error: entry.error
-        ? buildStructuredError(entry.error, ErrorCode.NOT_FOUND, entry.path)
-        : undefined,
+      info:
+        entry.status === 'success'
+          ? buildFileInfoPayload(entry.info)
+          : undefined,
+      error:
+        entry.status === 'error'
+          ? buildStructuredError(entry.error, ErrorCode.NOT_FOUND, entry.path)
+          : undefined,
     }));
 
   const { fileCount, dirCount } = countFilesAndDirs(result.results);
@@ -333,10 +338,12 @@ async function handleGetMultipleFileInfo(
   // Serialize stats to JSON for resource storage
   const statsData = result.results.map((entry) => ({
     path: entry.path,
-    info: entry.info ? buildFileInfoPayload(entry.info) : undefined,
-    error: entry.error
-      ? buildStructuredError(entry.error, ErrorCode.NOT_FOUND, entry.path)
-      : undefined,
+    info:
+      entry.status === 'success' ? buildFileInfoPayload(entry.info) : undefined,
+    error:
+      entry.status === 'error'
+        ? buildStructuredError(entry.error, ErrorCode.NOT_FOUND, entry.path)
+        : undefined,
   }));
   const statsJson = JSON.stringify(statsData, null, 2);
 

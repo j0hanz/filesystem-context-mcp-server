@@ -1,5 +1,6 @@
 import type { Root } from '@modelcontextprotocol/server';
 
+import type { Stats } from 'node:fs';
 import { realpath, stat } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
 import {
@@ -567,7 +568,7 @@ export class PathGuard {
   async validateExistingDirectory(requestedPath: string): Promise<string> {
     const details = await this.validateExistingPathDetailed(requestedPath);
 
-    let stats;
+    let stats: Stats;
     try {
       stats = await stat(details.resolvedPath);
     } catch (error) {

@@ -160,8 +160,10 @@ async function reportProgress(
   ctx: ToolContext,
   progress: { current: number; total?: number; message?: string }
 ): Promise<void> {
-  await updateTaskStoreProgress(ctx, progress);
-  await sendMcpProgressNotification(ctx, progress);
+  await Promise.all([
+    updateTaskStoreProgress(ctx, progress),
+    sendMcpProgressNotification(ctx, progress),
+  ]);
 }
 
 function createProgressReporter(
@@ -1115,7 +1117,7 @@ export function createToolTaskHandler<Args extends ToolSchema, Result>(
 
     const taskStore = getTaskStore(ctx);
     const releaseCreationLock = await acquireTaskCreationLock(taskStore);
-    let task;
+    let task: Awaited<ReturnType<typeof taskStore.createTask>>;
     try {
       if ((await countActiveTasks(taskStore)) >= MAX_CONCURRENT_TASKS) {
         throw new McpError(

@@ -2071,6 +2071,10 @@ function handleMessage(message: WorkerRequest): void {
       }
       maybeFinishShutdown();
       break;
+    default: {
+      const _exhaustive: never = message;
+      throw new Error(`Unhandled message type: ${JSON.stringify(_exhaustive)}`);
+    }
   }
 }
 

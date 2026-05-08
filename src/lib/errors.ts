@@ -272,6 +272,12 @@ function buildProblemFromSignal(
     }
     case 'unknown':
       return Problem.ioError(message);
+    default: {
+      const _exhaustive: never = signal;
+      return Problem.ioError(
+        `Unhandled error kind: ${JSON.stringify(_exhaustive)}`
+      );
+    }
   }
 }
 

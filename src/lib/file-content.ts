@@ -383,7 +383,9 @@ async function readFileBufferWithLimit(
     for await (const chunk of stream) {
       const buffer = Buffer.isBuffer(chunk)
         ? chunk
-        : Buffer.from(chunk as ArrayBuffer);
+        : typeof chunk === 'string'
+          ? Buffer.from(chunk)
+          : Buffer.from(chunk as ArrayBuffer);
       totalSize += buffer.length;
 
       if (totalSize > maxSize) {
@@ -805,7 +807,7 @@ async function executeByteRangeRead(
 
   const chunks: string[] = [];
   for await (const chunk of stream) {
-    chunks.push(chunk as string);
+    chunks.push(typeof chunk === 'string' ? chunk : String(chunk));
     assertNotAborted(context.normalized.signal);
   }
 
