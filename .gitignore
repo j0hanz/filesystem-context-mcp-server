@@ -47,10 +47,6 @@ memory_db/
 .agents/*
 .claude/
 !.github/workflows/
-!.github/resources.md
-!.github/tool-call.md
-!.github/tools-schema.md
-!.github/ts.md
 .vscode/*
 !.vscode/extensions.json
 !.vscode/tasks.json
