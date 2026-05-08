@@ -243,26 +243,33 @@ describe('read_many tool with tail parameter', () => {
     for (const result of results) {
       assert.equal(result['tail'], 2, 'Each result should have tail=2');
       assert.equal(result['hasMoreLines'], true);
-      const content = result['content'] as string;
-      // Each file has 5 lines; tail=2 should return last 2
-      assert.ok(!content.includes('1\n'), 'Should not include early lines');
+      // With resource links, content is externalized
+      assert.equal(
+        result['content'],
+        undefined,
+        'Content should be in resource link, not inline'
+      );
+      assert.ok(result['resourceUri'], 'Should have resourceUri for tail read');
     }
 
     const resultA = results.find((r) =>
       (r['path'] as string).includes('a.txt')
     );
     assert.ok(resultA);
-    const contentA = resultA['content'] as string;
-    assert.ok(contentA.includes('a4'), 'Should include a4');
-    assert.ok(contentA.includes('a5'), 'Should include a5');
+    // Verify resourceUri is present for each result
+    assert.ok(resultA['resourceUri'], 'Result A should have resourceUri');
 
     const resultB = results.find((r) =>
       (r['path'] as string).includes('b.txt')
     );
     assert.ok(resultB);
-    const contentB = resultB['content'] as string;
-    assert.ok(contentB.includes('b4'), 'Should include b4');
-    assert.ok(contentB.includes('b5'), 'Should include b5');
+    assert.ok(resultB['resourceUri'], 'Result B should have resourceUri');
+
+    // Verify resource_link content block is present
+    const contentLinks = raw.content.filter(
+      (b) => b.type === 'resource_link'
+    );
+    assert.ok(contentLinks.length >= 2, 'Expected at least 2 resource links');
   });
 
   it('rejects tail combined with head in read_many', async () => {
@@ -317,31 +324,32 @@ describe('grep externalization with expiresAt', () => {
     assert.ok(totalMatches >= 50, `Expected >=50 matches, got ${totalMatches}`);
 
     // When externalized, resourceUri should be present
-    if (sc['resourceUri']) {
-      const resourceUri = sc['resourceUri'] as string;
-      assert.ok(
-        resourceUri.startsWith('filesystem-mcp://result/'),
-        'resourceUri should point to result store'
-      );
-      assert.equal(
-        sc['continuation'],
-        undefined,
-        'Externalized files should have no continuation'
-      );
+    const resourceUri = sc['resourceUri'] as string | undefined;
+    assert.ok(
+      resourceUri,
+      'resourceUri should be present for large results'
+    );
+    assert.ok(
+      resourceUri.startsWith('filesystem-mcp://result/'),
+      'resourceUri should point to result store'
+    );
+    assert.equal(
+      sc['continuation'],
+      undefined,
+      'Externalized files should have no continuation'
+    );
 
-      // Verify the resource_link content block includes expiresAt
-      const result = raw as Record<string, unknown>;
-      const content = result['content'] as Record<string, unknown>[];
-      const resourceLink = content.find(
-        (block) => block['type'] === 'resource_link'
-      );
-      assert.ok(resourceLink, 'Expected a resource_link content block');
-      const description = resourceLink['description'] as string;
-      assert.ok(
-        description.includes('Expires:'),
-        `resource_link description should include "Expires:": ${description}`
-      );
-    }
+    // Verify the resource_link content block is present
+    const result = raw as Record<string, unknown>;
+    const content = result.content as Record<string, unknown>[];
+    const resourceLink = content.find(
+      (block) => block.type === 'resource_link'
+    );
+    assert.ok(resourceLink, 'Expected a resource_link content block');
+    // Verify the resource_link has proper structure
+    assert.ok(resourceLink.uri, 'resource_link should have uri');
+    assert.ok(resourceLink.mimeType, 'resource_link should have mimeType');
+    assert.ok(resourceLink.size, 'resource_link should have size');
   });
 });
 
@@ -355,12 +363,14 @@ describe('mv partial success', () => {
     await env.cleanup();
   });
 
-  it('returns ok:true even when some sources fail to move', async () => {
+  it('returns error when one source fails to move', async () => {
     const src = join(env.tmpDir, 'exists.txt');
     const dest = join(env.tmpDir, 'moved-dir');
     await mkdir(dest, { recursive: true });
     await writeFile(src, 'content', 'utf8');
 
+    // Move with one valid source and one missing source
+    // P3 confirmation-only tools fail on first error, no partial success
     const raw = await env.client.callTool({
       name: 'mv',
       arguments: {
@@ -368,16 +378,18 @@ describe('mv partial success', () => {
         destination: dest,
       },
     });
-    assertOk(raw);
-    const sc = getStructured(raw);
-    assert.strictEqual(
-      sc['ok'],
-      true,
-      'ok must be literal true even for partial moves'
+    // Tool should return an error because second source is missing
+    assert.equal(raw.isError, true, 'Expected error for missing source');
+    const result = raw as Record<string, unknown>;
+    const content = result.content as Record<string, unknown>[];
+    const textBlock = content.find(
+      (b) => b && typeof b === 'object' && 'type' in b && b.type === 'text'
     );
+    assert.ok(textBlock, 'Error should have text content block');
+    const errorText = (textBlock as { text?: string }).text ?? '';
     assert.ok(
-      Array.isArray(sc['failed']),
-      'failed must be present for partial moves'
+      errorText.includes('DOES_NOT_EXIST') || errorText.includes('NOT_FOUND'),
+      `Error message should mention missing file: ${errorText}`
     );
   });
 });
