@@ -73,13 +73,129 @@ export const Problem = {
     build(ErrorCode.UNKNOWN, msg, o),
 } as const;
 
-// Stub: real classifier comes in Task 2.
+const ERRNO_MAP: Readonly<Record<string, ErrorCode>> = {
+  ENOENT: ErrorCode.NOT_FOUND,
+  EACCES: ErrorCode.PERMISSION_DENIED,
+  EPERM: ErrorCode.PERMISSION_DENIED,
+  ENOTDIR: ErrorCode.NOT_DIRECTORY,
+  EISDIR: ErrorCode.NOT_FILE,
+  ELOOP: ErrorCode.SYMLINK_NOT_ALLOWED,
+  ENAMETOOLONG: ErrorCode.INVALID_INPUT,
+  ETIMEDOUT: ErrorCode.TIMEOUT,
+  EMFILE: ErrorCode.IO_ERROR,
+  ENFILE: ErrorCode.IO_ERROR,
+  EBUSY: ErrorCode.IO_ERROR,
+  ENOTEMPTY: ErrorCode.NOT_DIRECTORY,
+  EEXIST: ErrorCode.INVALID_INPUT,
+  EINVAL: ErrorCode.INVALID_INPUT,
+};
+
+const ERRNO_RE = /^E[A-Z]+$/;
+
+type ClassificationSignal =
+  | { kind: 'abort' }
+  | { kind: 'timeout' }
+  | { kind: 'errno'; errno: string; syscall?: string; path?: string }
+  | { kind: 'unknown' };
+
+function readErrnoCode(value: unknown): string | undefined {
+  if (!(value instanceof Error)) return undefined;
+  const code = (value as { code?: unknown }).code;
+  if (typeof code !== 'string') return undefined;
+  return code;
+}
+
+function isAbortSingle(value: unknown): boolean {
+  if (!(value instanceof Error)) return false;
+  if (value.name === 'AbortError') return true;
+  const code = readErrnoCode(value);
+  return code === 'ABORT_ERR';
+}
+
+function isTimeoutSingle(value: unknown): boolean {
+  if (!(value instanceof Error)) return false;
+  if (value.name === 'TimeoutError') return true;
+  return readErrnoCode(value) === 'ETIMEDOUT';
+}
+
+function readSignalSingle(value: unknown): ClassificationSignal | undefined {
+  if (isAbortSingle(value)) return { kind: 'abort' };
+  if (isTimeoutSingle(value)) return { kind: 'timeout' };
+  const code = readErrnoCode(value);
+  if (code !== undefined && ERRNO_RE.test(code)) {
+    const v = value as NodeJS.ErrnoException;
+    return {
+      kind: 'errno',
+      errno: code,
+      ...(typeof v.syscall === 'string' ? { syscall: v.syscall } : {}),
+      ...(typeof v.path === 'string' ? { path: v.path } : {}),
+    };
+  }
+  return undefined;
+}
+
+export function walkCauseChain(error: unknown): ClassificationSignal {
+  let current: unknown = error;
+  const visited = new Set<unknown>();
+  let abortSeen = false;
+  let timeoutSeen = false;
+  let errnoSignal: ClassificationSignal | undefined;
+
+  while (current !== undefined && current !== null && !visited.has(current)) {
+    const signal = readSignalSingle(current);
+    if (signal !== undefined) {
+      if (signal.kind === 'abort') abortSeen = true;
+      else if (signal.kind === 'timeout') timeoutSeen = true;
+      else if (signal.kind === 'errno' && errnoSignal === undefined) {
+        errnoSignal = signal;
+      }
+    }
+    if (!(current instanceof Error)) break;
+    visited.add(current);
+    current = (current as { cause?: unknown }).cause;
+  }
+
+  if (abortSeen) return { kind: 'abort' };
+  if (timeoutSeen) return { kind: 'timeout' };
+  if (errnoSignal !== undefined) return errnoSignal;
+  return { kind: 'unknown' };
+}
+
+function buildProblemFromSignal(
+  signal: ClassificationSignal,
+  error: unknown,
+): Problem {
+  const message = error instanceof Error ? error.message : String(error);
+  switch (signal.kind) {
+    case 'abort':
+      return Problem.cancelled(message);
+    case 'timeout':
+      return Problem.timeout(message);
+    case 'errno': {
+      const code = ERRNO_MAP[signal.errno] ?? ErrorCode.IO_ERROR;
+      const details: ProblemDetails = {
+        errno: signal.errno,
+        ...(signal.syscall !== undefined ? { syscall: signal.syscall } : {}),
+      };
+      return build(code, message, {
+        ...(signal.path !== undefined ? { path: signal.path } : {}),
+        details,
+      });
+    }
+    case 'unknown':
+      return Problem.ioError(message);
+  }
+}
+
 export function classify(error: unknown): Problem {
   if (error === null || error === undefined) {
     return Problem.unknown('Unknown error');
   }
   if (!(error instanceof Error)) {
-    return Problem.unknown(typeof error === 'string' ? error : '[non-Error thrown]');
+    return Problem.unknown(
+      typeof error === 'string' ? error : '[non-Error thrown]',
+    );
   }
-  return Problem.ioError(error.message);
+  const signal = walkCauseChain(error);
+  return buildProblemFromSignal(signal, error);
 }
