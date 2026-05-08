@@ -13,6 +13,7 @@ import {
 const RootsInputSchema = z.strictObject({});
 
 const RootsOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
   roots: z.array(z.string()).describe('Allowed root directory paths'),
 });
 
@@ -40,6 +41,7 @@ export const LIST_ALLOWED_DIRECTORIES = defineTool<
   run: (_args, ctx) => {
     const dirs = ctx.pathGuard.getAllowedDirectories();
     const structured: z.infer<typeof RootsOutputSchema> = {
+      ok: true,
       roots: dirs,
     };
     return Promise.resolve(

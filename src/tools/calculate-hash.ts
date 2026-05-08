@@ -48,6 +48,7 @@ const HashInputSchema = z.strictObject({
 });
 
 const HashOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
   filePath: z.string().describe('Resolved file or directory path'),
   algorithms: z
     .array(z.enum(SUPPORTED_ALGORITHMS))
@@ -301,6 +302,7 @@ async function handleCalculateHash(
     summary,
     resources: [link],
     structured: {
+      ok: true,
       filePath: validPath,
       algorithms: [...algorithms],
       hashes,
