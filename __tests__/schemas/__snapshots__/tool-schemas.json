@@ -36,9 +36,7 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "patch"
-      ],
+      "required": ["patch"],
       "additionalProperties": false
     },
     "outputSchema": {
@@ -68,13 +66,7 @@
         "kind": {
           "description": "File kind of primary file",
           "type": "string",
-          "enum": [
-            "text",
-            "binary",
-            "image",
-            "audio",
-            "pdf"
-          ]
+          "enum": ["text", "binary", "image", "audio", "pdf"]
         },
         "resourceUri": {
           "description": "Resource URI for primary file",
@@ -103,10 +95,7 @@
                 "$ref": "#/$defs/NonNegInt"
               }
             },
-            "required": [
-              "path",
-              "hunks"
-            ],
+            "required": ["path", "hunks"],
             "additionalProperties": false
           },
           "description": "Per-file patch results"
@@ -143,19 +132,12 @@
                 "$ref": "#/$defs/PerFileError"
               }
             },
-            "required": [
-              "path",
-              "error"
-            ],
+            "required": ["path", "error"],
             "additionalProperties": false
           }
         }
       },
-      "required": [
-        "ok",
-        "files",
-        "summary"
-      ],
+      "required": ["ok", "files", "summary"],
       "additionalProperties": false,
       "$defs": {
         "NonNegInt": {
@@ -182,11 +164,7 @@
               "$ref": "#/$defs/NonNegInt"
             }
           },
-          "required": [
-            "total",
-            "succeeded",
-            "failed"
-          ],
+          "required": ["total", "succeeded", "failed"],
           "additionalProperties": false,
           "title": "Operation Summary"
         },
@@ -210,10 +188,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "code",
-            "message"
-          ],
+          "required": ["code", "message"],
           "additionalProperties": false,
           "title": "Per-File Error"
         }
@@ -231,25 +206,16 @@
           "description": "Path inside an allowed root"
         },
         "algorithms": {
-          "default": [
-            "sha256"
-          ],
+          "default": ["sha256"],
           "description": "Hash algorithms to compute (default: sha256)",
           "type": "array",
           "items": {
             "type": "string",
-            "enum": [
-              "sha256",
-              "md5",
-              "sha1",
-              "sha512"
-            ]
+            "enum": ["sha256", "md5", "sha1", "sha512"]
           }
         }
       },
-      "required": [
-        "path"
-      ],
+      "required": ["path"],
       "additionalProperties": false
     },
     "outputSchema": {
@@ -268,12 +234,7 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": [
-              "sha256",
-              "md5",
-              "sha1",
-              "sha512"
-            ]
+            "enum": ["sha256", "md5", "sha1", "sha512"]
           },
           "description": "Algorithms computed"
         },
@@ -351,10 +312,7 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "original",
-        "modified"
-      ],
+      "required": ["original", "modified"],
       "additionalProperties": false
     },
     "outputSchema": {
@@ -397,11 +355,7 @@
               "$ref": "#/$defs/NonNegInt"
             }
           },
-          "required": [
-            "additions",
-            "deletions",
-            "hunks"
-          ],
+          "required": ["additions", "deletions", "hunks"],
           "additionalProperties": false
         },
         "truncated": {
@@ -413,11 +367,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "ok",
-        "diff",
-        "isIdentical"
-      ],
+      "required": ["ok", "diff", "isIdentical"],
       "additionalProperties": false,
       "$defs": {
         "NonNegInt": {
@@ -448,25 +398,15 @@
                 "type": "string",
                 "minLength": 1,
                 "description": "Exact text to find (must match literally)",
-                "examples": [
-                  "const x = 1;",
-                  "function oldName("
-                ]
+                "examples": ["const x = 1;", "function oldName("]
               },
               "newText": {
                 "type": "string",
                 "description": "Replacement text (empty string to delete)",
-                "examples": [
-                  "const x = 2;",
-                  "function newName(",
-                  ""
-                ]
+                "examples": ["const x = 2;", "function newName(", ""]
               }
             },
-            "required": [
-              "oldText",
-              "newText"
-            ],
+            "required": ["oldText", "newText"],
             "additionalProperties": false
           },
           "description": "List of text substitutions"
@@ -482,10 +422,7 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "path",
-        "edits"
-      ],
+      "required": ["path", "edits"],
       "additionalProperties": false
     },
     "outputSchema": {
@@ -516,13 +453,7 @@
         },
         "kind": {
           "type": "string",
-          "enum": [
-            "text",
-            "binary",
-            "image",
-            "audio",
-            "pdf"
-          ],
+          "enum": ["text", "binary", "image", "audio", "pdf"],
           "description": "File kind"
         },
         "resourceUri": {
@@ -629,12 +560,7 @@
           "default": "path",
           "description": "Sort order",
           "type": "string",
-          "enum": [
-            "name",
-            "size",
-            "modified",
-            "path"
-          ]
+          "enum": ["name", "size", "modified", "path"]
         },
         "maxDepth": {
           "description": "Max directory depth",
@@ -648,9 +574,7 @@
           "pattern": "^[A-Za-z0-9_-]*$"
         }
       },
-      "required": [
-        "pattern"
-      ],
+      "required": ["pattern"],
       "additionalProperties": false,
       "$defs": {
         "SafeGlobPattern": {
@@ -659,11 +583,7 @@
           "maxLength": 1000,
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
-          "examples": [
-            "**/*.ts",
-            "src/**/*.js",
-            "*.{ts,tsx}"
-          ]
+          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
         }
       }
     },
@@ -697,9 +617,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "path"
-            ],
+            "required": ["path"],
             "additionalProperties": false
           },
           "description": "Matching files"
@@ -730,11 +648,7 @@
           "pattern": "^[A-Za-z0-9_-]*$"
         }
       },
-      "required": [
-        "ok",
-        "root",
-        "results"
-      ],
+      "required": ["ok", "root", "results"],
       "additionalProperties": false,
       "$defs": {
         "NonNegInt": {
@@ -764,11 +678,7 @@
           "minLength": 1,
           "maxLength": 10000,
           "description": "Text or regex to search for (RE2: no lookahead/lookbehind/backrefs when isRegex=true)",
-          "examples": [
-            "TODO",
-            "function\\s+(\\w+)",
-            "import.*from"
-          ]
+          "examples": ["TODO", "function\\s+(\\w+)", "import.*from"]
         },
         "isRegex": {
           "default": false,
@@ -836,9 +746,7 @@
           "pattern": "^[A-Za-z0-9_-]*$"
         }
       },
-      "required": [
-        "searchPattern"
-      ],
+      "required": ["searchPattern"],
       "additionalProperties": false,
       "$defs": {
         "SafeGlobPattern": {
@@ -847,19 +755,13 @@
           "maxLength": 1000,
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
-          "examples": [
-            "**/*.ts",
-            "src/**/*.js",
-            "*.{ts,tsx}"
-          ]
+          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
         }
       },
       "allOf": [
         {
           "if": {
-            "required": [
-              "pattern"
-            ]
+            "required": ["pattern"]
           },
           "then": {
             "properties": {
@@ -932,11 +834,7 @@
                 }
               }
             },
-            "required": [
-              "file",
-              "line",
-              "content"
-            ],
+            "required": ["file", "line", "content"],
             "additionalProperties": false
           },
           "description": "Flat list of matches (sorted by file then line)"
@@ -972,11 +870,7 @@
         "stoppedReason": {
           "description": "Why search stopped early",
           "type": "string",
-          "enum": [
-            "maxResults",
-            "maxFiles",
-            "timeout"
-          ]
+          "enum": ["maxResults", "maxFiles", "timeout"]
         },
         "resourceUri": {
           "description": "Full results URI when truncated",
@@ -988,10 +882,7 @@
           "pattern": "^[A-Za-z0-9_-]*$"
         }
       },
-      "required": [
-        "ok",
-        "matches"
-      ],
+      "required": ["ok", "matches"],
       "additionalProperties": false,
       "$defs": {
         "PositiveInt": {
@@ -1044,12 +935,7 @@
           "default": "name",
           "description": "Sort order",
           "type": "string",
-          "enum": [
-            "name",
-            "size",
-            "modified",
-            "type"
-          ]
+          "enum": ["name", "size", "modified", "type"]
         },
         "pattern": {
           "$ref": "#/$defs/SafeGlobPattern"
@@ -1073,11 +959,7 @@
           "maxLength": 1000,
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
-          "examples": [
-            "**/*.ts",
-            "src/**/*.js",
-            "*.{ts,tsx}"
-          ]
+          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
         }
       }
     },
@@ -1119,11 +1001,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "name",
-              "relativePath",
-              "type"
-            ],
+            "required": ["name", "relativePath", "type"],
             "additionalProperties": false
           },
           "description": "Directory entries"
@@ -1162,21 +1040,12 @@
           "pattern": "^[A-Za-z0-9_-]*$"
         }
       },
-      "required": [
-        "ok",
-        "path",
-        "entries"
-      ],
+      "required": ["ok", "path", "entries"],
       "additionalProperties": false,
       "$defs": {
         "FileType": {
           "type": "string",
-          "enum": [
-            "file",
-            "directory",
-            "symlink",
-            "other"
-          ],
+          "enum": ["file", "directory", "symlink", "other"],
           "title": "File Type"
         },
         "NonNegInt": {
@@ -1203,9 +1072,7 @@
           "description": "One or more directory paths to create (recursive)"
         }
       },
-      "required": [
-        "paths"
-      ],
+      "required": ["paths"],
       "additionalProperties": false
     },
     "outputSchema": {
@@ -1221,10 +1088,7 @@
           "description": "Success indicator"
         }
       },
-      "required": [
-        "path",
-        "ok"
-      ],
+      "required": ["path", "ok"],
       "additionalProperties": false
     }
   },
@@ -1250,10 +1114,7 @@
           "description": "Destination path"
         }
       },
-      "required": [
-        "sources",
-        "destination"
-      ],
+      "required": ["sources", "destination"],
       "additionalProperties": false
     },
     "outputSchema": {
@@ -1273,11 +1134,7 @@
           "description": "Success indicator"
         }
       },
-      "required": [
-        "from",
-        "to",
-        "ok"
-      ],
+      "required": ["from", "to", "ok"],
       "additionalProperties": false
     }
   },
@@ -1333,113 +1190,72 @@
           "maximum": 4294967295
         }
       },
-      "required": [
-        "path"
-      ],
+      "required": ["path"],
       "additionalProperties": false,
       "allOf": [
         {
           "not": {
-            "required": [
-              "head",
-              "tail"
-            ]
+            "required": ["head", "tail"]
           }
         },
         {
           "not": {
-            "required": [
-              "tail",
-              "startLine"
-            ]
+            "required": ["tail", "startLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "tail",
-              "endLine"
-            ]
+            "required": ["tail", "endLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "head",
-              "startLine"
-            ]
+            "required": ["head", "startLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "head",
-              "endLine"
-            ]
+            "required": ["head", "endLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "offset",
-              "head"
-            ]
+            "required": ["offset", "head"]
           }
         },
         {
           "not": {
-            "required": [
-              "offset",
-              "tail"
-            ]
+            "required": ["offset", "tail"]
           }
         },
         {
           "not": {
-            "required": [
-              "offset",
-              "startLine"
-            ]
+            "required": ["offset", "startLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "offset",
-              "endLine"
-            ]
+            "required": ["offset", "endLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "length",
-              "head"
-            ]
+            "required": ["length", "head"]
           }
         },
         {
           "not": {
-            "required": [
-              "length",
-              "tail"
-            ]
+            "required": ["length", "tail"]
           }
         },
         {
           "not": {
-            "required": [
-              "length",
-              "startLine"
-            ]
+            "required": ["length", "startLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "length",
-              "endLine"
-            ]
+            "required": ["length", "endLine"]
           }
         }
       ]
@@ -1470,13 +1286,7 @@
         "kind": {
           "description": "File kind: text, binary, image, audio, or pdf",
           "type": "string",
-          "enum": [
-            "text",
-            "binary",
-            "image",
-            "audio",
-            "pdf"
-          ]
+          "enum": ["text", "binary", "image", "audio", "pdf"]
         },
         "resourceUri": {
           "description": "Full content URI in resource store",
@@ -1531,9 +1341,7 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "path"
-      ],
+      "required": ["path"],
       "additionalProperties": false,
       "$defs": {
         "Continuation": {
@@ -1556,11 +1364,7 @@
               "description": "One sentence: what data remains"
             }
           },
-          "required": [
-            "tool",
-            "args",
-            "hint"
-          ],
+          "required": ["tool", "args", "hint"],
           "additionalProperties": false,
           "title": "Continuation"
         },
@@ -1623,113 +1427,72 @@
           "maximum": 2147483647
         }
       },
-      "required": [
-        "paths"
-      ],
+      "required": ["paths"],
       "additionalProperties": false,
       "allOf": [
         {
           "not": {
-            "required": [
-              "head",
-              "tail"
-            ]
+            "required": ["head", "tail"]
           }
         },
         {
           "not": {
-            "required": [
-              "tail",
-              "startLine"
-            ]
+            "required": ["tail", "startLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "tail",
-              "endLine"
-            ]
+            "required": ["tail", "endLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "head",
-              "startLine"
-            ]
+            "required": ["head", "startLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "head",
-              "endLine"
-            ]
+            "required": ["head", "endLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "offset",
-              "head"
-            ]
+            "required": ["offset", "head"]
           }
         },
         {
           "not": {
-            "required": [
-              "offset",
-              "tail"
-            ]
+            "required": ["offset", "tail"]
           }
         },
         {
           "not": {
-            "required": [
-              "offset",
-              "startLine"
-            ]
+            "required": ["offset", "startLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "offset",
-              "endLine"
-            ]
+            "required": ["offset", "endLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "length",
-              "head"
-            ]
+            "required": ["length", "head"]
           }
         },
         {
           "not": {
-            "required": [
-              "length",
-              "tail"
-            ]
+            "required": ["length", "tail"]
           }
         },
         {
           "not": {
-            "required": [
-              "length",
-              "startLine"
-            ]
+            "required": ["length", "startLine"]
           }
         },
         {
           "not": {
-            "required": [
-              "length",
-              "endLine"
-            ]
+            "required": ["length", "endLine"]
           }
         }
       ]
@@ -1762,13 +1525,7 @@
               "kind": {
                 "description": "File kind: text, binary, image, audio, or pdf",
                 "type": "string",
-                "enum": [
-                  "text",
-                  "binary",
-                  "image",
-                  "audio",
-                  "pdf"
-                ]
+                "enum": ["text", "binary", "image", "audio", "pdf"]
               },
               "totalLines": {
                 "description": "Total lines",
@@ -1807,9 +1564,7 @@
                 "$ref": "#/$defs/PerFileError"
               }
             },
-            "required": [
-              "path"
-            ],
+            "required": ["path"],
             "additionalProperties": false
           },
           "description": "Per-file read results"
@@ -1819,11 +1574,7 @@
           "$ref": "#/$defs/OperationSummary"
         }
       },
-      "required": [
-        "ok",
-        "results",
-        "summary"
-      ],
+      "required": ["ok", "results", "summary"],
       "additionalProperties": false,
       "$defs": {
         "NonNegInt": {
@@ -1856,11 +1607,7 @@
               "description": "One sentence: what data remains"
             }
           },
-          "required": [
-            "tool",
-            "args",
-            "hint"
-          ],
+          "required": ["tool", "args", "hint"],
           "additionalProperties": false,
           "title": "Continuation"
         },
@@ -1884,10 +1631,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "code",
-            "message"
-          ],
+          "required": ["code", "message"],
           "additionalProperties": false,
           "title": "Per-File Error"
         },
@@ -1910,11 +1654,7 @@
               "$ref": "#/$defs/NonNegInt"
             }
           },
-          "required": [
-            "total",
-            "succeeded",
-            "failed"
-          ],
+          "required": ["total", "succeeded", "failed"],
           "additionalProperties": false,
           "title": "Operation Summary"
         }
@@ -1947,9 +1687,7 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "paths"
-      ],
+      "required": ["paths"],
       "additionalProperties": false
     },
     "outputSchema": {
@@ -1965,10 +1703,7 @@
           "description": "Success indicator"
         }
       },
-      "required": [
-        "path",
-        "ok"
-      ],
+      "required": ["path", "ok"],
       "additionalProperties": false
     }
   },
@@ -1994,10 +1729,7 @@
           "description": "Allowed root directory paths"
         }
       },
-      "required": [
-        "ok",
-        "roots"
-      ],
+      "required": ["ok", "roots"],
       "additionalProperties": false
     }
   },
@@ -2020,21 +1752,13 @@
           "minLength": 1,
           "maxLength": 10000,
           "description": "Text or regex to find (RE2: no lookahead/lookbehind/backrefs when isRegex=true)",
-          "examples": [
-            "TODO",
-            "function\\s+(\\w+)",
-            "import.*from"
-          ]
+          "examples": ["TODO", "function\\s+(\\w+)", "import.*from"]
         },
         "replacement": {
           "type": "string",
           "maxLength": 10000,
           "description": "Replacement text",
-          "examples": [
-            "$1_renamed",
-            "",
-            "TODO: fix"
-          ]
+          "examples": ["$1_renamed", "", "TODO: fix"]
         },
         "isRegex": {
           "default": false,
@@ -2091,10 +1815,7 @@
           "maximum": 100
         }
       },
-      "required": [
-        "searchPattern",
-        "replacement"
-      ],
+      "required": ["searchPattern", "replacement"],
       "additionalProperties": false,
       "$defs": {
         "SafeGlobPattern": {
@@ -2103,19 +1824,13 @@
           "maxLength": 1000,
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
-          "examples": [
-            "**/*.ts",
-            "src/**/*.js",
-            "*.{ts,tsx}"
-          ]
+          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
         }
       },
       "allOf": [
         {
           "if": {
-            "required": [
-              "pattern"
-            ]
+            "required": ["pattern"]
           },
           "then": {
             "properties": {
@@ -2179,10 +1894,7 @@
                 "$ref": "#/$defs/PerFileError"
               }
             },
-            "required": [
-              "path",
-              "error"
-            ],
+            "required": ["path", "error"],
             "additionalProperties": false
           }
         },
@@ -2204,13 +1916,7 @@
             },
             "kind": {
               "type": "string",
-              "enum": [
-                "text",
-                "binary",
-                "image",
-                "audio",
-                "pdf"
-              ]
+              "enum": ["text", "binary", "image", "audio", "pdf"]
             },
             "resourceUri": {
               "type": "string"
@@ -2239,10 +1945,7 @@
                 "$ref": "#/$defs/NonNegInt"
               }
             },
-            "required": [
-              "path",
-              "matches"
-            ],
+            "required": ["path", "matches"],
             "additionalProperties": false
           }
         },
@@ -2261,19 +1964,10 @@
         "stoppedReason": {
           "description": "Why enumeration stopped early",
           "type": "string",
-          "enum": [
-            "maxResults",
-            "maxFiles",
-            "timeout"
-          ]
+          "enum": ["maxResults", "maxFiles", "timeout"]
         }
       },
-      "required": [
-        "ok",
-        "filesModified",
-        "totalMatches",
-        "processedFiles"
-      ],
+      "required": ["ok", "filesModified", "totalMatches", "processedFiles"],
       "additionalProperties": false,
       "$defs": {
         "NonNegInt": {
@@ -2301,10 +1995,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "code",
-            "message"
-          ],
+          "required": ["code", "message"],
           "additionalProperties": false,
           "title": "Per-File Error"
         }
@@ -2322,9 +2013,7 @@
           "description": "Path inside an allowed root"
         }
       },
-      "required": [
-        "path"
-      ],
+      "required": ["path"],
       "additionalProperties": false
     },
     "outputSchema": {
@@ -2340,20 +2029,12 @@
           "$ref": "#/$defs/FileInfo"
         }
       },
-      "required": [
-        "ok",
-        "file"
-      ],
+      "required": ["ok", "file"],
       "additionalProperties": false,
       "$defs": {
         "FileType": {
           "type": "string",
-          "enum": [
-            "file",
-            "directory",
-            "symlink",
-            "other"
-          ],
+          "enum": ["file", "directory", "symlink", "other"],
           "title": "File Type"
         },
         "NonNegInt": {
@@ -2456,9 +2137,7 @@
           "description": "Paths to stat"
         }
       },
-      "required": [
-        "paths"
-      ],
+      "required": ["paths"],
       "additionalProperties": false
     },
     "outputSchema": {
@@ -2487,9 +2166,7 @@
                 "$ref": "#/$defs/PerFileError"
               }
             },
-            "required": [
-              "path"
-            ],
+            "required": ["path"],
             "additionalProperties": false
           },
           "description": "Per-path results"
@@ -2595,12 +2272,7 @@
         },
         "FileType": {
           "type": "string",
-          "enum": [
-            "file",
-            "directory",
-            "symlink",
-            "other"
-          ],
+          "enum": ["file", "directory", "symlink", "other"],
           "title": "File Type"
         },
         "NonNegInt": {
@@ -2634,10 +2306,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "code",
-            "message"
-          ],
+          "required": ["code", "message"],
           "additionalProperties": false,
           "title": "Per-File Error"
         },
@@ -2660,11 +2329,7 @@
               "$ref": "#/$defs/NonNegInt"
             }
           },
-          "required": [
-            "total",
-            "succeeded",
-            "failed"
-          ],
+          "required": ["total", "succeeded", "failed"],
           "additionalProperties": false,
           "title": "Operation Summary"
         }
@@ -2754,12 +2419,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "ok",
-        "root",
-        "tree",
-        "ascii"
-      ],
+      "required": ["ok", "root", "tree", "ascii"],
       "additionalProperties": false,
       "$defs": {
         "__schema0": {
@@ -2789,20 +2449,12 @@
               }
             }
           },
-          "required": [
-            "name",
-            "type"
-          ],
+          "required": ["name", "type"],
           "additionalProperties": false
         },
         "FileType": {
           "type": "string",
-          "enum": [
-            "file",
-            "directory",
-            "symlink",
-            "other"
-          ],
+          "enum": ["file", "directory", "symlink", "other"],
           "title": "File Type"
         },
         "NonNegInt": {
@@ -2833,11 +2485,7 @@
               "description": "One sentence: what data remains"
             }
           },
-          "required": [
-            "tool",
-            "args",
-            "hint"
-          ],
+          "required": ["tool", "args", "hint"],
           "additionalProperties": false,
           "title": "Continuation"
         }
@@ -2860,10 +2508,7 @@
           "description": "File content to write"
         }
       },
-      "required": [
-        "path",
-        "content"
-      ],
+      "required": ["path", "content"],
       "additionalProperties": false
     },
     "outputSchema": {
@@ -2894,13 +2539,7 @@
         },
         "kind": {
           "type": "string",
-          "enum": [
-            "text",
-            "binary",
-            "image",
-            "audio",
-            "pdf"
-          ],
+          "enum": ["text", "binary", "image", "audio", "pdf"],
           "description": "File kind"
         },
         "resourceUri": {
