@@ -49,6 +49,15 @@
           "minLength": 1,
           "maxLength": 4096,
           "description": "Path inside an allowed root"
+        },
+        "algorithms": {
+          "default": ["sha256"],
+          "description": "Hash algorithms to compute (default: sha256)",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["sha256", "md5", "sha1", "sha512"]
+          }
         }
       },
       "required": ["path"],
