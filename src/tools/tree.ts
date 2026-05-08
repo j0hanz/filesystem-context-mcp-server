@@ -1,11 +1,15 @@
 import { basename, relative } from 'node:path';
 
-import type { z } from 'zod/v4';
+import { z } from 'zod/v4';
 
 import { withTimedAbortSignal } from '../lib/abort.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_SEARCH_TIMEOUT_MS,
+  DEFAULT_TREE_DEPTH,
+  DEFAULT_TREE_ENTRIES,
+  MAX_TREE_DEPTH,
+  MAX_TREE_ENTRIES,
 } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import {
@@ -27,9 +31,17 @@ import {
   validateExistingDirectory,
   validateExistingPathDetailed,
 } from '../lib/paths.js';
-import { TreeInputSchema } from '../schemas/inputs.js';
-import { TreeOutputSchema } from '../schemas/outputs.js';
-import type { ContinuationSchema } from '../schemas/shared.js';
+import {
+  FileType as FileTypeEnum,
+  NonNegInt,
+  OptionalPath,
+} from '../schemas/fields.js';
+import {
+  ContinuationSchema,
+  defaultFalseBoolean,
+  includeHiddenField,
+  includeIgnoredField,
+} from '../schemas/shared.js';
 
 import { defineTool } from './define-tool.js';
 import { DIRECTORY_ICONS } from './icons.js';
@@ -404,6 +416,58 @@ async function treeDirectory(
 }
 
 // ---------------------------------------------------------------------------
+
+const TreeInputSchema = z.strictObject({
+  path: OptionalPath.describe('Base directory (default: root)'),
+  maxDepth: z
+    .uint32()
+    .min(0)
+    .max(MAX_TREE_DEPTH)
+    .optional()
+    .default(DEFAULT_TREE_DEPTH)
+    .describe(`Max depth (default: ${String(DEFAULT_TREE_DEPTH)})`),
+  maxEntries: z
+    .uint32()
+    .min(1)
+    .max(MAX_TREE_ENTRIES)
+    .optional()
+    .default(DEFAULT_TREE_ENTRIES)
+    .describe('Max total entries (default: 1000)'),
+  includeHidden: includeHiddenField(),
+  includeIgnored: includeIgnoredField(),
+  includeSizes: defaultFalseBoolean('Include file sizes'),
+});
+
+// Recursive tree schema (structurally typed to avoid named type in exported signatures)
+const TreeNodeSchema: z.ZodType = z.lazy(
+  (): z.ZodType =>
+    z.strictObject({
+      name: z.string().describe('Name'),
+      type: FileTypeEnum.describe('Type'),
+      relativePath: z.string().optional().describe('Relative path from root'),
+      size: NonNegInt.optional().describe('Size (bytes)'),
+      children: z
+        .array(TreeNodeSchema)
+        .optional()
+        .describe('Child nodes (directories/symlinks)'),
+    })
+);
+z.globalRegistry.add(TreeNodeSchema, { id: 'TreeNode' });
+
+const TreeOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
+  root: z.string().describe('Root directory path'),
+  tree: TreeNodeSchema.describe('Tree structure'),
+  ascii: z.string().describe('ASCII tree representation'),
+  totalEntries: NonNegInt.optional().describe('Total entries in tree'),
+  continuation: ContinuationSchema.optional().describe(
+    'Present when tree was cut; call the named tool with the given args to continue'
+  ),
+  resourceUri: z
+    .string()
+    .optional()
+    .describe('Full ascii tree URI when externalised'),
+});
 
 const TREE_TOOL: ToolContract = {
   name: 'tree',

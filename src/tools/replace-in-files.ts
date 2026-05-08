@@ -4,12 +4,15 @@ import { basename, relative } from 'node:path';
 
 import { createTwoFilesPatch } from 'diff';
 import RE2 from 're2';
-import type { z } from 'zod/v4';
+import { z } from 'zod/v4';
 
 import { atomicWriteFile } from '../lib/atomic-write.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
+  DEFAULT_SEARCH_RESULTS,
   DEFAULT_SEARCH_TIMEOUT_MS,
+  MAX_SEARCH_DEPTH,
+  MAX_SEARCH_RESULTS,
   MAX_TEXT_FILE_SIZE,
   PARALLEL_CONCURRENCY,
 } from '../lib/constants.js';
@@ -22,15 +25,18 @@ import { globEntries } from '../lib/fs-walk.js';
 import { Logger } from '../lib/logger.js';
 import { validateExistingPath, validatePathForWrite } from '../lib/paths.js';
 import { runInWorker, shouldOffload } from '../lib/worker-pool.js';
+import { NonNegInt, OptionalPath, SafeGlobPattern } from '../schemas/fields.js';
 import {
   safeGlobConstraint,
   toToolJsonSchema,
 } from '../schemas/json-schema.js';
-
 import {
-  SearchAndReplaceInputSchema,
-  SearchAndReplaceOutputSchema,
-} from '../schemas.js';
+  defaultFalseBoolean,
+  includeHiddenField,
+  includeIgnoredField,
+  PerFileErrorSchema,
+} from '../schemas/shared.js';
+
 import { defineTool } from './define-tool.js';
 import { FILE_EDIT_ICONS } from './icons.js';
 import {
@@ -46,6 +52,90 @@ import {
   resolveFinalProgressCurrent,
   runWithProgressSession,
 } from './tool-execution.js';
+
+const SearchAndReplaceInputSchema = z.strictObject({
+  path: OptionalPath,
+  pattern: SafeGlobPattern.optional().describe(
+    'File glob filter (default: **/* text files)'
+  ),
+  searchPattern: z
+    .string()
+    .min(1)
+    .max(10000)
+    .describe(
+      'Text or regex to find (RE2: no lookahead/lookbehind/backrefs when isRegex=true)'
+    )
+    .meta({ examples: ['TODO', 'function\\s+(\\w+)', 'import.*from'] }),
+  replacement: z
+    .string()
+    .max(10000)
+    .describe('Replacement text')
+    .meta({ examples: ['$1_renamed', '', 'TODO: fix'] }),
+  isRegex: defaultFalseBoolean('Treat searchPattern as regex'),
+  includeHidden: includeHiddenField(),
+  includeIgnored: includeIgnoredField(),
+  caseSensitive: defaultFalseBoolean('Case-sensitive'),
+  wholeWord: defaultFalseBoolean('Match whole words only'),
+  dryRun: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe('Preview without writing \u2014 set false to apply'),
+  returnDiff: defaultFalseBoolean('Include unified diff in output'),
+  maxResults: z
+    .uint32()
+    .min(1)
+    .max(MAX_SEARCH_RESULTS)
+    .optional()
+    .default(DEFAULT_SEARCH_RESULTS)
+    .describe('Max matches across all files'),
+  maxFiles: z
+    .uint32()
+    .min(1)
+    .max(MAX_SEARCH_RESULTS)
+    .optional()
+    .describe('Max files to process'),
+  maxDepth: z
+    .uint32()
+    .min(0)
+    .max(MAX_SEARCH_DEPTH)
+    .optional()
+    .describe('Max directory depth'),
+});
+
+const SearchAndReplaceOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
+  matches: NonNegInt.describe('Total match count'),
+  filesChanged: NonNegInt.describe('Files changed'),
+  processedFiles: NonNegInt.describe('Files scanned'),
+  failedFiles: NonNegInt.optional().describe('Files that failed'),
+  failures: z
+    .array(
+      z.strictObject({
+        path: z.string(),
+        error: PerFileErrorSchema,
+      })
+    )
+    .optional()
+    .describe('Per-file failures'),
+  changedFiles: z
+    .array(z.strictObject({ path: z.string(), matches: NonNegInt }))
+    .optional()
+    .describe('Changed files with match counts'),
+  changedFilesTruncated: z
+    .boolean()
+    .optional()
+    .describe('changedFiles list was truncated'),
+  diff: z
+    .string()
+    .optional()
+    .describe('Unified diff (when returnDiff or dryRun)'),
+  diffTruncated: z.boolean().optional().describe('Diff was truncated'),
+  stoppedReason: z
+    .enum(['maxResults', 'maxFiles', 'timeout'])
+    .optional()
+    .describe('Why enumeration stopped early'),
+});
 
 const SEARCH_AND_REPLACE_TOOL: ToolContract = {
   name: 'search_and_replace',

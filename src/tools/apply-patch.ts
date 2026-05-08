@@ -7,7 +7,7 @@ import {
   parsePatch,
   type StructuredPatch,
 } from 'diff';
-import type { z } from 'zod/v4';
+import { z } from 'zod/v4';
 
 import { withAbort } from '../lib/abort.js';
 import { atomicWriteFile } from '../lib/atomic-write.js';
@@ -18,8 +18,12 @@ import { Logger } from '../lib/logger.js';
 import { processInParallel } from '../lib/parallel.js';
 import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
 import { runInWorker, shouldOffload } from '../lib/worker-pool.js';
-import { ApplyPatchInputSchema } from '../schemas/inputs.js';
-import { ApplyPatchOutputSchema } from '../schemas/outputs.js';
+import { NonNegInt, OptionalPath } from '../schemas/fields.js';
+import {
+  defaultFalseBoolean,
+  OperationSummarySchema,
+  PerFileErrorSchema,
+} from '../schemas/shared.js';
 
 import { defineTool } from './define-tool.js';
 import { FILE_EDIT_ICONS } from './icons.js';
@@ -31,6 +35,57 @@ import {
   type ToolContract,
   type ToolResult,
 } from './shared.js';
+
+const ApplyPatchInputSchema = z.strictObject({
+  path: OptionalPath.describe(
+    'Required for single-file patches without a/ b/ headers; ignored for multi-file patches'
+  ),
+  patch: z
+    .string()
+    .min(1)
+    .max(MAX_TEXT_FILE_SIZE)
+    .describe(
+      'Unified diff patch content (unified format with --- a/ +++ b/ headers)'
+    )
+    .meta({
+      examples: [
+        '--- a/src/foo.ts\n+++ b/src/foo.ts\n@@ -1,3 +1,3 @@\n-const x = 1;\n+const x = 2;\n',
+      ],
+    }),
+  dryRun: defaultFalseBoolean('Validate patch without applying'),
+  fuzzFactor: z
+    .int32()
+    .min(0)
+    .max(10)
+    .optional()
+    .default(0)
+    .describe('Lines of context allowed to differ (0\u201310)'),
+  autoConvertLineEndings: defaultFalseBoolean('Auto-convert line endings'),
+});
+
+const ApplyPatchOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
+  files: z
+    .array(
+      z.strictObject({
+        path: z.string().describe('File path'),
+        hunks: NonNegInt.describe('Hunks applied'),
+        linesAdded: NonNegInt.optional().describe('Lines added'),
+        linesRemoved: NonNegInt.optional().describe('Lines removed'),
+      })
+    )
+    .describe('Per-file patch results'),
+  summary: OperationSummarySchema.describe('Operation summary'),
+  failures: z
+    .array(
+      z.strictObject({
+        path: z.string(),
+        error: PerFileErrorSchema,
+      })
+    )
+    .optional()
+    .describe('Per-file patch failures'),
+});
 
 const APPLY_PATCH_TOOL: ToolContract = {
   name: 'apply_patch',

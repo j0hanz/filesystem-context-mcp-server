@@ -7,7 +7,7 @@ import { SdkError, SdkErrorCode } from '@modelcontextprotocol/server';
 import { cp, mkdir, rename, rm, stat } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 
-import type { z } from 'zod/v4';
+import { z } from 'zod/v4';
 
 import { withAbort } from '../lib/abort.js';
 import {
@@ -22,8 +22,8 @@ import {
   validateExistingPath,
   validatePathForWrite,
 } from '../lib/paths.js';
-import { MoveFileInputSchema } from '../schemas/inputs.js';
-import { MoveFileOutputSchema } from '../schemas/outputs.js';
+import { RequiredPath } from '../schemas/fields.js';
+import { PerFileErrorSchema } from '../schemas/shared.js';
 
 import { defineTool } from './define-tool.js';
 import { FILE_MOVE_ICONS } from './icons.js';
@@ -35,6 +35,33 @@ import {
   type ToolContract,
   type ToolResult,
 } from './shared.js';
+
+const MoveFileInputSchema = z.strictObject({
+  sources: z
+    .array(RequiredPath)
+    .min(1)
+    .describe('One or more source paths to move'),
+  destination: RequiredPath.describe('Destination path'),
+});
+
+const MoveFileOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
+  source: z
+    .string()
+    .optional()
+    .describe('Resolved source (single-source moves)'),
+  sources: z.array(z.string()).describe('Resolved sources that were moved'),
+  destination: z.string().describe('Resolved destination'),
+  failed: z
+    .array(
+      z.strictObject({
+        source: z.string().describe('Failed source path'),
+        error: PerFileErrorSchema.describe('Failure details'),
+      })
+    )
+    .optional()
+    .describe('Failed moves (partial failure)'),
+});
 
 const MOVE_FILE_TOOL: ToolContract = {
   name: 'mv',

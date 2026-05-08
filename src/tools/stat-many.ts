@@ -2,7 +2,7 @@ import type { Stats } from 'node:fs';
 import { readlink, stat } from 'node:fs/promises';
 import { parse } from 'node:path';
 
-import type { z } from 'zod/v4';
+import { z } from 'zod/v4';
 
 import { assertNotAborted, withAbort } from '../lib/abort.js';
 import {
@@ -22,8 +22,12 @@ import {
   assertAllowedFileAccess,
   validateExistingPathDetailed,
 } from '../lib/paths.js';
-import { StatManyInputSchema } from '../schemas/inputs.js';
-import { StatManyOutputSchema } from '../schemas/outputs.js';
+import { RequiredPath } from '../schemas/fields.js';
+import {
+  FileInfoSchema,
+  OperationSummarySchema,
+  PerFileErrorSchema,
+} from '../schemas/shared.js';
 
 import {
   type FileInfo,
@@ -47,6 +51,24 @@ import {
   createBatchProgressCallbacks,
   resolveFinalProgressCurrent,
 } from './tool-execution.js';
+
+const StatManyInputSchema = z.strictObject({
+  paths: z.array(RequiredPath).min(1).describe('Paths to stat'),
+});
+
+const StatManyOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
+  results: z
+    .array(
+      z.strictObject({
+        path: z.string().describe('Requested path'),
+        info: FileInfoSchema.optional().describe('File info (when successful)'),
+        error: PerFileErrorSchema.optional().describe('Error (when failed)'),
+      })
+    )
+    .describe('Per-path results'),
+  summary: OperationSummarySchema.describe('Operation summary'),
+});
 
 const GET_MULTIPLE_FILE_INFO_TOOL: ToolContract = {
   name: 'stat_many',

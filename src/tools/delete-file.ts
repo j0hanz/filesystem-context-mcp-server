@@ -7,14 +7,18 @@ import { SdkError, SdkErrorCode } from '@modelcontextprotocol/server';
 import { lstat, rm, rmdir } from 'node:fs/promises';
 import { basename } from 'node:path';
 
-import type { z } from 'zod/v4';
+import { z } from 'zod/v4';
 
 import { withAbort } from '../lib/abort.js';
 import { ErrorCode, isNodeError, McpError } from '../lib/errors.js';
 import { Logger } from '../lib/logger.js';
 import { isAllowedDirectoryRoot, validatePathForWrite } from '../lib/paths.js';
-import { DeleteInputSchema } from '../schemas/inputs.js';
-import { DeleteOutputSchema } from '../schemas/outputs.js';
+import { FileType as FileTypeEnum, RequiredPath } from '../schemas/fields.js';
+import {
+  defaultFalseBoolean,
+  OperationSummarySchema,
+  PerFileErrorSchema,
+} from '../schemas/shared.js';
 
 import { defineTool } from './define-tool.js';
 import { FILE_DELETE_ICONS } from './icons.js';
@@ -25,6 +29,34 @@ import {
   type ToolContract,
   type ToolResult,
 } from './shared.js';
+
+const DeleteInputSchema = z.strictObject({
+  paths: z.array(RequiredPath).min(1).describe('One or more paths to delete'),
+  recursive: defaultFalseBoolean('Delete directories recursively'),
+  ignoreIfNotExists: defaultFalseBoolean('No error if path does not exist'),
+});
+
+const DeleteOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
+  deleted: z
+    .array(
+      z.strictObject({
+        path: z.string().describe('Deleted path'),
+        type: FileTypeEnum.optional().describe('Deleted item type'),
+      })
+    )
+    .describe('Successfully deleted items'),
+  summary: OperationSummarySchema.describe('Operation summary'),
+  failures: z
+    .array(
+      z.strictObject({
+        path: z.string(),
+        error: PerFileErrorSchema,
+      })
+    )
+    .optional()
+    .describe('Per-path failures'),
+});
 
 const DELETE_FILE_TOOL: ToolContract = {
   name: 'rm',

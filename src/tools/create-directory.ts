@@ -1,13 +1,16 @@
 import { mkdir } from 'node:fs/promises';
 import { basename } from 'node:path';
 
-import type { z } from 'zod/v4';
+import { z } from 'zod/v4';
 
 import { withAbort } from '../lib/abort.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
 import { validatePathForWrite } from '../lib/paths.js';
-import { CreateDirectoryInputSchema } from '../schemas/inputs.js';
-import { CreateDirectoryOutputSchema } from '../schemas/outputs.js';
+import { RequiredPath } from '../schemas/fields.js';
+import {
+  OperationSummarySchema,
+  PerFileErrorSchema,
+} from '../schemas/shared.js';
 
 import { defineTool } from './define-tool.js';
 import { DIR_CREATE_ICONS } from './icons.js';
@@ -17,6 +20,35 @@ import {
   IDEMPOTENT_WRITE_TOOL_ANNOTATIONS,
   type ToolContract,
 } from './shared.js';
+
+const CreateDirectoryInputSchema = z.strictObject({
+  paths: z
+    .array(RequiredPath)
+    .min(1)
+    .describe('One or more directory paths to create (recursive)'),
+});
+
+const CreateDirectoryOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
+  created: z
+    .array(
+      z.strictObject({
+        path: z.string().describe('Created directory path'),
+        isNew: z.boolean().describe('Was directory newly created'),
+      })
+    )
+    .describe('Created directories'),
+  summary: OperationSummarySchema.describe('Operation summary'),
+  failures: z
+    .array(
+      z.strictObject({
+        path: z.string(),
+        error: PerFileErrorSchema,
+      })
+    )
+    .optional()
+    .describe('Per-path failures'),
+});
 
 const CREATE_DIRECTORY_TOOL: ToolContract = {
   name: 'mkdir',

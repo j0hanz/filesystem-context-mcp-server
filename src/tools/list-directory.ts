@@ -12,6 +12,7 @@ import {
   DEFAULT_MAX_DEPTH,
   DEFAULT_SEARCH_TIMEOUT_MS,
   MAX_LIST_ENTRIES,
+  MAX_TREE_DEPTH,
   PARALLEL_CONCURRENCY,
 } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
@@ -37,8 +38,19 @@ import {
   validateExistingPathDetailed,
 } from '../lib/paths.js';
 import { createBase64JsonCodec } from '../lib/zod-codecs.js';
-import { ListDirectoryInputSchema } from '../schemas/inputs.js';
-import { ListDirectoryOutputSchema } from '../schemas/outputs.js';
+import {
+  FileType as FileTypeEnum,
+  NonNegInt,
+  OptionalPath,
+  SafeGlobPattern,
+} from '../schemas/fields.js';
+import {
+  CursorSchema,
+  defaultFalseBoolean,
+  includeHiddenField,
+  includeIgnoredField,
+  NextCursorSchema,
+} from '../schemas/shared.js';
 
 import type { DirectoryEntry, ListDirectoryResult } from '../config.js';
 import { formatOperationSummary, joinLines } from '../config.js';
@@ -491,6 +503,59 @@ async function listDirectory(
 }
 
 // ---------------------------------------------------------------------------
+
+const ListDirectoryInputSchema = z.strictObject({
+  path: OptionalPath.describe('Base directory (default: root)'),
+  includeHidden: includeHiddenField(),
+  includeIgnored: includeIgnoredField(),
+  maxDepth: z
+    .uint32()
+    .min(1)
+    .max(MAX_TREE_DEPTH)
+    .optional()
+    .describe('Max directory depth (default: flat listing)'),
+  maxEntries: z
+    .uint32()
+    .min(1)
+    .max(MAX_LIST_ENTRIES)
+    .optional()
+    .default(DEFAULT_LIST_MAX_ENTRIES)
+    .describe('Max entries to return per page'),
+  sortBy: z
+    .enum(['name', 'size', 'modified', 'type'])
+    .optional()
+    .default('name')
+    .describe('Sort order'),
+  pattern: SafeGlobPattern.optional(),
+  includeSymlinkTargets: defaultFalseBoolean('Resolve symlink targets'),
+  cursor: CursorSchema,
+});
+
+const ListDirectoryOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
+  path: z.string().describe('Listed directory path'),
+  entries: z
+    .array(
+      z.strictObject({
+        name: z.string().describe('Entry name'),
+        relativePath: z
+          .string()
+          .describe('Relative path from listed directory'),
+        type: FileTypeEnum.describe('Entry type'),
+        size: NonNegInt.optional().describe('Size in bytes'),
+        modified: z.string().optional().describe('ISO 8601 last modified time'),
+      })
+    )
+    .describe('Directory entries'),
+  totalEntries: NonNegInt.optional().describe('Total entries scanned'),
+  totalFiles: NonNegInt.optional().describe('Total files'),
+  totalDirectories: NonNegInt.optional().describe('Total directories'),
+  stoppedReason: z.string().optional().describe('Why enumeration stopped'),
+  skippedInaccessible: NonNegInt.optional().describe(
+    'Inaccessible entries skipped'
+  ),
+  nextCursor: NextCursorSchema,
+});
 
 const LIST_DIRECTORY_TOOL: ToolContract = {
   name: 'ls',

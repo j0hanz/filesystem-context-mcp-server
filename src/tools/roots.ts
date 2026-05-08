@@ -1,9 +1,7 @@
-import type { z } from 'zod/v4';
+import { z } from 'zod/v4';
 
 import { ErrorCode } from '../lib/errors.js';
 import { getAllowedDirectories } from '../lib/paths.js';
-import { RootsInputSchema } from '../schemas/inputs.js';
-import { RootsOutputSchema } from '../schemas/outputs.js';
 
 import { joinLines } from '../config.js';
 import { defineTool } from './define-tool.js';
@@ -13,6 +11,20 @@ import {
   READ_ONLY_TOOL_ANNOTATIONS,
   type ToolContract,
 } from './shared.js';
+
+const RootsInputSchema = z.strictObject({});
+
+const RootsOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
+  roots: z
+    .array(
+      z.strictObject({
+        uri: z.string().describe('Root URI'),
+        name: z.string().optional().describe('Display name'),
+      })
+    )
+    .describe('Allowed root directories'),
+});
 
 const LIST_ALLOWED_DIRECTORIES_TOOL: ToolContract = {
   name: 'roots',

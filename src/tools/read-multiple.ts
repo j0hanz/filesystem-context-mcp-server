@@ -2,7 +2,7 @@ import type { Stats } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 
-import type { z } from 'zod/v4';
+import { z } from 'zod/v4';
 
 import { withAbort } from '../lib/abort.js';
 import {
@@ -18,13 +18,18 @@ import { applyIndexedErrors, applyIndexedValues } from '../lib/fs-walk.js';
 import { processInParallel } from '../lib/parallel.js';
 import { validateExistingPath } from '../lib/paths.js';
 import { assignDefined } from '../lib/utils.js';
-import { ReadManyInputSchema } from '../schemas/inputs.js';
+import { NonNegInt, PositiveInt, RequiredPath } from '../schemas/fields.js';
 import {
   readRangeConstraints,
   toToolJsonSchema,
 } from '../schemas/json-schema.js';
-import { ReadManyOutputSchema } from '../schemas/outputs.js';
-import type { ContinuationSchema } from '../schemas/shared.js';
+import {
+  ContinuationSchema,
+  createReadRangeFields,
+  OperationSummarySchema,
+  PerFileErrorSchema,
+  validateReadRange,
+} from '../schemas/shared.js';
 
 import { defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
@@ -520,6 +525,55 @@ async function readMultipleFiles(
 // ---------------------------------------------------------------------------
 
 const FULL_FILE_CONTENTS_DESCRIPTION = 'Full file contents';
+
+const readManyRangeFields = createReadRangeFields({
+  head: 'Return first N lines from each',
+  tail: 'Return last N lines from each',
+  startLine: 'Start line (1-indexed)',
+  endLine: 'End line (1-indexed)',
+});
+
+const ReadManyInputSchema = z
+  .strictObject({
+    paths: z.array(RequiredPath).min(1).describe('File paths to read'),
+    ...readManyRangeFields,
+  })
+  .superRefine((value, ctx) => {
+    validateReadRange(
+      {
+        head: value.head,
+        tail: value.tail,
+        startLine: value.startLine,
+        endLine: value.endLine,
+      },
+      ctx
+    );
+  });
+
+const ReadManyOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
+  results: z
+    .array(
+      z.strictObject({
+        path: z.string().describe('File path'),
+        content: z.string().optional().describe('Content'),
+        resourceUri: z.string().optional().describe('Full content URI'),
+        totalLines: NonNegInt.optional().describe('Total lines'),
+        linesRead: NonNegInt.optional().describe('Lines returned'),
+        hasMoreLines: z.boolean().optional().describe('More lines available'),
+        head: PositiveInt.optional().describe('Head lines requested'),
+        tail: PositiveInt.optional().describe('Tail lines requested'),
+        startLine: PositiveInt.optional().describe('Start line'),
+        endLine: PositiveInt.optional().describe('End line'),
+        continuation: ContinuationSchema.optional().describe(
+          'Present when file was cut; call the named tool with the given args to continue'
+        ),
+        error: PerFileErrorSchema.optional().describe('Per-file error'),
+      })
+    )
+    .describe('Per-file read results'),
+  summary: OperationSummarySchema.describe('Operation summary'),
+});
 
 const READ_MANY_TOOL: ToolContract = {
   name: 'read_many',

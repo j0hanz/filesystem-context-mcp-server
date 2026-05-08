@@ -2,7 +2,7 @@ import type { Stats } from 'node:fs';
 import { readlink, stat } from 'node:fs/promises';
 import { parse } from 'node:path';
 
-import type { z } from 'zod/v4';
+import { z } from 'zod/v4';
 
 import { assertNotAborted, withAbort } from '../lib/abort.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, getMimeType } from '../lib/constants.js';
@@ -12,8 +12,8 @@ import {
   assertAllowedFileAccess,
   validateExistingPathDetailed,
 } from '../lib/paths.js';
-import { StatInputSchema } from '../schemas/inputs.js';
-import { StatOutputSchema } from '../schemas/outputs.js';
+import { RequiredPath } from '../schemas/fields.js';
+import { FileInfoSchema } from '../schemas/shared.js';
 
 import { type FileInfo, formatBytes, joinLines } from '../config.js';
 import { buildPathMessages, defineTool } from './define-tool.js';
@@ -24,6 +24,15 @@ import {
   READ_ONLY_TOOL_ANNOTATIONS,
   type ToolContract,
 } from './shared.js';
+
+const StatInputSchema = z.strictObject({
+  path: RequiredPath,
+});
+
+const StatOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
+  file: FileInfoSchema.describe('File info'),
+});
 
 const GET_FILE_INFO_TOOL: ToolContract = {
   name: 'stat',

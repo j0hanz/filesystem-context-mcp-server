@@ -3,7 +3,7 @@ import { basename } from 'node:path';
 
 import { createTwoFilesPatch, diffLines } from 'diff';
 import RE2 from 're2';
-import type { z } from 'zod/v4';
+import { z } from 'zod/v4';
 
 import { withAbort } from '../lib/abort.js';
 import { atomicWriteFile } from '../lib/atomic-write.js';
@@ -13,8 +13,8 @@ import { readFileWithStats } from '../lib/file-content.js';
 import { Logger } from '../lib/logger.js';
 import { assertAllowedFileAccess, validateExistingPath } from '../lib/paths.js';
 import { runInWorker, shouldOffload } from '../lib/worker-pool.js';
-import { EditFileInputSchema } from '../schemas/inputs.js';
-import { EditFileOutputSchema } from '../schemas/outputs.js';
+import { NonNegInt, PositiveInt, RequiredPath } from '../schemas/fields.js';
+import { defaultFalseBoolean } from '../schemas/shared.js';
 
 import { defineTool } from './define-tool.js';
 import { FILE_EDIT_ICONS } from './icons.js';
@@ -24,6 +24,47 @@ import {
   type ToolContract,
   type ToolResult,
 } from './shared.js';
+
+const EditFileInputSchema = z.strictObject({
+  path: RequiredPath,
+  edits: z
+    .array(
+      z.strictObject({
+        oldText: z
+          .string()
+          .min(1, 'oldText required')
+          .describe('Exact text to find (must match literally)')
+          .meta({ examples: ['const x = 1;', 'function oldName('] }),
+        newText: z
+          .string()
+          .describe('Replacement text (empty string to delete)')
+          .meta({ examples: ['const x = 2;', 'function newName(', ''] }),
+      })
+    )
+    .min(1)
+    .describe('List of text substitutions'),
+  dryRun: defaultFalseBoolean('Preview changes without writing'),
+  ignoreWhitespace: defaultFalseBoolean(
+    'Ignore leading/trailing whitespace when matching'
+  ),
+});
+
+const EditFileOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
+  path: z.string().describe('File path'),
+  appliedEdits: NonNegInt.describe('Edits applied'),
+  linesAdded: NonNegInt.optional().describe('Lines added'),
+  linesRemoved: NonNegInt.optional().describe('Lines removed'),
+  diff: z.string().optional().describe('Unified diff of changes'),
+  unmatchedEdits: z
+    .array(z.string())
+    .optional()
+    .describe('oldText strings that had no match'),
+  lineRange: z
+    .tuple([PositiveInt, PositiveInt])
+    .optional()
+    .describe('[firstLine, lastLine] range modified'),
+});
 
 const EDIT_FILE_TOOL: ToolContract = {
   name: 'edit',

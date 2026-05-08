@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { basename, relative, win32 } from 'node:path';
 
-import type { z } from 'zod/v4';
+import { z } from 'zod/v4';
 
 import { assertNotAborted, withAbort } from '../lib/abort.js';
 import {
@@ -17,8 +17,7 @@ import {
   loadRootGitignore,
 } from '../lib/fs-walk.js';
 import { validateExistingPath } from '../lib/paths.js';
-import { HashInputSchema } from '../schemas/inputs.js';
-import { HashOutputSchema } from '../schemas/outputs.js';
+import { NonNegInt, RequiredPath, Sha256Hex } from '../schemas/fields.js';
 
 import { defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
@@ -34,6 +33,18 @@ import {
 } from './tool-execution.js';
 
 const WINDOWS_PATH_SEPARATOR = /\\/gu;
+
+const HashInputSchema = z.strictObject({
+  path: RequiredPath,
+});
+
+const HashOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
+  hash: Sha256Hex.describe('SHA-256 digest'),
+  path: z.string().describe('Resolved path'),
+  isDirectory: z.boolean().describe('True when hashing a directory'),
+  fileCount: NonNegInt.optional().describe('Files hashed (directories only)'),
+});
 
 const CALCULATE_HASH_TOOL: ToolContract = {
   name: 'calculate_hash',

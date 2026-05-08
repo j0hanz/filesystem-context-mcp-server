@@ -2,15 +2,15 @@ import { readFile, stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 
 import { formatPatch, structuredPatch, type StructuredPatch } from 'diff';
-import type { z } from 'zod/v4';
+import { z } from 'zod/v4';
 
 import { withAbort } from '../lib/abort.js';
 import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
 import { ErrorCode, McpError } from '../lib/errors.js';
 import { validateExistingPath } from '../lib/paths.js';
 import { runInWorker, shouldOffload } from '../lib/worker-pool.js';
-import { DiffFilesInputSchema } from '../schemas/inputs.js';
-import { DiffFilesOutputSchema } from '../schemas/outputs.js';
+import { NonNegInt, RequiredPath } from '../schemas/fields.js';
+import { defaultFalseBoolean } from '../schemas/shared.js';
 
 import { defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
@@ -24,6 +24,30 @@ import {
   type ToolResponse,
   type ToolResult,
 } from './shared.js';
+
+const DiffFilesInputSchema = z.strictObject({
+  original: RequiredPath.describe('Original file path'),
+  modified: RequiredPath.describe('Modified file path'),
+  context: z.int32().min(0).optional().describe('Context lines (default 3)'),
+  ignoreWhitespace: defaultFalseBoolean('Ignore whitespace changes'),
+  stripTrailingCr: defaultFalseBoolean('Strip trailing carriage returns'),
+});
+
+const DiffFilesOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
+  diff: z.string().describe('Unified diff output (empty when identical)'),
+  isIdentical: z.boolean().describe('True when files are identical'),
+  stats: z
+    .strictObject({
+      additions: NonNegInt.describe('Lines added'),
+      deletions: NonNegInt.describe('Lines deleted'),
+      hunks: NonNegInt.describe('Hunk count'),
+    })
+    .optional()
+    .describe('Diff statistics (absent when identical)'),
+  truncated: z.boolean().optional().describe('Diff was truncated to resource'),
+  resourceUri: z.string().optional().describe('Full diff URI when truncated'),
+});
 
 const DIFF_FILES_TOOL: ToolContract = {
   name: 'diff_files',

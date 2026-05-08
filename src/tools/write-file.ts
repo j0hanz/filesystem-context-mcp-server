@@ -1,15 +1,15 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
-import type { z } from 'zod/v4';
+import { z } from 'zod/v4';
 
 import { withAbort } from '../lib/abort.js';
 import { atomicWriteFile } from '../lib/atomic-write.js';
+import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { Logger } from '../lib/logger.js';
 import { validatePathForWrite } from '../lib/paths.js';
-import { WriteFileInputSchema } from '../schemas/inputs.js';
-import { WriteFileOutputSchema } from '../schemas/outputs.js';
+import { NonNegInt, RequiredPath } from '../schemas/fields.js';
 
 import { formatBytes } from '../config.js';
 import { buildPathMessages, defineTool } from './define-tool.js';
@@ -19,6 +19,17 @@ import {
   DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   type ToolContract,
 } from './shared.js';
+
+const WriteFileInputSchema = z.strictObject({
+  path: RequiredPath.describe('Target file path'),
+  content: z.string().max(MAX_TEXT_FILE_SIZE).describe('File content to write'),
+});
+
+const WriteFileOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
+  path: z.string().describe('Written file path'),
+  bytesWritten: NonNegInt.describe('Bytes written'),
+});
 
 const WRITE_FILE_TOOL: ToolContract = {
   name: 'write',

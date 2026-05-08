@@ -1,13 +1,16 @@
 import type { Stats } from 'node:fs';
 import { basename, relative } from 'node:path';
 
-import type { z } from 'zod/v4';
+import { z } from 'zod/v4';
 
 import { withTimedAbortSignal } from '../lib/abort.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_SEARCH_MAX_FILES,
+  DEFAULT_SEARCH_RESULTS,
   DEFAULT_SEARCH_TIMEOUT_MS,
+  MAX_SEARCH_DEPTH,
+  MAX_SEARCH_RESULTS,
 } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import {
@@ -34,10 +37,16 @@ import {
   validateExistingPathDetailed,
 } from '../lib/paths.js';
 import { assignDefined } from '../lib/utils.js';
+import { NonNegInt, OptionalPath, SafeGlobPattern } from '../schemas/fields.js';
+import {
+  CursorSchema,
+  includeHiddenField,
+  includeIgnoredField,
+  NextCursorSchema,
+} from '../schemas/shared.js';
 
 import type { SearchFilesResult, SearchResult } from '../config.js';
 import { formatOperationSummary, joinLines } from '../config.js';
-import { SearchFilesInputSchema, SearchFilesOutputSchema } from '../schemas.js';
 import { defineTool } from './define-tool.js';
 import { DIRECTORY_ICONS } from './icons.js';
 import {
@@ -479,6 +488,53 @@ async function searchFiles(
 }
 
 // ---------------------------------------------------------------------------
+
+const SearchFilesInputSchema = z.strictObject({
+  path: OptionalPath.describe('Base directory (default: root)'),
+  pattern: SafeGlobPattern.describe('Glob pattern to search'),
+  maxResults: z
+    .uint32()
+    .min(1)
+    .max(MAX_SEARCH_RESULTS)
+    .optional()
+    .default(DEFAULT_SEARCH_RESULTS)
+    .describe('Max files to return'),
+  includeIgnored: includeIgnoredField(),
+  includeHidden: includeHiddenField(),
+  sortBy: z
+    .enum(['name', 'size', 'modified', 'path'])
+    .optional()
+    .default('path')
+    .describe('Sort order'),
+  maxDepth: z
+    .uint32()
+    .min(0)
+    .max(MAX_SEARCH_DEPTH)
+    .optional()
+    .describe('Max directory depth'),
+  cursor: CursorSchema,
+});
+
+const SearchFilesOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
+  root: z.string().describe('Search root path'),
+  results: z
+    .array(
+      z.strictObject({
+        path: z.string().describe('Relative path from search root'),
+        size: NonNegInt.optional().describe('Size in bytes'),
+        modified: z.string().optional().describe('ISO 8601 last modified time'),
+      })
+    )
+    .describe('Matching files'),
+  totalMatches: NonNegInt.optional().describe('Total matches found'),
+  filesScanned: NonNegInt.optional().describe('Files scanned'),
+  skippedInaccessible: NonNegInt.optional().describe(
+    'Inaccessible entries skipped'
+  ),
+  stoppedReason: z.string().optional().describe('Why search stopped early'),
+  nextCursor: NextCursorSchema,
+});
 
 const SEARCH_FILES_TOOL: ToolContract = {
   name: 'find',

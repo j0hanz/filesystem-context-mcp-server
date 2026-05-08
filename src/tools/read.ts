@@ -1,6 +1,6 @@
 import { basename } from 'node:path';
 
-import type { z } from 'zod/v4';
+import { z } from 'zod/v4';
 
 import {
   DEFAULT_CONTINUATION_CHUNK_SIZE,
@@ -10,13 +10,22 @@ import {
 import { ErrorCode } from '../lib/errors.js';
 import { calculateFileContentHash, readFile } from '../lib/file-content.js';
 import { assignDefined } from '../lib/utils.js';
-import { ReadFileInputSchema } from '../schemas/inputs.js';
+import {
+  NonNegInt,
+  PositiveInt,
+  RequiredPath,
+  Sha256Hex,
+} from '../schemas/fields.js';
 import {
   readRangeConstraints,
   toToolJsonSchema,
 } from '../schemas/json-schema.js';
-import { ReadFileOutputSchema } from '../schemas/outputs.js';
-import type { ContinuationSchema } from '../schemas/shared.js';
+import {
+  ContinuationSchema,
+  createReadRangeFields,
+  defaultFalseBoolean,
+  validateReadRange,
+} from '../schemas/shared.js';
 
 import { defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
@@ -29,6 +38,73 @@ import {
   type ToolResponse,
   type ToolResult,
 } from './shared.js';
+
+const readRangeFields = createReadRangeFields({
+  head: 'Return first N lines',
+  tail: 'Return last N lines',
+  startLine: 'Start line (1-indexed)',
+  endLine: 'End line (1-indexed)',
+});
+
+const ReadFileInputSchema = z
+  .strictObject({
+    path: RequiredPath,
+    includeHash: defaultFalseBoolean('Include SHA-256 hash of the content'),
+    ...readRangeFields,
+    offset: z
+      .uint32()
+      .optional()
+      .describe(
+        'Byte offset to start reading (mutually exclusive with line params)'
+      ),
+    length: z
+      .uint32()
+      .min(1)
+      .optional()
+      .describe(
+        'Number of bytes to read (used with offset; reads to EOF if omitted)'
+      ),
+  })
+  .superRefine((value, ctx) => {
+    validateReadRange(
+      {
+        head: value.head,
+        tail: value.tail,
+        startLine: value.startLine,
+        endLine: value.endLine,
+        offset: value.offset,
+        length: value.length,
+      },
+      ctx
+    );
+  });
+
+const ReadFileOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
+  path: z.string().describe('Resolved path'),
+  content: z.string().optional().describe('File content'),
+  resourceUri: z
+    .string()
+    .optional()
+    .describe('Full content URI when externalized'),
+  continuation: ContinuationSchema.optional().describe(
+    'Present when file was cut; call the named tool with the given args to read next chunk'
+  ),
+  totalLines: NonNegInt.optional().describe('Total lines in file'),
+  linesRead: NonNegInt.optional().describe('Lines returned'),
+  hasMoreLines: z.boolean().optional().describe('More lines available'),
+  head: PositiveInt.optional().describe('Head lines requested'),
+  tail: PositiveInt.optional().describe('Tail lines requested'),
+  startLine: PositiveInt.optional().describe('Start line'),
+  endLine: PositiveInt.optional().describe('End line'),
+  contentHash: Sha256Hex.optional().describe(
+    'SHA-256 of content (when includeHash)'
+  ),
+  // Byte-range fields
+  offset: NonNegInt.optional().describe('Byte offset used'),
+  bytesRead: NonNegInt.optional().describe('Bytes returned'),
+  reachedEOF: z.boolean().optional().describe('Read reached end of file'),
+});
 
 const READ_FILE_TOOL: ToolContract = {
   name: 'read',

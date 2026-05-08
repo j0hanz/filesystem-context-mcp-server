@@ -14,9 +14,12 @@ import {
 } from '../lib/abort.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
+  DEFAULT_SEARCH_CONTENT_RESULTS,
   DEFAULT_SEARCH_MAX_FILES,
   DEFAULT_SEARCH_TIMEOUT_MS,
   MAX_LINE_CONTENT_LENGTH,
+  MAX_SEARCH_DEPTH,
+  MAX_SEARCH_RESULTS,
   MAX_SEARCHABLE_FILE_SIZE,
   parseEnvInt,
   SEARCH_WORKERS,
@@ -40,12 +43,23 @@ import {
   validateExistingPathDetailed,
 } from '../lib/paths.js';
 import { mergeOptions, omitOptionKeys } from '../lib/utils.js';
-import { GrepInputSchema } from '../schemas/inputs.js';
+import {
+  NonNegInt,
+  OptionalPath,
+  PositiveInt,
+  SafeGlobPattern,
+} from '../schemas/fields.js';
 import {
   safeGlobConstraint,
   toToolJsonSchema,
 } from '../schemas/json-schema.js';
-import { GrepOutputSchema } from '../schemas/outputs.js';
+import {
+  CursorSchema,
+  defaultFalseBoolean,
+  includeHiddenField,
+  includeIgnoredField,
+  NextCursorSchema,
+} from '../schemas/shared.js';
 
 import type { ContentMatch, SearchContentResult } from '../config.js';
 import { formatOperationSummary } from '../config.js';
@@ -1413,6 +1427,112 @@ function buildSearchPreviewState(
     heading: buildHeading(payloads.length, visibleCount),
   };
 }
+
+const GrepInputSchema = z.strictObject({
+  path: OptionalPath,
+  pattern: SafeGlobPattern.optional().describe(
+    'File glob filter (default: all text files)'
+  ),
+  searchPattern: z
+    .string()
+    .min(1)
+    .max(10000)
+    .describe(
+      'Text or regex to search for (RE2: no lookahead/lookbehind/backrefs when isRegex=true)'
+    )
+    .meta({ examples: ['TODO', 'function\\s+(\\w+)', 'import.*from'] }),
+  isRegex: defaultFalseBoolean('Treat searchPattern as regex'),
+  includeHidden: includeHiddenField(),
+  includeIgnored: includeIgnoredField(),
+  caseSensitive: defaultFalseBoolean('Case-sensitive'),
+  wholeWord: defaultFalseBoolean('Match whole words only'),
+  contextLines: z
+    .int32()
+    .min(0)
+    .max(20)
+    .optional()
+    .describe(
+      'Lines of context before AND after each match (symmetric; overridden by contextBefore/contextAfter)'
+    ),
+  contextBefore: z
+    .int32()
+    .min(0)
+    .max(20)
+    .optional()
+    .describe(
+      'Lines of context before each match (overrides contextLines for before)'
+    ),
+  contextAfter: z
+    .int32()
+    .min(0)
+    .max(20)
+    .optional()
+    .describe(
+      'Lines of context after each match (overrides contextLines for after)'
+    ),
+  fuzzy: z
+    .boolean()
+    .optional()
+    .describe(
+      'Approximate string matching (Levenshtein-based, \u226425% char difference). Incompatible with isRegex.'
+    ),
+
+  maxResults: z
+    .uint32()
+    .min(1)
+    .max(MAX_SEARCH_RESULTS)
+    .optional()
+    .default(DEFAULT_SEARCH_CONTENT_RESULTS)
+    .describe('Max matches to return per page'),
+  maxDepth: z
+    .uint32()
+    .min(0)
+    .max(MAX_SEARCH_DEPTH)
+    .optional()
+    .describe('Max directory depth'),
+  cursor: CursorSchema,
+});
+
+const GrepOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
+  matches: z
+    .array(
+      z.strictObject({
+        file: z.string().describe('Relative file path'),
+        line: PositiveInt.describe('Line number'),
+        column: NonNegInt.optional().describe('Column (0-indexed)'),
+        content: z.string().describe('Matched line content'),
+        matchCount: NonNegInt.optional().describe('Match count on this line'),
+        contextBefore: z
+          .array(z.string())
+          .optional()
+          .describe('Context lines before'),
+        contextAfter: z
+          .array(z.string())
+          .optional()
+          .describe('Context lines after'),
+      })
+    )
+    .describe('Flat list of matches (sorted by file then line)'),
+  totalMatches: NonNegInt.optional().describe('Total match count'),
+  filesMatched: NonNegInt.optional().describe('Files with matches'),
+  filesScanned: NonNegInt.optional().describe('Files scanned'),
+  skippedTooLarge: NonNegInt.optional().describe('Files skipped (too large)'),
+  skippedBinary: NonNegInt.optional().describe('Files skipped (binary)'),
+  skippedInaccessible: NonNegInt.optional().describe(
+    'Files skipped (inaccessible)'
+  ),
+  truncated: z.boolean().optional().describe('Results truncated'),
+  stoppedReason: z
+    .enum(['maxResults', 'maxFiles', 'timeout'])
+    .optional()
+    .describe('Why search stopped early'),
+  resourceUri: z
+    .string()
+    .optional()
+    .describe('Full results URI when truncated'),
+  nextCursor: NextCursorSchema,
+});
 
 const SEARCH_CONTENT_TOOL: ToolContract = {
   name: 'grep',
