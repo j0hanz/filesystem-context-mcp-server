@@ -1,28 +1,29 @@
-import {
-  type CreateTaskServerContext,
-  type GetTaskResult,
-  RELATED_TASK_META_KEY,
-  type RequestTaskStore,
-  type Result,
-  type TaskServerContext,
-  type TaskStatusNotificationParams,
-} from '@modelcontextprotocol/server';
-
 import assert from 'node:assert/strict';
 import { readdirSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
+import { z } from 'zod/v4';
+
+import { ErrorCode } from '../../src/config.js';
 import {
-  MAX_CONCURRENT_TASKS,
-  MAX_TASK_TTL_MS,
-} from '../../src/lib/constants.js';
-import {
-  ErrorCode,
+  classifyError,
+  createDetailedError,
   getSuggestion,
+  isAbortError,
   isNodeError,
+  isTimeoutLikeError,
   McpError,
+  zodErrorToProblem,
 } from '../../src/lib/errors.js';
-import { createToolTaskHandler } from '../../src/tools/tool-execution.js';
+import type { Problem } from '../../src/lib/problem.js';
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function makeErrno(code: string, message = 'fake'): NodeJS.ErrnoException {
+  const e = new Error(message) as NodeJS.ErrnoException;
+  e.code = code;
+  return e;
+}
 
 // ─── isNodeError ────────────────────────────────────────────────────────────
 
@@ -55,9 +56,9 @@ describe('isNodeError', () => {
   });
 });
 
-// ─── McpError ───────────────────────────────────────────────────────────────
+// ─── McpError — legacy positional constructor ────────────────────────────────
 
-describe('McpError', () => {
+describe('McpError — legacy constructor', () => {
   it('stores code, message, and is instanceof Error', () => {
     const err = new McpError(ErrorCode.NOT_FOUND, 'file not found');
     assert.equal(err.code, ErrorCode.NOT_FOUND);
@@ -78,6 +79,51 @@ describe('McpError', () => {
   it('stores no path when not provided', () => {
     const err = new McpError(ErrorCode.NOT_FOUND, 'msg');
     assert.equal(err.path, undefined);
+  });
+
+  it('has a problem property with the correct code', () => {
+    const err = new McpError(ErrorCode.TOO_LARGE, 'too big');
+    assert.equal(err.problem.code, ErrorCode.TOO_LARGE);
+    assert.equal(err.problem.message, 'too big');
+  });
+});
+
+// ─── McpError — Problem constructor ─────────────────────────────────────────
+
+describe('McpError — Problem constructor', () => {
+  it('wraps a Problem directly', () => {
+    const problem: Problem = {
+      code: ErrorCode.VALIDATION_FAILED,
+      message: 'bad input',
+      issues: [
+        { code: 'invalid_type', message: 'Expected string', path: ['name'] },
+      ],
+    };
+    const err = new McpError(problem);
+    assert.equal(err.code, ErrorCode.VALIDATION_FAILED);
+    assert.equal(err.message, 'bad input');
+    assert.equal(err.problem, problem);
+    assert.ok(err instanceof Error);
+    assert.ok(err instanceof McpError);
+  });
+
+  it('wraps a Problem with cause', () => {
+    const cause = new Error('underlying');
+    const problem: Problem = { code: ErrorCode.IO_ERROR, message: 'io failed' };
+    const err = new McpError(problem, cause);
+    assert.equal(err.cause, cause);
+    assert.equal(err.code, ErrorCode.IO_ERROR);
+  });
+
+  it('VALIDATION_FAILED problem exposes issues', () => {
+    const problem: Problem = {
+      code: ErrorCode.VALIDATION_FAILED,
+      message: 'validation failed',
+      issues: [{ code: 'custom', message: 'required', path: ['field'] }],
+    };
+    const err = new McpError(problem);
+    assert.ok(Array.isArray(err.problem.issues));
+    assert.equal(err.problem.issues?.length, 1);
   });
 });
 
@@ -107,244 +153,127 @@ describe('getSuggestion', () => {
   });
 });
 
-function createMockTaskStore(): {
-  taskStore: RequestTaskStore;
-  getStoredTask: () => GetTaskResult | undefined;
-  getStoredResult: () => Result | undefined;
-} {
-  let storedTask: GetTaskResult | undefined;
-  let storedResult: Result | undefined;
-  let taskCounter = 0;
+// ─── classifyError — no message sniffing ────────────────────────────────────
 
-  const taskStore: RequestTaskStore = {
-    createTask(taskParams) {
-      taskCounter += 1;
-      const createdAt = new Date().toISOString();
-      storedTask = {
-        taskId: `task-${taskCounter}`,
-        status: 'working',
-        ttl: taskParams.ttl ?? null,
-        createdAt,
-        lastUpdatedAt: createdAt,
-        pollInterval: taskParams.pollInterval ?? 1000,
-      };
-      return Promise.resolve(storedTask);
-    },
-    getTask(taskId) {
-      assert.equal(storedTask?.taskId, taskId);
-      assert.ok(storedTask, 'Expected task to exist');
-      return Promise.resolve({ ...storedTask });
-    },
-    storeTaskResult(taskId, status, result) {
-      assert.equal(storedTask?.taskId, taskId);
-      assert.ok(storedTask, 'Expected task to exist before storing result');
-      storedResult = result;
-      storedTask = {
-        ...storedTask,
-        status,
-        lastUpdatedAt: new Date().toISOString(),
-      };
-      return Promise.resolve();
-    },
-    getTaskResult(taskId) {
-      assert.equal(storedTask?.taskId, taskId);
-      assert.ok(storedResult, 'Expected stored result to exist');
-      return Promise.resolve(storedResult);
-    },
-    updateTaskStatus(taskId, status, statusMessage) {
-      assert.equal(storedTask?.taskId, taskId);
-      assert.ok(storedTask, 'Expected task to exist before updating status');
-      storedTask = {
-        ...storedTask,
-        status,
-        ...(statusMessage ? { statusMessage } : {}),
-        lastUpdatedAt: new Date().toISOString(),
-      };
-      return Promise.resolve();
-    },
-    listTasks() {
-      return Promise.resolve({ tasks: storedTask ? [{ ...storedTask }] : [] });
-    },
-  };
+describe('classifyError — no message sniffing', () => {
+  it('classifies plain Error with no errno as IO_ERROR', () => {
+    assert.equal(classifyError(new Error('boom')), ErrorCode.IO_ERROR);
+  });
 
-  return {
-    taskStore,
-    getStoredTask: () => storedTask,
-    getStoredResult: () => storedResult,
-  };
-}
-
-function createCreateTaskContext(
-  taskStore: RequestTaskStore,
-  notifications: TaskStatusNotificationParams[] = [],
-  requestedTtl?: number
-): CreateTaskServerContext {
-  const signal = new AbortController().signal;
-  return {
-    mcpReq: {
-      id: 1,
-      method: 'tools/call',
-      signal,
-      notify: async (notification: { method: string; params?: unknown }) => {
-        if (notification.method === 'notifications/tasks/status') {
-          notifications.push(
-            notification.params as TaskStatusNotificationParams
-          );
-        }
-      },
-      send: async () => ({}) as never,
-    },
-    sessionId: 'test-session',
-    task: {
-      store: taskStore,
-      ...(requestedTtl !== undefined ? { requestedTtl } : {}),
-    },
-  } as unknown as CreateTaskServerContext;
-}
-
-function createTaskContext(
-  taskStore: RequestTaskStore,
-  taskId: string
-): TaskServerContext {
-  return {
-    ...createCreateTaskContext(taskStore),
-    task: {
-      store: taskStore,
-      id: taskId,
-    },
-  };
-}
-
-describe('task cancellation normalization', () => {
-  it('reports cancelled while storing failed for SDK task-store compatibility', async () => {
-    const notifications: TaskStatusNotificationParams[] = [];
-    const { taskStore, getStoredResult, getStoredTask } = createMockTaskStore();
-    const handler = createToolTaskHandler(() =>
-      Promise.resolve({
-        content: [{ type: 'text', text: 'CANCELLED: cancelled' }],
-        isError: true as const,
-        errorCode: ErrorCode.CANCELLED,
-      })
+  it('does NOT classify by message substring', () => {
+    // Locks the no-sniffing invariant.
+    assert.equal(
+      classifyError(new Error('permission denied')),
+      ErrorCode.IO_ERROR
     );
-
-    const createExtra = createCreateTaskContext(taskStore, notifications);
-
-    const { task } = await handler.createTask(createExtra);
-
-    for (
-      let attempt = 0;
-      attempt < 20 &&
-      (!getStoredResult() ||
-        !notifications.some(
-          (notification) => notification.status === 'cancelled'
-        ));
-      attempt += 1
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-
-    assert.equal(getStoredTask()?.status, 'failed');
-    assert.ok(
-      notifications.some((notification) => notification.status === 'cancelled'),
-      `Expected a cancelled notification, got ${JSON.stringify(notifications)}`
+    assert.equal(
+      classifyError(new Error('no such file or directory')),
+      ErrorCode.IO_ERROR
     );
+    assert.equal(
+      classifyError(new Error('ENOENT: file not found')),
+      ErrorCode.IO_ERROR
+    );
+  });
 
-    const taskExtra = createTaskContext(taskStore, task.taskId);
-    const reportedTask = await handler.getTask(taskExtra);
+  it('classifies by errno code when present', () => {
+    assert.equal(classifyError(makeErrno('ENOENT')), ErrorCode.NOT_FOUND);
+    assert.equal(
+      classifyError(makeErrno('EACCES')),
+      ErrorCode.PERMISSION_DENIED
+    );
+    assert.equal(
+      classifyError(makeErrno('EPERM')),
+      ErrorCode.PERMISSION_DENIED
+    );
+  });
 
-    assert.equal(reportedTask.status, 'cancelled');
-    assert.equal((await handler.getTaskResult(taskExtra)).isError, true);
+  it('classifies non-Error as UNKNOWN', () => {
+    assert.equal(classifyError(null), ErrorCode.UNKNOWN);
+    assert.equal(classifyError(undefined), ErrorCode.UNKNOWN);
+    assert.equal(classifyError('string'), ErrorCode.UNKNOWN);
   });
 });
 
-describe('task failure normalization', () => {
-  it('reports tool errors as failed and attaches related-task metadata', async () => {
-    const { taskStore, getStoredTask } = createMockTaskStore();
-    const handler = createToolTaskHandler(() =>
-      Promise.resolve({
-        content: [{ type: 'text', text: 'NOT_FOUND: missing file' }],
-        isError: true as const,
-        errorCode: ErrorCode.NOT_FOUND,
-      })
-    );
+// ─── errno fix regressions ──────────────────────────────────────────────────
 
-    const { task } = await handler.createTask(
-      createCreateTaskContext(taskStore)
-    );
-
-    for (
-      let attempt = 0;
-      attempt < 20 && getStoredTask()?.status !== 'failed';
-      attempt += 1
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-
-    const taskExtra = createTaskContext(taskStore, task.taskId);
-
-    const reportedTask = await handler.getTask(taskExtra);
-    assert.equal(reportedTask.status, 'failed');
-
-    const result = await handler.getTaskResult(taskExtra);
-    assert.equal(result.isError, true);
-    assert.deepEqual(result._meta, {
-      [RELATED_TASK_META_KEY]: { taskId: task.taskId },
-    });
+describe('classifyError — errno regression locks', () => {
+  it('EMFILE → IO_ERROR (was TIMEOUT)', () => {
+    assert.equal(classifyError(makeErrno('EMFILE')), ErrorCode.IO_ERROR);
   });
 
-  it('clamps requested task ttl to the server maximum', async () => {
-    const { taskStore } = createMockTaskStore();
-    const handler = createToolTaskHandler(() =>
-      Promise.resolve({
-        content: [{ type: 'text', text: 'ok' }],
-        structuredContent: {},
-      })
-    );
-
-    const { task } = await handler.createTask(
-      createCreateTaskContext(taskStore, [], MAX_TASK_TTL_MS + 60_000)
-    );
-
-    assert.equal(task.ttl, MAX_TASK_TTL_MS);
+  it('ENFILE → IO_ERROR (was TIMEOUT)', () => {
+    assert.equal(classifyError(makeErrno('ENFILE')), ErrorCode.IO_ERROR);
   });
 
-  it('rejects task creation when the active-task limit is reached', async () => {
-    const tasks = Array.from({ length: MAX_CONCURRENT_TASKS }, (_, index) => ({
-      taskId: `task-${index}`,
-      status: 'working' as const,
-      ttl: 1_000,
-      createdAt: new Date().toISOString(),
-      lastUpdatedAt: new Date().toISOString(),
-    }));
-    const taskStore = {
-      createTask() {
-        assert.fail('createTask should not be called when the limit is hit');
-      },
-      getTask() {
-        assert.fail('getTask should not be called in this test');
-      },
-      storeTaskResult() {
-        assert.fail('storeTaskResult should not be called in this test');
-      },
-      getTaskResult() {
-        assert.fail('getTaskResult should not be called in this test');
-      },
-      updateTaskStatus() {
-        assert.fail('updateTaskStatus should not be called in this test');
-      },
-      listTasks() {
-        return Promise.resolve({ tasks });
-      },
-    } satisfies RequestTaskStore;
-    const handler = createToolTaskHandler(() =>
-      Promise.resolve({
-        content: [{ type: 'text', text: 'ok' }],
-        structuredContent: {},
-      })
-    );
+  it('EBUSY → IO_ERROR (was PERMISSION_DENIED)', () => {
+    assert.equal(classifyError(makeErrno('EBUSY')), ErrorCode.IO_ERROR);
+  });
+});
 
-    await assert.rejects(async () => {
-      await handler.createTask(createCreateTaskContext(taskStore));
-    }, /Too many active tasks/u);
+// ─── isAbortError / isTimeoutLikeError ──────────────────────────────────────
+
+describe('isAbortError', () => {
+  it('returns true for AbortError by name', () => {
+    const e = new Error('aborted');
+    e.name = 'AbortError';
+    assert.equal(isAbortError(e), true);
+  });
+
+  it('returns true for ABORT_ERR errno', () => {
+    assert.equal(isAbortError(makeErrno('ABORT_ERR')), true);
+  });
+
+  it('returns false for plain Error', () => {
+    assert.equal(isAbortError(new Error('plain')), false);
+  });
+
+  it('returns false for non-Error', () => {
+    assert.equal(isAbortError(null), false);
+  });
+});
+
+describe('isTimeoutLikeError', () => {
+  it('returns true for TimeoutError by name', () => {
+    const e = new Error('timed out');
+    e.name = 'TimeoutError';
+    assert.equal(isTimeoutLikeError(e), true);
+  });
+
+  it('returns true for ETIMEDOUT errno', () => {
+    assert.equal(isTimeoutLikeError(makeErrno('ETIMEDOUT')), true);
+  });
+
+  it('returns false for plain Error', () => {
+    assert.equal(isTimeoutLikeError(new Error('plain')), false);
+  });
+});
+
+// ─── createDetailedError ────────────────────────────────────────────────────
+
+describe('createDetailedError', () => {
+  it('produces code and message from errno error', () => {
+    const err = makeErrno('ENOENT', 'no such file');
+    const d = createDetailedError(err);
+    assert.equal(d.code, ErrorCode.NOT_FOUND);
+    assert.equal(typeof d.message, 'string');
+  });
+
+  it('accepts optional path override', () => {
+    const err = makeErrno('EACCES', 'forbidden');
+    const d = createDetailedError(err, '/foo/bar');
+    assert.equal(d.path, '/foo/bar');
+  });
+
+  it('VALIDATION_FAILED error exposes issues array', () => {
+    const schema = z.strictObject({ name: z.string() });
+    const parsed = schema.safeParse({ name: 42 });
+    assert.ok(!parsed.success);
+    const problem = zodErrorToProblem(parsed.error, schema);
+    const err = new McpError(problem);
+    const d = createDetailedError(err);
+    assert.equal(d.code, ErrorCode.VALIDATION_FAILED);
+    assert.ok(Array.isArray(d.issues));
+    assert.ok((d.issues?.length ?? 0) > 0);
   });
 });

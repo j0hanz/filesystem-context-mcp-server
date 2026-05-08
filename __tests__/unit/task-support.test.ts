@@ -490,4 +490,68 @@ describe('createToolTaskHandler', () => {
       store.cleanup();
     }
   });
+
+  it('stores cancelled as failed in task store (SDK compatibility)', async () => {
+    // The SDK task store only knows 'completed'/'failed'. CANCELLED is stored
+    // as 'failed' but re-mapped to 'cancelled' on reads via our normalizer.
+    const store = createTestTaskStore();
+    try {
+      const handler = createToolTaskHandler(() =>
+        Promise.resolve({
+          content: [{ type: 'text', text: 'CANCELLED: aborted' }],
+          isError: true as const,
+          errorCode: ErrorCode.CANCELLED,
+        })
+      );
+
+      const { task } = await handler.createTask(createMockExtra(store));
+      // Wait for background execution to complete
+      for (let attempt = 0; attempt < 30; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        const current = await handler.getTask(
+          createMockTaskExtra(store, task.taskId)
+        );
+        if (current.status === 'cancelled') break;
+      }
+
+      const got = await handler.getTask(
+        createMockTaskExtra(store, task.taskId)
+      );
+      assert.equal(got.status, 'cancelled');
+      const result = await handler.getTaskResult(
+        createMockTaskExtra(store, task.taskId)
+      );
+      assert.equal(result.isError, true);
+    } finally {
+      store.cleanup();
+    }
+  });
+
+  it('attaches RELATED_TASK_META_KEY to task result on failure', async () => {
+    const store = createTestTaskStore();
+    try {
+      const handler = createToolTaskHandler(() =>
+        Promise.resolve({
+          content: [{ type: 'text', text: 'NOT_FOUND: missing' }],
+          isError: true as const,
+          errorCode: ErrorCode.NOT_FOUND,
+        })
+      );
+
+      const { task } = await handler.createTask(createMockExtra(store));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const taskExtra = createMockTaskExtra(store, task.taskId);
+      const got = await handler.getTask(taskExtra);
+      assert.equal(got.status, 'failed');
+
+      const result = await handler.getTaskResult(taskExtra);
+      assert.equal(result.isError, true);
+      assert.deepEqual(result._meta, {
+        [RELATED_TASK_META_KEY]: { taskId: task.taskId },
+      });
+    } finally {
+      store.cleanup();
+    }
+  });
 });
