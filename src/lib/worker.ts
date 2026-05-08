@@ -155,7 +155,7 @@ function serializeError(e: unknown): SerializedError {
       code: e.code,
       message: e.message,
       ...(e.path ? { path: e.path } : {}),
-      ...(e.details ? { details: e.details } : {}),
+      ...(e.details !== undefined ? { details: e.details } : {}),
     };
   }
   if (e instanceof Error) {
@@ -168,71 +168,55 @@ function serializeError(e: unknown): SerializedError {
   return { kind: 'generic', message: String(e) };
 }
 
+const TASK_HANDLERS: {
+  [K in WorkerTaskName]: (payload: TaskPayloadMap[K]) => TaskResultMap[K];
+} = {
+  diff: (p) =>
+    structuredPatch(p.oldHeader, p.newHeader, p.oldStr, p.newStr, '', '', {
+      ...(p.context !== undefined ? { context: p.context } : {}),
+      ...(p.ignoreWhitespace ? { ignoreWhitespace: p.ignoreWhitespace } : {}),
+      ...(p.stripTrailingCr ? { stripTrailingCr: p.stripTrailingCr } : {}),
+    }),
+  formatPatch: (p) => formatPatch(p.patch),
+  applyPatch: (p) => {
+    const parsed = parsePatch(p.patchText);
+    const patch = parsed[0] ?? null;
+    const applied =
+      patch === null
+        ? false
+        : applyPatch(p.source, patch, {
+            ...(p.fuzzFactor !== undefined ? { fuzzFactor: p.fuzzFactor } : {}),
+            ...(p.autoConvertLineEndings !== undefined
+              ? { autoConvertLineEndings: p.autoConvertLineEndings }
+              : {}),
+          });
+    return { applied, patch };
+  },
+  diffLines: (p) => {
+    const changes = diffLines(p.oldStr, p.newStr);
+    const unifiedDiff = createTwoFilesPatch(
+      p.oldHeader,
+      p.newHeader,
+      p.oldStr,
+      p.newStr,
+      '',
+      ''
+    );
+    return { changes, unifiedDiff };
+  },
+};
+
 function runHandler<N extends WorkerTaskName>(
   name: N,
   payload: TaskPayloadMap[N]
 ): TaskResultMap[N] {
-  switch (name) {
-    case 'diff': {
-      const p = payload as DiffPayload;
-      const result = structuredPatch(
-        p.oldHeader,
-        p.newHeader,
-        p.oldStr,
-        p.newStr,
-        '',
-        '',
-        {
-          ...(p.context !== undefined ? { context: p.context } : {}),
-          ...(p.ignoreWhitespace
-            ? { ignoreWhitespace: p.ignoreWhitespace }
-            : {}),
-          ...(p.stripTrailingCr ? { stripTrailingCr: p.stripTrailingCr } : {}),
-        }
-      );
-      return result as TaskResultMap[N];
-    }
-    case 'formatPatch': {
-      const p = payload as FormatPatchPayload;
-      return formatPatch(p.patch) as TaskResultMap[N];
-    }
-    case 'applyPatch': {
-      const p = payload as ApplyPatchPayload;
-      const parsed = parsePatch(p.patchText);
-      const patch = parsed[0] ?? null;
-      const applied =
-        patch === null
-          ? false
-          : applyPatch(p.source, patch, {
-              ...(p.fuzzFactor !== undefined
-                ? { fuzzFactor: p.fuzzFactor }
-                : {}),
-              ...(p.autoConvertLineEndings !== undefined
-                ? { autoConvertLineEndings: p.autoConvertLineEndings }
-                : {}),
-            });
-      const result: ApplyPatchResult = { applied, patch };
-      return result as TaskResultMap[N];
-    }
-    case 'diffLines': {
-      const p = payload as DiffLinesPayload;
-      const changes = diffLines(p.oldStr, p.newStr);
-      const unifiedDiff = createTwoFilesPatch(
-        p.oldHeader,
-        p.newHeader,
-        p.oldStr,
-        p.newStr,
-        '',
-        ''
-      );
-      const result: DiffLinesResult = { changes, unifiedDiff };
-      return result as TaskResultMap[N];
-    }
-    default: {
-      const exhaustive: never = name;
-      throw new Error(`Unknown worker task: ${String(exhaustive)}`);
-    }
+  if (!Object.hasOwn(TASK_HANDLERS, name)) {
+    throw new Error(`Unknown worker task: ${name as string}`);
   }
+  const handler = TASK_HANDLERS[name] as (
+    p: TaskPayloadMap[N]
+  ) => TaskResultMap[N];
+  return handler(payload);
 }
 
 if (!isMainThread && parentPort) {
