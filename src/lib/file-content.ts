@@ -389,8 +389,10 @@ async function readFileBufferWithLimit(
 function countLines(content: string): number {
   if (content.length === 0) return 0;
   let count = 1;
-  for (let i = 0; i < content.length; i++) {
-    if (content.charCodeAt(i) === 10) count++;
+  let pos = content.indexOf('\n');
+  while (pos !== -1) {
+    count++;
+    pos = content.indexOf('\n', pos + 1);
   }
   return count;
 }
@@ -518,7 +520,7 @@ async function readRangeContent(
   }
 
   const content = lines.join('\n');
-  const linesRead = countLines(content);
+  const linesRead = lines.length;
 
   const effectiveHasMoreLines = hasEndLine
     ? hasMoreLines || (stoppedByLimit && !reachedEof)
@@ -561,7 +563,7 @@ async function readTailContent(
   }
 
   const content = lines.join('\n');
-  const linesRead = countLines(content);
+  const linesRead = lines.length;
   const hasMoreLines = totalLines > tail;
 
   return {
@@ -592,14 +594,11 @@ async function readFullContent(
 async function assertNotBinary(
   validPath: string,
   filePath: string,
+  handle: FileHandle,
   normalized: NormalizedOptions
 ): Promise<void> {
   assertNotAborted(normalized.signal);
-  const isBinary = await isProbablyBinary(
-    validPath,
-    undefined,
-    normalized.signal
-  );
+  const isBinary = await isProbablyBinary(validPath, handle, normalized.signal);
   if (!isBinary) return;
   throw new McpError(
     ErrorCode.INVALID_INPUT,
@@ -842,15 +841,16 @@ async function readFileWithStatsInternal(
 
   assertFileStats(filePath, stats);
 
-  if (normalized.skipBinary) {
-    await assertNotBinary(validPath, filePath, normalized);
-  }
-  assertNotAborted(normalized.signal);
-
   await using handle = await openReadableFileHandle(
     validPath,
     normalized.signal
   );
+
+  if (normalized.skipBinary) {
+    await assertNotBinary(validPath, filePath, handle, normalized);
+  }
+  assertNotAborted(normalized.signal);
+
   return await readByMode({
     handle,
     validPath,
