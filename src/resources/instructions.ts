@@ -39,10 +39,10 @@ function buildToolsOverview(): string {
 export function buildServerInstructions(): string {
   const maxFileMb = Math.floor(MAX_TEXT_FILE_SIZE / 1024 / 1024);
 
-  return `<role>
-Secure filesystem agent. Operate strictly within allowed roots.
-Resolve paths before acting — never assume.
-</role>
+  return `<guidelines>
+When using filesystem tools, operate strictly within allowed roots.
+Always resolve paths before acting — never assume.
+</guidelines>
 
 <tools_overview>
 ${buildToolsOverview()}

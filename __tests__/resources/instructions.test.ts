@@ -6,7 +6,7 @@ import { buildServerInstructions } from '../../src/resources/instructions.js';
 describe('buildServerInstructions', () => {
   it('contains all four required sections', () => {
     const content = buildServerInstructions();
-    assert.match(content, /<role>/u);
+    assert.match(content, /<guidelines>/u);
     assert.match(content, /<tools_overview>/u);
     assert.match(content, /<constraints>/u);
     assert.match(content, /<error_recovery>/u);

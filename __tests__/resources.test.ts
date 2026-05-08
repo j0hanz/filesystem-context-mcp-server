@@ -97,7 +97,7 @@ describe('resources and metadata', () => {
     assert.ok(instructionsContent);
     assert.equal(instructionsContent.mimeType, 'text/markdown');
     const text = getTextContent(instructionsContent);
-    assert.match(text, /<role>/u);
+    assert.match(text, /<guidelines>/u);
     assert.match(text, /<tools_overview>/u);
     assert.match(text, /<constraints>/u);
     assert.match(text, /<error_recovery>/u);
