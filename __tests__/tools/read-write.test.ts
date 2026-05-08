@@ -567,7 +567,7 @@ describe('read_many tool budget enforcement', () => {
 
     // First files should have succeeded
     const succeeded = results.filter(
-      (r) => r['content'] !== undefined && r['error'] === undefined
+      (r) => r['resourceUri'] !== undefined && r['error'] === undefined
     );
     assert.ok(succeeded.length > 0, 'Expected at least one file to succeed');
   });

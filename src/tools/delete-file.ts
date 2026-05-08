@@ -32,9 +32,21 @@ const DeleteInputSchema = z.strictObject({
   ignoreIfNotExists: defaultFalseBoolean('No error if path does not exist'),
 });
 
+const DeleteFailureItemSchema = z.strictObject({
+  path: z.string(),
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+  }),
+});
+
 const DeleteOutputSchema = z.strictObject({
-  path: z.string().describe('Deleted path'),
   ok: z.literal(true).describe('Success indicator'),
+  path: z.string().optional().describe('Deleted path'),
+  failures: z
+    .array(DeleteFailureItemSchema)
+    .optional()
+    .describe('Per-path errors'),
 });
 
 const DELETE_FILE_TOOL: ToolContract = {
@@ -52,6 +64,7 @@ const DELETE_FILE_TOOL: ToolContract = {
 
 type DeleteInput = z.infer<typeof DeleteInputSchema>;
 type DeleteOutput = z.infer<typeof DeleteOutputSchema>;
+type DeleteFailureItem = z.infer<typeof DeleteFailureItemSchema>;
 
 // Internal types for error handling
 interface DeletedItem {
@@ -171,12 +184,13 @@ async function deleteSinglePath(
   pathGuard: PathGuard,
   signal?: AbortSignal,
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>
-): Promise<{ item: DeletedItem } | { failure: DeleteFailure }> {
+): Promise<{ item: DeletedItem } | { failure: DeleteFailure; soft?: boolean }> {
   let validPath: string;
   try {
     validPath = await pathGuard.validatePathForWrite(inputPath);
   } catch (error) {
-    return { failure: toDeleteFailure(inputPath, error) };
+    // Path guard violation: soft failure, collect in failures[] instead of throwing
+    return { failure: toDeleteFailure(inputPath, error), soft: true };
   }
 
   if (pathGuard.isAllowedRoot(validPath)) {
@@ -192,6 +206,7 @@ async function deleteSinglePath(
           validPath
         ),
       },
+      // No soft flag — workspace root deletion is a hard error
     };
   }
 
@@ -253,11 +268,22 @@ async function handleDelete(
   );
 
   if ('failure' in result) {
-    throw new McpError(
-      result.failure.error.code as ErrorCode,
-      `Failed to delete ${inputPath}`,
-      inputPath
-    );
+    if (!result.soft) {
+      throw new McpError(
+        result.failure.error.code as ErrorCode,
+        `Failed to delete ${inputPath}`,
+        inputPath
+      );
+    }
+    // Soft failure (path guard violation): return in failures[] with ok: true
+    const failureItem: DeleteFailureItem = {
+      path: result.failure.path,
+      error: {
+        code: result.failure.error.code,
+        message: result.failure.error.message,
+      },
+    };
+    return { ok: true as const, failures: [failureItem] };
   }
 
   return {
@@ -278,7 +304,7 @@ export const DELETE_FILE = defineTool<DeleteInput, DeleteOutput>({
     const names = args.paths.map((p) => basename(p)).join(', ');
     if (result.isError)
       return `${DELETE_FILE_TOOL.title}: ${names} \u2022 ${result.errorCode}`;
-    return `${DELETE_FILE_TOOL.title}: deleted ${result.structuredContent.path}`;
+    return `${DELETE_FILE_TOOL.title}: deleted ${result.structuredContent.path ?? names}`;
   },
   run: async (args, ctx) => {
     const structured = await handleDelete(
@@ -288,7 +314,9 @@ export const DELETE_FILE = defineTool<DeleteInput, DeleteOutput>({
       ctx.elicitInput
     );
     // P3 confirmation-only pattern: terse summary with deletion confirmation
-    const summary = `delete-file: deleted ${structured.path}`;
+    const summary = structured.path
+      ? `delete-file: deleted ${structured.path}`
+      : `delete-file: 1 failure`;
     void ctx.log?.('info', `rm: ${args.paths[0]}`, 'rm');
     return buildToolResponse(summary, structured);
   },
