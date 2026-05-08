@@ -51,7 +51,9 @@ import { formatOperationSummary, joinLines } from '../config.js';
 import { defineTool } from './define-tool.js';
 import { DIRECTORY_ICONS } from './icons.js';
 import {
+  buildResourceResponse,
   buildToolResponse,
+  putResource,
   READ_ONLY_TOOL_ANNOTATIONS,
   type ToolContract,
   type ToolResponse,
@@ -549,6 +551,11 @@ const ListDirectoryOutputSchema = z.strictObject({
       })
     )
     .describe('Directory entries'),
+  entryCount: NonNegInt.optional().describe('Total number of entries'),
+  resourceUri: z
+    .string()
+    .optional()
+    .describe('Resource URI for full JSON listing'),
   totalEntries: NonNegInt.optional().describe('Total entries scanned'),
   totalFiles: NonNegInt.optional().describe('Total files'),
   totalDirectories: NonNegInt.optional().describe('Total directories'),
@@ -661,6 +668,26 @@ function resolveNextListCursor(
   return encodeListCursor({ snapshotId, offset: nextOffset });
 }
 
+function buildEntrySummaryPart(entries: readonly DirectoryEntry[]): string {
+  const files = entries.filter((e) => e.type === 'file').length;
+  const directories = entries.filter((e) => e.type === 'directory').length;
+  const symlinks = entries.filter((e) => e.type === 'symlink').length;
+
+  const parts: string[] = [];
+  if (files > 0) parts.push(`${files} file${files === 1 ? '' : 's'}`);
+  if (directories > 0)
+    parts.push(`${directories} dir${directories === 1 ? '' : 's'}`);
+  if (symlinks > 0)
+    parts.push(`${symlinks} symlink${symlinks === 1 ? '' : 's'}`);
+
+  if (parts.length === 0) return '';
+  return ` (${parts.join(', ')})`;
+}
+
+function buildListSummaryText(dirPath: string, entryCount: number): string {
+  return `list-directory: ${dirPath} · ${entryCount} ${entryCount === 1 ? 'entry' : 'entries'}`;
+}
+
 function buildListTextResult(
   result: Awaited<ReturnType<typeof listDirectory>>,
   nextCursor?: string
@@ -714,7 +741,9 @@ function buildStructuredListEntry(
 
 function buildStructuredListResult(
   result: Awaited<ReturnType<typeof listDirectory>>,
-  nextCursor?: string
+  nextCursor?: string,
+  resourceUri?: string,
+  entryCount?: number
 ): z.infer<typeof ListDirectoryOutputSchema> {
   const { entries, summary, path: resultPath } = result;
   const structuredEntries: NonNullable<
@@ -727,6 +756,8 @@ function buildStructuredListResult(
     ok: true,
     path: resultPath,
     entries: structuredEntries,
+    ...(resourceUri !== undefined ? { resourceUri } : {}),
+    ...(entryCount !== undefined ? { entryCount } : {}),
     totalEntries: summary.totalEntries,
     totalFiles: summary.totalFiles,
     totalDirectories: summary.totalDirectories,
@@ -741,7 +772,8 @@ function buildStructuredListResult(
 async function handleListDirectory(
   args: z.infer<typeof ListDirectoryInputSchema>,
   pathGuard: PathGuard,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  resourceStore?: Parameters<typeof putResource>[0]['store']
 ): Promise<ToolResponse<z.infer<typeof ListDirectoryOutputSchema>>> {
   const dirPath = pathGuard.resolvePathOrRoot(args.path);
   const pageSize = args.maxEntries;
@@ -799,6 +831,50 @@ async function handleListDirectory(
     displayEntries.length,
     result.entries.length
   );
+
+  // Store full listing in resource store if available
+  let resourceUri: string | undefined;
+  if (resourceStore) {
+    // Create full listing JSON with all entries
+    const fullListing = result.entries.map((entry) =>
+      buildStructuredListEntry(entry)
+    );
+
+    const jsonContent = JSON.stringify(fullListing, null, 2);
+    const dirName = basename(result.path) || 'listing';
+    const fileName = `${dirName}-listing.json`;
+
+    const { entry, link } = putResource({
+      store: resourceStore,
+      name: fileName,
+      mimeType: 'application/json',
+      kind: 'text',
+      content: jsonContent,
+    });
+
+    resourceUri = entry.uri;
+
+    // Build summary with entry counts
+    const fullEntrySummary = buildEntrySummaryPart(result.entries);
+    const summaryText =
+      buildListSummaryText(result.path, result.entries.length) +
+      fullEntrySummary;
+
+    const structured = buildStructuredListResult(
+      { ...result, entries: displayEntries },
+      nextCursor,
+      resourceUri,
+      result.entries.length
+    );
+
+    return buildResourceResponse({
+      summary: summaryText,
+      resources: [link],
+      structured,
+    });
+  }
+
+  // Fallback to old behavior if resource store is not available
   const displayResult = { ...result, entries: displayEntries };
   return buildToolResponse(
     buildListTextResult(displayResult, nextCursor),
@@ -812,7 +888,8 @@ type ListDirOutput = z.infer<typeof ListDirectoryOutputSchema>;
 export const LIST_DIRECTORY = defineTool<ListDirInput, ListDirOutput>({
   contract: LIST_DIRECTORY_TOOL,
   defaultErrorCode: ErrorCode.NOT_DIRECTORY,
-  run: (args, ctx) => handleListDirectory(args, ctx.pathGuard, ctx.signal),
+  run: (args, ctx) =>
+    handleListDirectory(args, ctx.pathGuard, ctx.signal, ctx.resourceStore),
   progressMessage: (args) =>
     `${LIST_DIRECTORY_TOOL.title}: ${args.path ? basename(args.path) : '.'}`,
   completionMessage: (
@@ -823,7 +900,7 @@ export const LIST_DIRECTORY = defineTool<ListDirInput, ListDirOutput>({
     if (result.isError)
       return `${LIST_DIRECTORY_TOOL.title}: ${base} • ${result.errorCode}`;
     const sc = result.structuredContent;
-    const count = sc.totalEntries ?? 0;
+    const count = sc.entryCount ?? sc.totalEntries ?? 0;
     return `${LIST_DIRECTORY_TOOL.title}: ${base} • ${count} ${count === 1 ? 'entry' : 'entries'}`;
   },
 });

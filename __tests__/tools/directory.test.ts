@@ -64,8 +64,30 @@ describe('ls tool', () => {
     });
     const result = raw;
     assertOk(result);
+
+    // Verify content blocks: first is summary text, second is resource_link
+    assert.equal(result.content.length, 2);
+    assert.equal(result.content[0].type, 'text');
+    const summaryText = (result.content[0] as Record<string, unknown>)
+      .text as string;
+    assert.ok(summaryText.includes('list-directory:'));
+
+    assert.equal(result.content[1].type, 'resource_link');
+    const resourceLink = result.content[1] as Record<string, unknown>;
+    assert.ok(
+      (resourceLink.uri as string).includes('filesystem-mcp://result/')
+    );
+    assert.ok((resourceLink.name as string).includes('-listing.json'));
+
+    // Verify structured content
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
+    assert.ok(sc['resourceUri']);
+    assert.ok(
+      (sc['resourceUri'] as string).includes('filesystem-mcp://result/')
+    );
+    assert.ok(sc['entryCount']);
+
     const entries = sc['entries'] as Record<string, unknown>[];
     assert.ok(Array.isArray(entries) && entries.length >= 3);
 
@@ -136,6 +158,41 @@ describe('ls tool', () => {
       firstEntries.map((entry) => entry['name']),
       secondEntries.map((entry) => entry['name'])
     );
+  });
+
+  it('list-directory with many entries returns single resource link', async () => {
+    const manyFilesDir = join(env.tmpDir, 'many-files');
+    await mkdir(manyFilesDir);
+
+    // Create 20+ files
+    for (let i = 0; i < 25; i++) {
+      await writeFile(
+        join(manyFilesDir, `file-${String(i).padStart(2, '0')}.txt`),
+        `content ${i}`,
+        'utf8'
+      );
+    }
+
+    const raw = await env.client.callTool({
+      name: 'ls',
+      arguments: { path: manyFilesDir },
+    });
+    assertOk(raw);
+
+    // Verify only one resource_link despite many files
+    assert.equal(raw.content.length, 2);
+    assert.equal(raw.content[0].type, 'text');
+    assert.equal(raw.content[1].type, 'resource_link');
+
+    const sc = getStructured(raw);
+    assert.ok(sc['entryCount']);
+    assert.equal(sc['entryCount'], 25);
+    assert.ok(sc['resourceUri']);
+
+    // Verify summary text contains entry count
+    const summaryText = (raw.content[0] as Record<string, unknown>)
+      .text as string;
+    assert.ok(summaryText.includes('25'));
   });
 });
 
