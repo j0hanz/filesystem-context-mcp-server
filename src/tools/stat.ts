@@ -16,11 +16,7 @@ import { StatInputSchema } from '../schemas/inputs.js';
 import { StatOutputSchema } from '../schemas/outputs.js';
 
 import { type FileInfo, formatBytes, joinLines } from '../config.js';
-import {
-  buildPathMessages,
-  defineTool,
-  type ToolRunContext,
-} from './define-tool.js';
+import { buildPathMessages, defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
   buildFileInfoPayload,
@@ -163,7 +159,7 @@ const statMessages = buildPathMessages<StatInput, StatOutput>(
 
 export const GET_FILE_INFO = defineTool<StatInput, StatOutput>({
   contract: GET_FILE_INFO_TOOL,
-  run: async (args, ctx: ToolRunContext) => {
+  run: async (args, ctx) => {
     const info = await getFileInfo(args.path, {
       includeMimeType: true,
       ...(ctx.signal ? { signal: ctx.signal } : {}),

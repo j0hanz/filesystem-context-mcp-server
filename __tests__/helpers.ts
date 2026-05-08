@@ -17,6 +17,7 @@ import { resolveAllowedDirectoriesState } from '../src/lib/paths.js';
 import { createInMemoryResourceStore } from '../src/lib/resource-store.js';
 import { createTaskStore } from '../src/server/task-store.js';
 import { registerAllTools } from '../src/tools.js';
+import type { HandlerContext } from '../src/tools/shared.js';
 import { LinkedTransport } from './linked-transport.js';
 
 // Disable worker threads in integration tests — workers are tested separately.
@@ -249,4 +250,17 @@ export function getStructured(result: unknown): Record<string, unknown> {
     'structuredContent must be present on success results'
   );
   return sc as Record<string, unknown>;
+}
+
+/**
+ * Create a stub HandlerContext for unit tests.
+ * Allows tests to call tool.handle() directly without full MCP server setup.
+ */
+export function makeHandlerContext(
+  overrides?: Partial<HandlerContext>
+): HandlerContext {
+  return {
+    resourceStore: undefined,
+    ...overrides,
+  };
 }

@@ -427,6 +427,22 @@ export function toToolContext(ctx?: ToolContext | ServerContext): ToolContext {
   return ctx;
 }
 
+/**
+ * Handler context for tool run functions. Contains only the fields that handlers
+ * actually need, decoupled from MCP transport internals like _meta and sessionId.
+ */
+export interface HandlerContext {
+  signal?: AbortSignal;
+  resourceStore: ResourceStore | undefined;
+  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>;
+  log?: (level: LoggingLevel, data: unknown, logger?: string) => Promise<void>;
+  onProgress?: (params: {
+    current: number;
+    total?: number;
+    message?: string;
+  }) => void;
+}
+
 export interface IconInfo {
   src: string;
   mimeType: string;

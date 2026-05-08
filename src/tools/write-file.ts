@@ -12,11 +12,7 @@ import { WriteFileInputSchema } from '../schemas/inputs.js';
 import { WriteFileOutputSchema } from '../schemas/outputs.js';
 
 import { formatBytes } from '../config.js';
-import {
-  buildPathMessages,
-  defineTool,
-  type ToolRunContext,
-} from './define-tool.js';
+import { buildPathMessages, defineTool } from './define-tool.js';
 import { FILE_EDIT_ICONS } from './icons.js';
 import {
   buildToolResponse,
@@ -50,7 +46,7 @@ const writeMessages = buildPathMessages<WriteInput, WriteOutput>(
 
 export const WRITE_FILE = defineTool<WriteInput, WriteOutput>({
   contract: WRITE_FILE_TOOL,
-  run: async (args, ctx: ToolRunContext) => {
+  run: async (args, ctx) => {
     const validPath = await validatePathForWrite(args.path, ctx.signal);
 
     // Ensure parent directory exists

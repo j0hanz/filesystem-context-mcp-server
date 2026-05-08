@@ -41,6 +41,7 @@ import { toToolJsonSchema } from '../schemas/json-schema.js';
 
 import {
   buildToolErrorResponse,
+  type HandlerContext,
   type IconInfo,
   type TaskToolContext,
   type ToolContext,
@@ -193,12 +194,20 @@ function createProgressReporter(
   };
 }
 
-function notifyProgress(
-  ctx: ToolContext,
-  progress: { current: number; total?: number; message?: string }
-): void {
-  if (!canReportProgress(ctx)) return;
-  void reportProgress(ctx, progress);
+/**
+ * Converts a ToolContext to an onProgress callback, or returns undefined if progress
+ * cannot be reported. Used internally to adapt ToolContext-based reporting to
+ * HandlerContext-based callbacks.
+ */
+export function toolContextToOnProgress(
+  ctx: ToolContext
+):
+  | ((params: { current: number; total?: number; message?: string }) => void)
+  | undefined {
+  if (!canReportProgress(ctx)) {
+    return undefined;
+  }
+  return createProgressReporter(ctx);
 }
 
 export interface ToolProgressSession {
@@ -213,24 +222,27 @@ export interface ToolProgressSession {
   getCurrent: () => number;
 }
 
-interface BatchProgressCallbacks {
-  progress: ToolProgressSession;
-  onItemComplete: () => void;
-}
-
-function createToolProgressSession(
-  ctx: ToolContext,
+/**
+ * Private helper that builds a progress session from an onProgress callback.
+ * This is the core session logic, decoupled from ToolContext.
+ */
+function buildProgressSessionFromOnProgress(
+  onProgress:
+    | ((params: { current: number; total?: number; message?: string }) => void)
+    | undefined,
   startMessage: string,
   initialTotal?: number
 ): ToolProgressSession {
-  notifyProgress(ctx, {
-    current: 0,
-    ...(initialTotal !== undefined ? { total: initialTotal } : {}),
-    message: startMessage,
-  });
+  // Fire initial progress notification if callback exists
+  if (onProgress) {
+    onProgress({
+      current: 0,
+      ...(initialTotal !== undefined ? { total: initialTotal } : {}),
+      message: startMessage,
+    });
+  }
 
   let cursor = 0;
-  const baseReporter = createProgressReporter(ctx);
 
   const setCursor = (value: number): number => {
     if (value > cursor) cursor = value;
@@ -239,29 +251,35 @@ function createToolProgressSession(
 
   const finishProgress = (message?: string, minimumCurrent?: number): void => {
     const finalCurrent = Math.max(cursor + 1, minimumCurrent ?? 1, 1);
-    notifyProgress(ctx, {
-      current: finalCurrent,
-      total: finalCurrent,
-      ...(message !== undefined ? { message } : {}),
-    });
+    if (onProgress) {
+      onProgress({
+        current: finalCurrent,
+        total: finalCurrent,
+        ...(message !== undefined ? { message } : {}),
+      });
+    }
     cursor = finalCurrent;
   };
 
   return {
     update: ({ current, total, message }) => {
       const normalized = setCursor(current);
-      baseReporter({
-        current: normalized,
-        ...(total !== undefined ? { total } : {}),
-        message,
-      });
+      if (onProgress) {
+        onProgress({
+          current: normalized,
+          ...(total !== undefined ? { total } : {}),
+          message,
+        });
+      }
     },
     increment: (messageForCurrent) => {
       const next = setCursor(cursor + 1);
-      baseReporter({
-        current: next,
-        message: messageForCurrent(next),
-      });
+      if (onProgress) {
+        onProgress({
+          current: next,
+          message: messageForCurrent(next),
+        });
+      }
     },
     complete: finishProgress,
     fail: finishProgress,
@@ -269,8 +287,13 @@ function createToolProgressSession(
   };
 }
 
+interface BatchProgressCallbacks {
+  progress: ToolProgressSession;
+  onItemComplete: () => void;
+}
+
 export function createBatchProgressCallbacks(
-  ctx: ToolContext,
+  ctx: HandlerContext,
   params: {
     toolLabel: string;
     context: string;
@@ -278,8 +301,8 @@ export function createBatchProgressCallbacks(
     itemVerb: string;
   }
 ): BatchProgressCallbacks {
-  const progress = createToolProgressSession(
-    ctx,
+  const progress = buildProgressSessionFromOnProgress(
+    ctx.onProgress,
     `${params.toolLabel}: ${params.context}`,
     params.totalItems
   );
@@ -326,14 +349,18 @@ export async function completeProgressSession<T>(
 }
 
 export async function runWithProgressSession<T>(
-  ctx: ToolContext,
+  ctx: HandlerContext,
   label: string,
   body: (
     progress: ToolProgressSession
   ) => Promise<{ value: T; suffix: string; finalCurrent?: number }>,
   initialTotal?: number
 ): Promise<T> {
-  const progress = createToolProgressSession(ctx, label, initialTotal);
+  const progress = buildProgressSessionFromOnProgress(
+    ctx.onProgress,
+    label,
+    initialTotal
+  );
   return completeProgressSession(progress, label, () => body(progress));
 }
 

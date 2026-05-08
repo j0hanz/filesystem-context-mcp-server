@@ -10,23 +10,22 @@ import type { ToolContract } from './contract.js';
 import {
   buildToolErrorResponse,
   executeToolWithDiagnostics,
+  type HandlerContext,
   type ToolContext,
   type ToolRegistrationOptions,
   type ToolResult,
 } from './shared.js';
-import { registerStandardTool } from './tool-execution.js';
-
-export interface ToolRunContext extends ToolContext {
-  signal?: AbortSignal;
-  resourceStore: ToolRegistrationOptions['resourceStore'];
-}
+import {
+  registerStandardTool,
+  toolContextToOnProgress,
+} from './tool-execution.js';
 
 export interface DefineToolOptions<
   Args,
   Output extends Record<string, unknown>,
 > {
   contract: ToolContract;
-  run: (args: Args, ctx: ToolRunContext) => Promise<ToolResult<Output>>;
+  run: (args: Args, ctx: HandlerContext) => Promise<ToolResult<Output>>;
   progressMessage?: (args: Args) => string;
   completionMessage?: (
     args: Args,
@@ -42,14 +41,18 @@ export interface DefineToolOptions<
   onError?: (error: unknown, args: Args) => ToolResult<any>;
 }
 
-export interface DefinedTool {
+export interface DefinedTool<Args, Output extends Record<string, unknown>> {
   readonly contract: ToolContract;
+  readonly handle: (
+    args: Args,
+    ctx: HandlerContext
+  ) => Promise<ToolResult<Output>>;
   register(server: McpServer, options: ToolRegistrationOptions): void;
 }
 
 export function defineTool<Args, Output extends Record<string, unknown>>(
   opts: DefineToolOptions<Args, Output>
-): DefinedTool {
+): DefinedTool<Args, Output> {
   const { contract, run } = opts;
   const errorCode = opts.defaultErrorCode ?? ErrorCode.UNKNOWN;
   const diagnosticsContext =
@@ -61,7 +64,8 @@ export function defineTool<Args, Output extends Record<string, unknown>>(
 
   return {
     contract,
-    register(server, options) {
+    handle: run,
+    register(server: McpServer, options: ToolRegistrationOptions): void {
       const handler = (
         args: Args,
         ctx: ToolContext
@@ -77,12 +81,15 @@ export function defineTool<Args, Output extends Record<string, unknown>>(
             : { timedSignal: {} }),
           context: diagnosticsContext(args),
           run: async (signal) => {
-            const runCtx: ToolRunContext = {
-              ...ctx,
+            const onProgress = toolContextToOnProgress(ctx);
+            const handlerCtx: HandlerContext = {
               ...(signal !== undefined ? { signal } : {}),
               resourceStore: options.resourceStore,
+              ...(ctx.elicitInput ? { elicitInput: ctx.elicitInput } : {}),
+              ...(ctx.log ? { log: ctx.log } : {}),
+              ...(onProgress !== undefined ? { onProgress } : {}),
             };
-            return run(args, runCtx);
+            return run(args, handlerCtx);
           },
           onError: (error) =>
             opts.onError

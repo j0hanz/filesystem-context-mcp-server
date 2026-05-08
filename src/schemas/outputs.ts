@@ -63,27 +63,19 @@ export const SearchFilesOutputSchema = z.strictObject({
   stoppedReason: z.string().optional().describe('Why search stopped early'),
   nextCursor: NextCursorSchema,
 });
-
-// Tree node recursive type for directory structure visualization
-interface TreeNode {
-  name: string;
-  type: 'file' | 'directory' | 'symlink' | 'other';
-  relativePath?: string | undefined;
-  size?: number | undefined;
-  children?: TreeNode[] | undefined;
-}
-
-const TreeNodeSchema: z.ZodType<TreeNode> = z.lazy(() =>
-  z.strictObject({
-    name: z.string().describe('Name'),
-    type: FileTypeEnum.describe('Type'),
-    relativePath: z.string().optional().describe('Relative path from root'),
-    size: NonNegInt.optional().describe('Size (bytes)'),
-    children: z
-      .array(TreeNodeSchema)
-      .optional()
-      .describe('Child nodes (directories/symlinks)'),
-  })
+// Recursive tree schema (structurally typed to avoid named type in exported signatures)
+const TreeNodeSchema: z.ZodType = z.lazy(
+  (): z.ZodType =>
+    z.strictObject({
+      name: z.string().describe('Name'),
+      type: FileTypeEnum.describe('Type'),
+      relativePath: z.string().optional().describe('Relative path from root'),
+      size: NonNegInt.optional().describe('Size (bytes)'),
+      children: z
+        .array(TreeNodeSchema)
+        .optional()
+        .describe('Child nodes (directories/symlinks)'),
+    })
 );
 z.globalRegistry.add(TreeNodeSchema, { id: 'TreeNode' });
 

@@ -9,11 +9,8 @@ import { ErrorCode } from '../../src/lib/errors.js';
 import type { PathGuard } from '../../src/lib/path-guard.js';
 import type { ResourceStore } from '../../src/lib/resource-store.js';
 import type { ToolContract } from '../../src/tools/contract.js';
-import {
-  defineTool,
-  type ToolRunContext,
-} from '../../src/tools/define-tool.js';
-import type { ToolResult } from '../../src/tools/shared.js';
+import { defineTool } from '../../src/tools/define-tool.js';
+import type { HandlerContext, ToolResult } from '../../src/tools/shared.js';
 import { buildToolResponse } from '../../src/tools/shared.js';
 
 const TestInputSchema = z.strictObject({
@@ -97,9 +94,9 @@ test('defineTool: registers a standard tool with server.registerTool', (): void 
   assert.equal(registeredToolName, 'test-tool', 'registered with correct name');
 });
 
-test('defineTool: run receives args and ToolRunContext with signal', async (): Promise<void> => {
+test('defineTool: run receives args and HandlerContext with signal', async (): Promise<void> => {
   const runInputs: TestInput[] = [];
-  const runContexts: ToolRunContext[] = [];
+  const runContexts: HandlerContext[] = [];
 
   const tool = defineTool<TestInput, TestOutput>({
     contract: TEST_CONTRACT,
@@ -504,4 +501,28 @@ test('defineTool: resourceStore is injected into ToolRunContext', async (): Prom
   );
 
   assert.equal(capturedResourceStore, mockResourceStore);
+});
+
+test('defineTool: handle is callable directly without MCP server setup', async (): Promise<void> => {
+  const tool = defineTool<TestInput, TestOutput>({
+    contract: TEST_CONTRACT,
+    run: async (args, ctx) => {
+      assert.ok(ctx.signal === undefined || ctx.signal instanceof AbortSignal);
+      assert.ok(ctx.resourceStore === undefined);
+      return buildToolResponse(`Got: ${args.message}`, {
+        ok: true,
+        result: args.message.toUpperCase(),
+      });
+    },
+  });
+
+  // Call handle directly without any MCP machinery
+  const result = await tool.handle(
+    { message: 'hello' },
+    { resourceStore: undefined }
+  );
+
+  assert.ok(!result.isError, 'result should not be an error');
+  assert.equal(result.structuredContent.ok, true);
+  assert.equal(result.structuredContent.result, 'HELLO');
 });
