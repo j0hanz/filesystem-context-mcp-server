@@ -115,10 +115,6 @@ export function toToolJsonSchema(
     stripRootSchema(raw)
   ) as JsonSchema;
   const final = augment ? augment(cleaned) : cleaned;
-
-  // Clone the ~standard object and remove its built-in jsonSchema builder
-  // Override the ~standard object's built-in jsonSchema builder
-  // so the MCP SDK uses our cleaned `final` schema for tools/list.
   const std = { ...zodSchema['~standard'] } as Record<string, unknown>;
   std.jsonSchema = {
     input: () => final,
