@@ -4,11 +4,16 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import type * as http from 'node:http';
 import process from 'node:process';
 
+import { z } from 'zod/v4';
+
 import { formatUnknownErrorMessage } from './lib/errors.js';
 import { shutdownWorkerPool } from './lib/worker-pool.js';
 
 import { CliExitError, parseArgs } from './cli.js';
 import { createServer, startHttpServer, startServer } from './server.js';
+
+// Ensure consistent English error messages across all locales.
+z.config(z.locales.en());
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
 let activeServer: McpServer | undefined;
