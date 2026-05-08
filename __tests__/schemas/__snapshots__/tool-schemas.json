@@ -679,6 +679,10 @@
           "minimum": 0,
           "maximum": 20
         },
+        "fuzzy": {
+          "description": "Approximate string matching (Levenshtein-based, ≤25% char difference). Incompatible with isRegex.",
+          "type": "boolean"
+        },
         "maxResults": {
           "default": 500,
           "description": "Max matches to return per page",

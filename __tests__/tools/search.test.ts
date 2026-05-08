@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Integration tests for search tools: grep (search_content), find (search_files),
  * and search_and_replace.
  */
@@ -528,6 +528,75 @@ describe('grep tool — asymmetric context', () => {
         Array.isArray(before) && before.includes('line2'),
         'Should include line2 (1 line before)'
       );
+    } finally {
+      await env.cleanup();
+    }
+  });
+});
+
+// --- grep tool - fuzzy search ---
+
+describe('grep tool - fuzzy search', () => {
+  it('finds approximate matches with fuzzy enabled', async () => {
+    const env = await createTestEnv();
+    try {
+      const filePath = join(env.tmpDir, 'fuzzy.txt');
+      await writeFile(
+        filePath,
+        'line with aproximate spelling\nno match here',
+        'utf8'
+      );
+      const res = await env.client.callTool({
+        name: 'grep',
+        arguments: {
+          path: filePath,
+          searchPattern: 'approximate',
+          fuzzy: true,
+        },
+      });
+      assertOk(res);
+      const structured = getStructured(res);
+      const matches = structured['matches'] as Record<string, unknown>[];
+      // 'aproximate' is 1 char off from 'approximate' - should match
+      assert.ok(
+        Array.isArray(matches) && matches.length > 0,
+        'Expected fuzzy match for "aproximate" vs "approximate"'
+      );
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  it('rejects fuzzy + isRegex combination', async () => {
+    const env = await createTestEnv();
+    try {
+      const filePath = join(env.tmpDir, 'reject.txt');
+      await writeFile(filePath, 'some content', 'utf8');
+      const res = await env.client.callTool({
+        name: 'grep',
+        arguments: {
+          path: filePath,
+          searchPattern: 'foo',
+          fuzzy: true,
+          isRegex: true,
+        },
+      });
+      assertToolError(res);
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  it('rejects fuzzy pattern shorter than 4 characters', async () => {
+    const env = await createTestEnv();
+    try {
+      const filePath = join(env.tmpDir, 'short.txt');
+      await writeFile(filePath, 'abc here', 'utf8');
+      const res = await env.client.callTool({
+        name: 'grep',
+        arguments: { path: filePath, searchPattern: 'abc', fuzzy: true },
+      });
+      assertToolError(res);
     } finally {
       await env.cleanup();
     }

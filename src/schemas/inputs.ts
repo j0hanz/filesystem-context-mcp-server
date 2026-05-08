@@ -211,6 +211,12 @@ export const GrepInputSchema = z.strictObject({
     .describe(
       'Lines of context after each match (overrides contextLines for after)'
     ),
+  fuzzy: z
+    .boolean()
+    .optional()
+    .describe(
+      'Approximate string matching (Levenshtein-based, \u226425% char difference). Incompatible with isRegex.'
+    ),
 
   maxResults: z
     .uint32()

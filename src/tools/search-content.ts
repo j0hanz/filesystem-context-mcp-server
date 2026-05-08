@@ -328,6 +328,7 @@ async function executeSearch(
     ...(args.contextAfter !== undefined
       ? { contextAfter: args.contextAfter }
       : {}),
+    ...(args.fuzzy === true ? { fuzzy: true } : {}),
     maxResults: args.maxResults,
     isLiteral: !args.isRegex,
     ...(args.maxDepth !== undefined ? { maxDepth: args.maxDepth } : {}),

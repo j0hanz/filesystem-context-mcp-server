@@ -61,6 +61,7 @@ interface MatcherOptions {
   caseSensitive: boolean;
   wholeWord: boolean;
   isLiteral: boolean;
+  fuzzy?: boolean;
 }
 
 type Matcher = (line: string) => number;
@@ -123,6 +124,17 @@ function buildRegexMatcher(final: string, caseSensitive: boolean): Matcher {
 }
 
 function buildMatcher(pattern: string, options: MatcherOptions): Matcher {
+  if (options.fuzzy === true) {
+    const threshold = Math.floor(pattern.length / 4);
+    const lowerPattern = pattern.toLowerCase();
+    return (line: string): number => {
+      const words = line.toLowerCase().split(/\s+/);
+      return words.some((word) => levenshtein(word, lowerPattern) <= threshold)
+        ? 1
+        : 0;
+    };
+  }
+
   if (options.isLiteral && pattern.length === 0) return () => 0;
 
   if (options.isLiteral && !options.wholeWord) {
@@ -132,6 +144,30 @@ function buildMatcher(pattern: string, options: MatcherOptions): Matcher {
 
   const final = buildRegexPattern(pattern, options);
   return buildRegexMatcher(final, options.caseSensitive);
+}
+
+// --- Fuzzy helpers ---
+
+const MAX_FUZZY_FILES = 200;
+const MIN_FUZZY_PATTERN_LENGTH = 4;
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const curr = new Array<number>(n + 1);
+    curr[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] =
+        cost === 0
+          ? (prev[j - 1] ?? 0)
+          : 1 + Math.min(prev[j] ?? 0, curr[j - 1] ?? 0, prev[j - 1] ?? 0);
+    }
+    prev = curr;
+  }
+  return prev[n] ?? 0;
 }
 
 // --- Configuration & Schemas ---
@@ -166,6 +202,7 @@ const SearchOptionsSchema = z.strictObject({
   contextLines: z.int().min(0),
   contextBefore: z.int32().min(0).max(20).optional(),
   contextAfter: z.int32().min(0).max(20).optional(),
+  fuzzy: z.boolean().optional(),
   wholeWord: z.boolean(),
   isLiteral: z.boolean(),
   includeHidden: z.boolean(),
@@ -528,6 +565,7 @@ function buildMatcherOptions(opts: ResolvedOptions): MatcherOptions {
     caseSensitive: opts.caseSensitive,
     wholeWord: opts.wholeWord,
     isLiteral: opts.isLiteral,
+    ...(opts.fuzzy === true ? { fuzzy: true } : {}),
   };
 }
 
@@ -1153,7 +1191,7 @@ async function searchSingleFile(
   const summary = createScanSummary();
   summary.filesScanned = 1;
 
-  const matcher = buildMatcher(pattern, opts);
+  const matcher = buildMatcher(pattern, buildMatcherOptions(opts));
   const result = await scanFileResolved(
     details.resolvedPath,
     details.requestedPath,
@@ -1217,6 +1255,12 @@ async function searchDirectory(
       if (isSensitivePath(entry.path, normalized)) continue;
 
       summary.filesScanned++;
+      if (opts.fuzzy === true && summary.filesScanned > MAX_FUZZY_FILES) {
+        throw new McpError(
+          ErrorCode.INVALID_INPUT,
+          `Fuzzy search is limited to ${MAX_FUZZY_FILES} files. Narrow your path or disable fuzzy mode.`
+        );
+      }
       onProgress?.({
         current: summary.filesScanned,
         total: opts.maxFilesScanned,
@@ -1276,6 +1320,22 @@ export async function searchContent(
     throw new McpError(ErrorCode.INVALID_INPUT, 'pattern required');
 
   const opts = resolveOptions(options);
+
+  if (opts.fuzzy === true) {
+    if (!opts.isLiteral) {
+      throw new McpError(
+        ErrorCode.INVALID_INPUT,
+        "Cannot use 'fuzzy' with 'isRegex'"
+      );
+    }
+    if (pattern.length < MIN_FUZZY_PATTERN_LENGTH) {
+      throw new McpError(
+        ErrorCode.INVALID_INPUT,
+        `Fuzzy pattern must be at least ${MIN_FUZZY_PATTERN_LENGTH} characters`
+      );
+    }
+  }
+
   try {
     return await withTimedAbortSignal(
       options.signal,
@@ -1764,7 +1824,8 @@ function getMatcherCacheKey(pattern: string, options: MatcherOptions): string {
   const cs = options.caseSensitive ? '1' : '0';
   const ww = options.wholeWord ? '1' : '0';
   const lit = options.isLiteral ? '1' : '0';
-  return `${pattern}|${cs}|${ww}|${lit}`;
+  const fz = options.fuzzy ? '1' : '0';
+  return `${pattern}|${cs}|${ww}|${lit}|${fz}`;
 }
 
 function getCachedMatcher(pattern: string, options: MatcherOptions): Matcher {
