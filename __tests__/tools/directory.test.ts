@@ -470,15 +470,39 @@ describe('mv tool', () => {
       arguments: { sources: [src], destination: dst },
     });
     assertOk(raw);
+
+    // Verify content: terse summary with source → destination, no resource links
+    assert.equal(
+      raw.content.length,
+      1,
+      'Expected exactly one content block (P3 confirmation-only pattern)'
+    );
+    assert.equal(raw.content[0].type, 'text', 'Expected text content');
+    const summaryText = raw.content[0].text;
+    assert.ok(
+      summaryText.startsWith('move-file:'),
+      'Expected summary to start with "move-file:"'
+    );
+    assert.ok(
+      summaryText.includes('→'),
+      'Expected summary to include arrow (→) separator'
+    );
+
+    // Verify structured content has from/to/ok (P3 pattern)
     const sc = getStructured(raw);
-    assert.deepEqual(
-      (sc['sources'] as string[]).map((entry) => entry.toLowerCase()),
-      [src.toLowerCase()]
+    assert.ok(sc['ok'] === true, 'Expected ok: true');
+    assert.equal(
+      (sc['from'] as string).toLowerCase(),
+      src.toLowerCase(),
+      'Expected from field to be source path'
     );
     assert.equal(
-      (sc['destination'] as string).toLowerCase(),
-      dst.toLowerCase()
+      (sc['to'] as string).toLowerCase(),
+      dst.toLowerCase(),
+      'Expected to field to be destination path'
     );
+
+    // Verify file was actually moved
     await assert.rejects(() => stat(src), /ENOENT/);
     const content = await readFile(dst, 'utf8');
     assert.equal(content, 'move me');
