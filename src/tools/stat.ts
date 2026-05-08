@@ -12,7 +12,7 @@ import type { PathGuard } from '../lib/path-guard.js';
 import { RequiredPath } from '../schemas/fields.js';
 import { FileInfoSchema } from '../schemas/shared.js';
 
-import { type FileInfo, formatBytes, joinLines } from '../config.js';
+import { type FileInfo, formatBytes } from '../config.js';
 import { buildPathMessages, defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
@@ -142,18 +142,12 @@ async function getFileInfo(
   );
 }
 
-function formatFileInfoDetails(info: FileInfo): string {
-  const lines = [
-    `${info.name} (${info.type})`,
-    `  Path: ${info.path}`,
-    `  Size: ${formatBytes(info.size)}`,
-    `  Modified: ${info.modified.toISOString()}`,
-  ];
-
-  if (info.mimeType) lines.push(`  Type: ${info.mimeType}`);
-  if (info.symlinkTarget) lines.push(`  Target: ${info.symlinkTarget}`);
-
-  return joinLines(lines);
+function formatFileInfoSummary(info: FileInfo): string {
+  const parts = [info.name, formatBytes(info.size)];
+  if (info.symlinkTarget) {
+    parts.push(`→ ${info.symlinkTarget}`);
+  }
+  return `stat: ${parts.join(' \u2022 ')}`;
 }
 
 type StatInput = z.infer<typeof StatInputSchema>;
@@ -178,7 +172,7 @@ export const GET_FILE_INFO = defineTool<StatInput, StatOutput>({
       file: buildFileInfoPayload(info),
     };
 
-    return buildToolResponse(formatFileInfoDetails(info), structured);
+    return buildToolResponse(formatFileInfoSummary(info), structured);
   },
   defaultErrorCode: ErrorCode.NOT_FOUND,
   ...statMessages,
