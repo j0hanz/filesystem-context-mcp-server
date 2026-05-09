@@ -294,6 +294,20 @@ describe('Tool contract', () => {
   });
 });
 
+describe('Prompts contract', () => {
+  it('ALL_PROMPTS matches the 5 expected prompts', async () => {
+    const { ALL_PROMPTS } = await import('../src/prompts.js');
+    const names = ALL_PROMPTS.map((p) => p.name).sort();
+    assert.deepEqual(names, [
+      'analyze-path',
+      'compare-files',
+      'find-in-tree',
+      'get-help',
+      'summarize-directory',
+    ]);
+  });
+});
+
 describe('Completion contract', () => {
   // Verify that all prompts and resource templates that declare completable
   // args actually return completions — and that undeclared args return empty.
@@ -305,9 +319,8 @@ describe('Completion contract', () => {
     tmpDir: string;
     teardown: () => Promise<void>;
   }> {
-    const { registerGetHelpPrompt, registerAnalyzePathPrompt, registerCompareFilesPrompt } =
-      await import('../src/prompts.js');
-    const { registerAllResources, serverInstructionsContent } = await import('../src/resources.js');
+    const { registerAllPrompts } = await import('../src/prompts.js');
+    const { registerAllResources } = await import('../src/resources.js');
     const { PathGuard } = await import('../src/lib/path-guard.js');
     const { createInMemoryResourceStore } = await import('../src/lib/resource-store.js');
     const { LinkedTransport } = await import('./linked-transport.js');
@@ -324,9 +337,11 @@ describe('Completion contract', () => {
     // Set up ResourceStore for resource registration
     const resourceStore = createInMemoryResourceStore();
 
-    registerGetHelpPrompt(server, serverInstructionsContent);
-    registerAnalyzePathPrompt(server, pathGuard);
-    registerCompareFilesPrompt(server, pathGuard);
+    registerAllPrompts(server, {
+      pathGuard,
+      instructions: 'test instructions',
+      isInitialized: () => true,
+    });
     registerAllResources(server, {
       resourceStore,
     });

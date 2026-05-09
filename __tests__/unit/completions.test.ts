@@ -10,29 +10,29 @@ import { describe, it } from 'node:test';
 
 import { normalizePath, PathGuard } from '../../src/lib/path-guard.js';
 import { createInMemoryResourceStore } from '../../src/lib/resource-store.js';
-import {
-  registerAnalyzePathPrompt,
-  registerCompareFilesPrompt,
-  registerGetHelpPrompt,
-} from '../../src/prompts.js';
-import { registerAllResources, serverInstructionsContent } from '../../src/resources.js';
+import { registerAllPrompts } from '../../src/prompts.js';
+import { registerAllResources } from '../../src/resources.js';
 import { LinkedTransport } from '../linked-transport.js';
 
-function makeCompletionServer(withInstructions = false, pathGuard?: PathGuard): McpServer {
+const mockPathGuard = {
+  getAllowedDirectories: () => [],
+} as unknown as PathGuard;
+
+function makeCompletionServer(pathGuard: PathGuard = mockPathGuard): McpServer {
   const server = new McpServer(
-    { name: 'test-server', version: '0.0.0' },
+    { name: 'test-server', version: '1.0.0' },
     { capabilities: { completions: {} } },
   );
-  const instructions = withInstructions ? serverInstructionsContent : '';
-  registerGetHelpPrompt(server, instructions);
-  if (pathGuard) {
-    registerAnalyzePathPrompt(server, pathGuard);
-    registerCompareFilesPrompt(server, pathGuard);
-  }
+
+  registerAllPrompts(server, {
+    pathGuard,
+    instructions: 'test instructions',
+    isInitialized: () => true,
+  });
 
   const resourceStore = createInMemoryResourceStore();
-
   registerAllResources(server, { resourceStore });
+
   return server;
 }
 
@@ -59,7 +59,7 @@ describe('completions', () => {
     await writeFile(join(tmpDir, 'beta.txt'), 'beta', 'utf8');
     const pathGuard = await PathGuard.fromAllowedDirectories([tmpDir]);
 
-    const server = makeCompletionServer(false, pathGuard);
+    const server = makeCompletionServer(pathGuard);
     const { client, cleanup } = await connectPair(server);
 
     try {
@@ -97,7 +97,7 @@ describe('completions', () => {
     await writeFile(join(fooDir, 'inside.txt'), 'inside', 'utf8');
     const pathGuard = await PathGuard.fromAllowedDirectories([tmpDir]);
 
-    const server = makeCompletionServer(false, pathGuard);
+    const server = makeCompletionServer(pathGuard);
     const { client, cleanup } = await connectPair(server);
 
     try {
@@ -140,7 +140,7 @@ describe('completions', () => {
     await symlink(outsideDir, linkedDir, process.platform === 'win32' ? 'junction' : 'dir');
     const pathGuard = await PathGuard.fromAllowedDirectories([allowedDir]);
 
-    const server = makeCompletionServer(false, pathGuard);
+    const server = makeCompletionServer(pathGuard);
     const { client, cleanup } = await connectPair(server);
 
     try {
@@ -169,7 +169,7 @@ describe('completions', () => {
   });
 
   it('completes topic sections for the get-help prompt', async () => {
-    const server = makeCompletionServer(true);
+    const server = makeCompletionServer();
     const { client, cleanup } = await connectPair(server);
 
     try {
