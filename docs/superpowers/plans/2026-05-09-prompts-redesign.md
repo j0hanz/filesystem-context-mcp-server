@@ -14,15 +14,15 @@
 
 ## File Structure
 
-| File | Action | Responsibility |
-| --- | --- | --- |
-| `src/resources/instructions.ts` | Modify | Add `INSTRUCTION_SECTIONS` typed map; keep rendering `SERVER_INSTRUCTIONS_CONTENT` from it. |
-| `src/prompts.ts` | Rewrite (full) | Single registry: types, helpers, 5 prompt entries, `registerAllPrompts` export, `ALL_PROMPTS` export. |
-| `src/server/bootstrap.ts` | Modify | Replace 3 `register*Prompt` calls with one `registerAllPrompts` call. |
-| `__tests__/prompts.test.ts` | Rewrite | Structural assertions per prompt; cover all 5 prompts; path-guard rejection cases. |
-| `__tests__/contract.test.ts` | Modify | Update `Completion contract` block to use `registerAllPrompts`; add prompts contract assertions on `ALL_PROMPTS`. |
-| `__tests__/unit/completions.test.ts` | Modify | Update imports + helper to use `registerAllPrompts`. |
-| `__tests__/prompts-stdio.test.ts` | Modify | Update prose-matching assertions to structural ones; add new-prompt smoke test. |
+| File                                 | Action         | Responsibility                                                                                                    |
+| ------------------------------------ | -------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `src/resources/instructions.ts`      | Modify         | Add `INSTRUCTION_SECTIONS` typed map; keep rendering `SERVER_INSTRUCTIONS_CONTENT` from it.                       |
+| `src/prompts.ts`                     | Rewrite (full) | Single registry: types, helpers, 5 prompt entries, `registerAllPrompts` export, `ALL_PROMPTS` export.             |
+| `src/server/bootstrap.ts`            | Modify         | Replace 3 `register*Prompt` calls with one `registerAllPrompts` call.                                             |
+| `__tests__/prompts.test.ts`          | Rewrite        | Structural assertions per prompt; cover all 5 prompts; path-guard rejection cases.                                |
+| `__tests__/contract.test.ts`         | Modify         | Update `Completion contract` block to use `registerAllPrompts`; add prompts contract assertions on `ALL_PROMPTS`. |
+| `__tests__/unit/completions.test.ts` | Modify         | Update imports + helper to use `registerAllPrompts`.                                                              |
+| `__tests__/prompts-stdio.test.ts`    | Modify         | Update prose-matching assertions to structural ones; add new-prompt smoke test.                                   |
 
 ---
 
@@ -71,7 +71,7 @@ Expected: FAIL — `INSTRUCTION_SECTIONS` is not exported.
 
 Replace the body of `buildServerInstructions()` and the `SERVER_INSTRUCTIONS_CONTENT` const with:
 
-```ts
+````ts
 function buildSectionsRecord(): Record<string, string> {
   const maxFileMb = Math.floor(MAX_TEXT_FILE_SIZE / 1024 / 1024);
   return {
@@ -113,7 +113,7 @@ function buildSectionsRecord(): Record<string, string> {
 export const INSTRUCTION_SECTIONS: Record<string, string> = buildSectionsRecord();
 
 export const SERVER_INSTRUCTIONS_CONTENT = `\n${Object.values(INSTRUCTION_SECTIONS).join('\n\n')}\n`;
-```
+````
 
 Delete the old `buildServerInstructions` function. The exported `createInstructionsResource()` continues to read `SERVER_INSTRUCTIONS_CONTENT` unchanged.
 
@@ -157,6 +157,7 @@ import { z } from 'zod/v4';
 import { Logger } from './lib/logger.js';
 import { completePathCached } from './lib/path-completer.js';
 import type { PathGuard } from './lib/path-guard.js';
+
 import { INSTRUCTION_SECTIONS } from './resources/instructions.js';
 import { type IconInfo, withDefaultIcons } from './tools/shared.js';
 
@@ -271,10 +272,7 @@ const PROMPT_ENTRIES: PromptEntry[] = [];
 
 export const ALL_PROMPTS: PromptContract[] = PROMPT_ENTRIES.map((e) => e.contract);
 
-export function registerAllPrompts(
-  server: McpServer,
-  options: PromptRegistrationOptions,
-): void {
+export function registerAllPrompts(server: McpServer, options: PromptRegistrationOptions): void {
   for (const { register } of PROMPT_ENTRIES) {
     register(server, options);
   }
@@ -399,8 +397,7 @@ const ANALYZE_PATH: PromptEntry = {
   contract: {
     name: 'analyze-path',
     title: 'Analyze Path',
-    description:
-      'Workflow for analyzing a file or directory using stat, read, and tree.',
+    description: 'Workflow for analyzing a file or directory using stat, read, and tree.',
     requiresPathGuard: true,
   },
   register(server, options) {
@@ -476,18 +473,8 @@ const COMPARE_FILES: PromptEntry = {
           title: COMPARE_FILES.contract.title,
           description: COMPARE_FILES.contract.description,
           argsSchema: z.strictObject({
-            original: pathArg(
-              server,
-              options.pathGuard,
-              'original',
-              'Path to the original file.',
-            ),
-            modified: pathArg(
-              server,
-              options.pathGuard,
-              'modified',
-              'Path to the modified file.',
-            ),
+            original: pathArg(server, options.pathGuard, 'original', 'Path to the original file.'),
+            modified: pathArg(server, options.pathGuard, 'modified', 'Path to the modified file.'),
           }),
         },
         options.iconInfo,
@@ -507,11 +494,7 @@ const COMPARE_FILES: PromptEntry = {
           ].join('\n');
           return {
             description: COMPARE_FILES.contract.description,
-            messages: [
-              userText(text),
-              linkToPath(resolvedOriginal),
-              linkToPath(resolvedModified),
-            ],
+            messages: [userText(text), linkToPath(resolvedOriginal), linkToPath(resolvedModified)],
           };
         }),
     );
@@ -569,9 +552,7 @@ const FIND_IN_TREE: PromptEntry = {
               'root',
               'Directory to search under. Defaults to first allowed root.',
             ).optional(),
-            mode: FIND_IN_TREE_MODE.default('both').describe(
-              'Search by name, content, or both.',
-            ),
+            mode: FIND_IN_TREE_MODE.default('both').describe('Search by name, content, or both.'),
           }),
         },
         options.iconInfo,

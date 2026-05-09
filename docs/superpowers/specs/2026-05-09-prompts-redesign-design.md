@@ -68,7 +68,7 @@ interface PromptContract {
 
 interface PromptRegistrationOptions {
   pathGuard: PathGuard;
-  instructions: string;          // SERVER_INSTRUCTIONS_CONTENT
+  instructions: string; // SERVER_INSTRUCTIONS_CONTENT
   isInitialized: () => boolean;
   iconInfo?: IconInfo;
 }
@@ -131,59 +131,59 @@ Common conventions for every prompt:
 
 ### 4.1 `get-help`
 
-| | |
-| --- | --- |
-| Title | Get Help |
-| Description | Return filesystem-mcp usage instructions, optionally filtered to a section. |
-| Args | `topic?: string` — `completable` over `Object.keys(INSTRUCTION_SECTIONS)`. |
-| Path-guarded | No |
-| Messages | `[ userText(section ?? full) ]` |
-| Notes | Topic resolution is a strict key lookup; on miss, returns the full instructions plus a one-line note listing valid keys. |
+|              |                                                                                                                          |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| Title        | Get Help                                                                                                                 |
+| Description  | Return filesystem-mcp usage instructions, optionally filtered to a section.                                              |
+| Args         | `topic?: string` — `completable` over `Object.keys(INSTRUCTION_SECTIONS)`.                                               |
+| Path-guarded | No                                                                                                                       |
+| Messages     | `[ userText(section ?? full) ]`                                                                                          |
+| Notes        | Topic resolution is a strict key lookup; on miss, returns the full instructions plus a one-line note listing valid keys. |
 
 ### 4.2 `analyze-path`
 
-| | |
-| --- | --- |
-| Title | Analyze Path |
-| Description | Workflow for analyzing a file or directory using stat / read / tree. |
-| Args | `path: string` — `pathArg`. |
-| Path-guarded | Yes |
-| Behavior | Resolves `path`; runs one `fs.stat` to detect kind. |
-| Messages | `[ userText(taskTailoredToKind), linkToPath(resolved), linkToInstructions() ]` |
-| Notes | Branches the task statement on `isFile` vs `isDirectory` instead of dumping a generic numbered list. |
+|              |                                                                                                      |
+| ------------ | ---------------------------------------------------------------------------------------------------- |
+| Title        | Analyze Path                                                                                         |
+| Description  | Workflow for analyzing a file or directory using stat / read / tree.                                 |
+| Args         | `path: string` — `pathArg`.                                                                          |
+| Path-guarded | Yes                                                                                                  |
+| Behavior     | Resolves `path`; runs one `fs.stat` to detect kind.                                                  |
+| Messages     | `[ userText(taskTailoredToKind), linkToPath(resolved), linkToInstructions() ]`                       |
+| Notes        | Branches the task statement on `isFile` vs `isDirectory` instead of dumping a generic numbered list. |
 
 ### 4.3 `compare-files`
 
-| | |
-| --- | --- |
-| Title | Compare Files |
-| Description | Workflow for comparing two files using diff_files. |
-| Args | `original: string`, `modified: string` — both `pathArg`. |
-| Path-guarded | Yes |
-| Messages | `[ userText("Call diff_files with - original: $1\n- modified: $2 …"), linkToPath(original), linkToPath(modified) ]` |
-| Notes | Text retains the `- original:` / `- modified:` substrings for backward-recognizable intent; tests assert the structure (3 messages, 2 `resource_link`s with the expected `file://` URIs) rather than the prose. |
+|              |                                                                                                                                                                                                                 |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Title        | Compare Files                                                                                                                                                                                                   |
+| Description  | Workflow for comparing two files using diff_files.                                                                                                                                                              |
+| Args         | `original: string`, `modified: string` — both `pathArg`.                                                                                                                                                        |
+| Path-guarded | Yes                                                                                                                                                                                                             |
+| Messages     | `[ userText("Call diff_files with - original: $1\n- modified: $2 …"), linkToPath(original), linkToPath(modified) ]`                                                                                             |
+| Notes        | Text retains the `- original:` / `- modified:` substrings for backward-recognizable intent; tests assert the structure (3 messages, 2 `resource_link`s with the expected `file://` URIs) rather than the prose. |
 
 ### 4.4 `find-in-tree` (NEW)
 
-| | |
-| --- | --- |
-| Title | Find in Tree |
-| Description | Locate files and matches by name and content under a directory. |
-| Args | `query: string`; `root?: string` (defaults to first allowed root); `mode?: 'name' \| 'content' \| 'both'` (default `'both'`). |
-| Path-guarded | Yes (`root`) |
-| Messages | `[ userText(modeBranchedTask), linkToInstructions() ]` |
-| Notes | Collapses the common LLM dance of stitching `find` + `grep` into one prompt. |
+|              |                                                                                                                               |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| Title        | Find in Tree                                                                                                                  |
+| Description  | Locate files and matches by name and content under a directory.                                                               |
+| Args         | `query: string`; `root?: string` (defaults to first allowed root); `mode?: 'name' \| 'content' \| 'both'` (default `'both'`). |
+| Path-guarded | Yes (`root`)                                                                                                                  |
+| Messages     | `[ userText(modeBranchedTask), linkToInstructions() ]`                                                                        |
+| Notes        | Collapses the common LLM dance of stitching `find` + `grep` into one prompt.                                                  |
 
 ### 4.5 `summarize-directory` (NEW)
 
-| | |
-| --- | --- |
-| Title | Summarize Directory |
-| Description | Onboarding summary: tech stack, entry points, structure. |
-| Args | `path: string` (`pathArg`), `depth?: number` — `z.number().int().min(1).max(6).default(3)`. |
-| Path-guarded | Yes |
-| Behavior | Resolves `path`; rejects non-directories with a structured error. |
-| Messages | `[ userText("Summarize this project at $path. Call tree (maxDepth=$depth), then read_many for README/package.json/Cargo.toml/pyproject.toml/etc. Produce: purpose, tech stack, entry points, notable directories."), linkToPath(resolved) ]` |
+|              |                                                                                                                                                                                                                                              |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Title        | Summarize Directory                                                                                                                                                                                                                          |
+| Description  | Onboarding summary: tech stack, entry points, structure.                                                                                                                                                                                     |
+| Args         | `path: string` (`pathArg`), `depth?: number` — `z.number().int().min(1).max(6).default(3)`.                                                                                                                                                  |
+| Path-guarded | Yes                                                                                                                                                                                                                                          |
+| Behavior     | Resolves `path`; rejects non-directories with a structured error.                                                                                                                                                                            |
+| Messages     | `[ userText("Summarize this project at $path. Call tree (maxDepth=$depth), then read_many for README/package.json/Cargo.toml/pyproject.toml/etc. Produce: purpose, tech stack, entry points, notable directories."), linkToPath(resolved) ]` |
 
 ## 5. Security & validation
 
