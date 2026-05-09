@@ -4,7 +4,7 @@ import { strict as assert } from 'node:assert';
 
 import { describe, it } from 'node:test';
 
-import { McpProgressSink } from '../../src/tools/progress-sinks.js';
+import { McpProgressSink, TaskStoreSink } from '../../src/tools/progress-sinks.js';
 
 void describe('McpProgressSink', () => {
   void it('forwards tick events to sendNotification', async () => {
@@ -12,7 +12,7 @@ void describe('McpProgressSink', () => {
     const sink = new McpProgressSink({
       progressToken: 'tok-1',
       sendNotification: async (n) => {
-        notifications.push(n as ProgressNotification);
+        notifications.push(n);
       },
     });
 
@@ -40,7 +40,7 @@ void describe('McpProgressSink', () => {
     const sink = new McpProgressSink({
       progressToken: 'tok-1',
       sendNotification: async (n) => {
-        notifications.push(n as ProgressNotification);
+        notifications.push(n);
       },
     });
 
@@ -54,7 +54,7 @@ void describe('McpProgressSink', () => {
     const sink = new McpProgressSink({
       progressToken: 'tok-1',
       sendNotification: async (n) => {
-        notifications.push(n as ProgressNotification);
+        notifications.push(n);
       },
     });
 
@@ -80,7 +80,7 @@ void describe('McpProgressSink', () => {
     const sink = new McpProgressSink({
       progressToken: 'tok-1',
       sendNotification: async (n) => {
-        notifications.push(n as ProgressNotification);
+        notifications.push(n);
       },
     });
 
@@ -98,5 +98,78 @@ void describe('McpProgressSink', () => {
       total: 1,
       message: 'aborted',
     });
+  });
+});
+
+void describe('TaskStoreSink', () => {
+  void it('updates message and status on emit', async () => {
+    let message: string | undefined;
+    let statusMessage: string | undefined;
+
+    const sink = new TaskStoreSink({
+      taskId: 'task-1',
+      store: {
+        updateTask: async (id: string, patch: { message?: string; statusMessage?: string }) => {
+          assert.equal(id, 'task-1');
+          message = patch.message;
+          statusMessage = patch.statusMessage;
+        },
+      },
+    });
+
+    await sink.emit({ kind: 'status', message: 'scanning' });
+    assert.equal(message, 'scanning');
+    assert.equal(statusMessage, 'scanning');
+
+    await sink.emit({
+      kind: 'tick',
+      current: 5,
+      total: 10,
+      message: 'working',
+    });
+    assert.equal(message, 'working [5/10]');
+    assert.equal(statusMessage, 'working');
+  });
+
+  void it('swallows "Task not found" and "terminal status" errors', async () => {
+    const sink = new TaskStoreSink({
+      taskId: 'task-1',
+      store: {
+        updateTask: async () => {
+          throw new Error('Task not found');
+        },
+      },
+    });
+
+    // Should not throw.
+    await sink.emit({ kind: 'status', message: 'x' });
+
+    const terminalSink = new TaskStoreSink({
+      taskId: 'task-1',
+      store: {
+        updateTask: async () => {
+          throw new Error('Cannot update task with terminal status');
+        },
+      },
+    });
+
+    // Should not throw.
+    await terminalSink.emit({ kind: 'status', message: 'y' });
+  });
+
+  void it('rethrows other errors', async () => {
+    const sink = new TaskStoreSink({
+      taskId: 'task-1',
+      store: {
+        updateTask: async () => {
+          throw new Error('Database connection failed');
+        },
+      },
+    });
+
+    await assert.rejects(
+      sink.emit({ kind: 'status', message: 'x' }),
+      /Database connection failed/
+    );
   });
 });

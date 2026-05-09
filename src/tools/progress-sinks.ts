@@ -59,3 +59,64 @@ export class McpProgressSink implements ProgressSink {
     } satisfies ProgressNotification);
   }
 }
+
+/**
+ * Simplified task store interface for progress updates. Matches the patch
+ * capability used by the TaskStoreSink.
+ */
+export interface TaskStore {
+  updateTask(
+    taskId: string,
+    patch: { message?: string; statusMessage?: string }
+  ): Promise<void>;
+}
+
+export interface TaskStoreSinkOptions {
+  taskId: string;
+  store: TaskStore;
+}
+
+/**
+ * Sink that updates a TaskStore with progress information. Swallows benign
+ * "Task not found" or "terminal status" errors to prevent failing the tool.
+ */
+export class TaskStoreSink implements ProgressSink {
+  readonly name = 'task-store';
+  readonly #taskId: string;
+  readonly #store: TaskStore;
+
+  constructor(opts: TaskStoreSinkOptions) {
+    this.#taskId = opts.taskId;
+    this.#store = opts.store;
+  }
+
+  async emit(event: ProgressEvent): Promise<void> {
+    const statusMessage = event.message;
+
+    let message = event.message;
+    if (event.kind === 'tick') {
+      const total = event.total;
+      message =
+        total !== undefined
+          ? `${event.message} [${event.current}/${total}]`
+          : `${event.message} [${event.current}]`;
+    }
+
+    try {
+      await this.#store.updateTask(this.#taskId, {
+        message,
+        statusMessage,
+      });
+    } catch (error) {
+      if (this.#isBenignError(error)) return;
+      throw error;
+    }
+  }
+
+  #isBenignError(error: unknown): boolean {
+    return (
+      error instanceof Error &&
+      /Task .*not found|terminal status/iu.test(error.message)
+    );
+  }
+}
