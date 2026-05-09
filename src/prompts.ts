@@ -245,7 +245,63 @@ const COMPARE_FILES: PromptEntry = {
   },
 };
 
-const PROMPT_ENTRIES: PromptEntry[] = [GET_HELP, ANALYZE_PATH, COMPARE_FILES];
+const FIND_IN_TREE_MODE = z.enum(['name', 'content', 'both']);
+
+const FIND_IN_TREE: PromptEntry = {
+  contract: {
+    name: 'find-in-tree',
+    title: 'Find in Tree',
+    description: 'Locate files and matches by name and content under a directory.',
+    requiresPathGuard: true,
+  },
+  register(server, options) {
+    server.registerPrompt(
+      FIND_IN_TREE.contract.name,
+      withDefaultIcons(
+        {
+          title: FIND_IN_TREE.contract.title,
+          description: FIND_IN_TREE.contract.description,
+          argsSchema: z.strictObject({
+            query: z.string().min(1).describe('Search term (name pattern or content regex).'),
+            root: pathArg(
+              server,
+              options.pathGuard,
+              'root',
+              'Directory to search under. Defaults to first allowed root.',
+            ).optional(),
+            mode: FIND_IN_TREE_MODE.default('both').describe('Search by name, content, or both.'),
+          }),
+        },
+        options.iconInfo,
+      ),
+      async ({ query, root, mode }): Promise<GetPromptResult> =>
+        wrapHandler(FIND_IN_TREE.contract.name, options, true, async () => {
+          const allowed = options.pathGuard.getAllowedDirectories();
+          const candidate = root ?? allowed[0];
+          if (!candidate) {
+            throw new Error('find-in-tree: no root provided and no allowed directories');
+          }
+          const resolved = await options.pathGuard.validateExistingDirectory(candidate);
+          const steps: string[] = [];
+          if (mode === 'name' || mode === 'both') {
+            steps.push(`- Call \`find\` with pattern "${query}" under "${resolved}".`);
+          }
+          if (mode === 'content' || mode === 'both') {
+            steps.push(
+              `- Call \`grep\` with pattern "${query}" under "${resolved}". Report relative paths, line numbers, and a 1-line context for each match.`,
+            );
+          }
+          const text = [`Find "${query}" in ${resolved} (mode=${mode}):`, '', ...steps].join('\n');
+          return {
+            description: FIND_IN_TREE.contract.description,
+            messages: [userText(text), linkToInstructions()],
+          };
+        }),
+    );
+  },
+};
+
+const PROMPT_ENTRIES: PromptEntry[] = [GET_HELP, ANALYZE_PATH, COMPARE_FILES, FIND_IN_TREE];
 
 export const ALL_PROMPTS: PromptContract[] = PROMPT_ENTRIES.map((e) => e.contract);
 
