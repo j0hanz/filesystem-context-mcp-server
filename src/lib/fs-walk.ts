@@ -15,7 +15,6 @@ import {
   startPerfMeasure,
 } from './observability.js';
 import { toPosixPath } from './path-guard.js';
-import { isRecord } from './utils.js';
 
 export function getFileType(stats: Stats): FileType {
   if (stats.isFile()) return 'file';
@@ -53,9 +52,9 @@ export interface DirentLike {
 export type EntryType = 'file' | 'directory' | 'symlink' | 'other';
 
 export function resolveEntryType(dirent: DirentLike): EntryType {
-  if (dirent.isSymbolicLink()) return 'symlink';
   if (dirent.isDirectory()) return 'directory';
   if (dirent.isFile()) return 'file';
+  if (dirent.isSymbolicLink()) return 'symlink';
   return 'other';
 }
 
@@ -72,6 +71,7 @@ export function resolveStopReason<R extends string>(options: {
 }
 
 export function compareStringValues(left?: string, right?: string): number {
+  if (left === right) return 0;
   return collator.compare(left ?? '', right ?? '');
 }
 
@@ -90,34 +90,49 @@ export function stableSortByDerivedString<T>(
   derive: (item: T) => string,
   tieBreak: (left: T, right: T) => number
 ): void {
-  const decorated = [];
   const len = items.length;
+  if (len <= 1) return;
 
-  for (let index = 0; index < len; index++) {
-    const item = items[index];
-    if (item === undefined) continue;
-    decorated.push({
-      item,
-      derived: derive(item),
-      index,
-    });
+  const derived = new Array<string>(len);
+  const indices = new Int32Array(len);
+
+  for (let i = 0; i < len; i++) {
+    const item = items[i];
+    if (item !== undefined) {
+      derived[i] = derive(item);
+    }
+    indices[i] = i;
   }
 
-  decorated.sort((left, right) => {
-    const derivedCompare = compareStringValues(left.derived, right.derived);
-    if (derivedCompare !== 0) return derivedCompare;
+  indices.sort((a, b) => {
+    const itemA = items[a];
+    const itemB = items[b];
 
-    const tiedCompare = tieBreak(left.item, right.item);
+    if (itemA === undefined && itemB === undefined) return 0;
+    if (itemA === undefined) return 1;
+    if (itemB === undefined) return -1;
+
+    const derivedA = derived[a] ?? '';
+    const derivedB = derived[b] ?? '';
+
+    if (derivedA !== derivedB) {
+      const derivedCompare = collator.compare(derivedA, derivedB);
+      if (derivedCompare !== 0) return derivedCompare;
+    }
+
+    const tiedCompare = tieBreak(itemA, itemB);
     if (tiedCompare !== 0) return tiedCompare;
 
-    return left.index - right.index;
+    return a - b;
   });
 
-  const decoratedLen = decorated.length;
-  for (let index = 0; index < decoratedLen; index++) {
-    const entry = decorated[index];
-    if (!entry) continue;
-    items[index] = entry.item;
+  const sortedItems = new Array<T>(len);
+  for (let i = 0; i < len; i++) {
+    const idx = indices[i];
+    sortedItems[i] = items[idx ?? 0] as T;
+  }
+  for (let i = 0; i < len; i++) {
+    items[i] = sortedItems[i] as T;
   }
 }
 
@@ -457,25 +472,16 @@ function normalizeGlobOptions(options: GlobEntriesOptions): NormalizedGlob {
 }
 
 function getRelativeDepth(relativePath: string): number {
-  if (relativePath.length === 0) return 0;
+  const len = relativePath.length;
+  if (len === 0) return 0;
   let count = 0;
-  for (let i = 0; i < relativePath.length; i++) {
+  for (let i = 0; i < len; i++) {
     const code = relativePath.charCodeAt(i);
     if (code === 47 || code === 92) {
       count++;
     }
   }
   return count + 1;
-}
-
-function isGlobDirentLike(value: unknown): value is GlobDirentLike {
-  if (!isRecord(value)) return false;
-  return (
-    typeof value.name === 'string' &&
-    typeof value.isDirectory === 'function' &&
-    typeof value.isFile === 'function' &&
-    typeof value.isSymbolicLink === 'function'
-  );
 }
 
 function resolveDirentBase(
@@ -562,85 +568,52 @@ interface ProcessContext {
 }
 
 class AsyncGlobBatchQueue {
-  private buffer: string[] = [];
+  private buffer: string[];
+  private bufferLength = 0;
 
-  constructor(private readonly context: ProcessContext) {}
+  constructor(private readonly context: ProcessContext) {
+    this.buffer = new Array<string>(GLOB_BATCH_CONCURRENCY);
+  }
 
   add(match: string): void {
-    this.buffer.push(match);
+    this.buffer[this.bufferLength++] = match;
   }
 
   isFull(): boolean {
-    return this.buffer.length >= GLOB_BATCH_CONCURRENCY;
+    return this.bufferLength >= GLOB_BATCH_CONCURRENCY;
   }
 
   hasItems(): boolean {
-    return this.buffer.length > 0;
+    return this.bufferLength > 0;
   }
 
   async *flush(): AsyncGenerator<GlobEntry> {
-    if (this.buffer.length === 0) return;
+    if (this.bufferLength === 0) return;
 
-    const currentBuffer = this.buffer;
-    this.buffer = [];
+    const count = this.bufferLength;
+    this.bufferLength = 0;
 
-    const promises: Promise<GlobEntry | null>[] = [];
-    for (const match of currentBuffer) {
-      promises.push(
-        resolveStringMatch(
-          match,
-          this.context.cwd,
-          this.context.maxDepth,
-          this.context.seen,
-          this.context.onlyFiles,
-          this.context.followSymlinks,
-          this.context.returnStats,
-          this.context.suppressErrors
-        )
+    const promises = new Array<Promise<GlobEntry | null>>(count);
+    for (let i = 0; i < count; i++) {
+      const matchPath = this.buffer[i];
+      promises[i] = resolveStringMatch(
+        matchPath ?? '',
+        this.context.cwd,
+        this.context.maxDepth,
+        this.context.seen,
+        this.context.onlyFiles,
+        this.context.followSymlinks,
+        this.context.returnStats,
+        this.context.suppressErrors
       );
     }
 
     const results = await Promise.all(promises);
 
-    for (const entry of results) {
-      if (entry !== null) yield entry;
+    for (let i = 0; i < count; i++) {
+      const entry = results[i];
+      if (entry !== null && entry !== undefined) yield entry;
     }
-  }
-}
-
-async function* processIterable(
-  iterable: AsyncIterable<GlobMatch>,
-  context: ProcessContext
-): AsyncGenerator<GlobEntry> {
-  const queue = new AsyncGlobBatchQueue(context);
-
-  try {
-    for await (const match of iterable) {
-      if (typeof match === 'string') {
-        queue.add(match);
-        if (queue.isFull()) {
-          yield* queue.flush();
-        }
-        continue;
-      }
-
-      if (queue.hasItems()) {
-        yield* queue.flush();
-      }
-
-      if (isGlobDirentLike(match)) {
-        yield* processDirentMatch(
-          match,
-          context.cwd,
-          context.maxDepth,
-          context.seen,
-          context.onlyFiles
-        );
-      }
-    }
-    yield* queue.flush();
-  } catch (error) {
-    if (!context.suppressErrors) throw error;
   }
 }
 
@@ -680,7 +653,34 @@ async function* nativeGlobEntries(
       throw error;
     }
 
-    yield* processIterable(iterable, context);
+    if (plan.useDirents) {
+      try {
+        for await (const match of iterable) {
+          yield* processDirentMatch(
+            match as GlobDirentLike,
+            context.cwd,
+            context.maxDepth,
+            context.seen,
+            context.onlyFiles
+          );
+        }
+      } catch (error) {
+        if (!suppressErrors) throw error;
+      }
+    } else {
+      const queue = new AsyncGlobBatchQueue(context);
+      try {
+        for await (const match of iterable) {
+          queue.add(match as string);
+          if (queue.isFull()) {
+            yield* queue.flush();
+          }
+        }
+        yield* queue.flush();
+      } catch (error) {
+        if (!suppressErrors) throw error;
+      }
+    }
   }
 }
 
