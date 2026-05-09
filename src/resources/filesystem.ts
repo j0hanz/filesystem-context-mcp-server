@@ -3,8 +3,8 @@ import type { ServerContext } from '@modelcontextprotocol/server';
 
 import { type FSWatcher, watch } from 'node:fs';
 
-import { readFileWithStats } from '../lib/file-content.js';
-import { completePathCached } from '../lib/path-completer.js';
+import { readFileWithStats } from '../core/file-content.js';
+import { completePathCached } from '../core/path-completer.js';
 
 import type { ResourceContract } from './contract.js';
 import type { ResourceRegistrationOptions } from './shared.js';

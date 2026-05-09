@@ -2,7 +2,7 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
 import { ErrorCode, McpError } from '../../src/lib/errors.js';
-import { createInMemoryResourceStore } from '../../src/lib/resource-store.js';
+import { createInMemoryResourceStore } from '../../src/lib/store.js;
 
 test('putBlob stores and getBlob retrieves binary data correctly', () => {
   const store = createInMemoryResourceStore();

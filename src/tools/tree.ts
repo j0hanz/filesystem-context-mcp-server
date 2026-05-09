@@ -4,7 +4,7 @@ import { basename, relative } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { withTimedAbortSignal } from '../lib/abort.js';
+import { withTimedAbortSignal } from '../core/abort.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_SEARCH_TIMEOUT_MS,
@@ -12,8 +12,8 @@ import {
   DEFAULT_TREE_ENTRIES,
   MAX_TREE_DEPTH,
   MAX_TREE_ENTRIES,
-} from '../lib/constants.js';
-import { ErrorCode } from '../lib/errors.js';
+} from '../core/constants.js';
+import { ErrorCode } from '../core/errors.js';
 import {
   type DirentLike,
   type EntryAccessDependencies,
@@ -24,9 +24,9 @@ import {
   loadRootGitignore,
   resolveEntryType,
   resolveStopReason,
-} from '../lib/fs-walk.js';
-import { isPathWithinDirectories, normalizePath, toPosixPath } from '../lib/path-guard.js';
-import type { PathGuard } from '../lib/path-guard.js';
+} from '../core/fs-walk.js';
+import { isPathWithinDirectories, normalizePath, toPosixPath } from '../core/path-guard.js';
+import type { PathGuard } from '../core/path-guard.js';
 import { FileType as FileTypeEnum, NonNegInt, OptionalPath } from '../schemas/fields.js';
 import {
   ContinuationSchema,

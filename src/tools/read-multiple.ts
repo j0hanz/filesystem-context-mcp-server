@@ -4,21 +4,21 @@ import { basename } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { withAbort } from '../lib/abort.js';
+import { withAbort } from '../core/abort.js';
 import {
   DEFAULT_CONTINUATION_CHUNK_SIZE,
   DEFAULT_READ_MANY_MAX_TOTAL_SIZE,
   DEFAULT_SEARCH_TIMEOUT_MS,
   MAX_TEXT_FILE_SIZE,
   PARALLEL_CONCURRENCY,
-} from '../lib/constants.js';
-import { ErrorCode } from '../lib/errors.js';
-import { readFile, readFileWithStats } from '../lib/file-content.js';
-import { applyIndexedErrors, applyIndexedValues } from '../lib/fs-walk.js';
-import { detectMimeType } from '../lib/mime.js';
-import { processInParallel } from '../lib/parallel.js';
-import type { PathGuard } from '../lib/path-guard.js';
-import { assignDefined } from '../lib/utils.js';
+} from '../core/constants.js';
+import { ErrorCode } from '../core/errors.js';
+import { readFile, readFileWithStats } from '../core/file-content.js';
+import { applyIndexedErrors, applyIndexedValues } from '../core/fs-walk.js';
+import { detectMimeType } from '../core/mime.js';
+import { processInParallel } from '../core/parallel.js';
+import type { PathGuard } from '../core/path-guard.js';
+import { assignDefined } from '../core/utils.js';
 import { NonNegInt, PositiveInt, RequiredPath } from '../schemas/fields.js';
 import { readRangeConstraints, toToolJsonSchema } from '../schemas/json-schema.js';
 import {

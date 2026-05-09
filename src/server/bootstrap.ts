@@ -30,16 +30,16 @@ import {
   getInitHandshakeTimeoutMs,
   INIT_TIMEOUT_CLOSE,
   parseEnvInt,
-} from '../lib/constants.js';
-import { formatUnknownErrorMessage } from '../lib/errors.js';
+} from '../core/constants.js';
+import { formatUnknownErrorMessage } from '../core/errors.js';
 import {
   createLoggingState,
   Logger,
   LogRouter,
   type LogTarget,
   SessionContext,
-} from '../lib/logger.js';
-import { createInMemoryResourceStore } from '../lib/resource-store.js';
+} from '../core/logger.js';
+import { createInMemoryResourceStore } from '../core/store.js';
 
 import { pkgInfo } from '../pkg-info.js';
 import { registerAllPrompts } from '../prompts.js';

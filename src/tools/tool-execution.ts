@@ -7,8 +7,8 @@ import type {
 
 import type { z } from 'zod/v4';
 
-import { classifyError, ErrorCode, McpError } from '../lib/errors.js';
-import { maybeStripStructuredContentFromResult } from '../lib/utils.js';
+import { classifyError, ErrorCode, McpError } from '../core/errors.js';
+import { maybeStripStructuredContentFromResult } from '../core/utils.js';
 import { toToolJsonSchema } from '../schemas/json-schema.js';
 
 import * as progressSinks from './progress-sinks.js';

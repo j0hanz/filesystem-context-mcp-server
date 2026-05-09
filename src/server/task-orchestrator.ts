@@ -10,9 +10,9 @@ import {
   type ToolTaskHandler,
 } from '@modelcontextprotocol/server';
 
-import { DEFAULT_TASK_TTL_MS, MAX_CONCURRENT_TASKS, MAX_TASK_TTL_MS } from '../lib/constants.js';
-import { ErrorCode, McpError } from '../lib/errors.js';
-import { isRecord, maybeStripStructuredContentFromResult } from '../lib/utils.js';
+import { DEFAULT_TASK_TTL_MS, MAX_CONCURRENT_TASKS, MAX_TASK_TTL_MS } from '../core/constants.js';
+import { ErrorCode, McpError } from '../core/errors.js';
+import { isRecord, maybeStripStructuredContentFromResult } from '../core/utils.js';
 
 import { type ToolContext, type ToolResult, toToolContext } from '../tools/shared.js';
 import type { EventedTaskStore } from './task-store.js';

@@ -4,7 +4,7 @@ import { basename } from 'node:path';
 
 import type { z } from 'zod/v4';
 
-import { ErrorCode } from '../lib/errors.js';
+import { ErrorCode } from '../core/errors.js';
 
 import type { ToolContract } from './contract.js';
 import { progressSessionFromContext } from './progress-sinks.js';

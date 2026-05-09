@@ -13,19 +13,19 @@ import { basename } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { createTimedAbortSignal } from '../lib/abort.js';
+import { createTimedAbortSignal } from '../core/abort.js';
 import {
   createDetailedError,
   ErrorCode,
   formatDetailedError,
   getSuggestion,
   McpError,
-} from '../lib/errors.js';
-import type { MimeKind } from '../lib/mime.js';
-import { type TraceContext, withToolDiagnostics } from '../lib/observability.js';
-import type { PathGuard } from '../lib/path-guard.js';
-import type { ResourceStore } from '../lib/resource-store.js';
-import { createBase64JsonCodec } from '../lib/zod-codecs.js';
+} from '../core/errors.js';
+import type { MimeKind } from '../core/mime.js';
+import { type TraceContext, withToolDiagnostics } from '../core/observability.js';
+import type { PathGuard } from '../core/path-guard.js';
+import type { ResourceStore } from '../core/store.js';
+import { createBase64JsonCodec } from '../core/zod-codecs.js';
 
 import type { FileInfo } from '../config.js';
 import type { TaskOrchestrator } from '../server/task-orchestrator.js';

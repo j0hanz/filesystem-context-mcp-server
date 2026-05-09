@@ -3,7 +3,7 @@ import { basename, relative } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { withTimedAbortSignal } from '../lib/abort.js';
+import { withTimedAbortSignal } from '../core/abort.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_SEARCH_MAX_FILES,
@@ -11,8 +11,8 @@ import {
   DEFAULT_SEARCH_TIMEOUT_MS,
   MAX_SEARCH_DEPTH,
   MAX_SEARCH_RESULTS,
-} from '../lib/constants.js';
-import { ErrorCode } from '../lib/errors.js';
+} from '../core/constants.js';
+import { ErrorCode } from '../core/errors.js';
 import {
   buildGlobOptions,
   compareOptionalNumberDesc,
@@ -29,11 +29,11 @@ import {
   resolveStopReason,
   stableSortByDerivedString,
   withOptionalStoppedReason,
-} from '../lib/fs-walk.js';
-import { isPathWithinDirectories, normalizePath } from '../lib/path-guard.js';
-import type { PathGuard } from '../lib/path-guard.js';
-import type { ResourceStore } from '../lib/resource-store.js';
-import { assignDefined } from '../lib/utils.js';
+} from '../core/fs-walk.js';
+import { isPathWithinDirectories, normalizePath } from '../core/path-guard.js';
+import type { PathGuard } from '../core/path-guard.js';
+import type { ResourceStore } from '../core/store.js';
+import { assignDefined } from '../core/utils.js';
 import { NonNegInt, OptionalPath, SafeGlobPattern } from '../schemas/fields.js';
 import {
   CursorSchema,

@@ -9,7 +9,7 @@ import { join, sep } from 'node:path';
 import { describe, it } from 'node:test';
 
 import { normalizePath, PathGuard } from '../../src/lib/path-guard.js';
-import { createInMemoryResourceStore } from '../../src/lib/resource-store.js';
+import { createInMemoryResourceStore } from '../../src/lib/store.js;
 import { registerAllPrompts } from '../../src/prompts.js';
 import { registerAllResources } from '../../src/resources.js';
 import { LinkedTransport } from '../linked-transport.js';

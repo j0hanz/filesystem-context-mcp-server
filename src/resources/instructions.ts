@@ -2,7 +2,7 @@ import {
   DEFAULT_SEARCH_CONTENT_RESULTS,
   MAX_SEARCH_RESULTS,
   MAX_TEXT_FILE_SIZE,
-} from '../lib/constants.js';
+} from '../core/constants.js';
 
 import { ALL_TOOLS } from '../tools.js';
 import type { ResourceContract } from './contract.js';

@@ -4,13 +4,13 @@ import { basename, relative, win32 } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { assertNotAborted, withAbort } from '../lib/abort.js';
-import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../lib/constants.js';
-import { ErrorCode } from '../lib/errors.js';
-import { calculateFileContentHash } from '../lib/file-content.js';
-import { globEntries, isIgnoredByGitignore, loadRootGitignore } from '../lib/fs-walk.js';
-import type { PathGuard } from '../lib/path-guard.js';
-import type { ResourceStore } from '../lib/resource-store.js';
+import { assertNotAborted, withAbort } from '../core/abort.js';
+import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../core/constants.js';
+import { ErrorCode } from '../core/errors.js';
+import { calculateFileContentHash } from '../core/file-content.js';
+import { globEntries, isIgnoredByGitignore, loadRootGitignore } from '../core/fs-walk.js';
+import type { PathGuard } from '../core/path-guard.js';
+import type { ResourceStore } from '../core/store.js';
 import { NonNegInt, RequiredPath } from '../schemas/fields.js';
 
 import { defineTool } from './define-tool.js';

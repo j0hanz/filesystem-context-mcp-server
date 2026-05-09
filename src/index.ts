@@ -6,8 +6,8 @@ import process from 'node:process';
 
 import { z } from 'zod/v4';
 
-import { formatUnknownErrorMessage } from './lib/errors.js';
-import { shutdownWorkerPool } from './lib/worker-pool.js';
+import { formatUnknownErrorMessage } from './core/errors.js';
+import { shutdownWorkerPool } from './core/worker-pool.js';
 
 import { CliExitError, parseArgs } from './cli.js';
 import { createServer, startHttpServer, startServer } from './server.js';

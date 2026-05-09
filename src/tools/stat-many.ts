@@ -4,12 +4,12 @@ import { parse } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { assertNotAborted, withAbort } from '../lib/abort.js';
-import { DEFAULT_SEARCH_TIMEOUT_MS, getMimeType, PARALLEL_CONCURRENCY } from '../lib/constants.js';
-import { ErrorCode, isAbortError } from '../lib/errors.js';
-import { getFileType, isHidden } from '../lib/fs-walk.js';
-import { processInParallel } from '../lib/parallel.js';
-import type { PathGuard } from '../lib/path-guard.js';
+import { assertNotAborted, withAbort } from '../core/abort.js';
+import { DEFAULT_SEARCH_TIMEOUT_MS, getMimeType, PARALLEL_CONCURRENCY } from '../core/constants.js';
+import { ErrorCode, isAbortError } from '../core/errors.js';
+import { getFileType, isHidden } from '../core/fs-walk.js';
+import { processInParallel } from '../core/parallel.js';
+import type { PathGuard } from '../core/path-guard.js';
 import { NonNegInt, RequiredPath } from '../schemas/fields.js';
 import { FileInfoSchema, OperationSummarySchema, PerFileErrorSchema } from '../schemas/shared.js';
 

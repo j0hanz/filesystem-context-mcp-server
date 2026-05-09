@@ -4,17 +4,17 @@ import { basename, resolve } from 'node:path';
 import { applyPatch, formatPatch, parsePatch, type StructuredPatch } from 'diff';
 import { z } from 'zod/v4';
 
-import { withAbort } from '../lib/abort.js';
-import { atomicWriteFile } from '../lib/atomic-write.js';
-import { MAX_TEXT_FILE_SIZE, PARALLEL_CONCURRENCY } from '../lib/constants.js';
-import { ErrorCode, McpError } from '../lib/errors.js';
-import { readFileWithStats } from '../lib/file-content.js';
-import { Logger } from '../lib/logger.js';
-import { detectMimeType } from '../lib/mime.js';
-import { processInParallel } from '../lib/parallel.js';
-import type { PathGuard } from '../lib/path-guard.js';
-import type { ResourceStore } from '../lib/resource-store.js';
-import { runInWorker, shouldOffload } from '../lib/worker-pool.js';
+import { withAbort } from '../core/abort.js';
+import { atomicWriteFile } from '../core/atomic-write.js';
+import { MAX_TEXT_FILE_SIZE, PARALLEL_CONCURRENCY } from '../core/constants.js';
+import { ErrorCode, McpError } from '../core/errors.js';
+import { readFileWithStats } from '../core/file-content.js';
+import { Logger } from '../core/logger.js';
+import { detectMimeType } from '../core/mime.js';
+import { processInParallel } from '../core/parallel.js';
+import type { PathGuard } from '../core/path-guard.js';
+import type { ResourceStore } from '../core/store.js';
+import { runInWorker, shouldOffload } from '../core/worker-pool.js';
 import { NonNegInt, OptionalPath } from '../schemas/fields.js';
 import {
   defaultFalseBoolean,

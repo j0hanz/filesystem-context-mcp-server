@@ -6,10 +6,10 @@ import { basename, dirname, join, resolve, sep } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { withAbort } from '../lib/abort.js';
-import { ErrorCode, isNodeError, McpError } from '../lib/errors.js';
-import { Logger } from '../lib/logger.js';
-import type { PathGuard } from '../lib/path-guard.js';
+import { withAbort } from '../core/abort.js';
+import { ErrorCode, isNodeError, McpError } from '../core/errors.js';
+import { Logger } from '../core/logger.js';
+import type { PathGuard } from '../core/path-guard.js';
 import { RequiredPath } from '../schemas/fields.js';
 
 import { defineTool } from './define-tool.js';

@@ -1,6 +1,6 @@
 import { z } from 'zod/v4';
 
-import { ErrorCode } from '../lib/errors.js';
+import { ErrorCode } from '../core/errors.js';
 
 import { defineTool } from './define-tool.js';
 import { DIRECTORY_ICONS } from './icons.js';

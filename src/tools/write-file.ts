@@ -3,12 +3,12 @@ import { basename, dirname } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { withAbort } from '../lib/abort.js';
-import { atomicWriteFile } from '../lib/atomic-write.js';
-import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
-import { ErrorCode } from '../lib/errors.js';
-import { Logger } from '../lib/logger.js';
-import { detectMimeType } from '../lib/mime.js';
+import { withAbort } from '../core/abort.js';
+import { atomicWriteFile } from '../core/atomic-write.js';
+import { MAX_TEXT_FILE_SIZE } from '../core/constants.js';
+import { ErrorCode } from '../core/errors.js';
+import { Logger } from '../core/logger.js';
+import { detectMimeType } from '../core/mime.js';
 import { NonNegInt, RequiredPath } from '../schemas/fields.js';
 
 import { formatBytes } from '../config.js';

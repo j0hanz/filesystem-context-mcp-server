@@ -43,7 +43,7 @@ function getStructured(result: unknown): Record<string, unknown> {
 async function createDistEnv(): Promise<DistEnv> {
   const distToolsUrl = pathToFileURL(resolve('dist/tools.js')).href;
   const distPathsUrl = pathToFileURL(resolve('dist/lib/paths.js')).href;
-  const distResourceStoreUrl = pathToFileURL(resolve('dist/lib/resource-store.js')).href;
+  const distResourceStoreUrl = pathToFileURL(resolve('dist/lib/store.js)).href;
 
   const [toolsModule, pathsModule, resourceStoreModule] = await Promise.all([
     import(distToolsUrl) as Promise<DistToolsModule>,

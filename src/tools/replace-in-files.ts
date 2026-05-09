@@ -1,4 +1,4 @@
-﻿import { Buffer } from 'node:buffer';
+import { Buffer } from 'node:buffer';
 import { open } from 'node:fs/promises';
 import { basename, relative } from 'node:path';
 
@@ -6,7 +6,7 @@ import { createTwoFilesPatch } from 'diff';
 import RE2 from 're2';
 import { z } from 'zod/v4';
 
-import { atomicWriteFile } from '../lib/atomic-write.js';
+import { atomicWriteFile } from '../core/atomic-write.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_SEARCH_RESULTS,
@@ -15,14 +15,14 @@ import {
   MAX_SEARCH_RESULTS,
   MAX_TEXT_FILE_SIZE,
   PARALLEL_CONCURRENCY,
-} from '../lib/constants.js';
-import { ErrorCode, formatUnknownErrorMessage, McpError } from '../lib/errors.js';
-import { globEntries } from '../lib/fs-walk.js';
-import { Logger } from '../lib/logger.js';
-import { detectMimeType } from '../lib/mime.js';
-import type { PathGuard } from '../lib/path-guard.js';
-import type { ResourceStore } from '../lib/resource-store.js';
-import { runInWorker, shouldOffload } from '../lib/worker-pool.js';
+} from '../core/constants.js';
+import { ErrorCode, formatUnknownErrorMessage, McpError } from '../core/errors.js';
+import { globEntries } from '../core/fs-walk.js';
+import { Logger } from '../core/logger.js';
+import { detectMimeType } from '../core/mime.js';
+import type { PathGuard } from '../core/path-guard.js';
+import type { ResourceStore } from '../core/store.js';
+import { runInWorker, shouldOffload } from '../core/worker-pool.js';
 import { NonNegInt, OptionalPath, SafeGlobPattern } from '../schemas/fields.js';
 import { safeGlobConstraint, toToolJsonSchema } from '../schemas/json-schema.js';
 import {

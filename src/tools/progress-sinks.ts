@@ -1,8 +1,8 @@
 import type { ProgressNotification, ProgressToken } from '@modelcontextprotocol/server';
 
-import { classifyError } from '../lib/errors.js';
-import { Logger } from '../lib/logger.js';
-import { type ProgressEvent, ProgressSession, type ProgressSink } from '../lib/progress-session.js';
+import { classifyError } from '../core/errors.js';
+import { Logger } from '../core/logger.js';
+import { type ProgressEvent, ProgressSession, type ProgressSink } from '../core/progress-session.js';
 
 import type { ToolContext } from './shared.js';
 

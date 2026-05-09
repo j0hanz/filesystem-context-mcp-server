@@ -5,16 +5,16 @@ import { createTwoFilesPatch, diffLines } from 'diff';
 import RE2 from 're2';
 import { z } from 'zod/v4';
 
-import { withAbort } from '../lib/abort.js';
-import { atomicWriteFile } from '../lib/atomic-write.js';
-import { MAX_TEXT_FILE_SIZE } from '../lib/constants.js';
-import { ErrorCode, McpError } from '../lib/errors.js';
-import { readFileWithStats } from '../lib/file-content.js';
-import { Logger } from '../lib/logger.js';
-import { detectMimeType } from '../lib/mime.js';
-import type { PathGuard } from '../lib/path-guard.js';
-import type { ResourceStore } from '../lib/resource-store.js';
-import { runInWorker, shouldOffload } from '../lib/worker-pool.js';
+import { withAbort } from '../core/abort.js';
+import { atomicWriteFile } from '../core/atomic-write.js';
+import { MAX_TEXT_FILE_SIZE } from '../core/constants.js';
+import { ErrorCode, McpError } from '../core/errors.js';
+import { readFileWithStats } from '../core/file-content.js';
+import { Logger } from '../core/logger.js';
+import { detectMimeType } from '../core/mime.js';
+import type { PathGuard } from '../core/path-guard.js';
+import type { ResourceStore } from '../core/store.js';
+import { runInWorker, shouldOffload } from '../core/worker-pool.js';
 import { NonNegInt, PositiveInt, RequiredPath } from '../schemas/fields.js';
 import { defaultFalseBoolean } from '../schemas/shared.js';
 

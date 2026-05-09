@@ -9,9 +9,9 @@ import { stat } from 'node:fs/promises';
 
 import { z } from 'zod/v4';
 
-import { Logger } from './lib/logger.js';
-import { completePathCached } from './lib/path-completer.js';
-import type { PathGuard } from './lib/path-guard.js';
+import { Logger } from './core/logger.js';
+import { completePathCached } from './core/path-completer.js';
+import type { PathGuard } from './core/path-guard.js';
 
 import { INSTRUCTION_SECTIONS } from './resources/instructions.js';
 import { type IconInfo, withDefaultIcons } from './tools/shared.js';

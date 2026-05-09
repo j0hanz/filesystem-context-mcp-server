@@ -1,5 +1,5 @@
-import type { PathGuard } from '../lib/path-guard.js';
-import type { ResourceStore } from '../lib/resource-store.js';
+import type { PathGuard } from '../core/path-guard.js';
+import type { ResourceStore } from '../core/store.js';
 
 import type { IconInfo } from '../tools/shared.js';
 

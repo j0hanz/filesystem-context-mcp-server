@@ -5,7 +5,7 @@ import { basename, join, relative } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { withAbort, withTimedAbortSignal } from '../lib/abort.js';
+import { withAbort, withTimedAbortSignal } from '../core/abort.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_LIST_MAX_ENTRIES,
@@ -14,8 +14,8 @@ import {
   MAX_LIST_ENTRIES,
   MAX_TREE_DEPTH,
   PARALLEL_CONCURRENCY,
-} from '../lib/constants.js';
-import { ErrorCode, McpError } from '../lib/errors.js';
+} from '../core/constants.js';
+import { ErrorCode, McpError } from '../core/errors.js';
 import {
   type DirentLike,
   type EntryAccessDependencies,
@@ -27,11 +27,11 @@ import {
   resolveEntryType,
   resolveStopReason,
   withOptionalStoppedReason,
-} from '../lib/fs-walk.js';
-import { processInParallel } from '../lib/parallel.js';
-import { isPathWithinDirectories, normalizePath } from '../lib/path-guard.js';
-import type { PathGuard } from '../lib/path-guard.js';
-import { createBase64JsonCodec } from '../lib/zod-codecs.js';
+} from '../core/fs-walk.js';
+import { processInParallel } from '../core/parallel.js';
+import { isPathWithinDirectories, normalizePath } from '../core/path-guard.js';
+import type { PathGuard } from '../core/path-guard.js';
+import { createBase64JsonCodec } from '../core/zod-codecs.js';
 import {
   FileType as FileTypeEnum,
   NonNegInt,

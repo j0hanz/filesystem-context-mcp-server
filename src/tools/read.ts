@@ -6,13 +6,13 @@ import {
   DEFAULT_CONTINUATION_CHUNK_SIZE,
   DEFAULT_SEARCH_TIMEOUT_MS,
   MAX_TEXT_FILE_SIZE,
-} from '../lib/constants.js';
-import { ErrorCode } from '../lib/errors.js';
-import { calculateFileContentHash, readFile } from '../lib/file-content.js';
-import { detectMimeType } from '../lib/mime.js';
-import type { PathGuard } from '../lib/path-guard.js';
-import type { ResourceStore } from '../lib/resource-store.js';
-import { assignDefined } from '../lib/utils.js';
+} from '../core/constants.js';
+import { ErrorCode } from '../core/errors.js';
+import { calculateFileContentHash, readFile } from '../core/file-content.js';
+import { detectMimeType } from '../core/mime.js';
+import type { PathGuard } from '../core/path-guard.js';
+import type { ResourceStore } from '../core/store.js';
+import { assignDefined } from '../core/utils.js';
 import { NonNegInt, PositiveInt, RequiredPath, Sha256Hex } from '../schemas/fields.js';
 import { readRangeConstraints, toToolJsonSchema } from '../schemas/json-schema.js';
 import {

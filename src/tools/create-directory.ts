@@ -3,9 +3,9 @@ import { basename } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { withAbort } from '../lib/abort.js';
-import { ErrorCode, McpError } from '../lib/errors.js';
-import type { PathGuard } from '../lib/path-guard.js';
+import { withAbort } from '../core/abort.js';
+import { ErrorCode, McpError } from '../core/errors.js';
+import type { PathGuard } from '../core/path-guard.js';
 import { RequiredPath } from '../schemas/fields.js';
 
 import { defineTool } from './define-tool.js';

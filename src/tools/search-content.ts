@@ -7,7 +7,7 @@ import { parentPort, threadId, Worker, workerData } from 'node:worker_threads';
 import RE2 from 're2';
 import { z } from 'zod/v4';
 
-import { assertNotAborted, withAbort, withTimedAbortSignal } from '../lib/abort.js';
+import { assertNotAborted, withAbort, withTimedAbortSignal } from '../core/abort.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_SEARCH_CONTENT_RESULTS,
@@ -19,20 +19,20 @@ import {
   MAX_SEARCHABLE_FILE_SIZE,
   parseEnvInt,
   SEARCH_WORKERS,
-} from '../lib/constants.js';
+} from '../core/constants.js';
 import {
   ErrorCode,
   formatUnknownErrorMessage,
   isTimeoutLikeError,
   McpError,
-} from '../lib/errors.js';
-import { isProbablyBinary } from '../lib/file-content.js';
-import { buildGlobOptions, globEntries, type GlobEntry } from '../lib/fs-walk.js';
-import { startPerfMeasure } from '../lib/observability.js';
-import { isPathWithinDirectories, isSafeGlobSyntax, normalizePath } from '../lib/path-guard.js';
-import type { PathGuard } from '../lib/path-guard.js';
-import type { ResourceStore } from '../lib/resource-store.js';
-import { mergeOptions, omitOptionKeys } from '../lib/utils.js';
+} from '../core/errors.js';
+import { isProbablyBinary } from '../core/file-content.js';
+import { buildGlobOptions, globEntries, type GlobEntry } from '../core/fs-walk.js';
+import { startPerfMeasure } from '../core/observability.js';
+import { isPathWithinDirectories, isSafeGlobSyntax, normalizePath } from '../core/path-guard.js';
+import type { PathGuard } from '../core/path-guard.js';
+import type { ResourceStore } from '../core/store.js';
+import { mergeOptions, omitOptionKeys } from '../core/utils.js';
 import { NonNegInt, OptionalPath, PositiveInt, SafeGlobPattern } from '../schemas/fields.js';
 import { safeGlobConstraint, toToolJsonSchema } from '../schemas/json-schema.js';
 import {

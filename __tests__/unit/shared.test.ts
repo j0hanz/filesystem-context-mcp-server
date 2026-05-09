@@ -5,7 +5,7 @@ import { z } from 'zod/v4';
 
 import { ErrorCode } from '../../src/lib/errors.js';
 import { getTraceContext } from '../../src/lib/observability.js';
-import { createInMemoryResourceStore } from '../../src/lib/resource-store.js';
+import { createInMemoryResourceStore } from '../../src/lib/store.js;
 import {
   buildToolErrorResponse,
   buildToolResponse,
