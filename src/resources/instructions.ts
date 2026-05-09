@@ -44,33 +44,33 @@ export function buildServerInstructions(): string {
   const maxFileMb = Math.floor(MAX_TEXT_FILE_SIZE / 1024 / 1024);
 
   return `
-    Guidelines:
-    \`\`\`
-    root_access: When using filesystem tools, operate strictly within allowed roots.
-    path_resolution: Always resolve paths before acting — never assume.
-    \`\`\`
+Guidelines:
+\`\`\`
+root_access: When using filesystem tools, operate strictly within allowed roots.
+path_resolution: Always resolve paths before acting — never assume.
+\`\`\`
 
-    Tools Overview:
-    ${buildToolsOverview()}
+Tools Overview:
+${buildToolsOverview()}
 
-    Full schemas, descriptions, and annotations are in \`tools/list\`.
+Full schemas, descriptions, and annotations are in \`tools/list\`.
 
-    Constraints:
-    \`\`\`
-    allowed_roots: Operate within allowed roots only (negotiated at startup via CLI).
-    sensitive_paths: Sensitive file paths (.env, *.pem, *id_rsa*) are denied by default.
-    enforced_limits: max file size ${maxFileMb} MB, file search cap ${MAX_SEARCH_RESULTS} results, content search cap ${DEFAULT_SEARCH_CONTENT_RESULTS} matches.
-    ephemeral_results: When a tool returns resourceUri, call resources/read immediately — cached results are ephemeral and expire after 30 min, eviction, or restart.
-    \`\`\`
+Constraints:
+\`\`\`
+allowed_roots: Operate within allowed roots only (negotiated at startup via CLI).
+sensitive_paths: Sensitive file paths (.env, *.pem, *id_rsa*) are denied by default.
+enforced_limits: max file size ${maxFileMb} MB, file search cap ${MAX_SEARCH_RESULTS} results, content search cap ${DEFAULT_SEARCH_CONTENT_RESULTS} matches.
+ephemeral_results: When a tool returns resourceUri, call resources/read immediately — cached results are ephemeral and expire after 30 min, eviction, or restart.
+\`\`\`
 
-    Error Recovery:
-    \`\`\`
-    ACCESS_DENIED: Run roots to list allowed directories, retry with a valid path.
-    NOT_FOUND: Run ls or find to verify the path.
-    TOO_LARGE: Use head/tail, line ranges, or split across read_many.
-    TIMEOUT: Reduce scope, depth, or maxResults.
-    INVALID_INPUT: Re-read the tool schema in tools/list.
-    \`\`\`
+Error Recovery:
+\`\`\`
+ACCESS_DENIED: Run roots to list allowed directories, retry with a valid path.
+NOT_FOUND: Run ls or find to verify the path.
+TOO_LARGE: Use head/tail, line ranges, or split across read_many.
+TIMEOUT: Reduce scope, depth, or maxResults.
+INVALID_INPUT: Re-read the tool schema in tools/list.
+\`\`\`
 `;
 }
 
