@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { INSTRUCTION_SECTIONS, SERVER_INSTRUCTIONS_CONTENT } from '../../src/resources/instructions.js';
+import {
+  INSTRUCTION_SECTIONS,
+  SERVER_INSTRUCTIONS_CONTENT,
+} from '../../src/resources/instructions.js';
 
 describe('SERVER_INSTRUCTIONS_CONTENT', () => {
   it('contains all four required sections', () => {

@@ -1,11 +1,11 @@
-import { stat } from 'node:fs/promises';
-
 import {
   completable,
   type GetPromptResult,
   type McpServer,
   type PromptMessage,
 } from '@modelcontextprotocol/server';
+
+import { stat } from 'node:fs/promises';
 
 import { z } from 'zod/v4';
 

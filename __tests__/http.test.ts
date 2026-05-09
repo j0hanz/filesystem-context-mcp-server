@@ -501,7 +501,9 @@ describe('HTTP transport', () => {
       assert.deepEqual(prompts.map((prompt) => prompt.name).sort(), [
         'analyze-path',
         'compare-files',
+        'find-in-tree',
         'get-help',
+        'summarize-directory',
       ]);
     } finally {
       await transport.terminateSession().catch(() => {});

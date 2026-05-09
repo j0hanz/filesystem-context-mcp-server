@@ -117,7 +117,7 @@ describe('resources and metadata', () => {
     assert.equal(tools.length, 18);
     assert.equal(resources.length, 1);
     assert.equal(resourceTemplates.length, 2);
-    assert.equal(prompts.length, 3);
+    assert.equal(prompts.length, 5);
 
     assert.equal(serverJson.title, 'Filesystem MCP');
   });
