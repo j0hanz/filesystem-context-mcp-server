@@ -121,9 +121,6 @@ export const INIT_TIMEOUT_CLOSE = parseTrueEnvFlag(process.env.FS_INIT_TIMEOUT_C
 
 export const TASK_POLL_INTERVAL_MS = 500;
 
-/** How long cancelled-task results are retained before lazy eviction. */
-export const CANCELLED_RESULT_TTL_MS = 2 * 60 * 1_000; // 2 minutes
-
 // Auto-tuned parallelism based on CPU cores (no env override)
 const BYTES_PER_PARALLEL_TASK = 64 * MIB;
 const BYTES_PER_SEARCH_WORKER = 128 * MIB;
