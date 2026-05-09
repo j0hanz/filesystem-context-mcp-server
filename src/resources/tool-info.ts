@@ -4,7 +4,3 @@ export function pickAvailableToolNames(names: readonly string[]): string[] {
   const nameSet = new Set(ALL_TOOLS.map((c) => c.name));
   return names.filter((name) => nameSet.has(name));
 }
-
-export function formatToolNameList(names: readonly string[]): string {
-  return names.map((name) => `\`${name}\``).join(', ');
-}

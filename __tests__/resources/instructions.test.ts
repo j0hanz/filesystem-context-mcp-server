@@ -12,13 +12,13 @@ describe('buildServerInstructions', () => {
     assert.match(content, /## Error Recovery/u);
   });
 
-  it('includes known tool names in the overview table', () => {
+  it('includes known tool names in the overview', () => {
     const content = buildServerInstructions();
-    assert.match(content, /`roots`/u);
-    assert.match(content, /`ls`/u);
-    assert.match(content, /`grep`/u);
-    assert.match(content, /`read`/u);
-    assert.match(content, /`write`/u);
+    assert.match(content, /roots/u);
+    assert.match(content, /ls/u);
+    assert.match(content, /grep/u);
+    assert.match(content, /read/u);
+    assert.match(content, /write/u);
   });
 
   it('points to tools/list for schemas', () => {
