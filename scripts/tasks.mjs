@@ -1471,9 +1471,9 @@ class TtyReporter extends BaseReporter {
     const flags = ['fix', 'quick', 'all']
       .filter((flag) => this.config[flag])
       .map((flag) => `${Theme.YELLOW}--${flag}${Theme.R}`);
-    const suffix = flags.length > 0 ? `  ${flags.join('  ')}` : '';
+    const suffix = flags.length > 0 ? ` ${flags.join(' ')}` : '';
     process.stdout.write(
-      `\n  ${Theme.BOLD}gemini-assistant${Theme.R}  ${Theme.DIM}checks${Theme.R}${suffix}\n\n`,
+      `\n  ${Theme.BOLD}Filesystem MCP Server${Theme.R} ${Theme.DIM}${Theme.R}${suffix}\n\n`,
     );
   }
 
