@@ -4,8 +4,13 @@ import {
   MAX_TEXT_FILE_SIZE,
 } from '../lib/constants.js';
 
+import { ALL_TOOLS } from '../tools.js';
 import type { ResourceContract } from './contract.js';
-import { pickAvailableToolNames } from './tool-info.js';
+
+function pickAvailableToolNames(names: readonly string[]): string[] {
+  const nameSet = new Set(ALL_TOOLS.map((c) => c.name));
+  return names.filter((name) => nameSet.has(name));
+}
 
 function buildToolsOverview(): string {
   const rows: [string, string[]][] = [
