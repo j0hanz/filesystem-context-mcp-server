@@ -36,11 +36,12 @@ Create `__tests__/unit/progress-session.test.ts`:
 
 ```ts
 import { strict as assert } from 'node:assert';
+
 import { describe, it } from 'node:test';
 
 import {
-  ProgressSession,
   type ProgressEvent,
+  ProgressSession,
   type ProgressSink,
 } from '../../src/lib/progress-session.js';
 
@@ -233,68 +234,68 @@ git commit -m "feat(progress-session): scaffold ProgressSession with start-tick 
 Append to `__tests__/unit/progress-session.test.ts` (inside the `describe('ProgressSession', ...)` block):
 
 ```ts
-  void it('step advances cursor by one and emits a tick', () => {
-    const sink = new MemorySink();
-    const clock = makeClock();
-    const session = new ProgressSession({
-      label: 'job',
-      total: 3,
-      sinks: [sink],
-      now: clock.now,
-    });
-    sink.events.length = 0;
-
-    clock.advance(100);
-    session.step('one');
-    clock.advance(100);
-    session.step('two');
-
-    assert.equal(session.current, 2);
-    assert.equal(sink.events.length, 2);
-    assert.deepEqual(sink.events[0], {
-      kind: 'tick',
-      current: 1,
-      total: 3,
-      message: 'one',
-    });
-    assert.deepEqual(sink.events[1], {
-      kind: 'tick',
-      current: 2,
-      total: 3,
-      message: 'two',
-    });
+void it('step advances cursor by one and emits a tick', () => {
+  const sink = new MemorySink();
+  const clock = makeClock();
+  const session = new ProgressSession({
+    label: 'job',
+    total: 3,
+    sinks: [sink],
+    now: clock.now,
   });
+  sink.events.length = 0;
 
-  void it('set clamps cursor monotonically and emits with provided fields', () => {
-    const sink = new MemorySink();
-    const clock = makeClock();
-    const session = new ProgressSession({
-      label: 'job',
-      sinks: [sink],
-      now: clock.now,
-    });
-    sink.events.length = 0;
+  clock.advance(100);
+  session.step('one');
+  clock.advance(100);
+  session.step('two');
 
-    clock.advance(100);
-    session.set({ current: 5, total: 10, message: 'five' });
-    clock.advance(100);
-    // Regress attempt: should clamp to existing cursor (5).
-    session.set({ current: 2, message: 'should clamp' });
-
-    assert.equal(session.current, 5);
-    assert.equal(sink.events.length, 2);
-    assert.deepEqual(sink.events[0], {
-      kind: 'tick',
-      current: 5,
-      total: 10,
-      message: 'five',
-    });
-    assert.deepEqual(sink.events[1], {
-      kind: 'tick',
-      current: 5,
-      message: 'should clamp',
-    });
+  assert.equal(session.current, 2);
+  assert.equal(sink.events.length, 2);
+  assert.deepEqual(sink.events[0], {
+    kind: 'tick',
+    current: 1,
+    total: 3,
+    message: 'one',
   });
+  assert.deepEqual(sink.events[1], {
+    kind: 'tick',
+    current: 2,
+    total: 3,
+    message: 'two',
+  });
+});
+
+void it('set clamps cursor monotonically and emits with provided fields', () => {
+  const sink = new MemorySink();
+  const clock = makeClock();
+  const session = new ProgressSession({
+    label: 'job',
+    sinks: [sink],
+    now: clock.now,
+  });
+  sink.events.length = 0;
+
+  clock.advance(100);
+  session.set({ current: 5, total: 10, message: 'five' });
+  clock.advance(100);
+  // Regress attempt: should clamp to existing cursor (5).
+  session.set({ current: 2, message: 'should clamp' });
+
+  assert.equal(session.current, 5);
+  assert.equal(sink.events.length, 2);
+  assert.deepEqual(sink.events[0], {
+    kind: 'tick',
+    current: 5,
+    total: 10,
+    message: 'five',
+  });
+  assert.deepEqual(sink.events[1], {
+    kind: 'tick',
+    current: 5,
+    message: 'should clamp',
+  });
+});
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -362,68 +363,68 @@ git commit -m "feat(progress-session): implement step and set cursor mechanics"
 Append to the describe block:
 
 ```ts
-  void it('complete emits a complete event carrying the current cursor', () => {
-    const sink = new MemorySink();
-    const session = new ProgressSession({
-      label: 'job',
-      total: 5,
-      sinks: [sink],
-      now: makeClock().now,
-    });
-    session.step('a');
-    session.step('b');
-    sink.events.length = 0;
-
-    session.complete('done');
-
-    assert.equal(sink.events.length, 1);
-    assert.deepEqual(sink.events[0], {
-      kind: 'complete',
-      current: 2,
-      total: 5,
-      message: 'done',
-    });
+void it('complete emits a complete event carrying the current cursor', () => {
+  const sink = new MemorySink();
+  const session = new ProgressSession({
+    label: 'job',
+    total: 5,
+    sinks: [sink],
+    now: makeClock().now,
   });
+  session.step('a');
+  session.step('b');
+  sink.events.length = 0;
 
-  void it('fail emits a fail event with error and optional message', () => {
-    const sink = new MemorySink();
-    const session = new ProgressSession({
-      label: 'job',
-      sinks: [sink],
-      now: makeClock().now,
-    });
-    sink.events.length = 0;
-    const err = new Error('boom');
+  session.complete('done');
 
-    session.fail(err, 'aborted');
-
-    assert.equal(sink.events.length, 1);
-    assert.deepEqual(sink.events[0], {
-      kind: 'fail',
-      current: 0,
-      message: 'aborted',
-      error: err,
-    });
+  assert.equal(sink.events.length, 1);
+  assert.deepEqual(sink.events[0], {
+    kind: 'complete',
+    current: 2,
+    total: 5,
+    message: 'done',
   });
+});
 
-  void it('calls after a terminal event are no-ops', () => {
-    const sink = new MemorySink();
-    const session = new ProgressSession({
-      label: 'job',
-      sinks: [sink],
-      now: makeClock().now,
-    });
-    session.complete('done');
-    sink.events.length = 0;
-
-    session.step('ignored');
-    session.set({ current: 99, message: 'ignored' });
-    session.complete('again');
-    session.fail(new Error('again'));
-
-    assert.equal(sink.events.length, 0);
-    assert.equal(session.current, 0);
+void it('fail emits a fail event with error and optional message', () => {
+  const sink = new MemorySink();
+  const session = new ProgressSession({
+    label: 'job',
+    sinks: [sink],
+    now: makeClock().now,
   });
+  sink.events.length = 0;
+  const err = new Error('boom');
+
+  session.fail(err, 'aborted');
+
+  assert.equal(sink.events.length, 1);
+  assert.deepEqual(sink.events[0], {
+    kind: 'fail',
+    current: 0,
+    message: 'aborted',
+    error: err,
+  });
+});
+
+void it('calls after a terminal event are no-ops', () => {
+  const sink = new MemorySink();
+  const session = new ProgressSession({
+    label: 'job',
+    sinks: [sink],
+    now: makeClock().now,
+  });
+  session.complete('done');
+  sink.events.length = 0;
+
+  session.step('ignored');
+  session.set({ current: 99, message: 'ignored' });
+  session.complete('again');
+  session.fail(new Error('again'));
+
+  assert.equal(sink.events.length, 0);
+  assert.equal(session.current, 0);
+});
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -486,26 +487,26 @@ git commit -m "feat(progress-session): implement terminal complete and fail even
 Append:
 
 ```ts
-  void it('status emits a status event without advancing cursor', () => {
-    const sink = new MemorySink();
-    const session = new ProgressSession({
-      label: 'job',
-      total: 10,
-      sinks: [sink],
-      now: makeClock().now,
-    });
-    session.step('a');
-    sink.events.length = 0;
-
-    session.status('still scanning');
-
-    assert.equal(session.current, 1);
-    assert.equal(sink.events.length, 1);
-    assert.deepEqual(sink.events[0], {
-      kind: 'status',
-      message: 'still scanning',
-    });
+void it('status emits a status event without advancing cursor', () => {
+  const sink = new MemorySink();
+  const session = new ProgressSession({
+    label: 'job',
+    total: 10,
+    sinks: [sink],
+    now: makeClock().now,
   });
+  session.step('a');
+  sink.events.length = 0;
+
+  session.status('still scanning');
+
+  assert.equal(session.current, 1);
+  assert.equal(sink.events.length, 1);
+  assert.deepEqual(sink.events[0], {
+    kind: 'status',
+    message: 'still scanning',
+  });
+});
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -549,77 +550,77 @@ git commit -m "feat(progress-session): implement status events"
 Append:
 
 ```ts
-  void it('rate-limits tick events within 50ms window', () => {
-    const sink = new MemorySink();
-    const clock = makeClock();
-    const session = new ProgressSession({
-      label: 'job',
-      sinks: [sink],
-      now: clock.now,
-    });
-    sink.events.length = 0;
-
-    clock.advance(100);
-    session.step('a'); // emitted
-
-    clock.advance(10);
-    session.step('b'); // suppressed (within 50ms)
-
-    clock.advance(10);
-    session.step('c'); // suppressed
-
-    clock.advance(50);
-    session.step('d'); // emitted (60ms since last sent)
-
-    assert.equal(sink.events.length, 2);
-    assert.equal(sink.events[0]?.kind === 'tick' && sink.events[0].message, 'a');
-    assert.equal(sink.events[1]?.kind === 'tick' && sink.events[1].message, 'd');
-    // Cursor still advanced even when ticks were suppressed.
-    assert.equal(session.current, 4);
+void it('rate-limits tick events within 50ms window', () => {
+  const sink = new MemorySink();
+  const clock = makeClock();
+  const session = new ProgressSession({
+    label: 'job',
+    sinks: [sink],
+    now: clock.now,
   });
+  sink.events.length = 0;
 
-  void it('terminal events bypass the rate limit', () => {
-    const sink = new MemorySink();
-    const clock = makeClock();
-    const session = new ProgressSession({
-      label: 'job',
-      sinks: [sink],
-      now: clock.now,
-    });
-    sink.events.length = 0;
+  clock.advance(100);
+  session.step('a'); // emitted
 
-    clock.advance(100);
-    session.step('a'); // emitted, marks lastSentMs
+  clock.advance(10);
+  session.step('b'); // suppressed (within 50ms)
 
-    clock.advance(5);
-    session.complete('done'); // must emit despite being within 50ms
+  clock.advance(10);
+  session.step('c'); // suppressed
 
-    assert.equal(sink.events.length, 2);
-    assert.equal(sink.events[1]?.kind, 'complete');
+  clock.advance(50);
+  session.step('d'); // emitted (60ms since last sent)
+
+  assert.equal(sink.events.length, 2);
+  assert.equal(sink.events[0]?.kind === 'tick' && sink.events[0].message, 'a');
+  assert.equal(sink.events[1]?.kind === 'tick' && sink.events[1].message, 'd');
+  // Cursor still advanced even when ticks were suppressed.
+  assert.equal(session.current, 4);
+});
+
+void it('terminal events bypass the rate limit', () => {
+  const sink = new MemorySink();
+  const clock = makeClock();
+  const session = new ProgressSession({
+    label: 'job',
+    sinks: [sink],
+    now: clock.now,
   });
+  sink.events.length = 0;
 
-  void it('status events bypass the rate limit', () => {
-    const sink = new MemorySink();
-    const clock = makeClock();
-    const session = new ProgressSession({
-      label: 'job',
-      sinks: [sink],
-      now: clock.now,
-    });
-    sink.events.length = 0;
+  clock.advance(100);
+  session.step('a'); // emitted, marks lastSentMs
 
-    clock.advance(100);
-    session.step('a'); // emitted
+  clock.advance(5);
+  session.complete('done'); // must emit despite being within 50ms
 
-    clock.advance(5);
-    session.status('s1'); // emitted (status not rate-limited)
-    clock.advance(5);
-    session.status('s2'); // emitted
+  assert.equal(sink.events.length, 2);
+  assert.equal(sink.events[1]?.kind, 'complete');
+});
 
-    assert.equal(sink.events.length, 3);
-    assert.equal(sink.events[1]?.kind, 'status');
-    assert.equal(sink.events[2]?.kind, 'status');
+void it('status events bypass the rate limit', () => {
+  const sink = new MemorySink();
+  const clock = makeClock();
+  const session = new ProgressSession({
+    label: 'job',
+    sinks: [sink],
+    now: clock.now,
   });
+  sink.events.length = 0;
+
+  clock.advance(100);
+  session.step('a'); // emitted
+
+  clock.advance(5);
+  session.status('s1'); // emitted (status not rate-limited)
+  clock.advance(5);
+  session.status('s2'); // emitted
+
+  assert.equal(sink.events.length, 3);
+  assert.equal(sink.events[1]?.kind, 'status');
+  assert.equal(sink.events[2]?.kind, 'status');
+});
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -675,62 +676,62 @@ git commit -m "feat(progress-session): rate-limit tick events with terminal/stat
 Append:
 
 ```ts
-  void it('sync sink errors are caught and other sinks still receive the event', () => {
-    const goodSink = new MemorySink();
-    const badSink: ProgressSink = {
-      name: 'bad',
-      emit() {
-        throw new Error('sink failure');
-      },
-    };
-    const session = new ProgressSession({
-      label: 'job',
-      sinks: [badSink, goodSink],
-      now: makeClock().now,
-    });
-    // Constructor's start tick: badSink throws but session must construct.
-    assert.equal(goodSink.events.length, 1);
-
-    // Subsequent operations also unaffected.
-    session.complete('done');
-    assert.equal(goodSink.events.length, 2);
+void it('sync sink errors are caught and other sinks still receive the event', () => {
+  const goodSink = new MemorySink();
+  const badSink: ProgressSink = {
+    name: 'bad',
+    emit() {
+      throw new Error('sink failure');
+    },
+  };
+  const session = new ProgressSession({
+    label: 'job',
+    sinks: [badSink, goodSink],
+    now: makeClock().now,
   });
+  // Constructor's start tick: badSink throws but session must construct.
+  assert.equal(goodSink.events.length, 1);
 
-  void it('async sink rejections are caught', async () => {
-    const goodSink = new MemorySink();
-    const badSink: ProgressSink = {
-      name: 'bad-async',
-      emit() {
-        return Promise.reject(new Error('async sink failure'));
-      },
-    };
-    const session = new ProgressSession({
-      label: 'job',
-      sinks: [badSink, goodSink],
-      now: makeClock().now,
-    });
-    session.complete('done');
+  // Subsequent operations also unaffected.
+  session.complete('done');
+  assert.equal(goodSink.events.length, 2);
+});
 
-    // Allow microtask queue to drain so the rejection is observed-and-swallowed.
-    await Promise.resolve();
-    await Promise.resolve();
-
-    assert.equal(goodSink.events.length, 2);
+void it('async sink rejections are caught', async () => {
+  const goodSink = new MemorySink();
+  const badSink: ProgressSink = {
+    name: 'bad-async',
+    emit() {
+      return Promise.reject(new Error('async sink failure'));
+    },
+  };
+  const session = new ProgressSession({
+    label: 'job',
+    sinks: [badSink, goodSink],
+    now: makeClock().now,
   });
+  session.complete('done');
 
-  void it('empty sink array works without errors', () => {
-    const session = new ProgressSession({
-      label: 'job',
-      total: 5,
-      sinks: [],
-      now: makeClock().now,
-    });
-    session.step('a');
-    session.set({ current: 3, message: 'three' });
-    session.status('s');
-    session.complete('done');
-    assert.equal(session.current, 3);
+  // Allow microtask queue to drain so the rejection is observed-and-swallowed.
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(goodSink.events.length, 2);
+});
+
+void it('empty sink array works without errors', () => {
+  const session = new ProgressSession({
+    label: 'job',
+    total: 5,
+    sinks: [],
+    now: makeClock().now,
   });
+  session.step('a');
+  session.set({ current: 3, message: 'three' });
+  session.status('s');
+  session.complete('done');
+  assert.equal(session.current, 3);
+});
 ```
 
 - [ ] **Step 2: Run tests to verify they pass**
@@ -764,10 +765,11 @@ git commit -m "test(progress-session): cover sync/async sink error guarding"
 Create `__tests__/tools/progress-sinks.test.ts`:
 
 ```ts
-import { strict as assert } from 'node:assert';
-import { describe, it } from 'node:test';
-
 import type { ProgressNotification } from '@modelcontextprotocol/server';
+
+import { strict as assert } from 'node:assert';
+
+import { describe, it } from 'node:test';
 
 import { McpProgressSink } from '../../src/tools/progress-sinks.js';
 
@@ -882,10 +884,7 @@ import type {
   ProgressToken,
 } from '@modelcontextprotocol/server';
 
-import type {
-  ProgressEvent,
-  ProgressSink,
-} from '../lib/progress-session.js';
+import type { ProgressEvent, ProgressSink } from '../lib/progress-session.js';
 
 interface McpProgressSinkOptions {
   progressToken: ProgressToken;
@@ -1193,14 +1192,14 @@ git commit -m "feat(progress-sinks): TaskStoreSink with benign-error swallowing"
 Append to the test file:
 
 ```ts
-import {
-  progressSessionFromContext,
-} from '../../src/tools/progress-sinks.js';
+import { progressSessionFromContext } from '../../src/tools/progress-sinks.js';
 import type { ToolContext } from '../../src/tools/shared.js';
 
 void describe('progressSessionFromContext', () => {
   void it('returns a session with no sinks when no progress context is available', () => {
-    const ctx = { signal: new AbortController().signal } as unknown as ToolContext;
+    const ctx = {
+      signal: new AbortController().signal,
+    } as unknown as ToolContext;
     const session = progressSessionFromContext(ctx, { label: 'job' });
     // Session must construct without errors and accept calls.
     session.step('a');
@@ -1274,7 +1273,8 @@ In `src/tools/progress-sinks.ts`, append:
 ```ts
 import { Logger } from '../lib/logger.js';
 import { ProgressSession } from '../lib/progress-session.js';
-import type { ToolContext, TaskToolContext } from './shared.js';
+
+import type { TaskToolContext, ToolContext } from './shared.js';
 
 function hasMcpProgress(ctx: ToolContext): ctx is ToolContext & {
   _meta: { progressToken: ProgressToken };
@@ -1554,11 +1554,11 @@ Replace lines around 856-859:
 //       );
 //     };
 // After:
-    const onItemComplete = (): void => {
-      rawOnItemComplete();
-      itemsDone++;
-      progress.status(`${label} [${itemsDone}/${args.paths.length} read]`);
-    };
+const onItemComplete = (): void => {
+  rawOnItemComplete();
+  itemsDone++;
+  progress.status(`${label} [${itemsDone}/${args.paths.length} read]`);
+};
 ```
 
 - [ ] **Step 2: Edit `search-content.ts`**
@@ -1576,17 +1576,20 @@ Remove `reportTaskStatus` from the import at line 78. In the `progressWithMessag
 //         void reportTaskStatus(`${progressLabel} ${current} files`);
 //       };
 // After:
-      const progressWithMessage = ({ current, total }: {
-        total?: number;
-        current: number;
-      }): void => {
-        progress.set({
-          current,
-          ...(total !== undefined ? { total } : {}),
-          message: `${progressLabel} [${current} files]`,
-        });
-        progress.status(`${progressLabel} ${current} files`);
-      };
+const progressWithMessage = ({
+  current,
+  total,
+}: {
+  total?: number;
+  current: number;
+}): void => {
+  progress.set({
+    current,
+    ...(total !== undefined ? { total } : {}),
+    message: `${progressLabel} [${current} files]`,
+  });
+  progress.status(`${progressLabel} ${current} files`);
+};
 ```
 
 - [ ] **Step 3: Commit**
@@ -1660,8 +1663,7 @@ function wrapToolHandler<Args, Result>(
 
     try {
       const result = await handler(args, resolvedExtra);
-      const endMessage =
-        options.completionMessage?.(args, result) ?? message;
+      const endMessage = options.completionMessage?.(args, result) ?? message;
       session.complete(endMessage);
       return maybeStripStructuredContentFromResult(result);
     } catch (error) {
@@ -1690,10 +1692,7 @@ export {
   resolveFinalProgressCurrent,
   runWithProgressSession,
 } from './progress-sinks.js';
-export type {
-  ProgressEvent,
-  ProgressSink,
-} from './progress-sinks.js';
+export type { ProgressEvent, ProgressSink } from './progress-sinks.js';
 ```
 
 Delete the existing local exports of these symbols (since they're now re-exports).

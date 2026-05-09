@@ -44,11 +44,11 @@ This redesign collapses the entanglement into a deep `ProgressSession` module wi
 
 Three named pieces:
 
-| File | Responsibility | Imports |
-| :--- | :--- | :--- |
-| [src/lib/progress-session.ts](../../../src/lib/progress-session.ts) (new) | `ProgressSession` class, `ProgressEvent` discriminated union, `ProgressSink` interface, monotonic + rate-limit logic, sink error guarding. | `node:*`, `Logger` |
-| [src/tools/progress-sinks.ts](../../../src/tools/progress-sinks.ts) (new) | `McpProgressSink`, `TaskStoreSink`, `progressSessionFromContext(ctx, opts)` bridge, the public helpers `runWithProgressSession` / `createBatchProgressCallbacks` / `completeProgressSession` / `resolveFinalProgressCurrent`. | `progress-session`, `@modelcontextprotocol/server`, `ToolContext` types |
-| [src/tools/tool-execution.ts](../../../src/tools/tool-execution.ts) (slimmed) | Orchestration only. No progress state, no ALS, no `withProgress`. Re-exports the public progress helpers from `progress-sinks` to preserve current import paths. | unchanged minus deleted symbols |
+| File                                                                          | Responsibility                                                                                                                                                                                                                | Imports                                                                 |
+| :---------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------- |
+| [src/lib/progress-session.ts](../../../src/lib/progress-session.ts) (new)     | `ProgressSession` class, `ProgressEvent` discriminated union, `ProgressSink` interface, monotonic + rate-limit logic, sink error guarding.                                                                                    | `node:*`, `Logger`                                                      |
+| [src/tools/progress-sinks.ts](../../../src/tools/progress-sinks.ts) (new)     | `McpProgressSink`, `TaskStoreSink`, `progressSessionFromContext(ctx, opts)` bridge, the public helpers `runWithProgressSession` / `createBatchProgressCallbacks` / `completeProgressSession` / `resolveFinalProgressCurrent`. | `progress-session`, `@modelcontextprotocol/server`, `ToolContext` types |
+| [src/tools/tool-execution.ts](../../../src/tools/tool-execution.ts) (slimmed) | Orchestration only. No progress state, no ALS, no `withProgress`. Re-exports the public progress helpers from `progress-sinks` to preserve current import paths.                                                              | unchanged minus deleted symbols                                         |
 
 ### Components
 
@@ -82,7 +82,13 @@ type ProgressEvent =
   | { kind: 'tick'; current: number; total?: number; message: string }
   | { kind: 'status'; message: string }
   | { kind: 'complete'; current: number; total?: number; message: string }
-  | { kind: 'fail';     current: number; total?: number; message: string; error: unknown };
+  | {
+      kind: 'fail';
+      current: number;
+      total?: number;
+      message: string;
+      error: unknown;
+    };
 ```
 
 (No `start` event kind — folded into a synthetic first `tick` to match today's wire behavior.)
@@ -149,15 +155,15 @@ Tomorrow: callers thread the `progress` they already have, calling `progress.sta
 
 ## Error handling
 
-| Failure mode | Behavior |
-| :--- | :--- |
-| Sink `emit` throws synchronously | `emitGuarded` catches; `Logger.warn({ sink, eventKind, err })`; never propagates. |
-| Sink `emit` returns rejected promise | Same as above. |
-| Sink constructor throws inside `progressSessionFromContext` | Logged; sink omitted from session; tool continues. |
-| Tool handler throws | Caught by orchestration layer (`completeProgressSession` / `wrapToolHandler`); calls `progress.fail(error)`; rethrows after terminal event dispatches. |
-| Out-of-order `set({ current })` (cursor regress) | Silently clamped via `max(cursor, input.current)`; event still emits with the clamped value. |
-| `complete` after `complete` / `fail` after terminal | No-op. `done` flag set on first terminal event. |
-| `step` / `set` / `status` after terminal | No-op. |
+| Failure mode                                                | Behavior                                                                                                                                               |
+| :---------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sink `emit` throws synchronously                            | `emitGuarded` catches; `Logger.warn({ sink, eventKind, err })`; never propagates.                                                                      |
+| Sink `emit` returns rejected promise                        | Same as above.                                                                                                                                         |
+| Sink constructor throws inside `progressSessionFromContext` | Logged; sink omitted from session; tool continues.                                                                                                     |
+| Tool handler throws                                         | Caught by orchestration layer (`completeProgressSession` / `wrapToolHandler`); calls `progress.fail(error)`; rethrows after terminal event dispatches. |
+| Out-of-order `set({ current })` (cursor regress)            | Silently clamped via `max(cursor, input.current)`; event still emits with the clamped value.                                                           |
+| `complete` after `complete` / `fail` after terminal         | No-op. `done` flag set on first terminal event.                                                                                                        |
+| `step` / `set` / `status` after terminal                    | No-op.                                                                                                                                                 |
 
 ## Testing strategy
 
@@ -213,13 +219,13 @@ The user has approved breaking changes. All breakage is internal to this repo.
 
 ### Affected call sites (~7 tools)
 
-| File | Changes |
-| :--- | :--- |
-| [src/tools/read-multiple.ts](../../../src/tools/read-multiple.ts) | `reportTaskStatus(...)` → `progress.status(...)`. `update({...})` / `increment(...)` calls renamed. |
-| [src/tools/search-content.ts](../../../src/tools/search-content.ts) | Same. |
-| [src/tools/tree.ts](../../../src/tools/tree.ts) | `runWithProgressSession` callers — body callbacks rename `update`/`increment` to `set`/`step`. |
-| [src/tools/search-files.ts](../../../src/tools/search-files.ts) | Same. |
-| [src/tools/calculate-hash.ts](../../../src/tools/calculate-hash.ts) | Same. |
+| File                                                                | Changes                                                                                                                                          |
+| :------------------------------------------------------------------ | :----------------------------------------------------------------------------------------------------------------------------------------------- |
+| [src/tools/read-multiple.ts](../../../src/tools/read-multiple.ts)   | `reportTaskStatus(...)` → `progress.status(...)`. `update({...})` / `increment(...)` calls renamed.                                              |
+| [src/tools/search-content.ts](../../../src/tools/search-content.ts) | Same.                                                                                                                                            |
+| [src/tools/tree.ts](../../../src/tools/tree.ts)                     | `runWithProgressSession` callers — body callbacks rename `update`/`increment` to `set`/`step`.                                                   |
+| [src/tools/search-files.ts](../../../src/tools/search-files.ts)     | Same.                                                                                                                                            |
+| [src/tools/calculate-hash.ts](../../../src/tools/calculate-hash.ts) | Same.                                                                                                                                            |
 | [src/tools/tool-execution.ts](../../../src/tools/tool-execution.ts) | `wrapToolHandler` rewires to use `progressSessionFromContext` instead of `withProgress`. Re-exports the public helpers from `progress-sinks.ts`. |
 
 ### Preserved (no breakage)
@@ -231,9 +237,9 @@ The user has approved breaking changes. All breakage is internal to this repo.
 
 ## Risks
 
-| Risk | Mitigation |
-| :--- | :--- |
-| Subtle off-by-one in synthetic-first-`tick` vs. today's "fire 0/total at session creation". | Pure unit test asserts `MemorySink` receives exactly `{ kind: 'tick', current: 0, total, message: label }` first. End-to-end `task-mode.test.ts` catches wire regressions. |
-| Rate-limit window applied differently to `status` (now: not at all; before: didn't apply because reportTaskStatus bypassed reportProgress). | Behavior is preserved: today's `reportTaskStatus` already bypasses `createProgressReporter`'s rate limit by going through a separate code path. |
-| 100%-normalization moved into MCP sink might change wire output for the task-store sink's "completed" message format. | Task-store sink formats from raw event `current`, not normalized; today it gets the raw cursor value too. Verified by reading `formatTaskStatusMessage` on `complete` paths. |
-| `step` no longer accepts a `current => string` callback, breaking any caller that depends on knowing the count *before* the message is built. | Callers read `progress.current` after the call, or precompute. Audit will confirm — most call sites pass static or pre-built strings. |
+| Risk                                                                                                                                          | Mitigation                                                                                                                                                                   |
+| :-------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Subtle off-by-one in synthetic-first-`tick` vs. today's "fire 0/total at session creation".                                                   | Pure unit test asserts `MemorySink` receives exactly `{ kind: 'tick', current: 0, total, message: label }` first. End-to-end `task-mode.test.ts` catches wire regressions.   |
+| Rate-limit window applied differently to `status` (now: not at all; before: didn't apply because reportTaskStatus bypassed reportProgress).   | Behavior is preserved: today's `reportTaskStatus` already bypasses `createProgressReporter`'s rate limit by going through a separate code path.                              |
+| 100%-normalization moved into MCP sink might change wire output for the task-store sink's "completed" message format.                         | Task-store sink formats from raw event `current`, not normalized; today it gets the raw cursor value too. Verified by reading `formatTaskStatusMessage` on `complete` paths. |
+| `step` no longer accepts a `current => string` callback, breaking any caller that depends on knowing the count _before_ the message is built. | Callers read `progress.current` after the call, or precompute. Audit will confirm — most call sites pass static or pre-built strings.                                        |
