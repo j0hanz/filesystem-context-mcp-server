@@ -81,14 +81,18 @@ export function defineTool<Args, Output extends Record<string, unknown>>(
             : { timedSignal: {} }),
           context: diagnosticsContext(args),
           run: async (signal) => {
+            const progress = progressSessionFromContext(ctx, {
+              label: contract.name,
+            });
             const handlerCtx: HandlerContext = {
               ...(signal !== undefined ? { signal } : {}),
               pathGuard: options.pathGuard,
               resourceStore: options.resourceStore,
               ...(ctx.elicitInput ? { elicitInput: ctx.elicitInput } : {}),
               ...(ctx.log ? { log: ctx.log } : {}),
-              onProgress: (p) =>
-                progressSessionFromContext(ctx, { label: contract.name }).set(p),
+              onProgress: (p) => {
+                progress.set(p);
+              },
             };
             return run(args, handlerCtx);
           },

@@ -36,14 +36,7 @@ import { Logger } from '../lib/logger.js';
 import { assignDefined, isRecord } from '../lib/utils.js';
 import { toToolJsonSchema } from '../schemas/json-schema.js';
 
-import {
-  completeProgressSession,
-  createBatchProgressCallbacks,
-  ProgressSession,
-  progressSessionFromContext,
-  resolveFinalProgressCurrent,
-  runWithProgressSession,
-} from './progress-sinks.js';
+import * as progressSinks from './progress-sinks.js';
 import {
   buildToolErrorResponse,
   type IconInfo,
@@ -56,15 +49,14 @@ import {
   withDefaultIcons,
 } from './shared.js';
 
-export {
+export const {
   completeProgressSession,
   createBatchProgressCallbacks,
-  ProgressSession,
+
   progressSessionFromContext,
   resolveFinalProgressCurrent,
   runWithProgressSession,
-};
-
+} = progressSinks;
 // === Section A: Task Support Metadata ===
 type TaskSupportLevel = 'optional' | 'required' | 'forbidden';
 
@@ -128,7 +120,9 @@ function wrapToolHandler<Args, Result>(
 
     if (options.progressMessage) {
       const label = options.progressMessage(args);
-      const progress = progressSessionFromContext(resolvedExtra, { label });
+      const progress = progressSinks.progressSessionFromContext(resolvedExtra, {
+        label,
+      });
       try {
         const result = await handler(args, resolvedExtra);
         const suffix = options.completionMessage?.(args, result);

@@ -12,11 +12,9 @@ import {
   type ProgressSink,
 } from '../lib/progress-session.js';
 
-export { ProgressSession };
-export type { ProgressEvent, ProgressSink };
-
 import type { TaskToolContext, ToolContext } from './shared.js';
 
+export { ProgressSession };
 interface McpProgressSinkOptions {
   progressToken: ProgressToken;
   sendNotification: (n: ProgressNotification) => Promise<void>;
