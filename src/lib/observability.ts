@@ -67,6 +67,7 @@ interface ToolDiagnosticsEvent {
 interface ToolAsyncContext {
   tool: string;
   path?: string;
+  normalizedPath?: string;
   traceContext?: TraceContext;
 }
 
@@ -105,70 +106,57 @@ let traceCounter = 0;
 
 // --- Helpers: Result Analysis ---
 
-function extractStructuredOutcome(
-  content: Record<string, unknown>
-): { ok: boolean; error?: string } | undefined {
-  if (typeof content.ok === 'boolean') {
-    if (content.ok) return { ok: true };
-    const err = extractResultError(content);
-    return err ? { ok: false, error: err } : { ok: false };
-  }
-  return undefined;
-}
+function extractErrorMessage(source: unknown): string {
+  if (typeof source === 'string') return source;
+  if (source instanceof Error) return source.message;
+  if (!isRecord(source)) return safeStringify(source);
 
-function extractRecordOutcome(
-  result: Record<string, unknown>
-): { ok: boolean; error?: string } | undefined {
-  if (result.isError === true) {
-    return { ok: false, error: extractErrorMessage(result) };
+  // Check structured content first
+  const struct = source.structuredContent;
+  if (isRecord(struct)) {
+    const structErr = struct.error;
+    if (typeof structErr === 'string') return structErr;
+    if (isRecord(structErr) && typeof structErr.message === 'string') {
+      return structErr.message;
+    }
   }
 
-  if (typeof result.ok === 'boolean') {
-    if (result.ok) return { ok: true };
-    return { ok: false, error: extractErrorMessage(result) };
+  // Check direct properties
+  if (typeof source.error === 'string') return source.error;
+  if (isRecord(source.error) && typeof source.error.message === 'string') {
+    return source.error.message;
   }
+  if (typeof source.message === 'string') return source.message;
 
-  if (isRecord(result.structuredContent)) {
-    return extractStructuredOutcome(result.structuredContent);
-  }
-
-  return undefined;
+  return safeStringify(source);
 }
 
 function extractOutcome(result: unknown): { ok: boolean; error?: string } {
   if (!isRecord(result)) return { ok: true };
 
-  const outcome = extractRecordOutcome(result);
-  if (outcome) return outcome;
+  if (result.isError === true) {
+    return { ok: false, error: extractErrorMessage(result) };
+  }
+
+  if (typeof result.ok === 'boolean') {
+    return result.ok
+      ? { ok: true }
+      : { ok: false, error: extractErrorMessage(result) };
+  }
+
+  const struct = result.structuredContent;
+  if (isRecord(struct) && typeof struct.ok === 'boolean') {
+    if (struct.ok) return { ok: true };
+    const err =
+      typeof struct.error === 'string'
+        ? struct.error
+        : isRecord(struct.error) && typeof struct.error.message === 'string'
+          ? struct.error.message
+          : undefined;
+    return err ? { ok: false, error: err } : { ok: false };
+  }
 
   return { ok: true };
-}
-
-function getMessage(obj: Record<string, unknown>): string | undefined {
-  if (typeof obj.message === 'string') return obj.message;
-  return undefined;
-}
-
-function extractMessageFromResultError(
-  record: Record<string, unknown>
-): string | undefined {
-  if (isRecord(record.error)) {
-    const msg = getMessage(record.error);
-    if (msg) return msg;
-  }
-  return undefined;
-}
-
-function extractErrorMessageFromRecord(
-  record: Record<string, unknown>
-): string | undefined {
-  const struct = record.structuredContent;
-  if (isRecord(struct)) {
-    const msg = extractMessageFromResultError(struct);
-    if (msg) return msg;
-  }
-  if (typeof record.message === 'string') return record.message;
-  return extractMessageFromResultError(record);
 }
 
 function safeStringify(source: unknown): string {
@@ -179,25 +167,6 @@ function safeStringify(source: unknown): string {
   }
 }
 
-function extractErrorMessage(source: unknown): string {
-  if (typeof source === 'string') return source;
-  if (source instanceof Error) return source.message;
-  if (isRecord(source)) {
-    const msg = extractErrorMessageFromRecord(source);
-    if (msg) return msg;
-  }
-  return safeStringify(source);
-}
-
-function extractResultError(
-  structured: Record<string, unknown>
-): string | undefined {
-  const err = structured.error;
-  return isRecord(err) && typeof err.message === 'string'
-    ? err.message
-    : undefined;
-}
-
 function sanitizePathForDiagnostics(
   path: string | undefined
 ): string | undefined {
@@ -205,14 +174,6 @@ function sanitizePathForDiagnostics(
   if (!path || detail === 0) return undefined;
   if (detail === 2) return path;
   return hash('sha256', path, 'hex').slice(0, 16);
-}
-
-function getNormalizedPathForContext(
-  currentPath?: string,
-  existingPath?: unknown
-): string | undefined {
-  if (existingPath !== undefined) return undefined;
-  return sanitizePathForDiagnostics(currentPath);
 }
 
 function enrichWithToolContext(
@@ -226,9 +187,15 @@ function enrichWithToolContext(
     merged.tool = current.tool;
   }
 
-  const normalizedPath = getNormalizedPathForContext(current.path, merged.path);
-  if (normalizedPath) {
-    merged.path = normalizedPath;
+  if (merged.path === undefined && current.normalizedPath) {
+    merged.path = current.normalizedPath;
+  } else if (merged.path !== undefined) {
+    const hashed = sanitizePathForDiagnostics(merged.path as string);
+    if (hashed) {
+      merged.path = hashed;
+    } else {
+      delete merged.path;
+    }
   }
 
   return merged;
@@ -236,33 +203,24 @@ function enrichWithToolContext(
 
 // --- Perf Helpers ---
 
-function toMs(nanos: number): number {
-  return nanos / 1_000_000;
-}
-
 function getDelayStats(
   h: ReturnType<typeof monitorEventLoopDelay>
 ): NonNullable<PerfDiagnosticsEvent['eventLoopDelay']> | undefined {
   if (h.count === 0) return undefined;
   return {
-    min: toMs(h.min),
-    max: toMs(h.max),
-    mean: toMs(h.mean),
-    p50: toMs(h.percentile(50)),
-    p95: toMs(h.percentile(95)),
-    p99: toMs(h.percentile(99)),
+    min: h.min / 1_000_000,
+    max: h.max / 1_000_000,
+    mean: h.mean / 1_000_000,
+    p50: h.percentile(50) / 1_000_000,
+    p95: h.percentile(95) / 1_000_000,
+    p99: h.percentile(99) / 1_000_000,
     exceeds: h.exceeds,
   };
 }
 
 function clearPublishedMeasures(entries: readonly { name: string }[]): void {
-  if (entries.length === 0) return;
-  const names = new Set<string>();
   for (const entry of entries) {
-    names.add(entry.name);
-  }
-  for (const name of names) {
-    performance.clearMeasures(name);
+    performance.clearMeasures(entry.name);
   }
 }
 
@@ -295,11 +253,11 @@ export function shouldPublishOpsTrace(): boolean {
 }
 
 export function publishOpsTraceStart(context: OpsTraceContext): void {
-  CHANNELS.ops.start.publish(normalizeContext(applyToolContext(context)));
+  CHANNELS.ops.start.publish(buildOpsTraceContext(context));
 }
 
 export function publishOpsTraceEnd(context: OpsTraceContext): void {
-  CHANNELS.ops.end.publish(normalizeContext(applyToolContext(context)));
+  CHANNELS.ops.end.publish(buildOpsTraceContext(context));
 }
 
 export function publishOpsTraceError(
@@ -307,18 +265,31 @@ export function publishOpsTraceError(
   error: unknown
 ): void {
   CHANNELS.ops.error.publish({
-    ...normalizeContext(applyToolContext(context)),
+    ...buildOpsTraceContext(context),
     error,
   });
 }
 
-function applyToolContext(context: OpsTraceContext): OpsTraceContext {
+function buildOpsTraceContext(context: OpsTraceContext): OpsTraceContext {
   const current = toolContext.getStore();
-  if (!current) return context;
-
   const merged: OpsTraceContext = { ...context };
-  merged.tool ??= current.tool;
-  merged.path ??= current.path;
+
+  if (current && merged.tool === undefined) {
+    merged.tool = current.tool;
+  }
+
+  const path = merged.path ?? current?.path;
+  if (path) {
+    const hashed = sanitizePathForDiagnostics(path);
+    if (hashed) {
+      merged.path = hashed;
+    } else {
+      delete merged.path;
+    }
+  } else {
+    delete merged.path;
+  }
+
   return merged;
 }
 
@@ -330,17 +301,6 @@ export function getToolContextSnapshot():
 
 export function getTraceContext(): TraceContext | undefined {
   return toolContext.getStore()?.traceContext;
-}
-
-function normalizeContext(ctx: OpsTraceContext): OpsTraceContext {
-  if (!ctx.path) return ctx;
-  const normalized = sanitizePathForDiagnostics(ctx.path);
-  if (!normalized) {
-    const copy = { ...ctx };
-    delete copy.path;
-    return copy;
-  }
-  return { ...ctx, path: normalized };
 }
 
 function clearMeasureMarks(startMark: string, endMark: string): void {
@@ -482,22 +442,27 @@ async function runAndObserve<T>(
     publishToolStart(tool, options.pathVal, options.traceparent);
 
   let result: T;
-  const obs: { ok: boolean; errorMsg: string | undefined } = {
-    ok: false,
-    errorMsg: undefined,
-  };
+  let ok = false;
+  let errorMsg: string | undefined;
 
   try {
     result = await run();
-    const { ok, error } = extractOutcome(result);
-    obs.ok = ok;
-    obs.errorMsg = error;
+    const outcome = extractOutcome(result);
+    ok = outcome.ok;
+    errorMsg = outcome.error;
   } catch (err) {
-    obs.errorMsg = extractErrorMessage(err);
+    errorMsg = extractErrorMessage(err);
     throw err;
   } finally {
     const durationMs = performance.now() - startMs;
-    finalizeObservation(tool, options, durationMs, obs, eluStart, loopMonitor);
+    finalizeObservation(
+      tool,
+      options,
+      durationMs,
+      { ok, errorMsg },
+      eluStart,
+      loopMonitor
+    );
   }
 
   return result;
@@ -575,6 +540,7 @@ export async function withToolDiagnostics<T>(
   const context: ToolAsyncContext = {
     tool,
     ...(options?.path ? { path: options.path } : {}),
+    ...(normalizedPath ? { normalizedPath } : {}),
     ...(options?.traceContext ? { traceContext: options.traceContext } : {}),
   };
 
