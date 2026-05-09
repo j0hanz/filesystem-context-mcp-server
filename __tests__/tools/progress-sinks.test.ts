@@ -4,7 +4,9 @@ import { strict as assert } from 'node:assert';
 
 import { describe, it } from 'node:test';
 
-import { McpProgressSink, TaskStoreSink } from '../../src/tools/progress-sinks.js';
+import { ProgressSession } from '../../src/lib/progress-session.js';
+import { McpProgressSink, progressSessionFromContext, TaskStoreSink } from '../../src/tools/progress-sinks.js';
+import type { ToolContext } from '../../src/tools/shared.js';
 
 void describe('McpProgressSink', () => {
   void it('forwards tick events to sendNotification', async () => {
@@ -12,7 +14,7 @@ void describe('McpProgressSink', () => {
     const sink = new McpProgressSink({
       progressToken: 'tok-1',
       sendNotification: async (n) => {
-        notifications.push(n as ProgressNotification);
+        notifications.push(n);
       },
     });
 
@@ -40,7 +42,7 @@ void describe('McpProgressSink', () => {
     const sink = new McpProgressSink({
       progressToken: 'tok-1',
       sendNotification: async (n) => {
-        notifications.push(n as ProgressNotification);
+        notifications.push(n);
       },
     });
 
@@ -54,7 +56,7 @@ void describe('McpProgressSink', () => {
     const sink = new McpProgressSink({
       progressToken: 'tok-1',
       sendNotification: async (n) => {
-        notifications.push(n as ProgressNotification);
+        notifications.push(n);
       },
     });
 
@@ -80,7 +82,7 @@ void describe('McpProgressSink', () => {
     const sink = new McpProgressSink({
       progressToken: 'tok-1',
       sendNotification: async (n) => {
-        notifications.push(n as ProgressNotification);
+        notifications.push(n);
       },
     });
 
@@ -235,5 +237,67 @@ void describe('TaskStoreSink', () => {
         ),
       /database offline/
     );
+  });
+});
+
+void describe('progressSessionFromContext', () => {
+  void it('constructs a session with McpProgressSink if _meta.progressToken is present', async () => {
+    let notified = false;
+    const ctx = {
+      _meta: { progressToken: 'tok-1' },
+      sendNotification: async () => {
+        notified = true;
+      },
+    } as unknown as ToolContext;
+
+    const session = progressSessionFromContext(ctx, { label: 'test' });
+    assert.ok(session instanceof ProgressSession);
+
+    // The constructor emits a start tick asynchronously.
+    // We wait a bit to let the microtask queue clear.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.ok(notified, 'McpProgressSink should have sent a notification');
+  });
+
+  void it('constructs a session with TaskStoreSink if taskId and taskStore are present', async () => {
+    const store = new FakeTaskStore();
+    const ctx = {
+      taskId: 't-1',
+      taskStore: store,
+    } as unknown as ToolContext;
+
+    const session = progressSessionFromContext(ctx, { label: 'test' });
+    assert.ok(session instanceof ProgressSession);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(store.calls.length, 1);
+    assert.equal(store.calls[0]?.taskId, 't-1');
+  });
+
+  void it('constructs a session with both sinks if both sets of metadata are present', async () => {
+    let notified = false;
+    const store = new FakeTaskStore();
+    const ctx = {
+      _meta: { progressToken: 'tok-1' },
+      sendNotification: async () => {
+        notified = true;
+      },
+      taskId: 't-1',
+      taskStore: store,
+    } as unknown as ToolContext;
+
+    const session = progressSessionFromContext(ctx, { label: 'test' });
+    assert.ok(session instanceof ProgressSession);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.ok(notified);
+    assert.equal(store.calls.length, 1);
+  });
+
+  void it('constructs a session with no sinks if metadata is missing', async () => {
+    const ctx = {} as ToolContext;
+    const session = progressSessionFromContext(ctx, { label: 'test' });
+    assert.ok(session instanceof ProgressSession);
+    // Should just not do anything but still be a valid session.
   });
 });

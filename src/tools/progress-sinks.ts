@@ -4,7 +4,8 @@ import type {
   RequestTaskStore,
 } from '@modelcontextprotocol/server';
 
-import type { ProgressEvent, ProgressSink } from '../lib/progress-session.js';
+import { type ProgressEvent, type ProgressSink, ProgressSession } from '../lib/progress-session.js';
+import type { TaskToolContext, ToolContext } from './shared.js';
 
 interface McpProgressSinkOptions {
   progressToken: ProgressToken;
@@ -106,4 +107,51 @@ export class TaskStoreSink implements ProgressSink {
       throw error;
     }
   }
+}
+
+function hasMcpProgress(
+  ctx: ToolContext
+): ctx is ToolContext & {
+  _meta: { progressToken: ProgressToken };
+  sendNotification: NonNullable<ToolContext['sendNotification']>;
+} {
+  return Boolean(ctx._meta?.progressToken && ctx.sendNotification);
+}
+
+function hasTaskProgress(
+  ctx: ToolContext
+): ctx is TaskToolContext & { taskId: string; taskStore: RequestTaskStore } {
+  const candidate = ctx as TaskToolContext;
+  return Boolean(candidate.taskId && candidate.taskStore);
+}
+
+export function progressSessionFromContext(
+  ctx: ToolContext,
+  opts: { label: string; total?: number }
+): ProgressSession {
+  const sinks: ProgressSink[] = [];
+
+  if (hasMcpProgress(ctx)) {
+    sinks.push(
+      new McpProgressSink({
+        progressToken: ctx._meta.progressToken,
+        sendNotification: ctx.sendNotification,
+      })
+    );
+  }
+
+  if (hasTaskProgress(ctx)) {
+    sinks.push(
+      new TaskStoreSink({
+        taskId: ctx.taskId,
+        taskStore: ctx.taskStore,
+      })
+    );
+  }
+
+  return new ProgressSession({
+    label: opts.label,
+    ...(opts.total !== undefined ? { total: opts.total } : {}),
+    sinks,
+  });
 }
