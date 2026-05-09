@@ -43,4 +43,67 @@ void describe('ProgressSession', () => {
       message: 'Hash: foo.bin',
     });
   });
+
+  void it('step advances cursor by one and emits a tick', () => {
+    const sink = new MemorySink();
+    const clock = makeClock();
+    const session = new ProgressSession({
+      label: 'job',
+      total: 3,
+      sinks: [sink],
+      now: clock.now,
+    });
+    sink.events.length = 0;
+
+    clock.advance(100);
+    session.step('one');
+    clock.advance(100);
+    session.step('two');
+
+    assert.equal(session.current, 2);
+    assert.equal(sink.events.length, 2);
+    assert.deepEqual(sink.events[0], {
+      kind: 'tick',
+      current: 1,
+      total: 3,
+      message: 'one',
+    });
+    assert.deepEqual(sink.events[1], {
+      kind: 'tick',
+      current: 2,
+      total: 3,
+      message: 'two',
+    });
+  });
+
+  void it('set clamps cursor monotonically and emits with provided fields', () => {
+    const sink = new MemorySink();
+    const clock = makeClock();
+    const session = new ProgressSession({
+      label: 'job',
+      sinks: [sink],
+      now: clock.now,
+    });
+    sink.events.length = 0;
+
+    clock.advance(100);
+    session.set({ current: 5, total: 10, message: 'five' });
+    clock.advance(100);
+    // Regress attempt: should clamp to existing cursor (5).
+    session.set({ current: 2, message: 'should clamp' });
+
+    assert.equal(session.current, 5);
+    assert.equal(sink.events.length, 2);
+    assert.deepEqual(sink.events[0], {
+      kind: 'tick',
+      current: 5,
+      total: 10,
+      message: 'five',
+    });
+    assert.deepEqual(sink.events[1], {
+      kind: 'tick',
+      current: 5,
+      message: 'should clamp',
+    });
+  });
 });

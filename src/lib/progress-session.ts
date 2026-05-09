@@ -27,25 +27,25 @@ export interface ProgressSessionOptions {
   rateLimitMs?: number;
 }
 
-const DEFAULT_RATE_LIMIT_MS = 50;
+// const DEFAULT_RATE_LIMIT_MS = 50;
 
 export class ProgressSession {
   readonly #label: string;
   readonly #total: number | undefined;
   readonly #sinks: ProgressSink[];
-  readonly #now: () => number;
-  readonly #rateLimitMs: number;
+  // readonly #now: () => number;
+  // readonly #rateLimitMs: number;
 
   #cursor = 0;
-  #lastSentMs = 0;
+  // #lastSentMs = 0;
   #done = false;
 
   constructor(opts: ProgressSessionOptions) {
     this.#label = opts.label;
     this.#total = opts.total;
     this.#sinks = opts.sinks;
-    this.#now = opts.now ?? Date.now;
-    this.#rateLimitMs = opts.rateLimitMs ?? DEFAULT_RATE_LIMIT_MS;
+    // this.#now = opts.now ?? Date.now;
+    // this.#rateLimitMs = opts.rateLimitMs ?? DEFAULT_RATE_LIMIT_MS;
 
     // Synthetic start tick — preserves today's "fire 0/total at session creation" wire behavior.
     this.#dispatch({
@@ -60,12 +60,29 @@ export class ProgressSession {
     return this.#cursor;
   }
 
-  step(_message: string): void {
-    // Implemented in Task 2.
+  step(message: string): void {
+    if (this.#done) return;
+    this.#cursor += 1;
+    this.#dispatch({
+      kind: 'tick',
+      current: this.#cursor,
+      ...(this.#total !== undefined ? { total: this.#total } : {}),
+      message,
+    });
   }
 
-  set(_input: { current: number; total?: number; message?: string }): void {
-    // Implemented in Task 2.
+  set(input: { current: number; total?: number; message?: string }): void {
+    if (this.#done) return;
+    if (input.current > this.#cursor) {
+      this.#cursor = input.current;
+    }
+    const total = input.total ?? this.#total;
+    this.#dispatch({
+      kind: 'tick',
+      current: this.#cursor,
+      ...(total !== undefined ? { total } : {}),
+      message: input.message ?? this.#label,
+    });
   }
 
   status(_message: string): void {
