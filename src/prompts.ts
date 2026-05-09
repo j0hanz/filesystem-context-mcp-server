@@ -1,202 +1,132 @@
-import { completable, type GetPromptResult, type McpServer } from '@modelcontextprotocol/server';
+import {
+  completable,
+  type GetPromptResult,
+  type McpServer,
+  type PromptMessage,
+} from '@modelcontextprotocol/server';
 
 import { z } from 'zod/v4';
 
+import { Logger } from './lib/logger.js';
 import { completePathCached } from './lib/path-completer.js';
 import type { PathGuard } from './lib/path-guard.js';
 
+import { INSTRUCTION_SECTIONS } from './resources/instructions.js';
 import { type IconInfo, withDefaultIcons } from './tools/shared.js';
 
-const HELP_PROMPT_NAME = 'get-help';
-const HELP_PROMPT_TITLE = 'Get Help';
-const HELP_PROMPT_DESCRIPTION = 'Return filesystem-mcp usage instructions.';
+// --- Types ---
 
-const COMPARE_FILES_PROMPT_NAME = 'compare-files';
-const COMPARE_FILES_PROMPT_TITLE = 'Compare Files';
-const COMPARE_FILES_PROMPT_DESCRIPTION =
-  'Generate a workflow for comparing two files using diff_files.';
-
-const ANALYZE_PATH_PROMPT_NAME = 'analyze-path';
-const ANALYZE_PATH_PROMPT_TITLE = 'Analyze Path';
-const ANALYZE_PATH_PROMPT_DESCRIPTION =
-  'Generate a workflow for analyzing a file or directory using stat, read, and tree.';
-
-const SECTION_HEADER_RE = /^\s*([A-Z][A-Za-z ]*):\s*$/u;
-
-function findSectionStarts(instructions: string): { name: string; line: number }[] {
-  const lines = instructions.split('\n');
-  const sections: { name: string; line: number }[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const match = SECTION_HEADER_RE.exec(lines[i] ?? '');
-    if (match?.[1]) {
-      sections.push({ name: match[1].trim().toLowerCase(), line: i });
-    }
-  }
-  return sections;
+export interface PromptContract {
+  readonly name: string;
+  readonly title: string;
+  readonly description: string;
+  readonly requiresPathGuard: boolean;
 }
 
-function filterInstructionsByTopic(instructions: string, topic: string): string {
-  const normalized = topic.trim().toLowerCase();
-  if (!normalized) return instructions;
-
-  const lines = instructions.split('\n');
-  const sections = findSectionStarts(instructions);
-  const idx = sections.findIndex((s) => s.name.startsWith(normalized));
-  if (idx >= 0) {
-    const start = sections[idx]?.line ?? 0;
-    const end = sections[idx + 1]?.line ?? lines.length;
-    return lines.slice(start, end).join('\n').trimEnd();
-  }
-
-  const available = sections.map((s) => s.name).join(', ');
-  return `Section '${topic}' not found. Available: ${available}\n\n${instructions}`;
+export interface PromptRegistrationOptions {
+  pathGuard: PathGuard;
+  instructions: string;
+  isInitialized: () => boolean;
+  iconInfo?: IconInfo;
 }
 
-function extractTopics(instructions: string): string[] {
-  return findSectionStarts(instructions).map((s) => s.name);
+interface PromptEntry {
+  readonly contract: PromptContract;
+  readonly register: (server: McpServer, options: PromptRegistrationOptions) => void;
 }
 
-function filterByPrefix(values: string[], prefix: string): string[] {
-  const lower = prefix.toLowerCase();
-  return lower ? values.filter((v) => v.startsWith(lower)) : [...values];
-}
+// --- Helpers ---
 
-export function registerGetHelpPrompt(
+function pathArg(
   server: McpServer,
-  instructions: string,
-  iconInfo?: IconInfo,
-): void {
-  const topics = extractTopics(instructions);
-  const baseConfig = withDefaultIcons(
-    { title: HELP_PROMPT_TITLE, description: HELP_PROMPT_DESCRIPTION },
-    iconInfo,
-  );
-
-  server.registerPrompt(
-    HELP_PROMPT_NAME,
-    {
-      ...baseConfig,
-      argsSchema: z.strictObject({
-        topic: completable(
-          z
-            .string()
-            .describe(
-              'Optional section heading prefix (example: "error handling"). Omit to return full instructions.',
-            ),
-          (value) => filterByPrefix(topics, value),
-        ).optional(),
-      }),
-    },
-    ({ topic }): GetPromptResult => {
-      const text = topic ? filterInstructionsByTopic(instructions, topic) : instructions;
-      return {
-        description: HELP_PROMPT_DESCRIPTION,
-        messages: [
-          {
-            role: 'user',
-            content: {
-              type: 'text',
-              text,
-              annotations: { audience: ['assistant'], priority: 1 },
-            },
-          },
-        ],
-      };
-    },
-  );
-}
-
-export function registerCompareFilesPrompt(
-  server: McpServer,
-  pathGuard: PathGuard,
-  iconInfo?: IconInfo,
-): void {
-  server.registerPrompt(
-    COMPARE_FILES_PROMPT_NAME,
-    {
-      ...withDefaultIcons(
-        {
-          title: COMPARE_FILES_PROMPT_TITLE,
-          description: COMPARE_FILES_PROMPT_DESCRIPTION,
-        },
-        iconInfo,
-      ),
-      argsSchema: z.strictObject({
-        original: completable(z.string().describe('Path to the original file.'), (value, ctx) => {
-          const opts: Parameters<typeof completePathCached>[1] = {
-            server,
-            pathGuard,
-            argumentName: 'original',
-          };
-          if (ctx?.arguments) opts.contextArguments = ctx.arguments;
-          return completePathCached(value, opts);
-        }),
-        modified: completable(z.string().describe('Path to the modified file.'), (value, ctx) => {
-          const opts: Parameters<typeof completePathCached>[1] = {
-            server,
-            pathGuard,
-            argumentName: 'modified',
-          };
-          if (ctx?.arguments) opts.contextArguments = ctx.arguments;
-          return completePathCached(value, opts);
-        }),
-      }),
-    },
-    ({ original, modified }): GetPromptResult => ({
-      description: COMPARE_FILES_PROMPT_DESCRIPTION,
-      messages: [
-        {
-          role: 'user',
-          content: {
-            type: 'text',
-            text: `Compare files and explain differences.\n\n1. Call \`diff_files\` with:\n   - original: "${original}"\n   - modified: "${modified}"\n2. Summarize: additions, deletions, and semantic changes.\n3. Flag any potential issues (conflicts, regressions, breaking changes).`,
-            annotations: { audience: ['assistant'], priority: 1 },
-          },
-        },
-      ],
+  guard: PathGuard,
+  argumentName: string,
+  description: string,
+): ReturnType<typeof completable<z.ZodString>> {
+  return completable(z.string().describe(description), (value, ctx) =>
+    completePathCached(value, {
+      server,
+      pathGuard: guard,
+      argumentName,
+      ...(ctx?.arguments ? { contextArguments: ctx.arguments } : {}),
     }),
   );
 }
 
-export function registerAnalyzePathPrompt(
-  server: McpServer,
-  pathGuard: PathGuard,
-  iconInfo?: IconInfo,
-): void {
-  server.registerPrompt(
-    ANALYZE_PATH_PROMPT_NAME,
-    {
-      ...withDefaultIcons(
-        {
-          title: ANALYZE_PATH_PROMPT_TITLE,
-          description: ANALYZE_PATH_PROMPT_DESCRIPTION,
-        },
-        iconInfo,
-      ),
-      argsSchema: z.strictObject({
-        path: completable(z.string().describe('Absolute path to analyze.'), (value, ctx) => {
-          const opts: Parameters<typeof completePathCached>[1] = {
-            server,
-            pathGuard,
-            argumentName: 'path',
-          };
-          if (ctx?.arguments) opts.contextArguments = ctx.arguments;
-          return completePathCached(value, opts);
-        }),
-      }),
+function topicArg(
+  topics: readonly string[],
+  description: string,
+): ReturnType<typeof completable<z.ZodString>> {
+  return completable(z.string().describe(description), (value) => {
+    const lower = value.toLowerCase();
+    return lower ? topics.filter((t) => t.startsWith(lower)) : [...topics];
+  });
+}
+
+function userText(text: string): PromptMessage {
+  return {
+    role: 'user',
+    content: {
+      type: 'text',
+      text,
+      annotations: { audience: ['assistant'], priority: 1 },
     },
-    ({ path: targetPath }): GetPromptResult => ({
-      description: ANALYZE_PATH_PROMPT_DESCRIPTION,
-      messages: [
-        {
-          role: 'user',
-          content: {
-            type: 'text',
-            text: `Analyze the path: ${targetPath}\n\n1. Call \`stat\` to determine if it is a file or directory.\n2. If file: call \`read\` with \`includeHash: true\` and summarize contents.\n3. If directory: call \`tree\` (maxDepth: 3) and \`ls\` to summarize structure.\n4. Report: type, size, permissions, key observations.`,
-            annotations: { audience: ['assistant'], priority: 1 },
-          },
-        },
-      ],
-    }),
-  );
+  };
+}
+
+function linkToInstructions(): PromptMessage {
+  return {
+    role: 'user',
+    content: {
+      type: 'resource_link',
+      uri: 'internal://instructions',
+      name: 'filesystem-mcp-instructions',
+      mimeType: 'text/markdown',
+      annotations: { audience: ['assistant'], priority: 0.5 },
+    },
+  };
+}
+
+function linkToPath(absPath: string): PromptMessage {
+  return {
+    role: 'user',
+    content: {
+      type: 'resource_link',
+      uri: `file://${absPath}`,
+      name: absPath,
+      annotations: { audience: ['assistant'], priority: 1 },
+    },
+  };
+}
+
+function wrapHandler<T>(
+  name: string,
+  options: PromptRegistrationOptions,
+  requiresInit: boolean,
+  fn: () => Promise<T> | T,
+): Promise<T> | T {
+  if (requiresInit && !options.isInitialized()) {
+    throw new Error(`Prompt ${name} called before roots are initialized`);
+  }
+  const start = Date.now();
+  const result = fn();
+  if (result instanceof Promise) {
+    return result.finally(() => {
+      Logger.debug(`prompt resolved`, { name, durationMs: Date.now() - start });
+    });
+  }
+  Logger.debug(`prompt resolved`, { name, durationMs: Date.now() - start });
+  return result;
+}
+
+// --- Prompt entries (filled in by later tasks) ---
+
+const PROMPT_ENTRIES: PromptEntry[] = [];
+
+export const ALL_PROMPTS: PromptContract[] = PROMPT_ENTRIES.map((e) => e.contract);
+
+export function registerAllPrompts(server: McpServer, options: PromptRegistrationOptions): void {
+  for (const { register } of PROMPT_ENTRIES) {
+    register(server, options);
+  }
 }
