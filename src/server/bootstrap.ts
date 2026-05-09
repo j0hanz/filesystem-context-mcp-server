@@ -42,11 +42,7 @@ import {
 import { createInMemoryResourceStore } from '../lib/resource-store.js';
 
 import { pkgInfo } from '../pkg-info.js';
-import {
-  registerAnalyzePathPrompt,
-  registerCompareFilesPrompt,
-  registerGetHelpPrompt,
-} from '../prompts.js';
+import { registerAllPrompts } from '../prompts.js';
 import {
   registerAllResources,
   type ResourcesHandle,
@@ -202,9 +198,12 @@ export async function createServer(options: ServerOptions = {}): Promise<{ serve
   });
   resourceHandles.set(server, resourcesHandle);
 
-  registerGetHelpPrompt(server, serverInstructionsContent, localIcon);
-  registerCompareFilesPrompt(server, rootsManager.pathGuard, localIcon);
-  registerAnalyzePathPrompt(server, rootsManager.pathGuard, localIcon);
+  registerAllPrompts(server, {
+    pathGuard: rootsManager.pathGuard,
+    instructions: serverInstructionsContent,
+    isInitialized: () => rootsManager.isInitialized(),
+    ...(localIcon ? { iconInfo: localIcon } : {}),
+  });
   registerAllTools(server, {
     pathGuard: rootsManager.pathGuard,
     resourceStore,
