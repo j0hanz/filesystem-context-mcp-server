@@ -6,10 +6,10 @@ import { buildServerInstructions } from '../../src/resources/instructions.js';
 describe('buildServerInstructions', () => {
   it('contains all four required sections', () => {
     const content = buildServerInstructions();
-    assert.match(content, /## Guidelines/u);
-    assert.match(content, /## Tools Overview/u);
-    assert.match(content, /## Constraints/u);
-    assert.match(content, /## Error Recovery/u);
+    assert.match(content, /Guidelines:/u);
+    assert.match(content, /Tools Overview:/u);
+    assert.match(content, /Constraints:/u);
+    assert.match(content, /Error Recovery:/u);
   });
 
   it('includes known tool names in the overview', () => {
