@@ -1,4 +1,4 @@
-import type { ProgressNotification } from '@modelcontextprotocol/server';
+import type { ProgressNotification, RequestTaskStore } from '@modelcontextprotocol/server';
 
 import { strict as assert } from 'node:assert';
 
@@ -123,7 +123,10 @@ class FakeTaskStore {
 void describe('TaskStoreSink', () => {
   void it('writes "working" status for tick events with current/total formatting', async () => {
     const store = new FakeTaskStore();
-    const sink = new TaskStoreSink({ taskStore: store, taskId: 't-1' });
+    const sink = new TaskStoreSink({
+      taskStore: store as unknown as RequestTaskStore,
+      taskId: 't-1',
+    });
 
     await sink.emit({
       kind: 'tick',
@@ -142,7 +145,10 @@ void describe('TaskStoreSink', () => {
 
   void it('uses raw message for status events', async () => {
     const store = new FakeTaskStore();
-    const sink = new TaskStoreSink({ taskStore: store, taskId: 't-1' });
+    const sink = new TaskStoreSink({
+      taskStore: store as unknown as RequestTaskStore,
+      taskId: 't-1',
+    });
 
     await sink.emit({ kind: 'status', message: 'still scanning subtree X' });
 
@@ -151,7 +157,10 @@ void describe('TaskStoreSink', () => {
 
   void it('writes complete and fail events as working updates', async () => {
     const store = new FakeTaskStore();
-    const sink = new TaskStoreSink({ taskStore: store, taskId: 't-1' });
+    const sink = new TaskStoreSink({
+      taskStore: store as unknown as RequestTaskStore,
+      taskId: 't-1',
+    });
 
     await sink.emit({
       kind: 'complete',
@@ -176,7 +185,10 @@ void describe('TaskStoreSink', () => {
   void it('swallows benign "Task not found" errors', async () => {
     const store = new FakeTaskStore();
     store.shouldReject = new Error('Task t-1 not found');
-    const sink = new TaskStoreSink({ taskStore: store, taskId: 't-1' });
+    const sink = new TaskStoreSink({
+      taskStore: store as unknown as RequestTaskStore,
+      taskId: 't-1',
+    });
 
     // Must not throw.
     await sink.emit({
@@ -190,7 +202,10 @@ void describe('TaskStoreSink', () => {
   void it('swallows benign "terminal status" errors', async () => {
     const store = new FakeTaskStore();
     store.shouldReject = new Error('Cannot update terminal status');
-    const sink = new TaskStoreSink({ taskStore: store, taskId: 't-1' });
+    const sink = new TaskStoreSink({
+      taskStore: store as unknown as RequestTaskStore,
+      taskId: 't-1',
+    });
 
     await sink.emit({
       kind: 'tick',
@@ -203,7 +218,10 @@ void describe('TaskStoreSink', () => {
   void it('rethrows non-benign errors so emitGuarded can log them', async () => {
     const store = new FakeTaskStore();
     store.shouldReject = new Error('database offline');
-    const sink = new TaskStoreSink({ taskStore: store, taskId: 't-1' });
+    const sink = new TaskStoreSink({
+      taskStore: store as unknown as RequestTaskStore,
+      taskId: 't-1',
+    });
 
     await assert.rejects(
       () =>
