@@ -29,8 +29,7 @@ export interface DefineToolOptions<Args, Output extends Record<string, unknown>>
   defaultErrorCode?: ErrorCode;
   /** Optional custom error handler. If provided, overrides defaultErrorCode.
    * Can return either success or error responses. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onError?: (error: unknown, args: Args) => ToolResult<any>;
+  onError?: (error: unknown, args: Args) => ToolResult<Output>;
 }
 
 export interface DefinedTool<Args, Output extends Record<string, unknown>> {
