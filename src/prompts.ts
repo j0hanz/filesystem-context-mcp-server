@@ -202,7 +202,50 @@ const ANALYZE_PATH: PromptEntry = {
   },
 };
 
-const PROMPT_ENTRIES: PromptEntry[] = [GET_HELP, ANALYZE_PATH];
+const COMPARE_FILES: PromptEntry = {
+  contract: {
+    name: 'compare-files',
+    title: 'Compare Files',
+    description: 'Workflow for comparing two files using diff_files.',
+    requiresPathGuard: true,
+  },
+  register(server, options) {
+    server.registerPrompt(
+      COMPARE_FILES.contract.name,
+      withDefaultIcons(
+        {
+          title: COMPARE_FILES.contract.title,
+          description: COMPARE_FILES.contract.description,
+          argsSchema: z.strictObject({
+            original: pathArg(server, options.pathGuard, 'original', 'Path to the original file.'),
+            modified: pathArg(server, options.pathGuard, 'modified', 'Path to the modified file.'),
+          }),
+        },
+        options.iconInfo,
+      ),
+      async ({ original, modified }): Promise<GetPromptResult> =>
+        wrapHandler(COMPARE_FILES.contract.name, options, true, async () => {
+          const [resolvedOriginal, resolvedModified] = await Promise.all([
+            options.pathGuard.validateExistingPath(original),
+            options.pathGuard.validateExistingPath(modified),
+          ]);
+          const text = [
+            'Call `diff_files` with:',
+            `- original: ${resolvedOriginal}`,
+            `- modified: ${resolvedModified}`,
+            '',
+            'Then summarize: additions, deletions, and semantic changes. Flag potential conflicts, regressions, or breaking changes.',
+          ].join('\n');
+          return {
+            description: COMPARE_FILES.contract.description,
+            messages: [userText(text), linkToPath(resolvedOriginal), linkToPath(resolvedModified)],
+          };
+        }),
+    );
+  },
+};
+
+const PROMPT_ENTRIES: PromptEntry[] = [GET_HELP, ANALYZE_PATH, COMPARE_FILES];
 
 export const ALL_PROMPTS: PromptContract[] = PROMPT_ENTRIES.map((e) => e.contract);
 
