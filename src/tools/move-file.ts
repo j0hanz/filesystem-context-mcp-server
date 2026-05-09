@@ -13,6 +13,7 @@ import { ErrorCode, isNodeError, McpError } from '../core/errors.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import { defineTool } from './define.js';
+import { buildToolResponse } from './shared.js';
 
 const MoveFileInputSchema = z.strictObject({
   sources: z.array(RequiredPath).min(1).describe('One or more source paths to move'),
@@ -205,6 +206,7 @@ export const MOVE_FILE = defineTool({
   run: async (args, ctx) => {
     const structured = await handleMoveFile(args, ctx.pathGuard, ctx.signal, ctx.elicitInput);
     ctx.log?.('info', `mv: ${args.sources.join(', ')} \u2192 ${args.destination}`, 'mv');
-    return structured;
+    const summary = `move-file: ${structured.from} \u2192 ${structured.to}`;
+    return buildToolResponse(summary, structured);
   },
 });

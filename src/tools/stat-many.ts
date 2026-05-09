@@ -15,7 +15,12 @@ import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, getMimeType, PARALLEL_CONCURRENCY } from '../core/util.js';
 import { defineTool } from './define.js';
-import { buildFileInfoPayload, buildStructuredError, putResource } from './shared.js';
+import {
+  buildFileInfoPayload,
+  buildResourceResponse,
+  buildStructuredError,
+  putResource,
+} from './shared.js';
 
 const StatManyInputSchema = z.strictObject({
   paths: z.array(RequiredPath).min(1).describe('Paths to stat'),
@@ -252,7 +257,7 @@ async function handleGetMultipleFileInfo(
   resourceStore: ResourceStore | undefined,
   signal?: AbortSignal,
   onProgress?: () => void,
-): Promise<z.infer<typeof StatManyOutputSchema>> {
+): Promise<ReturnType<typeof buildResourceResponse<z.infer<typeof StatManyOutputSchema>>>> {
   const result = await getMultipleFileInfo(args.paths, {
     includeMimeType: true,
     pathGuard,
@@ -288,7 +293,7 @@ async function handleGetMultipleFileInfo(
   if (!resourceStore) {
     throw new Error('ResourceStore is required for stat-many tool');
   }
-  const { entry: statsEntry } = putResource({
+  const { entry: statsEntry, link: statsLink } = putResource({
     store: resourceStore,
     name: 'stats.json',
     mimeType: 'application/json',
@@ -296,18 +301,29 @@ async function handleGetMultipleFileInfo(
     content: statsJson,
   });
 
-  return {
-    ok: true as const,
-    results: structuredResults,
-    summary: {
-      total: result.summary.total,
-      succeeded: result.summary.succeeded,
-      failed: result.summary.failed,
+  const summary =
+    fileCount === 1 && dirCount === 0
+      ? 'stat-many: 1 file'
+      : fileCount === 0 && dirCount === 1
+        ? 'stat-many: 1 directory'
+        : `stat-many: ${String(fileCount)} file${fileCount === 1 ? '' : 's'} \u00b7 ${String(dirCount)} director${dirCount === 1 ? 'y' : 'ies'}`;
+
+  return buildResourceResponse({
+    summary,
+    resources: [statsLink],
+    structured: {
+      ok: true as const,
+      results: structuredResults,
+      summary: {
+        total: result.summary.total,
+        succeeded: result.summary.succeeded,
+        failed: result.summary.failed,
+      },
+      fileCount,
+      dirCount,
+      resourceUri: statsEntry.uri,
     },
-    fileCount,
-    dirCount,
-    resourceUri: statsEntry.uri,
-  };
+  });
 }
 
 export const GET_MULTIPLE_FILE_INFO = defineTool({

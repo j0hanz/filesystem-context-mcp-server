@@ -46,6 +46,8 @@ import {
 } from '../core/util.js';
 import { defineTool } from './define.js';
 import {
+  buildResourceResponse,
+  buildToolResponse,
   decodeOffsetCursor,
   encodeOffsetCursor,
   putResource,
@@ -1491,9 +1493,9 @@ function buildExternalizedResponse(
   fullStructured: SearchOutput,
   preview: SearchPreviewState,
   resourceStore: ResourceStore,
-): SearchOutput {
+): { structured: SearchOutput; link: ReturnType<typeof putResource>['link'] } {
   const resultsJson = JSON.stringify(fullStructured, null, 2);
-  const { entry } = putResource({
+  const { entry, link } = putResource({
     store: resourceStore,
     name: 'search-results.json',
     mimeType: 'application/json',
@@ -1511,7 +1513,7 @@ function buildExternalizedResponse(
     structuredForResponse.truncated = true;
   }
 
-  return structuredForResponse;
+  return { structured: structuredForResponse, link };
 }
 
 async function handleSearchContent(
@@ -1520,7 +1522,12 @@ async function handleSearchContent(
   signal?: AbortSignal,
   resourceStore?: ResourceStore,
   onProgress?: (progress: { total?: number; current: number }) => void,
-): Promise<SearchOutput> {
+): Promise<{
+  structured: SearchOutput;
+  link?: ReturnType<typeof putResource>['link'];
+  matchCount: number;
+  fileCount: number;
+}> {
   const basePath = pathGuard.resolvePathOrRoot(args.path);
   const regexMatcher = createSearchMatcher(args);
 
@@ -1551,9 +1558,12 @@ async function handleSearchContent(
   if (nextCursor !== undefined) fullStructured.nextCursor = nextCursor;
 
   const preview = buildSearchPreviewState(matchPayloads);
+  const matchCount = matchPayloads.length;
+  const fileCount = new Set(matchPayloads.map((m) => m.file)).size;
 
   if (resourceStore && matchPayloads.length > 0) {
-    return buildExternalizedResponse(fullStructured, preview, resourceStore);
+    const ext = buildExternalizedResponse(fullStructured, preview, resourceStore);
+    return { structured: ext.structured, link: ext.link, matchCount, fileCount };
   }
 
   if (preview.needsExternalize) {
@@ -1561,7 +1571,7 @@ async function handleSearchContent(
     fullStructured.truncated = true;
   }
 
-  return fullStructured;
+  return { structured: fullStructured, matchCount, fileCount };
 }
 
 export const SEARCH_CONTENT = defineTool({
@@ -1593,7 +1603,25 @@ export const SEARCH_CONTENT = defineTool({
         message: `grep: ${truncatedPattern} [${params.current} files]`,
       });
     };
-    return handleSearchContent(args, ctx.pathGuard, ctx.signal, ctx.resourceStore, onProgress);
+    const { structured, link, matchCount, fileCount } = await handleSearchContent(
+      args,
+      ctx.pathGuard,
+      ctx.signal,
+      ctx.resourceStore,
+      onProgress,
+    );
+    const summary =
+      `search-content: '${args.searchPattern}'` +
+      ` \u00b7 ${String(matchCount)} matches` +
+      ` in ${String(fileCount)} files`;
+    if (link) {
+      return buildResourceResponse({
+        summary,
+        resources: [link],
+        structured,
+      });
+    }
+    return buildToolResponse(summary, structured);
   },
 });
 

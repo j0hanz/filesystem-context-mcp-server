@@ -2,6 +2,7 @@ import { z } from 'zod/v4';
 
 import { ErrorCode } from '../core/errors.js';
 import { defineTool } from './define.js';
+import { buildToolResponse } from './shared.js';
 
 const RootsInputSchema = z.strictObject({});
 
@@ -20,7 +21,9 @@ export const LIST_ALLOWED_DIRECTORIES = defineTool({
   annotations: 'readOnly',
   run: (_args, ctx) => {
     const dirs = ctx.pathGuard.getAllowedDirectories();
-    return Promise.resolve({ ok: true as const, roots: dirs });
+    const structured = { ok: true as const, roots: dirs };
+    const summary = `roots: ${String(dirs.length)} allowed director${dirs.length === 1 ? 'y' : 'ies'}`;
+    return Promise.resolve(buildToolResponse(summary, structured));
   },
   defaultErrorCode: ErrorCode.UNKNOWN,
 });

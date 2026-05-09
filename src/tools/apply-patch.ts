@@ -19,7 +19,13 @@ import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { MAX_TEXT_FILE_SIZE, PARALLEL_CONCURRENCY } from '../core/util.js';
 import { defineTool } from './define.js';
-import { buildStructuredError, putResource } from './shared.js';
+import {
+  buildResourceResponse,
+  buildStructuredError,
+  buildToolResponse,
+  formatBytes,
+  putResource,
+} from './shared.js';
 
 const ApplyPatchInputSchema = z.strictObject({
   path: OptionalPath.describe(
@@ -240,7 +246,10 @@ async function processMultiFilePatch(
   pathGuard: PathGuard,
   resourceStore: ResourceStore | undefined,
   signal?: AbortSignal,
-): Promise<z.infer<typeof ApplyPatchOutputSchema>> {
+): Promise<{
+  structured: z.infer<typeof ApplyPatchOutputSchema>;
+  link?: ReturnType<typeof putResource>['link'];
+}> {
   const validBase = await pathGuard.validateExistingPath(basePath);
 
   const tasks = parsed.map((diff) => {
@@ -320,8 +329,9 @@ async function processMultiFilePatch(
     : { mimeType: 'text/plain', kind: 'text' as const };
 
   let resourceUri = '';
+  let resourceLink: ReturnType<typeof putResource>['link'] | undefined;
   if (!options.dryRun && resourceStore && primaryResult) {
-    const { entry } = putResource({
+    const { entry, link } = putResource({
       store: resourceStore,
       name: basename(primaryResult.path),
       mimeType: mimeInfo.mimeType,
@@ -329,13 +339,14 @@ async function processMultiFilePatch(
       content: patchedContent,
     });
     resourceUri = entry.uri;
+    resourceLink = link;
   }
 
   const filesPatched = results.filter((r) => r.applied).map((r) => r.path);
 
-  return {
+  const structured: z.infer<typeof ApplyPatchOutputSchema> = {
     ok: true as const,
-    path: primaryResult?.path,
+    ...(primaryResult ? { path: primaryResult.path } : {}),
     size: bytesWritten,
     lineCount,
     mimeType: mimeInfo.mimeType,
@@ -352,6 +363,7 @@ async function processMultiFilePatch(
     },
     ...(failures.length > 0 ? { failures } : {}),
   };
+  return { structured, ...(resourceLink ? { link: resourceLink } : {}) };
 }
 
 function parseAndValidatePatch(patch: string): ReturnType<typeof parsePatch> {
@@ -379,7 +391,10 @@ async function handleSingleFilePatch(
   pathGuard: PathGuard,
   resourceStore: ResourceStore | undefined,
   signal?: AbortSignal,
-): Promise<z.infer<typeof ApplyPatchOutputSchema>> {
+): Promise<{
+  structured: z.infer<typeof ApplyPatchOutputSchema>;
+  link?: ReturnType<typeof putResource>['link'];
+}> {
   // diff cannot be undefined here if we got past validation, but TS checking is permissive
   let result: PatchFileResult;
   try {
@@ -412,8 +427,9 @@ async function handleSingleFilePatch(
   const mimeInfo = detectMimeType(result.path, Buffer.from(patchedContent.slice(0, 512)));
 
   let resourceUri = '';
+  let resourceLink: ReturnType<typeof putResource>['link'] | undefined;
   if (!options.dryRun && resourceStore) {
-    const { entry } = putResource({
+    const { entry, link } = putResource({
       store: resourceStore,
       name: basename(result.path),
       mimeType: mimeInfo.mimeType,
@@ -421,9 +437,10 @@ async function handleSingleFilePatch(
       content: patchedContent,
     });
     resourceUri = entry.uri;
+    resourceLink = link;
   }
 
-  return {
+  const structured: z.infer<typeof ApplyPatchOutputSchema> = {
     ok: true as const,
     path: result.path,
     size: bytesWritten,
@@ -444,6 +461,7 @@ async function handleSingleFilePatch(
     filesPatched: [result.path],
     summary: { total: 1, succeeded: 1, failed: 0 },
   };
+  return { structured, ...(resourceLink ? { link: resourceLink } : {}) };
 }
 
 async function handleApplyPatch(
@@ -451,7 +469,10 @@ async function handleApplyPatch(
   pathGuard: PathGuard,
   resourceStore: ResourceStore | undefined,
   signal?: AbortSignal,
-): Promise<z.infer<typeof ApplyPatchOutputSchema>> {
+): Promise<{
+  structured: z.infer<typeof ApplyPatchOutputSchema>;
+  link?: ReturnType<typeof putResource>['link'];
+}> {
   const parsed = parseAndValidatePatch(args.patch);
 
   const options: PatchOptions = {
@@ -495,16 +516,34 @@ export const APPLY_PATCH = defineTool({
     return args.dryRun ? `Apply Patch: ${name} [dry run]` : `Apply Patch: ${name}`;
   },
   run: async (args, ctx) => {
-    const result = await handleApplyPatch(args, ctx.pathGuard, ctx.resourceStore, ctx.signal);
+    const { structured, link } = await handleApplyPatch(
+      args,
+      ctx.pathGuard,
+      ctx.resourceStore,
+      ctx.signal,
+    );
     if (!args.dryRun) {
-      const added = result.files.reduce((s, f) => s + (f.linesAdded ?? 0), 0);
-      const removed = result.files.reduce((s, f) => s + (f.linesRemoved ?? 0), 0);
+      const added = structured.files.reduce((s, f) => s + (f.linesAdded ?? 0), 0);
+      const removed = structured.files.reduce((s, f) => s + (f.linesRemoved ?? 0), 0);
       ctx.log?.(
         'info',
         `patch: ${args.path ?? ''} (+${String(added)}/-${String(removed)})`,
         'apply_patch',
       );
     }
-    return result;
+    const succeeded = structured.summary.succeeded;
+    const fileWord = succeeded === 1 ? 'file' : 'files';
+    const baseSummary =
+      `apply-patch: patched ${String(succeeded)} ${fileWord}` +
+      (structured.path ? ` \u00b7 ${basename(structured.path)}` : '') +
+      ` \u00b7 ${formatBytes(structured.size ?? 0)}`;
+    if (link) {
+      return buildResourceResponse({
+        summary: baseSummary,
+        resources: [link],
+        structured,
+      });
+    }
+    return buildToolResponse(baseSummary, structured);
   },
 });

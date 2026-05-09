@@ -9,6 +9,7 @@ import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, McpError } from '../core/errors.js';
 import type { PathGuard } from '../core/path.js';
 import { defineTool } from './define.js';
+import { buildToolResponse } from './shared.js';
 
 const CreateDirectoryInputSchema = z.strictObject({
   paths: z.array(RequiredPath).min(1).describe('One or more directory paths to create (recursive)'),
@@ -54,7 +55,7 @@ export const CREATE_DIRECTORY = defineTool({
   run: async (args, ctx) => {
     const structured = await handleCreateDirectory(args, ctx.pathGuard, ctx.signal);
     ctx.log?.('info', `mkdir: ${args.paths[0]}`, 'mkdir');
-    return structured;
+    return buildToolResponse(`create-directory: created ${structured.path}`, structured);
   },
   progressLabel: (args) => {
     if (args.paths.length === 1) {

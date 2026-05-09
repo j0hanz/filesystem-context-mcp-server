@@ -1,3 +1,5 @@
+import type { ContentBlock } from '@modelcontextprotocol/server';
+
 import { readFile, stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 
@@ -13,7 +15,7 @@ import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import { defineTool } from './define.js';
-import { putResource } from './shared.js';
+import { buildResourceResponse, buildToolResponse, putResource } from './shared.js';
 
 const DiffFilesInputSchema = z.strictObject({
   original: RequiredPath.describe('Original file path'),
@@ -119,7 +121,10 @@ async function handleDiffFiles(
   pathGuard: PathGuard,
   signal?: AbortSignal,
   resourceStore?: ResourceStore,
-): Promise<z.infer<typeof DiffFilesOutputSchema>> {
+): Promise<
+  | z.infer<typeof DiffFilesOutputSchema>
+  | { content: ContentBlock[]; structuredContent: z.infer<typeof DiffFilesOutputSchema> }
+> {
   const originalInput = args.original;
   const modifiedInput = args.modified;
 
@@ -170,17 +175,19 @@ async function handleDiffFiles(
 
   // If files are identical, return early with no resource
   if (isIdentical) {
-    return {
+    return buildToolResponse('No differences', {
       ok: true as const,
       diff: '',
       isIdentical: true,
-    };
+    });
   }
 
   // Store diff in resource and return resource link
   const changeCount = (mappedStats?.additions ?? 0) + (mappedStats?.deletions ?? 0);
+  const originalName = basename(originalPath);
+  const modifiedName = basename(modifiedPath);
   if (resourceStore) {
-    const { entry } = putResource({
+    const { entry, link } = putResource({
       store: resourceStore,
       name: 'diff.patch',
       mimeType: 'text/x-patch',
@@ -188,24 +195,30 @@ async function handleDiffFiles(
       content: diffText,
     });
 
-    return {
-      ok: true as const,
-      diff: diffText,
-      isIdentical: false,
-      changeCount,
-      ...(mappedStats ? { stats: mappedStats } : {}),
-      resourceUri: entry.uri,
-    };
+    const summary = `diff-files: ${originalName} vs ${modifiedName} \u00b7 ${String(changeCount)} change${changeCount === 1 ? '' : 's'}`;
+
+    return buildResourceResponse({
+      summary,
+      resources: [link],
+      structured: {
+        ok: true as const,
+        diff: diffText,
+        isIdentical: false,
+        changeCount,
+        ...(mappedStats ? { stats: mappedStats } : {}),
+        resourceUri: entry.uri,
+      },
+    });
   }
 
   // Fallback if resource store is unavailable
-  return {
+  return buildToolResponse(diffText, {
     ok: true as const,
     diff: diffText,
     isIdentical: false,
     changeCount,
     ...(mappedStats ? { stats: mappedStats } : {}),
-  };
+  });
 }
 
 export const DIFF_FILES = defineTool({

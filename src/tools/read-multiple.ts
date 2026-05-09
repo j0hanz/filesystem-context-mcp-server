@@ -33,7 +33,12 @@ import {
   PARALLEL_CONCURRENCY,
 } from '../core/util.js';
 import { defineTool } from './define.js';
-import { buildStructuredError, putResource } from './shared.js';
+import {
+  buildResourceResponse,
+  buildStructuredError,
+  buildToolResponse,
+  putResource,
+} from './shared.js';
 
 // ---------------------------------------------------------------------------
 // readMultipleFiles implementation (inlined from file-operations/metadata.ts)
@@ -508,6 +513,7 @@ type ReadManyResultWithResource = Omit<ReadManyResult, 'error'> & {
   resourceUri?: string;
   mimeType?: string;
   kind?: 'text' | 'binary' | 'image' | 'audio' | 'pdf';
+  resourceLink?: ReturnType<typeof putResource>['link'];
 };
 
 function buildReadContinuation(result: {
@@ -585,7 +591,7 @@ function maybeExternalizeReadManyResult(
   const mimeInfo = detectMimeType(result.path, contentSample);
 
   // Store the content in the resource store
-  const { entry } = putResource({
+  const { entry, link } = putResource({
     store: resourceStore,
     name: basename(result.path),
     mimeType: mimeInfo.mimeType,
@@ -598,6 +604,7 @@ function maybeExternalizeReadManyResult(
     resourceUri: entry.uri,
     mimeType: mimeInfo.mimeType,
     kind: mimeInfo.kind,
+    resourceLink: link,
   };
 }
 
@@ -624,13 +631,16 @@ function buildReadManyResponsePayload(
 ): {
   structuredResults: ReadManyOutputItem[];
   summary: ReadManyOutput['summary'];
+  resourceLinks: ReturnType<typeof putResource>['link'][];
 } {
   const structuredResults: ReadManyOutputItem[] = [];
+  const resourceLinks: ReturnType<typeof putResource>['link'][] = [];
   let succeeded = 0;
 
   for (const result of results) {
     const mappedResult = maybeExternalizeReadManyResult(result, resourceStore);
     structuredResults.push(toStructuredReadManyResult(mappedResult));
+    if (mappedResult.resourceLink) resourceLinks.push(mappedResult.resourceLink);
 
     if (mappedResult.error === undefined) succeeded += 1;
   }
@@ -644,6 +654,7 @@ function buildReadManyResponsePayload(
       succeeded,
       failed: total - succeeded,
     },
+    resourceLinks,
   };
 }
 
@@ -653,17 +664,28 @@ async function handleReadMultipleFiles(
   signal?: AbortSignal,
   resourceStore?: ResourceStore,
   onReadComplete?: () => void,
-): Promise<ReadManyOutput> {
+): Promise<ReadManyOutput | ReturnType<typeof buildResourceResponse<ReadManyOutput>>> {
   const options = buildReadMultipleOptions(args, signal, onReadComplete);
   options.pathGuard = pathGuard;
   const results = await readMultipleFiles(args.paths, options);
   const payload = buildReadManyResponsePayload(results, resourceStore);
 
-  return {
+  const structured: ReadManyOutput = {
     ok: true as const,
     results: payload.structuredResults,
     summary: payload.summary,
   };
+
+  const summaryText = `read_many: ${String(payload.summary.total)} file${payload.summary.total === 1 ? '' : 's'}`;
+
+  if (payload.resourceLinks.length > 0) {
+    return buildResourceResponse({
+      summary: summaryText,
+      resources: payload.resourceLinks,
+      structured,
+    });
+  }
+  return buildToolResponse(summaryText, structured);
 }
 
 export const READ_MANY = defineTool({

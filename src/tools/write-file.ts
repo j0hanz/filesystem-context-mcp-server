@@ -11,7 +11,7 @@ import { atomicWriteFile, detectMimeType } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import { defineTool } from './define.js';
-import { putResource } from './shared.js';
+import { buildResourceResponse, buildToolResponse, formatBytes, putResource } from './shared.js';
 
 const WriteFileInputSchema = z.strictObject({
   path: RequiredPath.describe('Target file path'),
@@ -68,7 +68,7 @@ export const WRITE_FILE = defineTool({
 
     // Return basic response if no resource store
     if (!ctx.resourceStore) {
-      return {
+      return buildToolResponse(`Successfully wrote to file: ${args.path}`, {
         ok: true as const,
         path: validPath,
         size: bytesWritten,
@@ -78,11 +78,11 @@ export const WRITE_FILE = defineTool({
         resourceUri: '',
         created: fileStats.birthtime.toISOString(),
         modified: fileStats.mtime.toISOString(),
-      };
+      });
     }
 
     // Store content in resource store
-    const { entry } = putResource({
+    const { entry, link } = putResource({
       store: ctx.resourceStore,
       name: basename(validPath),
       mimeType: mimeInfo.mimeType,
@@ -90,17 +90,27 @@ export const WRITE_FILE = defineTool({
       content: args.content,
     });
 
-    return {
-      ok: true as const,
-      path: validPath,
-      size: bytesWritten,
-      lineCount,
-      mimeType: mimeInfo.mimeType,
-      kind: mimeInfo.kind,
-      resourceUri: entry.uri,
-      created: fileStats.birthtime.toISOString(),
-      modified: fileStats.mtime.toISOString(),
-    };
+    const summary = [
+      `write: ${basename(validPath)}`,
+      formatBytes(bytesWritten),
+      `${String(lineCount)} lines`,
+    ].join(' \u00b7 ');
+
+    return buildResourceResponse({
+      summary,
+      resources: [link],
+      structured: {
+        ok: true as const,
+        path: validPath,
+        size: bytesWritten,
+        lineCount,
+        mimeType: mimeInfo.mimeType,
+        kind: mimeInfo.kind,
+        resourceUri: entry.uri,
+        created: fileStats.birthtime.toISOString(),
+        modified: fileStats.mtime.toISOString(),
+      },
+    });
   },
   progressLabel: (args) => `Write File: ${basename(args.path)}`,
   defaultErrorCode: ErrorCode.UNKNOWN,

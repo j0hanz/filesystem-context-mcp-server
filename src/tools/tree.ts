@@ -34,7 +34,7 @@ import {
   MAX_TREE_ENTRIES,
 } from '../core/util.js';
 import { defineTool } from './define.js';
-import { putResource } from './shared.js';
+import { buildResourceResponse, buildToolResponse, putResource } from './shared.js';
 
 // ---------------------------------------------------------------------------
 // Private tree implementation (inlined from lib/file-operations/metadata.ts)
@@ -468,7 +468,10 @@ async function handleTree(
   signal?: AbortSignal,
   resourceStore?: Parameters<typeof putResource>[0]['store'],
   onProgress?: (progress: { current: number }) => void,
-): Promise<z.infer<typeof TreeOutputSchema>> {
+): Promise<
+  | z.infer<typeof TreeOutputSchema>
+  | ReturnType<typeof buildResourceResponse<z.infer<typeof TreeOutputSchema>>>
+> {
   const basePath = pathGuard.resolvePathOrRoot(args.path);
   const result = await treeDirectory(basePath, pathGuard, {
     maxDepth: args.maxDepth,
@@ -489,16 +492,18 @@ async function handleTree(
   const continuation = buildTreeContinuation(basePath, result.truncated, result.totalEntries);
 
   let resourceUri: string | undefined;
+  let resourceLink: ReturnType<typeof putResource>['link'] | undefined;
 
   if (resourceStore) {
-    const { entry } = putResource({
+    const put = putResource({
       store: resourceStore,
       name: `${basename(result.root)}-tree.txt`,
       mimeType: 'text/plain',
       kind: 'text',
       content: ascii,
     });
-    resourceUri = entry.uri;
+    resourceUri = put.entry.uri;
+    resourceLink = put.link;
   }
 
   const structured: z.infer<typeof TreeOutputSchema> = {
@@ -513,7 +518,19 @@ async function handleTree(
     ...(resourceUri ? { resourceUri } : {}),
   };
 
-  return structured;
+  const dirname = basename(result.root) || result.root;
+  const depthLabel = maxDepth === 1 ? '1 level' : `${String(maxDepth)} levels`;
+  const entriesLabel = entryCount === 1 ? '1 entry' : `${String(entryCount)} entries`;
+  const summaryText = `tree: ${dirname} \u00b7 ${entriesLabel} \u00b7 ${depthLabel} deep`;
+
+  if (resourceLink) {
+    return buildResourceResponse({
+      summary: summaryText,
+      resources: [resourceLink],
+      structured,
+    });
+  }
+  return buildToolResponse(summaryText, structured);
 }
 
 export const TREE = defineTool({

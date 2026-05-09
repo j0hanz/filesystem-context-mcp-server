@@ -30,7 +30,13 @@ import {
   PARALLEL_CONCURRENCY,
 } from '../core/util.js';
 import { defineTool } from './define.js';
-import { buildStructuredError, putResource, truncateProgressPattern } from './shared.js';
+import {
+  buildResourceResponse,
+  buildStructuredError,
+  buildToolResponse,
+  putResource,
+  truncateProgressPattern,
+} from './shared.js';
 
 const SearchAndReplaceInputSchema = z.strictObject({
   path: OptionalPath,
@@ -475,7 +481,10 @@ async function handleSearchAndReplace(
   signal?: AbortSignal,
   onProgress: (progress: { total?: number; current: number }) => void = () => undefined,
   resourceStore?: ResourceStore,
-): Promise<SearchAndReplaceOutput> {
+): Promise<{
+  structured: SearchAndReplaceOutput;
+  link?: ReturnType<typeof putResource>['link'];
+}> {
   const maxFileSize = MAX_TEXT_FILE_SIZE;
   const root = await resolveSearchRoot(args.path, pathGuard);
   const matcher = createReplacementMatcher(args);
@@ -544,7 +553,7 @@ async function handleSearchAndReplace(
   // Store primary file in resource store if available
   if (resourceStore && summary.changedFiles.length > 0 && summary.filesChanged > 0) {
     const primaryFile = summary.changedFiles[0];
-    if (!primaryFile) return structured;
+    if (!primaryFile) return { structured };
 
     const primaryFilePath = primaryFile.path;
     const fullPath = `${summary.root}/${primaryFilePath}`;
@@ -563,7 +572,7 @@ async function handleSearchAndReplace(
       const lineCount = content.split('\n').length;
       const size = Buffer.byteLength(content, 'utf-8');
 
-      const { entry } = putResource({
+      const { entry, link } = putResource({
         store: resourceStore,
         name: basename(fullPath),
         mimeType: mimeInfo.mimeType,
@@ -580,7 +589,7 @@ async function handleSearchAndReplace(
         resourceUri: entry.uri,
       };
 
-      return structured;
+      return { structured, link };
     } catch (error) {
       // Gracefully fall back if resource storage fails
       Logger.error(
@@ -589,7 +598,7 @@ async function handleSearchAndReplace(
     }
   }
 
-  return structured;
+  return { structured };
 }
 
 export const SEARCH_AND_REPLACE = defineTool({
@@ -623,7 +632,7 @@ export const SEARCH_AND_REPLACE = defineTool({
         message: `search_and_replace: ${truncatedPattern} [${params.current} files]`,
       });
     };
-    const result = await handleSearchAndReplace(
+    const { structured, link } = await handleSearchAndReplace(
       args,
       ctx.pathGuard,
       ctx.signal,
@@ -633,11 +642,23 @@ export const SEARCH_AND_REPLACE = defineTool({
     if (!args.dryRun) {
       ctx.log?.(
         'info',
-        `search_and_replace: ${String(result.totalMatches)} matches in ${String(result.filesModified)} files`,
+        `search_and_replace: ${String(structured.totalMatches)} matches in ${String(structured.filesModified)} files`,
         'search_and_replace',
       );
     }
-    return result;
+    const dryLabel = args.dryRun ? ' [dry run]' : '';
+    const summaryText =
+      `search-and-replace: '${truncatedPattern}'${dryLabel}` +
+      ` \u00b7 ${String(structured.totalMatches)} match(es)` +
+      ` in ${String(structured.filesModified)} file(s)`;
+    if (link) {
+      return buildResourceResponse({
+        summary: summaryText,
+        resources: [link],
+        structured,
+      });
+    }
+    return buildToolResponse(summaryText, structured);
   },
 });
 function buildSearchAndReplaceStructuredResult(

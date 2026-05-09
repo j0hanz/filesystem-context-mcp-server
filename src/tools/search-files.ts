@@ -45,6 +45,8 @@ import {
 } from '../core/util.js';
 import { defineTool } from './define.js';
 import {
+  buildResourceResponse,
+  buildToolResponse,
   decodeOffsetCursor,
   encodeOffsetCursor,
   putResource,
@@ -552,7 +554,11 @@ async function handleSearchFiles(
   signal?: AbortSignal,
   onProgress?: (progress: { total?: number; current: number }) => void,
   resourceStore?: ResourceStore,
-): Promise<z.infer<typeof SearchFilesOutputSchema>> {
+): Promise<{
+  structured: z.infer<typeof SearchFilesOutputSchema>;
+  link?: ReturnType<typeof putResource>['link'];
+  count: number;
+}> {
   const basePath = pathGuard.resolvePathOrRoot(args.path);
   const excludePatterns = args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
   const cursorOffset = args.cursor !== undefined ? decodeOffsetCursor(args.cursor) : 0;
@@ -594,7 +600,7 @@ async function handleSearchFiles(
   // If resourceStore is available, store results as JSON and build resource response
   if (resourceStore !== undefined && relativeResults.length > 0) {
     const resultsJson = JSON.stringify(relativeResults, null, 2);
-    const { entry } = putResource({
+    const { entry, link } = putResource({
       store: resourceStore,
       name: 'search-results.json',
       mimeType: 'application/json',
@@ -603,12 +609,16 @@ async function handleSearchFiles(
     });
 
     return {
-      ...structured,
-      resourceUri: entry.uri,
+      structured: {
+        ...structured,
+        resourceUri: entry.uri,
+      },
+      link,
+      count: relativeResults.length,
     };
   }
 
-  return structured;
+  return { structured, count: relativeResults.length };
 }
 
 export const SEARCH_FILES = defineTool({
@@ -641,6 +651,21 @@ export const SEARCH_FILES = defineTool({
         message: `find: ${truncateProgressPattern(args.pattern)} [${params.current} files]`,
       });
     };
-    return handleSearchFiles(args, ctx.pathGuard, ctx.signal, onProgress, ctx.resourceStore);
+    const { structured, link, count } = await handleSearchFiles(
+      args,
+      ctx.pathGuard,
+      ctx.signal,
+      onProgress,
+      ctx.resourceStore,
+    );
+    const summary = `search-files: '${args.pattern}' \u00b7 ${String(count)} matches`;
+    if (link) {
+      return buildResourceResponse({
+        summary,
+        resources: [link],
+        structured,
+      });
+    }
+    return buildToolResponse(summary, structured);
   },
 });

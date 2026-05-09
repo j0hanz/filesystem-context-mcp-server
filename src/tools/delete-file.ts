@@ -14,7 +14,7 @@ import { ErrorCode, isNodeError, McpError } from '../core/errors.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import { defineTool } from './define.js';
-import { buildStructuredError } from './shared.js';
+import { buildStructuredError, buildToolResponse } from './shared.js';
 
 const DeleteInputSchema = z.strictObject({
   paths: z.array(RequiredPath).min(1).describe('One or more paths to delete'),
@@ -255,6 +255,9 @@ export const DELETE_FILE = defineTool({
   run: async (args, ctx) => {
     const structured = await handleDelete(args, ctx.pathGuard, ctx.signal, ctx.elicitInput);
     ctx.log?.('info', `rm: ${args.paths[0]}`, 'rm');
-    return structured;
+    const summary = structured.path
+      ? `delete-file: deleted ${structured.path}`
+      : `delete-file: 1 failure`;
+    return buildToolResponse(summary, structured);
   },
 });

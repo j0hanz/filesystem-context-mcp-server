@@ -574,6 +574,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 1000,
+          "pattern": "^(?!\\/)(?![a-zA-Z]:[\\\\/])(?!.*\\.\\.).+$",
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
           "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
@@ -746,37 +747,12 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 1000,
+          "pattern": "^(?!\\/)(?![a-zA-Z]:[\\\\/])(?!.*\\.\\.).+$",
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
           "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
         }
-      },
-      "allOf": [
-        {
-          "if": {
-            "required": ["pattern"]
-          },
-          "then": {
-            "properties": {
-              "pattern": {
-                "not": {
-                  "anyOf": [
-                    {
-                      "pattern": "^/"
-                    },
-                    {
-                      "pattern": "^[A-Za-z]:"
-                    },
-                    {
-                      "pattern": "\\.\\."
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      ]
+      }
     },
     "outputSchema": {
       "type": "object",
@@ -950,6 +926,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 1000,
+          "pattern": "^(?!\\/)(?![a-zA-Z]:[\\\\/])(?!.*\\.\\.).+$",
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
           "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
@@ -1193,22 +1170,22 @@
         },
         {
           "not": {
-            "required": ["tail", "startLine"]
-          }
-        },
-        {
-          "not": {
-            "required": ["tail", "endLine"]
-          }
-        },
-        {
-          "not": {
             "required": ["head", "startLine"]
           }
         },
         {
           "not": {
             "required": ["head", "endLine"]
+          }
+        },
+        {
+          "not": {
+            "required": ["tail", "startLine"]
+          }
+        },
+        {
+          "not": {
+            "required": ["tail", "endLine"]
           }
         },
         {
@@ -1229,26 +1206,6 @@
         {
           "not": {
             "required": ["offset", "endLine"]
-          }
-        },
-        {
-          "not": {
-            "required": ["length", "head"]
-          }
-        },
-        {
-          "not": {
-            "required": ["length", "tail"]
-          }
-        },
-        {
-          "not": {
-            "required": ["length", "startLine"]
-          }
-        },
-        {
-          "not": {
-            "required": ["length", "endLine"]
           }
         }
       ]
@@ -1421,74 +1378,7 @@
         }
       },
       "required": ["paths"],
-      "additionalProperties": false,
-      "allOf": [
-        {
-          "not": {
-            "required": ["head", "tail"]
-          }
-        },
-        {
-          "not": {
-            "required": ["tail", "startLine"]
-          }
-        },
-        {
-          "not": {
-            "required": ["tail", "endLine"]
-          }
-        },
-        {
-          "not": {
-            "required": ["head", "startLine"]
-          }
-        },
-        {
-          "not": {
-            "required": ["head", "endLine"]
-          }
-        },
-        {
-          "not": {
-            "required": ["offset", "head"]
-          }
-        },
-        {
-          "not": {
-            "required": ["offset", "tail"]
-          }
-        },
-        {
-          "not": {
-            "required": ["offset", "startLine"]
-          }
-        },
-        {
-          "not": {
-            "required": ["offset", "endLine"]
-          }
-        },
-        {
-          "not": {
-            "required": ["length", "head"]
-          }
-        },
-        {
-          "not": {
-            "required": ["length", "tail"]
-          }
-        },
-        {
-          "not": {
-            "required": ["length", "startLine"]
-          }
-        },
-        {
-          "not": {
-            "required": ["length", "endLine"]
-          }
-        }
-      ]
+      "additionalProperties": false
     },
     "outputSchema": {
       "type": "object",
@@ -1841,37 +1731,12 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 1000,
+          "pattern": "^(?!\\/)(?![a-zA-Z]:[\\\\/])(?!.*\\.\\.).+$",
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
           "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
         }
-      },
-      "allOf": [
-        {
-          "if": {
-            "required": ["pattern"]
-          },
-          "then": {
-            "properties": {
-              "pattern": {
-                "not": {
-                  "anyOf": [
-                    {
-                      "pattern": "^/"
-                    },
-                    {
-                      "pattern": "^[A-Za-z]:"
-                    },
-                    {
-                      "pattern": "\\.\\."
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      ]
+      }
     },
     "outputSchema": {
       "type": "object",

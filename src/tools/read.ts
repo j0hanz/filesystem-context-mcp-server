@@ -21,7 +21,7 @@ import {
   MAX_TEXT_FILE_SIZE,
 } from '../core/util.js';
 import { defineTool } from './define.js';
-import { putResource } from './shared.js';
+import { buildResourceResponse, buildToolResponse, formatBytes, putResource } from './shared.js';
 
 const readRangeFields = createReadRangeFields({
   head: 'Return first N lines',
@@ -196,7 +196,7 @@ async function handleReadFile(
   pathGuard: PathGuard,
   signal?: AbortSignal,
   resourceStore?: ResourceStore,
-): Promise<ReadFileOutput> {
+): Promise<ReadFileOutput | ReturnType<typeof buildResourceResponse<ReadFileOutput>>> {
   const options = buildReadOptions(args, signal);
   const result = await readFile(args.path, options, pathGuard);
   const mimeInfo = detectMimeType(result.path, Buffer.from(result.content.slice(0, 512)));
@@ -213,7 +213,7 @@ async function handleReadFile(
 
   // Always store content in resource store and return summary + link
   if (resourceStore) {
-    const { entry } = putResource({
+    const { entry, link } = putResource({
       store: resourceStore,
       name: basename(result.path),
       mimeType: mimeInfo.mimeType,
@@ -221,13 +221,26 @@ async function handleReadFile(
       content: result.content,
     });
 
-    return {
+    const structuredWithResource: ReadFileOutput = {
       ...structured,
       resourceUri: entry.uri,
     };
+
+    const summary = [
+      `read: ${basename(result.path)}`,
+      `${String(structured.totalLines ?? 0)} lines`,
+      formatBytes(entry.size),
+      mimeInfo.mimeType,
+    ].join(' \u00b7 ');
+
+    return buildResourceResponse({
+      summary,
+      resources: [link],
+      structured: structuredWithResource,
+    });
   }
 
-  return structured;
+  return buildToolResponse(result.content, structured);
 }
 
 export const READ_FILE = defineTool({
@@ -244,5 +257,19 @@ export const READ_FILE = defineTool({
   ],
   defaultErrorCode: ErrorCode.NOT_FILE,
   progressLabel: buildReadProgressLabel,
+  inputSchemaAugment: (schema) => ({
+    ...schema,
+    allOf: [
+      { not: { required: ['head', 'tail'] } },
+      { not: { required: ['head', 'startLine'] } },
+      { not: { required: ['head', 'endLine'] } },
+      { not: { required: ['tail', 'startLine'] } },
+      { not: { required: ['tail', 'endLine'] } },
+      { not: { required: ['offset', 'head'] } },
+      { not: { required: ['offset', 'tail'] } },
+      { not: { required: ['offset', 'startLine'] } },
+      { not: { required: ['offset', 'endLine'] } },
+    ],
+  }),
   run: (args, ctx) => handleReadFile(args, ctx.pathGuard, ctx.signal, ctx.resourceStore),
 });

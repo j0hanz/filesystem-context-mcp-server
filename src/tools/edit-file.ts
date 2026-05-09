@@ -16,7 +16,7 @@ import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import { defineTool } from './define.js';
-import { putResource } from './shared.js';
+import { buildResourceResponse, buildToolResponse, formatBytes, putResource } from './shared.js';
 
 const EditFileInputSchema = z.strictObject({
   path: RequiredPath,
@@ -332,6 +332,7 @@ async function handleEditFile(
   structured: EditOutput;
   editedContent: string;
   validPath: string;
+  resourceLink?: ReturnType<typeof putResource>['link'];
 }> {
   const { validPath, content } = await loadEditableFile(args.path, pathGuard, signal);
   const editResult = await applyEdits(content, args.edits, args.ignoreWhitespace);
@@ -347,9 +348,10 @@ async function handleEditFile(
     const mimeInfo = detectMimeType(validPath, Buffer.from(editResult.content.slice(0, 512)));
 
     let resourceUri = '';
+    let resourceLink: ReturnType<typeof putResource>['link'] | undefined;
     // For dryRun with changes, store the hypothetical edited content in resource
     if (editResult.appliedEdits > 0 && resourceStore) {
-      const { entry } = putResource({
+      const { entry, link } = putResource({
         store: resourceStore,
         name: basename(validPath),
         mimeType: mimeInfo.mimeType,
@@ -357,6 +359,7 @@ async function handleEditFile(
         content: editResult.content,
       });
       resourceUri = entry.uri;
+      resourceLink = link;
     }
 
     return {
@@ -372,6 +375,7 @@ async function handleEditFile(
       }),
       editedContent: editResult.content,
       validPath,
+      ...(resourceLink ? { resourceLink } : {}),
     };
   }
 
@@ -401,8 +405,9 @@ async function handleEditFile(
 
   // Store in resource store if available and edits were made
   let resourceUri = '';
+  let resourceLink: ReturnType<typeof putResource>['link'] | undefined;
   if (editResult.appliedEdits > 0 && resourceStore) {
-    const { entry } = putResource({
+    const { entry, link } = putResource({
       store: resourceStore,
       name: basename(validPath),
       mimeType: mimeInfo.mimeType,
@@ -410,6 +415,7 @@ async function handleEditFile(
       content: editResult.content,
     });
     resourceUri = entry.uri;
+    resourceLink = link;
   }
 
   return {
@@ -425,6 +431,7 @@ async function handleEditFile(
     }),
     editedContent: editResult.content,
     validPath,
+    ...(resourceLink ? { resourceLink } : {}),
   };
 }
 
@@ -441,8 +448,24 @@ export const EDIT_FILE = defineTool({
   nuances: ['Each edit applies to the output of the previous edit.'],
   progressLabel: buildEditProgressMessage,
   run: async (args, ctx) => {
-    const { structured } = await handleEditFile(args, ctx.pathGuard, ctx.resourceStore, ctx.signal);
+    const { structured, resourceLink } = await handleEditFile(
+      args,
+      ctx.pathGuard,
+      ctx.resourceStore,
+      ctx.signal,
+    );
     ctx.log?.('info', `edit: ${args.path} (${String(structured.appliedEdits ?? 0)} edits)`, 'edit');
-    return structured;
+    const summary =
+      `edit-file: edited ${basename(args.path)}` +
+      ` \u00b7 ${formatBytes(structured.size)}` +
+      ` \u00b7 ${String(structured.lineCount)} lines`;
+    if (resourceLink) {
+      return buildResourceResponse({
+        summary,
+        resources: [resourceLink],
+        structured,
+      });
+    }
+    return buildToolResponse(summary, structured);
   },
 });

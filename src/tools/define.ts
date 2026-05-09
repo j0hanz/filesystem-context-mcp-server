@@ -1,6 +1,7 @@
 // src/tools/define.ts
 // Tool definition engine for registering tools with MCP server
 import type {
+  ContentBlock,
   ElicitRequestFormParams,
   ElicitResult,
   LoggingLevel,
@@ -49,6 +50,8 @@ export interface ToolDeps {
   readonly resourceStore: ResourceStore | undefined;
 }
 
+export type RunResult<T> = T | { content: ContentBlock[]; structuredContent: T };
+
 export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
   readonly name: string;
   readonly title: string;
@@ -61,9 +64,10 @@ export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
   readonly timeoutMs?: number;
   readonly progressLabel?: (args: z.infer<I>) => string;
   readonly defaultErrorCode?: ErrorCode;
-  readonly run: (args: z.infer<I>, ctx: ToolCtx) => Promise<z.infer<O>>;
+  readonly run: (args: z.infer<I>, ctx: ToolCtx) => Promise<RunResult<z.infer<O>>>;
   readonly nuances?: readonly string[];
   readonly gotchas?: readonly string[];
+  readonly inputSchemaAugment?: (schema: Record<string, unknown>) => Record<string, unknown>;
 }
 
 export interface DefinedTool {
@@ -109,7 +113,7 @@ export const ALL_TOOLS: DefinedTool[] = [];
 export function defineTool<I extends z.ZodType, O extends z.ZodType>(
   def: ToolDef<I, O>,
 ): DefinedTool {
-  const inputSchema = toToolJsonSchema(def.input);
+  const inputSchema = toToolJsonSchema(def.input, def.inputSchemaAugment);
   const outputSchema = toToolJsonSchema(def.output);
   const taskMode = def.task ?? 'forbidden';
 
@@ -174,6 +178,19 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
         try {
           const result = await def.run(parsedArgs, toolCtx);
           progressSession.complete(label);
+          if (
+            result !== null &&
+            typeof result === 'object' &&
+            'content' in result &&
+            'structuredContent' in result &&
+            Array.isArray((result as { content: unknown }).content)
+          ) {
+            const wrapped = result as { content: ContentBlock[]; structuredContent: unknown };
+            return {
+              content: wrapped.content,
+              structuredContent: wrapped.structuredContent,
+            };
+          }
           return {
             content: [{ type: 'text', text: JSON.stringify(result) }],
             structuredContent: result,

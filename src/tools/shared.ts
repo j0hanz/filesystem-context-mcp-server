@@ -153,6 +153,17 @@ export function buildStructuredError(
   };
 }
 
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
+  const KIB_LOCAL = 1024;
+  const MIB_LOCAL = 1024 * 1024;
+  const GIB_LOCAL = 1024 * 1024 * 1024;
+  if (bytes < KIB_LOCAL) return `${bytes} B`;
+  if (bytes < MIB_LOCAL) return `${(bytes / KIB_LOCAL).toFixed(1)} KB`;
+  if (bytes < GIB_LOCAL) return `${(bytes / MIB_LOCAL).toFixed(1)} MB`;
+  return `${(bytes / GIB_LOCAL).toFixed(1)} GB`;
+}
+
 export function buildToolResponse<T>(
   text: string,
   structuredContent: T,

@@ -46,7 +46,7 @@ import {
   PARALLEL_CONCURRENCY,
 } from '../core/util.js';
 import { defineTool } from './define.js';
-import { putResource } from './shared.js';
+import { buildResourceResponse, buildToolResponse, putResource } from './shared.js';
 
 // ---------------------------------------------------------------------------
 // Private listDirectory implementation (inlined from lib/file-operations/metadata.ts)
@@ -619,7 +619,10 @@ async function handleListDirectory(
   pathGuard: PathGuard,
   signal?: AbortSignal,
   resourceStore?: Parameters<typeof putResource>[0]['store'],
-): Promise<z.infer<typeof ListDirectoryOutputSchema>> {
+): Promise<
+  | z.infer<typeof ListDirectoryOutputSchema>
+  | ReturnType<typeof buildResourceResponse<z.infer<typeof ListDirectoryOutputSchema>>>
+> {
   const dirPath = pathGuard.resolvePathOrRoot(args.path);
   const pageSize = args.maxEntries;
   const options: ListDirectoryOptions = {
@@ -675,7 +678,6 @@ async function handleListDirectory(
   );
 
   // Store full listing in resource store if available
-  let resourceUri: string | undefined;
   if (resourceStore) {
     // Create full listing JSON with all entries
     const fullListing = result.entries.map((entry) => buildStructuredListEntry(entry));
@@ -684,7 +686,7 @@ async function handleListDirectory(
     const dirName = basename(result.path) || 'listing';
     const fileName = `${dirName}-listing.json`;
 
-    const { entry } = putResource({
+    const { entry, link } = putResource({
       store: resourceStore,
       name: fileName,
       mimeType: 'application/json',
@@ -692,19 +694,27 @@ async function handleListDirectory(
       content: jsonContent,
     });
 
-    resourceUri = entry.uri;
-
-    return buildStructuredListResult(
+    const structured = buildStructuredListResult(
       { ...result, entries: displayEntries },
       nextCursor,
-      resourceUri,
+      entry.uri,
       result.entries.length,
     );
+
+    const summaryText = `list-directory: ${result.path} \u00b7 ${String(result.entries.length)} ${result.entries.length === 1 ? 'entry' : 'entries'}`;
+
+    return buildResourceResponse({
+      summary: summaryText,
+      resources: [link],
+      structured,
+    });
   }
 
   // Fallback to old behavior if resource store is not available
   const displayResult = { ...result, entries: displayEntries };
-  return buildStructuredListResult(displayResult, nextCursor);
+  const fallbackStructured = buildStructuredListResult(displayResult, nextCursor);
+  const fallbackSummary = `list-directory: ${result.path} \u00b7 ${String(displayEntries.length)} ${displayEntries.length === 1 ? 'entry' : 'entries'}`;
+  return buildToolResponse(fallbackSummary, fallbackStructured);
 }
 
 type ListDirInput = z.infer<typeof ListDirectoryInputSchema>;

@@ -14,7 +14,7 @@ import { getFileType, isHidden } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, getMimeType } from '../core/util.js';
 import { defineTool } from './define.js';
-import { buildFileInfoPayload } from './shared.js';
+import { buildFileInfoPayload, buildToolResponse, formatBytes } from './shared.js';
 
 const StatInputSchema = z.strictObject({
   path: RequiredPath,
@@ -125,7 +125,12 @@ export const GET_FILE_INFO = defineTool({
       pathGuard: ctx.pathGuard,
       signal: ctx.signal,
     });
-    return { ok: true as const, file: buildFileInfoPayload(info) };
+    const structured = { ok: true as const, file: buildFileInfoPayload(info) };
+    const parts = [info.name, formatBytes(info.size)];
+    if (info.symlinkTarget) {
+      parts.push(`\u2192 ${info.symlinkTarget}`);
+    }
+    return buildToolResponse(`stat: ${parts.join(' \u2022 ')}`, structured);
   },
   progressLabel: (args) => `Get File Info: ${args.path}`,
   defaultErrorCode: ErrorCode.NOT_FOUND,

@@ -18,7 +18,7 @@ import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../core/util.js';
 import { defineTool } from './define.js';
-import { putResource } from './shared.js';
+import { buildResourceResponse, putResource } from './shared.js';
 
 const WINDOWS_PATH_SEPARATOR = /\\/gu;
 
@@ -197,7 +197,7 @@ async function handleCalculateHash(
   resourceStore: ResourceStore | undefined,
   signal?: AbortSignal,
   onProgress?: (progress: { total?: number; current: number }) => void,
-): Promise<z.infer<typeof HashOutputSchema>> {
+): Promise<ReturnType<typeof buildResourceResponse<z.infer<typeof HashOutputSchema>>>> {
   const validPath = await pathGuard.validateExistingPath(args.path);
   const { algorithms } = args;
 
@@ -228,7 +228,7 @@ async function handleCalculateHash(
   }
 
   const hashJson = JSON.stringify(hashes, null, 2);
-  const { entry } = putResource({
+  const { entry, link } = putResource({
     store: resourceStore,
     name: 'hashes.json',
     mimeType: 'application/json',
@@ -236,15 +236,32 @@ async function handleCalculateHash(
     content: hashJson,
   });
 
-  return {
-    ok: true as const,
-    filePath: validPath,
-    algorithms: [...algorithms],
-    hashes,
-    resourceUri: entry.uri,
-    isDirectory: stats.isDirectory(),
-    ...(fileCount !== undefined ? { fileCount } : {}),
+  const fileName = basename(validPath);
+  const primaryAlgo = algorithms[0] ?? 'sha256';
+  const ALGO_LABELS: Record<string, string> = {
+    sha256: 'SHA-256',
+    sha1: 'SHA-1',
+    sha512: 'SHA-512',
+    md5: 'MD5',
   };
+  const displayAlgo = ALGO_LABELS[primaryAlgo] ?? primaryAlgo.toUpperCase();
+  const primaryHash = hashes[primaryAlgo] ?? Object.values(hashes)[0] ?? '';
+  const hashDisplay = primaryHash.length > 16 ? `${primaryHash.slice(0, 16)}\u2026` : primaryHash;
+  const summary = `calculate-hash: ${fileName} \u00b7 ${displayAlgo}: ${hashDisplay}`;
+
+  return buildResourceResponse({
+    summary,
+    resources: [link],
+    structured: {
+      ok: true as const,
+      filePath: validPath,
+      algorithms: [...algorithms],
+      hashes,
+      resourceUri: entry.uri,
+      isDirectory: stats.isDirectory(),
+      ...(fileCount !== undefined ? { fileCount } : {}),
+    },
+  });
 }
 
 export const CALCULATE_HASH = defineTool({
