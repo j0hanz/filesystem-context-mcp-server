@@ -106,4 +106,58 @@ void describe('ProgressSession', () => {
       message: 'should clamp',
     });
   });
+
+  void it('complete sets #done and emits terminal complete event', () => {
+    const sink = new MemorySink();
+    const clock = makeClock();
+    const session = new ProgressSession({
+      label: 'job',
+      total: 10,
+      sinks: [sink],
+      now: clock.now,
+    });
+    sink.events.length = 0;
+
+    session.complete('finished');
+
+    assert.equal(sink.events.length, 1);
+    assert.deepEqual(sink.events[0], {
+      kind: 'complete',
+      current: 0,
+      total: 10,
+      message: 'finished',
+    });
+
+    // Subsequent calls are no-ops
+    session.step('too late');
+    assert.equal(sink.events.length, 1);
+  });
+
+  void it('fail sets #done and emits terminal fail event', () => {
+    const sink = new MemorySink();
+    const clock = makeClock();
+    const session = new ProgressSession({
+      label: 'job',
+      total: 10,
+      sinks: [sink],
+      now: clock.now,
+    });
+    sink.events.length = 0;
+
+    const error = new Error('boom');
+    session.fail(error, 'failed');
+
+    assert.equal(sink.events.length, 1);
+    assert.deepEqual(sink.events[0], {
+      kind: 'fail',
+      current: 0,
+      total: 10,
+      message: 'failed',
+      error,
+    });
+
+    // Subsequent calls are no-ops
+    session.complete('ignored');
+    assert.equal(sink.events.length, 1);
+  });
 });

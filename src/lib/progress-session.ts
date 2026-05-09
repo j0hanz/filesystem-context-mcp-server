@@ -89,12 +89,27 @@ export class ProgressSession {
     // Implemented in Task 4.
   }
 
-  complete(_message: string): void {
-    // Implemented in Task 3.
+  complete(message: string): void {
+    if (this.#done) return;
+    this.#done = true;
+    this.#dispatch({
+      kind: 'complete',
+      current: this.#cursor,
+      ...(this.#total !== undefined ? { total: this.#total } : {}),
+      message,
+    });
   }
 
-  fail(_error: unknown, _message?: string): void {
-    // Implemented in Task 3.
+  fail(error: unknown, message?: string): void {
+    if (this.#done) return;
+    this.#done = true;
+    this.#dispatch({
+      kind: 'fail',
+      current: this.#cursor,
+      ...(this.#total !== undefined ? { total: this.#total } : {}),
+      message: message ?? this.#label,
+      error,
+    });
   }
 
   #dispatch(event: ProgressEvent): void {
