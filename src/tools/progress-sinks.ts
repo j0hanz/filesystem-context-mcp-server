@@ -1,6 +1,7 @@
 import type {
   ProgressNotification,
   ProgressToken,
+  RequestTaskStore,
 } from '@modelcontextprotocol/server';
 
 import type { ProgressEvent, ProgressSink } from '../lib/progress-session.js';
@@ -60,63 +61,49 @@ export class McpProgressSink implements ProgressSink {
   }
 }
 
-/**
- * Simplified task store interface for progress updates. Matches the patch
- * capability used by the TaskStoreSink.
- */
-export interface TaskStore {
-  updateTask(
-    taskId: string,
-    patch: { message?: string; statusMessage?: string }
-  ): Promise<void>;
-}
-
-export interface TaskStoreSinkOptions {
+interface TaskStoreSinkOptions {
+  taskStore: RequestTaskStore;
   taskId: string;
-  store: TaskStore;
 }
 
-/**
- * Sink that updates a TaskStore with progress information. Swallows benign
- * "Task not found" or "terminal status" errors to prevent failing the tool.
- */
+const BENIGN_TASK_ERROR_RE = /Task .*not found|terminal status/iu;
+
+function isBenignTaskStoreError(error: unknown): boolean {
+  return error instanceof Error && BENIGN_TASK_ERROR_RE.test(error.message);
+}
+
+function formatTickMessage(
+  current: number,
+  total: number | undefined,
+  message: string | undefined
+): string {
+  if (total !== undefined) {
+    return message ? `${message} (${current}/${total})` : `${current}/${total}`;
+  }
+  return message ?? `${current}`;
+}
+
 export class TaskStoreSink implements ProgressSink {
   readonly name = 'task-store';
+  readonly #taskStore: RequestTaskStore;
   readonly #taskId: string;
-  readonly #store: TaskStore;
 
   constructor(opts: TaskStoreSinkOptions) {
+    this.#taskStore = opts.taskStore;
     this.#taskId = opts.taskId;
-    this.#store = opts.store;
   }
 
   async emit(event: ProgressEvent): Promise<void> {
-    const statusMessage = event.message;
-
-    let message = event.message;
-    if (event.kind === 'tick') {
-      const total = event.total;
-      message =
-        total !== undefined
-          ? `${event.message} [${event.current}/${total}]`
-          : `${event.message} [${event.current}]`;
-    }
+    const message =
+      event.kind === 'status'
+        ? event.message
+        : formatTickMessage(event.current, event.total, event.message);
 
     try {
-      await this.#store.updateTask(this.#taskId, {
-        message,
-        statusMessage,
-      });
+      await this.#taskStore.updateTaskStatus(this.#taskId, 'working', message);
     } catch (error) {
-      if (this.#isBenignError(error)) return;
+      if (isBenignTaskStoreError(error)) return;
       throw error;
     }
-  }
-
-  #isBenignError(error: unknown): boolean {
-    return (
-      error instanceof Error &&
-      /Task .*not found|terminal status/iu.test(error.message)
-    );
   }
 }

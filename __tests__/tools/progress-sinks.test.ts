@@ -12,7 +12,7 @@ void describe('McpProgressSink', () => {
     const sink = new McpProgressSink({
       progressToken: 'tok-1',
       sendNotification: async (n) => {
-        notifications.push(n);
+        notifications.push(n as ProgressNotification);
       },
     });
 
@@ -40,7 +40,7 @@ void describe('McpProgressSink', () => {
     const sink = new McpProgressSink({
       progressToken: 'tok-1',
       sendNotification: async (n) => {
-        notifications.push(n);
+        notifications.push(n as ProgressNotification);
       },
     });
 
@@ -54,7 +54,7 @@ void describe('McpProgressSink', () => {
     const sink = new McpProgressSink({
       progressToken: 'tok-1',
       sendNotification: async (n) => {
-        notifications.push(n);
+        notifications.push(n as ProgressNotification);
       },
     });
 
@@ -80,7 +80,7 @@ void describe('McpProgressSink', () => {
     const sink = new McpProgressSink({
       progressToken: 'tok-1',
       sendNotification: async (n) => {
-        notifications.push(n);
+        notifications.push(n as ProgressNotification);
       },
     });
 
@@ -101,75 +101,121 @@ void describe('McpProgressSink', () => {
   });
 });
 
+interface FakeUpdateCall {
+  taskId: string;
+  status: string;
+  message: string;
+}
+
+class FakeTaskStore {
+  readonly calls: FakeUpdateCall[] = [];
+  shouldReject?: Error;
+  async updateTaskStatus(
+    taskId: string,
+    status: 'working' | 'completed' | 'failed',
+    message: string
+  ): Promise<void> {
+    if (this.shouldReject) throw this.shouldReject;
+    this.calls.push({ taskId, status, message });
+  }
+}
+
 void describe('TaskStoreSink', () => {
-  void it('updates message and status on emit', async () => {
-    let message: string | undefined;
-    let statusMessage: string | undefined;
-
-    const sink = new TaskStoreSink({
-      taskId: 'task-1',
-      store: {
-        updateTask: async (id: string, patch: { message?: string; statusMessage?: string }) => {
-          assert.equal(id, 'task-1');
-          message = patch.message;
-          statusMessage = patch.statusMessage;
-        },
-      },
-    });
-
-    await sink.emit({ kind: 'status', message: 'scanning' });
-    assert.equal(message, 'scanning');
-    assert.equal(statusMessage, 'scanning');
+  void it('writes "working" status for tick events with current/total formatting', async () => {
+    const store = new FakeTaskStore();
+    const sink = new TaskStoreSink({ taskStore: store, taskId: 't-1' });
 
     await sink.emit({
       kind: 'tick',
-      current: 5,
+      current: 3,
       total: 10,
-      message: 'working',
+      message: 'scanning',
     });
-    assert.equal(message, 'working [5/10]');
-    assert.equal(statusMessage, 'working');
+
+    assert.equal(store.calls.length, 1);
+    assert.deepEqual(store.calls[0], {
+      taskId: 't-1',
+      status: 'working',
+      message: 'scanning (3/10)',
+    });
   });
 
-  void it('swallows "Task not found" and "terminal status" errors', async () => {
-    const sink = new TaskStoreSink({
-      taskId: 'task-1',
-      store: {
-        updateTask: async () => {
-          throw new Error('Task not found');
-        },
-      },
-    });
+  void it('uses raw message for status events', async () => {
+    const store = new FakeTaskStore();
+    const sink = new TaskStoreSink({ taskStore: store, taskId: 't-1' });
 
-    // Should not throw.
-    await sink.emit({ kind: 'status', message: 'x' });
+    await sink.emit({ kind: 'status', message: 'still scanning subtree X' });
 
-    const terminalSink = new TaskStoreSink({
-      taskId: 'task-1',
-      store: {
-        updateTask: async () => {
-          throw new Error('Cannot update task with terminal status');
-        },
-      },
-    });
-
-    // Should not throw.
-    await terminalSink.emit({ kind: 'status', message: 'y' });
+    assert.deepEqual(store.calls[0]?.message, 'still scanning subtree X');
   });
 
-  void it('rethrows other errors', async () => {
-    const sink = new TaskStoreSink({
-      taskId: 'task-1',
-      store: {
-        updateTask: async () => {
-          throw new Error('Database connection failed');
-        },
-      },
+  void it('writes complete and fail events as working updates', async () => {
+    const store = new FakeTaskStore();
+    const sink = new TaskStoreSink({ taskStore: store, taskId: 't-1' });
+
+    await sink.emit({
+      kind: 'complete',
+      current: 5,
+      total: 5,
+      message: 'all done',
     });
+    await sink.emit({
+      kind: 'fail',
+      current: 2,
+      total: 5,
+      message: 'aborted',
+      error: new Error('x'),
+    });
+
+    assert.equal(store.calls.length, 2);
+    assert.equal(store.calls[0]?.status, 'working');
+    assert.equal(store.calls[0]?.message, 'all done (5/5)');
+    assert.equal(store.calls[1]?.message, 'aborted (2/5)');
+  });
+
+  void it('swallows benign "Task not found" errors', async () => {
+    const store = new FakeTaskStore();
+    store.shouldReject = new Error('Task t-1 not found');
+    const sink = new TaskStoreSink({ taskStore: store, taskId: 't-1' });
+
+    // Must not throw.
+    await sink.emit({
+      kind: 'tick',
+      current: 1,
+      total: 1,
+      message: 'm',
+    });
+  });
+
+  void it('swallows benign "terminal status" errors', async () => {
+    const store = new FakeTaskStore();
+    store.shouldReject = new Error('Cannot update terminal status');
+    const sink = new TaskStoreSink({ taskStore: store, taskId: 't-1' });
+
+    await sink.emit({
+      kind: 'tick',
+      current: 1,
+      total: 1,
+      message: 'm',
+    });
+  });
+
+  void it('rethrows non-benign errors so emitGuarded can log them', async () => {
+    const store = new FakeTaskStore();
+    store.shouldReject = new Error('database offline');
+    const sink = new TaskStoreSink({ taskStore: store, taskId: 't-1' });
 
     await assert.rejects(
-      sink.emit({ kind: 'status', message: 'x' }),
-      /Database connection failed/
+      () =>
+        Promise.resolve(
+          sink.emit({
+            kind: 'tick',
+            current: 1,
+            total: 1,
+            message: 'm',
+          })
+        ),
+      /database offline/
     );
   });
 });
