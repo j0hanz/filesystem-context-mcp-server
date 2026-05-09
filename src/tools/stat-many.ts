@@ -4,12 +4,12 @@ import { parse } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { assertNotAborted, withAbort } from '../core/abort.js';
-import { DEFAULT_SEARCH_TIMEOUT_MS, getMimeType, PARALLEL_CONCURRENCY } from '../core/constants.js';
+import { assertNotAborted, withAbort } from '../core/concurrency.js';
+import { DEFAULT_SEARCH_TIMEOUT_MS, getMimeType, PARALLEL_CONCURRENCY } from '../core/util.js';
 import { ErrorCode, isAbortError } from '../core/errors.js';
-import { getFileType, isHidden } from '../core/fs-walk.js';
-import { processInParallel } from '../core/parallel.js';
-import type { PathGuard } from '../core/path-guard.js';
+import { getFileType, isHidden } from '../core/fs.js';
+import { processInParallel } from '../core/concurrency.js';
+import type { PathGuard } from '../core/path.js';
 import { NonNegInt, RequiredPath } from '../schemas/fields.js';
 import { FileInfoSchema, OperationSummarySchema, PerFileErrorSchema } from '../schemas/shared.js';
 
@@ -403,3 +403,5 @@ export const GET_MULTIPLE_FILE_INFO = defineTool<
   },
   defaultErrorCode: ErrorCode.NOT_FOUND,
 });
+
+

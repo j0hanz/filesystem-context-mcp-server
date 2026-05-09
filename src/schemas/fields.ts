@@ -1,7 +1,7 @@
 // src/schemas/fields.ts
 import { z } from 'zod/v4';
 
-import { isSafeGlobSyntax } from '../core/path-guard.js';
+import { isSafeGlobSyntax } from '../core/path.js';
 
 // Runtime: full ISO-8601 UTC validation. Wire: format only (pattern stripped by post-processor).
 export const IsoDateTime = z.iso.datetime().meta({
@@ -61,3 +61,4 @@ export const SafeGlobPattern = z
     examples: ['**/*.ts', 'src/**/*.js', '*.{ts,tsx}'],
     suggestion: 'Use forward-slash globs; absolute paths and ".." are forbidden.',
   });
+

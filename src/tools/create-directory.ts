@@ -3,9 +3,9 @@ import { basename } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { withAbort } from '../core/abort.js';
+import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, McpError } from '../core/errors.js';
-import type { PathGuard } from '../core/path-guard.js';
+import type { PathGuard } from '../core/path.js';
 import { RequiredPath } from '../schemas/fields.js';
 
 import { defineTool } from './define-tool.js';
@@ -91,3 +91,4 @@ export const CREATE_DIRECTORY = defineTool<
   },
   defaultErrorCode: ErrorCode.UNKNOWN,
 });
+

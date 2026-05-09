@@ -4,7 +4,7 @@ import { basename, relative } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { withTimedAbortSignal } from '../core/abort.js';
+import { withTimedAbortSignal } from '../core/concurrency.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_SEARCH_TIMEOUT_MS,
@@ -12,7 +12,7 @@ import {
   DEFAULT_TREE_ENTRIES,
   MAX_TREE_DEPTH,
   MAX_TREE_ENTRIES,
-} from '../core/constants.js';
+} from '../core/util.js';
 import { ErrorCode } from '../core/errors.js';
 import {
   type DirentLike,
@@ -24,9 +24,9 @@ import {
   loadRootGitignore,
   resolveEntryType,
   resolveStopReason,
-} from '../core/fs-walk.js';
-import { isPathWithinDirectories, normalizePath, toPosixPath } from '../core/path-guard.js';
-import type { PathGuard } from '../core/path-guard.js';
+} from '../core/fs.js';
+import { isPathWithinDirectories, normalizePath, toPosixPath } from '../core/path.js';
+import type { PathGuard } from '../core/path.js';
 import { FileType as FileTypeEnum, NonNegInt, OptionalPath } from '../schemas/fields.js';
 import {
   ContinuationSchema,
@@ -596,3 +596,5 @@ export const TREE = defineTool<z.infer<typeof TreeInputSchema>, z.infer<typeof T
     );
   },
 });
+
+

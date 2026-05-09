@@ -6,10 +6,10 @@ import { basename } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { withAbort } from '../core/abort.js';
+import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, isNodeError, McpError } from '../core/errors.js';
-import { Logger } from '../core/logger.js';
-import type { PathGuard } from '../core/path-guard.js';
+import { Logger } from '../core/observability.js';
+import type { PathGuard } from '../core/path.js';
 import { RequiredPath } from '../schemas/fields.js';
 import { defaultFalseBoolean } from '../schemas/shared.js';
 
@@ -284,3 +284,4 @@ export const DELETE_FILE = defineTool<DeleteInput, DeleteOutput>({
     return buildToolResponse(summary, structured);
   },
 });
+

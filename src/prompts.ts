@@ -9,9 +9,9 @@ import { stat } from 'node:fs/promises';
 
 import { z } from 'zod/v4';
 
-import { Logger } from './core/logger.js';
-import { completePathCached } from './core/path-completer.js';
-import type { PathGuard } from './core/path-guard.js';
+import { Logger } from './core/observability.js';
+import { completePathCached } from './core/path.js';
+import type { PathGuard } from './core/path.js';
 
 import { INSTRUCTION_SECTIONS } from './resources/instructions.js';
 import { type IconInfo, withDefaultIcons } from './tools/shared.js';
@@ -356,3 +356,5 @@ export function registerAllPrompts(server: McpServer, options: PromptRegistratio
     register(server, options);
   }
 }
+
+

@@ -2,7 +2,7 @@ import {
   DEFAULT_SEARCH_CONTENT_RESULTS,
   MAX_SEARCH_RESULTS,
   MAX_TEXT_FILE_SIZE,
-} from '../core/constants.js';
+} from '../core/util.js';
 
 import { ALL_TOOLS } from '../tools.js';
 import type { ResourceContract } from './contract.js';
@@ -100,3 +100,4 @@ export function createInstructionsResource(): ResourceContract {
     },
   };
 }
+

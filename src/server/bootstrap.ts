@@ -30,7 +30,7 @@ import {
   getInitHandshakeTimeoutMs,
   INIT_TIMEOUT_CLOSE,
   parseEnvInt,
-} from '../core/constants.js';
+} from '../core/util.js';
 import { formatUnknownErrorMessage } from '../core/errors.js';
 import {
   createLoggingState,
@@ -38,7 +38,7 @@ import {
   LogRouter,
   type LogTarget,
   SessionContext,
-} from '../core/logger.js';
+} from '../core/observability.js';
 import { createInMemoryResourceStore } from '../core/store.js';
 
 import { pkgInfo } from '../pkg-info.js';
@@ -720,3 +720,4 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
       .on('error', reject);
   });
 }
+

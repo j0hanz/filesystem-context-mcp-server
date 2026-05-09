@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 
-import { maybeStripStructuredContentFromResult } from '../../src/core/utils.js';
+import { maybeStripStructuredContentFromResult } from '../src/core/util.js';
 import { withDefaultIcons } from '../../src/tools/shared.js';
 
 describe('tool registration shape', () => {
@@ -95,3 +95,5 @@ describe('FS_CONTEXT_STRIP_STRUCTURED', () => {
     assert.deepEqual(stripped, result);
   });
 });
+
+

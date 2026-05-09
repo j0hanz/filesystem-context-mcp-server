@@ -5,7 +5,7 @@ import {
   type ProgressEvent,
   ProgressSession,
   type ProgressSink,
-} from '../../src/core/progress-session.js';
+} from '../src/core/observability.js';
 
 class MemorySink implements ProgressSink {
   readonly name = 'memory';
@@ -317,3 +317,5 @@ void describe('ProgressSession', () => {
     assert.equal(session.current, 3);
   });
 });
+
+

@@ -1,0 +1,1109 @@
+
+> @j0hanz/filesystem-mcp@1.19.1 test
+> node --test --import tsx/esm "__tests__/**/*.test.ts"
+
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\core\util.js' imported from C:\filesystem-mcp\__tests__\helpers.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841739:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841739:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841739:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/core/util.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\contract.test.ts (759.2059ms)
+ÔûÂ dist runtime regressions
+  ´╣ú grep from dist can search files in an allowed root (6.1971ms) # dist runtime not present
+Ô£ö dist runtime regressions (7.5307ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+[INFO] Roots updated: 0 root(s), 1 allowed dir(s)
+ÔûÂ HTTP transport
+  Ô£ö accepts negotiated supported protocol versions after initialize (211.0468ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+[INFO] Roots updated: 0 root(s), 1 allowed dir(s)
+  Ô£ö accepts the current protocol version (2025-11-25) (56.5706ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+[INFO] Roots updated: 0 root(s), 1 allowed dir(s)
+  Ô£ö accepts post-initialize HTTP requests without mcp-protocol-version header (56.1712ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+[INFO] Roots updated: 0 root(s), 1 allowed dir(s)
+  Ô£ö accepts the negotiated server protocol version after fallback (51.6958ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+[INFO] Roots updated: 0 root(s), 1 allowed dir(s)
+  Ô£ö accepts post-initialize requests with any supported protocol version (54.1758ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+  Ô£ö rejects browser origins outside localhost (16.0202ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+  Ô£ö rejects loopback requests with a disallowed Host header (24.2824ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+  Ô£ö returns 405 for unsupported HTTP methods on /mcp (12.7237ms)
+  Ô£ö refuses non-loopback HTTP binding without an API key (5.0742ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+[INFO] Roots updated: 0 root(s), 1 allowed dir(s)
+  Ô£ö supports discovery and session termination through the real v2 HTTP client transport (276.8194ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+[WARNING] Client did not send notifications/initialized within 1000ms
+[WARNING] [HTTP] Evicting stale session ceb7d561-b34e-4579-a0e3-9782bd5458aa
+  Ô£ö evicts stale uninitialized sessions through the full cleanup path (2241.3225ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+  Ô£ö sets headersTimeout, requestTimeout, and keepAliveTimeout for Slowloris protection (2.0072ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+  Ô£ö does not crash on post-startup HTTP server errors (1.6953ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+  Ô£ö returns 413 for request bodies exceeding the size limit (18.1305ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+  Ô£ö returns 204 No Content for OPTIONS preflight requests on /mcp (3.6268ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+  Ô£ö returns 400 for non-object/array JSON primitives when strict parser is used (6.1254ms)
+Ô£ö HTTP transport (3040.6881ms)
+ÔûÂ prompts over stdio transport
+  Ô£ö returns analyze-path with required args over stdio transport (871.0425ms)
+  Ô£ö returns find-in-tree with required args over stdio transport (915.2075ms)
+Ô£ö prompts over stdio transport (1787.7257ms)
+ÔûÂ prompts
+  Ô£ö lists all 5 prompts (98.7938ms)
+  Ô£ö get-help returns full instructions when no topic (37.8194ms)
+  Ô£ö get-help filters to a known topic (40.2615ms)
+  Ô£ö analyze-path on a file returns text + path link + instructions link (27.3226ms)
+  Ô£ö analyze-path on a directory adapts the task statement (52.087ms)
+  Ô£ö compare-files returns text + 2 path links (70.2054ms)
+  Ô£ö find-in-tree defaults root to first allowed dir and includes both modes (29.7893ms)
+  Ô£ö find-in-tree mode=name omits grep (31.7132ms)
+  Ô£ö summarize-directory returns text + path link (36.6701ms)
+  Ô£ö summarize-directory honors custom depth (35.5023ms)
+  Ô£ö analyze-path rejects a path outside allowed roots (29.6492ms)
+Ô£ö prompts (495.855ms)
+ÔûÂ resources and metadata
+  Ô£ö lists exactly 1 static resource and 2 resource templates (85.7526ms)
+  Ô£ö reads instructions resource and exposes instructions through initialize metadata (36.0643ms)
+  Ô£ö keeps README and server metadata in sync with the advertised discovery surface (207.2959ms)
+Ô£ö resources and metadata (331.1245ms)
+ÔûÂ SERVER_INSTRUCTIONS_CONTENT
+  Ô£ö contains all four required sections (1.4527ms)
+  Ô£ö includes known tool names in the overview (0.3378ms)
+  Ô£ö points to tools/list for schemas (0.1815ms)
+  Ô£ö includes all five error recovery codes (0.2142ms)
+  Ô£ö mentions resourceUri cache behaviour (0.2384ms)
+  Ô£ö describes cache expiry with TTL and eviction, not just restart (0.2423ms)
+  Ô£ö is a non-empty string (0.2268ms)
+Ô£ö SERVER_INSTRUCTIONS_CONTENT (4.8154ms)
+ÔûÂ INSTRUCTION_SECTIONS
+  Ô£ö exposes the four documented sections as non-empty strings (1.43ms)
+  Ô£ö SERVER_INSTRUCTIONS_CONTENT contains every section body (2.1938ms)
+Ô£ö INSTRUCTION_SECTIONS (3.9506ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\__tests__\core\path.js' imported from C:\filesystem-mcp\__tests__\schemas\fields.test.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841791:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841791:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841791:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/__tests__/core/path.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\schemas\fields.test.ts (547.1059ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\core\util.js' imported from C:\filesystem-mcp\__tests__\helpers.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841804:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841804:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841804:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/core/util.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\schemas\json-schema.test.ts (790.1464ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\core\util.js' imported from C:\filesystem-mcp\__tests__\helpers.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841816:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841816:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841816:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/core/util.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\schemas\snapshot.test.ts (727.5141ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\core\util.js' imported from C:\filesystem-mcp\__tests__\helpers.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841828:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841828:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841828:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/core/util.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\security.test.ts (751.8039ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\core\util.js' imported from C:\filesystem-mcp\__tests__\helpers.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841848:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841848:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841848:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/core/util.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\tools\diff.test.ts (780.5536ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\core\util.js' imported from C:\filesystem-mcp\__tests__\helpers.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841846:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841846:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841846:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/core/util.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\tools\directory.test.ts (721.2717ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\core\util.js' imported from C:\filesystem-mcp\__tests__\helpers.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841854:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841854:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841854:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/core/util.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\tools\elicitation.test.ts (747.6726ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\core\util.js' imported from C:\filesystem-mcp\__tests__\helpers.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841865:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841865:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352841865:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/core/util.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\tools\hash.test.ts (713.554ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\__tests__\core\observability.js' imported from C:\filesystem-mcp\__tests__\tools\progress-sinks.test.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842379:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842379:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842379:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/__tests__/core/observability.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\tools\progress-sinks.test.ts (318.3923ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\core\util.js' imported from C:\filesystem-mcp\__tests__\helpers.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842552:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842552:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842552:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/core/util.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\tools\read-write.test.ts (709.3044ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\core\util.js' imported from C:\filesystem-mcp\__tests__\helpers.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842556:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842556:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842556:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/core/util.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\tools\refinements.test.ts (715.9111ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\core\util.js' imported from C:\filesystem-mcp\__tests__\helpers.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842583:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842583:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842583:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/core/util.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\tools\search.test.ts (807.2162ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\core\util.js' imported from C:\filesystem-mcp\__tests__\helpers.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842621:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842621:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842621:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/core/util.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\tools\stat.test.ts (841.1551ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\core\util.js' imported from C:\filesystem-mcp\__tests__\helpers.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842625:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842625:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842625:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/core/util.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\tools\task-mode.test.ts (823.3391ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\__tests__\core\concurrency.js' imported from C:\filesystem-mcp\__tests__\tools\worker-offload.test.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842627:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842627:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842627:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/__tests__/core/concurrency.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\tools\worker-offload.test.ts (413.572ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\__tests__\core\concurrency.js' imported from C:\filesystem-mcp\__tests__\unit\abort.test.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842619:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842619:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842619:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/__tests__/core/concurrency.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\unit\abort.test.ts (322.848ms)
+ÔûÂ createServer config
+  Ô£ö creates server with enforceStrictCapabilities enabled (59.1997ms)
+Ô£ö createServer config (60.6613ms)
+ÔûÂ Cleanup Refactors
+  Ô£ö JSON stringify handles serialization correctly (1.1517ms)
+  Ô£ö Date.now() temporal consistency (0.2495ms)
+  Ô£ö for...of preserves iteration and side effects (1.1185ms)
+  Ô£ö delete operator removes properties same as Reflect.deleteProperty (0.3196ms)
+  Ô£ö verifies that all refactors are pure refactors with no behavior change (0.2291ms)
+Ô£ö Cleanup Refactors (4.4899ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\__tests__\core\path.js' imported from C:\filesystem-mcp\__tests__\unit\completions.test.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842749:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842749:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352842749:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/__tests__/core/path.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\unit\completions.test.ts (762.3331ms)
+ÔûÂ decodeOffsetCursor
+  Ô£ö round-trips a valid offset (3.1035ms)
+  Ô£ö round-trips offset 0 (0.4178ms)
+  Ô£ö throws McpError on non-base64url garbage (0.8098ms)
+  Ô£ö throws McpError when JSON has no offset key (1.1479ms)
+  Ô£ö throws McpError when offset is a string (0.7066ms)
+  Ô£ö throws McpError when offset is negative (0.5224ms)
+  Ô£ö throws McpError when offset is a float (0.4233ms)
+Ô£ö decodeOffsetCursor (11.0903ms)
+Ô£ö defineTool: returns DefinedTool with contract and register (3.0811ms)
+Ô£ö defineTool: registers a standard tool with server.registerTool (2.9816ms)
+Ô£ö defineTool: run receives args and HandlerContext with signal (4.8744ms)
+Ô£ö defineTool: default diagnosticsContext extracts path from args (0.8945ms)
+Ô£ö defineTool: custom diagnosticsContext is used (2.336ms)
+Ô£ö defineTool: progressMessage is forwarded to registerStandardTool (0.6269ms)
+Ô£ö defineTool: completionMessage is forwarded to registerStandardTool (0.5522ms)
+Ô£ö defineTool: handler returns not-initialized error when guard fails (0.8737ms)
+Ô£ö defineTool: handler validates output schema (1.9604ms)
+Ô£ö defineTool: handler returns formatted error on thrown exception (2.5357ms)
+Ô£ö defineTool: defaultErrorCode is used in error responses (0.75ms)
+Ô£ö defineTool: resourceStore is injected into ToolRunContext (0.6606ms)
+Ô£ö defineTool: handle is callable directly without MCP server setup (0.2873ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\__tests__\core\util.js' imported from C:\filesystem-mcp\__tests__\unit\env-parsing.test.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843028:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843028:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843028:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/__tests__/core/util.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\unit\env-parsing.test.ts (354.9575ms)
+ÔûÂ isNodeError
+  Ô£ö returns true for system errors with a string code (2.618ms)
+  Ô£ö returns false for plain Error with no code (0.2645ms)
+  Ô£ö returns false for plain Error with numeric code (0.206ms)
+  Ô£ö returns false for non-Error primitives (0.1784ms)
+Ô£ö isNodeError (5.3303ms)
+ÔûÂ McpError ÔÇö legacy constructor
+  Ô£ö stores code, message, and is instanceof Error (0.5079ms)
+  Ô£ö has name "McpError" (0.1977ms)
+  Ô£ö stores optional path (0.2154ms)
+  Ô£ö stores no path when not provided (0.2044ms)
+  Ô£ö has a problem property with the correct code (0.281ms)
+Ô£ö McpError ÔÇö legacy constructor (1.8859ms)
+ÔûÂ McpError ÔÇö Problem constructor
+  Ô£ö wraps a Problem directly (0.4268ms)
+  Ô£ö wraps a Problem with cause (0.3573ms)
+  Ô£ö VALIDATION_FAILED problem exposes issues (0.1977ms)
+Ô£ö McpError ÔÇö Problem constructor (1.3821ms)
+ÔûÂ getSuggestion
+  Ô£ö returns a string or undefined for every ErrorCode value (0.2295ms)
+Ô£ö getSuggestion (0.3307ms)
+ÔûÂ classifyError ÔÇö no message sniffing
+  Ô£ö classifies plain Error with no errno as IO_ERROR (0.6619ms)
+  Ô£ö does NOT classify by message substring (0.1981ms)
+  Ô£ö classifies by errno code when present (0.3405ms)
+  Ô£ö classifies non-Error as UNKNOWN (0.1473ms)
+Ô£ö classifyError ÔÇö no message sniffing (1.5522ms)
+ÔûÂ classifyError ÔÇö errno regression locks
+  Ô£ö EMFILE ÔåÆ IO_ERROR (was TIMEOUT) (0.1905ms)
+  Ô£ö ENFILE ÔåÆ IO_ERROR (was TIMEOUT) (0.1409ms)
+  Ô£ö EBUSY ÔåÆ IO_ERROR (was PERMISSION_DENIED) (0.1375ms)
+Ô£ö classifyError ÔÇö errno regression locks (0.6286ms)
+ÔûÂ isAbortError
+  Ô£ö returns true for AbortError by name (1.4476ms)
+  Ô£ö returns true for ABORT_ERR errno (0.1784ms)
+  Ô£ö returns false for plain Error (0.1253ms)
+  Ô£ö returns false for non-Error (0.0914ms)
+Ô£ö isAbortError (2.0498ms)
+ÔûÂ isTimeoutLikeError
+  Ô£ö returns true for TimeoutError by name (0.1944ms)
+  Ô£ö returns true for ETIMEDOUT errno (0.1307ms)
+  Ô£ö returns false for plain Error (0.6578ms)
+Ô£ö isTimeoutLikeError (1.1689ms)
+ÔûÂ createDetailedError
+  Ô£ö produces code and message from errno error (0.5978ms)
+  Ô£ö accepts optional path override (0.2324ms)
+  Ô£ö VALIDATION_FAILED error exposes issues array (4.1311ms)
+Ô£ö createDetailedError (5.3888ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\__tests__\core\concurrency.js' imported from C:\filesystem-mcp\__tests__\unit\fs-helpers.test.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843293:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843293:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843293:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/__tests__/core/concurrency.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\unit\fs-helpers.test.ts (330.8829ms)
+ÔûÂ isLoopbackHttpHost
+  Ô£ö accepts canonical loopback hosts (0.5654ms)
+  Ô£ö is case-insensitive and trims whitespace (0.0919ms)
+  Ô£ö rejects non-loopback hosts (0.1164ms)
+Ô£ö isLoopbackHttpHost (1.5036ms)
+ÔûÂ isAllowedLocalhostOrigin
+  Ô£ö allows http and https localhost origins with optional port (0.2383ms)
+  Ô£ö rejects non-localhost origins (0.1058ms)
+Ô£ö isAllowedLocalhostOrigin (0.497ms)
+ÔûÂ validateBearerAuthorization
+  Ô£ö accepts a matching Bearer token (0.557ms)
+  Ô£ö rejects a mismatched token (0.1335ms)
+  Ô£ö rejects missing or non-Bearer headers (0.1016ms)
+  Ô£ö rejects a token exceeding the 4096-byte cap (0.1282ms)
+Ô£ö validateBearerAuthorization (1.1659ms)
+ÔûÂ assertHttpBindingPolicy
+  Ô£ö allows loopback bind without an API key (0.6585ms)
+  Ô£ö allows non-loopback bind when an API key is set (0.1471ms)
+  Ô£ö refuses non-loopback bind without an API key (0.4729ms)
+Ô£ö assertHttpBindingPolicy (1.4125ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\__tests__\core\observability.js' imported from C:\filesystem-mcp\__tests__\unit\http-session-registry.test.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843390:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843390:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843390:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/__tests__/core/observability.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\unit\http-session-registry.test.ts (328.594ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\__tests__\core\observability.js' imported from C:\filesystem-mcp\__tests__\unit\log-router.test.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843398:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843398:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843398:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/__tests__/core/observability.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\unit\log-router.test.ts (329.6095ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\__tests__\core\fs.js' imported from C:\filesystem-mcp\__tests__\unit\mime.test.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843419:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843419:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843419:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/__tests__/core/fs.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\unit\mime.test.ts (319.6921ms)
+Ô£ö observability tool context (1.6515ms)
+Ô£ö startPerfMeasure does not crash without subscribers (0.3871ms)
+Ô£ö withToolDiagnostics returns correct value and catches errors (0.8944ms)
+Ô£ö extracts error from structured outcome (1.1146ms)
+Ô£ö ops trace functions (0.5614ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\__tests__\core\path.js' imported from C:\filesystem-mcp\__tests__\unit\path-completer.test.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843449:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843449:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843449:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/__tests__/core/path.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\unit\path-completer.test.ts (695.9781ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\__tests__\core\util.js' imported from C:\filesystem-mcp\__tests__\unit\path-guard.test.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843621:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843621:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843621:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/__tests__/core/util.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\unit\path-guard.test.ts (352.3376ms)
+ÔûÂ classify
+  Ô£ö returns UNKNOWN for non-Error values (1.5908ms)
+  Ô£ö returns IO_ERROR for plain Error with no errno and no cause (0.7936ms)
+  Ô£ö does NOT classify by message substring (0.3535ms)
+Ô£ö classify (4.303ms)
+ÔûÂ Problem factories
+  Ô£ö Problem.notFound builds a NOT_FOUND problem (0.2545ms)
+Ô£ö Problem factories (0.4605ms)
+ÔûÂ classify ÔÇö errno table
+  Ô£ö ENOENT ÔåÆ NOT_FOUND (0.7536ms)
+  Ô£ö EACCES ÔåÆ PERMISSION_DENIED (0.3424ms)
+  Ô£ö EPERM ÔåÆ PERMISSION_DENIED (0.3284ms)
+  Ô£ö ENOTDIR ÔåÆ NOT_DIRECTORY (0.2104ms)
+  Ô£ö EISDIR ÔåÆ NOT_FILE (0.3004ms)
+  Ô£ö ELOOP ÔåÆ SYMLINK_NOT_ALLOWED (0.2269ms)
+  Ô£ö ENAMETOOLONG ÔåÆ INVALID_INPUT (0.2138ms)
+  Ô£ö ETIMEDOUT ÔåÆ TIMEOUT (0.3718ms)
+  Ô£ö ENOTEMPTY ÔåÆ NOT_DIRECTORY (0.1555ms)
+  Ô£ö EEXIST ÔåÆ INVALID_INPUT (0.2728ms)
+  Ô£ö EINVAL ÔåÆ INVALID_INPUT (0.1277ms)
+Ô£ö classify ÔÇö errno table (4.3848ms)
+ÔûÂ classify ÔÇö errno fixes (regression locks)
+  Ô£ö EMFILE ÔåÆ IO_ERROR (was TIMEOUT) (0.2201ms)
+  Ô£ö ENFILE ÔåÆ IO_ERROR (was TIMEOUT) (0.1491ms)
+  Ô£ö EBUSY ÔåÆ IO_ERROR (was PERMISSION_DENIED) (0.1272ms)
+Ô£ö classify ÔÇö errno fixes (regression locks) (0.7086ms)
+ÔûÂ classify ÔÇö abort & timeout
+  Ô£ö AbortError name ÔåÆ CANCELLED (0.231ms)
+  Ô£ö code ABORT_ERR ÔåÆ CANCELLED (0.1359ms)
+  Ô£ö TimeoutError name ÔåÆ TIMEOUT (0.1412ms)
+Ô£ö classify ÔÇö abort & timeout (0.6846ms)
+ÔûÂ classify ÔÇö cause chain
+  Ô£ö walks .cause to find errno (0.2475ms)
+  Ô£ö terminates on first abort hit even if outer has errno cause (0.7571ms)
+Ô£ö classify ÔÇö cause chain (2.3022ms)
+ÔûÂ classify ÔÇö Problem details propagate errno
+  Ô£ö records errno + syscall in details (0.3391ms)
+Ô£ö classify ÔÇö Problem details propagate errno (0.4455ms)
+ÔûÂ zodErrorToProblem
+  Ô£ö maps a Zod validation error to VALIDATION_FAILED with issues[] (6.6646ms)
+  Ô£ö preserves custom params from superRefine issues (5.0908ms)
+  Ô£ö classify(ZodError) routes through zodErrorToProblem (1.302ms)
+Ô£ö zodErrorToProblem (14.8589ms)
+ÔûÂ resolveSuggestion
+  Ô£ö returns per-code default when no issues and no schema (0.1939ms)
+  Ô£ö returns undefined for VALIDATION_FAILED with no issues + no schema (0.1415ms)
+  Ô£ö rule-params suggestion wins over per-code default (0.1485ms)
+  Ô£ö schema-meta suggestion wins over rule-params and default (0.8895ms)
+Ô£ö resolveSuggestion (1.6074ms)
+ÔûÂ truncateProgressPattern
+  Ô£ö returns short patterns unchanged (1.4297ms)
+  Ô£ö returns pattern at exact maxLength unchanged (0.2231ms)
+  Ô£ö hard-truncates long patterns without pipe (0.18ms)
+  Ô£ö shows first 2 segments for pipe-separated patterns (0.1755ms)
+  Ô£ö hard-truncates when first 2 segments exceed maxLength (0.2614ms)
+  Ô£ö respects custom maxLength (0.1749ms)
+  Ô£ö handles single-segment pipe pattern (trailing pipe) (0.1512ms)
+Ô£ö truncateProgressPattern (4.2272ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\__tests__\core\observability.js' imported from C:\filesystem-mcp\__tests__\unit\progress-session.test.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843748:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843748:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843748:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/__tests__/core/observability.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\unit\progress-session.test.ts (350.5944ms)
+Ô£ö putBlob stores and getBlob retrieves binary data correctly (6.8848ms)
+Ô£ö putBlob deduplicates identical content (0.3838ms)
+Ô£ö getBlob throws when called on a text URI (1.1124ms)
+Ô£ö getText throws when called on a blob URI (0.826ms)
+Ô£ö Default TTL is 60 seconds (0.4239ms)
+Ô£ö putText with same data still stores as text kind (0.3463ms)
+Ô£ö putBlob rejects data larger than maxEntryBytes (0.334ms)
+Ô£ö getBlob expires after TTL (151.3276ms)
+ÔûÂ resource store
+  Ô£ö expires entries on read and removes them from the key list (29.3549ms)
+  Ô£ö does not deduplicate cached resources across different mime types (3.6928ms)
+  Ô£ö evicts least recently used entries when limits are reached (0.9292ms)
+Ô£ö resource store (35.5379ms)
+ÔûÂ RootsManager
+  Ô£ö coalesces repeated roots change notifications into one update (155.9388ms)
+[WARNING] Client did not send notifications/initialized within 30000ms
+  Ô£ö cancels pending debounced updates on destroy (156.2183ms)
+  Ô£ö clears init timer when initialized notification is received (0.3549ms)
+  Ô£ö clears init timer on destroy before initialized (0.1841ms)
+  Ô£ö invokes onInitTimeout callback when client never initializes (0.8736ms)
+  Ô£ö does not invoke onInitTimeout when initialized arrives first (0.1837ms)
+Ô£ö RootsManager (315.254ms)
+Ô£ö buildResourceResponse: summary + resource_link blocks + structured (1.9573ms)
+Ô£ö putResource: text kind uses putText and returns resource_link (2.5873ms)
+Ô£ö putResource: image kind uses putBlob (0.4004ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\core\util.js' imported from C:\filesystem-mcp\__tests__\helpers.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843940:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843940:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352843940:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/core/util.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\unit\shared.test.ts (709.5751ms)
+TEST CAUGHT McpError: Task execution cancelled.
+    at EventEmitter.<anonymous> (C:\filesystem-mcp\src\server\task-orchestrator.ts:33:26)
+    at EventEmitter.emit (node:events:509:28)
+    at EventedTaskStore.updateTaskStatus (C:\filesystem-mcp\src\server\task-store.ts:17:19)
+    at async TestContext.<anonymous> (C:\filesystem-mcp\__tests__\unit\task-orchestrator.test.ts:171:7)
+    at async Test.run (node:internal/test_runner/test:1208:7)
+    at async Suite.processPendingSubtests (node:internal/test_runner/test:831:7) {
+  problem: { code: 'CANCELLED', message: 'Task execution cancelled.' }
+} CANCELLED McpError
+ÔûÂ TaskOrchestrator
+  Ô£ö executes a tool task successfully in background (13.8558ms)
+  Ô£ö cancels background execution when store emits cancelled event (3.6092ms)
+  Ô£ö updates task status message on progress notifications (11.8491ms)
+Ô£ö TaskOrchestrator (30.7821ms)
+ÔûÂ EventedTaskStore
+  Ô£ö emits "cancelled" event when a task status is updated to cancelled (2.5473ms)
+Ô£ö EventedTaskStore (3.7045ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\__tests__\core\util.js' imported from C:\filesystem-mcp\__tests__\unit\task-support.test.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352844124:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352844124:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352844124:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/__tests__/core/util.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\unit\task-support.test.ts (526.1541ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\__tests__\core\util.js' imported from C:\filesystem-mcp\__tests__\unit\tool-registration.test.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352844183:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352844183:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352844183:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/__tests__/core/util.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\unit\tool-registration.test.ts (328.6541ms)
+Ô£û worker dispatch handles diff task (100.7444ms)
+Ô£û worker dispatch reports error for unknown task (73.5513ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\__tests__\core\concurrency.js' imported from C:\filesystem-mcp\__tests__\unit\worker-pool-timeout.test.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352844337:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352844337:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352844337:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/__tests__/core/concurrency.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\unit\worker-pool-timeout.test.ts (373.2307ms)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\__tests__\core\concurrency.js' imported from C:\filesystem-mcp\__tests__\unit\worker-pool.test.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolveBase (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352844385:2:3744)
+    at async resolveDirectory (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352844385:2:4237)
+    at async resolve (file:///C:/filesystem-mcp/node_modules/tsx/dist/esm/index.mjs?1778352844385:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:785:22)
+    at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)
+    at async handleMessage (node:internal/modules/esm/worker:251:18) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/filesystem-mcp/__tests__/core/concurrency.js'
+}
+
+Node.js v24.15.0
+Ô£û __tests__\unit\worker-pool.test.ts (254.8389ms)
+Ôä╣ tests 210
+Ôä╣ suites 37
+Ôä╣ pass 176
+Ôä╣ fail 33
+Ôä╣ cancelled 0
+Ôä╣ skipped 1
+Ôä╣ todo 0
+Ôä╣ duration_ms 4742.1439
+
+Ô£û failing tests:
+
+test at __tests__\contract.test.ts:1:1
+Ô£û __tests__\contract.test.ts (759.2059ms)
+  'test failed'
+
+test at __tests__\schemas\fields.test.ts:1:1
+Ô£û __tests__\schemas\fields.test.ts (547.1059ms)
+  'test failed'
+
+test at __tests__\schemas\json-schema.test.ts:1:1
+Ô£û __tests__\schemas\json-schema.test.ts (790.1464ms)
+  'test failed'
+
+test at __tests__\schemas\snapshot.test.ts:1:1
+Ô£û __tests__\schemas\snapshot.test.ts (727.5141ms)
+  'test failed'
+
+test at __tests__\security.test.ts:1:1
+Ô£û __tests__\security.test.ts (751.8039ms)
+  'test failed'
+
+test at __tests__\tools\diff.test.ts:1:1
+Ô£û __tests__\tools\diff.test.ts (780.5536ms)
+  'test failed'
+
+test at __tests__\tools\directory.test.ts:1:1
+Ô£û __tests__\tools\directory.test.ts (721.2717ms)
+  'test failed'
+
+test at __tests__\tools\elicitation.test.ts:1:1
+Ô£û __tests__\tools\elicitation.test.ts (747.6726ms)
+  'test failed'
+
+test at __tests__\tools\hash.test.ts:1:1
+Ô£û __tests__\tools\hash.test.ts (713.554ms)
+  'test failed'
+
+test at __tests__\tools\progress-sinks.test.ts:1:1
+Ô£û __tests__\tools\progress-sinks.test.ts (318.3923ms)
+  'test failed'
+
+test at __tests__\tools\read-write.test.ts:1:1
+Ô£û __tests__\tools\read-write.test.ts (709.3044ms)
+  'test failed'
+
+test at __tests__\tools\refinements.test.ts:1:1
+Ô£û __tests__\tools\refinements.test.ts (715.9111ms)
+  'test failed'
+
+test at __tests__\tools\search.test.ts:1:1
+Ô£û __tests__\tools\search.test.ts (807.2162ms)
+  'test failed'
+
+test at __tests__\tools\stat.test.ts:1:1
+Ô£û __tests__\tools\stat.test.ts (841.1551ms)
+  'test failed'
+
+test at __tests__\tools\task-mode.test.ts:1:1
+Ô£û __tests__\tools\task-mode.test.ts (823.3391ms)
+  'test failed'
+
+test at __tests__\tools\worker-offload.test.ts:1:1
+Ô£û __tests__\tools\worker-offload.test.ts (413.572ms)
+  'test failed'
+
+test at __tests__\unit\abort.test.ts:1:1
+Ô£û __tests__\unit\abort.test.ts (322.848ms)
+  'test failed'
+
+test at __tests__\unit\completions.test.ts:1:1
+Ô£û __tests__\unit\completions.test.ts (762.3331ms)
+  'test failed'
+
+test at __tests__\unit\env-parsing.test.ts:1:1
+Ô£û __tests__\unit\env-parsing.test.ts (354.9575ms)
+  'test failed'
+
+test at __tests__\unit\fs-helpers.test.ts:1:1
+Ô£û __tests__\unit\fs-helpers.test.ts (330.8829ms)
+  'test failed'
+
+test at __tests__\unit\http-session-registry.test.ts:1:1
+Ô£û __tests__\unit\http-session-registry.test.ts (328.594ms)
+  'test failed'
+
+test at __tests__\unit\log-router.test.ts:1:1
+Ô£û __tests__\unit\log-router.test.ts (329.6095ms)
+  'test failed'
+
+test at __tests__\unit\mime.test.ts:1:1
+Ô£û __tests__\unit\mime.test.ts (319.6921ms)
+  'test failed'
+
+test at __tests__\unit\path-completer.test.ts:1:1
+Ô£û __tests__\unit\path-completer.test.ts (695.9781ms)
+  'test failed'
+
+test at __tests__\unit\path-guard.test.ts:1:1
+Ô£û __tests__\unit\path-guard.test.ts (352.3376ms)
+  'test failed'
+
+test at __tests__\unit\progress-session.test.ts:1:1
+Ô£û __tests__\unit\progress-session.test.ts (350.5944ms)
+  'test failed'
+
+test at __tests__\unit\shared.test.ts:1:1
+Ô£û __tests__\unit\shared.test.ts (709.5751ms)
+  'test failed'
+
+test at __tests__\unit\task-support.test.ts:1:1
+Ô£û __tests__\unit\task-support.test.ts (526.1541ms)
+  'test failed'
+
+test at __tests__\unit\tool-registration.test.ts:1:1
+Ô£û __tests__\unit\tool-registration.test.ts (328.6541ms)
+  'test failed'
+
+test at __tests__\unit\worker-dispatch.test.ts:1:464
+Ô£û worker dispatch handles diff task (100.7444ms)
+  Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\src\core\worker.ts' imported from C:\filesystem-mcp\
+      at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+      at moduleResolve (node:internal/modules/esm/resolve:861:10)
+      at defaultResolve (node:internal/modules/esm/resolve:988:11)
+      at #cachedDefaultResolve (node:internal/modules/esm/loader:697:20)
+      at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:714:38)
+      at ModuleLoader.resolveSync (node:internal/modules/esm/loader:746:52)
+      at #resolve (node:internal/modules/esm/loader:679:17)
+      at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:599:35)
+      at node:internal/modules/esm/loader:628:32
+      at TracingChannel.tracePromise (node:diagnostics_channel:362:14) {
+    code: 'ERR_MODULE_NOT_FOUND',
+    url: 'file:///C:/filesystem-mcp/src/core/worker.ts'
+  }
+
+test at __tests__\unit\worker-dispatch.test.ts:1:893
+Ô£û worker dispatch reports error for unknown task (73.5513ms)
+  Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\filesystem-mcp\src\core\worker.ts' imported from C:\filesystem-mcp\
+      at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+      at moduleResolve (node:internal/modules/esm/resolve:861:10)
+      at defaultResolve (node:internal/modules/esm/resolve:988:11)
+      at #cachedDefaultResolve (node:internal/modules/esm/loader:697:20)
+      at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:714:38)
+      at ModuleLoader.resolveSync (node:internal/modules/esm/loader:746:52)
+      at #resolve (node:internal/modules/esm/loader:679:17)
+      at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:599:35)
+      at node:internal/modules/esm/loader:628:32
+      at TracingChannel.tracePromise (node:diagnostics_channel:362:14) {
+    code: 'ERR_MODULE_NOT_FOUND',
+    url: 'file:///C:/filesystem-mcp/src/core/worker.ts'
+  }
+
+test at __tests__\unit\worker-pool-timeout.test.ts:1:1
+Ô£û __tests__\unit\worker-pool-timeout.test.ts (373.2307ms)
+  'test failed'
+
+test at __tests__\unit\worker-pool.test.ts:1:1
+Ô£û __tests__\unit\worker-pool.test.ts (254.8389ms)
+  'test failed'

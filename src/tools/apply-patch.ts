@@ -4,17 +4,17 @@ import { basename, resolve } from 'node:path';
 import { applyPatch, formatPatch, parsePatch, type StructuredPatch } from 'diff';
 import { z } from 'zod/v4';
 
-import { withAbort } from '../core/abort.js';
-import { atomicWriteFile } from '../core/atomic-write.js';
-import { MAX_TEXT_FILE_SIZE, PARALLEL_CONCURRENCY } from '../core/constants.js';
+import { withAbort } from '../core/concurrency.js';
+import { atomicWriteFile } from '../core/fs.js';
+import { MAX_TEXT_FILE_SIZE, PARALLEL_CONCURRENCY } from '../core/util.js';
 import { ErrorCode, McpError } from '../core/errors.js';
-import { readFileWithStats } from '../core/file-content.js';
-import { Logger } from '../core/logger.js';
-import { detectMimeType } from '../core/mime.js';
-import { processInParallel } from '../core/parallel.js';
-import type { PathGuard } from '../core/path-guard.js';
+import { readFileWithStats } from '../core/fs.js';
+import { Logger } from '../core/observability.js';
+import { detectMimeType } from '../core/fs.js';
+import { processInParallel } from '../core/concurrency.js';
+import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
-import { runInWorker, shouldOffload } from '../core/worker-pool.js';
+import { runInWorker, shouldOffload } from '../core/concurrency.js';
 import { NonNegInt, OptionalPath } from '../schemas/fields.js';
 import {
   defaultFalseBoolean,
@@ -584,3 +584,5 @@ export const APPLY_PATCH = defineTool<PatchInput, PatchOutput>({
     return `${APPLY_PATCH_TOOL.title}: ${name} • ${dry}no changes`;
   },
 });
+
+

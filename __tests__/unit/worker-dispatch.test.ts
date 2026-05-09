@@ -5,7 +5,7 @@ import { Worker } from 'node:worker_threads';
 
 import type { StructuredPatch } from 'diff';
 
-const workerUrl = new URL('../../src/core/worker.ts', import.meta.url);
+const workerUrl = new URL('../../src/core/concurrency.ts', import.meta.url);
 
 interface SuccessResponse {
   id: number;

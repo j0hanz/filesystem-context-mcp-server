@@ -4,13 +4,13 @@ import { getSystemErrorMessage, getSystemErrorName } from 'node:util';
 
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
 
-import { processInParallel } from './core/parallel.js';
+import { processInParallel } from './core/concurrency.js';
 import {
   getReservedDeviceNameForPath,
   isWindowsDriveRelativePath,
   normalizePath,
-} from './core/path-guard.js';
-import { isRecord } from './core/utils.js';
+} from './core/path.js';
+import { isRecord } from './core/util.js';
 
 import { pkgInfo } from './pkg-info.js';
 

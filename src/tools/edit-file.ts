@@ -5,16 +5,16 @@ import { createTwoFilesPatch, diffLines } from 'diff';
 import RE2 from 're2';
 import { z } from 'zod/v4';
 
-import { withAbort } from '../core/abort.js';
-import { atomicWriteFile } from '../core/atomic-write.js';
-import { MAX_TEXT_FILE_SIZE } from '../core/constants.js';
+import { withAbort } from '../core/concurrency.js';
+import { atomicWriteFile } from '../core/fs.js';
+import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import { ErrorCode, McpError } from '../core/errors.js';
-import { readFileWithStats } from '../core/file-content.js';
-import { Logger } from '../core/logger.js';
-import { detectMimeType } from '../core/mime.js';
-import type { PathGuard } from '../core/path-guard.js';
+import { readFileWithStats } from '../core/fs.js';
+import { Logger } from '../core/observability.js';
+import { detectMimeType } from '../core/fs.js';
+import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
-import { runInWorker, shouldOffload } from '../core/worker-pool.js';
+import { runInWorker, shouldOffload } from '../core/concurrency.js';
 import { NonNegInt, PositiveInt, RequiredPath } from '../schemas/fields.js';
 import { defaultFalseBoolean } from '../schemas/shared.js';
 
@@ -542,3 +542,5 @@ export const EDIT_FILE = defineTool<EditInput, EditOutput>({
   progressMessage: buildEditProgressMessage,
   completionMessage: buildEditCompletionMessage,
 });
+
+

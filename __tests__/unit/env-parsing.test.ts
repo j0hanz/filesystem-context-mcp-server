@@ -7,7 +7,7 @@ import {
   WORKER_OFFLOAD_THRESHOLD_BYTES,
   WORKER_POOL_MAX,
   WORKERS_DISABLED,
-} from '../../src/core/constants.js';
+} from '../src/core/util.js';
 
 describe('FS_CONTEXT_MAX_INLINE_MATCHES parsing', () => {
   const ORIG = process.env['FS_CONTEXT_MAX_INLINE_MATCHES'];
@@ -44,3 +44,5 @@ test('worker constants are within sensible bounds', () => {
   assert.equal(WORKER_CANCEL_GRACE_MS, 500);
   assert.equal(typeof WORKERS_DISABLED, 'boolean');
 });
+
+

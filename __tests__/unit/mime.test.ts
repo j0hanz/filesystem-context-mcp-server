@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { detectMimeType, type MimeKind } from '../../src/core/mime.js';
+import { detectMimeType, type MimeKind } from '../src/core/fs.js';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -127,3 +127,5 @@ describe('detectMimeType', () => {
     }
   });
 });
+
+

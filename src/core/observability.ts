@@ -1,11 +1,213 @@
+import type {
+  LoggingLevel,
+  LoggingMessageNotificationParams,
+  McpServer,
+} from '@modelcontextprotocol/server';
+
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { hash } from 'node:crypto';
-import { channel, tracingChannel } from 'node:diagnostics_channel';
+import { channel } from 'node:diagnostics_channel';
+import { inspect } from 'node:util';
+
+interface SessionContextData {
+  sessionId?: string;
+}
+
+export const SessionContext = new AsyncLocalStorage<SessionContextData>();
+
+interface LogEvent {
+  level: LoggingLevel;
+  message: string;
+  data?: unknown;
+  sessionId?: string;
+}
+
+const LOG_CHANNEL = channel('filesystem-mcp:log');
+const MCP_LOGGER_NAME = 'filesystem-mcp';
+
+const LOG_LEVEL_ORDER: Record<LoggingLevel, number> = {
+  debug: 0,
+  info: 1,
+  notice: 2,
+  warning: 3,
+  error: 4,
+  critical: 5,
+  alert: 6,
+  emergency: 7,
+};
+
+export interface LoggingState {
+  minimumLevel: LoggingLevel;
+}
+
+export function createLoggingState(minimumLevel: LoggingLevel = 'debug'): LoggingState {
+  return { minimumLevel };
+}
+
+function canSendMcpLogs(server: McpServer): boolean {
+  const capabilities = server.server.getClientCapabilities();
+  if (!capabilities || typeof capabilities !== 'object') return false;
+  return 'logging' in capabilities && Boolean(capabilities.logging);
+}
+
+export function logToMcp(
+  server: McpServer | undefined,
+  level: LoggingLevel,
+  data: string,
+  minLevel: LoggingLevel = 'debug',
+): void {
+  if (LOG_LEVEL_ORDER[level] < LOG_LEVEL_ORDER[minLevel]) {
+    return;
+  }
+  if (!server || !canSendMcpLogs(server)) {
+    console.error(`[${level.toUpperCase()}] ${data}`);
+    return;
+  }
+
+  const params: LoggingMessageNotificationParams = {
+    level,
+    logger: MCP_LOGGER_NAME,
+    data,
+  };
+
+  void server.sendLoggingMessage(params).catch((error: unknown) => {
+    console.error(`Failed to send MCP log: ${level} | ${data}`, formatTransportError(error));
+  });
+}
+
+function formatTransportError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return JSON.stringify(error);
+}
+
+export const Logger = {
+  emit(level: LoggingLevel, message: string, data?: unknown): void {
+    const session = SessionContext.getStore();
+    const event: LogEvent = {
+      level,
+      message,
+      ...(data !== undefined ? { data } : {}),
+      ...(session?.sessionId !== undefined ? { sessionId: session.sessionId } : {}),
+    };
+
+    if (LOG_CHANNEL.hasSubscribers) {
+      LOG_CHANNEL.publish(event);
+    } else {
+      // Fallback if no subscribers
+      console.error(`[${level.toUpperCase()}] ${message}`, data ?? '');
+    }
+  },
+
+  debug(message: string, data?: unknown): void {
+    this.emit('debug', message, data);
+  },
+
+  info(message: string, data?: unknown): void {
+    this.emit('info', message, data);
+  },
+
+  notice(message: string, data?: unknown): void {
+    this.emit('notice', message, data);
+  },
+
+  warn(message: string, data?: unknown): void {
+    this.emit('warning', message, data);
+  },
+
+  error(message: string, data?: unknown): void {
+    this.emit('error', message, data);
+  },
+
+  critical(message: string, data?: unknown): void {
+    this.emit('critical', message, data);
+  },
+};
+
+/**
+ * Routes log events from the `filesystem-mcp:log` diagnostics channel to the
+ * correct McpServer. Stdio uses a single fallback target; HTTP attaches one
+ * target per session keyed by `sessionId`. Subscribes to the channel exactly
+ * once on first construction.
+ */
+export interface LogTarget {
+  server: McpServer;
+  loggingState: LoggingState;
+}
+
+function stringifyLogData(data: unknown): string {
+  if (data === undefined) return '';
+  if (typeof data === 'string') return ` ${data}`;
+  if (
+    data === null ||
+    typeof data === 'number' ||
+    typeof data === 'boolean' ||
+    typeof data === 'bigint'
+  ) {
+    return ` ${String(data)}`;
+  }
+  return ` ${inspect(data, { depth: 4, colors: false, compact: 3 })}`;
+}
+
+export class LogRouter {
+  private static instance: LogRouter | undefined;
+  private stdio: LogTarget | undefined;
+  private readonly sessions = new Map<string, LogTarget>();
+
+  private constructor() {
+    LOG_CHANNEL.subscribe((message) => {
+      this.dispatch(message as LogEvent);
+    });
+  }
+
+  static global(): LogRouter {
+    LogRouter.instance ??= new LogRouter();
+    return LogRouter.instance;
+  }
+
+  attachStdio(target: LogTarget): void {
+    this.stdio ??= target;
+  }
+
+  detachStdio(): void {
+    this.stdio = undefined;
+  }
+
+  attachSession(sessionId: string, target: LogTarget): void {
+    this.sessions.set(sessionId, target);
+  }
+
+  detachSession(sessionId: string): void {
+    this.sessions.delete(sessionId);
+  }
+
+  /** For tests: forget all routing state without unsubscribing the channel. */
+  reset(): void {
+    this.stdio = undefined;
+    this.sessions.clear();
+  }
+
+  private dispatch(event: LogEvent): void {
+    const target = event.sessionId ? this.sessions.get(event.sessionId) : this.stdio;
+    const dataStr = stringifyLogData(event.data);
+    if (target) {
+      logToMcp(
+        target.server,
+        event.level,
+        `${event.message}${dataStr}`,
+        target.loggingState.minimumLevel,
+      );
+      return;
+    }
+    console.error(`[${event.level.toUpperCase()}] ${event.message}${dataStr}`);
+  }
+}
+
+import { AsyncLocalStorage as AsyncLocalStorageImport } from 'node:async_hooks';
+import { hash as hashFunc } from 'node:crypto';
+import { channel as channelFunc, tracingChannel } from 'node:diagnostics_channel';
 import { monitorEventLoopDelay, performance, PerformanceObserver } from 'node:perf_hooks';
 
-import { parseTrueEnvFlag } from './constants.js';
-import { Logger } from './logger.js';
-import { isRecord } from './utils.js';
+import { parseTrueEnvFlag, isRecord } from './util.js';
 
 // --- Configuration ---
 
@@ -88,12 +290,12 @@ interface PerfDiagnosticsEvent {
 // --- Channels & Observability State ---
 
 const CHANNELS = {
-  tool: channel('filesystem-mcp:tool'),
-  perf: channel('filesystem-mcp:perf'),
+  tool: channelFunc('filesystem-mcp:tool'),
+  perf: channelFunc('filesystem-mcp:perf'),
   ops: tracingChannel<unknown, OpsTraceContext>('filesystem-mcp:ops'),
 };
 
-const toolContext = new AsyncLocalStorage<ToolAsyncContext>({
+const toolContext = new AsyncLocalStorageImport<ToolAsyncContext>({
   name: 'filesystem-mcp:tool',
 });
 
@@ -165,7 +367,7 @@ function sanitizePathForDiagnostics(path: string | undefined): string | undefine
   const { detail } = readConfig();
   if (!path || detail === 0) return undefined;
   if (detail === 2) return path;
-  return hash('sha256', path, 'hex').slice(0, 16);
+  return hashFunc('sha256', path, 'hex').slice(0, 16);
 }
 
 function enrichWithToolContext(
@@ -305,7 +507,7 @@ export function startPerfMeasure(
   const id = ++traceCounter;
   const startMark = `${name}:start:${id}`;
   const endMark = `${name}:end:${id}`;
-  const runInCapturedContext = AsyncLocalStorage.snapshot();
+  const runInCapturedContext = AsyncLocalStorageImport.snapshot();
   let finished = false;
 
   performance.mark(startMark);
@@ -522,4 +724,182 @@ export async function withToolDiagnostics<T>(
 function logError(tool: string, durationMs: number, msg?: string): void {
   const suffix = msg ? `: ${msg}` : '';
   Logger.error(`[ToolError] ${tool} failed in ${durationMs.toFixed(1)}ms${suffix}`);
+}
+
+// --- Progress Session ---
+
+export type ProgressEvent =
+  | { kind: 'tick'; current: number; total?: number; message: string }
+  | { kind: 'status'; message: string }
+  | { kind: 'complete'; current: number; total?: number; message: string }
+  | {
+      kind: 'fail';
+      current: number;
+      total?: number;
+      message: string;
+      error: unknown;
+    };
+
+export interface ProgressSink {
+  readonly name: string;
+  emit(event: ProgressEvent): Promise<void> | void;
+}
+
+interface ProgressSessionOptions {
+  label: string;
+  total?: number;
+  sinks: ProgressSink[];
+  /** Clock injection for deterministic rate-limit tests. Defaults to Date.now. */
+  now?: () => number;
+  /** Override the rate limit window. Default: 50ms. */
+  rateLimitMs?: number;
+  /** If true, rate limit window increases after 5 seconds of execution. */
+  dynamicRateLimit?: boolean;
+}
+
+const DEFAULT_RATE_LIMIT_MS = 50;
+
+export class ProgressSession {
+  readonly #label: string;
+  readonly #total: number | undefined;
+  readonly #sinks: ProgressSink[];
+  readonly #now: () => number;
+  readonly #rateLimitMs: number;
+  readonly #dynamicRateLimit: boolean;
+  readonly #startTime: number;
+
+  #cursor = 0;
+  #lastSentMs = 0;
+  #done = false;
+
+  constructor(opts: ProgressSessionOptions) {
+    this.#label = opts.label;
+    this.#total = opts.total;
+    this.#sinks = opts.sinks;
+    this.#now = opts.now ?? Date.now;
+    this.#rateLimitMs = opts.rateLimitMs ?? DEFAULT_RATE_LIMIT_MS;
+    this.#dynamicRateLimit = opts.dynamicRateLimit ?? false;
+
+    const now = this.#now();
+    this.#startTime = now;
+    this.#lastSentMs = now - this.#rateLimitMs;
+
+    // Synthetic start tick — preserves today's "fire 0/total at session creation" wire behavior.
+    this.#dispatch({
+      kind: 'tick',
+      current: 0,
+      ...(this.#total !== undefined ? { total: this.#total } : {}),
+      message: this.#label,
+    });
+  }
+
+  get current(): number {
+    return this.#cursor;
+  }
+
+  step(message: string): void {
+    if (this.#done) return;
+    this.#cursor += 1;
+    this.#dispatch({
+      kind: 'tick',
+      current: this.#cursor,
+      ...(this.#total !== undefined ? { total: this.#total } : {}),
+      message,
+    });
+  }
+
+  set(input: { current: number; total?: number; message?: string }): void {
+    if (this.#done) return;
+    if (input.current > this.#cursor) {
+      this.#cursor = input.current;
+    }
+    const total = input.total ?? this.#total;
+    this.#dispatch({
+      kind: 'tick',
+      current: this.#cursor,
+      ...(total !== undefined ? { total } : {}),
+      message: input.message ?? this.#label,
+    });
+  }
+
+  status(message: string): void {
+    if (this.#done) return;
+    this.#dispatch({
+      kind: 'status',
+      message,
+    });
+  }
+
+  complete(message: string): void {
+    if (this.#done) return;
+    this.#done = true;
+    this.#dispatch({
+      kind: 'complete',
+      current: this.#cursor,
+      ...(this.#total !== undefined ? { total: this.#total } : {}),
+      message,
+    });
+  }
+
+  fail(error: unknown, message?: string): void {
+    if (this.#done) return;
+    this.#done = true;
+    this.#dispatch({
+      kind: 'fail',
+      current: this.#cursor,
+      ...(this.#total !== undefined ? { total: this.#total } : {}),
+      message: message ?? this.#label,
+      error,
+    });
+  }
+
+  #dispatch(event: ProgressEvent): void {
+    if (this.#shouldRateLimit(event)) {
+      return;
+    }
+
+    if (event.kind !== 'status') {
+      this.#lastSentMs = this.#now();
+    }
+
+    for (const sink of this.#sinks) {
+      this.#emitGuarded(sink, event);
+    }
+  }
+
+  #shouldRateLimit(event: ProgressEvent): boolean {
+    if (event.kind !== 'tick') {
+      return false;
+    }
+
+    const now = this.#now();
+    const effectiveRateLimit =
+      this.#dynamicRateLimit && now - this.#startTime > 5000
+        ? Math.max(this.#rateLimitMs, 250)
+        : this.#rateLimitMs;
+
+    const elapsed = now - this.#lastSentMs;
+    return elapsed < effectiveRateLimit;
+  }
+
+  #emitGuarded(sink: ProgressSink, event: ProgressEvent): void {
+    try {
+      const result = sink.emit(event);
+      if (result instanceof Promise) {
+        result.catch((err: unknown) => {
+          Logger.warn('ProgressSink emit failed', {
+            sink: sink.name,
+            eventKind: event.kind,
+            err,
+          });
+        });
+      }
+    } catch (err) {
+      Logger.warn('ProgressSink emit failed', {
+        sink: sink.name,
+        eventKind: event.kind,
+        err,
+      });
+    }
+  }
 }

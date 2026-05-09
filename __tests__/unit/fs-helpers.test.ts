@@ -1,7 +1,7 @@
 import assert from 'node:assert';
 import { describe, it } from 'node:test';
 
-import { processInParallel } from '../../src/core/parallel.js';
+import { processInParallel } from '../src/core/concurrency.js';
 
 describe('processInParallel', () => {
   it('correctly handles results containing undefined', async () => {
@@ -24,3 +24,5 @@ describe('processInParallel', () => {
     assert.deepEqual(results.errors, []);
   });
 });
+
+

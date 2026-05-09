@@ -5,18 +5,18 @@ import { realpath } from 'node:fs/promises';
 
 import { z } from 'zod/v4';
 
-import { assertNotAborted, createTimedAbortSignal, withAbort } from '../core/abort.js';
-import { getInitHandshakeTimeoutMs, SENSITIVE_FILE_DENYLIST } from '../core/constants.js';
+import { assertNotAborted, createTimedAbortSignal, withAbort } from '../core/concurrency.js';
+import { getInitHandshakeTimeoutMs, SENSITIVE_FILE_DENYLIST } from '../core/util.js';
 import { formatUnknownErrorMessage } from '../core/errors.js';
-import { Logger, type LoggingState, logToMcp } from '../core/logger.js';
+import { Logger, type LoggingState, logToMcp } from '../core/observability.js';
 import {
   getValidRootDirectories,
   isPathWithinDirectories,
   normalizePath,
   PathGuard,
   resolveAllowedDirectoriesState,
-} from '../core/path-guard.js';
-import { debounce, isRecord } from '../core/utils.js';
+} from '../core/path.js';
+import { debounce, isRecord } from '../core/util.js';
 
 const ROOTS_TIMEOUT_MS = 5000;
 const ROOTS_DEBOUNCE_MS = 100;
@@ -283,3 +283,5 @@ export class RootsManager {
     }
   }
 }
+
+

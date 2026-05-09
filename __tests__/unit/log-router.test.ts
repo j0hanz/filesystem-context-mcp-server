@@ -4,7 +4,7 @@ import type { LoggingLevel, McpServer } from '@modelcontextprotocol/server';
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 
-import { Logger, LogRouter, type LogTarget, SessionContext } from '../../src/core/logger.js';
+import { Logger, LogRouter, type LogTarget, SessionContext } from '../src/core/observability.js';
 
 interface RecordedLog {
   level: LoggingLevel;
@@ -118,3 +118,5 @@ describe('LogRouter', () => {
     assert.equal(stdio.records.length, 0);
   });
 });
+
+

@@ -3,7 +3,7 @@ import { basename, relative } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { withTimedAbortSignal } from '../core/abort.js';
+import { withTimedAbortSignal } from '../core/concurrency.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_SEARCH_MAX_FILES,
@@ -11,7 +11,7 @@ import {
   DEFAULT_SEARCH_TIMEOUT_MS,
   MAX_SEARCH_DEPTH,
   MAX_SEARCH_RESULTS,
-} from '../core/constants.js';
+} from '../core/util.js';
 import { ErrorCode } from '../core/errors.js';
 import {
   buildGlobOptions,
@@ -29,11 +29,11 @@ import {
   resolveStopReason,
   stableSortByDerivedString,
   withOptionalStoppedReason,
-} from '../core/fs-walk.js';
-import { isPathWithinDirectories, normalizePath } from '../core/path-guard.js';
-import type { PathGuard } from '../core/path-guard.js';
+} from '../core/fs.js';
+import { isPathWithinDirectories, normalizePath } from '../core/path.js';
+import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
-import { assignDefined } from '../core/utils.js';
+import { assignDefined } from '../core/util.js';
 import { NonNegInt, OptionalPath, SafeGlobPattern } from '../schemas/fields.js';
 import {
   CursorSchema,
@@ -743,3 +743,5 @@ export const SEARCH_FILES = defineTool<
     });
   },
 });
+
+

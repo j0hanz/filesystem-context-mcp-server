@@ -4,12 +4,12 @@ import { basename } from 'node:path';
 import { formatPatch, structuredPatch, type StructuredPatch } from 'diff';
 import { z } from 'zod/v4';
 
-import { withAbort } from '../core/abort.js';
-import { MAX_TEXT_FILE_SIZE } from '../core/constants.js';
+import { withAbort } from '../core/concurrency.js';
+import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import { ErrorCode, McpError } from '../core/errors.js';
-import type { PathGuard } from '../core/path-guard.js';
+import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
-import { runInWorker, shouldOffload } from '../core/worker-pool.js';
+import { runInWorker, shouldOffload } from '../core/concurrency.js';
 import { NonNegInt, RequiredPath } from '../schemas/fields.js';
 import { defaultFalseBoolean } from '../schemas/shared.js';
 
@@ -267,3 +267,5 @@ export const DIFF_FILES = defineTool<DiffInput, DiffOutput>({
     return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2}`;
   },
 });
+
+

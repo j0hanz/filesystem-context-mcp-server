@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { runInWorker, shouldOffload, shutdownWorkerPool } from '../../src/core/worker-pool.js';
+import { runInWorker, shouldOffload, shutdownWorkerPool } from '../src/core/concurrency.js';
 
 test.afterEach(async () => {
   await shutdownWorkerPool();
@@ -112,3 +112,5 @@ test('runInWorker handles malformed patch without crashing', async () => {
     `expected applied to be source or false, got: ${JSON.stringify(result.applied)}`,
   );
 });
+
+

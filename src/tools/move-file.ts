@@ -6,10 +6,10 @@ import { basename, dirname, join, resolve, sep } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { withAbort } from '../core/abort.js';
+import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, isNodeError, McpError } from '../core/errors.js';
-import { Logger } from '../core/logger.js';
-import type { PathGuard } from '../core/path-guard.js';
+import { Logger } from '../core/observability.js';
+import type { PathGuard } from '../core/path.js';
 import { RequiredPath } from '../schemas/fields.js';
 
 import { defineTool } from './define-tool.js';
@@ -239,3 +239,4 @@ export const MOVE_FILE = defineTool<MoveInput, MoveOutput>({
   },
   onError: (error, args) => buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.sources[0] ?? ''),
 });
+

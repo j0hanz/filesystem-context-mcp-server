@@ -1,8 +1,8 @@
 import type { ProgressNotification, ProgressToken } from '@modelcontextprotocol/server';
 
 import { classifyError } from '../core/errors.js';
-import { Logger } from '../core/logger.js';
-import { type ProgressEvent, ProgressSession, type ProgressSink } from '../core/progress-session.js';
+import { Logger } from '../core/observability.js';
+import { type ProgressEvent, ProgressSession, type ProgressSink } from '../core/observability.js';
 
 import type { ToolContext } from './shared.js';
 
@@ -179,3 +179,5 @@ export async function runWithProgressSession<T>(
   });
   return completeProgressSession(progress, label, () => body(progress));
 }
+
+

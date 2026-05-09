@@ -8,7 +8,7 @@ import type {
 import type { z } from 'zod/v4';
 
 import { classifyError, ErrorCode, McpError } from '../core/errors.js';
-import { maybeStripStructuredContentFromResult } from '../core/utils.js';
+import { maybeStripStructuredContentFromResult } from '../core/util.js';
 import { toToolJsonSchema } from '../schemas/json-schema.js';
 
 import * as progressSinks from './progress-sinks.js';
@@ -182,3 +182,4 @@ export function registerStandardTool<Args, Result extends Record<string, unknown
     validatedHandler as never,
   );
 }
+

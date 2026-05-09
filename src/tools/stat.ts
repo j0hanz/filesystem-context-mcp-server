@@ -4,11 +4,11 @@ import { parse } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { assertNotAborted, withAbort } from '../core/abort.js';
-import { DEFAULT_SEARCH_TIMEOUT_MS, getMimeType } from '../core/constants.js';
+import { assertNotAborted, withAbort } from '../core/concurrency.js';
+import { DEFAULT_SEARCH_TIMEOUT_MS, getMimeType } from '../core/util.js';
 import { ErrorCode, isAbortError } from '../core/errors.js';
-import { getFileType, isHidden } from '../core/fs-walk.js';
-import type { PathGuard } from '../core/path-guard.js';
+import { getFileType, isHidden } from '../core/fs.js';
+import type { PathGuard } from '../core/path.js';
 import { RequiredPath } from '../schemas/fields.js';
 import { FileInfoSchema } from '../schemas/shared.js';
 
@@ -164,3 +164,5 @@ export const GET_FILE_INFO = defineTool<StatInput, StatOutput>({
   defaultErrorCode: ErrorCode.NOT_FOUND,
   ...statMessages,
 });
+
+
