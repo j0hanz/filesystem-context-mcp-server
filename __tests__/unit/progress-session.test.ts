@@ -160,4 +160,22 @@ void describe('ProgressSession', () => {
     session.complete('ignored');
     assert.equal(sink.events.length, 1);
   });
+
+  void it('status emits a status event without advancing cursor', () => {
+    const sink = new MemorySink();
+    const session = new ProgressSession({
+      label: 'job',
+      sinks: [sink],
+    });
+    sink.events.length = 0;
+
+    session.status('connecting...');
+
+    assert.equal(session.current, 0);
+    assert.equal(sink.events.length, 1);
+    assert.deepEqual(sink.events[0], {
+      kind: 'status',
+      message: 'connecting...',
+    });
+  });
 });

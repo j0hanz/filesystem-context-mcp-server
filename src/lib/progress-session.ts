@@ -85,8 +85,12 @@ export class ProgressSession {
     });
   }
 
-  status(_message: string): void {
-    // Implemented in Task 4.
+  status(message: string): void {
+    if (this.#done) return;
+    this.#dispatch({
+      kind: 'status',
+      message,
+    });
   }
 
   complete(message: string): void {
