@@ -25,6 +25,8 @@ interface ProgressSessionOptions {
   now?: () => number;
   /** Override the rate limit window. Default: 50ms. */
   rateLimitMs?: number;
+  /** If true, rate limit window increases after 5 seconds of execution. */
+  dynamicRateLimit?: boolean;
 }
 
 const DEFAULT_RATE_LIMIT_MS = 50;
@@ -35,6 +37,8 @@ export class ProgressSession {
   readonly #sinks: ProgressSink[];
   readonly #now: () => number;
   readonly #rateLimitMs: number;
+  readonly #dynamicRateLimit: boolean;
+  readonly #startTime: number;
 
   #cursor = 0;
   #lastSentMs = 0;
@@ -46,8 +50,10 @@ export class ProgressSession {
     this.#sinks = opts.sinks;
     this.#now = opts.now ?? Date.now;
     this.#rateLimitMs = opts.rateLimitMs ?? DEFAULT_RATE_LIMIT_MS;
+    this.#dynamicRateLimit = opts.dynamicRateLimit ?? false;
 
     const now = this.#now();
+    this.#startTime = now;
     this.#lastSentMs = now - this.#rateLimitMs;
 
     // Synthetic start tick — preserves today's "fire 0/total at session creation" wire behavior.
@@ -139,8 +145,13 @@ export class ProgressSession {
     }
 
     const now = this.#now();
+    const effectiveRateLimit =
+      this.#dynamicRateLimit && now - this.#startTime > 5000
+        ? Math.max(this.#rateLimitMs, 250)
+        : this.#rateLimitMs;
+
     const elapsed = now - this.#lastSentMs;
-    return elapsed < this.#rateLimitMs;
+    return elapsed < effectiveRateLimit;
   }
 
   #emitGuarded(sink: ProgressSink, event: ProgressEvent): void {

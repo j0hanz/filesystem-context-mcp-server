@@ -19,20 +19,31 @@ export { ProgressSession };
 interface McpProgressSinkOptions {
   progressToken: ProgressToken;
   sendNotification: (n: ProgressNotification) => Promise<void>;
+  signal: AbortSignal;
+  log?: ToolContext['log'];
 }
 
 export class McpProgressSink implements ProgressSink {
   readonly name = 'mcp';
   readonly #progressToken: ProgressToken;
   readonly #sendNotification: (n: ProgressNotification) => Promise<void>;
+  readonly #signal: AbortSignal;
+  readonly #log?: ToolContext['log'];
 
   constructor(opts: McpProgressSinkOptions) {
     this.#progressToken = opts.progressToken;
     this.#sendNotification = opts.sendNotification;
+    this.#signal = opts.signal;
+    this.#log = opts.log;
   }
 
   async emit(event: ProgressEvent): Promise<void> {
-    if (event.kind === 'status') return;
+    if (this.#signal.aborted) return;
+
+    if (event.kind === 'status') {
+      await this.#log?.('info', `Progress Status: ${event.message}`);
+      return;
+    }
 
     if (event.kind === 'tick') {
       await this.#send({
@@ -121,8 +132,11 @@ export class TaskStoreSink implements ProgressSink {
 function hasMcpProgress(ctx: ToolContext): ctx is ToolContext & {
   _meta: { progressToken: ProgressToken };
   sendNotification: NonNullable<ToolContext['sendNotification']>;
+  signal: AbortSignal;
 } {
-  return Boolean(ctx._meta?.progressToken && ctx.sendNotification);
+  return Boolean(
+    ctx._meta?.progressToken && ctx.sendNotification && ctx.signal
+  );
 }
 
 function hasTaskProgress(
@@ -144,6 +158,8 @@ export function progressSessionFromContext(
         new McpProgressSink({
           progressToken: ctx._meta.progressToken,
           sendNotification: ctx.sendNotification,
+          signal: ctx.signal,
+          log: ctx.log,
         })
       );
     } catch (error) {
@@ -174,6 +190,7 @@ export function progressSessionFromContext(
     label: opts.label,
     ...(opts.total !== undefined ? { total: opts.total } : {}),
     sinks,
+    dynamicRateLimit: true,
   });
 }
 

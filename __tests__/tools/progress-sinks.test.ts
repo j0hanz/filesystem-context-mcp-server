@@ -18,6 +18,7 @@ void describe('McpProgressSink', () => {
   void it('forwards tick events to sendNotification', async () => {
     const notifications: ProgressNotification[] = [];
     const sink = new McpProgressSink({
+      signal: new AbortController().signal,
       progressToken: 'tok-1',
       sendNotification: async (n) => {
         notifications.push(n);
@@ -46,6 +47,7 @@ void describe('McpProgressSink', () => {
   void it('ignores status events', async () => {
     const notifications: ProgressNotification[] = [];
     const sink = new McpProgressSink({
+      signal: new AbortController().signal,
       progressToken: 'tok-1',
       sendNotification: async (n) => {
         notifications.push(n);
@@ -60,6 +62,7 @@ void describe('McpProgressSink', () => {
   void it('normalizes complete events to 100% display', async () => {
     const notifications: ProgressNotification[] = [];
     const sink = new McpProgressSink({
+      signal: new AbortController().signal,
       progressToken: 'tok-1',
       sendNotification: async (n) => {
         notifications.push(n);
@@ -86,6 +89,7 @@ void describe('McpProgressSink', () => {
   void it('normalizes fail events to display max(current, total, 1)', async () => {
     const notifications: ProgressNotification[] = [];
     const sink = new McpProgressSink({
+      signal: new AbortController().signal,
       progressToken: 'tok-1',
       sendNotification: async (n) => {
         notifications.push(n);
@@ -251,6 +255,7 @@ void describe('progressSessionFromContext', () => {
     let notified = false;
     const ctx = {
       _meta: { progressToken: 'tok-1' },
+      signal: new AbortController().signal,
       sendNotification: async () => {
         notified = true;
       },
@@ -285,6 +290,7 @@ void describe('progressSessionFromContext', () => {
     const store = new FakeTaskStore();
     const ctx = {
       _meta: { progressToken: 'tok-1' },
+      signal: new AbortController().signal,
       sendNotification: async () => {
         notified = true;
       },
