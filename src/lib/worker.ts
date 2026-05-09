@@ -21,9 +21,7 @@ import { isMainThread, parentPort } from 'node:worker_threads';
 
 import {
   applyPatch,
-  type Change,
   createTwoFilesPatch,
-  diffLines,
   formatPatch,
   parsePatch,
   structuredPatch,
@@ -41,7 +39,7 @@ export type WorkerTaskName =
   | 'diff'
   | 'formatPatch'
   | 'applyPatch'
-  | 'diffLines';
+  | 'createPatch';
 
 export interface DiffPayload {
   oldStr: string;
@@ -64,7 +62,7 @@ export interface ApplyPatchPayload {
   autoConvertLineEndings?: boolean;
 }
 
-export interface DiffLinesPayload {
+export interface CreatePatchPayload {
   oldStr: string;
   newStr: string;
   oldHeader: string;
@@ -75,7 +73,7 @@ export interface TaskPayloadMap {
   diff: DiffPayload;
   formatPatch: FormatPatchPayload;
   applyPatch: ApplyPatchPayload;
-  diffLines: DiffLinesPayload;
+  createPatch: CreatePatchPayload;
 }
 
 export interface ApplyPatchResult {
@@ -83,16 +81,11 @@ export interface ApplyPatchResult {
   patch: StructuredPatch | null;
 }
 
-export interface DiffLinesResult {
-  changes: Change[];
-  unifiedDiff: string;
-}
-
 export interface TaskResultMap {
   diff: StructuredPatch;
   formatPatch: string;
   applyPatch: ApplyPatchResult;
-  diffLines: DiffLinesResult;
+  createPatch: string;
 }
 
 interface TaskRequest {
@@ -192,9 +185,8 @@ const TASK_HANDLERS: {
           });
     return { applied, patch };
   },
-  diffLines: (p) => {
-    const changes = diffLines(p.oldStr, p.newStr);
-    const unifiedDiff = createTwoFilesPatch(
+  createPatch: (p) => {
+    return createTwoFilesPatch(
       p.oldHeader,
       p.newHeader,
       p.oldStr,
@@ -202,7 +194,6 @@ const TASK_HANDLERS: {
       '',
       ''
     );
-    return { changes, unifiedDiff };
   },
 };
 

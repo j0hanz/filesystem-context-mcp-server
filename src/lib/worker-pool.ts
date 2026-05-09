@@ -72,16 +72,60 @@ interface PoolWorker {
   startedReady: boolean;
 }
 
+class FastQueue<T> {
+  private items: T[] = [];
+  private head = 0;
+
+  push(item: T): void {
+    this.items.push(item);
+  }
+
+  shift(): T | undefined {
+    if (this.head < this.items.length) {
+      const item = this.items[this.head];
+      this.items[this.head] = undefined as unknown as T;
+      this.head++;
+      if (this.head > 1000 && this.head * 2 >= this.items.length) {
+        this.items = this.items.slice(this.head);
+        this.head = 0;
+      }
+      return item;
+    }
+    return undefined;
+  }
+
+  get length(): number {
+    return this.items.length - this.head;
+  }
+
+  remove(predicate: (item: T) => boolean): void {
+    for (let i = this.head; i < this.items.length; i++) {
+      const item = this.items[i];
+      if (item !== undefined && predicate(item)) {
+        this.items.splice(i, 1);
+        return;
+      }
+    }
+  }
+
+  clear(): T[] {
+    const remaining = this.items.slice(this.head);
+    this.items = [];
+    this.head = 0;
+    return remaining;
+  }
+}
+
 interface PoolState {
   workers: PoolWorker[];
-  queue: QueuedTask[];
+  queue: FastQueue<QueuedTask>;
   nextId: number;
   sweepTimer?: NodeJS.Timeout | undefined;
 }
 
 const state: PoolState = {
   workers: [],
-  queue: [],
+  queue: new FastQueue<QueuedTask>(),
   nextId: 1,
 };
 
@@ -100,8 +144,9 @@ function stopSweepTimerIfPossible(): void {
 
 function sweepIdleWorkers(): void {
   const now = Date.now();
-  for (const pw of [...state.workers]) {
-    if (pw.state === 'idle' && now - pw.lastIdleAt >= WORKER_IDLE_TIMEOUT_MS) {
+  for (let i = state.workers.length - 1; i >= 0; i--) {
+    const pw = state.workers[i];
+    if (pw?.state === 'idle' && now - pw.lastIdleAt >= WORKER_IDLE_TIMEOUT_MS) {
       retireWorker(pw);
     }
   }
@@ -110,7 +155,10 @@ function sweepIdleWorkers(): void {
 
 function retireWorker(pw: PoolWorker): void {
   pw.state = 'terminating';
-  state.workers = state.workers.filter((x) => x !== pw);
+  const idx = state.workers.indexOf(pw);
+  if (idx !== -1) {
+    state.workers.splice(idx, 1);
+  }
   void pw.worker.terminate();
 }
 
@@ -146,7 +194,10 @@ function handleResponse(pw: PoolWorker, response: TaskResponse): void {
 }
 
 function handleWorkerExit(pw: PoolWorker, code: number): void {
-  state.workers = state.workers.filter((x) => x !== pw);
+  const idx = state.workers.indexOf(pw);
+  if (idx !== -1) {
+    state.workers.splice(idx, 1);
+  }
   if (pw.current) {
     cleanupEntry(pw.current);
     pw.current.reject(
@@ -265,8 +316,7 @@ export function runInWorker<N extends WorkerTaskName>(
           }, WORKER_CANCEL_GRACE_MS).unref();
         } else {
           // still queued; remove from queue
-          const idx = state.queue.findIndex((q) => q.entry === entry);
-          if (idx >= 0) state.queue.splice(idx, 1);
+          state.queue.remove((q) => q.entry === entry);
         }
         const reason: unknown = opts.signal?.reason;
         reject(
@@ -287,7 +337,11 @@ export function runInWorker<N extends WorkerTaskName>(
       const tid = setTimeout(() => {
         cleanupEntry(entry);
         const pw = state.workers.find((p) => p.current === entry);
-        if (pw) retireWorker(pw);
+        if (pw) {
+          retireWorker(pw);
+        } else {
+          state.queue.remove((q) => q.entry === entry);
+        }
         reject(new McpError(ErrorCode.TIMEOUT, 'Worker task timed out'));
       }, opts.timeoutMs);
       tid.unref();
@@ -304,9 +358,7 @@ export function runInWorker<N extends WorkerTaskName>(
 
 export async function shutdownWorkerPool(): Promise<void> {
   // Reject everything that's still queued.
-  while (state.queue.length > 0) {
-    const qt = state.queue.shift();
-    if (!qt) break;
+  for (const qt of state.queue.clear()) {
     cleanupEntry(qt.entry);
     qt.entry.reject(
       new McpError(ErrorCode.UNKNOWN, 'Worker pool shutting down')

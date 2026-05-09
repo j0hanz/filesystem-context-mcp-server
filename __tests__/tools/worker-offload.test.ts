@@ -43,8 +43,8 @@ describe('worker output parity', () => {
     );
   });
 
-  it('diffLines task matches createTwoFilesPatch inline', async () => {
-    const workerResult = await runInWorker('diffLines', {
+  it('createPatch task matches createTwoFilesPatch inline', async () => {
+    const workerResult = await runInWorker('createPatch', {
       oldStr: OLD,
       newStr: NEW,
       oldHeader: 'old.txt',
@@ -53,7 +53,7 @@ describe('worker output parity', () => {
 
     const inlineResult = createTwoFilesPatch('old.txt', 'new.txt', OLD, NEW);
 
-    assert.equal(workerResult.unifiedDiff, inlineResult);
+    assert.equal(workerResult, inlineResult);
   });
 
   it('applyPatch task matches applyPatch inline', async () => {

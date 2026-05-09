@@ -432,13 +432,12 @@ async function maybeAppendPatchDiff(
       Buffer.byteLength(params.originalContent) +
       Buffer.byteLength(params.updatedContent);
     if (shouldOffload(totalBytes)) {
-      const result = await runInWorker('diffLines', {
+      return await runInWorker('createPatch', {
         oldStr: params.originalContent,
         newStr: params.updatedContent,
         oldHeader: basename(params.filePath),
         newHeader: basename(params.filePath),
       });
-      return result.unifiedDiff;
     }
     return new Promise<string>((resolve) => {
       // Defer to event loop to avoid blocking on large diffs

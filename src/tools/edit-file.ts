@@ -304,13 +304,12 @@ async function buildDiff(
   const fileName = basename(validPath);
   const totalBytes = Buffer.byteLength(original) + Buffer.byteLength(modified);
   if (shouldOffload(totalBytes)) {
-    const result = await runInWorker('diffLines', {
+    return await runInWorker('createPatch', {
       oldStr: original,
       newStr: modified,
       oldHeader: fileName,
       newHeader: fileName,
     });
-    return result.unifiedDiff;
   }
   return new Promise<string>((resolve) => {
     createTwoFilesPatch(
