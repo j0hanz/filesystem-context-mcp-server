@@ -9,11 +9,12 @@ import type {
 
 import type { z } from 'zod/v4';
 
+import { toToolJsonSchema } from '../schemas/json-schema.js';
+
 import { ErrorCode } from '../core/errors.js';
 import { Logger, ProgressSession } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
-import { toToolJsonSchema } from '../schemas/json-schema.js';
 import { buildToolErrorResponse } from './shared.js';
 import type { ToolContext } from './shared.js';
 
