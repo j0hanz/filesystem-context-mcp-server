@@ -1,3 +1,5 @@
+import { stat } from 'node:fs/promises';
+
 import {
   completable,
   type GetPromptResult,
@@ -162,7 +164,45 @@ const GET_HELP: PromptEntry = {
   },
 };
 
-const PROMPT_ENTRIES: PromptEntry[] = [GET_HELP];
+const ANALYZE_PATH: PromptEntry = {
+  contract: {
+    name: 'analyze-path',
+    title: 'Analyze Path',
+    description: 'Workflow for analyzing a file or directory using stat, read, and tree.',
+    requiresPathGuard: true,
+  },
+  register(server, options) {
+    server.registerPrompt(
+      ANALYZE_PATH.contract.name,
+      withDefaultIcons(
+        {
+          title: ANALYZE_PATH.contract.title,
+          description: ANALYZE_PATH.contract.description,
+          argsSchema: z.strictObject({
+            path: pathArg(server, options.pathGuard, 'path', 'Absolute path to analyze.'),
+          }),
+        },
+        options.iconInfo,
+      ),
+      async ({ path: rawPath }): Promise<GetPromptResult> =>
+        wrapHandler(ANALYZE_PATH.contract.name, options, true, async () => {
+          const resolved = await options.pathGuard.validateExistingPath(rawPath);
+          const stats = await stat(resolved);
+          const kind = stats.isDirectory() ? 'directory' : 'file';
+          const task =
+            kind === 'file'
+              ? `Analyze this file: ${resolved}\n\n- Call \`stat\` to confirm size and permissions.\n- Call \`read\` (with \`includeHash: true\`) and summarize contents.\n- Report: type, size, permissions, key observations.`
+              : `Analyze this directory: ${resolved}\n\n- Call \`tree\` (maxDepth: 3) for layout.\n- Call \`ls\` for top-level entries.\n- Report: structure, notable files/subdirs, observations.`;
+          return {
+            description: ANALYZE_PATH.contract.description,
+            messages: [userText(task), linkToPath(resolved), linkToInstructions()],
+          };
+        }),
+    );
+  },
+};
+
+const PROMPT_ENTRIES: PromptEntry[] = [GET_HELP, ANALYZE_PATH];
 
 export const ALL_PROMPTS: PromptContract[] = PROMPT_ENTRIES.map((e) => e.contract);
 
