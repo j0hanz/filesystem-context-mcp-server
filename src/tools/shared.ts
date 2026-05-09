@@ -6,7 +6,6 @@ import type {
   LoggingLevel,
   Notification,
   RequestMeta,
-  RequestTaskStore,
   ServerContext,
 } from '@modelcontextprotocol/server';
 
@@ -29,6 +28,7 @@ import type { ResourceStore } from '../lib/resource-store.js';
 import { createBase64JsonCodec } from '../lib/zod-codecs.js';
 
 import type { FileInfo } from '../config.js';
+import type { TaskOrchestrator } from '../server/task-orchestrator.js';
 
 export { type ToolContract } from './contract.js';
 
@@ -279,16 +279,6 @@ export interface ToolContext {
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>;
 }
 
-/**
- * `ToolContext` augmented with optional task-execution metadata. Populated by
- * the task handler in `task-support.ts`; absent for non-task tool calls.
- */
-export type TaskToolContext = ToolContext & {
-  taskId?: string;
-  taskStore?: RequestTaskStore;
-  taskRequestedTtl?: number;
-};
-
 export function toToolContext(ctx?: ToolContext | ServerContext): ToolContext {
   if (!ctx) return {};
   if ('mcpReq' in ctx) {
@@ -353,6 +343,7 @@ export interface ToolRegistrationOptions {
   resourceStore?: ResourceStore;
   isInitialized?: () => boolean;
   hasTaskSupport?: boolean;
+  orchestrator?: TaskOrchestrator | undefined;
   serverIcon?: string;
   iconInfo?: IconInfo;
 }

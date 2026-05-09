@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { SENSITIVE_FILE_DENYLIST } from '../src/lib/constants.js';
 import { PathGuard, resolveAllowedDirectoriesState } from '../src/lib/path-guard.js';
 import { createInMemoryResourceStore, type ResourceStore } from '../src/lib/resource-store.js';
+import { TaskOrchestrator } from '../src/server/task-orchestrator.js';
 import { createTaskStore } from '../src/server/task-store.js';
 import { registerAllTools } from '../src/tools.js';
 import type { HandlerContext } from '../src/tools/shared.js';
@@ -45,6 +46,7 @@ export async function createTestEnv(): Promise<TestEnv> {
   const tmpDir = await mkdtemp(join(tmpdir(), `fsmcp-${randomUUID().slice(0, 8)}-`));
 
   const taskStore = createTaskStore();
+  const orchestrator = new TaskOrchestrator(taskStore);
 
   const server = new McpServer(
     { name: 'test-server', version: '0.0.0' },
@@ -75,6 +77,7 @@ export async function createTestEnv(): Promise<TestEnv> {
     resourceStore,
     isInitialized: () => true,
     hasTaskSupport: true,
+    orchestrator,
   });
 
   const client = new Client({ name: 'test-client', version: '1.0.0' });

@@ -1,3 +1,5 @@
+import { parseTrueEnvFlag } from './constants.js';
+
 // type-guards.ts
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object';
@@ -60,4 +62,21 @@ export function assignDefined<T extends object>(
     }
   }
   return target;
+}
+
+function shouldStripStructuredOutput(): boolean {
+  return parseTrueEnvFlag(process.env.FS_CONTEXT_STRIP_STRUCTURED);
+}
+
+// Strips structuredContent from a tool result if present, without modifying the original object.
+export function maybeStripStructuredContentFromResult<T extends object>(result: T): T {
+  if (!shouldStripStructuredOutput()) return result;
+  if (!Object.hasOwn(result, 'structuredContent')) return result;
+
+  const stripped = Object.fromEntries(
+    Object.entries(result as Record<string, unknown>).filter(
+      ([key]) => key !== 'structuredContent',
+    ),
+  );
+  return stripped as T;
 }

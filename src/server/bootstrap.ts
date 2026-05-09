@@ -52,6 +52,8 @@ import { registerAllTools } from '../tools.js';
 import { type IconInfo, withDefaultIcons } from '../tools/shared.js';
 import { InMemoryEventStore } from './event-store.js';
 import { RootsManager, type ServerOptions } from './roots-manager.js';
+import { TaskOrchestrator } from './task-orchestrator.js';
+import type { EventedTaskStore } from './task-store.js';
 import { createTaskStore } from './task-store.js';
 
 interface CapabilityOptions {
@@ -144,15 +146,18 @@ export async function createServer(
     enableTaskToolRequests: true,
   });
 
+  let taskStore: EventedTaskStore | undefined;
   if (capabilities.tasks) {
+    taskStore = createTaskStore();
     capabilities.tasks = {
       ...capabilities.tasks,
-      taskStore: createTaskStore(),
+      taskStore,
       taskMessageQueue: new InMemoryTaskMessageQueue(),
     };
   }
 
   const hasTaskSupport = capabilities.tasks?.requests?.tools?.call !== undefined;
+  const orchestrator = taskStore ? new TaskOrchestrator(taskStore) : undefined;
 
   const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> = {
     capabilities,
@@ -213,6 +218,7 @@ export async function createServer(
     resourceStore,
     isInitialized: options.isInitialized ?? (() => rootsManager.isInitialized()),
     hasTaskSupport,
+    orchestrator,
     ...(localIcon ? { iconInfo: localIcon } : {}),
   });
 

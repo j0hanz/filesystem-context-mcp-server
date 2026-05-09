@@ -111,15 +111,11 @@ export const MAX_CONCURRENT_TASKS = parseEnvInt(
   10_000,
 );
 
-export const TASK_CANCEL_POLL_MS = 2_000;
-
 export function getInitHandshakeTimeoutMs(): number {
   return parseEnvInt('FS_INIT_HANDSHAKE_TIMEOUT_MS', 30_000, 1_000, 300_000);
 }
 
 export const INIT_TIMEOUT_CLOSE = parseTrueEnvFlag(process.env.FS_INIT_TIMEOUT_CLOSE);
-
-export const TASK_POLL_INTERVAL_MS = 500;
 
 // Auto-tuned parallelism based on CPU cores (no env override)
 const BYTES_PER_PARALLEL_TASK = 64 * MIB;
