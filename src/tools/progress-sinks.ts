@@ -4,7 +4,13 @@ import type {
   RequestTaskStore,
 } from '@modelcontextprotocol/server';
 
-import { type ProgressEvent, type ProgressSink, ProgressSession } from '../lib/progress-session.js';
+import { Logger } from '../lib/logger.js';
+import {
+  type ProgressEvent,
+  ProgressSession,
+  type ProgressSink,
+} from '../lib/progress-session.js';
+
 import type { TaskToolContext, ToolContext } from './shared.js';
 
 interface McpProgressSinkOptions {
@@ -109,9 +115,7 @@ export class TaskStoreSink implements ProgressSink {
   }
 }
 
-function hasMcpProgress(
-  ctx: ToolContext
-): ctx is ToolContext & {
+function hasMcpProgress(ctx: ToolContext): ctx is ToolContext & {
   _meta: { progressToken: ProgressToken };
   sendNotification: NonNullable<ToolContext['sendNotification']>;
 } {
@@ -132,21 +136,35 @@ export function progressSessionFromContext(
   const sinks: ProgressSink[] = [];
 
   if (hasMcpProgress(ctx)) {
-    sinks.push(
-      new McpProgressSink({
-        progressToken: ctx._meta.progressToken,
-        sendNotification: ctx.sendNotification,
-      })
-    );
+    try {
+      sinks.push(
+        new McpProgressSink({
+          progressToken: ctx._meta.progressToken,
+          sendNotification: ctx.sendNotification,
+        })
+      );
+    } catch (error) {
+      Logger.warn(
+        'progress-sinks',
+        `Failed to instantiate McpProgressSink: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }
 
   if (hasTaskProgress(ctx)) {
-    sinks.push(
-      new TaskStoreSink({
-        taskId: ctx.taskId,
-        taskStore: ctx.taskStore,
-      })
-    );
+    try {
+      sinks.push(
+        new TaskStoreSink({
+          taskId: ctx.taskId,
+          taskStore: ctx.taskStore,
+        })
+      );
+    } catch (error) {
+      Logger.warn(
+        'progress-sinks',
+        `Failed to instantiate TaskStoreSink: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }
 
   return new ProgressSession({
