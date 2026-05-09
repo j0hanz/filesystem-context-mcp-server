@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { channel, tracingChannel } from 'node:diagnostics_channel';
-import test from 'node:test';
+import process from 'node:process';
+import test, { before } from 'node:test';
 
 import {
   getToolContextSnapshot,
@@ -10,6 +11,10 @@ import {
   startPerfMeasure,
   withToolDiagnostics,
 } from '../../src/lib/observability.js';
+
+before(() => {
+  process.env.FS_CONTEXT_DIAGNOSTICS = '1';
+});
 
 test('observability tool context', async () => {
   await withToolDiagnostics('test-tool', async () => {

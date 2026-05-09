@@ -112,25 +112,35 @@ function getRootsManager(server: McpServer): RootsManager {
   return manager;
 }
 
-async function getLocalIconInfo(): Promise<IconInfo | undefined> {
-  const name = 'logo.svg';
-  const mime = 'image/svg+xml';
-  const candidates = [`../assets/${name}`, `../../assets/${name}`];
+let cachedIconInfo: Promise<IconInfo | undefined> | undefined;
 
-  for (const candidate of candidates) {
-    try {
-      const iconPath = new URL(candidate, import.meta.url);
-      const buffer = await readFile(iconPath);
-      return {
-        src: `data:${mime};base64,${buffer.toString('base64')}`,
-        mimeType: mime,
-      };
-    } catch {
-      // Try next candidate.
-    }
+function getLocalIconInfo(): Promise<IconInfo | undefined> {
+  if (cachedIconInfo !== undefined) {
+    return cachedIconInfo;
   }
 
-  return undefined;
+  cachedIconInfo = (async () => {
+    const name = 'logo.svg';
+    const mime = 'image/svg+xml';
+    const candidates = [`../assets/${name}`, `../../assets/${name}`];
+
+    for (const candidate of candidates) {
+      try {
+        const iconPath = new URL(candidate, import.meta.url);
+        const buffer = await readFile(iconPath);
+        return {
+          src: `data:${mime};base64,${buffer.toString('base64')}`,
+          mimeType: mime,
+        };
+      } catch {
+        // Try next candidate.
+      }
+    }
+
+    return undefined;
+  })();
+
+  return cachedIconInfo;
 }
 
 export async function createServer(
@@ -303,6 +313,9 @@ export function isAllowedLocalhostOrigin(origin: string): boolean {
   return ALLOWED_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin));
 }
 
+let cachedApiKey: string | undefined;
+let cachedExpectedHash: Buffer | undefined;
+
 export function validateBearerAuthorization(
   apiKey: string,
   authHeader: unknown
@@ -315,7 +328,16 @@ export function validateBearerAuthorization(
   if (userKey.length > MAX_BEARER_TOKEN_LENGTH) {
     return false;
   }
-  const expectedHash = createHash('sha256').update(apiKey).digest();
+
+  let expectedHash: Buffer;
+  if (apiKey === cachedApiKey && cachedExpectedHash !== undefined) {
+    expectedHash = cachedExpectedHash;
+  } else {
+    expectedHash = createHash('sha256').update(apiKey).digest();
+    cachedApiKey = apiKey;
+    cachedExpectedHash = expectedHash;
+  }
+
   const actualHash = createHash('sha256').update(userKey).digest();
   return timingSafeEqual(expectedHash, actualHash);
 }
@@ -352,8 +374,8 @@ function originGuardMiddleware(): RequestHandler {
  * matching bearer token. No key set = open access (loopback dev mode).
  */
 function bearerAuthMiddleware(): RequestHandler {
+  const apiKey = process.env.FILESYSTEM_MCP_API_KEY;
   return (req: Request, res: Response, next: NextFunction): void => {
-    const apiKey = process.env.FILESYSTEM_MCP_API_KEY;
     if (!apiKey) {
       next();
       return;
@@ -637,71 +659,45 @@ export async function startHttpServer(
     }
   );
 
-  app.all('/mcp', async (req: Request, res: Response) => {
+  app.post('/mcp', async (req: Request, res: Response) => {
     try {
       const sessionId = getSessionId(req);
-
-      if (req.method === 'POST') {
-        if (sessionId) {
-          const session = registry.getOrRespondNotFound(sessionId, res);
-          if (session)
-            await handleSessionTransportRequest(session, req, res, req.body);
-          return;
-        }
-        if (isInitializeRequest(req.body)) {
-          const maxSessions = parseEnvInt(
-            'FILESYSTEM_MCP_MAX_HTTP_SESSIONS',
-            100,
-            1,
-            10_000
-          );
-          if (registry.size() >= maxSessions) {
-            sendJsonRpcError(
-              res,
-              503,
-              JSON_RPC_SERVER_ERROR,
-              'Too many sessions'
-            );
-            return;
-          }
-          const session = await createHttpSession(
-            options,
-            registry,
-            eventStore
-          );
+      if (sessionId) {
+        const session = registry.getOrRespondNotFound(sessionId, res);
+        if (session) {
           await handleSessionTransportRequest(session, req, res, req.body);
-          return;
         }
-        sendJsonRpcError(
-          res,
-          400,
-          JSON_RPC_SERVER_ERROR,
-          'Bad Request: No valid session ID provided'
-        );
         return;
       }
-
-      if (req.method === 'GET' || req.method === 'DELETE') {
-        if (!sessionId) {
+      if (isInitializeRequest(req.body)) {
+        const maxSessions = parseEnvInt(
+          'FILESYSTEM_MCP_MAX_HTTP_SESSIONS',
+          100,
+          1,
+          10_000
+        );
+        if (registry.size() >= maxSessions) {
           sendJsonRpcError(
             res,
-            400,
+            503,
             JSON_RPC_SERVER_ERROR,
-            'Bad Request: Missing session ID'
+            'Too many sessions'
           );
           return;
         }
-        const session = registry.getOrRespondNotFound(sessionId, res);
-        if (session) await handleSessionTransportRequest(session, req, res);
+        const session = await createHttpSession(options, registry, eventStore);
+        await handleSessionTransportRequest(session, req, res, req.body);
         return;
       }
-
-      // Unsupported method
-      res.status(405).set('Allow', 'GET, POST, DELETE, OPTIONS');
-      sendJsonRpcError(res, 405, JSON_RPC_SERVER_ERROR, 'Method Not Allowed');
+      sendJsonRpcError(
+        res,
+        400,
+        JSON_RPC_SERVER_ERROR,
+        'Bad Request: No valid session ID provided'
+      );
     } catch (error) {
       Logger.error(
-        '[HTTP] Error handling request:',
+        '[HTTP] Error handling POST request:',
         formatUnknownErrorMessage(error)
       );
       if (!res.headersSent) {
@@ -713,6 +709,46 @@ export async function startHttpServer(
         );
       }
     }
+  });
+
+  const handleGetOrDelete = async (req: Request, res: Response) => {
+    try {
+      const sessionId = getSessionId(req);
+      if (!sessionId) {
+        sendJsonRpcError(
+          res,
+          400,
+          JSON_RPC_SERVER_ERROR,
+          'Bad Request: Missing session ID'
+        );
+        return;
+      }
+      const session = registry.getOrRespondNotFound(sessionId, res);
+      if (session) {
+        await handleSessionTransportRequest(session, req, res);
+      }
+    } catch (error) {
+      Logger.error(
+        `[HTTP] Error handling ${req.method} request:`,
+        formatUnknownErrorMessage(error)
+      );
+      if (!res.headersSent) {
+        sendJsonRpcError(
+          res,
+          500,
+          JSON_RPC_INTERNAL_ERROR,
+          'Internal Server Error'
+        );
+      }
+    }
+  };
+
+  app.get('/mcp', handleGetOrDelete);
+  app.delete('/mcp', handleGetOrDelete);
+
+  app.all('/mcp', (_req: Request, res: Response) => {
+    res.status(405).set('Allow', 'GET, POST, DELETE, OPTIONS');
+    sendJsonRpcError(res, 405, JSON_RPC_SERVER_ERROR, 'Method Not Allowed');
   });
 
   const httpServer = createHttpServer(app);
