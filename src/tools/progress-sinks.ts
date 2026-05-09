@@ -1,35 +1,61 @@
+import type {
+  ProgressNotification,
+  ProgressToken,
+} from '@modelcontextprotocol/server';
+
 import type { ProgressEvent, ProgressSink } from '../lib/progress-session.js';
 
-/**
- * A progress sink that forwards events to an MCP progress notification callback.
- * Implements 100% display normalization for 'complete' and 'fail' events.
- */
-export class McpProgressSink implements ProgressSink {
-  constructor(
-    public readonly name: string,
-    private readonly onProgress: (data: { progress: number; total: number }) => void
-  ) {}
+interface McpProgressSinkOptions {
+  progressToken: ProgressToken;
+  sendNotification: (n: ProgressNotification) => Promise<void>;
+}
 
-  emit(event: ProgressEvent): void {
-    if (event.kind === 'status') {
+export class McpProgressSink implements ProgressSink {
+  readonly name = 'mcp';
+  readonly #progressToken: ProgressToken;
+  readonly #sendNotification: (n: ProgressNotification) => Promise<void>;
+
+  constructor(opts: McpProgressSinkOptions) {
+    this.#progressToken = opts.progressToken;
+    this.#sendNotification = opts.sendNotification;
+  }
+
+  async emit(event: ProgressEvent): Promise<void> {
+    if (event.kind === 'status') return;
+
+    if (event.kind === 'tick') {
+      await this.#send({
+        progress: event.current,
+        ...(event.total !== undefined ? { total: event.total } : {}),
+        message: event.message,
+      });
       return;
     }
 
-    let { current, total } = event;
+    // complete | fail — normalize to 100% display.
+    const displayCurrent = Math.max(
+      event.current,
+      event.total ?? event.current,
+      1
+    );
+    await this.#send({
+      progress: displayCurrent,
+      total: displayCurrent,
+      message: event.message,
+    });
+  }
 
-    if (event.kind === 'complete' || event.kind === 'fail') {
-      // 100% display normalization: Ensure display hits 100% on terminal events.
-      // Math.max(current, total ?? current, 1) ensures we don't send 0/0 and that progress >= total.
-      const finalValue = Math.max(current, total ?? current, 1);
-      current = finalValue;
-      total = finalValue;
-    }
-
-    if (total !== undefined) {
-      this.onProgress({
-        progress: current,
-        total,
-      });
-    }
+  async #send(params: {
+    progress: number;
+    total?: number;
+    message?: string;
+  }): Promise<void> {
+    await this.#sendNotification({
+      method: 'notifications/progress',
+      params: {
+        progressToken: this.#progressToken,
+        ...params,
+      },
+    } satisfies ProgressNotification);
   }
 }

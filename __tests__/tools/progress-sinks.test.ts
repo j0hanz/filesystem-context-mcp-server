@@ -1,106 +1,102 @@
+import type { ProgressNotification } from '@modelcontextprotocol/server';
+
+import { strict as assert } from 'node:assert';
+
 import { describe, it } from 'node:test';
-import assert from 'node:assert/strict';
+
 import { McpProgressSink } from '../../src/tools/progress-sinks.js';
-import type { ProgressEvent } from '../../src/lib/progress-session.js';
 
-describe('McpProgressSink', () => {
-  it('normalizes 100% on complete', () => {
-    const sent: { progress: number; total: number }[] = [];
-    const sink = new McpProgressSink('test-tool', (data) => {
-      sent.push(data);
+void describe('McpProgressSink', () => {
+  void it('forwards tick events to sendNotification', async () => {
+    const notifications: ProgressNotification[] = [];
+    const sink = new McpProgressSink({
+      progressToken: 'tok-1',
+      sendNotification: async (n) => {
+        notifications.push(n as ProgressNotification);
+      },
     });
 
-    const event: ProgressEvent = {
-      kind: 'complete',
-      current: 5,
-      total: 10,
-      message: 'Done',
-    };
-
-    sink.emit(event);
-
-    assert.equal(sent.length, 1);
-    assert.deepEqual(sent[0]?.progress, 10);
-    assert.deepEqual(sent[0]?.total, 10);
-  });
-
-  it('normalizes 100% on fail', () => {
-    const sent: { progress: number; total: number }[] = [];
-    const sink = new McpProgressSink('test-tool', (data) => {
-      sent.push(data);
-    });
-
-    const event: ProgressEvent = {
-      kind: 'fail',
+    await sink.emit({
+      kind: 'tick',
       current: 3,
       total: 10,
-      message: 'Failed',
-      error: new Error('boom'),
-    };
-
-    sink.emit(event);
-
-    assert.equal(sent.length, 1);
-    assert.deepEqual(sent[0]?.progress, 10);
-    assert.deepEqual(sent[0]?.total, 10);
-  });
-
-  it('handles missing total on complete by setting total to current', () => {
-    const sent: { progress: number; total: number }[] = [];
-    const sink = new McpProgressSink('test-tool', (data) => {
-      sent.push(data);
+      message: 'three',
     });
 
-    const event: ProgressEvent = {
+    assert.equal(notifications.length, 1);
+    assert.deepEqual(notifications[0], {
+      method: 'notifications/progress',
+      params: {
+        progressToken: 'tok-1',
+        progress: 3,
+        total: 10,
+        message: 'three',
+      },
+    });
+  });
+
+  void it('ignores status events', async () => {
+    const notifications: ProgressNotification[] = [];
+    const sink = new McpProgressSink({
+      progressToken: 'tok-1',
+      sendNotification: async (n) => {
+        notifications.push(n as ProgressNotification);
+      },
+    });
+
+    await sink.emit({ kind: 'status', message: 'scanning' });
+
+    assert.equal(notifications.length, 0);
+  });
+
+  void it('normalizes complete events to 100% display', async () => {
+    const notifications: ProgressNotification[] = [];
+    const sink = new McpProgressSink({
+      progressToken: 'tok-1',
+      sendNotification: async (n) => {
+        notifications.push(n as ProgressNotification);
+      },
+    });
+
+    // current=2, total=5 → display as 5/5 (legacy "show 100%" quirk).
+    await sink.emit({
       kind: 'complete',
-      current: 7,
-      message: 'Done',
-    };
-
-    sink.emit(event);
-
-    assert.equal(sent.length, 1);
-    assert.deepEqual(sent[0]?.progress, 7);
-    assert.deepEqual(sent[0]?.total, 7);
-  });
-
-  it('ensures at least 1/1 progress even if current/total are 0', () => {
-     const sent: { progress: number; total: number }[] = [];
-    const sink = new McpProgressSink('test-tool', (data) => {
-      sent.push(data);
-    });
-
-    const event: ProgressEvent = {
-      kind: 'complete',
-      current: 0,
-      total: 0,
-      message: 'Done',
-    };
-
-    sink.emit(event);
-
-    assert.equal(sent.length, 1);
-    assert.deepEqual(sent[0]?.progress, 1);
-    assert.deepEqual(sent[0]?.total, 1);
-  });
-
-  it('passes through tick events without 100% normalization', () => {
-    const sent: { progress: number; total: number }[] = [];
-    const sink = new McpProgressSink('test-tool', (data) => {
-      sent.push(data);
-    });
-
-    const event: ProgressEvent = {
-      kind: 'tick',
       current: 2,
-      total: 10,
-      message: 'Step 2',
-    };
+      total: 5,
+      message: 'done',
+    });
 
-    sink.emit(event);
+    assert.equal(notifications.length, 1);
+    assert.deepEqual(notifications[0]?.params, {
+      progressToken: 'tok-1',
+      progress: 5,
+      total: 5,
+      message: 'done',
+    });
+  });
 
-    assert.equal(sent.length, 1);
-    assert.deepEqual(sent[0]?.progress, 2);
-    assert.deepEqual(sent[0]?.total, 10);
+  void it('normalizes fail events to display max(current, total, 1)', async () => {
+    const notifications: ProgressNotification[] = [];
+    const sink = new McpProgressSink({
+      progressToken: 'tok-1',
+      sendNotification: async (n) => {
+        notifications.push(n as ProgressNotification);
+      },
+    });
+
+    // No total, current=0 → display 1/1.
+    await sink.emit({
+      kind: 'fail',
+      current: 0,
+      message: 'aborted',
+      error: new Error('x'),
+    });
+
+    assert.deepEqual(notifications[0]?.params, {
+      progressToken: 'tok-1',
+      progress: 1,
+      total: 1,
+      message: 'aborted',
+    });
   });
 });
