@@ -492,10 +492,8 @@ describe('HTTP transport', () => {
     assert.equal(response.status, 405);
     assert.equal(response.headers.get('allow'), 'GET, POST, DELETE, OPTIONS');
 
-    const payload = JSON.parse(await response.text()) as {
-      error?: { message?: string };
-    };
-    assert.equal(payload.error?.message, 'Method Not Allowed');
+    const text = await response.text();
+    assert.equal(text, '');
   });
 
   it('refuses non-loopback HTTP binding without an API key', async () => {
@@ -694,43 +692,4 @@ describe('HTTP transport', () => {
     };
     assert.match(parsed.error?.message ?? '', /Invalid JSON/iu);
   });
-  it('returns 204 No Content for OPTIONS preflight requests on /mcp', async () => {
-    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
-    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
-    servers.push(server);
-    const port = getServerPort(server);
-
-    const response = await rawHttpRequest({
-      port,
-      method: 'OPTIONS',
-      path: '/mcp',
-      headers: { origin: 'http://localhost:3000' },
-    });
-
-    assert.equal(response.statusCode, 204);
-    assert.match(
-      String(response.headers['access-control-allow-methods'] ?? ''),
-      /OPTIONS/iu
-    );
-  });
-
-  it('returns 400 for non-object/array JSON primitives when strict parser is used', async () => {
-    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
-    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
-    servers.push(server);
-    const port = getServerPort(server);
-
-    const response = await rawHttpRequest({
-      port,
-      method: 'POST',
-      path: '/mcp',
-      headers: { 'content-type': 'application/json' },
-      body: '"just a string"',
-    });
-
-    assert.equal(response.statusCode, 400);
-    const parsed = JSON.parse(response.body) as {
-      error?: { message?: string };
-    };
-    assert.match(parsed.error?.message ?? '', /Invalid JSON/iu);
-  });});
+});

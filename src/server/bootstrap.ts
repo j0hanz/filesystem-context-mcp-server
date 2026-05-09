@@ -1,9 +1,11 @@
-import { createMcpExpressApp } from '@modelcontextprotocol/express';
+import {
+  hostHeaderValidation,
+  localhostHostValidation,
+} from '@modelcontextprotocol/express';
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import {
   InMemoryTaskMessageQueue,
   isInitializeRequest,
-  localhostAllowedHostnames,
   McpServer,
   ProtocolErrorCode,
   type SetLevelRequest,
@@ -617,17 +619,29 @@ export async function startHttpServer(
     handshakeTimeoutMs: getInitHandshakeTimeoutMs(),
   });
 
-  const app = createMcpExpressApp({
-    host: httpHost,
-    allowedHosts: isLoopbackHttpHost(httpHost)
-      ? localhostAllowedHostnames()
-      : [httpHost],
-  });
+  const app = express();
+
+  if (isLoopbackHttpHost(httpHost)) {
+    app.use(localhostHostValidation());
+  } else {
+    app.use(hostHeaderValidation([httpHost]));
+  }
 
   app.use(originGuardMiddleware());
+
+  app.options('/mcp', (req: Request, res: Response) => {
+    res.header('Access-Control-Allow-Origin', req.headers.origin ?? '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.header(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization, mcp-session-id, mcp-protocol-version'
+    );
+    res.status(204).end();
+  });
+
   app.use('/mcp', bearerAuthMiddleware());
 
-  app.use(express.json({ limit: MAX_REQUEST_BODY_BYTES, strict: false }));
+  app.use(express.json({ limit: MAX_REQUEST_BODY_BYTES }));
 
   // Body-parse error handler — translate to JSON-RPC error format
   app.use(
@@ -747,8 +761,7 @@ export async function startHttpServer(
   app.delete('/mcp', handleGetOrDelete);
 
   app.all('/mcp', (_req: Request, res: Response) => {
-    res.status(405).set('Allow', 'GET, POST, DELETE, OPTIONS');
-    sendJsonRpcError(res, 405, JSON_RPC_SERVER_ERROR, 'Method Not Allowed');
+    res.status(405).set('Allow', 'GET, POST, DELETE, OPTIONS').end();
   });
 
   const httpServer = createHttpServer(app);
