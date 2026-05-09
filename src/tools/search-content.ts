@@ -253,14 +253,6 @@ function resolveOptions(options: SearchContentOptions): ResolvedOptions {
   return result.data;
 }
 
-function getRemainingMatchCapacity(
-  maxMatches: number,
-  currentMatches: number,
-  minimum = 0,
-): number {
-  return Math.max(minimum, maxMatches - currentMatches);
-}
-
 // --- Context Management ---
 
 interface PendingContext {
@@ -362,23 +354,13 @@ function processLineMatch(
   requestedPath: string,
   ctx?: ContextBuffer,
 ): void {
-  if (ctx) {
-    matches.push({
-      file: requestedPath,
-      line: lineNumber,
-      content: trimmedLine,
-      matchCount,
-      contextBefore: ctx.snapshotBefore(),
-      contextAfter: ctx.scheduleAfter(),
-    });
-  } else {
-    matches.push({
-      file: requestedPath,
-      line: lineNumber,
-      content: trimmedLine,
-      matchCount,
-    });
-  }
+  matches.push({
+    file: requestedPath,
+    line: lineNumber,
+    content: trimmedLine,
+    matchCount,
+    ...(ctx ? { contextBefore: ctx.snapshotBefore(), contextAfter: ctx.scheduleAfter() } : {}),
+  });
 }
 
 async function readMatches(
@@ -512,14 +494,12 @@ interface ScanOutcome {
 }
 
 function buildScanFileOptions(opts: ResolvedOptions): ScanFileOptions {
-  const ctxBefore: number | undefined = opts.contextBefore;
-  const ctxAfter: number | undefined = opts.contextAfter;
   return {
     maxFileSize: opts.maxFileSize,
     skipBinary: opts.skipBinary,
     contextLines: opts.contextLines,
-    contextBefore: ctxBefore ?? opts.contextLines,
-    contextAfter: ctxAfter ?? opts.contextLines,
+    contextBefore: opts.contextBefore ?? opts.contextLines,
+    contextAfter: opts.contextAfter ?? opts.contextLines,
   };
 }
 
@@ -608,21 +588,8 @@ interface ScanError {
 
 type WorkerResponse = ScanResult | ScanError;
 
-interface WorkerScanRequest {
-  resolvedPath: string;
-  requestedPath: string;
-  pattern: string;
-  matcherOptions: MatcherOptions;
-  scanOptions: ScanFileOptions;
-  maxMatches: number;
-}
-
-interface WorkerScanResult {
-  matches: readonly ContentMatch[];
-  matched: boolean;
-  skippedTooLarge: boolean;
-  skippedBinary: boolean;
-}
+type WorkerScanRequest = Omit<ScanRequest, 'type' | 'id'>;
+type WorkerScanResult = ScanResult['result'];
 
 interface ScanTask {
   id: number;
@@ -872,7 +839,7 @@ async function executeSequential(
 
     try {
       pathGuard.assertAllowedFileAccess(file.requestedPath);
-      const remaining = getRemainingMatchCapacity(opts.maxResults, matches.length);
+      const remaining = Math.max(0, opts.maxResults - matches.length);
       const result = await scanFileResolved(
         file.resolvedPath,
         file.requestedPath,
@@ -920,7 +887,7 @@ async function fillWorkerPool(context: FillWorkerPoolContext): Promise<boolean> 
     if (result.done) return true;
 
     try {
-      const remaining = getRemainingMatchCapacity(maxResults, currentMatches, 1);
+      const remaining = Math.max(1, maxResults - currentMatches);
       const task = pool.scan({
         resolvedPath: result.value.resolvedPath,
         requestedPath: result.value.requestedPath,
@@ -950,7 +917,7 @@ function processScanResult(
   if (winner.result) {
     const res = winner.result;
     applyScanOutcome(summary, res);
-    const remaining = getRemainingMatchCapacity(maxResults, matches.length);
+    const remaining = Math.max(0, maxResults - matches.length);
     if (remaining > 0 && res.matches.length > 0) {
       const take = Math.min(remaining, res.matches.length);
       for (let index = 0; index < take; index += 1) {
@@ -1044,32 +1011,6 @@ async function executeParallel(
 
 // --- Entry Points ---
 
-async function scanFileInWorker(
-  resolvedPath: string,
-  requestedPath: string,
-  matcher: Matcher,
-  options: ScanFileOptions,
-  maxMatches: number,
-  _isCancelled: () => boolean,
-  isBinaryDetector: BinaryDetector,
-): Promise<WorkerScanResult> {
-  const res = await scanFileResolved(
-    resolvedPath,
-    requestedPath,
-    matcher,
-    options,
-    undefined,
-    maxMatches,
-    isBinaryDetector,
-  );
-  return {
-    matches: res.matches,
-    matched: res.matched,
-    skippedBinary: res.skippedBinary,
-    skippedTooLarge: res.skippedTooLarge,
-  };
-}
-
 async function searchSingleFile(
   details: { resolvedPath: string; requestedPath: string },
   opts: ResolvedOptions,
@@ -1083,7 +1024,7 @@ async function searchSingleFile(
     details.resolvedPath,
     details.requestedPath,
     matcher,
-    { ...buildScanFileOptions(opts) },
+    buildScanFileOptions(opts),
     signal,
     opts.maxResults,
   );
@@ -1862,15 +1803,14 @@ async function handleScanRequest(request: ScanRequest): Promise<void> {
 
   try {
     const matcher = getCachedMatcher(pattern, matcherOptions);
-    const isCancelled = (): boolean => cancelledRequests.has(id);
 
-    const result = await scanFileInWorker(
+    const result = await scanFileResolved(
       resolvedPath,
       requestedPath,
       matcher,
       scanOptions,
+      undefined,
       maxMatches,
-      isCancelled,
       isProbablyBinary,
     );
 

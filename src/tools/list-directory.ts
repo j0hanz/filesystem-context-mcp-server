@@ -64,11 +64,6 @@ import {
 // Private listDirectory implementation (inlined from lib/file-operations/metadata.ts)
 // ---------------------------------------------------------------------------
 
-const LIST_ACCESS_DEPS_BASE = {
-  normalizePath,
-  isPathWithinDirectories,
-};
-
 interface ListDirectoryOptions {
   includeHidden?: boolean;
   excludePatterns?: readonly string[];
@@ -233,10 +228,9 @@ function resolveListRelativePath(basePath: string, entryPath: string): string {
 
 async function resolveSymlinkTarget(
   entryType: EntryType,
-  includeSymlinkTargets: boolean,
   entryPath: string,
 ): Promise<string | undefined> {
-  if (entryType !== 'symlink' || !includeSymlinkTargets) return undefined;
+  if (entryType !== 'symlink') return undefined;
   return readlink(entryPath).catch(() => undefined);
 }
 
@@ -299,7 +293,7 @@ async function enqueueAppendEntry(
     return;
   }
   pending.push(
-    resolveSymlinkTarget(entryType, true, entry.path).then((target) => {
+    resolveSymlinkTarget(entryType, entry.path).then((target) => {
       appendEntry(entry, entryType, target, ctx);
     }),
   );
@@ -444,7 +438,8 @@ async function listDirectory(
 ): Promise<ListDirectoryResult> {
   const normalized = normalizeListOptions(options, pathGuard);
   const deps: EntryAccessDependencies = {
-    ...LIST_ACCESS_DEPS_BASE,
+    normalizePath,
+    isPathWithinDirectories,
     isSensitivePath: (p) => pathGuard.isSensitive(p),
     validateSymlinkPath: (p) => pathGuard.validateExistingPathDetailed(p),
   };

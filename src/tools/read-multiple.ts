@@ -215,14 +215,10 @@ function resolveNormalizedReadOptions(options: ReadMultipleOptions): {
   signal?: AbortSignal;
 } {
   const { signal, ...rest } = options;
-  const result: {
-    normalized: NormalizedReadMultipleOptions;
-    signal?: AbortSignal;
-  } = {
+  return {
     normalized: normalizeReadMultipleOptions(rest),
+    ...(signal ? { signal } : {}),
   };
-  if (signal) result.signal = signal;
-  return result;
 }
 
 interface ValidatedFileInfo {
@@ -300,49 +296,6 @@ function applyBudget(
   return { totalSize: totalSize + estimatedSize, exceeded: false };
 }
 
-function applyBudgetForRange(options: {
-  batchStart: number;
-  batchEnd: number;
-  totalFiles: number;
-  maxTotalSize: number;
-  maxSize: number;
-  validated: Map<number, ValidatedFileInfo>;
-  skippedBudget: Set<number>;
-  totalSize: number;
-}): { totalSize: number; exceeded: boolean } {
-  const {
-    batchStart,
-    batchEnd,
-    totalFiles,
-    maxTotalSize,
-    maxSize,
-    validated,
-    skippedBudget,
-    totalSize: startingTotalSize,
-  } = options;
-  let totalSize = startingTotalSize;
-
-  for (let index = batchStart; index < batchEnd; index += 1) {
-    const info = validated.get(index);
-    if (!info) continue;
-
-    const { exceeded, totalSize: nextTotalSize } = applyBudget(
-      totalSize,
-      estimateReadSize(info.stats, maxSize),
-      maxTotalSize,
-      index,
-      totalFiles,
-      skippedBudget,
-    );
-    if (exceeded) {
-      return { totalSize, exceeded: true };
-    }
-    totalSize = nextTotalSize;
-  }
-
-  return { totalSize, exceeded: false };
-}
-
 async function collectFileBudget(
   filePaths: readonly string[],
   maxTotalSize: number,
@@ -359,37 +312,32 @@ async function collectFileBudget(
   const totalFiles = filePaths.length;
 
   for (let batchStart = 0; batchStart < totalFiles; batchStart += PARALLEL_CONCURRENCY) {
-    const batchTasks: { filePath: string; index: number }[] = [];
     const batchEnd = Math.min(batchStart + PARALLEL_CONCURRENCY, totalFiles);
+    const batchTasks: { filePath: string; index: number }[] = [];
 
     for (let index = batchStart; index < batchEnd; index += 1) {
       const filePath = filePaths[index];
-      if (!filePath) continue;
-      if (validated.has(index)) continue;
+      if (!filePath || validated.has(index)) continue;
       batchTasks.push({ filePath, index });
     }
 
     const batchInfos = await validateBatch(batchTasks, pathGuard, signal);
-    for (const [index, info] of batchInfos) {
-      validated.set(index, info);
-    }
+    for (const [index, info] of batchInfos) validated.set(index, info);
 
-    const budgetResult = applyBudgetForRange({
-      batchStart,
-      batchEnd,
-      totalFiles,
-      maxTotalSize,
-      maxSize,
-      validated,
-      skippedBudget,
-      totalSize,
-    });
-
-    const { exceeded, totalSize: nextTotalSize } = budgetResult;
-    if (exceeded) {
-      return { skippedBudget, validated };
+    for (let index = batchStart; index < batchEnd; index += 1) {
+      const info = validated.get(index);
+      if (!info) continue;
+      const { exceeded, totalSize: nextTotalSize } = applyBudget(
+        totalSize,
+        estimateReadSize(info.stats, maxSize),
+        maxTotalSize,
+        index,
+        totalFiles,
+        skippedBudget,
+      );
+      if (exceeded) return { skippedBudget, validated };
+      totalSize = nextTotalSize;
     }
-    totalSize = nextTotalSize;
   }
 
   return { skippedBudget, validated };

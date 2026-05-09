@@ -85,8 +85,7 @@ export async function isProbablyBinary(
     return isBinarySlice(slice);
   }
 
-  const effectivePath = filePath;
-  await using handle = await openReadableFileHandle(effectivePath, signal);
+  await using handle = await openReadableFileHandle(filePath, signal);
   const slice = await readProbe(handle, signal);
   return isBinarySlice(slice);
 }
@@ -232,17 +231,17 @@ function validateByteBasedOptions(
   }
 }
 
+const POSITIVE_INT_OPTION_NAMES = ['maxSize', 'head', 'tail', 'startLine', 'endLine'] as const;
+
 function validateReadOptions(options: ReadFileOptions): void {
   const hasHead = options.head !== undefined;
   const hasTail = options.tail !== undefined;
   const hasStart = options.startLine !== undefined;
   const hasEnd = options.endLine !== undefined;
 
-  assertPositiveSafeIntegerOption('maxSize', options.maxSize, 'maxSize must be at least 1');
-  assertPositiveSafeIntegerOption('head', options.head, 'head must be at least 1');
-  assertPositiveSafeIntegerOption('tail', options.tail, 'tail must be at least 1');
-  assertPositiveSafeIntegerOption('startLine', options.startLine, 'startLine must be at least 1');
-  assertPositiveSafeIntegerOption('endLine', options.endLine, 'endLine must be at least 1');
+  for (const name of POSITIVE_INT_OPTION_NAMES) {
+    assertPositiveSafeIntegerOption(name, options[name], `${name} must be at least 1`);
+  }
 
   validateLineBasedOptions(hasHead, hasTail, hasStart, hasEnd, options);
   validateByteBasedOptions(hasHead, hasTail, hasStart, hasEnd, options);

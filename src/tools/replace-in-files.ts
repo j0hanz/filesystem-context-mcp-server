@@ -1,5 +1,5 @@
 ﻿import { Buffer } from 'node:buffer';
-import { type FileHandle, open } from 'node:fs/promises';
+import { open } from 'node:fs/promises';
 import { basename, relative } from 'node:path';
 
 import { createTwoFilesPatch } from 'diff';
@@ -277,10 +277,6 @@ function buildReplacementPlan(
   };
 }
 
-function formatFileTooLargeError(filePath: string, size: number, maxFileSize: number): string {
-  return `File too large: ${filePath} (${size} bytes > ${maxFileSize} bytes)`;
-}
-
 async function processEntry(entryPath: string, ctx: ReplaceContext): Promise<void> {
   const { options, signal, summary } = ctx;
 
@@ -334,35 +330,24 @@ async function readReplacementPlan(
   ctx: ReplaceContext,
 ): Promise<ReplacementPlan | undefined> {
   const { matcher, replacement, maxFileSize, signal } = ctx;
-  let fileHandle: FileHandle | undefined;
-  try {
-    const fd = await open(validPath, 'r');
-    fileHandle = fd;
-    const stats = await fileHandle.stat();
-    if (stats.size > maxFileSize) {
-      throw new Error(formatFileTooLargeError(validPath, stats.size, maxFileSize));
-    }
-
-    let content: string;
-    if (matcher.testBuffer) {
-      const buffer = await fileHandle.readFile({ signal });
-      if (!matcher.testBuffer(buffer)) {
-        return undefined;
-      }
-      content = buffer.toString('utf-8');
-    } else {
-      content = await fileHandle.readFile({
-        encoding: 'utf-8',
-        signal,
-      });
-    }
-
-    return buildReplacementPlan(content, replacement, matcher);
-  } finally {
-    if (fileHandle) {
-      await fileHandle.close();
-    }
+  await using fileHandle = await open(validPath, 'r');
+  const stats = await fileHandle.stat();
+  if (stats.size > maxFileSize) {
+    throw new Error(
+      `File too large: ${validPath} (${String(stats.size)} bytes > ${String(maxFileSize)} bytes)`,
+    );
   }
+
+  let content: string;
+  if (matcher.testBuffer) {
+    const buffer = await fileHandle.readFile({ signal });
+    if (!matcher.testBuffer(buffer)) return undefined;
+    content = buffer.toString('utf-8');
+  } else {
+    content = await fileHandle.readFile({ encoding: 'utf-8', signal });
+  }
+
+  return buildReplacementPlan(content, replacement, matcher);
 }
 
 async function maybeAppendPatchDiff(
@@ -380,36 +365,35 @@ async function maybeAppendPatchDiff(
     return;
   }
 
-  const patch = await (async (): Promise<string> => {
-    const totalBytes =
-      Buffer.byteLength(params.originalContent) + Buffer.byteLength(params.updatedContent);
-    if (shouldOffload(totalBytes)) {
-      return await runInWorker('createPatch', {
+  const header = basename(params.filePath);
+  const totalBytes =
+    Buffer.byteLength(params.originalContent) + Buffer.byteLength(params.updatedContent);
+
+  const patch = shouldOffload(totalBytes)
+    ? await runInWorker('createPatch', {
         oldStr: params.originalContent,
         newStr: params.updatedContent,
-        oldHeader: basename(params.filePath),
-        newHeader: basename(params.filePath),
-      });
-    }
-    return new Promise<string>((resolve) => {
-      // Defer to event loop to avoid blocking on large diffs
-      setImmediate(() => {
-        createTwoFilesPatch(
-          basename(params.filePath),
-          basename(params.filePath),
-          params.originalContent,
-          params.updatedContent,
-          'Original',
-          'Modified',
-          {
-            callback: (res: string | undefined) => {
-              resolve(res ?? '');
+        oldHeader: header,
+        newHeader: header,
+      })
+    : await new Promise<string>((resolve) => {
+        // Defer to event loop to avoid blocking on large diffs
+        setImmediate(() => {
+          createTwoFilesPatch(
+            header,
+            header,
+            params.originalContent,
+            params.updatedContent,
+            'Original',
+            'Modified',
+            {
+              callback: (res: string | undefined) => {
+                resolve(res ?? '');
+              },
             },
-          },
-        );
+          );
+        });
       });
-    });
-  })();
 
   if (summary.diff.length + patch.length <= MAX_DIFF_SIZE + DIFF_APPEND_BUFFER) {
     summary.diff += patch;
