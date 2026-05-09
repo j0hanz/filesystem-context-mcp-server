@@ -75,7 +75,6 @@ import {
   truncateProgressPattern,
 } from './shared.js';
 import {
-  reportTaskStatus,
   resolveFinalProgressCurrent,
   runWithProgressSession,
 } from './tool-execution.js';
@@ -1892,12 +1891,12 @@ export const SEARCH_CONTENT = defineTool<SearchInput, SearchOutput>({
         total?: number;
         current: number;
       }): void => {
-        progress.update({
+        progress.set({
           current,
           ...(total !== undefined ? { total } : {}),
           message: `${progressLabel} [${current} files]`,
         });
-        void reportTaskStatus(`${progressLabel} ${current} files`);
+        progress.status(`${progressLabel} ${current} files`);
       };
 
       const result = await handleSearchContent(

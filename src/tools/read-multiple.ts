@@ -48,7 +48,6 @@ import {
 import {
   completeProgressSession,
   createBatchProgressCallbacks,
-  reportTaskStatus,
   resolveFinalProgressCurrent,
 } from './tool-execution.js';
 
@@ -854,9 +853,7 @@ export const READ_MANY = defineTool<ReadManyInput, ReadManyOutput>({
     const onItemComplete = (): void => {
       rawOnItemComplete();
       itemsDone++;
-      void reportTaskStatus(
-        `${label} [${itemsDone}/${args.paths.length} read]`
-      );
+      progress.status(`${label} [${itemsDone}/${args.paths.length} read]`);
     };
 
     return completeProgressSession(progress, label, async () => {
