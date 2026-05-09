@@ -301,7 +301,53 @@ const FIND_IN_TREE: PromptEntry = {
   },
 };
 
-const PROMPT_ENTRIES: PromptEntry[] = [GET_HELP, ANALYZE_PATH, COMPARE_FILES, FIND_IN_TREE];
+const SUMMARIZE_DIRECTORY: PromptEntry = {
+  contract: {
+    name: 'summarize-directory',
+    title: 'Summarize Directory',
+    description: 'Onboarding summary: purpose, tech stack, entry points, structure.',
+    requiresPathGuard: true,
+  },
+  register(server, options) {
+    server.registerPrompt(
+      SUMMARIZE_DIRECTORY.contract.name,
+      withDefaultIcons(
+        {
+          title: SUMMARIZE_DIRECTORY.contract.title,
+          description: SUMMARIZE_DIRECTORY.contract.description,
+          argsSchema: z.strictObject({
+            path: pathArg(server, options.pathGuard, 'path', 'Directory to summarize.'),
+            depth: z.number().int().min(1).max(6).default(3).describe('Tree depth (1-6).'),
+          }),
+        },
+        options.iconInfo,
+      ),
+      async ({ path: rawPath, depth }): Promise<GetPromptResult> =>
+        wrapHandler(SUMMARIZE_DIRECTORY.contract.name, options, true, async () => {
+          const resolved = await options.pathGuard.validateExistingDirectory(rawPath);
+          const text = [
+            `Summarize this project at ${resolved}:`,
+            '',
+            `- Call \`tree\` with maxDepth=${depth}.`,
+            '- Call `read_many` for top-level manifests when present: README.md, package.json, Cargo.toml, pyproject.toml, go.mod, build.gradle, pom.xml, Dockerfile.',
+            '- Produce: purpose, tech stack, entry points, notable directories.',
+          ].join('\n');
+          return {
+            description: SUMMARIZE_DIRECTORY.contract.description,
+            messages: [userText(text), linkToPath(resolved)],
+          };
+        }),
+    );
+  },
+};
+
+const PROMPT_ENTRIES: PromptEntry[] = [
+  GET_HELP,
+  ANALYZE_PATH,
+  COMPARE_FILES,
+  FIND_IN_TREE,
+  SUMMARIZE_DIRECTORY,
+];
 
 export const ALL_PROMPTS: PromptContract[] = PROMPT_ENTRIES.map((e) => e.contract);
 
