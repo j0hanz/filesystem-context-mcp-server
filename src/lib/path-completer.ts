@@ -14,9 +14,13 @@ const MAX_COMPLETION_ITEMS = 100;
 const COMPLETION_RATE_LIMIT_MS = 100;
 const MAX_COMPLETION_CACHE_KEYS = 128;
 
+interface CacheEntry {
+  ms: number;
+  result: string[];
+}
+
 interface CompletionState {
-  lastCallMs: Map<string, number>;
-  lastResult: Map<string, string[]>;
+  cache: Map<string, CacheEntry>;
 }
 
 const completionState = new WeakMap<McpServer, CompletionState>();
@@ -24,19 +28,19 @@ const completionState = new WeakMap<McpServer, CompletionState>();
 function getCompletionState(server: McpServer): CompletionState {
   let state = completionState.get(server);
   if (state === undefined) {
-    state = { lastCallMs: new Map(), lastResult: new Map() };
+    state = { cache: new Map() };
     completionState.set(server, state);
   }
   return state;
 }
 
-function rememberCacheValue<T>(
-  cache: Map<string, T>,
+function setCacheValue(
+  cache: Map<string, CacheEntry>,
   key: string,
-  value: T
+  entry: CacheEntry
 ): void {
   if (cache.has(key)) cache.delete(key);
-  cache.set(key, value);
+  cache.set(key, entry);
   while (cache.size > MAX_COMPLETION_CACHE_KEYS) {
     const oldest = cache.keys().next();
     if (oldest.done) break;
@@ -49,11 +53,11 @@ function buildCacheKey(
   value: string,
   contextArguments?: Record<string, string>
 ): string {
-  return JSON.stringify({
-    argumentName: argumentName.toLowerCase(),
-    value,
-    contextArguments,
-  });
+  const base = `${argumentName.toLowerCase()}:${value}`;
+  if (!contextArguments) return base;
+  const keys = Object.keys(contextArguments);
+  if (keys.length === 0) return base;
+  return `${base}:${JSON.stringify(contextArguments)}`;
 }
 
 const DESTINATION_CONTEXT_KEYS = ['source', 'path', 'cwd', 'root'] as const;
@@ -76,15 +80,9 @@ function chooseContextKeys(argumentName: string): readonly string[] {
 }
 
 function hasTrailingSeparator(value: string): boolean {
-  return value.endsWith(sep) || value.endsWith('/') || value.endsWith('\\');
-}
-
-function isAbsolutePathInput(value: string): boolean {
-  return (
-    isAbsolute(value) ||
-    /^[A-Za-z]:[\\/]/u.test(value) ||
-    value.startsWith('\\\\')
-  );
+  if (value.length === 0) return false;
+  const lastChar = value.charCodeAt(value.length - 1);
+  return lastChar === 47 /* / */ || lastChar === 92 /* \ */;
 }
 
 function resolveFromBase(
@@ -104,9 +102,12 @@ function parseNamedRootInput(
   value: string
 ): { rootName: string; remainder: string } | undefined {
   const normalizedInput = toPosixPath(value);
-  const [rootName, ...rest] = normalizedInput.split('/');
+  if (!normalizedInput) return undefined;
+  const slashIndex = normalizedInput.indexOf('/');
+  if (slashIndex === -1) return { rootName: normalizedInput, remainder: '' };
+  const rootName = normalizedInput.slice(0, slashIndex);
   if (!rootName) return undefined;
-  return { rootName, remainder: rest.join(sep) };
+  return { rootName, remainder: normalizedInput.slice(slashIndex + 1) };
 }
 
 function findAllowedRootByName(
@@ -164,17 +165,20 @@ async function toAllowedContextDirectory(
   allowed: string[]
 ): Promise<string | undefined> {
   const parent = dirname(resolved);
-  if (await isAllowedCompletionDirectory(resolved, allowed)) return resolved;
-  return (await isAllowedCompletionDirectory(parent, allowed))
-    ? parent
-    : undefined;
+  const [resolvedOk, parentOk] = await Promise.all([
+    isAllowedCompletionDirectory(resolved, allowed),
+    isAllowedCompletionDirectory(parent, allowed),
+  ]);
+  if (resolvedOk) return resolved;
+  if (parentOk) return parent;
+  return undefined;
 }
 
 function resolveContextCandidatePath(
   candidate: string,
   allowed: string[]
 ): string | undefined {
-  if (isAbsolutePathInput(candidate)) return normalizePath(candidate);
+  if (isAbsolute(candidate)) return normalizePath(candidate);
   if (allowed.length === 1) {
     const base = allowed[0];
     if (!base) return undefined;
@@ -220,7 +224,10 @@ function collectAllowedRoots(
 
 function getRootPrefix(currentValue: string): string {
   const normalizedInput = toPosixPath(currentValue);
-  return (normalizedInput.split('/')[0] ?? '').toLowerCase();
+  const slashIndex = normalizedInput.indexOf('/');
+  return (
+    slashIndex === -1 ? normalizedInput : normalizedInput.slice(0, slashIndex)
+  ).toLowerCase();
 }
 
 function findRootPrefixMatches(
@@ -249,9 +256,10 @@ function findMatchingRoots(
 }
 
 function sortCompletionMatches(matches: string[]): void {
+  const sepCode = sep.charCodeAt(0);
   matches.sort((left, right) => {
-    const leftIsDir = left.endsWith(sep);
-    const rightIsDir = right.endsWith(sep);
+    const leftIsDir = left.charCodeAt(left.length - 1) === sepCode;
+    const rightIsDir = right.charCodeAt(right.length - 1) === sepCode;
     if (leftIsDir && !rightIsDir) return -1;
     if (!leftIsDir && rightIsDir) return 1;
     return left.localeCompare(right);
@@ -265,7 +273,7 @@ function mergeCompletionMatches(
   for (const group of matchGroups) {
     for (const match of group) uniqueMatches.add(match);
   }
-  const merged = [...uniqueMatches];
+  const merged = Array.from(uniqueMatches);
   sortCompletionMatches(merged);
   return merged;
 }
@@ -279,13 +287,20 @@ async function findMatchesInDirectory(
   if (!(await isAllowedCompletionDirectory(searchDir, allowed))) return matches;
   try {
     const entries = await readdir(searchDir, { withFileTypes: true });
-    const lowerPrefix = prefix.toLowerCase();
     const dirSep = searchDir.endsWith(sep) ? '' : sep;
-    for (const entry of entries) {
-      if (entry.name.toLowerCase().startsWith(lowerPrefix)) {
+
+    if (prefix === '') {
+      for (const entry of entries) {
         const fullPath = `${searchDir}${dirSep}${entry.name}`;
-        const isDir = entry.isDirectory();
-        matches.push(isDir ? `${fullPath}${sep}` : fullPath);
+        matches.push(entry.isDirectory() ? `${fullPath}${sep}` : fullPath);
+      }
+    } else {
+      const lowerPrefix = prefix.toLowerCase();
+      for (const entry of entries) {
+        if (entry.name.toLowerCase().startsWith(lowerPrefix)) {
+          const fullPath = `${searchDir}${dirSep}${entry.name}`;
+          matches.push(entry.isDirectory() ? `${fullPath}${sep}` : fullPath);
+        }
       }
     }
   } catch {
@@ -300,7 +315,7 @@ function getSearchContext(
   contextBase?: string
 ): { searchDir: string; prefix: string } | undefined {
   const trailingSeparator = hasTrailingSeparator(currentValue);
-  if (isAbsolutePathInput(currentValue)) {
+  if (isAbsolute(currentValue)) {
     return resolveFromBase(
       parse(currentValue).root || sep,
       currentValue,
@@ -392,15 +407,13 @@ export async function completePathCached(
   );
   const now = Date.now();
   const sessionState = getCompletionState(options.server);
-  const lastCallMs = sessionState.lastCallMs.get(cacheKey) ?? 0;
+  const cacheEntry = sessionState.cache.get(cacheKey);
 
-  if (now - lastCallMs < COMPLETION_RATE_LIMIT_MS) {
-    const cached = sessionState.lastResult.get(cacheKey);
-    return cached ?? [];
+  if (cacheEntry && now - cacheEntry.ms < COMPLETION_RATE_LIMIT_MS) {
+    return cacheEntry.result;
   }
 
-  rememberCacheValue(sessionState.lastCallMs, cacheKey, now);
   const results = await completePath(value, options);
-  rememberCacheValue(sessionState.lastResult, cacheKey, results);
+  setCacheValue(sessionState.cache, cacheKey, { ms: now, result: results });
   return results;
 }
