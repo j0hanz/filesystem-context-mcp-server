@@ -613,7 +613,7 @@ export const TREE = defineTool<
       label,
       async (progress) => {
         const onProgress = ({ current }: { current: number }): void => {
-          progress.update({
+          progress.set({
             current,
             total: knownTotal,
             message: `${label} [${current} entries]`,

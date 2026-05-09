@@ -332,7 +332,7 @@ export const CALCULATE_HASH = defineTool<
         total?: number;
         current: number;
       }): void => {
-        progress.update({
+        progress.set({
           current,
           ...(total !== undefined ? { total } : {}),
           message: `${label} [${current} files]`,

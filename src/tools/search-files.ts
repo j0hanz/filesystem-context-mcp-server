@@ -759,7 +759,7 @@ export const SEARCH_FILES = defineTool<
         total?: number;
         current: number;
       }): void => {
-        progress.update({
+        progress.set({
           current,
           ...(total !== undefined ? { total } : {}),
           message: `${SEARCH_FILES_TOOL.title}: ${truncatedPattern} [${current} files]`,
