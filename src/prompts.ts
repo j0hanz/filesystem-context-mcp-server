@@ -121,7 +121,48 @@ function wrapHandler<T>(
 
 // --- Prompt entries (filled in by later tasks) ---
 
-const PROMPT_ENTRIES: PromptEntry[] = [];
+const GET_HELP: PromptEntry = {
+  contract: {
+    name: 'get-help',
+    title: 'Get Help',
+    description: 'Return filesystem-mcp usage instructions, optionally filtered to a section.',
+    requiresPathGuard: false,
+  },
+  register(server, options) {
+    const topics = Object.keys(INSTRUCTION_SECTIONS);
+    server.registerPrompt(
+      GET_HELP.contract.name,
+      withDefaultIcons(
+        {
+          title: GET_HELP.contract.title,
+          description: GET_HELP.contract.description,
+          argsSchema: z.strictObject({
+            topic: topicArg(
+              topics,
+              'Optional section key. Omit to return full instructions.',
+            ).optional(),
+          }),
+        },
+        options.iconInfo,
+      ),
+      ({ topic }): GetPromptResult | Promise<GetPromptResult> =>
+        wrapHandler(GET_HELP.contract.name, options, false, () => {
+          const section = topic ? INSTRUCTION_SECTIONS[topic.toLowerCase()] : undefined;
+          const text =
+            section ??
+            (topic
+              ? `Section '${topic}' not found. Available: ${topics.join(', ')}\n\n${options.instructions}`
+              : options.instructions);
+          return {
+            description: GET_HELP.contract.description,
+            messages: [userText(text)],
+          };
+        }),
+    );
+  },
+};
+
+const PROMPT_ENTRIES: PromptEntry[] = [GET_HELP];
 
 export const ALL_PROMPTS: PromptContract[] = PROMPT_ENTRIES.map((e) => e.contract);
 
