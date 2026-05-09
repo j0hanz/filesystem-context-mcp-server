@@ -3,7 +3,7 @@ import type { ProgressNotification } from '@modelcontextprotocol/server';
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 
-import { ProgressSession } from '../../src/lib/progress-session.js';
+import { ProgressSession } from '../../src/core/progress-session.js';
 import { McpProgressSink, progressSessionFromContext } from '../../src/tools/progress-sinks.js';
 import type { ToolContext } from '../../src/tools/shared.js';
 

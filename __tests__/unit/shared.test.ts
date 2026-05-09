@@ -3,9 +3,9 @@ import { describe, it } from 'node:test';
 
 import { z } from 'zod/v4';
 
-import { ErrorCode } from '../../src/lib/errors.js';
-import { getTraceContext } from '../../src/lib/observability.js';
-import { createInMemoryResourceStore } from '../../src/lib/store.js;
+import { ErrorCode } from '../../src/core/errors.js';
+import { getTraceContext } from '../../src/core/observability.js';
+import { createInMemoryResourceStore } from '../../src/core/store.js';
 import {
   buildToolErrorResponse,
   buildToolResponse,

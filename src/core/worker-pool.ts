@@ -209,7 +209,7 @@ function handleWorkerExit(pw: PoolWorker, code: number): void {
 
 function spawnWorker(): PoolWorker {
   // Use WORKER_ENTRY_URL from worker.ts so the URL resolves correctly in both
-  // tsx (src/lib/worker.ts) and compiled (dist/lib/worker.js) contexts.
+  // tsx (src/core/worker.ts) and compiled (dist/core/worker.js) contexts.
   // The worker entry file has no project imports, so it loads without tsx hooks.
   const w = new Worker(WORKER_ENTRY_URL);
   const pw: PoolWorker = {

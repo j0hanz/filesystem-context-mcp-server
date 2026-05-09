@@ -5,7 +5,7 @@ import {
   type ProgressEvent,
   ProgressSession,
   type ProgressSink,
-} from '../../src/lib/progress-session.js';
+} from '../../src/core/progress-session.js';
 
 class MemorySink implements ProgressSink {
   readonly name = 'memory';

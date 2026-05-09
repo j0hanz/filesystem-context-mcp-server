@@ -2,8 +2,8 @@ import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { ErrorCode } from '../../src/config.js';
-import { McpError } from '../../src/lib/errors.js';
-import { runInWorker, shutdownWorkerPool } from '../../src/lib/worker-pool.js';
+import { McpError } from '../../src/core/errors.js';
+import { runInWorker, shutdownWorkerPool } from '../../src/core/worker-pool.js';
 
 test('runInWorker removes task from queue on timeout', async () => {
   // Fill the pool to force queueing with moderately sized tasks

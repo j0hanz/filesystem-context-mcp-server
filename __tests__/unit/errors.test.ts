@@ -15,7 +15,7 @@ import {
   McpError,
   type Problem,
   zodErrorToProblem,
-} from '../../src/lib/errors.js';
+} from '../../src/core/errors.js';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 

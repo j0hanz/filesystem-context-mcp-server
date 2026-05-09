@@ -8,9 +8,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { SENSITIVE_FILE_DENYLIST } from '../src/lib/constants.js';
-import { PathGuard, resolveAllowedDirectoriesState } from '../src/lib/path-guard.js';
-import { createInMemoryResourceStore, type ResourceStore } from '../src/lib/store.js;
+import { SENSITIVE_FILE_DENYLIST } from '../src/core/constants.js';
+import { PathGuard, resolveAllowedDirectoriesState } from '../src/core/path-guard.js';
+import { createInMemoryResourceStore, type ResourceStore } from '../src/core/store.js';
 import { TaskOrchestrator } from '../src/server/task-orchestrator.js';
 import { createTaskStore } from '../src/server/task-store.js';
 import { registerAllTools } from '../src/tools.js';

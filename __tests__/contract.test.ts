@@ -321,8 +321,8 @@ describe('Completion contract', () => {
   }> {
     const { registerAllPrompts } = await import('../src/prompts.js');
     const { registerAllResources } = await import('../src/resources.js');
-    const { PathGuard } = await import('../src/lib/path-guard.js');
-    const { createInMemoryResourceStore } = await import('../src/lib/store.js);
+    const { PathGuard } = await import('../src/core/path-guard.js');
+    const { createInMemoryResourceStore } = await import('../src/core/store.js');
     const { LinkedTransport } = await import('./linked-transport.js');
 
     const tmpDir = await mkdtemp(join(tmpdir(), `fsmcp-cc-${randomUUID().slice(0, 8)}-`));

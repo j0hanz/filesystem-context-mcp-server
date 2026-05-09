@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { ErrorCode, McpError } from '../../src/lib/errors.js';
-import { createInMemoryResourceStore } from '../../src/lib/store.js;
+import { ErrorCode, McpError } from '../../src/core/errors.js';
+import { createInMemoryResourceStore } from '../../src/core/store.js';
 
 describe('resource store', () => {
   it('expires entries on read and removes them from the key list', async () => {

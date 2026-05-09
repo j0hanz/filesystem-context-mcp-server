@@ -42,8 +42,8 @@ function getStructured(result: unknown): Record<string, unknown> {
 
 async function createDistEnv(): Promise<DistEnv> {
   const distToolsUrl = pathToFileURL(resolve('dist/tools.js')).href;
-  const distPathsUrl = pathToFileURL(resolve('dist/lib/paths.js')).href;
-  const distResourceStoreUrl = pathToFileURL(resolve('dist/lib/store.js)).href;
+  const distPathsUrl = pathToFileURL(resolve('dist/core/paths.js')).href;
+  const distResourceStoreUrl = pathToFileURL(resolve('dist/core/store.js')).href;
 
   const [toolsModule, pathsModule, resourceStoreModule] = await Promise.all([
     import(distToolsUrl) as Promise<DistToolsModule>,
@@ -103,7 +103,7 @@ describe('dist runtime regressions', () => {
   it('grep from dist can search files in an allowed root', async (t) => {
     try {
       await access(resolve('dist/tools.js'));
-      await access(resolve('dist/lib/paths.js'));
+      await access(resolve('dist/core/paths.js'));
     } catch {
       t.skip('dist runtime not present');
       return;

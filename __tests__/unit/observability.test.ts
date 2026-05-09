@@ -10,7 +10,7 @@ import {
   publishOpsTraceStart,
   startPerfMeasure,
   withToolDiagnostics,
-} from '../../src/lib/observability.js';
+} from '../../src/core/observability.js';
 
 before(() => {
   process.env.FS_CONTEXT_DIAGNOSTICS = '1';

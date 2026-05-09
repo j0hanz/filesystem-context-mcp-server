@@ -12,8 +12,8 @@ import {
   DEFAULT_TASK_TTL_MS,
   MAX_CONCURRENT_TASKS,
   MAX_TASK_TTL_MS,
-} from '../../src/lib/constants.js';
-import { ErrorCode } from '../../src/lib/errors.js';
+} from '../../src/core/constants.js';
+import { ErrorCode } from '../../src/core/errors.js';
 import { TaskOrchestrator } from '../../src/server/task-orchestrator.js';
 import { EventedTaskStore } from '../../src/server/task-store.js';
 import type { ToolResult } from '../../src/tools/shared.js';

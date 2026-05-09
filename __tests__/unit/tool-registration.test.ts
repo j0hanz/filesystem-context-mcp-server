@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 
-import { maybeStripStructuredContentFromResult } from '../../src/lib/utils.js';
+import { maybeStripStructuredContentFromResult } from '../../src/core/utils.js';
 import { withDefaultIcons } from '../../src/tools/shared.js';
 
 describe('tool registration shape', () => {
