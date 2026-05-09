@@ -1,44 +1,41 @@
 // src/tools/define.ts
 // Tool definition engine for registering tools with MCP server
-import type { McpServer } from '@modelcontextprotocol/server';
+import type {
+  ElicitRequestFormParams,
+  ElicitResult,
+  LoggingLevel,
+  McpServer,
+  ServerContext,
+} from '@modelcontextprotocol/server';
 
-import type { z } from 'zod';
+import type { z } from 'zod/v4';
 
 import { ErrorCode, formatUnknownErrorMessage, McpError } from '../core/errors.js';
-import type { Logger } from '../core/observability.js';
-import { ProgressSession } from '../core/observability.js';
+import { Logger, ProgressSession } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { toMcpSchema } from '../schema.js';
 
 // ============ Type Definitions ============
 
-type Annotation = 'readOnly' | 'idempotentWrite' | 'destructiveWrite';
-type TaskMode = 'forbidden' | 'optional' | 'required';
+export type Annotation = 'readOnly' | 'idempotentWrite' | 'destructiveWrite';
+export type TaskMode = 'forbidden' | 'optional' | 'required';
 
-interface ProgressTick {
-  current: number;
-  total?: number;
-  message?: string;
-}
-
-type ProgressFn = (tick: ProgressTick) => void;
-
-interface ToolCtx {
+export interface ToolCtx {
   readonly signal: AbortSignal;
   readonly pathGuard: PathGuard;
-  readonly resourceStore: ResourceStore;
-  readonly log: typeof Logger;
-  readonly progress: ProgressFn;
+  readonly resourceStore: ResourceStore | undefined;
+  readonly log?: (level: LoggingLevel, data: unknown, logger?: string) => void;
+  readonly onProgress?: (params: { current: number; total?: number; message?: string }) => void;
+  readonly elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>;
 }
 
-interface ToolDeps {
+export interface ToolDeps {
   readonly isInitialized: () => boolean;
   readonly server: McpServer;
   readonly orchestrator?: unknown;
   readonly pathGuard: PathGuard;
-  readonly resourceStore: ResourceStore;
-  readonly log: typeof Logger;
+  readonly resourceStore: ResourceStore | undefined;
 }
 
 export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
@@ -52,7 +49,7 @@ export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
   readonly task?: TaskMode;
   readonly timeoutMs?: number;
   readonly progressLabel?: (args: z.infer<I>) => string;
-  readonly defaultErrorCode?: string;
+  readonly defaultErrorCode?: ErrorCode;
   readonly run: (args: z.infer<I>, ctx: ToolCtx) => Promise<z.infer<O>>;
   readonly nuances?: readonly string[];
   readonly gotchas?: readonly string[];
@@ -66,46 +63,33 @@ export interface DefinedTool {
   readonly task: TaskMode;
   readonly nuances: readonly string[];
   readonly gotchas: readonly string[];
-  readonly inputJsonSchema: unknown;
-  readonly outputJsonSchema: unknown;
+  readonly inputJsonSchema: object;
+  readonly outputJsonSchema: object;
   register(deps: ToolDeps): void;
 }
 
-// ============ Utilities ============
+// ============ Annotation → MCP hints ============
 
-/**
- * Compose multiple AbortSignals into a single AbortSignal that aborts when any input aborts.
- */
-function composeAbortSignals(...signals: (AbortSignal | undefined)[]): AbortSignal {
-  const defined = signals.filter((s): s is AbortSignal => s !== undefined);
-
-  if (defined.length === 0) {
-    return new AbortController().signal;
-  }
-
-  if (defined.length === 1) {
-    const [first] = defined;
-    return first ?? new AbortController().signal;
-  }
-
-  // Multiple signals: use AbortSignal.any() if available (Node.js 20.3+), else fallback
-  if (typeof AbortSignal.any === 'function') {
-    return AbortSignal.any(defined);
-  }
-
-  // Fallback for older Node.js: create an AbortController that mirrors any input
-  const controller = new AbortController();
-  for (const signal of defined) {
-    signal.addEventListener(
-      'abort',
-      () => {
-        controller.abort(signal.reason);
-      },
-      { once: true },
-    );
-  }
-  return controller.signal;
-}
+const ANNOTATION_HINTS = {
+  readOnly: {
+    readOnlyHint: true,
+    idempotentHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+  },
+  idempotentWrite: {
+    readOnlyHint: false,
+    idempotentHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+  },
+  destructiveWrite: {
+    readOnlyHint: false,
+    idempotentHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+  },
+} as const satisfies Record<Annotation, object>;
 
 // ============ Tool Registry ============
 
@@ -126,102 +110,75 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
     task: taskMode,
     nuances: def.nuances ?? [],
     gotchas: def.gotchas ?? [],
-    // Store the schemas themselves - they contain the JSON schema data
-    inputJsonSchema: inputSchema,
-    outputJsonSchema: outputSchema,
+    inputJsonSchema: (
+      inputSchema as unknown as { jsonSchema: { input(): object } }
+    ).jsonSchema.input(),
+    outputJsonSchema: (
+      outputSchema as unknown as { jsonSchema: { output(): object } }
+    ).jsonSchema.output(),
 
     register(deps: ToolDeps) {
-      const handler = async (args: unknown, extra: unknown) => {
+      const handler = async (args: unknown, extra: ServerContext) => {
         if (!deps.isInitialized()) {
-          throw new McpError(
-            { code: ErrorCode.UNKNOWN, message: 'Server not initialized' },
-            undefined,
-          );
-        }
-
-        // Parse and validate input
-        let parsedArgs: z.infer<I>;
-        try {
-          parsedArgs = def.input.parse(args);
-        } catch (error) {
-          const message = `Invalid input: ${formatUnknownErrorMessage(error)}`;
           return {
             isError: true,
-            content: [{ type: 'text', text: message }],
+            content: [{ type: 'text', text: 'Server not initialized. Roots unavailable.' }],
           };
         }
 
-        // Compose abort signals: client signal + timeout
-        const extraSignal =
-          typeof extra === 'object' && extra !== null && 'signal' in extra
-            ? (extra as { signal?: AbortSignal }).signal
-            : undefined;
-
-        const timeoutSignal = def.timeoutMs ? AbortSignal.timeout(def.timeoutMs) : undefined;
-
-        const signal = composeAbortSignals(extraSignal, timeoutSignal);
-
-        // Create progress session
-        let progressSession: ProgressSession | undefined;
-        if (
-          typeof extra === 'object' &&
-          extra !== null &&
-          'onProgress' in extra &&
-          typeof (extra as { onProgress?: unknown }).onProgress === 'function'
-        ) {
-          const label = def.progressLabel ? def.progressLabel(parsedArgs) : def.name;
-          progressSession = new ProgressSession({
-            label,
-            sinks: [],
-            now: Date.now,
-          });
+        // Parse and validate input
+        const parsed = def.input.safeParse(args);
+        if (!parsed.success) {
+          return {
+            isError: true,
+            content: [{ type: 'text', text: `Invalid input: ${parsed.error.message}` }],
+          };
         }
+        const parsedArgs = parsed.data;
+
+        // Compose abort signals: client signal + optional timeout
+        const timeoutSignal = def.timeoutMs ? AbortSignal.timeout(def.timeoutMs) : undefined;
+        const signal = timeoutSignal
+          ? AbortSignal.any([extra.mcpReq.signal, timeoutSignal])
+          : extra.mcpReq.signal;
+
+        // Progress session for lifecycle tracking (start/complete/fail)
+        const label = def.progressLabel ? def.progressLabel(parsedArgs) : def.name;
+        const progressSession = new ProgressSession({ label, sinks: [], dynamicRateLimit: true });
 
         const ctx: ToolCtx = {
           signal,
           pathGuard: deps.pathGuard,
           resourceStore: deps.resourceStore,
-          log: deps.log,
-          progress: (tick: ProgressTick) => {
-            if (progressSession) {
-              progressSession.set({
-                current: tick.current,
-                ...(tick.total !== undefined ? { total: tick.total } : {}),
-                ...(tick.message !== undefined ? { message: tick.message } : {}),
-              });
-            }
+          log: (level, data, logger) => {
+            const msg = typeof data === 'string' ? data : String(data);
+            Logger.emit(level, msg);
+            void extra.mcpReq.log(level, data, logger);
           },
+          onProgress: ({ message }) => {
+            progressSession.step(message ?? label);
+          },
+          elicitInput: (params) => extra.mcpReq.elicitInput(params),
         };
 
         try {
           const result = await def.run(parsedArgs, ctx);
-
-          // Validate output
-          let validatedResult: z.infer<O>;
-          try {
-            validatedResult = def.output.parse(result);
-          } catch (error) {
-            const message = `Invalid output: ${formatUnknownErrorMessage(error)}`;
+          progressSession.complete(label);
+          return {
+            content: [{ type: 'text', text: JSON.stringify(result) }],
+            structuredContent: result,
+          };
+        } catch (error: unknown) {
+          progressSession.fail(error, label);
+          if (error instanceof McpError) {
             return {
               isError: true,
-              content: [{ type: 'text', text: message }],
+              content: [{ type: 'text', text: error.message }],
+              _meta: { errorCode: error.code },
             };
           }
-
-          progressSession?.complete(def.name);
-
-          return {
-            content: [{ type: 'text', text: JSON.stringify(validatedResult) }],
-            ...(validatedResult ? { structuredContent: validatedResult } : {}),
-          };
-        } catch (error) {
-          progressSession?.fail(error);
-
-          const code =
-            error instanceof McpError ? error.code : (def.defaultErrorCode ?? ErrorCode.UNKNOWN);
-          const message =
-            error instanceof McpError ? error.message : formatUnknownErrorMessage(error);
-
+          const code = def.defaultErrorCode ?? ErrorCode.UNKNOWN;
+          const message = formatUnknownErrorMessage(error);
           return {
             isError: true,
             content: [{ type: 'text', text: message }],
@@ -230,19 +187,19 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
         }
       };
 
-      if (taskMode !== 'forbidden' && deps.orchestrator) {
-        // Register as task if orchestrator is available
-        // Use `as never` to bridge StandardSchema/JSON-Schema type mismatch
-        deps.server.experimental.tasks.registerToolTask(
-          def.name,
-          { ...def, inputSchema, outputSchema } as never,
-          handler as never,
-        );
-      } else {
-        // Register as standard tool
-        // Use `as never` to bridge StandardSchema/JSON-Schema type mismatch
-        deps.server.registerTool(def.name, inputSchema as never, handler as never);
-      }
+      // `as never`: bridges StandardSchema/JSON-Schema type mismatch at registration boundary.
+      // The runtime shape is verified by the SDK's own validation.
+      deps.server.registerTool(
+        def.name,
+        {
+          title: def.title,
+          description: def.description,
+          inputSchema,
+          outputSchema,
+          annotations: ANNOTATION_HINTS[def.annotations],
+        } as never,
+        handler as never,
+      );
     },
   };
 
