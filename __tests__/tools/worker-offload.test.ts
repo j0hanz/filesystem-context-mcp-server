@@ -10,7 +10,7 @@ import { after, describe, it } from 'node:test';
 
 import { applyPatch, createTwoFilesPatch, formatPatch, parsePatch, structuredPatch } from 'diff';
 
-import { runInWorker, shutdownWorkerPool } from '../src/core/concurrency.js';
+import { runInWorker, shutdownWorkerPool } from '../../src/core/concurrency.js';
 
 const OLD = 'line1\nline2\nline3\n';
 const NEW = 'line1\nLINE2\nline3\n';

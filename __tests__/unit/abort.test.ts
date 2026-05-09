@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-import { createTimedAbortSignal } from '../src/core/concurrency.js';
+import { createTimedAbortSignal } from '../../src/core/concurrency.js';
 
 describe('createTimedAbortSignal', () => {
   it('aborts the signal after the timeout elapses', async () => {

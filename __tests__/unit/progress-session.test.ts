@@ -5,7 +5,7 @@ import {
   type ProgressEvent,
   ProgressSession,
   type ProgressSink,
-} from '../src/core/observability.js';
+} from '../../src/core/observability.js';
 
 class MemorySink implements ProgressSink {
   readonly name = 'memory';

@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
-import { SENSITIVE_FILE_DENYLIST } from '../src/core/util.js';
-import { type AllowedDirectoriesState, PathGuard } from '../src/core/path.js';
+import { SENSITIVE_FILE_DENYLIST } from '../../src/core/util.js';
+import { type AllowedDirectoriesState, PathGuard } from '../../src/core/path.js';
 
 let tmpDir: string;
 let guard: PathGuard;

@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { describe, it } from 'node:test';
 
-import { normalizePath, PathGuard } from '../src/core/path.js';
+import { normalizePath, PathGuard } from '../../src/core/path.js';
 import { createInMemoryResourceStore } from '../../src/core/store.js';
 import { registerAllPrompts } from '../../src/prompts.js';
 import { registerAllResources } from '../../src/resources.js';

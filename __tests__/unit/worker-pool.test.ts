@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { runInWorker, shouldOffload, shutdownWorkerPool } from '../src/core/concurrency.js';
+import { runInWorker, shouldOffload, shutdownWorkerPool } from '../../src/core/concurrency.js';
 
 test.afterEach(async () => {
   await shutdownWorkerPool();

@@ -12,7 +12,7 @@ import {
   DEFAULT_TASK_TTL_MS,
   MAX_CONCURRENT_TASKS,
   MAX_TASK_TTL_MS,
-} from '../src/core/util.js';
+} from '../../src/core/util.js';
 import { ErrorCode } from '../../src/core/errors.js';
 import { TaskOrchestrator } from '../../src/server/task-orchestrator.js';
 import { EventedTaskStore } from '../../src/server/task-store.js';

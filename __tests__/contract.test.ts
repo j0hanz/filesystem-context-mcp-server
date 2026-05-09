@@ -321,7 +321,7 @@ describe('Completion contract', () => {
   }> {
     const { registerAllPrompts } = await import('../src/prompts.js');
     const { registerAllResources } = await import('../src/resources.js');
-    const { PathGuard } = await import('../src/core/path-guard.js');
+    const { PathGuard } = await import('../src/core/path.js');
     const { createInMemoryResourceStore } = await import('../src/core/store.js');
     const { LinkedTransport } = await import('./linked-transport.js');
 

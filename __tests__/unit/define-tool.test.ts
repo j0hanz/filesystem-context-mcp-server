@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { z } from 'zod/v4';
 
 import { ErrorCode } from '../../src/core/errors.js';
-import type { PathGuard } from '../src/core/path.js';
+import type { PathGuard } from '../../src/core/path.js';
 import type { ResourceStore } from '../../src/core/store.js';
 import type { ToolContract } from '../../src/tools/contract.js';
 import { defineTool } from '../../src/tools/define-tool.js';
