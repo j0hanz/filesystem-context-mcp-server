@@ -293,37 +293,24 @@ function validateReadOptions(options: ReadFileOptions): void {
 function normalizeOptions(options: ReadFileOptions): NormalizedOptions {
   validateReadOptions(options);
 
-  const normalized: NormalizedOptions = {
+  return {
     encoding: options.encoding ?? 'utf-8',
     maxSize: Math.min(
       options.maxSize ?? MAX_TEXT_FILE_SIZE,
       MAX_TEXT_FILE_SIZE
     ),
     skipBinary: options.skipBinary ?? false,
+    ...(options.head !== undefined ? { head: options.head } : {}),
+    ...(options.tail !== undefined ? { tail: options.tail } : {}),
+    ...(options.endLine !== undefined
+      ? { startLine: options.startLine ?? 1, endLine: options.endLine }
+      : options.startLine !== undefined
+        ? { startLine: options.startLine }
+        : {}),
+    ...(options.signal ? { signal: options.signal } : {}),
+    ...(options.offset !== undefined ? { offset: options.offset } : {}),
+    ...(options.length !== undefined ? { length: options.length } : {}),
   };
-
-  if (options.head !== undefined) {
-    normalized.head = options.head;
-  }
-  if (options.tail !== undefined) {
-    normalized.tail = options.tail;
-  }
-  if (options.endLine !== undefined) {
-    normalized.startLine = options.startLine ?? 1;
-    normalized.endLine = options.endLine;
-  } else if (options.startLine !== undefined) {
-    normalized.startLine = options.startLine;
-  }
-  if (options.signal) {
-    normalized.signal = options.signal;
-  }
-  if (options.offset !== undefined) {
-    normalized.offset = options.offset;
-  }
-  if (options.length !== undefined) {
-    normalized.length = options.length;
-  }
-  return normalized;
 }
 
 function prepareReadOptions(options: ReadFileOptions): NormalizedOptions {
@@ -335,14 +322,11 @@ function prepareReadOptions(options: ReadFileOptions): NormalizedOptions {
 function buildReadContentOptions(
   normalized: NormalizedOptions
 ): ReadContentOptions {
-  const readOptions: ReadContentOptions = {
+  return {
     encoding: normalized.encoding,
     maxSize: normalized.maxSize,
+    ...(normalized.signal ? { signal: normalized.signal } : {}),
   };
-  if (normalized.signal) {
-    readOptions.signal = normalized.signal;
-  }
-  return readOptions;
 }
 
 function resolveReadMode(options: NormalizedOptions): ReadMode {
@@ -421,57 +405,6 @@ function countLines(content: string): number {
   return count;
 }
 
-async function readHeadContent(
-  handle: FileHandle,
-  head: number,
-  options: ReadContentOptions
-): Promise<PartialReadResult> {
-  assertNotAborted(options.signal);
-
-  const lines: string[] = [];
-  let estimatedBytes = 0;
-  const newlineBytes = Buffer.byteLength('\n', options.encoding);
-  const iterator = handle
-    .readLines({ encoding: options.encoding, signal: options.signal })
-    [Symbol.asyncIterator]();
-
-  let hasMoreLines = false;
-  let next = await iterator.next();
-
-  try {
-    while (!next.done) {
-      const line = next.value;
-      lines.push(line);
-
-      estimatedBytes +=
-        Buffer.byteLength(line, options.encoding) + newlineBytes;
-      if (estimatedBytes >= options.maxSize) {
-        hasMoreLines = true;
-        break;
-      }
-
-      if (lines.length === head) {
-        const peek = await iterator.next();
-        hasMoreLines = !peek.done;
-        break;
-      }
-
-      next = await iterator.next();
-    }
-  } finally {
-    await iterator.return?.();
-  }
-
-  const content = lines.join('\n');
-  const linesRead = lines.length;
-  return {
-    content,
-    truncated: hasMoreLines,
-    linesRead,
-    hasMoreLines,
-  };
-}
-
 async function readRangeContent(
   handle: FileHandle,
   startLine: number,
@@ -483,35 +416,30 @@ async function readRangeContent(
   const lines: string[] = [];
   let lineNumber = 0;
   let estimatedBytes = 0;
-  const hasEndLine = endLine !== undefined;
-  let stoppedByLimit = false;
-  let reachedEof = false;
   const newlineBytes = Buffer.byteLength('\n', options.encoding);
+  const stopAt = endLine ?? Number.POSITIVE_INFINITY;
+
+  let hasMoreLines = false;
+  let stoppedByLimit = false;
 
   const iterator = handle
     .readLines({ encoding: options.encoding, signal: options.signal })
     [Symbol.asyncIterator]();
 
-  let hasMoreLines = false;
-
-  const stopAt = endLine ?? Number.POSITIVE_INFINITY;
-
-  let stoppedEarly = false;
-  let next = await iterator.next();
-
   try {
-    while (!next.done) {
-      const line = next.value;
+    for (;;) {
+      const { value: line, done } = await iterator.next();
+      if (done) {
+        break;
+      }
       lineNumber++;
 
       if (lineNumber < startLine) {
-        next = await iterator.next();
         continue;
       }
 
       if (lineNumber > stopAt) {
         hasMoreLines = true;
-        stoppedEarly = true;
         break;
       }
 
@@ -521,40 +449,30 @@ async function readRangeContent(
         Buffer.byteLength(line, options.encoding) + newlineBytes;
       if (estimatedBytes >= options.maxSize) {
         stoppedByLimit = true;
-        stoppedEarly = true;
+        const { done: peekDone } = await iterator.next();
+        if (!peekDone) {
+          hasMoreLines = true;
+        }
         break;
       }
 
-      if (hasEndLine && lineNumber === stopAt) {
-        const peek = await iterator.next();
-        hasMoreLines = !peek.done;
-        reachedEof = Boolean(peek.done);
-        stoppedEarly = true;
+      if (lineNumber === stopAt) {
+        const { done: peekDone } = await iterator.next();
+        if (!peekDone) {
+          hasMoreLines = true;
+        }
         break;
       }
-
-      next = await iterator.next();
     }
   } finally {
     await iterator.return?.();
   }
 
-  if (!stoppedEarly) {
-    reachedEof = true;
-  }
-
-  const content = lines.join('\n');
-  const linesRead = lines.length;
-
-  const effectiveHasMoreLines = hasEndLine
-    ? hasMoreLines || (stoppedByLimit && !reachedEof)
-    : stoppedByLimit && !reachedEof;
-
   return {
-    content,
-    truncated: stoppedByLimit || effectiveHasMoreLines,
-    linesRead,
-    hasMoreLines: effectiveHasMoreLines,
+    content: lines.join('\n'),
+    truncated: stoppedByLimit || hasMoreLines,
+    linesRead: lines.length,
+    hasMoreLines,
   };
 }
 
@@ -586,9 +504,25 @@ async function readTailContent(
     lines[i] = ring[(start + i) % tail] ?? '';
   }
 
-  const content = lines.join('\n');
-  const linesRead = lines.length;
-  const hasMoreLines = totalLines > tail;
+  // Enforce maxSize by dropping oldest lines if necessary
+  let totalBytes = 0;
+  const newlineBytes = Buffer.byteLength('\n', options.encoding);
+  let linesToKeep = 0;
+
+  for (let i = size - 1; i >= 0; i--) {
+    const bytes =
+      Buffer.byteLength(lines[i] ?? '', options.encoding) + newlineBytes;
+    if (totalBytes + bytes > options.maxSize && totalBytes > 0) {
+      break;
+    }
+    totalBytes += bytes;
+    linesToKeep++;
+  }
+
+  const finalLines = lines.slice(size - linesToKeep);
+  const content = finalLines.join('\n');
+  const linesRead = finalLines.length;
+  const hasMoreLines = totalLines > linesRead;
 
   return {
     content,
@@ -677,11 +611,8 @@ async function executeHeadRead(
 ): Promise<ReadFileResult> {
   const head = requireReadOption(context.normalized, 'head', context.filePath);
   const readOptions = buildReadContentOptions(context.normalized);
-  const { content, truncated, linesRead, hasMoreLines } = await readHeadContent(
-    context.handle,
-    head,
-    readOptions
-  );
+  const { content, truncated, linesRead, hasMoreLines } =
+    await readRangeContent(context.handle, 1, head, readOptions);
 
   return {
     path: context.validPath,
@@ -812,8 +743,19 @@ async function executeByteRangeRead(
   });
 
   const chunks: string[] = [];
+  let totalBytes = 0;
   for await (const chunk of stream) {
-    chunks.push(typeof chunk === 'string' ? chunk : String(chunk));
+    const strChunk = typeof chunk === 'string' ? chunk : String(chunk);
+    totalBytes += Buffer.byteLength(strChunk, context.normalized.encoding);
+    if (totalBytes > context.normalized.maxSize) {
+      stream.destroy();
+      throw createTooLargeError(
+        totalBytes,
+        context.normalized.maxSize,
+        context.filePath
+      );
+    }
+    chunks.push(strChunk);
     assertNotAborted(context.normalized.signal);
   }
 
