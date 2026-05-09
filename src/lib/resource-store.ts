@@ -109,46 +109,6 @@ function isExpired(
   return Number.isFinite(expiresAt) && expiresAt <= now;
 }
 
-function createTextEntry(params: {
-  uri: string;
-  name: string;
-  mimeType: string;
-  text: string;
-  ttlMs: number;
-}): TextResourceEntry {
-  const storedAt = new Date();
-  return {
-    uri: params.uri,
-    name: params.name,
-    mimeType: params.mimeType,
-    text: params.text,
-    hash: computeSha256(params.text),
-    size: estimateBytes(params.text),
-    storedAt: storedAt.toISOString(),
-    expiresAt: new Date(storedAt.getTime() + params.ttlMs).toISOString(),
-  };
-}
-
-function createBlobEntry(params: {
-  uri: string;
-  name: string;
-  mimeType: string;
-  data: Buffer;
-  ttlMs: number;
-}): BlobResourceEntry {
-  const storedAt = new Date();
-  return {
-    uri: params.uri,
-    name: params.name,
-    mimeType: params.mimeType,
-    data: params.data,
-    hash: computeSha256(params.data),
-    size: estimateBytes(params.data),
-    storedAt: storedAt.toISOString(),
-    expiresAt: new Date(storedAt.getTime() + params.ttlMs).toISOString(),
-  };
-}
-
 export function createInMemoryResourceStore(
   options: Partial<ResourceStoreOptions> = {}
 ): ResourceStore {
@@ -201,88 +161,17 @@ export function createInMemoryResourceStore(
     }
   }
 
-  function putText(params: {
-    name: string;
-    mimeType?: string;
-    text: string;
-  }): TextResourceEntry {
-    pruneExpiredEntries();
-
-    const mimeType = params.mimeType ?? 'text/plain';
-    const entryBytes = estimateBytes(params.text);
-    if (entryBytes > resolved.maxEntryBytes) {
-      publishResourceStoreDiagnostics({
-        phase: 'cache_reject',
-        bytes: entryBytes,
-        reason: 'entry_too_large',
-      });
-      throw new McpError(
-        ErrorCode.TOO_LARGE,
-        `Resource too large to cache (${entryBytes} bytes).`
-      );
-    }
-
-    const contentHash = computeSha256(params.text);
-    const indexKey = buildIndexKey(mimeType, contentHash);
-    const existingUri = byHashIndex.get(indexKey);
-    if (existingUri !== undefined) {
-      const cached = byUri.get(existingUri);
-      if (cached !== undefined) {
-        if (isExpired(cached)) {
-          removeEntry(existingUri, 'expired');
-        } else if (cached.kind === 'text') {
-          publishResourceStoreDiagnostics({
-            phase: 'cache_hit',
-            uri: cached.uri,
-            name: cached.name,
-            bytes: cached.size,
-          });
-          return cached;
-        }
-      } else {
-        byHashIndex.delete(indexKey);
-      }
-    }
-
-    const id = randomUUID();
-    const uri = `filesystem-mcp://result/${id}`;
-    const entry = createTextEntry({
-      uri,
-      name: params.name,
-      mimeType,
-      text: params.text,
-      ttlMs: resolved.entryTtlMs,
-    });
-
-    byUri.set(uri, { ...entry, kind: 'text' });
-    byHashIndex.set(indexKey, uri);
-    totalBytes += entryBytes;
-    publishResourceStoreDiagnostics({
-      phase: 'cache_store',
-      uri: entry.uri,
-      name: entry.name,
-      bytes: entry.size,
-    });
-
-    enforceLimits();
-
-    if (!byUri.has(uri)) {
-      publishResourceStoreDiagnostics({
-        phase: 'cache_reject',
-        uri,
-        name: entry.name,
-        bytes: entry.size,
-        reason: 'evicted_immediately',
-      });
-      throw new McpError(ErrorCode.TOO_LARGE, 'Cache full: entry evicted.');
-    }
-
-    return entry;
+  function bumpLru(uri: string, entry: StoredEntry): void {
+    byUri.delete(uri);
+    byUri.set(uri, entry);
   }
 
-  function getText(uri: string): TextResourceEntry {
+  function _getExisting(
+    uri: string,
+    expectedKind?: 'text' | 'blob'
+  ): StoredEntry {
     const existing = byUri.get(uri);
-    if (!existing?.kind || existing.kind !== 'text') {
+    if (!existing || (expectedKind && existing.kind !== expectedKind)) {
       publishResourceStoreDiagnostics({
         phase: 'cache_miss',
         uri,
@@ -305,6 +194,7 @@ export function createInMemoryResourceStore(
         `Resource expired: ${uri}. Re-run the tool to regenerate.`
       );
     }
+    bumpLru(uri, existing);
     publishResourceStoreDiagnostics({
       phase: 'cache_hit',
       uri: existing.uri,
@@ -314,11 +204,13 @@ export function createInMemoryResourceStore(
     return existing;
   }
 
-  function putBlob(params: {
-    name: string;
-    mimeType: string;
-    data: Buffer;
-  }): BlobResourceEntry {
+  function _put(
+    kind: 'text' | 'blob',
+    params: { name: string; mimeType: string; data: string | Buffer },
+    createFn: (
+      base: Omit<TextResourceEntry | BlobResourceEntry, 'text' | 'data'>
+    ) => StoredEntry
+  ): StoredEntry {
     pruneExpiredEntries();
 
     const entryBytes = estimateBytes(params.data);
@@ -337,12 +229,14 @@ export function createInMemoryResourceStore(
     const contentHash = computeSha256(params.data);
     const indexKey = buildIndexKey(params.mimeType, contentHash);
     const existingUri = byHashIndex.get(indexKey);
+
     if (existingUri !== undefined) {
       const cached = byUri.get(existingUri);
       if (cached !== undefined) {
         if (isExpired(cached)) {
           removeEntry(existingUri, 'expired');
-        } else if (cached.kind === 'blob') {
+        } else if (cached.kind === kind) {
+          bumpLru(existingUri, cached);
           publishResourceStoreDiagnostics({
             phase: 'cache_hit',
             uri: cached.uri,
@@ -356,19 +250,24 @@ export function createInMemoryResourceStore(
       }
     }
 
-    const id = randomUUID();
-    const uri = `filesystem-mcp://result/${id}`;
-    const entry = createBlobEntry({
+    const uri = `filesystem-mcp://result/${randomUUID()}`;
+    const storedAt = new Date();
+    const entry = createFn({
       uri,
       name: params.name,
       mimeType: params.mimeType,
-      data: params.data,
-      ttlMs: resolved.entryTtlMs,
+      hash: contentHash,
+      size: entryBytes,
+      storedAt: storedAt.toISOString(),
+      expiresAt: new Date(
+        storedAt.getTime() + resolved.entryTtlMs
+      ).toISOString(),
     });
 
-    byUri.set(uri, { ...entry, kind: 'blob' });
+    byUri.set(uri, entry);
     byHashIndex.set(indexKey, uri);
     totalBytes += entryBytes;
+
     publishResourceStoreDiagnostics({
       phase: 'cache_store',
       uri: entry.uri,
@@ -392,72 +291,52 @@ export function createInMemoryResourceStore(
     return entry;
   }
 
+  function putText(params: {
+    name: string;
+    mimeType?: string;
+    text: string;
+  }): TextResourceEntry {
+    return _put(
+      'text',
+      {
+        name: params.name,
+        mimeType: params.mimeType ?? 'text/plain',
+        data: params.text,
+      },
+      (base) => ({
+        ...base,
+        kind: 'text',
+        text: params.text,
+      })
+    ) as TextResourceEntry & { kind: 'text' };
+  }
+
+  function getText(uri: string): TextResourceEntry {
+    return _getExisting(uri, 'text') as TextResourceEntry & { kind: 'text' };
+  }
+
+  function putBlob(params: {
+    name: string;
+    mimeType: string;
+    data: Buffer;
+  }): BlobResourceEntry {
+    return _put(
+      'blob',
+      { name: params.name, mimeType: params.mimeType, data: params.data },
+      (base) => ({
+        ...base,
+        kind: 'blob',
+        data: params.data,
+      })
+    ) as BlobResourceEntry & { kind: 'blob' };
+  }
+
   function getBlob(uri: string): BlobResourceEntry {
-    const existing = byUri.get(uri);
-    if (!existing?.kind || existing.kind !== 'blob') {
-      publishResourceStoreDiagnostics({
-        phase: 'cache_miss',
-        uri,
-        reason: 'not_found',
-      });
-      throw new McpError(
-        ErrorCode.NOT_FOUND,
-        `Resource not found: ${uri}. Re-run the tool to regenerate.`
-      );
-    }
-    if (isExpired(existing)) {
-      removeEntry(uri, 'expired');
-      publishResourceStoreDiagnostics({
-        phase: 'cache_miss',
-        uri,
-        reason: 'expired',
-      });
-      throw new McpError(
-        ErrorCode.NOT_FOUND,
-        `Resource expired: ${uri}. Re-run the tool to regenerate.`
-      );
-    }
-    publishResourceStoreDiagnostics({
-      phase: 'cache_hit',
-      uri: existing.uri,
-      name: existing.name,
-      bytes: existing.size,
-    });
-    return existing;
+    return _getExisting(uri, 'blob') as BlobResourceEntry & { kind: 'blob' };
   }
 
   function getEntry(uri: string): StoredEntry {
-    const existing = byUri.get(uri);
-    if (!existing) {
-      publishResourceStoreDiagnostics({
-        phase: 'cache_miss',
-        uri,
-        reason: 'not_found',
-      });
-      throw new McpError(
-        ErrorCode.NOT_FOUND,
-        `Resource not found: ${uri}. Re-run the tool to regenerate.`
-      );
-    }
-    if (isExpired(existing)) {
-      removeEntry(uri, 'expired');
-      publishResourceStoreDiagnostics({
-        phase: 'cache_miss',
-        uri,
-        reason: 'expired',
-      });
-      throw new McpError(
-        ErrorCode.NOT_FOUND,
-        `Resource expired: ${uri}. Re-run the tool to regenerate.`
-      );
-    }
-    publishResourceStoreDiagnostics({
-      phase: 'cache_hit',
-      uri: existing.uri,
-      name: existing.name,
-      bytes: existing.size,
-    });
-    return existing;
+    return _getExisting(uri);
   }
 
   function clear(): void {

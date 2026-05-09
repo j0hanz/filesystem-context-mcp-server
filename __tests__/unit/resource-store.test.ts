@@ -37,4 +37,18 @@ describe('resource store', () => {
     assert.notEqual(textEntry.uri, jsonEntry.uri);
     assert.equal(store.keys().length, 2);
   });
+
+  it('evicts least recently used entries when limits are reached', () => {
+    const store = createInMemoryResourceStore({ maxEntries: 2 });
+    const entry1 = store.putText({ name: '1', text: 'one' });
+    store.putText({ name: '2', text: 'two' });
+
+    // Access entry1 to make it recently used
+    store.getText(entry1.uri);
+
+    // Add entry3, which should evict entry2 instead of entry1
+    const entry3 = store.putText({ name: '3', text: 'three' });
+
+    assert.deepEqual(store.keys().sort(), [entry1.uri, entry3.uri].sort());
+  });
 });
