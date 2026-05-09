@@ -16,8 +16,8 @@ import {
   type ToolResult,
 } from './shared.js';
 import {
+  progressSessionFromContext,
   registerStandardTool,
-  toolContextToOnProgress,
 } from './tool-execution.js';
 
 export interface DefineToolOptions<
@@ -81,14 +81,14 @@ export function defineTool<Args, Output extends Record<string, unknown>>(
             : { timedSignal: {} }),
           context: diagnosticsContext(args),
           run: async (signal) => {
-            const onProgress = toolContextToOnProgress(ctx);
             const handlerCtx: HandlerContext = {
               ...(signal !== undefined ? { signal } : {}),
               pathGuard: options.pathGuard,
               resourceStore: options.resourceStore,
               ...(ctx.elicitInput ? { elicitInput: ctx.elicitInput } : {}),
               ...(ctx.log ? { log: ctx.log } : {}),
-              ...(onProgress !== undefined ? { onProgress } : {}),
+              onProgress: (p) =>
+                progressSessionFromContext(ctx, { label: contract.name }).set(p),
             };
             return run(args, handlerCtx);
           },

@@ -17,7 +17,7 @@ export interface ProgressSink {
   emit(event: ProgressEvent): Promise<void> | void;
 }
 
-export interface ProgressSessionOptions {
+interface ProgressSessionOptions {
   label: string;
   total?: number;
   sinks: ProgressSink[];

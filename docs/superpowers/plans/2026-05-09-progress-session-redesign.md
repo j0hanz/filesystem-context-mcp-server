@@ -36,7 +36,6 @@ Create `__tests__/unit/progress-session.test.ts`:
 
 ```ts
 import { strict as assert } from 'node:assert';
-
 import { describe, it } from 'node:test';
 
 import {
@@ -768,7 +767,6 @@ Create `__tests__/tools/progress-sinks.test.ts`:
 import type { ProgressNotification } from '@modelcontextprotocol/server';
 
 import { strict as assert } from 'node:assert';
-
 import { describe, it } from 'node:test';
 
 import { McpProgressSink } from '../../src/tools/progress-sinks.js';

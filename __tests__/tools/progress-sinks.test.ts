@@ -1,11 +1,17 @@
-import type { ProgressNotification, RequestTaskStore } from '@modelcontextprotocol/server';
+import type {
+  ProgressNotification,
+  RequestTaskStore,
+} from '@modelcontextprotocol/server';
 
 import { strict as assert } from 'node:assert';
-
 import { describe, it } from 'node:test';
 
 import { ProgressSession } from '../../src/lib/progress-session.js';
-import { McpProgressSink, progressSessionFromContext, TaskStoreSink } from '../../src/tools/progress-sinks.js';
+import {
+  McpProgressSink,
+  progressSessionFromContext,
+  TaskStoreSink,
+} from '../../src/tools/progress-sinks.js';
 import type { ToolContext } from '../../src/tools/shared.js';
 
 void describe('McpProgressSink', () => {
