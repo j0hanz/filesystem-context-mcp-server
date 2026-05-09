@@ -27,25 +27,28 @@ export interface ProgressSessionOptions {
   rateLimitMs?: number;
 }
 
-// const DEFAULT_RATE_LIMIT_MS = 50;
+const DEFAULT_RATE_LIMIT_MS = 50;
 
 export class ProgressSession {
   readonly #label: string;
   readonly #total: number | undefined;
   readonly #sinks: ProgressSink[];
-  // readonly #now: () => number;
-  // readonly #rateLimitMs: number;
+  readonly #now: () => number;
+  readonly #rateLimitMs: number;
 
   #cursor = 0;
-  // #lastSentMs = 0;
+  #lastSentMs = 0;
   #done = false;
 
   constructor(opts: ProgressSessionOptions) {
     this.#label = opts.label;
     this.#total = opts.total;
     this.#sinks = opts.sinks;
-    // this.#now = opts.now ?? Date.now;
-    // this.#rateLimitMs = opts.rateLimitMs ?? DEFAULT_RATE_LIMIT_MS;
+    this.#now = opts.now ?? Date.now;
+    this.#rateLimitMs = opts.rateLimitMs ?? DEFAULT_RATE_LIMIT_MS;
+
+    const now = this.#now();
+    this.#lastSentMs = now - this.#rateLimitMs;
 
     // Synthetic start tick — preserves today's "fire 0/total at session creation" wire behavior.
     this.#dispatch({
@@ -117,10 +120,27 @@ export class ProgressSession {
   }
 
   #dispatch(event: ProgressEvent): void {
-    // Rate limiting + monotonic guard added in later tasks; for now, always dispatch.
+    if (this.#shouldRateLimit(event)) {
+      return;
+    }
+
+    if (event.kind !== 'status') {
+      this.#lastSentMs = this.#now();
+    }
+
     for (const sink of this.#sinks) {
       this.#emitGuarded(sink, event);
     }
+  }
+
+  #shouldRateLimit(event: ProgressEvent): boolean {
+    if (event.kind !== 'tick') {
+      return false;
+    }
+
+    const now = this.#now();
+    const elapsed = now - this.#lastSentMs;
+    return elapsed < this.#rateLimitMs;
   }
 
   #emitGuarded(sink: ProgressSink, event: ProgressEvent): void {

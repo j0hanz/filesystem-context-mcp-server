@@ -178,4 +178,49 @@ void describe('ProgressSession', () => {
       message: 'connecting...',
     });
   });
+
+  void it('rate-limits tick events but bypasses for terminal and status events', () => {
+    const sink = new MemorySink();
+    const clock = makeClock();
+    const session = new ProgressSession({
+      label: 'rate-limit',
+      sinks: [sink],
+      now: clock.now,
+      rateLimitMs: 50,
+    });
+    // Synthetic start at t=1000.
+    assert.equal(sink.events.length, 1);
+    sink.events.length = 0;
+
+    // t=1010 (within 50ms)
+    clock.advance(10);
+    session.step('skip this');
+    assert.equal(sink.events.length, 0);
+
+    // t=1020 (within 50ms) — status bypasses rate limit
+    clock.advance(10);
+    session.status('bypass-status');
+    assert.equal(sink.events.length, 1);
+    assert.equal(sink.events[0]?.kind, 'status');
+    sink.events.length = 0;
+
+    // t=1060 (past 50ms window since start at 1000)
+    clock.advance(40);
+    session.step('keep this');
+    assert.equal(sink.events.length, 1);
+    assert.equal(sink.events[0]?.kind, 'tick');
+    assert.equal(sink.events[0]?.message, 'keep this');
+    sink.events.length = 0;
+
+    // t=1070 (within 50ms of 1060)
+    clock.advance(10);
+    session.step('skip this too');
+    assert.equal(sink.events.length, 0);
+
+    // t=1080 (within 50ms) — terminal complete bypasses
+    clock.advance(10);
+    session.complete('done');
+    assert.equal(sink.events.length, 1);
+    assert.equal(sink.events[0]?.kind, 'complete');
+  });
 });
