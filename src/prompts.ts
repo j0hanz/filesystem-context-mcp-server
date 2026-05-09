@@ -25,6 +25,22 @@ const ANALYZE_PATH_PROMPT_TITLE = 'Analyze Path';
 const ANALYZE_PATH_PROMPT_DESCRIPTION =
   'Generate a workflow for analyzing a file or directory using stat, read, and tree.';
 
+const SECTION_HEADER_RE = /^\s*([A-Z][A-Za-z ]*):\s*$/u;
+
+function findSectionStarts(
+  instructions: string
+): { name: string; line: number }[] {
+  const lines = instructions.split('\n');
+  const sections: { name: string; line: number }[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const match = SECTION_HEADER_RE.exec(lines[i] ?? '');
+    if (match?.[1]) {
+      sections.push({ name: match[1].trim().toLowerCase(), line: i });
+    }
+  }
+  return sections;
+}
+
 function filterInstructionsByTopic(
   instructions: string,
   topic: string
@@ -32,32 +48,21 @@ function filterInstructionsByTopic(
   const normalized = topic.trim().toLowerCase();
   if (!normalized) return instructions;
 
-  const sections = instructions.split(/\n(?=## )/u);
-  const match = sections.find((sec) =>
-    sec.toLowerCase().startsWith(`## ${normalized}`)
-  );
-  if (match !== undefined) return match;
+  const lines = instructions.split('\n');
+  const sections = findSectionStarts(instructions);
+  const idx = sections.findIndex((s) => s.name.startsWith(normalized));
+  if (idx >= 0) {
+    const start = sections[idx]?.line ?? 0;
+    const end = sections[idx + 1]?.line ?? lines.length;
+    return lines.slice(start, end).join('\n').trimEnd();
+  }
 
-  const available = sections
-    .filter((sec) => sec.startsWith('## '))
-    .map((sec) => sec.split('\n')[0]?.replace(/^##\s*/u, '') ?? '')
-    .filter(Boolean)
-    .join(', ');
-
+  const available = sections.map((s) => s.name).join(', ');
   return `Section '${topic}' not found. Available: ${available}\n\n${instructions}`;
 }
 
 function extractTopics(instructions: string): string[] {
-  const headers: string[] = [];
-
-  for (const line of instructions.split('\n')) {
-    if (line.startsWith('## ')) {
-      const header = line.slice(3).trim().toLowerCase();
-      if (header) headers.push(header);
-    }
-  }
-
-  return headers;
+  return findSectionStarts(instructions).map((s) => s.name);
 }
 
 function filterByPrefix(values: string[], prefix: string): string[] {
