@@ -196,12 +196,14 @@ void describe('ProgressSession', () => {
     clock.advance(10);
     session.step('skip this');
     assert.equal(sink.events.length, 0);
+    assert.equal(session.current, 1);
 
     // t=1020 (within 50ms) — status bypasses rate limit
     clock.advance(10);
     session.status('bypass-status');
     assert.equal(sink.events.length, 1);
     assert.equal(sink.events[0]?.kind, 'status');
+    assert.equal(session.current, 1);
     sink.events.length = 0;
 
     // t=1060 (past 50ms window since start at 1000)
@@ -210,17 +212,20 @@ void describe('ProgressSession', () => {
     assert.equal(sink.events.length, 1);
     assert.equal(sink.events[0]?.kind, 'tick');
     assert.equal(sink.events[0]?.message, 'keep this');
+    assert.equal(session.current, 2);
     sink.events.length = 0;
 
     // t=1070 (within 50ms of 1060)
     clock.advance(10);
     session.step('skip this too');
     assert.equal(sink.events.length, 0);
+    assert.equal(session.current, 3);
 
     // t=1080 (within 50ms) — terminal complete bypasses
     clock.advance(10);
     session.complete('done');
     assert.equal(sink.events.length, 1);
     assert.equal(sink.events[0]?.kind, 'complete');
+    assert.equal(session.current, 3);
   });
 });
