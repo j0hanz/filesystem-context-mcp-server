@@ -89,5 +89,3 @@ describe('worker output parity', () => {
     assert.equal(workerResult.applied, typeof inlineResult === 'string' ? inlineResult : false);
   });
 });
-
-

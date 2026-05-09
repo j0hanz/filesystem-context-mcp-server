@@ -4,15 +4,19 @@ import { basename, relative, win32 } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { assertNotAborted, withAbort } from '../core/concurrency.js';
-import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../core/util.js';
-import { ErrorCode } from '../core/errors.js';
-import { calculateFileContentHash } from '../core/fs.js';
-import { globEntries, isIgnoredByGitignore, loadRootGitignore } from '../core/fs.js';
-import type { PathGuard } from '../core/path.js';
-import type { ResourceStore } from '../core/store.js';
 import { NonNegInt, RequiredPath } from '../schemas/fields.js';
 
+import { assertNotAborted, withAbort } from '../core/concurrency.js';
+import { ErrorCode } from '../core/errors.js';
+import {
+  calculateFileContentHash,
+  globEntries,
+  isIgnoredByGitignore,
+  loadRootGitignore,
+} from '../core/fs.js';
+import type { PathGuard } from '../core/path.js';
+import type { ResourceStore } from '../core/store.js';
+import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../core/util.js';
 import { defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
@@ -329,5 +333,3 @@ export const CALCULATE_HASH = defineTool<
     );
   },
 });
-
-

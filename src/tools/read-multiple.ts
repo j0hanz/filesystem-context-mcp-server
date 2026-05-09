@@ -4,21 +4,6 @@ import { basename } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { withAbort } from '../core/concurrency.js';
-import {
-  DEFAULT_CONTINUATION_CHUNK_SIZE,
-  DEFAULT_READ_MANY_MAX_TOTAL_SIZE,
-  DEFAULT_SEARCH_TIMEOUT_MS,
-  MAX_TEXT_FILE_SIZE,
-  PARALLEL_CONCURRENCY,
-} from '../core/util.js';
-import { ErrorCode } from '../core/errors.js';
-import { readFile, readFileWithStats } from '../core/fs.js';
-import { applyIndexedErrors, applyIndexedValues } from '../core/fs.js';
-import { detectMimeType } from '../core/fs.js';
-import { processInParallel } from '../core/concurrency.js';
-import type { PathGuard } from '../core/path.js';
-import { assignDefined } from '../core/util.js';
 import { NonNegInt, PositiveInt, RequiredPath } from '../schemas/fields.js';
 import { readRangeConstraints, toToolJsonSchema } from '../schemas/json-schema.js';
 import {
@@ -29,6 +14,24 @@ import {
   validateReadRange,
 } from '../schemas/shared.js';
 
+import { processInParallel, withAbort } from '../core/concurrency.js';
+import { ErrorCode } from '../core/errors.js';
+import {
+  applyIndexedErrors,
+  applyIndexedValues,
+  detectMimeType,
+  readFile,
+  readFileWithStats,
+} from '../core/fs.js';
+import type { PathGuard } from '../core/path.js';
+import {
+  assignDefined,
+  DEFAULT_CONTINUATION_CHUNK_SIZE,
+  DEFAULT_READ_MANY_MAX_TOTAL_SIZE,
+  DEFAULT_SEARCH_TIMEOUT_MS,
+  MAX_TEXT_FILE_SIZE,
+  PARALLEL_CONCURRENCY,
+} from '../core/util.js';
 import { defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
@@ -774,5 +777,3 @@ export const READ_MANY = defineTool<ReadManyInput, ReadManyOutput>({
     });
   },
 });
-
-

@@ -4,15 +4,15 @@ import { parse } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { assertNotAborted, withAbort } from '../core/concurrency.js';
-import { DEFAULT_SEARCH_TIMEOUT_MS, getMimeType } from '../core/util.js';
-import { ErrorCode, isAbortError } from '../core/errors.js';
-import { getFileType, isHidden } from '../core/fs.js';
-import type { PathGuard } from '../core/path.js';
 import { RequiredPath } from '../schemas/fields.js';
 import { FileInfoSchema } from '../schemas/shared.js';
 
 import { type FileInfo, formatBytes } from '../config.js';
+import { assertNotAborted, withAbort } from '../core/concurrency.js';
+import { ErrorCode, isAbortError } from '../core/errors.js';
+import { getFileType, isHidden } from '../core/fs.js';
+import type { PathGuard } from '../core/path.js';
+import { DEFAULT_SEARCH_TIMEOUT_MS, getMimeType } from '../core/util.js';
 import { buildPathMessages, defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
@@ -164,5 +164,3 @@ export const GET_FILE_INFO = defineTool<StatInput, StatOutput>({
   defaultErrorCode: ErrorCode.NOT_FOUND,
   ...statMessages,
 });
-
-

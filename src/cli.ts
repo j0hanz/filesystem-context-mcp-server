@@ -11,7 +11,6 @@ import {
   normalizePath,
 } from './core/path.js';
 import { isRecord } from './core/util.js';
-
 import { pkgInfo } from './pkg-info.js';
 
 const { version: SERVER_VERSION } = pkgInfo;

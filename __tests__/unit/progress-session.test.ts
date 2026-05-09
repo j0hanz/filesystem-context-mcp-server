@@ -317,5 +317,3 @@ void describe('ProgressSession', () => {
     assert.equal(session.current, 3);
   });
 });
-
-

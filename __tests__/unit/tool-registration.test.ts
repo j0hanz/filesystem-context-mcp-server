@@ -95,5 +95,3 @@ describe('FS_CONTEXT_STRIP_STRUCTURED', () => {
     assert.deepEqual(stripped, result);
   });
 });
-
-

@@ -112,5 +112,3 @@ test('runInWorker handles malformed patch without crashing', async () => {
     `expected applied to be source or false, got: ${JSON.stringify(result.applied)}`,
   );
 });
-
-

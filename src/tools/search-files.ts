@@ -3,15 +3,17 @@ import { basename, relative } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { withTimedAbortSignal } from '../core/concurrency.js';
+import { NonNegInt, OptionalPath, SafeGlobPattern } from '../schemas/fields.js';
 import {
-  DEFAULT_EXCLUDE_PATTERNS,
-  DEFAULT_SEARCH_MAX_FILES,
-  DEFAULT_SEARCH_RESULTS,
-  DEFAULT_SEARCH_TIMEOUT_MS,
-  MAX_SEARCH_DEPTH,
-  MAX_SEARCH_RESULTS,
-} from '../core/util.js';
+  CursorSchema,
+  includeHiddenField,
+  includeIgnoredField,
+  NextCursorSchema,
+} from '../schemas/shared.js';
+
+import { formatOperationSummary, joinLines } from '../config.js';
+import type { SearchFilesResult, SearchResult } from '../config.js';
+import { withTimedAbortSignal } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
 import {
   buildGlobOptions,
@@ -33,17 +35,15 @@ import {
 import { isPathWithinDirectories, normalizePath } from '../core/path.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
-import { assignDefined } from '../core/util.js';
-import { NonNegInt, OptionalPath, SafeGlobPattern } from '../schemas/fields.js';
 import {
-  CursorSchema,
-  includeHiddenField,
-  includeIgnoredField,
-  NextCursorSchema,
-} from '../schemas/shared.js';
-
-import type { SearchFilesResult, SearchResult } from '../config.js';
-import { formatOperationSummary, joinLines } from '../config.js';
+  assignDefined,
+  DEFAULT_EXCLUDE_PATTERNS,
+  DEFAULT_SEARCH_MAX_FILES,
+  DEFAULT_SEARCH_RESULTS,
+  DEFAULT_SEARCH_TIMEOUT_MS,
+  MAX_SEARCH_DEPTH,
+  MAX_SEARCH_RESULTS,
+} from '../core/util.js';
 import { defineTool } from './define-tool.js';
 import { DIRECTORY_ICONS } from './icons.js';
 import {
@@ -743,5 +743,3 @@ export const SEARCH_FILES = defineTool<
     });
   },
 });
-
-

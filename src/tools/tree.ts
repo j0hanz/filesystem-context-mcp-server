@@ -4,15 +4,15 @@ import { basename, relative } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { withTimedAbortSignal } from '../core/concurrency.js';
+import { FileType as FileTypeEnum, NonNegInt, OptionalPath } from '../schemas/fields.js';
 import {
-  DEFAULT_EXCLUDE_PATTERNS,
-  DEFAULT_SEARCH_TIMEOUT_MS,
-  DEFAULT_TREE_DEPTH,
-  DEFAULT_TREE_ENTRIES,
-  MAX_TREE_DEPTH,
-  MAX_TREE_ENTRIES,
-} from '../core/util.js';
+  ContinuationSchema,
+  defaultFalseBoolean,
+  includeHiddenField,
+  includeIgnoredField,
+} from '../schemas/shared.js';
+
+import { withTimedAbortSignal } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
 import {
   type DirentLike,
@@ -27,14 +27,14 @@ import {
 } from '../core/fs.js';
 import { isPathWithinDirectories, normalizePath, toPosixPath } from '../core/path.js';
 import type { PathGuard } from '../core/path.js';
-import { FileType as FileTypeEnum, NonNegInt, OptionalPath } from '../schemas/fields.js';
 import {
-  ContinuationSchema,
-  defaultFalseBoolean,
-  includeHiddenField,
-  includeIgnoredField,
-} from '../schemas/shared.js';
-
+  DEFAULT_EXCLUDE_PATTERNS,
+  DEFAULT_SEARCH_TIMEOUT_MS,
+  DEFAULT_TREE_DEPTH,
+  DEFAULT_TREE_ENTRIES,
+  MAX_TREE_DEPTH,
+  MAX_TREE_ENTRIES,
+} from '../core/util.js';
 import { defineTool } from './define-tool.js';
 import { DIRECTORY_ICONS } from './icons.js';
 import {
@@ -596,5 +596,3 @@ export const TREE = defineTool<z.infer<typeof TreeInputSchema>, z.infer<typeof T
     );
   },
 });
-
-

@@ -1,7 +1,7 @@
 // src/schema.ts
 // Centralized schema layer consolidating primitives, domain composites, and MCP JSON-Schema adapter
-
 import type { StandardSchemaWithJSON } from '@modelcontextprotocol/server';
+
 import { z } from 'zod';
 
 // ============ JSON-Schema Adapter ============
@@ -38,10 +38,13 @@ export function toMcpSchema(schema: z.ZodType): StandardSchemaWithJSON {
 // ============ Primitives ============
 
 /** ISO 8601 DateTime string (e.g., "2026-05-09T12:30:45Z") */
-export const IsoDateTime = z.string().datetime().meta({ id: 'IsoDateTime' });
+export const IsoDateTime = z.iso.datetime().meta({ id: 'IsoDateTime' });
 
 /** SHA-256 hex digest (64 lowercase hex characters) */
-export const Sha256Hex = z.string().regex(/^[a-f0-9]{64}$/).meta({ id: 'Sha256Hex' });
+export const Sha256Hex = z
+  .string()
+  .regex(/^[a-f0-9]{64}$/)
+  .meta({ id: 'Sha256Hex' });
 
 /** Non-negative integer (0, 1, 2, ...) */
 export const NonNegInt = z.number().int().min(0).meta({ id: 'NonNegInt' });
@@ -65,7 +68,7 @@ export const Paths = z.array(Path).min(1).max(1000).meta({ id: 'Paths' });
 export const Glob = z.string().min(1).max(1000).meta({ id: 'Glob' });
 
 /** Base64-URL-encoded opaque cursor for pagination */
-export const CursorOpaque = z.string().base64url().optional().meta({ id: 'Cursor' });
+export const CursorOpaque = z.base64url().optional().meta({ id: 'Cursor' });
 
 // ============ Domain Composites ============
 

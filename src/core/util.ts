@@ -1,3 +1,8 @@
+import { availableParallelism } from 'node:os';
+
+import { z } from 'zod/v4';
+
+import { Logger } from './observability.js';
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object';
@@ -78,13 +83,6 @@ export function maybeStripStructuredContentFromResult<T extends object>(result: 
   );
   return stripped as T;
 }
-
-
-import { availableParallelism } from 'node:os';
-
-import { z } from 'zod/v4';
-
-import { Logger } from './observability.js';
 
 const STRING_BOOL_SCHEMA = z.stringbool();
 
@@ -474,4 +472,3 @@ export function getMimeType(ext: string): string {
   const lowerExt = ext.toLowerCase();
   return MIME_TYPES.get(lowerExt) ?? 'application/octet-stream';
 }
-

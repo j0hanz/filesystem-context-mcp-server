@@ -7,7 +7,10 @@ import type {
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { hash as hashFunc } from 'node:crypto';
 import { channel, tracingChannel } from 'node:diagnostics_channel';
+import { monitorEventLoopDelay, performance, PerformanceObserver } from 'node:perf_hooks';
 import { inspect } from 'node:util';
+
+import { isRecord, parseTrueEnvFlag } from './util.js';
 
 // Aliases for observability subsystem
 const AsyncLocalStorageImport = AsyncLocalStorage;
@@ -206,10 +209,6 @@ export class LogRouter {
     console.error(`[${event.level.toUpperCase()}] ${event.message}${dataStr}`);
   }
 }
-
-import { monitorEventLoopDelay, performance, PerformanceObserver } from 'node:perf_hooks';
-
-import { parseTrueEnvFlag, isRecord } from './util.js';
 
 // --- Configuration ---
 

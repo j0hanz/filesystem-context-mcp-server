@@ -6,23 +6,6 @@ import { createTwoFilesPatch } from 'diff';
 import RE2 from 're2';
 import { z } from 'zod/v4';
 
-import { atomicWriteFile } from '../core/fs.js';
-import {
-  DEFAULT_EXCLUDE_PATTERNS,
-  DEFAULT_SEARCH_RESULTS,
-  DEFAULT_SEARCH_TIMEOUT_MS,
-  MAX_SEARCH_DEPTH,
-  MAX_SEARCH_RESULTS,
-  MAX_TEXT_FILE_SIZE,
-  PARALLEL_CONCURRENCY,
-} from '../core/util.js';
-import { ErrorCode, formatUnknownErrorMessage, McpError } from '../core/errors.js';
-import { globEntries } from '../core/fs.js';
-import { Logger } from '../core/observability.js';
-import { detectMimeType } from '../core/fs.js';
-import type { PathGuard } from '../core/path.js';
-import type { ResourceStore } from '../core/store.js';
-import { runInWorker, shouldOffload } from '../core/concurrency.js';
 import { NonNegInt, OptionalPath, SafeGlobPattern } from '../schemas/fields.js';
 import { safeGlobConstraint, toToolJsonSchema } from '../schemas/json-schema.js';
 import {
@@ -32,6 +15,21 @@ import {
   PerFileErrorSchema,
 } from '../schemas/shared.js';
 
+import { runInWorker, shouldOffload } from '../core/concurrency.js';
+import { ErrorCode, formatUnknownErrorMessage, McpError } from '../core/errors.js';
+import { atomicWriteFile, detectMimeType, globEntries } from '../core/fs.js';
+import { Logger } from '../core/observability.js';
+import type { PathGuard } from '../core/path.js';
+import type { ResourceStore } from '../core/store.js';
+import {
+  DEFAULT_EXCLUDE_PATTERNS,
+  DEFAULT_SEARCH_RESULTS,
+  DEFAULT_SEARCH_TIMEOUT_MS,
+  MAX_SEARCH_DEPTH,
+  MAX_SEARCH_RESULTS,
+  MAX_TEXT_FILE_SIZE,
+  PARALLEL_CONCURRENCY,
+} from '../core/util.js';
 import { defineTool } from './define-tool.js';
 import { FILE_EDIT_ICONS } from './icons.js';
 import {
@@ -734,5 +732,3 @@ function buildSearchAndReplaceStructuredResult(
     ...(summary.stoppedReason ? { stoppedReason: summary.stoppedReason } : {}),
   };
 }
-
-

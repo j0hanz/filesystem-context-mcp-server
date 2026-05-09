@@ -61,4 +61,3 @@ export const SafeGlobPattern = z
     examples: ['**/*.ts', 'src/**/*.js', '*.{ts,tsx}'],
     suggestion: 'Use forward-slash globs; absolute paths and ".." are forbidden.',
   });
-

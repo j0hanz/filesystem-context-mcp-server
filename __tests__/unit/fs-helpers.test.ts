@@ -24,5 +24,3 @@ describe('processInParallel', () => {
     assert.deepEqual(results.errors, []);
   });
 });
-
-

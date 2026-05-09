@@ -1,14 +1,26 @@
-import type { Root } from '@modelcontextprotocol/server';
+import type { McpServer, Root } from '@modelcontextprotocol/server';
 
 import type { Stats } from 'node:fs';
 import { readdir, realpath, stat } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
-import { basename, dirname, isAbsolute, join, normalize, parse, posix, resolve, sep } from 'node:path';
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  normalize,
+  parse,
+  posix,
+  resolve,
+  sep,
+} from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { z } from 'zod/v4';
+
 import { assertNotAborted, withAbort } from './concurrency.js';
-import { SENSITIVE_FILE_DENYLIST } from './util.js';
 import { ErrorCode, isAbortError, McpError } from './errors.js';
+import { SENSITIVE_FILE_DENYLIST } from './util.js';
 
 // Path utility primitives. Owned by path-guard.ts to avoid a circular
 // dependency with paths.ts (which depends on PathGuard). paths.ts re-exports
@@ -734,9 +746,6 @@ export async function getValidRootDirectories(
   return validDirs;
 }
 
-
-import type { McpServer } from '@modelcontextprotocol/server';
-
 // path-guard is in this file, no import needed
 
 const MAX_COMPLETION_ITEMS = 100;
@@ -1095,9 +1104,6 @@ export async function completePathCached(
   return results;
 }
 
-
-import { z } from 'zod/v4';
-
 export function createBase64JsonCodec<Schema extends z.ZodType>(
   schema: Schema,
 ): z.ZodCodec<z.ZodString, Schema> {
@@ -1120,4 +1126,3 @@ export function createBase64JsonCodec<Schema extends z.ZodType>(
     encode: (value) => Buffer.from(JSON.stringify(value)).toString('base64url'),
   });
 }
-

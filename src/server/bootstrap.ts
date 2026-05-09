@@ -25,12 +25,6 @@ import express, {
   type Response,
 } from 'express';
 
-import {
-  DEFAULT_LOG_LEVEL,
-  getInitHandshakeTimeoutMs,
-  INIT_TIMEOUT_CLOSE,
-  parseEnvInt,
-} from '../core/util.js';
 import { formatUnknownErrorMessage } from '../core/errors.js';
 import {
   createLoggingState,
@@ -40,7 +34,12 @@ import {
   SessionContext,
 } from '../core/observability.js';
 import { createInMemoryResourceStore } from '../core/store.js';
-
+import {
+  DEFAULT_LOG_LEVEL,
+  getInitHandshakeTimeoutMs,
+  INIT_TIMEOUT_CLOSE,
+  parseEnvInt,
+} from '../core/util.js';
 import { pkgInfo } from '../pkg-info.js';
 import { registerAllPrompts } from '../prompts.js';
 import {
@@ -720,4 +719,3 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
       .on('error', reject);
   });
 }
-

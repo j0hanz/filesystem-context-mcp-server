@@ -118,5 +118,3 @@ describe('LogRouter', () => {
     assert.equal(stdio.records.length, 0);
   });
 });
-
-

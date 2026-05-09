@@ -456,5 +456,3 @@ test('defineTool: handle is callable directly without MCP server setup', async (
   assert.equal(result.structuredContent.ok, true);
   assert.equal(result.structuredContent.result, 'HELLO');
 });
-
-

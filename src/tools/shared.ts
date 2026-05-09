@@ -13,6 +13,7 @@ import { basename } from 'node:path';
 
 import { z } from 'zod/v4';
 
+import type { FileInfo } from '../config.js';
 import { createTimedAbortSignal } from '../core/concurrency.js';
 import {
   createDetailedError,
@@ -24,10 +25,8 @@ import {
 import type { MimeKind } from '../core/fs.js';
 import { type TraceContext, withToolDiagnostics } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
-import type { ResourceStore } from '../core/store.js';
 import { createBase64JsonCodec } from '../core/path.js';
-
-import type { FileInfo } from '../config.js';
+import type { ResourceStore } from '../core/store.js';
 import type { TaskOrchestrator } from '../server/task-orchestrator.js';
 
 export { type ToolContract } from './contract.js';
@@ -619,5 +618,3 @@ export function putResource(params: PutResourceParams): PutResourceResult {
     link,
   };
 }
-
-

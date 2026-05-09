@@ -4,16 +4,15 @@ import { parse } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { assertNotAborted, withAbort } from '../core/concurrency.js';
-import { DEFAULT_SEARCH_TIMEOUT_MS, getMimeType, PARALLEL_CONCURRENCY } from '../core/util.js';
-import { ErrorCode, isAbortError } from '../core/errors.js';
-import { getFileType, isHidden } from '../core/fs.js';
-import { processInParallel } from '../core/concurrency.js';
-import type { PathGuard } from '../core/path.js';
 import { NonNegInt, RequiredPath } from '../schemas/fields.js';
 import { FileInfoSchema, OperationSummarySchema, PerFileErrorSchema } from '../schemas/shared.js';
 
 import type { FileInfo, GetMultipleFileInfoResult, MultipleFileInfoResult } from '../config.js';
+import { assertNotAborted, processInParallel, withAbort } from '../core/concurrency.js';
+import { ErrorCode, isAbortError } from '../core/errors.js';
+import { getFileType, isHidden } from '../core/fs.js';
+import type { PathGuard } from '../core/path.js';
+import { DEFAULT_SEARCH_TIMEOUT_MS, getMimeType, PARALLEL_CONCURRENCY } from '../core/util.js';
 import { defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
@@ -403,5 +402,3 @@ export const GET_MULTIPLE_FILE_INFO = defineTool<
   },
   defaultErrorCode: ErrorCode.NOT_FOUND,
 });
-
-

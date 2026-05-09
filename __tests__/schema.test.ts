@@ -1,5 +1,6 @@
 import assert from 'node:assert';
 import test from 'node:test';
+
 import { z } from 'zod';
 
 import { batchResult, paginated, toMcpSchema } from '../src/schema.js';
@@ -15,10 +16,10 @@ test('toMcpSchema generates valid standard schema', () => {
 
 test('batchResult creates correct discriminated union', () => {
   const schema = batchResult(z.string());
-  assert.equal(schema._def.discriminator, 'ok');
+  assert.equal(schema.def.discriminator, 'ok');
 });
 
 test('paginated creates correct discriminated union', () => {
   const schema = paginated(z.string());
-  assert.equal(schema._def.discriminator, 'hasMore');
+  assert.equal(schema.def.discriminator, 'hasMore');
 });

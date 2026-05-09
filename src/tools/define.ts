@@ -1,29 +1,30 @@
 // src/tools/define.ts
 // Tool definition engine for registering tools with MCP server
-
 import type { McpServer } from '@modelcontextprotocol/server';
+
 import type { z } from 'zod';
 
 import { ErrorCode, formatUnknownErrorMessage, McpError } from '../core/errors.js';
-import { Logger, ProgressSession } from '../core/observability.js';
+import type { Logger } from '../core/observability.js';
+import { ProgressSession } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { toMcpSchema } from '../schema.js';
 
 // ============ Type Definitions ============
 
-export type Annotation = 'readOnly' | 'idempotentWrite' | 'destructiveWrite';
-export type TaskMode = 'forbidden' | 'optional' | 'required';
+type Annotation = 'readOnly' | 'idempotentWrite' | 'destructiveWrite';
+type TaskMode = 'forbidden' | 'optional' | 'required';
 
-export interface ProgressTick {
+interface ProgressTick {
   current: number;
   total?: number;
   message?: string;
 }
 
-export type ProgressFn = (tick: ProgressTick) => void;
+type ProgressFn = (tick: ProgressTick) => void;
 
-export interface ToolCtx {
+interface ToolCtx {
   readonly signal: AbortSignal;
   readonly pathGuard: PathGuard;
   readonly resourceStore: ResourceStore;
@@ -31,7 +32,7 @@ export interface ToolCtx {
   readonly progress: ProgressFn;
 }
 
-export interface ToolDeps {
+interface ToolDeps {
   readonly isInitialized: () => boolean;
   readonly server: McpServer;
   readonly orchestrator?: unknown;
@@ -83,8 +84,8 @@ function composeAbortSignals(...signals: (AbortSignal | undefined)[]): AbortSign
   }
 
   if (defined.length === 1) {
-    // Safe: just checked defined.length === 1
-    return defined[0]!;
+    const [first] = defined;
+    return first ?? new AbortController().signal;
   }
 
   // Multiple signals: use AbortSignal.any() if available (Node.js 20.3+), else fallback
@@ -95,7 +96,13 @@ function composeAbortSignals(...signals: (AbortSignal | undefined)[]): AbortSign
   // Fallback for older Node.js: create an AbortController that mirrors any input
   const controller = new AbortController();
   for (const signal of defined) {
-    signal.addEventListener('abort', () => controller.abort(signal.reason), { once: true });
+    signal.addEventListener(
+      'abort',
+      () => {
+        controller.abort(signal.reason);
+      },
+      { once: true },
+    );
   }
   return controller.signal;
 }
@@ -120,8 +127,8 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
     nuances: def.nuances ?? [],
     gotchas: def.gotchas ?? [],
     // Store the schemas themselves - they contain the JSON schema data
-    inputJsonSchema: inputSchema as unknown,
-    outputJsonSchema: outputSchema as unknown,
+    inputJsonSchema: inputSchema,
+    outputJsonSchema: outputSchema,
 
     register(deps: ToolDeps) {
       const handler = async (args: unknown, extra: unknown) => {
@@ -150,9 +157,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
             ? (extra as { signal?: AbortSignal }).signal
             : undefined;
 
-        const timeoutSignal = def.timeoutMs
-          ? AbortSignal.timeout(def.timeoutMs)
-          : undefined;
+        const timeoutSignal = def.timeoutMs ? AbortSignal.timeout(def.timeoutMs) : undefined;
 
         const signal = composeAbortSignals(extraSignal, timeoutSignal);
 
@@ -236,11 +241,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
       } else {
         // Register as standard tool
         // Use `as never` to bridge StandardSchema/JSON-Schema type mismatch
-        deps.server.registerTool(
-          def.name,
-          inputSchema as never,
-          handler as never,
-        );
+        deps.server.registerTool(def.name, inputSchema as never, handler as never);
       }
     },
   };

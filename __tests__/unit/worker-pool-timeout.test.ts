@@ -2,8 +2,8 @@ import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { ErrorCode } from '../../src/config.js';
-import { McpError } from '../../src/core/errors.js';
 import { runInWorker, shutdownWorkerPool } from '../../src/core/concurrency.js';
+import { McpError } from '../../src/core/errors.js';
 
 test('runInWorker removes task from queue on timeout', async () => {
   // Fill the pool to force queueing with moderately sized tasks
@@ -35,5 +35,3 @@ test('runInWorker removes task from queue on timeout', async () => {
 
   await shutdownWorkerPool();
 });
-
-

@@ -3,15 +3,14 @@ import { basename, dirname } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { withAbort } from '../core/concurrency.js';
-import { atomicWriteFile } from '../core/fs.js';
-import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
-import { ErrorCode } from '../core/errors.js';
-import { Logger } from '../core/observability.js';
-import { detectMimeType } from '../core/fs.js';
 import { NonNegInt, RequiredPath } from '../schemas/fields.js';
 
 import { formatBytes } from '../config.js';
+import { withAbort } from '../core/concurrency.js';
+import { ErrorCode } from '../core/errors.js';
+import { atomicWriteFile, detectMimeType } from '../core/fs.js';
+import { Logger } from '../core/observability.js';
+import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import { buildPathMessages, defineTool } from './define-tool.js';
 import { FILE_EDIT_ICONS } from './icons.js';
 import {
@@ -141,5 +140,3 @@ export const WRITE_FILE = defineTool<WriteInput, WriteOutput>({
   ...writeMessages,
   defaultErrorCode: ErrorCode.UNKNOWN,
 });
-
-

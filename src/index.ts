@@ -6,10 +6,9 @@ import process from 'node:process';
 
 import { z } from 'zod/v4';
 
-import { formatUnknownErrorMessage } from './core/errors.js';
-import { shutdownWorkerPool } from './core/concurrency.js';
-
 import { CliExitError, parseArgs } from './cli.js';
+import { shutdownWorkerPool } from './core/concurrency.js';
+import { formatUnknownErrorMessage } from './core/errors.js';
 import { createServer, startHttpServer, startServer } from './server.js';
 
 // Ensure consistent English error messages across all locales.
@@ -131,4 +130,3 @@ main().catch((error: unknown) => {
   console.error('Fatal error:', formatUnknownErrorMessage(error));
   void shutdown('fatal', 1);
 });
-

@@ -247,5 +247,3 @@ describe('HttpSessionRegistry', () => {
     assert.equal(ok.closeCalls, 1);
   });
 });
-
-

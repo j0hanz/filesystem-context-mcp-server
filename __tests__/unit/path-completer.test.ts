@@ -9,11 +9,7 @@ import { join, sep } from 'node:path';
 import { test } from 'node:test';
 
 import { completePathCached } from '../../src/core/path.js';
-import {
-  normalizePath,
-  PathGuard,
-  resolveAllowedDirectoriesState,
-} from '../../src/core/path.js';
+import { normalizePath, PathGuard, resolveAllowedDirectoriesState } from '../../src/core/path.js';
 
 async function withTestDir(fn: (tmpDir: string) => Promise<void>) {
   const tmpDir = await mkdtemp(join(tmpdir(), `fsmcp-pathcomp-${randomUUID().slice(0, 8)}-`));
@@ -109,6 +105,3 @@ test('path-completer', async (t) => {
     });
   });
 });
-
-
-

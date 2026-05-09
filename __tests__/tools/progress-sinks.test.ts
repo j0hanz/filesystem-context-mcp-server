@@ -133,5 +133,3 @@ void describe('progressSessionFromContext', () => {
     // Should just not do anything but still be a valid session.
   });
 });
-
-

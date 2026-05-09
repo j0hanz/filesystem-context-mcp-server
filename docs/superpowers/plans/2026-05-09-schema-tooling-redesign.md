@@ -176,8 +176,8 @@ git commit -m "refactor: consolidate core files per design spec"
 ```typescript
 // __tests__/schema.test.ts
 import assert from 'node:assert';
-
 import test from 'node:test';
+
 import { z } from 'zod/v4';
 
 import { batchResult, paginated, toMcpSchema } from '../src/schema.js';
@@ -334,8 +334,8 @@ git commit -m "feat: implement centralized schema layer"
 ```typescript
 // __tests__/unit/define.test.ts
 import assert from 'node:assert';
-
 import test from 'node:test';
+
 import { z } from 'zod/v4';
 
 import { ErrorCode } from '../../src/core/errors.js';

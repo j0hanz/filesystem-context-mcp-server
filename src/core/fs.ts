@@ -1,18 +1,38 @@
 import { isUtf8 } from 'node:buffer';
 import { type BinaryToTextEncoding, createHash, randomUUID } from 'node:crypto';
 import { createReadStream, type Stats } from 'node:fs';
-import { type FileHandle, glob as fsGlob, lstat, open, readFile as readFilePromises, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import {
+  type FileHandle,
+  glob as fsGlob,
+  lstat,
+  open,
+  readFile as readFilePromises,
+  rename,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
+// fs-walk.ts
+
+import ignore, { type Ignore } from 'ignore';
+
+import type { FileType } from '../config.js';
 import { assertNotAborted, withAbort } from './concurrency.js';
+import { ErrorCode, isNodeError, McpError } from './errors.js';
 import {
-  BINARY_CHECK_BUFFER_SIZE,
-  KNOWN_BINARY_EXTENSIONS,
-  MAX_TEXT_FILE_SIZE,
-} from './util.js';
-import { ErrorCode, McpError } from './errors.js';
+  getToolContextSnapshot,
+  publishOpsTraceEnd,
+  publishOpsTraceError,
+  publishOpsTraceStart,
+  shouldPublishOpsTrace,
+  startPerfMeasure,
+} from './observability.js';
 import type { PathGuard } from './path.js';
+import { toPosixPath } from './path.js';
+import { BINARY_CHECK_BUFFER_SIZE, KNOWN_BINARY_EXTENSIONS, MAX_TEXT_FILE_SIZE } from './util.js';
 
 const READ_ONLY_FILE_FLAG = 'r';
 const STREAM_CHUNK_SIZE = 64 * 1024;
@@ -819,23 +839,6 @@ export async function atomicWriteFile(
   }
 }
 
-
-// fs-walk.ts
-
-import ignore, { type Ignore } from 'ignore';
-
-import type { FileType } from '../config.js';
-import { isNodeError } from './errors.js';
-import {
-  getToolContextSnapshot,
-  publishOpsTraceEnd,
-  publishOpsTraceError,
-  publishOpsTraceStart,
-  shouldPublishOpsTrace,
-  startPerfMeasure,
-} from './observability.js';
-import { toPosixPath } from './path.js';
-
 export function getFileType(stats: Stats): FileType {
   if (stats.isFile()) return 'file';
   if (stats.isDirectory()) return 'directory';
@@ -1526,7 +1529,6 @@ export function buildGlobOptions(config: GlobConfig): Parameters<typeof globEntr
   return options;
 }
 
-
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type MimeKind = 'text' | 'binary' | 'image' | 'audio' | 'pdf';
@@ -1809,4 +1811,3 @@ export function detectMimeType(path: string, sample?: Buffer): MimeInfo {
   // 4. Final fallback
   return { mimeType: 'application/octet-stream', kind: 'binary' };
 }
-

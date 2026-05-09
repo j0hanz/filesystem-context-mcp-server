@@ -2,17 +2,6 @@ import { basename } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import {
-  DEFAULT_CONTINUATION_CHUNK_SIZE,
-  DEFAULT_SEARCH_TIMEOUT_MS,
-  MAX_TEXT_FILE_SIZE,
-} from '../core/util.js';
-import { ErrorCode } from '../core/errors.js';
-import { calculateFileContentHash, readFile } from '../core/fs.js';
-import { detectMimeType } from '../core/fs.js';
-import type { PathGuard } from '../core/path.js';
-import type { ResourceStore } from '../core/store.js';
-import { assignDefined } from '../core/util.js';
 import { NonNegInt, PositiveInt, RequiredPath, Sha256Hex } from '../schemas/fields.js';
 import { readRangeConstraints, toToolJsonSchema } from '../schemas/json-schema.js';
 import {
@@ -23,6 +12,16 @@ import {
 } from '../schemas/shared.js';
 
 import { formatBytes } from '../config.js';
+import { ErrorCode } from '../core/errors.js';
+import { calculateFileContentHash, detectMimeType, readFile } from '../core/fs.js';
+import type { PathGuard } from '../core/path.js';
+import type { ResourceStore } from '../core/store.js';
+import {
+  assignDefined,
+  DEFAULT_CONTINUATION_CHUNK_SIZE,
+  DEFAULT_SEARCH_TIMEOUT_MS,
+  MAX_TEXT_FILE_SIZE,
+} from '../core/util.js';
 import { defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
@@ -323,5 +322,3 @@ export const READ_FILE = defineTool<ReadFileInput, ReadFileOutput>({
   progressMessage: buildReadProgressMessage,
   completionMessage: buildReadCompletionMessage,
 });
-
-

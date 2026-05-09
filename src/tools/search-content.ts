@@ -7,32 +7,6 @@ import { parentPort, threadId, Worker, workerData } from 'node:worker_threads';
 import RE2 from 're2';
 import { z } from 'zod/v4';
 
-import { assertNotAborted, withAbort, withTimedAbortSignal } from '../core/concurrency.js';
-import {
-  DEFAULT_EXCLUDE_PATTERNS,
-  DEFAULT_SEARCH_CONTENT_RESULTS,
-  DEFAULT_SEARCH_MAX_FILES,
-  DEFAULT_SEARCH_TIMEOUT_MS,
-  MAX_LINE_CONTENT_LENGTH,
-  MAX_SEARCH_DEPTH,
-  MAX_SEARCH_RESULTS,
-  MAX_SEARCHABLE_FILE_SIZE,
-  parseEnvInt,
-  SEARCH_WORKERS,
-} from '../core/util.js';
-import {
-  ErrorCode,
-  formatUnknownErrorMessage,
-  isTimeoutLikeError,
-  McpError,
-} from '../core/errors.js';
-import { isProbablyBinary } from '../core/fs.js';
-import { buildGlobOptions, globEntries, type GlobEntry } from '../core/fs.js';
-import { startPerfMeasure } from '../core/observability.js';
-import { isPathWithinDirectories, isSafeGlobSyntax, normalizePath } from '../core/path.js';
-import type { PathGuard } from '../core/path.js';
-import type { ResourceStore } from '../core/store.js';
-import { mergeOptions, omitOptionKeys } from '../core/util.js';
 import { NonNegInt, OptionalPath, PositiveInt, SafeGlobPattern } from '../schemas/fields.js';
 import { safeGlobConstraint, toToolJsonSchema } from '../schemas/json-schema.js';
 import {
@@ -43,8 +17,35 @@ import {
   NextCursorSchema,
 } from '../schemas/shared.js';
 
-import type { ContentMatch, SearchContentResult } from '../config.js';
 import { formatOperationSummary } from '../config.js';
+import type { ContentMatch, SearchContentResult } from '../config.js';
+import { assertNotAborted, withAbort, withTimedAbortSignal } from '../core/concurrency.js';
+import {
+  ErrorCode,
+  formatUnknownErrorMessage,
+  isTimeoutLikeError,
+  McpError,
+} from '../core/errors.js';
+import { buildGlobOptions, globEntries, isProbablyBinary } from '../core/fs.js';
+import type { GlobEntry } from '../core/fs.js';
+import { startPerfMeasure } from '../core/observability.js';
+import { isPathWithinDirectories, isSafeGlobSyntax, normalizePath } from '../core/path.js';
+import type { PathGuard } from '../core/path.js';
+import type { ResourceStore } from '../core/store.js';
+import {
+  DEFAULT_EXCLUDE_PATTERNS,
+  DEFAULT_SEARCH_CONTENT_RESULTS,
+  DEFAULT_SEARCH_MAX_FILES,
+  DEFAULT_SEARCH_TIMEOUT_MS,
+  MAX_LINE_CONTENT_LENGTH,
+  MAX_SEARCH_DEPTH,
+  MAX_SEARCH_RESULTS,
+  MAX_SEARCHABLE_FILE_SIZE,
+  mergeOptions,
+  omitOptionKeys,
+  parseEnvInt,
+  SEARCH_WORKERS,
+} from '../core/util.js';
 import { defineTool } from './define-tool.js';
 import { SEARCH_ICONS } from './icons.js';
 import {
@@ -1860,5 +1861,3 @@ if (parentPort) {
     workerLog(`Started with threadId=${String(threadId)}`);
   }
 }
-
-

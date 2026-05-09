@@ -8,9 +8,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { SENSITIVE_FILE_DENYLIST } from '../src/core/util.js';
 import { PathGuard, resolveAllowedDirectoriesState } from '../src/core/path.js';
 import { createInMemoryResourceStore, type ResourceStore } from '../src/core/store.js';
+import { SENSITIVE_FILE_DENYLIST } from '../src/core/util.js';
 import { TaskOrchestrator } from '../src/server/task-orchestrator.js';
 import { createTaskStore } from '../src/server/task-store.js';
 import { registerAllTools } from '../src/tools.js';
@@ -295,4 +295,3 @@ export async function readResourceLink(
 
   return null;
 }
-

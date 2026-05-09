@@ -44,5 +44,3 @@ test('worker constants are within sensible bounds', () => {
   assert.equal(WORKER_CANCEL_GRACE_MS, 500);
   assert.equal(typeof WORKERS_DISABLED, 'boolean');
 });
-
-

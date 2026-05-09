@@ -6,7 +6,6 @@ import { realpath } from 'node:fs/promises';
 import { z } from 'zod/v4';
 
 import { assertNotAborted, createTimedAbortSignal, withAbort } from '../core/concurrency.js';
-import { getInitHandshakeTimeoutMs, SENSITIVE_FILE_DENYLIST } from '../core/util.js';
 import { formatUnknownErrorMessage } from '../core/errors.js';
 import { Logger, type LoggingState, logToMcp } from '../core/observability.js';
 import {
@@ -16,7 +15,12 @@ import {
   PathGuard,
   resolveAllowedDirectoriesState,
 } from '../core/path.js';
-import { debounce, isRecord } from '../core/util.js';
+import {
+  debounce,
+  getInitHandshakeTimeoutMs,
+  isRecord,
+  SENSITIVE_FILE_DENYLIST,
+} from '../core/util.js';
 
 const ROOTS_TIMEOUT_MS = 5000;
 const ROOTS_DEBOUNCE_MS = 100;
@@ -283,5 +287,3 @@ export class RootsManager {
     }
   }
 }
-
-
