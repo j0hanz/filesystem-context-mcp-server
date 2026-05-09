@@ -134,7 +134,9 @@ function getLocalIconInfo(): Promise<IconInfo | undefined> {
   return cachedIconInfo;
 }
 
-export async function createServer(options: ServerOptions = {}): Promise<{ server: McpServer }> {
+export async function createServer(
+  options: ServerOptions & { isInitialized?: () => boolean } = {},
+): Promise<{ server: McpServer }> {
   const resourceStore = createInMemoryResourceStore();
   const localIcon = await getLocalIconInfo();
   const capabilities = buildServerCapabilities({
@@ -180,6 +182,8 @@ export async function createServer(options: ServerOptions = {}): Promise<{ serve
   const rootsManager = new RootsManager(options, loggingState);
   rootsManagers.set(server, rootsManager);
 
+  await rootsManager.recomputeAllowedDirectories();
+
   // Subscribe to Logger channel if not already done, but we need to route based on session or fallback to this server if it's stdio.
   // Wait, in stdio there's only one server. In HTTP there are multiple.
   server.server.setRequestHandler('logging/setLevel', (req: SetLevelRequest) => {
@@ -201,13 +205,13 @@ export async function createServer(options: ServerOptions = {}): Promise<{ serve
   registerAllPrompts(server, {
     pathGuard: rootsManager.pathGuard,
     instructions: serverInstructionsContent,
-    isInitialized: () => rootsManager.isInitialized(),
+    isInitialized: options.isInitialized ?? (() => rootsManager.isInitialized()),
     ...(localIcon ? { iconInfo: localIcon } : {}),
   });
   registerAllTools(server, {
     pathGuard: rootsManager.pathGuard,
     resourceStore,
-    isInitialized: () => rootsManager.isInitialized(),
+    isInitialized: options.isInitialized ?? (() => rootsManager.isInitialized()),
     hasTaskSupport,
     ...(localIcon ? { iconInfo: localIcon } : {}),
   });
