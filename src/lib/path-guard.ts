@@ -12,7 +12,6 @@ import {
   posix,
   resolve,
   sep,
-  win32,
 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -28,13 +27,10 @@ const POSIX_PATH_SEPARATOR = '/';
 const IS_WINDOWS = platform() === 'win32';
 const HOMEDIR = homedir();
 const PATH_SEPARATOR = sep;
-const HOME_PREFIX_LENGTH = 2;
-const LEADING_SEPARATORS_RE = /^[/\\]+/;
-const DRIVE_LETTER_REGEX = /^[A-Za-z]:/;
 
 export function toPosixPath(value: string): string {
   return value.includes(WINDOWS_PATH_SEPARATOR)
-    ? value.replace(/\\/gu, POSIX_PATH_SEPARATOR)
+    ? value.replaceAll(WINDOWS_PATH_SEPARATOR, POSIX_PATH_SEPARATOR)
     : value;
 }
 
@@ -52,11 +48,18 @@ function expandHome(filepath: string): string {
   if (filepath === '~') return HOMEDIR;
 
   // Accept both "~/" and "~\\" for cross-platform UX.
-  if (filepath.startsWith('~/') || filepath.startsWith('~\\')) {
-    const rest = filepath
-      .slice(HOME_PREFIX_LENGTH)
-      .replace(LEADING_SEPARATORS_RE, '');
-    return rest.length === 0 ? HOMEDIR : join(HOMEDIR, rest);
+  if (filepath.length > 1 && filepath.charCodeAt(0) === 126) {
+    const second = filepath.charCodeAt(1);
+    if (second === 47 || second === 92) {
+      let startIdx = 2;
+      while (startIdx < filepath.length) {
+        const c = filepath.charCodeAt(startIdx);
+        if (c === 47 || c === 92) startIdx++;
+        else break;
+      }
+      const rest = filepath.slice(startIdx);
+      return rest.length === 0 ? HOMEDIR : join(HOMEDIR, rest);
+    }
   }
 
   return filepath;
@@ -65,7 +68,7 @@ function expandHome(filepath: string): string {
 export function normalizePath(p: string): string {
   const resolved = resolve(expandHome(p));
 
-  if (IS_WINDOWS && DRIVE_LETTER_REGEX.test(resolved)) {
+  if (IS_WINDOWS && resolved.length >= 2 && resolved.charCodeAt(1) === 58) {
     return resolved.charAt(0).toLowerCase() + resolved.slice(1);
   }
 
@@ -120,17 +123,13 @@ function isPathInsideDirectory(
   const candidate = normalizeCaseForComparison(normalizedCandidate);
 
   if (root === candidate) return true;
-
   if (!candidate.startsWith(root)) return false;
-  const rootEndsWithSep =
-    root.endsWith(POSIX_PATH_SEPARATOR) ||
-    root.endsWith(WINDOWS_PATH_SEPARATOR);
-  if (rootEndsWithSep) return true;
 
-  const nextChar = candidate[root.length];
-  return (
-    nextChar === POSIX_PATH_SEPARATOR || nextChar === WINDOWS_PATH_SEPARATOR
-  );
+  const rootLastChar = root.charCodeAt(root.length - 1);
+  if (rootLastChar === 47 || rootLastChar === 92) return true;
+
+  const nextChar = candidate.charCodeAt(root.length);
+  return nextChar === 47 || nextChar === 92;
 }
 
 export function isPathWithinDirectories(
@@ -154,20 +153,33 @@ interface CompiledPatternSet {
   nameGlobs: readonly string[];
 }
 
-const WINDOWS_ABSOLUTE_RE = /^[a-z]:\//iu;
-
 function compilePatternGlobs(normalizedPattern: string): readonly string[] {
   const globs = new Set<string>([normalizedPattern]);
-  const isWindowsAbsolute = WINDOWS_ABSOLUTE_RE.test(normalizedPattern);
+
+  const isWindowsAbsolute =
+    normalizedPattern.length >= 3 &&
+    normalizedPattern.charCodeAt(1) === 58 &&
+    normalizedPattern.charCodeAt(2) === 47 &&
+    ((normalizedPattern.charCodeAt(0) >= 65 &&
+      normalizedPattern.charCodeAt(0) <= 90) ||
+      (normalizedPattern.charCodeAt(0) >= 97 &&
+        normalizedPattern.charCodeAt(0) <= 122));
 
   if (!normalizedPattern.startsWith('**/') && !isWindowsAbsolute) {
-    const withoutRoot = normalizedPattern.replace(/^\/+/u, '');
+    let startIdx = 0;
+    while (
+      startIdx < normalizedPattern.length &&
+      normalizedPattern.charCodeAt(startIdx) === 47
+    ) {
+      startIdx++;
+    }
+    const withoutRoot = normalizedPattern.slice(startIdx);
     if (withoutRoot.length > 0) {
       globs.add(`**/${withoutRoot}`);
     }
   }
 
-  return [...globs];
+  return Array.from(globs);
 }
 
 function compilePatterns(patterns: readonly string[]): CompiledPattern[] {
@@ -210,16 +222,11 @@ function toPatternSet(
   };
 }
 
-function matchesAnyGlobs(
-  globs: readonly string[],
-  candidates: readonly string[]
-): boolean {
-  if (globs.length === 0 || candidates.length === 0) return false;
+function matchesAnyGlob(globs: readonly string[], candidate: string): boolean {
+  if (globs.length === 0) return false;
 
-  for (const candidate of candidates) {
-    for (const glob of globs) {
-      if (posix.matchesGlob(candidate, glob)) return true;
-    }
+  for (const glob of globs) {
+    if (posix.matchesGlob(candidate, glob)) return true;
   }
 
   return false;
@@ -309,6 +316,31 @@ export async function resolveAllowedDirectoriesState(
 // Windows helpers (moved from paths.ts)
 // ---------------------------------------------------------------------------
 
+const RESERVED_DEVICE_NAMES = new Set([
+  'CON',
+  'PRN',
+  'AUX',
+  'NUL',
+  'COM1',
+  'COM2',
+  'COM3',
+  'COM4',
+  'COM5',
+  'COM6',
+  'COM7',
+  'COM8',
+  'COM9',
+  'LPT1',
+  'LPT2',
+  'LPT3',
+  'LPT4',
+  'LPT5',
+  'LPT6',
+  'LPT7',
+  'LPT8',
+  'LPT9',
+]);
+
 function getReservedDeviceName(segment: string): string | undefined {
   const CHAR_CODE_SPACE = 32;
   const CHAR_CODE_DOT = 46;
@@ -327,30 +359,6 @@ function getReservedDeviceName(segment: string): string | undefined {
     dotIdx !== -1 ? withoutStream.slice(0, dotIdx) : withoutStream
   ).toUpperCase();
 
-  const RESERVED_DEVICE_NAMES = new Set([
-    'CON',
-    'PRN',
-    'AUX',
-    'NUL',
-    'COM1',
-    'COM2',
-    'COM3',
-    'COM4',
-    'COM5',
-    'COM6',
-    'COM7',
-    'COM8',
-    'COM9',
-    'LPT1',
-    'LPT2',
-    'LPT3',
-    'LPT4',
-    'LPT5',
-    'LPT6',
-    'LPT7',
-    'LPT8',
-    'LPT9',
-  ]);
   return RESERVED_DEVICE_NAMES.has(baseName) ? baseName : undefined;
 }
 
@@ -368,10 +376,15 @@ export function getReservedDeviceNameForPath(
 
 export function isWindowsDriveRelativePath(requestedPath: string): boolean {
   if (!IS_WINDOWS) return false;
-  const WINDOWS_DRIVE_REL_REGEX = /^[A-Za-z]:$/u;
-  const parsed = win32.parse(requestedPath);
-  if (!WINDOWS_DRIVE_REL_REGEX.test(parsed.root)) return false;
-  return !win32.isAbsolute(requestedPath);
+  if (requestedPath.length < 2) return false;
+  if (requestedPath.charCodeAt(1) !== 58) return false;
+
+  const c = requestedPath.charCodeAt(0);
+  if (!((c >= 65 && c <= 90) || (c >= 97 && c <= 122))) return false;
+
+  if (requestedPath.length === 2) return true;
+  const third = requestedPath.charCodeAt(2);
+  return third !== 47 && third !== 92;
 }
 
 /**
@@ -443,32 +456,18 @@ export class PathGuard {
     }
 
     const normalizedPath = normalizeForMatch(filePath);
-    const pathCandidates = [normalizedPath];
-    const nameCandidates = [posix.basename(normalizedPath)];
 
     return (
-      matchesAnyGlobs(this.denyPatterns.pathGlobs, pathCandidates) ||
-      matchesAnyGlobs(this.denyPatterns.nameGlobs, nameCandidates)
+      matchesAnyGlob(this.denyPatterns.pathGlobs, normalizedPath) ||
+      matchesAnyGlob(
+        this.denyPatterns.nameGlobs,
+        posix.basename(normalizedPath)
+      )
     );
   }
 
   isSafeGlob(pattern: string): boolean {
-    // Empty pattern is not safe
-    if (!pattern || pattern.trim().length === 0) {
-      return false;
-    }
-
-    // Absolute paths are not safe
-    if (isAbsolute(pattern)) {
-      return false;
-    }
-
-    // Patterns with .. traversal are not safe
-    if (pattern.includes('..')) {
-      return false;
-    }
-
-    return true;
+    return isSafeGlobSyntax(pattern);
   }
 
   assertSafeGlob(
