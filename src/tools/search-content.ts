@@ -27,7 +27,7 @@ import {
   McpError,
 } from '../lib/errors.js';
 import { isProbablyBinary } from '../lib/file-content.js';
-import { buildGlobOptions, globEntries } from '../lib/fs-walk.js';
+import { buildGlobOptions, globEntries, type GlobEntry } from '../lib/fs-walk.js';
 import { startPerfMeasure } from '../lib/observability.js';
 import { isPathWithinDirectories, isSafeGlobSyntax, normalizePath } from '../lib/path-guard.js';
 import type { PathGuard } from '../lib/path-guard.js';
@@ -1097,6 +1097,18 @@ async function searchSingleFile(
   );
 }
 
+function getValidatedFilePath(
+  entry: GlobEntry,
+  pathGuard: PathGuard,
+  rootDirectories: readonly string[],
+): string | null {
+  if (!entry.dirent.isFile()) return null;
+  const normalized = normalizePath(entry.path);
+  if (!isPathWithinDirectories(normalized, rootDirectories)) return null;
+  if (pathGuard.isSensitive(entry.path)) return null;
+  return normalized;
+}
+
 async function searchDirectory(
   details: { resolvedPath: string; requestedPath: string },
   opts: ResolvedOptions,
@@ -1129,13 +1141,10 @@ async function searchDirectory(
 
   async function* fileGenerator(): AsyncGenerator<ResolvedFile> {
     for await (const entry of stream) {
-      if (signal.aborted) break;
-      if (summary.filesScanned >= opts.maxFilesScanned) break;
-      if (!entry.dirent.isFile()) continue;
+      if (signal.aborted || summary.filesScanned >= opts.maxFilesScanned) break;
 
-      const normalized = normalizePath(entry.path);
-      if (!isPathWithinDirectories(normalized, rootDirectories)) continue;
-      if (pathGuard.isSensitive(entry.path)) continue;
+      const normalized = getValidatedFilePath(entry, pathGuard, rootDirectories);
+      if (!normalized) continue;
 
       summary.filesScanned++;
       if (opts.fuzzy === true && summary.filesScanned > MAX_FUZZY_FILES) {
@@ -1144,10 +1153,10 @@ async function searchDirectory(
           `Fuzzy search is limited to ${MAX_FUZZY_FILES} files. Narrow your path or disable fuzzy mode.`,
         );
       }
-      onProgress?.({
-        current: summary.filesScanned,
-        total: opts.maxFilesScanned,
-      });
+
+      if (onProgress) {
+        onProgress({ current: summary.filesScanned, total: opts.maxFilesScanned });
+      }
 
       yield { resolvedPath: normalized, requestedPath: entry.path };
     }
@@ -1157,10 +1166,9 @@ async function searchDirectory(
       summary.stoppedReason = 'maxFiles';
     }
 
-    onProgress?.({
-      current: summary.filesScanned,
-      total: opts.maxFilesScanned,
-    });
+    if (onProgress) {
+      onProgress({ current: summary.filesScanned, total: opts.maxFilesScanned });
+    }
   }
 
   const matches = shouldUseWorkers()
@@ -1557,6 +1565,32 @@ function findColumnOffset(content: string, context: SearchContext): number | und
   }
 }
 
+function buildSearchContentOptions(
+  args: SearchInput,
+  signal?: AbortSignal,
+  onProgress?: (progress: { total?: number; current: number }) => void,
+): SearchContentOptions {
+  const options: SearchContentOptions = {
+    includeHidden: args.includeHidden,
+    excludePatterns: args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS,
+    filePattern: args.pattern ?? '**/*',
+    caseSensitive: args.caseSensitive,
+    wholeWord: args.wholeWord,
+    maxResults: args.maxResults,
+    isLiteral: !args.isRegex,
+  };
+
+  if (args.contextLines !== undefined) options.contextLines = args.contextLines;
+  if (args.contextBefore !== undefined) options.contextBefore = args.contextBefore;
+  if (args.contextAfter !== undefined) options.contextAfter = args.contextAfter;
+  if (args.fuzzy === true) options.fuzzy = true;
+  if (args.maxDepth !== undefined) options.maxDepth = args.maxDepth;
+  if (signal) options.signal = signal;
+  if (onProgress) options.onProgress = onProgress;
+
+  return options;
+}
+
 async function executeSearch(
   args: SearchInput,
   basePath: string,
@@ -1564,24 +1598,7 @@ async function executeSearch(
   signal?: AbortSignal,
   onProgress?: (progress: { total?: number; current: number }) => void,
 ): Promise<SearchResultValue> {
-  const excludePatterns = args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
-
-  const options: SearchContentOptions = {
-    includeHidden: args.includeHidden,
-    excludePatterns,
-    filePattern: args.pattern ?? '**/*',
-    caseSensitive: args.caseSensitive,
-    wholeWord: args.wholeWord,
-    ...(args.contextLines !== undefined ? { contextLines: args.contextLines } : {}),
-    ...(args.contextBefore !== undefined ? { contextBefore: args.contextBefore } : {}),
-    ...(args.contextAfter !== undefined ? { contextAfter: args.contextAfter } : {}),
-    ...(args.fuzzy === true ? { fuzzy: true } : {}),
-    maxResults: args.maxResults,
-    isLiteral: !args.isRegex,
-    ...(args.maxDepth !== undefined ? { maxDepth: args.maxDepth } : {}),
-    ...(signal ? { signal } : {}),
-    ...(onProgress ? { onProgress } : {}),
-  };
+  const options = buildSearchContentOptions(args, signal, onProgress);
 
   try {
     return await searchContent(basePath, args.searchPattern, options, pathGuard);
@@ -1620,6 +1637,49 @@ function createSearchContext(args: SearchInput, matcher: RE2 | undefined): Searc
   };
 }
 
+function buildExternalizedResponse(
+  args: SearchInput,
+  fullStructured: SearchOutput,
+  preview: SearchPreviewState,
+  resourceStore: ResourceStore,
+  matchPayloads: SearchMatchPayload[],
+): ToolResponse<SearchOutput> {
+  const resultsJson = JSON.stringify(fullStructured, null, 2);
+  const { entry, link } = putResource({
+    store: resourceStore,
+    name: 'search-results.json',
+    mimeType: 'application/json',
+    kind: 'text',
+    content: resultsJson,
+  });
+
+  const uniqueFiles = new Set(matchPayloads.map((m) => m.file));
+  const fileCount = uniqueFiles.size;
+
+  const matchText = matchPayloads.length === 1 ? 'match' : 'matches';
+  const fileText = fileCount === 1 ? 'file' : 'files';
+  const summary = [
+    `search-content: '${args.searchPattern}'`,
+    `${matchPayloads.length} ${matchText} in ${fileCount} ${fileText}`,
+  ].join(' · ');
+
+  const structuredForResponse: SearchOutput = {
+    ...fullStructured,
+    resourceUri: entry.uri,
+  };
+
+  if (preview.needsExternalize) {
+    structuredForResponse.matches = preview.visiblePayloads;
+    structuredForResponse.truncated = true;
+  }
+
+  return buildResourceResponse({
+    summary,
+    resources: [link],
+    structured: structuredForResponse,
+  });
+}
+
 async function handleSearchContent(
   args: SearchInput,
   pathGuard: PathGuard,
@@ -1653,56 +1713,16 @@ async function handleSearchContent(
 
   const fullStructured: SearchOutput = {
     ...buildSearchStructured(result.summary, matchPayloads),
-    ...(nextCursor !== undefined ? { nextCursor } : {}),
   };
+  if (nextCursor !== undefined) fullStructured.nextCursor = nextCursor;
 
   const preview = buildSearchPreviewState(matchPayloads);
 
-  // If resourceStore is available and there are matches, store results and use resource response
   if (resourceStore && matchPayloads.length > 0) {
-    // Serialize full results to JSON
-    const resultsJson = JSON.stringify(fullStructured, null, 2);
-    const { entry, link } = putResource({
-      store: resourceStore,
-      name: 'search-results.json',
-      mimeType: 'application/json',
-      kind: 'text',
-      content: resultsJson,
-    });
-
-    // Count unique files in the matches
-    const uniqueFiles = new Set(matchPayloads.map((m) => m.file));
-    const fileCount = uniqueFiles.size;
-
-    // Build summary: "search-content: 'pattern' · N matches in M files"
-    const summary = [
-      `search-content: '${args.searchPattern}'`,
-      `${matchPayloads.length} ${matchPayloads.length === 1 ? 'match' : 'matches'} in ${fileCount} ${fileCount === 1 ? 'file' : 'files'}`,
-    ].join(' · ');
-
-    // For externalized results, show truncation info if needed
-    const structuredForResponse: SearchOutput = preview.needsExternalize
-      ? {
-          ...fullStructured,
-          matches: preview.visiblePayloads,
-          truncated: true,
-          resourceUri: entry.uri,
-        }
-      : {
-          ...fullStructured,
-          resourceUri: entry.uri,
-        };
-
-    return buildResourceResponse({
-      summary,
-      resources: [link],
-      structured: structuredForResponse,
-    });
+    return buildExternalizedResponse(args, fullStructured, preview, resourceStore, matchPayloads);
   }
 
-  // Fallback: traditional text response when no resourceStore or no matches
   const text = buildSearchText(preview.heading, preview.visiblePayloads, result.summary);
-
   return buildToolResponse(text, fullStructured);
 }
 

@@ -257,7 +257,7 @@ interface GlobDirentLike extends DirentLike {
   parentPath?: string;
 }
 
-interface GlobEntry {
+export interface GlobEntry {
   path: string;
   relativePath?: string;
   dirent: DirentLike;

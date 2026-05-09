@@ -141,17 +141,20 @@ interface CompiledPatternSet {
   nameGlobs: readonly string[];
 }
 
-function compilePatternGlobs(normalizedPattern: string): readonly string[] {
-  const globs = new Set<string>([normalizedPattern]);
-
-  const isWindowsAbsolute =
+function isWindowsAbsolutePosixPath(normalizedPattern: string): boolean {
+  return (
     normalizedPattern.length >= 3 &&
     normalizedPattern.charCodeAt(1) === 58 &&
     normalizedPattern.charCodeAt(2) === 47 &&
     ((normalizedPattern.charCodeAt(0) >= 65 && normalizedPattern.charCodeAt(0) <= 90) ||
-      (normalizedPattern.charCodeAt(0) >= 97 && normalizedPattern.charCodeAt(0) <= 122));
+      (normalizedPattern.charCodeAt(0) >= 97 && normalizedPattern.charCodeAt(0) <= 122))
+  );
+}
 
-  if (!normalizedPattern.startsWith('**/') && !isWindowsAbsolute) {
+function compilePatternGlobs(normalizedPattern: string): readonly string[] {
+  const globs = new Set<string>([normalizedPattern]);
+
+  if (!normalizedPattern.startsWith('**/') && !isWindowsAbsolutePosixPath(normalizedPattern)) {
     let startIdx = 0;
     while (startIdx < normalizedPattern.length && normalizedPattern.charCodeAt(startIdx) === 47) {
       startIdx++;
@@ -448,7 +451,11 @@ export class PathGuard {
     return details.resolvedPath;
   }
 
-  async validateExistingPathDetailed(requestedPath: string): Promise<ValidatedPathDetails> {
+  private validateAccess(requestedPath: string): {
+    normalizedRequested: string;
+    allowedDirs: string[];
+    accessDeniedHint: string;
+  } {
     if (!this.allowedDirectoriesState) {
       throw new McpError(
         ErrorCode.UNKNOWN,
@@ -457,22 +464,28 @@ export class PathGuard {
       );
     }
 
-    // Normalize and validate the path
     const normalizedRequested = normalizePath(requestedPath);
     const allowedDirs = this.allowedDirectoriesState.expanded;
 
-    // Check if within allowed directories
+    const accessDeniedHint =
+      allowedDirs.length > 0
+        ? `Allowed: ${allowedDirs.join(', ')}`
+        : 'No allowed directories configured.';
+
     if (!isPathWithinDirectories(normalizedRequested, allowedDirs)) {
-      const hint =
-        allowedDirs.length > 0
-          ? `Allowed: ${allowedDirs.join(', ')}`
-          : 'No allowed directories configured.';
       throw new McpError(
         ErrorCode.ACCESS_DENIED,
-        `Outside allowed directories. ${hint}`,
+        `Outside allowed directories. ${accessDeniedHint}`,
         requestedPath,
       );
     }
+
+    return { normalizedRequested, allowedDirs, accessDeniedHint };
+  }
+
+  async validateExistingPathDetailed(requestedPath: string): Promise<ValidatedPathDetails> {
+    const { normalizedRequested, allowedDirs, accessDeniedHint } =
+      this.validateAccess(requestedPath);
 
     // Resolve the real path
     let realPath: string;
@@ -503,13 +516,9 @@ export class PathGuard {
 
     // Check if the resolved path is still within allowed directories
     if (!isPathWithinDirectories(normalizedReal, allowedDirs)) {
-      const hint =
-        allowedDirs.length > 0
-          ? `Allowed: ${allowedDirs.join(', ')}`
-          : 'No allowed directories configured.';
       throw new McpError(
         ErrorCode.ACCESS_DENIED,
-        `Outside allowed directories. ${hint}`,
+        `Outside allowed directories. ${accessDeniedHint}`,
         requestedPath,
         { resolvedPath: realPath, normalizedResolvedPath: normalizedReal },
       );
@@ -599,33 +608,13 @@ export class PathGuard {
   }
 
   async validatePathForWrite(requestedPath: string): Promise<string> {
-    if (!this.allowedDirectoriesState) {
-      throw new McpError(
-        ErrorCode.UNKNOWN,
-        'PathGuard not initialized. Call initialize() first.',
-        requestedPath,
-      );
-    }
+    const { normalizedRequested, allowedDirs, accessDeniedHint } =
+      this.validateAccess(requestedPath);
 
-    const normalizedRequested = normalizePath(requestedPath);
     if (this.isSensitive(requestedPath) || this.isSensitive(normalizedRequested)) {
       throw new McpError(
         ErrorCode.ACCESS_DENIED,
         'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
-        requestedPath,
-      );
-    }
-
-    const allowedDirs = this.allowedDirectoriesState.expanded;
-    const accessDeniedHint =
-      allowedDirs.length > 0
-        ? `Allowed: ${allowedDirs.join(', ')}`
-        : 'No allowed directories configured.';
-
-    if (!isPathWithinDirectories(normalizedRequested, allowedDirs)) {
-      throw new McpError(
-        ErrorCode.ACCESS_DENIED,
-        `Outside allowed directories. ${accessDeniedHint}`,
         requestedPath,
       );
     }
