@@ -74,11 +74,37 @@ describe('prompts over stdio transport', () => {
       arguments: { path: filePath },
     });
 
-    assert.equal(result.messages.length, 1);
-    const [message] = result.messages;
-    assert.ok(message);
-    assert.equal(message.content.type, 'text');
-    assert.match(message.content.text, /Analyze the path:/u);
-    assert.match(message.content.text, /sample\.txt/u);
+    assert.equal(result.messages.length, 3);
+    const [m0, m1, m2] = result.messages;
+    assert.ok(m0 && m1 && m2);
+    assert.equal(m0.content.type, 'text');
+    assert.match(m0.content.text, /Analyze this file:/u);
+    assert.match(m0.content.text, /sample\.txt/u);
+    assert.equal(m1.content.type, 'resource_link');
+    assert.equal(m2.content.type, 'resource_link');
+    assert.equal(m2.content.uri, 'internal://instructions');
+  });
+
+  it('returns find-in-tree with required args over stdio transport', async (t) => {
+    try {
+      await access(resolve('dist/index.js'));
+    } catch {
+      t.skip('dist runtime not present');
+      return;
+    }
+    const env = await createPromptStdIoEnv();
+    cleanups.push(env.cleanup);
+
+    const result = await env.client.getPrompt({
+      name: 'find-in-tree',
+      arguments: { query: 'needle' },
+    });
+    assert.equal(result.messages.length, 2);
+    const [m0, m1] = result.messages;
+    assert.ok(m0 && m1);
+    assert.equal(m0.content.type, 'text');
+    assert.match(m0.content.text, /Call `find`/u);
+    assert.equal(m1.content.type, 'resource_link');
+    assert.equal(m1.content.uri, 'internal://instructions');
   });
 });
