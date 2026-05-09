@@ -45,18 +45,8 @@ interface ReadRangeDescriptions {
 
 export function createReadRangeFields(descs: ReadRangeDescriptions) {
   return {
-    head: z
-      .int32()
-      .min(1, 'Min: 1')
-      .max(100000, 'Max: 100,000')
-      .optional()
-      .describe(descs.head),
-    tail: z
-      .int32()
-      .min(1, 'Min: 1')
-      .max(100000, 'Max: 100,000')
-      .optional()
-      .describe(descs.tail),
+    head: z.int32().min(1, 'Min: 1').max(100000, 'Max: 100,000').optional().describe(descs.head),
+    tail: z.int32().min(1, 'Min: 1').max(100000, 'Max: 100,000').optional().describe(descs.tail),
     startLine: z.int32().min(1, 'Min: 1').optional().describe(descs.startLine),
     endLine: z.int32().min(1, 'Min: 1').optional().describe(descs.endLine),
   };
@@ -72,7 +62,7 @@ export function validateReadRange(
     offset?: number | undefined;
     length?: number | undefined;
   },
-  ctx: z.RefinementCtx
+  ctx: z.RefinementCtx,
 ): void {
   const hasHead = value.head !== undefined;
   const hasTail = value.tail !== undefined;
@@ -88,8 +78,7 @@ export function validateReadRange(
       params: {
         rule: 'head_no_line_range',
         conflictsWith: ['startLine', 'endLine'],
-        suggestion:
-          "Use either 'head' alone or 'startLine'/'endLine' together.",
+        suggestion: "Use either 'head' alone or 'startLine'/'endLine' together.",
       },
       input: value,
     });
@@ -102,8 +91,7 @@ export function validateReadRange(
       params: {
         rule: 'tail_exclusive',
         conflictsWith: ['head', 'startLine', 'endLine'],
-        suggestion:
-          "Use 'tail' alone or use 'startLine'/'endLine' without 'tail'.",
+        suggestion: "Use 'tail' alone or use 'startLine'/'endLine' without 'tail'.",
       },
       input: value,
     });
@@ -117,8 +105,7 @@ export function validateReadRange(
       params: {
         rule: 'endLine_gte_startLine',
         conflictsWith: ['startLine'],
-        suggestion:
-          'Set endLine to a value greater than or equal to startLine.',
+        suggestion: 'Set endLine to a value greater than or equal to startLine.',
       },
       input: value,
     });
@@ -127,13 +114,11 @@ export function validateReadRange(
     ctx.addIssue({
       code: 'custom',
       path: ['offset'],
-      message:
-        "Cannot use 'offset'/'length' with line-based params (head/tail/startLine/endLine)",
+      message: "Cannot use 'offset'/'length' with line-based params (head/tail/startLine/endLine)",
       params: {
         rule: 'byte_range_no_line_params',
         conflictsWith: ['head', 'tail', 'startLine', 'endLine'],
-        suggestion:
-          "Use 'offset'/'length' alone; do not combine with line-based params.",
+        suggestion: "Use 'offset'/'length' alone; do not combine with line-based params.",
       },
       input: value,
     });
@@ -168,7 +153,7 @@ export const CursorSchema = z
   .describe(
     'Pagination cursor from a previous response. Treat as opaque. ' +
       '`ls` cursors are snapshot-backed (expire after ~5 min or restart); ' +
-      '`find` cursors are offset-based and re-run the query each page.'
+      '`find` cursors are offset-based and re-run the query each page.',
   );
 
 export const NextCursorSchema = z

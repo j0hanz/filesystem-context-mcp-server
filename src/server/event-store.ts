@@ -47,7 +47,7 @@ export class InMemoryEventStore {
     lastEventId: string,
     callbacks: {
       send: (eventId: string, message: JSONRPCMessage) => Promise<void>;
-    }
+    },
   ): Promise<string> {
     const streamId = this.eventIdToStreamId.get(lastEventId);
     if (!streamId) {
@@ -61,9 +61,7 @@ export class InMemoryEventStore {
 
     const eventIndex = stream.findIndex((e) => e.id === lastEventId);
     if (eventIndex === -1) {
-      throw new Error(
-        `Event ID ${lastEventId} not found in stream ${streamId}`
-      );
+      throw new Error(`Event ID ${lastEventId} not found in stream ${streamId}`);
     }
 
     // Replay all events after the found index

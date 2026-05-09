@@ -39,19 +39,18 @@ describe('tool output validation', () => {
     const first = result.content[0];
     assert.ok(
       first?.type === 'text' && typeof first.text === 'string',
-      'Expected a text error block'
+      'Expected a text error block',
     );
     assert.match(
       first.text,
       /returned invalid structuredContent/u,
-      'Expected invalid structuredContent message'
+      'Expected invalid structuredContent message',
     );
   });
 });
 
 describe('SEP-414 trace context propagation', () => {
-  const VALID_TRACEPARENT =
-    '00-0af7651916cd43dd8448eb211c80319c-00f067aa0ba902b7-01';
+  const VALID_TRACEPARENT = '00-0af7651916cd43dd8448eb211c80319c-00f067aa0ba902b7-01';
 
   const outputSchema = z.strictObject({ ok: z.literal(true) });
 
@@ -123,8 +122,7 @@ describe('inline preview threshold (TASK-013)', () => {
   // After the fix MAX_INLINE_PREVIEW_CHARS === MAX_INLINE_CONTENT_CHARS, so
   // a content string of MAX+1 chars should produce a preview whose leading
   // portion is MAX chars long, NOT the old 4_000-char cap.
-  const MAX =
-    parseInt(process.env.FS_CONTEXT_MAX_INLINE_CHARS ?? '', 10) || 20_000;
+  const MAX = parseInt(process.env.FS_CONTEXT_MAX_INLINE_CHARS ?? '', 10) || 20_000;
 
   it('content at exactly MAX chars is returned inline (not externalized)', () => {
     const store = createInMemoryResourceStore();
@@ -133,11 +131,7 @@ describe('inline preview threshold (TASK-013)', () => {
     const result = maybeExternalizeTextContent(store, content, {
       name: 'test',
     });
-    assert.equal(
-      result,
-      undefined,
-      'Content at MAX chars must NOT be externalized'
-    );
+    assert.equal(result, undefined, 'Content at MAX chars must NOT be externalized');
   });
 
   it('content of MAX+1 chars is externalized with a preview of MAX leading chars', () => {
@@ -148,11 +142,7 @@ describe('inline preview threshold (TASK-013)', () => {
       name: 'test-preview',
     });
     // Function is deprecated and returns undefined now; use putResource instead
-    assert.equal(
-      result,
-      undefined,
-      'Function is deprecated; use putResource instead'
-    );
+    assert.equal(result, undefined, 'Function is deprecated; use putResource instead');
   });
 });
 
@@ -217,9 +207,7 @@ describe('readResourceLink helper', () => {
   it('returns null when resource_link uri is not found in store', async () => {
     const store = createInMemoryResourceStore();
     const result = await readResourceLink(store, {
-      content: [
-        { type: 'resource_link', uri: 'filesystem-mcp://resource/notfound' },
-      ],
+      content: [{ type: 'resource_link', uri: 'filesystem-mcp://resource/notfound' }],
     });
 
     assert.equal(result, null);

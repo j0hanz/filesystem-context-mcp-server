@@ -210,14 +210,8 @@ void describe('ProgressSession', () => {
     session.step('d'); // emitted (60ms since last sent)
 
     assert.equal(sink.events.length, 2);
-    assert.equal(
-      sink.events[0]?.kind === 'tick' && sink.events[0].message,
-      'a'
-    );
-    assert.equal(
-      sink.events[1]?.kind === 'tick' && sink.events[1].message,
-      'd'
-    );
+    assert.equal(sink.events[0]?.kind === 'tick' && sink.events[0].message, 'a');
+    assert.equal(sink.events[1]?.kind === 'tick' && sink.events[1].message, 'd');
     // Cursor still advanced even when ticks were suppressed.
     assert.equal(session.current, 4);
   });

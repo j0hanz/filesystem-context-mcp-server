@@ -44,14 +44,12 @@ const EditFileInputSchema = z.strictObject({
           .string()
           .describe('Replacement text (empty string to delete)')
           .meta({ examples: ['const x = 2;', 'function newName(', ''] }),
-      })
+      }),
     )
     .min(1)
     .describe('List of text substitutions'),
   dryRun: defaultFalseBoolean('Preview changes without writing'),
-  ignoreWhitespace: defaultFalseBoolean(
-    'Ignore leading/trailing whitespace when matching'
-  ),
+  ignoreWhitespace: defaultFalseBoolean('Ignore leading/trailing whitespace when matching'),
 });
 
 const EditFileOutputSchema = z.strictObject({
@@ -60,19 +58,14 @@ const EditFileOutputSchema = z.strictObject({
   size: NonNegInt.describe('File size in bytes'),
   lineCount: NonNegInt.describe('Number of lines in file'),
   mimeType: z.string().describe('MIME type of the file'),
-  kind: z
-    .enum(['text', 'binary', 'image', 'audio', 'pdf'])
-    .describe('File kind'),
+  kind: z.enum(['text', 'binary', 'image', 'audio', 'pdf']).describe('File kind'),
   resourceUri: z.string().describe('Full content URI in resource store'),
   modified: z.string().describe('Last modification timestamp (ISO 8601)'),
   appliedEdits: NonNegInt.optional().describe('Edits applied'),
   linesAdded: NonNegInt.optional().describe('Lines added'),
   linesRemoved: NonNegInt.optional().describe('Lines removed'),
   diff: z.string().optional().describe('Unified diff of changes'),
-  unmatchedEdits: z
-    .array(z.string())
-    .optional()
-    .describe('oldText strings that had no match'),
+  unmatchedEdits: z.array(z.string()).optional().describe('oldText strings that had no match'),
   lineRange: z
     .tuple([PositiveInt, PositiveInt])
     .optional()
@@ -116,10 +109,7 @@ function escapeRegExp(string: string): string {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function getLineNumberAtIndex(
-  str: string,
-  maxIndex: number = str.length
-): number {
+function getLineNumberAtIndex(str: string, maxIndex: number = str.length): number {
   let count = 1;
   let pos = 0;
   while (pos < maxIndex) {
@@ -137,7 +127,7 @@ function countLines(str: string): number {
 
 async function computeDiffStats(
   original: string,
-  modified: string
+  modified: string,
 ): Promise<{ linesAdded: number; linesRemoved: number }> {
   return new Promise((resolve) => {
     diffLines(original, modified, {
@@ -163,7 +153,7 @@ function findEditMatch(
   content: string,
   oldText: string,
   ignoreWhitespace: boolean,
-  regexCache?: Map<string, RE2>
+  regexCache?: Map<string, RE2>,
 ): TextRange | undefined {
   if (ignoreWhitespace) {
     const pattern = escapeRegExp(oldText).replace(/\s+/g, '\\s+');
@@ -195,15 +185,9 @@ function findEditMatch(
   };
 }
 
-function replaceEditMatch(
-  content: string,
-  match: TextRange,
-  newText: string
-): string {
+function replaceEditMatch(content: string, match: TextRange, newText: string): string {
   return (
-    content.slice(0, match.startIndex) +
-    newText +
-    content.slice(match.startIndex + match.length)
+    content.slice(0, match.startIndex) + newText + content.slice(match.startIndex + match.length)
   );
 }
 
@@ -211,7 +195,7 @@ function mergeLineRange(
   currentRange: EditResult['lineRange'],
   content: string,
   matchStartIndex: number,
-  newText: string
+  newText: string,
 ): [number, number] {
   const startLine = getLineNumberAtIndex(content, matchStartIndex);
   const endLine = startLine + countLines(newText) - 1;
@@ -220,10 +204,7 @@ function mergeLineRange(
     return [startLine, endLine];
   }
 
-  return [
-    Math.min(currentRange[0], startLine),
-    Math.max(currentRange[1], endLine),
-  ];
+  return [Math.min(currentRange[0], startLine), Math.max(currentRange[1], endLine)];
 }
 
 interface BuildStructuredEditOutputParams {
@@ -237,19 +218,8 @@ interface BuildStructuredEditOutputParams {
   result: EditResult;
 }
 
-function buildStructuredEditOutput(
-  params: BuildStructuredEditOutputParams
-): EditOutput {
-  const {
-    validPath,
-    size,
-    lineCount,
-    mimeType,
-    kind,
-    resourceUri,
-    modified,
-    result,
-  } = params;
+function buildStructuredEditOutput(params: BuildStructuredEditOutputParams): EditOutput {
+  const { validPath, size, lineCount, mimeType, kind, resourceUri, modified, result } = params;
   return {
     ok: true as const,
     path: validPath,
@@ -266,9 +236,7 @@ function buildStructuredEditOutput(
           linesRemoved: result.linesRemoved,
         }
       : { appliedEdits: 0 }),
-    ...(result.unmatchedEdits.length > 0
-      ? { unmatchedEdits: result.unmatchedEdits }
-      : {}),
+    ...(result.unmatchedEdits.length > 0 ? { unmatchedEdits: result.unmatchedEdits } : {}),
     ...(result.diff ? { diff: result.diff } : {}),
     ...(result.lineRange ? { lineRange: result.lineRange } : {}),
   };
@@ -279,7 +247,7 @@ async function finalizeEditResult(
   updatedContent: string,
   appliedEdits: number,
   unmatchedEdits: string[],
-  lineRange: EditResult['lineRange']
+  lineRange: EditResult['lineRange'],
 ): Promise<EditResult> {
   const { linesAdded, linesRemoved } =
     appliedEdits > 0
@@ -296,11 +264,7 @@ async function finalizeEditResult(
   };
 }
 
-async function buildDiff(
-  validPath: string,
-  original: string,
-  modified: string
-): Promise<string> {
+async function buildDiff(validPath: string, original: string, modified: string): Promise<string> {
   const fileName = basename(validPath);
   const totalBytes = Buffer.byteLength(original) + Buffer.byteLength(modified);
   if (shouldOffload(totalBytes)) {
@@ -312,19 +276,11 @@ async function buildDiff(
     });
   }
   return new Promise<string>((resolve) => {
-    createTwoFilesPatch(
-      fileName,
-      fileName,
-      original,
-      modified,
-      'Original',
-      'Modified',
-      {
-        callback: (res: string | undefined) => {
-          resolve(res ?? '');
-        },
-      }
-    );
+    createTwoFilesPatch(fileName, fileName, original, modified, 'Original', 'Modified', {
+      callback: (res: string | undefined) => {
+        resolve(res ?? '');
+      },
+    });
   });
 }
 
@@ -334,9 +290,7 @@ function formatUnmatchedEditsNote(unmatchedEdits: string[]): string {
   }
 
   return ` — ${unmatchedEdits.length} unmatched: [${unmatchedEdits
-    .map((text) =>
-      JSON.stringify(text.length > 40 ? `${text.slice(0, 40)}…` : text)
-    )
+    .map((text) => JSON.stringify(text.length > 40 ? `${text.slice(0, 40)}…` : text))
     .join(', ')}]`;
 }
 
@@ -353,7 +307,7 @@ function buildEditMessage(requestedPath: string, result: EditResult): string {
 async function loadEditableFile(
   requestedPath: string,
   pathGuard: PathGuard,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<{ validPath: string; content: string }> {
   const validPath = await pathGuard.validateExistingPath(requestedPath);
   pathGuard.assertAllowedFileAccess(requestedPath);
@@ -364,7 +318,7 @@ async function loadEditableFile(
       ErrorCode.TOO_LARGE,
       `File too large for edit (${stats.size} bytes > ${MAX_TEXT_FILE_SIZE} bytes)`,
       requestedPath,
-      { size: stats.size, maxFileSize: MAX_TEXT_FILE_SIZE }
+      { size: stats.size, maxFileSize: MAX_TEXT_FILE_SIZE },
     );
   }
 
@@ -378,7 +332,7 @@ async function loadEditableFile(
       skipBinary: true,
       ...(signal ? { signal } : {}),
     },
-    pathGuard
+    pathGuard,
   );
   return { validPath, content };
 }
@@ -389,19 +343,12 @@ function buildEditProgressMessage(args: EditInput): string {
   return `${EDIT_FILE_TOOL.title}: ${name}${tag}`;
 }
 
-function buildEditCompletionMessage(
-  args: EditInput,
-  result: ToolResult<EditOutput>
-): string {
+function buildEditCompletionMessage(args: EditInput, result: ToolResult<EditOutput>): string {
   const name = basename(args.path);
-  if (result.isError)
-    return `${EDIT_FILE_TOOL.title}: ${name} • ${result.errorCode}`;
+  if (result.isError) return `${EDIT_FILE_TOOL.title}: ${name} • ${result.errorCode}`;
 
   const { structuredContent } = result;
-  if (
-    structuredContent.appliedEdits === 0 &&
-    (structuredContent.unmatchedEdits?.length ?? 0) > 0
-  )
+  if (structuredContent.appliedEdits === 0 && (structuredContent.unmatchedEdits?.length ?? 0) > 0)
     return `${EDIT_FILE_TOOL.title}: ${name} • failed`;
 
   const applied = structuredContent.appliedEdits;
@@ -416,7 +363,7 @@ function buildEditCompletionMessage(
 async function applyEdits(
   content: string,
   edits: EditInput['edits'],
-  ignoreWhitespace: boolean
+  ignoreWhitespace: boolean,
 ): Promise<EditResult> {
   let newContent = content;
   let appliedEdits = 0;
@@ -425,57 +372,33 @@ async function applyEdits(
   const regexCache = ignoreWhitespace ? new Map<string, RE2>() : undefined;
 
   for (const edit of edits) {
-    const match = findEditMatch(
-      newContent,
-      edit.oldText,
-      ignoreWhitespace,
-      regexCache
-    );
+    const match = findEditMatch(newContent, edit.oldText, ignoreWhitespace, regexCache);
 
     if (!match) {
       unmatchedEdits.push(edit.oldText);
       continue;
     }
 
-    lineRange = mergeLineRange(
-      lineRange,
-      newContent,
-      match.startIndex,
-      edit.newText
-    );
+    lineRange = mergeLineRange(lineRange, newContent, match.startIndex, edit.newText);
     newContent = replaceEditMatch(newContent, match, edit.newText);
     appliedEdits += 1;
   }
 
-  return finalizeEditResult(
-    content,
-    newContent,
-    appliedEdits,
-    unmatchedEdits,
-    lineRange
-  );
+  return finalizeEditResult(content, newContent, appliedEdits, unmatchedEdits, lineRange);
 }
 
 async function handleEditFile(
   args: EditInput,
   pathGuard: PathGuard,
   resourceStore: ResourceStore | undefined,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<{
   structured: EditOutput;
   editedContent: string;
   validPath: string;
 }> {
-  const { validPath, content } = await loadEditableFile(
-    args.path,
-    pathGuard,
-    signal
-  );
-  const editResult = await applyEdits(
-    content,
-    args.edits,
-    args.ignoreWhitespace
-  );
+  const { validPath, content } = await loadEditableFile(args.path, pathGuard, signal);
+  const editResult = await applyEdits(content, args.edits, args.ignoreWhitespace);
 
   if (args.dryRun) {
     if (editResult.appliedEdits > 0) {
@@ -485,10 +408,7 @@ async function handleEditFile(
     // For dryRun, calculate stats and optionally store in resource store
     const bytesWritten = Buffer.byteLength(editResult.content, 'utf-8');
     const lineCount = editResult.content.split('\n').length;
-    const mimeInfo = detectMimeType(
-      validPath,
-      Buffer.from(editResult.content.slice(0, 512))
-    );
+    const mimeInfo = detectMimeType(validPath, Buffer.from(editResult.content.slice(0, 512)));
 
     let resourceUri = '';
     // For dryRun with changes, store the hypothetical edited content in resource
@@ -523,7 +443,7 @@ async function handleEditFile(
     throw new McpError(
       ErrorCode.INVALID_INPUT,
       `All ${editResult.unmatchedEdits.length} edits failed. Verify oldText matches exact file content.`,
-      args.path
+      args.path,
     );
   }
 
@@ -533,7 +453,7 @@ async function handleEditFile(
       signal,
     });
     Logger.info(
-      `edit: ${args.path} (${editResult.appliedEdits} edits, +${editResult.linesAdded}/-${editResult.linesRemoved})`
+      `edit: ${args.path} (${editResult.appliedEdits} edits, +${editResult.linesAdded}/-${editResult.linesRemoved})`,
     );
   }
 
@@ -541,10 +461,7 @@ async function handleEditFile(
   const fileStats = await withAbort(stat(validPath), signal);
   const bytesWritten = Buffer.byteLength(editResult.content, 'utf-8');
   const lineCount = editResult.content.split('\n').length;
-  const mimeInfo = detectMimeType(
-    validPath,
-    Buffer.from(editResult.content.slice(0, 512))
-  );
+  const mimeInfo = detectMimeType(validPath, Buffer.from(editResult.content.slice(0, 512)));
 
   // Store in resource store if available and edits were made
   let resourceUri = '';
@@ -578,17 +495,12 @@ async function handleEditFile(
 export const EDIT_FILE = defineTool<EditInput, EditOutput>({
   contract: EDIT_FILE_TOOL,
   run: async (args, ctx) => {
-    const { structured } = await handleEditFile(
-      args,
-      ctx.pathGuard,
-      ctx.resourceStore,
-      ctx.signal
-    );
+    const { structured } = await handleEditFile(args, ctx.pathGuard, ctx.resourceStore, ctx.signal);
 
     void ctx.log?.(
       'info',
       `edit: ${args.path} (${String(structured.appliedEdits ?? 0)} edits)`,
-      'edit'
+      'edit',
     );
 
     // If resource was already stored in handler, use resource response

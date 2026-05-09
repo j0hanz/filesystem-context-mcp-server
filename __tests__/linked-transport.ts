@@ -45,8 +45,7 @@ class LinkedTransport implements Transport {
       try {
         this.peer.onmessage?.(structuredClone(message));
       } catch (error) {
-        const normalized =
-          error instanceof Error ? error : new Error(String(error));
+        const normalized = error instanceof Error ? error : new Error(String(error));
         this.onerror?.(normalized);
         this.peer.onerror?.(normalized);
       }

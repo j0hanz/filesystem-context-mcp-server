@@ -165,7 +165,7 @@ const FileStore = {
       return JSON.parse(raw);
     } catch (err) {
       process.stderr.write(
-        `${Theme.YELLOW}warning${Theme.R} corrupt JSON at ${file} (${err?.message || err}); using defaults\n`
+        `${Theme.YELLOW}warning${Theme.R} corrupt JSON at ${file} (${err?.message || err}); using defaults\n`,
       );
       return fallback;
     }
@@ -212,9 +212,7 @@ const Results = {
       rawOutput,
       ...(meta.truncatedStdout ? { truncatedStdout: true } : {}),
       ...(meta.truncatedStderr ? { truncatedStderr: true } : {}),
-      ...(meta.status !== undefined && meta.status !== null
-        ? { status: meta.status }
-        : {}),
+      ...(meta.status !== undefined && meta.status !== null ? { status: meta.status } : {}),
       ...(meta.signal ? { signal: meta.signal } : {}),
       ...(meta.command ? { command: meta.command } : {}),
     });
@@ -274,7 +272,7 @@ function parseCliConfig(args) {
     const n = Number(values.detail);
     if (!Number.isInteger(n) || n < 1) {
       process.stderr.write(
-        `--detail requires a positive integer (got: ${values.detail})\n\n${HELP_TEXT}`
+        `--detail requires a positive integer (got: ${values.detail})\n\n${HELP_TEXT}`,
       );
       process.exitCode = 2;
       return null;
@@ -285,19 +283,16 @@ function parseCliConfig(args) {
     const n = Number(values['test-timeout']);
     if (!Number.isInteger(n) || n < 1) {
       process.stderr.write(
-        `--test-timeout requires a positive integer ms (got: ${values['test-timeout']})\n\n${HELP_TEXT}`
+        `--test-timeout requires a positive integer ms (got: ${values['test-timeout']})\n\n${HELP_TEXT}`,
       );
       process.exitCode = 2;
       return null;
     }
   }
 
-  if (
-    values['test-shard'] !== undefined &&
-    !/^\d+\/\d+$/.test(values['test-shard'])
-  ) {
+  if (values['test-shard'] !== undefined && !/^\d+\/\d+$/.test(values['test-shard'])) {
     process.stderr.write(
-      `--test-shard requires <index>/<total> (got: ${values['test-shard']})\n\n${HELP_TEXT}`
+      `--test-shard requires <index>/<total> (got: ${values['test-shard']})\n\n${HELP_TEXT}`,
     );
     process.exitCode = 2;
     return null;
@@ -311,10 +306,7 @@ function parseCliConfig(args) {
     llm: !!values.llm,
     watch: !!values.watch,
     detail: values.detail !== undefined ? Number(values.detail) : null,
-    testTimeout:
-      values['test-timeout'] !== undefined
-        ? Number(values['test-timeout'])
-        : null,
+    testTimeout: values['test-timeout'] !== undefined ? Number(values['test-timeout']) : null,
     testNamePattern: values['test-name-pattern'] ?? null,
     testShard: values['test-shard'] ?? null,
     updateSnapshots: !!values['update-snapshots'],
@@ -345,18 +337,13 @@ const ProcessRunner = {
     return { cmd, args, windowsVerbatimArguments: false };
   },
 
-  spawnOptions(
-    command,
-    { signal, stdio = ['ignore', 'pipe', 'pipe'], encoding } = {}
-  ) {
+  spawnOptions(command, { signal, stdio = ['ignore', 'pipe', 'pipe'], encoding } = {}) {
     return {
       ...(stdio ? { stdio } : {}),
       ...(encoding ? { encoding } : {}),
       ...(signal ? { signal } : {}),
       ...(Config.IS_WINDOWS ? { windowsHide: true } : {}),
-      ...(command.windowsVerbatimArguments
-        ? { windowsVerbatimArguments: true }
-        : {}),
+      ...(command.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
     };
   },
 
@@ -383,11 +370,7 @@ const ProcessRunner = {
 
       let child;
       try {
-        child = spawn(
-          command.cmd,
-          command.args,
-          this.spawnOptions(command, { signal })
-        );
+        child = spawn(command.cmd, command.args, this.spawnOptions(command, { signal }));
       } catch (err) {
         settle({
           ok: false,
@@ -448,18 +431,14 @@ const HistoryManager = {
 
   sanitize(parsed) {
     const test_durations = Object.create(null);
-    const src =
-      parsed && typeof parsed === 'object' ? parsed.test_durations : null;
+    const src = parsed && typeof parsed === 'object' ? parsed.test_durations : null;
     if (!src || typeof src !== 'object') return { test_durations };
 
     for (const key of Object.keys(src)) {
-      if (key === '__proto__' || key === 'constructor' || key === 'prototype')
-        continue;
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
       const value = src[key];
       if (!Array.isArray(value)) continue;
-      test_durations[key] = value.filter(
-        (n) => typeof n === 'number' && Number.isFinite(n)
-      );
+      test_durations[key] = value.filter((n) => typeof n === 'number' && Number.isFinite(n));
     }
     return { test_durations };
   },
@@ -572,10 +551,7 @@ const KnipParser = {
   ]),
 
   isFixable(errors) {
-    return (
-      Array.isArray(errors) &&
-      errors.some((error) => this.FIXABLE_RULES.has(error.rule))
-    );
+    return Array.isArray(errors) && errors.some((error) => this.FIXABLE_RULES.has(error.rule));
   },
 
   parse(jsonText) {
@@ -600,11 +576,8 @@ const KnipParser = {
     for (const [category, meta] of Object.entries(this.RULES)) {
       const list = row[category];
       if (!Array.isArray(list) || list.length === 0) continue;
-      if (category === 'duplicates')
-        this.pushDuplicateErrors(errors, file, list);
-      else
-        for (const entry of list)
-          this.pushError(errors, file, category, meta, entry);
+      if (category === 'duplicates') this.pushDuplicateErrors(errors, file, list);
+      else for (const entry of list) this.pushError(errors, file, category, meta, entry);
     }
   },
 
@@ -742,11 +715,7 @@ class TestTapState {
   }
 
   appendStderr(chunk) {
-    const next = Text.appendCapped(
-      this.stderrBuf,
-      chunk,
-      Config.MAX_STDERR_CHARS
-    );
+    const next = Text.appendCapped(this.stderrBuf, chunk, Config.MAX_STDERR_CHARS);
     this.stderrBuf = next.value;
   }
 
@@ -795,8 +764,7 @@ class TestTapState {
     this.inYaml = false;
     const yaml = TapParser.parseYaml([...this.yamlLines]);
     if (this.currentFailName) this.enrichCurrentFailure(yaml);
-    else if (this.currentOkName && yaml.duration_ms !== undefined)
-      this.updateCurrentDuration(yaml);
+    else if (this.currentOkName && yaml.duration_ms !== undefined) this.updateCurrentDuration(yaml);
     this.yamlLines.length = 0;
     this.currentFailName = null;
     this.currentOkName = null;
@@ -857,7 +825,7 @@ class TestRunner {
         '--report-signal=SIGUSR2',
         '--report-filename=.tasks-test-hang.json',
         '--report-exclude-env',
-        '--report-exclude-network'
+        '--report-exclude-network',
       );
     }
     if (this.testConfig.testTimeout) {
@@ -887,8 +855,8 @@ class TestRunner {
       this.buildArgv(),
       ProcessRunner.spawnOptions(
         {},
-        { signal: AbortSignal.any([abortController.signal, this.signal]) }
-      )
+        { signal: AbortSignal.any([abortController.signal, this.signal]) },
+      ),
     );
 
     child.stdout?.on('error', noop);
@@ -937,10 +905,7 @@ class TestRunner {
     };
 
     const handleTimeout = async () => {
-      const maxHistorical = Math.max(
-        0,
-        ...Object.values(history.test_durations).flat()
-      );
+      const maxHistorical = Math.max(0, ...Object.values(history.test_durations).flat());
       const phase = state.seenFirstOk ? 'between-tests' : 'startup';
       const ms = state.seenFirstOk ? silenceMs : startupMs;
 
@@ -953,10 +918,7 @@ class TestRunner {
           // ignore signal errors
         }
         try {
-          await Promise.race([
-            once(child, 'close'),
-            delay(500, undefined, { ref: false }),
-          ]);
+          await Promise.race([once(child, 'close'), delay(500, undefined, { ref: false })]);
         } catch {
           // ignore drain errors
         }
@@ -1014,7 +976,7 @@ class TestRunner {
           Results.fail({
             failures: state.failures,
             testDurations: state.testDurations,
-          })
+          }),
         );
         return;
       }
@@ -1022,9 +984,8 @@ class TestRunner {
       if (code !== 0) {
         settle(
           Results.fail({
-            rawOutput:
-              state.stderrBuf || `test runner exited with code ${code}`,
-          })
+            rawOutput: state.stderrBuf || `test runner exited with code ${code}`,
+          }),
         );
         return;
       }
@@ -1055,10 +1016,7 @@ const TaskCommands = {
   },
 
   typeCheck() {
-    return [
-      'npx',
-      ['tsc', '-p', 'tsconfig.json', '--noEmit', '--pretty', 'false'],
-    ];
+    return ['npx', ['tsc', '-p', 'tsconfig.json', '--noEmit', '--pretty', 'false']];
   },
 
   knipCheck() {
@@ -1105,11 +1063,7 @@ const TaskRunners = {
     });
   },
 
-  async diagnosticCommand({
-    command,
-    parse,
-    output = (result) => result.stdout,
-  }) {
+  async diagnosticCommand({ command, parse, output = (result) => result.stdout }) {
     const [cmd, args] = command;
     const result = await ProcessRunner.execAsync(cmd, args);
     if (result.ok) return Results.pass();
@@ -1225,9 +1179,7 @@ const OutputRenderer = {
   },
 
   renderSourceWindow(filePath, line, col) {
-    const src = filePath
-      ? sourceCache.lines(path.resolve(process.cwd(), filePath))
-      : [];
+    const src = filePath ? sourceCache.lines(path.resolve(process.cwd(), filePath)) : [];
     const BEFORE = 4;
     const AFTER = 5;
     const startLine = Math.max(1, line - BEFORE);
@@ -1241,11 +1193,9 @@ const OutputRenderer = {
       const srcLine = src[n - 1] || '';
       const gutter = String(n).padStart(gutterW);
       if (n === line) {
+        output.push(`${Theme.BOLD}${gutter}${Theme.R} ${Theme.DIM}│${Theme.R} ${srcLine}`);
         output.push(
-          `${Theme.BOLD}${gutter}${Theme.R} ${Theme.DIM}│${Theme.R} ${srcLine}`
-        );
-        output.push(
-          `${Theme.DIM}${pad} │${Theme.R} ${' '.repeat(Math.max(0, col - 1))}${Theme.RED}^^^${Theme.R}`
+          `${Theme.DIM}${pad} │${Theme.R} ${' '.repeat(Math.max(0, col - 1))}${Theme.RED}^^^${Theme.R}`,
         );
       } else {
         output.push(`${Theme.DIM}${gutter} │ ${srcLine}${Theme.R}`);
@@ -1266,26 +1216,18 @@ const OutputRenderer = {
       errorLabel = 'unknown error';
     }
 
-    process.stdout.write(
-      `\n  ${Theme.BOLD}Failure ${index}${Theme.R} — ${name}\n\n`
-    );
-    process.stdout.write(
-      `  ${Theme.RED}error${Theme.R}  ${Theme.DIM}${errorLabel}${Theme.R}\n`
-    );
+    process.stdout.write(`\n  ${Theme.BOLD}Failure ${index}${Theme.R} — ${name}\n\n`);
+    process.stdout.write(`  ${Theme.RED}error${Theme.R}  ${Theme.DIM}${errorLabel}${Theme.R}\n`);
 
     if (frame) {
       process.stdout.write(`    ${Theme.DIM}-->${Theme.R} ${frame}\n\n`);
       const parsed = parseFrame(frame);
       if (parsed) {
-        process.stdout.write(
-          this.renderSourceWindow(parsed.file, parsed.line, parsed.col)
-        );
+        process.stdout.write(this.renderSourceWindow(parsed.file, parsed.line, parsed.col));
         process.stdout.write('\n');
       }
     } else {
-      process.stdout.write(
-        `  ${Theme.DIM}(no source location available)${Theme.R}\n`
-      );
+      process.stdout.write(`  ${Theme.DIM}(no source location available)${Theme.R}\n`);
     }
   },
 
@@ -1304,23 +1246,14 @@ const OutputRenderer = {
     const underline = '^'.repeat(underlineLen);
 
     output.push(`${Theme.DIM}${pad} |${Theme.R}`);
-    this.renderSourceContext(
-      output,
-      src,
-      line,
-      col,
-      pad,
-      gutterW,
-      color,
-      underline
-    );
+    this.renderSourceContext(output, src, line, col, pad, gutterW, color, underline);
     return output.join('\n');
   },
 
   renderSourceContext(output, src, line, col, pad, gutterW, color, underline) {
     if (line < 1 || line > src.length) {
       output.push(
-        `${Theme.DIM}${pad} │${Theme.R} ${' '.repeat(col - 1)}${color}${underline}${Theme.R}`
+        `${Theme.DIM}${pad} │${Theme.R} ${' '.repeat(col - 1)}${color}${underline}${Theme.R}`,
       );
       return;
     }
@@ -1330,11 +1263,9 @@ const OutputRenderer = {
       const srcLine = src[n - 1] || '';
       const gutter = String(n).padStart(gutterW);
       if (n === line) {
+        output.push(`${Theme.BOLD}${gutter}${Theme.R} ${Theme.DIM}│${Theme.R} ${srcLine}`);
         output.push(
-          `${Theme.BOLD}${gutter}${Theme.R} ${Theme.DIM}│${Theme.R} ${srcLine}`
-        );
-        output.push(
-          `${Theme.DIM}${pad} │${Theme.R} ${' '.repeat(col - 1)}${color}${underline}${Theme.R}`
+          `${Theme.DIM}${pad} │${Theme.R} ${' '.repeat(col - 1)}${color}${underline}${Theme.R}`,
         );
       } else {
         output.push(`${Theme.DIM}${gutter} │ ${srcLine}${Theme.R}`);
@@ -1388,7 +1319,7 @@ const OutputRenderer = {
   emitLlmBlock(data) {
     const HR = '─'.repeat(53);
     process.stdout.write(
-      `\n${HR}\n## LLM CONTEXT\n\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\`\n${HR}\n\n`
+      `\n${HR}\n## LLM CONTEXT\n\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\`\n${HR}\n\n`,
     );
   },
 };
@@ -1428,33 +1359,23 @@ class Aggregate {
       ms,
       skipped: false,
       ...(result.counts ? { counts: result.counts } : {}),
-      ...(result.errors
-        ? { errors: result.errors.slice(0, Config.MAX_ERRORS_IN_FILE) }
-        : {}),
-      ...(result.failures
-        ? { failures: result.failures.slice(0, Config.MAX_ERRORS_IN_FILE) }
-        : {}),
+      ...(result.errors ? { errors: result.errors.slice(0, Config.MAX_ERRORS_IN_FILE) } : {}),
+      ...(result.failures ? { failures: result.failures.slice(0, Config.MAX_ERRORS_IN_FILE) } : {}),
       ...(result.timeout
         ? {
             timeout: true,
             phase: result.phase,
             silenceMs: result.silenceMs,
-            ...(result.lastCompletedTest
-              ? { lastCompletedTest: result.lastCompletedTest }
-              : {}),
+            ...(result.lastCompletedTest ? { lastCompletedTest: result.lastCompletedTest } : {}),
             ...(result.suiteMaxHistoricalMs
               ? { suiteMaxHistoricalMs: result.suiteMaxHistoricalMs }
               : {}),
           }
         : {}),
-      ...(result.rawOutput
-        ? { rawOutput: Text.cap(result.rawOutput, 4000) }
-        : {}),
+      ...(result.rawOutput ? { rawOutput: Text.cap(result.rawOutput, 4000) } : {}),
       ...(result.truncatedStdout ? { truncatedStdout: true } : {}),
       ...(result.truncatedStderr ? { truncatedStderr: true } : {}),
-      ...(result.status !== undefined && result.status !== null
-        ? { status: result.status }
-        : {}),
+      ...(result.status !== undefined && result.status !== null ? { status: result.status } : {}),
       ...(result.signal ? { signal: result.signal } : {}),
       ...(result.command ? { command: result.command } : {}),
     });
@@ -1496,8 +1417,7 @@ class Aggregate {
         if (task.timeout) return `${task.label}: timeout`;
         if (task.counts?.errors)
           return `${task.label}: ${Text.plural(task.counts.errors, 'error')}`;
-        if (task.failures)
-          return `${task.label}: ${Text.plural(task.failures.length, 'failure')}`;
+        if (task.failures) return `${task.label}: ${Text.plural(task.failures.length, 'failure')}`;
         return `${task.label}: failed`;
       })
       .join(', ');
@@ -1553,7 +1473,7 @@ class TtyReporter extends BaseReporter {
       .map((flag) => `${Theme.YELLOW}--${flag}${Theme.R}`);
     const suffix = flags.length > 0 ? `  ${flags.join('  ')}` : '';
     process.stdout.write(
-      `\n  ${Theme.BOLD}gemini-assistant${Theme.R}  ${Theme.DIM}checks${Theme.R}${suffix}\n\n`
+      `\n  ${Theme.BOLD}gemini-assistant${Theme.R}  ${Theme.DIM}checks${Theme.R}${suffix}\n\n`,
     );
   }
 
@@ -1565,7 +1485,7 @@ class TtyReporter extends BaseReporter {
         this.writeTaskLine(
           Icons.RUN,
           label,
-          `${Theme.DIM}${Text.elapsed(Date.now() - this.tickerStart)}${Theme.R}`
+          `${Theme.DIM}${Text.elapsed(Date.now() - this.tickerStart)}${Theme.R}`,
         );
       }, 1000).unref();
     }
@@ -1582,12 +1502,12 @@ class TtyReporter extends BaseReporter {
   writeTaskLine(icon, label, right = '', newline = false) {
     if (!this.useTicker) {
       process.stdout.write(
-        `  ${icon}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}${right ? `  ${right}` : ''}\n`
+        `  ${icon}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}${right ? `  ${right}` : ''}\n`,
       );
       return;
     }
     process.stdout.write(
-      `\r  ${icon}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}${right ? `  ${right}` : ''}${Theme.CLEAR_EOL}${newline ? '\n' : ''}`
+      `\r  ${icon}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}${right ? `  ${right}` : ''}${Theme.CLEAR_EOL}${newline ? '\n' : ''}`,
     );
   }
 
@@ -1599,27 +1519,20 @@ class TtyReporter extends BaseReporter {
   }
 
   resultRight(result, ms) {
-    if (result.skipped)
-      return `${Theme.DIM}${result.skipReason || 'skipped'}${Theme.R}`;
+    if (result.skipped) return `${Theme.DIM}${result.skipReason || 'skipped'}${Theme.R}`;
     const time = `${Theme.DIM}${Text.elapsed(ms)}${Theme.R}`;
     const counts = this.formatCounts(result.counts);
     let right = counts ? `${time}  ${counts}` : time;
-    if (result.annotation)
-      right += `  ${Theme.DIM}(${result.annotation})${Theme.R}`;
+    if (result.annotation) right += `  ${Theme.DIM}(${result.annotation})${Theme.R}`;
     return right;
   }
 
   formatCounts(counts) {
     if (!counts) return null;
     const parts = [];
-    if (counts.errors)
-      parts.push(
-        `${Theme.RED}${Text.plural(counts.errors, 'error')}${Theme.R}`
-      );
+    if (counts.errors) parts.push(`${Theme.RED}${Text.plural(counts.errors, 'error')}${Theme.R}`);
     if (counts.warnings)
-      parts.push(
-        `${Theme.YELLOW}${Text.plural(counts.warnings, 'warning')}${Theme.R}`
-      );
+      parts.push(`${Theme.YELLOW}${Text.plural(counts.warnings, 'warning')}${Theme.R}`);
     return parts.join(' · ') || null;
   }
 
@@ -1637,7 +1550,7 @@ class TtyReporter extends BaseReporter {
 
     for (const label of labels) {
       process.stdout.write(
-        `  ${Icons.RUN}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}${Theme.CLEAR_EOL}\n`
+        `  ${Icons.RUN}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}${Theme.CLEAR_EOL}\n`,
       );
     }
     this.tickerHandle = setInterval(() => this.redrawGroup(), 1000).unref();
@@ -1652,7 +1565,7 @@ class TtyReporter extends BaseReporter {
       return;
     }
     process.stdout.write(
-      `  ${icon}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}  ${right}${Theme.CLEAR_EOL}\n`
+      `  ${icon}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}  ${right}${Theme.CLEAR_EOL}\n`,
     );
   }
 
@@ -1672,7 +1585,7 @@ class TtyReporter extends BaseReporter {
       const icon = done?.icon || Icons.RUN;
       const right = done?.right || elapsed;
       process.stdout.write(
-        `  ${icon}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}  ${right}${Theme.CLEAR_EOL}\n`
+        `  ${icon}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}  ${right}${Theme.CLEAR_EOL}\n`,
       );
     }
   }
@@ -1694,7 +1607,7 @@ class TtyReporter extends BaseReporter {
         OutputRenderer.renderDiagnosticsGrouped(shown);
         if (total > shown.length) {
           process.stdout.write(
-            `  ${Theme.DIM}… ${total - shown.length} more diagnostics; full list in ${Config.FAILURE_FILE}${Theme.R}\n\n`
+            `  ${Theme.DIM}… ${total - shown.length} more diagnostics; full list in ${Config.FAILURE_FILE}${Theme.R}\n\n`,
           );
         }
         continue;
@@ -1711,22 +1624,20 @@ class TtyReporter extends BaseReporter {
         startupPhase
           ? `no TAP output during startup window (${Text.elapsed(task.silenceMs)})`
           : `no TAP output for ${Text.elapsed(task.silenceMs)} between tests`
-      }\n\n`
+      }\n\n`,
     );
 
     if (task.lastCompletedTest) {
       process.stdout.write(`  ${Theme.DIM}Last completed test:${Theme.R}\n`);
-      process.stdout.write(
-        `  ${Theme.GREEN}✔${Theme.R}  ${task.lastCompletedTest.name}\n\n`
-      );
+      process.stdout.write(`  ${Theme.GREEN}✔${Theme.R}  ${task.lastCompletedTest.name}\n\n`);
       process.stdout.write(
         `  ${Theme.DIM}→ The hang likely occurred in the next test after this one.\n` +
-          `    Check for: unclosed handles, unresolved promises, missing mock teardown.${Theme.R}\n\n`
+          `    Check for: unclosed handles, unresolved promises, missing mock teardown.${Theme.R}\n\n`,
       );
     } else if (startupPhase) {
       process.stdout.write(
         `  ${Theme.DIM}→ Test process produced no TAP lines before the startup window expired.\n` +
-          `    Check for: top-level await deadlocks, missing .env / config, slow cold start.${Theme.R}\n\n`
+          `    Check for: top-level await deadlocks, missing .env / config, slow cold start.${Theme.R}\n\n`,
       );
     }
   }
@@ -1739,22 +1650,18 @@ class TtyReporter extends BaseReporter {
     for (let i = 0; i < shown.length; i++) {
       const f = shown[i];
       const idx = String(i + 1).padStart(maxIdx);
-      const fileRef = f.frame
-        ? f.frame.replace(/:(\d+):(\d+)$/, ':$1')
-        : f.file || '';
+      const fileRef = f.frame ? f.frame.replace(/:(\d+):(\d+)$/, ':$1') : f.file || '';
       const nameStr = Text.cap(f.name, 60);
       process.stdout.write(
-        `    ${Theme.BOLD}${idx}${Theme.R}  ${nameStr.padEnd(62)}  ${Theme.DIM}${fileRef}${Theme.R}\n`
+        `    ${Theme.BOLD}${idx}${Theme.R}  ${nameStr.padEnd(62)}  ${Theme.DIM}${fileRef}${Theme.R}\n`,
       );
     }
     if (total > shown.length) {
       process.stdout.write(
-        `    ${Theme.DIM}… ${total - shown.length} more failures; full list in ${Config.FAILURE_FILE}${Theme.R}\n`
+        `    ${Theme.DIM}… ${total - shown.length} more failures; full list in ${Config.FAILURE_FILE}${Theme.R}\n`,
       );
     }
-    process.stdout.write(
-      `\n  ${Theme.DIM}→ node scripts/tasks.mjs --detail <n>${Theme.R}\n\n`
-    );
+    process.stdout.write(`\n  ${Theme.DIM}→ node scripts/tasks.mjs --detail <n>${Theme.R}\n\n`);
   }
 
   renderRawOutput(rawOutput, task = {}) {
@@ -1762,23 +1669,17 @@ class TtyReporter extends BaseReporter {
     const cleanOutput = stripVTControlCharacters(rawOutput);
     const lines = cleanOutput.trim().split('\n');
     const shown = lines.slice(0, Config.RAW_OUTPUT_MAX_LINES);
-    for (const line of shown)
-      process.stdout.write(`      ${Theme.DIM}${line}${Theme.R}\n`);
+    for (const line of shown) process.stdout.write(`      ${Theme.DIM}${line}${Theme.R}\n`);
     if (lines.length > shown.length) {
       process.stdout.write(
-        `      ${Theme.DIM}… ${lines.length - shown.length} more lines${Theme.R}\n`
+        `      ${Theme.DIM}… ${lines.length - shown.length} more lines${Theme.R}\n`,
       );
     }
     if (task.truncatedStdout || task.truncatedStderr) {
-      const which = [
-        task.truncatedStdout ? 'stdout' : null,
-        task.truncatedStderr ? 'stderr' : null,
-      ]
+      const which = [task.truncatedStdout ? 'stdout' : null, task.truncatedStderr ? 'stderr' : null]
         .filter(Boolean)
         .join(' + ');
-      process.stdout.write(
-        `      ${Theme.DIM}[${which} truncated]${Theme.R}\n`
-      );
+      process.stdout.write(`      ${Theme.DIM}[${which} truncated]${Theme.R}\n`);
     }
     process.stdout.write('\n');
   }
@@ -1791,21 +1692,17 @@ class TtyReporter extends BaseReporter {
     const wall = Text.elapsed(aggregate.wallMs());
     if (aggregate.failed === 0) {
       const skippedNote =
-        aggregate.skipped > 0
-          ? `  ${Theme.DIM}(${aggregate.skipped} skipped)${Theme.R}`
-          : '';
+        aggregate.skipped > 0 ? `  ${Theme.DIM}(${aggregate.skipped} skipped)${Theme.R}` : '';
       process.stdout.write(
-        `  ${Theme.GREEN}${Theme.BOLD}✓${Theme.R}  ${aggregate.passed}/${total} passed${skippedNote}  ${Theme.DIM}${wall}${Theme.R}\n\n`
+        `  ${Theme.GREEN}${Theme.BOLD}✓${Theme.R}  ${aggregate.passed}/${total} passed${skippedNote}  ${Theme.DIM}${wall}${Theme.R}\n\n`,
       );
       return;
     }
 
     process.stdout.write(
-      `  ${Theme.RED}${Theme.BOLD}✗${Theme.R}  ${aggregate.failed} failed: ${aggregate.failureSummary() || 'failed'}  ${Theme.DIM}·${Theme.R}  ${aggregate.passed}/${total} ran  ${Theme.DIM}${wall}${Theme.R}\n`
+      `  ${Theme.RED}${Theme.BOLD}✗${Theme.R}  ${aggregate.failed} failed: ${aggregate.failureSummary() || 'failed'}  ${Theme.DIM}·${Theme.R}  ${aggregate.passed}/${total} ran  ${Theme.DIM}${wall}${Theme.R}\n`,
     );
-    process.stdout.write(
-      `  ${Theme.DIM}✎  failure details → ${Config.FAILURE_FILE}${Theme.R}\n\n`
-    );
+    process.stdout.write(`  ${Theme.DIM}✎  failure details → ${Config.FAILURE_FILE}${Theme.R}\n\n`);
   }
 
   renderSlowestTests(slowestTests) {
@@ -1813,7 +1710,7 @@ class TtyReporter extends BaseReporter {
     process.stdout.write(`  ${Theme.DIM}Slowest tests:${Theme.R}\n`);
     for (const test of slowestTests) {
       process.stdout.write(
-        `    ${Text.elapsed(test.ms).padStart(5)}  ${Theme.DIM}${test.name}${Theme.R}\n`
+        `    ${Text.elapsed(test.ms).padStart(5)}  ${Theme.DIM}${test.name}${Theme.R}\n`,
       );
     }
     process.stdout.write('\n');
@@ -1833,7 +1730,7 @@ class JsonReporter extends BaseReporter {
         tasks: aggregate.tasks,
         slowestTests: aggregate.slowestTests,
         failureSummary: aggregate.failureSummary(),
-      }) + '\n'
+      }) + '\n',
     );
   }
 }
@@ -1847,20 +1744,14 @@ async function renderDetailCommand(config) {
 
   const data = await FileStore.readJson(Config.FAILURE_FILE, null);
   if (!data) {
-    process.stderr.write(
-      `No failure data found. Run node scripts/tasks.mjs first.\n`
-    );
+    process.stderr.write(`No failure data found. Run node scripts/tasks.mjs first.\n`);
     process.exitCode = 1;
     return;
   }
 
   const testTask = Array.isArray(data.tasks)
     ? data.tasks.find(
-        (t) =>
-          t.label === 'test' &&
-          !t.ok &&
-          Array.isArray(t.failures) &&
-          t.failures.length > 0
+        (t) => t.label === 'test' && !t.ok && Array.isArray(t.failures) && t.failures.length > 0,
       )
     : null;
   const failures = testTask?.failures ?? [];
@@ -1873,7 +1764,7 @@ async function renderDetailCommand(config) {
 
   if (index < 1 || index > failures.length) {
     process.stderr.write(
-      `Failure ${index} not found. Last run had ${Text.plural(failures.length, 'failure')}.\n`
+      `Failure ${index} not found. Last run had ${Text.plural(failures.length, 'failure')}.\n`,
     );
     process.exitCode = 1;
     return;
@@ -1883,15 +1774,11 @@ async function renderDetailCommand(config) {
 
   if (llm || json) {
     const parsed = failure.frame ? parseFrame(failure.frame) : null;
-    const src = parsed
-      ? sourceCache.lines(path.resolve(process.cwd(), parsed.file))
-      : [];
+    const src = parsed ? sourceCache.lines(path.resolve(process.cwd(), parsed.file)) : [];
     const BEFORE = 4;
     const AFTER = 5;
     const startLine = parsed ? Math.max(1, parsed.line - BEFORE) : 1;
-    const endLine = parsed
-      ? Math.min(src.length || parsed.line, parsed.line + AFTER)
-      : 1;
+    const endLine = parsed ? Math.min(src.length || parsed.line, parsed.line + AFTER) : 1;
     const windowLines = src.slice(startLine - 1, endLine);
 
     const payload = {
@@ -1964,7 +1851,7 @@ function installSignalHandlers(reporter, config) {
           schemaVersion: JSON_SCHEMA_VERSION,
           ok: false,
           interrupted: true,
-        }) + '\n'
+        }) + '\n',
       );
     } else {
       process.stdout.write('\x1b[?25h');
@@ -2055,8 +1942,7 @@ class TaskOrchestrator {
 
     const results = await this.executeGroup(deepTasks, aggregate, reporter);
     for (const result of results) {
-      if (result?.result?.testDurations)
-        testDurations = result.result.testDurations;
+      if (result?.result?.testDurations) testDurations = result.result.testDurations;
     }
     return testDurations;
   }
@@ -2074,20 +1960,14 @@ class TaskOrchestrator {
   }
 
   async executeTask(task, aggregate, reporter, options = {}) {
-    const result = await this.runTaskWithReporting(
-      task,
-      aggregate,
-      reporter,
-      options
-    );
+    const result = await this.runTaskWithReporting(task, aggregate, reporter, options);
     aggregate.record(task.label, result, result.ms || 0);
     return result;
   }
 
   _checkSkip(task, aggregate) {
     if (task.skip) return Results.skip('skipped');
-    if (this.shouldGate(task, aggregate))
-      return Results.skip('gated on prior failure');
+    if (this.shouldGate(task, aggregate)) return Results.skip('gated on prior failure');
     return null;
   }
 
@@ -2133,12 +2013,11 @@ class TaskOrchestrator {
         });
         reporter.groupTaskEnd(task.label, result, ms);
         return { task, result, ms };
-      })
+      }),
     );
     reporter.groupEnd();
 
-    for (const { task, result, ms } of results)
-      aggregate.record(task.label, result, ms);
+    for (const { task, result, ms } of results) aggregate.record(task.label, result, ms);
     return [...completed, ...results];
   }
 
@@ -2171,8 +2050,7 @@ class TaskOrchestrator {
 
     if (!result.errors || result.errors.length === 0) return null;
     if (task.label !== 'lint' && task.label !== 'knip') return null;
-    if (task.label === 'knip' && !KnipParser.isFixable(result.errors))
-      return null;
+    if (task.label === 'knip' && !KnipParser.isFixable(result.errors)) return null;
 
     const fixResult =
       task.label === 'lint'
@@ -2182,10 +2060,7 @@ class TaskOrchestrator {
     if (task.label === 'knip' && fixResult.ok) {
       // knip --fix may leave files unformatted (we drop knip's own --format because
       // it crashes on Windows). Format the workspace ourselves so the rerun passes.
-      const formatResult = await ProcessRunner.execAsync('npm', [
-        'run',
-        'format',
-      ]);
+      const formatResult = await ProcessRunner.execAsync('npm', ['run', 'format']);
       if (!formatResult.ok) return this._applyFixAndRerun(task, formatResult);
     }
 
@@ -2227,15 +2102,14 @@ if (import.meta.main) {
       const child = spawn(
         command.cmd,
         command.args,
-        ProcessRunner.spawnOptions(command, { stdio: 'inherit' })
+        ProcessRunner.spawnOptions(command, { stdio: 'inherit' }),
       );
       child.on('error', (err) => {
         process.stderr.write(`${describeSpawnError(err, 'node')}\n`);
         process.exitCode = 1;
       });
       child.on('close', (code, signalName) => {
-        process.exitCode =
-          code ?? (signalName ? signalExitCode(signalName) : 1);
+        process.exitCode = code ?? (signalName ? signalExitCode(signalName) : 1);
       });
     } else {
       process.exitCode = await new TaskOrchestrator(config).run();

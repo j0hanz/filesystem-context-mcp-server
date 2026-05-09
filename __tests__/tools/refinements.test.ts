@@ -77,10 +77,7 @@ describe('apply_patch multi-file', () => {
     assert.ok(!actualA.includes('\ntwo\n'), 'alpha.txt original "two" gone');
 
     const actualB = await readFile(fileB, 'utf8');
-    assert.ok(
-      actualB.includes('BBB_REPLACED'),
-      'beta.txt should contain BBB_REPLACED'
-    );
+    assert.ok(actualB.includes('BBB_REPLACED'), 'beta.txt should contain BBB_REPLACED');
   });
 
   it('reports per-file errors when one file is missing', async () => {
@@ -244,24 +241,16 @@ describe('read_many tool with tail parameter', () => {
       assert.equal(result['tail'], 2, 'Each result should have tail=2');
       assert.equal(result['hasMoreLines'], true);
       // With resource links, content is externalized
-      assert.equal(
-        result['content'],
-        undefined,
-        'Content should be in resource link, not inline'
-      );
+      assert.equal(result['content'], undefined, 'Content should be in resource link, not inline');
       assert.ok(result['resourceUri'], 'Should have resourceUri for tail read');
     }
 
-    const resultA = results.find((r) =>
-      (r['path'] as string).includes('a.txt')
-    );
+    const resultA = results.find((r) => (r['path'] as string).includes('a.txt'));
     assert.ok(resultA);
     // Verify resourceUri is present for each result
     assert.ok(resultA['resourceUri'], 'Result A should have resourceUri');
 
-    const resultB = results.find((r) =>
-      (r['path'] as string).includes('b.txt')
-    );
+    const resultB = results.find((r) => (r['path'] as string).includes('b.txt'));
     assert.ok(resultB);
     assert.ok(resultB['resourceUri'], 'Result B should have resourceUri');
 
@@ -296,7 +285,7 @@ describe('grep externalization with expiresAt', () => {
       await writeFile(
         join(env.tmpDir, `data_${String(i).padStart(3, '0')}.txt`),
         lines.join('\n') + '\n',
-        'utf8'
+        'utf8',
       );
     }
   });
@@ -326,20 +315,14 @@ describe('grep externalization with expiresAt', () => {
     assert.ok(resourceUri, 'resourceUri should be present for large results');
     assert.ok(
       resourceUri.startsWith('filesystem-mcp://result/'),
-      'resourceUri should point to result store'
+      'resourceUri should point to result store',
     );
-    assert.equal(
-      sc['continuation'],
-      undefined,
-      'Externalized files should have no continuation'
-    );
+    assert.equal(sc['continuation'], undefined, 'Externalized files should have no continuation');
 
     // Verify the resource_link content block is present
     const result = raw as Record<string, unknown>;
     const content = result.content as Record<string, unknown>[];
-    const resourceLink = content.find(
-      (block) => block.type === 'resource_link'
-    );
+    const resourceLink = content.find((block) => block.type === 'resource_link');
     assert.ok(resourceLink, 'Expected a resource_link content block');
     // Verify the resource_link has proper structure
     assert.ok(resourceLink.uri, 'resource_link should have uri');
@@ -378,13 +361,13 @@ describe('mv partial success', () => {
     const result = raw as Record<string, unknown>;
     const content = result.content as Record<string, unknown>[];
     const textBlock = content.find(
-      (b) => b && typeof b === 'object' && 'type' in b && b.type === 'text'
+      (b) => b && typeof b === 'object' && 'type' in b && b.type === 'text',
     );
     assert.ok(textBlock, 'Error should have text content block');
     const errorText = (textBlock as { text?: string }).text ?? '';
     assert.ok(
       errorText.includes('DOES_NOT_EXIST') || errorText.includes('NOT_FOUND'),
-      `Error message should mention missing file: ${errorText}`
+      `Error message should mention missing file: ${errorText}`,
     );
   });
 });
@@ -421,10 +404,7 @@ describe('search_and_replace wholeWord', () => {
     const content = readFileSync(file, 'utf8');
     // 'cat' (standalone) -> 'dog'; 'concatenate', 'cats' must be unchanged
     assert.ok(content.includes('dog'), 'standalone "cat" must be replaced');
-    assert.ok(
-      content.includes('concatenate'),
-      '"concatenate" must be unchanged'
-    );
+    assert.ok(content.includes('concatenate'), '"concatenate" must be unchanged');
     assert.ok(content.includes('cats'), '"cats" must be unchanged');
   });
 });

@@ -4,10 +4,7 @@ import { afterEach, describe, it } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import { LogRouter, type LogTarget } from '../../src/lib/logger.js';
-import {
-  type HttpSession,
-  HttpSessionRegistry,
-} from '../../src/server/bootstrap.js';
+import { type HttpSession, HttpSessionRegistry } from '../../src/server/bootstrap.js';
 import { InMemoryEventStore } from '../../src/server/event-store.js';
 
 interface FakeRootsManager {
@@ -160,7 +157,7 @@ describe('HttpSessionRegistry', () => {
       opts: {
         initialized: boolean;
         createdAt?: number;
-      }
+      },
     ): FakeSession {
       const session = makeFakeSession(opts);
       const originalClose = session.close;
@@ -191,11 +188,7 @@ describe('HttpSessionRegistry', () => {
 
     assert.equal(stale.closeCalls, 1, 'stale session must be closed once');
     assert.equal(fresh.closeCalls, 0, 'fresh session must survive sweep');
-    assert.equal(
-      initialized.closeCalls,
-      0,
-      'initialized session must not be evicted'
-    );
+    assert.equal(initialized.closeCalls, 0, 'initialized session must not be evicted');
 
     await registry.closeAll();
     assert.equal(fresh.closeCalls, 1, 'fresh closed by closeAll');

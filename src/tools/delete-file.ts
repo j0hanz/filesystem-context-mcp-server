@@ -1,7 +1,4 @@
-import type {
-  ElicitRequestFormParams,
-  ElicitResult,
-} from '@modelcontextprotocol/server';
+import type { ElicitRequestFormParams, ElicitResult } from '@modelcontextprotocol/server';
 import { SdkError, SdkErrorCode } from '@modelcontextprotocol/server';
 
 import { lstat, rm, rmdir } from 'node:fs/promises';
@@ -43,17 +40,13 @@ const DeleteFailureItemSchema = z.strictObject({
 const DeleteOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),
   path: z.string().optional().describe('Deleted path'),
-  failures: z
-    .array(DeleteFailureItemSchema)
-    .optional()
-    .describe('Per-path errors'),
+  failures: z.array(DeleteFailureItemSchema).optional().describe('Per-path errors'),
 });
 
 const DELETE_FILE_TOOL: ToolContract = {
   name: 'rm',
   title: 'Delete File',
-  description:
-    'Permanently delete one or more files or directories. This action is irreversible.',
+  description: 'Permanently delete one or more files or directories. This action is irreversible.',
   inputSchema: DeleteInputSchema,
   outputSchema: DeleteOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
@@ -89,17 +82,13 @@ function toDeleteFailure(path: string, error: unknown): DeleteFailure {
         error: buildStructuredError(error, ErrorCode.NOT_FOUND, path),
       };
     }
-    if (
-      error.code === 'ENOTEMPTY' ||
-      error.code === 'EISDIR' ||
-      error.code === 'EEXIST'
-    ) {
+    if (error.code === 'ENOTEMPTY' || error.code === 'EISDIR' || error.code === 'EEXIST') {
       return {
         path,
         error: buildStructuredError(
           new Error('Directory not empty. Set recursive: true.'),
           ErrorCode.INVALID_INPUT,
-          path
+          path,
         ),
       };
     }
@@ -114,7 +103,7 @@ function toDeleteFailure(path: string, error: unknown): DeleteFailure {
 }
 
 function resolveItemType(
-  itemStats: Awaited<ReturnType<typeof lstat>>
+  itemStats: Awaited<ReturnType<typeof lstat>>,
 ): 'directory' | 'symlink' | 'file' | 'other' {
   if (itemStats.isDirectory()) return 'directory';
   if (itemStats.isSymbolicLink()) return 'symlink';
@@ -126,7 +115,7 @@ async function tryElicitConfirmation(
   inputPath: string,
   args: Pick<DeleteInput, 'recursive'>,
   itemStats: Awaited<ReturnType<typeof lstat>>,
-  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>
+  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>,
 ): Promise<boolean> {
   if (!elicitInput || !args.recursive || !itemStats.isDirectory()) {
     return true; // Proceed if not applicable
@@ -145,14 +134,9 @@ async function tryElicitConfirmation(
       },
     });
 
-    return (
-      elicitResult.action === 'accept' && elicitResult.content?.confirm === true
-    );
+    return elicitResult.action === 'accept' && elicitResult.content?.confirm === true;
   } catch (err) {
-    if (
-      err instanceof SdkError &&
-      err.code === SdkErrorCode.CapabilityNotSupported
-    ) {
+    if (err instanceof SdkError && err.code === SdkErrorCode.CapabilityNotSupported) {
       return true; // Proceed if client doesn't support elicitation
     }
     return false; // Fail closed for unknown transport errors
@@ -163,7 +147,7 @@ async function performDeletion(
   validPath: string,
   args: Pick<DeleteInput, 'recursive' | 'ignoreIfNotExists'>,
   isDirectory: boolean,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<void> {
   if (isDirectory && !args.recursive) {
     await withAbort(rmdir(validPath), signal);
@@ -173,7 +157,7 @@ async function performDeletion(
         recursive: args.recursive,
         force: args.ignoreIfNotExists,
       }),
-      signal
+      signal,
     );
   }
 }
@@ -183,7 +167,7 @@ async function deleteSinglePath(
   args: Pick<DeleteInput, 'recursive' | 'ignoreIfNotExists'>,
   pathGuard: PathGuard,
   signal?: AbortSignal,
-  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>
+  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>,
 ): Promise<{ item: DeletedItem } | { failure: DeleteFailure; soft?: boolean }> {
   let validPath: string;
   try {
@@ -200,10 +184,10 @@ async function deleteSinglePath(
         error: buildStructuredError(
           new McpError(
             ErrorCode.ACCESS_DENIED,
-            'Deleting a workspace root directory is not allowed'
+            'Deleting a workspace root directory is not allowed',
           ),
           ErrorCode.ACCESS_DENIED,
-          validPath
+          validPath,
         ),
       },
       // No soft flag — workspace root deletion is a hard error
@@ -214,23 +198,14 @@ async function deleteSinglePath(
   try {
     itemStats = await withAbort(lstat(validPath), signal);
   } catch (error) {
-    if (
-      isNodeError(error) &&
-      error.code === 'ENOENT' &&
-      args.ignoreIfNotExists
-    ) {
+    if (isNodeError(error) && error.code === 'ENOENT' && args.ignoreIfNotExists) {
       return { item: { path: validPath } };
     }
     return { failure: toDeleteFailure(inputPath, error) };
   }
 
   const itemType = resolveItemType(itemStats);
-  const shouldProceed = await tryElicitConfirmation(
-    inputPath,
-    args,
-    itemStats,
-    elicitInput
-  );
+  const shouldProceed = await tryElicitConfirmation(inputPath, args, itemStats, elicitInput);
 
   if (!shouldProceed) {
     // User declined or transport failed — skip without deleting.
@@ -251,7 +226,7 @@ async function handleDelete(
   args: DeleteInput,
   pathGuard: PathGuard,
   signal?: AbortSignal,
-  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>
+  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>,
 ): Promise<DeleteOutput> {
   // P3 confirmation-only pattern: process single path (use first path)
   const inputPath = args.paths[0];
@@ -259,20 +234,14 @@ async function handleDelete(
     throw new McpError(ErrorCode.INVALID_INPUT, 'No paths provided.');
   }
 
-  const result = await deleteSinglePath(
-    inputPath,
-    args,
-    pathGuard,
-    signal,
-    elicitInput
-  );
+  const result = await deleteSinglePath(inputPath, args, pathGuard, signal, elicitInput);
 
   if ('failure' in result) {
     if (!result.soft) {
       throw new McpError(
         result.failure.error.code as ErrorCode,
         `Failed to delete ${inputPath}`,
-        inputPath
+        inputPath,
       );
     }
     // Soft failure (path guard violation): return in failures[] with ok: true
@@ -302,17 +271,11 @@ export const DELETE_FILE = defineTool<DeleteInput, DeleteOutput>({
   },
   completionMessage: (args, result: ToolResult<DeleteOutput>) => {
     const names = args.paths.map((p) => basename(p)).join(', ');
-    if (result.isError)
-      return `${DELETE_FILE_TOOL.title}: ${names} \u2022 ${result.errorCode}`;
+    if (result.isError) return `${DELETE_FILE_TOOL.title}: ${names} \u2022 ${result.errorCode}`;
     return `${DELETE_FILE_TOOL.title}: deleted ${result.structuredContent.path ?? names}`;
   },
   run: async (args, ctx) => {
-    const structured = await handleDelete(
-      args,
-      ctx.pathGuard,
-      ctx.signal,
-      ctx.elicitInput
-    );
+    const structured = await handleDelete(args, ctx.pathGuard, ctx.signal, ctx.elicitInput);
     // P3 confirmation-only pattern: terse summary with deletion confirmation
     const summary = structured.path
       ? `delete-file: deleted ${structured.path}`

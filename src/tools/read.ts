@@ -13,16 +13,8 @@ import { detectMimeType } from '../lib/mime.js';
 import type { PathGuard } from '../lib/path-guard.js';
 import type { ResourceStore } from '../lib/resource-store.js';
 import { assignDefined } from '../lib/utils.js';
-import {
-  NonNegInt,
-  PositiveInt,
-  RequiredPath,
-  Sha256Hex,
-} from '../schemas/fields.js';
-import {
-  readRangeConstraints,
-  toToolJsonSchema,
-} from '../schemas/json-schema.js';
+import { NonNegInt, PositiveInt, RequiredPath, Sha256Hex } from '../schemas/fields.js';
+import { readRangeConstraints, toToolJsonSchema } from '../schemas/json-schema.js';
 import {
   ContinuationSchema,
   createReadRangeFields,
@@ -58,16 +50,12 @@ const ReadFileInputSchema = z
     offset: z
       .uint32()
       .optional()
-      .describe(
-        'Byte offset to start reading (mutually exclusive with line params)'
-      ),
+      .describe('Byte offset to start reading (mutually exclusive with line params)'),
     length: z
       .uint32()
       .min(1)
       .optional()
-      .describe(
-        'Number of bytes to read (used with offset; reads to EOF if omitted)'
-      ),
+      .describe('Number of bytes to read (used with offset; reads to EOF if omitted)'),
   })
   .superRefine((value, ctx) => {
     validateReadRange(
@@ -79,7 +67,7 @@ const ReadFileInputSchema = z
         offset: value.offset,
         length: value.length,
       },
-      ctx
+      ctx,
     );
   });
 
@@ -95,12 +83,9 @@ const ReadFileOutputSchema = z.strictObject({
     .enum(['text', 'binary', 'image', 'audio', 'pdf'])
     .optional()
     .describe('File kind: text, binary, image, audio, or pdf'),
-  resourceUri: z
-    .string()
-    .optional()
-    .describe('Full content URI in resource store'),
+  resourceUri: z.string().optional().describe('Full content URI in resource store'),
   continuation: ContinuationSchema.optional().describe(
-    'Present when file was cut; call the named tool with the given args to read next chunk'
+    'Present when file was cut; call the named tool with the given args to read next chunk',
   ),
   totalLines: NonNegInt.optional().describe('Total lines in file'),
   linesRead: NonNegInt.optional().describe('Lines returned'),
@@ -109,9 +94,7 @@ const ReadFileOutputSchema = z.strictObject({
   tail: PositiveInt.optional().describe('Tail lines requested'),
   startLine: PositiveInt.optional().describe('Start line'),
   endLine: PositiveInt.optional().describe('End line'),
-  contentHash: Sha256Hex.optional().describe(
-    'SHA-256 of content (when includeHash)'
-  ),
+  contentHash: Sha256Hex.optional().describe('SHA-256 of content (when includeHash)'),
   // Byte-range fields
   offset: NonNegInt.optional().describe('Byte offset used'),
   bytesRead: NonNegInt.optional().describe('Bytes returned'),
@@ -126,10 +109,7 @@ const READ_FILE_TOOL: ToolContract = {
   inputSchema: ReadFileInputSchema,
   inputSchemaJson: toToolJsonSchema(ReadFileInputSchema, (s) => ({
     ...s,
-    allOf: [
-      ...(Array.isArray(s.allOf) ? (s.allOf as unknown[]) : []),
-      ...readRangeConstraints(),
-    ],
+    allOf: [...(Array.isArray(s.allOf) ? (s.allOf as unknown[]) : []), ...readRangeConstraints()],
   })),
   outputSchema: ReadFileOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
@@ -149,7 +129,7 @@ const READ_TOOL_LABEL = READ_FILE_TOOL.title;
 
 function buildReadOptions(
   args: ReadFileInput,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Parameters<typeof readFile>[1] {
   const options: Parameters<typeof readFile>[1] = {
     encoding: 'utf-8',
@@ -203,7 +183,7 @@ function toStructuredReadFileResult(
   filePath: string,
   result: ReadFileHandlerResult,
   mimeType: string,
-  kind: string
+  kind: string,
 ): ReadFileOutput {
   const structured: ReadFileOutput = {
     ok: true,
@@ -238,20 +218,17 @@ function buildReadProgressMessage(args: ReadFileInput): string {
     const end = args.endLine ?? '…';
     return `${READ_TOOL_LABEL}: ${name} [lines ${args.startLine}–${end}]`;
   }
-  if (args.head !== undefined)
-    return `${READ_TOOL_LABEL}: ${name} [head ${args.head}]`;
-  if (args.tail !== undefined)
-    return `${READ_TOOL_LABEL}: ${name} [tail ${args.tail}]`;
+  if (args.head !== undefined) return `${READ_TOOL_LABEL}: ${name} [head ${args.head}]`;
+  if (args.tail !== undefined) return `${READ_TOOL_LABEL}: ${name} [tail ${args.tail}]`;
   return `${READ_TOOL_LABEL}: ${name}`;
 }
 
 function buildReadCompletionMessage(
   args: ReadFileInput,
-  result: ToolResult<ReadFileOutput>
+  result: ToolResult<ReadFileOutput>,
 ): string {
   const name = basename(args.path);
-  if (result.isError)
-    return `${READ_TOOL_LABEL}: ${name} • ${result.errorCode}`;
+  if (result.isError) return `${READ_TOOL_LABEL}: ${name} • ${result.errorCode}`;
 
   const structured = result.structuredContent;
 
@@ -291,26 +268,20 @@ async function handleReadFile(
   args: ReadFileInput,
   pathGuard: PathGuard,
   signal?: AbortSignal,
-  resourceStore?: ResourceStore
+  resourceStore?: ResourceStore,
 ): Promise<ToolResponse<ReadFileOutput>> {
   const options = buildReadOptions(args, signal);
   const result = await readFile(args.path, options, pathGuard);
-  const mimeInfo = detectMimeType(
-    result.path,
-    Buffer.from(result.content.slice(0, 512))
-  );
+  const mimeInfo = detectMimeType(result.path, Buffer.from(result.content.slice(0, 512)));
   const structured = toStructuredReadFileResult(
     result.path,
     result,
     mimeInfo.mimeType,
-    mimeInfo.kind
+    mimeInfo.kind,
   );
 
   if (args.includeHash) {
-    structured.contentHash = await calculateFileContentHash(
-      result.path,
-      signal
-    );
+    structured.contentHash = await calculateFileContentHash(result.path, signal);
   }
 
   // Always store content in resource store and return summary + link
@@ -348,8 +319,7 @@ async function handleReadFile(
 export const READ_FILE = defineTool<ReadFileInput, ReadFileOutput>({
   contract: READ_FILE_TOOL,
   defaultErrorCode: ErrorCode.NOT_FILE,
-  run: (args, ctx) =>
-    handleReadFile(args, ctx.pathGuard, ctx.signal, ctx.resourceStore),
+  run: (args, ctx) => handleReadFile(args, ctx.pathGuard, ctx.signal, ctx.resourceStore),
   progressMessage: buildReadProgressMessage,
   completionMessage: buildReadCompletionMessage,
 });

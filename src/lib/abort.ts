@@ -33,10 +33,7 @@ function getAbortError(signal: AbortSignal, message?: string): Error {
   return createAbortError(message);
 }
 
-export function withAbort<T>(
-  promise: Promise<T>,
-  signal?: AbortSignal
-): Promise<T> {
+export function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return promise;
   signal.throwIfAborted();
 
@@ -60,21 +57,19 @@ export function withAbort<T>(
       (error: unknown) => {
         signal.removeEventListener('abort', onAbort);
         reject(normalizeUnknownError(error));
-      }
+      },
     );
   });
 }
 
 export function createTimedAbortSignal(
   baseSignal: AbortSignal | undefined,
-  timeoutMs?: number
+  timeoutMs?: number,
 ): { signal: AbortSignal; cleanup: () => void } {
   if (isFiniteNumber(timeoutMs)) {
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      controller.abort(
-        new DOMException('The operation timed out', 'TimeoutError')
-      );
+      controller.abort(new DOMException('The operation timed out', 'TimeoutError'));
     }, timeoutMs);
     timer.unref();
 
@@ -100,7 +95,7 @@ export function createTimedAbortSignal(
 export async function withTimedAbortSignal<T>(
   baseSignal: AbortSignal | undefined,
   timeoutMs: number | undefined,
-  run: (signal: AbortSignal) => Promise<T>
+  run: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
   const { signal, cleanup } = createTimedAbortSignal(baseSignal, timeoutMs);
   try {

@@ -1,7 +1,4 @@
-import type {
-  Icon,
-  StandardSchemaWithJSON,
-} from '@modelcontextprotocol/server';
+import type { Icon, StandardSchemaWithJSON } from '@modelcontextprotocol/server';
 
 import type { ZodType } from 'zod/v4';
 

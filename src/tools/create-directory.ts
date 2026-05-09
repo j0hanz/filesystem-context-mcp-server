@@ -17,10 +17,7 @@ import {
 } from './shared.js';
 
 const CreateDirectoryInputSchema = z.strictObject({
-  paths: z
-    .array(RequiredPath)
-    .min(1)
-    .describe('One or more directory paths to create (recursive)'),
+  paths: z.array(RequiredPath).min(1).describe('One or more directory paths to create (recursive)'),
 });
 
 const CreateDirectoryOutputSchema = z.strictObject({
@@ -31,8 +28,7 @@ const CreateDirectoryOutputSchema = z.strictObject({
 const CREATE_DIRECTORY_TOOL: ToolContract = {
   name: 'mkdir',
   title: 'Create Directory',
-  description:
-    'Create one or more directories (recursive). Accepts a list of paths.',
+  description: 'Create one or more directories (recursive). Accepts a list of paths.',
   inputSchema: CreateDirectoryInputSchema,
   outputSchema: CreateDirectoryOutputSchema,
   annotations: IDEMPOTENT_WRITE_TOOL_ANNOTATIONS,
@@ -43,7 +39,7 @@ const CREATE_DIRECTORY_TOOL: ToolContract = {
 async function handleCreateDirectory(
   args: z.infer<typeof CreateDirectoryInputSchema>,
   pathGuard: PathGuard,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<z.infer<typeof CreateDirectoryOutputSchema>> {
   // P3 confirmation-only pattern: process single path (use first path)
   const inputPath = args.paths[0];
@@ -61,11 +57,7 @@ async function handleCreateDirectory(
   } catch (error) {
     // Re-throw McpErrors (e.g. ACCESS_DENIED) — security violations must not be silenced
     if (error instanceof McpError) throw error;
-    throw new McpError(
-      ErrorCode.UNKNOWN,
-      `Failed to create ${inputPath}`,
-      inputPath
-    );
+    throw new McpError(ErrorCode.UNKNOWN, `Failed to create ${inputPath}`, inputPath);
   }
 }
 
@@ -75,11 +67,7 @@ export const CREATE_DIRECTORY = defineTool<
 >({
   contract: CREATE_DIRECTORY_TOOL,
   run: async (args, ctx) => {
-    const structured = await handleCreateDirectory(
-      args,
-      ctx.pathGuard,
-      ctx.signal
-    );
+    const structured = await handleCreateDirectory(args, ctx.pathGuard, ctx.signal);
     // P3 confirmation-only pattern: terse summary with creation confirmation
     const summary = `create-directory: created ${structured.path}`;
     void ctx.log?.('info', `mkdir: ${args.paths[0]}`, 'mkdir');
@@ -94,8 +82,7 @@ export const CREATE_DIRECTORY = defineTool<
   completionMessage: (args, result) => {
     if (args.paths.length === 1) {
       const name = basename(args.paths[0] ?? '');
-      if (result.isError)
-        return `${CREATE_DIRECTORY_TOOL.title}: ${name} • ${result.errorCode}`;
+      if (result.isError) return `${CREATE_DIRECTORY_TOOL.title}: ${name} • ${result.errorCode}`;
       return `${CREATE_DIRECTORY_TOOL.title}: created ${result.structuredContent.path}`;
     }
     if (result.isError)

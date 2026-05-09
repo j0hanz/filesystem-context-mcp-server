@@ -24,9 +24,7 @@ function isStdinEvent(event: NodeJS.Signals | 'end' | 'close'): boolean {
   return event === 'end' || event === 'close';
 }
 
-function registerShutdownTrigger(
-  event: NodeJS.Signals | 'end' | 'close'
-): void {
+function registerShutdownTrigger(event: NodeJS.Signals | 'end' | 'close'): void {
   const target = isStdinEvent(event) ? process.stdin : process;
   target.once(event, () => {
     const reason = isStdinEvent(event) ? `stdin ${event}` : event;
@@ -62,10 +60,7 @@ async function shutdown(reason: string, exitCode = 0): Promise<void> {
     await shutdownWorkerPool();
     keepForceExitTimer = false;
   } catch (error: unknown) {
-    console.error(
-      `Shutdown error (${reason}):`,
-      formatUnknownErrorMessage(error)
-    );
+    console.error(`Shutdown error (${reason}):`, formatUnknownErrorMessage(error));
   } finally {
     if (!keepForceExitTimer) {
       clearTimeout(timer);
@@ -98,7 +93,7 @@ async function main(): Promise<void> {
     }
   } else {
     console.error(
-      `No directories specified via CLI. Will use MCP Roots${allowCwd ? ' or current working directory' : ''}.`
+      `No directories specified via CLI. Will use MCP Roots${allowCwd ? ' or current working directory' : ''}.`,
     );
   }
 

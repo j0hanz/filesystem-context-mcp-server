@@ -23,16 +23,8 @@ describe('grep tool', () => {
 
   before(async () => {
     env = await createTestEnv();
-    await writeFile(
-      join(env.tmpDir, 'fruits.txt'),
-      'apple\nbanana\ncherry\n',
-      'utf8'
-    );
-    await writeFile(
-      join(env.tmpDir, 'veggies.txt'),
-      'carrot\napricot\ncucumber\n',
-      'utf8'
-    );
+    await writeFile(join(env.tmpDir, 'fruits.txt'), 'apple\nbanana\ncherry\n', 'utf8');
+    await writeFile(join(env.tmpDir, 'veggies.txt'), 'carrot\napricot\ncucumber\n', 'utf8');
     const sub = join(env.tmpDir, 'sub');
     await mkdir(sub);
     await writeFile(join(sub, 'deep.txt'), 'another apple here\n', 'utf8');
@@ -51,10 +43,7 @@ describe('grep tool', () => {
     assertOk(result);
 
     // Verify summary text and resource link
-    assert.ok(
-      result.content.length >= 2,
-      'Expected summary text and resource link'
-    );
+    assert.ok(result.content.length >= 2, 'Expected summary text and resource link');
     const summaryBlock = result.content[0];
     assert.equal(summaryBlock.type, 'text');
     const summaryText = (summaryBlock as { text: string }).text;
@@ -69,7 +58,7 @@ describe('grep tool', () => {
     const matches = sc['matches'] as Record<string, unknown>[];
     assert.ok(
       Array.isArray(matches) && matches.length >= 2,
-      'Should match apple in at least 2 files'
+      'Should match apple in at least 2 files',
     );
     assert.ok(sc['resourceUri'], 'Expected resourceUri in structured content');
   });
@@ -89,10 +78,7 @@ describe('grep tool', () => {
 
     const sc = getStructured(result);
     const matches = sc['matches'] as Record<string, unknown>[];
-    assert.ok(
-      Array.isArray(matches) && matches.length > 0,
-      'Should find lines starting with "a"'
-    );
+    assert.ok(Array.isArray(matches) && matches.length > 0, 'Should find lines starting with "a"');
     assert.ok(sc['resourceUri'], 'Expected resourceUri in structured content');
   });
 
@@ -124,7 +110,7 @@ describe('grep tool', () => {
     const files = matches.map((m) => m['file'] as string);
     assert.ok(
       !files.some((f) => f.includes('deep')),
-      `maxDepth:0 should exclude sub/deep.txt, got: ${JSON.stringify(files)}`
+      `maxDepth:0 should exclude sub/deep.txt, got: ${JSON.stringify(files)}`,
     );
   });
 
@@ -140,16 +126,13 @@ describe('grep tool', () => {
     assertToolError(raw);
     const result = raw as ToolResult;
     const textBlock = result.content.find(
-      (block: {
-        type: string;
-        text?: string;
-      }): block is { type: string; text: string } =>
-        typeof block.text === 'string'
+      (block: { type: string; text?: string }): block is { type: string; text: string } =>
+        typeof block.text === 'string',
     );
     assert.ok(textBlock, 'Expected text response content');
     assert.match(
       textBlock.text,
-      /Invalid glob or unsafe path \(absolute\/\.\. forbidden\)|data\/pattern must NOT be valid/u
+      /Invalid glob or unsafe path \(absolute\/\.\. forbidden\)|data\/pattern must NOT be valid/u,
     );
   });
 
@@ -180,10 +163,7 @@ describe('grep tool', () => {
     // Verify summary text contains the search query
     const summaryBlock = result.content[0];
     assert.equal(summaryBlock.type, 'text');
-    assert.match(
-      (summaryBlock as { text: string }).text,
-      /search-content: 'rocket'/
-    );
+    assert.match((summaryBlock as { text: string }).text, /search-content: 'rocket'/);
 
     // Verify UTF-8 content is preserved in matches
     const sc = getStructured(result);
@@ -212,7 +192,7 @@ describe('grep tool', () => {
           maxResults: 10,
         },
       },
-      { task: { ttl: 60_000 } }
+      { task: { ttl: 60_000 } },
     );
 
     for await (const message of stream) {
@@ -232,7 +212,7 @@ describe('grep tool', () => {
     assert.ok(taskId, 'Expected task-mode execution to return a task id');
     assert.ok(
       statuses.some((status) => status === 'working' || status === 'completed'),
-      `Expected task status updates, got ${JSON.stringify(statuses)}`
+      `Expected task status updates, got ${JSON.stringify(statuses)}`,
     );
     assert.ok(finalResult, 'Expected a final task result');
     assertOk(finalResult);
@@ -245,8 +225,7 @@ describe('grep tool', () => {
     const storedTask = await env.client.experimental.tasks.getTask(taskId);
     assert.equal(storedTask.status, 'completed');
 
-    const storedResult =
-      await env.client.experimental.tasks.getTaskResult(taskId);
+    const storedResult = await env.client.experimental.tasks.getTaskResult(taskId);
     assert.equal(storedResult.isError, undefined);
   });
 });
@@ -279,16 +258,10 @@ describe('find tool', () => {
     assertOk(result);
 
     // Verify summary text and resource link
-    assert.ok(
-      result.content.length >= 2,
-      'Expected summary text and resource link'
-    );
+    assert.ok(result.content.length >= 2, 'Expected summary text and resource link');
     const summaryBlock = result.content[0];
     assert.equal(summaryBlock.type, 'text');
-    assert.match(
-      (summaryBlock as { text: string }).text,
-      /search-files:.*match/
-    );
+    assert.match((summaryBlock as { text: string }).text, /search-files:.*match/);
 
     const linkBlock = result.content[1];
     assert.equal(linkBlock.type, 'resource_link');
@@ -355,9 +328,7 @@ describe('find tool', () => {
 
     const linkBlock = result.content[1];
     assert.equal(linkBlock.type, 'resource_link');
-    assert.ok(
-      (linkBlock as { uri: string }).uri.startsWith('filesystem-mcp://result/')
-    );
+    assert.ok((linkBlock as { uri: string }).uri.startsWith('filesystem-mcp://result/'));
     assert.equal((linkBlock as { name: string }).name, 'search-results.json');
 
     const sc = getStructured(result);
@@ -376,11 +347,7 @@ describe('search_and_replace tool', () => {
 
   before(async () => {
     env = await createTestEnv();
-    await writeFile(
-      join(env.tmpDir, 'file1.txt'),
-      'hello world\nhello again\n',
-      'utf8'
-    );
+    await writeFile(join(env.tmpDir, 'file1.txt'), 'hello world\nhello again\n', 'utf8');
     await writeFile(join(env.tmpDir, 'file2.txt'), 'goodbye world\n', 'utf8');
   });
 
@@ -411,19 +378,13 @@ describe('search_and_replace tool', () => {
     const pf = sc['primaryFile'] as Record<string, unknown>;
     assert.ok(pf['path'], 'Primary file should have path');
     assert.ok(pf['size'] !== undefined, 'Primary file should have size');
-    assert.ok(
-      pf['lineCount'] !== undefined,
-      'Primary file should have lineCount'
-    );
+    assert.ok(pf['lineCount'] !== undefined, 'Primary file should have lineCount');
     assert.ok(pf['mimeType'], 'Primary file should have mimeType');
     assert.ok(pf['kind'], 'Primary file should have kind');
     assert.ok(pf['resourceUri'], 'Primary file should have resourceUri');
 
     // Verify summary includes resource link
-    assert.ok(
-      result.content.length >= 2,
-      'Expected summary text and resource link'
-    );
+    assert.ok(result.content.length >= 2, 'Expected summary text and resource link');
     const linkBlock = result.content[1];
     assert.equal(linkBlock.type, 'resource_link');
 
@@ -466,10 +427,7 @@ describe('search_and_replace tool', () => {
     });
     assertOk(raw);
     const actual = await readFile(file, 'utf8');
-    assert.ok(
-      actual.includes('NUM'),
-      'Regex replacement should have substituted digits'
-    );
+    assert.ok(actual.includes('NUM'), 'Regex replacement should have substituted digits');
     assert.ok(!/\d/.exec(actual), 'No digits should remain');
   });
 
@@ -507,7 +465,7 @@ describe('search_and_replace tool', () => {
     const results = (sc['results'] ?? []) as Record<string, unknown>[];
     assert.ok(
       !results.some((f) => (f['path'] as string).includes('deep')),
-      `maxDepth:0 should exclude nested/deep.txt, got: ${JSON.stringify(results)}`
+      `maxDepth:0 should exclude nested/deep.txt, got: ${JSON.stringify(results)}`,
     );
   });
 
@@ -519,11 +477,7 @@ describe('search_and_replace tool', () => {
     const capDir = join(env.tmpDir, 'captest');
     await mkdir(capDir, { recursive: true });
     for (let i = 0; i < 12; i++) {
-      await writeFile(
-        join(capDir, `cap${String(i)}.txt`),
-        'hit\nhit\nhit\n',
-        'utf8'
-      );
+      await writeFile(join(capDir, `cap${String(i)}.txt`), 'hit\nhit\nhit\n', 'utf8');
     }
 
     const raw = await env.client.callTool({
@@ -568,11 +522,11 @@ describe('grep tool — asymmetric context', () => {
       const after = matches[0]?.['contextAfter'] as string[] | undefined;
       assert.ok(
         Array.isArray(before) && before.includes('line2'),
-        'Should include line before match'
+        'Should include line before match',
       );
       assert.ok(
         !Array.isArray(after) || after.length === 0,
-        'Should not include lines after match'
+        'Should not include lines after match',
       );
     } finally {
       await env.cleanup();
@@ -601,12 +555,9 @@ describe('grep tool — asymmetric context', () => {
       const after = matches[0]?.['contextAfter'] as string[] | undefined;
       assert.ok(
         !Array.isArray(before) || before.length === 0,
-        'Should not include lines before match'
+        'Should not include lines before match',
       );
-      assert.ok(
-        Array.isArray(after) && after.includes('line4'),
-        'Should include line after match'
-      );
+      assert.ok(Array.isArray(after) && after.includes('line4'), 'Should include line after match');
     } finally {
       await env.cleanup();
     }
@@ -633,11 +584,11 @@ describe('grep tool — asymmetric context', () => {
       const before = matches[0]?.['contextBefore'] as string[] | undefined;
       assert.ok(
         Array.isArray(before) && before.includes('line1'),
-        'Should include line1 (2 lines before)'
+        'Should include line1 (2 lines before)',
       );
       assert.ok(
         Array.isArray(before) && before.includes('line2'),
-        'Should include line2 (1 line before)'
+        'Should include line2 (1 line before)',
       );
     } finally {
       await env.cleanup();
@@ -652,11 +603,7 @@ describe('grep tool - fuzzy search', () => {
     const env = await createTestEnv();
     try {
       const filePath = join(env.tmpDir, 'fuzzy.txt');
-      await writeFile(
-        filePath,
-        'line with aproximate spelling\nno match here',
-        'utf8'
-      );
+      await writeFile(filePath, 'line with aproximate spelling\nno match here', 'utf8');
       const res = await env.client.callTool({
         name: 'grep',
         arguments: {
@@ -671,7 +618,7 @@ describe('grep tool - fuzzy search', () => {
       // 'aproximate' is 1 char off from 'approximate' - should match
       assert.ok(
         Array.isArray(matches) && matches.length > 0,
-        'Expected fuzzy match for "aproximate" vs "approximate"'
+        'Expected fuzzy match for "aproximate" vs "approximate"',
       );
     } finally {
       await env.cleanup();

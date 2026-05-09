@@ -20,10 +20,7 @@ import { processInParallel } from '../lib/parallel.js';
 import type { PathGuard } from '../lib/path-guard.js';
 import { assignDefined } from '../lib/utils.js';
 import { NonNegInt, PositiveInt, RequiredPath } from '../schemas/fields.js';
-import {
-  readRangeConstraints,
-  toToolJsonSchema,
-} from '../schemas/json-schema.js';
+import { readRangeConstraints, toToolJsonSchema } from '../schemas/json-schema.js';
 import {
   ContinuationSchema,
   createReadRangeFields,
@@ -119,10 +116,7 @@ type ReadFileOptions = LineSelectionOptions & {
   skipBinary?: boolean;
 };
 
-function applyLineSelection(
-  target: LineSelectionOptions,
-  source: LineSelectionOptions
-): void {
+function applyLineSelection(target: LineSelectionOptions, source: LineSelectionOptions): void {
   assignDefined(target, { head: source.head, tail: source.tail });
   if (source.endLine !== undefined) {
     target.startLine = source.startLine ?? 1;
@@ -132,9 +126,7 @@ function applyLineSelection(
   }
 }
 
-function buildReadOptions(
-  options: NormalizedReadMultipleOptions
-): ReadFileOptions {
+function buildReadOptions(options: NormalizedReadMultipleOptions): ReadFileOptions {
   const readOptions: ReadFileOptions = {
     encoding: options.encoding,
     maxSize: options.maxSize,
@@ -146,7 +138,7 @@ function buildReadOptions(
 
 function buildReadMultipleResult(
   filePath: string,
-  result: Awaited<ReturnType<typeof readFile>>
+  result: Awaited<ReturnType<typeof readFile>>,
 ): ReadMultipleResult {
   const output: ReadMultipleResult = {
     path: filePath,
@@ -168,18 +160,12 @@ function buildReadMultipleResult(
 async function readSingleFile(
   task: FileReadTask,
   readOptions: Parameters<typeof readFile>[1],
-  pathGuard: PathGuard
+  pathGuard: PathGuard,
 ): Promise<{ index: number; value: ReadMultipleResult }> {
   const { filePath, index, validPath, stats } = task;
   const result =
     validPath && stats
-      ? await readFileWithStats(
-          filePath,
-          validPath,
-          stats,
-          readOptions,
-          pathGuard
-        )
+      ? await readFileWithStats(filePath, validPath, stats, readOptions, pathGuard)
       : await readFile(filePath, readOptions, pathGuard);
 
   return {
@@ -193,7 +179,7 @@ async function readFilesInParallel(
   options: NormalizedReadMultipleOptions,
   pathGuard: PathGuard,
   signal?: AbortSignal,
-  onReadComplete?: () => void
+  onReadComplete?: () => void,
 ): Promise<{
   results: { index: number; value: ReadMultipleResult }[];
   errors: { index: number; error: Error }[];
@@ -210,19 +196,14 @@ async function readFilesInParallel(
       return result;
     },
     PARALLEL_CONCURRENCY,
-    signal
+    signal,
   );
 }
 
-function normalizeReadMultipleOptions(
-  options: ReadMultipleOptions
-): NormalizedReadMultipleOptions {
+function normalizeReadMultipleOptions(options: ReadMultipleOptions): NormalizedReadMultipleOptions {
   const normalized: NormalizedReadMultipleOptions = {
     encoding: options.encoding ?? 'utf-8',
-    maxSize: Math.min(
-      options.maxSize ?? MAX_TEXT_FILE_SIZE,
-      MAX_TEXT_FILE_SIZE
-    ),
+    maxSize: Math.min(options.maxSize ?? MAX_TEXT_FILE_SIZE, MAX_TEXT_FILE_SIZE),
     maxTotalSize: options.maxTotalSize ?? DEFAULT_READ_MANY_MAX_TOTAL_SIZE,
   };
   applyLineSelection(normalized, options);
@@ -255,18 +236,14 @@ async function validateFile(
   filePath: string,
   index: number,
   pathGuard: PathGuard,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<ValidatedFileInfo> {
   const validPath = await pathGuard.validateExistingPath(filePath);
   const stats = await withAbort(stat(validPath), signal);
   return { filePath, index, validPath, stats };
 }
 
-function markRemainingSkipped(
-  startIndex: number,
-  total: number,
-  skippedBudget: Set<number>
-): void {
+function markRemainingSkipped(startIndex: number, total: number, skippedBudget: Set<number>): void {
   for (let index = startIndex; index < total; index += 1) {
     skippedBudget.add(index);
   }
@@ -276,7 +253,7 @@ async function tryValidateFile(
   filePath: string,
   index: number,
   pathGuard: PathGuard,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<ValidatedFileInfo | undefined> {
   try {
     return await validateFile(filePath, index, pathGuard, signal);
@@ -288,16 +265,15 @@ async function tryValidateFile(
 async function validateBatch(
   tasks: { filePath: string; index: number }[],
   pathGuard: PathGuard,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<Map<number, ValidatedFileInfo>> {
   if (tasks.length === 0) return new Map<number, ValidatedFileInfo>();
 
   const { results } = await processInParallel(
     tasks,
-    async (task) =>
-      tryValidateFile(task.filePath, task.index, pathGuard, signal),
+    async (task) => tryValidateFile(task.filePath, task.index, pathGuard, signal),
     PARALLEL_CONCURRENCY,
-    signal
+    signal,
   );
 
   const infos = new Map<number, ValidatedFileInfo>();
@@ -314,7 +290,7 @@ function applyBudget(
   maxTotalSize: number,
   index: number,
   totalFiles: number,
-  skippedBudget: Set<number>
+  skippedBudget: Set<number>,
 ): { totalSize: number; exceeded: boolean } {
   if (totalSize + estimatedSize > maxTotalSize) {
     skippedBudget.add(index);
@@ -356,7 +332,7 @@ function applyBudgetForRange(options: {
       maxTotalSize,
       index,
       totalFiles,
-      skippedBudget
+      skippedBudget,
     );
     if (exceeded) {
       return { totalSize, exceeded: true };
@@ -372,7 +348,7 @@ async function collectFileBudget(
   maxTotalSize: number,
   maxSize: number,
   pathGuard: PathGuard,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<{
   skippedBudget: Set<number>;
   validated: Map<number, ValidatedFileInfo>;
@@ -382,11 +358,7 @@ async function collectFileBudget(
   let totalSize = 0;
   const totalFiles = filePaths.length;
 
-  for (
-    let batchStart = 0;
-    batchStart < totalFiles;
-    batchStart += PARALLEL_CONCURRENCY
-  ) {
+  for (let batchStart = 0; batchStart < totalFiles; batchStart += PARALLEL_CONCURRENCY) {
     const batchTasks: { filePath: string; index: number }[] = [];
     const batchEnd = Math.min(batchStart + PARALLEL_CONCURRENCY, totalFiles);
 
@@ -430,14 +402,10 @@ function buildOutput(filePaths: readonly string[]): ReadMultipleResult[] {
 function resolveErrorOriginalIndex(
   failureIndex: number,
   filesToProcess: { index: number }[],
-  totalInputFiles: number
+  totalInputFiles: number,
 ): number | undefined {
   const batchIndex = filesToProcess[failureIndex]?.index;
-  if (
-    typeof batchIndex === 'number' &&
-    batchIndex >= 0 &&
-    batchIndex < totalInputFiles
-  ) {
+  if (typeof batchIndex === 'number' && batchIndex >= 0 && batchIndex < totalInputFiles) {
     return batchIndex;
   }
   if (failureIndex >= 0 && failureIndex < totalInputFiles) {
@@ -449,7 +417,7 @@ function resolveErrorOriginalIndex(
 function buildFilesToProcess(
   filePaths: readonly string[],
   validated: Map<number, { validPath: string; stats: Stats }>,
-  skippedBudget: Set<number>
+  skippedBudget: Set<number>,
 ): FileReadTask[] {
   const filesToProcess: FileReadTask[] = [];
   for (let index = 0; index < filePaths.length; index += 1) {
@@ -475,7 +443,7 @@ function applySkippedBudget(
   output: ReadMultipleResult[],
   skippedBudget: Set<number>,
   filePaths: readonly string[],
-  maxTotalSize: number
+  maxTotalSize: number,
 ): void {
   for (const index of skippedBudget) {
     const filePath = filePaths[index];
@@ -483,7 +451,7 @@ function applySkippedBudget(
     output[index] = {
       path: filePath,
       error: new Error(
-        `Skipped: combined estimated read would exceed maxTotalSize (${maxTotalSize} bytes)`
+        `Skipped: combined estimated read would exceed maxTotalSize (${maxTotalSize} bytes)`,
       ),
     };
   }
@@ -491,7 +459,7 @@ function applySkippedBudget(
 
 async function readMultipleFiles(
   filePaths: readonly string[],
-  options: ReadMultipleOptions = {}
+  options: ReadMultipleOptions = {},
 ): Promise<ReadMultipleResult[]> {
   if (filePaths.length === 0) return [];
 
@@ -508,21 +476,17 @@ async function readMultipleFiles(
     normalized.maxTotalSize,
     normalized.maxSize,
     pathGuard,
-    signal
+    signal,
   );
 
-  const filesToProcess = buildFilesToProcess(
-    filePaths,
-    validated,
-    skippedBudget
-  );
+  const filesToProcess = buildFilesToProcess(filePaths, validated, skippedBudget);
 
   const { results, errors } = await readFilesInParallel(
     filesToProcess,
     normalized,
     pathGuard,
     signal,
-    options.onReadComplete
+    options.onReadComplete,
   );
 
   applyIndexedValues(output, results);
@@ -565,7 +529,7 @@ const ReadManyInputSchema = z
         startLine: value.startLine,
         endLine: value.endLine,
       },
-      ctx
+      ctx,
     );
   });
 
@@ -589,10 +553,10 @@ const ReadManyOutputSchema = z.strictObject({
         startLine: PositiveInt.optional().describe('Start line'),
         endLine: PositiveInt.optional().describe('End line'),
         continuation: ContinuationSchema.optional().describe(
-          'Present when file was cut; call the named tool with the given args to continue'
+          'Present when file was cut; call the named tool with the given args to continue',
         ),
         error: PerFileErrorSchema.optional().describe('Per-file error'),
-      })
+      }),
     )
     .describe('Per-file read results'),
   summary: OperationSummarySchema.describe('Operation summary'),
@@ -607,20 +571,13 @@ const READ_MANY_TOOL: ToolContract = {
   inputSchema: ReadManyInputSchema,
   inputSchemaJson: toToolJsonSchema(ReadManyInputSchema, (s) => ({
     ...s,
-    allOf: [
-      ...(Array.isArray(s.allOf) ? (s.allOf as unknown[]) : []),
-      ...readRangeConstraints(),
-    ],
+    allOf: [...(Array.isArray(s.allOf) ? (s.allOf as unknown[]) : []), ...readRangeConstraints()],
   })),
   outputSchema: ReadManyOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   icons: FILE_READ_ICONS,
-  nuances: [
-    'Per-file failures land in `results[].error`; the call still returns `isError:false`.',
-  ],
-  gotchas: [
-    'One `defaultTimeoutMs` covers the whole batch — slow disks may starve later files.',
-  ],
+  nuances: ['Per-file failures land in `results[].error`; the call still returns `isError:false`.'],
+  gotchas: ['One `defaultTimeoutMs` covers the whole batch — slow disks may starve later files.'],
   taskSupport: 'optional',
   defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
 } as const;
@@ -669,9 +626,7 @@ function buildReadContinuation(result: {
   };
 }
 
-function toStructuredReadManyResult(
-  result: ReadManyResultWithResource
-): ReadManyOutputItem {
+function toStructuredReadManyResult(result: ReadManyResultWithResource): ReadManyOutputItem {
   const structuredResult: ReadManyOutputItem = {
     path: result.path,
   };
@@ -694,14 +649,12 @@ function toStructuredReadManyResult(
 
 function maybeExternalizeReadManyResult(
   result: ReadManyResult,
-  resourceStore?: ToolRegistrationOptions['resourceStore']
+  resourceStore?: ToolRegistrationOptions['resourceStore'],
 ): ReadManyResultWithResource {
   const { error, ...rest } = result;
   const baseResult: ReadManyResultWithResource = {
     ...rest,
-    ...(error
-      ? { error: buildStructuredError(error, ErrorCode.UNKNOWN, result.path) }
-      : {}),
+    ...(error ? { error: buildStructuredError(error, ErrorCode.UNKNOWN, result.path) } : {}),
   };
 
   if (!result.content) {
@@ -748,7 +701,7 @@ function buildReadManyTextSection(result: ReadManyResultWithResource): string {
 function buildReadMultipleOptions(
   args: ReadManyInput,
   signal?: AbortSignal,
-  onReadComplete?: () => void
+  onReadComplete?: () => void,
 ): ReadMultipleOptions {
   const options: ReadMultipleOptions = {};
 
@@ -764,7 +717,7 @@ function buildReadMultipleOptions(
 
 function buildReadManyResponsePayload(
   results: readonly ReadManyResult[],
-  resourceStore?: ToolRegistrationOptions['resourceStore']
+  resourceStore?: ToolRegistrationOptions['resourceStore'],
 ): {
   resourceLinks: ReturnType<typeof buildResourceLink>[];
   structuredResults: ReadManyOutputItem[];
@@ -787,7 +740,7 @@ function buildReadManyResponsePayload(
           uri: mappedResult.resourceUri,
           name: basename(mappedResult.path),
           ...(mappedResult.mimeType ? { mimeType: mappedResult.mimeType } : {}),
-        })
+        }),
       );
     }
 
@@ -814,7 +767,7 @@ async function handleReadMultipleFiles(
   pathGuard: PathGuard,
   signal?: AbortSignal,
   resourceStore?: ToolRegistrationOptions['resourceStore'],
-  onReadComplete?: () => void
+  onReadComplete?: () => void,
 ): Promise<ToolResponse<ReadManyOutput>> {
   const options = buildReadMultipleOptions(args, signal, onReadComplete);
   options.pathGuard = pathGuard;
@@ -841,13 +794,12 @@ export const READ_MANY = defineTool<ReadManyInput, ReadManyOutput>({
   run: async (args, ctx) => {
     const context = buildBatchPathContext(args.paths, 'files');
     const label = `${READ_MANY_TOOL_LABEL}: ${context}`;
-    const { progress, onItemComplete: rawOnItemComplete } =
-      createBatchProgressCallbacks(ctx, {
-        toolLabel: READ_MANY_TOOL_LABEL,
-        context,
-        totalItems: args.paths.length,
-        itemVerb: 'read',
-      });
+    const { progress, onItemComplete: rawOnItemComplete } = createBatchProgressCallbacks(ctx, {
+      toolLabel: READ_MANY_TOOL_LABEL,
+      context,
+      totalItems: args.paths.length,
+      itemVerb: 'read',
+    });
 
     let itemsDone = 0;
     const onItemComplete = (): void => {
@@ -862,7 +814,7 @@ export const READ_MANY = defineTool<ReadManyInput, ReadManyOutput>({
         ctx.pathGuard,
         ctx.signal,
         ctx.resourceStore,
-        onItemComplete
+        onItemComplete,
       );
 
       const sc = result.structuredContent;

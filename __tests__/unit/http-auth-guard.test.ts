@@ -73,10 +73,7 @@ describe('validateBearerAuthorization', () => {
 
   it('rejects a token exceeding the 4096-byte cap', () => {
     const oversized = 'x'.repeat(4097);
-    assert.equal(
-      validateBearerAuthorization(apiKey, `Bearer ${oversized}`),
-      false
-    );
+    assert.equal(validateBearerAuthorization(apiKey, `Bearer ${oversized}`), false);
   });
 });
 

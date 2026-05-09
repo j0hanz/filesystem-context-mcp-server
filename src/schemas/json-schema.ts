@@ -19,11 +19,7 @@ const JSON_SCHEMA_OVERRIDE: NonNullable<
     delete out.maximum;
   }
   // Strip nonstandard format values when a concrete pattern already encodes the constraint
-  if (
-    typeof out.format === 'string' &&
-    NONSTANDARD_FORMATS.has(out.format) &&
-    'pattern' in out
-  ) {
+  if (typeof out.format === 'string' && NONSTANDARD_FORMATS.has(out.format) && 'pattern' in out) {
     delete out.format;
   }
   // Strip contentEncoding when a concrete pattern already encodes the constraint
@@ -42,15 +38,9 @@ function removeDefaultedFromRequired(schema: unknown): unknown {
   for (const [k, v] of Object.entries(schema as JsonSchema)) {
     out[k] = removeDefaultedFromRequired(v);
   }
-  if (
-    Array.isArray(out.required) &&
-    out.properties &&
-    typeof out.properties === 'object'
-  ) {
+  if (Array.isArray(out.required) && out.properties && typeof out.properties === 'object') {
     const props = out.properties as Record<string, JsonSchema>;
-    const filtered = (out.required as string[]).filter(
-      (n) => !('default' in (props[n] ?? {}))
-    );
+    const filtered = (out.required as string[]).filter((n) => !('default' in (props[n] ?? {})));
     if (filtered.length === 0) delete out.required;
     else out.required = filtered;
   }
@@ -90,11 +80,7 @@ export function safeGlobConstraint(propertyName: string): JsonSchema {
       properties: {
         [propertyName]: {
           not: {
-            anyOf: [
-              { pattern: '^/' },
-              { pattern: '^[A-Za-z]:' },
-              { pattern: '\\.\\.' },
-            ],
+            anyOf: [{ pattern: '^/' }, { pattern: '^[A-Za-z]:' }, { pattern: '\\.\\.' }],
           },
         },
       },
@@ -104,16 +90,14 @@ export function safeGlobConstraint(propertyName: string): JsonSchema {
 
 export function toToolJsonSchema(
   zodSchema: z.ZodType,
-  augment?: (schema: JsonSchema) => JsonSchema
+  augment?: (schema: JsonSchema) => JsonSchema,
 ): StandardSchemaWithJSON {
   const raw = z.toJSONSchema(zodSchema, {
     io: 'input',
     unrepresentable: 'any',
     override: JSON_SCHEMA_OVERRIDE,
   }) as JsonSchema;
-  const cleaned = removeDefaultedFromRequired(
-    stripRootSchema(raw)
-  ) as JsonSchema;
+  const cleaned = removeDefaultedFromRequired(stripRootSchema(raw)) as JsonSchema;
   const final = augment ? augment(cleaned) : cleaned;
   const std = { ...zodSchema['~standard'] } as Record<string, unknown>;
   std.jsonSchema = {

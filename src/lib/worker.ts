@@ -35,11 +35,7 @@ export const WORKER_ENTRY_URL = new URL(import.meta.url);
 
 // ---- shared types (used by both sides) ---------------------------------
 
-export type WorkerTaskName =
-  | 'diff'
-  | 'formatPatch'
-  | 'applyPatch'
-  | 'createPatch';
+export type WorkerTaskName = 'diff' | 'formatPatch' | 'applyPatch' | 'createPatch';
 
 export interface DiffPayload {
   oldStr: string;
@@ -186,27 +182,18 @@ const TASK_HANDLERS: {
     return { applied, patch };
   },
   createPatch: (p) => {
-    return createTwoFilesPatch(
-      p.oldHeader,
-      p.newHeader,
-      p.oldStr,
-      p.newStr,
-      '',
-      ''
-    );
+    return createTwoFilesPatch(p.oldHeader, p.newHeader, p.oldStr, p.newStr, '', '');
   },
 };
 
 function runHandler<N extends WorkerTaskName>(
   name: N,
-  payload: TaskPayloadMap[N]
+  payload: TaskPayloadMap[N],
 ): TaskResultMap[N] {
   if (!Object.hasOwn(TASK_HANDLERS, name)) {
     throw new Error(`Unknown worker task: ${name as string}`);
   }
-  const handler = TASK_HANDLERS[name] as (
-    p: TaskPayloadMap[N]
-  ) => TaskResultMap[N];
+  const handler = TASK_HANDLERS[name] as (p: TaskPayloadMap[N]) => TaskResultMap[N];
   return handler(payload);
 }
 

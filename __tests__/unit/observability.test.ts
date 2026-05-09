@@ -37,7 +37,7 @@ test('withToolDiagnostics returns correct value and catches errors', async () =>
       withToolDiagnostics('test-tool', async () => {
         throw new Error('fail');
       }),
-    /fail/
+    /fail/,
   );
 });
 
@@ -107,10 +107,7 @@ test('ops trace functions', () => {
   publishOpsTraceEnd({ op: 'test-op-end', path: 'test-path' });
   assert.equal(endEvent?.op, 'test-op-end');
 
-  publishOpsTraceError(
-    { op: 'test-op-err', path: 'test-path' },
-    new Error('err')
-  );
+  publishOpsTraceError({ op: 'test-op-err', path: 'test-path' }, new Error('err'));
   assert.equal(errEvent?.op, 'test-op-err');
   assert.equal((errEvent?.error as Error)?.message, 'err');
 });

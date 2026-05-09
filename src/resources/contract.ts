@@ -1,7 +1,4 @@
-import type {
-  ReadResourceResult,
-  ServerContext,
-} from '@modelcontextprotocol/server';
+import type { ReadResourceResult, ServerContext } from '@modelcontextprotocol/server';
 
 export interface ResourceContract {
   name: string;
@@ -20,12 +17,12 @@ export interface ResourceContract {
   read: (
     uri: URL,
     variables: Record<string, string | string[]>,
-    ctx: ServerContext
+    ctx: ServerContext,
   ) => Promise<ReadResourceResult> | ReadResourceResult;
   complete?: (
     variable: string,
     value: string,
-    ctx?: { arguments?: Record<string, string> }
+    ctx?: { arguments?: Record<string, string> },
   ) => Promise<string[]> | string[];
 
   subscribe?: (uri: string, notify: (uri: string) => void) => void;

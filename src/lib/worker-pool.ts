@@ -168,7 +168,7 @@ function rehydrateError(err: SerializedError): Error {
       err.code,
       err.message,
       ...(err.path !== undefined ? [err.path] : [undefined]),
-      ...(err.details !== undefined ? [err.details] : [])
+      ...(err.details !== undefined ? [err.details] : []),
     );
   }
   const e = new Error(err.message);
@@ -201,10 +201,7 @@ function handleWorkerExit(pw: PoolWorker, code: number): void {
   if (pw.current) {
     cleanupEntry(pw.current);
     pw.current.reject(
-      new McpError(
-        ErrorCode.UNKNOWN,
-        `Worker terminated unexpectedly (exit code ${String(code)})`
-      )
+      new McpError(ErrorCode.UNKNOWN, `Worker terminated unexpectedly (exit code ${String(code)})`),
     );
   }
   stopSweepTimerIfPossible();
@@ -285,14 +282,11 @@ function cleanupEntry(entry: InflightEntry): void {
 export function runInWorker<N extends WorkerTaskName>(
   name: N,
   payload: TaskPayloadMap[N],
-  opts: RunInWorkerOptions = {}
+  opts: RunInWorkerOptions = {},
 ): Promise<TaskResultMap[N]> {
   if (WORKERS_DISABLED) {
     return Promise.reject(
-      new McpError(
-        ErrorCode.UNKNOWN,
-        'runInWorker called while FS_DISABLE_WORKERS=1 — caller bug'
-      )
+      new McpError(ErrorCode.UNKNOWN, 'runInWorker called while FS_DISABLE_WORKERS=1 — caller bug'),
     );
   }
 
@@ -311,8 +305,7 @@ export function runInWorker<N extends WorkerTaskName>(
         const pw = state.workers.find((p) => p.current === entry);
         if (pw) {
           setTimeout(() => {
-            if (state.workers.includes(pw) && pw.current === entry)
-              retireWorker(pw);
+            if (state.workers.includes(pw) && pw.current === entry) retireWorker(pw);
           }, WORKER_CANCEL_GRACE_MS).unref();
         } else {
           // still queued; remove from queue
@@ -320,9 +313,7 @@ export function runInWorker<N extends WorkerTaskName>(
         }
         const reason: unknown = opts.signal?.reason;
         reject(
-          reason instanceof Error
-            ? reason
-            : new DOMException('Operation aborted', 'AbortError')
+          reason instanceof Error ? reason : new DOMException('Operation aborted', 'AbortError'),
         );
       };
       entry.abortHandler = handler;
@@ -360,9 +351,7 @@ export async function shutdownWorkerPool(): Promise<void> {
   // Reject everything that's still queued.
   for (const qt of state.queue.clear()) {
     cleanupEntry(qt.entry);
-    qt.entry.reject(
-      new McpError(ErrorCode.UNKNOWN, 'Worker pool shutting down')
-    );
+    qt.entry.reject(new McpError(ErrorCode.UNKNOWN, 'Worker pool shutting down'));
   }
   // Reject in-flight tasks; terminate workers.
   const toTerminate = [...state.workers];
@@ -375,15 +364,13 @@ export async function shutdownWorkerPool(): Promise<void> {
     toTerminate.map(async (pw) => {
       if (pw.current) {
         cleanupEntry(pw.current);
-        pw.current.reject(
-          new McpError(ErrorCode.UNKNOWN, 'Worker pool shutting down')
-        );
+        pw.current.reject(new McpError(ErrorCode.UNKNOWN, 'Worker pool shutting down'));
       }
       try {
         await pw.worker.terminate();
       } catch {
         /* ignore */
       }
-    })
+    }),
   );
 }

@@ -81,9 +81,9 @@ interface ListDirectoryOptions {
   signal?: AbortSignal;
 }
 
-type ListDirectoryNormalizedOptions = Required<
-  Omit<ListDirectoryOptions, 'signal' | 'pattern'>
-> & { pattern?: string };
+type ListDirectoryNormalizedOptions = Required<Omit<ListDirectoryOptions, 'signal' | 'pattern'>> & {
+  pattern?: string;
+};
 
 type ListStoppedReason = ListDirectoryResult['summary']['stoppedReason'];
 
@@ -113,7 +113,7 @@ interface AppendContext {
 
 function normalizeListOptions(
   options: ListDirectoryOptions,
-  pathGuard: PathGuard
+  pathGuard: PathGuard,
 ): ListDirectoryNormalizedOptions {
   const normalized: ListDirectoryNormalizedOptions = {
     includeHidden: options.includeHidden ?? false,
@@ -138,27 +138,24 @@ const LIST_SORT_COMPARATORS: Record<
   name: (a, b) => a.name.localeCompare(b.name),
   type: (a, b) => a.type.localeCompare(b.type),
   size: (a, b) => (a.size ?? 0) - (b.size ?? 0),
-  modified: (a, b) =>
-    (a.modified?.getTime() ?? 0) - (b.modified?.getTime() ?? 0),
+  modified: (a, b) => (a.modified?.getTime() ?? 0) - (b.modified?.getTime() ?? 0),
 };
 
 function sortListEntries(
   entries: DirectoryEntry[],
-  sortBy: NonNullable<ListDirectoryOptions['sortBy']>
+  sortBy: NonNullable<ListDirectoryOptions['sortBy']>,
 ): void {
   entries.sort(LIST_SORT_COMPARATORS[sortBy]);
 }
 
-function resolveListMaxDepth(
-  normalized: ListDirectoryNormalizedOptions
-): number {
+function resolveListMaxDepth(normalized: ListDirectoryNormalizedOptions): number {
   return normalized.pattern ? normalized.maxDepth : 1;
 }
 
 function filterDirents(
   dirents: Dirent[],
   basePath: string,
-  includeHidden: boolean
+  includeHidden: boolean,
 ): { dirent: Dirent; entryPath: string }[] {
   const filtered: { dirent: Dirent; entryPath: string }[] = [];
   for (const dirent of dirents) {
@@ -172,12 +169,9 @@ async function* readDirectoryEntries(
   basePath: string,
   normalized: ListDirectoryNormalizedOptions,
   needsStats: boolean,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): AsyncGenerator<EntryCandidate> {
-  const dirents = await withAbort(
-    readdir(basePath, { withFileTypes: true }),
-    signal
-  );
+  const dirents = await withAbort(readdir(basePath, { withFileTypes: true }), signal);
   const filtered = filterDirents(dirents, basePath, normalized.includeHidden);
 
   if (!needsStats) {
@@ -195,7 +189,7 @@ async function* readDirectoryEntries(
       stats: await withAbort(lstat(entryPath), signal),
     }),
     PARALLEL_CONCURRENCY,
-    signal
+    signal,
   );
 
   if (errors.length > 0) {
@@ -205,15 +199,8 @@ async function* readDirectoryEntries(
   yield* results;
 }
 
-function shouldUseFastPath(
-  normalized: ListDirectoryNormalizedOptions,
-  maxDepth: number
-): boolean {
-  return (
-    !normalized.pattern &&
-    normalized.excludePatterns.length === 0 &&
-    maxDepth === 1
-  );
+function shouldUseFastPath(normalized: ListDirectoryNormalizedOptions, maxDepth: number): boolean {
+  return !normalized.pattern && normalized.excludePatterns.length === 0 && maxDepth === 1;
 }
 
 function createListEntryStream(
@@ -221,7 +208,7 @@ function createListEntryStream(
   normalized: ListDirectoryNormalizedOptions,
   maxDepth: number,
   needsStats: boolean,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): AsyncIterable<EntryCandidate> {
   if (shouldUseFastPath(normalized, maxDepth)) {
     return readDirectoryEntries(basePath, normalized, needsStats, signal);
@@ -247,7 +234,7 @@ function resolveListRelativePath(basePath: string, entryPath: string): string {
 async function resolveSymlinkTarget(
   entryType: EntryType,
   includeSymlinkTargets: boolean,
-  entryPath: string
+  entryPath: string,
 ): Promise<string | undefined> {
   if (entryType !== 'symlink' || !includeSymlinkTargets) return undefined;
   return readlink(entryPath).catch(() => undefined);
@@ -263,10 +250,9 @@ function buildDirectoryEntry(
   entry: { path: string; stats?: Stats },
   entryType: EntryType,
   needsStats: boolean,
-  symlinkTarget: string | undefined
+  symlinkTarget: string | undefined,
 ): DirectoryEntry {
-  const size =
-    needsStats && entry.stats?.isFile() ? entry.stats.size : undefined;
+  const size = needsStats && entry.stats?.isFile() ? entry.stats.size : undefined;
   const modified = needsStats ? entry.stats?.mtime : undefined;
   return {
     name: basename(entry.path),
@@ -282,7 +268,7 @@ function buildDirectoryEntry(
 function trackSymlink(
   entryType: EntryType,
   includeSymlinkTargets: boolean,
-  counters: ListCounters
+  counters: ListCounters,
 ): void {
   if (entryType === 'symlink' && !includeSymlinkTargets) {
     counters.symlinksNotFollowed += 1;
@@ -293,17 +279,11 @@ function appendEntry(
   entry: EntryCandidate,
   entryType: EntryType,
   symlinkTarget: string | undefined,
-  ctx: AppendContext
+  ctx: AppendContext,
 ): void {
   updateTotals(entryType, ctx.totals);
   ctx.entries.push(
-    buildDirectoryEntry(
-      ctx.basePath,
-      entry,
-      entryType,
-      ctx.needsStats,
-      symlinkTarget
-    )
+    buildDirectoryEntry(ctx.basePath, entry, entryType, ctx.needsStats, symlinkTarget),
   );
 }
 
@@ -312,7 +292,7 @@ async function enqueueAppendEntry(
   entryType: EntryType,
   ctx: AppendContext,
   pending: Promise<void>[],
-  flushPending: () => Promise<void>
+  flushPending: () => Promise<void>,
 ): Promise<void> {
   if (!ctx.includeSymlinkTargets) {
     appendEntry(entry, entryType, undefined, ctx);
@@ -321,7 +301,7 @@ async function enqueueAppendEntry(
   pending.push(
     resolveSymlinkTarget(entryType, true, entry.path).then((target) => {
       appendEntry(entry, entryType, target, ctx);
-    })
+    }),
   );
   if (pending.length >= PARALLEL_CONCURRENCY) {
     await flushPending();
@@ -334,7 +314,7 @@ function buildListSummary(
   maxDepth: number,
   truncated: boolean,
   stoppedReason: ListStoppedReason | undefined,
-  counters: ListCounters
+  counters: ListCounters,
 ): ListDirectoryResult['summary'] {
   const summary = {
     totalEntries: entries.length,
@@ -356,7 +336,7 @@ async function collectListEntries(
   signal: AbortSignal,
   needsStats: boolean,
   maxDepth: number,
-  deps: EntryAccessDependencies
+  deps: EntryAccessDependencies,
 ): Promise<{
   entries: DirectoryEntry[];
   totals: EntryTotals;
@@ -376,13 +356,7 @@ async function collectListEntries(
   const pending: Promise<void>[] = [];
   let acceptedCount = 0;
 
-  const stream = createListEntryStream(
-    basePath,
-    normalized,
-    maxDepth,
-    needsStats,
-    signal
-  );
+  const stream = createListEntryStream(basePath, normalized, maxDepth, needsStats, signal);
 
   const flushPending = async (): Promise<void> => {
     if (pending.length === 0) return;
@@ -398,15 +372,13 @@ async function collectListEntries(
   };
 
   for await (const entry of stream) {
-    const stopReason = resolveStopReason<Exclude<ListStoppedReason, undefined>>(
-      {
-        signal,
-        current: acceptedCount,
-        max: normalized.maxEntries,
-        abortedReason: 'aborted',
-        maxReason: 'maxEntries',
-      }
-    );
+    const stopReason = resolveStopReason<Exclude<ListStoppedReason, undefined>>({
+      signal,
+      current: acceptedCount,
+      max: normalized.maxEntries,
+      abortedReason: 'aborted',
+      maxReason: 'maxEntries',
+    });
     if (stopReason) {
       truncated = true;
       stoppedReason = stopReason;
@@ -421,7 +393,7 @@ async function collectListEntries(
       entryType,
       basePathDirectories,
       signal,
-      deps
+      deps,
     );
     if (!accessible) {
       counters.skippedInaccessible += 1;
@@ -429,13 +401,7 @@ async function collectListEntries(
     }
 
     acceptedCount += 1;
-    await enqueueAppendEntry(
-      entry,
-      entryType,
-      appendCtx,
-      pending,
-      flushPending
-    );
+    await enqueueAppendEntry(entry, entryType, appendCtx, pending, flushPending);
   }
 
   if (normalized.includeSymlinkTargets) {
@@ -449,40 +415,32 @@ async function executeListDirectory(
   basePath: string,
   normalized: ListDirectoryNormalizedOptions,
   signal: AbortSignal,
-  deps: EntryAccessDependencies
+  deps: EntryAccessDependencies,
 ): Promise<{
   entries: DirectoryEntry[];
   summary: ListDirectoryResult['summary'];
 }> {
   const needsStats = needsStatsForSort(normalized.sortBy);
   const maxDepth = resolveListMaxDepth(normalized);
-  const { entries, totals, truncated, stoppedReason, counters } =
-    await collectListEntries(
-      basePath,
-      normalized,
-      signal,
-      needsStats,
-      maxDepth,
-      deps
-    );
+  const { entries, totals, truncated, stoppedReason, counters } = await collectListEntries(
+    basePath,
+    normalized,
+    signal,
+    needsStats,
+    maxDepth,
+    deps,
+  );
   sortListEntries(entries, normalized.sortBy);
   return {
     entries,
-    summary: buildListSummary(
-      entries,
-      totals,
-      maxDepth,
-      truncated,
-      stoppedReason,
-      counters
-    ),
+    summary: buildListSummary(entries, totals, maxDepth, truncated, stoppedReason, counters),
   };
 }
 
 async function listDirectory(
   dirPath: string,
   pathGuard: PathGuard,
-  options: ListDirectoryOptions = {}
+  options: ListDirectoryOptions = {},
 ): Promise<ListDirectoryResult> {
   const normalized = normalizeListOptions(options, pathGuard);
   const deps: EntryAccessDependencies = {
@@ -490,20 +448,11 @@ async function listDirectory(
     isSensitivePath: (p) => pathGuard.isSensitive(p),
     validateSymlinkPath: (p) => pathGuard.validateExistingPathDetailed(p),
   };
-  return withTimedAbortSignal(
-    options.signal,
-    normalized.timeoutMs,
-    async (signal) => {
-      const basePath = await pathGuard.validateExistingDirectory(dirPath);
-      const { entries, summary } = await executeListDirectory(
-        basePath,
-        normalized,
-        signal,
-        deps
-      );
-      return { path: basePath, entries, summary };
-    }
-  );
+  return withTimedAbortSignal(options.signal, normalized.timeoutMs, async (signal) => {
+    const basePath = await pathGuard.validateExistingDirectory(dirPath);
+    const { entries, summary } = await executeListDirectory(basePath, normalized, signal, deps);
+    return { path: basePath, entries, summary };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -542,27 +491,20 @@ const ListDirectoryOutputSchema = z.strictObject({
     .array(
       z.strictObject({
         name: z.string().describe('Entry name'),
-        relativePath: z
-          .string()
-          .describe('Relative path from listed directory'),
+        relativePath: z.string().describe('Relative path from listed directory'),
         type: FileTypeEnum.describe('Entry type'),
         size: NonNegInt.optional().describe('Size in bytes'),
         modified: z.string().optional().describe('ISO 8601 last modified time'),
-      })
+      }),
     )
     .describe('Directory entries'),
   entryCount: NonNegInt.optional().describe('Total number of entries'),
-  resourceUri: z
-    .string()
-    .optional()
-    .describe('Resource URI for full JSON listing'),
+  resourceUri: z.string().optional().describe('Resource URI for full JSON listing'),
   totalEntries: NonNegInt.optional().describe('Total entries scanned'),
   totalFiles: NonNegInt.optional().describe('Total files'),
   totalDirectories: NonNegInt.optional().describe('Total directories'),
   stoppedReason: z.string().optional().describe('Why enumeration stopped'),
-  skippedInaccessible: NonNegInt.optional().describe(
-    'Inaccessible entries skipped'
-  ),
+  skippedInaccessible: NonNegInt.optional().describe('Inaccessible entries skipped'),
   nextCursor: NextCursorSchema,
 });
 
@@ -590,8 +532,7 @@ interface ListSnapshot {
 }
 
 const LIST_CURSOR_TTL_MS =
-  parseInt(process.env.FS_CONTEXT_LIST_CURSOR_TTL_MS ?? '', 10) ||
-  5 * 60 * 1000;
+  parseInt(process.env.FS_CONTEXT_LIST_CURSOR_TTL_MS ?? '', 10) || 5 * 60 * 1000;
 const listSnapshots = new Map<string, ListSnapshot>();
 const listSnapshotTimers = new Map<string, NodeJS.Timeout>();
 const ListCursorPayloadSchema = z.strictObject({
@@ -604,7 +545,7 @@ type ListCursorPayload = z.infer<typeof ListCursorPayloadSchema>;
 
 function buildListFingerprint(
   args: z.infer<typeof ListDirectoryInputSchema>,
-  pathGuard: PathGuard
+  pathGuard: PathGuard,
 ): string {
   return JSON.stringify({
     path: pathGuard.resolvePathOrRoot(args.path),
@@ -657,7 +598,7 @@ function resolveNextListCursor(
   snapshotId: string | undefined,
   offset: number,
   pageSize: number,
-  totalEntries: number
+  totalEntries: number,
 ): string | undefined {
   if (!snapshotId) return undefined;
   const nextOffset = offset + pageSize;
@@ -675,10 +616,8 @@ function buildEntrySummaryPart(entries: readonly DirectoryEntry[]): string {
 
   const parts: string[] = [];
   if (files > 0) parts.push(`${files} file${files === 1 ? '' : 's'}`);
-  if (directories > 0)
-    parts.push(`${directories} dir${directories === 1 ? '' : 's'}`);
-  if (symlinks > 0)
-    parts.push(`${symlinks} symlink${symlinks === 1 ? '' : 's'}`);
+  if (directories > 0) parts.push(`${directories} dir${directories === 1 ? '' : 's'}`);
+  if (symlinks > 0) parts.push(`${symlinks} symlink${symlinks === 1 ? '' : 's'}`);
 
   if (parts.length === 0) return '';
   return ` (${parts.join(', ')})`;
@@ -690,7 +629,7 @@ function buildListSummaryText(dirPath: string, entryCount: number): string {
 
 function buildListTextResult(
   result: Awaited<ReturnType<typeof listDirectory>>,
-  nextCursor?: string
+  nextCursor?: string,
 ): string {
   const { entries, summary, path } = result;
   if (entries.length === 0) {
@@ -728,7 +667,7 @@ function buildListTextResult(
 }
 
 function buildStructuredListEntry(
-  entry: Awaited<ReturnType<typeof listDirectory>>['entries'][number]
+  entry: Awaited<ReturnType<typeof listDirectory>>['entries'][number],
 ): NonNullable<z.infer<typeof ListDirectoryOutputSchema>['entries']>[number] {
   return {
     name: entry.name,
@@ -743,12 +682,10 @@ function buildStructuredListResult(
   result: Awaited<ReturnType<typeof listDirectory>>,
   nextCursor?: string,
   resourceUri?: string,
-  entryCount?: number
+  entryCount?: number,
 ): z.infer<typeof ListDirectoryOutputSchema> {
   const { entries, summary, path: resultPath } = result;
-  const structuredEntries: NonNullable<
-    z.infer<typeof ListDirectoryOutputSchema>['entries']
-  > = [];
+  const structuredEntries: NonNullable<z.infer<typeof ListDirectoryOutputSchema>['entries']> = [];
   for (const entry of entries) {
     structuredEntries.push(buildStructuredListEntry(entry));
   }
@@ -762,9 +699,7 @@ function buildStructuredListResult(
     totalFiles: summary.totalFiles,
     totalDirectories: summary.totalDirectories,
     ...(summary.stoppedReason ? { stoppedReason: summary.stoppedReason } : {}),
-    ...(summary.skippedInaccessible
-      ? { skippedInaccessible: summary.skippedInaccessible }
-      : {}),
+    ...(summary.skippedInaccessible ? { skippedInaccessible: summary.skippedInaccessible } : {}),
     ...(nextCursor !== undefined ? { nextCursor } : {}),
   };
 }
@@ -773,7 +708,7 @@ async function handleListDirectory(
   args: z.infer<typeof ListDirectoryInputSchema>,
   pathGuard: PathGuard,
   signal?: AbortSignal,
-  resourceStore?: Parameters<typeof putResource>[0]['store']
+  resourceStore?: Parameters<typeof putResource>[0]['store'],
 ): Promise<ToolResponse<z.infer<typeof ListDirectoryOutputSchema>>> {
   const dirPath = pathGuard.resolvePathOrRoot(args.path);
   const pageSize = args.maxEntries;
@@ -812,10 +747,7 @@ async function handleListDirectory(
     result = await listDirectory(dirPath, pathGuard, options);
   }
 
-  const displayEntries = result.entries.slice(
-    cursorOffset,
-    cursorOffset + pageSize
-  );
+  const displayEntries = result.entries.slice(cursorOffset, cursorOffset + pageSize);
   if (!args.cursor && displayEntries.length < result.entries.length) {
     snapshotId = storeListSnapshot({
       path: result.path,
@@ -829,16 +761,14 @@ async function handleListDirectory(
     snapshotId,
     cursorOffset,
     displayEntries.length,
-    result.entries.length
+    result.entries.length,
   );
 
   // Store full listing in resource store if available
   let resourceUri: string | undefined;
   if (resourceStore) {
     // Create full listing JSON with all entries
-    const fullListing = result.entries.map((entry) =>
-      buildStructuredListEntry(entry)
-    );
+    const fullListing = result.entries.map((entry) => buildStructuredListEntry(entry));
 
     const jsonContent = JSON.stringify(fullListing, null, 2);
     const dirName = basename(result.path) || 'listing';
@@ -856,15 +786,13 @@ async function handleListDirectory(
 
     // Build summary with entry counts
     const fullEntrySummary = buildEntrySummaryPart(result.entries);
-    const summaryText =
-      buildListSummaryText(result.path, result.entries.length) +
-      fullEntrySummary;
+    const summaryText = buildListSummaryText(result.path, result.entries.length) + fullEntrySummary;
 
     const structured = buildStructuredListResult(
       { ...result, entries: displayEntries },
       nextCursor,
       resourceUri,
-      result.entries.length
+      result.entries.length,
     );
 
     return buildResourceResponse({
@@ -878,7 +806,7 @@ async function handleListDirectory(
   const displayResult = { ...result, entries: displayEntries };
   return buildToolResponse(
     buildListTextResult(displayResult, nextCursor),
-    buildStructuredListResult(displayResult, nextCursor)
+    buildStructuredListResult(displayResult, nextCursor),
   );
 }
 
@@ -888,17 +816,12 @@ type ListDirOutput = z.infer<typeof ListDirectoryOutputSchema>;
 export const LIST_DIRECTORY = defineTool<ListDirInput, ListDirOutput>({
   contract: LIST_DIRECTORY_TOOL,
   defaultErrorCode: ErrorCode.NOT_DIRECTORY,
-  run: (args, ctx) =>
-    handleListDirectory(args, ctx.pathGuard, ctx.signal, ctx.resourceStore),
+  run: (args, ctx) => handleListDirectory(args, ctx.pathGuard, ctx.signal, ctx.resourceStore),
   progressMessage: (args) =>
     `${LIST_DIRECTORY_TOOL.title}: ${args.path ? basename(args.path) : '.'}`,
-  completionMessage: (
-    args: ListDirInput,
-    result: ToolResult<ListDirOutput>
-  ): string => {
+  completionMessage: (args: ListDirInput, result: ToolResult<ListDirOutput>): string => {
     const base = args.path ? basename(args.path) : '.';
-    if (result.isError)
-      return `${LIST_DIRECTORY_TOOL.title}: ${base} • ${result.errorCode}`;
+    if (result.isError) return `${LIST_DIRECTORY_TOOL.title}: ${base} • ${result.errorCode}`;
     const sc = result.structuredContent;
     const count = sc.entryCount ?? sc.totalEntries ?? 0;
     return `${LIST_DIRECTORY_TOOL.title}: ${base} • ${count} ${count === 1 ? 'entry' : 'entries'}`;

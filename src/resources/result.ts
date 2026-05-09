@@ -3,9 +3,7 @@ import { ProtocolError, ProtocolErrorCode } from '@modelcontextprotocol/server';
 import type { ResourceContract } from './contract.js';
 import type { ResourceRegistrationOptions } from './shared.js';
 
-export function createResultResource(
-  options: ResourceRegistrationOptions
-): ResourceContract {
+export function createResultResource(options: ResourceRegistrationOptions): ResourceContract {
   return {
     name: 'filesystem-mcp-result',
     title: 'Cached Tool Result',
@@ -18,16 +16,14 @@ export function createResultResource(
       if (typeof id !== 'string' || id.length === 0) {
         throw new ProtocolError(
           ProtocolErrorCode.ResourceNotFound,
-          'Cached result expired. Re-run the tool to regenerate.'
+          'Cached result expired. Re-run the tool to regenerate.',
         );
       }
 
       const entry = options.resourceStore.getEntry(uri.toString());
       if (entry.kind === 'text') {
         return {
-          contents: [
-            { uri: entry.uri, mimeType: entry.mimeType, text: entry.text },
-          ],
+          contents: [{ uri: entry.uri, mimeType: entry.mimeType, text: entry.text }],
         };
       }
       return {

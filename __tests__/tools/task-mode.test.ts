@@ -2,22 +2,14 @@
  * Integration tests for diff_files and apply_patch in task mode
  * (tasks/create + tasks/get + tasks/result lifecycle).
  */
-import {
-  type CallToolResult,
-  type CreateTaskResult,
-} from '@modelcontextprotocol/client';
+import { type CallToolResult, type CreateTaskResult } from '@modelcontextprotocol/client';
 
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-import {
-  assertOk,
-  createTestEnv,
-  getStructured,
-  type TestEnv,
-} from '../helpers.js';
+import { assertOk, createTestEnv, getStructured, type TestEnv } from '../helpers.js';
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 const POLL_INTERVAL_MS = 50;
@@ -30,7 +22,7 @@ async function delay(ms: number): Promise<void> {
 /** Poll tasks/get until the task reaches a terminal status. */
 async function pollUntilDone(
   client: TestEnv['client'],
-  taskId: string
+  taskId: string,
 ): Promise<{ status: string }> {
   for (let i = 0; i < MAX_POLLS; i++) {
     await delay(POLL_INTERVAL_MS);
@@ -40,9 +32,7 @@ async function pollUntilDone(
     });
     if (TERMINAL_STATUSES.has(got.status)) return { status: got.status };
   }
-  assert.fail(
-    `Task ${taskId} did not reach terminal status after ${MAX_POLLS} polls`
-  );
+  assert.fail(`Task ${taskId} did not reach terminal status after ${MAX_POLLS} polls`);
 }
 
 // ─── diff_files (task mode) ──────────────────────────────────────────────────
@@ -73,14 +63,14 @@ describe('task mode: diff_files', () => {
           arguments: { original: fileA, modified: fileB },
         },
       },
-      { task: {} }
+      { task: {} },
     )) as CreateTaskResult;
 
     const { taskId } = createResult.task;
     assert.ok(taskId, 'taskId must be non-empty');
     assert.ok(
       ['working', 'completed'].includes(createResult.task.status),
-      `unexpected initial status: ${createResult.task.status}`
+      `unexpected initial status: ${createResult.task.status}`,
     );
 
     const taskState = await pollUntilDone(env.client, taskId);
@@ -105,7 +95,7 @@ describe('task mode: diff_files', () => {
           arguments: { original: fileA, modified: fileB },
         },
       },
-      { task: {} }
+      { task: {} },
     )) as CreateTaskResult;
 
     const { taskId } = createResult.task;
@@ -114,7 +104,7 @@ describe('task mode: diff_files', () => {
     assert.equal(typeof taskState.status, 'string');
     assert.ok(
       TERMINAL_STATUSES.has(taskState.status),
-      `expected terminal status, got: ${taskState.status}`
+      `expected terminal status, got: ${taskState.status}`,
     );
   });
 });
@@ -154,7 +144,7 @@ describe('task mode: apply_patch', () => {
           arguments: { path: target, patch },
         },
       },
-      { task: {} }
+      { task: {} },
     )) as CreateTaskResult;
 
     const { taskId } = createResult.task;
@@ -196,7 +186,7 @@ describe('task mode: apply_patch', () => {
           arguments: { path: target, patch, dryRun: true },
         },
       },
-      { task: {} }
+      { task: {} },
     )) as CreateTaskResult;
 
     const { taskId } = createResult.task;

@@ -59,6 +59,5 @@ export const SafeGlobPattern = z
     id: 'SafeGlobPattern',
     title: 'Glob Pattern',
     examples: ['**/*.ts', 'src/**/*.js', '*.{ts,tsx}'],
-    suggestion:
-      'Use forward-slash globs; absolute paths and ".." are forbidden.',
+    suggestion: 'Use forward-slash globs; absolute paths and ".." are forbidden.',
   });

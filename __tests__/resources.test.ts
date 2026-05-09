@@ -18,7 +18,7 @@ interface DiscoveryEnv {
 function getTextContent(
   content:
     | { uri: string; text: string; mimeType?: string | undefined }
-    | { uri: string; blob: string; mimeType?: string | undefined }
+    | { uri: string; blob: string; mimeType?: string | undefined },
 ): string {
   if ('text' in content) {
     return content.text;
@@ -84,10 +84,7 @@ describe('resources and metadata', () => {
 
     const instructions = env.client.getInstructions();
     assert.ok(instructions, 'Expected initialize instructions to be present');
-    assert.match(
-      instructions,
-      /Start with: roots -> ls\/find -> stat -> read/u
-    );
+    assert.match(instructions, /Start with: roots -> ls\/find -> stat -> read/u);
 
     const instructionsResource = await env.client.readResource({
       uri: 'internal://instructions',

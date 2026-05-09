@@ -15,10 +15,7 @@ function pickAvailableToolNames(names: readonly string[]): string[] {
 function buildToolsOverview(): string {
   const rows: [string, string[]][] = [
     ['Navigate', pickAvailableToolNames(['roots', 'ls', 'tree', 'find'])],
-    [
-      'Inspect',
-      pickAvailableToolNames(['stat', 'stat_many', 'grep', 'calculate_hash']),
-    ],
+    ['Inspect', pickAvailableToolNames(['stat', 'stat_many', 'grep', 'calculate_hash'])],
     ['Read', pickAvailableToolNames(['read', 'read_many', 'diff_files'])],
     [
       'Write',

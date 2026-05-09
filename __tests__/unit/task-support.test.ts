@@ -35,7 +35,7 @@ function createTestTaskStore(): RequestTaskStore & { cleanup: () => void } {
         taskParams,
         reqCounter,
         { method: 'tools/call', params: {} },
-        'test-session'
+        'test-session',
       );
       return task;
     },
@@ -51,12 +51,7 @@ function createTestTaskStore(): RequestTaskStore & { cleanup: () => void } {
       return store.getTaskResult(taskId, 'test-session');
     },
     async updateTaskStatus(taskId, status, statusMessage?) {
-      await store.updateTaskStatus(
-        taskId,
-        status,
-        statusMessage,
-        'test-session'
-      );
+      await store.updateTaskStatus(taskId, status, statusMessage, 'test-session');
     },
     async listTasks(cursor?) {
       return store.listTasks(cursor, 'test-session');
@@ -82,10 +77,7 @@ function createMockExtra(taskStore: RequestTaskStore): CreateTaskServerContext {
   } as unknown as CreateTaskServerContext;
 }
 
-function createMockTaskExtra(
-  taskStore: RequestTaskStore,
-  taskId: string
-): TaskServerContext {
+function createMockTaskExtra(taskStore: RequestTaskStore, taskId: string): TaskServerContext {
   return {
     ...createMockExtra(taskStore),
     task: {
@@ -104,7 +96,7 @@ describe('createToolTaskHandler', () => {
           content: [{ type: 'text', text: 'done' }],
           structuredContent: { ok: true },
         }),
-        { toolName: 'test_tool' }
+        { toolName: 'test_tool' },
       );
 
       const result = await handler.createTask(createMockExtra(store));
@@ -112,7 +104,7 @@ describe('createToolTaskHandler', () => {
       assert.equal(result.task.taskId.length > 0, true, 'taskId must be set');
       assert.ok(
         ['working', 'completed'].includes(result.task.status),
-        `status must be working or completed, got: ${result.task.status}`
+        `status must be working or completed, got: ${result.task.status}`,
       );
       assert.equal(typeof result.task.createdAt, 'string');
       assert.equal(typeof result.task.lastUpdatedAt, 'string');
@@ -132,14 +124,12 @@ describe('createToolTaskHandler', () => {
             content: [{ type: 'text', text: 'done' }],
           } as ToolResult<unknown>;
         },
-        { toolName: 'my_grep' }
+        { toolName: 'my_grep' },
       );
 
       const { task } = await handler.createTask(createMockExtra(store));
       // Fetch the task immediately to see the statusMessage before completion
-      const got = await handler.getTask(
-        createMockTaskExtra(store, task.taskId)
-      );
+      const got = await handler.getTask(createMockTaskExtra(store, task.taskId));
       assert.equal(got.statusMessage, 'my_grep: starting');
     } finally {
       store.cleanup();
@@ -158,13 +148,11 @@ describe('createToolTaskHandler', () => {
       // Allow background execution to complete
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      const got = await handler.getTask(
-        createMockTaskExtra(store, task.taskId)
-      );
+      const got = await handler.getTask(createMockTaskExtra(store, task.taskId));
       assert.equal(got.taskId, task.taskId);
       assert.ok(
         ['working', 'completed', 'failed'].includes(got.status),
-        `unexpected status: ${got.status}`
+        `unexpected status: ${got.status}`,
       );
       assert.equal(typeof got.createdAt, 'string');
       assert.equal(typeof got.lastUpdatedAt, 'string');
@@ -185,9 +173,7 @@ describe('createToolTaskHandler', () => {
       // Wait for background execution
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      const result = await handler.getTaskResult(
-        createMockTaskExtra(store, task.taskId)
-      );
+      const result = await handler.getTaskResult(createMockTaskExtra(store, task.taskId));
       assert.ok(result.content, 'result must have content');
       assert.ok(Array.isArray(result.content), 'content must be an array');
     } finally {
@@ -207,9 +193,7 @@ describe('createToolTaskHandler', () => {
       const { task } = await handler.createTask(createMockExtra(store));
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      const got = await handler.getTask(
-        createMockTaskExtra(store, task.taskId)
-      );
+      const got = await handler.getTask(createMockTaskExtra(store, task.taskId));
       assert.equal(got.status, 'failed');
     } finally {
       store.cleanup();
@@ -233,9 +217,7 @@ describe('createToolTaskHandler', () => {
       const { task } = await handler.createTask(createMockExtra(store));
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      const got = await handler.getTask(
-        createMockTaskExtra(store, task.taskId)
-      );
+      const got = await handler.getTask(createMockTaskExtra(store, task.taskId));
       assert.equal(got.status, 'cancelled');
     } finally {
       store.cleanup();
@@ -272,7 +254,7 @@ describe('createToolTaskHandler', () => {
       const { task } = await handler.createTask(ctx);
       assert.ok(
         task.ttl !== null && task.ttl <= MAX_TASK_TTL_MS,
-        `ttl ${String(task.ttl)} should be clamped to ${String(MAX_TASK_TTL_MS)}`
+        `ttl ${String(task.ttl)} should be clamped to ${String(MAX_TASK_TTL_MS)}`,
       );
     } finally {
       store.cleanup();
@@ -305,7 +287,7 @@ describe('createToolTaskHandler', () => {
         async () =>
           ({
             content: [{ type: 'text', text: 'ok' }],
-          }) as ToolResult<unknown>
+          }) as ToolResult<unknown>,
       );
 
       await assert.rejects(
@@ -315,12 +297,12 @@ describe('createToolTaskHandler', () => {
           if (error instanceof Error) {
             assert.ok(
               error.message.includes('Too many active tasks'),
-              `Expected "Too many active tasks" in: ${error.message}`
+              `Expected "Too many active tasks" in: ${error.message}`,
             );
           }
 
           return true;
-        }
+        },
       );
     } finally {
       real.cleanup();
@@ -350,16 +332,13 @@ describe('createToolTaskHandler', () => {
       getTaskResult: real.getTaskResult.bind(real),
       updateTaskStatus: real.updateTaskStatus.bind(real),
       async listTasks() {
-        const tasks = Array.from(
-          { length: MAX_CONCURRENT_TASKS - 1 + createdCount },
-          (_, i) => ({
-            taskId: `fake-${String(i)}`,
-            status: 'working' as const,
-            ttl: null,
-            createdAt: new Date().toISOString(),
-            lastUpdatedAt: new Date().toISOString(),
-          })
-        );
+        const tasks = Array.from({ length: MAX_CONCURRENT_TASKS - 1 + createdCount }, (_, i) => ({
+          taskId: `fake-${String(i)}`,
+          status: 'working' as const,
+          ttl: null,
+          createdAt: new Date().toISOString(),
+          lastUpdatedAt: new Date().toISOString(),
+        }));
         return { tasks };
       },
     };
@@ -369,17 +348,13 @@ describe('createToolTaskHandler', () => {
         async () =>
           ({
             content: [{ type: 'text', text: 'ok' }],
-          }) as ToolResult<unknown>
+          }) as ToolResult<unknown>,
       );
 
-      const firstTaskPromise = handler.createTask(
-        createMockExtra(serializedStore)
-      );
+      const firstTaskPromise = handler.createTask(createMockExtra(serializedStore));
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      const secondTaskPromise = handler.createTask(
-        createMockExtra(serializedStore)
-      );
+      const secondTaskPromise = handler.createTask(createMockExtra(serializedStore));
 
       releaseFirstCreate();
 
@@ -395,7 +370,7 @@ describe('createToolTaskHandler', () => {
           }
 
           return true;
-        }
+        },
       );
       assert.equal(createCalls, 1);
     } finally {
@@ -423,7 +398,7 @@ describe('createToolTaskHandler', () => {
             content: [{ type: 'text', text: 'done' }],
           } as ToolResult<unknown>;
         },
-        { cancelPollMs: 50 }
+        { cancelPollMs: 50 },
       );
 
       const { task } = await handler.createTask(createMockExtra(store));
@@ -451,14 +426,10 @@ describe('createToolTaskHandler', () => {
       const { task } = await handler.createTask(createMockExtra(store));
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      const result = await handler.getTaskResult(
-        createMockTaskExtra(store, task.taskId)
-      );
+      const result = await handler.getTaskResult(createMockTaskExtra(store, task.taskId));
       const meta = result._meta as Record<string, unknown> | undefined;
       assert.ok(meta, 'result must include _meta');
-      const related = meta[RELATED_TASK_META_KEY] as
-        | Record<string, unknown>
-        | undefined;
+      const related = meta[RELATED_TASK_META_KEY] as Record<string, unknown> | undefined;
       assert.ok(related, `must have ${RELATED_TASK_META_KEY} key`);
       assert.equal(related['taskId'], task.taskId);
     } finally {
@@ -474,7 +445,7 @@ describe('createToolTaskHandler', () => {
           content: [{ type: 'text', text: 'ok' }],
           structuredContent: { ok: true },
         }),
-        { toolName: 'grep' }
+        { toolName: 'grep' },
       );
 
       const result = await handler.createTask(createMockExtra(store));
@@ -483,7 +454,7 @@ describe('createToolTaskHandler', () => {
         assert.equal(
           meta['io.modelcontextprotocol/model-immediate-response'],
           undefined,
-          '_meta must not contain non-standard model-immediate-response key'
+          '_meta must not contain non-standard model-immediate-response key',
         );
       }
     } finally {
@@ -501,26 +472,20 @@ describe('createToolTaskHandler', () => {
           content: [{ type: 'text', text: 'CANCELLED: aborted' }],
           isError: true as const,
           errorCode: ErrorCode.CANCELLED,
-        })
+        }),
       );
 
       const { task } = await handler.createTask(createMockExtra(store));
       // Wait for background execution to complete
       for (let attempt = 0; attempt < 30; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 10));
-        const current = await handler.getTask(
-          createMockTaskExtra(store, task.taskId)
-        );
+        const current = await handler.getTask(createMockTaskExtra(store, task.taskId));
         if (current.status === 'cancelled') break;
       }
 
-      const got = await handler.getTask(
-        createMockTaskExtra(store, task.taskId)
-      );
+      const got = await handler.getTask(createMockTaskExtra(store, task.taskId));
       assert.equal(got.status, 'cancelled');
-      const result = await handler.getTaskResult(
-        createMockTaskExtra(store, task.taskId)
-      );
+      const result = await handler.getTaskResult(createMockTaskExtra(store, task.taskId));
       assert.equal(result.isError, true);
     } finally {
       store.cleanup();
@@ -535,7 +500,7 @@ describe('createToolTaskHandler', () => {
           content: [{ type: 'text', text: 'NOT_FOUND: missing' }],
           isError: true as const,
           errorCode: ErrorCode.NOT_FOUND,
-        })
+        }),
       );
 
       const { task } = await handler.createTask(createMockExtra(store));

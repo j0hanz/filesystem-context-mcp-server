@@ -1,8 +1,4 @@
-import {
-  InMemoryTaskStore,
-  type Result,
-  type Task,
-} from '@modelcontextprotocol/server';
+import { InMemoryTaskStore, type Result, type Task } from '@modelcontextprotocol/server';
 
 import { CANCELLED_RESULT_TTL_MS } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
@@ -54,10 +50,7 @@ export class ResultAwareInMemoryTaskStore extends InMemoryTaskStore {
     }
   }
 
-  override async getTaskResult(
-    taskId: string,
-    sessionId?: string
-  ): Promise<Result> {
+  override async getTaskResult(taskId: string, sessionId?: string): Promise<Result> {
     this.evictExpired();
     try {
       return await super.getTaskResult(taskId, sessionId);
@@ -81,7 +74,7 @@ export class ResultAwareInMemoryTaskStore extends InMemoryTaskStore {
     taskId: string,
     status: 'completed' | 'failed',
     result: Result,
-    sessionId?: string
+    sessionId?: string,
   ): Promise<void> {
     try {
       await super.storeTaskResult(taskId, status, result, sessionId);
@@ -108,7 +101,7 @@ export class ResultAwareInMemoryTaskStore extends InMemoryTaskStore {
     taskId: string,
     status: Task['status'],
     statusMessage?: string,
-    sessionId?: string
+    sessionId?: string,
   ): Promise<void> {
     await super.updateTaskStatus(taskId, status, statusMessage, sessionId);
 

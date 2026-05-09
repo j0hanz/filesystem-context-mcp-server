@@ -12,12 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-import {
-  assertOk,
-  createTestEnv,
-  getStructured,
-  type TestEnv,
-} from './helpers.js';
+import { assertOk, createTestEnv, getStructured, type TestEnv } from './helpers.js';
 
 // Names of all 18 tools as registered
 const ALL_TOOLS = new Set([
@@ -90,7 +85,7 @@ describe('Tool contract', () => {
       assert.match(
         tool.name,
         /^[A-Za-z0-9_.-]+$/,
-        `Tool name "${tool.name}" contains invalid characters`
+        `Tool name "${tool.name}" contains invalid characters`,
       );
     }
   });
@@ -99,10 +94,9 @@ describe('Tool contract', () => {
     const { tools } = await env.client.listTools();
     for (const tool of tools) {
       assert.equal(
-        (tool.annotations as Record<string, unknown> | undefined)
-          ?.openWorldHint,
+        (tool.annotations as Record<string, unknown> | undefined)?.openWorldHint,
         false,
-        `${tool.name}: expected openWorldHint=false`
+        `${tool.name}: expected openWorldHint=false`,
       );
     }
   });
@@ -112,16 +106,8 @@ describe('Tool contract', () => {
     for (const tool of tools) {
       if (!READ_ONLY_TOOLS.has(tool.name)) continue;
       const ann = tool.annotations as Record<string, unknown>;
-      assert.equal(
-        ann['readOnlyHint'],
-        true,
-        `${tool.name}: expected readOnlyHint=true`
-      );
-      assert.equal(
-        ann['destructiveHint'],
-        false,
-        `${tool.name}: expected destructiveHint=false`
-      );
+      assert.equal(ann['readOnlyHint'], true, `${tool.name}: expected readOnlyHint=true`);
+      assert.equal(ann['destructiveHint'], false, `${tool.name}: expected destructiveHint=false`);
     }
   });
 
@@ -130,11 +116,7 @@ describe('Tool contract', () => {
     for (const tool of tools) {
       if (!DESTRUCTIVE_TOOLS.has(tool.name)) continue;
       const ann = tool.annotations as Record<string, unknown>;
-      assert.equal(
-        ann['destructiveHint'],
-        true,
-        `${tool.name}: expected destructiveHint=true`
-      );
+      assert.equal(ann['destructiveHint'], true, `${tool.name}: expected destructiveHint=true`);
     }
   });
 
@@ -143,16 +125,8 @@ describe('Tool contract', () => {
     const mkdir = tools.find((t) => t.name === 'mkdir');
     assert.ok(mkdir, 'mkdir tool must exist');
     const ann = mkdir.annotations as Record<string, unknown>;
-    assert.equal(
-      ann['idempotentHint'],
-      true,
-      'mkdir: expected idempotentHint=true'
-    );
-    assert.equal(
-      ann['destructiveHint'],
-      false,
-      'mkdir: expected destructiveHint=false'
-    );
+    assert.equal(ann['idempotentHint'], true, 'mkdir: expected idempotentHint=true');
+    assert.equal(ann['destructiveHint'], false, 'mkdir: expected destructiveHint=false');
   });
 
   it('smoke: roots returns ok:true with the test tmpDir', async () => {
@@ -229,14 +203,14 @@ describe('Tool contract', () => {
         assert.equal(
           execution?.taskSupport,
           'optional',
-          `${tool.name}: expected execution.taskSupport='optional'`
+          `${tool.name}: expected execution.taskSupport='optional'`,
         );
       } else {
         // forbidden tools should not have taskSupport or have it as 'forbidden'
         const taskSupport = execution?.taskSupport;
         assert.ok(
           taskSupport === undefined || taskSupport === 'forbidden',
-          `${tool.name}: expected taskSupport undefined or 'forbidden', got '${String(taskSupport)}'`
+          `${tool.name}: expected taskSupport undefined or 'forbidden', got '${String(taskSupport)}'`,
         );
       }
     }
@@ -267,11 +241,7 @@ describe('Tool contract', () => {
       const result = await env.client.callTool(tc);
       assertOk(result);
       const sc = getStructured(result);
-      assert.equal(
-        sc['ok'],
-        true,
-        `${tc.name}: expected structuredContent.ok === true`
-      );
+      assert.equal(sc['ok'], true, `${tc.name}: expected structuredContent.ok === true`);
     }
   });
 
@@ -287,7 +257,7 @@ describe('Tool contract', () => {
         if (prop['$ref']) continue;
         assert.ok(
           prop.description && prop.description.length > 0,
-          `${tool.name}.${propName}: missing description`
+          `${tool.name}.${propName}: missing description`,
         );
       }
     }
@@ -305,11 +275,11 @@ describe('Tool contract', () => {
     assert.equal(maxDepthProp.default, 5, 'tree.maxDepth default must be 5');
     assert.ok(
       maxDepthProp.description?.includes('5'),
-      `tree.maxDepth description must mention 5, got: "${String(maxDepthProp.description)}"`
+      `tree.maxDepth description must mention 5, got: "${String(maxDepthProp.description)}"`,
     );
     assert.ok(
       !maxDepthProp.description?.includes('default: 4'),
-      `tree.maxDepth description must not say "default: 4"`
+      `tree.maxDepth description must not say "default: 4"`,
     );
   });
 
@@ -318,7 +288,7 @@ describe('Tool contract', () => {
     for (const tool of tools) {
       assert.ok(
         !tool.description?.includes('filePattern'),
-        `${tool.name}: description must not reference stale "filePattern" parameter name`
+        `${tool.name}: description must not reference stale "filePattern" parameter name`,
       );
     }
   });
@@ -335,27 +305,20 @@ describe('Completion contract', () => {
     tmpDir: string;
     teardown: () => Promise<void>;
   }> {
-    const {
-      registerGetHelpPrompt,
-      registerAnalyzePathPrompt,
-      registerCompareFilesPrompt,
-    } = await import('../src/prompts.js');
-    const { registerAllResources, serverInstructionsContent } =
-      await import('../src/resources.js');
+    const { registerGetHelpPrompt, registerAnalyzePathPrompt, registerCompareFilesPrompt } =
+      await import('../src/prompts.js');
+    const { registerAllResources, serverInstructionsContent } = await import('../src/resources.js');
     const { PathGuard } = await import('../src/lib/path-guard.js');
-    const { createInMemoryResourceStore } =
-      await import('../src/lib/resource-store.js');
+    const { createInMemoryResourceStore } = await import('../src/lib/resource-store.js');
     const { LinkedTransport } = await import('./linked-transport.js');
 
-    const tmpDir = await mkdtemp(
-      join(tmpdir(), `fsmcp-cc-${randomUUID().slice(0, 8)}-`)
-    );
+    const tmpDir = await mkdtemp(join(tmpdir(), `fsmcp-cc-${randomUUID().slice(0, 8)}-`));
     await writeFile(join(tmpDir, 'sample.txt'), 'sample');
     const pathGuard = await PathGuard.fromAllowedDirectories([tmpDir]);
 
     const server = new McpServer(
       { name: 'contract-completion-server', version: '0.0.0' },
-      { capabilities: { completions: {} } }
+      { capabilities: { completions: {} } },
     );
 
     // Set up ResourceStore for resource registration
@@ -392,10 +355,7 @@ describe('Completion contract', () => {
         ref: { type: 'ref/prompt', name: 'analyze-path' },
         argument: { name: 'path', value: tmpDir },
       });
-      assert.ok(
-        result.completion.values.length > 0,
-        'analyze-path.path must return completions'
-      );
+      assert.ok(result.completion.values.length > 0, 'analyze-path.path must return completions');
     } finally {
       await teardown();
     }
@@ -410,7 +370,7 @@ describe('Completion contract', () => {
       });
       assert.ok(
         result.completion.values.length > 0,
-        'compare-files.original must return completions'
+        'compare-files.original must return completions',
       );
     } finally {
       await teardown();
@@ -426,7 +386,7 @@ describe('Completion contract', () => {
       });
       assert.ok(
         result.completion.values.length > 0,
-        'compare-files.modified must return completions'
+        'compare-files.modified must return completions',
       );
     } finally {
       await teardown();
@@ -442,7 +402,7 @@ describe('Completion contract', () => {
       });
       assert.ok(
         result.completion.values.length > 0,
-        'get-help.topic must return at least one topic'
+        'get-help.topic must return at least one topic',
       );
     } finally {
       await teardown();
@@ -459,7 +419,7 @@ describe('Completion contract', () => {
       assert.deepEqual(
         result.completion.values,
         [],
-        'get-help has no path arg — must return empty (strict SDK dispatch)'
+        'get-help has no path arg — must return empty (strict SDK dispatch)',
       );
     } finally {
       await teardown();

@@ -13,7 +13,7 @@ interface PromptStdIoEnv {
 }
 
 async function createPromptStdIoEnv(
-  setup?: (tempDir: string) => Promise<void>
+  setup?: (tempDir: string) => Promise<void>,
 ): Promise<PromptStdIoEnv> {
   const tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-prompts-stdio-'));
   if (setup) {

@@ -13,7 +13,7 @@ describe('tool registration shape', () => {
         inputSchema: { type: 'object', additionalProperties: false },
         taskSupport: 'optional' as const,
       },
-      undefined
+      undefined,
     ) as {
       execution?: { taskSupport?: string };
       taskSupport?: string;
@@ -35,7 +35,7 @@ describe('tool registration shape', () => {
           mode: 'background',
         },
       },
-      undefined
+      undefined,
     ) as {
       execution?: { taskSupport?: string; mode?: string };
       taskSupport?: string;

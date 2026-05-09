@@ -1,11 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import {
-  runInWorker,
-  shouldOffload,
-  shutdownWorkerPool,
-} from '../../src/lib/worker-pool.js';
+import { runInWorker, shouldOffload, shutdownWorkerPool } from '../../src/lib/worker-pool.js';
 
 test.afterEach(async () => {
   await shutdownWorkerPool();
@@ -51,7 +47,7 @@ test('runInWorker respects WORKER_POOL_MAX by queueing extra requests', async ()
       newStr: `${String(i + 1)}\n`,
       oldHeader: 'o',
       newHeader: 'n',
-    })
+    }),
   );
   const results = await Promise.all(tasks);
   assert.equal(results.length, 10);
@@ -70,7 +66,7 @@ test('runInWorker rejects with abort error when signal aborts', async () => {
       oldHeader: 'o',
       newHeader: 'n',
     },
-    { signal: ctrl.signal }
+    { signal: ctrl.signal },
   );
   ctrl.abort();
   await assert.rejects(promise, (err: Error) => {
@@ -85,8 +81,8 @@ test('runInWorker rejects already-aborted signal synchronously', async () => {
     runInWorker(
       'diff',
       { oldStr: 'a', newStr: 'b', oldHeader: 'o', newHeader: 'n' },
-      { signal: ctrl.signal }
-    )
+      { signal: ctrl.signal },
+    ),
   );
 });
 
@@ -113,6 +109,6 @@ test('runInWorker handles malformed patch without crashing', async () => {
   // Either the source is returned unchanged or applied is false — both valid.
   assert.ok(
     result.applied === 'unrelated\n' || result.applied === false,
-    `expected applied to be source or false, got: ${JSON.stringify(result.applied)}`
+    `expected applied to be source or false, got: ${JSON.stringify(result.applied)}`,
   );
 });

@@ -3,11 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { readdir, realpath, stat } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, parse, resolve, sep } from 'node:path';
 
-import {
-  isPathWithinDirectories,
-  normalizePath,
-  toPosixPath,
-} from './path-guard.js';
+import { isPathWithinDirectories, normalizePath, toPosixPath } from './path-guard.js';
 import type { PathGuard } from './path-guard.js';
 
 const MAX_COMPLETION_ITEMS = 100;
@@ -34,11 +30,7 @@ function getCompletionState(server: McpServer): CompletionState {
   return state;
 }
 
-function setCacheValue(
-  cache: Map<string, CacheEntry>,
-  key: string,
-  entry: CacheEntry
-): void {
+function setCacheValue(cache: Map<string, CacheEntry>, key: string, entry: CacheEntry): void {
   if (cache.has(key)) cache.delete(key);
   cache.set(key, entry);
   while (cache.size > MAX_COMPLETION_CACHE_KEYS) {
@@ -51,7 +43,7 @@ function setCacheValue(
 function buildCacheKey(
   argumentName: string,
   value: string,
-  contextArguments?: Record<string, string>
+  contextArguments?: Record<string, string>,
 ): string {
   const base = `${argumentName.toLowerCase()}:${value}`;
   if (!contextArguments) return base;
@@ -88,7 +80,7 @@ function hasTrailingSeparator(value: string): boolean {
 function resolveFromBase(
   base: string,
   rawValue: string,
-  trailingSeparator: boolean
+  trailingSeparator: boolean,
 ): { searchDir: string; prefix: string } {
   const normalizedValue = normalizePath(resolve(base, rawValue));
   if (trailingSeparator) return { searchDir: normalizedValue, prefix: '' };
@@ -98,9 +90,7 @@ function resolveFromBase(
   };
 }
 
-function parseNamedRootInput(
-  value: string
-): { rootName: string; remainder: string } | undefined {
+function parseNamedRootInput(value: string): { rootName: string; remainder: string } | undefined {
   const normalizedInput = toPosixPath(value);
   if (!normalizedInput) return undefined;
   const slashIndex = normalizedInput.indexOf('/');
@@ -110,20 +100,12 @@ function parseNamedRootInput(
   return { rootName, remainder: normalizedInput.slice(slashIndex + 1) };
 }
 
-function findAllowedRootByName(
-  rootName: string,
-  allowed: readonly string[]
-): string | undefined {
+function findAllowedRootByName(rootName: string, allowed: readonly string[]): string | undefined {
   const normalizedRootName = rootName.toLowerCase();
-  return allowed.find(
-    (candidate) => basename(candidate).toLowerCase() === normalizedRootName
-  );
+  return allowed.find((candidate) => basename(candidate).toLowerCase() === normalizedRootName);
 }
 
-function resolveNamedRootPath(
-  value: string,
-  allowed: string[]
-): string | undefined {
+function resolveNamedRootPath(value: string, allowed: string[]): string | undefined {
   const parsed = parseNamedRootInput(value);
   if (!parsed) return undefined;
   const root = findAllowedRootByName(parsed.rootName, allowed);
@@ -133,7 +115,7 @@ function resolveNamedRootPath(
 
 function resolveNamedRootContext(
   currentValue: string,
-  allowed: string[]
+  allowed: string[],
 ): { searchDir: string; prefix: string } | undefined {
   const parsed = parseNamedRootInput(currentValue);
   if (!parsed) return undefined;
@@ -143,16 +125,10 @@ function resolveNamedRootContext(
   return resolveFromBase(root, parsed.remainder, trailingSeparator);
 }
 
-async function isAllowedCompletionDirectory(
-  path: string,
-  allowed: string[]
-): Promise<boolean> {
+async function isAllowedCompletionDirectory(path: string, allowed: string[]): Promise<boolean> {
   if (!isPathWithinDirectories(path, allowed)) return false;
   try {
-    const [stats, resolvedRealPath] = await Promise.all([
-      stat(path),
-      realpath(path),
-    ]);
+    const [stats, resolvedRealPath] = await Promise.all([stat(path), realpath(path)]);
     if (!stats.isDirectory()) return false;
     return isPathWithinDirectories(normalizePath(resolvedRealPath), allowed);
   } catch {
@@ -162,7 +138,7 @@ async function isAllowedCompletionDirectory(
 
 async function toAllowedContextDirectory(
   resolved: string,
-  allowed: string[]
+  allowed: string[],
 ): Promise<string | undefined> {
   const parent = dirname(resolved);
   const [resolvedOk, parentOk] = await Promise.all([
@@ -174,10 +150,7 @@ async function toAllowedContextDirectory(
   return undefined;
 }
 
-function resolveContextCandidatePath(
-  candidate: string,
-  allowed: string[]
-): string | undefined {
+function resolveContextCandidatePath(candidate: string, allowed: string[]): string | undefined {
   if (isAbsolute(candidate)) return normalizePath(candidate);
   if (allowed.length === 1) {
     const base = allowed[0];
@@ -190,7 +163,7 @@ function resolveContextCandidatePath(
 async function resolveContextBaseDirectory(
   argumentName: string,
   contextArguments: Record<string, string> | undefined,
-  allowed: string[]
+  allowed: string[],
 ): Promise<string | undefined> {
   if (!contextArguments || Object.keys(contextArguments).length === 0) {
     return undefined;
@@ -213,7 +186,7 @@ function withDirectorySeparator(value: string): string {
 
 function collectAllowedRoots(
   allowed: readonly string[],
-  predicate: (root: string) => boolean
+  predicate: (root: string) => boolean,
 ): string[] {
   const matches: string[] = [];
   for (const root of allowed) {
@@ -225,27 +198,18 @@ function collectAllowedRoots(
 function getRootPrefix(currentValue: string): string {
   const normalizedInput = toPosixPath(currentValue);
   const slashIndex = normalizedInput.indexOf('/');
-  return (
-    slashIndex === -1 ? normalizedInput : normalizedInput.slice(0, slashIndex)
-  ).toLowerCase();
+  return (slashIndex === -1 ? normalizedInput : normalizedInput.slice(0, slashIndex)).toLowerCase();
 }
 
-function findRootPrefixMatches(
-  currentValue: string,
-  allowed: string[]
-): string[] {
+function findRootPrefixMatches(currentValue: string, allowed: string[]): string[] {
   const rootPrefix = getRootPrefix(currentValue);
   if (!rootPrefix) return collectAllowedRoots(allowed, () => true);
   return collectAllowedRoots(allowed, (root) =>
-    basename(root).toLowerCase().startsWith(rootPrefix)
+    basename(root).toLowerCase().startsWith(rootPrefix),
   );
 }
 
-function findMatchingRoots(
-  searchDir: string,
-  prefix: string,
-  allowed: string[]
-): string[] {
+function findMatchingRoots(searchDir: string, prefix: string, allowed: string[]): string[] {
   const lowerPrefix = prefix.toLowerCase();
   const normalizedSearchDir = normalizePath(searchDir);
   return collectAllowedRoots(allowed, (root) => {
@@ -266,9 +230,7 @@ function sortCompletionMatches(matches: string[]): void {
   });
 }
 
-function mergeCompletionMatches(
-  ...matchGroups: readonly (readonly string[])[]
-): string[] {
+function mergeCompletionMatches(...matchGroups: readonly (readonly string[])[]): string[] {
   const uniqueMatches = new Set<string>();
   for (const group of matchGroups) {
     for (const match of group) uniqueMatches.add(match);
@@ -281,7 +243,7 @@ function mergeCompletionMatches(
 async function findMatchesInDirectory(
   searchDir: string,
   prefix: string,
-  allowed: string[]
+  allowed: string[],
 ): Promise<string[]> {
   const matches: string[] = [];
   if (!(await isAllowedCompletionDirectory(searchDir, allowed))) return matches;
@@ -312,21 +274,16 @@ async function findMatchesInDirectory(
 function getSearchContext(
   currentValue: string,
   allowed: string[],
-  contextBase?: string
+  contextBase?: string,
 ): { searchDir: string; prefix: string } | undefined {
   const trailingSeparator = hasTrailingSeparator(currentValue);
   if (isAbsolute(currentValue)) {
-    return resolveFromBase(
-      parse(currentValue).root || sep,
-      currentValue,
-      trailingSeparator
-    );
+    return resolveFromBase(parse(currentValue).root || sep, currentValue, trailingSeparator);
   }
   const namedRootContext = resolveNamedRootContext(currentValue, allowed);
   if (namedRootContext) return namedRootContext;
   if (contextBase) {
-    if (currentValue.length === 0)
-      return { searchDir: contextBase, prefix: '' };
+    if (currentValue.length === 0) return { searchDir: contextBase, prefix: '' };
     return resolveFromBase(contextBase, currentValue, trailingSeparator);
   }
   if (allowed.length === 1) {
@@ -352,10 +309,7 @@ export interface CompletePathOptions {
  * current allowed-directory state. Uses a per-McpServer WeakMap to isolate
  * rate-limit and cache state across HTTP sessions.
  */
-async function completePath(
-  value: string,
-  options: CompletePathOptions
-): Promise<string[]> {
+async function completePath(value: string, options: CompletePathOptions): Promise<string[]> {
   const allowed = options.pathGuard.getAllowedDirectories();
   const argName = options.argumentName ?? '';
 
@@ -363,7 +317,7 @@ async function completePath(
     const contextBase = await resolveContextBaseDirectory(
       argName,
       options.contextArguments,
-      allowed
+      allowed,
     );
 
     if (!value && !contextBase) {
@@ -372,19 +326,13 @@ async function completePath(
 
     const context = getSearchContext(value, allowed, contextBase);
     if (!context) {
-      return findRootPrefixMatches(value, allowed).slice(
-        0,
-        MAX_COMPLETION_ITEMS
-      );
+      return findRootPrefixMatches(value, allowed).slice(0, MAX_COMPLETION_ITEMS);
     }
 
     const { searchDir, prefix } = context;
     const dirMatches = await findMatchesInDirectory(searchDir, prefix, allowed);
     const rootMatches = findMatchingRoots(searchDir, prefix, allowed);
-    return mergeCompletionMatches(dirMatches, rootMatches).slice(
-      0,
-      MAX_COMPLETION_ITEMS
-    );
+    return mergeCompletionMatches(dirMatches, rootMatches).slice(0, MAX_COMPLETION_ITEMS);
   } catch {
     return [];
   }
@@ -396,15 +344,11 @@ async function completePath(
  */
 export async function completePathCached(
   value: string,
-  options: CompletePathOptions
+  options: CompletePathOptions,
 ): Promise<string[]> {
   if (!options.server) return completePath(value, options);
 
-  const cacheKey = buildCacheKey(
-    options.argumentName ?? '',
-    value,
-    options.contextArguments
-  );
+  const cacheKey = buildCacheKey(options.argumentName ?? '', value, options.contextArguments);
   const now = Date.now();
   const sessionState = getCompletionState(options.server);
   const cacheEntry = sessionState.cache.get(cacheKey);

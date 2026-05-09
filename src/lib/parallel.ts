@@ -34,7 +34,7 @@ export async function processInParallel<T, R>(
   items: T[],
   processor: (item: T) => Promise<R>,
   concurrency: number = PARALLEL_CONCURRENCY,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<ParallelResult<R>> {
   const itemCount = items.length;
   if (itemCount === 0) return { results: [], errors: [] };

@@ -16,10 +16,7 @@ function createFakeServer(): {
 
   const server = {
     server: {
-      setNotificationHandler: (
-        method: string,
-        handler: (() => Promise<void>) | (() => void)
-      ) => {
+      setNotificationHandler: (method: string, handler: (() => Promise<void>) | (() => void)) => {
         if (method === 'notifications/initialized') {
           initializedHandler = handler as () => Promise<void>;
         }
@@ -50,12 +47,11 @@ describe('RootsManager', () => {
     const fakeServer = createFakeServer();
     let updateCalls = 0;
 
-    (
-      manager as unknown as { updateRootsFromClient: () => Promise<void> }
-    ).updateRootsFromClient = () => {
-      updateCalls += 1;
-      return Promise.resolve();
-    };
+    (manager as unknown as { updateRootsFromClient: () => Promise<void> }).updateRootsFromClient =
+      () => {
+        updateCalls += 1;
+        return Promise.resolve();
+      };
 
     manager.registerHandlers(fakeServer.server);
 
@@ -76,12 +72,11 @@ describe('RootsManager', () => {
     const fakeServer = createFakeServer();
     let updateCalls = 0;
 
-    (
-      manager as unknown as { updateRootsFromClient: () => Promise<void> }
-    ).updateRootsFromClient = () => {
-      updateCalls += 1;
-      return Promise.resolve();
-    };
+    (manager as unknown as { updateRootsFromClient: () => Promise<void> }).updateRootsFromClient =
+      () => {
+        updateCalls += 1;
+        return Promise.resolve();
+      };
 
     manager.registerHandlers(fakeServer.server);
 
@@ -99,20 +94,15 @@ describe('RootsManager', () => {
     const manager = new RootsManager({}, { minimumLevel: 'debug' });
     const fakeServer = createFakeServer();
 
-    (
-      manager as unknown as { updateRootsFromClient: () => Promise<void> }
-    ).updateRootsFromClient = () => Promise.resolve();
+    (manager as unknown as { updateRootsFromClient: () => Promise<void> }).updateRootsFromClient =
+      () => Promise.resolve();
 
     manager.registerHandlers(fakeServer.server);
 
     // initTimer should be set after registerHandlers
-    const timerBefore = (
-      manager as unknown as { initTimer: ReturnType<typeof setTimeout> }
-    ).initTimer;
-    assert.ok(
-      timerBefore,
-      'Expected initTimer to be set after registerHandlers'
-    );
+    const timerBefore = (manager as unknown as { initTimer: ReturnType<typeof setTimeout> })
+      .initTimer;
+    assert.ok(timerBefore, 'Expected initTimer to be set after registerHandlers');
 
     await fakeServer.getInitializedHandler()();
 
@@ -121,11 +111,7 @@ describe('RootsManager', () => {
         initTimer: ReturnType<typeof setTimeout> | undefined;
       }
     ).initTimer;
-    assert.equal(
-      timerAfter,
-      undefined,
-      'Expected initTimer to be cleared after initialized'
-    );
+    assert.equal(timerAfter, undefined, 'Expected initTimer to be cleared after initialized');
 
     manager.destroy();
   });
@@ -134,15 +120,13 @@ describe('RootsManager', () => {
     const manager = new RootsManager({}, { minimumLevel: 'debug' });
     const fakeServer = createFakeServer();
 
-    (
-      manager as unknown as { updateRootsFromClient: () => Promise<void> }
-    ).updateRootsFromClient = () => Promise.resolve();
+    (manager as unknown as { updateRootsFromClient: () => Promise<void> }).updateRootsFromClient =
+      () => Promise.resolve();
 
     manager.registerHandlers(fakeServer.server);
 
-    const timerBefore = (
-      manager as unknown as { initTimer: ReturnType<typeof setTimeout> }
-    ).initTimer;
+    const timerBefore = (manager as unknown as { initTimer: ReturnType<typeof setTimeout> })
+      .initTimer;
     assert.ok(timerBefore, 'Expected initTimer to be set');
 
     manager.destroy();
@@ -152,11 +136,7 @@ describe('RootsManager', () => {
         initTimer: ReturnType<typeof setTimeout> | undefined;
       }
     ).initTimer;
-    assert.equal(
-      timerAfter,
-      undefined,
-      'Expected initTimer to be cleared on destroy'
-    );
+    assert.equal(timerAfter, undefined, 'Expected initTimer to be cleared on destroy');
   });
 
   it('invokes onInitTimeout callback when client never initializes', () => {
@@ -166,19 +146,14 @@ describe('RootsManager', () => {
       const fakeServer = createFakeServer();
       let callbackInvoked = false;
 
-      (
-        manager as unknown as { updateRootsFromClient: () => Promise<void> }
-      ).updateRootsFromClient = () => Promise.resolve();
+      (manager as unknown as { updateRootsFromClient: () => Promise<void> }).updateRootsFromClient =
+        () => Promise.resolve();
 
       manager.registerHandlers(fakeServer.server, () => {
         callbackInvoked = true;
       });
 
-      assert.equal(
-        callbackInvoked,
-        false,
-        'Callback should not fire before timeout'
-      );
+      assert.equal(callbackInvoked, false, 'Callback should not fire before timeout');
 
       // Advance past the init handshake timeout (30s default)
       mock.timers.tick(30_000);
@@ -195,9 +170,8 @@ describe('RootsManager', () => {
     const fakeServer = createFakeServer();
     let callbackInvoked = false;
 
-    (
-      manager as unknown as { updateRootsFromClient: () => Promise<void> }
-    ).updateRootsFromClient = () => Promise.resolve();
+    (manager as unknown as { updateRootsFromClient: () => Promise<void> }).updateRootsFromClient =
+      () => Promise.resolve();
 
     manager.registerHandlers(fakeServer.server, () => {
       callbackInvoked = true;

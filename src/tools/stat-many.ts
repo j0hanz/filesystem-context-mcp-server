@@ -5,27 +5,15 @@ import { parse } from 'node:path';
 import { z } from 'zod/v4';
 
 import { assertNotAborted, withAbort } from '../lib/abort.js';
-import {
-  DEFAULT_SEARCH_TIMEOUT_MS,
-  getMimeType,
-  PARALLEL_CONCURRENCY,
-} from '../lib/constants.js';
+import { DEFAULT_SEARCH_TIMEOUT_MS, getMimeType, PARALLEL_CONCURRENCY } from '../lib/constants.js';
 import { ErrorCode, isAbortError } from '../lib/errors.js';
 import { getFileType, isHidden } from '../lib/fs-walk.js';
 import { processInParallel } from '../lib/parallel.js';
 import type { PathGuard } from '../lib/path-guard.js';
 import { NonNegInt, RequiredPath } from '../schemas/fields.js';
-import {
-  FileInfoSchema,
-  OperationSummarySchema,
-  PerFileErrorSchema,
-} from '../schemas/shared.js';
+import { FileInfoSchema, OperationSummarySchema, PerFileErrorSchema } from '../schemas/shared.js';
 
-import type {
-  FileInfo,
-  GetMultipleFileInfoResult,
-  MultipleFileInfoResult,
-} from '../config.js';
+import type { FileInfo, GetMultipleFileInfoResult, MultipleFileInfoResult } from '../config.js';
 import { defineTool } from './define-tool.js';
 import { FILE_READ_ICONS } from './icons.js';
 import {
@@ -56,7 +44,7 @@ const StatManyOutputSchema = z.strictObject({
         path: z.string().describe('Requested path'),
         info: FileInfoSchema.optional().describe('File info (when successful)'),
         error: PerFileErrorSchema.optional().describe('Error (when failed)'),
-      })
+      }),
     )
     .describe('Per-path results'),
   summary: OperationSummarySchema.describe('Operation summary'),
@@ -106,7 +94,7 @@ function buildFileInfoResult(
   isSymlink: boolean,
   stats: Stats,
   mimeType: string | undefined,
-  symlinkTarget: string | undefined
+  symlinkTarget: string | undefined,
 ): FileInfo {
   const tokenEstimate = stats.isFile() ? Math.ceil(stats.size / 4) : undefined;
   return {
@@ -127,7 +115,7 @@ function buildFileInfoResult(
 
 async function getSymlinkTarget(
   pathToRead: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<string | undefined> {
   assertNotAborted(signal);
   try {
@@ -145,10 +133,7 @@ interface FileInfoOptions {
   pathGuard: PathGuard;
 }
 
-async function getFileInfo(
-  filePath: string,
-  options: FileInfoOptions
-): Promise<FileInfo> {
+async function getFileInfo(filePath: string, options: FileInfoOptions): Promise<FileInfo> {
   const { signal, pathGuard } = options;
   assertNotAborted(signal);
 
@@ -160,23 +145,13 @@ async function getFileInfo(
   const { base: name, ext: rawExt } = parse(requestedPath);
   const ext = rawExt.toLowerCase();
   const includeMimeType = options.includeMimeType !== false;
-  const mimeType =
-    includeMimeType && ext.length > 0 ? getMimeType(ext) : undefined;
+  const mimeType = includeMimeType && ext.length > 0 ? getMimeType(ext) : undefined;
 
-  const symlinkTarget = isSymlink
-    ? await getSymlinkTarget(requestedPath, signal)
-    : undefined;
+  const symlinkTarget = isSymlink ? await getSymlinkTarget(requestedPath, signal) : undefined;
 
   const stats = await withAbort(stat(resolvedPath), signal);
 
-  return buildFileInfoResult(
-    name,
-    requestedPath,
-    isSymlink,
-    stats,
-    mimeType,
-    symlinkTarget
-  );
+  return buildFileInfoResult(name, requestedPath, isSymlink, stats, mimeType, symlinkTarget);
 }
 
 function buildEmptyResult(): GetMultipleFileInfoResult {
@@ -186,9 +161,7 @@ function buildEmptyResult(): GetMultipleFileInfoResult {
   };
 }
 
-function buildIndexedPathTasks(
-  paths: readonly string[]
-): { filePath: string; index: number }[] {
+function buildIndexedPathTasks(paths: readonly string[]): { filePath: string; index: number }[] {
   const tasks: { filePath: string; index: number }[] = [];
   for (let index = 0; index < paths.length; index += 1) {
     const filePath = paths[index];
@@ -201,7 +174,7 @@ function buildIndexedPathTasks(
 
 async function readFileInfoInParallel(
   paths: readonly string[],
-  options: FileInfoOptions
+  options: FileInfoOptions,
 ): Promise<{
   results: { index: number; value: MultipleFileInfoResult }[];
   errors: { index: number; error: Error }[];
@@ -214,7 +187,7 @@ async function readFileInfoInParallel(
       return { index, value: { path: filePath, status: 'success', info } };
     },
     PARALLEL_CONCURRENCY,
-    options.signal
+    options.signal,
   );
 }
 
@@ -247,7 +220,7 @@ function calculateSummary(results: readonly MultipleFileInfoResult[]): {
 
 async function getMultipleFileInfo(
   paths: readonly string[],
-  options: FileInfoOptions
+  options: FileInfoOptions,
 ): Promise<GetMultipleFileInfoResult> {
   if (paths.length === 0) return buildEmptyResult();
 
@@ -307,7 +280,7 @@ async function handleGetMultipleFileInfo(
   pathGuard: PathGuard,
   resourceStore: ToolRegistrationOptions['resourceStore'],
   signal?: AbortSignal,
-  onProgress?: () => void
+  onProgress?: () => void,
 ): Promise<{
   text: string;
   structured: z.infer<typeof StatManyOutputSchema>;
@@ -320,26 +293,23 @@ async function handleGetMultipleFileInfo(
     ...(onProgress !== undefined ? { onProgress } : {}),
   });
 
-  const structuredResults: z.infer<typeof StatManyOutputSchema>['results'] =
-    result.results.map((entry) => ({
+  const structuredResults: z.infer<typeof StatManyOutputSchema>['results'] = result.results.map(
+    (entry) => ({
       path: entry.path,
-      info:
-        entry.status === 'success'
-          ? buildFileInfoPayload(entry.info)
-          : undefined,
+      info: entry.status === 'success' ? buildFileInfoPayload(entry.info) : undefined,
       error:
         entry.status === 'error'
           ? buildStructuredError(entry.error, ErrorCode.NOT_FOUND, entry.path)
           : undefined,
-    }));
+    }),
+  );
 
   const { fileCount, dirCount } = countFilesAndDirs(result.results);
 
   // Serialize stats to JSON for resource storage
   const statsData = result.results.map((entry) => ({
     path: entry.path,
-    info:
-      entry.status === 'success' ? buildFileInfoPayload(entry.info) : undefined,
+    info: entry.status === 'success' ? buildFileInfoPayload(entry.info) : undefined,
     error:
       entry.status === 'error'
         ? buildStructuredError(entry.error, ErrorCode.NOT_FOUND, entry.path)
@@ -399,14 +369,13 @@ export const GET_MULTIPLE_FILE_INFO = defineTool<
     });
 
     const result = await completeProgressSession(progress, label, async () => {
-      const { text, structured, resourceLink } =
-        await handleGetMultipleFileInfo(
-          args,
-          ctx.pathGuard,
-          ctx.resourceStore,
-          ctx.signal,
-          onItemComplete
-        );
+      const { text, structured, resourceLink } = await handleGetMultipleFileInfo(
+        args,
+        ctx.pathGuard,
+        ctx.resourceStore,
+        ctx.signal,
+        onItemComplete,
+      );
       const total = structured.summary.total;
       const failed = structured.summary.failed;
       const suffix = failed ? `${failed} failed` : 'done';
@@ -427,8 +396,7 @@ export const GET_MULTIPLE_FILE_INFO = defineTool<
   },
   progressMessage: () => GET_MULTIPLE_FILE_INFO_TOOL.title,
   completionMessage: (_args, result) => {
-    if (result.isError)
-      return `${GET_MULTIPLE_FILE_INFO_TOOL.title} • ${result.errorCode}`;
+    if (result.isError) return `${GET_MULTIPLE_FILE_INFO_TOOL.title} • ${result.errorCode}`;
     const sc = result.structuredContent;
     const { fileCount, dirCount } = sc;
     return `${GET_MULTIPLE_FILE_INFO_TOOL.title} • ${fileCount} file${fileCount === 1 ? '' : 's'} · ${dirCount} director${dirCount === 1 ? 'y' : 'ies'}`;

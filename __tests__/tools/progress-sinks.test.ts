@@ -1,7 +1,4 @@
-import type {
-  ProgressNotification,
-  RequestTaskStore,
-} from '@modelcontextprotocol/server';
+import type { ProgressNotification, RequestTaskStore } from '@modelcontextprotocol/server';
 
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
@@ -125,7 +122,7 @@ class FakeTaskStore {
   async updateTaskStatus(
     taskId: string,
     status: 'working' | 'completed' | 'failed',
-    message: string
+    message: string,
   ): Promise<void> {
     if (this.shouldReject) throw this.shouldReject;
     this.calls.push({ taskId, status, message });
@@ -243,9 +240,9 @@ void describe('TaskStoreSink', () => {
             current: 1,
             total: 1,
             message: 'm',
-          })
+          }),
         ),
-      /database offline/
+      /database offline/,
     );
   });
 });

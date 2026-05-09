@@ -6,12 +6,7 @@ import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-import {
-  assertOk,
-  assertToolError,
-  createTestEnv,
-  type TestEnv,
-} from './helpers.js';
+import { assertOk, assertToolError, createTestEnv, type TestEnv } from './helpers.js';
 
 // ─── Path boundary enforcement ───────────────────────────────────────────────
 
@@ -57,15 +52,14 @@ describe('security: path boundary enforcement', () => {
       // rm returns ok:true with failures[] for per-path errors; all others return isError
       if (tool === 'rm') {
         assertOk(raw);
-        const sc = (raw as { structuredContent?: Record<string, unknown> })
-          .structuredContent;
+        const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
         assert.ok(
           Array.isArray(sc?.['failures']) && sc['failures'].length > 0,
-          'rm must report ACCESS_DENIED in failures[]'
+          'rm must report ACCESS_DENIED in failures[]',
         );
         assert.equal(
           (sc?.['failures'] as { error: { code: string } }[])[0]?.error?.code,
-          'ACCESS_DENIED'
+          'ACCESS_DENIED',
         );
       } else {
         assertToolError(raw, 'ACCESS_DENIED');
@@ -268,10 +262,7 @@ describe('security: symlink escape for destructive ops', () => {
     await rm(outsideDir, { recursive: true, force: true });
   });
 
-  async function createSymlink(
-    name: string,
-    target: string
-  ): Promise<string | null> {
+  async function createSymlink(name: string, target: string): Promise<string | null> {
     const linkPath = join(env.tmpDir, name);
     try {
       await symlink(target, linkPath);
@@ -282,10 +273,7 @@ describe('security: symlink escape for destructive ops', () => {
   }
 
   it('write: rejects writing through symlink to outside', async () => {
-    const linkPath = await createSymlink(
-      'write-escape.txt',
-      join(outsideDir, 'target.txt')
-    );
+    const linkPath = await createSymlink('write-escape.txt', join(outsideDir, 'target.txt'));
     if (!linkPath) return;
     const raw = await env.client.callTool({
       name: 'write',
@@ -295,10 +283,7 @@ describe('security: symlink escape for destructive ops', () => {
   });
 
   it('edit: rejects editing through symlink to outside', async () => {
-    const linkPath = await createSymlink(
-      'edit-escape.txt',
-      join(outsideDir, 'target.txt')
-    );
+    const linkPath = await createSymlink('edit-escape.txt', join(outsideDir, 'target.txt'));
     if (!linkPath) return;
     const raw = await env.client.callTool({
       name: 'edit',
@@ -311,10 +296,7 @@ describe('security: symlink escape for destructive ops', () => {
   });
 
   it('mv: rejects moving symlink target outside allowed root', async () => {
-    const linkPath = await createSymlink(
-      'mv-escape.txt',
-      join(outsideDir, 'target.txt')
-    );
+    const linkPath = await createSymlink('mv-escape.txt', join(outsideDir, 'target.txt'));
     if (!linkPath) return;
     const raw = await env.client.callTool({
       name: 'mv',
@@ -334,15 +316,14 @@ describe('security: symlink escape for destructive ops', () => {
       arguments: { paths: [linkPath] },
     });
     assertOk(raw);
-    const sc = (raw as { structuredContent?: Record<string, unknown> })
-      .structuredContent;
+    const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
     assert.ok(
       Array.isArray(sc?.['failures']) && sc['failures'].length > 0,
-      'rm must report ACCESS_DENIED in failures[]'
+      'rm must report ACCESS_DENIED in failures[]',
     );
     assert.equal(
       (sc?.['failures'] as { error: { code: string } }[])[0]?.error?.code,
-      'ACCESS_DENIED'
+      'ACCESS_DENIED',
     );
   });
 });

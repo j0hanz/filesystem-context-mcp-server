@@ -72,7 +72,7 @@ describe('prompts', () => {
 
     assert.equal(
       result.description,
-      'Generate a workflow for analyzing a file or directory using stat, read, and tree.'
+      'Generate a workflow for analyzing a file or directory using stat, read, and tree.',
     );
     assert.equal(result.messages.length, 1);
     const [message] = result.messages;
@@ -107,17 +107,17 @@ describe('prompts', () => {
     assert.match(
       message.content.text,
       /- original:/u,
-      'compare-files prompt must use named original: arg'
+      'compare-files prompt must use named original: arg',
     );
     assert.match(
       message.content.text,
       /- modified:/u,
-      'compare-files prompt must use named modified: arg'
+      'compare-files prompt must use named modified: arg',
     );
     assert.doesNotMatch(
       message.content.text,
       /paths:/u,
-      'compare-files prompt must not use old paths: array format'
+      'compare-files prompt must not use old paths: array format',
     );
   });
 });

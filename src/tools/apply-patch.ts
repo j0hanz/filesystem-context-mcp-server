@@ -1,12 +1,7 @@
 import { stat } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
-import {
-  applyPatch,
-  formatPatch,
-  parsePatch,
-  type StructuredPatch,
-} from 'diff';
+import { applyPatch, formatPatch, parsePatch, type StructuredPatch } from 'diff';
 import { z } from 'zod/v4';
 
 import { withAbort } from '../lib/abort.js';
@@ -42,15 +37,13 @@ import {
 
 const ApplyPatchInputSchema = z.strictObject({
   path: OptionalPath.describe(
-    'Required for single-file patches without a/ b/ headers; ignored for multi-file patches'
+    'Required for single-file patches without a/ b/ headers; ignored for multi-file patches',
   ),
   patch: z
     .string()
     .min(1)
     .max(MAX_TEXT_FILE_SIZE)
-    .describe(
-      'Unified diff patch content (unified format with --- a/ +++ b/ headers)'
-    )
+    .describe('Unified diff patch content (unified format with --- a/ +++ b/ headers)')
     .meta({
       examples: [
         '--- a/src/foo.ts\n+++ b/src/foo.ts\n@@ -1,3 +1,3 @@\n-const x = 1;\n+const x = 2;\n',
@@ -85,26 +78,19 @@ const ApplyPatchOutputSchema = z.strictObject({
         hunks: NonNegInt.describe('Hunks applied'),
         linesAdded: NonNegInt.optional().describe('Lines added'),
         linesRemoved: NonNegInt.optional().describe('Lines removed'),
-      })
+      }),
     )
     .describe('Per-file patch results'),
-  appliedHunks: NonNegInt.optional().describe(
-    'Total hunks applied (primary file)'
-  ),
-  rejectedHunks: NonNegInt.optional().describe(
-    'Total hunks rejected (primary file)'
-  ),
-  filesPatched: z
-    .array(z.string())
-    .optional()
-    .describe('List of patched file paths'),
+  appliedHunks: NonNegInt.optional().describe('Total hunks applied (primary file)'),
+  rejectedHunks: NonNegInt.optional().describe('Total hunks rejected (primary file)'),
+  filesPatched: z.array(z.string()).optional().describe('List of patched file paths'),
   summary: OperationSummarySchema.describe('Operation summary'),
   failures: z
     .array(
       z.strictObject({
         path: z.string(),
         error: PerFileErrorSchema,
-      })
+      }),
     )
     .optional()
     .describe('Per-file patch failures'),
@@ -122,23 +108,21 @@ const APPLY_PATCH_TOOL: ToolContract = {
   outputSchema: ApplyPatchOutputSchema,
   annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
   icons: FILE_EDIT_ICONS,
-  nuances: [
-    'Multi-file patches use `path` as base directory; per-file results in `files[]`.',
-  ],
+  nuances: ['Multi-file patches use `path` as base directory; per-file results in `files[]`.'],
   taskSupport: 'optional',
 } as const;
 
 function assertPatchTargetSizeWithinLimit(
   filePath: string,
   size: number,
-  maxFileSize: number
+  maxFileSize: number,
 ): void {
   if (size <= maxFileSize) return;
   throw new McpError(
     ErrorCode.TOO_LARGE,
     `File too large for patch (${size} bytes > ${maxFileSize} bytes).`,
     filePath,
-    { size, maxFileSize }
+    { size, maxFileSize },
   );
 }
 
@@ -159,9 +143,7 @@ function countStructuredPatchStats(diff: StructuredPatch): {
 }
 
 function stripGitPrefix(fileName: string): string {
-  return fileName.startsWith('a/') || fileName.startsWith('b/')
-    ? fileName.slice(2)
-    : fileName;
+  return fileName.startsWith('a/') || fileName.startsWith('b/') ? fileName.slice(2) : fileName;
 }
 
 function extractPatchTargetPath(diff: StructuredPatch): string | undefined {
@@ -201,17 +183,13 @@ async function applyDiff(
   diff: StructuredPatch,
   options: PatchOptions,
   pathGuard: PathGuard,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<PatchFileResult> {
   const validPath = await pathGuard.validateExistingPath(filePath);
   pathGuard.assertAllowedFileAccess(filePath);
 
   const fileStats = await withAbort(stat(validPath), signal);
-  assertPatchTargetSizeWithinLimit(
-    validPath,
-    fileStats.size,
-    MAX_TEXT_FILE_SIZE
-  );
+  assertPatchTargetSizeWithinLimit(validPath, fileStats.size, MAX_TEXT_FILE_SIZE);
 
   const { content } = await readFileWithStats(
     filePath,
@@ -223,7 +201,7 @@ async function applyDiff(
       skipBinary: true,
       ...(signal ? { signal } : {}),
     },
-    pathGuard
+    pathGuard,
   );
 
   const patched = await (async (): Promise<string | false> => {
@@ -238,7 +216,7 @@ async function applyDiff(
           fuzzFactor: options.fuzzFactor,
           autoConvertLineEndings: options.autoConvertLineEndings,
         },
-        signal ? { signal } : {}
+        signal ? { signal } : {},
       );
       return result.applied;
     }
@@ -291,7 +269,7 @@ async function processMultiFilePatch(
   options: PatchOptions,
   pathGuard: PathGuard,
   resourceStore: ResourceStore | undefined,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<ToolResult<z.infer<typeof ApplyPatchOutputSchema>>> {
   const validBase = await pathGuard.validateExistingPath(basePath);
 
@@ -327,7 +305,7 @@ async function processMultiFilePatch(
     tasks,
     (task) => task(),
     PARALLEL_CONCURRENCY,
-    signal
+    signal,
   );
 
   const succeeded = results.filter((r) => r.applied).length;
@@ -338,9 +316,9 @@ async function processMultiFilePatch(
     return buildToolErrorResponse(
       new McpError(
         ErrorCode.INVALID_INPUT,
-        `All ${parsed.length} patches failed${label}. Files: ${failedPaths}. Regenerate via diff_files.`
+        `All ${parsed.length} patches failed${label}. Files: ${failedPaths}. Regenerate via diff_files.`,
       ),
-      ErrorCode.INVALID_INPUT
+      ErrorCode.INVALID_INPUT,
     );
   }
 
@@ -354,19 +332,15 @@ async function processMultiFilePatch(
             linesRemoved: r.linesRemoved,
           },
         ]
-      : []
+      : [],
   );
 
-  const failures = results.flatMap((r) =>
-    !r.applied ? [{ path: r.path, error: r.error }] : []
-  );
+  const failures = results.flatMap((r) => (!r.applied ? [{ path: r.path, error: r.error }] : []));
 
   if (!options.dryRun) {
     const added = files.reduce((s, f) => s + (f.linesAdded ?? 0), 0);
     const removed = files.reduce((s, f) => s + (f.linesRemoved ?? 0), 0);
-    Logger.info(
-      `apply_patch: ${basePath} (${succeeded} file(s), +${added}/-${removed})`
-    );
+    Logger.info(`apply_patch: ${basePath} (${succeeded} file(s), +${added}/-${removed})`);
   }
 
   // Get primary (first patched) file for resource storage
@@ -375,10 +349,7 @@ async function processMultiFilePatch(
   const bytesWritten = Buffer.byteLength(patchedContent, 'utf-8');
   const lineCount = patchedContent.split('\n').length;
   const mimeInfo = primaryResult
-    ? detectMimeType(
-        primaryResult.path,
-        Buffer.from(patchedContent.slice(0, 512))
-      )
+    ? detectMimeType(primaryResult.path, Buffer.from(patchedContent.slice(0, 512)))
     : { mimeType: 'text/plain', kind: 'text' as const };
 
   let resourceUri = '';
@@ -447,7 +418,7 @@ function parseAndValidatePatch(patch: string): ReturnType<typeof parsePatch> {
   if (!hasHunks) {
     throw new McpError(
       ErrorCode.INVALID_INPUT,
-      'Patch must include unified hunk headers (@@ -n,n +n,n @@).'
+      'Patch must include unified hunk headers (@@ -n,n +n,n @@).',
     );
   }
 
@@ -460,7 +431,7 @@ async function handleSingleFilePatch(
   options: PatchOptions,
   pathGuard: PathGuard,
   resourceStore: ResourceStore | undefined,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<ToolResult<z.infer<typeof ApplyPatchOutputSchema>>> {
   // diff cannot be undefined here if we got past validation, but TS checking is permissive
   let result: PatchFileResult;
@@ -474,27 +445,22 @@ async function handleSingleFilePatch(
     return buildToolErrorResponse(
       new McpError(
         ErrorCode.INVALID_INPUT,
-        'Patch failed or had no effect. Content may have changed. Regenerate via diff_files.'
+        'Patch failed or had no effect. Content may have changed. Regenerate via diff_files.',
       ),
       ErrorCode.INVALID_INPUT,
-      targetPath
+      targetPath,
     );
   }
 
   if (!options.dryRun) {
-    Logger.info(
-      `apply_patch: ${targetPath} (+${result.linesAdded}/-${result.linesRemoved})`
-    );
+    Logger.info(`apply_patch: ${targetPath} (+${result.linesAdded}/-${result.linesRemoved})`);
   }
 
   // Store patched content in resource store if available
   const patchedContent = result.content;
   const bytesWritten = Buffer.byteLength(patchedContent, 'utf-8');
   const lineCount = patchedContent.split('\n').length;
-  const mimeInfo = detectMimeType(
-    result.path,
-    Buffer.from(patchedContent.slice(0, 512))
-  );
+  const mimeInfo = detectMimeType(result.path, Buffer.from(patchedContent.slice(0, 512)));
 
   let resourceUri = '';
   if (!options.dryRun && resourceStore) {
@@ -556,7 +522,7 @@ async function handleApplyPatch(
   args: z.infer<typeof ApplyPatchInputSchema>,
   pathGuard: PathGuard,
   resourceStore: ResourceStore | undefined,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<ToolResult<z.infer<typeof ApplyPatchOutputSchema>>> {
   const parsed = parseAndValidatePatch(args.patch);
 
@@ -569,14 +535,7 @@ async function handleApplyPatch(
   const targetPath = args.path ?? '';
 
   if (parsed.length > 1) {
-    return processMultiFilePatch(
-      targetPath,
-      parsed,
-      options,
-      pathGuard,
-      resourceStore,
-      signal
-    );
+    return processMultiFilePatch(targetPath, parsed, options, pathGuard, resourceStore, signal);
   }
 
   const diff = parsed[0];
@@ -584,14 +543,7 @@ async function handleApplyPatch(
     throw new McpError(ErrorCode.INVALID_INPUT, 'No patch content found.');
   }
 
-  return handleSingleFilePatch(
-    targetPath,
-    diff,
-    options,
-    pathGuard,
-    resourceStore,
-    signal
-  );
+  return handleSingleFilePatch(targetPath, diff, options, pathGuard, resourceStore, signal);
 }
 
 type PatchInput = z.infer<typeof ApplyPatchInputSchema>;
@@ -601,12 +553,7 @@ export const APPLY_PATCH = defineTool<PatchInput, PatchOutput>({
   contract: APPLY_PATCH_TOOL,
   defaultErrorCode: ErrorCode.UNKNOWN,
   run: async (args, ctx) => {
-    const result = await handleApplyPatch(
-      args,
-      ctx.pathGuard,
-      ctx.resourceStore,
-      ctx.signal
-    );
+    const result = await handleApplyPatch(args, ctx.pathGuard, ctx.resourceStore, ctx.signal);
     if (!result.isError && !args.dryRun) {
       const sc = result.structuredContent;
       const added = sc.files.reduce((s, f) => s + (f.linesAdded ?? 0), 0);
@@ -614,7 +561,7 @@ export const APPLY_PATCH = defineTool<PatchInput, PatchOutput>({
       void ctx.log?.(
         'info',
         `patch: ${args.path ?? ''} (+${String(added)}/-${String(removed)})`,
-        'apply_patch'
+        'apply_patch',
       );
     }
     return result;
@@ -625,13 +572,9 @@ export const APPLY_PATCH = defineTool<PatchInput, PatchOutput>({
       ? `${APPLY_PATCH_TOOL.title}: ${name} [dry run]`
       : `${APPLY_PATCH_TOOL.title}: ${name}`;
   },
-  completionMessage: (
-    args: PatchInput,
-    result: ToolResult<PatchOutput>
-  ): string => {
+  completionMessage: (args: PatchInput, result: ToolResult<PatchOutput>): string => {
     const name = basename(args.path ?? '');
-    if (result.isError)
-      return `${APPLY_PATCH_TOOL.title}: ${name} • ${result.errorCode}`;
+    if (result.isError) return `${APPLY_PATCH_TOOL.title}: ${name} • ${result.errorCode}`;
     const sc = result.structuredContent;
     const added = sc.files.reduce((s, f) => s + (f.linesAdded ?? 0), 0);
     const removed = sc.files.reduce((s, f) => s + (f.linesRemoved ?? 0), 0);

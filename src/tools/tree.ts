@@ -25,17 +25,9 @@ import {
   resolveEntryType,
   resolveStopReason,
 } from '../lib/fs-walk.js';
-import {
-  isPathWithinDirectories,
-  normalizePath,
-  toPosixPath,
-} from '../lib/path-guard.js';
+import { isPathWithinDirectories, normalizePath, toPosixPath } from '../lib/path-guard.js';
 import type { PathGuard } from '../lib/path-guard.js';
-import {
-  FileType as FileTypeEnum,
-  NonNegInt,
-  OptionalPath,
-} from '../schemas/fields.js';
+import { FileType as FileTypeEnum, NonNegInt, OptionalPath } from '../schemas/fields.js';
 import {
   ContinuationSchema,
   defaultFalseBoolean,
@@ -53,10 +45,7 @@ import {
   type ToolRegistrationOptions,
   type ToolResponse,
 } from './shared.js';
-import {
-  resolveFinalProgressCurrent,
-  runWithProgressSession,
-} from './tool-execution.js';
+import { resolveFinalProgressCurrent, runWithProgressSession } from './tool-execution.js';
 
 // ---------------------------------------------------------------------------
 // Private tree implementation (inlined from lib/file-operations/metadata.ts)
@@ -126,7 +115,7 @@ function resolveTreeRelativePath(basePath: string, entryPath: string): string {
 function ensureParentNodes(
   rootNode: TreeEntry,
   nodeByPath: Map<string, TreeEntry>,
-  relativePath: string
+  relativePath: string,
 ): TreeEntry {
   const normalized = toPosixPath(relativePath);
   if (normalized.length === 0 || normalized === '.') return rootNode;
@@ -139,8 +128,7 @@ function ensureParentNodes(
   for (let index = 0; index < parentSegmentCount; index += 1) {
     const segment = segments[index];
     if (!segment) continue;
-    currentPath =
-      currentPath.length === 0 ? segment : `${currentPath}/${segment}`;
+    currentPath = currentPath.length === 0 ? segment : `${currentPath}/${segment}`;
 
     let child = nodeByPath.get(currentPath);
     if (!child) {
@@ -187,7 +175,7 @@ async function resolveTreeEntry(
   rootDirectories: readonly string[],
   gitignoreMatcher: Awaited<ReturnType<typeof loadRootGitignore>>,
   signal: AbortSignal,
-  deps: EntryAccessDependencies
+  deps: EntryAccessDependencies,
 ): Promise<{ type: EntryType; relativePosix: string; name: string } | null> {
   const type = resolveEntryType(entry.dirent);
   const isAccessible = await isEntryAccessibleByType(
@@ -195,7 +183,7 @@ async function resolveTreeEntry(
     type,
     rootDirectories,
     signal,
-    deps
+    deps,
   );
   if (!isAccessible) return null;
 
@@ -217,7 +205,7 @@ function upsertChildNode(
   parent: TreeEntry,
   nodeByPath: Map<string, TreeEntry>,
   resolved: { type: EntryType; relativePosix: string; name: string },
-  childPathIndexByParent: WeakMap<TreeEntry, Set<string>>
+  childPathIndexByParent: WeakMap<TreeEntry, Set<string>>,
 ): void {
   const ensureDirectoryShape = (node: TreeEntry): void => {
     if (node.type === 'directory') {
@@ -278,12 +266,7 @@ function upsertChildNode(
 function formatTreeAscii(tree: TreeEntry): string {
   const lines: string[] = [];
 
-  const walk = (
-    node: TreeEntry,
-    prefix: string,
-    isLast: boolean,
-    isRoot: boolean
-  ): void => {
+  const walk = (node: TreeEntry, prefix: string, isLast: boolean, isRoot: boolean): void => {
     let connector = '';
     let linePrefix = '';
     if (!isRoot) {
@@ -338,7 +321,7 @@ function calculateMaxDepth(node: TreeEntry, currentDepth = 0): number {
 async function treeDirectory(
   dirPath: string,
   pathGuard: PathGuard,
-  options: TreeOptions = {}
+  options: TreeOptions = {},
 ): Promise<TreeResult> {
   const normalized = normalizeTreeOptions(options);
   const deps: EntryAccessDependencies = {
@@ -346,99 +329,85 @@ async function treeDirectory(
     isSensitivePath: (p) => pathGuard.isSensitive(p),
     validateSymlinkPath: (p) => pathGuard.validateExistingPathDetailed(p),
   };
-  return withTimedAbortSignal(
-    options.signal,
-    normalized.timeoutMs,
-    async (signal) => {
-      const root = await pathGuard.validateExistingDirectory(dirPath);
-      const rootNormalized = normalizePath(root);
-      const rootDirectories = [rootNormalized];
+  return withTimedAbortSignal(options.signal, normalized.timeoutMs, async (signal) => {
+    const root = await pathGuard.validateExistingDirectory(dirPath);
+    const rootNormalized = normalizePath(root);
+    const rootDirectories = [rootNormalized];
 
-      const excludePatterns = normalized.includeIgnored
-        ? []
-        : DEFAULT_EXCLUDE_PATTERNS;
+    const excludePatterns = normalized.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
 
-      const gitignoreMatcher = normalized.includeIgnored
-        ? null
-        : await loadRootGitignore(root, signal);
+    const gitignoreMatcher = normalized.includeIgnored
+      ? null
+      : await loadRootGitignore(root, signal);
 
-      const rootNode: TreeEntry = {
-        name: basename(root) || root,
-        type: 'directory',
-        relativePath: '.',
-        children: [],
-      };
+    const rootNode: TreeEntry = {
+      name: basename(root) || root,
+      type: 'directory',
+      relativePath: '.',
+      children: [],
+    };
 
-      const nodeByPath = new Map<string, TreeEntry>();
-      const childPathIndexByParent = new WeakMap<TreeEntry, Set<string>>();
-      let totalEntries = 0;
-      let truncated = false;
+    const nodeByPath = new Map<string, TreeEntry>();
+    const childPathIndexByParent = new WeakMap<TreeEntry, Set<string>>();
+    let totalEntries = 0;
+    let truncated = false;
 
-      const stream = globEntries({
-        cwd: root,
-        pattern: '**/*',
-        excludePatterns,
-        includeHidden: normalized.includeHidden,
-        baseNameMatch: false,
-        caseSensitiveMatch: true,
-        maxDepth: normalized.maxDepth,
-        followSymbolicLinks: false,
-        onlyFiles: false,
-        stats: normalized.includeSizes,
-        suppressErrors: true,
+    const stream = globEntries({
+      cwd: root,
+      pattern: '**/*',
+      excludePatterns,
+      includeHidden: normalized.includeHidden,
+      baseNameMatch: false,
+      caseSensitiveMatch: true,
+      maxDepth: normalized.maxDepth,
+      followSymbolicLinks: false,
+      onlyFiles: false,
+      stats: normalized.includeSizes,
+      suppressErrors: true,
+    });
+
+    for await (const entry of stream) {
+      const stopReason = resolveStopReason<'aborted' | 'maxEntries'>({
+        signal,
+        current: totalEntries,
+        max: normalized.maxEntries,
+        abortedReason: 'aborted',
+        maxReason: 'maxEntries',
       });
-
-      for await (const entry of stream) {
-        const stopReason = resolveStopReason<'aborted' | 'maxEntries'>({
-          signal,
-          current: totalEntries,
-          max: normalized.maxEntries,
-          abortedReason: 'aborted',
-          maxReason: 'maxEntries',
-        });
-        if (stopReason) {
-          truncated = true;
-          break;
-        }
-
-        const resolved = await resolveTreeEntry(
-          entry,
-          root,
-          rootDirectories,
-          gitignoreMatcher,
-          signal,
-          deps
-        );
-        if (!resolved) continue;
-
-        const parent = ensureParentNodes(
-          rootNode,
-          nodeByPath,
-          resolved.relativePosix
-        );
-
-        upsertChildNode(parent, nodeByPath, resolved, childPathIndexByParent);
-
-        if (
-          normalized.includeSizes &&
-          resolved.type === 'file' &&
-          entry.stats
-        ) {
-          const node = nodeByPath.get(resolved.relativePosix);
-          if (node) {
-            node.size = entry.stats.size;
-          }
-        }
-
-        totalEntries += 1;
-        options.onProgress?.({ current: totalEntries });
+      if (stopReason) {
+        truncated = true;
+        break;
       }
 
-      sortTree(rootNode);
+      const resolved = await resolveTreeEntry(
+        entry,
+        root,
+        rootDirectories,
+        gitignoreMatcher,
+        signal,
+        deps,
+      );
+      if (!resolved) continue;
 
-      return { root, tree: rootNode, truncated, totalEntries };
+      const parent = ensureParentNodes(rootNode, nodeByPath, resolved.relativePosix);
+
+      upsertChildNode(parent, nodeByPath, resolved, childPathIndexByParent);
+
+      if (normalized.includeSizes && resolved.type === 'file' && entry.stats) {
+        const node = nodeByPath.get(resolved.relativePosix);
+        if (node) {
+          node.size = entry.stats.size;
+        }
+      }
+
+      totalEntries += 1;
+      options.onProgress?.({ current: totalEntries });
     }
-  );
+
+    sortTree(rootNode);
+
+    return { root, tree: rootNode, truncated, totalEntries };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -472,11 +441,8 @@ const TreeNodeSchema: z.ZodType = z.lazy(
       type: FileTypeEnum.describe('Type'),
       relativePath: z.string().optional().describe('Relative path from root'),
       size: NonNegInt.optional().describe('Size (bytes)'),
-      children: z
-        .array(TreeNodeSchema)
-        .optional()
-        .describe('Child nodes (directories/symlinks)'),
-    })
+      children: z.array(TreeNodeSchema).optional().describe('Child nodes (directories/symlinks)'),
+    }),
 );
 z.globalRegistry.add(TreeNodeSchema, { id: 'TreeNode' });
 
@@ -489,12 +455,9 @@ const TreeOutputSchema = z.strictObject({
   entryCount: NonNegInt.optional().describe('Entry count in tree'),
   maxDepth: NonNegInt.optional().describe('Maximum depth of tree'),
   continuation: ContinuationSchema.optional().describe(
-    'Present when tree was cut; call the named tool with the given args to continue'
+    'Present when tree was cut; call the named tool with the given args to continue',
   ),
-  resourceUri: z
-    .string()
-    .optional()
-    .describe('Resource URI for full ASCII tree when stored'),
+  resourceUri: z.string().optional().describe('Resource URI for full ASCII tree when stored'),
 });
 
 const TREE_TOOL: ToolContract = {
@@ -518,7 +481,7 @@ const TREE_TOOL: ToolContract = {
 function buildTreeContinuation(
   basePath: string,
   truncated: boolean,
-  totalEntries: number
+  totalEntries: number,
 ): z.infer<typeof ContinuationSchema> | undefined {
   if (!truncated) return undefined;
   return {
@@ -533,7 +496,7 @@ async function handleTree(
   pathGuard: PathGuard,
   signal?: AbortSignal,
   resourceStore?: ToolRegistrationOptions['resourceStore'],
-  onProgress?: (progress: { current: number }) => void
+  onProgress?: (progress: { current: number }) => void,
 ): Promise<ToolResponse<z.infer<typeof TreeOutputSchema>>> {
   const basePath = pathGuard.resolvePathOrRoot(args.path);
   const result = await treeDirectory(basePath, pathGuard, {
@@ -552,11 +515,7 @@ async function handleTree(
   const entryCount = countTreeEntries(result.tree);
   const maxDepth = calculateMaxDepth(result.tree);
 
-  const continuation = buildTreeContinuation(
-    basePath,
-    result.truncated,
-    result.totalEntries
-  );
+  const continuation = buildTreeContinuation(basePath, result.truncated, result.totalEntries);
 
   let resourceUri: string | undefined;
   let resources: ContentBlock[] = [];
@@ -597,10 +556,7 @@ async function handleTree(
   });
 }
 
-export const TREE = defineTool<
-  z.infer<typeof TreeInputSchema>,
-  z.infer<typeof TreeOutputSchema>
->({
+export const TREE = defineTool<z.infer<typeof TreeInputSchema>, z.infer<typeof TreeOutputSchema>>({
   contract: TREE_TOOL,
   defaultErrorCode: ErrorCode.NOT_DIRECTORY,
   run: async (args, ctx) => {
@@ -625,7 +581,7 @@ export const TREE = defineTool<
           ctx.pathGuard,
           ctx.signal,
           ctx.resourceStore,
-          onProgress
+          onProgress,
         );
         const sc = result.structuredContent;
         const count = sc.totalEntries ?? 0;
@@ -636,7 +592,7 @@ export const TREE = defineTool<
         const finalCurrent = resolveFinalProgressCurrent(progress, count);
         return { value: result, suffix, finalCurrent };
       },
-      knownTotal
+      knownTotal,
     );
   },
 });

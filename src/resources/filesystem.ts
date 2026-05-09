@@ -23,31 +23,25 @@ function extractPath(uri: string): string | undefined {
   }
 }
 
-export function createFilesystemResource(
-  options: ResourceRegistrationOptions
-): ResourceContract {
+export function createFilesystemResource(options: ResourceRegistrationOptions): ResourceContract {
   const watchers = new Map<string, FSWatcher>();
 
   return {
     name: 'filesystem-mcp-file',
     title: 'Workspace File',
-    description:
-      'Read a file from the workspace. Subscribe to get updates when the file changes.',
+    description: 'Read a file from the workspace. Subscribe to get updates when the file changes.',
     uriTemplate: FILESYSTEM_FILE_URI_TEMPLATE,
     annotations: { audience: ['assistant'], priority: 0.8 },
 
     async read(uri, variables, _ctx: ServerContext) {
       if (!options.pathGuard) {
-        throw new ProtocolError(
-          ProtocolErrorCode.InternalError,
-          'PathGuard not configured'
-        );
+        throw new ProtocolError(ProtocolErrorCode.InternalError, 'PathGuard not configured');
       }
       const rawPath = variables.path;
       if (typeof rawPath !== 'string') {
         throw new ProtocolError(
           ProtocolErrorCode.InvalidParams,
-          'Path variable is required and must be a string'
+          'Path variable is required and must be a string',
         );
       }
       await options.pathGuard.validateExistingPath(rawPath);

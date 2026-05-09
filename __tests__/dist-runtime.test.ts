@@ -16,7 +16,7 @@ interface DistToolsModule {
     options: {
       resourceStore: unknown;
       isInitialized: () => boolean;
-    }
+    },
   ) => void;
 }
 
@@ -35,21 +35,15 @@ interface DistEnv {
 }
 
 function getStructured(result: unknown): Record<string, unknown> {
-  const structured = (result as { structuredContent?: unknown })
-    .structuredContent;
-  assert.ok(
-    structured !== undefined && structured !== null,
-    'structuredContent must be present'
-  );
+  const structured = (result as { structuredContent?: unknown }).structuredContent;
+  assert.ok(structured !== undefined && structured !== null, 'structuredContent must be present');
   return structured as Record<string, unknown>;
 }
 
 async function createDistEnv(): Promise<DistEnv> {
   const distToolsUrl = pathToFileURL(resolve('dist/tools.js')).href;
   const distPathsUrl = pathToFileURL(resolve('dist/lib/paths.js')).href;
-  const distResourceStoreUrl = pathToFileURL(
-    resolve('dist/lib/resource-store.js')
-  ).href;
+  const distResourceStoreUrl = pathToFileURL(resolve('dist/lib/resource-store.js')).href;
 
   const [toolsModule, pathsModule, resourceStoreModule] = await Promise.all([
     import(distToolsUrl) as Promise<DistToolsModule>,
@@ -70,7 +64,7 @@ async function createDistEnv(): Promise<DistEnv> {
         logging: {},
         completions: {},
       },
-    }
+    },
   );
 
   toolsModule.registerAllTools(server, {
@@ -145,12 +139,12 @@ describe('dist runtime regressions', () => {
     assert.equal(
       grepStructured['totalMatches'],
       1,
-      `Expected one grep match, got ${JSON.stringify(grepStructured)}`
+      `Expected one grep match, got ${JSON.stringify(grepStructured)}`,
     );
     assert.equal(
       grepStructured['skippedInaccessible'] ?? 0,
       0,
-      `Expected no inaccessible files, got ${JSON.stringify(grepStructured)}`
+      `Expected no inaccessible files, got ${JSON.stringify(grepStructured)}`,
     );
   });
 });

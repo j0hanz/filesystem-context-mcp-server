@@ -35,22 +35,17 @@ function validateCliPath(inputPath: string): void {
 
   if (isWindowsDriveRelativePath(inputPath)) {
     throw new InvalidArgumentError(
-      'Windows drive-relative paths are not allowed. Use C:\\path or C:/path instead of C:path.'
+      'Windows drive-relative paths are not allowed. Use C:\\path or C:/path instead of C:path.',
     );
   }
 
   const reserved = getReservedDeviceNameForPath(inputPath);
   if (reserved) {
-    throw new InvalidArgumentError(
-      `Windows reserved device name not allowed: ${reserved}.`
-    );
+    throw new InvalidArgumentError(`Windows reserved device name not allowed: ${reserved}.`);
   }
 }
 
-function getNodeErrorProperty(
-  error: unknown,
-  key: 'code' | 'errno'
-): string | number | undefined {
+function getNodeErrorProperty(error: unknown, key: 'code' | 'errno'): string | number | undefined {
   if (!isRecord(error)) return undefined;
   const value = error[key];
   if (typeof value === 'string' || typeof value === 'number') {
@@ -90,9 +85,7 @@ function normalizeDirectoryError(error: unknown, inputPath: string): Error {
     try {
       const name = getSystemErrorName(errno);
       const message = getSystemErrorMessage(errno);
-      return new Error(
-        `Cannot access directory ${inputPath} (${name}: ${message})`
-      );
+      return new Error(`Cannot access directory ${inputPath} (${name}: ${message})`);
     } catch {
       // Fall through to best-effort formatting.
     }
@@ -122,13 +115,11 @@ async function validateDirectoryPath(inputPath: string): Promise<string> {
   }
 }
 
-async function normalizeCliDirectories(
-  args: readonly string[]
-): Promise<string[]> {
+async function normalizeCliDirectories(args: readonly string[]): Promise<string[]> {
   const { results, errors } = await processInParallel(
     [...args],
     validateDirectoryPath,
-    CLI_VALIDATE_CONCURRENCY
+    CLI_VALIDATE_CONCURRENCY,
   );
   if (errors.length === 0) {
     return results;
@@ -159,22 +150,14 @@ function createCliProgram(output: string[]): Command {
   cli
     .name('filesystem-mcp')
     .usage('[options] [allowedDirs...]')
-    .description(
-      'MCP filesystem server. Positional directories define allowed access roots.'
-    )
+    .description('MCP filesystem server. Positional directories define allowed access roots.')
     .argument(
       '[allowedDirs...]',
       'Directories the MCP server can access on disk',
-      parseAllowedDirArgument
+      parseAllowedDirArgument,
     )
-    .option(
-      '--allow_cwd, --allow-cwd',
-      'Allow the current working directory as an additional root'
-    )
-    .option(
-      '--port <number>',
-      'Enable HTTP transport on the given port (Node Streamable HTTP)'
-    )
+    .option('--allow_cwd, --allow-cwd', 'Allow the current working directory as an additional root')
+    .option('--port <number>', 'Enable HTTP transport on the given port (Node Streamable HTTP)')
     .helpOption('-h, --help', 'Display command help')
     .version(SERVER_VERSION, '-v, --version', 'Display server version')
     .addHelpText(
@@ -185,7 +168,7 @@ Examples:
   $ filesystem-mcp --allow-cwd
   $ filesystem-mcp /project/src /project/tests --allow-cwd
   $ filesystem-mcp --port 3000 /path/to/allowed/dir
-`
+`,
     );
 
   cli.allowUnknownOption(false);
@@ -237,10 +220,7 @@ function parsePortOption(raw: unknown): number | undefined {
   if (raw === undefined) return undefined;
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 1 || n > 65535) {
-    throw new CliExitError(
-      `Error: --port must be an integer between 1 and 65535`,
-      1
-    );
+    throw new CliExitError(`Error: --port must be an integer between 1 and 65535`, 1);
   }
   return n;
 }
@@ -256,10 +236,7 @@ export async function parseArgs(): Promise<{
     cli.parse(process.argv, { from: 'node' });
   } catch (error: unknown) {
     if (error instanceof CommanderError) {
-      throw new CliExitError(
-        formatCliOutput(output, error.message),
-        error.exitCode
-      );
+      throw new CliExitError(formatCliOutput(output, error.message), error.exitCode);
     }
     throw error;
   }
@@ -271,8 +248,7 @@ export async function parseArgs(): Promise<{
 
   let allowedDirs: string[];
   try {
-    allowedDirs =
-      positionals.length > 0 ? await normalizeCliDirectories(positionals) : [];
+    allowedDirs = positionals.length > 0 ? await normalizeCliDirectories(positionals) : [];
   } catch (error: unknown) {
     throw new CliExitError(normalizeCliExitMessage(error), 1);
   }

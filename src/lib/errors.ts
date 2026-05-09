@@ -42,11 +42,7 @@ interface ProblemFactoryOptions {
   issues?: readonly ProblemIssue[];
 }
 
-function build(
-  code: ErrorCode,
-  message: string,
-  opts: ProblemFactoryOptions = {}
-): Problem {
+function build(code: ErrorCode, message: string, opts: ProblemFactoryOptions = {}): Problem {
   return {
     code,
     message,
@@ -58,26 +54,21 @@ function build(
 }
 
 export const Problem = {
-  notFound: (msg: string, o?: ProblemFactoryOptions): Problem =>
-    build(ErrorCode.NOT_FOUND, msg, o),
+  notFound: (msg: string, o?: ProblemFactoryOptions): Problem => build(ErrorCode.NOT_FOUND, msg, o),
   invalidInput: (msg: string, o?: ProblemFactoryOptions): Problem =>
     build(ErrorCode.INVALID_INPUT, msg, o),
   accessDenied: (msg: string, o?: ProblemFactoryOptions): Problem =>
     build(ErrorCode.ACCESS_DENIED, msg, o),
   permissionDenied: (msg: string, o?: ProblemFactoryOptions): Problem =>
     build(ErrorCode.PERMISSION_DENIED, msg, o),
-  timeout: (msg: string, o?: ProblemFactoryOptions): Problem =>
-    build(ErrorCode.TIMEOUT, msg, o),
+  timeout: (msg: string, o?: ProblemFactoryOptions): Problem => build(ErrorCode.TIMEOUT, msg, o),
   cancelled: (msg: string, o?: ProblemFactoryOptions): Problem =>
     build(ErrorCode.CANCELLED, msg, o),
-  tooLarge: (msg: string, o?: ProblemFactoryOptions): Problem =>
-    build(ErrorCode.TOO_LARGE, msg, o),
-  ioError: (msg: string, o?: ProblemFactoryOptions): Problem =>
-    build(ErrorCode.IO_ERROR, msg, o),
+  tooLarge: (msg: string, o?: ProblemFactoryOptions): Problem => build(ErrorCode.TOO_LARGE, msg, o),
+  ioError: (msg: string, o?: ProblemFactoryOptions): Problem => build(ErrorCode.IO_ERROR, msg, o),
   validationFailed: (msg: string, o?: ProblemFactoryOptions): Problem =>
     build(ErrorCode.VALIDATION_FAILED, msg, o),
-  unknown: (msg: string, o?: ProblemFactoryOptions): Problem =>
-    build(ErrorCode.UNKNOWN, msg, o),
+  unknown: (msg: string, o?: ProblemFactoryOptions): Problem => build(ErrorCode.UNKNOWN, msg, o),
 } as const;
 
 // ─── Suggestions ─────────────────────────────────────────────────────────────
@@ -96,36 +87,24 @@ const DEFAULT_SUGGESTIONS: Readonly<Partial<Record<ErrorCode, string>>> = {
 
 function readSuggestionMeta(schema: z.ZodType | undefined): string | undefined {
   if (!schema) return undefined;
-  const meta = z.globalRegistry.get(schema) as
-    | { suggestion?: unknown }
-    | undefined;
+  const meta = z.globalRegistry.get(schema) as { suggestion?: unknown } | undefined;
   if (meta && typeof meta.suggestion === 'string') return meta.suggestion;
   return undefined;
 }
 
-function descend(
-  schema: z.ZodType,
-  segment: string | number
-): z.ZodType | undefined {
+function descend(schema: z.ZodType, segment: string | number): z.ZodType | undefined {
   const def = (schema as unknown as { _def?: unknown })._def as
     | { shape?: Record<string, z.ZodType>; type?: z.ZodType }
     | undefined;
   if (!def) return undefined;
-  if (
-    typeof segment === 'string' &&
-    def.shape !== undefined &&
-    segment in def.shape
-  ) {
+  if (typeof segment === 'string' && def.shape !== undefined && segment in def.shape) {
     return def.shape[segment];
   }
   if (typeof segment === 'number' && def.type !== undefined) return def.type;
   return undefined;
 }
 
-function suggestionFromIssueMeta(
-  schema: z.ZodType,
-  issue: ProblemIssue
-): string | undefined {
+function suggestionFromIssueMeta(schema: z.ZodType, issue: ProblemIssue): string | undefined {
   let cursor: z.ZodType | undefined = schema;
   const trail: (z.ZodType | undefined)[] = [cursor];
   for (const segment of issue.path) {
@@ -142,7 +121,7 @@ function suggestionFromIssueMeta(
 
 export function resolveSuggestion(
   p: Pick<Problem, 'code' | 'issues'>,
-  schema?: z.ZodType
+  schema?: z.ZodType,
 ): string | undefined {
   if (p.issues && p.issues.length > 0 && schema) {
     for (const issue of p.issues) {
@@ -249,10 +228,7 @@ function walkCauseChain(error: unknown): ClassificationSignal {
   return { kind: 'unknown' };
 }
 
-function buildProblemFromSignal(
-  signal: ClassificationSignal,
-  error: unknown
-): Problem {
+function buildProblemFromSignal(signal: ClassificationSignal, error: unknown): Problem {
   const message = error instanceof Error ? error.message : String(error);
   switch (signal.kind) {
     case 'abort':
@@ -274,9 +250,7 @@ function buildProblemFromSignal(
       return Problem.ioError(message);
     default: {
       const _exhaustive: never = signal;
-      return Problem.ioError(
-        `Unhandled error kind: ${JSON.stringify(_exhaustive)}`
-      );
+      return Problem.ioError(`Unhandled error kind: ${JSON.stringify(_exhaustive)}`);
     }
   }
 }
@@ -300,15 +274,9 @@ function toProblemIssue(issue: z.core.$ZodIssue): ProblemIssue {
   };
 }
 
-export function zodErrorToProblem(
-  err: z.ZodError,
-  schema?: z.ZodType
-): Problem {
+export function zodErrorToProblem(err: z.ZodError, schema?: z.ZodType): Problem {
   const issues = err.issues.map(toProblemIssue);
-  const suggestion = resolveSuggestion(
-    { code: ErrorCode.VALIDATION_FAILED, issues },
-    schema
-  );
+  const suggestion = resolveSuggestion({ code: ErrorCode.VALIDATION_FAILED, issues }, schema);
   return build(ErrorCode.VALIDATION_FAILED, z.prettifyError(err), {
     issues,
     ...(suggestion !== undefined ? { suggestion } : {}),
@@ -324,19 +292,14 @@ function isMcpErrorCarrier(error: unknown): error is { problem: Problem } {
   );
 }
 
-export function classify(
-  error: unknown,
-  ctx?: { schema?: z.ZodType }
-): Problem {
+export function classify(error: unknown, ctx?: { schema?: z.ZodType }): Problem {
   if (error === null || error === undefined) {
     return Problem.unknown('Unknown error');
   }
   if (isMcpErrorCarrier(error)) return error.problem;
   if (error instanceof z.ZodError) return zodErrorToProblem(error, ctx?.schema);
   if (!(error instanceof Error)) {
-    return Problem.unknown(
-      typeof error === 'string' ? error : '[non-Error thrown]'
-    );
+    return Problem.unknown(typeof error === 'string' ? error : '[non-Error thrown]');
   }
   const signal = walkCauseChain(error);
   return buildProblemFromSignal(signal, error);
@@ -401,15 +364,13 @@ export function formatUnknownErrorMessage(error: unknown): string {
 }
 
 export function normalizeUnknownError(error: unknown): Error {
-  return error instanceof Error
-    ? error
-    : new Error(formatUnknownErrorMessage(error));
+  return error instanceof Error ? error : new Error(formatUnknownErrorMessage(error));
 }
 
 export function createDetailedError(
   error: unknown,
   path?: string,
-  additionalDetails?: Record<string, unknown>
+  additionalDetails?: Record<string, unknown>,
 ): DetailedError {
   const problem = classify(error);
   const trace = getTraceContext();
@@ -420,8 +381,7 @@ export function createDetailedError(
   };
   const resolvedPath = path ?? problem.path;
   const suggestion =
-    problem.suggestion ??
-    resolveSuggestion({ code: problem.code, issues: problem.issues ?? [] });
+    problem.suggestion ?? resolveSuggestion({ code: problem.code, issues: problem.issues ?? [] });
 
   return {
     code: problem.code,
@@ -429,9 +389,7 @@ export function createDetailedError(
     ...(resolvedPath !== undefined ? { path: resolvedPath } : {}),
     ...(suggestion !== undefined ? { suggestion } : {}),
     ...(Object.keys(merged).length > 0 ? { details: merged } : {}),
-    ...(problem.issues && problem.issues.length > 0
-      ? { issues: problem.issues }
-      : {}),
+    ...(problem.issues && problem.issues.length > 0 ? { issues: problem.issues } : {}),
   };
 }
 
@@ -459,14 +417,14 @@ export class McpError extends Error {
     message: string,
     path?: string,
     details?: Record<string, unknown>,
-    cause?: unknown
+    cause?: unknown,
   );
   constructor(
     arg1: Problem | ErrorCode,
     arg2?: unknown,
     arg3?: string,
     arg4?: Record<string, unknown>,
-    arg5?: unknown
+    arg5?: unknown,
   ) {
     if (typeof arg1 === 'string') {
       // Legacy positional form
@@ -477,12 +435,8 @@ export class McpError extends Error {
       const cause = arg5;
       const trace = getTraceContext();
       const traceDetails: Partial<ProblemDetails> = {
-        ...(trace?.traceparent !== undefined
-          ? { traceparent: trace.traceparent }
-          : {}),
-        ...(trace?.tracestate !== undefined
-          ? { tracestate: trace.tracestate }
-          : {}),
+        ...(trace?.traceparent !== undefined ? { traceparent: trace.traceparent } : {}),
+        ...(trace?.tracestate !== undefined ? { tracestate: trace.tracestate } : {}),
         ...(trace?.baggage !== undefined ? { baggage: trace.baggage } : {}),
       };
 
@@ -534,7 +488,7 @@ export class McpError extends Error {
     message: string,
     path?: string,
     details?: Record<string, unknown>,
-    cause?: unknown
+    cause?: unknown,
   ): McpError {
     return new McpError(ErrorCode.NOT_FOUND, message, path, details, cause);
   }
@@ -543,7 +497,7 @@ export class McpError extends Error {
     message: string,
     path?: string,
     details?: Record<string, unknown>,
-    cause?: unknown
+    cause?: unknown,
   ): McpError {
     return new McpError(ErrorCode.INVALID_INPUT, message, path, details, cause);
   }
@@ -552,7 +506,7 @@ export class McpError extends Error {
     message: string,
     path?: string,
     details?: Record<string, unknown>,
-    cause?: unknown
+    cause?: unknown,
   ): McpError {
     return new McpError(ErrorCode.ACCESS_DENIED, message, path, details, cause);
   }
@@ -561,7 +515,7 @@ export class McpError extends Error {
     message: string,
     path?: string,
     details?: Record<string, unknown>,
-    cause?: unknown
+    cause?: unknown,
   ): McpError {
     return new McpError(ErrorCode.TIMEOUT, message, path, details, cause);
   }

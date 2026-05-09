@@ -38,11 +38,7 @@ describe('Cleanup Refactors', () => {
     // Verify consistency: using `now` multiple times gives same result
     const check1 = now > threshold2;
     const check2 = now > threshold2; // Same check should have same result
-    assert.strictEqual(
-      check1,
-      check2,
-      'Repeated checks with same now should match'
-    );
+    assert.strictEqual(check1, check2, 'Repeated checks with same now should match');
   });
 
   it('for...of preserves iteration and side effects', () => {
@@ -62,11 +58,7 @@ describe('Cleanup Refactors', () => {
       results2.push(item * 2);
     });
 
-    assert.deepEqual(
-      results1,
-      results2,
-      'for...of and forEach should produce same results'
-    );
+    assert.deepEqual(results1, results2, 'for...of and forEach should produce same results');
     assert.deepEqual(results1, [2, 4, 6]);
 
     // Test 2: Mutations on external object (like ICON_DATA.set)
@@ -89,7 +81,7 @@ describe('Cleanup Refactors', () => {
     assert.deepEqual(
       mapResults1,
       mapResults2,
-      'for...of and forEach should mutate maps identically'
+      'for...of and forEach should mutate maps identically',
     );
     assert.strictEqual(mapResults1.get(2), 'second');
 
@@ -108,11 +100,7 @@ describe('Cleanup Refactors', () => {
       idx++;
     }
 
-    assert.deepEqual(
-      array1,
-      array2,
-      'for...of with manual index tracking should match forEach'
-    );
+    assert.deepEqual(array1, array2, 'for...of with manual index tracking should match forEach');
   });
 
   it('delete operator removes properties same as Reflect.deleteProperty', () => {
@@ -130,7 +118,7 @@ describe('Cleanup Refactors', () => {
     assert.deepEqual(
       obj1,
       obj2,
-      'delete and Reflect.deleteProperty should produce identical results'
+      'delete and Reflect.deleteProperty should produce identical results',
     );
     assert.deepEqual(obj1, { a: 1, c: 3 });
 
@@ -154,11 +142,7 @@ describe('Cleanup Refactors', () => {
     const obj6: Record<string, number> = { x: 1 };
     delete obj5['nonexistent'];
     Reflect.deleteProperty(obj6, 'nonexistent');
-    assert.deepEqual(
-      obj5,
-      obj6,
-      'Deleting non-existent keys should have no effect'
-    );
+    assert.deepEqual(obj5, obj6, 'Deleting non-existent keys should have no effect');
   });
 
   it('verifies that all refactors are pure refactors with no behavior change', () => {
@@ -168,11 +152,7 @@ describe('Cleanup Refactors', () => {
     // JSON.stringify is deterministic
     const stringified1 = JSON.stringify(testData);
     const stringified2 = JSON.stringify(testData);
-    assert.strictEqual(
-      stringified1,
-      stringified2,
-      'JSON.stringify is deterministic'
-    );
+    assert.strictEqual(stringified1, stringified2, 'JSON.stringify is deterministic');
 
     // Date.now() temporal consistency
     const t1 = Date.now();
@@ -185,21 +165,13 @@ describe('Cleanup Refactors', () => {
     arr.forEach(() => count1++);
     let count2 = 0;
     for (const _item of arr) count2++;
-    assert.strictEqual(
-      count1,
-      count2,
-      'for...of and forEach iterate same number of times'
-    );
+    assert.strictEqual(count1, count2, 'for...of and forEach iterate same number of times');
 
     // delete is equivalent to Reflect.deleteProperty
     const testObj1: Record<string, number> = { x: 1 };
     const testObj2: Record<string, number> = { x: 1 };
     delete testObj1['x'];
     Reflect.deleteProperty(testObj2, 'x');
-    assert.deepEqual(
-      testObj1,
-      testObj2,
-      'delete equals Reflect.deleteProperty'
-    );
+    assert.deepEqual(testObj1, testObj2, 'delete equals Reflect.deleteProperty');
   });
 });

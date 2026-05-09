@@ -33,9 +33,7 @@ const WriteFileOutputSchema = z.strictObject({
   size: NonNegInt.describe('File size in bytes'),
   lineCount: NonNegInt.describe('Number of lines in file'),
   mimeType: z.string().describe('MIME type of the file'),
-  kind: z
-    .enum(['text', 'binary', 'image', 'audio', 'pdf'])
-    .describe('File kind'),
+  kind: z.enum(['text', 'binary', 'image', 'audio', 'pdf']).describe('File kind'),
   resourceUri: z.string().describe('Full content URI in resource store'),
   created: z.string().describe('Creation timestamp (ISO 8601)'),
   modified: z.string().describe('Last modification timestamp (ISO 8601)'),
@@ -60,9 +58,8 @@ const WRITE_FILE_TOOL: ToolContract = {
 type WriteInput = z.infer<typeof WriteFileInputSchema>;
 type WriteOutput = z.infer<typeof WriteFileOutputSchema>;
 
-const writeMessages = buildPathMessages<WriteInput, WriteOutput>(
-  WRITE_FILE_TOOL.title,
-  (sc) => formatBytes(sc.size)
+const writeMessages = buildPathMessages<WriteInput, WriteOutput>(WRITE_FILE_TOOL.title, (sc) =>
+  formatBytes(sc.size),
 );
 
 export const WRITE_FILE = defineTool<WriteInput, WriteOutput>({
@@ -82,18 +79,11 @@ export const WRITE_FILE = defineTool<WriteInput, WriteOutput>({
 
     Logger.info(`write: ${args.path} (${bytesWritten} bytes)`);
 
-    void ctx.log?.(
-      'info',
-      `write: ${args.path} (${String(bytesWritten)} bytes)`,
-      'write'
-    );
+    void ctx.log?.('info', `write: ${args.path} (${String(bytesWritten)} bytes)`, 'write');
 
     // Get file stats and MIME type
     const fileStats = await withAbort(stat(validPath), ctx.signal);
-    const mimeInfo = detectMimeType(
-      validPath,
-      Buffer.from(args.content.slice(0, 512))
-    );
+    const mimeInfo = detectMimeType(validPath, Buffer.from(args.content.slice(0, 512)));
 
     // Count lines in content
     const lineCount = args.content.split('\n').length;

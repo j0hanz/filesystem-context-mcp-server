@@ -2,10 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { ErrorCode, McpError } from '../../src/lib/errors.js';
-import {
-  decodeOffsetCursor,
-  encodeOffsetCursor,
-} from '../../src/tools/shared.js';
+import { decodeOffsetCursor, encodeOffsetCursor } from '../../src/tools/shared.js';
 
 // ─── encodeOffsetCursor / decodeOffsetCursor ────────────────────────────────
 
@@ -23,52 +20,39 @@ describe('decodeOffsetCursor', () => {
   it('throws McpError on non-base64url garbage', () => {
     assert.throws(
       () => decodeOffsetCursor('not-a-valid-cursor'),
-      (err: unknown) =>
-        err instanceof McpError && err.code === ErrorCode.INVALID_INPUT
+      (err: unknown) => err instanceof McpError && err.code === ErrorCode.INVALID_INPUT,
     );
   });
 
   it('throws McpError when JSON has no offset key', () => {
-    const cursor = Buffer.from(JSON.stringify({ wrong: 123 })).toString(
-      'base64url'
-    );
+    const cursor = Buffer.from(JSON.stringify({ wrong: 123 })).toString('base64url');
     assert.throws(
       () => decodeOffsetCursor(cursor),
-      (err: unknown) =>
-        err instanceof McpError && err.code === ErrorCode.INVALID_INPUT
+      (err: unknown) => err instanceof McpError && err.code === ErrorCode.INVALID_INPUT,
     );
   });
 
   it('throws McpError when offset is a string', () => {
-    const cursor = Buffer.from(JSON.stringify({ offset: '5' })).toString(
-      'base64url'
-    );
+    const cursor = Buffer.from(JSON.stringify({ offset: '5' })).toString('base64url');
     assert.throws(
       () => decodeOffsetCursor(cursor),
-      (err: unknown) =>
-        err instanceof McpError && err.code === ErrorCode.INVALID_INPUT
+      (err: unknown) => err instanceof McpError && err.code === ErrorCode.INVALID_INPUT,
     );
   });
 
   it('throws McpError when offset is negative', () => {
-    const cursor = Buffer.from(JSON.stringify({ offset: -1 })).toString(
-      'base64url'
-    );
+    const cursor = Buffer.from(JSON.stringify({ offset: -1 })).toString('base64url');
     assert.throws(
       () => decodeOffsetCursor(cursor),
-      (err: unknown) =>
-        err instanceof McpError && err.code === ErrorCode.INVALID_INPUT
+      (err: unknown) => err instanceof McpError && err.code === ErrorCode.INVALID_INPUT,
     );
   });
 
   it('throws McpError when offset is a float', () => {
-    const cursor = Buffer.from(JSON.stringify({ offset: 1.5 })).toString(
-      'base64url'
-    );
+    const cursor = Buffer.from(JSON.stringify({ offset: 1.5 })).toString('base64url');
     assert.throws(
       () => decodeOffsetCursor(cursor),
-      (err: unknown) =>
-        err instanceof McpError && err.code === ErrorCode.INVALID_INPUT
+      (err: unknown) => err instanceof McpError && err.code === ErrorCode.INVALID_INPUT,
     );
   });
 });

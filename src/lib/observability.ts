@@ -1,11 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { hash } from 'node:crypto';
 import { channel, tracingChannel } from 'node:diagnostics_channel';
-import {
-  monitorEventLoopDelay,
-  performance,
-  PerformanceObserver,
-} from 'node:perf_hooks';
+import { monitorEventLoopDelay, performance, PerformanceObserver } from 'node:perf_hooks';
 
 import { parseTrueEnvFlag } from './constants.js';
 import { Logger } from './logger.js';
@@ -139,9 +135,7 @@ function extractOutcome(result: unknown): { ok: boolean; error?: string } {
   }
 
   if (typeof result.ok === 'boolean') {
-    return result.ok
-      ? { ok: true }
-      : { ok: false, error: extractErrorMessage(result) };
+    return result.ok ? { ok: true } : { ok: false, error: extractErrorMessage(result) };
   }
 
   const struct = result.structuredContent;
@@ -167,9 +161,7 @@ function safeStringify(source: unknown): string {
   }
 }
 
-function sanitizePathForDiagnostics(
-  path: string | undefined
-): string | undefined {
+function sanitizePathForDiagnostics(path: string | undefined): string | undefined {
   const { detail } = readConfig();
   if (!path || detail === 0) return undefined;
   if (detail === 2) return path;
@@ -177,7 +169,7 @@ function sanitizePathForDiagnostics(
 }
 
 function enrichWithToolContext(
-  detail?: Record<string, unknown>
+  detail?: Record<string, unknown>,
 ): Record<string, unknown> | undefined {
   const current = toolContext.getStore();
   if (!current) return detail;
@@ -204,7 +196,7 @@ function enrichWithToolContext(
 // --- Perf Helpers ---
 
 function getDelayStats(
-  h: ReturnType<typeof monitorEventLoopDelay>
+  h: ReturnType<typeof monitorEventLoopDelay>,
 ): NonNullable<PerfDiagnosticsEvent['eventLoopDelay']> | undefined {
   if (h.count === 0) return undefined;
   return {
@@ -260,10 +252,7 @@ export function publishOpsTraceEnd(context: OpsTraceContext): void {
   CHANNELS.ops.end.publish(buildOpsTraceContext(context));
 }
 
-export function publishOpsTraceError(
-  context: OpsTraceContext,
-  error: unknown
-): void {
+export function publishOpsTraceError(context: OpsTraceContext, error: unknown): void {
   CHANNELS.ops.error.publish({
     ...buildOpsTraceContext(context),
     error,
@@ -293,9 +282,7 @@ function buildOpsTraceContext(context: OpsTraceContext): OpsTraceContext {
   return merged;
 }
 
-export function getToolContextSnapshot():
-  | { tool: string; path?: string }
-  | undefined {
+export function getToolContextSnapshot(): { tool: string; path?: string } | undefined {
   return toolContext.getStore();
 }
 
@@ -310,7 +297,7 @@ function clearMeasureMarks(startMark: string, endMark: string): void {
 
 export function startPerfMeasure(
   name: string,
-  detail?: Record<string, unknown>
+  detail?: Record<string, unknown>,
 ): ((ok?: boolean) => void) | undefined {
   if (!readConfig().enabled || !CHANNELS.perf.hasSubscribers) return undefined;
 
@@ -352,11 +339,7 @@ export function startPerfMeasure(
   };
 }
 
-function publishToolStart(
-  tool: string,
-  pathVal?: string,
-  traceparent?: string
-): void {
+function publishToolStart(tool: string, pathVal?: string, traceparent?: string): void {
   const event: ToolDiagnosticsEvent = { phase: 'start', tool };
   if (pathVal) event.path = pathVal;
   if (traceparent) event.traceparent = traceparent;
@@ -368,7 +351,7 @@ function publishToolEnd(
   ok: boolean,
   durationMs: number,
   errorMsg?: string,
-  traceparent?: string
+  traceparent?: string,
 ): void {
   const event: ToolDiagnosticsEvent = { phase: 'end', tool, ok, durationMs };
   if (errorMsg) event.error = errorMsg;
@@ -380,7 +363,7 @@ function publishPerfEnd(
   tool: string,
   durationMs: number,
   eluStart: ReturnType<typeof performance.eventLoopUtilization>,
-  loopMonitor?: ReturnType<typeof monitorEventLoopDelay>
+  loopMonitor?: ReturnType<typeof monitorEventLoopDelay>,
 ): void {
   const elu = performance.eventLoopUtilization(eluStart);
   const event: PerfDiagnosticsEvent = {
@@ -410,7 +393,7 @@ function finalizeObservation(
   durationMs: number,
   obs: { ok: boolean; errorMsg: string | undefined },
   eluStart?: ReturnType<typeof performance.eventLoopUtilization>,
-  loopMonitor?: ReturnType<typeof monitorEventLoopDelay>
+  loopMonitor?: ReturnType<typeof monitorEventLoopDelay>,
 ): void {
   loopMonitor?.disable();
 
@@ -429,17 +412,14 @@ function finalizeObservation(
 async function runAndObserve<T>(
   tool: string,
   run: () => Promise<T>,
-  options: ObserveOptions
+  options: ObserveOptions,
 ): Promise<T> {
   const startMs = performance.now();
-  const eluStart = options.pubPerf
-    ? performance.eventLoopUtilization()
-    : undefined;
+  const eluStart = options.pubPerf ? performance.eventLoopUtilization() : undefined;
   const loopMonitor = options.pubPerf ? monitorEventLoopDelay() : undefined;
   loopMonitor?.enable();
 
-  if (options.pubTool)
-    publishToolStart(tool, options.pathVal, options.traceparent);
+  if (options.pubTool) publishToolStart(tool, options.pathVal, options.traceparent);
 
   let result: T;
   let ok = false;
@@ -455,23 +435,13 @@ async function runAndObserve<T>(
     throw err;
   } finally {
     const durationMs = performance.now() - startMs;
-    finalizeObservation(
-      tool,
-      options,
-      durationMs,
-      { ok, errorMsg },
-      eluStart,
-      loopMonitor
-    );
+    finalizeObservation(tool, options, durationMs, { ok, errorMsg }, eluStart, loopMonitor);
   }
 
   return result;
 }
 
-async function runWithBasicErrorLogging<T>(
-  tool: string,
-  run: () => Promise<T>
-): Promise<T> {
+async function runWithBasicErrorLogging<T>(tool: string, run: () => Promise<T>): Promise<T> {
   const start = performance.now();
   try {
     const res = await run();
@@ -491,7 +461,7 @@ function buildObserveOptions(
   pubPerf: boolean,
   logErrors: boolean,
   normalizedPath?: string,
-  traceparent?: string
+  traceparent?: string,
 ): ObserveOptions {
   return {
     pubTool,
@@ -507,7 +477,7 @@ async function executeInContext<T>(
   run: () => Promise<T>,
   config: Config,
   normalizedPath?: string,
-  traceparent?: string
+  traceparent?: string,
 ): Promise<T> {
   if (!config.enabled) {
     return config.logToolErrors ? runWithBasicErrorLogging(tool, run) : run();
@@ -523,7 +493,7 @@ async function executeInContext<T>(
     pubPerf,
     config.logToolErrors,
     normalizedPath,
-    traceparent
+    traceparent,
   );
 
   return runAndObserve(tool, run, options);
@@ -532,7 +502,7 @@ async function executeInContext<T>(
 export async function withToolDiagnostics<T>(
   tool: string,
   run: () => Promise<T>,
-  options?: { path?: string; traceContext?: TraceContext }
+  options?: { path?: string; traceContext?: TraceContext },
 ): Promise<T> {
   const config = readConfig();
   const normalizedPath = sanitizePathForDiagnostics(options?.path);
@@ -545,19 +515,11 @@ export async function withToolDiagnostics<T>(
   };
 
   return toolContext.run(context, () =>
-    executeInContext(
-      tool,
-      run,
-      config,
-      normalizedPath,
-      options?.traceContext?.traceparent
-    )
+    executeInContext(tool, run, config, normalizedPath, options?.traceContext?.traceparent),
   );
 }
 
 function logError(tool: string, durationMs: number, msg?: string): void {
   const suffix = msg ? `: ${msg}` : '';
-  Logger.error(
-    `[ToolError] ${tool} failed in ${durationMs.toFixed(1)}ms${suffix}`
-  );
+  Logger.error(`[ToolError] ${tool} failed in ${durationMs.toFixed(1)}ms${suffix}`);
 }

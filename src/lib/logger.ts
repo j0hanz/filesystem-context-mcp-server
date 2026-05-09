@@ -39,9 +39,7 @@ export interface LoggingState {
   minimumLevel: LoggingLevel;
 }
 
-export function createLoggingState(
-  minimumLevel: LoggingLevel = 'debug'
-): LoggingState {
+export function createLoggingState(minimumLevel: LoggingLevel = 'debug'): LoggingState {
   return { minimumLevel };
 }
 
@@ -55,7 +53,7 @@ export function logToMcp(
   server: McpServer | undefined,
   level: LoggingLevel,
   data: string,
-  minLevel: LoggingLevel = 'debug'
+  minLevel: LoggingLevel = 'debug',
 ): void {
   if (LOG_LEVEL_ORDER[level] < LOG_LEVEL_ORDER[minLevel]) {
     return;
@@ -72,10 +70,7 @@ export function logToMcp(
   };
 
   void server.sendLoggingMessage(params).catch((error: unknown) => {
-    console.error(
-      `Failed to send MCP log: ${level} | ${data}`,
-      formatTransportError(error)
-    );
+    console.error(`Failed to send MCP log: ${level} | ${data}`, formatTransportError(error));
   });
 }
 
@@ -92,9 +87,7 @@ export const Logger = {
       level,
       message,
       ...(data !== undefined ? { data } : {}),
-      ...(session?.sessionId !== undefined
-        ? { sessionId: session.sessionId }
-        : {}),
+      ...(session?.sessionId !== undefined ? { sessionId: session.sessionId } : {}),
     };
 
     if (LOG_CHANNEL.hasSubscribers) {
@@ -194,16 +187,14 @@ export class LogRouter {
   }
 
   private dispatch(event: LogEvent): void {
-    const target = event.sessionId
-      ? this.sessions.get(event.sessionId)
-      : this.stdio;
+    const target = event.sessionId ? this.sessions.get(event.sessionId) : this.stdio;
     const dataStr = stringifyLogData(event.data);
     if (target) {
       logToMcp(
         target.server,
         event.level,
         `${event.message}${dataStr}`,
-        target.loggingState.minimumLevel
+        target.loggingState.minimumLevel,
       );
       return;
     }

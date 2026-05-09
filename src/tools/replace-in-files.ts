@@ -16,11 +16,7 @@ import {
   MAX_TEXT_FILE_SIZE,
   PARALLEL_CONCURRENCY,
 } from '../lib/constants.js';
-import {
-  ErrorCode,
-  formatUnknownErrorMessage,
-  McpError,
-} from '../lib/errors.js';
+import { ErrorCode, formatUnknownErrorMessage, McpError } from '../lib/errors.js';
 import { globEntries } from '../lib/fs-walk.js';
 import { Logger } from '../lib/logger.js';
 import { detectMimeType } from '../lib/mime.js';
@@ -28,10 +24,7 @@ import type { PathGuard } from '../lib/path-guard.js';
 import type { ResourceStore } from '../lib/resource-store.js';
 import { runInWorker, shouldOffload } from '../lib/worker-pool.js';
 import { NonNegInt, OptionalPath, SafeGlobPattern } from '../schemas/fields.js';
-import {
-  safeGlobConstraint,
-  toToolJsonSchema,
-} from '../schemas/json-schema.js';
+import { safeGlobConstraint, toToolJsonSchema } from '../schemas/json-schema.js';
 import {
   defaultFalseBoolean,
   includeHiddenField,
@@ -51,23 +44,16 @@ import {
   type ToolResponse,
   truncateProgressPattern,
 } from './shared.js';
-import {
-  resolveFinalProgressCurrent,
-  runWithProgressSession,
-} from './tool-execution.js';
+import { resolveFinalProgressCurrent, runWithProgressSession } from './tool-execution.js';
 
 const SearchAndReplaceInputSchema = z.strictObject({
   path: OptionalPath,
-  pattern: SafeGlobPattern.optional().describe(
-    'File glob filter (default: **/* text files)'
-  ),
+  pattern: SafeGlobPattern.optional().describe('File glob filter (default: **/* text files)'),
   searchPattern: z
     .string()
     .min(1)
     .max(10000)
-    .describe(
-      'Text or regex to find (RE2: no lookahead/lookbehind/backrefs when isRegex=true)'
-    )
+    .describe('Text or regex to find (RE2: no lookahead/lookbehind/backrefs when isRegex=true)')
     .meta({ examples: ['TODO', 'function\\s+(\\w+)', 'import.*from'] }),
   replacement: z
     .string()
@@ -92,18 +78,8 @@ const SearchAndReplaceInputSchema = z.strictObject({
     .optional()
     .default(DEFAULT_SEARCH_RESULTS)
     .describe('Max matches across all files'),
-  maxFiles: z
-    .uint32()
-    .min(1)
-    .max(MAX_SEARCH_RESULTS)
-    .optional()
-    .describe('Max files to process'),
-  maxDepth: z
-    .uint32()
-    .min(0)
-    .max(MAX_SEARCH_DEPTH)
-    .optional()
-    .describe('Max directory depth'),
+  maxFiles: z.uint32().min(1).max(MAX_SEARCH_RESULTS).optional().describe('Max files to process'),
+  maxDepth: z.uint32().min(0).max(MAX_SEARCH_DEPTH).optional().describe('Max directory depth'),
 });
 
 const SearchAndReplaceOutputSchema = z.strictObject({
@@ -117,7 +93,7 @@ const SearchAndReplaceOutputSchema = z.strictObject({
       z.strictObject({
         path: z.string(),
         error: PerFileErrorSchema,
-      })
+      }),
     )
     .optional()
     .describe('Per-file failures'),
@@ -136,14 +112,8 @@ const SearchAndReplaceOutputSchema = z.strictObject({
     .array(z.strictObject({ path: z.string(), matches: NonNegInt }))
     .optional()
     .describe('Changed files with match counts'),
-  resultsTruncated: z
-    .boolean()
-    .optional()
-    .describe('results list was truncated'),
-  diff: z
-    .string()
-    .optional()
-    .describe('Unified diff (when returnDiff or dryRun)'),
+  resultsTruncated: z.boolean().optional().describe('results list was truncated'),
+  diff: z.string().optional().describe('Unified diff (when returnDiff or dryRun)'),
   diffTruncated: z.boolean().optional().describe('Diff was truncated'),
   stoppedReason: z
     .enum(['maxResults', 'maxFiles', 'timeout'])
@@ -186,9 +156,7 @@ const DIFF_APPEND_BUFFER = 1024;
 
 interface Failure {
   path: string;
-  error: NonNullable<
-    z.infer<typeof SearchAndReplaceOutputSchema>['failures']
-  >[number]['error'];
+  error: NonNullable<z.infer<typeof SearchAndReplaceOutputSchema>['failures']>[number]['error'];
 }
 
 function recordFailure(failures: Failure[], failure: Failure): void {
@@ -196,11 +164,7 @@ function recordFailure(failures: Failure[], failure: Failure): void {
   failures.push(failure);
 }
 
-function recordChangedFile(
-  summary: ReplaceSummary,
-  filePath: string,
-  matchCount: number
-): void {
+function recordChangedFile(summary: ReplaceSummary, filePath: string, matchCount: number): void {
   const relativePath = relative(summary.root, filePath);
   if (summary.changedFiles.length < MAX_CHANGED_FILES) {
     summary.changedFiles.push({ path: relativePath, matches: matchCount });
@@ -216,7 +180,7 @@ function createRegexMatcher(pattern: string, caseSensitive: boolean): RE2 {
   } catch (error) {
     throw new McpError(
       ErrorCode.INVALID_PATTERN,
-      `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`
+      `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`,
     );
   }
 }
@@ -252,12 +216,10 @@ function createRegexReplacementMatcher(regex: RE2): ReplacementMatcher {
 
 function createLiteralReplacementMatcher(
   searchPattern: string,
-  caseSensitive: boolean
+  caseSensitive: boolean,
 ): ReplacementMatcher {
   const patternLength = searchPattern.length;
-  const searchBuffer = caseSensitive
-    ? Buffer.from(searchPattern, 'utf8')
-    : null;
+  const searchBuffer = caseSensitive ? Buffer.from(searchPattern, 'utf8') : null;
 
   return {
     testBuffer(buffer: Buffer): boolean {
@@ -301,7 +263,7 @@ interface ReplacementPlan {
 function buildReplacementPlan(
   content: string,
   replacement: string,
-  matcher: ReplacementMatcher
+  matcher: ReplacementMatcher,
 ): ReplacementPlan | undefined {
   const matchCount = matcher.count(content);
   if (matchCount === 0) {
@@ -315,18 +277,11 @@ function buildReplacementPlan(
   };
 }
 
-function formatFileTooLargeError(
-  filePath: string,
-  size: number,
-  maxFileSize: number
-): string {
+function formatFileTooLargeError(filePath: string, size: number, maxFileSize: number): string {
   return `File too large: ${filePath} (${size} bytes > ${maxFileSize} bytes)`;
 }
 
-async function processEntry(
-  entryPath: string,
-  ctx: ReplaceContext
-): Promise<void> {
+async function processEntry(entryPath: string, ctx: ReplaceContext): Promise<void> {
   const { options, signal, summary } = ctx;
 
   let validPath: string;
@@ -376,7 +331,7 @@ async function processEntry(
 
 async function readReplacementPlan(
   validPath: string,
-  ctx: ReplaceContext
+  ctx: ReplaceContext,
 ): Promise<ReplacementPlan | undefined> {
   const { matcher, replacement, maxFileSize, signal } = ctx;
   let fileHandle: FileHandle | undefined;
@@ -385,9 +340,7 @@ async function readReplacementPlan(
     fileHandle = fd;
     const stats = await fileHandle.stat();
     if (stats.size > maxFileSize) {
-      throw new Error(
-        formatFileTooLargeError(validPath, stats.size, maxFileSize)
-      );
+      throw new Error(formatFileTooLargeError(validPath, stats.size, maxFileSize));
     }
 
     let content: string;
@@ -419,7 +372,7 @@ async function maybeAppendPatchDiff(
     originalContent: string;
     updatedContent: string;
     includeDiff: boolean;
-  }
+  },
 ): Promise<void> {
   if (!params.includeDiff) return;
   if (summary.diff.length >= MAX_DIFF_SIZE) {
@@ -429,8 +382,7 @@ async function maybeAppendPatchDiff(
 
   const patch = await (async (): Promise<string> => {
     const totalBytes =
-      Buffer.byteLength(params.originalContent) +
-      Buffer.byteLength(params.updatedContent);
+      Buffer.byteLength(params.originalContent) + Buffer.byteLength(params.updatedContent);
     if (shouldOffload(totalBytes)) {
       return await runInWorker('createPatch', {
         oldStr: params.originalContent,
@@ -453,16 +405,13 @@ async function maybeAppendPatchDiff(
             callback: (res: string | undefined) => {
               resolve(res ?? '');
             },
-          }
+          },
         );
       });
     });
   })();
 
-  if (
-    summary.diff.length + patch.length <=
-    MAX_DIFF_SIZE + DIFF_APPEND_BUFFER
-  ) {
+  if (summary.diff.length + patch.length <= MAX_DIFF_SIZE + DIFF_APPEND_BUFFER) {
     summary.diff += patch;
     return;
   }
@@ -479,11 +428,10 @@ async function processEntriesConcurrently(
     shouldStop?: () => boolean;
     onEntry: () => void;
     runEntry: (entryPath: string) => Promise<void>;
-  }
+  },
 ): Promise<{ stoppedByLimit: boolean; stoppedByMatchCap: boolean }> {
   const pending = new Set<Promise<void>>();
-  const { signal, concurrency, maxEntries, shouldStop, onEntry, runEntry } =
-    options;
+  const { signal, concurrency, maxEntries, shouldStop, onEntry, runEntry } = options;
   let dispatched = 0;
   let stoppedByLimit = false;
   let stoppedByMatchCap = false;
@@ -553,7 +501,7 @@ function createReplaceSummary(root: string): ReplaceSummary {
 
 async function resolveSearchRoot(
   pathValue: string | undefined,
-  pathGuard: PathGuard
+  pathGuard: PathGuard,
 ): Promise<string> {
   return pathValue
     ? pathGuard.validateExistingPath(pathValue)
@@ -562,36 +510,28 @@ async function resolveSearchRoot(
 
 function buildSearchPattern(args: SearchAndReplaceArgs): string {
   if (args.isRegex) {
-    return args.wholeWord
-      ? `\\b(?:${args.searchPattern})\\b`
-      : args.searchPattern;
+    return args.wholeWord ? `\\b(?:${args.searchPattern})\\b` : args.searchPattern;
   }
   const escaped = args.searchPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return args.wholeWord ? `\\b(?:${escaped})\\b` : escaped;
 }
 
-function createReplacementMatcher(
-  args: SearchAndReplaceArgs
-): ReplacementMatcher {
+function createReplacementMatcher(args: SearchAndReplaceArgs): ReplacementMatcher {
   // Use regex when isRegex, wholeWord, or case-insensitive (all require RE2)
   if (args.isRegex || args.wholeWord || !args.caseSensitive) {
     const pattern = buildSearchPattern(args);
     const regex = createRegexMatcher(pattern, args.caseSensitive);
     return createRegexReplacementMatcher(regex);
   }
-  return createLiteralReplacementMatcher(
-    args.searchPattern,
-    args.caseSensitive
-  );
+  return createLiteralReplacementMatcher(args.searchPattern, args.caseSensitive);
 }
 
 async function handleSearchAndReplace(
   args: SearchAndReplaceArgs,
   pathGuard: PathGuard,
   signal?: AbortSignal,
-  onProgress: (progress: { total?: number; current: number }) => void = () =>
-    undefined,
-  resourceStore?: ResourceStore
+  onProgress: (progress: { total?: number; current: number }) => void = () => undefined,
+  resourceStore?: ResourceStore,
 ): Promise<ToolResponse<SearchAndReplaceOutput>> {
   const maxFileSize = MAX_TEXT_FILE_SIZE;
   const root = await resolveSearchRoot(args.path, pathGuard);
@@ -628,18 +568,17 @@ async function handleSearchAndReplace(
     pathGuard,
   };
 
-  const { stoppedByLimit, stoppedByMatchCap } =
-    await processEntriesConcurrently(entries, {
-      signal,
-      concurrency: REPLACE_CONCURRENCY,
-      ...(args.maxFiles !== undefined ? { maxEntries: args.maxFiles } : {}),
-      shouldStop: () => summary.totalMatches >= args.maxResults,
-      onEntry: () => {
-        summary.processedFiles++;
-        onProgress({ current: summary.processedFiles });
-      },
-      runEntry: (entryPath) => processEntry(entryPath, context),
-    });
+  const { stoppedByLimit, stoppedByMatchCap } = await processEntriesConcurrently(entries, {
+    signal,
+    concurrency: REPLACE_CONCURRENCY,
+    ...(args.maxFiles !== undefined ? { maxEntries: args.maxFiles } : {}),
+    shouldStop: () => summary.totalMatches >= args.maxResults,
+    onEntry: () => {
+      summary.processedFiles++;
+      onProgress({ current: summary.processedFiles });
+    },
+    runEntry: (entryPath) => processEntry(entryPath, context),
+  });
 
   summary.perfTimeMs = performance.now() - t0;
 
@@ -653,24 +592,17 @@ async function handleSearchAndReplace(
 
   if (!args.dryRun && summary.totalMatches > 0) {
     Logger.info(
-      `search_and_replace: ${summary.filesChanged} file(s), ${summary.totalMatches} match(es)`
+      `search_and_replace: ${summary.filesChanged} file(s), ${summary.totalMatches} match(es)`,
     );
   }
 
   const structured = buildSearchAndReplaceStructuredResult(summary, args);
 
   // Store primary file in resource store if available
-  if (
-    resourceStore &&
-    summary.changedFiles.length > 0 &&
-    summary.filesChanged > 0
-  ) {
+  if (resourceStore && summary.changedFiles.length > 0 && summary.filesChanged > 0) {
     const primaryFile = summary.changedFiles[0];
     if (!primaryFile)
-      return buildToolResponse(
-        buildSearchAndReplaceText(summary, args.dryRun),
-        structured
-      );
+      return buildToolResponse(buildSearchAndReplaceText(summary, args.dryRun), structured);
 
     const primaryFilePath = primaryFile.path;
     const fullPath = `${summary.root}/${primaryFilePath}`;
@@ -685,10 +617,7 @@ async function handleSearchAndReplace(
         }
       })();
 
-      const mimeInfo = detectMimeType(
-        fullPath,
-        Buffer.from(content.slice(0, 512))
-      );
+      const mimeInfo = detectMimeType(fullPath, Buffer.from(content.slice(0, 512)));
       const lineCount = content.split('\n').length;
       const size = Buffer.byteLength(content, 'utf-8');
 
@@ -709,12 +638,7 @@ async function handleSearchAndReplace(
         resourceUri: entry.uri,
       };
 
-      const summary_text = buildSearchAndReplaceText(
-        summary,
-        args.dryRun,
-        primaryFilePath,
-        size
-      );
+      const summary_text = buildSearchAndReplaceText(summary, args.dryRun, primaryFilePath, size);
 
       return buildResourceResponse({
         summary: summary_text,
@@ -724,21 +648,15 @@ async function handleSearchAndReplace(
     } catch (error) {
       // Gracefully fall back if resource storage fails
       Logger.error(
-        `Failed to store primary file in resource store: ${formatUnknownErrorMessage(error)}`
+        `Failed to store primary file in resource store: ${formatUnknownErrorMessage(error)}`,
       );
     }
   }
 
-  return buildToolResponse(
-    buildSearchAndReplaceText(summary, args.dryRun),
-    structured
-  );
+  return buildToolResponse(buildSearchAndReplaceText(summary, args.dryRun), structured);
 }
 
-export const SEARCH_AND_REPLACE = defineTool<
-  SearchAndReplaceArgs,
-  SearchAndReplaceOutput
->({
+export const SEARCH_AND_REPLACE = defineTool<SearchAndReplaceArgs, SearchAndReplaceOutput>({
   contract: SEARCH_AND_REPLACE_TOOL,
   defaultErrorCode: ErrorCode.UNKNOWN,
   diagnosticsContext: (args) => (args.path ? { path: args.path } : {}),
@@ -768,13 +686,10 @@ export const SEARCH_AND_REPLACE = defineTool<
         ctx.pathGuard,
         ctx.signal,
         progressWithMessage,
-        ctx.resourceStore
+        ctx.resourceStore,
       );
       const sc = result.structuredContent;
-      const finalCurrent = resolveFinalProgressCurrent(
-        progress,
-        sc.processedFiles + 1
-      );
+      const finalCurrent = resolveFinalProgressCurrent(progress, sc.processedFiles + 1);
       const matchWord = sc.totalMatches === 1 ? 'match' : 'matches';
       const fileWord = sc.filesModified === 1 ? 'file' : 'files';
       let suffix = `${sc.totalMatches} ${matchWord} in ${sc.filesModified} ${fileWord}`;
@@ -783,7 +698,7 @@ export const SEARCH_AND_REPLACE = defineTool<
         void ctx.log?.(
           'info',
           `search_and_replace: ${String(sc.totalMatches)} matches in ${String(sc.filesModified)} files`,
-          'search_and_replace'
+          'search_and_replace',
         );
       }
       return { value: result, suffix, finalCurrent };
@@ -795,7 +710,7 @@ function buildSearchAndReplaceText(
   summary: ReplaceSummary,
   dryRun: boolean,
   primaryFilePath?: string,
-  primaryFileSize?: number
+  primaryFileSize?: number,
 ): string {
   const parts = [
     `replace-in-files: replaced in ${summary.filesChanged} files`,
@@ -812,15 +727,14 @@ function buildSearchAndReplaceText(
   }
 
   const text = parts.join(' · ');
-  const failureSuffix =
-    summary.failedFiles > 0 ? ` (${summary.failedFiles} failed)` : '';
+  const failureSuffix = summary.failedFiles > 0 ? ` (${summary.failedFiles} failed)` : '';
   const dryRunSuffix = dryRun ? ' (dry run)' : '';
   return text + failureSuffix + dryRunSuffix;
 }
 
 function buildSearchAndReplaceStructuredResult(
   summary: ReplaceSummary,
-  args: SearchAndReplaceArgs
+  args: SearchAndReplaceArgs,
 ): SearchAndReplaceOutput {
   return {
     ok: true,
@@ -829,13 +743,9 @@ function buildSearchAndReplaceStructuredResult(
     processedFiles: summary.processedFiles,
     ...(summary.failedFiles > 0 ? { failedFiles: summary.failedFiles } : {}),
     ...(summary.failures.length > 0 ? { failures: summary.failures } : {}),
-    ...(summary.changedFiles.length > 0
-      ? { results: summary.changedFiles }
-      : {}),
+    ...(summary.changedFiles.length > 0 ? { results: summary.changedFiles } : {}),
     ...(summary.changedFilesTruncated ? { resultsTruncated: true } : {}),
-    ...((args.dryRun || args.returnDiff) && summary.diff
-      ? { diff: summary.diff }
-      : {}),
+    ...((args.dryRun || args.returnDiff) && summary.diff ? { diff: summary.diff } : {}),
     ...(summary.diffTruncated ? { diffTruncated: true } : {}),
     ...(summary.stoppedReason ? { stoppedReason: summary.stoppedReason } : {}),
   };

@@ -5,17 +5,10 @@ import { basename, relative, win32 } from 'node:path';
 import { z } from 'zod/v4';
 
 import { assertNotAborted, withAbort } from '../lib/abort.js';
-import {
-  DEFAULT_SEARCH_TIMEOUT_MS,
-  PARALLEL_CONCURRENCY,
-} from '../lib/constants.js';
+import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../lib/constants.js';
 import { ErrorCode } from '../lib/errors.js';
 import { calculateFileContentHash } from '../lib/file-content.js';
-import {
-  globEntries,
-  isIgnoredByGitignore,
-  loadRootGitignore,
-} from '../lib/fs-walk.js';
+import { globEntries, isIgnoredByGitignore, loadRootGitignore } from '../lib/fs-walk.js';
 import type { PathGuard } from '../lib/path-guard.js';
 import type { ResourceStore } from '../lib/resource-store.js';
 import { NonNegInt, RequiredPath } from '../schemas/fields.js';
@@ -29,10 +22,7 @@ import {
   type ToolContract,
   type ToolResponse,
 } from './shared.js';
-import {
-  resolveFinalProgressCurrent,
-  runWithProgressSession,
-} from './tool-execution.js';
+import { resolveFinalProgressCurrent, runWithProgressSession } from './tool-execution.js';
 
 const WINDOWS_PATH_SEPARATOR = /\\/gu;
 
@@ -50,12 +40,8 @@ const HashInputSchema = z.strictObject({
 const HashOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),
   filePath: z.string().describe('Resolved file or directory path'),
-  algorithms: z
-    .array(z.enum(SUPPORTED_ALGORITHMS))
-    .describe('Algorithms computed'),
-  hashes: z
-    .record(z.string(), z.string())
-    .describe('Algorithm → hex digest mapping'),
+  algorithms: z.array(z.enum(SUPPORTED_ALGORITHMS)).describe('Algorithms computed'),
+  hashes: z.record(z.string(), z.string()).describe('Algorithm → hex digest mapping'),
   resourceUri: z.string().describe('URI to hashes.json resource'),
   isDirectory: z.boolean().describe('True when hashing a directory'),
   fileCount: NonNegInt.optional().describe('Files hashed (directories only)'),
@@ -64,8 +50,7 @@ const HashOutputSchema = z.strictObject({
 const CALCULATE_HASH_TOOL: ToolContract = {
   name: 'calculate_hash',
   title: 'Calculate Hash',
-  description:
-    'Calculate SHA-256, MD5, or other hashes for a file or directory.',
+  description: 'Calculate SHA-256, MD5, or other hashes for a file or directory.',
   inputSchema: HashInputSchema,
   outputSchema: HashOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
@@ -95,16 +80,13 @@ function comparePaths(left: { path: string }, right: { path: string }): number {
 async function calculateMultipleHashes(
   filePath: string,
   algorithms: readonly (typeof SUPPORTED_ALGORITHMS)[number][],
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<Record<string, string>> {
   const { createReadStream } = await import('node:fs');
   const { PassThrough } = await import('node:stream');
   const { pipeline: streamPipeline } = await import('node:stream/promises');
 
-  const hashers = new Map<
-    (typeof SUPPORTED_ALGORITHMS)[number],
-    ReturnType<typeof createHash>
-  >();
+  const hashers = new Map<(typeof SUPPORTED_ALGORITHMS)[number], ReturnType<typeof createHash>>();
   for (const algo of algorithms) {
     hashers.set(algo, createHash(algo));
   }
@@ -115,7 +97,7 @@ async function calculateMultipleHashes(
 
   // Create pipeline that feeds the file into all hashers
   const hashPromises = Array.from(hashers.values()).map((hasher) =>
-    streamPipeline(splitter, hasher, { signal })
+    streamPipeline(splitter, hasher, { signal }),
   );
 
   const readStream = createReadStream(filePath, {
@@ -141,7 +123,7 @@ function updateCompositeHash(
   hasher: ReturnType<typeof createHash>,
   pathLengthBytes: Buffer,
   relativePath: string,
-  fileHash: Buffer
+  fileHash: Buffer,
 ): void {
   const relativePathBytes = Buffer.from(relativePath, 'utf8');
   pathLengthBytes.writeUInt32BE(relativePathBytes.length, 0);
@@ -156,7 +138,7 @@ async function hashDirectory(
   options: {
     signal?: AbortSignal;
     onProgress?: (progress: { total?: number; current: number }) => void;
-  } = {}
+  } = {},
 ): Promise<{ hash: string; fileCount: number }> {
   const { signal, onProgress } = options;
   const gitignoreMatcher = await loadRootGitignore(dirPath, signal);
@@ -177,10 +159,7 @@ async function hashDirectory(
     suppressErrors: true,
   })) {
     assertNotAborted(signal);
-    if (
-      gitignoreMatcher &&
-      isIgnoredByGitignore(gitignoreMatcher, dirPath, entry.path)
-    ) {
+    if (gitignoreMatcher && isIgnoredByGitignore(gitignoreMatcher, dirPath, entry.path)) {
       continue;
     }
     filteredPaths.push({
@@ -203,11 +182,7 @@ async function hashDirectory(
       if (!task) break;
 
       assertNotAborted(signal);
-      const fileHash = await calculateFileContentHash(
-        task.filePath,
-        signal,
-        null
-      );
+      const fileHash = await calculateFileContentHash(task.filePath, signal, null);
       entries.push({ path: task.relativePath, hash: fileHash });
 
       filesHashed++;
@@ -242,7 +217,7 @@ async function handleCalculateHash(
   pathGuard: PathGuard,
   resourceStore: ResourceStore | undefined,
   signal?: AbortSignal,
-  onProgress?: (progress: { total?: number; current: number }) => void
+  onProgress?: (progress: { total?: number; current: number }) => void,
 ): Promise<ToolResponse<z.infer<typeof HashOutputSchema>>> {
   const validPath = await pathGuard.validateExistingPath(args.path);
   const { algorithms } = args;
@@ -293,8 +268,7 @@ async function handleCalculateHash(
         : primaryAlgo === 'sha1'
           ? 'SHA-1'
           : primaryAlgo.toUpperCase();
-  const hashDisplay =
-    primaryHash.length > 16 ? `${primaryHash.slice(0, 16)}…` : primaryHash;
+  const hashDisplay = primaryHash.length > 16 ? `${primaryHash.slice(0, 16)}…` : primaryHash;
   const fileName = basename(validPath);
   const summary = `calculate-hash: ${fileName} · ${displayAlgo}: ${hashDisplay}`;
 
@@ -322,43 +296,36 @@ export const CALCULATE_HASH = defineTool<
   run: async (args, ctx) => {
     const baseName = basename(args.path);
     const label = `${CALCULATE_HASH_TOOL.title}: ${baseName}`;
-    return runWithProgressSession<
-      ToolResponse<z.infer<typeof HashOutputSchema>>
-    >(ctx, label, async (progress) => {
-      const onProgress = ({
-        current,
-        total,
-      }: {
-        total?: number;
-        current: number;
-      }): void => {
-        progress.set({
-          current,
-          ...(total !== undefined ? { total } : {}),
-          message: `${label} [${current} files]`,
-        });
-      };
+    return runWithProgressSession<ToolResponse<z.infer<typeof HashOutputSchema>>>(
+      ctx,
+      label,
+      async (progress) => {
+        const onProgress = ({ current, total }: { total?: number; current: number }): void => {
+          progress.set({
+            current,
+            ...(total !== undefined ? { total } : {}),
+            message: `${label} [${current} files]`,
+          });
+        };
 
-      const result = await handleCalculateHash(
-        args,
-        ctx.pathGuard,
-        ctx.resourceStore,
-        ctx.signal,
-        onProgress
-      );
-      const sc = result.structuredContent;
-      const totalFiles = sc.fileCount ?? 1;
-      const finalCurrent = resolveFinalProgressCurrent(
-        progress,
-        totalFiles + 1
-      );
-      const primaryAlgo = args.algorithms[0] ?? 'sha256';
-      const primaryHash = sc.hashes[primaryAlgo] ?? '';
-      const suffix =
-        sc.fileCount !== undefined && sc.fileCount > 1
-          ? `${sc.fileCount} files • ${primaryHash.slice(0, 8)}…`
-          : `${primaryHash.slice(0, 8)}…`;
-      return { value: result, suffix, finalCurrent };
-    });
+        const result = await handleCalculateHash(
+          args,
+          ctx.pathGuard,
+          ctx.resourceStore,
+          ctx.signal,
+          onProgress,
+        );
+        const sc = result.structuredContent;
+        const totalFiles = sc.fileCount ?? 1;
+        const finalCurrent = resolveFinalProgressCurrent(progress, totalFiles + 1);
+        const primaryAlgo = args.algorithms[0] ?? 'sha256';
+        const primaryHash = sc.hashes[primaryAlgo] ?? '';
+        const suffix =
+          sc.fileCount !== undefined && sc.fileCount > 1
+            ? `${sc.fileCount} files • ${primaryHash.slice(0, 8)}…`
+            : `${primaryHash.slice(0, 8)}…`;
+        return { value: result, suffix, finalCurrent };
+      },
+    );
   },
 });

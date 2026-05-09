@@ -61,7 +61,7 @@ test('getBlob throws when called on a text URI', () => {
       assert(err instanceof McpError);
       assert.strictEqual(err.code, ErrorCode.NOT_FOUND);
       return true;
-    }
+    },
   );
 });
 
@@ -82,7 +82,7 @@ test('getText throws when called on a blob URI', () => {
       assert(err instanceof McpError);
       assert.strictEqual(err.code, ErrorCode.NOT_FOUND);
       return true;
-    }
+    },
   );
 });
 
@@ -138,7 +138,7 @@ test('putBlob rejects data larger than maxEntryBytes', () => {
       assert(err instanceof McpError);
       assert.strictEqual(err.code, ErrorCode.TOO_LARGE);
       return true;
-    }
+    },
   );
 });
 

@@ -18,17 +18,11 @@ import {
 } from './shared.js';
 import { registerStandardTool } from './tool-execution.js';
 
-export interface DefineToolOptions<
-  Args,
-  Output extends Record<string, unknown>,
-> {
+export interface DefineToolOptions<Args, Output extends Record<string, unknown>> {
   contract: ToolContract;
   run: (args: Args, ctx: HandlerContext) => Promise<ToolResult<Output>>;
   progressMessage?: (args: Args) => string;
-  completionMessage?: (
-    args: Args,
-    result: ToolResult<Output>
-  ) => string | undefined;
+  completionMessage?: (args: Args, result: ToolResult<Output>) => string | undefined;
   /** Default: `{ path: (args as { path?: string }).path }`. */
   diagnosticsContext?: (args: Args) => Record<string, unknown>;
   /** Default: `ErrorCode.UNKNOWN`. If onError is provided, this is ignored. */
@@ -41,15 +35,12 @@ export interface DefineToolOptions<
 
 export interface DefinedTool<Args, Output extends Record<string, unknown>> {
   readonly contract: ToolContract;
-  readonly handle: (
-    args: Args,
-    ctx: HandlerContext
-  ) => Promise<ToolResult<Output>>;
+  readonly handle: (args: Args, ctx: HandlerContext) => Promise<ToolResult<Output>>;
   register(server: McpServer, options: ToolRegistrationOptions): void;
 }
 
 export function defineTool<Args, Output extends Record<string, unknown>>(
-  opts: DefineToolOptions<Args, Output>
+  opts: DefineToolOptions<Args, Output>,
 ): DefinedTool<Args, Output> {
   const { contract, run } = opts;
   const errorCode = opts.defaultErrorCode ?? ErrorCode.UNKNOWN;
@@ -64,10 +55,7 @@ export function defineTool<Args, Output extends Record<string, unknown>>(
     contract,
     handle: run,
     register(server: McpServer, options: ToolRegistrationOptions): void {
-      const handler = (
-        args: Args,
-        ctx: ToolContext
-      ): Promise<ToolResult<Output>> =>
+      const handler = (args: Args, ctx: ToolContext): Promise<ToolResult<Output>> =>
         executeToolWithDiagnostics<Output>({
           toolName: contract.name,
           ctx,
@@ -107,17 +95,13 @@ export function defineTool<Args, Output extends Record<string, unknown>>(
               : buildToolErrorResponse(
                   error,
                   errorCode,
-                  diagnosticsContext(args).path as string | undefined
+                  diagnosticsContext(args).path as string | undefined,
                 ),
         });
 
       registerStandardTool(server, contract, handler, options, {
-        ...(opts.progressMessage
-          ? { progressMessage: opts.progressMessage }
-          : {}),
-        ...(opts.completionMessage
-          ? { completionMessage: opts.completionMessage }
-          : {}),
+        ...(opts.progressMessage ? { progressMessage: opts.progressMessage } : {}),
+        ...(opts.completionMessage ? { completionMessage: opts.completionMessage } : {}),
       });
     },
   };
@@ -135,7 +119,7 @@ export function buildPathMessages<
   Out extends Record<string, unknown>,
 >(
   title: string,
-  suffixForSuccess?: (sc: Out) => string | undefined
+  suffixForSuccess?: (sc: Out) => string | undefined,
 ): {
   progressMessage: (args: Args) => string;
   completionMessage: (args: Args, result: ToolResult<Out>) => string;
@@ -146,9 +130,7 @@ export function buildPathMessages<
       const name = basename(args.path);
       if (result.isError) return `${title}: ${name} \u2022 ${result.errorCode}`;
       const suffix = suffixForSuccess?.(result.structuredContent);
-      return suffix !== undefined
-        ? `${title}: ${name} \u2022 ${suffix}`
-        : `${title}: ${name}`;
+      return suffix !== undefined ? `${title}: ${name} \u2022 ${suffix}` : `${title}: ${name}`;
     },
   };
 }

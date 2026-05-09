@@ -57,10 +57,7 @@ import {
   type ToolResponse,
   truncateProgressPattern,
 } from './shared.js';
-import {
-  resolveFinalProgressCurrent,
-  runWithProgressSession,
-} from './tool-execution.js';
+import { resolveFinalProgressCurrent, runWithProgressSession } from './tool-execution.js';
 
 // ---------------------------------------------------------------------------
 // Private searchFiles implementation (inlined from lib/file-operations/search.ts)
@@ -99,9 +96,7 @@ type SearchFilesNormalized = Required<
 
 type SearchFilesStopReason = SearchFilesResult['summary']['stoppedReason'];
 
-function normalizeSearchFilesOptions(
-  options: SearchFilesOptions
-): SearchFilesNormalized {
+function normalizeSearchFilesOptions(options: SearchFilesOptions): SearchFilesNormalized {
   const normalized: SearchFilesNormalized = {
     maxResults: options.maxResults ?? SEARCH_FILES_MAX_RESULTS,
     sortBy: options.sortBy ?? 'path',
@@ -144,13 +139,12 @@ interface CollectOutcome {
 function buildSearchFilesResult(
   entry: { path: string; stats?: Stats },
   entryType: EntryType,
-  needsStats: boolean
+  needsStats: boolean,
 ): SearchResult {
   let resolvedType: SearchResult['type'] = 'other';
   if (entryType === 'directory') resolvedType = 'directory';
   else if (entryType === 'file') resolvedType = 'file';
-  const size =
-    needsStats && entry.stats?.isFile() ? entry.stats.size : undefined;
+  const size = needsStats && entry.stats?.isFile() ? entry.stats.size : undefined;
   const modified = needsStats ? entry.stats?.mtime : undefined;
   return {
     path: entry.path,
@@ -163,11 +157,9 @@ function buildSearchFilesResult(
 function shouldStopCollecting(
   state: CollectState,
   normalized: SearchFilesNormalized,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): boolean {
-  const stopReason = resolveStopReason<
-    Exclude<SearchFilesStopReason, undefined>
-  >({
+  const stopReason = resolveStopReason<Exclude<SearchFilesStopReason, undefined>>({
     signal,
     current: state.filesScanned,
     max: normalized.maxFilesScanned,
@@ -182,10 +174,7 @@ function shouldStopCollecting(
   return false;
 }
 
-function shouldIncludeEntry(
-  entryType: EntryType,
-  normalized: SearchFilesNormalized
-): boolean {
+function shouldIncludeEntry(entryType: EntryType, normalized: SearchFilesNormalized): boolean {
   return !normalized.skipSymlinks || entryType !== 'symlink';
 }
 
@@ -203,7 +192,7 @@ function buildSearchStream(
   pattern: string,
   excludePatterns: readonly string[],
   normalized: SearchFilesNormalized,
-  needsStats: boolean
+  needsStats: boolean,
 ): AsyncIterable<SearchEntry> {
   return globEntries(
     buildGlobOptions({
@@ -216,10 +205,8 @@ function buildSearchStream(
       followSymbolicLinks: false,
       onlyFiles: true,
       stats: needsStats,
-      ...(normalized.maxDepth !== undefined
-        ? { maxDepth: normalized.maxDepth }
-        : {}),
-    })
+      ...(normalized.maxDepth !== undefined ? { maxDepth: normalized.maxDepth } : {}),
+    }),
   );
 }
 
@@ -241,7 +228,7 @@ function handleSearchEntry(
   entryType: EntryType,
   needsStats: boolean,
   normalized: SearchFilesNormalized,
-  state: CollectState
+  state: CollectState,
 ): void {
   state.results.push(buildSearchFilesResult(entry, entryType, needsStats));
   if (state.results.length >= normalized.maxResults) {
@@ -264,7 +251,7 @@ interface CollectStreamContext {
 async function collectFromStream(
   stream: AsyncIterable<SearchEntry>,
   signal: AbortSignal,
-  context: CollectStreamContext
+  context: CollectStreamContext,
 ): Promise<void> {
   const {
     root,
@@ -291,7 +278,7 @@ async function collectFromStream(
         gitignoreMatcher,
         root,
         entry.path,
-        entry.relativePath ? { relativePath: entry.relativePath } : {}
+        entry.relativePath ? { relativePath: entry.relativePath } : {},
       )
     ) {
       continue;
@@ -305,7 +292,7 @@ async function collectFromStream(
       entryType,
       rootDirectories,
       signal,
-      accessDeps
+      accessDeps,
     );
     if (!isAccessible) {
       state.skippedInaccessible++;
@@ -329,16 +316,10 @@ async function collectSearchResults(
   normalized: SearchFilesNormalized,
   signal: AbortSignal,
   pathGuard: PathGuard,
-  onProgress?: (progress: { total?: number; current: number }) => void
+  onProgress?: (progress: { total?: number; current: number }) => void,
 ): Promise<CollectOutcome> {
   const needsStats = needsStatsForSort(normalized.sortBy);
-  const stream = buildSearchStream(
-    root,
-    pattern,
-    excludePatterns,
-    normalized,
-    needsStats
-  );
+  const stream = buildSearchStream(root, pattern, excludePatterns, normalized, needsStats);
   const state = createCollectState();
   const rootDirectories = [root];
 
@@ -349,8 +330,7 @@ async function collectSearchResults(
   const accessDeps = {
     ...SEARCH_FILES_ACCESS_DEPS_BASE,
     isSensitivePath: (p: string) => pathGuard.isSensitive(p),
-    validateSymlinkPath: (p: string) =>
-      pathGuard.validateExistingPathDetailed(p),
+    validateSymlinkPath: (p: string) => pathGuard.validateExistingPathDetailed(p),
   };
 
   await collectFromStream(stream, signal, {
@@ -371,7 +351,7 @@ function buildSearchFilesSummary(
   filesScanned: number,
   truncated: boolean,
   stoppedReason: SearchFilesStopReason | undefined,
-  skippedInaccessible: number
+  skippedInaccessible: number,
 ): SearchFilesResult['summary'] {
   const summary = {
     matched: results.length,
@@ -404,13 +384,10 @@ function comparePathThenName(a: Sortable, b: Sortable): number {
 const SEARCH_FILES_SORT_COMPARATORS: Readonly<
   Record<SortBy, (a: Sortable, b: Sortable) => number>
 > = {
-  size: (a, b) =>
-    compareOptionalNumberDesc(a.size, b.size, () => compareNameThenPath(a, b)),
+  size: (a, b) => compareOptionalNumberDesc(a.size, b.size, () => compareNameThenPath(a, b)),
   modified: (a, b) =>
-    compareOptionalNumberDesc(
-      a.modified?.getTime(),
-      b.modified?.getTime(),
-      () => compareNameThenPath(a, b)
+    compareOptionalNumberDesc(a.modified?.getTime(), b.modified?.getTime(), () =>
+      compareNameThenPath(a, b),
     ),
   path: (a, b) => comparePathThenName(a, b),
   name: (a, b) => compareNameThenPath(a, b),
@@ -421,7 +398,7 @@ function sortSearchResults(results: Sortable[], sortBy: SortBy): void {
     stableSortByDerivedString(
       results,
       (item) => basename(item.path ?? ''),
-      (left, right) => comparePathThenName(left, right)
+      (left, right) => comparePathThenName(left, right),
     );
     return;
   }
@@ -436,26 +413,21 @@ async function runSearchFiles(
   normalized: SearchFilesNormalized,
   signal: AbortSignal,
   onProgress?: (progress: { total?: number; current: number }) => void,
-  pathGuard?: PathGuard
+  pathGuard?: PathGuard,
 ): Promise<{ results: SearchResult[]; summary: SearchFilesResult['summary'] }> {
   if (!pathGuard) {
     throw new Error('pathGuard is required in runSearchFiles');
   }
-  const {
-    results,
-    filesScanned,
-    truncated,
-    stoppedReason,
-    skippedInaccessible,
-  } = await collectSearchResults(
-    root,
-    pattern,
-    excludePatterns,
-    normalized,
-    signal,
-    pathGuard,
-    onProgress
-  );
+  const { results, filesScanned, truncated, stoppedReason, skippedInaccessible } =
+    await collectSearchResults(
+      root,
+      pattern,
+      excludePatterns,
+      normalized,
+      signal,
+      pathGuard,
+      onProgress,
+    );
 
   sortSearchResults(results, normalized.sortBy);
 
@@ -466,7 +438,7 @@ async function runSearchFiles(
       filesScanned,
       truncated,
       stoppedReason,
-      skippedInaccessible
+      skippedInaccessible,
     ),
   };
 }
@@ -476,29 +448,25 @@ async function searchFiles(
   pattern: string,
   excludePatterns: readonly string[] = [],
   options: SearchFilesOptions = {},
-  pathGuard?: PathGuard
+  pathGuard?: PathGuard,
 ): Promise<SearchFilesResult> {
   if (!pathGuard) {
     throw new Error('pathGuard is required in searchFiles');
   }
   const normalized = normalizeSearchFilesOptions(options);
-  return withTimedAbortSignal(
-    options.signal,
-    normalized.timeoutMs,
-    async (signal) => {
-      const root = await pathGuard.validateExistingDirectory(basePath);
-      const { results, summary } = await runSearchFiles(
-        root,
-        pattern,
-        excludePatterns,
-        normalized,
-        signal,
-        options.onProgress,
-        pathGuard
-      );
-      return { basePath: root, pattern, results, summary };
-    }
-  );
+  return withTimedAbortSignal(options.signal, normalized.timeoutMs, async (signal) => {
+    const root = await pathGuard.validateExistingDirectory(basePath);
+    const { results, summary } = await runSearchFiles(
+      root,
+      pattern,
+      excludePatterns,
+      normalized,
+      signal,
+      options.onProgress,
+      pathGuard,
+    );
+    return { basePath: root, pattern, results, summary };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -520,12 +488,7 @@ const SearchFilesInputSchema = z.strictObject({
     .optional()
     .default('path')
     .describe('Sort order'),
-  maxDepth: z
-    .uint32()
-    .min(0)
-    .max(MAX_SEARCH_DEPTH)
-    .optional()
-    .describe('Max directory depth'),
+  maxDepth: z.uint32().min(0).max(MAX_SEARCH_DEPTH).optional().describe('Max directory depth'),
   cursor: CursorSchema,
 });
 
@@ -538,19 +501,14 @@ const SearchFilesOutputSchema = z.strictObject({
         path: z.string().describe('Relative path from search root'),
         size: NonNegInt.optional().describe('Size in bytes'),
         modified: z.string().optional().describe('ISO 8601 last modified time'),
-      })
+      }),
     )
     .describe('Matching files'),
   totalMatches: NonNegInt.optional().describe('Total matches found'),
   filesScanned: NonNegInt.optional().describe('Files scanned'),
-  skippedInaccessible: NonNegInt.optional().describe(
-    'Inaccessible entries skipped'
-  ),
+  skippedInaccessible: NonNegInt.optional().describe('Inaccessible entries skipped'),
   stoppedReason: z.string().optional().describe('Why search stopped early'),
-  resourceUri: z
-    .string()
-    .optional()
-    .describe('URI to stored search results JSON'),
+  resourceUri: z.string().optional().describe('URI to stored search results JSON'),
   nextCursor: NextCursorSchema,
 });
 
@@ -569,9 +527,7 @@ const SEARCH_FILES_TOOL: ToolContract = {
     'Respects `.gitignore` unless `includeIgnored=true`.',
     'Result paths are relative to the search root, not the workspace root.',
   ],
-  gotchas: [
-    'Bare names match only at the root; use `**/README.md` for recursive match.',
-  ],
+  gotchas: ['Bare names match only at the root; use `**/README.md` for recursive match.'],
   taskSupport: 'optional',
   defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
 } as const;
@@ -584,18 +540,15 @@ function buildTruncatedReason(summary: {
 }): string | undefined {
   if (!summary.truncated) return undefined;
   if (summary.stoppedReason === 'timeout') return 'timeout';
-  if (summary.stoppedReason === 'maxFiles')
-    return `max files (${summary.filesScanned})`;
+  if (summary.stoppedReason === 'maxFiles') return `max files (${summary.filesScanned})`;
   return `max results (${summary.matched})`;
 }
 
 function buildRelativeResults(
   basePath: string,
-  displayResults: readonly { path: string; size?: number; modified?: Date }[]
+  displayResults: readonly { path: string; size?: number; modified?: Date }[],
 ): NonNullable<z.infer<typeof SearchFilesOutputSchema>['results']> {
-  const relativeResults: NonNullable<
-    z.infer<typeof SearchFilesOutputSchema>['results']
-  > = [];
+  const relativeResults: NonNullable<z.infer<typeof SearchFilesOutputSchema>['results']> = [];
   for (const entry of displayResults) {
     relativeResults.push({
       path: relative(basePath, entry.path),
@@ -609,7 +562,7 @@ function buildRelativeResults(
 function computeNextCursor(
   summary: { truncated: boolean },
   displayResultsCount: number,
-  cursorOffset: number
+  cursorOffset: number,
 ): string | undefined {
   if (summary.truncated && displayResultsCount > 0) {
     return encodeOffsetCursor(cursorOffset + displayResultsCount);
@@ -624,7 +577,7 @@ function applySummaryFields(
     skippedInaccessible: number;
     stoppedReason?: 'timeout' | 'maxResults' | 'maxFiles';
   },
-  nextCursor?: string
+  nextCursor?: string,
 ): void {
   assignDefined(structured, {
     skippedInaccessible: summary.skippedInaccessible || undefined,
@@ -638,12 +591,11 @@ async function handleSearchFiles(
   pathGuard: PathGuard,
   signal?: AbortSignal,
   onProgress?: (progress: { total?: number; current: number }) => void,
-  resourceStore?: ResourceStore
+  resourceStore?: ResourceStore,
 ): Promise<ToolResponse<z.infer<typeof SearchFilesOutputSchema>>> {
   const basePath = pathGuard.resolvePathOrRoot(args.path);
   const excludePatterns = args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
-  const cursorOffset =
-    args.cursor !== undefined ? decodeOffsetCursor(args.cursor) : 0;
+  const cursorOffset = args.cursor !== undefined ? decodeOffsetCursor(args.cursor) : 0;
   const pageSize = args.maxResults;
   const fetchMax = cursorOffset + pageSize;
   const searchOptions: Parameters<typeof searchFiles>[3] = {
@@ -662,17 +614,13 @@ async function handleSearchFiles(
     args.pattern,
     excludePatterns,
     searchOptions,
-    pathGuard
+    pathGuard,
   );
   const allResults = result.results;
   let displayResults = allResults;
   if (cursorOffset > 0) displayResults = allResults.slice(cursorOffset);
 
-  const nextCursor = computeNextCursor(
-    result.summary,
-    displayResults.length,
-    cursorOffset
-  );
+  const nextCursor = computeNextCursor(result.summary, displayResults.length, cursorOffset);
   const relativeResults = buildRelativeResults(result.basePath, displayResults);
   const structured: z.infer<typeof SearchFilesOutputSchema> = {
     ok: true,
@@ -771,7 +719,7 @@ export const SEARCH_FILES = defineTool<
         ctx.pathGuard,
         ctx.signal,
         progressWithMessage,
-        ctx.resourceStore
+        ctx.resourceStore,
       );
       const sc = result.structuredContent;
       const { totalMatches = 0, stoppedReason } = sc;
@@ -790,10 +738,7 @@ export const SEARCH_FILES = defineTool<
         }
       }
 
-      const finalCurrent = resolveFinalProgressCurrent(
-        progress,
-        (sc.filesScanned ?? 0) + 1
-      );
+      const finalCurrent = resolveFinalProgressCurrent(progress, (sc.filesScanned ?? 0) + 1);
       return { value: result, suffix, finalCurrent };
     });
   },

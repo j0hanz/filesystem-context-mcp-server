@@ -15,15 +15,15 @@ test('runInWorker removes task from queue on timeout', async () => {
     runInWorker(
       'createPatch',
       { oldStr: largeStr1, newStr: largeStr2, oldHeader: '', newHeader: '' },
-      { signal: ctrl.signal }
-    ).catch(() => {})
+      { signal: ctrl.signal },
+    ).catch(() => {}),
   );
 
   // Queue a task with a very short timeout.
   const timedOutTask = runInWorker(
     'createPatch',
     { oldStr: 'x', newStr: 'y', oldHeader: '', newHeader: '' },
-    { timeoutMs: 1 }
+    { timeoutMs: 1 },
   );
 
   await assert.rejects(timedOutTask, (err: unknown) => {

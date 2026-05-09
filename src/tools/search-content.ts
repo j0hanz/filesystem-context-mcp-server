@@ -7,11 +7,7 @@ import { parentPort, threadId, Worker, workerData } from 'node:worker_threads';
 import RE2 from 're2';
 import { z } from 'zod/v4';
 
-import {
-  assertNotAborted,
-  withAbort,
-  withTimedAbortSignal,
-} from '../lib/abort.js';
+import { assertNotAborted, withAbort, withTimedAbortSignal } from '../lib/abort.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_SEARCH_CONTENT_RESULTS,
@@ -33,24 +29,12 @@ import {
 import { isProbablyBinary } from '../lib/file-content.js';
 import { buildGlobOptions, globEntries } from '../lib/fs-walk.js';
 import { startPerfMeasure } from '../lib/observability.js';
-import {
-  isPathWithinDirectories,
-  isSafeGlobSyntax,
-  normalizePath,
-} from '../lib/path-guard.js';
+import { isPathWithinDirectories, isSafeGlobSyntax, normalizePath } from '../lib/path-guard.js';
 import type { PathGuard } from '../lib/path-guard.js';
 import type { ResourceStore } from '../lib/resource-store.js';
 import { mergeOptions, omitOptionKeys } from '../lib/utils.js';
-import {
-  NonNegInt,
-  OptionalPath,
-  PositiveInt,
-  SafeGlobPattern,
-} from '../schemas/fields.js';
-import {
-  safeGlobConstraint,
-  toToolJsonSchema,
-} from '../schemas/json-schema.js';
+import { NonNegInt, OptionalPath, PositiveInt, SafeGlobPattern } from '../schemas/fields.js';
+import { safeGlobConstraint, toToolJsonSchema } from '../schemas/json-schema.js';
 import {
   CursorSchema,
   defaultFalseBoolean,
@@ -74,10 +58,7 @@ import {
   type ToolResponse,
   truncateProgressPattern,
 } from './shared.js';
-import {
-  resolveFinalProgressCurrent,
-  runWithProgressSession,
-} from './tool-execution.js';
+import { resolveFinalProgressCurrent, runWithProgressSession } from './tool-execution.js';
 
 // ---------------------------------------------------------------------------
 // Private searchContent implementation (inlined from lib/file-operations/search.ts)
@@ -118,10 +99,7 @@ function buildRegexPattern(pattern: string, options: MatcherOptions): string {
   return options.wholeWord ? `\\b${escaped}\\b` : escaped;
 }
 
-function buildLiteralMatcher(
-  pattern: string,
-  options: MatcherOptions
-): Matcher {
+function buildLiteralMatcher(pattern: string, options: MatcherOptions): Matcher {
   if (!options.caseSensitive) {
     const final = escapeLiteral(pattern);
     const regex = new RE2(final, 'gi');
@@ -153,9 +131,7 @@ function buildMatcher(pattern: string, options: MatcherOptions): Matcher {
     const lowerPattern = pattern.toLowerCase();
     return (line: string): number => {
       const words = line.toLowerCase().split(/\s+/);
-      return words.some((word) => levenshtein(word, lowerPattern) <= threshold)
-        ? 1
-        : 0;
+      return words.some((word) => levenshtein(word, lowerPattern) <= threshold) ? 1 : 0;
     };
   }
   if (options.isLiteral && pattern.length === 0) return () => 0;
@@ -260,16 +236,10 @@ const ERROR_WORKER_POOL_CLOSED = 'Worker pool closed';
 const SEARCH_WORKER_NAME_PREFIX = 'filesystem-search';
 const SEARCH_WORKER_RESOURCE_TYPE = 'SearchWorkerTask';
 
-type SearchContentStopReason = NonNullable<
-  SearchContentResult['summary']['stoppedReason']
->;
+type SearchContentStopReason = NonNullable<SearchContentResult['summary']['stoppedReason']>;
 
 function resolveOptions(options: SearchContentOptions): ResolvedOptions {
-  const normalizedOptions = omitOptionKeys(options, [
-    'signal',
-    'onProgress',
-    'maxDepth',
-  ]);
+  const normalizedOptions = omitOptionKeys(options, ['signal', 'onProgress', 'maxDepth']);
   const merged = mergeOptions(SEARCH_CONTENT_DEFAULTS, normalizedOptions);
   const result = SearchOptionsSchema.safeParse(merged);
   if (!result.success) {
@@ -277,7 +247,7 @@ function resolveOptions(options: SearchContentOptions): ResolvedOptions {
       ErrorCode.INVALID_INPUT,
       `Invalid search options:\n${z.prettifyError(result.error)}`,
       undefined,
-      { errors: z.treeifyError(result.error) }
+      { errors: z.treeifyError(result.error) },
     );
   }
   return result.data;
@@ -286,7 +256,7 @@ function resolveOptions(options: SearchContentOptions): ResolvedOptions {
 function getRemainingMatchCapacity(
   maxMatches: number,
   currentMatches: number,
-  minimum = 0
+  minimum = 0,
 ): number {
   return Math.max(minimum, maxMatches - currentMatches);
 }
@@ -390,7 +360,7 @@ function processLineMatch(
   lineNumber: number,
   matchCount: number,
   requestedPath: string,
-  ctx?: ContextBuffer
+  ctx?: ContextBuffer,
 ): void {
   if (ctx) {
     matches.push({
@@ -418,7 +388,7 @@ async function readMatches(
   options: ScanFileOptions,
   maxMatches: number,
   isCancelled: () => boolean,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<ContentMatch[]> {
   if (maxMatches <= 0) return [];
 
@@ -441,14 +411,7 @@ async function readMatches(
       if (matchCount > 0) {
         trimmedLine = trimContent(rawLine);
         ctx?.flushPending(trimmedLine);
-        processLineMatch(
-          matches,
-          trimmedLine,
-          lineNumber,
-          matchCount,
-          requestedPath,
-          ctx
-        );
+        processLineMatch(matches, trimmedLine, lineNumber, matchCount, requestedPath, ctx);
         ctx?.updateBefore(trimmedLine);
       } else if (hasContext) {
         trimmedLine = trimContent(rawLine);
@@ -470,7 +433,7 @@ async function readMatches(
 type BinaryDetector = (
   resolvedPath: string,
   handle: FileHandle,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ) => Promise<boolean>;
 
 async function scanFileResolved(
@@ -480,7 +443,7 @@ async function scanFileResolved(
   options: ScanFileOptions,
   signal?: AbortSignal,
   maxMatches: number = Number.POSITIVE_INFINITY,
-  injectedBinaryDetector?: BinaryDetector
+  injectedBinaryDetector?: BinaryDetector,
 ): Promise<ScanFileResult> {
   assertNotAborted(signal);
   await using handle = await withAbort(open(resolvedPath, 'r'), signal);
@@ -514,7 +477,7 @@ async function scanFileResolved(
     options,
     maxMatches,
     () => Boolean(signal?.aborted),
-    signal
+    signal,
   );
 
   return {
@@ -575,10 +538,7 @@ function applyScanOutcome(summary: ScanSummary, outcome: ScanOutcome): void {
   if (outcome.skippedTooLarge) summary.skippedTooLarge++;
 }
 
-function markTruncated(
-  summary: ScanSummary,
-  reason: SearchContentStopReason
-): void {
+function markTruncated(summary: ScanSummary, reason: SearchContentStopReason): void {
   summary.truncated = true;
   summary.stoppedReason = reason;
 }
@@ -600,7 +560,7 @@ function buildSearchContentResult(
   pattern: string,
   filePattern: string,
   matches: ContentMatch[],
-  summary: ScanSummary
+  summary: ScanSummary,
 ): SearchContentResult {
   const baseSummary = {
     filesScanned: summary.filesScanned,
@@ -685,10 +645,7 @@ class SearchWorkerTaskResource extends AsyncResource {
     super(SEARCH_WORKER_RESOURCE_TYPE);
   }
 
-  resolve(
-    resolver: (result: WorkerScanResult) => void,
-    result: WorkerScanResult
-  ): void {
+  resolve(resolver: (result: WorkerScanResult) => void, result: WorkerScanResult): void {
     this.finish(resolver, result);
   }
 
@@ -718,13 +675,10 @@ class SearchWorkerPool {
 
   constructor(
     private size: number,
-    private debug: boolean
+    private debug: boolean,
   ) {
     if (size <= 0) throw new Error('Pool size must be positive');
-    this.workers = Array.from(
-      { length: size },
-      (): Worker | undefined => undefined
-    );
+    this.workers = Array.from({ length: size }, (): Worker | undefined => undefined);
   }
 
   private normalizeWorkerError(error: unknown, fallbackMessage: string): Error {
@@ -740,10 +694,7 @@ class SearchWorkerPool {
     }
   }
 
-  private markWorkerAsUnavailable(
-    workerIndex: number,
-    expectedWorker: Worker
-  ): void {
+  private markWorkerAsUnavailable(workerIndex: number, expectedWorker: Worker): void {
     if (this.closed) return;
     if (this.workers[workerIndex] !== expectedWorker) return;
     this.workers[workerIndex] = undefined;
@@ -775,7 +726,7 @@ class SearchWorkerPool {
     worker.on('messageerror', (error: unknown) => {
       const normalized = this.normalizeWorkerError(
         error,
-        `Worker ${String(index)} failed to deserialize a message`
+        `Worker ${String(index)} failed to deserialize a message`,
       );
       this.rejectPendingForWorker(index, normalized);
       this.markWorkerAsUnavailable(index, worker);
@@ -790,9 +741,7 @@ class SearchWorkerPool {
       if (this.closed) return;
       this.rejectPendingForWorker(
         index,
-        new Error(
-          `Worker ${String(index)} exited with code ${String(exitCode)}`
-        )
+        new Error(`Worker ${String(index)} exited with code ${String(exitCode)}`),
       );
       this.markWorkerAsUnavailable(index, worker);
     });
@@ -843,8 +792,8 @@ class SearchWorkerPool {
         pendingRequest.reject(
           this.normalizeWorkerError(
             error,
-            `Failed to post scan request ${String(id)} to worker ${String(workerIndex)}`
-          )
+            `Failed to post scan request ${String(id)} to worker ${String(workerIndex)}`,
+          ),
         );
         this.markWorkerAsUnavailable(workerIndex, worker);
       }
@@ -870,8 +819,7 @@ class SearchWorkerPool {
 
   async close(): Promise<void> {
     this.closed = true;
-    for (const p of this.pending.values())
-      p.reject(new Error(ERROR_WORKER_POOL_CLOSED));
+    for (const p of this.pending.values()) p.reject(new Error(ERROR_WORKER_POOL_CLOSED));
     this.pending.clear();
     const terminations: Promise<number>[] = [];
     for (let index = 0; index < this.workers.length; index += 1) {
@@ -906,7 +854,7 @@ async function executeSequential(
   opts: ResolvedOptions,
   signal: AbortSignal,
   summary: ScanSummary,
-  pathGuard: PathGuard
+  pathGuard: PathGuard,
 ): Promise<ContentMatch[]> {
   const matches: ContentMatch[] = [];
   const matcher = buildMatcher(pattern, buildMatcherOptions(opts));
@@ -924,17 +872,14 @@ async function executeSequential(
 
     try {
       pathGuard.assertAllowedFileAccess(file.requestedPath);
-      const remaining = getRemainingMatchCapacity(
-        opts.maxResults,
-        matches.length
-      );
+      const remaining = getRemainingMatchCapacity(opts.maxResults, matches.length);
       const result = await scanFileResolved(
         file.resolvedPath,
         file.requestedPath,
         matcher,
         scanOpts,
         signal,
-        remaining
+        remaining,
       );
       applyScanOutcome(summary, result);
       matches.push(...result.matches);
@@ -957,9 +902,7 @@ interface FillWorkerPoolContext {
   summary: ScanSummary;
 }
 
-async function fillWorkerPool(
-  context: FillWorkerPoolContext
-): Promise<boolean> {
+async function fillWorkerPool(context: FillWorkerPoolContext): Promise<boolean> {
   const {
     pool,
     pending,
@@ -977,11 +920,7 @@ async function fillWorkerPool(
     if (result.done) return true;
 
     try {
-      const remaining = getRemainingMatchCapacity(
-        maxResults,
-        currentMatches,
-        1
-      );
+      const remaining = getRemainingMatchCapacity(maxResults, currentMatches, 1);
       const task = pool.scan({
         resolvedPath: result.value.resolvedPath,
         requestedPath: result.value.requestedPath,
@@ -1002,11 +941,10 @@ function processScanResult(
   winner: { result: WorkerScanResult | undefined; error: Error | undefined },
   summary: ScanSummary,
   matches: ContentMatch[],
-  maxResults: number
+  maxResults: number,
 ): void {
   if (winner.error) {
-    if (winner.error.message !== ERROR_SCAN_CANCELLED)
-      summary.skippedInaccessible++;
+    if (winner.error.message !== ERROR_SCAN_CANCELLED) summary.skippedInaccessible++;
     return;
   }
   if (winner.result) {
@@ -1039,11 +977,8 @@ async function waitForWinner(pending: Set<ScanTask>): Promise<{
       (err: unknown) => ({
         task,
         result: undefined,
-        error:
-          err instanceof Error
-            ? err
-            : new Error(formatUnknownErrorMessage(err)),
-      })
+        error: err instanceof Error ? err : new Error(formatUnknownErrorMessage(err)),
+      }),
     );
     raceCandidates.push(task.racePromise);
   }
@@ -1055,7 +990,7 @@ async function executeParallel(
   pattern: string,
   opts: ResolvedOptions,
   signal: AbortSignal,
-  summary: ScanSummary
+  summary: ScanSummary,
 ): Promise<ContentMatch[]> {
   const pool = getPool();
   const matches: ContentMatch[] = [];
@@ -1102,8 +1037,7 @@ async function executeParallel(
   }
 
   if (signal.aborted) markTruncated(summary, 'timeout');
-  else if (matches.length >= opts.maxResults)
-    markTruncated(summary, 'maxResults');
+  else if (matches.length >= opts.maxResults) markTruncated(summary, 'maxResults');
 
   return matches;
 }
@@ -1117,7 +1051,7 @@ async function scanFileInWorker(
   options: ScanFileOptions,
   maxMatches: number,
   _isCancelled: () => boolean,
-  isBinaryDetector: BinaryDetector
+  isBinaryDetector: BinaryDetector,
 ): Promise<WorkerScanResult> {
   const res = await scanFileResolved(
     resolvedPath,
@@ -1126,7 +1060,7 @@ async function scanFileInWorker(
     options,
     undefined,
     maxMatches,
-    isBinaryDetector
+    isBinaryDetector,
   );
   return {
     matches: res.matches,
@@ -1140,7 +1074,7 @@ async function searchSingleFile(
   details: { resolvedPath: string; requestedPath: string },
   opts: ResolvedOptions,
   pattern: string,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<SearchContentResult> {
   const summary = createScanSummary();
   summary.filesScanned = 1;
@@ -1151,7 +1085,7 @@ async function searchSingleFile(
     matcher,
     { ...buildScanFileOptions(opts) },
     signal,
-    opts.maxResults
+    opts.maxResults,
   );
   if (result.matched) summary.filesMatched = 1;
   return buildSearchContentResult(
@@ -1159,7 +1093,7 @@ async function searchSingleFile(
     pattern,
     opts.filePattern,
     result.matches as ContentMatch[],
-    summary
+    summary,
   );
 }
 
@@ -1170,7 +1104,7 @@ async function searchDirectory(
   signal: AbortSignal,
   pathGuard: PathGuard,
   onProgress?: (progress: { total?: number; current: number }) => void,
-  maxDepth?: number
+  maxDepth?: number,
 ): Promise<SearchContentResult> {
   const root = await pathGuard.validateExistingDirectory(details.resolvedPath);
   const rootDirectories = [root];
@@ -1188,7 +1122,7 @@ async function searchDirectory(
       stats: false,
       suppressErrors: true,
       ...(maxDepth !== undefined ? { maxDepth } : {}),
-    })
+    }),
   );
 
   const summary = createScanSummary();
@@ -1207,7 +1141,7 @@ async function searchDirectory(
       if (opts.fuzzy === true && summary.filesScanned > MAX_FUZZY_FILES) {
         throw new McpError(
           ErrorCode.INVALID_INPUT,
-          `Fuzzy search is limited to ${MAX_FUZZY_FILES} files. Narrow your path or disable fuzzy mode.`
+          `Fuzzy search is limited to ${MAX_FUZZY_FILES} files. Narrow your path or disable fuzzy mode.`,
         );
       }
       onProgress?.({
@@ -1231,102 +1165,70 @@ async function searchDirectory(
 
   const matches = shouldUseWorkers()
     ? await executeParallel(fileGenerator(), pattern, opts, signal, summary)
-    : await executeSequential(
-        fileGenerator(),
-        pattern,
-        opts,
-        signal,
-        summary,
-        pathGuard
-      );
+    : await executeSequential(fileGenerator(), pattern, opts, signal, summary, pathGuard);
 
-  return buildSearchContentResult(
-    root,
-    pattern,
-    opts.filePattern,
-    matches,
-    summary
-  );
+  return buildSearchContentResult(root, pattern, opts.filePattern, matches, summary);
 }
 
 function buildTimeoutSearchResult(
   basePath: string,
   pattern: string,
-  filePattern: string
+  filePattern: string,
 ): SearchContentResult {
   const timeoutSummary = createScanSummary();
   markTruncated(timeoutSummary, 'timeout');
-  return buildSearchContentResult(
-    basePath,
-    pattern,
-    filePattern,
-    [],
-    timeoutSummary
-  );
+  return buildSearchContentResult(basePath, pattern, filePattern, [], timeoutSummary);
 }
 
 async function searchContent(
   basePath: string,
   pattern: string,
   options: SearchContentOptions = {},
-  pathGuard?: PathGuard
+  pathGuard?: PathGuard,
 ): Promise<SearchContentResult> {
   if (!pathGuard) {
     throw new Error('pathGuard is required in searchContent');
   }
-  if (!basePath.trim())
-    throw new McpError(ErrorCode.INVALID_INPUT, 'basePath required');
-  if (typeof pattern !== 'string')
-    throw new McpError(ErrorCode.INVALID_INPUT, 'pattern required');
+  if (!basePath.trim()) throw new McpError(ErrorCode.INVALID_INPUT, 'basePath required');
+  if (typeof pattern !== 'string') throw new McpError(ErrorCode.INVALID_INPUT, 'pattern required');
 
   const opts = resolveOptions(options);
 
   if (opts.fuzzy === true) {
     if (!opts.isLiteral) {
-      throw new McpError(
-        ErrorCode.INVALID_INPUT,
-        "Cannot use 'fuzzy' with 'isRegex'"
-      );
+      throw new McpError(ErrorCode.INVALID_INPUT, "Cannot use 'fuzzy' with 'isRegex'");
     }
     if (pattern.length < MIN_FUZZY_PATTERN_LENGTH) {
       throw new McpError(
         ErrorCode.INVALID_INPUT,
-        `Fuzzy pattern must be at least ${MIN_FUZZY_PATTERN_LENGTH} characters`
+        `Fuzzy pattern must be at least ${MIN_FUZZY_PATTERN_LENGTH} characters`,
       );
     }
   }
 
   try {
-    return await withTimedAbortSignal(
-      options.signal,
-      opts.timeoutMs,
-      async (signal) => {
-        const details = await pathGuard.validateExistingPathDetailed(basePath);
-        const fileStats = await withAbort(stat(details.resolvedPath), signal);
+    return await withTimedAbortSignal(options.signal, opts.timeoutMs, async (signal) => {
+      const details = await pathGuard.validateExistingPathDetailed(basePath);
+      const fileStats = await withAbort(stat(details.resolvedPath), signal);
 
-        if (fileStats.isFile()) {
-          return searchSingleFile(details, opts, pattern, signal);
-        }
-
-        if (!fileStats.isDirectory()) {
-          throw new McpError(
-            ErrorCode.INVALID_INPUT,
-            'Path must be file or directory',
-            basePath
-          );
-        }
-
-        return searchDirectory(
-          details,
-          opts,
-          pattern,
-          signal,
-          pathGuard,
-          options.onProgress,
-          options.maxDepth
-        );
+      if (fileStats.isFile()) {
+        return searchSingleFile(details, opts, pattern, signal);
       }
-    );
+
+      if (!fileStats.isDirectory()) {
+        throw new McpError(ErrorCode.INVALID_INPUT, 'Path must be file or directory', basePath);
+      }
+
+      return searchDirectory(
+        details,
+        opts,
+        pattern,
+        signal,
+        pathGuard,
+        options.onProgress,
+        options.maxDepth,
+      );
+    });
   } catch (error: unknown) {
     if (isTimeoutLikeError(error)) {
       return buildTimeoutSearchResult(basePath, pattern, opts.filePattern);
@@ -1341,12 +1243,7 @@ async function searchContent(
  * Configuration constants for the Search Content tool.
  */
 const CONFIG = {
-  MAX_INLINE_MATCHES: parseEnvInt(
-    'FS_CONTEXT_MAX_INLINE_MATCHES',
-    50,
-    1,
-    10_000
-  ),
+  MAX_INLINE_MATCHES: parseEnvInt('FS_CONTEXT_MAX_INLINE_MATCHES', 50, 1, 10_000),
   COMPLETION_LABELS: {
     timeout: 'timeout',
     maxResults: 'max results',
@@ -1386,9 +1283,7 @@ const TRUTHY_SUMMARY_FIELDS: readonly TruthySummaryField[] = [
   'skippedInaccessible',
 ];
 
-function buildStructuredSummaryFields(
-  summary: SearchSummary
-): Partial<SearchOutput> {
+function buildStructuredSummaryFields(summary: SearchSummary): Partial<SearchOutput> {
   const result: Partial<SearchOutput> = {};
   for (const key of TRUTHY_SUMMARY_FIELDS) {
     const value = summary[key];
@@ -1409,27 +1304,21 @@ function buildCompletionSuffix(
   count: number,
   filesMatched: number,
   scope: SearchInput['pattern'],
-  stoppedReason?: SearchSummary['stoppedReason']
+  stoppedReason?: SearchSummary['stoppedReason'],
 ): string {
   if (count === 0) return `No matches in ${scope}`;
 
   const matchWord = count === 1 ? 'match' : 'matches';
   const fileWord = filesMatched === 1 ? 'file' : 'files';
   const reasonSuffix =
-    stoppedReason !== undefined
-      ? ` [${CONFIG.COMPLETION_LABELS[stoppedReason]}]`
-      : '';
+    stoppedReason !== undefined ? ` [${CONFIG.COMPLETION_LABELS[stoppedReason]}]` : '';
 
   return `${count} ${matchWord} in ${filesMatched} ${fileWord}${reasonSuffix}`;
 }
 
-function buildSearchPreviewState(
-  payloads: SearchMatchPayload[]
-): SearchPreviewState {
+function buildSearchPreviewState(payloads: SearchMatchPayload[]): SearchPreviewState {
   const needsExternalize = payloads.length > CONFIG.MAX_INLINE_MATCHES;
-  const visibleCount = needsExternalize
-    ? CONFIG.MAX_INLINE_MATCHES
-    : payloads.length;
+  const visibleCount = needsExternalize ? CONFIG.MAX_INLINE_MATCHES : payloads.length;
 
   return {
     needsExternalize,
@@ -1440,15 +1329,13 @@ function buildSearchPreviewState(
 
 const GrepInputSchema = z.strictObject({
   path: OptionalPath,
-  pattern: SafeGlobPattern.optional().describe(
-    'File glob filter (default: all text files)'
-  ),
+  pattern: SafeGlobPattern.optional().describe('File glob filter (default: all text files)'),
   searchPattern: z
     .string()
     .min(1)
     .max(10000)
     .describe(
-      'Text or regex to search for (RE2: no lookahead/lookbehind/backrefs when isRegex=true)'
+      'Text or regex to search for (RE2: no lookahead/lookbehind/backrefs when isRegex=true)',
     )
     .meta({ examples: ['TODO', 'function\\s+(\\w+)', 'import.*from'] }),
   isRegex: defaultFalseBoolean('Treat searchPattern as regex'),
@@ -1462,29 +1349,25 @@ const GrepInputSchema = z.strictObject({
     .max(20)
     .optional()
     .describe(
-      'Lines of context before AND after each match (symmetric; overridden by contextBefore/contextAfter)'
+      'Lines of context before AND after each match (symmetric; overridden by contextBefore/contextAfter)',
     ),
   contextBefore: z
     .int32()
     .min(0)
     .max(20)
     .optional()
-    .describe(
-      'Lines of context before each match (overrides contextLines for before)'
-    ),
+    .describe('Lines of context before each match (overrides contextLines for before)'),
   contextAfter: z
     .int32()
     .min(0)
     .max(20)
     .optional()
-    .describe(
-      'Lines of context after each match (overrides contextLines for after)'
-    ),
+    .describe('Lines of context after each match (overrides contextLines for after)'),
   fuzzy: z
     .boolean()
     .optional()
     .describe(
-      'Approximate string matching (Levenshtein-based, \u226425% char difference). Incompatible with isRegex.'
+      'Approximate string matching (Levenshtein-based, \u226425% char difference). Incompatible with isRegex.',
     ),
 
   maxResults: z
@@ -1494,12 +1377,7 @@ const GrepInputSchema = z.strictObject({
     .optional()
     .default(DEFAULT_SEARCH_CONTENT_RESULTS)
     .describe('Max matches to return per page'),
-  maxDepth: z
-    .uint32()
-    .min(0)
-    .max(MAX_SEARCH_DEPTH)
-    .optional()
-    .describe('Max directory depth'),
+  maxDepth: z.uint32().min(0).max(MAX_SEARCH_DEPTH).optional().describe('Max directory depth'),
   cursor: CursorSchema,
 });
 
@@ -1513,15 +1391,9 @@ const GrepOutputSchema = z.strictObject({
         column: NonNegInt.optional().describe('Column (0-indexed)'),
         content: z.string().describe('Matched line content'),
         matchCount: NonNegInt.optional().describe('Match count on this line'),
-        contextBefore: z
-          .array(z.string())
-          .optional()
-          .describe('Context lines before'),
-        contextAfter: z
-          .array(z.string())
-          .optional()
-          .describe('Context lines after'),
-      })
+        contextBefore: z.array(z.string()).optional().describe('Context lines before'),
+        contextAfter: z.array(z.string()).optional().describe('Context lines after'),
+      }),
     )
     .describe('Flat list of matches (sorted by file then line)'),
   totalMatches: NonNegInt.optional().describe('Total match count'),
@@ -1529,18 +1401,13 @@ const GrepOutputSchema = z.strictObject({
   filesScanned: NonNegInt.optional().describe('Files scanned'),
   skippedTooLarge: NonNegInt.optional().describe('Files skipped (too large)'),
   skippedBinary: NonNegInt.optional().describe('Files skipped (binary)'),
-  skippedInaccessible: NonNegInt.optional().describe(
-    'Files skipped (inaccessible)'
-  ),
+  skippedInaccessible: NonNegInt.optional().describe('Files skipped (inaccessible)'),
   truncated: z.boolean().optional().describe('Results truncated'),
   stoppedReason: z
     .enum(['maxResults', 'maxFiles', 'timeout'])
     .optional()
     .describe('Why search stopped early'),
-  resourceUri: z
-    .string()
-    .optional()
-    .describe('Full results URI when truncated'),
+  resourceUri: z.string().optional().describe('Full results URI when truncated'),
   nextCursor: NextCursorSchema,
 });
 
@@ -1562,9 +1429,7 @@ const SEARCH_CONTENT_TOOL: ToolContract = {
   outputSchema: GrepOutputSchema,
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
   icons: SEARCH_ICONS,
-  nuances: [
-    'Inline results capped at 50 matches; full results via `resourceUri`.',
-  ],
+  nuances: ['Inline results capped at 50 matches; full results via `resourceUri`.'],
   gotchas: [
     'RE2 dialect: no lookahead, lookbehind, or backreferences.',
     'Use `pattern` to scope to specific files; without it, scans every text file.',
@@ -1585,7 +1450,7 @@ function buildHeading(totalMatches: number, visibleMatches: number): string {
 function buildSearchText(
   heading: string,
   matches: readonly SearchMatchPayload[],
-  summary?: SearchSummary
+  summary?: SearchSummary,
 ): string {
   if (matches.length === 0) return 'No matches';
 
@@ -1594,9 +1459,7 @@ function buildSearchText(
 
   const summaryOpts = {
     truncated: summary.truncated,
-    ...(summary.truncated
-      ? { truncatedReason: resolveTruncatedReason(summary) }
-      : {}),
+    ...(summary.truncated ? { truncatedReason: resolveTruncatedReason(summary) } : {}),
   };
 
   return text + formatOperationSummary(summaryOpts);
@@ -1604,7 +1467,7 @@ function buildSearchText(
 
 function buildSearchStructured(
   summary: SearchSummary,
-  matches: SearchMatchPayload[]
+  matches: SearchMatchPayload[],
 ): SearchOutput {
   return {
     ok: true,
@@ -1617,7 +1480,7 @@ function buildSearchStructured(
 
 function buildSortedPayloads(
   result: SearchResultValue,
-  context: SearchContext
+  context: SearchContext,
 ): SearchMatchPayload[] {
   const relativeByFile = new Map<string, string>();
 
@@ -1640,9 +1503,7 @@ function buildSortedPayloads(
       ...(column !== undefined ? { column } : {}),
       content: match.content,
       matchCount: match.matchCount,
-      ...(match.contextBefore
-        ? { contextBefore: [...match.contextBefore] }
-        : {}),
+      ...(match.contextBefore ? { contextBefore: [...match.contextBefore] } : {}),
       ...(match.contextAfter ? { contextAfter: [...match.contextAfter] } : {}),
     };
 
@@ -1652,24 +1513,18 @@ function buildSortedPayloads(
   payloads.sort((left, right) => {
     const fileCompare = left.payload.file.localeCompare(right.payload.file);
     if (fileCompare !== 0) return fileCompare;
-    if (left.payload.line !== right.payload.line)
-      return left.payload.line - right.payload.line;
+    if (left.payload.line !== right.payload.line) return left.payload.line - right.payload.line;
     return left.originalIndex - right.originalIndex;
   });
 
   return payloads.map((p) => p.payload);
 }
 
-function buildMatchList(
-  heading: string,
-  matches: readonly SearchMatchPayload[]
-): string {
+function buildMatchList(heading: string, matches: readonly SearchMatchPayload[]): string {
   if (matches.length === 0) return heading;
   const parts: string[] = [heading];
   for (const match of matches) {
-    parts.push(
-      `\n  ${match.file}:${String(match.line).padStart(4)}: ${match.content}`
-    );
+    parts.push(`\n  ${match.file}:${String(match.line).padStart(4)}: ${match.content}`);
   }
 
   return parts.join('');
@@ -1683,10 +1538,7 @@ function resolveTruncatedReason(summary: SearchSummary): string {
   return `max results (${summary.matches})`;
 }
 
-function findColumnOffset(
-  content: string,
-  context: SearchContext
-): number | undefined {
+function findColumnOffset(content: string, context: SearchContext): number | undefined {
   try {
     if (context.matcher) {
       context.matcher.lastIndex = 0;
@@ -1710,7 +1562,7 @@ async function executeSearch(
   basePath: string,
   pathGuard: PathGuard,
   signal?: AbortSignal,
-  onProgress?: (progress: { total?: number; current: number }) => void
+  onProgress?: (progress: { total?: number; current: number }) => void,
 ): Promise<SearchResultValue> {
   const excludePatterns = args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
 
@@ -1720,15 +1572,9 @@ async function executeSearch(
     filePattern: args.pattern ?? '**/*',
     caseSensitive: args.caseSensitive,
     wholeWord: args.wholeWord,
-    ...(args.contextLines !== undefined
-      ? { contextLines: args.contextLines }
-      : {}),
-    ...(args.contextBefore !== undefined
-      ? { contextBefore: args.contextBefore }
-      : {}),
-    ...(args.contextAfter !== undefined
-      ? { contextAfter: args.contextAfter }
-      : {}),
+    ...(args.contextLines !== undefined ? { contextLines: args.contextLines } : {}),
+    ...(args.contextBefore !== undefined ? { contextBefore: args.contextBefore } : {}),
+    ...(args.contextAfter !== undefined ? { contextAfter: args.contextAfter } : {}),
     ...(args.fuzzy === true ? { fuzzy: true } : {}),
     maxResults: args.maxResults,
     isLiteral: !args.isRegex,
@@ -1738,17 +1584,12 @@ async function executeSearch(
   };
 
   try {
-    return await searchContent(
-      basePath,
-      args.searchPattern,
-      options,
-      pathGuard
-    );
+    return await searchContent(basePath, args.searchPattern, options, pathGuard);
   } catch (error) {
     if (error instanceof Error && /regular expression/i.test(error.message)) {
       throw new McpError(
         ErrorCode.INVALID_PATTERN,
-        `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`
+        `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`,
       );
     }
     throw error;
@@ -1763,15 +1604,12 @@ function createSearchMatcher(args: SearchInput): RE2 | undefined {
   } catch (error) {
     throw new McpError(
       ErrorCode.INVALID_PATTERN,
-      `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`
+      `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`,
     );
   }
 }
 
-function createSearchContext(
-  args: SearchInput,
-  matcher: RE2 | undefined
-): SearchContext {
+function createSearchContext(args: SearchInput, matcher: RE2 | undefined): SearchContext {
   return {
     pattern: args.searchPattern,
     caseSensitive: args.caseSensitive,
@@ -1787,13 +1625,12 @@ async function handleSearchContent(
   pathGuard: PathGuard,
   signal?: AbortSignal,
   resourceStore?: ResourceStore,
-  onProgress?: (progress: { total?: number; current: number }) => void
+  onProgress?: (progress: { total?: number; current: number }) => void,
 ): Promise<ToolResponse<SearchOutput>> {
   const basePath = pathGuard.resolvePathOrRoot(args.path);
   const regexMatcher = createSearchMatcher(args);
 
-  const cursorOffset =
-    args.cursor !== undefined ? decodeOffsetCursor(args.cursor) : 0;
+  const cursorOffset = args.cursor !== undefined ? decodeOffsetCursor(args.cursor) : 0;
   const pageSize = args.maxResults;
   const fetchMax = cursorOffset + pageSize;
 
@@ -1802,13 +1639,12 @@ async function handleSearchContent(
     basePath,
     pathGuard,
     signal,
-    onProgress
+    onProgress,
   );
   const searchContext = createSearchContext(args, regexMatcher);
 
   const allPayloads = buildSortedPayloads(result, searchContext);
-  const matchPayloads =
-    cursorOffset > 0 ? allPayloads.slice(cursorOffset) : allPayloads;
+  const matchPayloads = cursorOffset > 0 ? allPayloads.slice(cursorOffset) : allPayloads;
 
   const nextCursor =
     result.summary.truncated && matchPayloads.length > 0
@@ -1865,11 +1701,7 @@ async function handleSearchContent(
   }
 
   // Fallback: traditional text response when no resourceStore or no matches
-  const text = buildSearchText(
-    preview.heading,
-    preview.visiblePayloads,
-    result.summary
-  );
+  const text = buildSearchText(preview.heading, preview.visiblePayloads, result.summary);
 
   return buildToolResponse(text, fullStructured);
 }
@@ -1904,21 +1736,13 @@ export const SEARCH_CONTENT = defineTool<SearchInput, SearchOutput>({
         ctx.pathGuard,
         ctx.signal,
         ctx.resourceStore,
-        progressWithMessage
+        progressWithMessage,
       );
 
       const sc = result.structuredContent;
       const { totalMatches = 0, filesMatched = 0, stoppedReason } = sc;
-      const suffix = buildCompletionSuffix(
-        totalMatches,
-        filesMatched,
-        scope,
-        stoppedReason
-      );
-      const finalCurrent = resolveFinalProgressCurrent(
-        progress,
-        (sc.filesScanned ?? 0) + 1
-      );
+      const suffix = buildCompletionSuffix(totalMatches, filesMatched, scope, stoppedReason);
+      const finalCurrent = resolveFinalProgressCurrent(progress, (sc.filesScanned ?? 0) + 1);
       return { value: result, suffix, finalCurrent };
     });
   },
@@ -1998,10 +1822,7 @@ function markCancelledIfActive(id: number): void {
   }
 }
 
-function buildScanResponse(
-  id: number,
-  result: ScanResult['result']
-): ScanResult {
+function buildScanResponse(id: number, result: ScanResult['result']): ScanResult {
   return { type: 'result', id, result };
 }
 
@@ -2010,15 +1831,8 @@ function buildErrorResponse(id: number, error: unknown): ScanError {
 }
 
 async function handleScanRequest(request: ScanRequest): Promise<void> {
-  const {
-    id,
-    resolvedPath,
-    requestedPath,
-    pattern,
-    matcherOptions,
-    scanOptions,
-    maxMatches,
-  } = request;
+  const { id, resolvedPath, requestedPath, pattern, matcherOptions, scanOptions, maxMatches } =
+    request;
 
   if (consumeCancelled(id)) return;
   activeRequests.add(id);
@@ -2037,7 +1851,7 @@ async function handleScanRequest(request: ScanRequest): Promise<void> {
       scanOptions,
       maxMatches,
       isCancelled,
-      isProbablyBinary
+      isProbablyBinary,
     );
 
     if (consumeCancelled(id)) return;

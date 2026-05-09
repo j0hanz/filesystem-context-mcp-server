@@ -4,11 +4,7 @@ import { ErrorCode } from '../lib/errors.js';
 
 import { defineTool } from './define-tool.js';
 import { DIRECTORY_ICONS } from './icons.js';
-import {
-  buildToolResponse,
-  READ_ONLY_TOOL_ANNOTATIONS,
-  type ToolContract,
-} from './shared.js';
+import { buildToolResponse, READ_ONLY_TOOL_ANNOTATIONS, type ToolContract } from './shared.js';
 
 const RootsInputSchema = z.strictObject({});
 
@@ -44,14 +40,11 @@ export const LIST_ALLOWED_DIRECTORIES = defineTool<
       ok: true,
       roots: dirs,
     };
-    return Promise.resolve(
-      buildToolResponse(buildTextRoots(dirs.length), structured)
-    );
+    return Promise.resolve(buildToolResponse(buildTextRoots(dirs.length), structured));
   },
   progressMessage: () => LIST_ALLOWED_DIRECTORIES_TOOL.title,
   completionMessage: (_args, result) => {
-    if (result.isError)
-      return `${LIST_ALLOWED_DIRECTORIES_TOOL.title} • ${result.errorCode}`;
+    if (result.isError) return `${LIST_ALLOWED_DIRECTORIES_TOOL.title} • ${result.errorCode}`;
     const sc = result.structuredContent;
     const count = sc.roots.length;
     return `${LIST_ALLOWED_DIRECTORIES_TOOL.title} • ${count} ${count === 1 ? 'root' : 'roots'}`;

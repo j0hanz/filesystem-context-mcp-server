@@ -65,15 +65,11 @@ describe('rm: client declines elicitation', () => {
       arguments: { paths: [dir], recursive: true },
     });
     assertOk(result);
-    const sc = (result as { structuredContent?: { ok?: unknown } })
-      .structuredContent;
+    const sc = (result as { structuredContent?: { ok?: unknown } }).structuredContent;
     assert.equal((sc as { ok: unknown } | undefined)?.ok, true);
     // Directory must still exist
     const entries = await readdir(dir);
-    assert.ok(
-      entries.length > 0,
-      'directory contents must be intact after decline'
-    );
+    assert.ok(entries.length > 0, 'directory contents must be intact after decline');
   });
 });
 
@@ -234,10 +230,7 @@ describe('rm: elicitation handler throws', () => {
     assertOk(result);
     // Directory must still exist with its content intact
     const entries = await readdir(dir);
-    assert.ok(
-      entries.length > 0,
-      'directory contents must be intact when elicitation throws'
-    );
+    assert.ok(entries.length > 0, 'directory contents must be intact when elicitation throws');
   });
 });
 

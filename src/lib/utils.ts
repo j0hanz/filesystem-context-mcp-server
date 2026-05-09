@@ -6,7 +6,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 // debounce
 export function debounce<Args extends unknown[]>(
   func: (...args: Args) => void,
-  waitMs: number
+  waitMs: number,
 ): { (...args: Args): void; cancel: () => void } {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const debounced = (...args: Args): void => {
@@ -30,21 +30,16 @@ export function debounce<Args extends unknown[]>(
 }
 
 // option-utils.ts
-export function mergeOptions<T extends object>(
-  defaults: T,
-  overrides: Partial<T>
-): T {
+export function mergeOptions<T extends object>(defaults: T, overrides: Partial<T>): T {
   return { ...defaults, ...overrides };
 }
 
 export function omitOptionKeys<T extends object, K extends keyof T>(
   input: T,
-  keys: readonly K[]
+  keys: readonly K[],
 ): Omit<T, K> {
   const keySet = new Set<PropertyKey>(keys as readonly PropertyKey[]);
-  const output = Object.fromEntries(
-    Object.entries(input).filter(([key]) => !keySet.has(key))
-  );
+  const output = Object.fromEntries(Object.entries(input).filter(([key]) => !keySet.has(key)));
   return output as Omit<T, K>;
 }
 
@@ -56,7 +51,7 @@ export function omitOptionKeys<T extends object, K extends keyof T>(
  */
 export function assignDefined<T extends object>(
   target: T,
-  source: { [K in keyof T]?: T[K] | undefined }
+  source: { [K in keyof T]?: T[K] | undefined },
 ): T {
   for (const key of Object.keys(source) as (keyof T)[]) {
     const value = source[key];

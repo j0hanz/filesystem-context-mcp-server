@@ -82,17 +82,13 @@ function computeDiffStats(hunks: StructuredPatch['hunks']): {
   return { linesAdded, linesRemoved, hunksCount: hunks.length };
 }
 
-function assertDiffFileSizeWithinLimit(
-  filePath: string,
-  size: number,
-  maxFileSize: number
-): void {
+function assertDiffFileSizeWithinLimit(filePath: string, size: number, maxFileSize: number): void {
   if (size <= maxFileSize) return;
   throw new McpError(
     ErrorCode.TOO_LARGE,
     `File too large for diff (${size} bytes > ${maxFileSize} bytes).`,
     filePath,
-    { size, maxFileSize }
+    { size, maxFileSize },
   );
 }
 
@@ -103,7 +99,7 @@ async function computeDiff(
   originalContent: string,
   modifiedContent: string,
   totalBytes: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<StructuredPatch | undefined> {
   if (shouldOffload(totalBytes)) {
     return runInWorker(
@@ -114,14 +110,10 @@ async function computeDiff(
         oldHeader: basename(originalPath),
         newHeader: basename(modifiedPath),
         ...(args.context !== undefined ? { context: args.context } : {}),
-        ...(args.ignoreWhitespace
-          ? { ignoreWhitespace: args.ignoreWhitespace }
-          : {}),
-        ...(args.stripTrailingCr
-          ? { stripTrailingCr: args.stripTrailingCr }
-          : {}),
+        ...(args.ignoreWhitespace ? { ignoreWhitespace: args.ignoreWhitespace } : {}),
+        ...(args.stripTrailingCr ? { stripTrailingCr: args.stripTrailingCr } : {}),
       },
-      signal ? { signal } : {}
+      signal ? { signal } : {},
     );
   }
 
@@ -141,7 +133,7 @@ async function computeDiff(
         callback: (res) => {
           resolve(res);
         },
-      }
+      },
     );
   });
 }
@@ -150,7 +142,7 @@ async function handleDiffFiles(
   args: z.infer<typeof DiffFilesInputSchema>,
   pathGuard: PathGuard,
   signal?: AbortSignal,
-  resourceStore?: ResourceStore
+  resourceStore?: ResourceStore,
 ): Promise<ToolResponse<z.infer<typeof DiffFilesOutputSchema>>> {
   const originalInput = args.original;
   const modifiedInput = args.modified;
@@ -165,16 +157,8 @@ async function handleDiffFiles(
     withAbort(stat(modifiedPath), signal),
   ]);
 
-  assertDiffFileSizeWithinLimit(
-    originalPath,
-    originalStats.size,
-    MAX_TEXT_FILE_SIZE
-  );
-  assertDiffFileSizeWithinLimit(
-    modifiedPath,
-    modifiedStats.size,
-    MAX_TEXT_FILE_SIZE
-  );
+  assertDiffFileSizeWithinLimit(originalPath, originalStats.size, MAX_TEXT_FILE_SIZE);
+  assertDiffFileSizeWithinLimit(modifiedPath, modifiedStats.size, MAX_TEXT_FILE_SIZE);
 
   const [originalContent, modifiedContent] = await Promise.all([
     readFile(originalPath, { encoding: 'utf-8', signal }),
@@ -190,15 +174,11 @@ async function handleDiffFiles(
     originalContent,
     modifiedContent,
     totalBytes,
-    signal
+    signal,
   );
 
   if (!patchObj) {
-    throw new McpError(
-      ErrorCode.TIMEOUT,
-      `Diff timed out or too complex.`,
-      originalPath
-    );
+    throw new McpError(ErrorCode.TIMEOUT, `Diff timed out or too complex.`, originalPath);
   }
 
   const isIdentical = patchObj.hunks.length === 0;
@@ -222,8 +202,7 @@ async function handleDiffFiles(
   }
 
   // Store diff in resource and return resource link
-  const changeCount =
-    (mappedStats?.additions ?? 0) + (mappedStats?.deletions ?? 0);
+  const changeCount = (mappedStats?.additions ?? 0) + (mappedStats?.deletions ?? 0);
   const originalName = basename(originalPath);
   const modifiedName = basename(modifiedPath);
 
@@ -269,24 +248,18 @@ export const DIFF_FILES = defineTool<DiffInput, DiffOutput>({
   contract: DIFF_FILES_TOOL,
   defaultErrorCode: ErrorCode.UNKNOWN,
   diagnosticsContext: (args) => ({ path: args.original }),
-  run: (args, ctx) =>
-    handleDiffFiles(args, ctx.pathGuard, ctx.signal, ctx.resourceStore),
+  run: (args, ctx) => handleDiffFiles(args, ctx.pathGuard, ctx.signal, ctx.resourceStore),
   progressMessage: (args) => {
     const n1 = basename(args.original);
     const n2 = basename(args.modified);
     return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2}`;
   },
-  completionMessage: (
-    args: DiffInput,
-    result: ToolResult<DiffOutput>
-  ): string => {
+  completionMessage: (args: DiffInput, result: ToolResult<DiffOutput>): string => {
     const n1 = basename(args.original);
     const n2 = basename(args.modified);
-    if (result.isError)
-      return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2} • ${result.errorCode}`;
+    if (result.isError) return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2} • ${result.errorCode}`;
     const sc = result.structuredContent;
-    if (sc.isIdentical)
-      return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2} • identical`;
+    if (sc.isIdentical) return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2} • identical`;
     const added = sc.stats?.additions ?? 0;
     const removed = sc.stats?.deletions ?? 0;
     if (added > 0 || removed > 0)

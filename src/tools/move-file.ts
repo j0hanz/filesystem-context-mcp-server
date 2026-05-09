@@ -1,7 +1,4 @@
-import type {
-  ElicitRequestFormParams,
-  ElicitResult,
-} from '@modelcontextprotocol/server';
+import type { ElicitRequestFormParams, ElicitResult } from '@modelcontextprotocol/server';
 import { SdkError, SdkErrorCode } from '@modelcontextprotocol/server';
 
 import { cp, mkdir, rename, rm, stat } from 'node:fs/promises';
@@ -26,10 +23,7 @@ import {
 } from './shared.js';
 
 const MoveFileInputSchema = z.strictObject({
-  sources: z
-    .array(RequiredPath)
-    .min(1)
-    .describe('One or more source paths to move'),
+  sources: z.array(RequiredPath).min(1).describe('One or more source paths to move'),
   destination: RequiredPath.describe('Destination path'),
 });
 
@@ -68,7 +62,7 @@ async function getDestinationStatus(validDest: string): Promise<boolean> {
 async function tryElicitOverwriteConfirmation(
   destination: string,
   validDest: string,
-  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>
+  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>,
 ): Promise<void> {
   if (!elicitInput) return;
 
@@ -98,28 +92,22 @@ async function tryElicitOverwriteConfirmation(
       },
     });
 
-    if (
-      elicitResult.action !== 'accept' ||
-      elicitResult.content?.confirmOverwrite !== true
-    ) {
+    if (elicitResult.action !== 'accept' || elicitResult.content?.confirmOverwrite !== true) {
       // User declined — surface as a cancellation error.
       throw new McpError(
         ErrorCode.CANCELLED,
-        `Move cancelled: "${destination}" already exists and overwrite was declined.`
+        `Move cancelled: "${destination}" already exists and overwrite was declined.`,
       );
     }
   } catch (err) {
     if (err instanceof McpError) throw err;
-    if (
-      err instanceof SdkError &&
-      err.code === SdkErrorCode.CapabilityNotSupported
-    ) {
+    if (err instanceof SdkError && err.code === SdkErrorCode.CapabilityNotSupported) {
       // Client doesn't support elicitation — proceed without asking.
     } else {
       // Transport or unexpected failure — fail closed, don't move.
       throw new McpError(
         ErrorCode.CANCELLED,
-        `Move cancelled: could not confirm overwrite of "${destination}".`
+        `Move cancelled: could not confirm overwrite of "${destination}".`,
       );
     }
   }
@@ -129,7 +117,7 @@ async function handleMoveFile(
   args: z.infer<typeof MoveFileInputSchema>,
   pathGuard: PathGuard,
   signal?: AbortSignal,
-  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>
+  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>,
 ): Promise<z.infer<typeof MoveFileOutputSchema>> {
   const sources = args.sources;
   if (sources.length === 0) {
@@ -142,7 +130,7 @@ async function handleMoveFile(
   if (sources.length > 1 && !destIsDirectory) {
     throw new McpError(
       ErrorCode.INVALID_INPUT,
-      'Destination must be an existing directory for multiple sources.'
+      'Destination must be an existing directory for multiple sources.',
     );
   }
 
@@ -151,11 +139,7 @@ async function handleMoveFile(
   }
 
   if (sources.length === 1 && !destIsDirectory) {
-    await tryElicitOverwriteConfirmation(
-      args.destination,
-      validDest,
-      elicitInput
-    );
+    await tryElicitOverwriteConfirmation(args.destination, validDest, elicitInput);
   }
 
   const movedSources: string[] = [];
@@ -170,13 +154,11 @@ async function handleMoveFile(
       throw new McpError(
         error instanceof McpError ? error.code : ErrorCode.ACCESS_DENIED,
         `Move failed for ${src}`,
-        src
+        src,
       );
     }
 
-    const targetPath = destIsDirectory
-      ? join(validDest, basename(validSource))
-      : validDest;
+    const targetPath = destIsDirectory ? join(validDest, basename(validSource)) : validDest;
 
     if (resolve(validSource) === resolve(targetPath)) {
       continue;
@@ -186,7 +168,7 @@ async function handleMoveFile(
       throw new McpError(
         ErrorCode.INVALID_INPUT,
         'Cannot move a directory into its own subdirectory',
-        src
+        src,
       );
     }
 
@@ -197,21 +179,11 @@ async function handleMoveFile(
       if (isNodeError(error) && error.code === 'EXDEV') {
         // Handle cross-device move
         try {
-          await withAbort(
-            cp(validSource, targetPath, { recursive: true }),
-            signal
-          );
-          await withAbort(
-            rm(validSource, { recursive: true, force: true }),
-            signal
-          );
+          await withAbort(cp(validSource, targetPath, { recursive: true }), signal);
+          await withAbort(rm(validSource, { recursive: true, force: true }), signal);
           movedSources.push(validSource);
         } catch (_crossDeviceError) {
-          throw new McpError(
-            ErrorCode.UNKNOWN,
-            `Cross-device move failed for ${src}`,
-            src
-          );
+          throw new McpError(ErrorCode.UNKNOWN, `Cross-device move failed for ${src}`, src);
         }
       } else {
         throw new McpError(ErrorCode.UNKNOWN, `Move failed for ${src}`, src);
@@ -240,19 +212,10 @@ type MoveOutput = z.infer<typeof MoveFileOutputSchema>;
 export const MOVE_FILE = defineTool<MoveInput, MoveOutput>({
   contract: MOVE_FILE_TOOL,
   run: async (args, ctx) => {
-    const structured = await handleMoveFile(
-      args,
-      ctx.pathGuard,
-      ctx.signal,
-      ctx.elicitInput
-    );
+    const structured = await handleMoveFile(args, ctx.pathGuard, ctx.signal, ctx.elicitInput);
     // P3 confirmation-only pattern: terse summary with from → to
     const summary = `move-file: ${structured.from} → ${structured.to}`;
-    void ctx.log?.(
-      'info',
-      `mv: ${args.sources.join(', ')} \u2192 ${args.destination}`,
-      'mv'
-    );
+    void ctx.log?.('info', `mv: ${args.sources.join(', ')} \u2192 ${args.destination}`, 'mv');
     return buildToolResponse(summary, structured);
   },
   progressMessage: (args) => {
@@ -262,10 +225,7 @@ export const MOVE_FILE = defineTool<MoveInput, MoveOutput>({
     }
     return `${MOVE_FILE_TOOL.title}: ${args.sources.length} items \u2192 ${dest}`;
   },
-  completionMessage: (
-    args: MoveInput,
-    result: ToolResult<MoveOutput>
-  ): string => {
+  completionMessage: (args: MoveInput, result: ToolResult<MoveOutput>): string => {
     const dest = basename(args.destination);
     if (args.sources.length === 1) {
       const src = basename(args.sources[0] ?? '');
@@ -277,6 +237,5 @@ export const MOVE_FILE = defineTool<MoveInput, MoveOutput>({
       return `${MOVE_FILE_TOOL.title}: ${args.sources.length} items \u2192 ${dest} \u2022 ${result.errorCode}`;
     return `${MOVE_FILE_TOOL.title}: ${args.sources.length} items \u2192 ${dest}`;
   },
-  onError: (error, args) =>
-    buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.sources[0] ?? ''),
+  onError: (error, args) => buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.sources[0] ?? ''),
 });

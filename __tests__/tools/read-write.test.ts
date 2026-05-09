@@ -42,20 +42,14 @@ describe('read tool', () => {
     // Check content blocks: first is summary text, second is resource_link
     assert.equal(result.content.length, 2);
     assert.equal(result.content[0].type, 'text');
-    assert.ok(
-      (result.content[0] as Record<string, unknown>).text
-        ?.toString()
-        .includes('read:')
-    );
+    assert.ok((result.content[0] as Record<string, unknown>).text?.toString().includes('read:'));
     assert.equal(result.content[1].type, 'resource_link');
 
     // Check structured content
     const sc = getStructured(result);
     assert.ok(sc['mimeType']);
     assert.ok(sc['resourceUri']);
-    assert.ok(
-      (sc['resourceUri'] as string).includes('filesystem-mcp://result/')
-    );
+    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://result/'));
   });
 
   it('reads a specific line range', async () => {
@@ -75,9 +69,7 @@ describe('read tool', () => {
   });
 
   it('hashes the full file content even for partial reads', async () => {
-    const expectedHash = createHash('sha256')
-      .update('line1\nline2\nline3\n', 'utf8')
-      .digest('hex');
+    const expectedHash = createHash('sha256').update('line1\nline2\nline3\n', 'utf8').digest('hex');
 
     const raw = await env.client.callTool({
       name: 'read',
@@ -135,17 +127,13 @@ describe('read tool', () => {
     assert.strictEqual(
       (sc['path'] as string).toLowerCase(),
       absPath.toLowerCase(),
-      'path in output must be the resolved absolute path'
+      'path in output must be the resolved absolute path',
     );
   });
 
   it('read returns summary text block with resource link', async () => {
     const tsFile = join(env.tmpDir, 'test.ts');
-    await writeFile(
-      tsFile,
-      'const x = 1;\nconst y = 2;\nconst z = 3;\n',
-      'utf8'
-    );
+    await writeFile(tsFile, 'const x = 1;\nconst y = 2;\nconst z = 3;\n', 'utf8');
 
     const raw = await env.client.callTool({
       name: 'read',
@@ -157,8 +145,7 @@ describe('read tool', () => {
     // Check text block contains summary pattern
     assert.equal(raw.content.length, 2);
     assert.equal(raw.content[0].type, 'text');
-    const textContent = (raw.content[0] as Record<string, unknown>)
-      .text as string;
+    const textContent = (raw.content[0] as Record<string, unknown>).text as string;
     // Check for format: read: <name> · <lines> · <size> · <mime>
     assert.ok(textContent.includes('read:'));
     assert.ok(textContent.includes('lines'));
@@ -180,9 +167,7 @@ describe('read tool', () => {
 
   it('read with continuation returns resource link for each chunk', async () => {
     const largeFile = join(env.tmpDir, 'large.txt');
-    const lines = Array.from({ length: 100 }, (_, i) => `line ${i + 1}`).join(
-      '\n'
-    );
+    const lines = Array.from({ length: 100 }, (_, i) => `line ${i + 1}`).join('\n');
     await writeFile(largeFile, lines + '\n', 'utf8');
 
     // First read with head
@@ -258,8 +243,7 @@ describe('write tool', () => {
     // Verify summary includes "write:" and filename
     assert.equal(result.content.length, 2);
     assert.equal(result.content[0].type, 'text');
-    const summary = (result.content[0] as Record<string, unknown>)
-      .text as string;
+    const summary = (result.content[0] as Record<string, unknown>).text as string;
     assert.ok(summary.includes('write:'));
     assert.ok(summary.includes('written.txt'));
 
@@ -288,8 +272,7 @@ describe('write tool', () => {
     assert.ok(typeof sc['resourceUri'] === 'string');
 
     // Verify summary includes "write:"
-    const summary = (result.content[0] as Record<string, unknown>)
-      .text as string;
+    const summary = (result.content[0] as Record<string, unknown>).text as string;
     assert.ok(summary.includes('write:'));
 
     const actual = await readFile(file, 'utf8');
@@ -309,7 +292,7 @@ describe('write tool', () => {
     assert.ok(
       (result.content[1] as Record<string, unknown>).uri
         ?.toString()
-        .includes('filesystem-mcp://result/')
+        .includes('filesystem-mcp://result/'),
     );
     const actual = await readFile(file, 'utf8');
     assert.equal(actual, 'nested');
@@ -364,9 +347,7 @@ describe('read_many tool', () => {
     assert.equal(result.content.length, 3); // 1 summary + 2 resource_links
     assert.equal(result.content[0].type, 'text');
     assert.ok(
-      (result.content[0] as Record<string, unknown>).text
-        ?.toString()
-        .includes('read_many:')
+      (result.content[0] as Record<string, unknown>).text?.toString().includes('read_many:'),
     );
     assert.equal(result.content[1].type, 'resource_link');
     assert.equal(result.content[2].type, 'resource_link');
@@ -448,17 +429,13 @@ describe('read_many tool', () => {
     assertOk(raw);
     const sc = getStructured(raw);
     const results = sc['results'] as Record<string, unknown>[];
-    const binResult = results.find((r) =>
-      (r['path'] as string).includes('binary.bin')
-    );
+    const binResult = results.find((r) => (r['path'] as string).includes('binary.bin'));
     assert.ok(binResult, 'Expected entry for binary file');
     const binError = binResult['error'] as Record<string, unknown> | undefined;
     assert.ok(binError, 'Expected error for binary file');
     assert.equal(typeof binError['message'], 'string');
     // Text file should still succeed
-    const textResult = results.find((r) =>
-      (r['path'] as string).includes('a.txt')
-    );
+    const textResult = results.find((r) => (r['path'] as string).includes('a.txt'));
     assert.ok(textResult, 'Expected entry for text file');
     assert.ok(textResult['resourceUri'], 'Text file should have resourceUri');
   });
@@ -482,9 +459,7 @@ describe('read_many tool', () => {
     assert.equal(raw.content.length, 6);
     assert.equal(raw.content[0].type, 'text');
     assert.ok(
-      (raw.content[0] as Record<string, unknown>).text
-        ?.toString()
-        .includes('read_many: 5 files')
+      (raw.content[0] as Record<string, unknown>).text?.toString().includes('read_many: 5 files'),
     );
 
     // Verify all resource_links
@@ -502,11 +477,7 @@ describe('read_many tool', () => {
       assert.ok(result, `Expected result at index ${i}`);
       assert.equal(result['path'], paths[i], `Path mismatch at index ${i}`);
       assert.ok(result['resourceUri'], `Expected resourceUri for file ${i}`);
-      assert.equal(
-        result['content'],
-        undefined,
-        `Content should be absent for file ${i}`
-      );
+      assert.equal(result['content'], undefined, `Content should be absent for file ${i}`);
       assert.equal(result['totalLines'], 2, `Expected 2 lines for file ${i}`);
     }
 
@@ -560,14 +531,11 @@ describe('read_many tool budget enforcement', () => {
         err['message'].includes('maxTotalSize')
       );
     });
-    assert.ok(
-      skipped.length > 0,
-      'Expected at least one file skipped due to budget'
-    );
+    assert.ok(skipped.length > 0, 'Expected at least one file skipped due to budget');
 
     // First files should have succeeded
     const succeeded = results.filter(
-      (r) => r['resourceUri'] !== undefined && r['error'] === undefined
+      (r) => r['resourceUri'] !== undefined && r['error'] === undefined,
     );
     assert.ok(succeeded.length > 0, 'Expected at least one file to succeed');
   });
@@ -708,17 +676,14 @@ describe('edit tool', () => {
     assert.equal(typeof sc['mimeType'], 'string');
     assert.equal(typeof sc['kind'], 'string');
     assert.equal(typeof sc['resourceUri'], 'string');
-    assert.ok(
-      (sc['resourceUri'] as string).includes('filesystem-mcp://result/')
-    );
+    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://result/'));
     assert.equal(typeof sc['modified'], 'string');
     assert.equal(sc['appliedEdits'], 1);
 
     // Verify summary includes "edit-file:" and file path
     assert.equal(result.content.length, 2);
     assert.equal(result.content[0].type, 'text');
-    const summary = (result.content[0] as Record<string, unknown>)
-      .text as string;
+    const summary = (result.content[0] as Record<string, unknown>).text as string;
     assert.ok(summary.includes('edit-file:'));
     assert.ok(summary.includes('edit-me.txt'));
 
@@ -749,20 +714,14 @@ describe('edit tool', () => {
     assert.equal(sc['ok'], true);
     assert.equal(sc['appliedEdits'], 1);
     assert.equal(typeof sc['resourceUri'], 'string');
-    assert.ok(
-      (sc['resourceUri'] as string).includes('filesystem-mcp://result/')
-    );
+    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://result/'));
 
     // Verify diff is present in dryRun
     assert.equal(typeof sc['diff'], 'string');
 
     // File should not be modified
     const actual = await readFile(file, 'utf8');
-    assert.equal(
-      actual,
-      'original content\n',
-      'File should not be modified in dryRun'
-    );
+    assert.equal(actual, 'original content\n', 'File should not be modified in dryRun');
   });
 
   it('rejects edits with an empty oldText target', async () => {
@@ -812,9 +771,7 @@ describe('edit tool', () => {
     const sc = getStructured(raw);
     assert.equal(sc['appliedEdits'], 2);
     assert.equal(typeof sc['resourceUri'], 'string');
-    assert.ok(
-      (sc['resourceUri'] as string).includes('filesystem-mcp://result/')
-    );
+    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://result/'));
     assert.equal(typeof sc['mimeType'], 'string');
     assert.equal(typeof sc['lineCount'], 'number');
 
@@ -845,9 +802,7 @@ describe('edit tool', () => {
     assert.equal(sc['linesAdded'], 2);
     assert.equal(sc['linesRemoved'], 1);
     assert.equal(typeof sc['resourceUri'], 'string');
-    assert.ok(
-      (sc['resourceUri'] as string).includes('filesystem-mcp://result/')
-    );
+    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://result/'));
     assert.match(sc['diff'] as string, /^--- dry-diff\.txt/m);
     assert.match(sc['diff'] as string, /^\+beta-1$/m);
     assert.match(sc['diff'] as string, /^\+beta-2$/m);
@@ -872,15 +827,8 @@ describe('edit tool', () => {
     });
     assertOk(raw);
     const sc = getStructured(raw);
-    assert.strictEqual(
-      sc['ok'],
-      true,
-      'ok must be literal true even for partial edits'
-    );
-    assert.ok(
-      Array.isArray(sc['unmatchedEdits']),
-      'unmatchedEdits must be present'
-    );
+    assert.strictEqual(sc['ok'], true, 'ok must be literal true even for partial edits');
+    assert.ok(Array.isArray(sc['unmatchedEdits']), 'unmatchedEdits must be present');
     assert.strictEqual((sc['unmatchedEdits'] as string[]).length, 1);
   });
 
@@ -946,15 +894,12 @@ describe('apply_patch tool', () => {
     assert.equal(typeof sc['mimeType'], 'string');
     assert.equal(typeof sc['kind'], 'string');
     assert.equal(typeof sc['resourceUri'], 'string');
-    assert.ok(
-      (sc['resourceUri'] as string).includes('filesystem-mcp://result/')
-    );
+    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://result/'));
 
     // Verify summary includes "apply-patch:" and file path
     assert.equal(result.content.length, 2);
     assert.equal(result.content[0].type, 'text');
-    const summary = (result.content[0] as Record<string, unknown>)
-      .text as string;
+    const summary = (result.content[0] as Record<string, unknown>).text as string;
     assert.ok(summary.includes('apply-patch:'));
     assert.ok(summary.includes('patch-target.txt'));
 
@@ -964,10 +909,7 @@ describe('apply_patch tool', () => {
     assert.ok((link.uri as string).includes('filesystem-mcp://result/'));
 
     const actual = await readFile(file, 'utf8');
-    assert.ok(
-      actual.includes('BETA'),
-      'Patch should replace "beta" with "BETA"'
-    );
+    assert.ok(actual.includes('BETA'), 'Patch should replace "beta" with "BETA"');
     assert.ok(!actual.includes('\nbeta\n'), 'Original "beta" should be gone');
   });
 
@@ -991,11 +933,7 @@ describe('apply_patch tool', () => {
     });
     assertOk(raw);
     const actual = await readFile(file, 'utf8');
-    assert.equal(
-      actual,
-      ORIGINAL_CONTENT,
-      'File must be unchanged in dryRun mode'
-    );
+    assert.equal(actual, ORIGINAL_CONTENT, 'File must be unchanged in dryRun mode');
   });
 
   it('returns INVALID_INPUT when patch has no effect', async () => {
@@ -1029,13 +967,8 @@ describe('apply_patch tool', () => {
     await writeFile(binaryFile, original);
 
     const patch =
-      [
-        '--- a/patch-binary.bin',
-        '+++ b/patch-binary.bin',
-        '@@ -1 +1 @@',
-        '-x',
-        '+y',
-      ].join('\n') + '\n';
+      ['--- a/patch-binary.bin', '+++ b/patch-binary.bin', '@@ -1 +1 @@', '-x', '+y'].join('\n') +
+      '\n';
 
     const raw = await env.client.callTool({
       name: 'apply_patch',

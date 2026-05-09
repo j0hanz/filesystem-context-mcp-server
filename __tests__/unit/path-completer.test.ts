@@ -16,9 +16,7 @@ import {
 } from '../../src/lib/path-guard.js';
 
 async function withTestDir(fn: (tmpDir: string) => Promise<void>) {
-  const tmpDir = await mkdtemp(
-    join(tmpdir(), `fsmcp-pathcomp-${randomUUID().slice(0, 8)}-`)
-  );
+  const tmpDir = await mkdtemp(join(tmpdir(), `fsmcp-pathcomp-${randomUUID().slice(0, 8)}-`));
   try {
     await fn(tmpDir);
   } finally {
@@ -27,21 +25,18 @@ async function withTestDir(fn: (tmpDir: string) => Promise<void>) {
 }
 
 test('path-completer', async (t) => {
-  await t.test(
-    'returns allowed directories on empty input without context',
-    async () => {
-      await withTestDir(async (tmpDir) => {
-        const pathGuard = new PathGuard([]);
-        const state = await resolveAllowedDirectoriesState([tmpDir]);
-        pathGuard.initialize(state);
+  await t.test('returns allowed directories on empty input without context', async () => {
+    await withTestDir(async (tmpDir) => {
+      const pathGuard = new PathGuard([]);
+      const state = await resolveAllowedDirectoriesState([tmpDir]);
+      pathGuard.initialize(state);
 
-        const server = new McpServer({ name: 'test', version: '1.0' });
-        const results = await completePathCached('', { pathGuard, server });
+      const server = new McpServer({ name: 'test', version: '1.0' });
+      const results = await completePathCached('', { pathGuard, server });
 
-        assert.deepEqual(results, [normalizePath(tmpDir)]);
-      });
-    }
-  );
+      assert.deepEqual(results, [normalizePath(tmpDir)]);
+    });
+  });
 
   await t.test('matches files inside directory', async () => {
     await withTestDir(async (tmpDir) => {
@@ -68,9 +63,7 @@ test('path-completer', async (t) => {
         pathGuard,
         server,
       });
-      assert.deepEqual(subdirResults, [
-        normalizePath(join(tmpDir, 'subdir')) + sep,
-      ]);
+      assert.deepEqual(subdirResults, [normalizePath(join(tmpDir, 'subdir')) + sep]);
     });
   });
 

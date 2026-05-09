@@ -202,11 +202,7 @@ function looksLikeText(buffer: Buffer): boolean {
   let nonTextCount = 0;
   for (const byte of sample) {
     // Allow common control characters (9=tab, 10=LF, 13=CR) and printable ASCII (32-126) + extended ASCII
-    if (
-      byte < 9 ||
-      (byte > 13 && byte < 32 && byte !== 27) ||
-      (byte > 126 && byte < 160)
-    ) {
+    if (byte < 9 || (byte > 13 && byte < 32 && byte !== 27) || (byte > 126 && byte < 160)) {
       nonTextCount++;
     }
   }

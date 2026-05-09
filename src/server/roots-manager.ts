@@ -5,15 +5,8 @@ import { realpath } from 'node:fs/promises';
 
 import { z } from 'zod/v4';
 
-import {
-  assertNotAborted,
-  createTimedAbortSignal,
-  withAbort,
-} from '../lib/abort.js';
-import {
-  getInitHandshakeTimeoutMs,
-  SENSITIVE_FILE_DENYLIST,
-} from '../lib/constants.js';
+import { assertNotAborted, createTimedAbortSignal, withAbort } from '../lib/abort.js';
+import { getInitHandshakeTimeoutMs, SENSITIVE_FILE_DENYLIST } from '../lib/constants.js';
 import { formatUnknownErrorMessage } from '../lib/errors.js';
 import { Logger, type LoggingState, logToMcp } from '../lib/logger.js';
 import {
@@ -78,10 +71,7 @@ function extractRoots(value: unknown): Root[] {
 
 async function resolveRootDirectories(roots: Root[]): Promise<string[]> {
   if (roots.length === 0) return [];
-  const { signal, cleanup } = createTimedAbortSignal(
-    undefined,
-    ROOTS_TIMEOUT_MS
-  );
+  const { signal, cleanup } = createTimedAbortSignal(undefined, ROOTS_TIMEOUT_MS);
   try {
     return await getValidRootDirectories(roots, signal);
   } finally {
@@ -92,7 +82,7 @@ async function resolveRootDirectories(roots: Root[]): Promise<string[]> {
 async function isRootWithinBaseline(
   normalizedRoot: string,
   baseline: readonly string[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<boolean> {
   if (!isPathWithinDirectories(normalizedRoot, baseline)) {
     return false;
@@ -111,7 +101,7 @@ async function isRootWithinBaseline(
 async function filterRootsWithinBaseline(
   roots: readonly string[],
   baseline: readonly string[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<string[]> {
   const normalizedBaseline = normalizeCLIDirectories(baseline);
   const normalizedRoots = roots.map(normalizePath);
@@ -119,8 +109,8 @@ async function filterRootsWithinBaseline(
 
   const results = await Promise.allSettled(
     normalizedRoots.map((normalizedRoot) =>
-      isRootWithinBaseline(normalizedRoot, normalizedBaseline, signal)
-    )
+      isRootWithinBaseline(normalizedRoot, normalizedBaseline, signal),
+    ),
   );
 
   return normalizedRoots.filter((_, i) => {
@@ -130,9 +120,7 @@ async function filterRootsWithinBaseline(
 }
 
 export class RootsManager {
-  private _debouncedUpdate:
-    | { (server: McpServer): void; cancel: () => void }
-    | undefined;
+  private _debouncedUpdate: { (server: McpServer): void; cancel: () => void } | undefined;
   private rootDirectories: string[] = [];
   readonly pathGuard: PathGuard = new PathGuard(SENSITIVE_FILE_DENYLIST);
   private clientInitialized = false;
@@ -174,25 +162,19 @@ export class RootsManager {
   registerHandlers(server: McpServer, onInitTimeout?: () => void): void {
     const initHandshakeTimeoutMs = getInitHandshakeTimeoutMs();
 
-    server.server.setNotificationHandler(
-      'notifications/initialized',
-      async () => {
-        if (this.initTimer) {
-          clearTimeout(this.initTimer);
-          this.initTimer = undefined;
-        }
-        this.clientInitialized = true;
-        await this.updateRootsFromClient(server);
+    server.server.setNotificationHandler('notifications/initialized', async () => {
+      if (this.initTimer) {
+        clearTimeout(this.initTimer);
+        this.initTimer = undefined;
       }
-    );
+      this.clientInitialized = true;
+      await this.updateRootsFromClient(server);
+    });
 
-    server.server.setNotificationHandler(
-      'notifications/roots/list_changed',
-      () => {
-        if (!this.clientInitialized) return;
-        this.scheduleRootsUpdate(server);
-      }
-    );
+    server.server.setNotificationHandler('notifications/roots/list_changed', () => {
+      if (!this.clientInitialized) return;
+      this.scheduleRootsUpdate(server);
+    });
 
     this.initTimer = setTimeout(() => {
       if (!this.clientInitialized) {
@@ -206,7 +188,7 @@ export class RootsManager {
           server,
           'warning',
           `Client did not send notifications/initialized within ${String(initHandshakeTimeoutMs)}ms`,
-          this.loggingState.minimumLevel
+          this.loggingState.minimumLevel,
         );
         onInitTimeout?.();
       }
@@ -216,24 +198,15 @@ export class RootsManager {
   }
 
   async recomputeAllowedDirectories(): Promise<void> {
-    const cliAllowedDirs = normalizeCLIDirectories(
-      this.options.cliAllowedDirs ?? []
-    );
+    const cliAllowedDirs = normalizeCLIDirectories(this.options.cliAllowedDirs ?? []);
     const allowCwd = Boolean(this.options.allowCwd);
     const allowCwdDirs = allowCwd ? [normalizePath(process.cwd())] : [];
     const baseline = [...cliAllowedDirs, ...allowCwdDirs];
-    const { signal, cleanup } = createTimedAbortSignal(
-      undefined,
-      ROOTS_TIMEOUT_MS
-    );
+    const { signal, cleanup } = createTimedAbortSignal(undefined, ROOTS_TIMEOUT_MS);
     try {
       const rootsToInclude =
         baseline.length > 0
-          ? await filterRootsWithinBaseline(
-              this.rootDirectories,
-              baseline,
-              signal
-            )
+          ? await filterRootsWithinBaseline(this.rootDirectories, baseline, signal)
           : this.rootDirectories;
 
       const combined = [...baseline, ...rootsToInclude];
@@ -257,7 +230,7 @@ export class RootsManager {
         server,
         'notice',
         'No allowed directories specified. Using the current working directory as an allowed directory.',
-        this.loggingState.minimumLevel
+        this.loggingState.minimumLevel,
       );
       return;
     }
@@ -266,7 +239,7 @@ export class RootsManager {
       server,
       'warning',
       'No allowed directories specified. Please provide directories as command-line arguments or enable --allow-cwd to use the current working directory.',
-      this.loggingState.minimumLevel
+      this.loggingState.minimumLevel,
     );
   }
 
@@ -294,12 +267,12 @@ export class RootsManager {
         server,
         'debug',
         `[DEBUG] MCP Roots protocol unavailable or failed: ${formatUnknownErrorMessage(error)}`,
-        this.loggingState.minimumLevel
+        this.loggingState.minimumLevel,
       );
     } finally {
       await this.recomputeAllowedDirectories();
       Logger.info(
-        `Roots updated: ${this.rootDirectories.length} root(s), ${this.pathGuard.getAllowedDirectories().length} allowed dir(s)`
+        `Roots updated: ${this.rootDirectories.length} root(s), ${this.pathGuard.getAllowedDirectories().length} allowed dir(s)`,
       );
       this.updatingRoots = false;
       // If a change arrived while we were running, apply it now.

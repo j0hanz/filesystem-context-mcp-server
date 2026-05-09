@@ -4,12 +4,7 @@ import type { LoggingLevel, McpServer } from '@modelcontextprotocol/server';
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 
-import {
-  Logger,
-  LogRouter,
-  type LogTarget,
-  SessionContext,
-} from '../../src/lib/logger.js';
+import { Logger, LogRouter, type LogTarget, SessionContext } from '../../src/lib/logger.js';
 
 interface RecordedLog {
   level: LoggingLevel;
@@ -27,10 +22,7 @@ function makeRecordingTarget(): {
         return { logging: true };
       },
     },
-    sendLoggingMessage(params: {
-      level: LoggingLevel;
-      data: unknown;
-    }): Promise<void> {
+    sendLoggingMessage(params: { level: LoggingLevel; data: unknown }): Promise<void> {
       records.push({ level: params.level, data: String(params.data) });
       return Promise.resolve();
     },

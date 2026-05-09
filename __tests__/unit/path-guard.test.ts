@@ -5,10 +5,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import { SENSITIVE_FILE_DENYLIST } from '../../src/lib/constants.js';
-import {
-  type AllowedDirectoriesState,
-  PathGuard,
-} from '../../src/lib/path-guard.js';
+import { type AllowedDirectoriesState, PathGuard } from '../../src/lib/path-guard.js';
 
 let tmpDir: string;
 let guard: PathGuard;
@@ -39,7 +36,7 @@ test('validateExistingPath rejects path outside allowed dirs', async () => {
     (err: unknown) => {
       assert.ok(err instanceof Error);
       return true;
-    }
+    },
   );
 });
 
@@ -73,22 +70,20 @@ test('validateExistingPath throws before initialize()', async () => {
   const uninit = new PathGuard(SENSITIVE_FILE_DENYLIST);
   await assert.rejects(
     () => uninit.validateExistingPath(join(tmpDir, 'test.txt')),
-    /not initialized|allowed/i
+    /not initialized|allowed/i,
   );
 });
 
 test('getAllowedDirectories returns the initialized dirs', () => {
   const dirs = guard.getAllowedDirectories();
-  assert.ok(
-    dirs.some((d) => d === tmpDir || d.toLowerCase() === tmpDir.toLowerCase())
-  );
+  assert.ok(dirs.some((d) => d === tmpDir || d.toLowerCase() === tmpDir.toLowerCase()));
 });
 
 test('validateExistingDirectory rejects a file path', async () => {
   await writeFile(join(tmpDir, 'notadir.txt'), 'x');
   await assert.rejects(
     () => guard.validateExistingDirectory(join(tmpDir, 'notadir.txt')),
-    /directory/i
+    /directory/i,
   );
 });
 

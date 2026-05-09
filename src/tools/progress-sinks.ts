@@ -6,11 +6,7 @@ import type {
 
 import { classifyError } from '../lib/errors.js';
 import { Logger } from '../lib/logger.js';
-import {
-  type ProgressEvent,
-  ProgressSession,
-  type ProgressSink,
-} from '../lib/progress-session.js';
+import { type ProgressEvent, ProgressSession, type ProgressSink } from '../lib/progress-session.js';
 
 import type { TaskToolContext, ToolContext } from './shared.js';
 
@@ -55,11 +51,7 @@ export class McpProgressSink implements ProgressSink {
     }
 
     // complete | fail — normalize to 100% display.
-    const displayCurrent = Math.max(
-      event.current,
-      event.total ?? event.current,
-      1
-    );
+    const displayCurrent = Math.max(event.current, event.total ?? event.current, 1);
     await this.#send({
       progress: displayCurrent,
       total: displayCurrent,
@@ -67,11 +59,7 @@ export class McpProgressSink implements ProgressSink {
     });
   }
 
-  async #send(params: {
-    progress: number;
-    total?: number;
-    message?: string;
-  }): Promise<void> {
+  async #send(params: { progress: number; total?: number; message?: string }): Promise<void> {
     await this.#sendNotification({
       method: 'notifications/progress',
       params: {
@@ -96,7 +84,7 @@ function isBenignTaskStoreError(error: unknown): boolean {
 function formatTickMessage(
   current: number,
   total: number | undefined,
-  message: string | undefined
+  message: string | undefined,
 ): string {
   if (total !== undefined) {
     return message ? `${message} (${current}/${total})` : `${current}/${total}`;
@@ -134,13 +122,11 @@ function hasMcpProgress(ctx: ToolContext): ctx is ToolContext & {
   sendNotification: NonNullable<ToolContext['sendNotification']>;
   signal: AbortSignal;
 } {
-  return Boolean(
-    ctx._meta?.progressToken && ctx.sendNotification && ctx.signal
-  );
+  return Boolean(ctx._meta?.progressToken && ctx.sendNotification && ctx.signal);
 }
 
 function hasTaskProgress(
-  ctx: ToolContext
+  ctx: ToolContext,
 ): ctx is TaskToolContext & { taskId: string; taskStore: RequestTaskStore } {
   const candidate = ctx as TaskToolContext;
   return Boolean(candidate.taskId && candidate.taskStore);
@@ -148,7 +134,7 @@ function hasTaskProgress(
 
 export function progressSessionFromContext(
   ctx: ToolContext,
-  opts: { label: string; total?: number }
+  opts: { label: string; total?: number },
 ): ProgressSession {
   const sinks: ProgressSink[] = [];
 
@@ -160,12 +146,12 @@ export function progressSessionFromContext(
           sendNotification: ctx.sendNotification,
           signal: ctx.signal,
           log: ctx.log,
-        })
+        }),
       );
     } catch (error) {
       Logger.warn(
         'progress-sinks',
-        `Failed to instantiate McpProgressSink: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to instantiate McpProgressSink: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -176,12 +162,12 @@ export function progressSessionFromContext(
         new TaskStoreSink({
           taskId: ctx.taskId,
           taskStore: ctx.taskStore,
-        })
+        }),
       );
     } catch (error) {
       Logger.warn(
         'progress-sinks',
-        `Failed to instantiate TaskStoreSink: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to instantiate TaskStoreSink: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -220,7 +206,7 @@ interface BatchParams {
 
 export function createBatchProgressCallbacks(
   ctx: ToolContext,
-  params: BatchParams
+  params: BatchParams,
 ): BatchProgressCallbacks {
   const progress = progressSessionFromContext(ctx, {
     label: `${params.toolLabel}: ${params.context}`,
@@ -243,7 +229,7 @@ export function createBatchProgressCallbacks(
 export async function completeProgressSession<T>(
   progress: ProgressSession,
   label: string,
-  body: () => Promise<{ value: T; suffix: string; finalCurrent?: number }>
+  body: () => Promise<{ value: T; suffix: string; finalCurrent?: number }>,
 ): Promise<T> {
   try {
     const { value, suffix } = await body();
@@ -258,10 +244,8 @@ export async function completeProgressSession<T>(
 export async function runWithProgressSession<T>(
   ctx: ToolContext,
   label: string,
-  body: (
-    progress: ProgressSession
-  ) => Promise<{ value: T; suffix: string; finalCurrent?: number }>,
-  initialTotal?: number
+  body: (progress: ProgressSession) => Promise<{ value: T; suffix: string; finalCurrent?: number }>,
+  initialTotal?: number,
 ): Promise<T> {
   const progress = progressSessionFromContext(ctx, {
     label,

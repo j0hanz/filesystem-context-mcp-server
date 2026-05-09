@@ -1,7 +1,7 @@
 import { z } from 'zod/v4';
 
 export function createBase64JsonCodec<Schema extends z.ZodType>(
-  schema: Schema
+  schema: Schema,
 ): z.ZodCodec<z.ZodString, Schema> {
   return z.codec(z.string(), schema, {
     decode: (value) => {

@@ -3,16 +3,7 @@ import type { Root } from '@modelcontextprotocol/server';
 import type { Stats } from 'node:fs';
 import { realpath, stat } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
-import {
-  dirname,
-  isAbsolute,
-  join,
-  normalize,
-  parse,
-  posix,
-  resolve,
-  sep,
-} from 'node:path';
+import { dirname, isAbsolute, join, normalize, parse, posix, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { assertNotAborted, withAbort } from './abort.js';
@@ -115,10 +106,7 @@ function dedupePreserveOrder<T>(items: readonly T[]): T[] {
   return [...new Set(items)];
 }
 
-function isPathInsideDirectory(
-  normalizedDirectory: string,
-  normalizedCandidate: string
-): boolean {
+function isPathInsideDirectory(normalizedDirectory: string, normalizedCandidate: string): boolean {
   const root = normalizeCaseForComparison(normalizedDirectory);
   const candidate = normalizeCaseForComparison(normalizedCandidate);
 
@@ -134,7 +122,7 @@ function isPathInsideDirectory(
 
 export function isPathWithinDirectories(
   normalizedPath: string,
-  allowedDirs: readonly string[]
+  allowedDirs: readonly string[],
 ): boolean {
   for (const allowedDir of allowedDirs) {
     if (isPathInsideDirectory(allowedDir, normalizedPath)) return true;
@@ -160,17 +148,12 @@ function compilePatternGlobs(normalizedPattern: string): readonly string[] {
     normalizedPattern.length >= 3 &&
     normalizedPattern.charCodeAt(1) === 58 &&
     normalizedPattern.charCodeAt(2) === 47 &&
-    ((normalizedPattern.charCodeAt(0) >= 65 &&
-      normalizedPattern.charCodeAt(0) <= 90) ||
-      (normalizedPattern.charCodeAt(0) >= 97 &&
-        normalizedPattern.charCodeAt(0) <= 122));
+    ((normalizedPattern.charCodeAt(0) >= 65 && normalizedPattern.charCodeAt(0) <= 90) ||
+      (normalizedPattern.charCodeAt(0) >= 97 && normalizedPattern.charCodeAt(0) <= 122));
 
   if (!normalizedPattern.startsWith('**/') && !isWindowsAbsolute) {
     let startIdx = 0;
-    while (
-      startIdx < normalizedPattern.length &&
-      normalizedPattern.charCodeAt(startIdx) === 47
-    ) {
+    while (startIdx < normalizedPattern.length && normalizedPattern.charCodeAt(startIdx) === 47) {
       startIdx++;
     }
     const withoutRoot = normalizedPattern.slice(startIdx);
@@ -203,9 +186,7 @@ function compilePatterns(patterns: readonly string[]): CompiledPattern[] {
   return compiled;
 }
 
-function toPatternSet(
-  patterns: readonly CompiledPattern[]
-): CompiledPatternSet {
+function toPatternSet(patterns: readonly CompiledPattern[]): CompiledPatternSet {
   const pathGlobs = new Set<string>();
   const nameGlobs = new Set<string>();
 
@@ -258,10 +239,7 @@ function normalizeAllowedDirectories(dirs: readonly string[]): string[] {
   return dedupePreserveOrder(normalized);
 }
 
-async function resolveRealPath(
-  normalized: string,
-  signal?: AbortSignal
-): Promise<string | null> {
+async function resolveRealPath(normalized: string, signal?: AbortSignal): Promise<string | null> {
   try {
     assertNotAborted(signal);
     const realPath = await withAbort(realpath(normalized), signal);
@@ -270,8 +248,7 @@ async function resolveRealPath(
     if (
       error instanceof Error &&
       (error.name === 'AbortError' ||
-        ('code' in error &&
-          (error as NodeJS.ErrnoException).code === 'ERR_ABORTED'))
+        ('code' in error && (error as NodeJS.ErrnoException).code === 'ERR_ABORTED'))
     ) {
       throw error;
     }
@@ -281,11 +258,9 @@ async function resolveRealPath(
 
 async function expandAllowedDirectories(
   primaryDirs: readonly string[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<string[]> {
-  const realPaths = await Promise.all(
-    primaryDirs.map((dir) => resolveRealPath(dir, signal))
-  );
+  const realPaths = await Promise.all(primaryDirs.map((dir) => resolveRealPath(dir, signal)));
 
   const expanded: string[] = [];
   for (let i = 0; i < primaryDirs.length; i++) {
@@ -305,7 +280,7 @@ async function expandAllowedDirectories(
 
 export async function resolveAllowedDirectoriesState(
   dirs: readonly string[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<AllowedDirectoriesState> {
   const primary = normalizeAllowedDirectories(dirs);
   const expanded = await expandAllowedDirectories(primary, signal);
@@ -352,19 +327,14 @@ function getReservedDeviceName(segment: string): string | undefined {
   }
   const trimmed = segment.slice(0, end);
   const streamIdx = trimmed.indexOf(':');
-  const withoutStream =
-    streamIdx !== -1 ? trimmed.slice(0, streamIdx) : trimmed;
+  const withoutStream = streamIdx !== -1 ? trimmed.slice(0, streamIdx) : trimmed;
   const dotIdx = withoutStream.indexOf('.');
-  const baseName = (
-    dotIdx !== -1 ? withoutStream.slice(0, dotIdx) : withoutStream
-  ).toUpperCase();
+  const baseName = (dotIdx !== -1 ? withoutStream.slice(0, dotIdx) : withoutStream).toUpperCase();
 
   return RESERVED_DEVICE_NAMES.has(baseName) ? baseName : undefined;
 }
 
-export function getReservedDeviceNameForPath(
-  requestedPath: string
-): string | undefined {
+export function getReservedDeviceNameForPath(requestedPath: string): string | undefined {
   if (!IS_WINDOWS) return undefined;
   const segments = requestedPath.split(/[\\/]/u);
   for (const segment of segments) {
@@ -416,7 +386,7 @@ export class PathGuard {
    */
   static async fromAllowedDirectories(
     dirs: readonly string[],
-    signal?: AbortSignal
+    signal?: AbortSignal,
   ): Promise<PathGuard> {
     const state = await resolveAllowedDirectoriesState(dirs, signal);
     const guard = new PathGuard(SENSITIVE_FILE_DENYLIST);
@@ -448,10 +418,7 @@ export class PathGuard {
   }
 
   isSensitive(filePath: string): boolean {
-    if (
-      this.denyPatterns.pathGlobs.length === 0 &&
-      this.denyPatterns.nameGlobs.length === 0
-    ) {
+    if (this.denyPatterns.pathGlobs.length === 0 && this.denyPatterns.nameGlobs.length === 0) {
       return false;
     }
 
@@ -459,10 +426,7 @@ export class PathGuard {
 
     return (
       matchesAnyGlob(this.denyPatterns.pathGlobs, normalizedPath) ||
-      matchesAnyGlob(
-        this.denyPatterns.nameGlobs,
-        posix.basename(normalizedPath)
-      )
+      matchesAnyGlob(this.denyPatterns.nameGlobs, posix.basename(normalizedPath))
     );
   }
 
@@ -472,7 +436,7 @@ export class PathGuard {
 
   assertSafeGlob(
     pattern: string,
-    message = 'Invalid glob or unsafe path (absolute/.. forbidden)'
+    message = 'Invalid glob or unsafe path (absolute/.. forbidden)',
   ): void {
     if (!this.isSafeGlob(pattern)) {
       throw new McpError(ErrorCode.INVALID_PATTERN, message);
@@ -484,14 +448,12 @@ export class PathGuard {
     return details.resolvedPath;
   }
 
-  async validateExistingPathDetailed(
-    requestedPath: string
-  ): Promise<ValidatedPathDetails> {
+  async validateExistingPathDetailed(requestedPath: string): Promise<ValidatedPathDetails> {
     if (!this.allowedDirectoriesState) {
       throw new McpError(
         ErrorCode.UNKNOWN,
         'PathGuard not initialized. Call initialize() first.',
-        requestedPath
+        requestedPath,
       );
     }
 
@@ -508,7 +470,7 @@ export class PathGuard {
       throw new McpError(
         ErrorCode.ACCESS_DENIED,
         `Outside allowed directories. ${hint}`,
-        requestedPath
+        requestedPath,
       );
     }
 
@@ -517,17 +479,13 @@ export class PathGuard {
     try {
       realPath = await realpath(normalizedRequested);
     } catch (error) {
-      if (
-        error instanceof Error &&
-        'code' in error &&
-        error.code === 'ENOENT'
-      ) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
         throw new McpError(
           ErrorCode.NOT_FOUND,
           'Path not found',
           requestedPath,
           { originalError: error.message },
-          error
+          error,
         );
       }
       throw new McpError(
@@ -537,7 +495,7 @@ export class PathGuard {
         {
           originalError: error instanceof Error ? error.message : String(error),
         },
-        error instanceof Error ? error : undefined
+        error instanceof Error ? error : undefined,
       );
     }
 
@@ -553,7 +511,7 @@ export class PathGuard {
         ErrorCode.ACCESS_DENIED,
         `Outside allowed directories. ${hint}`,
         requestedPath,
-        { resolvedPath: realPath, normalizedResolvedPath: normalizedReal }
+        { resolvedPath: realPath, normalizedResolvedPath: normalizedReal },
       );
     }
 
@@ -578,16 +536,12 @@ export class PathGuard {
         {
           originalError: error instanceof Error ? error.message : String(error),
         },
-        error instanceof Error ? error : undefined
+        error instanceof Error ? error : undefined,
       );
     }
 
     if (!stats.isDirectory()) {
-      throw new McpError(
-        ErrorCode.NOT_DIRECTORY,
-        'Not a directory',
-        requestedPath
-      );
+      throw new McpError(ErrorCode.NOT_DIRECTORY, 'Not a directory', requestedPath);
     }
 
     return details.resolvedPath;
@@ -603,21 +557,18 @@ export class PathGuard {
     if (roots.length === 0) {
       throw new McpError(
         ErrorCode.ACCESS_DENIED,
-        'No roots configured. Use roots tool, --allow-cwd, or MCP Roots protocol.'
+        'No roots configured. Use roots tool, --allow-cwd, or MCP Roots protocol.',
       );
     }
     if (roots.length > 1) {
       throw new McpError(
         ErrorCode.INVALID_INPUT,
-        'Multiple roots configured. Provide an explicit path.'
+        'Multiple roots configured. Provide an explicit path.',
       );
     }
     const root = roots[0];
     if (!root) {
-      throw new McpError(
-        ErrorCode.ACCESS_DENIED,
-        'Workspace root is unexpectedly undefined'
-      );
+      throw new McpError(ErrorCode.ACCESS_DENIED, 'Workspace root is unexpectedly undefined');
     }
     return root;
   }
@@ -642,7 +593,7 @@ export class PathGuard {
       throw new McpError(
         ErrorCode.ACCESS_DENIED,
         'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
-        requestedPath
+        requestedPath,
       );
     }
   }
@@ -652,19 +603,16 @@ export class PathGuard {
       throw new McpError(
         ErrorCode.UNKNOWN,
         'PathGuard not initialized. Call initialize() first.',
-        requestedPath
+        requestedPath,
       );
     }
 
     const normalizedRequested = normalizePath(requestedPath);
-    if (
-      this.isSensitive(requestedPath) ||
-      this.isSensitive(normalizedRequested)
-    ) {
+    if (this.isSensitive(requestedPath) || this.isSensitive(normalizedRequested)) {
       throw new McpError(
         ErrorCode.ACCESS_DENIED,
         'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
-        requestedPath
+        requestedPath,
       );
     }
 
@@ -678,7 +626,7 @@ export class PathGuard {
       throw new McpError(
         ErrorCode.ACCESS_DENIED,
         `Outside allowed directories. ${accessDeniedHint}`,
-        requestedPath
+        requestedPath,
       );
     }
 
@@ -698,10 +646,9 @@ export class PathGuard {
             'Cannot resolve path',
             requestedPath,
             {
-              originalError:
-                error instanceof Error ? error.message : String(error),
+              originalError: error instanceof Error ? error.message : String(error),
             },
-            error instanceof Error ? error : undefined
+            error instanceof Error ? error : undefined,
           );
         }
         current = parent;
@@ -715,7 +662,7 @@ export class PathGuard {
         ErrorCode.ACCESS_DENIED,
         `Outside allowed directories. ${accessDeniedHint}`,
         requestedPath,
-        { resolvedPath: realPath, normalizedResolvedPath: normalizedReal }
+        { resolvedPath: realPath, normalizedResolvedPath: normalizedReal },
       );
     }
 
@@ -736,7 +683,7 @@ function rethrowIfAborted(error: unknown): void {
 async function maybeAddRealPath(
   normalizedPath: string,
   validDirs: string[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<void> {
   try {
     assertNotAborted(signal);
@@ -750,10 +697,7 @@ async function maybeAddRealPath(
   }
 }
 
-async function resolveRootDirectory(
-  root: Root,
-  signal?: AbortSignal
-): Promise<string | null> {
+async function resolveRootDirectory(root: Root, signal?: AbortSignal): Promise<string | null> {
   try {
     const dirPath = fileURLToPath(root.uri);
     const normalizedPath = normalizePath(dirPath);
@@ -769,13 +713,13 @@ async function resolveRootDirectory(
 
 export async function getValidRootDirectories(
   roots: Root[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<string[]> {
   const fileRoots = roots.filter(isFileRoot);
   if (fileRoots.length === 0) return [];
 
   const resolvedResults = await Promise.all(
-    fileRoots.map((root) => resolveRootDirectory(root, signal))
+    fileRoots.map((root) => resolveRootDirectory(root, signal)),
   );
   const validPaths = resolvedResults.filter((p): p is string => p !== null);
   if (validPaths.length === 0) return [];
@@ -785,7 +729,7 @@ export async function getValidRootDirectories(
       const extra: string[] = [];
       await maybeAddRealPath(normalizedPath, extra, signal);
       return extra[0] ?? null;
-    })
+    }),
   );
 
   const validDirs: string[] = [];

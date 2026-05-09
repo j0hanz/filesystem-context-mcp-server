@@ -23,10 +23,7 @@ import {
   McpError,
 } from '../lib/errors.js';
 import type { MimeKind } from '../lib/mime.js';
-import {
-  type TraceContext,
-  withToolDiagnostics,
-} from '../lib/observability.js';
+import { type TraceContext, withToolDiagnostics } from '../lib/observability.js';
 import type { PathGuard } from '../lib/path-guard.js';
 import type { ResourceStore } from '../lib/resource-store.js';
 import { createBase64JsonCodec } from '../lib/zod-codecs.js';
@@ -38,16 +35,12 @@ export { type ToolContract } from './contract.js';
 // W3C Trace Context: version-traceid-parentid-traceflags
 const TRACEPARENT_RE = /^[\da-f]{2}-[\da-f]{32}-[\da-f]{16}-[\da-f]{2}$/i;
 
-function extractTraceContext(
-  meta: ToolContext['_meta']
-): TraceContext | undefined {
+function extractTraceContext(meta: ToolContext['_meta']): TraceContext | undefined {
   const tp = meta?.traceparent;
   if (typeof tp !== 'string' || !TRACEPARENT_RE.test(tp)) return undefined;
   return {
     traceparent: tp,
-    ...(typeof meta?.tracestate === 'string'
-      ? { tracestate: meta.tracestate }
-      : {}),
+    ...(typeof meta?.tracestate === 'string' ? { tracestate: meta.tracestate } : {}),
     ...(typeof meta?.baggage === 'string' ? { baggage: meta.baggage } : {}),
   };
 }
@@ -79,7 +72,7 @@ function normalizeToolExecution<T extends object>(tool: T): T {
   const existingExecution = getExecutionConfigForToolNormalization(candidate);
   const resolvedTaskSupport = resolveTaskSupportForNormalization(
     topLevelTaskSupport,
-    existingExecution?.taskSupport
+    existingExecution?.taskSupport,
   );
 
   if (resolvedTaskSupport === undefined && topLevelTaskSupport === undefined) {
@@ -89,10 +82,7 @@ function normalizeToolExecution<T extends object>(tool: T): T {
   const normalized = { ...candidate };
   delete normalized.taskSupport;
 
-  const execution = buildNormalizedExecutionForTool(
-    existingExecution,
-    resolvedTaskSupport
-  );
+  const execution = buildNormalizedExecutionForTool(existingExecution, resolvedTaskSupport);
   if (execution !== undefined) {
     normalized.execution = execution;
   }
@@ -101,7 +91,7 @@ function normalizeToolExecution<T extends object>(tool: T): T {
 }
 
 function getExecutionConfigForToolNormalization(
-  candidate: Record<string, unknown>
+  candidate: Record<string, unknown>,
 ): Record<string, unknown> | undefined {
   const { execution } = candidate;
   return execution && typeof execution === 'object'
@@ -111,7 +101,7 @@ function getExecutionConfigForToolNormalization(
 
 function resolveTaskSupportForNormalization(
   topLevelTaskSupport: unknown,
-  executionTaskSupport: unknown
+  executionTaskSupport: unknown,
 ): string | undefined {
   if (
     topLevelTaskSupport === 'optional' ||
@@ -134,7 +124,7 @@ function resolveTaskSupportForNormalization(
 
 function buildNormalizedExecutionForTool(
   existingExecution: Record<string, unknown> | undefined,
-  taskSupport: string | undefined
+  taskSupport: string | undefined,
 ): Record<string, unknown> | undefined {
   if (taskSupport === undefined && existingExecution === undefined) {
     return undefined;
@@ -169,7 +159,7 @@ export function buildResourceLink(params: {
 function resolveDetailedError(
   error: unknown,
   defaultCode: ErrorCode,
-  path?: string
+  path?: string,
 ): {
   code: ErrorCode;
   message: string;
@@ -178,10 +168,7 @@ function resolveDetailedError(
   details?: Record<string, unknown>;
 } {
   const detailed = createDetailedError(error, path);
-  if (
-    detailed.code === ErrorCode.UNKNOWN ||
-    detailed.code === ErrorCode.IO_ERROR
-  ) {
+  if (detailed.code === ErrorCode.UNKNOWN || detailed.code === ErrorCode.IO_ERROR) {
     detailed.code = defaultCode;
     const suggestion = getSuggestion(defaultCode);
     if (suggestion) {
@@ -194,7 +181,7 @@ function resolveDetailedError(
 export function buildStructuredError(
   error: unknown,
   defaultCode: ErrorCode,
-  path?: string
+  path?: string,
 ): {
   code: ErrorCode;
   message: string;
@@ -206,16 +193,14 @@ export function buildStructuredError(
     code: detailed.code,
     message: detailed.message,
     ...(detailed.path !== undefined ? { path: detailed.path } : {}),
-    ...(detailed.suggestion !== undefined
-      ? { suggestion: detailed.suggestion }
-      : {}),
+    ...(detailed.suggestion !== undefined ? { suggestion: detailed.suggestion } : {}),
   };
 }
 
 export function buildToolResponse<T>(
   text: string,
   structuredContent: T,
-  extraContent: ContentBlock[] = []
+  extraContent: ContentBlock[] = [],
 ): {
   content: ContentBlock[];
   structuredContent: T;
@@ -241,7 +226,7 @@ export type ToolResult<T> = ToolResponse<T> | ToolErrorResponse;
 function validateStructuredContent<T>(
   toolName: string,
   outputSchema: z.ZodType<T>,
-  structuredContent: unknown
+  structuredContent: unknown,
 ): T {
   const parsed = outputSchema.safeParse(structuredContent);
   if (parsed.success) {
@@ -252,30 +237,26 @@ function validateStructuredContent<T>(
     ErrorCode.UNKNOWN,
     `Tool "${toolName}" returned invalid structuredContent.`,
     undefined,
-    { errors: z.treeifyError(parsed.error) }
+    { errors: z.treeifyError(parsed.error) },
   );
 }
 
 function validateToolResponse<T>(
   toolName: string,
   result: ToolResponse<T>,
-  outputSchema?: z.ZodType<T>
+  outputSchema?: z.ZodType<T>,
 ): ToolResponse<T> {
   if (!outputSchema) return result;
   if (!Object.hasOwn(result, 'structuredContent')) {
     throw new McpError(
       ErrorCode.UNKNOWN,
-      `Tool "${toolName}" returned success without structuredContent.`
+      `Tool "${toolName}" returned success without structuredContent.`,
     );
   }
 
   return {
     ...result,
-    structuredContent: validateStructuredContent(
-      toolName,
-      outputSchema,
-      result.structuredContent
-    ),
+    structuredContent: validateStructuredContent(toolName, outputSchema, result.structuredContent),
   };
 }
 
@@ -333,11 +314,7 @@ export interface HandlerContext {
   resourceStore: ResourceStore | undefined;
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>;
   log?: (level: LoggingLevel, data: unknown, logger?: string) => Promise<void>;
-  onProgress?: (params: {
-    current: number;
-    total?: number;
-    message?: string;
-  }) => void;
+  onProgress?: (params: { current: number; total?: number; message?: string }) => void;
 }
 
 export interface IconInfo {
@@ -347,7 +324,7 @@ export interface IconInfo {
 
 export function withDefaultIcons<T extends object>(
   tool: T,
-  iconInfo: IconInfo | undefined
+  iconInfo: IconInfo | undefined,
 ): T & { icons?: Icon[] } {
   const normalizedTool = normalizeToolExecution(tool);
   if (!iconInfo) {
@@ -401,24 +378,20 @@ export function buildFileInfoPayload(info: FileInfo): FileInfoPayload {
     path: info.path,
     type: info.type,
     size: info.size,
-    ...(info.tokenEstimate !== undefined
-      ? { tokenEstimate: info.tokenEstimate }
-      : {}),
+    ...(info.tokenEstimate !== undefined ? { tokenEstimate: info.tokenEstimate } : {}),
     created: info.created.toISOString(),
     modified: info.modified.toISOString(),
     accessed: info.accessed.toISOString(),
     permissions: info.permissions,
     isHidden: info.isHidden,
     ...(info.mimeType !== undefined ? { mimeType: info.mimeType } : {}),
-    ...(info.symlinkTarget !== undefined
-      ? { symlinkTarget: info.symlinkTarget }
-      : {}),
+    ...(info.symlinkTarget !== undefined ? { symlinkTarget: info.symlinkTarget } : {}),
   };
 }
 
 async function withToolErrorHandling<T>(
   run: () => Promise<ToolResult<T>>,
-  onError: (error: unknown) => ToolResult<T>
+  onError: (error: unknown) => ToolResult<T>,
 ): Promise<ToolResult<T>> {
   try {
     return await run();
@@ -431,9 +404,7 @@ interface ToolExecutionOptions<T> {
   toolName: string;
   ctx: ToolContext;
   outputSchema?: z.ZodType<T>;
-  run: (
-    signal: AbortSignal | undefined
-  ) => ToolResult<T> | Promise<ToolResult<T>>;
+  run: (signal: AbortSignal | undefined) => ToolResult<T> | Promise<ToolResult<T>>;
   onError: (error: unknown) => ToolResult<T>;
   context?: Record<string, unknown>;
   timedSignal?: {
@@ -443,31 +414,25 @@ interface ToolExecutionOptions<T> {
 
 function getToolSignal(
   extraSignal: AbortSignal | undefined,
-  timedSignal: ToolExecutionOptions<unknown>['timedSignal']
+  timedSignal: ToolExecutionOptions<unknown>['timedSignal'],
 ): { signal: AbortSignal | undefined; cleanup: () => void } {
   if (!timedSignal) {
     return { signal: extraSignal, cleanup: () => undefined };
   }
 
-  const { signal, cleanup } = createTimedAbortSignal(
-    extraSignal,
-    timedSignal.timeoutMs
-  );
+  const { signal, cleanup } = createTimedAbortSignal(extraSignal, timedSignal.timeoutMs);
   return { signal, cleanup };
 }
 
 export async function executeToolWithDiagnostics<T>(
-  options: ToolExecutionOptions<T>
+  options: ToolExecutionOptions<T>,
 ): Promise<ToolResult<T>> {
   const traceContext = extractTraceContext(options.ctx._meta);
   return withToolDiagnostics(
     options.toolName,
     () =>
       withToolErrorHandling(async () => {
-        const { signal, cleanup } = getToolSignal(
-          options.ctx.signal,
-          options.timedSignal
-        );
+        const { signal, cleanup } = getToolSignal(options.ctx.signal, options.timedSignal);
         try {
           const rawResult = await options.run(signal);
           // If run() returned a ToolErrorResponse directly, skip output validation.
@@ -477,7 +442,7 @@ export async function executeToolWithDiagnostics<T>(
           return validateToolResponse(
             options.toolName,
             rawResult as ToolResponse<T>,
-            options.outputSchema
+            options.outputSchema,
           );
         } finally {
           cleanup();
@@ -486,14 +451,14 @@ export async function executeToolWithDiagnostics<T>(
     {
       ...options.context,
       ...(traceContext ? { traceContext } : {}),
-    }
+    },
   );
 }
 
 export function buildToolErrorResponse(
   error: unknown,
   defaultCode: ErrorCode,
-  path?: string
+  path?: string,
 ): ToolErrorResponse {
   const detailed = resolveDetailedError(error, defaultCode, path);
   const text = formatDetailedError(detailed);
@@ -522,16 +487,12 @@ export function decodeOffsetCursor(cursor: string): number {
   }
   throw new McpError(
     ErrorCode.INVALID_INPUT,
-    `Invalid cursor. Request the first page without a cursor.`
+    `Invalid cursor. Request the first page without a cursor.`,
   );
 }
 
-export function buildBatchPathContext(
-  paths: readonly string[],
-  unitLabel = 'paths'
-): string {
-  const normalizedLabel =
-    paths.length === 1 ? unitLabel.replace(/s$/i, '') : unitLabel;
+export function buildBatchPathContext(paths: readonly string[], unitLabel = 'paths'): string {
+  const normalizedLabel = paths.length === 1 ? unitLabel.replace(/s$/i, '') : unitLabel;
   const first = basename(paths[0] ?? '');
   let extraPaths = '';
   if (paths.length > 1) {
@@ -542,19 +503,14 @@ export function buildBatchPathContext(
   return `${paths.length} ${normalizedLabel} [${first}${extraPaths}]`;
 }
 
-export function truncateProgressPattern(
-  pattern: string,
-  maxLength = 40
-): string {
+export function truncateProgressPattern(pattern: string, maxLength = 40): string {
   if (pattern.length <= maxLength) return pattern;
   if (pattern.includes('|')) {
     const segments = pattern.split('|');
     const first = segments[0] ?? '';
     const second = segments[1];
     const preview = second !== undefined ? `${first}|${second}` : first;
-    return preview.length <= maxLength
-      ? `${preview}…`
-      : `${preview.slice(0, maxLength)}…`;
+    return preview.length <= maxLength ? `${preview}…` : `${preview.slice(0, maxLength)}…`;
   }
   return `${pattern.slice(0, maxLength)}…`;
 }
@@ -565,7 +521,7 @@ export function truncateProgressPattern(
 export function maybeExternalizeTextContent(
   _resourceStore?: ResourceStore,
   _content?: string,
-  _params?: { name: string; mimeType?: string }
+  _params?: { name: string; mimeType?: string },
 ):
   | {
       entry: {
@@ -603,9 +559,7 @@ interface PutResourceResult {
   link: ContentBlock;
 }
 
-export function buildResourceResponse<T>(
-  params: BuildResourceResponseParams<T>
-): {
+export function buildResourceResponse<T>(params: BuildResourceResponseParams<T>): {
   content: ContentBlock[];
   structuredContent: T;
 } {
@@ -624,7 +578,7 @@ function buildLinkBlock(
     audience?: ('user' | 'assistant')[];
     title?: string;
     description?: string;
-  }
+  },
 ): ContentBlock {
   const audience = params?.audience ?? ['user'];
   return {
@@ -648,33 +602,21 @@ export function putResource(params: PutResourceParams): PutResourceResult {
           name: params.name,
           mimeType: params.mimeType,
           text:
-            typeof params.content === 'string'
-              ? params.content
-              : params.content.toString('utf-8'),
+            typeof params.content === 'string' ? params.content : params.content.toString('utf-8'),
         })
       : params.store.putBlob({
           name: params.name,
           mimeType: params.mimeType,
-          data: Buffer.isBuffer(params.content)
-            ? params.content
-            : Buffer.from(params.content),
+          data: Buffer.isBuffer(params.content) ? params.content : Buffer.from(params.content),
         });
 
   const linkParams = {
     ...(params.audience !== undefined ? { audience: params.audience } : {}),
     ...(params.title !== undefined ? { title: params.title } : {}),
-    ...(params.description !== undefined
-      ? { description: params.description }
-      : {}),
+    ...(params.description !== undefined ? { description: params.description } : {}),
   };
 
-  const link = buildLinkBlock(
-    entry.uri,
-    entry.name,
-    entry.mimeType,
-    entry.size,
-    linkParams
-  );
+  const link = buildLinkBlock(entry.uri, entry.name, entry.mimeType, entry.size, linkParams);
 
   return {
     entry: {

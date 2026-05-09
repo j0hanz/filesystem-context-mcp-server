@@ -12,20 +12,17 @@ describe('ResultAwareInMemoryTaskStore', () => {
         { ttl: 1_000, pollInterval: 100 },
         1,
         { method: 'tools/call', params: {} },
-        'test-session'
+        'test-session',
       );
 
       await store.updateTaskStatus(
         task.taskId,
         'cancelled',
         'Client cancelled task execution.',
-        'test-session'
+        'test-session',
       );
 
-      const result = (await store.getTaskResult(
-        task.taskId,
-        'test-session'
-      )) as {
+      const result = (await store.getTaskResult(task.taskId, 'test-session')) as {
         isError?: boolean;
         errorCode?: string;
         content: { type: string; text?: string }[];
@@ -34,11 +31,8 @@ describe('ResultAwareInMemoryTaskStore', () => {
       assert.equal(result.errorCode, ErrorCode.CANCELLED);
 
       const textBlock = result.content.find(
-        (block: {
-          type: string;
-          text?: string;
-        }): block is { type: 'text'; text: string } =>
-          block.type === 'text' && typeof block.text === 'string'
+        (block: { type: string; text?: string }): block is { type: 'text'; text: string } =>
+          block.type === 'text' && typeof block.text === 'string',
       );
       assert.ok(textBlock, 'Expected a text error payload');
       assert.match(textBlock.text, /Client cancelled task execution\./u);
@@ -57,14 +51,14 @@ describe('ResultAwareInMemoryTaskStore', () => {
             { ttl: 60_000, pollInterval: 100 },
             1,
             { method: 'tools/call', params: {} },
-            `session-${i}`
+            `session-${i}`,
           );
 
           await store.updateTaskStatus(
             task.taskId,
             'cancelled',
             'Test cancellation',
-            `session-${i}`
+            `session-${i}`,
           );
         }
 
@@ -75,7 +69,7 @@ describe('ResultAwareInMemoryTaskStore', () => {
         assert.strictEqual(
           store1.cancelledResults.size,
           50,
-          'All 50 cancelled results should be retained below threshold'
+          'All 50 cancelled results should be retained below threshold',
         );
 
         // Call getTaskResult to trigger eviction scan (which should not evict anything below threshold)
@@ -83,21 +77,16 @@ describe('ResultAwareInMemoryTaskStore', () => {
           { ttl: 60_000, pollInterval: 100 },
           1,
           { method: 'tools/call', params: {} },
-          'test-session'
+          'test-session',
         );
-        await store.updateTaskStatus(
-          task.taskId,
-          'cancelled',
-          'Test',
-          'test-session'
-        );
+        await store.updateTaskStatus(task.taskId, 'cancelled', 'Test', 'test-session');
         await store.getTaskResult(task.taskId, 'test-session');
 
         // Still 51 results (the newly added one + the original 50)
         assert.strictEqual(
           store1.cancelledResults.size,
           51,
-          'No eviction should occur below threshold even when scan is triggered'
+          'No eviction should occur below threshold even when scan is triggered',
         );
       } finally {
         store.cleanup();
@@ -125,7 +114,7 @@ describe('ResultAwareInMemoryTaskStore', () => {
         assert.strictEqual(
           store1.cancelledResults.size,
           101,
-          'Should have 101 entries before eviction'
+          'Should have 101 entries before eviction',
         );
 
         // Trigger eviction by calling getTaskResult
@@ -133,26 +122,15 @@ describe('ResultAwareInMemoryTaskStore', () => {
           { ttl: 60_000, pollInterval: 100 },
           1,
           { method: 'tools/call', params: {} },
-          'trigger-session'
+          'trigger-session',
         );
-        await store.updateTaskStatus(
-          task.taskId,
-          'cancelled',
-          'Test',
-          'trigger-session'
-        );
+        await store.updateTaskStatus(task.taskId, 'cancelled', 'Test', 'trigger-session');
         await store.getTaskResult(task.taskId, 'trigger-session');
 
         // After eviction, count should be reduced
         const finalCount = store1.cancelledResults.size;
-        assert.ok(
-          finalCount < 101,
-          `Eviction should reduce count from 101, got ${finalCount}`
-        );
-        assert.ok(
-          finalCount <= 100,
-          `After eviction, count should be <= 100, got ${finalCount}`
-        );
+        assert.ok(finalCount < 101, `Eviction should reduce count from 101, got ${finalCount}`);
+        assert.ok(finalCount <= 100, `After eviction, count should be <= 100, got ${finalCount}`);
       } finally {
         store.cleanup();
       }
@@ -185,7 +163,7 @@ describe('ResultAwareInMemoryTaskStore', () => {
         assert.strictEqual(
           store1.cancelledResults.size,
           100,
-          'Should have exactly 100 entries at threshold'
+          'Should have exactly 100 entries at threshold',
         );
 
         // Call getTaskResult which would trigger evictExpired
@@ -193,14 +171,9 @@ describe('ResultAwareInMemoryTaskStore', () => {
           { ttl: 60_000, pollInterval: 100 },
           1,
           { method: 'tools/call', params: {} },
-          'test-session'
+          'test-session',
         );
-        await store.updateTaskStatus(
-          task.taskId,
-          'cancelled',
-          'Test',
-          'test-session'
-        );
+        await store.updateTaskStatus(task.taskId, 'cancelled', 'Test', 'test-session');
         await store.getTaskResult(task.taskId, 'test-session');
 
         // We now have 101 entries (the 100 we added + the one from updateTaskStatus)
@@ -209,14 +182,9 @@ describe('ResultAwareInMemoryTaskStore', () => {
           { ttl: 60_000, pollInterval: 100 },
           1,
           { method: 'tools/call', params: {} },
-          'test-session-2'
+          'test-session-2',
         );
-        await store.updateTaskStatus(
-          nextTask.taskId,
-          'cancelled',
-          'Test',
-          'test-session-2'
-        );
+        await store.updateTaskStatus(nextTask.taskId, 'cancelled', 'Test', 'test-session-2');
         await store.getTaskResult(nextTask.taskId, 'test-session-2');
 
         // Now eviction should have run and removed expired entries
@@ -224,7 +192,7 @@ describe('ResultAwareInMemoryTaskStore', () => {
         const finalCount = store1.cancelledResults.size;
         assert.ok(
           finalCount < 102,
-          `After exceeding threshold, eviction should remove expired entries, got ${finalCount}`
+          `After exceeding threshold, eviction should remove expired entries, got ${finalCount}`,
         );
       } finally {
         store.cleanup();

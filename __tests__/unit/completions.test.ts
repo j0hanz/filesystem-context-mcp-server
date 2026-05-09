@@ -15,19 +15,13 @@ import {
   registerCompareFilesPrompt,
   registerGetHelpPrompt,
 } from '../../src/prompts.js';
-import {
-  registerAllResources,
-  serverInstructionsContent,
-} from '../../src/resources.js';
+import { registerAllResources, serverInstructionsContent } from '../../src/resources.js';
 import { LinkedTransport } from '../linked-transport.js';
 
-function makeCompletionServer(
-  withInstructions = false,
-  pathGuard?: PathGuard
-): McpServer {
+function makeCompletionServer(withInstructions = false, pathGuard?: PathGuard): McpServer {
   const server = new McpServer(
     { name: 'test-server', version: '0.0.0' },
-    { capabilities: { completions: {} } }
+    { capabilities: { completions: {} } },
   );
   const instructions = withInstructions ? serverInstructionsContent : '';
   registerGetHelpPrompt(server, instructions);
@@ -43,7 +37,7 @@ function makeCompletionServer(
 }
 
 async function connectPair(
-  server: McpServer
+  server: McpServer,
 ): Promise<{ client: Client; cleanup: () => Promise<void> }> {
   const client = new Client({ name: 'test-client', version: '1.0.0' });
   const [clientTransport, serverTransport] = LinkedTransport.createLinkedPair();
@@ -60,9 +54,7 @@ async function connectPair(
 
 describe('completions', () => {
   it('does not reuse stale path suggestions for a different prefix inside the rate limit window', async () => {
-    const tmpDir = await mkdtemp(
-      join(tmpdir(), `fsmcp-complete-${randomUUID().slice(0, 8)}-`)
-    );
+    const tmpDir = await mkdtemp(join(tmpdir(), `fsmcp-complete-${randomUUID().slice(0, 8)}-`));
     await writeFile(join(tmpDir, 'alpha.txt'), 'alpha', 'utf8');
     await writeFile(join(tmpDir, 'beta.txt'), 'beta', 'utf8');
     const pathGuard = await PathGuard.fromAllowedDirectories([tmpDir]);
@@ -82,15 +74,15 @@ describe('completions', () => {
 
       assert.ok(
         first.completion.values.some((v) => v.endsWith('alpha.txt')),
-        'first should include alpha.txt'
+        'first should include alpha.txt',
       );
       assert.ok(
         second.completion.values.some((v) => v.endsWith('beta.txt')),
-        'second should include beta.txt'
+        'second should include beta.txt',
       );
       assert.ok(
         !second.completion.values.some((v) => v.endsWith('alpha.txt')),
-        'second should not include alpha.txt'
+        'second should not include alpha.txt',
       );
     } finally {
       await cleanup();
@@ -99,9 +91,7 @@ describe('completions', () => {
   });
 
   it('does not collide cache keys when context values contain delimiter characters', async () => {
-    const tmpDir = await mkdtemp(
-      join(tmpdir(), `fsmcp-complete-${randomUUID().slice(0, 8)}-`)
-    );
+    const tmpDir = await mkdtemp(join(tmpdir(), `fsmcp-complete-${randomUUID().slice(0, 8)}-`));
     const fooDir = join(tmpDir, 'foo');
     await mkdir(fooDir);
     await writeFile(join(fooDir, 'inside.txt'), 'inside', 'utf8');
@@ -125,15 +115,13 @@ describe('completions', () => {
       });
 
       assert.ok(
-        fromContextDirectory.completion.values.some((v) =>
-          v.endsWith('inside.txt')
-        ),
-        'context cwd should resolve to fooDir'
+        fromContextDirectory.completion.values.some((v) => v.endsWith('inside.txt')),
+        'context cwd should resolve to fooDir',
       );
       assert.deepEqual(
         withoutContextDirectory.completion.values.map(normalizePath),
         [normalizePath(tmpDir)],
-        'mangled context key should fall back to root'
+        'mangled context key should fall back to root',
       );
     } finally {
       await cleanup();
@@ -142,20 +130,14 @@ describe('completions', () => {
   });
 
   it('does not enumerate completion entries through a linked directory outside allowed roots', async () => {
-    const tmpDir = await mkdtemp(
-      join(tmpdir(), `fsmcp-complete-${randomUUID().slice(0, 8)}-`)
-    );
+    const tmpDir = await mkdtemp(join(tmpdir(), `fsmcp-complete-${randomUUID().slice(0, 8)}-`));
     const allowedDir = join(tmpDir, 'allowed');
     const outsideDir = join(tmpDir, 'outside');
     const linkedDir = join(allowedDir, 'linked');
     await mkdir(allowedDir);
     await mkdir(outsideDir);
     await writeFile(join(outsideDir, 'secret.txt'), 'secret', 'utf8');
-    await symlink(
-      outsideDir,
-      linkedDir,
-      process.platform === 'win32' ? 'junction' : 'dir'
-    );
+    await symlink(outsideDir, linkedDir, process.platform === 'win32' ? 'junction' : 'dir');
     const pathGuard = await PathGuard.fromAllowedDirectories([allowedDir]);
 
     const server = makeCompletionServer(false, pathGuard);
@@ -174,11 +156,11 @@ describe('completions', () => {
 
       assert.ok(
         !direct.completion.values.some((v) => v.endsWith('secret.txt')),
-        'symlink direct should not expose secret.txt'
+        'symlink direct should not expose secret.txt',
       );
       assert.ok(
         !fromContext.completion.values.some((v) => v.endsWith('secret.txt')),
-        'symlink via context should not expose secret.txt'
+        'symlink via context should not expose secret.txt',
       );
     } finally {
       await cleanup();
@@ -200,13 +182,10 @@ describe('completions', () => {
         argument: { name: 'topic', value: 'er' },
       });
 
-      assert.ok(
-        all.completion.values.length > 0,
-        'should return at least one topic'
-      );
+      assert.ok(all.completion.values.length > 0, 'should return at least one topic');
       assert.ok(
         filtered.completion.values.every((v) => v.startsWith('er')),
-        'filtered topics should all start with "er"'
+        'filtered topics should all start with "er"',
       );
     } finally {
       await cleanup();
@@ -226,7 +205,7 @@ describe('completions', () => {
       assert.deepEqual(
         result.completion.values,
         [],
-        'get-help has no path arg — must return empty'
+        'get-help has no path arg — must return empty',
       );
     } finally {
       await cleanup();

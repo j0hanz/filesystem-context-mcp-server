@@ -123,11 +123,7 @@ describe('detectMimeType', () => {
 
     for (const [path, expectedKind] of Object.entries(kinds)) {
       const result = detectMimeType(path);
-      assert.equal(
-        result.kind,
-        expectedKind,
-        `${path} should have kind '${expectedKind}'`
-      );
+      assert.equal(result.kind, expectedKind, `${path} should have kind '${expectedKind}'`);
     }
   });
 });

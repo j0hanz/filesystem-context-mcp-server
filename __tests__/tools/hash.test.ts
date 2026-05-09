@@ -45,9 +45,7 @@ describe('calculate_hash tool', () => {
     assert.ok((sc['hashes']['sha256'] as string).length > 0);
     assert.equal(sc['isDirectory'], false);
     assert.equal(typeof sc['resourceUri'], 'string');
-    assert(
-      (sc['resourceUri'] as string).startsWith('filesystem-mcp://result/')
-    );
+    assert((sc['resourceUri'] as string).startsWith('filesystem-mcp://result/'));
 
     // Verify summary contains file name and algorithm
     const summary = raw.content[0];
@@ -58,9 +56,7 @@ describe('calculate_hash tool', () => {
     assert(text.includes(':'));
 
     // Verify resource link
-    const resourceLink = raw.content.find(
-      (c) => c && 'type' in c && c.type === 'resource_link'
-    );
+    const resourceLink = raw.content.find((c) => c && 'type' in c && c.type === 'resource_link');
     assert(resourceLink, 'Should have a resource_link');
     assert.equal((resourceLink as { name: string }).name, 'hashes.json');
   });
@@ -87,9 +83,7 @@ describe('calculate_hash tool', () => {
     assert(text.includes('SHA-256'));
 
     // Verify resource link still present
-    const resourceLink = raw.content.find(
-      (c) => c && 'type' in c && c.type === 'resource_link'
-    );
+    const resourceLink = raw.content.find((c) => c && 'type' in c && c.type === 'resource_link');
     assert(resourceLink, 'Should have a resource_link');
   });
 
@@ -111,7 +105,7 @@ describe('calculate_hash tool', () => {
     assert.equal(
       sc1['hashes']['sha256'],
       sc2['hashes']['sha256'],
-      'Same content should produce same hash'
+      'Same content should produce same hash',
     );
   });
 
@@ -122,19 +116,19 @@ describe('calculate_hash tool', () => {
       await env.client.callTool({
         name: 'calculate_hash',
         arguments: { path: mutable },
-      })
+      }),
     );
     await writeFile(mutable, 'version 2', 'utf8');
     const r2 = getStructured(
       await env.client.callTool({
         name: 'calculate_hash',
         arguments: { path: mutable },
-      })
+      }),
     );
     assert.notEqual(
       r1['hashes']['sha256'],
       r2['hashes']['sha256'],
-      'Different content should produce different hash'
+      'Different content should produce different hash',
     );
   });
 
@@ -172,11 +166,7 @@ describe('diff_files tool', () => {
     modified = join(env.tmpDir, 'modified.txt');
     identical = join(env.tmpDir, 'identical.txt');
     await writeFile(original, 'line one\nline two\nline three\n', 'utf8');
-    await writeFile(
-      modified,
-      'line one\nline TWO CHANGED\nline three\n',
-      'utf8'
-    );
+    await writeFile(modified, 'line one\nline TWO CHANGED\nline three\n', 'utf8');
     await writeFile(identical, 'line one\nline two\nline three\n', 'utf8');
   });
 

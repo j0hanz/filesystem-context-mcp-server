@@ -39,16 +39,9 @@ describe('stat tool', () => {
     // P2 metadata-only: verify content has only summary text, no resource links
     assert.equal(result.content.length, 1, 'Expected only summary text block');
     assert.equal(result.content[0].type, 'text');
-    const summaryText = (result.content[0] as Record<string, unknown>)
-      .text as string;
-    assert.ok(
-      summaryText.includes('stat:'),
-      'Summary should start with "stat:"'
-    );
-    assert.ok(
-      summaryText.includes('stat-test.txt'),
-      'Summary should include filename'
-    );
+    const summaryText = (result.content[0] as Record<string, unknown>).text as string;
+    assert.ok(summaryText.includes('stat:'), 'Summary should start with "stat:"');
+    assert.ok(summaryText.includes('stat-test.txt'), 'Summary should include filename');
     assert.ok(summaryText.includes('\u2022'), 'Summary should use separator');
 
     // Verify structured content has all metadata fields
@@ -59,21 +52,12 @@ describe('stat tool', () => {
     assert.equal(info['type'], 'file');
     assert.ok(typeof info['size'] === 'number' && info['size'] > 0);
     assert.equal(info['name'], 'stat-test.txt');
-    assert.ok(
-      (info['path'] as string).endsWith('stat-test.txt'),
-      'Path should end with filename'
-    );
+    assert.ok((info['path'] as string).endsWith('stat-test.txt'), 'Path should end with filename');
     assert.ok(info['modified'], 'Should have modified timestamp');
     assert.ok(info['created'], 'Should have created timestamp');
     assert.ok(info['accessed'], 'Should have accessed timestamp');
-    assert.ok(
-      typeof info['permissions'] === 'string',
-      'Should have permissions'
-    );
-    assert.ok(
-      typeof info['isHidden'] === 'boolean',
-      'Should have isHidden flag'
-    );
+    assert.ok(typeof info['permissions'] === 'string', 'Should have permissions');
+    assert.ok(typeof info['isHidden'] === 'boolean', 'Should have isHidden flag');
   });
 
   it('returns dir info for an existing directory', async () => {
@@ -87,8 +71,7 @@ describe('stat tool', () => {
     // P2 metadata-only: verify content has only summary text, no resource links
     assert.equal(result.content.length, 1, 'Expected only summary text block');
     assert.equal(result.content[0].type, 'text');
-    const summaryText = (result.content[0] as Record<string, unknown>)
-      .text as string;
+    const summaryText = (result.content[0] as Record<string, unknown>).text as string;
     assert.ok(summaryText.includes('stat:'), 'Summary should include "stat:"');
 
     // Verify structured content for directory
@@ -145,8 +128,7 @@ describe('stat_many tool', () => {
     // Verify content blocks: first is summary text, second is resource_link
     assert.equal(result.content.length, 2);
     assert.equal(result.content[0].type, 'text');
-    const summaryText =
-      (result.content[0] as Record<string, unknown>).text?.toString() ?? '';
+    const summaryText = (result.content[0] as Record<string, unknown>).text?.toString() ?? '';
     assert.ok(summaryText.includes('stat-many:'));
     assert.ok(summaryText.includes('2 files'));
 
@@ -154,9 +136,7 @@ describe('stat_many tool', () => {
     const resourceLink = result.content[1] as Record<string, unknown>;
     assert.equal(resourceLink['name'], 'stats.json');
     assert.equal(resourceLink['mimeType'], 'application/json');
-    assert.ok(
-      (resourceLink['uri'] as string).includes('filesystem-mcp://result/')
-    );
+    assert.ok((resourceLink['uri'] as string).includes('filesystem-mcp://result/'));
 
     // Verify structured content
     const sc = getStructured(result);
@@ -174,7 +154,7 @@ describe('stat_many tool', () => {
     assert.equal(sc['dirCount'], 0, 'Expected dirCount === 0');
     assert.ok(
       (sc['resourceUri'] as string).includes('filesystem-mcp://result/'),
-      'Expected resourceUri to point to stats.json'
+      'Expected resourceUri to point to stats.json',
     );
   });
 
@@ -221,11 +201,7 @@ describe('stat_many tool', () => {
     assertOk(result);
 
     // Verify single resource_link (not split)
-    assert.equal(
-      result.content.length,
-      2,
-      'Expected summary + one resource_link'
-    );
+    assert.equal(result.content.length, 2, 'Expected summary + one resource_link');
     assert.equal(result.content[1].type, 'resource_link');
 
     const sc = getStructured(result);
@@ -239,7 +215,7 @@ describe('stat_many tool', () => {
     // Verify resourceUri
     assert.ok(
       (sc['resourceUri'] as string).includes('filesystem-mcp://result/'),
-      'Expected valid resourceUri'
+      'Expected valid resourceUri',
     );
   });
 

@@ -1,9 +1,6 @@
 import { Client } from '@modelcontextprotocol/client';
 import type { ElicitResult } from '@modelcontextprotocol/client';
-import {
-  InMemoryTaskMessageQueue,
-  McpServer,
-} from '@modelcontextprotocol/server';
+import { InMemoryTaskMessageQueue, McpServer } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -12,14 +9,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { SENSITIVE_FILE_DENYLIST } from '../src/lib/constants.js';
-import {
-  PathGuard,
-  resolveAllowedDirectoriesState,
-} from '../src/lib/path-guard.js';
-import {
-  createInMemoryResourceStore,
-  type ResourceStore,
-} from '../src/lib/resource-store.js';
+import { PathGuard, resolveAllowedDirectoriesState } from '../src/lib/path-guard.js';
+import { createInMemoryResourceStore, type ResourceStore } from '../src/lib/resource-store.js';
 import { createTaskStore } from '../src/server/task-store.js';
 import { registerAllTools } from '../src/tools.js';
 import type { HandlerContext } from '../src/tools/shared.js';
@@ -51,9 +42,7 @@ export interface TestEnv {
  * singleton to [tmpDir] so path validation works correctly.
  */
 export async function createTestEnv(): Promise<TestEnv> {
-  const tmpDir = await mkdtemp(
-    join(tmpdir(), `fsmcp-${randomUUID().slice(0, 8)}-`)
-  );
+  const tmpDir = await mkdtemp(join(tmpdir(), `fsmcp-${randomUUID().slice(0, 8)}-`));
 
   const taskStore = createTaskStore();
 
@@ -74,7 +63,7 @@ export async function createTestEnv(): Promise<TestEnv> {
           taskMessageQueue: new InMemoryTaskMessageQueue(),
         },
       },
-    }
+    },
   );
 
   const resourceStore = createInMemoryResourceStore();
@@ -121,12 +110,8 @@ export type ElicitationHandler = (params: {
  * Like createTestEnv but the MCP client advertises `elicitation: {}` capability
  * and delegates all elicitation/create requests to `handler`.
  */
-export async function createTestEnvWithElicitation(
-  handler: ElicitationHandler
-): Promise<TestEnv> {
-  const tmpDir = await mkdtemp(
-    join(tmpdir(), `fsmcp-${randomUUID().slice(0, 8)}-`)
-  );
+export async function createTestEnvWithElicitation(handler: ElicitationHandler): Promise<TestEnv> {
+  const tmpDir = await mkdtemp(join(tmpdir(), `fsmcp-${randomUUID().slice(0, 8)}-`));
 
   const taskStore = createTaskStore();
 
@@ -147,7 +132,7 @@ export async function createTestEnvWithElicitation(
           taskMessageQueue: new InMemoryTaskMessageQueue(),
         },
       },
-    }
+    },
   );
 
   const resourceStore = createInMemoryResourceStore();
@@ -164,7 +149,7 @@ export async function createTestEnvWithElicitation(
   // Client advertises elicitation capability so the server will call elicitInput
   const client = new Client(
     { name: 'test-client', version: '1.0.0' },
-    { capabilities: { elicitation: {} } }
+    { capabilities: { elicitation: {} } },
   );
 
   // Register the elicitation handler for server→client elicitation/create requests.
@@ -174,8 +159,8 @@ export async function createTestEnvWithElicitation(
         mode: string;
         message: string;
         requestedSchema: unknown;
-      }
-    )
+      },
+    ),
   );
 
   const [ct, st] = LinkedTransport.createLinkedPair();
@@ -208,15 +193,12 @@ export function assertToolError(result: unknown, expectedCode?: string): void {
   const r = result as ToolResult;
   assert.equal(r.isError, true, 'Expected isError to be true');
   const textBlock = r.content.find(
-    (b): b is { type: string; text: string } => typeof b.text === 'string'
+    (b): b is { type: string; text: string } => typeof b.text === 'string',
   );
   assert.ok(textBlock, 'Error result must have a text block');
   if (expectedCode !== undefined) {
     const match = /^([A-Z][A-Z_]+):/.exec(textBlock.text);
-    assert.ok(
-      match,
-      `Expected "${expectedCode}: …" pattern in:\n${textBlock.text}`
-    );
+    assert.ok(match, `Expected "${expectedCode}: …" pattern in:\n${textBlock.text}`);
     assert.equal(match[1], expectedCode);
   }
 }
@@ -229,16 +211,11 @@ export function assertOk(result: unknown): void {
   const r = result as ToolResult;
   if (r.isError === true) {
     const textBlock = r.content.find(
-      (b): b is { type: string; text: string } => typeof b.text === 'string'
+      (b): b is { type: string; text: string } => typeof b.text === 'string',
     );
-    assert.fail(
-      `Expected success, got error: ${textBlock?.text ?? 'unknown error'}`
-    );
+    assert.fail(`Expected success, got error: ${textBlock?.text ?? 'unknown error'}`);
   }
-  assert.ok(
-    r.content.length > 0,
-    'Result must have at least one content block'
-  );
+  assert.ok(r.content.length > 0, 'Result must have at least one content block');
 }
 
 /**
@@ -250,7 +227,7 @@ export function getStructured(result: unknown): Record<string, unknown> {
   const sc = r.structuredContent;
   assert.ok(
     sc !== undefined && sc !== null,
-    'structuredContent must be present on success results'
+    'structuredContent must be present on success results',
   );
   return sc as Record<string, unknown>;
 }
@@ -259,9 +236,7 @@ export function getStructured(result: unknown): Record<string, unknown> {
  * Create a stub HandlerContext for unit tests.
  * Allows tests to call tool.handle() directly without full MCP server setup.
  */
-export function makeHandlerContext(
-  overrides?: Partial<HandlerContext>
-): HandlerContext {
+export function makeHandlerContext(overrides?: Partial<HandlerContext>): HandlerContext {
   return {
     pathGuard: new PathGuard(SENSITIVE_FILE_DENYLIST),
     resourceStore: undefined,
@@ -284,7 +259,7 @@ export async function readResourceLink(
       uri?: string;
       [key: string]: unknown;
     }[];
-  }
+  },
 ): Promise<{
   text?: string;
   blob?: Buffer;

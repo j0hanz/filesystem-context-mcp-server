@@ -18,10 +18,10 @@ function logInvalidEnvValue(
   envVar: string,
   value: string,
   expected: string,
-  defaultValue: number | boolean
+  defaultValue: number | boolean,
 ): void {
   Logger.warn(
-    `Invalid ${envVar} value: ${value} (must be ${expected}). Using default: ${String(defaultValue)}`
+    `Invalid ${envVar} value: ${value} (must be ${expected}). Using default: ${String(defaultValue)}`,
   );
 }
 
@@ -30,19 +30,14 @@ export function parseEnvInt(
   envVar: string,
   defaultValue: number,
   min: number,
-  max: number
+  max: number,
 ): number {
   const value = process.env[envVar];
   if (!value) return defaultValue;
 
   const parsed = parseInt(value, 10);
   if (Number.isNaN(parsed) || parsed < min || parsed > max) {
-    logInvalidEnvValue(
-      envVar,
-      value,
-      `${String(min)}-${String(max)}`,
-      defaultValue
-    );
+    logInvalidEnvValue(envVar, value, `${String(min)}-${String(max)}`, defaultValue);
     return defaultValue;
   }
   return parsed;
@@ -86,10 +81,7 @@ const VALID_LOG_LEVELS = [
 
 type ValidLogLevel = (typeof VALID_LOG_LEVELS)[number];
 
-function parseEnvLogLevel(
-  envVar: string,
-  defaultValue: ValidLogLevel
-): ValidLogLevel {
+function parseEnvLogLevel(envVar: string, defaultValue: ValidLogLevel): ValidLogLevel {
   const value = process.env[envVar];
   if (!value) return defaultValue;
   const normalized = value.trim().toLowerCase();
@@ -97,15 +89,12 @@ function parseEnvLogLevel(
     return normalized as ValidLogLevel;
   }
   Logger.warn(
-    `Invalid ${envVar} value: ${value} (must be ${VALID_LOG_LEVELS.join('|')}). Using default: ${defaultValue}`
+    `Invalid ${envVar} value: ${value} (must be ${VALID_LOG_LEVELS.join('|')}). Using default: ${defaultValue}`,
   );
   return defaultValue;
 }
 
-export const DEFAULT_LOG_LEVEL = parseEnvLogLevel(
-  'FILESYSTEM_MCP_LOG_LEVEL',
-  'info'
-);
+export const DEFAULT_LOG_LEVEL = parseEnvLogLevel('FILESYSTEM_MCP_LOG_LEVEL', 'info');
 
 // Default TTL for MCP tasks when the client does not specify one (5 minutes).
 export const DEFAULT_TASK_TTL_MS = 5 * 60 * 1000;
@@ -113,13 +102,13 @@ export const MAX_TASK_TTL_MS = parseEnvInt(
   'FILESYSTEM_MCP_MAX_TASK_TTL_MS',
   60 * 60 * 1000,
   1_000,
-  24 * 60 * 60 * 1000
+  24 * 60 * 60 * 1000,
 );
 export const MAX_CONCURRENT_TASKS = parseEnvInt(
   'FILESYSTEM_MCP_MAX_CONCURRENT_TASKS',
   100,
   1,
-  10_000
+  10_000,
 );
 
 export const TASK_CANCEL_POLL_MS = 2_000;
@@ -128,9 +117,7 @@ export function getInitHandshakeTimeoutMs(): number {
   return parseEnvInt('FS_INIT_HANDSHAKE_TIMEOUT_MS', 30_000, 1_000, 300_000);
 }
 
-export const INIT_TIMEOUT_CLOSE = parseTrueEnvFlag(
-  process.env.FS_INIT_TIMEOUT_CLOSE
-);
+export const INIT_TIMEOUT_CLOSE = parseTrueEnvFlag(process.env.FS_INIT_TIMEOUT_CLOSE);
 
 export const TASK_POLL_INTERVAL_MS = 500;
 
@@ -148,11 +135,7 @@ function getAvailableMemory(): number | undefined {
   return available;
 }
 
-function applyMemoryBound(
-  cpuBound: number,
-  bytesPerUnit: number,
-  minValue: number
-): number {
+function applyMemoryBound(cpuBound: number, bytesPerUnit: number, minValue: number): number {
   const availableMemory = getAvailableMemory();
   if (availableMemory === undefined) return cpuBound;
   const memoryBound = Math.floor(availableMemory / bytesPerUnit);
@@ -173,35 +156,20 @@ function getDefaultSearchWorkers(): number {
 export const PARALLEL_CONCURRENCY = getOptimalParallelism();
 
 // Configurable via environment variables
-export const MAX_SEARCHABLE_FILE_SIZE = parseEnvInt(
-  'MAX_SEARCH_SIZE',
-  MIB,
-  100 * KIB,
-  10 * MIB
-);
-export const MAX_TEXT_FILE_SIZE = parseEnvInt(
-  'MAX_FILE_SIZE',
-  10 * MIB,
-  MIB,
-  100 * MIB
-);
+export const MAX_SEARCHABLE_FILE_SIZE = parseEnvInt('MAX_SEARCH_SIZE', MIB, 100 * KIB, 10 * MIB);
+export const MAX_TEXT_FILE_SIZE = parseEnvInt('MAX_FILE_SIZE', 10 * MIB, MIB, 100 * MIB);
 
 export const DEFAULT_READ_MANY_MAX_TOTAL_SIZE = parseEnvInt(
   'MAX_READ_MANY_TOTAL_SIZE',
   512 * KIB,
   10 * KIB,
-  100 * MIB
+  100 * MIB,
 );
 
 /** Default line chunk size for read continuation when no explicit range was given. */
 export const DEFAULT_CONTINUATION_CHUNK_SIZE = 200;
 
-export const DEFAULT_SEARCH_TIMEOUT_MS = parseEnvInt(
-  'DEFAULT_SEARCH_TIMEOUT',
-  5000,
-  100,
-  60000
-);
+export const DEFAULT_SEARCH_TIMEOUT_MS = parseEnvInt('DEFAULT_SEARCH_TIMEOUT', 5000, 100, 60000);
 
 const ALLOW_SENSITIVE_FILES = parseEnvBool('FS_CONTEXT_ALLOW_SENSITIVE', false);
 const ENV_DENYLIST = parseEnvList('FS_CONTEXT_DENYLIST');
@@ -215,41 +183,23 @@ export const SEARCH_WORKERS = parseEnvInt(
   'FS_CONTEXT_SEARCH_WORKERS',
   getDefaultSearchWorkers(),
   1,
-  16
+  16,
 );
 
-const WORKER_POOL_MAX_DEFAULT = Math.min(
-  4,
-  Math.max(1, availableParallelism() - 1)
-);
+const WORKER_POOL_MAX_DEFAULT = Math.min(4, Math.max(1, availableParallelism() - 1));
 
-export const WORKER_POOL_MAX = parseEnvInt(
-  'FS_WORKER_POOL_MAX',
-  WORKER_POOL_MAX_DEFAULT,
-  1,
-  16
-);
+export const WORKER_POOL_MAX = parseEnvInt('FS_WORKER_POOL_MAX', WORKER_POOL_MAX_DEFAULT, 1, 16);
 
-export const WORKER_IDLE_TIMEOUT_MS = parseEnvInt(
-  'FS_WORKER_IDLE_MS',
-  30_000,
-  1_000,
-  10 * 60_000
-);
+export const WORKER_IDLE_TIMEOUT_MS = parseEnvInt('FS_WORKER_IDLE_MS', 30_000, 1_000, 10 * 60_000);
 
 export const WORKER_OFFLOAD_THRESHOLD_BYTES = parseEnvInt(
   'FS_WORKER_OFFLOAD_THRESHOLD',
   256 * KIB,
   KIB,
-  100 * MIB
+  100 * MIB,
 );
 
-export const WORKER_CANCEL_GRACE_MS = parseEnvInt(
-  'FS_WORKER_CANCEL_GRACE_MS',
-  500,
-  0,
-  60_000
-);
+export const WORKER_CANCEL_GRACE_MS = parseEnvInt('FS_WORKER_CANCEL_GRACE_MS', 500, 0, 60_000);
 
 export const WORKERS_DISABLED = parseEnvBool('FS_DISABLE_WORKERS', false);
 

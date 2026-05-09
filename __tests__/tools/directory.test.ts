@@ -33,32 +33,22 @@ describe('roots tool', () => {
     assertOk(result);
 
     // Verify content: terse summary, no resource links
-    assert.equal(
-      result.content.length,
-      1,
-      'Expected exactly one content block'
-    );
+    assert.equal(result.content.length, 1, 'Expected exactly one content block');
     assert.equal(result.content[0].type, 'text', 'Expected text content');
     const summaryText = result.content[0].text;
-    assert.ok(
-      summaryText.startsWith('roots:'),
-      'Expected summary to start with "roots:"'
-    );
-    assert.ok(
-      summaryText.includes('allowed'),
-      'Expected summary to include "allowed"'
-    );
+    assert.ok(summaryText.startsWith('roots:'), 'Expected summary to start with "roots:"');
+    assert.ok(summaryText.includes('allowed'), 'Expected summary to include "allowed"');
 
     // Verify structured content
     const sc = getStructured(result);
     const roots = sc['roots'] as string[];
     assert.ok(
       Array.isArray(roots) && roots.length > 0,
-      'Expected at least one root directory path'
+      'Expected at least one root directory path',
     );
     assert.ok(
       roots.every((r) => typeof r === 'string'),
-      'Expected all roots to be strings'
+      'Expected all roots to be strings',
     );
   });
 });
@@ -90,24 +80,19 @@ describe('ls tool', () => {
     // Verify content blocks: first is summary text, second is resource_link
     assert.equal(result.content.length, 2);
     assert.equal(result.content[0].type, 'text');
-    const summaryText = (result.content[0] as Record<string, unknown>)
-      .text as string;
+    const summaryText = (result.content[0] as Record<string, unknown>).text as string;
     assert.ok(summaryText.includes('list-directory:'));
 
     assert.equal(result.content[1].type, 'resource_link');
     const resourceLink = result.content[1] as Record<string, unknown>;
-    assert.ok(
-      (resourceLink.uri as string).includes('filesystem-mcp://result/')
-    );
+    assert.ok((resourceLink.uri as string).includes('filesystem-mcp://result/'));
     assert.ok((resourceLink.name as string).includes('-listing.json'));
 
     // Verify structured content
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
     assert.ok(sc['resourceUri']);
-    assert.ok(
-      (sc['resourceUri'] as string).includes('filesystem-mcp://result/')
-    );
+    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://result/'));
     assert.ok(sc['entryCount']);
 
     const entries = sc['entries'] as Record<string, unknown>[];
@@ -140,7 +125,7 @@ describe('ls tool', () => {
       await writeFile(
         join(env.tmpDir, `page-${String(index).padStart(2, '0')}.txt`),
         String(index),
-        'utf8'
+        'utf8',
       );
     }
 
@@ -150,10 +135,7 @@ describe('ls tool', () => {
     });
     assertOk(firstPage);
     const firstStructured = getStructured(firstPage);
-    const firstEntries = firstStructured['entries'] as Record<
-      string,
-      unknown
-    >[];
+    const firstEntries = firstStructured['entries'] as Record<string, unknown>[];
     const firstCursor = firstStructured['nextCursor'];
 
     assert.equal(firstEntries.length, 5);
@@ -170,15 +152,12 @@ describe('ls tool', () => {
     });
     assertOk(secondPage);
     const secondStructured = getStructured(secondPage);
-    const secondEntries = secondStructured['entries'] as Record<
-      string,
-      unknown
-    >[];
+    const secondEntries = secondStructured['entries'] as Record<string, unknown>[];
 
     assert.equal(secondEntries.length, 5);
     assert.notDeepEqual(
       firstEntries.map((entry) => entry['name']),
-      secondEntries.map((entry) => entry['name'])
+      secondEntries.map((entry) => entry['name']),
     );
   });
 
@@ -191,7 +170,7 @@ describe('ls tool', () => {
       await writeFile(
         join(manyFilesDir, `file-${String(i).padStart(2, '0')}.txt`),
         `content ${i}`,
-        'utf8'
+        'utf8',
       );
     }
 
@@ -212,8 +191,7 @@ describe('ls tool', () => {
     assert.ok(sc['resourceUri']);
 
     // Verify summary text contains entry count
-    const summaryText = (raw.content[0] as Record<string, unknown>)
-      .text as string;
+    const summaryText = (raw.content[0] as Record<string, unknown>).text as string;
     assert.ok(summaryText.includes('25'));
   });
 });
@@ -245,17 +223,14 @@ describe('tree tool', () => {
     // Verify content blocks: first is summary text, second is resource_link
     assert.equal(result.content.length, 2);
     assert.equal(result.content[0].type, 'text');
-    const summaryText = (result.content[0] as Record<string, unknown>)
-      .text as string;
+    const summaryText = (result.content[0] as Record<string, unknown>).text as string;
     assert.ok(summaryText.includes('tree:'));
     assert.ok(summaryText.includes('entries'));
     assert.ok(summaryText.includes('deep'));
 
     assert.equal(result.content[1].type, 'resource_link');
     const resourceLink = result.content[1] as Record<string, unknown>;
-    assert.ok(
-      (resourceLink.uri as string).includes('filesystem-mcp://result/')
-    );
+    assert.ok((resourceLink.uri as string).includes('filesystem-mcp://result/'));
     assert.ok((resourceLink.name as string).includes('-tree.txt'));
     assert.equal(resourceLink.mimeType, 'text/plain');
 
@@ -264,9 +239,7 @@ describe('tree tool', () => {
     assert.equal(sc['ok'], true);
     assert.ok(sc['tree'] !== undefined, 'Expected tree field');
     assert.ok(sc['resourceUri']);
-    assert.ok(
-      (sc['resourceUri'] as string).includes('filesystem-mcp://result/')
-    );
+    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://result/'));
     assert.ok(typeof sc['entryCount'] === 'number');
     assert.ok(typeof sc['maxDepth'] === 'number');
     assert.ok(sc['entryCount'] > 0);
@@ -308,8 +281,7 @@ describe('tree tool', () => {
     assert.ok(maxDepth >= 5, `Expected maxDepth >= 5, got ${maxDepth}`);
 
     // Verify summary includes depth info
-    const summaryText = (result.content[0] as Record<string, unknown>)
-      .text as string;
+    const summaryText = (result.content[0] as Record<string, unknown>).text as string;
     assert.ok(summaryText.includes('deep'));
     assert.ok(summaryText.includes('level'));
   });
@@ -340,13 +312,13 @@ describe('mkdir tool', () => {
     assert.equal(
       raw.content.length,
       1,
-      'Expected exactly one content block (P3 confirmation-only pattern)'
+      'Expected exactly one content block (P3 confirmation-only pattern)',
     );
     assert.equal(raw.content[0].type, 'text', 'Expected text content');
     const summaryText = raw.content[0].text;
     assert.ok(
       summaryText.startsWith('create-directory:'),
-      'Expected summary to start with "create-directory:"'
+      'Expected summary to start with "create-directory:"',
     );
 
     // Verify structured content has path and ok (P3 pattern)
@@ -357,12 +329,12 @@ describe('mkdir tool', () => {
     assert.equal(
       createdPath.toLowerCase(),
       newDir.toLowerCase(),
-      'Expected path field to be the created directory path'
+      'Expected path field to be the created directory path',
     );
     // Verify summary contains the path (case-insensitive)
     assert.ok(
       summaryText.toLowerCase().includes(createdPath.toLowerCase()),
-      'Expected summary to include the created path'
+      'Expected summary to include the created path',
     );
 
     // Verify directory was actually created
@@ -394,7 +366,7 @@ describe('mkdir tool', () => {
     assert.equal(
       (sc['path'] as string).toLowerCase(),
       d1.toLowerCase(),
-      'Expected path to be the first directory in the array'
+      'Expected path to be the first directory in the array',
     );
     // Only d1 should be created
     assert.ok((await stat(d1)).isDirectory());
@@ -437,13 +409,13 @@ describe('rm tool', () => {
     assert.equal(
       raw.content.length,
       1,
-      'Expected exactly one content block (P3 confirmation-only pattern)'
+      'Expected exactly one content block (P3 confirmation-only pattern)',
     );
     assert.equal(raw.content[0].type, 'text', 'Expected text content');
     const summaryText = raw.content[0].text;
     assert.ok(
       summaryText.startsWith('delete-file:'),
-      'Expected summary to start with "delete-file:"'
+      'Expected summary to start with "delete-file:"',
     );
 
     // Verify structured content has path and ok (P3 pattern)
@@ -454,12 +426,12 @@ describe('rm tool', () => {
     assert.equal(
       deletedPath.toLowerCase(),
       file.toLowerCase(),
-      'Expected path field to be the deleted file path'
+      'Expected path field to be the deleted file path',
     );
     // Verify summary contains the path (case-insensitive)
     assert.ok(
       summaryText.toLowerCase().includes(deletedPath.toLowerCase()),
-      'Expected summary to include the deleted path'
+      'Expected summary to include the deleted path',
     );
 
     // Verify file was actually deleted
@@ -480,13 +452,13 @@ describe('rm tool', () => {
     assert.equal(
       raw.content.length,
       1,
-      'Expected exactly one content block (P3 confirmation-only pattern)'
+      'Expected exactly one content block (P3 confirmation-only pattern)',
     );
     assert.equal(raw.content[0].type, 'text', 'Expected text content');
     const summaryText = raw.content[0].text;
     assert.ok(
       summaryText.startsWith('delete-file:'),
-      'Expected summary to start with "delete-file:"'
+      'Expected summary to start with "delete-file:"',
     );
 
     // Verify structured content has path and ok (P3 pattern)
@@ -556,18 +528,12 @@ describe('mv tool', () => {
     assert.equal(
       raw.content.length,
       1,
-      'Expected exactly one content block (P3 confirmation-only pattern)'
+      'Expected exactly one content block (P3 confirmation-only pattern)',
     );
     assert.equal(raw.content[0].type, 'text', 'Expected text content');
     const summaryText = raw.content[0].text;
-    assert.ok(
-      summaryText.startsWith('move-file:'),
-      'Expected summary to start with "move-file:"'
-    );
-    assert.ok(
-      summaryText.includes('→'),
-      'Expected summary to include arrow (→) separator'
-    );
+    assert.ok(summaryText.startsWith('move-file:'), 'Expected summary to start with "move-file:"');
+    assert.ok(summaryText.includes('→'), 'Expected summary to include arrow (→) separator');
 
     // Verify structured content has from/to/ok (P3 pattern)
     const sc = getStructured(raw);
@@ -575,12 +541,12 @@ describe('mv tool', () => {
     assert.equal(
       (sc['from'] as string).toLowerCase(),
       src.toLowerCase(),
-      'Expected from field to be source path'
+      'Expected from field to be source path',
     );
     assert.equal(
       (sc['to'] as string).toLowerCase(),
       dst.toLowerCase(),
-      'Expected to field to be destination path'
+      'Expected to field to be destination path',
     );
 
     // Verify file was actually moved

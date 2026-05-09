@@ -1,8 +1,4 @@
-import {
-  completable,
-  type GetPromptResult,
-  type McpServer,
-} from '@modelcontextprotocol/server';
+import { completable, type GetPromptResult, type McpServer } from '@modelcontextprotocol/server';
 
 import { z } from 'zod/v4';
 
@@ -27,9 +23,7 @@ const ANALYZE_PATH_PROMPT_DESCRIPTION =
 
 const SECTION_HEADER_RE = /^\s*([A-Z][A-Za-z ]*):\s*$/u;
 
-function findSectionStarts(
-  instructions: string
-): { name: string; line: number }[] {
+function findSectionStarts(instructions: string): { name: string; line: number }[] {
   const lines = instructions.split('\n');
   const sections: { name: string; line: number }[] = [];
   for (let i = 0; i < lines.length; i++) {
@@ -41,10 +35,7 @@ function findSectionStarts(
   return sections;
 }
 
-function filterInstructionsByTopic(
-  instructions: string,
-  topic: string
-): string {
+function filterInstructionsByTopic(instructions: string, topic: string): string {
   const normalized = topic.trim().toLowerCase();
   if (!normalized) return instructions;
 
@@ -73,12 +64,12 @@ function filterByPrefix(values: string[], prefix: string): string[] {
 export function registerGetHelpPrompt(
   server: McpServer,
   instructions: string,
-  iconInfo?: IconInfo
+  iconInfo?: IconInfo,
 ): void {
   const topics = extractTopics(instructions);
   const baseConfig = withDefaultIcons(
     { title: HELP_PROMPT_TITLE, description: HELP_PROMPT_DESCRIPTION },
-    iconInfo
+    iconInfo,
   );
 
   server.registerPrompt(
@@ -90,16 +81,14 @@ export function registerGetHelpPrompt(
           z
             .string()
             .describe(
-              'Optional section heading prefix (example: "error handling"). Omit to return full instructions.'
+              'Optional section heading prefix (example: "error handling"). Omit to return full instructions.',
             ),
-          (value) => filterByPrefix(topics, value)
+          (value) => filterByPrefix(topics, value),
         ).optional(),
       }),
     },
     ({ topic }): GetPromptResult => {
-      const text = topic
-        ? filterInstructionsByTopic(instructions, topic)
-        : instructions;
+      const text = topic ? filterInstructionsByTopic(instructions, topic) : instructions;
       return {
         description: HELP_PROMPT_DESCRIPTION,
         messages: [
@@ -113,14 +102,14 @@ export function registerGetHelpPrompt(
           },
         ],
       };
-    }
+    },
   );
 }
 
 export function registerCompareFilesPrompt(
   server: McpServer,
   pathGuard: PathGuard,
-  iconInfo?: IconInfo
+  iconInfo?: IconInfo,
 ): void {
   server.registerPrompt(
     COMPARE_FILES_PROMPT_NAME,
@@ -130,33 +119,27 @@ export function registerCompareFilesPrompt(
           title: COMPARE_FILES_PROMPT_TITLE,
           description: COMPARE_FILES_PROMPT_DESCRIPTION,
         },
-        iconInfo
+        iconInfo,
       ),
       argsSchema: z.strictObject({
-        original: completable(
-          z.string().describe('Path to the original file.'),
-          (value, ctx) => {
-            const opts: Parameters<typeof completePathCached>[1] = {
-              server,
-              pathGuard,
-              argumentName: 'original',
-            };
-            if (ctx?.arguments) opts.contextArguments = ctx.arguments;
-            return completePathCached(value, opts);
-          }
-        ),
-        modified: completable(
-          z.string().describe('Path to the modified file.'),
-          (value, ctx) => {
-            const opts: Parameters<typeof completePathCached>[1] = {
-              server,
-              pathGuard,
-              argumentName: 'modified',
-            };
-            if (ctx?.arguments) opts.contextArguments = ctx.arguments;
-            return completePathCached(value, opts);
-          }
-        ),
+        original: completable(z.string().describe('Path to the original file.'), (value, ctx) => {
+          const opts: Parameters<typeof completePathCached>[1] = {
+            server,
+            pathGuard,
+            argumentName: 'original',
+          };
+          if (ctx?.arguments) opts.contextArguments = ctx.arguments;
+          return completePathCached(value, opts);
+        }),
+        modified: completable(z.string().describe('Path to the modified file.'), (value, ctx) => {
+          const opts: Parameters<typeof completePathCached>[1] = {
+            server,
+            pathGuard,
+            argumentName: 'modified',
+          };
+          if (ctx?.arguments) opts.contextArguments = ctx.arguments;
+          return completePathCached(value, opts);
+        }),
       }),
     },
     ({ original, modified }): GetPromptResult => ({
@@ -171,14 +154,14 @@ export function registerCompareFilesPrompt(
           },
         },
       ],
-    })
+    }),
   );
 }
 
 export function registerAnalyzePathPrompt(
   server: McpServer,
   pathGuard: PathGuard,
-  iconInfo?: IconInfo
+  iconInfo?: IconInfo,
 ): void {
   server.registerPrompt(
     ANALYZE_PATH_PROMPT_NAME,
@@ -188,21 +171,18 @@ export function registerAnalyzePathPrompt(
           title: ANALYZE_PATH_PROMPT_TITLE,
           description: ANALYZE_PATH_PROMPT_DESCRIPTION,
         },
-        iconInfo
+        iconInfo,
       ),
       argsSchema: z.strictObject({
-        path: completable(
-          z.string().describe('Absolute path to analyze.'),
-          (value, ctx) => {
-            const opts: Parameters<typeof completePathCached>[1] = {
-              server,
-              pathGuard,
-              argumentName: 'path',
-            };
-            if (ctx?.arguments) opts.contextArguments = ctx.arguments;
-            return completePathCached(value, opts);
-          }
-        ),
+        path: completable(z.string().describe('Absolute path to analyze.'), (value, ctx) => {
+          const opts: Parameters<typeof completePathCached>[1] = {
+            server,
+            pathGuard,
+            argumentName: 'path',
+          };
+          if (ctx?.arguments) opts.contextArguments = ctx.arguments;
+          return completePathCached(value, opts);
+        }),
       }),
     },
     ({ path: targetPath }): GetPromptResult => ({
@@ -217,6 +197,6 @@ export function registerAnalyzePathPrompt(
           },
         },
       ],
-    })
+    }),
   );
 }

@@ -9,11 +9,7 @@ describe('createTimedAbortSignal', () => {
     const { signal, cleanup } = createTimedAbortSignal(undefined, 50);
     try {
       await sleep(100);
-      assert.equal(
-        signal.aborted,
-        true,
-        'Signal must be aborted after timeout'
-      );
+      assert.equal(signal.aborted, true, 'Signal must be aborted after timeout');
       assert.equal(signal.reason?.name, 'TimeoutError');
     } finally {
       cleanup();
@@ -24,11 +20,7 @@ describe('createTimedAbortSignal', () => {
     const { signal, cleanup } = createTimedAbortSignal(undefined, 100);
     cleanup(); // cancel before timeout fires
     await sleep(150); // wait longer than the timeout
-    assert.equal(
-      signal.aborted,
-      false,
-      'Signal must NOT be aborted after cleanup'
-    );
+    assert.equal(signal.aborted, false, 'Signal must NOT be aborted after cleanup');
   });
 
   it('returns a noop signal when no timeout and no base signal', () => {

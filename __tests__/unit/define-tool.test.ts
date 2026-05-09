@@ -27,7 +27,7 @@ type TestOutput = z.infer<typeof TestOutputSchema>;
 
 type MockHandler = (
   args: TestInput,
-  ctx: Record<string, unknown>
+  ctx: Record<string, unknown>,
 ) => Promise<ToolResult<TestOutput>>;
 
 const TEST_CONTRACT: ToolContract = {
@@ -125,7 +125,7 @@ test('defineTool: run receives args and HandlerContext with signal', async (): P
       log: undefined,
       signal: new AbortController().signal,
       _meta: {},
-    }
+    },
   );
 
   assert.ok(!result.isError, 'result is not an error');
@@ -163,7 +163,7 @@ test('defineTool: default diagnosticsContext extracts path from args', async ():
       log: undefined,
       signal: new AbortController().signal,
       _meta: {},
-    }
+    },
   );
 });
 
@@ -178,15 +178,11 @@ test('defineTool: custom diagnosticsContext is used', async (): Promise<void> =>
       }),
     },
     run: async () => buildToolResponse('test', { ok: true, result: 'success' }),
-    diagnosticsContext: (args: ExtendedInput) =>
-      args.path ? { path: args.path } : {},
+    diagnosticsContext: (args: ExtendedInput) => (args.path ? { path: args.path } : {}),
   });
 
   let capturedHandler:
-    | ((
-        args: ExtendedInput,
-        ctx: Record<string, unknown>
-      ) => Promise<ToolResult<TestOutput>>)
+    | ((args: ExtendedInput, ctx: Record<string, unknown>) => Promise<ToolResult<TestOutput>>)
     | undefined;
   const mockServer = {
     registerTool: (
@@ -194,8 +190,8 @@ test('defineTool: custom diagnosticsContext is used', async (): Promise<void> =>
       _schema: unknown,
       handler: (
         args: ExtendedInput,
-        ctx: Record<string, unknown>
-      ) => Promise<ToolResult<TestOutput>>
+        ctx: Record<string, unknown>,
+      ) => Promise<ToolResult<TestOutput>>,
     ): void => {
       capturedHandler = handler;
     },
@@ -218,7 +214,7 @@ test('defineTool: custom diagnosticsContext is used', async (): Promise<void> =>
       log: undefined,
       signal: new AbortController().signal,
       _meta: {},
-    }
+    },
   );
 });
 
@@ -230,11 +226,7 @@ test('defineTool: progressMessage is forwarded to registerStandardTool', (): voi
   });
 
   const mockServer = {
-    registerTool: (
-      _name: string,
-      _schema: unknown,
-      _handler: unknown
-    ): void => {
+    registerTool: (_name: string, _schema: unknown, _handler: unknown): void => {
       // Verify option is accepted
     },
   } as unknown as McpServer;
@@ -250,16 +242,11 @@ test('defineTool: completionMessage is forwarded to registerStandardTool', (): v
   const tool = defineTool<TestInput, TestOutput>({
     contract: TEST_CONTRACT,
     run: async () => buildToolResponse('test', { ok: true, result: 'success' }),
-    completionMessage: (args, result) =>
-      result.isError ? 'Failed' : `Done: ${args.message}`,
+    completionMessage: (args, result) => (result.isError ? 'Failed' : `Done: ${args.message}`),
   });
 
   const mockServer = {
-    registerTool: (
-      _name: string,
-      _schema: unknown,
-      _handler: unknown
-    ): void => {
+    registerTool: (_name: string, _schema: unknown, _handler: unknown): void => {
       // Verify option is accepted
     },
   } as unknown as McpServer;
@@ -296,7 +283,7 @@ test('defineTool: handler returns not-initialized error when guard fails', async
       log: undefined,
       signal: new AbortController().signal,
       _meta: {},
-    }
+    },
   );
 
   assert.ok(result.isError, 'result is an error when not initialized');
@@ -333,7 +320,7 @@ test('defineTool: handler validates output schema', async (): Promise<void> => {
       log: undefined,
       signal: new AbortController().signal,
       _meta: {},
-    }
+    },
   );
 
   assert.ok(result.isError, 'result is an error when output validation fails');
@@ -366,7 +353,7 @@ test('defineTool: handler returns formatted error on thrown exception', async ()
       log: undefined,
       signal: new AbortController().signal,
       _meta: {},
-    }
+    },
   );
 
   assert.ok(result.isError, 'result is an error');
@@ -401,7 +388,7 @@ test('defineTool: defaultErrorCode is used in error responses', async (): Promis
       log: undefined,
       signal: new AbortController().signal,
       _meta: {},
-    }
+    },
   );
 
   assert.ok(result.isError);
@@ -440,7 +427,7 @@ test('defineTool: resourceStore is injected into ToolRunContext', async (): Prom
       log: undefined,
       signal: new AbortController().signal,
       _meta: {},
-    }
+    },
   );
 
   assert.equal(capturedResourceStore, mockResourceStore);
@@ -462,7 +449,7 @@ test('defineTool: handle is callable directly without MCP server setup', async (
   // Call handle directly without any MCP machinery
   const result = await tool.handle(
     { message: 'hello' },
-    { pathGuard: null as unknown as PathGuard, resourceStore: undefined }
+    { pathGuard: null as unknown as PathGuard, resourceStore: undefined },
   );
 
   assert.ok(!result.isError, 'result should not be an error');

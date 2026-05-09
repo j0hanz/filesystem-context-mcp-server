@@ -70,7 +70,7 @@ function buildFileInfoResult(
   isSymlink: boolean,
   stats: Stats,
   mimeType: string | undefined,
-  symlinkTarget: string | undefined
+  symlinkTarget: string | undefined,
 ): FileInfo {
   const tokenEstimate = stats.isFile() ? Math.ceil(stats.size / 4) : undefined;
   return {
@@ -91,7 +91,7 @@ function buildFileInfoResult(
 
 async function getSymlinkTarget(
   pathToRead: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<string | undefined> {
   assertNotAborted(signal);
   try {
@@ -108,10 +108,7 @@ interface FileInfoOptions {
   pathGuard: PathGuard;
 }
 
-async function getFileInfo(
-  filePath: string,
-  options: FileInfoOptions
-): Promise<FileInfo> {
+async function getFileInfo(filePath: string, options: FileInfoOptions): Promise<FileInfo> {
   const { signal, pathGuard } = options;
   assertNotAborted(signal);
 
@@ -123,23 +120,13 @@ async function getFileInfo(
   const { base: name, ext: rawExt } = parse(requestedPath);
   const ext = rawExt.toLowerCase();
   const includeMimeType = options.includeMimeType !== false;
-  const mimeType =
-    includeMimeType && ext.length > 0 ? getMimeType(ext) : undefined;
+  const mimeType = includeMimeType && ext.length > 0 ? getMimeType(ext) : undefined;
 
-  const symlinkTarget = isSymlink
-    ? await getSymlinkTarget(requestedPath, signal)
-    : undefined;
+  const symlinkTarget = isSymlink ? await getSymlinkTarget(requestedPath, signal) : undefined;
 
   const stats = await withAbort(stat(resolvedPath), signal);
 
-  return buildFileInfoResult(
-    name,
-    requestedPath,
-    isSymlink,
-    stats,
-    mimeType,
-    symlinkTarget
-  );
+  return buildFileInfoResult(name, requestedPath, isSymlink, stats, mimeType, symlinkTarget);
 }
 
 function formatFileInfoSummary(info: FileInfo): string {
@@ -155,7 +142,7 @@ type StatOutput = z.infer<typeof StatOutputSchema>;
 
 const statMessages = buildPathMessages<StatInput, StatOutput>(
   GET_FILE_INFO_TOOL.title,
-  (sc) => `${sc.file.name} \u2022 ${formatBytes(sc.file.size)}`
+  (sc) => `${sc.file.name} \u2022 ${formatBytes(sc.file.size)}`,
 );
 
 export const GET_FILE_INFO = defineTool<StatInput, StatOutput>({

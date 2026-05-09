@@ -1,7 +1,4 @@
-import {
-  hostHeaderValidation,
-  localhostHostValidation,
-} from '@modelcontextprotocol/express';
+import { hostHeaderValidation, localhostHostValidation } from '@modelcontextprotocol/express';
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import {
   InMemoryTaskMessageQueue,
@@ -66,15 +63,11 @@ interface CapabilityOptions {
   enableTaskToolRequests?: boolean;
 }
 
-type ServerCapabilities = NonNullable<
-  ConstructorParameters<typeof McpServer>[1]
->['capabilities'];
+type ServerCapabilities = NonNullable<ConstructorParameters<typeof McpServer>[1]>['capabilities'];
 
 type NonOptionalServerCapabilities = NonNullable<ServerCapabilities>;
 
-function buildServerCapabilities(
-  options: CapabilityOptions = {}
-): NonOptionalServerCapabilities {
+function buildServerCapabilities(options: CapabilityOptions = {}): NonOptionalServerCapabilities {
   const capabilities: NonOptionalServerCapabilities = {
     logging: {},
     resources: { subscribe: true, listChanged: true },
@@ -145,9 +138,7 @@ function getLocalIconInfo(): Promise<IconInfo | undefined> {
   return cachedIconInfo;
 }
 
-export async function createServer(
-  options: ServerOptions = {}
-): Promise<{ server: McpServer }> {
+export async function createServer(options: ServerOptions = {}): Promise<{ server: McpServer }> {
   const resourceStore = createInMemoryResourceStore();
   const localIcon = await getLocalIconInfo();
   const capabilities = buildServerCapabilities({
@@ -163,14 +154,12 @@ export async function createServer(
     };
   }
 
-  const hasTaskSupport =
-    capabilities.tasks?.requests?.tools?.call !== undefined;
+  const hasTaskSupport = capabilities.tasks?.requests?.tools?.call !== undefined;
 
-  const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> =
-    {
-      capabilities,
-      enforceStrictCapabilities: true,
-    };
+  const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> = {
+    capabilities,
+    enforceStrictCapabilities: true,
+  };
 
   serverConfig.instructions =
     'filesystem-mcp: Secure local filesystem MCP server. ' +
@@ -186,9 +175,9 @@ export async function createServer(
         ...(SERVER_DESCRIPTION ? { description: SERVER_DESCRIPTION } : {}),
         ...(SERVER_HOMEPAGE ? { websiteUrl: SERVER_HOMEPAGE } : {}),
       },
-      localIcon
+      localIcon,
     ),
-    serverConfig
+    serverConfig,
   );
 
   const loggingState = createLoggingState(DEFAULT_LOG_LEVEL);
@@ -197,14 +186,11 @@ export async function createServer(
 
   // Subscribe to Logger channel if not already done, but we need to route based on session or fallback to this server if it's stdio.
   // Wait, in stdio there's only one server. In HTTP there are multiple.
-  server.server.setRequestHandler(
-    'logging/setLevel',
-    (req: SetLevelRequest) => {
-      loggingState.minimumLevel = req.params.level;
-      Logger.notice(`Log level set to ${req.params.level}`);
-      return {};
-    }
-  );
+  server.server.setRequestHandler('logging/setLevel', (req: SetLevelRequest) => {
+    loggingState.minimumLevel = req.params.level;
+    Logger.notice(`Log level set to ${req.params.level}`);
+    return {};
+  });
 
   // Track stdio server by default; HTTP overrides per-session via the registry.
   logRouter.attachStdio({ server, loggingState });
@@ -230,9 +216,7 @@ export async function createServer(
   return { server };
 }
 
-export async function startServer(serverAndHandle: {
-  server: McpServer;
-}): Promise<void> {
+export async function startServer(serverAndHandle: { server: McpServer }): Promise<void> {
   const { server } = serverAndHandle;
   const transport = new StdioServerTransport();
   const rootsManager = getRootsManager(server);
@@ -243,7 +227,7 @@ export async function startServer(serverAndHandle: {
       ? () => {
           void server.close();
         }
-      : undefined
+      : undefined,
   );
   await rootsManager.recomputeAllowedDirectories();
   await server.connect(transport);
@@ -273,7 +257,7 @@ function sendJsonRpcError(
   res: ServerResponse,
   status: number,
   code: number,
-  message: string
+  message: string,
 ): void {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(
@@ -281,14 +265,13 @@ function sendJsonRpcError(
       jsonrpc: '2.0',
       error: { code, message },
       id: null,
-    })
+    }),
   );
 }
 
 function getSessionId(req: IncomingMessage): string | undefined {
   const rawSessionId = req.headers['mcp-session-id'];
-  return typeof rawSessionId === 'string' &&
-    rawSessionId.length <= MAX_SESSION_ID_LENGTH
+  return typeof rawSessionId === 'string' && rawSessionId.length <= MAX_SESSION_ID_LENGTH
     ? rawSessionId
     : undefined;
 }
@@ -318,10 +301,7 @@ export function isAllowedLocalhostOrigin(origin: string): boolean {
 let cachedApiKey: string | undefined;
 let cachedExpectedHash: Buffer | undefined;
 
-export function validateBearerAuthorization(
-  apiKey: string,
-  authHeader: unknown
-): boolean {
+export function validateBearerAuthorization(apiKey: string, authHeader: unknown): boolean {
   const bearerPrefix = 'Bearer ';
   if (typeof authHeader !== 'string' || !authHeader.startsWith(bearerPrefix)) {
     return false;
@@ -348,14 +328,11 @@ export function validateBearerAuthorization(
  * Refuse to bind to a non-loopback host without an API key. Throws on
  * policy violation; returns silently when allowed.
  */
-export function assertHttpBindingPolicy(
-  host: string,
-  apiKey: string | undefined
-): void {
+export function assertHttpBindingPolicy(host: string, apiKey: string | undefined): void {
   if (isLoopbackHttpHost(host)) return;
   if (apiKey) return;
   throw new Error(
-    `Refusing to bind HTTP server to non-loopback host '${host}' without FILESYSTEM_MCP_API_KEY.`
+    `Refusing to bind HTTP server to non-loopback host '${host}' without FILESYSTEM_MCP_API_KEY.`,
   );
 }
 
@@ -395,7 +372,7 @@ function bearerAuthMiddleware(): RequestHandler {
         jsonrpc: '2.0',
         error: { code: JSON_RPC_SERVER_ERROR, message: 'Unauthorized' },
         id: null,
-      })
+      }),
     );
   };
 }
@@ -460,10 +437,7 @@ export class HttpSessionRegistry {
     this.eventStore.delete(sessionId);
   }
 
-  getOrRespondNotFound(
-    sessionId: string,
-    res: ServerResponse
-  ): HttpSession | undefined {
+  getOrRespondNotFound(sessionId: string, res: ServerResponse): HttpSession | undefined {
     const session = this.sessions.get(sessionId);
     if (!session) {
       sendJsonRpcError(res, 404, JSON_RPC_SERVER_ERROR, 'Session not found');
@@ -491,7 +465,7 @@ export class HttpSessionRegistry {
         session.close().catch((err: unknown) => {
           Logger.error(
             `[HTTP] Error closing stale session ${sessionId}:`,
-            formatUnknownErrorMessage(err)
+            formatUnknownErrorMessage(err),
           );
           this.eventStore.delete(sessionId);
         });
@@ -506,11 +480,8 @@ export class HttpSessionRegistry {
     }
     const closes = Array.from(this.sessions.values()).map((session) =>
       session.close().catch((err: unknown) => {
-        Logger.error(
-          '[HTTP] Error closing session on shutdown:',
-          formatUnknownErrorMessage(err)
-        );
-      })
+        Logger.error('[HTTP] Error closing session on shutdown:', formatUnknownErrorMessage(err));
+      }),
     );
     await Promise.allSettled(closes);
     this.eventStore.clear();
@@ -521,13 +492,13 @@ const MAX_REQUEST_BODY_BYTES = parseEnvInt(
   'FS_CONTEXT_MAX_REQUEST_BYTES',
   4 * 1024 * 1024,
   1024,
-  256 * 1024 * 1024
+  256 * 1024 * 1024,
 );
 
 async function createHttpSession(
   options: ServerOptions,
   registry: HttpSessionRegistry,
-  eventStore: InMemoryEventStore
+  eventStore: InMemoryEventStore,
 ): Promise<HttpSession> {
   const { server: mcpServer } = await createServer(options);
   const rootsManager = getRootsManager(mcpServer);
@@ -566,7 +537,7 @@ async function createHttpSession(
           createdAt: Date.now(),
           close,
         },
-        { server: mcpServer, loggingState: rootsManager.loggingState }
+        { server: mcpServer, loggingState: rootsManager.loggingState },
       );
       rootsManager.logMissingDirectoriesIfNeeded(mcpServer);
     },
@@ -595,20 +566,15 @@ async function handleSessionTransportRequest(
   session: HttpSession,
   req: IncomingMessage,
   res: ServerResponse,
-  body?: unknown
+  body?: unknown,
 ): Promise<void> {
-  const store = session.transport.sessionId
-    ? { sessionId: session.transport.sessionId }
-    : {};
+  const store = session.transport.sessionId ? { sessionId: session.transport.sessionId } : {};
   await SessionContext.run(store, async () => {
     await session.transport.handleRequest(req, res, body);
   });
 }
 
-export async function startHttpServer(
-  port: number,
-  options: ServerOptions
-): Promise<Server> {
+export async function startHttpServer(port: number, options: ServerOptions): Promise<Server> {
   const eventStore = new InMemoryEventStore();
   const httpHost = process.env.FILESYSTEM_MCP_HTTP_HOST ?? '127.0.0.1';
   assertHttpBindingPolicy(httpHost, process.env.FILESYSTEM_MCP_API_KEY);
@@ -634,7 +600,7 @@ export async function startHttpServer(
     res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     res.header(
       'Access-Control-Allow-Headers',
-      'Content-Type, Authorization, mcp-session-id, mcp-protocol-version'
+      'Content-Type, Authorization, mcp-session-id, mcp-protocol-version',
     );
     res.status(204).end();
   });
@@ -644,34 +610,17 @@ export async function startHttpServer(
   app.use(express.json({ limit: MAX_REQUEST_BODY_BYTES }));
 
   // Body-parse error handler — translate to JSON-RPC error format
-  app.use(
-    (
-      err: Error & { status?: number },
-      _req: Request,
-      res: Response,
-      next: NextFunction
-    ) => {
-      if (err.status === 413) {
-        sendJsonRpcError(
-          res,
-          413,
-          JSON_RPC_INVALID_REQUEST,
-          'Request body too large'
-        );
-        return;
-      }
-      if (err.status === 400) {
-        sendJsonRpcError(
-          res,
-          400,
-          JSON_RPC_PARSE_ERROR,
-          'Invalid JSON in request body'
-        );
-        return;
-      }
-      next(err);
+  app.use((err: Error & { status?: number }, _req: Request, res: Response, next: NextFunction) => {
+    if (err.status === 413) {
+      sendJsonRpcError(res, 413, JSON_RPC_INVALID_REQUEST, 'Request body too large');
+      return;
     }
-  );
+    if (err.status === 400) {
+      sendJsonRpcError(res, 400, JSON_RPC_PARSE_ERROR, 'Invalid JSON in request body');
+      return;
+    }
+    next(err);
+  });
 
   app.post('/mcp', async (req: Request, res: Response) => {
     try {
@@ -684,19 +633,9 @@ export async function startHttpServer(
         return;
       }
       if (isInitializeRequest(req.body)) {
-        const maxSessions = parseEnvInt(
-          'FILESYSTEM_MCP_MAX_HTTP_SESSIONS',
-          100,
-          1,
-          10_000
-        );
+        const maxSessions = parseEnvInt('FILESYSTEM_MCP_MAX_HTTP_SESSIONS', 100, 1, 10_000);
         if (registry.size() >= maxSessions) {
-          sendJsonRpcError(
-            res,
-            503,
-            JSON_RPC_SERVER_ERROR,
-            'Too many sessions'
-          );
+          sendJsonRpcError(res, 503, JSON_RPC_SERVER_ERROR, 'Too many sessions');
           return;
         }
         const session = await createHttpSession(options, registry, eventStore);
@@ -707,20 +646,12 @@ export async function startHttpServer(
         res,
         400,
         JSON_RPC_SERVER_ERROR,
-        'Bad Request: No valid session ID provided'
+        'Bad Request: No valid session ID provided',
       );
     } catch (error) {
-      Logger.error(
-        '[HTTP] Error handling POST request:',
-        formatUnknownErrorMessage(error)
-      );
+      Logger.error('[HTTP] Error handling POST request:', formatUnknownErrorMessage(error));
       if (!res.headersSent) {
-        sendJsonRpcError(
-          res,
-          500,
-          JSON_RPC_INTERNAL_ERROR,
-          'Internal Server Error'
-        );
+        sendJsonRpcError(res, 500, JSON_RPC_INTERNAL_ERROR, 'Internal Server Error');
       }
     }
   });
@@ -729,12 +660,7 @@ export async function startHttpServer(
     try {
       const sessionId = getSessionId(req);
       if (!sessionId) {
-        sendJsonRpcError(
-          res,
-          400,
-          JSON_RPC_SERVER_ERROR,
-          'Bad Request: Missing session ID'
-        );
+        sendJsonRpcError(res, 400, JSON_RPC_SERVER_ERROR, 'Bad Request: Missing session ID');
         return;
       }
       const session = registry.getOrRespondNotFound(sessionId, res);
@@ -744,15 +670,10 @@ export async function startHttpServer(
     } catch (error) {
       Logger.error(
         `[HTTP] Error handling ${req.method} request:`,
-        formatUnknownErrorMessage(error)
+        formatUnknownErrorMessage(error),
       );
       if (!res.headersSent) {
-        sendJsonRpcError(
-          res,
-          500,
-          JSON_RPC_INTERNAL_ERROR,
-          'Internal Server Error'
-        );
+        sendJsonRpcError(res, 500, JSON_RPC_INTERNAL_ERROR, 'Internal Server Error');
       }
     }
   };

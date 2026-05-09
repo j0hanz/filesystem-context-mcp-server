@@ -6,7 +6,7 @@ import { assertNotAborted, withAbort } from './abort.js';
 export async function atomicWriteFile(
   filePath: string,
   content: string,
-  options: { encoding?: BufferEncoding; signal?: AbortSignal | undefined } = {}
+  options: { encoding?: BufferEncoding; signal?: AbortSignal | undefined } = {},
 ): Promise<void> {
   const { encoding = 'utf-8', signal } = options;
   const tempPath = `${filePath}.${randomUUID()}.tmp`;

@@ -49,10 +49,7 @@ const TOOL_ENTRIES: ToolEntry[] = [
 
 export const ALL_TOOLS: ToolContract[] = TOOL_ENTRIES.map((e) => e.contract);
 
-export function registerAllTools(
-  server: McpServer,
-  options: ToolRegistrationOptions
-): void {
+export function registerAllTools(server: McpServer, options: ToolRegistrationOptions): void {
   for (const { register } of TOOL_ENTRIES) {
     register(server, options);
   }

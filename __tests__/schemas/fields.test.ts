@@ -4,11 +4,7 @@ import { describe, it } from 'node:test';
 import { z } from 'zod/v4';
 
 import { isSafeGlobSyntax } from '../../src/lib/path-guard.js';
-import {
-  IsoDateTime,
-  NonNegInt,
-  SafeGlobPattern,
-} from '../../src/schemas/fields.js';
+import { IsoDateTime, NonNegInt, SafeGlobPattern } from '../../src/schemas/fields.js';
 
 describe('fields', () => {
   it('IsoDateTime is in globalRegistry', () => {
@@ -23,10 +19,7 @@ describe('fields', () => {
     const def = defs['IsoDateTime'] as Record<string, unknown>;
     assert.equal(def['format'], 'date-time');
     // Pattern still present here — stripped by post-processor in json-schema.ts (Task 3)
-    assert.ok(
-      'pattern' in def,
-      'raw output still has pattern (post-processor strips it)'
-    );
+    assert.ok('pattern' in def, 'raw output still has pattern (post-processor strips it)');
   });
 
   it('NonNegInt is in globalRegistry', () => {

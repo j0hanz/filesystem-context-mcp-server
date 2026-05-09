@@ -261,14 +261,7 @@
           "$ref": "#/$defs/NonNegInt"
         }
       },
-      "required": [
-        "ok",
-        "filePath",
-        "algorithms",
-        "hashes",
-        "resourceUri",
-        "isDirectory"
-      ],
+      "required": ["ok", "filePath", "algorithms", "hashes", "resourceUri", "isDirectory"],
       "additionalProperties": false,
       "$defs": {
         "NonNegInt": {
@@ -1948,14 +1941,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "path",
-            "size",
-            "lineCount",
-            "mimeType",
-            "kind",
-            "resourceUri"
-          ],
+          "required": ["path", "size", "lineCount", "mimeType", "kind", "resourceUri"],
           "additionalProperties": false
         },
         "results": {
@@ -2216,14 +2202,7 @@
           "description": "URI to stats.json resource"
         }
       },
-      "required": [
-        "ok",
-        "results",
-        "summary",
-        "fileCount",
-        "dirCount",
-        "resourceUri"
-      ],
+      "required": ["ok", "results", "summary", "fileCount", "dirCount", "resourceUri"],
       "additionalProperties": false,
       "$defs": {
         "FileInfo": {

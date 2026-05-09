@@ -9,9 +9,7 @@ const testFiles = ['__tests__/**/*.ts'];
 const jsConfigFiles = ['**/*.js', '**/*.mjs'];
 
 // Dynamically filter builtin modules instead of hardcoding a massive array
-const nodeBuiltins = builtinModules.filter(
-  (m) => !m.startsWith('node:') && !m.startsWith('_')
-);
+const nodeBuiltins = builtinModules.filter((m) => !m.startsWith('node:') && !m.startsWith('_'));
 
 export default tseslint.config(
   {
@@ -52,10 +50,7 @@ export default tseslint.config(
     name: 'project/common-rules',
     rules: {
       // Catch blocks frequently use `unknown`; numbers are safe to interpolate.
-      '@typescript-eslint/restrict-template-expressions': [
-        'error',
-        { allowNumber: true },
-      ],
+      '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
 
       // Allow `_`-prefixed args/vars/caught-errors as the deliberate unused-marker convention.
       '@typescript-eslint/no-unused-vars': [
@@ -132,10 +127,7 @@ export default tseslint.config(
       '@typescript-eslint/no-import-type-side-effects': 'error',
 
       // Fire-and-forget promises must be explicit with void.
-      '@typescript-eslint/no-floating-promises': [
-        'error',
-        { ignoreVoid: true, ignoreIIFE: true },
-      ],
+      '@typescript-eslint/no-floating-promises': ['error', { ignoreVoid: true, ignoreIIFE: true }],
 
       // Express/MCP route handlers often pass async callbacks to APIs typed as void callbacks.
       '@typescript-eslint/no-misused-promises': [
@@ -197,5 +189,5 @@ export default tseslint.config(
     },
   },
 
-  eslintConfigPrettier
+  eslintConfigPrettier,
 );

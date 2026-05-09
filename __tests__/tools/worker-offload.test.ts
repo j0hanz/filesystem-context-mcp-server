@@ -8,13 +8,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, it } from 'node:test';
 
-import {
-  applyPatch,
-  createTwoFilesPatch,
-  formatPatch,
-  parsePatch,
-  structuredPatch,
-} from 'diff';
+import { applyPatch, createTwoFilesPatch, formatPatch, parsePatch, structuredPatch } from 'diff';
 
 import { runInWorker, shutdownWorkerPool } from '../../src/lib/worker-pool.js';
 
@@ -39,7 +33,7 @@ describe('worker output parity', () => {
     assert.equal(workerResult.hunks.length, inlineResult.hunks.length);
     assert.deepEqual(
       workerResult.hunks.map((h) => h.lines),
-      inlineResult.hunks.map((h) => h.lines)
+      inlineResult.hunks.map((h) => h.lines),
     );
   });
 
@@ -57,9 +51,7 @@ describe('worker output parity', () => {
   });
 
   it('applyPatch task matches applyPatch inline', async () => {
-    const parsed0 = parsePatch(
-      createTwoFilesPatch('old.txt', 'new.txt', OLD, NEW)
-    )[0];
+    const parsed0 = parsePatch(createTwoFilesPatch('old.txt', 'new.txt', OLD, NEW))[0];
     assert.ok(parsed0 !== undefined, 'expected a parsed patch');
     const patchText = formatPatch(parsed0);
 
@@ -72,16 +64,11 @@ describe('worker output parity', () => {
     assert.ok(parsedDiff !== undefined, 'expected parsed diff for inline');
     const inlineResult = applyPatch(OLD, parsedDiff);
 
-    assert.equal(
-      workerResult.applied,
-      typeof inlineResult === 'string' ? inlineResult : false
-    );
+    assert.equal(workerResult.applied, typeof inlineResult === 'string' ? inlineResult : false);
   });
 
   it('applyPatch returns false for non-applicable patch', async () => {
-    const parsed0 = parsePatch(
-      createTwoFilesPatch('old.txt', 'new.txt', OLD, NEW)
-    )[0];
+    const parsed0 = parsePatch(createTwoFilesPatch('old.txt', 'new.txt', OLD, NEW))[0];
     assert.ok(parsed0 !== undefined, 'expected a parsed patch');
     const patchText = formatPatch(parsed0);
     const unrelatedSource = 'totally\ndifferent\ncontent\n';
@@ -99,9 +86,6 @@ describe('worker output parity', () => {
       fuzzFactor: 0,
     });
 
-    assert.equal(
-      workerResult.applied,
-      typeof inlineResult === 'string' ? inlineResult : false
-    );
+    assert.equal(workerResult.applied, typeof inlineResult === 'string' ? inlineResult : false);
   });
 });

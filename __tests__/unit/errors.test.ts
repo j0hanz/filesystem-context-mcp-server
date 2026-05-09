@@ -95,9 +95,7 @@ describe('McpError — Problem constructor', () => {
     const problem: Problem = {
       code: ErrorCode.VALIDATION_FAILED,
       message: 'bad input',
-      issues: [
-        { code: 'invalid_type', message: 'Expected string', path: ['name'] },
-      ],
+      issues: [{ code: 'invalid_type', message: 'Expected string', path: ['name'] }],
     };
     const err = new McpError(problem);
     assert.equal(err.code, ErrorCode.VALIDATION_FAILED);
@@ -137,19 +135,13 @@ describe('getSuggestion', () => {
       const suggestion = getSuggestion(code);
       if (suggestion !== undefined) {
         assert.equal(typeof suggestion, 'string');
-        assert.ok(
-          suggestion.length > 0,
-          `Expected non-empty suggestion for ${code}`
-        );
+        assert.ok(suggestion.length > 0, `Expected non-empty suggestion for ${code}`);
         withSuggestion.push(code);
       } else {
         withoutSuggestion.push(code);
       }
     }
-    assert.ok(
-      withSuggestion.length > 0,
-      'At least some codes should have suggestions'
-    );
+    assert.ok(withSuggestion.length > 0, 'At least some codes should have suggestions');
   });
 });
 
@@ -162,30 +154,15 @@ describe('classifyError — no message sniffing', () => {
 
   it('does NOT classify by message substring', () => {
     // Locks the no-sniffing invariant.
-    assert.equal(
-      classifyError(new Error('permission denied')),
-      ErrorCode.IO_ERROR
-    );
-    assert.equal(
-      classifyError(new Error('no such file or directory')),
-      ErrorCode.IO_ERROR
-    );
-    assert.equal(
-      classifyError(new Error('ENOENT: file not found')),
-      ErrorCode.IO_ERROR
-    );
+    assert.equal(classifyError(new Error('permission denied')), ErrorCode.IO_ERROR);
+    assert.equal(classifyError(new Error('no such file or directory')), ErrorCode.IO_ERROR);
+    assert.equal(classifyError(new Error('ENOENT: file not found')), ErrorCode.IO_ERROR);
   });
 
   it('classifies by errno code when present', () => {
     assert.equal(classifyError(makeErrno('ENOENT')), ErrorCode.NOT_FOUND);
-    assert.equal(
-      classifyError(makeErrno('EACCES')),
-      ErrorCode.PERMISSION_DENIED
-    );
-    assert.equal(
-      classifyError(makeErrno('EPERM')),
-      ErrorCode.PERMISSION_DENIED
-    );
+    assert.equal(classifyError(makeErrno('EACCES')), ErrorCode.PERMISSION_DENIED);
+    assert.equal(classifyError(makeErrno('EPERM')), ErrorCode.PERMISSION_DENIED);
   });
 
   it('classifies non-Error as UNKNOWN', () => {

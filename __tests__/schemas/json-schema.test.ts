@@ -73,10 +73,7 @@ describe('advertised schema constraints', () => {
     const schema = await getInputSchema('read');
     const v = new Validator(schema, '2020-12', false);
     const result = v.validate({ path: '/tmp/f.txt', head: 10, tail: 5 });
-    assert.ok(
-      !result.valid,
-      'head+tail should be rejected by advertised schema'
-    );
+    assert.ok(!result.valid, 'head+tail should be rejected by advertised schema');
   });
 
   it('read: rejects head + startLine together', async () => {
@@ -87,10 +84,7 @@ describe('advertised schema constraints', () => {
       head: 10,
       startLine: 1,
     });
-    assert.ok(
-      !result.valid,
-      'head+startLine should be rejected by advertised schema'
-    );
+    assert.ok(!result.valid, 'head+startLine should be rejected by advertised schema');
   });
 
   it('grep: rejects absolute path in pattern', async () => {
@@ -100,20 +94,14 @@ describe('advertised schema constraints', () => {
       searchPattern: 'hello',
       pattern: '/etc/passwd',
     });
-    assert.ok(
-      !result.valid,
-      'absolute glob should be rejected by advertised schema'
-    );
+    assert.ok(!result.valid, 'absolute glob should be rejected by advertised schema');
   });
 
   it('grep: rejects traversal pattern', async () => {
     const schema = await getInputSchema('grep');
     const v = new Validator(schema, '2020-12', false);
     const result = v.validate({ searchPattern: 'hello', pattern: '../*.ts' });
-    assert.ok(
-      !result.valid,
-      'traversal glob should be rejected by advertised schema'
-    );
+    assert.ok(!result.valid, 'traversal glob should be rejected by advertised schema');
   });
 
   it('search_and_replace: rejects absolute path in pattern', async () => {
@@ -124,9 +112,6 @@ describe('advertised schema constraints', () => {
       replacement: 'new',
       pattern: '/abs/path/*.ts',
     });
-    assert.ok(
-      !result.valid,
-      'absolute glob should be rejected by advertised schema'
-    );
+    assert.ok(!result.valid, 'absolute glob should be rejected by advertised schema');
   });
 });

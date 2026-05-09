@@ -35,7 +35,7 @@ const collator = new Intl.Collator(undefined, { numeric: true });
 
 export function withOptionalStoppedReason<T extends object, R extends string>(
   summary: T,
-  stoppedReason: R | undefined
+  stoppedReason: R | undefined,
 ): T & { stoppedReason?: R } {
   if (stoppedReason === undefined) {
     return summary;
@@ -78,7 +78,7 @@ export function compareStringValues(left?: string, right?: string): number {
 export function compareOptionalNumberDesc(
   left: number | undefined,
   right: number | undefined,
-  tieBreak: () => number
+  tieBreak: () => number,
 ): number {
   const diff = (right ?? 0) - (left ?? 0);
   if (diff !== 0) return diff;
@@ -88,7 +88,7 @@ export function compareOptionalNumberDesc(
 export function stableSortByDerivedString<T>(
   items: T[],
   derive: (item: T) => string,
-  tieBreak: (left: T, right: T) => number
+  tieBreak: (left: T, right: T) => number,
 ): void {
   const len = items.length;
   if (len <= 1) return;
@@ -146,10 +146,7 @@ interface IndexedError {
   error: Error;
 }
 
-export function applyIndexedValues<T>(
-  output: T[],
-  results: readonly IndexedValue<T>[]
-): void {
+export function applyIndexedValues<T>(output: T[], results: readonly IndexedValue<T>[]): void {
   for (const result of results) {
     if (result.index < 0 || result.index >= output.length) continue;
     output[result.index] = result.value;
@@ -173,14 +170,11 @@ export function applyIndexedErrors<T>(options: {
 
 export interface EntryAccessDependencies {
   normalizePath: (inputPath: string) => string;
-  isPathWithinDirectories: (
-    normalizedPath: string,
-    rootDirectories: readonly string[]
-  ) => boolean;
+  isPathWithinDirectories: (normalizedPath: string, rootDirectories: readonly string[]) => boolean;
   isSensitivePath: (requestedPath: string, resolvedPath: string) => boolean;
   validateSymlinkPath: (
     inputPath: string,
-    signal: AbortSignal
+    signal: AbortSignal,
   ) => Promise<{ requestedPath: string; resolvedPath: string }>;
 }
 
@@ -189,7 +183,7 @@ export async function isEntryAccessibleByType(
   entryType: EntryType,
   rootDirectories: readonly string[],
   signal: AbortSignal,
-  deps: EntryAccessDependencies
+  deps: EntryAccessDependencies,
 ): Promise<boolean> {
   if (entryType !== 'symlink') {
     const normalizedPath = deps.normalizePath(entryPath);
@@ -201,10 +195,7 @@ export async function isEntryAccessibleByType(
 
   try {
     const validated = await deps.validateSymlinkPath(entryPath, signal);
-    return !deps.isSensitivePath(
-      validated.requestedPath,
-      validated.resolvedPath
-    );
+    return !deps.isSensitivePath(validated.requestedPath, validated.resolvedPath);
   } catch {
     return false;
   }
@@ -224,7 +215,7 @@ function parseGitignoreLines(contents: string): string[] {
 
 export async function loadRootGitignore(
   root: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<Ignore | null> {
   const gitignorePath = join(root, '.gitignore');
 
@@ -248,7 +239,7 @@ export function isIgnoredByGitignore(
   matcher: Ignore,
   root: string,
   absolutePath: string,
-  options: { isDirectory?: boolean; relativePath?: string } = {}
+  options: { isDirectory?: boolean; relativePath?: string } = {},
 ): boolean {
   let { relativePath } = options;
   relativePath ??= relative(root, absolutePath);
@@ -256,9 +247,7 @@ export function isIgnoredByGitignore(
 
   const normalized = toPosixPath(relativePath);
   if (options.isDirectory) {
-    return matcher.ignores(
-      normalized.endsWith('/') ? normalized : `${normalized}/`
-    );
+    return matcher.ignores(normalized.endsWith('/') ? normalized : `${normalized}/`);
   }
   return matcher.ignores(normalized);
 }
@@ -343,11 +332,7 @@ function splitPatternPrefix(normalizedPattern: string): {
   };
 }
 
-function addFirstDotSegment(
-  patterns: Set<string>,
-  prefix: string,
-  remainder: string
-): void {
+function addFirstDotSegment(patterns: Set<string>, prefix: string, remainder: string): void {
   if (remainder.length === 0) return;
   const segments = remainder.split(SEP);
   const idx = segments.findIndex((seg) => seg !== '**' && seg.length > 0);
@@ -366,13 +351,12 @@ function expandHiddenGlobstars(
   patterns: Set<string>,
   prefix: string,
   remainder: string,
-  maxDepth: number
+  maxDepth: number,
 ): void {
   if (!remainder.startsWith('**/')) return;
 
   const afterGlobstar = remainder.slice(3);
-  const addDotFile =
-    afterGlobstar.length > 0 && afterGlobstar.charCodeAt(0) !== DOT_CHAR_CODE;
+  const addDotFile = afterGlobstar.length > 0 && afterGlobstar.charCodeAt(0) !== DOT_CHAR_CODE;
 
   let depthPrefix = '';
   for (let depth = 0; depth <= maxDepth; depth++) {
@@ -382,10 +366,7 @@ function expandHiddenGlobstars(
   }
 }
 
-function buildHiddenPatterns(
-  normalizedPattern: string,
-  maxDepth: number
-): readonly string[] {
+function buildHiddenPatterns(normalizedPattern: string, maxDepth: number): readonly string[] {
   const patterns = new Set<string>([normalizedPattern]);
   const { prefix, remainder } = splitPatternPrefix(normalizedPattern);
 
@@ -412,9 +393,7 @@ function assertOptionsShape(options: GlobEntriesOptions): void {
     !Array.isArray(opts.excludePatterns) ||
     opts.excludePatterns.some((p) => typeof p !== 'string')
   ) {
-    throw new TypeError(
-      'globEntries: options.excludePatterns must be an array of strings'
-    );
+    throw new TypeError('globEntries: options.excludePatterns must be an array of strings');
   }
 
   for (const key of GLOB_BOOLEAN_OPTION_KEYS) {
@@ -427,33 +406,20 @@ function assertOptionsShape(options: GlobEntriesOptions): void {
     opts.maxDepth !== undefined &&
     (!Number.isFinite(opts.maxDepth) || typeof opts.maxDepth !== 'number')
   ) {
-    throw new TypeError(
-      'globEntries: options.maxDepth must be a finite number'
-    );
+    throw new TypeError('globEntries: options.maxDepth must be a finite number');
   }
 
-  if (
-    opts.suppressErrors !== undefined &&
-    typeof opts.suppressErrors !== 'boolean'
-  ) {
-    throw new TypeError(
-      'globEntries: options.suppressErrors must be a boolean'
-    );
+  if (opts.suppressErrors !== undefined && typeof opts.suppressErrors !== 'boolean') {
+    throw new TypeError('globEntries: options.suppressErrors must be a boolean');
   }
 }
 
 function normalizeGlobOptions(options: GlobEntriesOptions): NormalizedGlob {
   const cwd = resolve(options.cwd);
-  const normalizedPattern = normalizePattern(
-    options.pattern,
-    options.baseNameMatch
-  );
+  const normalizedPattern = normalizePattern(options.pattern, options.baseNameMatch);
 
   const patterns = options.includeHidden
-    ? buildHiddenPatterns(
-        normalizedPattern,
-        options.maxDepth ?? DEFAULT_MAX_HIDDEN_DEPTH
-      )
+    ? buildHiddenPatterns(normalizedPattern, options.maxDepth ?? DEFAULT_MAX_HIDDEN_DEPTH)
     : [normalizedPattern];
 
   const normalized: NormalizedGlob = {
@@ -484,10 +450,7 @@ function getRelativeDepth(relativePath: string): number {
   return count + 1;
 }
 
-function resolveDirentBase(
-  cwd: string,
-  parentPath: string | undefined
-): string {
+function resolveDirentBase(cwd: string, parentPath: string | undefined): string {
   if (!parentPath) return cwd;
   return isAbsolute(parentPath) ? parentPath : resolve(cwd, parentPath);
 }
@@ -501,7 +464,7 @@ function* processDirentMatch(
   cwd: string,
   maxDepth: number | undefined,
   seen: Set<string>,
-  onlyFiles: boolean
+  onlyFiles: boolean,
 ): Generator<GlobEntry> {
   const base = resolveDirentBase(cwd, match.parentPath);
   const absolutePath = resolve(base, match.name);
@@ -526,7 +489,7 @@ async function resolveStringMatch(
   onlyFiles: boolean,
   followSymlinks: boolean,
   returnStats: boolean,
-  suppressErrors: boolean
+  suppressErrors: boolean,
 ): Promise<GlobEntry | null> {
   if (maxDepth !== undefined) {
     const depth = getRelativeDepth(match);
@@ -539,9 +502,7 @@ async function resolveStringMatch(
   seen.add(absolutePath);
 
   try {
-    const stats = followSymlinks
-      ? await stat(absolutePath)
-      : await lstat(absolutePath);
+    const stats = followSymlinks ? await stat(absolutePath) : await lstat(absolutePath);
 
     if (onlyFiles && !stats.isFile()) return null;
 
@@ -604,7 +565,7 @@ class AsyncGlobBatchQueue {
         this.context.onlyFiles,
         this.context.followSymlinks,
         this.context.returnStats,
-        this.context.suppressErrors
+        this.context.suppressErrors,
       );
     }
 
@@ -617,18 +578,12 @@ class AsyncGlobBatchQueue {
   }
 }
 
-async function* nativeGlobEntries(
-  options: GlobEntriesOptions
-): AsyncGenerator<GlobEntry> {
+async function* nativeGlobEntries(options: GlobEntriesOptions): AsyncGenerator<GlobEntry> {
   const plan = normalizeGlobOptions(options);
   const seen = new Set<string>();
 
   const { cwd, maxDepth, suppressErrors } = plan;
-  const {
-    onlyFiles,
-    stats: returnStats,
-    followSymbolicLinks: followSymlinks,
-  } = options;
+  const { onlyFiles, stats: returnStats, followSymbolicLinks: followSymlinks } = options;
 
   const context = {
     cwd,
@@ -661,7 +616,7 @@ async function* nativeGlobEntries(
             context.cwd,
             context.maxDepth,
             context.seen,
-            context.onlyFiles
+            context.onlyFiles,
           );
         }
       } catch (error) {
@@ -684,9 +639,7 @@ async function* nativeGlobEntries(
   }
 }
 
-export async function* globEntries(
-  options: GlobEntriesOptions
-): AsyncGenerator<GlobEntry> {
+export async function* globEntries(options: GlobEntriesOptions): AsyncGenerator<GlobEntry> {
   const engine = 'node:fs/promises.glob';
 
   const endMeasure = startPerfMeasure('globEntries', { engine });
@@ -695,9 +648,7 @@ export async function* globEntries(
     ? {
         op: 'globEntries',
         engine,
-        ...(toolContext
-          ? { tool: toolContext.tool, path: toolContext.path }
-          : {}),
+        ...(toolContext ? { tool: toolContext.tool, path: toolContext.path } : {}),
       }
     : undefined;
 
@@ -731,9 +682,7 @@ interface GlobConfig {
   suppressErrors?: boolean;
 }
 
-export function buildGlobOptions(
-  config: GlobConfig
-): Parameters<typeof globEntries>[0] {
+export function buildGlobOptions(config: GlobConfig): Parameters<typeof globEntries>[0] {
   const options: Parameters<typeof globEntries>[0] = {
     cwd: config.cwd,
     pattern: config.pattern,

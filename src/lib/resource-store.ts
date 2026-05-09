@@ -26,17 +26,9 @@ interface BlobResourceEntry {
 }
 
 export interface ResourceStore {
-  putText(params: {
-    name: string;
-    mimeType?: string;
-    text: string;
-  }): TextResourceEntry;
+  putText(params: { name: string; mimeType?: string; text: string }): TextResourceEntry;
   getText(uri: string): TextResourceEntry;
-  putBlob(params: {
-    name: string;
-    mimeType: string;
-    data: Buffer;
-  }): BlobResourceEntry;
+  putBlob(params: { name: string; mimeType: string; data: Buffer }): BlobResourceEntry;
   getBlob(uri: string): BlobResourceEntry;
   getEntry(uri: string): StoredEntry;
   clear(): void;
@@ -57,9 +49,7 @@ const DEFAULT_RESOURCE_STORE_OPTIONS: ResourceStoreOptions = {
   entryTtlMs: 60 * 1000, // 60 seconds — anti-leak window
 };
 
-type StoredEntry =
-  | (TextResourceEntry & { kind: 'text' })
-  | (BlobResourceEntry & { kind: 'blob' });
+type StoredEntry = (TextResourceEntry & { kind: 'text' }) | (BlobResourceEntry & { kind: 'blob' });
 
 interface ResourceStoreDiagnosticsEvent {
   phase:
@@ -75,13 +65,9 @@ interface ResourceStoreDiagnosticsEvent {
   reason?: 'entry_too_large' | 'evicted_immediately' | 'expired' | 'not_found';
 }
 
-const RESOURCE_STORE_DIAGNOSTICS_CHANNEL = channel(
-  'filesystem-mcp:resource-store'
-);
+const RESOURCE_STORE_DIAGNOSTICS_CHANNEL = channel('filesystem-mcp:resource-store');
 
-function publishResourceStoreDiagnostics(
-  event: ResourceStoreDiagnosticsEvent
-): void {
+function publishResourceStoreDiagnostics(event: ResourceStoreDiagnosticsEvent): void {
   if (!RESOURCE_STORE_DIAGNOSTICS_CHANNEL.hasSubscribers) return;
   RESOURCE_STORE_DIAGNOSTICS_CHANNEL.publish(event);
 }
@@ -101,16 +87,13 @@ function buildIndexKey(mimeType: string, contentHash: string): string {
   return `${mimeType}:${contentHash}`;
 }
 
-function isExpired(
-  entry: TextResourceEntry | BlobResourceEntry,
-  now = Date.now()
-): boolean {
+function isExpired(entry: TextResourceEntry | BlobResourceEntry, now = Date.now()): boolean {
   const expiresAt = Date.parse(entry.expiresAt);
   return Number.isFinite(expiresAt) && expiresAt <= now;
 }
 
 export function createInMemoryResourceStore(
-  options: Partial<ResourceStoreOptions> = {}
+  options: Partial<ResourceStoreOptions> = {},
 ): ResourceStore {
   const resolved: ResourceStoreOptions = {
     ...DEFAULT_RESOURCE_STORE_OPTIONS,
@@ -121,10 +104,7 @@ export function createInMemoryResourceStore(
   const byHashIndex = new Map<string, string>(); // mimeType:sha256hex -> uri
   let totalBytes = 0;
 
-  function removeEntry(
-    uri: string,
-    reason?: ResourceStoreDiagnosticsEvent['reason']
-  ): void {
+  function removeEntry(uri: string, reason?: ResourceStoreDiagnosticsEvent['reason']): void {
     const existing = byUri.get(uri);
     if (!existing) return;
     totalBytes -= existing.size;
@@ -166,10 +146,7 @@ export function createInMemoryResourceStore(
     byUri.set(uri, entry);
   }
 
-  function _getExisting(
-    uri: string,
-    expectedKind?: 'text' | 'blob'
-  ): StoredEntry {
+  function _getExisting(uri: string, expectedKind?: 'text' | 'blob'): StoredEntry {
     const existing = byUri.get(uri);
     if (!existing || (expectedKind && existing.kind !== expectedKind)) {
       publishResourceStoreDiagnostics({
@@ -179,7 +156,7 @@ export function createInMemoryResourceStore(
       });
       throw new McpError(
         ErrorCode.NOT_FOUND,
-        `Resource not found: ${uri}. Re-run the tool to regenerate.`
+        `Resource not found: ${uri}. Re-run the tool to regenerate.`,
       );
     }
     if (isExpired(existing)) {
@@ -191,7 +168,7 @@ export function createInMemoryResourceStore(
       });
       throw new McpError(
         ErrorCode.NOT_FOUND,
-        `Resource expired: ${uri}. Re-run the tool to regenerate.`
+        `Resource expired: ${uri}. Re-run the tool to regenerate.`,
       );
     }
     bumpLru(uri, existing);
@@ -207,9 +184,7 @@ export function createInMemoryResourceStore(
   function _put(
     kind: 'text' | 'blob',
     params: { name: string; mimeType: string; data: string | Buffer },
-    createFn: (
-      base: Omit<TextResourceEntry | BlobResourceEntry, 'text' | 'data'>
-    ) => StoredEntry
+    createFn: (base: Omit<TextResourceEntry | BlobResourceEntry, 'text' | 'data'>) => StoredEntry,
   ): StoredEntry {
     pruneExpiredEntries();
 
@@ -220,10 +195,7 @@ export function createInMemoryResourceStore(
         bytes: entryBytes,
         reason: 'entry_too_large',
       });
-      throw new McpError(
-        ErrorCode.TOO_LARGE,
-        `Resource too large to cache (${entryBytes} bytes).`
-      );
+      throw new McpError(ErrorCode.TOO_LARGE, `Resource too large to cache (${entryBytes} bytes).`);
     }
 
     const contentHash = computeSha256(params.data);
@@ -259,9 +231,7 @@ export function createInMemoryResourceStore(
       hash: contentHash,
       size: entryBytes,
       storedAt: storedAt.toISOString(),
-      expiresAt: new Date(
-        storedAt.getTime() + resolved.entryTtlMs
-      ).toISOString(),
+      expiresAt: new Date(storedAt.getTime() + resolved.entryTtlMs).toISOString(),
     });
 
     byUri.set(uri, entry);
@@ -291,11 +261,7 @@ export function createInMemoryResourceStore(
     return entry;
   }
 
-  function putText(params: {
-    name: string;
-    mimeType?: string;
-    text: string;
-  }): TextResourceEntry {
+  function putText(params: { name: string; mimeType?: string; text: string }): TextResourceEntry {
     return _put(
       'text',
       {
@@ -307,7 +273,7 @@ export function createInMemoryResourceStore(
         ...base,
         kind: 'text',
         text: params.text,
-      })
+      }),
     ) as TextResourceEntry & { kind: 'text' };
   }
 
@@ -315,11 +281,7 @@ export function createInMemoryResourceStore(
     return _getExisting(uri, 'text') as TextResourceEntry & { kind: 'text' };
   }
 
-  function putBlob(params: {
-    name: string;
-    mimeType: string;
-    data: Buffer;
-  }): BlobResourceEntry {
+  function putBlob(params: { name: string; mimeType: string; data: Buffer }): BlobResourceEntry {
     return _put(
       'blob',
       { name: params.name, mimeType: params.mimeType, data: params.data },
@@ -327,7 +289,7 @@ export function createInMemoryResourceStore(
         ...base,
         kind: 'blob',
         data: params.data,
-      })
+      }),
     ) as BlobResourceEntry & { kind: 'blob' };
   }
 

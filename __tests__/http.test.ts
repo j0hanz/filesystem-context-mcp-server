@@ -1,7 +1,4 @@
-import {
-  Client,
-  StreamableHTTPClientTransport,
-} from '@modelcontextprotocol/client';
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -29,7 +26,7 @@ function parseSseJsonPayload(rawBody: string): unknown {
 
   assert.ok(
     dataLines.length > 0,
-    `Expected SSE response to include at least one data line, got ${JSON.stringify(rawBody)}`
+    `Expected SSE response to include at least one data line, got ${JSON.stringify(rawBody)}`,
   );
 
   return JSON.parse(dataLines.join('\n')) as unknown;
@@ -62,17 +59,14 @@ async function rawHttpRequest(params: {
         });
         res.on('error', reject);
         res.on('end', () => {
-          const totalLength = chunks.reduce(
-            (acc, chunk) => acc + chunk.length,
-            0
-          );
+          const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
           resolve({
             statusCode: res.statusCode ?? 0,
             headers: res.headers,
             body: Buffer.concat(chunks, totalLength).toString('utf8'),
           });
         });
-      }
+      },
     );
     req.on('error', reject);
     if (params.body) {
@@ -91,7 +85,7 @@ async function createHttpClient(port: number): Promise<{
     version: '1.0.0',
   });
   const transport = new StreamableHTTPClientTransport(
-    new URL(`http://127.0.0.1:${String(port)}/mcp`)
+    new URL(`http://127.0.0.1:${String(port)}/mcp`),
   );
   await client.connect(transport);
   return { client, transport };
@@ -156,10 +150,7 @@ describe('HTTP transport', () => {
 
     assert.equal(initResponse.status, 200);
     const sessionId = initResponse.headers.get('mcp-session-id');
-    assert.ok(
-      sessionId,
-      'Expected initialize response to include Mcp-Session-Id'
-    );
+    assert.ok(sessionId, 'Expected initialize response to include Mcp-Session-Id');
     const initPayload = parseSseJsonPayload(await initResponse.text()) as {
       result?: {
         protocolVersion?: string;
@@ -179,22 +170,19 @@ describe('HTTP transport', () => {
     assert.ok(initPayload.result?.capabilities?.['tasks']);
     assert.ok(initPayload.result?.capabilities?.['logging']);
 
-    const initializedResponse = await fetch(
-      `http://127.0.0.1:${String(port)}/mcp`,
-      {
-        method: 'POST',
-        headers: {
-          accept: 'application/json, text/event-stream',
-          'content-type': 'application/json',
-          'mcp-protocol-version': '2025-06-18',
-          'mcp-session-id': sessionId,
-        },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'notifications/initialized',
-        }),
-      }
-    );
+    const initializedResponse = await fetch(`http://127.0.0.1:${String(port)}/mcp`, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+        'mcp-protocol-version': '2025-06-18',
+        'mcp-session-id': sessionId,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/initialized',
+      }),
+    });
 
     assert.equal(initializedResponse.status, 202);
   });
@@ -225,27 +213,21 @@ describe('HTTP transport', () => {
 
     assert.equal(initResponse.status, 200);
     const sessionId = initResponse.headers.get('mcp-session-id');
-    assert.ok(
-      sessionId,
-      'Expected initialize response to include Mcp-Session-Id'
-    );
+    assert.ok(sessionId, 'Expected initialize response to include Mcp-Session-Id');
 
-    const initializedResponse = await fetch(
-      `http://127.0.0.1:${String(port)}/mcp`,
-      {
-        method: 'POST',
-        headers: {
-          accept: 'application/json, text/event-stream',
-          'content-type': 'application/json',
-          'mcp-protocol-version': '2025-11-25',
-          'mcp-session-id': sessionId,
-        },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'notifications/initialized',
-        }),
-      }
-    );
+    const initializedResponse = await fetch(`http://127.0.0.1:${String(port)}/mcp`, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+        'mcp-protocol-version': '2025-11-25',
+        'mcp-session-id': sessionId,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/initialized',
+      }),
+    });
 
     assert.equal(initializedResponse.status, 202);
   });
@@ -276,28 +258,22 @@ describe('HTTP transport', () => {
 
     assert.equal(initResponse.status, 200);
     const sessionId = initResponse.headers.get('mcp-session-id');
-    assert.ok(
-      sessionId,
-      'Expected initialize response to include Mcp-Session-Id'
-    );
+    assert.ok(sessionId, 'Expected initialize response to include Mcp-Session-Id');
 
     // SDK v2 transport accepts requests without MCP-Protocol-Version header,
     // defaulting to the version negotiated at initialization.
-    const missingHeaderResponse = await fetch(
-      `http://127.0.0.1:${String(port)}/mcp`,
-      {
-        method: 'POST',
-        headers: {
-          accept: 'application/json, text/event-stream',
-          'content-type': 'application/json',
-          'mcp-session-id': sessionId,
-        },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'notifications/initialized',
-        }),
-      }
-    );
+    const missingHeaderResponse = await fetch(`http://127.0.0.1:${String(port)}/mcp`, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+        'mcp-session-id': sessionId,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/initialized',
+      }),
+    });
 
     assert.equal(missingHeaderResponse.status, 202);
   });
@@ -328,10 +304,7 @@ describe('HTTP transport', () => {
 
     assert.equal(initResponse.status, 200);
     const sessionId = initResponse.headers.get('mcp-session-id');
-    assert.ok(
-      sessionId,
-      'Expected initialize response to include Mcp-Session-Id'
-    );
+    assert.ok(sessionId, 'Expected initialize response to include Mcp-Session-Id');
 
     const initPayload = parseSseJsonPayload(await initResponse.text()) as {
       result?: { protocolVersion?: string };
@@ -339,25 +312,22 @@ describe('HTTP transport', () => {
     assert.equal(
       initPayload.result?.protocolVersion,
       '2025-11-25',
-      `Expected the server to negotiate to its latest supported protocol version, got ${JSON.stringify(initPayload)}`
+      `Expected the server to negotiate to its latest supported protocol version, got ${JSON.stringify(initPayload)}`,
     );
 
-    const initializedResponse = await fetch(
-      `http://127.0.0.1:${String(port)}/mcp`,
-      {
-        method: 'POST',
-        headers: {
-          accept: 'application/json, text/event-stream',
-          'content-type': 'application/json',
-          'mcp-protocol-version': '2025-11-25',
-          'mcp-session-id': sessionId,
-        },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'notifications/initialized',
-        }),
-      }
-    );
+    const initializedResponse = await fetch(`http://127.0.0.1:${String(port)}/mcp`, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+        'mcp-protocol-version': '2025-11-25',
+        'mcp-session-id': sessionId,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/initialized',
+      }),
+    });
 
     assert.equal(initializedResponse.status, 202);
   });
@@ -388,29 +358,23 @@ describe('HTTP transport', () => {
 
     assert.equal(initResponse.status, 200);
     const sessionId = initResponse.headers.get('mcp-session-id');
-    assert.ok(
-      sessionId,
-      'Expected initialize response to include Mcp-Session-Id'
-    );
+    assert.ok(sessionId, 'Expected initialize response to include Mcp-Session-Id');
 
     // SDK v2 transport accepts any supported protocol version on subsequent
     // requests, not just the one negotiated at initialization.
-    const otherSupportedVersionResponse = await fetch(
-      `http://127.0.0.1:${String(port)}/mcp`,
-      {
-        method: 'POST',
-        headers: {
-          accept: 'application/json, text/event-stream',
-          'content-type': 'application/json',
-          'mcp-protocol-version': '2025-06-18',
-          'mcp-session-id': sessionId,
-        },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'notifications/initialized',
-        }),
-      }
-    );
+    const otherSupportedVersionResponse = await fetch(`http://127.0.0.1:${String(port)}/mcp`, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+        'mcp-protocol-version': '2025-06-18',
+        'mcp-session-id': sessionId,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/initialized',
+      }),
+    });
 
     assert.equal(otherSupportedVersionResponse.status, 202);
   });
@@ -505,7 +469,7 @@ describe('HTTP transport', () => {
 
     await assert.rejects(
       () => startHttpServer(0, { cliAllowedDirs: [dir] }),
-      /Refusing to bind HTTP server to non-loopback host/
+      /Refusing to bind HTTP server to non-loopback host/,
     );
   });
 
@@ -530,10 +494,10 @@ describe('HTTP transport', () => {
       assert.equal(tools.length, 18);
       assert.equal(resources.length, 1);
       assert.equal(resources[0]?.uri, 'internal://instructions');
-      assert.deepEqual(
-        resourceTemplates.map((template) => template.uriTemplate).sort(),
-        ['filesystem-mcp://file/{+path}', 'filesystem-mcp://result/{id}']
-      );
+      assert.deepEqual(resourceTemplates.map((template) => template.uriTemplate).sort(), [
+        'filesystem-mcp://file/{+path}',
+        'filesystem-mcp://result/{id}',
+      ]);
       assert.deepEqual(prompts.map((prompt) => prompt.name).sort(), [
         'analyze-path',
         'compare-files',
@@ -575,29 +539,23 @@ describe('HTTP transport', () => {
 
     assert.equal(initResponse.status, 200);
     const sessionId = initResponse.headers.get('mcp-session-id');
-    assert.ok(
-      sessionId,
-      'Expected initialize response to include Mcp-Session-Id'
-    );
+    assert.ok(sessionId, 'Expected initialize response to include Mcp-Session-Id');
 
     await new Promise((resolve) => setTimeout(resolve, 2200));
 
-    const followUpResponse = await fetch(
-      `http://127.0.0.1:${String(port)}/mcp`,
-      {
-        method: 'POST',
-        headers: {
-          accept: 'application/json, text/event-stream',
-          'content-type': 'application/json',
-          'mcp-protocol-version': '2025-11-25',
-          'mcp-session-id': sessionId,
-        },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'notifications/initialized',
-        }),
-      }
-    );
+    const followUpResponse = await fetch(`http://127.0.0.1:${String(port)}/mcp`, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+        'mcp-protocol-version': '2025-11-25',
+        'mcp-session-id': sessionId,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/initialized',
+      }),
+    });
 
     assert.equal(followUpResponse.status, 404);
     assert.match(await followUpResponse.text(), /Session not found/u);
@@ -626,7 +584,7 @@ describe('HTTP transport', () => {
     const listenerCount = server.listenerCount('error');
     assert.ok(
       listenerCount >= 1,
-      `Expected at least one persistent error listener, got ${listenerCount}`
+      `Expected at least one persistent error listener, got ${listenerCount}`,
     );
   });
 
@@ -666,10 +624,7 @@ describe('HTTP transport', () => {
     });
 
     assert.equal(response.statusCode, 204);
-    assert.match(
-      String(response.headers['access-control-allow-methods'] ?? ''),
-      /OPTIONS/iu
-    );
+    assert.match(String(response.headers['access-control-allow-methods'] ?? ''), /OPTIONS/iu);
   });
 
   it('returns 400 for non-object/array JSON primitives when strict parser is used', async () => {
