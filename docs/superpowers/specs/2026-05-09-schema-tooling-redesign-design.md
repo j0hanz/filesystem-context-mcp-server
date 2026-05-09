@@ -27,54 +27,57 @@ Replace the current schema + tool-definition stack with a single, schema-first, 
 
 ## 3. Architecture overview
 
-### 3.1 Folder layout (hybrid: feature folders for complex tools, single files for simple ones)
+### 3.1 Folder layout (consolidated — fewer files, related logic colocated)
+
+Guiding rule: **group by responsibility, not by symbol**. Each file owns a coherent slice of behavior; related helpers live next to their callers instead of being scattered across single-symbol files.
 
 ```text
 src/
-├── cli.ts, config.ts, index.ts, server.ts
+├── index.ts            — public exports
+├── cli.ts              — CLI entry
+├── server.ts           — createMcpServer + startStdio + startHttp + RootsManager + TaskOrchestrator + EventedTaskStore + EventStore
+├── config.ts           — runtime config + pkg-info
 │
-├── core/                         (was lib/)
-│   ├── path-guard.ts, errors.ts, abort.ts
-│   ├── file-content.ts, atomic-write.ts, fs-walk.ts, mime.ts
-│   ├── parallel.ts, worker-pool.ts, worker.ts
-│   ├── resource-store.ts, observability.ts, logger.ts
-│   ├── progress-session.ts
-│   └── constants.ts, utils.ts
+├── core/               — foundation (was lib/)
+│   ├── path.ts         — PathGuard + path-completer + safe-glob check
+│   ├── fs.ts           — file-content + atomic-write + fs-walk + mime
+│   ├── concurrency.ts  — parallel + worker-pool + worker bootstrap + abort helpers
+│   ├── store.ts        — ResourceStore (in-memory + blob store)
+│   ├── observability.ts — Logger + LogRouter + diagnostics-channel + ProgressSession + traceparent helpers
+│   ├── errors.ts       — McpError + ErrorCode + Problem + classifyError
+│   └── util.ts         — small helpers + constants (formatBytes, etc.)
 │
-├── schema/                       (was schemas/)
-│   ├── primitives.ts             — registered leaf primitives
-│   ├── fs.ts                     — domain composites (FileInfo, BatchResult, Continuation)
-│   └── io.ts                     — toMcpSchema() adapter (~40 lines)
+├── schema.ts           — primitives + FS composites (FileInfo, batchResult, paginated, Continuation) + toMcpSchema()
 │
 ├── tools/
-│   ├── define.ts                 — flat defineTool() + DefinedTool type
-│   ├── registry.ts               — ALL_TOOLS array + registerAllTools()
-│   ├── presets.ts                — annotation presets + icon sets
-│   │
-│   ├── read/{schema.ts, handler.ts, index.ts}
-│   ├── write/, search-text/, replace-text/, apply-patch/, edit-file/, diff-files/
-│   │
-│   ├── list-dir.ts, tree.ts, find-files.ts, stat.ts, hash-file.ts
-│   ├── make-dir.ts, move.ts, delete.ts, list-roots.ts
+│   ├── define.ts       — defineTool + DefinedTool + annotation/icon presets + registry + registerAllTools
+│   ├── read.ts         — `read` (single tool, big schema)
+│   ├── search.ts       — `list_dir` + `tree` + `find_files` + `search_text` (read-only traversal)
+│   ├── edit.ts         — `edit_file` + `replace_text` + `apply_patch` + `diff_files` (text mutation)
+│   ├── write.ts        — `write` + `make_dir` + `move` + `delete` (FS mutation)
+│   └── stat.ts         — `stat` + `hash_file` + `list_roots` (metadata)
 │
-├── server/
-│   ├── index.ts                  — re-export façade
-│   ├── bootstrap.ts              — createMcpServer() (transport-agnostic)
-│   ├── stdio.ts                  — startStdio()
-│   ├── http.ts                   — startHttp() (Express, sessions, host validation, auth guard)
-│   ├── roots.ts                  (was roots-manager.ts)
-│   ├── tasks.ts                  (was task-orchestrator.ts)
-│   ├── task-store.ts, event-store.ts
+├── prompts.ts          — definePrompt + all prompts (one file)
 │
-├── prompts/
-│   ├── index.ts                  — registerAllPrompts()
-│   └── <one file per prompt>
-│
-└── resources/
-    ├── index.ts, instructions.ts, filesystem.ts, result.ts
+└── resources.ts        — instructions + filesystem + result resources (one file)
 ```
 
-### 3.2 Tool inventory (15 tools, snake_case, verb-first)
+File counts:
+
+| Area                        | Today   | Redesigned       |
+| --------------------------- | ------- | ---------------- |
+| `src/` root                 | 7       | 4                |
+| Foundation (`lib/`/`core/`) | 13      | 7                |
+| Schema                      | 3       | 1                |
+| Tools                       | 22      | 6                |
+| Server                      | 5       | (in `server.ts`) |
+| Prompts                     | 1       | 1                |
+| Resources                   | 5       | 1                |
+| **Total**                   | **~56** | **~22**          |
+
+Largest files in the redesign: `server.ts` (~500 LOC), `core/fs.ts` (~400), `core/observability.ts` (~350), `tools/search.ts` (~600), `tools/edit.ts` (~500). All grep-friendly and small enough to hold in context.
+
+### 3.2 Tool inventory (16 tools, snake_case, verb-first)
 
 | New name       | Replaces                                                       | Notes                                                      |
 | -------------- | -------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -95,9 +98,11 @@ src/
 | `delete`       | `delete_file`                                                  | files + dirs                                               |
 | `list_roots`   | `list_allowed_directories`                                     |                                                            |
 
-## 4. Schema layer
+## 4. Schema layer (`src/schema.ts`)
 
-### 4.1 `schema/primitives.ts`
+All three concerns — registered leaf primitives, domain composites, and the JSON-Schema adapter — live in one file (~250 LOC). The split into separate files added ceremony without isolation: every tool imports from all three, and the helpers reference each other. Keeping them together makes the schema layer one obvious destination.
+
+### 4.1 Primitives section
 
 Every reusable leaf is registered once via `.meta({ id })` so Zod v4's `$defs` registry emits `$ref` instead of inlining:
 
@@ -114,7 +119,7 @@ export const Glob = z.string().min(1).max(1000).refine(isSafeGlobSyntax).meta({ 
 export const CursorOpaque = z.base64url().optional().meta({ id: 'Cursor' });
 ```
 
-### 4.2 `schema/fs.ts`
+### 4.2 Domain composites section
 
 Domain composites — every shared shape is registered. `batchResult<T>` and `paginated<T>` are reusable factories:
 
@@ -171,9 +176,9 @@ export const Continuation = z
   .meta({ id: 'Continuation' });
 ```
 
-### 4.3 `schema/io.ts`
+### 4.3 JSON-Schema adapter section
 
-The entire JSON-Schema adapter. ~40 lines, no `augment` hook (discriminated unions emit `oneOf` natively):
+`toMcpSchema()` — ~40 lines, no `augment` hook (discriminated unions emit `oneOf` natively):
 
 ```ts
 const STRIP_FORMATS = new Set(['base64url', 'sha256_hex']);
@@ -208,8 +213,9 @@ export function toMcpSchema(schema: z.ZodType): StandardSchemaWithJSON {
 - `removeDefaultedFromRequired` post-pass (replaced by `io: 'input'`).
 - All `superRefine` blocks for read-range / byte-range mutual exclusion (replaced by `discriminatedUnion('mode', ...)`).
 - `inputSchemaJson` field on `ToolContract` and the `augment` hook on `toToolJsonSchema` (no longer needed — Zod emits `oneOf` natively).
-- `readRangeConstraints()` and `safeGlobConstraint()` helpers in `json-schema.ts`.
-- `createReadRangeFields()` and `validateReadRange()` in `schemas/shared.ts`.
+- `readRangeConstraints()` and `safeGlobConstraint()` helpers (today's `json-schema.ts`).
+- `createReadRangeFields()` and `validateReadRange()` (today's `schemas/shared.ts`).
+- The `schemas/` folder itself — collapsed into `schema.ts`.
 
 ## 5. Tool definition surface (`tools/define.ts`)
 
@@ -297,7 +303,7 @@ One private function:
 ### 5.4 Tool author experience
 
 ```ts
-// src/tools/read/index.ts
+// src/tools/read.ts — schema, handler, and defineTool() call all in one file
 export const READ = defineTool({
   name: 'read',
   title: 'Read Files',
@@ -314,7 +320,7 @@ export const READ = defineTool({
 });
 ```
 
-~15 lines vs. ~120 today. Schema and handler are sibling files in the same folder.
+~15 lines for the `defineTool()` block vs. ~120 of plumbing today. Input schema, output schema, and `runRead()` handler all sit above it in the same file.
 
 ## 6. Output-shape conventions
 
@@ -354,21 +360,24 @@ Used by: `read.range` (full/head/tail/lines/bytes), `write.mode` (create/overwri
 - Path-Guard violations already throw `McpError(ErrorCode.PATH_OUTSIDE_ROOTS)` and flow naturally.
 - `defaultErrorCode` only kicks in when the handler throws a non-`McpError` value.
 
-## 8. Server bootstrap split
+## 8. Server bootstrap consolidation
 
-Today's `bootstrap.ts` (~600 LOC, mixes stdio + HTTP/Express + capabilities + logging routing + init timeouts + icons) splits into:
+Today's `server/` folder is 5 files (`bootstrap.ts`, `roots-manager.ts`, `task-orchestrator.ts`, `task-store.ts`, `event-store.ts`) plus tight coupling between them. Redesign collapses them into a single `src/server.ts` (~500 LOC) with internal sections:
 
-- `server/bootstrap.ts` — `createMcpServer()` builds server, `RootsManager`, deps, registers tools/resources/prompts. Transport-agnostic.
-- `server/stdio.ts` — `startStdio(server)`.
-- `server/http.ts` — `startHttp(server, opts)`: Express, sessions, host validation, auth guard, init-handshake timeouts.
-- `server/index.ts` — public re-export façade so external imports keep working.
+- `createMcpServer()` — transport-agnostic: builds the `McpServer`, `RootsManager`, dependency bundle, registers tools/resources/prompts.
+- `startStdio(server)` — stdio transport.
+- `startHttp(server, opts)` — Express, sessions, host validation, auth guard, init-handshake timeouts.
+- `RootsManager` class.
+- `TaskOrchestrator` class.
+- `EventedTaskStore` + in-memory `EventStore`.
 
-Other files (`roots.ts`, `tasks.ts`, `task-store.ts`, `event-store.ts`) are renames only.
+Why one file: every section depends on every other (the orchestrator references the store, the store emits events, the bootstrap wires all three into the server, the transports own the server). Splitting them produced today's circular-import smell where `bootstrap.ts` re-exports facades for everything. Co-located, the dependencies are explicit and grep-able.
 
 ## 9. Resources, prompts, instructions
 
-- `resources/instructions.ts`, `tool-info.ts`, `tool-catalog.ts` → pure functions over `ALL_TOOLS: DefinedTool[]`. They read `name/title/description/nuances/gotchas/inputJsonSchema/outputJsonSchema` directly off each `DefinedTool`. **One source of truth** for tool metadata.
-- Prompts move from one big `prompts.ts` into `src/prompts/<one-per-prompt>.ts` with `definePrompt({ name, title, args, run })`. Same flat shape as tools.
+- `src/resources.ts` (one file, ~300 LOC) holds three resource registrations: server instructions, filesystem resource template, result resource template. Each is a section. Today's 5-file `resources/` folder folds in.
+- The instructions section + tool-info + tool-catalog become **pure functions over `ALL_TOOLS: DefinedTool[]`**. They read `name/title/description/nuances/gotchas/inputJsonSchema/outputJsonSchema` directly off each `DefinedTool`. **One source of truth** for tool metadata across registration, instructions, and the catalog.
+- `src/prompts.ts` keeps the single-file shape (~200 LOC) using `definePrompt({ name, title, args, run })`. The prompt body is short enough that one file is more navigable than per-prompt files.
 
 ## 10. Tests
 
@@ -396,14 +405,15 @@ Other files (`roots.ts`, `tasks.ts`, `task-store.ts`, `event-store.ts`) are rena
 
 | Metric                                             | Today      | Redesigned        |
 | -------------------------------------------------- | ---------- | ----------------- |
-| Tool count                                         | 18         | 15                |
+| Tool count                                         | 18         | 16                |
+| Source files in `src/`                             | ~56        | ~22               |
 | Schema LOC                                         | ~2400      | ~1200             |
 | Tools with `outputSchema`                          | ~70%       | 100%              |
 | Layers in registration pipeline                    | 5          | 1                 |
 | `as never` casts in tool registration              | 2          | 0                 |
 | `inputSchemaJson` escape hatches                   | yes        | gone              |
 | `tools/list` payload (FileInfo deduped via `$ref`) | inlined ×6 | one `$defs` entry |
-| Per-tool definition LOC (e.g. `read.ts`)           | ~120       | ~30               |
+| Per-tool definition LOC (e.g. `read`)              | ~120       | ~30               |
 
 ## 14. Open questions
 
