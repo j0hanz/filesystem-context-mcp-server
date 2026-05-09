@@ -169,7 +169,6 @@ git commit -m "refactor: simplify ToolContext and remove TaskStoreSink"
 
 ```typescript
 import assert from 'node:assert';
-
 import test from 'node:test';
 
 import { TaskOrchestrator } from '../../src/server/task-orchestrator.js';
