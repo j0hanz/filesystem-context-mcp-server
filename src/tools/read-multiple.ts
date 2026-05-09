@@ -5,7 +5,6 @@ import { basename } from 'node:path';
 import { z } from 'zod/v4';
 
 import { NonNegInt, PositiveInt, RequiredPath } from '../schemas/fields.js';
-import { readRangeConstraints, toToolJsonSchema } from '../schemas/json-schema.js';
 import {
   ContinuationSchema,
   createReadRangeFields,
@@ -24,6 +23,7 @@ import {
   readFileWithStats,
 } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
+import type { ResourceStore } from '../core/store.js';
 import {
   assignDefined,
   DEFAULT_CONTINUATION_CHUNK_SIZE,
@@ -32,24 +32,8 @@ import {
   MAX_TEXT_FILE_SIZE,
   PARALLEL_CONCURRENCY,
 } from '../core/util.js';
-import { defineTool } from './define-tool.js';
-import { FILE_READ_ICONS } from './icons.js';
-import {
-  buildBatchPathContext,
-  buildResourceLink,
-  buildResourceResponse,
-  buildStructuredError,
-  putResource,
-  READ_ONLY_TOOL_ANNOTATIONS,
-  type ToolContract,
-  type ToolRegistrationOptions,
-  type ToolResponse,
-} from './shared.js';
-import {
-  completeProgressSession,
-  createBatchProgressCallbacks,
-  resolveFinalProgressCurrent,
-} from './tool-execution.js';
+import { defineTool } from './define.js';
+import { buildStructuredError, putResource } from './shared.js';
 
 // ---------------------------------------------------------------------------
 // readMultipleFiles implementation (inlined from file-operations/metadata.ts)
@@ -513,27 +497,7 @@ const ReadManyOutputSchema = z.strictObject({
   summary: OperationSummarySchema.describe('Operation summary'),
 });
 
-const READ_MANY_TOOL: ToolContract = {
-  name: 'read_many',
-  title: 'Read Multiple Files',
-  description:
-    'Read multiple text files in one request with contents and metadata. ' +
-    'For a single file, use `read`.',
-  inputSchema: ReadManyInputSchema,
-  inputSchemaJson: toToolJsonSchema(ReadManyInputSchema, (s) => ({
-    ...s,
-    allOf: [...(Array.isArray(s.allOf) ? (s.allOf as unknown[]) : []), ...readRangeConstraints()],
-  })),
-  outputSchema: ReadManyOutputSchema,
-  annotations: READ_ONLY_TOOL_ANNOTATIONS,
-  icons: FILE_READ_ICONS,
-  nuances: ['Per-file failures land in `results[].error`; the call still returns `isError:false`.'],
-  gotchas: ['One `defaultTimeoutMs` covers the whole batch — slow disks may starve later files.'],
-  taskSupport: 'optional',
-  defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-} as const;
-
-const READ_MANY_TOOL_LABEL = READ_MANY_TOOL.title;
+const READ_MANY_TOOL_LABEL = 'Read Multiple Files';
 
 type ReadManyInput = z.infer<typeof ReadManyInputSchema>;
 type ReadManyOutput = z.infer<typeof ReadManyOutputSchema>;
@@ -600,7 +564,7 @@ function toStructuredReadManyResult(result: ReadManyResultWithResource): ReadMan
 
 function maybeExternalizeReadManyResult(
   result: ReadManyResult,
-  resourceStore?: ToolRegistrationOptions['resourceStore'],
+  resourceStore?: ResourceStore,
 ): ReadManyResultWithResource {
   const { error, ...rest } = result;
   const baseResult: ReadManyResultWithResource = {
@@ -637,18 +601,6 @@ function maybeExternalizeReadManyResult(
   };
 }
 
-function buildReadManyTextSection(result: ReadManyResultWithResource): string {
-  if (result.error) {
-    return `${result.path} [ERROR: ${result.error.code}]`;
-  }
-
-  const parts: string[] = [basename(result.path)];
-  if (result.totalLines !== undefined) {
-    parts.push(`${result.totalLines} lines`);
-  }
-  return parts.join(' · ');
-}
-
 function buildReadMultipleOptions(
   args: ReadManyInput,
   signal?: AbortSignal,
@@ -668,48 +620,30 @@ function buildReadMultipleOptions(
 
 function buildReadManyResponsePayload(
   results: readonly ReadManyResult[],
-  resourceStore?: ToolRegistrationOptions['resourceStore'],
+  resourceStore?: ResourceStore,
 ): {
-  resourceLinks: ReturnType<typeof buildResourceLink>[];
   structuredResults: ReadManyOutputItem[];
   summary: ReadManyOutput['summary'];
-  text: string;
 } {
-  const resourceLinks: ReturnType<typeof buildResourceLink>[] = [];
   const structuredResults: ReadManyOutputItem[] = [];
-  const textLines: string[] = [];
   let succeeded = 0;
 
   for (const result of results) {
     const mappedResult = maybeExternalizeReadManyResult(result, resourceStore);
     structuredResults.push(toStructuredReadManyResult(mappedResult));
-    textLines.push(buildReadManyTextSection(mappedResult));
-
-    if (mappedResult.resourceUri && !mappedResult.error) {
-      resourceLinks.push(
-        buildResourceLink({
-          uri: mappedResult.resourceUri,
-          name: basename(mappedResult.path),
-          ...(mappedResult.mimeType ? { mimeType: mappedResult.mimeType } : {}),
-        }),
-      );
-    }
 
     if (mappedResult.error === undefined) succeeded += 1;
   }
 
   const total = structuredResults.length;
-  const summaryText = `read_many: ${total} files\n- ${textLines.join('\n- ')}`;
 
   return {
-    resourceLinks,
     structuredResults,
     summary: {
       total,
       succeeded,
       failed: total - succeeded,
     },
-    text: summaryText,
   };
 }
 
@@ -717,63 +651,49 @@ async function handleReadMultipleFiles(
   args: ReadManyInput,
   pathGuard: PathGuard,
   signal?: AbortSignal,
-  resourceStore?: ToolRegistrationOptions['resourceStore'],
+  resourceStore?: ResourceStore,
   onReadComplete?: () => void,
-): Promise<ToolResponse<ReadManyOutput>> {
+): Promise<ReadManyOutput> {
   const options = buildReadMultipleOptions(args, signal, onReadComplete);
   options.pathGuard = pathGuard;
   const results = await readMultipleFiles(args.paths, options);
   const payload = buildReadManyResponsePayload(results, resourceStore);
 
-  const structured: ReadManyOutput = {
-    ok: true,
+  return {
+    ok: true as const,
     results: payload.structuredResults,
     summary: payload.summary,
   };
-
-  return buildResourceResponse({
-    summary: payload.text,
-    resources: payload.resourceLinks,
-    structured,
-  });
 }
 
-export const READ_MANY = defineTool<ReadManyInput, ReadManyOutput>({
-  contract: READ_MANY_TOOL,
+export const READ_MANY = defineTool({
+  name: 'read_many',
+  title: 'Read Multiple Files',
+  description:
+    'Read multiple text files in one request with contents and metadata. ' +
+    'For a single file, use `read`.',
+  input: ReadManyInputSchema,
+  output: ReadManyOutputSchema,
+  annotations: 'readOnly',
+  task: 'optional',
+  timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
+  nuances: ['Per-file failures land in `results[].error`; the call still returns `isError:false`.'],
+  gotchas: ['One `timeoutMs` covers the whole batch \u2014 slow disks may starve later files.'],
   defaultErrorCode: ErrorCode.NOT_FILE,
-  diagnosticsContext: (args) => ({ path: args.paths[0] ?? '' }),
+  progressLabel: (args) => `${READ_MANY_TOOL_LABEL}: ${args.paths.length} files`,
   run: async (args, ctx) => {
-    const context = buildBatchPathContext(args.paths, 'files');
-    const label = `${READ_MANY_TOOL_LABEL}: ${context}`;
-    const { progress, onItemComplete: rawOnItemComplete } = createBatchProgressCallbacks(ctx, {
-      toolLabel: READ_MANY_TOOL_LABEL,
-      context,
-      totalItems: args.paths.length,
-      itemVerb: 'read',
-    });
-
-    let itemsDone = 0;
-    const onItemComplete = (): void => {
-      rawOnItemComplete();
-      itemsDone++;
-      progress.status(`${label} [${itemsDone}/${args.paths.length} read]`);
+    const total = args.paths.length;
+    let completed = 0;
+    const onReadComplete = (): void => {
+      completed++;
+      ctx.onProgress?.({ current: completed, total, message: `read_many: ${completed}/${total}` });
     };
-
-    return completeProgressSession(progress, label, async () => {
-      const result = await handleReadMultipleFiles(
-        args,
-        ctx.pathGuard,
-        ctx.signal,
-        ctx.resourceStore,
-        onItemComplete,
-      );
-
-      const sc = result.structuredContent;
-      const total = sc.summary.total;
-      const failed = sc.summary.failed;
-      const suffix = failed ? `${failed} failed` : 'done';
-      const finalCurrent = resolveFinalProgressCurrent(progress, total);
-      return { value: result, suffix, finalCurrent };
-    });
+    return handleReadMultipleFiles(
+      args,
+      ctx.pathGuard,
+      ctx.signal,
+      ctx.resourceStore,
+      onReadComplete,
+    );
   },
 });

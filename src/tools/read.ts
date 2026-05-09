@@ -3,7 +3,6 @@ import { basename } from 'node:path';
 import { z } from 'zod/v4';
 
 import { NonNegInt, PositiveInt, RequiredPath, Sha256Hex } from '../schemas/fields.js';
-import { readRangeConstraints, toToolJsonSchema } from '../schemas/json-schema.js';
 import {
   ContinuationSchema,
   createReadRangeFields,
@@ -11,7 +10,6 @@ import {
   validateReadRange,
 } from '../schemas/shared.js';
 
-import { formatBytes } from '../config.js';
 import { ErrorCode } from '../core/errors.js';
 import { calculateFileContentHash, detectMimeType, readFile } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
@@ -22,17 +20,8 @@ import {
   DEFAULT_SEARCH_TIMEOUT_MS,
   MAX_TEXT_FILE_SIZE,
 } from '../core/util.js';
-import { defineTool } from './define-tool.js';
-import { FILE_READ_ICONS } from './icons.js';
-import {
-  buildResourceResponse,
-  buildToolResponse,
-  putResource,
-  READ_ONLY_TOOL_ANNOTATIONS,
-  type ToolContract,
-  type ToolResponse,
-  type ToolResult,
-} from './shared.js';
+import { defineTool } from './define.js';
+import { putResource } from './shared.js';
 
 const readRangeFields = createReadRangeFields({
   head: 'Return first N lines',
@@ -100,31 +89,11 @@ const ReadFileOutputSchema = z.strictObject({
   reachedEOF: z.boolean().optional().describe('Read reached end of file'),
 });
 
-const READ_FILE_TOOL: ToolContract = {
-  name: 'read',
-  title: 'Read File',
-  description:
-    'Read a text file. Use head/tail/startLine/endLine for partial line reads; use offset/length for byte-range reads; use read_many for batches.',
-  inputSchema: ReadFileInputSchema,
-  inputSchemaJson: toToolJsonSchema(ReadFileInputSchema, (s) => ({
-    ...s,
-    allOf: [...(Array.isArray(s.allOf) ? (s.allOf as unknown[]) : []), ...readRangeConstraints()],
-  })),
-  outputSchema: ReadFileOutputSchema,
-  annotations: READ_ONLY_TOOL_ANNOTATIONS,
-  icons: FILE_READ_ICONS,
-  nuances: [
-    'Large content is externalized to `filesystem-mcp://result/{id}` and preview is returned inline.',
-  ],
-  taskSupport: 'forbidden',
-  defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-} as const;
-
 type ReadFileInput = z.infer<typeof ReadFileInputSchema>;
 type ReadFileOutput = z.infer<typeof ReadFileOutputSchema>;
 type ReadFileHandlerResult = Awaited<ReturnType<typeof readFile>>;
 
-const READ_TOOL_LABEL = READ_FILE_TOOL.title;
+const READ_TOOL_LABEL = 'Read File';
 
 function buildReadOptions(
   args: ReadFileInput,
@@ -207,7 +176,7 @@ function toStructuredReadFileResult(
   });
 }
 
-function buildReadProgressMessage(args: ReadFileInput): string {
+function buildReadProgressLabel(args: ReadFileInput): string {
   const name = basename(args.path);
   if (args.offset !== undefined) {
     const end = args.length !== undefined ? args.offset + args.length - 1 : '…';
@@ -222,53 +191,12 @@ function buildReadProgressMessage(args: ReadFileInput): string {
   return `${READ_TOOL_LABEL}: ${name}`;
 }
 
-function buildReadCompletionMessage(
-  args: ReadFileInput,
-  result: ToolResult<ReadFileOutput>,
-): string {
-  const name = basename(args.path);
-  if (result.isError) return `${READ_TOOL_LABEL}: ${name} • ${result.errorCode}`;
-
-  const structured = result.structuredContent;
-
-  if (structured.offset !== undefined) {
-    return `${READ_TOOL_LABEL}: ${name} • ${String(structured.bytesRead ?? 0)} bytes @ ${String(structured.offset)}`;
-  }
-
-  const lines = structured.linesRead ?? structured.totalLines;
-
-  if (structured.startLine !== undefined) {
-    const end = structured.linesRead
-      ? structured.startLine + structured.linesRead - 1
-      : (structured.endLine ?? '…');
-    return `${READ_TOOL_LABEL}: ${name} • lines ${structured.startLine}–${end}`;
-  }
-
-  if (structured.head !== undefined) {
-    return structured.hasMoreLines
-      ? `${READ_TOOL_LABEL}: ${name} • first ${String(lines ?? structured.head)} lines`
-      : `${READ_TOOL_LABEL}: ${name} • ${String(lines ?? structured.head)} lines`;
-  }
-
-  if (structured.tail !== undefined) {
-    return structured.hasMoreLines
-      ? `${READ_TOOL_LABEL}: ${name} • last ${String(lines ?? structured.tail)} lines`
-      : `${READ_TOOL_LABEL}: ${name} • ${String(lines ?? structured.tail)} lines`;
-  }
-
-  if (structured.continuation) {
-    return `${READ_TOOL_LABEL}: ${name} • truncated [${String(lines)} lines]`;
-  }
-
-  return `${READ_TOOL_LABEL}: ${name} • ${String(lines)} lines`;
-}
-
 async function handleReadFile(
   args: ReadFileInput,
   pathGuard: PathGuard,
   signal?: AbortSignal,
   resourceStore?: ResourceStore,
-): Promise<ToolResponse<ReadFileOutput>> {
+): Promise<ReadFileOutput> {
   const options = buildReadOptions(args, signal);
   const result = await readFile(args.path, options, pathGuard);
   const mimeInfo = detectMimeType(result.path, Buffer.from(result.content.slice(0, 512)));
@@ -285,7 +213,7 @@ async function handleReadFile(
 
   // Always store content in resource store and return summary + link
   if (resourceStore) {
-    const { entry, link } = putResource({
+    const { entry } = putResource({
       store: resourceStore,
       name: basename(result.path),
       mimeType: mimeInfo.mimeType,
@@ -293,32 +221,28 @@ async function handleReadFile(
       content: result.content,
     });
 
-    const structuredWithResource: ReadFileOutput = {
+    return {
       ...structured,
       resourceUri: entry.uri,
     };
-
-    const summary = [
-      `read: ${basename(result.path)}`,
-      `${structured.totalLines ?? 0} lines`,
-      formatBytes(entry.size),
-      mimeInfo.mimeType,
-    ].join(' · ');
-
-    return buildResourceResponse({
-      summary,
-      resources: [link],
-      structured: structuredWithResource,
-    });
   }
 
-  return buildToolResponse(result.content, structured);
+  return structured;
 }
 
-export const READ_FILE = defineTool<ReadFileInput, ReadFileOutput>({
-  contract: READ_FILE_TOOL,
+export const READ_FILE = defineTool({
+  name: 'read',
+  title: 'Read File',
+  description:
+    'Read a text file. Use head/tail/startLine/endLine for partial line reads; use offset/length for byte-range reads; use read_many for batches.',
+  input: ReadFileInputSchema,
+  output: ReadFileOutputSchema,
+  annotations: 'readOnly',
+  timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
+  nuances: [
+    'Large content is externalized to `filesystem-mcp://result/{id}` and preview is returned inline.',
+  ],
   defaultErrorCode: ErrorCode.NOT_FILE,
+  progressLabel: buildReadProgressLabel,
   run: (args, ctx) => handleReadFile(args, ctx.pathGuard, ctx.signal, ctx.resourceStore),
-  progressMessage: buildReadProgressMessage,
-  completionMessage: buildReadCompletionMessage,
 });

@@ -5,21 +5,13 @@ import { z } from 'zod/v4';
 
 import { NonNegInt, RequiredPath } from '../schemas/fields.js';
 
-import { formatBytes } from '../config.js';
 import { withAbort } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
 import { atomicWriteFile, detectMimeType } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
-import { buildPathMessages, defineTool } from './define-tool.js';
-import { FILE_EDIT_ICONS } from './icons.js';
-import {
-  buildResourceResponse,
-  buildToolResponse,
-  DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
-  putResource,
-  type ToolContract,
-} from './shared.js';
+import { defineTool } from './define.js';
+import { putResource } from './shared.js';
 
 const WriteFileInputSchema = z.strictObject({
   path: RequiredPath.describe('Target file path'),
@@ -38,31 +30,18 @@ const WriteFileOutputSchema = z.strictObject({
   modified: z.string().describe('Last modification timestamp (ISO 8601)'),
 });
 
-const WRITE_FILE_TOOL: ToolContract = {
+export const WRITE_FILE = defineTool({
   name: 'write',
   title: 'Write File',
   description:
     'Write content to a file, OVERWRITING ALL existing content. Creates the file and parent directories if needed.',
-  inputSchema: WriteFileInputSchema,
-  outputSchema: WriteFileOutputSchema,
-  annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
-  icons: FILE_EDIT_ICONS,
+  input: WriteFileInputSchema,
+  output: WriteFileOutputSchema,
+  annotations: 'destructiveWrite',
   gotchas: [
     'Overwrites silently — read existing content first if you need to merge.',
     'Use `edit` for partial changes.',
   ],
-  taskSupport: 'forbidden',
-} as const;
-
-type WriteInput = z.infer<typeof WriteFileInputSchema>;
-type WriteOutput = z.infer<typeof WriteFileOutputSchema>;
-
-const writeMessages = buildPathMessages<WriteInput, WriteOutput>(WRITE_FILE_TOOL.title, (sc) =>
-  formatBytes(sc.size),
-);
-
-export const WRITE_FILE = defineTool<WriteInput, WriteOutput>({
-  contract: WRITE_FILE_TOOL,
   run: async (args, ctx) => {
     const validPath = await ctx.pathGuard.validatePathForWrite(args.path);
 
@@ -78,7 +57,7 @@ export const WRITE_FILE = defineTool<WriteInput, WriteOutput>({
 
     Logger.info(`write: ${args.path} (${bytesWritten} bytes)`);
 
-    void ctx.log?.('info', `write: ${args.path} (${String(bytesWritten)} bytes)`, 'write');
+    ctx.log?.('info', `write: ${args.path} (${String(bytesWritten)} bytes)`, 'write');
 
     // Get file stats and MIME type
     const fileStats = await withAbort(stat(validPath), ctx.signal);
@@ -89,8 +68,8 @@ export const WRITE_FILE = defineTool<WriteInput, WriteOutput>({
 
     // Return basic response if no resource store
     if (!ctx.resourceStore) {
-      return buildToolResponse(`Successfully wrote to file: ${args.path}`, {
-        ok: true,
+      return {
+        ok: true as const,
         path: validPath,
         size: bytesWritten,
         lineCount,
@@ -99,11 +78,11 @@ export const WRITE_FILE = defineTool<WriteInput, WriteOutput>({
         resourceUri: '',
         created: fileStats.birthtime.toISOString(),
         modified: fileStats.mtime.toISOString(),
-      });
+      };
     }
 
     // Store content in resource store
-    const { entry, link } = putResource({
+    const { entry } = putResource({
       store: ctx.resourceStore,
       name: basename(validPath),
       mimeType: mimeInfo.mimeType,
@@ -111,16 +90,8 @@ export const WRITE_FILE = defineTool<WriteInput, WriteOutput>({
       content: args.content,
     });
 
-    // Build summary message
-    const summary = [
-      `write: ${basename(validPath)}`,
-      formatBytes(bytesWritten),
-      `${lineCount} lines`,
-    ].join(' · ');
-
-    // Build structured response
-    const structured: WriteOutput = {
-      ok: true,
+    return {
+      ok: true as const,
       path: validPath,
       size: bytesWritten,
       lineCount,
@@ -130,13 +101,7 @@ export const WRITE_FILE = defineTool<WriteInput, WriteOutput>({
       created: fileStats.birthtime.toISOString(),
       modified: fileStats.mtime.toISOString(),
     };
-
-    return buildResourceResponse({
-      summary,
-      resources: [link],
-      structured,
-    });
   },
-  ...writeMessages,
+  progressLabel: (args) => `Write File: ${basename(args.path)}`,
   defaultErrorCode: ErrorCode.UNKNOWN,
 });

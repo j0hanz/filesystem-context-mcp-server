@@ -9,8 +9,6 @@ import type {
   ServerContext,
 } from '@modelcontextprotocol/server';
 
-import { basename } from 'node:path';
-
 import { z } from 'zod/v4';
 
 import type { FileInfo } from '../config.js';
@@ -43,27 +41,6 @@ function extractTraceContext(meta: ToolContext['_meta']): TraceContext | undefin
     ...(typeof meta?.baggage === 'string' ? { baggage: meta.baggage } : {}),
   };
 }
-
-export const READ_ONLY_TOOL_ANNOTATIONS = {
-  readOnlyHint: true,
-  idempotentHint: true,
-  destructiveHint: false,
-  openWorldHint: false,
-} as const;
-
-export const DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS = {
-  readOnlyHint: false,
-  idempotentHint: false,
-  destructiveHint: true,
-  openWorldHint: false,
-} as const;
-
-export const IDEMPOTENT_WRITE_TOOL_ANNOTATIONS = {
-  readOnlyHint: false,
-  idempotentHint: true,
-  destructiveHint: false,
-  openWorldHint: false,
-} as const;
 
 function normalizeToolExecution<T extends object>(tool: T): T {
   const candidate = tool as Record<string, unknown>;
@@ -135,26 +112,6 @@ function buildNormalizedExecutionForTool(
   };
 }
 
-export function buildResourceLink(params: {
-  uri: string;
-  name: string;
-  mimeType?: string;
-  description?: string;
-  expiresAt?: string;
-}): ContentBlock {
-  const descParts: string[] = [];
-  if (params.description) descParts.push(params.description);
-  if (params.expiresAt) descParts.push(`Expires: ${params.expiresAt}`);
-  const description = descParts.length > 0 ? descParts.join(' · ') : undefined;
-  return {
-    type: 'resource_link',
-    uri: params.uri,
-    name: params.name,
-    ...(description ? { description } : {}),
-    ...(params.mimeType ? { mimeType: params.mimeType } : {}),
-  };
-}
-
 function resolveDetailedError(
   error: unknown,
   defaultCode: ErrorCode,
@@ -210,7 +167,7 @@ export function buildToolResponse<T>(
   };
 }
 
-export type ToolResponse<T> = ReturnType<typeof buildToolResponse<T>> & {
+type ToolResponse<T> = ReturnType<typeof buildToolResponse<T>> & {
   isError?: never;
 } & Record<string, unknown>;
 
@@ -479,18 +436,6 @@ export function decodeOffsetCursor(cursor: string): number {
     ErrorCode.INVALID_INPUT,
     `Invalid cursor. Request the first page without a cursor.`,
   );
-}
-
-export function buildBatchPathContext(paths: readonly string[], unitLabel = 'paths'): string {
-  const normalizedLabel = paths.length === 1 ? unitLabel.replace(/s$/i, '') : unitLabel;
-  const first = basename(paths[0] ?? '');
-  let extraPaths = '';
-  if (paths.length > 1) {
-    const secondPath = basename(paths[1] ?? '');
-    const ellipsis = paths.length > 2 ? '…' : '';
-    extraPaths = `, ${secondPath}${ellipsis}`;
-  }
-  return `${paths.length} ${normalizedLabel} [${first}${extraPaths}]`;
 }
 
 export function truncateProgressPattern(pattern: string, maxLength = 40): string {

@@ -13,15 +13,8 @@ import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, isNodeError, McpError } from '../core/errors.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
-import { defineTool } from './define-tool.js';
-import { FILE_DELETE_ICONS } from './icons.js';
-import {
-  buildStructuredError,
-  buildToolResponse,
-  DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
-  type ToolContract,
-  type ToolResult,
-} from './shared.js';
+import { defineTool } from './define.js';
+import { buildStructuredError } from './shared.js';
 
 const DeleteInputSchema = z.strictObject({
   paths: z.array(RequiredPath).min(1).describe('One or more paths to delete'),
@@ -42,18 +35,6 @@ const DeleteOutputSchema = z.strictObject({
   path: z.string().optional().describe('Deleted path'),
   failures: z.array(DeleteFailureItemSchema).optional().describe('Per-path errors'),
 });
-
-const DELETE_FILE_TOOL: ToolContract = {
-  name: 'rm',
-  title: 'Delete File',
-  description: 'Permanently delete one or more files or directories. This action is irreversible.',
-  inputSchema: DeleteInputSchema,
-  outputSchema: DeleteOutputSchema,
-  annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
-  icons: FILE_DELETE_ICONS,
-  gotchas: ['Non-empty directories require `recursive=true`.'],
-  taskSupport: 'forbidden',
-} as const;
 
 type DeleteInput = z.infer<typeof DeleteInputSchema>;
 type DeleteOutput = z.infer<typeof DeleteOutputSchema>;
@@ -261,26 +242,19 @@ async function handleDelete(
   };
 }
 
-export const DELETE_FILE = defineTool<DeleteInput, DeleteOutput>({
-  contract: DELETE_FILE_TOOL,
+export const DELETE_FILE = defineTool({
+  name: 'rm',
+  title: 'Delete File',
+  description: 'Permanently delete one or more files or directories. This action is irreversible.',
+  input: DeleteInputSchema,
+  output: DeleteOutputSchema,
+  annotations: 'destructiveWrite',
+  gotchas: ['Non-empty directories require `recursive=true`.'],
   defaultErrorCode: ErrorCode.UNKNOWN,
-  diagnosticsContext: (args) => ({ path: args.paths[0] ?? '' }),
-  progressMessage: (args) => {
-    const names = args.paths.map((p) => basename(p)).join(', ');
-    return `${DELETE_FILE_TOOL.title}: ${names}`;
-  },
-  completionMessage: (args, result: ToolResult<DeleteOutput>) => {
-    const names = args.paths.map((p) => basename(p)).join(', ');
-    if (result.isError) return `${DELETE_FILE_TOOL.title}: ${names} \u2022 ${result.errorCode}`;
-    return `${DELETE_FILE_TOOL.title}: deleted ${result.structuredContent.path ?? names}`;
-  },
+  progressLabel: (args) => `Delete File: ${args.paths.map((p) => basename(p)).join(', ')}`,
   run: async (args, ctx) => {
     const structured = await handleDelete(args, ctx.pathGuard, ctx.signal, ctx.elicitInput);
-    // P3 confirmation-only pattern: terse summary with deletion confirmation
-    const summary = structured.path
-      ? `delete-file: deleted ${structured.path}`
-      : `delete-file: 1 failure`;
-    void ctx.log?.('info', `rm: ${args.paths[0]}`, 'rm');
-    return buildToolResponse(summary, structured);
+    ctx.log?.('info', `rm: ${args.paths[0]}`, 'rm');
+    return structured;
   },
 });

@@ -12,15 +12,7 @@ import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, isNodeError, McpError } from '../core/errors.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
-import { defineTool } from './define-tool.js';
-import { FILE_MOVE_ICONS } from './icons.js';
-import {
-  buildToolErrorResponse,
-  buildToolResponse,
-  DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
-  type ToolContract,
-  type ToolResult,
-} from './shared.js';
+import { defineTool } from './define.js';
 
 const MoveFileInputSchema = z.strictObject({
   sources: z.array(RequiredPath).min(1).describe('One or more source paths to move'),
@@ -32,20 +24,6 @@ const MoveFileOutputSchema = z.strictObject({
   to: z.string().describe('Resolved destination path'),
   ok: z.literal(true).describe('Success indicator'),
 });
-
-const MOVE_FILE_TOOL: ToolContract = {
-  name: 'mv',
-  title: 'Move File',
-  description: 'Move or rename one or more files/directories to a destination.',
-  inputSchema: MoveFileInputSchema,
-  outputSchema: MoveFileOutputSchema,
-  annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
-  icons: FILE_MOVE_ICONS,
-  gotchas: [
-    'On POSIX, an existing destination is silently overwritten; on Windows, rename fails with EEXIST if destination exists.',
-  ],
-  taskSupport: 'forbidden',
-} as const;
 
 async function getDestinationStatus(validDest: string): Promise<boolean> {
   try {
@@ -206,36 +184,27 @@ async function handleMoveFile(
   };
 }
 
-type MoveInput = z.infer<typeof MoveFileInputSchema>;
-type MoveOutput = z.infer<typeof MoveFileOutputSchema>;
-
-export const MOVE_FILE = defineTool<MoveInput, MoveOutput>({
-  contract: MOVE_FILE_TOOL,
+export const MOVE_FILE = defineTool({
+  name: 'mv',
+  title: 'Move File',
+  description: 'Move or rename one or more files/directories to a destination.',
+  input: MoveFileInputSchema,
+  output: MoveFileOutputSchema,
+  annotations: 'destructiveWrite',
+  gotchas: [
+    'On POSIX, an existing destination is silently overwritten; on Windows, rename fails with EEXIST if destination exists.',
+  ],
+  progressLabel: (args) => {
+    const dest = basename(args.destination);
+    if (args.sources.length === 1) {
+      return `Move File: ${basename(args.sources[0] ?? '')} \u2192 ${dest}`;
+    }
+    return `Move File: ${args.sources.length} items \u2192 ${dest}`;
+  },
+  defaultErrorCode: ErrorCode.UNKNOWN,
   run: async (args, ctx) => {
     const structured = await handleMoveFile(args, ctx.pathGuard, ctx.signal, ctx.elicitInput);
-    // P3 confirmation-only pattern: terse summary with from → to
-    const summary = `move-file: ${structured.from} → ${structured.to}`;
-    void ctx.log?.('info', `mv: ${args.sources.join(', ')} \u2192 ${args.destination}`, 'mv');
-    return buildToolResponse(summary, structured);
+    ctx.log?.('info', `mv: ${args.sources.join(', ')} \u2192 ${args.destination}`, 'mv');
+    return structured;
   },
-  progressMessage: (args) => {
-    const dest = basename(args.destination);
-    if (args.sources.length === 1) {
-      return `${MOVE_FILE_TOOL.title}: ${basename(args.sources[0] ?? '')} \u2192 ${dest}`;
-    }
-    return `${MOVE_FILE_TOOL.title}: ${args.sources.length} items \u2192 ${dest}`;
-  },
-  completionMessage: (args: MoveInput, result: ToolResult<MoveOutput>): string => {
-    const dest = basename(args.destination);
-    if (args.sources.length === 1) {
-      const src = basename(args.sources[0] ?? '');
-      if (result.isError)
-        return `${MOVE_FILE_TOOL.title}: ${src} \u2192 ${dest} \u2022 ${result.errorCode}`;
-      return `${MOVE_FILE_TOOL.title}: ${src} \u2192 ${dest}`;
-    }
-    if (result.isError)
-      return `${MOVE_FILE_TOOL.title}: ${args.sources.length} items \u2192 ${dest} \u2022 ${result.errorCode}`;
-    return `${MOVE_FILE_TOOL.title}: ${args.sources.length} items \u2192 ${dest}`;
-  },
-  onError: (error, args) => buildToolErrorResponse(error, ErrorCode.UNKNOWN, args.sources[0] ?? ''),
 });

@@ -8,13 +8,7 @@ import { RequiredPath } from '../schemas/fields.js';
 import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, McpError } from '../core/errors.js';
 import type { PathGuard } from '../core/path.js';
-import { defineTool } from './define-tool.js';
-import { DIR_CREATE_ICONS } from './icons.js';
-import {
-  buildToolResponse,
-  IDEMPOTENT_WRITE_TOOL_ANNOTATIONS,
-  type ToolContract,
-} from './shared.js';
+import { defineTool } from './define.js';
 
 const CreateDirectoryInputSchema = z.strictObject({
   paths: z.array(RequiredPath).min(1).describe('One or more directory paths to create (recursive)'),
@@ -24,17 +18,6 @@ const CreateDirectoryOutputSchema = z.strictObject({
   path: z.string().describe('Created directory path'),
   ok: z.literal(true).describe('Success indicator'),
 });
-
-const CREATE_DIRECTORY_TOOL: ToolContract = {
-  name: 'mkdir',
-  title: 'Create Directory',
-  description: 'Create one or more directories (recursive). Accepts a list of paths.',
-  inputSchema: CreateDirectoryInputSchema,
-  outputSchema: CreateDirectoryOutputSchema,
-  annotations: IDEMPOTENT_WRITE_TOOL_ANNOTATIONS,
-  icons: DIR_CREATE_ICONS,
-  taskSupport: 'forbidden',
-} as const;
 
 async function handleCreateDirectory(
   args: z.infer<typeof CreateDirectoryInputSchema>,
@@ -61,33 +44,23 @@ async function handleCreateDirectory(
   }
 }
 
-export const CREATE_DIRECTORY = defineTool<
-  z.infer<typeof CreateDirectoryInputSchema>,
-  z.infer<typeof CreateDirectoryOutputSchema>
->({
-  contract: CREATE_DIRECTORY_TOOL,
+export const CREATE_DIRECTORY = defineTool({
+  name: 'mkdir',
+  title: 'Create Directory',
+  description: 'Create one or more directories (recursive). Accepts a list of paths.',
+  input: CreateDirectoryInputSchema,
+  output: CreateDirectoryOutputSchema,
+  annotations: 'idempotentWrite',
   run: async (args, ctx) => {
     const structured = await handleCreateDirectory(args, ctx.pathGuard, ctx.signal);
-    // P3 confirmation-only pattern: terse summary with creation confirmation
-    const summary = `create-directory: created ${structured.path}`;
-    void ctx.log?.('info', `mkdir: ${args.paths[0]}`, 'mkdir');
-    return buildToolResponse(summary, structured);
+    ctx.log?.('info', `mkdir: ${args.paths[0]}`, 'mkdir');
+    return structured;
   },
-  progressMessage: (args) => {
+  progressLabel: (args) => {
     if (args.paths.length === 1) {
-      return `${CREATE_DIRECTORY_TOOL.title}: ${basename(args.paths[0] ?? '')}`;
+      return `Create Directory: ${basename(args.paths[0] ?? '')}`;
     }
-    return `${CREATE_DIRECTORY_TOOL.title}: ${args.paths.length} directories`;
-  },
-  completionMessage: (args, result) => {
-    if (args.paths.length === 1) {
-      const name = basename(args.paths[0] ?? '');
-      if (result.isError) return `${CREATE_DIRECTORY_TOOL.title}: ${name} • ${result.errorCode}`;
-      return `${CREATE_DIRECTORY_TOOL.title}: created ${result.structuredContent.path}`;
-    }
-    if (result.isError)
-      return `${CREATE_DIRECTORY_TOOL.title}: ${args.paths.length} directories • ${result.errorCode}`;
-    return `${CREATE_DIRECTORY_TOOL.title}: created ${result.structuredContent.path}`;
+    return `Create Directory: ${args.paths.length} directories`;
   },
   defaultErrorCode: ErrorCode.UNKNOWN,
 });

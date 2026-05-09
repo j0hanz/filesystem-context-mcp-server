@@ -55,39 +55,6 @@ function stripRootSchema(schema: JsonSchema): JsonSchema {
   return schema;
 }
 
-export function readRangeConstraints(): JsonSchema[] {
-  return [
-    { not: { required: ['head', 'tail'] } },
-    { not: { required: ['tail', 'startLine'] } },
-    { not: { required: ['tail', 'endLine'] } },
-    { not: { required: ['head', 'startLine'] } },
-    { not: { required: ['head', 'endLine'] } },
-    { not: { required: ['offset', 'head'] } },
-    { not: { required: ['offset', 'tail'] } },
-    { not: { required: ['offset', 'startLine'] } },
-    { not: { required: ['offset', 'endLine'] } },
-    { not: { required: ['length', 'head'] } },
-    { not: { required: ['length', 'tail'] } },
-    { not: { required: ['length', 'startLine'] } },
-    { not: { required: ['length', 'endLine'] } },
-  ];
-}
-
-export function safeGlobConstraint(propertyName: string): JsonSchema {
-  return {
-    if: { required: [propertyName] },
-    then: {
-      properties: {
-        [propertyName]: {
-          not: {
-            anyOf: [{ pattern: '^/' }, { pattern: '^[A-Za-z]:' }, { pattern: '\\.\\.' }],
-          },
-        },
-      },
-    },
-  };
-}
-
 export function toToolJsonSchema(
   zodSchema: z.ZodType,
   augment?: (schema: JsonSchema) => JsonSchema,

@@ -1,6 +1,5 @@
 import type { ProgressNotification, ProgressToken } from '@modelcontextprotocol/server';
 
-import { classifyError } from '../core/errors.js';
 import { Logger, ProgressSession } from '../core/observability.js';
 import type { ProgressEvent, ProgressSink } from '../core/observability.js';
 import type { ToolContext } from './shared.js';
@@ -103,78 +102,4 @@ export function progressSessionFromContext(
     sinks,
     dynamicRateLimit: true,
   });
-}
-
-/** Final-cursor heuristic preserved from legacy implementation. */
-export function resolveFinalProgressCurrent(
-  progress: ProgressSession,
-  ...candidates: number[]
-): number {
-  let finalCurrent = progress.current + 1;
-  for (const candidate of candidates) {
-    if (candidate > finalCurrent) finalCurrent = candidate;
-  }
-  return finalCurrent;
-}
-
-interface BatchProgressCallbacks {
-  progress: ProgressSession;
-  onItemComplete: () => void;
-}
-
-interface BatchParams {
-  toolLabel: string;
-  context: string;
-  totalItems: number;
-  itemVerb: string;
-}
-
-export function createBatchProgressCallbacks(
-  ctx: ToolContext,
-  params: BatchParams,
-): BatchProgressCallbacks {
-  const progress = progressSessionFromContext(ctx, {
-    label: `${params.toolLabel}: ${params.context}`,
-    total: params.totalItems,
-  });
-
-  let itemsDone = 0;
-  const onItemComplete = (): void => {
-    itemsDone++;
-    progress.set({
-      current: itemsDone,
-      total: params.totalItems,
-      message: `${params.toolLabel}: ${params.context} [${itemsDone}/${params.totalItems} ${params.itemVerb}]`,
-    });
-  };
-
-  return { progress, onItemComplete };
-}
-
-export async function completeProgressSession<T>(
-  progress: ProgressSession,
-  label: string,
-  body: () => Promise<{ value: T; suffix: string; finalCurrent?: number }>,
-): Promise<T> {
-  try {
-    const { value, suffix } = await body();
-    progress.complete(`${label} • ${suffix}`);
-    return value;
-  } catch (error) {
-    progress.fail(error, `${label} • ${classifyError(error)}`);
-    throw error;
-  }
-}
-
-export async function runWithProgressSession<T>(
-  ctx: ToolContext,
-  label: string,
-  body: (progress: ProgressSession) => Promise<{ value: T; suffix: string; finalCurrent?: number }>,
-  initialTotal?: number,
-): Promise<T> {
-  const progress = progressSessionFromContext(ctx, {
-    label,
-    ...(initialTotal !== undefined ? { total: initialTotal } : {}),
-  });
-  return completeProgressSession(progress, label, () => body(progress));
 }

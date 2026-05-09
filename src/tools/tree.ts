@@ -1,5 +1,3 @@
-import type { ContentBlock } from '@modelcontextprotocol/server';
-
 import { basename, relative } from 'node:path';
 
 import { z } from 'zod/v4';
@@ -35,17 +33,8 @@ import {
   MAX_TREE_DEPTH,
   MAX_TREE_ENTRIES,
 } from '../core/util.js';
-import { defineTool } from './define-tool.js';
-import { DIRECTORY_ICONS } from './icons.js';
-import {
-  buildResourceResponse,
-  putResource,
-  READ_ONLY_TOOL_ANNOTATIONS,
-  type ToolContract,
-  type ToolRegistrationOptions,
-  type ToolResponse,
-} from './shared.js';
-import { resolveFinalProgressCurrent, runWithProgressSession } from './tool-execution.js';
+import { defineTool } from './define.js';
+import { putResource } from './shared.js';
 
 // ---------------------------------------------------------------------------
 // Private tree implementation (inlined from lib/file-operations/metadata.ts)
@@ -460,24 +449,6 @@ const TreeOutputSchema = z.strictObject({
   resourceUri: z.string().optional().describe('Resource URI for full ASCII tree when stored'),
 });
 
-const TREE_TOOL: ToolContract = {
-  name: 'tree',
-  title: 'Tree',
-  description:
-    'Render a directory tree (bounded recursion). Returns ASCII tree + structured JSON. ' +
-    '`maxDepth=0` returns only the root node.',
-  inputSchema: TreeInputSchema,
-  outputSchema: TreeOutputSchema,
-  annotations: READ_ONLY_TOOL_ANNOTATIONS,
-  icons: DIRECTORY_ICONS,
-  nuances: [
-    '`maxDepth=0` returns only the root node.',
-    'Result is bounded by both `maxDepth` and `maxEntries`.',
-  ],
-  taskSupport: 'optional',
-  defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-} as const;
-
 function buildTreeContinuation(
   basePath: string,
   truncated: boolean,
@@ -495,9 +466,9 @@ async function handleTree(
   args: z.infer<typeof TreeInputSchema>,
   pathGuard: PathGuard,
   signal?: AbortSignal,
-  resourceStore?: ToolRegistrationOptions['resourceStore'],
+  resourceStore?: Parameters<typeof putResource>[0]['store'],
   onProgress?: (progress: { current: number }) => void,
-): Promise<ToolResponse<z.infer<typeof TreeOutputSchema>>> {
+): Promise<z.infer<typeof TreeOutputSchema>> {
   const basePath = pathGuard.resolvePathOrRoot(args.path);
   const result = await treeDirectory(basePath, pathGuard, {
     maxDepth: args.maxDepth,
@@ -518,10 +489,9 @@ async function handleTree(
   const continuation = buildTreeContinuation(basePath, result.truncated, result.totalEntries);
 
   let resourceUri: string | undefined;
-  let resources: ContentBlock[] = [];
 
   if (resourceStore) {
-    const { entry, link } = putResource({
+    const { entry } = putResource({
       store: resourceStore,
       name: `${basename(result.root)}-tree.txt`,
       mimeType: 'text/plain',
@@ -529,13 +499,7 @@ async function handleTree(
       content: ascii,
     });
     resourceUri = entry.uri;
-    resources = [link];
   }
-
-  const dirname = basename(result.root) || result.root;
-  const depthLabel = maxDepth === 1 ? '1 level' : `${maxDepth} levels`;
-  const entriesLabel = entryCount === 1 ? '1 entry' : `${entryCount} entries`;
-  const summaryText = `tree: ${dirname} · ${entriesLabel} · ${depthLabel} deep`;
 
   const structured: z.infer<typeof TreeOutputSchema> = {
     ok: true,
@@ -549,50 +513,35 @@ async function handleTree(
     ...(resourceUri ? { resourceUri } : {}),
   };
 
-  return buildResourceResponse({
-    summary: summaryText,
-    resources,
-    structured,
-  });
+  return structured;
 }
 
-export const TREE = defineTool<z.infer<typeof TreeInputSchema>, z.infer<typeof TreeOutputSchema>>({
-  contract: TREE_TOOL,
+export const TREE = defineTool({
+  name: 'tree',
+  title: 'Tree',
+  description:
+    'Render a directory tree (bounded recursion). Returns ASCII tree + structured JSON. ' +
+    '`maxDepth=0` returns only the root node.',
+  input: TreeInputSchema,
+  output: TreeOutputSchema,
+  annotations: 'readOnly',
+  task: 'optional',
+  timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
+  nuances: [
+    '`maxDepth=0` returns only the root node.',
+    'Result is bounded by both `maxDepth` and `maxEntries`.',
+  ],
   defaultErrorCode: ErrorCode.NOT_DIRECTORY,
+  progressLabel: (args) => `Tree: ${args.path ? basename(args.path) : '.'}`,
   run: async (args, ctx) => {
-    const context = args.path ? basename(args.path) : '.';
-    const label = `${TREE_TOOL.title}: ${context}`;
-    const knownTotal = args.maxEntries;
-
-    return runWithProgressSession(
-      ctx,
-      label,
-      async (progress) => {
-        const onProgress = ({ current }: { current: number }): void => {
-          progress.set({
-            current,
-            total: knownTotal,
-            message: `${label} [${current} entries]`,
-          });
-        };
-
-        const result = await handleTree(
-          args,
-          ctx.pathGuard,
-          ctx.signal,
-          ctx.resourceStore,
-          onProgress,
-        );
-        const sc = result.structuredContent;
-        const count = sc.totalEntries ?? 0;
-
-        let suffix = `${count} ${count === 1 ? 'entry' : 'entries'}`;
-        if (sc.continuation) suffix += ' [truncated]';
-
-        const finalCurrent = resolveFinalProgressCurrent(progress, count);
-        return { value: result, suffix, finalCurrent };
-      },
-      knownTotal,
-    );
+    const total = args.maxEntries;
+    const onProgress = ({ current }: { current: number }): void => {
+      ctx.onProgress?.({
+        current,
+        total,
+        message: `Tree: ${args.path ? basename(args.path) : '.'} [${current} entries]`,
+      });
+    };
+    return handleTree(args, ctx.pathGuard, ctx.signal, ctx.resourceStore, onProgress);
   },
 });

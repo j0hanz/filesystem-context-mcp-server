@@ -11,7 +11,6 @@ import {
   NextCursorSchema,
 } from '../schemas/shared.js';
 
-import { formatOperationSummary, joinLines } from '../config.js';
 import type { SearchFilesResult, SearchResult } from '../config.js';
 import { withTimedAbortSignal } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
@@ -44,20 +43,13 @@ import {
   MAX_SEARCH_DEPTH,
   MAX_SEARCH_RESULTS,
 } from '../core/util.js';
-import { defineTool } from './define-tool.js';
-import { DIRECTORY_ICONS } from './icons.js';
+import { defineTool } from './define.js';
 import {
-  buildResourceResponse,
-  buildToolResponse,
   decodeOffsetCursor,
   encodeOffsetCursor,
   putResource,
-  READ_ONLY_TOOL_ANNOTATIONS,
-  type ToolContract,
-  type ToolResponse,
   truncateProgressPattern,
 } from './shared.js';
-import { resolveFinalProgressCurrent, runWithProgressSession } from './tool-execution.js';
 
 // ---------------------------------------------------------------------------
 // Private searchFiles implementation (inlined from lib/file-operations/search.ts)
@@ -512,38 +504,6 @@ const SearchFilesOutputSchema = z.strictObject({
   nextCursor: NextCursorSchema,
 });
 
-const SEARCH_FILES_TOOL: ToolContract = {
-  name: 'find',
-  title: 'Find Files',
-  description:
-    'Find files by glob pattern (e.g. `**/*.ts`). Returns matching files with metadata. ' +
-    'Cursors are offset-based: each page re-runs the query from the stored offset. ' +
-    'For content search, use `grep`. For bulk edits, pass the same glob to `search_and_replace`.',
-  inputSchema: SearchFilesInputSchema,
-  outputSchema: SearchFilesOutputSchema,
-  annotations: READ_ONLY_TOOL_ANNOTATIONS,
-  icons: DIRECTORY_ICONS,
-  nuances: [
-    'Respects `.gitignore` unless `includeIgnored=true`.',
-    'Result paths are relative to the search root, not the workspace root.',
-  ],
-  gotchas: ['Bare names match only at the root; use `**/README.md` for recursive match.'],
-  taskSupport: 'optional',
-  defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-} as const;
-
-function buildTruncatedReason(summary: {
-  truncated: boolean;
-  stoppedReason?: string;
-  filesScanned: number;
-  matched: number;
-}): string | undefined {
-  if (!summary.truncated) return undefined;
-  if (summary.stoppedReason === 'timeout') return 'timeout';
-  if (summary.stoppedReason === 'maxFiles') return `max files (${summary.filesScanned})`;
-  return `max results (${summary.matched})`;
-}
-
 function buildRelativeResults(
   basePath: string,
   displayResults: readonly { path: string; size?: number; modified?: Date }[],
@@ -592,7 +552,7 @@ async function handleSearchFiles(
   signal?: AbortSignal,
   onProgress?: (progress: { total?: number; current: number }) => void,
   resourceStore?: ResourceStore,
-): Promise<ToolResponse<z.infer<typeof SearchFilesOutputSchema>>> {
+): Promise<z.infer<typeof SearchFilesOutputSchema>> {
   const basePath = pathGuard.resolvePathOrRoot(args.path);
   const excludePatterns = args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
   const cursorOffset = args.cursor !== undefined ? decodeOffsetCursor(args.cursor) : 0;
@@ -631,12 +591,10 @@ async function handleSearchFiles(
   };
   applySummaryFields(structured, result.summary, nextCursor);
 
-  const truncatedReason = buildTruncatedReason(result.summary);
-
   // If resourceStore is available, store results as JSON and build resource response
   if (resourceStore !== undefined && relativeResults.length > 0) {
     const resultsJson = JSON.stringify(relativeResults, null, 2);
-    const { entry, link } = putResource({
+    const { entry } = putResource({
       store: resourceStore,
       name: 'search-results.json',
       mimeType: 'application/json',
@@ -644,102 +602,45 @@ async function handleSearchFiles(
       content: resultsJson,
     });
 
-    const summary = [
-      `search-files: '${args.pattern}'`,
-      `${relativeResults.length} ${relativeResults.length === 1 ? 'match' : 'matches'}`,
-    ].join(' · ');
-
-    const structuredWithResource = {
+    return {
       ...structured,
       resourceUri: entry.uri,
     };
-
-    return buildResourceResponse({
-      summary,
-      resources: [link],
-      structured: structuredWithResource,
-    });
   }
 
-  // Fallback: build traditional text response when no results or no resourceStore
-  const summaryOptions: Parameters<typeof formatOperationSummary>[0] = {
-    truncated: result.summary.truncated,
-  };
-  if (truncatedReason) summaryOptions.truncatedReason = truncatedReason;
-
-  const textLines: string[] = [];
-  if (relativeResults.length === 0) {
-    textLines.push('No matches');
-  } else {
-    textLines.push(`Found ${relativeResults.length}:`);
-    for (const entry of relativeResults) {
-      textLines.push(`  ${entry.path}`);
-    }
-  }
-
-  let text = joinLines(textLines) + formatOperationSummary(summaryOptions);
-  if (nextCursor) {
-    text += `\n[Next page available. Use cursor: "${nextCursor}"]`;
-  }
-  return buildToolResponse(text, structured);
+  return structured;
 }
 
-export const SEARCH_FILES = defineTool<
-  z.infer<typeof SearchFilesInputSchema>,
-  z.infer<typeof SearchFilesOutputSchema>
->({
-  contract: SEARCH_FILES_TOOL,
+export const SEARCH_FILES = defineTool({
+  name: 'find',
+  title: 'Find Files',
+  description:
+    'Find files by glob pattern (e.g. `**/*.ts`). Returns matching files with metadata. ' +
+    'Cursors are offset-based: each page re-runs the query from the stored offset. ' +
+    'For content search, use `grep`. For bulk edits, pass the same glob to `search_and_replace`.',
+  input: SearchFilesInputSchema,
+  output: SearchFilesOutputSchema,
+  annotations: 'readOnly',
+  task: 'optional',
+  timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
+  nuances: [
+    'Respects `.gitignore` unless `includeIgnored=true`.',
+    'Result paths are relative to the search root, not the workspace root.',
+  ],
+  gotchas: ['Bare names match only at the root; use `**/README.md` for recursive match.'],
   defaultErrorCode: ErrorCode.UNKNOWN,
-  diagnosticsContext: (args) => ({ path: args.path ?? '.' }),
+  progressLabel: (args) => {
+    const scopeLabel = (args.path ? basename(args.path) : '.') || '.';
+    return `Find Files: ${truncateProgressPattern(args.pattern)} in ${scopeLabel}`;
+  },
   run: async (args, ctx) => {
-    const rawScopeLabel = args.path ? basename(args.path) : '.';
-    const scopeLabel = rawScopeLabel || '.';
-    const { pattern } = args;
-    const truncatedPattern = truncateProgressPattern(pattern);
-    const context = `${truncatedPattern} in ${scopeLabel}`;
-    const label = `${SEARCH_FILES_TOOL.title}: ${context}`;
-
-    return runWithProgressSession(ctx, label, async (progress) => {
-      const progressWithMessage = ({
-        current,
-        total,
-      }: {
-        total?: number;
-        current: number;
-      }): void => {
-        progress.set({
-          current,
-          ...(total !== undefined ? { total } : {}),
-          message: `${SEARCH_FILES_TOOL.title}: ${truncatedPattern} [${current} files]`,
-        });
-      };
-
-      const result = await handleSearchFiles(
-        args,
-        ctx.pathGuard,
-        ctx.signal,
-        progressWithMessage,
-        ctx.resourceStore,
-      );
-      const sc = result.structuredContent;
-      const { totalMatches = 0, stoppedReason } = sc;
-
-      let suffix: string;
-      if (totalMatches === 0) {
-        suffix = 'No matches';
-      } else {
-        suffix = `${totalMatches} ${totalMatches === 1 ? 'match' : 'matches'}`;
-        if (stoppedReason === 'timeout') {
-          suffix += ' [timeout]';
-        } else if (stoppedReason === 'maxResults') {
-          suffix += ' [max results]';
-        } else if (stoppedReason === 'maxFiles') {
-          suffix += ' [max files]';
-        }
-      }
-
-      const finalCurrent = resolveFinalProgressCurrent(progress, (sc.filesScanned ?? 0) + 1);
-      return { value: result, suffix, finalCurrent };
-    });
+    const onProgress = (params: { current: number; total?: number }): void => {
+      ctx.onProgress?.({
+        current: params.current,
+        ...(params.total !== undefined ? { total: params.total } : {}),
+        message: `find: ${truncateProgressPattern(args.pattern)} [${params.current} files]`,
+      });
+    };
+    return handleSearchFiles(args, ctx.pathGuard, ctx.signal, onProgress, ctx.resourceStore);
   },
 });

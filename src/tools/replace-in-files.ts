@@ -7,7 +7,6 @@ import RE2 from 're2';
 import { z } from 'zod/v4';
 
 import { NonNegInt, OptionalPath, SafeGlobPattern } from '../schemas/fields.js';
-import { safeGlobConstraint, toToolJsonSchema } from '../schemas/json-schema.js';
 import {
   defaultFalseBoolean,
   includeHiddenField,
@@ -30,19 +29,8 @@ import {
   MAX_TEXT_FILE_SIZE,
   PARALLEL_CONCURRENCY,
 } from '../core/util.js';
-import { defineTool } from './define-tool.js';
-import { FILE_EDIT_ICONS } from './icons.js';
-import {
-  buildResourceResponse,
-  buildStructuredError,
-  buildToolResponse,
-  DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
-  putResource,
-  type ToolContract,
-  type ToolResponse,
-  truncateProgressPattern,
-} from './shared.js';
-import { resolveFinalProgressCurrent, runWithProgressSession } from './tool-execution.js';
+import { defineTool } from './define.js';
+import { buildStructuredError, putResource, truncateProgressPattern } from './shared.js';
 
 const SearchAndReplaceInputSchema = z.strictObject({
   path: OptionalPath,
@@ -118,33 +106,6 @@ const SearchAndReplaceOutputSchema = z.strictObject({
     .optional()
     .describe('Why enumeration stopped early'),
 });
-
-const SEARCH_AND_REPLACE_TOOL: ToolContract = {
-  name: 'search_and_replace',
-  title: 'Search and Replace',
-  description:
-    'Bulk search-and-replace across files matching a glob. ' +
-    'Replaces ALL occurrences per file (unlike `edit`: first only). ' +
-    'Always `dryRun:true` first \u2014 returns a unified diff. ' +
-    'Literal matching by default; `isRegex:true` enables RE2 with capture groups ($1, $2).',
-  inputSchema: SearchAndReplaceInputSchema,
-  inputSchemaJson: toToolJsonSchema(SearchAndReplaceInputSchema, (s) => ({
-    ...s,
-    allOf: [
-      ...(Array.isArray(s.allOf) ? (s.allOf as unknown[]) : []),
-      safeGlobConstraint('pattern'),
-    ],
-  })),
-  outputSchema: SearchAndReplaceOutputSchema,
-  annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
-  icons: FILE_EDIT_ICONS,
-  gotchas: [
-    'RE2 dialect: no lookahead, lookbehind, or backreferences.',
-    'Replaces ALL occurrences per file; use `edit` for first-only replacement.',
-  ],
-  taskSupport: 'optional',
-  defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-} as const;
 
 const MAX_FAILURES = 20;
 const REPLACE_CONCURRENCY = Math.min(PARALLEL_CONCURRENCY, 8);
@@ -514,7 +475,7 @@ async function handleSearchAndReplace(
   signal?: AbortSignal,
   onProgress: (progress: { total?: number; current: number }) => void = () => undefined,
   resourceStore?: ResourceStore,
-): Promise<ToolResponse<SearchAndReplaceOutput>> {
+): Promise<SearchAndReplaceOutput> {
   const maxFileSize = MAX_TEXT_FILE_SIZE;
   const root = await resolveSearchRoot(args.path, pathGuard);
   const matcher = createReplacementMatcher(args);
@@ -583,8 +544,7 @@ async function handleSearchAndReplace(
   // Store primary file in resource store if available
   if (resourceStore && summary.changedFiles.length > 0 && summary.filesChanged > 0) {
     const primaryFile = summary.changedFiles[0];
-    if (!primaryFile)
-      return buildToolResponse(buildSearchAndReplaceText(summary, args.dryRun), structured);
+    if (!primaryFile) return structured;
 
     const primaryFilePath = primaryFile.path;
     const fullPath = `${summary.root}/${primaryFilePath}`;
@@ -603,7 +563,7 @@ async function handleSearchAndReplace(
       const lineCount = content.split('\n').length;
       const size = Buffer.byteLength(content, 'utf-8');
 
-      const { entry, link } = putResource({
+      const { entry } = putResource({
         store: resourceStore,
         name: basename(fullPath),
         mimeType: mimeInfo.mimeType,
@@ -620,13 +580,7 @@ async function handleSearchAndReplace(
         resourceUri: entry.uri,
       };
 
-      const summary_text = buildSearchAndReplaceText(summary, args.dryRun, primaryFilePath, size);
-
-      return buildResourceResponse({
-        summary: summary_text,
-        resources: [link],
-        structured,
-      });
+      return structured;
     } catch (error) {
       // Gracefully fall back if resource storage fails
       Logger.error(
@@ -635,85 +589,57 @@ async function handleSearchAndReplace(
     }
   }
 
-  return buildToolResponse(buildSearchAndReplaceText(summary, args.dryRun), structured);
+  return structured;
 }
 
-export const SEARCH_AND_REPLACE = defineTool<SearchAndReplaceArgs, SearchAndReplaceOutput>({
-  contract: SEARCH_AND_REPLACE_TOOL,
+export const SEARCH_AND_REPLACE = defineTool({
+  name: 'search_and_replace',
+  title: 'Search and Replace',
+  description:
+    'Bulk search-and-replace across files matching a glob. ' +
+    'Replaces ALL occurrences per file (unlike `edit`: first only). ' +
+    'Always `dryRun:true` first \u2014 returns a unified diff. ' +
+    'Literal matching by default; `isRegex:true` enables RE2 with capture groups ($1, $2).',
+  input: SearchAndReplaceInputSchema,
+  output: SearchAndReplaceOutputSchema,
+  annotations: 'destructiveWrite',
+  task: 'optional',
+  timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
+  gotchas: [
+    'RE2 dialect: no lookahead, lookbehind, or backreferences.',
+    'Replaces ALL occurrences per file; use `edit` for first-only replacement.',
+  ],
   defaultErrorCode: ErrorCode.UNKNOWN,
-  diagnosticsContext: (args) => (args.path ? { path: args.path } : {}),
-  run: async (args, ctx) => {
+  progressLabel: (args) => {
     const dryLabel = args.dryRun ? ' [dry run]' : '';
+    return `Search and Replace: "${truncateProgressPattern(args.searchPattern)}" in ${args.pattern ?? '**/*'}${dryLabel}`;
+  },
+  run: async (args, ctx) => {
     const truncatedPattern = truncateProgressPattern(args.searchPattern);
-    const context = `"${truncatedPattern}" in ${args.pattern ?? '**/*'}${dryLabel}`;
-    const label = `${SEARCH_AND_REPLACE_TOOL.title}: ${context}`;
-
-    return runWithProgressSession(ctx, label, async (progress) => {
-      const progressWithMessage = ({
-        current,
-        total,
-      }: {
-        total?: number;
-        current: number;
-      }): void => {
-        progress.set({
-          current,
-          ...(total !== undefined ? { total } : {}),
-          message: `${SEARCH_AND_REPLACE_TOOL.title}: ${truncatedPattern} [${current} files]`,
-        });
-      };
-
-      const result = await handleSearchAndReplace(
-        args,
-        ctx.pathGuard,
-        ctx.signal,
-        progressWithMessage,
-        ctx.resourceStore,
+    const onProgress = (params: { current: number; total?: number }): void => {
+      ctx.onProgress?.({
+        current: params.current,
+        ...(params.total !== undefined ? { total: params.total } : {}),
+        message: `search_and_replace: ${truncatedPattern} [${params.current} files]`,
+      });
+    };
+    const result = await handleSearchAndReplace(
+      args,
+      ctx.pathGuard,
+      ctx.signal,
+      onProgress,
+      ctx.resourceStore,
+    );
+    if (!args.dryRun) {
+      ctx.log?.(
+        'info',
+        `search_and_replace: ${String(result.totalMatches)} matches in ${String(result.filesModified)} files`,
+        'search_and_replace',
       );
-      const sc = result.structuredContent;
-      const finalCurrent = resolveFinalProgressCurrent(progress, sc.processedFiles + 1);
-      const matchWord = sc.totalMatches === 1 ? 'match' : 'matches';
-      const fileWord = sc.filesModified === 1 ? 'file' : 'files';
-      let suffix = `${sc.totalMatches} ${matchWord} in ${sc.filesModified} ${fileWord}`;
-      if (sc.failedFiles) suffix += `, ${sc.failedFiles} failed`;
-      if (!args.dryRun) {
-        void ctx.log?.(
-          'info',
-          `search_and_replace: ${String(sc.totalMatches)} matches in ${String(sc.filesModified)} files`,
-          'search_and_replace',
-        );
-      }
-      return { value: result, suffix, finalCurrent };
-    });
+    }
+    return result;
   },
 });
-
-function buildSearchAndReplaceText(
-  summary: ReplaceSummary,
-  dryRun: boolean,
-  primaryFilePath?: string,
-  primaryFileSize?: number,
-): string {
-  const parts = [
-    `replace-in-files: replaced in ${summary.filesChanged} files`,
-    `${summary.totalMatches} match${summary.totalMatches === 1 ? '' : 'es'}`,
-  ];
-
-  if (primaryFilePath && primaryFileSize !== undefined) {
-    const sizeKb =
-      primaryFileSize >= 1024
-        ? `${(primaryFileSize / 1024).toFixed(1)} KB`
-        : `${primaryFileSize} B`;
-    parts.push(primaryFilePath);
-    parts.push(sizeKb);
-  }
-
-  const text = parts.join(' · ');
-  const failureSuffix = summary.failedFiles > 0 ? ` (${summary.failedFiles} failed)` : '';
-  const dryRunSuffix = dryRun ? ' (dry run)' : '';
-  return text + failureSuffix + dryRunSuffix;
-}
-
 function buildSearchAndReplaceStructuredResult(
   summary: ReplaceSummary,
   args: SearchAndReplaceArgs,

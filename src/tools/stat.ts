@@ -7,20 +7,14 @@ import { z } from 'zod/v4';
 import { RequiredPath } from '../schemas/fields.js';
 import { FileInfoSchema } from '../schemas/shared.js';
 
-import { type FileInfo, formatBytes } from '../config.js';
+import type { FileInfo } from '../config.js';
 import { assertNotAborted, withAbort } from '../core/concurrency.js';
 import { ErrorCode, isAbortError } from '../core/errors.js';
 import { getFileType, isHidden } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, getMimeType } from '../core/util.js';
-import { buildPathMessages, defineTool } from './define-tool.js';
-import { FILE_READ_ICONS } from './icons.js';
-import {
-  buildFileInfoPayload,
-  buildToolResponse,
-  READ_ONLY_TOOL_ANNOTATIONS,
-  type ToolContract,
-} from './shared.js';
+import { defineTool } from './define.js';
+import { buildFileInfoPayload } from './shared.js';
 
 const StatInputSchema = z.strictObject({
   path: RequiredPath,
@@ -30,20 +24,6 @@ const StatOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),
   file: FileInfoSchema.describe('File info'),
 });
-
-const GET_FILE_INFO_TOOL: ToolContract = {
-  name: 'stat',
-  title: 'Get File Info',
-  description:
-    'Get file/directory metadata: size, modified, permissions, mime, tokenEstimate. ' +
-    'Use `tokenEstimate` (size\u00f74) to pre-screen token cost before reading.',
-  inputSchema: StatInputSchema,
-  outputSchema: StatOutputSchema,
-  annotations: READ_ONLY_TOOL_ANNOTATIONS,
-  icons: FILE_READ_ICONS,
-  taskSupport: 'forbidden',
-  defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-} as const;
 
 const PERM_STRINGS = [
   '---',
@@ -129,38 +109,24 @@ async function getFileInfo(filePath: string, options: FileInfoOptions): Promise<
   return buildFileInfoResult(name, requestedPath, isSymlink, stats, mimeType, symlinkTarget);
 }
 
-function formatFileInfoSummary(info: FileInfo): string {
-  const parts = [info.name, formatBytes(info.size)];
-  if (info.symlinkTarget) {
-    parts.push(`→ ${info.symlinkTarget}`);
-  }
-  return `stat: ${parts.join(' \u2022 ')}`;
-}
-
-type StatInput = z.infer<typeof StatInputSchema>;
-type StatOutput = z.infer<typeof StatOutputSchema>;
-
-const statMessages = buildPathMessages<StatInput, StatOutput>(
-  GET_FILE_INFO_TOOL.title,
-  (sc) => `${sc.file.name} \u2022 ${formatBytes(sc.file.size)}`,
-);
-
-export const GET_FILE_INFO = defineTool<StatInput, StatOutput>({
-  contract: GET_FILE_INFO_TOOL,
+export const GET_FILE_INFO = defineTool({
+  name: 'stat',
+  title: 'Get File Info',
+  description:
+    'Get file/directory metadata: size, modified, permissions, mime, tokenEstimate. ' +
+    'Use `tokenEstimate` (size\u00f74) to pre-screen token cost before reading.',
+  input: StatInputSchema,
+  output: StatOutputSchema,
+  annotations: 'readOnly',
+  timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   run: async (args, ctx) => {
     const info = await getFileInfo(args.path, {
       includeMimeType: true,
       pathGuard: ctx.pathGuard,
-      ...(ctx.signal ? { signal: ctx.signal } : {}),
+      signal: ctx.signal,
     });
-
-    const structured: z.infer<typeof StatOutputSchema> = {
-      ok: true,
-      file: buildFileInfoPayload(info),
-    };
-
-    return buildToolResponse(formatFileInfoSummary(info), structured);
+    return { ok: true as const, file: buildFileInfoPayload(info) };
   },
+  progressLabel: (args) => `Get File Info: ${args.path}`,
   defaultErrorCode: ErrorCode.NOT_FOUND,
-  ...statMessages,
 });

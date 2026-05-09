@@ -1,9 +1,9 @@
-import type { McpServer } from '@modelcontextprotocol/server';
+﻿import type { McpServer } from '@modelcontextprotocol/server';
 
 import { APPLY_PATCH } from './tools/apply-patch.js';
 import { CALCULATE_HASH } from './tools/calculate-hash.js';
-import type { ToolContract } from './tools/contract.js';
 import { CREATE_DIRECTORY } from './tools/create-directory.js';
+import { ALL_TOOLS as _ALL_TOOLS, registerAllTools as _registerAllTools } from './tools/define.js';
 import { DELETE_FILE } from './tools/delete-file.js';
 import { DIFF_FILES } from './tools/diff-files.js';
 import { EDIT_FILE } from './tools/edit-file.js';
@@ -21,12 +21,9 @@ import { GET_FILE_INFO } from './tools/stat.js';
 import { TREE } from './tools/tree.js';
 import { WRITE_FILE } from './tools/write-file.js';
 
-interface ToolEntry {
-  contract: ToolContract;
-  register: (server: McpServer, options: ToolRegistrationOptions) => void;
-}
-
-const TOOL_ENTRIES: ToolEntry[] = [
+// All 18 tool exports imported above; each triggers defineTool() which auto-registers into ALL_TOOLS.
+// These references keep knip/ESLint satisfied that exports are consumed.
+void [
   LIST_ALLOWED_DIRECTORIES,
   LIST_DIRECTORY,
   SEARCH_FILES,
@@ -47,10 +44,14 @@ const TOOL_ENTRIES: ToolEntry[] = [
   SEARCH_AND_REPLACE,
 ];
 
-export const ALL_TOOLS: ToolContract[] = TOOL_ENTRIES.map((e) => e.contract);
+export const ALL_TOOLS = _ALL_TOOLS;
 
 export function registerAllTools(server: McpServer, options: ToolRegistrationOptions): void {
-  for (const { register } of TOOL_ENTRIES) {
-    register(server, options);
-  }
+  _registerAllTools({
+    server,
+    isInitialized: options.isInitialized ?? (() => true),
+    pathGuard: options.pathGuard,
+    resourceStore: options.resourceStore,
+    ...(options.orchestrator ? { orchestrator: options.orchestrator } : {}),
+  });
 }

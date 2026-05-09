@@ -23,12 +23,6 @@ import {
   withDefaultIcons,
 } from './shared.js';
 
-export {
-  createBatchProgressCallbacks,
-  completeProgressSession,
-  resolveFinalProgressCurrent,
-  runWithProgressSession,
-} from './progress-sinks.js';
 // === Section A: Task Support Metadata ===
 type TaskSupportLevel = 'optional' | 'required' | 'forbidden';
 

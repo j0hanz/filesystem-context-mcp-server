@@ -12,17 +12,8 @@ import { ErrorCode, McpError } from '../core/errors.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
-import { defineTool } from './define-tool.js';
-import { FILE_READ_ICONS } from './icons.js';
-import {
-  buildResourceResponse,
-  buildToolResponse,
-  putResource,
-  READ_ONLY_TOOL_ANNOTATIONS,
-  type ToolContract,
-  type ToolResponse,
-  type ToolResult,
-} from './shared.js';
+import { defineTool } from './define.js';
+import { putResource } from './shared.js';
 
 const DiffFilesInputSchema = z.strictObject({
   original: RequiredPath.describe('Original file path'),
@@ -48,20 +39,6 @@ const DiffFilesOutputSchema = z.strictObject({
   truncated: z.boolean().optional().describe('Diff was truncated to resource'),
   resourceUri: z.string().optional().describe('Full diff URI when truncated'),
 });
-
-const DIFF_FILES_TOOL: ToolContract = {
-  name: 'diff_files',
-  title: 'Diff Files',
-  description:
-    'Generate a unified diff between two files. ' +
-    'Output feeds directly into `apply_patch`. ' +
-    '`isIdentical=true` means files match \u2014 no patch needed.',
-  inputSchema: DiffFilesInputSchema,
-  outputSchema: DiffFilesOutputSchema,
-  annotations: READ_ONLY_TOOL_ANNOTATIONS,
-  icons: FILE_READ_ICONS,
-  taskSupport: 'optional',
-} as const;
 
 function computeDiffStats(hunks: StructuredPatch['hunks']): {
   linesAdded: number;
@@ -142,7 +119,7 @@ async function handleDiffFiles(
   pathGuard: PathGuard,
   signal?: AbortSignal,
   resourceStore?: ResourceStore,
-): Promise<ToolResponse<z.infer<typeof DiffFilesOutputSchema>>> {
+): Promise<z.infer<typeof DiffFilesOutputSchema>> {
   const originalInput = args.original;
   const modifiedInput = args.modified;
 
@@ -193,20 +170,17 @@ async function handleDiffFiles(
 
   // If files are identical, return early with no resource
   if (isIdentical) {
-    return buildToolResponse('No differences', {
-      ok: true,
+    return {
+      ok: true as const,
       diff: '',
       isIdentical: true,
-    });
+    };
   }
 
   // Store diff in resource and return resource link
   const changeCount = (mappedStats?.additions ?? 0) + (mappedStats?.deletions ?? 0);
-  const originalName = basename(originalPath);
-  const modifiedName = basename(modifiedPath);
-
   if (resourceStore) {
-    const { entry, link } = putResource({
+    const { entry } = putResource({
       store: resourceStore,
       name: 'diff.patch',
       mimeType: 'text/x-patch',
@@ -214,55 +188,39 @@ async function handleDiffFiles(
       content: diffText,
     });
 
-    const summary = `diff-files: ${originalName} vs ${modifiedName} · ${changeCount} change${changeCount === 1 ? '' : 's'}`;
-
-    return buildResourceResponse({
-      summary,
-      resources: [link],
-      structured: {
-        ok: true,
-        diff: diffText,
-        isIdentical: false,
-        changeCount,
-        ...(mappedStats ? { stats: mappedStats } : {}),
-        resourceUri: entry.uri,
-      },
-    });
+    return {
+      ok: true as const,
+      diff: diffText,
+      isIdentical: false,
+      changeCount,
+      ...(mappedStats ? { stats: mappedStats } : {}),
+      resourceUri: entry.uri,
+    };
   }
 
   // Fallback if resource store is unavailable
-  return buildToolResponse(diffText, {
-    ok: true,
+  return {
+    ok: true as const,
     diff: diffText,
     isIdentical: false,
     changeCount,
     ...(mappedStats ? { stats: mappedStats } : {}),
-  });
+  };
 }
 
-type DiffInput = z.infer<typeof DiffFilesInputSchema>;
-type DiffOutput = z.infer<typeof DiffFilesOutputSchema>;
-
-export const DIFF_FILES = defineTool<DiffInput, DiffOutput>({
-  contract: DIFF_FILES_TOOL,
+export const DIFF_FILES = defineTool({
+  name: 'diff_files',
+  title: 'Diff Files',
+  description:
+    'Generate a unified diff between two files. ' +
+    'Output feeds directly into `apply_patch`. ' +
+    '`isIdentical=true` means files match \u2014 no patch needed.',
+  input: DiffFilesInputSchema,
+  output: DiffFilesOutputSchema,
+  annotations: 'readOnly',
+  task: 'optional',
   defaultErrorCode: ErrorCode.UNKNOWN,
-  diagnosticsContext: (args) => ({ path: args.original }),
+  progressLabel: (args) =>
+    `Diff Files: ${basename(args.original)} \u27f7 ${basename(args.modified)}`,
   run: (args, ctx) => handleDiffFiles(args, ctx.pathGuard, ctx.signal, ctx.resourceStore),
-  progressMessage: (args) => {
-    const n1 = basename(args.original);
-    const n2 = basename(args.modified);
-    return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2}`;
-  },
-  completionMessage: (args: DiffInput, result: ToolResult<DiffOutput>): string => {
-    const n1 = basename(args.original);
-    const n2 = basename(args.modified);
-    if (result.isError) return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2} • ${result.errorCode}`;
-    const sc = result.structuredContent;
-    if (sc.isIdentical) return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2} • identical`;
-    const added = sc.stats?.additions ?? 0;
-    const removed = sc.stats?.deletions ?? 0;
-    if (added > 0 || removed > 0)
-      return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2} • +${added} -${removed}`;
-    return `${DIFF_FILES_TOOL.title}: ${n1} ⟷ ${n2}`;
-  },
 });

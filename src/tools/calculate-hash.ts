@@ -17,16 +17,8 @@ import {
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../core/util.js';
-import { defineTool } from './define-tool.js';
-import { FILE_READ_ICONS } from './icons.js';
-import {
-  buildResourceResponse,
-  putResource,
-  READ_ONLY_TOOL_ANNOTATIONS,
-  type ToolContract,
-  type ToolResponse,
-} from './shared.js';
-import { resolveFinalProgressCurrent, runWithProgressSession } from './tool-execution.js';
+import { defineTool } from './define.js';
+import { putResource } from './shared.js';
 
 const WINDOWS_PATH_SEPARATOR = /\\/gu;
 
@@ -50,23 +42,6 @@ const HashOutputSchema = z.strictObject({
   isDirectory: z.boolean().describe('True when hashing a directory'),
   fileCount: NonNegInt.optional().describe('Files hashed (directories only)'),
 });
-
-const CALCULATE_HASH_TOOL: ToolContract = {
-  name: 'calculate_hash',
-  title: 'Calculate Hash',
-  description: 'Calculate SHA-256, MD5, or other hashes for a file or directory.',
-  inputSchema: HashInputSchema,
-  outputSchema: HashOutputSchema,
-  annotations: READ_ONLY_TOOL_ANNOTATIONS,
-  icons: FILE_READ_ICONS,
-  nuances: [
-    'Directory hashing respects root `.gitignore` and sorts paths for stable output.',
-    'Hidden files (names starting with `.`) are excluded from directory hashing.',
-    'Supported algorithms: sha256, md5, sha1, sha512.',
-  ],
-  taskSupport: 'optional',
-  defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-} as const;
 
 function toStableRelativePath(root: string, entryPath: string): string {
   const relativePath = relative(root, entryPath);
@@ -222,7 +197,7 @@ async function handleCalculateHash(
   resourceStore: ResourceStore | undefined,
   signal?: AbortSignal,
   onProgress?: (progress: { total?: number; current: number }) => void,
-): Promise<ToolResponse<z.infer<typeof HashOutputSchema>>> {
+): Promise<z.infer<typeof HashOutputSchema>> {
   const validPath = await pathGuard.validateExistingPath(args.path);
   const { algorithms } = args;
 
@@ -253,7 +228,7 @@ async function handleCalculateHash(
   }
 
   const hashJson = JSON.stringify(hashes, null, 2);
-  const { link, entry } = putResource({
+  const { entry } = putResource({
     store: resourceStore,
     name: 'hashes.json',
     mimeType: 'application/json',
@@ -261,75 +236,39 @@ async function handleCalculateHash(
     content: hashJson,
   });
 
-  // Format summary with primary algorithm and truncated hash
-  const primaryAlgo = algorithms[0] ?? 'sha256';
-  const primaryHash = hashes[primaryAlgo] ?? '';
-  const displayAlgo =
-    primaryAlgo === 'sha256'
-      ? 'SHA-256'
-      : primaryAlgo === 'sha512'
-        ? 'SHA-512'
-        : primaryAlgo === 'sha1'
-          ? 'SHA-1'
-          : primaryAlgo.toUpperCase();
-  const hashDisplay = primaryHash.length > 16 ? `${primaryHash.slice(0, 16)}…` : primaryHash;
-  const fileName = basename(validPath);
-  const summary = `calculate-hash: ${fileName} · ${displayAlgo}: ${hashDisplay}`;
-
-  return buildResourceResponse({
-    summary,
-    resources: [link],
-    structured: {
-      ok: true,
-      filePath: validPath,
-      algorithms: [...algorithms],
-      hashes,
-      resourceUri: entry.uri,
-      isDirectory: stats.isDirectory(),
-      ...(fileCount !== undefined ? { fileCount } : {}),
-    },
-  });
+  return {
+    ok: true as const,
+    filePath: validPath,
+    algorithms: [...algorithms],
+    hashes,
+    resourceUri: entry.uri,
+    isDirectory: stats.isDirectory(),
+    ...(fileCount !== undefined ? { fileCount } : {}),
+  };
 }
 
-export const CALCULATE_HASH = defineTool<
-  z.infer<typeof HashInputSchema>,
-  z.infer<typeof HashOutputSchema>
->({
-  contract: CALCULATE_HASH_TOOL,
+export const CALCULATE_HASH = defineTool({
+  name: 'calculate_hash',
+  title: 'Calculate Hash',
+  description: 'Calculate SHA-256, MD5, or other hashes for a file or directory.',
+  input: HashInputSchema,
+  output: HashOutputSchema,
+  annotations: 'readOnly',
+  task: 'optional',
+  timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
+  nuances: [
+    'Directory hashing respects root `.gitignore` and sorts paths for stable output.',
+    'Hidden files (names starting with `.`) are excluded from directory hashing.',
+    'Supported algorithms: sha256, md5, sha1, sha512.',
+  ],
   defaultErrorCode: ErrorCode.UNKNOWN,
+  progressLabel: (args) => `Calculate Hash: ${basename(args.path)}`,
   run: async (args, ctx) => {
-    const baseName = basename(args.path);
-    const label = `${CALCULATE_HASH_TOOL.title}: ${baseName}`;
-    return runWithProgressSession<ToolResponse<z.infer<typeof HashOutputSchema>>>(
-      ctx,
-      label,
-      async (progress) => {
-        const onProgress = ({ current, total }: { total?: number; current: number }): void => {
-          progress.set({
-            current,
-            ...(total !== undefined ? { total } : {}),
-            message: `${label} [${current} files]`,
-          });
-        };
-
-        const result = await handleCalculateHash(
-          args,
-          ctx.pathGuard,
-          ctx.resourceStore,
-          ctx.signal,
-          onProgress,
-        );
-        const sc = result.structuredContent;
-        const totalFiles = sc.fileCount ?? 1;
-        const finalCurrent = resolveFinalProgressCurrent(progress, totalFiles + 1);
-        const primaryAlgo = args.algorithms[0] ?? 'sha256';
-        const primaryHash = sc.hashes[primaryAlgo] ?? '';
-        const suffix =
-          sc.fileCount !== undefined && sc.fileCount > 1
-            ? `${sc.fileCount} files • ${primaryHash.slice(0, 8)}…`
-            : `${primaryHash.slice(0, 8)}…`;
-        return { value: result, suffix, finalCurrent };
-      },
-    );
+    const onProgress = ctx.onProgress
+      ? ({ current, total }: { total?: number; current: number }): void => {
+          ctx.onProgress?.({ current, ...(total !== undefined ? { total } : {}) });
+        }
+      : undefined;
+    return handleCalculateHash(args, ctx.pathGuard, ctx.resourceStore, ctx.signal, onProgress);
   },
 });

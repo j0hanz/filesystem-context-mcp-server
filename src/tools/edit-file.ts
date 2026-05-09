@@ -8,7 +8,6 @@ import { z } from 'zod/v4';
 import { NonNegInt, PositiveInt, RequiredPath } from '../schemas/fields.js';
 import { defaultFalseBoolean } from '../schemas/shared.js';
 
-import { formatBytes } from '../config.js';
 import { runInWorker, shouldOffload, withAbort } from '../core/concurrency.js';
 import { ErrorCode, McpError } from '../core/errors.js';
 import { atomicWriteFile, detectMimeType, readFileWithStats } from '../core/fs.js';
@@ -16,16 +15,8 @@ import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
-import { defineTool } from './define-tool.js';
-import { FILE_EDIT_ICONS } from './icons.js';
-import {
-  buildResourceResponse,
-  buildToolResponse,
-  DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
-  putResource,
-  type ToolContract,
-  type ToolResult,
-} from './shared.js';
+import { defineTool } from './define.js';
+import { putResource } from './shared.js';
 
 const EditFileInputSchema = z.strictObject({
   path: RequiredPath,
@@ -68,21 +59,6 @@ const EditFileOutputSchema = z.strictObject({
     .optional()
     .describe('[firstLine, lastLine] range modified'),
 });
-
-const EDIT_FILE_TOOL: ToolContract = {
-  name: 'edit',
-  title: 'Edit File',
-  description:
-    'Apply sequential literal string replacements to a file (first occurrence per edit). ' +
-    '`oldText` must match exactly — include 3–5 lines of context for unique targeting. ' +
-    'Use `dryRun:true` to preview.',
-  inputSchema: EditFileInputSchema,
-  outputSchema: EditFileOutputSchema,
-  annotations: DESTRUCTIVE_WRITE_TOOL_ANNOTATIONS,
-  icons: FILE_EDIT_ICONS,
-  nuances: ['Each edit applies to the output of the previous edit.'],
-  taskSupport: 'forbidden',
-} as const;
 
 type EditInput = z.infer<typeof EditFileInputSchema>;
 type EditOutput = z.infer<typeof EditFileOutputSchema>;
@@ -281,26 +257,6 @@ async function buildDiff(validPath: string, original: string, modified: string):
   });
 }
 
-function formatUnmatchedEditsNote(unmatchedEdits: string[]): string {
-  if (unmatchedEdits.length === 0) {
-    return '';
-  }
-
-  return ` — ${unmatchedEdits.length} unmatched: [${unmatchedEdits
-    .map((text) => JSON.stringify(text.length > 40 ? `${text.slice(0, 40)}…` : text))
-    .join(', ')}]`;
-}
-
-function buildEditMessage(requestedPath: string, result: EditResult): string {
-  const unmatchedNote = formatUnmatchedEditsNote(result.unmatchedEdits);
-
-  if (result.appliedEdits === 0) {
-    return `No edits applied to ${requestedPath}${unmatchedNote}`;
-  }
-
-  return `Successfully applied ${result.appliedEdits} edits to ${requestedPath}${unmatchedNote}`;
-}
-
 async function loadEditableFile(
   requestedPath: string,
   pathGuard: PathGuard,
@@ -337,24 +293,7 @@ async function loadEditableFile(
 function buildEditProgressMessage(args: EditInput): string {
   const name = basename(args.path);
   const tag = args.dryRun ? ' [dry run]' : '';
-  return `${EDIT_FILE_TOOL.title}: ${name}${tag}`;
-}
-
-function buildEditCompletionMessage(args: EditInput, result: ToolResult<EditOutput>): string {
-  const name = basename(args.path);
-  if (result.isError) return `${EDIT_FILE_TOOL.title}: ${name} • ${result.errorCode}`;
-
-  const { structuredContent } = result;
-  if (structuredContent.appliedEdits === 0 && (structuredContent.unmatchedEdits?.length ?? 0) > 0)
-    return `${EDIT_FILE_TOOL.title}: ${name} • failed`;
-
-  const applied = structuredContent.appliedEdits;
-  if (applied === 0) return `${EDIT_FILE_TOOL.title}: ${name} • no changes`;
-
-  const added = structuredContent.linesAdded ?? 0;
-  const removed = structuredContent.linesRemoved ?? 0;
-  const dry = args.dryRun ? 'dry run ' : '';
-  return `${EDIT_FILE_TOOL.title}: ${name} • ${dry} +${added} -${removed}`;
+  return `Edit File: ${name}${tag}`;
 }
 
 async function applyEdits(
@@ -489,53 +428,21 @@ async function handleEditFile(
   };
 }
 
-export const EDIT_FILE = defineTool<EditInput, EditOutput>({
-  contract: EDIT_FILE_TOOL,
+export const EDIT_FILE = defineTool({
+  name: 'edit',
+  title: 'Edit File',
+  description:
+    'Apply sequential literal string replacements to a file (first occurrence per edit). ' +
+    '`oldText` must match exactly — include 3–5 lines of context for unique targeting. ' +
+    'Use `dryRun:true` to preview.',
+  input: EditFileInputSchema,
+  output: EditFileOutputSchema,
+  annotations: 'destructiveWrite',
+  nuances: ['Each edit applies to the output of the previous edit.'],
+  progressLabel: buildEditProgressMessage,
   run: async (args, ctx) => {
     const { structured } = await handleEditFile(args, ctx.pathGuard, ctx.resourceStore, ctx.signal);
-
-    void ctx.log?.(
-      'info',
-      `edit: ${args.path} (${String(structured.appliedEdits ?? 0)} edits)`,
-      'edit',
-    );
-
-    // If resource was already stored in handler, use resource response
-    if (structured.resourceUri) {
-      const summary = [
-        `edit-file: edited ${basename(structured.path)}`,
-        formatBytes(structured.size),
-        `${structured.lineCount} lines`,
-      ].join(' · ');
-
-      const link = {
-        type: 'resource_link' as const,
-        uri: structured.resourceUri,
-        name: basename(structured.path),
-        mimeType: structured.mimeType,
-        size: structured.size,
-        annotations: {
-          audience: ['user' as const],
-        },
-      };
-
-      return buildResourceResponse({
-        summary,
-        resources: [link],
-        structured,
-      });
-    }
-
-    // Otherwise return basic tool response
-    const message = buildEditMessage(args.path, {
-      appliedEdits: structured.appliedEdits ?? 0,
-      unmatchedEdits: structured.unmatchedEdits ?? [],
-      content: '',
-      linesAdded: structured.linesAdded ?? 0,
-      linesRemoved: structured.linesRemoved ?? 0,
-    });
-    return buildToolResponse(message, structured);
+    ctx.log?.('info', `edit: ${args.path} (${String(structured.appliedEdits ?? 0)} edits)`, 'edit');
+    return structured;
   },
-  progressMessage: buildEditProgressMessage,
-  completionMessage: buildEditCompletionMessage,
 });

@@ -19,7 +19,6 @@ import {
   NextCursorSchema,
 } from '../schemas/shared.js';
 
-import { formatOperationSummary, joinLines } from '../config.js';
 import type { DirectoryEntry, ListDirectoryResult } from '../config.js';
 import { processInParallel, withAbort, withTimedAbortSignal } from '../core/concurrency.js';
 import { ErrorCode, McpError } from '../core/errors.js';
@@ -46,17 +45,8 @@ import {
   MAX_TREE_DEPTH,
   PARALLEL_CONCURRENCY,
 } from '../core/util.js';
-import { defineTool } from './define-tool.js';
-import { DIRECTORY_ICONS } from './icons.js';
-import {
-  buildResourceResponse,
-  buildToolResponse,
-  putResource,
-  READ_ONLY_TOOL_ANNOTATIONS,
-  type ToolContract,
-  type ToolResponse,
-  type ToolResult,
-} from './shared.js';
+import { defineTool } from './define.js';
+import { putResource } from './shared.js';
 
 // ---------------------------------------------------------------------------
 // Private listDirectory implementation (inlined from lib/file-operations/metadata.ts)
@@ -501,22 +491,6 @@ const ListDirectoryOutputSchema = z.strictObject({
   nextCursor: NextCursorSchema,
 });
 
-const LIST_DIRECTORY_TOOL: ToolContract = {
-  name: 'ls',
-  title: 'List Directory',
-  description:
-    'List directory contents with optional bounded recursion via `maxDepth`. ' +
-    'Returns name, path, type, size, modified date. ' +
-    'Omit path for workspace root. `includeIgnored=true` for node_modules etc. ' +
-    'For glob-based recursive search, use `find`.',
-  inputSchema: ListDirectoryInputSchema,
-  outputSchema: ListDirectoryOutputSchema,
-  annotations: READ_ONLY_TOOL_ANNOTATIONS,
-  icons: DIRECTORY_ICONS,
-  taskSupport: 'optional',
-  nuances: ['`pattern` enables filtered recursive traversal up to `maxDepth`.'],
-} as const;
-
 interface ListSnapshot {
   entries: Awaited<ReturnType<typeof listDirectory>>['entries'];
   summary: Awaited<ReturnType<typeof listDirectory>>['summary'];
@@ -602,63 +576,6 @@ function resolveNextListCursor(
   return encodeListCursor({ snapshotId, offset: nextOffset });
 }
 
-function buildEntrySummaryPart(entries: readonly DirectoryEntry[]): string {
-  const files = entries.filter((e) => e.type === 'file').length;
-  const directories = entries.filter((e) => e.type === 'directory').length;
-  const symlinks = entries.filter((e) => e.type === 'symlink').length;
-
-  const parts: string[] = [];
-  if (files > 0) parts.push(`${files} file${files === 1 ? '' : 's'}`);
-  if (directories > 0) parts.push(`${directories} dir${directories === 1 ? '' : 's'}`);
-  if (symlinks > 0) parts.push(`${symlinks} symlink${symlinks === 1 ? '' : 's'}`);
-
-  if (parts.length === 0) return '';
-  return ` (${parts.join(', ')})`;
-}
-
-function buildListSummaryText(dirPath: string, entryCount: number): string {
-  return `list-directory: ${dirPath} · ${entryCount} ${entryCount === 1 ? 'entry' : 'entries'}`;
-}
-
-function buildListTextResult(
-  result: Awaited<ReturnType<typeof listDirectory>>,
-  nextCursor?: string,
-): string {
-  const { entries, summary, path } = result;
-  if (entries.length === 0) {
-    if (!summary.entriesScanned || summary.entriesScanned === 0) {
-      return `${path} (empty)`;
-    }
-    return `${path} (no matches)`;
-  }
-
-  const lines = [path];
-  for (const entry of entries) {
-    const suffix = entry.type === 'directory' ? '/' : '';
-    lines.push(`  ${entry.relativePath}${suffix}`);
-  }
-
-  let truncatedReason: string | undefined;
-  if (summary.truncated) {
-    if (summary.stoppedReason === 'maxEntries') {
-      truncatedReason = `max entries (${summary.totalEntries})`;
-    } else {
-      truncatedReason = 'aborted';
-    }
-  }
-
-  const summaryOptions: Parameters<typeof formatOperationSummary>[0] = {
-    truncated: summary.truncated,
-    ...(truncatedReason ? { truncatedReason } : {}),
-  };
-
-  let text = joinLines(lines) + formatOperationSummary(summaryOptions);
-  if (nextCursor) {
-    text += `\n[Next page available. Use cursor: "${nextCursor}"]`;
-  }
-  return text;
-}
-
 function buildStructuredListEntry(
   entry: Awaited<ReturnType<typeof listDirectory>>['entries'][number],
 ): NonNullable<z.infer<typeof ListDirectoryOutputSchema>['entries']>[number] {
@@ -702,7 +619,7 @@ async function handleListDirectory(
   pathGuard: PathGuard,
   signal?: AbortSignal,
   resourceStore?: Parameters<typeof putResource>[0]['store'],
-): Promise<ToolResponse<z.infer<typeof ListDirectoryOutputSchema>>> {
+): Promise<z.infer<typeof ListDirectoryOutputSchema>> {
   const dirPath = pathGuard.resolvePathOrRoot(args.path);
   const pageSize = args.maxEntries;
   const options: ListDirectoryOptions = {
@@ -767,7 +684,7 @@ async function handleListDirectory(
     const dirName = basename(result.path) || 'listing';
     const fileName = `${dirName}-listing.json`;
 
-    const { entry, link } = putResource({
+    const { entry } = putResource({
       store: resourceStore,
       name: fileName,
       mimeType: 'application/json',
@@ -777,46 +694,35 @@ async function handleListDirectory(
 
     resourceUri = entry.uri;
 
-    // Build summary with entry counts
-    const fullEntrySummary = buildEntrySummaryPart(result.entries);
-    const summaryText = buildListSummaryText(result.path, result.entries.length) + fullEntrySummary;
-
-    const structured = buildStructuredListResult(
+    return buildStructuredListResult(
       { ...result, entries: displayEntries },
       nextCursor,
       resourceUri,
       result.entries.length,
     );
-
-    return buildResourceResponse({
-      summary: summaryText,
-      resources: [link],
-      structured,
-    });
   }
 
   // Fallback to old behavior if resource store is not available
   const displayResult = { ...result, entries: displayEntries };
-  return buildToolResponse(
-    buildListTextResult(displayResult, nextCursor),
-    buildStructuredListResult(displayResult, nextCursor),
-  );
+  return buildStructuredListResult(displayResult, nextCursor);
 }
 
 type ListDirInput = z.infer<typeof ListDirectoryInputSchema>;
-type ListDirOutput = z.infer<typeof ListDirectoryOutputSchema>;
 
-export const LIST_DIRECTORY = defineTool<ListDirInput, ListDirOutput>({
-  contract: LIST_DIRECTORY_TOOL,
+export const LIST_DIRECTORY = defineTool({
+  name: 'ls',
+  title: 'List Directory',
+  description:
+    'List directory contents with optional bounded recursion via `maxDepth`. ' +
+    'Returns name, path, type, size, modified date. ' +
+    'Omit path for workspace root. `includeIgnored=true` for node_modules etc. ' +
+    'For glob-based recursive search, use `find`.',
+  input: ListDirectoryInputSchema,
+  output: ListDirectoryOutputSchema,
+  annotations: 'readOnly',
+  task: 'optional',
+  nuances: ['`pattern` enables filtered recursive traversal up to `maxDepth`.'],
   defaultErrorCode: ErrorCode.NOT_DIRECTORY,
+  progressLabel: (args: ListDirInput) => `List Directory: ${args.path ? basename(args.path) : '.'}`,
   run: (args, ctx) => handleListDirectory(args, ctx.pathGuard, ctx.signal, ctx.resourceStore),
-  progressMessage: (args) =>
-    `${LIST_DIRECTORY_TOOL.title}: ${args.path ? basename(args.path) : '.'}`,
-  completionMessage: (args: ListDirInput, result: ToolResult<ListDirOutput>): string => {
-    const base = args.path ? basename(args.path) : '.';
-    if (result.isError) return `${LIST_DIRECTORY_TOOL.title}: ${base} • ${result.errorCode}`;
-    const sc = result.structuredContent;
-    const count = sc.entryCount ?? sc.totalEntries ?? 0;
-    return `${LIST_DIRECTORY_TOOL.title}: ${base} • ${count} ${count === 1 ? 'entry' : 'entries'}`;
-  },
 });

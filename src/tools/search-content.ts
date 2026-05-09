@@ -8,7 +8,6 @@ import RE2 from 're2';
 import { z } from 'zod/v4';
 
 import { NonNegInt, OptionalPath, PositiveInt, SafeGlobPattern } from '../schemas/fields.js';
-import { safeGlobConstraint, toToolJsonSchema } from '../schemas/json-schema.js';
 import {
   CursorSchema,
   defaultFalseBoolean,
@@ -17,7 +16,6 @@ import {
   NextCursorSchema,
 } from '../schemas/shared.js';
 
-import { formatOperationSummary } from '../config.js';
 import type { ContentMatch, SearchContentResult } from '../config.js';
 import { assertNotAborted, withAbort, withTimedAbortSignal } from '../core/concurrency.js';
 import {
@@ -46,20 +44,13 @@ import {
   parseEnvInt,
   SEARCH_WORKERS,
 } from '../core/util.js';
-import { defineTool } from './define-tool.js';
-import { SEARCH_ICONS } from './icons.js';
+import { defineTool } from './define.js';
 import {
-  buildResourceResponse,
-  buildToolResponse,
   decodeOffsetCursor,
   encodeOffsetCursor,
   putResource,
-  READ_ONLY_TOOL_ANNOTATIONS,
-  type ToolContract,
-  type ToolResponse,
   truncateProgressPattern,
 } from './shared.js';
-import { resolveFinalProgressCurrent, runWithProgressSession } from './tool-execution.js';
 
 // ---------------------------------------------------------------------------
 // Private searchContent implementation (inlined from lib/file-operations/search.ts)
@@ -1249,23 +1240,6 @@ function buildStructuredSummaryFields(summary: SearchSummary): Partial<SearchOut
   }
   return result;
 }
-
-function buildCompletionSuffix(
-  count: number,
-  filesMatched: number,
-  scope: SearchInput['pattern'],
-  stoppedReason?: SearchSummary['stoppedReason'],
-): string {
-  if (count === 0) return `No matches in ${scope}`;
-
-  const matchWord = count === 1 ? 'match' : 'matches';
-  const fileWord = filesMatched === 1 ? 'file' : 'files';
-  const reasonSuffix =
-    stoppedReason !== undefined ? ` [${CONFIG.COMPLETION_LABELS[stoppedReason]}]` : '';
-
-  return `${count} ${matchWord} in ${filesMatched} ${fileWord}${reasonSuffix}`;
-}
-
 function buildSearchPreviewState(payloads: SearchMatchPayload[]): SearchPreviewState {
   const needsExternalize = payloads.length > CONFIG.MAX_INLINE_MATCHES;
   const visibleCount = needsExternalize ? CONFIG.MAX_INLINE_MATCHES : payloads.length;
@@ -1361,34 +1335,6 @@ const GrepOutputSchema = z.strictObject({
   nextCursor: NextCursorSchema,
 });
 
-const SEARCH_CONTENT_TOOL: ToolContract = {
-  name: 'grep',
-  title: 'Search Content',
-  description:
-    'Search file contents for text (grep-like). Returns matching lines. ' +
-    'Scope with `pattern` (e.g. `**/*.ts`) to reduce noise. ' +
-    '`includeHidden=true` for dotfiles.',
-  inputSchema: GrepInputSchema,
-  inputSchemaJson: toToolJsonSchema(GrepInputSchema, (s) => ({
-    ...s,
-    allOf: [
-      ...(Array.isArray(s.allOf) ? (s.allOf as unknown[]) : []),
-      safeGlobConstraint('pattern'),
-    ],
-  })),
-  outputSchema: GrepOutputSchema,
-  annotations: READ_ONLY_TOOL_ANNOTATIONS,
-  icons: SEARCH_ICONS,
-  nuances: ['Inline results capped at 50 matches; full results via `resourceUri`.'],
-  gotchas: [
-    'RE2 dialect: no lookahead, lookbehind, or backreferences.',
-    'Use `pattern` to scope to specific files; without it, scans every text file.',
-    'Skips binary/oversized files silently — verify with `stat` if no matches.',
-  ],
-  taskSupport: 'optional',
-  defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-} as const;
-
 function buildHeading(totalMatches: number, visibleMatches: number): string {
   if (visibleMatches >= totalMatches) {
     return `Found ${totalMatches}:`;
@@ -1396,25 +1342,6 @@ function buildHeading(totalMatches: number, visibleMatches: number): string {
 
   return `Found ${totalMatches} (showing first ${visibleMatches}):`;
 }
-
-function buildSearchText(
-  heading: string,
-  matches: readonly SearchMatchPayload[],
-  summary?: SearchSummary,
-): string {
-  if (matches.length === 0) return 'No matches';
-
-  const text = buildMatchList(heading, matches);
-  if (!summary) return text;
-
-  const summaryOpts = {
-    truncated: summary.truncated,
-    ...(summary.truncated ? { truncatedReason: resolveTruncatedReason(summary) } : {}),
-  };
-
-  return text + formatOperationSummary(summaryOpts);
-}
-
 function buildSearchStructured(
   summary: SearchSummary,
   matches: SearchMatchPayload[],
@@ -1469,25 +1396,6 @@ function buildSortedPayloads(
 
   return payloads.map((p) => p.payload);
 }
-
-function buildMatchList(heading: string, matches: readonly SearchMatchPayload[]): string {
-  if (matches.length === 0) return heading;
-  const parts: string[] = [heading];
-  for (const match of matches) {
-    parts.push(`\n  ${match.file}:${String(match.line).padStart(4)}: ${match.content}`);
-  }
-
-  return parts.join('');
-}
-
-function resolveTruncatedReason(summary: SearchSummary): string {
-  if (summary.stoppedReason === 'timeout') return 'timeout';
-  if (summary.stoppedReason === 'maxFiles') {
-    return `max files (${summary.filesScanned})`;
-  }
-  return `max results (${summary.matches})`;
-}
-
 function findColumnOffset(content: string, context: SearchContext): number | undefined {
   try {
     if (context.matcher) {
@@ -1580,30 +1488,18 @@ function createSearchContext(args: SearchInput, matcher: RE2 | undefined): Searc
 }
 
 function buildExternalizedResponse(
-  args: SearchInput,
   fullStructured: SearchOutput,
   preview: SearchPreviewState,
   resourceStore: ResourceStore,
-  matchPayloads: SearchMatchPayload[],
-): ToolResponse<SearchOutput> {
+): SearchOutput {
   const resultsJson = JSON.stringify(fullStructured, null, 2);
-  const { entry, link } = putResource({
+  const { entry } = putResource({
     store: resourceStore,
     name: 'search-results.json',
     mimeType: 'application/json',
     kind: 'text',
     content: resultsJson,
   });
-
-  const uniqueFiles = new Set(matchPayloads.map((m) => m.file));
-  const fileCount = uniqueFiles.size;
-
-  const matchText = matchPayloads.length === 1 ? 'match' : 'matches';
-  const fileText = fileCount === 1 ? 'file' : 'files';
-  const summary = [
-    `search-content: '${args.searchPattern}'`,
-    `${matchPayloads.length} ${matchText} in ${fileCount} ${fileText}`,
-  ].join(' · ');
 
   const structuredForResponse: SearchOutput = {
     ...fullStructured,
@@ -1615,11 +1511,7 @@ function buildExternalizedResponse(
     structuredForResponse.truncated = true;
   }
 
-  return buildResourceResponse({
-    summary,
-    resources: [link],
-    structured: structuredForResponse,
-  });
+  return structuredForResponse;
 }
 
 async function handleSearchContent(
@@ -1628,7 +1520,7 @@ async function handleSearchContent(
   signal?: AbortSignal,
   resourceStore?: ResourceStore,
   onProgress?: (progress: { total?: number; current: number }) => void,
-): Promise<ToolResponse<SearchOutput>> {
+): Promise<SearchOutput> {
   const basePath = pathGuard.resolvePathOrRoot(args.path);
   const regexMatcher = createSearchMatcher(args);
 
@@ -1661,52 +1553,47 @@ async function handleSearchContent(
   const preview = buildSearchPreviewState(matchPayloads);
 
   if (resourceStore && matchPayloads.length > 0) {
-    return buildExternalizedResponse(args, fullStructured, preview, resourceStore, matchPayloads);
+    return buildExternalizedResponse(fullStructured, preview, resourceStore);
   }
 
-  const text = buildSearchText(preview.heading, preview.visiblePayloads, result.summary);
-  return buildToolResponse(text, fullStructured);
+  if (preview.needsExternalize) {
+    fullStructured.matches = preview.visiblePayloads;
+    fullStructured.truncated = true;
+  }
+
+  return fullStructured;
 }
 
-export const SEARCH_CONTENT = defineTool<SearchInput, SearchOutput>({
-  contract: SEARCH_CONTENT_TOOL,
+export const SEARCH_CONTENT = defineTool({
+  name: 'grep',
+  title: 'Search Content',
+  description:
+    'Search file contents for text (grep-like). Returns matching lines. ' +
+    'Scope with `pattern` (e.g. `**/*.ts`) to reduce noise. ' +
+    '`includeHidden=true` for dotfiles.',
+  input: GrepInputSchema,
+  output: GrepOutputSchema,
+  annotations: 'readOnly',
+  task: 'optional',
+  timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
+  nuances: ['Inline results capped at 50 matches; full results via `resourceUri`.'],
+  gotchas: [
+    'RE2 dialect: no lookahead, lookbehind, or backreferences.',
+    'Use `pattern` to scope to specific files; without it, scans every text file.',
+    'Skips binary/oversized files silently \u2014 verify with `stat` if no matches.',
+  ],
   defaultErrorCode: ErrorCode.UNKNOWN,
-  diagnosticsContext: (args) => ({ path: args.path ?? '.' }),
+  progressLabel: (args) => `Search Content: ${truncateProgressPattern(args.searchPattern)}`,
   run: async (args, ctx) => {
-    const pattern = args.searchPattern;
-    const scope = args.pattern;
-    const progressLabel = `${SEARCH_CONTENT_TOOL.title}: ${truncateProgressPattern(pattern)}`;
-
-    return runWithProgressSession(ctx, progressLabel, async (progress) => {
-      const progressWithMessage = ({
-        current,
-        total,
-      }: {
-        total?: number;
-        current: number;
-      }): void => {
-        progress.set({
-          current,
-          ...(total !== undefined ? { total } : {}),
-          message: `${progressLabel} [${current} files]`,
-        });
-        progress.status(`${progressLabel} ${current} files`);
-      };
-
-      const result = await handleSearchContent(
-        args,
-        ctx.pathGuard,
-        ctx.signal,
-        ctx.resourceStore,
-        progressWithMessage,
-      );
-
-      const sc = result.structuredContent;
-      const { totalMatches = 0, filesMatched = 0, stoppedReason } = sc;
-      const suffix = buildCompletionSuffix(totalMatches, filesMatched, scope, stoppedReason);
-      const finalCurrent = resolveFinalProgressCurrent(progress, (sc.filesScanned ?? 0) + 1);
-      return { value: result, suffix, finalCurrent };
-    });
+    const truncatedPattern = truncateProgressPattern(args.searchPattern);
+    const onProgress = (params: { current: number; total?: number }): void => {
+      ctx.onProgress?.({
+        current: params.current,
+        ...(params.total !== undefined ? { total: params.total } : {}),
+        message: `grep: ${truncatedPattern} [${params.current} files]`,
+      });
+    };
+    return handleSearchContent(args, ctx.pathGuard, ctx.signal, ctx.resourceStore, onProgress);
   },
 });
 

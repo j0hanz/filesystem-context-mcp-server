@@ -12,24 +12,10 @@ import { assertNotAborted, processInParallel, withAbort } from '../core/concurre
 import { ErrorCode, isAbortError } from '../core/errors.js';
 import { getFileType, isHidden } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
+import type { ResourceStore } from '../core/store.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, getMimeType, PARALLEL_CONCURRENCY } from '../core/util.js';
-import { defineTool } from './define-tool.js';
-import { FILE_READ_ICONS } from './icons.js';
-import {
-  buildBatchPathContext,
-  buildFileInfoPayload,
-  buildResourceResponse,
-  buildStructuredError,
-  putResource,
-  READ_ONLY_TOOL_ANNOTATIONS,
-  type ToolContract,
-  type ToolRegistrationOptions,
-} from './shared.js';
-import {
-  completeProgressSession,
-  createBatchProgressCallbacks,
-  resolveFinalProgressCurrent,
-} from './tool-execution.js';
+import { defineTool } from './define.js';
+import { buildFileInfoPayload, buildStructuredError, putResource } from './shared.js';
 
 const StatManyInputSchema = z.strictObject({
   paths: z.array(RequiredPath).min(1).describe('Paths to stat'),
@@ -51,20 +37,6 @@ const StatManyOutputSchema = z.strictObject({
   dirCount: NonNegInt.describe('Number of directories'),
   resourceUri: z.string().describe('URI to stats.json resource'),
 });
-
-const GET_MULTIPLE_FILE_INFO_TOOL: ToolContract = {
-  name: 'stat_many',
-  title: 'Get Multiple File Info',
-  description:
-    'Get metadata for multiple files/directories in one request. ' +
-    'Use `tokenEstimate` (size\u00f74) to pre-screen token cost before reading.',
-  inputSchema: StatManyInputSchema,
-  outputSchema: StatManyOutputSchema,
-  annotations: READ_ONLY_TOOL_ANNOTATIONS,
-  icons: FILE_READ_ICONS,
-  taskSupport: 'optional',
-  defaultTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-} as const;
 
 const PERM_STRINGS = [
   '---',
@@ -277,14 +249,10 @@ function countFilesAndDirs(results: readonly MultipleFileInfoResult[]): {
 async function handleGetMultipleFileInfo(
   args: z.infer<typeof StatManyInputSchema>,
   pathGuard: PathGuard,
-  resourceStore: ToolRegistrationOptions['resourceStore'],
+  resourceStore: ResourceStore | undefined,
   signal?: AbortSignal,
   onProgress?: () => void,
-): Promise<{
-  text: string;
-  structured: z.infer<typeof StatManyOutputSchema>;
-  resourceLink: ReturnType<typeof putResource>['link'];
-}> {
+): Promise<z.infer<typeof StatManyOutputSchema>> {
   const result = await getMultipleFileInfo(args.paths, {
     includeMimeType: true,
     pathGuard,
@@ -320,7 +288,7 @@ async function handleGetMultipleFileInfo(
   if (!resourceStore) {
     throw new Error('ResourceStore is required for stat-many tool');
   }
-  const { entry: statsEntry, link: statsLink } = putResource({
+  const { entry: statsEntry } = putResource({
     store: resourceStore,
     name: 'stats.json',
     mimeType: 'application/json',
@@ -328,16 +296,8 @@ async function handleGetMultipleFileInfo(
     content: statsJson,
   });
 
-  // Build summary with file and directory counts
-  const summary =
-    fileCount === 1 && dirCount === 0
-      ? 'stat-many: 1 file'
-      : fileCount === 0 && dirCount === 1
-        ? 'stat-many: 1 directory'
-        : `stat-many: ${fileCount} file${fileCount === 1 ? '' : 's'} · ${dirCount} director${dirCount === 1 ? 'y' : 'ies'}`;
-
-  const structured: z.infer<typeof StatManyOutputSchema> = {
-    ok: true,
+  return {
+    ok: true as const,
     results: structuredResults,
     summary: {
       total: result.summary.total,
@@ -348,57 +308,34 @@ async function handleGetMultipleFileInfo(
     dirCount,
     resourceUri: statsEntry.uri,
   };
-
-  return { text: summary, structured, resourceLink: statsLink };
 }
 
-export const GET_MULTIPLE_FILE_INFO = defineTool<
-  z.infer<typeof StatManyInputSchema>,
-  z.infer<typeof StatManyOutputSchema>
->({
-  contract: GET_MULTIPLE_FILE_INFO_TOOL,
-  run: async (args, ctx) => {
-    const context = buildBatchPathContext(args.paths);
-    const label = `${GET_MULTIPLE_FILE_INFO_TOOL.title}: ${context}`;
-    const { progress, onItemComplete } = createBatchProgressCallbacks(ctx, {
-      toolLabel: GET_MULTIPLE_FILE_INFO_TOOL.title,
-      context,
-      totalItems: args.paths.length,
-      itemVerb: 'done',
-    });
-
-    const result = await completeProgressSession(progress, label, async () => {
-      const { text, structured, resourceLink } = await handleGetMultipleFileInfo(
-        args,
-        ctx.pathGuard,
-        ctx.resourceStore,
-        ctx.signal,
-        onItemComplete,
-      );
-      const total = structured.summary.total;
-      const failed = structured.summary.failed;
-      const suffix = failed ? `${failed} failed` : 'done';
-      const finalCurrent = resolveFinalProgressCurrent(progress, total);
-
-      return {
-        value: buildResourceResponse({
-          summary: text,
-          resources: [resourceLink],
-          structured,
-        }),
-        suffix,
-        finalCurrent,
-      };
-    });
-
-    return result;
-  },
-  progressMessage: () => GET_MULTIPLE_FILE_INFO_TOOL.title,
-  completionMessage: (_args, result) => {
-    if (result.isError) return `${GET_MULTIPLE_FILE_INFO_TOOL.title} • ${result.errorCode}`;
-    const sc = result.structuredContent;
-    const { fileCount, dirCount } = sc;
-    return `${GET_MULTIPLE_FILE_INFO_TOOL.title} • ${fileCount} file${fileCount === 1 ? '' : 's'} · ${dirCount} director${dirCount === 1 ? 'y' : 'ies'}`;
-  },
+export const GET_MULTIPLE_FILE_INFO = defineTool({
+  name: 'stat_many',
+  title: 'Get Multiple File Info',
+  description:
+    'Get metadata for multiple files/directories in one request. ' +
+    'Use `tokenEstimate` (size\u00f74) to pre-screen token cost before reading.',
+  input: StatManyInputSchema,
+  output: StatManyOutputSchema,
+  annotations: 'readOnly',
+  task: 'optional',
+  timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   defaultErrorCode: ErrorCode.NOT_FOUND,
+  progressLabel: (args) => `Get Multiple File Info: ${args.paths.length} paths`,
+  run: async (args, ctx) => {
+    const total = args.paths.length;
+    let completed = 0;
+    const onProgress = (): void => {
+      completed++;
+      ctx.onProgress?.({ current: completed, total, message: `stat_many: ${completed}/${total}` });
+    };
+    return handleGetMultipleFileInfo(
+      args,
+      ctx.pathGuard,
+      ctx.resourceStore,
+      ctx.signal,
+      onProgress,
+    );
+  },
 });
