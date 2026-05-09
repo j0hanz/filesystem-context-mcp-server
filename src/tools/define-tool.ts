@@ -7,6 +7,7 @@ import type { z } from 'zod/v4';
 import { ErrorCode } from '../lib/errors.js';
 
 import type { ToolContract } from './contract.js';
+import { progressSessionFromContext } from './progress-sinks.js';
 import {
   buildToolErrorResponse,
   executeToolWithDiagnostics,
@@ -15,10 +16,7 @@ import {
   type ToolRegistrationOptions,
   type ToolResult,
 } from './shared.js';
-import {
-  progressSessionFromContext,
-  registerStandardTool,
-} from './tool-execution.js';
+import { registerStandardTool } from './tool-execution.js';
 
 export interface DefineToolOptions<
   Args,
@@ -94,7 +92,14 @@ export function defineTool<Args, Output extends Record<string, unknown>>(
                 progress.set(p);
               },
             };
-            return run(args, handlerCtx);
+            try {
+              const result = await run(args, handlerCtx);
+              progress.complete(contract.name);
+              return result;
+            } catch (error) {
+              progress.fail(error);
+              throw error;
+            }
           },
           onError: (error) =>
             opts.onError

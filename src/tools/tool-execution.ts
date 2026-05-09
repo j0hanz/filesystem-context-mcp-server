@@ -49,14 +49,12 @@ import {
   withDefaultIcons,
 } from './shared.js';
 
-export const {
-  completeProgressSession,
+export {
   createBatchProgressCallbacks,
-
-  progressSessionFromContext,
+  completeProgressSession,
   resolveFinalProgressCurrent,
   runWithProgressSession,
-} = progressSinks;
+} from './progress-sinks.js';
 // === Section A: Task Support Metadata ===
 type TaskSupportLevel = 'optional' | 'required' | 'forbidden';
 
