@@ -1,7 +1,7 @@
 import { isUtf8 } from 'node:buffer';
-import { type BinaryToTextEncoding, createHash } from 'node:crypto';
+import { type BinaryToTextEncoding, createHash, randomUUID } from 'node:crypto';
 import { createReadStream, type Stats } from 'node:fs';
-import { type FileHandle, glob as fsGlob, lstat, open, readFile as readFilePromises, stat } from 'node:fs/promises';
+import { type FileHandle, glob as fsGlob, lstat, open, readFile as readFilePromises, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
@@ -796,10 +796,6 @@ export async function readFile(
 
   return readFileWithStatsInternal(filePath, validPath, stats, normalized, pathGuard);
 }
-
-
-import { randomUUID } from 'node:crypto';
-import { rename, unlink, writeFile } from 'node:fs/promises';
 
 export async function atomicWriteFile(
   filePath: string,

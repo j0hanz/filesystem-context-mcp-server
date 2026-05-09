@@ -5,8 +5,13 @@ import type {
 } from '@modelcontextprotocol/server';
 
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { channel } from 'node:diagnostics_channel';
+import { hash as hashFunc } from 'node:crypto';
+import { channel, tracingChannel } from 'node:diagnostics_channel';
 import { inspect } from 'node:util';
+
+// Aliases for observability subsystem
+const AsyncLocalStorageImport = AsyncLocalStorage;
+const channelFunc = channel;
 
 interface SessionContextData {
   sessionId?: string;
@@ -202,9 +207,6 @@ export class LogRouter {
   }
 }
 
-import { AsyncLocalStorage as AsyncLocalStorageImport } from 'node:async_hooks';
-import { hash as hashFunc } from 'node:crypto';
-import { channel as channelFunc, tracingChannel } from 'node:diagnostics_channel';
 import { monitorEventLoopDelay, performance, PerformanceObserver } from 'node:perf_hooks';
 
 import { parseTrueEnvFlag, isRecord } from './util.js';
