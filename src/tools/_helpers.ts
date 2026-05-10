@@ -11,6 +11,7 @@ import type {
   ProgressNotification,
   ProgressToken,
   RequestMeta,
+  Role,
   ServerContext,
 } from '@modelcontextprotocol/server';
 
@@ -68,10 +69,12 @@ export interface ToolContext {
 
 // ============ ToolRegistrationOptions ============
 
-export interface IconInfo {
-  src: string;
-  mimeType: string;
-}
+/**
+ * Minimal icon descriptor used internally. Compatible with SDK's `Icon`
+ * (which has optional mimeType, sizes, theme). We require mimeType for
+ * consistency with our single icon producer.
+ */
+export type IconInfo = Icon & { mimeType: string };
 
 export interface ToolRegistrationOptions {
   pathGuard: PathGuard;
@@ -197,7 +200,7 @@ interface PutResourceParams {
   mimeType: string;
   kind: MimeKind;
   content: string | Buffer;
-  audience?: ('user' | 'assistant')[];
+  audience?: Role[];
   title?: string;
   description?: string;
 }
@@ -213,7 +216,7 @@ function buildLinkBlock(
   mimeType: string,
   size: number,
   params?: {
-    audience?: ('user' | 'assistant')[];
+    audience?: Role[];
     title?: string;
     description?: string;
   },

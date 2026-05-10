@@ -2,12 +2,15 @@ import { hostHeaderValidation, localhostHostValidation } from '@modelcontextprot
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import type { McpServer } from '@modelcontextprotocol/server';
 import {
+  type EventId,
+  type EventStore,
   isInitializeRequest,
   JSONRPC_VERSION,
   type JSONRPCMessage,
   parseJSONRPCMessage,
   ProtocolErrorCode,
   StdioServerTransport,
+  type StreamId,
 } from '@modelcontextprotocol/server';
 
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -39,17 +42,17 @@ import { createServer, logRouter, type RootsManager, type ServerOptions } from '
 const MAX_EVENTS_PER_STREAM = 1000;
 
 interface StoredEvent {
-  id: string;
+  id: EventId;
   message: JSONRPCMessage;
 }
 
-export class InMemoryEventStore {
+export class InMemoryEventStore implements EventStore {
   // Map of streamId -> StoredEvent[]
-  private streams = new Map<string, StoredEvent[]>();
+  private streams = new Map<StreamId, StoredEvent[]>();
   // Map of eventId -> streamId for fast lookup
-  private eventIdToStreamId = new Map<string, string>();
+  private eventIdToStreamId = new Map<EventId, StreamId>();
 
-  storeEvent(streamId: string, message: JSONRPCMessage): Promise<string> {
+  storeEvent(streamId: StreamId, message: JSONRPCMessage): Promise<EventId> {
     const eventId = randomUUID();
     let stream = this.streams.get(streamId);
 
@@ -73,16 +76,16 @@ export class InMemoryEventStore {
     return Promise.resolve(eventId);
   }
 
-  getStreamIdForEventId(eventId: string): Promise<string | undefined> {
+  getStreamIdForEventId(eventId: EventId): Promise<StreamId | undefined> {
     return Promise.resolve(this.eventIdToStreamId.get(eventId));
   }
 
   async replayEventsAfter(
-    lastEventId: string,
+    lastEventId: EventId,
     callbacks: {
-      send: (eventId: string, message: JSONRPCMessage) => Promise<void>;
+      send: (eventId: EventId, message: JSONRPCMessage) => Promise<void>;
     },
-  ): Promise<string> {
+  ): Promise<StreamId> {
     const streamId = this.eventIdToStreamId.get(lastEventId);
     if (!streamId) {
       throw new Error(`Event ID ${lastEventId} not found or expired`);

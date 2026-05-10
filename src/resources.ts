@@ -5,6 +5,7 @@ import {
   ProtocolErrorCode,
   type ReadResourceResult,
   ResourceTemplate,
+  type Role,
   type ServerContext,
 } from '@modelcontextprotocol/server';
 
@@ -51,7 +52,7 @@ interface ResourceContract {
   uriTemplate?: string;
 
   annotations?: {
-    audience?: ('user' | 'assistant')[];
+    audience?: Role[];
     priority?: number;
   };
 
