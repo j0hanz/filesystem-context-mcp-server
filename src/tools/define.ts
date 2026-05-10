@@ -1,6 +1,7 @@
 // src/tools/define.ts
 // Tool definition engine for registering tools with MCP server
 import type {
+  CallToolResult,
   ContentBlock,
   ElicitRequestFormParams,
   ElicitResult,
@@ -135,7 +136,9 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
         if (!deps.isInitialized()) {
           return {
             isError: true as const,
-            content: [{ type: 'text', text: 'Server not initialized. Roots unavailable.' }],
+            content: [
+              { type: 'text' as const, text: 'Server not initialized. Roots unavailable.' },
+            ],
           };
         }
 
@@ -143,7 +146,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
         if (!parsed.success) {
           return {
             isError: true as const,
-            content: [{ type: 'text', text: `Invalid input: ${parsed.error.message}` }],
+            content: [{ type: 'text' as const, text: `Invalid input: ${parsed.error.message}` }],
           };
         }
         const parsedArgs = parsed.data;
@@ -191,7 +194,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
             };
           }
           return {
-            content: [{ type: 'text', text: JSON.stringify(result) }],
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
             structuredContent: result,
           };
         } catch (error: unknown) {
@@ -233,14 +236,14 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
               elicitInput: (params: ElicitRequestFormParams) => Promise<ElicitResult>;
             };
           },
-        ) =>
-          coreHandler(args, {
+        ): Promise<CallToolResult> =>
+          (await coreHandler(args, {
             signal: extra.mcpReq.signal,
             log: async (level: LoggingLevel, data: unknown, logger?: string) =>
               extra.mcpReq.log(level, data, logger),
             elicitInput: (params: ElicitRequestFormParams) => extra.mcpReq.elicitInput(params),
-          });
-        deps.server.registerTool(def.name, toolDefShape as never, serverCtxHandler as never);
+          })) as unknown as CallToolResult;
+        deps.server.registerTool(def.name, toolDefShape, serverCtxHandler);
       }
     },
   };
