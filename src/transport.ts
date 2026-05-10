@@ -491,17 +491,92 @@ async function handleSessionTransportRequest(
   });
 }
 
-export async function startHttpServer(port: number, options: ServerOptions): Promise<Server> {
-  const eventStore = new InMemoryEventStore();
-  const httpHost = process.env.FILESYSTEM_MCP_HTTP_HOST ?? '127.0.0.1';
-  assertHttpBindingPolicy(httpHost, process.env.FILESYSTEM_MCP_API_KEY);
+function errorHandlerMiddleware(
+  err: Error & { status?: number },
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  if (err.status === 413) {
+    sendJsonRpcError(res, 413, JSON_RPC_INVALID_REQUEST, 'Request body too large');
+    return;
+  }
+  if (err.status === 400) {
+    sendJsonRpcError(res, 400, JSON_RPC_PARSE_ERROR, 'Invalid JSON in request body');
+    return;
+  }
+  next(err);
+}
 
-  const registry = new HttpSessionRegistry({
-    eventStore,
-    logRouter,
-    handshakeTimeoutMs: getInitHandshakeTimeoutMs(),
-  });
+async function handlePostMcp(
+  req: Request,
+  res: Response,
+  options: ServerOptions,
+  registry: HttpSessionRegistry,
+  eventStore: InMemoryEventStore,
+): Promise<void> {
+  try {
+    const sessionId = getSessionId(req);
+    if (sessionId) {
+      const session = registry.getOrRespondNotFound(sessionId, res);
+      if (session) {
+        await handleSessionTransportRequest(session, req, res, req.body);
+      }
+      return;
+    }
+    if (!isInitializeRequest(req.body)) {
+      sendJsonRpcError(
+        res,
+        400,
+        JSON_RPC_SERVER_ERROR,
+        'Bad Request: No valid session ID provided',
+      );
+      return;
+    }
+    const maxSessions = parseEnvInt('FILESYSTEM_MCP_MAX_HTTP_SESSIONS', 100, 1, 10_000);
+    if (registry.size() >= maxSessions) {
+      sendJsonRpcError(res, 503, JSON_RPC_SERVER_ERROR, 'Too many sessions');
+      return;
+    }
+    const session = await createHttpSession(options, registry, eventStore);
+    await handleSessionTransportRequest(session, req, res, req.body);
+  } catch (error) {
+    Logger.error('[HTTP] Error handling POST request:', formatUnknownErrorMessage(error));
+    if (!res.headersSent) {
+      sendJsonRpcError(res, 500, JSON_RPC_INTERNAL_ERROR, 'Internal Server Error');
+    }
+  }
+}
 
+async function handleGetOrDeleteMcp(
+  req: Request,
+  res: Response,
+  registry: HttpSessionRegistry,
+): Promise<void> {
+  try {
+    const sessionId = getSessionId(req);
+    if (!sessionId) {
+      sendJsonRpcError(res, 400, JSON_RPC_SERVER_ERROR, 'Bad Request: Missing session ID');
+      return;
+    }
+    const session = registry.getOrRespondNotFound(sessionId, res);
+    if (session) {
+      await handleSessionTransportRequest(session, req, res);
+    }
+  } catch (error) {
+    Logger.error(`[HTTP] Error handling ${req.method} request:`, formatUnknownErrorMessage(error));
+    if (!res.headersSent) {
+      sendJsonRpcError(res, 500, JSON_RPC_INTERNAL_ERROR, 'Internal Server Error');
+    }
+  }
+}
+
+function setupExpressApp(
+  httpHost: string,
+  options: ServerOptions,
+  registry: HttpSessionRegistry,
+  eventStore: InMemoryEventStore,
+): express.Express {
   const app = express();
 
   if (isLoopbackHttpHost(httpHost)) {
@@ -525,82 +600,38 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
   app.use('/mcp', bearerAuthMiddleware());
 
   app.use(express.json({ limit: MAX_REQUEST_BODY_BYTES }));
+  app.use(errorHandlerMiddleware);
 
-  // Body-parse error handler — translate to JSON-RPC error format
-  app.use((err: Error & { status?: number }, _req: Request, res: Response, next: NextFunction) => {
-    if (err.status === 413) {
-      sendJsonRpcError(res, 413, JSON_RPC_INVALID_REQUEST, 'Request body too large');
-      return;
-    }
-    if (err.status === 400) {
-      sendJsonRpcError(res, 400, JSON_RPC_PARSE_ERROR, 'Invalid JSON in request body');
-      return;
-    }
-    next(err);
+  app.post('/mcp', (req: Request, res: Response) => {
+    void handlePostMcp(req, res, options, registry, eventStore);
   });
 
-  app.post('/mcp', async (req: Request, res: Response) => {
-    try {
-      const sessionId = getSessionId(req);
-      if (sessionId) {
-        const session = registry.getOrRespondNotFound(sessionId, res);
-        if (session) {
-          await handleSessionTransportRequest(session, req, res, req.body);
-        }
-        return;
-      }
-      if (isInitializeRequest(req.body)) {
-        const maxSessions = parseEnvInt('FILESYSTEM_MCP_MAX_HTTP_SESSIONS', 100, 1, 10_000);
-        if (registry.size() >= maxSessions) {
-          sendJsonRpcError(res, 503, JSON_RPC_SERVER_ERROR, 'Too many sessions');
-          return;
-        }
-        const session = await createHttpSession(options, registry, eventStore);
-        await handleSessionTransportRequest(session, req, res, req.body);
-        return;
-      }
-      sendJsonRpcError(
-        res,
-        400,
-        JSON_RPC_SERVER_ERROR,
-        'Bad Request: No valid session ID provided',
-      );
-    } catch (error) {
-      Logger.error('[HTTP] Error handling POST request:', formatUnknownErrorMessage(error));
-      if (!res.headersSent) {
-        sendJsonRpcError(res, 500, JSON_RPC_INTERNAL_ERROR, 'Internal Server Error');
-      }
-    }
-  });
-
-  const handleGetOrDelete = async (req: Request, res: Response) => {
-    try {
-      const sessionId = getSessionId(req);
-      if (!sessionId) {
-        sendJsonRpcError(res, 400, JSON_RPC_SERVER_ERROR, 'Bad Request: Missing session ID');
-        return;
-      }
-      const session = registry.getOrRespondNotFound(sessionId, res);
-      if (session) {
-        await handleSessionTransportRequest(session, req, res);
-      }
-    } catch (error) {
-      Logger.error(
-        `[HTTP] Error handling ${req.method} request:`,
-        formatUnknownErrorMessage(error),
-      );
-      if (!res.headersSent) {
-        sendJsonRpcError(res, 500, JSON_RPC_INTERNAL_ERROR, 'Internal Server Error');
-      }
-    }
+  const getOrDeleteHandler = (req: Request, res: Response) => {
+    void handleGetOrDeleteMcp(req, res, registry);
   };
 
-  app.get('/mcp', handleGetOrDelete);
-  app.delete('/mcp', handleGetOrDelete);
+  app.get('/mcp', getOrDeleteHandler);
+  app.delete('/mcp', getOrDeleteHandler);
 
   app.all('/mcp', (_req: Request, res: Response) => {
     res.status(405).set('Allow', 'GET, POST, DELETE, OPTIONS').end();
   });
+
+  return app;
+}
+
+export async function startHttpServer(port: number, options: ServerOptions): Promise<Server> {
+  const eventStore = new InMemoryEventStore();
+  const httpHost = process.env.FILESYSTEM_MCP_HTTP_HOST ?? '127.0.0.1';
+  assertHttpBindingPolicy(httpHost, process.env.FILESYSTEM_MCP_API_KEY);
+
+  const registry = new HttpSessionRegistry({
+    eventStore,
+    logRouter,
+    handshakeTimeoutMs: getInitHandshakeTimeoutMs(),
+  });
+
+  const app = setupExpressApp(httpHost, options, registry, eventStore);
 
   const httpServer = createHttpServer(app);
   httpServer.headersTimeout = 10_000;

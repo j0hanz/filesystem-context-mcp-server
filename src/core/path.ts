@@ -66,7 +66,11 @@ function expandHome(filepath: string): string {
   if (filepath === '~') return HOMEDIR;
 
   // Accept both "~/" and "~\\" for cross-platform UX.
-  if (filepath.length > 1 && filepath.charCodeAt(0) === CHAR_TILDE && isSlash(filepath.charCodeAt(1))) {
+  if (
+    filepath.length > 1 &&
+    filepath.charCodeAt(0) === CHAR_TILDE &&
+    isSlash(filepath.charCodeAt(1))
+  ) {
     let startIdx = 2;
     while (startIdx < filepath.length && isSlash(filepath.charCodeAt(startIdx))) {
       startIdx++;
@@ -174,7 +178,10 @@ function compilePatternGlobs(normalizedPattern: string): readonly string[] {
 
   if (!normalizedPattern.startsWith('**/') && !isWindowsAbsolutePosixPath(normalizedPattern)) {
     let startIdx = 0;
-    while (startIdx < normalizedPattern.length && normalizedPattern.charCodeAt(startIdx) === CHAR_FORWARD_SLASH) {
+    while (
+      startIdx < normalizedPattern.length &&
+      normalizedPattern.charCodeAt(startIdx) === CHAR_FORWARD_SLASH
+    ) {
       startIdx++;
     }
     const withoutRoot = normalizedPattern.slice(startIdx);
@@ -619,7 +626,10 @@ export class PathGuard {
     }
   }
 
-  private async findNearestExistingAncestor(requestedPath: string, currentPath: string): Promise<string> {
+  private async findNearestExistingAncestor(
+    requestedPath: string,
+    currentPath: string,
+  ): Promise<string> {
     let current = currentPath;
     for (;;) {
       try {
