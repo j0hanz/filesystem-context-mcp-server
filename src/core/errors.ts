@@ -26,9 +26,9 @@ interface ProblemIssue {
 }
 
 interface ProblemDetails {
-  readonly traceparent?: string;
-  readonly tracestate?: string;
-  readonly baggage?: string;
+  readonly 'io.opentelemetry/traceparent'?: string;
+  readonly 'io.opentelemetry/tracestate'?: string;
+  readonly 'io.opentelemetry/baggage'?: string;
   readonly errno?: string;
   readonly syscall?: string;
   readonly tool?: string;
@@ -431,9 +431,13 @@ export class McpError extends Error {
       const cause = arg5;
       const trace = getTraceContext();
       const traceDetails: Partial<ProblemDetails> = {
-        ...(trace?.traceparent !== undefined ? { traceparent: trace.traceparent } : {}),
-        ...(trace?.tracestate !== undefined ? { tracestate: trace.tracestate } : {}),
-        ...(trace?.baggage !== undefined ? { baggage: trace.baggage } : {}),
+        ...(trace?.traceparent !== undefined
+          ? { 'io.opentelemetry/traceparent': trace.traceparent }
+          : {}),
+        ...(trace?.tracestate !== undefined
+          ? { 'io.opentelemetry/tracestate': trace.tracestate }
+          : {}),
+        ...(trace?.baggage !== undefined ? { 'io.opentelemetry/baggage': trace.baggage } : {}),
       };
 
       const details: ProblemDetails | undefined =

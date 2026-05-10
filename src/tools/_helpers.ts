@@ -33,6 +33,9 @@ import type { MimeKind } from '../core/fs.js';
 import {
   Logger,
   ProgressSession,
+  readBaggage,
+  readTraceparent,
+  readTracestate,
   type TraceContext,
   withToolDiagnostics,
 } from '../core/observability.js';
@@ -44,11 +47,14 @@ import type { TaskOrchestrator } from '../tasks.js';
 
 // ============ ToolContext ============
 
-/** W3C Trace Context metadata passed through RequestMeta. */
+/**
+ * W3C Trace Context metadata as carried on MCP `_meta`. Wire keys use
+ * io.opentelemetry/ namespace per MCP spec for third-party key namespacing.
+ */
 interface TracingMeta {
-  traceparent?: string | undefined;
-  tracestate?: string | undefined;
-  baggage?: string | undefined;
+  'io.opentelemetry/traceparent'?: string | undefined;
+  'io.opentelemetry/tracestate'?: string | undefined;
+  'io.opentelemetry/baggage'?: string | undefined;
 }
 
 export interface ToolContext {
@@ -427,12 +433,14 @@ export interface HandlerContext {
 const TRACEPARENT_RE = /^[\da-f]{2}-[\da-f]{32}-[\da-f]{16}-[\da-f]{2}$/i;
 
 function extractTraceContext(meta: ToolContext['_meta']): TraceContext | undefined {
-  const tp = meta?.traceparent;
+  const tp = readTraceparent(meta);
   if (typeof tp !== 'string' || !TRACEPARENT_RE.test(tp)) return undefined;
+  const ts = readTracestate(meta);
+  const bg = readBaggage(meta);
   return {
     traceparent: tp,
-    ...(typeof meta?.tracestate === 'string' ? { tracestate: meta.tracestate } : {}),
-    ...(typeof meta?.baggage === 'string' ? { baggage: meta.baggage } : {}),
+    ...(ts ? { tracestate: ts } : {}),
+    ...(bg ? { baggage: bg } : {}),
   };
 }
 
