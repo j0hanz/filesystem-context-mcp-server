@@ -204,7 +204,7 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
       if (!options.pathGuard) {
         throw new ProtocolError(ProtocolErrorCode.InternalError, 'PathGuard not configured');
       }
-      const rawPath = variables.path;
+      const rawPath = variables['path'];
       if (typeof rawPath !== 'string') {
         throw new ProtocolError(
           ProtocolErrorCode.InvalidParams,

@@ -16,12 +16,12 @@ function override(
   ctx: Parameters<NonNullable<NonNullable<Parameters<typeof z.toJSONSchema>[1]>['override']>>[0],
 ): void {
   const s = ctx.jsonSchema as JsonSchema;
-  if (s.format === 'date-time' && 'pattern' in s) delete s.pattern;
-  if (s.type === 'integer' && s.maximum === Number.MAX_SAFE_INTEGER) delete s.maximum;
-  if (typeof s.format === 'string' && STRIP_FORMATS.has(s.format) && 'pattern' in s)
-    delete s.format;
-  if ('contentEncoding' in s && 'pattern' in s) delete s.contentEncoding;
-  if ('suggestion' in s) delete s.suggestion;
+  if (s['format'] === 'date-time' && 'pattern' in s) delete s['pattern'];
+  if (s['type'] === 'integer' && s['maximum'] === Number.MAX_SAFE_INTEGER) delete s['maximum'];
+  if (typeof s['format'] === 'string' && STRIP_FORMATS.has(s['format']) && 'pattern' in s)
+    delete s['format'];
+  if ('contentEncoding' in s && 'pattern' in s) delete s['contentEncoding'];
+  if ('suggestion' in s) delete s['suggestion'];
 }
 
 // Remove from `required` any property that has a `default` value.
@@ -33,11 +33,15 @@ function removeDefaultedFromRequired(schema: unknown): unknown {
   for (const [k, v] of Object.entries(schema as JsonSchema)) {
     out[k] = removeDefaultedFromRequired(v);
   }
-  if (Array.isArray(out.required) && out.properties && typeof out.properties === 'object') {
-    const props = out.properties as Record<string, JsonSchema>;
-    const filtered = (out.required as string[]).filter((n) => !('default' in (props[n] ?? {})));
-    if (filtered.length === 0) delete out.required;
-    else out.required = filtered;
+  if (
+    Array.isArray(out['required']) &&
+    out['properties'] &&
+    typeof out['properties'] === 'object'
+  ) {
+    const props = out['properties'] as Record<string, JsonSchema>;
+    const filtered = (out['required'] as string[]).filter((n) => !('default' in (props[n] ?? {})));
+    if (filtered.length === 0) delete out['required'];
+    else out['required'] = filtered;
   }
   return out;
 }
@@ -57,11 +61,11 @@ export function toMcpSchema(
     unrepresentable: 'any',
     override,
   }) as JsonSchema;
-  if ('$schema' in raw) delete raw.$schema;
+  if ('$schema' in raw) delete raw['$schema'];
   const cleaned = removeDefaultedFromRequired(raw) as JsonSchema;
   const final = augment ? augment(cleaned) : cleaned;
   const std = { ...(schema['~standard'] as unknown as Record<string, unknown>) };
-  std.jsonSchema = { input: () => final, output: () => final };
+  std['jsonSchema'] = { input: () => final, output: () => final };
   return { '~standard': std, jsonSchema: final } as unknown as StandardSchemaWithJSON;
 }
 

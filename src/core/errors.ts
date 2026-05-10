@@ -131,7 +131,7 @@ export function resolveSuggestion(
   }
   if (p.issues && p.issues.length > 0) {
     for (const issue of p.issues) {
-      const fromRule = issue.params?.suggestion;
+      const fromRule = issue.params?.['suggestion'];
       if (typeof fromRule === 'string') return fromRule;
     }
   }
@@ -307,12 +307,8 @@ export function classify(error: unknown, ctx?: { schema?: z.ZodType }): Problem 
 
 // ─── Type guard helpers ──────────────────────────────────────────────────────
 
-interface ErrorConstructorWithIsError extends ErrorConstructor {
-  isError?: (value: unknown) => boolean;
-}
-
 function isNativeError(error: unknown): error is Error {
-  const candidate = Error as ErrorConstructorWithIsError;
+  const candidate = Error;
   if (typeof candidate.isError === 'function') {
     return candidate.isError(error);
   }

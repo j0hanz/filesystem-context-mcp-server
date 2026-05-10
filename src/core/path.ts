@@ -774,8 +774,11 @@ function buildCacheKey(
 
 class PathCompleter {
   private cache = new Map<string, CacheEntry>();
+  private readonly pathGuard: PathGuard;
 
-  constructor(private readonly pathGuard: PathGuard) {}
+  constructor(pathGuard: PathGuard) {
+    this.pathGuard = pathGuard;
+  }
 
   async suggest(
     value: string,

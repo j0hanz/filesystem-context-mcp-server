@@ -224,9 +224,9 @@ let _cachedConfig: Config | undefined;
 
 function readConfig(): Config {
   _cachedConfig ??= {
-    enabled: parseTrueEnvFlag(ENV.FS_CONTEXT_DIAGNOSTICS),
-    detail: parseDetail(ENV.FS_CONTEXT_DIAGNOSTICS_DETAIL),
-    logToolErrors: parseTrueEnvFlag(ENV.FS_CONTEXT_TOOL_LOG_ERRORS),
+    enabled: parseTrueEnvFlag(ENV['FS_CONTEXT_DIAGNOSTICS']),
+    detail: parseDetail(ENV['FS_CONTEXT_DIAGNOSTICS_DETAIL']),
+    logToolErrors: parseTrueEnvFlag(ENV['FS_CONTEXT_TOOL_LOG_ERRORS']),
   };
   return _cachedConfig;
 }
@@ -311,21 +311,21 @@ function extractErrorMessage(source: unknown): string {
   if (!isRecord(source)) return safeStringify(source);
 
   // Check structured content first
-  const struct = source.structuredContent;
+  const struct = source['structuredContent'];
   if (isRecord(struct)) {
-    const structErr = struct.error;
+    const structErr = struct['error'];
     if (typeof structErr === 'string') return structErr;
-    if (isRecord(structErr) && typeof structErr.message === 'string') {
-      return structErr.message;
+    if (isRecord(structErr) && typeof structErr['message'] === 'string') {
+      return structErr['message'];
     }
   }
 
   // Check direct properties
-  if (typeof source.error === 'string') return source.error;
-  if (isRecord(source.error) && typeof source.error.message === 'string') {
-    return source.error.message;
+  if (typeof source['error'] === 'string') return source['error'];
+  if (isRecord(source['error']) && typeof source['error']['message'] === 'string') {
+    return source['error']['message'];
   }
-  if (typeof source.message === 'string') return source.message;
+  if (typeof source['message'] === 'string') return source['message'];
 
   return safeStringify(source);
 }
@@ -333,22 +333,22 @@ function extractErrorMessage(source: unknown): string {
 function extractOutcome(result: unknown): { ok: boolean; error?: string } {
   if (!isRecord(result)) return { ok: true };
 
-  if (result.isError === true) {
+  if (result['isError'] === true) {
     return { ok: false, error: extractErrorMessage(result) };
   }
 
-  if (typeof result.ok === 'boolean') {
-    return result.ok ? { ok: true } : { ok: false, error: extractErrorMessage(result) };
+  if (typeof result['ok'] === 'boolean') {
+    return result['ok'] ? { ok: true } : { ok: false, error: extractErrorMessage(result) };
   }
 
-  const struct = result.structuredContent;
-  if (isRecord(struct) && typeof struct.ok === 'boolean') {
-    if (struct.ok) return { ok: true };
+  const struct = result['structuredContent'];
+  if (isRecord(struct) && typeof struct['ok'] === 'boolean') {
+    if (struct['ok']) return { ok: true };
     const err =
-      typeof struct.error === 'string'
-        ? struct.error
-        : isRecord(struct.error) && typeof struct.error.message === 'string'
-          ? struct.error.message
+      typeof struct['error'] === 'string'
+        ? struct['error']
+        : isRecord(struct['error']) && typeof struct['error']['message'] === 'string'
+          ? struct['error']['message']
           : undefined;
     return err ? { ok: false, error: err } : { ok: false };
   }
@@ -378,18 +378,18 @@ function enrichWithToolContext(
   if (!current) return detail;
 
   const merged: Record<string, unknown> = { ...(detail ?? {}) };
-  if (merged.tool === undefined) {
-    merged.tool = current.tool;
+  if (merged['tool'] === undefined) {
+    merged['tool'] = current.tool;
   }
 
-  if (merged.path === undefined && current.normalizedPath) {
-    merged.path = current.normalizedPath;
-  } else if (merged.path !== undefined) {
-    const hashed = sanitizePathForDiagnostics(merged.path as string);
+  if (merged['path'] === undefined && current.normalizedPath) {
+    merged['path'] = current.normalizedPath;
+  } else if (merged['path'] !== undefined) {
+    const hashed = sanitizePathForDiagnostics(merged['path'] as string);
     if (hashed) {
-      merged.path = hashed;
+      merged['path'] = hashed;
     } else {
-      delete merged.path;
+      delete merged['path'];
     }
   }
 

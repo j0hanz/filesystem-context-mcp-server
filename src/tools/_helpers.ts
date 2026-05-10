@@ -335,11 +335,11 @@ export { ProgressSession };
 
 function normalizeToolExecution<T extends object>(tool: T): T {
   const candidate = tool as Record<string, unknown>;
-  const topLevelTaskSupport = candidate.taskSupport;
+  const topLevelTaskSupport = candidate['taskSupport'];
   const existingExecution = getExecutionConfig(candidate);
   const resolvedTaskSupport = resolveTaskSupport(
     topLevelTaskSupport,
-    existingExecution?.taskSupport,
+    existingExecution?.['taskSupport'],
   );
 
   if (resolvedTaskSupport === undefined && topLevelTaskSupport === undefined) {
@@ -347,11 +347,11 @@ function normalizeToolExecution<T extends object>(tool: T): T {
   }
 
   const normalized = { ...candidate };
-  delete normalized.taskSupport;
+  delete normalized['taskSupport'];
 
   const execution = buildExecution(existingExecution, resolvedTaskSupport);
   if (execution !== undefined) {
-    normalized.execution = execution;
+    normalized['execution'] = execution;
   }
 
   return normalized as T;

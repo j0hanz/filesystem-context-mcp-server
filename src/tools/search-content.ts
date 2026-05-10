@@ -635,11 +635,12 @@ class SearchWorkerPool {
   private pending = new Map<number, PendingWorkerRequest>();
   private nextRequestId = 0;
   private closed = false;
+  private size: number;
+  private debug: boolean;
 
-  constructor(
-    private size: number,
-    private debug: boolean,
-  ) {
+  constructor(size: number, debug: boolean) {
+    this.size = size;
+    this.debug = debug;
     if (size <= 0) throw new Error('Pool size must be positive');
     this.workers = Array.from({ length: size }, (): Worker | undefined => undefined);
   }
@@ -803,7 +804,7 @@ let poolInstance: SearchWorkerPool | null = null;
 
 function getPool(): SearchWorkerPool {
   if (!poolInstance) {
-    const debug = process.env.FS_CONTEXT_SEARCH_WORKERS_DEBUG === '1';
+    const debug = process.env['FS_CONTEXT_SEARCH_WORKERS_DEBUG'] === '1';
     poolInstance = new SearchWorkerPool(SEARCH_WORKERS, debug);
   }
   return poolInstance;

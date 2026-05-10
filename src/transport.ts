@@ -265,7 +265,7 @@ function originGuardMiddleware(): RequestHandler {
  * matching bearer token. No key set = open access (loopback dev mode).
  */
 function bearerAuthMiddleware(): RequestHandler {
-  const apiKey = process.env.FILESYSTEM_MCP_API_KEY;
+  const apiKey = process.env['FILESYSTEM_MCP_API_KEY'];
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!apiKey) {
       next();
@@ -616,8 +616,8 @@ function setupExpressApp(
 
 export async function startHttpServer(port: number, options: ServerOptions): Promise<Server> {
   const eventStore = new InMemoryEventStore();
-  const httpHost = process.env.FILESYSTEM_MCP_HTTP_HOST ?? '127.0.0.1';
-  assertHttpBindingPolicy(httpHost, process.env.FILESYSTEM_MCP_API_KEY);
+  const httpHost = process.env['FILESYSTEM_MCP_HTTP_HOST'] ?? '127.0.0.1';
+  assertHttpBindingPolicy(httpHost, process.env['FILESYSTEM_MCP_API_KEY']);
 
   const registry = new HttpSessionRegistry({
     eventStore,

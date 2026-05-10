@@ -59,8 +59,10 @@ export function createTaskStore(): EventedTaskStore {
  */
 export class TaskOrchestrator {
   private readonly controllers = new Map<string, AbortController>();
+  private readonly store: EventedTaskStore;
 
-  constructor(private readonly store: EventedTaskStore) {
+  constructor(store: EventedTaskStore) {
+    this.store = store;
     this.store.events.on('cancelled', (taskId: string) => {
       const controller = this.controllers.get(taskId);
       if (controller) {
@@ -194,10 +196,10 @@ export class TaskOrchestrator {
           if (notification.method === 'notifications/tasks/status') {
             const params = notification.params as Record<string, unknown>;
             const status = (
-              typeof params.status === 'string' ? params.status : 'working'
+              typeof params['status'] === 'string' ? params['status'] : 'working'
             ) as Task['status'];
             const statusMessage =
-              typeof params.statusMessage === 'string' ? params.statusMessage : '';
+              typeof params['statusMessage'] === 'string' ? params['statusMessage'] : '';
 
             await task.store.updateTaskStatus(taskId, status, `${toolName}: ${statusMessage}`);
           } else {
@@ -211,21 +213,21 @@ export class TaskOrchestrator {
 
       const strippedResult = maybeStripStructuredContentFromResult(result);
       if (
-        strippedResult._meta &&
-        typeof strippedResult._meta === 'object' &&
-        'io.modelcontextprotocol/model-immediate-response' in strippedResult._meta
+        strippedResult['_meta'] &&
+        typeof strippedResult['_meta'] === 'object' &&
+        'io.modelcontextprotocol/model-immediate-response' in strippedResult['_meta']
       ) {
         // Create a copy to avoid mutating the original
-        strippedResult._meta = { ...strippedResult._meta };
-        delete (strippedResult._meta as Record<string, unknown>)[
+        strippedResult['_meta'] = { ...strippedResult['_meta'] };
+        delete (strippedResult['_meta'] as Record<string, unknown>)[
           'io.modelcontextprotocol/model-immediate-response'
         ];
       }
 
       // Ensure _meta exists and attach RELATED_TASK_META_KEY
-      strippedResult._meta = {
-        ...(typeof strippedResult._meta === 'object' && strippedResult._meta !== null
-          ? strippedResult._meta
+      strippedResult['_meta'] = {
+        ...(typeof strippedResult['_meta'] === 'object' && strippedResult['_meta'] !== null
+          ? strippedResult['_meta']
           : {}),
         [RELATED_TASK_META_KEY]: { taskId },
       };
@@ -248,7 +250,7 @@ export class TaskOrchestrator {
       // If we are here, the task might have been cancelled from the outside (store event)
       // or the handler failed.
       const isCancelled =
-        (isRecord(error) && error.code === ErrorCode.CANCELLED) || signal?.aborted === true;
+        (isRecord(error) && error['code'] === ErrorCode.CANCELLED) || signal?.aborted === true;
 
       if (isCancelled) {
         try {
@@ -262,9 +264,11 @@ export class TaskOrchestrator {
         }
       } else {
         const message =
-          isRecord(error) && typeof error.message === 'string' ? error.message : String(error);
+          isRecord(error) && typeof error['message'] === 'string'
+            ? error['message']
+            : String(error);
         const code = (
-          isRecord(error) && typeof error.code === 'string' ? error.code : ErrorCode.UNKNOWN
+          isRecord(error) && typeof error['code'] === 'string' ? error['code'] : ErrorCode.UNKNOWN
         ) as ErrorCode;
 
         // Store the failure result

@@ -1201,14 +1201,14 @@ function assertOptionsShape(options: GlobEntriesOptions): void {
 
   const opts = optsUnknown as Record<string, unknown>;
 
-  if (typeof opts.cwd !== 'string')
+  if (typeof opts['cwd'] !== 'string')
     throw new TypeError('globEntries: options.cwd must be a string');
-  if (typeof opts.pattern !== 'string')
+  if (typeof opts['pattern'] !== 'string')
     throw new TypeError('globEntries: options.pattern must be a string');
 
   if (
-    !Array.isArray(opts.excludePatterns) ||
-    opts.excludePatterns.some((p) => typeof p !== 'string')
+    !Array.isArray(opts['excludePatterns']) ||
+    opts['excludePatterns'].some((p) => typeof p !== 'string')
   ) {
     throw new TypeError('globEntries: options.excludePatterns must be an array of strings');
   }
@@ -1220,13 +1220,13 @@ function assertOptionsShape(options: GlobEntriesOptions): void {
   }
 
   if (
-    opts.maxDepth !== undefined &&
-    (!Number.isFinite(opts.maxDepth) || typeof opts.maxDepth !== 'number')
+    opts['maxDepth'] !== undefined &&
+    (!Number.isFinite(opts['maxDepth']) || typeof opts['maxDepth'] !== 'number')
   ) {
     throw new TypeError('globEntries: options.maxDepth must be a finite number');
   }
 
-  if (opts.suppressErrors !== undefined && typeof opts.suppressErrors !== 'boolean') {
+  if (opts['suppressErrors'] !== undefined && typeof opts['suppressErrors'] !== 'boolean') {
     throw new TypeError('globEntries: options.suppressErrors must be a boolean');
   }
 }
@@ -1348,8 +1348,10 @@ interface ProcessContext {
 class AsyncGlobBatchQueue {
   private buffer: string[];
   private bufferLength = 0;
+  private readonly context: ProcessContext;
 
-  constructor(private readonly context: ProcessContext) {
+  constructor(context: ProcessContext) {
+    this.context = context;
     this.buffer = new Array<string>(GLOB_BATCH_CONCURRENCY);
   }
 

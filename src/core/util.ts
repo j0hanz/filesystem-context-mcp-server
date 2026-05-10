@@ -68,7 +68,7 @@ export function assignDefined<T extends object>(
 }
 
 function shouldStripStructuredOutput(): boolean {
-  return parseTrueEnvFlag(process.env.FS_CONTEXT_STRIP_STRUCTURED);
+  return parseTrueEnvFlag(process.env['FS_CONTEXT_STRIP_STRUCTURED']);
 }
 
 // Strips structuredContent from a tool result if present, without modifying the original object.
@@ -195,7 +195,7 @@ export function getInitHandshakeTimeoutMs(): number {
   return parseEnvInt('FS_INIT_HANDSHAKE_TIMEOUT_MS', 30_000, 1_000, 300_000);
 }
 
-export const INIT_TIMEOUT_CLOSE = parseTrueEnvFlag(process.env.FS_INIT_TIMEOUT_CLOSE);
+export const INIT_TIMEOUT_CLOSE = parseTrueEnvFlag(process.env['FS_INIT_TIMEOUT_CLOSE']);
 
 // Auto-tuned parallelism based on CPU cores (no env override)
 const BYTES_PER_PARALLEL_TASK = 64 * MIB;

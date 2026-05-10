@@ -76,7 +76,7 @@ const RootsResponseSchema = z.strictObject({
 });
 
 function isRoot(value: unknown): value is Root {
-  return isRecord(value) && typeof value.uri === 'string';
+  return isRecord(value) && typeof value['uri'] === 'string';
 }
 
 function normalizeRoot(root: Root): Root {
@@ -355,12 +355,22 @@ const {
 } = pkgInfo;
 
 export class FilesystemServerContext {
+  public readonly mcp: McpServer;
+  public readonly roots: RootsManager;
+  public readonly resources: ResourceStore;
+  public readonly resourcesHandle: ResourcesHandle;
+
   constructor(
-    public readonly mcp: McpServer,
-    public readonly roots: RootsManager,
-    public readonly resources: ResourceStore,
-    public readonly resourcesHandle: ResourcesHandle,
-  ) {}
+    mcp: McpServer,
+    roots: RootsManager,
+    resources: ResourceStore,
+    resourcesHandle: ResourcesHandle,
+  ) {
+    this.mcp = mcp;
+    this.roots = roots;
+    this.resources = resources;
+    this.resourcesHandle = resourcesHandle;
+  }
 
   async close(): Promise<void> {
     this.resourcesHandle.destroy();

@@ -70,7 +70,7 @@ async function tryElicitOverwriteConfirmation(
       },
     });
 
-    if (elicitResult.action !== 'accept' || elicitResult.content?.confirmOverwrite !== true) {
+    if (elicitResult.action !== 'accept' || elicitResult.content?.['confirmOverwrite'] !== true) {
       // User declined — surface as a cancellation error.
       throw new McpError(
         ErrorCode.CANCELLED,

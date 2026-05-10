@@ -113,7 +113,7 @@ async function tryElicitConfirmation(
       },
     });
 
-    return elicitResult.action === 'accept' && elicitResult.content?.confirm === true;
+    return elicitResult.action === 'accept' && elicitResult.content?.['confirm'] === true;
   } catch (err) {
     if (err instanceof SdkError && err.code === SdkErrorCode.CapabilityNotSupported) {
       return true; // Proceed if client doesn't support elicitation
