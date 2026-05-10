@@ -28,6 +28,23 @@ interface OrchestratorLike {
   ): unknown;
 }
 
+// Local type adapter for experimental.tasks. The published SDK's typings for
+// `experimental.tasks.registerToolTask` are incomplete in 2.0.0-alpha.2; the
+// interface and `getExperimentalTasks` helper isolate the necessary cast in
+// one spot so the rest of this file stays cast-free. Delete once the SDK
+// publishes proper typings.
+interface ExperimentalTasksApi {
+  registerToolTask(name: string, def: unknown, handler: unknown): void;
+}
+
+function getExperimentalTasks(server: McpServer): ExperimentalTasksApi {
+  // Cast from untyped experimental API to our locally-defined interface.
+  // The SDK doesn't export types for experimental.tasks, so this unsafe cast
+  // is unavoidable until the SDK publishes proper typings.
+  const typedTasks = server.experimental.tasks as unknown as ExperimentalTasksApi;
+  return typedTasks;
+}
+
 // ============ Type Definitions ============
 
 export type Annotation = 'readOnly' | 'idempotentWrite' | 'destructiveWrite';
@@ -216,11 +233,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
         // Register as a task-capable tool via the orchestrator.
         // The orchestrator wraps coreHandler into a ToolTaskHandler (createTask / getTask / getTaskResult).
         const taskHandler = deps.orchestrator.wrapToolTask(coreHandler, { toolName: def.name });
-        (
-          deps.server.experimental.tasks as unknown as {
-            registerToolTask: (name: string, def: unknown, handler: unknown) => void;
-          }
-        ).registerToolTask(
+        getExperimentalTasks(deps.server).registerToolTask(
           def.name,
           { ...toolDefShape, execution: { taskSupport: taskMode } },
           taskHandler,
