@@ -67,7 +67,7 @@ function normalizeCLIDirectories(dirs: readonly string[]): string[] {
 }
 
 const RootSchema = z.strictObject({
-  uri: z.string(),
+  uri: z.string().startsWith('file://', { message: "Root.uri must start with 'file://'" }),
   name: z.string().optional(),
 });
 
