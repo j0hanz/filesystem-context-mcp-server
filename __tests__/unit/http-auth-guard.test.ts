@@ -7,7 +7,7 @@ import {
   isAllowedLocalhostOrigin,
   isLoopbackHttpHost,
   validateBearerAuthorization,
-} from '../../src/server.js';
+} from '../../src/transport.js';
 
 describe('isLoopbackHttpHost', () => {
   it('accepts canonical loopback hosts', () => {

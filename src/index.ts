@@ -9,7 +9,8 @@ import { z } from 'zod/v4';
 import { CliExitError, parseArgs } from './cli.js';
 import { shutdownWorkerPool } from './core/concurrency.js';
 import { formatUnknownErrorMessage } from './core/errors.js';
-import { createServer, startHttpServer, startServer } from './server.js';
+import { createServer } from './server.js';
+import { startHttpServer, startServer } from './transport.js';
 
 // Ensure consistent English error messages across all locales.
 z.config(z.locales.en());

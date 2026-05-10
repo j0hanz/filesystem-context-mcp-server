@@ -4,8 +4,8 @@ import { afterEach, describe, it } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import { LogRouter, type LogTarget } from '../../src/core/observability.js';
-import { type HttpSession, HttpSessionRegistry } from '../../src/server.js';
-import { InMemoryEventStore } from '../../src/server.js';
+import { type HttpSession, HttpSessionRegistry } from '../../src/transport.js';
+import { InMemoryEventStore } from '../../src/transport.js';
 
 interface FakeRootsManager {
   initialized: boolean;

@@ -40,7 +40,7 @@ import type { ProgressEvent, ProgressSink } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import { createBase64JsonCodec } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
-import type { TaskOrchestrator } from '../server.js';
+import type { TaskOrchestrator } from '../tasks.js';
 
 // ============ ToolContext ============
 

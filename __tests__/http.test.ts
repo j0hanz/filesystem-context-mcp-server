@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 
-import { startHttpServer } from '../src/server.js';
+import { startHttpServer } from '../src/transport.js';
 
 function getServerPort(server: Server): number {
   const address = server.address();
