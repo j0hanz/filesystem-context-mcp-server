@@ -5,6 +5,7 @@ import {
   isInitializeRequest,
   JSONRPC_VERSION,
   type JSONRPCMessage,
+  parseJSONRPCMessage,
   ProtocolErrorCode,
   StdioServerTransport,
 } from '@modelcontextprotocol/server';
@@ -512,14 +513,24 @@ async function handlePostMcp(
 ): Promise<void> {
   try {
     const sessionId = getSessionId(req);
+
+    const body = req.body as unknown;
+    let message: JSONRPCMessage;
+    try {
+      message = parseJSONRPCMessage(body);
+    } catch {
+      // Invalid JSON-RPC shape
+      sendJsonRpcError(res, 400, JSON_RPC_INVALID_REQUEST, 'Invalid Request');
+      return;
+    }
     if (sessionId) {
       const session = registry.getOrRespondNotFound(sessionId, res);
       if (session) {
-        await handleSessionTransportRequest(session, req, res, req.body);
+        await handleSessionTransportRequest(session, req, res, message);
       }
       return;
     }
-    if (!isInitializeRequest(req.body)) {
+    if (!isInitializeRequest(message)) {
       sendJsonRpcError(
         res,
         400,
@@ -534,7 +545,7 @@ async function handlePostMcp(
       return;
     }
     const session = await createHttpSession(options, registry, eventStore);
-    await handleSessionTransportRequest(session, req, res, req.body);
+    await handleSessionTransportRequest(session, req, res, message);
   } catch (error) {
     Logger.error('[HTTP] Error handling POST request:', formatUnknownErrorMessage(error));
     if (!res.headersSent) {
