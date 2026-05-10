@@ -31,6 +31,21 @@ const IS_WINDOWS = platform() === 'win32';
 const HOMEDIR = homedir();
 const PATH_SEPARATOR = sep;
 
+const CHAR_FORWARD_SLASH = 47;
+const CHAR_BACKWARD_SLASH = 92;
+const CHAR_COLON = 58;
+const CHAR_TILDE = 126;
+const CHAR_SPACE = 32;
+const CHAR_DOT = 46;
+
+function isSlash(code: number): boolean {
+  return code === CHAR_FORWARD_SLASH || code === CHAR_BACKWARD_SLASH;
+}
+
+function isAlpha(code: number): boolean {
+  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
 export function toPosixPath(value: string): string {
   return value.includes(WINDOWS_PATH_SEPARATOR)
     ? value.replaceAll(WINDOWS_PATH_SEPARATOR, POSIX_PATH_SEPARATOR)
@@ -51,18 +66,13 @@ function expandHome(filepath: string): string {
   if (filepath === '~') return HOMEDIR;
 
   // Accept both "~/" and "~\\" for cross-platform UX.
-  if (filepath.length > 1 && filepath.charCodeAt(0) === 126) {
-    const second = filepath.charCodeAt(1);
-    if (second === 47 || second === 92) {
-      let startIdx = 2;
-      while (startIdx < filepath.length) {
-        const c = filepath.charCodeAt(startIdx);
-        if (c === 47 || c === 92) startIdx++;
-        else break;
-      }
-      const rest = filepath.slice(startIdx);
-      return rest.length === 0 ? HOMEDIR : join(HOMEDIR, rest);
+  if (filepath.length > 1 && filepath.charCodeAt(0) === CHAR_TILDE && isSlash(filepath.charCodeAt(1))) {
+    let startIdx = 2;
+    while (startIdx < filepath.length && isSlash(filepath.charCodeAt(startIdx))) {
+      startIdx++;
     }
+    const rest = filepath.slice(startIdx);
+    return rest.length === 0 ? HOMEDIR : join(HOMEDIR, rest);
   }
 
   return filepath;
@@ -71,7 +81,7 @@ function expandHome(filepath: string): string {
 export function normalizePath(p: string): string {
   const resolved = resolve(expandHome(p));
 
-  if (IS_WINDOWS && resolved.length >= 2 && resolved.charCodeAt(1) === 58) {
+  if (IS_WINDOWS && resolved.length >= 2 && resolved.charCodeAt(1) === CHAR_COLON) {
     return resolved.charAt(0).toLowerCase() + resolved.slice(1);
   }
 
@@ -125,11 +135,8 @@ function isPathInsideDirectory(normalizedDirectory: string, normalizedCandidate:
   if (root === candidate) return true;
   if (!candidate.startsWith(root)) return false;
 
-  const rootLastChar = root.charCodeAt(root.length - 1);
-  if (rootLastChar === 47 || rootLastChar === 92) return true;
-
-  const nextChar = candidate.charCodeAt(root.length);
-  return nextChar === 47 || nextChar === 92;
+  if (isSlash(root.charCodeAt(root.length - 1))) return true;
+  return isSlash(candidate.charCodeAt(root.length));
 }
 
 export function isPathWithinDirectories(
@@ -156,10 +163,9 @@ interface CompiledPatternSet {
 function isWindowsAbsolutePosixPath(normalizedPattern: string): boolean {
   return (
     normalizedPattern.length >= 3 &&
-    normalizedPattern.charCodeAt(1) === 58 &&
-    normalizedPattern.charCodeAt(2) === 47 &&
-    ((normalizedPattern.charCodeAt(0) >= 65 && normalizedPattern.charCodeAt(0) <= 90) ||
-      (normalizedPattern.charCodeAt(0) >= 97 && normalizedPattern.charCodeAt(0) <= 122))
+    normalizedPattern.charCodeAt(1) === CHAR_COLON &&
+    normalizedPattern.charCodeAt(2) === CHAR_FORWARD_SLASH &&
+    isAlpha(normalizedPattern.charCodeAt(0))
   );
 }
 
@@ -168,7 +174,7 @@ function compilePatternGlobs(normalizedPattern: string): readonly string[] {
 
   if (!normalizedPattern.startsWith('**/') && !isWindowsAbsolutePosixPath(normalizedPattern)) {
     let startIdx = 0;
-    while (startIdx < normalizedPattern.length && normalizedPattern.charCodeAt(startIdx) === 47) {
+    while (startIdx < normalizedPattern.length && normalizedPattern.charCodeAt(startIdx) === CHAR_FORWARD_SLASH) {
       startIdx++;
     }
     const withoutRoot = normalizedPattern.slice(startIdx);
@@ -332,12 +338,10 @@ const RESERVED_DEVICE_NAMES = new Set([
 ]);
 
 function getReservedDeviceName(segment: string): string | undefined {
-  const CHAR_CODE_SPACE = 32;
-  const CHAR_CODE_DOT = 46;
   let end = segment.length;
   while (end > 0) {
     const c = segment.charCodeAt(end - 1);
-    if (c === CHAR_CODE_SPACE || c === CHAR_CODE_DOT) end--;
+    if (c === CHAR_SPACE || c === CHAR_DOT) end--;
     else break;
   }
   const trimmed = segment.slice(0, end);
@@ -360,16 +364,12 @@ export function getReservedDeviceNameForPath(requestedPath: string): string | un
 }
 
 export function isWindowsDriveRelativePath(requestedPath: string): boolean {
-  if (!IS_WINDOWS) return false;
-  if (requestedPath.length < 2) return false;
-  if (requestedPath.charCodeAt(1) !== 58) return false;
-
-  const c = requestedPath.charCodeAt(0);
-  if (!((c >= 65 && c <= 90) || (c >= 97 && c <= 122))) return false;
+  if (!IS_WINDOWS || requestedPath.length < 2) return false;
+  if (requestedPath.charCodeAt(1) !== CHAR_COLON) return false;
+  if (!isAlpha(requestedPath.charCodeAt(0))) return false;
 
   if (requestedPath.length === 2) return true;
-  const third = requestedPath.charCodeAt(2);
-  return third !== 47 && third !== 92;
+  return !isSlash(requestedPath.charCodeAt(2));
 }
 
 /**
@@ -619,6 +619,27 @@ export class PathGuard {
     }
   }
 
+  private async findNearestExistingAncestor(requestedPath: string, currentPath: string): Promise<string> {
+    let current = currentPath;
+    for (;;) {
+      try {
+        return await realpath(current);
+      } catch (error) {
+        const parent = dirname(current);
+        if (parent === current) {
+          throw new McpError(
+            ErrorCode.UNKNOWN,
+            'Cannot resolve path',
+            requestedPath,
+            { originalError: error instanceof Error ? error.message : String(error) },
+            error instanceof Error ? error : undefined,
+          );
+        }
+        current = parent;
+      }
+    }
+  }
+
   async validatePathForWrite(requestedPath: string): Promise<string> {
     const { normalizedRequested, allowedDirs, accessDeniedHint } =
       this.validateAccess(requestedPath);
@@ -632,30 +653,7 @@ export class PathGuard {
     }
 
     // Resolve the nearest existing real path
-    let current = normalizedRequested;
-    let realPath: string;
-
-    for (;;) {
-      try {
-        realPath = await realpath(current);
-        break;
-      } catch (error) {
-        const parent = dirname(current);
-        if (parent === current) {
-          throw new McpError(
-            ErrorCode.UNKNOWN,
-            'Cannot resolve path',
-            requestedPath,
-            {
-              originalError: error instanceof Error ? error.message : String(error),
-            },
-            error instanceof Error ? error : undefined,
-          );
-        }
-        current = parent;
-      }
-    }
-
+    const realPath = await this.findNearestExistingAncestor(requestedPath, normalizedRequested);
     const normalizedReal = normalizePath(realPath);
 
     if (!isPathWithinDirectories(normalizedReal, allowedDirs)) {
@@ -681,20 +679,18 @@ function rethrowIfAborted(error: unknown): void {
   if (isAbortError(error)) throw error;
 }
 
-async function maybeAddRealPath(
+async function resolveRealPathIfExists(
   normalizedPath: string,
-  validDirs: string[],
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<string | null> {
   try {
     assertNotAborted(signal);
     const realPath = await withAbort(realpath(normalizedPath), signal);
     const normalizedReal = normalizePath(realPath);
-    if (!isSamePath(normalizedReal, normalizedPath)) {
-      validDirs.push(normalizedReal);
-    }
+    return isSamePath(normalizedReal, normalizedPath) ? null : normalizedReal;
   } catch (error) {
     rethrowIfAborted(error);
+    return null;
   }
 }
 
@@ -726,22 +722,17 @@ export async function getValidRootDirectories(
   if (validPaths.length === 0) return [];
 
   const realExpansions = await Promise.all(
-    validPaths.map(async (normalizedPath) => {
-      const extra: string[] = [];
-      await maybeAddRealPath(normalizedPath, extra, signal);
-      return extra[0] ?? null;
-    }),
+    validPaths.map((normalizedPath) => resolveRealPathIfExists(normalizedPath, signal)),
   );
 
   const validDirs: string[] = [];
-  let i = 0;
-  for (const p of validPaths) {
-    validDirs.push(p);
-    const expanded = realExpansions[i];
-    if (expanded !== null && expanded !== undefined) {
-      validDirs.push(expanded);
+  for (let i = 0; i < validPaths.length; i++) {
+    const validPath = validPaths[i];
+    if (validPath !== undefined) {
+      validDirs.push(validPath);
     }
-    i++;
+    const expanded = realExpansions[i];
+    if (expanded) validDirs.push(expanded);
   }
   return validDirs;
 }
@@ -814,9 +805,7 @@ function chooseContextKeys(argumentName: string): readonly string[] {
 }
 
 function hasTrailingSeparator(value: string): boolean {
-  if (value.length === 0) return false;
-  const lastChar = value.charCodeAt(value.length - 1);
-  return lastChar === 47 /* / */ || lastChar === 92 /* \ */;
+  return value.length > 0 && isSlash(value.charCodeAt(value.length - 1));
 }
 
 function resolveFromBase(
