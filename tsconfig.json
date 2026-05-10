@@ -17,9 +17,6 @@
     "rootDir": "./src",
     "types": ["node"],
     "strict": true,
-    "paths": {
-      "@/*": ["./src/*"]
-    },
     "allowUnusedLabels": false,
     "noUncheckedSideEffectImports": true,
     "noFallthroughCasesInSwitch": true,
@@ -28,6 +25,7 @@
     "erasableSyntaxOnly": true,
     "noUnusedParameters": true,
     "noImplicitOverride": true,
+    "noImplicitReturns": true,
     "exactOptionalPropertyTypes": true,
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
