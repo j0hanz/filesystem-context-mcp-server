@@ -10,7 +10,6 @@ import {
   buildToolErrorResponse,
   buildToolResponse,
   executeToolWithDiagnostics,
-  maybeExternalizeTextContent,
   putResource,
 } from '../../src/tools/_helpers.js';
 import { readResourceLink } from '../helpers.js';
@@ -114,35 +113,6 @@ describe('SEP-414 trace context propagation', () => {
     });
 
     assert.equal(captured, undefined, 'No trace context when _meta is absent');
-  });
-});
-
-describe('inline preview threshold (TASK-013)', () => {
-  // Default MAX_INLINE_CONTENT_CHARS is 20_000 (env-overridable).
-  // After the fix MAX_INLINE_PREVIEW_CHARS === MAX_INLINE_CONTENT_CHARS, so
-  // a content string of MAX+1 chars should produce a preview whose leading
-  // portion is MAX chars long, NOT the old 4_000-char cap.
-  const MAX = parseInt(process.env.FS_CONTEXT_MAX_INLINE_CHARS ?? '', 10) || 20_000;
-
-  it('content at exactly MAX chars is returned inline (not externalized)', () => {
-    const store = createInMemoryResourceStore();
-    const content = 'x'.repeat(MAX);
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
-    const result = maybeExternalizeTextContent(store, content, {
-      name: 'test',
-    });
-    assert.equal(result, undefined, 'Content at MAX chars must NOT be externalized');
-  });
-
-  it('content of MAX+1 chars is externalized with a preview of MAX leading chars', () => {
-    const store = createInMemoryResourceStore();
-    const content = 'a'.repeat(MAX) + 'Z'; // MAX+1 chars, last char distinct
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
-    const result = maybeExternalizeTextContent(store, content, {
-      name: 'test-preview',
-    });
-    // Function is deprecated and returns undefined now; use putResource instead
-    assert.equal(result, undefined, 'Function is deprecated; use putResource instead');
   });
 });
 

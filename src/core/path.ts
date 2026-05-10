@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod/v4';
 
 import { assertNotAborted, withAbort } from './concurrency.js';
-import { ErrorCode, isAbortError, McpError } from './errors.js';
+import { ErrorCode, isAbortError, isNodeError, McpError } from './errors.js';
 import { SENSITIVE_FILE_DENYLIST } from './util.js';
 
 // Path utility primitives. Owned by path-guard.ts to avoid a circular
@@ -511,7 +511,7 @@ export class PathGuard {
     try {
       realPath = await realpath(normalizedRequested);
     } catch (error) {
-      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      if (isNodeError(error) && error.code === 'ENOENT') {
         throw new McpError(
           ErrorCode.NOT_FOUND,
           'Path not found',

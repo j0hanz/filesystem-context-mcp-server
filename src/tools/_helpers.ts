@@ -516,28 +516,6 @@ export async function executeToolWithDiagnostics<T>(
   );
 }
 
-/**
- * @deprecated Removed in resource-store-first refactor. Use putResource instead.
- */
-export function maybeExternalizeTextContent(
-  _resourceStore?: ResourceStore,
-  _content?: string,
-  _params?: { name: string; mimeType?: string },
-):
-  | {
-      entry: {
-        uri: string;
-        name: string;
-        size: number;
-        mimeType: string;
-        expiresAt: string;
-      };
-      preview: string;
-    }
-  | undefined {
-  return undefined;
-}
-
 // ---- McpProgressSink ----
 
 interface McpProgressSinkOptions {
