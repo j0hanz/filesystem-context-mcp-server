@@ -20,7 +20,10 @@ test('coreHandler has explicit Promise<CallToolResult> return type annotation', 
   );
 
   // Verify coreHandler has explicit return type annotation
-  const coreHandlerMatch = /const coreHandler = async \(args: unknown, ctx: ToolContext\): Promise<CallToolResult>/.exec(fileContent);
+  const coreHandlerMatch =
+    /const coreHandler = async \(args: unknown, ctx: ToolContext\): Promise<CallToolResult>/.exec(
+      fileContent,
+    );
   assert(
     coreHandlerMatch,
     'coreHandler should have explicit return type annotation: Promise<CallToolResult>',
@@ -33,7 +36,8 @@ test('coreHandler has explicit Promise<CallToolResult> return type annotation', 
   );
 
   // Verify serverCtxHandler has proper return type (allow multi-line declarations with newlines before =>)
-  const serverCtxMatch = /const serverCtxHandler = async[\s\S]*?\): Promise<CallToolResult> =>/.exec(fileContent);
+  const serverCtxMatch =
+    /const serverCtxHandler = async[\s\S]*?\): Promise<CallToolResult> =>/.exec(fileContent);
   assert(
     serverCtxMatch,
     'serverCtxHandler should have return type annotation: Promise<CallToolResult> before =>',

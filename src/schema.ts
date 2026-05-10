@@ -10,6 +10,17 @@ import { isSafeGlobSyntax } from './core/path.js';
 
 type JsonSchema = Record<string, unknown>;
 
+/**
+ * Typed return value from toMcpSchema containing both the StandardSchema and extracted JSON schema.
+ * This eliminates the need for unsafe casts when accessing the jsonSchema property.
+ */
+export interface McpSchemaPair {
+  /** Standard Schema instance compatible with @modelcontextprotocol/server. */
+  readonly standard: StandardSchemaWithJSON;
+  /** JSON Schema representation (extracted from standard schema). */
+  readonly jsonSchema: object;
+}
+
 const STRIP_FORMATS = new Set(['base64url', 'sha256_hex']);
 
 function override(
@@ -51,11 +62,14 @@ function removeDefaultedFromRequired(schema: unknown): unknown {
  * Removes $schema, cleans up redundant format/pattern combinations,
  * strips defaulted fields from required[], and ensures both input() and output()
  * callables are present on ~standard.jsonSchema.
+ *
+ * Returns a typed pair containing both the standard schema and extracted JSON schema,
+ * eliminating the need for unsafe casts when accessing jsonSchema.
  */
 export function toMcpSchema(
   schema: z.ZodType,
   augment?: (s: JsonSchema) => JsonSchema,
-): StandardSchemaWithJSON {
+): McpSchemaPair {
   const raw = z.toJSONSchema(schema, {
     io: 'input',
     unrepresentable: 'any',
@@ -66,7 +80,8 @@ export function toMcpSchema(
   const final = augment ? augment(cleaned) : cleaned;
   const std = { ...(schema['~standard'] as unknown as Record<string, unknown>) };
   std['jsonSchema'] = { input: () => final, output: () => final };
-  return { '~standard': std, jsonSchema: final } as unknown as StandardSchemaWithJSON;
+  const standard = { '~standard': std, jsonSchema: final } as unknown as StandardSchemaWithJSON;
+  return { standard, jsonSchema: final };
 }
 
 // ============ Primitives (from fields.ts) ============

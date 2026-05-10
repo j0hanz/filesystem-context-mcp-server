@@ -130,8 +130,11 @@ export const ALL_TOOLS: DefinedTool[] = [];
 export function defineTool<I extends z.ZodType, O extends z.ZodType>(
   def: ToolDef<I, O>,
 ): DefinedTool {
-  const inputSchema = toMcpSchema(def.input, def.inputSchemaAugment);
-  const outputSchema = toMcpSchema(def.output);
+  const { standard: inputSchema, jsonSchema: inputJsonSchema } = toMcpSchema(
+    def.input,
+    def.inputSchemaAugment,
+  );
+  const { standard: outputSchema, jsonSchema: outputJsonSchema } = toMcpSchema(def.output);
   const taskMode = def.task ?? 'forbidden';
 
   const tool: DefinedTool = {
@@ -142,8 +145,8 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
     task: taskMode,
     nuances: def.nuances ?? [],
     gotchas: def.gotchas ?? [],
-    inputJsonSchema: (inputSchema as unknown as { jsonSchema: object }).jsonSchema,
-    outputJsonSchema: (outputSchema as unknown as { jsonSchema: object }).jsonSchema,
+    inputJsonSchema,
+    outputJsonSchema,
 
     register(deps: ToolDeps) {
       // Core handler: accepts ToolContext (compatible with both task-orchestrator and

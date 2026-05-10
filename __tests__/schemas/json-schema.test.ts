@@ -19,10 +19,10 @@ describe('toToolJsonSchema', () => {
     assert.ok('pattern' in (rawDefs['IsoDateTime'] as Record<string, unknown>));
 
     // Now convert via toToolJsonSchema (which calls walk and fromJsonSchema)
-    // We can't easily inspect the wrapped result, so just verify it completes
     const result = toToolJsonSchema(schema);
     assert.ok(result, 'toToolJsonSchema returns a result');
-    assert.ok('~standard' in result);
+    assert.ok('standard' in result);
+    assert.ok('jsonSchema' in result);
   });
 
   it('strips MAX_SAFE_INTEGER maximum from integer fields', () => {
@@ -33,7 +33,7 @@ describe('toToolJsonSchema', () => {
     const rawStr = JSON.stringify(raw);
     assert.ok(rawStr.includes('9007199254740991'));
 
-    // Now convert - can't easily inspect wrapped result, just verify it works
+    // Now convert - verify it returns McpSchemaPair
     const result = toToolJsonSchema(schema);
     assert.ok(result, 'toToolJsonSchema returns a result');
   });
@@ -44,13 +44,13 @@ describe('toToolJsonSchema', () => {
       b: z.string().optional(),
     });
     // The augment function is called on the cleaned JSON before wrapping
-    // We can't easily inspect the result of fromJsonSchema, so verify execution
     const result = toToolJsonSchema(schema, (s) => ({
       ...s,
       allOf: [{ if: { required: ['a'] }, then: { not: { required: ['b'] } } }],
     }));
     assert.ok(result, 'augmented schema returns a result');
-    assert.ok('~standard' in result);
+    assert.ok('standard' in result);
+    assert.ok('jsonSchema' in result);
   });
 });
 
