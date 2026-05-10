@@ -26,7 +26,7 @@ import {
   PathGuard,
   resolveAllowedDirectoriesState,
 } from './core/path.js';
-import { createInMemoryResourceStore } from './core/store.js';
+import { createInMemoryResourceStore, type ResourceStore } from './core/store.js';
 import {
   debounce,
   DEFAULT_LOG_LEVEL,
@@ -354,15 +354,20 @@ const {
   homepage: SERVER_HOMEPAGE,
 } = pkgInfo;
 
-const rootsManagers = new WeakMap<McpServer, RootsManager>();
-export const resourceHandles = new WeakMap<McpServer, ResourcesHandle>();
+export class FilesystemServerContext {
+  constructor(
+    public readonly mcp: McpServer,
+    public readonly roots: RootsManager,
+    public readonly resources: ResourceStore,
+    public readonly resourcesHandle: ResourcesHandle,
+  ) {}
 
-export function getRootsManager(server: McpServer): RootsManager {
-  const manager = rootsManagers.get(server);
-  if (!manager) {
-    throw new Error('Roots manager not initialized for server instance');
+  async close(): Promise<void> {
+    this.resourcesHandle.destroy();
+    this.roots.destroy();
+    logRouter.detachStdio();
+    await this.mcp.close();
   }
-  return manager;
 }
 
 let cachedIconInfo: Promise<IconInfo | undefined> | undefined;
@@ -399,7 +404,7 @@ function getLocalIconInfo(): Promise<IconInfo | undefined> {
 
 export async function createServer(
   options: ServerOptions & { isInitialized?: () => boolean } = {},
-): Promise<{ server: McpServer }> {
+): Promise<FilesystemServerContext> {
   const resourceStore = createInMemoryResourceStore();
   const localIcon = await getLocalIconInfo();
   const capabilities = buildServerCapabilities({
@@ -446,7 +451,6 @@ export async function createServer(
 
   const loggingState = createLoggingState(DEFAULT_LOG_LEVEL);
   const rootsManager = new RootsManager(options, loggingState);
-  rootsManagers.set(server, rootsManager);
 
   await rootsManager.recomputeAllowedDirectories();
 
@@ -464,7 +468,6 @@ export async function createServer(
     pathGuard: rootsManager.pathGuard,
     ...(localIcon ? { iconInfo: localIcon } : {}),
   });
-  resourceHandles.set(server, resourcesHandle);
 
   registerAllPrompts(server, {
     pathGuard: rootsManager.pathGuard,
@@ -481,5 +484,5 @@ export async function createServer(
     ...(localIcon ? { iconInfo: localIcon } : {}),
   });
 
-  return { server };
+  return new FilesystemServerContext(server, rootsManager, resourceStore, resourcesHandle);
 }

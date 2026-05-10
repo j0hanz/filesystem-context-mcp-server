@@ -758,30 +758,7 @@ interface CacheEntry {
   result: string[];
 }
 
-interface CompletionState {
-  cache: Map<string, CacheEntry>;
-}
-
-const completionState = new WeakMap<McpServer, CompletionState>();
-
-function getCompletionState(server: McpServer): CompletionState {
-  let state = completionState.get(server);
-  if (state === undefined) {
-    state = { cache: new Map() };
-    completionState.set(server, state);
-  }
-  return state;
-}
-
-function setCacheValue(cache: Map<string, CacheEntry>, key: string, entry: CacheEntry): void {
-  if (cache.has(key)) cache.delete(key);
-  cache.set(key, entry);
-  while (cache.size > MAX_COMPLETION_CACHE_KEYS) {
-    const oldest = cache.keys().next();
-    if (oldest.done) break;
-    cache.delete(oldest.value);
-  }
-}
+const completionState = new WeakMap<McpServer, PathCompleter>();
 
 function buildCacheKey(
   argumentName: string,
@@ -793,6 +770,44 @@ function buildCacheKey(
   const keys = Object.keys(contextArguments);
   if (keys.length === 0) return base;
   return `${base}:${JSON.stringify(contextArguments)}`;
+}
+
+class PathCompleter {
+  private cache = new Map<string, CacheEntry>();
+
+  constructor(private readonly pathGuard: PathGuard) {}
+
+  async suggest(
+    value: string,
+    argumentName = '',
+    contextArguments?: Record<string, string>,
+  ): Promise<string[]> {
+    const cacheKey = buildCacheKey(argumentName, value, contextArguments);
+    const now = Date.now();
+    const cacheEntry = this.cache.get(cacheKey);
+
+    if (cacheEntry && now - cacheEntry.ms < COMPLETION_RATE_LIMIT_MS) {
+      return cacheEntry.result;
+    }
+
+    const results = await completePath(value, {
+      pathGuard: this.pathGuard,
+      argumentName,
+      ...(contextArguments !== undefined ? { contextArguments } : {}),
+    });
+    this._setCacheValue(cacheKey, { ms: now, result: results });
+    return results;
+  }
+
+  private _setCacheValue(key: string, entry: CacheEntry): void {
+    if (this.cache.has(key)) this.cache.delete(key);
+    this.cache.set(key, entry);
+    while (this.cache.size > MAX_COMPLETION_CACHE_KEYS) {
+      const oldest = this.cache.keys().next();
+      if (oldest.done) break;
+      this.cache.delete(oldest.value);
+    }
+  }
 }
 
 const DESTINATION_CONTEXT_KEYS = ['source', 'path', 'cwd', 'root'] as const;
@@ -1089,18 +1104,12 @@ export async function completePathCached(
 ): Promise<string[]> {
   if (!options.server) return completePath(value, options);
 
-  const cacheKey = buildCacheKey(options.argumentName ?? '', value, options.contextArguments);
-  const now = Date.now();
-  const sessionState = getCompletionState(options.server);
-  const cacheEntry = sessionState.cache.get(cacheKey);
-
-  if (cacheEntry && now - cacheEntry.ms < COMPLETION_RATE_LIMIT_MS) {
-    return cacheEntry.result;
+  let completer = completionState.get(options.server);
+  if (!completer) {
+    completer = new PathCompleter(options.pathGuard);
+    completionState.set(options.server, completer);
   }
-
-  const results = await completePath(value, options);
-  setCacheValue(sessionState.cache, cacheKey, { ms: now, result: results });
-  return results;
+  return completer.suggest(value, options.argumentName ?? '', options.contextArguments);
 }
 
 export function createBase64JsonCodec<Schema extends z.ZodType>(

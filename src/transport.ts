@@ -27,14 +27,8 @@ import { formatUnknownErrorMessage } from './core/errors.js';
 import type { LogRouter } from './core/observability.js';
 import { Logger, type LogTarget, SessionContext } from './core/observability.js';
 import { getInitHandshakeTimeoutMs, INIT_TIMEOUT_CLOSE, parseEnvInt } from './core/util.js';
-import {
-  createServer,
-  getRootsManager,
-  logRouter,
-  resourceHandles,
-  type RootsManager,
-  type ServerOptions,
-} from './server.js';
+import type { FilesystemServerContext } from './server.js';
+import { createServer, logRouter, type RootsManager, type ServerOptions } from './server.js';
 
 // ═══════════════════════════════════════════════════════════════
 // event-store
@@ -135,12 +129,11 @@ export class InMemoryEventStore {
   }
 }
 
-export async function startServer(serverAndHandle: { server: McpServer }): Promise<void> {
-  const { server } = serverAndHandle;
+export async function startServer(ctx: FilesystemServerContext): Promise<void> {
+  const { mcp: server } = ctx;
   const transport = new StdioServerTransport();
-  const rootsManager = getRootsManager(server);
 
-  rootsManager.registerHandlers(
+  ctx.roots.registerHandlers(
     server,
     INIT_TIMEOUT_CLOSE
       ? () => {
@@ -148,17 +141,17 @@ export async function startServer(serverAndHandle: { server: McpServer }): Promi
         }
       : undefined,
   );
-  await rootsManager.recomputeAllowedDirectories();
+  await ctx.roots.recomputeAllowedDirectories();
   await server.connect(transport);
   const sdkOnClose = transport.onclose;
   transport.onclose = () => {
-    resourceHandles.get(server)?.destroy();
-    rootsManager.destroy();
+    ctx.resourcesHandle.destroy();
+    ctx.roots.destroy();
     logRouter.detachStdio();
     sdkOnClose?.();
   };
 
-  rootsManager.logMissingDirectoriesIfNeeded(server);
+  ctx.roots.logMissingDirectoriesIfNeeded(server);
 }
 
 const MAX_SESSION_ID_LENGTH = 256;
@@ -417,8 +410,9 @@ async function createHttpSession(
   registry: HttpSessionRegistry,
   eventStore: InMemoryEventStore,
 ): Promise<HttpSession> {
-  const { server: mcpServer } = await createServer(options);
-  const rootsManager = getRootsManager(mcpServer);
+  const serverCtx = await createServer(options);
+  const mcpServer = serverCtx.mcp;
+  const rootsManager = serverCtx.roots;
 
   rootsManager.registerHandlers(mcpServer);
   await rootsManager.recomputeAllowedDirectories();
@@ -427,7 +421,7 @@ async function createHttpSession(
   const cleanup = (): void => {
     if (cleanedUp) return;
     cleanedUp = true;
-    resourceHandles.get(mcpServer)?.destroy();
+    serverCtx.resourcesHandle.destroy();
     const { sessionId } = transport;
     if (sessionId) {
       registry.remove(sessionId);

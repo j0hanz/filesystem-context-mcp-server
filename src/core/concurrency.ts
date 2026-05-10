@@ -216,7 +216,7 @@ class FastQueue<T> {
   }
 }
 
-export class WorkerPool {
+class WorkerPool {
   private workers: PoolWorker[] = [];
   private queue = new FastQueue<QueuedTask>();
   private nextId = 1;

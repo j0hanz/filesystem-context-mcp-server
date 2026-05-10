@@ -17,20 +17,20 @@ interface PromptEnv {
 
 async function createPromptEnv(): Promise<PromptEnv> {
   const tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-prompts-'));
-  const { server } = await createServer({
+  const ctx = await createServer({
     cliAllowedDirs: [tempDir],
     isInitialized: () => true,
   });
   const client = new Client({ name: 'prompt-test-client', version: '1.0.0' });
   const [clientTransport, serverTransport] = LinkedTransport.createLinkedPair();
-  await server.connect(serverTransport);
+  await ctx.mcp.connect(serverTransport);
   await client.connect(clientTransport);
   return {
     client,
     tempDir,
     cleanup: async () => {
       await client.close().catch(() => {});
-      await server.close().catch(() => {});
+      await ctx.mcp.close().catch(() => {});
       await rm(tempDir, { recursive: true, force: true });
     },
   };

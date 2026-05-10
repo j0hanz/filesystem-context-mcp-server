@@ -103,12 +103,12 @@ async function main(): Promise<void> {
       cliAllowedDirs: allowedDirs,
     });
   } else {
-    const serverAndHandle = await createServer({
+    const ctx = await createServer({
       allowCwd,
       cliAllowedDirs: allowedDirs,
     });
-    activeServer = serverAndHandle.server;
-    await startServer(serverAndHandle);
+    activeServer = ctx.mcp;
+    await startServer(ctx);
   }
 }
 

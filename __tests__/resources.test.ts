@@ -28,7 +28,7 @@ function getTextContent(
 
 async function createDiscoveryEnv(): Promise<DiscoveryEnv> {
   const tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-discovery-'));
-  const { server, resourcesHandle } = await createServer({
+  const ctx = await createServer({
     cliAllowedDirs: [tempDir],
   });
   const client = new Client({
@@ -37,15 +37,15 @@ async function createDiscoveryEnv(): Promise<DiscoveryEnv> {
   });
   const [clientTransport, serverTransport] = LinkedTransport.createLinkedPair();
 
-  await server.connect(serverTransport);
+  await ctx.mcp.connect(serverTransport);
   await client.connect(clientTransport);
 
   return {
     client,
     cleanup: async () => {
-      resourcesHandle?.destroy();
+      ctx.resourcesHandle.destroy();
       await client.close().catch(() => {});
-      await server.close().catch(() => {});
+      await ctx.mcp.close().catch(() => {});
       await rm(tempDir, { recursive: true, force: true });
     },
   };
