@@ -227,14 +227,14 @@ test('defineTool: resourceStore is injected into ToolCtx', async (): Promise<voi
   assert.equal(capturedResourceStore, mockResourceStore);
 });
 
-test('defineTool: inputJsonSchema and outputJsonSchema are present', (): void => {
+test('defineTool: inputSchema and outputSchema are present', (): void => {
   const tool = defineTool(BASE_DEF);
   assert.ok(
-    typeof tool.inputJsonSchema === 'object' && tool.inputJsonSchema !== null,
-    'inputJsonSchema is an object',
+    typeof tool.inputSchema === 'object' && tool.inputSchema !== null,
+    'inputSchema is an object',
   );
   assert.ok(
-    typeof tool.outputJsonSchema === 'object' && tool.outputJsonSchema !== null,
-    'outputJsonSchema is an object',
+    typeof tool.outputSchema === 'object' && tool.outputSchema !== null,
+    'outputSchema is an object',
   );
 });

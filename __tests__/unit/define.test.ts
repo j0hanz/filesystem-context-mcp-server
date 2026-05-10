@@ -18,8 +18,8 @@ test('defineTool creates DefinedTool properly', () => {
 
   assert.equal(tool.name, 'test_tool');
   assert.equal(tool.title, 'Test Tool');
-  assert.ok(tool.inputJsonSchema);
-  assert.ok(tool.outputJsonSchema);
+  assert.ok(tool.inputSchema);
+  assert.ok(tool.outputSchema);
   assert.equal(tool.annotations, 'readOnly');
   assert.ok(ALL_TOOLS.includes(tool));
 });
