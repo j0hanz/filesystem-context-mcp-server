@@ -336,11 +336,7 @@ async function readFileBufferWithLimit(
 
   try {
     for await (const chunk of stream) {
-      const buffer = Buffer.isBuffer(chunk)
-        ? chunk
-        : typeof chunk === 'string'
-          ? Buffer.from(chunk)
-          : Buffer.from(chunk as ArrayBuffer);
+      const buffer = chunk as Buffer;
       totalSize += buffer.length;
 
       if (totalSize > maxSize) {
@@ -672,6 +668,13 @@ async function executeByteRangeRead(context: ReadModeContext): Promise<ReadFileR
     reachedEOF = true;
   }
 
+  const actualEnd = end ?? fileSize - 1;
+  const bytesRead = actualEnd - start + 1;
+
+  if (bytesRead > context.normalized.maxSize) {
+    throw createTooLargeError(bytesRead, context.normalized.maxSize, context.filePath);
+  }
+
   const stream = context.handle.createReadStream({
     encoding: context.normalized.encoding,
     start,
@@ -679,21 +682,12 @@ async function executeByteRangeRead(context: ReadModeContext): Promise<ReadFileR
   });
 
   const chunks: string[] = [];
-  let totalBytes = 0;
   for await (const chunk of stream) {
-    const strChunk = typeof chunk === 'string' ? chunk : String(chunk);
-    totalBytes += Buffer.byteLength(strChunk, context.normalized.encoding);
-    if (totalBytes > context.normalized.maxSize) {
-      stream.destroy();
-      throw createTooLargeError(totalBytes, context.normalized.maxSize, context.filePath);
-    }
-    chunks.push(strChunk);
+    chunks.push(typeof chunk === 'string' ? chunk : String(chunk));
     assertNotAborted(context.normalized.signal);
   }
 
   const content = chunks.join('');
-  const actualEnd = end ?? fileSize - 1;
-  const bytesRead = actualEnd - start + 1;
 
   return {
     path: context.validPath,
@@ -1731,7 +1725,10 @@ function looksLikeText(buffer: Buffer): boolean {
 
   // Count non-text bytes
   let nonTextCount = 0;
-  for (const byte of sample) {
+  const len = sample.length;
+  for (let i = 0; i < len; i++) {
+    const byte = sample[i];
+    if (byte === undefined) continue;
     // Allow common control characters (9=tab, 10=LF, 13=CR) and printable ASCII (32-126) + extended ASCII
     if (byte < 9 || (byte > 13 && byte < 32 && byte !== 27) || (byte > 126 && byte < 160)) {
       nonTextCount++;
@@ -1739,7 +1736,7 @@ function looksLikeText(buffer: Buffer): boolean {
   }
 
   // If less than 30% non-text bytes, consider it text
-  return nonTextCount / sample.length < 0.3;
+  return nonTextCount / len < 0.3;
 }
 
 /**
@@ -1749,16 +1746,13 @@ const WEBP_MARKER_BYTES = Buffer.from([0x57, 0x45, 0x42, 0x50]);
 
 function detectByMagic(buffer: Buffer): MimeInfo | null {
   for (const sig of MAGIC_SIGNATURES) {
-    if (buffer.length >= sig.offset + sig.bytes.length) {
-      const sample = buffer.subarray(sig.offset, sig.offset + sig.bytes.length);
-      if (sample.equals(sig.bytes)) {
+    const end = sig.offset + sig.bytes.length;
+    if (buffer.length >= end) {
+      if (buffer.compare(sig.bytes, 0, sig.bytes.length, sig.offset, end) === 0) {
         // Special handling for RIFF (WEBP vs AVI)
         if (sig.mimeType === 'image/webp') {
-          if (buffer.length >= 12) {
-            const webpMarker = buffer.subarray(8, 12);
-            if (webpMarker.equals(WEBP_MARKER_BYTES)) {
-              return { mimeType: 'image/webp', kind: 'image' };
-            }
+          if (buffer.length >= 12 && buffer.compare(WEBP_MARKER_BYTES, 0, 4, 8, 12) === 0) {
+            return { mimeType: 'image/webp', kind: 'image' };
           }
           continue;
         }
