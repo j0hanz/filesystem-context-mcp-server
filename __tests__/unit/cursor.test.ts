@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { ErrorCode, McpError } from '../../src/core/errors.js';
-import { decodeOffsetCursor, encodeOffsetCursor } from '../../src/tools/shared.js';
+import { decodeOffsetCursor, encodeOffsetCursor } from '../../src/tools/_helpers.js';
 
 // ─── encodeOffsetCursor / decodeOffsetCursor ────────────────────────────────
 

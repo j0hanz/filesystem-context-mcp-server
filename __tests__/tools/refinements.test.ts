@@ -227,7 +227,7 @@ describe('read_many tool with tail parameter', () => {
 
   it('reads last N lines of each file', async () => {
     const raw = await env.client.callTool({
-      name: 'read_many',
+      name: 'read',
       arguments: { paths: [fileA, fileB], tail: 2 },
     });
     assertOk(raw);
@@ -261,7 +261,7 @@ describe('read_many tool with tail parameter', () => {
 
   it('rejects tail combined with head in read_many', async () => {
     const raw = await env.client.callTool({
-      name: 'read_many',
+      name: 'read',
       arguments: { paths: [fileA], tail: 2, head: 2 },
     });
     assertToolError(raw);
@@ -296,7 +296,7 @@ describe('grep externalization with expiresAt', () => {
 
   it('externalizes large grep results and includes resourceUri', async () => {
     const raw = await env.client.callTool({
-      name: 'grep',
+      name: 'search_text',
       arguments: {
         path: env.tmpDir,
         searchPattern: 'FINDME_marker',
@@ -350,7 +350,7 @@ describe('mv partial success', () => {
     // Move with one valid source and one missing source
     // P3 confirmation-only tools fail on first error, no partial success
     const raw = await env.client.callTool({
-      name: 'mv',
+      name: 'move',
       arguments: {
         sources: [src, join(env.tmpDir, 'DOES_NOT_EXIST.txt')],
         destination: dest,
@@ -387,7 +387,7 @@ describe('search_and_replace wholeWord', () => {
     await writeFile(file, 'cat concatenate cats\n', 'utf8');
 
     const raw = await env.client.callTool({
-      name: 'search_and_replace',
+      name: 'replace_text',
       arguments: {
         path: env.tmpDir,
         pattern: '*.txt',

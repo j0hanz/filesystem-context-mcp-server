@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 
-import { startHttpServer } from '../src/server/bootstrap.js';
+import { startHttpServer } from '../src/server.js';
 
 function getServerPort(server: Server): number {
   const address = server.address();
@@ -491,7 +491,7 @@ describe('HTTP transport', () => {
       const { resourceTemplates } = await client.listResourceTemplates();
       const { prompts } = await client.listPrompts();
 
-      assert.equal(tools.length, 18);
+      assert.equal(tools.length, 16);
       assert.equal(resources.length, 1);
       assert.equal(resources[0]?.uri, 'internal://instructions');
       assert.deepEqual(resourceTemplates.map((template) => template.uriTemplate).sort(), [

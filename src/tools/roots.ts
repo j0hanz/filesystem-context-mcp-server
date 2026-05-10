@@ -1,8 +1,8 @@
 import { z } from 'zod/v4';
 
 import { ErrorCode } from '../core/errors.js';
+import { buildToolResponse } from './_helpers.js';
 import { defineTool } from './define.js';
-import { buildToolResponse } from './shared.js';
 
 const RootsInputSchema = z.strictObject({});
 
@@ -12,7 +12,7 @@ const RootsOutputSchema = z.strictObject({
 });
 
 export const LIST_ALLOWED_DIRECTORIES = defineTool({
-  name: 'roots',
+  name: 'list_roots',
   title: 'Workspace Roots',
   description:
     'List allowed workspace roots. Call first \u2014 all other tools are scoped to these directories.',

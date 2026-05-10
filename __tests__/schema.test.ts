@@ -8,10 +8,14 @@ import { batchResult, paginated, toMcpSchema } from '../src/schema.js';
 test('toMcpSchema generates valid standard schema', () => {
   const schema = z.strictObject({ foo: z.string() }).meta({ id: 'TestSchema' });
   const mcp = toMcpSchema(schema);
-  assert.ok(mcp.jsonSchema.input);
-  const json = mcp.jsonSchema.input() as Record<string, unknown>;
+  // ~standard.jsonSchema.input() is what the MCP SDK calls to get the wire schema
+  const stdSchema = (
+    mcp as unknown as { '~standard': { jsonSchema: { input: () => Record<string, unknown> } } }
+  )['~standard'].jsonSchema;
+  assert.ok(typeof stdSchema.input === 'function');
+  const json = stdSchema.input();
   assert.equal(json.type, 'object');
-  assert.ok(json.$defs);
+  assert.ok(json.properties);
 });
 
 test('batchResult creates correct discriminated union', () => {

@@ -12,7 +12,7 @@ import {
   executeToolWithDiagnostics,
   maybeExternalizeTextContent,
   putResource,
-} from '../../src/tools/shared.js';
+} from '../../src/tools/_helpers.js';
 import { readResourceLink } from '../helpers.js';
 
 describe('tool output validation', () => {

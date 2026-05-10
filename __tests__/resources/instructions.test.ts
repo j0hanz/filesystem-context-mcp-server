@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import {
-  INSTRUCTION_SECTIONS,
-  SERVER_INSTRUCTIONS_CONTENT,
-} from '../../src/resources/instructions.js';
+import { INSTRUCTION_SECTIONS, SERVER_INSTRUCTIONS_CONTENT } from '../../src/resources.js';
 
 describe('SERVER_INSTRUCTIONS_CONTENT', () => {
   it('contains all four required sections', () => {
@@ -17,9 +14,9 @@ describe('SERVER_INSTRUCTIONS_CONTENT', () => {
 
   it('includes known tool names in the overview', () => {
     const content = SERVER_INSTRUCTIONS_CONTENT;
-    assert.match(content, /roots/u);
+    assert.match(content, /list_roots/u);
     assert.match(content, /ls/u);
-    assert.match(content, /grep/u);
+    assert.match(content, /search_text/u);
     assert.match(content, /read/u);
     assert.match(content, /write/u);
   });
@@ -68,7 +65,7 @@ describe('INSTRUCTION_SECTIONS', () => {
   });
 
   it('SERVER_INSTRUCTIONS_CONTENT contains every section body', async () => {
-    const { SERVER_INSTRUCTIONS_CONTENT } = await import('../../src/resources/instructions.js');
+    const { SERVER_INSTRUCTIONS_CONTENT } = await import('../../src/resources.js');
     for (const body of Object.values(INSTRUCTION_SECTIONS)) {
       assert.ok(
         SERVER_INSTRUCTIONS_CONTENT.includes(body.trim()),

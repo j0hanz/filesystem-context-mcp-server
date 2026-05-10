@@ -9,9 +9,9 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { ErrorCode } from '../../src/core/errors.js';
-import { TaskOrchestrator } from '../../src/server/task-orchestrator.js';
-import { EventedTaskStore } from '../../src/server/task-store.js';
-import { type ToolContext } from '../../src/tools/shared.js';
+import { TaskOrchestrator } from '../../src/server.js';
+import { EventedTaskStore } from '../../src/server.js';
+import { type ToolContext } from '../../src/tools/_helpers.js';
 
 function createMockExtra(
   store: EventedTaskStore,

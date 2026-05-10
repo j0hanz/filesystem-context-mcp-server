@@ -3,13 +3,12 @@ import { basename } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { RequiredPath } from '../schemas/fields.js';
-
 import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, McpError } from '../core/errors.js';
 import type { PathGuard } from '../core/path.js';
+import { RequiredPath } from '../schema.js';
+import { buildToolResponse } from './_helpers.js';
 import { defineTool } from './define.js';
-import { buildToolResponse } from './shared.js';
 
 const CreateDirectoryInputSchema = z.strictObject({
   paths: z.array(RequiredPath).min(1).describe('One or more directory paths to create (recursive)'),
@@ -46,7 +45,7 @@ async function handleCreateDirectory(
 }
 
 export const CREATE_DIRECTORY = defineTool({
-  name: 'mkdir',
+  name: 'make_dir',
   title: 'Create Directory',
   description: 'Create one or more directories (recursive). Accepts a list of paths.',
   input: CreateDirectoryInputSchema,

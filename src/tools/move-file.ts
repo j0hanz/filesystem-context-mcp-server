@@ -6,14 +6,13 @@ import { basename, dirname, join, resolve, sep } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { RequiredPath } from '../schemas/fields.js';
-
 import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, isNodeError, McpError } from '../core/errors.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
+import { RequiredPath } from '../schema.js';
+import { buildToolResponse } from './_helpers.js';
 import { defineTool } from './define.js';
-import { buildToolResponse } from './shared.js';
 
 const MoveFileInputSchema = z.strictObject({
   sources: z.array(RequiredPath).min(1).describe('One or more source paths to move'),
@@ -186,7 +185,7 @@ async function handleMoveFile(
 }
 
 export const MOVE_FILE = defineTool({
-  name: 'mv',
+  name: 'move',
   title: 'Move File',
   description: 'Move or rename one or more files/directories to a destination.',
   input: MoveFileInputSchema,

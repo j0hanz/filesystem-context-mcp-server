@@ -14,7 +14,7 @@ import {
 
 // ─── rm: backward-compat (no elicitation capability) ─────────────────────────
 
-describe('rm: client without elicitation capability', () => {
+describe('delete: client without elicitation capability', () => {
   let env: TestEnv;
   let dir: string;
 
@@ -31,7 +31,7 @@ describe('rm: client without elicitation capability', () => {
 
   it('deletes directory immediately without elicitation when capability absent', async () => {
     const result = await env.client.callTool({
-      name: 'rm',
+      name: 'delete',
       arguments: { paths: [dir], recursive: true },
     });
     assertOk(result);
@@ -42,7 +42,7 @@ describe('rm: client without elicitation capability', () => {
 
 // ─── rm: client declines elicitation ─────────────────────────────────────────
 
-describe('rm: client declines elicitation', () => {
+describe('delete: client declines elicitation', () => {
   let env: TestEnv;
   let dir: string;
 
@@ -61,7 +61,7 @@ describe('rm: client declines elicitation', () => {
 
   it('returns success without deleting when user declines', async () => {
     const result = await env.client.callTool({
-      name: 'rm',
+      name: 'delete',
       arguments: { paths: [dir], recursive: true },
     });
     assertOk(result);
@@ -75,7 +75,7 @@ describe('rm: client declines elicitation', () => {
 
 // ─── rm: client accepts elicitation ──────────────────────────────────────────
 
-describe('rm: client accepts elicitation', () => {
+describe('delete: client accepts elicitation', () => {
   let env: TestEnv;
   let dir: string;
 
@@ -95,7 +95,7 @@ describe('rm: client accepts elicitation', () => {
 
   it('deletes directory when user accepts elicitation', async () => {
     const result = await env.client.callTool({
-      name: 'rm',
+      name: 'delete',
       arguments: { paths: [dir], recursive: true },
     });
     assertOk(result);
@@ -105,7 +105,7 @@ describe('rm: client accepts elicitation', () => {
 
 // ─── mv: backward-compat (no elicitation capability) ─────────────────────────
 
-describe('mv: client without elicitation capability', () => {
+describe('move: client without elicitation capability', () => {
   let env: TestEnv;
   let src: string;
   let dest: string;
@@ -124,7 +124,7 @@ describe('mv: client without elicitation capability', () => {
 
   it('overwrites destination immediately when capability absent', async () => {
     const result = await env.client.callTool({
-      name: 'mv',
+      name: 'move',
       arguments: { sources: [src], destination: dest },
     });
     assertOk(result);
@@ -135,7 +135,7 @@ describe('mv: client without elicitation capability', () => {
 
 // ─── mv: client declines when destination would be overwritten ────────────────
 
-describe('mv: client declines elicitation (destination exists)', () => {
+describe('move: client declines elicitation (destination exists)', () => {
   let env: TestEnv;
   let src: string;
   let dest: string;
@@ -156,7 +156,7 @@ describe('mv: client declines elicitation (destination exists)', () => {
 
   it('returns CANCELLED error without moving when user declines overwrite', async () => {
     const result = await env.client.callTool({
-      name: 'mv',
+      name: 'move',
       arguments: { sources: [src], destination: dest },
     });
     assertToolError(result, 'CANCELLED');
@@ -170,7 +170,7 @@ describe('mv: client declines elicitation (destination exists)', () => {
 
 // ─── mv: client accepts overwrite ────────────────────────────────────────────
 
-describe('mv: client accepts elicitation (destination exists)', () => {
+describe('move: client accepts elicitation (destination exists)', () => {
   let env: TestEnv;
   let src: string;
   let dest: string;
@@ -192,7 +192,7 @@ describe('mv: client accepts elicitation (destination exists)', () => {
 
   it('moves and overwrites when user accepts', async () => {
     const result = await env.client.callTool({
-      name: 'mv',
+      name: 'move',
       arguments: { sources: [src], destination: dest },
     });
     assertOk(result);
@@ -204,7 +204,7 @@ describe('mv: client accepts elicitation (destination exists)', () => {
 
 // ─── rm: elicitation handler throws (transport/capability error) ──────────────
 
-describe('rm: elicitation handler throws', () => {
+describe('delete: elicitation handler throws', () => {
   let env: TestEnv;
   let dir: string;
 
@@ -223,7 +223,7 @@ describe('rm: elicitation handler throws', () => {
 
   it('does NOT delete when elicitInput throws', async () => {
     const result = await env.client.callTool({
-      name: 'rm',
+      name: 'delete',
       arguments: { paths: [dir], recursive: true },
     });
     // Must succeed (fail-closed returns ok:true, no deletion)
@@ -236,7 +236,7 @@ describe('rm: elicitation handler throws', () => {
 
 // ─── mv: elicitation handler throws (transport/capability error) ──────────────
 
-describe('mv: elicitation handler throws', () => {
+describe('move: elicitation handler throws', () => {
   let env: TestEnv;
   let src: string;
   let dest: string;
@@ -257,7 +257,7 @@ describe('mv: elicitation handler throws', () => {
 
   it('does NOT move when elicitInput throws', async () => {
     const result = await env.client.callTool({
-      name: 'mv',
+      name: 'move',
       arguments: { sources: [src], destination: dest },
     });
     assertToolError(result, 'CANCELLED');

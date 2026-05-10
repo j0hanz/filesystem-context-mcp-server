@@ -30,7 +30,7 @@ describe('calculate_hash tool', () => {
 
   it('calculates file hash and stores in resource', async () => {
     const raw = await env.client.callTool({
-      name: 'calculate_hash',
+      name: 'hash_file',
       arguments: { path: file },
     });
     assertOk(raw);
@@ -63,7 +63,7 @@ describe('calculate_hash tool', () => {
 
   it('calculate-hash with multiple algorithms', async () => {
     const raw = await env.client.callTool({
-      name: 'calculate_hash',
+      name: 'hash_file',
       arguments: { path: file, algorithms: ['sha256', 'md5'] },
     });
     assertOk(raw);
@@ -92,11 +92,11 @@ describe('calculate_hash tool', () => {
     await writeFile(file2, 'deterministic content\n', 'utf8');
 
     const raw1 = await env.client.callTool({
-      name: 'calculate_hash',
+      name: 'hash_file',
       arguments: { path: file },
     });
     const raw2 = await env.client.callTool({
-      name: 'calculate_hash',
+      name: 'hash_file',
       arguments: { path: file2 },
     });
 
@@ -114,14 +114,14 @@ describe('calculate_hash tool', () => {
     await writeFile(mutable, 'version 1', 'utf8');
     const r1 = getStructured(
       await env.client.callTool({
-        name: 'calculate_hash',
+        name: 'hash_file',
         arguments: { path: mutable },
       }),
     );
     await writeFile(mutable, 'version 2', 'utf8');
     const r2 = getStructured(
       await env.client.callTool({
-        name: 'calculate_hash',
+        name: 'hash_file',
         arguments: { path: mutable },
       }),
     );
@@ -134,7 +134,7 @@ describe('calculate_hash tool', () => {
 
   it('returns isDirectory:true and fileCount for a directory', async () => {
     const raw = await env.client.callTool({
-      name: 'calculate_hash',
+      name: 'hash_file',
       arguments: { path: env.tmpDir },
     });
     assertOk(raw);
@@ -147,7 +147,7 @@ describe('calculate_hash tool', () => {
 
   it('returns NOT_FOUND for a missing path', async () => {
     const raw = await env.client.callTool({
-      name: 'calculate_hash',
+      name: 'hash_file',
       arguments: { path: join(env.tmpDir, 'ghost.txt') },
     });
     assertToolError(raw, 'NOT_FOUND');

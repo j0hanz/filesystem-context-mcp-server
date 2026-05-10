@@ -11,10 +11,10 @@ import { join } from 'node:path';
 import { PathGuard, resolveAllowedDirectoriesState } from '../src/core/path.js';
 import { createInMemoryResourceStore, type ResourceStore } from '../src/core/store.js';
 import { SENSITIVE_FILE_DENYLIST } from '../src/core/util.js';
-import { TaskOrchestrator } from '../src/server/task-orchestrator.js';
-import { createTaskStore } from '../src/server/task-store.js';
+import { TaskOrchestrator } from '../src/server.js';
+import { createTaskStore } from '../src/server.js';
 import { registerAllTools } from '../src/tools.js';
-import type { HandlerContext } from '../src/tools/shared.js';
+import type { HandlerContext } from '../src/tools/_helpers.js';
 import { LinkedTransport } from './linked-transport.js';
 
 // Disable worker threads in integration tests — workers are tested separately.

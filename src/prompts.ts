@@ -12,8 +12,8 @@ import { z } from 'zod/v4';
 import { Logger } from './core/observability.js';
 import { completePathCached } from './core/path.js';
 import type { PathGuard } from './core/path.js';
-import { INSTRUCTION_SECTIONS } from './resources/instructions.js';
-import { type IconInfo, withDefaultIcons } from './tools/shared.js';
+import { INSTRUCTION_SECTIONS } from './resources.js';
+import { type IconInfo, withDefaultIcons } from './tools/_helpers.js';
 
 // --- Types ---
 

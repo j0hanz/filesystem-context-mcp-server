@@ -4,8 +4,6 @@ import { basename, relative, win32 } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { NonNegInt, RequiredPath } from '../schemas/fields.js';
-
 import { assertNotAborted, withAbort } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
 import {
@@ -17,8 +15,9 @@ import {
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../core/util.js';
+import { NonNegInt, RequiredPath } from '../schema.js';
+import { buildResourceResponse, putResource } from './_helpers.js';
 import { defineTool } from './define.js';
-import { buildResourceResponse, putResource } from './shared.js';
 
 const WINDOWS_PATH_SEPARATOR = /\\/gu;
 
@@ -265,7 +264,7 @@ async function handleCalculateHash(
 }
 
 export const CALCULATE_HASH = defineTool({
-  name: 'calculate_hash',
+  name: 'hash_file',
   title: 'Calculate Hash',
   description: 'Calculate SHA-256, MD5, or other hashes for a file or directory.',
   input: HashInputSchema,

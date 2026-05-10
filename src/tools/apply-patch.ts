@@ -4,13 +4,6 @@ import { basename, resolve } from 'node:path';
 import { applyPatch, formatPatch, parsePatch, type StructuredPatch } from 'diff';
 import { z } from 'zod/v4';
 
-import { NonNegInt, OptionalPath } from '../schemas/fields.js';
-import {
-  defaultFalseBoolean,
-  OperationSummarySchema,
-  PerFileErrorSchema,
-} from '../schemas/shared.js';
-
 import { processInParallel, runInWorker, shouldOffload, withAbort } from '../core/concurrency.js';
 import { ErrorCode, McpError } from '../core/errors.js';
 import { atomicWriteFile, detectMimeType, readFileWithStats } from '../core/fs.js';
@@ -18,14 +11,21 @@ import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { MAX_TEXT_FILE_SIZE, PARALLEL_CONCURRENCY } from '../core/util.js';
-import { defineTool } from './define.js';
+import {
+  defaultFalseBoolean,
+  NonNegInt,
+  OperationSummarySchema,
+  OptionalPath,
+  PerFileErrorSchema,
+} from '../schema.js';
 import {
   buildResourceResponse,
   buildStructuredError,
   buildToolResponse,
   formatBytes,
   putResource,
-} from './shared.js';
+} from './_helpers.js';
+import { defineTool } from './define.js';
 
 const ApplyPatchInputSchema = z.strictObject({
   path: OptionalPath.describe(

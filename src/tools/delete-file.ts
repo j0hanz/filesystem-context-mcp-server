@@ -6,15 +6,13 @@ import { basename } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { RequiredPath } from '../schemas/fields.js';
-import { defaultFalseBoolean } from '../schemas/shared.js';
-
 import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, isNodeError, McpError } from '../core/errors.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
+import { defaultFalseBoolean, RequiredPath } from '../schema.js';
+import { buildStructuredError, buildToolResponse } from './_helpers.js';
 import { defineTool } from './define.js';
-import { buildStructuredError, buildToolResponse } from './shared.js';
 
 const DeleteInputSchema = z.strictObject({
   paths: z.array(RequiredPath).min(1).describe('One or more paths to delete'),
@@ -243,7 +241,7 @@ async function handleDelete(
 }
 
 export const DELETE_FILE = defineTool({
-  name: 'rm',
+  name: 'delete',
   title: 'Delete File',
   description: 'Permanently delete one or more files or directories. This action is irreversible.',
   input: DeleteInputSchema,

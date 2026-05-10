@@ -3,14 +3,6 @@ import { basename, relative } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { NonNegInt, OptionalPath, SafeGlobPattern } from '../schemas/fields.js';
-import {
-  CursorSchema,
-  includeHiddenField,
-  includeIgnoredField,
-  NextCursorSchema,
-} from '../schemas/shared.js';
-
 import type { SearchFilesResult, SearchResult } from '../config.js';
 import { withTimedAbortSignal } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
@@ -43,7 +35,15 @@ import {
   MAX_SEARCH_DEPTH,
   MAX_SEARCH_RESULTS,
 } from '../core/util.js';
-import { defineTool } from './define.js';
+import {
+  CursorSchema,
+  includeHiddenField,
+  includeIgnoredField,
+  NextCursorSchema,
+  NonNegInt,
+  OptionalPath,
+  SafeGlobPattern,
+} from '../schema.js';
 import {
   buildResourceResponse,
   buildToolResponse,
@@ -51,7 +51,8 @@ import {
   encodeOffsetCursor,
   putResource,
   truncateProgressPattern,
-} from './shared.js';
+} from './_helpers.js';
+import { defineTool } from './define.js';
 
 // ---------------------------------------------------------------------------
 // Private searchFiles implementation (inlined from lib/file-operations/search.ts)
@@ -622,7 +623,7 @@ async function handleSearchFiles(
 }
 
 export const SEARCH_FILES = defineTool({
-  name: 'find',
+  name: 'find_files',
   title: 'Find Files',
   description:
     'Find files by glob pattern (e.g. `**/*.ts`). Returns matching files with metadata. ' +

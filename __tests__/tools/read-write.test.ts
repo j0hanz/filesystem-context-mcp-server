@@ -337,7 +337,7 @@ describe('read_many tool', () => {
 
   it('reads multiple files in one call', async () => {
     const raw = await env.client.callTool({
-      name: 'read_many',
+      name: 'read',
       arguments: { paths: [fileA, fileB] },
     });
     const result = raw;
@@ -346,9 +346,7 @@ describe('read_many tool', () => {
     // Check content blocks: first is summary text, rest are resource_links
     assert.equal(result.content.length, 3); // 1 summary + 2 resource_links
     assert.equal(result.content[0].type, 'text');
-    assert.ok(
-      (result.content[0] as Record<string, unknown>).text?.toString().includes('read_many:'),
-    );
+    assert.ok((result.content[0] as Record<string, unknown>).text?.toString().includes('read:'));
     assert.equal(result.content[1].type, 'resource_link');
     assert.equal(result.content[2].type, 'resource_link');
 
@@ -376,7 +374,7 @@ describe('read_many tool', () => {
   it('includes per-path error for missing files', async () => {
     const missing = join(env.tmpDir, 'missing.txt');
     const raw = await env.client.callTool({
-      name: 'read_many',
+      name: 'read',
       arguments: { paths: [fileA, missing] },
     });
     const result = raw;
@@ -395,7 +393,7 @@ describe('read_many tool', () => {
     const rangeFile = join(env.tmpDir, 'range.txt');
     await writeFile(rangeFile, 'L1\nL2\nL3\nL4\nL5\n', 'utf8');
     const raw = await env.client.callTool({
-      name: 'read_many',
+      name: 'read',
       arguments: { paths: [rangeFile], startLine: 2, endLine: 4 },
     });
     assertOk(raw);
@@ -423,7 +421,7 @@ describe('read_many tool', () => {
     // Write bytes that include a null byte to trigger binary detection
     await writeFile(binFile, Buffer.from([0x89, 0x50, 0x00, 0x47, 0x0d]));
     const raw = await env.client.callTool({
-      name: 'read_many',
+      name: 'read',
       arguments: { paths: [fileA, binFile] },
     });
     assertOk(raw);
@@ -450,7 +448,7 @@ describe('read_many tool', () => {
     }
 
     const raw = await env.client.callTool({
-      name: 'read_many',
+      name: 'read',
       arguments: { paths },
     });
     assertOk(raw);
@@ -459,7 +457,7 @@ describe('read_many tool', () => {
     assert.equal(raw.content.length, 6);
     assert.equal(raw.content[0].type, 'text');
     assert.ok(
-      (raw.content[0] as Record<string, unknown>).text?.toString().includes('read_many: 5 files'),
+      (raw.content[0] as Record<string, unknown>).text?.toString().includes('read: 5 files'),
     );
 
     // Verify all resource_links
@@ -514,7 +512,7 @@ describe('read_many tool budget enforcement', () => {
     }
 
     const raw = await env.client.callTool({
-      name: 'read_many',
+      name: 'read',
       arguments: { paths },
     });
     assertOk(raw);

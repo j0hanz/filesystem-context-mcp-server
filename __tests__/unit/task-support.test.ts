@@ -10,9 +10,9 @@ import { describe, it } from 'node:test';
 
 import { ErrorCode } from '../../src/core/errors.js';
 import { DEFAULT_TASK_TTL_MS, MAX_CONCURRENT_TASKS, MAX_TASK_TTL_MS } from '../../src/core/util.js';
-import { TaskOrchestrator } from '../../src/server/task-orchestrator.js';
-import { EventedTaskStore } from '../../src/server/task-store.js';
-import type { ToolResult } from '../../src/tools/shared.js';
+import { TaskOrchestrator } from '../../src/server.js';
+import { EventedTaskStore } from '../../src/server.js';
+import type { ToolResult } from '../../src/tools/_helpers.js';
 
 /**
  * Build a minimal RequestTaskStore backed by InMemoryTaskStore.
@@ -490,7 +490,7 @@ describe('createToolTaskHandler', () => {
           content: [{ type: 'text', text: 'ok' }],
           structuredContent: { ok: true },
         }),
-        { toolName: 'grep' },
+        { toolName: 'search_text' },
       );
 
       const result = await callCreateTask(handler, createMockExtra(store));

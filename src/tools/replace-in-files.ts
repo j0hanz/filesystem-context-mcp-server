@@ -6,14 +6,6 @@ import { createTwoFilesPatch } from 'diff';
 import RE2 from 're2';
 import { z } from 'zod/v4';
 
-import { NonNegInt, OptionalPath, SafeGlobPattern } from '../schemas/fields.js';
-import {
-  defaultFalseBoolean,
-  includeHiddenField,
-  includeIgnoredField,
-  PerFileErrorSchema,
-} from '../schemas/shared.js';
-
 import { runInWorker, shouldOffload } from '../core/concurrency.js';
 import { ErrorCode, formatUnknownErrorMessage, McpError } from '../core/errors.js';
 import { atomicWriteFile, detectMimeType, globEntries } from '../core/fs.js';
@@ -29,14 +21,23 @@ import {
   MAX_TEXT_FILE_SIZE,
   PARALLEL_CONCURRENCY,
 } from '../core/util.js';
-import { defineTool } from './define.js';
+import {
+  defaultFalseBoolean,
+  includeHiddenField,
+  includeIgnoredField,
+  NonNegInt,
+  OptionalPath,
+  PerFileErrorSchema,
+  SafeGlobPattern,
+} from '../schema.js';
 import {
   buildResourceResponse,
   buildStructuredError,
   buildToolResponse,
   putResource,
   truncateProgressPattern,
-} from './shared.js';
+} from './_helpers.js';
+import { defineTool } from './define.js';
 
 const SearchAndReplaceInputSchema = z.strictObject({
   path: OptionalPath,
@@ -602,7 +603,7 @@ async function handleSearchAndReplace(
 }
 
 export const SEARCH_AND_REPLACE = defineTool({
-  name: 'search_and_replace',
+  name: 'replace_text',
   title: 'Search and Replace',
   description:
     'Bulk search-and-replace across files matching a glob. ' +

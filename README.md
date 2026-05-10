@@ -1,1 +1,5 @@
 # Filesystem MCP Server
+
+**16 filesystem tools** for reading, writing, searching, and managing files via the Model Context Protocol.
+
+**Self-documenting** — 3 built-in resources provide instructions, tool catalogs, and per-tool info. 3 built-in prompts guide common workflows.

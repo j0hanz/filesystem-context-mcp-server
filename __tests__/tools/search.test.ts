@@ -36,7 +36,7 @@ describe('grep tool', () => {
 
   it('finds literal matches across files', async () => {
     const raw = await env.client.callTool({
-      name: 'grep',
+      name: 'search_text',
       arguments: { path: env.tmpDir, searchPattern: 'apple' },
     });
     const result = raw;
@@ -65,7 +65,7 @@ describe('grep tool', () => {
 
   it('finds regex matches', async () => {
     const raw = await env.client.callTool({
-      name: 'grep',
+      name: 'search_text',
       arguments: { path: env.tmpDir, searchPattern: '^a[a-z]+', isRegex: true },
     });
     const result = raw;
@@ -84,7 +84,7 @@ describe('grep tool', () => {
 
   it('restricts search using filePattern', async () => {
     const raw = await env.client.callTool({
-      name: 'grep',
+      name: 'search_text',
       arguments: { path: env.tmpDir, searchPattern: 'a', pattern: '*.txt' },
     });
     const result = raw;
@@ -96,7 +96,7 @@ describe('grep tool', () => {
   it('maxDepth:0 excludes nested matches', async () => {
     // sub/deep.txt contains 'another apple here' but is 1 level deep
     const raw = await env.client.callTool({
-      name: 'grep',
+      name: 'search_text',
       arguments: {
         path: env.tmpDir,
         searchPattern: 'apple',
@@ -116,7 +116,7 @@ describe('grep tool', () => {
 
   it('rejects unsafe filePattern values before traversal', async () => {
     const raw = await env.client.callTool({
-      name: 'grep',
+      name: 'search_text',
       arguments: {
         path: env.tmpDir,
         searchPattern: 'apple',
@@ -138,7 +138,7 @@ describe('grep tool', () => {
 
   it('returns empty matches for a pattern that is not found', async () => {
     const raw = await env.client.callTool({
-      name: 'grep',
+      name: 'search_text',
       arguments: { path: env.tmpDir, searchPattern: 'ZZZNOMATCH' },
     });
     const result = raw;
@@ -153,7 +153,7 @@ describe('grep tool', () => {
     await writeFile(file, 'rocket 🚀 line\n', 'utf8');
 
     const raw = await env.client.callTool({
-      name: 'grep',
+      name: 'search_text',
       arguments: { path: env.tmpDir, searchPattern: 'rocket' },
     });
 
@@ -184,7 +184,7 @@ describe('grep tool', () => {
 
     const stream = env.client.experimental.tasks.callToolStream(
       {
-        name: 'grep',
+        name: 'search_text',
         arguments: {
           path: env.tmpDir,
           searchPattern: 'needle',
@@ -251,7 +251,7 @@ describe('find tool', () => {
 
   it('finds files matching a glob pattern', async () => {
     const raw = await env.client.callTool({
-      name: 'find',
+      name: 'find_files',
       arguments: { path: env.tmpDir, pattern: '**/*.ts' },
     });
     const result = raw;
@@ -275,7 +275,7 @@ describe('find tool', () => {
 
   it('excludes non-matching files', async () => {
     const raw = await env.client.callTool({
-      name: 'find',
+      name: 'find_files',
       arguments: { path: env.tmpDir, pattern: '**/*.json' },
     });
     const result = raw;
@@ -293,7 +293,7 @@ describe('find tool', () => {
 
   it('returns empty results when no files match', async () => {
     const raw = await env.client.callTool({
-      name: 'find',
+      name: 'find_files',
       arguments: { path: env.tmpDir, pattern: '**/*.neverexists' },
     });
     const result = raw;
@@ -312,7 +312,7 @@ describe('find tool', () => {
     }
 
     const raw = await env.client.callTool({
-      name: 'find',
+      name: 'find_files',
       arguments: { path: env.tmpDir, pattern: '**/*.ts' },
     });
     const result = raw;
@@ -357,7 +357,7 @@ describe('search_and_replace tool', () => {
 
   it('replaces text in all matching files', async () => {
     const raw = await env.client.callTool({
-      name: 'search_and_replace',
+      name: 'replace_text',
       arguments: {
         path: env.tmpDir,
         pattern: '*.txt',
@@ -397,7 +397,7 @@ describe('search_and_replace tool', () => {
   it('dryRun:true does not modify any files', async () => {
     await writeFile(join(env.tmpDir, 'dry.txt'), 'oldvalue\n', 'utf8');
     const raw = await env.client.callTool({
-      name: 'search_and_replace',
+      name: 'replace_text',
       arguments: {
         path: env.tmpDir,
         pattern: 'dry.txt',
@@ -415,7 +415,7 @@ describe('search_and_replace tool', () => {
     const file = join(env.tmpDir, 'regex-test.txt');
     await writeFile(file, 'cat123\ndog456\n', 'utf8');
     const raw = await env.client.callTool({
-      name: 'search_and_replace',
+      name: 'replace_text',
       arguments: {
         path: env.tmpDir,
         pattern: 'regex-test.txt',
@@ -433,7 +433,7 @@ describe('search_and_replace tool', () => {
 
   it('returns ACCESS_DENIED when path escapes allowed root', async () => {
     const raw = await env.client.callTool({
-      name: 'search_and_replace',
+      name: 'replace_text',
       arguments: {
         path: '/tmp',
         pattern: '*.txt',
@@ -450,7 +450,7 @@ describe('search_and_replace tool', () => {
     await writeFile(join(sub, 'deep.txt'), 'hello world\n', 'utf8');
 
     const raw = await env.client.callTool({
-      name: 'search_and_replace',
+      name: 'replace_text',
       arguments: {
         path: env.tmpDir,
         pattern: '**/*.txt',
@@ -481,7 +481,7 @@ describe('search_and_replace tool', () => {
     }
 
     const raw = await env.client.callTool({
-      name: 'search_and_replace',
+      name: 'replace_text',
       arguments: {
         path: capDir,
         pattern: '*.txt',
@@ -506,7 +506,7 @@ describe('grep tool — asymmetric context', () => {
       const filePath = join(env.tmpDir, 'ctx.txt');
       await writeFile(filePath, 'line1\nline2\nMATCH\nline4\nline5', 'utf8');
       const res = await env.client.callTool({
-        name: 'grep',
+        name: 'search_text',
         arguments: {
           path: filePath,
           searchPattern: 'MATCH',
@@ -539,7 +539,7 @@ describe('grep tool — asymmetric context', () => {
       const filePath = join(env.tmpDir, 'ctx2.txt');
       await writeFile(filePath, 'line1\nline2\nMATCH\nline4\nline5', 'utf8');
       const res = await env.client.callTool({
-        name: 'grep',
+        name: 'search_text',
         arguments: {
           path: filePath,
           searchPattern: 'MATCH',
@@ -569,7 +569,7 @@ describe('grep tool — asymmetric context', () => {
       const filePath = join(env.tmpDir, 'ctx3.txt');
       await writeFile(filePath, 'line1\nline2\nMATCH\nline4\nline5', 'utf8');
       const res = await env.client.callTool({
-        name: 'grep',
+        name: 'search_text',
         arguments: {
           path: filePath,
           searchPattern: 'MATCH',
@@ -605,7 +605,7 @@ describe('grep tool - fuzzy search', () => {
       const filePath = join(env.tmpDir, 'fuzzy.txt');
       await writeFile(filePath, 'line with aproximate spelling\nno match here', 'utf8');
       const res = await env.client.callTool({
-        name: 'grep',
+        name: 'search_text',
         arguments: {
           path: filePath,
           searchPattern: 'approximate',
@@ -631,7 +631,7 @@ describe('grep tool - fuzzy search', () => {
       const filePath = join(env.tmpDir, 'reject.txt');
       await writeFile(filePath, 'some content', 'utf8');
       const res = await env.client.callTool({
-        name: 'grep',
+        name: 'search_text',
         arguments: {
           path: filePath,
           searchPattern: 'foo',
@@ -651,7 +651,7 @@ describe('grep tool - fuzzy search', () => {
       const filePath = join(env.tmpDir, 'short.txt');
       await writeFile(filePath, 'abc here', 'utf8');
       const res = await env.client.callTool({
-        name: 'grep',
+        name: 'search_text',
         arguments: { path: filePath, searchPattern: 'abc', fuzzy: true },
       });
       assertToolError(res);

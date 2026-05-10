@@ -5,20 +5,6 @@ import { basename, join, relative } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import {
-  FileType as FileTypeEnum,
-  NonNegInt,
-  OptionalPath,
-  SafeGlobPattern,
-} from '../schemas/fields.js';
-import {
-  CursorSchema,
-  defaultFalseBoolean,
-  includeHiddenField,
-  includeIgnoredField,
-  NextCursorSchema,
-} from '../schemas/shared.js';
-
 import type { DirectoryEntry, ListDirectoryResult } from '../config.js';
 import { processInParallel, withAbort, withTimedAbortSignal } from '../core/concurrency.js';
 import { ErrorCode, McpError } from '../core/errors.js';
@@ -45,8 +31,19 @@ import {
   MAX_TREE_DEPTH,
   PARALLEL_CONCURRENCY,
 } from '../core/util.js';
+import {
+  CursorSchema,
+  defaultFalseBoolean,
+  FileType as FileTypeEnum,
+  includeHiddenField,
+  includeIgnoredField,
+  NextCursorSchema,
+  NonNegInt,
+  OptionalPath,
+  SafeGlobPattern,
+} from '../schema.js';
+import { buildResourceResponse, buildToolResponse, putResource } from './_helpers.js';
 import { defineTool } from './define.js';
-import { buildResourceResponse, buildToolResponse, putResource } from './shared.js';
 
 // ---------------------------------------------------------------------------
 // Private listDirectory implementation (inlined from lib/file-operations/metadata.ts)

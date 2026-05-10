@@ -4,7 +4,7 @@ import { McpServer } from '@modelcontextprotocol/server';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { createServer } from '../../src/server/bootstrap.js';
+import { createServer } from '../../src/server.js';
 
 describe('createServer config', () => {
   it('creates server with enforceStrictCapabilities enabled', async () => {

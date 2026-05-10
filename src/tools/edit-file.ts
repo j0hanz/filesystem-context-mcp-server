@@ -5,9 +5,6 @@ import { createTwoFilesPatch, diffLines } from 'diff';
 import RE2 from 're2';
 import { z } from 'zod/v4';
 
-import { NonNegInt, PositiveInt, RequiredPath } from '../schemas/fields.js';
-import { defaultFalseBoolean } from '../schemas/shared.js';
-
 import { runInWorker, shouldOffload, withAbort } from '../core/concurrency.js';
 import { ErrorCode, McpError } from '../core/errors.js';
 import { atomicWriteFile, detectMimeType, readFileWithStats } from '../core/fs.js';
@@ -15,8 +12,9 @@ import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
+import { defaultFalseBoolean, NonNegInt, PositiveInt, RequiredPath } from '../schema.js';
+import { buildResourceResponse, buildToolResponse, formatBytes, putResource } from './_helpers.js';
 import { defineTool } from './define.js';
-import { buildResourceResponse, buildToolResponse, formatBytes, putResource } from './shared.js';
 
 const EditFileInputSchema = z.strictObject({
   path: RequiredPath,

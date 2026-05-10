@@ -7,15 +7,6 @@ import { parentPort, threadId, Worker, workerData } from 'node:worker_threads';
 import RE2 from 're2';
 import { z } from 'zod/v4';
 
-import { NonNegInt, OptionalPath, PositiveInt, SafeGlobPattern } from '../schemas/fields.js';
-import {
-  CursorSchema,
-  defaultFalseBoolean,
-  includeHiddenField,
-  includeIgnoredField,
-  NextCursorSchema,
-} from '../schemas/shared.js';
-
 import type { ContentMatch, SearchContentResult } from '../config.js';
 import { assertNotAborted, withAbort, withTimedAbortSignal } from '../core/concurrency.js';
 import {
@@ -44,7 +35,17 @@ import {
   parseEnvInt,
   SEARCH_WORKERS,
 } from '../core/util.js';
-import { defineTool } from './define.js';
+import {
+  CursorSchema,
+  defaultFalseBoolean,
+  includeHiddenField,
+  includeIgnoredField,
+  NextCursorSchema,
+  NonNegInt,
+  OptionalPath,
+  PositiveInt,
+  SafeGlobPattern,
+} from '../schema.js';
 import {
   buildResourceResponse,
   buildToolResponse,
@@ -52,7 +53,8 @@ import {
   encodeOffsetCursor,
   putResource,
   truncateProgressPattern,
-} from './shared.js';
+} from './_helpers.js';
+import { defineTool } from './define.js';
 
 // ---------------------------------------------------------------------------
 // Private searchContent implementation (inlined from lib/file-operations/search.ts)
@@ -1575,7 +1577,7 @@ async function handleSearchContent(
 }
 
 export const SEARCH_CONTENT = defineTool({
-  name: 'grep',
+  name: 'search_text',
   title: 'Search Content',
   description:
     'Search file contents for text (grep-like). Returns matching lines. ' +

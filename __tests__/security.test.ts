@@ -29,10 +29,10 @@ describe('security: path boundary enforcement', () => {
     { tool: 'write', args: () => ({ path: '/tmp/escape.txt', content: 'x' }) },
     { tool: 'stat', args: () => ({ path: '/etc/hostname' }) },
     { tool: 'ls', args: () => ({ path: '/etc' }) },
-    { tool: 'rm', args: (d) => ({ paths: [join(d, '../escape.txt')] }) },
-    { tool: 'mkdir', args: () => ({ paths: [`/tmp/evil-dir-${Date.now()}`] }) },
+    { tool: 'delete', args: (d) => ({ paths: [join(d, '../escape.txt')] }) },
+    { tool: 'make_dir', args: () => ({ paths: [`/tmp/evil-dir-${Date.now()}`] }) },
     {
-      tool: 'search_and_replace',
+      tool: 'replace_text',
       args: () => ({
         path: '/tmp',
         pattern: '*.txt',
@@ -40,7 +40,7 @@ describe('security: path boundary enforcement', () => {
         replacement: 'y',
       }),
     },
-    { tool: 'calculate_hash', args: () => ({ path: '/etc/passwd' }) },
+    { tool: 'hash_file', args: () => ({ path: '/etc/passwd' }) },
   ];
 
   for (const { tool, args } of toolsAndArgs) {
@@ -50,12 +50,12 @@ describe('security: path boundary enforcement', () => {
         arguments: args(env.tmpDir),
       });
       // rm returns ok:true with failures[] for per-path errors; all others return isError
-      if (tool === 'rm') {
+      if (tool === 'delete') {
         assertOk(raw);
         const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
         assert.ok(
           Array.isArray(sc?.['failures']) && sc['failures'].length > 0,
-          'rm must report ACCESS_DENIED in failures[]',
+          'delete must report ACCESS_DENIED in failures[]',
         );
         assert.equal(
           (sc?.['failures'] as { error: { code: string } }[])[0]?.error?.code,
@@ -166,33 +166,33 @@ describe('security: schema validation rejects malformed input', () => {
     await env.cleanup();
   });
 
-  it('stat_many: rejects empty paths array', async () => {
+  it('stat: rejects empty paths array', async () => {
     const raw = await env.client.callTool({
-      name: 'stat_many',
+      name: 'stat',
       arguments: { paths: [] },
     });
     assertToolError(raw);
   });
 
-  it('read_many: rejects empty paths array', async () => {
+  it('read: rejects empty paths array', async () => {
     const raw = await env.client.callTool({
-      name: 'read_many',
+      name: 'read',
       arguments: { paths: [] },
     });
     assertToolError(raw);
   });
 
-  it('mv: rejects missing both source and sources', async () => {
+  it('move: rejects missing both source and sources', async () => {
     const raw = await env.client.callTool({
-      name: 'mv',
+      name: 'move',
       arguments: { destination: join(env.tmpDir, 'dst.txt') },
     });
     assertToolError(raw);
   });
 
-  it('mv: rejects providing both source and sources', async () => {
+  it('move: rejects providing both source and sources', async () => {
     const raw = await env.client.callTool({
-      name: 'mv',
+      name: 'move',
       arguments: {
         source: join(env.tmpDir, 'a.txt'),
         sources: [join(env.tmpDir, 'b.txt')],
@@ -202,14 +202,14 @@ describe('security: schema validation rejects malformed input', () => {
     assertToolError(raw);
   });
 
-  it('mkdir: rejects missing both path and paths', async () => {
-    const raw = await env.client.callTool({ name: 'mkdir', arguments: {} });
+  it('make_dir: rejects missing both path and paths', async () => {
+    const raw = await env.client.callTool({ name: 'make_dir', arguments: {} });
     assertToolError(raw);
   });
 
-  it('mkdir: rejects providing both path and paths', async () => {
+  it('make_dir: rejects providing both path and paths', async () => {
     const raw = await env.client.callTool({
-      name: 'mkdir',
+      name: 'make_dir',
       arguments: {
         path: join(env.tmpDir, 'one'),
         paths: [join(env.tmpDir, 'two')],
@@ -295,11 +295,11 @@ describe('security: symlink escape for destructive ops', () => {
     assertToolError(raw, 'ACCESS_DENIED');
   });
 
-  it('mv: rejects moving symlink target outside allowed root', async () => {
+  it('move: rejects moving symlink target outside allowed root', async () => {
     const linkPath = await createSymlink('mv-escape.txt', join(outsideDir, 'target.txt'));
     if (!linkPath) return;
     const raw = await env.client.callTool({
-      name: 'mv',
+      name: 'move',
       arguments: {
         source: linkPath,
         destination: join(env.tmpDir, 'moved.txt'),
@@ -308,18 +308,18 @@ describe('security: symlink escape for destructive ops', () => {
     assertToolError(raw, 'ACCESS_DENIED');
   });
 
-  it('rm: rejects deleting through symlink to directory outside', async () => {
+  it('delete: rejects deleting through symlink to directory outside', async () => {
     const linkPath = await createSymlink('rm-escape-dir', outsideDir);
     if (!linkPath) return;
     const raw = await env.client.callTool({
-      name: 'rm',
+      name: 'delete',
       arguments: { paths: [linkPath] },
     });
     assertOk(raw);
     const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
     assert.ok(
       Array.isArray(sc?.['failures']) && sc['failures'].length > 0,
-      'rm must report ACCESS_DENIED in failures[]',
+      'delete must report ACCESS_DENIED in failures[]',
     );
     assert.equal(
       (sc?.['failures'] as { error: { code: string } }[])[0]?.error?.code,

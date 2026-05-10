@@ -4,8 +4,7 @@ import { describe, it } from 'node:test';
 import { Validator } from '@cfworker/json-schema';
 import { z } from 'zod/v4';
 
-import { IsoDateTime, NonNegInt } from '../../src/schemas/fields.js';
-import { toToolJsonSchema } from '../../src/schemas/json-schema.js';
+import { IsoDateTime, NonNegInt, toMcpSchema as toToolJsonSchema } from '../../src/schema.js';
 import { createTestEnv } from '../helpers.js';
 
 describe('toToolJsonSchema', () => {
@@ -87,8 +86,8 @@ describe('advertised schema constraints', () => {
     assert.ok(!result.valid, 'head+startLine should be rejected by advertised schema');
   });
 
-  it('grep: rejects absolute path in pattern', async () => {
-    const schema = await getInputSchema('grep');
+  it('search_text: rejects absolute path in pattern', async () => {
+    const schema = await getInputSchema('search_text');
     const v = new Validator(schema, '2020-12', false);
     const result = v.validate({
       searchPattern: 'hello',
@@ -97,15 +96,15 @@ describe('advertised schema constraints', () => {
     assert.ok(!result.valid, 'absolute glob should be rejected by advertised schema');
   });
 
-  it('grep: rejects traversal pattern', async () => {
-    const schema = await getInputSchema('grep');
+  it('search_text: rejects traversal pattern', async () => {
+    const schema = await getInputSchema('search_text');
     const v = new Validator(schema, '2020-12', false);
     const result = v.validate({ searchPattern: 'hello', pattern: '../*.ts' });
     assert.ok(!result.valid, 'traversal glob should be rejected by advertised schema');
   });
 
-  it('search_and_replace: rejects absolute path in pattern', async () => {
-    const schema = await getInputSchema('search_and_replace');
+  it('replace_text: rejects absolute path in pattern', async () => {
+    const schema = await getInputSchema('replace_text');
     const v = new Validator(schema, '2020-12', false);
     const result = v.validate({
       searchPattern: 'old',

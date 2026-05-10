@@ -7,7 +7,7 @@ import {
   isAllowedLocalhostOrigin,
   isLoopbackHttpHost,
   validateBearerAuthorization,
-} from '../../src/server/bootstrap.js';
+} from '../../src/server.js';
 
 describe('isLoopbackHttpHost', () => {
   it('accepts canonical loopback hosts', () => {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { EventedTaskStore } from '../../src/server/task-store.js';
+import { EventedTaskStore } from '../../src/server.js';
 
 describe('EventedTaskStore', () => {
   it('emits "cancelled" event when a task status is updated to cancelled', async () => {

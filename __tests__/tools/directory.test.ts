@@ -28,7 +28,7 @@ describe('roots tool', () => {
   });
 
   it('lists allowed roots with terse summary', async () => {
-    const raw = await env.client.callTool({ name: 'roots', arguments: {} });
+    const raw = await env.client.callTool({ name: 'list_roots', arguments: {} });
     const result = raw;
     assertOk(result);
 
@@ -303,7 +303,7 @@ describe('mkdir tool', () => {
   it('creates a new directory', async () => {
     const newDir = join(env.tmpDir, 'new-dir');
     const raw = await env.client.callTool({
-      name: 'mkdir',
+      name: 'make_dir',
       arguments: { paths: [newDir] },
     });
     assertOk(raw);
@@ -346,7 +346,7 @@ describe('mkdir tool', () => {
     const existingDir = join(env.tmpDir, 'idempotent-dir');
     await mkdir(existingDir);
     const raw = await env.client.callTool({
-      name: 'mkdir',
+      name: 'make_dir',
       arguments: { paths: [existingDir] },
     });
     assertOk(raw);
@@ -356,7 +356,7 @@ describe('mkdir tool', () => {
     const d1 = join(env.tmpDir, 'batch-a');
     const d2 = join(env.tmpDir, 'batch-b');
     const raw = await env.client.callTool({
-      name: 'mkdir',
+      name: 'make_dir',
       arguments: { paths: [d1, d2] },
     });
     assertOk(raw);
@@ -376,7 +376,7 @@ describe('mkdir tool', () => {
 
   it('rejects creation outside allowed root', async () => {
     const raw = await env.client.callTool({
-      name: 'mkdir',
+      name: 'make_dir',
       arguments: { paths: [`/tmp/escape-${Date.now()}`] },
     });
     assertToolError(raw, 'ACCESS_DENIED');
@@ -400,7 +400,7 @@ describe('rm tool', () => {
     const file = join(env.tmpDir, 'to-delete.txt');
     await writeFile(file, 'bye', 'utf8');
     const raw = await env.client.callTool({
-      name: 'rm',
+      name: 'delete',
       arguments: { paths: [file] },
     });
     assertOk(raw);
@@ -443,7 +443,7 @@ describe('rm tool', () => {
     await mkdir(dir);
     await writeFile(join(dir, 'inner.txt'), 'inner', 'utf8');
     const raw = await env.client.callTool({
-      name: 'rm',
+      name: 'delete',
       arguments: { paths: [dir], recursive: true },
     });
     assertOk(raw);
@@ -472,7 +472,7 @@ describe('rm tool', () => {
 
   it('returns NOT_FOUND error for missing file', async () => {
     const raw = await env.client.callTool({
-      name: 'rm',
+      name: 'delete',
       arguments: { paths: [join(env.tmpDir, 'ghost.txt')] },
     });
     assertToolError(raw, 'NOT_FOUND');
@@ -480,7 +480,7 @@ describe('rm tool', () => {
 
   it('ignoreIfNotExists suppresses NOT_FOUND', async () => {
     const raw = await env.client.callTool({
-      name: 'rm',
+      name: 'delete',
       arguments: {
         paths: [join(env.tmpDir, 'definitely-not-here.txt')],
         ignoreIfNotExists: true,
@@ -491,7 +491,7 @@ describe('rm tool', () => {
 
   it('returns ACCESS_DENIED error when deleting workspace root', async () => {
     const raw = await env.client.callTool({
-      name: 'rm',
+      name: 'delete',
       arguments: { paths: [env.tmpDir], recursive: true },
     });
     assertToolError(raw, 'ACCESS_DENIED');
@@ -519,7 +519,7 @@ describe('mv tool', () => {
     const dst = join(env.tmpDir, 'dest.txt');
     await writeFile(src, 'move me', 'utf8');
     const raw = await env.client.callTool({
-      name: 'mv',
+      name: 'move',
       arguments: { sources: [src], destination: dst },
     });
     assertOk(raw);
@@ -557,7 +557,7 @@ describe('mv tool', () => {
 
   it('returns isError for total failure when source is missing', async () => {
     const raw = await env.client.callTool({
-      name: 'mv',
+      name: 'move',
       arguments: {
         sources: [join(env.tmpDir, 'no-source.txt')],
         destination: join(env.tmpDir, 'dst.txt'),
@@ -591,7 +591,7 @@ describe('invalid cursor rejection', () => {
 
   it('find rejects a malformed cursor with INVALID_INPUT', async () => {
     const raw = await env.client.callTool({
-      name: 'find',
+      name: 'find_files',
       arguments: {
         path: env.tmpDir,
         pattern: '*.txt',

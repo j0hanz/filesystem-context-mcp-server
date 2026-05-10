@@ -4,8 +4,8 @@ import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 
 import { ProgressSession } from '../../src/core/observability.js';
-import { McpProgressSink, progressSessionFromContext } from '../../src/tools/progress-sinks.js';
-import type { ToolContext } from '../../src/tools/shared.js';
+import { McpProgressSink, progressSessionFromContext } from '../../src/tools/_helpers.js';
+import type { ToolContext } from '../../src/tools/_helpers.js';
 
 void describe('McpProgressSink', () => {
   void it('forwards tick events to sendNotification', async () => {

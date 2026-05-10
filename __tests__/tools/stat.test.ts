@@ -119,7 +119,7 @@ describe('stat_many tool', () => {
 
   it('gets stats for multiple files', async () => {
     const raw = await env.client.callTool({
-      name: 'stat_many',
+      name: 'stat',
       arguments: { paths: [fileA, fileB] },
     });
     const result = raw;
@@ -129,7 +129,7 @@ describe('stat_many tool', () => {
     assert.equal(result.content.length, 2);
     assert.equal(result.content[0].type, 'text');
     const summaryText = (result.content[0] as Record<string, unknown>).text?.toString() ?? '';
-    assert.ok(summaryText.includes('stat-many:'));
+    assert.ok(summaryText.includes('stat:'));
     assert.ok(summaryText.includes('2 files'));
 
     assert.equal(result.content[1].type, 'resource_link');
@@ -161,7 +161,7 @@ describe('stat_many tool', () => {
   it('includes per-path error for missing entries', async () => {
     const missing = join(env.tmpDir, 'missing.txt');
     const raw = await env.client.callTool({
-      name: 'stat_many',
+      name: 'stat',
       arguments: { paths: [fileA, missing] },
     });
     const result = raw;
@@ -194,7 +194,7 @@ describe('stat_many tool', () => {
     }
 
     const raw = await env.client.callTool({
-      name: 'stat_many',
+      name: 'stat',
       arguments: { paths: files },
     });
     const result = raw;
@@ -221,7 +221,7 @@ describe('stat_many tool', () => {
 
   it('rejects empty paths array (schema validation)', async () => {
     const raw = await env.client.callTool({
-      name: 'stat_many',
+      name: 'stat',
       arguments: { paths: [] },
     });
     assertToolError(raw);

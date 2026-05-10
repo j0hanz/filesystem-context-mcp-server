@@ -6,16 +6,14 @@ import { basename } from 'node:path';
 import { formatPatch, structuredPatch, type StructuredPatch } from 'diff';
 import { z } from 'zod/v4';
 
-import { NonNegInt, RequiredPath } from '../schemas/fields.js';
-import { defaultFalseBoolean } from '../schemas/shared.js';
-
 import { runInWorker, shouldOffload, withAbort } from '../core/concurrency.js';
 import { ErrorCode, McpError } from '../core/errors.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
+import { defaultFalseBoolean, NonNegInt, RequiredPath } from '../schema.js';
+import { buildResourceResponse, buildToolResponse, putResource } from './_helpers.js';
 import { defineTool } from './define.js';
-import { buildResourceResponse, buildToolResponse, putResource } from './shared.js';
 
 const DiffFilesInputSchema = z.strictObject({
   original: RequiredPath.describe('Original file path'),

@@ -1,5 +1,5 @@
 /**
- * Contract tests: verify that all 18 tools are registered, named correctly,
+ * Contract tests: verify that all 16 tools are registered, named correctly,
  * carry the right annotations, and perform a basic smoke call.
  */
 import { Client } from '@modelcontextprotocol/client';
@@ -14,23 +14,21 @@ import { after, before, describe, it } from 'node:test';
 
 import { assertOk, createTestEnv, getStructured, type TestEnv } from './helpers.js';
 
-// Names of all 18 tools as registered
+// Names of all 16 tools as registered
 const ALL_TOOLS = new Set([
   'apply_patch',
-  'calculate_hash',
-  'mkdir',
-  'rm',
+  'hash_file',
+  'make_dir',
+  'delete',
   'diff_files',
   'edit',
   'ls',
-  'mv',
-  'read_many',
+  'move',
   'read',
-  'search_and_replace',
-  'roots',
-  'grep',
-  'find',
-  'stat_many',
+  'replace_text',
+  'list_roots',
+  'search_text',
+  'find_files',
   'stat',
   'tree',
   'write',
@@ -38,15 +36,13 @@ const ALL_TOOLS = new Set([
 
 // Annotations by category
 const READ_ONLY_TOOLS = new Set([
-  'calculate_hash',
+  'hash_file',
   'diff_files',
   'ls',
-  'read_many',
   'read',
-  'roots',
-  'grep',
-  'find',
-  'stat_many',
+  'list_roots',
+  'search_text',
+  'find_files',
   'stat',
   'tree',
 ]);
@@ -54,9 +50,9 @@ const READ_ONLY_TOOLS = new Set([
 const DESTRUCTIVE_TOOLS = new Set([
   'apply_patch',
   'edit',
-  'rm',
-  'mv',
-  'search_and_replace',
+  'delete',
+  'move',
+  'replace_text',
   'write',
 ]);
 
@@ -71,9 +67,9 @@ describe('Tool contract', () => {
     await env.cleanup();
   });
 
-  it('registers exactly 18 tools with correct names', async () => {
+  it('registers exactly 16 tools with correct names', async () => {
     const { tools } = await env.client.listTools();
-    assert.equal(tools.length, ALL_TOOLS.size, 'Expected 18 tools');
+    assert.equal(tools.length, ALL_TOOLS.size, 'Expected 16 tools');
     for (const tool of tools) {
       assert.ok(ALL_TOOLS.has(tool.name), `Unexpected tool name: ${tool.name}`);
     }
@@ -120,18 +116,18 @@ describe('Tool contract', () => {
     }
   });
 
-  it('mkdir has idempotentHint:true and destructiveHint:false', async () => {
+  it('make_dir has idempotentHint:true and destructiveHint:false', async () => {
     const { tools } = await env.client.listTools();
-    const mkdir = tools.find((t) => t.name === 'mkdir');
-    assert.ok(mkdir, 'mkdir tool must exist');
+    const mkdir = tools.find((t) => t.name === 'make_dir');
+    assert.ok(mkdir, 'make_dir tool must exist');
     const ann = mkdir.annotations as Record<string, unknown>;
-    assert.equal(ann['idempotentHint'], true, 'mkdir: expected idempotentHint=true');
-    assert.equal(ann['destructiveHint'], false, 'mkdir: expected destructiveHint=false');
+    assert.equal(ann['idempotentHint'], true, 'make_dir: expected idempotentHint=true');
+    assert.equal(ann['destructiveHint'], false, 'make_dir: expected destructiveHint=false');
   });
 
-  it('smoke: roots returns ok:true with the test tmpDir', async () => {
+  it('smoke: list_roots returns ok:true with the test tmpDir', async () => {
     const rawResult = await env.client.callTool({
-      name: 'roots',
+      name: 'list_roots',
       arguments: {},
     });
     const result = rawResult;
@@ -183,14 +179,14 @@ describe('Tool contract', () => {
   it('task-capable tools expose execution.taskSupport in tools/list', async () => {
     const TASK_OPTIONAL_TOOLS = new Set([
       'apply_patch',
-      'calculate_hash',
+      'hash_file',
       'diff_files',
-      'grep',
-      'find',
+      'search_text',
+      'find_files',
       'ls',
-      'read_many',
-      'search_and_replace',
-      'stat_many',
+      'read',
+      'replace_text',
+      'stat',
       'tree',
     ]);
 
@@ -225,16 +221,16 @@ describe('Tool contract', () => {
       name: string;
       arguments: Record<string, unknown>;
     }[] = [
-      { name: 'roots', arguments: {} },
+      { name: 'list_roots', arguments: {} },
       { name: 'ls', arguments: { path: env.tmpDir } },
       { name: 'tree', arguments: { path: env.tmpDir } },
-      { name: 'find', arguments: { path: env.tmpDir, pattern: '**/*' } },
+      { name: 'find_files', arguments: { path: env.tmpDir, pattern: '**/*' } },
       { name: 'stat', arguments: { path: testFile } },
-      { name: 'stat_many', arguments: { paths: [testFile] } },
+      { name: 'stat', arguments: { paths: [testFile] } },
       { name: 'read', arguments: { path: testFile } },
-      { name: 'read_many', arguments: { paths: [testFile] } },
-      { name: 'grep', arguments: { path: env.tmpDir, searchPattern: 'hello' } },
-      { name: 'calculate_hash', arguments: { path: testFile } },
+      { name: 'read', arguments: { paths: [testFile] } },
+      { name: 'search_text', arguments: { path: env.tmpDir, searchPattern: 'hello' } },
+      { name: 'hash_file', arguments: { path: testFile } },
     ];
 
     for (const tc of testCases) {

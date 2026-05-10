@@ -10,14 +10,13 @@ import type {
 
 import type { z } from 'zod/v4';
 
-import { toToolJsonSchema } from '../schemas/json-schema.js';
-
 import { ErrorCode } from '../core/errors.js';
 import { Logger, ProgressSession } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
-import { buildToolErrorResponse } from './shared.js';
-import type { ToolContext } from './shared.js';
+import { toMcpSchema } from '../schema.js';
+import { buildToolErrorResponse } from './_helpers.js';
+import type { ToolContext } from './_helpers.js';
 
 // Minimal duck-typed interface for the task orchestrator.
 // Avoids a circular import by not referencing TaskOrchestrator directly.
@@ -113,8 +112,8 @@ export const ALL_TOOLS: DefinedTool[] = [];
 export function defineTool<I extends z.ZodType, O extends z.ZodType>(
   def: ToolDef<I, O>,
 ): DefinedTool {
-  const inputSchema = toToolJsonSchema(def.input, def.inputSchemaAugment);
-  const outputSchema = toToolJsonSchema(def.output);
+  const inputSchema = toMcpSchema(def.input, def.inputSchemaAugment);
+  const outputSchema = toMcpSchema(def.output);
   const taskMode = def.task ?? 'forbidden';
 
   const tool: DefinedTool = {

@@ -2,7 +2,7 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
 import { createInMemoryResourceStore } from '../../src/core/store.js';
-import { buildResourceResponse, putResource } from '../../src/tools/shared.js';
+import { buildResourceResponse, putResource } from '../../src/tools/_helpers.js';
 
 test('buildResourceResponse: summary + resource_link blocks + structured', () => {
   const link = {

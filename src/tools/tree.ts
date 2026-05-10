@@ -2,14 +2,6 @@ import { basename, relative } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { FileType as FileTypeEnum, NonNegInt, OptionalPath } from '../schemas/fields.js';
-import {
-  ContinuationSchema,
-  defaultFalseBoolean,
-  includeHiddenField,
-  includeIgnoredField,
-} from '../schemas/shared.js';
-
 import { withTimedAbortSignal } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
 import {
@@ -33,8 +25,17 @@ import {
   MAX_TREE_DEPTH,
   MAX_TREE_ENTRIES,
 } from '../core/util.js';
+import {
+  ContinuationSchema,
+  defaultFalseBoolean,
+  FileType as FileTypeEnum,
+  includeHiddenField,
+  includeIgnoredField,
+  NonNegInt,
+  OptionalPath,
+} from '../schema.js';
+import { buildResourceResponse, buildToolResponse, putResource } from './_helpers.js';
 import { defineTool } from './define.js';
-import { buildResourceResponse, buildToolResponse, putResource } from './shared.js';
 
 // ---------------------------------------------------------------------------
 // Private tree implementation (inlined from lib/file-operations/metadata.ts)

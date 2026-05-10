@@ -3,15 +3,14 @@ import { basename, dirname } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { NonNegInt, RequiredPath } from '../schemas/fields.js';
-
 import { withAbort } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
 import { atomicWriteFile, detectMimeType } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
+import { NonNegInt, RequiredPath } from '../schema.js';
+import { buildResourceResponse, buildToolResponse, formatBytes, putResource } from './_helpers.js';
 import { defineTool } from './define.js';
-import { buildResourceResponse, buildToolResponse, formatBytes, putResource } from './shared.js';
 
 const WriteFileInputSchema = z.strictObject({
   path: RequiredPath.describe('Target file path'),

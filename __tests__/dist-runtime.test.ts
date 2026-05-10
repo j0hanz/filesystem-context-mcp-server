@@ -116,7 +116,7 @@ describe('dist runtime regressions', () => {
     await writeFile(filePath, 'alpha\nneedle value\nomega\n', 'utf8');
 
     const findResult = await env.client.callTool({
-      name: 'find',
+      name: 'find_files',
       arguments: {
         path: env.tmpDir,
         pattern: '*.txt',
@@ -127,7 +127,7 @@ describe('dist runtime regressions', () => {
     assert.equal(findStructured['totalMatches'], 1);
 
     const grepResult = await env.client.callTool({
-      name: 'grep',
+      name: 'search_text',
       arguments: {
         path: env.tmpDir,
         pattern: 'needle value',

@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import { z } from 'zod/v4';
 
 import { isSafeGlobSyntax } from '../../src/core/path.js';
-import { IsoDateTime, NonNegInt, SafeGlobPattern } from '../../src/schemas/fields.js';
+import { IsoDateTime, NonNegInt, SafeGlobPattern } from '../../src/schema.js';
 
 describe('fields', () => {
   it('IsoDateTime is in globalRegistry', () => {

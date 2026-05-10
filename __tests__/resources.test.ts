@@ -110,11 +110,11 @@ describe('resources and metadata', () => {
     const { resourceTemplates } = await env.client.listResourceTemplates();
     const { prompts } = await env.client.listPrompts();
 
-    assert.match(readme, /\*\*18 filesystem tools\*\*/u);
+    assert.match(readme, /\*\*16 filesystem tools\*\*/u);
     assert.match(readme, /\*\*Self-documenting\*\* — 3 built-in resources/u);
     assert.match(readme, /3 built-in prompts/u);
 
-    assert.equal(tools.length, 18);
+    assert.equal(tools.length, 16);
     assert.equal(resources.length, 1);
     assert.equal(resourceTemplates.length, 2);
     assert.equal(prompts.length, 5);
