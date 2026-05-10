@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import { z } from 'zod/v4';
 
 import { isSafeGlobSyntax } from '../../src/core/path.js';
-import { IsoDateTime, NonNegInt, SafeGlobPattern } from '../../src/schema.js';
+import { FileInfoSchema, IsoDateTime, NonNegInt, OperationSummarySchema, SafeGlobPattern } from '../../src/schema.js';
 
 describe('fields', () => {
   it('IsoDateTime is in globalRegistry', () => {
@@ -68,6 +68,17 @@ describe('fields', () => {
     it('rejects traversal patterns without server initialization', () => {
       const r = SafeGlobPattern.safeParse('../*.ts');
       assert.ok(!r.success, 'traversal should fail safeParse');
+    });
+  });
+
+  describe('no duplicate $defs ids', () => {
+    it('FileInfoSchema serializes with a single FileInfo $defs entry', () => {
+      const json = z.toJSONSchema(
+        z.strictObject({ a: FileInfoSchema, b: FileInfoSchema, s: OperationSummarySchema }),
+      ) as Record<string, unknown>;
+      const defs = (json['$defs'] ?? {}) as Record<string, unknown>;
+      const fileInfoKeys = Object.keys(defs).filter((k) => k.startsWith('FileInfo'));
+      assert.deepEqual(fileInfoKeys, ['FileInfo']);
     });
   });
 });

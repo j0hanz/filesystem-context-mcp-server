@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { z } from 'zod';
 
-import { batchResult, paginated, toMcpSchema } from '../src/schema.js';
+import { toMcpSchema } from '../src/schema.js';
 
 test('toMcpSchema generates valid standard schema', () => {
   const schema = z.strictObject({ foo: z.string() }).meta({ id: 'TestSchema' });
@@ -18,14 +18,4 @@ test('toMcpSchema generates valid standard schema', () => {
   assert.ok(json.properties);
   // Also verify the extracted jsonSchema matches
   assert.deepEqual(json, jsonSchema);
-});
-
-test('batchResult creates correct discriminated union', () => {
-  const schema = batchResult(z.string());
-  assert.equal(schema.def.discriminator, 'ok');
-});
-
-test('paginated creates correct discriminated union', () => {
-  const schema = paginated(z.string());
-  assert.equal(schema.def.discriminator, 'hasMore');
 });
