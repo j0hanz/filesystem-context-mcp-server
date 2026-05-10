@@ -3,6 +3,7 @@ import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import type { McpServer } from '@modelcontextprotocol/server';
 import {
   isInitializeRequest,
+  JSONRPC_VERSION,
   type JSONRPCMessage,
   ProtocolErrorCode,
   StdioServerTransport,
@@ -174,7 +175,7 @@ function sendJsonRpcError(
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(
     JSON.stringify({
-      jsonrpc: '2.0',
+      jsonrpc: JSONRPC_VERSION,
       error: { code, message },
       id: null,
     }),
@@ -281,7 +282,7 @@ function bearerAuthMiddleware(): RequestHandler {
     });
     res.end(
       JSON.stringify({
-        jsonrpc: '2.0',
+        jsonrpc: JSONRPC_VERSION,
         error: { code: JSON_RPC_SERVER_ERROR, message: 'Unauthorized' },
         id: null,
       }),
