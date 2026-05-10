@@ -120,7 +120,7 @@ const ReadManyItemSchema = z.strictObject({
 });
 
 const ReadFileOutputSchema = z.strictObject({
-  ok: z.literal(true).default(true).describe('Always true for successful read'),
+  ok: z.literal(true).describe('Success indicator'),
   path: RequiredPath.describe('Resolved absolute path to the file'),
   content: z.string().optional().describe('File content'),
   mimeType: z.string().optional().describe('MIME type'),

@@ -1280,10 +1280,9 @@
       "type": "object",
       "properties": {
         "ok": {
-          "default": true,
-          "description": "Always true for successful read",
           "type": "boolean",
-          "const": true
+          "const": true,
+          "description": "Success indicator"
         },
         "path": {
           "type": "string",
@@ -1440,6 +1439,7 @@
         }
       },
       "required": [
+        "ok",
         "path"
       ],
       "additionalProperties": false,
