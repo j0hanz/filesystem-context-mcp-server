@@ -216,273 +216,284 @@ class FastQueue<T> {
   }
 }
 
-interface PoolState {
-  workers: PoolWorker[];
-  queue: FastQueue<QueuedTask>;
-  nextId: number;
-  sweepTimer?: NodeJS.Timeout | undefined;
-}
+class WorkerPool {
+  private workers: PoolWorker[] = [];
+  private queue = new FastQueue<QueuedTask>();
+  private nextId = 1;
+  private sweepTimer?: NodeJS.Timeout | undefined;
 
-const state: PoolState = {
-  workers: [],
-  queue: new FastQueue<QueuedTask>(),
-  nextId: 1,
-};
-
-function startSweepTimerIfNeeded(): void {
-  if (state.sweepTimer) return;
-  state.sweepTimer = setInterval(sweepIdleWorkers, 10_000);
-  state.sweepTimer.unref();
-}
-
-function stopSweepTimerIfPossible(): void {
-  if (state.workers.length === 0 && state.sweepTimer) {
-    clearInterval(state.sweepTimer);
-    state.sweepTimer = undefined;
-  }
-}
-
-function sweepIdleWorkers(): void {
-  const now = Date.now();
-  for (let i = state.workers.length - 1; i >= 0; i--) {
-    const pw = state.workers[i];
-    if (pw?.state === 'idle' && now - pw.lastIdleAt >= WORKER_IDLE_TIMEOUT_MS) {
-      retireWorker(pw);
+  public run<N extends WorkerTaskName>(
+    name: N,
+    payload: TaskPayloadMap[N],
+    opts: RunInWorkerOptions = {},
+  ): Promise<TaskResultMap[N]> {
+    if (WORKERS_DISABLED) {
+      return Promise.reject(
+        new McpError(
+          ErrorCode.UNKNOWN,
+          'runInWorker called while FS_DISABLE_WORKERS=1 — caller bug',
+        ),
+      );
     }
+
+    return new Promise<TaskResultMap[N]>((resolve, reject) => {
+      const id = this.nextId++;
+      const entry: InflightEntry = {
+        id,
+        resolve: resolve as (v: unknown) => void,
+        reject,
+      };
+
+      if (opts.signal) {
+        entry.signal = opts.signal;
+        const handler = (): void => {
+          this.abortEntry(entry, false);
+          const reason: unknown = opts.signal?.reason;
+          reject(
+            reason instanceof Error ? reason : new DOMException('Operation aborted', 'AbortError'),
+          );
+        };
+        entry.abortHandler = handler;
+        if (opts.signal.aborted) {
+          handler();
+          return;
+        }
+        opts.signal.addEventListener('abort', handler, { once: true });
+      }
+
+      if (opts.timeoutMs !== undefined && opts.timeoutMs > 0) {
+        const tid = setTimeout(() => {
+          this.abortEntry(entry, true);
+          reject(new McpError(ErrorCode.TIMEOUT, 'Worker task timed out'));
+        }, opts.timeoutMs);
+        tid.unref();
+        entry.timeoutId = tid;
+      }
+
+      this.queue.push({
+        request: { id, name, payload },
+        entry,
+      });
+      this.drainQueue();
+    });
   }
-  stopSweepTimerIfPossible();
-}
 
-function removeWorker(pw: PoolWorker): void {
-  const idx = state.workers.indexOf(pw);
-  if (idx !== -1) {
-    state.workers.splice(idx, 1);
-  }
-}
-
-function retireWorker(pw: PoolWorker): void {
-  pw.state = 'terminating';
-  removeWorker(pw);
-  void pw.worker.terminate();
-}
-
-function rehydrateError(err: SerializedError): Error {
-  if (err.kind === 'mcp') {
-    return new McpError(
-      err.code,
-      err.message,
-      ...(err.path !== undefined ? [err.path] : [undefined]),
-      ...(err.details !== undefined ? [err.details] : []),
+  public async shutdown(): Promise<void> {
+    // Reject everything that's still queued.
+    for (const qt of this.queue.clear()) {
+      this.cleanupEntry(qt.entry);
+      qt.entry.reject(new McpError(ErrorCode.UNKNOWN, 'Worker pool shutting down'));
+    }
+    // Reject in-flight tasks; terminate workers.
+    const toTerminate = [...this.workers];
+    this.workers = [];
+    if (this.sweepTimer) {
+      clearInterval(this.sweepTimer);
+      this.sweepTimer = undefined;
+    }
+    await Promise.all(
+      toTerminate.map(async (pw) => {
+        if (pw.current) {
+          this.cleanupEntry(pw.current);
+          pw.current.reject(new McpError(ErrorCode.UNKNOWN, 'Worker pool shutting down'));
+        }
+        try {
+          await pw.worker.terminate();
+        } catch {
+          /* ignore */
+        }
+      }),
     );
   }
-  const e = new Error(err.message);
-  if (err.stack) e.stack = err.stack;
-  return e;
-}
 
-function handleResponse(pw: PoolWorker, response: TaskResponse): void {
-  const entry = pw.current;
-  if (entry?.id !== response.id) return;
-  cleanupEntry(entry);
-  delete pw.current;
-
-  if (response.ok) {
-    entry.resolve(response.value);
-  } else {
-    entry.reject(rehydrateError(response.error));
+  private startSweepTimerIfNeeded(): void {
+    if (this.sweepTimer) return;
+    this.sweepTimer = setInterval(() => {
+      this.sweepIdleWorkers();
+    }, 10_000);
+    this.sweepTimer.unref();
   }
 
-  pw.state = 'idle';
-  pw.lastIdleAt = Date.now();
-  drainQueue();
-}
-
-function handleWorkerExit(pw: PoolWorker, code: number): void {
-  removeWorker(pw);
-  if (pw.current) {
-    cleanupEntry(pw.current);
-    pw.current.reject(
-      new McpError(ErrorCode.UNKNOWN, `Worker terminated unexpectedly (exit code ${String(code)})`),
-    );
+  private stopSweepTimerIfPossible(): void {
+    if (this.workers.length === 0 && this.sweepTimer) {
+      clearInterval(this.sweepTimer);
+      this.sweepTimer = undefined;
+    }
   }
-  stopSweepTimerIfPossible();
-}
 
-function spawnWorker(): PoolWorker {
-  // Use WORKER_ENTRY_URL from worker.ts so the URL resolves correctly in both
-  // tsx (src/core/worker.ts) and compiled (dist/core/worker.js) contexts.
-  // The worker entry file has no project imports, so it loads without tsx hooks.
-  const w = new Worker(WORKER_ENTRY_URL);
-  const pw: PoolWorker = {
-    worker: w,
-    state: 'starting',
-    lastIdleAt: Date.now(),
-    startedReady: false,
-  };
-  w.on('online', () => {
-    pw.startedReady = true;
-    if (pw.state === 'starting') {
-      pw.state = 'idle';
-      drainQueue();
+  private sweepIdleWorkers(): void {
+    const now = Date.now();
+    for (let i = this.workers.length - 1; i >= 0; i--) {
+      const pw = this.workers[i];
+      if (pw?.state === 'idle' && now - pw.lastIdleAt >= WORKER_IDLE_TIMEOUT_MS) {
+        this.retireWorker(pw);
+      }
     }
-  });
-  w.on('message', (msg: TaskResponse) => {
-    handleResponse(pw, msg);
-  });
-  w.on('error', (err) => {
-    handleWorkerError(pw, err);
-  });
-  w.on('exit', (code) => {
-    handleWorkerExit(pw, code);
-  });
-  state.workers.push(pw);
-  startSweepTimerIfNeeded();
-  return pw;
-}
+    this.stopSweepTimerIfPossible();
+  }
 
-function pickIdleWorker(): PoolWorker | undefined {
-  return state.workers.find((p) => p.state === 'idle');
-}
-
-function dispatch(pw: PoolWorker, qt: QueuedTask): void {
-  pw.state = 'busy';
-  pw.current = qt.entry;
-  pw.worker.postMessage(qt.request);
-}
-
-function drainQueue(): void {
-  while (state.queue.length > 0) {
-    const idle = pickIdleWorker();
-    if (idle) {
-      const next = state.queue.shift();
-      if (next) dispatch(idle, next);
-      continue;
+  private removeWorker(pw: PoolWorker): void {
+    const idx = this.workers.indexOf(pw);
+    if (idx !== -1) {
+      this.workers.splice(idx, 1);
     }
-    if (state.workers.length < WORKER_POOL_MAX) {
-      spawnWorker(); // becomes idle on 'online', re-drains then
+  }
+
+  private retireWorker(pw: PoolWorker): void {
+    pw.state = 'terminating';
+    this.removeWorker(pw);
+    void pw.worker.terminate();
+  }
+
+  private handleResponse(pw: PoolWorker, response: TaskResponse): void {
+    const entry = pw.current;
+    if (entry?.id !== response.id) return;
+    this.cleanupEntry(entry);
+    delete pw.current;
+
+    if (response.ok) {
+      entry.resolve(response.value);
+    } else {
+      entry.reject(this.rehydrateError(response.error));
+    }
+
+    pw.state = 'idle';
+    pw.lastIdleAt = Date.now();
+    this.drainQueue();
+  }
+
+  private handleWorkerExit(pw: PoolWorker, code: number): void {
+    this.removeWorker(pw);
+    if (pw.current) {
+      this.cleanupEntry(pw.current);
+      pw.current.reject(
+        new McpError(
+          ErrorCode.UNKNOWN,
+          `Worker terminated unexpectedly (exit code ${String(code)})`,
+        ),
+      );
+    }
+    this.stopSweepTimerIfPossible();
+  }
+
+  private spawnWorker(): PoolWorker {
+    const w = new Worker(WORKER_ENTRY_URL);
+    const pw: PoolWorker = {
+      worker: w,
+      state: 'starting',
+      lastIdleAt: Date.now(),
+      startedReady: false,
+    };
+    w.on('online', () => {
+      pw.startedReady = true;
+      if (pw.state === 'starting') {
+        pw.state = 'idle';
+        this.drainQueue();
+      }
+    });
+    w.on('message', (msg: TaskResponse) => {
+      this.handleResponse(pw, msg);
+    });
+    w.on('error', (err) => {
+      this.handleWorkerError(pw, err);
+    });
+    w.on('exit', (code) => {
+      this.handleWorkerExit(pw, code);
+    });
+    this.workers.push(pw);
+    this.startSweepTimerIfNeeded();
+    return pw;
+  }
+
+  private pickIdleWorker(): PoolWorker | undefined {
+    return this.workers.find((p) => p.state === 'idle');
+  }
+
+  private dispatch(pw: PoolWorker, qt: QueuedTask): void {
+    pw.state = 'busy';
+    pw.current = qt.entry;
+    pw.worker.postMessage(qt.request);
+  }
+
+  private drainQueue(): void {
+    while (this.queue.length > 0) {
+      const idle = this.pickIdleWorker();
+      if (idle) {
+        const next = this.queue.shift();
+        if (next) this.dispatch(idle, next);
+        continue;
+      }
+      if (this.workers.length < WORKER_POOL_MAX) {
+        this.spawnWorker();
+        return;
+      }
       return;
     }
-    return; // queue stays full until a worker frees up
   }
-}
 
-function findWorkerForEntry(entry: InflightEntry): PoolWorker | undefined {
-  return state.workers.find((p) => p.current === entry);
-}
+  private findWorkerForEntry(entry: InflightEntry): PoolWorker | undefined {
+    return this.workers.find((p) => p.current === entry);
+  }
 
-function abortEntry(entry: InflightEntry, isTimeout: boolean): void {
-  cleanupEntry(entry);
-  const pw = findWorkerForEntry(entry);
-  if (pw) {
-    if (isTimeout) {
-      retireWorker(pw);
+  private abortEntry(entry: InflightEntry, isTimeout: boolean): void {
+    this.cleanupEntry(entry);
+    const pw = this.findWorkerForEntry(entry);
+    if (pw) {
+      if (isTimeout) {
+        this.retireWorker(pw);
+      } else {
+        setTimeout(() => {
+          if (this.workers.includes(pw) && pw.current === entry) this.retireWorker(pw);
+        }, WORKER_CANCEL_GRACE_MS).unref();
+      }
     } else {
-      setTimeout(() => {
-        if (state.workers.includes(pw) && pw.current === entry) retireWorker(pw);
-      }, WORKER_CANCEL_GRACE_MS).unref();
+      this.queue.remove((q) => q.entry === entry);
     }
-  } else {
-    state.queue.remove((q) => q.entry === entry);
+  }
+
+  private handleWorkerError(pw: PoolWorker, err: unknown): void {
+    if (pw.current) {
+      this.cleanupEntry(pw.current);
+      pw.current.reject(err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+
+  private cleanupEntry(entry: InflightEntry): void {
+    if (entry.abortHandler && entry.signal) {
+      entry.signal.removeEventListener('abort', entry.abortHandler);
+    }
+    if (entry.timeoutId) {
+      clearTimeout(entry.timeoutId);
+    }
+  }
+
+  private rehydrateError(err: SerializedError): Error {
+    if (err.kind === 'mcp') {
+      return new McpError(
+        err.code,
+        err.message,
+        ...(err.path !== undefined ? [err.path] : [undefined]),
+        ...(err.details !== undefined ? [err.details] : []),
+      );
+    }
+    const e = new Error(err.message);
+    if (err.stack) e.stack = err.stack;
+    return e;
   }
 }
 
-function handleWorkerError(pw: PoolWorker, err: unknown): void {
-  if (pw.current) {
-    cleanupEntry(pw.current);
-    pw.current.reject(err instanceof Error ? err : new Error(String(err)));
-  }
-}
-
-function cleanupEntry(entry: InflightEntry): void {
-  if (entry.abortHandler && entry.signal) {
-    entry.signal.removeEventListener('abort', entry.abortHandler);
-  }
-  if (entry.timeoutId) {
-    clearTimeout(entry.timeoutId);
-  }
-}
-
-// ---- public exports ----------------------------------------------------
+const globalWorkerPool = new WorkerPool();
 
 export function runInWorker<N extends WorkerTaskName>(
   name: N,
   payload: TaskPayloadMap[N],
   opts: RunInWorkerOptions = {},
 ): Promise<TaskResultMap[N]> {
-  if (WORKERS_DISABLED) {
-    return Promise.reject(
-      new McpError(ErrorCode.UNKNOWN, 'runInWorker called while FS_DISABLE_WORKERS=1 — caller bug'),
-    );
-  }
-
-  return new Promise<TaskResultMap[N]>((resolve, reject) => {
-    const id = state.nextId++;
-    const entry: InflightEntry = {
-      id,
-      resolve: resolve as (v: unknown) => void,
-      reject,
-    };
-
-    if (opts.signal) {
-      entry.signal = opts.signal;
-      const handler = (): void => {
-        abortEntry(entry, false);
-        const reason: unknown = opts.signal?.reason;
-        reject(
-          reason instanceof Error ? reason : new DOMException('Operation aborted', 'AbortError'),
-        );
-      };
-      entry.abortHandler = handler;
-      if (opts.signal.aborted) {
-        handler();
-        return;
-      }
-      opts.signal.addEventListener('abort', handler, { once: true });
-    }
-
-    if (opts.timeoutMs !== undefined && opts.timeoutMs > 0) {
-      const tid = setTimeout(() => {
-        abortEntry(entry, true);
-        reject(new McpError(ErrorCode.TIMEOUT, 'Worker task timed out'));
-      }, opts.timeoutMs);
-      tid.unref();
-      entry.timeoutId = tid;
-    }
-
-    state.queue.push({
-      request: { id, name, payload },
-      entry,
-    });
-    drainQueue();
-  });
+  return globalWorkerPool.run(name, payload, opts);
 }
 
 export async function shutdownWorkerPool(): Promise<void> {
-  // Reject everything that's still queued.
-  for (const qt of state.queue.clear()) {
-    cleanupEntry(qt.entry);
-    qt.entry.reject(new McpError(ErrorCode.UNKNOWN, 'Worker pool shutting down'));
-  }
-  // Reject in-flight tasks; terminate workers.
-  const toTerminate = [...state.workers];
-  state.workers = [];
-  if (state.sweepTimer) {
-    clearInterval(state.sweepTimer);
-    state.sweepTimer = undefined;
-  }
-  await Promise.all(
-    toTerminate.map(async (pw) => {
-      if (pw.current) {
-        cleanupEntry(pw.current);
-        pw.current.reject(new McpError(ErrorCode.UNKNOWN, 'Worker pool shutting down'));
-      }
-      try {
-        await pw.worker.terminate();
-      } catch {
-        /* ignore */
-      }
-    }),
-  );
+  return globalWorkerPool.shutdown();
 }
 
 function createAbortError(message = 'Operation aborted'): Error {
