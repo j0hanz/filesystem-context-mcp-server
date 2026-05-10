@@ -32,11 +32,57 @@ const HashInputSchema = z.strictObject({
     .describe('Hash algorithms to compute (default: sha256)'),
 });
 
+// Build per-algorithm hash validators
+const algorithmHashSchemas = {
+  sha256: z.hash('sha256'),
+  md5: z.hash('md5'),
+  sha1: z.hash('sha1'),
+  sha512: z.hash('sha512'),
+} as const satisfies Record<(typeof SUPPORTED_ALGORITHMS)[number], z.ZodType>;
+
+// Create a schema that validates each digest against its algorithm
+const HashesSchema = z
+  .record(z.string(), z.string())
+  .refine((hashes) => {
+    // Verify all keys are valid algorithms
+    return Object.keys(hashes).every((key) =>
+      SUPPORTED_ALGORITHMS.includes(key as (typeof SUPPORTED_ALGORITHMS)[number]),
+    );
+  }, {
+    message: 'All hashes must have algorithm names as keys (sha256, md5, sha1, sha512)',
+  })
+  .superRefine((hashes, ctx) => {
+    for (const [algo, digest] of Object.entries(hashes)) {
+      // Validate the digest against the specific algorithm's hash schema
+      const algorithmSchema =
+        algorithmHashSchemas[algo as (typeof SUPPORTED_ALGORITHMS)[number]];
+      if (!algorithmSchema) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.invalid_enum_value,
+          enum: SUPPORTED_ALGORITHMS as unknown as string[],
+          path: [algo],
+          message: `Invalid algorithm: ${algo}`,
+        });
+        continue;
+      }
+
+      const result = algorithmSchema.safeParse(digest);
+      if (!result.success) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.invalid_string,
+          validation: 'regex',
+          path: [algo],
+          message: `Invalid ${algo} digest: must be valid hex string`,
+        });
+      }
+    }
+  });
+
 const HashOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),
   filePath: z.string().describe('Resolved file or directory path'),
   algorithms: z.array(z.enum(SUPPORTED_ALGORITHMS)).describe('Algorithms computed'),
-  hashes: z.record(z.string(), z.string()).describe('Algorithm → hex digest mapping'),
+  hashes: HashesSchema.describe('Algorithm → hex digest mapping'),
   resourceUri: z.string().describe('URI to hashes.json resource'),
   isDirectory: z.boolean().describe('True when hashing a directory'),
   fileCount: NonNegInt.optional().describe('Files hashed (directories only)'),
@@ -293,3 +339,5 @@ export const CALCULATE_HASH = defineTool({
     return handleCalculateHash(args, ctx.pathGuard, ctx.resourceStore, ctx.signal, onProgress);
   },
 });
+export type HashOutput = z.infer<typeof HashOutputSchema>;
+export { HashOutputSchema, HashesSchema };

@@ -6,6 +6,9 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
+import { z } from 'zod/v4';
+
+import { HashOutputSchema } from '../../src/tools/calculate-hash.js';
 import {
   assertOk,
   assertToolError,
@@ -151,6 +154,52 @@ describe('calculate_hash tool', () => {
       arguments: { path: join(env.tmpDir, 'ghost.txt') },
     });
     assertToolError(raw, 'NOT_FOUND');
+  });
+});
+
+describe('HashOutputSchema validation', () => {
+  it('rejects non-hex digest in hashes', async () => {
+    // Test 1: Valid hash should pass
+    const validOutput = {
+      ok: true,
+      filePath: '/some/path',
+      algorithms: ['sha256'],
+      hashes: {
+        sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      },
+      resourceUri: 'filesystem-mcp://result/123',
+      isDirectory: false,
+    };
+    const result1 = HashOutputSchema.safeParse(validOutput);
+    assert.equal(result1.success, true, 'Valid hash should pass');
+
+    // Test 2: Non-hex digest should fail
+    const invalidHexOutput = {
+      ok: true,
+      filePath: '/some/path',
+      algorithms: ['sha256'],
+      hashes: {
+        sha256: 'not-a-valid-hex-string',
+      },
+      resourceUri: 'filesystem-mcp://result/123',
+      isDirectory: false,
+    };
+    const result2 = HashOutputSchema.safeParse(invalidHexOutput);
+    assert.equal(result2.success, false, 'Non-hex digest should fail');
+
+    // Test 3: Digest with wrong length for algorithm should fail
+    const wrongLengthOutput = {
+      ok: true,
+      filePath: '/some/path',
+      algorithms: ['sha256'],
+      hashes: {
+        sha256: 'abcd1234', // Too short for SHA256
+      },
+      resourceUri: 'filesystem-mcp://result/123',
+      isDirectory: false,
+    };
+    const result3 = HashOutputSchema.safeParse(wrongLengthOutput);
+    assert.equal(result3.success, false, 'Digest with wrong length should fail');
   });
 });
 
