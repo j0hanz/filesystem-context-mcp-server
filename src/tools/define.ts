@@ -132,7 +132,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
       // Core handler: accepts ToolContext (compatible with both task-orchestrator and
       // regular ServerContext call paths). signal is optional in ToolContext; fall back
       // to an already-aborted signal when absent so ToolCtx.signal stays non-optional.
-      const coreHandler = async (args: unknown, ctx: ToolContext) => {
+      const coreHandler = async (args: unknown, ctx: ToolContext): Promise<CallToolResult> => {
         if (!deps.isInitialized()) {
           return {
             isError: true as const,
@@ -190,12 +190,12 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
             const wrapped = result as { content: ContentBlock[]; structuredContent: unknown };
             return {
               content: wrapped.content,
-              structuredContent: wrapped.structuredContent,
+              structuredContent: wrapped.structuredContent as Record<string, unknown>,
             };
           }
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result,
+            structuredContent: result as Record<string, unknown>,
           };
         } catch (error: unknown) {
           progressSession.fail(error, label);
@@ -237,12 +237,12 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
             };
           },
         ): Promise<CallToolResult> =>
-          (await coreHandler(args, {
+          coreHandler(args, {
             signal: extra.mcpReq.signal,
             log: async (level: LoggingLevel, data: unknown, logger?: string) =>
               extra.mcpReq.log(level, data, logger),
             elicitInput: (params: ElicitRequestFormParams) => extra.mcpReq.elicitInput(params),
-          })) as unknown as CallToolResult;
+          });
         deps.server.registerTool(def.name, toolDefShape, serverCtxHandler);
       }
     },
