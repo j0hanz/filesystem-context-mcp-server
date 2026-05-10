@@ -516,8 +516,9 @@
           "description": "Full content URI in resource store"
         },
         "modified": {
-          "type": "string",
-          "description": "Last modification timestamp (ISO 8601)"
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+          "description": "Last modification timestamp (ISO 8601 UTC)",
+          "$ref": "#/$defs/IsoDateTime"
         },
         "appliedEdits": {
           "description": "Edits applied",
@@ -571,6 +572,12 @@
           "type": "integer",
           "minimum": 0,
           "title": "Non-Negative Integer"
+        },
+        "IsoDateTime": {
+          "type": "string",
+          "format": "date-time",
+          "title": "ISO Date-Time",
+          "description": "ISO 8601 date-time (UTC)"
         },
         "PositiveInt": {
           "type": "integer",
@@ -681,7 +688,7 @@
               },
               "modified": {
                 "description": "ISO 8601 last modified time",
-                "type": "string"
+                "$ref": "#/$defs/IsoDateTime"
               }
             },
             "required": [
@@ -728,6 +735,12 @@
           "type": "integer",
           "minimum": 0,
           "title": "Non-Negative Integer"
+        },
+        "IsoDateTime": {
+          "type": "string",
+          "format": "date-time",
+          "title": "ISO Date-Time",
+          "description": "ISO 8601 date-time (UTC)"
         }
       }
     }
@@ -969,7 +982,7 @@
               },
               "modified": {
                 "description": "ISO 8601 last modified time",
-                "type": "string"
+                "$ref": "#/$defs/IsoDateTime"
               }
             },
             "required": [
@@ -1036,6 +1049,12 @@
           "type": "integer",
           "minimum": 0,
           "title": "Non-Negative Integer"
+        },
+        "IsoDateTime": {
+          "type": "string",
+          "format": "date-time",
+          "title": "ISO Date-Time",
+          "description": "ISO 8601 date-time (UTC)"
         }
       }
     }
@@ -2532,12 +2551,14 @@
           "description": "Full content URI in resource store"
         },
         "created": {
-          "type": "string",
-          "description": "Creation timestamp (ISO 8601)"
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+          "description": "Creation timestamp (ISO 8601 UTC)",
+          "$ref": "#/$defs/IsoDateTime"
         },
         "modified": {
-          "type": "string",
-          "description": "Last modification timestamp (ISO 8601)"
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+          "description": "Last modification timestamp (ISO 8601 UTC)",
+          "$ref": "#/$defs/IsoDateTime"
         }
       },
       "required": [
@@ -2557,6 +2578,12 @@
           "type": "integer",
           "minimum": 0,
           "title": "Non-Negative Integer"
+        },
+        "IsoDateTime": {
+          "type": "string",
+          "format": "date-time",
+          "title": "ISO Date-Time",
+          "description": "ISO 8601 date-time (UTC)"
         }
       }
     }

@@ -12,7 +12,7 @@ import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
-import { defaultFalseBoolean, NonNegInt, PositiveInt, RequiredPath } from '../schema.js';
+import { defaultFalseBoolean, IsoDateTime, NonNegInt, PositiveInt, RequiredPath } from '../schema.js';
 import { buildResourceResponse, buildToolResponse, formatBytes, putResource } from './_helpers.js';
 import { defineTool } from './define.js';
 
@@ -46,7 +46,7 @@ const EditFileOutputSchema = z.strictObject({
   mimeType: z.string().describe('MIME type of the file'),
   kind: z.enum(['text', 'binary', 'image', 'audio', 'pdf']).describe('File kind'),
   resourceUri: z.string().describe('Full content URI in resource store'),
-  modified: z.string().describe('Last modification timestamp (ISO 8601)'),
+  modified: IsoDateTime.describe('Last modification timestamp (ISO 8601 UTC)'),
   appliedEdits: NonNegInt.optional().describe('Edits applied'),
   linesAdded: NonNegInt.optional().describe('Lines added'),
   linesRemoved: NonNegInt.optional().describe('Lines removed'),

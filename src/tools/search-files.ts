@@ -39,6 +39,7 @@ import {
   CursorSchema,
   includeHiddenField,
   includeIgnoredField,
+  IsoDateTime,
   NextCursorSchema,
   NonNegInt,
   OptionalPath,
@@ -495,7 +496,7 @@ const SearchFilesOutputSchema = z.strictObject({
       z.strictObject({
         path: z.string().describe('Relative path from search root'),
         size: NonNegInt.optional().describe('Size in bytes'),
-        modified: z.string().optional().describe('ISO 8601 last modified time'),
+        modified: IsoDateTime.optional().describe('ISO 8601 last modified time'),
       }),
     )
     .describe('Matching files'),

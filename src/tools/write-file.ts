@@ -8,7 +8,7 @@ import { ErrorCode } from '../core/errors.js';
 import { atomicWriteFile, detectMimeType } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
-import { NonNegInt, RequiredPath } from '../schema.js';
+import { IsoDateTime, NonNegInt, RequiredPath } from '../schema.js';
 import { buildResourceResponse, buildToolResponse, formatBytes, putResource } from './_helpers.js';
 import { defineTool } from './define.js';
 
@@ -25,8 +25,8 @@ const WriteFileOutputSchema = z.strictObject({
   mimeType: z.string().describe('MIME type of the file'),
   kind: z.enum(['text', 'binary', 'image', 'audio', 'pdf']).describe('File kind'),
   resourceUri: z.string().describe('Full content URI in resource store'),
-  created: z.string().describe('Creation timestamp (ISO 8601)'),
-  modified: z.string().describe('Last modification timestamp (ISO 8601)'),
+  created: IsoDateTime.describe('Creation timestamp (ISO 8601 UTC)'),
+  modified: IsoDateTime.describe('Last modification timestamp (ISO 8601 UTC)'),
 });
 
 export const WRITE_FILE = defineTool({

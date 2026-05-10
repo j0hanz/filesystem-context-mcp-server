@@ -37,6 +37,7 @@ import {
   FileType as FileTypeEnum,
   includeHiddenField,
   includeIgnoredField,
+  IsoDateTime,
   NextCursorSchema,
   NonNegInt,
   OptionalPath,
@@ -474,7 +475,7 @@ const ListDirectoryOutputSchema = z.strictObject({
         relativePath: z.string().describe('Relative path from listed directory'),
         type: FileTypeEnum.describe('Entry type'),
         size: NonNegInt.optional().describe('Size in bytes'),
-        modified: z.string().optional().describe('ISO 8601 last modified time'),
+        modified: IsoDateTime.optional().describe('ISO 8601 last modified time'),
       }),
     )
     .describe('Directory entries'),
