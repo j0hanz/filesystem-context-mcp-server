@@ -46,6 +46,10 @@ function createParallelAbortError(): Error {
   return new DOMException('Operation aborted', 'AbortError');
 }
 
+function checkParallelAbort(signal?: AbortSignal): void {
+  if (signal?.aborted) throw createParallelAbortError();
+}
+
 function assertPositiveSafeIntegerOption(name: string, value: unknown): void {
   if (value === undefined) return;
   if (
@@ -78,7 +82,7 @@ export async function processInParallel<T, R>(
   const resultSlots: (R | Unfilled)[] = new Array<R | Unfilled>(itemCount);
   const errors: { index: number; error: Error }[] = [];
 
-  if (signal?.aborted) throw createParallelAbortError();
+  checkParallelAbort(signal);
 
   let nextIndex = 0;
 
@@ -86,7 +90,7 @@ export async function processInParallel<T, R>(
 
   const next = async (): Promise<void> => {
     while (nextIndex < itemCount) {
-      if (signal?.aborted) throw createParallelAbortError();
+      checkParallelAbort(signal);
 
       const index = nextIndex;
       nextIndex += 1;
@@ -97,11 +101,10 @@ export async function processInParallel<T, R>(
 
       try {
         const result = await processor(item);
-        if (signal?.aborted) throw createParallelAbortError();
+        checkParallelAbort(signal);
         resultSlots[index] = result;
       } catch (error) {
-        if (signal?.aborted) throw createParallelAbortError();
-
+        checkParallelAbort(signal);
         errors.push({
           index,
           error: normalizeUnknownError(error),
@@ -118,7 +121,7 @@ export async function processInParallel<T, R>(
 
   await Promise.allSettled(workers);
 
-  if (signal?.aborted) throw createParallelAbortError();
+  checkParallelAbort(signal);
 
   const results: R[] = [];
   for (const slot of resultSlots) {
@@ -250,12 +253,16 @@ function sweepIdleWorkers(): void {
   stopSweepTimerIfPossible();
 }
 
-function retireWorker(pw: PoolWorker): void {
-  pw.state = 'terminating';
+function removeWorker(pw: PoolWorker): void {
   const idx = state.workers.indexOf(pw);
   if (idx !== -1) {
     state.workers.splice(idx, 1);
   }
+}
+
+function retireWorker(pw: PoolWorker): void {
+  pw.state = 'terminating';
+  removeWorker(pw);
   void pw.worker.terminate();
 }
 
@@ -291,10 +298,7 @@ function handleResponse(pw: PoolWorker, response: TaskResponse): void {
 }
 
 function handleWorkerExit(pw: PoolWorker, code: number): void {
-  const idx = state.workers.indexOf(pw);
-  if (idx !== -1) {
-    state.workers.splice(idx, 1);
-  }
+  removeWorker(pw);
   if (pw.current) {
     cleanupEntry(pw.current);
     pw.current.reject(
@@ -326,10 +330,7 @@ function spawnWorker(): PoolWorker {
     handleResponse(pw, msg);
   });
   w.on('error', (err) => {
-    if (pw.current) {
-      cleanupEntry(pw.current);
-      pw.current.reject(err instanceof Error ? err : new Error(String(err)));
-    }
+    handleWorkerError(pw, err);
   });
   w.on('exit', (code) => {
     handleWorkerExit(pw, code);
@@ -362,6 +363,33 @@ function drainQueue(): void {
       return;
     }
     return; // queue stays full until a worker frees up
+  }
+}
+
+function findWorkerForEntry(entry: InflightEntry): PoolWorker | undefined {
+  return state.workers.find((p) => p.current === entry);
+}
+
+function abortEntry(entry: InflightEntry, isTimeout: boolean): void {
+  cleanupEntry(entry);
+  const pw = findWorkerForEntry(entry);
+  if (pw) {
+    if (isTimeout) {
+      retireWorker(pw);
+    } else {
+      setTimeout(() => {
+        if (state.workers.includes(pw) && pw.current === entry) retireWorker(pw);
+      }, WORKER_CANCEL_GRACE_MS).unref();
+    }
+  } else {
+    state.queue.remove((q) => q.entry === entry);
+  }
+}
+
+function handleWorkerError(pw: PoolWorker, err: unknown): void {
+  if (pw.current) {
+    cleanupEntry(pw.current);
+    pw.current.reject(err instanceof Error ? err : new Error(String(err)));
   }
 }
 
@@ -398,16 +426,7 @@ export function runInWorker<N extends WorkerTaskName>(
     if (opts.signal) {
       entry.signal = opts.signal;
       const handler = (): void => {
-        cleanupEntry(entry);
-        const pw = state.workers.find((p) => p.current === entry);
-        if (pw) {
-          setTimeout(() => {
-            if (state.workers.includes(pw) && pw.current === entry) retireWorker(pw);
-          }, WORKER_CANCEL_GRACE_MS).unref();
-        } else {
-          // still queued; remove from queue
-          state.queue.remove((q) => q.entry === entry);
-        }
+        abortEntry(entry, false);
         const reason: unknown = opts.signal?.reason;
         reject(
           reason instanceof Error ? reason : new DOMException('Operation aborted', 'AbortError'),
@@ -423,13 +442,7 @@ export function runInWorker<N extends WorkerTaskName>(
 
     if (opts.timeoutMs !== undefined && opts.timeoutMs > 0) {
       const tid = setTimeout(() => {
-        cleanupEntry(entry);
-        const pw = state.workers.find((p) => p.current === entry);
-        if (pw) {
-          retireWorker(pw);
-        } else {
-          state.queue.remove((q) => q.entry === entry);
-        }
+        abortEntry(entry, true);
         reject(new McpError(ErrorCode.TIMEOUT, 'Worker task timed out'));
       }, opts.timeoutMs);
       tid.unref();
