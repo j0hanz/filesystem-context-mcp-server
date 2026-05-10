@@ -34,8 +34,9 @@ const StatInputSchema = z
     paths: z
       .array(RequiredPath)
       .min(1)
+      .max(1000)
       .optional()
-      .describe('Paths to stat (batch mode; mutually exclusive with path)'),
+      .describe('Paths to stat (batch mode; mutually exclusive with path; max 1000)'),
   })
   .superRefine((value, ctx) => {
     if (!value.path && !value.paths) {

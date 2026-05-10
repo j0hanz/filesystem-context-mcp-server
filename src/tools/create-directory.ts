@@ -11,7 +11,11 @@ import { buildToolResponse } from './_helpers.js';
 import { defineTool } from './define.js';
 
 const CreateDirectoryInputSchema = z.strictObject({
-  paths: z.array(RequiredPath).min(1).describe('One or more directory paths to create (recursive)'),
+  paths: z
+    .array(RequiredPath)
+    .min(1)
+    .max(1000)
+    .describe('One or more directory paths to create (recursive; max 1000)'),
 });
 
 const CreateDirectoryOutputSchema = z.strictObject({

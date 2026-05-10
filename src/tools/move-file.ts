@@ -15,7 +15,11 @@ import { buildToolResponse } from './_helpers.js';
 import { defineTool } from './define.js';
 
 const MoveFileInputSchema = z.strictObject({
-  sources: z.array(RequiredPath).min(1).describe('One or more source paths to move'),
+  sources: z
+    .array(RequiredPath)
+    .min(1)
+    .max(1000)
+    .describe('One or more source paths to move (max 1000)'),
   destination: RequiredPath.describe('Destination path'),
 });
 

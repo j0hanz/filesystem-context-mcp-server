@@ -601,3 +601,36 @@ describe('invalid cursor rejection', () => {
     assertToolError(raw, 'INVALID_INPUT');
   });
 });
+
+// ─── array size limits ──────────────────────────────────────────────────────
+
+describe('array size limits', () => {
+  let env: TestEnv;
+
+  before(async () => {
+    env = await createTestEnv();
+  });
+
+  after(async () => {
+    await env.cleanup();
+  });
+
+  it('make_dir rejects > 1000 paths', async () => {
+    const paths = Array.from({ length: 1001 }, (_, i) =>
+      join(env.tmpDir, `dir-${i}`),
+    );
+    const raw = await env.client.callTool({
+      name: 'make_dir',
+      arguments: { paths },
+    });
+    assertToolError(raw);
+    // Verify error mentions the size constraint
+    const textBlock = raw.content.find(
+      (b): b is { type: string; text: string } => typeof b.text === 'string',
+    );
+    assert.ok(
+      textBlock?.text.includes('1000'),
+      'Expected error to mention the 1000 item limit',
+    );
+  });
+});

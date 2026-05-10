@@ -58,8 +58,9 @@ const ReadFileInputSchema = z
     paths: z
       .array(RequiredPath)
       .min(1)
+      .max(1000)
       .optional()
-      .describe('File paths (batch mode; mutually exclusive with path)'),
+      .describe('File paths (batch mode; mutually exclusive with path; max 1000)'),
     includeHash: defaultFalseBoolean('Include SHA-256 hash of the content'),
     ...readRangeFields,
     offset: z

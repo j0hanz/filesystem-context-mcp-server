@@ -15,7 +15,11 @@ import { buildStructuredError, buildToolResponse } from './_helpers.js';
 import { defineTool } from './define.js';
 
 const DeleteInputSchema = z.strictObject({
-  paths: z.array(RequiredPath).min(1).describe('One or more paths to delete'),
+  paths: z
+    .array(RequiredPath)
+    .min(1)
+    .max(1000)
+    .describe('One or more paths to delete (max 1000)'),
   recursive: defaultFalseBoolean('Delete directories recursively'),
   ignoreIfNotExists: defaultFalseBoolean('No error if path does not exist'),
 });
