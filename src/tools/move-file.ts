@@ -190,7 +190,12 @@ export const MOVE_FILE = defineTool({
   description: 'Move or rename one or more files/directories to a destination.',
   input: MoveFileInputSchema,
   output: MoveFileOutputSchema,
-  annotations: 'destructiveWrite',
+  annotations: {
+    readOnlyHint: false,
+    idempotentHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+  },
   gotchas: [
     'On POSIX, an existing destination is silently overwritten; on Windows, rename fails with EEXIST if destination exists.',
   ],

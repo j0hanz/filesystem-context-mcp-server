@@ -507,8 +507,13 @@ export const APPLY_PATCH = defineTool({
     'On failure, regenerate the patch from current file content.',
   input: ApplyPatchInputSchema,
   output: ApplyPatchOutputSchema,
-  annotations: 'destructiveWrite',
-  task: 'optional',
+  annotations: {
+    readOnlyHint: false,
+    idempotentHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+  },
+  execution: { taskSupport: 'optional' },
   nuances: ['Multi-file patches use `path` as base directory; per-file results in `files[]`.'],
   defaultErrorCode: ErrorCode.UNKNOWN,
   progressLabel: (args: PatchInput) => {

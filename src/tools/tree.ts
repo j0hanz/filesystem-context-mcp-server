@@ -542,8 +542,13 @@ export const TREE = defineTool({
     '`maxDepth=0` returns only the root node.',
   input: TreeInputSchema,
   output: TreeOutputSchema,
-  annotations: 'readOnly',
-  task: 'optional',
+  annotations: {
+    readOnlyHint: true,
+    idempotentHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+  },
+  execution: { taskSupport: 'optional' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   nuances: [
     '`maxDepth=0` returns only the root node.',

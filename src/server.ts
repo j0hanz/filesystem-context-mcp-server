@@ -8,8 +8,6 @@ import {
 import { channel } from 'node:diagnostics_channel';
 import { readFile, realpath } from 'node:fs/promises';
 
-import { z } from 'zod/v4';
-
 import { assertNotAborted, createTimedAbortSignal, withAbort } from './core/concurrency.js';
 import { formatUnknownErrorMessage } from './core/errors.js';
 import {
@@ -31,7 +29,6 @@ import {
   debounce,
   DEFAULT_LOG_LEVEL,
   getInitHandshakeTimeoutMs,
-  isRecord,
   SENSITIVE_FILE_DENYLIST,
 } from './core/util.js';
 import { pkgInfo } from './pkg-info.js';
@@ -64,37 +61,6 @@ function normalizeCLIDirectories(dirs: readonly string[]): string[] {
     normalized.push(normalizePath(trimmed));
   }
   return normalized;
-}
-
-const RootSchema = z.strictObject({
-  uri: z.string().startsWith('file://', { message: "Root.uri must start with 'file://'" }),
-  name: z.string().optional(),
-});
-
-const RootsResponseSchema = z.strictObject({
-  roots: z.array(RootSchema).optional(),
-});
-
-function isRoot(value: unknown): value is Root {
-  return isRecord(value) && typeof value['uri'] === 'string';
-}
-
-function normalizeRoot(root: Root): Root {
-  return root.name ? { uri: root.uri, name: root.name } : { uri: root.uri };
-}
-
-function extractRoots(value: unknown): Root[] {
-  const parsed = RootsResponseSchema.safeParse(value);
-  if (!parsed.success || !parsed.data.roots) {
-    return [];
-  }
-  const roots: Root[] = [];
-  for (const root of parsed.data.roots) {
-    if (isRoot(root)) {
-      roots.push(normalizeRoot(root));
-    }
-  }
-  return roots;
 }
 
 async function resolveRootDirectories(roots: Root[]): Promise<string[]> {
@@ -287,7 +253,9 @@ export class RootsManager {
         const rootsResult = await server.server.listRoots(undefined, {
           timeout: ROOTS_TIMEOUT_MS,
         });
-        const roots = extractRoots(rootsResult);
+        const roots: Root[] = rootsResult.roots
+          .filter((r) => r.uri.startsWith('file://'))
+          .map((r) => (r.name ? { uri: r.uri, name: r.name } : { uri: r.uri }));
         this.rootDirectories = await resolveRootDirectories(roots);
       }
     } catch (error) {

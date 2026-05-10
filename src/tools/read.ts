@@ -783,8 +783,13 @@ export const READ_FILE = defineTool({
     'Read a text file. Use head/tail/startLine/endLine for partial line reads; use offset/length for byte-range reads; use read_many for batches.',
   input: ReadFileInputSchema,
   output: ReadFileOutputSchema,
-  annotations: 'readOnly',
-  task: 'optional',
+  annotations: {
+    readOnlyHint: true,
+    idempotentHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+  },
+  execution: { taskSupport: 'optional' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   nuances: [
     'Large content is externalized to `filesystem-mcp://result/{id}` and preview is returned inline.',

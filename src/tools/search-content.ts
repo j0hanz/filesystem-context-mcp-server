@@ -1586,8 +1586,13 @@ export const SEARCH_CONTENT = defineTool({
     '`includeHidden=true` for dotfiles.',
   input: GrepInputSchema,
   output: GrepOutputSchema,
-  annotations: 'readOnly',
-  task: 'optional',
+  annotations: {
+    readOnlyHint: true,
+    idempotentHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+  },
+  execution: { taskSupport: 'optional' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   nuances: ['Inline results capped at 50 matches; full results via `resourceUri`.'],
   gotchas: [

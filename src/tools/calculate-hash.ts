@@ -269,8 +269,13 @@ export const CALCULATE_HASH = defineTool({
   description: 'Calculate SHA-256, MD5, or other hashes for a file or directory.',
   input: HashInputSchema,
   output: HashOutputSchema,
-  annotations: 'readOnly',
-  task: 'optional',
+  annotations: {
+    readOnlyHint: true,
+    idempotentHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+  },
+  execution: { taskSupport: 'optional' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   nuances: [
     'Directory hashing respects root `.gitignore` and sorts paths for stable output.',

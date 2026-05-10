@@ -18,7 +18,12 @@ export const LIST_ALLOWED_DIRECTORIES = defineTool({
     'List allowed workspace roots. Call first \u2014 all other tools are scoped to these directories.',
   input: RootsInputSchema,
   output: RootsOutputSchema,
-  annotations: 'readOnly',
+  annotations: {
+    readOnlyHint: true,
+    idempotentHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+  },
   run: (_args, ctx) => {
     const dirs = ctx.pathGuard.getAllowedDirectories();
     const structured = { ok: true as const, roots: dirs };

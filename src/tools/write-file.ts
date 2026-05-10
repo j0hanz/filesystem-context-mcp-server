@@ -36,7 +36,12 @@ export const WRITE_FILE = defineTool({
     'Write content to a file, OVERWRITING ALL existing content. Creates the file and parent directories if needed.',
   input: WriteFileInputSchema,
   output: WriteFileOutputSchema,
-  annotations: 'destructiveWrite',
+  annotations: {
+    readOnlyHint: false,
+    idempotentHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+  },
   gotchas: [
     'Overwrites silently — read existing content first if you need to merge.',
     'Use `edit` for partial changes.',

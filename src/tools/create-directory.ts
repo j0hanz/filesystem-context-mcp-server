@@ -50,7 +50,12 @@ export const CREATE_DIRECTORY = defineTool({
   description: 'Create one or more directories (recursive). Accepts a list of paths.',
   input: CreateDirectoryInputSchema,
   output: CreateDirectoryOutputSchema,
-  annotations: 'idempotentWrite',
+  annotations: {
+    readOnlyHint: false,
+    idempotentHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+  },
   run: async (args, ctx) => {
     const structured = await handleCreateDirectory(args, ctx.pathGuard, ctx.signal);
     ctx.log?.('info', `mkdir: ${args.paths[0]}`, 'mkdir');

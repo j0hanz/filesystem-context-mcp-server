@@ -246,7 +246,12 @@ export const DELETE_FILE = defineTool({
   description: 'Permanently delete one or more files or directories. This action is irreversible.',
   input: DeleteInputSchema,
   output: DeleteOutputSchema,
-  annotations: 'destructiveWrite',
+  annotations: {
+    readOnlyHint: false,
+    idempotentHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+  },
   gotchas: ['Non-empty directories require `recursive=true`.'],
   defaultErrorCode: ErrorCode.UNKNOWN,
   progressLabel: (args) => `Delete File: ${args.paths.map((p) => basename(p)).join(', ')}`,

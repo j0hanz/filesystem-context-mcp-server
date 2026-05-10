@@ -442,7 +442,12 @@ export const EDIT_FILE = defineTool({
     'Use `dryRun:true` to preview.',
   input: EditFileInputSchema,
   output: EditFileOutputSchema,
-  annotations: 'destructiveWrite',
+  annotations: {
+    readOnlyHint: false,
+    idempotentHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+  },
   nuances: ['Each edit applies to the output of the previous edit.'],
   progressLabel: buildEditProgressMessage,
   run: async (args, ctx) => {

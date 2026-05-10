@@ -631,8 +631,13 @@ export const SEARCH_FILES = defineTool({
     'For content search, use `grep`. For bulk edits, pass the same glob to `search_and_replace`.',
   input: SearchFilesInputSchema,
   output: SearchFilesOutputSchema,
-  annotations: 'readOnly',
-  task: 'optional',
+  annotations: {
+    readOnlyHint: true,
+    idempotentHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+  },
+  execution: { taskSupport: 'optional' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   nuances: [
     'Respects `.gitignore` unless `includeIgnored=true`.',

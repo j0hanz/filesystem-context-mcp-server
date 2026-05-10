@@ -612,8 +612,13 @@ export const SEARCH_AND_REPLACE = defineTool({
     'Literal matching by default; `isRegex:true` enables RE2 with capture groups ($1, $2).',
   input: SearchAndReplaceInputSchema,
   output: SearchAndReplaceOutputSchema,
-  annotations: 'destructiveWrite',
-  task: 'optional',
+  annotations: {
+    readOnlyHint: false,
+    idempotentHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+  },
+  execution: { taskSupport: 'optional' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   gotchas: [
     'RE2 dialect: no lookahead, lookbehind, or backreferences.',

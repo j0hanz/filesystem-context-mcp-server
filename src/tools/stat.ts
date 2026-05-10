@@ -323,8 +323,13 @@ export const GET_FILE_INFO = defineTool({
     'Pass `paths` array for batch mode.',
   input: StatInputSchema,
   output: StatOutputSchema,
-  annotations: 'readOnly',
-  task: 'optional',
+  annotations: {
+    readOnlyHint: true,
+    idempotentHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+  },
+  execution: { taskSupport: 'optional' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   defaultErrorCode: ErrorCode.NOT_FOUND,
   progressLabel: (args) =>

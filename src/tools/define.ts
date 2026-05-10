@@ -7,6 +7,9 @@ import type {
   ElicitResult,
   LoggingLevel,
   McpServer,
+  Tool,
+  ToolAnnotations,
+  ToolExecution,
 } from '@modelcontextprotocol/server';
 
 import type { z } from 'zod/v4';
@@ -47,9 +50,6 @@ function getExperimentalTasks(server: McpServer): ExperimentalTasksApi {
 
 // ============ Type Definitions ============
 
-export type Annotation = 'readOnly' | 'idempotentWrite' | 'destructiveWrite';
-export type TaskMode = 'forbidden' | 'optional' | 'required';
-
 export interface ToolCtx {
   readonly signal: AbortSignal;
   readonly pathGuard: PathGuard;
@@ -75,9 +75,9 @@ export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
   readonly description: string;
   readonly input: I;
   readonly output: O;
-  readonly annotations: Annotation;
+  readonly annotations: ToolAnnotations;
   readonly icons?: readonly unknown[];
-  readonly task?: TaskMode;
+  readonly execution?: ToolExecution;
   readonly timeoutMs?: number;
   readonly progressLabel?: (args: z.infer<I>) => string;
   readonly defaultErrorCode?: ErrorCode;
@@ -87,41 +87,11 @@ export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
   readonly inputSchemaAugment?: (schema: Record<string, unknown>) => Record<string, unknown>;
 }
 
-export interface DefinedTool {
-  readonly name: string;
-  readonly title: string;
-  readonly description: string;
-  readonly annotations: Annotation;
-  readonly task: TaskMode;
+export interface DefinedTool extends Tool {
   readonly nuances: readonly string[];
   readonly gotchas: readonly string[];
-  readonly inputJsonSchema: object;
-  readonly outputJsonSchema: object;
   register(deps: ToolDeps): void;
 }
-
-// ============ Annotation → MCP hints ============
-
-const ANNOTATION_HINTS = {
-  readOnly: {
-    readOnlyHint: true,
-    idempotentHint: true,
-    destructiveHint: false,
-    openWorldHint: false,
-  },
-  idempotentWrite: {
-    readOnlyHint: false,
-    idempotentHint: true,
-    destructiveHint: false,
-    openWorldHint: false,
-  },
-  destructiveWrite: {
-    readOnlyHint: false,
-    idempotentHint: false,
-    destructiveHint: true,
-    openWorldHint: false,
-  },
-} as const satisfies Record<Annotation, object>;
 
 // ============ Tool Registry ============
 
@@ -135,18 +105,17 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
     def.inputSchemaAugment,
   );
   const { standard: outputSchema, jsonSchema: outputJsonSchema } = toMcpSchema(def.output);
-  const taskMode = def.task ?? 'forbidden';
 
   const tool: DefinedTool = {
     name: def.name,
     title: def.title,
     description: def.description,
     annotations: def.annotations,
-    task: taskMode,
+    execution: def.execution ?? { taskSupport: 'forbidden' },
     nuances: def.nuances ?? [],
     gotchas: def.gotchas ?? [],
-    inputJsonSchema,
-    outputJsonSchema,
+    inputSchema: inputJsonSchema as Tool['inputSchema'],
+    outputSchema: outputJsonSchema as Tool['outputSchema'],
 
     register(deps: ToolDeps) {
       // Core handler: accepts ToolContext (compatible with both task-orchestrator and
@@ -229,16 +198,20 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
         description: def.description,
         inputSchema,
         outputSchema,
-        annotations: ANNOTATION_HINTS[def.annotations],
+        annotations: def.annotations,
       };
 
-      if (taskMode !== 'forbidden' && deps.orchestrator) {
+      if (
+        tool.execution?.taskSupport &&
+        tool.execution.taskSupport !== 'forbidden' &&
+        deps.orchestrator
+      ) {
         // Register as a task-capable tool via the orchestrator.
         // The orchestrator wraps coreHandler into a ToolTaskHandler (createTask / getTask / getTaskResult).
         const taskHandler = deps.orchestrator.wrapToolTask(coreHandler, { toolName: def.name });
         getExperimentalTasks(deps.server).registerToolTask(
           def.name,
-          { ...toolDefShape, execution: { taskSupport: taskMode } },
+          { ...toolDefShape, execution: tool.execution },
           taskHandler,
         );
       } else {

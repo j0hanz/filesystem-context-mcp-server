@@ -228,8 +228,13 @@ export const DIFF_FILES = defineTool({
     '`isIdentical=true` means files match \u2014 no patch needed.',
   input: DiffFilesInputSchema,
   output: DiffFilesOutputSchema,
-  annotations: 'readOnly',
-  task: 'optional',
+  annotations: {
+    readOnlyHint: true,
+    idempotentHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+  },
+  execution: { taskSupport: 'optional' },
   defaultErrorCode: ErrorCode.UNKNOWN,
   progressLabel: (args) =>
     `Diff Files: ${basename(args.original)} \u27f7 ${basename(args.modified)}`,
