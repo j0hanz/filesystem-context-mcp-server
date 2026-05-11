@@ -5,6 +5,10 @@ import {
   type EventId,
   type EventStore,
   isInitializeRequest,
+  isJSONRPCErrorResponse,
+  isJSONRPCNotification,
+  isJSONRPCRequest,
+  isJSONRPCResultResponse,
   JSONRPC_VERSION,
   type JSONRPCErrorResponse,
   type JSONRPCMessage,
@@ -191,6 +195,16 @@ function getSessionId(req: IncomingMessage): string | undefined {
   return typeof rawSessionId === 'string' && rawSessionId.length <= MAX_SESSION_ID_LENGTH
     ? rawSessionId
     : undefined;
+}
+
+type JsonRpcKind = 'request' | 'notification' | 'result' | 'error' | 'unknown';
+
+function classifyJsonRpcMessage(message: JSONRPCMessage): JsonRpcKind {
+  if (isJSONRPCRequest(message)) return 'request';
+  if (isJSONRPCNotification(message)) return 'notification';
+  if (isJSONRPCResultResponse(message)) return 'result';
+  if (isJSONRPCErrorResponse(message)) return 'error';
+  return 'unknown';
 }
 
 // ---------------------------------------------------------------------------
@@ -525,6 +539,10 @@ async function handlePostMcp(
       sendJsonRpcError(res, 400, JSON_RPC_INVALID_REQUEST, 'Invalid Request');
       return;
     }
+
+    const kind = classifyJsonRpcMessage(message);
+    Logger.debug('[HTTP] inbound', { kind, sessionId: sessionId ?? null });
+
     if (sessionId) {
       const session = registry.getOrRespondNotFound(sessionId, res);
       if (session) {
@@ -532,6 +550,18 @@ async function handlePostMcp(
       }
       return;
     }
+
+    // No session yet — only an initialize request may open one.
+    if (kind === 'result' || kind === 'error') {
+      sendJsonRpcError(
+        res,
+        400,
+        JSON_RPC_INVALID_REQUEST,
+        'JSON-RPC response or notification cannot start a new session',
+      );
+      return;
+    }
+
     if (!isInitializeRequest(message)) {
       sendJsonRpcError(
         res,

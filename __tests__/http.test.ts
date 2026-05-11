@@ -649,4 +649,24 @@ describe('HTTP transport', () => {
     };
     assert.match(parsed.error?.message ?? '', /Invalid JSON/iu);
   });
+
+  it('rejects a stray JSON-RPC response posted without a session id', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+    const port = getServerPort(server);
+
+    const res = await rawHttpRequest({
+      port,
+      method: 'POST',
+      path: '/mcp',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, result: {} }),
+    });
+
+    assert.equal(res.statusCode, 400, 'response messages without a session must be rejected');
+    const body = JSON.parse(res.body) as { error?: { code?: number; message?: string } };
+    assert.equal(body.error?.code, -32600);
+    assert.match(body.error?.message ?? '', /response|notification/iu);
+  });
 });
