@@ -1,6 +1,6 @@
 import { basename, relative } from 'node:path';
 
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 import { withTimedAbortSignal } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
@@ -26,6 +26,7 @@ import {
   includeIgnoredField,
   NonNegInt,
   OptionalPath,
+  PositiveInt,
 } from '../schema.js';
 import { buildToolResponse, putResource } from './_helpers.js';
 import { defineTool } from './define.js';
@@ -193,18 +194,10 @@ const DEFAULT_LIST_ENTRIES = DEFAULT_TREE_ENTRIES;
 
 const ListInputSchema = z.strictObject({
   path: OptionalPath,
-  maxDepth: z
-    .number()
-    .int()
-    .min(1)
-    .max(MAX_TREE_DEPTH)
+  maxDepth: PositiveInt.max(MAX_TREE_DEPTH)
     .default(DEFAULT_LIST_DEPTH)
     .describe(`Max directory depth (default: ${String(DEFAULT_LIST_DEPTH)}, flat listing)`),
-  maxEntries: z
-    .number()
-    .int()
-    .min(1)
-    .max(MAX_LIST_ENTRIES)
+  maxEntries: PositiveInt.max(MAX_LIST_ENTRIES)
     .default(DEFAULT_LIST_ENTRIES)
     .describe(`Max entries to return (default: ${String(DEFAULT_LIST_ENTRIES)})`),
   includeHidden: includeHiddenField(),

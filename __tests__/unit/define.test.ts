@@ -1,7 +1,7 @@
 import assert from 'node:assert';
 import test from 'node:test';
 
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 import { ALL_TOOLS, defineTool } from '../../src/tools/define.js';
 
