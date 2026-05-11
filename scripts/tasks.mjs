@@ -122,6 +122,39 @@ const HELP_TEXT = [
   '',
 ].join('\n');
 
+class OutputBuffer {
+  constructor(maxChars) {
+    this.maxChars = maxChars;
+    this.chunks = [];
+    this.length = 0;
+    this.isTruncated = false;
+  }
+
+  append(chunk) {
+    if (this.isTruncated || !chunk) return;
+
+    if (this.length + chunk.length > this.maxChars) {
+      const remaining = this.maxChars - this.length;
+      if (remaining > 0) {
+        this.chunks.push(chunk.slice(0, remaining));
+        this.length += remaining;
+      }
+      this.isTruncated = true;
+    } else {
+      this.chunks.push(chunk);
+      this.length += chunk.length;
+    }
+  }
+
+  toString() {
+    if (this.chunks.length === 0) return '';
+    if (this.chunks.length === 1) return this.chunks[0];
+    const result = this.chunks.join('');
+    this.chunks = [result];
+    return result;
+  }
+}
+
 const Text = {
   normalizePath(value) {
     return String(value || '').replaceAll('\\', '/');
@@ -134,15 +167,6 @@ const Text = {
   cap(value, maxChars) {
     const text = String(value || '');
     return text.length > maxChars ? text.slice(0, maxChars) : text;
-  },
-
-  appendCapped(current, chunk, maxChars) {
-    if (current.length >= maxChars) return { value: current, truncated: true };
-    const remaining = maxChars - current.length;
-    if (chunk.length > remaining) {
-      return { value: current + chunk.slice(0, remaining), truncated: true };
-    }
-    return { value: current + chunk, truncated: false };
   },
 
   elapsed(ms) {
@@ -377,6 +401,34 @@ function describeSpawnError(err, cmd) {
   return base;
 }
 
+const ProcessUtils = {
+  forceKill(child) {
+    if (!child) return;
+    try {
+      if (Config.IS_WINDOWS) {
+        if (child.pid !== undefined) {
+          spawn('taskkill', ['/F', '/T', '/PID', String(child.pid)], {
+            stdio: 'ignore',
+            windowsHide: true,
+          }).on('error', noop);
+        } else {
+          child.kill();
+        }
+      } else {
+        child.kill('SIGKILL');
+      }
+    } catch {
+      // ignore kill errors
+    }
+  },
+
+  forceKillAfterGrace(child, graceMs = Config.KILL_GRACE_MS) {
+    return setTimeout(() => {
+      this.forceKill(child);
+    }, graceMs).unref();
+  },
+};
+
 const ProcessRunner = {
   command(cmd, args) {
     if (Config.IS_WINDOWS && (cmd === 'npm' || cmd === 'npx')) {
@@ -409,10 +461,8 @@ const ProcessRunner = {
 
     return new Promise((resolve) => {
       let settled = false;
-      let stdout = '';
-      let stderr = '';
-      let truncatedStdout = false;
-      let truncatedStderr = false;
+      const stdoutBuf = new OutputBuffer(maxStdout);
+      const stderrBuf = new OutputBuffer(maxStderr);
 
       const settle = (payload) => {
         if (settled) return;
@@ -439,36 +489,32 @@ const ProcessRunner = {
       child.stdout?.setEncoding('utf8');
       child.stderr?.setEncoding('utf8');
       child.stdout?.on('data', (chunk) => {
-        const next = Text.appendCapped(stdout, chunk, maxStdout);
-        stdout = next.value;
-        truncatedStdout ||= next.truncated;
+        stdoutBuf.append(chunk);
       });
       child.stderr?.on('data', (chunk) => {
-        const next = Text.appendCapped(stderr, chunk, maxStderr);
-        stderr = next.value;
-        truncatedStderr ||= next.truncated;
+        stderrBuf.append(chunk);
       });
       child.on('close', (code, signalName) => {
         settle({
           ok: code === 0,
-          stdout,
-          stderr,
+          stdout: stdoutBuf.toString(),
+          stderr: stderrBuf.toString(),
           status: code,
           signal: signalName,
-          truncatedStdout,
-          truncatedStderr,
+          truncatedStdout: stdoutBuf.isTruncated,
+          truncatedStderr: stderrBuf.isTruncated,
         });
       });
       child.on('error', (err) => {
         if (err?.name === 'AbortError') return;
         settle({
           ok: false,
-          stdout,
+          stdout: stdoutBuf.toString(),
           stderr: describeSpawnError(err, cmd),
           status: null,
           signal: null,
-          truncatedStdout,
-          truncatedStderr,
+          truncatedStdout: stdoutBuf.isTruncated,
+          truncatedStderr: stderrBuf.isTruncated,
         });
       });
     });
@@ -601,6 +647,8 @@ const KnipParser = {
     'unused-ns-type',
   ]),
 
+  _RULE_ENTRIES: null,
+
   isFixable(errors) {
     return Array.isArray(errors) && errors.some((error) => this.FIXABLE_RULES.has(error.rule));
   },
@@ -609,6 +657,7 @@ const KnipParser = {
     const parsed = Json.parse(jsonText, {});
     const rows = Array.isArray(parsed?.issues) ? parsed.issues : [];
     const errors = [];
+    if (!this._RULE_ENTRIES) this._RULE_ENTRIES = Object.entries(this.RULES);
     for (const row of rows) this.parseRow(row, errors);
     return errors;
   },
@@ -624,7 +673,8 @@ const KnipParser = {
     const file = row?.file ? Text.normalizePath(row.file) : '';
     if (!file) return;
 
-    for (const [category, meta] of Object.entries(this.RULES)) {
+    const entries = this._RULE_ENTRIES || Object.entries(this.RULES);
+    for (const [category, meta] of entries) {
       const list = row[category];
       if (!Array.isArray(list) || list.length === 0) continue;
       if (category === 'duplicates') this.pushDuplicateErrors(errors, file, list);
@@ -769,12 +819,11 @@ class TestTapState {
     this.currentOkName = null;
     this.inYaml = false;
     this.yamlLines = [];
-    this.stderrBuf = '';
+    this.stderrBuf = new OutputBuffer(Config.MAX_STDERR_CHARS);
   }
 
   appendStderr(chunk) {
-    const next = Text.appendCapped(this.stderrBuf, chunk, Config.MAX_STDERR_CHARS);
-    this.stderrBuf = next.value;
+    this.stderrBuf.append(chunk);
   }
 
   handleLine(line) {
@@ -940,27 +989,7 @@ class TestRunner {
       resolve(value);
     };
 
-    const forceKillAfterGrace = () => {
-      const timer = setTimeout(() => {
-        try {
-          if (Config.IS_WINDOWS) {
-            if (child.pid !== undefined) {
-              spawn('taskkill', ['/F', '/T', '/PID', String(child.pid)], {
-                stdio: 'ignore',
-                windowsHide: true,
-              }).on('error', noop);
-            } else {
-              child.kill();
-            }
-          } else {
-            child.kill('SIGKILL');
-          }
-        } catch {
-          // ignore kill errors
-        }
-      }, Config.KILL_GRACE_MS).unref();
-      return timer;
-    };
+    const forceKillAfterGrace = () => ProcessUtils.forceKillAfterGrace(child);
 
     const handleTimeout = async () => {
       const maxHistorical = Math.max(0, ...Object.values(history.test_durations).flat());
@@ -1002,7 +1031,7 @@ class TestRunner {
         phase,
         lastCompletedTest: state.lastCompleted,
         suiteMaxHistoricalMs: maxHistorical,
-        rawOutput: state.stderrBuf || undefined,
+        rawOutput: state.stderrBuf.toString() || undefined,
       });
     };
 
@@ -1042,7 +1071,7 @@ class TestRunner {
       if (code !== 0) {
         settle(
           Results.fail({
-            rawOutput: state.stderrBuf || `test runner exited with code ${code}`,
+            rawOutput: state.stderrBuf.toString() || `test runner exited with code ${code}`,
           }),
         );
         return;
@@ -1263,7 +1292,7 @@ const OutputRenderer = {
     return output.join('\n');
   },
 
-  renderDetailView(failure, index) {
+  formatDetailView(failure, index) {
     const { name, frame, errorMessage, expected, actual } = failure;
     let errorLabel;
     if (expected !== undefined && actual !== undefined) {
@@ -1274,19 +1303,24 @@ const OutputRenderer = {
       errorLabel = 'unknown error';
     }
 
-    process.stdout.write(`\n  ${Theme.BOLD}Failure ${index}${Theme.R} — ${name}\n\n`);
-    process.stdout.write(`  ${Theme.RED}error${Theme.R}  ${Theme.DIM}${errorLabel}${Theme.R}\n`);
+    const output = [];
+    output.push(`\n  ${Theme.BOLD}Failure ${index}${Theme.R} — ${name}\n`);
+    output.push(`  ${Theme.RED}error${Theme.R}  ${Theme.DIM}${errorLabel}${Theme.R}`);
 
     if (frame) {
-      process.stdout.write(`    ${Theme.DIM}-->${Theme.R} ${frame}\n\n`);
+      output.push(`    ${Theme.DIM}-->${Theme.R} ${frame}\n`);
       const parsed = parseFrame(frame);
       if (parsed) {
-        process.stdout.write(this.renderSourceWindow(parsed.file, parsed.line, parsed.col));
-        process.stdout.write('\n');
+        output.push(this.renderSourceWindow(parsed.file, parsed.line, parsed.col));
       }
     } else {
-      process.stdout.write(`  ${Theme.DIM}(no source location available)${Theme.R}\n`);
+      output.push(`  ${Theme.DIM}(no source location available)${Theme.R}`);
     }
+    return output.join('\n');
+  },
+
+  renderDetailView(failure, index) {
+    process.stdout.write(this.formatDetailView(failure, index) + '\n');
   },
 
   renderDiagnostic(error, cwd = process.cwd()) {
@@ -1354,7 +1388,7 @@ const OutputRenderer = {
     return output.join('\n');
   },
 
-  renderDiagnosticsGrouped(errors, cwd = process.cwd()) {
+  formatDiagnosticsGrouped(errors, cwd = process.cwd()) {
     const byFile = new Map();
     for (const err of errors) {
       const list = byFile.get(err.file) || [];
@@ -1362,16 +1396,22 @@ const OutputRenderer = {
       byFile.set(err.file, list);
     }
 
+    const output = [];
     for (const [file, list] of byFile) {
-      process.stdout.write(`  ${Theme.BOLD}${file}${Theme.R}\n\n`);
+      output.push(`  ${Theme.BOLD}${file}${Theme.R}\n`);
       for (const err of list) {
         const block = this.renderDiagnostic(err, cwd)
           .split('\n')
           .map((line) => `    ${line}`)
           .join('\n');
-        process.stdout.write(`${block}\n\n`);
+        output.push(`${block}\n`);
       }
     }
+    return output.join('\n');
+  },
+
+  renderDiagnosticsGrouped(errors, cwd = process.cwd()) {
+    process.stdout.write(this.formatDiagnosticsGrouped(errors, cwd) + '\n');
   },
 
   emitLlmBlock(data) {
@@ -1636,15 +1676,16 @@ class TtyReporter extends BaseReporter {
   redrawGroup() {
     if (!this.groupLabels || !this.groupDone) return;
     const elapsed = `${Theme.DIM}${Text.elapsed(Date.now() - this.groupStartMs)}${Theme.R}`;
-    process.stdout.write(`\x1b[${this.groupLabels.length}A`);
+    const lines = [`\x1b[${this.groupLabels.length}A`];
     for (const label of this.groupLabels) {
       const done = this.groupDone.get(label);
       const icon = done?.icon || Icons.RUN;
       const right = done?.right || elapsed;
-      process.stdout.write(
+      lines.push(
         `  ${icon}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}  ${right}${Theme.CLEAR_EOL}\n`,
       );
     }
+    process.stdout.write(lines.join(''));
   }
 
   failureDetail(failedTasks) {
@@ -2043,7 +2084,6 @@ class TaskOrchestrator {
       return { ...skipResult, ms: 0 };
     }
 
-    OutputRenderer.clearCache();
     reporter.taskStart(task.label);
     const { result, ms } = await this.runMeasured(task, options);
     reporter.taskEnd(task.label, result, ms);
@@ -2071,7 +2111,6 @@ class TaskOrchestrator {
     reporter.groupStart(activeTasks.map((task) => task.label));
     const results = await Promise.all(
       activeTasks.map(async (task) => {
-        OutputRenderer.clearCache();
         const { result, ms } = await this.runMeasured(task, {
           allowAutoFix: true,
         });
@@ -2153,6 +2192,31 @@ class TaskOrchestrator {
     return aggregate.failed === 0 ? 0 : 1;
   }
 }
+
+export {
+  Config,
+  Theme,
+  Icons,
+  Text,
+  Json,
+  FileStore,
+  Results,
+  ProcessRunner,
+  ProcessUtils,
+  HistoryManager,
+  EslintParser,
+  TscParser,
+  KnipParser,
+  TapParser,
+  TestTapState,
+  TestRunner,
+  TaskCommands,
+  TaskRunners,
+  OutputRenderer,
+  Aggregate,
+  TaskOrchestrator,
+  OutputBuffer,
+};
 
 if (import.meta.main) {
   const config = parseCliConfig(process.argv.slice(2));
