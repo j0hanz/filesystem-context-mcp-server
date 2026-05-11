@@ -53,9 +53,9 @@ describe('roots tool', () => {
   });
 });
 
-// ─── ls ─────────────────────────────────────────────────────────────────────
+// ─── list ───────────────────────────────────────────────────────────────────
 
-describe('ls tool', () => {
+describe('list tool', () => {
   let env: TestEnv;
 
   before(async () => {
@@ -63,227 +63,132 @@ describe('ls tool', () => {
     await writeFile(join(env.tmpDir, 'alpha.txt'), 'a', 'utf8');
     await writeFile(join(env.tmpDir, 'beta.txt'), 'b', 'utf8');
     await mkdir(join(env.tmpDir, 'sub'));
+    await writeFile(join(env.tmpDir, 'sub', 'nested.txt'), 'n', 'utf8');
   });
 
   after(async () => {
     await env.cleanup();
   });
 
-  it('lists entries in the allowed directory', async () => {
+  it('lists top-level entries flat (default maxDepth=1)', async () => {
     const raw = await env.client.callTool({
-      name: 'ls',
+      name: 'list',
       arguments: { path: env.tmpDir },
     });
-    const result = raw;
-    assertOk(result);
+    assertOk(raw);
 
-    // Verify content blocks: first is summary text, second is resource_link
-    assert.equal(result.content.length, 2);
-    assert.equal(result.content[0].type, 'text');
-    const summaryText = (result.content[0] as Record<string, unknown>).text as string;
-    assert.ok(summaryText.includes('list-directory:'));
-
-    assert.equal(result.content[1].type, 'resource_link');
-    const resourceLink = result.content[1] as Record<string, unknown>;
-    assert.ok((resourceLink.uri as string).includes('filesystem-mcp://result/'));
-    assert.ok((resourceLink.name as string).includes('-listing.json'));
-
-    // Verify structured content
-    const sc = getStructured(result);
+    const sc = getStructured(raw);
     assert.equal(sc['ok'], true);
-    assert.ok(sc['resourceUri']);
-    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://result/'));
-    assert.ok(sc['entryCount']);
+    assert.equal(typeof sc['path'], 'string');
+    assert.equal(typeof sc['markdown'], 'string');
 
     const entries = sc['entries'] as Record<string, unknown>[];
-    assert.ok(Array.isArray(entries) && entries.length >= 3);
-
     const names = entries.map((e) => e['name'] as string);
-    assert.ok(names.includes('alpha.txt'));
-    assert.ok(names.includes('beta.txt'));
-    assert.ok(names.includes('sub'));
+
+    // sub directory, then alpha.txt, beta.txt (dirs-first, alpha)
+    assert.ok(names.includes('sub'), 'Expected sub dir');
+    assert.ok(names.includes('alpha.txt'), 'Expected alpha.txt');
+    assert.ok(names.includes('beta.txt'), 'Expected beta.txt');
+
+    // dirs-first: sub must appear before alpha.txt
+    assert.ok(names.indexOf('sub') < names.indexOf('alpha.txt'), 'Expected dirs first');
+
+    // flat: nested.txt must NOT appear at maxDepth=1
+    assert.ok(!names.includes('nested.txt'), 'Expected no nested entries at maxDepth=1');
+
+    assert.ok(typeof sc['entryCount'] === 'number');
+    assert.ok(typeof sc['totalEntries'] === 'number');
+    assert.ok(typeof sc['totalFiles'] === 'number');
+    assert.ok(typeof sc['totalDirectories'] === 'number');
+    assert.equal(sc['totalDirectories'], 1);
+  });
+
+  it('recurses when maxDepth > 1', async () => {
+    const raw = await env.client.callTool({
+      name: 'list',
+      arguments: { path: env.tmpDir, maxDepth: 2 },
+    });
+    assertOk(raw);
+
+    const sc = getStructured(raw);
+    const entries = sc['entries'] as Record<string, unknown>[];
+    const names = entries.map((e) => e['name'] as string);
+
+    assert.ok(names.includes('nested.txt'), 'Expected nested.txt at maxDepth=2');
+
+    // relativePath must be POSIX
+    const nested = entries.find((e) => e['name'] === 'nested.txt');
+    assert.ok(nested);
+    assert.equal(nested['relativePath'], 'sub/nested.txt');
+  });
+
+  it('markdown contains root name and entry names', async () => {
+    const raw = await env.client.callTool({
+      name: 'list',
+      arguments: { path: env.tmpDir },
+    });
+    assertOk(raw);
+
+    const sc = getStructured(raw);
+    const markdown = sc['markdown'] as string;
+    const lines = markdown.split('\n');
+
+    // First line is the root dir name
+    assert.ok(lines[0] !== undefined && lines[0].length > 0, 'Expected root name as first line');
+    assert.ok(markdown.includes('sub'), 'Expected sub in markdown');
+    assert.ok(markdown.includes('alpha.txt'), 'Expected alpha.txt in markdown');
+    // Box-drawing chars present
+    assert.ok(markdown.includes('├──') || markdown.includes('└──'), 'Expected box-drawing chars');
+  });
+
+  it('truncation stores full result in resourceUri', async () => {
+    const manyDir = join(env.tmpDir, 'many');
+    await mkdir(manyDir);
+    for (let i = 0; i < 10; i++) {
+      await writeFile(join(manyDir, `f${String(i).padStart(2, '0')}.txt`), '', 'utf8');
+    }
+
+    const raw = await env.client.callTool({
+      name: 'list',
+      arguments: { path: manyDir, maxEntries: 3 },
+    });
+    assertOk(raw);
+
+    const sc = getStructured(raw);
+    assert.equal(sc['entryCount'], 3);
+    assert.ok((sc['totalEntries'] as number) > 3, 'Expected totalEntries > 3');
+    assert.ok(typeof sc['resourceUri'] === 'string', 'Expected resourceUri when truncated');
+    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://result/'));
+  });
+
+  it('totalFiles + totalDirectories === totalEntries', async () => {
+    const raw = await env.client.callTool({
+      name: 'list',
+      arguments: { path: env.tmpDir, maxDepth: 2 },
+    });
+    assertOk(raw);
+
+    const sc = getStructured(raw);
+    assert.equal(
+      (sc['totalFiles'] as number) + (sc['totalDirectories'] as number),
+      sc['totalEntries'] as number,
+    );
   });
 
   it('returns ACCESS_DENIED for paths outside allowed roots', async () => {
     const raw = await env.client.callTool({
-      name: 'ls',
+      name: 'list',
       arguments: { path: '/etc' },
     });
     assertToolError(raw, 'ACCESS_DENIED');
   });
 
-  it('rejects unsafe glob patterns before traversal', async () => {
+  it('returns NOT_DIRECTORY for a file path', async () => {
     const raw = await env.client.callTool({
-      name: 'ls',
-      arguments: { path: env.tmpDir, pattern: '../../*' },
+      name: 'list',
+      arguments: { path: join(env.tmpDir, 'alpha.txt') },
     });
-    assertToolError(raw);
-  });
-
-  it('paginates with an opaque cursor across multiple pages', async () => {
-    for (let index = 0; index < 12; index += 1) {
-      await writeFile(
-        join(env.tmpDir, `page-${String(index).padStart(2, '0')}.txt`),
-        String(index),
-        'utf8',
-      );
-    }
-
-    const firstPage = await env.client.callTool({
-      name: 'ls',
-      arguments: { path: env.tmpDir, maxEntries: 5 },
-    });
-    assertOk(firstPage);
-    const firstStructured = getStructured(firstPage);
-    const firstEntries = firstStructured['entries'] as Record<string, unknown>[];
-    const firstCursor = firstStructured['nextCursor'];
-
-    assert.equal(firstEntries.length, 5);
-    assert.equal(typeof firstCursor, 'string');
-    assert.doesNotMatch(firstCursor as string, /"offset"|"snapshotId"/u);
-
-    const secondPage = await env.client.callTool({
-      name: 'ls',
-      arguments: {
-        path: env.tmpDir,
-        maxEntries: 5,
-        cursor: firstCursor,
-      },
-    });
-    assertOk(secondPage);
-    const secondStructured = getStructured(secondPage);
-    const secondEntries = secondStructured['entries'] as Record<string, unknown>[];
-
-    assert.equal(secondEntries.length, 5);
-    assert.notDeepEqual(
-      firstEntries.map((entry) => entry['name']),
-      secondEntries.map((entry) => entry['name']),
-    );
-  });
-
-  it('list-directory with many entries returns single resource link', async () => {
-    const manyFilesDir = join(env.tmpDir, 'many-files');
-    await mkdir(manyFilesDir);
-
-    // Create 20+ files
-    for (let i = 0; i < 25; i++) {
-      await writeFile(
-        join(manyFilesDir, `file-${String(i).padStart(2, '0')}.txt`),
-        `content ${i}`,
-        'utf8',
-      );
-    }
-
-    const raw = await env.client.callTool({
-      name: 'ls',
-      arguments: { path: manyFilesDir },
-    });
-    assertOk(raw);
-
-    // Verify only one resource_link despite many files
-    assert.equal(raw.content.length, 2);
-    assert.equal(raw.content[0].type, 'text');
-    assert.equal(raw.content[1].type, 'resource_link');
-
-    const sc = getStructured(raw);
-    assert.ok(sc['entryCount']);
-    assert.equal(sc['entryCount'], 25);
-    assert.ok(sc['resourceUri']);
-
-    // Verify summary text contains entry count
-    const summaryText = (raw.content[0] as Record<string, unknown>).text as string;
-    assert.ok(summaryText.includes('25'));
-  });
-});
-
-// ─── tree ───────────────────────────────────────────────────────────────────
-
-describe('tree tool', () => {
-  let env: TestEnv;
-
-  before(async () => {
-    env = await createTestEnv();
-    const sub = join(env.tmpDir, 'deep', 'dir');
-    await mkdir(sub, { recursive: true });
-    await writeFile(join(sub, 'nested.txt'), 'deep', 'utf8');
-  });
-
-  after(async () => {
-    await env.cleanup();
-  });
-
-  it('generates tree view with resource link', async () => {
-    const raw = await env.client.callTool({
-      name: 'tree',
-      arguments: { path: env.tmpDir },
-    });
-    const result = raw;
-    assertOk(result);
-
-    // Verify content blocks: first is summary text, second is resource_link
-    assert.equal(result.content.length, 2);
-    assert.equal(result.content[0].type, 'text');
-    const summaryText = (result.content[0] as Record<string, unknown>).text as string;
-    assert.ok(summaryText.includes('tree:'));
-    assert.ok(summaryText.includes('entries'));
-    assert.ok(summaryText.includes('deep'));
-
-    assert.equal(result.content[1].type, 'resource_link');
-    const resourceLink = result.content[1] as Record<string, unknown>;
-    assert.ok((resourceLink.uri as string).includes('filesystem-mcp://result/'));
-    assert.ok((resourceLink.name as string).includes('-tree.txt'));
-    assert.equal(resourceLink.mimeType, 'text/plain');
-
-    // Verify structured content
-    const sc = getStructured(result);
-    assert.equal(sc['ok'], true);
-    assert.ok(sc['tree'] !== undefined, 'Expected tree field');
-    assert.ok(sc['resourceUri']);
-    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://result/'));
-    assert.ok(typeof sc['entryCount'] === 'number');
-    assert.ok(typeof sc['maxDepth'] === 'number');
-    assert.ok(sc['entryCount'] > 0);
-    assert.ok(sc['maxDepth'] > 0);
-  });
-
-  it('respects maxDepth:1 to limit nesting', async () => {
-    const raw = await env.client.callTool({
-      name: 'tree',
-      arguments: { path: env.tmpDir, maxDepth: 1 },
-    });
-    const result = raw;
-    assertOk(result);
-    const sc = getStructured(result);
-    assert.equal(sc['ok'], true);
-  });
-
-  it('calculates max depth for large directory structure', async () => {
-    // Create a deeper nested structure
-    const deep1 = join(env.tmpDir, 'level1');
-    const deep2 = join(deep1, 'level2');
-    const deep3 = join(deep2, 'level3');
-    const deep4 = join(deep3, 'level4');
-    const deep5 = join(deep4, 'level5');
-    await mkdir(deep5, { recursive: true });
-    await writeFile(join(deep5, 'deep-file.txt'), 'very deep', 'utf8');
-
-    const raw = await env.client.callTool({
-      name: 'tree',
-      arguments: { path: env.tmpDir },
-    });
-    const result = raw;
-    assertOk(result);
-    const sc = getStructured(result);
-    assert.equal(sc['ok'], true);
-
-    // Verify max depth is calculated correctly (should be at least 5 for our structure)
-    const maxDepth = sc['maxDepth'] as number;
-    assert.ok(maxDepth >= 5, `Expected maxDepth >= 5, got ${maxDepth}`);
-
-    // Verify summary includes depth info
-    const summaryText = (result.content[0] as Record<string, unknown>).text as string;
-    assert.ok(summaryText.includes('deep'));
-    assert.ok(summaryText.includes('level'));
+    assertToolError(raw, 'NOT_DIRECTORY');
   });
 });
 
