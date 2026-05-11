@@ -3,6 +3,8 @@ import {
   type GetPromptResult,
   type McpServer,
   type PromptMessage,
+  type ResourceLink,
+  type TextContent,
 } from '@modelcontextprotocol/server';
 
 import { stat } from 'node:fs/promises';
@@ -65,39 +67,33 @@ function topicArg(
 }
 
 function userText(text: string): PromptMessage {
-  return {
-    role: 'user',
-    content: {
-      type: 'text',
-      text,
-      annotations: { audience: ['assistant'], priority: 1 },
-    },
+  const content: TextContent = {
+    type: 'text',
+    text,
+    annotations: { audience: ['assistant'], priority: 1 },
   };
+  return { role: 'user', content };
 }
 
 function linkToInstructions(): PromptMessage {
-  return {
-    role: 'user',
-    content: {
-      type: 'resource_link',
-      uri: 'internal://instructions',
-      name: 'filesystem-mcp-instructions',
-      mimeType: 'text/markdown',
-      annotations: { audience: ['assistant'], priority: 0.5 },
-    },
+  const content: ResourceLink = {
+    type: 'resource_link',
+    uri: 'internal://instructions',
+    name: 'filesystem-mcp-instructions',
+    mimeType: 'text/markdown',
+    annotations: { audience: ['assistant'], priority: 0.5 },
   };
+  return { role: 'user', content };
 }
 
 function linkToPath(absPath: string): PromptMessage {
-  return {
-    role: 'user',
-    content: {
-      type: 'resource_link',
-      uri: `file://${absPath}`,
-      name: absPath,
-      annotations: { audience: ['assistant'], priority: 1 },
-    },
+  const content: ResourceLink = {
+    type: 'resource_link',
+    uri: `file://${absPath}`,
+    name: absPath,
+    annotations: { audience: ['assistant'], priority: 1 },
   };
+  return { role: 'user', content };
 }
 
 function wrapHandler<T>(
