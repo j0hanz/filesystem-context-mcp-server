@@ -7,7 +7,6 @@ import { ALL_TOOLS as _ALL_TOOLS, registerAllTools as _registerAllTools } from '
 import './tools/delete-file.js';
 import './tools/edit.js';
 import './tools/list.js';
-import './tools/list-directory.js';
 import './tools/move-file.js';
 import './tools/read.js';
 import './tools/replace-in-files.js';
@@ -15,7 +14,6 @@ import './tools/roots.js';
 import './tools/search-content.js';
 import './tools/search-files.js';
 import './tools/stat.js';
-import './tools/tree.js';
 import './tools/write-file.js';
 
 export const ALL_TOOLS = _ALL_TOOLS;

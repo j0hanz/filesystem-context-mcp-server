@@ -1,5 +1,5 @@
 /**
- * Integration tests for directory-oriented tools: roots, ls, tree, mkdir, rm, mv.
+ * Integration tests for directory-oriented tools: roots, list, mkdir, rm, mv.
  */
 import assert from 'node:assert/strict';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
@@ -487,14 +487,6 @@ describe('invalid cursor rejection', () => {
 
   after(async () => {
     await env.cleanup();
-  });
-
-  it('ls rejects a malformed cursor with INVALID_INPUT', async () => {
-    const raw = await env.client.callTool({
-      name: 'ls',
-      arguments: { path: env.tmpDir, cursor: 'not-a-valid-cursor' },
-    });
-    assertToolError(raw, 'INVALID_INPUT');
   });
 
   it('find rejects a malformed cursor with INVALID_INPUT', async () => {
