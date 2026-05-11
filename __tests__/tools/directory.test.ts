@@ -476,7 +476,7 @@ describe('move tool', () => {
     assert.equal(raw.content[0].type, 'text', 'Expected text content');
     const summaryText = raw.content[0].text;
     assert.ok(summaryText.startsWith('move:'), 'Expected summary to start with "move:"');
-    assert.ok(summaryText.includes('->'), 'Expected summary to include arrow (->) separator');
+    assert.ok(summaryText.includes('→'), 'Expected summary to include arrow (→) separator');
 
     // Verify structured content has from/to/ok result metadata
     const sc = getStructured(raw);
@@ -527,10 +527,14 @@ describe('move tool', () => {
       arguments: { moves: [{ source: src, destination: dst }] },
     });
 
-    assertToolError(raw, 'INVALID_INPUT');
+    assertOk(raw);
+    const sc = getStructured(raw);
+    const failures = sc['failures'] as Record<string, unknown>[] | undefined;
+    assert.ok(Array.isArray(failures) && failures.length === 1, 'Expected 1 failure');
+    assert.equal((failures[0]['error'] as Record<string, unknown>)['code'], 'INVALID_INPUT');
   });
 
-  it('returns isError for total failure when source is missing', async () => {
+  it('returns failure in failures[] when source is missing', async () => {
     const raw = await env.client.callTool({
       name: 'move',
       arguments: {
@@ -542,7 +546,11 @@ describe('move tool', () => {
         ],
       },
     });
-    assertToolError(raw, 'NOT_FOUND');
+    assertOk(raw);
+    const sc = getStructured(raw);
+    const failures = sc['failures'] as Record<string, unknown>[] | undefined;
+    assert.ok(Array.isArray(failures) && failures.length === 1, 'Expected 1 failure');
+    assert.ok((failures[0]['source'] as string).includes('no-source.txt'));
   });
 });
 
@@ -664,6 +672,55 @@ describe('delete: processes all paths in batch', () => {
     const failures = sc['failures'] as Record<string, unknown>[] | undefined;
     assert.ok(Array.isArray(failures) && failures.length === 1, 'Expected 1 failure');
     assert.ok((failures[0]['path'] as string).includes('no-such-file.txt'));
+    assert.equal((failures[0]['error'] as Record<string, unknown>)['code'], 'NOT_FOUND');
+  });
+});
+
+describe('move: partial failure support', () => {
+  let env: TestEnv;
+
+  before(async () => {
+    env = await createTestEnv();
+  });
+
+  after(async () => {
+    await env.cleanup();
+  });
+
+  it('moves valid pairs and collects failures for invalid ones', async () => {
+    const src1 = join(env.tmpDir, 'mv-good-src.txt');
+    const dest1 = join(env.tmpDir, 'mv-good-dest.txt');
+    const missingSrc = join(env.tmpDir, 'mv-missing-src.txt'); // does not exist
+    const dest2 = join(env.tmpDir, 'mv-bad-dest.txt');
+
+    await writeFile(src1, 'move me', 'utf8');
+
+    const result = await env.client.callTool({
+      name: 'move',
+      arguments: {
+        moves: [
+          { source: src1, destination: dest1 }, // succeeds
+          { source: missingSrc, destination: dest2 }, // fails (missing source)
+        ],
+      },
+    });
+
+    assertOk(result);
+    const sc = getStructured(result);
+
+    // src1 must have been moved to dest1
+    const content = await readFile(dest1, 'utf8');
+    assert.equal(content, 'move me');
+
+    // moves[] must have exactly 1 success
+    const moves = sc['moves'] as Record<string, unknown>[];
+    assert.equal(moves.length, 1, 'Expected 1 successful move');
+    assert.ok((moves[0]['to'] as string).includes('mv-good-dest.txt'));
+
+    // failures[] must have exactly 1 entry for the missing source
+    const failures = sc['failures'] as Record<string, unknown>[] | undefined;
+    assert.ok(Array.isArray(failures) && failures.length === 1, 'Expected 1 failure');
+    assert.ok((failures[0]['source'] as string).includes('mv-missing-src.txt'));
     assert.equal((failures[0]['error'] as Record<string, unknown>)['code'], 'NOT_FOUND');
   });
 });

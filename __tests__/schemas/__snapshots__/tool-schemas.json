@@ -1003,6 +1003,11 @@
     "outputSchema": {
       "type": "object",
       "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true,
+          "description": "Success indicator"
+        },
         "moves": {
           "type": "array",
           "items": {
@@ -1026,9 +1031,43 @@
             "additionalProperties": false
           },
           "description": "Completed move operations"
+        },
+        "failures": {
+          "description": "Per-move errors",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "Source path that failed"
+              },
+              "destination": {
+                "type": "string",
+                "description": "Destination path for the failed move"
+              },
+              "error": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "description": "Error code"
+                  },
+                  "message": {
+                    "type": "string",
+                    "description": "Error message"
+                  }
+                },
+                "required": ["code", "message"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["source", "destination", "error"],
+            "additionalProperties": false
+          }
         }
       },
-      "required": ["moves"],
+      "required": ["ok", "moves"],
       "additionalProperties": false
     }
   },

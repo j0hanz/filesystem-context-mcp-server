@@ -7,10 +7,10 @@ import { basename, dirname, resolve, sep } from 'node:path';
 import { z } from 'zod/v4';
 
 import { withAbort } from '../core/concurrency.js';
-import { ErrorCode, isNodeError, McpError } from '../core/errors.js';
+import { ErrorCode, isAbortError, isNodeError, McpError } from '../core/errors.js';
 import type { PathGuard } from '../core/path.js';
 import { RequiredPath } from '../schema.js';
-import { buildToolResponse } from './_helpers.js';
+import { buildStructuredError, buildToolResponse } from './_helpers.js';
 import { defineTool } from './define.js';
 
 const MoveItemSchema = z.strictObject({
@@ -28,8 +28,21 @@ const MoveInputSchema = z.strictObject({
   moves: z.array(MoveItemSchema).min(1).max(100).describe('Move operations to perform'),
 });
 
+const MoveFailureItemSchema = z.strictObject({
+  source: z.string().describe('Source path that failed'),
+  destination: z.string().describe('Destination path for the failed move'),
+  error: z.strictObject({
+    code: z.string().describe('Error code'),
+    message: z.string().describe('Error message'),
+  }),
+});
+
+type MoveFailureItem = z.infer<typeof MoveFailureItemSchema>;
+
 const MoveOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
   moves: z.array(MoveItemResultSchema).describe('Completed move operations'),
+  failures: z.array(MoveFailureItemSchema).optional().describe('Per-move errors'),
 });
 
 type MoveItemResult = z.infer<typeof MoveItemResultSchema>;
@@ -89,13 +102,21 @@ async function tryElicitOverwriteConfirmation(
   }
 }
 
-function buildSummary(results: readonly MoveItemResult[]): string {
-  if (results.length === 1) {
+function buildSummary(
+  results: readonly MoveItemResult[],
+  failures: readonly MoveFailureItem[],
+): string {
+  const successCount = results.length;
+  const failCount = failures.length;
+  if (failCount === 0 && successCount === 1) {
     const result = results[0];
-    if (result) return `move: ${basename(result.from)} -> ${basename(result.to)}`;
+    if (result) {
+      return `move: ${basename(result.from)} → ${basename(result.to)}`;
+    }
   }
-
-  return `move: ${String(results.length)} items`;
+  const parts = [`move: ${String(successCount)} item${successCount === 1 ? '' : 's'}`];
+  if (failCount > 0) parts.push(`${String(failCount)} failed`);
+  return parts.join(' · ');
 }
 
 async function validateMoveSource(source: string, pathGuard: PathGuard): Promise<string> {
@@ -162,36 +183,54 @@ export const MOVE = defineTool({
   defaultErrorCode: ErrorCode.UNKNOWN,
   run: async (args, ctx) => {
     const results: MoveItemResult[] = [];
+    const failures: MoveFailureItem[] = [];
 
     for (const move of args.moves) {
-      const validSource = await validateMoveSource(move.source, ctx.pathGuard);
-      const validDest = await ctx.pathGuard.validatePathForWrite(move.destination);
+      try {
+        const validSource = await validateMoveSource(move.source, ctx.pathGuard);
+        const validDest = await ctx.pathGuard.validatePathForWrite(move.destination);
 
-      if (resolve(validSource) === resolve(validDest)) {
-        continue;
-      }
+        if (resolve(validSource) === resolve(validDest)) {
+          continue;
+        }
 
-      if (resolve(validDest).startsWith(resolve(validSource) + sep)) {
-        throw new McpError(
-          ErrorCode.INVALID_INPUT,
-          'Cannot move a directory into its own subdirectory',
-          move.source,
+        if (resolve(validDest).startsWith(resolve(validSource) + sep)) {
+          throw new McpError(
+            ErrorCode.INVALID_INPUT,
+            'Cannot move a directory into its own subdirectory',
+            move.source,
+          );
+        }
+
+        await withAbort(mkdir(dirname(validDest), { recursive: true }), ctx.signal);
+        await tryElicitOverwriteConfirmation(
+          move.destination,
+          validDest,
+          ctx.signal,
+          ctx.elicitInput,
         );
+        await performRenameWithFallback(validSource, validDest, ctx.signal, move.source);
+
+        results.push({ ok: true as const, from: validSource, to: validDest });
+        ctx.log?.('info', `move: ${move.source} -> ${move.destination}`, 'move');
+      } catch (err) {
+        // Re-throw cancellation (user-declined overwrite or abort signal)
+        if (isAbortError(err)) throw err;
+        // Collect all other errors as per-move failures
+        const structured = buildStructuredError(err, ErrorCode.UNKNOWN, move.source);
+        failures.push({
+          source: move.source,
+          destination: move.destination,
+          error: { code: structured.code, message: structured.message },
+        });
       }
-
-      await withAbort(mkdir(dirname(validDest), { recursive: true }), ctx.signal);
-      await tryElicitOverwriteConfirmation(
-        move.destination,
-        validDest,
-        ctx.signal,
-        ctx.elicitInput,
-      );
-      await performRenameWithFallback(validSource, validDest, ctx.signal, move.source);
-
-      results.push({ ok: true as const, from: validSource, to: validDest });
-      ctx.log?.('info', `move: ${move.source} -> ${move.destination}`, 'move');
     }
 
-    return buildToolResponse(buildSummary(results), { moves: results });
+    const output: z.infer<typeof MoveOutputSchema> = {
+      ok: true as const,
+      moves: results,
+      ...(failures.length > 0 ? { failures } : {}),
+    };
+    return buildToolResponse(buildSummary(results, failures), output);
   },
 });
