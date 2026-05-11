@@ -316,7 +316,7 @@ const SUMMARIZE_DIRECTORY: PromptEntry = {
           description: SUMMARIZE_DIRECTORY.contract.description,
           argsSchema: z.strictObject({
             path: pathArg(server, options.pathGuard, 'path', 'Directory to summarize.'),
-            depth: z.coerce.number().int().min(1).max(6).default(3).describe('Tree depth (1-6).'),
+            depth: z.int32().min(1).max(6).default(3).describe('Tree depth (1-6).'),
           }),
         },
         options.iconInfo,
