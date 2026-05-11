@@ -6,6 +6,7 @@ import {
   type EventStore,
   isInitializeRequest,
   JSONRPC_VERSION,
+  type JSONRPCErrorResponse,
   type JSONRPCMessage,
   parseJSONRPCMessage,
   ProtocolErrorCode,
@@ -176,14 +177,13 @@ function sendJsonRpcError(
   code: number,
   message: string,
 ): void {
+  const payload = {
+    jsonrpc: JSONRPC_VERSION,
+    id: null,
+    error: { code, message },
+  } as unknown as JSONRPCErrorResponse;
   res.writeHead(status, { 'Content-Type': 'application/json' });
-  res.end(
-    JSON.stringify({
-      jsonrpc: JSONRPC_VERSION,
-      error: { code, message },
-      id: null,
-    }),
-  );
+  res.end(JSON.stringify(payload));
 }
 
 function getSessionId(req: IncomingMessage): string | undefined {
@@ -280,17 +280,16 @@ function bearerAuthMiddleware(): RequestHandler {
       next();
       return;
     }
+    const payload = {
+      jsonrpc: JSONRPC_VERSION,
+      id: null,
+      error: { code: JSON_RPC_SERVER_ERROR, message: 'Unauthorized' },
+    } as unknown as JSONRPCErrorResponse;
     res.writeHead(401, {
       'Content-Type': 'application/json',
       'WWW-Authenticate': 'Bearer',
     });
-    res.end(
-      JSON.stringify({
-        jsonrpc: JSONRPC_VERSION,
-        error: { code: JSON_RPC_SERVER_ERROR, message: 'Unauthorized' },
-        id: null,
-      }),
-    );
+    res.end(JSON.stringify(payload));
   };
 }
 
