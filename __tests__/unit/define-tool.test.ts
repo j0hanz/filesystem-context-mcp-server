@@ -167,18 +167,6 @@ test('defineTool: handler returns not-initialized error when guard fails', async
   assert.ok(result.isError, 'result is an error when not initialized');
 });
 
-test('defineTool: handler rejects invalid input args', async (): Promise<void> => {
-  const tool = defineTool(BASE_DEF);
-  const capture: HandlerCapture = { handler: undefined };
-  tool.register(makeTestDeps(makeMockServer(capture)));
-  assert.ok(capture.handler, 'handler was captured');
-  const result = await capture.handler(
-    { message: 42 as unknown as string },
-    { mcpReq: fakeMcpReq() },
-  );
-  assert.ok(result.isError, 'result is an error when input is invalid');
-});
-
 test('defineTool: handler returns formatted error on thrown exception', async (): Promise<void> => {
   const tool = defineTool({
     ...BASE_DEF,

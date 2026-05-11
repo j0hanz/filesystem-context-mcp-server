@@ -131,14 +131,8 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
           };
         }
 
-        const parsed = def.input.safeParse(args);
-        if (!parsed.success) {
-          return {
-            isError: true as const,
-            content: [{ type: 'text' as const, text: `Invalid input: ${parsed.error.message}` }],
-          };
-        }
-        const parsedArgs = parsed.data;
+        // Input validation already performed by the MCP SDK via the standard schema
+        const parsedArgs = args as z.infer<typeof def.input>;
 
         const baseSignal = ctx.signal ?? new AbortController().signal;
         const timeoutSignal = def.timeoutMs ? AbortSignal.timeout(def.timeoutMs) : undefined;
