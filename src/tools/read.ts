@@ -52,23 +52,56 @@ const readRangeFields = createReadRangeFields({
   endLine: 'End line (1-indexed)',
 });
 
-const SingleReadSchema = z
-  .object({
-    path: RequiredPath.describe('File path (single-file mode)'),
+const ReadFileInputSchema = z
+  .strictObject({
+    path: RequiredPath.optional().describe('File path (single-file mode)'),
+    paths: z.array(RequiredPath).min(1).max(1000).optional().describe('File paths (batch mode; max 1000)'),
     includeHash: defaultFalseBoolean('Include SHA-256 hash of the content'),
     ...readRangeFields,
     offset: z
       .uint32()
       .optional()
-      .describe('Byte offset to start reading (mutually exclusive with line params)'),
+      .describe('Byte offset to start reading (single-file mode only; mutually exclusive with line params)'),
     length: z
       .uint32()
       .min(1)
       .optional()
-      .describe('Number of bytes to read (used with offset; reads to EOF if omitted)'),
+      .describe('Number of bytes to read (single-file mode only; used with offset; reads to EOF if omitted)'),
   })
-  .loose()
   .superRefine((value, ctx) => {
+    const hasPath = value.path !== undefined;
+    const hasPaths = value.paths !== undefined;
+
+    // Require exactly one of path or paths
+    if (!hasPath && !hasPaths) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['path'],
+        message: "Provide either 'path' or 'paths'",
+        input: value,
+      });
+    }
+
+    if (hasPath && hasPaths) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['paths'],
+        message: "Cannot use both 'path' and 'paths'",
+        input: value,
+      });
+    }
+
+    // offset and length are not supported in batch mode
+    if (hasPaths && (value.offset !== undefined || value.length !== undefined)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['offset'],
+        message: "'offset' and 'length' are not supported in batch mode",
+        input: value,
+      });
+    }
+
+    // Validate line-based range parameters (applies to both single and batch modes when provided)
     validateReadRange(
       {
         head: value.head,
@@ -80,42 +113,6 @@ const SingleReadSchema = z
       },
       ctx,
     );
-  });
-
-const BatchReadSchema = z
-  .object({
-    paths: z.array(RequiredPath).min(1).max(1000).describe('File paths (batch mode; max 1000)'),
-    includeHash: defaultFalseBoolean('Include SHA-256 hash of the content'),
-    head: z.uint32().min(1).optional().describe('Return first N lines'),
-    tail: z.uint32().min(1).optional().describe('Return last N lines'),
-    startLine: PositiveInt.optional().describe('Start line (1-indexed)'),
-    endLine: PositiveInt.optional().describe('End line (1-indexed)'),
-  })
-  .loose()
-  .superRefine((value, ctx) => {
-    validateReadRange(
-      {
-        head: value.head,
-        tail: value.tail,
-        startLine: value.startLine,
-        endLine: value.endLine,
-      },
-      ctx,
-    );
-  });
-
-const ReadFileInputSchema = z
-  .union([SingleReadSchema, BatchReadSchema])
-  .superRefine((value, ctx) => {
-    // Check if user provided both path and paths
-    if ('path' in value && 'paths' in value && value.path && value.paths) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['paths'],
-        message: "Cannot use both 'path' and 'paths'",
-        input: value,
-      });
-    }
   });
 
 const ReadManyItemSchema = z.strictObject({
