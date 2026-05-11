@@ -7,6 +7,7 @@ import {
   RELATED_TASK_META_KEY,
   type Task,
   type TaskServerContext,
+  type TaskStatus,
   type ToolTaskHandler,
 } from '@modelcontextprotocol/server';
 import type { StandardSchemaWithJSON } from '@modelcontextprotocol/server';
@@ -32,7 +33,7 @@ export class EventedTaskStore extends InMemoryTaskStore {
 
   override async updateTaskStatus(
     taskId: string,
-    status: Task['status'],
+    status: TaskStatus,
     statusMessage?: string,
     sessionId?: string,
   ): Promise<void> {
@@ -197,7 +198,7 @@ export class TaskOrchestrator {
             const params = notification.params as Record<string, unknown>;
             const status = (
               typeof params['status'] === 'string' ? params['status'] : 'working'
-            ) as Task['status'];
+            ) as TaskStatus;
             const statusMessage =
               typeof params['statusMessage'] === 'string' ? params['statusMessage'] : '';
 
