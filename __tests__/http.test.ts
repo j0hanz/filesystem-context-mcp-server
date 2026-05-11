@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 
+import { Logger } from '../src/core/observability.js';
 import { startHttpServer } from '../src/transport.js';
 
 function getServerPort(server: Server): number {
@@ -668,5 +669,84 @@ describe('HTTP transport', () => {
     const body = JSON.parse(res.body) as { error?: { code?: number; message?: string } };
     assert.equal(body.error?.code, -32600);
     assert.match(body.error?.message ?? '', /response|notification/iu);
+  });
+
+  it('emits a debug breadcrumb when a client sends notifications/initialized over HTTP', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+    const port = getServerPort(server);
+
+    // Capture Logger.debug calls
+    const debugLogs: { message: string; data: unknown }[] = [];
+    const originalDebug = Object.getOwnPropertyDescriptor(Logger, 'debug')?.value as
+      | ((message: string, data: unknown) => void)
+      | undefined;
+    Object.defineProperty(Logger, 'debug', {
+      value: (message: string, data: unknown): void => {
+        debugLogs.push({ message, data });
+        if (originalDebug) originalDebug.call(Logger, message, data);
+      },
+      configurable: true,
+    });
+
+    try {
+      // First, open a session via initialize request using fetch
+      const initRes = await fetch(`http://127.0.0.1:${String(port)}/mcp`, {
+        method: 'POST',
+        headers: {
+          accept: 'application/json, text/event-stream',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {
+            protocolVersion: '2025-11-25',
+            capabilities: {},
+            clientInfo: { name: 'test', version: '0' },
+          },
+        }),
+      });
+      assert.equal(initRes.status, 200, 'initialize should return 200');
+
+      // Extract session ID from response header
+      const sessionId = initRes.headers.get('mcp-session-id');
+      assert.ok(typeof sessionId === 'string', 'Expected mcp-session-id header');
+
+      debugLogs.length = 0; // Clear init logs
+
+      // Now send notifications/initialized with the session ID
+      const notifRes = await fetch(`http://127.0.0.1:${String(port)}/mcp`, {
+        method: 'POST',
+        headers: {
+          accept: 'application/json, text/event-stream',
+          'content-type': 'application/json',
+          'mcp-session-id': sessionId,
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+      });
+      assert.equal(notifRes.status, 202, 'initialized notification should return 202');
+
+      // Verify the breadcrumb was logged
+      const breadcrumb = debugLogs.find(
+        (log) =>
+          log.message === '[HTTP] initialized notification received' &&
+          typeof log.data === 'object' &&
+          log.data !== null &&
+          'sessionId' in log.data &&
+          (log.data as Record<string, unknown>).sessionId === sessionId,
+      );
+      assert.ok(breadcrumb, 'Expected initialized-notification breadcrumb in HTTP debug log');
+    } finally {
+      // Restore Logger.debug
+      if (originalDebug) {
+        Object.defineProperty(Logger, 'debug', {
+          value: originalDebug,
+          configurable: true,
+        });
+      }
+    }
   });
 });

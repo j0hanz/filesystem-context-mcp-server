@@ -4,6 +4,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import {
   type EventId,
   type EventStore,
+  isInitializedNotification,
   isInitializeRequest,
   isJSONRPCErrorResponse,
   isJSONRPCNotification,
@@ -542,6 +543,9 @@ async function handlePostMcp(
 
     const kind = classifyJsonRpcMessage(message);
     Logger.debug('[HTTP] inbound', { kind, sessionId: sessionId ?? null });
+    if (isInitializedNotification(message)) {
+      Logger.debug('[HTTP] initialized notification received', { sessionId: sessionId ?? null });
+    }
 
     if (sessionId) {
       const session = registry.getOrRespondNotFound(sessionId, res);
