@@ -52,15 +52,9 @@ const readRangeFields = createReadRangeFields({
   endLine: 'End line (1-indexed)',
 });
 
-const ReadFileInputSchema = z
-  .strictObject({
-    path: RequiredPath.optional().describe('File path (single-file mode)'),
-    paths: z
-      .array(RequiredPath)
-      .min(1)
-      .max(1000)
-      .optional()
-      .describe('File paths (batch mode; mutually exclusive with path; max 1000)'),
+const SingleReadSchema = z
+  .object({
+    path: RequiredPath.describe('File path (single-file mode)'),
     includeHash: defaultFalseBoolean('Include SHA-256 hash of the content'),
     ...readRangeFields,
     offset: z
@@ -73,23 +67,8 @@ const ReadFileInputSchema = z
       .optional()
       .describe('Number of bytes to read (used with offset; reads to EOF if omitted)'),
   })
+  .passthrough()
   .superRefine((value, ctx) => {
-    if (!value.path && !value.paths) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['path'],
-        message: "Either 'path' or 'paths' is required",
-        input: value,
-      });
-    }
-    if (value.path && value.paths) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['paths'],
-        message: "Cannot use both 'path' and 'paths'",
-        input: value,
-      });
-    }
     validateReadRange(
       {
         head: value.head,
@@ -102,6 +81,52 @@ const ReadFileInputSchema = z
       ctx,
     );
   });
+
+const BatchReadSchema = z
+  .object({
+    paths: z
+      .array(RequiredPath)
+      .min(1)
+      .max(1000)
+      .describe('File paths (batch mode; max 1000)'),
+    includeHash: defaultFalseBoolean('Include SHA-256 hash of the content'),
+    head: z
+      .uint32()
+      .min(1)
+      .optional()
+      .describe('Return first N lines'),
+    tail: z
+      .uint32()
+      .min(1)
+      .optional()
+      .describe('Return last N lines'),
+    startLine: PositiveInt.optional().describe('Start line (1-indexed)'),
+    endLine: PositiveInt.optional().describe('End line (1-indexed)'),
+  })
+  .passthrough()
+  .superRefine((value, ctx) => {
+    validateReadRange(
+      {
+        head: value.head,
+        tail: value.tail,
+        startLine: value.startLine,
+        endLine: value.endLine,
+      },
+      ctx,
+    );
+  });
+
+const ReadFileInputSchema = z.union([SingleReadSchema, BatchReadSchema]).superRefine((value, ctx) => {
+  // Check if user provided both path and paths
+  if ('path' in value && 'paths' in value && value.path && value.paths) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['paths'],
+      message: "Cannot use both 'path' and 'paths'",
+      input: value,
+    });
+  }
+});
 
 const ReadManyItemSchema = z.strictObject({
   path: z.string().describe('File path'),
@@ -159,14 +184,21 @@ function buildReadOptions(
     skipBinary: true,
   };
 
+  const head = 'head' in args && typeof args.head === 'number' ? args.head : undefined;
+  const tail = 'tail' in args && typeof args.tail === 'number' ? args.tail : undefined;
+  const startLine = 'startLine' in args && typeof args.startLine === 'number' ? args.startLine : undefined;
+  const endLine = 'endLine' in args && typeof args.endLine === 'number' ? args.endLine : undefined;
+  const offset = 'offset' in args && typeof args.offset === 'number' ? args.offset : undefined;
+  const length = 'length' in args && typeof args.length === 'number' ? args.length : undefined;
+
   return assignDefined(options, {
     signal,
-    head: args.head,
-    tail: args.tail,
-    startLine: args.startLine,
-    endLine: args.endLine,
-    offset: args.offset,
-    length: args.length,
+    head,
+    tail,
+    startLine,
+    endLine,
+    offset,
+    length,
   });
 }
 
@@ -231,18 +263,22 @@ function toStructuredReadFileResult(
 }
 
 function buildReadProgressLabel(args: ReadFileInput): string {
-  const name = args.path ? basename(args.path) : `${String(args.paths?.length ?? 0)} files`;
-  if (args.paths) return `Read Files: ${name}`;
-  if (args.offset !== undefined) {
-    const end = args.length !== undefined ? args.offset + args.length - 1 : '…';
-    return `${READ_TOOL_LABEL}: ${name} [bytes ${args.offset}–${String(end)}]`;
+  const isBatch = 'paths' in args && Array.isArray(args['paths']);
+  const args_ = args as Record<string, unknown>;
+  const name = isBatch
+    ? `${String(args_['paths'] && Array.isArray(args_['paths']) ? (args_['paths'] as string[]).length : 0)} files`
+    : basename(args_['path'] as string);
+  if (isBatch) return `Read Files: ${name}`;
+  if (args_['offset'] !== undefined && typeof args_['offset'] === 'number') {
+    const end = args_['length'] !== undefined && typeof args_['length'] === 'number' ? (args_['offset'] as number) + (args_['length'] as number) - 1 : '…';
+    return `${READ_TOOL_LABEL}: ${name} [bytes ${args_['offset']}–${String(end)}]`;
   }
-  if (args.startLine !== undefined) {
-    const end = args.endLine ?? '…';
-    return `${READ_TOOL_LABEL}: ${name} [lines ${args.startLine}–${end}]`;
+  if (args_['startLine'] !== undefined && typeof args_['startLine'] === 'number') {
+    const end = args_['endLine'] ?? '…';
+    return `${READ_TOOL_LABEL}: ${name} [lines ${args_['startLine']}–${end}]`;
   }
-  if (args.head !== undefined) return `${READ_TOOL_LABEL}: ${name} [head ${args.head}]`;
-  if (args.tail !== undefined) return `${READ_TOOL_LABEL}: ${name} [tail ${args.tail}]`;
+  if (args_['head'] !== undefined && typeof args_['head'] === 'number') return `${READ_TOOL_LABEL}: ${name} [head ${args_['head']}]`;
+  if (args_['tail'] !== undefined && typeof args_['tail'] === 'number') return `${READ_TOOL_LABEL}: ${name} [tail ${args_['tail']}]`;
   return `${READ_TOOL_LABEL}: ${name}`;
 }
 
@@ -812,7 +848,8 @@ export const READ_FILE = defineTool({
     ],
   }),
   run: (args, ctx) => {
-    if (args.paths) {
+    const isBatch = 'paths' in args && Array.isArray(args.paths);
+    if (isBatch) {
       return handleReadMultipleFiles(
         args as ReadFileInput & { paths: string[] },
         ctx.pathGuard,

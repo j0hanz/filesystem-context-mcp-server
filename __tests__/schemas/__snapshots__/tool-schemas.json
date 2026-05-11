@@ -1158,68 +1158,117 @@
   "read": {
     "inputSchema": {
       "type": "object",
-      "properties": {
-        "path": {
-          "description": "File path (single-file mode)",
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "File path (single-file mode)"
+            },
+            "includeHash": {
+              "default": false,
+              "description": "Include SHA-256 hash of the content",
+              "type": "boolean"
+            },
+            "head": {
+              "description": "Return first N lines",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000
+            },
+            "tail": {
+              "description": "Return last N lines",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000
+            },
+            "startLine": {
+              "description": "Start line (1-indexed)",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "endLine": {
+              "description": "End line (1-indexed)",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "offset": {
+              "description": "Byte offset to start reading (mutually exclusive with line params)",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "length": {
+              "description": "Number of bytes to read (used with offset; reads to EOF if omitted)",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": {}
         },
-        "paths": {
-          "description": "File paths (batch mode; mutually exclusive with path; max 1000)",
-          "minItems": 1,
-          "maxItems": 1000,
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 4096,
-            "description": "Path inside an allowed root"
-          }
-        },
-        "includeHash": {
-          "default": false,
-          "description": "Include SHA-256 hash of the content",
-          "type": "boolean"
-        },
-        "head": {
-          "description": "Return first N lines",
+        {
+          "type": "object",
+          "properties": {
+            "paths": {
+              "minItems": 1,
+              "maxItems": 1000,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096,
+                "description": "Path inside an allowed root"
+              },
+              "description": "File paths (batch mode; max 1000)"
+            },
+            "includeHash": {
+              "default": false,
+              "description": "Include SHA-256 hash of the content",
+              "type": "boolean"
+            },
+            "head": {
+              "description": "Return first N lines",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295
+            },
+            "tail": {
+              "description": "Return last N lines",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295
+            },
+            "startLine": {
+              "description": "Start line (1-indexed)",
+              "$ref": "#/$defs/PositiveInt"
+            },
+            "endLine": {
+              "description": "End line (1-indexed)",
+              "$ref": "#/$defs/PositiveInt"
+            }
+          },
+          "required": [
+            "paths"
+          ],
+          "additionalProperties": {}
+        }
+      ],
+      "$defs": {
+        "PositiveInt": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 100000
-        },
-        "tail": {
-          "description": "Return last N lines",
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 100000
-        },
-        "startLine": {
-          "description": "Start line (1-indexed)",
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 2147483647
-        },
-        "endLine": {
-          "description": "End line (1-indexed)",
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 2147483647
-        },
-        "offset": {
-          "description": "Byte offset to start reading (mutually exclusive with line params)",
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 4294967295
-        },
-        "length": {
-          "description": "Number of bytes to read (used with offset; reads to EOF if omitted)",
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 4294967295
+          "title": "Positive Integer"
         }
       },
-      "additionalProperties": false,
       "allOf": [
         {
           "not": {

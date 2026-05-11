@@ -205,6 +205,39 @@ describe('read tool', () => {
     assert.equal(raw2.content[1].type, 'resource_link');
     assert.ok(sc2['resourceUri']);
   });
+
+  it('read rejects both path and paths supplied (oneOf shape)', async () => {
+    const raw = await env.client.callTool({
+      name: 'read',
+      arguments: { path: file, paths: [file] },
+    });
+    assertToolError(raw);
+    const text = (raw as { content: { text?: string }[] }).content[0]?.text;
+    assert.match(text ?? '', /path.*paths|both/iu);
+  });
+
+  it('read JSON schema declares oneOf between path and paths', async () => {
+    const tools = await env.client.listTools();
+    const readTool = tools.tools.find((t) => t.name === 'read');
+    assert.ok(readTool, 'read tool should exist');
+    const inputSchema = readTool.inputSchema as Record<string, unknown>;
+    // Schema should have anyOf (from z.union) instead of superRefine
+    assert.ok(inputSchema.anyOf, 'Schema should declare anyOf for single vs batch modes');
+    const anyOfArray = inputSchema.anyOf as Record<string, unknown>[];
+    assert.ok(Array.isArray(anyOfArray), 'anyOf should be an array');
+    assert.ok(anyOfArray.length >= 2, 'anyOf should have at least 2 branches');
+    // First branch should have path, second should have paths
+    const hasSingleBranch = anyOfArray.some((branch: Record<string, unknown>) => {
+      const required = branch.required as string[] | undefined;
+      return required?.includes('path') && !required?.includes('paths');
+    });
+    const hasBatchBranch = anyOfArray.some((branch: Record<string, unknown>) => {
+      const required = branch.required as string[] | undefined;
+      return required?.includes('paths') && !required?.includes('path');
+    });
+    assert.ok(hasSingleBranch, 'anyOf should have a branch with required path');
+    assert.ok(hasBatchBranch, 'anyOf should have a branch with required paths');
+  });
 });
 
 // ─── write ───────────────────────────────────────────────────────────────────
