@@ -34,46 +34,44 @@ const HashInputSchema = z.strictObject({
 
 // Native Zod v4 record schema: constrains keys to algorithms and values to lowercase hex
 const ALGO_LENGTHS: Record<(typeof SUPPORTED_ALGORITHMS)[number], number> = {
-  sha256: 64,  // 256 bits = 64 hex chars
+  sha256: 64, // 256 bits = 64 hex chars
   sha512: 128, // 512 bits = 128 hex chars
-  sha1: 40,    // 160 bits = 40 hex chars
-  md5: 32,     // 128 bits = 32 hex chars
+  sha1: 40, // 160 bits = 40 hex chars
+  md5: 32, // 128 bits = 32 hex chars
 };
 
-const HashesSchema = z
-  .record(z.string(), z.string())
-  .superRefine((hashes, ctx) => {
-    for (const [key, value] of Object.entries(hashes)) {
-      // Validate key is supported algorithm
-      if (!SUPPORTED_ALGORITHMS.includes(key as (typeof SUPPORTED_ALGORITHMS)[number])) {
-        ctx.addIssue({
-          code: 'custom',
-          path: [key],
-          message: `Must be a supported algorithm: ${SUPPORTED_ALGORITHMS.join(', ')}`,
-        });
-        continue;
-      }
-      // Validate value is valid hex string
-      if (!/^[a-f0-9]+$/i.test(value)) {
-        ctx.addIssue({
-          code: 'custom',
-          path: [key],
-          message: `Invalid ${key} digest: must be lowercase hex string`,
-        });
-        continue;
-      }
-      // Validate digest length matches algorithm
-      const algo = key as (typeof SUPPORTED_ALGORITHMS)[number];
-      const expectedLength = ALGO_LENGTHS[algo];
-      if (value.length !== expectedLength) {
-        ctx.addIssue({
-          code: 'custom',
-          path: [key],
-          message: `Invalid ${algo} digest: expected ${expectedLength} hex characters, got ${value.length}`,
-        });
-      }
+const HashesSchema = z.record(z.string(), z.string()).superRefine((hashes, ctx) => {
+  for (const [key, value] of Object.entries(hashes)) {
+    // Validate key is supported algorithm
+    if (!SUPPORTED_ALGORITHMS.includes(key as (typeof SUPPORTED_ALGORITHMS)[number])) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [key],
+        message: `Must be a supported algorithm: ${SUPPORTED_ALGORITHMS.join(', ')}`,
+      });
+      continue;
     }
-  });
+    // Validate value is valid hex string
+    if (!/^[a-f0-9]+$/i.test(value)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [key],
+        message: `Invalid ${key} digest: must be lowercase hex string`,
+      });
+      continue;
+    }
+    // Validate digest length matches algorithm
+    const algo = key as (typeof SUPPORTED_ALGORITHMS)[number];
+    const expectedLength = ALGO_LENGTHS[algo];
+    if (value.length !== expectedLength) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [key],
+        message: `Invalid ${algo} digest: expected ${expectedLength} hex characters, got ${value.length}`,
+      });
+    }
+  }
+});
 
 const HashOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),

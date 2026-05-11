@@ -55,18 +55,27 @@ const readRangeFields = createReadRangeFields({
 const ReadFileInputSchema = z
   .strictObject({
     path: RequiredPath.optional().describe('File path (single-file mode)'),
-    paths: z.array(RequiredPath).min(1).max(1000).optional().describe('File paths (batch mode; max 1000)'),
+    paths: z
+      .array(RequiredPath)
+      .min(1)
+      .max(1000)
+      .optional()
+      .describe('File paths (batch mode; max 1000)'),
     includeHash: defaultFalseBoolean('Include SHA-256 hash of the content'),
     ...readRangeFields,
     offset: z
       .uint32()
       .optional()
-      .describe('Byte offset to start reading (single-file mode only; mutually exclusive with line params)'),
+      .describe(
+        'Byte offset to start reading (single-file mode only; mutually exclusive with line params)',
+      ),
     length: z
       .uint32()
       .min(1)
       .optional()
-      .describe('Number of bytes to read (single-file mode only; used with offset; reads to EOF if omitted)'),
+      .describe(
+        'Number of bytes to read (single-file mode only; used with offset; reads to EOF if omitted)',
+      ),
   })
   .superRefine((value, ctx) => {
     const hasPath = value.path !== undefined;
