@@ -13,6 +13,7 @@ import type {
   ToolExecution,
   ToolTaskHandler,
 } from '@modelcontextprotocol/server';
+import { getDisplayName } from '@modelcontextprotocol/server';
 
 import type { z } from 'zod/v4';
 
@@ -123,7 +124,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
         const timeoutSignal = def.timeoutMs ? AbortSignal.timeout(def.timeoutMs) : undefined;
         const signal = timeoutSignal ? AbortSignal.any([baseSignal, timeoutSignal]) : baseSignal;
 
-        const label = def.progressLabel ? def.progressLabel(parsedArgs) : def.name;
+        const label = def.progressLabel ? def.progressLabel(parsedArgs) : getDisplayName(def);
         const progressSession = new ProgressSession({ label, sinks: [], dynamicRateLimit: true });
 
         const toolCtx: ToolCtx = {

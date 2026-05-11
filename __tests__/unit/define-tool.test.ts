@@ -226,3 +226,12 @@ test('defineTool: inputSchema and outputSchema are present', (): void => {
     'outputSchema is an object',
   );
 });
+
+test('progress label fallback: uses title when progressLabel not provided', async (): Promise<void> => {
+  const { getDisplayName } = (await import('@modelcontextprotocol/server')) as {
+    getDisplayName: (m: { title?: string; name: string }) => string;
+  };
+  const tool = defineTool(BASE_DEF);
+  assert.equal(getDisplayName(tool), 'Test Tool');
+  assert.notEqual(getDisplayName(tool), tool.name);
+});

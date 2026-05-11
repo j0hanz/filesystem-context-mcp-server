@@ -1,5 +1,6 @@
 import {
   completable,
+  getDisplayName,
   type GetPromptResult,
   type McpServer,
   type PromptMessage,
@@ -97,22 +98,31 @@ function linkToPath(absPath: string): PromptMessage {
 }
 
 function wrapHandler<T>(
-  name: string,
+  contract: PromptContract,
   options: PromptRegistrationOptions,
   requiresInit: boolean,
   fn: () => Promise<T> | T,
 ): Promise<T> | T {
   if (requiresInit && !options.isInitialized()) {
-    throw new Error(`Prompt ${name} called before roots are initialized`);
+    throw new Error(`Prompt ${contract.name} called before roots are initialized`);
   }
+  const displayName = getDisplayName(contract);
   const start = Date.now();
   const result = fn();
   if (result instanceof Promise) {
     return result.finally(() => {
-      Logger.debug(`prompt resolved`, { name, durationMs: Date.now() - start });
+      Logger.debug(`prompt resolved`, {
+        name: contract.name,
+        displayName,
+        durationMs: Date.now() - start,
+      });
     });
   }
-  Logger.debug(`prompt resolved`, { name, durationMs: Date.now() - start });
+  Logger.debug(`prompt resolved`, {
+    name: contract.name,
+    displayName,
+    durationMs: Date.now() - start,
+  });
   return result;
 }
 
@@ -143,7 +153,7 @@ const GET_HELP: PromptEntry = {
         options.iconInfo,
       ),
       ({ topic }): GetPromptResult | Promise<GetPromptResult> =>
-        wrapHandler(GET_HELP.contract.name, options, false, () => {
+        wrapHandler(GET_HELP.contract, options, false, () => {
           const section = topic ? INSTRUCTION_SECTIONS[topic.toLowerCase()] : undefined;
           const text =
             section ??
@@ -180,7 +190,7 @@ const ANALYZE_PATH: PromptEntry = {
         options.iconInfo,
       ),
       async ({ path: rawPath }): Promise<GetPromptResult> =>
-        wrapHandler(ANALYZE_PATH.contract.name, options, true, async () => {
+        wrapHandler(ANALYZE_PATH.contract, options, true, async () => {
           const resolved = await options.pathGuard.validateExistingPath(rawPath);
           const stats = await stat(resolved);
           const kind = stats.isDirectory() ? 'directory' : 'file';
@@ -219,7 +229,7 @@ const COMPARE_FILES: PromptEntry = {
         options.iconInfo,
       ),
       async ({ original, modified }): Promise<GetPromptResult> =>
-        wrapHandler(COMPARE_FILES.contract.name, options, true, async () => {
+        wrapHandler(COMPARE_FILES.contract, options, true, async () => {
           const [resolvedOriginal, resolvedModified] = await Promise.all([
             options.pathGuard.validateExistingPath(original),
             options.pathGuard.validateExistingPath(modified),
@@ -270,7 +280,7 @@ const FIND_IN_TREE: PromptEntry = {
         options.iconInfo,
       ),
       async ({ query, root, mode }): Promise<GetPromptResult> =>
-        wrapHandler(FIND_IN_TREE.contract.name, options, true, async () => {
+        wrapHandler(FIND_IN_TREE.contract, options, true, async () => {
           const allowed = options.pathGuard.getAllowedDirectories();
           const candidate = root ?? allowed[0];
           if (!candidate) {
@@ -318,7 +328,7 @@ const SUMMARIZE_DIRECTORY: PromptEntry = {
         options.iconInfo,
       ),
       async ({ path: rawPath, depth }): Promise<GetPromptResult> =>
-        wrapHandler(SUMMARIZE_DIRECTORY.contract.name, options, true, async () => {
+        wrapHandler(SUMMARIZE_DIRECTORY.contract, options, true, async () => {
           const resolved = await options.pathGuard.validateExistingDirectory(rawPath);
           const text = [
             `Summarize this project at ${resolved}:`,
