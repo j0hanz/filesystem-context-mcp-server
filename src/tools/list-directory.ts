@@ -502,7 +502,7 @@ const listSnapshots = new Map<string, ListSnapshot>();
 const listSnapshotTimers = new Map<string, NodeJS.Timeout>();
 const ListCursorPayloadSchema = z.strictObject({
   snapshotId: z.string().min(1),
-  offset: z.int().min(0),
+  offset: NonNegInt,
 });
 const ListCursorCodec = createBase64JsonCodec(ListCursorPayloadSchema);
 

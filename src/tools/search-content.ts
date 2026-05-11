@@ -183,7 +183,7 @@ const SearchOptionsSchema = z.strictObject({
   maxFilesScanned: z.int().min(0),
   timeoutMs: z.int().min(0),
   skipBinary: z.boolean(),
-  contextLines: z.int().min(0),
+  contextLines: NonNegInt,
   contextBefore: z.int32().min(0).max(20).optional(),
   contextAfter: z.int32().min(0).max(20).optional(),
   fuzzy: z.boolean().optional(),

@@ -44,6 +44,7 @@ import type { ProgressEvent, ProgressSink } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import { createBase64JsonCodec } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
+import { NonNegInt } from '../schema.js';
 import type { TaskOrchestrator } from '../tasks.js';
 
 // ============ ToolContext ============
@@ -271,7 +272,7 @@ export function putResource(params: PutResourceParams): PutResourceResult {
 // ============ Cursor Helpers ============
 
 const OffsetCursorSchema = z.strictObject({
-  offset: z.int().min(0),
+  offset: NonNegInt,
 });
 
 const OffsetCursorCodec = createBase64JsonCodec(OffsetCursorSchema);
