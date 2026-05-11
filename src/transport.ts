@@ -171,19 +171,27 @@ const ALLOWED_ORIGIN_PATTERNS: readonly RegExp[] = [
   /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/u,
 ];
 
+/**
+ * Builds a JSON-RPC error response object with the given code and message.
+ * The `id` field is set to `null` since this is a response to an invalid request that may not have a valid ID.
+ */
+function buildJsonRpcError(code: number, message: string): JSONRPCErrorResponse {
+  const payload: Omit<JSONRPCErrorResponse, 'id'> & { id: null } = {
+    jsonrpc: JSONRPC_VERSION,
+    id: null,
+    error: { code, message },
+  };
+  return payload as unknown as JSONRPCErrorResponse;
+}
+
 function sendJsonRpcError(
   res: ServerResponse,
   status: number,
   code: number,
   message: string,
 ): void {
-  const payload = {
-    jsonrpc: JSONRPC_VERSION,
-    id: null,
-    error: { code, message },
-  } as unknown as JSONRPCErrorResponse;
   res.writeHead(status, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(payload));
+  res.end(JSON.stringify(buildJsonRpcError(code, message)));
 }
 
 function getSessionId(req: IncomingMessage): string | undefined {
@@ -290,16 +298,11 @@ function bearerAuthMiddleware(): RequestHandler {
       next();
       return;
     }
-    const payload = {
-      jsonrpc: JSONRPC_VERSION,
-      id: null,
-      error: { code: JSON_RPC_SERVER_ERROR, message: 'Unauthorized' },
-    } as unknown as JSONRPCErrorResponse;
     res.writeHead(401, {
       'Content-Type': 'application/json',
       'WWW-Authenticate': 'Bearer',
     });
-    res.end(JSON.stringify(payload));
+    res.end(JSON.stringify(buildJsonRpcError(JSON_RPC_SERVER_ERROR, 'Unauthorized')));
   };
 }
 

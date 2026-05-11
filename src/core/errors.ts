@@ -92,10 +92,20 @@ function readSuggestionMeta(schema: z.ZodType | undefined): string | undefined {
   return undefined;
 }
 
+interface ZodDef {
+  shape?: Record<string, z.ZodType>;
+  type?: z.ZodType;
+}
+
+function getZodDef(schema: z.ZodType): ZodDef | undefined {
+  if (!('_def' in schema)) return undefined;
+  const def: unknown = (schema as { _def: unknown })._def;
+  if (def === null || typeof def !== 'object') return undefined;
+  return def;
+}
+
 function descend(schema: z.ZodType, segment: string | number): z.ZodType | undefined {
-  const def = (schema as unknown as { _def?: unknown })._def as
-    | { shape?: Record<string, z.ZodType>; type?: z.ZodType }
-    | undefined;
+  const def = getZodDef(schema);
   if (!def) return undefined;
   if (typeof segment === 'string' && def.shape !== undefined && segment in def.shape) {
     return def.shape[segment];

@@ -173,7 +173,7 @@ interface PoolWorker {
 }
 
 class FastQueue<T> {
-  private items: T[] = [];
+  private items: (T | undefined)[] = [];
   private head = 0;
 
   push(item: T): void {
@@ -183,7 +183,7 @@ class FastQueue<T> {
   shift(): T | undefined {
     if (this.head < this.items.length) {
       const item = this.items[this.head];
-      this.items[this.head] = undefined as unknown as T;
+      this.items[this.head] = undefined;
       this.head++;
       if (this.head > 1000 && this.head * 2 >= this.items.length) {
         this.items = this.items.slice(this.head);
@@ -209,7 +209,7 @@ class FastQueue<T> {
   }
 
   clear(): T[] {
-    const remaining = this.items.slice(this.head);
+    const remaining = this.items.slice(this.head).filter((x): x is T => x !== undefined);
     this.items = [];
     this.head = 0;
     return remaining;
