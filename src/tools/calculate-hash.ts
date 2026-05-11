@@ -58,8 +58,7 @@ const HashesSchema = z
         algorithmHashSchemas[algo as (typeof SUPPORTED_ALGORITHMS)[number]];
       if (!algorithmSchema) {
         ctx.addIssue({
-          code: z.ZodIssueCode.invalid_enum_value,
-          enum: SUPPORTED_ALGORITHMS as unknown as string[],
+          code: 'custom',
           path: [algo],
           message: `Invalid algorithm: ${algo}`,
         });
@@ -69,8 +68,7 @@ const HashesSchema = z
       const result = algorithmSchema.safeParse(digest);
       if (!result.success) {
         ctx.addIssue({
-          code: z.ZodIssueCode.invalid_string,
-          validation: 'regex',
+          code: 'custom',
           path: [algo],
           message: `Invalid ${algo} digest: must be valid hex string`,
         });
