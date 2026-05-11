@@ -57,15 +57,8 @@ const HashesSchema = z
   .superRefine((hashes, ctx) => {
     for (const [algo, digest] of Object.entries(hashes)) {
       // Validate the digest against the specific algorithm's hash schema
+      // Note: The refine above ensures algo is a valid algorithm, so lookup is safe
       const algorithmSchema = algorithmHashSchemas[algo as (typeof SUPPORTED_ALGORITHMS)[number]];
-      if (!algorithmSchema) {
-        ctx.addIssue({
-          code: 'custom',
-          path: [algo],
-          message: `Invalid algorithm: ${algo}`,
-        });
-        continue;
-      }
 
       const result = algorithmSchema.safeParse(digest);
       if (!result.success) {

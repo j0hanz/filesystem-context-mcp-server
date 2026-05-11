@@ -67,7 +67,7 @@ const SingleReadSchema = z
       .optional()
       .describe('Number of bytes to read (used with offset; reads to EOF if omitted)'),
   })
-  .passthrough()
+  .loose()
   .superRefine((value, ctx) => {
     validateReadRange(
       {
@@ -91,7 +91,7 @@ const BatchReadSchema = z
     startLine: PositiveInt.optional().describe('Start line (1-indexed)'),
     endLine: PositiveInt.optional().describe('End line (1-indexed)'),
   })
-  .passthrough()
+  .loose()
   .superRefine((value, ctx) => {
     validateReadRange(
       {
@@ -268,8 +268,8 @@ function buildReadProgressLabel(args: ReadFileInput): string {
     return `${READ_TOOL_LABEL}: ${name} [bytes ${args_['offset']}–${String(end)}]`;
   }
   if (args_['startLine'] !== undefined && typeof args_['startLine'] === 'number') {
-    const end = args_['endLine'] ?? '…';
-    return `${READ_TOOL_LABEL}: ${name} [lines ${args_['startLine']}–${end}]`;
+    const end = (args_['endLine'] ?? '…') as string | number;
+    return `${READ_TOOL_LABEL}: ${name} [lines ${args_['startLine']}–${String(end)}]`;
   }
   if (args_['head'] !== undefined && typeof args_['head'] === 'number')
     return `${READ_TOOL_LABEL}: ${name} [head ${args_['head']}]`;

@@ -6,8 +6,6 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-import { z } from 'zod/v4';
-
 import { HashOutputSchema } from '../../src/tools/calculate-hash.js';
 import {
   assertOk,

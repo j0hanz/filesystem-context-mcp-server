@@ -22,6 +22,7 @@ export default tseslint.config(
       '.agents/**',
       '.claude/**',
       'logs/**',
+      '.worktrees/**',
     ],
   },
 
