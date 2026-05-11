@@ -117,8 +117,8 @@ const MAX_PATH_LENGTH = 4096;
 
 const PathBase = z
   .string()
-  .min(1, 'Path required')
-  .max(MAX_PATH_LENGTH, `Path too long (max ${MAX_PATH_LENGTH} chars)`)
+  .min(1, { error: 'Path required' })
+  .max(MAX_PATH_LENGTH, { error: `Path too long (max ${MAX_PATH_LENGTH} chars)` })
   .describe('Path inside an allowed root')
   .meta({
     suggestion:
@@ -130,8 +130,8 @@ export const RequiredPath = PathBase;
 
 export const SafeGlobPattern = z
   .string()
-  .min(1, 'Pattern required')
-  .max(1000, 'Max 1000 chars')
+  .min(1, { error: 'Pattern required' })
+  .max(1000, { error: 'Max 1000 chars' })
   .regex(/^(?!\/)(?![a-zA-Z]:[\\/])(?!.*\.\.).+$/, {
     error: 'Invalid glob or unsafe path (absolute/.. forbidden)',
   })
@@ -192,10 +192,10 @@ interface ReadRangeDescriptions {
 
 export function createReadRangeFields(descs: ReadRangeDescriptions) {
   return {
-    head: z.int32().min(1, 'Min: 1').max(100000, 'Max: 100,000').optional().describe(descs.head),
-    tail: z.int32().min(1, 'Min: 1').max(100000, 'Max: 100,000').optional().describe(descs.tail),
-    startLine: z.int32().min(1, 'Min: 1').optional().describe(descs.startLine),
-    endLine: z.int32().min(1, 'Min: 1').optional().describe(descs.endLine),
+    head: z.int32().min(1, { error: 'Min: 1' }).max(100000, { error: 'Max: 100,000' }).optional().describe(descs.head),
+    tail: z.int32().min(1, { error: 'Min: 1' }).max(100000, { error: 'Max: 100,000' }).optional().describe(descs.tail),
+    startLine: z.int32().min(1, { error: 'Min: 1' }).optional().describe(descs.startLine),
+    endLine: z.int32().min(1, { error: 'Min: 1' }).optional().describe(descs.endLine),
   };
 }
 
