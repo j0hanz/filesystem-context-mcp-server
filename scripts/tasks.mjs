@@ -729,96 +729,23 @@ const KnipParser = {
   },
 };
 
-const TapParser = {
-  OK_RE: /^ok \d+ - (.+?)(?:\s+#\s+time=(\S+))?$/,
-  NOT_OK_RE: /^not ok \d+ - (.+)$/,
-  YAML_KV_RE: /^(\w+):\s*(.*)$/,
-  YAML_BLOCK_FRAME_RE: /(?:at\s+)?\S+\s+\(([^)]+:\d+:\d+)\)/,
-
+const JsonLParser = {
   parseLine(line) {
-    const trimmed = line.trimStart();
-    const indent = line.length - trimmed.length;
-
-    if (trimmed.startsWith('ok ')) {
-      const ok = this.OK_RE.exec(trimmed);
-      if (ok) {
-        return {
-          type: 'ok',
-          depth: indent,
-          name: ok[1].trim(),
-          duration: ok[2] ? parseFloat(ok[2]) : 0,
-        };
-      }
+    if (!line.trim()) return null;
+    try {
+      return JSON.parse(line);
+    } catch {
+      return null;
     }
-
-    if (trimmed.startsWith('not ok ')) {
-      const notOk = this.NOT_OK_RE.exec(trimmed);
-      if (notOk) return { type: 'not_ok', depth: indent, name: notOk[1].trim() };
-    }
-
-    if (trimmed === '---') return { type: 'yaml_start' };
-    if (trimmed === '...') return { type: 'yaml_end' };
-    return { type: 'raw', line };
-  },
-
-  parseYaml(lines) {
-    const result = Object.create(null);
-    let multiKey = null;
-    const multiLines = [];
-
-    const flushMulti = () => {
-      if (multiKey === null) return;
-      result[multiKey] = multiLines.join('\n').trim();
-      multiKey = null;
-      multiLines.length = 0;
-    };
-
-    for (const raw of lines) {
-      const trimmed = raw.trim();
-      const kv = this.YAML_KV_RE.exec(trimmed);
-
-      if (kv) {
-        flushMulti();
-        this.writeYamlKv(result, kv, (key) => {
-          multiKey = key;
-        });
-      } else if (multiKey !== null) {
-        multiLines.push(trimmed);
-      }
-    }
-    flushMulti();
-
-    if (!result.at && result.stack) {
-      const match = this.YAML_BLOCK_FRAME_RE.exec(result.stack);
-      if (match && !match[1].startsWith('node:')) result.at = match[1];
-    }
-    if (!result.at && result.location) {
-      result.at = result.location.replace(/\\\\/g, '\\');
-    }
-    return result;
-  },
-
-  writeYamlKv(result, kv, setMultiKey) {
-    const [, key, value] = kv;
-    if (value === '|-' || value === '|') {
-      setMultiKey(key);
-      return;
-    }
-    result[key] = value.replace(/^'|'$/g, '');
   },
 };
 
-class TestTapState {
+class TestJsonState {
   constructor() {
     this.seenFirstOk = false;
     this.lastCompleted = null;
     this.testDurations = new Map();
     this.failures = [];
-    this.currentFailName = null;
-    this.currentFailIndex = -1;
-    this.currentOkName = null;
-    this.inYaml = false;
-    this.yamlLines = [];
     this.stderrBuf = new OutputBuffer(Config.MAX_STDERR_CHARS);
   }
 
@@ -827,81 +754,50 @@ class TestTapState {
   }
 
   handleLine(line) {
-    const ev = TapParser.parseLine(line);
-    if (ev.type === 'ok') return this.handleOk(ev);
-    if (ev.type === 'not_ok') return this.handleNotOk(ev);
-    if (ev.type === 'yaml_start') return this.startYaml();
-    if (ev.type === 'yaml_end' && this.inYaml) return this.endYaml();
-    if (this.inYaml) this.yamlLines.push(line);
-  }
+    const ev = JsonLParser.parseLine(line);
+    if (!ev) return;
 
-  handleOk(ev) {
-    this.seenFirstOk = true;
-    this.lastCompleted = { name: ev.name, duration: ev.duration };
-    this.testDurations.set(ev.name, ev.duration);
-    this.currentOkName = ev.name;
-    this.currentFailName = null;
-    this.inYaml = false;
-    this.yamlLines.length = 0;
-  }
-
-  handleNotOk(ev) {
-    this.seenFirstOk = true;
-    this.currentFailName = ev.name;
-    this.currentOkName = null;
-    this.inYaml = false;
-    this.yamlLines.length = 0;
-    this.currentFailIndex = this.failures.length;
-    this.failures.push({
-      name: ev.name,
-      file: '',
-      expected: undefined,
-      actual: undefined,
-      errorMessage: undefined,
-      frame: null,
-    });
-  }
-
-  startYaml() {
-    this.inYaml = true;
-    this.yamlLines.length = 0;
-  }
-
-  endYaml() {
-    this.inYaml = false;
-    const yaml = TapParser.parseYaml([...this.yamlLines]);
-    if (this.currentFailName) this.enrichCurrentFailure(yaml);
-    else if (this.currentOkName && yaml.duration_ms !== undefined) this.updateCurrentDuration(yaml);
-    this.yamlLines.length = 0;
-    this.currentFailName = null;
-    this.currentOkName = null;
-  }
-
-  enrichCurrentFailure(yaml) {
-    const enriched = {
-      name: this.currentFailName,
-      file: yaml.at ? yaml.at.replace(/:\d+:\d+$/, '') : '',
-      expected: yaml.expected,
-      actual: yaml.actual,
-      errorMessage: yaml.error,
-      frame: yaml.at || null,
-    };
-
-    if (
-      this.currentFailIndex >= 0 &&
-      this.failures[this.currentFailIndex].name === this.currentFailName
-    ) {
-      this.failures[this.currentFailIndex] = enriched;
-    } else {
-      this.failures.push(enriched);
+    if (ev.type === 'test:pass') {
+      this.seenFirstOk = true;
+      const ms = ev.data.details?.duration_ms || 0;
+      this.testDurations.set(ev.data.name, ms);
+      this.lastCompleted = { name: ev.data.name, duration: ms };
+    } else if (ev.type === 'test:fail') {
+      this.seenFirstOk = true;
+      this.failures.push(this.enrichFailure(ev.data));
     }
   }
 
-  updateCurrentDuration(yaml) {
-    const ms = parseFloat(yaml.duration_ms);
-    if (!Number.isFinite(ms)) return;
-    this.testDurations.set(this.currentOkName, ms);
-    this.lastCompleted = { name: this.currentOkName, duration: ms };
+  enrichFailure(data) {
+    const errorObj = data.details?.error || {};
+    const cause = errorObj.cause || {};
+
+    // Parse stack for the specific frame if available
+    let frame = errorObj.stack || null;
+    let errorMessage = errorObj.message || 'unknown test failure';
+
+    // Fallbacks for assertion errors where exact operator / diff is used
+    let expected = cause.expected;
+    let actual = cause.actual;
+
+    if (cause.name === 'AssertionError') {
+      errorMessage = cause.message || 'AssertionError';
+      frame = cause.stack || frame;
+    } else if (errorObj.failureType === 'testTimeoutFailure') {
+      errorMessage = errorObj.cause || 'Test timed out';
+    } else if (errorObj.failureType === 'subtestsFailed') {
+      errorMessage = 'Subtests failed';
+    }
+
+    return {
+      name: data.name,
+      file: data.file ? path.relative(process.cwd(), data.file) : '',
+      expected: expected !== undefined ? String(expected) : undefined,
+      actual: actual !== undefined ? String(actual) : undefined,
+      errorMessage,
+      frame,
+      rawEvent: data,
+    };
   }
 }
 
@@ -924,7 +820,7 @@ class TestRunner {
       '--env-file-if-exists=.env',
       '--test',
       '--no-warnings',
-      '--test-reporter=tap',
+      '--test-reporter=./scripts/test-reporter.mjs',
     ];
     if (!Config.IS_WINDOWS) {
       argv.push(
@@ -955,7 +851,7 @@ class TestRunner {
     const silenceMs = this.historyManager.getSilenceTimeout(history);
     const startupMs = Math.max(silenceMs, Config.STARTUP_MIN_MS);
     const abortController = new AbortController();
-    const state = new TestTapState();
+    const state = new TestJsonState();
 
     const child = spawn(
       process.execPath,
@@ -1032,6 +928,11 @@ class TestRunner {
         lastCompletedTest: state.lastCompleted,
         suiteMaxHistoricalMs: maxHistorical,
         rawOutput: state.stderrBuf.toString() || undefined,
+        environment: {
+          memoryAtFailure: process.memoryUsage(),
+          activeHandles: process.getActiveResourcesInfo(),
+          cpuUsage: process.cpuUsage(),
+        },
       });
     };
 
@@ -1063,6 +964,11 @@ class TestRunner {
           Results.fail({
             failures: state.failures,
             testDurations: state.testDurations,
+            environment: {
+              memoryAtFailure: process.memoryUsage(),
+              activeHandles: process.getActiveResourcesInfo(),
+              cpuUsage: process.cpuUsage(),
+            },
           }),
         );
         return;
@@ -1072,6 +978,11 @@ class TestRunner {
         settle(
           Results.fail({
             rawOutput: state.stderrBuf.toString() || `test runner exited with code ${code}`,
+            environment: {
+              memoryAtFailure: process.memoryUsage(),
+              activeHandles: process.getActiveResourcesInfo(),
+              cpuUsage: process.cpuUsage(),
+            },
           }),
         );
         return;
@@ -1292,7 +1203,7 @@ const OutputRenderer = {
     return output.join('\n');
   },
 
-  formatDetailView(failure, index) {
+  formatDetailView(failure, index, environment = null) {
     const { name, frame, errorMessage, expected, actual } = failure;
     let errorLabel;
     if (expected !== undefined && actual !== undefined) {
@@ -1304,11 +1215,21 @@ const OutputRenderer = {
     }
 
     const output = [];
-    output.push(`\n  ${Theme.BOLD}Failure ${index}${Theme.R} — ${name}\n`);
+    output.push(`\\n  ${Theme.BOLD}Failure ${index}${Theme.R} — ${name}\\n`);
     output.push(`  ${Theme.RED}error${Theme.R}  ${Theme.DIM}${errorLabel}${Theme.R}`);
 
+    if (expected !== undefined && actual !== undefined) {
+      const expLines = String(expected).split('\\n');
+      const actLines = String(actual).split('\\n');
+      output.push(`\\n    ${Theme.DIM}Expected:${Theme.R}`);
+      for (const line of expLines) output.push(`    ${Theme.RED}- ${line}${Theme.R}`);
+      output.push(`    ${Theme.DIM}Actual:${Theme.R}`);
+      for (const line of actLines) output.push(`    ${Theme.GREEN}+ ${line}${Theme.R}`);
+      output.push('');
+    }
+
     if (frame) {
-      output.push(`    ${Theme.DIM}-->${Theme.R} ${frame}\n`);
+      output.push(`    ${Theme.DIM}-->${Theme.R} ${frame}\\n`);
       const parsed = parseFrame(frame);
       if (parsed) {
         output.push(this.renderSourceWindow(parsed.file, parsed.line, parsed.col));
@@ -1316,11 +1237,26 @@ const OutputRenderer = {
     } else {
       output.push(`  ${Theme.DIM}(no source location available)${Theme.R}`);
     }
-    return output.join('\n');
+
+    if (environment) {
+      output.push(`\\n  ${Theme.DIM}Environment at failure:${Theme.R}`);
+      if (environment.memoryAtFailure) {
+        const mem = environment.memoryAtFailure;
+        output.push(
+          `  ${Theme.DIM}  Memory: ${Math.round(mem.rss / 1024 / 1024)}MB RSS, ${Math.round(mem.heapUsed / 1024 / 1024)}MB Heap${Theme.R}`,
+        );
+      }
+      if (environment.activeHandles) {
+        output.push(
+          `  ${Theme.DIM}  Active Handles: ${environment.activeHandles.length}${Theme.R}`,
+        );
+      }
+    }
+    return output.join('\\n');
   },
 
-  renderDetailView(failure, index) {
-    process.stdout.write(this.formatDetailView(failure, index) + '\n');
+  renderDetailView(failure, index, environment = null) {
+    process.stdout.write(this.formatDetailView(failure, index, environment) + '\\n');
   },
 
   renderDiagnostic(error, cwd = process.cwd()) {
@@ -1374,9 +1310,19 @@ const OutputRenderer = {
     output.push('');
 
     if (expected !== undefined && actual !== undefined) {
+      const expLines = String(expected).split('\\n');
+      const actLines = String(actual).split('\\n');
+
       output.push(`     ${Theme.DIM}AssertionError:${Theme.R}`);
-      output.push(`     ${Theme.RED}- Expected   ${expected}${Theme.R}`);
-      output.push(`     ${Theme.GREEN}+ Received   ${actual}${Theme.R}`);
+      if (expLines.length <= 1 && actLines.length <= 1) {
+        output.push(`     ${Theme.RED}- Expected   ${expected}${Theme.R}`);
+        output.push(`     ${Theme.GREEN}+ Received   ${actual}${Theme.R}`);
+      } else {
+        output.push(`     ${Theme.RED}- Expected${Theme.R}`);
+        for (const line of expLines) output.push(`     ${Theme.RED}- ${line}${Theme.R}`);
+        output.push(`     ${Theme.GREEN}+ Received${Theme.R}`);
+        for (const line of actLines) output.push(`     ${Theme.GREEN}+ ${line}${Theme.R}`);
+      }
     } else if (errorMessage) {
       output.push(`     ${Theme.RED}${errorMessage}${Theme.R}`);
     }
@@ -1385,7 +1331,7 @@ const OutputRenderer = {
       output.push('');
       output.push(`     ${Theme.DIM}at ${frame}${Theme.R}`);
     }
-    return output.join('\n');
+    return output.join('\\n');
   },
 
   formatDiagnosticsGrouped(errors, cwd = process.cwd()) {
@@ -1470,6 +1416,7 @@ class Aggregate {
               : {}),
           }
         : {}),
+      ...(result.environment ? { environment: result.environment } : {}),
       ...(result.rawOutput ? { rawOutput: Text.cap(result.rawOutput, 4000) } : {}),
       ...(result.truncatedStdout ? { truncatedStdout: true } : {}),
       ...(result.truncatedStderr ? { truncatedStderr: true } : {}),
@@ -1738,6 +1685,22 @@ class TtyReporter extends BaseReporter {
           `    Check for: top-level await deadlocks, missing .env / config, slow cold start.${Theme.R}\n\n`,
       );
     }
+
+    if (task.environment) {
+      process.stdout.write(`  ${Theme.DIM}Environment at timeout:${Theme.R}\n`);
+      if (task.environment.memoryAtFailure) {
+        const mem = task.environment.memoryAtFailure;
+        process.stdout.write(
+          `  ${Theme.DIM}  Memory: ${Math.round(mem.rss / 1024 / 1024)}MB RSS, ${Math.round(mem.heapUsed / 1024 / 1024)}MB Heap${Theme.R}\n`,
+        );
+      }
+      if (task.environment.activeHandles) {
+        process.stdout.write(
+          `  ${Theme.DIM}  Active Handles: ${task.environment.activeHandles.length}${Theme.R}\n`,
+        );
+      }
+      process.stdout.write('\n');
+    }
   }
 
   renderTestFailures(failures) {
@@ -1900,8 +1863,8 @@ async function renderDetailCommand(config) {
 
     process.stdout.write(JSON.stringify(payload) + '\n');
   } else {
-    OutputRenderer.renderDetailView(failure, index);
-    process.stdout.write('\n');
+    OutputRenderer.renderDetailView(failure, index, testTask?.environment);
+    process.stdout.write('\\n');
   }
 }
 
@@ -2207,8 +2170,8 @@ export {
   EslintParser,
   TscParser,
   KnipParser,
-  TapParser,
-  TestTapState,
+  JsonLParser,
+  TestJsonState,
   TestRunner,
   TaskCommands,
   TaskRunners,
