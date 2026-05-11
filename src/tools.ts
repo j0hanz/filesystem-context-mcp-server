@@ -1,12 +1,10 @@
 ﻿import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { ToolRegistrationOptions } from './tools/_helpers.js';
-import './tools/apply-patch.js';
 import './tools/calculate-hash.js';
 import './tools/create-directory.js';
 import { ALL_TOOLS as _ALL_TOOLS, registerAllTools as _registerAllTools } from './tools/define.js';
 import './tools/delete-file.js';
-import './tools/diff-files.js';
 import './tools/edit.js';
 import './tools/list-directory.js';
 import './tools/move-file.js';

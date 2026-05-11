@@ -1,200 +1,4 @@
 {
-  "apply_patch": {
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "description": "Required for single-file patches without a/ b/ headers; ignored for multi-file patches",
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
-        },
-        "patch": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 10485760,
-          "description": "Unified diff patch content (unified format with --- a/ +++ b/ headers)",
-          "examples": [
-            "--- a/src/foo.ts\n+++ b/src/foo.ts\n@@ -1,3 +1,3 @@\n-const x = 1;\n+const x = 2;\n"
-          ]
-        },
-        "dryRun": {
-          "default": false,
-          "description": "Validate patch without applying",
-          "type": "boolean"
-        },
-        "fuzzFactor": {
-          "default": 0,
-          "description": "Lines of context allowed to differ (0–10)",
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 10
-        },
-        "autoConvertLineEndings": {
-          "default": false,
-          "description": "Auto-convert line endings",
-          "type": "boolean"
-        }
-      },
-      "required": ["patch"],
-      "additionalProperties": false
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "const": true,
-          "description": "Success indicator"
-        },
-        "path": {
-          "description": "Primary patched file path",
-          "type": "string"
-        },
-        "size": {
-          "description": "Primary file size in bytes",
-          "$ref": "#/$defs/NonNegInt"
-        },
-        "lineCount": {
-          "description": "Primary file line count",
-          "$ref": "#/$defs/NonNegInt"
-        },
-        "mimeType": {
-          "description": "MIME type of primary file",
-          "type": "string"
-        },
-        "kind": {
-          "description": "File kind of primary file",
-          "type": "string",
-          "enum": ["text", "binary", "image", "audio", "pdf"]
-        },
-        "resourceUri": {
-          "description": "Resource URI for primary file",
-          "type": "string"
-        },
-        "files": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "path": {
-                "type": "string",
-                "description": "File path"
-              },
-              "hunks": {
-                "maximum": 9007199254740991,
-                "description": "Hunks applied",
-                "$ref": "#/$defs/NonNegInt"
-              },
-              "linesAdded": {
-                "description": "Lines added",
-                "$ref": "#/$defs/NonNegInt"
-              },
-              "linesRemoved": {
-                "description": "Lines removed",
-                "$ref": "#/$defs/NonNegInt"
-              }
-            },
-            "required": ["path", "hunks"],
-            "additionalProperties": false
-          },
-          "description": "Per-file patch results"
-        },
-        "appliedHunks": {
-          "description": "Total hunks applied (primary file)",
-          "$ref": "#/$defs/NonNegInt"
-        },
-        "rejectedHunks": {
-          "description": "Total hunks rejected (primary file)",
-          "$ref": "#/$defs/NonNegInt"
-        },
-        "filesPatched": {
-          "description": "List of patched file paths",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "summary": {
-          "description": "Operation summary",
-          "$ref": "#/$defs/OperationSummary"
-        },
-        "failures": {
-          "description": "Per-file patch failures",
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "path": {
-                "type": "string"
-              },
-              "error": {
-                "$ref": "#/$defs/PerFileError"
-              }
-            },
-            "required": ["path", "error"],
-            "additionalProperties": false
-          }
-        }
-      },
-      "required": ["ok", "files", "summary"],
-      "additionalProperties": false,
-      "$defs": {
-        "NonNegInt": {
-          "type": "integer",
-          "minimum": 0,
-          "title": "Non-Negative Integer"
-        },
-        "OperationSummary": {
-          "type": "object",
-          "properties": {
-            "total": {
-              "maximum": 9007199254740991,
-              "description": "Total",
-              "$ref": "#/$defs/NonNegInt"
-            },
-            "succeeded": {
-              "maximum": 9007199254740991,
-              "description": "Succeeded",
-              "$ref": "#/$defs/NonNegInt"
-            },
-            "failed": {
-              "maximum": 9007199254740991,
-              "description": "Failed",
-              "$ref": "#/$defs/NonNegInt"
-            }
-          },
-          "required": ["total", "succeeded", "failed"],
-          "additionalProperties": false,
-          "title": "Operation Summary"
-        },
-        "PerFileError": {
-          "type": "object",
-          "properties": {
-            "code": {
-              "type": "string",
-              "description": "Error code"
-            },
-            "message": {
-              "type": "string",
-              "description": "Error message"
-            },
-            "path": {
-              "description": "Path involved",
-              "type": "string"
-            },
-            "suggestion": {
-              "description": "Suggested fix",
-              "type": "string"
-            }
-          },
-          "required": ["code", "message"],
-          "additionalProperties": false,
-          "title": "Per-File Error"
-        }
-      }
-    }
-  },
   "delete": {
     "inputSchema": {
       "type": "object",
@@ -269,116 +73,72 @@
       "additionalProperties": false
     }
   },
-  "diff_files": {
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "original": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096,
-          "description": "Original file path"
-        },
-        "modified": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096,
-          "description": "Modified file path"
-        },
-        "context": {
-          "description": "Context lines (default 3)",
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 2147483647
-        },
-        "ignoreWhitespace": {
-          "default": false,
-          "description": "Ignore whitespace changes",
-          "type": "boolean"
-        },
-        "stripTrailingCr": {
-          "default": false,
-          "description": "Strip trailing carriage returns",
-          "type": "boolean"
-        }
-      },
-      "required": ["original", "modified"],
-      "additionalProperties": false
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "const": true,
-          "description": "Success indicator"
-        },
-        "diff": {
-          "type": "string",
-          "description": "Unified diff output (empty when identical)"
-        },
-        "isIdentical": {
-          "type": "boolean",
-          "description": "True when files are identical"
-        },
-        "changeCount": {
-          "description": "Total lines added + deleted",
-          "type": "number"
-        },
-        "stats": {
-          "description": "Diff statistics (absent when identical)",
-          "type": "object",
-          "properties": {
-            "additions": {
-              "maximum": 9007199254740991,
-              "description": "Lines added",
-              "$ref": "#/$defs/NonNegInt"
-            },
-            "deletions": {
-              "maximum": 9007199254740991,
-              "description": "Lines deleted",
-              "$ref": "#/$defs/NonNegInt"
-            },
-            "hunks": {
-              "maximum": 9007199254740991,
-              "description": "Hunk count",
-              "$ref": "#/$defs/NonNegInt"
-            }
-          },
-          "required": ["additions", "deletions", "hunks"],
-          "additionalProperties": false
-        },
-        "truncated": {
-          "description": "Diff was truncated to resource",
-          "type": "boolean"
-        },
-        "resourceUri": {
-          "description": "Full diff URI when truncated",
-          "type": "string"
-        }
-      },
-      "required": ["ok", "diff", "isIdentical"],
-      "additionalProperties": false,
-      "$defs": {
-        "NonNegInt": {
-          "type": "integer",
-          "minimum": 0,
-          "title": "Non-Negative Integer"
-        }
-      }
-    }
-  },
   "edit": {
     "inputSchema": {
       "type": "object",
       "properties": {
         "path": {
+          "description": "File path (single-file mode)",
           "type": "string",
           "minLength": 1,
-          "maxLength": 4096,
-          "description": "Path inside an allowed root"
+          "maxLength": 4096
+        },
+        "paths": {
+          "description": "File paths; same edits applied to each (max 5)",
+          "minItems": 1,
+          "maxItems": 5,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Path inside an allowed root"
+          }
+        },
+        "files": {
+          "description": "Per-file edits (max 5)",
+          "minItems": 1,
+          "maxItems": 5,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096,
+                "description": "File path"
+              },
+              "edits": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "oldText": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "Exact text to find (must match literally)",
+                      "examples": ["const x = 1;", "function oldName("]
+                    },
+                    "newText": {
+                      "type": "string",
+                      "description": "Replacement text (empty string to delete)",
+                      "examples": ["const x = 2;", "function newName(", ""]
+                    }
+                  },
+                  "required": ["oldText", "newText"],
+                  "additionalProperties": false
+                },
+                "description": "Edits for this file"
+              }
+            },
+            "required": ["path", "edits"],
+            "additionalProperties": false
+          }
         },
         "edits": {
+          "description": "Edits applied to path or every entry in paths (forbidden when using files)",
           "minItems": 1,
           "type": "array",
           "items": {
@@ -398,8 +158,7 @@
             },
             "required": ["oldText", "newText"],
             "additionalProperties": false
-          },
-          "description": "List of text substitutions"
+          }
         },
         "dryRun": {
           "default": false,
@@ -412,7 +171,6 @@
           "type": "boolean"
         }
       },
-      "required": ["path", "edits"],
       "additionalProperties": false
     },
     "outputSchema": {
@@ -424,35 +182,32 @@
           "description": "Success indicator"
         },
         "path": {
-          "type": "string",
-          "description": "File path"
+          "description": "File path (single-file mode)",
+          "type": "string"
         },
         "size": {
-          "maximum": 9007199254740991,
           "description": "File size in bytes",
           "$ref": "#/$defs/NonNegInt"
         },
         "lineCount": {
-          "maximum": 9007199254740991,
-          "description": "Number of lines in file",
+          "description": "Number of lines",
           "$ref": "#/$defs/NonNegInt"
         },
         "mimeType": {
-          "type": "string",
-          "description": "MIME type of the file"
+          "description": "MIME type",
+          "type": "string"
         },
         "kind": {
+          "description": "File kind",
           "type": "string",
-          "enum": ["text", "binary", "image", "audio", "pdf"],
-          "description": "File kind"
+          "enum": ["text", "binary", "image", "audio", "pdf"]
         },
         "resourceUri": {
-          "type": "string",
-          "description": "Full content URI in resource store"
+          "description": "Resource URI",
+          "type": "string"
         },
         "modified": {
-          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-          "description": "Last modification timestamp (ISO 8601 UTC)",
+          "description": "Modified (ISO 8601 UTC)",
           "$ref": "#/$defs/IsoDateTime"
         },
         "appliedEdits": {
@@ -472,14 +227,14 @@
           "type": "string"
         },
         "unmatchedEdits": {
-          "description": "oldText strings that had no match",
+          "description": "oldText with no match",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "lineRange": {
-          "description": "[firstLine, lastLine] range modified",
+          "description": "[firstLine, lastLine]",
           "type": "array",
           "prefixItems": [
             {
@@ -489,18 +244,118 @@
               "$ref": "#/$defs/PositiveInt"
             }
           ]
+        },
+        "results": {
+          "description": "Per-file successes (multi mode)",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "File path"
+              },
+              "size": {
+                "maximum": 9007199254740991,
+                "description": "File size in bytes",
+                "$ref": "#/$defs/NonNegInt"
+              },
+              "lineCount": {
+                "maximum": 9007199254740991,
+                "description": "Number of lines",
+                "$ref": "#/$defs/NonNegInt"
+              },
+              "mimeType": {
+                "type": "string",
+                "description": "MIME type"
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["text", "binary", "image", "audio", "pdf"],
+                "description": "File kind"
+              },
+              "resourceUri": {
+                "type": "string",
+                "description": "Resource URI"
+              },
+              "modified": {
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                "description": "Modified (ISO 8601 UTC)",
+                "$ref": "#/$defs/IsoDateTime"
+              },
+              "appliedEdits": {
+                "maximum": 9007199254740991,
+                "description": "Edits applied",
+                "$ref": "#/$defs/NonNegInt"
+              },
+              "linesAdded": {
+                "description": "Lines added",
+                "$ref": "#/$defs/NonNegInt"
+              },
+              "linesRemoved": {
+                "description": "Lines removed",
+                "$ref": "#/$defs/NonNegInt"
+              },
+              "diff": {
+                "description": "Unified diff (dryRun or when changes present)",
+                "type": "string"
+              },
+              "unmatchedEdits": {
+                "description": "oldText with no match",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "lineRange": {
+                "description": "[firstLine, lastLine]",
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "$ref": "#/$defs/PositiveInt"
+                  },
+                  {
+                    "$ref": "#/$defs/PositiveInt"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "path",
+              "size",
+              "lineCount",
+              "mimeType",
+              "kind",
+              "resourceUri",
+              "modified",
+              "appliedEdits"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "failures": {
+          "description": "Per-file hard failures (multi mode)",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "error": {
+                "$ref": "#/$defs/PerFileError"
+              }
+            },
+            "required": ["path", "error"],
+            "additionalProperties": false
+          }
+        },
+        "summary": {
+          "description": "Aggregate counts (multi mode)",
+          "$ref": "#/$defs/OperationSummary"
         }
       },
-      "required": [
-        "ok",
-        "path",
-        "size",
-        "lineCount",
-        "mimeType",
-        "kind",
-        "resourceUri",
-        "modified"
-      ],
+      "required": ["ok"],
       "additionalProperties": false,
       "$defs": {
         "NonNegInt": {
@@ -518,6 +373,53 @@
           "type": "integer",
           "exclusiveMinimum": 0,
           "title": "Positive Integer"
+        },
+        "PerFileError": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Error code"
+            },
+            "message": {
+              "type": "string",
+              "description": "Error message"
+            },
+            "path": {
+              "description": "Path involved",
+              "type": "string"
+            },
+            "suggestion": {
+              "description": "Suggested fix",
+              "type": "string"
+            }
+          },
+          "required": ["code", "message"],
+          "additionalProperties": false,
+          "title": "Per-File Error"
+        },
+        "OperationSummary": {
+          "type": "object",
+          "properties": {
+            "total": {
+              "maximum": 9007199254740991,
+              "description": "Total",
+              "$ref": "#/$defs/NonNegInt"
+            },
+            "succeeded": {
+              "maximum": 9007199254740991,
+              "description": "Succeeded",
+              "$ref": "#/$defs/NonNegInt"
+            },
+            "failed": {
+              "maximum": 9007199254740991,
+              "description": "Failed",
+              "$ref": "#/$defs/NonNegInt"
+            }
+          },
+          "required": ["total", "succeeded", "failed"],
+          "additionalProperties": false,
+          "title": "Operation Summary"
         }
       }
     }

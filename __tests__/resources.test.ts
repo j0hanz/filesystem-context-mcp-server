@@ -113,14 +113,14 @@ describe('resources and metadata', () => {
     const { resourceTemplates } = await env.client.listResourceTemplates();
     const { prompts } = await env.client.listPrompts();
 
-    assert.match(readme, /\*\*16 filesystem tools\*\*/u);
+    assert.match(readme, /\*\*14 filesystem tools\*\*/u);
     assert.match(readme, /\*\*Self-documenting\*\* — 3 built-in resources/u);
-    assert.match(readme, /3 built-in prompts/u);
+    assert.match(readme, /4 built-in prompts/u);
 
-    assert.equal(tools.length, 16);
+    assert.equal(tools.length, 14);
     assert.equal(resources.length, 1);
     assert.equal(resourceTemplates.length, 2);
-    assert.equal(prompts.length, 5);
+    assert.equal(prompts.length, 4);
 
     assert.equal(serverJson.title, 'Filesystem MCP');
   });

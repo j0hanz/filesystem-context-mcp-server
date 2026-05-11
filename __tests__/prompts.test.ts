@@ -58,18 +58,12 @@ describe('prompts', () => {
     }
   });
 
-  it('lists all 5 prompts', async () => {
+  it('lists all 4 prompts', async () => {
     const env = await createPromptEnv();
     cleanups.push(env.cleanup);
     const result = await env.client.listPrompts();
     const names = result.prompts.map((p) => p.name).sort();
-    assert.deepEqual(names, [
-      'analyze-path',
-      'compare-files',
-      'find-in-tree',
-      'get-help',
-      'summarize-directory',
-    ]);
+    assert.deepEqual(names, ['analyze-path', 'find-in-tree', 'get-help', 'summarize-directory']);
   });
 
   it('get-help returns full instructions when no topic', async () => {
@@ -129,30 +123,6 @@ describe('prompts', () => {
     assert.ok(m0);
     expectText(m0);
     assert.match(m0.content.text, /Analyze this directory:/u);
-  });
-
-  it('compare-files returns text + 2 path links', async () => {
-    const env = await createPromptEnv();
-    cleanups.push(env.cleanup);
-    const original = join(env.tempDir, 'original.txt');
-    const modified = join(env.tempDir, 'modified.txt');
-    await writeFile(original, 'before\n', 'utf8');
-    await writeFile(modified, 'after\n', 'utf8');
-    const result = await env.client.getPrompt({
-      name: 'compare-files',
-      arguments: { original, modified },
-    });
-    assert.equal(result.messages.length, 3);
-    const [m0, m1, m2] = result.messages;
-    assert.ok(m0 && m1 && m2);
-    expectText(m0);
-    assert.match(m0.content.text, /Call `diff_files`/u);
-    assert.match(m0.content.text, /- original: /u);
-    assert.match(m0.content.text, /- modified: /u);
-    expectLink(m1);
-    assert.equal(m1.content.uri.toLowerCase(), `file://${original}`.toLowerCase());
-    expectLink(m2);
-    assert.equal(m2.content.uri.toLowerCase(), `file://${modified}`.toLowerCase());
   });
 
   it('find-in-tree defaults root to first allowed dir and includes both modes', async () => {

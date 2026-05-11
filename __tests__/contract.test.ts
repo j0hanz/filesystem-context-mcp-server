@@ -14,13 +14,11 @@ import { after, before, describe, it } from 'node:test';
 
 import { assertOk, createTestEnv, getStructured, type TestEnv } from './helpers.js';
 
-// Names of all 16 tools as registered
+// Names of all 14 tools as registered
 const ALL_TOOLS = new Set([
-  'apply_patch',
   'hash_file',
   'make_dir',
   'delete',
-  'diff_files',
   'edit',
   'ls',
   'move',
@@ -37,7 +35,6 @@ const ALL_TOOLS = new Set([
 // Annotations by category
 const READ_ONLY_TOOLS = new Set([
   'hash_file',
-  'diff_files',
   'ls',
   'read',
   'list_roots',
@@ -47,14 +44,7 @@ const READ_ONLY_TOOLS = new Set([
   'tree',
 ]);
 
-const DESTRUCTIVE_TOOLS = new Set([
-  'apply_patch',
-  'edit',
-  'delete',
-  'move',
-  'replace_text',
-  'write',
-]);
+const DESTRUCTIVE_TOOLS = new Set(['edit', 'delete', 'move', 'replace_text', 'write']);
 
 describe('Tool contract', () => {
   let env: TestEnv;
@@ -69,7 +59,7 @@ describe('Tool contract', () => {
 
   it('registers exactly 16 tools with correct names', async () => {
     const { tools } = await env.client.listTools();
-    assert.equal(tools.length, ALL_TOOLS.size, 'Expected 16 tools');
+    assert.equal(tools.length, ALL_TOOLS.size, 'Expected 14 tools');
     for (const tool of tools) {
       assert.ok(ALL_TOOLS.has(tool.name), `Unexpected tool name: ${tool.name}`);
     }
@@ -178,9 +168,7 @@ describe('Tool contract', () => {
 
   it('task-capable tools expose execution.taskSupport in tools/list', async () => {
     const TASK_OPTIONAL_TOOLS = new Set([
-      'apply_patch',
       'hash_file',
-      'diff_files',
       'search_text',
       'find_files',
       'ls',
@@ -291,16 +279,10 @@ describe('Tool contract', () => {
 });
 
 describe('Prompts contract', () => {
-  it('ALL_PROMPTS matches the 5 expected prompts', async () => {
+  it('ALL_PROMPTS matches the 4 expected prompts', async () => {
     const { ALL_PROMPTS } = await import('../src/prompts.js');
     const names = ALL_PROMPTS.map((p) => p.name).sort();
-    assert.deepEqual(names, [
-      'analyze-path',
-      'compare-files',
-      'find-in-tree',
-      'get-help',
-      'summarize-directory',
-    ]);
+    assert.deepEqual(names, ['analyze-path', 'find-in-tree', 'get-help', 'summarize-directory']);
   });
 });
 
@@ -367,38 +349,6 @@ describe('Completion contract', () => {
         argument: { name: 'path', value: tmpDir },
       });
       assert.ok(result.completion.values.length > 0, 'analyze-path.path must return completions');
-    } finally {
-      await teardown();
-    }
-  });
-
-  it('compare-files: original arg returns path completions', async () => {
-    const { client, tmpDir, teardown } = await makeServer();
-    try {
-      const result = await client.complete({
-        ref: { type: 'ref/prompt', name: 'compare-files' },
-        argument: { name: 'original', value: tmpDir },
-      });
-      assert.ok(
-        result.completion.values.length > 0,
-        'compare-files.original must return completions',
-      );
-    } finally {
-      await teardown();
-    }
-  });
-
-  it('compare-files: modified arg returns path completions', async () => {
-    const { client, tmpDir, teardown } = await makeServer();
-    try {
-      const result = await client.complete({
-        ref: { type: 'ref/prompt', name: 'compare-files' },
-        argument: { name: 'modified', value: tmpDir },
-      });
-      assert.ok(
-        result.completion.values.length > 0,
-        'compare-files.modified must return completions',
-      );
     } finally {
       await teardown();
     }

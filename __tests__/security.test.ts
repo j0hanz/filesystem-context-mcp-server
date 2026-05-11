@@ -233,14 +233,6 @@ describe('security: schema validation rejects malformed input', () => {
     });
     assertToolError(raw);
   });
-
-  it('diff_files: rejects when both paths are missing', async () => {
-    const raw = await env.client.callTool({
-      name: 'diff_files',
-      arguments: {},
-    });
-    assertToolError(raw);
-  });
 });
 
 // ─── Symlink escape for destructive operations ───────────────────────────────

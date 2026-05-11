@@ -492,7 +492,7 @@ describe('HTTP transport', () => {
       const { resourceTemplates } = await client.listResourceTemplates();
       const { prompts } = await client.listPrompts();
 
-      assert.equal(tools.length, 16);
+      assert.equal(tools.length, 14);
       assert.equal(resources.length, 1);
       assert.equal(resources[0]?.uri, 'internal://instructions');
       assert.deepEqual(resourceTemplates.map((template) => template.uriTemplate).sort(), [
@@ -501,7 +501,6 @@ describe('HTTP transport', () => {
       ]);
       assert.deepEqual(prompts.map((prompt) => prompt.name).sort(), [
         'analyze-path',
-        'compare-files',
         'find-in-tree',
         'get-help',
         'summarize-directory',

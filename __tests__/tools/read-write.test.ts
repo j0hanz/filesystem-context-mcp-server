@@ -1,5 +1,5 @@
 /**
- * Integration tests for file I/O tools: read, write, read_many, edit, apply_patch.
+ * Integration tests for file I/O tools: read, write, read_many, edit.
  */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -709,11 +709,11 @@ describe('edit tool', () => {
     assert.equal(typeof sc['modified'], 'string');
     assert.equal(sc['appliedEdits'], 1);
 
-    // Verify summary includes "edit-file:" and file path
+    // Verify summary includes "edit:" and file path
     assert.equal(result.content.length, 2);
     assert.equal(result.content[0].type, 'text');
     const summary = (result.content[0] as Record<string, unknown>).text as string;
-    assert.ok(summary.includes('edit-file:'));
+    assert.ok(summary.includes('edit:'));
     assert.ok(summary.includes('edit-me.txt'));
 
     // Verify resource_link
@@ -804,9 +804,9 @@ describe('edit tool', () => {
     assert.equal(typeof sc['mimeType'], 'string');
     assert.equal(typeof sc['lineCount'], 'number');
 
-    // Verify summary includes "edit-file:"
+    // Verify summary includes "edit:"
     const summary = (raw.content[0] as Record<string, unknown>).text as string;
-    assert.ok(summary.includes('edit-file:'));
+    assert.ok(summary.includes('edit:'));
 
     const actual = await readFile(file, 'utf8');
     assert.equal(actual, 'alpha\ndelta\n');
@@ -879,133 +879,4 @@ describe('edit tool', () => {
   });
 });
 
-// ─── apply_patch ─────────────────────────────────────────────────────────────
-
-describe('apply_patch tool', () => {
-  let env: TestEnv;
-  let file: string;
-  const ORIGINAL_CONTENT = 'alpha\nbeta\ngamma\n';
-
-  before(async () => {
-    env = await createTestEnv();
-    file = join(env.tmpDir, 'patch-target.txt');
-    await writeFile(file, ORIGINAL_CONTENT, 'utf8');
-  });
-
-  after(async () => {
-    await env.cleanup();
-  });
-
-  it('applies a valid unified diff patch to a file', async () => {
-    const patch =
-      [
-        `--- a/patch-target.txt`,
-        `+++ b/patch-target.txt`,
-        `@@ -1,3 +1,3 @@`,
-        ` alpha`,
-        `-beta`,
-        `+BETA`,
-        ` gamma`,
-      ].join('\n') + '\n';
-
-    const raw = await env.client.callTool({
-      name: 'apply_patch',
-      arguments: { path: file, patch },
-    });
-    const result = raw;
-    assertOk(result);
-    const sc = getStructured(result);
-    assert.equal(sc['ok'], true);
-
-    // Verify structured content has required fields
-    assert.equal(typeof sc['size'], 'number');
-    assert.equal(typeof sc['lineCount'], 'number');
-    assert.equal(typeof sc['mimeType'], 'string');
-    assert.equal(typeof sc['kind'], 'string');
-    assert.equal(typeof sc['resourceUri'], 'string');
-    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://result/'));
-
-    // Verify summary includes "apply-patch:" and file path
-    assert.equal(result.content.length, 2);
-    assert.equal(result.content[0].type, 'text');
-    const summary = (result.content[0] as Record<string, unknown>).text as string;
-    assert.ok(summary.includes('apply-patch:'));
-    assert.ok(summary.includes('patch-target.txt'));
-
-    // Verify resource_link
-    assert.equal(result.content[1].type, 'resource_link');
-    const link = result.content[1] as Record<string, unknown>;
-    assert.ok((link.uri as string).includes('filesystem-mcp://result/'));
-
-    const actual = await readFile(file, 'utf8');
-    assert.ok(actual.includes('BETA'), 'Patch should replace "beta" with "BETA"');
-    assert.ok(!actual.includes('\nbeta\n'), 'Original "beta" should be gone');
-  });
-
-  it('dryRun:true does not modify the file', async () => {
-    // Reset file first
-    await writeFile(file, ORIGINAL_CONTENT, 'utf8');
-    const patch =
-      [
-        `--- a/patch-target.txt`,
-        `+++ b/patch-target.txt`,
-        `@@ -1,3 +1,3 @@`,
-        ` alpha`,
-        `-beta`,
-        `+DRY`,
-        ` gamma`,
-      ].join('\n') + '\n';
-
-    const raw = await env.client.callTool({
-      name: 'apply_patch',
-      arguments: { path: file, patch, dryRun: true },
-    });
-    assertOk(raw);
-    const actual = await readFile(file, 'utf8');
-    assert.equal(actual, ORIGINAL_CONTENT, 'File must be unchanged in dryRun mode');
-  });
-
-  it('returns INVALID_INPUT when patch has no effect', async () => {
-    await writeFile(file, ORIGINAL_CONTENT, 'utf8');
-    // Patch that targets content not present in the file — applyPatch returns
-    // the original string (not false) when context lines match but the removed
-    // line is absent, so the patched output equals the original.
-    const patch =
-      [
-        `--- a/patch-target.txt`,
-        `+++ b/patch-target.txt`,
-        `@@ -1,3 +1,3 @@`,
-        ` alpha`,
-        `-BETA`,
-        `+BETA`,
-        ` gamma`,
-      ].join('\n') + '\n';
-
-    const raw = await env.client.callTool({
-      name: 'apply_patch',
-      arguments: { path: file, patch },
-    });
-    assertToolError(raw, 'INVALID_INPUT');
-    const actual = await readFile(file, 'utf8');
-    assert.equal(actual, ORIGINAL_CONTENT, 'File must be unchanged');
-  });
-
-  it('rejects binary files instead of patching decoded bytes', async () => {
-    const binaryFile = join(env.tmpDir, 'patch-binary.bin');
-    const original = Buffer.from([0x89, 0x50, 0x00, 0x47, 0x0d]);
-    await writeFile(binaryFile, original);
-
-    const patch =
-      ['--- a/patch-binary.bin', '+++ b/patch-binary.bin', '@@ -1 +1 @@', '-x', '+y'].join('\n') +
-      '\n';
-
-    const raw = await env.client.callTool({
-      name: 'apply_patch',
-      arguments: { path: binaryFile, patch },
-    });
-
-    assertToolError(raw, 'INVALID_INPUT');
-    const actual = await readFile(binaryFile);
-    assert.deepEqual(actual, original);
-  });
-});
+// (apply_patch removed)

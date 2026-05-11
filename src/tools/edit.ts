@@ -657,7 +657,7 @@ async function dispatch(
     );
     ctx.log?.('info', `edit: ${filePath} (${String(structured.appliedEdits ?? 0)} edits)`, 'edit');
     const summary =
-      `edit-file: edited ${basename(filePath)}` +
+      `edit: edited ${basename(filePath)}` +
       ` \u00b7 ${formatBytes(structured.size ?? 0)}` +
       ` \u00b7 ${String(structured.lineCount)} lines`;
     if (resourceLink) {
@@ -720,7 +720,7 @@ async function dispatch(
   };
 }
 
-export const EDIT_FILE = defineTool({
+export const EDIT = defineTool({
   name: 'edit',
   title: 'Edit Files',
   description:
