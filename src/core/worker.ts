@@ -17,7 +17,7 @@
  *   Path validation always runs on the main thread before runInWorker is
  *   called.
  */
-import { isMainThread, parentPort } from 'node:worker_threads';
+import { isMainThread, parentPort, workerData } from 'node:worker_threads';
 
 import {
   applyPatch,
@@ -197,7 +197,11 @@ function runHandler<N extends WorkerTaskName>(
   return handler(payload);
 }
 
-if (!isMainThread && parentPort) {
+// Only register as the diff/patch/hash message handler when this file is the
+// actual worker entry point (spawned with no workerData). Search-content workers
+// pass workerData={{ debug: boolean }} and transitively import this module, so we
+// must NOT register our handler in that case to avoid conflicting listeners.
+if (!isMainThread && parentPort && workerData == null) {
   const port = parentPort;
   port.on('message', (msg: TaskRequest) => {
     let response: TaskResponse;
