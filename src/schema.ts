@@ -101,12 +101,12 @@ export const Sha256Hex = z.hash('sha256').meta({
 
 export const NonNegInt = z
   .int({ error: 'Must be integer' })
-  .min(0, 'Min: 0')
+  .nonnegative({ message: 'Must be ≥ 0' })
   .meta({ id: 'NonNegInt', title: 'Non-Negative Integer' });
 
 export const PositiveInt = z
   .int({ error: 'Must be integer' })
-  .min(1, 'Min: 1')
+  .positive({ message: 'Must be > 0' })
   .meta({ id: 'PositiveInt', title: 'Positive Integer' });
 
 export const FileType = z
