@@ -4,7 +4,7 @@ import {
   McpServer,
   type Root,
   type ServerCapabilities,
-  type SetLevelRequest,
+  type SetLevelRequestParams,
 } from '@modelcontextprotocol/server';
 
 import { channel } from 'node:diagnostics_channel';
@@ -433,7 +433,7 @@ export async function createServer(
 
   await rootsManager.recomputeAllowedDirectories();
 
-  server.server.setRequestHandler('logging/setLevel', (req: SetLevelRequest) => {
+  server.server.setRequestHandler('logging/setLevel', (req: { params: SetLevelRequestParams }) => {
     loggingState.minimumLevel = req.params.level;
     Logger.notice(`Log level set to ${req.params.level}`);
     return {};
