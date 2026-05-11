@@ -1,10 +1,12 @@
 // src/resources.ts — inlined from src/resources/{shared,contract,instructions,filesystem,result}.ts
 import {
+  checkResourceAllowed,
   type McpServer,
   ProtocolError,
   ProtocolErrorCode,
   type ReadResourceResult,
   ResourceTemplate,
+  resourceUrlFromServerUrl,
   type Role,
   type ServerContext,
   UriTemplate,
@@ -371,36 +373,36 @@ export function registerAllResources(
 
   // Hook into subscriptions routing
   server.server.setRequestHandler('resources/subscribe', (req: { params: { uri: string } }) => {
-    const { uri } = req.params;
+    const requestedResource = resourceUrlFromServerUrl(req.params.uri);
     for (const contract of ALL_RESOURCES) {
-      if (contract.subscribe) {
-        // Simplistic routing - normally we'd check if URI matches template or exact URI
-        let matches = false;
-        if (contract.uri && uri === contract.uri) matches = true;
-        if (contract.uriTemplate) {
-          // Check if URI matches the template prefix (e.g. filesystem-mcp://file/)
-          const prefix = contract.uriTemplate.split('{')[0];
-          if (prefix && uri.startsWith(prefix)) matches = true;
-        }
+      if (!contract.subscribe) continue;
 
-        if (matches) {
-          contract.subscribe(uri, (updatedUri) => {
-            void server.server.sendResourceUpdated({ uri: updatedUri }).catch(() => {
-              /* Transport may be closed */
-            });
+      const configured = contract.uri ?? contract.uriTemplate?.split('{')[0];
+
+      if (!configured) continue;
+
+      if (
+        checkResourceAllowed({
+          requestedResource,
+          configuredResource: configured,
+        })
+      ) {
+        contract.subscribe(requestedResource.toString(), (updatedUri) => {
+          void server.server.sendResourceUpdated({ uri: updatedUri }).catch(() => {
+            /* Transport may be closed */
           });
-          break;
-        }
+        });
+        break;
       }
     }
     return {};
   });
 
   server.server.setRequestHandler('resources/unsubscribe', (req: { params: { uri: string } }) => {
-    const { uri } = req.params;
+    const canonical = resourceUrlFromServerUrl(req.params.uri).toString();
     for (const contract of ALL_RESOURCES) {
       if (contract.unsubscribe) {
-        contract.unsubscribe(uri);
+        contract.unsubscribe(canonical);
       }
     }
     return {};
