@@ -1,6 +1,7 @@
 import { Client } from '@modelcontextprotocol/client';
 
 import assert from 'node:assert/strict';
+import { channel } from 'node:diagnostics_channel';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -151,5 +152,39 @@ describe('resources and metadata', () => {
       true,
       'subscribe routing correctly handles URIs with different schemes and fragments',
     );
+  });
+
+  it('emits resource_subscription events for subscribe and unsubscribe', async () => {
+    const env = await createDiscoveryEnv();
+    cleanups.push(env.cleanup);
+
+    const logChannel = channel('filesystem-mcp:log');
+    const messages: string[] = [];
+    const subscription = (msg: unknown): void => {
+      const event = msg as { message?: string };
+      if (typeof event.message === 'string') messages.push(event.message);
+    };
+    logChannel.subscribe(subscription);
+
+    const uri = 'filesystem-mcp://file/' + encodeURIComponent(__filename);
+    await env.client.subscribeResource({ uri });
+    await env.client.unsubscribeResource({ uri });
+
+    const events = messages
+      .map((message) => {
+        try {
+          return JSON.parse(message) as Record<string, unknown>;
+        } catch {
+          return undefined;
+        }
+      })
+      .filter((event): event is Record<string, unknown> => Boolean(event))
+      .filter((event) => event['event'] === 'resource_subscription');
+
+    assert.equal(events.length, 2);
+    assert.equal(events[0]?.['action'], 'subscribe');
+    assert.equal(events[1]?.['action'], 'unsubscribe');
+
+    logChannel.unsubscribe(subscription);
   });
 });

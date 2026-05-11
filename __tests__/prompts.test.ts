@@ -1,6 +1,7 @@
 import { Client } from '@modelcontextprotocol/client';
 
 import assert from 'node:assert/strict';
+import { channel } from 'node:diagnostics_channel';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -76,6 +77,38 @@ describe('prompts', () => {
     expectText(message);
     assert.match(message.content.text, /Guidelines:/u);
     assert.match(message.content.text, /Constraints:/u);
+  });
+
+  it('emits prompt_complete events for successful prompt resolution', async () => {
+    const env = await createPromptEnv();
+    cleanups.push(env.cleanup);
+
+    const logChannel = channel('filesystem-mcp:log');
+    const messages: string[] = [];
+    const subscription = (msg: unknown): void => {
+      const event = msg as { message?: string };
+      if (typeof event.message === 'string') messages.push(event.message);
+    };
+    logChannel.subscribe(subscription);
+
+    await env.client.getPrompt({ name: 'get-help', arguments: {} });
+
+    const completion = messages
+      .map((message) => {
+        try {
+          return JSON.parse(message) as Record<string, unknown>;
+        } catch {
+          return undefined;
+        }
+      })
+      .find((event) => event?.['event'] === 'prompt_complete');
+
+    assert.ok(completion);
+    assert.equal(completion?.['prompt_name'], 'get-help');
+    assert.equal(completion?.['outcome'], 'success');
+    assert.ok(typeof completion?.['duration_ms'] === 'number');
+
+    logChannel.unsubscribe(subscription);
   });
 
   it('get-help filters to a known topic', async () => {

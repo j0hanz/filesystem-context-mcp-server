@@ -8,7 +8,7 @@ import { z } from 'zod/v4';
 
 import { CliExitError, parseArgs } from './cli.js';
 import { shutdownWorkerPool } from './core/concurrency.js';
-import { formatUnknownErrorMessage } from './core/errors.js';
+import { logRuntimeFailure } from './core/observability.js';
 import { createServer } from './server.js';
 import { startHttpServer, startServer } from './transport.js';
 
@@ -40,7 +40,12 @@ async function shutdown(reason: string, exitCode = 0): Promise<void> {
   let keepForceExitTimer = true;
 
   const timer = setTimeout(() => {
-    console.error(`Shutdown timed out (${reason}), forcing exit.`);
+    logRuntimeFailure(
+      'shutdown_timeout',
+      'process',
+      'shutdown',
+      `Shutdown timed out (${reason}), forcing exit.`,
+    );
     process.exit(exitCode);
   }, SHUTDOWN_TIMEOUT_MS);
   timer.unref();
@@ -60,7 +65,7 @@ async function shutdown(reason: string, exitCode = 0): Promise<void> {
     await shutdownWorkerPool();
     keepForceExitTimer = false;
   } catch (error: unknown) {
-    console.error(`Shutdown error (${reason}):`, formatUnknownErrorMessage(error));
+    logRuntimeFailure('shutdown_error', 'process', 'shutdown', error);
   } finally {
     if (!keepForceExitTimer) {
       clearTimeout(timer);
@@ -78,7 +83,7 @@ async function main(): Promise<void> {
   } catch (error: unknown) {
     if (error instanceof CliExitError) {
       if (error.message.length > 0) {
-        console.error(error.message);
+        logRuntimeFailure('cli_exit', 'startup', 'parse_args', error.message);
       }
       process.exitCode = error.exitCode;
       return;
@@ -118,16 +123,16 @@ registerShutdownTrigger('end');
 registerShutdownTrigger('close');
 
 process.once('unhandledRejection', (reason: unknown) => {
-  console.error('Unhandled rejection:', formatUnknownErrorMessage(reason));
+  logRuntimeFailure('unhandled_rejection', 'process', 'unhandledRejection', reason);
   void shutdown('unhandledRejection', 1);
 });
 
 process.once('uncaughtException', (error: Error) => {
-  console.error('Uncaught exception:', error);
+  logRuntimeFailure('uncaught_exception', 'process', 'uncaughtException', error);
   void shutdown('uncaughtException', 1);
 });
 
 main().catch((error: unknown) => {
-  console.error('Fatal error:', formatUnknownErrorMessage(error));
+  logRuntimeFailure('fatal', 'startup', 'main', error);
   void shutdown('fatal', 1);
 });

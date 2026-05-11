@@ -26,12 +26,18 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http';
+import { performance } from 'node:perf_hooks';
 
 import type { Express, NextFunction, Request, RequestHandler, Response } from 'express';
 
 import { formatUnknownErrorMessage } from './core/errors.js';
-import type { LogRouter } from './core/observability.js';
-import { Logger, type LogTarget, SessionContext } from './core/observability.js';
+import {
+  emitWideEvent,
+  Logger,
+  type LogRouter,
+  type LogTarget,
+  SessionContext,
+} from './core/observability.js';
 import { getInitHandshakeTimeoutMs, INIT_TIMEOUT_CLOSE, parseEnvInt } from './core/util.js';
 import type { FilesystemServerContext } from './server.js';
 import { createServer, logRouter, type RootsManager, type ServerOptions } from './server.js';
@@ -209,6 +215,30 @@ function classifyJsonRpcMessage(message: JSONRPCMessage): JsonRpcKind {
   if (isJSONRPCResultResponse(message)) return 'result';
   if (isJSONRPCErrorResponse(message)) return 'error';
   return 'unknown';
+}
+
+function emitHttpCompletionEvent(input: {
+  method: string;
+  path: string;
+  kind: JsonRpcKind;
+  jsonrpcMethod?: string;
+  sessionId?: string;
+  httpStatus: number;
+  outcome: 'success' | 'error' | 'rejected';
+  startedAt: number;
+}): void {
+  emitWideEvent(input.outcome === 'success' ? 'info' : 'error', {
+    event: 'http_request_complete',
+    transport: 'http',
+    method: input.method,
+    path: input.path,
+    request_kind: input.kind,
+    ...(input.jsonrpcMethod ? { jsonrpc_method: input.jsonrpcMethod } : {}),
+    session_id: input.sessionId ?? null,
+    http_status: input.httpStatus,
+    outcome: input.outcome,
+    duration_ms: performance.now() - input.startedAt,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -526,20 +556,30 @@ async function handlePostMcp(
   registry: HttpSessionRegistry,
   eventStore: InMemoryEventStore,
 ): Promise<void> {
+  const startedAt = performance.now();
+  const method = req.method;
+  const path = req.originalUrl;
+  const sessionId = getSessionId(req);
+  let kind: JsonRpcKind = 'unknown';
+  let jsonrpcMethod: string | undefined;
+  let httpStatus = 200;
+  let outcome: 'success' | 'error' | 'rejected' = 'success';
   try {
-    const sessionId = getSessionId(req);
-
     const body = req.body as unknown;
     let message: JSONRPCMessage;
     try {
       message = parseJSONRPCMessage(body);
     } catch {
       // Invalid JSON-RPC shape
+      httpStatus = 400;
+      outcome = 'rejected';
       sendJsonRpcError(res, 400, JSON_RPC_INVALID_REQUEST, 'Invalid Request');
       return;
     }
 
-    const kind = classifyJsonRpcMessage(message);
+    kind = classifyJsonRpcMessage(message);
+    jsonrpcMethod =
+      'method' in message && typeof message.method === 'string' ? message.method : undefined;
     Logger.debug('[HTTP] inbound', { kind, sessionId: sessionId ?? null });
     if (isInitializedNotification(message)) {
       Logger.debug('[HTTP] initialized notification received', { sessionId: sessionId ?? null });
@@ -549,12 +589,15 @@ async function handlePostMcp(
       const session = registry.getOrRespondNotFound(sessionId, res);
       if (session) {
         await handleSessionTransportRequest(session, req, res, message);
+        httpStatus = res.statusCode;
       }
       return;
     }
 
     // No session yet — only an initialize request may open one.
     if (kind === 'result' || kind === 'error') {
+      httpStatus = 400;
+      outcome = 'rejected';
       sendJsonRpcError(
         res,
         400,
@@ -565,6 +608,8 @@ async function handlePostMcp(
     }
 
     if (!isInitializeRequest(message)) {
+      httpStatus = 400;
+      outcome = 'rejected';
       sendJsonRpcError(
         res,
         400,
@@ -575,16 +620,32 @@ async function handlePostMcp(
     }
     const maxSessions = parseEnvInt('FILESYSTEM_MCP_MAX_HTTP_SESSIONS', 100, 1, 10_000);
     if (registry.size() >= maxSessions) {
+      httpStatus = 503;
+      outcome = 'rejected';
       sendJsonRpcError(res, 503, JSON_RPC_SERVER_ERROR, 'Too many sessions');
       return;
     }
     const session = await createHttpSession(options, registry, eventStore);
     await handleSessionTransportRequest(session, req, res, message);
+    httpStatus = res.statusCode;
   } catch (error) {
+    httpStatus = 500;
+    outcome = 'error';
     Logger.error('[HTTP] Error handling POST request:', formatUnknownErrorMessage(error));
     if (!res.headersSent) {
       sendJsonRpcError(res, 500, JSON_RPC_INTERNAL_ERROR, 'Internal Server Error');
     }
+  } finally {
+    emitHttpCompletionEvent({
+      method,
+      path,
+      kind,
+      ...(jsonrpcMethod ? { jsonrpcMethod } : {}),
+      ...(sessionId ? { sessionId } : {}),
+      httpStatus,
+      outcome,
+      startedAt,
+    });
   }
 }
 
@@ -593,21 +654,41 @@ async function handleGetOrDeleteMcp(
   res: Response,
   registry: HttpSessionRegistry,
 ): Promise<void> {
+  const startedAt = performance.now();
+  const method = req.method;
+  const path = req.originalUrl;
+  const sessionId = getSessionId(req);
+  let httpStatus = 200;
+  let outcome: 'success' | 'error' | 'rejected' = 'success';
   try {
-    const sessionId = getSessionId(req);
     if (!sessionId) {
+      httpStatus = 400;
+      outcome = 'rejected';
       sendJsonRpcError(res, 400, JSON_RPC_SERVER_ERROR, 'Bad Request: Missing session ID');
       return;
     }
     const session = registry.getOrRespondNotFound(sessionId, res);
     if (session) {
       await handleSessionTransportRequest(session, req, res);
+      httpStatus = res.statusCode;
     }
   } catch (error) {
+    httpStatus = 500;
+    outcome = 'error';
     Logger.error(`[HTTP] Error handling ${req.method} request:`, formatUnknownErrorMessage(error));
     if (!res.headersSent) {
       sendJsonRpcError(res, 500, JSON_RPC_INTERNAL_ERROR, 'Internal Server Error');
     }
+  } finally {
+    emitHttpCompletionEvent({
+      method,
+      path,
+      kind: 'unknown',
+      ...(sessionId ? { sessionId } : {}),
+      httpStatus,
+      outcome,
+      startedAt,
+    });
   }
 }
 

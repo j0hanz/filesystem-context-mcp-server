@@ -12,7 +12,7 @@ import { stat } from 'node:fs/promises';
 
 import { z } from 'zod/v4';
 
-import { Logger } from './core/observability.js';
+import { emitWideEvent, Logger } from './core/observability.js';
 import { completePathCached } from './core/path.js';
 import type { PathGuard } from './core/path.js';
 import { INSTRUCTION_SECTIONS } from './resources.js';
@@ -108,22 +108,43 @@ function wrapHandler<T>(
   }
   const displayName = getDisplayName(contract);
   const start = Date.now();
-  const result = fn();
-  if (result instanceof Promise) {
-    return result.finally(() => {
-      Logger.debug(`prompt resolved`, {
-        name: contract.name,
-        displayName,
-        durationMs: Date.now() - start,
-      });
+
+  const logPromptResolution = (outcome: 'success' | 'error', errorMessage?: string): void => {
+    emitWideEvent(outcome === 'success' ? 'info' : 'error', {
+      event: 'prompt_complete',
+      prompt_name: contract.name,
+      display_name: displayName,
+      outcome,
+      duration_ms: Date.now() - start,
+      ...(errorMessage ? { error_message: errorMessage } : {}),
     });
+    Logger.debug(`prompt resolved`, {
+      name: contract.name,
+      displayName,
+      durationMs: Date.now() - start,
+    });
+  };
+
+  try {
+    const result = fn();
+    if (result instanceof Promise) {
+      return result.then(
+        (value) => {
+          logPromptResolution('success');
+          return value;
+        },
+        (error: unknown) => {
+          logPromptResolution('error', error instanceof Error ? error.message : String(error));
+          throw error;
+        },
+      );
+    }
+    logPromptResolution('success');
+    return result;
+  } catch (error) {
+    logPromptResolution('error', error instanceof Error ? error.message : String(error));
+    throw error;
   }
-  Logger.debug(`prompt resolved`, {
-    name: contract.name,
-    displayName,
-    durationMs: Date.now() - start,
-  });
-  return result;
 }
 
 // --- Prompt entries (filled in by later tasks) ---

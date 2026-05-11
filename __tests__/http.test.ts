@@ -1,6 +1,7 @@
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 
 import assert from 'node:assert/strict';
+import { channel } from 'node:diagnostics_channel';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
 import type { Server } from 'node:http';
@@ -186,6 +187,64 @@ describe('HTTP transport', () => {
     });
 
     assert.equal(initializedResponse.status, 202);
+  });
+
+  it('emits one http_request_complete event for initialize requests', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-log-'));
+    const logChannel = channel('filesystem-mcp:log');
+    const messages: string[] = [];
+    const subscription = (msg: unknown): void => {
+      const event = msg as { message?: string };
+      if (typeof event.message === 'string') {
+        messages.push(event.message);
+      }
+    };
+    logChannel.subscribe(subscription);
+
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+
+    const port = getServerPort(server);
+    const response = await rawHttpRequest({
+      port,
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-11-25',
+          capabilities: {},
+          clientInfo: { name: 'http-test', version: '1.0.0' },
+        },
+      }),
+    });
+
+    assert.equal(response.statusCode, 200);
+
+    const completion = messages
+      .map((message) => {
+        try {
+          return JSON.parse(message) as Record<string, unknown>;
+        } catch {
+          return undefined;
+        }
+      })
+      .find((event) => event?.['event'] === 'http_request_complete');
+
+    assert.ok(completion, 'expected http_request_complete event');
+    assert.equal(completion?.['transport'], 'http');
+    assert.equal(completion?.['method'], 'POST');
+    assert.equal(completion?.['jsonrpc_method'], 'initialize');
+    assert.equal(completion?.['http_status'], 200);
+    assert.equal(completion?.['outcome'], 'success');
+    assert.ok(typeof completion?.['duration_ms'] === 'number');
+
+    logChannel.unsubscribe(subscription);
   });
 
   it('accepts the current protocol version (2025-11-25)', async () => {

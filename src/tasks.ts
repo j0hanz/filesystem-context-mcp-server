@@ -16,6 +16,7 @@ import type { StandardSchemaWithJSON } from '@modelcontextprotocol/server';
 import { EventEmitter } from 'node:events';
 
 import { ErrorCode, McpError } from './core/errors.js';
+import { logRuntimeFailure } from './core/observability.js';
 import {
   DEFAULT_TASK_TTL_MS,
   isRecord,
@@ -134,10 +135,7 @@ export class TaskOrchestrator {
       // Start background execution without awaiting it.
       this.executeBackground(mcpTask.taskId, handler, args, ctx, options.toolName).catch(
         (error: unknown) => {
-          console.error(
-            `[TaskOrchestrator] Fatal error in background task ${mcpTask.taskId}:`,
-            error,
-          );
+          logRuntimeFailure('background_task_fatal', 'task_orchestrator', options.toolName, error);
         },
       );
 

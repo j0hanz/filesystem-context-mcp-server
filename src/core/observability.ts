@@ -10,6 +10,7 @@ import { channel, tracingChannel } from 'node:diagnostics_channel';
 import { monitorEventLoopDelay, performance, PerformanceObserver } from 'node:perf_hooks';
 import { inspect } from 'node:util';
 
+import { pkgInfo } from '../pkg-info.js';
 import { isRecord, parseTrueEnvFlag } from './util.js';
 
 // Aliases for observability subsystem
@@ -49,6 +50,51 @@ export interface LoggingState {
 
 export function createLoggingState(minimumLevel: LoggingLevel = 'debug'): LoggingState {
   return { minimumLevel };
+}
+
+type WideEventLevel = LoggingLevel;
+
+interface WideEventPayload {
+  event: string;
+  outcome?: 'success' | 'error' | 'cancelled' | 'rejected';
+  duration_ms?: number;
+  session_id?: string | null;
+  traceparent?: string;
+  [key: string]: unknown;
+}
+
+const STATIC_WIDE_EVENT_CONTEXT = {
+  service: 'filesystem-mcp',
+  service_version: pkgInfo.version,
+  runtime: 'node',
+} as const;
+
+function buildWideEvent(payload: WideEventPayload): Record<string, unknown> {
+  return {
+    ...STATIC_WIDE_EVENT_CONTEXT,
+    timestamp: new Date().toISOString(),
+    ...payload,
+  };
+}
+
+export function emitWideEvent(level: WideEventLevel, payload: WideEventPayload): void {
+  Logger.emit(level, JSON.stringify(buildWideEvent(payload)));
+}
+
+export function logRuntimeFailure(
+  reason: string,
+  scope: string,
+  operation: string,
+  error: unknown,
+): void {
+  emitWideEvent('error', {
+    event: 'runtime_failure',
+    reason,
+    scope,
+    operation,
+    outcome: 'error',
+    error_message: formatTransportError(error),
+  });
 }
 
 function canSendMcpLogs(server: McpServer): boolean {

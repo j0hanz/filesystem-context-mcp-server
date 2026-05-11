@@ -1,5 +1,5 @@
 // define-tool.test.ts — tests for defineTool() from src/tools/define.ts
-import type { McpServer } from '@modelcontextprotocol/server';
+import type { McpServer, ServerContext } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -25,16 +25,7 @@ type TestInput = z.infer<typeof TestInputSchema>;
 type TestOutput = z.infer<typeof TestOutputSchema>;
 
 // The serverCtxHandler signature registered via registerTool
-type CapturedHandler = (
-  args: TestInput,
-  extra: {
-    mcpReq: {
-      signal: AbortSignal;
-      log: (level: string, data: unknown, logger?: string) => Promise<void>;
-      elicitInput: (params: unknown) => Promise<unknown>;
-    };
-  },
-) => Promise<Record<string, unknown>>;
+type CapturedHandler = (args: TestInput, extra: ServerContext) => Promise<Record<string, unknown>>;
 
 interface HandlerCapture {
   handler: CapturedHandler | undefined;
@@ -58,8 +49,16 @@ function makeTestDeps(server: McpServer, isInitialized = true) {
 }
 
 function fakeMcpReq() {
+  const notifications: unknown[] = [];
   return {
     signal: new AbortController().signal,
+    _meta: {
+      'io.opentelemetry/traceparent': '00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01',
+    },
+    notifications,
+    notify: async (notification: unknown) => {
+      notifications.push(notification);
+    },
     log: async () => undefined,
     elicitInput: async () => ({ action: 'cancel' as const }),
   };
@@ -111,7 +110,9 @@ test('defineTool: run receives args and ToolCtx with signal', async (): Promise<
   const capture: HandlerCapture = { handler: undefined };
   tool.register(makeTestDeps(makeMockServer(capture)));
   assert.ok(capture.handler, 'handler was captured');
-  const result = await capture.handler({ message: 'hello' }, { mcpReq: fakeMcpReq() });
+  const result = await capture.handler({ message: 'hello' }, {
+    mcpReq: fakeMcpReq(),
+  } as unknown as ServerContext);
   assert.equal((result.structuredContent as TestOutput).result, 'success');
   assert.equal(runInputs.length, 1);
   assert.deepEqual(runInputs[0], { message: 'hello' });
@@ -123,7 +124,7 @@ test('defineTool: tool runs without crash on basic invocation', async (): Promis
   const capture: HandlerCapture = { handler: undefined };
   tool.register(makeTestDeps(makeMockServer(capture)));
   assert.ok(capture.handler, 'handler was captured');
-  await capture.handler({ message: 'test' }, { mcpReq: fakeMcpReq() });
+  await capture.handler({ message: 'test' }, { mcpReq: fakeMcpReq() } as unknown as ServerContext);
 });
 
 test('defineTool: extended input schema works', async (): Promise<void> => {
@@ -136,9 +137,10 @@ test('defineTool: extended input schema works', async (): Promise<void> => {
   const capture: HandlerCapture = { handler: undefined };
   tool.register(makeTestDeps(makeMockServer(capture)));
   assert.ok(capture.handler, 'handler was captured');
-  await capture.handler({ message: 'test', path: '/some/path' } as TestInput, {
-    mcpReq: fakeMcpReq(),
-  });
+  await capture.handler(
+    { message: 'test', path: '/some/path' } as TestInput,
+    { mcpReq: fakeMcpReq() } as unknown as ServerContext,
+  );
 });
 
 test('defineTool: progressLabel option is accepted', (): void => {
@@ -163,7 +165,9 @@ test('defineTool: handler returns not-initialized error when guard fails', async
   const capture: HandlerCapture = { handler: undefined };
   tool.register(makeTestDeps(makeMockServer(capture), false));
   assert.ok(capture.handler, 'handler was captured');
-  const result = await capture.handler({ message: 'test' }, { mcpReq: fakeMcpReq() });
+  const result = await capture.handler({ message: 'test' }, {
+    mcpReq: fakeMcpReq(),
+  } as unknown as ServerContext);
   assert.ok(result.isError, 'result is an error when not initialized');
 });
 
@@ -177,7 +181,9 @@ test('defineTool: handler returns formatted error on thrown exception', async ()
   const capture: HandlerCapture = { handler: undefined };
   tool.register(makeTestDeps(makeMockServer(capture)));
   assert.ok(capture.handler, 'handler was captured');
-  const result = await capture.handler({ message: 'test' }, { mcpReq: fakeMcpReq() });
+  const result = await capture.handler({ message: 'test' }, {
+    mcpReq: fakeMcpReq(),
+  } as unknown as ServerContext);
   assert.ok(result.isError, 'result is an error');
   assert.equal(result.errorCode, ErrorCode.UNKNOWN);
 });
@@ -193,7 +199,9 @@ test('defineTool: defaultErrorCode is used in error responses', async (): Promis
   const capture: HandlerCapture = { handler: undefined };
   tool.register(makeTestDeps(makeMockServer(capture)));
   assert.ok(capture.handler, 'handler was captured');
-  const result = await capture.handler({ message: 'test' }, { mcpReq: fakeMcpReq() });
+  const result = await capture.handler({ message: 'test' }, {
+    mcpReq: fakeMcpReq(),
+  } as unknown as ServerContext);
   assert.ok(result.isError);
   assert.equal(result.errorCode, ErrorCode.TIMEOUT);
 });
@@ -211,8 +219,38 @@ test('defineTool: resourceStore is injected into ToolCtx', async (): Promise<voi
   const mockResourceStore = { mock: true } as unknown as ResourceStore;
   tool.register({ ...makeTestDeps(makeMockServer(capture)), resourceStore: mockResourceStore });
   assert.ok(capture.handler, 'handler was captured');
-  await capture.handler({ message: 'test' }, { mcpReq: fakeMcpReq() });
+  await capture.handler({ message: 'test' }, { mcpReq: fakeMcpReq() } as unknown as ServerContext);
   assert.equal(capturedResourceStore, mockResourceStore);
+});
+
+test('defineTool: regular tools keep session, trace metadata, and notifications', async (): Promise<void> => {
+  let capturedSessionId: string | undefined;
+  let capturedTraceparent: string | undefined;
+
+  const tool = defineTool({
+    ...BASE_DEF,
+    run: async (_args, ctx) => {
+      capturedSessionId = ctx.sessionId;
+      capturedTraceparent = ctx._meta?.['io.opentelemetry/traceparent'];
+      await ctx.sendNotification?.({ method: 'notifications/test', params: { ok: true } });
+      return buildToolResponse<TestOutput>('test', { ok: true, result: 'success' });
+    },
+  });
+
+  const capture: HandlerCapture = { handler: undefined };
+  tool.register(makeTestDeps(makeMockServer(capture)));
+  assert.ok(capture.handler, 'handler was captured');
+
+  const requestContext = {
+    sessionId: 'session-42',
+    mcpReq: fakeMcpReq(),
+  } as unknown as ServerContext;
+
+  const result = await capture.handler({ message: 'hello' }, requestContext);
+  assert.equal((result.structuredContent as TestOutput).result, 'success');
+  assert.equal(capturedSessionId, 'session-42');
+  assert.equal(capturedTraceparent, '00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01');
+  assert.equal((requestContext.mcpReq as { notifications?: unknown[] }).notifications?.length, 1);
 });
 
 test('defineTool: inputSchema and outputSchema are present', (): void => {

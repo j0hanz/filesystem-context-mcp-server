@@ -7,6 +7,7 @@ import type {
   ElicitResult,
   LoggingLevel,
   McpServer,
+  ServerContext,
   StandardSchemaWithJSON,
   Tool,
   ToolAnnotations,
@@ -22,7 +23,7 @@ import { Logger, ProgressSession } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { toMcpSchema } from '../schema.js';
-import { buildToolErrorResponse } from './_helpers.js';
+import { buildToolErrorResponse, toToolContext } from './_helpers.js';
 import type { ToolContext } from './_helpers.js';
 
 // Minimal duck-typed interface for the task orchestrator.
@@ -38,9 +39,12 @@ interface OrchestratorLike {
 
 export interface ToolCtx {
   readonly signal: AbortSignal;
+  readonly sessionId?: string;
+  readonly _meta?: ToolContext['_meta'];
   readonly pathGuard: PathGuard;
   readonly resourceStore: ResourceStore | undefined;
   readonly log?: (level: LoggingLevel, data: unknown, logger?: string) => void;
+  readonly sendNotification?: ToolContext['sendNotification'];
   readonly onProgress?: (params: { current: number; total?: number; message?: string }) => void;
   readonly elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>;
 }
@@ -129,6 +133,8 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
 
         const toolCtx: ToolCtx = {
           signal,
+          ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
+          ...(ctx._meta ? { _meta: ctx._meta } : {}),
           pathGuard: deps.pathGuard,
           resourceStore: deps.resourceStore,
           ...(ctx.log
@@ -140,6 +146,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
                 })(ctx.log),
               }
             : {}),
+          ...(ctx.sendNotification ? { sendNotification: ctx.sendNotification } : {}),
           onProgress: (p) => {
             progressSession.set(p);
           },
@@ -200,20 +207,8 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
         // Regular tool: adapt ServerContext → ToolContext inline.
         const serverCtxHandler = async (
           args: unknown,
-          extra: {
-            mcpReq: {
-              signal: AbortSignal;
-              log: (level: LoggingLevel, data: unknown, logger?: string) => Promise<void>;
-              elicitInput: (params: ElicitRequestFormParams) => Promise<ElicitResult>;
-            };
-          },
-        ): Promise<CallToolResult> =>
-          coreHandler(args, {
-            signal: extra.mcpReq.signal,
-            log: async (level: LoggingLevel, data: unknown, logger?: string) =>
-              extra.mcpReq.log(level, data, logger),
-            elicitInput: (params: ElicitRequestFormParams) => extra.mcpReq.elicitInput(params),
-          });
+          ctx: ServerContext,
+        ): Promise<CallToolResult> => coreHandler(args, toToolContext(ctx));
         deps.server.registerTool(def.name, toolDefShape, serverCtxHandler);
       }
     },

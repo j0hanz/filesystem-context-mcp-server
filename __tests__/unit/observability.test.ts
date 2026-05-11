@@ -4,7 +4,9 @@ import process from 'node:process';
 import test, { before } from 'node:test';
 
 import {
+  emitWideEvent,
   getToolContextSnapshot,
+  logRuntimeFailure,
   publishOpsTraceEnd,
   publishOpsTraceError,
   publishOpsTraceStart,
@@ -110,4 +112,53 @@ test('ops trace functions', () => {
   publishOpsTraceError({ op: 'test-op-err', path: 'test-path' }, new Error('err'));
   assert.equal(errEvent?.op, 'test-op-err');
   assert.equal((errEvent?.error as Error)?.message, 'err');
+});
+
+test('emitWideEvent emits canonical JSON with environment metadata', () => {
+  const logChannel = channel('filesystem-mcp:log');
+  let lastEvent: { message?: string; level?: string } | undefined;
+
+  logChannel.subscribe((msg: unknown) => {
+    lastEvent = msg as { message?: string; level?: string };
+  });
+
+  emitWideEvent('info', {
+    event: 'http_request_complete',
+    transport: 'http',
+    outcome: 'success',
+    duration_ms: 12,
+    session_id: 's-123',
+    http_status: 200,
+  });
+
+  assert.equal(lastEvent?.level, 'info');
+  const parsed = JSON.parse(lastEvent?.message ?? '{}') as Record<string, unknown>;
+  assert.equal(parsed['event'], 'http_request_complete');
+  assert.equal(parsed['transport'], 'http');
+  assert.equal(parsed['outcome'], 'success');
+  assert.equal(parsed['session_id'], 's-123');
+  assert.equal(parsed['http_status'], 200);
+  assert.equal(parsed['service'], 'filesystem-mcp');
+  assert.equal(parsed['runtime'], 'node');
+  assert.ok(typeof parsed['service_version'] === 'string');
+  assert.ok(typeof parsed['timestamp'] === 'string');
+});
+
+test('logRuntimeFailure emits a wide event with error details', () => {
+  const logChannel = channel('filesystem-mcp:log');
+  let lastEvent: { message?: string; level?: string } | undefined;
+
+  logChannel.subscribe((msg: unknown) => {
+    lastEvent = msg as { message?: string; level?: string };
+  });
+
+  logRuntimeFailure('fatal', 'startup', 'parseArgs', new Error('boom'));
+
+  assert.equal(lastEvent?.level, 'error');
+  const parsed = JSON.parse(lastEvent?.message ?? '{}') as Record<string, unknown>;
+  assert.equal(parsed['event'], 'runtime_failure');
+  assert.equal(parsed['reason'], 'fatal');
+  assert.equal(parsed['scope'], 'startup');
+  assert.equal(parsed['operation'], 'parseArgs');
+  assert.equal(parsed['error_message'], 'boom');
 });

@@ -15,6 +15,7 @@ import {
 import { type FSWatcher, watch } from 'node:fs';
 
 import { readFileWithStats } from './core/fs.js';
+import { emitWideEvent } from './core/observability.js';
 import { completePathCached, type PathGuard } from './core/path.js';
 import type { ResourceStore } from './core/store.js';
 import {
@@ -361,41 +362,61 @@ export function registerAllResources(
   }
 
   // Hook into subscriptions routing
-  server.server.setRequestHandler('resources/subscribe', (req: { params: { uri: string } }) => {
-    const requestedResource = resourceUrlFromServerUrl(req.params.uri);
-    for (const contract of ALL_RESOURCES) {
-      if (!contract.subscribe) continue;
+  server.server.setRequestHandler(
+    'resources/subscribe',
+    (req: { params: { uri: string } }, ctx: ServerContext) => {
+      const requestedResource = resourceUrlFromServerUrl(req.params.uri);
+      for (const contract of ALL_RESOURCES) {
+        if (!contract.subscribe) continue;
 
-      const configured = contract.uri ?? contract.uriTemplate?.split('{')[0];
+        const configured = contract.uri ?? contract.uriTemplate?.split('{')[0];
 
-      if (!configured) continue;
+        if (!configured) continue;
 
-      if (
-        checkResourceAllowed({
-          requestedResource,
-          configuredResource: configured,
-        })
-      ) {
-        contract.subscribe(requestedResource.toString(), (updatedUri) => {
-          void server.server.sendResourceUpdated({ uri: updatedUri }).catch(() => {
-            /* Transport may be closed */
+        if (
+          checkResourceAllowed({
+            requestedResource,
+            configuredResource: configured,
+          })
+        ) {
+          contract.subscribe(requestedResource.toString(), (updatedUri) => {
+            void server.server.sendResourceUpdated({ uri: updatedUri }).catch(() => {
+              /* Transport may be closed */
+            });
           });
-        });
-        break;
+          emitWideEvent('info', {
+            event: 'resource_subscription',
+            action: 'subscribe',
+            uri: requestedResource.toString(),
+            session_id: ctx.sessionId ?? null,
+            outcome: 'success',
+          });
+          break;
+        }
       }
-    }
-    return {};
-  });
+      return {};
+    },
+  );
 
-  server.server.setRequestHandler('resources/unsubscribe', (req: { params: { uri: string } }) => {
-    const canonical = resourceUrlFromServerUrl(req.params.uri).toString();
-    for (const contract of ALL_RESOURCES) {
-      if (contract.unsubscribe) {
-        contract.unsubscribe(canonical);
+  server.server.setRequestHandler(
+    'resources/unsubscribe',
+    (req: { params: { uri: string } }, ctx: ServerContext) => {
+      const canonical = resourceUrlFromServerUrl(req.params.uri).toString();
+      for (const contract of ALL_RESOURCES) {
+        if (contract.unsubscribe) {
+          contract.unsubscribe(canonical);
+        }
       }
-    }
-    return {};
-  });
+      emitWideEvent('info', {
+        event: 'resource_subscription',
+        action: 'unsubscribe',
+        uri: canonical,
+        session_id: ctx.sessionId ?? null,
+        outcome: 'success',
+      });
+      return {};
+    },
+  );
 
   return {
     destroy(): void {
