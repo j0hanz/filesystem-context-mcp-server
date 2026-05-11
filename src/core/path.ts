@@ -18,9 +18,9 @@ import { fileURLToPath } from 'node:url';
 
 import { z } from 'zod/v4';
 
-import { assertNotAborted, withAbort } from './concurrency.js';
+import { assertNotAborted, processInParallel, withAbort } from './concurrency.js';
 import { ErrorCode, isAbortError, isNodeError, McpError } from './errors.js';
-import { SENSITIVE_FILE_DENYLIST } from './util.js';
+import { PARALLEL_CONCURRENCY, SENSITIVE_FILE_DENYLIST } from './util.js';
 
 // Path utility primitives. Owned by path-guard.ts to avoid a circular
 // dependency with paths.ts (which depends on PathGuard). paths.ts re-exports
@@ -361,7 +361,6 @@ function getReservedDeviceName(segment: string): string | undefined {
 }
 
 export function getReservedDeviceNameForPath(requestedPath: string): string | undefined {
-  if (!IS_WINDOWS) return undefined;
   const segments = requestedPath.split(/[\\/]/u);
   for (const segment of segments) {
     const reserved = getReservedDeviceName(segment);
@@ -725,14 +724,20 @@ export async function getValidRootDirectories(
   const fileRoots = roots.filter(isFileRoot);
   if (fileRoots.length === 0) return [];
 
-  const resolvedResults = await Promise.all(
-    fileRoots.map((root) => resolveRootDirectory(root, signal)),
+  const { results: resolvedResults } = await processInParallel(
+    fileRoots,
+    (root) => resolveRootDirectory(root, signal),
+    PARALLEL_CONCURRENCY,
+    signal,
   );
   const validPaths = resolvedResults.filter((p): p is string => p !== null);
   if (validPaths.length === 0) return [];
 
-  const realExpansions = await Promise.all(
-    validPaths.map((normalizedPath) => resolveRealPathIfExists(normalizedPath, signal)),
+  const { results: realExpansions } = await processInParallel(
+    validPaths,
+    (normalizedPath) => resolveRealPathIfExists(normalizedPath, signal),
+    PARALLEL_CONCURRENCY,
+    signal,
   );
 
   const validDirs: string[] = [];
