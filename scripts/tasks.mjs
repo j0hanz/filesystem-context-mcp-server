@@ -90,20 +90,32 @@ function signalExitCode(signalName) {
 }
 
 const HELP_TEXT = [
-  'Usage: node scripts/tasks.mjs [flags]',
+  'Usage: node scripts/tasks.mjs <command> [options]',
   '',
-  '  --fix        Run lint:fix / knip --fix instead of check',
-  '  --quick      Skip test + rebuild',
-  '  --all        Run-all mode: continue past failures across all tasks',
-  '  --json       Emit single JSON object on stdout, suppress human output',
-  '  --llm        Echo failure detail to stdout (always written to .tasks-last-failure.json)',
-  '  --detail <n> Show source-window detail for test failure at index n',
-  '  --watch      Run node --test in watch mode (bypasses orchestration; stdio inherited)',
-  '  --test-timeout <ms>           Forward to node --test-timeout',
-  '  --test-name-pattern <regex>   Forward to node --test-name-pattern',
-  '  --test-shard <i/n>            Forward to node --test-shard',
-  '  --update-snapshots            Forward to node --test-update-snapshots',
-  '  --help       Show this help',
+  'Commands:',
+  '  check        Run validation (format → [lint, type, knip] → [test, rebuild])',
+  '  fix          Auto-fix (format, lint, knip) then run validation',
+  '  test         Run tests directly (bypasses orchestrator)',
+  '  detail <n>   Show source-window detail for the Nth test failure',
+  '',
+  'Options for check / fix:',
+  '  --quick      Skip test + rebuild (static checks only)',
+  '  --all        Continue past failures across all tasks',
+  '  --json       Emit single JSON object to stdout',
+  '  --llm        Echo failure detail to stdout',
+  '',
+  'Options for test:',
+  '  --watch                 Run node --test in watch mode',
+  '  --timeout <ms>          Forward to node --test-timeout',
+  '  --name-pattern <regex>   Forward to node --test-name-pattern',
+  '  --shard <i/n>            Forward to node --test-shard',
+  '  --update-snapshots      Forward to node --test-update-snapshots',
+  '  --json                  Emit single JSON object to stdout',
+  '  --llm                   Echo failure detail to stdout',
+  '',
+  'Options for detail:',
+  '  --json                  Emit failure context as JSON',
+  '  --llm                   Emit failure context as LLM-friendly markdown',
   '',
   'Note: when running under --permission, this script needs --allow-fs-read,',
   '  --allow-fs-write, and --allow-child-process to spawn npm/npx/tsc/node test runs.',
@@ -220,32 +232,32 @@ function countDiagnostics(errors) {
 }
 
 function parseCliConfig(args) {
-  let values;
+  let parsed;
   try {
-    ({ values } = parseArgs({
+    parsed = parseArgs({
       args,
       options: {
-        fix: { type: 'boolean' },
         quick: { type: 'boolean' },
         all: { type: 'boolean' },
         json: { type: 'boolean' },
         llm: { type: 'boolean' },
         watch: { type: 'boolean' },
-        detail: { type: 'string' },
-        'test-timeout': { type: 'string' },
-        'test-name-pattern': { type: 'string' },
-        'test-shard': { type: 'string' },
+        timeout: { type: 'string' },
+        'name-pattern': { type: 'string' },
+        shard: { type: 'string' },
         'update-snapshots': { type: 'boolean' },
         help: { type: 'boolean', short: 'h' },
       },
       strict: true,
-      allowPositionals: false,
-    }));
+      allowPositionals: true,
+    });
   } catch (err) {
     process.stderr.write(`${err?.message || String(err)}\n\n${HELP_TEXT}`);
     process.exitCode = 2;
     return null;
   }
+
+  const { values, positionals } = parsed;
 
   if (values.help) {
     process.stdout.write(HELP_TEXT);
@@ -253,49 +265,104 @@ function parseCliConfig(args) {
     return null;
   }
 
-  if (values.detail !== undefined) {
-    const n = Number(values.detail);
-    if (!Number.isInteger(n) || n < 1) {
-      process.stderr.write(
-        `--detail requires a positive integer (got: ${values.detail})\n\n${HELP_TEXT}`,
-      );
-      process.exitCode = 2;
-      return null;
-    }
-  }
-
-  if (values['test-timeout'] !== undefined) {
-    const n = Number(values['test-timeout']);
-    if (!Number.isInteger(n) || n < 1) {
-      process.stderr.write(
-        `--test-timeout requires a positive integer ms (got: ${values['test-timeout']})\n\n${HELP_TEXT}`,
-      );
-      process.exitCode = 2;
-      return null;
-    }
-  }
-
-  if (values['test-shard'] !== undefined && !/^\d+\/\d+$/.test(values['test-shard'])) {
-    process.stderr.write(
-      `--test-shard requires <index>/<total> (got: ${values['test-shard']})\n\n${HELP_TEXT}`,
-    );
+  const command = positionals[0];
+  if (!command) {
+    process.stderr.write(`Missing command.\n\n${HELP_TEXT}`);
     process.exitCode = 2;
     return null;
   }
 
-  return Object.freeze({
-    fix: !!values.fix,
-    quick: !!values.quick,
-    all: !!values.all,
-    json: !!values.json,
-    llm: !!values.llm,
-    watch: !!values.watch,
-    detail: values.detail !== undefined ? Number(values.detail) : null,
-    testTimeout: values['test-timeout'] !== undefined ? Number(values['test-timeout']) : null,
-    testNamePattern: values['test-name-pattern'] ?? null,
-    testShard: values['test-shard'] ?? null,
-    updateSnapshots: !!values['update-snapshots'],
-  });
+  if (command === 'check' || command === 'fix') {
+    const forbidden = ['watch', 'timeout', 'name-pattern', 'shard', 'update-snapshots'];
+    for (const flag of forbidden) {
+      if (values[flag] !== undefined) {
+        process.stderr.write(`Flag --${flag} is not supported for command '${command}'.\n`);
+        process.exitCode = 2;
+        return null;
+      }
+    }
+    return {
+      command,
+      quick: !!values.quick,
+      all: !!values.all,
+      json: !!values.json,
+      llm: !!values.llm,
+    };
+  }
+
+  if (command === 'test') {
+    const forbidden = ['quick', 'all'];
+    for (const flag of forbidden) {
+      if (values[flag] !== undefined) {
+        process.stderr.write(`Flag --${flag} is not supported for command 'test'.\n`);
+        process.exitCode = 2;
+        return null;
+      }
+    }
+
+    if (values.timeout !== undefined) {
+      const n = Number(values.timeout);
+      if (!Number.isInteger(n) || n < 1) {
+        process.stderr.write(`--timeout requires a positive integer ms.\n`);
+        process.exitCode = 2;
+        return null;
+      }
+    }
+
+    if (values.shard !== undefined && !/^\d+\/\d+$/.test(values.shard)) {
+      process.stderr.write(`--shard requires <index>/<total>.\n`);
+      process.exitCode = 2;
+      return null;
+    }
+
+    return {
+      command: 'test',
+      watch: !!values.watch,
+      testTimeout: values.timeout ? Number(values.timeout) : null,
+      testNamePattern: values['name-pattern'] ?? null,
+      testShard: values.shard ?? null,
+      updateSnapshots: !!values['update-snapshots'],
+      json: !!values.json,
+      llm: !!values.llm,
+    };
+  }
+
+  if (command === 'detail') {
+    const n = Number(positionals[1]);
+    if (!Number.isInteger(n) || n < 1) {
+      process.stderr.write(`'detail' requires a positive integer failure index.\n`);
+      process.exitCode = 2;
+      return null;
+    }
+
+    const forbidden = [
+      'quick',
+      'all',
+      'watch',
+      'timeout',
+      'name-pattern',
+      'shard',
+      'update-snapshots',
+    ];
+    for (const flag of forbidden) {
+      if (values[flag] !== undefined) {
+        process.stderr.write(`Flag --${flag} is not supported for command 'detail'.\n`);
+        process.exitCode = 2;
+        return null;
+      }
+    }
+
+    return {
+      command: 'detail',
+      index: n,
+      json: !!values.json,
+      llm: !!values.llm,
+    };
+  }
+
+  process.stderr.write(`Unknown command '${command}'.\n\n${HELP_TEXT}`);
+  process.exitCode = 2;
+  return null;
 }
 
 function describeSpawnError(err, cmd) {
@@ -1459,13 +1526,12 @@ class TtyReporter extends BaseReporter {
   }
 
   header() {
-    const flags = ['fix', 'quick', 'all']
+    const cmd = `${Theme.CYAN}${this.config.command}${Theme.R}`;
+    const flags = ['quick', 'all']
       .filter((flag) => this.config[flag])
       .map((flag) => `${Theme.YELLOW}--${flag}${Theme.R}`);
     const suffix = flags.length > 0 ? ` ${flags.join(' ')}` : '';
-    process.stdout.write(
-      `\n  ${Theme.BOLD}Filesystem MCP Server${Theme.R} ${Theme.DIM}${Theme.R}${suffix}\n\n`,
-    );
+    process.stdout.write(`\n  ${Theme.BOLD}Filesystem MCP Server${Theme.R} ${cmd}${suffix}\n\n`);
   }
 
   taskStart(label) {
@@ -1652,7 +1718,7 @@ class TtyReporter extends BaseReporter {
         `    ${Theme.DIM}… ${total - shown.length} more failures; full list in ${Config.FAILURE_FILE}${Theme.R}\n`,
       );
     }
-    process.stdout.write(`\n  ${Theme.DIM}→ node scripts/tasks.mjs --detail <n>${Theme.R}\n\n`);
+    process.stdout.write(`\n  ${Theme.DIM}→ node scripts/tasks.mjs detail <n>${Theme.R}\n\n`);
   }
 
   renderRawOutput(rawOutput, task = {}) {
@@ -1731,7 +1797,7 @@ function noop() {
 }
 
 async function renderDetailCommand(config) {
-  const { detail: index, llm, json } = config;
+  const { index, llm, json } = config;
 
   const data = await FileStore.readJson(Config.FAILURE_FILE, null);
   if (!data) {
@@ -1870,19 +1936,20 @@ class TaskOrchestrator {
   }
 
   createTasks(config) {
+    const isFix = config.command === 'fix';
     return [
-      { label: 'format', runner: () => TaskRunners.runFormat(config) },
-      { label: 'lint', runner: () => TaskRunners.runLint(config.fix) },
+      { label: 'format', runner: () => TaskRunners.runFormat({ fix: isFix }) },
+      { label: 'lint', runner: () => TaskRunners.runLint(isFix) },
       { label: 'type-check', runner: () => TaskRunners.runTypeCheck() },
       { label: 'knip', runner: () => TaskRunners.runKnip() },
       {
         label: 'test',
         runner: () =>
           TaskRunners.runTest({
-            testTimeout: config.testTimeout,
-            testNamePattern: config.testNamePattern,
-            testShard: config.testShard,
-            updateSnapshots: config.updateSnapshots,
+            testTimeout: null,
+            testNamePattern: null,
+            testShard: null,
+            updateSnapshots: false,
           }),
         skip: config.quick,
       },
@@ -1902,7 +1969,8 @@ class TaskOrchestrator {
     reporter.header();
 
     const aggregate = new Aggregate(this.config.all ? 'run-all' : 'fail-fast');
-    const testDurations = this.config.fix
+    const isFix = this.config.command === 'fix';
+    const testDurations = isFix
       ? await this.runSequential(aggregate, reporter)
       : await this.runPhased(aggregate, reporter);
 
@@ -1911,9 +1979,10 @@ class TaskOrchestrator {
 
   async runSequential(aggregate, reporter) {
     let testDurations = null;
+    const isFix = this.config.command === 'fix';
     for (const task of this.tasks) {
       const result = await this.executeTask(task, aggregate, reporter, {
-        allowAutoFix: this.config.fix,
+        allowAutoFix: isFix,
       });
       if (result?.testDurations) testDurations = result.testDurations;
       if (!this.config.all && aggregate.failed > 0) break;
@@ -2088,24 +2157,49 @@ class TaskOrchestrator {
 if (import.meta.main) {
   const config = parseCliConfig(process.argv.slice(2));
   if (config !== null) {
-    if (config.detail !== null) {
+    if (config.command === 'detail') {
       await renderDetailCommand(config);
-    } else if (config.watch) {
-      const runner = new TestRunner({ testConfig: config });
-      const argv = [...runner.buildArgv(), '--watch'];
-      const command = ProcessRunner.command(process.execPath, argv);
-      const child = spawn(
-        command.cmd,
-        command.args,
-        ProcessRunner.spawnOptions(command, { stdio: 'inherit' }),
-      );
-      child.on('error', (err) => {
-        process.stderr.write(`${describeSpawnError(err, 'node')}\n`);
-        process.exitCode = 1;
-      });
-      child.on('close', (code, signalName) => {
-        process.exitCode = code ?? (signalName ? signalExitCode(signalName) : 1);
-      });
+    } else if (config.command === 'test') {
+      if (config.watch) {
+        const runner = new TestRunner({ testConfig: config });
+        const argv = [...runner.buildArgv(), '--watch'];
+        const command = ProcessRunner.command(process.execPath, argv);
+        const child = spawn(
+          command.cmd,
+          command.args,
+          ProcessRunner.spawnOptions(command, { stdio: 'inherit' }),
+        );
+        child.on('error', (err) => {
+          process.stderr.write(`${describeSpawnError(err, 'node')}\n`);
+          process.exitCode = 1;
+        });
+        child.on('close', (code, signalName) => {
+          process.exitCode = code ?? (signalName ? signalExitCode(signalName) : 1);
+        });
+      } else {
+        const reporter = config.json ? new JsonReporter(config, 0) : new TtyReporter(config, 0);
+        const start = Date.now();
+        const result = await TaskRunners.runTest(config);
+        const ms = Date.now() - start;
+
+        const aggregate = new Aggregate('test');
+        aggregate.record('test', result, ms);
+        aggregate.setSlowestTests(result.testDurations);
+
+        if (!config.json && !result.ok) {
+          reporter.failureDetail([{ label: 'test', ...result }]);
+        }
+
+        reporter.summary(aggregate);
+
+        if (!result.ok) {
+          await writeFailureFile(aggregate);
+        } else {
+          await clearFailureFile();
+        }
+
+        process.exitCode = result.ok ? 0 : 1;
+      }
     } else {
       process.exitCode = await new TaskOrchestrator(config).run();
     }
