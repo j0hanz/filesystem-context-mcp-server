@@ -5,13 +5,12 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
-import { fileURLToPath } from 'node:url';
 
 import serverJson from '../server.json' with { type: 'json' };
 import { createServer } from '../src/server.js';
 import { LinkedTransport } from './linked-transport.js';
 
-const __filename = fileURLToPath(import.meta.url);
+const __filename = import.meta.filename;
 
 interface DiscoveryEnv {
   client: Client;

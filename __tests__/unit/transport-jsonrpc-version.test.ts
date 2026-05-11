@@ -2,12 +2,10 @@ import { JSONRPC_VERSION } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { test } from 'node:test';
-import { fileURLToPath } from 'node:url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const __dirname = import.meta.dirname;
 
 test('JSONRPC_VERSION constant', async (t) => {
   await t.test('JSONRPC_VERSION exports as "2.0"', () => {

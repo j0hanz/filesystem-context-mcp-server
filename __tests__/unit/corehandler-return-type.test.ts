@@ -1,13 +1,12 @@
 // Verify CallToolResult is available from MCP SDK
 import type { CallToolResult } from '@modelcontextprotocol/server';
 
-import { strict as assert } from 'node:assert';
+import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { test } from 'node:test';
-import { fileURLToPath } from 'node:url';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const __dirname = import.meta.dirname;
 
 test('coreHandler has explicit Promise<CallToolResult> return type annotation', async () => {
   const defineFilePath = join(__dirname, '../../src/tools/define.ts');

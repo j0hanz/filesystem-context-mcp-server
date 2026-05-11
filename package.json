@@ -68,7 +68,6 @@
     "@modelcontextprotocol/express": "2.0.0-alpha.2",
     "@modelcontextprotocol/node": "2.0.0-alpha.2",
     "@modelcontextprotocol/server": "2.0.0-alpha.2",
-    "commander": "^14.0.3",
     "diff": "^9",
     "express": "^5.2.1",
     "ignore": "^7.0.5",

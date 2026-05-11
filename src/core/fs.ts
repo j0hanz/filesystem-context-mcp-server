@@ -13,6 +13,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { text } from 'node:stream/consumers';
 import { pipeline } from 'node:stream/promises';
 
 // fs-walk.ts
@@ -679,15 +680,10 @@ async function executeByteRangeRead(context: ReadModeContext): Promise<ReadFileR
     encoding: context.normalized.encoding,
     start,
     ...(end !== undefined ? { end } : {}),
+    signal: context.normalized.signal,
   });
 
-  const chunks: string[] = [];
-  for await (const chunk of stream) {
-    chunks.push(typeof chunk === 'string' ? chunk : String(chunk));
-    assertNotAborted(context.normalized.signal);
-  }
-
-  const content = chunks.join('');
+  const content = await text(stream);
 
   return {
     path: context.validPath,

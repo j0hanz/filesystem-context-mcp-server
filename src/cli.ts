@@ -1,8 +1,6 @@
 import type { Stats } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { getSystemErrorMessage, getSystemErrorName } from 'node:util';
-
-import { Command, CommanderError, InvalidArgumentError } from 'commander';
+import { getSystemErrorMessage, getSystemErrorName, parseArgs as utilParseArgs } from 'node:util';
 
 import { processInParallel } from './core/concurrency.js';
 import {
@@ -29,18 +27,19 @@ export class CliExitError extends Error {
 
 function validateCliPath(inputPath: string): void {
   if (inputPath.includes('\0')) {
-    throw new InvalidArgumentError('Path contains null bytes.');
+    throw new CliExitError('Path contains null bytes.', 1);
   }
 
   if (isWindowsDriveRelativePath(inputPath)) {
-    throw new InvalidArgumentError(
+    throw new CliExitError(
       'Windows drive-relative paths are not allowed. Use C:\\path or C:/path instead of C:path.',
+      1,
     );
   }
 
   const reserved = getReservedDeviceNameForPath(inputPath);
   if (reserved) {
-    throw new InvalidArgumentError(`Windows reserved device name not allowed: ${reserved}.`);
+    throw new CliExitError(`Windows reserved device name not allowed: ${reserved}.`, 1);
   }
 }
 
@@ -51,16 +50,6 @@ function getNodeErrorProperty(error: unknown, key: 'code' | 'errno'): string | n
     return value;
   }
   return undefined;
-}
-
-function collectStringValues(values: readonly unknown[]): string[] {
-  const result: string[] = [];
-  for (const value of values) {
-    if (typeof value === 'string') {
-      result.push(value);
-    }
-  }
-  return result;
 }
 
 function getNodeErrorCode(error: unknown): string | undefined {
@@ -132,68 +121,30 @@ async function normalizeCliDirectories(args: readonly string[]): Promise<string[
   throw first?.error ?? new Error('Failed to validate directories');
 }
 
-function parseAllowedDirArgument(value: string, previous: unknown): string[] {
-  validateCliPath(value);
-  const values = Array.isArray(previous) ? collectStringValues(previous) : [];
-  return [...values, value];
-}
+function printHelpAndExit(): never {
+  const help = `filesystem-mcp [options] [allowedDirs...]
 
-function getParsedAllowedDirs(cli: Command): string[] {
-  const [allowedDirs] = cli.processedArgs as unknown[];
-  if (!Array.isArray(allowedDirs)) return [];
-  return collectStringValues(allowedDirs);
-}
+MCP filesystem server. Positional directories define allowed access roots.
 
-function createCliProgram(output: string[]): Command {
-  const cli = new Command();
-  cli
-    .name('filesystem-mcp')
-    .usage('[options] [allowedDirs...]')
-    .description('MCP filesystem server. Positional directories define allowed access roots.')
-    .argument(
-      '[allowedDirs...]',
-      'Directories the MCP server can access on disk',
-      parseAllowedDirArgument,
-    )
-    .option('--allow_cwd, --allow-cwd', 'Allow the current working directory as an additional root')
-    .option('--port <number>', 'Enable HTTP transport on the given port (Node Streamable HTTP)')
-    .helpOption('-h, --help', 'Display command help')
-    .version(SERVER_VERSION, '-v, --version', 'Display server version')
-    .addHelpText(
-      'after',
-      `
+Options:
+  -h, --help              Display command help
+  -v, --version           Display server version
+  --allow-cwd             Allow the current working directory as an additional root
+  --port <number>         Enable HTTP transport on the given port (Node Streamable HTTP)
+
 Examples:
   $ filesystem-mcp /path/to/allowed/dir
   $ filesystem-mcp --allow-cwd
   $ filesystem-mcp /project/src /project/tests --allow-cwd
   $ filesystem-mcp --port 3000 /path/to/allowed/dir
-`,
-    );
-
-  cli.allowUnknownOption(false);
-  cli.allowExcessArguments(false);
-  cli.showHelpAfterError('(run with --help for usage)');
-  cli.showSuggestionAfterError(true);
-  cli.exitOverride();
-  cli.configureOutput({
-    writeOut(text: string): void {
-      output.push(text);
-    },
-    writeErr(text: string): void {
-      output.push(text);
-    },
-    outputError(text: string, write: (str: string) => void): void {
-      write(text);
-    },
-  });
-
-  return cli;
+`;
+  process.stdout.write(help);
+  process.exit(0);
 }
 
-function formatCliOutput(output: readonly string[], fallback: string): string {
-  const joined = output.join('').trimEnd();
-  if (joined.length > 0) return joined;
-  return fallback.trimEnd();
+function printVersionAndExit(): never {
+  process.stdout.write(`${SERVER_VERSION}\n`);
+  process.exit(0);
 }
 
 function normalizeCliExitMessage(error: unknown): string {
@@ -229,30 +180,52 @@ export async function parseArgs(): Promise<{
   allowCwd: boolean;
   port: number | undefined;
 }> {
-  const output: string[] = [];
-  const cli = createCliProgram(output);
   try {
-    cli.parse(process.argv, { from: 'node' });
-  } catch (error: unknown) {
-    if (error instanceof CommanderError) {
-      throw new CliExitError(formatCliOutput(output, error.message), error.exitCode);
+    const parsed = utilParseArgs({
+      options: {
+        'allow-cwd': { type: 'boolean', default: false },
+        port: { type: 'string' },
+        help: { type: 'boolean', short: 'h' },
+        version: { type: 'boolean', short: 'v' },
+      },
+      strict: true,
+      allowPositionals: true,
+    });
+
+    if (parsed.values.help) {
+      printHelpAndExit();
     }
-    throw error;
-  }
 
-  const options = cli.opts<{ allowCwd?: boolean; port?: string }>();
-  const allowCwd = Boolean(options.allowCwd);
-  const port = parsePortOption(options.port);
-  const positionals = getParsedAllowedDirs(cli);
+    if (parsed.values.version) {
+      printVersionAndExit();
+    }
 
-  let allowedDirs: string[];
-  try {
-    allowedDirs = positionals.length > 0 ? await normalizeCliDirectories(positionals) : [];
+    const positionals = parsed.positionals;
+    for (const positional of positionals) {
+      validateCliPath(positional);
+    }
+
+    const allowCwd = (parsed.values as Record<string, unknown>)['allow-cwd'] as boolean;
+    const port = parsePortOption(parsed.values.port);
+
+    let allowedDirs: string[];
+    try {
+      allowedDirs = positionals.length > 0 ? await normalizeCliDirectories(positionals) : [];
+    } catch (error: unknown) {
+      throw new CliExitError(normalizeCliExitMessage(error), 1);
+    }
+
+    const deduplicatedDirs = deduplicateAllowedDirectories(allowedDirs);
+
+    return { allowedDirs: deduplicatedDirs, allowCwd, port };
   } catch (error: unknown) {
-    throw new CliExitError(normalizeCliExitMessage(error), 1);
+    if (error instanceof CliExitError) {
+      throw error;
+    }
+
+    // Handle parsing errors from util.parseArgs
+    const message = error instanceof Error ? error.message : String(error);
+    const formattedMessage = message.startsWith('Error:') ? message : `Error: ${message}`;
+    throw new CliExitError(formattedMessage, 1);
   }
-
-  const deduplicatedDirs = deduplicateAllowedDirectories(allowedDirs);
-
-  return { allowedDirs: deduplicatedDirs, allowCwd, port };
 }
