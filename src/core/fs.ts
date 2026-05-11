@@ -1781,7 +1781,7 @@ export function detectMimeType(path: string, sample?: Buffer): MimeInfo {
   const ext = lastDot > -1 ? path.slice(lastDot + 1).toLowerCase() : '';
 
   // 1. Check extension map
-  if (ext && ext in EXT_MAP) {
+  if (ext && Object.hasOwn(EXT_MAP, ext)) {
     const entry = EXT_MAP[ext];
     if (entry !== undefined) {
       return entry;

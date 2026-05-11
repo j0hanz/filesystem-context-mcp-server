@@ -82,6 +82,13 @@ describe('detectMimeType', () => {
     assert.equal(result.kind, 'text');
   });
 
+  it('treats inherited object keys as unknown extensions', () => {
+    const sample = makeTextBuffer();
+    const result = detectMimeType('file.__proto__', sample);
+    assert.equal(result.mimeType, 'text/plain');
+    assert.equal(result.kind, 'text');
+  });
+
   it('falls back to application/octet-stream for unknown binary files', () => {
     const sample = makeZipBuffer();
     const result = detectMimeType('unknown', sample);
