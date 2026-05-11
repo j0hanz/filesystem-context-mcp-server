@@ -32,40 +32,44 @@ const HashInputSchema = z.strictObject({
     .describe('Hash algorithms to compute (default: sha256)'),
 });
 
-// Build per-algorithm hash validators
-const algorithmHashSchemas = {
-  sha256: z.hash('sha256'),
-  md5: z.hash('md5'),
-  sha1: z.hash('sha1'),
-  sha512: z.hash('sha512'),
-} as const satisfies Record<(typeof SUPPORTED_ALGORITHMS)[number], z.ZodType>;
+// Native Zod v4 record schema: constrains keys to algorithms and values to lowercase hex
+const ALGO_LENGTHS: Record<(typeof SUPPORTED_ALGORITHMS)[number], number> = {
+  sha256: 64,  // 256 bits = 64 hex chars
+  sha512: 128, // 512 bits = 128 hex chars
+  sha1: 40,    // 160 bits = 40 hex chars
+  md5: 32,     // 128 bits = 32 hex chars
+};
 
-// Create a schema that validates each digest against its algorithm
 const HashesSchema = z
   .record(z.string(), z.string())
-  .refine(
-    (hashes) => {
-      // Verify all keys are valid algorithms
-      return Object.keys(hashes).every((key) =>
-        SUPPORTED_ALGORITHMS.includes(key as (typeof SUPPORTED_ALGORITHMS)[number]),
-      );
-    },
-    {
-      message: 'All hashes must have algorithm names as keys (sha256, md5, sha1, sha512)',
-    },
-  )
   .superRefine((hashes, ctx) => {
-    for (const [algo, digest] of Object.entries(hashes)) {
-      // Validate the digest against the specific algorithm's hash schema
-      // Note: The refine above ensures algo is a valid algorithm, so lookup is safe
-      const algorithmSchema = algorithmHashSchemas[algo as (typeof SUPPORTED_ALGORITHMS)[number]];
-
-      const result = algorithmSchema.safeParse(digest);
-      if (!result.success) {
+    for (const [key, value] of Object.entries(hashes)) {
+      // Validate key is supported algorithm
+      if (!SUPPORTED_ALGORITHMS.includes(key as (typeof SUPPORTED_ALGORITHMS)[number])) {
         ctx.addIssue({
           code: 'custom',
-          path: [algo],
-          message: `Invalid ${algo} digest: must be valid hex string`,
+          path: [key],
+          message: `Must be a supported algorithm: ${SUPPORTED_ALGORITHMS.join(', ')}`,
+        });
+        continue;
+      }
+      // Validate value is valid hex string
+      if (!/^[a-f0-9]+$/i.test(value)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [key],
+          message: `Invalid ${key} digest: must be lowercase hex string`,
+        });
+        continue;
+      }
+      // Validate digest length matches algorithm
+      const algo = key as (typeof SUPPORTED_ALGORITHMS)[number];
+      const expectedLength = ALGO_LENGTHS[algo];
+      if (value.length !== expectedLength) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [key],
+          message: `Invalid ${algo} digest: expected ${expectedLength} hex characters, got ${value.length}`,
         });
       }
     }
