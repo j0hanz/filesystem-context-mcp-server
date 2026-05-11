@@ -16,52 +16,134 @@ import {
   defaultFalseBoolean,
   IsoDateTime,
   NonNegInt,
+  OperationSummarySchema,
+  PerFileErrorSchema,
   PositiveInt,
   RequiredPath,
 } from '../schema.js';
 import { buildResourceResponse, buildToolResponse, formatBytes, putResource } from './_helpers.js';
 import { defineTool } from './define.js';
 
-const EditFileInputSchema = z.strictObject({
-  path: RequiredPath,
-  edits: z
-    .array(
-      z.strictObject({
-        oldText: z
-          .string()
-          .min(1, 'oldText required')
-          .describe('Exact text to find (must match literally)')
-          .meta({ examples: ['const x = 1;', 'function oldName('] }),
-        newText: z
-          .string()
-          .describe('Replacement text (empty string to delete)')
-          .meta({ examples: ['const x = 2;', 'function newName(', ''] }),
-      }),
-    )
-    .min(1)
-    .describe('List of text substitutions'),
-  dryRun: defaultFalseBoolean('Preview changes without writing'),
-  ignoreWhitespace: defaultFalseBoolean('Ignore leading/trailing whitespace when matching'),
+const EditSpecSchema = z.strictObject({
+  oldText: z
+    .string()
+    .min(1, 'oldText required')
+    .describe('Exact text to find (must match literally)')
+    .meta({ examples: ['const x = 1;', 'function oldName('] }),
+  newText: z
+    .string()
+    .describe('Replacement text (empty string to delete)')
+    .meta({ examples: ['const x = 2;', 'function newName(', ''] }),
+});
+
+const FileEditEntrySchema = z.strictObject({
+  path: RequiredPath.describe('File path'),
+  edits: z.array(EditSpecSchema).min(1).describe('Edits for this file'),
+});
+
+const MAX_MULTI_FILES = 5;
+
+const EditFileInputSchema = z
+  .strictObject({
+    path: RequiredPath.optional().describe('File path (single-file mode)'),
+    paths: z
+      .array(RequiredPath)
+      .min(1)
+      .max(MAX_MULTI_FILES)
+      .optional()
+      .describe(`File paths; same edits applied to each (max ${MAX_MULTI_FILES})`),
+    files: z
+      .array(FileEditEntrySchema)
+      .min(1)
+      .max(MAX_MULTI_FILES)
+      .optional()
+      .describe(`Per-file edits (max ${MAX_MULTI_FILES})`),
+    edits: z
+      .array(EditSpecSchema)
+      .min(1)
+      .optional()
+      .describe('Edits applied to path or every entry in paths'),
+    dryRun: defaultFalseBoolean('Preview changes without writing'),
+    ignoreWhitespace: defaultFalseBoolean('Ignore leading/trailing whitespace when matching'),
+  })
+  .superRefine((value, ctx) => {
+    const modes = [value.path !== undefined, value.paths !== undefined, value.files !== undefined];
+    const provided = modes.filter(Boolean).length;
+    if (provided === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['path'],
+        message: "Provide exactly one of 'path', 'paths', or 'files'",
+        input: value,
+      });
+      return;
+    }
+    if (provided > 1) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['path'],
+        message: "Use only one of 'path', 'paths', or 'files'",
+        input: value,
+      });
+      return;
+    }
+    if ((value.path !== undefined || value.paths !== undefined) && value.edits === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['edits'],
+        message: "'edits' required when using 'path' or 'paths'",
+        input: value,
+      });
+    }
+    if (value.files !== undefined && value.edits !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['edits'],
+        message: "'edits' not allowed with 'files'; each file carries its own edits",
+        input: value,
+      });
+    }
+  });
+
+const PerFileResultSchema = z.strictObject({
+  path: z.string().describe('File path'),
+  size: NonNegInt.describe('File size in bytes'),
+  lineCount: NonNegInt.describe('Number of lines'),
+  mimeType: z.string().describe('MIME type'),
+  kind: z.enum(['text', 'binary', 'image', 'audio', 'pdf']).describe('File kind'),
+  resourceUri: z.string().describe('Resource URI'),
+  modified: IsoDateTime.describe('Modified (ISO 8601 UTC)'),
+  appliedEdits: NonNegInt.describe('Edits applied'),
+  linesAdded: NonNegInt.optional().describe('Lines added'),
+  linesRemoved: NonNegInt.optional().describe('Lines removed'),
+  diff: z.string().optional().describe('Unified diff (dryRun or when changes present)'),
+  unmatchedEdits: z.array(z.string()).optional().describe('oldText with no match'),
+  lineRange: z.tuple([PositiveInt, PositiveInt]).optional().describe('[firstLine, lastLine]'),
 });
 
 const EditFileOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),
-  path: z.string().describe('File path'),
-  size: NonNegInt.describe('File size in bytes'),
-  lineCount: NonNegInt.describe('Number of lines in file'),
-  mimeType: z.string().describe('MIME type of the file'),
-  kind: z.enum(['text', 'binary', 'image', 'audio', 'pdf']).describe('File kind'),
-  resourceUri: z.string().describe('Full content URI in resource store'),
-  modified: IsoDateTime.describe('Last modification timestamp (ISO 8601 UTC)'),
+  // Single-file fields
+  path: z.string().optional().describe('File path (single-file mode)'),
+  size: NonNegInt.optional().describe('File size in bytes'),
+  lineCount: NonNegInt.optional().describe('Number of lines'),
+  mimeType: z.string().optional().describe('MIME type'),
+  kind: z.enum(['text', 'binary', 'image', 'audio', 'pdf']).optional().describe('File kind'),
+  resourceUri: z.string().optional().describe('Resource URI'),
+  modified: IsoDateTime.optional().describe('Modified (ISO 8601 UTC)'),
   appliedEdits: NonNegInt.optional().describe('Edits applied'),
   linesAdded: NonNegInt.optional().describe('Lines added'),
   linesRemoved: NonNegInt.optional().describe('Lines removed'),
   diff: z.string().optional().describe('Unified diff of changes'),
-  unmatchedEdits: z.array(z.string()).optional().describe('oldText strings that had no match'),
-  lineRange: z
-    .tuple([PositiveInt, PositiveInt])
+  unmatchedEdits: z.array(z.string()).optional().describe('oldText with no match'),
+  lineRange: z.tuple([PositiveInt, PositiveInt]).optional().describe('[firstLine, lastLine]'),
+  // Multi-file fields
+  results: z.array(PerFileResultSchema).optional().describe('Per-file successes (multi mode)'),
+  failures: z
+    .array(z.strictObject({ path: z.string(), error: PerFileErrorSchema }))
     .optional()
-    .describe('[firstLine, lastLine] range modified'),
+    .describe('Per-file hard failures (multi mode)'),
+  summary: OperationSummarySchema.optional().describe('Aggregate counts (multi mode)'),
 });
 
 type EditInput = z.infer<typeof EditFileInputSchema>;
@@ -295,14 +377,16 @@ async function loadEditableFile(
 }
 
 function buildEditProgressMessage(args: EditInput): string {
-  const name = basename(args.path);
   const tag = args.dryRun ? ' [dry run]' : '';
-  return `Edit File: ${name}${tag}`;
+  if (args.path !== undefined) return `Edit File: ${basename(args.path)}${tag}`;
+  if (args.paths !== undefined) return `Edit Files: ${args.paths.length} files${tag}`;
+  if (args.files !== undefined) return `Edit Files: ${args.files.length} files${tag}`;
+  return `Edit Files${tag}`;
 }
 
 async function applyEdits(
   content: string,
-  edits: EditInput['edits'],
+  edits: z.infer<typeof EditSpecSchema>[],
   ignoreWhitespace: boolean,
 ): Promise<EditResult> {
   let newContent = content;
@@ -328,7 +412,10 @@ async function applyEdits(
 }
 
 async function handleEditFile(
-  args: EditInput,
+  filePath: string,
+  edits: z.infer<typeof EditSpecSchema>[],
+  dryRun: boolean,
+  ignoreWhitespace: boolean,
   pathGuard: PathGuard,
   resourceStore: ResourceStore | undefined,
   signal?: AbortSignal,
@@ -338,10 +425,10 @@ async function handleEditFile(
   validPath: string;
   resourceLink?: ReturnType<typeof putResource>['link'];
 }> {
-  const { validPath, content } = await loadEditableFile(args.path, pathGuard, signal);
-  const editResult = await applyEdits(content, args.edits, args.ignoreWhitespace);
+  const { validPath, content } = await loadEditableFile(filePath, pathGuard, signal);
+  const editResult = await applyEdits(content, edits, ignoreWhitespace);
 
-  if (args.dryRun) {
+  if (dryRun) {
     if (editResult.appliedEdits > 0) {
       editResult.diff = await buildDiff(validPath, content, editResult.content);
     }
@@ -387,7 +474,7 @@ async function handleEditFile(
     throw new McpError(
       ErrorCode.INVALID_INPUT,
       `All ${editResult.unmatchedEdits.length} edits failed. Verify oldText matches exact file content.`,
-      args.path,
+      filePath,
     );
   }
 
@@ -397,7 +484,7 @@ async function handleEditFile(
       signal,
     });
     Logger.info(
-      `edit: ${args.path} (${editResult.appliedEdits} edits, +${editResult.linesAdded}/-${editResult.linesRemoved})`,
+      `edit: ${filePath} (${editResult.appliedEdits} edits, +${editResult.linesAdded}/-${editResult.linesRemoved})`,
     );
   }
 
@@ -441,11 +528,13 @@ async function handleEditFile(
 
 export const EDIT_FILE = defineTool({
   name: 'edit',
-  title: 'Edit File',
+  title: 'Edit Files',
   description:
-    'Apply sequential literal string replacements to a file (first occurrence per edit). ' +
-    '`oldText` must match exactly — include 3–5 lines of context for unique targeting. ' +
-    'Use `dryRun:true` to preview.',
+    'Apply sequential literal string replacements to one or more files (max 5). ' +
+    'Single-file: { path, edits }. Multi-file shared: { paths, edits } — same edits applied to each file. ' +
+    'Multi-file per-file: { files: [{ path, edits }, \u2026] }. ' +
+    '`oldText` must match exactly — include 3\u20135 lines of context. ' +
+    'Use `dryRun:true` to preview. For glob-driven bulk regex replacement, use `replace_text` instead.',
   input: EditFileInputSchema,
   output: EditFileOutputSchema,
   annotations: {
@@ -457,16 +546,22 @@ export const EDIT_FILE = defineTool({
   nuances: ['Each edit applies to the output of the previous edit.'],
   progressLabel: buildEditProgressMessage,
   run: async (args, ctx) => {
+    // Single-file path mode only for now; multi-file dispatch added in Tasks 2-3
+    const filePath = args.path!;
+    const edits = args.edits!;
     const { structured, resourceLink } = await handleEditFile(
-      args,
+      filePath,
+      edits,
+      args.dryRun,
+      args.ignoreWhitespace,
       ctx.pathGuard,
       ctx.resourceStore,
       ctx.signal,
     );
-    ctx.log?.('info', `edit: ${args.path} (${String(structured.appliedEdits ?? 0)} edits)`, 'edit');
+    ctx.log?.('info', `edit: ${filePath} (${String(structured.appliedEdits ?? 0)} edits)`, 'edit');
     const summary =
-      `edit-file: edited ${basename(args.path)}` +
-      ` \u00b7 ${formatBytes(structured.size)}` +
+      `edit-file: edited ${basename(filePath)}` +
+      ` \u00b7 ${formatBytes(structured.size ?? 0)}` +
       ` \u00b7 ${String(structured.lineCount)} lines`;
     if (resourceLink) {
       return buildResourceResponse({

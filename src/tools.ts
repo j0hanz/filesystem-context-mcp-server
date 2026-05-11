@@ -7,7 +7,7 @@ import './tools/create-directory.js';
 import { ALL_TOOLS as _ALL_TOOLS, registerAllTools as _registerAllTools } from './tools/define.js';
 import './tools/delete-file.js';
 import './tools/diff-files.js';
-import './tools/edit-file.js';
+import './tools/edit.js';
 import './tools/list-directory.js';
 import './tools/move-file.js';
 import './tools/read.js';
