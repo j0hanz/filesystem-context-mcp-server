@@ -34,6 +34,11 @@
     "outputSchema": {
       "type": "object",
       "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true,
+          "description": "Success indicator"
+        },
         "files": {
           "type": "array",
           "items": {
@@ -96,9 +101,26 @@
             "additionalProperties": false
           },
           "description": "Created files"
+        },
+        "failures": {
+          "description": "Per-file errors",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "error": {
+                "$ref": "#/$defs/PerFileError"
+              }
+            },
+            "required": ["path", "error"],
+            "additionalProperties": false
+          }
         }
       },
-      "required": ["files"],
+      "required": ["ok", "files"],
       "additionalProperties": false,
       "$defs": {
         "NonNegInt": {
@@ -111,6 +133,30 @@
           "format": "date-time",
           "title": "ISO Date-Time",
           "description": "ISO 8601 date-time (UTC)"
+        },
+        "PerFileError": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Error code"
+            },
+            "message": {
+              "type": "string",
+              "description": "Error message"
+            },
+            "path": {
+              "description": "Path involved",
+              "type": "string"
+            },
+            "suggestion": {
+              "description": "Suggested fix",
+              "type": "string"
+            }
+          },
+          "required": ["code", "message"],
+          "additionalProperties": false,
+          "title": "Per-File Error"
         }
       }
     }

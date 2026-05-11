@@ -336,12 +336,16 @@ describe('create tool', () => {
     assert.equal(actual, 'nested');
   });
 
-  it('returns ACCESS_DENIED outside allowed root', async () => {
+  it('returns ACCESS_DENIED in failures[] for paths outside allowed root', async () => {
     const raw = await env.client.callTool({
       name: 'create',
       arguments: { files: [{ path: '/tmp/escape.txt', content: 'bad' }] },
     });
-    assertToolError(raw, 'ACCESS_DENIED');
+    assertOk(raw);
+    const sc = getStructured(raw);
+    const failures = sc['failures'] as Record<string, unknown>[] | undefined;
+    assert.ok(Array.isArray(failures) && failures.length === 1, 'Expected 1 failure');
+    assert.equal((failures[0]['error'] as Record<string, unknown>)['code'], 'ACCESS_DENIED');
   });
 
   it('returns an error when files is omitted', async () => {
@@ -351,6 +355,55 @@ describe('create tool', () => {
       arguments: {},
     });
     assert.ok(raw.isError, 'create without files must return an error');
+  });
+});
+
+describe('create: partial failure support', () => {
+  let env: TestEnv;
+
+  before(async () => {
+    env = await createTestEnv();
+  });
+
+  after(async () => {
+    await env.cleanup();
+  });
+
+  it('creates valid files and reports failures for invalid paths in the same call', async () => {
+    const good1 = join(env.tmpDir, 'partial-good1.txt');
+    const good2 = join(env.tmpDir, 'partial-good2.txt');
+
+    const result = await env.client.callTool({
+      name: 'create',
+      arguments: {
+        files: [
+          { path: good1, content: 'hello' },
+          { path: '/tmp/escape-bad.txt', content: 'evil' }, // outside allowed root
+          { path: good2, content: 'world' },
+        ],
+      },
+    });
+
+    // Tool must succeed at the top level
+    assertOk(result);
+    const sc = getStructured(result);
+
+    // Both valid files must exist
+    const actual1 = await readFile(good1, 'utf8');
+    const actual2 = await readFile(good2, 'utf8');
+    assert.equal(actual1, 'hello');
+    assert.equal(actual2, 'world');
+
+    // files[] must have 2 successes
+    const files = sc['files'] as Record<string, unknown>[];
+    assert.equal(files.length, 2, 'Expected 2 successful files');
+    assert.ok(sc['ok'] === true, 'Expected ok: true at top level');
+
+    // failures[] must have 1 entry for the bad path
+    const failures = sc['failures'] as Record<string, unknown>[] | undefined;
+    assert.ok(Array.isArray(failures) && failures.length === 1, 'Expected 1 failure');
+    assert.ok((failures[0]['path'] as string).includes('escape-bad.txt'));
+    assert.equal((failures[0]['error'] as Record<string, unknown>)['code'], 'ACCESS_DENIED');
   });
 });
 

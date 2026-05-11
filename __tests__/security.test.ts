@@ -52,13 +52,15 @@ describe('security: path boundary enforcement', () => {
         name: tool,
         arguments: args(env.tmpDir),
       });
-      // rm returns ok:true with failures[] for per-path errors; all others return isError
-      if (tool === 'delete') {
+      // rm returns ok:true with failures[] for per-path errors;
+      // create also returns ok:true with failures[] for path guard violations;
+      // all other tools return isError
+      if (tool === 'delete' || tool === 'create') {
         assertOk(raw);
         const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
         assert.ok(
           Array.isArray(sc?.['failures']) && sc['failures'].length > 0,
-          'delete must report ACCESS_DENIED in failures[]',
+          `${tool} must report ACCESS_DENIED in failures[]`,
         );
         assert.equal(
           (sc?.['failures'] as { error: { code: string } }[])[0]?.error?.code,
@@ -109,7 +111,16 @@ describe('security: path traversal via ".."', () => {
       name: 'create',
       arguments: { files: [{ path: escaped, content: 'exploit' }] },
     });
-    assertToolError(raw, 'ACCESS_DENIED');
+    assertOk(raw);
+    const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
+    assert.ok(
+      Array.isArray(sc?.['failures']) && sc['failures'].length > 0,
+      'create must report ACCESS_DENIED in failures[]',
+    );
+    assert.equal(
+      (sc?.['failures'] as { error: { code: string } }[])[0]?.error?.code,
+      'ACCESS_DENIED',
+    );
   });
 });
 

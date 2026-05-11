@@ -305,7 +305,16 @@ describe('create tool (directory creation)', () => {
       name: 'create',
       arguments: { files: [{ path: `/tmp/escape-${Date.now()}`, content: '' }] },
     });
-    assertToolError(raw, 'ACCESS_DENIED');
+    assertOk(raw);
+    const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
+    assert.ok(
+      Array.isArray(sc?.['failures']) && sc['failures'].length > 0,
+      'create must report ACCESS_DENIED in failures[]',
+    );
+    assert.equal(
+      (sc?.['failures'] as { error: { code: string } }[])[0]?.error?.code,
+      'ACCESS_DENIED',
+    );
   });
 });
 
