@@ -21,7 +21,13 @@ import {
   PositiveInt,
   RequiredPath,
 } from '../schema.js';
-import { buildResourceResponse, buildToolResponse, formatBytes, putResource } from './_helpers.js';
+import {
+  buildResourceResponse,
+  buildStructuredError,
+  buildToolResponse,
+  formatBytes,
+  putResource,
+} from './_helpers.js';
 import { defineTool } from './define.js';
 
 const EditSpecSchema = z.strictObject({
@@ -525,6 +531,63 @@ async function handleEditFile(
     validPath,
     ...(resourceLink ? { resourceLink } : {}),
   };
+}
+
+type PerFileResult = z.infer<typeof PerFileResultSchema>;
+
+type RunOneFileResult =
+  | { kind: 'ok'; path: string; result: PerFileResult; link?: string }
+  | { kind: 'failed'; path: string; error: z.infer<typeof PerFileErrorSchema> };
+
+export async function runOneFile(
+  filePath: string,
+  edits: z.infer<typeof EditSpecSchema>[],
+  dryRun: boolean,
+  ignoreWhitespace: boolean,
+  pathGuard: PathGuard,
+  resourceStore: ResourceStore | undefined,
+  signal: AbortSignal,
+): Promise<RunOneFileResult> {
+  try {
+    const { structured, resourceLink } = await handleEditFile(
+      filePath,
+      edits,
+      dryRun,
+      ignoreWhitespace,
+      pathGuard,
+      resourceStore,
+      signal,
+    );
+    const result: PerFileResult = {
+      path: structured.path ?? filePath,
+      size: structured.size ?? 0,
+      lineCount: structured.lineCount ?? 0,
+      mimeType: structured.mimeType ?? 'application/octet-stream',
+      kind: structured.kind ?? 'text',
+      resourceUri: structured.resourceUri ?? '',
+      modified: structured.modified ?? new Date().toISOString(),
+      appliedEdits: structured.appliedEdits ?? 0,
+      ...(structured.linesAdded !== undefined ? { linesAdded: structured.linesAdded } : {}),
+      ...(structured.linesRemoved !== undefined ? { linesRemoved: structured.linesRemoved } : {}),
+      ...(structured.diff !== undefined ? { diff: structured.diff } : {}),
+      ...(structured.unmatchedEdits !== undefined
+        ? { unmatchedEdits: structured.unmatchedEdits }
+        : {}),
+      ...(structured.lineRange !== undefined ? { lineRange: structured.lineRange } : {}),
+    };
+    return {
+      kind: 'ok',
+      path: filePath,
+      result,
+      ...(resourceLink && 'uri' in resourceLink ? { link: resourceLink.uri } : {}),
+    };
+  } catch (err: unknown) {
+    return {
+      kind: 'failed',
+      path: filePath,
+      error: buildStructuredError(err, ErrorCode.UNKNOWN, filePath),
+    };
+  }
 }
 
 export const EDIT_FILE = defineTool({
