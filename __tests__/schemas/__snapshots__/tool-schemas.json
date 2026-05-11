@@ -2134,27 +2134,44 @@
   "stat": {
     "inputSchema": {
       "type": "object",
-      "properties": {
-        "path": {
-          "description": "Path to stat (single-path mode)",
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "Path to stat (single-path mode)"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false
         },
-        "paths": {
-          "description": "Paths to stat (batch mode; mutually exclusive with path; max 1000)",
-          "minItems": 1,
-          "maxItems": 1000,
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 4096,
-            "description": "Path inside an allowed root"
-          }
+        {
+          "type": "object",
+          "properties": {
+            "paths": {
+              "minItems": 1,
+              "maxItems": 1000,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096,
+                "description": "Path inside an allowed root"
+              },
+              "description": "Paths to stat (batch mode)"
+            }
+          },
+          "required": [
+            "paths"
+          ],
+          "additionalProperties": false
         }
-      },
-      "additionalProperties": false
+      ]
     },
     "outputSchema": {
       "type": "object",

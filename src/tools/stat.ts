@@ -28,34 +28,15 @@ import {
 } from './_helpers.js';
 import { defineTool } from './define.js';
 
-const StatInputSchema = z
-  .strictObject({
-    path: RequiredPath.optional().describe('Path to stat (single-path mode)'),
-    paths: z
-      .array(RequiredPath)
-      .min(1)
-      .max(1000)
-      .optional()
-      .describe('Paths to stat (batch mode; mutually exclusive with path; max 1000)'),
-  })
-  .superRefine((value, ctx) => {
-    if (!value.path && !value.paths) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['path'],
-        message: "Either 'path' or 'paths' is required",
-        input: value,
-      });
-    }
-    if (value.path && value.paths) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['paths'],
-        message: "Cannot use both 'path' and 'paths'",
-        input: value,
-      });
-    }
-  });
+const SingleStatSchema = z.strictObject({
+  path: RequiredPath.describe('Path to stat (single-path mode)'),
+});
+
+const BatchStatSchema = z.strictObject({
+  paths: z.array(RequiredPath).min(1).max(1000).describe('Paths to stat (batch mode)'),
+});
+
+const StatInputSchema = z.union([SingleStatSchema, BatchStatSchema]);
 
 const StatManyResultItemSchema = z.strictObject({
   path: z.string().describe('Requested path'),
@@ -333,26 +314,32 @@ export const GET_FILE_INFO = defineTool({
   execution: { taskSupport: 'optional' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   defaultErrorCode: ErrorCode.NOT_FOUND,
-  progressLabel: (args) =>
-    args.paths ? `Get File Info: ${args.paths.length} paths` : `Get File Info: ${args.path ?? ''}`,
+  progressLabel: (args) => {
+    const isBatch = 'paths' in args && Array.isArray(args.paths);
+    if (isBatch) {
+      return `Get File Info: ${(args as { paths: string[] }).paths.length} paths`;
+    }
+    return `Get File Info: ${(args as { path: string }).path}`;
+  },
   run: async (args, ctx) => {
-    if (args.paths) {
-      const total = args.paths.length;
+    const isBatch = 'paths' in args && Array.isArray(args.paths);
+    if (isBatch) {
+      const paths = (args as { paths: string[] }).paths;
+      const total = paths.length;
       let completed = 0;
       const onProgress = (): void => {
         completed++;
         ctx.onProgress?.({ current: completed, total, message: `stat: ${completed}/${total}` });
       };
       return handleGetMultipleFileInfo(
-        args.paths,
+        paths,
         ctx.pathGuard,
         ctx.resourceStore,
         ctx.signal,
         onProgress,
       );
     }
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    const info = await getFileInfo(args.path!, {
+    const info = await getFileInfo((args as { path: string }).path, {
       includeMimeType: true,
       pathGuard: ctx.pathGuard,
       signal: ctx.signal,
