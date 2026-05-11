@@ -28,12 +28,11 @@
  */
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import readline from 'node:readline';
-import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, stripVTControlCharacters } from 'node:util';
 
@@ -175,20 +174,6 @@ const FileStore = {
     const tmp = `${file}.tmp`;
     await writeFile(tmp, JSON.stringify(payload, null, 2) + '\n', 'utf8');
     await rename(tmp, file);
-  },
-
-  writeJsonAtomicSync(file, payload) {
-    const tmp = `${file}.tmp`;
-    writeFileSync(tmp, JSON.stringify(payload, null, 2) + '\n', 'utf8');
-    renameSync(tmp, file);
-  },
-
-  removeSync(file) {
-    try {
-      rmSync(file, { force: true });
-    } catch {
-      // best-effort cleanup only
-    }
   },
 };
 
@@ -434,9 +419,8 @@ const HistoryManager = {
     const src = parsed && typeof parsed === 'object' ? parsed.test_durations : null;
     if (!src || typeof src !== 'object') return { test_durations };
 
-    for (const key of Object.keys(src)) {
+    for (const [key, value] of Object.entries(src)) {
       if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
-      const value = src[key];
       if (!Array.isArray(value)) continue;
       test_durations[key] = value.filter((n) => typeof n === 'number' && Number.isFinite(n));
     }
@@ -629,27 +613,34 @@ const KnipParser = {
 };
 
 const TapParser = {
-  OK_RE: /^\s*ok \d+ - (.+?)(?:\s+#\s+time=(\S+))?$/,
-  NOT_OK_RE: /^\s*not ok \d+ - (.+)$/,
+  OK_RE: /^ok \d+ - (.+?)(?:\s+#\s+time=(\S+))?$/,
+  NOT_OK_RE: /^not ok \d+ - (.+)$/,
   YAML_KV_RE: /^(\w+):\s*(.*)$/,
   YAML_BLOCK_FRAME_RE: /(?:at\s+)?\S+\s+\(([^)]+:\d+:\d+)\)/,
 
   parseLine(line) {
-    const indent = line.match(/^(\s*)/)?.[1]?.length || 0;
-    const ok = this.OK_RE.exec(line);
-    if (ok) {
-      return {
-        type: 'ok',
-        depth: indent,
-        name: ok[1].trim(),
-        duration: ok[2] ? parseFloat(ok[2]) : 0,
-      };
+    const trimmed = line.trimStart();
+    const indent = line.length - trimmed.length;
+
+    if (trimmed.startsWith('ok ')) {
+      const ok = this.OK_RE.exec(trimmed);
+      if (ok) {
+        return {
+          type: 'ok',
+          depth: indent,
+          name: ok[1].trim(),
+          duration: ok[2] ? parseFloat(ok[2]) : 0,
+        };
+      }
     }
 
-    const notOk = this.NOT_OK_RE.exec(line);
-    if (notOk) return { type: 'not_ok', depth: indent, name: notOk[1].trim() };
-    if (/^\s+---\s*$/.test(line)) return { type: 'yaml_start' };
-    if (/^\s+\.\.\.\s*$/.test(line)) return { type: 'yaml_end' };
+    if (trimmed.startsWith('not ok ')) {
+      const notOk = this.NOT_OK_RE.exec(trimmed);
+      if (notOk) return { type: 'not_ok', depth: indent, name: notOk[1].trim() };
+    }
+
+    if (trimmed === '---') return { type: 'yaml_start' };
+    if (trimmed === '...') return { type: 'yaml_end' };
     return { type: 'raw', line };
   },
 
@@ -918,9 +909,9 @@ class TestRunner {
           // ignore signal errors
         }
         try {
-          await Promise.race([once(child, 'close'), delay(500, undefined, { ref: false })]);
+          await once(child, 'close', { signal: AbortSignal.timeout(500) });
         } catch {
-          // ignore drain errors
+          // ignore drain/timeout errors
         }
       }
 
@@ -1807,7 +1798,7 @@ async function renderDetailCommand(config) {
   }
 }
 
-function writeFailureFile(aggregate, file = Config.FAILURE_FILE) {
+async function writeFailureFile(aggregate, file = Config.FAILURE_FILE) {
   const payload = {
     ok: false,
     mode: aggregate.mode,
@@ -1819,14 +1810,18 @@ function writeFailureFile(aggregate, file = Config.FAILURE_FILE) {
   };
 
   try {
-    FileStore.writeJsonAtomicSync(file, payload);
+    await FileStore.writeJsonAtomic(file, payload);
   } catch {
     // best-effort: do not mask the actual task failure
   }
 }
 
-function clearFailureFile(file = Config.FAILURE_FILE) {
-  FileStore.removeSync(file);
+async function clearFailureFile(file = Config.FAILURE_FILE) {
+  try {
+    await rm(file, { force: true });
+  } catch {
+    // best-effort cleanup only
+  }
 }
 
 function installSignalHandlers(reporter, config) {
@@ -1911,7 +1906,7 @@ class TaskOrchestrator {
       ? await this.runSequential(aggregate, reporter)
       : await this.runPhased(aggregate, reporter);
 
-    return this.finish(aggregate, reporter, testDurations);
+    return await this.finish(aggregate, reporter, testDurations);
   }
 
   async runSequential(aggregate, reporter) {
@@ -2067,13 +2062,13 @@ class TaskOrchestrator {
     return this._applyFixAndRerun(task, fixResult);
   }
 
-  finish(aggregate, reporter, testDurations = null) {
+  async finish(aggregate, reporter, testDurations = null) {
     if (testDurations) aggregate.setSlowestTests(testDurations);
     reporter.failureDetail(aggregate.failures());
     reporter.summary(aggregate);
 
     if (aggregate.failed > 0) {
-      writeFailureFile(aggregate);
+      await writeFailureFile(aggregate);
       if (this.config.llm && !this.config.json) {
         OutputRenderer.emitLlmBlock({
           ok: false,
@@ -2083,7 +2078,7 @@ class TaskOrchestrator {
         });
       }
     } else {
-      clearFailureFile();
+      await clearFailureFile();
     }
 
     return aggregate.failed === 0 ? 0 : 1;
