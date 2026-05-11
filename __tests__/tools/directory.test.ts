@@ -78,7 +78,6 @@ describe('list tool', () => {
     assertOk(raw);
 
     const sc = getStructured(raw);
-    assert.equal(sc['ok'], true);
     assert.equal(typeof sc['path'], 'string');
     assert.equal(typeof sc['markdown'], 'string');
 
@@ -92,6 +91,7 @@ describe('list tool', () => {
 
     // dirs-first: sub must appear before alpha.txt
     assert.ok(names.indexOf('sub') < names.indexOf('alpha.txt'), 'Expected dirs first');
+    assert.ok(names.indexOf('alpha.txt') < names.indexOf('beta.txt'), 'Expected alphabetical ordering of files');
 
     // flat: nested.txt must NOT appear at maxDepth=1
     assert.ok(!names.includes('nested.txt'), 'Expected no nested entries at maxDepth=1');
@@ -114,6 +114,8 @@ describe('list tool', () => {
     const entries = sc['entries'] as Record<string, unknown>[];
     const names = entries.map((e) => e['name'] as string);
 
+    assert.ok(names.includes('alpha.txt'), 'Expected alpha.txt at maxDepth=2');
+    assert.ok(names.includes('beta.txt'), 'Expected beta.txt at maxDepth=2');
     assert.ok(names.includes('nested.txt'), 'Expected nested.txt at maxDepth=2');
 
     // relativePath must be POSIX
@@ -134,7 +136,7 @@ describe('list tool', () => {
     const lines = markdown.split('\n');
 
     // First line is the root dir name
-    assert.ok(lines[0] !== undefined && lines[0].length > 0, 'Expected root name as first line');
+    assert.ok(lines[0], 'Expected root name as first line');
     assert.ok(markdown.includes('sub'), 'Expected sub in markdown');
     assert.ok(markdown.includes('alpha.txt'), 'Expected alpha.txt in markdown');
     // Box-drawing chars present
@@ -144,6 +146,7 @@ describe('list tool', () => {
   it('truncation stores full result in resourceUri', async () => {
     const manyDir = join(env.tmpDir, 'many');
     await mkdir(manyDir);
+    // Create 10 files to exceed maxEntries=3 and trigger truncation behavior
     for (let i = 0; i < 10; i++) {
       await writeFile(join(manyDir, `f${String(i).padStart(2, '0')}.txt`), '', 'utf8');
     }
