@@ -62,7 +62,8 @@ const EditFileInputSchema = z
       .array(EditSpecSchema)
       .min(1)
       .optional()
-      .describe('Edits applied to path or every entry in paths'),
+      .describe('Edits applied to path or every entry in paths (forbidden when using files)'),
+
     dryRun: defaultFalseBoolean('Preview changes without writing'),
     ignoreWhitespace: defaultFalseBoolean('Ignore leading/trailing whitespace when matching'),
   })
@@ -547,8 +548,11 @@ export const EDIT_FILE = defineTool({
   progressLabel: buildEditProgressMessage,
   run: async (args, ctx) => {
     // Single-file path mode only for now; multi-file dispatch added in Tasks 2-3
-    const filePath = args.path!;
-    const edits = args.edits!;
+    if (args.path === undefined || args.edits === undefined) {
+      throw new McpError(ErrorCode.INVALID_INPUT, 'Single-file mode requires path and edits');
+    }
+    const filePath = args.path;
+    const edits = args.edits;
     const { structured, resourceLink } = await handleEditFile(
       filePath,
       edits,

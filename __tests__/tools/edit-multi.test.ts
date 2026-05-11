@@ -67,4 +67,35 @@ describe('edit tool — input validation', () => {
     const res = await env.client.callTool({ name: 'edit', arguments: { files } });
     assert.equal(res.isError, true);
   });
+
+  it('rejects paths[] without edits', async () => {
+    const res = await env.client.callTool({
+      name: 'edit',
+      arguments: { paths: [join(env.tmpDir, 'x.txt')] },
+    });
+    assert.equal(res.isError, true);
+  });
+
+  it('rejects files[] with top-level edits', async () => {
+    const res = await env.client.callTool({
+      name: 'edit',
+      arguments: {
+        files: [{ path: join(env.tmpDir, 'x.txt'), edits: [{ oldText: 'a', newText: 'b' }] }],
+        edits: [{ oldText: 'a', newText: 'b' }],
+      },
+    });
+    assert.equal(res.isError, true);
+  });
+
+  it('rejects when both paths and files are provided', async () => {
+    const res = await env.client.callTool({
+      name: 'edit',
+      arguments: {
+        paths: [join(env.tmpDir, 'x.txt')],
+        files: [{ path: join(env.tmpDir, 'y.txt'), edits: [{ oldText: 'a', newText: 'b' }] }],
+        edits: [{ oldText: 'a', newText: 'b' }],
+      },
+    });
+    assert.equal(res.isError, true);
+  });
 });
