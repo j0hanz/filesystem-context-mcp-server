@@ -317,14 +317,14 @@ export const GET_FILE_INFO = defineTool({
   progressLabel: (args) => {
     const isBatch = 'paths' in args && Array.isArray(args.paths);
     if (isBatch) {
-      return `Get File Info: ${(args as { paths: string[] }).paths.length} paths`;
+      return `Get File Info: ${(args).paths.length} paths`;
     }
     return `Get File Info: ${(args as { path: string }).path}`;
   },
   run: async (args, ctx) => {
     const isBatch = 'paths' in args && Array.isArray(args.paths);
     if (isBatch) {
-      const paths = (args as { paths: string[] }).paths;
+      const paths = (args).paths;
       const total = paths.length;
       let completed = 0;
       const onProgress = (): void => {

@@ -192,8 +192,18 @@ interface ReadRangeDescriptions {
 
 export function createReadRangeFields(descs: ReadRangeDescriptions) {
   return {
-    head: z.int32().min(1, { error: 'Min: 1' }).max(100000, { error: 'Max: 100,000' }).optional().describe(descs.head),
-    tail: z.int32().min(1, { error: 'Min: 1' }).max(100000, { error: 'Max: 100,000' }).optional().describe(descs.tail),
+    head: z
+      .int32()
+      .min(1, { error: 'Min: 1' })
+      .max(100000, { error: 'Max: 100,000' })
+      .optional()
+      .describe(descs.head),
+    tail: z
+      .int32()
+      .min(1, { error: 'Min: 1' })
+      .max(100000, { error: 'Max: 100,000' })
+      .optional()
+      .describe(descs.tail),
     startLine: z.int32().min(1, { error: 'Min: 1' }).optional().describe(descs.startLine),
     endLine: z.int32().min(1, { error: 'Min: 1' }).optional().describe(descs.endLine),
   };

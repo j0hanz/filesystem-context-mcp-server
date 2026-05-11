@@ -84,22 +84,10 @@ const SingleReadSchema = z
 
 const BatchReadSchema = z
   .object({
-    paths: z
-      .array(RequiredPath)
-      .min(1)
-      .max(1000)
-      .describe('File paths (batch mode; max 1000)'),
+    paths: z.array(RequiredPath).min(1).max(1000).describe('File paths (batch mode; max 1000)'),
     includeHash: defaultFalseBoolean('Include SHA-256 hash of the content'),
-    head: z
-      .uint32()
-      .min(1)
-      .optional()
-      .describe('Return first N lines'),
-    tail: z
-      .uint32()
-      .min(1)
-      .optional()
-      .describe('Return last N lines'),
+    head: z.uint32().min(1).optional().describe('Return first N lines'),
+    tail: z.uint32().min(1).optional().describe('Return last N lines'),
     startLine: PositiveInt.optional().describe('Start line (1-indexed)'),
     endLine: PositiveInt.optional().describe('End line (1-indexed)'),
   })
@@ -116,17 +104,19 @@ const BatchReadSchema = z
     );
   });
 
-const ReadFileInputSchema = z.union([SingleReadSchema, BatchReadSchema]).superRefine((value, ctx) => {
-  // Check if user provided both path and paths
-  if ('path' in value && 'paths' in value && value.path && value.paths) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['paths'],
-      message: "Cannot use both 'path' and 'paths'",
-      input: value,
-    });
-  }
-});
+const ReadFileInputSchema = z
+  .union([SingleReadSchema, BatchReadSchema])
+  .superRefine((value, ctx) => {
+    // Check if user provided both path and paths
+    if ('path' in value && 'paths' in value && value.path && value.paths) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['paths'],
+        message: "Cannot use both 'path' and 'paths'",
+        input: value,
+      });
+    }
+  });
 
 const ReadManyItemSchema = z.strictObject({
   path: z.string().describe('File path'),
@@ -186,7 +176,8 @@ function buildReadOptions(
 
   const head = 'head' in args && typeof args.head === 'number' ? args.head : undefined;
   const tail = 'tail' in args && typeof args.tail === 'number' ? args.tail : undefined;
-  const startLine = 'startLine' in args && typeof args.startLine === 'number' ? args.startLine : undefined;
+  const startLine =
+    'startLine' in args && typeof args.startLine === 'number' ? args.startLine : undefined;
   const endLine = 'endLine' in args && typeof args.endLine === 'number' ? args.endLine : undefined;
   const offset = 'offset' in args && typeof args.offset === 'number' ? args.offset : undefined;
   const length = 'length' in args && typeof args.length === 'number' ? args.length : undefined;
@@ -263,22 +254,27 @@ function toStructuredReadFileResult(
 }
 
 function buildReadProgressLabel(args: ReadFileInput): string {
-  const isBatch = 'paths' in args && Array.isArray(args['paths']);
+  const isBatch = 'paths' in args && Array.isArray(args.paths);
   const args_ = args as Record<string, unknown>;
   const name = isBatch
     ? `${String(args_['paths'] && Array.isArray(args_['paths']) ? (args_['paths'] as string[]).length : 0)} files`
     : basename(args_['path'] as string);
   if (isBatch) return `Read Files: ${name}`;
   if (args_['offset'] !== undefined && typeof args_['offset'] === 'number') {
-    const end = args_['length'] !== undefined && typeof args_['length'] === 'number' ? (args_['offset'] as number) + (args_['length'] as number) - 1 : '…';
+    const end =
+      args_['length'] !== undefined && typeof args_['length'] === 'number'
+        ? (args_['offset']) + (args_['length']) - 1
+        : '…';
     return `${READ_TOOL_LABEL}: ${name} [bytes ${args_['offset']}–${String(end)}]`;
   }
   if (args_['startLine'] !== undefined && typeof args_['startLine'] === 'number') {
     const end = args_['endLine'] ?? '…';
     return `${READ_TOOL_LABEL}: ${name} [lines ${args_['startLine']}–${end}]`;
   }
-  if (args_['head'] !== undefined && typeof args_['head'] === 'number') return `${READ_TOOL_LABEL}: ${name} [head ${args_['head']}]`;
-  if (args_['tail'] !== undefined && typeof args_['tail'] === 'number') return `${READ_TOOL_LABEL}: ${name} [tail ${args_['tail']}]`;
+  if (args_['head'] !== undefined && typeof args_['head'] === 'number')
+    return `${READ_TOOL_LABEL}: ${name} [head ${args_['head']}]`;
+  if (args_['tail'] !== undefined && typeof args_['tail'] === 'number')
+    return `${READ_TOOL_LABEL}: ${name} [tail ${args_['tail']}]`;
   return `${READ_TOOL_LABEL}: ${name}`;
 }
 

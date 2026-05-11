@@ -43,19 +43,21 @@ const algorithmHashSchemas = {
 // Create a schema that validates each digest against its algorithm
 const HashesSchema = z
   .record(z.string(), z.string())
-  .refine((hashes) => {
-    // Verify all keys are valid algorithms
-    return Object.keys(hashes).every((key) =>
-      SUPPORTED_ALGORITHMS.includes(key as (typeof SUPPORTED_ALGORITHMS)[number]),
-    );
-  }, {
-    message: 'All hashes must have algorithm names as keys (sha256, md5, sha1, sha512)',
-  })
+  .refine(
+    (hashes) => {
+      // Verify all keys are valid algorithms
+      return Object.keys(hashes).every((key) =>
+        SUPPORTED_ALGORITHMS.includes(key as (typeof SUPPORTED_ALGORITHMS)[number]),
+      );
+    },
+    {
+      message: 'All hashes must have algorithm names as keys (sha256, md5, sha1, sha512)',
+    },
+  )
   .superRefine((hashes, ctx) => {
     for (const [algo, digest] of Object.entries(hashes)) {
       // Validate the digest against the specific algorithm's hash schema
-      const algorithmSchema =
-        algorithmHashSchemas[algo as (typeof SUPPORTED_ALGORITHMS)[number]];
+      const algorithmSchema = algorithmHashSchemas[algo as (typeof SUPPORTED_ALGORITHMS)[number]];
       if (!algorithmSchema) {
         ctx.addIssue({
           code: 'custom',
