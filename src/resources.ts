@@ -87,7 +87,7 @@ function buildToolsOverview(): string {
   const rows: [string, string[]][] = [
     ['Navigate', pickAvailableToolNames(['list_roots', 'ls', 'tree', 'find_files'])],
     ['Inspect', pickAvailableToolNames(['stat', 'search_text', 'hash_file'])],
-    ['Read', pickAvailableToolNames(['read', 'diff_files'])],
+    ['Read', pickAvailableToolNames(['read'])],
     [
       'Write',
       pickAvailableToolNames([
@@ -96,7 +96,6 @@ function buildToolsOverview(): string {
         'edit',
         'move',
         'delete',
-        'apply_patch',
         'replace_text',
       ]),
     ],

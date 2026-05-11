@@ -61,7 +61,7 @@ On `notifications/initialized`, the manager fetches roots from the client and re
 
 ### Tool system (`src/tools/define.ts`, `src/tools/*.ts`)
 
-All 18 tools are defined with `defineTool()` which populates `ALL_TOOLS[]`. Import side-effects in `src/tools.ts` trigger registration. Each `ToolDef` declares:
+All 14 tools are defined with `defineTool()` which populates `ALL_TOOLS[]`. Import side-effects in `src/tools.ts` trigger registration. Each `ToolDef` declares:
 
 - `annotations`: `readOnly` | `idempotentWrite` | `destructiveWrite` (maps to MCP hints)
 - `task`: `forbidden` | `optional` | `required` — controls whether the tool is registered as a task-capable tool via `TaskOrchestrator`
