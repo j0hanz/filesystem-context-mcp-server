@@ -136,7 +136,8 @@ export const SafeGlobPattern = z
     error: 'Invalid glob or unsafe path (absolute/.. forbidden)',
   })
   .refine((val) => isSafeGlobSyntax(val), {
-    error: 'Invalid glob or unsafe path (absolute/.. forbidden)',
+    message: 'Invalid glob or unsafe path (absolute/.. forbidden)',
+    abort: true,
   })
   .describe('Glob pattern (e.g. "**/*.ts", "src/**/*.js")')
   .meta({
