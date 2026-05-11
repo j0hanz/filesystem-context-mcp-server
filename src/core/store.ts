@@ -3,26 +3,22 @@ import { channel } from 'node:diagnostics_channel';
 
 import { ErrorCode, McpError } from './errors.js';
 
-interface TextResourceEntry {
+interface ResourceEntryBase {
   uri: string;
   name: string;
   mimeType: string;
-  text: string;
   hash: string;
   size: number;
   storedAt: string;
   expiresAt: string;
 }
 
-interface BlobResourceEntry {
-  uri: string;
-  name: string;
-  mimeType: string;
+interface TextResourceEntry extends ResourceEntryBase {
+  text: string;
+}
+
+interface BlobResourceEntry extends ResourceEntryBase {
   data: Buffer;
-  hash: string;
-  size: number;
-  storedAt: string;
-  expiresAt: string;
 }
 
 export interface ResourceStore {

@@ -77,6 +77,8 @@ export interface ToolContext {
  */
 export type IconInfo = Icon & { mimeType: string };
 
+type TaskSupport = 'optional' | 'required' | 'forbidden';
+
 export interface ToolRegistrationOptions {
   pathGuard: PathGuard;
   resourceStore?: ResourceStore;
@@ -168,10 +170,12 @@ export function buildToolResponse<T>(
   structuredContent: T,
   extraContent: ContentBlock[] = [],
 ): {
+  _kind: 'wrapped';
   content: ContentBlock[];
   structuredContent: T;
 } {
   return {
+    _kind: 'wrapped',
     content: [{ type: 'text', text }, ...extraContent],
     structuredContent,
   };
@@ -184,10 +188,12 @@ interface BuildResourceResponseParams<T> {
 }
 
 export function buildResourceResponse<T>(params: BuildResourceResponseParams<T>): {
+  _kind: 'wrapped';
   content: ContentBlock[];
   structuredContent: T;
 } {
   return {
+    _kind: 'wrapped',
     content: [{ type: 'text', text: params.summary }, ...params.resources],
     structuredContent: params.structured,
   };
@@ -376,7 +382,7 @@ function getExecutionConfig(
     : undefined;
 }
 
-function resolveTaskSupport(topLevel: unknown, nested: unknown): string | undefined {
+function resolveTaskSupport(topLevel: unknown, nested: unknown): TaskSupport | undefined {
   if (topLevel === 'optional' || topLevel === 'required' || topLevel === 'forbidden') {
     return topLevel;
   }
@@ -388,7 +394,7 @@ function resolveTaskSupport(topLevel: unknown, nested: unknown): string | undefi
 
 function buildExecution(
   existing: Record<string, unknown> | undefined,
-  taskSupport: string | undefined,
+  taskSupport: TaskSupport | undefined,
 ): Record<string, unknown> | undefined {
   if (taskSupport === undefined && existing === undefined) return undefined;
   return {
@@ -411,6 +417,7 @@ export function withDefaultIcons<T extends object>(
 // ---- Legacy ToolResult / HandlerContext ----
 
 type ToolResponse<T> = {
+  _kind: 'wrapped';
   content: ContentBlock[];
   structuredContent: T;
   isError?: never;

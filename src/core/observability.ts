@@ -55,11 +55,32 @@ type WideEventLevel = LoggingLevel;
 
 interface WideEventPayload {
   event: string;
-  outcome?: 'success' | 'error' | 'cancelled' | 'rejected';
+  action?: string;
+  display_name?: string;
   duration_ms?: number;
+  error_message?: string;
+  error_type?: string;
+  execution_id?: string;
+  http_status?: number;
+  input_keys?: readonly string[];
+  input_size_bytes?: number;
+  jsonrpc_method?: string;
+  memory_delta_mb?: number;
+  method?: string;
+  operation?: string;
+  outcome?: 'success' | 'error' | 'cancelled' | 'rejected';
+  path?: string;
+  prompt_name?: string;
+  progress_steps_emitted?: number;
+  reason?: string;
+  request_kind?: 'request' | 'notification' | 'result' | 'error' | 'unknown';
+  result_size_bytes?: number;
+  scope?: string;
   session_id?: string | null;
+  tool_name?: string;
+  transport?: string;
   traceparent?: string;
-  [key: string]: unknown;
+  uri?: string;
 }
 
 function toLogfmt(obj: Record<string, unknown>): string {
@@ -83,7 +104,10 @@ function toLogfmt(obj: Record<string, unknown>): string {
     .join(' ');
 }
 
-export function emitWideEvent(level: WideEventLevel, payload: WideEventPayload): void {
+export function emitWideEvent(
+  level: WideEventLevel,
+  payload: WideEventPayload & Record<string, unknown>,
+): void {
   // We omit the heavy static wide event context here to make logs LLM-friendly,
   // but keep timestamp and dynamic payload so it's dense and valuable.
   const eventToLog = {

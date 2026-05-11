@@ -30,7 +30,7 @@ import {
   formatBytes,
   putResource,
 } from './_helpers.js';
-import { defineTool, type ToolCtx } from './define.js';
+import { defineTool, type RunResult, type ToolCtx } from './define.js';
 
 const EditSpecSchema = z.strictObject({
   oldText: z
@@ -636,10 +636,7 @@ export async function runOneFile(
   }
 }
 
-async function dispatch(
-  args: EditInput,
-  ctx: ToolCtx,
-): Promise<{ content: ContentBlock[]; structuredContent: EditOutput }> {
+async function dispatch(args: EditInput, ctx: ToolCtx): Promise<RunResult<EditOutput>> {
   const jobs = normalizeJobs(args);
   const isSingle = jobs.length === 1 && args.path !== undefined;
 
@@ -715,6 +712,7 @@ async function dispatch(
     .map((r) => ({ type: 'resource_link' as const, uri: r.link, name: r.link }));
 
   return {
+    _kind: 'wrapped' as const,
     content: [{ type: 'text' as const, text: summaryText }, ...links],
     structuredContent: structured,
   };

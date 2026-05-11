@@ -60,7 +60,9 @@ export interface ToolDeps {
   readonly resourceStore: ResourceStore | undefined;
 }
 
-export type RunResult<T> = T | { content: ContentBlock[]; structuredContent: T };
+export type RunResult<T> =
+  | T
+  | { readonly _kind: 'wrapped'; content: ContentBlock[]; structuredContent: T };
 
 export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
   readonly name: string;
@@ -193,11 +195,17 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
             if (
               result !== null &&
               typeof result === 'object' &&
+              '_kind' in result &&
+              (result as { _kind?: unknown })._kind === 'wrapped' &&
               'content' in result &&
               'structuredContent' in result &&
               Array.isArray((result as { content: unknown }).content)
             ) {
-              const wrapped = result as { content: ContentBlock[]; structuredContent: unknown };
+              const wrapped = result as {
+                readonly _kind: 'wrapped';
+                content: ContentBlock[];
+                structuredContent: unknown;
+              };
               responseContent = wrapped.content;
               responseStructuredContent = wrapped.structuredContent as Record<string, unknown>;
             } else {
