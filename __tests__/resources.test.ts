@@ -3,9 +3,9 @@ import { Client } from '@modelcontextprotocol/client';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import serverJson from '../server.json' with { type: 'json' };
 import { createServer } from '../src/server.js';
@@ -148,6 +148,9 @@ describe('resources and metadata', () => {
 
     // Test passes if we got here without crashing - the key behavior is that
     // real URIs are accepted and fake-scheme URIs are rejected/canonicalized properly
-    assert.ok(true, 'subscribe routing correctly handles URIs with different schemes and fragments');
+    assert.ok(
+      true,
+      'subscribe routing correctly handles URIs with different schemes and fragments',
+    );
   });
 });

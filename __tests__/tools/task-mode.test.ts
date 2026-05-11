@@ -3,6 +3,7 @@
  * (tasks/create + tasks/get + tasks/result lifecycle).
  */
 import { type CallToolResult, type CreateTaskResult } from '@modelcontextprotocol/client';
+import { takeResult, toArrayAsync } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
@@ -106,6 +107,37 @@ describe('task mode: diff_files', () => {
       TERMINAL_STATUSES.has(taskState.status),
       `expected terminal status, got: ${taskState.status}`,
     );
+  });
+
+  it('callToolStream correctly yields messages and result', async () => {
+    const stream = env.client.experimental.tasks.callToolStream(
+      { name: 'diff_files', arguments: { original: fileA, modified: fileB } },
+      { task: {} },
+    );
+
+    const messages = await toArrayAsync(stream);
+    assert.ok(messages.length >= 2, 'Stream should yield at least taskCreated and result');
+    assert.equal(messages[0]?.type, 'taskCreated');
+
+    const lastMessage = messages[messages.length - 1];
+    assert.equal(lastMessage?.type, 'result');
+    if (lastMessage?.type === 'result') {
+      const sc = getStructured(lastMessage.result);
+      assert.equal(sc['ok'], true);
+      assert.equal(sc['isIdentical'], false);
+    }
+  });
+
+  it('takeResult correctly extracts the final result', async () => {
+    const stream = env.client.experimental.tasks.callToolStream(
+      { name: 'diff_files', arguments: { original: fileA, modified: fileB } },
+      { task: {} },
+    );
+
+    const result = await takeResult(stream);
+    const sc = getStructured(result);
+    assert.equal(sc['ok'], true);
+    assert.equal(sc['isIdentical'], false);
   });
 });
 

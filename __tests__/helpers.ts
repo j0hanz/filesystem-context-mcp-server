@@ -80,7 +80,10 @@ export async function createTestEnv(): Promise<TestEnv> {
     orchestrator,
   });
 
-  const client = new Client({ name: 'test-client', version: '1.0.0' });
+  const client = new Client(
+    { name: 'test-client', version: '1.0.0' },
+    { capabilities: { tasks: {} } },
+  );
   const [ct, st] = LinkedTransport.createLinkedPair();
   await server.connect(st);
   await client.connect(ct);

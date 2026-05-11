@@ -1,4 +1,4 @@
-import { hostHeaderValidation, localhostHostValidation } from '@modelcontextprotocol/express';
+import { createMcpExpressApp } from '@modelcontextprotocol/express';
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import type { McpServer } from '@modelcontextprotocol/server';
 import {
@@ -27,12 +27,7 @@ import {
   type ServerResponse,
 } from 'node:http';
 
-import express, {
-  type NextFunction,
-  type Request,
-  type RequestHandler,
-  type Response,
-} from 'express';
+import type { Express, NextFunction, Request, RequestHandler, Response } from 'express';
 
 import { formatUnknownErrorMessage } from './core/errors.js';
 import type { LogRouter } from './core/observability.js';
@@ -618,14 +613,12 @@ function setupExpressApp(
   options: ServerOptions,
   registry: HttpSessionRegistry,
   eventStore: InMemoryEventStore,
-): express.Express {
-  const app = express();
-
-  if (isLoopbackHttpHost(httpHost)) {
-    app.use(localhostHostValidation());
-  } else {
-    app.use(hostHeaderValidation([httpHost]));
-  }
+): Express {
+  const app = createMcpExpressApp({
+    host: httpHost,
+    ...(!isLoopbackHttpHost(httpHost) ? { allowedHosts: [httpHost] } : {}),
+    jsonLimit: `${MAX_REQUEST_BODY_BYTES}b`,
+  });
 
   app.use(originGuardMiddleware());
 
@@ -641,7 +634,6 @@ function setupExpressApp(
 
   app.use('/mcp', bearerAuthMiddleware());
 
-  app.use(express.json({ limit: MAX_REQUEST_BODY_BYTES }));
   app.use(errorHandlerMiddleware);
 
   app.post('/mcp', (req: Request, res: Response) => {

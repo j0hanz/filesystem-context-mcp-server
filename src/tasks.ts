@@ -119,10 +119,7 @@ export class TaskOrchestrator {
             throw new McpError(ErrorCode.INVALID_INPUT, `Too many active tasks (${activeCount})`);
           }
 
-          const requestedTtl =
-            'taskRequestedTtl' in ctx && typeof ctx.taskRequestedTtl === 'number'
-              ? ctx.taskRequestedTtl
-              : DEFAULT_TASK_TTL_MS;
+          const requestedTtl = ctx.task.requestedTtl ?? DEFAULT_TASK_TTL_MS;
           const ttl = Math.min(requestedTtl, MAX_TASK_TTL_MS);
 
           // Create the task record in the store.
