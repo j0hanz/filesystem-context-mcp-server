@@ -238,9 +238,9 @@ describe('read tool', () => {
   });
 });
 
-// ─── write ───────────────────────────────────────────────────────────────────
+// ─── create ──────────────────────────────────────────────────────────────────
 
-describe('write tool', () => {
+describe('create tool', () => {
   let env: TestEnv;
 
   before(async () => {
@@ -254,28 +254,31 @@ describe('write tool', () => {
   it('creates a new file with content', async () => {
     const file = join(env.tmpDir, 'written.txt');
     const raw = await env.client.callTool({
-      name: 'write',
-      arguments: { path: file, content: 'hello world' },
+      name: 'create',
+      arguments: { files: [{ path: file, content: 'hello world' }] },
     });
     const result = raw;
     assertOk(result);
     const sc = getStructured(result);
-    assert.equal(sc['ok'], true);
-    assert.equal(typeof sc['size'], 'number');
-    assert.equal(sc['size'], 11); // "hello world" is 11 bytes
-    assert.equal(sc['lineCount'], 1);
-    assert.ok(typeof sc['mimeType'] === 'string');
-    assert.ok(typeof sc['kind'] === 'string');
-    assert.ok(typeof sc['resourceUri'] === 'string');
-    assert.ok(sc['resourceUri'].includes('filesystem-mcp://result/'));
-    assert.ok(typeof sc['created'] === 'string');
-    assert.ok(typeof sc['modified'] === 'string');
+    const created = (sc['files'] as Record<string, unknown>[])[0];
+    assert.ok(created, 'Expected first file result');
+    assert.equal(created['ok'], true);
+    assert.equal(typeof created['path'], 'string');
+    assert.equal(typeof created['size'], 'number');
+    assert.equal(created['size'], 11); // "hello world" is 11 bytes
+    assert.equal(created['lineCount'], 1);
+    assert.ok(typeof created['mimeType'] === 'string');
+    assert.ok(typeof created['kind'] === 'string');
+    assert.ok(typeof created['resourceUri'] === 'string');
+    assert.ok(created['resourceUri'].includes('filesystem-mcp://result/'));
+    assert.ok(typeof created['created'] === 'string');
+    assert.ok(typeof created['modified'] === 'string');
 
-    // Verify summary includes "write:" and filename
+    // Verify summary includes "create:" and filename
     assert.equal(result.content.length, 2);
     assert.equal(result.content[0].type, 'text');
     const summary = (result.content[0] as Record<string, unknown>).text as string;
-    assert.ok(summary.includes('write:'));
+    assert.ok(summary.includes('create:'));
     assert.ok(summary.includes('written.txt'));
 
     // Verify resource_link
@@ -291,20 +294,22 @@ describe('write tool', () => {
     const file = join(env.tmpDir, 'overwrite.txt');
     await writeFile(file, 'old content', 'utf8');
     const raw = await env.client.callTool({
-      name: 'write',
-      arguments: { path: file, content: 'new content' },
+      name: 'create',
+      arguments: { files: [{ path: file, content: 'new content' }] },
     });
     const result = raw;
     assertOk(result);
     const sc = getStructured(result);
-    assert.equal(sc['ok'], true);
-    assert.equal(sc['size'], 11); // "new content" is 11 bytes
-    assert.equal(sc['lineCount'], 1);
-    assert.ok(typeof sc['resourceUri'] === 'string');
+    const created = (sc['files'] as Record<string, unknown>[])[0];
+    assert.ok(created, 'Expected first file result');
+    assert.equal(created['ok'], true);
+    assert.equal(created['size'], 11); // "new content" is 11 bytes
+    assert.equal(created['lineCount'], 1);
+    assert.ok(typeof created['resourceUri'] === 'string');
 
-    // Verify summary includes "write:"
+    // Verify summary includes "create:"
     const summary = (result.content[0] as Record<string, unknown>).text as string;
-    assert.ok(summary.includes('write:'));
+    assert.ok(summary.includes('create:'));
 
     const actual = await readFile(file, 'utf8');
     assert.equal(actual, 'new content');
@@ -313,13 +318,15 @@ describe('write tool', () => {
   it('creates parent directories and stores resource', async () => {
     const file = join(env.tmpDir, 'nested', 'deep', 'file.txt');
     const raw = await env.client.callTool({
-      name: 'write',
-      arguments: { path: file, content: 'nested' },
+      name: 'create',
+      arguments: { files: [{ path: file, content: 'nested' }] },
     });
     const result = raw;
     assertOk(result);
     const sc = getStructured(result);
-    assert.ok(sc['resourceUri']);
+    const created = (sc['files'] as Record<string, unknown>[])[0];
+    assert.ok(created, 'Expected first file result');
+    assert.ok(created['resourceUri']);
     assert.ok(
       (result.content[1] as Record<string, unknown>).uri
         ?.toString()
@@ -331,19 +338,19 @@ describe('write tool', () => {
 
   it('returns ACCESS_DENIED outside allowed root', async () => {
     const raw = await env.client.callTool({
-      name: 'write',
-      arguments: { path: '/tmp/escape.txt', content: 'bad' },
+      name: 'create',
+      arguments: { files: [{ path: '/tmp/escape.txt', content: 'bad' }] },
     });
     assertToolError(raw, 'ACCESS_DENIED');
   });
 
-  it('returns an error when path is omitted', async () => {
+  it('returns an error when files is omitted', async () => {
     const raw = await env.client.callTool({
-      name: 'write',
-      // intentionally no path
-      arguments: { content: 'hello' },
+      name: 'create',
+      // intentionally no files
+      arguments: {},
     });
-    assert.ok(raw.isError, 'write without path must return an error');
+    assert.ok(raw.isError, 'create without files must return an error');
   });
 });
 

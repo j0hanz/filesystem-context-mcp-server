@@ -2,19 +2,18 @@
 
 import type { ToolRegistrationOptions } from './tools/_helpers.js';
 import './tools/calculate-hash.js';
-import './tools/create-directory.js';
+import './tools/create.js';
 import { ALL_TOOLS as _ALL_TOOLS, registerAllTools as _registerAllTools } from './tools/define.js';
 import './tools/delete-file.js';
 import './tools/edit.js';
 import './tools/list.js';
-import './tools/move-file.js';
+import './tools/move.js';
 import './tools/read.js';
 import './tools/replace-in-files.js';
 import './tools/roots.js';
 import './tools/search-content.js';
 import './tools/search-files.js';
 import './tools/stat.js';
-import './tools/write-file.js';
 
 export const ALL_TOOLS = _ALL_TOOLS;
 

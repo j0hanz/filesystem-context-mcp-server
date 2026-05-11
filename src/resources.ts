@@ -88,10 +88,7 @@ function buildToolsOverview(): string {
     ['Navigate', pickAvailableToolNames(['list_roots', 'list', 'find_files'])],
     ['Inspect', pickAvailableToolNames(['stat', 'search_text', 'hash_file'])],
     ['Read', pickAvailableToolNames(['read'])],
-    [
-      'Write',
-      pickAvailableToolNames(['make_dir', 'write', 'edit', 'move', 'delete', 'replace_text']),
-    ],
+    ['Write', pickAvailableToolNames(['create', 'edit', 'move', 'delete', 'replace_text'])],
   ];
 
   const rowLines = rows

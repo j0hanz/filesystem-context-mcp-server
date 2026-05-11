@@ -18,7 +18,7 @@ describe('SERVER_INSTRUCTIONS_CONTENT', () => {
     assert.match(content, /ls/u);
     assert.match(content, /search_text/u);
     assert.match(content, /read/u);
-    assert.match(content, /write/u);
+    assert.match(content, /create/u);
   });
 
   it('points to tools/list for schemas', () => {

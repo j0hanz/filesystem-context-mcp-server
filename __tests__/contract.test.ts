@@ -1,5 +1,5 @@
 /**
- * Contract tests: verify that all 16 tools are registered, named correctly,
+ * Contract tests: verify that all filesystem tools are registered, named correctly,
  * carry the right annotations, and perform a basic smoke call.
  */
 import { Client } from '@modelcontextprotocol/client';
@@ -14,10 +14,10 @@ import { after, before, describe, it } from 'node:test';
 
 import { assertOk, createTestEnv, getStructured, type TestEnv } from './helpers.js';
 
-// Names of all 13 tools as registered
+// Names of all 12 tools as registered
 const ALL_TOOLS = new Set([
+  'create',
   'hash_file',
-  'make_dir',
   'delete',
   'edit',
   'list',
@@ -28,7 +28,6 @@ const ALL_TOOLS = new Set([
   'search_text',
   'find_files',
   'stat',
-  'write',
 ]);
 
 // Annotations by category
@@ -42,7 +41,7 @@ const READ_ONLY_TOOLS = new Set([
   'stat',
 ]);
 
-const DESTRUCTIVE_TOOLS = new Set(['edit', 'delete', 'move', 'replace_text', 'write']);
+const DESTRUCTIVE_TOOLS = new Set(['create', 'edit', 'delete', 'move', 'replace_text']);
 
 describe('Tool contract', () => {
   let env: TestEnv;
@@ -55,9 +54,9 @@ describe('Tool contract', () => {
     await env.cleanup();
   });
 
-  it('registers exactly 13 tools with correct names', async () => {
+  it('registers exactly 12 tools with correct names', async () => {
     const { tools } = await env.client.listTools();
-    assert.equal(tools.length, ALL_TOOLS.size, 'Expected 13 tools');
+    assert.equal(tools.length, ALL_TOOLS.size, 'Expected 12 tools');
     for (const tool of tools) {
       assert.ok(ALL_TOOLS.has(tool.name), `Unexpected tool name: ${tool.name}`);
     }
@@ -104,13 +103,13 @@ describe('Tool contract', () => {
     }
   });
 
-  it('make_dir has idempotentHint:true and destructiveHint:false', async () => {
+  it('create has idempotentHint:false and destructiveHint:true', async () => {
     const { tools } = await env.client.listTools();
-    const mkdir = tools.find((t) => t.name === 'make_dir');
-    assert.ok(mkdir, 'make_dir tool must exist');
-    const ann = mkdir.annotations as Record<string, unknown>;
-    assert.equal(ann['idempotentHint'], true, 'make_dir: expected idempotentHint=true');
-    assert.equal(ann['destructiveHint'], false, 'make_dir: expected destructiveHint=false');
+    const create = tools.find((t) => t.name === 'create');
+    assert.ok(create, 'create tool must exist');
+    const ann = create.annotations as Record<string, unknown>;
+    assert.equal(ann['idempotentHint'], false, 'create: expected idempotentHint=false');
+    assert.equal(ann['destructiveHint'], true, 'create: expected destructiveHint=true');
   });
 
   it('smoke: list_roots returns ok:true with the test tmpDir', async () => {

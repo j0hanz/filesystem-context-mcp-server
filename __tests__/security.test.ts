@@ -26,11 +26,14 @@ describe('security: path boundary enforcement', () => {
     args: (tmpDir: string) => Record<string, unknown>;
   }[] = [
     { tool: 'read', args: () => ({ path: '/etc/passwd' }) },
-    { tool: 'write', args: () => ({ path: '/tmp/escape.txt', content: 'x' }) },
+    { tool: 'create', args: () => ({ files: [{ path: '/tmp/escape.txt', content: 'x' }] }) },
     { tool: 'stat', args: () => ({ path: '/etc/hostname' }) },
     { tool: 'list', args: () => ({ path: '/etc' }) },
     { tool: 'delete', args: (d) => ({ paths: [join(d, '../escape.txt')] }) },
-    { tool: 'make_dir', args: () => ({ paths: [`/tmp/evil-dir-${Date.now()}`] }) },
+    {
+      tool: 'create',
+      args: () => ({ files: [{ path: `/tmp/evil-dir-${Date.now()}/.keep`, content: '' }] }),
+    },
     {
       tool: 'replace_text',
       args: () => ({
@@ -100,11 +103,11 @@ describe('security: path traversal via ".."', () => {
     assertToolError(raw, 'ACCESS_DENIED');
   });
 
-  it('write: rejects traversal above tmpDir', async () => {
+  it('create: rejects traversal above tmpDir', async () => {
     const escaped = join(env.tmpDir, '..', 'evil.txt');
     const raw = await env.client.callTool({
-      name: 'write',
-      arguments: { path: escaped, content: 'exploit' },
+      name: 'create',
+      arguments: { files: [{ path: escaped, content: 'exploit' }] },
     });
     assertToolError(raw, 'ACCESS_DENIED');
   });
@@ -182,7 +185,7 @@ describe('security: schema validation rejects malformed input', () => {
     assertToolError(raw);
   });
 
-  it('move: rejects missing both source and sources', async () => {
+  it('move: rejects missing moves', async () => {
     const raw = await env.client.callTool({
       name: 'move',
       arguments: { destination: join(env.tmpDir, 'dst.txt') },
@@ -190,7 +193,7 @@ describe('security: schema validation rejects malformed input', () => {
     assertToolError(raw);
   });
 
-  it('move: rejects providing both source and sources', async () => {
+  it('move: rejects legacy source/sources shape', async () => {
     const raw = await env.client.callTool({
       name: 'move',
       arguments: {
@@ -202,14 +205,14 @@ describe('security: schema validation rejects malformed input', () => {
     assertToolError(raw);
   });
 
-  it('make_dir: rejects missing both path and paths', async () => {
-    const raw = await env.client.callTool({ name: 'make_dir', arguments: {} });
+  it('create: rejects missing files', async () => {
+    const raw = await env.client.callTool({ name: 'create', arguments: {} });
     assertToolError(raw);
   });
 
-  it('make_dir: rejects providing both path and paths', async () => {
+  it('create: rejects legacy path/paths shape', async () => {
     const raw = await env.client.callTool({
-      name: 'make_dir',
+      name: 'create',
       arguments: {
         path: join(env.tmpDir, 'one'),
         paths: [join(env.tmpDir, 'two')],
@@ -226,10 +229,10 @@ describe('security: schema validation rejects malformed input', () => {
     assertToolError(raw);
   });
 
-  it('write: rejects missing content field', async () => {
+  it('create: rejects missing content field', async () => {
     const raw = await env.client.callTool({
-      name: 'write',
-      arguments: { path: join(env.tmpDir, 'f.txt') },
+      name: 'create',
+      arguments: { files: [{ path: join(env.tmpDir, 'f.txt') }] },
     });
     assertToolError(raw);
   });
@@ -264,12 +267,12 @@ describe('security: symlink escape for destructive ops', () => {
     }
   }
 
-  it('write: rejects writing through symlink to outside', async () => {
-    const linkPath = await createSymlink('write-escape.txt', join(outsideDir, 'target.txt'));
+  it('create: rejects writing through symlink to outside', async () => {
+    const linkPath = await createSymlink('create-escape.txt', join(outsideDir, 'target.txt'));
     if (!linkPath) return;
     const raw = await env.client.callTool({
-      name: 'write',
-      arguments: { path: linkPath, content: 'hacked' },
+      name: 'create',
+      arguments: { files: [{ path: linkPath, content: 'hacked' }] },
     });
     assertToolError(raw, 'ACCESS_DENIED');
   });
@@ -293,8 +296,7 @@ describe('security: symlink escape for destructive ops', () => {
     const raw = await env.client.callTool({
       name: 'move',
       arguments: {
-        source: linkPath,
-        destination: join(env.tmpDir, 'moved.txt'),
+        moves: [{ source: linkPath, destination: join(env.tmpDir, 'moved.txt') }],
       },
     });
     assertToolError(raw, 'ACCESS_DENIED');

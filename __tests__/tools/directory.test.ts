@@ -1,5 +1,5 @@
 /**
- * Integration tests for directory-oriented tools: roots, list, mkdir, rm, mv.
+ * Integration tests for directory-oriented tools: roots, list, create, rm, move.
  */
 import assert from 'node:assert/strict';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
@@ -198,9 +198,9 @@ describe('list tool', () => {
   });
 });
 
-// ─── mkdir ──────────────────────────────────────────────────────────────────
+// ─── create ─────────────────────────────────────────────────────────────────
 
-describe('mkdir tool', () => {
+describe('create tool (directory creation)', () => {
   let env: TestEnv;
 
   before(async () => {
@@ -211,84 +211,99 @@ describe('mkdir tool', () => {
     await env.cleanup();
   });
 
-  it('creates a new directory', async () => {
+  it('creates a new file and parent directory', async () => {
     const newDir = join(env.tmpDir, 'new-dir');
+    const newFile = join(newDir, 'created.txt');
     const raw = await env.client.callTool({
-      name: 'make_dir',
-      arguments: { paths: [newDir] },
+      name: 'create',
+      arguments: { files: [{ path: newFile, content: '' }] },
     });
     assertOk(raw);
 
-    // Verify content: terse summary with creation confirmation, no resource links
-    assert.equal(
-      raw.content.length,
-      1,
-      'Expected exactly one content block (P3 confirmation-only pattern)',
+    // Verify content includes terse summary
+    const textBlock = raw.content.find(
+      (block): block is { type: string; text: string } => typeof block.text === 'string',
     );
-    assert.equal(raw.content[0].type, 'text', 'Expected text content');
-    const summaryText = raw.content[0].text;
-    assert.ok(
-      summaryText.startsWith('create-directory:'),
-      'Expected summary to start with "create-directory:"',
-    );
+    assert.ok(textBlock, 'Expected text content');
+    const summaryText = textBlock.text;
+    assert.ok(summaryText.startsWith('create:'), 'Expected summary to start with "create:"');
 
-    // Verify structured content has path and ok (P3 pattern)
+    // Verify structured content has created file metadata
     const sc = getStructured(raw);
-    assert.ok(sc['ok'] === true, 'Expected ok: true');
-    const createdPath = sc['path'] as string;
-    assert.ok(createdPath, 'Expected path field to be set');
+    const files = sc['files'] as Record<string, unknown>[];
+    const createdFile = files[0];
+    assert.ok(createdFile, 'Expected first file result');
+    assert.ok(createdFile['ok'] === true, 'Expected ok: true');
+    const createdPath = createdFile['path'] as string;
+    assert.ok(createdPath, 'Expected file path field to be set');
     assert.equal(
       createdPath.toLowerCase(),
-      newDir.toLowerCase(),
-      'Expected path field to be the created directory path',
+      newFile.toLowerCase(),
+      'Expected path field to be the created file path',
     );
+    assert.equal(createdFile['size'], 0);
+    assert.equal(createdFile['lineCount'], 1);
+    assert.equal(createdFile['mimeType'], 'text/plain');
+    assert.equal(createdFile['kind'], 'text');
     // Verify summary contains the path (case-insensitive)
     assert.ok(
-      summaryText.toLowerCase().includes(createdPath.toLowerCase()),
-      'Expected summary to include the created path',
+      summaryText.toLowerCase().includes('created.txt'),
+      'Expected summary to include the created file name',
     );
 
-    // Verify directory was actually created
-    const statResult = await stat(newDir);
-    assert.ok(statResult.isDirectory());
+    // Verify file and parent directory were actually created
+    const dirStat = await stat(newDir);
+    assert.ok(dirStat.isDirectory());
+    const fileStat = await stat(newFile);
+    assert.ok(fileStat.isFile());
   });
 
-  it('is idempotent — creating an existing directory is not an error', async () => {
-    const existingDir = join(env.tmpDir, 'idempotent-dir');
-    await mkdir(existingDir);
+  it('overwrites an existing file without error', async () => {
+    const existingFile = join(env.tmpDir, 'idempotent-file.txt');
+    await writeFile(existingFile, 'existing', 'utf8');
     const raw = await env.client.callTool({
-      name: 'make_dir',
-      arguments: { paths: [existingDir] },
+      name: 'create',
+      arguments: { files: [{ path: existingFile, content: '' }] },
     });
     assertOk(raw);
   });
 
-  it('creates multiple directories via paths array', async () => {
-    const d1 = join(env.tmpDir, 'batch-a');
-    const d2 = join(env.tmpDir, 'batch-b');
+  it('creates multiple files via files array', async () => {
+    const f1 = join(env.tmpDir, 'batch-a', 'created.txt');
+    const f2 = join(env.tmpDir, 'batch-b', 'created.txt');
     const raw = await env.client.callTool({
-      name: 'make_dir',
-      arguments: { paths: [d1, d2] },
+      name: 'create',
+      arguments: {
+        files: [
+          { path: f1, content: '' },
+          { path: f2, content: '' },
+        ],
+      },
     });
     assertOk(raw);
-    // P3 pattern: only first path is processed
     const sc = getStructured(raw);
-    assert.ok(sc['ok'] === true);
+    const files = sc['files'] as Record<string, unknown>[];
+    assert.equal(files.length, 2);
+    const firstFile = files[0];
+    assert.ok(firstFile, 'Expected first file result');
+    assert.ok(firstFile['ok'] === true);
     assert.equal(
-      (sc['path'] as string).toLowerCase(),
-      d1.toLowerCase(),
-      'Expected path to be the first directory in the array',
+      (firstFile['path'] as string).toLowerCase(),
+      f1.toLowerCase(),
+      'Expected first file path to match the first input',
     );
-    // Only d1 should be created
-    assert.ok((await stat(d1)).isDirectory());
-    // d2 is not created because P3 pattern processes only first path
-    await assert.rejects(() => stat(d2), /ENOENT/);
+    assert.equal(firstFile['size'], 0);
+    assert.equal(firstFile['lineCount'], 1);
+    assert.equal(firstFile['mimeType'], 'text/plain');
+    assert.equal(firstFile['kind'], 'text');
+    assert.ok((await stat(f1)).isFile());
+    assert.ok((await stat(f2)).isFile());
   });
 
   it('rejects creation outside allowed root', async () => {
     const raw = await env.client.callTool({
-      name: 'make_dir',
-      arguments: { paths: [`/tmp/escape-${Date.now()}`] },
+      name: 'create',
+      arguments: { files: [{ path: `/tmp/escape-${Date.now()}`, content: '' }] },
     });
     assertToolError(raw, 'ACCESS_DENIED');
   });
@@ -412,9 +427,9 @@ describe('rm tool', () => {
   });
 });
 
-// ─── mv ─────────────────────────────────────────────────────────────────────
+// ─── move ───────────────────────────────────────────────────────────────────
 
-describe('mv tool', () => {
+describe('move tool', () => {
   let env: TestEnv;
 
   before(async () => {
@@ -431,7 +446,7 @@ describe('mv tool', () => {
     await writeFile(src, 'move me', 'utf8');
     const raw = await env.client.callTool({
       name: 'move',
-      arguments: { sources: [src], destination: dst },
+      arguments: { moves: [{ source: src, destination: dst }] },
     });
     assertOk(raw);
 
@@ -443,19 +458,22 @@ describe('mv tool', () => {
     );
     assert.equal(raw.content[0].type, 'text', 'Expected text content');
     const summaryText = raw.content[0].text;
-    assert.ok(summaryText.startsWith('move-file:'), 'Expected summary to start with "move-file:"');
-    assert.ok(summaryText.includes('→'), 'Expected summary to include arrow (→) separator');
+    assert.ok(summaryText.startsWith('move:'), 'Expected summary to start with "move:"');
+    assert.ok(summaryText.includes('->'), 'Expected summary to include arrow (->) separator');
 
-    // Verify structured content has from/to/ok (P3 pattern)
+    // Verify structured content has from/to/ok result metadata
     const sc = getStructured(raw);
-    assert.ok(sc['ok'] === true, 'Expected ok: true');
+    const moves = sc['moves'] as Record<string, unknown>[];
+    const move = moves[0];
+    assert.ok(move, 'Expected first move result');
+    assert.ok(move['ok'] === true, 'Expected ok: true');
     assert.equal(
-      (sc['from'] as string).toLowerCase(),
+      (move['from'] as string).toLowerCase(),
       src.toLowerCase(),
       'Expected from field to be source path',
     );
     assert.equal(
-      (sc['to'] as string).toLowerCase(),
+      (move['to'] as string).toLowerCase(),
       dst.toLowerCase(),
       'Expected to field to be destination path',
     );
@@ -466,12 +484,45 @@ describe('mv tool', () => {
     assert.equal(content, 'move me');
   });
 
+  it('skips self-moves without changing the file', async () => {
+    const src = join(env.tmpDir, 'same-file.txt');
+    await writeFile(src, 'same', 'utf8');
+
+    const raw = await env.client.callTool({
+      name: 'move',
+      arguments: { moves: [{ source: src, destination: src }] },
+    });
+
+    assertOk(raw);
+    const sc = getStructured(raw);
+    const moves = sc['moves'] as Record<string, unknown>[];
+    assert.equal(moves.length, 0);
+    assert.equal(await readFile(src, 'utf8'), 'same');
+  });
+
+  it('rejects moving a directory into its own subdirectory', async () => {
+    const src = join(env.tmpDir, 'parent-dir');
+    const dst = join(src, 'child', 'parent-dir');
+    await mkdir(src, { recursive: true });
+
+    const raw = await env.client.callTool({
+      name: 'move',
+      arguments: { moves: [{ source: src, destination: dst }] },
+    });
+
+    assertToolError(raw, 'INVALID_INPUT');
+  });
+
   it('returns isError for total failure when source is missing', async () => {
     const raw = await env.client.callTool({
       name: 'move',
       arguments: {
-        sources: [join(env.tmpDir, 'no-source.txt')],
-        destination: join(env.tmpDir, 'dst.txt'),
+        moves: [
+          {
+            source: join(env.tmpDir, 'no-source.txt'),
+            destination: join(env.tmpDir, 'dst.txt'),
+          },
+        ],
       },
     });
     assertToolError(raw, 'NOT_FOUND');
@@ -518,17 +569,20 @@ describe('array size limits', () => {
     await env.cleanup();
   });
 
-  it('make_dir rejects > 1000 paths', async () => {
-    const paths = Array.from({ length: 1001 }, (_, i) => join(env.tmpDir, `dir-${i}`));
+  it('create rejects > 100 files', async () => {
+    const files = Array.from({ length: 101 }, (_, i) => ({
+      path: join(env.tmpDir, `file-${i}.txt`),
+      content: '',
+    }));
     const raw = await env.client.callTool({
-      name: 'make_dir',
-      arguments: { paths },
+      name: 'create',
+      arguments: { files },
     });
     assertToolError(raw);
     // Verify error mentions the size constraint
     const textBlock = raw.content.find(
-      (b): b is { type: string; text: string } => typeof b.text === 'string',
+      (b): b is { type: 'text'; text: string } => b.type === 'text',
     );
-    assert.ok(textBlock?.text.includes('1000'), 'Expected error to mention the 1000 item limit');
+    assert.ok(textBlock?.text.includes('100'), 'Expected error to mention the 100 item limit');
   });
 });

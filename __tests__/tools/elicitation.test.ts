@@ -125,7 +125,7 @@ describe('move: client without elicitation capability', () => {
   it('overwrites destination immediately when capability absent', async () => {
     const result = await env.client.callTool({
       name: 'move',
-      arguments: { sources: [src], destination: dest },
+      arguments: { moves: [{ source: src, destination: dest }] },
     });
     assertOk(result);
     const { readFileSync } = await import('node:fs');
@@ -157,7 +157,7 @@ describe('move: client declines elicitation (destination exists)', () => {
   it('returns CANCELLED error without moving when user declines overwrite', async () => {
     const result = await env.client.callTool({
       name: 'move',
-      arguments: { sources: [src], destination: dest },
+      arguments: { moves: [{ source: src, destination: dest }] },
     });
     assertToolError(result, 'CANCELLED');
     const { readFileSync } = await import('node:fs');
@@ -193,7 +193,7 @@ describe('move: client accepts elicitation (destination exists)', () => {
   it('moves and overwrites when user accepts', async () => {
     const result = await env.client.callTool({
       name: 'move',
-      arguments: { sources: [src], destination: dest },
+      arguments: { moves: [{ source: src, destination: dest }] },
     });
     assertOk(result);
     const { readFileSync, existsSync } = await import('node:fs');
@@ -258,7 +258,7 @@ describe('move: elicitation handler throws', () => {
   it('does NOT move when elicitInput throws', async () => {
     const result = await env.client.callTool({
       name: 'move',
-      arguments: { sources: [src], destination: dest },
+      arguments: { moves: [{ source: src, destination: dest }] },
     });
     assertToolError(result, 'CANCELLED');
     const { readFileSync } = await import('node:fs');
