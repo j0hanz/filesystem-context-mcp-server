@@ -263,7 +263,7 @@ function buildReadProgressLabel(args: ReadFileInput): string {
   if (args_['offset'] !== undefined && typeof args_['offset'] === 'number') {
     const end =
       args_['length'] !== undefined && typeof args_['length'] === 'number'
-        ? (args_['offset']) + (args_['length']) - 1
+        ? args_['offset'] + args_['length'] - 1
         : '…';
     return `${READ_TOOL_LABEL}: ${name} [bytes ${args_['offset']}–${String(end)}]`;
   }
