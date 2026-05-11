@@ -90,14 +90,7 @@ function buildToolsOverview(): string {
     ['Read', pickAvailableToolNames(['read'])],
     [
       'Write',
-      pickAvailableToolNames([
-        'make_dir',
-        'write',
-        'edit',
-        'move',
-        'delete',
-        'replace_text',
-      ]),
+      pickAvailableToolNames(['make_dir', 'write', 'edit', 'move', 'delete', 'replace_text']),
     ],
   ];
 

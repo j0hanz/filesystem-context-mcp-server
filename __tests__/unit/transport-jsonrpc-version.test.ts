@@ -15,8 +15,8 @@ test('JSONRPC_VERSION constant', async (t) => {
   });
 
   await t.test('transport.ts uses JSONRPC_VERSION instead of hardcoded "2.0"', () => {
-    // Read the compiled transport.js to verify literals are replaced
-    const transportPath = join(__dirname, '../../dist/transport.js');
+    // Read the source transport.ts to verify no hardcoded literals
+    const transportPath = join(__dirname, '../../src/transport.ts');
     const transportSource = readFileSync(transportPath, 'utf-8');
 
     // Count occurrences of jsonrpc: '2.0' (hardcoded literal)
