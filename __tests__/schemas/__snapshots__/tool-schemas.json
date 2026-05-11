@@ -157,6 +157,13 @@
           "description": "Deleted path",
           "type": "string"
         },
+        "paths": {
+          "description": "Deleted paths (multi-path mode)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "failures": {
           "description": "Per-path errors",
           "type": "array",
@@ -771,16 +778,14 @@
         "maxDepth": {
           "default": 1,
           "description": "Max directory depth (default: 1, flat listing)",
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 50
+          "maximum": 50,
+          "$ref": "#/$defs/PositiveInt"
         },
         "maxEntries": {
           "default": 1000,
           "description": "Max entries to return (default: 1000)",
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 20000
+          "maximum": 20000,
+          "$ref": "#/$defs/PositiveInt"
         },
         "includeHidden": {
           "default": false,
@@ -793,7 +798,14 @@
           "type": "boolean"
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "$defs": {
+        "PositiveInt": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "title": "Positive Integer"
+        }
+      }
     },
     "outputSchema": {
       "type": "object",

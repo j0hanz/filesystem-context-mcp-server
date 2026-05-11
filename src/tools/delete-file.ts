@@ -6,10 +6,11 @@ import { basename } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { withAbort } from '../core/concurrency.js';
+import { processInParallel, withAbort } from '../core/concurrency.js';
 import { ErrorCode, isNodeError, McpError } from '../core/errors.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
+import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import { defaultFalseBoolean, RequiredPath } from '../schema.js';
 import { buildStructuredError, buildToolResponse } from './_helpers.js';
 import { defineTool } from './define.js';
@@ -31,6 +32,7 @@ const DeleteFailureItemSchema = z.strictObject({
 const DeleteOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),
   path: z.string().optional().describe('Deleted path'),
+  paths: z.array(z.string()).optional().describe('Deleted paths (multi-path mode)'),
   failures: z.array(DeleteFailureItemSchema).optional().describe('Per-path errors'),
 });
 
@@ -147,13 +149,13 @@ async function deleteSinglePath(
   pathGuard: PathGuard,
   signal?: AbortSignal,
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>,
-): Promise<{ item: DeletedItem } | { failure: DeleteFailure; soft?: boolean }> {
+): Promise<{ item: DeletedItem } | { failure: DeleteFailure }> {
   let validPath: string;
   try {
     validPath = await pathGuard.validatePathForWrite(inputPath);
   } catch (error) {
-    // Path guard violation: soft failure, collect in failures[] instead of throwing
-    return { failure: toDeleteFailure(inputPath, error), soft: true };
+    // Path guard violation: collect in failures[] instead of throwing
+    return { failure: toDeleteFailure(inputPath, error) };
   }
 
   if (pathGuard.isAllowedRoot(validPath)) {
@@ -169,7 +171,6 @@ async function deleteSinglePath(
           validPath,
         ),
       },
-      // No soft flag — workspace root deletion is a hard error
     };
   }
 
@@ -207,37 +208,49 @@ async function handleDelete(
   signal?: AbortSignal,
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>,
 ): Promise<DeleteOutput> {
-  // P3 confirmation-only pattern: process single path (use first path)
-  const inputPath = args.paths[0];
-  if (!inputPath) {
-    throw new McpError(ErrorCode.INVALID_INPUT, 'No paths provided.');
-  }
+  const { results, errors } = await processInParallel(
+    args.paths,
+    (inputPath) => deleteSinglePath(inputPath, args, pathGuard, signal, elicitInput),
+    PARALLEL_CONCURRENCY,
+    signal,
+  );
 
-  const result = await deleteSinglePath(inputPath, args, pathGuard, signal, elicitInput);
+  const successPaths: string[] = [];
+  const failures: DeleteFailureItem[] = [];
 
-  if ('failure' in result) {
-    if (!result.soft) {
-      throw new McpError(
-        result.failure.error.code as ErrorCode,
-        `Failed to delete ${inputPath}`,
-        inputPath,
-      );
+  for (const r of results) {
+    if ('failure' in r) {
+      failures.push({
+        path: r.failure.path,
+        error: {
+          code: r.failure.error.code,
+          message: r.failure.error.message,
+        },
+      });
+    } else if (r.item.path) {
+      successPaths.push(r.item.path);
     }
-    // Soft failure (path guard violation): return in failures[] with ok: true
-    const failureItem: DeleteFailureItem = {
-      path: result.failure.path,
-      error: {
-        code: result.failure.error.code,
-        message: result.failure.error.message,
-      },
-    };
-    return { ok: true as const, failures: [failureItem] };
   }
 
-  return {
-    ok: true as const,
-    path: result.item.path,
-  };
+  // Guard against unexpected throws from deleteSinglePath (should not occur in practice)
+  for (const { index, error } of errors) {
+    const path = args.paths[index] ?? '(unknown)';
+    failures.push({
+      path,
+      error: { code: ErrorCode.UNKNOWN, message: error.message },
+    });
+  }
+
+  const output: DeleteOutput = { ok: true as const };
+  if (successPaths.length === 1) {
+    output.path = successPaths[0];
+  } else if (successPaths.length > 1) {
+    output.paths = successPaths;
+  }
+  if (failures.length > 0) {
+    output.failures = failures;
+  }
+  return output;
 }
 
 export const DELETE_FILE = defineTool({
@@ -257,10 +270,15 @@ export const DELETE_FILE = defineTool({
   progressLabel: (args) => `Delete File: ${args.paths.map((p) => basename(p)).join(', ')}`,
   run: async (args, ctx) => {
     const structured = await handleDelete(args, ctx.pathGuard, ctx.signal, ctx.elicitInput);
-    ctx.log?.('info', `rm: ${args.paths[0]}`, 'rm');
-    const summary = structured.path
-      ? `delete-file: deleted ${structured.path}`
-      : `delete-file: 1 failure`;
+    const deleted = structured.paths ?? (structured.path ? [structured.path] : []);
+    const failCount = structured.failures?.length ?? 0;
+    const delCount = deleted.length;
+    const failSuffix =
+      failCount > 0 ? `, ${String(failCount)} failure${failCount === 1 ? '' : 's'}` : '';
+    const summary =
+      delCount > 0
+        ? `delete-file: deleted ${delCount === 1 ? (deleted[0] ?? '') : `${String(delCount)} paths`}${failSuffix}`
+        : `delete-file: ${String(failCount)} failure${failCount === 1 ? '' : 's'}`;
     return buildToolResponse(summary, structured);
   },
 });

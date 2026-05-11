@@ -401,7 +401,11 @@ describe('rm tool', () => {
       name: 'delete',
       arguments: { paths: [join(env.tmpDir, 'ghost.txt')] },
     });
-    assertToolError(raw, 'NOT_FOUND');
+    assertOk(raw);
+    const sc = getStructured(raw);
+    const failures = sc['failures'] as Record<string, unknown>[] | undefined;
+    assert.ok(Array.isArray(failures) && failures.length === 1, 'Expected 1 failure');
+    assert.equal((failures[0]['error'] as Record<string, unknown>)['code'], 'NOT_FOUND');
   });
 
   it('ignoreIfNotExists suppresses NOT_FOUND', async () => {
@@ -420,7 +424,11 @@ describe('rm tool', () => {
       name: 'delete',
       arguments: { paths: [env.tmpDir], recursive: true },
     });
-    assertToolError(raw, 'ACCESS_DENIED');
+    assertOk(raw);
+    const sc = getStructured(raw);
+    const failures = sc['failures'] as Record<string, unknown>[] | undefined;
+    assert.ok(Array.isArray(failures) && failures.length === 1, 'Expected 1 failure');
+    assert.equal((failures[0]['error'] as Record<string, unknown>)['code'], 'ACCESS_DENIED');
     // Verify root still exists
     const stats = await stat(env.tmpDir);
     assert.ok(stats.isDirectory());
@@ -584,5 +592,69 @@ describe('array size limits', () => {
       (b): b is { type: 'text'; text: string } => b.type === 'text',
     );
     assert.ok(textBlock?.text.includes('100'), 'Expected error to mention the 100 item limit');
+  });
+});
+
+describe('delete: processes all paths in batch', () => {
+  let env: TestEnv;
+  let f1: string;
+  let f2: string;
+  let f3: string;
+
+  before(async () => {
+    env = await createTestEnv();
+    f1 = join(env.tmpDir, 'del-a.txt');
+    f2 = join(env.tmpDir, 'del-b.txt');
+    f3 = join(env.tmpDir, 'del-c.txt');
+    await writeFile(f1, 'a', 'utf8');
+    await writeFile(f2, 'b', 'utf8');
+    await writeFile(f3, 'c', 'utf8');
+  });
+
+  after(async () => {
+    await env.cleanup();
+  });
+
+  it('deletes all three paths and returns them in paths[]', async () => {
+    const result = await env.client.callTool({
+      name: 'delete',
+      arguments: { paths: [f1, f2, f3] },
+    });
+    assertOk(result);
+    const sc = getStructured(result);
+
+    // All three must be gone from the file system
+    for (const f of [f1, f2, f3]) {
+      await assert.rejects(stat(f), { code: 'ENOENT' });
+    }
+
+    // Structured output must list all three deleted paths
+    const paths = sc['paths'] as string[] | undefined;
+    assert.ok(Array.isArray(paths) && paths.length === 3, 'Expected paths[] with 3 entries');
+    assert.ok(paths.some((p) => p.includes('del-a.txt')));
+    assert.ok(paths.some((p) => p.includes('del-b.txt')));
+    assert.ok(paths.some((p) => p.includes('del-c.txt')));
+  });
+
+  it('collects per-path errors for missing files in failures[], continues rest', async () => {
+    const missing = join(env.tmpDir, 'no-such-file.txt');
+    const extra = join(env.tmpDir, 'del-extra.txt');
+    await writeFile(extra, 'x', 'utf8');
+
+    const result = await env.client.callTool({
+      name: 'delete',
+      arguments: { paths: [extra, missing], ignoreIfNotExists: false },
+    });
+    assertOk(result);
+    const sc = getStructured(result);
+
+    // extra must be deleted
+    await assert.rejects(stat(extra), { code: 'ENOENT' });
+
+    // failures[] must mention the missing file
+    const failures = sc['failures'] as Record<string, unknown>[] | undefined;
+    assert.ok(Array.isArray(failures) && failures.length === 1, 'Expected 1 failure');
+    assert.ok((failures[0]['path'] as string).includes('no-such-file.txt'));
+    assert.equal((failures[0]['error'] as Record<string, unknown>)['code'], 'NOT_FOUND');
   });
 });
