@@ -1,0 +1,1049 @@
+
+> @j0hanz/filesystem-mcp@1.19.1 test
+> node --test --import tsx/esm "__tests__/**/*.test.ts" __tests__/tools/directory.test.ts
+
+ÔûÂ Tool contract
+  Ô£ö registers exactly 16 tools with correct names (119.496ms)
+  Ô£ö all tool names match the safe character pattern (78.4551ms)
+  Ô£ö all tools have openWorldHint: false (97.0741ms)
+  Ô£ö read-only tools have readOnlyHint:true and destructiveHint:false (61.3254ms)
+  Ô£ö destructive tools have destructiveHint:true (60.3724ms)
+  Ô£ö make_dir has idempotentHint:true and destructiveHint:false (62.773ms)
+  Ô£ö smoke: list_roots returns ok:true with the test tmpDir (4.5063ms)
+  Ô£ö structuredContent matches outputSchema shape for read-only tools (3041.3307ms)
+  Ô£ö task-capable tools expose execution.taskSupport in tools/list (27.5629ms)
+  Ô£ö all read-only tools return structuredContent with ok:true (9065.8253ms)
+  Ô£ö all input schema properties have descriptions (30.8463ms)
+  Ô£ö tree.maxDepth default is 5 and description matches constant (26.1875ms)
+  Ô£ö no tool description references filePattern (25.5895ms)
+Ô£ö Tool contract (12739.114ms)
+ÔûÂ Prompts contract
+  Ô£ö ALL_PROMPTS matches the 4 expected prompts (7.6427ms)
+Ô£ö Prompts contract (7.7263ms)
+ÔûÂ Completion contract
+  Ô£ö analyze-path: path arg returns path completions (8.7896ms)
+  Ô£ö get-help: topic arg returns section completions (4.9632ms)
+  Ô£ö get-help: undeclared arg returns empty (4.697ms)
+Ô£ö Completion contract (18.6413ms)
+ÔûÂ dist runtime regressions
+  ´╣ú grep from dist can search files in an allowed root (12.0849ms) # dist runtime not present
+Ô£ö dist runtime regressions (13.5788ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+[DEBUG] [HTTP] inbound { kind: 'request', sessionId: null }
+[INFO] Roots updated: 0 root(s), 1 allowed dir(s)
+ÔûÂ HTTP transport
+  Ô£ö accepts negotiated supported protocol versions after initialize (142.9924ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+[INFO] Roots updated: 0 root(s), 1 allowed dir(s)
+  Ô£ö accepts the current protocol version (2025-11-25) (24.7111ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+[INFO] Roots updated: 0 root(s), 1 allowed dir(s)
+  Ô£ö accepts post-initialize HTTP requests without mcp-protocol-version header (27.9238ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+[INFO] Roots updated: 0 root(s), 1 allowed dir(s)
+  Ô£ö accepts the negotiated server protocol version after fallback (24.9889ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+[INFO] Roots updated: 0 root(s), 1 allowed dir(s)
+  Ô£ö accepts post-initialize requests with any supported protocol version (20.3429ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+  Ô£ö rejects browser origins outside localhost (8.7301ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+  Ô£ö rejects loopback requests with a disallowed Host header (9.7625ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+  Ô£ö returns 405 for unsupported HTTP methods on /mcp (9.1491ms)
+  Ô£ö refuses non-loopback HTTP binding without an API key (1.9592ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+[INFO] Roots updated: 0 root(s), 1 allowed dir(s)
+  Ô£ö supports discovery and session termination through the real v2 HTTP client transport (214.4175ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+[WARNING] Client did not send notifications/initialized within 1000ms
+[WARNING] [HTTP] Evicting stale session 1d40e7ac-7107-4af8-aad9-dc276a007601
+  Ô£ö evicts stale uninitialized sessions through the full cleanup path (2216.0454ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+  Ô£ö sets headersTimeout, requestTimeout, and keepAliveTimeout for Slowloris protection (3.3129ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+  Ô£ö does not crash on post-startup HTTP server errors (1.8838ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+  Ô£ö returns 413 for request bodies exceeding the size limit (20.5241ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+  Ô£ö returns 204 No Content for OPTIONS preflight requests on /mcp (4.2493ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+  Ô£ö returns 400 for non-object/array JSON primitives when strict parser is used (4.9367ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+  Ô£ö rejects a stray JSON-RPC response posted without a session id (4.2786ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+[INFO] Roots updated: 0 root(s), 1 allowed dir(s)
+  Ô£ö emits a debug breadcrumb when a client sends notifications/initialized over HTTP (16.7859ms)
+Ô£ö HTTP transport (2759.6726ms)
+ÔûÂ prompts over stdio transport
+  Ô£ö returns analyze-path with required args over stdio transport (791.2509ms)
+  Ô£ö returns find-in-tree with required args over stdio transport (620.4459ms)
+Ô£ö prompts over stdio transport (1413.164ms)
+ÔûÂ prompts
+  Ô£ö lists all 4 prompts (70.1658ms)
+  Ô£ö get-help returns full instructions when no topic (16.8424ms)
+  Ô£ö get-help filters to a known topic (14.0374ms)
+  Ô£ö analyze-path on a file returns text + path link + instructions link (21.9065ms)
+  Ô£ö analyze-path on a directory adapts the task statement (11.7099ms)
+  Ô£ö find-in-tree defaults root to first allowed dir and includes both modes (11.5261ms)
+  Ô£ö find-in-tree mode=name omits grep (10.1791ms)
+  Ô£ö summarize-directory returns text + path link (18.8785ms)
+  Ô£ö summarize-directory honors custom depth (11.598ms)
+  Ô£ö analyze-path rejects a path outside allowed roots (12.7941ms)
+Ô£ö prompts (202.6999ms)
+ÔûÂ resources and metadata
+  Ô£ö lists exactly 1 static resource and 2 resource templates (56.3032ms)
+  Ô£ö reads instructions resource and exposes instructions through initialize metadata (16.1583ms)
+  Ô£ö keeps README and server metadata in sync with the advertised discovery surface (144.767ms)
+  Ô£ö subscribe routing only matches URIs that share scheme/host/path with a registered resource (15.3683ms)
+Ô£ö resources and metadata (234.5939ms)
+ÔûÂ SERVER_INSTRUCTIONS_CONTENT
+  Ô£ö contains all four required sections (1.1849ms)
+  Ô£ö includes known tool names in the overview (0.2555ms)
+  Ô£ö points to tools/list for schemas (0.1873ms)
+  Ô£ö includes all five error recovery codes (0.217ms)
+  Ô£ö mentions resourceUri cache behaviour (0.1974ms)
+  Ô£ö describes cache expiry with TTL and eviction, not just restart (0.2319ms)
+  Ô£ö is a non-empty string (0.2469ms)
+Ô£ö SERVER_INSTRUCTIONS_CONTENT (4.1866ms)
+ÔûÂ INSTRUCTION_SECTIONS
+  Ô£ö exposes the four documented sections as non-empty strings (1.375ms)
+  Ô£ö SERVER_INSTRUCTIONS_CONTENT contains every section body (2.0316ms)
+Ô£ö INSTRUCTION_SECTIONS (3.7683ms)
+Ô£ö toMcpSchema generates valid standard schema (3.7349ms)
+ÔûÂ fields
+  Ô£ö IsoDateTime is in globalRegistry (1.741ms)
+  Ô£ö IsoDateTime $defs entry has no pattern after walk (2.1775ms)
+  Ô£ö NonNegInt is in globalRegistry (0.2481ms)
+  ÔûÂ isSafeGlobSyntax (pure, no PathGuard required)
+    Ô£ö accepts valid relative globs (1.0429ms)
+    Ô£ö rejects absolute POSIX paths (0.2852ms)
+    Ô£ö rejects Windows absolute paths (0.1844ms)
+    Ô£ö rejects traversal patterns (2.2761ms)
+    Ô£ö rejects empty patterns (0.1807ms)
+  Ô£ö isSafeGlobSyntax (pure, no PathGuard required) (4.4966ms)
+  ÔûÂ SafeGlobPattern.safeParse (no PathGuard initialization needed)
+    Ô£ö accepts valid globs without server initialization (0.9623ms)
+    Ô£ö rejects absolute paths without server initialization (0.7977ms)
+    Ô£ö rejects traversal patterns without server initialization (0.2916ms)
+  Ô£ö SafeGlobPattern.safeParse (no PathGuard initialization needed) (2.3266ms)
+  ÔûÂ no duplicate $defs ids
+    Ô£ö FileInfoSchema serializes with a single FileInfo $defs entry (2.9255ms)
+  Ô£ö no duplicate $defs ids (3.0415ms)
+Ô£ö fields (17.2517ms)
+ÔûÂ toToolJsonSchema
+  Ô£ö strips datetime pattern from $defs (1.324ms)
+  Ô£ö strips MAX_SAFE_INTEGER maximum from integer fields (0.5018ms)
+  Ô£ö augment function can inject allOf constraints (0.4931ms)
+Ô£ö toToolJsonSchema (3.6623ms)
+ÔûÂ advertised schema constraints
+  Ô£ö read: rejects head + tail together (174.1963ms)
+  Ô£ö read: rejects head + startLine together (78.0064ms)
+  Ô£ö search_text: rejects absolute path in pattern (72.9201ms)
+  Ô£ö search_text: rejects traversal pattern (61.1018ms)
+  Ô£ö replace_text: rejects absolute path in pattern (57.0582ms)
+Ô£ö advertised schema constraints (444.1749ms)
+ÔûÂ tool schema snapshots
+  Ô£ö matches stored snapshot (set FS_UPDATE_SCHEMA_SNAPSHOT=1 to update) (166.7532ms)
+  Ô£ö each tool has inputSchema and no $schema at root level (87.3239ms)
+Ô£ö tool schema snapshots (255.5482ms)
+ÔûÂ security: path boundary enforcement
+  Ô£ö read: rejects access outside allowed root (1013.3101ms)
+  Ô£ö write: rejects access outside allowed root (2.1892ms)
+  Ô£ö stat: rejects access outside allowed root (1002.0988ms)
+[INFO] rm: C:\Users\PC\AppData\Local\Temp\escape.txt 
+  Ô£ö ls: rejects access outside allowed root (1007.0787ms)
+  Ô£ö delete: rejects access outside allowed root (2.2096ms)
+  Ô£ö make_dir: rejects access outside allowed root (0.8006ms)
+  Ô£ö replace_text: rejects access outside allowed root (1003.3818ms)
+  Ô£ö hash_file: rejects access outside allowed root (1001.9637ms)
+Ô£ö security: path boundary enforcement (5078.2457ms)
+ÔûÂ security: path traversal via ".."
+  Ô£ö read: rejects traversal above tmpDir (1002.4755ms)
+  Ô£ö stat: rejects traversal above tmpDir (1004.3658ms)
+  Ô£ö write: rejects traversal above tmpDir (0.5852ms)
+Ô£ö security: path traversal via ".." (2011.9858ms)
+ÔûÂ security: symlink escape attempt
+  Ô£ö read: rejects symlink pointing outside allowed root (0.7362ms)
+  Ô£ö stat: rejects symlink pointing outside allowed root (0.7628ms)
+Ô£ö security: symlink escape attempt (3.9629ms)
+ÔûÂ security: schema validation rejects malformed input
+  Ô£ö stat: rejects empty paths array (0.695ms)
+  Ô£ö read: rejects empty paths array (0.3953ms)
+  Ô£ö move: rejects missing both source and sources (0.5259ms)
+  Ô£ö move: rejects providing both source and sources (0.3869ms)
+  Ô£ö make_dir: rejects missing both path and paths (0.3308ms)
+  Ô£ö make_dir: rejects providing both path and paths (0.3448ms)
+  Ô£ö ls: rejects unsafe recursive glob patterns (0.5093ms)
+  Ô£ö write: rejects missing content field (0.3685ms)
+Ô£ö security: schema validation rejects malformed input (8.2249ms)
+ÔûÂ security: symlink escape for destructive ops
+  Ô£ö write: rejects writing through symlink to outside (0.7344ms)
+  Ô£ö edit: rejects editing through symlink to outside (0.7551ms)
+  Ô£ö move: rejects moving symlink target outside allowed root (0.6348ms)
+  Ô£ö delete: rejects deleting through symlink to directory outside (0.9529ms)
+Ô£ö security: symlink escape for destructive ops (7.0007ms)
+ÔûÂ roots tool
+  Ô£ö lists allowed roots with terse summary (5.4028ms)
+Ô£ö roots tool (43.3643ms)
+ÔûÂ list tool
+  Ô£û lists top-level entries flat (default maxDepth=1) (3.1417ms)
+  Ô£û recurses when maxDepth > 1 (1.4468ms)
+  Ô£û markdown contains root name and entry names (3.2695ms)
+  Ô£û truncation stores full result in resourceUri (46.516ms)
+  Ô£û totalFiles + totalDirectories === totalEntries (3.9241ms)
+  Ô£û returns ACCESS_DENIED for paths outside allowed roots (1.2709ms)
+  Ô£û returns NOT_DIRECTORY for a file path (2.2738ms)
+Ô£û list tool (92.0047ms)
+[INFO] mkdir: C:\Users\PC\AppData\Local\Temp\fsmcp-cfa33190-I8bRcK\new-dir 
+ÔûÂ mkdir tool
+  Ô£ö creates a new directory (24.0206ms)
+[INFO] mkdir: C:\Users\PC\AppData\Local\Temp\fsmcp-cfa33190-I8bRcK\idempotent-dir 
+  Ô£ö is idempotent ÔÇö creating an existing directory is not an error (8.8159ms)
+[INFO] mkdir: C:\Users\PC\AppData\Local\Temp\fsmcp-cfa33190-I8bRcK\batch-a 
+  Ô£ö creates multiple directories via paths array (10.6306ms)
+  Ô£ö rejects creation outside allowed root (3.705ms)
+Ô£ö mkdir tool (62.6593ms)
+[INFO] rm: C:\Users\PC\AppData\Local\Temp\fsmcp-391122a4-UsZ29b\to-delete.txt 
+[INFO] rm: C:\Users\PC\AppData\Local\Temp\fsmcp-391122a4-UsZ29b\to-delete.txt 
+ÔûÂ rm tool
+  Ô£ö removes an existing file (12.2073ms)
+[INFO] rm: C:\Users\PC\AppData\Local\Temp\fsmcp-391122a4-UsZ29b\to-delete-dir 
+[INFO] rm: C:\Users\PC\AppData\Local\Temp\fsmcp-391122a4-UsZ29b\to-delete-dir 
+  Ô£ö removes a directory recursively (7.3874ms)
+  Ô£ö returns NOT_FOUND error for missing file (6.3087ms)
+[INFO] rm: C:\Users\PC\AppData\Local\Temp\fsmcp-391122a4-UsZ29b\definitely-not-here.txt 
+  Ô£ö ignoreIfNotExists suppresses NOT_FOUND (3.8905ms)
+  Ô£ö returns ACCESS_DENIED error when deleting workspace root (3.1302ms)
+Ô£ö rm tool (44.2603ms)
+[INFO] mv: 1 item(s) ÔåÆ C:\Users\PC\AppData\Local\Temp\fsmcp-7fbf4e17-5aJ6DI\dest.txt 
+[INFO] mv: C:\Users\PC\AppData\Local\Temp\fsmcp-7fbf4e17-5aJ6DI\source.txt ÔåÆ C:\Users\PC\AppData\Local\Temp\fsmcp-7fbf4e17-5aJ6DI\dest.txt 
+ÔûÂ mv tool
+  Ô£ö moves a file to a new path (10.7026ms)
+  Ô£ö returns isError for total failure when source is missing (6.0995ms)
+Ô£ö mv tool (22.5575ms)
+ÔûÂ invalid cursor rejection
+  Ô£ö ls rejects a malformed cursor with INVALID_INPUT (1009.1258ms)
+  Ô£ö find rejects a malformed cursor with INVALID_INPUT (1004.2388ms)
+Ô£ö invalid cursor rejection (2020.2249ms)
+ÔûÂ array size limits
+  Ô£ö make_dir rejects > 1000 paths (7.1687ms)
+Ô£ö array size limits (11.0518ms)
+ÔûÂ edit tool ÔÇö input validation
+  Ô£ö rejects when none of path/paths/files is provided (5.4979ms)
+  Ô£ö rejects when both path and paths are provided (1.5588ms)
+  Ô£ö rejects when both path and files are provided (1.6223ms)
+  Ô£ö rejects paths[] with more than 5 entries (1.479ms)
+  Ô£ö rejects files[] with more than 5 entries (1.4393ms)
+  Ô£ö rejects paths[] without edits (1.0631ms)
+  Ô£ö rejects files[] with top-level edits (1.2053ms)
+  Ô£ö rejects when both paths and files are provided (1.274ms)
+Ô£ö edit tool ÔÇö input validation (61.4954ms)
+[INFO] edit: C:\Users\PC\AppData\Local\Temp\fsmcp-365d8ad7-WJrUAf\a.ts (1 edits, +1/-1) 
+[INFO] edit: C:\Users\PC\AppData\Local\Temp\fsmcp-365d8ad7-WJrUAf\b.ts (1 edits, +1/-1) 
+ÔûÂ edit tool ÔÇö paths[] mode
+  Ô£ö applies same edits to multiple files (59.9212ms)
+[INFO] edit: C:\Users\PC\AppData\Local\Temp\fsmcp-365d8ad7-WJrUAf\good.ts (1 edits, +1/-1) 
+  Ô£ö isolates failures ÔÇö other files succeed (34.4616ms)
+[INFO] edit: C:\Users\PC\AppData\Local\Temp\fsmcp-365d8ad7-WJrUAf\sum.ts (1 edits, +1/-1) 
+  Ô£ö summary string format matches design (n/N ok only when some failed) (42.5328ms)
+Ô£ö edit tool ÔÇö paths[] mode (150.0363ms)
+[INFO] edit: C:\Users\PC\AppData\Local\Temp\fsmcp-a8048a40-QNbhmb\fb.ts (1 edits, +1/-1) 
+[INFO] edit: C:\Users\PC\AppData\Local\Temp\fsmcp-a8048a40-QNbhmb\fa.ts (1 edits, +1/-1) 
+ÔûÂ edit tool ÔÇö files[] mode
+  Ô£ö applies per-file edits (34.7633ms)
+  Ô£ö dryRun: does not write files, returns diff (63.2336ms)
+Ô£ö edit tool ÔÇö files[] mode (109.0596ms)
+[INFO] rm: C:\Users\PC\AppData\Local\Temp\fsmcp-963ecdc1-le8KKW\to-delete 
+[INFO] rm: C:\Users\PC\AppData\Local\Temp\fsmcp-963ecdc1-le8KKW\to-delete 
+ÔûÂ delete: client without elicitation capability
+  Ô£ö deletes directory immediately without elicitation when capability absent (35.2116ms)
+Ô£ö delete: client without elicitation capability (93.7237ms)
+[INFO] rm: C:\Users\PC\AppData\Local\Temp\fsmcp-09706ce7-VRXlWB\guarded-dir 
+ÔûÂ delete: client declines elicitation
+  Ô£ö returns success without deleting when user declines (12.2359ms)
+Ô£ö delete: client declines elicitation (33.2018ms)
+[INFO] rm: C:\Users\PC\AppData\Local\Temp\fsmcp-399dee80-A8OWKf\accept-dir 
+[INFO] rm: C:\Users\PC\AppData\Local\Temp\fsmcp-399dee80-A8OWKf\accept-dir 
+ÔûÂ delete: client accepts elicitation
+  Ô£ö deletes directory when user accepts elicitation (14.0384ms)
+Ô£ö delete: client accepts elicitation (26.7766ms)
+[INFO] mv: 1 item(s) ÔåÆ C:\Users\PC\AppData\Local\Temp\fsmcp-cf21a708-dcAqjs\dest.txt 
+[INFO] mv: C:\Users\PC\AppData\Local\Temp\fsmcp-cf21a708-dcAqjs\src.txt ÔåÆ C:\Users\PC\AppData\Local\Temp\fsmcp-cf21a708-dcAqjs\dest.txt 
+ÔûÂ move: client without elicitation capability
+  Ô£ö overwrites destination immediately when capability absent (7.7085ms)
+Ô£ö move: client without elicitation capability (19.196ms)
+ÔûÂ move: client declines elicitation (destination exists)
+  Ô£ö returns CANCELLED error without moving when user declines overwrite (7.4271ms)
+Ô£ö move: client declines elicitation (destination exists) (16.741ms)
+[INFO] mv: 1 item(s) ÔåÆ C:\Users\PC\AppData\Local\Temp\fsmcp-23bcda20-fnOyff\mv-accept-dest.txt 
+[INFO] mv: C:\Users\PC\AppData\Local\Temp\fsmcp-23bcda20-fnOyff\mv-accept-src.txt ÔåÆ C:\Users\PC\AppData\Local\Temp\fsmcp-23bcda20-fnOyff\mv-accept-dest.txt 
+ÔûÂ move: client accepts elicitation (destination exists)
+  Ô£ö moves and overwrites when user accepts (8.0046ms)
+Ô£ö move: client accepts elicitation (destination exists) (14.6844ms)
+[INFO] rm: C:\Users\PC\AppData\Local\Temp\fsmcp-93828484-a5uQ0r\throw-dir 
+ÔûÂ delete: elicitation handler throws
+  Ô£ö does NOT delete when elicitInput throws (5.1985ms)
+Ô£ö delete: elicitation handler throws (12.016ms)
+ÔûÂ move: elicitation handler throws
+  Ô£ö does NOT move when elicitInput throws (13.8731ms)
+Ô£ö move: elicitation handler throws (20.9058ms)
+ÔûÂ calculate_hash tool
+  Ô£ö calculates file hash and stores in resource (1014.1956ms)
+  Ô£ö calculate-hash with multiple algorithms (1007.3492ms)
+  Ô£ö returns the same hash for identical content (2022.7764ms)
+  Ô£ö returns a different hash after file content changes (2006.3327ms)
+  Ô£ö returns isDirectory:true and fileCount for a directory (1003.9076ms)
+  Ô£ö returns NOT_FOUND for a missing path (1002.0614ms)
+Ô£ö calculate_hash tool (8096.3312ms)
+ÔûÂ HashOutputSchema validation
+  Ô£ö rejects non-hex digest in hashes (0.8119ms)
+Ô£ö HashOutputSchema validation (0.9226ms)
+ÔûÂ McpProgressSink
+  Ô£ö forwards tick events to sendNotification (3.0225ms)
+  Ô£ö ignores status events (0.4275ms)
+  Ô£ö normalizes complete events to 100% display (1.3731ms)
+  Ô£ö normalizes fail events to display max(current, total, 1) (0.3057ms)
+Ô£ö McpProgressSink (7.795ms)
+ÔûÂ progressSessionFromContext
+  Ô£ö constructs a session with McpProgressSink if _meta.progressToken is present (13.0536ms)
+  Ô£ö constructs a session with no sinks if metadata is missing (0.3643ms)
+Ô£ö progressSessionFromContext (13.6791ms)
+ÔûÂ read tool
+  Ô£ö reads the full file content (1013.9966ms)
+  Ô£ö reads a specific line range (1003.3861ms)
+  Ô£ö hashes the full file content even for partial reads (1003.5011ms)
+  Ô£ö does not mark head reads as truncated when the file fits exactly (1006.2146ms)
+  Ô£ö returns NOT_FOUND for missing file (1013.4001ms)
+  Ô£ö returns ACCESS_DENIED outside allowed root (1008.0511ms)
+  Ô£ö returns the resolved absolute path, not the input path (1006.9226ms)
+  Ô£ö read returns summary text block with resource link (1011.585ms)
+  Ô£ö read with continuation returns resource link for each chunk (2026.0079ms)
+  Ô£ö read rejects both path and paths supplied (oneOf shape) (0.8226ms)
+  Ô£ö read JSON schema has flat properties with optional path and paths (56.1193ms)
+Ô£ö read tool (10191.913ms)
+[INFO] write: C:\Users\PC\AppData\Local\Temp\fsmcp-0526f1ee-ByZCmg\written.txt (11 bytes) 
+[INFO] write: C:\Users\PC\AppData\Local\Temp\fsmcp-0526f1ee-ByZCmg\written.txt (11 bytes) 
+ÔûÂ write tool
+  Ô£ö creates a new file with content (4.9704ms)
+[INFO] write: C:\Users\PC\AppData\Local\Temp\fsmcp-0526f1ee-ByZCmg\overwrite.txt (11 bytes) 
+[INFO] write: C:\Users\PC\AppData\Local\Temp\fsmcp-0526f1ee-ByZCmg\overwrite.txt (11 bytes) 
+  Ô£ö overwrites an existing file (6.5048ms)
+[INFO] write: C:\Users\PC\AppData\Local\Temp\fsmcp-0526f1ee-ByZCmg\nested\deep\file.txt (6 bytes) 
+[INFO] write: C:\Users\PC\AppData\Local\Temp\fsmcp-0526f1ee-ByZCmg\nested\deep\file.txt (6 bytes) 
+  Ô£ö creates parent directories and stores resource (3.5562ms)
+  Ô£ö returns ACCESS_DENIED outside allowed root (0.5827ms)
+  Ô£ö returns an error when path is omitted (0.3683ms)
+Ô£ö write tool (20.1979ms)
+ÔûÂ read_many tool
+  Ô£ö reads multiple files in one call (1004.7939ms)
+  Ô£ö includes per-path error for missing files (1003.4669ms)
+  Ô£ö reads with startLine/endLine range (1003.5646ms)
+  Ô£ö rejects binary files with per-path error (1002.262ms)
+  Ô£ö read_many with large file list creates proper resource links (1010.7016ms)
+Ô£ö read_many tool (5029.0133ms)
+ÔûÂ read_many tool budget enforcement
+  Ô£ö skips files that exceed maxTotalSize budget (1003.9158ms)
+Ô£ö read_many tool budget enforcement (1007.2412ms)
+ÔûÂ read tool ÔÇö byte-range
+  Ô£ö reads middle bytes with offset and length (1006.8963ms)
+  Ô£ö clamps length to file end and sets reachedEOF (1007.4945ms)
+  Ô£ö reads to EOF when no length given (1007.4633ms)
+  Ô£ö returns empty when offset is past EOF (1007.6744ms)
+  Ô£ö rejects offset combined with startLine (3.7744ms)
+Ô£ö read tool ÔÇö byte-range (4033.595ms)
+[INFO] edit: C:\Users\PC\AppData\Local\Temp\fsmcp-8ab4a042-k0i872\edit-me.txt (1 edits, +1/-1) 
+[INFO] edit: C:\Users\PC\AppData\Local\Temp\fsmcp-8ab4a042-k0i872\edit-me.txt (1 edits) 
+ÔûÂ edit tool
+  Ô£ö applies a text replacement (19.2319ms)
+[INFO] edit: C:\Users\PC\AppData\Local\Temp\fsmcp-8ab4a042-k0i872\dry-edit.txt (1 edits) 
+  Ô£ö dryRun:true does not modify the file but stores in resource (35.8142ms)
+  Ô£ö rejects edits with an empty oldText target (1.0466ms)
+  Ô£ö reports unmatched edits when oldText is not found (5.3061ms)
+[INFO] edit: C:\Users\PC\AppData\Local\Temp\fsmcp-8ab4a042-k0i872\sequential.txt (2 edits, +1/-1) 
+[INFO] edit: C:\Users\PC\AppData\Local\Temp\fsmcp-8ab4a042-k0i872\sequential.txt (2 edits) 
+  Ô£ö applies sequential edits against updated content (17.5951ms)
+[INFO] edit: C:\Users\PC\AppData\Local\Temp\fsmcp-8ab4a042-k0i872\dry-diff.txt (1 edits) 
+  Ô£ö returns diff and stats in dryRun mode without modifying the file (47.7236ms)
+[INFO] edit: C:\Users\PC\AppData\Local\Temp\fsmcp-8ab4a042-k0i872\partial-edit.txt (1 edits, +1/-1) 
+[INFO] edit: C:\Users\PC\AppData\Local\Temp\fsmcp-8ab4a042-k0i872\partial-edit.txt (1 edits) 
+  Ô£ö returns ok:true even when some edits are unmatched (18.6522ms)
+  Ô£ö rejects binary files instead of rewriting them as text (2.4397ms)
+Ô£ö edit tool (151.7384ms)
+ÔûÂ grep tool
+  Ô£ö finds literal matches across files (1023.5025ms)
+  Ô£ö finds regex matches (1010.5911ms)
+  Ô£ö restricts search using filePattern (1013.7389ms)
+  Ô£ö maxDepth:0 excludes nested matches (1002.8827ms)
+  Ô£ö rejects unsafe filePattern values before traversal (0.9674ms)
+  Ô£ö search_text rejects absolute filePattern (..) (2.0662ms)
+  Ô£ö returns empty matches for a pattern that is not found (1005.9896ms)
+  Ô£ö preserves UTF-8 match text in the rendered response body (1011.9524ms)
+  Ô£ö supports task-mode execution via the client tasks API (1006.5548ms)
+Ô£ö grep tool (7118.1105ms)
+ÔûÂ find tool
+  Ô£ö finds files matching a glob pattern (1009.6546ms)
+  Ô£ö excludes non-matching files (1006.317ms)
+  Ô£ö returns empty results when no files match (1008.1065ms)
+  Ô£ö search-files with many results stores in resource (1015.8689ms)
+Ô£ö find tool (4045.2204ms)
+[INFO] search_and_replace: 2 file(s), 2 match(es) 
+[INFO] search_and_replace: 2 matches in 2 files 
+ÔûÂ search_and_replace tool
+  Ô£ö replaces text in all matching files (1001.5422ms)
+  Ô£ö dryRun:true does not modify any files (1003.4598ms)
+[INFO] search_and_replace: 1 file(s), 2 match(es) 
+[INFO] search_and_replace: 2 matches in 1 files 
+  Ô£ö supports regex replacement (1010.353ms)
+  Ô£ö returns ACCESS_DENIED when path escapes allowed root (1000.9561ms)
+  Ô£ö maxDepth:0 excludes nested files (1007.4615ms)
+  Ô£ö maxResults cap stops early and sets stoppedReason (1013.7233ms)
+Ô£ö search_and_replace tool (6042.5572ms)
+ÔûÂ grep tool ÔÇö asymmetric context
+  Ô£ö contextBefore only: includes lines before match but not after (1006.3719ms)
+  Ô£ö contextAfter only: includes lines after match but not before (1007.2847ms)
+  Ô£ö contextBefore overrides contextLines for before (1007.9079ms)
+Ô£ö grep tool ÔÇö asymmetric context (3021.7765ms)
+ÔûÂ grep tool - fuzzy search
+  Ô£ö finds approximate matches with fuzzy enabled (1006.9122ms)
+  Ô£ö rejects fuzzy + isRegex combination (1007.3667ms)
+  Ô£ö rejects fuzzy pattern shorter than 4 characters (1007.4921ms)
+Ô£ö grep tool - fuzzy search (3021.9787ms)
+ÔûÂ stat tool
+  Ô£ö returns file info for an existing file (1010.6401ms)
+  Ô£ö returns dir info for an existing directory (1013.7854ms)
+  Ô£ö returns NOT_FOUND for a missing path (1002.561ms)
+  Ô£ö returns ACCESS_DENIED when path escapes allowed root (1003.8372ms)
+  Ô£ö stat JSON schema has flat properties with optional path and paths (56.9927ms)
+Ô£ö stat tool (4119.6812ms)
+ÔûÂ stat_many tool
+  Ô£ö gets stats for multiple files (1011.0319ms)
+  Ô£ö includes per-path error for missing entries (1006.3754ms)
+  Ô£ö stat-many with large file list (1018.4339ms)
+  Ô£ö rejects empty paths array (schema validation) (0.8567ms)
+Ô£ö stat_many tool (3041.6471ms)
+ÔûÂ worker output parity
+  Ô£ö diff task matches structuredPatch inline (150.233ms)
+  Ô£ö createPatch task matches createTwoFilesPatch inline (1.7592ms)
+  Ô£ö applyPatch task matches applyPatch inline (3.9863ms)
+  Ô£ö applyPatch returns false for non-applicable patch (1.049ms)
+Ô£ö worker output parity (158.5855ms)
+ÔûÂ createTimedAbortSignal
+  Ô£ö aborts the signal after the timeout elapses (100.5231ms)
+  Ô£ö cleanup() cancels the pending timer so the signal is NOT aborted (160.0167ms)
+  Ô£ö returns a noop signal when no timeout and no base signal (0.2627ms)
+  Ô£ö returns the base signal unchanged when no timeout (0.1773ms)
+  Ô£ö combines base signal and timeout ÔÇö base abort wins (0.4077ms)
+Ô£ö createTimedAbortSignal (262.8036ms)
+ÔûÂ createServer config
+  Ô£ö creates server with enforceStrictCapabilities enabled (19.1339ms)
+Ô£ö createServer config (20.2444ms)
+ÔûÂ Cleanup Refactors
+  Ô£ö JSON stringify handles serialization correctly (1.1374ms)
+  Ô£ö Date.now() temporal consistency (0.2986ms)
+  Ô£ö for...of preserves iteration and side effects (1.318ms)
+  Ô£ö delete operator removes properties same as Reflect.deleteProperty (0.3514ms)
+  Ô£ö verifies that all refactors are pure refactors with no behavior change (0.3041ms)
+Ô£ö Cleanup Refactors (5.0168ms)
+ÔûÂ completions
+  Ô£ö does not reuse stale path suggestions for a different prefix inside the rate limit window (40.3997ms)
+  Ô£ö does not collide cache keys when context values contain delimiter characters (8.6059ms)
+  Ô£ö does not enumerate completion entries through a linked directory outside allowed roots (9.1723ms)
+  Ô£ö completes topic sections for the get-help prompt (4.3798ms)
+  Ô£ö returns empty completions for arg names not declared by the prompt (2.5086ms)
+Ô£ö completions (66.4873ms)
+Ô£ö coreHandler has explicit Promise<CallToolResult> return type annotation (1.4451ms)
+Ô£ö CallToolResult type is correctly imported from MCP SDK (0.2805ms)
+ÔûÂ decodeOffsetCursor
+  Ô£ö round-trips a valid offset (2.4008ms)
+  Ô£ö round-trips offset 0 (0.3523ms)
+  Ô£ö throws McpError on non-base64url garbage (0.8666ms)
+  Ô£ö throws McpError when JSON has no offset key (1.0647ms)
+  Ô£ö throws McpError when offset is a string (0.3839ms)
+  Ô£ö throws McpError when offset is negative (0.3975ms)
+  Ô£ö throws McpError when offset is a float (0.3661ms)
+Ô£ö decodeOffsetCursor (8.5444ms)
+Ô£ö defineTool: returns DefinedTool with name and register (3.391ms)
+Ô£ö defineTool: registers a standard tool with server.registerTool (0.9844ms)
+Ô£ö defineTool: run receives args and ToolCtx with signal (1.9779ms)
+Ô£ö defineTool: tool runs without crash on basic invocation (0.7982ms)
+Ô£ö defineTool: extended input schema works (0.8282ms)
+Ô£ö defineTool: progressLabel option is accepted (0.3446ms)
+Ô£ö defineTool: all annotation types are accepted (0.5038ms)
+Ô£ö defineTool: handler returns not-initialized error when guard fails (0.2481ms)
+Ô£ö defineTool: handler returns formatted error on thrown exception (1.2567ms)
+Ô£ö defineTool: defaultErrorCode is used in error responses (0.4326ms)
+Ô£ö defineTool: resourceStore is injected into ToolCtx (0.3707ms)
+Ô£ö defineTool: inputSchema and outputSchema are present (0.2462ms)
+Ô£ö progress label fallback: uses title when progressLabel not provided (1.2055ms)
+Ô£ö defineTool creates DefinedTool properly (2.7253ms)
+Ô£ö defineTool execution handles errors (0.4018ms)
+Ô£ö ALL_TOOLS registry stores defined tools (0.377ms)
+[WARNING] Invalid FS_CONTEXT_TEST_INLINE value: 0 (must be 1-10000). Using default: 50 
+ÔûÂ FS_CONTEXT_MAX_INLINE_MATCHES parsing
+  Ô£ö parseEnvInt treats "0" as below-minimum, returning default (2.1883ms)
+  Ô£ö parseEnvInt treats "25" as valid, returning 25 (0.8218ms)
+Ô£ö FS_CONTEXT_MAX_INLINE_MATCHES parsing (4.1353ms)
+Ô£ö worker constants are within sensible bounds (0.1511ms)
+ÔûÂ isNodeError
+  Ô£ö returns true for system errors with a string code (0.791ms)
+  Ô£ö returns false for plain Error with no code (0.1436ms)
+  Ô£ö returns false for plain Error with numeric code (0.1214ms)
+  Ô£ö returns false for non-Error primitives (0.0947ms)
+Ô£ö isNodeError (2.1818ms)
+ÔûÂ McpError ÔÇö legacy constructor
+  Ô£ö stores code, message, and is instanceof Error (0.452ms)
+  Ô£ö has name "McpError" (0.1495ms)
+  Ô£ö stores optional path (0.2626ms)
+  Ô£ö stores no path when not provided (0.2528ms)
+  Ô£ö has a problem property with the correct code (0.2921ms)
+Ô£ö McpError ÔÇö legacy constructor (1.9043ms)
+ÔûÂ McpError ÔÇö Problem constructor
+  Ô£ö wraps a Problem directly (0.3292ms)
+  Ô£ö wraps a Problem with cause (0.1898ms)
+  Ô£ö VALIDATION_FAILED problem exposes issues (0.247ms)
+Ô£ö McpError ÔÇö Problem constructor (0.9814ms)
+ÔûÂ getSuggestion
+  Ô£ö returns a string or undefined for every ErrorCode value (0.2007ms)
+Ô£ö getSuggestion (0.2826ms)
+ÔûÂ classifyError ÔÇö no message sniffing
+  Ô£ö classifies plain Error with no errno as IO_ERROR (0.5938ms)
+  Ô£ö does NOT classify by message substring (0.2101ms)
+  Ô£ö classifies by errno code when present (0.253ms)
+  Ô£ö classifies non-Error as UNKNOWN (0.14ms)
+Ô£ö classifyError ÔÇö no message sniffing (2.1981ms)
+ÔûÂ classifyError ÔÇö errno regression locks
+  Ô£ö EMFILE ÔåÆ IO_ERROR (was TIMEOUT) (0.1417ms)
+  Ô£ö ENFILE ÔåÆ IO_ERROR (was TIMEOUT) (0.0922ms)
+  Ô£ö EBUSY ÔåÆ IO_ERROR (was PERMISSION_DENIED) (0.0805ms)
+Ô£ö classifyError ÔÇö errno regression locks (0.4063ms)
+ÔûÂ isAbortError
+  Ô£ö returns true for AbortError by name (0.1496ms)
+  Ô£ö returns true for ABORT_ERR errno (0.0876ms)
+  Ô£ö returns false for plain Error (0.0707ms)
+  Ô£ö returns false for non-Error (0.052ms)
+Ô£ö isAbortError (0.455ms)
+ÔûÂ isTimeoutLikeError
+  Ô£ö returns true for TimeoutError by name (0.2052ms)
+  Ô£ö returns true for ETIMEDOUT errno (0.1101ms)
+  Ô£ö returns false for plain Error (0.0909ms)
+Ô£ö isTimeoutLikeError (0.5492ms)
+ÔûÂ createDetailedError
+  Ô£ö produces code and message from errno error (0.3167ms)
+  Ô£ö accepts optional path override (0.1486ms)
+  Ô£ö VALIDATION_FAILED error exposes issues array (2.4517ms)
+Ô£ö createDetailedError (3.0516ms)
+ÔûÂ processInParallel
+  Ô£ö correctly handles results containing undefined (1.6276ms)
+  Ô£ö correctly handles mixed results with some undefined (0.2346ms)
+  Ô£ö correctly handles all results as undefined (0.2379ms)
+Ô£ö processInParallel (3.1651ms)
+ÔûÂ isLoopbackHttpHost
+  Ô£ö accepts canonical loopback hosts (0.6501ms)
+  Ô£ö is case-insensitive and trims whitespace (0.1076ms)
+  Ô£ö rejects non-loopback hosts (0.1229ms)
+Ô£ö isLoopbackHttpHost (1.6404ms)
+ÔûÂ isAllowedLocalhostOrigin
+  Ô£ö allows http and https localhost origins with optional port (0.2267ms)
+  Ô£ö rejects non-localhost origins (0.1163ms)
+Ô£ö isAllowedLocalhostOrigin (0.5031ms)
+ÔûÂ validateBearerAuthorization
+  Ô£ö accepts a matching Bearer token (0.4967ms)
+  Ô£ö rejects a mismatched token (0.1578ms)
+  Ô£ö rejects missing or non-Bearer headers (0.1657ms)
+  Ô£ö rejects a token exceeding the 4096-byte cap (0.149ms)
+Ô£ö validateBearerAuthorization (1.2885ms)
+ÔûÂ assertHttpBindingPolicy
+  Ô£ö allows loopback bind without an API key (0.7038ms)
+  Ô£ö allows non-loopback bind when an API key is set (3.1991ms)
+  Ô£ö refuses non-loopback bind without an API key (0.6597ms)
+Ô£ö assertHttpBindingPolicy (4.7924ms)
+ÔûÂ HttpSessionRegistry
+  Ô£ö add/get/size track sessions and expose log-router attachment (1.1741ms)
+  Ô£ö remove deletes from sessions, log-router, and event store (0.2536ms)
+  Ô£ö getOrRespondNotFound returns the session when present (0.2198ms)
+  Ô£ö getOrRespondNotFound writes a 404 JSON-RPC error when missing (0.3265ms)
+[WARNING] [HTTP] Evicting stale session stale
+[ERROR] [HTTP] Error closing session on shutdown: boom
+  Ô£ö startSweep evicts uninitialized sessions older than handshakeTimeoutMs (92.0762ms)
+  Ô£ö startSweep is idempotent (0.3173ms)
+  Ô£ö closeAll closes every session, stops the sweep, and clears event store (0.2355ms)
+  Ô£ö closeAll swallows individual session close errors (0.3831ms)
+Ô£ö HttpSessionRegistry (96.0881ms)
+[INFO] orphaned
+[INFO] no listener
+ÔûÂ LogRouter
+  Ô£ö global() returns a singleton instance (0.9445ms)
+  Ô£ö routes events without a sessionId to the stdio target (0.6292ms)
+  Ô£ö attachStdio is idempotent ÔÇö second call does not replace the first (0.2424ms)
+  Ô£ö routes events with a sessionId to the matching session target (0.3725ms)
+  Ô£ö detachSession stops routing for that session id (0.8108ms)
+  Ô£ö detachStdio removes fallback routing (0.3844ms)
+Ô£ö LogRouter (4.438ms)
+ÔûÂ detectMimeType
+  Ô£ö detects TypeScript by extension (0.8938ms)
+  Ô£ö detects PNG by extension (0.2193ms)
+  Ô£ö detects PDF by extension (0.1846ms)
+  Ô£ö detects PNG by magic bytes (no extension) (0.2879ms)
+  Ô£ö detects JSON by extension (0.1796ms)
+  Ô£ö detects Markdown by extension (0.1601ms)
+  Ô£ö detects diff by extension (0.1383ms)
+  Ô£ö falls back to text/plain for unknown text files (0.3045ms)
+  Ô£ö falls back to application/octet-stream for unknown binary files (0.2166ms)
+  Ô£ö detects JPEG by magic bytes (0.2467ms)
+  Ô£ö detects PDF by magic bytes (0.1181ms)
+  Ô£ö prioritizes extension over magic bytes when both available (0.0934ms)
+  Ô£ö returns correct kind for image formats (0.1276ms)
+Ô£ö detectMimeType (4.7503ms)
+Ô£ö observability tool context (1.6155ms)
+Ô£ö startPerfMeasure does not crash without subscribers (0.2733ms)
+Ô£ö withToolDiagnostics returns correct value and catches errors (0.7612ms)
+Ô£ö extracts error from structured outcome (1.1003ms)
+Ô£ö ops trace functions (0.5608ms)
+ÔûÂ path-completer
+  Ô£ö returns allowed directories on empty input without context (15.634ms)
+  Ô£ö matches files inside directory (17.3134ms)
+  Ô£ö uses context base directory when input is empty (4.7759ms)
+  Ô£ö matches named root input (4.2462ms)
+Ô£ö path-completer (43.4424ms)
+Ô£ö validateExistingPath resolves a file within allowed dir (7.8141ms)
+Ô£ö validateExistingPath rejects path outside allowed dirs (0.8688ms)
+Ô£ö isSensitive returns true for .env files (5.2496ms)
+Ô£ö isSensitive returns false for normal files (1.7647ms)
+Ô£ö isSafeGlob returns false for traversal patterns (0.222ms)
+Ô£ö isSafeGlob returns true for safe patterns (0.227ms)
+Ô£ö isSensitive works before initialize() (0.5059ms)
+Ô£ö validateExistingPath throws before initialize() (0.3806ms)
+Ô£ö getAllowedDirectories returns the initialized dirs (0.2431ms)
+Ô£ö validateExistingDirectory rejects a file path (6.4778ms)
+Ô£ö validatePathForWrite returns normalized path for new file (3.6882ms)
+ÔûÂ classify
+  Ô£ö returns UNKNOWN for non-Error values (0.9491ms)
+  Ô£ö returns IO_ERROR for plain Error with no errno and no cause (0.3399ms)
+  Ô£ö does NOT classify by message substring (0.1426ms)
+Ô£ö classify (2.3212ms)
+ÔûÂ Problem factories
+  Ô£ö Problem.notFound builds a NOT_FOUND problem (0.1377ms)
+Ô£ö Problem factories (0.2499ms)
+ÔûÂ classify ÔÇö errno table
+  Ô£ö ENOENT ÔåÆ NOT_FOUND (0.2783ms)
+  Ô£ö EACCES ÔåÆ PERMISSION_DENIED (0.1788ms)
+  Ô£ö EPERM ÔåÆ PERMISSION_DENIED (0.1474ms)
+  Ô£ö ENOTDIR ÔåÆ NOT_DIRECTORY (0.128ms)
+  Ô£ö EISDIR ÔåÆ NOT_FILE (0.1439ms)
+  Ô£ö ELOOP ÔåÆ SYMLINK_NOT_ALLOWED (0.1736ms)
+  Ô£ö ENAMETOOLONG ÔåÆ INVALID_INPUT (0.1472ms)
+  Ô£ö ETIMEDOUT ÔåÆ TIMEOUT (0.1024ms)
+  Ô£ö ENOTEMPTY ÔåÆ NOT_DIRECTORY (0.0628ms)
+  Ô£ö EEXIST ÔåÆ INVALID_INPUT (0.0627ms)
+  Ô£ö EINVAL ÔåÆ INVALID_INPUT (0.0514ms)
+Ô£ö classify ÔÇö errno table (1.905ms)
+ÔûÂ classify ÔÇö errno fixes (regression locks)
+  Ô£ö EMFILE ÔåÆ IO_ERROR (was TIMEOUT) (0.1233ms)
+  Ô£ö ENFILE ÔåÆ IO_ERROR (was TIMEOUT) (0.0694ms)
+  Ô£ö EBUSY ÔåÆ IO_ERROR (was PERMISSION_DENIED) (0.0629ms)
+Ô£ö classify ÔÇö errno fixes (regression locks) (0.3735ms)
+ÔûÂ classify ÔÇö abort & timeout
+  Ô£ö AbortError name ÔåÆ CANCELLED (0.1466ms)
+  Ô£ö code ABORT_ERR ÔåÆ CANCELLED (0.0713ms)
+  Ô£ö TimeoutError name ÔåÆ TIMEOUT (0.0866ms)
+Ô£ö classify ÔÇö abort & timeout (0.3876ms)
+ÔûÂ classify ÔÇö cause chain
+  Ô£ö walks .cause to find errno (0.1933ms)
+  Ô£ö terminates on first abort hit even if outer has errno cause (0.1465ms)
+Ô£ö classify ÔÇö cause chain (0.4241ms)
+ÔûÂ classify ÔÇö Problem details propagate errno
+  Ô£ö records errno + syscall in details (0.1774ms)
+Ô£ö classify ÔÇö Problem details propagate errno (0.253ms)
+ÔûÂ zodErrorToProblem
+  Ô£ö maps a Zod validation error to VALIDATION_FAILED with issues[] (3.6484ms)
+  Ô£ö preserves custom params from superRefine issues (1.1307ms)
+  Ô£ö classify(ZodError) routes through zodErrorToProblem (0.9665ms)
+Ô£ö zodErrorToProblem (5.8761ms)
+ÔûÂ resolveSuggestion
+  Ô£ö returns per-code default when no issues and no schema (0.1201ms)
+  Ô£ö returns undefined for VALIDATION_FAILED with no issues + no schema (0.0804ms)
+  Ô£ö rule-params suggestion wins over per-code default (0.0935ms)
+  Ô£ö schema-meta suggestion wins over rule-params and default (0.4755ms)
+Ô£ö resolveSuggestion (0.8921ms)
+ÔûÂ truncateProgressPattern
+  Ô£ö returns short patterns unchanged (0.9518ms)
+  Ô£ö returns pattern at exact maxLength unchanged (0.1742ms)
+  Ô£ö hard-truncates long patterns without pipe (0.1509ms)
+  Ô£ö shows first 2 segments for pipe-separated patterns (0.1461ms)
+  Ô£ö hard-truncates when first 2 segments exceed maxLength (0.2046ms)
+  Ô£ö respects custom maxLength (0.2154ms)
+  Ô£ö handles single-segment pipe pattern (trailing pipe) (0.1584ms)
+Ô£ö truncateProgressPattern (4.3998ms)
+[WARNING] ProgressSink emit failed {
+  sink: 'bad',
+  eventKind: 'tick',
+  err: Error: sink failure
+      at Object.emit (C:\filesystem-mcp\__tests__\unit\progress-session.test.ts:267:15)
+      at ProgressSession.#emitGuarded (C:\filesystem-mcp\src\core\observability.ts:925:27)
+      at ProgressSession.#dispatch (C:\filesystem-mcp\src\core\observability.ts:904:12)
+      at new ProgressSession (C:\filesystem-mcp\src\core\observability.ts:826:10)
+      at TestContext.<anonymous> (C:\filesystem-mcp\__tests__\unit\progress-session.test.ts:270:21)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+}
+[WARNING] ProgressSink emit failed {
+  sink: 'bad',
+  eventKind: 'complete',
+  err: Error: sink failure
+      at Object.emit (C:\filesystem-mcp\__tests__\unit\progress-session.test.ts:267:15)
+      at ProgressSession.#emitGuarded (C:\filesystem-mcp\src\core\observability.ts:925:27)
+      at ProgressSession.#dispatch (C:\filesystem-mcp\src\core\observability.ts:904:12)
+      at ProgressSession.complete (C:\filesystem-mcp\src\core\observability.ts:874:10)
+      at TestContext.<anonymous> (C:\filesystem-mcp\__tests__\unit\progress-session.test.ts:279:13)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+}
+[WARNING] ProgressSink emit failed {
+  sink: 'bad-async',
+  eventKind: 'tick',
+  err: Error: async sink failure
+      at Object.emit (C:\filesystem-mcp\__tests__\unit\progress-session.test.ts:288:31)
+      at ProgressSession.#emitGuarded (C:\filesystem-mcp\src\core\observability.ts:925:27)
+      at ProgressSession.#dispatch (C:\filesystem-mcp\src\core\observability.ts:904:12)
+      at new ProgressSession (C:\filesystem-mcp\src\core\observability.ts:826:10)
+      at TestContext.<anonymous> (C:\filesystem-mcp\__tests__\unit\progress-session.test.ts:291:21)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+}
+[WARNING] ProgressSink emit failed {
+  sink: 'bad-async',
+  eventKind: 'complete',
+  err: Error: async sink failure
+      at Object.emit (C:\filesystem-mcp\__tests__\unit\progress-session.test.ts:288:31)
+      at ProgressSession.#emitGuarded (C:\filesystem-mcp\src\core\observability.ts:925:27)
+      at ProgressSession.#dispatch (C:\filesystem-mcp\src\core\observability.ts:904:12)
+      at ProgressSession.complete (C:\filesystem-mcp\src\core\observability.ts:874:10)
+      at TestContext.<anonymous> (C:\filesystem-mcp\__tests__\unit\progress-session.test.ts:296:13)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+}
+ÔûÂ ProgressSession
+  Ô£ö emits a synthetic start tick on construction (2.142ms)
+  Ô£ö step advances cursor by one and emits a tick (0.3288ms)
+  Ô£ö set clamps cursor monotonically and emits with provided fields (0.3146ms)
+  Ô£ö complete emits a complete event carrying the current cursor (0.2206ms)
+  Ô£ö fail emits a fail event with error and optional message (0.187ms)
+  Ô£ö calls after a terminal event are no-ops (0.1807ms)
+  Ô£ö status emits a status event without advancing cursor (0.1821ms)
+  Ô£ö rate-limits tick events within 50ms window (0.1654ms)
+  Ô£ö terminal events bypass the rate limit (0.1439ms)
+  Ô£ö status events bypass the rate limit (0.1923ms)
+  Ô£ö sync sink errors are caught and other sinks still receive the event (3.6797ms)
+  Ô£ö async sink rejections are caught (0.7715ms)
+  Ô£ö empty sink array works without errors (0.1156ms)
+Ô£ö ProgressSession (10.1903ms)
+Ô£ö putBlob stores and getBlob retrieves binary data correctly (3.083ms)
+Ô£ö putBlob deduplicates identical content (0.2261ms)
+Ô£ö getBlob throws when called on a text URI (0.5957ms)
+Ô£ö getText throws when called on a blob URI (0.2197ms)
+Ô£ö Default TTL is 60 seconds (0.1706ms)
+Ô£ö putText with same data still stores as text kind (0.1829ms)
+Ô£ö putBlob rejects data larger than maxEntryBytes (0.1997ms)
+Ô£ö getBlob expires after TTL (150.6325ms)
+ÔûÂ resource store
+  Ô£ö expires entries on read and removes them from the key list (24.2149ms)
+  Ô£ö does not deduplicate cached resources across different mime types (0.4819ms)
+  Ô£ö evicts least recently used entries when limits are reached (0.4562ms)
+Ô£ö resource store (26.2761ms)
+ÔûÂ RootsManager
+  Ô£ö coalesces repeated roots change notifications into one update (156.7019ms)
+[WARNING] Client did not send notifications/initialized within 30000ms
+  Ô£ö cancels pending debounced updates on destroy (164.8869ms)
+  Ô£ö clears init timer when initialized notification is received (0.5502ms)
+  Ô£ö clears init timer on destroy before initialized (0.2893ms)
+  Ô£ö invokes onInitTimeout callback when client never initializes (1.2675ms)
+  Ô£ö does not invoke onInitTimeout when initialized arrives first (0.2969ms)
+Ô£ö RootsManager (325.6033ms)
+ÔûÂ RootSchema validation
+  ÔûÂ valid file:// URIs
+    Ô£ö accepts file:// with absolute path (2.2943ms)
+    Ô£ö accepts file:// with relative path components (0.1521ms)
+    Ô£ö accepts file:// URI with name (0.1158ms)
+    Ô£ö accepts file:// URI with Windows-style path (0.1227ms)
+    Ô£ö accepts file:// URI with special characters in path (0.1893ms)
+  Ô£ö valid file:// URIs (3.6734ms)
+  ÔûÂ invalid non-file:// URIs
+    Ô£ö rejects URI without prefix (0.4824ms)
+    Ô£ö rejects http:// URI (0.1864ms)
+    Ô£ö rejects https:// URI (0.1871ms)
+    Ô£ö rejects empty string (0.2687ms)
+    Ô£ö rejects relative path without file:// prefix (0.2601ms)
+    Ô£ö rejects ftp:// URI (0.1685ms)
+  Ô£ö invalid non-file:// URIs (1.9089ms)
+  ÔûÂ RootsResponseSchema with array of roots
+    Ô£ö accepts array of valid file:// URIs (0.6352ms)
+    Ô£ö filters out roots with invalid URIs via safeParse (0.3586ms)
+    Ô£ö accepts empty roots array (0.1376ms)
+    Ô£ö accepts response with no roots key (0.1034ms)
+  Ô£ö RootsResponseSchema with array of roots (1.4074ms)
+  ÔûÂ extractRoots integration (safeParse behavior)
+    Ô£ö returns empty array for invalid response (0.2426ms)
+    Ô£ö returns empty array for response with no roots (0.0792ms)
+    Ô£ö returns empty array for null value (0.2873ms)
+    Ô£ö returns valid roots from valid response (0.1513ms)
+  Ô£ö extractRoots integration (safeParse behavior) (0.914ms)
+  ÔûÂ error messages
+    Ô£ö provides clear error message when URI is missing file:// prefix (0.1881ms)
+  Ô£ö error messages (0.2518ms)
+Ô£ö RootSchema validation (8.8077ms)
+Ô£ö buildResourceResponse: summary + resource_link blocks + structured (1.8774ms)
+Ô£ö putResource: text kind uses putText and returns resource_link (1.825ms)
+Ô£ö putResource: image kind uses putBlob (0.3087ms)
+ÔûÂ tool output validation
+  Ô£ö converts invalid structuredContent into a tool error response (2.9526ms)
+Ô£ö tool output validation (3.6782ms)
+ÔûÂ SEP-414 trace context propagation
+  Ô£ö exposes trace context via getTraceContext() inside tool execution (0.6632ms)
+  Ô£ö silently drops invalid traceparent values (0.2967ms)
+  Ô£ö works without trace context (backward compatible) (0.261ms)
+Ô£ö SEP-414 trace context propagation (1.4601ms)
+ÔûÂ readResourceLink helper
+  Ô£ö fetches text resource from store (2.1708ms)
+  Ô£ö fetches blob resource from store (0.662ms)
+  Ô£ö returns null when no resource_link found (0.2404ms)
+  Ô£ö returns null when result has no content (0.1502ms)
+  Ô£ö returns null when resource_link uri is not found in store (0.282ms)
+Ô£ö readResourceLink helper (3.8434ms)
+TEST CAUGHT McpError: Task execution cancelled.
+    at EventEmitter.<anonymous> (C:\filesystem-mcp\src\tasks.ts:72:26)
+    at EventEmitter.emit (node:events:509:28)
+    at EventedTaskStore.updateTaskStatus (C:\filesystem-mcp\src\tasks.ts:44:19)
+    at async TestContext.<anonymous> (C:\filesystem-mcp\__tests__\unit\task-orchestrator.test.ts:171:7)
+    at async Test.run (node:internal/test_runner/test:1208:7)
+    at async Suite.processPendingSubtests (node:internal/test_runner/test:831:7) {
+  problem: { code: 'CANCELLED', message: 'Task execution cancelled.' }
+} CANCELLED McpError
+ÔûÂ TaskOrchestrator
+  Ô£ö executes a tool task successfully in background (12.8498ms)
+  Ô£ö cancels background execution when store emits cancelled event (3.4712ms)
+  Ô£ö updates task status message on progress notifications (25.0971ms)
+Ô£ö TaskOrchestrator (42.431ms)
+ÔûÂ EventedTaskStore
+  Ô£ö emits "cancelled" event when a task status is updated to cancelled (2.7708ms)
+Ô£ö EventedTaskStore (3.8615ms)
+[TaskOrchestrator] Fatal error in background task 157c390b57854d4ab9335c0acca79bd6: Error: Task with ID 157c390b57854d4ab9335c0acca79bd6 not found
+    at EventedTaskStore.storeTaskResult (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\experimental\tasks\stores\inMemory.ts:104:19)
+    at Object.storeTaskResult (C:\filesystem-mcp\__tests__\unit\task-support.test.ts:48:19)
+    at TaskOrchestrator.executeBackground (C:\filesystem-mcp\src\tasks.ts:282:26)
+ÔûÂ createToolTaskHandler
+  Ô£ö createTask returns a task with valid shape (4.1815ms)
+  Ô£ö createTask sets initial statusMessage with tool name (8.5121ms)
+  Ô£ö getTask returns normalized task state (55.3302ms)
+  Ô£ö getTaskResult returns CallToolResult after completion (109.3644ms)
+HANDLER RETURNING
+[TaskOrchestrator] Fatal error in background task 6aeacb3167424c9f9890f958d03ebce1: Error: Task with ID 6aeacb3167424c9f9890f958d03ebce1 not found
+    at EventedTaskStore.storeTaskResult (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\experimental\tasks\stores\inMemory.ts:104:19)
+    at Object.storeTaskResult (C:\filesystem-mcp\__tests__\unit\task-support.test.ts:48:19)
+    at TaskOrchestrator.executeBackground (C:\filesystem-mcp\src\tasks.ts:282:26)
+  Ô£ö error result projects to failed status (103.0162ms)
+[TaskOrchestrator] Fatal error in background task d0eaa011bbcf43ffb9222b04b80031a1: Error: Task with ID d0eaa011bbcf43ffb9222b04b80031a1 not found
+    at EventedTaskStore.storeTaskResult (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\experimental\tasks\stores\inMemory.ts:104:19)
+    at Object.storeTaskResult (C:\filesystem-mcp\__tests__\unit\task-support.test.ts:48:19)
+    at TaskOrchestrator.executeBackground (C:\filesystem-mcp\src\tasks.ts:282:26)
+[TaskOrchestrator] Fatal error in background task 0dea40eb265c44569e2e8fc2ffe2e247: Error: Task with ID 0dea40eb265c44569e2e8fc2ffe2e247 not found
+    at EventedTaskStore.storeTaskResult (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\experimental\tasks\stores\inMemory.ts:104:19)
+    at Object.storeTaskResult (C:\filesystem-mcp\__tests__\unit\task-support.test.ts:48:19)
+    at TaskOrchestrator.executeBackground (C:\filesystem-mcp\src\tasks.ts:282:26)
+  Ô£ö cancelled error code projects to cancelled status (105.4127ms)
+  Ô£ö applies default TTL when none is requested (0.5204ms)
+  Ô£ö clamps oversized TTL to MAX_TASK_TTL_MS (0.5217ms)
+  Ô£ö rejects when concurrent task limit is reached (1.0127ms)
+ABOUT TO CANCEL ca83d725cd6a482b9f814afa37d4092d
+  Ô£ö serializes task creation so concurrent requests cannot bypass the active-task limit (13.6131ms)
+  Ô£ö propagates cancellation signal to running tool (236.2818ms)
+[TaskOrchestrator] Fatal error in background task a331e0644f684e55a8980d1900f4e411: Error: Task with ID a331e0644f684e55a8980d1900f4e411 not found
+    at EventedTaskStore.storeTaskResult (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\experimental\tasks\stores\inMemory.ts:104:19)
+    at Object.storeTaskResult (C:\filesystem-mcp\__tests__\unit\task-support.test.ts:48:19)
+    at TaskOrchestrator.executeBackground (C:\filesystem-mcp\src\tasks.ts:282:26)
+  Ô£ö getTaskResult attaches io.modelcontextprotocol/related-task metadata (112.5639ms)
+  Ô£ö createTask does not include non-standard _meta keys (0.3123ms)
+  Ô£ö stores cancelled as failed in task store (SDK compatibility) (14.6088ms)
+  Ô£ö attaches RELATED_TASK_META_KEY to task result on failure (107.3345ms)
+Ô£ö createToolTaskHandler (874.5599ms)
+Ô£ö McpSchemaPair interface (2.8478ms)
+Ô£ö toMcpSchema with augment function (0.8679ms)
+Ô£ö McpSchemaPair eliminates need for jsonSchema property cast (0.8207ms)
+Ô£ö toMcpSchema returns equivalent data before and after refactor (0.893ms)
+ÔûÂ tool registration shape
+  Ô£ö normalizes top-level taskSupport into execution.taskSupport (0.8202ms)
+  Ô£ö strips invalid top-level taskSupport without disturbing execution metadata (0.1508ms)
+Ô£ö tool registration shape (1.9879ms)
+ÔûÂ FS_CONTEXT_STRIP_STRUCTURED
+  Ô£ö passes through result unchanged when flag is unset (0.6675ms)
+  Ô£ö removes structuredContent when flag is "true" (0.4182ms)
+  Ô£ö removes structuredContent when flag is "1" (0.3079ms)
+  Ô£ö returns result as-is when it has no structuredContent (1.2619ms)
+Ô£ö FS_CONTEXT_STRIP_STRUCTURED (2.9313ms)
+Ô£ö TracingMeta interface uses namespaced keys (4.3368ms)
+Ô£ö ProblemDetails interface uses namespaced keys (1.2868ms)
+Ô£ö Reader helpers handle new namespaced keys (0.1682ms)
+Ô£ö Reader helpers support legacy keys for backward compatibility (0.1636ms)
+Ô£ö Reader helpers prefer namespaced keys over legacy (0.1278ms)
+Ô£ö Reader helpers return undefined for missing keys (0.1216ms)
+Ô£ö Reader helpers ignore non-string values (0.1223ms)
+ÔûÂ JSON-RPC message validation
+  ÔûÂ parseJSONRPCMessage function availability
+    Ô£ö parseJSONRPCMessage is exported from SDK (0.5148ms)
+  Ô£ö parseJSONRPCMessage function availability (1.0618ms)
+  ÔûÂ parseJSONRPCMessage behavior
+    Ô£ö accepts valid JSON-RPC 2.0 request (1.2362ms)
+    Ô£ö throws on missing jsonrpc field (1.544ms)
+    Ô£ö throws on invalid jsonrpc version (0.2912ms)
+    Ô£ö throws on null input (0.1923ms)
+    Ô£ö throws on string input (0.1752ms)
+    Ô£ö throws on array input (0.1619ms)
+    Ô£ö throws on plain object without jsonrpc (0.3478ms)
+  Ô£ö parseJSONRPCMessage behavior (4.3003ms)
+Ô£ö JSON-RPC message validation (5.738ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+ÔûÂ HTTP transport JSON-RPC validation (integration)
+  Ô£ö returns -32600 error for malformed JSON-RPC (missing jsonrpc field) (37.7095ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+  Ô£ö returns -32700 error for non-object body (Express rejects non-object JSON) (5.5846ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+  Ô£ö returns -32700 error for null body (Express rejects null) (3.9226ms)
+[INFO] [HTTP] Server listening on http://127.0.0.1:0
+[DEBUG] [HTTP] inbound { kind: 'request', sessionId: null }
+  Ô£ö allows valid JSON-RPC initialize request (22.8661ms)
+Ô£ö HTTP transport JSON-RPC validation (integration) (70.3647ms)
+ÔûÂ JSONRPC_VERSION constant
+  Ô£ö JSONRPC_VERSION exports as "2.0" (0.6553ms)
+  Ô£ö transport.ts uses JSONRPC_VERSION instead of hardcoded "2.0" (0.5418ms)
+Ô£ö JSONRPC_VERSION constant (2.21ms)
+Ô£ö worker dispatch handles diff task (112.0488ms)
+Ô£ö worker dispatch reports error for unknown task (110.5996ms)
+Ô£ö runInWorker removes task from queue on timeout (13.3296ms)
+Ô£ö shouldOffload exists and is callable (1.069ms)
+Ô£ö runInWorker dispatches diff task and returns StructuredPatch (94.841ms)
+Ô£ö runInWorker reuses idle workers across tasks (89.4798ms)
+Ô£ö runInWorker respects WORKER_POOL_MAX by queueing extra requests (110.6428ms)
+Ô£ö runInWorker rejects with abort error when signal aborts (6.833ms)
+Ô£ö runInWorker rejects already-aborted signal synchronously (0.3404ms)
+Ô£ö shutdownWorkerPool is idempotent (90.7656ms)
+Ô£ö runInWorker handles malformed patch without crashing (92.0288ms)
+Ôä╣ tests 537
+Ôä╣ suites 112
+Ôä╣ pass 529
+Ôä╣ fail 7
+Ôä╣ cancelled 0
+Ôä╣ skipped 1
+Ôä╣ todo 0
+Ôä╣ duration_ms 25489.9118
+
+Ô£û failing tests:
+
+test at __tests__\tools\directory.test.ts:1:1448
+Ô£û lists top-level entries flat (default maxDepth=1) (3.1417ms)
+  Error [ProtocolError]: Tool list not found
+      at ProtocolError.fromError (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\types\errors.ts:31:16)
+      at Client._onresponse (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\shared\protocol.ts:722:41)
+      at LinkedTransport._transport.onmessage (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\shared\protocol.ts:476:22)
+      at <anonymous> (C:\filesystem-mcp\__tests__\linked-transport.ts:46:19)
+      at node:internal/process/task_queues:150:7
+      at AsyncResource.runInAsyncScope (node:async_hooks:227:14)
+      at AsyncResource.runMicrotask (node:internal/process/task_queues:147:8) {
+    code: -32602,
+    data: undefined
+  }
+
+test at __tests__\tools\directory.test.ts:1:2460
+Ô£û recurses when maxDepth > 1 (1.4468ms)
+  Error [ProtocolError]: Tool list not found
+      at ProtocolError.fromError (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\types\errors.ts:31:16)
+      at Client._onresponse (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\shared\protocol.ts:722:41)
+      at LinkedTransport._transport.onmessage (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\shared\protocol.ts:476:22)
+      at <anonymous> (C:\filesystem-mcp\__tests__\linked-transport.ts:46:19)
+      at node:internal/process/task_queues:150:7
+      at AsyncResource.runInAsyncScope (node:async_hooks:227:14)
+      at AsyncResource.runMicrotask (node:internal/process/task_queues:147:8) {
+    code: -32602,
+    data: undefined
+  }
+
+test at __tests__\tools\directory.test.ts:1:3051
+Ô£û markdown contains root name and entry names (3.2695ms)
+  Error [ProtocolError]: Tool list not found
+      at ProtocolError.fromError (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\types\errors.ts:31:16)
+      at Client._onresponse (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\shared\protocol.ts:722:41)
+      at LinkedTransport._transport.onmessage (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\shared\protocol.ts:476:22)
+      at <anonymous> (C:\filesystem-mcp\__tests__\linked-transport.ts:46:19)
+      at node:internal/process/task_queues:150:7
+      at AsyncResource.runInAsyncScope (node:async_hooks:227:14)
+      at AsyncResource.runMicrotask (node:internal/process/task_queues:147:8) {
+    code: -32602,
+    data: undefined
+  }
+
+test at __tests__\tools\directory.test.ts:1:3610
+Ô£û truncation stores full result in resourceUri (46.516ms)
+  Error [ProtocolError]: Tool list not found
+      at ProtocolError.fromError (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\types\errors.ts:31:16)
+      at Client._onresponse (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\shared\protocol.ts:722:41)
+      at LinkedTransport._transport.onmessage (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\shared\protocol.ts:476:22)
+      at <anonymous> (C:\filesystem-mcp\__tests__\linked-transport.ts:46:19)
+      at node:internal/process/task_queues:150:7
+      at AsyncResource.runInAsyncScope (node:async_hooks:227:14)
+      at AsyncResource.runMicrotask (node:internal/process/task_queues:147:8) {
+    code: -32602,
+    data: undefined
+  }
+
+test at __tests__\tools\directory.test.ts:1:4205
+Ô£û totalFiles + totalDirectories === totalEntries (3.9241ms)
+  Error [ProtocolError]: Tool list not found
+      at ProtocolError.fromError (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\types\errors.ts:31:16)
+      at Client._onresponse (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\shared\protocol.ts:722:41)
+      at LinkedTransport._transport.onmessage (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\shared\protocol.ts:476:22)
+      at <anonymous> (C:\filesystem-mcp\__tests__\linked-transport.ts:46:19)
+      at node:internal/process/task_queues:150:7
+      at AsyncResource.runInAsyncScope (node:async_hooks:227:14)
+      at AsyncResource.runMicrotask (node:internal/process/task_queues:147:8) {
+    code: -32602,
+    data: undefined
+  }
+
+test at __tests__\tools\directory.test.ts:1:4474
+Ô£û returns ACCESS_DENIED for paths outside allowed roots (1.2709ms)
+  Error [ProtocolError]: Tool list not found
+      at ProtocolError.fromError (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\types\errors.ts:31:16)
+      at Client._onresponse (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\shared\protocol.ts:722:41)
+      at LinkedTransport._transport.onmessage (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\shared\protocol.ts:476:22)
+      at <anonymous> (C:\filesystem-mcp\__tests__\linked-transport.ts:46:19)
+      at node:internal/process/task_queues:150:7
+      at AsyncResource.runInAsyncScope (node:async_hooks:227:14)
+      at AsyncResource.runMicrotask (node:internal/process/task_queues:147:8) {
+    code: -32602,
+    data: undefined
+  }
+
+test at __tests__\tools\directory.test.ts:1:4657
+Ô£û returns NOT_DIRECTORY for a file path (2.2738ms)
+  Error [ProtocolError]: Tool list not found
+      at ProtocolError.fromError (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\types\errors.ts:31:16)
+      at Client._onresponse (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\shared\protocol.ts:722:41)
+      at LinkedTransport._transport.onmessage (C:\filesystem-mcp\node_modules\@modelcontextprotocol\core\src\shared\protocol.ts:476:22)
+      at <anonymous> (C:\filesystem-mcp\__tests__\linked-transport.ts:46:19)
+      at node:internal/process/task_queues:150:7
+      at AsyncResource.runInAsyncScope (node:async_hooks:227:14)
+      at AsyncResource.runMicrotask (node:internal/process/task_queues:147:8) {
+    code: -32602,
+    data: undefined
+  }
