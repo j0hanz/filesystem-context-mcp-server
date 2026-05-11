@@ -99,27 +99,21 @@ describe('stat tool', () => {
     assertToolError(raw, 'ACCESS_DENIED');
   });
 
-  it('stat JSON schema declares anyOf between path and paths', async () => {
+  it('stat JSON schema has flat properties with optional path and paths', async () => {
     const tools = await env.client.listTools();
     const statTool = tools.tools.find((t) => t.name === 'stat');
     assert.ok(statTool, 'stat tool should exist');
     const inputSchema = statTool.inputSchema as Record<string, unknown>;
-    // Schema should have anyOf (from z.union) instead of superRefine
-    assert.ok(inputSchema.anyOf, 'Schema should declare anyOf for single vs batch modes');
-    const anyOfArray = inputSchema.anyOf as Record<string, unknown>[];
-    assert.ok(Array.isArray(anyOfArray), 'anyOf should be an array');
-    assert.ok(anyOfArray.length >= 2, 'anyOf should have at least 2 branches');
-    // First branch should have path, second should have paths
-    const hasSingleBranch = anyOfArray.some((branch: Record<string, unknown>) => {
-      const required = branch.required as string[] | undefined;
-      return required?.includes('path') && !required?.includes('paths');
-    });
-    const hasBatchBranch = anyOfArray.some((branch: Record<string, unknown>) => {
-      const required = branch.required as string[] | undefined;
-      return required?.includes('paths') && !required?.includes('path');
-    });
-    assert.ok(hasSingleBranch, 'anyOf should have a branch with required path');
-    assert.ok(hasBatchBranch, 'anyOf should have a branch with required paths');
+    // Schema should have properties at the top level (path and paths both optional)
+    assert.ok(inputSchema.properties, 'Schema should have properties object');
+    const properties = inputSchema.properties as Record<string, unknown>;
+    assert.ok(properties.path, 'Schema should have path property');
+    assert.ok(properties.paths, 'Schema should have paths property');
+    // Neither should be in the required array (both optional)
+    const required = inputSchema.required as string[] | undefined;
+    assert.ok(!required || required.length === 0, 'No properties should be required');
+    // Should not have anyOf (that was the old union structure)
+    assert.ok(!inputSchema.anyOf, 'Schema should not have anyOf (flattened structure)');
   });
 });
 

@@ -28,15 +28,38 @@ import {
 } from './_helpers.js';
 import { defineTool } from './define.js';
 
-const SingleStatSchema = z.strictObject({
-  path: RequiredPath.describe('Path to stat (single-path mode)'),
-});
+const StatInputSchema = z
+  .strictObject({
+    path: RequiredPath.optional().describe('Path to stat (single-path mode)'),
+    paths: z
+      .array(RequiredPath)
+      .min(1)
+      .max(1000)
+      .optional()
+      .describe('Paths to stat (batch mode; max 1000)'),
+  })
+  .superRefine((v, ctx) => {
+    const hasPath = v.path !== undefined;
+    const hasPaths = v.paths !== undefined;
 
-const BatchStatSchema = z.strictObject({
-  paths: z.array(RequiredPath).min(1).max(1000).describe('Paths to stat (batch mode)'),
-});
+    if (!hasPath && !hasPaths) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['path'],
+        message: "Provide either 'path' or 'paths'",
+        input: v,
+      });
+    }
 
-const StatInputSchema = z.union([SingleStatSchema, BatchStatSchema]);
+    if (hasPath && hasPaths) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['paths'],
+        message: "Cannot use both 'path' and 'paths'",
+        input: v,
+      });
+    }
+  });
 
 const StatManyResultItemSchema = z.strictObject({
   path: z.string().describe('Requested path'),
@@ -317,14 +340,14 @@ export const GET_FILE_INFO = defineTool({
   progressLabel: (args) => {
     const isBatch = 'paths' in args && Array.isArray(args.paths);
     if (isBatch) {
-      return `Get File Info: ${args.paths.length} paths`;
+      return `Get File Info: ${(args as { paths: string[] }).paths.length} paths`;
     }
     return `Get File Info: ${(args as { path: string }).path}`;
   },
   run: async (args, ctx) => {
     const isBatch = 'paths' in args && Array.isArray(args.paths);
     if (isBatch) {
-      const paths = args.paths;
+      const paths = (args as { paths: string[] }).paths;
       const total = paths.length;
       let completed = 0;
       const onProgress = (): void => {
