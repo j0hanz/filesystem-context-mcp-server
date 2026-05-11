@@ -136,6 +136,29 @@ describe('grep tool', () => {
     );
   });
 
+  it('search_text rejects absolute filePattern (..)', async () => {
+    // Test that absolute paths and .. patterns are rejected by filePattern schema
+    const testCases = [
+      { pattern: '/etc/*.conf', description: 'Unix absolute path' },
+      { pattern: '/etc/passwd', description: 'Unix absolute path (direct)' },
+      { pattern: 'C:\\windows\\*.txt', description: 'Windows absolute path' },
+      { pattern: '../**/*.ts', description: 'Parent directory pattern' },
+      { pattern: 'src/../../*.js', description: 'Path with .. traversal' },
+    ];
+
+    for (const testCase of testCases) {
+      const raw = await env.client.callTool({
+        name: 'search_text',
+        arguments: {
+          path: env.tmpDir,
+          searchPattern: 'test',
+          pattern: testCase.pattern,
+        },
+      });
+      assertToolError(raw);
+    }
+  });
+
   it('returns empty matches for a pattern that is not found', async () => {
     const raw = await env.client.callTool({
       name: 'search_text',

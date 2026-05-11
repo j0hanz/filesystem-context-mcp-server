@@ -18,7 +18,7 @@ import {
 import { buildGlobOptions, globEntries, isProbablyBinary } from '../core/fs.js';
 import type { GlobEntry } from '../core/fs.js';
 import { startPerfMeasure } from '../core/observability.js';
-import { isPathWithinDirectories, isSafeGlobSyntax, normalizePath } from '../core/path.js';
+import { isPathWithinDirectories, normalizePath } from '../core/path.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import {
@@ -166,14 +166,6 @@ function levenshtein(a: string, b: string): number {
 
 const SEARCH_CONTENT_MAX_RESULTS = 500;
 
-const SafeFilePatternSchema = z
-  .string()
-  .min(1, 'Pattern required')
-  .max(1000, 'Max 1000 chars')
-  .refine((value) => isSafeGlobSyntax(value), {
-    error: 'Invalid glob or unsafe path (absolute/.. forbidden)',
-  });
-
 interface ScanFileOptions {
   maxFileSize: number;
   skipBinary: boolean;
@@ -183,7 +175,7 @@ interface ScanFileOptions {
 }
 
 const SearchOptionsSchema = z.strictObject({
-  filePattern: SafeFilePatternSchema,
+  filePattern: SafeGlobPattern,
   excludePatterns: z.array(z.string()),
   caseSensitive: z.boolean(),
   maxResults: z.int().min(0),
