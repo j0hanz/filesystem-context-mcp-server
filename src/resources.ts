@@ -7,11 +7,10 @@ import {
   ResourceTemplate,
   type Role,
   type ServerContext,
+  UriTemplate,
 } from '@modelcontextprotocol/server';
 
 import { type FSWatcher, watch } from 'node:fs';
-
-import uriTemplate from 'uri-templates';
 
 import { readFileWithStats } from './core/fs.js';
 import { completePathCached, type PathGuard } from './core/path.js';
@@ -344,7 +343,7 @@ export function registerAllResources(
         ...(contract.complete
           ? {
               complete: Object.fromEntries(
-                uriTemplate(contract.uriTemplate).varNames.map((varName) => [
+                new UriTemplate(contract.uriTemplate).variableNames.map((varName) => [
                   varName,
                   (value: string, ctx?: { arguments?: Record<string, string> }) => {
                     const completeFn = contract.complete;

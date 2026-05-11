@@ -7,9 +7,11 @@ import type {
   ElicitResult,
   LoggingLevel,
   McpServer,
+  StandardSchemaWithJSON,
   Tool,
   ToolAnnotations,
   ToolExecution,
+  ToolTaskHandler,
 } from '@modelcontextprotocol/server';
 
 import type { z } from 'zod/v4';
@@ -28,24 +30,7 @@ interface OrchestratorLike {
   wrapToolTask(
     handler: (args: unknown, ctx: ToolContext) => Promise<unknown>,
     options: { toolName: string },
-  ): unknown;
-}
-
-// Local type adapter for experimental.tasks. The published SDK's typings for
-// `experimental.tasks.registerToolTask` are incomplete in 2.0.0-alpha.2; the
-// interface and `getExperimentalTasks` helper isolate the necessary cast in
-// one spot so the rest of this file stays cast-free. Delete once the SDK
-// publishes proper typings.
-interface ExperimentalTasksApi {
-  registerToolTask(name: string, def: unknown, handler: unknown): void;
-}
-
-function getExperimentalTasks(server: McpServer): ExperimentalTasksApi {
-  // Cast from untyped experimental API to our locally-defined interface.
-  // The SDK doesn't export types for experimental.tasks, so this unsafe cast
-  // is unavoidable until the SDK publishes proper typings.
-  const typedTasks = server.experimental.tasks as unknown as ExperimentalTasksApi;
-  return typedTasks;
+  ): ToolTaskHandler<StandardSchemaWithJSON>;
 }
 
 // ============ Type Definitions ============
@@ -203,9 +188,11 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
         // Register as a task-capable tool via the orchestrator.
         // The orchestrator wraps coreHandler into a ToolTaskHandler (createTask / getTask / getTaskResult).
         const taskHandler = deps.orchestrator.wrapToolTask(coreHandler, { toolName: def.name });
-        getExperimentalTasks(deps.server).registerToolTask(
+        // SDK's TaskToolExecution narrows taskSupport to 'optional' | 'required'.
+        const taskExecution = { taskSupport: tool.execution.taskSupport };
+        deps.server.experimental.tasks.registerToolTask(
           def.name,
-          { ...toolDefShape, execution: tool.execution },
+          { ...toolDefShape, execution: taskExecution },
           taskHandler,
         );
       } else {

@@ -4,6 +4,7 @@ import {
   type CreateTaskServerContext,
   type GetTaskResult,
   InMemoryTaskStore,
+  isTerminal,
   RELATED_TASK_META_KEY,
   type Task,
   type TaskServerContext,
@@ -255,9 +256,9 @@ export class TaskOrchestrator {
 
       if (isCancelled) {
         try {
-          // Only update status if it's not already cancelled or terminal.
+          // Only update status if it's not already in a terminal state.
           const current = await task.store.getTask(taskId);
-          if (current.status !== 'cancelled') {
+          if (!isTerminal(current.status)) {
             await task.store.updateTaskStatus(taskId, 'cancelled', `${toolName}: cancelled`);
           }
         } catch {
