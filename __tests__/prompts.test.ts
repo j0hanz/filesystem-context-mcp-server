@@ -93,20 +93,12 @@ describe('prompts', () => {
 
     await env.client.getPrompt({ name: 'get-help', arguments: {} });
 
-    const completion = messages
-      .map((message) => {
-        try {
-          return JSON.parse(message) as Record<string, unknown>;
-        } catch {
-          return undefined;
-        }
-      })
-      .find((event) => event?.['event'] === 'prompt_complete');
+    const completion = messages.find((event) => event.includes('event=prompt_complete'));
 
     assert.ok(completion);
-    assert.equal(completion?.['prompt_name'], 'get-help');
-    assert.equal(completion?.['outcome'], 'success');
-    assert.ok(typeof completion?.['duration_ms'] === 'number');
+    assert.ok(completion?.includes('prompt_name=get-help'));
+    assert.ok(completion?.includes('outcome=success'));
+    assert.ok(completion?.includes('duration_ms='));
 
     logChannel.unsubscribe(subscription);
   });

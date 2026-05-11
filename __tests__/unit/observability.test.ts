@@ -132,16 +132,14 @@ test('emitWideEvent emits canonical JSON with environment metadata', () => {
   });
 
   assert.equal(lastEvent?.level, 'info');
-  const parsed = JSON.parse(lastEvent?.message ?? '{}') as Record<string, unknown>;
-  assert.equal(parsed['event'], 'http_request_complete');
-  assert.equal(parsed['transport'], 'http');
-  assert.equal(parsed['outcome'], 'success');
-  assert.equal(parsed['session_id'], 's-123');
-  assert.equal(parsed['http_status'], 200);
-  assert.equal(parsed['service'], 'filesystem-mcp');
-  assert.equal(parsed['runtime'], 'node');
-  assert.ok(typeof parsed['service_version'] === 'string');
-  assert.ok(typeof parsed['timestamp'] === 'string');
+  const msg = lastEvent?.message ?? '';
+  assert.ok(msg.includes('event=http_request_complete'));
+  assert.ok(msg.includes('transport=http'));
+  assert.ok(msg.includes('outcome=success'));
+  assert.ok(msg.includes('session_id=s-123'));
+  assert.ok(msg.includes('http_status=200'));
+  assert.ok(msg.includes('timestamp='));
+  // Note: static context (service, runtime, etc.) is omitted from logfmt emission
 });
 
 test('logRuntimeFailure emits a wide event with error details', () => {
@@ -155,10 +153,10 @@ test('logRuntimeFailure emits a wide event with error details', () => {
   logRuntimeFailure('fatal', 'startup', 'parseArgs', new Error('boom'));
 
   assert.equal(lastEvent?.level, 'error');
-  const parsed = JSON.parse(lastEvent?.message ?? '{}') as Record<string, unknown>;
-  assert.equal(parsed['event'], 'runtime_failure');
-  assert.equal(parsed['reason'], 'fatal');
-  assert.equal(parsed['scope'], 'startup');
-  assert.equal(parsed['operation'], 'parseArgs');
-  assert.equal(parsed['error_message'], 'boom');
+  const msg = lastEvent?.message ?? '';
+  assert.ok(msg.includes('event=runtime_failure'));
+  assert.ok(msg.includes('reason=fatal'));
+  assert.ok(msg.includes('scope=startup'));
+  assert.ok(msg.includes('operation=parseArgs'));
+  assert.ok(msg.includes('error_message=boom'));
 });

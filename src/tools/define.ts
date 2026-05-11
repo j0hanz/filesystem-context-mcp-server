@@ -16,10 +16,13 @@ import type {
 } from '@modelcontextprotocol/server';
 import { getDisplayName } from '@modelcontextprotocol/server';
 
+import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
+
 import type { z } from 'zod/v4';
 
 import { ErrorCode } from '../core/errors.js';
-import { Logger, ProgressSession } from '../core/observability.js';
+import { emitWideEvent, Logger, ProgressSession } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { toMcpSchema } from '../schema.js';
@@ -112,70 +115,143 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
       // regular ServerContext call paths). signal is optional in ToolContext; fall back
       // to an already-aborted signal when absent so ToolCtx.signal stays non-optional.
       const coreHandler = async (args: unknown, ctx: ToolContext): Promise<CallToolResult> => {
-        if (!deps.isInitialized()) {
-          return {
-            isError: true as const,
-            content: [
-              { type: 'text' as const, text: 'Server not initialized. Roots unavailable.' },
-            ],
-          };
+        const executionId = randomUUID();
+        const startTime = performance.now();
+        const startMemory = process.memoryUsage().rss;
+
+        let inputKeys: string[] | undefined;
+        let inputSizeBytes: number | undefined;
+        if (args && typeof args === 'object') {
+          inputKeys = Object.keys(args);
+          try {
+            inputSizeBytes = Buffer.byteLength(JSON.stringify(args), 'utf8');
+          } catch {
+            // Ignore serialization error
+          }
         }
 
-        // Input validation already performed by the MCP SDK via the standard schema
-        const parsedArgs = args as z.infer<typeof def.input>;
-
-        const baseSignal = ctx.signal ?? new AbortController().signal;
-        const timeoutSignal = def.timeoutMs ? AbortSignal.timeout(def.timeoutMs) : undefined;
-        const signal = timeoutSignal ? AbortSignal.any([baseSignal, timeoutSignal]) : baseSignal;
-
-        const label = def.progressLabel ? def.progressLabel(parsedArgs) : getDisplayName(def);
-        const progressSession = new ProgressSession({ label, sinks: [], dynamicRateLimit: true });
-
-        const toolCtx: ToolCtx = {
-          signal,
-          ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
-          ...(ctx._meta ? { _meta: ctx._meta } : {}),
-          pathGuard: deps.pathGuard,
-          resourceStore: deps.resourceStore,
-          ...(ctx.log
-            ? {
-                log: ((ctxLog) => (level, data, logger) => {
-                  const msg = typeof data === 'string' ? data : String(data);
-                  Logger.emit(level, msg);
-                  void ctxLog(level, data, logger);
-                })(ctx.log),
-              }
-            : {}),
-          ...(ctx.sendNotification ? { sendNotification: ctx.sendNotification } : {}),
-          onProgress: (p) => {
-            progressSession.set(p);
-          },
-          ...(ctx.elicitInput ? { elicitInput: ctx.elicitInput } : {}),
-        };
+        let progressUpdates = 0;
+        let outcome: 'success' | 'error' | 'cancelled' = 'success';
+        let errorType: string | undefined;
+        let errorMessage: string | undefined;
+        let resultSizeBytes: number | undefined;
 
         try {
-          const result = await def.run(parsedArgs, toolCtx);
-          progressSession.complete(label);
-          if (
-            result !== null &&
-            typeof result === 'object' &&
-            'content' in result &&
-            'structuredContent' in result &&
-            Array.isArray((result as { content: unknown }).content)
-          ) {
-            const wrapped = result as { content: ContentBlock[]; structuredContent: unknown };
+          if (!deps.isInitialized()) {
+            outcome = 'error';
+            errorMessage = 'Server not initialized. Roots unavailable.';
+
             return {
-              content: wrapped.content,
-              structuredContent: wrapped.structuredContent as Record<string, unknown>,
+              isError: true as const,
+              content: [
+                { type: 'text' as const, text: 'Server not initialized. Roots unavailable.' },
+              ],
             };
           }
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            structuredContent: result as Record<string, unknown>,
+
+          // Input validation already performed by the MCP SDK via the standard schema
+          const parsedArgs = args as z.infer<typeof def.input>;
+
+          const baseSignal = ctx.signal ?? new AbortController().signal;
+          const timeoutSignal = def.timeoutMs ? AbortSignal.timeout(def.timeoutMs) : undefined;
+          const signal = timeoutSignal ? AbortSignal.any([baseSignal, timeoutSignal]) : baseSignal;
+
+          const label = def.progressLabel ? def.progressLabel(parsedArgs) : getDisplayName(def);
+          const progressSession = new ProgressSession({ label, sinks: [], dynamicRateLimit: true });
+
+          const toolCtx: ToolCtx = {
+            signal,
+            ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
+            ...(ctx._meta ? { _meta: ctx._meta } : {}),
+            pathGuard: deps.pathGuard,
+            resourceStore: deps.resourceStore,
+            ...(ctx.log
+              ? {
+                  log: ((ctxLog) => (level, data, logger) => {
+                    const msg = typeof data === 'string' ? data : String(data);
+                    Logger.emit(level, msg);
+                    void ctxLog(level, data, logger);
+                  })(ctx.log),
+                }
+              : {}),
+            ...(ctx.sendNotification ? { sendNotification: ctx.sendNotification } : {}),
+            onProgress: (p) => {
+              progressUpdates++;
+              progressSession.set(p);
+            },
+            ...(ctx.elicitInput ? { elicitInput: ctx.elicitInput } : {}),
           };
-        } catch (error: unknown) {
-          progressSession.fail(error, label);
-          return buildToolErrorResponse(error, def.defaultErrorCode ?? ErrorCode.UNKNOWN);
+
+          try {
+            const result = await def.run(parsedArgs, toolCtx);
+            progressSession.complete(label);
+            outcome = signal.aborted ? 'cancelled' : 'success';
+
+            let responseContent: ContentBlock[];
+            let responseStructuredContent: Record<string, unknown>;
+
+            if (
+              result !== null &&
+              typeof result === 'object' &&
+              'content' in result &&
+              'structuredContent' in result &&
+              Array.isArray((result as { content: unknown }).content)
+            ) {
+              const wrapped = result as { content: ContentBlock[]; structuredContent: unknown };
+              responseContent = wrapped.content;
+              responseStructuredContent = wrapped.structuredContent as Record<string, unknown>;
+            } else {
+              responseContent = [{ type: 'text' as const, text: JSON.stringify(result) }];
+              responseStructuredContent = result as Record<string, unknown>;
+            }
+
+            try {
+              resultSizeBytes = Buffer.byteLength(
+                JSON.stringify(responseStructuredContent),
+                'utf8',
+              );
+            } catch {
+              // Ignore serialization error
+            }
+
+            return {
+              content: responseContent,
+              structuredContent: responseStructuredContent,
+            };
+          } catch (error: unknown) {
+            progressSession.fail(error, label);
+            outcome = signal.aborted ? 'cancelled' : 'error';
+            if (error instanceof Error) {
+              errorType = error.name;
+              errorMessage = error.message;
+            } else {
+              errorType = 'UnknownError';
+              errorMessage = String(error);
+            }
+            return buildToolErrorResponse(error, def.defaultErrorCode ?? ErrorCode.UNKNOWN);
+          }
+        } finally {
+          const level = outcome === 'error' ? 'error' : 'info';
+          emitWideEvent(level, {
+            event: 'tool_execution',
+            tool_name: def.name,
+            execution_id: executionId,
+            ...(ctx.sessionId ? { session_id: ctx.sessionId } : {}),
+            ...(ctx._meta &&
+            'traceparent' in ctx._meta &&
+            typeof ctx._meta['traceparent'] === 'string'
+              ? { traceparent: ctx._meta['traceparent'] }
+              : {}),
+            ...(inputKeys ? { input_keys: inputKeys } : {}),
+            ...(inputSizeBytes !== undefined ? { input_size_bytes: inputSizeBytes } : {}),
+            ...(resultSizeBytes !== undefined ? { result_size_bytes: resultSizeBytes } : {}),
+            outcome,
+            ...(errorType ? { error_type: errorType } : {}),
+            ...(errorMessage ? { error_message: errorMessage } : {}),
+            duration_ms: performance.now() - startTime,
+            memory_delta_mb: (process.memoryUsage().rss - startMemory) / 1024 / 1024,
+            progress_steps_emitted: progressUpdates,
+          });
         }
       };
 

@@ -226,23 +226,15 @@ describe('HTTP transport', () => {
 
     assert.equal(response.statusCode, 200);
 
-    const completion = messages
-      .map((message) => {
-        try {
-          return JSON.parse(message) as Record<string, unknown>;
-        } catch {
-          return undefined;
-        }
-      })
-      .find((event) => event?.['event'] === 'http_request_complete');
+    const completion = messages.find((event) => event.includes('event=http_request_complete'));
 
     assert.ok(completion, 'expected http_request_complete event');
-    assert.equal(completion?.['transport'], 'http');
-    assert.equal(completion?.['method'], 'POST');
-    assert.equal(completion?.['jsonrpc_method'], 'initialize');
-    assert.equal(completion?.['http_status'], 200);
-    assert.equal(completion?.['outcome'], 'success');
-    assert.ok(typeof completion?.['duration_ms'] === 'number');
+    assert.ok(completion?.includes('transport=http'));
+    assert.ok(completion?.includes('method=POST'));
+    assert.ok(completion?.includes('jsonrpc_method=initialize'));
+    assert.ok(completion?.includes('http_status=200'));
+    assert.ok(completion?.includes('outcome=success'));
+    assert.ok(completion?.includes('duration_ms='));
 
     logChannel.unsubscribe(subscription);
   });

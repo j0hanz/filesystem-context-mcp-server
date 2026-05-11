@@ -10,7 +10,6 @@ import { channel, tracingChannel } from 'node:diagnostics_channel';
 import { monitorEventLoopDelay, performance, PerformanceObserver } from 'node:perf_hooks';
 import { inspect } from 'node:util';
 
-import { pkgInfo } from '../pkg-info.js';
 import { isRecord, parseTrueEnvFlag } from './util.js';
 
 // Aliases for observability subsystem
@@ -63,22 +62,35 @@ interface WideEventPayload {
   [key: string]: unknown;
 }
 
-const STATIC_WIDE_EVENT_CONTEXT = {
-  service: 'filesystem-mcp',
-  service_version: pkgInfo.version,
-  runtime: 'node',
-} as const;
-
-function buildWideEvent(payload: WideEventPayload): Record<string, unknown> {
-  return {
-    ...STATIC_WIDE_EVENT_CONTEXT,
-    timestamp: new Date().toISOString(),
-    ...payload,
-  };
+function toLogfmt(obj: Record<string, unknown>): string {
+  return Object.entries(obj)
+    .filter(([_, v]) => v !== undefined && v !== null)
+    .map(([k, v]) => {
+      if (Array.isArray(v)) {
+        return `${k}=[${v.join(',')}]`;
+      }
+      if (typeof v === 'string') {
+        if (v.includes(' ') || v.includes('"') || v.includes('=')) {
+          return `${k}=${JSON.stringify(v)}`;
+        }
+        return `${k}=${v}`;
+      }
+      if (typeof v === 'number') {
+        return `${k}=${Number.isInteger(v) ? v : v.toFixed(2)}`;
+      }
+      return `${k}=${JSON.stringify(v)}`;
+    })
+    .join(' ');
 }
 
 export function emitWideEvent(level: WideEventLevel, payload: WideEventPayload): void {
-  Logger.emit(level, JSON.stringify(buildWideEvent(payload)));
+  // We omit the heavy static wide event context here to make logs LLM-friendly,
+  // but keep timestamp and dynamic payload so it's dense and valuable.
+  const eventToLog = {
+    timestamp: new Date().toISOString(),
+    ...payload,
+  };
+  Logger.emit(level, toLogfmt(eventToLog));
 }
 
 export function logRuntimeFailure(

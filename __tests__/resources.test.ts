@@ -170,20 +170,11 @@ describe('resources and metadata', () => {
     await env.client.subscribeResource({ uri });
     await env.client.unsubscribeResource({ uri });
 
-    const events = messages
-      .map((message) => {
-        try {
-          return JSON.parse(message) as Record<string, unknown>;
-        } catch {
-          return undefined;
-        }
-      })
-      .filter((event): event is Record<string, unknown> => Boolean(event))
-      .filter((event) => event['event'] === 'resource_subscription');
+    const events = messages.filter((message) => message.includes('event=resource_subscription'));
 
     assert.equal(events.length, 2);
-    assert.equal(events[0]?.['action'], 'subscribe');
-    assert.equal(events[1]?.['action'], 'unsubscribe');
+    assert.ok(events[0]?.includes('action=subscribe'));
+    assert.ok(events[1]?.includes('action=unsubscribe'));
 
     logChannel.unsubscribe(subscription);
   });
