@@ -1,7 +1,9 @@
 import {
+  type Implementation,
   InMemoryTaskMessageQueue,
   McpServer,
   type Root,
+  type ServerCapabilities,
   type SetLevelRequest,
 } from '@modelcontextprotocol/server';
 
@@ -289,12 +291,8 @@ interface CapabilityOptions {
   enableTaskToolRequests?: boolean;
 }
 
-type ServerCapabilities = NonNullable<ConstructorParameters<typeof McpServer>[1]>['capabilities'];
-
-type NonOptionalServerCapabilities = NonNullable<ServerCapabilities>;
-
-function buildServerCapabilities(options: CapabilityOptions = {}): NonOptionalServerCapabilities {
-  const capabilities: NonOptionalServerCapabilities = {
+function buildServerCapabilities(options: CapabilityOptions = {}): ServerCapabilities {
+  const capabilities: ServerCapabilities = {
     logging: {},
     resources: { subscribe: true, listChanged: true },
     tools: {},
@@ -404,7 +402,15 @@ export async function createServer(
   const orchestrator = taskStore ? new TaskOrchestrator(taskStore) : undefined;
 
   const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> = {
-    capabilities,
+    capabilities: {
+      logging: capabilities.logging,
+      resources: capabilities.resources,
+      tools: capabilities.tools,
+      prompts: capabilities.prompts,
+      completions: capabilities.completions,
+      extensions: capabilities.extensions,
+      ...(capabilities.tasks ? { tasks: capabilities.tasks } : {}),
+    },
     enforceStrictCapabilities: true,
   };
 
@@ -413,19 +419,14 @@ export async function createServer(
     'Start with: roots -> ls/find -> stat -> read. Never guess paths. ' +
     'For full guidance, read internal://instructions or run the get-help prompt.';
 
-  const server = new McpServer(
-    withDefaultIcons(
-      {
-        name: 'filesystem-mcp',
-        title: 'Filesystem MCP',
-        version: SERVER_VERSION,
-        ...(SERVER_DESCRIPTION ? { description: SERVER_DESCRIPTION } : {}),
-        ...(SERVER_HOMEPAGE ? { websiteUrl: SERVER_HOMEPAGE } : {}),
-      },
-      localIcon,
-    ),
-    serverConfig,
-  );
+  const implementation: Implementation = {
+    name: 'filesystem-mcp',
+    title: 'Filesystem MCP',
+    version: SERVER_VERSION,
+    ...(SERVER_DESCRIPTION ? { description: SERVER_DESCRIPTION } : {}),
+    ...(SERVER_HOMEPAGE ? { websiteUrl: SERVER_HOMEPAGE } : {}),
+  };
+  const server = new McpServer(withDefaultIcons(implementation, localIcon), serverConfig);
 
   const loggingState = createLoggingState(DEFAULT_LOG_LEVEL);
   const rootsManager = new RootsManager(options, loggingState);
