@@ -1,3 +1,5 @@
+import type { ContentBlock } from '@modelcontextprotocol/server';
+
 import { stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 
@@ -5,13 +7,13 @@ import { createTwoFilesPatch, diffLines } from 'diff';
 import RE2 from 're2';
 import { z } from 'zod/v4';
 
-import { runInWorker, shouldOffload, withAbort } from '../core/concurrency.js';
+import { processInParallel, runInWorker, shouldOffload, withAbort } from '../core/concurrency.js';
 import { ErrorCode, McpError } from '../core/errors.js';
 import { atomicWriteFile, detectMimeType, readFileWithStats } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
-import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
+import { MAX_TEXT_FILE_SIZE, PARALLEL_CONCURRENCY } from '../core/util.js';
 import {
   defaultFalseBoolean,
   IsoDateTime,
@@ -28,7 +30,7 @@ import {
   formatBytes,
   putResource,
 } from './_helpers.js';
-import { defineTool } from './define.js';
+import { defineTool, type ToolCtx } from './define.js';
 
 const EditSpecSchema = z.strictObject({
   oldText: z
@@ -535,6 +537,50 @@ async function handleEditFile(
 
 type PerFileResult = z.infer<typeof PerFileResultSchema>;
 
+function formatFileToken(res: PerFileResult): string {
+  const base = basename(res.path);
+  if (res.unmatchedEdits && res.unmatchedEdits.length > 0) return `${base} NO MATCH`;
+  const added = res.linesAdded ?? 0;
+  const removed = res.linesRemoved ?? 0;
+  if (added === 0 && removed === 0) return `${base} (no change)`;
+  return `${base} +${added} -${removed}`;
+}
+
+function formatFailedToken(path: string): string {
+  return `${basename(path)} FAILED`;
+}
+
+function formatMultiSummary(
+  results: PerFileResult[],
+  failures: { path: string; error: z.infer<typeof PerFileErrorSchema> }[],
+  dryRun: boolean,
+): string {
+  const tag = dryRun ? ' [dry run]' : '';
+  const tokens = [
+    ...results.map(formatFileToken),
+    ...failures.map((f) => formatFailedToken(f.path)),
+  ];
+  const ratio =
+    failures.length > 0 ? ` (${results.length}/${results.length + failures.length} ok)` : '';
+  return `edit: ${tokens.join(' \u00b7 ')}${ratio}${tag}`;
+}
+
+interface EditJob {
+  filePath: string;
+  edits: z.infer<typeof EditSpecSchema>[];
+}
+
+function normalizeJobs(args: EditInput): EditJob[] {
+  if (args.path !== undefined) {
+    return [{ filePath: args.path, edits: args.edits ?? [] }];
+  }
+  if (args.paths !== undefined) {
+    return args.paths.map((p) => ({ filePath: p, edits: args.edits ?? [] }));
+  }
+  // files mode
+  return (args.files ?? []).map((f) => ({ filePath: f.path, edits: f.edits }));
+}
+
 type RunOneFileResult =
   | { kind: 'ok'; path: string; result: PerFileResult; link?: string }
   | { kind: 'failed'; path: string; error: z.infer<typeof PerFileErrorSchema> };
@@ -590,32 +636,16 @@ export async function runOneFile(
   }
 }
 
-export const EDIT_FILE = defineTool({
-  name: 'edit',
-  title: 'Edit Files',
-  description:
-    'Apply sequential literal string replacements to one or more files (max 5). ' +
-    'Single-file: { path, edits }. Multi-file shared: { paths, edits } — same edits applied to each file. ' +
-    'Multi-file per-file: { files: [{ path, edits }, \u2026] }. ' +
-    '`oldText` must match exactly — include 3\u20135 lines of context. ' +
-    'Use `dryRun:true` to preview. For glob-driven bulk regex replacement, use `replace_text` instead.',
-  input: EditFileInputSchema,
-  output: EditFileOutputSchema,
-  annotations: {
-    readOnlyHint: false,
-    idempotentHint: false,
-    destructiveHint: true,
-    openWorldHint: false,
-  },
-  nuances: ['Each edit applies to the output of the previous edit.'],
-  progressLabel: buildEditProgressMessage,
-  run: async (args, ctx) => {
-    // Single-file path mode only for now; multi-file dispatch added in Tasks 2-3
-    if (args.path === undefined || args.edits === undefined) {
-      throw new McpError(ErrorCode.INVALID_INPUT, 'Single-file mode requires path and edits');
-    }
-    const filePath = args.path;
-    const edits = args.edits;
+async function dispatch(
+  args: EditInput,
+  ctx: ToolCtx,
+): Promise<{ content: ContentBlock[]; structuredContent: EditOutput }> {
+  const jobs = normalizeJobs(args);
+  const isSingle = jobs.length === 1 && args.path !== undefined;
+
+  if (isSingle) {
+    const filePath = args.path ?? '';
+    const edits = args.edits ?? [];
     const { structured, resourceLink } = await handleEditFile(
       filePath,
       edits,
@@ -638,5 +668,76 @@ export const EDIT_FILE = defineTool({
       });
     }
     return buildToolResponse(summary, structured);
+  }
+
+  // Multi-file: run in parallel
+  const { results: rawResults } = await processInParallel(
+    jobs,
+    (job) =>
+      runOneFile(
+        job.filePath,
+        job.edits,
+        args.dryRun,
+        args.ignoreWhitespace,
+        ctx.pathGuard,
+        ctx.resourceStore,
+        ctx.signal,
+      ),
+    PARALLEL_CONCURRENCY,
+    ctx.signal,
+  );
+
+  const results: PerFileResult[] = [];
+  const failures: { path: string; error: z.infer<typeof PerFileErrorSchema> }[] = [];
+
+  for (const r of rawResults) {
+    if (r.kind === 'ok') results.push(r.result);
+    else failures.push({ path: r.path, error: r.error });
+  }
+
+  const summaryText = formatMultiSummary(results, failures, args.dryRun);
+  const structured: EditOutput = {
+    ok: true,
+    results,
+    ...(failures.length > 0 ? { failures } : {}),
+    summary: {
+      total: jobs.length,
+      succeeded: results.length,
+      failed: failures.length,
+    },
+  };
+
+  const links: ContentBlock[] = rawResults
+    .filter(
+      (r): r is Extract<RunOneFileResult, { kind: 'ok' }> & { link: string } =>
+        r.kind === 'ok' && r.link !== undefined,
+    )
+    .map((r) => ({ type: 'resource_link' as const, uri: r.link, name: r.link }));
+
+  return {
+    content: [{ type: 'text' as const, text: summaryText }, ...links],
+    structuredContent: structured,
+  };
+}
+
+export const EDIT_FILE = defineTool({
+  name: 'edit',
+  title: 'Edit Files',
+  description:
+    'Apply sequential literal string replacements to one or more files (max 5). ' +
+    'Single-file: { path, edits }. Multi-file shared: { paths, edits } — same edits applied to each file. ' +
+    'Multi-file per-file: { files: [{ path, edits }, \u2026] }. ' +
+    '`oldText` must match exactly — include 3\u20135 lines of context. ' +
+    'Use `dryRun:true` to preview. For glob-driven bulk regex replacement, use `replace_text` instead.',
+  input: EditFileInputSchema,
+  output: EditFileOutputSchema,
+  annotations: {
+    readOnlyHint: false,
+    idempotentHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
   },
+  nuances: ['Each edit applies to the output of the previous edit.'],
+  progressLabel: buildEditProgressMessage,
+  run: async (args, ctx) => dispatch(args, ctx),
 });
