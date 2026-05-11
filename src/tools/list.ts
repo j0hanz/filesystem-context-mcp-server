@@ -75,10 +75,7 @@ function compareEntries(a: CollectedEntry, b: CollectedEntry): number {
   return a.name.localeCompare(b.name);
 }
 
-async function collect(
-  rootPath: string,
-  options: CollectOptions,
-): Promise<CollectResult> {
+async function collect(rootPath: string, options: CollectOptions): Promise<CollectResult> {
   const gitignoreMatcher = options.includeIgnored
     ? null
     : await loadRootGitignore(rootPath, options.signal);
@@ -100,7 +97,7 @@ async function collect(
     if (options.signal.aborted) break;
 
     // Type detection: check if it's a directory
-    const isDir = entry.dirent.isDirectory?.() ?? false;
+    const isDir = entry.dirent.isDirectory();
     const entryType: EntryType = isDir ? 'directory' : 'file';
 
     // Get relative path (entry.path is absolute)
@@ -242,16 +239,16 @@ async function handleList(
   signal?: AbortSignal,
   resourceStore?: ResourceStore,
 ): Promise<z.infer<typeof ListOutputSchema>> {
-  const path = args['path'] as string | undefined;
+  const path = args.path;
   const resolvedPath = pathGuard.resolvePathOrRoot(path);
   const validDir = await pathGuard.validateExistingDirectory(resolvedPath);
 
   return withTimedAbortSignal(signal, DEFAULT_SEARCH_TIMEOUT_MS, async (timedSignal) => {
     const result = await collect(validDir, {
-      maxDepth: args['maxDepth'] as number ?? DEFAULT_LIST_DEPTH,
-      maxEntries: args['maxEntries'] as number ?? DEFAULT_LIST_ENTRIES,
-      includeHidden: (args['includeHidden'] as boolean | undefined) ?? false,
-      includeIgnored: (args['includeIgnored'] as boolean | undefined) ?? false,
+      maxDepth: args.maxDepth,
+      maxEntries: args.maxEntries,
+      includeHidden: args.includeHidden,
+      includeIgnored: args.includeIgnored,
       signal: timedSignal,
     });
 
@@ -311,12 +308,12 @@ export const LIST = defineTool({
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   defaultErrorCode: ErrorCode.NOT_DIRECTORY,
   progressLabel: (args) => {
-    const path = args['path'] as string | undefined;
+    const path = args.path;
     return `List: ${path ? basename(path) : '.'}`;
   },
   run: async (args, ctx) => {
     const output = await handleList(args, ctx.pathGuard, ctx.signal, ctx.resourceStore);
-    const path = args['path'] as string | undefined;
+    const path = args.path;
     const label = 'List: ' + (path ? basename(path) : '.');
     return buildToolResponse(label, output);
   },

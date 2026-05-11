@@ -15,33 +15,6 @@ export interface FileInfo {
   readonly symlinkTarget?: string;
 }
 
-export interface DirectoryEntry {
-  readonly name: string;
-  readonly path: string;
-  readonly relativePath: string;
-  readonly type: FileType;
-  readonly size?: number;
-  readonly modified?: Date;
-  readonly symlinkTarget?: string;
-}
-
-export interface ListDirectoryResult {
-  readonly path: string;
-  readonly entries: readonly DirectoryEntry[];
-  readonly summary: {
-    readonly totalEntries: number;
-    readonly entriesScanned?: number;
-    readonly entriesVisible?: number;
-    readonly totalFiles: number;
-    readonly totalDirectories: number;
-    readonly maxDepthReached: number;
-    readonly truncated: boolean;
-    readonly stoppedReason?: 'maxEntries' | 'aborted';
-    readonly skippedInaccessible: number;
-    readonly symlinksNotFollowed: number;
-  };
-}
-
 export interface SearchResult {
   readonly path: string;
   readonly type: FileType;

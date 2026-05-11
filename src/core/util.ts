@@ -277,14 +277,10 @@ export const WORKER_CANCEL_GRACE_MS = parseEnvInt('FS_WORKER_CANCEL_GRACE_MS', 5
 export const WORKERS_DISABLED = parseEnvBool('FS_DISABLE_WORKERS', false);
 
 // Hardcoded defaults
-export const DEFAULT_MAX_DEPTH = 10;
-export const DEFAULT_LIST_MAX_ENTRIES = 20000;
 export const DEFAULT_SEARCH_MAX_FILES = 20000;
 
 // Schema limits and defaults
 export const MAX_TREE_DEPTH = 50;
-export const DEFAULT_TREE_DEPTH = 5;
-export const MAX_TREE_ENTRIES = 20000;
 export const DEFAULT_TREE_ENTRIES = 1000;
 
 export const MAX_LIST_ENTRIES = 20000;

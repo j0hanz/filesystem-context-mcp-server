@@ -28,7 +28,7 @@ describe('security: path boundary enforcement', () => {
     { tool: 'read', args: () => ({ path: '/etc/passwd' }) },
     { tool: 'write', args: () => ({ path: '/tmp/escape.txt', content: 'x' }) },
     { tool: 'stat', args: () => ({ path: '/etc/hostname' }) },
-    { tool: 'ls', args: () => ({ path: '/etc' }) },
+    { tool: 'list', args: () => ({ path: '/etc' }) },
     { tool: 'delete', args: (d) => ({ paths: [join(d, '../escape.txt')] }) },
     { tool: 'make_dir', args: () => ({ paths: [`/tmp/evil-dir-${Date.now()}`] }) },
     {
@@ -218,10 +218,10 @@ describe('security: schema validation rejects malformed input', () => {
     assertToolError(raw);
   });
 
-  it('ls: rejects unsafe recursive glob patterns', async () => {
+  it('list: rejects paths outside allowed directories', async () => {
     const raw = await env.client.callTool({
-      name: 'ls',
-      arguments: { path: env.tmpDir, pattern: '../../*' },
+      name: 'list',
+      arguments: { path: '/../' },
     });
     assertToolError(raw);
   });

@@ -91,7 +91,10 @@ describe('list tool', () => {
 
     // dirs-first: sub must appear before alpha.txt
     assert.ok(names.indexOf('sub') < names.indexOf('alpha.txt'), 'Expected dirs first');
-    assert.ok(names.indexOf('alpha.txt') < names.indexOf('beta.txt'), 'Expected alphabetical ordering of files');
+    assert.ok(
+      names.indexOf('alpha.txt') < names.indexOf('beta.txt'),
+      'Expected alphabetical ordering of files',
+    );
 
     // flat: nested.txt must NOT appear at maxDepth=1
     assert.ok(!names.includes('nested.txt'), 'Expected no nested entries at maxDepth=1');
@@ -161,7 +164,7 @@ describe('list tool', () => {
     assert.equal(sc['entryCount'], 3);
     assert.ok((sc['totalEntries'] as number) > 3, 'Expected totalEntries > 3');
     assert.ok(typeof sc['resourceUri'] === 'string', 'Expected resourceUri when truncated');
-    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://result/'));
+    assert.ok(sc['resourceUri'].includes('filesystem-mcp://result/'));
   });
 
   it('totalFiles + totalDirectories === totalEntries', async () => {

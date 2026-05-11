@@ -14,13 +14,13 @@ import { after, before, describe, it } from 'node:test';
 
 import { assertOk, createTestEnv, getStructured, type TestEnv } from './helpers.js';
 
-// Names of all 14 tools as registered
+// Names of all 13 tools as registered
 const ALL_TOOLS = new Set([
   'hash_file',
   'make_dir',
   'delete',
   'edit',
-  'ls',
+  'list',
   'move',
   'read',
   'replace_text',
@@ -28,20 +28,18 @@ const ALL_TOOLS = new Set([
   'search_text',
   'find_files',
   'stat',
-  'tree',
   'write',
 ]);
 
 // Annotations by category
 const READ_ONLY_TOOLS = new Set([
   'hash_file',
-  'ls',
+  'list',
   'read',
   'list_roots',
   'search_text',
   'find_files',
   'stat',
-  'tree',
 ]);
 
 const DESTRUCTIVE_TOOLS = new Set(['edit', 'delete', 'move', 'replace_text', 'write']);
@@ -57,9 +55,9 @@ describe('Tool contract', () => {
     await env.cleanup();
   });
 
-  it('registers exactly 16 tools with correct names', async () => {
+  it('registers exactly 13 tools with correct names', async () => {
     const { tools } = await env.client.listTools();
-    assert.equal(tools.length, ALL_TOOLS.size, 'Expected 14 tools');
+    assert.equal(tools.length, ALL_TOOLS.size, 'Expected 13 tools');
     for (const tool of tools) {
       assert.ok(ALL_TOOLS.has(tool.name), `Unexpected tool name: ${tool.name}`);
     }
@@ -130,16 +128,16 @@ describe('Tool contract', () => {
   });
 
   it('structuredContent matches outputSchema shape for read-only tools', async () => {
-    // ls: returns ok, entries[]
-    const lsResult = await env.client.callTool({
-      name: 'ls',
+    // list: returns ok, entries[]
+    const listResult = await env.client.callTool({
+      name: 'list',
       arguments: { path: env.tmpDir },
     });
-    assertOk(lsResult);
-    const lsSc = getStructured(lsResult);
-    assert.equal(lsSc['ok'], true);
-    assert.ok(Array.isArray(lsSc['entries']), 'ls: expected entries array');
-    assert.equal(typeof lsSc['totalEntries'], 'number');
+    assertOk(listResult);
+    const listSc = getStructured(listResult);
+    assert.equal(listSc['ok'], true);
+    assert.ok(Array.isArray(listSc['entries']), 'list: expected entries array');
+    assert.equal(typeof listSc['totalEntries'], 'number');
 
     // stat: returns ok, info.type, info.size, etc.
     const statResult = await env.client.callTool({
@@ -153,17 +151,6 @@ describe('Tool contract', () => {
     assert.ok(file, 'stat: expected file object');
     assert.equal(typeof file['type'], 'string');
     assert.equal(typeof file['size'], 'number');
-
-    // tree: returns ok, ascii string, root
-    const treeResult = await env.client.callTool({
-      name: 'tree',
-      arguments: { path: env.tmpDir },
-    });
-    assertOk(treeResult);
-    const treeSc = getStructured(treeResult);
-    assert.equal(treeSc['ok'], true);
-    assert.equal(typeof treeSc['ascii'], 'string');
-    assert.equal(typeof treeSc['totalEntries'], 'number');
   });
 
   it('task-capable tools expose execution.taskSupport in tools/list', async () => {
@@ -171,11 +158,9 @@ describe('Tool contract', () => {
       'hash_file',
       'search_text',
       'find_files',
-      'ls',
       'read',
       'replace_text',
       'stat',
-      'tree',
     ]);
 
     const { tools } = await env.client.listTools();
@@ -210,8 +195,7 @@ describe('Tool contract', () => {
       arguments: Record<string, unknown>;
     }[] = [
       { name: 'list_roots', arguments: {} },
-      { name: 'ls', arguments: { path: env.tmpDir } },
-      { name: 'tree', arguments: { path: env.tmpDir } },
+      { name: 'list', arguments: { path: env.tmpDir } },
       { name: 'find_files', arguments: { path: env.tmpDir, pattern: '**/*' } },
       { name: 'stat', arguments: { path: testFile } },
       { name: 'stat', arguments: { paths: [testFile] } },
@@ -247,23 +231,19 @@ describe('Tool contract', () => {
     }
   });
 
-  it('tree.maxDepth default is 5 and description matches constant', async () => {
+  it('list.maxDepth default is 1 and description matches constant', async () => {
     const { tools } = await env.client.listTools();
-    const tree = tools.find((t) => t.name === 'tree');
-    assert.ok(tree, 'tree tool must exist');
-    const schema = tree.inputSchema as {
+    const list = tools.find((t) => t.name === 'list');
+    assert.ok(list, 'list tool must exist');
+    const schema = list.inputSchema as {
       properties?: Record<string, { default?: number; description?: string }>;
     };
     const maxDepthProp = schema.properties?.['maxDepth'];
-    assert.ok(maxDepthProp, 'tree must expose maxDepth property');
-    assert.equal(maxDepthProp.default, 5, 'tree.maxDepth default must be 5');
+    assert.ok(maxDepthProp, 'list must expose maxDepth property');
+    assert.equal(maxDepthProp.default, 1, 'list.maxDepth default must be 1');
     assert.ok(
-      maxDepthProp.description?.includes('5'),
-      `tree.maxDepth description must mention 5, got: "${String(maxDepthProp.description)}"`,
-    );
-    assert.ok(
-      !maxDepthProp.description?.includes('default: 4'),
-      `tree.maxDepth description must not say "default: 4"`,
+      maxDepthProp.description?.includes('1'),
+      `list.maxDepth description must mention 1, got: "${String(maxDepthProp.description)}"`,
     );
   });
 
