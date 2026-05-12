@@ -30,7 +30,7 @@ const DeleteFailureItemSchema = z.strictObject({
 });
 
 const DeleteOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Success indicator'),
+  ok: z.boolean().describe('Success indicator — false only when every path failed'),
   path: z.string().optional().describe('Deleted path'),
   paths: z.array(z.string()).optional().describe('Deleted paths (multi-path mode)'),
   failures: z.array(DeleteFailureItemSchema).optional().describe('Per-path errors'),
@@ -241,7 +241,8 @@ async function handleDelete(
     });
   }
 
-  const output: DeleteOutput = { ok: true as const };
+  const ok = successPaths.length > 0 || args.paths.length === 0;
+  const output: DeleteOutput = { ok };
   if (successPaths.length === 1) {
     output.path = successPaths[0];
   } else if (successPaths.length > 1) {
@@ -265,7 +266,10 @@ export const DELETE_FILE = defineTool({
     destructiveHint: true,
     openWorldHint: false,
   },
-  gotchas: ['Non-empty directories require `recursive=true`.'],
+  gotchas: [
+    'Non-empty directories require `recursive=true`.',
+    'ok: false only when every path failed. Partial failures return ok: true — always check failures[] for per-path errors.',
+  ],
   defaultErrorCode: ErrorCode.UNKNOWN,
   progressLabel: (args) => `Delete File: ${args.paths.map((p) => basename(p)).join(', ')}`,
   run: async (args, ctx) => {

@@ -674,6 +674,42 @@ describe('delete: processes all paths in batch', () => {
     assert.ok((failures[0]['path'] as string).includes('no-such-file.txt'));
     assert.equal((failures[0]['error'] as Record<string, unknown>)['code'], 'NOT_FOUND');
   });
+
+  it('returns ok:false when every path fails', async () => {
+    const raw = await env.client.callTool({
+      name: 'delete',
+      arguments: {
+        paths: [
+          join(env.tmpDir, 'no-such-a.txt'),
+          join(env.tmpDir, 'no-such-b.txt'),
+        ],
+      },
+    });
+    assertOk(raw);
+    const sc = getStructured(raw);
+    assert.equal(sc['ok'], false, 'ok must be false when every path fails');
+    const failures = sc['failures'] as Record<string, unknown>[] | undefined;
+    assert.ok(Array.isArray(failures) && failures.length === 2, 'Expected 2 failures');
+  });
+
+  it('returns ok:true when at least one path succeeds (partial failure)', async () => {
+    const goodFile = join(env.tmpDir, 'partial-good.txt');
+    await writeFile(goodFile, '', 'utf8');
+    const raw = await env.client.callTool({
+      name: 'delete',
+      arguments: {
+        paths: [
+          goodFile,
+          join(env.tmpDir, 'no-such-c.txt'),
+        ],
+      },
+    });
+    assertOk(raw);
+    const sc = getStructured(raw);
+    assert.equal(sc['ok'], true, 'ok must be true when at least one path succeeds');
+    const failures = sc['failures'] as Record<string, unknown>[] | undefined;
+    assert.ok(Array.isArray(failures) && failures.length === 1, 'Expected 1 failure');
+  });
 });
 
 describe('move: partial failure support', () => {
