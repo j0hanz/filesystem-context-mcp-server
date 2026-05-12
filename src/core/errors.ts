@@ -69,6 +69,24 @@ export const Problem = {
   validationFailed: (msg: string, o?: ProblemFactoryOptions): Problem =>
     build(ErrorCode.VALIDATION_FAILED, msg, o),
   unknown: (msg: string, o?: ProblemFactoryOptions): Problem => build(ErrorCode.UNKNOWN, msg, o),
+  fromUnknown(
+    error: unknown,
+    defaultCode: ErrorCode,
+    path?: string,
+  ): { code: ErrorCode; message: string; path?: string; suggestion?: string } {
+    const detailed = createDetailedError(error, path);
+    const shouldOverride =
+      detailed.code === ErrorCode.UNKNOWN || detailed.code === ErrorCode.IO_ERROR;
+    const code = shouldOverride ? defaultCode : detailed.code;
+    const defaultSuggestion = shouldOverride ? getSuggestion(code) : undefined;
+    const suggestion = defaultSuggestion ?? detailed.suggestion;
+    return {
+      code,
+      message: detailed.message,
+      ...(detailed.path !== undefined ? { path: detailed.path } : {}),
+      ...(suggestion !== undefined ? { suggestion } : {}),
+    };
+  },
 } as const;
 
 // ─── Suggestions ─────────────────────────────────────────────────────────────

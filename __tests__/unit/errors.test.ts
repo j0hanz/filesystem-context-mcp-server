@@ -13,7 +13,7 @@ import {
   isNodeError,
   isTimeoutLikeError,
   McpError,
-  type Problem,
+  Problem,
   zodErrorToProblem,
 } from '../../src/core/errors.js';
 
@@ -252,5 +252,47 @@ describe('createDetailedError', () => {
     assert.equal(d.code, ErrorCode.VALIDATION_FAILED);
     assert.ok(Array.isArray(d.issues));
     assert.ok((d.issues?.length ?? 0) > 0);
+  });
+});
+
+describe('Problem.fromUnknown', () => {
+  it('returns code and message for a plain Error', () => {
+    const err = new Error('boom');
+    const result = Problem.fromUnknown(err, ErrorCode.UNKNOWN);
+    assert.equal(result.code, ErrorCode.UNKNOWN);
+    assert.equal(result.message, 'boom');
+    assert.equal(result.path, undefined);
+    assert.equal(result.suggestion, undefined);
+  });
+
+  it('overrides UNKNOWN code with defaultCode', () => {
+    const err = new Error('something went wrong');
+    const result = Problem.fromUnknown(err, ErrorCode.NOT_FOUND);
+    assert.equal(result.code, ErrorCode.NOT_FOUND);
+  });
+
+  it('overrides IO_ERROR code with defaultCode', () => {
+    const ioErr = Object.assign(new Error('io'), { code: 'EMFILE' });
+    const result = Problem.fromUnknown(ioErr, ErrorCode.TOO_LARGE);
+    assert.equal(result.code, ErrorCode.TOO_LARGE);
+  });
+
+  it('preserves specific error codes (e.g. NOT_FOUND from ENOENT)', () => {
+    const notFound = Object.assign(new Error('not found'), { code: 'ENOENT' });
+    const result = Problem.fromUnknown(notFound, ErrorCode.UNKNOWN);
+    assert.equal(result.code, ErrorCode.NOT_FOUND);
+  });
+
+  it('includes path when provided', () => {
+    const err = new Error('oops');
+    const result = Problem.fromUnknown(err, ErrorCode.UNKNOWN, '/some/path');
+    assert.equal(result.path, '/some/path');
+  });
+
+  it('does not include issues or details fields', () => {
+    const err = new Error('oops');
+    const result = Problem.fromUnknown(err, ErrorCode.UNKNOWN) as Record<string, unknown>;
+    assert.equal('issues' in result, false);
+    assert.equal('details' in result, false);
   });
 });
