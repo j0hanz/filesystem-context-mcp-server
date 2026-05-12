@@ -316,6 +316,7 @@ test('defineTool: RunResult without text falls back to JSON.stringify(structured
     mcpReq: fakeMcpReq(),
   } as unknown as ServerContext);
   assert.equal((result.structuredContent as TestOutput).result, 'json-fallback');
+  assert.equal(result.content.length, 1);
   const text = (result.content[0] as { type: string; text: string }).text;
   assert.equal(text, JSON.stringify({ ok: true, result: 'json-fallback' }));
 });

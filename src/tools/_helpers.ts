@@ -170,7 +170,7 @@ export function buildResourceResponse<T>(params: BuildResourceResponseParams<T>)
   return {
     structured: params.structured,
     text: params.summary,
-    resources: params.resources,
+    ...(params.resources.length > 0 ? { resources: params.resources } : {}),
   };
 }
 
@@ -390,7 +390,6 @@ export function withDefaultIcons<T extends object>(
 // ---- ToolResult ----
 
 type ToolResponse<T> = {
-  _kind: 'wrapped';
   content: ContentBlock[];
   structuredContent: T;
   isError?: never;
