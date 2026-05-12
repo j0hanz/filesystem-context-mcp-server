@@ -14,7 +14,6 @@ import { SENSITIVE_FILE_DENYLIST } from '../src/core/util.js';
 import { TaskOrchestrator } from '../src/tasks.js';
 import { createTaskStore } from '../src/tasks.js';
 import { registerAllTools } from '../src/tools.js';
-import type { HandlerContext } from '../src/tools/_helpers.js';
 import { LinkedTransport } from './linked-transport.js';
 
 // Disable worker threads in integration tests — workers are tested separately.
@@ -76,7 +75,6 @@ export async function createTestEnv(): Promise<TestEnv> {
     pathGuard,
     resourceStore,
     isInitialized: () => true,
-    hasTaskSupport: true,
     orchestrator,
   });
 
@@ -149,7 +147,6 @@ export async function createTestEnvWithElicitation(handler: ElicitationHandler):
     pathGuard,
     resourceStore,
     isInitialized: () => true,
-    hasTaskSupport: true,
   });
 
   // Client advertises elicitation capability so the server will call elicitInput
@@ -236,18 +233,6 @@ export function getStructured(result: unknown): Record<string, unknown> {
     'structuredContent must be present on success results',
   );
   return sc as Record<string, unknown>;
-}
-
-/**
- * Create a stub HandlerContext for unit tests.
- * Allows tests to call tool.handle() directly without full MCP server setup.
- */
-export function makeHandlerContext(overrides?: Partial<HandlerContext>): HandlerContext {
-  return {
-    pathGuard: new PathGuard(SENSITIVE_FILE_DENYLIST),
-    resourceStore: undefined,
-    ...overrides,
-  };
 }
 
 /**

@@ -575,43 +575,6 @@ export function getTraceContext(): TraceContext | undefined {
   return toolContext.getStore()?.traceContext;
 }
 
-/**
- * Read W3C traceparent from _meta, checking both namespaced and legacy keys.
- * Namespaced key (io.opentelemetry/traceparent) is preferred for new messages.
- * Legacy key (traceparent) is checked for backward compatibility during transition.
- */
-export function readTraceparent(meta?: Record<string, unknown>): string | undefined {
-  if (!meta) return undefined;
-  // Try new namespaced key first
-  const namespaced = meta['io.opentelemetry/traceparent'];
-  if (typeof namespaced === 'string') return namespaced;
-  // Fall back to legacy key for compatibility
-  const legacy = meta['traceparent'];
-  return typeof legacy === 'string' ? legacy : undefined;
-}
-
-/**
- * Read W3C tracestate from _meta, checking both namespaced and legacy keys.
- */
-export function readTracestate(meta?: Record<string, unknown>): string | undefined {
-  if (!meta) return undefined;
-  const namespaced = meta['io.opentelemetry/tracestate'];
-  if (typeof namespaced === 'string') return namespaced;
-  const legacy = meta['tracestate'];
-  return typeof legacy === 'string' ? legacy : undefined;
-}
-
-/**
- * Read W3C baggage from _meta, checking both namespaced and legacy keys.
- */
-export function readBaggage(meta?: Record<string, unknown>): string | undefined {
-  if (!meta) return undefined;
-  const namespaced = meta['io.opentelemetry/baggage'];
-  if (typeof namespaced === 'string') return namespaced;
-  const legacy = meta['baggage'];
-  return typeof legacy === 'string' ? legacy : undefined;
-}
-
 function clearMeasureMarks(startMark: string, endMark: string): void {
   performance.clearMarks(startMark);
   performance.clearMarks(endMark);

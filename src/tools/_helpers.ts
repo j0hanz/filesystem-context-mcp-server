@@ -1,6 +1,5 @@
 // src/tools/_helpers.ts
 // Shared runtime helpers for tool implementations.
-// This module is the successor to shared.ts; all active tool files import from here.
 import type {
   ContentBlock,
   ElicitRequestFormParams,
@@ -8,21 +7,14 @@ import type {
   Icon,
   LoggingLevel,
   Notification,
-  ProgressNotification,
-  ProgressToken,
   RequestMeta,
   Role,
   ServerContext,
 } from '@modelcontextprotocol/server';
 
-// ============ Legacy Compatibility (merged from shared.ts, progress-sinks.ts) ============
-// These exports preserve backward-compatibility for tests and consumers that previously
-// imported from tools/shared.js or tools/progress-sinks.js.
-
 import { z } from 'zod/v4';
 
 import type { FileInfo } from '../config.js';
-import { createTimedAbortSignal } from '../core/concurrency.js';
 import {
   createDetailedError,
   ErrorCode,
@@ -31,16 +23,6 @@ import {
   McpError,
 } from '../core/errors.js';
 import type { MimeKind } from '../core/fs.js';
-import {
-  Logger,
-  ProgressSession,
-  readBaggage,
-  readTraceparent,
-  readTracestate,
-  type TraceContext,
-  withToolDiagnostics,
-} from '../core/observability.js';
-import type { ProgressEvent, ProgressSink } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import { createBase64JsonCodec } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
@@ -83,10 +65,7 @@ export interface ToolRegistrationOptions {
   pathGuard: PathGuard;
   resourceStore?: ResourceStore;
   isInitialized?: () => boolean;
-  hasTaskSupport?: boolean;
   orchestrator?: TaskOrchestrator | undefined;
-  serverIcon?: string;
-  iconInfo?: IconInfo;
 }
 
 // ============ Error Helpers ============
@@ -345,8 +324,6 @@ export function buildFileInfoPayload(info: FileInfo): FileInfoPayload {
   };
 }
 
-export { ProgressSession };
-
 // ---- Icon helpers ----
 
 function normalizeToolExecution<T extends object>(tool: T): T {
@@ -414,7 +391,7 @@ export function withDefaultIcons<T extends object>(
   return { ...normalized, icons: [{ src: iconInfo.src, mimeType: iconInfo.mimeType }] };
 }
 
-// ---- Legacy ToolResult / HandlerContext ----
+// ---- ToolResult ----
 
 type ToolResponse<T> = {
   _kind: 'wrapped';
@@ -431,30 +408,6 @@ interface ToolErrorResponse extends Record<string, unknown> {
 
 export type ToolResult<T> = ToolResponse<T> | ToolErrorResponse;
 
-export interface HandlerContext {
-  signal?: AbortSignal;
-  pathGuard: PathGuard;
-  resourceStore: ResourceStore | undefined;
-  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>;
-  log?: (level: LoggingLevel, data: unknown, logger?: string) => Promise<void>;
-  onProgress?: (params: { current: number; total?: number; message?: string }) => void;
-}
-
-// W3C Trace Context: version-traceid-parentid-traceflags
-const TRACEPARENT_RE = /^[\da-f]{2}-[\da-f]{32}-[\da-f]{16}-[\da-f]{2}$/i;
-
-function extractTraceContext(meta: ToolContext['_meta']): TraceContext | undefined {
-  const tp = readTraceparent(meta);
-  if (typeof tp !== 'string' || !TRACEPARENT_RE.test(tp)) return undefined;
-  const ts = readTracestate(meta);
-  const bg = readBaggage(meta);
-  return {
-    traceparent: tp,
-    ...(ts ? { tracestate: ts } : {}),
-    ...(bg ? { baggage: bg } : {}),
-  };
-}
-
 export function toToolContext(ctx?: ToolContext | ServerContext): ToolContext {
   if (!ctx) return {};
   if ('mcpReq' in ctx) {
@@ -468,170 +421,4 @@ export function toToolContext(ctx?: ToolContext | ServerContext): ToolContext {
     };
   }
   return ctx;
-}
-
-function validateStructuredOutput<T>(
-  toolName: string,
-  outputSchema: z.ZodType<T>,
-  structuredContent: unknown,
-): T {
-  const parsed = outputSchema.safeParse(structuredContent);
-  if (parsed.success) return parsed.data;
-  throw new McpError(
-    ErrorCode.UNKNOWN,
-    `Tool "${toolName}" returned invalid structuredContent.`,
-    undefined,
-    { errors: z.treeifyError(parsed.error) },
-  );
-}
-
-interface ToolExecutionOptions<T> {
-  toolName: string;
-  ctx: ToolContext;
-  outputSchema?: z.ZodType<T>;
-  run: (signal: AbortSignal | undefined) => ToolResult<T> | Promise<ToolResult<T>>;
-  onError: (error: unknown) => ToolResult<T>;
-  context?: Record<string, unknown>;
-  timedSignal?: { timeoutMs?: number };
-}
-
-export async function executeToolWithDiagnostics<T>(
-  options: ToolExecutionOptions<T>,
-): Promise<ToolResult<T>> {
-  const traceContext = extractTraceContext(options.ctx._meta);
-  return withToolDiagnostics(
-    options.toolName,
-    async () => {
-      try {
-        const { signal: rawSignal, cleanup } = options.timedSignal
-          ? createTimedAbortSignal(options.ctx.signal, options.timedSignal.timeoutMs)
-          : { signal: options.ctx.signal, cleanup: () => undefined };
-        try {
-          const rawResult = await options.run(rawSignal);
-          if (!Object.hasOwn(rawResult, 'structuredContent')) {
-            return rawResult;
-          }
-          if (!options.outputSchema) return rawResult;
-          const typed = rawResult as ToolResponse<T>;
-          return {
-            ...typed,
-            structuredContent: validateStructuredOutput(
-              options.toolName,
-              options.outputSchema,
-              typed.structuredContent,
-            ),
-          };
-        } finally {
-          cleanup();
-        }
-      } catch (error) {
-        return options.onError(error);
-      }
-    },
-    {
-      ...options.context,
-      ...(traceContext ? { traceContext } : {}),
-    },
-  );
-}
-
-// ---- McpProgressSink ----
-
-interface McpProgressSinkOptions {
-  progressToken: ProgressToken;
-  sendNotification: (n: ProgressNotification) => Promise<void>;
-  signal: AbortSignal;
-  log?: ToolContext['log'];
-}
-
-export class McpProgressSink implements ProgressSink {
-  readonly name = 'mcp';
-  readonly #progressToken: ProgressToken;
-  readonly #sendNotification: (n: ProgressNotification) => Promise<void>;
-  readonly #signal: AbortSignal;
-  readonly #log?: ToolContext['log'];
-
-  constructor(opts: McpProgressSinkOptions) {
-    this.#progressToken = opts.progressToken;
-    this.#sendNotification = opts.sendNotification;
-    this.#signal = opts.signal;
-    this.#log = opts.log;
-  }
-
-  async emit(event: ProgressEvent): Promise<void> {
-    if (this.#signal.aborted) return;
-
-    if (event.kind === 'status') {
-      await this.#log?.('info', `Progress Status: ${event.message}`);
-      return;
-    }
-
-    if (event.kind === 'tick') {
-      await this.#send({
-        progress: event.current,
-        ...(event.total !== undefined ? { total: event.total } : {}),
-        message: event.message,
-      });
-      return;
-    }
-
-    const displayCurrent = Math.max(event.current, event.total ?? event.current, 1);
-    await this.#send({
-      progress: displayCurrent,
-      total: displayCurrent,
-      message: event.message,
-    });
-  }
-
-  async #send(params: { progress: number; total?: number; message?: string }): Promise<void> {
-    await this.#sendNotification({
-      method: 'notifications/progress',
-      params: {
-        progressToken: this.#progressToken,
-        progress: params.progress,
-        ...(params.total !== undefined ? { total: params.total } : {}),
-        ...(params.message !== undefined ? { message: params.message } : {}),
-      },
-    });
-  }
-}
-
-function hasMcpProgress(ctx: ToolContext): ctx is ToolContext & {
-  _meta: { progressToken: ProgressToken };
-  sendNotification: (n: ProgressNotification) => Promise<void>;
-  signal: AbortSignal;
-} {
-  return Boolean(ctx._meta?.progressToken && ctx.sendNotification && ctx.signal);
-}
-
-export function progressSessionFromContext(
-  ctx: ToolContext,
-  opts: { label: string; total?: number },
-): ProgressSession {
-  const sinks: ProgressSink[] = [];
-
-  if (hasMcpProgress(ctx)) {
-    try {
-      sinks.push(
-        new McpProgressSink({
-          progressToken: ctx._meta.progressToken,
-          sendNotification: ctx.sendNotification,
-          signal: ctx.signal,
-          log: ctx.log,
-        }),
-      );
-    } catch (error) {
-      Logger.warn(
-        'progress-sinks',
-        `Failed to instantiate McpProgressSink: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
-
-  return new ProgressSession({
-    label: opts.label,
-    ...(opts.total !== undefined ? { total: opts.total } : {}),
-    sinks,
-    dynamicRateLimit: true,
-  });
 }

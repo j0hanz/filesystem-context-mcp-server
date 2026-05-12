@@ -398,7 +398,6 @@ export async function createServer(
     };
   }
 
-  const hasTaskSupport = capabilities.tasks?.requests?.tools?.call !== undefined;
   const orchestrator = taskStore ? new TaskOrchestrator(taskStore) : undefined;
 
   const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> = {
@@ -458,9 +457,7 @@ export async function createServer(
     pathGuard: rootsManager.pathGuard,
     resourceStore,
     isInitialized: options.isInitialized ?? (() => rootsManager.isInitialized()),
-    hasTaskSupport,
     orchestrator,
-    ...(localIcon ? { iconInfo: localIcon } : {}),
   });
 
   return new FilesystemServerContext(server, rootsManager, resourceStore, resourcesHandle);
