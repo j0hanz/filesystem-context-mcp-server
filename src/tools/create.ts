@@ -6,17 +6,11 @@ import { basename, dirname } from 'node:path';
 import { z } from 'zod/v4';
 
 import { withAbort } from '../core/concurrency.js';
-import { ErrorCode, isAbortError } from '../core/errors.js';
+import { ErrorCode, isAbortError, Problem } from '../core/errors.js';
 import { atomicWriteFile, detectMimeType } from '../core/fs.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import { IsoDateTime, NonNegInt, PerFileErrorSchema, RequiredPath } from '../schema.js';
-import {
-  buildResourceResponse,
-  buildStructuredError,
-  buildToolResponse,
-  formatBytes,
-  putResource,
-} from './_helpers.js';
+import { formatBytes, putResource } from './_helpers.js';
 import { defineTool } from './define.js';
 
 const CreateFileItemSchema = z.strictObject({
@@ -137,7 +131,7 @@ export const CREATE = defineTool({
         if (isAbortError(err)) throw err; // propagate cancellation
         failures.push({
           path: file.path,
-          error: buildStructuredError(err, ErrorCode.UNKNOWN, file.path),
+          error: Problem.fromUnknown(err, ErrorCode.UNKNOWN, file.path),
         });
       }
     }
@@ -150,14 +144,10 @@ export const CREATE = defineTool({
     const summary = buildSummary(results, failures.length);
 
     if (links.length > 0) {
-      return buildResourceResponse({
-        summary,
-        resources: links,
-        structured,
-      });
+      return { structured, text: summary, resources: links };
     }
 
-    return buildToolResponse(summary, structured);
+    return { structured, text: summary };
   },
   progressLabel: (args) => {
     if (args.files.length === 1) {

@@ -7,10 +7,9 @@ import { basename, dirname, resolve, sep } from 'node:path';
 import { z } from 'zod/v4';
 
 import { withAbort } from '../core/concurrency.js';
-import { ErrorCode, isAbortError, isNodeError, McpError } from '../core/errors.js';
+import { ErrorCode, isAbortError, isNodeError, McpError, Problem } from '../core/errors.js';
 import type { PathGuard } from '../core/path.js';
 import { RequiredPath } from '../schema.js';
-import { buildStructuredError, buildToolResponse } from './_helpers.js';
 import { defineTool } from './define.js';
 
 const MoveItemSchema = z.strictObject({
@@ -217,7 +216,7 @@ export const MOVE = defineTool({
         // Re-throw cancellation (user-declined overwrite or abort signal)
         if (isAbortError(err)) throw err;
         // Collect all other errors as per-move failures
-        const structured = buildStructuredError(err, ErrorCode.UNKNOWN, move.source);
+        const structured = Problem.fromUnknown(err, ErrorCode.UNKNOWN, move.source);
         failures.push({
           source: move.source,
           destination: move.destination,
@@ -231,6 +230,6 @@ export const MOVE = defineTool({
       moves: results,
       ...(failures.length > 0 ? { failures } : {}),
     };
-    return buildToolResponse(buildSummary(results, failures), output);
+    return { structured: output, text: buildSummary(results, failures) };
   },
 });

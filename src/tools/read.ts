@@ -5,7 +5,7 @@ import { basename } from 'node:path';
 import { z } from 'zod/v4';
 
 import { processInParallel, withAbort } from '../core/concurrency.js';
-import { ErrorCode } from '../core/errors.js';
+import { ErrorCode, Problem } from '../core/errors.js';
 import {
   applyIndexedErrors,
   applyIndexedValues,
@@ -36,13 +36,7 @@ import {
   Sha256Hex,
   validateReadRange,
 } from '../schema.js';
-import {
-  buildResourceResponse,
-  buildStructuredError,
-  buildToolResponse,
-  formatBytes,
-  putResource,
-} from './_helpers.js';
+import { formatBytes, putResource } from './_helpers.js';
 import { defineTool, type RunResult } from './define.js';
 
 const readRangeFields = createReadRangeFields({
@@ -330,14 +324,10 @@ async function handleReadFile(
       mimeInfo.mimeType,
     ].join(' \u00b7 ');
 
-    return buildResourceResponse({
-      summary,
-      resources: [link],
-      structured: structuredWithResource,
-    });
+    return { structured: structuredWithResource, text: summary, resources: [link] };
   }
 
-  return buildToolResponse(result.content, structured);
+  return { structured, text: result.content };
 }
 
 // ---------------------------------------------------------------------------
@@ -733,7 +723,7 @@ function maybeExternalizeReadManyResult(
   const { error, ...rest } = result;
   const baseResult: ReadManyResultWithResource = {
     ...rest,
-    ...(error ? { error: buildStructuredError(error, ErrorCode.UNKNOWN, result.path) } : {}),
+    ...(error ? { error: Problem.fromUnknown(error, ErrorCode.UNKNOWN, result.path) } : {}),
   };
   if (!result.content || !resourceStore) return baseResult;
   const contentSample = Buffer.from(result.content.slice(0, 512));
@@ -809,13 +799,9 @@ async function handleReadMultipleFiles(
   };
   const summaryText = `read: ${String(payload.summary.total)} file${payload.summary.total === 1 ? '' : 's'}`;
   if (payload.resourceLinks.length > 0) {
-    return buildResourceResponse({
-      summary: summaryText,
-      resources: payload.resourceLinks,
-      structured,
-    });
+    return { structured, text: summaryText, resources: payload.resourceLinks };
   }
-  return buildToolResponse(summaryText, structured);
+  return { structured, text: summaryText };
 }
 
 export const READ_FILE = defineTool({

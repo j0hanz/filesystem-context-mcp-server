@@ -6,7 +6,7 @@ import { z } from 'zod/v4';
 
 import type { FileInfo, GetMultipleFileInfoResult, MultipleFileInfoResult } from '../config.js';
 import { assertNotAborted, processInParallel, withAbort } from '../core/concurrency.js';
-import { ErrorCode, isAbortError } from '../core/errors.js';
+import { ErrorCode, isAbortError, Problem } from '../core/errors.js';
 import { getFileType, isHidden } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
@@ -18,14 +18,7 @@ import {
   PerFileErrorSchema,
   RequiredPath,
 } from '../schema.js';
-import {
-  buildFileInfoPayload,
-  buildResourceResponse,
-  buildStructuredError,
-  buildToolResponse,
-  formatBytes,
-  putResource,
-} from './_helpers.js';
+import { buildFileInfoPayload, formatBytes, putResource } from './_helpers.js';
 import { defineTool, type RunResult } from './define.js';
 
 const StatInputSchema = z
@@ -278,7 +271,7 @@ async function handleGetMultipleFileInfo(
     info: entry.status === 'success' ? buildFileInfoPayload(entry.info) : undefined,
     error:
       entry.status === 'error'
-        ? buildStructuredError(entry.error, ErrorCode.NOT_FOUND, entry.path)
+        ? Problem.fromUnknown(entry.error, ErrorCode.NOT_FOUND, entry.path)
         : undefined,
   }));
 
@@ -301,9 +294,7 @@ async function handleGetMultipleFileInfo(
         ? 'stat: 1 directory'
         : `stat: ${String(fileCount)} file${fileCount === 1 ? '' : 's'} \u00b7 ${String(dirCount)} director${dirCount === 1 ? 'y' : 'ies'}`;
 
-  return buildResourceResponse({
-    summary,
-    resources: [statsLink],
+  return {
     structured: {
       ok: true as const,
       results: structuredResults,
@@ -316,7 +307,9 @@ async function handleGetMultipleFileInfo(
       dirCount,
       resourceUri: statsEntry.uri,
     },
-  });
+    text: summary,
+    resources: [statsLink],
+  };
 }
 
 export const GET_FILE_INFO = defineTool({
@@ -369,9 +362,12 @@ export const GET_FILE_INFO = defineTool({
     });
     const parts = [info.name, formatBytes(info.size)];
     if (info.symlinkTarget) parts.push(`\u2192 ${info.symlinkTarget}`);
-    return buildToolResponse(`stat: ${parts.join(' \u2022 ')}`, {
-      ok: true as const,
-      file: buildFileInfoPayload(info),
-    });
+    return {
+      structured: {
+        ok: true as const,
+        file: buildFileInfoPayload(info),
+      },
+      text: `stat: ${parts.join(' \u2022 ')}`,
+    };
   },
 });

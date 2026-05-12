@@ -7,12 +7,11 @@ import { basename } from 'node:path';
 import { z } from 'zod/v4';
 
 import { processInParallel, withAbort } from '../core/concurrency.js';
-import { ErrorCode, isNodeError, McpError } from '../core/errors.js';
+import { ErrorCode, isNodeError, McpError, Problem } from '../core/errors.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import { defaultFalseBoolean, RequiredPath } from '../schema.js';
-import { buildStructuredError, buildToolResponse } from './_helpers.js';
 import { defineTool } from './define.js';
 
 const DeleteInputSchema = z.strictObject({
@@ -60,13 +59,13 @@ function toDeleteFailure(path: string, error: unknown): DeleteFailure {
     if (error.code === 'ENOENT') {
       return {
         path,
-        error: buildStructuredError(error, ErrorCode.NOT_FOUND, path),
+        error: Problem.fromUnknown(error, ErrorCode.NOT_FOUND, path),
       };
     }
     if (error.code === 'ENOTEMPTY' || error.code === 'EISDIR' || error.code === 'EEXIST') {
       return {
         path,
-        error: buildStructuredError(
+        error: Problem.fromUnknown(
           new Error('Directory not empty. Set recursive: true.'),
           ErrorCode.INVALID_INPUT,
           path,
@@ -76,11 +75,11 @@ function toDeleteFailure(path: string, error: unknown): DeleteFailure {
     if (error.code === 'EPERM' || error.code === 'EACCES') {
       return {
         path,
-        error: buildStructuredError(error, ErrorCode.PERMISSION_DENIED, path),
+        error: Problem.fromUnknown(error, ErrorCode.PERMISSION_DENIED, path),
       };
     }
   }
-  return { path, error: buildStructuredError(error, ErrorCode.UNKNOWN, path) };
+  return { path, error: Problem.fromUnknown(error, ErrorCode.UNKNOWN, path) };
 }
 
 function resolveItemType(
@@ -162,7 +161,7 @@ async function deleteSinglePath(
     return {
       failure: {
         path: validPath,
-        error: buildStructuredError(
+        error: Problem.fromUnknown(
           new McpError(
             ErrorCode.ACCESS_DENIED,
             'Deleting a workspace root directory is not allowed',
@@ -191,7 +190,7 @@ async function deleteSinglePath(
     return {
       failure: {
         path: validPath,
-        error: buildStructuredError(
+        error: Problem.fromUnknown(
           new McpError(ErrorCode.CANCELLED, 'Delete cancelled by user'),
           ErrorCode.CANCELLED,
           validPath,
@@ -291,6 +290,6 @@ export const DELETE_FILE = defineTool({
       delCount > 0
         ? `delete-file: deleted ${delCount === 1 ? (deleted[0] ?? '') : `${String(delCount)} paths`}${failSuffix}`
         : `delete-file: ${String(failCount)} failure${failCount === 1 ? '' : 's'}`;
-    return buildToolResponse(summary, structured);
+    return { structured, text: summary };
   },
 });

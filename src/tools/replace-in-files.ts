@@ -7,7 +7,7 @@ import RE2 from 're2';
 import { z } from 'zod/v4';
 
 import { runInWorker, shouldOffload } from '../core/concurrency.js';
-import { ErrorCode, formatUnknownErrorMessage, McpError } from '../core/errors.js';
+import { ErrorCode, formatUnknownErrorMessage, McpError, Problem } from '../core/errors.js';
 import { atomicWriteFile, detectMimeType, globEntries } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
@@ -30,13 +30,7 @@ import {
   PerFileErrorSchema,
   SafeGlobPattern,
 } from '../schema.js';
-import {
-  buildResourceResponse,
-  buildStructuredError,
-  buildToolResponse,
-  putResource,
-  truncateProgressPattern,
-} from './_helpers.js';
+import { putResource, truncateProgressPattern } from './_helpers.js';
 import { defineTool } from './define.js';
 
 function globEscape(name: string): string {
@@ -257,7 +251,7 @@ async function processEntry(entryPath: string, ctx: ReplaceContext): Promise<voi
     summary.failedFiles++;
     recordFailure(summary.failures, {
       path: entryPath,
-      error: buildStructuredError(error, ErrorCode.UNKNOWN, entryPath),
+      error: Problem.fromUnknown(error, ErrorCode.UNKNOWN, entryPath),
     });
     return;
   }
@@ -290,7 +284,7 @@ async function processEntry(entryPath: string, ctx: ReplaceContext): Promise<voi
     summary.failedFiles++;
     recordFailure(summary.failures, {
       path: validPath,
-      error: buildStructuredError(error, ErrorCode.UNKNOWN, validPath),
+      error: Problem.fromUnknown(error, ErrorCode.UNKNOWN, validPath),
     });
   }
 }
@@ -672,13 +666,9 @@ export const SEARCH_AND_REPLACE = defineTool({
       ` \u00b7 ${String(structured.totalMatches)} match(es)` +
       ` in ${String(structured.filesModified)} file(s)`;
     if (link) {
-      return buildResourceResponse({
-        summary: summaryText,
-        resources: [link],
-        structured,
-      });
+      return { structured, text: summaryText, resources: [link] };
     }
-    return buildToolResponse(summaryText, structured);
+    return { structured, text: summaryText };
   },
 });
 function buildSearchAndReplaceStructuredResult(

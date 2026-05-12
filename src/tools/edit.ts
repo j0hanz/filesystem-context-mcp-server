@@ -8,7 +8,7 @@ import RE2 from 're2';
 import { z } from 'zod/v4';
 
 import { processInParallel, runInWorker, shouldOffload, withAbort } from '../core/concurrency.js';
-import { ErrorCode, McpError } from '../core/errors.js';
+import { ErrorCode, McpError, Problem } from '../core/errors.js';
 import { atomicWriteFile, detectMimeType, readFileWithStats } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
@@ -23,13 +23,7 @@ import {
   PositiveInt,
   RequiredPath,
 } from '../schema.js';
-import {
-  buildResourceResponse,
-  buildStructuredError,
-  buildToolResponse,
-  formatBytes,
-  putResource,
-} from './_helpers.js';
+import { formatBytes, putResource } from './_helpers.js';
 import { defineTool, type RunResult, type ToolCtx } from './define.js';
 
 const EditSpecSchema = z.strictObject({
@@ -631,7 +625,7 @@ export async function runOneFile(
     return {
       kind: 'failed',
       path: filePath,
-      error: buildStructuredError(err, ErrorCode.UNKNOWN, filePath),
+      error: Problem.fromUnknown(err, ErrorCode.UNKNOWN, filePath),
     };
   }
 }
@@ -658,13 +652,9 @@ async function dispatch(args: EditInput, ctx: ToolCtx): Promise<RunResult<EditOu
       ` \u00b7 ${formatBytes(structured.size ?? 0)}` +
       ` \u00b7 ${String(structured.lineCount)} lines`;
     if (resourceLink) {
-      return buildResourceResponse({
-        summary,
-        resources: [resourceLink],
-        structured,
-      });
+      return { structured, text: summary, resources: [resourceLink] };
     }
-    return buildToolResponse(summary, structured);
+    return { structured, text: summary };
   }
 
   // Multi-file: run in parallel
