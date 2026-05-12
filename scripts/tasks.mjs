@@ -300,12 +300,7 @@ function parseCliConfig(args) {
     return null;
   }
 
-  const command = positionals[0];
-  if (!command) {
-    process.stderr.write(`Missing command.\n\n${HELP_TEXT}`);
-    process.exitCode = 2;
-    return null;
-  }
+  const command = positionals[0] ?? 'check';
 
   if (command === 'check' || command === 'fix') {
     if (
@@ -320,7 +315,7 @@ function parseCliConfig(args) {
     return {
       command,
       quick: !!values.quick,
-      all: !!values.all,
+      all: values.all ?? true,
       json: !!values.json,
       llm: !!values.llm,
     };
@@ -2127,6 +2122,8 @@ class TaskOrchestrator {
       // it crashes on Windows). Format the workspace ourselves so the rerun passes.
       const formatResult = await ProcessRunner.execAsync('npm', ['run', 'format']);
       if (!formatResult.ok) return this._applyFixAndRerun(task, formatResult);
+      const check = await task.runner();
+      return check.ok ? Results.pass({ annotation: 'auto-fixed' }) : task.runner();
     }
 
     return this._applyFixAndRerun(task, fixResult);
