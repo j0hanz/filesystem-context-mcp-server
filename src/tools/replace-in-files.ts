@@ -457,10 +457,10 @@ async function resolveSearchRoot(
   pathValue: string | undefined,
   pathGuard: PathGuard,
 ): Promise<{ root: string; filePattern: string | undefined }> {
-  const resolvedPath = pathValue
-    ? await pathGuard.validateExistingPath(pathValue)
-    : pathGuard.resolvePathOrRoot(pathValue);
-
+  if (!pathValue) {
+    return { root: pathGuard.resolvePathOrRoot(undefined), filePattern: undefined };
+  }
+  const resolvedPath = await pathGuard.validateExistingPath(pathValue);
   const fileStats = await stat(resolvedPath);
   if (fileStats.isFile()) {
     return { root: dirname(resolvedPath), filePattern: globEscape(basename(resolvedPath)) };
@@ -640,7 +640,8 @@ export const SEARCH_AND_REPLACE = defineTool({
   defaultErrorCode: ErrorCode.UNKNOWN,
   progressLabel: (args) => {
     const dryLabel = args.dryRun ? ' [dry run]' : '';
-    return `Search and Replace: "${truncateProgressPattern(args.searchPattern)}" in ${args.pattern ?? '**/*'}${dryLabel}`;
+    const scope = args.pattern ?? args.path ?? '**/*';
+    return `Search and Replace: "${truncateProgressPattern(args.searchPattern)}" in ${scope}${dryLabel}`;
   },
   run: async (args, ctx) => {
     const truncatedPattern = truncateProgressPattern(args.searchPattern);
