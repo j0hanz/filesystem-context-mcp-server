@@ -69,6 +69,11 @@ export interface CreatePatchPayload {
   newHeader: string;
 }
 
+export interface ApplyPatchResult {
+  applied: string | false;
+  patch: StructuredPatch | null;
+}
+
 /**
  * Unified registry of all worker task types.
  * Maps task name → { payload type, result type }
@@ -85,10 +90,6 @@ export type TaskPayload<T extends WorkerTaskName> = WorkerTaskRegistry[T]['paylo
 
 /** Extract result type for a worker task by name. */
 export type TaskResult<T extends WorkerTaskName> = WorkerTaskRegistry[T]['result'];
-export interface ApplyPatchResult {
-  applied: string | false;
-  patch: StructuredPatch | null;
-}
 
 export interface TaskRequest {
   id: number;

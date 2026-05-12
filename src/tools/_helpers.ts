@@ -425,17 +425,6 @@ export function toToolContext(ctx?: ToolContext | ServerContext): ToolContext {
 
 // ============ Error Boundary Assertions ============
 
-/**
- * Assertion function that narrows ToolCtx.signal from optional to required.
- *
- * @example
- * export async function myTool(args: Input, ctx: ToolCtx) {
- *   requireSignal(ctx);
- *   // Now ctx.signal is definitely AbortSignal (not optional)
- *   const result = await someAsyncOp(ctx.signal);
- * }
- * @throws {Error} If signal is not provided
- */
 export function requireSignal(
   ctx: ToolContext,
 ): asserts ctx is ToolContext & { signal: AbortSignal } {
@@ -444,37 +433,25 @@ export function requireSignal(
   }
 }
 
-/**
- * Assertion function that narrows ToolContext.log from optional to required.
- * Throws if log callback is undefined.
- */
 export function requireLog(
   ctx: ToolContext,
-): asserts ctx is ToolContext & { log: Required<ToolContext['log']> } {
+): asserts ctx is ToolContext & { log: NonNullable<ToolContext['log']> } {
   if (!ctx.log) {
     throw new Error('Logger callback is required but was not provided in ToolContext');
   }
 }
 
-/**
- * Assertion function that narrows ToolContext.sendNotification from optional to required.
- * Throws if sendNotification callback is undefined.
- */
 export function requireSendNotification(
   ctx: ToolContext,
-): asserts ctx is ToolContext & { sendNotification: Required<ToolContext['sendNotification']> } {
+): asserts ctx is ToolContext & { sendNotification: NonNullable<ToolContext['sendNotification']> } {
   if (!ctx.sendNotification) {
     throw new Error('Notification callback is required but was not provided in ToolContext');
   }
 }
 
-/**
- * Assertion function that narrows ToolContext.elicitInput from optional to required.
- * Throws if elicit callback is undefined.
- */
 export function requireElicitInput(
   ctx: ToolContext,
-): asserts ctx is ToolContext & { elicitInput: Required<ToolContext['elicitInput']> } {
+): asserts ctx is ToolContext & { elicitInput: NonNullable<ToolContext['elicitInput']> } {
   if (!ctx.elicitInput) {
     throw new Error('Elicit callback is required but was not provided in ToolContext');
   }

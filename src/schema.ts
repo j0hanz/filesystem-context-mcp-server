@@ -21,20 +21,8 @@ export interface McpSchemaPair {
   readonly jsonSchema: object;
 }
 
-/**
- * Extract the inferred type from a Zod schema.
- * Useful for generic handlers that accept Zod types.
- *
- * @example
- * const schema = z.object({ name: z.string(), age: z.number() });
- * type Data = ZodInfer<typeof schema>; // { name: string; age: number; }
- */
 export type ZodInfer<T> = T extends z.ZodType ? z.infer<T> : never;
 
-/**
- * Extract both the inferred type and the schema together.
- * Useful for creating type-safe schema+parser pairs.
- */
 export interface SchemaAndInfer<T extends z.ZodType> {
   schema: T;
   inferred: z.infer<T>;
