@@ -16,7 +16,7 @@ import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../core/util.js';
 import { NonNegInt, RequiredPath } from '../schema.js';
-import { buildResourceResponse, putResource } from './_helpers.js';
+import { putResource } from './_helpers.js';
 import { defineTool } from './define.js';
 
 const WINDOWS_PATH_SEPARATOR = /\\/gu;
@@ -225,7 +225,7 @@ async function handleCalculateHash(
   resourceStore: ResourceStore | undefined,
   signal?: AbortSignal,
   onProgress?: (progress: { total?: number; current: number }) => void,
-): Promise<ReturnType<typeof buildResourceResponse<z.infer<typeof HashOutputSchema>>>> {
+) {
   const validPath = await pathGuard.validateExistingPath(args.path);
   const { algorithms } = args;
 
@@ -277,9 +277,7 @@ async function handleCalculateHash(
   const hashDisplay = primaryHash.length > 16 ? `${primaryHash.slice(0, 16)}\u2026` : primaryHash;
   const summary = `calculate-hash: ${fileName} \u00b7 ${displayAlgo}: ${hashDisplay}`;
 
-  return buildResourceResponse({
-    summary,
-    resources: [link],
+  return {
     structured: {
       ok: true as const,
       filePath: validPath,
@@ -289,7 +287,9 @@ async function handleCalculateHash(
       isDirectory: stats.isDirectory(),
       ...(fileCount !== undefined ? { fileCount } : {}),
     },
-  });
+    text: summary,
+    resources: [link],
+  };
 }
 
 export const CALCULATE_HASH = defineTool({

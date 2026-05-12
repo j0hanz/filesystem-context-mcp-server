@@ -46,8 +46,6 @@ import {
   SafeGlobPattern,
 } from '../schema.js';
 import {
-  buildResourceResponse,
-  buildToolResponse,
   decodeOffsetCursor,
   encodeOffsetCursor,
   putResource,
@@ -667,12 +665,8 @@ export const SEARCH_FILES = defineTool({
     );
     const summary = `search-files: '${args.pattern}' \u00b7 ${String(count)} matches`;
     if (link) {
-      return buildResourceResponse({
-        summary,
-        resources: [link],
-        structured,
-      });
+      return { structured, text: summary, resources: [link] };
     }
-    return buildToolResponse(summary, structured);
+    return { structured, text: summary };
   },
 });

@@ -28,7 +28,7 @@ import {
   OptionalPath,
   PositiveInt,
 } from '../schema.js';
-import { buildToolResponse, putResource } from './_helpers.js';
+import { putResource } from './_helpers.js';
 import { defineTool } from './define.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -338,6 +338,6 @@ export const LIST = defineTool({
     const output = await handleList(args, ctx.pathGuard, ctx.signal, ctx.resourceStore);
     const path = args.path;
     const label = 'List: ' + (path ? basename(path) : '.');
-    return buildToolResponse(label, output);
+    return { structured: output, text: label };
   },
 });
