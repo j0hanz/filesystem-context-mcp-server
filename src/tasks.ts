@@ -12,7 +12,6 @@ import {
   type TaskStatus,
   type ToolTaskHandler,
 } from '@modelcontextprotocol/server';
-
 import type { StandardSchemaWithJSON } from '@modelcontextprotocol/server';
 
 import { EventEmitter } from 'node:events';
@@ -114,7 +113,9 @@ export class TaskOrchestrator {
         [args, ctx] = params;
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
       const clientCaps = (ctx as any).session?.clientCapabilities?.experimental?.tasks?.requests;
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       assertToolsCallTaskCapability(clientCaps, 'tools/call', 'Client');
 
       const { task } = ctx;

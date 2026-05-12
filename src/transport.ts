@@ -2,6 +2,7 @@ import { createMcpExpressApp } from '@modelcontextprotocol/express';
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import type { McpServer } from '@modelcontextprotocol/server';
 import {
+  DEFAULT_REQUEST_TIMEOUT_MSEC,
   type EventId,
   type EventStore,
   isInitializedNotification,
@@ -11,7 +12,6 @@ import {
   isJSONRPCRequest,
   isJSONRPCResultResponse,
   JSONRPC_VERSION,
-  DEFAULT_REQUEST_TIMEOUT_MSEC,
   type JSONRPCErrorResponse,
   type JSONRPCMessage,
   localhostAllowedHostnames,

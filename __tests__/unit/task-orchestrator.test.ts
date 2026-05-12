@@ -36,6 +36,7 @@ function createMockExtra(
       clientCapabilities: withCapabilities
         ? { experimental: { tasks: { requests: { tools: { call: true } } } } }
         : undefined,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any,
     task: {
       store: {
