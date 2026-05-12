@@ -592,7 +592,7 @@ describe('search_and_replace tool', () => {
     const raw = await env.client.callTool({
       name: 'replace_text',
       arguments: {
-        path: targetFile,           // file path, not directory
+        path: targetFile, // file path, not directory
         searchPattern: 'needle',
         replacement: 'pin',
       },
