@@ -1,4 +1,5 @@
 import {
+  assertToolsCallTaskCapability,
   type CallToolResult,
   type CreateTaskResult,
   type CreateTaskServerContext,
@@ -11,6 +12,7 @@ import {
   type TaskStatus,
   type ToolTaskHandler,
 } from '@modelcontextprotocol/server';
+
 import type { StandardSchemaWithJSON } from '@modelcontextprotocol/server';
 
 import { EventEmitter } from 'node:events';
@@ -111,6 +113,9 @@ export class TaskOrchestrator {
       } else {
         [args, ctx] = params;
       }
+
+      const clientCaps = (ctx as any).session?.clientCapabilities?.experimental?.tasks?.requests;
+      assertToolsCallTaskCapability(clientCaps, 'tools/call', 'Client');
 
       const { task } = ctx;
 

@@ -1,6 +1,7 @@
 import {
   type CallToolResult,
   type CreateTaskServerContext,
+  SdkError,
   type Task,
   type TaskServerContext,
 } from '@modelcontextprotocol/server';
@@ -16,6 +17,7 @@ import { type ToolContext } from '../../src/tools/_helpers.js';
 function createMockExtra(
   store: EventedTaskStore,
   sessionId = 'test-session',
+  withCapabilities = true,
 ): CreateTaskServerContext {
   let reqId = 0;
   return {
@@ -30,6 +32,11 @@ function createMockExtra(
       requestSampling: async () => ({}) as never,
     },
     sessionId,
+    session: {
+      clientCapabilities: withCapabilities
+        ? { experimental: { tasks: { requests: { tools: { call: true } } } } }
+        : undefined,
+    } as any,
     task: {
       store: {
         async createTask(params: { ttl?: number }) {
@@ -219,6 +226,28 @@ describe('TaskOrchestrator', () => {
 
       const final = await store.getTask(task.taskId, 'test-session');
       assert.strictEqual(final?.statusMessage, 'test_tool: Custom progress message');
+    } finally {
+      store.cleanup();
+    }
+  });
+
+  it('rejects createTask if client lacks task capability', async () => {
+    const store = new EventedTaskStore();
+    const orchestrator = new TaskOrchestrator(store);
+
+    try {
+      const handler = async (_args: unknown, _ctx: ToolContext) => {
+        return { content: [], structuredContent: { success: true } };
+      };
+
+      const wrapped = orchestrator.wrapToolTask(handler, { toolName: 'test-tool' });
+
+      // Mock context without client capabilities
+      const ctx = createMockExtra(store, 'test-session', false);
+
+      await assert.rejects(wrapped.createTask(ctx), (err: unknown) => {
+        return err instanceof SdkError;
+      });
     } finally {
       store.cleanup();
     }
