@@ -9,7 +9,7 @@ import { z } from 'zod/v4';
 import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, isAbortError, isNodeError, McpError, Problem } from '../core/errors.js';
 import type { PathGuard } from '../core/path.js';
-import { RequiredPath } from '../schema.js';
+import { PerFileErrorSchema, RequiredPath } from '../schema.js';
 import { defineTool } from './define.js';
 
 const MoveItemSchema = z.strictObject({
@@ -30,10 +30,7 @@ const MoveInputSchema = z.strictObject({
 const MoveFailureItemSchema = z.strictObject({
   source: z.string().describe('Source path that failed'),
   destination: z.string().describe('Destination path for the failed move'),
-  error: z.strictObject({
-    code: z.string().describe('Error code'),
-    message: z.string().describe('Error message'),
-  }),
+  error: PerFileErrorSchema,
 });
 
 type MoveFailureItem = z.infer<typeof MoveFailureItemSchema>;
@@ -220,7 +217,7 @@ export const MOVE = defineTool({
         failures.push({
           source: move.source,
           destination: move.destination,
-          error: { code: structured.code, message: structured.message },
+          error: structured,
         });
       }
     }

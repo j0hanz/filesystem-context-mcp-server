@@ -765,6 +765,10 @@ describe('move: partial failure support', () => {
     const failures = sc['failures'] as Record<string, unknown>[] | undefined;
     assert.ok(Array.isArray(failures) && failures.length === 1, 'Expected 1 failure');
     assert.ok((failures[0]['source'] as string).includes('mv-missing-src.txt'));
-    assert.equal((failures[0]['error'] as Record<string, unknown>)['code'], 'NOT_FOUND');
+
+    const failureError = failures[0]['error'] as Record<string, unknown>;
+    assert.equal(failureError['code'], 'NOT_FOUND');
+    assert.equal(failureError['path'], missingSrc);
+    assert.equal(typeof failureError['suggestion'], 'string');
   });
 });

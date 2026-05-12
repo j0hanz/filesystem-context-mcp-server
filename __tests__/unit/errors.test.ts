@@ -303,4 +303,12 @@ describe('Problem.fromUnknown', () => {
     assert.equal('issues' in result, false);
     assert.equal('details' in result, false);
   });
+
+  it('preserves McpError problem fields without overriding', () => {
+    const err = new McpError(ErrorCode.PERMISSION_DENIED, 'no access', '/locked');
+    const result = Problem.fromUnknown(err, ErrorCode.UNKNOWN);
+    assert.equal(result.code, ErrorCode.PERMISSION_DENIED);
+    assert.equal(result.message, 'no access');
+    assert.equal(result.path, '/locked');
+  });
 });
