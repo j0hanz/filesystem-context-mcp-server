@@ -1,72 +1,115 @@
-# Filesystem MCP Server - Gemini Instructions
+# AGENTS.md
 
-Comprehensive instructions and context for developing, testing, and maintaining the Filesystem MCP Server.
+This file provides guidance to agents using the Filesystem MCP server. It covers how to connect, available tools, and best practices for safe and effective interactions.
 
-## Project Overview
+## Commands
 
-A secure Model Context Protocol (MCP) server that provides local filesystem operations (reading, writing, searching, etc.) to LLM clients. Built with **TypeScript** and **Node.js (>=24)**, it supports both **stdio** and **HTTP** transports.
+The dev loop is driven by `scripts/tasks.mjs` (alias: `npm run tasks`).
 
-### Core Architecture
+```bash
+node scripts/tasks.mjs check          # format → [lint, type-check, knip] → [test, rebuild]
+node scripts/tasks.mjs check --quick  # static checks only (skip test + rebuild)
+node scripts/tasks.mjs fix            # auto-fix format/lint/knip, then re-validate
+node scripts/tasks.mjs test           # run tests directly
+node scripts/tasks.mjs test --watch   # watch mode
+node scripts/tasks.mjs detail <n>     # show source window for the Nth test failure
+```
 
-- **`McpServer`**: The primary entry point for MCP communication.
-- **`PathGuard`**: The security centerpiece. Validates every path against allowed roots and a sensitive-file denylist.
-- **`RootsManager`**: Orchestrates allowed directories from CLI arguments and dynamic MCP Roots notifications.
-- **`WorkerPool`**: Offloads CPU-intensive tasks (e.g., recursive search, hash calculation) to prevent blocking the main event loop.
-- **Tool System**: Uses a custom `defineTool` engine for consistent validation, error handling, and observability.
-- **Task System**: Manages long-running or background operations via `TaskOrchestrator`.
+Useful test flags: `--name-pattern <regex>`, `--timeout <ms>`, `--shard <i/n>`, `--update-snapshots`.
 
-## Key Commands (Dev Loop)
+After a failure, `--llm` appends a structured JSON block to stdout and writes `.tasks-last-failure.json`.
 
-The project uses `scripts/tasks.mjs` as the primary dev-loop driver.
+**Run a single test file:**
 
-- **Check Everything**: `npm run check` (or `node scripts/tasks.mjs check`)
-  - Runs: `format` → `[lint, type-check, knip]` → `[test, rebuild]`.
-- **Auto-Fix**: `node scripts/tasks.mjs fix`
-  - Fixes format, lint, and knip issues automatically.
-- **Run Tests**: `npm test` (or `node scripts/tasks.mjs test`)
-  - Runs tests in `__tests__` using `node --test` and `tsx`.
-  - Support flags: `--name-pattern <regex>`, `--timeout <ms>`, `--shard <i/n>`, `--update-snapshots`.
-- **Build**: `npm run build`
-  - Compiles TypeScript to `dist/`.
-- **Static Analysis**: `npm run type-check`, `npm run lint`, `npm run knip`.
-- **Debug Tests**: `node scripts/tasks.mjs detail <n>`
-  - Shows source code context for the Nth failure from the previous test run.
+```bash
+node --test --import tsx/esm "__tests__/unit/path-guard.test.ts"
+```
 
-## Development Conventions
+## Architecture
 
-### Security First (PathGuard)
+### Request flow
 
-- **Never bypass `PathGuard`**. All file operations must use `pathGuard.validateExistingPath()`, `validateExistingDirectory()`, or `validatePathForWrite()`.
-- Sensitive files (e.g., `.git`, `.env`, SSH keys) are blocked by default.
-- Paths are always normalized and resolved to their real path (resolving symlinks) before access.
+```text
+src/index.ts  →  src/cli.ts (parseArgs)
+             →  src/transport.ts (startServer | startHttpServer)
+             →  src/server.ts (createServer → FilesystemServerContext)
+```
 
-### Tool Implementation
+`FilesystemServerContext` is the root object holding:
 
-- Define tools in `src/tools/` using the `defineTool` helper from `src/tools/define.ts`.
-- Use **Zod (v4)** for input and output schemas.
-- Tools should return a `RunResult` containing `structured` data and optional `text` or `resources`.
-- Error handling: Use `McpError` with appropriate `ErrorCode` for consistent client feedback.
+- `mcp: McpServer` — the MCP SDK server instance
+- `roots: RootsManager` — tracks allowed directories, handles MCP Roots protocol
+- `resources: ResourceStore` — in-memory temporary resource store (TTL-based)
+- `resourcesHandle: ResourcesHandle` — manages resource list-changed notifications
 
-### Code Style
+### Transports
 
-- **ESM Only**: The project is `type: module`. Use `.js` extensions in imports (e.g., `import { x } from './y.js'`).
-- **Strict Typing**: No `any`. Use specific types for errors and unknown values.
-- **Async/Await**: Prefer `fs/promises` for all filesystem operations.
-- **Logging**: Use `Logger` from `src/core/observability.ts`. Avoid `console.log` in production code.
+Two transport modes, selected by whether `--port` is passed:
 
-### Testing
+- **stdio** (`startServer`): single-session, `StdioServerTransport`
+- **HTTP** (`startHttpServer`): multi-session, Express + `NodeStreamableHTTPServerTransport` on `/mcp`. Each POST with no `mcp-session-id` that carries an `initialize` request spawns a new `FilesystemServerContext`. `HttpSessionRegistry` owns the session map and sweep timer for stale sessions.
 
-- Tests are located in `__tests__/`.
-- Use `node:test` (built-in) and `tsx` for ESM support.
-- Organize tests into `unit/`, `tools/`, and integration tests.
-- Always add a reproduction test case for bug fixes.
+HTTP security: origin guard (localhost only by default), optional bearer auth via `FILESYSTEM_MCP_API_KEY`, non-loopback binding requires an API key.
 
-## Project Structure
+### Tool system
 
-- `src/core/`: Foundation logic (concurrency, errors, fs, observability, path security).
-- `src/tools/`: Implementation of all MCP tools.
-- `src/server.ts`: MCP server setup, handler registration, and capability building.
-- `src/transport.ts`: stdio and HTTP transport implementations.
-- `__tests__/`: Comprehensive test suite.
-- `scripts/`: Dev-loop and maintenance scripts.
-- `.claude/`: Detailed architectural and environment specs (useful reference).
+Tools are registered via **side-effect imports** in [src/tools.ts](src/tools.ts). Each file under `src/tools/` calls `defineTool()` from [src/tools/define.ts](src/tools/define.ts), which:
+
+1. Converts Zod schemas to MCP JSON schemas via `toMcpSchema()` ([src/schema.ts](src/schema.ts))
+2. Pushes the tool definition onto `ALL_TOOLS[]`
+3. On `register(deps)`, wraps the handler with observability (wide events), progress sessions, timeout signals, and optionally routes through `TaskOrchestrator` for async task support
+
+To add a new tool: create `src/tools/<name>.ts`, call `defineTool({...})`, then add an import line in `src/tools.ts`.
+
+### Security — PathGuard
+
+`PathGuard` ([src/core/path.ts](src/core/path.ts)) is the single enforcer of filesystem access policy. It holds the resolved list of allowed directories and applies the sensitive-file denylist. All tool handlers receive `pathGuard` via `ToolCtx` and must call it before any filesystem operation. Path validation always happens on the main thread.
+
+### Worker pool
+
+`src/core/concurrency.ts` maintains a process-global lazy worker pool for CPU-bound operations (diff, patch, format). Workers are spawned from [src/core/worker.ts](src/core/worker.ts), which has **no project imports** (only `import type`) because tsx ESM hooks are not active in worker threads. Workers receive only the string payloads they need — never paths, session tokens, or `AsyncLocalStorage` state.
+
+### Observability
+
+`src/core/observability.ts` provides:
+
+- `Logger` — structured log emitter
+- `LogRouter` — multiplexes log targets between stdio and per-session HTTP
+- `SessionContext` — `AsyncLocalStorage` for propagating session ID through async call stacks
+- `emitWideEvent()` — emits canonical log-line events (one per tool execution, one per HTTP request) to a `node:diagnostics_channel`
+
+Every tool execution emits a `tool_execution` wide event with `duration_ms`, `outcome`, `input_size_bytes`, `result_size_bytes`, etc.
+
+### Task system
+
+`src/tasks.ts` contains `TaskOrchestrator`, which wraps tool handlers into MCP async tasks (create / poll / cancel). Tools opt in by setting `execution.taskSupport` to `'optional'` or `'required'` in their `ToolDef`. The orchestrator uses `EventedTaskStore` (an `InMemoryTaskStore` subclass that emits cancellation events).
+
+### Resources & prompts
+
+- **Resources** ([src/resources.ts](src/resources.ts)): 3 built-in resources (`internal://instructions`, etc.) plus dynamic resources stored in `ResourceStore`
+- **Prompts** ([src/prompts.ts](src/prompts.ts)): 4 built-in prompts (get-help, etc.)
+
+## Key environment variables
+
+| Variable                           | Default     | Purpose                                         |
+| ---------------------------------- | ----------- | ----------------------------------------------- |
+| `FILESYSTEM_MCP_API_KEY`           | —           | Bearer token for HTTP transport auth            |
+| `FILESYSTEM_MCP_HTTP_HOST`         | `127.0.0.1` | HTTP bind address                               |
+| `FILESYSTEM_MCP_LOG_LEVEL`         | `info`      | Min log level                                   |
+| `FILESYSTEM_MCP_MAX_HTTP_SESSIONS` | `100`       | Max concurrent HTTP sessions                    |
+| `FS_CONTEXT_ALLOW_SENSITIVE`       | `false`     | Allow `.env`, keys, certs                       |
+| `FS_CONTEXT_DENYLIST`              | —           | Comma/newline-separated extra denylist patterns |
+| `FS_DISABLE_WORKERS`               | `false`     | Disable the diff/patch worker pool              |
+| `FS_WORKER_POOL_MAX`               | CPU-1       | Worker pool size cap                            |
+| `MAX_FILE_SIZE`                    | 10 MiB      | Max readable file size                          |
+| `MAX_SEARCH_SIZE`                  | 1 MiB       | Max file size for content search                |
+| `DEFAULT_SEARCH_TIMEOUT`           | 5000 ms     | Search timeout                                  |
+| `FS_INIT_HANDSHAKE_TIMEOUT_MS`     | 30000 ms    | Time to wait for `notifications/initialized`    |
+| `FS_CONTEXT_STRIP_STRUCTURED`      | `false`     | Strip `structuredContent` from tool results     |
+
+## TypeScript notes
+
+- `tsconfig.json` is extremely strict: `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noUnusedLocals/Parameters`, `erasableSyntaxOnly`
+- Tests use a separate `tsconfig.test.json` (includes `__tests__/`) run via `tsx` (no separate compile step)
+- Module system: ESM (`"module": "NodeNext"`); all internal imports must use `.js` extensions even for `.ts` source files
+- `zod/v4` is the import path (not `zod` directly) — configured at startup in `index.ts` with `z.config(z.locales.en())`
