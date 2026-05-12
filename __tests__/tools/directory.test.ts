@@ -679,10 +679,7 @@ describe('delete: processes all paths in batch', () => {
     const raw = await env.client.callTool({
       name: 'delete',
       arguments: {
-        paths: [
-          join(env.tmpDir, 'no-such-a.txt'),
-          join(env.tmpDir, 'no-such-b.txt'),
-        ],
+        paths: [join(env.tmpDir, 'no-such-a.txt'), join(env.tmpDir, 'no-such-b.txt')],
       },
     });
     assertOk(raw);
@@ -698,10 +695,7 @@ describe('delete: processes all paths in batch', () => {
     const raw = await env.client.callTool({
       name: 'delete',
       arguments: {
-        paths: [
-          goodFile,
-          join(env.tmpDir, 'no-such-c.txt'),
-        ],
+        paths: [goodFile, join(env.tmpDir, 'no-such-c.txt')],
       },
     });
     assertOk(raw);

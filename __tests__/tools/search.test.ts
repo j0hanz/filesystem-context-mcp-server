@@ -258,7 +258,7 @@ describe('grep tool', () => {
       name: 'search_text',
       arguments: {
         path: env.tmpDir,
-        pattern: '*.txt',          // no ** — must still recurse via baseNameMatch
+        pattern: '*.txt', // no ** — must still recurse via baseNameMatch
         searchPattern: 'another apple',
       },
     });
