@@ -1,5 +1,6 @@
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 
+import { DEFAULT_REQUEST_TIMEOUT_MSEC } from '@modelcontextprotocol/server';
 import assert from 'node:assert/strict';
 import { channel } from 'node:diagnostics_channel';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -625,7 +626,11 @@ describe('HTTP transport', () => {
       keepAliveTimeout: number;
     };
     assert.equal(s.headersTimeout, 10_000, 'headersTimeout must be 10s');
-    assert.equal(s.requestTimeout, 30_000, 'requestTimeout must be 30s');
+    assert.equal(
+      s.requestTimeout,
+      DEFAULT_REQUEST_TIMEOUT_MSEC,
+      'requestTimeout must be DEFAULT_REQUEST_TIMEOUT_MSEC',
+    );
     assert.equal(s.keepAliveTimeout, 5_000, 'keepAliveTimeout must be 5s');
   });
 
