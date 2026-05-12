@@ -1,6 +1,6 @@
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
-
 import { DEFAULT_REQUEST_TIMEOUT_MSEC } from '@modelcontextprotocol/server';
+
 import assert from 'node:assert/strict';
 import { channel } from 'node:diagnostics_channel';
 import { mkdtemp, rm } from 'node:fs/promises';

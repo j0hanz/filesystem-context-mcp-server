@@ -191,22 +191,29 @@ async function computeDiffStats(
   original: string,
   modified: string,
 ): Promise<{ linesAdded: number; linesRemoved: number }> {
+  const totalBytes = Buffer.byteLength(original) + Buffer.byteLength(modified);
+  if (shouldOffload(totalBytes)) {
+    return runInWorker('computeDiffStats', { oldStr: original, newStr: modified });
+  }
   return new Promise((resolve) => {
-    diffLines(original, modified, {
-      callback: (changes) => {
-        let linesAdded = 0;
-        let linesRemoved = 0;
+    // Yield to the event loop so we don't completely block
+    setImmediate(() => {
+      diffLines(original, modified, {
+        callback: (changes) => {
+          let linesAdded = 0;
+          let linesRemoved = 0;
 
-        for (const part of changes) {
-          if (part.added) {
-            linesAdded += part.count;
-          } else if (part.removed) {
-            linesRemoved += part.count;
+          for (const part of changes) {
+            if (part.added) {
+              linesAdded += part.count;
+            } else if (part.removed) {
+              linesRemoved += part.count;
+            }
           }
-        }
 
-        resolve({ linesAdded, linesRemoved });
-      },
+          resolve({ linesAdded, linesRemoved });
+        },
+      });
     });
   });
 }
@@ -338,10 +345,12 @@ async function buildDiff(validPath: string, original: string, modified: string):
     });
   }
   return new Promise<string>((resolve) => {
-    createTwoFilesPatch(fileName, fileName, original, modified, 'Original', 'Modified', {
-      callback: (res: string | undefined) => {
-        resolve(res ?? '');
-      },
+    setImmediate(() => {
+      createTwoFilesPatch(fileName, fileName, original, modified, 'Original', 'Modified', {
+        callback: (res: string | undefined) => {
+          resolve(res ?? '');
+        },
+      });
     });
   });
 }

@@ -22,6 +22,7 @@ import { isMainThread, parentPort, workerData } from 'node:worker_threads';
 import {
   applyPatch,
   createTwoFilesPatch,
+  diffLines,
   formatPatch,
   parsePatch,
   structuredPatch,
@@ -35,7 +36,13 @@ export const WORKER_ENTRY_URL = new URL(import.meta.url);
 
 // ---- shared types (used by both sides) ---------------------------------
 
-const WORKER_TASK_NAMES = ['diff', 'formatPatch', 'applyPatch', 'createPatch'] as const;
+const WORKER_TASK_NAMES = [
+  'diff',
+  'formatPatch',
+  'applyPatch',
+  'createPatch',
+  'computeDiffStats',
+] as const;
 
 export type WorkerTaskName = (typeof WORKER_TASK_NAMES)[number];
 
@@ -69,6 +76,11 @@ export interface CreatePatchPayload {
   newHeader: string;
 }
 
+export interface ComputeDiffStatsPayload {
+  oldStr: string;
+  newStr: string;
+}
+
 export interface ApplyPatchResult {
   applied: string | false;
   patch: StructuredPatch | null;
@@ -83,6 +95,10 @@ export interface WorkerTaskRegistry {
   formatPatch: { payload: FormatPatchPayload; result: string };
   applyPatch: { payload: ApplyPatchPayload; result: ApplyPatchResult };
   createPatch: { payload: CreatePatchPayload; result: string };
+  computeDiffStats: {
+    payload: ComputeDiffStatsPayload;
+    result: { linesAdded: number; linesRemoved: number };
+  };
 }
 
 /** Extract payload type for a worker task by name. */
@@ -190,6 +206,16 @@ const TASK_HANDLERS: {
   },
   createPatch: (p) => {
     return createTwoFilesPatch(p.oldHeader, p.newHeader, p.oldStr, p.newStr, '', '');
+  },
+  computeDiffStats: (p) => {
+    const changes = diffLines(p.oldStr, p.newStr);
+    let linesAdded = 0;
+    let linesRemoved = 0;
+    for (const part of changes) {
+      if (part.added) linesAdded += part.count;
+      else if (part.removed) linesRemoved += part.count;
+    }
+    return { linesAdded, linesRemoved };
   },
 };
 

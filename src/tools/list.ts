@@ -41,11 +41,9 @@ interface CollectedEntry {
 
 interface CollectOptions {
   maxDepth: number;
-  maxEntries: number;
   includeHidden: boolean;
   includeIgnored: boolean;
   signal: AbortSignal;
-  mode: 'inline' | 'full';
 }
 
 interface CollectResult {
@@ -87,23 +85,6 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
   let totalFiles = 0;
   let totalDirectories = 0;
 
-  function insertBounded(entry: CollectedEntry): void {
-    let low = 0;
-    let high = entries.length;
-    while (low < high) {
-      const middle = Math.floor((low + high) / 2);
-      const current = entries[middle];
-      if (current !== undefined && compareEntries(current, entry) <= 0) {
-        low = middle + 1;
-      } else {
-        high = middle;
-      }
-    }
-    if (low >= options.maxEntries) return;
-    entries.splice(low, 0, entry);
-    if (entries.length > options.maxEntries) entries.pop();
-  }
-
   for await (const entry of globEntries({
     cwd: rootPath,
     pattern: '**/*',
@@ -139,22 +120,16 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
       totalFiles++;
     }
 
-    const collectedEntry: CollectedEntry = {
-      name,
-      relativePath: toPosixPath(relPath),
-      type: entryType,
-    };
-
-    if (options.mode === 'full') {
-      entries.push(collectedEntry);
-    } else {
-      insertBounded(collectedEntry);
+    if (entries.length < MAX_LIST_ENTRIES) {
+      entries.push({
+        name,
+        relativePath: toPosixPath(relPath),
+        type: entryType,
+      });
     }
   }
 
-  if (options.mode === 'full') {
-    entries.sort(compareEntries);
-  }
+  entries.sort(compareEntries);
 
   return {
     entries,
@@ -259,32 +234,23 @@ async function handleList(
   return withTimedAbortSignal(signal, DEFAULT_SEARCH_TIMEOUT_MS, async (timedSignal) => {
     const result = await collect(validDir, {
       maxDepth: args.maxDepth,
-      maxEntries: args.maxEntries,
       includeHidden: args.includeHidden,
       includeIgnored: args.includeIgnored,
       signal: timedSignal,
-      mode: 'inline',
     });
 
-    const markdown = renderMarkdown(basename(validDir), result.entries);
+    const inlineEntries = result.entries.slice(0, args.maxEntries);
+    const markdown = renderMarkdown(basename(validDir), inlineEntries);
 
     let resourceUri: string | undefined;
-    if (result.totalEntries > result.entries.length && resourceStore) {
-      const fullResult = await collect(validDir, {
-        maxDepth: args.maxDepth,
-        maxEntries: args.maxEntries,
-        includeHidden: args.includeHidden,
-        includeIgnored: args.includeIgnored,
-        signal: timedSignal,
-        mode: 'full',
-      });
-      const fullMarkdown = renderMarkdown(basename(validDir), fullResult.entries);
+    if (result.totalEntries > inlineEntries.length && resourceStore) {
+      const fullMarkdown = renderMarkdown(basename(validDir), result.entries);
       const fullOutput = {
-        entries: fullResult.entries,
+        entries: result.entries,
         markdown: fullMarkdown,
-        totalEntries: fullResult.totalEntries,
-        totalFiles: fullResult.totalFiles,
-        totalDirectories: fullResult.totalDirectories,
+        totalEntries: result.totalEntries,
+        totalFiles: result.totalFiles,
+        totalDirectories: result.totalDirectories,
       };
       const { entry } = putResource({
         store: resourceStore,
@@ -299,9 +265,9 @@ async function handleList(
     const output: z.infer<typeof ListOutputSchema> = {
       ok: true,
       path: validDir,
-      entries: result.entries,
+      entries: inlineEntries,
       markdown,
-      entryCount: result.entries.length,
+      entryCount: inlineEntries.length,
       totalEntries: result.totalEntries,
       totalFiles: result.totalFiles,
       totalDirectories: result.totalDirectories,
