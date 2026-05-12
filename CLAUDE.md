@@ -4,28 +4,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
+The dev loop is driven by `scripts/tasks.mjs` (alias: `npm run tasks`).
+
 ```bash
-npm run build          # Compile TypeScript → dist/
-npm run type-check     # Type-check without emitting
-npm run lint           # ESLint (zero warnings allowed)
-npm run lint:fix       # ESLint with auto-fix
-npm run format         # Prettier write
-npm run format:check   # Prettier check
-npm run knip           # Dead-code / unused-export check
-npm run check          # Full static + test suite
-npm test               # Run all tests
+node scripts/tasks.mjs check          # format → [lint, type-check, knip] → [test, rebuild]
+node scripts/tasks.mjs check --quick  # static checks only (skip test + rebuild)
+node scripts/tasks.mjs fix            # auto-fix format/lint/knip, then re-validate
+node scripts/tasks.mjs test           # run tests directly
+node scripts/tasks.mjs test --watch   # watch mode
+node scripts/tasks.mjs detail <n>     # show source window for the Nth test failure
 ```
+
+Useful test flags: `--name-pattern <regex>`, `--timeout <ms>`, `--shard <i/n>`, `--update-snapshots`.
+
+After a failure, `--llm` appends a structured JSON block to stdout and writes `.tasks-last-failure.json`.
 
 **Run a single test file:**
 
 ```bash
 node --test --import tsx/esm "__tests__/unit/path-guard.test.ts"
-```
-
-**Run the MCP inspector (requires build first):**
-
-```bash
-npm run inspector
 ```
 
 ## Architecture
