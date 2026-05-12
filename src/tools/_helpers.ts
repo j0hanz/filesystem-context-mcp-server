@@ -15,13 +15,7 @@ import type {
 import { z } from 'zod/v4';
 
 import type { FileInfo } from '../config.js';
-import {
-  createDetailedError,
-  ErrorCode,
-  formatDetailedError,
-  getSuggestion,
-  McpError,
-} from '../core/errors.js';
+import { createDetailedError, ErrorCode, getSuggestion, McpError } from '../core/errors.js';
 import type { MimeKind } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
 import { createBase64JsonCodec } from '../core/path.js';
@@ -108,24 +102,6 @@ export function buildStructuredError(
     message: detailed.message,
     ...(detailed.path !== undefined ? { path: detailed.path } : {}),
     ...(detailed.suggestion !== undefined ? { suggestion: detailed.suggestion } : {}),
-  };
-}
-
-export function buildToolErrorResponse(
-  error: unknown,
-  defaultCode: ErrorCode,
-  path?: string,
-): {
-  content: ContentBlock[];
-  isError: true;
-  errorCode: ErrorCode;
-} {
-  const detailed = resolveDetailedError(error, defaultCode, path);
-  const text = formatDetailedError(detailed);
-  return {
-    content: [{ type: 'text', text }],
-    isError: true,
-    errorCode: detailed.code,
   };
 }
 

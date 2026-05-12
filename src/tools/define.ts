@@ -21,12 +21,17 @@ import { performance } from 'node:perf_hooks';
 
 import type { z } from 'zod/v4';
 
-import { ErrorCode } from '../core/errors.js';
+import {
+  createDetailedError,
+  ErrorCode,
+  formatDetailedError,
+  getSuggestion,
+} from '../core/errors.js';
 import { emitWideEvent, Logger, ProgressSession } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { toMcpSchema } from '../schema.js';
-import { buildToolErrorResponse, toToolContext } from './_helpers.js';
+import { toToolContext } from './_helpers.js';
 import type { ToolContext } from './_helpers.js';
 
 // Minimal duck-typed interface for the task orchestrator.
@@ -217,7 +222,24 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
               errorType = 'UnknownError';
               errorMessage = String(error);
             }
-            return buildToolErrorResponse(error, def.defaultErrorCode ?? ErrorCode.UNKNOWN);
+            const defaultCode = def.defaultErrorCode ?? ErrorCode.UNKNOWN;
+            const detailed = createDetailedError(error);
+            const resolvedCode =
+              detailed.code === ErrorCode.UNKNOWN || detailed.code === ErrorCode.IO_ERROR
+                ? defaultCode
+                : detailed.code;
+            const defaultSuggestion =
+              resolvedCode !== detailed.code ? getSuggestion(resolvedCode) : undefined;
+            const errorText = formatDetailedError({
+              ...detailed,
+              code: resolvedCode,
+              ...(defaultSuggestion !== undefined ? { suggestion: defaultSuggestion } : {}),
+            });
+            return {
+              content: [{ type: 'text' as const, text: errorText }],
+              isError: true as const,
+              errorCode: resolvedCode,
+            };
           }
         } finally {
           const level = outcome === 'error' ? 'error' : 'info';
