@@ -11,6 +11,7 @@ import {
   isJSONRPCRequest,
   isJSONRPCResultResponse,
   JSONRPC_VERSION,
+  DEFAULT_REQUEST_TIMEOUT_MSEC,
   type JSONRPCErrorResponse,
   type JSONRPCMessage,
   localhostAllowedHostnames,
@@ -766,7 +767,8 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
 
   const httpServer = createHttpServer(app);
   httpServer.headersTimeout = 10_000;
-  httpServer.requestTimeout = 30_000;
+  // Use the standard MCP request timeout for HTTP requests
+  httpServer.requestTimeout = DEFAULT_REQUEST_TIMEOUT_MSEC;
   httpServer.keepAliveTimeout = 5_000;
 
   const onHttpServerError = (error: Error): void => {
