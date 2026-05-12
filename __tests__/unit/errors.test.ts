@@ -256,7 +256,7 @@ describe('createDetailedError', () => {
 });
 
 describe('Problem.fromUnknown', () => {
-  it('returns code and message for a plain Error', () => {
+  it('overrides IO_ERROR from plain Error with defaultCode', () => {
     const err = new Error('boom');
     const result = Problem.fromUnknown(err, ErrorCode.UNKNOWN);
     assert.equal(result.code, ErrorCode.UNKNOWN);
@@ -275,6 +275,14 @@ describe('Problem.fromUnknown', () => {
     const ioErr = Object.assign(new Error('io'), { code: 'EMFILE' });
     const result = Problem.fromUnknown(ioErr, ErrorCode.TOO_LARGE);
     assert.equal(result.code, ErrorCode.TOO_LARGE);
+  });
+
+  it('populates suggestion from defaultCode when overriding', () => {
+    const err = new Error('io');
+    const result = Problem.fromUnknown(err, ErrorCode.NOT_FOUND);
+    assert.equal(result.code, ErrorCode.NOT_FOUND);
+    // suggestion should come from getSuggestion(NOT_FOUND)
+    assert.ok(result.suggestion !== undefined, 'suggestion should be populated when overriding');
   });
 
   it('preserves specific error codes (e.g. NOT_FOUND from ENOENT)', () => {
