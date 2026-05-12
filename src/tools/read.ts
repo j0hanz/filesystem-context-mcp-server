@@ -86,7 +86,7 @@ const ReadFileInputSchema = z
       ctx.addIssue({
         code: 'custom',
         path: ['path'],
-        message: "Provide either 'path' or 'paths'",
+        message: "Either 'path' or 'paths' must be provided",
         input: value,
       });
     }
