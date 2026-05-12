@@ -66,7 +66,12 @@ describe('delete: client declines elicitation', () => {
     });
     assertOk(result);
     const sc = (result as { structuredContent?: { ok?: unknown } }).structuredContent;
-    assert.equal((sc as { ok: unknown } | undefined)?.ok, true);
+    assert.equal((sc as { ok: unknown } | undefined)?.ok, false);
+    assert.equal((sc as { path?: unknown } | undefined)?.path, undefined);
+    assert.equal((sc as { paths?: unknown } | undefined)?.paths, undefined);
+    const failures = (sc as { failures?: { error?: { code?: unknown } }[] } | undefined)?.failures;
+    assert.ok(Array.isArray(failures) && failures.length === 1, 'Expected 1 cancellation failure');
+    assert.equal(failures?.[0]?.error?.code, 'CANCELLED');
     // Directory must still exist
     const entries = await readdir(dir);
     assert.ok(entries.length > 0, 'directory contents must be intact after decline');

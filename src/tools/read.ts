@@ -142,7 +142,7 @@ const ReadManyItemSchema = z.strictObject({
 
 const ReadFileOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),
-  path: RequiredPath.describe('Resolved absolute path to the file'),
+  path: RequiredPath.optional().describe('Resolved absolute path to the file'),
   content: z.string().optional().describe('File content'),
   mimeType: z.string().optional().describe('MIME type'),
   kind: z.enum(['text', 'binary', 'image', 'audio', 'pdf']).optional().describe('File kind'),
@@ -800,7 +800,6 @@ async function handleReadMultipleFiles(
   const payload = buildReadManyResponsePayload(results, resourceStore);
   const structured: ReadFileOutput = {
     ok: true,
-    path: args.paths[0] ?? '',
     results: payload.structuredResults,
     summary: payload.summary,
   };

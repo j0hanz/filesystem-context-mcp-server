@@ -45,6 +45,7 @@ interface CollectOptions {
   includeHidden: boolean;
   includeIgnored: boolean;
   signal: AbortSignal;
+  mode: 'inline' | 'full';
 }
 
 interface CollectResult {
@@ -81,7 +82,27 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
     ? null
     : await loadRootGitignore(rootPath, options.signal);
 
-  const all: CollectedEntry[] = [];
+  const entries: CollectedEntry[] = [];
+  let totalEntries = 0;
+  let totalFiles = 0;
+  let totalDirectories = 0;
+
+  function insertBounded(entry: CollectedEntry): void {
+    let low = 0;
+    let high = entries.length;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      const current = entries[middle];
+      if (current !== undefined && compareEntries(current, entry) <= 0) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    if (low >= options.maxEntries) return;
+    entries.splice(low, 0, entry);
+    if (entries.length > options.maxEntries) entries.pop();
+  }
 
   for await (const entry of globEntries({
     cwd: rootPath,
@@ -97,15 +118,11 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
   })) {
     if (options.signal.aborted) break;
 
-    // Type detection: check if it's a directory
     const isDir = entry.dirent.isDirectory();
     const entryType: EntryType = isDir ? 'directory' : 'file';
-
-    // Get relative path (entry.path is absolute)
     const relPath = relative(rootPath, entry.path);
     const name = basename(relPath);
 
-    // Gitignore filter
     if (
       gitignoreMatcher &&
       isIgnoredByGitignore(gitignoreMatcher, rootPath, entry.path, {
@@ -115,30 +132,33 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
       continue;
     }
 
-    all.push({
-      name,
-      relativePath: toPosixPath(relPath),
-      type: entryType,
-    });
-  }
-
-  // Sort all entries before slicing
-  all.sort(compareEntries);
-
-  // Count types from all entries
-  let totalFiles = 0;
-  let totalDirectories = 0;
-  for (const entry of all) {
-    if (entry.type === 'directory') {
+    totalEntries++;
+    if (entryType === 'directory') {
       totalDirectories++;
     } else {
       totalFiles++;
     }
+
+    const collectedEntry: CollectedEntry = {
+      name,
+      relativePath: toPosixPath(relPath),
+      type: entryType,
+    };
+
+    if (options.mode === 'full') {
+      entries.push(collectedEntry);
+    } else {
+      insertBounded(collectedEntry);
+    }
+  }
+
+  if (options.mode === 'full') {
+    entries.sort(compareEntries);
   }
 
   return {
-    entries: all.slice(0, options.maxEntries),
-    totalEntries: all.length,
+    entries,
+    totalEntries,
     totalFiles,
     totalDirectories,
   };
@@ -206,7 +226,7 @@ const ListInputSchema = z.strictObject({
 
 const ListOutputSchema = z.strictObject({
   ok: z.literal(true),
-  path: z.string().describe('Listed directory path'),
+  path: z.string().optional().describe('Listed directory path'),
   entries: z
     .array(
       z.strictObject({
@@ -243,18 +263,28 @@ async function handleList(
       includeHidden: args.includeHidden,
       includeIgnored: args.includeIgnored,
       signal: timedSignal,
+      mode: 'inline',
     });
 
     const markdown = renderMarkdown(basename(validDir), result.entries);
 
     let resourceUri: string | undefined;
     if (result.totalEntries > result.entries.length && resourceStore) {
+      const fullResult = await collect(validDir, {
+        maxDepth: args.maxDepth,
+        maxEntries: args.maxEntries,
+        includeHidden: args.includeHidden,
+        includeIgnored: args.includeIgnored,
+        signal: timedSignal,
+        mode: 'full',
+      });
+      const fullMarkdown = renderMarkdown(basename(validDir), fullResult.entries);
       const fullOutput = {
-        entries: result.entries,
-        markdown,
-        totalEntries: result.totalEntries,
-        totalFiles: result.totalFiles,
-        totalDirectories: result.totalDirectories,
+        entries: fullResult.entries,
+        markdown: fullMarkdown,
+        totalEntries: fullResult.totalEntries,
+        totalFiles: fullResult.totalFiles,
+        totalDirectories: fullResult.totalDirectories,
       };
       const { entry } = putResource({
         store: resourceStore,

@@ -444,6 +444,7 @@ describe('read_many tool', () => {
     // Check structured content
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
+    assert.equal(sc['path'], undefined, 'Batch read must not set top-level path');
     const results = sc['results'] as Record<string, unknown>[];
     assert.equal(results.length, 2);
 

@@ -165,6 +165,20 @@ describe('list tool', () => {
     assert.ok((sc['totalEntries'] as number) > 3, 'Expected totalEntries > 3');
     assert.ok(typeof sc['resourceUri'] === 'string', 'Expected resourceUri when truncated');
     assert.ok(sc['resourceUri'].includes('filesystem-mcp://result/'));
+
+    const resource = env.resourceStore.getText(sc['resourceUri']);
+    const fullOutput = JSON.parse(resource.text) as {
+      entries?: unknown[];
+      markdown?: string;
+      totalEntries?: number;
+    };
+    assert.equal(fullOutput.totalEntries, sc['totalEntries']);
+    assert.equal(fullOutput.entries?.length, sc['totalEntries']);
+    const fullMarkdown = fullOutput.markdown;
+    assert.ok(
+      typeof fullMarkdown === 'string' && fullMarkdown.includes('f09.txt'),
+      'Expected full markdown in resource payload',
+    );
   });
 
   it('totalFiles + totalDirectories === totalEntries', async () => {
@@ -221,10 +235,10 @@ describe('create tool (directory creation)', () => {
     assertOk(raw);
 
     // Verify content includes terse summary
-    const textBlock = raw.content.find(
-      (block): block is { type: string; text: string } => typeof block.text === 'string',
-    );
-    assert.ok(textBlock, 'Expected text content');
+    const textBlock = raw.content.find((block) => block.type === 'text');
+    if (!textBlock) {
+      assert.fail('Expected text content');
+    }
     const summaryText = textBlock.text;
     assert.ok(summaryText.startsWith('create:'), 'Expected summary to start with "create:"');
 

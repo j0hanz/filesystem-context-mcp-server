@@ -188,8 +188,16 @@ async function deleteSinglePath(
   const shouldProceed = await tryElicitConfirmation(inputPath, args, itemStats, elicitInput);
 
   if (!shouldProceed) {
-    // User declined or transport failed — skip without deleting.
-    return { item: { path: validPath, type: itemType } };
+    return {
+      failure: {
+        path: validPath,
+        error: buildStructuredError(
+          new McpError(ErrorCode.CANCELLED, 'Delete cancelled by user'),
+          ErrorCode.CANCELLED,
+          validPath,
+        ),
+      },
+    };
   }
 
   try {

@@ -33,6 +33,7 @@ export interface ToolResult {
 export interface TestEnv {
   client: Client;
   tmpDir: string;
+  resourceStore: ResourceStore;
   cleanup: () => Promise<void>;
 }
 
@@ -101,7 +102,7 @@ export async function createTestEnv(): Promise<TestEnv> {
     await rm(tmpDir, { recursive: true, force: true });
   };
 
-  return { client, tmpDir, cleanup };
+  return { client, tmpDir, resourceStore, cleanup };
 }
 
 export type ElicitationHandler = (params: {
@@ -185,7 +186,7 @@ export async function createTestEnvWithElicitation(handler: ElicitationHandler):
     await rm(tmpDir, { recursive: true, force: true });
   };
 
-  return { client, tmpDir, cleanup };
+  return { client, tmpDir, resourceStore, cleanup };
 }
 
 /**
