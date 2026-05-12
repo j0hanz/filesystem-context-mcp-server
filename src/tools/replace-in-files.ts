@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { open, stat } from 'node:fs/promises';
-import { basename, dirname, relative } from 'node:path';
+import { basename, dirname, relative, join } from 'node:path';
 
 import { createTwoFilesPatch } from 'diff';
 import RE2 from 're2';
@@ -568,7 +568,7 @@ async function handleSearchAndReplace(
     if (!primaryFile) return { structured };
 
     const primaryFilePath = primaryFile.path;
-    const fullPath = `${summary.root}/${primaryFilePath}`;
+    const fullPath = join(summary.root, primaryFilePath);
 
     try {
       const content = await (async (): Promise<string> => {
