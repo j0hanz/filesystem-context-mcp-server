@@ -1,6 +1,6 @@
-# AGENTS.md
+# GEMINI.md
 
-This file provides guidance to agents using the Filesystem MCP server. It covers how to connect, available tools, and best practices for safe and effective interactions.
+MCP server exposing filesystem operations to LLM clients over stdio or HTTP.
 
 ## Commands
 
