@@ -4,6 +4,15 @@ import { describe, it } from 'node:test';
 import { ErrorCode, McpError } from '../../src/core/errors.js';
 import { decodeOffsetCursor, encodeOffsetCursor } from '../../src/tools/_helpers.js';
 
+// ─── Helper functions ───────────────────────────────────────────────────────
+
+/**
+ * Encode an object to a base64url-encoded JSON string.
+ */
+function encodeCursor(obj: unknown): string {
+  return Buffer.from(JSON.stringify(obj)).toString('base64url');
+}
+
 // ─── encodeOffsetCursor / decodeOffsetCursor ────────────────────────────────
 
 describe('decodeOffsetCursor', () => {
@@ -25,7 +34,7 @@ describe('decodeOffsetCursor', () => {
   });
 
   it('throws McpError when JSON has no offset key', () => {
-    const cursor = Buffer.from(JSON.stringify({ wrong: 123 })).toString('base64url');
+    const cursor = encodeCursor({ wrong: 123 });
     assert.throws(
       () => decodeOffsetCursor(cursor),
       (err: unknown) => err instanceof McpError && err.code === ErrorCode.INVALID_INPUT,
@@ -33,7 +42,7 @@ describe('decodeOffsetCursor', () => {
   });
 
   it('throws McpError when offset is a string', () => {
-    const cursor = Buffer.from(JSON.stringify({ offset: '5' })).toString('base64url');
+    const cursor = encodeCursor({ offset: '5' });
     assert.throws(
       () => decodeOffsetCursor(cursor),
       (err: unknown) => err instanceof McpError && err.code === ErrorCode.INVALID_INPUT,
@@ -41,7 +50,7 @@ describe('decodeOffsetCursor', () => {
   });
 
   it('throws McpError when offset is negative', () => {
-    const cursor = Buffer.from(JSON.stringify({ offset: -1 })).toString('base64url');
+    const cursor = encodeCursor({ offset: -1 });
     assert.throws(
       () => decodeOffsetCursor(cursor),
       (err: unknown) => err instanceof McpError && err.code === ErrorCode.INVALID_INPUT,
@@ -49,7 +58,7 @@ describe('decodeOffsetCursor', () => {
   });
 
   it('throws McpError when offset is a float', () => {
-    const cursor = Buffer.from(JSON.stringify({ offset: 1.5 })).toString('base64url');
+    const cursor = encodeCursor({ offset: 1.5 });
     assert.throws(
       () => decodeOffsetCursor(cursor),
       (err: unknown) => err instanceof McpError && err.code === ErrorCode.INVALID_INPUT,

@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { open, stat } from 'node:fs/promises';
-import { basename, dirname, relative, join } from 'node:path';
+import { basename, dirname, join, relative } from 'node:path';
 
 import { createTwoFilesPatch } from 'diff';
 import RE2 from 're2';

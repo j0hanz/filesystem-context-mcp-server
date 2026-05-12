@@ -1125,13 +1125,25 @@ export function createBase64JsonCodec<Schema extends z.ZodType>(
 ): z.ZodCodec<z.ZodString, Schema> {
   return z.codec(z.string(), schema, {
     decode: (value) => {
+      let buffer: Buffer;
+      try {
+        buffer = Buffer.from(value, 'base64url');
+      } catch (error) {
+        throw new Error('Invalid base64url encoding.', { cause: error });
+      }
+
+      let text: string;
+      try {
+        text = buffer.toString('utf-8');
+      } catch (error) {
+        throw new Error('UTF-8 decode failed (corrupted payload).', { cause: error });
+      }
+
       let parsed: unknown;
       try {
-        parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf-8'));
+        parsed = JSON.parse(text);
       } catch (error) {
-        throw new Error('Invalid base64url-encoded JSON payload.', {
-          cause: error,
-        });
+        throw new Error('Invalid JSON in payload.', { cause: error });
       }
 
       // Cast to the codec's declared decode return type. The downstream

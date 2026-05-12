@@ -1723,10 +1723,7 @@ function looksLikeText(buffer: Buffer): boolean {
 
   // Count non-text bytes
   let nonTextCount = 0;
-  const len = sample.length;
-  for (let i = 0; i < len; i++) {
-    const byte = sample[i];
-    if (byte === undefined) continue;
+  for (const byte of sample) {
     // Allow common control characters (9=tab, 10=LF, 13=CR) and printable ASCII (32-126) + extended ASCII
     if (byte < 9 || (byte > 13 && byte < 32 && byte !== 27) || (byte > 126 && byte < 160)) {
       nonTextCount++;
@@ -1734,7 +1731,7 @@ function looksLikeText(buffer: Buffer): boolean {
   }
 
   // If less than 30% non-text bytes, consider it text
-  return nonTextCount / len < 0.3;
+  return nonTextCount / sample.length < 0.3;
 }
 
 /**
