@@ -203,13 +203,39 @@ function runHandler<N extends WorkerTaskName>(
 // must NOT register our handler in that case to avoid conflicting listeners.
 if (!isMainThread && parentPort && workerData == null) {
   const port = parentPort;
-  port.on('message', (msg: TaskRequest) => {
+  port.on('message', (msg: unknown) => {
     let response: TaskResponse;
+    let msgId = -1; // Extract and store msgId early to ensure we always have it in catch block
     try {
-      const value = runHandler(msg.name, msg.payload);
-      response = { id: msg.id, ok: true, value };
+      // Guard against malformed message envelope before dereferencing any fields.
+      // Runtime validation is necessary because this message comes from external
+      // sources and may be malformed or corrupted, even though TypeScript would
+      // normally guarantee TaskRequest shape.
+      if (msg === null || typeof msg !== 'object') {
+        throw new Error('Worker received non-object message');
+      }
+
+      const msgObj = msg as Record<string, unknown>;
+      if (typeof msgObj['id'] !== 'number') {
+        throw new Error('Worker message missing or invalid id field');
+      }
+      // Safe to access msgId now; cache it before any other errors can occur
+      msgId = msgObj['id'];
+
+      if (typeof msgObj['name'] !== 'string') {
+        throw new Error('Worker message missing or invalid name field');
+      }
+      if (msgObj['payload'] === null || typeof msgObj['payload'] !== 'object') {
+        throw new Error('Worker message missing or invalid payload field');
+      }
+
+      // Now safely cast to TaskRequest after validation
+      const taskRequest = msg as TaskRequest;
+      const value = runHandler(taskRequest.name, taskRequest.payload);
+      response = { id: msgId, ok: true, value };
     } catch (err: unknown) {
-      response = { id: msg.id, ok: false, error: serializeError(err) };
+      // msgId is always set either from successful validation or kept as -1 fallback
+      response = { id: msgId, ok: false, error: serializeError(err) };
     }
     port.postMessage(response);
   });

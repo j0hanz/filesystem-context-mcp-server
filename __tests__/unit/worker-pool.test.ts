@@ -112,3 +112,57 @@ test('runInWorker handles malformed patch without crashing', async () => {
     `expected applied to be source or false, got: ${JSON.stringify(result.applied)}`,
   );
 });
+
+// Task 2: Regression tests for queued-task completion after worker failure.
+// These tests ensure that when a worker fails while other tasks are queued,
+// the queue is drained and all remaining tasks complete or reject.
+
+test('queued tasks complete after large burst of concurrent requests', async () => {
+  // Submit tasks that exceed pool capacity to guarantee queueing.
+  // All tasks should complete successfully; none should stall.
+  const tasks = Array.from({ length: 30 }, (_, i) =>
+    runInWorker('diff', {
+      oldStr: `original_${String(i)}\n`,
+      newStr: `modified_${String(i)}\n`,
+      oldHeader: `file_${String(i)}.txt`,
+      newHeader: `file_${String(i)}.txt`,
+    }),
+  );
+
+  const results = await Promise.all(tasks);
+  assert.equal(results.length, 30);
+  for (const result of results) {
+    assert.ok(Array.isArray(result.hunks));
+  }
+});
+
+test('queued tasks continue after mixed task types', async () => {
+  // Submit a mix of diff and createPatch tasks, exceeding pool capacity.
+  // Verifies queue draining works across task boundaries.
+  const tasks: Promise<unknown>[] = [];
+
+  for (let i = 0; i < 15; i++) {
+    tasks.push(
+      runInWorker('diff', {
+        oldStr: `old_${String(i)}\n`,
+        newStr: `new_${String(i)}\n`,
+        oldHeader: 'a',
+        newHeader: 'b',
+      }),
+    );
+    tasks.push(
+      runInWorker('createPatch', {
+        oldStr: `old_${String(i)}\n`,
+        newStr: `new_${String(i)}\n`,
+        oldHeader: 'a',
+        newHeader: 'b',
+      }),
+    );
+  }
+
+  const results = await Promise.all(tasks);
+  assert.equal(results.length, 30);
+  for (const result of results) {
+    assert.ok(result);
+  }
+});

@@ -23,6 +23,7 @@ import {
   WORKER_IDLE_TIMEOUT_MS,
   WORKER_OFFLOAD_THRESHOLD_BYTES,
   WORKER_POOL_MAX,
+  WORKER_QUEUE_MAX,
   WORKERS_DISABLED,
 } from './util.js';
 import { WORKER_ENTRY_URL } from './worker.js';
@@ -270,6 +271,18 @@ class WorkerPool {
         entry.timeoutId = tid;
       }
 
+      // Reject immediately if queue is at capacity to prevent unbounded growth.
+      if (this.queue.length >= WORKER_QUEUE_MAX) {
+        this.cleanupEntry(entry);
+        reject(
+          new McpError(
+            ErrorCode.UNKNOWN,
+            `Worker pool task queue is full (${String(WORKER_QUEUE_MAX)} pending tasks); rejecting new submission`,
+          ),
+        );
+        return;
+      }
+
       this.queue.push({
         request: { id, name, payload },
         entry,
@@ -374,6 +387,9 @@ class WorkerPool {
       );
     }
     this.stopSweepTimerIfPossible();
+    // Resume queue scheduling after worker removal, in case tasks were queued
+    // while the pool was at capacity.
+    this.drainQueue();
   }
 
   private spawnWorker(): PoolWorker {
@@ -455,7 +471,12 @@ class WorkerPool {
     if (pw.current) {
       this.cleanupEntry(pw.current);
       pw.current.reject(err instanceof Error ? err : new Error(String(err)));
+      delete pw.current;
     }
+    // Retire the worker to prevent further task scheduling on it.
+    this.retireWorker(pw);
+    // Resume queue scheduling in case tasks were queued while at capacity.
+    this.drainQueue();
   }
 
   private cleanupEntry(entry: InflightEntry): void {
