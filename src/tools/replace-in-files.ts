@@ -61,8 +61,8 @@ const SearchAndReplaceInputSchema = z.strictObject({
   dryRun: z
     .boolean()
     .optional()
-    .default(true)
-    .describe('Preview without writing \u2014 set false to apply'),
+    .default(false)
+    .describe('Apply changes immediately. Set true to preview without writing.'),
   returnDiff: defaultFalseBoolean('Include unified diff in output'),
   maxResults: z
     .uint32()
@@ -608,7 +608,7 @@ export const SEARCH_AND_REPLACE = defineTool({
   description:
     'Bulk search-and-replace across files matching a glob. ' +
     'Replaces ALL occurrences per file (unlike `edit`: first only). ' +
-    'Always `dryRun:true` first \u2014 returns a unified diff. ' +
+    'Use `returnDiff:true` to preview changes as a unified diff before or alongside writing. ' +
     'Literal matching by default; `isRegex:true` enables RE2 with capture groups ($1, $2).',
   input: SearchAndReplaceInputSchema,
   output: SearchAndReplaceOutputSchema,

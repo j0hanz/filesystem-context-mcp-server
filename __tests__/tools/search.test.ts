@@ -434,6 +434,24 @@ describe('search_and_replace tool', () => {
     assert.equal(actual, 'oldvalue\n', 'File must be unchanged in dryRun');
   });
 
+  it('applies changes when dryRun is omitted (default is false)', async () => {
+    const file = join(env.tmpDir, 'default-dry.txt');
+    await writeFile(file, 'before\n', 'utf8');
+    const raw = await env.client.callTool({
+      name: 'replace_text',
+      arguments: {
+        path: env.tmpDir,
+        pattern: 'default-dry.txt',
+        searchPattern: 'before',
+        replacement: 'after',
+        // dryRun intentionally omitted — must default to false
+      },
+    });
+    assertOk(raw);
+    const actual = await readFile(file, 'utf8');
+    assert.equal(actual, 'after\n', 'Omitting dryRun should apply changes (default false)');
+  });
+
   it('supports regex replacement', async () => {
     const file = join(env.tmpDir, 'regex-test.txt');
     await writeFile(file, 'cat123\ndog456\n', 'utf8');
