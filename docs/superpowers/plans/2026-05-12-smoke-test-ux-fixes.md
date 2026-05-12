@@ -12,13 +12,13 @@
 
 ## File map
 
-| File | What changes |
-|------|-------------|
-| `src/tools/replace-in-files.ts` | `dryRun` default, `baseNameMatch`, file-path auto-detect + `globEscape`, description/gotchas |
-| `src/tools/search-content.ts` | `baseNameMatch` in `SEARCH_CONTENT_DEFAULTS`, gotcha |
-| `src/tools/delete-file.ts` | `ok` schema type, `ok` computation, gotcha |
-| `__tests__/tools/search.test.ts` | New tests for Tasks 1, 2, 3, 5 |
-| `__tests__/tools/directory.test.ts` | Updated + new assertions for Task 4 |
+| File                                | What changes                                                                                 |
+| ----------------------------------- | -------------------------------------------------------------------------------------------- |
+| `src/tools/replace-in-files.ts`     | `dryRun` default, `baseNameMatch`, file-path auto-detect + `globEscape`, description/gotchas |
+| `src/tools/search-content.ts`       | `baseNameMatch` in `SEARCH_CONTENT_DEFAULTS`, gotcha                                         |
+| `src/tools/delete-file.ts`          | `ok` schema type, `ok` computation, gotcha                                                   |
+| `__tests__/tools/search.test.ts`    | New tests for Tasks 1, 2, 3, 5                                                               |
+| `__tests__/tools/directory.test.ts` | Updated + new assertions for Task 4                                                          |
 
 ---
 
@@ -148,17 +148,14 @@ it('pattern without / matches files in subdirectories (baseNameMatch)', async ()
     name: 'replace_text',
     arguments: {
       path: env.tmpDir,
-      pattern: '*.txt',         // no ** — must still recurse via baseNameMatch
+      pattern: '*.txt', // no ** — must still recurse via baseNameMatch
       searchPattern: 'find-me',
       replacement: 'found',
     },
   });
   assertOk(raw);
   const sc = getStructured(raw);
-  assert.ok(
-    (sc['totalMatches'] as number) >= 1,
-    'Should match find-me in the subdirectory file',
-  );
+  assert.ok((sc['totalMatches'] as number) >= 1, 'Should match find-me in the subdirectory file');
   const actual = await readFile(deepFile, 'utf8');
   assert.equal(actual, 'found\n', 'Replacement must have been applied in subdirectory file');
 });
@@ -179,10 +176,10 @@ In `src/tools/replace-in-files.ts`, inside `handleSearchAndReplace`, find the `g
 ```typescript
 const entries = globEntries({
   cwd: root,
-  pattern: filePattern,           // note: filePattern comes from resolveSearchRoot after Task 5
+  pattern: filePattern, // note: filePattern comes from resolveSearchRoot after Task 5
   excludePatterns: args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS,
   includeHidden: args.includeHidden,
-  baseNameMatch: true,            // CHANGED from false
+  baseNameMatch: true, // CHANGED from false
   caseSensitiveMatch: true,
   followSymbolicLinks: false,
   onlyFiles: true,
@@ -249,7 +246,7 @@ it('pattern without / matches files in subdirectories (baseNameMatch)', async ()
     name: 'search_text',
     arguments: {
       path: env.tmpDir,
-      pattern: '*.txt',          // no ** — must still recurse via baseNameMatch
+      pattern: '*.txt', // no ** — must still recurse via baseNameMatch
       searchPattern: 'another apple',
     },
   });
@@ -296,7 +293,7 @@ const SEARCH_CONTENT_DEFAULTS: ResolvedOptions = {
   wholeWord: false,
   isLiteral: true,
   includeHidden: false,
-  baseNameMatch: true,            // CHANGED from false
+  baseNameMatch: true, // CHANGED from false
   caseSensitiveFileMatch: true,
 };
 ```
@@ -347,13 +344,10 @@ it('returns ok:false when every path fails', async () => {
   const raw = await env.client.callTool({
     name: 'delete',
     arguments: {
-      paths: [
-        join(env.tmpDir, 'no-such-a.txt'),
-        join(env.tmpDir, 'no-such-b.txt'),
-      ],
+      paths: [join(env.tmpDir, 'no-such-a.txt'), join(env.tmpDir, 'no-such-b.txt')],
     },
   });
-  assertOk(raw);                          // isError should still be undefined
+  assertOk(raw); // isError should still be undefined
   const sc = getStructured(raw);
   assert.equal(sc['ok'], false, 'ok must be false when every path fails');
   const failures = sc['failures'] as Record<string, unknown>[] | undefined;
@@ -366,10 +360,7 @@ it('returns ok:true when at least one path succeeds (partial failure)', async ()
   const raw = await env.client.callTool({
     name: 'delete',
     arguments: {
-      paths: [
-        goodFile,
-        join(env.tmpDir, 'no-such-c.txt'),
-      ],
+      paths: [goodFile, join(env.tmpDir, 'no-such-c.txt')],
     },
   });
   assertOk(raw);
@@ -484,7 +475,7 @@ it('accepts a file path directly and scopes search to that file', async () => {
   const raw = await env.client.callTool({
     name: 'replace_text',
     arguments: {
-      path: targetFile,           // file path, not directory
+      path: targetFile, // file path, not directory
       searchPattern: 'needle',
       replacement: 'pin',
     },
