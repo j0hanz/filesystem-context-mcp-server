@@ -1047,19 +1047,7 @@
                 "description": "Destination path for the failed move"
               },
               "error": {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "description": "Error code"
-                  },
-                  "message": {
-                    "type": "string",
-                    "description": "Error message"
-                  }
-                },
-                "required": ["code", "message"],
-                "additionalProperties": false
+                "$ref": "#/$defs/PerFileError"
               }
             },
             "required": ["source", "destination", "error"],
@@ -1068,7 +1056,33 @@
         }
       },
       "required": ["ok", "moves"],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "$defs": {
+        "PerFileError": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Error code"
+            },
+            "message": {
+              "type": "string",
+              "description": "Error message"
+            },
+            "path": {
+              "description": "Path involved",
+              "type": "string"
+            },
+            "suggestion": {
+              "description": "Suggested fix",
+              "type": "string"
+            }
+          },
+          "required": ["code", "message"],
+          "additionalProperties": false,
+          "title": "Per-File Error"
+        }
+      }
     }
   },
   "read": {
