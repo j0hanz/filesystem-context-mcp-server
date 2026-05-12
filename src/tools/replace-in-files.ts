@@ -495,7 +495,7 @@ async function handleSearchAndReplace(
     pattern: args.pattern ?? '**/*',
     excludePatterns: args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS,
     includeHidden: args.includeHidden,
-    baseNameMatch: false,
+    baseNameMatch: true,
     caseSensitiveMatch: true, // Default to sensitive for file paths
     followSymbolicLinks: false,
     onlyFiles: true,
@@ -623,6 +623,7 @@ export const SEARCH_AND_REPLACE = defineTool({
   gotchas: [
     'RE2 dialect: no lookahead, lookbehind, or backreferences.',
     'Replaces ALL occurrences per file; use `edit` for first-only replacement.',
+    "Patterns without '/' match by filename anywhere in the tree (e.g. *.ts finds all .ts files). Add a path prefix like src/*.ts to restrict to a subtree.",
   ],
   defaultErrorCode: ErrorCode.UNKNOWN,
   progressLabel: (args) => {

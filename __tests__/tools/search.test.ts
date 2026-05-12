@@ -536,6 +536,31 @@ describe('search_and_replace tool', () => {
     const sc = getStructured(raw);
     assert.equal(sc['stoppedReason'], 'maxResults');
   });
+
+  it('pattern without / matches files in subdirectories (baseNameMatch)', async () => {
+    const sub = join(env.tmpDir, 'bm-sub');
+    await mkdir(sub, { recursive: true });
+    const deepFile = join(sub, 'bm-deep.txt');
+    await writeFile(deepFile, 'find-me\n', 'utf8');
+
+    const raw = await env.client.callTool({
+      name: 'replace_text',
+      arguments: {
+        path: env.tmpDir,
+        pattern: '*.txt',         // no ** — must still recurse via baseNameMatch
+        searchPattern: 'find-me',
+        replacement: 'found',
+      },
+    });
+    assertOk(raw);
+    const sc = getStructured(raw);
+    assert.ok(
+      (sc['totalMatches'] as number) >= 1,
+      'Should match find-me in the subdirectory file',
+    );
+    const actual = await readFile(deepFile, 'utf8');
+    assert.equal(actual, 'found\n', 'Replacement must have been applied in subdirectory file');
+  });
 });
 
 // ─── grep tool — asymmetric context ──────────────────────────────────────────
