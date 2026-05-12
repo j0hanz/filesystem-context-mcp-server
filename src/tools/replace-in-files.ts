@@ -66,7 +66,7 @@ const SearchAndReplaceInputSchema = z.strictObject({
     .boolean()
     .optional()
     .default(false)
-    .describe('Apply changes immediately. Set true to preview without writing.'),
+    .describe('Preview changes without writing (default false = apply changes)'),
   returnDiff: defaultFalseBoolean('Include unified diff in output'),
   maxResults: z
     .uint32()
