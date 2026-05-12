@@ -779,10 +779,12 @@
         "hashes": {
           "type": "object",
           "propertyNames": {
-            "type": "string"
+            "type": "string",
+            "enum": ["sha256", "md5", "sha1", "sha512"]
           },
           "additionalProperties": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[a-f0-9]+$"
           },
           "description": "Algorithm → hex digest mapping"
         },

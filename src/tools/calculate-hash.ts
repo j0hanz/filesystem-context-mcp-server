@@ -40,48 +40,36 @@ const ALGO_LENGTHS: Record<(typeof SUPPORTED_ALGORITHMS)[number], number> = {
   md5: 32, // 128 bits = 32 hex chars
 };
 
-const HashesSchema = z.record(z.string(), z.string()).superRefine((hashes, ctx) => {
-  for (const [key, value] of Object.entries(hashes)) {
-    // Validate key is supported algorithm
-    if (!SUPPORTED_ALGORITHMS.includes(key as (typeof SUPPORTED_ALGORITHMS)[number])) {
-      ctx.addIssue({
-        code: 'custom',
-        path: [key],
-        message: `Must be a supported algorithm: ${SUPPORTED_ALGORITHMS.join(', ')}`,
-      });
-      continue;
-    }
-    // Validate value is valid hex string
-    if (!/^[a-f0-9]+$/i.test(value)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: [key],
-        message: `Invalid ${key} digest: must be lowercase hex string`,
-      });
-      continue;
-    }
-    // Validate digest length matches algorithm
-    const algo = key as (typeof SUPPORTED_ALGORITHMS)[number];
-    const expectedLength = ALGO_LENGTHS[algo];
-    if (value.length !== expectedLength) {
-      ctx.addIssue({
-        code: 'custom',
-        path: [key],
-        message: `Invalid ${algo} digest: expected ${expectedLength} hex characters, got ${value.length}`,
-      });
-    }
-  }
-});
+// z.partialRecord: keys are optional but MUST be from the enum; rejects unknown keys.
+// Generates propertyNames.enum in JSON Schema so clients can validate key names client-side.
+const HashesSchema = z.partialRecord(
+  z.enum(SUPPORTED_ALGORITHMS),
+  z.string().regex(/^[a-f0-9]+$/i, { message: 'Must be lowercase hex string' }),
+);
 
-const HashOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Success indicator'),
-  filePath: z.string().describe('Resolved file or directory path'),
-  algorithms: z.array(z.enum(SUPPORTED_ALGORITHMS)).describe('Algorithms computed'),
-  hashes: HashesSchema.describe('Algorithm → hex digest mapping'),
-  resourceUri: z.string().describe('URI to hashes.json resource'),
-  isDirectory: z.boolean().describe('True when hashing a directory'),
-  fileCount: NonNegInt.optional().describe('Files hashed (directories only)'),
-});
+const HashOutputSchema = z
+  .strictObject({
+    ok: z.literal(true).describe('Success indicator'),
+    filePath: z.string().describe('Resolved file or directory path'),
+    algorithms: z.array(z.enum(SUPPORTED_ALGORITHMS)).describe('Algorithms computed'),
+    hashes: HashesSchema.describe('Algorithm → hex digest mapping'),
+    resourceUri: z.string().describe('URI to hashes.json resource'),
+    isDirectory: z.boolean().describe('True when hashing a directory'),
+    fileCount: NonNegInt.optional().describe('Files hashed (directories only)'),
+  })
+  .superRefine((data, ctx) => {
+    // Validate each digest has the correct byte-length for its algorithm.
+    for (const [algo, digest] of Object.entries(data.hashes)) {
+      const expectedLength = ALGO_LENGTHS[algo as (typeof SUPPORTED_ALGORITHMS)[number]];
+      if (digest.length !== expectedLength) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['hashes', algo],
+          message: `Invalid ${algo} digest: expected ${expectedLength} hex characters, got ${digest.length}`,
+        });
+      }
+    }
+  });
 
 function toStableRelativePath(root: string, entryPath: string): string {
   const relativePath = relative(root, entryPath);

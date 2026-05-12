@@ -6,6 +6,8 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
+import { z } from 'zod/v4';
+
 import { HashOutputSchema } from '../../src/tools/calculate-hash.js';
 import {
   assertOk,
@@ -198,6 +200,34 @@ describe('HashOutputSchema validation', () => {
     };
     const result3 = HashOutputSchema.safeParse(wrongLengthOutput);
     assert.equal(result3.success, false, 'Digest with wrong length should fail');
+  });
+});
+
+describe('HashesSchema JSON Schema constraints', () => {
+  it('output schema constrains hashes keys to SUPPORTED_ALGORITHMS enum', (): void => {
+    const json = z.toJSONSchema(HashOutputSchema, {
+      io: 'input',
+      unrepresentable: 'any',
+    }) as Record<string, unknown>;
+
+    const props = json['properties'] as Record<string, unknown>;
+    assert.ok(props, 'outputSchema has properties');
+    const hashesSchema = props['hashes'] as Record<string, unknown>;
+    assert.ok(hashesSchema, 'hashes property exists');
+
+    // z.record(z.enum(...), ...) should produce a propertyNames.enum constraint
+    assert.ok(
+      'propertyNames' in hashesSchema,
+      'hashes JSON Schema must have propertyNames constraint from z.record(z.enum(...))',
+    );
+    const propNames = hashesSchema['propertyNames'] as Record<string, unknown>;
+    assert.ok('enum' in propNames, 'propertyNames should carry an enum array');
+    const enumValues = (propNames['enum'] as string[]).slice().sort();
+    assert.deepEqual(
+      enumValues,
+      ['md5', 'sha1', 'sha256', 'sha512'],
+      'enum should list all four supported algorithms',
+    );
   });
 });
 
