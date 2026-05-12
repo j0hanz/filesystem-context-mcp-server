@@ -215,7 +215,7 @@ const SEARCH_CONTENT_DEFAULTS: ResolvedOptions = {
   wholeWord: false,
   isLiteral: true,
   includeHidden: false,
-  baseNameMatch: false,
+  baseNameMatch: true,
   caseSensitiveFileMatch: true,
 };
 
@@ -1591,6 +1591,7 @@ export const SEARCH_CONTENT = defineTool({
     'RE2 dialect: no lookahead, lookbehind, or backreferences.',
     'Use `pattern` to scope to specific files; without it, scans every text file.',
     'Skips binary/oversized files silently \u2014 verify with `stat` if no matches.',
+    "Patterns without '/' match by filename anywhere in the tree (e.g. *.ts finds all .ts files). Add a path prefix like src/*.ts to restrict to a subtree.",
   ],
   defaultErrorCode: ErrorCode.UNKNOWN,
   progressLabel: (args) => `Search Content: ${truncateProgressPattern(args.searchPattern)}`,

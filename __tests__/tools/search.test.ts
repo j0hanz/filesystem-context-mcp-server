@@ -251,6 +251,30 @@ describe('grep tool', () => {
     const storedResult = await env.client.experimental.tasks.getTaskResult(taskId);
     assert.equal(storedResult.isError, undefined);
   });
+
+  it('pattern without / matches files in subdirectories (baseNameMatch)', async () => {
+    // env already has sub/deep.txt with 'another apple here'
+    const raw = await env.client.callTool({
+      name: 'search_text',
+      arguments: {
+        path: env.tmpDir,
+        pattern: '*.txt',          // no ** — must still recurse via baseNameMatch
+        searchPattern: 'another apple',
+      },
+    });
+    assertOk(raw);
+    const sc = getStructured(raw);
+    const matches = sc['matches'] as Record<string, unknown>[];
+    assert.ok(
+      Array.isArray(matches) && matches.length >= 1,
+      'Should find match in sub/deep.txt with *.txt pattern',
+    );
+    const files = matches.map((m) => m['file'] as string);
+    assert.ok(
+      files.some((f) => f.includes('deep.txt')),
+      `Expected sub/deep.txt in results, got: ${JSON.stringify(files)}`,
+    );
+  });
 });
 
 // ─── find (search_files) ─────────────────────────────────────────────────────
