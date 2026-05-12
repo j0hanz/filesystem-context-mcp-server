@@ -35,7 +35,11 @@ export const WORKER_ENTRY_URL = new URL(import.meta.url);
 
 // ---- shared types (used by both sides) ---------------------------------
 
-export type WorkerTaskName = 'diff' | 'formatPatch' | 'applyPatch' | 'createPatch';
+const WORKER_TASK_NAMES = ['diff', 'formatPatch', 'applyPatch', 'createPatch'] as const;
+
+export type WorkerTaskName = (typeof WORKER_TASK_NAMES)[number];
+
+export { WORKER_TASK_NAMES };
 
 export interface DiffPayload {
   oldStr: string;
@@ -65,29 +69,31 @@ export interface CreatePatchPayload {
   newHeader: string;
 }
 
-export interface TaskPayloadMap {
-  diff: DiffPayload;
-  formatPatch: FormatPatchPayload;
-  applyPatch: ApplyPatchPayload;
-  createPatch: CreatePatchPayload;
+/**
+ * Unified registry of all worker task types.
+ * Maps task name → { payload type, result type }
+ */
+export interface WorkerTaskRegistry {
+  diff: { payload: DiffPayload; result: StructuredPatch };
+  formatPatch: { payload: FormatPatchPayload; result: string };
+  applyPatch: { payload: ApplyPatchPayload; result: ApplyPatchResult };
+  createPatch: { payload: CreatePatchPayload; result: string };
 }
 
+/** Extract payload type for a worker task by name. */
+export type TaskPayload<T extends WorkerTaskName> = WorkerTaskRegistry[T]['payload'];
+
+/** Extract result type for a worker task by name. */
+export type TaskResult<T extends WorkerTaskName> = WorkerTaskRegistry[T]['result'];
 export interface ApplyPatchResult {
   applied: string | false;
   patch: StructuredPatch | null;
 }
 
-export interface TaskResultMap {
-  diff: StructuredPatch;
-  formatPatch: string;
-  applyPatch: ApplyPatchResult;
-  createPatch: string;
-}
-
 export interface TaskRequest {
   id: number;
   name: WorkerTaskName;
-  payload: TaskPayloadMap[WorkerTaskName];
+  payload: TaskPayload<WorkerTaskName>;
 }
 
 export interface SerializedMcpError {
@@ -109,7 +115,7 @@ export type SerializedError = SerializedMcpError | SerializedGenericError;
 export interface TaskResponseSuccess {
   id: number;
   ok: true;
-  value: TaskResultMap[WorkerTaskName];
+  value: TaskResult<WorkerTaskName>;
 }
 
 export interface TaskResponseFailure {
@@ -158,7 +164,7 @@ function serializeError(e: unknown): SerializedError {
 }
 
 const TASK_HANDLERS: {
-  [K in WorkerTaskName]: (payload: TaskPayloadMap[K]) => TaskResultMap[K];
+  [K in WorkerTaskName]: (payload: TaskPayload<K>) => TaskResult<K>;
 } = {
   diff: (p) =>
     structuredPatch(p.oldHeader, p.newHeader, p.oldStr, p.newStr, '', '', {
@@ -186,14 +192,11 @@ const TASK_HANDLERS: {
   },
 };
 
-function runHandler<N extends WorkerTaskName>(
-  name: N,
-  payload: TaskPayloadMap[N],
-): TaskResultMap[N] {
+function runHandler<N extends WorkerTaskName>(name: N, payload: TaskPayload<N>): TaskResult<N> {
   if (!Object.hasOwn(TASK_HANDLERS, name)) {
     throw new Error(`Unknown worker task: ${name as string}`);
   }
-  const handler = TASK_HANDLERS[name] as (p: TaskPayloadMap[N]) => TaskResultMap[N];
+  const handler = TASK_HANDLERS[name] as (p: TaskPayload<N>) => TaskResult<N>;
   return handler(payload);
 }
 

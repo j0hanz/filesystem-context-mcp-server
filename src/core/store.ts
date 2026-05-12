@@ -47,18 +47,32 @@ const DEFAULT_RESOURCE_STORE_OPTIONS: ResourceStoreOptions = {
 
 type StoredEntry = (TextResourceEntry & { kind: 'text' }) | (BlobResourceEntry & { kind: 'blob' });
 
+const _CACHE_PHASES = [
+  'cache_hit',
+  'cache_miss',
+  'cache_store',
+  'cache_evict',
+  'cache_clear',
+  'cache_reject',
+] as const;
+
+type CachePhase = (typeof _CACHE_PHASES)[number];
+
+const _CACHE_EVICTION_REASONS = [
+  'entry_too_large',
+  'evicted_immediately',
+  'expired',
+  'not_found',
+] as const;
+
+type CacheEvictionReason = (typeof _CACHE_EVICTION_REASONS)[number];
+
 interface ResourceStoreDiagnosticsEvent {
-  phase:
-    | 'cache_hit'
-    | 'cache_miss'
-    | 'cache_store'
-    | 'cache_evict'
-    | 'cache_clear'
-    | 'cache_reject';
+  phase: CachePhase;
   uri?: string;
   name?: string;
   bytes?: number;
-  reason?: 'entry_too_large' | 'evicted_immediately' | 'expired' | 'not_found';
+  reason?: CacheEvictionReason;
 }
 
 const RESOURCE_STORE_DIAGNOSTICS_CHANNEL = channel('filesystem-mcp:resource-store');

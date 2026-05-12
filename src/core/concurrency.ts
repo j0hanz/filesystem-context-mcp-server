@@ -29,9 +29,9 @@ import {
 import { WORKER_ENTRY_URL } from './worker.js';
 import type {
   SerializedError,
-  TaskPayloadMap,
+  TaskPayload,
   TaskResponse,
-  TaskResultMap,
+  TaskResult,
   WorkerTaskName,
 } from './worker.js';
 
@@ -160,7 +160,7 @@ interface QueuedTask {
   request: {
     id: number;
     name: WorkerTaskName;
-    payload: TaskPayloadMap[WorkerTaskName];
+    payload: TaskPayload<WorkerTaskName>;
   };
   entry: InflightEntry;
 }
@@ -225,9 +225,9 @@ class WorkerPool {
 
   public run<N extends WorkerTaskName>(
     name: N,
-    payload: TaskPayloadMap[N],
+    payload: TaskPayload<N>,
     opts: RunInWorkerOptions = {},
-  ): Promise<TaskResultMap[N]> {
+  ): Promise<TaskResult<N>> {
     if (WORKERS_DISABLED) {
       return Promise.reject(
         new McpError(
@@ -237,7 +237,7 @@ class WorkerPool {
       );
     }
 
-    return new Promise<TaskResultMap[N]>((resolve, reject) => {
+    return new Promise<TaskResult<N>>((resolve, reject) => {
       const id = this.nextId++;
       const entry: InflightEntry = {
         id,
@@ -507,9 +507,9 @@ const globalWorkerPool = new WorkerPool();
 
 export function runInWorker<N extends WorkerTaskName>(
   name: N,
-  payload: TaskPayloadMap[N],
+  payload: TaskPayload<N>,
   opts: RunInWorkerOptions = {},
-): Promise<TaskResultMap[N]> {
+): Promise<TaskResult<N>> {
   return globalWorkerPool.run(name, payload, opts);
 }
 
