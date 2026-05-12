@@ -13,10 +13,12 @@ import {
   JSONRPC_VERSION,
   type JSONRPCErrorResponse,
   type JSONRPCMessage,
+  localhostAllowedHostnames,
   parseJSONRPCMessage,
   ProtocolErrorCode,
   StdioServerTransport,
   type StreamId,
+  validateHostHeader,
 } from '@modelcontextprotocol/server';
 
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -702,6 +704,17 @@ function setupExpressApp(
     host: httpHost,
     ...(!isLoopbackHttpHost(httpHost) ? { allowedHosts: [httpHost] } : {}),
     jsonLimit: `${MAX_REQUEST_BODY_BYTES}b`,
+  });
+
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const host = req.headers.host;
+    const allowedHosts = [...localhostAllowedHostnames(), httpHost];
+    const result = validateHostHeader(host, allowedHosts);
+    if (!result.ok) {
+      res.status(403).json({ error: 'Invalid Host header' });
+      return;
+    }
+    next();
   });
 
   app.use(originGuardMiddleware());
