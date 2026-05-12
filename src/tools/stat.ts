@@ -26,7 +26,7 @@ import {
   formatBytes,
   putResource,
 } from './_helpers.js';
-import { defineTool } from './define.js';
+import { defineTool, type RunResult } from './define.js';
 
 const StatInputSchema = z
   .strictObject({
@@ -265,7 +265,7 @@ async function handleGetMultipleFileInfo(
   resourceStore: ResourceStore | undefined,
   signal?: AbortSignal,
   onProgress?: () => void,
-): Promise<StatOutput | ReturnType<typeof buildResourceResponse<StatOutput>>> {
+): Promise<RunResult<StatOutput>> {
   const result = await getMultipleFileInfo(paths, {
     includeMimeType: true,
     pathGuard,

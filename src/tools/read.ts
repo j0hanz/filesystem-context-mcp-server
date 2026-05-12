@@ -43,7 +43,7 @@ import {
   formatBytes,
   putResource,
 } from './_helpers.js';
-import { defineTool } from './define.js';
+import { defineTool, type RunResult } from './define.js';
 
 const readRangeFields = createReadRangeFields({
   head: 'Return first N lines',
@@ -293,7 +293,7 @@ async function handleReadFile(
   pathGuard: PathGuard,
   signal?: AbortSignal,
   resourceStore?: ResourceStore,
-): Promise<ReadFileOutput | ReturnType<typeof buildResourceResponse<ReadFileOutput>>> {
+): Promise<RunResult<ReadFileOutput>> {
   const options = buildReadOptions(args, signal);
   const result = await readFile(args.path, options, pathGuard);
   const mimeInfo = detectMimeType(result.path, Buffer.from(result.content.slice(0, 512)));
@@ -785,7 +785,7 @@ async function handleReadMultipleFiles(
   signal?: AbortSignal,
   resourceStore?: ResourceStore,
   onProgress?: (progress: { current: number; total: number; message: string }) => void,
-): Promise<ReadFileOutput | ReturnType<typeof buildResourceResponse<ReadFileOutput>>> {
+): Promise<RunResult<ReadFileOutput>> {
   const total = args.paths.length;
   let completed = 0;
   const onReadComplete = (): void => {

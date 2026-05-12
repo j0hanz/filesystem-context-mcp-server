@@ -17,9 +17,9 @@ test('buildResourceResponse: summary + resource_link blocks + structured', () =>
     resources: [link],
     structured: { path: 'src/x.ts', size: 10 },
   });
-  assert.equal(r.content[0]?.type, 'text');
-  assert.equal(r.content[1], link);
-  assert.deepEqual(r.structuredContent, { path: 'src/x.ts', size: 10 });
+  assert.equal(r.text, 'read: src/x.ts · 1 line · 10 B · text/x-typescript');
+  assert.deepEqual(r.resources, [link]);
+  assert.deepEqual(r.structured, { path: 'src/x.ts', size: 10 });
 });
 
 test('putResource: text kind uses putText and returns resource_link', () => {

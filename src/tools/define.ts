@@ -60,9 +60,11 @@ export interface ToolDeps {
   readonly resourceStore: ResourceStore | undefined;
 }
 
-export type RunResult<T> =
-  | T
-  | { readonly _kind: 'wrapped'; content: ContentBlock[]; structuredContent: T };
+export interface RunResult<T> {
+  readonly structured: T;
+  readonly text?: string;
+  readonly resources?: ContentBlock[];
+}
 
 export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
   readonly name: string;
@@ -189,42 +191,21 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
             progressSession.complete(label);
             outcome = signal.aborted ? 'cancelled' : 'success';
 
-            let responseContent: ContentBlock[];
-            let responseStructuredContent: Record<string, unknown>;
-
-            if (
-              result !== null &&
-              typeof result === 'object' &&
-              '_kind' in result &&
-              (result as { _kind?: unknown })._kind === 'wrapped' &&
-              'content' in result &&
-              'structuredContent' in result &&
-              Array.isArray((result as { content: unknown }).content)
-            ) {
-              const wrapped = result as {
-                readonly _kind: 'wrapped';
-                content: ContentBlock[];
-                structuredContent: unknown;
-              };
-              responseContent = wrapped.content;
-              responseStructuredContent = wrapped.structuredContent as Record<string, unknown>;
-            } else {
-              responseContent = [{ type: 'text' as const, text: JSON.stringify(result) }];
-              responseStructuredContent = result as Record<string, unknown>;
-            }
+            const text = result.text ?? JSON.stringify(result.structured);
+            const content: ContentBlock[] = [
+              { type: 'text' as const, text },
+              ...(result.resources ?? []),
+            ];
 
             try {
-              resultSizeBytes = Buffer.byteLength(
-                JSON.stringify(responseStructuredContent),
-                'utf8',
-              );
+              resultSizeBytes = Buffer.byteLength(JSON.stringify(result.structured), 'utf8');
             } catch {
               // Ignore serialization error
             }
 
             return {
-              content: responseContent,
-              structuredContent: responseStructuredContent,
+              content,
+              structuredContent: result.structured as Record<string, unknown>,
             };
           } catch (error: unknown) {
             progressSession.fail(error, label);

@@ -273,3 +273,49 @@ test('progress label fallback: uses title when progressLabel not provided', asyn
   assert.equal(getDisplayName(tool), 'Test Tool');
   assert.notEqual(getDisplayName(tool), tool.name);
 });
+
+test('defineTool: RunResult with text and resources flows through to CallToolResult', async (): Promise<void> => {
+  const resourceLink = {
+    type: 'resource_link' as const,
+    uri: 'filesystem-mcp://result/abc',
+    name: 'file.ts',
+    mimeType: 'text/plain',
+    size: 10,
+  };
+  const tool = defineTool({
+    ...BASE_DEF,
+    run: async () => ({
+      structured: { ok: true as const, result: 'new-shape' },
+      text: 'summary: file.ts',
+      resources: [resourceLink],
+    }),
+  });
+  const capture: HandlerCapture = { handler: undefined };
+  tool.register(makeTestDeps(makeMockServer(capture)));
+  assert.ok(capture.handler);
+  const result = await capture.handler({ message: 'test' }, {
+    mcpReq: fakeMcpReq(),
+  } as unknown as ServerContext);
+  assert.equal((result.structuredContent as TestOutput).result, 'new-shape');
+  assert.equal(result.content[0]?.type, 'text');
+  assert.equal((result.content[0] as { type: string; text: string }).text, 'summary: file.ts');
+  assert.equal(result.content[1], resourceLink);
+});
+
+test('defineTool: RunResult without text falls back to JSON.stringify(structured)', async (): Promise<void> => {
+  const tool = defineTool({
+    ...BASE_DEF,
+    run: async () => ({
+      structured: { ok: true as const, result: 'json-fallback' },
+    }),
+  });
+  const capture: HandlerCapture = { handler: undefined };
+  tool.register(makeTestDeps(makeMockServer(capture)));
+  assert.ok(capture.handler);
+  const result = await capture.handler({ message: 'test' }, {
+    mcpReq: fakeMcpReq(),
+  } as unknown as ServerContext);
+  assert.equal((result.structuredContent as TestOutput).result, 'json-fallback');
+  const text = (result.content[0] as { type: string; text: string }).text;
+  assert.equal(text, JSON.stringify({ ok: true, result: 'json-fallback' }));
+});

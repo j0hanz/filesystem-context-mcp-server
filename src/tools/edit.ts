@@ -712,9 +712,9 @@ async function dispatch(args: EditInput, ctx: ToolCtx): Promise<RunResult<EditOu
     .map((r) => ({ type: 'resource_link' as const, uri: r.link, name: r.link }));
 
   return {
-    _kind: 'wrapped' as const,
-    content: [{ type: 'text' as const, text: summaryText }, ...links],
-    structuredContent: structured,
+    structured,
+    text: summaryText,
+    ...(links.length > 0 ? { resources: links } : {}),
   };
 }
 

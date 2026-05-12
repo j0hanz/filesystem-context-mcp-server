@@ -148,15 +148,11 @@ export function buildToolResponse<T>(
   text: string,
   structuredContent: T,
   extraContent: ContentBlock[] = [],
-): {
-  _kind: 'wrapped';
-  content: ContentBlock[];
-  structuredContent: T;
-} {
+): { structured: T; text: string; resources?: ContentBlock[] } {
   return {
-    _kind: 'wrapped',
-    content: [{ type: 'text', text }, ...extraContent],
-    structuredContent,
+    structured: structuredContent,
+    text,
+    ...(extraContent.length > 0 ? { resources: extraContent } : {}),
   };
 }
 
@@ -167,14 +163,14 @@ interface BuildResourceResponseParams<T> {
 }
 
 export function buildResourceResponse<T>(params: BuildResourceResponseParams<T>): {
-  _kind: 'wrapped';
-  content: ContentBlock[];
-  structuredContent: T;
+  structured: T;
+  text: string;
+  resources?: ContentBlock[];
 } {
   return {
-    _kind: 'wrapped',
-    content: [{ type: 'text', text: params.summary }, ...params.resources],
-    structuredContent: params.structured,
+    structured: params.structured,
+    text: params.summary,
+    resources: params.resources,
   };
 }
 
