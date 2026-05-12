@@ -255,6 +255,17 @@ function countDiagnostics(errors) {
   return { errors: errorCount, warnings: warningCount };
 }
 
+function rejectForbiddenFlags(values, forbidden, command) {
+  for (const flag of forbidden) {
+    if (values[flag] !== undefined) {
+      process.stderr.write(`Flag --${flag} is not supported for command '${command}'.\n`);
+      process.exitCode = 2;
+      return true;
+    }
+  }
+  return false;
+}
+
 function parseCliConfig(args) {
   let parsed;
   try {
@@ -297,13 +308,14 @@ function parseCliConfig(args) {
   }
 
   if (command === 'check' || command === 'fix') {
-    const forbidden = ['watch', 'timeout', 'name-pattern', 'shard', 'update-snapshots'];
-    for (const flag of forbidden) {
-      if (values[flag] !== undefined) {
-        process.stderr.write(`Flag --${flag} is not supported for command '${command}'.\n`);
-        process.exitCode = 2;
-        return null;
-      }
+    if (
+      rejectForbiddenFlags(
+        values,
+        ['watch', 'timeout', 'name-pattern', 'shard', 'update-snapshots'],
+        command,
+      )
+    ) {
+      return null;
     }
     return {
       command,
@@ -315,14 +327,7 @@ function parseCliConfig(args) {
   }
 
   if (command === 'test') {
-    const forbidden = ['quick', 'all'];
-    for (const flag of forbidden) {
-      if (values[flag] !== undefined) {
-        process.stderr.write(`Flag --${flag} is not supported for command 'test'.\n`);
-        process.exitCode = 2;
-        return null;
-      }
-    }
+    if (rejectForbiddenFlags(values, ['quick', 'all'], 'test')) return null;
 
     if (values.timeout !== undefined) {
       const n = Number(values.timeout);
@@ -359,21 +364,14 @@ function parseCliConfig(args) {
       return null;
     }
 
-    const forbidden = [
-      'quick',
-      'all',
-      'watch',
-      'timeout',
-      'name-pattern',
-      'shard',
-      'update-snapshots',
-    ];
-    for (const flag of forbidden) {
-      if (values[flag] !== undefined) {
-        process.stderr.write(`Flag --${flag} is not supported for command 'detail'.\n`);
-        process.exitCode = 2;
-        return null;
-      }
+    if (
+      rejectForbiddenFlags(
+        values,
+        ['quick', 'all', 'watch', 'timeout', 'name-pattern', 'shard', 'update-snapshots'],
+        'detail',
+      )
+    ) {
+      return null;
     }
 
     return {
@@ -647,7 +645,7 @@ const KnipParser = {
     'unused-ns-type',
   ]),
 
-  _RULE_ENTRIES: null,
+  RULE_ENTRIES: null,
 
   isFixable(errors) {
     return Array.isArray(errors) && errors.some((error) => this.FIXABLE_RULES.has(error.rule));
@@ -657,7 +655,6 @@ const KnipParser = {
     const parsed = Json.parse(jsonText, {});
     const rows = Array.isArray(parsed?.issues) ? parsed.issues : [];
     const errors = [];
-    if (!this._RULE_ENTRIES) this._RULE_ENTRIES = Object.entries(this.RULES);
     for (const row of rows) this.parseRow(row, errors);
     return errors;
   },
@@ -673,8 +670,7 @@ const KnipParser = {
     const file = row?.file ? Text.normalizePath(row.file) : '';
     if (!file) return;
 
-    const entries = this._RULE_ENTRIES || Object.entries(this.RULES);
-    for (const [category, meta] of entries) {
+    for (const [category, meta] of this.RULE_ENTRIES) {
       const list = row[category];
       if (!Array.isArray(list) || list.length === 0) continue;
       if (category === 'duplicates') this.pushDuplicateErrors(errors, file, list);
@@ -728,6 +724,9 @@ const KnipParser = {
     });
   },
 };
+
+// Cache rule entries once; `KnipParser.RULES` is frozen so the entries list is stable.
+KnipParser.RULE_ENTRIES = Object.freeze(Object.entries(KnipParser.RULES));
 
 const JsonLParser = {
   parseLine(line) {
