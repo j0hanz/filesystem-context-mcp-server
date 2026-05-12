@@ -1478,8 +1478,8 @@
           "type": "boolean"
         },
         "dryRun": {
-          "default": true,
-          "description": "Preview without writing — set false to apply",
+          "default": false,
+          "description": "Apply changes immediately. Set true to preview without writing.",
           "type": "boolean"
         },
         "returnDiff": {

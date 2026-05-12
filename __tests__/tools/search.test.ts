@@ -547,17 +547,14 @@ describe('search_and_replace tool', () => {
       name: 'replace_text',
       arguments: {
         path: env.tmpDir,
-        pattern: '*.txt',         // no ** — must still recurse via baseNameMatch
+        pattern: '*.txt', // no ** — must still recurse via baseNameMatch
         searchPattern: 'find-me',
         replacement: 'found',
       },
     });
     assertOk(raw);
     const sc = getStructured(raw);
-    assert.ok(
-      (sc['totalMatches'] as number) >= 1,
-      'Should match find-me in the subdirectory file',
-    );
+    assert.ok((sc['totalMatches'] as number) >= 1, 'Should match find-me in the subdirectory file');
     const actual = await readFile(deepFile, 'utf8');
     assert.equal(actual, 'found\n', 'Replacement must have been applied in subdirectory file');
   });
