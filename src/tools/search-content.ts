@@ -622,7 +622,7 @@ interface PendingWorkerRequest {
   workerIndex: number;
 }
 
-class SearchWorkerPool {
+export class SearchWorkerPool {
   private workers: (Worker | undefined)[];
   private pending = new Map<number, PendingWorkerRequest>();
   private nextRequestId = 0;
@@ -656,6 +656,13 @@ class SearchWorkerPool {
     this.workers[workerIndex] = undefined;
   }
 
+  private retireWorker(workerIndex: number, expectedWorker: Worker): void {
+    this.markWorkerAsUnavailable(workerIndex, expectedWorker);
+    void expectedWorker.terminate().catch(() => {
+      /* Worker may already be exiting */
+    });
+  }
+
   private getWorker(workerIndex: number): Worker {
     const existing = this.workers[workerIndex];
     if (existing) return existing;
@@ -685,12 +692,12 @@ class SearchWorkerPool {
         `Worker ${String(index)} failed to deserialize a message`,
       );
       this.rejectPendingForWorker(index, normalized);
-      this.markWorkerAsUnavailable(index, worker);
+      this.retireWorker(index, worker);
     });
 
     worker.on('error', (error: Error) => {
       this.rejectPendingForWorker(index, error);
-      this.markWorkerAsUnavailable(index, worker);
+      this.retireWorker(index, worker);
     });
 
     worker.on('exit', (exitCode: number) => {
@@ -751,7 +758,7 @@ class SearchWorkerPool {
             `Failed to post scan request ${String(id)} to worker ${String(workerIndex)}`,
           ),
         );
-        this.markWorkerAsUnavailable(workerIndex, worker);
+        this.retireWorker(workerIndex, worker);
       }
     });
 

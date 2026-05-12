@@ -171,6 +171,15 @@ function createInstructionsResource(): ResourceContract {
 const FILESYSTEM_FILE_URI_TEMPLATE = 'filesystem-mcp://file/{+path}';
 const FILE_URI_PREFIX = 'filesystem-mcp://file';
 
+let watchFactory: (path: string, listener: () => void) => FSWatcher = (path, listener) =>
+  watch(path, listener);
+
+export function setWatchFactoryForTests(
+  factory?: (path: string, listener: () => void) => FSWatcher,
+): void {
+  watchFactory = factory ?? ((path, listener) => watch(path, listener));
+}
+
 function extractPath(uri: string): string | undefined {
   if (!uri.startsWith(FILE_URI_PREFIX)) return undefined;
   const rawPath = uri.slice(FILE_URI_PREFIX.length);
@@ -184,6 +193,12 @@ function extractPath(uri: string): string | undefined {
 
 function createFilesystemResource(options: ResourceRegistrationOptions): ResourceContract {
   const watchers = new Map<string, FSWatcher>();
+  const dropWatcher = (uri: string, watcher: FSWatcher): void => {
+    const current = watchers.get(uri);
+    if (current !== watcher) return;
+    watcher.close();
+    watchers.delete(uri);
+  };
 
   return {
     name: 'filesystem-mcp-file',
@@ -234,11 +249,12 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
       options.pathGuard
         .validateExistingPath(filePath)
         .then((resolved) => {
-          const watcher = watch(resolved, () => {
+          const watcher = watchFactory(resolved, () => {
             notify(uri);
           });
           watcher.on('error', () => {
-            /* ignore */
+            // Remove broken watchers so future subscribe calls can recover.
+            dropWatcher(uri, watcher);
           });
           watchers.set(uri, watcher);
         })
@@ -250,8 +266,7 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     unsubscribe(uri) {
       const watcher = watchers.get(uri);
       if (watcher) {
-        watcher.close();
-        watchers.delete(uri);
+        dropWatcher(uri, watcher);
       }
     },
 

@@ -756,6 +756,15 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
   httpServer.requestTimeout = 30_000;
   httpServer.keepAliveTimeout = 5_000;
 
+  const onHttpServerError = (error: Error): void => {
+    Logger.error('[HTTP] runtime server error', {
+      host: httpHost,
+      port,
+      error: formatUnknownErrorMessage(error),
+    });
+  };
+  httpServer.on('error', onHttpServerError);
+
   registry.startSweep();
 
   httpServer.once('close', () => {
@@ -774,6 +783,6 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
         Logger.info(`[HTTP] Server listening on http://${httpHost}:${port}`);
         resolve(httpServer);
       })
-      .on('error', reject);
+      .once('error', reject);
   });
 }

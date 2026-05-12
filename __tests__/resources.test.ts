@@ -2,12 +2,15 @@ import { Client } from '@modelcontextprotocol/client';
 
 import assert from 'node:assert/strict';
 import { channel } from 'node:diagnostics_channel';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { EventEmitter } from 'node:events';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import serverJson from '../server.json' with { type: 'json' };
+import { setWatchFactoryForTests } from '../src/resources.js';
 import { createServer } from '../src/server.js';
 import { LinkedTransport } from './linked-transport.js';
 
@@ -15,6 +18,7 @@ const __filename = import.meta.filename;
 
 interface DiscoveryEnv {
   client: Client;
+  tempDir: string;
   cleanup: () => Promise<void>;
 }
 
@@ -45,6 +49,7 @@ async function createDiscoveryEnv(): Promise<DiscoveryEnv> {
 
   return {
     client,
+    tempDir,
     cleanup: async () => {
       ctx.resourcesHandle.destroy();
       await client.close().catch(() => {});
@@ -58,6 +63,7 @@ describe('resources and metadata', () => {
   const cleanups: (() => Promise<void>)[] = [];
 
   afterEach(async () => {
+    setWatchFactoryForTests();
     while (cleanups.length > 0) {
       const cleanup = cleanups.pop();
       if (!cleanup) continue;
@@ -177,5 +183,51 @@ describe('resources and metadata', () => {
     assert.ok(events[1]?.includes('action=unsubscribe'));
 
     logChannel.unsubscribe(subscription);
+  });
+
+  it('recovers from watcher errors by allowing re-subscribe', async () => {
+    class FakeWatcher extends EventEmitter {
+      public closed = false;
+
+      close(): void {
+        this.closed = true;
+      }
+    }
+
+    const env = await createDiscoveryEnv();
+    cleanups.push(env.cleanup);
+
+    const filePath = join(env.tempDir, 'watch-recover.txt');
+    await writeFile(filePath, 'hello', 'utf8');
+
+    const createdWatchers: FakeWatcher[] = [];
+    setWatchFactoryForTests((_path: string, _listener: () => void) => {
+      const watcher = new FakeWatcher();
+      createdWatchers.push(watcher);
+      return watcher as unknown as import('node:fs').FSWatcher;
+    });
+
+    const uri = 'filesystem-mcp://file/' + encodeURIComponent(filePath);
+
+    await env.client.subscribeResource({ uri });
+    for (let attempt = 0; attempt < 20 && createdWatchers.length < 1; attempt += 1) {
+      await delay(10);
+    }
+    assert.equal(createdWatchers.length, 1, 'expected first watcher to be created');
+
+    createdWatchers[0]?.emit('error', new Error('watcher failed'));
+    await delay(10);
+
+    await env.client.subscribeResource({ uri });
+    for (let attempt = 0; attempt < 20 && createdWatchers.length < 2; attempt += 1) {
+      await delay(10);
+    }
+
+    assert.equal(createdWatchers.length, 2, 'expected second watcher to be created after error');
+    assert.equal(
+      createdWatchers[0]?.closed,
+      true,
+      'failed watcher should be closed during cleanup',
+    );
   });
 });

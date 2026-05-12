@@ -64,17 +64,26 @@ export function createTaskStore(): EventedTaskStore {
 export class TaskOrchestrator {
   private readonly controllers = new Map<string, AbortController>();
   private readonly store: EventedTaskStore;
+  private readonly onCancelled: (taskId: string) => void;
+  private disposed = false;
 
   constructor(store: EventedTaskStore) {
     this.store = store;
-    this.store.events.on('cancelled', (taskId: string) => {
+    this.onCancelled = (taskId: string) => {
       const controller = this.controllers.get(taskId);
       if (controller) {
         // Abort the background execution with a cancellation reason.
         controller.abort(new McpError(ErrorCode.CANCELLED, 'Task execution cancelled.'));
         this.controllers.delete(taskId);
       }
-    });
+    };
+    this.store.events.on('cancelled', this.onCancelled);
+  }
+
+  public dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.store.events.off('cancelled', this.onCancelled);
   }
 
   private creationPromise: Promise<unknown> = Promise.resolve();

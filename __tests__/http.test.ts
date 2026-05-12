@@ -641,6 +641,31 @@ describe('HTTP transport', () => {
     );
   });
 
+  it('logs structured context for runtime HTTP server errors', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-log-'));
+    const logChannel = channel('filesystem-mcp:log');
+    const messages: string[] = [];
+    const subscription = (msg: unknown): void => {
+      const event = msg as { message?: string };
+      if (typeof event.message === 'string') {
+        messages.push(event.message);
+      }
+    };
+    logChannel.subscribe(subscription);
+
+    try {
+      const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+      servers.push(server);
+
+      server.emit('error', new Error('runtime boom'));
+
+      const logged = messages.find((message) => message.includes('[HTTP] runtime server error'));
+      assert.ok(logged, 'expected explicit runtime server error log entry');
+    } finally {
+      logChannel.unsubscribe(subscription);
+    }
+  });
+
   it('returns 413 for request bodies exceeding the size limit', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
     const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });

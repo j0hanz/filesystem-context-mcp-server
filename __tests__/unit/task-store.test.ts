@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { EventedTaskStore } from '../../src/tasks.js';
+import { EventedTaskStore, TaskOrchestrator } from '../../src/tasks.js';
 
 describe('EventedTaskStore', () => {
   it('emits "cancelled" event when a task status is updated to cancelled', async () => {
@@ -27,6 +27,25 @@ describe('EventedTaskStore', () => {
       );
 
       assert.strictEqual(emittedTaskId, task.taskId);
+    } finally {
+      store.cleanup();
+    }
+  });
+
+  it('removes cancelled listener when TaskOrchestrator is disposed', () => {
+    const store = new EventedTaskStore();
+    try {
+      assert.equal(store.events.listenerCount('cancelled'), 0);
+
+      const orchestrator = new TaskOrchestrator(store);
+      assert.equal(store.events.listenerCount('cancelled'), 1);
+
+      orchestrator.dispose();
+      assert.equal(store.events.listenerCount('cancelled'), 0);
+
+      // Idempotent disposal should not throw or change listener state.
+      orchestrator.dispose();
+      assert.equal(store.events.listenerCount('cancelled'), 0);
     } finally {
       store.cleanup();
     }
