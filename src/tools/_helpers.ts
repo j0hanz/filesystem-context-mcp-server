@@ -15,7 +15,7 @@ import type {
 import { z } from 'zod/v4';
 
 import type { FileInfo } from '../config.js';
-import { createDetailedError, ErrorCode, getSuggestion, McpError } from '../core/errors.js';
+import { ErrorCode, McpError } from '../core/errors.js';
 import type { MimeKind } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
 import { createBase64JsonCodec } from '../core/path.js';
@@ -62,49 +62,6 @@ export interface ToolRegistrationOptions {
   orchestrator?: TaskOrchestrator | undefined;
 }
 
-// ============ Error Helpers ============
-
-function resolveDetailedError(
-  error: unknown,
-  defaultCode: ErrorCode,
-  path?: string,
-): {
-  code: ErrorCode;
-  message: string;
-  path?: string;
-  suggestion?: string;
-  details?: Record<string, unknown>;
-} {
-  const detailed = createDetailedError(error, path);
-  if (detailed.code === ErrorCode.UNKNOWN || detailed.code === ErrorCode.IO_ERROR) {
-    detailed.code = defaultCode;
-    const suggestion = getSuggestion(defaultCode);
-    if (suggestion) {
-      detailed.suggestion = suggestion;
-    }
-  }
-  return detailed;
-}
-
-export function buildStructuredError(
-  error: unknown,
-  defaultCode: ErrorCode,
-  path?: string,
-): {
-  code: ErrorCode;
-  message: string;
-  path?: string;
-  suggestion?: string;
-} {
-  const detailed = resolveDetailedError(error, defaultCode, path);
-  return {
-    code: detailed.code,
-    message: detailed.message,
-    ...(detailed.path !== undefined ? { path: detailed.path } : {}),
-    ...(detailed.suggestion !== undefined ? { suggestion: detailed.suggestion } : {}),
-  };
-}
-
 // ============ Formatting ============
 
 export function formatBytes(bytes: number): string {
@@ -116,38 +73,6 @@ export function formatBytes(bytes: number): string {
   if (bytes < MIB_LOCAL) return `${(bytes / KIB_LOCAL).toFixed(1)} KB`;
   if (bytes < GIB_LOCAL) return `${(bytes / MIB_LOCAL).toFixed(1)} MB`;
   return `${(bytes / GIB_LOCAL).toFixed(1)} GB`;
-}
-
-// ============ Response Builders ============
-
-export function buildToolResponse<T>(
-  text: string,
-  structuredContent: T,
-  extraContent: ContentBlock[] = [],
-): { structured: T; text: string; resources?: ContentBlock[] } {
-  return {
-    structured: structuredContent,
-    text,
-    ...(extraContent.length > 0 ? { resources: extraContent } : {}),
-  };
-}
-
-interface BuildResourceResponseParams<T> {
-  summary: string;
-  resources: ContentBlock[];
-  structured: T;
-}
-
-export function buildResourceResponse<T>(params: BuildResourceResponseParams<T>): {
-  structured: T;
-  text: string;
-  resources?: ContentBlock[];
-} {
-  return {
-    structured: params.structured,
-    text: params.summary,
-    ...(params.resources.length > 0 ? { resources: params.resources } : {}),
-  };
 }
 
 // ============ Resource Store Helpers ============
@@ -392,38 +317,4 @@ export function toToolContext(ctx?: ToolContext | ServerContext): ToolContext {
     };
   }
   return ctx;
-}
-
-// ============ Error Boundary Assertions ============
-
-export function requireSignal(
-  ctx: ToolContext,
-): asserts ctx is ToolContext & { signal: AbortSignal } {
-  if (!ctx.signal) {
-    throw new Error('AbortSignal is required but was not provided in ToolContext');
-  }
-}
-
-export function requireLog(
-  ctx: ToolContext,
-): asserts ctx is ToolContext & { log: NonNullable<ToolContext['log']> } {
-  if (!ctx.log) {
-    throw new Error('Logger callback is required but was not provided in ToolContext');
-  }
-}
-
-export function requireSendNotification(
-  ctx: ToolContext,
-): asserts ctx is ToolContext & { sendNotification: NonNullable<ToolContext['sendNotification']> } {
-  if (!ctx.sendNotification) {
-    throw new Error('Notification callback is required but was not provided in ToolContext');
-  }
-}
-
-export function requireElicitInput(
-  ctx: ToolContext,
-): asserts ctx is ToolContext & { elicitInput: NonNullable<ToolContext['elicitInput']> } {
-  if (!ctx.elicitInput) {
-    throw new Error('Elicit callback is required but was not provided in ToolContext');
-  }
 }
