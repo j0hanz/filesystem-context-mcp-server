@@ -2,25 +2,7 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
 import { createInMemoryResourceStore } from '../../src/core/store.js';
-import { buildResourceResponse, putResource } from '../../src/tools/_helpers.js';
-
-test('buildResourceResponse: summary + resource_link blocks + structured', () => {
-  const link = {
-    type: 'resource_link' as const,
-    uri: 'filesystem-mcp://result/abc',
-    name: 'src/x.ts',
-    mimeType: 'text/x-typescript',
-    size: 10,
-  };
-  const r = buildResourceResponse({
-    summary: 'read: src/x.ts · 1 line · 10 B · text/x-typescript',
-    resources: [link],
-    structured: { path: 'src/x.ts', size: 10 },
-  });
-  assert.equal(r.text, 'read: src/x.ts · 1 line · 10 B · text/x-typescript');
-  assert.deepEqual(r.resources, [link]);
-  assert.deepEqual(r.structured, { path: 'src/x.ts', size: 10 });
-});
+import { putResource } from '../../src/tools/_helpers.js';
 
 test('putResource: text kind uses putText and returns resource_link', () => {
   const store = createInMemoryResourceStore();

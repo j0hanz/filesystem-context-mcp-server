@@ -9,7 +9,6 @@ import { z } from 'zod/v4';
 import { ErrorCode } from '../../src/core/errors.js';
 import type { PathGuard } from '../../src/core/path.js';
 import type { ResourceStore } from '../../src/core/store.js';
-import { buildToolResponse } from '../../src/tools/_helpers.js';
 import { defineTool } from '../../src/tools/define.js';
 
 const TestInputSchema = z.strictObject({
@@ -72,7 +71,7 @@ const BASE_DEF = {
   output: TestOutputSchema,
   annotations: 'readOnly' as const,
   task: 'forbidden' as const,
-  run: async () => buildToolResponse<TestOutput>('test', { ok: true, result: 'success' }),
+  run: async () => ({ structured: { ok: true as const, result: 'success' }, text: 'test' }),
 };
 
 test('defineTool: returns DefinedTool with name and register', (): void => {
@@ -104,7 +103,7 @@ test('defineTool: run receives args and ToolCtx with signal', async (): Promise<
     run: async (args, ctx) => {
       runInputs.push(args);
       runSignals.push(ctx.signal);
-      return buildToolResponse<TestOutput>('test', { ok: true, result: 'success' });
+      return { structured: { ok: true as const, result: 'success' }, text: 'test' };
     },
   });
   const capture: HandlerCapture = { handler: undefined };
@@ -132,7 +131,7 @@ test('defineTool: extended input schema works', async (): Promise<void> => {
   const tool = defineTool({
     ...BASE_DEF,
     input: ExtendedInputSchema,
-    run: async () => buildToolResponse<TestOutput>('test', { ok: true, result: 'success' }),
+    run: async () => ({ structured: { ok: true as const, result: 'success' }, text: 'test' }),
   });
   const capture: HandlerCapture = { handler: undefined };
   tool.register(makeTestDeps(makeMockServer(capture)));
@@ -212,7 +211,7 @@ test('defineTool: resourceStore is injected into ToolCtx', async (): Promise<voi
     ...BASE_DEF,
     run: async (_args, ctx) => {
       capturedResourceStore = ctx.resourceStore;
-      return buildToolResponse<TestOutput>('test', { ok: true, result: 'success' });
+      return { structured: { ok: true as const, result: 'success' }, text: 'test' };
     },
   });
   const capture: HandlerCapture = { handler: undefined };
@@ -233,7 +232,7 @@ test('defineTool: regular tools keep session, trace metadata, and notifications'
       capturedSessionId = ctx.sessionId;
       capturedTraceparent = ctx._meta?.['io.opentelemetry/traceparent'];
       await ctx.sendNotification?.({ method: 'notifications/test', params: { ok: true } });
-      return buildToolResponse<TestOutput>('test', { ok: true, result: 'success' });
+      return { structured: { ok: true as const, result: 'success' }, text: 'test' };
     },
   });
 
