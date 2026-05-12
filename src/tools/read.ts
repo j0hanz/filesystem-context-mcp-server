@@ -89,6 +89,7 @@ const ReadFileInputSchema = z
         message: "Either 'path' or 'paths' must be provided",
         input: value,
       });
+      return;
     }
 
     if (hasPath && hasPaths) {
@@ -98,6 +99,7 @@ const ReadFileInputSchema = z
         message: "Cannot use both 'path' and 'paths'",
         input: value,
       });
+      return;
     }
 
     // offset and length are not supported in batch mode
@@ -167,6 +169,8 @@ const ReadFileOutputSchema = z.strictObject({
 type ReadFileInput = z.infer<typeof ReadFileInputSchema>;
 type ReadFileOutput = z.infer<typeof ReadFileOutputSchema>;
 type ReadFileHandlerResult = Awaited<ReturnType<typeof readFile>>;
+
+export { ReadFileInputSchema };
 
 const READ_TOOL_LABEL = 'Read File';
 
