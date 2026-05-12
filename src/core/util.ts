@@ -174,10 +174,13 @@ function parseEnvLogLevel(envVar: string, defaultValue: ValidLogLevel): ValidLog
   return defaultValue;
 }
 
-export const DEFAULT_LOG_LEVEL = parseEnvLogLevel('FILESYSTEM_MCP_LOG_LEVEL', 'info');
+export const LOG_LEVEL = parseEnvLogLevel('FILESYSTEM_MCP_LOG_LEVEL', 'info');
 
 // Default TTL for MCP tasks when the client does not specify one (5 minutes).
-export const DEFAULT_TASK_TTL_MS = 5 * 60 * 1000;
+export const TASK_TTL = 5 * 60 * 1000;
+
+// Interval for polling task status in the TaskOrchestrator (50ms).
+export const TASK_POLL_INTERVAL = 50;
 export const MAX_TASK_TTL_MS = parseEnvInt(
   'FILESYSTEM_MCP_MAX_TASK_TTL_MS',
   60 * 60 * 1000,

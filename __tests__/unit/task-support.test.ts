@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { ErrorCode } from '../../src/core/errors.js';
-import { DEFAULT_TASK_TTL_MS, MAX_CONCURRENT_TASKS, MAX_TASK_TTL_MS } from '../../src/core/util.js';
+import { MAX_CONCURRENT_TASKS, MAX_TASK_TTL_MS, TASK_TTL } from '../../src/core/util.js';
 import { TaskOrchestrator } from '../../src/tasks.js';
 import { EventedTaskStore } from '../../src/tasks.js';
 import type { ToolResult } from '../../src/tools/_helpers.js';
@@ -267,7 +267,7 @@ describe('createToolTaskHandler', () => {
       }));
 
       const { task } = await callCreateTask(handler, createMockExtra(store));
-      assert.equal(task.ttl, DEFAULT_TASK_TTL_MS);
+      assert.equal(task.ttl, TASK_TTL);
     } finally {
       store.cleanup();
     }

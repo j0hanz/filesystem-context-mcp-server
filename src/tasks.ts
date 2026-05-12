@@ -18,11 +18,12 @@ import { EventEmitter } from 'node:events';
 import { ErrorCode, McpError } from './core/errors.js';
 import { logRuntimeFailure } from './core/observability.js';
 import {
-  DEFAULT_TASK_TTL_MS,
   isRecord,
   MAX_CONCURRENT_TASKS,
   MAX_TASK_TTL_MS,
   maybeStripStructuredContentFromResult,
+  TASK_POLL_INTERVAL,
+  TASK_TTL,
 } from './core/util.js';
 import { type ToolContext, type ToolResult, toToolContext } from './tools/_helpers.js';
 
@@ -120,12 +121,13 @@ export class TaskOrchestrator {
             throw new McpError(ErrorCode.INVALID_INPUT, `Too many active tasks (${activeCount})`);
           }
 
-          const requestedTtl = ctx.task.requestedTtl ?? DEFAULT_TASK_TTL_MS;
+          const requestedTtl = ctx.task.requestedTtl ?? TASK_TTL;
           const ttl = Math.min(requestedTtl, MAX_TASK_TTL_MS);
 
           // Create the task record in the store.
           return task.store.createTask({
             ttl,
+            pollInterval: TASK_POLL_INTERVAL,
           });
         }))) as Task;
 

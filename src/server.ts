@@ -29,8 +29,8 @@ import {
 import { createInMemoryResourceStore, type ResourceStore } from './core/store.js';
 import {
   debounce,
-  DEFAULT_LOG_LEVEL,
   getInitHandshakeTimeoutMs,
+  LOG_LEVEL,
   SENSITIVE_FILE_DENYLIST,
 } from './core/util.js';
 import { pkgInfo } from './pkg-info.js';
@@ -427,7 +427,7 @@ export async function createServer(
   };
   const server = new McpServer(withDefaultIcons(implementation, localIcon), serverConfig);
 
-  const loggingState = createLoggingState(DEFAULT_LOG_LEVEL);
+  const loggingState = createLoggingState(LOG_LEVEL);
   const rootsManager = new RootsManager(options, loggingState);
 
   await rootsManager.recomputeAllowedDirectories();
