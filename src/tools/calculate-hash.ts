@@ -44,7 +44,7 @@ const ALGO_LENGTHS: Record<(typeof SUPPORTED_ALGORITHMS)[number], number> = {
 // Generates propertyNames.enum in JSON Schema so clients can validate key names client-side.
 const HashesSchema = z.partialRecord(
   z.enum(SUPPORTED_ALGORITHMS),
-  z.string().regex(/^[a-f0-9]+$/i, { message: 'Must be lowercase hex string' }),
+  z.string().regex(/^[a-f0-9]+$/, { message: 'Must be lowercase hex string' }),
 );
 
 const HashOutputSchema = z

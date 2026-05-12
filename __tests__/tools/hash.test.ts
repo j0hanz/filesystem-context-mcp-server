@@ -8,7 +8,7 @@ import { after, before, describe, it } from 'node:test';
 
 import { z } from 'zod/v4';
 
-import { HashOutputSchema } from '../../src/tools/calculate-hash.js';
+import { HashesSchema, HashOutputSchema } from '../../src/tools/calculate-hash.js';
 import {
   assertOk,
   assertToolError,
@@ -200,6 +200,18 @@ describe('HashOutputSchema validation', () => {
     };
     const result3 = HashOutputSchema.safeParse(wrongLengthOutput);
     assert.equal(result3.success, false, 'Digest with wrong length should fail');
+  });
+
+  it('rejects uppercase hex digest', () => {
+    // 64-char valid sha256 but uppercase — currently passes due to /i flag bug
+    const result = HashesSchema.safeParse({
+      sha256: 'E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855',
+    });
+    assert.equal(result.success, false, 'Uppercase hex should be rejected');
+    assert.ok(
+      result.error?.issues.some((i) => i.message === 'Must be lowercase hex string'),
+      'Expected "Must be lowercase hex string" in issues',
+    );
   });
 });
 
