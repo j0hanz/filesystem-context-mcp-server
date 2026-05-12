@@ -108,12 +108,12 @@ export const Sha256Hex = z.hash('sha256').meta({
 
 export const NonNegInt = z
   .int({ error: 'Must be integer' })
-  .nonnegative({ message: 'Must be ≥ 0' })
+  .nonnegative({ error: 'Must be ≥ 0' })
   .meta({ id: 'NonNegInt', title: 'Non-Negative Integer' });
 
 export const PositiveInt = z
   .int({ error: 'Must be integer' })
-  .positive({ message: 'Must be > 0' })
+  .positive({ error: 'Must be > 0' })
   .meta({ id: 'PositiveInt', title: 'Positive Integer' });
 
 export const FileType = z
@@ -144,7 +144,6 @@ export const SafeGlobPattern = z
   })
   .refine((val) => isSafeGlobSyntax(val), {
     message: 'Invalid glob or unsafe path (absolute/.. forbidden)',
-    abort: true,
   })
   .describe('Glob pattern (e.g. "**/*.ts", "src/**/*.js")')
   .meta({
