@@ -582,6 +582,31 @@ describe('search_and_replace tool', () => {
     const actual = await readFile(deepFile, 'utf8');
     assert.equal(actual, 'found\n', 'Replacement must have been applied in subdirectory file');
   });
+
+  it('accepts a file path directly and scopes search to that file', async () => {
+    const targetFile = join(env.tmpDir, 'target-only.txt');
+    const siblingFile = join(env.tmpDir, 'sibling.txt');
+    await writeFile(targetFile, 'needle in target\n', 'utf8');
+    await writeFile(siblingFile, 'needle in sibling\n', 'utf8');
+
+    const raw = await env.client.callTool({
+      name: 'replace_text',
+      arguments: {
+        path: targetFile,           // file path, not directory
+        searchPattern: 'needle',
+        replacement: 'pin',
+      },
+    });
+    assertOk(raw);
+    const sc = getStructured(raw);
+    assert.equal(sc['filesModified'], 1, 'Should modify exactly 1 file');
+
+    const targetActual = await readFile(targetFile, 'utf8');
+    assert.equal(targetActual, 'pin in target\n', 'target-only.txt must be modified');
+
+    const siblingActual = await readFile(siblingFile, 'utf8');
+    assert.equal(siblingActual, 'needle in sibling\n', 'sibling.txt must NOT be modified');
+  });
 });
 
 // ─── grep tool — asymmetric context ──────────────────────────────────────────

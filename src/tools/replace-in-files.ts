@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
-import { open } from 'node:fs/promises';
-import { basename, relative } from 'node:path';
+import { open, stat } from 'node:fs/promises';
+import { basename, dirname, relative } from 'node:path';
 
 import { createTwoFilesPatch } from 'diff';
 import RE2 from 're2';
@@ -38,6 +38,10 @@ import {
   truncateProgressPattern,
 } from './_helpers.js';
 import { defineTool } from './define.js';
+
+function globEscape(name: string): string {
+  return name.replace(/[*?[\]{}()!|+@\\]/g, '\\$&');
+}
 
 const SearchAndReplaceInputSchema = z.strictObject({
   path: OptionalPath,
@@ -452,10 +456,16 @@ function createReplaceSummary(root: string): ReplaceSummary {
 async function resolveSearchRoot(
   pathValue: string | undefined,
   pathGuard: PathGuard,
-): Promise<string> {
-  return pathValue
-    ? pathGuard.validateExistingPath(pathValue)
+): Promise<{ root: string; filePattern: string | undefined }> {
+  const resolvedPath = pathValue
+    ? await pathGuard.validateExistingPath(pathValue)
     : pathGuard.resolvePathOrRoot(pathValue);
+
+  const fileStats = await stat(resolvedPath);
+  if (fileStats.isFile()) {
+    return { root: dirname(resolvedPath), filePattern: globEscape(basename(resolvedPath)) };
+  }
+  return { root: resolvedPath, filePattern: undefined };
 }
 
 function buildSearchPattern(args: SearchAndReplaceArgs): string {
@@ -487,12 +497,13 @@ async function handleSearchAndReplace(
   link?: ReturnType<typeof putResource>['link'];
 }> {
   const maxFileSize = MAX_TEXT_FILE_SIZE;
-  const root = await resolveSearchRoot(args.path, pathGuard);
+  const { root, filePattern } = await resolveSearchRoot(args.path, pathGuard);
+  const effectivePattern = filePattern ?? args.pattern ?? '**/*';
   const matcher = createReplacementMatcher(args);
 
   const entries = globEntries({
     cwd: root,
-    pattern: args.pattern ?? '**/*',
+    pattern: effectivePattern,
     excludePatterns: args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS,
     includeHidden: args.includeHidden,
     baseNameMatch: true,
@@ -624,6 +635,7 @@ export const SEARCH_AND_REPLACE = defineTool({
     'RE2 dialect: no lookahead, lookbehind, or backreferences.',
     'Replaces ALL occurrences per file; use `edit` for first-only replacement.',
     "Patterns without '/' match by filename anywhere in the tree (e.g. *.ts finds all .ts files). Add a path prefix like src/*.ts to restrict to a subtree.",
+    'Passing a file path auto-scopes the search to that single file. To combine a directory scope with a glob filter, pass the directory as path and use the pattern field.',
   ],
   defaultErrorCode: ErrorCode.UNKNOWN,
   progressLabel: (args) => {
