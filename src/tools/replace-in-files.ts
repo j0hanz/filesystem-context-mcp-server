@@ -8,7 +8,7 @@ import { z } from 'zod/v4';
 
 import { runInWorker, shouldOffload } from '../core/concurrency.js';
 import { ErrorCode, formatUnknownErrorMessage, McpError, Problem } from '../core/errors.js';
-import { atomicWriteFile, detectMimeType, globEntries } from '../core/fs.js';
+import { atomicWriteFile, detectMimeType, globEntries, MIME_SAMPLE_SIZE } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
@@ -462,11 +462,15 @@ async function resolveSearchRoot(
   return { root: resolvedPath, filePattern: undefined };
 }
 
+function escapeRegex(pattern: string): string {
+  return pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function buildSearchPattern(args: SearchAndReplaceArgs): string {
   if (args.isRegex) {
     return args.wholeWord ? `\\b(?:${args.searchPattern})\\b` : args.searchPattern;
   }
-  const escaped = args.searchPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escaped = escapeRegex(args.searchPattern);
   return args.wholeWord ? `\\b(?:${escaped})\\b` : escaped;
 }
 
@@ -574,7 +578,7 @@ async function handleSearchAndReplace(
         }
       })();
 
-      const mimeInfo = detectMimeType(fullPath, Buffer.from(content.slice(0, 512)));
+      const mimeInfo = detectMimeType(fullPath, Buffer.from(content.slice(0, MIME_SAMPLE_SIZE)));
       const lineCount = content.split('\n').length;
       const size = Buffer.byteLength(content, 'utf-8');
 

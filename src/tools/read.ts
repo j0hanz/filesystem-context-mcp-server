@@ -11,6 +11,7 @@ import {
   applyIndexedValues,
   calculateFileContentHash,
   detectMimeType,
+  MIME_SAMPLE_SIZE,
   readFile,
   readFileWithStats,
 } from '../core/fs.js';
@@ -258,27 +259,18 @@ function toStructuredReadFileResult(
 }
 
 function buildReadProgressLabel(args: ReadFileInput): string {
-  const isBatch = 'paths' in args && Array.isArray(args.paths);
-  const args_ = args as Record<string, unknown>;
-  const name = isBatch
-    ? `${String(args_['paths'] && Array.isArray(args_['paths']) ? (args_['paths'] as string[]).length : 0)} files`
-    : basename(args_['path'] as string);
+  const isBatch = args.paths !== undefined;
+  const name = isBatch ? `${String(args.paths?.length ?? 0)} files` : basename(args.path ?? '');
   if (isBatch) return `Read Files: ${name}`;
-  if (args_['offset'] !== undefined && typeof args_['offset'] === 'number') {
-    const end =
-      args_['length'] !== undefined && typeof args_['length'] === 'number'
-        ? args_['offset'] + args_['length'] - 1
-        : '…';
-    return `${READ_TOOL_LABEL}: ${name} [bytes ${args_['offset']}–${String(end)}]`;
+  if (args.offset !== undefined) {
+    const end = args.length !== undefined ? args.offset + args.length - 1 : '…';
+    return `${READ_TOOL_LABEL}: ${name} [bytes ${args.offset}–${String(end)}]`;
   }
-  if (args_['startLine'] !== undefined && typeof args_['startLine'] === 'number') {
-    const end = (args_['endLine'] ?? '…') as string | number;
-    return `${READ_TOOL_LABEL}: ${name} [lines ${args_['startLine']}–${String(end)}]`;
+  if (args.startLine !== undefined) {
+    return `${READ_TOOL_LABEL}: ${name} [lines ${args.startLine}–${String(args.endLine ?? '…')}]`;
   }
-  if (args_['head'] !== undefined && typeof args_['head'] === 'number')
-    return `${READ_TOOL_LABEL}: ${name} [head ${args_['head']}]`;
-  if (args_['tail'] !== undefined && typeof args_['tail'] === 'number')
-    return `${READ_TOOL_LABEL}: ${name} [tail ${args_['tail']}]`;
+  if (args.head !== undefined) return `${READ_TOOL_LABEL}: ${name} [head ${args.head}]`;
+  if (args.tail !== undefined) return `${READ_TOOL_LABEL}: ${name} [tail ${args.tail}]`;
   return `${READ_TOOL_LABEL}: ${name}`;
 }
 
@@ -290,7 +282,10 @@ async function handleReadFile(
 ): Promise<RunResult<ReadFileOutput>> {
   const options = buildReadOptions(args, signal);
   const result = await readFile(args.path, options, pathGuard);
-  const mimeInfo = detectMimeType(result.path, Buffer.from(result.content.slice(0, 512)));
+  const mimeInfo = detectMimeType(
+    result.path,
+    Buffer.from(result.content.slice(0, MIME_SAMPLE_SIZE)),
+  );
   const structured = toStructuredReadFileResult(
     result.path,
     result,
@@ -726,7 +721,7 @@ function maybeExternalizeReadManyResult(
     ...(error ? { error: Problem.fromUnknown(error, ErrorCode.UNKNOWN, result.path) } : {}),
   };
   if (!result.content || !resourceStore) return baseResult;
-  const contentSample = Buffer.from(result.content.slice(0, 512));
+  const contentSample = Buffer.from(result.content.slice(0, MIME_SAMPLE_SIZE));
   const mimeInfo = detectMimeType(result.path, contentSample);
   const { entry, link } = putResource({
     store: resourceStore,
@@ -839,8 +834,7 @@ export const READ_FILE = defineTool({
     ],
   }),
   run: (args, ctx) => {
-    const isBatch = 'paths' in args && Array.isArray(args.paths);
-    if (isBatch) {
+    if (args.paths !== undefined) {
       return handleReadMultipleFiles(
         args as ReadFileInput & { paths: string[] },
         ctx.pathGuard,

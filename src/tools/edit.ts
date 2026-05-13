@@ -9,7 +9,12 @@ import { z } from 'zod/v4';
 
 import { processInParallel, runInWorker, shouldOffload, withAbort } from '../core/concurrency.js';
 import { ErrorCode, McpError, Problem } from '../core/errors.js';
-import { atomicWriteFile, detectMimeType, readFileWithStats } from '../core/fs.js';
+import {
+  atomicWriteFile,
+  detectMimeType,
+  MIME_SAMPLE_SIZE,
+  readFileWithStats,
+} from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
@@ -333,6 +338,47 @@ async function finalizeEditResult(
   };
 }
 
+interface EditFileMetadata {
+  bytesWritten: number;
+  lineCount: number;
+  mimeType: string;
+  kind: 'text' | 'binary' | 'image' | 'audio' | 'pdf';
+  resourceUri: string;
+  resourceLink: ReturnType<typeof putResource>['link'] | undefined;
+}
+
+function buildEditFileMetadata(
+  content: string,
+  validPath: string,
+  appliedEdits: number,
+  resourceStore: ResourceStore | undefined,
+): EditFileMetadata {
+  const bytesWritten = Buffer.byteLength(content, 'utf-8');
+  const lineCount = content.split('\n').length;
+  const mimeInfo = detectMimeType(validPath, Buffer.from(content.slice(0, MIME_SAMPLE_SIZE)));
+  let resourceUri = '';
+  let resourceLink: ReturnType<typeof putResource>['link'] | undefined;
+  if (appliedEdits > 0 && resourceStore) {
+    const { entry, link } = putResource({
+      store: resourceStore,
+      name: basename(validPath),
+      mimeType: mimeInfo.mimeType,
+      kind: mimeInfo.kind,
+      content,
+    });
+    resourceUri = entry.uri;
+    resourceLink = link;
+  }
+  return {
+    bytesWritten,
+    lineCount,
+    mimeType: mimeInfo.mimeType,
+    kind: mimeInfo.kind,
+    resourceUri,
+    resourceLink,
+  };
+}
+
 async function buildDiff(validPath: string, original: string, modified: string): Promise<string> {
   const fileName = basename(validPath);
   const totalBytes = Buffer.byteLength(original) + Buffer.byteLength(modified);
@@ -445,40 +491,26 @@ async function handleEditFile(
       editResult.diff = await buildDiff(validPath, content, editResult.content);
     }
 
-    // For dryRun, calculate stats and optionally store in resource store
-    const bytesWritten = Buffer.byteLength(editResult.content, 'utf-8');
-    const lineCount = editResult.content.split('\n').length;
-    const mimeInfo = detectMimeType(validPath, Buffer.from(editResult.content.slice(0, 512)));
-
-    let resourceUri = '';
-    let resourceLink: ReturnType<typeof putResource>['link'] | undefined;
-    // For dryRun with changes, store the hypothetical edited content in resource
-    if (editResult.appliedEdits > 0 && resourceStore) {
-      const { entry, link } = putResource({
-        store: resourceStore,
-        name: basename(validPath),
-        mimeType: mimeInfo.mimeType,
-        kind: mimeInfo.kind,
-        content: editResult.content,
-      });
-      resourceUri = entry.uri;
-      resourceLink = link;
-    }
-
+    const meta = buildEditFileMetadata(
+      editResult.content,
+      validPath,
+      editResult.appliedEdits,
+      resourceStore,
+    );
     return {
       structured: buildStructuredEditOutput({
         validPath,
-        size: bytesWritten,
-        lineCount,
-        mimeType: mimeInfo.mimeType,
-        kind: mimeInfo.kind,
-        resourceUri,
+        size: meta.bytesWritten,
+        lineCount: meta.lineCount,
+        mimeType: meta.mimeType,
+        kind: meta.kind,
+        resourceUri: meta.resourceUri,
         modified: new Date().toISOString(),
         result: editResult,
       }),
       editedContent: editResult.content,
       validPath,
-      ...(resourceLink ? { resourceLink } : {}),
+      ...(meta.resourceLink ? { resourceLink: meta.resourceLink } : {}),
     };
   }
 
@@ -500,41 +532,27 @@ async function handleEditFile(
     );
   }
 
-  // Get file stats after writing
   const fileStats = await withAbort(stat(validPath), signal);
-  const bytesWritten = Buffer.byteLength(editResult.content, 'utf-8');
-  const lineCount = editResult.content.split('\n').length;
-  const mimeInfo = detectMimeType(validPath, Buffer.from(editResult.content.slice(0, 512)));
-
-  // Store in resource store if available and edits were made
-  let resourceUri = '';
-  let resourceLink: ReturnType<typeof putResource>['link'] | undefined;
-  if (editResult.appliedEdits > 0 && resourceStore) {
-    const { entry, link } = putResource({
-      store: resourceStore,
-      name: basename(validPath),
-      mimeType: mimeInfo.mimeType,
-      kind: mimeInfo.kind,
-      content: editResult.content,
-    });
-    resourceUri = entry.uri;
-    resourceLink = link;
-  }
-
+  const meta = buildEditFileMetadata(
+    editResult.content,
+    validPath,
+    editResult.appliedEdits,
+    resourceStore,
+  );
   return {
     structured: buildStructuredEditOutput({
       validPath,
-      size: bytesWritten,
-      lineCount,
-      mimeType: mimeInfo.mimeType,
-      kind: mimeInfo.kind,
-      resourceUri,
+      size: meta.bytesWritten,
+      lineCount: meta.lineCount,
+      mimeType: meta.mimeType,
+      kind: meta.kind,
+      resourceUri: meta.resourceUri,
       modified: fileStats.mtime.toISOString(),
       result: editResult,
     }),
     editedContent: editResult.content,
     validPath,
-    ...(resourceLink ? { resourceLink } : {}),
+    ...(meta.resourceLink ? { resourceLink: meta.resourceLink } : {}),
   };
 }
 

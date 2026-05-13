@@ -7,10 +7,10 @@ import { z } from 'zod/v4';
 import type { FileInfo, GetMultipleFileInfoResult, MultipleFileInfoResult } from '../config.js';
 import { assertNotAborted, processInParallel, withAbort } from '../core/concurrency.js';
 import { ErrorCode, isAbortError, Problem } from '../core/errors.js';
-import { getFileType, isHidden } from '../core/fs.js';
+import { detectMimeType, getFileType, isHidden } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
-import { DEFAULT_SEARCH_TIMEOUT_MS, getMimeType, PARALLEL_CONCURRENCY } from '../core/util.js';
+import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../core/util.js';
 import {
   FileInfoSchema,
   NonNegInt,
@@ -145,9 +145,9 @@ async function getFileInfo(filePath: string, options: FileInfoOptions): Promise<
   pathGuard.assertAllowedFileAccess(requestedPath);
 
   const { base: name, ext: rawExt } = parse(requestedPath);
-  const ext = rawExt.toLowerCase();
   const includeMimeType = options.includeMimeType !== false;
-  const mimeType = includeMimeType && ext.length > 0 ? getMimeType(ext) : undefined;
+  const mimeType =
+    includeMimeType && rawExt.length > 0 ? detectMimeType(requestedPath).mimeType : undefined;
 
   const symlinkTarget = isSymlink ? await getSymlinkTarget(requestedPath, signal) : undefined;
 
@@ -331,16 +331,14 @@ export const GET_FILE_INFO = defineTool({
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   defaultErrorCode: ErrorCode.NOT_FOUND,
   progressLabel: (args) => {
-    const isBatch = 'paths' in args && Array.isArray(args.paths);
-    if (isBatch) {
-      return `Get File Info: ${(args as { paths: string[] }).paths.length} paths`;
+    if (args.paths !== undefined) {
+      return `Get File Info: ${args.paths.length} paths`;
     }
-    return `Get File Info: ${(args as { path: string }).path}`;
+    return `Get File Info: ${args.path ?? ''}`;
   },
   run: async (args, ctx) => {
-    const isBatch = 'paths' in args && Array.isArray(args.paths);
-    if (isBatch) {
-      const paths = (args as { paths: string[] }).paths;
+    if (args.paths !== undefined) {
+      const paths = args.paths;
       const total = paths.length;
       let completed = 0;
       const onProgress = (): void => {

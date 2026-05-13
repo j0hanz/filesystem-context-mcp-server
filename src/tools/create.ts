@@ -7,7 +7,7 @@ import { z } from 'zod/v4';
 
 import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, isAbortError, Problem } from '../core/errors.js';
-import { atomicWriteFile, detectMimeType } from '../core/fs.js';
+import { atomicWriteFile, detectMimeType, MIME_SAMPLE_SIZE } from '../core/fs.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import { IsoDateTime, NonNegInt, PerFileErrorSchema, RequiredPath } from '../schema.js';
 import { formatBytes, putResource } from './_helpers.js';
@@ -101,7 +101,10 @@ export const CREATE = defineTool({
         const fileStats = await withAbort(stat(validPath), ctx.signal);
         const bytesWritten = Buffer.byteLength(file.content, 'utf-8');
         const lineCount = file.content.split('\n').length;
-        const mimeInfo = detectMimeType(validPath, Buffer.from(file.content.slice(0, 512)));
+        const mimeInfo = detectMimeType(
+          validPath,
+          Buffer.from(file.content.slice(0, MIME_SAMPLE_SIZE)),
+        );
 
         let resourceUri = '';
         if (ctx.resourceStore) {

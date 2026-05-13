@@ -33,7 +33,12 @@ import {
 } from './observability.js';
 import type { PathGuard } from './path.js';
 import { toPosixPath } from './path.js';
-import { BINARY_CHECK_BUFFER_SIZE, KNOWN_BINARY_EXTENSIONS, MAX_TEXT_FILE_SIZE } from './util.js';
+import {
+  assignDefined,
+  BINARY_CHECK_BUFFER_SIZE,
+  KNOWN_BINARY_EXTENSIONS,
+  MAX_TEXT_FILE_SIZE,
+} from './util.js';
 
 const READ_ONLY_FILE_FLAG = 'r';
 const STREAM_CHUNK_SIZE = 64 * 1024;
@@ -270,21 +275,26 @@ function validateReadOptions(options: ReadFileOptions): void {
 function normalizeOptions(options: ReadFileOptions): NormalizedOptions {
   validateReadOptions(options);
 
-  return {
+  const base: NormalizedOptions = {
     encoding: options.encoding ?? 'utf-8',
     maxSize: Math.min(options.maxSize ?? MAX_TEXT_FILE_SIZE, MAX_TEXT_FILE_SIZE),
     skipBinary: options.skipBinary ?? false,
-    ...(options.head !== undefined ? { head: options.head } : {}),
-    ...(options.tail !== undefined ? { tail: options.tail } : {}),
-    ...(options.endLine !== undefined
-      ? { startLine: options.startLine ?? 1, endLine: options.endLine }
-      : options.startLine !== undefined
-        ? { startLine: options.startLine }
-        : {}),
-    ...(options.signal ? { signal: options.signal } : {}),
-    ...(options.offset !== undefined ? { offset: options.offset } : {}),
-    ...(options.length !== undefined ? { length: options.length } : {}),
   };
+
+  if (options.endLine !== undefined) {
+    base.startLine = options.startLine ?? 1;
+    base.endLine = options.endLine;
+  } else if (options.startLine !== undefined) {
+    base.startLine = options.startLine;
+  }
+
+  return assignDefined(base, {
+    head: options.head,
+    tail: options.tail,
+    signal: options.signal,
+    offset: options.offset,
+    length: options.length,
+  });
 }
 
 function prepareReadOptions(options: ReadFileOptions): NormalizedOptions {
@@ -294,11 +304,12 @@ function prepareReadOptions(options: ReadFileOptions): NormalizedOptions {
 }
 
 function buildReadContentOptions(normalized: NormalizedOptions): ReadContentOptions {
-  return {
+  const result: ReadContentOptions = {
     encoding: normalized.encoding,
     maxSize: normalized.maxSize,
-    ...(normalized.signal ? { signal: normalized.signal } : {}),
   };
+  if (normalized.signal) result.signal = normalized.signal;
+  return result;
 }
 
 function resolveReadMode(options: NormalizedOptions): ReadMode {
@@ -367,6 +378,11 @@ function countLines(content: string): number {
   return count;
 }
 
+async function peekHasMore(iterator: AsyncIterator<string>): Promise<boolean> {
+  const { done } = await iterator.next();
+  return !done;
+}
+
 async function readRangeContent(
   handle: FileHandle,
   startLine: number,
@@ -410,18 +426,12 @@ async function readRangeContent(
       estimatedBytes += Buffer.byteLength(line, options.encoding) + newlineBytes;
       if (estimatedBytes >= options.maxSize) {
         stoppedByLimit = true;
-        const { done: peekDone } = await iterator.next();
-        if (!peekDone) {
-          hasMoreLines = true;
-        }
+        hasMoreLines = await peekHasMore(iterator);
         break;
       }
 
       if (lineNumber === stopAt) {
-        const { done: peekDone } = await iterator.next();
-        if (!peekDone) {
-          hasMoreLines = true;
-        }
+        hasMoreLines = await peekHasMore(iterator);
         break;
       }
     }
@@ -772,7 +782,7 @@ export async function readFileWithStats(
     assertFileStats(filePath, stats);
 
     const content = await withAbort(readFilePromises(validPath), options?.signal);
-    const mimeInfo = detectMimeType(validPath, content.subarray(0, 512));
+    const mimeInfo = detectMimeType(validPath, content.subarray(0, MIME_SAMPLE_SIZE));
     return {
       content,
       mimeType: mimeInfo.mimeType,
@@ -782,7 +792,10 @@ export async function readFileWithStats(
 
   // 5-arg version (filePath, validPath, stats, options, pathGuard)
   const validPath = arg2;
-  const stats = arg3 as Stats;
+  if (!arg3 || typeof arg3 !== 'object' || !('isFile' in arg3)) {
+    throw new McpError(ErrorCode.UNKNOWN, 'readFileWithStats: arg3 must be Stats');
+  }
+  const stats = arg3;
   const options = arg4 ?? {};
   const pathGuard = arg5;
 
@@ -1714,12 +1727,10 @@ const MAGIC_SIGNATURES: MagicSignature[] = [
 
 // ─── Helper Functions ───────────────────────────────────────────────────────
 
-/**
- * Check if a buffer is likely text (contains mostly printable ASCII or UTF-8).
- */
+export const MIME_SAMPLE_SIZE = 512;
+
 function looksLikeText(buffer: Buffer): boolean {
-  // Check first 512 bytes
-  const sample = buffer.subarray(0, 512);
+  const sample = buffer.subarray(0, MIME_SAMPLE_SIZE);
 
   // Count non-text bytes
   let nonTextCount = 0;
@@ -1781,22 +1792,15 @@ export function detectMimeType(path: string, sample?: Buffer): MimeInfo {
     }
   }
 
-  // 2. Check magic signatures if sample provided
+  // 2. Check magic signatures then text heuristics if sample provided
   if (sample && sample.length > 0) {
     const magicResult = detectByMagic(sample);
-    if (magicResult !== null) {
-      return magicResult;
-    }
+    if (magicResult !== null) return magicResult;
+    return looksLikeText(sample)
+      ? { mimeType: 'text/plain', kind: 'text' }
+      : { mimeType: 'application/octet-stream', kind: 'binary' };
   }
 
-  // 3. Fallback based on sample content
-  if (sample && sample.length > 0) {
-    if (looksLikeText(sample)) {
-      return { mimeType: 'text/plain', kind: 'text' };
-    }
-    return { mimeType: 'application/octet-stream', kind: 'binary' };
-  }
-
-  // 4. Final fallback
+  // 3. Final fallback
   return { mimeType: 'application/octet-stream', kind: 'binary' };
 }
