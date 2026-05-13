@@ -138,11 +138,11 @@ function updateCompositeHash(
   relativePath: string,
   fileHash: Buffer,
 ): void {
-  const relativePathBytes = Buffer.from(relativePath, 'utf8');
-  pathLengthBytes.writeUInt32BE(relativePathBytes.length, 0);
+  const byteLength = Buffer.byteLength(relativePath, 'utf8');
+  pathLengthBytes.writeUInt32BE(byteLength, 0);
 
   hasher.update(pathLengthBytes);
-  hasher.update(relativePathBytes);
+  hasher.update(relativePath, 'utf8');
   hasher.update(fileHash);
 }
 

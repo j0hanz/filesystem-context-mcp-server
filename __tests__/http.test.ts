@@ -58,7 +58,7 @@ async function rawHttpRequest(params: {
       (res) => {
         const chunks: Buffer[] = [];
         res.on('data', (chunk) => {
-          chunks.push(Buffer.from(chunk));
+          chunks.push(chunk);
         });
         res.on('error', reject);
         res.on('end', () => {
