@@ -135,6 +135,10 @@ async function performRenameWithFallback(
   try {
     await withAbort(rename(validSource, validDest), signal);
   } catch (error: unknown) {
+    if (isAbortError(error)) {
+      throw error;
+    }
+
     if (!isNodeError(error) || error.code !== 'EXDEV') {
       throw new McpError(ErrorCode.UNKNOWN, `Move failed for ${originalSource}`, originalSource);
     }
@@ -142,7 +146,10 @@ async function performRenameWithFallback(
     try {
       await withAbort(cp(validSource, validDest, { recursive: true }), signal);
       await withAbort(rm(validSource, { recursive: true, force: true }), signal);
-    } catch {
+    } catch (copyOrRemoveError) {
+      if (isAbortError(copyOrRemoveError)) {
+        throw copyOrRemoveError;
+      }
       throw new McpError(
         ErrorCode.UNKNOWN,
         `Cross-device move failed for ${originalSource}`,

@@ -21,6 +21,7 @@ before(async () => {
 });
 
 after(async () => {
+  if (!tmpDir) return;
   await rm(tmpDir, { recursive: true, force: true });
 });
 

@@ -793,7 +793,9 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
   };
 
   return new Promise((resolve, reject) => {
-    const onError = (err: Error) => { reject(err); };
+    const onError = (err: Error) => {
+      reject(err);
+    };
     httpServer.once('error', onError);
 
     httpServer.listen(port, httpHost, () => {
