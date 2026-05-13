@@ -793,11 +793,13 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
   };
 
   return new Promise((resolve, reject) => {
-    httpServer
-      .listen(port, httpHost, () => {
-        Logger.info(`[HTTP] Server listening on http://${httpHost}:${port}`);
-        resolve(httpServer);
-      })
-      .once('error', reject);
+    const onError = (err: Error) => { reject(err); };
+    httpServer.once('error', onError);
+
+    httpServer.listen(port, httpHost, () => {
+      httpServer.removeListener('error', onError);
+      Logger.info(`[HTTP] Server listening on http://${httpHost}:${port}`);
+      resolve(httpServer);
+    });
   });
 }
