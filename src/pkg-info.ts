@@ -9,4 +9,9 @@ const PkgInfoSchema = z.looseObject({
   homepage: z.url().optional(),
 });
 
-export const pkgInfo = PkgInfoSchema.parse(packageJsonRaw);
+const result = PkgInfoSchema.safeParse(packageJsonRaw);
+if (!result.success) {
+  throw new Error(`package.json failed schema validation:\n${z.prettifyError(result.error)}`);
+}
+
+export const pkgInfo = result.data;
