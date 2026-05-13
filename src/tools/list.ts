@@ -333,10 +333,13 @@ export const LIST = defineTool({
   },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   defaultErrorCode: ErrorCode.NOT_DIRECTORY,
-  progressLabel: (args) => {
-    const path = args.path;
-    return `List: ${path ? basename(path) : '.'}`;
-  },
+  progress: (args) => ({
+    label: 'List',
+    subject: args.path ? basename(args.path) : '.',
+  }),
+  progressDone: (_, result) => ({
+    detail: `${result.totalEntries} entries`,
+  }),
   run: async (args, ctx) => {
     const output = await handleList(args, ctx.pathGuard, ctx.signal, ctx.resourceStore);
     const path = args.path;

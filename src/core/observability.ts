@@ -10,6 +10,7 @@ import { channel, tracingChannel } from 'node:diagnostics_channel';
 import { monitorEventLoopDelay, performance, PerformanceObserver } from 'node:perf_hooks';
 import { inspect } from 'node:util';
 
+import { ansiLine, type Phase, type ProgressCtx } from './fmt.js';
 import { isRecord, parseTrueEnvFlag } from './util.js';
 
 // Aliases for observability subsystem
@@ -983,6 +984,57 @@ export class ProgressSession {
         eventKind: event.kind,
         err,
       });
+    }
+  }
+}
+
+export class StderrProgressSink implements ProgressSink {
+  readonly name = 'stderr';
+  readonly #startMs: number;
+  #ctx: ProgressCtx;
+  readonly #writeFn: (line: string) => void;
+
+  constructor(ctx: ProgressCtx, writeFn?: (line: string) => void) {
+    this.#ctx = ctx;
+    this.#startMs = Date.now();
+    this.#writeFn =
+      writeFn ??
+      ((line) => {
+        process.stderr.write(line + '\n');
+      });
+  }
+
+  updateCtx(extra: Partial<ProgressCtx>): void {
+    this.#ctx = { ...this.#ctx, ...extra };
+  }
+
+  emit(event: ProgressEvent): void {
+    if (!process.stderr.isTTY) return;
+
+    const phase: Phase =
+      event.kind === 'complete'
+        ? 'done'
+        : event.kind === 'fail'
+          ? 'fail'
+          : event.kind === 'tick' && event.current === 0
+            ? 'start'
+            : 'tick';
+
+    const merged: ProgressCtx = {
+      ...this.#ctx,
+      ...(event.kind === 'tick' || event.kind === 'complete'
+        ? { current: event.current, total: event.total }
+        : {}),
+      ...(event.kind === 'fail'
+        ? { error: event.error instanceof Error ? event.error.message : String(event.error) }
+        : {}),
+      durationMs: Date.now() - this.#startMs,
+    };
+
+    try {
+      this.#writeFn(ansiLine(phase, merged));
+    } catch {
+      // never allow observability failures to affect tool execution
     }
   }
 }

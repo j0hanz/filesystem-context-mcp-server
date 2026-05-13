@@ -317,7 +317,10 @@ export const CALCULATE_HASH = defineTool({
     'Supported algorithms: sha256, md5, sha1, sha512.',
   ],
   defaultErrorCode: ErrorCode.UNKNOWN,
-  progressLabel: (args) => `Calculate Hash: ${basename(args.path)}`,
+  progress: (args) => ({
+    label: 'Hash',
+    subject: basename(args.path),
+  }),
   run: async (args, ctx) => {
     const onProgress = ctx.onProgress
       ? ({ current, total }: { total?: number; current: number }): void => {

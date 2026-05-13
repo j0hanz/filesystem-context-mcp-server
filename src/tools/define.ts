@@ -14,7 +14,6 @@ import type {
   ToolExecution,
   ToolTaskHandler,
 } from '@modelcontextprotocol/server';
-import { getDisplayName } from '@modelcontextprotocol/server';
 
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
@@ -27,7 +26,14 @@ import {
   formatDetailedError,
   getSuggestion,
 } from '../core/errors.js';
-import { emitWideEvent, Logger, ProgressSession } from '../core/observability.js';
+import type { ProgressCtx } from '../core/fmt.js';
+import { plainMessage } from '../core/fmt.js';
+import {
+  emitWideEvent,
+  Logger,
+  ProgressSession,
+  StderrProgressSink,
+} from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { toMcpSchema } from '../schema.js';
@@ -53,7 +59,7 @@ export interface ToolCtx {
   readonly resourceStore: ResourceStore | undefined;
   readonly log?: (level: LoggingLevel, data: unknown, logger?: string) => void;
   readonly sendNotification?: ToolContext['sendNotification'];
-  readonly onProgress?: (params: { current: number; total?: number; message?: string }) => void;
+  readonly onProgress?: (params: { current: number; total?: number }) => void;
   readonly elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>;
 }
 
@@ -81,7 +87,8 @@ export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
   readonly icons?: readonly unknown[];
   readonly execution?: ToolExecution;
   readonly timeoutMs?: number;
-  readonly progressLabel?: (args: z.infer<I>) => string;
+  readonly progress?: (args: z.infer<I>) => ProgressCtx;
+  readonly progressDone?: (args: z.infer<I>, result: z.infer<O>) => Partial<ProgressCtx>;
   readonly defaultErrorCode?: ErrorCode;
   readonly run: (args: z.infer<I>, ctx: ToolCtx) => Promise<RunResult<z.infer<O>>>;
   readonly nuances?: readonly string[];
@@ -165,8 +172,22 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
           const timeoutSignal = def.timeoutMs ? AbortSignal.timeout(def.timeoutMs) : undefined;
           const signal = timeoutSignal ? AbortSignal.any([baseSignal, timeoutSignal]) : baseSignal;
 
-          const label = def.progressLabel ? def.progressLabel(parsedArgs) : getDisplayName(def);
-          const progressSession = new ProgressSession({ label, sinks: [], dynamicRateLimit: true });
+          const progressCtx: ProgressCtx = def.progress
+            ? def.progress(parsedArgs)
+            : { label: def.title };
+          const stderrSink = new StderrProgressSink(progressCtx);
+
+          const progressSession = new ProgressSession({
+            label: progressCtx.label,
+            sinks: [stderrSink],
+            dynamicRateLimit: true,
+          });
+
+          // Send initial start message to MCP client
+          void ctx.sendNotification?.({
+            method: 'notifications/tasks/status',
+            params: { status: 'working', statusMessage: plainMessage('start', progressCtx) },
+          });
 
           const toolCtx: ToolCtx = {
             signal,
@@ -186,14 +207,15 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
             ...(ctx.sendNotification ? { sendNotification: ctx.sendNotification } : {}),
             onProgress: (p) => {
               progressUpdates++;
-              progressSession.set(p);
-              // Emit task status notification to update progress message in UI
+              const tickCtx: ProgressCtx = {
+                ...progressCtx,
+                current: p.current,
+                ...(p.total !== undefined ? { total: p.total } : {}),
+              };
+              progressSession.set({ ...p, message: plainMessage('tick', tickCtx) });
               void ctx.sendNotification?.({
                 method: 'notifications/tasks/status',
-                params: {
-                  status: 'working',
-                  ...(p.message ? { statusMessage: p.message } : {}),
-                },
+                params: { status: 'working', statusMessage: plainMessage('tick', tickCtx) },
               });
             },
             ...(ctx.elicitInput ? { elicitInput: ctx.elicitInput } : {}),
@@ -201,7 +223,21 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
 
           try {
             const result = await def.run(parsedArgs, toolCtx);
-            progressSession.complete(label);
+            let doneCtx = progressCtx;
+            if (def.progressDone) {
+              try {
+                const extra = def.progressDone(parsedArgs, result.structured);
+                doneCtx = { ...progressCtx, ...extra };
+                stderrSink.updateCtx(extra);
+              } catch {
+                // ignore progressDone failures — best effort
+              }
+            }
+            progressSession.complete(plainMessage('done', doneCtx));
+            void ctx.sendNotification?.({
+              method: 'notifications/tasks/status',
+              params: { status: 'working', statusMessage: plainMessage('done', doneCtx) },
+            });
             outcome = signal.aborted ? 'cancelled' : 'success';
 
             const text = result.text ?? JSON.stringify(result.structured);
@@ -221,7 +257,16 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
               structuredContent: result.structured as Record<string, unknown>,
             };
           } catch (error: unknown) {
-            progressSession.fail(error, label);
+            const errMsg = error instanceof Error ? error.message : String(error);
+            stderrSink.updateCtx({ error: errMsg });
+            progressSession.fail(error, plainMessage('fail', { ...progressCtx, error: errMsg }));
+            void ctx.sendNotification?.({
+              method: 'notifications/tasks/status',
+              params: {
+                status: 'working',
+                statusMessage: plainMessage('fail', { ...progressCtx, error: errMsg }),
+              },
+            });
             outcome = signal.aborted ? 'cancelled' : 'error';
             if (error instanceof Error) {
               errorType = error.name;

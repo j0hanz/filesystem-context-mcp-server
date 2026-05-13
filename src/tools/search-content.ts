@@ -1648,14 +1648,19 @@ export const SEARCH_CONTENT = defineTool({
     "Patterns without '/' match by filename anywhere in the tree (e.g. *.ts finds all .ts files). Add a path prefix like src/*.ts to restrict to a subtree.",
   ],
   defaultErrorCode: ErrorCode.UNKNOWN,
-  progressLabel: (args) => `Search Content: ${truncateProgressPattern(args.searchPattern)}`,
+  progress: (args) => ({
+    label: 'Search',
+    subject: truncateProgressPattern(args.searchPattern),
+    scope: args.path ?? '.',
+  }),
+  progressDone: (_, result) => ({
+    detail: `${result.totalMatches ?? 0} matches · ${result.filesMatched ?? 0} files`,
+  }),
   run: async (args, ctx) => {
-    const truncatedPattern = truncateProgressPattern(args.searchPattern);
     const onProgress = (params: { current: number; total?: number }): void => {
       ctx.onProgress?.({
         current: params.current,
         ...(params.total !== undefined ? { total: params.total } : {}),
-        message: `grep: ${truncatedPattern} [${params.current} files]`,
       });
     };
     const { structured, link, matchCount, fileCount } = await handleSearchContent(

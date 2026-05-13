@@ -142,10 +142,11 @@ test('defineTool: extended input schema works', async (): Promise<void> => {
   );
 });
 
-test('defineTool: progressLabel option is accepted', (): void => {
+test('defineTool: progress and progressDone options are accepted', (): void => {
   const tool = defineTool({
     ...BASE_DEF,
-    progressLabel: (args) => `Processing: ${args.message}`,
+    progress: (args) => ({ label: 'Test', subject: args.message }),
+    progressDone: (_args, result) => ({ detail: result.result }),
   });
   tool.register(makeTestDeps(makeMockServer()));
   assert.ok(tool.name, 'tool was created');
@@ -249,7 +250,7 @@ test('defineTool: regular tools keep session, trace metadata, and notifications'
   assert.equal((result.structuredContent as TestOutput).result, 'success');
   assert.equal(capturedSessionId, 'session-42');
   assert.equal(capturedTraceparent, '00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01');
-  assert.equal((requestContext.mcpReq as { notifications?: unknown[] }).notifications?.length, 1);
+  assert.equal((requestContext.mcpReq as { notifications?: unknown[] }).notifications?.length, 3);
 });
 
 test('defineTool: inputSchema and outputSchema are present', (): void => {
@@ -264,7 +265,7 @@ test('defineTool: inputSchema and outputSchema are present', (): void => {
   );
 });
 
-test('progress label fallback: uses title when progressLabel not provided', async (): Promise<void> => {
+test('display name fallback: uses title when progress metadata is not provided', async (): Promise<void> => {
   const { getDisplayName } = (await import('@modelcontextprotocol/server')) as {
     getDisplayName: (m: { title?: string; name: string }) => string;
   };

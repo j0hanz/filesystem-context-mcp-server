@@ -176,12 +176,15 @@ export const MOVE = defineTool({
     'If the client does not support elicitation, overwrite confirmation is skipped.',
     'Self-moves are skipped without error.',
   ],
-  progressLabel: (args) => {
+  progress: (args) => {
     if (args.moves.length === 1) {
       const move = args.moves[0];
-      return `Move Files: ${basename(move?.source ?? '')} -> ${basename(move?.destination ?? '')}`;
+      return {
+        label: 'Move',
+        subject: `${basename(move?.source ?? '')} → ${basename(move?.destination ?? '')}`,
+      };
     }
-    return `Move Files: ${String(args.moves.length)} items`;
+    return { label: 'Move', subject: `${String(args.moves.length)} files` };
   },
   defaultErrorCode: ErrorCode.UNKNOWN,
   run: async (args, ctx) => {

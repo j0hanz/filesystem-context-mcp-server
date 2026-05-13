@@ -145,7 +145,7 @@ describe('createToolTaskHandler', () => {
     }
   });
 
-  it('createTask sets initial statusMessage with tool name', async () => {
+  it('createTask leaves initial statusMessage unset by default', async () => {
     const store = createTestTaskStore();
     try {
       // Use a slow handler so the task stays in 'working' long enough to check
@@ -153,7 +153,6 @@ describe('createToolTaskHandler', () => {
         store,
         async () => {
           await new Promise((resolve) => setTimeout(resolve, 200));
-          console.log('HANDLER RETURNING');
           return {
             content: [{ type: 'text', text: 'done' }],
           } as ToolResult<unknown>;
@@ -164,7 +163,7 @@ describe('createToolTaskHandler', () => {
       const { task } = await callCreateTask(handler, createMockExtra(store));
       // Fetch the task immediately to see the statusMessage before completion
       const got = await callGetTask(handler, createMockTaskExtra(store, task.taskId));
-      assert.equal(got.statusMessage, 'my_grep: starting');
+      assert.equal(got.statusMessage, undefined);
     } finally {
       store.cleanup();
     }

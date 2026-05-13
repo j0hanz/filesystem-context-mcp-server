@@ -644,16 +644,19 @@ export const SEARCH_FILES = defineTool({
   ],
   gotchas: ['Bare names match only at the root; use `**/README.md` for recursive match.'],
   defaultErrorCode: ErrorCode.UNKNOWN,
-  progressLabel: (args) => {
-    const scopeLabel = (args.path ? basename(args.path) : '.') || '.';
-    return `Find Files: ${truncateProgressPattern(args.pattern)} in ${scopeLabel}`;
-  },
+  progress: (args) => ({
+    label: 'Find',
+    subject: truncateProgressPattern(args.pattern),
+    scope: args.path ? basename(args.path) : '.',
+  }),
+  progressDone: (_, result) => ({
+    detail: `${result.results.length} files`,
+  }),
   run: async (args, ctx) => {
     const onProgress = (params: { current: number; total?: number }): void => {
       ctx.onProgress?.({
         current: params.current,
         ...(params.total !== undefined ? { total: params.total } : {}),
-        message: `find: ${truncateProgressPattern(args.pattern)} [${params.current} files]`,
       });
     };
     const { structured, link, count } = await handleSearchFiles(

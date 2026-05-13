@@ -434,14 +434,6 @@ async function loadEditableFile(
   return { validPath, content };
 }
 
-function buildEditProgressMessage(args: EditInput): string {
-  const tag = args.dryRun ? ' [dry run]' : '';
-  if (args.path !== undefined) return `Edit File: ${basename(args.path)}${tag}`;
-  if (args.paths !== undefined) return `Edit Files: ${args.paths.length} files${tag}`;
-  if (args.files !== undefined) return `Edit Files: ${args.files.length} files${tag}`;
-  return `Edit Files${tag}`;
-}
-
 async function applyEdits(
   content: string,
   edits: z.infer<typeof EditSpecSchema>[],
@@ -753,6 +745,33 @@ export const EDIT = defineTool({
     openWorldHint: false,
   },
   nuances: ['Each edit applies to the output of the previous edit.'],
-  progressLabel: buildEditProgressMessage,
+  progress: (args) => {
+    const dryLabel = args.dryRun ? ' [dry run]' : '';
+    let subject: string;
+    if (args.path !== undefined) {
+      subject = basename(args.path);
+    } else if (args.paths !== undefined) {
+      subject = `${args.paths.length} files`;
+    } else if (args.files !== undefined) {
+      subject = `${args.files.length} files`;
+    } else {
+      subject = 'files';
+    }
+    return { label: `Edit${dryLabel}`, subject };
+  },
+  progressDone: (_args, result) => {
+    if (result.results) {
+      const parts = result.results.map(
+        (item) => `${basename(item.path)}+${item.linesAdded ?? 0}-${item.linesRemoved ?? 0}`,
+      );
+      return { subject: parts.join(' · ') };
+    }
+    if (result.path !== undefined) {
+      return {
+        subject: `${basename(result.path)}+${result.linesAdded ?? 0}-${result.linesRemoved ?? 0}`,
+      };
+    }
+    return {};
+  },
   run: async (args, ctx) => dispatch(args, ctx),
 });

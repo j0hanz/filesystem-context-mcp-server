@@ -167,7 +167,7 @@ type ReadFileHandlerResult = Awaited<ReturnType<typeof readFile>>;
 
 export { ReadFileInputSchema };
 
-const READ_TOOL_LABEL = 'Read File';
+const READ_TOOL_LABEL = 'Read';
 
 function buildReadOptions(
   args: ReadFileInput,
@@ -256,22 +256,6 @@ function toStructuredReadFileResult(
     bytesRead: result.bytesRead,
     reachedEOF: result.reachedEOF,
   });
-}
-
-function buildReadProgressLabel(args: ReadFileInput): string {
-  const isBatch = args.paths !== undefined;
-  const name = isBatch ? `${String(args.paths?.length ?? 0)} files` : basename(args.path ?? '');
-  if (isBatch) return `Read Files: ${name}`;
-  if (args.offset !== undefined) {
-    const end = args.length !== undefined ? args.offset + args.length - 1 : '…';
-    return `${READ_TOOL_LABEL}: ${name} [bytes ${args.offset}–${String(end)}]`;
-  }
-  if (args.startLine !== undefined) {
-    return `${READ_TOOL_LABEL}: ${name} [lines ${args.startLine}–${String(args.endLine ?? '…')}]`;
-  }
-  if (args.head !== undefined) return `${READ_TOOL_LABEL}: ${name} [head ${args.head}]`;
-  if (args.tail !== undefined) return `${READ_TOOL_LABEL}: ${name} [tail ${args.tail}]`;
-  return `${READ_TOOL_LABEL}: ${name}`;
 }
 
 async function handleReadFile(
@@ -769,13 +753,13 @@ async function handleReadMultipleFiles(
   pathGuard: PathGuard,
   signal?: AbortSignal,
   resourceStore?: ResourceStore,
-  onProgress?: (progress: { current: number; total: number; message: string }) => void,
+  onProgress?: (progress: { current: number; total: number }) => void,
 ): Promise<RunResult<ReadFileOutput>> {
   const total = args.paths.length;
   let completed = 0;
   const onReadComplete = (): void => {
     completed++;
-    onProgress?.({ current: completed, total, message: `read: ${completed}/${total}` });
+    onProgress?.({ current: completed, total });
   };
   const results = await readMultipleFiles(args.paths, {
     pathGuard,
@@ -818,7 +802,34 @@ export const READ_FILE = defineTool({
     'Large content is externalized to `filesystem-mcp://result/{id}` and preview is returned inline.',
   ],
   defaultErrorCode: ErrorCode.NOT_FILE,
-  progressLabel: buildReadProgressLabel,
+  progress: (args) => {
+    const isBatch = args.paths !== undefined;
+    const name = isBatch ? `${String(args.paths?.length ?? 0)} files` : basename(args.path ?? '');
+    if (isBatch) {
+      return { label: READ_TOOL_LABEL, subject: name };
+    }
+    let scope: string | undefined;
+    if (args.offset !== undefined) {
+      const end = args.length !== undefined ? args.offset + args.length - 1 : '…';
+      scope = `bytes ${args.offset}–${String(end)}`;
+    } else if (args.startLine !== undefined) {
+      scope = `lines ${args.startLine}–${String(args.endLine ?? '…')}`;
+    } else if (args.head !== undefined) {
+      scope = `head ${args.head}`;
+    } else if (args.tail !== undefined) {
+      scope = `tail ${args.tail}`;
+    }
+    return { label: READ_TOOL_LABEL, subject: name, ...(scope ? { scope } : {}) };
+  },
+  progressDone: (args, result) => {
+    if (args.paths !== undefined && result.results) {
+      return { detail: `${result.results.length} files` };
+    }
+    if (result.bytesRead !== undefined) {
+      return { detail: formatBytes(result.bytesRead) };
+    }
+    return {};
+  },
   inputSchemaAugment: (schema) => ({
     ...schema,
     allOf: [

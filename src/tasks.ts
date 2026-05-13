@@ -197,7 +197,7 @@ export class TaskOrchestrator {
     handler: (args: Args, ctx: ToolContext) => Promise<ToolResult<Result>>,
     args: Args,
     serverCtx: CreateTaskServerContext,
-    toolName: string,
+    _toolName: string,
   ): Promise<void> {
     const { task } = serverCtx;
 
@@ -205,9 +205,6 @@ export class TaskOrchestrator {
     const signal = controller?.signal;
 
     try {
-      // Set initial status message
-      await task.store.updateTaskStatus(taskId, 'working', `${toolName}: starting`);
-
       const toolCtx = toToolContext(serverCtx);
 
       const interceptedSendNotification = async (notification: unknown) => {
@@ -218,7 +215,7 @@ export class TaskOrchestrator {
           const statusMessage =
             typeof params['statusMessage'] === 'string' ? params['statusMessage'] : '';
 
-          await task.store.updateTaskStatus(taskId, status, `${toolName}: ${statusMessage}`);
+          await task.store.updateTaskStatus(taskId, status, statusMessage);
         } else {
           // Forward other notifications normally
           await toolCtx.sendNotification?.(
@@ -227,21 +224,8 @@ export class TaskOrchestrator {
         }
       };
 
-      const interceptedOnProgress = (params: {
-        current: number;
-        total?: number;
-        message?: string;
-      }) => {
-        // When tool reports progress, send a task status notification (fire-and-forget)
-        if (params.message) {
-          void interceptedSendNotification({
-            method: 'notifications/tasks/status',
-            params: {
-              status: 'working',
-              statusMessage: params.message,
-            },
-          });
-        }
+      const interceptedOnProgress = (_params: { current: number; total?: number }): void => {
+        // no-op: progress status messages are sent directly via sendNotification in define.ts
       };
 
       const interceptedCtx: ToolContext = {
@@ -278,7 +262,7 @@ export class TaskOrchestrator {
         const isCancelled = strippedResult['errorCode'] === ErrorCode.CANCELLED;
         if (isCancelled) {
           try {
-            await task.store.updateTaskStatus(taskId, 'cancelled', `${toolName}: cancelled`);
+            await task.store.updateTaskStatus(taskId, 'cancelled', 'cancelled');
           } catch {
             // ignore
           }
@@ -301,7 +285,7 @@ export class TaskOrchestrator {
           // Only update status if it's not already in a terminal state.
           const current = await task.store.getTask(taskId);
           if (!isTerminal(current.status)) {
-            await task.store.updateTaskStatus(taskId, 'cancelled', `${toolName}: cancelled`);
+            await task.store.updateTaskStatus(taskId, 'cancelled', 'cancelled');
           }
         } catch {
           // Best effort for terminal tasks

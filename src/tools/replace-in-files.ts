@@ -636,18 +636,23 @@ export const SEARCH_AND_REPLACE = defineTool({
     'Passing a file path auto-scopes the search to that single file. To combine a directory scope with a glob filter, pass the directory as path and use the pattern field.',
   ],
   defaultErrorCode: ErrorCode.UNKNOWN,
-  progressLabel: (args) => {
+  progress: (args) => {
     const dryLabel = args.dryRun ? ' [dry run]' : '';
-    const scope = args.pattern ?? args.path ?? '**/*';
-    return `Search and Replace: "${truncateProgressPattern(args.searchPattern)}" in ${scope}${dryLabel}`;
+    return {
+      label: `Replace${dryLabel}`,
+      subject: `"${truncateProgressPattern(args.searchPattern)}" → "${truncateProgressPattern(args.replacement)}"`,
+      scope: args.path ?? args.pattern ?? '.',
+    };
   },
+  progressDone: (_, result) => ({
+    detail: `${result.filesModified} files · ${result.totalMatches} matches`,
+  }),
   run: async (args, ctx) => {
     const truncatedPattern = truncateProgressPattern(args.searchPattern);
     const onProgress = (params: { current: number; total?: number }): void => {
       ctx.onProgress?.({
         current: params.current,
         ...(params.total !== undefined ? { total: params.total } : {}),
-        message: `search_and_replace: ${truncatedPattern} [${params.current} files]`,
       });
     };
     const { structured, link } = await handleSearchAndReplace(

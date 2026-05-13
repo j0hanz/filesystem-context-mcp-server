@@ -152,11 +152,12 @@ export const CREATE = defineTool({
 
     return { structured, text: summary };
   },
-  progressLabel: (args) => {
-    if (args.files.length === 1) {
-      return `Create Files: ${basename(args.files[0]?.path ?? '')}`;
-    }
-    return `Create Files: ${String(args.files.length)} files`;
-  },
+  progress: (args) => ({
+    label: 'Create',
+    subject:
+      args.files.length === 1
+        ? basename(args.files[0]?.path ?? '')
+        : `${String(args.files.length)} files`,
+  }),
   defaultErrorCode: ErrorCode.UNKNOWN,
 });

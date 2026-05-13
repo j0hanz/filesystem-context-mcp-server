@@ -330,11 +330,20 @@ export const GET_FILE_INFO = defineTool({
   execution: { taskSupport: 'optional' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   defaultErrorCode: ErrorCode.NOT_FOUND,
-  progressLabel: (args) => {
+  progress: (args) => {
     if (args.paths !== undefined) {
-      return `Get File Info: ${args.paths.length} paths`;
+      return { label: 'Stat', subject: `${args.paths.length} paths` };
     }
-    return `Get File Info: ${args.path ?? ''}`;
+    return { label: 'Stat', subject: args.path ?? '' };
+  },
+  progressDone: (args, result) => {
+    if (
+      args.paths !== undefined &&
+      (result.fileCount !== undefined || result.dirCount !== undefined)
+    ) {
+      return { detail: `${(result.fileCount ?? 0) + (result.dirCount ?? 0)} entries` };
+    }
+    return {};
   },
   run: async (args, ctx) => {
     if (args.paths !== undefined) {
@@ -343,7 +352,7 @@ export const GET_FILE_INFO = defineTool({
       let completed = 0;
       const onProgress = (): void => {
         completed++;
-        ctx.onProgress?.({ current: completed, total, message: `stat: ${completed}/${total}` });
+        ctx.onProgress?.({ current: completed, total });
       };
       return handleGetMultipleFileInfo(
         paths,

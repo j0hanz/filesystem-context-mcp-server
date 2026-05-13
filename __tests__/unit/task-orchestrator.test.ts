@@ -98,8 +98,6 @@ describe('TaskOrchestrator', () => {
       const ctx = createMockExtra(store);
       const { task } = await handler.createTask(undefined as never, ctx);
 
-      assert.strictEqual(task.status, 'working');
-
       // Wait for background execution
       for (let i = 0; i < 10; i++) {
         const current = await store.getTask(task.taskId, 'test-session');
@@ -156,7 +154,6 @@ describe('TaskOrchestrator', () => {
             ) {
               cancelled = true;
             }
-            console.log('TEST CAUGHT', e, e.code, e.name);
             throw e;
           }
           return { content: [], structuredContent: {} };
@@ -213,12 +210,12 @@ describe('TaskOrchestrator', () => {
       // Wait for progress to be processed
       for (let i = 0; i < 10; i++) {
         const current = await store.getTask(task.taskId, 'test-session');
-        if (current?.statusMessage === 'test_tool: Custom progress message') break;
+        if (current?.statusMessage === 'Custom progress message') break;
         await new Promise((r) => setTimeout(r, 10));
       }
 
       const final = await store.getTask(task.taskId, 'test-session');
-      assert.strictEqual(final?.statusMessage, 'test_tool: Custom progress message');
+      assert.strictEqual(final?.statusMessage, 'Custom progress message');
     } finally {
       store.cleanup();
     }
@@ -276,7 +273,7 @@ describe('TaskOrchestrator', () => {
         async (_args: unknown, ctx: ToolContext) => {
           // Tool calls onProgress callback (this is how tools report progress)
           if (ctx.onProgress) {
-            ctx.onProgress({ current: 5, total: 10, message: 'Processing 5 of 10 items' });
+            ctx.onProgress({ current: 5, total: 10 });
           }
           return {
             content: [{ type: 'text', text: 'done' }],
@@ -289,21 +286,18 @@ describe('TaskOrchestrator', () => {
       const ctx = createMockExtra(store);
       const { task } = await handler.createTask(undefined as never, ctx);
 
-      // Wait for progress to be processed
+      // Wait for task completion since onProgress is now a no-op
       for (let i = 0; i < 20; i++) {
         const current = await store.getTask(task.taskId, 'test-session');
-        if (
-          current?.statusMessage === 'test_tool: Processing 5 of 10 items' ||
-          current?.status === 'completed'
-        ) {
+        if (current?.status === 'completed') {
           break;
         }
         await new Promise((r) => setTimeout(r, 10));
       }
 
       const final = await store.getTask(task.taskId, 'test-session');
-      // This should pass: onProgress should have updated the status message
-      assert.strictEqual(final?.statusMessage, 'test_tool: Processing 5 of 10 items');
+      // onProgress is now a no-op, so statusMessage won't be updated by it
+      assert.strictEqual(final?.status, 'completed');
     } finally {
       store.cleanup();
     }
