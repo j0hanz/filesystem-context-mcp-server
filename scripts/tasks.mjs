@@ -9,7 +9,7 @@
  *   --all       continue past failures across all tasks
  *   --json      machine-readable single-line JSON to stdout (suppresses human output)
  *   --llm       append failure-detail JSON block to stdout (also written to .tasks-last-failure.json)
- *   --detail N  post-mortem source-window for the Nth test failure of the previous run
+ *   --detail [N] post-mortem source-window detail for the Nth test failure of the previous run
  *
  * Side-effect files (both .gitignored):
  *   .tasks-history.json       rolling window of the last MAX_DURATIONS=5 test durations per test name.
@@ -33,6 +33,10 @@ import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import readline from 'node:readline';
+import {
+  createInterface as createPromptInterface,
+  Readline as TtyReadline,
+} from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, stripVTControlCharacters } from 'node:util';
 
@@ -96,7 +100,7 @@ const HELP_TEXT = [
   '  check        Run validation (format → [lint, type, knip] → [test, rebuild])',
   '  fix          Auto-fix (format, lint, knip) then run validation',
   '  test         Run tests directly (bypasses orchestrator)',
-  '  detail <n>   Show source-window detail for the Nth test failure',
+  '  detail [n]   Show source-window detail for the Nth test failure',
   '',
   'Options for check / fix:',
   '  --quick      Skip test + rebuild (static checks only)',
@@ -352,8 +356,9 @@ function parseCliConfig(args) {
   }
 
   if (command === 'detail') {
-    const n = Number(positionals[1]);
-    if (!Number.isInteger(n) || n < 1) {
+    const rawIndex = positionals[1];
+    const n = rawIndex === undefined ? null : Number(rawIndex);
+    if (rawIndex !== undefined && (!Number.isInteger(n) || n < 1)) {
       process.stderr.write(`'detail' requires a positive integer failure index.\n`);
       process.exitCode = 2;
       return null;
@@ -1500,10 +1505,20 @@ class TtyReporter extends BaseReporter {
   constructor(config, colWidth) {
     super(config, colWidth);
     this.useTicker = !!process.stdout.isTTY;
+    this.ttyReadline =
+      this.useTicker && process.stdout.isTTY
+        ? new TtyReadline(process.stdout, { autoCommit: true })
+        : null;
     this.tickerStart = 0;
     this.groupLabels = null;
     this.groupDone = null;
     this.groupStartMs = 0;
+  }
+
+  clearActiveLine() {
+    if (!this.ttyReadline) return;
+    this.ttyReadline.cursorTo(0);
+    this.ttyReadline.clearLine(0);
   }
 
   header() {
@@ -1544,8 +1559,9 @@ class TtyReporter extends BaseReporter {
       );
       return;
     }
+    this.clearActiveLine();
     process.stdout.write(
-      `\r  ${icon}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}${right ? `  ${right}` : ''}${Theme.CLEAR_EOL}${newline ? '\n' : ''}`,
+      `  ${icon}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}${right ? `  ${right}` : ''}${newline ? '\n' : ''}`,
     );
   }
 
@@ -1616,17 +1632,18 @@ class TtyReporter extends BaseReporter {
 
   redrawGroup() {
     if (!this.groupLabels || !this.groupDone) return;
+    if (!this.ttyReadline) return;
     const elapsed = `${Theme.DIM}${Text.elapsed(Date.now() - this.groupStartMs)}${Theme.R}`;
-    const lines = [`\x1b[${this.groupLabels.length}A`];
+    this.ttyReadline.moveCursor(0, -this.groupLabels.length);
     for (const label of this.groupLabels) {
       const done = this.groupDone.get(label);
       const icon = done?.icon || Icons.RUN;
       const right = done?.right || elapsed;
-      lines.push(
-        `  ${icon}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}  ${right}${Theme.CLEAR_EOL}\n`,
+      this.clearActiveLine();
+      process.stdout.write(
+        `  ${icon}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}  ${right}\n`,
       );
     }
-    process.stdout.write(lines.join(''));
   }
 
   failureDetail(failedTasks) {
@@ -1716,7 +1733,7 @@ class TtyReporter extends BaseReporter {
         `    ${Theme.DIM}… ${total - shown.length} more failures; full list in ${Config.FAILURE_FILE}${Theme.R}\n`,
       );
     }
-    process.stdout.write(`\n  ${Theme.DIM}→ node scripts/tasks.mjs detail <n>${Theme.R}\n\n`);
+    process.stdout.write(`\n  ${Theme.DIM}→ node scripts/tasks.mjs detail [n]${Theme.R}\n\n`);
   }
 
   renderRawOutput(rawOutput, task = {}) {
@@ -1794,8 +1811,31 @@ function noop() {
   // intentionally empty
 }
 
+async function promptForDetailIndex(maxFailures) {
+  if (maxFailures < 1) return null;
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    process.stderr.write(`'detail' requires a positive integer failure index.\n`);
+    return null;
+  }
+
+  const rl = createPromptInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const raw = await rl.question(`Select failure index [1-${maxFailures}] (press Enter for 1): `);
+    const answer = raw.trim();
+    const index = answer.length === 0 ? 1 : Number(answer);
+    if (!Number.isInteger(index) || index < 1 || index > maxFailures) {
+      process.stderr.write(`Failure index must be an integer between 1 and ${maxFailures}.\n`);
+      return null;
+    }
+    return index;
+  } finally {
+    rl.close();
+  }
+}
+
 async function renderDetailCommand(config) {
-  const { index, llm, json } = config;
+  let { index } = config;
+  const { llm, json } = config;
 
   const data = await FileStore.readJson(Config.FAILURE_FILE, null);
   if (!data) {
@@ -1815,6 +1855,14 @@ async function renderDetailCommand(config) {
     process.stderr.write(`No test failures in last run.\n`);
     process.exitCode = 1;
     return;
+  }
+
+  if (index == null) {
+    index = await promptForDetailIndex(failures.length);
+    if (index == null) {
+      process.exitCode = 2;
+      return;
+    }
   }
 
   if (index < 1 || index > failures.length) {
@@ -1913,7 +1961,9 @@ function installSignalHandlers(reporter, config) {
         }) + '\n',
       );
     } else {
-      process.stdout.write('\x1b[?25h');
+      if (process.stdout.isTTY) {
+        process.stdout.write('\x1b[?25h');
+      }
       process.stdout.write(`\n  ${Theme.YELLOW}interrupted${Theme.R}\n\n`);
     }
     process.exitCode = exitCode;
