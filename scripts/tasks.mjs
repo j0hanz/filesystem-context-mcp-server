@@ -32,7 +32,7 @@ import { readFileSync } from 'node:fs';
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
-import readline from 'node:readline';
+import { createInterface as createLineReader } from 'node:readline';
 import {
   createInterface as createPromptInterface,
   Readline as TtyReadline,
@@ -866,7 +866,7 @@ class TestRunner {
     child.stderr?.setEncoding('utf8');
     child.stderr?.on('data', (chunk) => state.appendStderr(chunk));
 
-    const lines = readline.createInterface({
+    const lines = createLineReader({
       input: child.stdout,
       crlfDelay: Infinity,
     });
