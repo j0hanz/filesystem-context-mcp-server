@@ -3,10 +3,10 @@
  * tasks.mjs — orchestrates the dev-loop checks (format, lint, type-check, knip, test, rebuild).
  *
  * Modes:
- *   default     format → [lint, type-check, knip] parallel → [test, rebuild] parallel  (fail-fast)
+ *   default     format → [lint, type-check, knip] parallel → [test, rebuild] parallel  (fail-fast; stops on first phase failure)
  *   --fix       sequential, auto-fix format/lint/knip then re-run
  *   --quick     skip test + rebuild
- *   --all       continue past failures across all tasks
+ *   --all       continue past failures across all tasks (disables fail-fast)
  *   --json      machine-readable single-line JSON to stdout (suppresses human output)
  *   --llm       append failure-detail JSON block to stdout (also written to .tasks-last-failure.json)
  *   --detail [N] post-mortem source-window detail for the Nth test failure of the previous run
@@ -153,9 +153,7 @@ class OutputBuffer {
   toString() {
     if (this.chunks.length === 0) return '';
     if (this.chunks.length === 1) return this.chunks[0];
-    const result = this.chunks.join('');
-    this.chunks = [result];
-    return result;
+    return this.chunks.join('');
   }
 }
 
@@ -165,7 +163,7 @@ const Text = {
   },
 
   joinOutput(stdout = '', stderr = '') {
-    return `${stdout || ''}\n${stderr || ''}`.trim();
+    return `${stdout}\n${stderr}`.trim();
   },
 
   cap(value, maxChars) {
@@ -319,7 +317,7 @@ function parseCliConfig(args) {
     return {
       command,
       quick: !!values.quick,
-      all: values.all ?? true,
+      all: values.all ?? false,
       json: !!values.json,
       llm: !!values.llm,
     };
@@ -486,6 +484,8 @@ const ProcessRunner = {
 
       child.stdout?.setEncoding('utf8');
       child.stderr?.setEncoding('utf8');
+      child.stdout?.on('error', noop);
+      child.stderr?.on('error', noop);
       child.stdout?.on('data', (chunk) => {
         stdoutBuf.append(chunk);
       });
@@ -1214,13 +1214,13 @@ const OutputRenderer = {
     }
 
     const output = [];
-    output.push(`\\n  ${Theme.BOLD}Failure ${index}${Theme.R} — ${name}\\n`);
+    output.push(`\n  ${Theme.BOLD}Failure ${index}${Theme.R} — ${name}\n`);
     output.push(`  ${Theme.RED}error${Theme.R}  ${Theme.DIM}${errorLabel}${Theme.R}`);
 
     if (expected !== undefined && actual !== undefined) {
-      const expLines = String(expected).split('\\n');
-      const actLines = String(actual).split('\\n');
-      output.push(`\\n    ${Theme.DIM}Expected:${Theme.R}`);
+      const expLines = String(expected).split('\n');
+      const actLines = String(actual).split('\n');
+      output.push(`\n    ${Theme.DIM}Expected:${Theme.R}`);
       for (const line of expLines) output.push(`    ${Theme.RED}- ${line}${Theme.R}`);
       output.push(`    ${Theme.DIM}Actual:${Theme.R}`);
       for (const line of actLines) output.push(`    ${Theme.GREEN}+ ${line}${Theme.R}`);
@@ -1228,7 +1228,7 @@ const OutputRenderer = {
     }
 
     if (frame) {
-      output.push(`    ${Theme.DIM}-->${Theme.R} ${frame}\\n`);
+      output.push(`    ${Theme.DIM}-->${Theme.R} ${frame}\n`);
       const parsed = parseFrame(frame);
       if (parsed) {
         output.push(this.renderSourceWindow(parsed.file, parsed.line, parsed.col));
@@ -1238,7 +1238,7 @@ const OutputRenderer = {
     }
 
     if (environment) {
-      output.push(`\\n  ${Theme.DIM}Environment at failure:${Theme.R}`);
+      output.push(`\n  ${Theme.DIM}Environment at failure:${Theme.R}`);
       if (environment.memoryAtFailure) {
         const mem = environment.memoryAtFailure;
         output.push(
@@ -1251,11 +1251,11 @@ const OutputRenderer = {
         );
       }
     }
-    return output.join('\\n');
+    return output.join('\n');
   },
 
   renderDetailView(failure, index, environment = null) {
-    process.stdout.write(this.formatDetailView(failure, index, environment) + '\\n');
+    process.stdout.write(this.formatDetailView(failure, index, environment) + '\n');
   },
 
   renderDiagnostic(error, cwd = process.cwd()) {
@@ -1298,39 +1298,6 @@ const OutputRenderer = {
         output.push(`${Theme.DIM}${gutter} │ ${srcLine}${Theme.R}`);
       }
     }
-  },
-
-  renderTestFailureCard(failure) {
-    const { name, file, expected, actual, errorMessage, frame } = failure;
-    const output = [];
-
-    output.push(`${Theme.RED}FAIL${Theme.R}  ${Theme.DIM}${file}${Theme.R}`);
-    output.push(`  ${Theme.RED}✗${Theme.R}  ${name}`);
-    output.push('');
-
-    if (expected !== undefined && actual !== undefined) {
-      const expLines = String(expected).split('\\n');
-      const actLines = String(actual).split('\\n');
-
-      output.push(`     ${Theme.DIM}AssertionError:${Theme.R}`);
-      if (expLines.length <= 1 && actLines.length <= 1) {
-        output.push(`     ${Theme.RED}- Expected   ${expected}${Theme.R}`);
-        output.push(`     ${Theme.GREEN}+ Received   ${actual}${Theme.R}`);
-      } else {
-        output.push(`     ${Theme.RED}- Expected${Theme.R}`);
-        for (const line of expLines) output.push(`     ${Theme.RED}- ${line}${Theme.R}`);
-        output.push(`     ${Theme.GREEN}+ Received${Theme.R}`);
-        for (const line of actLines) output.push(`     ${Theme.GREEN}+ ${line}${Theme.R}`);
-      }
-    } else if (errorMessage) {
-      output.push(`     ${Theme.RED}${errorMessage}${Theme.R}`);
-    }
-
-    if (frame) {
-      output.push('');
-      output.push(`     ${Theme.DIM}at ${frame}${Theme.R}`);
-    }
-    return output.join('\\n');
   },
 
   formatDiagnosticsGrouped(errors, cwd = process.cwd()) {
@@ -1906,7 +1873,7 @@ async function renderDetailCommand(config) {
     process.stdout.write(JSON.stringify(payload) + '\n');
   } else {
     OutputRenderer.renderDetailView(failure, index, testTask?.environment);
-    process.stdout.write('\\n');
+    process.stdout.write('\n');
   }
 }
 
@@ -2173,7 +2140,7 @@ class TaskOrchestrator {
       const formatResult = await ProcessRunner.execAsync('npm', ['run', 'format']);
       if (!formatResult.ok) return this._applyFixAndRerun(task, formatResult);
       const check = await task.runner();
-      return check.ok ? Results.pass({ annotation: 'auto-fixed' }) : task.runner();
+      return check.ok ? Results.pass({ annotation: 'auto-fixed' }) : check;
     }
 
     return this._applyFixAndRerun(task, fixResult);
