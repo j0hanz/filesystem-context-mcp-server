@@ -72,7 +72,9 @@ interface WideEventPayload {
   outcome?: 'success' | 'error' | 'cancelled' | 'rejected';
   path?: string;
   prompt_name?: string;
-  progress_steps_emitted?: number;
+  tool_progress_ticks?: number;
+  progress_notifications_emitted?: number;
+  task_status_updates_requested?: number;
   reason?: string;
   request_kind?: 'request' | 'notification' | 'result' | 'error' | 'unknown';
   result_size_bytes?: number;

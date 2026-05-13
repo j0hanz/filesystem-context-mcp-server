@@ -45,11 +45,14 @@ interface CollectOptions {
   includeHidden: boolean;
   includeIgnored: boolean;
   signal: AbortSignal;
+  onProgress?: (progress: { current: number; total?: number }) => void;
+  progressOffset?: number;
   mode: 'inline' | 'full';
 }
 
 interface CollectResult {
   entries: CollectedEntry[];
+  scannedEntries: number;
   totalEntries: number;
   totalFiles: number;
   totalDirectories: number;
@@ -83,9 +86,11 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
     : await loadRootGitignore(rootPath, options.signal);
 
   const entries: CollectedEntry[] = [];
+  let scanned = 0;
   let totalEntries = 0;
   let totalFiles = 0;
   let totalDirectories = 0;
+  const progressOffset = options.progressOffset ?? 0;
 
   function insertBounded(entry: CollectedEntry): void {
     let low = 0;
@@ -117,6 +122,8 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
     stats: false,
   })) {
     if (options.signal.aborted) break;
+    scanned++;
+    options.onProgress?.({ current: progressOffset + scanned });
 
     const isDir = entry.dirent.isDirectory();
     const entryType: EntryType = isDir ? 'directory' : 'file';
@@ -160,6 +167,7 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
 
   return {
     entries,
+    scannedEntries: scanned,
     totalEntries,
     totalFiles,
     totalDirectories,
@@ -253,6 +261,7 @@ async function handleList(
   pathGuard: PathGuard,
   signal?: AbortSignal,
   resourceStore?: ResourceStore,
+  onProgress?: (progress: { current: number; total?: number }) => void,
 ): Promise<z.infer<typeof ListOutputSchema>> {
   const path = args.path;
   const resolvedPath = pathGuard.resolvePathOrRoot(path);
@@ -265,6 +274,7 @@ async function handleList(
       includeHidden: args.includeHidden,
       includeIgnored: args.includeIgnored,
       signal: timedSignal,
+      ...(onProgress ? { onProgress } : {}),
       mode: 'inline',
     });
 
@@ -279,6 +289,8 @@ async function handleList(
         includeHidden: args.includeHidden,
         includeIgnored: args.includeIgnored,
         signal: timedSignal,
+        ...(onProgress ? { onProgress } : {}),
+        progressOffset: result.scannedEntries,
         mode: 'full',
       });
       const fullMarkdown = renderMarkdown(basename(validDir), fullResult.entries);
@@ -338,10 +350,16 @@ export const LIST = defineTool({
     subject: args.path ? basename(args.path) : '.',
   }),
   progressDone: (_, result) => ({
-    detail: `${result.totalEntries} entries`,
+    detail: `${result.totalEntries} included entries`,
   }),
   run: async (args, ctx) => {
-    const output = await handleList(args, ctx.pathGuard, ctx.signal, ctx.resourceStore);
+    const output = await handleList(
+      args,
+      ctx.pathGuard,
+      ctx.signal,
+      ctx.resourceStore,
+      ctx.onProgress,
+    );
     const path = args.path;
     const label = 'List: ' + (path ? basename(path) : '.');
     return { structured: output, text: label };

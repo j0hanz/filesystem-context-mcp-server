@@ -1,11 +1,18 @@
 /**
  * Integration tests for directory-oriented tools: roots, list, create, rm, move.
  */
+import type { McpServer, ServerContext } from '@modelcontextprotocol/server';
+
 import assert from 'node:assert/strict';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
+import { PathGuard, resolveAllowedDirectoriesState } from '../../src/core/path.js';
+import { createInMemoryResourceStore } from '../../src/core/store.js';
+import { SENSITIVE_FILE_DENYLIST } from '../../src/core/util.js';
+import { LIST } from '../../src/tools/list.js';
 import {
   assertOk,
   assertToolError,
@@ -209,6 +216,131 @@ describe('list tool', () => {
       arguments: { path: join(env.tmpDir, 'alpha.txt') },
     });
     assertToolError(raw, 'NOT_DIRECTORY');
+  });
+});
+
+describe('list tool progress', () => {
+  it('emits monotonic scanned progress across truncation second pass', async () => {
+    type CapturedHandler = (
+      args: unknown,
+      extra: ServerContext,
+    ) => Promise<Record<string, unknown>>;
+    const capture: { handler?: CapturedHandler } = {};
+
+    const mockServer = {
+      registerTool: (_name: string, _schema: unknown, handler: unknown): void => {
+        capture.handler = handler as CapturedHandler;
+      },
+    } as unknown as McpServer;
+
+    const tmp = await mkdtemp(join(tmpdir(), 'fsmcp-list-progress-'));
+
+    try {
+      await mkdir(join(tmp, 'nested', 'deep'), { recursive: true });
+      await writeFile(join(tmp, 'root.txt'), 'root', 'utf8');
+      await writeFile(join(tmp, 'nested', 'child.txt'), 'child', 'utf8');
+      await writeFile(join(tmp, 'nested', 'deep', 'leaf.txt'), 'leaf', 'utf8');
+
+      const pathGuard = new PathGuard(SENSITIVE_FILE_DENYLIST);
+      const state = await resolveAllowedDirectoriesState([tmp]);
+      pathGuard.initialize(state);
+
+      LIST.register({
+        server: mockServer,
+        pathGuard,
+        resourceStore: createInMemoryResourceStore(),
+        isInitialized: () => true,
+      });
+
+      assert.ok(capture.handler, 'Expected list handler to be registered');
+
+      const notifications: unknown[] = [];
+      const mcpReq = {
+        signal: new AbortController().signal,
+        _meta: { progressToken: 'list-progress-token' },
+        notify: async (notification: unknown) => {
+          notifications.push(notification);
+        },
+        log: async () => undefined,
+        elicitInput: async () => ({ action: 'cancel' as const }),
+      };
+
+      const raw = await capture.handler(
+        {
+          path: tmp,
+          maxDepth: 4,
+          maxEntries: 2,
+          includeHidden: false,
+          includeIgnored: false,
+        },
+        { mcpReq } as unknown as ServerContext,
+      );
+
+      const output = raw as {
+        structuredContent?: {
+          resourceUri?: unknown;
+          totalEntries?: unknown;
+        };
+      };
+      assert.equal(typeof output.structuredContent?.resourceUri, 'string');
+
+      const progressMethod = 'notifications/progress';
+      const deadline = Date.now() + 250;
+      while (
+        Date.now() < deadline &&
+        !notifications.some((notification) => {
+          if (!notification || typeof notification !== 'object') return false;
+          const candidate = notification as { method?: unknown };
+          return candidate.method === progressMethod;
+        })
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+
+      const progressPayloads = notifications
+        .filter((notification): notification is { method: string; params?: unknown } => {
+          if (!notification || typeof notification !== 'object') return false;
+          const candidate = notification as { method?: unknown; params?: unknown };
+          return candidate.method === progressMethod;
+        })
+        .map((notification): { progress?: unknown; total?: unknown; progressToken?: unknown } => {
+          if (!notification.params || typeof notification.params !== 'object') return {};
+          return notification.params;
+        });
+
+      const progressValues = progressPayloads
+        .map((payload) => payload.progress)
+        .filter((value): value is number => typeof value === 'number');
+
+      assert.ok(
+        progressPayloads.length >= 1,
+        'Expected at least one progress callback while walking temp tree',
+      );
+      assert.ok(
+        progressValues.some((value) => value >= 1),
+        'Expected at least one progress callback with payload.progress >= 1 (transport mapping for current)',
+      );
+      for (let i = 1; i < progressValues.length; i++) {
+        const previous = progressValues[i - 1];
+        const current = progressValues[i];
+        assert.ok(
+          current !== undefined && previous !== undefined && current >= previous,
+          'Expected progress callbacks to be non-decreasing even when truncation triggers a second pass',
+        );
+      }
+      assert.ok(
+        progressPayloads.some((payload) => payload.progressToken === 'list-progress-token'),
+        'Expected at least one progress callback with the provided progressToken',
+      );
+      const maxProgress = progressValues.length > 0 ? Math.max(...progressValues) : 0;
+      const includedEntries = output.structuredContent?.totalEntries;
+      assert.ok(
+        typeof includedEntries === 'number' && maxProgress > includedEntries,
+        'Expected scanned progress to exceed included entries count when truncation triggers second collection',
+      );
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
   });
 });
 

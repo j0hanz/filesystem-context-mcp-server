@@ -55,6 +55,7 @@ export interface ToolCtx {
   readonly signal: AbortSignal;
   readonly sessionId?: string;
   readonly _meta?: ToolContext['_meta'];
+  readonly task?: ToolContext['task'];
   readonly pathGuard: PathGuard;
   readonly resourceStore: ResourceStore | undefined;
   readonly log?: (level: LoggingLevel, data: unknown, logger?: string) => void;
@@ -127,6 +128,17 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
     outputSchema: outputJsonSchema as Tool['outputSchema'],
 
     register(deps: ToolDeps) {
+      const reportDetachedError = (context: string, error: unknown): void => {
+        const message = error instanceof Error ? error.message : String(error);
+        Logger.emit('warning', `${def.name}: ${context} failed: ${message}`);
+      };
+
+      const runDetached = (work: Promise<unknown>, context: string): void => {
+        void work.catch((error: unknown) => {
+          reportDetachedError(context, error);
+        });
+      };
+
       // Core handler: accepts ToolContext (compatible with both task-orchestrator and
       // regular ServerContext call paths). signal is optional in ToolContext; fall back
       // to an already-aborted signal when absent so ToolCtx.signal stays non-optional.
@@ -147,6 +159,10 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
         }
 
         let progressUpdates = 0;
+        let progressNotificationsEmitted = 0;
+        let taskStatusUpdatesRequested = 0;
+        const pendingProgressNotifications = new Set<Promise<void>>();
+        let progressClosed = false;
         let outcome: 'success' | 'error' | 'cancelled' = 'success';
         let errorType: string | undefined;
         let errorMessage: string | undefined;
@@ -183,16 +199,89 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
             dynamicRateLimit: true,
           });
 
-          // Send initial start message to MCP client
-          void ctx.sendNotification?.({
-            method: 'notifications/tasks/status',
-            params: { status: 'working', statusMessage: plainMessage('start', progressCtx) },
-          });
+          const task = ctx.task;
+          const taskId =
+            typeof task?.id === 'string' && task.id.trim().length > 0 ? task.id : undefined;
+          const progressToken = ctx._meta?.progressToken;
+          const shouldStoreTaskResultInDefine =
+            task !== undefined &&
+            taskId !== undefined &&
+            (tool.execution?.taskSupport ?? 'forbidden') === 'forbidden' &&
+            typeof task.store.storeTaskResult === 'function';
+
+          let taskStatusQueue: Promise<void> = Promise.resolve();
+          let taskHasTerminalStatus = false;
+
+          const updateTaskStatus = async (
+            message: string,
+            options?: { terminal?: boolean; detached?: boolean },
+          ): Promise<void> => {
+            if (!task || taskId === undefined) return;
+
+            const isTerminal = options?.terminal === true;
+            if (!isTerminal && taskHasTerminalStatus) return;
+            if (isTerminal) taskHasTerminalStatus = true;
+
+            const nextUpdate = taskStatusQueue.then(async () => {
+              if (!isTerminal && taskHasTerminalStatus) return;
+              taskStatusUpdatesRequested++;
+              await task.store.updateTaskStatus(taskId, 'working', message);
+            });
+
+            taskStatusQueue = nextUpdate.catch(() => {
+              // Keep queue alive after failures in individual updates.
+            });
+
+            if (options?.detached) {
+              runDetached(nextUpdate, 'updateTaskStatus');
+              return;
+            }
+
+            try {
+              await nextUpdate;
+            } catch (error) {
+              reportDetachedError('updateTaskStatus', error);
+            }
+          };
+
+          const emitProgressNotification = async (params: {
+            current: number;
+            total?: number;
+          }): Promise<void> => {
+            if (task) return;
+            if (!ctx.sendNotification || progressToken === undefined) return;
+            await ctx.sendNotification({
+              method: 'notifications/progress',
+              params: {
+                progressToken,
+                progress: params.current,
+                ...(params.total !== undefined ? { total: params.total } : {}),
+              },
+            });
+            progressNotificationsEmitted++;
+          };
+
+          const runTrackedProgressNotification = (params: {
+            current: number;
+            total?: number;
+          }): void => {
+            const promise = emitProgressNotification(params);
+            pendingProgressNotifications.add(promise);
+            runDetached(
+              promise.finally(() => {
+                pendingProgressNotifications.delete(promise);
+              }),
+              'progressNotification',
+            );
+          };
+
+          await updateTaskStatus(`start: ${plainMessage('start', progressCtx)}`);
 
           const toolCtx: ToolCtx = {
             signal,
             ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
             ...(ctx._meta ? { _meta: ctx._meta } : {}),
+            ...(ctx.task ? { task: ctx.task } : {}),
             pathGuard: deps.pathGuard,
             resourceStore: deps.resourceStore,
             ...(ctx.log
@@ -200,23 +289,23 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
                   log: ((ctxLog) => (level, data, logger) => {
                     const msg = typeof data === 'string' ? data : String(data);
                     Logger.emit(level, msg);
-                    void ctxLog(level, data, logger);
+                    runDetached(ctxLog(level, data, logger), 'log');
                   })(ctx.log),
                 }
               : {}),
             ...(ctx.sendNotification ? { sendNotification: ctx.sendNotification } : {}),
             onProgress: (p) => {
+              if (progressClosed) return;
               progressUpdates++;
               const tickCtx: ProgressCtx = {
                 ...progressCtx,
                 current: p.current,
                 ...(p.total !== undefined ? { total: p.total } : {}),
               };
+              const tickMessage = `tick: ${plainMessage('tick', tickCtx)}`;
               progressSession.set({ ...p, message: plainMessage('tick', tickCtx) });
-              void ctx.sendNotification?.({
-                method: 'notifications/tasks/status',
-                params: { status: 'working', statusMessage: plainMessage('tick', tickCtx) },
-              });
+              void updateTaskStatus(tickMessage, { detached: true });
+              runTrackedProgressNotification(p);
             },
             ...(ctx.elicitInput ? { elicitInput: ctx.elicitInput } : {}),
           };
@@ -233,11 +322,10 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
                 // ignore progressDone failures — best effort
               }
             }
-            progressSession.complete(plainMessage('done', doneCtx));
-            void ctx.sendNotification?.({
-              method: 'notifications/tasks/status',
-              params: { status: 'working', statusMessage: plainMessage('done', doneCtx) },
-            });
+            const doneMessage = `done: ${plainMessage('done', doneCtx)}`;
+            progressClosed = true;
+            progressSession.complete(doneMessage);
+            await updateTaskStatus(doneMessage, { terminal: true });
             outcome = signal.aborted ? 'cancelled' : 'success';
 
             const text = result.text ?? JSON.stringify(result.structured);
@@ -252,21 +340,21 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
               // Ignore serialization error
             }
 
-            return {
+            const successResult = {
               content,
               structuredContent: result.structured as Record<string, unknown>,
             };
+            if (shouldStoreTaskResultInDefine) {
+              await task.store.storeTaskResult(taskId, 'completed', successResult);
+            }
+            return successResult;
           } catch (error: unknown) {
             const errMsg = error instanceof Error ? error.message : String(error);
             stderrSink.updateCtx({ error: errMsg });
-            progressSession.fail(error, plainMessage('fail', { ...progressCtx, error: errMsg }));
-            void ctx.sendNotification?.({
-              method: 'notifications/tasks/status',
-              params: {
-                status: 'working',
-                statusMessage: plainMessage('fail', { ...progressCtx, error: errMsg }),
-              },
-            });
+            const failMessage = `fail: ${plainMessage('fail', { ...progressCtx, error: errMsg })}`;
+            progressClosed = true;
+            progressSession.fail(error, failMessage);
+            await updateTaskStatus(failMessage, { terminal: true });
             outcome = signal.aborted ? 'cancelled' : 'error';
             if (error instanceof Error) {
               errorType = error.name;
@@ -288,13 +376,20 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
               code: resolvedCode,
               ...(defaultSuggestion !== undefined ? { suggestion: defaultSuggestion } : {}),
             });
-            return {
+            const errorResult = {
               content: [{ type: 'text' as const, text: errorText }],
               isError: true as const,
               errorCode: resolvedCode,
             };
+            if (shouldStoreTaskResultInDefine) {
+              await task.store.storeTaskResult(taskId, 'failed', errorResult);
+            }
+            return errorResult;
           }
         } finally {
+          if (pendingProgressNotifications.size > 0) {
+            await Promise.allSettled([...pendingProgressNotifications]);
+          }
           const level = outcome === 'error' ? 'error' : 'info';
           emitWideEvent(level, {
             event: 'tool_execution',
@@ -314,7 +409,9 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
             ...(errorMessage ? { error_message: errorMessage } : {}),
             duration_ms: performance.now() - startTime,
             memory_delta_mb: (process.memoryUsage().rss - startMemory) / 1024 / 1024,
-            progress_steps_emitted: progressUpdates,
+            tool_progress_ticks: progressUpdates,
+            progress_notifications_emitted: progressNotificationsEmitted,
+            task_status_updates_requested: taskStatusUpdatesRequested,
           });
         }
       };

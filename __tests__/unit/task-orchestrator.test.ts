@@ -179,23 +179,31 @@ describe('TaskOrchestrator', () => {
     }
   });
 
-  it('updates task status message on progress notifications', async () => {
+  it('drops wrapped notifications/tasks/status and does not translate them into store status updates', async () => {
     const store = new EventedTaskStore();
     const orchestrator = new TaskOrchestrator(store);
 
     try {
+      const notifications: unknown[] = [];
+      let emittedStatusNotification = false;
+      let releaseHandler: (() => void) | undefined;
+      const blocked = new Promise<void>((resolve) => {
+        releaseHandler = resolve;
+      });
       const handler = orchestrator.wrapToolTask(
         async (_args: unknown, ctx: ToolContext) => {
+          emittedStatusNotification = true;
           if (ctx.sendNotification) {
             await ctx.sendNotification({
               method: 'notifications/tasks/status',
               params: {
-                taskId: 'ignored', // Orchestrator should inject correct taskId
+                taskId: 'ignored',
                 status: 'working',
                 statusMessage: 'Custom progress message',
               },
             });
           }
+          await blocked;
           return {
             content: [{ type: 'text', text: 'done' }],
             structuredContent: {},
@@ -204,28 +212,70 @@ describe('TaskOrchestrator', () => {
         { toolName: 'test_tool' },
       );
 
-      const ctx = createMockExtra(store);
+      const baseCtx = createMockExtra(store);
+      let statusUpdateCalls = 0;
+      const originalUpdateTaskStatus = baseCtx.task.store.updateTaskStatus.bind(baseCtx.task.store);
+      const ctx = {
+        ...baseCtx,
+        task: {
+          ...baseCtx.task,
+          store: {
+            ...baseCtx.task.store,
+            updateTaskStatus: async (
+              taskId: string,
+              status: Task['status'],
+              statusMessage?: string,
+            ) => {
+              statusUpdateCalls++;
+              await originalUpdateTaskStatus(taskId, status, statusMessage);
+            },
+          },
+        },
+        mcpReq: {
+          ...baseCtx.mcpReq,
+          notify: async (notification: unknown) => {
+            notifications.push(notification);
+          },
+        },
+      } as CreateTaskServerContext;
       const { task } = await handler.createTask(undefined as never, ctx);
 
-      // Wait for progress to be processed
+      for (let i = 0; i < 20; i++) {
+        if (emittedStatusNotification) {
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 10));
+      }
+
+      const midTask = await store.getTask(task.taskId, 'test-session');
+      assert.strictEqual(midTask?.status, 'working');
+      assert.strictEqual(midTask?.statusMessage, undefined);
+      assert.equal(statusUpdateCalls, 0);
+
+      releaseHandler?.();
+
+      // Wait for background execution to complete.
       for (let i = 0; i < 10; i++) {
         const current = await store.getTask(task.taskId, 'test-session');
-        if (current?.statusMessage === 'Custom progress message') break;
+        if (current?.status === 'completed') break;
         await new Promise((r) => setTimeout(r, 10));
       }
 
       const final = await store.getTask(task.taskId, 'test-session');
-      assert.strictEqual(final?.statusMessage, 'Custom progress message');
+      assert.strictEqual(final?.status, 'completed');
+      assert.equal(notifications.length, 0);
+      assert.equal(statusUpdateCalls, 0);
     } finally {
       store.cleanup();
     }
   });
 
-  it('ignores malformed task status notification params without failing the task', async () => {
+  it('drops malformed task status notifications without failing the task', async () => {
     const store = new EventedTaskStore();
     const orchestrator = new TaskOrchestrator(store);
 
     try {
+      const notifications: unknown[] = [];
       const handler = orchestrator.wrapToolTask(
         async (_args: unknown, ctx: ToolContext) => {
           await ctx.sendNotification?.({
@@ -241,7 +291,16 @@ describe('TaskOrchestrator', () => {
         { toolName: 'test_tool' },
       );
 
-      const ctx = createMockExtra(store);
+      const baseCtx = createMockExtra(store);
+      const ctx = {
+        ...baseCtx,
+        mcpReq: {
+          ...baseCtx.mcpReq,
+          notify: async (notification: unknown) => {
+            notifications.push(notification);
+          },
+        },
+      } as CreateTaskServerContext;
       const { task } = await handler.createTask(undefined as never, ctx);
 
       for (let i = 0; i < 10; i++) {
@@ -259,19 +318,20 @@ describe('TaskOrchestrator', () => {
       );
       assert.ok(result);
       assert.strictEqual(result?.content[0]?.type, 'text');
+      assert.equal(notifications.length, 0);
     } finally {
       store.cleanup();
     }
   });
 
-  it('updates task status message when tool calls onProgress callback', async () => {
+  it('ignores onProgress callback and does not update task status message', async () => {
     const store = new EventedTaskStore();
     const orchestrator = new TaskOrchestrator(store);
 
     try {
       const handler = orchestrator.wrapToolTask(
         async (_args: unknown, ctx: ToolContext) => {
-          // Tool calls onProgress callback (this is how tools report progress)
+          // onProgress is intentionally a no-op in task orchestration context.
           if (ctx.onProgress) {
             ctx.onProgress({ current: 5, total: 10 });
           }
@@ -283,10 +343,29 @@ describe('TaskOrchestrator', () => {
         { toolName: 'test_tool' },
       );
 
-      const ctx = createMockExtra(store);
+      const baseCtx = createMockExtra(store);
+      let statusUpdateCalls = 0;
+      const originalUpdateTaskStatus = baseCtx.task.store.updateTaskStatus.bind(baseCtx.task.store);
+      const ctx = {
+        ...baseCtx,
+        task: {
+          ...baseCtx.task,
+          store: {
+            ...baseCtx.task.store,
+            updateTaskStatus: async (
+              taskId: string,
+              status: Task['status'],
+              statusMessage?: string,
+            ) => {
+              statusUpdateCalls++;
+              await originalUpdateTaskStatus(taskId, status, statusMessage);
+            },
+          },
+        },
+      } as CreateTaskServerContext;
       const { task } = await handler.createTask(undefined as never, ctx);
 
-      // Wait for task completion since onProgress is now a no-op
+      // Wait for task completion; onProgress should not affect task-store status messages.
       for (let i = 0; i < 20; i++) {
         const current = await store.getTask(task.taskId, 'test-session');
         if (current?.status === 'completed') {
@@ -296,8 +375,8 @@ describe('TaskOrchestrator', () => {
       }
 
       const final = await store.getTask(task.taskId, 'test-session');
-      // onProgress is now a no-op, so statusMessage won't be updated by it
       assert.strictEqual(final?.status, 'completed');
+      assert.equal(statusUpdateCalls, 0);
     } finally {
       store.cleanup();
     }

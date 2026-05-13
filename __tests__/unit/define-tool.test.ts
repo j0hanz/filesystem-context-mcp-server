@@ -2,6 +2,7 @@
 import type { McpServer, ServerContext } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
+import { channel } from 'node:diagnostics_channel';
 import { test } from 'node:test';
 
 import { z } from 'zod/v4';
@@ -61,6 +62,50 @@ function fakeMcpReq() {
     log: async () => undefined,
     elicitInput: async () => ({ action: 'cancel' as const }),
   };
+}
+
+function fakeMcpReqWithProgressToken(progressToken: string) {
+  const req = fakeMcpReq();
+  return {
+    ...req,
+    _meta: {
+      ...req._meta,
+      progressToken,
+    },
+  };
+}
+
+function filterNotificationsByMethod(
+  notifications: unknown[],
+  method: string,
+): { method: string; params?: unknown }[] {
+  return notifications.filter(
+    (notification): notification is { method: string; params?: unknown } => {
+      if (!notification || typeof notification !== 'object') return false;
+      const candidate = notification as { method?: unknown; params?: unknown };
+      return candidate.method === method;
+    },
+  );
+}
+
+function getProgressPayloads(
+  notifications: unknown[],
+): { progressToken?: unknown; progress?: unknown; total?: unknown }[] {
+  return filterNotificationsByMethod(notifications, 'notifications/progress').map(
+    (notification) => {
+      if (!notification.params || typeof notification.params !== 'object') return {};
+      return notification.params;
+    },
+  );
+}
+
+async function runCapturedHandler(
+  capture: HandlerCapture,
+  args: TestInput,
+  serverContext: ServerContext,
+): Promise<Record<string, unknown>> {
+  assert.ok(capture.handler, 'handler was captured');
+  return capture.handler(args, serverContext);
 }
 
 const BASE_DEF = {
@@ -150,6 +195,316 @@ test('defineTool: progress and progressDone options are accepted', (): void => {
   });
   tool.register(makeTestDeps(makeMockServer()));
   assert.ok(tool.name, 'tool was created');
+});
+
+test('defineTool: no progress token => no progress notifications are emitted', async (): Promise<void> => {
+  const tool = defineTool({
+    ...BASE_DEF,
+    run: async (_args, ctx) => {
+      ctx.onProgress?.({ current: 1, total: 1 });
+      return { structured: { ok: true as const, result: 'success' }, text: 'test' };
+    },
+  });
+  const capture: HandlerCapture = { handler: undefined };
+  tool.register(makeTestDeps(makeMockServer(capture)));
+
+  const request = fakeMcpReq();
+  await runCapturedHandler(capture, { message: 'hello' }, {
+    mcpReq: request,
+  } as unknown as ServerContext);
+
+  const progressNotifications = getProgressPayloads(request.notifications);
+  assert.equal(progressNotifications.length, 0);
+});
+
+test('defineTool: with progress token and one tick => emits one progress notification with minimal payload shape', async (): Promise<void> => {
+  const tool = defineTool({
+    ...BASE_DEF,
+    run: async (_args, ctx) => {
+      ctx.onProgress?.({ current: 1, total: 1 });
+      return { structured: { ok: true as const, result: 'success' }, text: 'test' };
+    },
+  });
+  const capture: HandlerCapture = { handler: undefined };
+  tool.register(makeTestDeps(makeMockServer(capture)));
+
+  const request = fakeMcpReqWithProgressToken('token-1');
+  await runCapturedHandler(capture, { message: 'hello' }, {
+    mcpReq: request,
+  } as unknown as ServerContext);
+
+  const progressPayloads = getProgressPayloads(request.notifications);
+  assert.equal(progressPayloads.length, 1);
+  const payload = progressPayloads[0];
+  assert.equal(payload.progressToken, 'token-1');
+  assert.equal(typeof payload.progress, 'number');
+  assert.equal(payload.progress, 1);
+  assert.equal(payload.total, 1);
+});
+
+test('defineTool: task context start/tick/done path => updateTaskStatus is called three times', async (): Promise<void> => {
+  const updateTaskStatusCalls: { taskId: string; status: string; statusMessage: string }[] = [];
+
+  const tool = defineTool({
+    ...BASE_DEF,
+    run: async (_args, ctx) => {
+      ctx.onProgress?.({ current: 1, total: 1 });
+      return { structured: { ok: true as const, result: 'success' }, text: 'test' };
+    },
+  });
+  const capture: HandlerCapture = { handler: undefined };
+  tool.register(makeTestDeps(makeMockServer(capture)));
+
+  await runCapturedHandler(capture, { message: 'hello' }, {
+    mcpReq: fakeMcpReq(),
+    task: {
+      id: 'task-1',
+      store: {
+        updateTaskStatus: async (
+          taskId: string,
+          status: unknown,
+          statusMessage?: unknown,
+        ): Promise<void> => {
+          updateTaskStatusCalls.push({
+            taskId,
+            status: typeof status === 'string' ? status : '',
+            statusMessage: typeof statusMessage === 'string' ? statusMessage : '',
+          });
+        },
+      },
+    },
+  } as unknown as ServerContext);
+
+  assert.equal(updateTaskStatusCalls.length, 3);
+  assert.deepEqual(
+    updateTaskStatusCalls.map((call) => call.taskId),
+    ['task-1', 'task-1', 'task-1'],
+  );
+  assert.deepEqual(
+    updateTaskStatusCalls.map((call) => call.status),
+    ['working', 'working', 'working'],
+  );
+  assert.match(updateTaskStatusCalls[0].statusMessage, /\bstart\b/i);
+  assert.match(updateTaskStatusCalls[1].statusMessage, /\btick\b/i);
+  assert.match(updateTaskStatusCalls[2].statusMessage, /\bdone\b/i);
+});
+
+test('defineTool: delayed tick after completion does not overwrite terminal status', async (): Promise<void> => {
+  const updateTaskStatusCalls: { taskId: string; statusMessage: string }[] = [];
+
+  const tool = defineTool({
+    ...BASE_DEF,
+    run: async (_args, ctx) => {
+      setTimeout(() => {
+        ctx.onProgress?.({ current: 1, total: 1 });
+      }, 5);
+      return { structured: { ok: true as const, result: 'success' }, text: 'test' };
+    },
+  });
+
+  const capture: HandlerCapture = { handler: undefined };
+  tool.register(makeTestDeps(makeMockServer(capture)));
+
+  await runCapturedHandler(capture, { message: 'hello' }, {
+    mcpReq: fakeMcpReq(),
+    task: {
+      id: 'task-delayed-tick',
+      store: {
+        updateTaskStatus: async (
+          taskId: string,
+          _status: unknown,
+          statusMessage?: unknown,
+        ): Promise<void> => {
+          updateTaskStatusCalls.push({
+            taskId,
+            statusMessage: typeof statusMessage === 'string' ? statusMessage : '',
+          });
+        },
+      },
+    },
+  } as unknown as ServerContext);
+
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 20);
+  });
+
+  assert.equal(updateTaskStatusCalls.length, 2);
+  assert.deepEqual(
+    updateTaskStatusCalls.map((call) => call.taskId),
+    ['task-delayed-tick', 'task-delayed-tick'],
+  );
+  assert.match(updateTaskStatusCalls[0].statusMessage, /\bstart\b/i);
+  assert.match(updateTaskStatusCalls[1].statusMessage, /\bdone\b/i);
+});
+
+test('defineTool: delayed non-task tick after completion does not emit progress notification', async (): Promise<void> => {
+  const tool = defineTool({
+    ...BASE_DEF,
+    run: async (_args, ctx) => {
+      setTimeout(() => {
+        ctx.onProgress?.({ current: 1, total: 1 });
+      }, 5);
+      return { structured: { ok: true as const, result: 'success' }, text: 'test' };
+    },
+  });
+
+  const capture: HandlerCapture = { handler: undefined };
+  tool.register(makeTestDeps(makeMockServer(capture)));
+
+  const request = fakeMcpReqWithProgressToken('late-tick-token');
+  const result = await runCapturedHandler(capture, { message: 'hello' }, {
+    mcpReq: request,
+  } as unknown as ServerContext);
+
+  assert.equal((result.structuredContent as TestOutput).result, 'success');
+
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 20);
+  });
+
+  const progressPayloads = getProgressPayloads(request.notifications);
+  assert.equal(progressPayloads.length, 0);
+});
+
+test('defineTool: detached progress side effects tolerate rejections without unhandled rejection', async (t): Promise<void> => {
+  const unhandledRejections: unknown[] = [];
+  const onUnhandled = (reason: unknown): void => {
+    unhandledRejections.push(reason);
+  };
+  process.on('unhandledRejection', onUnhandled);
+  t.after(() => {
+    process.off('unhandledRejection', onUnhandled);
+  });
+
+  const tool = defineTool({
+    ...BASE_DEF,
+    run: async (_args, ctx) => {
+      ctx.log?.('info', { stage: 'begin' });
+      ctx.onProgress?.({ current: 1, total: 1 });
+      return { structured: { ok: true as const, result: 'success' }, text: 'test' };
+    },
+  });
+
+  const capture: HandlerCapture = { handler: undefined };
+  tool.register(makeTestDeps(makeMockServer(capture)));
+
+  const failingRequest = {
+    ...fakeMcpReqWithProgressToken('token-reject'),
+    log: async (): Promise<void> => {
+      throw new Error('log rejected');
+    },
+    notify: async (): Promise<void> => {
+      throw new Error('notification rejected');
+    },
+  };
+
+  const result = await runCapturedHandler(capture, { message: 'hello' }, {
+    mcpReq: failingRequest,
+    task: {
+      id: 'task-reject',
+      store: {
+        updateTaskStatus: async (
+          _taskId: string,
+          _status: unknown,
+          statusMessage?: unknown,
+        ): Promise<void> => {
+          if (typeof statusMessage === 'string' && /\btick\b/i.test(statusMessage)) {
+            throw new Error('tick rejected');
+          }
+        },
+      },
+    },
+  } as unknown as ServerContext);
+
+  assert.equal((result.structuredContent as TestOutput).result, 'success');
+
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 20);
+  });
+
+  assert.equal(unhandledRejections.length, 0);
+});
+
+test('defineTool: non-task progress notification rejection does not produce unhandled rejection', async (t): Promise<void> => {
+  const unhandledRejections: unknown[] = [];
+  const onUnhandled = (reason: unknown): void => {
+    unhandledRejections.push(reason);
+  };
+  process.on('unhandledRejection', onUnhandled);
+  t.after(() => {
+    process.off('unhandledRejection', onUnhandled);
+  });
+
+  const tool = defineTool({
+    ...BASE_DEF,
+    run: async (_args, ctx) => {
+      ctx.onProgress?.({ current: 1, total: 1 });
+      return { structured: { ok: true as const, result: 'success' }, text: 'test' };
+    },
+  });
+
+  const capture: HandlerCapture = { handler: undefined };
+  tool.register(makeTestDeps(makeMockServer(capture)));
+
+  const failingRequest = {
+    ...fakeMcpReqWithProgressToken('token-reject-notify'),
+    notify: async (): Promise<void> => {
+      throw new Error('notification rejected');
+    },
+  };
+
+  const result = await runCapturedHandler(capture, { message: 'hello' }, {
+    mcpReq: failingRequest,
+  } as unknown as ServerContext);
+
+  assert.equal((result.structuredContent as TestOutput).result, 'success');
+
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 20);
+  });
+
+  assert.equal(unhandledRejections.length, 0);
+});
+
+test('defineTool: tool_execution wide event uses SDK-aligned progress/status counters', async (t): Promise<void> => {
+  const logChannel = channel('filesystem-mcp:log');
+  const toolExecutionMessages: string[] = [];
+  const onLog = (msg: unknown): void => {
+    if (!msg || typeof msg !== 'object') return;
+    const event = msg as { level?: unknown; message?: unknown };
+    if (event.level !== 'info' || typeof event.message !== 'string') return;
+    if (!event.message.includes('event=tool_execution')) return;
+    if (!event.message.includes('tool_name=test-tool')) return;
+    toolExecutionMessages.push(event.message);
+  };
+
+  logChannel.subscribe(onLog);
+  t.after(() => {
+    logChannel.unsubscribe(onLog);
+  });
+
+  const tool = defineTool({
+    ...BASE_DEF,
+    run: async (_args, ctx) => {
+      ctx.onProgress?.({ current: 1, total: 1 });
+      return { structured: { ok: true as const, result: 'success' }, text: 'test' };
+    },
+  });
+
+  const capture: HandlerCapture = { handler: undefined };
+  tool.register(makeTestDeps(makeMockServer(capture)));
+
+  await runCapturedHandler(capture, { message: 'hello' }, {
+    mcpReq: fakeMcpReqWithProgressToken('counter-token'),
+  } as unknown as ServerContext);
+
+  assert.ok(toolExecutionMessages.length >= 1, 'expected tool_execution wide event log message');
+  const message = toolExecutionMessages[toolExecutionMessages.length - 1];
+
+  assert.ok(message.includes('tool_progress_ticks=1'));
+  assert.ok(message.includes('progress_notifications_emitted=1'));
+  assert.ok(message.includes('task_status_updates_requested=0'));
+  assert.equal(message.includes('progress_steps_emitted='), false);
 });
 
 test('defineTool: all annotation types are accepted', (): void => {
@@ -250,7 +605,7 @@ test('defineTool: regular tools keep session, trace metadata, and notifications'
   assert.equal((result.structuredContent as TestOutput).result, 'success');
   assert.equal(capturedSessionId, 'session-42');
   assert.equal(capturedTraceparent, '00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01');
-  assert.equal((requestContext.mcpReq as { notifications?: unknown[] }).notifications?.length, 3);
+  assert.equal((requestContext.mcpReq as { notifications?: unknown[] }).notifications?.length, 1);
 });
 
 test('defineTool: inputSchema and outputSchema are present', (): void => {

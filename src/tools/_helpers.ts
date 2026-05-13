@@ -39,6 +39,7 @@ export interface ToolContext {
   signal?: AbortSignal;
   sessionId?: string;
   _meta?: (RequestMeta & TracingMeta) | undefined;
+  task?: ServerContext['task'];
   sendNotification?: (notification: Notification) => Promise<void>;
   onProgress?: (params: { current: number; total?: number }) => void;
   log?: (level: LoggingLevel, data: unknown, logger?: string) => Promise<void>;
@@ -321,6 +322,7 @@ export function toToolContext(ctx?: ToolContext | ServerContext): ToolContext {
       signal: ctx.mcpReq.signal,
       ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
       ...(ctx.mcpReq._meta ? { _meta: ctx.mcpReq._meta } : {}),
+      ...(ctx.task ? { task: ctx.task } : {}),
       sendNotification: async (notification) => ctx.mcpReq.notify(notification),
       log: async (level, data, logger) => ctx.mcpReq.log(level, data, logger),
       elicitInput: (params) => ctx.mcpReq.elicitInput(params),

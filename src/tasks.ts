@@ -52,19 +52,6 @@ export function createTaskStore(): EventedTaskStore {
   return new EventedTaskStore();
 }
 
-const INTERCEPTED_TASK_STATUSES = new Set<TaskStatus>([
-  'working',
-  'completed',
-  'failed',
-  'cancelled',
-]);
-
-function coerceInterceptedTaskStatus(value: unknown): TaskStatus {
-  return typeof value === 'string' && INTERCEPTED_TASK_STATUSES.has(value as TaskStatus)
-    ? (value as TaskStatus)
-    : 'working';
-}
-
 // ═══════════════════════════════════════════════════════════════
 // task-orchestrator
 // ═══════════════════════════════════════════════════════════════
@@ -72,7 +59,7 @@ function coerceInterceptedTaskStatus(value: unknown): TaskStatus {
 /**
  * TaskOrchestrator manages the lifecycle of background tasks.
  * It connects the EventedTaskStore with the AbortControllers for cancellation,
- * and intercepts progress notifications to update task status in the store.
+ * and runs wrapped tool handlers in the background.
  */
 export class TaskOrchestrator {
   private readonly controllers = new Map<string, AbortController>();
@@ -207,32 +194,17 @@ export class TaskOrchestrator {
     try {
       const toolCtx = toToolContext(serverCtx);
 
-      const interceptedSendNotification = async (notification: unknown) => {
-        // Intercept progress notifications to update task status
-        if (isRecord(notification) && notification['method'] === 'notifications/tasks/status') {
-          const params = isRecord(notification['params']) ? notification['params'] : {};
-          const status = coerceInterceptedTaskStatus(params['status']);
-          const statusMessage =
-            typeof params['statusMessage'] === 'string' ? params['statusMessage'] : '';
-
-          await task.store.updateTaskStatus(taskId, status, statusMessage);
-        } else {
-          // Forward other notifications normally
-          await toolCtx.sendNotification?.(
-            notification as Parameters<NonNullable<typeof toolCtx.sendNotification>>[0],
-          );
-        }
-      };
-
-      const interceptedOnProgress = (_params: { current: number; total?: number }): void => {
-        // no-op: progress status messages are sent directly via sendNotification in define.ts
-      };
-
       const interceptedCtx: ToolContext = {
         ...toolCtx,
         ...(signal ? { signal } : {}),
-        sendNotification: interceptedSendNotification,
-        onProgress: interceptedOnProgress,
+        sendNotification: async (notification) => {
+          // Ignore wrapped task status notifications to avoid spoof/desync risk
+          // against the authoritative task state managed by the orchestrator/store.
+          if (notification.method === 'notifications/tasks/status') {
+            return;
+          }
+          await toolCtx.sendNotification?.(notification);
+        },
       };
 
       const result = await handler(args, interceptedCtx);
