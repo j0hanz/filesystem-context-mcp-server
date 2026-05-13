@@ -141,6 +141,7 @@ export const SafeGlobPattern = z
   .max(1000, { error: 'Max 1000 chars' })
   .regex(/^(?!\/)(?![a-zA-Z]:[\\/])(?!.*\.\.).+$/, {
     error: 'Invalid glob or unsafe path (absolute/.. forbidden)',
+    abort: true,
   })
   .refine((val) => isSafeGlobSyntax(val), {
     message: 'Invalid glob or unsafe path (absolute/.. forbidden)',

@@ -27,6 +27,8 @@ const HashInputSchema = z.strictObject({
   path: RequiredPath,
   algorithms: z
     .array(z.enum(SUPPORTED_ALGORITHMS))
+    .min(1)
+    .max(SUPPORTED_ALGORITHMS.length)
     .optional()
     .default(['sha256'])
     .describe('Hash algorithms to compute (default: sha256)'),
@@ -51,7 +53,11 @@ const HashOutputSchema = z
   .strictObject({
     ok: z.literal(true).describe('Success indicator'),
     filePath: z.string().describe('Resolved file or directory path'),
-    algorithms: z.array(z.enum(SUPPORTED_ALGORITHMS)).describe('Algorithms computed'),
+    algorithms: z
+      .array(z.enum(SUPPORTED_ALGORITHMS))
+      .min(1)
+      .max(SUPPORTED_ALGORITHMS.length)
+      .describe('Algorithms computed'),
     hashes: HashesSchema.describe('Algorithm → hex digest mapping'),
     resourceUri: z.string().describe('URI to hashes.json resource'),
     isDirectory: z.boolean().describe('True when hashing a directory'),

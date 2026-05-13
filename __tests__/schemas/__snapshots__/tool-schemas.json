@@ -746,6 +746,8 @@
         "algorithms": {
           "default": ["sha256"],
           "description": "Hash algorithms to compute (default: sha256)",
+          "minItems": 1,
+          "maxItems": 4,
           "type": "array",
           "items": {
             "type": "string",
@@ -769,6 +771,8 @@
           "description": "Resolved file or directory path"
         },
         "algorithms": {
+          "minItems": 1,
+          "maxItems": 4,
           "type": "array",
           "items": {
             "type": "string",
