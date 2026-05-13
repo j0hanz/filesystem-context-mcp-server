@@ -588,7 +588,8 @@ interface ScanTask {
   }>;
 }
 
-const isSourceContext = import.meta.url.endsWith('.ts');
+const isSourceContext =
+  import.meta.url.endsWith('.ts') || process.execArgv.some((a) => a.includes('tsx'));
 const WORKER_SCRIPT_URL = new URL(import.meta.url);
 
 class SearchWorkerTaskResource extends AsyncResource {
