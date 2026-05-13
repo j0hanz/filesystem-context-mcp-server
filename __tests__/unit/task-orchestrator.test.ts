@@ -223,4 +223,89 @@ describe('TaskOrchestrator', () => {
       store.cleanup();
     }
   });
+
+  it('ignores malformed task status notification params without failing the task', async () => {
+    const store = new EventedTaskStore();
+    const orchestrator = new TaskOrchestrator(store);
+
+    try {
+      const handler = orchestrator.wrapToolTask(
+        async (_args: unknown, ctx: ToolContext) => {
+          await ctx.sendNotification?.({
+            method: 'notifications/tasks/status',
+            params: null,
+          });
+
+          return {
+            content: [{ type: 'text', text: 'done' }],
+            structuredContent: {},
+          };
+        },
+        { toolName: 'test_tool' },
+      );
+
+      const ctx = createMockExtra(store);
+      const { task } = await handler.createTask(undefined as never, ctx);
+
+      for (let i = 0; i < 10; i++) {
+        const current = await store.getTask(task.taskId, 'test-session');
+        if (current?.status === 'completed') break;
+        await new Promise((r) => setTimeout(r, 10));
+      }
+
+      const final = await store.getTask(task.taskId, 'test-session');
+      assert.strictEqual(final?.status, 'completed');
+
+      const result = await handler.getTaskResult(
+        undefined as never,
+        createMockTaskExtra(store, task.taskId),
+      );
+      assert.ok(result);
+      assert.strictEqual(result?.content[0]?.type, 'text');
+    } finally {
+      store.cleanup();
+    }
+  });
+
+  it('updates task status message when tool calls onProgress callback', async () => {
+    const store = new EventedTaskStore();
+    const orchestrator = new TaskOrchestrator(store);
+
+    try {
+      const handler = orchestrator.wrapToolTask(
+        async (_args: unknown, ctx: ToolContext) => {
+          // Tool calls onProgress callback (this is how tools report progress)
+          if (ctx.onProgress) {
+            ctx.onProgress({ current: 5, total: 10, message: 'Processing 5 of 10 items' });
+          }
+          return {
+            content: [{ type: 'text', text: 'done' }],
+            structuredContent: {},
+          };
+        },
+        { toolName: 'test_tool' },
+      );
+
+      const ctx = createMockExtra(store);
+      const { task } = await handler.createTask(undefined as never, ctx);
+
+      // Wait for progress to be processed
+      for (let i = 0; i < 20; i++) {
+        const current = await store.getTask(task.taskId, 'test-session');
+        if (
+          current?.statusMessage === 'test_tool: Processing 5 of 10 items' ||
+          current?.status === 'completed'
+        ) {
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 10));
+      }
+
+      const final = await store.getTask(task.taskId, 'test-session');
+      // This should pass: onProgress should have updated the status message
+      assert.strictEqual(final?.statusMessage, 'test_tool: Processing 5 of 10 items');
+    } finally {
+      store.cleanup();
+    }
+  });
 });

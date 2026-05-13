@@ -71,8 +71,15 @@ function shouldStripStructuredOutput(): boolean {
   return parseTrueEnvFlag(process.env['FS_CONTEXT_STRIP_STRUCTURED']);
 }
 
+type StructuredContentKey<T extends object> = Extract<keyof T, 'structuredContent'>;
+
+export type MaybeStrippedStructuredContent<T extends object> = Omit<T, StructuredContentKey<T>> &
+  Partial<Pick<T, StructuredContentKey<T>>>;
+
 // Strips structuredContent from a tool result if present, without modifying the original object.
-export function maybeStripStructuredContentFromResult<T extends object>(result: T): T {
+export function maybeStripStructuredContentFromResult<T extends object>(
+  result: T,
+): MaybeStrippedStructuredContent<T> {
   if (!shouldStripStructuredOutput()) return result;
   if (!Object.hasOwn(result, 'structuredContent')) return result;
 
@@ -81,7 +88,7 @@ export function maybeStripStructuredContentFromResult<T extends object>(result: 
       ([key]) => key !== 'structuredContent',
     ),
   );
-  return stripped as T;
+  return stripped as MaybeStrippedStructuredContent<T>;
 }
 
 const STRING_BOOL_SCHEMA = z.stringbool();

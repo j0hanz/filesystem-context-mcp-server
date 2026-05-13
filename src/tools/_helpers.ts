@@ -40,6 +40,7 @@ export interface ToolContext {
   sessionId?: string;
   _meta?: (RequestMeta & TracingMeta) | undefined;
   sendNotification?: (notification: Notification) => Promise<void>;
+  onProgress?: (params: { current: number; total?: number; message?: string }) => void;
   log?: (level: LoggingLevel, data: unknown, logger?: string) => Promise<void>;
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>;
 }

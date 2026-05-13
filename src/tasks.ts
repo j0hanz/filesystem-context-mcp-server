@@ -52,6 +52,19 @@ export function createTaskStore(): EventedTaskStore {
   return new EventedTaskStore();
 }
 
+const INTERCEPTED_TASK_STATUSES = new Set<TaskStatus>([
+  'working',
+  'completed',
+  'failed',
+  'cancelled',
+]);
+
+function coerceInterceptedTaskStatus(value: unknown): TaskStatus {
+  return typeof value === 'string' && INTERCEPTED_TASK_STATUSES.has(value as TaskStatus)
+    ? (value as TaskStatus)
+    : 'working';
+}
+
 // ═══════════════════════════════════════════════════════════════
 // task-orchestrator
 // ═══════════════════════════════════════════════════════════════
@@ -196,25 +209,46 @@ export class TaskOrchestrator {
       await task.store.updateTaskStatus(taskId, 'working', `${toolName}: starting`);
 
       const toolCtx = toToolContext(serverCtx);
+
+      const interceptedSendNotification = async (notification: unknown) => {
+        // Intercept progress notifications to update task status
+        if (isRecord(notification) && notification['method'] === 'notifications/tasks/status') {
+          const params = isRecord(notification['params']) ? notification['params'] : {};
+          const status = coerceInterceptedTaskStatus(params['status']);
+          const statusMessage =
+            typeof params['statusMessage'] === 'string' ? params['statusMessage'] : '';
+
+          await task.store.updateTaskStatus(taskId, status, `${toolName}: ${statusMessage}`);
+        } else {
+          // Forward other notifications normally
+          await toolCtx.sendNotification?.(
+            notification as Parameters<NonNullable<typeof toolCtx.sendNotification>>[0],
+          );
+        }
+      };
+
+      const interceptedOnProgress = (params: {
+        current: number;
+        total?: number;
+        message?: string;
+      }) => {
+        // When tool reports progress, send a task status notification (fire-and-forget)
+        if (params.message) {
+          void interceptedSendNotification({
+            method: 'notifications/tasks/status',
+            params: {
+              status: 'working',
+              statusMessage: params.message,
+            },
+          });
+        }
+      };
+
       const interceptedCtx: ToolContext = {
         ...toolCtx,
         ...(signal ? { signal } : {}),
-        sendNotification: async (notification) => {
-          // Intercept progress notifications to update task status
-          if (notification.method === 'notifications/tasks/status') {
-            const params = notification.params as Record<string, unknown>;
-            const status = (
-              typeof params['status'] === 'string' ? params['status'] : 'working'
-            ) as TaskStatus;
-            const statusMessage =
-              typeof params['statusMessage'] === 'string' ? params['statusMessage'] : '';
-
-            await task.store.updateTaskStatus(taskId, status, `${toolName}: ${statusMessage}`);
-          } else {
-            // Forward other notifications normally
-            await toolCtx.sendNotification?.(notification);
-          }
-        },
+        sendNotification: interceptedSendNotification,
+        onProgress: interceptedOnProgress,
       };
 
       const result = await handler(args, interceptedCtx);
@@ -240,8 +274,8 @@ export class TaskOrchestrator {
         [RELATED_TASK_META_KEY]: { taskId },
       };
 
-      if (strippedResult.isError) {
-        const isCancelled = strippedResult.errorCode === ErrorCode.CANCELLED;
+      if ('isError' in strippedResult && strippedResult['isError'] === true) {
+        const isCancelled = strippedResult['errorCode'] === ErrorCode.CANCELLED;
         if (isCancelled) {
           try {
             await task.store.updateTaskStatus(taskId, 'cancelled', `${toolName}: cancelled`);
@@ -252,6 +286,8 @@ export class TaskOrchestrator {
           await task.store.storeTaskResult(taskId, 'failed', strippedResult);
         }
       } else {
+        // Only update message to 'completed' if no progress was reported during execution
+        // to preserve the final progress message from the tool
         await task.store.storeTaskResult(taskId, 'completed', strippedResult);
       }
     } catch (error: unknown) {

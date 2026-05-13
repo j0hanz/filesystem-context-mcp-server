@@ -187,6 +187,14 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
             onProgress: (p) => {
               progressUpdates++;
               progressSession.set(p);
+              // Emit task status notification to update progress message in UI
+              void ctx.sendNotification?.({
+                method: 'notifications/tasks/status',
+                params: {
+                  status: 'working',
+                  ...(p.message ? { statusMessage: p.message } : {}),
+                },
+              });
             },
             ...(ctx.elicitInput ? { elicitInput: ctx.elicitInput } : {}),
           };
