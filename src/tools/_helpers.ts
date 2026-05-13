@@ -165,14 +165,23 @@ export function encodeOffsetCursor(offset: number): string {
 
 export function decodeOffsetCursor(cursor: string): number {
   try {
-    return OffsetCursorCodec.parse(cursor).offset;
-  } catch {
-    // fall through to throw
+    const result = OffsetCursorCodec.safeParse(cursor);
+    if (!result.success) {
+      throw new McpError(
+        ErrorCode.INVALID_INPUT,
+        `Invalid cursor. Request the first page without a cursor.`,
+      );
+    }
+    return result.data.offset;
+  } catch (error) {
+    if (error instanceof McpError) {
+      throw error;
+    }
+    throw new McpError(
+      ErrorCode.INVALID_INPUT,
+      `Invalid cursor. Request the first page without a cursor.`,
+    );
   }
-  throw new McpError(
-    ErrorCode.INVALID_INPUT,
-    `Invalid cursor. Request the first page without a cursor.`,
-  );
 }
 
 export function truncateProgressPattern(pattern: string, maxLength = 40): string {
