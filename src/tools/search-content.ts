@@ -710,10 +710,7 @@ export class SearchWorkerPool {
     return worker;
   }
 
-  scan(req: WorkerScanRequest): ScanTask {
-    if (this.closed) throw new Error(ERROR_WORKER_POOL_CLOSED);
-
-    const id = this.nextRequestId++;
+  private getLeastBusyWorkerIndex(): number {
     let workerIndex = 0;
     const workerPendingCounts = new Array<number>(this.size).fill(0);
     for (const p of this.pending.values()) {
@@ -729,10 +726,16 @@ export class SearchWorkerPool {
         workerIndex = i;
       }
     }
+    return workerIndex;
+  }
 
-    const worker = this.getWorker(workerIndex);
-
-    const promise = new Promise<WorkerScanResult>((resolve, reject) => {
+  private createWorkerScanPromise(
+    id: number,
+    worker: Worker,
+    workerIndex: number,
+    req: WorkerScanRequest,
+  ): Promise<WorkerScanResult> {
+    return new Promise<WorkerScanResult>((resolve, reject) => {
       const resource = new SearchWorkerTaskResource();
       const pendingRequest: PendingWorkerRequest = {
         resolve: (result) => {
@@ -759,21 +762,35 @@ export class SearchWorkerPool {
         this.retireWorker(workerIndex, worker);
       }
     });
+  }
+
+  private cancelPendingScan(id: number, worker: Worker): void {
+    const entry = this.pending.get(id);
+    if (!entry) return;
+    this.pending.delete(id);
+    try {
+      worker.postMessage({ type: 'cancel', id });
+    } catch {
+      /* Worker may be terminating */
+    }
+    entry.reject(new Error(ERROR_SCAN_CANCELLED));
+  }
+
+  scan(req: WorkerScanRequest): ScanTask {
+    if (this.closed) throw new Error(ERROR_WORKER_POOL_CLOSED);
+
+    const id = this.nextRequestId++;
+    const workerIndex = this.getLeastBusyWorkerIndex();
+
+    const worker = this.getWorker(workerIndex);
+
+    const promise = this.createWorkerScanPromise(id, worker, workerIndex, req);
 
     return {
       id,
       promise,
       cancel: () => {
-        const entry = this.pending.get(id);
-        if (entry) {
-          this.pending.delete(id);
-          try {
-            worker.postMessage({ type: 'cancel', id });
-          } catch {
-            /* Worker may be terminating */
-          }
-          entry.reject(new Error(ERROR_SCAN_CANCELLED));
-        }
+        this.cancelPendingScan(id, worker);
       },
     };
   }
@@ -1516,6 +1533,42 @@ function buildExternalizedResponse(
   return { structured: structuredForResponse, link };
 }
 
+function getPagedPayloads(
+  result: SearchResultValue,
+  args: SearchInput,
+  regexMatcher: RE2 | undefined,
+  cursorOffset: number,
+): { matchPayloads: SearchMatchPayload[]; nextCursor: string | undefined } {
+  const searchContext = createSearchContext(args, regexMatcher);
+  const allPayloads = buildSortedPayloads(result, searchContext);
+  const matchPayloads = cursorOffset > 0 ? allPayloads.slice(cursorOffset) : allPayloads;
+
+  const nextCursor =
+    result.summary.truncated && matchPayloads.length > 0
+      ? encodeOffsetCursor(cursorOffset + matchPayloads.length)
+      : undefined;
+
+  return { matchPayloads, nextCursor };
+}
+
+function finalizeSearchOutput(
+  fullStructured: SearchOutput,
+  preview: SearchPreviewState,
+  matchPayloads: SearchMatchPayload[],
+  resourceStore?: ResourceStore,
+): { structured: SearchOutput; link?: ReturnType<typeof putResource>['link'] } {
+  if (resourceStore && matchPayloads.length > 0) {
+    return buildExternalizedResponse(fullStructured, preview, resourceStore);
+  }
+
+  if (preview.needsExternalize) {
+    fullStructured.matches = preview.visiblePayloads;
+    fullStructured.truncated = true;
+  }
+
+  return { structured: fullStructured };
+}
+
 async function handleSearchContent(
   args: SearchInput,
   pathGuard: PathGuard,
@@ -1542,15 +1595,8 @@ async function handleSearchContent(
     signal,
     onProgress,
   );
-  const searchContext = createSearchContext(args, regexMatcher);
 
-  const allPayloads = buildSortedPayloads(result, searchContext);
-  const matchPayloads = cursorOffset > 0 ? allPayloads.slice(cursorOffset) : allPayloads;
-
-  const nextCursor =
-    result.summary.truncated && matchPayloads.length > 0
-      ? encodeOffsetCursor(cursorOffset + matchPayloads.length)
-      : undefined;
+  const { matchPayloads, nextCursor } = getPagedPayloads(result, args, regexMatcher, cursorOffset);
 
   const fullStructured: SearchOutput = {
     ...buildSearchStructured(result.summary, matchPayloads),
@@ -1561,17 +1607,19 @@ async function handleSearchContent(
   const matchCount = matchPayloads.length;
   const fileCount = new Set(matchPayloads.map((m) => m.file)).size;
 
-  if (resourceStore && matchPayloads.length > 0) {
-    const ext = buildExternalizedResponse(fullStructured, preview, resourceStore);
-    return { structured: ext.structured, link: ext.link, matchCount, fileCount };
-  }
+  const { structured, link } = finalizeSearchOutput(
+    fullStructured,
+    preview,
+    matchPayloads,
+    resourceStore,
+  );
 
-  if (preview.needsExternalize) {
-    fullStructured.matches = preview.visiblePayloads;
-    fullStructured.truncated = true;
-  }
-
-  return { structured: fullStructured, matchCount, fileCount };
+  return {
+    structured,
+    ...(link !== undefined ? { link } : {}),
+    matchCount,
+    fileCount,
+  };
 }
 
 export const SEARCH_CONTENT = defineTool({
