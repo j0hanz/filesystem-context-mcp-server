@@ -33,10 +33,7 @@ import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { createInterface as createLineReader } from 'node:readline';
-import {
-  createInterface as createPromptInterface,
-  Readline as TtyReadline,
-} from 'node:readline/promises';
+import { createInterface as createPromptInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, stripVTControlCharacters } from 'node:util';
 
@@ -1472,20 +1469,10 @@ class TtyReporter extends BaseReporter {
   constructor(config, colWidth) {
     super(config, colWidth);
     this.useTicker = !!process.stdout.isTTY;
-    this.ttyReadline =
-      this.useTicker && process.stdout.isTTY
-        ? new TtyReadline(process.stdout, { autoCommit: true })
-        : null;
     this.tickerStart = 0;
     this.groupLabels = null;
     this.groupDone = null;
     this.groupStartMs = 0;
-  }
-
-  clearActiveLine() {
-    if (!this.ttyReadline) return;
-    this.ttyReadline.cursorTo(0);
-    this.ttyReadline.clearLine(0);
   }
 
   header() {
@@ -1526,9 +1513,8 @@ class TtyReporter extends BaseReporter {
       );
       return;
     }
-    this.clearActiveLine();
     process.stdout.write(
-      `  ${icon}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}${right ? `  ${right}` : ''}${newline ? '\n' : ''}`,
+      `\x1b[2K\r  ${icon}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}${right ? `  ${right}` : ''}${newline ? '\n' : ''}`,
     );
   }
 
@@ -1599,18 +1585,16 @@ class TtyReporter extends BaseReporter {
 
   redrawGroup() {
     if (!this.groupLabels || !this.groupDone) return;
-    if (!this.ttyReadline) return;
+    if (!this.useTicker) return;
     const elapsed = `${Theme.DIM}${Text.elapsed(Date.now() - this.groupStartMs)}${Theme.R}`;
-    this.ttyReadline.moveCursor(0, -this.groupLabels.length);
+    let out = `\x1b[${this.groupLabels.length}A`;
     for (const label of this.groupLabels) {
       const done = this.groupDone.get(label);
       const icon = done?.icon || Icons.RUN;
       const right = done?.right || elapsed;
-      this.clearActiveLine();
-      process.stdout.write(
-        `  ${icon}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}  ${right}\n`,
-      );
+      out += `\x1b[2K\r  ${icon}  ${Theme.BOLD}${label.padEnd(this.col)}${Theme.R}  ${right}\n`;
     }
+    process.stdout.write(out);
   }
 
   failureDetail(failedTasks) {
