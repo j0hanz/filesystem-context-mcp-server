@@ -104,7 +104,7 @@ const DEFAULT_SUGGESTIONS: Readonly<Partial<Record<ErrorCode, string>>> = {
 };
 
 function readSuggestionMeta(schema: z.ZodType | undefined): string | undefined {
-  if (!schema) return undefined;
+  if (schema === undefined || typeof schema !== 'object') return undefined;
   const meta = z.globalRegistry.get(schema) as { suggestion?: unknown } | undefined;
   if (meta && typeof meta.suggestion === 'string') return meta.suggestion;
   return undefined;
@@ -116,6 +116,7 @@ interface ZodDef {
 }
 
 function getZodDef(schema: z.ZodType): ZodDef | undefined {
+  if (typeof schema !== 'object') return undefined;
   if (!('_def' in schema)) return undefined;
   const def: unknown = (schema as { _def: unknown })._def;
   if (def === null || typeof def !== 'object') return undefined;
@@ -285,7 +286,7 @@ function buildProblemFromSignal(signal: ClassificationSignal, error: unknown): P
 
 function toProblemIssue(issue: z.core.$ZodIssue): ProblemIssue {
   const base: ProblemIssue = {
-    path: issue.path.map(String),
+    path: issue.path as readonly (string | number)[],
     code: issue.code,
     message: issue.message,
   };

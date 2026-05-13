@@ -312,3 +312,27 @@ describe('Problem.fromUnknown', () => {
     assert.equal(result.path, '/locked');
   });
 });
+
+describe('toProblemIssue — path segment types', () => {
+  it('preserves numeric path segments from array-indexed Zod issues', () => {
+    const schema = z.strictObject({
+      items: z.array(z.strictObject({ name: z.string() })),
+    });
+    const result = schema.safeParse({ items: [{ name: 42 }] });
+    assert.ok(!result.success, 'Should fail: name must be string');
+
+    const problem = zodErrorToProblem(result.error, schema);
+    assert.ok(problem.issues && problem.issues.length > 0, 'Should have issues');
+
+    // The path to the failing field is [items, 0, name] — index 0 must remain a number
+    const issue = problem.issues?.find((i) => i.path.includes('name'));
+    assert.ok(issue, 'Should find the name field issue');
+    const indexSegment = issue?.path[1]; // position 1 is the array index
+    assert.equal(
+      typeof indexSegment,
+      'number',
+      'Array index must remain a number, not be stringified',
+    );
+    assert.equal(indexSegment, 0);
+  });
+});
