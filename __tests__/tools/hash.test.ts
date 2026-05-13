@@ -187,7 +187,7 @@ describe('HashOutputSchema validation', () => {
     const result2 = HashOutputSchema.safeParse(invalidHexOutput);
     assert.equal(result2.success, false, 'Non-hex digest should fail');
 
-    // Test 3: Digest with wrong length for algorithm should fail
+    // Test 3: Digest with wrong length is now allowed at schema level (checked at runtime)
     const wrongLengthOutput = {
       ok: true,
       filePath: '/some/path',
@@ -199,7 +199,11 @@ describe('HashOutputSchema validation', () => {
       isDirectory: false,
     };
     const result3 = HashOutputSchema.safeParse(wrongLengthOutput);
-    assert.equal(result3.success, false, 'Digest with wrong length should fail');
+    assert.equal(
+      result3.success,
+      true,
+      'Schema validates shape/hex format; length is enforced at runtime in handleCalculateHash',
+    );
   });
 
   it('rejects uppercase hex digest', () => {

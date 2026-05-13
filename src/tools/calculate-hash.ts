@@ -5,7 +5,7 @@ import { basename, relative, win32 } from 'node:path';
 import { z } from 'zod/v4';
 
 import { assertNotAborted, withAbort } from '../core/concurrency.js';
-import { ErrorCode } from '../core/errors.js';
+import { ErrorCode, McpError, Problem } from '../core/errors.js';
 import {
   calculateFileContentHash,
   globEntries,
@@ -49,33 +49,19 @@ const HashesSchema = z.partialRecord(
   z.string().regex(/^[a-f0-9]+$/, { message: 'Must be lowercase hex string' }),
 );
 
-const HashOutputSchema = z
-  .strictObject({
-    ok: z.literal(true).describe('Success indicator'),
-    filePath: z.string().describe('Resolved file or directory path'),
-    algorithms: z
-      .array(z.enum(SUPPORTED_ALGORITHMS))
-      .min(1)
-      .max(SUPPORTED_ALGORITHMS.length)
-      .describe('Algorithms computed'),
-    hashes: HashesSchema.describe('Algorithm → hex digest mapping'),
-    resourceUri: z.string().describe('URI to hashes.json resource'),
-    isDirectory: z.boolean().describe('True when hashing a directory'),
-    fileCount: NonNegInt.optional().describe('Files hashed (directories only)'),
-  })
-  .superRefine((data, ctx) => {
-    // Validate each digest has the correct byte-length for its algorithm.
-    for (const [algo, digest] of Object.entries(data.hashes)) {
-      const expectedLength = ALGO_LENGTHS[algo as (typeof SUPPORTED_ALGORITHMS)[number]];
-      if (digest.length !== expectedLength) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['hashes', algo],
-          message: `Invalid ${algo} digest: expected ${expectedLength} hex characters, got ${digest.length}`,
-        });
-      }
-    }
-  });
+const HashOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
+  filePath: z.string().describe('Resolved file or directory path'),
+  algorithms: z
+    .array(z.enum(SUPPORTED_ALGORITHMS))
+    .min(1)
+    .max(SUPPORTED_ALGORITHMS.length)
+    .describe('Algorithms computed'),
+  hashes: HashesSchema.describe('Algorithm → hex digest mapping'),
+  resourceUri: z.string().describe('URI to hashes.json resource'),
+  isDirectory: z.boolean().describe('True when hashing a directory'),
+  fileCount: NonNegInt.optional().describe('Files hashed (directories only)'),
+});
 
 function toStableRelativePath(root: string, entryPath: string): string {
   const relativePath = relative(root, entryPath);
@@ -254,6 +240,19 @@ async function handleCalculateHash(
     // For files, calculate requested algorithms
     hashes = await calculateMultipleHashes(validPath, algorithms, signal);
     onProgress?.({ current: 1 });
+  }
+
+  // Runtime invariant: native crypto always produces fixed-length digests.
+  // If this ever fires, it indicates a logic error in the hash computation path.
+  for (const [algo, digest] of Object.entries(hashes)) {
+    const expectedLength = ALGO_LENGTHS[algo as (typeof SUPPORTED_ALGORITHMS)[number]];
+    if (digest.length !== expectedLength) {
+      throw new McpError(
+        Problem.invalidInput(
+          `Hash computation produced wrong-length ${algo} digest: expected ${String(expectedLength)} hex characters, got ${String(digest.length)}`,
+        ),
+      );
+    }
   }
 
   // Store hashes as JSON - resourceStore should always be available
