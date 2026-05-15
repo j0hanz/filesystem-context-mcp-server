@@ -60,7 +60,8 @@ describe('StderrProgressSink', () => {
       const sink = new StderrProgressSink(ctx, (line) => lines.push(line));
       sink.emit({ kind: 'complete', current: 500, message: 'Search: async.*await  src/' });
       const stripped = lines[0]?.replace(ANSI_ESCAPE_RE, '') ?? '';
-      assert.ok(stripped.startsWith('✓'), `expected ✓ symbol, got: ${stripped}`);
+      assert.ok(stripped.startsWith('Search:'), `expected label prefix, got: ${stripped}`);
+      assert.ok(!stripped.startsWith('✓'), 'done line should not have ✓ symbol');
     });
 
     it('emits a fail line for kind=fail', () => {
@@ -68,7 +69,8 @@ describe('StderrProgressSink', () => {
       const sink = new StderrProgressSink(ctx, (line) => lines.push(line));
       sink.emit({ kind: 'fail', current: 0, message: '', error: new Error('EACCES') });
       const stripped = lines[0]?.replace(ANSI_ESCAPE_RE, '') ?? '';
-      assert.ok(stripped.startsWith('✗'), `expected ✗ symbol`);
+      assert.ok(stripped.startsWith('Search:'), `expected label prefix, got: ${stripped}`);
+      assert.ok(!stripped.startsWith('✗'), 'fail line should not have ✗ symbol');
       assert.ok(stripped.includes('EACCES'), `expected EACCES in: ${stripped}`);
     });
 

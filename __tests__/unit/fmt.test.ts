@@ -93,12 +93,18 @@ describe('ansiLine', () => {
     assert.ok(strip(ansiLine('tick', { label: 'Read', current: 3, total: 10 })).startsWith('·'));
   });
 
-  it('done symbol is ✓', () => {
-    assert.ok(strip(ansiLine('done', { label: 'Read', subject: 'tasks.ts' })).startsWith('✓'));
+  it('done line starts with bold label, no symbol', () => {
+    const raw = ansiLine('done', { label: 'Read', subject: 'tasks.ts' });
+    const stripped = strip(raw);
+    assert.ok(stripped.startsWith('Read:'), `expected label prefix "Read:", got: ${stripped}`);
+    assert.ok(!stripped.startsWith('✓'), 'done line should not have symbol');
   });
 
-  it('fail symbol is ✗', () => {
-    assert.ok(strip(ansiLine('fail', { label: 'Edit', error: 'EACCES' })).startsWith('✗'));
+  it('fail line starts with bold label, no symbol', () => {
+    const raw = ansiLine('fail', { label: 'Edit', error: 'EACCES' });
+    const stripped = strip(raw);
+    assert.ok(stripped.startsWith('Edit:'), `expected label prefix "Edit:", got: ${stripped}`);
+    assert.ok(!stripped.startsWith('✗'), 'fail line should not have symbol');
   });
 
   it('plain text is embedded in ansi output', () => {
@@ -113,18 +119,62 @@ describe('ansiLine', () => {
     assert.ok(raw.includes('\x1b[31m-2\x1b[0m'), 'expected red -2');
   });
 
-  it('durationMs appended as dim text when provided', () => {
-    const raw = ansiLine('done', { label: 'Read', subject: 'f.ts', durationMs: 89 });
-    assert.ok(raw.includes('89ms'));
+  it('durationMs rendered for start/tick but not done/fail', () => {
+    // start phase should render timing
+    const startRaw = ansiLine('start', { label: 'Read', subject: 'tasks.ts', durationMs: 89 });
+    assert.ok(startRaw.includes('89ms'), 'start line should include duration');
+
+    // done phase should NOT render timing
+    const doneRaw = ansiLine('done', { label: 'Read', subject: 'f.ts', durationMs: 89 });
+    assert.ok(!doneRaw.includes('89ms'), 'done line should not include duration');
   });
 
-  it('durationMs over 1000ms formatted as seconds', () => {
-    const raw = ansiLine('done', { label: 'Read', subject: 'f.ts', durationMs: 2100 });
-    assert.ok(raw.includes('2.1s'));
+  it('durationMs over 1000ms formatted as seconds on start line', () => {
+    const raw = ansiLine('start', { label: 'Read', subject: 'f.ts', durationMs: 2100 });
+    assert.ok(raw.includes('2.1s'), 'start line should format duration as seconds');
   });
 
   it('durationMs absent — no timing suffix', () => {
     const raw = ansiLine('done', { label: 'Read', subject: 'f.ts' });
     assert.ok(!raw.includes('ms') && !raw.includes('s  '));
+  });
+
+  it('done line has no symbol prefix', () => {
+    const raw = ansiLine('done', { label: 'Read', subject: 'tasks.ts' });
+    const stripped = strip(raw);
+    assert.ok(stripped.startsWith('Read:'), `expected "Read:" prefix, got: ${stripped}`);
+    assert.ok(!stripped.startsWith('✓'), 'done line should not start with ✓ symbol');
+  });
+
+  it('fail line has no symbol prefix', () => {
+    const raw = ansiLine('fail', { label: 'Edit', subject: 'tasks.ts', error: 'EACCES' });
+    const stripped = strip(raw);
+    assert.ok(stripped.startsWith('Edit:'), `expected "Edit:" prefix, got: ${stripped}`);
+    assert.ok(!stripped.startsWith('✗'), 'fail line should not start with ✗ symbol');
+  });
+
+  it('done line: durationMs not rendered even when provided', () => {
+    const raw = ansiLine('done', { label: 'Read', subject: 'f.ts', durationMs: 89 });
+    const stripped = strip(raw);
+    assert.ok(!stripped.includes('89ms'), 'done line should not include duration');
+    assert.ok(
+      stripped.includes('Read:') && stripped.includes('f.ts'),
+      'done line should include label and subject',
+    );
+  });
+
+  it('fail line: durationMs not rendered even when provided', () => {
+    const raw = ansiLine('fail', {
+      label: 'Edit',
+      subject: 'tasks.ts',
+      error: 'EACCES',
+      durationMs: 150,
+    });
+    const stripped = strip(raw);
+    assert.ok(!stripped.includes('150ms'), 'fail line should not include duration');
+    assert.ok(
+      stripped.includes('Edit:') && stripped.includes('EACCES'),
+      'fail line should include label and error',
+    );
   });
 });

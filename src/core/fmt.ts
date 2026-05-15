@@ -77,6 +77,11 @@ export function ansiLine(phase: Phase, ctx: ProgressCtx): string {
   const body = buildBody(ctx, phase);
   const label = `${B}${ctx.label}:${R}`;
   const content = body ? `${label} ${colorizeStats(body)}` : label;
+
+  if (phase === 'done' || phase === 'fail') {
+    return content;
+  }
+
   const timing =
     ctx.durationMs !== undefined ? `  ${DIM}${formatDuration(ctx.durationMs)}${R}` : '';
   return `${SYMBOL_ANSI[phase]}  ${content}${timing}`;
