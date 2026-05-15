@@ -48,9 +48,23 @@ describe('RootsManager', () => {
     let updateCalls = 0;
 
     (manager as unknown as { updateRootsFromClient: () => Promise<void> }).updateRootsFromClient =
-      () => {
+      async () => {
+        // Only run if not shutting down and not already updating
+        const state = (manager as unknown as { state: string }).state;
+        if (state === 'shutting_down' || state === 'updating') {
+          (manager as unknown as { pendingRootsUpdate: boolean }).pendingRootsUpdate = true;
+          return;
+        }
+        (manager as unknown as { state: string }).state = 'updating';
         updateCalls += 1;
-        return Promise.resolve();
+        await Promise.resolve(); // Simulate async work
+        (manager as unknown as { state: string }).state = 'idle';
+        if ((manager as unknown as { pendingRootsUpdate: boolean }).pendingRootsUpdate) {
+          (manager as unknown as { pendingRootsUpdate: boolean }).pendingRootsUpdate = false;
+          void (
+            manager as unknown as { updateRootsFromClient: () => Promise<void> }
+          ).updateRootsFromClient();
+        }
       };
 
     manager.registerHandlers(fakeServer.server);
@@ -75,6 +89,7 @@ describe('RootsManager', () => {
     (manager as unknown as { updateRootsFromClient: () => Promise<void> }).updateRootsFromClient =
       () => {
         updateCalls += 1;
+        (manager as unknown as { state: string }).state = 'idle';
         return Promise.resolve();
       };
 

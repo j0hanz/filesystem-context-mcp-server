@@ -112,15 +112,15 @@ async function filterRootsWithinBaseline(
   });
 }
 
+type RootsManagerState = 'idle' | 'initializing' | 'updating' | 'shutting_down';
+
 export class RootsManager {
   private _debouncedUpdate: { (server: McpServer): void; cancel: () => void } | undefined;
   private rootDirectories: string[] = [];
   readonly pathGuard: PathGuard = new PathGuard(SENSITIVE_FILE_DENYLIST);
-  private clientInitialized = false;
+  private state: RootsManagerState = 'idle';
   private initTimer: ReturnType<typeof setTimeout> | undefined;
-  // Guard concurrent root refreshes; if one is already running we queue one
-  // replay so the last-known state still gets applied after completion.
-  private updatingRoots = false;
+
   // Tracks whether a roots change arrived while the previous refresh ran.
   private pendingRootsUpdate = false;
   private readonly options: ServerOptions;
@@ -132,10 +132,11 @@ export class RootsManager {
   }
 
   isInitialized(): boolean {
-    return this.clientInitialized;
+    return this.state !== 'initializing';
   }
 
   destroy(): void {
+    this.state = 'shutting_down';
     if (this.initTimer) {
       clearTimeout(this.initTimer);
       this.initTimer = undefined;
@@ -153,24 +154,27 @@ export class RootsManager {
   }
 
   registerHandlers(server: McpServer, onInitTimeout?: () => void): void {
+    if (this.state === 'shutting_down') return;
+    this.state = 'initializing';
     const initHandshakeTimeoutMs = getInitHandshakeTimeoutMs();
 
     server.server.setNotificationHandler('notifications/initialized', async () => {
+      if (this.state === 'shutting_down') return;
       if (this.initTimer) {
         clearTimeout(this.initTimer);
         this.initTimer = undefined;
       }
-      this.clientInitialized = true;
+      this.state = 'idle'; // Transition to idle before triggering the first update
       await this.updateRootsFromClient(server);
     });
 
     server.server.setNotificationHandler('notifications/roots/list_changed', () => {
-      if (!this.clientInitialized) return;
+      if (!this.isInitialized() || this.state === 'shutting_down') return;
       this.scheduleRootsUpdate(server);
     });
 
     this.initTimer = setTimeout(() => {
-      if (!this.clientInitialized) {
+      if (this.state === 'initializing') {
         if (LIFECYCLE_CHANNEL.hasSubscribers) {
           LIFECYCLE_CHANNEL.publish({
             phase: 'init_timeout',
@@ -237,13 +241,15 @@ export class RootsManager {
   }
 
   private async updateRootsFromClient(server: McpServer): Promise<void> {
+    if (this.state === 'shutting_down') return;
+
     // Guard against concurrent executions: if one is already running, queue a
     // single retry so the last-known state is always applied after completion.
-    if (this.updatingRoots) {
+    if (this.state === 'updating') {
       this.pendingRootsUpdate = true;
       return;
     }
-    this.updatingRoots = true;
+    this.state = 'updating';
     try {
       const clientCapabilities = server.server.getClientCapabilities();
       if (!clientCapabilities?.roots) {
@@ -265,15 +271,19 @@ export class RootsManager {
         this.loggingState.minimumLevel,
       );
     } finally {
-      await this.recomputeAllowedDirectories();
-      Logger.info(
-        `Roots updated: ${this.rootDirectories.length} root(s), ${this.pathGuard.getAllowedDirectories().length} allowed dir(s)`,
-      );
-      this.updatingRoots = false;
-      // If a change arrived while we were running, apply it now.
-      if (this.pendingRootsUpdate) {
-        this.pendingRootsUpdate = false;
-        void this.updateRootsFromClient(server);
+      // TS flow analysis doesn't know 'await' can yield to destroy() which sets state to shutting_down
+      const currentState = this.state as RootsManagerState;
+      if (currentState !== 'shutting_down') {
+        await this.recomputeAllowedDirectories();
+        Logger.info(
+          `Roots updated: ${this.rootDirectories.length} root(s), ${this.pathGuard.getAllowedDirectories().length} allowed dir(s)`,
+        );
+        this.state = 'idle';
+        // If a change arrived while we were running, apply it now.
+        if (this.pendingRootsUpdate) {
+          this.pendingRootsUpdate = false;
+          void this.updateRootsFromClient(server);
+        }
       }
     }
   }
