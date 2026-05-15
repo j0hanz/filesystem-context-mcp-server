@@ -151,7 +151,10 @@ describe('stat_many tool', () => {
 
     assert.equal(result.content[1].type, 'resource_link');
     const resourceLink = result.content[1] as Record<string, unknown>;
-    assert.equal(resourceLink['name'], 'stats.json');
+    assert.ok(
+      (resourceLink['name'] as string).endsWith(' paths'),
+      `Expected resource name to end with ' paths', got '${String(resourceLink['name'])}'`,
+    );
     assert.equal(resourceLink['mimeType'], 'application/json');
     assert.ok((resourceLink['uri'] as string).includes('filesystem-mcp://result/'));
 
@@ -171,7 +174,7 @@ describe('stat_many tool', () => {
     assert.equal(sc['dirCount'], 0, 'Expected dirCount === 0');
     assert.ok(
       (sc['resourceUri'] as string).includes('filesystem-mcp://result/'),
-      'Expected resourceUri to point to stats.json',
+      'Expected resourceUri to point to a resource',
     );
   });
 

@@ -23,6 +23,5 @@ export function registerAllTools(server: McpServer, options: ToolRegistrationOpt
     isInitialized: options.isInitialized ?? (() => true),
     pathGuard: options.pathGuard,
     resourceStore: options.resourceStore,
-    ...(options.orchestrator ? { orchestrator: options.orchestrator } : {}),
   });
 }

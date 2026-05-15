@@ -21,7 +21,6 @@ import type { PathGuard } from '../core/path.js';
 import { createBase64JsonCodec } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { NonNegInt } from '../schema.js';
-import type { TaskOrchestrator } from '../tasks.js';
 
 // ============ ToolContext ============
 
@@ -61,7 +60,6 @@ export interface ToolRegistrationOptions {
   pathGuard: PathGuard;
   resourceStore?: ResourceStore;
   isInitialized?: () => boolean;
-  orchestrator?: TaskOrchestrator | undefined;
 }
 
 // ============ Formatting ============

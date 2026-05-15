@@ -1511,11 +1511,12 @@ function buildExternalizedResponse(
   fullStructured: SearchOutput,
   preview: SearchPreviewState,
   resourceStore: ResourceStore,
+  searchPattern: string,
 ): { structured: SearchOutput; link: ReturnType<typeof putResource>['link'] } {
   const resultsJson = JSON.stringify(fullStructured, null, 2);
   const { entry, link } = putResource({
     store: resourceStore,
-    name: 'search-results.json',
+    name: `'${searchPattern}' matches`,
     mimeType: 'application/json',
     kind: 'text',
     content: resultsJson,
@@ -1557,9 +1558,10 @@ function finalizeSearchOutput(
   preview: SearchPreviewState,
   matchPayloads: SearchMatchPayload[],
   resourceStore?: ResourceStore,
+  searchPattern?: string,
 ): { structured: SearchOutput; link?: ReturnType<typeof putResource>['link'] } {
   if (resourceStore && matchPayloads.length > 0) {
-    return buildExternalizedResponse(fullStructured, preview, resourceStore);
+    return buildExternalizedResponse(fullStructured, preview, resourceStore, searchPattern ?? '');
   }
 
   if (preview.needsExternalize) {
@@ -1613,6 +1615,7 @@ async function handleSearchContent(
     preview,
     matchPayloads,
     resourceStore,
+    args.searchPattern,
   );
 
   return {
@@ -1638,7 +1641,7 @@ export const SEARCH_CONTENT = defineTool({
     destructiveHint: false,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'optional' },
+  execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   nuances: ['Inline results capped at 50 matches; full results via `resourceUri`.'],
   gotchas: [

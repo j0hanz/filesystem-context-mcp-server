@@ -28,7 +28,7 @@ import {
   PositiveInt,
   RequiredPath,
 } from '../schema.js';
-import { formatBytes, putResource } from './_helpers.js';
+import { formatBytes } from './_helpers.js';
 import { defineTool, type RunResult, type ToolCtx } from './define.js';
 
 const EditSpecSchema = z.strictObject({
@@ -344,7 +344,7 @@ interface EditFileMetadata {
   mimeType: string;
   kind: 'text' | 'binary' | 'image' | 'audio' | 'pdf';
   resourceUri: string;
-  resourceLink: ReturnType<typeof putResource>['link'] | undefined;
+  resourceLink: ContentBlock | undefined;
 }
 
 function buildEditFileMetadata(
@@ -356,18 +356,18 @@ function buildEditFileMetadata(
   const bytesWritten = Buffer.byteLength(content, 'utf-8');
   const lineCount = content.split('\n').length;
   const mimeInfo = detectMimeType(validPath, Buffer.from(content.slice(0, MIME_SAMPLE_SIZE)));
-  let resourceUri = '';
-  let resourceLink: ReturnType<typeof putResource>['link'] | undefined;
+  const resourceUri =
+    appliedEdits > 0 ? `filesystem-mcp://file/${validPath.replace(/\\/g, '/')}` : '';
+  let resourceLink: ContentBlock | undefined;
   if (appliedEdits > 0 && resourceStore) {
-    const { entry, link } = putResource({
-      store: resourceStore,
+    resourceLink = {
+      type: 'resource_link',
+      uri: resourceUri,
       name: basename(validPath),
       mimeType: mimeInfo.mimeType,
-      kind: mimeInfo.kind,
-      content,
-    });
-    resourceUri = entry.uri;
-    resourceLink = link;
+      size: bytesWritten,
+      annotations: { audience: ['user', 'assistant'] },
+    };
   }
   return {
     bytesWritten,
@@ -473,7 +473,7 @@ async function handleEditFile(
   structured: EditOutput;
   editedContent: string;
   validPath: string;
-  resourceLink?: ReturnType<typeof putResource>['link'];
+  resourceLink?: ContentBlock;
 }> {
   const { validPath, content } = await loadEditableFile(filePath, pathGuard, signal);
   const editResult = await applyEdits(content, edits, ignoreWhitespace);

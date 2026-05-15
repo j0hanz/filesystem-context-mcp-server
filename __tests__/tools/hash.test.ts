@@ -61,7 +61,7 @@ describe('calculate_hash tool', () => {
     // Verify resource link
     const resourceLink = raw.content.find((c) => c && 'type' in c && c.type === 'resource_link');
     assert(resourceLink, 'Should have a resource_link');
-    assert.equal((resourceLink as { name: string }).name, 'hashes.json');
+    assert.equal((resourceLink as { name: string }).name, 'hash-me.txt');
   });
 
   it('calculate-hash with multiple algorithms', async () => {

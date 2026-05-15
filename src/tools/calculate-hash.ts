@@ -263,7 +263,7 @@ async function handleCalculateHash(
   const hashJson = JSON.stringify(hashes, null, 2);
   const { entry, link } = putResource({
     store: resourceStore,
-    name: 'hashes.json',
+    name: basename(validPath),
     mimeType: 'application/json',
     kind: 'text',
     content: hashJson,
@@ -309,7 +309,7 @@ export const CALCULATE_HASH = defineTool({
     destructiveHint: false,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'optional' },
+  execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   nuances: [
     'Directory hashing respects root `.gitignore` and sorts paths for stable output.',

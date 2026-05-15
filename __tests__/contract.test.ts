@@ -153,14 +153,7 @@ describe('Tool contract', () => {
   });
 
   it('task-capable tools expose execution.taskSupport in tools/list', async () => {
-    const TASK_OPTIONAL_TOOLS = new Set([
-      'hash_file',
-      'search_text',
-      'find_files',
-      'read',
-      'replace_text',
-      'stat',
-    ]);
+    const TASK_OPTIONAL_TOOLS = new Set<string>();
 
     const { tools } = await env.client.listTools();
     for (const tool of tools) {

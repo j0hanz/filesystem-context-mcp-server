@@ -10,7 +10,7 @@ import { ErrorCode, isAbortError, Problem } from '../core/errors.js';
 import { atomicWriteFile, detectMimeType, MIME_SAMPLE_SIZE } from '../core/fs.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import { IsoDateTime, NonNegInt, PerFileErrorSchema, RequiredPath } from '../schema.js';
-import { formatBytes, putResource } from './_helpers.js';
+import { formatBytes } from './_helpers.js';
 import { defineTool } from './define.js';
 
 const CreateFileItemSchema = z.strictObject({
@@ -106,17 +106,17 @@ export const CREATE = defineTool({
           Buffer.from(file.content.slice(0, MIME_SAMPLE_SIZE)),
         );
 
-        let resourceUri = '';
+        const resourceUri = `filesystem-mcp://file/${validPath.replace(/\\/g, '/')}`;
         if (ctx.resourceStore) {
-          const { entry, link } = putResource({
-            store: ctx.resourceStore,
+          const contentSize = Buffer.byteLength(file.content, 'utf-8');
+          links.push({
+            type: 'resource_link',
+            uri: resourceUri,
             name: basename(validPath),
             mimeType: mimeInfo.mimeType,
-            kind: mimeInfo.kind,
-            content: file.content,
+            size: contentSize,
+            annotations: { audience: ['user', 'assistant'] },
           });
-          resourceUri = entry.uri;
-          links.push(link);
         }
 
         results.push({

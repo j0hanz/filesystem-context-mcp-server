@@ -217,7 +217,7 @@ test('defineTool: no progress token => no progress notifications are emitted', a
   assert.equal(progressNotifications.length, 0);
 });
 
-test('defineTool: with progress token and one tick => emits one progress notification with minimal payload shape', async (): Promise<void> => {
+test('defineTool: with progress token and one tick => emits start + tick + done notifications with message field', async (): Promise<void> => {
   const tool = defineTool({
     ...BASE_DEF,
     run: async (_args, ctx) => {
@@ -234,67 +234,23 @@ test('defineTool: with progress token and one tick => emits one progress notific
   } as unknown as ServerContext);
 
   const progressPayloads = getProgressPayloads(request.notifications);
-  assert.equal(progressPayloads.length, 1);
-  const payload = progressPayloads[0];
-  assert.equal(payload.progressToken, 'token-1');
-  assert.equal(typeof payload.progress, 'number');
-  assert.equal(payload.progress, 1);
-  assert.equal(payload.total, 1);
-});
-
-test('defineTool: task context start/tick/done path => updateTaskStatus called three times, done has no prefix', async (): Promise<void> => {
-  const updateTaskStatusCalls: { taskId: string; status: string; statusMessage: string }[] = [];
-
-  const tool = defineTool({
-    ...BASE_DEF,
-    run: async (_args, ctx) => {
-      ctx.onProgress?.({ current: 1, total: 1 });
-      return { structured: { ok: true as const, result: 'success' }, text: 'test' };
-    },
-  });
-  const capture: HandlerCapture = { handler: undefined };
-  tool.register(makeTestDeps(makeMockServer(capture)));
-
-  await runCapturedHandler(capture, { message: 'hello' }, {
-    mcpReq: fakeMcpReq(),
-    task: {
-      id: 'task-1',
-      store: {
-        updateTaskStatus: async (
-          taskId: string,
-          status: unknown,
-          statusMessage?: unknown,
-        ): Promise<void> => {
-          updateTaskStatusCalls.push({
-            taskId,
-            status: typeof status === 'string' ? status : '',
-            statusMessage: typeof statusMessage === 'string' ? statusMessage : '',
-          });
-        },
-      },
-    },
-  } as unknown as ServerContext);
-
-  assert.equal(updateTaskStatusCalls.length, 3);
-  assert.deepEqual(
-    updateTaskStatusCalls.map((call) => call.taskId),
-    ['task-1', 'task-1', 'task-1'],
-  );
-  assert.deepEqual(
-    updateTaskStatusCalls.map((call) => call.status),
-    ['working', 'working', 'working'],
-  );
-  assert.match(updateTaskStatusCalls[0].statusMessage, /\bstart\b/i);
-  assert.match(updateTaskStatusCalls[1].statusMessage, /\btick\b/i);
+  // start (current=0) + tick (current=1) + done (current=2)
+  assert.equal(progressPayloads.length, 3);
+  assert.ok(progressPayloads.every((p) => p.progressToken === 'token-1'));
   assert.ok(
-    !updateTaskStatusCalls[2].statusMessage.startsWith('done:'),
-    `expected no "done:" prefix in terminal status, got: ${updateTaskStatusCalls[2].statusMessage}`,
+    progressPayloads.every((p) => typeof p.message === 'string' && p.message.length > 0),
+    'all notifications must carry a message string',
   );
+  // monotonic
+  for (let i = 1; i < progressPayloads.length; i++) {
+    assert.ok((progressPayloads[i]?.progress ?? 0) >= (progressPayloads[i - 1]?.progress ?? 0));
+  }
+  // final notification signals completion: current === total
+  const last = progressPayloads[progressPayloads.length - 1];
+  assert.equal(last?.progress, last?.total);
 });
 
-test('defineTool: done status message has no "done:" prefix', async (): Promise<void> => {
-  const updateTaskStatusCalls: { statusMessage: string }[] = [];
-
+test('defineTool: done progress message does not carry "done:" prefix', async (): Promise<void> => {
   const tool = defineTool({
     ...BASE_DEF,
     progress: (_args) => ({ label: 'Test', subject: 'item' }),
@@ -306,77 +262,18 @@ test('defineTool: done status message has no "done:" prefix', async (): Promise<
   const capture: HandlerCapture = { handler: undefined };
   tool.register(makeTestDeps(makeMockServer(capture)));
 
+  const request = fakeMcpReqWithProgressToken('done-prefix-token');
   await runCapturedHandler(capture, { message: 'hello' }, {
-    mcpReq: fakeMcpReq(),
-    task: {
-      id: 'task-prefix',
-      store: {
-        updateTaskStatus: async (_taskId: string, _status: unknown, statusMessage?: unknown) => {
-          updateTaskStatusCalls.push({
-            statusMessage: typeof statusMessage === 'string' ? statusMessage : '',
-          });
-        },
-      },
-    },
+    mcpReq: request,
   } as unknown as ServerContext);
 
-  const doneMsg = updateTaskStatusCalls[updateTaskStatusCalls.length - 1]?.statusMessage ?? '';
+  const progressPayloads = getProgressPayloads(request.notifications);
+  const doneMsg = progressPayloads[progressPayloads.length - 1]?.message ?? '';
   assert.ok(!doneMsg.startsWith('done:'), `expected no "done:" prefix, got: ${doneMsg}`);
   assert.ok(doneMsg.startsWith('Test:'), `expected message to start with label, got: ${doneMsg}`);
 });
 
-test('defineTool: delayed tick after completion does not overwrite terminal status', async (): Promise<void> => {
-  const updateTaskStatusCalls: { taskId: string; statusMessage: string }[] = [];
-
-  const tool = defineTool({
-    ...BASE_DEF,
-    run: async (_args, ctx) => {
-      setTimeout(() => {
-        ctx.onProgress?.({ current: 1, total: 1 });
-      }, 5);
-      return { structured: { ok: true as const, result: 'success' }, text: 'test' };
-    },
-  });
-
-  const capture: HandlerCapture = { handler: undefined };
-  tool.register(makeTestDeps(makeMockServer(capture)));
-
-  await runCapturedHandler(capture, { message: 'hello' }, {
-    mcpReq: fakeMcpReq(),
-    task: {
-      id: 'task-delayed-tick',
-      store: {
-        updateTaskStatus: async (
-          taskId: string,
-          _status: unknown,
-          statusMessage?: unknown,
-        ): Promise<void> => {
-          updateTaskStatusCalls.push({
-            taskId,
-            statusMessage: typeof statusMessage === 'string' ? statusMessage : '',
-          });
-        },
-      },
-    },
-  } as unknown as ServerContext);
-
-  await new Promise<void>((resolve) => {
-    setTimeout(resolve, 20);
-  });
-
-  assert.equal(updateTaskStatusCalls.length, 2);
-  assert.deepEqual(
-    updateTaskStatusCalls.map((call) => call.taskId),
-    ['task-delayed-tick', 'task-delayed-tick'],
-  );
-  assert.match(updateTaskStatusCalls[0].statusMessage, /\bstart\b/i);
-  assert.ok(
-    !updateTaskStatusCalls[1].statusMessage.startsWith('done:'),
-    `expected no "done:" prefix in terminal status, got: ${updateTaskStatusCalls[1].statusMessage}`,
-  );
-});
-
-test('defineTool: delayed non-task tick after completion does not emit progress notification', async (): Promise<void> => {
+test('defineTool: delayed tick after completion is suppressed, only start+done notifications emitted', async (): Promise<void> => {
   const tool = defineTool({
     ...BASE_DEF,
     run: async (_args, ctx) => {
@@ -402,7 +299,12 @@ test('defineTool: delayed non-task tick after completion does not emit progress 
   });
 
   const progressPayloads = getProgressPayloads(request.notifications);
-  assert.equal(progressPayloads.length, 0);
+  // start (current=0) + done (current=1); the delayed tick is suppressed by progressClosed
+  assert.equal(progressPayloads.length, 2);
+  assert.equal(progressPayloads[0]?.progress, 0);
+  // final: current === total
+  const last = progressPayloads[progressPayloads.length - 1];
+  assert.equal(last?.progress, last?.total);
 });
 
 test('defineTool: detached progress side effects tolerate rejections without unhandled rejection', async (t): Promise<void> => {
@@ -541,9 +443,9 @@ test('defineTool: tool_execution wide event uses SDK-aligned progress/status cou
   const message = toolExecutionMessages[toolExecutionMessages.length - 1];
 
   assert.ok(message.includes('tool_progress_ticks=1'));
-  assert.ok(message.includes('progress_notifications_emitted=1'));
-  assert.ok(message.includes('task_status_updates_requested=0'));
-  assert.equal(message.includes('progress_steps_emitted='), false);
+  // start + tick + done = 3 notifications, each carrying a message string
+  assert.ok(message.includes('progress_notifications_emitted=3'));
+  assert.equal(message.includes('task_status_updates_requested='), false);
 });
 
 test('defineTool: all annotation types are accepted', (): void => {

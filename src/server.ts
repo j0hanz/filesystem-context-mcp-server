@@ -1,6 +1,5 @@
 import {
   type Implementation,
-  InMemoryTaskMessageQueue,
   McpServer,
   type Root,
   type ServerCapabilities,
@@ -40,8 +39,6 @@ import {
   type ResourcesHandle,
   serverInstructionsContent,
 } from './resources.js';
-import type { EventedTaskStore } from './tasks.js';
-import { createTaskStore, TaskOrchestrator } from './tasks.js';
 import { registerAllTools } from './tools.js';
 import { type IconInfo, withDefaultIcons } from './tools/_helpers.js';
 
@@ -385,20 +382,8 @@ export async function createServer(
   const localIcon = await getLocalIconInfo();
   const capabilities = buildServerCapabilities({
     enablePromptListChanged: false,
-    enableTaskToolRequests: true,
+    enableTaskToolRequests: false,
   });
-
-  let taskStore: EventedTaskStore | undefined;
-  if (capabilities.tasks) {
-    taskStore = createTaskStore();
-    capabilities.tasks = {
-      ...capabilities.tasks,
-      taskStore,
-      taskMessageQueue: new InMemoryTaskMessageQueue(),
-    };
-  }
-
-  const orchestrator = taskStore ? new TaskOrchestrator(taskStore) : undefined;
 
   const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> = {
     capabilities: {
@@ -457,7 +442,6 @@ export async function createServer(
     pathGuard: rootsManager.pathGuard,
     resourceStore,
     isInitialized: options.isInitialized ?? (() => rootsManager.isInitialized()),
-    orchestrator,
   });
 
   return new FilesystemServerContext(server, rootsManager, resourceStore, resourcesHandle);

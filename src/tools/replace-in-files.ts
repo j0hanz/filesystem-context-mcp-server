@@ -1,3 +1,5 @@
+import type { ContentBlock } from '@modelcontextprotocol/server';
+
 import { Buffer } from 'node:buffer';
 import { open, stat } from 'node:fs/promises';
 import { basename, dirname, join, relative } from 'node:path';
@@ -30,7 +32,7 @@ import {
   PerFileErrorSchema,
   SafeGlobPattern,
 } from '../schema.js';
-import { putResource, truncateProgressPattern } from './_helpers.js';
+import { truncateProgressPattern } from './_helpers.js';
 import { defineTool } from './define.js';
 
 function globEscape(name: string): string {
@@ -492,7 +494,7 @@ async function handleSearchAndReplace(
   resourceStore?: ResourceStore,
 ): Promise<{
   structured: SearchAndReplaceOutput;
-  link?: ReturnType<typeof putResource>['link'];
+  link?: ContentBlock;
 }> {
   const maxFileSize = MAX_TEXT_FILE_SIZE;
   const { root, filePattern } = await resolveSearchRoot(args.path, pathGuard);
@@ -582,13 +584,15 @@ async function handleSearchAndReplace(
       const lineCount = content.split('\n').length;
       const size = Buffer.byteLength(content, 'utf-8');
 
-      const { entry, link } = putResource({
-        store: resourceStore,
+      const fileUri = `filesystem-mcp://file/${fullPath.replace(/\\/g, '/')}`;
+      const link: ContentBlock = {
+        type: 'resource_link',
+        uri: fileUri,
         name: basename(fullPath),
         mimeType: mimeInfo.mimeType,
-        kind: mimeInfo.kind,
-        content,
-      });
+        size,
+        annotations: { audience: ['user', 'assistant'] },
+      };
 
       structured.primaryFile = {
         path: primaryFilePath,
@@ -596,7 +600,7 @@ async function handleSearchAndReplace(
         lineCount,
         mimeType: mimeInfo.mimeType,
         kind: mimeInfo.kind,
-        resourceUri: entry.uri,
+        resourceUri: fileUri,
       };
 
       return { structured, link };
@@ -627,7 +631,7 @@ export const SEARCH_AND_REPLACE = defineTool({
     destructiveHint: true,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'optional' },
+  execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   gotchas: [
     'RE2 dialect: no lookahead, lookbehind, or backreferences.',

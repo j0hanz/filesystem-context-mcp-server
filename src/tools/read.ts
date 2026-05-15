@@ -1,3 +1,5 @@
+import type { ContentBlock } from '@modelcontextprotocol/server';
+
 import type { Stats } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { basename } from 'node:path';
@@ -282,25 +284,30 @@ async function handleReadFile(
     structured.contentHash = await calculateFileContentHash(result.path, signal);
   }
 
-  // Always store content in resource store and return summary + link
+  // Build a filesystem-mcp://file URI pointing to the actual file on disk.
+  // This lets the user click to open the real file and never expires.
   if (resourceStore) {
-    const { entry, link } = putResource({
-      store: resourceStore,
+    const fileUri = `filesystem-mcp://file/${result.path.replace(/\\/g, '/')}`;
+    const contentSize = Buffer.byteLength(result.content, 'utf-8');
+
+    const link: ContentBlock = {
+      type: 'resource_link',
+      uri: fileUri,
       name: basename(result.path),
       mimeType: mimeInfo.mimeType,
-      kind: mimeInfo.kind,
-      content: result.content,
-    });
+      size: contentSize,
+      annotations: { audience: ['user', 'assistant'] },
+    };
 
     const structuredWithResource: ReadFileOutput = {
       ...structured,
-      resourceUri: entry.uri,
+      resourceUri: fileUri,
     };
 
     const summary = [
       `read: ${basename(result.path)}`,
       `${String(structured.totalLines ?? 0)} lines`,
-      formatBytes(entry.size),
+      formatBytes(contentSize),
       mimeInfo.mimeType,
     ].join(' \u00b7 ');
 
@@ -801,7 +808,7 @@ export const READ_FILE = defineTool({
     destructiveHint: false,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'optional' },
+  execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   nuances: [
     'Large content is externalized to `filesystem-mcp://result/{id}` and preview is returned inline.',

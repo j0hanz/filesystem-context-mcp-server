@@ -602,7 +602,7 @@ async function handleSearchFiles(
     const resultsJson = JSON.stringify(relativeResults, null, 2);
     const { entry, link } = putResource({
       store: resourceStore,
-      name: 'search-results.json',
+      name: `${args.pattern} files`,
       mimeType: 'application/json',
       kind: 'text',
       content: resultsJson,
@@ -636,7 +636,7 @@ export const SEARCH_FILES = defineTool({
     destructiveHint: false,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'optional' },
+  execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   nuances: [
     'Respects `.gitignore` unless `includeIgnored=true`.',

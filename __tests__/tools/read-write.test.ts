@@ -49,7 +49,7 @@ describe('read tool', () => {
     const sc = getStructured(result);
     assert.ok(sc['mimeType']);
     assert.ok(sc['resourceUri']);
-    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://result/'));
+    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://file/'));
   });
 
   it('reads a specific line range', async () => {
@@ -154,7 +154,7 @@ describe('read tool', () => {
     // Check resource_link
     const resourceLink = raw.content[1] as Record<string, unknown>;
     assert.equal(resourceLink.type, 'resource_link');
-    assert.match(resourceLink.uri as string, /^filesystem-mcp:\/\/result\//);
+    assert.match(resourceLink.uri as string, /^filesystem-mcp:\/\/file\//);
     assert.ok((resourceLink.mimeType as string).includes('text'));
     assert.ok((resourceLink.annotations as Record<string, unknown>)?.audience);
 
@@ -270,7 +270,7 @@ describe('create tool', () => {
     assert.ok(typeof created['mimeType'] === 'string');
     assert.ok(typeof created['kind'] === 'string');
     assert.ok(typeof created['resourceUri'] === 'string');
-    assert.ok(created['resourceUri'].includes('filesystem-mcp://result/'));
+    assert.ok(created['resourceUri'].includes('filesystem-mcp://file/'));
     assert.ok(typeof created['created'] === 'string');
     assert.ok(typeof created['modified'] === 'string');
 
@@ -284,7 +284,7 @@ describe('create tool', () => {
     // Verify resource_link
     assert.equal(result.content[1].type, 'resource_link');
     const link = result.content[1] as Record<string, unknown>;
-    assert.ok((link.uri as string).includes('filesystem-mcp://result/'));
+    assert.ok((link.uri as string).includes('filesystem-mcp://file/'));
 
     const actual = await readFile(file, 'utf8');
     assert.equal(actual, 'hello world');
@@ -330,7 +330,7 @@ describe('create tool', () => {
     assert.ok(
       (result.content[1] as Record<string, unknown>).uri
         ?.toString()
-        .includes('filesystem-mcp://result/'),
+        .includes('filesystem-mcp://file/'),
     );
     const actual = await readFile(file, 'utf8');
     assert.equal(actual, 'nested');
@@ -766,7 +766,7 @@ describe('edit tool', () => {
     assert.equal(typeof sc['mimeType'], 'string');
     assert.equal(typeof sc['kind'], 'string');
     assert.equal(typeof sc['resourceUri'], 'string');
-    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://result/'));
+    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://file/'));
     assert.equal(typeof sc['modified'], 'string');
     assert.equal(sc['appliedEdits'], 1);
 
@@ -780,7 +780,7 @@ describe('edit tool', () => {
     // Verify resource_link
     assert.equal(result.content[1].type, 'resource_link');
     const link = result.content[1] as Record<string, unknown>;
-    assert.ok((link.uri as string).includes('filesystem-mcp://result/'));
+    assert.ok((link.uri as string).includes('filesystem-mcp://file/'));
 
     const actual = await readFile(file, 'utf8');
     assert.equal(actual, 'foo BAR baz\n');
@@ -804,7 +804,7 @@ describe('edit tool', () => {
     assert.equal(sc['ok'], true);
     assert.equal(sc['appliedEdits'], 1);
     assert.equal(typeof sc['resourceUri'], 'string');
-    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://result/'));
+    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://file/'));
 
     // Verify diff is present in dryRun
     assert.equal(typeof sc['diff'], 'string');
@@ -861,7 +861,7 @@ describe('edit tool', () => {
     const sc = getStructured(raw);
     assert.equal(sc['appliedEdits'], 2);
     assert.equal(typeof sc['resourceUri'], 'string');
-    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://result/'));
+    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://file/'));
     assert.equal(typeof sc['mimeType'], 'string');
     assert.equal(typeof sc['lineCount'], 'number');
 
@@ -892,7 +892,7 @@ describe('edit tool', () => {
     assert.equal(sc['linesAdded'], 2);
     assert.equal(sc['linesRemoved'], 1);
     assert.equal(typeof sc['resourceUri'], 'string');
-    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://result/'));
+    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://file/'));
     assert.match(sc['diff'] as string, /^--- dry-diff\.txt/m);
     assert.match(sc['diff'] as string, /^\+beta-1$/m);
     assert.match(sc['diff'] as string, /^\+beta-2$/m);

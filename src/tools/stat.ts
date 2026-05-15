@@ -281,7 +281,7 @@ async function handleGetMultipleFileInfo(
   if (!resourceStore) throw new Error('ResourceStore is required for batch stat');
   const { entry: statsEntry, link: statsLink } = putResource({
     store: resourceStore,
-    name: 'stats.json',
+    name: `${String(paths.length)} paths`,
     mimeType: 'application/json',
     kind: 'text',
     content: statsJson,
@@ -327,7 +327,7 @@ export const GET_FILE_INFO = defineTool({
     destructiveHint: false,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'optional' },
+  execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   defaultErrorCode: ErrorCode.NOT_FOUND,
   progress: (args) => {

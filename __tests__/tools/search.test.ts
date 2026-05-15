@@ -196,61 +196,10 @@ describe('grep tool', () => {
     assert.match(match['content'] as string, /rocket 🚀 line/);
   });
 
-  it('supports task-mode execution via the client tasks API', async () => {
-    const taskFile = join(env.tmpDir, 'task-grep.txt');
-    await writeFile(taskFile, 'needle here\nanother line\n', 'utf8');
-
-    const events: string[] = [];
-    const statuses: string[] = [];
-    let taskId: string | undefined;
-    let finalResult: ToolResult | undefined;
-
-    const stream = env.client.experimental.tasks.callToolStream(
-      {
-        name: 'search_text',
-        arguments: {
-          path: env.tmpDir,
-          searchPattern: 'needle',
-          pattern: '*.txt',
-          maxResults: 10,
-        },
-      },
-      { task: { ttl: 60_000 } },
-    );
-
-    for await (const message of stream) {
-      events.push(message.type);
-      if (message.type === 'taskCreated') {
-        taskId = message.task.taskId;
-      }
-      if (message.type === 'taskStatus') {
-        statuses.push(message.task.status);
-      }
-      if (message.type === 'result') {
-        finalResult = message.result as ToolResult;
-      }
-    }
-
-    assert.equal(events[0], 'taskCreated');
-    assert.ok(taskId, 'Expected task-mode execution to return a task id');
-    assert.ok(
-      statuses.some((status) => status === 'working' || status === 'completed'),
-      `Expected task status updates, got ${JSON.stringify(statuses)}`,
-    );
-    assert.ok(finalResult, 'Expected a final task result');
-    assertOk(finalResult);
-
-    const sc = getStructured(finalResult);
-    const matches = sc['matches'] as Record<string, unknown>[];
-    assert.ok(Array.isArray(matches) && matches.length > 0);
-    assert.equal(matches[0]?.['file'], 'task-grep.txt');
-
-    const storedTask = await env.client.experimental.tasks.getTask(taskId);
-    assert.equal(storedTask.status, 'completed');
-
-    const storedResult = await env.client.experimental.tasks.getTaskResult(taskId);
-    assert.equal(storedResult.isError, undefined);
-  });
+  // Task support is disabled for all tools to ensure progress messages display correctly
+  // in the UI (matching main branch behavior). Task display in MCP v2 is immutable,
+  // so tasks would show "Ran search_text" instead of rich progress messages.
+  // See: https://github.com/j0hanz/filesystem-mcp/blob/main/src/tools/read.ts (taskSupport: 'forbidden')
 
   it('pattern without / matches files in subdirectories (baseNameMatch)', async () => {
     // env already has sub/deep.txt with 'another apple here'
@@ -376,7 +325,10 @@ describe('find tool', () => {
     const linkBlock = result.content[1];
     assert.equal(linkBlock.type, 'resource_link');
     assert.ok((linkBlock as { uri: string }).uri.startsWith('filesystem-mcp://result/'));
-    assert.equal((linkBlock as { name: string }).name, 'search-results.json');
+    assert.ok(
+      (linkBlock as { name: string }).name.endsWith(' files'),
+      `Expected resource name to end with ' files', got '${(linkBlock as { name: string }).name}'`,
+    );
 
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
