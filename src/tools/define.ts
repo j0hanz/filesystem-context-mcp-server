@@ -322,7 +322,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
                 // ignore progressDone failures — best effort
               }
             }
-            const doneMessage = `done: ${plainMessage('done', doneCtx)}`;
+            const doneMessage = plainMessage('done', doneCtx);
             progressClosed = true;
             progressSession.complete(doneMessage);
             await updateTaskStatus(doneMessage, { terminal: true });
@@ -351,7 +351,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
           } catch (error: unknown) {
             const errMsg = error instanceof Error ? error.message : String(error);
             stderrSink.updateCtx({ error: errMsg });
-            const failMessage = `fail: ${plainMessage('fail', { ...progressCtx, error: errMsg })}`;
+            const failMessage = plainMessage('fail', { ...progressCtx, error: errMsg });
             progressClosed = true;
             progressSession.fail(error, failMessage);
             await updateTaskStatus(failMessage, { terminal: true });

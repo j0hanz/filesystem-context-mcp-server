@@ -242,7 +242,7 @@ test('defineTool: with progress token and one tick => emits one progress notific
   assert.equal(payload.total, 1);
 });
 
-test('defineTool: task context start/tick/done path => updateTaskStatus is called three times', async (): Promise<void> => {
+test('defineTool: task context start/tick/done path => updateTaskStatus called three times, done has no prefix', async (): Promise<void> => {
   const updateTaskStatusCalls: { taskId: string; status: string; statusMessage: string }[] = [];
 
   const tool = defineTool({
@@ -286,7 +286,43 @@ test('defineTool: task context start/tick/done path => updateTaskStatus is calle
   );
   assert.match(updateTaskStatusCalls[0].statusMessage, /\bstart\b/i);
   assert.match(updateTaskStatusCalls[1].statusMessage, /\btick\b/i);
-  assert.match(updateTaskStatusCalls[2].statusMessage, /\bdone\b/i);
+  assert.ok(
+    !updateTaskStatusCalls[2].statusMessage.startsWith('done:'),
+    `expected no "done:" prefix in terminal status, got: ${updateTaskStatusCalls[2].statusMessage}`,
+  );
+});
+
+test('defineTool: done status message has no "done:" prefix', async (): Promise<void> => {
+  const updateTaskStatusCalls: { statusMessage: string }[] = [];
+
+  const tool = defineTool({
+    ...BASE_DEF,
+    progress: (_args) => ({ label: 'Test', subject: 'item' }),
+    run: async (_args, ctx) => {
+      ctx.onProgress?.({ current: 1, total: 1 });
+      return { structured: { ok: true as const, result: 'success' }, text: 'test' };
+    },
+  });
+  const capture: HandlerCapture = { handler: undefined };
+  tool.register(makeTestDeps(makeMockServer(capture)));
+
+  await runCapturedHandler(capture, { message: 'hello' }, {
+    mcpReq: fakeMcpReq(),
+    task: {
+      id: 'task-prefix',
+      store: {
+        updateTaskStatus: async (_taskId: string, _status: unknown, statusMessage?: unknown) => {
+          updateTaskStatusCalls.push({
+            statusMessage: typeof statusMessage === 'string' ? statusMessage : '',
+          });
+        },
+      },
+    },
+  } as unknown as ServerContext);
+
+  const doneMsg = updateTaskStatusCalls[updateTaskStatusCalls.length - 1]?.statusMessage ?? '';
+  assert.ok(!doneMsg.startsWith('done:'), `expected no "done:" prefix, got: ${doneMsg}`);
+  assert.ok(doneMsg.startsWith('Test:'), `expected message to start with label, got: ${doneMsg}`);
 });
 
 test('defineTool: delayed tick after completion does not overwrite terminal status', async (): Promise<void> => {
@@ -334,7 +370,10 @@ test('defineTool: delayed tick after completion does not overwrite terminal stat
     ['task-delayed-tick', 'task-delayed-tick'],
   );
   assert.match(updateTaskStatusCalls[0].statusMessage, /\bstart\b/i);
-  assert.match(updateTaskStatusCalls[1].statusMessage, /\bdone\b/i);
+  assert.ok(
+    !updateTaskStatusCalls[1].statusMessage.startsWith('done:'),
+    `expected no "done:" prefix in terminal status, got: ${updateTaskStatusCalls[1].statusMessage}`,
+  );
 });
 
 test('defineTool: delayed non-task tick after completion does not emit progress notification', async (): Promise<void> => {
