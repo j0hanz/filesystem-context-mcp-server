@@ -1336,6 +1336,10 @@
                 "description": "Present when file was cut",
                 "$ref": "#/$defs/Continuation"
               },
+              "bytesRead": {
+                "description": "Bytes returned",
+                "$ref": "#/$defs/NonNegInt"
+              },
               "error": {
                 "description": "Per-file error",
                 "$ref": "#/$defs/PerFileError"

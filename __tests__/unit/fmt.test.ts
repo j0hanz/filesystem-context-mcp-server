@@ -81,6 +81,37 @@ describe('plainMessage', () => {
   });
 });
 
+describe('Read progress subject format', () => {
+  it('line range is embedded in subject as name:start-end', () => {
+    const msg = plainMessage('done', {
+      label: 'Read',
+      subject: 'tasks.ts:10-50',
+      detail: '2.3 KB',
+    });
+    assert.equal(msg, 'Read: tasks.ts:10-50  2.3 KB');
+  });
+
+  it('line range with open end uses ellipsis', () => {
+    const msg = plainMessage('done', {
+      label: 'Read',
+      subject: 'tasks.ts:10-…',
+      detail: '1.1 KB',
+    });
+    assert.equal(msg, 'Read: tasks.ts:10-…  1.1 KB');
+  });
+});
+
+describe('Read progressDone multi-file format', () => {
+  it('multi-file detail is total bytes only (count is in subject)', () => {
+    const msg = plainMessage('done', {
+      label: 'Read',
+      subject: '3 files',
+      detail: '143 KB',
+    });
+    assert.equal(msg, 'Read: 3 files  143 KB');
+  });
+});
+
 describe('ansiLine', () => {
   // Strip ANSI codes for readable assertions
   const strip = (s: string): string => s.replace(ANSI_ESCAPE_RE, '');

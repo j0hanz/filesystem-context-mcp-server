@@ -134,6 +134,7 @@ const ReadManyItemSchema = z.strictObject({
   startLine: PositiveInt.optional().describe('Start line'),
   endLine: PositiveInt.optional().describe('End line'),
   continuation: ContinuationSchema.optional().describe('Present when file was cut'),
+  bytesRead: NonNegInt.optional().describe('Bytes returned'),
   error: PerFileErrorSchema.optional().describe('Per-file error'),
 });
 
@@ -674,6 +675,7 @@ type ReadManyResultWithResource = Omit<ReadMultipleResult, 'error'> & {
   resourceUri?: string;
   mimeType?: string;
   kind?: 'text' | 'binary' | 'image' | 'audio' | 'pdf';
+  bytesRead?: number;
   resourceLink?: ReturnType<typeof putResource>['link'];
 };
 
@@ -691,6 +693,7 @@ function toStructuredReadManyResult(result: ReadManyResultWithResource): ReadMan
     totalLines: result.totalLines,
     linesRead: result.linesRead,
     continuation: buildReadContinuation(result),
+    bytesRead: result.bytesRead,
     error: result.error,
   });
 }
@@ -703,6 +706,7 @@ function maybeExternalizeReadManyResult(
   const baseResult: ReadManyResultWithResource = {
     ...rest,
     ...(error ? { error: Problem.fromUnknown(error, ErrorCode.UNKNOWN, result.path) } : {}),
+    ...(result.content ? { bytesRead: Buffer.byteLength(result.content, 'utf8') } : {}),
   };
   if (!result.content || !resourceStore) return baseResult;
   const contentSample = Buffer.from(result.content.slice(0, MIME_SAMPLE_SIZE));
@@ -719,6 +723,7 @@ function maybeExternalizeReadManyResult(
     resourceUri: entry.uri,
     mimeType: mimeInfo.mimeType,
     kind: mimeInfo.kind,
+    bytesRead: entry.size,
     resourceLink: link,
   };
 }
@@ -813,7 +818,9 @@ export const READ_FILE = defineTool({
       const end = args.length !== undefined ? args.offset + args.length - 1 : '…';
       scope = `bytes ${args.offset}–${String(end)}`;
     } else if (args.startLine !== undefined) {
-      scope = `lines ${args.startLine}–${String(args.endLine ?? '…')}`;
+      const end = args.endLine ?? '…';
+      const subject = `${name}:${args.startLine}-${String(end)}`;
+      return { label: READ_TOOL_LABEL, subject };
     } else if (args.head !== undefined) {
       scope = `head ${args.head}`;
     } else if (args.tail !== undefined) {
@@ -823,7 +830,8 @@ export const READ_FILE = defineTool({
   },
   progressDone: (args, result) => {
     if (args.paths !== undefined && result.results) {
-      return { detail: `${result.results.length} files` };
+      const totalBytes = result.results.reduce((sum, r) => sum + (r.bytesRead ?? 0), 0);
+      return { detail: formatBytes(totalBytes) };
     }
     if (result.bytesRead !== undefined) {
       return { detail: formatBytes(result.bytesRead) };
