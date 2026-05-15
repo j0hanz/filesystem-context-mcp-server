@@ -266,7 +266,13 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
 
           try {
             const result = await def.run(parsedArgs, toolCtx);
-            const doneMessage = plainMessage('done', progressCtx);
+            const doneCtx: ProgressCtx = def.progressDone
+              ? {
+                  ...progressCtx,
+                  ...def.progressDone(parsedArgs, result.structured),
+                }
+              : progressCtx;
+            const doneMessage = plainMessage('done', doneCtx);
             progressClosed = true;
             progressSession.complete(doneMessage);
             // Final notification: current > all previous ticks so clients see monotonic progress.

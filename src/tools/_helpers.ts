@@ -75,6 +75,10 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / GIB_LOCAL).toFixed(1)} GB`;
 }
 
+export function formatCount(count: number, singular: string, plural = `${singular}s`): string {
+  return `${String(count)} ${count === 1 ? singular : plural}`;
+}
+
 // ============ Resource Store Helpers ============
 
 interface PutResourceParams {

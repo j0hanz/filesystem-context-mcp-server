@@ -43,24 +43,20 @@ describe('progress message contract (tool shaping)', () => {
     );
   });
 
-  it('tool definitions do not use progressDone augmentation', async () => {
-    const files = [
-      'src/tools/read.ts',
-      'src/tools/create.ts',
-      'src/tools/move.ts',
-      'src/tools/delete-file.ts',
-      'src/tools/edit.ts',
-      'src/tools/list.ts',
-      'src/tools/stat.ts',
-      'src/tools/calculate-hash.ts',
-      'src/tools/replace-in-files.ts',
-      'src/tools/search-content.ts',
-      'src/tools/search-files.ts',
-    ];
+  it('find_files uses progressDone to report match counts', async () => {
+    const src = await readFile('src/tools/search-files.ts', 'utf8');
+    assert.match(src, /\bprogressDone\s*:\s*\(_args, result\)\s*=>/u);
+    assert.match(src, /formatCount\(result\.totalMatches \?\? 0, 'match', 'matches'\)/u);
+  });
 
-    for (const file of files) {
-      const src = await readFile(file, 'utf8');
-      assert.doesNotMatch(src, /\bprogressDone\s*:/u, `${file} still defines progressDone`);
-    }
+  it('search_text uses progressDone to report match and file counts', async () => {
+    const src = await readFile('src/tools/search-content.ts', 'utf8');
+    assert.match(src, /\bprogressDone\s*:\s*\(_args, result\)\s*=>/u);
+    assert.match(
+      src,
+      /buildSearchMatchDetail\(result\.totalMatches \?\? 0, result\.filesMatched \?\? 0\)/u,
+    );
+    assert.match(src, /formatCount\(totalMatches, 'match', 'matches'\)/u);
+    assert.match(src, /formatCount\(filesMatched, 'file', 'files'\)/u);
   });
 });

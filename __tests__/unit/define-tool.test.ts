@@ -90,7 +90,7 @@ function filterNotificationsByMethod(
 
 function getProgressPayloads(
   notifications: unknown[],
-): { progressToken?: unknown; progress?: unknown; total?: unknown }[] {
+): { progressToken?: unknown; progress?: unknown; total?: unknown; message?: unknown }[] {
   return filterNotificationsByMethod(notifications, 'notifications/progress').map(
     (notification) => {
       if (!notification.params || typeof notification.params !== 'object') return {};
@@ -114,7 +114,12 @@ const BASE_DEF = {
   description: 'A tool for testing defineTool',
   input: TestInputSchema,
   output: TestOutputSchema,
-  annotations: 'readOnly' as const,
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
   task: 'forbidden' as const,
   run: async () => ({ structured: { ok: true as const, result: 'success' }, text: 'test' }),
 };
@@ -268,16 +273,17 @@ test('defineTool: done progress message does not carry "done:" prefix', async ()
   } as unknown as ServerContext);
 
   const progressPayloads = getProgressPayloads(request.notifications);
-  const doneMsg = progressPayloads[progressPayloads.length - 1]?.message ?? '';
+  const doneMessage = progressPayloads[progressPayloads.length - 1]?.message;
+  const doneMsg = typeof doneMessage === 'string' ? doneMessage : '';
   assert.ok(!doneMsg.startsWith('done:'), `expected no "done:" prefix, got: ${doneMsg}`);
   assert.ok(doneMsg.startsWith('Test:'), `expected message to start with label, got: ${doneMsg}`);
 });
 
-test('defineTool: ignores progressDone augmentation for done message text', async (): Promise<void> => {
+test('defineTool: applies progressDone augmentation to done message text', async (): Promise<void> => {
   const tool = defineTool({
     ...BASE_DEF,
     progress: (_args) => ({ label: 'Test', subject: 'item' }),
-    progressDone: (_args, _result) => ({ detail: 'SHOULD_NOT_APPEAR' }),
+    progressDone: (_args, _result) => ({ detail: '1 match' }),
     run: async (_args, ctx) => {
       ctx.onProgress?.({ current: 1, total: 1 });
       return { structured: { ok: true as const, result: 'success' }, text: 'test' };
@@ -293,9 +299,9 @@ test('defineTool: ignores progressDone augmentation for done message text', asyn
   } as unknown as ServerContext);
 
   const progressPayloads = getProgressPayloads(request.notifications);
-  const doneMsg = String(progressPayloads[progressPayloads.length - 1]?.message ?? '');
-  assert.equal(doneMsg, 'Test: item');
-  assert.ok(!doneMsg.includes('SHOULD_NOT_APPEAR'));
+  const doneMessage = progressPayloads[progressPayloads.length - 1]?.message;
+  const doneMsg = typeof doneMessage === 'string' ? doneMessage : '';
+  assert.equal(doneMsg, 'Test: item · 1 match');
 });
 
 test('defineTool: delayed tick after completion is suppressed, only start+done notifications emitted', async (): Promise<void> => {
@@ -473,11 +479,17 @@ test('defineTool: tool_execution wide event uses SDK-aligned progress/status cou
   assert.equal(message.includes('task_status_updates_requested='), false);
 });
 
-test('defineTool: all annotation types are accepted', (): void => {
-  for (const annotations of ['readOnly', 'idempotentWrite', 'destructiveWrite'] as const) {
+test('defineTool: annotation objects are accepted', (): void => {
+  const cases = [
+    { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+  ] as const;
+
+  for (const annotations of cases) {
     const tool = defineTool({ ...BASE_DEF, annotations });
     tool.register(makeTestDeps(makeMockServer()));
-    assert.equal(tool.annotations, annotations);
+    assert.deepEqual(tool.annotations, annotations);
   }
 });
 

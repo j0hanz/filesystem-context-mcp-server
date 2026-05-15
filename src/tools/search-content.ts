@@ -49,6 +49,7 @@ import {
 import {
   decodeOffsetCursor,
   encodeOffsetCursor,
+  formatCount,
   putResource,
   truncateProgressPattern,
 } from './_helpers.js';
@@ -1362,6 +1363,13 @@ function buildHeading(totalMatches: number, visibleMatches: number): string {
 
   return `Found ${totalMatches} (showing first ${visibleMatches}):`;
 }
+
+function buildSearchMatchDetail(totalMatches: number, filesMatched: number): string {
+  const matchDetail = formatCount(totalMatches, 'match', 'matches');
+  if (filesMatched <= 0) return matchDetail;
+  return `${matchDetail} · ${formatCount(filesMatched, 'file', 'files')}`;
+}
+
 function buildSearchStructured(
   summary: SearchSummary,
   matches: SearchMatchPayload[],
@@ -1655,6 +1663,9 @@ export const SEARCH_CONTENT = defineTool({
     label: 'Search',
     subject: truncateProgressPattern(args.searchPattern),
   }),
+  progressDone: (_args, result) => ({
+    detail: buildSearchMatchDetail(result.totalMatches ?? 0, result.filesMatched ?? 0),
+  }),
   run: async (args, ctx) => {
     const onProgress = (params: { current: number; total?: number }): void => {
       ctx.onProgress?.({
@@ -1671,8 +1682,8 @@ export const SEARCH_CONTENT = defineTool({
     );
     const summary =
       `search-content: '${args.searchPattern}'` +
-      ` \u00b7 ${String(matchCount)} matches` +
-      ` in ${String(fileCount)} files`;
+      ` \u00b7 ${formatCount(matchCount, 'match', 'matches')}` +
+      ` in ${formatCount(fileCount, 'file', 'files')}`;
     if (link) {
       return { structured, text: summary, resources: [link] };
     }

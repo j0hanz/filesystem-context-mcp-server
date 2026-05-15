@@ -48,6 +48,7 @@ import {
 import {
   decodeOffsetCursor,
   encodeOffsetCursor,
+  formatCount,
   putResource,
   truncateProgressPattern,
 } from './_helpers.js';
@@ -648,6 +649,9 @@ export const SEARCH_FILES = defineTool({
     label: 'Find',
     subject: truncateProgressPattern(args.pattern),
   }),
+  progressDone: (_args, result) => ({
+    detail: formatCount(result.totalMatches ?? 0, 'match', 'matches'),
+  }),
   run: async (args, ctx) => {
     const onProgress = (params: { current: number; total?: number }): void => {
       ctx.onProgress?.({
@@ -662,7 +666,11 @@ export const SEARCH_FILES = defineTool({
       onProgress,
       ctx.resourceStore,
     );
-    const summary = `search-files: '${args.pattern}' \u00b7 ${String(count)} matches`;
+    const summary = `search-files: '${args.pattern}' \u00b7 ${formatCount(
+      structured.totalMatches ?? count,
+      'match',
+      'matches',
+    )}`;
     if (link) {
       return { structured, text: summary, resources: [link] };
     }
