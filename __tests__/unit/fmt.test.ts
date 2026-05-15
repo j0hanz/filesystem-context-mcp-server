@@ -143,6 +143,25 @@ describe('Stat done format', () => {
     });
     assert.equal(msg, 'Stat: src/core/  47 entries');
   });
+
+  it('empty directory: omits entry count detail when zero', () => {
+    // progressDone returns {} when total is 0, so ctx has no detail
+    const msg = plainMessage('done', {
+      label: 'Stat',
+      subject: 'empty-dir/',
+      detail: undefined,
+    });
+    assert.equal(msg, 'Stat: empty-dir/');
+  });
+
+  it('single-path mode: no entry count when fileCount/dirCount undefined', () => {
+    // Single-path results don't have fileCount/dirCount, so returns {}
+    const msg = plainMessage('done', {
+      label: 'Stat',
+      subject: 'file.txt',
+    });
+    assert.equal(msg, 'Stat: file.txt');
+  });
 });
 
 describe('ansiLine', () => {
