@@ -134,6 +134,17 @@ describe('Hash done format', () => {
   });
 });
 
+describe('Stat done format', () => {
+  it('single directory: shows total entry count', () => {
+    const msg = plainMessage('done', {
+      label: 'Stat',
+      subject: 'src/core/',
+      detail: '47 entries',
+    });
+    assert.equal(msg, 'Stat: src/core/  47 entries');
+  });
+});
+
 describe('ansiLine', () => {
   // Strip ANSI codes for readable assertions
   const strip = (s: string): string => s.replace(ANSI_ESCAPE_RE, '');
