@@ -321,6 +321,11 @@ export const CALCULATE_HASH = defineTool({
     label: 'Hash',
     subject: basename(args.path),
   }),
+  progressDone: (_args, result) => {
+    const primaryAlgo = result.algorithms[0] ?? 'sha256';
+    const hash = result.hashes[primaryAlgo] ?? '';
+    return { detail: `${primaryAlgo}:${hash.slice(0, 8)}…` };
+  },
   run: async (args, ctx) => {
     const onProgress = ctx.onProgress
       ? ({ current, total }: { total?: number; current: number }): void => {

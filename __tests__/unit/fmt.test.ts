@@ -123,6 +123,17 @@ describe('Edit done format', () => {
   });
 });
 
+describe('Hash done format', () => {
+  it('shows algo:8chars… for a sha256 hash', () => {
+    const msg = plainMessage('done', {
+      label: 'Hash',
+      subject: 'large-file.bin',
+      detail: 'sha256:a1b2c3d4…',
+    });
+    assert.equal(msg, 'Hash: large-file.bin  sha256:a1b2c3d4…');
+  });
+});
+
 describe('ansiLine', () => {
   // Strip ANSI codes for readable assertions
   const strip = (s: string): string => s.replace(ANSI_ESCAPE_RE, '');
