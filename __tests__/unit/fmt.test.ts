@@ -164,6 +164,19 @@ describe('Stat done format', () => {
   });
 });
 
+describe('List done format', () => {
+  it('entry count has no "included" qualifier', () => {
+    const msg = plainMessage('done', {
+      label: 'List',
+      subject: 'src/tools/',
+      detail: '23 entries',
+    });
+    assert.equal(msg, 'List: src/tools/  23 entries');
+    // Verify "included" is absent
+    assert.ok(!msg.includes('included'), 'expected no "included" in done line');
+  });
+});
+
 describe('ansiLine', () => {
   // Strip ANSI codes for readable assertions
   const strip = (s: string): string => s.replace(ANSI_ESCAPE_RE, '');
