@@ -18,12 +18,7 @@ import { performance } from 'node:perf_hooks';
 
 import type { z } from 'zod/v4';
 
-import {
-  createDetailedError,
-  ErrorCode,
-  formatDetailedError,
-  getSuggestion,
-} from '../core/errors.js';
+import { ErrorCode, Problem } from '../core/errors.js';
 import type { ProgressCtx } from '../core/fmt.js';
 import { plainMessage } from '../core/fmt.js';
 import {
@@ -321,22 +316,11 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
               errorMessage = String(error);
             }
             const defaultCode = def.defaultErrorCode ?? ErrorCode.UNKNOWN;
-            const detailed = createDetailedError(error);
-            const resolvedCode =
-              detailed.code === ErrorCode.UNKNOWN || detailed.code === ErrorCode.IO_ERROR
-                ? defaultCode
-                : detailed.code;
-            const defaultSuggestion =
-              resolvedCode !== detailed.code ? getSuggestion(resolvedCode) : undefined;
-            const errorText = formatDetailedError({
-              ...detailed,
-              code: resolvedCode,
-              ...(defaultSuggestion !== undefined ? { suggestion: defaultSuggestion } : {}),
-            });
+            const { code: errorCode, text: errorText } = Problem.toText(error, defaultCode);
             const errorResult = {
               content: [{ type: 'text' as const, text: errorText }],
               isError: true as const,
-              errorCode: resolvedCode,
+              errorCode,
             };
             return errorResult;
           }

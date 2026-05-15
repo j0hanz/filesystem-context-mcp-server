@@ -87,6 +87,10 @@ export const Problem = {
       ...(suggestion !== undefined ? { suggestion } : {}),
     };
   },
+  toText(error: unknown, defaultCode: ErrorCode): { code: ErrorCode; text: string } {
+    const resolved = Problem.fromUnknown(error, defaultCode);
+    return { code: resolved.code, text: formatDetailedError(resolved) };
+  },
 } as const;
 
 // ─── Suggestions ─────────────────────────────────────────────────────────────
@@ -418,7 +422,7 @@ export function createDetailedError(
   };
 }
 
-export function formatDetailedError(error: DetailedError): string {
+function formatDetailedError(error: DetailedError): string {
   const lines: string[] = [`${error.code}: ${error.message}`];
   if (error.path && !error.message.includes(error.path)) {
     lines.push(error.path);
