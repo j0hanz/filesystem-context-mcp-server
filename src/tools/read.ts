@@ -826,24 +826,13 @@ export const READ_FILE = defineTool({
       scope = `bytes ${args.offset}–${String(end)}`;
     } else if (args.startLine !== undefined) {
       const end = args.endLine ?? '…';
-      const subject = `${name}:${args.startLine}-${String(end)}`;
-      return { label: READ_TOOL_LABEL, subject };
+      scope = `${args.startLine}-${String(end)}`;
     } else if (args.head !== undefined) {
       scope = `head ${args.head}`;
     } else if (args.tail !== undefined) {
       scope = `tail ${args.tail}`;
     }
     return { label: READ_TOOL_LABEL, subject: name, ...(scope ? { scope } : {}) };
-  },
-  progressDone: (args, result) => {
-    if (args.paths !== undefined && result.results) {
-      const totalBytes = result.results.reduce((sum, r) => sum + (r.bytesRead ?? 0), 0);
-      return { detail: formatBytes(totalBytes) };
-    }
-    if (result.bytesRead !== undefined) {
-      return { detail: formatBytes(result.bytesRead) };
-    }
-    return {};
   },
   inputSchemaAugment: (schema) => ({
     ...schema,

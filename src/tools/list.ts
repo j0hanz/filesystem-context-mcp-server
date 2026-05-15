@@ -349,9 +349,6 @@ export const LIST = defineTool({
     label: 'List',
     subject: args.path ? basename(args.path) : '.',
   }),
-  progressDone: (_, result) => ({
-    detail: `${result.totalEntries} entries`,
-  }),
   run: async (args, ctx) => {
     const output = await handleList(
       args,

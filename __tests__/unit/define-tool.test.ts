@@ -273,6 +273,31 @@ test('defineTool: done progress message does not carry "done:" prefix', async ()
   assert.ok(doneMsg.startsWith('Test:'), `expected message to start with label, got: ${doneMsg}`);
 });
 
+test('defineTool: ignores progressDone augmentation for done message text', async (): Promise<void> => {
+  const tool = defineTool({
+    ...BASE_DEF,
+    progress: (_args) => ({ label: 'Test', subject: 'item' }),
+    progressDone: (_args, _result) => ({ detail: 'SHOULD_NOT_APPEAR' }),
+    run: async (_args, ctx) => {
+      ctx.onProgress?.({ current: 1, total: 1 });
+      return { structured: { ok: true as const, result: 'success' }, text: 'test' };
+    },
+  });
+
+  const capture: HandlerCapture = { handler: undefined };
+  tool.register(makeTestDeps(makeMockServer(capture)));
+
+  const request = fakeMcpReqWithProgressToken('token-ignore-progressdone');
+  await runCapturedHandler(capture, { message: 'hello' }, {
+    mcpReq: request,
+  } as unknown as ServerContext);
+
+  const progressPayloads = getProgressPayloads(request.notifications);
+  const doneMsg = String(progressPayloads[progressPayloads.length - 1]?.message ?? '');
+  assert.equal(doneMsg, 'Test: item');
+  assert.ok(!doneMsg.includes('SHOULD_NOT_APPEAR'));
+});
+
 test('defineTool: delayed tick after completion is suppressed, only start+done notifications emitted', async (): Promise<void> => {
   const tool = defineTool({
     ...BASE_DEF,

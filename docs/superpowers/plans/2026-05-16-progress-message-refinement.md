@@ -168,7 +168,6 @@ Create `__tests__/unit/progress-message-contract.test.ts` with contract checks a
 ```ts
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-
 import { describe, it } from 'node:test';
 
 describe('progress message contract (tool shaping)', () => {

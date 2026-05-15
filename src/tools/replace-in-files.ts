@@ -644,13 +644,9 @@ export const SEARCH_AND_REPLACE = defineTool({
     const dryLabel = args.dryRun ? ' [dry run]' : '';
     return {
       label: `Replace${dryLabel}`,
-      subject: `"${truncateProgressPattern(args.searchPattern)}" → "${truncateProgressPattern(args.replacement)}"`,
-      scope: args.path ?? args.pattern ?? '.',
+      subject: `${truncateProgressPattern(args.searchPattern)} → ${truncateProgressPattern(args.replacement)}`,
     };
   },
-  progressDone: (_, result) => ({
-    detail: `${result.filesModified} files · ${result.totalMatches} matches`,
-  }),
   run: async (args, ctx) => {
     const truncatedPattern = truncateProgressPattern(args.searchPattern);
     const onProgress = (params: { current: number; total?: number }): void => {

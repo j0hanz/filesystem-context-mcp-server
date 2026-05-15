@@ -1655,9 +1655,6 @@ export const SEARCH_CONTENT = defineTool({
     label: 'Search',
     subject: truncateProgressPattern(args.searchPattern),
   }),
-  progressDone: (_, result) => ({
-    detail: `${result.totalMatches ?? 0} matches · ${result.filesMatched ?? 0} files`,
-  }),
   run: async (args, ctx) => {
     const onProgress = (params: { current: number; total?: number }): void => {
       ctx.onProgress?.({

@@ -282,12 +282,6 @@ export const DELETE_FILE = defineTool({
     label: 'Delete',
     subject: args.paths.map((p) => basename(p)).join(' · '),
   }),
-  progressDone: (_args, result) => {
-    const deleted = result.paths ?? (result.path ? [result.path] : []);
-    return {
-      detail: `${String(deleted.length)} files`,
-    };
-  },
   run: async (args, ctx) => {
     const structured = await handleDelete(args, ctx.pathGuard, ctx.signal, ctx.elicitInput);
     const deleted = structured.paths ?? (structured.path ? [structured.path] : []);

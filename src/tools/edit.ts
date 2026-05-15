@@ -759,19 +759,5 @@ export const EDIT = defineTool({
     }
     return { label: `Edit${dryLabel}`, subject };
   },
-  progressDone: (_args, result) => {
-    if (result.results) {
-      const parts = result.results.map(
-        (item) => `${basename(item.path)}+${item.linesAdded ?? 0}-${item.linesRemoved ?? 0}`,
-      );
-      return { subject: parts.join(' · ') };
-    }
-    if (result.path !== undefined) {
-      return {
-        subject: `${basename(result.path)}+${result.linesAdded ?? 0}-${result.linesRemoved ?? 0}`,
-      };
-    }
-    return {};
-  },
   run: async (args, ctx) => dispatch(args, ctx),
 });

@@ -647,10 +647,6 @@ export const SEARCH_FILES = defineTool({
   progress: (args) => ({
     label: 'Find',
     subject: truncateProgressPattern(args.pattern),
-    scope: args.path ? basename(args.path) : '.',
-  }),
-  progressDone: (_, result) => ({
-    detail: `${result.results.length} files`,
   }),
   run: async (args, ctx) => {
     const onProgress = (params: { current: number; total?: number }): void => {

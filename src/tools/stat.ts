@@ -336,10 +336,6 @@ export const GET_FILE_INFO = defineTool({
     }
     return { label: 'Stat', subject: args.path ?? '' };
   },
-  progressDone: (_args, result) => {
-    const total = (result.fileCount ?? 0) + (result.dirCount ?? 0);
-    return total > 0 ? { detail: `${total} entries` } : {};
-  },
   run: async (args, ctx) => {
     if (args.paths !== undefined) {
       const paths = args.paths;
