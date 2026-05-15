@@ -112,6 +112,17 @@ describe('Read progressDone multi-file format', () => {
   });
 });
 
+describe('Edit done format', () => {
+  it('single-file: scope is absent when subject has diff stats', () => {
+    const msg = plainMessage('done', {
+      label: 'Edit',
+      subject: 'tasks.ts+2-2',
+      scope: undefined,
+    });
+    assert.equal(msg, 'Edit: tasks.ts+2-2');
+  });
+});
+
 describe('ansiLine', () => {
   // Strip ANSI codes for readable assertions
   const strip = (s: string): string => s.replace(ANSI_ESCAPE_RE, '');
