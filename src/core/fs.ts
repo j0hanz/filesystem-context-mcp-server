@@ -12,7 +12,7 @@ import {
   unlink,
   writeFile,
 } from 'node:fs/promises';
-import { extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { extname, isAbsolute, join, posix, relative, resolve } from 'node:path';
 import { text } from 'node:stream/consumers';
 import { pipeline } from 'node:stream/promises';
 
@@ -1102,6 +1102,7 @@ interface GlobEntriesOptions {
   onlyFiles: boolean;
   stats: boolean;
   suppressErrors?: boolean;
+  respectGitignore?: boolean;
 }
 
 type GlobMatch = string | GlobDirentLike;
@@ -1113,6 +1114,7 @@ interface NormalizedGlob {
   useDirents: boolean;
   suppressErrors: boolean;
   maxDepth?: number;
+  respectGitignore: boolean;
 }
 
 const GLOB_MAGIC_RE = /[*?[\]{}!]/u;
@@ -1238,6 +1240,10 @@ function assertOptionsShape(options: GlobEntriesOptions): void {
   if (opts['suppressErrors'] !== undefined && typeof opts['suppressErrors'] !== 'boolean') {
     throw new TypeError('globEntries: options.suppressErrors must be a boolean');
   }
+
+  if (opts['respectGitignore'] !== undefined && typeof opts['respectGitignore'] !== 'boolean') {
+    throw new TypeError('globEntries: options.respectGitignore must be a boolean');
+  }
 }
 
 function normalizeGlobOptions(options: GlobEntriesOptions): NormalizedGlob {
@@ -1254,6 +1260,7 @@ function normalizeGlobOptions(options: GlobEntriesOptions): NormalizedGlob {
     exclude: options.excludePatterns.map(toPosixPath),
     useDirents: !options.stats && !options.followSymbolicLinks,
     suppressErrors: options.suppressErrors ?? false,
+    respectGitignore: options.respectGitignore ?? false,
   };
 
   if (options.maxDepth !== undefined) {
@@ -1406,7 +1413,10 @@ class AsyncGlobBatchQueue {
   }
 }
 
-async function* nativeGlobEntries(options: GlobEntriesOptions): AsyncGenerator<GlobEntry> {
+async function* nativeGlobEntries(
+  options: GlobEntriesOptions,
+  gitignoreMatcher?: Ignore | null,
+): AsyncGenerator<GlobEntry> {
   const plan = normalizeGlobOptions(options);
   const seen = new Set<string>();
 
@@ -1423,13 +1433,47 @@ async function* nativeGlobEntries(options: GlobEntriesOptions): AsyncGenerator<G
     suppressErrors,
   };
 
+  const forceFileTypes = plan.useDirents || Boolean(gitignoreMatcher);
+  const excludeFunc = gitignoreMatcher
+    ? (match: GlobMatch) => {
+        const relPath =
+          typeof match === 'string'
+            ? match
+            : match.parentPath
+              ? relative(cwd, join(match.parentPath, match.name))
+              : match.name;
+
+        const posixRel = toPosixPath(relPath);
+
+        // Gitignore check
+        const isDir = typeof match === 'string' ? false : match.isDirectory();
+        if (
+          isIgnoredByGitignore(gitignoreMatcher, cwd, '', {
+            relativePath: posixRel,
+            isDirectory: isDir,
+          })
+        ) {
+          return true;
+        }
+
+        // Also check explicit exclude patterns
+        if (plan.exclude.length > 0) {
+          for (const ex of plan.exclude) {
+            if (posix.matchesGlob(posixRel, ex)) return true;
+          }
+        }
+
+        return false;
+      }
+    : plan.exclude;
+
   for (const pattern of plan.patterns) {
     let iterable: AsyncIterable<GlobMatch>;
     try {
       iterable = fsGlob(pattern, {
         cwd,
-        exclude: plan.exclude,
-        withFileTypes: plan.useDirents,
+        exclude: excludeFunc,
+        withFileTypes: forceFileTypes,
       }) as AsyncIterable<GlobMatch>;
     } catch (error) {
       if (suppressErrors) continue;
@@ -1454,7 +1498,15 @@ async function* nativeGlobEntries(options: GlobEntriesOptions): AsyncGenerator<G
       const queue = new AsyncGlobBatchQueue(context);
       try {
         for await (const match of iterable) {
-          queue.add(match as string);
+          let strMatch: string;
+          if (typeof match === 'string') {
+            strMatch = match;
+          } else {
+            strMatch = match.parentPath
+              ? relative(cwd, join(match.parentPath, match.name))
+              : match.name;
+          }
+          queue.add(strMatch);
           if (queue.isFull()) {
             yield* queue.flush();
           }
@@ -1482,10 +1534,15 @@ export async function* globEntries(options: GlobEntriesOptions): AsyncGenerator<
 
   if (traceContext) publishOpsTraceStart(traceContext);
 
+  let gitignoreMatcher: Ignore | null = null;
+  if (options.respectGitignore) {
+    gitignoreMatcher = await loadRootGitignore(options.cwd);
+  }
+
   let ok = false;
   try {
     assertOptionsShape(options);
-    yield* nativeGlobEntries(options);
+    yield* nativeGlobEntries(options, gitignoreMatcher);
     ok = true;
   } catch (error: unknown) {
     if (traceContext) publishOpsTraceError(traceContext, error);
@@ -1508,6 +1565,7 @@ interface GlobConfig {
   stats?: boolean;
   maxDepth?: number;
   suppressErrors?: boolean;
+  respectGitignore?: boolean;
 }
 
 export function buildGlobOptions(config: GlobConfig): Parameters<typeof globEntries>[0] {
@@ -1529,6 +1587,10 @@ export function buildGlobOptions(config: GlobConfig): Parameters<typeof globEntr
 
   if (config.maxDepth !== undefined) {
     options.maxDepth = config.maxDepth;
+  }
+
+  if (config.respectGitignore !== undefined) {
+    options.respectGitignore = config.respectGitignore;
   }
 
   return options;

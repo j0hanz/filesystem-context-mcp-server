@@ -191,6 +191,7 @@ const SearchOptionsSchema = z.strictObject({
   includeHidden: z.boolean(),
   baseNameMatch: z.boolean(),
   caseSensitiveFileMatch: z.boolean(),
+  respectGitignore: z.boolean(),
 });
 
 type ResolvedOptions = z.infer<typeof SearchOptionsSchema>;
@@ -216,6 +217,7 @@ const SEARCH_CONTENT_DEFAULTS: ResolvedOptions = {
   includeHidden: false,
   baseNameMatch: true,
   caseSensitiveFileMatch: true,
+  respectGitignore: true,
 };
 
 const ERROR_SCAN_CANCELLED = 'Scan cancelled';
@@ -1087,6 +1089,7 @@ async function searchDirectory(
       onlyFiles: true,
       stats: false,
       suppressErrors: true,
+      respectGitignore: opts.respectGitignore,
       ...(maxDepth !== undefined ? { maxDepth } : {}),
     }),
   );
@@ -1456,6 +1459,7 @@ function buildSearchContentOptions(
     wholeWord: args.wholeWord,
     maxResults: args.maxResults,
     isLiteral: !args.isRegex,
+    respectGitignore: !args.includeIgnored,
   };
 
   if (args.contextLines !== undefined) options.contextLines = args.contextLines;

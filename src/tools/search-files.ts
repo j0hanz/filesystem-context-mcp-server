@@ -15,8 +15,6 @@ import {
   type EntryType,
   globEntries,
   isEntryAccessibleByType,
-  isIgnoredByGitignore,
-  loadRootGitignore,
   needsStatsForSort,
   resolveEntryType,
   resolveStopReason,
@@ -233,9 +231,7 @@ function handleSearchEntry(
 }
 
 interface CollectStreamContext {
-  root: string;
   rootDirectories: readonly string[];
-  gitignoreMatcher: Awaited<ReturnType<typeof loadRootGitignore>>;
   normalized: SearchFilesNormalized;
   needsStats: boolean;
   state: CollectState;
@@ -248,16 +244,7 @@ async function collectFromStream(
   signal: AbortSignal,
   context: CollectStreamContext,
 ): Promise<void> {
-  const {
-    root,
-    rootDirectories,
-    gitignoreMatcher,
-    normalized,
-    needsStats,
-    state,
-    accessDeps,
-    onProgress,
-  } = context;
+  const { rootDirectories, normalized, needsStats, state, accessDeps, onProgress } = context;
 
   for await (const entry of stream) {
     if (shouldStopCollecting(state, normalized, signal)) break;
@@ -266,18 +253,6 @@ async function collectFromStream(
       current: state.filesScanned,
       total: normalized.maxFilesScanned,
     });
-
-    if (
-      gitignoreMatcher &&
-      isIgnoredByGitignore(
-        gitignoreMatcher,
-        root,
-        entry.path,
-        entry.relativePath ? { relativePath: entry.relativePath } : {},
-      )
-    ) {
-      continue;
-    }
 
     const entryType = resolveEntryType(entry.dirent);
     if (!shouldIncludeEntry(entryType, normalized)) continue;
@@ -318,10 +293,6 @@ async function collectSearchResults(
   const state = createCollectState();
   const rootDirectories = [root];
 
-  const gitignoreMatcher = normalized.respectGitignore
-    ? await loadRootGitignore(root, signal)
-    : null;
-
   const accessDeps = {
     ...SEARCH_FILES_ACCESS_DEPS_BASE,
     isSensitivePath: (p: string) => pathGuard.isSensitive(p),
@@ -329,9 +300,7 @@ async function collectSearchResults(
   };
 
   await collectFromStream(stream, signal, {
-    root,
     rootDirectories,
-    gitignoreMatcher,
     normalized,
     needsStats,
     state,
