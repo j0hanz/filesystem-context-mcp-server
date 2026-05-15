@@ -17,21 +17,21 @@ describe('plainMessage', () => {
   it('start: label + subject + scope', () => {
     assert.equal(
       plainMessage('start', { label: 'Search', subject: 'async.*await', scope: 'src/' }),
-      'Search: async.*await  src/',
+      'Search: async.*await · src/',
     );
   });
 
   it('tick: subject + current/total', () => {
     assert.equal(
       plainMessage('tick', { label: 'Search', subject: 'async.*await', current: 45, total: 500 }),
-      'Search: async.*await  45/500',
+      'Search: async.*await · 45/500',
     );
   });
 
   it('tick: current only (no total)', () => {
     assert.equal(
       plainMessage('tick', { label: 'Search', subject: 'async.*await', current: 45 }),
-      'Search: async.*await  45',
+      'Search: async.*await · 45',
     );
   });
 
@@ -47,7 +47,7 @@ describe('plainMessage', () => {
         scope: 'src/',
         detail: '23 matches · 8 files',
       }),
-      'Search: async.*await  src/  23 matches · 8 files',
+      'Search: async.*await · src/ · 23 matches · 8 files',
     );
   });
 
@@ -61,7 +61,7 @@ describe('plainMessage', () => {
   it('done: scope omitted when undefined', () => {
     assert.equal(
       plainMessage('done', { label: 'Read', subject: 'tasks.ts', detail: '2.3 KB' }),
-      'Read: tasks.ts  2.3 KB',
+      'Read: tasks.ts · 2.3 KB',
     );
   });
 
@@ -72,7 +72,7 @@ describe('plainMessage', () => {
         subject: 'tasks.ts',
         error: 'EACCES: permission denied',
       }),
-      'Edit: tasks.ts  EACCES: permission denied',
+      'Edit: tasks.ts · EACCES: permission denied',
     );
   });
 
@@ -88,7 +88,7 @@ describe('Read progress subject format', () => {
       subject: 'tasks.ts:10-50',
       detail: '2.3 KB',
     });
-    assert.equal(msg, 'Read: tasks.ts:10-50  2.3 KB');
+    assert.equal(msg, 'Read: tasks.ts:10-50 · 2.3 KB');
   });
 
   it('line range with open end uses ellipsis', () => {
@@ -97,7 +97,7 @@ describe('Read progress subject format', () => {
       subject: 'tasks.ts:10-…',
       detail: '1.1 KB',
     });
-    assert.equal(msg, 'Read: tasks.ts:10-…  1.1 KB');
+    assert.equal(msg, 'Read: tasks.ts:10-… · 1.1 KB');
   });
 });
 
@@ -108,7 +108,7 @@ describe('Read progressDone multi-file format', () => {
       subject: '3 files',
       detail: '143 KB',
     });
-    assert.equal(msg, 'Read: 3 files  143 KB');
+    assert.equal(msg, 'Read: 3 files · 143 KB');
   });
 });
 
@@ -130,7 +130,7 @@ describe('Hash done format', () => {
       subject: 'large-file.bin',
       detail: 'sha256:a1b2c3d4…',
     });
-    assert.equal(msg, 'Hash: large-file.bin  sha256:a1b2c3d4…');
+    assert.equal(msg, 'Hash: large-file.bin · sha256:a1b2c3d4…');
   });
 });
 
@@ -141,7 +141,7 @@ describe('Stat done format', () => {
       subject: 'src/core/',
       detail: '47 entries',
     });
-    assert.equal(msg, 'Stat: src/core/  47 entries');
+    assert.equal(msg, 'Stat: src/core/ · 47 entries');
   });
 
   it('empty directory: omits entry count detail when zero', () => {
@@ -171,7 +171,7 @@ describe('List done format', () => {
       subject: 'src/tools/',
       detail: '23 entries',
     });
-    assert.equal(msg, 'List: src/tools/  23 entries');
+    assert.equal(msg, 'List: src/tools/ · 23 entries');
     // Verify "included" is absent
     assert.ok(!msg.includes('included'), 'expected no "included" in done line');
   });
@@ -205,7 +205,7 @@ describe('ansiLine', () => {
 
   it('plain text is embedded in ansi output', () => {
     const plain = strip(ansiLine('done', { label: 'Read', subject: 'tasks.ts', detail: '2.3 KB' }));
-    assert.ok(plain.includes('Read: tasks.ts  2.3 KB'));
+    assert.ok(plain.includes('Read: tasks.ts · 2.3 KB'));
   });
 
   it('+N and -N patterns are wrapped in ANSI codes', () => {

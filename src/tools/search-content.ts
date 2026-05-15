@@ -1654,7 +1654,6 @@ export const SEARCH_CONTENT = defineTool({
   progress: (args) => ({
     label: 'Search',
     subject: truncateProgressPattern(args.searchPattern),
-    scope: args.path ?? '.',
   }),
   progressDone: (_, result) => ({
     detail: `${result.totalMatches ?? 0} matches · ${result.filesMatched ?? 0} files`,

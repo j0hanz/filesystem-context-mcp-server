@@ -50,7 +50,7 @@ function buildBody(ctx: ProgressCtx, phase: Phase): string {
       break;
   }
 
-  return items.join('  ');
+  return items.join(' · ');
 }
 
 export function plainMessage(phase: Phase, ctx: ProgressCtx): string {

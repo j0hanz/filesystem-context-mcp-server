@@ -22,7 +22,7 @@ describe('StderrProgressSink', () => {
     it('emits nothing to stderr', () => {
       const lines: string[] = [];
       const sink = new StderrProgressSink(ctx, () => lines.push('written'));
-      sink.emit({ kind: 'tick', current: 45, total: 500, message: 'Search: async.*await  src/' });
+      sink.emit({ kind: 'tick', current: 45, total: 500, message: 'Search: async.*await · src/' });
       assert.equal(lines.length, 0);
     });
   });
@@ -48,7 +48,7 @@ describe('StderrProgressSink', () => {
     it('emits a start line for kind=tick with current === 0', () => {
       const lines: string[] = [];
       const sink = new StderrProgressSink(ctx, (line) => lines.push(line));
-      sink.emit({ kind: 'tick', current: 0, message: 'Search: async.*await  src/' });
+      sink.emit({ kind: 'tick', current: 0, message: 'Search: async.*await · src/' });
       assert.equal(lines.length, 1);
       // start symbol → is in the stripped text
       const stripped = lines[0]?.replace(ANSI_ESCAPE_RE, '') ?? '';
@@ -58,7 +58,7 @@ describe('StderrProgressSink', () => {
     it('emits a done line for kind=complete', () => {
       const lines: string[] = [];
       const sink = new StderrProgressSink(ctx, (line) => lines.push(line));
-      sink.emit({ kind: 'complete', current: 500, message: 'Search: async.*await  src/' });
+      sink.emit({ kind: 'complete', current: 500, message: 'Search: async.*await · src/' });
       const stripped = lines[0]?.replace(ANSI_ESCAPE_RE, '') ?? '';
       assert.ok(stripped.startsWith('Search:'), `expected label prefix, got: ${stripped}`);
       assert.ok(!stripped.startsWith('✓'), 'done line should not have ✓ symbol');
