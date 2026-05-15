@@ -209,15 +209,6 @@ export class TaskOrchestrator {
 
       const result = await handler(args, interceptedCtx);
 
-      // Capture the final status message from the handler for task display
-      let finalTaskDisplay: string | undefined;
-      try {
-        const taskInfo = await task.store.getTask(taskId);
-        finalTaskDisplay = taskInfo?.statusMessage;
-      } catch {
-        // Ignore if we can't get task info
-      }
-
       const strippedResult = maybeStripStructuredContentFromResult(result);
       if (
         strippedResult['_meta'] &&
@@ -232,13 +223,11 @@ export class TaskOrchestrator {
       }
 
       // Ensure _meta exists and attach RELATED_TASK_META_KEY
-      // Also store the final task display name from the last status message
       strippedResult['_meta'] = {
         ...(typeof strippedResult['_meta'] === 'object' && strippedResult['_meta'] !== null
           ? strippedResult['_meta']
           : {}),
         [RELATED_TASK_META_KEY]: { taskId },
-        ...(finalTaskDisplay ? { 'io.modelcontextprotocol/progress-display': finalTaskDisplay } : {}),
       };
 
       if ('isError' in strippedResult && strippedResult['isError'] === true) {
