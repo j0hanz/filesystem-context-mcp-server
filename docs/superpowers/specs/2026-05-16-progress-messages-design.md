@@ -38,6 +38,10 @@ Goal: Make progress messages clean, subject-focused, and consistent with no done
 5. `find_files` and `search_text` messages remove path/scope context:
    - `Find: <pattern>`
    - `Search: <pattern>`
+6. `read` line-range messages should render file and range as separate parts:
+   - Target style: `Read: tasks.ts · 10-53`
+   - Source fields: `startLine` and `endLine` (or `…` when open-ended)
+   - Avoid embedding range in filename segment like `tasks.ts:10-53`
 
 ## Message Contract
 
@@ -75,7 +79,12 @@ Update tool progress formatters as follows:
 3. `src/tools/replace-in-files.ts`
    - Build subject as unquoted `searchPattern → replacement`.
    - Do not include scope/path in message.
-4. All tools currently defining `progressDone`
+4. `src/tools/read.ts`
+   - For `startLine`/`endLine` reads, produce:
+     - `subject = <basename>`
+     - `scope = <start>-<end|…>`
+   - This yields `Read: <basename> · <range>` via formatter.
+5. All tools currently defining `progressDone`
    - Remove done-detail messaging so done text does not append result summary.
 
 ### 3) Formatter behavior
@@ -108,7 +117,8 @@ Update and/or add tests to lock behavior:
 4. `replace_text` message renders as `Replace: <search> → <replacement>`:
    - no quotes
    - no path/scope
-5. Existing lifecycle semantics remain true:
+5. `read` line-range message renders as `Read: <file> · <start>-<end|…>`.
+6. Existing lifecycle semantics remain true:
    - start emitted
    - tick monotonic
    - done/fail emitted
@@ -129,7 +139,8 @@ Likely impacted tests include:
 2. No tool appends done-summary details in success messages.
 3. `replace_text` displays clean transform text (`A → B`) without quotes/scope.
 4. `find_files` and `search_text` are pattern-only.
-5. Full check pipeline passes after implementation.
+5. `read` line-range progress shows range as separate segment (`Read: <file> · <range>`).
+6. Full check pipeline passes after implementation.
 
 ## Risks and Mitigations
 
