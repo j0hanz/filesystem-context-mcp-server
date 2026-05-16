@@ -9,9 +9,11 @@ import type {
   Notification,
   RequestMeta,
   ServerContext,
+  StandardSchemaWithJSON,
   Tool,
   ToolAnnotations,
   ToolExecution,
+  ToolTaskHandler,
 } from '@modelcontextprotocol/server';
 
 import { randomUUID } from 'node:crypto';
@@ -31,7 +33,6 @@ import {
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { toMcpSchema } from '../schema.js';
-import type { TaskOrchestrator } from '../tasks.js';
 
 // ============ Type Definitions ============
 
@@ -87,12 +88,27 @@ export interface ToolCtx {
   readonly elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>;
 }
 
+export interface ToolOrchestrator {
+  wrapToolTask<
+    Args extends StandardSchemaWithJSON | undefined,
+    Result extends Record<string, unknown>,
+  >(
+    handler: (args: unknown, ctx: ToolCtx) => Promise<ToolResult<Result>>,
+    options: {
+      toolName: string;
+      toolTitle?: string;
+      startStatusMessage?: (args: unknown) => string;
+      deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore'>;
+    },
+  ): ToolTaskHandler<Args>;
+}
+
 export interface ToolDeps {
   readonly isInitialized: () => boolean;
   readonly server: McpServer;
   readonly pathGuard: PathGuard;
   readonly resourceStore: ResourceStore | undefined;
-  readonly orchestrator?: TaskOrchestrator;
+  readonly orchestrator?: ToolOrchestrator;
 }
 
 export type IconInfo = Icon & { mimeType: string };
