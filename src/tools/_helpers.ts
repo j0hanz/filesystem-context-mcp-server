@@ -23,6 +23,7 @@ import { createBase64JsonCodec } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import { NonNegInt } from '../schema.js';
+import type { TaskOrchestrator } from '../tasks.js';
 import type { ToolCtx } from './define.js';
 
 // ============ ToolContext ============
@@ -63,6 +64,7 @@ export interface ToolRegistrationOptions {
   pathGuard: PathGuard;
   resourceStore?: ResourceStore;
   isInitialized?: () => boolean;
+  orchestrator?: TaskOrchestrator;
 }
 
 // ============ Formatting ============

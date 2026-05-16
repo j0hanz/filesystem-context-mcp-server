@@ -170,7 +170,7 @@ export const GET_FILE_INFO = defineTool({
     destructiveHint: false,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'forbidden' },
+  execution: { taskSupport: 'optional' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   defaultErrorCode: ErrorCode.NOT_FOUND,
   progress: (args) => {

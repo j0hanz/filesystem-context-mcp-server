@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { ErrorCode } from '../../src/core/errors.js';
-import { TaskOrchestrator } from '../../src/tasks.js';
+import { TASK_PROGRESS_STATUS_MESSAGE, TaskOrchestrator } from '../../src/tasks.js';
 import { EventedTaskStore } from '../../src/tasks.js';
 import { type ToolContext } from '../../src/tools/_helpers.js';
 
@@ -249,8 +249,8 @@ describe('TaskOrchestrator', () => {
 
       const midTask = await store.getTask(task.taskId, 'test-session');
       assert.strictEqual(midTask?.status, 'working');
-      assert.strictEqual(midTask?.statusMessage, undefined);
-      assert.equal(statusUpdateCalls, 0);
+      assert.strictEqual(midTask?.statusMessage, TASK_PROGRESS_STATUS_MESSAGE);
+      assert.equal(statusUpdateCalls, 1);
 
       releaseHandler?.();
 
@@ -264,7 +264,7 @@ describe('TaskOrchestrator', () => {
       const final = await store.getTask(task.taskId, 'test-session');
       assert.strictEqual(final?.status, 'completed');
       assert.equal(notifications.length, 0);
-      assert.equal(statusUpdateCalls, 0);
+      assert.equal(statusUpdateCalls, 1);
     } finally {
       store.cleanup();
     }
@@ -376,7 +376,7 @@ describe('TaskOrchestrator', () => {
 
       const final = await store.getTask(task.taskId, 'test-session');
       assert.strictEqual(final?.status, 'completed');
-      assert.equal(statusUpdateCalls, 0);
+      assert.equal(statusUpdateCalls, 1);
     } finally {
       store.cleanup();
     }

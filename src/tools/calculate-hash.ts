@@ -308,7 +308,7 @@ export const CALCULATE_HASH = defineTool({
     destructiveHint: false,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'forbidden' },
+  execution: { taskSupport: 'optional' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   nuances: [
     'Directory hashing respects root `.gitignore` and sorts paths for stable output.',

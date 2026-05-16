@@ -10,6 +10,7 @@ import { describe, it } from 'node:test';
 
 import { ErrorCode } from '../../src/core/errors.js';
 import { MAX_CONCURRENT_TASKS, MAX_TASK_TTL_MS, TASK_TTL } from '../../src/core/util.js';
+import { TASK_PROGRESS_STATUS_MESSAGE } from '../../src/tasks.js';
 import { TaskOrchestrator } from '../../src/tasks.js';
 import { EventedTaskStore } from '../../src/tasks.js';
 import type { ToolResult } from '../../src/tools/_helpers.js';
@@ -145,7 +146,7 @@ describe('createToolTaskHandler', () => {
     }
   });
 
-  it('createTask leaves initial statusMessage unset by default', async () => {
+  it('createTask sets canonical working statusMessage', async () => {
     const store = createTestTaskStore();
     try {
       // Use a slow handler so the task stays in 'working' long enough to check
@@ -161,9 +162,9 @@ describe('createToolTaskHandler', () => {
       );
 
       const { task } = await callCreateTask(handler, createMockExtra(store));
-      // Fetch the task immediately to see the statusMessage before completion
+      // Fetch the task immediately to verify canonical status message
       const got = await callGetTask(handler, createMockTaskExtra(store, task.taskId));
-      assert.equal(got.statusMessage, undefined);
+      assert.equal(got.statusMessage, TASK_PROGRESS_STATUS_MESSAGE);
     } finally {
       store.cleanup();
     }

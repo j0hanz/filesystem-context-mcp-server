@@ -170,8 +170,7 @@ describe('HTTP transport', () => {
     assert.ok(initPayload.result?.capabilities?.['resources']);
     assert.ok(initPayload.result?.capabilities?.['prompts']);
     assert.ok(initPayload.result?.capabilities?.['completions']);
-    // Task capability is disabled since all tools forbid task support
-    assert.ok(!initPayload.result?.capabilities?.['tasks']);
+    assert.ok(initPayload.result?.capabilities?.['tasks']);
     assert.ok(initPayload.result?.capabilities?.['logging']);
 
     const initializedResponse = await fetch(`http://127.0.0.1:${String(port)}/mcp`, {

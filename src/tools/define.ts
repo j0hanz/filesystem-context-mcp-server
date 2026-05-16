@@ -28,8 +28,9 @@ import {
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { toMcpSchema } from '../schema.js';
+import type { TaskOrchestrator } from '../tasks.js';
 import { toToolContext } from './_helpers.js';
-import type { ToolContext } from './_helpers.js';
+import type { ToolContext, ToolResult } from './_helpers.js';
 
 // ============ Type Definitions ============
 
@@ -50,6 +51,7 @@ export interface ToolDeps {
   readonly server: McpServer;
   readonly pathGuard: PathGuard;
   readonly resourceStore: ResourceStore | undefined;
+  readonly orchestrator?: TaskOrchestrator;
 }
 
 export interface RunResult<T> {
@@ -421,6 +423,30 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
 
       const serverCtxHandler = async (args: unknown, ctx: ServerContext): Promise<CallToolResult> =>
         coreHandler(args, toToolContext(ctx));
+
+      const taskSupport = def.execution?.taskSupport;
+      if (taskSupport && taskSupport !== 'forbidden' && deps.orchestrator) {
+        const taskToolDefShape = {
+          title: def.title,
+          description: def.description,
+          inputSchema,
+          outputSchema,
+          annotations: def.annotations,
+          execution: { ...def.execution, taskSupport },
+        };
+
+        deps.server.experimental.tasks.registerToolTask(
+          def.name,
+          taskToolDefShape,
+          deps.orchestrator.wrapToolTask(
+            async (args, ctx) =>
+              coreHandler(args, ctx) as Promise<ToolResult<Record<string, unknown>>>,
+            { toolName: def.name },
+          ),
+        );
+        return;
+      }
+
       deps.server.registerTool(def.name, toolDefShape, serverCtxHandler);
     },
   };

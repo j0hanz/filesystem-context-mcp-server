@@ -48,6 +48,8 @@ export class EventedTaskStore extends InMemoryTaskStore {
   }
 }
 
+export const TASK_PROGRESS_STATUS_MESSAGE = 'filesystem-mcp: processing request';
+
 export function createTaskStore(): EventedTaskStore {
   return new EventedTaskStore();
 }
@@ -142,6 +144,8 @@ export class TaskOrchestrator {
 
       const controller = new AbortController();
       this.controllers.set(mcpTask.taskId, controller);
+
+      await task.store.updateTaskStatus(mcpTask.taskId, 'working', TASK_PROGRESS_STATUS_MESSAGE);
 
       // Start background execution without awaiting it.
       this.executeBackground(mcpTask.taskId, handler, args, ctx, options.toolName).catch(

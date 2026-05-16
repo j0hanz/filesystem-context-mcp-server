@@ -159,9 +159,7 @@ export async function startServer(ctx: FilesystemServerContext): Promise<void> {
   await server.connect(transport);
   const sdkOnClose = transport.onclose;
   transport.onclose = () => {
-    ctx.resourcesHandle.destroy();
-    ctx.roots.destroy();
-    logRouter.detachStdio();
+    ctx.disposeRuntimeState();
     sdkOnClose?.();
   };
 
@@ -446,12 +444,11 @@ async function createHttpSession(
   const cleanup = (): void => {
     if (cleanedUp) return;
     cleanedUp = true;
-    serverCtx.resourcesHandle.destroy();
+    serverCtx.disposeRuntimeState();
     const { sessionId } = transport;
     if (sessionId) {
       registry.remove(sessionId);
     }
-    rootsManager.destroy();
   };
 
   const close = async (): Promise<void> => {

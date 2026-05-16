@@ -1,5 +1,6 @@
 import {
   type Implementation,
+  InMemoryTaskMessageQueue,
   McpServer,
   type Root,
   type ServerCapabilities,
@@ -39,6 +40,7 @@ import {
   type ResourcesHandle,
   serverInstructionsContent,
 } from './resources.js';
+import { createTaskStore, TaskOrchestrator } from './tasks.js';
 import { registerAllTools } from './tools.js';
 import { type IconInfo, withDefaultIcons } from './tools/_helpers.js';
 
@@ -332,23 +334,38 @@ export class FilesystemServerContext {
   public readonly roots: RootsManager;
   public readonly resources: ResourceStore;
   public readonly resourcesHandle: ResourcesHandle;
+  private readonly orchestrator: TaskOrchestrator;
+  private readonly taskStore: ReturnType<typeof createTaskStore>;
+  private cleanedUp = false;
 
   constructor(
     mcp: McpServer,
     roots: RootsManager,
     resources: ResourceStore,
     resourcesHandle: ResourcesHandle,
+    orchestrator: TaskOrchestrator,
+    taskStore: ReturnType<typeof createTaskStore>,
   ) {
     this.mcp = mcp;
     this.roots = roots;
     this.resources = resources;
     this.resourcesHandle = resourcesHandle;
+    this.orchestrator = orchestrator;
+    this.taskStore = taskStore;
   }
 
-  async close(): Promise<void> {
+  disposeRuntimeState(): void {
+    if (this.cleanedUp) return;
+    this.cleanedUp = true;
+    this.orchestrator.dispose();
+    this.taskStore.cleanup();
     this.resourcesHandle.destroy();
     this.roots.destroy();
     logRouter.detachStdio();
+  }
+
+  async close(): Promise<void> {
+    this.disposeRuntimeState();
     await this.mcp.close();
   }
 }
@@ -392,8 +409,11 @@ export async function createServer(
   const localIcon = await getLocalIconInfo();
   const capabilities = buildServerCapabilities({
     enablePromptListChanged: false,
-    enableTaskToolRequests: false,
+    enableTaskToolRequests: true,
   });
+
+  const taskStore = createTaskStore();
+  const taskOrchestrator = new TaskOrchestrator(taskStore);
 
   const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> = {
     capabilities: {
@@ -407,6 +427,13 @@ export async function createServer(
     },
     enforceStrictCapabilities: true,
   };
+
+  if (serverConfig.capabilities?.tasks) {
+    Object.assign(serverConfig.capabilities.tasks, {
+      taskStore,
+      taskMessageQueue: new InMemoryTaskMessageQueue(),
+    });
+  }
 
   serverConfig.instructions =
     'filesystem-mcp: Secure local filesystem MCP server. ' +
@@ -452,7 +479,15 @@ export async function createServer(
     pathGuard: rootsManager.pathGuard,
     resourceStore,
     isInitialized: options.isInitialized ?? (() => rootsManager.isInitialized()),
+    orchestrator: taskOrchestrator,
   });
 
-  return new FilesystemServerContext(server, rootsManager, resourceStore, resourcesHandle);
+  return new FilesystemServerContext(
+    server,
+    rootsManager,
+    resourceStore,
+    resourcesHandle,
+    taskOrchestrator,
+    taskStore,
+  );
 }

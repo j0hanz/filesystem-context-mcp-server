@@ -641,7 +641,7 @@ export const SEARCH_AND_REPLACE = defineTool({
     destructiveHint: true,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'forbidden' },
+  execution: { taskSupport: 'optional' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   gotchas: [
     'RE2 dialect: no lookahead, lookbehind, or backreferences.',

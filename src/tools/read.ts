@@ -335,7 +335,7 @@ export const READ_FILE = defineTool({
     destructiveHint: false,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'forbidden' },
+  execution: { taskSupport: 'optional' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   nuances: [
     'Large content is externalized to `filesystem-mcp://file/{path}` and the value carries `resourceUri`.',

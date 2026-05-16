@@ -606,7 +606,7 @@ export const SEARCH_FILES = defineTool({
     destructiveHint: false,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'forbidden' },
+  execution: { taskSupport: 'optional' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   nuances: [
     'Respects `.gitignore` unless `includeIgnored=true`.',

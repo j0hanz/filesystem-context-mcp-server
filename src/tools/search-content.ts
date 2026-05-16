@@ -1653,7 +1653,7 @@ export const SEARCH_CONTENT = defineTool({
     destructiveHint: false,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'forbidden' },
+  execution: { taskSupport: 'optional' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   nuances: ['Inline results capped at 50 matches; full results via `resourceUri`.'],
   gotchas: [
