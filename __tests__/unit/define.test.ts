@@ -39,3 +39,27 @@ test('defineTool execution handles errors', async () => {
 
   assert.ok(tool.name === 'error_tool');
 });
+
+test('defineTool produces StandardSchemaWithJSON-shaped inputSchema/outputSchema', () => {
+  const tool = defineTool({
+    name: 'shape_tool',
+    title: 'Shape Tool',
+    description: 'Verifies the registered schema carries jsonSchema converters',
+    input: z.strictObject({ a: z.string() }),
+    output: z.strictObject({ b: z.string() }),
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
+    run: async () => ({ structured: { b: 'ok' } }),
+  });
+
+  const inputJsonSchema = tool.inputSchema as Record<string, unknown>;
+  const outputJsonSchema = tool.outputSchema as Record<string, unknown>;
+  assert.equal(inputJsonSchema['type'], 'object');
+  assert.equal(outputJsonSchema['type'], 'object');
+  const inputProps = inputJsonSchema['properties'] as Record<string, unknown>;
+  assert.ok(inputProps && 'a' in inputProps);
+});

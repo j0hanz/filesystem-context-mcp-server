@@ -499,19 +499,41 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
 
 // ============ Tool Definition ============
 
+function withJsonSchema<T extends z.ZodType>(
+  schema: T,
+  jsonSchema: Record<string, unknown>,
+): StandardSchemaWithJSON<z.infer<T>, z.infer<T>> {
+  const standard = (schema as unknown as { '~standard': Record<string, unknown> })['~standard'];
+  return {
+    '~standard': {
+      ...standard,
+      jsonSchema: {
+        input: (_options: { target: string; libraryOptions?: Record<string, unknown> }) =>
+          jsonSchema,
+        output: (_options: { target: string; libraryOptions?: Record<string, unknown> }) =>
+          jsonSchema,
+      },
+    },
+  } as StandardSchemaWithJSON<z.infer<T>, z.infer<T>>;
+}
+
 export function defineTool<I extends z.ZodType, O extends z.ZodType>(
   def: ToolDef<I, O>,
 ): DefinedTool {
-  const inputSchema = def.input;
-  const outputSchema = def.output;
-  const inputJsonSchema = z.toJSONSchema(def.input, {
+  const baseInputJsonSchema = z.toJSONSchema(def.input, {
     target: 'draft-2020-12',
     io: 'input',
-  }) as Tool['inputSchema'];
+  }) as Record<string, unknown>;
+  const inputJsonSchema: Record<string, unknown> = def.inputSchemaAugment
+    ? def.inputSchemaAugment(baseInputJsonSchema)
+    : baseInputJsonSchema;
   const outputJsonSchema = z.toJSONSchema(def.output, {
     target: 'draft-2020-12',
     io: 'output',
-  }) as Tool['inputSchema'];
+  }) as Record<string, unknown>;
+
+  const inputSchemaWithJson = withJsonSchema(def.input, inputJsonSchema);
+  const outputSchemaWithJson = withJsonSchema(def.output, outputJsonSchema);
 
   const tool: DefinedTool = {
     name: def.name,
@@ -521,15 +543,15 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
     execution: def.execution ?? { taskSupport: 'forbidden' },
     nuances: def.nuances ?? [],
     gotchas: def.gotchas ?? [],
-    inputSchema: inputJsonSchema,
-    outputSchema: outputJsonSchema,
+    inputSchema: inputJsonSchema as Tool['inputSchema'],
+    outputSchema: outputJsonSchema as Tool['inputSchema'],
 
     register(deps: ToolDeps) {
       const toolDefShape = {
         title: def.title,
         description: def.description,
-        inputSchema: inputSchema as unknown as StandardSchemaWithJSON<z.infer<I>, z.infer<I>>,
-        outputSchema: outputSchema as unknown as StandardSchemaWithJSON<z.infer<O>, z.infer<O>>,
+        inputSchema: inputSchemaWithJson,
+        outputSchema: outputSchemaWithJson,
         annotations: def.annotations,
       };
 
@@ -546,8 +568,8 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
         const taskToolDefShape = {
           title: def.title,
           description: def.description,
-          inputSchema: inputSchema as unknown as StandardSchemaWithJSON<z.infer<I>, z.infer<I>>,
-          outputSchema: outputSchema as unknown as StandardSchemaWithJSON<z.infer<O>, z.infer<O>>,
+          inputSchema: inputSchemaWithJson,
+          outputSchema: outputSchemaWithJson,
           annotations: def.annotations,
           execution: { ...def.execution, taskSupport },
         };
