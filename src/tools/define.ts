@@ -153,6 +153,7 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
   private readonly ctx: ToolCtx;
   private readonly def: ToolDef<I, O>;
   private readonly parsedArgs: z.infer<I>;
+  private readonly progressCtx: ProgressCtx;
 
   constructor(toolName: string, ctx: ToolCtx, def: ToolDef<I, O>, parsedArgs: z.infer<I>) {
     this.toolName = toolName;
@@ -164,11 +165,11 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     const timeoutSignal = def.timeoutMs ? AbortSignal.timeout(def.timeoutMs) : undefined;
     this.signal = timeoutSignal ? AbortSignal.any([baseSignal, timeoutSignal]) : baseSignal;
 
-    const progressCtx: ProgressCtx = def.progress ? def.progress(parsedArgs) : { label: def.title };
-    this.stderrSink = new StderrProgressSink(progressCtx);
+    this.progressCtx = def.progress ? def.progress(parsedArgs) : { label: def.title };
+    this.stderrSink = new StderrProgressSink(this.progressCtx);
 
     this.progressSession = new ProgressSession({
-      label: progressCtx.label,
+      label: this.progressCtx.label,
       sinks: [this.stderrSink],
       dynamicRateLimit: true,
     });
@@ -208,23 +209,17 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
   }
 
   startProgress(): void {
-    const progressCtx: ProgressCtx = this.def.progress
-      ? this.def.progress(this.parsedArgs)
-      : { label: this.def.title };
     this.runTrackedProgress({
       current: 0,
-      message: plainMessage('start', progressCtx),
+      message: plainMessage('start', this.progressCtx),
     });
   }
 
   tickProgress(p: { current: number; total?: number }): void {
     if (this.progressClosed) return;
     this.progressUpdates++;
-    const progressCtx: ProgressCtx = this.def.progress
-      ? this.def.progress(this.parsedArgs)
-      : { label: this.def.title };
     const tickCtx: ProgressCtx = {
-      ...progressCtx,
+      ...this.progressCtx,
       current: p.current,
       ...(p.total !== undefined ? { total: p.total } : {}),
     };
@@ -234,12 +229,9 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
   }
 
   async completeProgress(result: z.infer<O>): Promise<void> {
-    const progressCtx: ProgressCtx = this.def.progress
-      ? this.def.progress(this.parsedArgs)
-      : { label: this.def.title };
     const doneCtx: ProgressCtx = this.def.progressDone
-      ? { ...progressCtx, ...this.def.progressDone(this.parsedArgs, result) }
-      : progressCtx;
+      ? { ...this.progressCtx, ...this.def.progressDone(this.parsedArgs, result) }
+      : this.progressCtx;
     const doneMessage = plainMessage('done', doneCtx);
     this.progressClosed = true;
     this.progressSession.complete(doneMessage);
@@ -255,12 +247,9 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
   async failProgress(
     error: unknown,
   ): Promise<{ isError: true; content: ContentBlock[]; errorCode?: number | string }> {
-    const progressCtx: ProgressCtx = this.def.progress
-      ? this.def.progress(this.parsedArgs)
-      : { label: this.def.title };
     const errMsg = error instanceof Error ? error.message : String(error);
     this.stderrSink.updateCtx({ error: errMsg });
-    const failMessage = plainMessage('fail', { ...progressCtx, error: errMsg });
+    const failMessage = plainMessage('fail', { ...this.progressCtx, error: errMsg });
     this.progressClosed = true;
     this.progressSession.fail(error, failMessage);
     const failCurrent = this.progressCursor + 1;
