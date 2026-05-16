@@ -499,6 +499,14 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
 
 // ============ Tool Definition ============
 
+// WHY THIS EXISTS: The SDK exports fromJsonSchema(rawSchema) which creates a
+// StandardSchemaWithJSON from a plain JSON Schema, but it validates at runtime using
+// CfWorkerJsonSchemaValidator instead of Zod. We need Zod validation (for structured
+// error messages) while serving the augmented JSON Schema (with head/tail/offset mutex
+// constraints added by inputSchemaAugment) to clients. This function keeps Zod's
+// ~standard.validate intact while replacing ~standard.jsonSchema with the augmented
+// schema. Remove when the SDK supports separate validate/publication schemas in
+// registerTool, or when inputSchemaAugment constraints can be expressed in Zod directly.
 function withJsonSchema<T extends z.ZodType>(
   schema: T,
   precomputedJsonSchema: Record<string, unknown>,
