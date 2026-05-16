@@ -6,8 +6,8 @@ import { createTwoFilesPatch, diffLines } from 'diff';
 import RE2 from 're2';
 import { z } from 'zod/v4';
 
-import { processInParallel, runInWorker, shouldOffload } from '../core/concurrency.js';
-import { ErrorCode, McpError, Problem } from '../core/errors.js';
+import { runInWorker, shouldOffload } from '../core/concurrency.js';
+import { ErrorCode, McpError } from '../core/errors.js';
 import {
   atomicWriteFile,
   detectMimeType,
@@ -18,7 +18,7 @@ import {
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
-import { MAX_TEXT_FILE_SIZE, PARALLEL_CONCURRENCY } from '../core/util.js';
+import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import {
   defaultFalseBoolean,
   IsoDateTime,
@@ -26,10 +26,10 @@ import {
   OperationSummarySchema,
   PerFileErrorSchema,
   PositiveInt,
-  RequiredPath,
+  singleOrBatchPathsInput,
 } from '../schema.js';
-import { formatBytes } from './_helpers.js';
-import { defineTool, type RunResult, type ToolCtx } from './define.js';
+import { type PerPathResult, runOverPaths } from './_helpers.js';
+import { defineTool } from './define.js';
 
 const EditSpecSchema = z.strictObject({
   oldText: z
@@ -43,75 +43,40 @@ const EditSpecSchema = z.strictObject({
     .meta({ examples: ['const x = 2;', 'function newName(', ''] }),
 });
 
-const FileEditEntrySchema = z.strictObject({
-  path: RequiredPath.describe('File path'),
-  edits: z.array(EditSpecSchema).min(1).describe('Edits for this file'),
-});
-
 const MAX_MULTI_FILES = 5;
 
-const EditFileInputSchema = z
-  .strictObject({
-    path: RequiredPath.optional().describe('File path (single-file mode)'),
-    paths: z
-      .array(RequiredPath)
-      .min(1)
-      .max(MAX_MULTI_FILES)
-      .optional()
-      .describe(`File paths; same edits applied to each (max ${MAX_MULTI_FILES})`),
-    files: z
-      .array(FileEditEntrySchema)
-      .min(1)
-      .max(MAX_MULTI_FILES)
-      .optional()
-      .describe(`Per-file edits (max ${MAX_MULTI_FILES})`),
+const EditFileInputSchema = singleOrBatchPathsInput({
+  extra: {
     edits: z
       .array(EditSpecSchema)
       .min(1)
       .optional()
       .describe('Edits applied to path or every entry in paths (forbidden when using files)'),
-
     dryRun: defaultFalseBoolean('Preview changes without writing'),
     ignoreWhitespace: defaultFalseBoolean('Ignore leading/trailing whitespace when matching'),
-  })
-  .superRefine((value, ctx) => {
-    const modes = [value.path !== undefined, value.paths !== undefined, value.files !== undefined];
-    const provided = modes.filter(Boolean).length;
-    if (provided === 0) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['path'],
-        message: "Provide exactly one of 'path', 'paths', or 'files'",
-        input: value,
-      });
-      return;
-    }
-    if (provided > 1) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['path'],
-        message: "Use only one of 'path', 'paths', or 'files'",
-        input: value,
-      });
-      return;
-    }
-    if ((value.path !== undefined || value.paths !== undefined) && value.edits === undefined) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['edits'],
-        message: "'edits' required when using 'path' or 'paths'",
-        input: value,
-      });
-    }
-    if (value.files !== undefined && value.edits !== undefined) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['edits'],
-        message: "'edits' not allowed with 'files'; each file carries its own edits",
-        input: value,
-      });
-    }
-  });
+  },
+  perFile: {
+    edits: z.array(EditSpecSchema).min(1).describe('Edits for this file'),
+  },
+  maxBatch: MAX_MULTI_FILES,
+}).superRefine((value, ctx) => {
+  if ((value.path !== undefined || value.paths !== undefined) && value.edits === undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['edits'],
+      message: "'edits' required when using 'path' or 'paths'",
+      input: value,
+    });
+  }
+  if (value.files !== undefined && value.edits !== undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['edits'],
+      message: "'edits' not allowed with 'files'; each file carries its own edits",
+      input: value,
+    });
+  }
+});
 
 const PerFileResultSchema = z.strictObject({
   path: z.string().describe('File path'),
@@ -129,33 +94,34 @@ const PerFileResultSchema = z.strictObject({
   lineRange: z.tuple([PositiveInt, PositiveInt]).optional().describe('[firstLine, lastLine]'),
 });
 
-const EditFileOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Success indicator'),
-  // Single-file fields
-  path: z.string().optional().describe('File path (single-file mode)'),
-  size: NonNegInt.optional().describe('File size in bytes'),
-  lineCount: NonNegInt.optional().describe('Number of lines'),
-  mimeType: z.string().optional().describe('MIME type'),
-  kind: z.enum(['text', 'binary', 'image', 'audio', 'pdf']).optional().describe('File kind'),
-  resourceUri: z.string().optional().describe('Resource URI'),
-  modified: IsoDateTime.optional().describe('Modified (ISO 8601 UTC)'),
-  appliedEdits: NonNegInt.optional().describe('Edits applied'),
-  linesAdded: NonNegInt.optional().describe('Lines added'),
-  linesRemoved: NonNegInt.optional().describe('Lines removed'),
-  diff: z.string().optional().describe('Unified diff of changes'),
-  unmatchedEdits: z.array(z.string()).optional().describe('oldText with no match'),
-  lineRange: z.tuple([PositiveInt, PositiveInt]).optional().describe('[firstLine, lastLine]'),
-  // Multi-file fields
-  results: z.array(PerFileResultSchema).optional().describe('Per-file successes (multi mode)'),
-  failures: z
-    .array(z.strictObject({ path: z.string(), error: PerFileErrorSchema }))
-    .optional()
-    .describe('Per-file hard failures (multi mode)'),
-  summary: OperationSummarySchema.optional().describe('Aggregate counts (multi mode)'),
+const EditPerPathSchema = z.strictObject({
+  path: z.string().describe('Requested path'),
+  value: PerFileResultSchema.optional().describe('Per-file edit result (success)'),
+  error: PerFileErrorSchema.optional().describe('Per-path error'),
 });
 
-type EditInput = z.infer<typeof EditFileInputSchema>;
-type EditOutput = z.infer<typeof EditFileOutputSchema>;
+const EditFileOutputSchema = z.strictObject({
+  ok: z.literal(true).describe('Success indicator'),
+  results: z.array(EditPerPathSchema).describe('Per-path results (always present)'),
+  summary: OperationSummarySchema.describe('Aggregate counts'),
+});
+
+interface SingleEditStructured {
+  ok: true;
+  path?: string;
+  size?: number;
+  lineCount?: number;
+  mimeType?: string;
+  kind?: 'text' | 'binary' | 'image' | 'audio' | 'pdf';
+  resourceUri?: string;
+  modified?: string;
+  appliedEdits?: number;
+  linesAdded?: number;
+  linesRemoved?: number;
+  diff?: string;
+  unmatchedEdits?: string[];
+  lineRange?: [number, number];
+}
 
 interface TextRange {
   startIndex: number;
@@ -292,7 +258,7 @@ interface BuildStructuredEditOutputParams {
   result: EditResult;
 }
 
-function buildStructuredEditOutput(params: BuildStructuredEditOutputParams): EditOutput {
+function buildStructuredEditOutput(params: BuildStructuredEditOutputParams): SingleEditStructured {
   const { validPath, size, lineCount, mimeType, kind, resourceUri, modified, result } = params;
   return {
     ok: true as const,
@@ -472,7 +438,7 @@ async function handleEditFile(
   resourceStore: ResourceStore | undefined,
   signal?: AbortSignal,
 ): Promise<{
-  structured: EditOutput;
+  structured: SingleEditStructured;
   editedContent: string;
   validPath: string;
   resourceLink?: ContentBlock;
@@ -552,183 +518,84 @@ async function handleEditFile(
   };
 }
 
-type PerFileResult = z.infer<typeof PerFileResultSchema>;
+function toEditPerPathPayload(
+  r: PerPathResult<{
+    structured: {
+      ok: true;
+      path?: string;
+      size?: number;
+      lineCount?: number;
+      mimeType?: string;
+      kind?: 'text' | 'binary' | 'image' | 'audio' | 'pdf';
+      resourceUri?: string;
+      modified?: string;
+      appliedEdits?: number;
+      linesAdded?: number;
+      linesRemoved?: number;
+      diff?: string;
+      unmatchedEdits?: string[];
+      lineRange?: [number, number];
+    };
+    resourceLink?: ContentBlock;
+  }>,
+): { perPath: z.infer<typeof EditPerPathSchema>; resourceLink?: ContentBlock } {
+  if (r.error) {
+    return { perPath: { path: r.path, error: r.error } };
+  }
 
-function formatFileToken(res: PerFileResult): string {
-  const base = basename(res.path);
-  if (res.unmatchedEdits && res.unmatchedEdits.length > 0) return `${base} NO MATCH`;
-  const added = res.linesAdded ?? 0;
-  const removed = res.linesRemoved ?? 0;
-  if (added === 0 && removed === 0) return `${base} (no change)`;
-  return `${base} +${added} -${removed}`;
+  const inner = r.value;
+  if (!inner) {
+    return {
+      perPath: {
+        path: r.path,
+        error: { code: ErrorCode.UNKNOWN, message: 'Unknown edit failure', path: r.path },
+      },
+    };
+  }
+
+  const s = inner.structured;
+  const value: z.infer<typeof PerFileResultSchema> = {
+    path: s.path ?? r.path,
+    size: s.size ?? 0,
+    lineCount: s.lineCount ?? 0,
+    mimeType: s.mimeType ?? 'application/octet-stream',
+    kind: s.kind ?? 'text',
+    resourceUri: s.resourceUri ?? '',
+    modified: s.modified ?? new Date().toISOString(),
+    appliedEdits: s.appliedEdits ?? 0,
+    ...(s.linesAdded !== undefined ? { linesAdded: s.linesAdded } : {}),
+    ...(s.linesRemoved !== undefined ? { linesRemoved: s.linesRemoved } : {}),
+    ...(s.diff !== undefined ? { diff: s.diff } : {}),
+    ...(s.unmatchedEdits !== undefined ? { unmatchedEdits: s.unmatchedEdits } : {}),
+    ...(s.lineRange !== undefined ? { lineRange: s.lineRange } : {}),
+  };
+
+  return {
+    perPath: { path: r.path, value },
+    ...(inner.resourceLink ? { resourceLink: inner.resourceLink } : {}),
+  };
 }
 
-function formatFailedToken(path: string): string {
-  return `${basename(path)} FAILED`;
-}
-
-function formatMultiSummary(
-  results: PerFileResult[],
-  failures: { path: string; error: z.infer<typeof PerFileErrorSchema> }[],
+function formatEditSummary(
+  results: readonly z.infer<typeof EditPerPathSchema>[],
   dryRun: boolean,
 ): string {
   const tag = dryRun ? ' [dry run]' : '';
-  const tokens = [
-    ...results.map(formatFileToken),
-    ...failures.map((f) => formatFailedToken(f.path)),
-  ];
-  const ratio =
-    failures.length > 0 ? ` (${results.length}/${results.length + failures.length} ok)` : '';
-  return `edit: ${tokens.join(' \u00b7 ')}${ratio}${tag}`;
-}
+  const tokens = results.map((r) => {
+    if (r.error) return `${basename(r.path)} FAILED`;
+    const v = r.value;
+    if (!v) return `${basename(r.path)} (no result)`;
+    if (v.unmatchedEdits && v.unmatchedEdits.length > 0) return `${basename(v.path)} NO MATCH`;
+    const added = v.linesAdded ?? 0;
+    const removed = v.linesRemoved ?? 0;
+    if (added === 0 && removed === 0) return `${basename(v.path)} (no change)`;
+    return `${basename(v.path)} +${String(added)} -${String(removed)}`;
+  });
 
-interface EditJob {
-  filePath: string;
-  edits: z.infer<typeof EditSpecSchema>[];
-}
-
-function normalizeJobs(args: EditInput): EditJob[] {
-  if (args.path !== undefined) {
-    return [{ filePath: args.path, edits: args.edits ?? [] }];
-  }
-  if (args.paths !== undefined) {
-    return args.paths.map((p) => ({ filePath: p, edits: args.edits ?? [] }));
-  }
-  // files mode
-  return (args.files ?? []).map((f) => ({ filePath: f.path, edits: f.edits }));
-}
-
-type RunOneFileResult =
-  | { kind: 'ok'; path: string; result: PerFileResult; link?: string }
-  | { kind: 'failed'; path: string; error: z.infer<typeof PerFileErrorSchema> };
-
-export async function runOneFile(
-  filePath: string,
-  edits: z.infer<typeof EditSpecSchema>[],
-  dryRun: boolean,
-  ignoreWhitespace: boolean,
-  pathGuard: PathGuard,
-  resourceStore: ResourceStore | undefined,
-  signal: AbortSignal,
-): Promise<RunOneFileResult> {
-  try {
-    const { structured, resourceLink } = await handleEditFile(
-      filePath,
-      edits,
-      dryRun,
-      ignoreWhitespace,
-      pathGuard,
-      resourceStore,
-      signal,
-    );
-    const result: PerFileResult = {
-      path: structured.path ?? filePath,
-      size: structured.size ?? 0,
-      lineCount: structured.lineCount ?? 0,
-      mimeType: structured.mimeType ?? 'application/octet-stream',
-      kind: structured.kind ?? 'text',
-      resourceUri: structured.resourceUri ?? '',
-      modified: structured.modified ?? new Date().toISOString(),
-      appliedEdits: structured.appliedEdits ?? 0,
-      ...(structured.linesAdded !== undefined ? { linesAdded: structured.linesAdded } : {}),
-      ...(structured.linesRemoved !== undefined ? { linesRemoved: structured.linesRemoved } : {}),
-      ...(structured.diff !== undefined ? { diff: structured.diff } : {}),
-      ...(structured.unmatchedEdits !== undefined
-        ? { unmatchedEdits: structured.unmatchedEdits }
-        : {}),
-      ...(structured.lineRange !== undefined ? { lineRange: structured.lineRange } : {}),
-    };
-    return {
-      kind: 'ok',
-      path: filePath,
-      result,
-      ...(resourceLink && 'uri' in resourceLink ? { link: resourceLink.uri } : {}),
-    };
-  } catch (err: unknown) {
-    return {
-      kind: 'failed',
-      path: filePath,
-      error: Problem.fromUnknown(err, ErrorCode.UNKNOWN, filePath),
-    };
-  }
-}
-
-async function dispatch(args: EditInput, ctx: ToolCtx): Promise<RunResult<EditOutput>> {
-  const jobs = normalizeJobs(args);
-  const isSingle = jobs.length === 1 && args.path !== undefined;
-
-  if (isSingle) {
-    const filePath = args.path ?? '';
-    const edits = args.edits ?? [];
-    const { structured, resourceLink } = await handleEditFile(
-      filePath,
-      edits,
-      args.dryRun,
-      args.ignoreWhitespace,
-      ctx.pathGuard,
-      ctx.resourceStore,
-      ctx.signal,
-    );
-    ctx.log?.('info', `edit: ${filePath} (${String(structured.appliedEdits ?? 0)} edits)`, 'edit');
-    const summary =
-      `edit: edited ${basename(filePath)}` +
-      ` \u00b7 ${formatBytes(structured.size ?? 0)}` +
-      ` \u00b7 ${String(structured.lineCount)} lines`;
-    if (resourceLink) {
-      return { structured, text: summary, resources: [resourceLink] };
-    }
-    return { structured, text: summary };
-  }
-
-  // Multi-file: run in parallel
-  const { results: rawResults } = await processInParallel(
-    jobs,
-    (job) =>
-      runOneFile(
-        job.filePath,
-        job.edits,
-        args.dryRun,
-        args.ignoreWhitespace,
-        ctx.pathGuard,
-        ctx.resourceStore,
-        ctx.signal,
-      ),
-    PARALLEL_CONCURRENCY,
-    ctx.signal,
-  );
-
-  const results: PerFileResult[] = [];
-  const failures: { path: string; error: z.infer<typeof PerFileErrorSchema> }[] = [];
-
-  for (const r of rawResults) {
-    if (r.kind === 'ok') results.push(r.result);
-    else failures.push({ path: r.path, error: r.error });
-  }
-
-  const summaryText = formatMultiSummary(results, failures, args.dryRun);
-  const structured: EditOutput = {
-    ok: true,
-    results,
-    ...(failures.length > 0 ? { failures } : {}),
-    summary: {
-      total: jobs.length,
-      succeeded: results.length,
-      failed: failures.length,
-    },
-  };
-
-  const links: ContentBlock[] = rawResults
-    .filter(
-      (r): r is Extract<RunOneFileResult, { kind: 'ok' }> & { link: string } =>
-        r.kind === 'ok' && r.link !== undefined,
-    )
-    .map((r) => ({ type: 'resource_link' as const, uri: r.link, name: r.link }));
-
-  return {
-    structured,
-    text: summaryText,
-    ...(links.length > 0 ? { resources: links } : {}),
-  };
+  const failed = results.filter((r) => r.error !== undefined).length;
+  const ok = results.length - failed;
+  const ratio = failed > 0 ? ` (${String(ok)}/${String(results.length)} ok)` : '';
+  return `edit: ${tokens.join(' · ')}${ratio}${tag}`;
 }
 
 export const EDIT = defineTool({
@@ -763,5 +630,55 @@ export const EDIT = defineTool({
     }
     return { label: `Edit${dryLabel}`, subject };
   },
-  run: async (args, ctx) => dispatch(args, ctx),
+  run: async (args, ctx) => {
+    const sharedEdits = args.edits ?? [];
+    const batchInput =
+      args.path !== undefined
+        ? { path: args.path }
+        : args.paths !== undefined
+          ? { paths: args.paths }
+          : { files: args.files ?? [] };
+
+    const batch = await runOverPaths<
+      { edits: z.infer<typeof EditSpecSchema>[] },
+      { structured: SingleEditStructured; resourceLink?: ContentBlock }
+    >(
+      batchInput,
+      ctx,
+      async ({ path, override }) => {
+        const edits = override?.edits ?? sharedEdits;
+        const { structured, resourceLink } = await handleEditFile(
+          path,
+          edits,
+          args.dryRun,
+          args.ignoreWhitespace,
+          ctx.pathGuard,
+          ctx.resourceStore,
+          ctx.signal,
+        );
+        return resourceLink ? { structured, resourceLink } : { structured };
+      },
+      { defaultErrorCode: ErrorCode.UNKNOWN },
+    );
+
+    const perPathResults: z.infer<typeof EditPerPathSchema>[] = [];
+    const resourceLinks: ContentBlock[] = [];
+    for (const r of batch.results) {
+      const { perPath, resourceLink } = toEditPerPathPayload(r);
+      perPathResults.push(perPath);
+      if (resourceLink) resourceLinks.push(resourceLink);
+    }
+
+    const summaryText = formatEditSummary(perPathResults, args.dryRun);
+
+    return {
+      structured: {
+        ok: true as const,
+        results: perPathResults,
+        summary: batch.summary,
+      },
+      text: summaryText,
+      ...(resourceLinks.length > 0 ? { resources: resourceLinks } : {}),
+    };
+  },
 });

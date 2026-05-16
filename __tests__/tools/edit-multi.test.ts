@@ -132,8 +132,10 @@ describe('edit tool — paths[] mode', () => {
     assert.ok(Array.isArray(s['results']));
     const results = s['results'] as Record<string, unknown>[];
     assert.equal(results.length, 2);
-    assert.equal(results[0]?.['appliedEdits'], 1);
-    assert.equal(results[1]?.['appliedEdits'], 1);
+    const value0 = results[0]?.['value'] as Record<string, unknown> | undefined;
+    const value1 = results[1]?.['value'] as Record<string, unknown> | undefined;
+    assert.equal(value0?.['appliedEdits'], 1);
+    assert.equal(value1?.['appliedEdits'], 1);
     const contA = await readFile(a, 'utf8');
     const contB = await readFile(b, 'utf8');
     assert.ok(contA.includes('const x = 42;'));
@@ -155,10 +157,11 @@ describe('edit tool — paths[] mode', () => {
 
     assertOk(res);
     const s = getStructured(res);
-    const results = s['results'] as Record<string, unknown>[] | undefined;
-    const failures = s['failures'] as Record<string, unknown>[] | undefined;
-    assert.ok(results?.length === 1, 'one success');
-    assert.ok(failures?.length === 1, 'one failure');
+    const results = s['results'] as Record<string, unknown>[];
+    const successCount = results.filter((r) => r['value'] !== undefined).length;
+    const failureCount = results.filter((r) => r['error'] !== undefined).length;
+    assert.equal(successCount, 1, 'one success');
+    assert.equal(failureCount, 1, 'one failure');
     const contA = await readFile(a, 'utf8');
     assert.ok(contA.includes('goodbye world'));
   });
@@ -239,7 +242,8 @@ describe('edit tool — files[] mode', () => {
     const s = getStructured(res);
     const results2 = s['results'] as Record<string, unknown>[];
     assert.ok(results2?.length === 1);
-    assert.ok(results2[0]?.['diff'], 'dryRun should include diff');
+    const value = results2[0]?.['value'] as Record<string, unknown> | undefined;
+    assert.ok(value?.['diff'], 'dryRun should include diff');
     const cont = await readFile(a, 'utf8');
     assert.ok(cont.includes('const x = 0;'), 'file should not be modified in dryRun');
   });
