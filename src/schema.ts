@@ -36,9 +36,9 @@ export const PositiveInt = z
   .positive({ error: 'Must be > 0' })
   .meta({ id: 'PositiveInt', title: 'Positive Integer' });
 
-export const FileType = z
-  .enum(['file', 'directory', 'symlink', 'other'])
-  .meta({ id: 'FileType', title: 'File Type' });
+export const FILE_TYPES = ['file', 'directory', 'symlink', 'other'] as const;
+export type FileType = (typeof FILE_TYPES)[number];
+export const FileType = z.enum(FILE_TYPES).meta({ id: 'FileType', title: 'File Type' });
 
 const MAX_PATH_LENGTH = 4096;
 

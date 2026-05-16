@@ -25,6 +25,7 @@ import { pipeline } from 'node:stream/promises';
 
 import ignore, { type Ignore } from 'ignore';
 
+import type { FileType } from '../schema.js';
 import { assertNotAborted, withAbort } from './concurrency.js';
 import { ErrorCode, FsError, isNodeError } from './errors.js';
 import {
@@ -39,12 +40,13 @@ import type { PathGuard } from './path.js';
 import { toPosixPath } from './path.js';
 import { BINARY_CHECK_BUFFER_SIZE, KNOWN_BINARY_EXTENSIONS, MAX_TEXT_FILE_SIZE } from './util.js';
 
+// Re-export FileType from schema for external consumers
+export type { FileType };
+
 const READ_ONLY_FILE_FLAG = 'r';
 const STREAM_CHUNK_SIZE = 64 * 1024;
 
 // ─── Domain primitives ────────────────────────────────────────────────────────
-
-export type FileType = 'file' | 'directory' | 'symlink' | 'other';
 
 export interface FileInfo {
   readonly name: string;
