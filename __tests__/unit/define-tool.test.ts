@@ -518,7 +518,9 @@ test('defineTool: handler returns formatted error on thrown exception', async ()
     mcpReq: fakeMcpReq(),
   } as unknown as ServerContext);
   assert.ok(result.isError, 'result is an error');
-  assert.equal(result.errorCode, ErrorCode.UNKNOWN);
+  assert.equal('errorCode' in result, false);
+  assert.match((result.content?.[0] as { text?: string } | undefined)?.text ?? '', /UNKNOWN/i);
+  assert.match((result.content?.[0] as { text?: string } | undefined)?.text ?? '', /Test error/i);
 });
 
 test('defineTool: defaultErrorCode is used in error responses', async (): Promise<void> => {
@@ -536,7 +538,9 @@ test('defineTool: defaultErrorCode is used in error responses', async (): Promis
     mcpReq: fakeMcpReq(),
   } as unknown as ServerContext);
   assert.ok(result.isError);
-  assert.equal(result.errorCode, ErrorCode.TIMEOUT);
+  assert.equal('errorCode' in result, false);
+  assert.match((result.content?.[0] as { text?: string } | undefined)?.text ?? '', /TIMEOUT/i);
+  assert.match((result.content?.[0] as { text?: string } | undefined)?.text ?? '', /Test error/i);
 });
 
 test('defineTool: resourceStore is injected into ToolCtx', async (): Promise<void> => {

@@ -1,4 +1,8 @@
-import { createMcpExpressApp } from '@modelcontextprotocol/express';
+import {
+  createMcpExpressApp,
+  hostHeaderValidation,
+  localhostHostValidation,
+} from '@modelcontextprotocol/express';
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import type { McpServer } from '@modelcontextprotocol/server';
 import {
@@ -14,12 +18,10 @@ import {
   JSONRPC_VERSION,
   type JSONRPCErrorResponse,
   type JSONRPCMessage,
-  localhostAllowedHostnames,
   parseJSONRPCMessage,
   ProtocolErrorCode,
   StdioServerTransport,
   type StreamId,
-  validateHostHeader,
 } from '@modelcontextprotocol/server';
 
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -170,9 +172,6 @@ export async function startServer(ctx: FilesystemServerContext): Promise<void> {
 const MAX_SESSION_ID_LENGTH = 256;
 const MAX_BEARER_TOKEN_LENGTH = 4096;
 const JSON_RPC_SERVER_ERROR = -32000;
-const JSON_RPC_INVALID_REQUEST = ProtocolErrorCode.InvalidRequest;
-const JSON_RPC_PARSE_ERROR = ProtocolErrorCode.ParseError;
-const JSON_RPC_INTERNAL_ERROR = ProtocolErrorCode.InternalError;
 
 const ALLOWED_ORIGIN_PATTERNS: readonly RegExp[] = [
   /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/u,
@@ -227,7 +226,10 @@ function classifyJsonRpcMessage(message: JSONRPCMessage): JsonRpcKind {
  * directly testable without spinning up a server.
  */
 export function isLoopbackHttpHost(host: string): boolean {
-  return localhostAllowedHostnames().includes(host.trim().toLowerCase());
+  const normalizedHost = host.trim().toLowerCase();
+  return (
+    normalizedHost === '127.0.0.1' || normalizedHost === 'localhost' || normalizedHost === '[::1]'
+  );
 }
 
 export function isAllowedLocalhostOrigin(origin: string): boolean {
@@ -510,11 +512,11 @@ function errorHandlerMiddleware(
   next: NextFunction,
 ): void {
   if (err.status === 413) {
-    sendJsonRpcError(res, 413, JSON_RPC_INVALID_REQUEST, 'Request body too large');
+    sendJsonRpcError(res, 413, ProtocolErrorCode.InvalidRequest, 'Request body too large');
     return;
   }
   if (err.status === 400) {
-    sendJsonRpcError(res, 400, JSON_RPC_PARSE_ERROR, 'Invalid JSON in request body');
+    sendJsonRpcError(res, 400, ProtocolErrorCode.ParseError, 'Invalid JSON in request body');
     return;
   }
   next(err);
@@ -549,7 +551,7 @@ async function handlePostMcp(
           message = parseJSONRPCMessage(body);
         } catch {
           // Invalid JSON-RPC shape
-          sendJsonRpcError(res, 400, JSON_RPC_INVALID_REQUEST, 'Invalid Request');
+          sendJsonRpcError(res, 400, ProtocolErrorCode.InvalidRequest, 'Invalid Request');
           enrich({ http_status: 400, outcome: 'rejected', request_kind: 'unknown' });
           return;
         }
@@ -586,7 +588,7 @@ async function handlePostMcp(
           sendJsonRpcError(
             res,
             400,
-            JSON_RPC_INVALID_REQUEST,
+            ProtocolErrorCode.InvalidRequest,
             'JSON-RPC response or notification cannot start a new session',
           );
           enrich({ http_status: 400, outcome: 'rejected' });
@@ -615,7 +617,7 @@ async function handlePostMcp(
       } catch (error) {
         Logger.error('[HTTP] Error handling POST request:', formatUnknownErrorMessage(error));
         if (!res.headersSent) {
-          sendJsonRpcError(res, 500, JSON_RPC_INTERNAL_ERROR, 'Internal Server Error');
+          sendJsonRpcError(res, 500, ProtocolErrorCode.InternalError, 'Internal Server Error');
         }
         enrich({ http_status: res.statusCode });
         throw error;
@@ -662,7 +664,7 @@ async function handleGetOrDeleteMcp(
           formatUnknownErrorMessage(error),
         );
         if (!res.headersSent) {
-          sendJsonRpcError(res, 500, JSON_RPC_INTERNAL_ERROR, 'Internal Server Error');
+          sendJsonRpcError(res, 500, ProtocolErrorCode.InternalError, 'Internal Server Error');
         }
         enrich({ http_status: res.statusCode });
         throw error;
@@ -683,16 +685,11 @@ function setupExpressApp(
     jsonLimit: `${MAX_REQUEST_BODY_BYTES}b`,
   });
 
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    const host = req.headers.host;
-    const allowedHosts = [...localhostAllowedHostnames(), httpHost];
-    const result = validateHostHeader(host, allowedHosts);
-    if (!result.ok) {
-      res.status(403).json({ error: 'Invalid Host header' });
-      return;
-    }
-    next();
-  });
+  if (isLoopbackHttpHost(httpHost)) {
+    app.use('/mcp', localhostHostValidation());
+  } else {
+    app.use('/mcp', hostHeaderValidation([httpHost]));
+  }
 
   app.use(originGuardMiddleware());
 

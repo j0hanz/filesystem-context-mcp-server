@@ -47,7 +47,6 @@ type ToolResponse<T> = {
 interface ToolErrorResponse extends Record<string, unknown> {
   content: ContentBlock[];
   isError: true;
-  errorCode: ErrorCode;
 }
 
 export type ToolResult<T> = ToolResponse<T> | ToolErrorResponse;
@@ -423,21 +422,18 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     await this.tracker.closeWithDone(plainMessage('done', doneCtx));
   }
 
-  private async failProgress(
-    error: unknown,
-  ): Promise<{ isError: true; content: ContentBlock[]; errorCode?: number | string }> {
+  private async failProgress(error: unknown): Promise<{ isError: true; content: ContentBlock[] }> {
     const errMsg = error instanceof Error ? error.message : String(error);
     this.tracker.updateStderrError(errMsg);
     const message = plainMessage('fail', { ...this.tracker.progressCtx, error: errMsg });
     await this.tracker.closeWithFail(error, message);
-    const { code: errorCode, text: errorText } = Problem.toText(
+    const { text: errorText } = Problem.toText(
       error,
       this.def.defaultErrorCode ?? ErrorCode.UNKNOWN,
     );
     return {
       content: [{ type: 'text' as const, text: errorText }],
       isError: true,
-      errorCode,
     };
   }
 

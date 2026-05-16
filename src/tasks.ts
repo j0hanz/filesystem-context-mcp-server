@@ -232,7 +232,10 @@ export class TaskOrchestrator implements TaskStore {
 
           const result = await handler(args, interceptedCtx);
 
-          const strippedResult = maybeStripStructuredContentFromResult(result);
+          const strippedResult = maybeStripStructuredContentFromResult(result) as Record<
+            string,
+            unknown
+          >;
           if (
             strippedResult['_meta'] &&
             typeof strippedResult['_meta'] === 'object' &&
@@ -252,7 +255,15 @@ export class TaskOrchestrator implements TaskStore {
           };
 
           if ('isError' in strippedResult && strippedResult['isError'] === true) {
-            const isCancelled = strippedResult['errorCode'] === ErrorCode.CANCELLED;
+            const contentValue: unknown = strippedResult['content'];
+            const contentItems: unknown[] = Array.isArray(contentValue) ? contentValue : [];
+            const firstContent = contentItems[0];
+            const firstText =
+              isRecord(firstContent) && firstContent['type'] === 'text'
+                ? firstContent['text']
+                : undefined;
+            const isCancelled =
+              typeof firstText === 'string' && /cancelled|canceled/i.test(firstText);
             if (isCancelled) {
               try {
                 await task.store.updateTaskStatus(mcpTask.taskId, 'cancelled', 'cancelled');
@@ -284,16 +295,10 @@ export class TaskOrchestrator implements TaskStore {
               isRecord(error) && typeof error['message'] === 'string'
                 ? error['message']
                 : String(error);
-            const code = (
-              isRecord(error) && typeof error['code'] === 'string'
-                ? error['code']
-                : ErrorCode.UNKNOWN
-            ) as ErrorCode;
 
             const errorResult = {
               isError: true as const,
               content: [{ type: 'text' as const, text: message }],
-              errorCode: code,
               _meta: {
                 [RELATED_TASK_META_KEY]: { taskId: mcpTask.taskId },
               },

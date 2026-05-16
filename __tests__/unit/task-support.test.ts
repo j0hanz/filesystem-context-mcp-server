@@ -229,7 +229,6 @@ describe('createToolTaskHandler', () => {
       const handler = getHandler(store, async () => ({
         content: [{ type: 'text', text: 'UNKNOWN: boom' }],
         isError: true,
-        errorCode: ErrorCode.UNKNOWN,
       }));
 
       const { task } = await callCreateTask(handler, createMockExtra(store));
@@ -253,7 +252,6 @@ describe('createToolTaskHandler', () => {
           },
         ],
         isError: true,
-        errorCode: ErrorCode.CANCELLED,
       }));
 
       const { task } = await callCreateTask(handler, createMockExtra(store));
@@ -289,9 +287,13 @@ describe('createToolTaskHandler', () => {
         structuredContent: { ok: true },
       }));
 
-      const ctx = {
-        ...createMockExtra(store),
-        taskRequestedTtl: MAX_TASK_TTL_MS + 999_999,
+      const baseCtx = createMockExtra(store);
+      const ctx: CreateTaskServerContext = {
+        ...baseCtx,
+        task: {
+          ...baseCtx.task,
+          requestedTtl: MAX_TASK_TTL_MS + 999_999,
+        },
       };
       const { task } = await callCreateTask(handler, ctx);
       assert.ok(
@@ -524,7 +526,6 @@ describe('createToolTaskHandler', () => {
         Promise.resolve({
           content: [{ type: 'text', text: 'CANCELLED: aborted' }],
           isError: true as const,
-          errorCode: ErrorCode.CANCELLED,
         }),
       );
 
@@ -551,7 +552,6 @@ describe('createToolTaskHandler', () => {
         Promise.resolve({
           content: [{ type: 'text', text: 'NOT_FOUND: missing' }],
           isError: true as const,
-          errorCode: ErrorCode.NOT_FOUND,
         }),
       );
 

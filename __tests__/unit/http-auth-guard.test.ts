@@ -1,4 +1,6 @@
 // __tests__/unit/http-auth-guard.test.ts
+import { hostHeaderValidation, localhostHostValidation } from '@modelcontextprotocol/express';
+
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 
@@ -8,6 +10,13 @@ import {
   isLoopbackHttpHost,
   validateBearerAuthorization,
 } from '../../src/transport.js';
+
+describe('express host validation exports', () => {
+  it('exposes host validation middleware factories as functions', () => {
+    assert.equal(typeof hostHeaderValidation, 'function');
+    assert.equal(typeof localhostHostValidation, 'function');
+  });
+});
 
 describe('isLoopbackHttpHost', () => {
   it('accepts canonical loopback hosts from SDK list', () => {
