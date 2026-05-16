@@ -120,6 +120,44 @@ export function emitWideEvent(
   Logger.emit(level, toLogfmt(eventToLog));
 }
 
+export async function withTelemetry<T>(
+  baseEvent: { event: string; [key: string]: unknown },
+  handler: (enrich: (extraData: Record<string, unknown>) => void) => Promise<T> | T,
+): Promise<T> {
+  const start = performance.now();
+  let extraData: Record<string, unknown> = {};
+  const enrich = (data: Record<string, unknown>) => {
+    extraData = { ...extraData, ...data };
+  };
+
+  try {
+    const result = await handler(enrich);
+    const outcome =
+      (extraData['outcome'] as 'success' | 'error' | 'cancelled' | 'rejected' | undefined) ??
+      'success';
+    const level = outcome === 'error' || outcome === 'rejected' ? 'error' : 'info';
+    emitWideEvent(level, {
+      ...baseEvent,
+      outcome,
+      duration_ms: performance.now() - start,
+      ...extraData,
+    });
+    return result;
+  } catch (error) {
+    const outcome =
+      (extraData['outcome'] as 'success' | 'error' | 'cancelled' | 'rejected' | undefined) ??
+      'error';
+    emitWideEvent('error', {
+      ...baseEvent,
+      outcome,
+      error_message: error instanceof Error ? error.message : String(error),
+      duration_ms: performance.now() - start,
+      ...extraData,
+    });
+    throw error;
+  }
+}
+
 export function logRuntimeFailure(
   reason: string,
   scope: string,

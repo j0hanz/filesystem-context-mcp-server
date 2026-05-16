@@ -1,5 +1,3 @@
-// src/tools/define.ts
-// Tool definition engine for registering tools with MCP server
 import type {
   CallToolResult,
   ContentBlock,
@@ -22,10 +20,10 @@ import { ErrorCode, Problem } from '../core/errors.js';
 import type { ProgressCtx } from '../core/fmt.js';
 import { plainMessage } from '../core/fmt.js';
 import {
-  emitWideEvent,
   Logger,
   ProgressSession,
   StderrProgressSink,
+  withTelemetry,
 } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
@@ -109,9 +107,9 @@ class ManagedExecution<I extends z.ZodType, O extends z.ZodType> {
   private pendingProgressNotifications = new Set<Promise<void>>();
   private progressClosed = false;
   private progressCursor = 0;
-  private outcome: 'success' | 'error' | 'cancelled' = 'success';
-  private errorType: string | undefined;
-  private errorMessage: string | undefined;
+  public outcome: 'success' | 'error' | 'cancelled' = 'success';
+  public errorType: string | undefined;
+  public errorMessage: string | undefined;
 
   private stderrSink: StderrProgressSink;
   private progressSession: ProgressSession;
@@ -271,36 +269,10 @@ class ManagedExecution<I extends z.ZodType, O extends z.ZodType> {
     };
   }
 
-  async settleAndEmitMetrics(
-    inputKeys?: string[],
-    inputSizeBytes?: number,
-    resultSizeBytes?: number,
-  ): Promise<void> {
+  async flushNotifications(): Promise<void> {
     if (this.pendingProgressNotifications.size > 0) {
       await Promise.allSettled([...this.pendingProgressNotifications]);
     }
-    const level = this.outcome === 'error' ? 'error' : 'info';
-    emitWideEvent(level, {
-      event: 'tool_execution',
-      tool_name: this.toolName,
-      execution_id: this.executionId,
-      ...(this.ctx.sessionId ? { session_id: this.ctx.sessionId } : {}),
-      ...(this.ctx._meta &&
-      'traceparent' in this.ctx._meta &&
-      typeof this.ctx._meta['traceparent'] === 'string'
-        ? { traceparent: this.ctx._meta['traceparent'] }
-        : {}),
-      ...(inputKeys ? { input_keys: inputKeys } : {}),
-      ...(inputSizeBytes !== undefined ? { input_size_bytes: inputSizeBytes } : {}),
-      ...(resultSizeBytes !== undefined ? { result_size_bytes: resultSizeBytes } : {}),
-      outcome: this.outcome,
-      ...(this.errorType ? { error_type: this.errorType } : {}),
-      ...(this.errorMessage ? { error_message: this.errorMessage } : {}),
-      duration_ms: performance.now() - this.startTime,
-      memory_delta_mb: (process.memoryUsage().rss - this.startMemory) / 1024 / 1024,
-      tool_progress_ticks: this.progressUpdates,
-      progress_notifications_emitted: this.progressNotificationsEmitted,
-    });
   }
 }
 
@@ -333,81 +305,109 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
       // regular ServerContext call paths). signal is optional in ToolContext; fall back
       // to an already-aborted signal when absent so ToolCtx.signal stays non-optional.
       const coreHandler = async (args: unknown, ctx: ToolContext): Promise<CallToolResult> => {
-        let inputKeys: string[] | undefined;
-        let inputSizeBytes: number | undefined;
-        let resultSizeBytes: number | undefined;
-
-        if (args && typeof args === 'object') {
-          inputKeys = Object.keys(args);
-          try {
-            inputSizeBytes = Buffer.byteLength(JSON.stringify(args), 'utf8');
-          } catch {
-            // Ignore serialization error
-          }
-        }
-
-        const parsedArgs = args as z.infer<typeof def.input>;
-        const exec = new ManagedExecution<I, O>(def.name, ctx, def, def.timeoutMs, parsedArgs);
-
-        try {
-          if (!deps.isInitialized()) {
-            return {
-              isError: true as const,
-              content: [
-                { type: 'text' as const, text: 'Server not initialized. Roots unavailable.' },
-              ],
-            };
-          }
-
-          exec.startProgress();
-
-          const toolCtx: ToolCtx = {
-            signal: exec.signal,
-            ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
-            ...(ctx._meta ? { _meta: ctx._meta } : {}),
-            pathGuard: deps.pathGuard,
-            resourceStore: deps.resourceStore,
-            ...(ctx.log
-              ? {
-                  log: ((ctxLog) => (level, data, logger) => {
-                    const msg = typeof data === 'string' ? data : String(data);
-                    Logger.emit(level, msg);
-                    runDetached(def.name, ctxLog(level, data, logger), 'log');
-                  })(ctx.log),
-                }
+        return withTelemetry(
+          {
+            event: 'tool_execution',
+            tool_name: def.name,
+            ...(ctx.sessionId ? { session_id: ctx.sessionId } : {}),
+            ...(ctx._meta &&
+            'traceparent' in ctx._meta &&
+            typeof ctx._meta['traceparent'] === 'string'
+              ? { traceparent: ctx._meta['traceparent'] }
               : {}),
-            ...(ctx.sendNotification ? { sendNotification: ctx.sendNotification } : {}),
-            onProgress: (p) => {
-              exec.tickProgress(p);
-            },
-            ...(ctx.elicitInput ? { elicitInput: ctx.elicitInput } : {}),
-          };
+          },
+          async (enrich) => {
+            let inputKeys: string[] | undefined;
+            let inputSizeBytes: number | undefined;
+            let resultSizeBytes: number | undefined;
 
-          const result = await def.run(parsedArgs, toolCtx);
+            if (args && typeof args === 'object') {
+              inputKeys = Object.keys(args);
+              try {
+                inputSizeBytes = Buffer.byteLength(JSON.stringify(args), 'utf8');
+              } catch {
+                // Ignore serialization error
+              }
+            }
 
-          await exec.completeProgress(result.structured);
+            const parsedArgs = args as z.infer<typeof def.input>;
+            const exec = new ManagedExecution<I, O>(def.name, ctx, def, def.timeoutMs, parsedArgs);
 
-          const text = result.text ?? JSON.stringify(result.structured);
-          const content: ContentBlock[] = [
-            { type: 'text' as const, text },
-            ...(result.resources ?? []),
-          ];
+            enrich({ execution_id: exec.executionId });
 
-          try {
-            resultSizeBytes = Buffer.byteLength(JSON.stringify(result.structured), 'utf8');
-          } catch {
-            // Ignore serialization error
-          }
+            try {
+              if (!deps.isInitialized()) {
+                enrich({ outcome: 'error', error_message: 'Server not initialized.' });
+                return {
+                  isError: true as const,
+                  content: [
+                    { type: 'text' as const, text: 'Server not initialized. Roots unavailable.' },
+                  ],
+                };
+              }
 
-          return {
-            content,
-            structuredContent: result.structured as Record<string, unknown>,
-          };
-        } catch (error: unknown) {
-          return await exec.failProgress(error);
-        } finally {
-          await exec.settleAndEmitMetrics(inputKeys, inputSizeBytes, resultSizeBytes);
-        }
+              exec.startProgress();
+
+              const toolCtx: ToolCtx = {
+                signal: exec.signal,
+                ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
+                ...(ctx._meta ? { _meta: ctx._meta } : {}),
+                pathGuard: deps.pathGuard,
+                resourceStore: deps.resourceStore,
+                ...(ctx.log
+                  ? {
+                      log: ((ctxLog) => (level, data, logger) => {
+                        const msg = typeof data === 'string' ? data : String(data);
+                        Logger.emit(level, msg);
+                        runDetached(def.name, ctxLog(level, data, logger), 'log');
+                      })(ctx.log),
+                    }
+                  : {}),
+                ...(ctx.sendNotification ? { sendNotification: ctx.sendNotification } : {}),
+                onProgress: (p) => {
+                  exec.tickProgress(p);
+                },
+                ...(ctx.elicitInput ? { elicitInput: ctx.elicitInput } : {}),
+              };
+
+              const result = await def.run(parsedArgs, toolCtx);
+
+              await exec.completeProgress(result.structured);
+
+              const text = result.text ?? JSON.stringify(result.structured);
+              const content: ContentBlock[] = [
+                { type: 'text' as const, text },
+                ...(result.resources ?? []),
+              ];
+
+              try {
+                resultSizeBytes = Buffer.byteLength(JSON.stringify(result.structured), 'utf8');
+              } catch {
+                // Ignore serialization error
+              }
+
+              return {
+                content,
+                structuredContent: result.structured as Record<string, unknown>,
+              };
+            } catch (error: unknown) {
+              return await exec.failProgress(error);
+            } finally {
+              await exec.flushNotifications();
+              enrich({
+                ...(inputKeys ? { input_keys: inputKeys } : {}),
+                ...(inputSizeBytes !== undefined ? { input_size_bytes: inputSizeBytes } : {}),
+                ...(resultSizeBytes !== undefined ? { result_size_bytes: resultSizeBytes } : {}),
+                outcome: exec.outcome,
+                ...(exec.errorType ? { error_type: exec.errorType } : {}),
+                ...(exec.errorMessage ? { error_message: exec.errorMessage } : {}),
+                memory_delta_mb: (process.memoryUsage().rss - exec.startMemory) / 1024 / 1024,
+                tool_progress_ticks: exec.progressUpdates,
+                progress_notifications_emitted: exec.progressNotificationsEmitted,
+              });
+            }
+          },
+        );
       };
 
       // `as never`: bridges StandardSchema/JSON-Schema type mismatch at registration boundary.

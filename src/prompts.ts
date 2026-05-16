@@ -12,7 +12,7 @@ import { stat } from 'node:fs/promises';
 
 import { z } from 'zod/v4';
 
-import { emitWideEvent, Logger } from './core/observability.js';
+import { Logger, withTelemetry } from './core/observability.js';
 import { completePathCached } from './core/path.js';
 import type { PathGuard } from './core/path.js';
 import { INSTRUCTION_SECTIONS } from './resources.js';
@@ -102,49 +102,27 @@ function wrapHandler<T>(
   options: PromptRegistrationOptions,
   requiresInit: boolean,
   fn: () => Promise<T> | T,
-): Promise<T> | T {
+): Promise<T> {
   if (requiresInit && !options.isInitialized()) {
     throw new Error(`Prompt ${contract.name} called before roots are initialized`);
   }
   const displayName = getDisplayName(contract);
-  const start = Date.now();
 
-  const logPromptResolution = (outcome: 'success' | 'error', errorMessage?: string): void => {
-    emitWideEvent(outcome === 'success' ? 'info' : 'error', {
+  return withTelemetry(
+    {
       event: 'prompt_complete',
       prompt_name: contract.name,
       display_name: displayName,
-      outcome,
-      duration_ms: Date.now() - start,
-      ...(errorMessage ? { error_message: errorMessage } : {}),
-    });
-    Logger.debug(`prompt resolved`, {
-      name: contract.name,
-      displayName,
-      durationMs: Date.now() - start,
-    });
-  };
-
-  try {
-    const result = fn();
-    if (result instanceof Promise) {
-      return result.then(
-        (value) => {
-          logPromptResolution('success');
-          return value;
-        },
-        (error: unknown) => {
-          logPromptResolution('error', error instanceof Error ? error.message : String(error));
-          throw error;
-        },
-      );
-    }
-    logPromptResolution('success');
-    return result;
-  } catch (error) {
-    logPromptResolution('error', error instanceof Error ? error.message : String(error));
-    throw error;
-  }
+    },
+    async () => {
+      const result = await fn();
+      Logger.debug(`prompt resolved`, {
+        name: contract.name,
+        displayName,
+      });
+      return result;
+    },
+  );
 }
 
 // --- Prompt entries (filled in by later tasks) ---
