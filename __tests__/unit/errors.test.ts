@@ -8,11 +8,11 @@ import { ErrorCode } from '../../src/config.js';
 import {
   classifyError,
   createDetailedError,
+  FsError,
   getSuggestion,
   isAbortError,
   isNodeError,
   isTimeoutLikeError,
-  FsError,
   Problem,
   zodErrorToProblem,
 } from '../../src/core/errors.js';

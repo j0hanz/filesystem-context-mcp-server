@@ -6,7 +6,7 @@ import { basename, dirname, resolve, sep } from 'node:path';
 import { z } from 'zod/v4';
 
 import { withAbort } from '../core/concurrency.js';
-import { ErrorCode, isAbortError, isNodeError, FsError, Problem } from '../core/errors.js';
+import { ErrorCode, FsError, isAbortError, isNodeError, Problem } from '../core/errors.js';
 import { cp, mkdir, rename, rm, stat } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
 import { PerFileErrorSchema, RequiredPath } from '../schema.js';

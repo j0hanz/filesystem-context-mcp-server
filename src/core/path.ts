@@ -28,9 +28,9 @@ import {
 import {
   ErrorCode,
   formatUnknownErrorMessage,
+  FsError,
   isAbortError,
   isNodeError,
-  FsError,
 } from './errors.js';
 import { Logger, type LoggingState, logToMcp } from './observability.js';
 import {

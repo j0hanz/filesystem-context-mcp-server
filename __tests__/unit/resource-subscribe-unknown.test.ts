@@ -7,7 +7,10 @@ import type { PathGuard } from '../../src/core/path.js';
 import { createInMemoryResourceStore } from '../../src/core/store.js';
 import { registerAllResources } from '../../src/resources.js';
 
-type RequestHandler = (req: { params: Record<string, string> }, ctx: ServerContext) => Promise<void>;
+type RequestHandler = (
+  req: { params: Record<string, string> },
+  ctx: ServerContext,
+) => Promise<void>;
 
 describe('resources/subscribe with unknown URI', () => {
   it('throws ProtocolError(ResourceNotFound) when subscribing to an unknown URI', async () => {
@@ -31,7 +34,6 @@ describe('resources/subscribe with unknown URI', () => {
         },
       },
     };
-
 
     const resourceStore = createInMemoryResourceStore();
 

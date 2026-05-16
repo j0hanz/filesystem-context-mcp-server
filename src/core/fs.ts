@@ -27,7 +27,7 @@ import ignore, { type Ignore } from 'ignore';
 
 import type { FileType } from '../config.js';
 import { assertNotAborted, withAbort } from './concurrency.js';
-import { ErrorCode, isNodeError, FsError } from './errors.js';
+import { ErrorCode, FsError, isNodeError } from './errors.js';
 import {
   getToolContextSnapshot,
   publishOpsTraceEnd,

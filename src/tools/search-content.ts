@@ -12,8 +12,8 @@ import { assertNotAborted, withAbort, withTimedAbortSignal } from '../core/concu
 import {
   ErrorCode,
   formatUnknownErrorMessage,
-  isTimeoutLikeError,
   FsError,
+  isTimeoutLikeError,
 } from '../core/errors.js';
 import { buildGlobOptions, globEntries, isProbablyBinary, stat } from '../core/fs.js';
 import type { GlobEntry } from '../core/fs.js';

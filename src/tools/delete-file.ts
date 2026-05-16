@@ -6,7 +6,7 @@ import { basename } from 'node:path';
 import { z } from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
-import { ErrorCode, isNodeError, FsError, Problem } from '../core/errors.js';
+import { ErrorCode, FsError, isNodeError, Problem } from '../core/errors.js';
 import { lstat, rm, rmdir } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
