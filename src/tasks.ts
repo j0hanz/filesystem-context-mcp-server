@@ -14,7 +14,7 @@ import {
 import type { StandardSchemaWithJSON } from '@modelcontextprotocol/server';
 
 import { ErrorCode, McpError } from './core/errors.js';
-import { logRuntimeFailure } from './core/observability.js';
+import { Logger, logRuntimeFailure } from './core/observability.js';
 import {
   isRecord,
   MAX_CONCURRENT_TASKS,
@@ -212,7 +212,16 @@ export class TaskOrchestrator extends InMemoryTaskStore {
       const { task } = ctx;
 
       const mcpTask = (await (this.creationPromise = this.creationPromise
-        .catch(() => undefined)
+        .catch((err: unknown) => {
+          Logger.debug('[TaskOrchestrator] prior task-creation failure cleared from chain', {
+            toolName: options.toolName,
+            error:
+              isRecord(err) && typeof err['message'] === 'string'
+                ? err['message']
+                : String(err),
+          });
+          return undefined;
+        })
         .then(async () => {
           let activeCount = 0;
           let cursor: string | undefined;
