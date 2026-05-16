@@ -40,9 +40,10 @@ import {
   SessionContext,
   withTelemetry,
 } from './core/observability.js';
+import type { PathGuard, ServerOptions } from './core/path.js';
 import { getInitHandshakeTimeoutMs, INIT_TIMEOUT_CLOSE, parseEnvInt } from './core/util.js';
 import type { FilesystemServerContext } from './server.js';
-import { createServer, logRouter, type RootsManager, type ServerOptions } from './server.js';
+import { createServer, logRouter } from './server.js';
 
 // ═══════════════════════════════════════════════════════════════
 // event-store
@@ -147,7 +148,7 @@ export async function startServer(ctx: FilesystemServerContext): Promise<void> {
   const { mcp: server } = ctx;
   const transport = new StdioServerTransport();
 
-  ctx.roots.registerHandlers(
+  ctx.pathGuard.registerHandlers(
     server,
     INIT_TIMEOUT_CLOSE
       ? () => {
@@ -155,7 +156,7 @@ export async function startServer(ctx: FilesystemServerContext): Promise<void> {
         }
       : undefined,
   );
-  await ctx.roots.recomputeAllowedDirectories();
+  await ctx.pathGuard.recomputeAllowedDirectories();
   await server.connect(transport);
   const sdkOnClose = transport.onclose;
   transport.onclose = () => {
@@ -163,7 +164,7 @@ export async function startServer(ctx: FilesystemServerContext): Promise<void> {
     sdkOnClose?.();
   };
 
-  ctx.roots.logMissingDirectoriesIfNeeded(server);
+  ctx.pathGuard.logMissingDirectoriesIfNeeded(server);
 }
 
 const MAX_SESSION_ID_LENGTH = 256;
@@ -318,7 +319,7 @@ function bearerAuthMiddleware(): RequestHandler {
 
 export interface HttpSession {
   server: McpServer;
-  rootsManager: RootsManager;
+  pathGuard: PathGuard;
   transport: NodeStreamableHTTPServerTransport;
   createdAt: number;
   close: () => Promise<void>;
@@ -390,10 +391,7 @@ export class HttpSessionRegistry {
   private sweepStale(): void {
     const now = Date.now();
     for (const [sessionId, session] of this.sessions) {
-      if (
-        !session.rootsManager.isInitialized() &&
-        now - session.createdAt > this.handshakeTimeoutMs
-      ) {
+      if (!session.pathGuard.isInitialized() && now - session.createdAt > this.handshakeTimeoutMs) {
         Logger.warn(`[HTTP] Evicting stale session ${sessionId}`);
         session.close().catch((err: unknown) => {
           Logger.error(
@@ -435,10 +433,7 @@ async function createHttpSession(
 ): Promise<HttpSession> {
   const serverCtx = await createServer(options);
   const mcpServer = serverCtx.mcp;
-  const rootsManager = serverCtx.roots;
-
-  rootsManager.registerHandlers(mcpServer);
-  await rootsManager.recomputeAllowedDirectories();
+  const pathGuard = serverCtx.pathGuard;
 
   let cleanedUp = false;
   const cleanup = (): void => {
@@ -451,6 +446,11 @@ async function createHttpSession(
     }
   };
 
+  pathGuard.registerHandlers(mcpServer, () => {
+    cleanup();
+    void mcpServer.close();
+  });
+
   const close = async (): Promise<void> => {
     cleanup();
     await mcpServer.close();
@@ -461,18 +461,20 @@ async function createHttpSession(
     eventStore,
     retryInterval: 2_000,
     onsessioninitialized: (sessionId) => {
+      const loggingState = pathGuard.loggingState;
+      if (!loggingState) throw new Error('LoggingState is required');
       registry.add(
         sessionId,
         {
           server: mcpServer,
-          rootsManager,
+          pathGuard,
           transport,
           createdAt: Date.now(),
           close,
         },
-        { server: mcpServer, loggingState: rootsManager.loggingState },
+        { server: mcpServer, loggingState },
       );
-      rootsManager.logMissingDirectoriesIfNeeded(mcpServer);
+      pathGuard.logMissingDirectoriesIfNeeded(mcpServer);
     },
     onsessionclosed: async (sessionId) => {
       const session = registry.get(sessionId);
@@ -488,7 +490,7 @@ async function createHttpSession(
 
   return {
     server: mcpServer,
-    rootsManager,
+    pathGuard,
     transport,
     createdAt: Date.now(),
     close,

@@ -7,7 +7,7 @@ import { LogRouter, type LogTarget } from '../../src/core/observability.js';
 import { type HttpSession, HttpSessionRegistry } from '../../src/transport.js';
 import { InMemoryEventStore } from '../../src/transport.js';
 
-interface FakeRootsManager {
+interface FakePathGuard {
   initialized: boolean;
   isInitialized: () => boolean;
 }
@@ -15,7 +15,7 @@ interface FakeRootsManager {
 interface FakeSession extends HttpSession {
   closed: boolean;
   closeCalls: number;
-  fakeRoots: FakeRootsManager;
+  fakePathGuard: FakePathGuard;
 }
 
 function makeFakeSession(opts: {
@@ -23,7 +23,7 @@ function makeFakeSession(opts: {
   createdAt?: number;
   closeError?: Error;
 }): FakeSession {
-  const fakeRoots: FakeRootsManager = {
+  const fakePathGuard: FakePathGuard = {
     initialized: opts.initialized,
     isInitialized() {
       return this.initialized;
@@ -32,8 +32,8 @@ function makeFakeSession(opts: {
   const session = {
     closed: false,
     closeCalls: 0,
-    fakeRoots,
-    rootsManager: fakeRoots as unknown as HttpSession['rootsManager'],
+    fakePathGuard,
+    pathGuard: fakePathGuard,
     server: {} as HttpSession['server'],
     transport: {} as HttpSession['transport'],
     createdAt: opts.createdAt ?? Date.now(),

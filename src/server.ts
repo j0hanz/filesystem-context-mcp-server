@@ -2,37 +2,16 @@ import {
   type Implementation,
   InMemoryTaskMessageQueue,
   McpServer,
-  type Root,
   type ServerCapabilities,
   type SetLevelRequestParams,
 } from '@modelcontextprotocol/server';
 
-import { channel } from 'node:diagnostics_channel';
-import { readFile, realpath } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 
-import { assertNotAborted, createTimedAbortSignal, withAbort } from './core/concurrency.js';
-import { formatUnknownErrorMessage } from './core/errors.js';
-import {
-  createLoggingState,
-  Logger,
-  type LoggingState,
-  LogRouter,
-  logToMcp,
-} from './core/observability.js';
-import {
-  getValidRootDirectories,
-  isPathWithinDirectories,
-  normalizePath,
-  PathGuard,
-  resolveAllowedDirectoriesState,
-} from './core/path.js';
+import { createLoggingState, Logger, LogRouter } from './core/observability.js';
+import { PathGuard, type ServerOptions } from './core/path.js';
 import { createInMemoryResourceStore, type ResourceStore } from './core/store.js';
-import {
-  debounce,
-  getInitHandshakeTimeoutMs,
-  LOG_LEVEL,
-  SENSITIVE_FILE_DENYLIST,
-} from './core/util.js';
+import { LOG_LEVEL, SENSITIVE_FILE_DENYLIST } from './core/util.js';
 import { pkgInfo } from './pkg-info.js';
 import { registerAllPrompts } from './prompts.js';
 import {
@@ -43,253 +22,6 @@ import {
 import { TaskOrchestrator } from './tasks.js';
 import { registerAllTools } from './tools.js';
 import { type IconInfo, withDefaultIcons } from './tools/_helpers.js';
-
-const ROOTS_TIMEOUT_MS = 5000;
-const ROOTS_DEBOUNCE_MS = 100;
-
-const LIFECYCLE_CHANNEL = channel('filesystem-mcp:lifecycle');
-
-export interface ServerOptions {
-  allowCwd?: boolean;
-  cliAllowedDirs?: string[];
-}
-
-function normalizeCLIDirectories(dirs: readonly string[]): string[] {
-  const normalized: string[] = [];
-  for (const dir of dirs) {
-    const trimmed = dir.trim();
-    if (trimmed.length === 0) continue;
-    normalized.push(normalizePath(trimmed));
-  }
-  return normalized;
-}
-
-async function resolveRootDirectories(roots: Root[]): Promise<string[]> {
-  if (roots.length === 0) return [];
-  const { signal, cleanup } = createTimedAbortSignal(undefined, ROOTS_TIMEOUT_MS);
-  try {
-    return await getValidRootDirectories(roots, signal);
-  } finally {
-    cleanup();
-  }
-}
-
-async function isRootWithinBaseline(
-  normalizedRoot: string,
-  baseline: readonly string[],
-  signal?: AbortSignal,
-): Promise<boolean> {
-  if (!isPathWithinDirectories(normalizedRoot, baseline)) {
-    return false;
-  }
-
-  try {
-    assertNotAborted(signal);
-    const realPath = await withAbort(realpath(normalizedRoot), signal);
-    const normalizedReal = normalizePath(realPath);
-    return isPathWithinDirectories(normalizedReal, baseline);
-  } catch {
-    return false;
-  }
-}
-
-async function filterRootsWithinBaseline(
-  roots: readonly string[],
-  baseline: readonly string[],
-  signal?: AbortSignal,
-): Promise<string[]> {
-  const normalizedBaseline = normalizeCLIDirectories(baseline);
-  const normalizedRoots = roots.map(normalizePath);
-  if (normalizedRoots.length === 0) return [];
-
-  const results = await Promise.allSettled(
-    normalizedRoots.map((normalizedRoot) =>
-      isRootWithinBaseline(normalizedRoot, normalizedBaseline, signal),
-    ),
-  );
-
-  return normalizedRoots.filter((_, i) => {
-    const result = results[i];
-    return result?.status === 'fulfilled' && result.value;
-  });
-}
-
-type RootsManagerState = 'idle' | 'initializing' | 'updating' | 'shutting_down';
-
-export class RootsManager {
-  private _debouncedUpdate: { (server: McpServer): void; cancel: () => void } | undefined;
-  private rootDirectories: string[] = [];
-  readonly pathGuard: PathGuard = new PathGuard(SENSITIVE_FILE_DENYLIST);
-  private state: RootsManagerState = 'idle';
-  private initTimer: ReturnType<typeof setTimeout> | undefined;
-
-  // Tracks whether a roots change arrived while the previous refresh ran.
-  private pendingRootsUpdate = false;
-  private readonly options: ServerOptions;
-  readonly loggingState: LoggingState;
-
-  constructor(options: ServerOptions, loggingState: LoggingState) {
-    this.options = options;
-    this.loggingState = loggingState;
-  }
-
-  isInitialized(): boolean {
-    return this.state !== 'initializing';
-  }
-
-  destroy(): void {
-    this.state = 'shutting_down';
-    if (this.initTimer) {
-      clearTimeout(this.initTimer);
-      this.initTimer = undefined;
-    }
-    if (this._debouncedUpdate) {
-      this._debouncedUpdate.cancel();
-      this._debouncedUpdate = undefined;
-    }
-  }
-
-  logMissingDirectoriesIfNeeded(server: McpServer): void {
-    if (this.pathGuard.getAllowedDirectories().length === 0) {
-      this.logMissingDirectories(server);
-    }
-  }
-
-  registerHandlers(server: McpServer, onInitTimeout?: () => void): void {
-    if (this.state === 'shutting_down') return;
-    this.state = 'initializing';
-    const initHandshakeTimeoutMs = getInitHandshakeTimeoutMs();
-
-    server.server.setNotificationHandler('notifications/initialized', async () => {
-      if (this.state === 'shutting_down') return;
-      if (this.initTimer) {
-        clearTimeout(this.initTimer);
-        this.initTimer = undefined;
-      }
-      this.state = 'idle'; // Transition to idle before triggering the first update
-      await this.updateRootsFromClient(server);
-    });
-
-    server.server.setNotificationHandler('notifications/roots/list_changed', () => {
-      if (!this.isInitialized() || this.state === 'shutting_down') return;
-      this.scheduleRootsUpdate(server);
-    });
-
-    this.initTimer = setTimeout(() => {
-      if (this.state === 'initializing') {
-        if (LIFECYCLE_CHANNEL.hasSubscribers) {
-          LIFECYCLE_CHANNEL.publish({
-            phase: 'init_timeout',
-            timeoutMs: initHandshakeTimeoutMs,
-          });
-        }
-        logToMcp(
-          server,
-          'warning',
-          `Client did not send notifications/initialized within ${String(initHandshakeTimeoutMs)}ms`,
-          this.loggingState.minimumLevel,
-        );
-        onInitTimeout?.();
-      }
-      this.initTimer = undefined;
-    }, initHandshakeTimeoutMs);
-    this.initTimer.unref();
-  }
-
-  async recomputeAllowedDirectories(): Promise<void> {
-    const cliAllowedDirs = normalizeCLIDirectories(this.options.cliAllowedDirs ?? []);
-    const allowCwd = Boolean(this.options.allowCwd);
-    const allowCwdDirs = allowCwd ? [normalizePath(process.cwd())] : [];
-    const baseline = [...cliAllowedDirs, ...allowCwdDirs];
-    const { signal, cleanup } = createTimedAbortSignal(undefined, ROOTS_TIMEOUT_MS);
-    try {
-      const rootsToInclude =
-        baseline.length > 0
-          ? await filterRootsWithinBaseline(this.rootDirectories, baseline, signal)
-          : this.rootDirectories;
-
-      const combined = [...baseline, ...rootsToInclude];
-      const nextState = await resolveAllowedDirectoriesState(combined, signal);
-      this.pathGuard.initialize(nextState);
-    } finally {
-      cleanup();
-    }
-  }
-
-  private scheduleRootsUpdate(server: McpServer): void {
-    this._debouncedUpdate ??= debounce((s: McpServer) => {
-      void this.updateRootsFromClient(s);
-    }, ROOTS_DEBOUNCE_MS);
-    this._debouncedUpdate(server);
-  }
-
-  private logMissingDirectories(server?: McpServer): void {
-    if (this.options.allowCwd) {
-      logToMcp(
-        server,
-        'notice',
-        'No allowed directories specified. Using the current working directory as an allowed directory.',
-        this.loggingState.minimumLevel,
-      );
-      return;
-    }
-
-    logToMcp(
-      server,
-      'warning',
-      'No allowed directories specified. Please provide directories as command-line arguments or enable --allow-cwd to use the current working directory.',
-      this.loggingState.minimumLevel,
-    );
-  }
-
-  private async updateRootsFromClient(server: McpServer): Promise<void> {
-    if (this.state === 'shutting_down') return;
-
-    // Guard against concurrent executions: if one is already running, queue a
-    // single retry so the last-known state is always applied after completion.
-    if (this.state === 'updating') {
-      this.pendingRootsUpdate = true;
-      return;
-    }
-    this.state = 'updating';
-    try {
-      const clientCapabilities = server.server.getClientCapabilities();
-      if (!clientCapabilities?.roots) {
-        this.rootDirectories = [];
-      } else {
-        const rootsResult = await server.server.listRoots(undefined, {
-          timeout: ROOTS_TIMEOUT_MS,
-        });
-        const roots: Root[] = rootsResult.roots
-          .filter((r) => r.uri.startsWith('file://'))
-          .map((r) => (r.name ? { uri: r.uri, name: r.name } : { uri: r.uri }));
-        this.rootDirectories = await resolveRootDirectories(roots);
-      }
-    } catch (error) {
-      logToMcp(
-        server,
-        'debug',
-        `[DEBUG] MCP Roots protocol unavailable or failed: ${formatUnknownErrorMessage(error)}`,
-        this.loggingState.minimumLevel,
-      );
-    } finally {
-      // TS flow analysis doesn't know 'await' can yield to destroy() which sets state to shutting_down
-      const currentState = this.state as RootsManagerState;
-      if (currentState !== 'shutting_down') {
-        await this.recomputeAllowedDirectories();
-        Logger.info(
-          `Roots updated: ${this.rootDirectories.length} root(s), ${this.pathGuard.getAllowedDirectories().length} allowed dir(s)`,
-        );
-        this.state = 'idle';
-        // If a change arrived while we were running, apply it now.
-        if (this.pendingRootsUpdate) {
-          this.pendingRootsUpdate = false;
-          void this.updateRootsFromClient(server);
-        }
-      }
-    }
-  }
-}
 
 // ═══════════════════════════════════════════════════════════════
 // bootstrap
@@ -331,7 +63,7 @@ const {
 
 export class FilesystemServerContext {
   public readonly mcp: McpServer;
-  public readonly roots: RootsManager;
+  public readonly pathGuard: PathGuard;
   public readonly resources: ResourceStore;
   public readonly resourcesHandle: ResourcesHandle;
   private readonly orchestrator: TaskOrchestrator;
@@ -339,13 +71,13 @@ export class FilesystemServerContext {
 
   constructor(
     mcp: McpServer,
-    roots: RootsManager,
+    pathGuard: PathGuard,
     resources: ResourceStore,
     resourcesHandle: ResourcesHandle,
     orchestrator: TaskOrchestrator,
   ) {
     this.mcp = mcp;
-    this.roots = roots;
+    this.pathGuard = pathGuard;
     this.resources = resources;
     this.resourcesHandle = resourcesHandle;
     this.orchestrator = orchestrator;
@@ -357,7 +89,7 @@ export class FilesystemServerContext {
     this.orchestrator.dispose();
     this.orchestrator.cleanup();
     this.resourcesHandle.destroy();
-    this.roots.destroy();
+    this.pathGuard.destroy();
     logRouter.detachStdio();
   }
 
@@ -446,9 +178,9 @@ export async function createServer(
   const server = new McpServer(withDefaultIcons(implementation, localIcon), serverConfig);
 
   const loggingState = createLoggingState(LOG_LEVEL);
-  const rootsManager = new RootsManager(options, loggingState);
+  const pathGuard = new PathGuard(SENSITIVE_FILE_DENYLIST, options, loggingState);
 
-  await rootsManager.recomputeAllowedDirectories();
+  await pathGuard.recomputeAllowedDirectories();
 
   server.server.setRequestHandler('logging/setLevel', (req: { params: SetLevelRequestParams }) => {
     loggingState.minimumLevel = req.params.level;
@@ -461,26 +193,26 @@ export async function createServer(
 
   const resourcesHandle = registerAllResources(server, {
     resourceStore,
-    pathGuard: rootsManager.pathGuard,
+    pathGuard,
     ...(localIcon ? { iconInfo: localIcon } : {}),
   });
 
   registerAllPrompts(server, {
-    pathGuard: rootsManager.pathGuard,
+    pathGuard,
     instructions: serverInstructionsContent,
-    isInitialized: options.isInitialized ?? (() => rootsManager.isInitialized()),
+    isInitialized: options.isInitialized ?? (() => pathGuard.isInitialized()),
     ...(localIcon ? { iconInfo: localIcon } : {}),
   });
   registerAllTools(server, {
-    pathGuard: rootsManager.pathGuard,
+    pathGuard,
     resourceStore,
-    isInitialized: options.isInitialized ?? (() => rootsManager.isInitialized()),
+    isInitialized: options.isInitialized ?? (() => pathGuard.isInitialized()),
     orchestrator: taskOrchestrator,
   });
 
   return new FilesystemServerContext(
     server,
-    rootsManager,
+    pathGuard,
     resourceStore,
     resourcesHandle,
     taskOrchestrator,

@@ -1,5 +1,6 @@
 import type { McpServer, Root } from '@modelcontextprotocol/server';
 
+import { channel } from 'node:diagnostics_channel';
 import type { Stats } from 'node:fs';
 import { readdir, realpath, stat } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
@@ -18,9 +19,97 @@ import { fileURLToPath } from 'node:url';
 
 import { z } from 'zod/v4';
 
-import { assertNotAborted, processInParallel, withAbort } from './concurrency.js';
-import { ErrorCode, isAbortError, isNodeError, McpError } from './errors.js';
-import { PARALLEL_CONCURRENCY, SENSITIVE_FILE_DENYLIST } from './util.js';
+import {
+  assertNotAborted,
+  createTimedAbortSignal,
+  processInParallel,
+  withAbort,
+} from './concurrency.js';
+import {
+  ErrorCode,
+  formatUnknownErrorMessage,
+  isAbortError,
+  isNodeError,
+  McpError,
+} from './errors.js';
+import { Logger, type LoggingState, logToMcp } from './observability.js';
+import {
+  debounce,
+  getInitHandshakeTimeoutMs,
+  PARALLEL_CONCURRENCY,
+  SENSITIVE_FILE_DENYLIST,
+} from './util.js';
+
+const ROOTS_TIMEOUT_MS = 5000;
+const ROOTS_DEBOUNCE_MS = 100;
+const LIFECYCLE_CHANNEL = channel('filesystem-mcp:lifecycle');
+
+export interface ServerOptions {
+  allowCwd?: boolean;
+  cliAllowedDirs?: string[];
+}
+
+type RootsManagerState = 'idle' | 'initializing' | 'updating' | 'shutting_down';
+
+function normalizeCLIDirectories(dirs: readonly string[]): string[] {
+  const normalized: string[] = [];
+  for (const dir of dirs) {
+    const trimmed = dir.trim();
+    if (trimmed.length === 0) continue;
+    normalized.push(normalizePath(trimmed));
+  }
+  return normalized;
+}
+
+async function resolveRootDirectories(roots: Root[]): Promise<string[]> {
+  if (roots.length === 0) return [];
+  const { signal, cleanup } = createTimedAbortSignal(undefined, ROOTS_TIMEOUT_MS);
+  try {
+    return await getValidRootDirectories(roots, signal);
+  } finally {
+    cleanup();
+  }
+}
+
+async function isRootWithinBaseline(
+  normalizedRoot: string,
+  baseline: readonly string[],
+  signal?: AbortSignal,
+): Promise<boolean> {
+  if (!isPathWithinDirectories(normalizedRoot, baseline)) {
+    return false;
+  }
+
+  try {
+    assertNotAborted(signal);
+    const realPath = await withAbort(realpath(normalizedRoot), signal);
+    const normalizedReal = normalizePath(realPath);
+    return isPathWithinDirectories(normalizedReal, baseline);
+  } catch {
+    return false;
+  }
+}
+
+async function filterRootsWithinBaseline(
+  roots: readonly string[],
+  baseline: readonly string[],
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const normalizedBaseline = normalizeCLIDirectories(baseline);
+  const normalizedRoots = roots.map(normalizePath);
+  if (normalizedRoots.length === 0) return [];
+
+  const results = await Promise.allSettled(
+    normalizedRoots.map((normalizedRoot) =>
+      isRootWithinBaseline(normalizedRoot, normalizedBaseline, signal),
+    ),
+  );
+
+  return normalizedRoots.filter((_, i) => {
+    const result = results[i];
+    return result?.status === 'fulfilled' && result.value;
+  });
+}
 
 // Path utility primitives. Owned by path-guard.ts to avoid a circular
 // dependency with paths.ts (which depends on PathGuard). paths.ts re-exports
@@ -396,8 +485,186 @@ export class PathGuard {
   private allowedDirectoriesState: AllowedDirectoriesState | undefined;
   private denyPatterns: CompiledPatternSet;
 
-  constructor(sensitivePatterns: readonly string[]) {
+  private rootDirectories: string[] = [];
+  private state: RootsManagerState = 'idle';
+  private _debouncedUpdate: { (server: McpServer): void; cancel: () => void } | undefined;
+  private initTimer: ReturnType<typeof setTimeout> | undefined;
+  private pendingRootsUpdate = false;
+
+  private readonly options: ServerOptions | undefined;
+  readonly loggingState: LoggingState | undefined;
+
+  constructor(
+    sensitivePatterns: readonly string[] = SENSITIVE_FILE_DENYLIST,
+    options?: ServerOptions,
+    loggingState?: LoggingState,
+  ) {
     this.denyPatterns = toPatternSet(compilePatterns(sensitivePatterns));
+    this.options = options;
+    this.loggingState = loggingState;
+  }
+
+  isInitialized(): boolean {
+    return this.state !== 'initializing';
+  }
+
+  destroy(): void {
+    this.state = 'shutting_down';
+    if (this.initTimer) {
+      clearTimeout(this.initTimer);
+      this.initTimer = undefined;
+    }
+    if (this._debouncedUpdate) {
+      this._debouncedUpdate.cancel();
+      this._debouncedUpdate = undefined;
+    }
+  }
+
+  logMissingDirectoriesIfNeeded(server: McpServer): void {
+    if (this.getAllowedDirectories().length === 0 && this.loggingState) {
+      this.logMissingDirectories(server);
+    }
+  }
+
+  registerHandlers(server: McpServer, onInitTimeout?: () => void): void {
+    if (this.state === 'shutting_down') return;
+    this.state = 'initializing';
+    const initHandshakeTimeoutMs = getInitHandshakeTimeoutMs();
+
+    server.server.setNotificationHandler('notifications/initialized', async () => {
+      if (this.state === 'shutting_down') return;
+      if (this.initTimer) {
+        clearTimeout(this.initTimer);
+        this.initTimer = undefined;
+      }
+      this.state = 'idle'; // Transition to idle before triggering the first update
+      await this.updateRootsFromClient(server);
+    });
+
+    server.server.setNotificationHandler('notifications/roots/list_changed', () => {
+      if (!this.isInitialized() || this.state === 'shutting_down') return;
+      this.scheduleRootsUpdate(server);
+    });
+
+    this.initTimer = setTimeout(() => {
+      if (this.state === 'initializing') {
+        if (LIFECYCLE_CHANNEL.hasSubscribers) {
+          LIFECYCLE_CHANNEL.publish({
+            phase: 'init_timeout',
+            timeoutMs: initHandshakeTimeoutMs,
+          });
+        }
+        if (this.loggingState) {
+          logToMcp(
+            server,
+            'warning',
+            `Client did not send notifications/initialized within ${String(initHandshakeTimeoutMs)}ms`,
+            this.loggingState.minimumLevel,
+          );
+        }
+        onInitTimeout?.();
+      }
+      this.initTimer = undefined;
+    }, initHandshakeTimeoutMs);
+    this.initTimer.unref();
+  }
+
+  async recomputeAllowedDirectories(): Promise<void> {
+    const cliAllowedDirs = normalizeCLIDirectories(this.options?.cliAllowedDirs ?? []);
+    const allowCwd = Boolean(this.options?.allowCwd);
+    const allowCwdDirs = allowCwd ? [normalizePath(process.cwd())] : [];
+    const baseline = [...cliAllowedDirs, ...allowCwdDirs];
+    const { signal, cleanup } = createTimedAbortSignal(undefined, ROOTS_TIMEOUT_MS);
+    try {
+      const rootsToInclude =
+        baseline.length > 0
+          ? await filterRootsWithinBaseline(this.rootDirectories, baseline, signal)
+          : this.rootDirectories;
+
+      const combined = [...baseline, ...rootsToInclude];
+      const nextState = await resolveAllowedDirectoriesState(combined, signal);
+      this.initialize(nextState);
+    } finally {
+      cleanup();
+    }
+  }
+
+  private scheduleRootsUpdate(server: McpServer): void {
+    this._debouncedUpdate ??= debounce((s: McpServer) => {
+      void this.updateRootsFromClient(s);
+    }, ROOTS_DEBOUNCE_MS);
+    this._debouncedUpdate(server);
+  }
+
+  private logMissingDirectories(server?: McpServer): void {
+    if (!this.loggingState) return;
+
+    if (this.options?.allowCwd) {
+      logToMcp(
+        server,
+        'notice',
+        'No allowed directories specified. Using the current working directory as an allowed directory.',
+        this.loggingState.minimumLevel,
+      );
+      return;
+    }
+
+    logToMcp(
+      server,
+      'warning',
+      'No allowed directories specified. Please provide directories as command-line arguments or enable --allow-cwd to use the current working directory.',
+      this.loggingState.minimumLevel,
+    );
+  }
+
+  private async updateRootsFromClient(server: McpServer): Promise<void> {
+    if (this.state === 'shutting_down') return;
+
+    // Guard against concurrent executions: if one is already running, queue a
+    // single retry so the last-known state is always applied after completion.
+    if (this.state === 'updating') {
+      this.pendingRootsUpdate = true;
+      return;
+    }
+    this.state = 'updating';
+    try {
+      const clientCapabilities = server.server.getClientCapabilities();
+      if (!clientCapabilities?.roots) {
+        this.rootDirectories = [];
+      } else {
+        const rootsResult = await server.server.listRoots(undefined, {
+          timeout: ROOTS_TIMEOUT_MS,
+        });
+        const roots: Root[] = rootsResult.roots
+          .filter((r) => r.uri.startsWith('file://'))
+          .map((r) => (r.name ? { uri: r.uri, name: r.name } : { uri: r.uri }));
+        this.rootDirectories = await resolveRootDirectories(roots);
+      }
+    } catch (error) {
+      if (this.loggingState) {
+        logToMcp(
+          server,
+          'debug',
+          `[DEBUG] MCP Roots protocol unavailable or failed: ${formatUnknownErrorMessage(error)}`,
+          this.loggingState.minimumLevel,
+        );
+      }
+    } finally {
+      // TS flow analysis doesn't know 'await' can yield to destroy() which sets state to shutting_down
+      const currentState = this.state as RootsManagerState;
+      if (currentState !== 'shutting_down') {
+        await this.recomputeAllowedDirectories();
+        Logger.info(
+          `Roots updated: ${this.rootDirectories.length} root(s), ${this.getAllowedDirectories().length} allowed dir(s)`,
+        );
+        this.state = 'idle';
+        // If a change arrived while we were running, apply it now.
+        if (this.pendingRootsUpdate) {
+          this.pendingRootsUpdate = false;
+          void this.updateRootsFromClient(server);
+        }
+      }
+    }
   }
 
   /**
@@ -717,10 +984,7 @@ async function resolveRootDirectory(root: Root, signal?: AbortSignal): Promise<s
   }
 }
 
-export async function getValidRootDirectories(
-  roots: Root[],
-  signal?: AbortSignal,
-): Promise<string[]> {
+async function getValidRootDirectories(roots: Root[], signal?: AbortSignal): Promise<string[]> {
   const fileRoots = roots.filter(isFileRoot);
   if (fileRoots.length === 0) return [];
 
