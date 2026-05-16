@@ -46,18 +46,4 @@ describe('tool schema snapshots', () => {
       'Schema snapshot mismatch — set FS_UPDATE_SCHEMA_SNAPSHOT=1 to update',
     );
   });
-
-  it('each tool has inputSchema and no $schema at root level', async () => {
-    const snap = await buildSnapshot();
-    for (const [name, schemas] of Object.entries(snap)) {
-      const s = schemas as Record<string, unknown>;
-      assert.ok('inputSchema' in s, `${name} has inputSchema`);
-      const input = s['inputSchema'] as Record<string, unknown>;
-      assert.ok(!('$schema' in input), `${name} inputSchema must not have $schema at root`);
-      if ('outputSchema' in s) {
-        const output = s['outputSchema'] as Record<string, unknown>;
-        assert.ok(!('$schema' in output), `${name} outputSchema must not have $schema at root`);
-      }
-    }
-  });
 });

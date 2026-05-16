@@ -18,7 +18,7 @@ import type {
 
 import { randomUUID } from 'node:crypto';
 
-import type { z } from 'zod/v4';
+import { z } from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode, Problem } from '../core/errors.js';
@@ -33,7 +33,6 @@ import {
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
-import { toMcpSchema } from '../schema.js';
 
 // ============ Type Definitions ============
 
@@ -503,11 +502,16 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
 export function defineTool<I extends z.ZodType, O extends z.ZodType>(
   def: ToolDef<I, O>,
 ): DefinedTool {
-  const { standard: inputSchema, jsonSchema: inputJsonSchema } = toMcpSchema(
-    def.input,
-    def.inputSchemaAugment,
-  );
-  const { standard: outputSchema, jsonSchema: outputJsonSchema } = toMcpSchema(def.output);
+  const inputSchema = def.input;
+  const outputSchema = def.output;
+  const inputJsonSchema = z.toJSONSchema(def.input, {
+    target: 'draft-2020-12',
+    io: 'input',
+  }) as Tool['inputSchema'];
+  const outputJsonSchema = z.toJSONSchema(def.output, {
+    target: 'draft-2020-12',
+    io: 'output',
+  }) as Tool['inputSchema'];
 
   const tool: DefinedTool = {
     name: def.name,
@@ -517,28 +521,23 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
     execution: def.execution ?? { taskSupport: 'forbidden' },
     nuances: def.nuances ?? [],
     gotchas: def.gotchas ?? [],
-    inputSchema: inputJsonSchema as Tool['inputSchema'],
-    outputSchema: outputJsonSchema as Tool['outputSchema'],
+    inputSchema: inputJsonSchema,
+    outputSchema: outputJsonSchema,
 
     register(deps: ToolDeps) {
       const toolDefShape = {
         title: def.title,
         description: def.description,
-        inputSchema,
-        outputSchema,
+        inputSchema: inputSchema as unknown as StandardSchemaWithJSON<z.infer<I>, z.infer<I>>,
+        outputSchema: outputSchema as unknown as StandardSchemaWithJSON<z.infer<O>, z.infer<O>>,
         annotations: def.annotations,
       };
 
       const serverCtxHandler = async (
-        args: unknown,
+        args: z.infer<I>,
         ctx: ServerContext,
       ): Promise<CallToolResult> => {
-        const executor = new ToolExecutor<I, O>(
-          def.name,
-          toToolCtx(ctx, deps),
-          def,
-          args as z.infer<I>,
-        );
+        const executor = new ToolExecutor<I, O>(def.name, toToolCtx(ctx, deps), def, args);
         return executor.execute(args, deps);
       };
 
@@ -547,8 +546,8 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
         const taskToolDefShape = {
           title: def.title,
           description: def.description,
-          inputSchema,
-          outputSchema,
+          inputSchema: inputSchema as unknown as StandardSchemaWithJSON<z.infer<I>, z.infer<I>>,
+          outputSchema: outputSchema as unknown as StandardSchemaWithJSON<z.infer<O>, z.infer<O>>,
           annotations: def.annotations,
           execution: { ...def.execution, taskSupport },
         };

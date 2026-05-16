@@ -1,100 +1,14 @@
 // src/schema.ts
 // Centralized schema layer consolidating primitives, domain composites, and MCP JSON-Schema adapter
-import type { StandardSchemaWithJSON } from '@modelcontextprotocol/server';
-
 import { z } from 'zod/v4';
 
 import { isSafeGlobSyntax } from './core/path.js';
-
-// ============ JSON-Schema Adapter ============
-
-type JsonSchema = Record<string, unknown>;
-
-/**
- * Typed return value from toMcpSchema containing both the StandardSchema and extracted JSON schema.
- * This eliminates the need for unsafe casts when accessing the jsonSchema property.
- */
-export interface McpSchemaPair<T = unknown> {
-  /** Standard Schema instance compatible with @modelcontextprotocol/server. */
-  readonly standard: StandardSchemaWithJSON<T, T>;
-  /** JSON Schema representation (extracted from standard schema). */
-  readonly jsonSchema: object;
-}
 
 export type ZodInfer<T> = T extends z.ZodType ? z.infer<T> : never;
 
 export interface SchemaAndInfer<T extends z.ZodType> {
   schema: T;
   inferred: z.infer<T>;
-}
-
-const STRIP_FORMATS = new Set(['base64url', 'sha256_hex']);
-
-function override(
-  ctx: Parameters<NonNullable<NonNullable<Parameters<typeof z.toJSONSchema>[1]>['override']>>[0],
-): void {
-  const s = ctx.jsonSchema as JsonSchema;
-  if (s['format'] === 'date-time' && 'pattern' in s) delete s['pattern'];
-  if (s['type'] === 'integer' && s['maximum'] === Number.MAX_SAFE_INTEGER) delete s['maximum'];
-  if (typeof s['format'] === 'string' && STRIP_FORMATS.has(s['format']) && 'pattern' in s)
-    delete s['format'];
-  if ('contentEncoding' in s && 'pattern' in s) delete s['contentEncoding'];
-  if ('suggestion' in s) delete s['suggestion'];
-}
-
-// Remove from `required` any property that has a `default` value.
-// Zod marks defaulted fields required, but clients omit them and Zod fills in the default.
-function removeDefaultedFromRequired(schema: unknown): unknown {
-  if (!schema || typeof schema !== 'object') return schema;
-  if (Array.isArray(schema)) return schema.map(removeDefaultedFromRequired);
-  const out: JsonSchema = {};
-  for (const [k, v] of Object.entries(schema as JsonSchema)) {
-    out[k] = removeDefaultedFromRequired(v);
-  }
-  if (
-    Array.isArray(out['required']) &&
-    out['properties'] &&
-    typeof out['properties'] === 'object'
-  ) {
-    const props = out['properties'] as Record<string, JsonSchema>;
-    const filtered = (out['required'] as string[]).filter((n) => !('default' in (props[n] ?? {})));
-    if (filtered.length === 0) delete out['required'];
-    else out['required'] = filtered;
-  }
-  return out;
-}
-
-/**
- * Convert a Zod schema to MCP-compatible StandardSchemaWithJSON.
- * Removes $schema, cleans up redundant format/pattern combinations,
- * strips defaulted fields from required[], and ensures both input() and output()
- * callables are present on ~standard.jsonSchema.
- *
- * Returns a typed pair containing both the standard schema and extracted JSON schema,
- * eliminating the need for unsafe casts when accessing jsonSchema.
- */
-export function toMcpSchema<T extends z.ZodType>(
-  schema: T,
-  augment?: (s: JsonSchema) => JsonSchema,
-): McpSchemaPair<z.infer<T>> {
-  const raw = z.toJSONSchema(schema, {
-    io: 'input',
-    unrepresentable: 'any',
-    override,
-  }) as JsonSchema;
-  if ('$schema' in raw) delete raw['$schema'];
-  const cleaned = removeDefaultedFromRequired(raw) as JsonSchema;
-  const final = augment ? augment(cleaned) : cleaned;
-  const std = { ...(schema['~standard'] as unknown as Record<string, unknown>) };
-  std['jsonSchema'] = { input: () => final, output: () => final };
-
-  const standard = Object.create(schema) as StandardSchemaWithJSON<z.infer<T>, z.infer<T>> & {
-    jsonSchema: object;
-  };
-  Object.defineProperty(standard, '~standard', { value: std, enumerable: true });
-  standard.jsonSchema = final;
-
-  return { standard, jsonSchema: final };
 }
 
 // ============ Primitives (from fields.ts) ============

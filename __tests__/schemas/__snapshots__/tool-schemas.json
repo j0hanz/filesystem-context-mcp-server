@@ -14,7 +14,8 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 4096,
-                "description": "Target file path"
+                "description": "Target file path",
+                "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
               },
               "content": {
                 "type": "string",
@@ -29,6 +30,7 @@
         }
       },
       "required": ["files"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     },
     "outputSchema": {
@@ -54,12 +56,10 @@
                 "description": "Written file path"
               },
               "size": {
-                "maximum": 9007199254740991,
                 "description": "File size in bytes",
                 "$ref": "#/$defs/NonNegInt"
               },
               "lineCount": {
-                "maximum": 9007199254740991,
                 "description": "Number of lines in file",
                 "$ref": "#/$defs/NonNegInt"
               },
@@ -77,12 +77,10 @@
                 "description": "Full content URI in resource store"
               },
               "created": {
-                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
                 "description": "Creation timestamp (ISO 8601 UTC)",
                 "$ref": "#/$defs/IsoDateTime"
               },
               "modified": {
-                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
                 "description": "Last modification timestamp (ISO 8601 UTC)",
                 "$ref": "#/$defs/IsoDateTime"
               }
@@ -121,16 +119,19 @@
         }
       },
       "required": ["ok", "files"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
         "NonNegInt": {
           "type": "integer",
           "minimum": 0,
+          "maximum": 9007199254740991,
           "title": "Non-Negative Integer"
         },
         "IsoDateTime": {
           "type": "string",
           "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
           "title": "ISO Date-Time",
           "description": "ISO 8601 date-time (UTC)"
         },
@@ -173,7 +174,8 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4096,
-            "description": "Path inside an allowed root"
+            "description": "Path inside an allowed root",
+            "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
           },
           "description": "One or more paths to delete (max 1000)"
         },
@@ -189,6 +191,7 @@
         }
       },
       "required": ["paths"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     },
     "outputSchema": {
@@ -238,6 +241,7 @@
         }
       },
       "required": ["ok"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     }
   },
@@ -282,7 +286,8 @@
           "description": "File path (single-path mode)",
           "type": "string",
           "minLength": 1,
-          "maxLength": 4096
+          "maxLength": 4096,
+          "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
         },
         "paths": {
           "description": "File paths (batch mode; max 5)",
@@ -293,7 +298,8 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4096,
-            "description": "Path inside an allowed root"
+            "description": "Path inside an allowed root",
+            "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
           }
         },
         "files": {
@@ -307,7 +313,8 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 4096,
-                "description": "Path inside an allowed root"
+                "description": "Path inside an allowed root",
+                "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
               },
               "edits": {
                 "minItems": 1,
@@ -339,6 +346,7 @@
           "description": "Per-file entries (batch mode; max 5)"
         }
       },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     },
     "outputSchema": {
@@ -367,12 +375,10 @@
                     "description": "File path"
                   },
                   "size": {
-                    "maximum": 9007199254740991,
                     "description": "File size in bytes",
                     "$ref": "#/$defs/NonNegInt"
                   },
                   "lineCount": {
-                    "maximum": 9007199254740991,
                     "description": "Number of lines",
                     "$ref": "#/$defs/NonNegInt"
                   },
@@ -390,12 +396,10 @@
                     "description": "Resource URI"
                   },
                   "modified": {
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
                     "description": "Modified (ISO 8601 UTC)",
                     "$ref": "#/$defs/IsoDateTime"
                   },
                   "appliedEdits": {
-                    "maximum": 9007199254740991,
                     "description": "Edits applied",
                     "$ref": "#/$defs/NonNegInt"
                   },
@@ -459,22 +463,26 @@
         }
       },
       "required": ["ok", "results", "summary"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
         "NonNegInt": {
           "type": "integer",
           "minimum": 0,
+          "maximum": 9007199254740991,
           "title": "Non-Negative Integer"
         },
         "IsoDateTime": {
           "type": "string",
           "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
           "title": "ISO Date-Time",
           "description": "ISO 8601 date-time (UTC)"
         },
         "PositiveInt": {
           "type": "integer",
           "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
           "title": "Positive Integer"
         },
         "PerFileError": {
@@ -505,17 +513,14 @@
           "type": "object",
           "properties": {
             "total": {
-              "maximum": 9007199254740991,
               "description": "Total",
               "$ref": "#/$defs/NonNegInt"
             },
             "succeeded": {
-              "maximum": 9007199254740991,
               "description": "Succeeded",
               "$ref": "#/$defs/NonNegInt"
             },
             "failed": {
-              "maximum": 9007199254740991,
               "description": "Failed",
               "$ref": "#/$defs/NonNegInt"
             }
@@ -535,7 +540,8 @@
           "description": "Base directory (default: root)",
           "type": "string",
           "minLength": 1,
-          "maxLength": 4096
+          "maxLength": 4096,
+          "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
         },
         "pattern": {
           "description": "Glob pattern to search",
@@ -573,10 +579,13 @@
         "cursor": {
           "description": "Pagination cursor from a previous response. Treat as opaque. `ls` cursors are snapshot-backed (expire after ~5 min or restart); `find` cursors are offset-based and re-run the query each page.",
           "type": "string",
+          "format": "base64url",
+          "contentEncoding": "base64url",
           "pattern": "^[A-Za-z0-9_-]*$"
         }
       },
       "required": ["pattern"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
         "SafeGlobPattern": {
@@ -586,7 +595,8 @@
           "pattern": "^(?!\\/)(?![a-zA-Z]:[\\\\/])(?!.*\\.\\.).+$",
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
-          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
+          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"],
+          "suggestion": "Use forward-slash globs; absolute paths and \"..\" are forbidden."
         }
       }
     },
@@ -648,20 +658,25 @@
         "nextCursor": {
           "description": "Cursor for the next page; absent on the final page.",
           "type": "string",
+          "format": "base64url",
+          "contentEncoding": "base64url",
           "pattern": "^[A-Za-z0-9_-]*$"
         }
       },
       "required": ["ok", "root", "results"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
         "NonNegInt": {
           "type": "integer",
           "minimum": 0,
+          "maximum": 9007199254740991,
           "title": "Non-Negative Integer"
         },
         "IsoDateTime": {
           "type": "string",
           "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
           "title": "ISO Date-Time",
           "description": "ISO 8601 date-time (UTC)"
         }
@@ -676,7 +691,8 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096,
-          "description": "Path inside an allowed root"
+          "description": "Path inside an allowed root",
+          "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
         },
         "algorithms": {
           "default": ["sha256"],
@@ -691,6 +707,7 @@
         }
       },
       "required": ["path"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     },
     "outputSchema": {
@@ -741,11 +758,13 @@
         }
       },
       "required": ["ok", "filePath", "algorithms", "hashes", "resourceUri", "isDirectory"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
         "NonNegInt": {
           "type": "integer",
           "minimum": 0,
+          "maximum": 9007199254740991,
           "title": "Non-Negative Integer"
         }
       }
@@ -759,7 +778,8 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096,
-          "description": "Path inside an allowed root"
+          "description": "Path inside an allowed root",
+          "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
         },
         "maxDepth": {
           "default": 1,
@@ -784,11 +804,13 @@
           "type": "boolean"
         }
       },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
         "PositiveInt": {
           "type": "integer",
           "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
           "title": "Positive Integer"
         }
       }
@@ -832,22 +854,18 @@
           "description": "ASCII tree representation"
         },
         "entryCount": {
-          "maximum": 9007199254740991,
           "description": "Number of entries returned",
           "$ref": "#/$defs/NonNegInt"
         },
         "totalEntries": {
-          "maximum": 9007199254740991,
           "description": "Total entries found before cap",
           "$ref": "#/$defs/NonNegInt"
         },
         "totalFiles": {
-          "maximum": 9007199254740991,
           "description": "Total files",
           "$ref": "#/$defs/NonNegInt"
         },
         "totalDirectories": {
-          "maximum": 9007199254740991,
           "description": "Total directories",
           "$ref": "#/$defs/NonNegInt"
         },
@@ -865,6 +883,7 @@
         "totalFiles",
         "totalDirectories"
       ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
         "FileType": {
@@ -875,6 +894,7 @@
         "NonNegInt": {
           "type": "integer",
           "minimum": 0,
+          "maximum": 9007199254740991,
           "title": "Non-Negative Integer"
         }
       }
@@ -884,6 +904,7 @@
     "inputSchema": {
       "type": "object",
       "properties": {},
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     },
     "outputSchema": {
@@ -903,6 +924,7 @@
         }
       },
       "required": ["ok", "roots"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     }
   },
@@ -921,13 +943,15 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 4096,
-                "description": "Source path to move"
+                "description": "Source path to move",
+                "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
               },
               "destination": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 4096,
-                "description": "Destination path"
+                "description": "Destination path",
+                "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
               }
             },
             "required": ["source", "destination"],
@@ -937,6 +961,7 @@
         }
       },
       "required": ["moves"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     },
     "outputSchema": {
@@ -995,6 +1020,7 @@
         }
       },
       "required": ["ok", "moves"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
         "PerFileError": {
@@ -1073,7 +1099,8 @@
           "description": "File path (single-path mode)",
           "type": "string",
           "minLength": 1,
-          "maxLength": 4096
+          "maxLength": 4096,
+          "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
         },
         "paths": {
           "description": "File paths (batch mode; max 1000)",
@@ -1084,58 +1111,13 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4096,
-            "description": "Path inside an allowed root"
+            "description": "Path inside an allowed root",
+            "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
           }
         }
       },
-      "additionalProperties": false,
-      "allOf": [
-        {
-          "not": {
-            "required": ["head", "tail"]
-          }
-        },
-        {
-          "not": {
-            "required": ["head", "startLine"]
-          }
-        },
-        {
-          "not": {
-            "required": ["head", "endLine"]
-          }
-        },
-        {
-          "not": {
-            "required": ["tail", "startLine"]
-          }
-        },
-        {
-          "not": {
-            "required": ["tail", "endLine"]
-          }
-        },
-        {
-          "not": {
-            "required": ["offset", "head"]
-          }
-        },
-        {
-          "not": {
-            "required": ["offset", "tail"]
-          }
-        },
-        {
-          "not": {
-            "required": ["offset", "startLine"]
-          }
-        },
-        {
-          "not": {
-            "required": ["offset", "endLine"]
-          }
-        }
-      ]
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
     },
     "outputSchema": {
       "type": "object",
@@ -1242,6 +1224,7 @@
         }
       },
       "required": ["ok", "results", "summary"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
         "Continuation": {
@@ -1271,15 +1254,18 @@
         "NonNegInt": {
           "type": "integer",
           "minimum": 0,
+          "maximum": 9007199254740991,
           "title": "Non-Negative Integer"
         },
         "PositiveInt": {
           "type": "integer",
           "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
           "title": "Positive Integer"
         },
         "Sha256Hex": {
           "type": "string",
+          "format": "sha256_hex",
           "pattern": "^[0-9a-fA-F]{64}$",
           "title": "SHA-256 Hash",
           "description": "SHA-256 hex digest"
@@ -1312,17 +1298,14 @@
           "type": "object",
           "properties": {
             "total": {
-              "maximum": 9007199254740991,
               "description": "Total",
               "$ref": "#/$defs/NonNegInt"
             },
             "succeeded": {
-              "maximum": 9007199254740991,
               "description": "Succeeded",
               "$ref": "#/$defs/NonNegInt"
             },
             "failed": {
-              "maximum": 9007199254740991,
               "description": "Failed",
               "$ref": "#/$defs/NonNegInt"
             }
@@ -1342,7 +1325,8 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096,
-          "description": "Path inside an allowed root"
+          "description": "Path inside an allowed root",
+          "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
         },
         "pattern": {
           "description": "File glob filter (default: **/* text files)",
@@ -1417,6 +1401,7 @@
         }
       },
       "required": ["searchPattern", "replacement"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
         "SafeGlobPattern": {
@@ -1426,7 +1411,8 @@
           "pattern": "^(?!\\/)(?![a-zA-Z]:[\\\\/])(?!.*\\.\\.).+$",
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
-          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
+          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"],
+          "suggestion": "Use forward-slash globs; absolute paths and \"..\" are forbidden."
         }
       }
     },
@@ -1439,17 +1425,14 @@
           "description": "Success indicator"
         },
         "filesModified": {
-          "maximum": 9007199254740991,
           "description": "Files changed",
           "$ref": "#/$defs/NonNegInt"
         },
         "totalMatches": {
-          "maximum": 9007199254740991,
           "description": "Total match count",
           "$ref": "#/$defs/NonNegInt"
         },
         "processedFiles": {
-          "maximum": 9007199254740991,
           "description": "Files scanned",
           "$ref": "#/$defs/NonNegInt"
         },
@@ -1537,11 +1520,13 @@
         }
       },
       "required": ["ok", "filesModified", "totalMatches", "processedFiles"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
         "NonNegInt": {
           "type": "integer",
           "minimum": 0,
+          "maximum": 9007199254740991,
           "title": "Non-Negative Integer"
         },
         "PerFileError": {
@@ -1579,7 +1564,8 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096,
-          "description": "Path inside an allowed root"
+          "description": "Path inside an allowed root",
+          "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
         },
         "pattern": {
           "description": "File glob filter (default: all text files)",
@@ -1655,10 +1641,13 @@
         "cursor": {
           "description": "Pagination cursor from a previous response. Treat as opaque. `ls` cursors are snapshot-backed (expire after ~5 min or restart); `find` cursors are offset-based and re-run the query each page.",
           "type": "string",
+          "format": "base64url",
+          "contentEncoding": "base64url",
           "pattern": "^[A-Za-z0-9_-]*$"
         }
       },
       "required": ["searchPattern"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
         "SafeGlobPattern": {
@@ -1668,7 +1657,8 @@
           "pattern": "^(?!\\/)(?![a-zA-Z]:[\\\\/])(?!.*\\.\\.).+$",
           "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
-          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"]
+          "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"],
+          "suggestion": "Use forward-slash globs; absolute paths and \"..\" are forbidden."
         }
       }
     },
@@ -1690,7 +1680,6 @@
                 "description": "Relative file path"
               },
               "line": {
-                "maximum": 9007199254740991,
                 "description": "Line number",
                 "$ref": "#/$defs/PositiveInt"
               },
@@ -1766,20 +1755,25 @@
         "nextCursor": {
           "description": "Cursor for the next page; absent on the final page.",
           "type": "string",
+          "format": "base64url",
+          "contentEncoding": "base64url",
           "pattern": "^[A-Za-z0-9_-]*$"
         }
       },
       "required": ["ok", "matches"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
         "PositiveInt": {
           "type": "integer",
           "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
           "title": "Positive Integer"
         },
         "NonNegInt": {
           "type": "integer",
           "minimum": 0,
+          "maximum": 9007199254740991,
           "title": "Non-Negative Integer"
         }
       }
@@ -1793,7 +1787,8 @@
           "description": "File path (single-path mode)",
           "type": "string",
           "minLength": 1,
-          "maxLength": 4096
+          "maxLength": 4096,
+          "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
         },
         "paths": {
           "description": "File paths (batch mode; max 1000)",
@@ -1804,10 +1799,12 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4096,
-            "description": "Path inside an allowed root"
+            "description": "Path inside an allowed root",
+            "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
           }
         }
       },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false
     },
     "outputSchema": {
@@ -1859,6 +1856,7 @@
         }
       },
       "required": ["ok", "results", "summary"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
         "FileInfo": {
@@ -1877,7 +1875,6 @@
               "$ref": "#/$defs/FileType"
             },
             "size": {
-              "maximum": 9007199254740991,
               "description": "Size (bytes)",
               "$ref": "#/$defs/NonNegInt"
             },
@@ -1886,17 +1883,14 @@
               "$ref": "#/$defs/NonNegInt"
             },
             "created": {
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
               "description": "Created",
               "$ref": "#/$defs/IsoDateTime"
             },
             "modified": {
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
               "description": "Modified",
               "$ref": "#/$defs/IsoDateTime"
             },
             "accessed": {
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
               "description": "Accessed",
               "$ref": "#/$defs/IsoDateTime"
             },
@@ -1939,11 +1933,13 @@
         "NonNegInt": {
           "type": "integer",
           "minimum": 0,
+          "maximum": 9007199254740991,
           "title": "Non-Negative Integer"
         },
         "IsoDateTime": {
           "type": "string",
           "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
           "title": "ISO Date-Time",
           "description": "ISO 8601 date-time (UTC)"
         },
@@ -1975,17 +1971,14 @@
           "type": "object",
           "properties": {
             "total": {
-              "maximum": 9007199254740991,
               "description": "Total",
               "$ref": "#/$defs/NonNegInt"
             },
             "succeeded": {
-              "maximum": 9007199254740991,
               "description": "Succeeded",
               "$ref": "#/$defs/NonNegInt"
             },
             "failed": {
-              "maximum": 9007199254740991,
               "description": "Failed",
               "$ref": "#/$defs/NonNegInt"
             }
