@@ -2,25 +2,11 @@ import type { ContentBlock, Role } from '@modelcontextprotocol/server';
 
 import { z } from 'zod/v4';
 
-import { processInParallel } from '../core/concurrency.js';
-import { ErrorCode, FsError, Problem } from '../core/errors.js';
+import { ErrorCode, FsError } from '../core/errors.js';
 import type { FileInfo, MimeKind } from '../core/fs.js';
-import type { PathGuard } from '../core/path.js';
 import { createBase64JsonCodec } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
-import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import { NonNegInt } from '../schema.js';
-import type { TaskOrchestrator } from '../tasks.js';
-import type { BatchResult, PerPathError, PerPathResult, ToolCtx } from './define.js';
-
-// ============ ToolRegistrationOptions ============
-
-export interface ToolRegistrationOptions {
-  pathGuard: PathGuard;
-  resourceStore?: ResourceStore;
-  isInitialized?: () => boolean;
-  orchestrator?: TaskOrchestrator;
-}
 
 // ============ Formatting ============
 
@@ -192,94 +178,4 @@ export function buildFileInfoPayload(info: FileInfo): FileInfoPayload {
     ...(info.mimeType !== undefined ? { mimeType: info.mimeType } : {}),
     ...(info.symlinkTarget !== undefined ? { symlinkTarget: info.symlinkTarget } : {}),
   };
-}
-
-interface BatchInput<TOverride> {
-  path?: string | undefined;
-  paths?: string[] | undefined;
-  files?: ({ path: string } & TOverride)[] | undefined;
-}
-
-interface RunOverPathsOptions {
-  defaultErrorCode?: ErrorCode;
-  concurrency?: number;
-}
-
-export async function runOverPaths<TOverride, TPerPath>(
-  args: BatchInput<TOverride>,
-  ctx: ToolCtx,
-  perPath: (item: { path: string; override?: TOverride }, ctx: ToolCtx) => Promise<TPerPath>,
-  options?: RunOverPathsOptions,
-): Promise<BatchResult<TPerPath>> {
-  const items = normalizeBatchItems(args);
-  if (items.length === 0) {
-    throw new Error("runOverPaths: at least one of 'path', 'paths', or 'files' must be provided");
-  }
-
-  const defaultErrorCode = options?.defaultErrorCode ?? ErrorCode.UNKNOWN;
-  const concurrency = options?.concurrency ?? PARALLEL_CONCURRENCY;
-
-  const total = items.length;
-  let completed = 0;
-  const results: PerPathResult<TPerPath>[] = new Array<PerPathResult<TPerPath>>(total);
-
-  const tick = (): void => {
-    completed += 1;
-    ctx.onProgress?.({ current: completed, total });
-  };
-
-  await processInParallel<
-    { item: { path: string; override?: TOverride }; index: number },
-    undefined
-  >(
-    items.map((item, index) => ({ item, index })),
-    async ({ item, index }) => {
-      try {
-        const value = await perPath(item, ctx);
-        results[index] = { path: item.path, value };
-      } catch (error: unknown) {
-        const problem = Problem.fromUnknown(error, defaultErrorCode, item.path);
-        const perPathError: PerPathError = {
-          code: problem.code,
-          message: problem.message,
-          ...(problem.path !== undefined ? { path: problem.path } : {}),
-          ...(problem.suggestion !== undefined ? { suggestion: problem.suggestion } : {}),
-        };
-        results[index] = { path: item.path, error: perPathError };
-      } finally {
-        tick();
-      }
-      return undefined;
-    },
-    concurrency,
-    ctx.signal,
-  );
-
-  let succeeded = 0;
-  for (const result of results) {
-    if (result.error === undefined) succeeded += 1;
-  }
-
-  return {
-    results,
-    summary: { total, succeeded, failed: total - succeeded },
-  };
-}
-
-function normalizeBatchItems<TOverride>(
-  args: BatchInput<TOverride>,
-): { path: string; override?: TOverride }[] {
-  if (args.path !== undefined) {
-    return [{ path: args.path }];
-  }
-  if (args.paths !== undefined) {
-    return args.paths.map((path) => ({ path }));
-  }
-  if (args.files !== undefined) {
-    return args.files.map(({ path, ...rest }) => ({
-      path,
-      override: rest as unknown as TOverride,
-    }));
-  }
-  return [];
 }

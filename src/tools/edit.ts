@@ -28,8 +28,7 @@ import {
   PositiveInt,
   singleOrBatchPathsInput,
 } from '../schema.js';
-import { runOverPaths } from './_helpers.js';
-import { defineTool, type PerPathResult } from './define.js';
+import { defineTool, type PerPathResult, runOverPaths } from './define.js';
 
 const EditSpecSchema = z.strictObject({
   oldText: z
