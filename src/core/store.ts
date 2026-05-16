@@ -102,24 +102,25 @@ function isExpired(entry: TextResourceEntry | BlobResourceEntry, now = Date.now(
   return Number.isFinite(expiresAt) && expiresAt <= now;
 }
 
-export function createInMemoryResourceStore(
-  options: Partial<ResourceStoreOptions> = {},
-): ResourceStore {
-  const resolved: ResourceStoreOptions = {
-    ...DEFAULT_RESOURCE_STORE_OPTIONS,
-    ...options,
-  };
+class InMemoryResourceStore implements ResourceStore {
+  private readonly resolved: ResourceStoreOptions;
+  private readonly byUri = new Map<string, StoredEntry>();
+  private readonly byHashIndex = new Map<string, string>();
+  private totalBytes = 0;
 
-  const byUri = new Map<string, StoredEntry>();
-  const byHashIndex = new Map<string, string>(); // mimeType:sha256hex -> uri
-  let totalBytes = 0;
+  constructor(options: Partial<ResourceStoreOptions> = {}) {
+    this.resolved = {
+      ...DEFAULT_RESOURCE_STORE_OPTIONS,
+      ...options,
+    };
+  }
 
-  function removeEntry(uri: string, reason?: ResourceStoreDiagnosticsEvent['reason']): void {
-    const existing = byUri.get(uri);
+  private removeEntry(uri: string, reason?: ResourceStoreDiagnosticsEvent['reason']): void {
+    const existing = this.byUri.get(uri);
     if (!existing) return;
-    totalBytes -= existing.size;
-    byUri.delete(uri);
-    byHashIndex.delete(buildIndexKey(existing.mimeType, existing.hash));
+    this.totalBytes -= existing.size;
+    this.byUri.delete(uri);
+    this.byHashIndex.delete(buildIndexKey(existing.mimeType, existing.hash));
     publishResourceStoreDiagnostics({
       phase: 'cache_evict',
       uri,
@@ -129,35 +130,35 @@ export function createInMemoryResourceStore(
     });
   }
 
-  function evictOldest(): void {
-    const first = byUri.keys().next();
+  private evictOldest(): void {
+    const first = this.byUri.keys().next();
     if (first.done) return;
-    removeEntry(first.value);
+    this.removeEntry(first.value);
   }
 
-  function pruneExpiredEntries(now = Date.now()): void {
-    for (const [uri, entry] of byUri) {
+  private pruneExpiredEntries(now = Date.now()): void {
+    for (const [uri, entry] of this.byUri) {
       if (isExpired(entry, now)) {
-        removeEntry(uri, 'expired');
+        this.removeEntry(uri, 'expired');
       }
     }
   }
 
-  function enforceLimits(): void {
-    while (byUri.size > resolved.maxEntries) evictOldest();
-    while (totalBytes > resolved.maxTotalBytes) {
-      if (byUri.size === 0) break;
-      evictOldest();
+  private enforceLimits(): void {
+    while (this.byUri.size > this.resolved.maxEntries) this.evictOldest();
+    while (this.totalBytes > this.resolved.maxTotalBytes) {
+      if (this.byUri.size === 0) break;
+      this.evictOldest();
     }
   }
 
-  function bumpLru(uri: string, entry: StoredEntry): void {
-    byUri.delete(uri);
-    byUri.set(uri, entry);
+  private bumpLru(uri: string, entry: StoredEntry): void {
+    this.byUri.delete(uri);
+    this.byUri.set(uri, entry);
   }
 
-  function _getExisting(uri: string, expectedKind?: 'text' | 'blob'): StoredEntry {
-    const existing = byUri.get(uri);
+  private _getExisting(uri: string, expectedKind?: 'text' | 'blob'): StoredEntry {
+    const existing = this.byUri.get(uri);
     if (!existing || (expectedKind && existing.kind !== expectedKind)) {
       publishResourceStoreDiagnostics({
         phase: 'cache_miss',
@@ -170,7 +171,7 @@ export function createInMemoryResourceStore(
       );
     }
     if (isExpired(existing)) {
-      removeEntry(uri, 'expired');
+      this.removeEntry(uri, 'expired');
       publishResourceStoreDiagnostics({
         phase: 'cache_miss',
         uri,
@@ -181,7 +182,7 @@ export function createInMemoryResourceStore(
         `Resource expired: ${uri}. Re-run the tool to regenerate.`,
       );
     }
-    bumpLru(uri, existing);
+    this.bumpLru(uri, existing);
     publishResourceStoreDiagnostics({
       phase: 'cache_hit',
       uri: existing.uri,
@@ -191,15 +192,15 @@ export function createInMemoryResourceStore(
     return existing;
   }
 
-  function _put(
+  private _put(
     kind: 'text' | 'blob',
     params: { name: string; mimeType: string; data: string | Buffer },
     createFn: (base: Omit<TextResourceEntry | BlobResourceEntry, 'text' | 'data'>) => StoredEntry,
   ): StoredEntry {
-    pruneExpiredEntries();
+    this.pruneExpiredEntries();
 
     const entryBytes = estimateBytes(params.data);
-    if (entryBytes > resolved.maxEntryBytes) {
+    if (entryBytes > this.resolved.maxEntryBytes) {
       publishResourceStoreDiagnostics({
         phase: 'cache_reject',
         bytes: entryBytes,
@@ -210,15 +211,15 @@ export function createInMemoryResourceStore(
 
     const contentHash = computeSha256(params.data);
     const indexKey = buildIndexKey(params.mimeType, contentHash);
-    const existingUri = byHashIndex.get(indexKey);
+    const existingUri = this.byHashIndex.get(indexKey);
 
     if (existingUri !== undefined) {
-      const cached = byUri.get(existingUri);
+      const cached = this.byUri.get(existingUri);
       if (cached !== undefined) {
         if (isExpired(cached)) {
-          removeEntry(existingUri, 'expired');
+          this.removeEntry(existingUri, 'expired');
         } else if (cached.kind === kind) {
-          bumpLru(existingUri, cached);
+          this.bumpLru(existingUri, cached);
           publishResourceStoreDiagnostics({
             phase: 'cache_hit',
             uri: cached.uri,
@@ -228,7 +229,7 @@ export function createInMemoryResourceStore(
           return cached;
         }
       } else {
-        byHashIndex.delete(indexKey);
+        this.byHashIndex.delete(indexKey);
       }
     }
 
@@ -241,12 +242,12 @@ export function createInMemoryResourceStore(
       hash: contentHash,
       size: entryBytes,
       storedAt: storedAt.toISOString(),
-      expiresAt: new Date(storedAt.getTime() + resolved.entryTtlMs).toISOString(),
+      expiresAt: new Date(storedAt.getTime() + this.resolved.entryTtlMs).toISOString(),
     });
 
-    byUri.set(uri, entry);
-    byHashIndex.set(indexKey, uri);
-    totalBytes += entryBytes;
+    this.byUri.set(uri, entry);
+    this.byHashIndex.set(indexKey, uri);
+    this.totalBytes += entryBytes;
 
     publishResourceStoreDiagnostics({
       phase: 'cache_store',
@@ -255,9 +256,9 @@ export function createInMemoryResourceStore(
       bytes: entry.size,
     });
 
-    enforceLimits();
+    this.enforceLimits();
 
-    if (!byUri.has(uri)) {
+    if (!this.byUri.has(uri)) {
       publishResourceStoreDiagnostics({
         phase: 'cache_reject',
         uri,
@@ -271,8 +272,8 @@ export function createInMemoryResourceStore(
     return entry;
   }
 
-  function putText(params: { name: string; mimeType?: string; text: string }): TextResourceEntry {
-    return _put(
+  putText(params: { name: string; mimeType?: string; text: string }): TextResourceEntry {
+    return this._put(
       'text',
       {
         name: params.name,
@@ -287,12 +288,12 @@ export function createInMemoryResourceStore(
     ) as TextResourceEntry & { kind: 'text' };
   }
 
-  function getText(uri: string): TextResourceEntry {
-    return _getExisting(uri, 'text') as TextResourceEntry & { kind: 'text' };
+  getText(uri: string): TextResourceEntry {
+    return this._getExisting(uri, 'text') as TextResourceEntry & { kind: 'text' };
   }
 
-  function putBlob(params: { name: string; mimeType: string; data: Buffer }): BlobResourceEntry {
-    return _put(
+  putBlob(params: { name: string; mimeType: string; data: Buffer }): BlobResourceEntry {
+    return this._put(
       'blob',
       { name: params.name, mimeType: params.mimeType, data: params.data },
       (base) => ({
@@ -303,29 +304,33 @@ export function createInMemoryResourceStore(
     ) as BlobResourceEntry & { kind: 'blob' };
   }
 
-  function getBlob(uri: string): BlobResourceEntry {
-    return _getExisting(uri, 'blob') as BlobResourceEntry & { kind: 'blob' };
+  getBlob(uri: string): BlobResourceEntry {
+    return this._getExisting(uri, 'blob') as BlobResourceEntry & { kind: 'blob' };
   }
 
-  function getEntry(uri: string): StoredEntry {
-    return _getExisting(uri);
+  getEntry(uri: string): StoredEntry {
+    return this._getExisting(uri);
   }
 
-  function clear(): void {
-    const bytesBeforeClear = totalBytes;
-    byUri.clear();
-    byHashIndex.clear();
-    totalBytes = 0;
+  clear(): void {
+    const bytesBeforeClear = this.totalBytes;
+    this.byUri.clear();
+    this.byHashIndex.clear();
+    this.totalBytes = 0;
     publishResourceStoreDiagnostics({
       phase: 'cache_clear',
       bytes: bytesBeforeClear,
     });
   }
 
-  function keys(): string[] {
-    pruneExpiredEntries();
-    return Array.from(byUri.keys());
+  keys(): string[] {
+    this.pruneExpiredEntries();
+    return Array.from(this.byUri.keys());
   }
+}
 
-  return { putText, getText, putBlob, getBlob, getEntry, clear, keys };
+export function createInMemoryResourceStore(
+  options: Partial<ResourceStoreOptions> = {},
+): ResourceStore {
+  return new InMemoryResourceStore(options);
 }
