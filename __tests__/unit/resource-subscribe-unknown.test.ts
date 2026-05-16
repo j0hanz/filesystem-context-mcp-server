@@ -7,6 +7,8 @@ import type { PathGuard } from '../../src/core/path.js';
 import { createInMemoryResourceStore } from '../../src/core/store.js';
 import { registerAllResources } from '../../src/resources.js';
 
+type RequestHandler = (req: { params: Record<string, string> }, ctx: ServerContext) => Promise<void>;
+
 describe('resources/subscribe with unknown URI', () => {
   it('throws ProtocolError(ResourceNotFound) when subscribing to an unknown URI', async () => {
     // Create a minimal mock PathGuard
@@ -15,25 +17,26 @@ describe('resources/subscribe with unknown URI', () => {
     } as unknown as PathGuard;
 
     // Create fake server and capture handlers
-    const handlers = new Map<string, Function>();
+    const handlers = new Map<string, RequestHandler>();
     const server = {
       registerResource: () => {
         /* no-op for test */
       },
       server: {
-        setRequestHandler: (name: string, handler: Function) => {
+        setRequestHandler: (name: string, handler: RequestHandler) => {
           handlers.set(name, handler);
         },
         sendResourceUpdated: async () => {
           /* no-op */
         },
       },
-    } as unknown as any;
+    };
+
 
     const resourceStore = createInMemoryResourceStore();
 
     // Register resources
-    registerAllResources(server, {
+    registerAllResources(server as never, {
       resourceStore,
       pathGuard: mockPathGuard,
     });
