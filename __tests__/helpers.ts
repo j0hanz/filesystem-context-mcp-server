@@ -10,7 +10,6 @@ import { join } from 'node:path';
 
 import { PathGuard, resolveAllowedDirectoriesState } from '../src/core/path.js';
 import { createInMemoryResourceStore, type ResourceStore } from '../src/core/store.js';
-import { SENSITIVE_FILE_DENYLIST } from '../src/core/util.js';
 import { TaskOrchestrator } from '../src/tasks.js';
 import { CALCULATE_HASH } from '../src/tools/calculate-hash.js';
 import { CREATE } from '../src/tools/create.js';
@@ -79,7 +78,7 @@ export async function createTestEnv(): Promise<TestEnv> {
   );
 
   const resourceStore = createInMemoryResourceStore();
-  const pathGuard = new PathGuard(SENSITIVE_FILE_DENYLIST);
+  const pathGuard = new PathGuard();
   const state = await resolveAllowedDirectoriesState([tmpDir]);
   pathGuard.initialize(state);
   const deps = {
@@ -170,7 +169,7 @@ export async function createTestEnvWithElicitation(handler: ElicitationHandler):
   );
 
   const resourceStore = createInMemoryResourceStore();
-  const pathGuard = new PathGuard(SENSITIVE_FILE_DENYLIST);
+  const pathGuard = new PathGuard();
   const state = await resolveAllowedDirectoriesState([tmpDir]);
   pathGuard.initialize(state);
   const deps2 = {

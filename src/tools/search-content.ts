@@ -14,14 +14,19 @@ import {
   FsError,
   isTimeoutLikeError,
 } from '../core/errors.js';
-import { buildGlobOptions, globEntries, isProbablyBinary, stat } from '../core/fs.js';
-import type { GlobEntry } from '../core/fs.js';
+import {
+  buildGlobOptions,
+  DEFAULT_EXCLUDE_PATTERNS,
+  globEntries,
+  type GlobEntry,
+  isProbablyBinary,
+  stat,
+} from '../core/fs.js';
 import { startPerfMeasure } from '../core/observability.js';
 import { isPathWithinDirectories, normalizePath } from '../core/path.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import {
-  DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_SEARCH_CONTENT_RESULTS,
   DEFAULT_SEARCH_MAX_FILES,
   DEFAULT_SEARCH_TIMEOUT_MS,

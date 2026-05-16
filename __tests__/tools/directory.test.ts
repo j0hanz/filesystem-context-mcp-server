@@ -11,7 +11,6 @@ import { after, before, describe, it } from 'node:test';
 
 import { PathGuard, resolveAllowedDirectoriesState } from '../../src/core/path.js';
 import { createInMemoryResourceStore } from '../../src/core/store.js';
-import { SENSITIVE_FILE_DENYLIST } from '../../src/core/util.js';
 import { LIST } from '../../src/tools/list.js';
 import {
   assertOk,
@@ -241,7 +240,7 @@ describe('list tool progress', () => {
       await writeFile(join(tmp, 'nested', 'child.txt'), 'child', 'utf8');
       await writeFile(join(tmp, 'nested', 'deep', 'leaf.txt'), 'leaf', 'utf8');
 
-      const pathGuard = new PathGuard(SENSITIVE_FILE_DENYLIST);
+      const pathGuard = new PathGuard();
       const state = await resolveAllowedDirectoriesState([tmp]);
       pathGuard.initialize(state);
 

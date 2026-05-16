@@ -12,6 +12,7 @@ import { runInWorker, shouldOffload } from '../core/concurrency.js';
 import { ErrorCode, formatUnknownErrorMessage, FsError, Problem } from '../core/errors.js';
 import {
   atomicWriteFile,
+  DEFAULT_EXCLUDE_PATTERNS,
   detectMimeType,
   globEntries,
   MIME_SAMPLE_SIZE,
@@ -21,7 +22,6 @@ import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import {
-  DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_SEARCH_RESULTS,
   DEFAULT_SEARCH_TIMEOUT_MS,
   MAX_SEARCH_DEPTH,

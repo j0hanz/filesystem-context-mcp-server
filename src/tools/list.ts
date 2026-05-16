@@ -5,6 +5,7 @@ import { z } from 'zod/v4';
 import { withTimedAbortSignal } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
 import {
+  DEFAULT_EXCLUDE_PATTERNS,
   type EntryType,
   globEntries,
   isIgnoredByGitignore,
@@ -14,7 +15,6 @@ import { toPosixPath } from '../core/path.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import {
-  DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_SEARCH_TIMEOUT_MS,
   DEFAULT_TREE_ENTRIES,
   MAX_LIST_ENTRIES,

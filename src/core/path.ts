@@ -37,7 +37,7 @@ import {
   debounce,
   getInitHandshakeTimeoutMs,
   PARALLEL_CONCURRENCY,
-  SENSITIVE_FILE_DENYLIST,
+  parseTrueEnvFlag,
 } from './util.js';
 
 const ROOTS_TIMEOUT_MS = 5000;
@@ -481,6 +481,36 @@ export function isSafeGlobSyntax(pattern: string): boolean {
   return true;
 }
 
+const DEFAULT_SENSITIVE_PATTERNS = [
+  '.env',
+  '.env.*',
+  '.npmrc',
+  '.pypirc',
+  '.aws/credentials',
+  '.aws/config',
+  '.mcpregistry_*_token',
+  '*.pem',
+  '*.key',
+  '*.p12',
+  '*.pfx',
+  '*.crt',
+  '*.cer',
+  '*id_rsa*',
+  '*id_dsa*',
+] as const;
+
+function buildSensitivePatterns(): readonly string[] {
+  const allowSensitive = parseTrueEnvFlag(process.env['FS_CONTEXT_ALLOW_SENSITIVE']);
+  const envValue = process.env['FS_CONTEXT_DENYLIST'];
+  const envDenylist = envValue
+    ? envValue
+        .split(/[,\n]/u)
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0)
+    : [];
+  return [...(allowSensitive ? [] : DEFAULT_SENSITIVE_PATTERNS), ...envDenylist];
+}
+
 export class PathGuard {
   private allowedDirectoriesState: AllowedDirectoriesState | undefined;
   private denyPatterns: CompiledPatternSet;
@@ -493,12 +523,8 @@ export class PathGuard {
   private readonly options: ServerOptions | undefined;
   readonly loggingState: LoggingState | undefined;
 
-  constructor(
-    sensitivePatterns: readonly string[] = SENSITIVE_FILE_DENYLIST,
-    options?: ServerOptions,
-    loggingState?: LoggingState,
-  ) {
-    this.denyPatterns = toPatternSet(compilePatterns(sensitivePatterns));
+  constructor(options?: ServerOptions, loggingState?: LoggingState) {
+    this.denyPatterns = toPatternSet(compilePatterns(buildSensitivePatterns()));
     this.options = options;
     this.loggingState = loggingState;
   }
@@ -512,7 +538,7 @@ export class PathGuard {
     signal?: AbortSignal,
   ): Promise<PathGuard> {
     const state = await resolveAllowedDirectoriesState(dirs, signal);
-    const guard = new PathGuard(SENSITIVE_FILE_DENYLIST);
+    const guard = new PathGuard();
     guard.initialize(state);
     return guard;
   }

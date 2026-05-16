@@ -16,7 +16,7 @@ import { readFile } from 'node:fs/promises';
 import { createLoggingState, Logger, LogRouter, withTelemetry } from './core/observability.js';
 import { PathGuard, type ServerOptions } from './core/path.js';
 import { createInMemoryResourceStore, type ResourceStore } from './core/store.js';
-import { LOG_LEVEL, SENSITIVE_FILE_DENYLIST } from './core/util.js';
+import { LOG_LEVEL } from './core/util.js';
 import { pkgInfo } from './pkg-info.js';
 import { PROMPT_ENTRIES } from './prompts.js';
 import {
@@ -162,7 +162,7 @@ export async function createServer(
   const server = new McpServer(withDefaultIcons(implementation, localIcon), serverConfig);
 
   const loggingState = createLoggingState(LOG_LEVEL);
-  const pathGuard = new PathGuard(SENSITIVE_FILE_DENYLIST, options, loggingState);
+  const pathGuard = new PathGuard(options, loggingState);
   await pathGuard.recomputeAllowedDirectories();
 
   server.server.setRequestHandler('logging/setLevel', (req: { params: SetLevelRequestParams }) => {

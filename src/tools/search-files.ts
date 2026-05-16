@@ -9,6 +9,7 @@ import {
   buildGlobOptions,
   compareOptionalNumberDesc,
   compareStringValues,
+  DEFAULT_EXCLUDE_PATTERNS,
   type DirentLike,
   type EntryAccessDependencies,
   type EntryType,
@@ -26,7 +27,6 @@ import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import {
   assignDefined,
-  DEFAULT_EXCLUDE_PATTERNS,
   DEFAULT_SEARCH_MAX_FILES,
   DEFAULT_SEARCH_RESULTS,
   DEFAULT_SEARCH_TIMEOUT_MS,

@@ -142,19 +142,6 @@ function parseEnvBool(envVar: string, defaultValue: boolean): boolean {
   return result.data;
 }
 
-function parseEnvList(envVar: string): string[] {
-  const value = process.env[envVar];
-  if (!value) return [];
-  const entries: string[] = [];
-  for (const token of value.split(/[,\n]/u)) {
-    const trimmed = token.trim();
-    if (trimmed.length > 0) {
-      entries.push(trimmed);
-    }
-  }
-  return entries;
-}
-
 const VALID_LOG_LEVELS = [
   'debug',
   'info',
@@ -254,9 +241,6 @@ export const DEFAULT_CONTINUATION_CHUNK_SIZE = 200;
 
 export const DEFAULT_SEARCH_TIMEOUT_MS = parseEnvInt('DEFAULT_SEARCH_TIMEOUT', 5000, 100, 60000);
 
-const ALLOW_SENSITIVE_FILES = parseEnvBool('FS_CONTEXT_ALLOW_SENSITIVE', false);
-const ENV_DENYLIST = parseEnvList('FS_CONTEXT_DENYLIST');
-
 /**
  * Number of search worker threads to use.
  * Default: CPU cores (capped at 8 for optimal I/O performance).
@@ -314,29 +298,6 @@ export const DEFAULT_SEARCH_CONTENT_RESULTS = 500;
 export const MAX_LINE_CONTENT_LENGTH = 200;
 export const BINARY_CHECK_BUFFER_SIZE = 512;
 
-const DEFAULT_SENSITIVE_PATTERNS = [
-  '.env',
-  '.env.*',
-  '.npmrc',
-  '.pypirc',
-  '.aws/credentials',
-  '.aws/config',
-  '.mcpregistry_*_token',
-  '*.pem',
-  '*.key',
-  '*.p12',
-  '*.pfx',
-  '*.crt',
-  '*.cer',
-  '*id_rsa*',
-  '*id_dsa*',
-] as const;
-
-export const SENSITIVE_FILE_DENYLIST = [
-  ...(ALLOW_SENSITIVE_FILES ? [] : DEFAULT_SENSITIVE_PATTERNS),
-  ...ENV_DENYLIST,
-];
-
 export const KNOWN_BINARY_EXTENSIONS = new Set([
   '.png',
   '.jpg',
@@ -379,47 +340,3 @@ export const KNOWN_BINARY_EXTENSIONS = new Set([
   '.bin',
   '.dat',
 ]);
-
-export const DEFAULT_EXCLUDE_PATTERNS = [
-  '**/node_modules',
-  '**/node_modules/**',
-  '**/dist',
-  '**/dist/**',
-  '**/build',
-  '**/build/**',
-  '**/coverage',
-  '**/coverage/**',
-  '**/.git',
-  '**/.git/**',
-  '**/.vscode',
-  '**/.vscode/**',
-  '**/.idea',
-  '**/.idea/**',
-  '**/.DS_Store',
-  '**/.next',
-  '**/.next/**',
-  '**/.nuxt',
-  '**/.nuxt/**',
-  '**/.output',
-  '**/.output/**',
-  '**/.svelte-kit',
-  '**/.svelte-kit/**',
-  '**/.cache',
-  '**/.cache/**',
-  '**/.yarn',
-  '**/.yarn/**',
-  '**/jspm_packages',
-  '**/jspm_packages/**',
-  '**/bower_components',
-  '**/bower_components/**',
-  '**/out',
-  '**/out/**',
-  '**/tmp',
-  '**/tmp/**',
-  '**/.temp',
-  '**/.temp/**',
-  '**/npm-debug.log',
-  '**/yarn-debug.log',
-  '**/yarn-error.log',
-  '**/Thumbs.db',
-];

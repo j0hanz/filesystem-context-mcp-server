@@ -43,7 +43,7 @@ function createFakeServer(): {
 
 describe('PathGuard Roots Management', () => {
   it('coalesces repeated roots change notifications into one update', async () => {
-    const manager = new PathGuard([], {}, { minimumLevel: 'debug' });
+    const manager = new PathGuard({}, { minimumLevel: 'debug' });
     const fakeServer = createFakeServer();
     let updateCalls = 0;
 
@@ -82,7 +82,7 @@ describe('PathGuard Roots Management', () => {
   });
 
   it('cancels pending debounced updates on destroy', async () => {
-    const manager = new PathGuard([], {}, { minimumLevel: 'debug' });
+    const manager = new PathGuard({}, { minimumLevel: 'debug' });
     const fakeServer = createFakeServer();
     let updateCalls = 0;
 
@@ -106,7 +106,7 @@ describe('PathGuard Roots Management', () => {
   });
 
   it('clears init timer when initialized notification is received', async () => {
-    const manager = new PathGuard([], {}, { minimumLevel: 'debug' });
+    const manager = new PathGuard({}, { minimumLevel: 'debug' });
     const fakeServer = createFakeServer();
 
     (manager as unknown as { updateRootsFromClient: () => Promise<void> }).updateRootsFromClient =
@@ -132,7 +132,7 @@ describe('PathGuard Roots Management', () => {
   });
 
   it('clears init timer on destroy before initialized', () => {
-    const manager = new PathGuard([], {}, { minimumLevel: 'debug' });
+    const manager = new PathGuard({}, { minimumLevel: 'debug' });
     const fakeServer = createFakeServer();
 
     (manager as unknown as { updateRootsFromClient: () => Promise<void> }).updateRootsFromClient =
@@ -157,7 +157,7 @@ describe('PathGuard Roots Management', () => {
   it('invokes onInitTimeout callback when client never initializes', () => {
     mock.timers.enable({ apis: ['setTimeout'] });
     try {
-      const manager = new PathGuard([], {}, { minimumLevel: 'debug' });
+      const manager = new PathGuard({}, { minimumLevel: 'debug' });
       const fakeServer = createFakeServer();
       let callbackInvoked = false;
 
@@ -181,7 +181,7 @@ describe('PathGuard Roots Management', () => {
   });
 
   it('does not invoke onInitTimeout when initialized arrives first', async () => {
-    const manager = new PathGuard([], {}, { minimumLevel: 'debug' });
+    const manager = new PathGuard({}, { minimumLevel: 'debug' });
     const fakeServer = createFakeServer();
     let callbackInvoked = false;
 

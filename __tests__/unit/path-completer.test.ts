@@ -23,7 +23,7 @@ async function withTestDir(fn: (tmpDir: string) => Promise<void>) {
 test('path-completer', async (t) => {
   await t.test('returns allowed directories on empty input without context', async () => {
     await withTestDir(async (tmpDir) => {
-      const pathGuard = new PathGuard([]);
+      const pathGuard = new PathGuard();
       const state = await resolveAllowedDirectoriesState([tmpDir]);
       pathGuard.initialize(state);
 
@@ -40,7 +40,7 @@ test('path-completer', async (t) => {
       await writeFile(join(tmpDir, 'file2.txt'), 'hello');
       await mkdir(join(tmpDir, 'subdir'));
 
-      const pathGuard = new PathGuard([]);
+      const pathGuard = new PathGuard();
       const state = await resolveAllowedDirectoriesState([tmpDir]);
       pathGuard.initialize(state);
 
@@ -69,7 +69,7 @@ test('path-completer', async (t) => {
       await mkdir(srcDir);
       await writeFile(join(srcDir, 'index.ts'), 'content');
 
-      const pathGuard = new PathGuard([]);
+      const pathGuard = new PathGuard();
       const state = await resolveAllowedDirectoriesState([tmpDir]);
       pathGuard.initialize(state);
 
@@ -91,7 +91,7 @@ test('path-completer', async (t) => {
       await mkdir(namedRoot);
       await writeFile(join(namedRoot, 'test.txt'), 'hello');
 
-      const pathGuard = new PathGuard([]);
+      const pathGuard = new PathGuard();
       const state = await resolveAllowedDirectoriesState([namedRoot]);
       pathGuard.initialize(state);
 

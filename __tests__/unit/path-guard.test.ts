@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import { type AllowedDirectoriesState, PathGuard } from '../../src/core/path.js';
-import { SENSITIVE_FILE_DENYLIST } from '../../src/core/util.js';
 
 let tmpDir: string;
 let guard: PathGuard;
@@ -16,7 +15,7 @@ before(async () => {
     primary: [tmpDir],
     expanded: [tmpDir],
   };
-  guard = new PathGuard(SENSITIVE_FILE_DENYLIST);
+  guard = new PathGuard();
   guard.initialize(state);
 });
 
@@ -63,12 +62,12 @@ test('isSafeGlob returns true for safe patterns', () => {
 });
 
 test('isSensitive works before initialize()', () => {
-  const uninit = new PathGuard(SENSITIVE_FILE_DENYLIST);
+  const uninit = new PathGuard();
   assert.strictEqual(uninit.isSensitive('.env'), true);
 });
 
 test('validateExistingPath throws before initialize()', async () => {
-  const uninit = new PathGuard(SENSITIVE_FILE_DENYLIST);
+  const uninit = new PathGuard();
   await assert.rejects(
     () => uninit.validateExistingPath(join(tmpDir, 'test.txt')),
     /not initialized|allowed/i,
