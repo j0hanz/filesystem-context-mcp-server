@@ -9,7 +9,7 @@ import RE2 from 're2';
 import { z } from 'zod/v4';
 
 import { runInWorker, shouldOffload } from '../core/concurrency.js';
-import { ErrorCode, formatUnknownErrorMessage, McpError, Problem } from '../core/errors.js';
+import { ErrorCode, formatUnknownErrorMessage, FsError, Problem } from '../core/errors.js';
 import {
   atomicWriteFile,
   detectMimeType,
@@ -150,7 +150,7 @@ function createRegexMatcher(pattern: string, caseSensitive: boolean): RE2 {
   try {
     return new RE2(pattern, flags);
   } catch (error) {
-    throw new McpError(
+    throw new FsError(
       ErrorCode.INVALID_PATTERN,
       `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`,
     );

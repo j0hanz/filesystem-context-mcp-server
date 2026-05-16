@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { ErrorCode, McpError } from '../../src/core/errors.js';
+import { ErrorCode, FsError } from '../../src/core/errors.js';
 import { decodeOffsetCursor, encodeOffsetCursor } from '../../src/tools/_helpers.js';
 
 // ─── Helper functions ───────────────────────────────────────────────────────
@@ -26,42 +26,42 @@ describe('decodeOffsetCursor', () => {
     assert.equal(decodeOffsetCursor(cursor), 0);
   });
 
-  it('throws McpError on non-base64url garbage', () => {
+  it('throws FsError on non-base64url garbage', () => {
     assert.throws(
       () => decodeOffsetCursor('not-a-valid-cursor'),
-      (err: unknown) => err instanceof McpError && err.code === ErrorCode.INVALID_INPUT,
+      (err: unknown) => err instanceof FsError && err.code === ErrorCode.INVALID_INPUT,
     );
   });
 
-  it('throws McpError when JSON has no offset key', () => {
+  it('throws FsError when JSON has no offset key', () => {
     const cursor = encodeCursor({ wrong: 123 });
     assert.throws(
       () => decodeOffsetCursor(cursor),
-      (err: unknown) => err instanceof McpError && err.code === ErrorCode.INVALID_INPUT,
+      (err: unknown) => err instanceof FsError && err.code === ErrorCode.INVALID_INPUT,
     );
   });
 
-  it('throws McpError when offset is a string', () => {
+  it('throws FsError when offset is a string', () => {
     const cursor = encodeCursor({ offset: '5' });
     assert.throws(
       () => decodeOffsetCursor(cursor),
-      (err: unknown) => err instanceof McpError && err.code === ErrorCode.INVALID_INPUT,
+      (err: unknown) => err instanceof FsError && err.code === ErrorCode.INVALID_INPUT,
     );
   });
 
-  it('throws McpError when offset is negative', () => {
+  it('throws FsError when offset is negative', () => {
     const cursor = encodeCursor({ offset: -1 });
     assert.throws(
       () => decodeOffsetCursor(cursor),
-      (err: unknown) => err instanceof McpError && err.code === ErrorCode.INVALID_INPUT,
+      (err: unknown) => err instanceof FsError && err.code === ErrorCode.INVALID_INPUT,
     );
   });
 
-  it('throws McpError when offset is a float', () => {
+  it('throws FsError when offset is a float', () => {
     const cursor = encodeCursor({ offset: 1.5 });
     assert.throws(
       () => decodeOffsetCursor(cursor),
-      (err: unknown) => err instanceof McpError && err.code === ErrorCode.INVALID_INPUT,
+      (err: unknown) => err instanceof FsError && err.code === ErrorCode.INVALID_INPUT,
     );
   });
 });

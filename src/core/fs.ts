@@ -27,7 +27,7 @@ import ignore, { type Ignore } from 'ignore';
 
 import type { FileType } from '../config.js';
 import { assertNotAborted, withAbort } from './concurrency.js';
-import { ErrorCode, isNodeError, McpError } from './errors.js';
+import { ErrorCode, isNodeError, FsError } from './errors.js';
 import {
   getToolContextSnapshot,
   publishOpsTraceEnd,
@@ -148,7 +148,7 @@ function assertPositiveSafeIntegerOption(name: string, value: unknown, message?:
     !Number.isSafeInteger(value) ||
     value < 1
   ) {
-    throw new McpError(ErrorCode.INVALID_INPUT, message ?? `${name} must be a positive integer`);
+    throw new FsError(ErrorCode.INVALID_INPUT, message ?? `${name} must be a positive integer`);
   }
 }
 
@@ -307,14 +307,14 @@ function validateLineBasedOptions(
   options: ReadFileOptions,
 ): void {
   if (hasHead && (hasStart || hasEnd)) {
-    throw new McpError(
+    throw new FsError(
       ErrorCode.INVALID_INPUT,
       'head cannot be used together with startLine/endLine',
     );
   }
 
   if (hasTail && (hasHead || hasStart || hasEnd)) {
-    throw new McpError(
+    throw new FsError(
       ErrorCode.INVALID_INPUT,
       'tail cannot be used together with head/startLine/endLine',
     );
@@ -322,7 +322,7 @@ function validateLineBasedOptions(
 
   const effectiveStart = options.startLine ?? 1;
   if (options.endLine !== undefined && options.endLine < effectiveStart) {
-    throw new McpError(
+    throw new FsError(
       ErrorCode.INVALID_INPUT,
       'endLine must be greater than or equal to startLine (default: 1)',
     );
@@ -337,14 +337,14 @@ function validateByteBasedOptions(
   options: ReadFileOptions,
 ): void {
   if (options.offset !== undefined && options.offset < 0) {
-    throw new McpError(ErrorCode.INVALID_INPUT, 'offset must be >= 0');
+    throw new FsError(ErrorCode.INVALID_INPUT, 'offset must be >= 0');
   }
   if (options.length !== undefined && options.length < 1) {
-    throw new McpError(ErrorCode.INVALID_INPUT, 'length must be >= 1');
+    throw new FsError(ErrorCode.INVALID_INPUT, 'length must be >= 1');
   }
   const hasByteRange = options.offset !== undefined || options.length !== undefined;
   if (hasByteRange && (hasHead || hasTail || hasStart || hasEnd)) {
-    throw new McpError(
+    throw new FsError(
       ErrorCode.INVALID_INPUT,
       "Cannot use 'offset'/'length' with line-based params",
     );
@@ -415,8 +415,8 @@ function resolveReadMode(options: NormalizedOptions): ReadMode {
   return 'full';
 }
 
-function createTooLargeError(bytesRead: number, maxSize: number, requestedPath: string): McpError {
-  return new McpError(
+function createTooLargeError(bytesRead: number, maxSize: number, requestedPath: string): FsError {
+  return new FsError(
     ErrorCode.TOO_LARGE,
     `File exceeds size limit (${bytesRead} > ${maxSize} bytes)`,
     requestedPath,
@@ -618,12 +618,12 @@ async function assertNotBinary(
   assertNotAborted(normalized.signal);
   const isBinary = await isProbablyBinary(validPath, handle, normalized.signal);
   if (!isBinary) return;
-  throw new McpError(ErrorCode.INVALID_INPUT, 'Binary file detected.', filePath);
+  throw new FsError(ErrorCode.INVALID_INPUT, 'Binary file detected.', filePath);
 }
 
 function assertSizeWithinLimit(size: number, maxSize: number, filePath: string): void {
   if (size <= maxSize) return;
-  throw new McpError(
+  throw new FsError(
     ErrorCode.TOO_LARGE,
     `File too large (${size} > ${maxSize} bytes). Use head to preview.`,
     filePath,
@@ -643,7 +643,7 @@ function requireReadOption<K extends RequiredReadOption>(
     return value;
   }
 
-  throw new McpError(ErrorCode.INVALID_INPUT, `Missing ${key} option`, filePath);
+  throw new FsError(ErrorCode.INVALID_INPUT, `Missing ${key} option`, filePath);
 }
 
 interface ReadModeContext {
@@ -816,7 +816,7 @@ async function readByMode(context: ReadModeContext): Promise<ReadFileResult> {
 
 function assertFileStats(filePath: string, stats: Stats): void {
   if (!stats.isFile()) {
-    throw new McpError(ErrorCode.NOT_FILE, 'Not a regular file', filePath);
+    throw new FsError(ErrorCode.NOT_FILE, 'Not a regular file', filePath);
   }
 }
 
@@ -888,14 +888,14 @@ export async function readFileWithStats(
   // 5-arg version (filePath, validPath, stats, options, pathGuard)
   const validPath = arg2;
   if (!arg3 || typeof arg3 !== 'object' || !('isFile' in arg3)) {
-    throw new McpError(ErrorCode.UNKNOWN, 'readFileWithStats: arg3 must be Stats');
+    throw new FsError(ErrorCode.UNKNOWN, 'readFileWithStats: arg3 must be Stats');
   }
   const stats = arg3;
   const options = arg4 ?? {};
   const pathGuard = arg5;
 
   if (!pathGuard) {
-    throw new McpError(ErrorCode.UNKNOWN, 'PathGuard must be provided to readFileWithStats');
+    throw new FsError(ErrorCode.UNKNOWN, 'PathGuard must be provided to readFileWithStats');
   }
 
   const normalized = prepareReadOptions(options);

@@ -6,7 +6,7 @@ import { basename } from 'node:path';
 import { z } from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
-import { ErrorCode, isNodeError, McpError, Problem } from '../core/errors.js';
+import { ErrorCode, isNodeError, FsError, Problem } from '../core/errors.js';
 import { lstat, rm, rmdir } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
@@ -159,7 +159,7 @@ async function deleteSinglePath(
       failure: {
         path: validPath,
         error: Problem.fromUnknown(
-          new McpError(
+          new FsError(
             ErrorCode.ACCESS_DENIED,
             'Deleting a workspace root directory is not allowed',
           ),
@@ -188,7 +188,7 @@ async function deleteSinglePath(
       failure: {
         path: validPath,
         error: Problem.fromUnknown(
-          new McpError(ErrorCode.CANCELLED, 'Delete cancelled by user'),
+          new FsError(ErrorCode.CANCELLED, 'Delete cancelled by user'),
           ErrorCode.CANCELLED,
           validPath,
         ),

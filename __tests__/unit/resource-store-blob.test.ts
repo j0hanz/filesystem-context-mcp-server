@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
-import { ErrorCode, McpError } from '../../src/core/errors.js';
+import { ErrorCode, FsError } from '../../src/core/errors.js';
 import { createInMemoryResourceStore } from '../../src/core/store.js';
 
 test('putBlob stores and getBlob retrieves binary data correctly', () => {
@@ -58,7 +58,7 @@ test('getBlob throws when called on a text URI', () => {
       store.getBlob(textEntry.uri);
     },
     (err) => {
-      assert(err instanceof McpError);
+      assert(err instanceof FsError);
       assert.strictEqual(err.code, ErrorCode.NOT_FOUND);
       return true;
     },
@@ -79,7 +79,7 @@ test('getText throws when called on a blob URI', () => {
       store.getText(blobEntry.uri);
     },
     (err) => {
-      assert(err instanceof McpError);
+      assert(err instanceof FsError);
       assert.strictEqual(err.code, ErrorCode.NOT_FOUND);
       return true;
     },
@@ -116,7 +116,7 @@ test('putText with same data still stores as text kind', () => {
   assert.strictEqual(retrieved.text, 'Hello, World!');
 
   // Should throw when accessed as blob
-  assert.throws(() => store.getBlob(textEntry.uri), McpError);
+  assert.throws(() => store.getBlob(textEntry.uri), FsError);
 });
 
 test('putBlob rejects data larger than maxEntryBytes', () => {
@@ -135,7 +135,7 @@ test('putBlob rejects data larger than maxEntryBytes', () => {
       });
     },
     (err) => {
-      assert(err instanceof McpError);
+      assert(err instanceof FsError);
       assert.strictEqual(err.code, ErrorCode.TOO_LARGE);
       return true;
     },
@@ -165,7 +165,7 @@ test('getBlob expires after TTL', () => {
         store.getBlob(entry.uri);
         assert.fail('Should have thrown expired error');
       } catch (err) {
-        assert(err instanceof McpError);
+        assert(err instanceof FsError);
         assert.strictEqual(err.code, ErrorCode.NOT_FOUND);
         resolve();
       }

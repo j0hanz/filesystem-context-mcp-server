@@ -16,7 +16,7 @@ import { Worker } from 'node:worker_threads';
  */
 
 import { ErrorCode } from '../config.js';
-import { McpError, normalizeUnknownError } from './errors.js';
+import { FsError, normalizeUnknownError } from './errors.js';
 import {
   PARALLEL_CONCURRENCY,
   WORKER_CANCEL_GRACE_MS,
@@ -230,7 +230,7 @@ class WorkerPool {
   ): Promise<TaskResult<N>> {
     if (WORKERS_DISABLED) {
       return Promise.reject(
-        new McpError(
+        new FsError(
           ErrorCode.UNKNOWN,
           'runInWorker called while FS_DISABLE_WORKERS=1 — caller bug',
         ),
@@ -265,7 +265,7 @@ class WorkerPool {
       if (opts.timeoutMs !== undefined && opts.timeoutMs > 0) {
         const tid = setTimeout(() => {
           this.abortEntry(entry, true);
-          reject(new McpError(ErrorCode.TIMEOUT, 'Worker task timed out'));
+          reject(new FsError(ErrorCode.TIMEOUT, 'Worker task timed out'));
         }, opts.timeoutMs);
         tid.unref();
         entry.timeoutId = tid;
@@ -275,7 +275,7 @@ class WorkerPool {
       if (this.queue.length >= WORKER_QUEUE_MAX) {
         this.cleanupEntry(entry);
         reject(
-          new McpError(
+          new FsError(
             ErrorCode.UNKNOWN,
             `Worker pool task queue is full (${String(WORKER_QUEUE_MAX)} pending tasks); rejecting new submission`,
           ),
@@ -295,7 +295,7 @@ class WorkerPool {
     // Reject everything that's still queued.
     for (const qt of this.queue.clear()) {
       this.cleanupEntry(qt.entry);
-      qt.entry.reject(new McpError(ErrorCode.UNKNOWN, 'Worker pool shutting down'));
+      qt.entry.reject(new FsError(ErrorCode.UNKNOWN, 'Worker pool shutting down'));
     }
     // Reject in-flight tasks; terminate workers.
     const toTerminate = [...this.workers];
@@ -308,7 +308,7 @@ class WorkerPool {
       toTerminate.map(async (pw) => {
         if (pw.current) {
           this.cleanupEntry(pw.current);
-          pw.current.reject(new McpError(ErrorCode.UNKNOWN, 'Worker pool shutting down'));
+          pw.current.reject(new FsError(ErrorCode.UNKNOWN, 'Worker pool shutting down'));
         }
         try {
           await pw.worker.terminate();
@@ -380,7 +380,7 @@ class WorkerPool {
     if (pw.current) {
       this.cleanupEntry(pw.current);
       pw.current.reject(
-        new McpError(
+        new FsError(
           ErrorCode.UNKNOWN,
           `Worker terminated unexpectedly (exit code ${String(code)})`,
         ),
@@ -490,7 +490,7 @@ class WorkerPool {
 
   private rehydrateError(err: SerializedError): Error {
     if (err.kind === 'mcp') {
-      return new McpError(
+      return new FsError(
         err.code,
         err.message,
         ...(err.path !== undefined ? [err.path] : [undefined]),

@@ -30,7 +30,7 @@ import {
   formatUnknownErrorMessage,
   isAbortError,
   isNodeError,
-  McpError,
+  FsError,
 } from './errors.js';
 import { Logger, type LoggingState, logToMcp } from './observability.js';
 import {
@@ -559,7 +559,7 @@ export class PathGuard implements IPathValidator {
     message = 'Invalid glob or unsafe path (absolute/.. forbidden)',
   ): void {
     if (!this.isSafeGlob(pattern)) {
-      throw new McpError(ErrorCode.INVALID_PATTERN, message);
+      throw new FsError(ErrorCode.INVALID_PATTERN, message);
     }
   }
 
@@ -574,7 +574,7 @@ export class PathGuard implements IPathValidator {
     accessDeniedHint: string;
   } {
     if (!this.allowedDirectoriesState) {
-      throw new McpError(
+      throw new FsError(
         ErrorCode.UNKNOWN,
         'PathGuard not initialized. Call initialize() first.',
         requestedPath,
@@ -590,7 +590,7 @@ export class PathGuard implements IPathValidator {
         : 'No allowed directories configured.';
 
     if (!isPathWithinDirectories(normalizedRequested, allowedDirs)) {
-      throw new McpError(
+      throw new FsError(
         ErrorCode.ACCESS_DENIED,
         `Outside allowed directories. ${accessDeniedHint}`,
         requestedPath,
@@ -609,7 +609,7 @@ export class PathGuard implements IPathValidator {
       realPath = await realpath(normalizedRequested);
     } catch (error) {
       if (isNodeError(error) && error.code === 'ENOENT') {
-        throw new McpError(
+        throw new FsError(
           ErrorCode.NOT_FOUND,
           'Path not found',
           requestedPath,
@@ -617,7 +617,7 @@ export class PathGuard implements IPathValidator {
           error,
         );
       }
-      throw new McpError(
+      throw new FsError(
         ErrorCode.UNKNOWN,
         'Cannot access path',
         requestedPath,
@@ -631,7 +631,7 @@ export class PathGuard implements IPathValidator {
     const normalizedReal = normalizePath(realPath);
 
     if (!isPathWithinDirectories(normalizedReal, allowedDirs)) {
-      throw new McpError(
+      throw new FsError(
         ErrorCode.ACCESS_DENIED,
         `Outside allowed directories. ${accessDeniedHint}`,
         requestedPath,
@@ -653,7 +653,7 @@ export class PathGuard implements IPathValidator {
     try {
       stats = await stat(details.resolvedPath);
     } catch (error) {
-      throw new McpError(
+      throw new FsError(
         ErrorCode.UNKNOWN,
         'Cannot access directory',
         requestedPath,
@@ -665,7 +665,7 @@ export class PathGuard implements IPathValidator {
     }
 
     if (!stats.isDirectory()) {
-      throw new McpError(ErrorCode.NOT_DIRECTORY, 'Not a directory', requestedPath);
+      throw new FsError(ErrorCode.NOT_DIRECTORY, 'Not a directory', requestedPath);
     }
 
     return details.resolvedPath;
@@ -675,20 +675,20 @@ export class PathGuard implements IPathValidator {
     if (pathValue && pathValue.trim().length > 0) return pathValue;
     const roots = this.getAllowedDirectories();
     if (roots.length === 0) {
-      throw new McpError(
+      throw new FsError(
         ErrorCode.ACCESS_DENIED,
         'No roots configured. Use roots tool, --allow-cwd, or MCP Roots protocol.',
       );
     }
     if (roots.length > 1) {
-      throw new McpError(
+      throw new FsError(
         ErrorCode.INVALID_INPUT,
         'Multiple roots configured. Provide an explicit path.',
       );
     }
     const root = roots[0];
     if (!root) {
-      throw new McpError(ErrorCode.ACCESS_DENIED, 'Workspace root is unexpectedly undefined');
+      throw new FsError(ErrorCode.ACCESS_DENIED, 'Workspace root is unexpectedly undefined');
     }
     return root;
   }
@@ -704,7 +704,7 @@ export class PathGuard implements IPathValidator {
 
   assertAllowedFileAccess(requestedPath: string): void {
     if (this.isSensitive(requestedPath)) {
-      throw new McpError(
+      throw new FsError(
         ErrorCode.ACCESS_DENIED,
         'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
         requestedPath,
@@ -723,7 +723,7 @@ export class PathGuard implements IPathValidator {
       } catch (error) {
         const parent = dirname(current);
         if (parent === current) {
-          throw new McpError(
+          throw new FsError(
             ErrorCode.UNKNOWN,
             'Cannot resolve path',
             requestedPath,
@@ -741,7 +741,7 @@ export class PathGuard implements IPathValidator {
       this.validateAccess(requestedPath);
 
     if (this.isSensitive(requestedPath) || this.isSensitive(normalizedRequested)) {
-      throw new McpError(
+      throw new FsError(
         ErrorCode.ACCESS_DENIED,
         'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
         requestedPath,
@@ -752,7 +752,7 @@ export class PathGuard implements IPathValidator {
     const normalizedReal = normalizePath(realPath);
 
     if (!isPathWithinDirectories(normalizedReal, allowedDirs)) {
-      throw new McpError(
+      throw new FsError(
         ErrorCode.ACCESS_DENIED,
         `Outside allowed directories. ${accessDeniedHint}`,
         requestedPath,

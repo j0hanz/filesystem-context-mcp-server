@@ -1,11 +1,11 @@
+import { ProtocolError, ProtocolErrorCode, type ServerContext } from '@modelcontextprotocol/server';
+
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { ProtocolError, ProtocolErrorCode, type ServerContext } from '@modelcontextprotocol/server';
-
-import { registerAllResources } from '../../src/resources.js';
-import { createInMemoryResourceStore } from '../../src/core/store.js';
 import type { PathGuard } from '../../src/core/path.js';
+import { createInMemoryResourceStore } from '../../src/core/store.js';
+import { registerAllResources } from '../../src/resources.js';
 
 describe('resources/subscribe with unknown URI', () => {
   it('throws ProtocolError(ResourceNotFound) when subscribing to an unknown URI', async () => {
@@ -52,11 +52,14 @@ describe('resources/subscribe with unknown URI', () => {
 
     let thrownError: unknown;
     try {
-      await subscribeHandler({
-        params: {
-          uri: unknownUri,
+      await subscribeHandler(
+        {
+          params: {
+            uri: unknownUri,
+          },
         },
-      }, ctx);
+        ctx,
+      );
     } catch (error) {
       thrownError = error;
     }
@@ -66,7 +69,7 @@ describe('resources/subscribe with unknown URI', () => {
       `Should throw ProtocolError, got: ${thrownError instanceof Error ? thrownError.message : String(thrownError)}`,
     );
     assert.equal(
-      (thrownError as ProtocolError).code,
+      thrownError.code,
       ProtocolErrorCode.ResourceNotFound,
       'Should have ResourceNotFound error code',
     );

@@ -4,7 +4,7 @@ import { basename, relative, win32 } from 'node:path';
 import { z } from 'zod/v4';
 
 import { assertNotAborted } from '../core/concurrency.js';
-import { ErrorCode, McpError, Problem } from '../core/errors.js';
+import { ErrorCode, FsError, Problem } from '../core/errors.js';
 import {
   calculateFileContentHash,
   globEntries,
@@ -246,7 +246,7 @@ async function handleCalculateHash(
   for (const [algo, digest] of Object.entries(hashes)) {
     const expectedLength = ALGO_LENGTHS[algo as (typeof SUPPORTED_ALGORITHMS)[number]];
     if (digest.length !== expectedLength) {
-      throw new McpError(
+      throw new FsError(
         Problem.invalidInput(
           `Hash computation produced wrong-length ${algo} digest: expected ${String(expectedLength)} hex characters, got ${String(digest.length)}`,
         ),

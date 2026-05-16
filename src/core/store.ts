@@ -1,7 +1,7 @@
 import { hash, randomUUID } from 'node:crypto';
 import { channel } from 'node:diagnostics_channel';
 
-import { ErrorCode, McpError } from './errors.js';
+import { ErrorCode, FsError } from './errors.js';
 
 interface ResourceEntryBase {
   uri: string;
@@ -164,7 +164,7 @@ export function createInMemoryResourceStore(
         uri,
         reason: 'not_found',
       });
-      throw new McpError(
+      throw new FsError(
         ErrorCode.NOT_FOUND,
         `Resource not found: ${uri}. Re-run the tool to regenerate.`,
       );
@@ -176,7 +176,7 @@ export function createInMemoryResourceStore(
         uri,
         reason: 'expired',
       });
-      throw new McpError(
+      throw new FsError(
         ErrorCode.NOT_FOUND,
         `Resource expired: ${uri}. Re-run the tool to regenerate.`,
       );
@@ -205,7 +205,7 @@ export function createInMemoryResourceStore(
         bytes: entryBytes,
         reason: 'entry_too_large',
       });
-      throw new McpError(ErrorCode.TOO_LARGE, `Resource too large to cache (${entryBytes} bytes).`);
+      throw new FsError(ErrorCode.TOO_LARGE, `Resource too large to cache (${entryBytes} bytes).`);
     }
 
     const contentHash = computeSha256(params.data);
@@ -265,7 +265,7 @@ export function createInMemoryResourceStore(
         bytes: entry.size,
         reason: 'evicted_immediately',
       });
-      throw new McpError(ErrorCode.TOO_LARGE, 'Cache full: entry evicted.');
+      throw new FsError(ErrorCode.TOO_LARGE, 'Cache full: entry evicted.');
     }
 
     return entry;

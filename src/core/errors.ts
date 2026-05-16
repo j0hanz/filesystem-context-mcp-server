@@ -316,10 +316,10 @@ export function zodErrorToProblem(err: z.ZodError, schema?: z.ZodType): Problem 
   });
 }
 
-function isMcpErrorCarrier(error: unknown): error is { problem: Problem } {
+function isFsErrorCarrier(error: unknown): error is { problem: Problem } {
   return (
     error instanceof Error &&
-    error.name === 'McpError' &&
+    error.name === 'FsError' &&
     'problem' in error &&
     typeof (error as { problem?: unknown }).problem === 'object'
   );
@@ -329,7 +329,7 @@ export function classify(error: unknown, ctx?: { schema?: z.ZodType }): Problem 
   if (error === null || error === undefined) {
     return Problem.unknown('Unknown error');
   }
-  if (isMcpErrorCarrier(error)) return error.problem;
+  if (isFsErrorCarrier(error)) return error.problem;
   if (error instanceof z.ZodError) return zodErrorToProblem(error, ctx?.schema);
   if (!(error instanceof Error)) {
     return Problem.unknown(typeof error === 'string' ? error : '[non-Error thrown]');
@@ -433,14 +433,14 @@ function formatDetailedError(error: DetailedError): string {
   return joinLines(lines);
 }
 
-// ─── McpError ────────────────────────────────────────────────────────────────
+// ─── FsError ─────────────────────────────────────────────────────────────────
 
-export class McpError extends Error {
+export class FsError extends Error {
   readonly problem: Problem;
 
-  // Overload 1: new McpError(problem, cause?)
+  // Overload 1: new FsError(problem, cause?)
   constructor(problem: Problem, cause?: unknown);
-  // Overload 2 (legacy): new McpError(code, message, path?, details?, cause?)
+  // Overload 2 (legacy): new FsError(code, message, path?, details?, cause?)
   constructor(
     code: ErrorCode,
     message: string,
@@ -498,8 +498,8 @@ export class McpError extends Error {
       super(problem.message, cause === undefined ? {} : { cause });
       this.problem = problem;
     }
-    this.name = 'McpError';
-    Object.setPrototypeOf(this, McpError.prototype);
+    this.name = 'FsError';
+    Object.setPrototypeOf(this, FsError.prototype);
   }
 
   get code(): ErrorCode {
@@ -522,8 +522,8 @@ export class McpError extends Error {
     path?: string,
     details?: Record<string, unknown>,
     cause?: unknown,
-  ): McpError {
-    return new McpError(ErrorCode.NOT_FOUND, message, path, details, cause);
+  ): FsError {
+    return new FsError(ErrorCode.NOT_FOUND, message, path, details, cause);
   }
 
   static invalidInput(
@@ -531,8 +531,8 @@ export class McpError extends Error {
     path?: string,
     details?: Record<string, unknown>,
     cause?: unknown,
-  ): McpError {
-    return new McpError(ErrorCode.INVALID_INPUT, message, path, details, cause);
+  ): FsError {
+    return new FsError(ErrorCode.INVALID_INPUT, message, path, details, cause);
   }
 
   static accessDenied(
@@ -540,8 +540,8 @@ export class McpError extends Error {
     path?: string,
     details?: Record<string, unknown>,
     cause?: unknown,
-  ): McpError {
-    return new McpError(ErrorCode.ACCESS_DENIED, message, path, details, cause);
+  ): FsError {
+    return new FsError(ErrorCode.ACCESS_DENIED, message, path, details, cause);
   }
 
   static timeout(
@@ -549,7 +549,7 @@ export class McpError extends Error {
     path?: string,
     details?: Record<string, unknown>,
     cause?: unknown,
-  ): McpError {
-    return new McpError(ErrorCode.TIMEOUT, message, path, details, cause);
+  ): FsError {
+    return new FsError(ErrorCode.TIMEOUT, message, path, details, cause);
   }
 }

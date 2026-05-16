@@ -4,7 +4,7 @@ import { z } from 'zod/v4';
 
 import type { FileInfo } from '../config.js';
 import { processInParallel } from '../core/concurrency.js';
-import { ErrorCode, McpError, Problem } from '../core/errors.js';
+import { ErrorCode, FsError, Problem } from '../core/errors.js';
 import type { MimeKind } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
 import { createBase64JsonCodec } from '../core/path.js';
@@ -141,17 +141,17 @@ export function decodeOffsetCursor(cursor: string): number {
   try {
     const result = OffsetCursorCodec.safeParse(cursor);
     if (!result.success) {
-      throw new McpError(
+      throw new FsError(
         ErrorCode.INVALID_INPUT,
         `Invalid cursor. Request the first page without a cursor.`,
       );
     }
     return result.data.offset;
   } catch (error) {
-    if (error instanceof McpError) {
+    if (error instanceof FsError) {
       throw error;
     }
-    throw new McpError(
+    throw new FsError(
       ErrorCode.INVALID_INPUT,
       `Invalid cursor. Request the first page without a cursor.`,
     );

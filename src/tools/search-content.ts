@@ -13,7 +13,7 @@ import {
   ErrorCode,
   formatUnknownErrorMessage,
   isTimeoutLikeError,
-  McpError,
+  FsError,
 } from '../core/errors.js';
 import { buildGlobOptions, globEntries, isProbablyBinary, stat } from '../core/fs.js';
 import type { GlobEntry } from '../core/fs.js';
@@ -232,7 +232,7 @@ function resolveOptions(options: SearchContentOptions): ResolvedOptions {
   const merged = mergeOptions(SEARCH_CONTENT_DEFAULTS, normalizedOptions);
   const result = SearchOptionsSchema.safeParse(merged);
   if (!result.success) {
-    throw new McpError(
+    throw new FsError(
       ErrorCode.INVALID_INPUT,
       `Invalid search options:\n${z.prettifyError(result.error)}`,
       undefined,
@@ -1105,7 +1105,7 @@ async function searchDirectory(
 
       summary.filesScanned++;
       if (opts.fuzzy === true && summary.filesScanned > MAX_FUZZY_FILES) {
-        throw new McpError(
+        throw new FsError(
           ErrorCode.INVALID_INPUT,
           `Fuzzy search is limited to ${MAX_FUZZY_FILES} files. Narrow your path or disable fuzzy mode.`,
         );
@@ -1154,17 +1154,17 @@ async function searchContent(
   if (!pathGuard) {
     throw new Error('pathGuard is required in searchContent');
   }
-  if (!basePath.trim()) throw new McpError(ErrorCode.INVALID_INPUT, 'basePath required');
-  if (typeof pattern !== 'string') throw new McpError(ErrorCode.INVALID_INPUT, 'pattern required');
+  if (!basePath.trim()) throw new FsError(ErrorCode.INVALID_INPUT, 'basePath required');
+  if (typeof pattern !== 'string') throw new FsError(ErrorCode.INVALID_INPUT, 'pattern required');
 
   const opts = resolveOptions(options);
 
   if (opts.fuzzy === true) {
     if (!opts.isLiteral) {
-      throw new McpError(ErrorCode.INVALID_INPUT, "Cannot use 'fuzzy' with 'isRegex'");
+      throw new FsError(ErrorCode.INVALID_INPUT, "Cannot use 'fuzzy' with 'isRegex'");
     }
     if (pattern.length < MIN_FUZZY_PATTERN_LENGTH) {
-      throw new McpError(
+      throw new FsError(
         ErrorCode.INVALID_INPUT,
         `Fuzzy pattern must be at least ${MIN_FUZZY_PATTERN_LENGTH} characters`,
       );
@@ -1181,7 +1181,7 @@ async function searchContent(
       }
 
       if (!fileStats.isDirectory()) {
-        throw new McpError(ErrorCode.INVALID_INPUT, 'Path must be file or directory', basePath);
+        throw new FsError(ErrorCode.INVALID_INPUT, 'Path must be file or directory', basePath);
       }
 
       return searchDirectory(
@@ -1486,7 +1486,7 @@ async function executeSearch(
     return await searchContent(basePath, args.searchPattern, options, pathGuard);
   } catch (error) {
     if (error instanceof Error && /regular expression/i.test(error.message)) {
-      throw new McpError(
+      throw new FsError(
         ErrorCode.INVALID_PATTERN,
         `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`,
       );
@@ -1501,7 +1501,7 @@ function createSearchMatcher(args: SearchInput): RE2 | undefined {
     const flags = args.caseSensitive ? '' : 'i';
     return new RE2(args.searchPattern, flags);
   } catch (error) {
-    throw new McpError(
+    throw new FsError(
       ErrorCode.INVALID_PATTERN,
       `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`,
     );

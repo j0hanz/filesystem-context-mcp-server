@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { ErrorCode, McpError } from '../../src/core/errors.js';
+import { ErrorCode, FsError } from '../../src/core/errors.js';
 import { createInMemoryResourceStore } from '../../src/core/store.js';
 
 describe('resource store', () => {
@@ -14,7 +14,7 @@ describe('resource store', () => {
     assert.throws(
       () => store.getText(entry.uri),
       (error: unknown) =>
-        error instanceof McpError &&
+        error instanceof FsError &&
         error.code === ErrorCode.NOT_FOUND &&
         error.message.includes('Resource expired:'),
     );

@@ -6,7 +6,7 @@ import { basename, dirname, resolve, sep } from 'node:path';
 import { z } from 'zod/v4';
 
 import { withAbort } from '../core/concurrency.js';
-import { ErrorCode, isAbortError, isNodeError, McpError, Problem } from '../core/errors.js';
+import { ErrorCode, isAbortError, isNodeError, FsError, Problem } from '../core/errors.js';
 import { cp, mkdir, rename, rm, stat } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
 import { PerFileErrorSchema, RequiredPath } from '../schema.js';
@@ -80,18 +80,18 @@ async function tryElicitOverwriteConfirmation(
 
     if (elicitResult.action !== 'accept' || elicitResult.content?.['confirmOverwrite'] !== true) {
       // User declined - surface as a cancellation error.
-      throw new McpError(
+      throw new FsError(
         ErrorCode.CANCELLED,
         `Move cancelled: "${destination}" already exists and overwrite was declined.`,
       );
     }
   } catch (err) {
-    if (err instanceof McpError) throw err;
+    if (err instanceof FsError) throw err;
     if (err instanceof SdkError && err.code === SdkErrorCode.CapabilityNotSupported) {
       // Client doesn't support elicitation - proceed without asking.
     } else {
       // Transport or unexpected failure - fail closed, don't move.
-      throw new McpError(
+      throw new FsError(
         ErrorCode.CANCELLED,
         `Move cancelled: could not confirm overwrite of "${destination}".`,
       );
@@ -122,8 +122,8 @@ async function validateMoveSource(source: string, pathGuard: PathGuard): Promise
     pathGuard.assertAllowedFileAccess(source);
     return validSource;
   } catch (error) {
-    if (error instanceof McpError) throw error;
-    throw new McpError(ErrorCode.ACCESS_DENIED, `Move failed for ${source}`, source);
+    if (error instanceof FsError) throw error;
+    throw new FsError(ErrorCode.ACCESS_DENIED, `Move failed for ${source}`, source);
   }
 }
 
@@ -141,7 +141,7 @@ async function performRenameWithFallback(
     }
 
     if (!isNodeError(error) || error.code !== 'EXDEV') {
-      throw new McpError(ErrorCode.UNKNOWN, `Move failed for ${originalSource}`, originalSource);
+      throw new FsError(ErrorCode.UNKNOWN, `Move failed for ${originalSource}`, originalSource);
     }
 
     try {
@@ -151,7 +151,7 @@ async function performRenameWithFallback(
       if (isAbortError(copyOrRemoveError)) {
         throw copyOrRemoveError;
       }
-      throw new McpError(
+      throw new FsError(
         ErrorCode.UNKNOWN,
         `Cross-device move failed for ${originalSource}`,
         originalSource,
@@ -202,7 +202,7 @@ export const MOVE = defineTool({
         }
 
         if (resolve(validDest).startsWith(resolve(validSource) + sep)) {
-          throw new McpError(
+          throw new FsError(
             ErrorCode.INVALID_INPUT,
             'Cannot move a directory into its own subdirectory',
             move.source,

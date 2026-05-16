@@ -113,7 +113,7 @@ export interface TaskRequest {
   payload: TaskPayload<WorkerTaskName>;
 }
 
-export interface SerializedMcpError {
+export interface SerializedFsError {
   kind: 'mcp';
   code: ErrorCode;
   message: string;
@@ -127,7 +127,7 @@ export interface SerializedGenericError {
   stack?: string;
 }
 
-export type SerializedError = SerializedMcpError | SerializedGenericError;
+export type SerializedError = SerializedFsError | SerializedGenericError;
 
 export interface TaskResponseSuccess {
   id: number;
@@ -145,7 +145,7 @@ export type TaskResponse = TaskResponseSuccess | TaskResponseFailure;
 
 // ---- worker-side: dispatch loop ----------------------------------------
 
-function isMcpErrorLike(e: unknown): e is {
+function isFsErrorLike(e: unknown): e is {
   name: string;
   code: ErrorCode;
   message: string;
@@ -155,13 +155,13 @@ function isMcpErrorLike(e: unknown): e is {
   return (
     typeof e === 'object' &&
     e !== null &&
-    (e as { name?: unknown }).name === 'McpError' &&
+    (e as { name?: unknown }).name === 'FsError' &&
     typeof (e as { code?: unknown }).code === 'string'
   );
 }
 
 function serializeError(e: unknown): SerializedError {
-  if (isMcpErrorLike(e)) {
+  if (isFsErrorLike(e)) {
     return {
       kind: 'mcp',
       code: e.code,

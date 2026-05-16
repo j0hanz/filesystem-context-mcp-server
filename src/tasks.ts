@@ -13,7 +13,7 @@ import {
 } from '@modelcontextprotocol/server';
 import type { StandardSchemaWithJSON } from '@modelcontextprotocol/server';
 
-import { ErrorCode, McpError } from './core/errors.js';
+import { ErrorCode, FsError } from './core/errors.js';
 import { Logger, logRuntimeFailure } from './core/observability.js';
 import {
   isRecord,
@@ -37,7 +37,7 @@ class BackgroundExecutor {
 
   abortAll(): void {
     for (const controller of this.controllers.values()) {
-      controller.abort(new McpError(ErrorCode.CANCELLED, 'Orchestrator shutting down.'));
+      controller.abort(new FsError(ErrorCode.CANCELLED, 'Orchestrator shutting down.'));
     }
     this.controllers.clear();
   }
@@ -45,7 +45,7 @@ class BackgroundExecutor {
   abort(taskId: string, reason = 'Task execution cancelled.'): void {
     const controller = this.controllers.get(taskId);
     if (controller) {
-      controller.abort(new McpError(ErrorCode.CANCELLED, reason));
+      controller.abort(new FsError(ErrorCode.CANCELLED, reason));
       this.controllers.delete(taskId);
     }
   }
@@ -216,9 +216,7 @@ export class TaskOrchestrator extends InMemoryTaskStore {
           Logger.debug('[TaskOrchestrator] prior task-creation failure cleared from chain', {
             toolName: options.toolName,
             error:
-              isRecord(err) && typeof err['message'] === 'string'
-                ? err['message']
-                : String(err),
+              isRecord(err) && typeof err['message'] === 'string' ? err['message'] : String(err),
           });
           return undefined;
         })
@@ -232,7 +230,7 @@ export class TaskOrchestrator extends InMemoryTaskStore {
           } while (cursor);
 
           if (activeCount >= MAX_CONCURRENT_TASKS) {
-            throw new McpError(ErrorCode.INVALID_INPUT, `Too many active tasks (${activeCount})`);
+            throw new FsError(ErrorCode.INVALID_INPUT, `Too many active tasks (${activeCount})`);
           }
 
           const requestedTtl = ctx.task.requestedTtl ?? TASK_TTL;

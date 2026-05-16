@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { ErrorCode } from '../../src/config.js';
 import { runInWorker, shutdownWorkerPool } from '../../src/core/concurrency.js';
-import { McpError } from '../../src/core/errors.js';
+import { FsError } from '../../src/core/errors.js';
 
 test('runInWorker removes task from queue on timeout', async () => {
   // Fill the pool to force queueing with moderately sized tasks
@@ -27,7 +27,7 @@ test('runInWorker removes task from queue on timeout', async () => {
   );
 
   await assert.rejects(timedOutTask, (err: unknown) => {
-    return err instanceof McpError && err.code === ErrorCode.TIMEOUT;
+    return err instanceof FsError && err.code === ErrorCode.TIMEOUT;
   });
 
   ctrl.abort(); // cancel the background workers so test finishes fast

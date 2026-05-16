@@ -12,7 +12,7 @@ import {
   isAbortError,
   isNodeError,
   isTimeoutLikeError,
-  McpError,
+  FsError,
   Problem,
   zodErrorToProblem,
 } from '../../src/core/errors.js';
@@ -56,59 +56,59 @@ describe('isNodeError', () => {
   });
 });
 
-// ─── McpError — legacy positional constructor ────────────────────────────────
+// ─── FsError — legacy positional constructor ─────────────────────────────────
 
-describe('McpError — legacy constructor', () => {
+describe('FsError — legacy constructor', () => {
   it('stores code, message, and is instanceof Error', () => {
-    const err = new McpError(ErrorCode.NOT_FOUND, 'file not found');
+    const err = new FsError(ErrorCode.NOT_FOUND, 'file not found');
     assert.equal(err.code, ErrorCode.NOT_FOUND);
     assert.equal(err.message, 'file not found');
     assert.ok(err instanceof Error);
   });
 
-  it('has name "McpError"', () => {
-    const err = new McpError(ErrorCode.PERMISSION_DENIED, 'no access');
-    assert.equal(err.name, 'McpError');
+  it('has name "FsError"', () => {
+    const err = new FsError(ErrorCode.PERMISSION_DENIED, 'no access');
+    assert.equal(err.name, 'FsError');
   });
 
   it('stores optional path', () => {
-    const err = new McpError(ErrorCode.NOT_FOUND, 'msg', '/some/path');
+    const err = new FsError(ErrorCode.NOT_FOUND, 'msg', '/some/path');
     assert.equal(err.path, '/some/path');
   });
 
   it('stores no path when not provided', () => {
-    const err = new McpError(ErrorCode.NOT_FOUND, 'msg');
+    const err = new FsError(ErrorCode.NOT_FOUND, 'msg');
     assert.equal(err.path, undefined);
   });
 
   it('has a problem property with the correct code', () => {
-    const err = new McpError(ErrorCode.TOO_LARGE, 'too big');
+    const err = new FsError(ErrorCode.TOO_LARGE, 'too big');
     assert.equal(err.problem.code, ErrorCode.TOO_LARGE);
     assert.equal(err.problem.message, 'too big');
   });
 });
 
-// ─── McpError — Problem constructor ─────────────────────────────────────────
+// ─── FsError — Problem constructor ──────────────────────────────────────────
 
-describe('McpError — Problem constructor', () => {
+describe('FsError — Problem constructor', () => {
   it('wraps a Problem directly', () => {
     const problem: Problem = {
       code: ErrorCode.VALIDATION_FAILED,
       message: 'bad input',
       issues: [{ code: 'invalid_type', message: 'Expected string', path: ['name'] }],
     };
-    const err = new McpError(problem);
+    const err = new FsError(problem);
     assert.equal(err.code, ErrorCode.VALIDATION_FAILED);
     assert.equal(err.message, 'bad input');
     assert.equal(err.problem, problem);
     assert.ok(err instanceof Error);
-    assert.ok(err instanceof McpError);
+    assert.ok(err instanceof FsError);
   });
 
   it('wraps a Problem with cause', () => {
     const cause = new Error('underlying');
     const problem: Problem = { code: ErrorCode.IO_ERROR, message: 'io failed' };
-    const err = new McpError(problem, cause);
+    const err = new FsError(problem, cause);
     assert.equal(err.cause, cause);
     assert.equal(err.code, ErrorCode.IO_ERROR);
   });
@@ -119,7 +119,7 @@ describe('McpError — Problem constructor', () => {
       message: 'validation failed',
       issues: [{ code: 'custom', message: 'required', path: ['field'] }],
     };
-    const err = new McpError(problem);
+    const err = new FsError(problem);
     assert.ok(Array.isArray(err.problem.issues));
     assert.equal(err.problem.issues?.length, 1);
   });
@@ -247,7 +247,7 @@ describe('createDetailedError', () => {
     const parsed = schema.safeParse({ name: 42 });
     assert.ok(!parsed.success);
     const problem = zodErrorToProblem(parsed.error, schema);
-    const err = new McpError(problem);
+    const err = new FsError(problem);
     const d = createDetailedError(err);
     assert.equal(d.code, ErrorCode.VALIDATION_FAILED);
     assert.ok(Array.isArray(d.issues));
@@ -304,8 +304,8 @@ describe('Problem.fromUnknown', () => {
     assert.equal('details' in result, false);
   });
 
-  it('preserves McpError problem fields without overriding', () => {
-    const err = new McpError(ErrorCode.PERMISSION_DENIED, 'no access', '/locked');
+  it('preserves FsError problem fields without overriding', () => {
+    const err = new FsError(ErrorCode.PERMISSION_DENIED, 'no access', '/locked');
     const result = Problem.fromUnknown(err, ErrorCode.UNKNOWN);
     assert.equal(result.code, ErrorCode.PERMISSION_DENIED);
     assert.equal(result.message, 'no access');
