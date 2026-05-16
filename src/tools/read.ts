@@ -11,10 +11,10 @@ import {
   detectMimeType,
   MIME_SAMPLE_SIZE,
   readFile,
+  type ReadSpec,
   stat,
 } from '../core/fs.js';
 import {
-  assignDefined,
   DEFAULT_CONTINUATION_CHUNK_SIZE,
   DEFAULT_READ_MANY_MAX_TOTAL_SIZE,
   DEFAULT_SEARCH_TIMEOUT_MS,
@@ -128,33 +128,40 @@ export { ReadFileInputSchema };
 
 const READ_TOOL_LABEL = 'Read';
 
-function buildReadOptions(
-  args: ReadFileInput,
-  signal?: AbortSignal,
-): Parameters<typeof readFile>[1] {
-  const options: Parameters<typeof readFile>[1] = {
-    encoding: 'utf-8',
+function buildReadSpec(args: ReadFileInput, signal?: AbortSignal): ReadSpec {
+  const common = {
+    encoding: 'utf-8' as BufferEncoding,
     maxSize: MAX_TEXT_FILE_SIZE,
-    skipBinary: true,
+    skipBinary: true as const,
+    ...(signal ? { signal } : {}),
   };
 
-  const head = 'head' in args && typeof args.head === 'number' ? args.head : undefined;
-  const tail = 'tail' in args && typeof args.tail === 'number' ? args.tail : undefined;
-  const startLine =
-    'startLine' in args && typeof args.startLine === 'number' ? args.startLine : undefined;
-  const endLine = 'endLine' in args && typeof args.endLine === 'number' ? args.endLine : undefined;
   const offset = 'offset' in args && typeof args.offset === 'number' ? args.offset : undefined;
   const length = 'length' in args && typeof args.length === 'number' ? args.length : undefined;
+  const head = 'head' in args && typeof args.head === 'number' ? args.head : undefined;
+  const tail = 'tail' in args && typeof args.tail === 'number' ? args.tail : undefined;
+  const start =
+    'startLine' in args && typeof args.startLine === 'number' ? args.startLine : undefined;
+  const end = 'endLine' in args && typeof args.endLine === 'number' ? args.endLine : undefined;
 
-  return assignDefined(options, {
-    signal,
-    head,
-    tail,
-    startLine,
-    endLine,
-    offset,
-    length,
-  });
+  if (offset !== undefined || length !== undefined) {
+    return {
+      kind: 'byteRange',
+      ...(offset !== undefined ? { offset } : {}),
+      ...(length !== undefined ? { length } : {}),
+      ...common,
+    };
+  }
+  if (head !== undefined) {
+    return { kind: 'head', lines: head, ...common };
+  }
+  if (tail !== undefined) {
+    return { kind: 'tail', lines: tail, ...common };
+  }
+  if (start !== undefined || end !== undefined) {
+    return { kind: 'range', start: start ?? 1, ...(end !== undefined ? { end } : {}), ...common };
+  }
+  return { kind: 'full', ...common };
 }
 
 function buildReadContinuation(result: {
@@ -272,8 +279,8 @@ async function readOnePath(
   args: ReadFileInput,
   ctx: ToolCtx,
 ): Promise<PerPathReadValue> {
-  const options = buildReadOptions(args, ctx.signal);
-  const result = await readFile(filePath, options, ctx.pathGuard);
+  const spec = buildReadSpec(args, ctx.signal);
+  const result = await readFile(filePath, spec, ctx.pathGuard);
 
   const mimeInfo = detectMimeType(
     result.path,

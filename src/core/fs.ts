@@ -37,12 +37,7 @@ import {
 } from './observability.js';
 import type { PathGuard } from './path.js';
 import { toPosixPath } from './path.js';
-import {
-  assignDefined,
-  BINARY_CHECK_BUFFER_SIZE,
-  KNOWN_BINARY_EXTENSIONS,
-  MAX_TEXT_FILE_SIZE,
-} from './util.js';
+import { BINARY_CHECK_BUFFER_SIZE, KNOWN_BINARY_EXTENSIONS, MAX_TEXT_FILE_SIZE } from './util.js';
 
 const READ_ONLY_FILE_FLAG = 'r';
 const STREAM_CHUNK_SIZE = 64 * 1024;
@@ -260,18 +255,48 @@ export async function calculateFileContentHash(
 
 type ReadMode = 'head' | 'full' | 'range' | 'tail' | 'byteRange';
 
-interface ReadFileOptions {
-  encoding?: BufferEncoding;
-  maxSize?: number;
-  head?: number;
-  tail?: number;
-  startLine?: number;
-  endLine?: number;
-  skipBinary?: boolean;
-  signal?: AbortSignal;
-  offset?: number;
-  length?: number;
-}
+export type ReadSpec =
+  | {
+      kind: 'full';
+      encoding?: BufferEncoding;
+      maxSize?: number;
+      skipBinary?: boolean;
+      signal?: AbortSignal;
+    }
+  | {
+      kind: 'head';
+      lines: number;
+      encoding?: BufferEncoding;
+      maxSize?: number;
+      skipBinary?: boolean;
+      signal?: AbortSignal;
+    }
+  | {
+      kind: 'tail';
+      lines: number;
+      encoding?: BufferEncoding;
+      maxSize?: number;
+      skipBinary?: boolean;
+      signal?: AbortSignal;
+    }
+  | {
+      kind: 'range';
+      start: number;
+      end?: number;
+      encoding?: BufferEncoding;
+      maxSize?: number;
+      skipBinary?: boolean;
+      signal?: AbortSignal;
+    }
+  | {
+      kind: 'byteRange';
+      offset?: number;
+      length?: number;
+      encoding?: BufferEncoding;
+      maxSize?: number;
+      skipBinary?: boolean;
+      signal?: AbortSignal;
+    };
 
 interface NormalizedOptions {
   encoding: BufferEncoding;
@@ -317,103 +342,66 @@ export interface ReadFileResult {
   reachedEOF?: boolean;
 }
 
-function validateLineBasedOptions(
-  hasHead: boolean,
-  hasTail: boolean,
-  hasStart: boolean,
-  hasEnd: boolean,
-  options: ReadFileOptions,
-): void {
-  if (hasHead && (hasStart || hasEnd)) {
-    throw new FsError(
-      ErrorCode.INVALID_INPUT,
-      'head cannot be used together with startLine/endLine',
-    );
+function normalizeSpec(spec: ReadSpec): { normalized: NormalizedOptions; mode: ReadMode } {
+  if (spec.maxSize !== undefined) {
+    assertPositiveSafeIntegerOption('maxSize', spec.maxSize, 'maxSize must be at least 1');
   }
-
-  if (hasTail && (hasHead || hasStart || hasEnd)) {
-    throw new FsError(
-      ErrorCode.INVALID_INPUT,
-      'tail cannot be used together with head/startLine/endLine',
-    );
-  }
-
-  const effectiveStart = options.startLine ?? 1;
-  if (options.endLine !== undefined && options.endLine < effectiveStart) {
-    throw new FsError(
-      ErrorCode.INVALID_INPUT,
-      'endLine must be greater than or equal to startLine (default: 1)',
-    );
-  }
-}
-
-function validateByteBasedOptions(
-  hasHead: boolean,
-  hasTail: boolean,
-  hasStart: boolean,
-  hasEnd: boolean,
-  options: ReadFileOptions,
-): void {
-  if (options.offset !== undefined && options.offset < 0) {
-    throw new FsError(ErrorCode.INVALID_INPUT, 'offset must be >= 0');
-  }
-  if (options.length !== undefined && options.length < 1) {
-    throw new FsError(ErrorCode.INVALID_INPUT, 'length must be >= 1');
-  }
-  const hasByteRange = options.offset !== undefined || options.length !== undefined;
-  if (hasByteRange && (hasHead || hasTail || hasStart || hasEnd)) {
-    throw new FsError(
-      ErrorCode.INVALID_INPUT,
-      "Cannot use 'offset'/'length' with line-based params",
-    );
-  }
-}
-
-const POSITIVE_INT_OPTION_NAMES = ['maxSize', 'head', 'tail', 'startLine', 'endLine'] as const;
-
-function validateReadOptions(options: ReadFileOptions): void {
-  const hasHead = options.head !== undefined;
-  const hasTail = options.tail !== undefined;
-  const hasStart = options.startLine !== undefined;
-  const hasEnd = options.endLine !== undefined;
-
-  for (const name of POSITIVE_INT_OPTION_NAMES) {
-    assertPositiveSafeIntegerOption(name, options[name], `${name} must be at least 1`);
-  }
-
-  validateLineBasedOptions(hasHead, hasTail, hasStart, hasEnd, options);
-  validateByteBasedOptions(hasHead, hasTail, hasStart, hasEnd, options);
-}
-
-function normalizeOptions(options: ReadFileOptions): NormalizedOptions {
-  validateReadOptions(options);
 
   const base: NormalizedOptions = {
-    encoding: options.encoding ?? 'utf-8',
-    maxSize: Math.min(options.maxSize ?? MAX_TEXT_FILE_SIZE, MAX_TEXT_FILE_SIZE),
-    skipBinary: options.skipBinary ?? false,
+    encoding: spec.encoding ?? 'utf-8',
+    maxSize: Math.min(spec.maxSize ?? MAX_TEXT_FILE_SIZE, MAX_TEXT_FILE_SIZE),
+    skipBinary: spec.skipBinary ?? false,
+    ...(spec.signal ? { signal: spec.signal } : {}),
   };
 
-  if (options.endLine !== undefined) {
-    base.startLine = options.startLine ?? 1;
-    base.endLine = options.endLine;
-  } else if (options.startLine !== undefined) {
-    base.startLine = options.startLine;
+  assertNotAborted(spec.signal);
+
+  switch (spec.kind) {
+    case 'head':
+      assertPositiveSafeIntegerOption('lines', spec.lines, 'lines must be at least 1');
+      return { normalized: { ...base, head: spec.lines }, mode: 'head' };
+    case 'tail':
+      assertPositiveSafeIntegerOption('lines', spec.lines, 'lines must be at least 1');
+      return { normalized: { ...base, tail: spec.lines }, mode: 'tail' };
+    case 'range': {
+      assertPositiveSafeIntegerOption('start', spec.start, 'start must be at least 1');
+      if (spec.end !== undefined) {
+        assertPositiveSafeIntegerOption('end', spec.end, 'end must be at least 1');
+        if (spec.end < spec.start) {
+          throw new FsError(
+            ErrorCode.INVALID_INPUT,
+            'end must be greater than or equal to start (default: 1)',
+          );
+        }
+      }
+      return {
+        normalized: {
+          ...base,
+          startLine: spec.start,
+          ...(spec.end !== undefined ? { endLine: spec.end } : {}),
+        },
+        mode: 'range',
+      };
+    }
+    case 'byteRange': {
+      if (spec.offset !== undefined && spec.offset < 0) {
+        throw new FsError(ErrorCode.INVALID_INPUT, 'offset must be >= 0');
+      }
+      if (spec.length !== undefined && spec.length < 1) {
+        throw new FsError(ErrorCode.INVALID_INPUT, 'length must be >= 1');
+      }
+      return {
+        normalized: {
+          ...base,
+          ...(spec.offset !== undefined ? { offset: spec.offset } : {}),
+          ...(spec.length !== undefined ? { length: spec.length } : {}),
+        },
+        mode: 'byteRange',
+      };
+    }
+    case 'full':
+      return { normalized: base, mode: 'full' };
   }
-
-  return assignDefined(base, {
-    head: options.head,
-    tail: options.tail,
-    signal: options.signal,
-    offset: options.offset,
-    length: options.length,
-  });
-}
-
-function prepareReadOptions(options: ReadFileOptions): NormalizedOptions {
-  const normalized = normalizeOptions(options);
-  assertNotAborted(normalized.signal);
-  return normalized;
 }
 
 function buildReadContentOptions(normalized: NormalizedOptions): ReadContentOptions {
@@ -423,14 +411,6 @@ function buildReadContentOptions(normalized: NormalizedOptions): ReadContentOpti
   };
   if (normalized.signal) result.signal = normalized.signal;
   return result;
-}
-
-function resolveReadMode(options: NormalizedOptions): ReadMode {
-  if (options.offset !== undefined || options.length !== undefined) return 'byteRange';
-  if (options.head !== undefined) return 'head';
-  if (options.tail !== undefined) return 'tail';
-  if (options.startLine !== undefined || options.endLine !== undefined) return 'range';
-  return 'full';
 }
 
 function createTooLargeError(bytesRead: number, maxSize: number, requestedPath: string): FsError {
@@ -670,6 +650,7 @@ interface ReadModeContext {
   filePath: string;
   stats: Stats;
   normalized: NormalizedOptions;
+  mode: ReadMode;
 }
 
 async function executeHeadRead(context: ReadModeContext): Promise<ReadFileResult> {
@@ -828,8 +809,7 @@ const READ_MODE_HANDLERS = {
 } as const satisfies Record<ReadMode, (context: ReadModeContext) => Promise<ReadFileResult>>;
 
 async function readByMode(context: ReadModeContext): Promise<ReadFileResult> {
-  const mode = resolveReadMode(context.normalized);
-  return READ_MODE_HANDLERS[mode](context);
+  return READ_MODE_HANDLERS[context.mode](context);
 }
 
 function assertFileStats(filePath: string, stats: Stats): void {
@@ -843,6 +823,7 @@ async function readFileWithStatsInternal(
   validPath: string,
   stats: Stats,
   normalized: NormalizedOptions,
+  mode: ReadMode,
   pathGuard: PathGuard,
 ): Promise<ReadFileResult> {
   assertNotAborted(normalized.signal);
@@ -857,80 +838,48 @@ async function readFileWithStatsInternal(
   }
   assertNotAborted(normalized.signal);
 
-  return await readByMode({
-    handle,
-    validPath,
-    filePath,
-    stats,
-    normalized,
-  });
+  return await readByMode({ handle, validPath, filePath, stats, normalized, mode });
 }
 
-export async function readFileWithStats(
+export async function readFileRaw(
   filePath: string,
   pathGuard: PathGuard,
   options?: { signal?: AbortSignal },
-): Promise<{ content: Buffer; mimeType: string; isBinary: boolean }>;
+): Promise<{ content: Buffer; mimeType: string; isBinary: boolean }> {
+  const validPath = await pathGuard.validateExistingPath(filePath);
+  pathGuard.assertAllowedFileAccess(filePath);
+  const stats = await withAbort(fsStat(validPath), options?.signal);
+  assertFileStats(filePath, stats);
+  const content = await withAbort(fsReadFile(validPath), options?.signal);
+  const mimeInfo = detectMimeType(validPath, content.subarray(0, MIME_SAMPLE_SIZE));
+  return {
+    content,
+    mimeType: mimeInfo.mimeType,
+    isBinary: mimeInfo.kind !== 'text',
+  };
+}
+
 export async function readFileWithStats(
   filePath: string,
   validPath: string,
   stats: Stats,
-  options: ReadFileOptions | undefined,
+  spec: ReadSpec | undefined,
   pathGuard: PathGuard,
-): Promise<ReadFileResult>;
-export async function readFileWithStats(
-  filePath: string,
-  arg2: string | PathGuard,
-  arg3?: Stats | { signal?: AbortSignal },
-  arg4?: ReadFileOptions,
-  arg5?: PathGuard,
-): Promise<ReadFileResult | { content: Buffer; mimeType: string; isBinary: boolean }> {
-  if (typeof arg2 !== 'string') {
-    // 2-arg/3-arg version (filePath, pathGuard, options?)
-    const pathGuard = arg2;
-    const options = arg3 as { signal?: AbortSignal } | undefined;
-    const validPath = await pathGuard.validateExistingPath(filePath);
-    pathGuard.assertAllowedFileAccess(filePath);
-    const stats = await withAbort(fsStat(validPath), options?.signal);
-    assertFileStats(filePath, stats);
-
-    const content = await withAbort(fsReadFile(validPath), options?.signal);
-    const mimeInfo = detectMimeType(validPath, content.subarray(0, MIME_SAMPLE_SIZE));
-    return {
-      content,
-      mimeType: mimeInfo.mimeType,
-      isBinary: mimeInfo.kind !== 'text',
-    };
-  }
-
-  // 5-arg version (filePath, validPath, stats, options, pathGuard)
-  const validPath = arg2;
-  if (!arg3 || typeof arg3 !== 'object' || !('isFile' in arg3)) {
-    throw new FsError(ErrorCode.UNKNOWN, 'readFileWithStats: arg3 must be Stats');
-  }
-  const stats = arg3;
-  const options = arg4 ?? {};
-  const pathGuard = arg5;
-
-  if (!pathGuard) {
-    throw new FsError(ErrorCode.UNKNOWN, 'PathGuard must be provided to readFileWithStats');
-  }
-
-  const normalized = prepareReadOptions(options);
-  return readFileWithStatsInternal(filePath, validPath, stats, normalized, pathGuard);
+): Promise<ReadFileResult> {
+  const { normalized, mode } = normalizeSpec(spec ?? { kind: 'full' });
+  return readFileWithStatsInternal(filePath, validPath, stats, normalized, mode, pathGuard);
 }
 
 export async function readFile(
   filePath: string,
-  options: ReadFileOptions = {},
+  spec: ReadSpec,
   pathGuard: PathGuard,
 ): Promise<ReadFileResult> {
-  const normalized = prepareReadOptions(options);
+  const { normalized, mode } = normalizeSpec(spec);
   const validPath = await pathGuard.validateExistingPath(filePath);
   assertNotAborted(normalized.signal);
   const stats = await withAbort(fsStat(validPath), normalized.signal);
-
-  return readFileWithStatsInternal(filePath, validPath, stats, normalized, pathGuard);
+  return readFileWithStatsInternal(filePath, validPath, stats, normalized, mode, pathGuard);
 }
 
 export async function atomicWriteFile(

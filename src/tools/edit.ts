@@ -406,6 +406,7 @@ async function loadEditableFile(
     validPath,
     stats,
     {
+      kind: 'full',
       encoding: 'utf-8',
       maxSize: MAX_TEXT_FILE_SIZE,
       skipBinary: true,

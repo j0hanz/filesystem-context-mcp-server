@@ -2,7 +2,7 @@ import type { ReadResourceResult, Role, ServerContext } from '@modelcontextproto
 
 import { type FSWatcher, watch } from 'node:fs';
 
-import { readFileWithStats } from './core/fs.js';
+import { readFileRaw } from './core/fs.js';
 import { PathCompleter, type PathGuard } from './core/path.js';
 import type { ResourceStore } from './core/store.js';
 import {
@@ -210,7 +210,7 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
         throw new Error('Path variable is required and must be a string');
       }
       await options.pathGuard.validateExistingPath(rawPath);
-      const readResult = await readFileWithStats(rawPath, options.pathGuard);
+      const readResult = await readFileRaw(rawPath, options.pathGuard);
 
       return {
         contents: [
