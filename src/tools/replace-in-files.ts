@@ -280,6 +280,7 @@ async function processEntry(entryPath: string, ctx: ReplaceContext): Promise<voi
       originalContent: plan.originalContent,
       updatedContent: plan.updatedContent,
       includeDiff: options.dryRun || options.returnDiff,
+      ...(signal ? { signal } : {}),
     });
 
     if (!options.dryRun) {
@@ -333,6 +334,7 @@ async function maybeAppendPatchDiff(
     originalContent: string;
     updatedContent: string;
     includeDiff: boolean;
+    signal?: AbortSignal;
   },
 ): Promise<void> {
   if (!params.includeDiff) return;
@@ -346,12 +348,16 @@ async function maybeAppendPatchDiff(
     Buffer.byteLength(params.originalContent) + Buffer.byteLength(params.updatedContent);
 
   const patch = shouldOffload(totalBytes)
-    ? await runInWorker('createPatch', {
-        oldStr: params.originalContent,
-        newStr: params.updatedContent,
-        oldHeader: header,
-        newHeader: header,
-      })
+    ? await runInWorker(
+        'createPatch',
+        {
+          oldStr: params.originalContent,
+          newStr: params.updatedContent,
+          oldHeader: header,
+          newHeader: header,
+        },
+        { ...(params.signal ? { signal: params.signal } : {}) },
+      )
     : await new Promise<string>((resolve) => {
         // Defer to event loop to avoid blocking on large diffs
         setImmediate(() => {

@@ -2,8 +2,6 @@ import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { runInWorker, shutdownWorkerPool } from '../../src/core/concurrency.js';
-import { ErrorCode } from '../../src/core/errors.js';
-import { FsError } from '../../src/core/errors.js';
 
 test('runInWorker removes task from queue on timeout', async () => {
   // Fill the pool to force queueing with moderately sized tasks
@@ -23,11 +21,11 @@ test('runInWorker removes task from queue on timeout', async () => {
   const timedOutTask = runInWorker(
     'createPatch',
     { oldStr: 'x', newStr: 'y', oldHeader: '', newHeader: '' },
-    { timeoutMs: 1 },
+    { signal: AbortSignal.timeout(1) },
   );
 
   await assert.rejects(timedOutTask, (err: unknown) => {
-    return err instanceof FsError && err.code === ErrorCode.TIMEOUT;
+    return err instanceof Error && err.name === 'TimeoutError';
   });
 
   ctrl.abort(); // cancel the background workers so test finishes fast

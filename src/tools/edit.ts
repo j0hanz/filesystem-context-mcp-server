@@ -161,10 +161,15 @@ function countLines(str: string): number {
 async function computeDiffStats(
   original: string,
   modified: string,
+  signal?: AbortSignal,
 ): Promise<{ linesAdded: number; linesRemoved: number }> {
   const totalBytes = Buffer.byteLength(original) + Buffer.byteLength(modified);
   if (shouldOffload(totalBytes)) {
-    return runInWorker('computeDiffStats', { oldStr: original, newStr: modified });
+    return runInWorker(
+      'computeDiffStats',
+      { oldStr: original, newStr: modified },
+      { ...(signal ? { signal } : {}) },
+    );
   }
   return new Promise((resolve) => {
     // Yield to the event loop so we don't completely block
@@ -288,10 +293,11 @@ async function finalizeEditResult(
   appliedEdits: number,
   unmatchedEdits: string[],
   lineRange: EditResult['lineRange'],
+  signal?: AbortSignal,
 ): Promise<EditResult> {
   const { linesAdded, linesRemoved } =
     appliedEdits > 0
-      ? await computeDiffStats(originalContent, updatedContent)
+      ? await computeDiffStats(originalContent, updatedContent, signal)
       : { linesAdded: 0, linesRemoved: 0 };
 
   return {
@@ -345,16 +351,25 @@ function buildEditFileMetadata(
   };
 }
 
-async function buildDiff(validPath: string, original: string, modified: string): Promise<string> {
+async function buildDiff(
+  validPath: string,
+  original: string,
+  modified: string,
+  signal?: AbortSignal,
+): Promise<string> {
   const fileName = basename(validPath);
   const totalBytes = Buffer.byteLength(original) + Buffer.byteLength(modified);
   if (shouldOffload(totalBytes)) {
-    return await runInWorker('createPatch', {
-      oldStr: original,
-      newStr: modified,
-      oldHeader: fileName,
-      newHeader: fileName,
-    });
+    return await runInWorker(
+      'createPatch',
+      {
+        oldStr: original,
+        newStr: modified,
+        oldHeader: fileName,
+        newHeader: fileName,
+      },
+      { ...(signal ? { signal } : {}) },
+    );
   }
   return new Promise<string>((resolve) => {
     setImmediate(() => {
@@ -406,6 +421,7 @@ async function applyEdits(
   content: string,
   edits: z.infer<typeof EditSpecSchema>[],
   ignoreWhitespace: boolean,
+  signal?: AbortSignal,
 ): Promise<EditResult> {
   let newContent = content;
   let appliedEdits = 0;
@@ -426,7 +442,7 @@ async function applyEdits(
     appliedEdits += 1;
   }
 
-  return finalizeEditResult(content, newContent, appliedEdits, unmatchedEdits, lineRange);
+  return finalizeEditResult(content, newContent, appliedEdits, unmatchedEdits, lineRange, signal);
 }
 
 async function handleEditFile(
@@ -444,11 +460,11 @@ async function handleEditFile(
   resourceLink?: ContentBlock;
 }> {
   const { validPath, content } = await loadEditableFile(filePath, pathGuard, signal);
-  const editResult = await applyEdits(content, edits, ignoreWhitespace);
+  const editResult = await applyEdits(content, edits, ignoreWhitespace, signal);
 
   if (dryRun) {
     if (editResult.appliedEdits > 0) {
-      editResult.diff = await buildDiff(validPath, content, editResult.content);
+      editResult.diff = await buildDiff(validPath, content, editResult.content, signal);
     }
 
     const meta = buildEditFileMetadata(

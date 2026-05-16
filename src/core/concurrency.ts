@@ -141,7 +141,6 @@ export function shouldOffload(payloadBytes: number): boolean {
 
 export interface RunInWorkerOptions {
   signal?: AbortSignal;
-  timeoutMs?: number;
 }
 
 // ---- pool internals ----------------------------------------------------
@@ -152,7 +151,6 @@ interface InflightEntry {
   reject: (err: Error) => void;
   signal?: AbortSignal;
   abortHandler?: () => void;
-  timeoutId?: NodeJS.Timeout;
 }
 
 interface QueuedTask {
@@ -247,8 +245,13 @@ class WorkerPool {
       if (opts.signal) {
         entry.signal = opts.signal;
         const handler = (): void => {
-          this.abortEntry(entry, false);
           const reason: unknown = opts.signal?.reason;
+          const isTimeout =
+            reason instanceof Error &&
+            (reason.name === 'TimeoutError' ||
+              (reason.name === 'FsError' &&
+                (reason as unknown as { code: string }).code === ErrorCode.TIMEOUT));
+          this.abortEntry(entry, isTimeout);
           reject(
             reason instanceof Error ? reason : new DOMException('Operation aborted', 'AbortError'),
           );
@@ -259,15 +262,6 @@ class WorkerPool {
           return;
         }
         opts.signal.addEventListener('abort', handler, { once: true });
-      }
-
-      if (opts.timeoutMs !== undefined && opts.timeoutMs > 0) {
-        const tid = setTimeout(() => {
-          this.abortEntry(entry, true);
-          reject(new FsError(ErrorCode.TIMEOUT, 'Worker task timed out'));
-        }, opts.timeoutMs);
-        tid.unref();
-        entry.timeoutId = tid;
       }
 
       // Reject immediately if queue is at capacity to prevent unbounded growth.
@@ -481,9 +475,6 @@ class WorkerPool {
   private cleanupEntry(entry: InflightEntry): void {
     if (entry.abortHandler && entry.signal) {
       entry.signal.removeEventListener('abort', entry.abortHandler);
-    }
-    if (entry.timeoutId) {
-      clearTimeout(entry.timeoutId);
     }
   }
 
