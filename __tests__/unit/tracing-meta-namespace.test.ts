@@ -7,8 +7,8 @@ import { z } from 'zod/v4';
 // Keys should be namespaced under io.opentelemetry/ per MCP spec.
 
 test('TracingMeta interface uses namespaced keys', () => {
-  // Validate that TracingMeta in _helpers.ts uses quoted namespaced keys.
-  // We check this by importing ToolContext and introspecting the type.
+  // Validate that TracingMeta in define.ts uses quoted namespaced keys.
+  // We check this by introspecting the type via ToolCtx['_meta'].
   // For runtime validation, we use a Zod schema that mirrors the expected structure.
 
   const TracingMetaSchema = z.object({

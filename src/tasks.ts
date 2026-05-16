@@ -23,7 +23,8 @@ import {
   TASK_POLL_INTERVAL,
   TASK_TTL,
 } from './core/util.js';
-import { type ToolContext, type ToolResult, toToolContext } from './tools/_helpers.js';
+import type { ToolResult } from './tools/_helpers.js';
+import { type ToolCtx, type ToolDeps, toToolCtx } from './tools/define.js';
 
 export const TASK_PROGRESS_STATUS_MESSAGE = 'filesystem-mcp: processing request';
 
@@ -78,8 +79,8 @@ export class TaskOrchestrator extends InMemoryTaskStore {
     Args extends StandardSchemaWithJSON | undefined,
     Result extends Record<string, unknown>,
   >(
-    handler: (args: unknown, ctx: ToolContext) => Promise<ToolResult<Result>>,
-    options: { toolName: string },
+    handler: (args: unknown, ctx: ToolCtx) => Promise<ToolResult<Result>>,
+    options: { toolName: string; deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore'> },
   ): ToolTaskHandler<Args> {
     const createTask = (async (
       ...params: [unknown, CreateTaskServerContext] | [CreateTaskServerContext]
@@ -127,11 +128,16 @@ export class TaskOrchestrator extends InMemoryTaskStore {
       await task.store.updateTaskStatus(mcpTask.taskId, 'working', TASK_PROGRESS_STATUS_MESSAGE);
 
       // Start background execution without awaiting it.
-      this.executeBackground(mcpTask.taskId, handler, args, ctx, options.toolName).catch(
-        (error: unknown) => {
-          logRuntimeFailure('background_task_fatal', 'task_orchestrator', options.toolName, error);
-        },
-      );
+      this.executeBackground(
+        mcpTask.taskId,
+        handler,
+        args,
+        ctx,
+        options.deps,
+        options.toolName,
+      ).catch((error: unknown) => {
+        logRuntimeFailure('background_task_fatal', 'task_orchestrator', options.toolName, error);
+      });
 
       return { task: mcpTask };
     }) as ToolTaskHandler<Args>['createTask'];
@@ -164,9 +170,10 @@ export class TaskOrchestrator extends InMemoryTaskStore {
    */
   private async executeBackground<Args, Result extends Record<string, unknown>>(
     taskId: string,
-    handler: (args: Args, ctx: ToolContext) => Promise<ToolResult<Result>>,
+    handler: (args: Args, ctx: ToolCtx) => Promise<ToolResult<Result>>,
     args: Args,
     serverCtx: CreateTaskServerContext,
+    deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore'>,
     _toolName: string,
   ): Promise<void> {
     const { task } = serverCtx;
@@ -175,10 +182,10 @@ export class TaskOrchestrator extends InMemoryTaskStore {
     const signal = controller?.signal;
 
     try {
-      const toolCtx = toToolContext(serverCtx);
+      const baseCtx = toToolCtx(serverCtx, deps);
 
-      const interceptedCtx: ToolContext = {
-        ...toolCtx,
+      const interceptedCtx: ToolCtx = {
+        ...baseCtx,
         ...(signal ? { signal } : {}),
         sendNotification: async (notification) => {
           // Ignore wrapped task status notifications to avoid spoof/desync risk
@@ -186,7 +193,7 @@ export class TaskOrchestrator extends InMemoryTaskStore {
           if (notification.method === 'notifications/tasks/status') {
             return;
           }
-          await toolCtx.sendNotification?.(notification);
+          await baseCtx.sendNotification?.(notification);
         },
       };
 

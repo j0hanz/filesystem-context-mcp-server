@@ -9,8 +9,14 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { ErrorCode } from '../../src/core/errors.js';
+import type { PathGuard } from '../../src/core/path.js';
 import { TASK_PROGRESS_STATUS_MESSAGE, TaskOrchestrator } from '../../src/tasks.js';
-import { type ToolContext } from '../../src/tools/_helpers.js';
+import { type ToolCtx, type ToolDeps } from '../../src/tools/define.js';
+
+const stubDeps: Pick<ToolDeps, 'pathGuard' | 'resourceStore'> = {
+  pathGuard: {} as PathGuard,
+  resourceStore: undefined,
+};
 
 function createMockExtra(
   store: TaskOrchestrator,
@@ -84,14 +90,14 @@ describe('TaskOrchestrator', () => {
     try {
       let executed = false;
       const handler = orchestrator.wrapToolTask(
-        async (_args: unknown, _ctx: ToolContext) => {
+        async (_args: unknown, _ctx: ToolCtx) => {
           executed = true;
           return {
             content: [{ type: 'text', text: 'success' }],
             structuredContent: { ok: true },
           };
         },
-        { toolName: 'test_tool' },
+        { toolName: 'test_tool', deps: stubDeps },
       );
 
       const ctx = createMockExtra(orchestrator);
@@ -129,7 +135,7 @@ describe('TaskOrchestrator', () => {
     try {
       let cancelled = false;
       const handler = orchestrator.wrapToolTask(
-        async (_args: unknown, ctx: ToolContext) => {
+        async (_args: unknown, ctx: ToolCtx) => {
           try {
             if (ctx.signal?.aborted) {
               throw ctx.signal.reason as Error;
@@ -157,7 +163,7 @@ describe('TaskOrchestrator', () => {
           }
           return { content: [], structuredContent: {} };
         },
-        { toolName: 'test_tool' },
+        { toolName: 'test_tool', deps: stubDeps },
       );
 
       const ctx = createMockExtra(store);
@@ -190,7 +196,7 @@ describe('TaskOrchestrator', () => {
         releaseHandler = resolve;
       });
       const handler = orchestrator.wrapToolTask(
-        async (_args: unknown, ctx: ToolContext) => {
+        async (_args: unknown, ctx: ToolCtx) => {
           emittedStatusNotification = true;
           if (ctx.sendNotification) {
             await ctx.sendNotification({
@@ -208,7 +214,7 @@ describe('TaskOrchestrator', () => {
             structuredContent: {},
           };
         },
-        { toolName: 'test_tool' },
+        { toolName: 'test_tool', deps: stubDeps },
       );
 
       const baseCtx = createMockExtra(store);
@@ -276,7 +282,7 @@ describe('TaskOrchestrator', () => {
     try {
       const notifications: unknown[] = [];
       const handler = orchestrator.wrapToolTask(
-        async (_args: unknown, ctx: ToolContext) => {
+        async (_args: unknown, ctx: ToolCtx) => {
           await ctx.sendNotification?.({
             method: 'notifications/tasks/status',
             params: null,
@@ -287,7 +293,7 @@ describe('TaskOrchestrator', () => {
             structuredContent: {},
           };
         },
-        { toolName: 'test_tool' },
+        { toolName: 'test_tool', deps: stubDeps },
       );
 
       const baseCtx = createMockExtra(store);
@@ -329,7 +335,7 @@ describe('TaskOrchestrator', () => {
 
     try {
       const handler = orchestrator.wrapToolTask(
-        async (_args: unknown, ctx: ToolContext) => {
+        async (_args: unknown, ctx: ToolCtx) => {
           // onProgress is intentionally a no-op in task orchestration context.
           if (ctx.onProgress) {
             ctx.onProgress({ current: 5, total: 10 });
@@ -339,7 +345,7 @@ describe('TaskOrchestrator', () => {
             structuredContent: {},
           };
         },
-        { toolName: 'test_tool' },
+        { toolName: 'test_tool', deps: stubDeps },
       );
 
       const baseCtx = createMockExtra(store);

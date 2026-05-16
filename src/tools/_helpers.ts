@@ -1,16 +1,4 @@
-// src/tools/_helpers.ts
-// Shared runtime helpers for tool implementations.
-import type {
-  ContentBlock,
-  ElicitRequestFormParams,
-  ElicitResult,
-  Icon,
-  LoggingLevel,
-  Notification,
-  RequestMeta,
-  Role,
-  ServerContext,
-} from '@modelcontextprotocol/server';
+import type { ContentBlock, Icon, Role } from '@modelcontextprotocol/server';
 
 import { z } from 'zod/v4';
 
@@ -25,29 +13,6 @@ import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import { NonNegInt } from '../schema.js';
 import type { TaskOrchestrator } from '../tasks.js';
 import type { ToolCtx } from './define.js';
-
-// ============ ToolContext ============
-
-/**
- * W3C Trace Context metadata as carried on MCP `_meta`. Wire keys use
- * io.opentelemetry/ namespace per MCP spec for third-party key namespacing.
- */
-interface TracingMeta {
-  'io.opentelemetry/traceparent'?: string | undefined;
-  'io.opentelemetry/tracestate'?: string | undefined;
-  'io.opentelemetry/baggage'?: string | undefined;
-}
-
-export interface ToolContext {
-  signal?: AbortSignal;
-  sessionId?: string;
-  _meta?: (RequestMeta & TracingMeta) | undefined;
-  task?: ServerContext['task'];
-  sendNotification?: (notification: Notification) => Promise<void>;
-  onProgress?: (params: { current: number; total?: number }) => void;
-  log?: (level: LoggingLevel, data: unknown, logger?: string) => Promise<void>;
-  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>;
-}
 
 // ============ ToolRegistrationOptions ============
 
@@ -428,20 +393,4 @@ function normalizeBatchItems<TOverride>(
     }));
   }
   return [];
-}
-
-export function toToolContext(ctx?: ToolContext | ServerContext): ToolContext {
-  if (!ctx) return {};
-  if ('mcpReq' in ctx) {
-    return {
-      signal: ctx.mcpReq.signal,
-      ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
-      ...(ctx.mcpReq._meta ? { _meta: ctx.mcpReq._meta } : {}),
-      ...(ctx.task ? { task: ctx.task } : {}),
-      sendNotification: async (notification) => ctx.mcpReq.notify(notification),
-      log: async (level, data, logger) => ctx.mcpReq.log(level, data, logger),
-      elicitInput: (params) => ctx.mcpReq.elicitInput(params),
-    };
-  }
-  return ctx;
 }

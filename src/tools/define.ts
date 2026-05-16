@@ -5,6 +5,8 @@ import type {
   ElicitResult,
   LoggingLevel,
   McpServer,
+  Notification,
+  RequestMeta,
   ServerContext,
   Tool,
   ToolAnnotations,
@@ -29,19 +31,23 @@ import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { toMcpSchema } from '../schema.js';
 import type { TaskOrchestrator } from '../tasks.js';
-import { toToolContext } from './_helpers.js';
-import type { ToolContext, ToolResult } from './_helpers.js';
+import type { ToolResult } from './_helpers.js';
 
 // ============ Type Definitions ============
+interface TracingMeta {
+  'io.opentelemetry/traceparent'?: string | undefined;
+  'io.opentelemetry/tracestate'?: string | undefined;
+  'io.opentelemetry/baggage'?: string | undefined;
+}
 
 export interface ToolCtx {
   readonly signal: AbortSignal;
   readonly sessionId?: string;
-  readonly _meta?: ToolContext['_meta'];
+  readonly _meta?: (RequestMeta & TracingMeta) | undefined;
   readonly pathGuard: PathGuard;
   readonly resourceStore: ResourceStore | undefined;
   readonly log?: (level: LoggingLevel, data: unknown, logger?: string) => void;
-  readonly sendNotification?: ToolContext['sendNotification'];
+  readonly sendNotification?: (notification: Notification) => Promise<void>;
   readonly onProgress?: (params: { current: number; total?: number }) => void;
   readonly elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>;
 }
@@ -85,6 +91,32 @@ export interface DefinedTool extends Tool {
   register(deps: ToolDeps): void;
 }
 
+// ============ Context Builder ============
+export function toToolCtx(
+  ctx: ServerContext | undefined,
+  deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore'>,
+): ToolCtx {
+  if (!ctx) {
+    return {
+      signal: new AbortController().signal,
+      pathGuard: deps.pathGuard,
+      resourceStore: deps.resourceStore,
+    };
+  }
+  return {
+    signal: ctx.mcpReq.signal,
+    ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
+    ...(ctx.mcpReq._meta ? { _meta: ctx.mcpReq._meta } : {}),
+    pathGuard: deps.pathGuard,
+    resourceStore: deps.resourceStore,
+    sendNotification: async (notification) => ctx.mcpReq.notify(notification),
+    log: (level, data, logger) => {
+      runDetached('mcp', ctx.mcpReq.log(level, data, logger), 'log');
+    },
+    elicitInput: (params) => ctx.mcpReq.elicitInput(params),
+  };
+}
+
 // ============ Execution Context ============
 
 function reportDetachedError(toolName: string, context: string, error: unknown): void {
@@ -118,17 +150,17 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
   private progressToken: string | number | undefined;
 
   private readonly toolName: string;
-  private readonly ctx: ToolContext;
+  private readonly ctx: ToolCtx;
   private readonly def: ToolDef<I, O>;
   private readonly parsedArgs: z.infer<I>;
 
-  constructor(toolName: string, ctx: ToolContext, def: ToolDef<I, O>, parsedArgs: z.infer<I>) {
+  constructor(toolName: string, ctx: ToolCtx, def: ToolDef<I, O>, parsedArgs: z.infer<I>) {
     this.toolName = toolName;
     this.ctx = ctx;
     this.def = def;
     this.parsedArgs = parsedArgs;
 
-    const baseSignal = ctx.signal ?? new AbortController().signal;
+    const baseSignal = ctx.signal;
     const timeoutSignal = def.timeoutMs ? AbortSignal.timeout(def.timeoutMs) : undefined;
     this.signal = timeoutSignal ? AbortSignal.any([baseSignal, timeoutSignal]) : baseSignal;
 
@@ -303,19 +335,20 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
 
           this.startProgress();
 
+          const ctxLog = this.ctx.log;
           const toolCtx: ToolCtx = {
             signal: this.signal,
             ...(this.ctx.sessionId ? { sessionId: this.ctx.sessionId } : {}),
             ...(this.ctx._meta ? { _meta: this.ctx._meta } : {}),
-            pathGuard: deps.pathGuard,
-            resourceStore: deps.resourceStore,
-            ...(this.ctx.log
+            pathGuard: this.ctx.pathGuard,
+            resourceStore: this.ctx.resourceStore,
+            ...(ctxLog
               ? {
-                  log: ((ctxLog) => (level: LoggingLevel, data: unknown, logger?: string) => {
+                  log: (level: LoggingLevel, data: unknown, logger?: string) => {
                     const msg = typeof data === 'string' ? data : String(data);
                     Logger.emit(level, msg);
-                    runDetached(this.def.name, ctxLog(level, data, logger), 'log');
-                  })(this.ctx.log),
+                    ctxLog(level, data, logger);
+                  },
                 }
               : {}),
             ...(this.ctx.sendNotification ? { sendNotification: this.ctx.sendNotification } : {}),
@@ -402,7 +435,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
       ): Promise<CallToolResult> => {
         const executor = new ToolExecutor<I, O>(
           def.name,
-          toToolContext(ctx),
+          toToolCtx(ctx, deps),
           def,
           args as z.infer<I>,
         );
@@ -428,7 +461,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
               const executor = new ToolExecutor<I, O>(def.name, ctx, def, args as z.infer<I>);
               return executor.execute(args, deps) as Promise<ToolResult<Record<string, unknown>>>;
             },
-            { toolName: def.name },
+            { toolName: def.name, deps },
           ),
         );
         return;
