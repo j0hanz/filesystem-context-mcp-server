@@ -10,7 +10,7 @@ import { describe, it } from 'node:test';
 
 import { ErrorCode } from '../../src/core/errors.js';
 import type { PathGuard } from '../../src/core/path.js';
-import { TASK_PROGRESS_STATUS_MESSAGE, TaskOrchestrator } from '../../src/tasks.js';
+import { TaskOrchestrator } from '../../src/tasks.js';
 import { type ToolCtx, type ToolDeps } from '../../src/tools/define.js';
 
 const stubDeps: Pick<ToolDeps, 'pathGuard' | 'resourceStore'> = {
@@ -254,7 +254,7 @@ describe('TaskOrchestrator', () => {
 
       const midTask = await store.getTask(task.taskId, 'test-session');
       assert.strictEqual(midTask?.status, 'working');
-      assert.strictEqual(midTask?.statusMessage, TASK_PROGRESS_STATUS_MESSAGE);
+      assert.strictEqual(midTask?.statusMessage, 'test_tool:');
       assert.equal(statusUpdateCalls, 1);
 
       releaseHandler?.();

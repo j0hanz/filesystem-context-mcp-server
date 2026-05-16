@@ -15,6 +15,7 @@ import {
 import type { StandardSchemaWithJSON } from '@modelcontextprotocol/server';
 
 import { ErrorCode, FsError } from './core/errors.js';
+import { plainMessage } from './core/fmt.js';
 import { logRuntimeFailure } from './core/observability.js';
 import {
   isRecord,
@@ -25,8 +26,6 @@ import {
   TASK_TTL,
 } from './core/util.js';
 import { type ToolCtx, type ToolDeps, type ToolResult, toToolCtx } from './tools/define.js';
-
-export const TASK_PROGRESS_STATUS_MESSAGE = 'filesystem-mcp: processing request';
 
 // ═══════════════════════════════════════════════════════════════
 // task-orchestrator
@@ -162,7 +161,11 @@ export class TaskOrchestrator implements TaskStore {
     Result extends Record<string, unknown>,
   >(
     handler: (args: unknown, ctx: ToolCtx) => Promise<ToolResult<Result>>,
-    options: { toolName: string; deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore'> },
+    options: {
+      toolName: string;
+      toolTitle?: string;
+      deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore'>;
+    },
   ): ToolTaskHandler<Args> {
     const createTask = (async (
       ...params: [unknown, CreateTaskServerContext] | [CreateTaskServerContext]
@@ -202,7 +205,11 @@ export class TaskOrchestrator implements TaskStore {
 
       this.runner.register(mcpTask.taskId);
 
-      await task.store.updateTaskStatus(mcpTask.taskId, 'working', TASK_PROGRESS_STATUS_MESSAGE);
+      await task.store.updateTaskStatus(
+        mcpTask.taskId,
+        'working',
+        plainMessage('start', { label: options.toolTitle ?? options.toolName }),
+      );
 
       this.runner
         .execute(mcpTask.taskId, async (execSignal) => {
