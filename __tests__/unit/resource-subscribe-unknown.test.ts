@@ -1,11 +1,12 @@
 import { ProtocolError, ProtocolErrorCode, type ServerContext } from '@modelcontextprotocol/server';
+import { checkResourceAllowed, resourceUrlFromServerUrl } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import type { PathGuard } from '../../src/core/path.js';
 import { createInMemoryResourceStore } from '../../src/core/store.js';
-import { registerAllResources } from '../../src/resources.js';
+import { getResourceContracts } from '../../src/resources.js';
 
 type RequestHandler = (
   req: { params: Record<string, string> },
@@ -38,10 +39,41 @@ describe('resources/subscribe with unknown URI', () => {
     const resourceStore = createInMemoryResourceStore();
 
     // Register resources
-    registerAllResources(server as never, {
+    const resourceContracts = getResourceContracts({
       resourceStore,
       pathGuard: mockPathGuard,
     });
+
+    server.server.setRequestHandler(
+      'resources/subscribe',
+      (req: { params: Record<string, string> }, _ctx: ServerContext) => {
+        const requestedResource = resourceUrlFromServerUrl(req.params.uri);
+        let foundMatch = false;
+        for (const contract of resourceContracts) {
+          if (!contract.subscribe) continue;
+          const configured = contract.uri ?? contract.uriTemplate?.split('{')[0];
+          if (!configured) continue;
+          if (
+            checkResourceAllowed({
+              requestedResource,
+              configuredResource: configured,
+            })
+          ) {
+            foundMatch = true;
+            break;
+          }
+        }
+        if (!foundMatch) {
+          return Promise.reject(
+            new ProtocolError(
+              ProtocolErrorCode.ResourceNotFound,
+              `Resource not found: ${requestedResource.toString()}`,
+            ),
+          );
+        }
+        return Promise.resolve();
+      },
+    );
 
     const subscribeHandler = handlers.get('resources/subscribe');
     assert.ok(subscribeHandler, 'Subscribe handler should be registered');

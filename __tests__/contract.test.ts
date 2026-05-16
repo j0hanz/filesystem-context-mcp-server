@@ -262,9 +262,9 @@ describe('Tool contract', () => {
 });
 
 describe('Prompts contract', () => {
-  it('ALL_PROMPTS matches the 4 expected prompts', async () => {
-    const { ALL_PROMPTS } = await import('../src/prompts.js');
-    const names = ALL_PROMPTS.map((p) => p.name).sort();
+  it('PROMPT_ENTRIES matches the 4 expected prompts', async () => {
+    const { PROMPT_ENTRIES } = await import('../src/prompts.js');
+    const names = PROMPT_ENTRIES.map((p) => p.contract.name).sort();
     assert.deepEqual(names, ['analyze-path', 'find-in-tree', 'get-help', 'summarize-directory']);
   });
 });
@@ -280,11 +280,12 @@ describe('Completion contract', () => {
     tmpDir: string;
     teardown: () => Promise<void>;
   }> {
-    const { registerAllPrompts } = await import('../src/prompts.js');
-    const { registerAllResources } = await import('../src/resources.js');
+    const { PROMPT_ENTRIES } = await import('../src/prompts.js');
+    const { getResourceContracts } = await import('../src/resources.js');
     const { PathGuard } = await import('../src/core/path.js');
     const { createInMemoryResourceStore } = await import('../src/core/store.js');
     const { LinkedTransport } = await import('./linked-transport.js');
+    const { ResourceTemplate } = await import('@modelcontextprotocol/server');
 
     const tmpDir = await mkdtemp(join(tmpdir(), `fsmcp-cc-${randomUUID().slice(0, 8)}-`));
     await writeFile(join(tmpDir, 'sample.txt'), 'sample');
@@ -298,14 +299,29 @@ describe('Completion contract', () => {
     // Set up ResourceStore for resource registration
     const resourceStore = createInMemoryResourceStore();
 
-    registerAllPrompts(server, {
-      pathGuard,
-      instructions: 'test instructions',
-      isInitialized: () => true,
-    });
-    registerAllResources(server, {
-      resourceStore,
-    });
+    for (const { register } of PROMPT_ENTRIES) {
+      register(server, {
+        pathGuard,
+        instructions: 'test instructions',
+        isInitialized: () => true,
+      });
+    }
+
+    const resourceContracts = getResourceContracts({ resourceStore });
+    for (const contract of resourceContracts) {
+      if (contract.uriTemplate) {
+        server.registerResource(
+          contract.name,
+          new ResourceTemplate(contract.uriTemplate, { list: undefined }),
+          {},
+          (uri, variables, ctx) => contract.read(uri, variables, ctx),
+        );
+      } else if (contract.uri) {
+        server.registerResource(contract.name, contract.uri, {}, (uri, ctx) =>
+          contract.read(uri, {}, ctx),
+        );
+      }
+    }
 
     const client = new Client({ name: 'contract-client', version: '1.0.0' });
     const [ct, st] = LinkedTransport.createLinkedPair();

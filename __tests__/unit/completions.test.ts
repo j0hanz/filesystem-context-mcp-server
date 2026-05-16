@@ -1,5 +1,6 @@
 import { Client } from '@modelcontextprotocol/client';
 import { McpServer } from '@modelcontextprotocol/server';
+import { ResourceTemplate } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -10,8 +11,8 @@ import { describe, it } from 'node:test';
 
 import { normalizePath, PathGuard } from '../../src/core/path.js';
 import { createInMemoryResourceStore } from '../../src/core/store.js';
-import { registerAllPrompts } from '../../src/prompts.js';
-import { registerAllResources } from '../../src/resources.js';
+import { PROMPT_ENTRIES } from '../../src/prompts.js';
+import { getResourceContracts } from '../../src/resources.js';
 import { LinkedTransport } from '../linked-transport.js';
 
 const mockPathGuard = {
@@ -24,14 +25,30 @@ function makeCompletionServer(pathGuard: PathGuard = mockPathGuard): McpServer {
     { capabilities: { completions: {} } },
   );
 
-  registerAllPrompts(server, {
-    pathGuard,
-    instructions: 'test instructions',
-    isInitialized: () => true,
-  });
+  for (const { register } of PROMPT_ENTRIES) {
+    register(server, {
+      pathGuard,
+      instructions: 'test instructions',
+      isInitialized: () => true,
+    });
+  }
 
   const resourceStore = createInMemoryResourceStore();
-  registerAllResources(server, { resourceStore });
+  const resourceContracts = getResourceContracts({ resourceStore });
+  for (const contract of resourceContracts) {
+    if (contract.uriTemplate) {
+      server.registerResource(
+        contract.name,
+        new ResourceTemplate(contract.uriTemplate, { list: undefined }),
+        {},
+        (uri, variables, ctx) => contract.read(uri, variables, ctx),
+      );
+    } else if (contract.uri) {
+      server.registerResource(contract.name, contract.uri, {}, (uri, ctx) =>
+        contract.read(uri, {}, ctx),
+      );
+    }
+  }
 
   return server;
 }

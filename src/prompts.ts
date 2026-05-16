@@ -20,14 +20,14 @@ import { type IconInfo, withDefaultIcons } from './tools/_helpers.js';
 
 // --- Types ---
 
-export interface PromptContract {
+interface PromptContract {
   readonly name: string;
   readonly title: string;
   readonly description: string;
   readonly requiresPathGuard: boolean;
 }
 
-export interface PromptRegistrationOptions {
+interface PromptRegistrationOptions {
   pathGuard: PathGuard;
   instructions: string;
   isInitialized: () => boolean;
@@ -308,10 +308,4 @@ const SUMMARIZE_DIRECTORY: PromptEntry = {
 
 const PROMPT_ENTRIES: PromptEntry[] = [GET_HELP, ANALYZE_PATH, FIND_IN_TREE, SUMMARIZE_DIRECTORY];
 
-export const ALL_PROMPTS: PromptContract[] = PROMPT_ENTRIES.map((e) => e.contract);
-
-export function registerAllPrompts(server: McpServer, options: PromptRegistrationOptions): void {
-  for (const { register } of PROMPT_ENTRIES) {
-    register(server, options);
-  }
-}
+export { PROMPT_ENTRIES };

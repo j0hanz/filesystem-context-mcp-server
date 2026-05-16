@@ -1,26 +1,43 @@
 import {
+  checkResourceAllowed,
   type Implementation,
   InMemoryTaskMessageQueue,
   McpServer,
+  ProtocolError,
+  ProtocolErrorCode,
+  ResourceTemplate,
+  resourceUrlFromServerUrl,
   type SetLevelRequestParams,
+  UriTemplate,
 } from '@modelcontextprotocol/server';
 
 import { readFile } from 'node:fs/promises';
 
-import { createLoggingState, Logger, LogRouter } from './core/observability.js';
+import { createLoggingState, Logger, LogRouter, withTelemetry } from './core/observability.js';
 import { McpRootsManager, PathGuard, type ServerOptions } from './core/path.js';
 import { createInMemoryResourceStore, type ResourceStore } from './core/store.js';
 import { LOG_LEVEL, SENSITIVE_FILE_DENYLIST } from './core/util.js';
 import { pkgInfo } from './pkg-info.js';
-import { registerAllPrompts } from './prompts.js';
+import { PROMPT_ENTRIES } from './prompts.js';
 import {
-  registerAllResources,
+  getResourceContracts,
   type ResourcesHandle,
   serverInstructionsContent,
 } from './resources.js';
 import { TaskOrchestrator } from './tasks.js';
-import { registerAllTools } from './tools.js';
 import { type IconInfo, withDefaultIcons } from './tools/_helpers.js';
+import { CALCULATE_HASH } from './tools/calculate-hash.js';
+import { CREATE } from './tools/create.js';
+import { DELETE_FILE } from './tools/delete-file.js';
+import { EDIT } from './tools/edit.js';
+import { LIST } from './tools/list.js';
+import { MOVE } from './tools/move.js';
+import { READ_FILE } from './tools/read.js';
+import { SEARCH_AND_REPLACE } from './tools/replace-in-files.js';
+import { LIST_ALLOWED_DIRECTORIES } from './tools/roots.js';
+import { SEARCH_CONTENT } from './tools/search-content.js';
+import { SEARCH_FILES } from './tools/search-files.js';
+import { GET_FILE_INFO } from './tools/stat.js';
 
 // ═══════════════════════════════════════════════════════════════
 // bootstrap
@@ -163,24 +180,164 @@ export async function createServer(
   // Track stdio server by default; HTTP overrides per-session via the registry.
   logRouter.attachStdio({ server, loggingState });
 
-  const resourcesHandle = registerAllResources(server, {
+  const resourcesOptions = {
     resourceStore,
     pathGuard,
     ...(localIcon ? { iconInfo: localIcon } : {}),
-  });
+  };
+  const resourceContracts = getResourceContracts(resourcesOptions);
 
-  registerAllPrompts(server, {
+  for (const contract of resourceContracts) {
+    const config = withDefaultIcons(
+      {
+        title: contract.title,
+        description: contract.description,
+        mimeType: contract.mimeType,
+        annotations: contract.annotations,
+      },
+      resourcesOptions.iconInfo,
+    );
+
+    if (contract.uriTemplate) {
+      const template = new ResourceTemplate(contract.uriTemplate, {
+        list: undefined,
+        ...(contract.complete
+          ? {
+              complete: Object.fromEntries(
+                new UriTemplate(contract.uriTemplate).variableNames.map((varName) => [
+                  varName,
+                  (value: string, ctx?: { arguments?: Record<string, string> }) => {
+                    const completeFn = contract.complete;
+                    return completeFn ? completeFn(varName, value, ctx) : [];
+                  },
+                ]),
+              ),
+            }
+          : {}),
+      });
+
+      server.registerResource(contract.name, template, config, (uri, variables, ctx) =>
+        contract.read(uri, variables, ctx),
+      );
+    } else if (contract.uri) {
+      server.registerResource(contract.name, contract.uri, config, (uri, ctx) =>
+        contract.read(uri, {}, ctx),
+      );
+    }
+  }
+
+  server.server.setRequestHandler(
+    'resources/subscribe',
+    (req: { params: { uri: string } }, ctx) => {
+      const requestedResource = resourceUrlFromServerUrl(req.params.uri);
+      return withTelemetry(
+        {
+          event: 'resource_subscription',
+          action: 'subscribe',
+          uri: requestedResource.toString(),
+          session_id: ctx.sessionId ?? null,
+        },
+        () => {
+          let foundMatch = false;
+          for (const contract of resourceContracts) {
+            if (!contract.subscribe) continue;
+            const configured = contract.uri ?? contract.uriTemplate?.split('{')[0];
+            if (!configured) continue;
+            if (
+              checkResourceAllowed({
+                requestedResource,
+                configuredResource: configured,
+              })
+            ) {
+              foundMatch = true;
+              contract.subscribe(requestedResource.toString(), (updatedUri) => {
+                void server.server.sendResourceUpdated({ uri: updatedUri }).catch(() => {
+                  /* Transport may be closed */
+                });
+              });
+              break;
+            }
+          }
+          if (!foundMatch) {
+            throw new ProtocolError(
+              ProtocolErrorCode.ResourceNotFound,
+              `Resource not found: ${requestedResource.toString()}`,
+            );
+          }
+          return {};
+        },
+      );
+    },
+  );
+
+  server.server.setRequestHandler(
+    'resources/unsubscribe',
+    (req: { params: { uri: string } }, ctx) => {
+      const canonical = resourceUrlFromServerUrl(req.params.uri).toString();
+      return withTelemetry(
+        {
+          event: 'resource_subscription',
+          action: 'unsubscribe',
+          uri: canonical,
+          session_id: ctx.sessionId ?? null,
+        },
+        () => {
+          for (const contract of resourceContracts) {
+            if (contract.unsubscribe) {
+              contract.unsubscribe(canonical);
+            }
+          }
+          return {};
+        },
+      );
+    },
+  );
+
+  const resourcesHandle = {
+    destroy(): void {
+      for (const contract of resourceContracts) {
+        if (contract.destroy) {
+          contract.destroy();
+        }
+      }
+    },
+  };
+
+  const promptsOptions = {
     pathGuard,
     instructions: serverInstructionsContent,
     isInitialized: options.isInitialized ?? (() => rootsManager.isInitialized()),
     ...(localIcon ? { iconInfo: localIcon } : {}),
-  });
-  registerAllTools(server, {
+  };
+  for (const { register } of PROMPT_ENTRIES) {
+    register(server, promptsOptions);
+  }
+
+  const toolDeps = {
+    server,
+    isInitialized: options.isInitialized ?? (() => rootsManager.isInitialized()),
     pathGuard,
     resourceStore,
-    isInitialized: options.isInitialized ?? (() => rootsManager.isInitialized()),
     orchestrator: taskOrchestrator,
-  });
+  };
+  const ALL_TOOLS = [
+    CALCULATE_HASH,
+    CREATE,
+    DELETE_FILE,
+    EDIT,
+    LIST,
+    MOVE,
+    READ_FILE,
+    SEARCH_AND_REPLACE,
+    LIST_ALLOWED_DIRECTORIES,
+    SEARCH_CONTENT,
+    SEARCH_FILES,
+    GET_FILE_INFO,
+  ] as const;
+
+  for (const tool of ALL_TOOLS) {
+    tool.register(toolDeps);
+  }
 
   return new FilesystemServerContext(
     server,

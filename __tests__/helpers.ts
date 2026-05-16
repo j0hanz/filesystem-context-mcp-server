@@ -12,7 +12,18 @@ import { PathGuard, resolveAllowedDirectoriesState } from '../src/core/path.js';
 import { createInMemoryResourceStore, type ResourceStore } from '../src/core/store.js';
 import { SENSITIVE_FILE_DENYLIST } from '../src/core/util.js';
 import { TaskOrchestrator } from '../src/tasks.js';
-import { registerAllTools } from '../src/tools.js';
+import { CALCULATE_HASH } from '../src/tools/calculate-hash.js';
+import { CREATE } from '../src/tools/create.js';
+import { DELETE_FILE } from '../src/tools/delete-file.js';
+import { EDIT } from '../src/tools/edit.js';
+import { LIST } from '../src/tools/list.js';
+import { MOVE } from '../src/tools/move.js';
+import { READ_FILE } from '../src/tools/read.js';
+import { SEARCH_AND_REPLACE } from '../src/tools/replace-in-files.js';
+import { LIST_ALLOWED_DIRECTORIES } from '../src/tools/roots.js';
+import { SEARCH_CONTENT } from '../src/tools/search-content.js';
+import { SEARCH_FILES } from '../src/tools/search-files.js';
+import { GET_FILE_INFO } from '../src/tools/stat.js';
 import { LinkedTransport } from './linked-transport.js';
 
 // Disable worker threads in integration tests — workers are tested separately.
@@ -71,12 +82,30 @@ export async function createTestEnv(): Promise<TestEnv> {
   const pathGuard = new PathGuard(SENSITIVE_FILE_DENYLIST);
   const state = await resolveAllowedDirectoriesState([tmpDir]);
   pathGuard.initialize(state);
-  registerAllTools(server, {
+  const deps = {
+    server,
     pathGuard,
     resourceStore,
     isInitialized: () => true,
     orchestrator,
-  });
+  };
+  const ALL_TOOLS = [
+    CALCULATE_HASH,
+    CREATE,
+    DELETE_FILE,
+    EDIT,
+    LIST,
+    MOVE,
+    READ_FILE,
+    SEARCH_AND_REPLACE,
+    LIST_ALLOWED_DIRECTORIES,
+    SEARCH_CONTENT,
+    SEARCH_FILES,
+    GET_FILE_INFO,
+  ];
+  for (const tool of ALL_TOOLS) {
+    tool.register(deps);
+  }
 
   const client = new Client(
     { name: 'test-client', version: '1.0.0' },
@@ -144,11 +173,30 @@ export async function createTestEnvWithElicitation(handler: ElicitationHandler):
   const pathGuard = new PathGuard(SENSITIVE_FILE_DENYLIST);
   const state = await resolveAllowedDirectoriesState([tmpDir]);
   pathGuard.initialize(state);
-  registerAllTools(server, {
+  const deps2 = {
+    server,
     pathGuard,
     resourceStore,
     isInitialized: () => true,
-  });
+    orchestrator,
+  };
+  const ALL_TOOLS = [
+    CALCULATE_HASH,
+    CREATE,
+    DELETE_FILE,
+    EDIT,
+    LIST,
+    MOVE,
+    READ_FILE,
+    SEARCH_AND_REPLACE,
+    LIST_ALLOWED_DIRECTORIES,
+    SEARCH_CONTENT,
+    SEARCH_FILES,
+    GET_FILE_INFO,
+  ];
+  for (const tool of ALL_TOOLS) {
+    tool.register(deps2);
+  }
 
   // Client advertises elicitation capability so the server will call elicitInput
   const client = new Client(

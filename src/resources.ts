@@ -1,20 +1,8 @@
-import {
-  checkResourceAllowed,
-  type McpServer,
-  ProtocolError,
-  ProtocolErrorCode,
-  type ReadResourceResult,
-  ResourceTemplate,
-  resourceUrlFromServerUrl,
-  type Role,
-  type ServerContext,
-  UriTemplate,
-} from '@modelcontextprotocol/server';
+import type { ReadResourceResult, Role, ServerContext } from '@modelcontextprotocol/server';
 
 import { type FSWatcher, watch } from 'node:fs';
 
 import { readFileWithStats } from './core/fs.js';
-import { withTelemetry } from './core/observability.js';
 import { completePathCached, type PathGuard } from './core/path.js';
 import type { ResourceStore } from './core/store.js';
 import {
@@ -22,8 +10,7 @@ import {
   MAX_SEARCH_RESULTS,
   MAX_TEXT_FILE_SIZE,
 } from './core/util.js';
-import { ALL_TOOLS } from './tools.js';
-import { type IconInfo, withDefaultIcons } from './tools/_helpers.js';
+import type { IconInfo } from './tools/_helpers.js';
 
 // ═══════════════════════════════════════════════════════════════
 // shared
@@ -43,44 +30,12 @@ export interface ResourcesHandle {
 // contract
 // ═══════════════════════════════════════════════════════════════
 
-interface ResourceContract {
-  name: string;
-  title?: string;
-  description?: string;
-  mimeType?: string;
-
-  uri?: string;
-  uriTemplate?: string;
-
-  annotations?: {
-    audience?: Role[];
-    priority?: number;
-  };
-
-  read: (
-    uri: URL,
-    variables: Record<string, string | string[]>,
-    ctx: ServerContext,
-  ) => Promise<ReadResourceResult> | ReadResourceResult;
-  complete?: (
-    variable: string,
-    value: string,
-    ctx?: { arguments?: Record<string, string> },
-  ) => Promise<string[]> | string[];
-
-  subscribe?: (uri: string, notify: (uri: string) => void) => void;
-  unsubscribe?: (uri: string) => void;
-  /** Global teardown hook to clean up watchers/timers */
-  destroy?: () => void;
-}
-
 // ═══════════════════════════════════════════════════════════════
 // instructions
 // ═══════════════════════════════════════════════════════════════
 
 function pickAvailableToolNames(names: readonly string[]): string[] {
-  const nameSet = new Set(ALL_TOOLS.map((c) => c.name));
-  return names.filter((name) => nameSet.has(name));
+  return [...names];
 }
 
 function buildToolsOverview(): string {
@@ -208,14 +163,11 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
 
     async read(uri, variables, _ctx: ServerContext) {
       if (!options.pathGuard) {
-        throw new ProtocolError(ProtocolErrorCode.InternalError, 'PathGuard not configured');
+        throw new Error('PathGuard not configured');
       }
       const rawPath = variables['path'];
       if (typeof rawPath !== 'string') {
-        throw new ProtocolError(
-          ProtocolErrorCode.InvalidParams,
-          'Path variable is required and must be a string',
-        );
+        throw new Error('Path variable is required and must be a string');
       }
       await options.pathGuard.validateExistingPath(rawPath);
       const readResult = await readFileWithStats(rawPath, options.pathGuard);
@@ -293,10 +245,7 @@ function createResultResource(options: ResourceRegistrationOptions): ResourceCon
     read(uri, variables) {
       const { id } = variables;
       if (typeof id !== 'string' || id.length === 0) {
-        throw new ProtocolError(
-          ProtocolErrorCode.ResourceNotFound,
-          'Cached result expired. Re-run the tool to regenerate.',
-        );
+        throw new Error('Cached result expired. Re-run the tool to regenerate.');
       }
 
       const entry = options.resourceStore.getEntry(uri.toString());
@@ -319,140 +268,39 @@ function createResultResource(options: ResourceRegistrationOptions): ResourceCon
 }
 
 // ═══════════════════════════════════════════════════════════════
-// registerAllResources
+// export contracts
 // ═══════════════════════════════════════════════════════════════
 
-export function registerAllResources(
-  server: McpServer,
-  options: ResourceRegistrationOptions,
-): ResourcesHandle {
-  const ALL_RESOURCES: ResourceContract[] = [
+export interface ResourceContract {
+  name: string;
+  title?: string;
+  description?: string;
+  mimeType?: string;
+  uri?: string;
+  uriTemplate?: string;
+  annotations?: {
+    audience?: Role[];
+    priority?: number;
+  };
+  read: (
+    uri: URL,
+    variables: Record<string, string | string[]>,
+    ctx: ServerContext,
+  ) => Promise<ReadResourceResult> | ReadResourceResult;
+  complete?: (
+    variable: string,
+    value: string,
+    ctx?: { arguments?: Record<string, string> },
+  ) => Promise<string[]> | string[];
+  subscribe?: (uri: string, notify: (uri: string) => void) => void;
+  unsubscribe?: (uri: string) => void;
+  destroy?: () => void;
+}
+
+export function getResourceContracts(options: ResourceRegistrationOptions): ResourceContract[] {
+  return [
     createInstructionsResource(),
     createResultResource(options),
     createFilesystemResource(options),
   ];
-
-  for (const contract of ALL_RESOURCES) {
-    const config = withDefaultIcons(
-      {
-        title: contract.title,
-        description: contract.description,
-        mimeType: contract.mimeType,
-        annotations: contract.annotations,
-      },
-      options.iconInfo,
-    );
-
-    if (contract.uriTemplate) {
-      const template = new ResourceTemplate(contract.uriTemplate, {
-        list: undefined,
-        ...(contract.complete
-          ? {
-              complete: Object.fromEntries(
-                new UriTemplate(contract.uriTemplate).variableNames.map((varName) => [
-                  varName,
-                  (value: string, ctx?: { arguments?: Record<string, string> }) => {
-                    const completeFn = contract.complete;
-                    return completeFn ? completeFn(varName, value, ctx) : [];
-                  },
-                ]),
-              ),
-            }
-          : {}),
-      });
-
-      server.registerResource(
-        contract.name,
-        template,
-        config,
-        (uri: URL, variables: Record<string, string | string[]>, ctx: ServerContext) =>
-          contract.read(uri, variables, ctx),
-      );
-    } else if (contract.uri) {
-      server.registerResource(contract.name, contract.uri, config, (uri, ctx) =>
-        contract.read(uri, {}, ctx),
-      );
-    }
-  }
-
-  // Hook into subscriptions routing
-  server.server.setRequestHandler(
-    'resources/subscribe',
-    (req: { params: { uri: string } }, ctx: ServerContext) => {
-      const requestedResource = resourceUrlFromServerUrl(req.params.uri);
-      return withTelemetry(
-        {
-          event: 'resource_subscription',
-          action: 'subscribe',
-          uri: requestedResource.toString(),
-          session_id: ctx.sessionId ?? null,
-        },
-        () => {
-          let foundMatch = false;
-          for (const contract of ALL_RESOURCES) {
-            if (!contract.subscribe) continue;
-
-            const configured = contract.uri ?? contract.uriTemplate?.split('{')[0];
-
-            if (!configured) continue;
-
-            if (
-              checkResourceAllowed({
-                requestedResource,
-                configuredResource: configured,
-              })
-            ) {
-              foundMatch = true;
-              contract.subscribe(requestedResource.toString(), (updatedUri) => {
-                void server.server.sendResourceUpdated({ uri: updatedUri }).catch(() => {
-                  /* Transport may be closed */
-                });
-              });
-              break;
-            }
-          }
-          if (!foundMatch) {
-            throw new ProtocolError(
-              ProtocolErrorCode.ResourceNotFound,
-              `Resource not found: ${requestedResource.toString()}`,
-            );
-          }
-          return {};
-        },
-      );
-    },
-  );
-
-  server.server.setRequestHandler(
-    'resources/unsubscribe',
-    (req: { params: { uri: string } }, ctx: ServerContext) => {
-      const canonical = resourceUrlFromServerUrl(req.params.uri).toString();
-      return withTelemetry(
-        {
-          event: 'resource_subscription',
-          action: 'unsubscribe',
-          uri: canonical,
-          session_id: ctx.sessionId ?? null,
-        },
-        () => {
-          for (const contract of ALL_RESOURCES) {
-            if (contract.unsubscribe) {
-              contract.unsubscribe(canonical);
-            }
-          }
-          return {};
-        },
-      );
-    },
-  );
-
-  return {
-    destroy(): void {
-      for (const contract of ALL_RESOURCES) {
-        if (contract.destroy) {
-          contract.destroy();
-        }
-      }
-    },
-  };
 }
