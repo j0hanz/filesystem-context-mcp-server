@@ -812,7 +812,7 @@ class TestRunner {
     const argv = [
       '--enable-source-maps',
       '--import',
-      'tsx/esm',
+      'tsx',
       '--env-file-if-exists=.env',
       '--test',
       '--no-warnings',
