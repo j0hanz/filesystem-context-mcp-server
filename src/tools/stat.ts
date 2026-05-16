@@ -1,13 +1,12 @@
 import type { Stats } from 'node:fs';
-import { readlink, stat } from 'node:fs/promises';
 import { parse } from 'node:path';
 
 import { z } from 'zod/v4';
 
 import type { FileInfo, GetMultipleFileInfoResult, MultipleFileInfoResult } from '../config.js';
-import { assertNotAborted, processInParallel, withAbort } from '../core/concurrency.js';
+import { assertNotAborted, processInParallel } from '../core/concurrency.js';
 import { ErrorCode, isAbortError, Problem } from '../core/errors.js';
-import { detectMimeType, getFileType, isHidden } from '../core/fs.js';
+import { detectMimeType, stat as fsStat, getFileType, isHidden, readlink } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../core/util.js';
@@ -117,11 +116,13 @@ function buildFileInfoResult(
 
 async function getSymlinkTarget(
   pathToRead: string,
+  pathGuard: PathGuard,
   signal?: AbortSignal,
 ): Promise<string | undefined> {
   assertNotAborted(signal);
   try {
-    return await withAbort(readlink(pathToRead), signal);
+    const { linkString } = await readlink(pathToRead, pathGuard);
+    return linkString;
   } catch (error) {
     if (isAbortError(error)) throw error;
     return undefined;
@@ -139,8 +140,7 @@ async function getFileInfo(filePath: string, options: FileInfoOptions): Promise<
   const { signal, pathGuard } = options;
   assertNotAborted(signal);
 
-  const { requestedPath, resolvedPath, isSymlink } =
-    await pathGuard.validateExistingPathDetailed(filePath);
+  const { requestedPath, isSymlink } = await pathGuard.validateExistingPathDetailed(filePath);
 
   pathGuard.assertAllowedFileAccess(requestedPath);
 
@@ -149,9 +149,11 @@ async function getFileInfo(filePath: string, options: FileInfoOptions): Promise<
   const mimeType =
     includeMimeType && rawExt.length > 0 ? detectMimeType(requestedPath).mimeType : undefined;
 
-  const symlinkTarget = isSymlink ? await getSymlinkTarget(requestedPath, signal) : undefined;
+  const symlinkTarget = isSymlink
+    ? await getSymlinkTarget(requestedPath, pathGuard, signal)
+    : undefined;
 
-  const stats = await withAbort(stat(resolvedPath), signal);
+  const { stats } = await fsStat(requestedPath, pathGuard, signal ? { signal } : undefined);
 
   return buildFileInfoResult(name, requestedPath, isSymlink, stats, mimeType, symlinkTarget);
 }

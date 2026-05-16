@@ -1,5 +1,5 @@
 import { AsyncResource } from 'node:async_hooks';
-import { type FileHandle, open, stat } from 'node:fs/promises';
+import { type FileHandle, open } from 'node:fs/promises';
 import { dirname, relative } from 'node:path';
 import { debuglog } from 'node:util';
 import { parentPort, threadId, Worker, workerData } from 'node:worker_threads';
@@ -15,7 +15,7 @@ import {
   isTimeoutLikeError,
   McpError,
 } from '../core/errors.js';
-import { buildGlobOptions, globEntries, isProbablyBinary } from '../core/fs.js';
+import { buildGlobOptions, globEntries, isProbablyBinary, stat } from '../core/fs.js';
 import type { GlobEntry } from '../core/fs.js';
 import { startPerfMeasure } from '../core/observability.js';
 import { isPathWithinDirectories, normalizePath } from '../core/path.js';
@@ -1174,7 +1174,7 @@ async function searchContent(
   try {
     return await withTimedAbortSignal(options.signal, opts.timeoutMs, async (signal) => {
       const details = await pathGuard.validateExistingPathDetailed(basePath);
-      const fileStats = await withAbort(stat(details.resolvedPath), signal);
+      const { stats: fileStats } = await stat(basePath, pathGuard, { signal });
 
       if (fileStats.isFile()) {
         return searchSingleFile(details, opts, pattern, signal);

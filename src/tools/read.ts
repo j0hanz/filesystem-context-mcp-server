@@ -1,12 +1,11 @@
 import type { ContentBlock } from '@modelcontextprotocol/server';
 
 import type { Stats } from 'node:fs';
-import { stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { processInParallel, withAbort } from '../core/concurrency.js';
+import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode, Problem } from '../core/errors.js';
 import {
   applyIndexedErrors,
@@ -16,6 +15,7 @@ import {
   MIME_SAMPLE_SIZE,
   readFile,
   readFileWithStats,
+  stat,
 } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
@@ -495,8 +495,7 @@ async function tryValidateFile(
   signal?: AbortSignal,
 ): Promise<ValidatedFileInfo | undefined> {
   try {
-    const validPath = await pathGuard.validateExistingPath(filePath);
-    const stats = await withAbort(stat(validPath), signal);
+    const { stats, validPath } = await stat(filePath, pathGuard, signal ? { signal } : undefined);
     return { filePath, index, validPath, stats };
   } catch {
     return undefined;

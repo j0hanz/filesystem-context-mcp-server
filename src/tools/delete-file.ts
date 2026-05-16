@@ -1,13 +1,13 @@
 import type { ElicitRequestFormParams, ElicitResult } from '@modelcontextprotocol/server';
 import { SdkError, SdkErrorCode } from '@modelcontextprotocol/server';
 
-import { lstat, rm, rmdir } from 'node:fs/promises';
 import { basename } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { processInParallel, withAbort } from '../core/concurrency.js';
+import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode, isNodeError, McpError, Problem } from '../core/errors.js';
+import { lstat, rm, rmdir } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
@@ -85,9 +85,9 @@ function toDeleteFailure(path: string, error: unknown): DeleteFailure {
 function resolveItemType(
   itemStats: Awaited<ReturnType<typeof lstat>>,
 ): 'directory' | 'symlink' | 'file' | 'other' {
-  if (itemStats.isDirectory()) return 'directory';
-  if (itemStats.isSymbolicLink()) return 'symlink';
-  if (itemStats.isFile()) return 'file';
+  if (itemStats.stats.isDirectory()) return 'directory';
+  if (itemStats.stats.isSymbolicLink()) return 'symlink';
+  if (itemStats.stats.isFile()) return 'file';
   return 'other';
 }
 
@@ -97,7 +97,7 @@ async function tryElicitConfirmation(
   itemStats: Awaited<ReturnType<typeof lstat>>,
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>,
 ): Promise<boolean> {
-  if (!elicitInput || !args.recursive || !itemStats.isDirectory()) {
+  if (!elicitInput || !args.recursive || !itemStats.stats.isDirectory()) {
     return true; // Proceed if not applicable
   }
 
@@ -127,18 +127,15 @@ async function performDeletion(
   validPath: string,
   args: Pick<DeleteInput, 'recursive' | 'ignoreIfNotExists'>,
   isDirectory: boolean,
-  signal?: AbortSignal,
+  pathGuard: PathGuard,
 ): Promise<void> {
   if (isDirectory && !args.recursive) {
-    await withAbort(rmdir(validPath), signal);
+    await rmdir(validPath, pathGuard);
   } else {
-    await withAbort(
-      rm(validPath, {
-        recursive: args.recursive,
-        force: args.ignoreIfNotExists,
-      }),
-      signal,
-    );
+    await rm(validPath, pathGuard, {
+      recursive: args.recursive,
+      force: args.ignoreIfNotExists,
+    });
   }
 }
 
@@ -151,7 +148,7 @@ async function deleteSinglePath(
 ): Promise<{ item: DeletedItem } | { failure: DeleteFailure }> {
   let validPath: string;
   try {
-    validPath = await pathGuard.validatePathForWrite(inputPath);
+    validPath = inputPath;
   } catch (error) {
     // Path guard violation: collect in failures[] instead of throwing
     return { failure: toDeleteFailure(inputPath, error) };
@@ -175,7 +172,7 @@ async function deleteSinglePath(
 
   let itemStats: Awaited<ReturnType<typeof lstat>> | undefined;
   try {
-    itemStats = await withAbort(lstat(validPath), signal);
+    itemStats = await lstat(validPath, pathGuard, signal ? { signal } : undefined);
   } catch (error) {
     if (isNodeError(error) && error.code === 'ENOENT' && args.ignoreIfNotExists) {
       return { item: { path: validPath } };
@@ -200,7 +197,7 @@ async function deleteSinglePath(
   }
 
   try {
-    await performDeletion(validPath, args, itemStats.isDirectory(), signal);
+    await performDeletion(validPath, args, itemStats.stats.isDirectory(), pathGuard);
   } catch (error) {
     return { failure: toDeleteFailure(inputPath, error) };
   }

@@ -1,16 +1,16 @@
 import { createHash } from 'node:crypto';
-import { stat } from 'node:fs/promises';
 import { basename, relative, win32 } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import { assertNotAborted, withAbort } from '../core/concurrency.js';
+import { assertNotAborted } from '../core/concurrency.js';
 import { ErrorCode, McpError, Problem } from '../core/errors.js';
 import {
   calculateFileContentHash,
   globEntries,
   isIgnoredByGitignore,
   loadRootGitignore,
+  stat,
 } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
@@ -218,11 +218,10 @@ async function handleCalculateHash(
   signal?: AbortSignal,
   onProgress?: (progress: { total?: number; current: number }) => void,
 ) {
-  const validPath = await pathGuard.validateExistingPath(args.path);
   const { algorithms } = args;
 
   // Check if path is a directory or file
-  const stats = await withAbort(stat(validPath), signal);
+  const { stats, validPath } = await stat(args.path, pathGuard, signal ? { signal } : undefined);
 
   let hashes: Record<string, string>;
   let fileCount: number | undefined;

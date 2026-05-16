@@ -3,14 +3,19 @@ import { type BinaryToTextEncoding, createHash, randomUUID } from 'node:crypto';
 import { createReadStream, type Stats } from 'node:fs';
 import {
   type FileHandle,
+  cp as fsCp,
   glob as fsGlob,
-  lstat,
-  open,
-  readFile as readFilePromises,
-  rename,
-  stat,
-  unlink,
-  writeFile,
+  lstat as fsLstat,
+  mkdir as fsMkdir,
+  open as fsOpen,
+  readFile as fsReadFile,
+  readlink as fsReadlink,
+  rename as fsRename,
+  rm as fsRm,
+  rmdir as fsRmdir,
+  stat as fsStat,
+  unlink as fsUnlink,
+  writeFile as fsWriteFile,
 } from 'node:fs/promises';
 import { extname, isAbsolute, join, posix, relative, resolve } from 'node:path';
 import { text } from 'node:stream/consumers';
@@ -43,6 +48,96 @@ import {
 const READ_ONLY_FILE_FLAG = 'r';
 const STREAM_CHUNK_SIZE = 64 * 1024;
 
+// ─── Guarded Primitives ──────────────────────────────────────────────────────
+
+export async function stat(
+  filePath: string,
+  pathGuard: PathGuard,
+  options?: { signal?: AbortSignal },
+): Promise<{ stats: Stats; validPath: string }> {
+  const validPath = await pathGuard.validateExistingPath(filePath);
+  pathGuard.assertAllowedFileAccess(filePath);
+  const stats = await withAbort(fsStat(validPath), options?.signal);
+  return { stats, validPath };
+}
+
+export async function lstat(
+  filePath: string,
+  pathGuard: PathGuard,
+  options?: { signal?: AbortSignal },
+): Promise<{ stats: Stats; validPath: string }> {
+  const validPath = await pathGuard.validateExistingPath(filePath);
+  pathGuard.assertAllowedFileAccess(filePath);
+  const stats = await withAbort(fsLstat(validPath), options?.signal);
+  return { stats, validPath };
+}
+
+export async function mkdir(
+  filePath: string,
+  pathGuard: PathGuard,
+  options?: Parameters<typeof fsMkdir>[1],
+): Promise<{ validPath: string; result: string | undefined }> {
+  const validPath = await pathGuard.validatePathForWrite(filePath);
+  const result = await fsMkdir(validPath, options);
+  return { validPath, result };
+}
+
+export async function rename(
+  oldPath: string,
+  newPath: string,
+  pathGuard: PathGuard,
+): Promise<{ validOld: string; validNew: string }> {
+  const validOld = await pathGuard.validateExistingPath(oldPath);
+  pathGuard.assertAllowedFileAccess(oldPath);
+  const validNew = await pathGuard.validatePathForWrite(newPath);
+  await fsRename(validOld, validNew);
+  return { validOld, validNew };
+}
+
+export async function rm(
+  filePath: string,
+  pathGuard: PathGuard,
+  options?: Parameters<typeof fsRm>[1],
+): Promise<{ validPath: string }> {
+  const validPath = await pathGuard.validatePathForWrite(filePath);
+  await fsRm(validPath, options);
+  return { validPath };
+}
+
+export async function rmdir(
+  filePath: string,
+  pathGuard: PathGuard,
+  options?: Parameters<typeof fsRmdir>[1],
+): Promise<{ validPath: string }> {
+  const validPath = await pathGuard.validatePathForWrite(filePath);
+  await fsRmdir(validPath, options);
+  return { validPath };
+}
+
+export async function readlink(
+  filePath: string,
+  pathGuard: PathGuard,
+  options?: Parameters<typeof fsReadlink>[1],
+): Promise<{ linkString: string; validPath: string }> {
+  const validPath = await pathGuard.validateExistingPath(filePath);
+  pathGuard.assertAllowedFileAccess(filePath);
+  const linkString = (await fsReadlink(validPath, options)) as string;
+  return { linkString, validPath };
+}
+
+export async function cp(
+  source: string,
+  destination: string,
+  pathGuard: PathGuard,
+  options?: Parameters<typeof fsCp>[2],
+): Promise<{ validSource: string; validDest: string }> {
+  const validSource = await pathGuard.validateExistingPath(source);
+  pathGuard.assertAllowedFileAccess(source);
+  const validDest = await pathGuard.validatePathForWrite(destination);
+  await fsCp(validSource, validDest, options);
+  return { validSource, validDest };
+}
+
 // ─── Input validation ────────────────────────────────────────────────────────
 
 function assertPositiveSafeIntegerOption(name: string, value: unknown, message?: string): void {
@@ -65,7 +160,7 @@ function hasKnownBinaryExtension(filePath: string): boolean {
 }
 
 async function openReadableFileHandle(filePath: string, signal?: AbortSignal): Promise<FileHandle> {
-  return withAbort(open(filePath, READ_ONLY_FILE_FLAG), signal);
+  return withAbort(fsOpen(filePath, READ_ONLY_FILE_FLAG), signal);
 }
 
 async function readProbe(handle: FileHandle, signal?: AbortSignal): Promise<Buffer> {
@@ -778,10 +873,10 @@ export async function readFileWithStats(
     const options = arg3 as { signal?: AbortSignal } | undefined;
     const validPath = await pathGuard.validateExistingPath(filePath);
     pathGuard.assertAllowedFileAccess(filePath);
-    const stats = await withAbort(stat(validPath), options?.signal);
+    const stats = await withAbort(fsStat(validPath), options?.signal);
     assertFileStats(filePath, stats);
 
-    const content = await withAbort(readFilePromises(validPath), options?.signal);
+    const content = await withAbort(fsReadFile(validPath), options?.signal);
     const mimeInfo = detectMimeType(validPath, content.subarray(0, MIME_SAMPLE_SIZE));
     return {
       content,
@@ -815,7 +910,7 @@ export async function readFile(
   const normalized = prepareReadOptions(options);
   const validPath = await pathGuard.validateExistingPath(filePath);
   assertNotAborted(normalized.signal);
-  const stats = await withAbort(stat(validPath), normalized.signal);
+  const stats = await withAbort(fsStat(validPath), normalized.signal);
 
   return readFileWithStatsInternal(filePath, validPath, stats, normalized, pathGuard);
 }
@@ -823,23 +918,26 @@ export async function readFile(
 export async function atomicWriteFile(
   filePath: string,
   content: string,
+  pathGuard: PathGuard,
   options: { encoding?: BufferEncoding; signal?: AbortSignal | undefined } = {},
-): Promise<void> {
+): Promise<{ validPath: string }> {
   const { encoding = 'utf-8', signal } = options;
-  const tempPath = `${filePath}.${randomUUID()}.tmp`;
+  const validPath = await pathGuard.validatePathForWrite(filePath);
+  const tempPath = `${validPath}.${randomUUID()}.tmp`;
 
   try {
     assertNotAborted(signal);
-    await writeFile(tempPath, content, { encoding, signal });
-    await withAbort(rename(tempPath, filePath), signal);
+    await fsWriteFile(tempPath, content, { encoding, signal });
+    await withAbort(fsRename(tempPath, validPath), signal);
   } catch (error) {
     try {
-      await unlink(tempPath).catch(() => undefined);
+      await fsUnlink(tempPath).catch(() => undefined);
     } catch {
       // Ignore cleanup errors
     }
     throw error;
   }
+  return { validPath };
 }
 
 export function getFileType(stats: Stats): FileType {
@@ -1046,7 +1144,7 @@ export async function loadRootGitignore(
   const gitignorePath = join(root, '.gitignore');
 
   try {
-    const contents = await readFilePromises(gitignorePath, {
+    const contents = await fsReadFile(gitignorePath, {
       encoding: 'utf-8',
       signal,
     });
@@ -1335,7 +1433,7 @@ async function resolveStringMatch(
   seen.add(absolutePath);
 
   try {
-    const stats = followSymlinks ? await stat(absolutePath) : await lstat(absolutePath);
+    const stats = followSymlinks ? await fsStat(absolutePath) : await fsLstat(absolutePath);
 
     if (onlyFiles && !stats.isFile()) return null;
 

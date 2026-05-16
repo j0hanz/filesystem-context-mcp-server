@@ -1,13 +1,12 @@
 import type { ContentBlock } from '@modelcontextprotocol/server';
 
-import { mkdir, stat } from 'node:fs/promises';
 import { basename, dirname } from 'node:path';
 
 import { z } from 'zod/v4';
 
 import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, isAbortError, Problem } from '../core/errors.js';
-import { atomicWriteFile, detectMimeType, MIME_SAMPLE_SIZE } from '../core/fs.js';
+import { atomicWriteFile, detectMimeType, MIME_SAMPLE_SIZE, mkdir, stat } from '../core/fs.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import { IsoDateTime, NonNegInt, PerFileErrorSchema, RequiredPath } from '../schema.js';
 import { formatBytes } from './_helpers.js';
@@ -89,16 +88,14 @@ export const CREATE = defineTool({
 
     for (const file of args.files) {
       try {
-        const validPath = await ctx.pathGuard.validatePathForWrite(file.path);
+        await withAbort(mkdir(dirname(file.path), ctx.pathGuard, { recursive: true }), ctx.signal);
 
-        await withAbort(mkdir(dirname(validPath), { recursive: true }), ctx.signal);
-
-        await atomicWriteFile(validPath, file.content, {
+        const { validPath } = await atomicWriteFile(file.path, file.content, ctx.pathGuard, {
           encoding: 'utf-8',
           signal: ctx.signal,
         });
 
-        const fileStats = await withAbort(stat(validPath), ctx.signal);
+        const { stats: fileStats } = await stat(file.path, ctx.pathGuard, { signal: ctx.signal });
         const bytesWritten = Buffer.byteLength(file.content, 'utf-8');
         const lineCount = file.content.split('\n').length;
         const mimeInfo = detectMimeType(

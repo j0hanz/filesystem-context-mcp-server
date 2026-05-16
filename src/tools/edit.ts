@@ -1,19 +1,19 @@
 import type { ContentBlock } from '@modelcontextprotocol/server';
 
-import { stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 
 import { createTwoFilesPatch, diffLines } from 'diff';
 import RE2 from 're2';
 import { z } from 'zod/v4';
 
-import { processInParallel, runInWorker, shouldOffload, withAbort } from '../core/concurrency.js';
+import { processInParallel, runInWorker, shouldOffload } from '../core/concurrency.js';
 import { ErrorCode, McpError, Problem } from '../core/errors.js';
 import {
   atomicWriteFile,
   detectMimeType,
   MIME_SAMPLE_SIZE,
   readFileWithStats,
+  stat,
 } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
@@ -406,9 +406,11 @@ async function loadEditableFile(
   pathGuard: PathGuard,
   signal?: AbortSignal,
 ): Promise<{ validPath: string; content: string }> {
-  const validPath = await pathGuard.validateExistingPath(requestedPath);
-  pathGuard.assertAllowedFileAccess(requestedPath);
-  const stats = await withAbort(stat(validPath), signal);
+  const { stats, validPath } = await stat(
+    requestedPath,
+    pathGuard,
+    signal ? { signal } : undefined,
+  );
 
   if (stats.size > MAX_TEXT_FILE_SIZE) {
     throw new McpError(
@@ -515,16 +517,18 @@ async function handleEditFile(
   }
 
   if (editResult.appliedEdits > 0) {
-    await atomicWriteFile(validPath, editResult.content, {
+    await atomicWriteFile(filePath, editResult.content, pathGuard, {
       encoding: 'utf-8',
       signal,
     });
+    // In case the path changed due to case sensitivity, though unlikely.
+    /* validPath handled by atomicWriteFile */
     Logger.info(
       `edit: ${filePath} (${editResult.appliedEdits} edits, +${editResult.linesAdded}/-${editResult.linesRemoved})`,
     );
   }
 
-  const fileStats = await withAbort(stat(validPath), signal);
+  const { stats: fileStats } = await stat(filePath, pathGuard, signal ? { signal } : undefined);
   const meta = buildEditFileMetadata(
     editResult.content,
     validPath,

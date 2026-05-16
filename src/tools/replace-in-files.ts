@@ -1,7 +1,7 @@
 import type { ContentBlock } from '@modelcontextprotocol/server';
 
 import { Buffer } from 'node:buffer';
-import { open, stat } from 'node:fs/promises';
+import { open } from 'node:fs/promises';
 import { basename, dirname, join, relative } from 'node:path';
 
 import { createTwoFilesPatch } from 'diff';
@@ -10,7 +10,13 @@ import { z } from 'zod/v4';
 
 import { runInWorker, shouldOffload } from '../core/concurrency.js';
 import { ErrorCode, formatUnknownErrorMessage, McpError, Problem } from '../core/errors.js';
-import { atomicWriteFile, detectMimeType, globEntries, MIME_SAMPLE_SIZE } from '../core/fs.js';
+import {
+  atomicWriteFile,
+  detectMimeType,
+  globEntries,
+  MIME_SAMPLE_SIZE,
+  stat,
+} from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
@@ -248,7 +254,7 @@ async function processEntry(entryPath: string, ctx: ReplaceContext): Promise<voi
 
   let validPath: string;
   try {
-    validPath = await ctx.pathGuard.validatePathForWrite(entryPath);
+    validPath = entryPath;
   } catch (error) {
     summary.failedFiles++;
     recordFailure(summary.failures, {
@@ -277,7 +283,7 @@ async function processEntry(entryPath: string, ctx: ReplaceContext): Promise<voi
     });
 
     if (!options.dryRun) {
-      await atomicWriteFile(validPath, plan.updatedContent, {
+      await atomicWriteFile(entryPath, plan.updatedContent, ctx.pathGuard, {
         encoding: 'utf-8',
         signal,
       });
@@ -297,7 +303,11 @@ async function readReplacementPlan(
 ): Promise<ReplacementPlan | undefined> {
   const { matcher, replacement, maxFileSize, signal } = ctx;
   await using fileHandle = await open(validPath, 'r');
-  const stats = await fileHandle.stat();
+  const { stats } = await stat(
+    validPath,
+    ctx.pathGuard,
+    ctx.signal ? { signal: ctx.signal } : undefined,
+  );
   if (stats.size > maxFileSize) {
     throw new Error(
       `File too large: ${validPath} (${String(stats.size)} bytes > ${String(maxFileSize)} bytes)`,
@@ -457,7 +467,7 @@ async function resolveSearchRoot(
     return { root: pathGuard.resolvePathOrRoot(undefined), filePattern: undefined };
   }
   const resolvedPath = await pathGuard.validateExistingPath(pathValue);
-  const fileStats = await stat(resolvedPath);
+  const { stats: fileStats } = await stat(resolvedPath, pathGuard);
   if (fileStats.isFile()) {
     return { root: dirname(resolvedPath), filePattern: globEscape(basename(resolvedPath)) };
   }

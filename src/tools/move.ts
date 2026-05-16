@@ -1,13 +1,13 @@
 import type { ElicitRequestFormParams, ElicitResult } from '@modelcontextprotocol/server';
 import { SdkError, SdkErrorCode } from '@modelcontextprotocol/server';
 
-import { cp, mkdir, rename, rm, stat } from 'node:fs/promises';
 import { basename, dirname, resolve, sep } from 'node:path';
 
 import { z } from 'zod/v4';
 
 import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, isAbortError, isNodeError, McpError, Problem } from '../core/errors.js';
+import { cp, mkdir, rename, rm, stat } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
 import { PerFileErrorSchema, RequiredPath } from '../schema.js';
 import { defineTool } from './define.js';
@@ -46,6 +46,7 @@ type MoveItemResult = z.infer<typeof MoveItemResultSchema>;
 async function tryElicitOverwriteConfirmation(
   destination: string,
   validDest: string,
+  pathGuard: PathGuard,
   signal: AbortSignal,
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>,
 ): Promise<void> {
@@ -53,7 +54,7 @@ async function tryElicitOverwriteConfirmation(
 
   let destExists = false;
   try {
-    await withAbort(stat(validDest), signal);
+    await stat(validDest, pathGuard, { signal });
     destExists = true;
   } catch {
     // Destination does not exist - no confirmation needed.
@@ -129,11 +130,11 @@ async function validateMoveSource(source: string, pathGuard: PathGuard): Promise
 async function performRenameWithFallback(
   validSource: string,
   validDest: string,
-  signal: AbortSignal,
+  pathGuard: PathGuard,
   originalSource: string,
 ): Promise<void> {
   try {
-    await withAbort(rename(validSource, validDest), signal);
+    await rename(validSource, validDest, pathGuard);
   } catch (error: unknown) {
     if (isAbortError(error)) {
       throw error;
@@ -144,8 +145,8 @@ async function performRenameWithFallback(
     }
 
     try {
-      await withAbort(cp(validSource, validDest, { recursive: true }), signal);
-      await withAbort(rm(validSource, { recursive: true, force: true }), signal);
+      await cp(validSource, validDest, pathGuard, { recursive: true });
+      await rm(validSource, pathGuard, { recursive: true, force: true });
     } catch (copyOrRemoveError) {
       if (isAbortError(copyOrRemoveError)) {
         throw copyOrRemoveError;
@@ -208,14 +209,15 @@ export const MOVE = defineTool({
           );
         }
 
-        await withAbort(mkdir(dirname(validDest), { recursive: true }), ctx.signal);
+        await withAbort(mkdir(dirname(validDest), ctx.pathGuard, { recursive: true }), ctx.signal);
         await tryElicitOverwriteConfirmation(
           move.destination,
           validDest,
+          ctx.pathGuard,
           ctx.signal,
           ctx.elicitInput,
         );
-        await performRenameWithFallback(validSource, validDest, ctx.signal, move.source);
+        await performRenameWithFallback(validSource, validDest, ctx.pathGuard, move.source);
 
         results.push({ ok: true as const, from: validSource, to: validDest });
         ctx.log?.('info', `move: ${move.source} -> ${move.destination}`, 'move');
