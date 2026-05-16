@@ -1,10 +1,20 @@
 # CLAUDE.md
 
-MCP server exposing filesystem operations to LLM clients over stdio or HTTP.
+## Project Overview
+
+This project (`@j0hanz/filesystem-mcp`) is a Model Context Protocol (MCP) server that provides secure filesystem operations (reading, writing, searching, diffing, and patching files) to AI models. It uses the official `@modelcontextprotocol` SDKs.
+
+### Architecture & Tech Stack
+
+- **Runtime:** Node.js (>= v24)
+- **Language:** TypeScript with strict type checking.
+- **Validation:** Zod (`zod/v4`).
+- **Transports:** Stdio and HTTP (Express).
+- **Core Concepts:** Implements an MCP Server exposing tools, resources, and prompts. Uses worker threads for concurrency and offloading.
 
 ## Commands
 
-Dev loop is driven by `scripts/tasks.mjs` (alias: `npm run tasks`).
+The dev loop is driven by `scripts/tasks.mjs` (alias: `npm run tasks`).
 
 ```bash
 node scripts/tasks.mjs check          # format → [lint, type-check, knip] → [test, rebuild]
@@ -15,18 +25,17 @@ node scripts/tasks.mjs test --watch   # watch mode
 node scripts/tasks.mjs detail <n>     # show source window for the Nth test failure
 ```
 
-Useful test flags: `--name-pattern <regex>`, `--timeout <ms>`, `--shard <i/n>`, `--update-snapshots`.
+## Coding Conventions & Guidelines
 
-After a failure, `--llm` appends a structured JSON block to stdout and writes `.tasks-last-failure.json`.
-
-**Run a single test file:**
-
-```bash
-node --test --import tsx/esm "__tests__/unit/path-guard.test.ts"
-```
-
-## Detailed References
-
-- [Architecture](.claude/architecture.md) — request flow, transports, tool system, PathGuard, worker pool, observability, task system
-- [Environment Variables](.claude/environment.md) — all `FILESYSTEM_MCP_*` and `FS_*` configuration
-- [TypeScript](.claude/typescript.md) — strict tsconfig flags, ESM imports, Zod v4
+- **ES Modules:** The project uses native ES Modules (`"type": "module"` in `package.json`, `NodeNext` resolution).
+- **Built-in Modules:** Always use the `node:` prefix when importing Node.js built-in modules (e.g., `import fs from 'node:fs';`).
+- **Strict Typing:**
+  - Leverage TypeScript's strict mode.
+  - Avoid `any`. ESLint rules enforce strict type checking (`strictTypeChecked`, `stylisticTypeChecked`).
+  - Use `unknown` for errors in catch blocks.
+- **Promise Handling:** No floating promises. Always `await` or explicitly mark as `void`.
+- **Error Handling & Logging:**
+  - **Do NOT log to `stdout` (`console.log`)**. This breaks the MCP Stdio protocol. Use `console.error` for diagnostic logging.
+  - Custom error handling and observability are routed through `src/core/observability.ts`.
+- **Unused Variables:** Prefix intentionally unused parameters or variables with `_` to satisfy ESLint.
+- **Tests:** Test files are located in `__tests__/` and end with `.test.ts`. Tests use looser ESLint rules for ergonomics but still enforce correctness.
