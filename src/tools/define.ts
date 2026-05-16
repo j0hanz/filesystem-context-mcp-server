@@ -420,7 +420,6 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
     outputSchema: outputJsonSchema as Tool['outputSchema'],
 
     register(deps: ToolDeps) {
-      // `as never`: bridges StandardSchema/JSON-Schema type mismatch at registration boundary.
       const toolDefShape = {
         title: def.title,
         description: def.description,

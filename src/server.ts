@@ -2,7 +2,6 @@ import {
   type Implementation,
   InMemoryTaskMessageQueue,
   McpServer,
-  type ServerCapabilities,
   type SetLevelRequestParams,
 } from '@modelcontextprotocol/server';
 
@@ -26,32 +25,6 @@ import { type IconInfo, withDefaultIcons } from './tools/_helpers.js';
 // ═══════════════════════════════════════════════════════════════
 // bootstrap
 // ═══════════════════════════════════════════════════════════════
-
-interface CapabilityOptions {
-  enablePromptListChanged?: boolean;
-  enableTaskToolRequests?: boolean;
-}
-
-function buildServerCapabilities(options: CapabilityOptions = {}): ServerCapabilities {
-  const capabilities: ServerCapabilities = {
-    logging: {},
-    resources: { subscribe: true, listChanged: true },
-    tools: {},
-    prompts: options.enablePromptListChanged ? { listChanged: true } : {},
-    completions: {},
-    extensions: {},
-  };
-
-  if (options.enableTaskToolRequests) {
-    capabilities.tasks = {
-      list: {},
-      cancel: {},
-      requests: { tools: { call: {} } },
-    };
-  }
-
-  return capabilities;
-}
 
 export const logRouter = LogRouter.global();
 
@@ -139,22 +112,22 @@ export async function createServer(
 ): Promise<FilesystemServerContext> {
   const resourceStore = createInMemoryResourceStore();
   const localIcon = await getLocalIconInfo();
-  const capabilities = buildServerCapabilities({
-    enablePromptListChanged: false,
-    enableTaskToolRequests: true,
-  });
 
   const taskOrchestrator = new TaskOrchestrator();
 
   const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> = {
     capabilities: {
-      logging: capabilities.logging,
-      resources: capabilities.resources,
-      tools: capabilities.tools,
-      prompts: capabilities.prompts,
-      completions: capabilities.completions,
-      extensions: capabilities.extensions,
-      ...(capabilities.tasks ? { tasks: capabilities.tasks } : {}),
+      logging: {},
+      resources: { subscribe: true, listChanged: true },
+      tools: {},
+      prompts: {},
+      completions: {},
+      extensions: {},
+      tasks: {
+        list: {},
+        cancel: {},
+        requests: { tools: { call: {} } },
+      },
     },
     enforceStrictCapabilities: true,
   };

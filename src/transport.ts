@@ -768,10 +768,6 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
 
   registry.startSweep();
 
-  httpServer.once('close', () => {
-    void registry.closeAll();
-  });
-
   const originalClose = httpServer.close.bind(httpServer);
   httpServer.close = function (callback?: (error?: Error) => void) {
     void registry.closeAll();
