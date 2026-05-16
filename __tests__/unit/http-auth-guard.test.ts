@@ -10,10 +10,14 @@ import {
 } from '../../src/transport.js';
 
 describe('isLoopbackHttpHost', () => {
-  it('accepts canonical loopback hosts', () => {
-    for (const host of ['127.0.0.1', 'localhost', '::1', '[::1]']) {
+  it('accepts canonical loopback hosts from SDK list', () => {
+    for (const host of ['127.0.0.1', 'localhost', '[::1]']) {
       assert.equal(isLoopbackHttpHost(host), true, host);
     }
+  });
+
+  it('does not accept bare unbracketed ::1 (invalid in HTTP Host headers)', () => {
+    assert.equal(isLoopbackHttpHost('::1'), false);
   });
 
   it('is case-insensitive and trims whitespace', () => {

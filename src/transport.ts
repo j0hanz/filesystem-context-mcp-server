@@ -227,13 +227,7 @@ function classifyJsonRpcMessage(message: JSONRPCMessage): JsonRpcKind {
  * directly testable without spinning up a server.
  */
 export function isLoopbackHttpHost(host: string): boolean {
-  const normalized = host.trim().toLowerCase();
-  return (
-    normalized === '127.0.0.1' ||
-    normalized === 'localhost' ||
-    normalized === '::1' ||
-    normalized === '[::1]'
-  );
+  return localhostAllowedHostnames().includes(host.trim().toLowerCase());
 }
 
 export function isAllowedLocalhostOrigin(origin: string): boolean {
