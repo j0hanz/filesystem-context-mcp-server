@@ -12,7 +12,6 @@ import { PathGuard, resolveAllowedDirectoriesState } from '../src/core/path.js';
 import { createInMemoryResourceStore, type ResourceStore } from '../src/core/store.js';
 import { SENSITIVE_FILE_DENYLIST } from '../src/core/util.js';
 import { TaskOrchestrator } from '../src/tasks.js';
-import { createTaskStore } from '../src/tasks.js';
 import { registerAllTools } from '../src/tools.js';
 import { LinkedTransport } from './linked-transport.js';
 
@@ -45,8 +44,8 @@ export interface TestEnv {
 export async function createTestEnv(): Promise<TestEnv> {
   const tmpDir = await mkdtemp(join(tmpdir(), `fsmcp-${randomUUID().slice(0, 8)}-`));
 
-  const taskStore = createTaskStore();
-  const orchestrator = new TaskOrchestrator(taskStore);
+  const orchestrator = new TaskOrchestrator();
+  const taskStore = orchestrator;
 
   const server = new McpServer(
     { name: 'test-server', version: '0.0.0' },
@@ -118,7 +117,8 @@ export type ElicitationHandler = (params: {
 export async function createTestEnvWithElicitation(handler: ElicitationHandler): Promise<TestEnv> {
   const tmpDir = await mkdtemp(join(tmpdir(), `fsmcp-${randomUUID().slice(0, 8)}-`));
 
-  const taskStore = createTaskStore();
+  const orchestrator = new TaskOrchestrator();
+  const taskStore = orchestrator;
 
   const server = new McpServer(
     { name: 'test-server', version: '0.0.0' },

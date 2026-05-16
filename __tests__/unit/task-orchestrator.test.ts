@@ -10,11 +10,10 @@ import { describe, it } from 'node:test';
 
 import { ErrorCode } from '../../src/core/errors.js';
 import { TASK_PROGRESS_STATUS_MESSAGE, TaskOrchestrator } from '../../src/tasks.js';
-import { EventedTaskStore } from '../../src/tasks.js';
 import { type ToolContext } from '../../src/tools/_helpers.js';
 
 function createMockExtra(
-  store: EventedTaskStore,
+  store: TaskOrchestrator,
   sessionId = 'test-session',
 ): CreateTaskServerContext {
   let reqId = 0;
@@ -63,7 +62,7 @@ function createMockExtra(
 }
 
 function createMockTaskExtra(
-  store: EventedTaskStore,
+  store: TaskOrchestrator,
   taskId: string,
   sessionId = 'test-session',
 ): TaskServerContext {
@@ -79,8 +78,8 @@ function createMockTaskExtra(
 
 describe('TaskOrchestrator', () => {
   it('executes a tool task successfully in background', async () => {
-    const store = new EventedTaskStore();
-    const orchestrator = new TaskOrchestrator(store);
+    const orchestrator = new TaskOrchestrator();
+    const store = orchestrator;
 
     try {
       let executed = false;
@@ -95,7 +94,7 @@ describe('TaskOrchestrator', () => {
         { toolName: 'test_tool' },
       );
 
-      const ctx = createMockExtra(store);
+      const ctx = createMockExtra(orchestrator);
       const { task } = await handler.createTask(undefined as never, ctx);
 
       // Wait for background execution
@@ -124,8 +123,8 @@ describe('TaskOrchestrator', () => {
   });
 
   it('cancels background execution when store emits cancelled event', async () => {
-    const store = new EventedTaskStore();
-    const orchestrator = new TaskOrchestrator(store);
+    const orchestrator = new TaskOrchestrator();
+    const store = orchestrator;
 
     try {
       let cancelled = false;
@@ -180,8 +179,8 @@ describe('TaskOrchestrator', () => {
   });
 
   it('drops wrapped notifications/tasks/status and does not translate them into store status updates', async () => {
-    const store = new EventedTaskStore();
-    const orchestrator = new TaskOrchestrator(store);
+    const orchestrator = new TaskOrchestrator();
+    const store = orchestrator;
 
     try {
       const notifications: unknown[] = [];
@@ -271,8 +270,8 @@ describe('TaskOrchestrator', () => {
   });
 
   it('drops malformed task status notifications without failing the task', async () => {
-    const store = new EventedTaskStore();
-    const orchestrator = new TaskOrchestrator(store);
+    const orchestrator = new TaskOrchestrator();
+    const store = orchestrator;
 
     try {
       const notifications: unknown[] = [];
@@ -325,8 +324,8 @@ describe('TaskOrchestrator', () => {
   });
 
   it('ignores onProgress callback and does not update task status message', async () => {
-    const store = new EventedTaskStore();
-    const orchestrator = new TaskOrchestrator(store);
+    const orchestrator = new TaskOrchestrator();
+    const store = orchestrator;
 
     try {
       const handler = orchestrator.wrapToolTask(

@@ -12,7 +12,6 @@ import { ErrorCode } from '../../src/core/errors.js';
 import { MAX_CONCURRENT_TASKS, MAX_TASK_TTL_MS, TASK_TTL } from '../../src/core/util.js';
 import { TASK_PROGRESS_STATUS_MESSAGE } from '../../src/tasks.js';
 import { TaskOrchestrator } from '../../src/tasks.js';
-import { EventedTaskStore } from '../../src/tasks.js';
 import type { ToolResult } from '../../src/tools/_helpers.js';
 
 /**
@@ -25,8 +24,8 @@ function createTestTaskStore(): RequestTaskStore & {
   cleanup: () => void;
   orchestrator: TaskOrchestrator;
 } {
-  const store = new EventedTaskStore();
-  const orchestrator = new TaskOrchestrator(store);
+  const orchestrator = new TaskOrchestrator();
+  const store = orchestrator;
   let reqCounter = 0;
 
   return {

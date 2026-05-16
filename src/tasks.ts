@@ -13,8 +13,6 @@ import {
 } from '@modelcontextprotocol/server';
 import type { StandardSchemaWithJSON } from '@modelcontextprotocol/server';
 
-import { EventEmitter } from 'node:events';
-
 import { ErrorCode, McpError } from './core/errors.js';
 import { logRuntimeFailure } from './core/observability.js';
 import {
@@ -27,12 +25,29 @@ import {
 } from './core/util.js';
 import { type ToolContext, type ToolResult, toToolContext } from './tools/_helpers.js';
 
+export const TASK_PROGRESS_STATUS_MESSAGE = 'filesystem-mcp: processing request';
+
 // ═══════════════════════════════════════════════════════════════
-// task-store
+// task-orchestrator
 // ═══════════════════════════════════════════════════════════════
 
-export class EventedTaskStore extends InMemoryTaskStore {
-  public readonly events = new EventEmitter();
+/**
+ * TaskOrchestrator manages the lifecycle of background tasks and acts as the
+ * authoritative TaskStore for the MCP server. It connects task status updates
+ * (like cancellation) directly to AbortControllers for background tool handlers.
+ */
+export class TaskOrchestrator extends InMemoryTaskStore {
+  private readonly controllers = new Map<string, AbortController>();
+  private disposed = false;
+
+  public dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    for (const controller of this.controllers.values()) {
+      controller.abort(new McpError(ErrorCode.CANCELLED, 'Orchestrator shutting down.'));
+    }
+    this.controllers.clear();
+  }
 
   override async updateTaskStatus(
     taskId: string,
@@ -43,49 +58,13 @@ export class EventedTaskStore extends InMemoryTaskStore {
     await super.updateTaskStatus(taskId, status, statusMessage, sessionId);
 
     if (status === 'cancelled') {
-      this.events.emit('cancelled', taskId);
-    }
-  }
-}
-
-export const TASK_PROGRESS_STATUS_MESSAGE = 'filesystem-mcp: processing request';
-
-export function createTaskStore(): EventedTaskStore {
-  return new EventedTaskStore();
-}
-
-// ═══════════════════════════════════════════════════════════════
-// task-orchestrator
-// ═══════════════════════════════════════════════════════════════
-
-/**
- * TaskOrchestrator manages the lifecycle of background tasks.
- * It connects the EventedTaskStore with the AbortControllers for cancellation,
- * and runs wrapped tool handlers in the background.
- */
-export class TaskOrchestrator {
-  private readonly controllers = new Map<string, AbortController>();
-  private readonly store: EventedTaskStore;
-  private readonly onCancelled: (taskId: string) => void;
-  private disposed = false;
-
-  constructor(store: EventedTaskStore) {
-    this.store = store;
-    this.onCancelled = (taskId: string) => {
       const controller = this.controllers.get(taskId);
       if (controller) {
         // Abort the background execution with a cancellation reason.
         controller.abort(new McpError(ErrorCode.CANCELLED, 'Task execution cancelled.'));
         this.controllers.delete(taskId);
       }
-    };
-    this.store.events.on('cancelled', this.onCancelled);
-  }
-
-  public dispose(): void {
-    if (this.disposed) return;
-    this.disposed = true;
-    this.store.events.off('cancelled', this.onCancelled);
+    }
   }
 
   private creationPromise: Promise<unknown> = Promise.resolve();

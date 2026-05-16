@@ -40,7 +40,7 @@ import {
   type ResourcesHandle,
   serverInstructionsContent,
 } from './resources.js';
-import { createTaskStore, TaskOrchestrator } from './tasks.js';
+import { TaskOrchestrator } from './tasks.js';
 import { registerAllTools } from './tools.js';
 import { type IconInfo, withDefaultIcons } from './tools/_helpers.js';
 
@@ -335,7 +335,6 @@ export class FilesystemServerContext {
   public readonly resources: ResourceStore;
   public readonly resourcesHandle: ResourcesHandle;
   private readonly orchestrator: TaskOrchestrator;
-  private readonly taskStore: ReturnType<typeof createTaskStore>;
   private cleanedUp = false;
 
   constructor(
@@ -344,21 +343,19 @@ export class FilesystemServerContext {
     resources: ResourceStore,
     resourcesHandle: ResourcesHandle,
     orchestrator: TaskOrchestrator,
-    taskStore: ReturnType<typeof createTaskStore>,
   ) {
     this.mcp = mcp;
     this.roots = roots;
     this.resources = resources;
     this.resourcesHandle = resourcesHandle;
     this.orchestrator = orchestrator;
-    this.taskStore = taskStore;
   }
 
   disposeRuntimeState(): void {
     if (this.cleanedUp) return;
     this.cleanedUp = true;
     this.orchestrator.dispose();
-    this.taskStore.cleanup();
+    this.orchestrator.cleanup();
     this.resourcesHandle.destroy();
     this.roots.destroy();
     logRouter.detachStdio();
@@ -412,8 +409,7 @@ export async function createServer(
     enableTaskToolRequests: true,
   });
 
-  const taskStore = createTaskStore();
-  const taskOrchestrator = new TaskOrchestrator(taskStore);
+  const taskOrchestrator = new TaskOrchestrator();
 
   const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> = {
     capabilities: {
@@ -430,7 +426,7 @@ export async function createServer(
 
   if (serverConfig.capabilities?.tasks) {
     Object.assign(serverConfig.capabilities.tasks, {
-      taskStore,
+      taskStore: taskOrchestrator,
       taskMessageQueue: new InMemoryTaskMessageQueue(),
     });
   }
@@ -488,6 +484,5 @@ export async function createServer(
     resourceStore,
     resourcesHandle,
     taskOrchestrator,
-    taskStore,
   );
 }
