@@ -481,29 +481,29 @@ export function isSafeGlobSyntax(pattern: string): boolean {
   return true;
 }
 
-interface IPathValidator {
-  getAllowedDirectories(): string[];
-  isSensitive(filePath: string): boolean;
-  isSafeGlob(pattern: string): boolean;
-  assertSafeGlob(pattern: string, message?: string): void;
-  validateExistingPath(requestedPath: string): Promise<string>;
-  validateExistingPathDetailed(requestedPath: string): Promise<ValidatedPathDetails>;
-  validateExistingDirectory(requestedPath: string): Promise<string>;
-  resolvePathOrRoot(pathValue: string | undefined): string;
-  isAllowedRoot(normalizedPath: string): boolean;
-  assertAllowedFileAccess(requestedPath: string): void;
-  validatePathForWrite(requestedPath: string): Promise<string>;
-}
-
-export class PathGuard implements IPathValidator {
+export class PathGuard {
   private allowedDirectoriesState: AllowedDirectoriesState | undefined;
   private denyPatterns: CompiledPatternSet;
+  private rootDirectories: string[] = [];
+  private state: RootsManagerState = 'idle';
+  private _debouncedUpdate: { (server: McpServer): void; cancel: () => void } | undefined;
+  private initTimer: ReturnType<typeof setTimeout> | undefined;
+  private pendingRootsUpdate = false;
 
-  constructor(sensitivePatterns: readonly string[] = SENSITIVE_FILE_DENYLIST) {
+  private readonly options: ServerOptions | undefined;
+  readonly loggingState: LoggingState | undefined;
+
+  constructor(
+    sensitivePatterns: readonly string[] = SENSITIVE_FILE_DENYLIST,
+    options?: ServerOptions,
+    loggingState?: LoggingState,
+  ) {
     this.denyPatterns = toPatternSet(compilePatterns(sensitivePatterns));
+    this.options = options;
+    this.loggingState = loggingState;
   }
 
-  isInitialized(): boolean {
+  hasAllowedDirectories(): boolean {
     return this.allowedDirectoriesState !== undefined;
   }
 
@@ -759,26 +759,7 @@ export class PathGuard implements IPathValidator {
         { resolvedPath: realPath, normalizedResolvedPath: normalizedReal },
       );
     }
-
     return normalizedRequested;
-  }
-}
-
-export class McpRootsManager {
-  private rootDirectories: string[] = [];
-  private state: RootsManagerState = 'idle';
-  private _debouncedUpdate: { (server: McpServer): void; cancel: () => void } | undefined;
-  private initTimer: ReturnType<typeof setTimeout> | undefined;
-  private pendingRootsUpdate = false;
-
-  private readonly pathGuard: PathGuard;
-  private readonly options: ServerOptions | undefined;
-  readonly loggingState: LoggingState | undefined;
-
-  constructor(pathGuard: PathGuard, options?: ServerOptions, loggingState?: LoggingState) {
-    this.pathGuard = pathGuard;
-    this.options = options;
-    this.loggingState = loggingState;
   }
 
   isInitialized(): boolean {
@@ -798,7 +779,7 @@ export class McpRootsManager {
   }
 
   logMissingDirectoriesIfNeeded(server: McpServer): void {
-    if (this.pathGuard.getAllowedDirectories().length === 0 && this.loggingState) {
+    if (this.getAllowedDirectories().length === 0 && this.loggingState) {
       this.logMissingDirectories(server);
     }
   }
@@ -860,7 +841,7 @@ export class McpRootsManager {
 
       const combined = [...baseline, ...rootsToInclude];
       const nextState = await resolveAllowedDirectoriesState(combined, signal);
-      this.pathGuard.initialize(nextState);
+      this.initialize(nextState);
     } finally {
       cleanup();
     }
@@ -929,7 +910,7 @@ export class McpRootsManager {
       if (currentState !== 'shutting_down') {
         await this.recomputeAllowedDirectories();
         Logger.info(
-          `Roots updated: ${this.rootDirectories.length} root(s), ${this.pathGuard.getAllowedDirectories().length} allowed dir(s)`,
+          `Roots updated: ${this.rootDirectories.length} root(s), ${this.getAllowedDirectories().length} allowed dir(s)`,
         );
         this.state = 'idle';
         if (this.pendingRootsUpdate) {
