@@ -30,6 +30,45 @@ export interface ResourcesHandle {
 // contract
 // ═══════════════════════════════════════════════════════════════
 
+interface BaseResourceContract {
+  name: string;
+  title?: string;
+  description?: string;
+  mimeType?: string;
+  annotations?: {
+    audience?: Role[];
+    priority?: number;
+  };
+  read(
+    uri: URL,
+    variables: Record<string, string | string[]>,
+    ctx: ServerContext,
+  ): Promise<ReadResourceResult> | ReadResourceResult;
+  subscribe?: (uri: string, notify: (uri: string) => void) => void;
+  unsubscribe?: (uri: string) => void;
+  destroy?: () => void;
+}
+
+/** A resource with a fixed, enumerable URI (e.g. internal://instructions). */
+interface StaticResourceContract extends BaseResourceContract {
+  uri: string;
+  uriTemplate?: never;
+  complete?: never;
+}
+
+/** A resource identified by a URI template (e.g. filesystem-mcp://file/{+path}). */
+interface TemplateResourceContract extends BaseResourceContract {
+  uriTemplate: string;
+  uri?: never;
+  complete?: (
+    variable: string,
+    value: string,
+    ctx?: { arguments?: Record<string, string> },
+  ) => Promise<string[]> | string[];
+}
+
+type ResourceContract = StaticResourceContract | TemplateResourceContract;
+
 // ═══════════════════════════════════════════════════════════════
 // instructions
 // ═══════════════════════════════════════════════════════════════
@@ -270,32 +309,6 @@ function createResultResource(options: ResourceRegistrationOptions): ResourceCon
 // ═══════════════════════════════════════════════════════════════
 // export contracts
 // ═══════════════════════════════════════════════════════════════
-
-export interface ResourceContract {
-  name: string;
-  title?: string;
-  description?: string;
-  mimeType?: string;
-  uri?: string;
-  uriTemplate?: string;
-  annotations?: {
-    audience?: Role[];
-    priority?: number;
-  };
-  read: (
-    uri: URL,
-    variables: Record<string, string | string[]>,
-    ctx: ServerContext,
-  ) => Promise<ReadResourceResult> | ReadResourceResult;
-  complete?: (
-    variable: string,
-    value: string,
-    ctx?: { arguments?: Record<string, string> },
-  ) => Promise<string[]> | string[];
-  subscribe?: (uri: string, notify: (uri: string) => void) => void;
-  unsubscribe?: (uri: string) => void;
-  destroy?: () => void;
-}
 
 export function getResourceContracts(options: ResourceRegistrationOptions): ResourceContract[] {
   return [

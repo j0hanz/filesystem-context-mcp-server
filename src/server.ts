@@ -235,7 +235,7 @@ export async function createServer(
           let foundMatch = false;
           for (const contract of resourceContracts) {
             if (!contract.subscribe) continue;
-            const configured = contract.uri ?? contract.uriTemplate?.split('{')[0];
+            const configured = contract.uri ?? contract.uriTemplate.split('{')[0];
             if (!configured) continue;
             if (
               checkResourceAllowed({
