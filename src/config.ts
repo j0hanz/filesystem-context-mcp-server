@@ -61,24 +61,6 @@ export interface SearchContentResult {
   };
 }
 
-export type MultipleFileInfoResult =
-  | {
-      readonly path: string;
-      readonly status: 'success';
-      readonly info: FileInfo;
-    }
-  | { readonly path: string; readonly status: 'error'; readonly error: Error };
-
-export interface GetMultipleFileInfoResult {
-  readonly results: readonly MultipleFileInfoResult[];
-  readonly summary: {
-    readonly total: number;
-    readonly succeeded: number;
-    readonly failed: number;
-    readonly totalSize: number;
-  };
-}
-
 export const ErrorCode = {
   ACCESS_DENIED: 'ACCESS_DENIED',
   NOT_FOUND: 'NOT_FOUND',

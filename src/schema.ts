@@ -297,6 +297,78 @@ export const includeHiddenField = () =>
 export const includeIgnoredField = () =>
   defaultFalseBoolean('Include ignored items (node_modules, .git, etc).');
 
+const DEFAULT_MAX_BATCH = 1000;
+
+export function singleOrBatchPathsInput<
+  TExtra extends z.ZodRawShape,
+  TPerFile extends z.ZodRawShape | undefined = undefined,
+>(opts: {
+  extra: TExtra;
+  perFile?: TPerFile;
+  maxBatch?: number;
+}): z.ZodObject<
+  TExtra & {
+    path: z.ZodOptional<typeof RequiredPath>;
+    paths: z.ZodOptional<z.ZodArray<typeof RequiredPath>>;
+    files: z.ZodOptional<
+      z.ZodArray<z.ZodObject<{ path: typeof RequiredPath } & NonNullable<TPerFile>>>
+    >;
+  }
+> {
+  const maxBatch = opts.maxBatch ?? DEFAULT_MAX_BATCH;
+  const perFileShape = opts.perFile;
+  const triadic = perFileShape !== undefined;
+
+  const filesSchema =
+    perFileShape === undefined
+      ? undefined
+      : z
+          .array(z.strictObject({ path: RequiredPath, ...perFileShape }))
+          .min(1)
+          .max(maxBatch);
+
+  const shape: z.ZodRawShape = {
+    ...opts.extra,
+    path: RequiredPath.optional().describe('File path (single-path mode)'),
+    paths: z
+      .array(RequiredPath)
+      .min(1)
+      .max(maxBatch)
+      .optional()
+      .describe(`File paths (batch mode; max ${String(maxBatch)})`),
+    ...(filesSchema ? { files: filesSchema.optional() } : {}),
+  };
+
+  return z.strictObject(shape).superRefine((value, ctx) => {
+    const hasPath = value['path'] !== undefined;
+    const hasPaths = value['paths'] !== undefined;
+    const hasFiles = triadic && value['files'] !== undefined;
+    const provided = [hasPath, hasPaths, hasFiles].filter(Boolean).length;
+
+    if (provided === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['path'],
+        message: triadic
+          ? "Provide exactly one of 'path', 'paths', or 'files'"
+          : "Either 'path' or 'paths' must be provided",
+        input: value,
+      });
+      return;
+    }
+    if (provided > 1) {
+      ctx.addIssue({
+        code: 'custom',
+        path: triadic ? ['path'] : ['paths'],
+        message: triadic
+          ? "Provide exactly one of 'path', 'paths', or 'files'"
+          : "Cannot use both 'path' and 'paths'",
+        input: value,
+      });
+    }
+  }) as never;
+}
+
 export const ContinuationSchema = z
   .strictObject({
     tool: z.string().describe('Tool name to call'),

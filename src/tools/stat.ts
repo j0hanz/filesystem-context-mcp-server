@@ -1,73 +1,48 @@
+import type { ContentBlock } from '@modelcontextprotocol/server';
+
 import type { Stats } from 'node:fs';
 import { parse } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import type { FileInfo, GetMultipleFileInfoResult, MultipleFileInfoResult } from '../config.js';
-import { assertNotAborted, processInParallel } from '../core/concurrency.js';
-import { ErrorCode, isAbortError, Problem } from '../core/errors.js';
+import type { FileInfo } from '../config.js';
+import { assertNotAborted } from '../core/concurrency.js';
+import { ErrorCode, isAbortError } from '../core/errors.js';
 import { detectMimeType, stat as fsStat, getFileType, isHidden, readlink } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
-import type { ResourceStore } from '../core/store.js';
-import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../core/util.js';
+import { DEFAULT_SEARCH_TIMEOUT_MS } from '../core/util.js';
 import {
   FileInfoSchema,
   NonNegInt,
   OperationSummarySchema,
   PerFileErrorSchema,
-  RequiredPath,
+  singleOrBatchPathsInput,
 } from '../schema.js';
-import { buildFileInfoPayload, formatBytes, putResource } from './_helpers.js';
-import { defineTool, type RunResult } from './define.js';
+import { buildFileInfoPayload, type PerPathResult, putResource, runOverPaths } from './_helpers.js';
+import { defineTool } from './define.js';
 
-const StatInputSchema = z
-  .strictObject({
-    path: RequiredPath.optional().describe('Path to stat (single-path mode)'),
-    paths: z
-      .array(RequiredPath)
-      .min(1)
-      .max(1000)
-      .optional()
-      .describe('Paths to stat (batch mode; max 1000)'),
-  })
-  .superRefine((v, ctx) => {
-    const hasPath = v.path !== undefined;
-    const hasPaths = v.paths !== undefined;
+const StatInputSchema = singleOrBatchPathsInput({
+  extra: {},
+});
 
-    if (!hasPath && !hasPaths) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['path'],
-        message: "Either 'path' or 'paths' must be provided",
-        input: v,
-      });
-    }
-
-    if (hasPath && hasPaths) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['paths'],
-        message: "Cannot use both 'path' and 'paths'",
-        input: v,
-      });
-    }
-  });
-
-const StatManyResultItemSchema = z.strictObject({
+const StatPerPathSchema = z.strictObject({
   path: z.string().describe('Requested path'),
-  info: FileInfoSchema.optional().describe('File info (when successful)'),
-  error: PerFileErrorSchema.optional().describe('Error (when failed)'),
+  value: FileInfoSchema.optional().describe('File info (success)'),
+  error: PerFileErrorSchema.optional().describe('Per-path error'),
 });
 
 const StatOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Success indicator'),
-  file: FileInfoSchema.optional().describe('File info (single-path mode)'),
-  // Batch mode fields
-  results: z.array(StatManyResultItemSchema).optional().describe('Per-path results (batch mode)'),
-  summary: OperationSummarySchema.optional().describe('Operation summary (batch mode)'),
-  fileCount: NonNegInt.optional().describe('Number of files (batch mode)'),
-  dirCount: NonNegInt.optional().describe('Number of directories (batch mode)'),
-  resourceUri: z.string().optional().describe('URI to stats.json resource (batch mode)'),
+  results: z
+    .array(StatPerPathSchema)
+    .describe('Per-path results (always present, ordered as input)'),
+  summary: OperationSummarySchema.describe('Aggregate counts'),
+  fileCount: NonNegInt.optional().describe('Count of regular files in results'),
+  dirCount: NonNegInt.optional().describe('Count of directories in results'),
+  resourceUri: z
+    .string()
+    .optional()
+    .describe('URI to aggregated stats.json (present when resourceStore available)'),
 });
 
 const PERM_STRINGS = [
@@ -158,159 +133,25 @@ async function getFileInfo(filePath: string, options: FileInfoOptions): Promise<
   return buildFileInfoResult(name, requestedPath, isSymlink, stats, mimeType, symlinkTarget);
 }
 
-// ---------------------------------------------------------------------------
-// Multi-path (batch) implementation
-// ---------------------------------------------------------------------------
-
-const UNKNOWN_PATH = '(unknown)';
-
-function buildIndexedPathTasks(paths: readonly string[]): { filePath: string; index: number }[] {
-  const tasks: { filePath: string; index: number }[] = [];
-  for (let index = 0; index < paths.length; index += 1) {
-    const filePath = paths[index];
-    if (filePath !== undefined) tasks.push({ filePath, index });
-  }
-  return tasks;
-}
-
-async function readFileInfoInParallel(
-  paths: readonly string[],
-  options: FileInfoOptions,
-): Promise<{
-  results: { index: number; value: MultipleFileInfoResult }[];
-  errors: { index: number; error: Error }[];
-}> {
-  return processInParallel(
-    buildIndexedPathTasks(paths),
-    async ({ filePath, index }) => {
-      const info = await getFileInfo(filePath, options);
-      options.onProgress?.();
-      return { index, value: { path: filePath, status: 'success' as const, info } };
-    },
-    PARALLEL_CONCURRENCY,
-    options.signal,
-  );
-}
-
-function calculateSummary(results: readonly MultipleFileInfoResult[]): {
-  total: number;
-  succeeded: number;
-  failed: number;
-  totalSize: number;
-} {
-  let succeeded = 0;
-  let failed = 0;
-  let totalSize = 0;
-  for (const result of results) {
-    if (result.status === 'success') {
-      succeeded++;
-      totalSize += result.info.size;
-    } else {
-      failed++;
-    }
-  }
-  return { total: results.length, succeeded, failed, totalSize };
-}
-
-async function getMultipleFileInfo(
-  paths: readonly string[],
-  options: FileInfoOptions,
-): Promise<GetMultipleFileInfoResult> {
-  if (paths.length === 0) {
-    return { results: [], summary: { total: 0, succeeded: 0, failed: 0, totalSize: 0 } };
-  }
-  const output = new Array<MultipleFileInfoResult>(paths.length);
-  const { results, errors } = await readFileInfoInParallel(paths, options);
-  for (const { index, value } of results) output[index] = value;
-  for (const { index, error } of errors) {
-    if (index >= 0 && index < output.length) {
-      output[index] = { path: paths[index] ?? UNKNOWN_PATH, status: 'error', error };
-    }
-  }
-  for (let i = 0; i < output.length; i++) {
-    output[i] ??= {
-      path: paths[i] ?? UNKNOWN_PATH,
-      status: 'error',
-      error: new Error('Unknown error'),
-    };
-  }
-  return { results: output, summary: calculateSummary(output) };
-}
-
-function countFilesAndDirs(results: readonly MultipleFileInfoResult[]): {
+function classifyTypeCounts(results: readonly PerPathResult<FileInfo>[]): {
   fileCount: number;
   dirCount: number;
 } {
   let fileCount = 0;
   let dirCount = 0;
   for (const result of results) {
-    if (result.status === 'success') {
-      if (result.info.type === 'directory') dirCount++;
-      else fileCount++;
-    }
+    if (result.value === undefined) continue;
+    if (result.value.type === 'directory') dirCount += 1;
+    else fileCount += 1;
   }
   return { fileCount, dirCount };
 }
 
-type StatOutput = z.infer<typeof StatOutputSchema>;
-
-async function handleGetMultipleFileInfo(
-  paths: string[],
-  pathGuard: PathGuard,
-  resourceStore: ResourceStore | undefined,
-  signal?: AbortSignal,
-  onProgress?: () => void,
-): Promise<RunResult<StatOutput>> {
-  const result = await getMultipleFileInfo(paths, {
-    includeMimeType: true,
-    pathGuard,
-    ...(signal !== undefined ? { signal } : {}),
-    ...(onProgress !== undefined ? { onProgress } : {}),
-  });
-
-  const structuredResults = result.results.map((entry) => ({
-    path: entry.path,
-    info: entry.status === 'success' ? buildFileInfoPayload(entry.info) : undefined,
-    error:
-      entry.status === 'error'
-        ? Problem.fromUnknown(entry.error, ErrorCode.NOT_FOUND, entry.path)
-        : undefined,
-  }));
-
-  const { fileCount, dirCount } = countFilesAndDirs(result.results);
-  const statsJson = JSON.stringify(structuredResults, null, 2);
-
-  if (!resourceStore) throw new Error('ResourceStore is required for batch stat');
-  const { entry: statsEntry, link: statsLink } = putResource({
-    store: resourceStore,
-    name: `${String(paths.length)} paths`,
-    mimeType: 'application/json',
-    kind: 'text',
-    content: statsJson,
-  });
-
-  const summary =
-    fileCount === 1 && dirCount === 0
-      ? 'stat: 1 file'
-      : fileCount === 0 && dirCount === 1
-        ? 'stat: 1 directory'
-        : `stat: ${String(fileCount)} file${fileCount === 1 ? '' : 's'} \u00b7 ${String(dirCount)} director${dirCount === 1 ? 'y' : 'ies'}`;
-
+function toStatPerPathPayload(r: PerPathResult<FileInfo>): z.infer<typeof StatPerPathSchema> {
   return {
-    structured: {
-      ok: true as const,
-      results: structuredResults,
-      summary: {
-        total: result.summary.total,
-        succeeded: result.summary.succeeded,
-        failed: result.summary.failed,
-      },
-      fileCount,
-      dirCount,
-      resourceUri: statsEntry.uri,
-    },
-    text: summary,
-    resources: [statsLink],
+    path: r.path,
+    ...(r.value ? { value: buildFileInfoPayload(r.value) } : {}),
+    ...(r.error ? { error: r.error } : {}),
   };
 }
 
@@ -334,40 +175,60 @@ export const GET_FILE_INFO = defineTool({
   defaultErrorCode: ErrorCode.NOT_FOUND,
   progress: (args) => {
     if (args.paths !== undefined) {
-      return { label: 'Stat', subject: `${args.paths.length} paths` };
+      return { label: 'Stat', subject: `${String(args.paths.length)} paths` };
     }
     return { label: 'Stat', subject: args.path ?? '' };
   },
   run: async (args, ctx) => {
-    if (args.paths !== undefined) {
-      const paths = args.paths;
-      const total = paths.length;
-      let completed = 0;
-      const onProgress = (): void => {
-        completed++;
-        ctx.onProgress?.({ current: completed, total });
-      };
-      return handleGetMultipleFileInfo(
-        paths,
-        ctx.pathGuard,
-        ctx.resourceStore,
-        ctx.signal,
-        onProgress,
-      );
+    const batchInput = args.path !== undefined ? { path: args.path } : { paths: args.paths ?? [] };
+
+    const batch = await runOverPaths<undefined, FileInfo>(
+      batchInput,
+      ctx,
+      async ({ path }) =>
+        getFileInfo(path, {
+          includeMimeType: true,
+          pathGuard: ctx.pathGuard,
+          signal: ctx.signal,
+        }),
+      { defaultErrorCode: ErrorCode.NOT_FOUND },
+    );
+
+    const { fileCount, dirCount } = classifyTypeCounts(batch.results);
+    const perPathPayload = batch.results.map(toStatPerPathPayload);
+
+    let resourceUri: string | undefined;
+    const resources: ContentBlock[] = [];
+    if (ctx.resourceStore) {
+      const { entry, link } = putResource({
+        store: ctx.resourceStore,
+        name: `${String(batch.summary.total)} path${batch.summary.total === 1 ? '' : 's'}`,
+        mimeType: 'application/json',
+        kind: 'text',
+        content: JSON.stringify(perPathPayload, null, 2),
+      });
+      resourceUri = entry.uri;
+      resources.push(link);
     }
-    const info = await getFileInfo((args as { path: string }).path, {
-      includeMimeType: true,
-      pathGuard: ctx.pathGuard,
-      signal: ctx.signal,
-    });
-    const parts = [info.name, formatBytes(info.size)];
-    if (info.symlinkTarget) parts.push(`\u2192 ${info.symlinkTarget}`);
+
+    const summary =
+      batch.summary.total === 1
+        ? `stat: ${fileCount === 1 ? '1 file' : dirCount === 1 ? '1 directory' : '1 path'}`
+        : `stat: ${String(fileCount)} file${fileCount === 1 ? '' : 's'} · ${String(
+            dirCount,
+          )} director${dirCount === 1 ? 'y' : 'ies'}`;
+
     return {
       structured: {
         ok: true as const,
-        file: buildFileInfoPayload(info),
+        results: perPathPayload,
+        summary: batch.summary,
+        fileCount,
+        dirCount,
+        ...(resourceUri ? { resourceUri } : {}),
       },
-      text: `stat: ${parts.join(' \u2022 ')}`,
+      text: summary,
+      ...(resources.length > 0 ? { resources } : {}),
     };
   },
 });

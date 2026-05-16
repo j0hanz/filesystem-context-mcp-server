@@ -1060,38 +1060,6 @@ export function stableSortByDerivedString<T>(
   }
 }
 
-interface IndexedValue<T> {
-  index: number;
-  value: T;
-}
-
-interface IndexedError {
-  index: number;
-  error: Error;
-}
-
-export function applyIndexedValues<T>(output: T[], results: readonly IndexedValue<T>[]): void {
-  for (const result of results) {
-    if (result.index < 0 || result.index >= output.length) continue;
-    output[result.index] = result.value;
-  }
-}
-
-export function applyIndexedErrors<T>(options: {
-  output: T[];
-  errors: readonly IndexedError[];
-  resolveIndex: (failureIndex: number) => number | undefined;
-  buildValue: (resolvedIndex: number, error: Error) => T;
-}): void {
-  const { output, errors, resolveIndex, buildValue } = options;
-  for (const failure of errors) {
-    const resolvedIndex = resolveIndex(failure.index);
-    if (resolvedIndex === undefined) continue;
-    if (resolvedIndex < 0 || resolvedIndex >= output.length) continue;
-    output[resolvedIndex] = buildValue(resolvedIndex, failure.error);
-  }
-}
-
 export interface EntryAccessDependencies {
   normalizePath: (inputPath: string) => string;
   isPathWithinDirectories: (normalizedPath: string, rootDirectories: readonly string[]) => boolean;

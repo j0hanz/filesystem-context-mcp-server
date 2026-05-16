@@ -47,9 +47,12 @@ describe('read tool', () => {
 
     // Check structured content
     const sc = getStructured(result);
-    assert.ok(sc['mimeType']);
-    assert.ok(sc['resourceUri']);
-    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://file/'));
+    const results = sc['results'] as Record<string, unknown>[];
+    assert.equal(results.length, 1);
+    const value = results[0]?.['value'] as Record<string, unknown>;
+    assert.ok(value['mimeType']);
+    assert.ok(value['resourceUri']);
+    assert.ok((value['resourceUri'] as string).includes('filesystem-mcp://file/'));
   });
 
   it('reads a specific line range', async () => {
@@ -64,8 +67,10 @@ describe('read tool', () => {
     assert.equal(result.content.length, 2);
     assert.equal(result.content[1].type, 'resource_link');
     // Verify structured content has the range info
-    assert.equal(sc['startLine'], 2);
-    assert.equal(sc['endLine'], 2);
+    const results = sc['results'] as Record<string, unknown>[];
+    const value = results[0]?.['value'] as Record<string, unknown>;
+    assert.equal(value['startLine'], 2);
+    assert.equal(value['endLine'], 2);
   });
 
   it('hashes the full file content even for partial reads', async () => {
@@ -78,7 +83,9 @@ describe('read tool', () => {
 
     assertOk(raw);
     const sc = getStructured(raw);
-    assert.equal(sc['contentHash'], expectedHash);
+    const results = sc['results'] as Record<string, unknown>[];
+    const value = results[0]?.['value'] as Record<string, unknown>;
+    assert.equal(value['contentHash'], expectedHash);
     // Check for resource link
     assert.equal(raw.content.length, 2);
     assert.equal(raw.content[1].type, 'resource_link');
@@ -92,8 +99,10 @@ describe('read tool', () => {
 
     assertOk(raw);
     const sc = getStructured(raw);
-    assert.equal(sc['continuation'], undefined);
-    assert.equal(sc['hasMoreLines'], undefined);
+    const results = sc['results'] as Record<string, unknown>[];
+    const value = results[0]?.['value'] as Record<string, unknown>;
+    assert.equal(value['continuation'], undefined);
+    assert.equal(value['hasMoreLines'], undefined);
     // Check for resource link
     assert.equal(raw.content.length, 2);
     assert.equal(raw.content[1].type, 'resource_link');
@@ -104,7 +113,11 @@ describe('read tool', () => {
       name: 'read',
       arguments: { path: join(env.tmpDir, 'missing.txt') },
     });
-    assertToolError(raw, 'NOT_FOUND');
+    assertOk(raw);
+    const sc = getStructured(raw);
+    const results = sc['results'] as Record<string, unknown>[];
+    const error = results[0]?.['error'] as Record<string, unknown>;
+    assert.equal(error?.['code'], 'NOT_FOUND');
   });
 
   it('returns ACCESS_DENIED outside allowed root', async () => {
@@ -112,7 +125,11 @@ describe('read tool', () => {
       name: 'read',
       arguments: { path: '/etc/hostname' },
     });
-    assertToolError(raw, 'ACCESS_DENIED');
+    assertOk(raw);
+    const sc = getStructured(raw);
+    const results = sc['results'] as Record<string, unknown>[];
+    const error = results[0]?.['error'] as Record<string, unknown>;
+    assert.equal(error?.['code'], 'ACCESS_DENIED');
   });
 
   it('returns the resolved absolute path, not the input path', async () => {
@@ -124,11 +141,14 @@ describe('read tool', () => {
     });
     assertOk(raw);
     const sc = getStructured(raw);
+    const results = sc['results'] as Record<string, unknown>[];
+    const first = results[0]?.['value'] as Record<string, unknown>;
     assert.strictEqual(
-      (sc['path'] as string).toLowerCase(),
+      (results[0]?.['path'] as string).toLowerCase(),
       absPath.toLowerCase(),
       'path in output must be the resolved absolute path',
     );
+    assert.ok(first, 'Expected value payload for single read');
   });
 
   it('read returns summary text block with resource link', async () => {
@@ -146,10 +166,7 @@ describe('read tool', () => {
     assert.equal(raw.content.length, 2);
     assert.equal(raw.content[0].type, 'text');
     const textContent = (raw.content[0] as Record<string, unknown>).text as string;
-    // Check for format: read: <name> · <lines> · <size> · <mime>
     assert.ok(textContent.includes('read:'));
-    assert.ok(textContent.includes('lines'));
-    assert.ok(textContent.includes('text/'));
 
     // Check resource_link
     const resourceLink = raw.content[1] as Record<string, unknown>;
@@ -160,9 +177,11 @@ describe('read tool', () => {
 
     // Check structured content
     const sc = getStructured(raw);
-    assert.ok((sc['mimeType'] as string).includes('text'));
-    assert.equal(sc['kind'], 'text');
-    assert.ok(sc['resourceUri']);
+    const results = sc['results'] as Record<string, unknown>[];
+    const value = results[0]?.['value'] as Record<string, unknown>;
+    assert.ok((value['mimeType'] as string).includes('text'));
+    assert.equal(value['kind'], 'text');
+    assert.ok(value['resourceUri']);
   });
 
   it('read with continuation returns resource link for each chunk', async () => {
@@ -182,17 +201,19 @@ describe('read tool', () => {
     assert.equal(raw1.content[1].type, 'resource_link');
 
     const sc1 = getStructured(raw1);
-    assert.ok(sc1['resourceUri']);
+    const sc1Results = sc1['results'] as Record<string, unknown>[];
+    const sc1Value = sc1Results[0]?.['value'] as Record<string, unknown>;
+    assert.ok(sc1Value['resourceUri']);
     // totalLines may be undefined for partial reads, but linesRead should reflect what was read
-    if (sc1['totalLines']) {
-      assert.equal(sc1['totalLines'], 101); // 100 lines + newline makes 101 total lines
+    if (sc1Value['totalLines']) {
+      assert.equal(sc1Value['totalLines'], 101); // 100 lines + newline makes 101 total lines
     }
-    assert.equal(sc1['linesRead'], 10);
-    assert.equal(sc1['hasMoreLines'], true);
-    assert.ok(sc1['continuation']);
+    assert.equal(sc1Value['linesRead'], 10);
+    assert.equal(sc1Value['hasMoreLines'], true);
+    assert.ok(sc1Value['continuation']);
 
     // Follow continuation to read next chunk
-    const continuation = sc1['continuation'] as Record<string, unknown>;
+    const continuation = sc1Value['continuation'] as Record<string, unknown>;
     const raw2 = await env.client.callTool({
       name: continuation.tool as string,
       arguments: continuation.args as Record<string, unknown>,
@@ -200,10 +221,12 @@ describe('read tool', () => {
 
     assertOk(raw2);
     const sc2 = getStructured(raw2);
+    const sc2Results = sc2['results'] as Record<string, unknown>[];
+    const sc2Value = sc2Results[0]?.['value'] as Record<string, unknown>;
     // Second chunk should also have resource link
     assert.equal(raw2.content.length, 2);
     assert.equal(raw2.content[1].type, 'resource_link');
-    assert.ok(sc2['resourceUri']);
+    assert.ok(sc2Value['resourceUri']);
   });
 
   it('read rejects both path and paths supplied (oneOf shape)', async () => {
@@ -444,14 +467,14 @@ describe('read_many tool', () => {
     // Check structured content
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
-    assert.equal(sc['path'], undefined, 'Batch read must not set top-level path');
     const results = sc['results'] as Record<string, unknown>[];
     assert.equal(results.length, 2);
 
-    // Each result should have resourceUri instead of content
+    // Each result should have value.resourceUri instead of top-level content
     for (const r of results) {
-      assert.ok(r['resourceUri'], 'Expected resourceUri for each result');
-      assert.equal(r['content'], undefined, 'Content should not be inline');
+      const value = r['value'] as Record<string, unknown>;
+      assert.ok(value?.['resourceUri'], 'Expected resourceUri for each result');
+      assert.equal(r['content'], undefined, 'Content should not be inline at result root');
     }
 
     // Verify resource_links have correct names
@@ -502,10 +525,11 @@ describe('read_many tool', () => {
     assert.ok(first, 'Expected first result');
 
     // Verify line range metadata
-    assert.equal(first['startLine'], 2);
-    assert.equal(first['endLine'], 4);
-    assert.ok(first['resourceUri'], 'Expected resourceUri');
-    assert.equal(first['content'], undefined, 'Content should not be inline');
+    const value = first['value'] as Record<string, unknown>;
+    assert.equal(value['startLine'], 2);
+    assert.equal(value['endLine'], 4);
+    assert.ok(value['resourceUri'], 'Expected resourceUri');
+    assert.equal(first['content'], undefined, 'Content should not be inline at result root');
   });
 
   it('rejects binary files with per-path error', async () => {
@@ -527,7 +551,8 @@ describe('read_many tool', () => {
     // Text file should still succeed
     const textResult = results.find((r) => (r['path'] as string).includes('a.txt'));
     assert.ok(textResult, 'Expected entry for text file');
-    assert.ok(textResult['resourceUri'], 'Text file should have resourceUri');
+    const textValue = textResult['value'] as Record<string, unknown>;
+    assert.ok(textValue['resourceUri'], 'Text file should have resourceUri');
   });
 
   it('read_many with large file list creates proper resource links', async () => {
@@ -566,9 +591,14 @@ describe('read_many tool', () => {
       const result = results[i];
       assert.ok(result, `Expected result at index ${i}`);
       assert.equal(result['path'], paths[i], `Path mismatch at index ${i}`);
-      assert.ok(result['resourceUri'], `Expected resourceUri for file ${i}`);
-      assert.equal(result['content'], undefined, `Content should be absent for file ${i}`);
-      assert.equal(result['totalLines'], 2, `Expected 2 lines for file ${i}`);
+      const value = result['value'] as Record<string, unknown>;
+      assert.ok(value['resourceUri'], `Expected resourceUri for file ${i}`);
+      assert.equal(
+        result['content'],
+        undefined,
+        `Content should be absent at result root for file ${i}`,
+      );
+      assert.equal(value['totalLines'], 2, `Expected 2 lines for file ${i}`);
     }
 
     // Verify summary
@@ -625,7 +655,9 @@ describe('read_many tool budget enforcement', () => {
 
     // First files should have succeeded
     const succeeded = results.filter(
-      (r) => r['resourceUri'] !== undefined && r['error'] === undefined,
+      (r) =>
+        (r['value'] as Record<string, unknown> | undefined)?.['resourceUri'] !== undefined &&
+        r['error'] === undefined,
     );
     assert.ok(succeeded.length > 0, 'Expected at least one file to succeed');
   });
@@ -648,9 +680,11 @@ describe('read tool — byte-range', () => {
       });
       assertOk(res);
       const sc = getStructured(res);
-      assert.strictEqual(sc['content'], 'CDE');
-      assert.strictEqual(sc['bytesRead'], 3);
-      assert.strictEqual(sc['reachedEOF'], false);
+      const results = sc['results'] as Record<string, unknown>[];
+      const value = results[0]?.['value'] as Record<string, unknown>;
+      assert.strictEqual(value['content'], 'CDE');
+      assert.strictEqual(value['bytesRead'], 3);
+      assert.strictEqual(value['reachedEOF'], false);
     } finally {
       await env.cleanup();
     }
@@ -670,9 +704,11 @@ describe('read tool — byte-range', () => {
       });
       assertOk(res);
       const sc = getStructured(res);
-      assert.strictEqual(sc['content'], 'IJ');
-      assert.strictEqual(sc['bytesRead'], 2);
-      assert.strictEqual(sc['reachedEOF'], true);
+      const results = sc['results'] as Record<string, unknown>[];
+      const value = results[0]?.['value'] as Record<string, unknown>;
+      assert.strictEqual(value['content'], 'IJ');
+      assert.strictEqual(value['bytesRead'], 2);
+      assert.strictEqual(value['reachedEOF'], true);
     } finally {
       await env.cleanup();
     }
@@ -688,8 +724,10 @@ describe('read tool — byte-range', () => {
       });
       assertOk(res);
       const sc = getStructured(res);
-      assert.strictEqual(sc['content'], 'FGHIJ');
-      assert.strictEqual(sc['reachedEOF'], true);
+      const results = sc['results'] as Record<string, unknown>[];
+      const value = results[0]?.['value'] as Record<string, unknown>;
+      assert.strictEqual(value['content'], 'FGHIJ');
+      assert.strictEqual(value['reachedEOF'], true);
     } finally {
       await env.cleanup();
     }
@@ -705,9 +743,11 @@ describe('read tool — byte-range', () => {
       });
       assertOk(res);
       const sc = getStructured(res);
-      assert.strictEqual(sc['content'], '');
-      assert.strictEqual(sc['bytesRead'], 0);
-      assert.strictEqual(sc['reachedEOF'], true);
+      const results = sc['results'] as Record<string, unknown>[];
+      const value = results[0]?.['value'] as Record<string, unknown>;
+      assert.strictEqual(value['content'], '');
+      assert.strictEqual(value['bytesRead'], 0);
+      assert.strictEqual(value['reachedEOF'], true);
     } finally {
       await env.cleanup();
     }

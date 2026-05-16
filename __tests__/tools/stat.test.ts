@@ -36,19 +36,20 @@ describe('stat tool', () => {
     const result = raw;
     assertOk(result);
 
-    // P2 metadata-only: verify content has only summary text, no resource links
-    assert.equal(result.content.length, 1, 'Expected only summary text block');
+    assert.ok(result.content.length >= 1, 'Expected at least one content block');
     assert.equal(result.content[0].type, 'text');
     const summaryText = (result.content[0] as Record<string, unknown>).text as string;
     assert.ok(summaryText.includes('stat:'), 'Summary should start with "stat:"');
-    assert.ok(summaryText.includes('stat-test.txt'), 'Summary should include filename');
-    assert.ok(summaryText.includes('\u2022'), 'Summary should use separator');
+    assert.ok(summaryText.includes('1 file'), 'Summary should include file count');
 
     // Verify structured content has all metadata fields
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
-    const info = sc['file'] as Record<string, unknown>;
-    assert.ok(info, 'Expected file field');
+    const results = sc['results'] as Record<string, unknown>[];
+    assert.equal(Array.isArray(results), true, 'Expected results array');
+    assert.equal(results.length, 1, 'Expected 1 result for single-path call');
+    const info = results[0]?.['value'] as Record<string, unknown>;
+    assert.ok(info, 'Expected results[0].value');
     assert.equal(info['type'], 'file');
     assert.ok(typeof info['size'] === 'number' && info['size'] > 0);
     assert.equal(info['name'], 'stat-test.txt');
@@ -58,6 +59,10 @@ describe('stat tool', () => {
     assert.ok(info['accessed'], 'Should have accessed timestamp');
     assert.ok(typeof info['permissions'] === 'string', 'Should have permissions');
     assert.ok(typeof info['isHidden'] === 'boolean', 'Should have isHidden flag');
+    const summary = sc['summary'] as Record<string, unknown>;
+    assert.deepEqual(summary, { total: 1, succeeded: 1, failed: 0 });
+    assert.equal(sc['fileCount'], 1);
+    assert.equal(sc['dirCount'], 0);
   });
 
   it('returns dir info for an existing directory', async () => {
@@ -68,19 +73,25 @@ describe('stat tool', () => {
     const result = raw;
     assertOk(result);
 
-    // P2 metadata-only: verify content has only summary text, no resource links
-    assert.equal(result.content.length, 1, 'Expected only summary text block');
+    assert.ok(result.content.length >= 1, 'Expected at least one content block');
     assert.equal(result.content[0].type, 'text');
     const summaryText = (result.content[0] as Record<string, unknown>).text as string;
     assert.ok(summaryText.includes('stat:'), 'Summary should include "stat:"');
+    assert.ok(summaryText.includes('1 directory'), 'Summary should include directory count');
 
     // Verify structured content for directory
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
-    const info = sc['file'] as Record<string, unknown>;
+    const results = sc['results'] as Record<string, unknown>[];
+    assert.equal(results.length, 1, 'Expected 1 result for single-path call');
+    const info = results[0]?.['value'] as Record<string, unknown>;
     assert.equal(info['type'], 'directory');
     assert.ok(info['path'], 'Should have path');
     assert.ok(info['modified'], 'Should have modified timestamp');
+    const summary = sc['summary'] as Record<string, unknown>;
+    assert.deepEqual(summary, { total: 1, succeeded: 1, failed: 0 });
+    assert.equal(sc['fileCount'], 0);
+    assert.equal(sc['dirCount'], 1);
   });
 
   it('returns NOT_FOUND for a missing path', async () => {
@@ -88,7 +99,13 @@ describe('stat tool', () => {
       name: 'stat',
       arguments: { path: join(env.tmpDir, 'does-not-exist.txt') },
     });
-    assertToolError(raw, 'NOT_FOUND');
+    assertOk(raw);
+    const sc = getStructured(raw);
+    assert.equal(sc['ok'], true);
+    const results = sc['results'] as Record<string, unknown>[];
+    assert.equal(results.length, 1);
+    const error = results[0]?.['error'] as Record<string, unknown>;
+    assert.equal(error?.['code'], 'NOT_FOUND');
   });
 
   it('returns ACCESS_DENIED when path escapes allowed root', async () => {
@@ -96,7 +113,13 @@ describe('stat tool', () => {
       name: 'stat',
       arguments: { path: '/etc/passwd' },
     });
-    assertToolError(raw, 'ACCESS_DENIED');
+    assertOk(raw);
+    const sc = getStructured(raw);
+    assert.equal(sc['ok'], true);
+    const results = sc['results'] as Record<string, unknown>[];
+    assert.equal(results.length, 1);
+    const error = results[0]?.['error'] as Record<string, unknown>;
+    assert.equal(error?.['code'], 'ACCESS_DENIED');
   });
 
   it('stat JSON schema has flat properties with optional path and paths', async () => {
@@ -164,7 +187,7 @@ describe('stat_many tool', () => {
     const results = sc['results'] as Record<string, unknown>[];
     assert.equal(results.length, 2);
     for (const r of results) {
-      const info = r['info'] as Record<string, unknown>;
+      const info = r['value'] as Record<string, unknown>;
       assert.ok(info, `Expected info for path ${r['path'] as string}`);
       assert.equal(info['type'], 'file');
     }
