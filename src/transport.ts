@@ -40,7 +40,7 @@ import {
   SessionContext,
   withTelemetry,
 } from './core/observability.js';
-import type { PathGuard, ServerOptions } from './core/path.js';
+import type { McpRootsManager, PathGuard, ServerOptions } from './core/path.js';
 import { getInitHandshakeTimeoutMs, INIT_TIMEOUT_CLOSE, parseEnvInt } from './core/util.js';
 import type { FilesystemServerContext } from './server.js';
 import { createServer, logRouter } from './server.js';
@@ -148,7 +148,7 @@ export async function startServer(ctx: FilesystemServerContext): Promise<void> {
   const { mcp: server } = ctx;
   const transport = new StdioServerTransport();
 
-  ctx.pathGuard.registerHandlers(
+  ctx.rootsManager.registerHandlers(
     server,
     INIT_TIMEOUT_CLOSE
       ? () => {
@@ -156,7 +156,7 @@ export async function startServer(ctx: FilesystemServerContext): Promise<void> {
         }
       : undefined,
   );
-  await ctx.pathGuard.recomputeAllowedDirectories();
+  await ctx.rootsManager.recomputeAllowedDirectories();
   await server.connect(transport);
   const sdkOnClose = transport.onclose;
   transport.onclose = () => {
@@ -164,7 +164,7 @@ export async function startServer(ctx: FilesystemServerContext): Promise<void> {
     sdkOnClose?.();
   };
 
-  ctx.pathGuard.logMissingDirectoriesIfNeeded(server);
+  ctx.rootsManager.logMissingDirectoriesIfNeeded(server);
 }
 
 const MAX_SESSION_ID_LENGTH = 256;
@@ -320,6 +320,7 @@ function bearerAuthMiddleware(): RequestHandler {
 export interface HttpSession {
   server: McpServer;
   pathGuard: PathGuard;
+  rootsManager: McpRootsManager;
   transport: NodeStreamableHTTPServerTransport;
   createdAt: number;
   close: () => Promise<void>;
@@ -434,6 +435,7 @@ async function createHttpSession(
   const serverCtx = await createServer(options);
   const mcpServer = serverCtx.mcp;
   const pathGuard = serverCtx.pathGuard;
+  const rootsManager = serverCtx.rootsManager;
 
   let cleanedUp = false;
   const cleanup = (): void => {
@@ -446,7 +448,7 @@ async function createHttpSession(
     }
   };
 
-  pathGuard.registerHandlers(mcpServer, () => {
+  rootsManager.registerHandlers(mcpServer, () => {
     cleanup();
     void mcpServer.close();
   });
@@ -461,20 +463,21 @@ async function createHttpSession(
     eventStore,
     retryInterval: 2_000,
     onsessioninitialized: (sessionId) => {
-      const loggingState = pathGuard.loggingState;
+      const loggingState = rootsManager.loggingState;
       if (!loggingState) throw new Error('LoggingState is required');
       registry.add(
         sessionId,
         {
           server: mcpServer,
           pathGuard,
+          rootsManager,
           transport,
           createdAt: Date.now(),
           close,
         },
         { server: mcpServer, loggingState },
       );
-      pathGuard.logMissingDirectoriesIfNeeded(mcpServer);
+      rootsManager.logMissingDirectoriesIfNeeded(mcpServer);
     },
     onsessionclosed: async (sessionId) => {
       const session = registry.get(sessionId);
@@ -491,6 +494,7 @@ async function createHttpSession(
   return {
     server: mcpServer,
     pathGuard,
+    rootsManager,
     transport,
     createdAt: Date.now(),
     close,

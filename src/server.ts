@@ -9,7 +9,7 @@ import {
 import { readFile } from 'node:fs/promises';
 
 import { createLoggingState, Logger, LogRouter } from './core/observability.js';
-import { PathGuard, type ServerOptions } from './core/path.js';
+import { McpRootsManager, PathGuard, type ServerOptions } from './core/path.js';
 import { createInMemoryResourceStore, type ResourceStore } from './core/store.js';
 import { LOG_LEVEL, SENSITIVE_FILE_DENYLIST } from './core/util.js';
 import { pkgInfo } from './pkg-info.js';
@@ -64,6 +64,7 @@ const {
 export class FilesystemServerContext {
   public readonly mcp: McpServer;
   public readonly pathGuard: PathGuard;
+  public readonly rootsManager: McpRootsManager;
   public readonly resources: ResourceStore;
   public readonly resourcesHandle: ResourcesHandle;
   private readonly orchestrator: TaskOrchestrator;
@@ -72,12 +73,14 @@ export class FilesystemServerContext {
   constructor(
     mcp: McpServer,
     pathGuard: PathGuard,
+    rootsManager: McpRootsManager,
     resources: ResourceStore,
     resourcesHandle: ResourcesHandle,
     orchestrator: TaskOrchestrator,
   ) {
     this.mcp = mcp;
     this.pathGuard = pathGuard;
+    this.rootsManager = rootsManager;
     this.resources = resources;
     this.resourcesHandle = resourcesHandle;
     this.orchestrator = orchestrator;
@@ -89,7 +92,7 @@ export class FilesystemServerContext {
     this.orchestrator.dispose();
     this.orchestrator.cleanup();
     this.resourcesHandle.destroy();
-    this.pathGuard.destroy();
+    this.rootsManager.destroy();
     logRouter.detachStdio();
   }
 
@@ -178,9 +181,10 @@ export async function createServer(
   const server = new McpServer(withDefaultIcons(implementation, localIcon), serverConfig);
 
   const loggingState = createLoggingState(LOG_LEVEL);
-  const pathGuard = new PathGuard(SENSITIVE_FILE_DENYLIST, options, loggingState);
+  const pathGuard = new PathGuard(SENSITIVE_FILE_DENYLIST);
+  const rootsManager = new McpRootsManager(pathGuard, options, loggingState);
 
-  await pathGuard.recomputeAllowedDirectories();
+  await rootsManager.recomputeAllowedDirectories();
 
   server.server.setRequestHandler('logging/setLevel', (req: { params: SetLevelRequestParams }) => {
     loggingState.minimumLevel = req.params.level;
@@ -200,19 +204,20 @@ export async function createServer(
   registerAllPrompts(server, {
     pathGuard,
     instructions: serverInstructionsContent,
-    isInitialized: options.isInitialized ?? (() => pathGuard.isInitialized()),
+    isInitialized: options.isInitialized ?? (() => rootsManager.isInitialized()),
     ...(localIcon ? { iconInfo: localIcon } : {}),
   });
   registerAllTools(server, {
     pathGuard,
     resourceStore,
-    isInitialized: options.isInitialized ?? (() => pathGuard.isInitialized()),
+    isInitialized: options.isInitialized ?? (() => rootsManager.isInitialized()),
     orchestrator: taskOrchestrator,
   });
 
   return new FilesystemServerContext(
     server,
     pathGuard,
+    rootsManager,
     resourceStore,
     resourcesHandle,
     taskOrchestrator,

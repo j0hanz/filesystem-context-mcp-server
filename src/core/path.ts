@@ -481,197 +481,32 @@ export function isSafeGlobSyntax(pattern: string): boolean {
   return true;
 }
 
-export class PathGuard {
+interface IPathValidator {
+  getAllowedDirectories(): string[];
+  isSensitive(filePath: string): boolean;
+  isSafeGlob(pattern: string): boolean;
+  assertSafeGlob(pattern: string, message?: string): void;
+  validateExistingPath(requestedPath: string): Promise<string>;
+  validateExistingPathDetailed(requestedPath: string): Promise<ValidatedPathDetails>;
+  validateExistingDirectory(requestedPath: string): Promise<string>;
+  resolvePathOrRoot(pathValue: string | undefined): string;
+  isAllowedRoot(normalizedPath: string): boolean;
+  assertAllowedFileAccess(requestedPath: string): void;
+  validatePathForWrite(requestedPath: string): Promise<string>;
+}
+
+export class PathGuard implements IPathValidator {
   private allowedDirectoriesState: AllowedDirectoriesState | undefined;
   private denyPatterns: CompiledPatternSet;
 
-  private rootDirectories: string[] = [];
-  private state: RootsManagerState = 'idle';
-  private _debouncedUpdate: { (server: McpServer): void; cancel: () => void } | undefined;
-  private initTimer: ReturnType<typeof setTimeout> | undefined;
-  private pendingRootsUpdate = false;
-
-  private readonly options: ServerOptions | undefined;
-  readonly loggingState: LoggingState | undefined;
-
-  constructor(
-    sensitivePatterns: readonly string[] = SENSITIVE_FILE_DENYLIST,
-    options?: ServerOptions,
-    loggingState?: LoggingState,
-  ) {
+  constructor(sensitivePatterns: readonly string[] = SENSITIVE_FILE_DENYLIST) {
     this.denyPatterns = toPatternSet(compilePatterns(sensitivePatterns));
-    this.options = options;
-    this.loggingState = loggingState;
   }
 
   isInitialized(): boolean {
-    return this.state !== 'initializing';
+    return this.allowedDirectoriesState !== undefined;
   }
 
-  destroy(): void {
-    this.state = 'shutting_down';
-    if (this.initTimer) {
-      clearTimeout(this.initTimer);
-      this.initTimer = undefined;
-    }
-    if (this._debouncedUpdate) {
-      this._debouncedUpdate.cancel();
-      this._debouncedUpdate = undefined;
-    }
-  }
-
-  logMissingDirectoriesIfNeeded(server: McpServer): void {
-    if (this.getAllowedDirectories().length === 0 && this.loggingState) {
-      this.logMissingDirectories(server);
-    }
-  }
-
-  registerHandlers(server: McpServer, onInitTimeout?: () => void): void {
-    if (this.state === 'shutting_down') return;
-    this.state = 'initializing';
-    const initHandshakeTimeoutMs = getInitHandshakeTimeoutMs();
-
-    server.server.setNotificationHandler('notifications/initialized', async () => {
-      if (this.state === 'shutting_down') return;
-      if (this.initTimer) {
-        clearTimeout(this.initTimer);
-        this.initTimer = undefined;
-      }
-      this.state = 'idle'; // Transition to idle before triggering the first update
-      await this.updateRootsFromClient(server);
-    });
-
-    server.server.setNotificationHandler('notifications/roots/list_changed', () => {
-      if (!this.isInitialized() || this.state === 'shutting_down') return;
-      this.scheduleRootsUpdate(server);
-    });
-
-    this.initTimer = setTimeout(() => {
-      if (this.state === 'initializing') {
-        if (LIFECYCLE_CHANNEL.hasSubscribers) {
-          LIFECYCLE_CHANNEL.publish({
-            phase: 'init_timeout',
-            timeoutMs: initHandshakeTimeoutMs,
-          });
-        }
-        if (this.loggingState) {
-          logToMcp(
-            server,
-            'warning',
-            `Client did not send notifications/initialized within ${String(initHandshakeTimeoutMs)}ms`,
-            this.loggingState.minimumLevel,
-          );
-        }
-        onInitTimeout?.();
-      }
-      this.initTimer = undefined;
-    }, initHandshakeTimeoutMs);
-    this.initTimer.unref();
-  }
-
-  async recomputeAllowedDirectories(): Promise<void> {
-    const cliAllowedDirs = normalizeCLIDirectories(this.options?.cliAllowedDirs ?? []);
-    const allowCwd = Boolean(this.options?.allowCwd);
-    const allowCwdDirs = allowCwd ? [normalizePath(process.cwd())] : [];
-    const baseline = [...cliAllowedDirs, ...allowCwdDirs];
-    const { signal, cleanup } = createTimedAbortSignal(undefined, ROOTS_TIMEOUT_MS);
-    try {
-      const rootsToInclude =
-        baseline.length > 0
-          ? await filterRootsWithinBaseline(this.rootDirectories, baseline, signal)
-          : this.rootDirectories;
-
-      const combined = [...baseline, ...rootsToInclude];
-      const nextState = await resolveAllowedDirectoriesState(combined, signal);
-      this.initialize(nextState);
-    } finally {
-      cleanup();
-    }
-  }
-
-  private scheduleRootsUpdate(server: McpServer): void {
-    this._debouncedUpdate ??= debounce((s: McpServer) => {
-      void this.updateRootsFromClient(s);
-    }, ROOTS_DEBOUNCE_MS);
-    this._debouncedUpdate(server);
-  }
-
-  private logMissingDirectories(server?: McpServer): void {
-    if (!this.loggingState) return;
-
-    if (this.options?.allowCwd) {
-      logToMcp(
-        server,
-        'notice',
-        'No allowed directories specified. Using the current working directory as an allowed directory.',
-        this.loggingState.minimumLevel,
-      );
-      return;
-    }
-
-    logToMcp(
-      server,
-      'warning',
-      'No allowed directories specified. Please provide directories as command-line arguments or enable --allow-cwd to use the current working directory.',
-      this.loggingState.minimumLevel,
-    );
-  }
-
-  private async updateRootsFromClient(server: McpServer): Promise<void> {
-    if (this.state === 'shutting_down') return;
-
-    // Guard against concurrent executions: if one is already running, queue a
-    // single retry so the last-known state is always applied after completion.
-    if (this.state === 'updating') {
-      this.pendingRootsUpdate = true;
-      return;
-    }
-    this.state = 'updating';
-    try {
-      const clientCapabilities = server.server.getClientCapabilities();
-      if (!clientCapabilities?.roots) {
-        this.rootDirectories = [];
-      } else {
-        const rootsResult = await server.server.listRoots(undefined, {
-          timeout: ROOTS_TIMEOUT_MS,
-        });
-        const roots: Root[] = rootsResult.roots
-          .filter((r) => r.uri.startsWith('file://'))
-          .map((r) => (r.name ? { uri: r.uri, name: r.name } : { uri: r.uri }));
-        this.rootDirectories = await resolveRootDirectories(roots);
-      }
-    } catch (error) {
-      if (this.loggingState) {
-        logToMcp(
-          server,
-          'debug',
-          `[DEBUG] MCP Roots protocol unavailable or failed: ${formatUnknownErrorMessage(error)}`,
-          this.loggingState.minimumLevel,
-        );
-      }
-    } finally {
-      // TS flow analysis doesn't know 'await' can yield to destroy() which sets state to shutting_down
-      const currentState = this.state as RootsManagerState;
-      if (currentState !== 'shutting_down') {
-        await this.recomputeAllowedDirectories();
-        Logger.info(
-          `Roots updated: ${this.rootDirectories.length} root(s), ${this.getAllowedDirectories().length} allowed dir(s)`,
-        );
-        this.state = 'idle';
-        // If a change arrived while we were running, apply it now.
-        if (this.pendingRootsUpdate) {
-          this.pendingRootsUpdate = false;
-          void this.updateRootsFromClient(server);
-        }
-      }
-    }
-  }
-
-  /**
-   * Resolve `dirs`, construct an initialized PathGuard, and return it.
-   * Reads `SENSITIVE_FILE_DENYLIST` (which already incorporates
-   * `FS_CONTEXT_ALLOW_SENSITIVE`) from constants.
-   */
   static async fromAllowedDirectories(
     dirs: readonly string[],
     signal?: AbortSignal,
@@ -683,7 +518,6 @@ export class PathGuard {
   }
 
   initialize(state: AllowedDirectoriesState): void {
-    // Normalize all allowed directories to ensure consistency
     const normalized: string[] = [];
     for (const dir of state.expanded) {
       const entry = normalizeAllowedDirectory(dir);
@@ -709,9 +543,7 @@ export class PathGuard {
     if (this.denyPatterns.pathGlobs.length === 0 && this.denyPatterns.nameGlobs.length === 0) {
       return false;
     }
-
     const normalizedPath = normalizeForMatch(filePath);
-
     return (
       matchesAnyGlob(this.denyPatterns.pathGlobs, normalizedPath) ||
       matchesAnyGlob(this.denyPatterns.nameGlobs, posix.basename(normalizedPath))
@@ -772,7 +604,6 @@ export class PathGuard {
     const { normalizedRequested, allowedDirs, accessDeniedHint } =
       this.validateAccess(requestedPath);
 
-    // Resolve the real path
     let realPath: string;
     try {
       realPath = await realpath(normalizedRequested);
@@ -799,7 +630,6 @@ export class PathGuard {
 
     const normalizedReal = normalizePath(realPath);
 
-    // Check if the resolved path is still within allowed directories
     if (!isPathWithinDirectories(normalizedReal, allowedDirs)) {
       throw new McpError(
         ErrorCode.ACCESS_DENIED,
@@ -841,10 +671,6 @@ export class PathGuard {
     return details.resolvedPath;
   }
 
-  /**
-   * Returns `pathValue` when non-empty; otherwise returns the single allowed
-   * root. Throws when the path is ambiguous (multiple roots) or no roots.
-   */
   resolvePathOrRoot(pathValue: string | undefined): string {
     if (pathValue && pathValue.trim().length > 0) return pathValue;
     const roots = this.getAllowedDirectories();
@@ -867,9 +693,6 @@ export class PathGuard {
     return root;
   }
 
-  /**
-   * True when `normalizedPath` equals one of the primary allowed roots exactly.
-   */
   isAllowedRoot(normalizedPath: string): boolean {
     const target = IS_WINDOWS ? normalizedPath.toLowerCase() : normalizedPath;
     for (const dir of this.getAllowedDirectories()) {
@@ -879,9 +702,6 @@ export class PathGuard {
     return false;
   }
 
-  /**
-   * Throws `ACCESS_DENIED` if `requestedPath` matches the sensitive-file denylist.
-   */
   assertAllowedFileAccess(requestedPath: string): void {
     if (this.isSensitive(requestedPath)) {
       throw new McpError(
@@ -928,7 +748,6 @@ export class PathGuard {
       );
     }
 
-    // Resolve the nearest existing real path
     const realPath = await this.findNearestExistingAncestor(requestedPath, normalizedRequested);
     const normalizedReal = normalizePath(realPath);
 
@@ -942,6 +761,183 @@ export class PathGuard {
     }
 
     return normalizedRequested;
+  }
+}
+
+export class McpRootsManager {
+  private rootDirectories: string[] = [];
+  private state: RootsManagerState = 'idle';
+  private _debouncedUpdate: { (server: McpServer): void; cancel: () => void } | undefined;
+  private initTimer: ReturnType<typeof setTimeout> | undefined;
+  private pendingRootsUpdate = false;
+
+  private readonly pathGuard: PathGuard;
+  private readonly options: ServerOptions | undefined;
+  readonly loggingState: LoggingState | undefined;
+
+  constructor(pathGuard: PathGuard, options?: ServerOptions, loggingState?: LoggingState) {
+    this.pathGuard = pathGuard;
+    this.options = options;
+    this.loggingState = loggingState;
+  }
+
+  isInitialized(): boolean {
+    return this.state !== 'initializing';
+  }
+
+  destroy(): void {
+    this.state = 'shutting_down';
+    if (this.initTimer) {
+      clearTimeout(this.initTimer);
+      this.initTimer = undefined;
+    }
+    if (this._debouncedUpdate) {
+      this._debouncedUpdate.cancel();
+      this._debouncedUpdate = undefined;
+    }
+  }
+
+  logMissingDirectoriesIfNeeded(server: McpServer): void {
+    if (this.pathGuard.getAllowedDirectories().length === 0 && this.loggingState) {
+      this.logMissingDirectories(server);
+    }
+  }
+
+  registerHandlers(server: McpServer, onInitTimeout?: () => void): void {
+    if (this.state === 'shutting_down') return;
+    this.state = 'initializing';
+    const initHandshakeTimeoutMs = getInitHandshakeTimeoutMs();
+
+    server.server.setNotificationHandler('notifications/initialized', async () => {
+      if (this.state === 'shutting_down') return;
+      if (this.initTimer) {
+        clearTimeout(this.initTimer);
+        this.initTimer = undefined;
+      }
+      this.state = 'idle';
+      await this.updateRootsFromClient(server);
+    });
+
+    server.server.setNotificationHandler('notifications/roots/list_changed', () => {
+      if (!this.isInitialized() || this.state === 'shutting_down') return;
+      this.scheduleRootsUpdate(server);
+    });
+
+    this.initTimer = setTimeout(() => {
+      if (this.state === 'initializing') {
+        if (LIFECYCLE_CHANNEL.hasSubscribers) {
+          LIFECYCLE_CHANNEL.publish({
+            phase: 'init_timeout',
+            timeoutMs: initHandshakeTimeoutMs,
+          });
+        }
+        if (this.loggingState) {
+          logToMcp(
+            server,
+            'warning',
+            `Client did not send notifications/initialized within ${String(initHandshakeTimeoutMs)}ms`,
+            this.loggingState.minimumLevel,
+          );
+        }
+        onInitTimeout?.();
+      }
+      this.initTimer = undefined;
+    }, initHandshakeTimeoutMs);
+    this.initTimer.unref();
+  }
+
+  async recomputeAllowedDirectories(): Promise<void> {
+    const cliAllowedDirs = normalizeCLIDirectories(this.options?.cliAllowedDirs ?? []);
+    const allowCwd = Boolean(this.options?.allowCwd);
+    const allowCwdDirs = allowCwd ? [normalizePath(process.cwd())] : [];
+    const baseline = [...cliAllowedDirs, ...allowCwdDirs];
+    const { signal, cleanup } = createTimedAbortSignal(undefined, ROOTS_TIMEOUT_MS);
+    try {
+      const rootsToInclude =
+        baseline.length > 0
+          ? await filterRootsWithinBaseline(this.rootDirectories, baseline, signal)
+          : this.rootDirectories;
+
+      const combined = [...baseline, ...rootsToInclude];
+      const nextState = await resolveAllowedDirectoriesState(combined, signal);
+      this.pathGuard.initialize(nextState);
+    } finally {
+      cleanup();
+    }
+  }
+
+  private scheduleRootsUpdate(server: McpServer): void {
+    this._debouncedUpdate ??= debounce((s: McpServer) => {
+      void this.updateRootsFromClient(s);
+    }, ROOTS_DEBOUNCE_MS);
+    this._debouncedUpdate(server);
+  }
+
+  private logMissingDirectories(server?: McpServer): void {
+    if (!this.loggingState) return;
+
+    if (this.options?.allowCwd) {
+      logToMcp(
+        server,
+        'notice',
+        'No allowed directories specified. Using the current working directory as an allowed directory.',
+        this.loggingState.minimumLevel,
+      );
+      return;
+    }
+
+    logToMcp(
+      server,
+      'warning',
+      'No allowed directories specified. Please provide directories as command-line arguments or enable --allow-cwd to use the current working directory.',
+      this.loggingState.minimumLevel,
+    );
+  }
+
+  private async updateRootsFromClient(server: McpServer): Promise<void> {
+    if (this.state === 'shutting_down') return;
+
+    if (this.state === 'updating') {
+      this.pendingRootsUpdate = true;
+      return;
+    }
+    this.state = 'updating';
+    try {
+      const clientCapabilities = server.server.getClientCapabilities();
+      if (!clientCapabilities?.roots) {
+        this.rootDirectories = [];
+      } else {
+        const rootsResult = await server.server.listRoots(undefined, {
+          timeout: ROOTS_TIMEOUT_MS,
+        });
+        const roots: Root[] = rootsResult.roots
+          .filter((r) => r.uri.startsWith('file://'))
+          .map((r) => (r.name ? { uri: r.uri, name: r.name } : { uri: r.uri }));
+        this.rootDirectories = await resolveRootDirectories(roots);
+      }
+    } catch (error) {
+      if (this.loggingState) {
+        logToMcp(
+          server,
+          'debug',
+          `[DEBUG] MCP Roots protocol unavailable or failed: ${formatUnknownErrorMessage(error)}`,
+          this.loggingState.minimumLevel,
+        );
+      }
+    } finally {
+      const currentState = this.state as RootsManagerState;
+      if (currentState !== 'shutting_down') {
+        await this.recomputeAllowedDirectories();
+        Logger.info(
+          `Roots updated: ${this.rootDirectories.length} root(s), ${this.pathGuard.getAllowedDirectories().length} allowed dir(s)`,
+        );
+        this.state = 'idle';
+        if (this.pendingRootsUpdate) {
+          this.pendingRootsUpdate = false;
+          void this.updateRootsFromClient(server);
+        }
+      }
+    }
   }
 }
 
