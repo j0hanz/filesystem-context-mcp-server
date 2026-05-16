@@ -131,7 +131,7 @@ export async function createServer(
   const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> = {
     capabilities: {
       logging: {},
-      resources: { subscribe: true, listChanged: true },
+      resources: { subscribe: true },
       tools: {},
       prompts: {},
       completions: {},
