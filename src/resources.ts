@@ -388,6 +388,7 @@ export function registerAllResources(
           session_id: ctx.sessionId ?? null,
         },
         () => {
+          let foundMatch = false;
           for (const contract of ALL_RESOURCES) {
             if (!contract.subscribe) continue;
 
@@ -401,6 +402,7 @@ export function registerAllResources(
                 configuredResource: configured,
               })
             ) {
+              foundMatch = true;
               contract.subscribe(requestedResource.toString(), (updatedUri) => {
                 void server.server.sendResourceUpdated({ uri: updatedUri }).catch(() => {
                   /* Transport may be closed */
@@ -408,6 +410,12 @@ export function registerAllResources(
               });
               break;
             }
+          }
+          if (!foundMatch) {
+            throw new ProtocolError(
+              ProtocolErrorCode.ResourceNotFound,
+              `Resource not found: ${requestedResource.toString()}`,
+            );
           }
           return {};
         },
