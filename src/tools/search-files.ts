@@ -3,7 +3,6 @@ import { basename, relative } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import type { SearchFilesResult, SearchResult } from '../config.js';
 import { withTimedAbortSignal } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
 import {
@@ -13,6 +12,7 @@ import {
   type DirentLike,
   type EntryAccessDependencies,
   type EntryType,
+  type FileType,
   globEntries,
   isEntryAccessibleByType,
   needsStatsForSort,
@@ -51,6 +51,30 @@ import {
   truncateProgressPattern,
 } from './_helpers.js';
 import { defineTool } from './define.js';
+
+// ---------------------------------------------------------------------------
+// Domain types
+// ---------------------------------------------------------------------------
+
+export interface SearchResult {
+  readonly path: string;
+  readonly type: FileType;
+  readonly size?: number;
+  readonly modified?: Date;
+}
+
+export interface SearchFilesResult {
+  readonly basePath: string;
+  readonly pattern: string;
+  readonly results: readonly SearchResult[];
+  readonly summary: {
+    readonly matched: number;
+    readonly truncated: boolean;
+    readonly skippedInaccessible: number;
+    readonly filesScanned: number;
+    readonly stoppedReason?: 'maxResults' | 'maxFiles' | 'timeout';
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Private searchFiles implementation (inlined from lib/file-operations/search.ts)

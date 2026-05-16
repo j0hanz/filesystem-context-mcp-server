@@ -7,7 +7,6 @@ import { parentPort, threadId, Worker, workerData } from 'node:worker_threads';
 import RE2 from 're2';
 import { z } from 'zod/v4';
 
-import type { ContentMatch, SearchContentResult } from '../config.js';
 import { assertNotAborted, withAbort, withTimedAbortSignal } from '../core/concurrency.js';
 import {
   ErrorCode,
@@ -54,6 +53,36 @@ import {
   truncateProgressPattern,
 } from './_helpers.js';
 import { defineTool } from './define.js';
+
+// ---------------------------------------------------------------------------
+// Domain types
+// ---------------------------------------------------------------------------
+
+export interface ContentMatch {
+  readonly file: string;
+  readonly line: number;
+  readonly content: string;
+  readonly contextBefore?: readonly string[];
+  readonly contextAfter?: readonly string[];
+  readonly matchCount: number;
+}
+
+export interface SearchContentResult {
+  readonly basePath: string;
+  readonly pattern: string;
+  readonly filePattern: string;
+  readonly matches: readonly ContentMatch[];
+  readonly summary: {
+    readonly filesScanned: number;
+    readonly filesMatched: number;
+    readonly matches: number;
+    readonly truncated: boolean;
+    readonly skippedTooLarge: number;
+    readonly skippedBinary: number;
+    readonly skippedInaccessible: number;
+    readonly stoppedReason?: 'maxResults' | 'maxFiles' | 'timeout';
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Private searchContent implementation (inlined from lib/file-operations/search.ts)

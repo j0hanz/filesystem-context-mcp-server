@@ -3,8 +3,13 @@ import { describe, it } from 'node:test';
 
 import { z } from 'zod/v4';
 
-import { ErrorCode } from '../../src/config.js';
-import { classify, Problem, resolveSuggestion, zodErrorToProblem } from '../../src/core/errors.js';
+import {
+  classify,
+  ErrorCode,
+  Problem,
+  resolveSuggestion,
+  zodErrorToProblem,
+} from '../../src/core/errors.js';
 
 describe('classify', () => {
   it('returns UNKNOWN for non-Error values', () => {

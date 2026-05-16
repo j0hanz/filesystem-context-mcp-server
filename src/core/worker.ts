@@ -29,7 +29,7 @@ import {
   type StructuredPatch,
 } from 'diff';
 
-import type { ErrorCode } from '../config.js';
+import type { ErrorCode } from './errors.js';
 
 /** URL of this file — used by the main-thread worker pool to spawn workers. */
 export const WORKER_ENTRY_URL = new URL(import.meta.url);

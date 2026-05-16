@@ -2,10 +2,9 @@ import type { ContentBlock, Icon, Role } from '@modelcontextprotocol/server';
 
 import { z } from 'zod/v4';
 
-import type { FileInfo } from '../config.js';
 import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode, FsError, Problem } from '../core/errors.js';
-import type { MimeKind } from '../core/fs.js';
+import type { FileInfo, MimeKind } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
 import { createBase64JsonCodec } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';

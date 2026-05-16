@@ -1,8 +1,8 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { ErrorCode } from '../../src/config.js';
 import { runInWorker, shutdownWorkerPool } from '../../src/core/concurrency.js';
+import { ErrorCode } from '../../src/core/errors.js';
 import { FsError } from '../../src/core/errors.js';
 
 test('runInWorker removes task from queue on timeout', async () => {

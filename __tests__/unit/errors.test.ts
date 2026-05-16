@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 
 import { z } from 'zod/v4';
 
-import { ErrorCode } from '../../src/config.js';
+import { ErrorCode } from '../../src/core/errors.js';
 import {
   classifyError,
   createDetailedError,

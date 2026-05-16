@@ -15,8 +15,7 @@ import { Worker } from 'node:worker_threads';
  *   main thread before runInWorker is called.
  */
 
-import { ErrorCode } from '../config.js';
-import { FsError, normalizeUnknownError } from './errors.js';
+import { ErrorCode, FsError, normalizeUnknownError } from './errors.js';
 import {
   PARALLEL_CONCURRENCY,
   WORKER_CANCEL_GRACE_MS,

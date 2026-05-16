@@ -1,9 +1,29 @@
 import { z } from 'zod/v4';
 
-import { ErrorCode, joinLines } from '../config.js';
 import { getTraceContext } from './observability.js';
 
-export { ErrorCode };
+export const ErrorCode = {
+  ACCESS_DENIED: 'ACCESS_DENIED',
+  NOT_FOUND: 'NOT_FOUND',
+  NOT_FILE: 'NOT_FILE',
+  NOT_DIRECTORY: 'NOT_DIRECTORY',
+  TOO_LARGE: 'TOO_LARGE',
+  TIMEOUT: 'TIMEOUT',
+  CANCELLED: 'CANCELLED',
+  INVALID_PATTERN: 'INVALID_PATTERN',
+  INVALID_INPUT: 'INVALID_INPUT',
+  PERMISSION_DENIED: 'PERMISSION_DENIED',
+  SYMLINK_NOT_ALLOWED: 'SYMLINK_NOT_ALLOWED',
+  VALIDATION_FAILED: 'VALIDATION_FAILED',
+  IO_ERROR: 'IO_ERROR',
+  UNKNOWN: 'UNKNOWN',
+} as const;
+
+export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
+
+function joinLines(lines: readonly string[]): string {
+  return lines.join('\n');
+}
 
 // ─── Problem model ───────────────────────────────────────────────────────────
 

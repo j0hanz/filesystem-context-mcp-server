@@ -5,10 +5,16 @@ import { parse } from 'node:path';
 
 import { z } from 'zod/v4';
 
-import type { FileInfo } from '../config.js';
 import { assertNotAborted } from '../core/concurrency.js';
 import { ErrorCode, isAbortError } from '../core/errors.js';
-import { detectMimeType, stat as fsStat, getFileType, isHidden, readlink } from '../core/fs.js';
+import {
+  detectMimeType,
+  type FileInfo,
+  stat as fsStat,
+  getFileType,
+  isHidden,
+  readlink,
+} from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../core/util.js';
 import {

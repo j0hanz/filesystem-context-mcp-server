@@ -25,7 +25,6 @@ import { pipeline } from 'node:stream/promises';
 
 import ignore, { type Ignore } from 'ignore';
 
-import type { FileType } from '../config.js';
 import { assertNotAborted, withAbort } from './concurrency.js';
 import { ErrorCode, FsError, isNodeError } from './errors.js';
 import {
@@ -47,6 +46,25 @@ import {
 
 const READ_ONLY_FILE_FLAG = 'r';
 const STREAM_CHUNK_SIZE = 64 * 1024;
+
+// ─── Domain primitives ────────────────────────────────────────────────────────
+
+export type FileType = 'file' | 'directory' | 'symlink' | 'other';
+
+export interface FileInfo {
+  readonly name: string;
+  readonly path: string;
+  readonly type: FileType;
+  readonly size: number;
+  readonly tokenEstimate?: number;
+  readonly created: Date;
+  readonly modified: Date;
+  readonly accessed: Date;
+  readonly permissions: string;
+  readonly isHidden: boolean;
+  readonly mimeType?: string;
+  readonly symlinkTarget?: string;
+}
 
 // ─── Guarded Primitives ──────────────────────────────────────────────────────
 
