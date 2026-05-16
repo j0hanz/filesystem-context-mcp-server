@@ -53,13 +53,12 @@ HTTP security: origin guard (localhost only by default), optional bearer auth vi
 
 ### Tool system
 
-Tools are registered via **side-effect imports** in [src/tools.ts](src/tools.ts). Each file under `src/tools/` calls `defineTool()` from [src/tools/define.ts](src/tools/define.ts), which:
+Each tool file under `src/tools/` exports a `DefinedTool` built with `defineTool()` from [src/tools/define.ts](src/tools/define.ts) (e.g., `export const READ_FILE = defineTool({...})`). [src/tools.ts](src/tools.ts) imports each named export and assembles the explicit `ALL_TOOLS` array. `defineTool` is a pure factory:
 
 1. Converts Zod schemas to MCP JSON schemas via `toMcpSchema()` ([src/schema.ts](src/schema.ts))
-2. Pushes the tool definition onto `ALL_TOOLS[]`
-3. On `register(deps)`, wraps the handler with observability (wide events), progress sessions, timeout signals, and optionally routes through `TaskOrchestrator` for async task support
+2. Returns a `DefinedTool` whose `register(deps)` method wraps the handler with observability (wide events), progress sessions, timeout signals, and optionally routes through `TaskOrchestrator` for async task support
 
-To add a new tool: create `src/tools/<name>.ts`, call `defineTool({...})`, then add an import line in `src/tools.ts`.
+To add a new tool: create `src/tools/<name>.ts`, `export const FOO = defineTool({...})`, then add a named import and an entry in the `ALL_TOOLS` array in `src/tools.ts`.
 
 ### Security — PathGuard
 

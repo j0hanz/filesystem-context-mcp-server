@@ -366,10 +366,6 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
   }
 }
 
-// ============ Tool Registry ============
-
-export const ALL_TOOLS: DefinedTool[] = [];
-
 export function defineTool<I extends z.ZodType, O extends z.ZodType>(
   def: ToolDef<I, O>,
 ): DefinedTool {
@@ -442,12 +438,5 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
     },
   };
 
-  ALL_TOOLS.push(tool);
   return tool;
-}
-
-export function registerAllTools(deps: ToolDeps): void {
-  for (const tool of ALL_TOOLS) {
-    tool.register(deps);
-  }
 }

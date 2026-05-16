@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { z } from 'zod/v4';
 
-import { ALL_TOOLS, defineTool } from '../../src/tools/define.js';
+import { defineTool } from '../../src/tools/define.js';
 
 test('defineTool creates DefinedTool properly', () => {
   const tool = defineTool({
@@ -21,7 +21,6 @@ test('defineTool creates DefinedTool properly', () => {
   assert.ok(tool.inputSchema);
   assert.ok(tool.outputSchema);
   assert.equal(tool.annotations, 'readOnly');
-  assert.ok(ALL_TOOLS.includes(tool));
 });
 
 test('defineTool execution handles errors', async () => {
@@ -39,20 +38,4 @@ test('defineTool execution handles errors', async () => {
   });
 
   assert.ok(tool.name === 'error_tool');
-});
-
-test('ALL_TOOLS registry stores defined tools', () => {
-  const initialCount = ALL_TOOLS.length;
-  const newTool = defineTool({
-    name: `tool_${Date.now()}`,
-    title: 'Unique Tool',
-    description: 'Testing registry',
-    input: z.strictObject({}),
-    output: z.strictObject({}),
-    annotations: 'readOnly',
-    run: async () => ({}),
-  });
-
-  assert.equal(ALL_TOOLS.length, initialCount + 1);
-  assert.ok(ALL_TOOLS.includes(newTool));
 });
