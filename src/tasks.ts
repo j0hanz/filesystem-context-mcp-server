@@ -23,8 +23,7 @@ import {
   TASK_POLL_INTERVAL,
   TASK_TTL,
 } from './core/util.js';
-import type { ToolResult } from './tools/_helpers.js';
-import { type ToolCtx, type ToolDeps, toToolCtx } from './tools/define.js';
+import { type ToolCtx, type ToolDeps, type ToolResult, toToolCtx } from './tools/define.js';
 
 export const TASK_PROGRESS_STATUS_MESSAGE = 'filesystem-mcp: processing request';
 

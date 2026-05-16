@@ -31,9 +31,43 @@ import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { toMcpSchema } from '../schema.js';
 import type { TaskOrchestrator } from '../tasks.js';
-import type { ToolResult } from './_helpers.js';
 
 // ============ Type Definitions ============
+
+// ---- Result wire types ----
+
+type ToolResponse<T> = {
+  content: ContentBlock[];
+  structuredContent: T;
+  isError?: never;
+} & Record<string, unknown>;
+
+interface ToolErrorResponse extends Record<string, unknown> {
+  content: ContentBlock[];
+  isError: true;
+  errorCode: ErrorCode;
+}
+
+export type ToolResult<T> = ToolResponse<T> | ToolErrorResponse;
+
+export interface PerPathError {
+  code: ErrorCode;
+  message: string;
+  path?: string;
+  suggestion?: string;
+}
+
+export interface PerPathResult<T> {
+  path: string;
+  value?: T;
+  error?: PerPathError;
+}
+
+export interface BatchResult<T> {
+  results: PerPathResult<T>[];
+  summary: { total: number; succeeded: number; failed: number };
+}
+
 interface TracingMeta {
   'io.opentelemetry/traceparent'?: string | undefined;
   'io.opentelemetry/tracestate'?: string | undefined;

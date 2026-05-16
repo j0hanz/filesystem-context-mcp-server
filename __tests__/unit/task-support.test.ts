@@ -13,7 +13,7 @@ import type { PathGuard } from '../../src/core/path.js';
 import { MAX_CONCURRENT_TASKS, MAX_TASK_TTL_MS, TASK_TTL } from '../../src/core/util.js';
 import { TASK_PROGRESS_STATUS_MESSAGE } from '../../src/tasks.js';
 import { TaskOrchestrator } from '../../src/tasks.js';
-import type { ToolResult } from '../../src/tools/_helpers.js';
+import type { ToolResult } from '../../src/tools/define.js';
 import type { ToolDeps } from '../../src/tools/define.js';
 
 const stubDeps: Pick<ToolDeps, 'pathGuard' | 'resourceStore'> = {

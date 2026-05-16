@@ -11,7 +11,7 @@ import type { ResourceStore } from '../core/store.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import { NonNegInt } from '../schema.js';
 import type { TaskOrchestrator } from '../tasks.js';
-import type { ToolCtx } from './define.js';
+import type { BatchResult, PerPathError, PerPathResult, ToolCtx } from './define.js';
 
 // ============ ToolRegistrationOptions ============
 
@@ -268,40 +268,6 @@ export function withDefaultIcons<T extends object>(
   const existing = (normalized as { icons?: Icon[] }).icons;
   if (existing && existing.length > 0) return normalized;
   return { ...normalized, icons: [{ src: iconInfo.src, mimeType: iconInfo.mimeType }] };
-}
-
-// ---- ToolResult ----
-
-type ToolResponse<T> = {
-  content: ContentBlock[];
-  structuredContent: T;
-  isError?: never;
-} & Record<string, unknown>;
-
-interface ToolErrorResponse extends Record<string, unknown> {
-  content: ContentBlock[];
-  isError: true;
-  errorCode: ErrorCode;
-}
-
-export type ToolResult<T> = ToolResponse<T> | ToolErrorResponse;
-
-export interface PerPathError {
-  code: ErrorCode;
-  message: string;
-  path?: string;
-  suggestion?: string;
-}
-
-export interface PerPathResult<T> {
-  path: string;
-  value?: T;
-  error?: PerPathError;
-}
-
-export interface BatchResult<T> {
-  results: PerPathResult<T>[];
-  summary: { total: number; succeeded: number; failed: number };
 }
 
 interface BatchInput<TOverride> {
