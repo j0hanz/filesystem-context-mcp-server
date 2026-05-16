@@ -14,9 +14,9 @@ type JsonSchema = Record<string, unknown>;
  * Typed return value from toMcpSchema containing both the StandardSchema and extracted JSON schema.
  * This eliminates the need for unsafe casts when accessing the jsonSchema property.
  */
-export interface McpSchemaPair {
+export interface McpSchemaPair<T = unknown> {
   /** Standard Schema instance compatible with @modelcontextprotocol/server. */
-  readonly standard: StandardSchemaWithJSON;
+  readonly standard: StandardSchemaWithJSON<T, T>;
   /** JSON Schema representation (extracted from standard schema). */
   readonly jsonSchema: object;
 }
@@ -73,10 +73,10 @@ function removeDefaultedFromRequired(schema: unknown): unknown {
  * Returns a typed pair containing both the standard schema and extracted JSON schema,
  * eliminating the need for unsafe casts when accessing jsonSchema.
  */
-export function toMcpSchema(
-  schema: z.ZodType,
+export function toMcpSchema<T extends z.ZodType>(
+  schema: T,
   augment?: (s: JsonSchema) => JsonSchema,
-): McpSchemaPair {
+): McpSchemaPair<z.infer<T>> {
   const raw = z.toJSONSchema(schema, {
     io: 'input',
     unrepresentable: 'any',
@@ -87,7 +87,13 @@ export function toMcpSchema(
   const final = augment ? augment(cleaned) : cleaned;
   const std = { ...(schema['~standard'] as unknown as Record<string, unknown>) };
   std['jsonSchema'] = { input: () => final, output: () => final };
-  const standard = { '~standard': std, jsonSchema: final } as unknown as StandardSchemaWithJSON;
+
+  const standard = Object.create(schema) as StandardSchemaWithJSON<z.infer<T>, z.infer<T>> & {
+    jsonSchema: object;
+  };
+  Object.defineProperty(standard, '~standard', { value: std, enumerable: true });
+  standard.jsonSchema = final;
+
   return { standard, jsonSchema: final };
 }
 

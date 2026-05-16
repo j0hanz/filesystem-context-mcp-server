@@ -16,6 +16,7 @@ import { Logger, withTelemetry } from './core/observability.js';
 import { PathCompleter } from './core/path.js';
 import type { PathGuard } from './core/path.js';
 import { INSTRUCTION_SECTIONS } from './resources.js';
+import { toMcpSchema } from './schema.js';
 import { type IconInfo, withDefaultIcons } from './tools/define.js';
 
 // --- Types ---
@@ -137,16 +138,18 @@ const GET_HELP: PromptEntry = {
         {
           title: GET_HELP.contract.title,
           description: GET_HELP.contract.description,
-          argsSchema: z.strictObject({
-            topic: topicArg(
-              topics,
-              'Optional section key. Omit to return full instructions.',
-            ).optional(),
-          }),
+          argsSchema: toMcpSchema(
+            z.strictObject({
+              topic: topicArg(
+                topics,
+                'Optional section key. Omit to return full instructions.',
+              ).optional(),
+            }),
+          ).standard,
         },
         options.iconInfo,
       ),
-      ({ topic }): GetPromptResult | Promise<GetPromptResult> =>
+      ({ topic }: { topic?: string | undefined }): GetPromptResult | Promise<GetPromptResult> =>
         wrapHandler(GET_HELP.contract, options, false, () => {
           const section = topic ? INSTRUCTION_SECTIONS[topic.toLowerCase()] : undefined;
           const text =
@@ -177,13 +180,15 @@ const ANALYZE_PATH: PromptEntry = {
         {
           title: ANALYZE_PATH.contract.title,
           description: ANALYZE_PATH.contract.description,
-          argsSchema: z.strictObject({
-            path: pathArg(options.pathGuard, 'path', 'Absolute path to analyze.'),
-          }),
+          argsSchema: toMcpSchema(
+            z.strictObject({
+              path: pathArg(options.pathGuard, 'path', 'Absolute path to analyze.'),
+            }),
+          ).standard,
         },
         options.iconInfo,
       ),
-      async ({ path: rawPath }): Promise<GetPromptResult> =>
+      async ({ path: rawPath }: { path: string }): Promise<GetPromptResult> =>
         wrapHandler(ANALYZE_PATH.contract, options, true, async () => {
           const resolved = await options.pathGuard.validateExistingPath(rawPath);
           const stats = await stat(resolved);
@@ -217,19 +222,29 @@ const FIND_IN_TREE: PromptEntry = {
         {
           title: FIND_IN_TREE.contract.title,
           description: FIND_IN_TREE.contract.description,
-          argsSchema: z.strictObject({
-            query: z.string().min(1).describe('Search term (name pattern or content regex).'),
-            root: pathArg(
-              options.pathGuard,
-              'root',
-              'Directory to search under. Defaults to first allowed root.',
-            ).optional(),
-            mode: FIND_IN_TREE_MODE.default('both').describe('Search by name, content, or both.'),
-          }),
+          argsSchema: toMcpSchema(
+            z.strictObject({
+              query: z.string().min(1).describe('Search term (name pattern or content regex).'),
+              root: pathArg(
+                options.pathGuard,
+                'root',
+                'Directory to search under. Defaults to first allowed root.',
+              ).optional(),
+              mode: FIND_IN_TREE_MODE.default('both').describe('Search by name, content, or both.'),
+            }),
+          ).standard,
         },
         options.iconInfo,
       ),
-      async ({ query, root, mode }): Promise<GetPromptResult> =>
+      async ({
+        query,
+        root,
+        mode,
+      }: {
+        query: string;
+        root?: string | undefined;
+        mode: 'name' | 'content' | 'both';
+      }): Promise<GetPromptResult> =>
         wrapHandler(FIND_IN_TREE.contract, options, true, async () => {
           const allowed = options.pathGuard.getAllowedDirectories();
           const candidate = root ?? allowed[0];
@@ -270,18 +285,20 @@ const SUMMARIZE_DIRECTORY: PromptEntry = {
         {
           title: SUMMARIZE_DIRECTORY.contract.title,
           description: SUMMARIZE_DIRECTORY.contract.description,
-          argsSchema: z.strictObject({
-            path: pathArg(options.pathGuard, 'path', 'Directory to summarize.'),
-            depth: z.coerce
-              .number<number>()
-              .pipe(z.int32().min(1).max(6))
-              .default(3)
-              .describe('Tree depth (1-6).'),
-          }),
+          argsSchema: toMcpSchema(
+            z.strictObject({
+              path: pathArg(options.pathGuard, 'path', 'Directory to summarize.'),
+              depth: z.coerce
+                .number<number>()
+                .pipe(z.int32().min(1).max(6))
+                .default(3)
+                .describe('Tree depth (1-6).'),
+            }),
+          ).standard,
         },
         options.iconInfo,
       ),
-      async ({ path: rawPath, depth }): Promise<GetPromptResult> =>
+      async ({ path: rawPath, depth }: { path: string; depth: number }): Promise<GetPromptResult> =>
         wrapHandler(SUMMARIZE_DIRECTORY.contract, options, true, async () => {
           const resolved = await options.pathGuard.validateExistingDirectory(rawPath);
           const text = [
