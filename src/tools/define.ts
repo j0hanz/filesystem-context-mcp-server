@@ -501,17 +501,20 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
 
 function withJsonSchema<T extends z.ZodType>(
   schema: T,
-  jsonSchema: Record<string, unknown>,
+  precomputedJsonSchema: Record<string, unknown>,
+  io: 'input' | 'output',
 ): StandardSchemaWithJSON<z.infer<T>, z.infer<T>> {
   const standard = (schema as unknown as { '~standard': Record<string, unknown> })['~standard'];
+  const compute = (options: { target: string }): Record<string, unknown> =>
+    options.target === 'draft-2020-12'
+      ? precomputedJsonSchema
+      : (z.toJSONSchema(schema, { target: options.target as never, io }));
   return {
     '~standard': {
       ...standard,
       jsonSchema: {
-        input: (_options: { target: string; libraryOptions?: Record<string, unknown> }) =>
-          jsonSchema,
-        output: (_options: { target: string; libraryOptions?: Record<string, unknown> }) =>
-          jsonSchema,
+        input: compute,
+        output: compute,
       },
     },
   } as StandardSchemaWithJSON<z.infer<T>, z.infer<T>>;
@@ -525,15 +528,15 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
     io: 'input',
   }) as Record<string, unknown>;
   const inputJsonSchema: Record<string, unknown> = def.inputSchemaAugment
-    ? def.inputSchemaAugment(baseInputJsonSchema)
+    ? { ...def.inputSchemaAugment(baseInputJsonSchema) }
     : baseInputJsonSchema;
   const outputJsonSchema = z.toJSONSchema(def.output, {
     target: 'draft-2020-12',
     io: 'output',
   }) as Record<string, unknown>;
 
-  const inputSchemaWithJson = withJsonSchema(def.input, inputJsonSchema);
-  const outputSchemaWithJson = withJsonSchema(def.output, outputJsonSchema);
+  const inputSchemaWithJson = withJsonSchema(def.input, inputJsonSchema, 'input');
+  const outputSchemaWithJson = withJsonSchema(def.output, outputJsonSchema, 'output');
 
   const tool: DefinedTool = {
     name: def.name,
@@ -544,7 +547,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
     nuances: def.nuances ?? [],
     gotchas: def.gotchas ?? [],
     inputSchema: inputJsonSchema as Tool['inputSchema'],
-    outputSchema: outputJsonSchema as Tool['inputSchema'],
+    outputSchema: outputJsonSchema as Tool['outputSchema'],
 
     register(deps: ToolDeps) {
       const toolDefShape = {
