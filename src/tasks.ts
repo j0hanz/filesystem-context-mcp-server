@@ -1,10 +1,12 @@
 import {
+  assertToolsCallTaskCapability,
   type CallToolResult,
   type CreateTaskResult,
   type CreateTaskServerContext,
   type GetTaskResult,
   InMemoryTaskStore,
   isTerminal,
+  type McpServer,
   RELATED_TASK_META_KEY,
   type Task,
   type TaskServerContext,
@@ -143,6 +145,7 @@ export class TaskOrchestrator implements TaskStore {
       toolTitle?: string;
       startStatusMessage?: (args: unknown) => string;
       deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore'>;
+      server?: McpServer;
     },
   ): ToolTaskHandler<Args> {
     const createTask = (async (
@@ -155,6 +158,24 @@ export class TaskOrchestrator implements TaskStore {
         args = undefined;
       } else {
         [args, ctx] = params;
+      }
+
+      // Guard: assert the client declared tools/call task capability.
+      if (options.server) {
+        const clientCaps = (
+          options.server as { server?: { getClientCapabilities?(): unknown } }
+        ).server?.getClientCapabilities?.() as
+          | {
+              experimental?: {
+                tasks?: { requests?: Parameters<typeof assertToolsCallTaskCapability>[0] };
+              };
+            }
+          | undefined;
+        assertToolsCallTaskCapability(
+          clientCaps?.experimental?.tasks?.requests,
+          'tools/call',
+          'Client',
+        );
       }
 
       const { task } = ctx;

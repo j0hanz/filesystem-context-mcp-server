@@ -572,3 +572,11 @@ describe('createToolTaskHandler', () => {
     }
   });
 });
+
+// --- assertToolsCallTaskCapability tests ---
+describe('assertToolsCallTaskCapability', () => {
+  it('is available from @modelcontextprotocol/server', async () => {
+    const { assertToolsCallTaskCapability } = await import('@modelcontextprotocol/server');
+    assert.equal(typeof assertToolsCallTaskCapability, 'function');
+  });
+});

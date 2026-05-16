@@ -99,6 +99,7 @@ export interface ToolOrchestrator {
       toolTitle?: string;
       startStatusMessage?: (args: unknown) => string;
       deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore'>;
+      server?: McpServer;
     },
   ): ToolTaskHandler<Args>;
 }
@@ -599,6 +600,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
               startStatusMessage: (args: unknown) =>
                 plainMessage('start', resolveProgressCtx(def, args as z.infer<I>)),
               deps,
+              server: deps.server,
             },
           ),
         );
