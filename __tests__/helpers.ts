@@ -108,7 +108,20 @@ export async function createTestEnv(): Promise<TestEnv> {
 
   const client = new Client(
     { name: 'test-client', version: '1.0.0' },
-    { capabilities: { tasks: {} } },
+    {
+      capabilities: {
+        tasks: {},
+        experimental: {
+          tasks: {
+            requests: {
+              tools: {
+                call: {},
+              },
+            },
+          },
+        },
+      },
+    },
   );
   const [ct, st] = LinkedTransport.createLinkedPair();
   await server.connect(st);
@@ -200,7 +213,20 @@ export async function createTestEnvWithElicitation(handler: ElicitationHandler):
   // Client advertises elicitation capability so the server will call elicitInput
   const client = new Client(
     { name: 'test-client', version: '1.0.0' },
-    { capabilities: { elicitation: {} } },
+    {
+      capabilities: {
+        elicitation: {},
+        experimental: {
+          tasks: {
+            requests: {
+              tools: {
+                call: {},
+              },
+            },
+          },
+        },
+      },
+    },
   );
 
   // Register the elicitation handler for server→client elicitation/create requests.
