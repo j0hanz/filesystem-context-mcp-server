@@ -17,7 +17,6 @@ import type {
 } from '@modelcontextprotocol/server';
 
 import { randomUUID } from 'node:crypto';
-import { performance } from 'node:perf_hooks';
 
 import type { z } from 'zod/v4';
 
@@ -157,6 +156,7 @@ export interface DefinedTool extends Tool {
 }
 
 // ============ Context Builder ============
+
 export function toToolCtx(
   ctx: ServerContext | undefined,
   deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore'>,
@@ -182,7 +182,34 @@ export function toToolCtx(
   };
 }
 
-// ============ Execution Context ============
+function buildExecutionCtx(
+  ctx: ToolCtx,
+  signal: AbortSignal,
+  onProgress: (p: { current: number; total?: number }) => void,
+): ToolCtx {
+  const ctxLog = ctx.log;
+  return {
+    signal,
+    ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
+    ...(ctx._meta ? { _meta: ctx._meta } : {}),
+    pathGuard: ctx.pathGuard,
+    resourceStore: ctx.resourceStore,
+    ...(ctxLog
+      ? {
+          log: (level: LoggingLevel, data: unknown, logger?: string) => {
+            const msg = typeof data === 'string' ? data : String(data);
+            Logger.emit(level, msg);
+            ctxLog(level, data, logger);
+          },
+        }
+      : {}),
+    ...(ctx.sendNotification ? { sendNotification: ctx.sendNotification } : {}),
+    onProgress,
+    ...(ctx.elicitInput ? { elicitInput: ctx.elicitInput } : {}),
+  };
+}
+
+// ============ Execution Helpers ============
 
 function reportDetachedError(toolName: string, context: string, error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
@@ -207,170 +234,206 @@ function resolveProgressCtx<I extends z.ZodType, O extends z.ZodType>(
   }
 }
 
-class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
-  readonly executionId = randomUUID();
-  readonly startTime = performance.now();
-  readonly startMemory = process.memoryUsage().rss;
-  readonly signal: AbortSignal;
+function composeSignal(base: AbortSignal, timeoutMs?: number): AbortSignal {
+  if (!timeoutMs) return base;
+  return AbortSignal.any([base, AbortSignal.timeout(timeoutMs)]);
+}
 
-  progressUpdates = 0;
-  progressNotificationsEmitted = 0;
-  private pendingProgressNotifications = new Set<Promise<void>>();
-  private progressClosed = false;
-  private progressCursor = 0;
-  public outcome: 'success' | 'error' | 'cancelled' = 'success';
-  public errorType: string | undefined;
-  public errorMessage: string | undefined;
+function measureInput(args: unknown): { inputKeys?: string[]; inputSizeBytes?: number } {
+  if (!args || typeof args !== 'object') return {};
+  const inputKeys = Object.keys(args);
+  try {
+    return { inputKeys, inputSizeBytes: Buffer.byteLength(JSON.stringify(args), 'utf8') };
+  } catch {
+    return { inputKeys };
+  }
+}
 
-  private stderrSink: StderrProgressSink;
-  private progressSession: ProgressSession;
-  private progressToken: string | number | undefined;
+function tryMeasureBytes(value: unknown): number | undefined {
+  try {
+    return Buffer.byteLength(JSON.stringify(value), 'utf8');
+  } catch {
+    return undefined;
+  }
+}
 
+function buildSuccessResponse<O>(result: RunResult<O>): CallToolResult {
+  const text = result.text ?? JSON.stringify(result.structured);
+  const content: ContentBlock[] = [{ type: 'text' as const, text }, ...(result.resources ?? [])];
+  return {
+    content,
+    structuredContent: result.structured as Record<string, unknown>,
+  };
+}
+
+function extractTracingMeta(meta: (RequestMeta & TracingMeta) | undefined): Record<string, string> {
+  if (meta && 'traceparent' in meta && typeof meta['traceparent'] === 'string') {
+    return { traceparent: meta['traceparent'] };
+  }
+  return {};
+}
+
+// ============ Progress Tracking ============
+
+class ProgressTracker {
+  tickCount = 0;
+  emittedCount = 0;
+
+  private pending = new Set<Promise<void>>();
+  private closed = false;
+  private cursor = 0;
   private readonly toolName: string;
-  private readonly ctx: ToolCtx;
-  private readonly def: ToolDef<I, O>;
-  private readonly parsedArgs: z.infer<I>;
-  private readonly progressCtx: ProgressCtx;
-  private readonly toolCtx: ToolCtx;
+  private readonly ctx: ProgressCtx;
+  private readonly token: string | number | undefined;
+  private readonly notify: ((n: Notification) => Promise<void>) | undefined;
+  private readonly stderrSink: StderrProgressSink;
+  private readonly session: ProgressSession;
 
-  constructor(toolName: string, ctx: ToolCtx, def: ToolDef<I, O>, parsedArgs: z.infer<I>) {
+  constructor(
+    toolName: string,
+    ctx: ProgressCtx,
+    token: string | number | undefined,
+    notify: ((n: Notification) => Promise<void>) | undefined,
+  ) {
     this.toolName = toolName;
     this.ctx = ctx;
-    this.def = def;
-    this.parsedArgs = parsedArgs;
-
-    const baseSignal = ctx.signal;
-    const timeoutSignal = def.timeoutMs ? AbortSignal.timeout(def.timeoutMs) : undefined;
-    this.signal = timeoutSignal ? AbortSignal.any([baseSignal, timeoutSignal]) : baseSignal;
-
-    this.progressCtx = resolveProgressCtx(def, parsedArgs);
-    this.stderrSink = new StderrProgressSink(this.progressCtx);
-
-    this.progressSession = new ProgressSession({
-      label: this.progressCtx.label,
+    this.token = token;
+    this.notify = notify;
+    this.stderrSink = new StderrProgressSink(ctx);
+    this.session = new ProgressSession({
+      label: ctx.label,
       sinks: [this.stderrSink],
       dynamicRateLimit: true,
     });
-
-    this.progressToken = ctx._meta?.progressToken;
-
-    const ctxLog = ctx.log;
-    this.toolCtx = {
-      signal: this.signal,
-      ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
-      ...(ctx._meta ? { _meta: ctx._meta } : {}),
-      pathGuard: ctx.pathGuard,
-      resourceStore: ctx.resourceStore,
-      ...(ctxLog
-        ? {
-            log: (level: LoggingLevel, data: unknown, logger?: string) => {
-              const msg = typeof data === 'string' ? data : String(data);
-              Logger.emit(level, msg);
-              ctxLog(level, data, logger);
-            },
-          }
-        : {}),
-      ...(ctx.sendNotification ? { sendNotification: ctx.sendNotification } : {}),
-      onProgress: (p) => {
-        this.tickProgress(p);
-      },
-      ...(ctx.elicitInput ? { elicitInput: ctx.elicitInput } : {}),
-    };
   }
 
-  async emitProgress(params: { current: number; total?: number; message?: string }): Promise<void> {
-    if (!this.ctx.sendNotification || this.progressToken === undefined) return;
+  get progressCtx(): ProgressCtx {
+    return this.ctx;
+  }
+
+  private async emit(params: { current: number; total?: number; message?: string }): Promise<void> {
+    if (!this.notify || this.token === undefined) return;
     try {
-      await this.ctx.sendNotification({
+      await this.notify({
         method: 'notifications/progress',
         params: {
-          progressToken: this.progressToken,
+          progressToken: this.token,
           progress: params.current,
           ...(params.total !== undefined ? { total: params.total } : {}),
           ...(params.message !== undefined ? { message: params.message } : {}),
         },
       });
-      this.progressNotificationsEmitted++;
+      this.emittedCount++;
     } catch (error) {
       reportDetachedError(this.toolName, 'progressNotification', error);
     }
   }
 
-  runTrackedProgress(params: { current: number; total?: number; message?: string }): void {
-    if (params.current > this.progressCursor) this.progressCursor = params.current;
-    const promise = this.emitProgress(params);
-    this.pendingProgressNotifications.add(promise);
+  private track(params: { current: number; total?: number; message?: string }): void {
+    if (params.current > this.cursor) this.cursor = params.current;
+    const promise = this.emit(params);
+    this.pending.add(promise);
     runDetached(
       this.toolName,
       promise.finally(() => {
-        this.pendingProgressNotifications.delete(promise);
+        this.pending.delete(promise);
       }),
       'progressNotification',
     );
   }
 
-  startProgress(): void {
-    this.runTrackedProgress({
-      current: 0,
-      message: plainMessage('start', this.progressCtx),
-    });
+  start(): void {
+    this.track({ current: 0, message: plainMessage('start', this.ctx) });
   }
 
-  tickProgress(p: { current: number; total?: number }): void {
-    if (this.progressClosed) return;
-    this.progressUpdates++;
+  tick(p: { current: number; total?: number }): void {
+    if (this.closed) return;
+    this.tickCount++;
     const tickCtx: ProgressCtx = {
-      ...this.progressCtx,
+      ...this.ctx,
       current: p.current,
       ...(p.total !== undefined ? { total: p.total } : {}),
     };
-    const tickMessage = plainMessage('tick', tickCtx);
-    this.progressSession.set({ ...p, message: tickMessage });
-    this.runTrackedProgress({ ...p, message: tickMessage });
+    const message = plainMessage('tick', tickCtx);
+    this.session.set({ ...p, message });
+    this.track({ ...p, message });
   }
 
-  async completeProgress(result: z.infer<O>): Promise<void> {
-    const doneCtx: ProgressCtx = this.def.progressDone
-      ? { ...this.progressCtx, ...this.def.progressDone(this.parsedArgs, result) }
-      : this.progressCtx;
-    const doneMessage = plainMessage('done', doneCtx);
-    this.progressClosed = true;
-    this.progressSession.complete(doneMessage);
-    const doneCurrent = this.progressCursor + 1;
-    await this.emitProgress({
-      current: doneCurrent,
-      total: doneCurrent,
-      message: doneMessage,
+  updateStderrError(errMsg: string): void {
+    this.stderrSink.updateCtx({ error: errMsg });
+  }
+
+  async closeWithDone(message: string): Promise<void> {
+    this.closed = true;
+    this.session.complete(message);
+    const current = this.cursor + 1;
+    await this.emit({ current, total: current, message });
+  }
+
+  async closeWithFail(error: unknown, message: string): Promise<void> {
+    this.closed = true;
+    this.session.fail(error, message);
+    const current = this.cursor + 1;
+    await this.emit({ current, total: current, message });
+  }
+
+  async flush(): Promise<void> {
+    if (this.pending.size > 0) {
+      await Promise.allSettled([...this.pending]);
+    }
+  }
+}
+
+// ============ Tool Execution ============
+
+class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
+  private readonly executionId = randomUUID();
+  private readonly startMemory = process.memoryUsage().rss;
+
+  readonly signal: AbortSignal;
+  private readonly def: ToolDef<I, O>;
+  private readonly parsedArgs: z.infer<I>;
+  private readonly tracker: ProgressTracker;
+  private readonly toolCtx: ToolCtx;
+
+  private outcome: 'success' | 'error' | 'cancelled' = 'success';
+  private errorType: string | undefined;
+  private errorMessage: string | undefined;
+
+  constructor(toolName: string, ctx: ToolCtx, def: ToolDef<I, O>, parsedArgs: z.infer<I>) {
+    this.def = def;
+    this.parsedArgs = parsedArgs;
+    this.signal = composeSignal(ctx.signal, def.timeoutMs);
+    const progressCtx = resolveProgressCtx(def, parsedArgs);
+    this.tracker = new ProgressTracker(
+      toolName,
+      progressCtx,
+      ctx._meta?.progressToken,
+      ctx.sendNotification,
+    );
+    this.toolCtx = buildExecutionCtx(ctx, this.signal, (p) => {
+      this.tracker.tick(p);
     });
-    this.outcome = this.signal.aborted ? 'cancelled' : 'success';
   }
 
-  async failProgress(
+  private async completeProgress(result: z.infer<O>): Promise<void> {
+    const doneCtx: ProgressCtx = this.def.progressDone
+      ? { ...this.tracker.progressCtx, ...this.def.progressDone(this.parsedArgs, result) }
+      : this.tracker.progressCtx;
+    await this.tracker.closeWithDone(plainMessage('done', doneCtx));
+  }
+
+  private async failProgress(
     error: unknown,
   ): Promise<{ isError: true; content: ContentBlock[]; errorCode?: number | string }> {
     const errMsg = error instanceof Error ? error.message : String(error);
-    this.stderrSink.updateCtx({ error: errMsg });
-    const failMessage = plainMessage('fail', { ...this.progressCtx, error: errMsg });
-    this.progressClosed = true;
-    this.progressSession.fail(error, failMessage);
-    const failCurrent = this.progressCursor + 1;
-    await this.emitProgress({
-      current: failCurrent,
-      total: failCurrent,
-      message: failMessage,
-    });
-
-    this.outcome = this.signal.aborted ? 'cancelled' : 'error';
-    if (error instanceof Error) {
-      this.errorType = error.name;
-      this.errorMessage = error.message;
-    } else {
-      this.errorType = 'UnknownError';
-      this.errorMessage = String(error);
-    }
-    const defaultCode = this.def.defaultErrorCode ?? ErrorCode.UNKNOWN;
-    const { code: errorCode, text: errorText } = Problem.toText(error, defaultCode);
-
+    this.tracker.updateStderrError(errMsg);
+    const message = plainMessage('fail', { ...this.tracker.progressCtx, error: errMsg });
+    await this.tracker.closeWithFail(error, message);
+    const { code: errorCode, text: errorText } = Problem.toText(
+      error,
+      this.def.defaultErrorCode ?? ErrorCode.UNKNOWN,
+    );
     return {
       content: [{ type: 'text' as const, text: errorText }],
       isError: true,
@@ -378,77 +441,46 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     };
   }
 
-  async flushNotifications(): Promise<void> {
-    if (this.pendingProgressNotifications.size > 0) {
-      await Promise.allSettled([...this.pendingProgressNotifications]);
-    }
-  }
-
   async execute(args: unknown, deps: ToolDeps): Promise<CallToolResult> {
+    if (!deps.isInitialized()) {
+      return {
+        isError: true as const,
+        content: [{ type: 'text' as const, text: 'Server not initialized. Roots unavailable.' }],
+      };
+    }
+
     return withTelemetry(
       {
         event: 'tool_execution',
         tool_name: this.def.name,
-        ...(this.ctx.sessionId ? { session_id: this.ctx.sessionId } : {}),
-        ...(this.ctx._meta &&
-        'traceparent' in this.ctx._meta &&
-        typeof this.ctx._meta['traceparent'] === 'string'
-          ? { traceparent: this.ctx._meta['traceparent'] }
-          : {}),
+        ...(this.toolCtx.sessionId ? { session_id: this.toolCtx.sessionId } : {}),
+        ...extractTracingMeta(this.toolCtx._meta),
       },
       async (enrich) => {
-        let inputKeys: string[] | undefined;
-        let inputSizeBytes: number | undefined;
+        enrich({ execution_id: this.executionId });
+        const { inputKeys, inputSizeBytes } = measureInput(args);
         let resultSizeBytes: number | undefined;
 
-        if (args && typeof args === 'object') {
-          inputKeys = Object.keys(args);
-          try {
-            inputSizeBytes = Buffer.byteLength(JSON.stringify(args), 'utf8');
-          } catch {
-            // Ignore serialization error
-          }
-        }
-
-        enrich({ execution_id: this.executionId });
-
         try {
-          if (!deps.isInitialized()) {
-            enrich({ outcome: 'error', error_message: 'Server not initialized.' });
-            return {
-              isError: true as const,
-              content: [
-                { type: 'text' as const, text: 'Server not initialized. Roots unavailable.' },
-              ],
-            };
-          }
-
-          this.startProgress();
-
+          this.tracker.start();
           const result = await this.def.run(this.parsedArgs, this.toolCtx);
-
           await this.completeProgress(result.structured);
-
-          const text = result.text ?? JSON.stringify(result.structured);
-          const content: ContentBlock[] = [
-            { type: 'text' as const, text },
-            ...(result.resources ?? []),
-          ];
-
-          try {
-            resultSizeBytes = Buffer.byteLength(JSON.stringify(result.structured), 'utf8');
-          } catch {
-            // Ignore serialization error
+          this.outcome = this.signal.aborted ? 'cancelled' : 'success';
+          resultSizeBytes = tryMeasureBytes(result.structured);
+          return buildSuccessResponse(result);
+        } catch (error) {
+          const response = await this.failProgress(error);
+          this.outcome = this.signal.aborted ? 'cancelled' : 'error';
+          if (error instanceof Error) {
+            this.errorType = error.name;
+            this.errorMessage = error.message;
+          } else {
+            this.errorType = 'UnknownError';
+            this.errorMessage = String(error);
           }
-
-          return {
-            content,
-            structuredContent: result.structured as Record<string, unknown>,
-          };
-        } catch (error: unknown) {
-          return await this.failProgress(error);
+          return response;
         } finally {
-          await this.flushNotifications();
+          await this.tracker.flush();
           enrich({
             ...(inputKeys ? { input_keys: inputKeys } : {}),
             ...(inputSizeBytes !== undefined ? { input_size_bytes: inputSizeBytes } : {}),
@@ -457,14 +489,16 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
             ...(this.errorType ? { error_type: this.errorType } : {}),
             ...(this.errorMessage ? { error_message: this.errorMessage } : {}),
             memory_delta_mb: (process.memoryUsage().rss - this.startMemory) / 1024 / 1024,
-            tool_progress_ticks: this.progressUpdates,
-            progress_notifications_emitted: this.progressNotificationsEmitted,
+            tool_progress_ticks: this.tracker.tickCount,
+            progress_notifications_emitted: this.tracker.emittedCount,
           });
         }
       },
     );
   }
 }
+
+// ============ Tool Definition ============
 
 export function defineTool<I extends z.ZodType, O extends z.ZodType>(
   def: ToolDef<I, O>,
