@@ -18,14 +18,12 @@ test('coreHandler has explicit Promise<CallToolResult> return type annotation', 
     'CallToolResult should be imported from @modelcontextprotocol/server',
   );
 
-  // Verify coreHandler has explicit return type annotation
-  const coreHandlerMatch =
-    /const coreHandler = async \(args: unknown, ctx: ToolContext\): Promise<CallToolResult>/.exec(
-      fileContent,
-    );
+  // Verify ToolExecutor execute has explicit return type annotation
+  const executeMatch =
+    /async execute\(args: unknown, deps: ToolDeps\): Promise<CallToolResult>/.exec(fileContent);
   assert(
-    coreHandlerMatch,
-    'coreHandler should have explicit return type annotation: Promise<CallToolResult>',
+    executeMatch,
+    'execute should have explicit return type annotation: Promise<CallToolResult>',
   );
 
   // Verify the unsafe cast has been removed

@@ -98,7 +98,7 @@ function runDetached(toolName: string, work: Promise<unknown>, context: string):
   });
 }
 
-class ManagedExecution<I extends z.ZodType, O extends z.ZodType> {
+class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
   readonly executionId = randomUUID();
   readonly startTime = performance.now();
   readonly startMemory = process.memoryUsage().rss;
@@ -119,30 +119,20 @@ class ManagedExecution<I extends z.ZodType, O extends z.ZodType> {
 
   private readonly toolName: string;
   private readonly ctx: ToolContext;
-  private readonly def: Pick<
-    ToolDef<I, O>,
-    'title' | 'progress' | 'progressDone' | 'defaultErrorCode'
-  >;
-  private readonly parsedArgs: z.infer<I> | undefined;
+  private readonly def: ToolDef<I, O>;
+  private readonly parsedArgs: z.infer<I>;
 
-  constructor(
-    toolName: string,
-    ctx: ToolContext,
-    def: Pick<ToolDef<I, O>, 'title' | 'progress' | 'progressDone' | 'defaultErrorCode'>,
-    timeoutMs: number | undefined,
-    parsedArgs?: z.infer<I>,
-  ) {
+  constructor(toolName: string, ctx: ToolContext, def: ToolDef<I, O>, parsedArgs: z.infer<I>) {
     this.toolName = toolName;
     this.ctx = ctx;
     this.def = def;
     this.parsedArgs = parsedArgs;
 
     const baseSignal = ctx.signal ?? new AbortController().signal;
-    const timeoutSignal = timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined;
+    const timeoutSignal = def.timeoutMs ? AbortSignal.timeout(def.timeoutMs) : undefined;
     this.signal = timeoutSignal ? AbortSignal.any([baseSignal, timeoutSignal]) : baseSignal;
 
-    const progressCtx: ProgressCtx =
-      def.progress && parsedArgs !== undefined ? def.progress(parsedArgs) : { label: def.title };
+    const progressCtx: ProgressCtx = def.progress ? def.progress(parsedArgs) : { label: def.title };
     this.stderrSink = new StderrProgressSink(progressCtx);
 
     this.progressSession = new ProgressSession({
@@ -186,10 +176,9 @@ class ManagedExecution<I extends z.ZodType, O extends z.ZodType> {
   }
 
   startProgress(): void {
-    const progressCtx: ProgressCtx =
-      this.def.progress && this.parsedArgs !== undefined
-        ? this.def.progress(this.parsedArgs)
-        : { label: this.def.title };
+    const progressCtx: ProgressCtx = this.def.progress
+      ? this.def.progress(this.parsedArgs)
+      : { label: this.def.title };
     this.runTrackedProgress({
       current: 0,
       message: plainMessage('start', progressCtx),
@@ -199,10 +188,9 @@ class ManagedExecution<I extends z.ZodType, O extends z.ZodType> {
   tickProgress(p: { current: number; total?: number }): void {
     if (this.progressClosed) return;
     this.progressUpdates++;
-    const progressCtx: ProgressCtx =
-      this.def.progress && this.parsedArgs !== undefined
-        ? this.def.progress(this.parsedArgs)
-        : { label: this.def.title };
+    const progressCtx: ProgressCtx = this.def.progress
+      ? this.def.progress(this.parsedArgs)
+      : { label: this.def.title };
     const tickCtx: ProgressCtx = {
       ...progressCtx,
       current: p.current,
@@ -214,14 +202,12 @@ class ManagedExecution<I extends z.ZodType, O extends z.ZodType> {
   }
 
   async completeProgress(result: z.infer<O>): Promise<void> {
-    const progressCtx: ProgressCtx =
-      this.def.progress && this.parsedArgs !== undefined
-        ? this.def.progress(this.parsedArgs)
-        : { label: this.def.title };
-    const doneCtx: ProgressCtx =
-      this.def.progressDone && this.parsedArgs !== undefined
-        ? { ...progressCtx, ...this.def.progressDone(this.parsedArgs, result) }
-        : progressCtx;
+    const progressCtx: ProgressCtx = this.def.progress
+      ? this.def.progress(this.parsedArgs)
+      : { label: this.def.title };
+    const doneCtx: ProgressCtx = this.def.progressDone
+      ? { ...progressCtx, ...this.def.progressDone(this.parsedArgs, result) }
+      : progressCtx;
     const doneMessage = plainMessage('done', doneCtx);
     this.progressClosed = true;
     this.progressSession.complete(doneMessage);
@@ -237,10 +223,9 @@ class ManagedExecution<I extends z.ZodType, O extends z.ZodType> {
   async failProgress(
     error: unknown,
   ): Promise<{ isError: true; content: ContentBlock[]; errorCode?: number | string }> {
-    const progressCtx: ProgressCtx =
-      this.def.progress && this.parsedArgs !== undefined
-        ? this.def.progress(this.parsedArgs)
-        : { label: this.def.title };
+    const progressCtx: ProgressCtx = this.def.progress
+      ? this.def.progress(this.parsedArgs)
+      : { label: this.def.title };
     const errMsg = error instanceof Error ? error.message : String(error);
     this.stderrSink.updateCtx({ error: errMsg });
     const failMessage = plainMessage('fail', { ...progressCtx, error: errMsg });
@@ -276,6 +261,109 @@ class ManagedExecution<I extends z.ZodType, O extends z.ZodType> {
       await Promise.allSettled([...this.pendingProgressNotifications]);
     }
   }
+
+  async execute(args: unknown, deps: ToolDeps): Promise<CallToolResult> {
+    return withTelemetry(
+      {
+        event: 'tool_execution',
+        tool_name: this.def.name,
+        ...(this.ctx.sessionId ? { session_id: this.ctx.sessionId } : {}),
+        ...(this.ctx._meta &&
+        'traceparent' in this.ctx._meta &&
+        typeof this.ctx._meta['traceparent'] === 'string'
+          ? { traceparent: this.ctx._meta['traceparent'] }
+          : {}),
+      },
+      async (enrich) => {
+        let inputKeys: string[] | undefined;
+        let inputSizeBytes: number | undefined;
+        let resultSizeBytes: number | undefined;
+
+        if (args && typeof args === 'object') {
+          inputKeys = Object.keys(args);
+          try {
+            inputSizeBytes = Buffer.byteLength(JSON.stringify(args), 'utf8');
+          } catch {
+            // Ignore serialization error
+          }
+        }
+
+        enrich({ execution_id: this.executionId });
+
+        try {
+          if (!deps.isInitialized()) {
+            enrich({ outcome: 'error', error_message: 'Server not initialized.' });
+            return {
+              isError: true as const,
+              content: [
+                { type: 'text' as const, text: 'Server not initialized. Roots unavailable.' },
+              ],
+            };
+          }
+
+          this.startProgress();
+
+          const toolCtx: ToolCtx = {
+            signal: this.signal,
+            ...(this.ctx.sessionId ? { sessionId: this.ctx.sessionId } : {}),
+            ...(this.ctx._meta ? { _meta: this.ctx._meta } : {}),
+            pathGuard: deps.pathGuard,
+            resourceStore: deps.resourceStore,
+            ...(this.ctx.log
+              ? {
+                  log: ((ctxLog) => (level: LoggingLevel, data: unknown, logger?: string) => {
+                    const msg = typeof data === 'string' ? data : String(data);
+                    Logger.emit(level, msg);
+                    runDetached(this.def.name, ctxLog(level, data, logger), 'log');
+                  })(this.ctx.log),
+                }
+              : {}),
+            ...(this.ctx.sendNotification ? { sendNotification: this.ctx.sendNotification } : {}),
+            onProgress: (p) => {
+              this.tickProgress(p);
+            },
+            ...(this.ctx.elicitInput ? { elicitInput: this.ctx.elicitInput } : {}),
+          };
+
+          const result = await this.def.run(this.parsedArgs, toolCtx);
+
+          await this.completeProgress(result.structured);
+
+          const text = result.text ?? JSON.stringify(result.structured);
+          const content: ContentBlock[] = [
+            { type: 'text' as const, text },
+            ...(result.resources ?? []),
+          ];
+
+          try {
+            resultSizeBytes = Buffer.byteLength(JSON.stringify(result.structured), 'utf8');
+          } catch {
+            // Ignore serialization error
+          }
+
+          return {
+            content,
+            structuredContent: result.structured as Record<string, unknown>,
+          };
+        } catch (error: unknown) {
+          return await this.failProgress(error);
+        } finally {
+          await this.flushNotifications();
+          enrich({
+            ...(inputKeys ? { input_keys: inputKeys } : {}),
+            ...(inputSizeBytes !== undefined ? { input_size_bytes: inputSizeBytes } : {}),
+            ...(resultSizeBytes !== undefined ? { result_size_bytes: resultSizeBytes } : {}),
+            outcome: this.outcome,
+            ...(this.errorType ? { error_type: this.errorType } : {}),
+            ...(this.errorMessage ? { error_message: this.errorMessage } : {}),
+            memory_delta_mb: (process.memoryUsage().rss - this.startMemory) / 1024 / 1024,
+            tool_progress_ticks: this.progressUpdates,
+            progress_notifications_emitted: this.progressNotificationsEmitted,
+          });
+        }
+      },
+    );
+  }
 }
 
 // ============ Tool Registry ============
@@ -303,115 +391,6 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
     outputSchema: outputJsonSchema as Tool['outputSchema'],
 
     register(deps: ToolDeps) {
-      // Core handler: accepts ToolContext (compatible with both task-orchestrator and
-      // regular ServerContext call paths). signal is optional in ToolContext; fall back
-      // to an already-aborted signal when absent so ToolCtx.signal stays non-optional.
-      const coreHandler = async (args: unknown, ctx: ToolContext): Promise<CallToolResult> => {
-        return withTelemetry(
-          {
-            event: 'tool_execution',
-            tool_name: def.name,
-            ...(ctx.sessionId ? { session_id: ctx.sessionId } : {}),
-            ...(ctx._meta &&
-            'traceparent' in ctx._meta &&
-            typeof ctx._meta['traceparent'] === 'string'
-              ? { traceparent: ctx._meta['traceparent'] }
-              : {}),
-          },
-          async (enrich) => {
-            let inputKeys: string[] | undefined;
-            let inputSizeBytes: number | undefined;
-            let resultSizeBytes: number | undefined;
-
-            if (args && typeof args === 'object') {
-              inputKeys = Object.keys(args);
-              try {
-                inputSizeBytes = Buffer.byteLength(JSON.stringify(args), 'utf8');
-              } catch {
-                // Ignore serialization error
-              }
-            }
-
-            const parsedArgs = args as z.infer<typeof def.input>;
-            const exec = new ManagedExecution<I, O>(def.name, ctx, def, def.timeoutMs, parsedArgs);
-
-            enrich({ execution_id: exec.executionId });
-
-            try {
-              if (!deps.isInitialized()) {
-                enrich({ outcome: 'error', error_message: 'Server not initialized.' });
-                return {
-                  isError: true as const,
-                  content: [
-                    { type: 'text' as const, text: 'Server not initialized. Roots unavailable.' },
-                  ],
-                };
-              }
-
-              exec.startProgress();
-
-              const toolCtx: ToolCtx = {
-                signal: exec.signal,
-                ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
-                ...(ctx._meta ? { _meta: ctx._meta } : {}),
-                pathGuard: deps.pathGuard,
-                resourceStore: deps.resourceStore,
-                ...(ctx.log
-                  ? {
-                      log: ((ctxLog) => (level, data, logger) => {
-                        const msg = typeof data === 'string' ? data : String(data);
-                        Logger.emit(level, msg);
-                        runDetached(def.name, ctxLog(level, data, logger), 'log');
-                      })(ctx.log),
-                    }
-                  : {}),
-                ...(ctx.sendNotification ? { sendNotification: ctx.sendNotification } : {}),
-                onProgress: (p) => {
-                  exec.tickProgress(p);
-                },
-                ...(ctx.elicitInput ? { elicitInput: ctx.elicitInput } : {}),
-              };
-
-              const result = await def.run(parsedArgs, toolCtx);
-
-              await exec.completeProgress(result.structured);
-
-              const text = result.text ?? JSON.stringify(result.structured);
-              const content: ContentBlock[] = [
-                { type: 'text' as const, text },
-                ...(result.resources ?? []),
-              ];
-
-              try {
-                resultSizeBytes = Buffer.byteLength(JSON.stringify(result.structured), 'utf8');
-              } catch {
-                // Ignore serialization error
-              }
-
-              return {
-                content,
-                structuredContent: result.structured as Record<string, unknown>,
-              };
-            } catch (error: unknown) {
-              return await exec.failProgress(error);
-            } finally {
-              await exec.flushNotifications();
-              enrich({
-                ...(inputKeys ? { input_keys: inputKeys } : {}),
-                ...(inputSizeBytes !== undefined ? { input_size_bytes: inputSizeBytes } : {}),
-                ...(resultSizeBytes !== undefined ? { result_size_bytes: resultSizeBytes } : {}),
-                outcome: exec.outcome,
-                ...(exec.errorType ? { error_type: exec.errorType } : {}),
-                ...(exec.errorMessage ? { error_message: exec.errorMessage } : {}),
-                memory_delta_mb: (process.memoryUsage().rss - exec.startMemory) / 1024 / 1024,
-                tool_progress_ticks: exec.progressUpdates,
-                progress_notifications_emitted: exec.progressNotificationsEmitted,
-              });
-            }
-          },
-        );
-      };
-
       // `as never`: bridges StandardSchema/JSON-Schema type mismatch at registration boundary.
       const toolDefShape = {
         title: def.title,
@@ -421,8 +400,18 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
         annotations: def.annotations,
       };
 
-      const serverCtxHandler = async (args: unknown, ctx: ServerContext): Promise<CallToolResult> =>
-        coreHandler(args, toToolContext(ctx));
+      const serverCtxHandler = async (
+        args: unknown,
+        ctx: ServerContext,
+      ): Promise<CallToolResult> => {
+        const executor = new ToolExecutor<I, O>(
+          def.name,
+          toToolContext(ctx),
+          def,
+          args as z.infer<I>,
+        );
+        return executor.execute(args, deps);
+      };
 
       const taskSupport = def.execution?.taskSupport;
       if (taskSupport && taskSupport !== 'forbidden' && deps.orchestrator) {
@@ -439,8 +428,10 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
           def.name,
           taskToolDefShape,
           deps.orchestrator.wrapToolTask(
-            async (args, ctx) =>
-              coreHandler(args, ctx) as Promise<ToolResult<Record<string, unknown>>>,
+            async (args, ctx) => {
+              const executor = new ToolExecutor<I, O>(def.name, ctx, def, args as z.infer<I>);
+              return executor.execute(args, deps) as Promise<ToolResult<Record<string, unknown>>>;
+            },
             { toolName: def.name },
           ),
         );
