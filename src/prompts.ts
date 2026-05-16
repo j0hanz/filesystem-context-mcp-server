@@ -13,7 +13,7 @@ import { stat } from 'node:fs/promises';
 import { z } from 'zod/v4';
 
 import { Logger, withTelemetry } from './core/observability.js';
-import { completePathCached } from './core/path.js';
+import { PathCompleter } from './core/path.js';
 import type { PathGuard } from './core/path.js';
 import { INSTRUCTION_SECTIONS } from './resources.js';
 import { type IconInfo, withDefaultIcons } from './tools/define.js';
@@ -42,18 +42,13 @@ interface PromptEntry {
 // --- Helpers ---
 
 function pathArg(
-  server: McpServer,
   guard: PathGuard,
   argumentName: string,
   description: string,
 ): ReturnType<typeof completable<z.ZodString>> {
+  const completer = new PathCompleter(guard);
   return completable(z.string().describe(description), (value, ctx) =>
-    completePathCached(value, {
-      server,
-      pathGuard: guard,
-      argumentName,
-      ...(ctx?.arguments ? { contextArguments: ctx.arguments } : {}),
-    }),
+    completer.suggest(value, argumentName, ctx?.arguments ?? undefined),
   );
 }
 
@@ -183,7 +178,7 @@ const ANALYZE_PATH: PromptEntry = {
           title: ANALYZE_PATH.contract.title,
           description: ANALYZE_PATH.contract.description,
           argsSchema: z.strictObject({
-            path: pathArg(server, options.pathGuard, 'path', 'Absolute path to analyze.'),
+            path: pathArg(options.pathGuard, 'path', 'Absolute path to analyze.'),
           }),
         },
         options.iconInfo,
@@ -225,7 +220,6 @@ const FIND_IN_TREE: PromptEntry = {
           argsSchema: z.strictObject({
             query: z.string().min(1).describe('Search term (name pattern or content regex).'),
             root: pathArg(
-              server,
               options.pathGuard,
               'root',
               'Directory to search under. Defaults to first allowed root.',
@@ -277,7 +271,7 @@ const SUMMARIZE_DIRECTORY: PromptEntry = {
           title: SUMMARIZE_DIRECTORY.contract.title,
           description: SUMMARIZE_DIRECTORY.contract.description,
           argsSchema: z.strictObject({
-            path: pathArg(server, options.pathGuard, 'path', 'Directory to summarize.'),
+            path: pathArg(options.pathGuard, 'path', 'Directory to summarize.'),
             depth: z.coerce
               .number<number>()
               .pipe(z.int32().min(1).max(6))

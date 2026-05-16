@@ -3,7 +3,7 @@ import type { ReadResourceResult, Role, ServerContext } from '@modelcontextproto
 import { type FSWatcher, watch } from 'node:fs';
 
 import { readFileWithStats } from './core/fs.js';
-import { completePathCached, type PathGuard } from './core/path.js';
+import { PathCompleter, type PathGuard } from './core/path.js';
 import type { ResourceStore } from './core/store.js';
 import {
   DEFAULT_SEARCH_CONTENT_RESULTS,
@@ -185,6 +185,7 @@ function extractPath(uri: string): string | undefined {
 }
 
 function createFilesystemResource(options: ResourceRegistrationOptions): ResourceContract {
+  const completer = options.pathGuard ? new PathCompleter(options.pathGuard) : undefined;
   const watchers = new Map<string, FSWatcher>();
   const dropWatcher = (uri: string, watcher: FSWatcher): void => {
     const current = watchers.get(uri);
@@ -226,7 +227,7 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
 
     async complete(variable, value) {
       if (variable === 'path' && options.pathGuard) {
-        return completePathCached(value, { pathGuard: options.pathGuard });
+        return completer ? completer.suggest(value) : [];
       }
       return [];
     },

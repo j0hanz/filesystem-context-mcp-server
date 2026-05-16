@@ -1030,21 +1030,7 @@ interface CacheEntry {
   result: string[];
 }
 
-const completionState = new WeakMap<McpServer, PathCompleter>();
-
-function buildCacheKey(
-  argumentName: string,
-  value: string,
-  contextArguments?: Record<string, string>,
-): string {
-  const base = `${argumentName.toLowerCase()}:${value}`;
-  if (!contextArguments) return base;
-  const keys = Object.keys(contextArguments);
-  if (keys.length === 0) return base;
-  return `${base}:${JSON.stringify(contextArguments)}`;
-}
-
-class PathCompleter {
+export class PathCompleter {
   private cache = new Map<string, CacheEntry>();
   private readonly pathGuard: PathGuard;
 
@@ -1057,7 +1043,7 @@ class PathCompleter {
     argumentName = '',
     contextArguments?: Record<string, string>,
   ): Promise<string[]> {
-    const cacheKey = buildCacheKey(argumentName, value, contextArguments);
+    const cacheKey = PathCompleter.buildCacheKey(argumentName, value, contextArguments);
     const now = Date.now();
     const cacheEntry = this.cache.get(cacheKey);
 
@@ -1070,11 +1056,23 @@ class PathCompleter {
       argumentName,
       ...(contextArguments !== undefined ? { contextArguments } : {}),
     });
-    this._setCacheValue(cacheKey, { ms: now, result: results });
+    this.setCacheValue(cacheKey, { ms: now, result: results });
     return results;
   }
 
-  private _setCacheValue(key: string, entry: CacheEntry): void {
+  private static buildCacheKey(
+    argumentName: string,
+    value: string,
+    contextArguments?: Record<string, string>,
+  ): string {
+    const base = `${argumentName.toLowerCase()}:${value}`;
+    if (!contextArguments) return base;
+    const keys = Object.keys(contextArguments);
+    if (keys.length === 0) return base;
+    return `${base}:${JSON.stringify(contextArguments)}`;
+  }
+
+  private setCacheValue(key: string, entry: CacheEntry): void {
     if (this.cache.has(key)) this.cache.delete(key);
     this.cache.set(key, entry);
     while (this.cache.size > MAX_COMPLETION_CACHE_KEYS) {
@@ -1324,22 +1322,12 @@ function getSearchContext(
   return undefined;
 }
 
-export interface CompletePathOptions {
-  /** McpServer instance for WeakMap cache key. Cache disabled when absent. */
-  server?: McpServer;
-  /** PathGuard for the current session (provides allowed directories). */
+interface CompletePathOptions {
   pathGuard: PathGuard;
-  /** Argument name — drives context-key selection (e.g. 'path', 'modified'). */
   argumentName?: string;
-  /** Sibling argument values from the completion ctx.arguments field. */
   contextArguments?: Record<string, string>;
 }
 
-/**
- * Returns up to MAX_COMPLETION_ITEMS path suggestions for `value` within the
- * current allowed-directory state. Uses a per-McpServer WeakMap to isolate
- * rate-limit and cache state across HTTP sessions.
- */
 async function completePath(value: string, options: CompletePathOptions): Promise<string[]> {
   const allowed = options.pathGuard.getAllowedDirectories();
   const argName = options.argumentName ?? '';
@@ -1367,24 +1355,6 @@ async function completePath(value: string, options: CompletePathOptions): Promis
   } catch {
     return [];
   }
-}
-
-/**
- * Rate-limited, cached wrapper around completePath.
- * Use this in completable() callbacks to avoid hammering the filesystem.
- */
-export async function completePathCached(
-  value: string,
-  options: CompletePathOptions,
-): Promise<string[]> {
-  if (!options.server) return completePath(value, options);
-
-  let completer = completionState.get(options.server);
-  if (!completer) {
-    completer = new PathCompleter(options.pathGuard);
-    completionState.set(options.server, completer);
-  }
-  return completer.suggest(value, options.argumentName ?? '', options.contextArguments);
 }
 
 export function createBase64JsonCodec<Schema extends z.ZodType>(

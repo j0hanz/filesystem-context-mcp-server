@@ -1,5 +1,3 @@
-import { McpServer } from '@modelcontextprotocol/server';
-
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -8,8 +6,12 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { test } from 'node:test';
 
-import { completePathCached } from '../../src/core/path.js';
-import { normalizePath, PathGuard, resolveAllowedDirectoriesState } from '../../src/core/path.js';
+import {
+  normalizePath,
+  PathCompleter,
+  PathGuard,
+  resolveAllowedDirectoriesState,
+} from '../../src/core/path.js';
 
 async function withTestDir(fn: (tmpDir: string) => Promise<void>) {
   const tmpDir = await mkdtemp(join(tmpdir(), `fsmcp-pathcomp-${randomUUID().slice(0, 8)}-`));
@@ -27,8 +29,8 @@ test('path-completer', async (t) => {
       const state = await resolveAllowedDirectoriesState([tmpDir]);
       pathGuard.initialize(state);
 
-      const server = new McpServer({ name: 'test', version: '1.0' });
-      const results = await completePathCached('', { pathGuard, server });
+      const completer = new PathCompleter(pathGuard);
+      const results = await completer.suggest('');
 
       assert.deepEqual(results, [normalizePath(tmpDir)]);
     });
@@ -44,21 +46,15 @@ test('path-completer', async (t) => {
       const state = await resolveAllowedDirectoriesState([tmpDir]);
       pathGuard.initialize(state);
 
-      const server = new McpServer({ name: 'test', version: '1.0' });
-      const results = await completePathCached(tmpDir + sep + 'file', {
-        pathGuard,
-        server,
-      });
+      const completer = new PathCompleter(pathGuard);
+      const results = await completer.suggest(tmpDir + sep + 'file');
 
       assert.deepEqual(results, [
         normalizePath(join(tmpDir, 'file1.txt')),
         normalizePath(join(tmpDir, 'file2.txt')),
       ]);
 
-      const subdirResults = await completePathCached(tmpDir + sep + 'sub', {
-        pathGuard,
-        server,
-      });
+      const subdirResults = await completer.suggest(tmpDir + sep + 'sub');
       assert.deepEqual(subdirResults, [normalizePath(join(tmpDir, 'subdir')) + sep]);
     });
   });
@@ -73,13 +69,8 @@ test('path-completer', async (t) => {
       const state = await resolveAllowedDirectoriesState([tmpDir]);
       pathGuard.initialize(state);
 
-      const server = new McpServer({ name: 'test', version: '1.0' });
-      const results = await completePathCached('', {
-        pathGuard,
-        server,
-        argumentName: 'path',
-        contextArguments: { path: srcDir + sep + 'index.ts' }, // Context base directory will resolve to srcDir
-      });
+      const completer = new PathCompleter(pathGuard);
+      const results = await completer.suggest('', 'path', { path: srcDir + sep + 'index.ts' });
 
       assert.deepEqual(results, [normalizePath(join(srcDir, 'index.ts'))]);
     });
@@ -95,11 +86,8 @@ test('path-completer', async (t) => {
       const state = await resolveAllowedDirectoriesState([namedRoot]);
       pathGuard.initialize(state);
 
-      const server = new McpServer({ name: 'test', version: '1.0' });
-      const results = await completePathCached('myRoot/test', {
-        pathGuard,
-        server,
-      });
+      const completer = new PathCompleter(pathGuard);
+      const results = await completer.suggest('myRoot/test');
 
       assert.deepEqual(results, [normalizePath(join(namedRoot, 'test.txt'))]);
     });
