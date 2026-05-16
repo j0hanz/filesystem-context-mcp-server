@@ -154,6 +154,7 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
   private readonly def: ToolDef<I, O>;
   private readonly parsedArgs: z.infer<I>;
   private readonly progressCtx: ProgressCtx;
+  private readonly toolCtx: ToolCtx;
 
   constructor(toolName: string, ctx: ToolCtx, def: ToolDef<I, O>, parsedArgs: z.infer<I>) {
     this.toolName = toolName;
@@ -175,6 +176,29 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     });
 
     this.progressToken = ctx._meta?.progressToken;
+
+    const ctxLog = ctx.log;
+    this.toolCtx = {
+      signal: this.signal,
+      ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
+      ...(ctx._meta ? { _meta: ctx._meta } : {}),
+      pathGuard: ctx.pathGuard,
+      resourceStore: ctx.resourceStore,
+      ...(ctxLog
+        ? {
+            log: (level: LoggingLevel, data: unknown, logger?: string) => {
+              const msg = typeof data === 'string' ? data : String(data);
+              Logger.emit(level, msg);
+              ctxLog(level, data, logger);
+            },
+          }
+        : {}),
+      ...(ctx.sendNotification ? { sendNotification: ctx.sendNotification } : {}),
+      onProgress: (p) => {
+        this.tickProgress(p);
+      },
+      ...(ctx.elicitInput ? { elicitInput: ctx.elicitInput } : {}),
+    };
   }
 
   async emitProgress(params: { current: number; total?: number; message?: string }): Promise<void> {
@@ -324,30 +348,7 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
 
           this.startProgress();
 
-          const ctxLog = this.ctx.log;
-          const toolCtx: ToolCtx = {
-            signal: this.signal,
-            ...(this.ctx.sessionId ? { sessionId: this.ctx.sessionId } : {}),
-            ...(this.ctx._meta ? { _meta: this.ctx._meta } : {}),
-            pathGuard: this.ctx.pathGuard,
-            resourceStore: this.ctx.resourceStore,
-            ...(ctxLog
-              ? {
-                  log: (level: LoggingLevel, data: unknown, logger?: string) => {
-                    const msg = typeof data === 'string' ? data : String(data);
-                    Logger.emit(level, msg);
-                    ctxLog(level, data, logger);
-                  },
-                }
-              : {}),
-            ...(this.ctx.sendNotification ? { sendNotification: this.ctx.sendNotification } : {}),
-            onProgress: (p) => {
-              this.tickProgress(p);
-            },
-            ...(this.ctx.elicitInput ? { elicitInput: this.ctx.elicitInput } : {}),
-          };
-
-          const result = await this.def.run(this.parsedArgs, toolCtx);
+          const result = await this.def.run(this.parsedArgs, this.toolCtx);
 
           await this.completeProgress(result.structured);
 
