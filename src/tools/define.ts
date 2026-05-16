@@ -164,6 +164,18 @@ function runDetached(toolName: string, work: Promise<unknown>, context: string):
   });
 }
 
+function resolveProgressCtx<I extends z.ZodType, O extends z.ZodType>(
+  def: ToolDef<I, O>,
+  args: z.infer<I>,
+): ProgressCtx {
+  if (!def.progress) return { label: def.title };
+  try {
+    return def.progress(args);
+  } catch {
+    return { label: def.title };
+  }
+}
+
 class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
   readonly executionId = randomUUID();
   readonly startTime = performance.now();
@@ -200,7 +212,7 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     const timeoutSignal = def.timeoutMs ? AbortSignal.timeout(def.timeoutMs) : undefined;
     this.signal = timeoutSignal ? AbortSignal.any([baseSignal, timeoutSignal]) : baseSignal;
 
-    this.progressCtx = def.progress ? def.progress(parsedArgs) : { label: def.title };
+    this.progressCtx = resolveProgressCtx(def, parsedArgs);
     this.stderrSink = new StderrProgressSink(this.progressCtx);
 
     this.progressSession = new ProgressSession({
@@ -487,17 +499,8 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
             {
               toolName: def.name,
               toolTitle: def.title,
-              ...(def.progress
-                ? {
-                    progress: (args: unknown) => {
-                      try {
-                        return def.progress?.(args as z.infer<I>) ?? { label: def.title };
-                      } catch {
-                        return { label: def.title };
-                      }
-                    },
-                  }
-                : {}),
+              startStatusMessage: (args: unknown) =>
+                plainMessage('start', resolveProgressCtx(def, args as z.infer<I>)),
               deps,
             },
           ),

@@ -349,7 +349,7 @@ describe('TaskOrchestrator', () => {
         {
           toolName: 'read',
           toolTitle: 'Read File',
-          progress: () => ({ label: 'Read', subject: 'README.md', scope: 'head 20' }),
+          startStatusMessage: () => 'Read: README.md · head 20',
           deps: stubDeps,
         },
       );

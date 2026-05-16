@@ -15,7 +15,7 @@ import {
 import type { StandardSchemaWithJSON } from '@modelcontextprotocol/server';
 
 import { ErrorCode, FsError } from './core/errors.js';
-import { plainMessage, type ProgressCtx } from './core/fmt.js';
+import { plainMessage } from './core/fmt.js';
 import { logRuntimeFailure } from './core/observability.js';
 import {
   isRecord,
@@ -164,7 +164,7 @@ export class TaskOrchestrator implements TaskStore {
     options: {
       toolName: string;
       toolTitle?: string;
-      progress?: (args: unknown) => ProgressCtx;
+      startStatusMessage?: (args: unknown) => string;
       deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore'>;
     },
   ): ToolTaskHandler<Args> {
@@ -206,21 +206,12 @@ export class TaskOrchestrator implements TaskStore {
 
       this.runner.register(mcpTask.taskId);
 
-      let startProgressCtx: ProgressCtx = { label: options.toolTitle ?? options.toolName };
-      if (options.progress) {
-        try {
-          startProgressCtx = options.progress(args);
-        } catch {
-          // Fall back to canonical tool label if progress context derivation fails.
-          startProgressCtx = { label: options.toolTitle ?? options.toolName };
-        }
-      }
+      const defaultStartMessage = plainMessage('start', {
+        label: options.toolTitle ?? options.toolName,
+      });
+      const startMessage = options.startStatusMessage?.(args) ?? defaultStartMessage;
 
-      await task.store.updateTaskStatus(
-        mcpTask.taskId,
-        'working',
-        plainMessage('start', startProgressCtx),
-      );
+      await task.store.updateTaskStatus(mcpTask.taskId, 'working', startMessage);
 
       this.runner
         .execute(mcpTask.taskId, async (execSignal) => {
