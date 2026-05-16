@@ -10,7 +10,7 @@ import {
   MAX_SEARCH_RESULTS,
   MAX_TEXT_FILE_SIZE,
 } from './core/util.js';
-import type { IconInfo } from './tools/_helpers.js';
+import type { IconInfo } from './tools/define.js';
 
 // ═══════════════════════════════════════════════════════════════
 // shared

@@ -1,4 +1,4 @@
-import type { ContentBlock, Icon, Role } from '@modelcontextprotocol/server';
+import type { ContentBlock, Role } from '@modelcontextprotocol/server';
 
 import { z } from 'zod/v4';
 
@@ -14,15 +14,6 @@ import type { TaskOrchestrator } from '../tasks.js';
 import type { BatchResult, PerPathError, PerPathResult, ToolCtx } from './define.js';
 
 // ============ ToolRegistrationOptions ============
-
-/**
- * Minimal icon descriptor used internally. Compatible with SDK's `Icon`
- * (which has optional mimeType, sizes, theme). We require mimeType for
- * consistency with our single icon producer.
- */
-export type IconInfo = Icon & { mimeType: string };
-
-type TaskSupport = 'optional' | 'required' | 'forbidden';
 
 export interface ToolRegistrationOptions {
   pathGuard: PathGuard;
@@ -201,73 +192,6 @@ export function buildFileInfoPayload(info: FileInfo): FileInfoPayload {
     ...(info.mimeType !== undefined ? { mimeType: info.mimeType } : {}),
     ...(info.symlinkTarget !== undefined ? { symlinkTarget: info.symlinkTarget } : {}),
   };
-}
-
-// ---- Icon helpers ----
-
-function normalizeToolExecution<T extends object>(tool: T): T {
-  const candidate = tool as Record<string, unknown>;
-  const topLevelTaskSupport = candidate['taskSupport'];
-  const existingExecution = getExecutionConfig(candidate);
-  const resolvedTaskSupport = resolveTaskSupport(
-    topLevelTaskSupport,
-    existingExecution?.['taskSupport'],
-  );
-
-  if (resolvedTaskSupport === undefined && topLevelTaskSupport === undefined) {
-    return tool;
-  }
-
-  const normalized = { ...candidate };
-  delete normalized['taskSupport'];
-
-  const execution = buildExecution(existingExecution, resolvedTaskSupport);
-  if (execution !== undefined) {
-    normalized['execution'] = execution;
-  }
-
-  return normalized as T;
-}
-
-function getExecutionConfig(
-  candidate: Record<string, unknown>,
-): Record<string, unknown> | undefined {
-  const { execution } = candidate;
-  return execution && typeof execution === 'object'
-    ? (execution as Record<string, unknown>)
-    : undefined;
-}
-
-function resolveTaskSupport(topLevel: unknown, nested: unknown): TaskSupport | undefined {
-  if (topLevel === 'optional' || topLevel === 'required' || topLevel === 'forbidden') {
-    return topLevel;
-  }
-  if (nested === 'optional' || nested === 'required' || nested === 'forbidden') {
-    return nested;
-  }
-  return undefined;
-}
-
-function buildExecution(
-  existing: Record<string, unknown> | undefined,
-  taskSupport: TaskSupport | undefined,
-): Record<string, unknown> | undefined {
-  if (taskSupport === undefined && existing === undefined) return undefined;
-  return {
-    ...(existing ?? {}),
-    ...(taskSupport !== undefined ? { taskSupport } : {}),
-  };
-}
-
-export function withDefaultIcons<T extends object>(
-  tool: T,
-  iconInfo: IconInfo | undefined,
-): T & { icons?: Icon[] } {
-  const normalized = normalizeToolExecution(tool);
-  if (!iconInfo) return normalized;
-  const existing = (normalized as { icons?: Icon[] }).icons;
-  if (existing && existing.length > 0) return normalized;
-  return { ...normalized, icons: [{ src: iconInfo.src, mimeType: iconInfo.mimeType }] };
 }
 
 interface BatchInput<TOverride> {

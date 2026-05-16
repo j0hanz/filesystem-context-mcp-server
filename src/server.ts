@@ -25,9 +25,9 @@ import {
   serverInstructionsContent,
 } from './resources.js';
 import { TaskOrchestrator } from './tasks.js';
-import { type IconInfo, withDefaultIcons } from './tools/_helpers.js';
 import { CALCULATE_HASH } from './tools/calculate-hash.js';
 import { CREATE } from './tools/create.js';
+import { type IconInfo, withDefaultIcons } from './tools/define.js';
 import { DELETE_FILE } from './tools/delete-file.js';
 import { EDIT } from './tools/edit.js';
 import { LIST } from './tools/list.js';

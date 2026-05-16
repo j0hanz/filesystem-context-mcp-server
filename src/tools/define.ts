@@ -3,6 +3,7 @@ import type {
   ContentBlock,
   ElicitRequestFormParams,
   ElicitResult,
+  Icon,
   LoggingLevel,
   McpServer,
   Notification,
@@ -92,6 +93,18 @@ export interface ToolDeps {
   readonly pathGuard: PathGuard;
   readonly resourceStore: ResourceStore | undefined;
   readonly orchestrator?: TaskOrchestrator;
+}
+
+export type IconInfo = Icon & { mimeType: string };
+
+export function withDefaultIcons<T extends object>(
+  obj: T,
+  iconInfo: IconInfo | undefined,
+): T & { icons?: Icon[] } {
+  if (!iconInfo) return obj;
+  const existing = (obj as { icons?: Icon[] }).icons;
+  if (existing && existing.length > 0) return obj;
+  return { ...obj, icons: [{ src: iconInfo.src, mimeType: iconInfo.mimeType }] };
 }
 
 export interface RunResult<T> {
