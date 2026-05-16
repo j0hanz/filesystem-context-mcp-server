@@ -948,11 +948,7 @@ export async function atomicWriteFile(
     await fsWriteFile(tempPath, content, { encoding, signal });
     await withAbort(fsRename(tempPath, validPath), signal);
   } catch (error) {
-    try {
-      await fsUnlink(tempPath).catch(() => undefined);
-    } catch {
-      // Ignore cleanup errors
-    }
+    await fsUnlink(tempPath).catch(() => undefined);
     throw error;
   }
   return { validPath };

@@ -1278,18 +1278,17 @@ async function findMatchesInDirectory(
   if (!(await isAllowedCompletionDirectory(searchDir, allowed))) return matches;
   try {
     const entries = await readdir(searchDir, { withFileTypes: true });
-    const dirSep = searchDir.endsWith(sep) ? '' : sep;
 
     if (prefix === '') {
       for (const entry of entries) {
-        const fullPath = `${searchDir}${dirSep}${entry.name}`;
+        const fullPath = join(searchDir, entry.name);
         matches.push(entry.isDirectory() ? `${fullPath}${sep}` : fullPath);
       }
     } else {
       const lowerPrefix = prefix.toLowerCase();
       for (const entry of entries) {
         if (entry.name.toLowerCase().startsWith(lowerPrefix)) {
-          const fullPath = `${searchDir}${dirSep}${entry.name}`;
+          const fullPath = join(searchDir, entry.name);
           matches.push(entry.isDirectory() ? `${fullPath}${sep}` : fullPath);
         }
       }
