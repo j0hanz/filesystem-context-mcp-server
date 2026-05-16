@@ -134,7 +134,7 @@ export async function processInParallel<T, R>(
 
 // ---- public API --------------------------------------------------------
 
-export function shouldOffload(payloadBytes: number): boolean {
+function shouldOffload(payloadBytes: number): boolean {
   if (WORKERS_DISABLED) return false;
   return payloadBytes >= WORKER_OFFLOAD_THRESHOLD_BYTES;
 }
@@ -501,6 +501,19 @@ export function runInWorker<N extends WorkerTaskName>(
   opts: RunInWorkerOptions = {},
 ): Promise<TaskResult<N>> {
   return globalWorkerPool.run(name, payload, opts);
+}
+
+export async function runWorkerOr<N extends WorkerTaskName>(
+  name: N,
+  payload: TaskPayload<N>,
+  payloadBytes: number,
+  opts: RunInWorkerOptions,
+  inline: () => Promise<TaskResult<N>>,
+): Promise<TaskResult<N>> {
+  if (shouldOffload(payloadBytes)) {
+    return runInWorker(name, payload, opts);
+  }
+  return inline();
 }
 
 export async function shutdownWorkerPool(): Promise<void> {

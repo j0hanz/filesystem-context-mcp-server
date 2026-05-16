@@ -8,7 +8,7 @@ import { createTwoFilesPatch } from 'diff';
 import RE2 from 're2';
 import { z } from 'zod/v4';
 
-import { runInWorker, shouldOffload } from '../core/concurrency.js';
+import { runWorkerOr } from '../core/concurrency.js';
 import { ErrorCode, formatUnknownErrorMessage, FsError, Problem } from '../core/errors.js';
 import {
   atomicWriteFile,
@@ -347,18 +347,18 @@ async function maybeAppendPatchDiff(
   const totalBytes =
     Buffer.byteLength(params.originalContent) + Buffer.byteLength(params.updatedContent);
 
-  const patch = shouldOffload(totalBytes)
-    ? await runInWorker(
-        'createPatch',
-        {
-          oldStr: params.originalContent,
-          newStr: params.updatedContent,
-          oldHeader: header,
-          newHeader: header,
-        },
-        { ...(params.signal ? { signal: params.signal } : {}) },
-      )
-    : await new Promise<string>((resolve) => {
+  const patch = await runWorkerOr(
+    'createPatch',
+    {
+      oldStr: params.originalContent,
+      newStr: params.updatedContent,
+      oldHeader: header,
+      newHeader: header,
+    },
+    totalBytes,
+    params.signal ? { signal: params.signal } : {},
+    () =>
+      new Promise<string>((resolve) => {
         // Defer to event loop to avoid blocking on large diffs
         setImmediate(() => {
           createTwoFilesPatch(
@@ -375,7 +375,8 @@ async function maybeAppendPatchDiff(
             },
           );
         });
-      });
+      }),
+  );
 
   if (summary.diff.length + patch.length <= MAX_DIFF_SIZE + DIFF_APPEND_BUFFER) {
     summary.diff += patch;

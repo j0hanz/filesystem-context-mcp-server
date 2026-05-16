@@ -1,14 +1,26 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { runInWorker, shouldOffload, shutdownWorkerPool } from '../../src/core/concurrency.js';
+import { runInWorker, runWorkerOr, shutdownWorkerPool } from '../../src/core/concurrency.js';
 
 test.afterEach(async () => {
   await shutdownWorkerPool();
 });
 
-test('shouldOffload exists and is callable', () => {
-  assert.equal(typeof shouldOffload, 'function');
+test('runWorkerOr calls inline for zero-byte payload (below offload threshold)', async () => {
+  let inlineCalled = false;
+  const result = await runWorkerOr(
+    'diff',
+    { oldStr: 'a\n', newStr: 'b\n', oldHeader: 'o', newHeader: 'n' },
+    0,
+    {},
+    () => {
+      inlineCalled = true;
+      return Promise.resolve({ hunks: [], index: [] as unknown as [] });
+    },
+  );
+  assert.ok(inlineCalled, 'inline should be called for zero-byte payload');
+  assert.ok(Array.isArray(result.hunks));
 });
 
 test('runInWorker dispatches diff task and returns StructuredPatch', async () => {

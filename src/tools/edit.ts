@@ -6,7 +6,7 @@ import { createTwoFilesPatch, diffLines } from 'diff';
 import RE2 from 're2';
 import { z } from 'zod/v4';
 
-import { runInWorker, shouldOffload } from '../core/concurrency.js';
+import { runWorkerOr } from '../core/concurrency.js';
 import { ErrorCode, FsError } from '../core/errors.js';
 import {
   atomicWriteFile,
@@ -163,34 +163,29 @@ async function computeDiffStats(
   signal?: AbortSignal,
 ): Promise<{ linesAdded: number; linesRemoved: number }> {
   const totalBytes = Buffer.byteLength(original) + Buffer.byteLength(modified);
-  if (shouldOffload(totalBytes)) {
-    return runInWorker(
-      'computeDiffStats',
-      { oldStr: original, newStr: modified },
-      { ...(signal ? { signal } : {}) },
-    );
-  }
-  return new Promise((resolve) => {
-    // Yield to the event loop so we don't completely block
-    setImmediate(() => {
-      diffLines(original, modified, {
-        callback: (changes) => {
-          let linesAdded = 0;
-          let linesRemoved = 0;
-
-          for (const part of changes) {
-            if (part.added) {
-              linesAdded += part.count;
-            } else if (part.removed) {
-              linesRemoved += part.count;
-            }
-          }
-
-          resolve({ linesAdded, linesRemoved });
-        },
-      });
-    });
-  });
+  return runWorkerOr(
+    'computeDiffStats',
+    { oldStr: original, newStr: modified },
+    totalBytes,
+    signal ? { signal } : {},
+    () =>
+      new Promise((resolve) => {
+        // Yield to the event loop so we don't completely block
+        setImmediate(() => {
+          diffLines(original, modified, {
+            callback: (changes) => {
+              let linesAdded = 0;
+              let linesRemoved = 0;
+              for (const part of changes) {
+                if (part.added) linesAdded += part.count;
+                else if (part.removed) linesRemoved += part.count;
+              }
+              resolve({ linesAdded, linesRemoved });
+            },
+          });
+        });
+      }),
+  );
 }
 
 function findEditMatch(
@@ -358,27 +353,22 @@ async function buildDiff(
 ): Promise<string> {
   const fileName = basename(validPath);
   const totalBytes = Buffer.byteLength(original) + Buffer.byteLength(modified);
-  if (shouldOffload(totalBytes)) {
-    return await runInWorker(
-      'createPatch',
-      {
-        oldStr: original,
-        newStr: modified,
-        oldHeader: fileName,
-        newHeader: fileName,
-      },
-      { ...(signal ? { signal } : {}) },
-    );
-  }
-  return new Promise<string>((resolve) => {
-    setImmediate(() => {
-      createTwoFilesPatch(fileName, fileName, original, modified, 'Original', 'Modified', {
-        callback: (res: string | undefined) => {
-          resolve(res ?? '');
-        },
-      });
-    });
-  });
+  return runWorkerOr(
+    'createPatch',
+    { oldStr: original, newStr: modified, oldHeader: fileName, newHeader: fileName },
+    totalBytes,
+    signal ? { signal } : {},
+    () =>
+      new Promise<string>((resolve) => {
+        setImmediate(() => {
+          createTwoFilesPatch(fileName, fileName, original, modified, 'Original', 'Modified', {
+            callback: (res: string | undefined) => {
+              resolve(res ?? '');
+            },
+          });
+        });
+      }),
+  );
 }
 
 async function loadEditableFile(
