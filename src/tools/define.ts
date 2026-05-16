@@ -508,7 +508,7 @@ function withJsonSchema<T extends z.ZodType>(
   const compute = (options: { target: string }): Record<string, unknown> =>
     options.target === 'draft-2020-12'
       ? precomputedJsonSchema
-      : (z.toJSONSchema(schema, { target: options.target as never, io }));
+      : z.toJSONSchema(schema, { target: options.target as never, io });
   return {
     '~standard': {
       ...standard,
