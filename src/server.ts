@@ -223,18 +223,6 @@ export async function createServer(
   server.server.setRequestHandler(
     'resources/subscribe',
     (req: { params: { uri: string } }, ctx) => {
-      // Guard: reject clients that did not declare resources.subscribe capability.
-      // TODO: Re-enable when we understand the capability format
-      // const clientCaps = server.server.getClientCapabilities() as
-      //   | { resources?: { subscribe?: boolean } }
-      //   | undefined;
-      // if (!clientCaps?.resources?.subscribe) {
-      //   throw new ProtocolError(
-      //     ProtocolErrorCode.InvalidRequest,
-      //     'Client did not declare resources.subscribe capability',
-      //   );
-      // }
-
       const requestedResource = resourceUrlFromServerUrl(req.params.uri);
       return withTelemetry(
         {
