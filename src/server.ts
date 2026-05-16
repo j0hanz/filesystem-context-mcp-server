@@ -127,17 +127,12 @@ export async function createServer(
         list: {},
         cancel: {},
         requests: { tools: { call: {} } },
+        taskStore: taskOrchestrator,
+        taskMessageQueue: new InMemoryTaskMessageQueue(),
       },
     },
     enforceStrictCapabilities: true,
   };
-
-  if (serverConfig.capabilities?.tasks) {
-    Object.assign(serverConfig.capabilities.tasks, {
-      taskStore: taskOrchestrator,
-      taskMessageQueue: new InMemoryTaskMessageQueue(),
-    });
-  }
 
   serverConfig.instructions =
     'filesystem-mcp: Secure local filesystem MCP server. ' +
