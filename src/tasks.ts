@@ -31,40 +31,6 @@ import { type ToolCtx, type ToolDeps, type ToolResult, toToolCtx } from './tools
 // task-orchestrator
 // ═══════════════════════════════════════════════════════════════
 
-class TaskRunner {
-  private readonly controllers = new Map<string, AbortController>();
-
-  abortAll(): void {
-    for (const controller of this.controllers.values()) {
-      controller.abort(new FsError(ErrorCode.CANCELLED, 'Orchestrator shutting down.'));
-    }
-    this.controllers.clear();
-  }
-
-  abort(taskId: string, reason = 'Task execution cancelled.'): void {
-    const controller = this.controllers.get(taskId);
-    if (controller) {
-      controller.abort(new FsError(ErrorCode.CANCELLED, reason));
-      this.controllers.delete(taskId);
-    }
-  }
-
-  register(taskId: string): AbortController {
-    const controller = new AbortController();
-    this.controllers.set(taskId, controller);
-    return controller;
-  }
-
-  async execute(taskId: string, fn: (signal?: AbortSignal) => Promise<void>): Promise<void> {
-    const controller = this.controllers.get(taskId);
-    try {
-      await fn(controller?.signal);
-    } finally {
-      this.controllers.delete(taskId);
-    }
-  }
-}
-
 class AsyncMutex {
   private promise = Promise.resolve();
 
@@ -87,10 +53,10 @@ class AsyncMutex {
 /**
  * TaskOrchestrator manages the lifecycle of background tasks and acts as the
  * authoritative TaskStore for the MCP server. It connects task status updates
- * (like cancellation) directly to AbortControllers via TaskRunner.
+ * (like cancellation) directly to AbortControllers.
  */
 export class TaskOrchestrator implements TaskStore {
-  private readonly runner = new TaskRunner();
+  private readonly controllers = new Map<string, AbortController>();
   private readonly store = new InMemoryTaskStore();
   private readonly creationMutex = new AsyncMutex();
   private disposed = false;
@@ -98,7 +64,18 @@ export class TaskOrchestrator implements TaskStore {
   public dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.runner.abortAll();
+    for (const controller of this.controllers.values()) {
+      controller.abort(new FsError(ErrorCode.CANCELLED, 'Orchestrator shutting down.'));
+    }
+    this.controllers.clear();
+  }
+
+  private abortTask(taskId: string, reason = 'Task execution cancelled.'): void {
+    const controller = this.controllers.get(taskId);
+    if (controller) {
+      controller.abort(new FsError(ErrorCode.CANCELLED, reason));
+      this.controllers.delete(taskId);
+    }
   }
 
   // TaskStore delegation
@@ -146,7 +123,7 @@ export class TaskOrchestrator implements TaskStore {
     await this.store.updateTaskStatus(taskId, status, statusMessage, sessionId);
 
     if (status === 'cancelled') {
-      this.runner.abort(taskId);
+      this.abortTask(taskId);
     }
   }
 
@@ -204,7 +181,8 @@ export class TaskOrchestrator implements TaskStore {
         });
       });
 
-      this.runner.register(mcpTask.taskId);
+      const controller = new AbortController();
+      this.controllers.set(mcpTask.taskId, controller);
 
       const defaultStartMessage = plainMessage('start', {
         label: options.toolTitle ?? options.toolName,
@@ -213,101 +191,110 @@ export class TaskOrchestrator implements TaskStore {
 
       await task.store.updateTaskStatus(mcpTask.taskId, 'working', startMessage);
 
-      this.runner
-        .execute(mcpTask.taskId, async (execSignal) => {
-          try {
-            const baseCtx = toToolCtx(ctx, options.deps);
+      const runExecution = async (execSignal?: AbortSignal) => {
+        try {
+          const baseCtx = toToolCtx(ctx, options.deps);
 
-            const interceptedCtx: ToolCtx = {
-              ...baseCtx,
-              ...(execSignal ? { signal: execSignal } : {}),
-              sendNotification: async (notification) => {
-                if (notification.method === 'notifications/tasks/status') {
-                  return;
-                }
-                await baseCtx.sendNotification?.(notification);
-              },
-            };
-
-            const result = await handler(args, interceptedCtx);
-
-            const strippedResult = maybeStripStructuredContentFromResult(result);
-            if (
-              strippedResult['_meta'] &&
-              typeof strippedResult['_meta'] === 'object' &&
-              'io.modelcontextprotocol/model-immediate-response' in strippedResult['_meta']
-            ) {
-              strippedResult['_meta'] = { ...strippedResult['_meta'] };
-              delete (strippedResult['_meta'] as Record<string, unknown>)[
-                'io.modelcontextprotocol/model-immediate-response'
-              ];
-            }
-
-            strippedResult['_meta'] = {
-              ...(typeof strippedResult['_meta'] === 'object' && strippedResult['_meta'] !== null
-                ? strippedResult['_meta']
-                : {}),
-              [RELATED_TASK_META_KEY]: { taskId: mcpTask.taskId },
-            };
-
-            if ('isError' in strippedResult && strippedResult['isError'] === true) {
-              const isCancelled = strippedResult['errorCode'] === ErrorCode.CANCELLED;
-              if (isCancelled) {
-                try {
-                  await task.store.updateTaskStatus(mcpTask.taskId, 'cancelled', 'cancelled');
-                } catch {
-                  // ignore
-                }
-              } else {
-                await task.store.storeTaskResult(mcpTask.taskId, 'failed', strippedResult);
+          const interceptedCtx: ToolCtx = {
+            ...baseCtx,
+            ...(execSignal ? { signal: execSignal } : {}),
+            sendNotification: async (notification) => {
+              if (notification.method === 'notifications/tasks/status') {
+                return;
               }
-            } else {
-              await task.store.storeTaskResult(mcpTask.taskId, 'completed', strippedResult);
-            }
-          } catch (error: unknown) {
-            const isCancelled =
-              (isRecord(error) && error['code'] === ErrorCode.CANCELLED) ||
-              execSignal?.aborted === true;
+              await baseCtx.sendNotification?.(notification);
+            },
+          };
 
+          const result = await handler(args, interceptedCtx);
+
+          const strippedResult = maybeStripStructuredContentFromResult(result);
+          if (
+            strippedResult['_meta'] &&
+            typeof strippedResult['_meta'] === 'object' &&
+            'io.modelcontextprotocol/model-immediate-response' in strippedResult['_meta']
+          ) {
+            strippedResult['_meta'] = { ...strippedResult['_meta'] };
+            delete (strippedResult['_meta'] as Record<string, unknown>)[
+              'io.modelcontextprotocol/model-immediate-response'
+            ];
+          }
+
+          strippedResult['_meta'] = {
+            ...(typeof strippedResult['_meta'] === 'object' && strippedResult['_meta'] !== null
+              ? strippedResult['_meta']
+              : {}),
+            [RELATED_TASK_META_KEY]: { taskId: mcpTask.taskId },
+          };
+
+          if ('isError' in strippedResult && strippedResult['isError'] === true) {
+            const isCancelled = strippedResult['errorCode'] === ErrorCode.CANCELLED;
             if (isCancelled) {
               try {
-                const current = await task.store.getTask(mcpTask.taskId);
-                if (!isTerminal(current.status)) {
-                  await task.store.updateTaskStatus(mcpTask.taskId, 'cancelled', 'cancelled');
-                }
+                await task.store.updateTaskStatus(mcpTask.taskId, 'cancelled', 'cancelled');
               } catch {
-                // Best effort
+                // ignore
               }
             } else {
-              const message =
-                isRecord(error) && typeof error['message'] === 'string'
-                  ? error['message']
-                  : String(error);
-              const code = (
-                isRecord(error) && typeof error['code'] === 'string'
-                  ? error['code']
-                  : ErrorCode.UNKNOWN
-              ) as ErrorCode;
-
-              const errorResult = {
-                isError: true as const,
-                content: [{ type: 'text' as const, text: message }],
-                errorCode: code,
-                _meta: {
-                  [RELATED_TASK_META_KEY]: { taskId: mcpTask.taskId },
-                },
-              };
-              await task.store.storeTaskResult(
-                mcpTask.taskId,
-                'failed',
-                maybeStripStructuredContentFromResult(errorResult),
-              );
+              await task.store.storeTaskResult(mcpTask.taskId, 'failed', strippedResult);
             }
+          } else {
+            await task.store.storeTaskResult(mcpTask.taskId, 'completed', strippedResult);
           }
-        })
-        .catch((error: unknown) => {
-          logRuntimeFailure('background_task_fatal', 'task_orchestrator', options.toolName, error);
-        });
+        } catch (error: unknown) {
+          const isCancelled =
+            (isRecord(error) && error['code'] === ErrorCode.CANCELLED) ||
+            execSignal?.aborted === true;
+
+          if (isCancelled) {
+            try {
+              const current = await task.store.getTask(mcpTask.taskId);
+              if (!isTerminal(current.status)) {
+                await task.store.updateTaskStatus(mcpTask.taskId, 'cancelled', 'cancelled');
+              }
+            } catch {
+              // Best effort
+            }
+          } else {
+            const message =
+              isRecord(error) && typeof error['message'] === 'string'
+                ? error['message']
+                : String(error);
+            const code = (
+              isRecord(error) && typeof error['code'] === 'string'
+                ? error['code']
+                : ErrorCode.UNKNOWN
+            ) as ErrorCode;
+
+            const errorResult = {
+              isError: true as const,
+              content: [{ type: 'text' as const, text: message }],
+              errorCode: code,
+              _meta: {
+                [RELATED_TASK_META_KEY]: { taskId: mcpTask.taskId },
+              },
+            };
+            await task.store.storeTaskResult(
+              mcpTask.taskId,
+              'failed',
+              maybeStripStructuredContentFromResult(errorResult),
+            );
+          }
+        }
+      };
+
+      const execute = async () => {
+        const ctrl = this.controllers.get(mcpTask.taskId);
+        try {
+          await runExecution(ctrl?.signal);
+        } finally {
+          this.controllers.delete(mcpTask.taskId);
+        }
+      };
+
+      execute().catch((error: unknown) => {
+        logRuntimeFailure('background_task_fatal', 'task_orchestrator', options.toolName, error);
+      });
 
       return { task: mcpTask };
     }) as ToolTaskHandler<Args>['createTask'];
