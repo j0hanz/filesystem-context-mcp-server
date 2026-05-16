@@ -245,66 +245,6 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "path": {
-          "description": "File path (single-file mode)",
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
-        },
-        "paths": {
-          "description": "File paths; same edits applied to each (max 5)",
-          "minItems": 1,
-          "maxItems": 5,
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 4096,
-            "description": "Path inside an allowed root"
-          }
-        },
-        "files": {
-          "description": "Per-file edits (max 5)",
-          "minItems": 1,
-          "maxItems": 5,
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "path": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 4096,
-                "description": "File path"
-              },
-              "edits": {
-                "minItems": 1,
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "oldText": {
-                      "type": "string",
-                      "minLength": 1,
-                      "description": "Exact text to find (must match literally)",
-                      "examples": ["const x = 1;", "function oldName("]
-                    },
-                    "newText": {
-                      "type": "string",
-                      "description": "Replacement text (empty string to delete)",
-                      "examples": ["const x = 2;", "function newName(", ""]
-                    }
-                  },
-                  "required": ["oldText", "newText"],
-                  "additionalProperties": false
-                },
-                "description": "Edits for this file"
-              }
-            },
-            "required": ["path", "edits"],
-            "additionalProperties": false
-          }
-        },
         "edits": {
           "description": "Edits applied to path or every entry in paths (forbidden when using files)",
           "minItems": 1,
@@ -337,6 +277,66 @@
           "default": false,
           "description": "Ignore leading/trailing whitespace when matching",
           "type": "boolean"
+        },
+        "path": {
+          "description": "File path (single-path mode)",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "paths": {
+          "description": "File paths (batch mode; max 5)",
+          "minItems": 1,
+          "maxItems": 5,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Path inside an allowed root"
+          }
+        },
+        "files": {
+          "minItems": 1,
+          "maxItems": 5,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096,
+                "description": "Path inside an allowed root"
+              },
+              "edits": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "oldText": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "Exact text to find (must match literally)",
+                      "examples": ["const x = 1;", "function oldName("]
+                    },
+                    "newText": {
+                      "type": "string",
+                      "description": "Replacement text (empty string to delete)",
+                      "examples": ["const x = 2;", "function newName(", ""]
+                    }
+                  },
+                  "required": ["oldText", "newText"],
+                  "additionalProperties": false
+                },
+                "description": "Edits for this file"
+              }
+            },
+            "required": ["path", "edits"],
+            "additionalProperties": false
+          },
+          "description": "Per-file entries (batch mode; max 5)"
         }
       },
       "additionalProperties": false
@@ -349,181 +349,116 @@
           "const": true,
           "description": "Success indicator"
         },
-        "path": {
-          "description": "File path (single-file mode)",
-          "type": "string"
-        },
-        "size": {
-          "description": "File size in bytes",
-          "$ref": "#/$defs/NonNegInt"
-        },
-        "lineCount": {
-          "description": "Number of lines",
-          "$ref": "#/$defs/NonNegInt"
-        },
-        "mimeType": {
-          "description": "MIME type",
-          "type": "string"
-        },
-        "kind": {
-          "description": "File kind",
-          "type": "string",
-          "enum": ["text", "binary", "image", "audio", "pdf"]
-        },
-        "resourceUri": {
-          "description": "Resource URI",
-          "type": "string"
-        },
-        "modified": {
-          "description": "Modified (ISO 8601 UTC)",
-          "$ref": "#/$defs/IsoDateTime"
-        },
-        "appliedEdits": {
-          "description": "Edits applied",
-          "$ref": "#/$defs/NonNegInt"
-        },
-        "linesAdded": {
-          "description": "Lines added",
-          "$ref": "#/$defs/NonNegInt"
-        },
-        "linesRemoved": {
-          "description": "Lines removed",
-          "$ref": "#/$defs/NonNegInt"
-        },
-        "diff": {
-          "description": "Unified diff of changes",
-          "type": "string"
-        },
-        "unmatchedEdits": {
-          "description": "oldText with no match",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "lineRange": {
-          "description": "[firstLine, lastLine]",
-          "type": "array",
-          "prefixItems": [
-            {
-              "$ref": "#/$defs/PositiveInt"
-            },
-            {
-              "$ref": "#/$defs/PositiveInt"
-            }
-          ]
-        },
         "results": {
-          "description": "Per-file successes (multi mode)",
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
               "path": {
                 "type": "string",
-                "description": "File path"
+                "description": "Requested path"
               },
-              "size": {
-                "maximum": 9007199254740991,
-                "description": "File size in bytes",
-                "$ref": "#/$defs/NonNegInt"
-              },
-              "lineCount": {
-                "maximum": 9007199254740991,
-                "description": "Number of lines",
-                "$ref": "#/$defs/NonNegInt"
-              },
-              "mimeType": {
-                "type": "string",
-                "description": "MIME type"
-              },
-              "kind": {
-                "type": "string",
-                "enum": ["text", "binary", "image", "audio", "pdf"],
-                "description": "File kind"
-              },
-              "resourceUri": {
-                "type": "string",
-                "description": "Resource URI"
-              },
-              "modified": {
-                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-                "description": "Modified (ISO 8601 UTC)",
-                "$ref": "#/$defs/IsoDateTime"
-              },
-              "appliedEdits": {
-                "maximum": 9007199254740991,
-                "description": "Edits applied",
-                "$ref": "#/$defs/NonNegInt"
-              },
-              "linesAdded": {
-                "description": "Lines added",
-                "$ref": "#/$defs/NonNegInt"
-              },
-              "linesRemoved": {
-                "description": "Lines removed",
-                "$ref": "#/$defs/NonNegInt"
-              },
-              "diff": {
-                "description": "Unified diff (dryRun or when changes present)",
-                "type": "string"
-              },
-              "unmatchedEdits": {
-                "description": "oldText with no match",
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "lineRange": {
-                "description": "[firstLine, lastLine]",
-                "type": "array",
-                "prefixItems": [
-                  {
-                    "$ref": "#/$defs/PositiveInt"
+              "value": {
+                "description": "Per-file edit result (success)",
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "File path"
                   },
-                  {
-                    "$ref": "#/$defs/PositiveInt"
+                  "size": {
+                    "maximum": 9007199254740991,
+                    "description": "File size in bytes",
+                    "$ref": "#/$defs/NonNegInt"
+                  },
+                  "lineCount": {
+                    "maximum": 9007199254740991,
+                    "description": "Number of lines",
+                    "$ref": "#/$defs/NonNegInt"
+                  },
+                  "mimeType": {
+                    "type": "string",
+                    "description": "MIME type"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": ["text", "binary", "image", "audio", "pdf"],
+                    "description": "File kind"
+                  },
+                  "resourceUri": {
+                    "type": "string",
+                    "description": "Resource URI"
+                  },
+                  "modified": {
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                    "description": "Modified (ISO 8601 UTC)",
+                    "$ref": "#/$defs/IsoDateTime"
+                  },
+                  "appliedEdits": {
+                    "maximum": 9007199254740991,
+                    "description": "Edits applied",
+                    "$ref": "#/$defs/NonNegInt"
+                  },
+                  "linesAdded": {
+                    "description": "Lines added",
+                    "$ref": "#/$defs/NonNegInt"
+                  },
+                  "linesRemoved": {
+                    "description": "Lines removed",
+                    "$ref": "#/$defs/NonNegInt"
+                  },
+                  "diff": {
+                    "description": "Unified diff (dryRun or when changes present)",
+                    "type": "string"
+                  },
+                  "unmatchedEdits": {
+                    "description": "oldText with no match",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "lineRange": {
+                    "description": "[firstLine, lastLine]",
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/PositiveInt"
+                      },
+                      {
+                        "$ref": "#/$defs/PositiveInt"
+                      }
+                    ]
                   }
-                ]
-              }
-            },
-            "required": [
-              "path",
-              "size",
-              "lineCount",
-              "mimeType",
-              "kind",
-              "resourceUri",
-              "modified",
-              "appliedEdits"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "failures": {
-          "description": "Per-file hard failures (multi mode)",
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "path": {
-                "type": "string"
+                },
+                "required": [
+                  "path",
+                  "size",
+                  "lineCount",
+                  "mimeType",
+                  "kind",
+                  "resourceUri",
+                  "modified",
+                  "appliedEdits"
+                ],
+                "additionalProperties": false
               },
               "error": {
+                "description": "Per-path error",
                 "$ref": "#/$defs/PerFileError"
               }
             },
-            "required": ["path", "error"],
+            "required": ["path"],
             "additionalProperties": false
-          }
+          },
+          "description": "Per-path results (always present)"
         },
         "summary": {
-          "description": "Aggregate counts (multi mode)",
+          "description": "Aggregate counts",
           "$ref": "#/$defs/OperationSummary"
         }
       },
-      "required": ["ok"],
+      "required": ["ok", "results", "summary"],
       "additionalProperties": false,
       "$defs": {
         "NonNegInt": {
@@ -1093,24 +1028,6 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "path": {
-          "description": "File path (single-file mode)",
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
-        },
-        "paths": {
-          "description": "File paths (batch mode; max 1000)",
-          "minItems": 1,
-          "maxItems": 1000,
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 4096,
-            "description": "Path inside an allowed root"
-          }
-        },
         "includeHash": {
           "default": false,
           "description": "Include SHA-256 hash of the content",
@@ -1151,6 +1068,24 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 4294967295
+        },
+        "path": {
+          "description": "File path (single-path mode)",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "paths": {
+          "description": "File paths (batch mode; max 1000)",
+          "minItems": 1,
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Path inside an allowed root"
+          }
         }
       },
       "additionalProperties": false,
@@ -1210,151 +1145,103 @@
           "const": true,
           "description": "Success indicator"
         },
-        "path": {
-          "description": "Resolved absolute path to the file",
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
-        },
-        "content": {
-          "description": "File content",
-          "type": "string"
-        },
-        "mimeType": {
-          "description": "MIME type",
-          "type": "string"
-        },
-        "kind": {
-          "description": "File kind",
-          "type": "string",
-          "enum": ["text", "binary", "image", "audio", "pdf"]
-        },
-        "resourceUri": {
-          "description": "Full content URI in resource store",
-          "type": "string"
-        },
-        "continuation": {
-          "description": "Present when file was cut",
-          "$ref": "#/$defs/Continuation"
-        },
-        "totalLines": {
-          "description": "Total lines in file",
-          "$ref": "#/$defs/NonNegInt"
-        },
-        "linesRead": {
-          "description": "Lines returned",
-          "$ref": "#/$defs/NonNegInt"
-        },
-        "hasMoreLines": {
-          "description": "More lines available",
-          "type": "boolean"
-        },
-        "head": {
-          "description": "Head lines requested",
-          "$ref": "#/$defs/PositiveInt"
-        },
-        "tail": {
-          "description": "Tail lines requested",
-          "$ref": "#/$defs/PositiveInt"
-        },
-        "startLine": {
-          "description": "Start line",
-          "$ref": "#/$defs/PositiveInt"
-        },
-        "endLine": {
-          "description": "End line",
-          "$ref": "#/$defs/PositiveInt"
-        },
-        "contentHash": {
-          "description": "SHA-256 of content (when includeHash)",
-          "$ref": "#/$defs/Sha256Hex"
-        },
-        "offset": {
-          "description": "Byte offset used",
-          "$ref": "#/$defs/NonNegInt"
-        },
-        "bytesRead": {
-          "description": "Bytes returned",
-          "$ref": "#/$defs/NonNegInt"
-        },
-        "reachedEOF": {
-          "description": "Read reached end of file",
-          "type": "boolean"
-        },
         "results": {
-          "description": "Per-file results (batch mode)",
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
               "path": {
                 "type": "string",
-                "description": "File path"
+                "description": "Requested path"
               },
-              "resourceUri": {
-                "description": "Full content URI",
-                "type": "string"
-              },
-              "mimeType": {
-                "description": "MIME type of the file",
-                "type": "string"
-              },
-              "kind": {
-                "description": "File kind",
-                "type": "string",
-                "enum": ["text", "binary", "image", "audio", "pdf"]
-              },
-              "totalLines": {
-                "description": "Total lines",
-                "$ref": "#/$defs/NonNegInt"
-              },
-              "linesRead": {
-                "description": "Lines returned",
-                "$ref": "#/$defs/NonNegInt"
-              },
-              "hasMoreLines": {
-                "description": "More lines available",
-                "type": "boolean"
-              },
-              "head": {
-                "description": "Head lines requested",
-                "$ref": "#/$defs/PositiveInt"
-              },
-              "tail": {
-                "description": "Tail lines requested",
-                "$ref": "#/$defs/PositiveInt"
-              },
-              "startLine": {
-                "description": "Start line",
-                "$ref": "#/$defs/PositiveInt"
-              },
-              "endLine": {
-                "description": "End line",
-                "$ref": "#/$defs/PositiveInt"
-              },
-              "continuation": {
-                "description": "Present when file was cut",
-                "$ref": "#/$defs/Continuation"
-              },
-              "bytesRead": {
-                "description": "Bytes returned",
-                "$ref": "#/$defs/NonNegInt"
+              "value": {
+                "description": "Read result (success)",
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "description": "File content (text)",
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "description": "MIME type",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "description": "File kind",
+                    "type": "string",
+                    "enum": ["text", "binary", "image", "audio", "pdf"]
+                  },
+                  "resourceUri": {
+                    "description": "Per-file resource URI when externalized",
+                    "type": "string"
+                  },
+                  "continuation": {
+                    "description": "Present when file was cut",
+                    "$ref": "#/$defs/Continuation"
+                  },
+                  "totalLines": {
+                    "description": "Total lines in file",
+                    "$ref": "#/$defs/NonNegInt"
+                  },
+                  "linesRead": {
+                    "description": "Lines returned",
+                    "$ref": "#/$defs/NonNegInt"
+                  },
+                  "hasMoreLines": {
+                    "description": "More lines available",
+                    "type": "boolean"
+                  },
+                  "head": {
+                    "description": "Head lines requested",
+                    "$ref": "#/$defs/PositiveInt"
+                  },
+                  "tail": {
+                    "description": "Tail lines requested",
+                    "$ref": "#/$defs/PositiveInt"
+                  },
+                  "startLine": {
+                    "description": "Start line",
+                    "$ref": "#/$defs/PositiveInt"
+                  },
+                  "endLine": {
+                    "description": "End line",
+                    "$ref": "#/$defs/PositiveInt"
+                  },
+                  "contentHash": {
+                    "description": "SHA-256 of content (when includeHash)",
+                    "$ref": "#/$defs/Sha256Hex"
+                  },
+                  "offset": {
+                    "description": "Byte offset used",
+                    "$ref": "#/$defs/NonNegInt"
+                  },
+                  "bytesRead": {
+                    "description": "Bytes returned",
+                    "$ref": "#/$defs/NonNegInt"
+                  },
+                  "reachedEOF": {
+                    "description": "Read reached end of file",
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
               },
               "error": {
-                "description": "Per-file error",
+                "description": "Per-path error",
                 "$ref": "#/$defs/PerFileError"
               }
             },
             "required": ["path"],
             "additionalProperties": false
-          }
+          },
+          "description": "Per-path results (always present)"
         },
         "summary": {
-          "description": "Operation summary (batch mode)",
+          "description": "Aggregate counts",
           "$ref": "#/$defs/OperationSummary"
         }
       },
-      "required": ["ok"],
+      "required": ["ok", "results", "summary"],
       "additionalProperties": false,
       "$defs": {
         "Continuation": {
@@ -1903,13 +1790,13 @@
       "type": "object",
       "properties": {
         "path": {
-          "description": "Path to stat (single-path mode)",
+          "description": "File path (single-path mode)",
           "type": "string",
           "minLength": 1,
           "maxLength": 4096
         },
         "paths": {
-          "description": "Paths to stat (batch mode; max 1000)",
+          "description": "File paths (batch mode; max 1000)",
           "minItems": 1,
           "maxItems": 1000,
           "type": "array",
@@ -1931,12 +1818,7 @@
           "const": true,
           "description": "Success indicator"
         },
-        "file": {
-          "description": "File info (single-path mode)",
-          "$ref": "#/$defs/FileInfo"
-        },
         "results": {
-          "description": "Per-path results (batch mode)",
           "type": "array",
           "items": {
             "type": "object",
@@ -1945,37 +1827,38 @@
                 "type": "string",
                 "description": "Requested path"
               },
-              "info": {
-                "description": "File info (when successful)",
+              "value": {
+                "description": "File info (success)",
                 "$ref": "#/$defs/FileInfo"
               },
               "error": {
-                "description": "Error (when failed)",
+                "description": "Per-path error",
                 "$ref": "#/$defs/PerFileError"
               }
             },
             "required": ["path"],
             "additionalProperties": false
-          }
+          },
+          "description": "Per-path results (always present, ordered as input)"
         },
         "summary": {
-          "description": "Operation summary (batch mode)",
+          "description": "Aggregate counts",
           "$ref": "#/$defs/OperationSummary"
         },
         "fileCount": {
-          "description": "Number of files (batch mode)",
+          "description": "Count of regular files in results",
           "$ref": "#/$defs/NonNegInt"
         },
         "dirCount": {
-          "description": "Number of directories (batch mode)",
+          "description": "Count of directories in results",
           "$ref": "#/$defs/NonNegInt"
         },
         "resourceUri": {
-          "description": "URI to stats.json resource (batch mode)",
+          "description": "URI to aggregated stats.json (present when resourceStore available)",
           "type": "string"
         }
       },
-      "required": ["ok"],
+      "required": ["ok", "results", "summary"],
       "additionalProperties": false,
       "$defs": {
         "FileInfo": {

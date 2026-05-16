@@ -325,7 +325,8 @@ export function singleOrBatchPathsInput<
       : z
           .array(z.strictObject({ path: RequiredPath, ...perFileShape }))
           .min(1)
-          .max(maxBatch);
+          .max(maxBatch)
+          .describe(`Per-file entries (batch mode; max ${String(maxBatch)})`);
 
   const shape: z.ZodRawShape = {
     ...opts.extra,

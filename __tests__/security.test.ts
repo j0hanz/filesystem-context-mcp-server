@@ -52,9 +52,8 @@ describe('security: path boundary enforcement', () => {
         name: tool,
         arguments: args(env.tmpDir),
       });
-      // rm returns ok:true with failures[] for per-path errors;
-      // create also returns ok:true with failures[] for path guard violations;
-      // all other tools return isError
+      // delete/create return ok:true with failures[] for per-path errors.
+      // read/stat now also return ok:true with inline per-path errors.
       if (tool === 'delete' || tool === 'create') {
         assertOk(raw);
         const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
@@ -66,6 +65,12 @@ describe('security: path boundary enforcement', () => {
           (sc?.['failures'] as { error: { code: string } }[])[0]?.error?.code,
           'ACCESS_DENIED',
         );
+      } else if (tool === 'read' || tool === 'stat') {
+        assertOk(raw);
+        const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
+        const results = sc?.['results'] as { error?: { code?: string } }[] | undefined;
+        assert.ok(Array.isArray(results) && results.length > 0, `${tool} must return results[]`);
+        assert.equal(results[0]?.error?.code, 'ACCESS_DENIED');
       } else {
         assertToolError(raw, 'ACCESS_DENIED');
       }
@@ -93,7 +98,11 @@ describe('security: path traversal via ".."', () => {
       name: 'read',
       arguments: { path: escaped },
     });
-    assertToolError(raw, 'ACCESS_DENIED');
+    assertOk(raw);
+    const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
+    const results = sc?.['results'] as { error?: { code?: string } }[] | undefined;
+    assert.ok(Array.isArray(results) && results.length > 0, 'read must return results[]');
+    assert.equal(results[0]?.error?.code, 'ACCESS_DENIED');
   });
 
   it('stat: rejects traversal above tmpDir', async () => {
@@ -102,7 +111,11 @@ describe('security: path traversal via ".."', () => {
       name: 'stat',
       arguments: { path: escaped },
     });
-    assertToolError(raw, 'ACCESS_DENIED');
+    assertOk(raw);
+    const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
+    const results = sc?.['results'] as { error?: { code?: string } }[] | undefined;
+    assert.ok(Array.isArray(results) && results.length > 0, 'stat must return results[]');
+    assert.equal(results[0]?.error?.code, 'ACCESS_DENIED');
   });
 
   it('create: rejects traversal above tmpDir', async () => {
@@ -149,7 +162,11 @@ describe('security: symlink escape attempt', () => {
       name: 'read',
       arguments: { path: linkPath },
     });
-    assertToolError(raw, 'ACCESS_DENIED');
+    assertOk(raw);
+    const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
+    const results = sc?.['results'] as { error?: { code?: string } }[] | undefined;
+    assert.ok(Array.isArray(results) && results.length > 0, 'read must return results[]');
+    assert.equal(results[0]?.error?.code, 'ACCESS_DENIED');
   });
 
   it('stat: rejects symlink pointing outside allowed root', async () => {
@@ -163,7 +180,11 @@ describe('security: symlink escape attempt', () => {
       name: 'stat',
       arguments: { path: linkPath },
     });
-    assertToolError(raw, 'ACCESS_DENIED');
+    assertOk(raw);
+    const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
+    const results = sc?.['results'] as { error?: { code?: string } }[] | undefined;
+    assert.ok(Array.isArray(results) && results.length > 0, 'stat must return results[]');
+    assert.equal(results[0]?.error?.code, 'ACCESS_DENIED');
   });
 });
 

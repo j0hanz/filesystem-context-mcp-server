@@ -798,17 +798,22 @@ describe('edit tool', () => {
     const result = raw;
     assertOk(result);
     const sc = getStructured(result);
+    const results = sc['results'] as Record<string, unknown>[];
+    assert.ok(Array.isArray(results));
+    assert.equal(results.length, 1);
+    const value = results[0]?.['value'] as Record<string, unknown> | undefined;
+    assert.ok(value, 'edit result value must be present');
 
     // Verify structured content has required fields
     assert.equal(sc['ok'], true);
-    assert.equal(typeof sc['size'], 'number');
-    assert.equal(typeof sc['lineCount'], 'number');
-    assert.equal(typeof sc['mimeType'], 'string');
-    assert.equal(typeof sc['kind'], 'string');
-    assert.equal(typeof sc['resourceUri'], 'string');
-    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://file/'));
-    assert.equal(typeof sc['modified'], 'string');
-    assert.equal(sc['appliedEdits'], 1);
+    assert.equal(typeof value['size'], 'number');
+    assert.equal(typeof value['lineCount'], 'number');
+    assert.equal(typeof value['mimeType'], 'string');
+    assert.equal(typeof value['kind'], 'string');
+    assert.equal(typeof value['resourceUri'], 'string');
+    assert.ok((value['resourceUri'] as string).includes('filesystem-mcp://file/'));
+    assert.equal(typeof value['modified'], 'string');
+    assert.equal(value['appliedEdits'], 1);
 
     // Verify summary includes "edit:" and file path
     assert.equal(result.content.length, 2);
@@ -839,15 +844,20 @@ describe('edit tool', () => {
     });
     assertOk(raw);
     const sc = getStructured(raw);
+    const results = sc['results'] as Record<string, unknown>[];
+    assert.ok(Array.isArray(results));
+    assert.equal(results.length, 1);
+    const value = results[0]?.['value'] as Record<string, unknown> | undefined;
+    assert.ok(value, 'edit result value must be present');
 
     // Verify structured content
     assert.equal(sc['ok'], true);
-    assert.equal(sc['appliedEdits'], 1);
-    assert.equal(typeof sc['resourceUri'], 'string');
-    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://file/'));
+    assert.equal(value['appliedEdits'], 1);
+    assert.equal(typeof value['resourceUri'], 'string');
+    assert.ok((value['resourceUri'] as string).includes('filesystem-mcp://file/'));
 
     // Verify diff is present in dryRun
-    assert.equal(typeof sc['diff'], 'string');
+    assert.equal(typeof value['diff'], 'string');
 
     // File should not be modified
     const actual = await readFile(file, 'utf8');
@@ -879,7 +889,14 @@ describe('edit tool', () => {
         edits: [{ oldText: 'DOES NOT EXIST', newText: 'anything' }],
       },
     });
-    assertToolError(raw, 'INVALID_INPUT');
+    assertOk(raw);
+    const sc = getStructured(raw);
+    const results = sc['results'] as Record<string, unknown>[];
+    assert.ok(Array.isArray(results));
+    assert.equal(results.length, 1);
+    const error = results[0]?.['error'] as Record<string, unknown> | undefined;
+    assert.ok(error, 'edit error must be present');
+    assert.equal(error['code'], 'INVALID_INPUT');
   });
 
   it('applies sequential edits against updated content', async () => {
@@ -899,11 +916,16 @@ describe('edit tool', () => {
 
     assertOk(raw);
     const sc = getStructured(raw);
-    assert.equal(sc['appliedEdits'], 2);
-    assert.equal(typeof sc['resourceUri'], 'string');
-    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://file/'));
-    assert.equal(typeof sc['mimeType'], 'string');
-    assert.equal(typeof sc['lineCount'], 'number');
+    const results = sc['results'] as Record<string, unknown>[];
+    assert.ok(Array.isArray(results));
+    assert.equal(results.length, 1);
+    const value = results[0]?.['value'] as Record<string, unknown> | undefined;
+    assert.ok(value, 'edit result value must be present');
+    assert.equal(value['appliedEdits'], 2);
+    assert.equal(typeof value['resourceUri'], 'string');
+    assert.ok((value['resourceUri'] as string).includes('filesystem-mcp://file/'));
+    assert.equal(typeof value['mimeType'], 'string');
+    assert.equal(typeof value['lineCount'], 'number');
 
     // Verify summary includes "edit:"
     const summary = (raw.content[0] as Record<string, unknown>).text as string;
@@ -928,14 +950,19 @@ describe('edit tool', () => {
 
     assertOk(raw);
     const sc = getStructured(raw);
-    assert.equal(sc['appliedEdits'], 1);
-    assert.equal(sc['linesAdded'], 2);
-    assert.equal(sc['linesRemoved'], 1);
-    assert.equal(typeof sc['resourceUri'], 'string');
-    assert.ok((sc['resourceUri'] as string).includes('filesystem-mcp://file/'));
-    assert.match(sc['diff'] as string, /^--- dry-diff\.txt/m);
-    assert.match(sc['diff'] as string, /^\+beta-1$/m);
-    assert.match(sc['diff'] as string, /^\+beta-2$/m);
+    const results = sc['results'] as Record<string, unknown>[];
+    assert.ok(Array.isArray(results));
+    assert.equal(results.length, 1);
+    const value = results[0]?.['value'] as Record<string, unknown> | undefined;
+    assert.ok(value, 'edit result value must be present');
+    assert.equal(value['appliedEdits'], 1);
+    assert.equal(value['linesAdded'], 2);
+    assert.equal(value['linesRemoved'], 1);
+    assert.equal(typeof value['resourceUri'], 'string');
+    assert.ok((value['resourceUri'] as string).includes('filesystem-mcp://file/'));
+    assert.match(value['diff'] as string, /^--- dry-diff\.txt/m);
+    assert.match(value['diff'] as string, /^\+beta-1$/m);
+    assert.match(value['diff'] as string, /^\+beta-2$/m);
 
     const actual = await readFile(file, 'utf8');
     assert.equal(actual, 'alpha\nbeta\n');
@@ -958,8 +985,13 @@ describe('edit tool', () => {
     assertOk(raw);
     const sc = getStructured(raw);
     assert.strictEqual(sc['ok'], true, 'ok must be literal true even for partial edits');
-    assert.ok(Array.isArray(sc['unmatchedEdits']), 'unmatchedEdits must be present');
-    assert.strictEqual((sc['unmatchedEdits'] as string[]).length, 1);
+    const results = sc['results'] as Record<string, unknown>[];
+    assert.ok(Array.isArray(results));
+    assert.equal(results.length, 1);
+    const value = results[0]?.['value'] as Record<string, unknown> | undefined;
+    assert.ok(value, 'edit result value must be present');
+    assert.ok(Array.isArray(value['unmatchedEdits']), 'unmatchedEdits must be present');
+    assert.strictEqual((value['unmatchedEdits'] as string[]).length, 1);
   });
 
   it('rejects binary files instead of rewriting them as text', async () => {
@@ -974,7 +1006,14 @@ describe('edit tool', () => {
       },
     });
 
-    assertToolError(raw, 'INVALID_INPUT');
+    assertOk(raw);
+    const sc = getStructured(raw);
+    const results = sc['results'] as Record<string, unknown>[];
+    assert.ok(Array.isArray(results));
+    assert.equal(results.length, 1);
+    const error = results[0]?.['error'] as Record<string, unknown> | undefined;
+    assert.ok(error, 'edit error must be present');
+    assert.equal(error['code'], 'INVALID_INPUT');
     const actual = await readFile(file);
     assert.deepEqual(actual, Buffer.from([0x89, 0x50, 0x00, 0x47, 0x0d]));
   });

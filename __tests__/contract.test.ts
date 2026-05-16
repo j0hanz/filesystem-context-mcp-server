@@ -138,7 +138,7 @@ describe('Tool contract', () => {
     assert.ok(Array.isArray(listSc['entries']), 'list: expected entries array');
     assert.equal(typeof listSc['totalEntries'], 'number');
 
-    // stat: returns ok, info.type, info.size, etc.
+    // stat: returns ok, results[0].value.type, results[0].value.size, etc.
     const statResult = await env.client.callTool({
       name: 'stat',
       arguments: { path: env.tmpDir },
@@ -146,10 +146,13 @@ describe('Tool contract', () => {
     assertOk(statResult);
     const statSc = getStructured(statResult);
     assert.equal(statSc['ok'], true);
-    const file = statSc['file'] as Record<string, unknown>;
-    assert.ok(file, 'stat: expected file object');
-    assert.equal(typeof file['type'], 'string');
-    assert.equal(typeof file['size'], 'number');
+    const statResults = statSc['results'] as Record<string, unknown>[];
+    assert.ok(Array.isArray(statResults), 'stat: expected results array');
+    assert.equal(statResults.length, 1, 'stat: expected one result');
+    const value = statResults[0]?.['value'] as Record<string, unknown> | undefined;
+    assert.ok(value, 'stat: expected value object');
+    assert.equal(typeof value['type'], 'string');
+    assert.equal(typeof value['size'], 'number');
   });
 
   it('task-capable tools expose execution.taskSupport in tools/list', async () => {
