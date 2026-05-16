@@ -329,6 +329,51 @@ describe('TaskOrchestrator', () => {
     }
   });
 
+  it('uses tool progress context for initial task status message', async () => {
+    const orchestrator = new TaskOrchestrator();
+    const store = orchestrator;
+
+    try {
+      let releaseHandler: (() => void) | undefined;
+      const blocked = new Promise<void>((resolve) => {
+        releaseHandler = resolve;
+      });
+      const handler = orchestrator.wrapToolTask(
+        async () => {
+          await blocked;
+          return {
+            content: [{ type: 'text', text: 'done' }],
+            structuredContent: {},
+          };
+        },
+        {
+          toolName: 'read',
+          toolTitle: 'Read File',
+          progress: () => ({ label: 'Read', subject: 'README.md', scope: 'head 20' }),
+          deps: stubDeps,
+        },
+      );
+
+      const { task } = await handler.createTask(undefined as never, createMockExtra(store));
+      const midTask = await store.getTask(task.taskId, 'test-session');
+      assert.strictEqual(midTask?.status, 'working');
+      assert.strictEqual(midTask?.statusMessage, 'Read: README.md · head 20');
+
+      releaseHandler?.();
+
+      for (let i = 0; i < 10; i++) {
+        const current = await store.getTask(task.taskId, 'test-session');
+        if (current?.status === 'completed') break;
+        await new Promise((r) => setTimeout(r, 10));
+      }
+
+      const final = await store.getTask(task.taskId, 'test-session');
+      assert.strictEqual(final?.status, 'completed');
+    } finally {
+      store.cleanup();
+    }
+  });
+
   it('ignores onProgress callback and does not update task status message', async () => {
     const orchestrator = new TaskOrchestrator();
     const store = orchestrator;

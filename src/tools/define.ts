@@ -484,7 +484,22 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
               const executor = new ToolExecutor<I, O>(def.name, ctx, def, args as z.infer<I>);
               return executor.execute(args, deps) as Promise<ToolResult<Record<string, unknown>>>;
             },
-            { toolName: def.name, toolTitle: def.title, deps },
+            {
+              toolName: def.name,
+              toolTitle: def.title,
+              ...(def.progress
+                ? {
+                    progress: (args: unknown) => {
+                      try {
+                        return def.progress?.(args as z.infer<I>) ?? { label: def.title };
+                      } catch {
+                        return { label: def.title };
+                      }
+                    },
+                  }
+                : {}),
+              deps,
+            },
           ),
         );
         return;
