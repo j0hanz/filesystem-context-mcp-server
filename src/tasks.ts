@@ -190,7 +190,10 @@ export class TaskOrchestrator implements TaskStore {
         } while (cursor);
 
         if (activeCount >= MAX_CONCURRENT_TASKS) {
-          throw new FsError(ErrorCode.INVALID_INPUT, `Too many active tasks (${activeCount})`);
+          throw new FsError(
+            ErrorCode.TOO_LARGE,
+            `Server at capacity: ${activeCount} active tasks (limit ${MAX_CONCURRENT_TASKS}).`,
+          );
         }
 
         const requestedTtl = ctx.task.requestedTtl ?? TASK_TTL;

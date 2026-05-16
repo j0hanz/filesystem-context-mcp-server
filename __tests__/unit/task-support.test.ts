@@ -339,8 +339,8 @@ describe('createToolTaskHandler', () => {
           assert.ok(error instanceof Error);
           if (error instanceof Error) {
             assert.ok(
-              error.message.includes('Too many active tasks'),
-              `Expected "Too many active tasks" in: ${error.message}`,
+              error.message.includes('Server at capacity'),
+              `Expected "Server at capacity" in: ${error.message}`,
             );
           }
 
@@ -410,7 +410,7 @@ describe('createToolTaskHandler', () => {
         (error: unknown) => {
           assert.ok(error instanceof Error);
           if (error instanceof Error) {
-            assert.ok(error.message.includes('Too many active tasks'));
+            assert.ok(error.message.includes('Server at capacity'));
           }
 
           return true;
@@ -578,5 +578,75 @@ describe('assertToolsCallTaskCapability', () => {
   it('is available from @modelcontextprotocol/server', async () => {
     const { assertToolsCallTaskCapability } = await import('@modelcontextprotocol/server');
     assert.equal(typeof assertToolsCallTaskCapability, 'function');
+  });
+});
+
+// --- concurrent task limit error code ---
+describe('concurrent task limit error code', () => {
+  it('reports ErrorCode.TOO_LARGE (not INVALID_INPUT) when at the concurrent task limit', async () => {
+    const orchestrator = new TaskOrchestrator();
+    const wrapped = orchestrator.wrapToolTask(
+      async () => ({
+        content: [{ type: 'text' as const, text: 'ok' }],
+        structuredContent: {} as Record<string, unknown>,
+      }),
+      { toolName: 'limit-test', deps: stubDeps },
+    );
+
+    // Return MAX_CONCURRENT_TASKS 'working' tasks from listTasks so the limit check fires.
+    const workingTasks = Array.from({ length: MAX_CONCURRENT_TASKS }, (_, i) => ({
+      taskId: `t-${i}`,
+      status: 'working' as const,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      ttl: 5_000,
+      pollInterval: 50,
+    }));
+
+    const mockCtx: CreateTaskServerContext = {
+      mcpReq: {
+        id: 99,
+        method: 'tools/call',
+        signal: new AbortController().signal,
+        notify: async () => {},
+        send: async () => ({}) as never,
+        log: async () => {},
+        elicitInput: async () => ({}) as never,
+        requestSampling: async () => ({}) as never,
+      },
+      sessionId: 'limit-session',
+      task: {
+        store: {
+          async createTask() {
+            throw new Error('should not reach createTask');
+          },
+          async getTask() {
+            throw new Error('not needed');
+          },
+          async updateTaskStatus() {},
+          async storeTaskResult() {},
+          async getTaskResult() {
+            return undefined;
+          },
+          async listTasks() {
+            return { tasks: workingTasks };
+          },
+        },
+        requestedTtl: 5_000,
+      },
+    };
+
+    let caught: unknown;
+    try {
+      await wrapped.createTask(mockCtx);
+    } catch (e) {
+      caught = e;
+    }
+
+    assert.ok(caught instanceof Error, `expected Error, got ${String(caught)}`);
+    assert.ok(
+      (caught as Record<string, unknown>).code === ErrorCode.TOO_LARGE,
+      `expected TOO_LARGE, got ${String((caught as Record<string, unknown>).code)}`,
+    );
   });
 });
