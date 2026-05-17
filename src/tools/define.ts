@@ -7,6 +7,7 @@ import type {
   LoggingLevel,
   McpServer,
   Notification,
+  ProgressNotificationParams,
   RequestMeta,
   ServerContext,
   StandardSchemaWithJSON,
@@ -312,15 +313,16 @@ class ProgressTracker {
 
   private async emit(params: { current: number; total?: number; message?: string }): Promise<void> {
     if (!this.notify || this.token === undefined) return;
+    const notificationParams: ProgressNotificationParams = {
+      progressToken: this.token,
+      progress: params.current,
+      ...(params.total !== undefined ? { total: params.total } : {}),
+      ...(params.message !== undefined ? { message: params.message } : {}),
+    };
     try {
       await this.notify({
         method: 'notifications/progress',
-        params: {
-          progressToken: this.token,
-          progress: params.current,
-          ...(params.total !== undefined ? { total: params.total } : {}),
-          ...(params.message !== undefined ? { message: params.message } : {}),
-        },
+        params: notificationParams,
       });
       this.emittedCount++;
     } catch (error) {
