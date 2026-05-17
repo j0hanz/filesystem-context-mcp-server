@@ -163,13 +163,27 @@ function setupResources(
           : {}),
       });
 
-      server.registerResource(contract.name, template, config, (uri, variables, ctx) =>
-        contract.read(uri, variables, ctx),
-      );
+      server.registerResource(contract.name, template, config, async (uri, variables, ctx) => {
+        try {
+          return await contract.read(uri, variables, ctx);
+        } catch (error) {
+          throw new ProtocolError(
+            ProtocolErrorCode.InvalidRequest,
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      });
     } else if (contract.uri) {
-      server.registerResource(contract.name, contract.uri, config, (uri, ctx) =>
-        contract.read(uri, {}, ctx),
-      );
+      server.registerResource(contract.name, contract.uri, config, async (uri, ctx) => {
+        try {
+          return await contract.read(uri, {}, ctx);
+        } catch (error) {
+          throw new ProtocolError(
+            ProtocolErrorCode.InvalidRequest,
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      });
     }
   }
 

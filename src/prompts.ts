@@ -4,6 +4,8 @@ import {
   type GetPromptResult,
   type McpServer,
   type PromptMessage,
+  ProtocolError,
+  ProtocolErrorCode,
   type ResourceLink,
   type TextContent,
 } from '@modelcontextprotocol/server';
@@ -99,7 +101,10 @@ function wrapHandler<T>(
   fn: () => Promise<T> | T,
 ): Promise<T> {
   if (requiresInit && !options.isInitialized()) {
-    throw new Error(`Prompt ${contract.name} called before roots are initialized`);
+    throw new ProtocolError(
+      ProtocolErrorCode.InvalidRequest,
+      `Prompt ${contract.name} called before roots are initialized`,
+    );
   }
   const displayName = getDisplayName(contract);
 
@@ -110,12 +115,19 @@ function wrapHandler<T>(
       display_name: displayName,
     },
     async () => {
-      const result = await fn();
-      Logger.debug(`prompt resolved`, {
-        name: contract.name,
-        displayName,
-      });
-      return result;
+      try {
+        const result = await fn();
+        Logger.debug(`prompt resolved`, {
+          name: contract.name,
+          displayName,
+        });
+        return result;
+      } catch (error) {
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidRequest,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
     },
   );
 }
