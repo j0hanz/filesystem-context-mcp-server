@@ -7,8 +7,9 @@ import { z } from 'zod/v4';
 
 import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, FsError, isAbortError, isNodeError, Problem } from '../core/errors.js';
+import type { GuardedFileSystem } from '../core/fs.js';
 import { PerFileErrorSchema, RequiredPath } from '../schema.js';
-import { defineTool, type ToolCtx, type ToolFsOps } from './define.js';
+import { defineTool, type ToolCtx } from './define.js';
 
 const MoveItemSchema = z.strictObject({
   source: RequiredPath.describe('Source path to move'),
@@ -127,7 +128,7 @@ async function validateMoveSource(
 async function performRenameWithFallback(
   validSource: string,
   validDest: string,
-  fsOps: Pick<ToolFsOps, 'rename' | 'cp' | 'rm'>,
+  fsOps: Pick<GuardedFileSystem, 'rename' | 'cp' | 'rm'>,
   originalSource: string,
 ): Promise<void> {
   try {

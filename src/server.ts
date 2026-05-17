@@ -17,6 +17,7 @@ import {
 
 import { readFile } from 'node:fs/promises';
 
+import { GuardedFileSystem } from './core/fs.js';
 import { createLoggingState, Logger, LogRouter, withTelemetry } from './core/observability.js';
 import { PathGuard, type ServerOptions } from './core/path.js';
 import { createInMemoryResourceStore, type ResourceStore } from './core/store.js';
@@ -58,6 +59,7 @@ const {
 export class FilesystemServerContext {
   public readonly mcp: McpServer;
   public readonly pathGuard: PathGuard;
+  public readonly fs: GuardedFileSystem;
   public readonly resources: ResourceStore;
   public readonly resourcesHandle: ResourcesHandle;
   private readonly orchestrator: TaskOrchestrator;
@@ -72,6 +74,7 @@ export class FilesystemServerContext {
   ) {
     this.mcp = mcp;
     this.pathGuard = pathGuard;
+    this.fs = new GuardedFileSystem(pathGuard);
     this.resources = resources;
     this.resourcesHandle = resourcesHandle;
     this.orchestrator = orchestrator;

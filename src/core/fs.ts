@@ -68,7 +68,7 @@ export async function stat(
   return { stats, validPath };
 }
 
-export async function lstat(
+async function lstat(
   filePath: string,
   pathGuard: PathGuard,
   options?: { signal?: AbortSignal },
@@ -88,7 +88,7 @@ export async function mkdir(
   return { validPath, result };
 }
 
-export async function rename(
+async function rename(
   oldPath: string,
   newPath: string,
   pathGuard: PathGuard,
@@ -99,7 +99,7 @@ export async function rename(
   return { validOld, validNew };
 }
 
-export async function rm(
+async function rm(
   filePath: string,
   pathGuard: PathGuard,
   options?: Parameters<typeof fsRm>[1],
@@ -109,7 +109,7 @@ export async function rm(
   return { validPath };
 }
 
-export async function rmdir(
+async function rmdir(
   filePath: string,
   pathGuard: PathGuard,
   options?: Parameters<typeof fsRmdir>[1],
@@ -129,7 +129,7 @@ export async function readlink(
   return { linkString, validPath };
 }
 
-export async function cp(
+async function cp(
   source: string,
   destination: string,
   pathGuard: PathGuard,
@@ -867,7 +867,7 @@ export async function readFileWithStats(
   return readFileWithStatsInternal(filePath, validPath, stats, normalized, mode);
 }
 
-export async function readFile(
+async function readFile(
   filePath: string,
   spec: ReadSpec,
   pathGuard: PathGuard,
@@ -1922,3 +1922,98 @@ export const DEFAULT_EXCLUDE_PATTERNS = [
   '**/yarn-error.log',
   '**/Thumbs.db',
 ];
+
+// ─── GuardedFileSystem Facade ──────────────────────────────────────────────────
+
+/**
+ * A facade over file system operations that automatically validates all paths
+ * against the provided PathGuard. This deepens the file system module by
+ * encapsulating path validation, so callers do not need to thread PathGuard
+ * into every individual function call.
+ */
+export class GuardedFileSystem {
+  readonly pathGuard: PathGuard;
+
+  constructor(pathGuard: PathGuard) {
+    this.pathGuard = pathGuard;
+  }
+
+  async stat(filePath: string, options?: { signal?: AbortSignal }) {
+    return stat(filePath, this.pathGuard, options);
+  }
+
+  async lstat(filePath: string, options?: { signal?: AbortSignal }) {
+    return lstat(filePath, this.pathGuard, options);
+  }
+
+  async mkdir(filePath: string, options?: Parameters<typeof fsMkdir>[1]) {
+    return mkdir(filePath, this.pathGuard, options);
+  }
+
+  async rename(oldPath: string, newPath: string) {
+    return rename(oldPath, newPath, this.pathGuard);
+  }
+
+  async rm(filePath: string, options?: Parameters<typeof fsRm>[1]) {
+    return rm(filePath, this.pathGuard, options);
+  }
+
+  async rmdir(filePath: string, options?: Parameters<typeof fsRmdir>[1]) {
+    return rmdir(filePath, this.pathGuard, options);
+  }
+
+  async readlink(filePath: string, options?: Parameters<typeof fsReadlink>[1]) {
+    return readlink(filePath, this.pathGuard, options);
+  }
+
+  async cp(source: string, destination: string, options?: Parameters<typeof fsCp>[2]) {
+    return cp(source, destination, this.pathGuard, options);
+  }
+
+  async isProbablyBinary(filePath: string, existingHandle?: FileHandle, signal?: AbortSignal) {
+    return isProbablyBinary(filePath, existingHandle, signal);
+  }
+
+  async hash(filePath: string, signal?: AbortSignal) {
+    return calculateFileContentHash(filePath, signal, 'hex' as const);
+  }
+
+  async calculateFileContentHash(
+    filePath: string,
+    signal?: AbortSignal,
+    encoding?: BinaryToTextEncoding | null,
+  ): Promise<string | Buffer> {
+    if (encoding === null) {
+      return calculateFileContentHash(filePath, signal, null);
+    }
+    if (encoding === undefined) {
+      return calculateFileContentHash(filePath, signal);
+    }
+    return calculateFileContentHash(filePath, signal, encoding);
+  }
+
+  async readFileRaw(filePath: string, options?: { signal?: AbortSignal }) {
+    return readFileRaw(filePath, this.pathGuard, options);
+  }
+
+  async readFileWithStats(
+    filePath: string,
+    validPath: string,
+    stats: Stats,
+    spec: ReadSpec | undefined,
+  ) {
+    return readFileWithStats(filePath, validPath, stats, spec);
+  }
+
+  async readFile(filePath: string, spec: ReadSpec) {
+    return readFile(filePath, spec, this.pathGuard);
+  }
+
+  async atomicWriteFile(
+    filePath: string,
+    content: string,
+    options?: { encoding?: BufferEncoding; signal?: AbortSignal | undefined },
+  ) {
+    return atomicWriteFile(filePath, content, this.pathGuard, options);
+  }
+}

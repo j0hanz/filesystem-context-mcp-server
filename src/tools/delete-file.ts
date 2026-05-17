@@ -11,10 +11,11 @@ import { z } from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode, FsError, isNodeError, Problem } from '../core/errors.js';
+import type { GuardedFileSystem } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import { defaultFalseBoolean, RequiredPath } from '../schema.js';
-import { defineTool, type ToolCtx, type ToolFsOps } from './define.js';
+import { defineTool, type ToolCtx } from './define.js';
 
 const DeleteInputSchema = z.strictObject({
   paths: z.array(RequiredPath).min(1).max(1000).describe('One or more paths to delete (max 1000)'),
@@ -85,7 +86,7 @@ function toDeleteFailure(path: string, error: unknown): DeleteFailure {
 }
 
 function resolveItemType(
-  itemStats: Awaited<ReturnType<ToolFsOps['lstat']>>,
+  itemStats: Awaited<ReturnType<GuardedFileSystem['lstat']>>,
 ): 'directory' | 'symlink' | 'file' | 'other' {
   if (itemStats.stats.isDirectory()) return 'directory';
   if (itemStats.stats.isSymbolicLink()) return 'symlink';
@@ -96,7 +97,7 @@ function resolveItemType(
 async function tryElicitConfirmation(
   inputPath: string,
   args: Pick<DeleteInput, 'recursive'>,
-  itemStats: Awaited<ReturnType<ToolFsOps['lstat']>>,
+  itemStats: Awaited<ReturnType<GuardedFileSystem['lstat']>>,
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>,
 ): Promise<boolean> {
   if (!elicitInput || !args.recursive || !itemStats.stats.isDirectory()) {
@@ -131,7 +132,7 @@ async function performDeletion(
   validPath: string,
   args: Pick<DeleteInput, 'recursive' | 'ignoreIfNotExists'>,
   isDirectory: boolean,
-  fsOps: Pick<ToolFsOps, 'rm' | 'rmdir'>,
+  fsOps: Pick<GuardedFileSystem, 'rm' | 'rmdir'>,
 ): Promise<void> {
   if (isDirectory && !args.recursive) {
     await fsOps.rmdir(validPath);
@@ -172,7 +173,7 @@ async function deleteSinglePath(
     };
   }
 
-  let itemStats: Awaited<ReturnType<ToolFsOps['lstat']>> | undefined;
+  let itemStats: Awaited<ReturnType<GuardedFileSystem['lstat']>> | undefined;
   try {
     itemStats = await ctx.fs.lstat(validPath);
   } catch (error) {
