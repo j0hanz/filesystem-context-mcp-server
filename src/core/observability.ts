@@ -455,6 +455,13 @@ function extractErrorMessage(source: unknown): string {
   }
   if (typeof source['message'] === 'string') return source['message'];
 
+  // MCP error response shape: { isError: true, content: [{ type: 'text', text: '...' }] }
+  const content: unknown = source['content'];
+  if (Array.isArray(content) && content.length > 0) {
+    const first: unknown = content[0];
+    if (isRecord(first) && typeof first['text'] === 'string') return first['text'];
+  }
+
   return safeStringify(source);
 }
 

@@ -78,12 +78,13 @@ test('extracts error from structured outcome', async () => {
   assert.equal(lastEvent?.ok, false);
   assert.equal(lastEvent?.error, 'nested error');
 
+  // MCP error response shape (what ToolExecutor.failProgress actually returns)
   await withToolDiagnostics('test-tool', async () => {
-    return { isError: true, message: 'isError message' };
+    return { isError: true, content: [{ type: 'text', text: 'content error message' }] };
   });
 
   assert.equal(lastEvent?.ok, false);
-  assert.equal(lastEvent?.error, 'isError message');
+  assert.equal(lastEvent?.error, 'content error message');
 
   await withToolDiagnostics('test-tool', async () => {
     return {
