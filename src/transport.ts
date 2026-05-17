@@ -370,7 +370,7 @@ export class HttpSessionRegistry {
   getOrRespondNotFound(sessionId: string, res: ServerResponse): HttpSession | undefined {
     const session = this.sessions.get(sessionId);
     if (!session) {
-      sendJsonRpcError(res, 404, JSON_RPC_SERVER_ERROR, 'Session not found');
+      sendJsonRpcError(res, 404, ProtocolErrorCode.InvalidRequest, 'Session not found');
       return undefined;
     }
     return session;
@@ -598,7 +598,7 @@ async function handlePostMcp(
           sendJsonRpcError(
             res,
             400,
-            JSON_RPC_SERVER_ERROR,
+            ProtocolErrorCode.InvalidRequest,
             'Bad Request: No valid session ID provided',
           );
           enrich({ http_status: 400, outcome: 'rejected' });
@@ -606,7 +606,7 @@ async function handlePostMcp(
         }
         const maxSessions = parseEnvInt('FILESYSTEM_MCP_MAX_HTTP_SESSIONS', 100, 1, 10_000);
         if (registry.size() >= maxSessions) {
-          sendJsonRpcError(res, 503, JSON_RPC_SERVER_ERROR, 'Too many sessions');
+          sendJsonRpcError(res, 503, ProtocolErrorCode.InternalError, 'Too many sessions');
           enrich({ http_status: 503, outcome: 'rejected' });
           return;
         }
@@ -646,7 +646,12 @@ async function handleGetOrDeleteMcp(
     async (enrich) => {
       try {
         if (!sessionId) {
-          sendJsonRpcError(res, 400, JSON_RPC_SERVER_ERROR, 'Bad Request: Missing session ID');
+          sendJsonRpcError(
+            res,
+            400,
+            ProtocolErrorCode.InvalidRequest,
+            'Bad Request: Missing session ID',
+          );
           enrich({ http_status: 400, outcome: 'rejected' });
           return;
         }
