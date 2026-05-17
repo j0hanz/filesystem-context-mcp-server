@@ -464,8 +464,17 @@ describe('TaskOrchestrator', () => {
       // WITHOUT calling updateTaskStatus('cancelled'). This leaves the store status
       // as 'working' so that when the handler returns the isError result, the
       // result-path isCancelled check is the sole deciding factor for final status.
-      // (If we called updateTaskStatus first, it would pre-set status to 'cancelled'
-      // and storeTaskResult would throw, masking whether result-path handled it.)
+      //
+      // Why not use the public API (store.updateTaskStatus('cancelled')) instead?
+      // InMemoryTaskStore.storeTaskResult throws
+      //   "Cannot store result for task … in terminal status 'cancelled'"
+      // whenever the task is already in a terminal state (completed/failed/cancelled).
+      // Pre-setting status to 'cancelled' via updateTaskStatus would cause the
+      // orchestrator's subsequent storeTaskResult('failed', …) call to throw rather
+      // than silently override — making unfixed code pass the test (false positive).
+      // Bypassing here is therefore intentional: the store status stays 'working' so
+      // storeTaskResult('failed') is the live operation that the fixed code must
+      // intercept and redirect to 'cancelled'.
       const internalControllers = (
         orchestrator as unknown as { controllers: Map<string, AbortController> }
       ).controllers;
