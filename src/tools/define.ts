@@ -18,6 +18,7 @@ import type {
 } from '@modelcontextprotocol/server';
 
 import { randomUUID } from 'node:crypto';
+import type { Stats } from 'node:fs';
 
 import { z } from 'zod/v4';
 
@@ -25,6 +26,20 @@ import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode, Problem } from '../core/errors.js';
 import type { ProgressCtx } from '../core/fmt.js';
 import { plainMessage } from '../core/fmt.js';
+import {
+  calculateFileContentHash,
+  cp as fsCoreCp,
+  lstat as fsCoreLstat,
+  mkdir as fsCoreMkdir,
+  readFile as fsCoreReadFile,
+  readlink as fsCoreReadlink,
+  rename as fsCoreRename,
+  rm as fsCoreRm,
+  rmdir as fsCoreRmdir,
+  stat as fsCoreStat,
+  type ReadFileResult,
+  type ReadSpec,
+} from '../core/fs.js';
 import {
   Logger,
   ProgressSession,
@@ -76,11 +91,47 @@ interface TracingMeta {
   'io.opentelemetry/baggage'?: string | undefined;
 }
 
+export interface ToolFsOps {
+  stat(path: string): Promise<{ stats: Stats; validPath: string }>;
+  lstat(path: string): Promise<{ stats: Stats; validPath: string }>;
+  readFile(path: string, spec: ReadSpec): Promise<ReadFileResult>;
+  hash(path: string): Promise<string>;
+  mkdir(
+    path: string,
+    options?: Parameters<typeof fsCoreMkdir>[2],
+  ): Promise<{ validPath: string; result: string | undefined }>;
+  rename(oldPath: string, newPath: string): Promise<{ validOld: string; validNew: string }>;
+  rm(path: string, options?: Parameters<typeof fsCoreRm>[2]): Promise<{ validPath: string }>;
+  rmdir(path: string, options?: Parameters<typeof fsCoreRmdir>[2]): Promise<{ validPath: string }>;
+  readlink(path: string): Promise<{ linkString: string; validPath: string }>;
+  cp(
+    source: string,
+    dest: string,
+    options?: Parameters<typeof fsCoreCp>[3],
+  ): Promise<{ validSource: string; validDest: string }>;
+}
+
+function buildFsOps(pathGuard: PathGuard, signal: AbortSignal): ToolFsOps {
+  return {
+    stat: (path) => fsCoreStat(path, pathGuard, { signal }),
+    lstat: (path) => fsCoreLstat(path, pathGuard, { signal }),
+    readFile: (path, spec) => fsCoreReadFile(path, spec, pathGuard),
+    hash: (path) => calculateFileContentHash(path, signal),
+    mkdir: (path, options) => fsCoreMkdir(path, pathGuard, options),
+    rename: (oldPath, newPath) => fsCoreRename(oldPath, newPath, pathGuard),
+    rm: (path, options) => fsCoreRm(path, pathGuard, options),
+    rmdir: (path, options) => fsCoreRmdir(path, pathGuard, options),
+    readlink: (path) => fsCoreReadlink(path, pathGuard),
+    cp: (src, dst, options) => fsCoreCp(src, dst, pathGuard, options),
+  };
+}
+
 export interface ToolCtx {
   readonly signal: AbortSignal;
   readonly sessionId?: string;
   readonly _meta?: (RequestMeta & TracingMeta) | undefined;
   readonly pathGuard: PathGuard;
+  readonly fs: ToolFsOps;
   readonly resourceStore: ResourceStore | undefined;
   readonly log?: (level: LoggingLevel, data: unknown, logger?: string) => void;
   readonly sendNotification?: (notification: Notification) => Promise<void>;
@@ -162,9 +213,11 @@ export function toToolCtx(
   deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore'>,
 ): ToolCtx {
   if (!ctx) {
+    const signal = new AbortController().signal;
     return {
-      signal: new AbortController().signal,
+      signal,
       pathGuard: deps.pathGuard,
+      fs: buildFsOps(deps.pathGuard, signal),
       resourceStore: deps.resourceStore,
     };
   }
@@ -173,6 +226,7 @@ export function toToolCtx(
     ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
     ...(ctx.mcpReq._meta ? { _meta: ctx.mcpReq._meta } : {}),
     pathGuard: deps.pathGuard,
+    fs: buildFsOps(deps.pathGuard, ctx.mcpReq.signal),
     resourceStore: deps.resourceStore,
     sendNotification: async (notification) => ctx.mcpReq.notify(notification),
     log: (level, data, logger) => {
@@ -193,6 +247,7 @@ function buildExecutionCtx(
     ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
     ...(ctx._meta ? { _meta: ctx._meta } : {}),
     pathGuard: ctx.pathGuard,
+    fs: buildFsOps(ctx.pathGuard, signal),
     resourceStore: ctx.resourceStore,
     ...(ctxLog
       ? {

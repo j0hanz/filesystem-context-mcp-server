@@ -1,8 +1,4 @@
-import type {
-  ElicitRequestFormParams,
-  ElicitResult,
-  PrimitiveSchemaDefinition,
-} from '@modelcontextprotocol/server';
+import type { PrimitiveSchemaDefinition } from '@modelcontextprotocol/server';
 import { SdkError, SdkErrorCode } from '@modelcontextprotocol/server';
 
 import { basename, dirname, resolve, sep } from 'node:path';
@@ -11,10 +7,8 @@ import { z } from 'zod/v4';
 
 import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, FsError, isAbortError, isNodeError, Problem } from '../core/errors.js';
-import { cp, mkdir, rename, rm, stat } from '../core/fs.js';
-import type { PathGuard } from '../core/path.js';
 import { PerFileErrorSchema, RequiredPath } from '../schema.js';
-import { defineTool } from './define.js';
+import { defineTool, type ToolCtx, type ToolFsOps } from './define.js';
 
 const MoveItemSchema = z.strictObject({
   source: RequiredPath.describe('Source path to move'),
@@ -50,15 +44,13 @@ type MoveItemResult = z.infer<typeof MoveItemResultSchema>;
 async function tryElicitOverwriteConfirmation(
   destination: string,
   validDest: string,
-  pathGuard: PathGuard,
-  signal: AbortSignal,
-  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>,
+  ctx: Pick<ToolCtx, 'fs' | 'elicitInput'>,
 ): Promise<void> {
-  if (!elicitInput) return;
+  if (!ctx.elicitInput) return;
 
   let destExists = false;
   try {
-    await stat(validDest, pathGuard, { signal });
+    await ctx.fs.stat(validDest);
     destExists = true;
   } catch {
     // Destination does not exist - no confirmation needed.
@@ -71,7 +63,7 @@ async function tryElicitOverwriteConfirmation(
       type: 'boolean',
       title: 'Yes, overwrite',
     };
-    const elicitResult = await elicitInput({
+    const elicitResult = await ctx.elicitInput({
       mode: 'form',
       message: `"${destination}" already exists. Overwrite it?`,
       requestedSchema: {
@@ -119,7 +111,10 @@ function buildSummary(
   return parts.join(' · ');
 }
 
-async function validateMoveSource(source: string, pathGuard: PathGuard): Promise<string> {
+async function validateMoveSource(
+  source: string,
+  pathGuard: ToolCtx['pathGuard'],
+): Promise<string> {
   try {
     const validSource = await pathGuard.validateExistingPath(source);
     return validSource;
@@ -132,11 +127,11 @@ async function validateMoveSource(source: string, pathGuard: PathGuard): Promise
 async function performRenameWithFallback(
   validSource: string,
   validDest: string,
-  pathGuard: PathGuard,
+  fsOps: Pick<ToolFsOps, 'rename' | 'cp' | 'rm'>,
   originalSource: string,
 ): Promise<void> {
   try {
-    await rename(validSource, validDest, pathGuard);
+    await fsOps.rename(validSource, validDest);
   } catch (error: unknown) {
     if (isAbortError(error)) {
       throw error;
@@ -147,8 +142,8 @@ async function performRenameWithFallback(
     }
 
     try {
-      await cp(validSource, validDest, pathGuard, { recursive: true });
-      await rm(validSource, pathGuard, { recursive: true, force: true });
+      await fsOps.cp(validSource, validDest, { recursive: true });
+      await fsOps.rm(validSource, { recursive: true, force: true });
     } catch (copyOrRemoveError) {
       if (isAbortError(copyOrRemoveError)) {
         throw copyOrRemoveError;
@@ -211,15 +206,9 @@ export const MOVE = defineTool({
           );
         }
 
-        await withAbort(mkdir(dirname(validDest), ctx.pathGuard, { recursive: true }), ctx.signal);
-        await tryElicitOverwriteConfirmation(
-          move.destination,
-          validDest,
-          ctx.pathGuard,
-          ctx.signal,
-          ctx.elicitInput,
-        );
-        await performRenameWithFallback(validSource, validDest, ctx.pathGuard, move.source);
+        await withAbort(ctx.fs.mkdir(dirname(validDest), { recursive: true }), ctx.signal);
+        await tryElicitOverwriteConfirmation(move.destination, validDest, ctx);
+        await performRenameWithFallback(validSource, validDest, ctx.fs, move.source);
 
         results.push({ ok: true as const, from: validSource, to: validDest });
         ctx.log?.('info', `move: ${move.source} -> ${move.destination}`, 'move');

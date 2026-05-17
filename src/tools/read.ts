@@ -6,14 +6,7 @@ import { z } from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
-import {
-  calculateFileContentHash,
-  detectMimeType,
-  MIME_SAMPLE_SIZE,
-  readFile,
-  type ReadSpec,
-  stat,
-} from '../core/fs.js';
+import { detectMimeType, MIME_SAMPLE_SIZE, type ReadSpec } from '../core/fs.js';
 import {
   DEFAULT_CONTINUATION_CHUNK_SIZE,
   DEFAULT_READ_MANY_MAX_TOTAL_SIZE,
@@ -206,22 +199,21 @@ async function collectFileBudget(
   filePaths: readonly string[],
   maxTotalSize: number,
   maxSize: number,
-  pathGuard: ToolCtx['pathGuard'],
-  signal?: AbortSignal,
+  ctx: Pick<ToolCtx, 'fs' | 'signal'>,
 ): Promise<{ skippedBudget: Set<number> }> {
   const indexed = filePaths.map((path, index) => ({ path, index }));
   const { results } = await processInParallel(
     indexed,
     async ({ path, index }): Promise<BatchFileInfo | undefined> => {
       try {
-        const out = await stat(path, pathGuard, signal ? { signal } : undefined);
+        const out = await ctx.fs.stat(path);
         return { index, size: Math.min(out.stats.size, maxSize) };
       } catch {
         return undefined;
       }
     },
     PARALLEL_CONCURRENCY,
-    signal,
+    ctx.signal,
   );
 
   const byIndex = new Map<number, number>();
@@ -280,7 +272,7 @@ async function readOnePath(
   ctx: ToolCtx,
 ): Promise<PerPathReadValue> {
   const spec = buildReadSpec(args, ctx.signal);
-  const result = await readFile(filePath, spec, ctx.pathGuard);
+  const result = await ctx.fs.readFile(filePath, spec);
 
   const mimeInfo = detectMimeType(
     result.path,
@@ -318,7 +310,7 @@ async function readOnePath(
   if (result.reachedEOF !== undefined) value.reachedEOF = result.reachedEOF;
 
   if (args.includeHash) {
-    value.contentHash = await calculateFileContentHash(result.path, ctx.signal);
+    value.contentHash = await ctx.fs.hash(result.path);
   }
 
   if (ctx.resourceStore) {
@@ -392,8 +384,7 @@ export const READ_FILE = defineTool({
         pathList,
         DEFAULT_READ_MANY_MAX_TOTAL_SIZE,
         MAX_TEXT_FILE_SIZE,
-        ctx.pathGuard,
-        ctx.signal,
+        ctx,
       );
       const filtered = preFilterByBudget(pathList, {
         skippedBudget: budget.skippedBudget,

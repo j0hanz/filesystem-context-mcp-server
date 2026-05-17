@@ -11,12 +11,10 @@ import { z } from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode, FsError, isNodeError, Problem } from '../core/errors.js';
-import { lstat, rm, rmdir } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
-import type { PathGuard } from '../core/path.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import { defaultFalseBoolean, RequiredPath } from '../schema.js';
-import { defineTool } from './define.js';
+import { defineTool, type ToolCtx, type ToolFsOps } from './define.js';
 
 const DeleteInputSchema = z.strictObject({
   paths: z.array(RequiredPath).min(1).max(1000).describe('One or more paths to delete (max 1000)'),
@@ -87,7 +85,7 @@ function toDeleteFailure(path: string, error: unknown): DeleteFailure {
 }
 
 function resolveItemType(
-  itemStats: Awaited<ReturnType<typeof lstat>>,
+  itemStats: Awaited<ReturnType<ToolFsOps['lstat']>>,
 ): 'directory' | 'symlink' | 'file' | 'other' {
   if (itemStats.stats.isDirectory()) return 'directory';
   if (itemStats.stats.isSymbolicLink()) return 'symlink';
@@ -98,7 +96,7 @@ function resolveItemType(
 async function tryElicitConfirmation(
   inputPath: string,
   args: Pick<DeleteInput, 'recursive'>,
-  itemStats: Awaited<ReturnType<typeof lstat>>,
+  itemStats: Awaited<ReturnType<ToolFsOps['lstat']>>,
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>,
 ): Promise<boolean> {
   if (!elicitInput || !args.recursive || !itemStats.stats.isDirectory()) {
@@ -133,12 +131,12 @@ async function performDeletion(
   validPath: string,
   args: Pick<DeleteInput, 'recursive' | 'ignoreIfNotExists'>,
   isDirectory: boolean,
-  pathGuard: PathGuard,
+  fsOps: Pick<ToolFsOps, 'rm' | 'rmdir'>,
 ): Promise<void> {
   if (isDirectory && !args.recursive) {
-    await rmdir(validPath, pathGuard);
+    await fsOps.rmdir(validPath);
   } else {
-    await rm(validPath, pathGuard, {
+    await fsOps.rm(validPath, {
       recursive: args.recursive,
       force: args.ignoreIfNotExists,
     });
@@ -148,9 +146,7 @@ async function performDeletion(
 async function deleteSinglePath(
   inputPath: string,
   args: Pick<DeleteInput, 'recursive' | 'ignoreIfNotExists'>,
-  pathGuard: PathGuard,
-  signal?: AbortSignal,
-  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>,
+  ctx: Pick<ToolCtx, 'fs' | 'pathGuard' | 'signal' | 'elicitInput'>,
 ): Promise<{ item: DeletedItem } | { failure: DeleteFailure }> {
   let validPath: string;
   try {
@@ -160,7 +156,7 @@ async function deleteSinglePath(
     return { failure: toDeleteFailure(inputPath, error) };
   }
 
-  if (pathGuard.isAllowedRoot(validPath)) {
+  if (ctx.pathGuard.isAllowedRoot(validPath)) {
     return {
       failure: {
         path: validPath,
@@ -176,9 +172,9 @@ async function deleteSinglePath(
     };
   }
 
-  let itemStats: Awaited<ReturnType<typeof lstat>> | undefined;
+  let itemStats: Awaited<ReturnType<ToolFsOps['lstat']>> | undefined;
   try {
-    itemStats = await lstat(validPath, pathGuard, signal ? { signal } : undefined);
+    itemStats = await ctx.fs.lstat(validPath);
   } catch (error) {
     if (isNodeError(error) && error.code === 'ENOENT' && args.ignoreIfNotExists) {
       return { item: { path: validPath } };
@@ -187,7 +183,7 @@ async function deleteSinglePath(
   }
 
   const itemType = resolveItemType(itemStats);
-  const shouldProceed = await tryElicitConfirmation(inputPath, args, itemStats, elicitInput);
+  const shouldProceed = await tryElicitConfirmation(inputPath, args, itemStats, ctx.elicitInput);
 
   if (!shouldProceed) {
     return {
@@ -203,7 +199,7 @@ async function deleteSinglePath(
   }
 
   try {
-    await performDeletion(validPath, args, itemStats.stats.isDirectory(), pathGuard);
+    await performDeletion(validPath, args, itemStats.stats.isDirectory(), ctx.fs);
   } catch (error) {
     return { failure: toDeleteFailure(inputPath, error) };
   }
@@ -212,17 +208,12 @@ async function deleteSinglePath(
   return { item: { path: validPath, type: itemType } };
 }
 
-async function handleDelete(
-  args: DeleteInput,
-  pathGuard: PathGuard,
-  signal?: AbortSignal,
-  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>,
-): Promise<DeleteOutput> {
+async function handleDelete(args: DeleteInput, ctx: ToolCtx): Promise<DeleteOutput> {
   const { results, errors } = await processInParallel(
     args.paths,
-    (inputPath) => deleteSinglePath(inputPath, args, pathGuard, signal, elicitInput),
+    (inputPath) => deleteSinglePath(inputPath, args, ctx),
     PARALLEL_CONCURRENCY,
-    signal,
+    ctx.signal,
   );
 
   const successPaths: string[] = [];
@@ -286,7 +277,7 @@ export const DELETE_FILE = defineTool({
     subject: args.paths.map((p) => basename(p)).join(' · '),
   }),
   run: async (args, ctx) => {
-    const structured = await handleDelete(args, ctx.pathGuard, ctx.signal, ctx.elicitInput);
+    const structured = await handleDelete(args, ctx);
     const deleted = structured.paths ?? (structured.path ? [structured.path] : []);
     const failCount = structured.failures?.length ?? 0;
     const delCount = deleted.length;
