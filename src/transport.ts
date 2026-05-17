@@ -171,7 +171,6 @@ export async function startServer(ctx: FilesystemServerContext): Promise<void> {
 
 const MAX_SESSION_ID_LENGTH = 256;
 const MAX_BEARER_TOKEN_LENGTH = 4096;
-const JSON_RPC_SERVER_ERROR = -32000;
 
 const ALLOWED_ORIGIN_PATTERNS: readonly RegExp[] = [
   /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/u,
@@ -305,7 +304,8 @@ function bearerAuthMiddleware(): RequestHandler {
       'Content-Type': 'application/json',
       'WWW-Authenticate': 'Bearer',
     });
-    res.end(JSON.stringify(buildJsonRpcError(JSON_RPC_SERVER_ERROR, 'Unauthorized')));
+    // -32000 is the JSON-RPC server-defined error range; no SDK enum maps to "Unauthorized".
+    res.end(JSON.stringify(buildJsonRpcError(-32000, 'Unauthorized')));
   };
 }
 
