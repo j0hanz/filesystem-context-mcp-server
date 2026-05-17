@@ -256,7 +256,8 @@ export class TaskOrchestrator implements TaskStore {
                 ? firstContent['text']
                 : undefined;
             const isCancelled =
-              typeof firstText === 'string' && /cancelled|canceled/i.test(firstText);
+              execSignal?.aborted === true ||
+              (typeof firstText === 'string' && /cancelled|canceled/i.test(firstText));
             if (isCancelled) {
               try {
                 await task.store.updateTaskStatus(mcpTask.taskId, 'cancelled', 'cancelled');

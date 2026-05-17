@@ -431,4 +431,63 @@ describe('TaskOrchestrator', () => {
       store.cleanup();
     }
   });
+
+  it('classifies a cancelled task by signal even when isError result omits the word "cancelled"', async () => {
+    const orchestrator = new TaskOrchestrator();
+    const store = orchestrator;
+
+    try {
+      const handler = orchestrator.wrapToolTask(
+        async (_args: unknown, ctx: ToolCtx) => {
+          // Wait for the abort signal, then return an isError result
+          // whose text intentionally omits the word "cancelled".
+          await new Promise<void>((resolve) => {
+            if (ctx.signal?.aborted) {
+              resolve();
+              return;
+            }
+            ctx.signal?.addEventListener('abort', () => resolve(), { once: true });
+          });
+          return {
+            content: [{ type: 'text' as const, text: 'UNKNOWN: operation halted' }],
+            structuredContent: {},
+            isError: true as const,
+          };
+        },
+        { toolName: 'test_tool', deps: stubDeps },
+      );
+
+      const ctx = createMockExtra(orchestrator);
+      const { task } = await handler.createTask(undefined as never, ctx);
+
+      // Abort the orchestrator's internal AbortController for this task directly,
+      // WITHOUT calling updateTaskStatus('cancelled'). This leaves the store status
+      // as 'working' so that when the handler returns the isError result, the
+      // result-path isCancelled check is the sole deciding factor for final status.
+      // (If we called updateTaskStatus first, it would pre-set status to 'cancelled'
+      // and storeTaskResult would throw, masking whether result-path handled it.)
+      const internalControllers = (
+        orchestrator as unknown as { controllers: Map<string, AbortController> }
+      ).controllers;
+      const ctrl = internalControllers.get(task.taskId);
+      assert.ok(ctrl, 'expected an AbortController to exist for the task');
+      ctrl.abort(new Error('UNKNOWN: operation halted'));
+
+      // Wait for the task to terminate.
+      let final: Task | undefined;
+      for (let i = 0; i < 30; i++) {
+        final = await store.getTask(task.taskId, 'test-session');
+        if (final.status === 'cancelled' || final.status === 'failed') break;
+        await new Promise((r) => setTimeout(r, 10));
+      }
+
+      assert.strictEqual(
+        final?.status,
+        'cancelled',
+        `expected cancelled, got ${final?.status ?? 'undefined'} — orchestrator must trust the signal, not the error text`,
+      );
+    } finally {
+      store.cleanup();
+    }
+  });
 });
