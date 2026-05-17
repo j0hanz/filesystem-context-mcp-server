@@ -7,6 +7,7 @@ import {
   ProtocolErrorCode,
   ResourceTemplate,
   resourceUrlFromServerUrl,
+  type ServerCapabilities,
   type SetLevelRequestParams,
   UriTemplate,
 } from '@modelcontextprotocol/server';
@@ -310,22 +311,23 @@ export async function createServer(
 
   const taskOrchestrator = new TaskOrchestrator();
 
-  const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> = {
-    capabilities: {
-      logging: {},
-      resources: { subscribe: true },
-      tools: {},
-      prompts: {},
-      completions: {},
-      extensions: {},
-      tasks: {
-        list: {},
-        cancel: {},
-        requests: { tools: { call: {} } },
-        taskStore: taskOrchestrator,
-        taskMessageQueue: new InMemoryTaskMessageQueue(),
-      },
+  const capabilities = {
+    logging: {},
+    resources: { subscribe: true },
+    tools: {},
+    prompts: {},
+    completions: {},
+    extensions: {},
+    tasks: {
+      list: {},
+      cancel: {},
+      requests: { tools: { call: {} } },
+      taskStore: taskOrchestrator,
+      taskMessageQueue: new InMemoryTaskMessageQueue(),
     },
+  } satisfies Omit<ServerCapabilities, 'tasks'> & { tasks: unknown };
+  const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> = {
+    capabilities,
     enforceStrictCapabilities: true,
   };
 
