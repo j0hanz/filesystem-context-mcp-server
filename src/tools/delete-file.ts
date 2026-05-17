@@ -1,4 +1,8 @@
-import type { ElicitRequestFormParams, ElicitResult } from '@modelcontextprotocol/server';
+import type {
+  ElicitRequestFormParams,
+  ElicitResult,
+  PrimitiveSchemaDefinition,
+} from '@modelcontextprotocol/server';
 import { SdkError, SdkErrorCode } from '@modelcontextprotocol/server';
 
 import { basename } from 'node:path';
@@ -102,14 +106,16 @@ async function tryElicitConfirmation(
   }
 
   try {
+    const confirmField: PrimitiveSchemaDefinition = {
+      type: 'boolean',
+      title: 'Yes, delete permanently',
+    };
     const elicitResult = await elicitInput({
       mode: 'form',
       message: `Permanently delete "${inputPath}" and all its contents? This cannot be undone.`,
       requestedSchema: {
         type: 'object',
-        properties: {
-          confirm: { type: 'boolean', title: 'Yes, delete permanently' },
-        },
+        properties: { confirm: confirmField },
         required: ['confirm'],
       },
     });

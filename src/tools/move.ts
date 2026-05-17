@@ -1,4 +1,8 @@
-import type { ElicitRequestFormParams, ElicitResult } from '@modelcontextprotocol/server';
+import type {
+  ElicitRequestFormParams,
+  ElicitResult,
+  PrimitiveSchemaDefinition,
+} from '@modelcontextprotocol/server';
 import { SdkError, SdkErrorCode } from '@modelcontextprotocol/server';
 
 import { basename, dirname, resolve, sep } from 'node:path';
@@ -63,17 +67,16 @@ async function tryElicitOverwriteConfirmation(
   if (!destExists) return;
 
   try {
+    const confirmOverwriteField: PrimitiveSchemaDefinition = {
+      type: 'boolean',
+      title: 'Yes, overwrite',
+    };
     const elicitResult = await elicitInput({
       mode: 'form',
       message: `"${destination}" already exists. Overwrite it?`,
       requestedSchema: {
         type: 'object',
-        properties: {
-          confirmOverwrite: {
-            type: 'boolean',
-            title: 'Yes, overwrite',
-          },
-        },
+        properties: { confirmOverwrite: confirmOverwriteField },
         required: ['confirmOverwrite'],
       },
     });
