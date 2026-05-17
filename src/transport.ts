@@ -39,7 +39,7 @@ import {
   Logger,
   type LogRouter,
   type LogTarget,
-  SessionContext,
+  withSession,
   withTelemetry,
 } from './core/observability.js';
 import type { PathGuard, ServerOptions } from './core/path.js';
@@ -499,8 +499,7 @@ async function handleSessionTransportRequest(
   res: ServerResponse,
   body?: unknown,
 ): Promise<void> {
-  const store = session.transport.sessionId ? { sessionId: session.transport.sessionId } : {};
-  await SessionContext.run(store, async () => {
+  await withSession(session.transport.sessionId, async () => {
     await session.transport.handleRequest(req, res, body);
   });
 }

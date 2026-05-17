@@ -4,7 +4,7 @@ import type { LoggingLevel, McpServer } from '@modelcontextprotocol/server';
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 
-import { Logger, LogRouter, type LogTarget, SessionContext } from '../../src/core/observability.js';
+import { Logger, LogRouter, type LogTarget, withSession } from '../../src/core/observability.js';
 
 interface RecordedLog {
   level: LoggingLevel;
@@ -72,7 +72,7 @@ describe('LogRouter', () => {
     assert.equal(second.records.length, 0);
   });
 
-  it('routes events with a sessionId to the matching session target', () => {
+  it('routes events with a sessionId to the matching session target', async () => {
     const router = LogRouter.global();
     const stdio = makeRecordingTarget();
     const sessionA = makeRecordingTarget();
@@ -81,10 +81,10 @@ describe('LogRouter', () => {
     router.attachSession('A', sessionA.target);
     router.attachSession('B', sessionB.target);
 
-    SessionContext.run({ sessionId: 'A' }, () => {
+    await withSession('A', async () => {
       Logger.notice('for A');
     });
-    SessionContext.run({ sessionId: 'B' }, () => {
+    await withSession('B', async () => {
       Logger.warn('for B');
     });
 
@@ -95,13 +95,13 @@ describe('LogRouter', () => {
     assert.equal(stdio.records.length, 0);
   });
 
-  it('detachSession stops routing for that session id', () => {
+  it('detachSession stops routing for that session id', async () => {
     const router = LogRouter.global();
     const session = makeRecordingTarget();
     router.attachSession('A', session.target);
     router.detachSession('A');
 
-    SessionContext.run({ sessionId: 'A' }, () => {
+    await withSession('A', async () => {
       Logger.info('orphaned');
     });
 

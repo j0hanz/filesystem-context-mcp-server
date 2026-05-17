@@ -28,14 +28,7 @@ import ignore, { type Ignore } from 'ignore';
 import type { FileType } from '../schema.js';
 import { assertNotAborted, withAbort } from './concurrency.js';
 import { ErrorCode, FsError, isNodeError } from './errors.js';
-import {
-  getToolContextSnapshot,
-  publishOpsTraceEnd,
-  publishOpsTraceError,
-  publishOpsTraceStart,
-  shouldPublishOpsTrace,
-  startPerfMeasure,
-} from './observability.js';
+import { startPerfMeasure, withOpsTrace } from './observability.js';
 import type { PathGuard } from './path.js';
 import { toPosixPath } from './path.js';
 import { BINARY_CHECK_BUFFER_SIZE, KNOWN_BINARY_EXTENSIONS, MAX_TEXT_FILE_SIZE } from './util.js';
@@ -1563,34 +1556,20 @@ async function* nativeGlobEntries(
 
 export async function* globEntries(options: GlobEntriesOptions): AsyncGenerator<GlobEntry> {
   const engine = 'node:fs/promises.glob';
-
   const endMeasure = startPerfMeasure('globEntries', { engine });
-  const toolContext = getToolContextSnapshot();
-  const traceContext = shouldPublishOpsTrace()
-    ? {
-        op: 'globEntries',
-        engine,
-        ...(toolContext ? { tool: toolContext.tool, path: toolContext.path } : {}),
-      }
-    : undefined;
-
-  if (traceContext) publishOpsTraceStart(traceContext);
-
-  let gitignoreMatcher: Ignore | null = null;
-  if (options.respectGitignore) {
-    gitignoreMatcher = await loadRootGitignore(options.cwd);
-  }
 
   let ok = false;
   try {
-    assertOptionsShape(options);
-    yield* nativeGlobEntries(options, gitignoreMatcher);
+    yield* withOpsTrace({ op: 'globEntries', engine }, async function* () {
+      let gitignoreMatcher: Ignore | null = null;
+      if (options.respectGitignore) {
+        gitignoreMatcher = await loadRootGitignore(options.cwd);
+      }
+      assertOptionsShape(options);
+      yield* nativeGlobEntries(options, gitignoreMatcher);
+    });
     ok = true;
-  } catch (error: unknown) {
-    if (traceContext) publishOpsTraceError(traceContext, error);
-    throw error;
   } finally {
-    if (traceContext) publishOpsTraceEnd(traceContext);
     endMeasure?.(ok);
   }
 }

@@ -5,12 +5,9 @@ import test, { before } from 'node:test';
 
 import {
   emitWideEvent,
-  getToolContextSnapshot,
   logRuntimeFailure,
-  publishOpsTraceEnd,
-  publishOpsTraceError,
-  publishOpsTraceStart,
   startPerfMeasure,
+  withOpsTrace,
   withToolDiagnostics,
 } from '../../src/core/observability.js';
 
@@ -18,11 +15,26 @@ before(() => {
   process.env.FS_CONTEXT_DIAGNOSTICS = '1';
 });
 
-test('observability tool context', async () => {
-  await withToolDiagnostics('test-tool', async () => {
-    const ctx = getToolContextSnapshot();
-    assert.equal(ctx?.tool, 'test-tool');
+test('tool context flows into ops trace events', async () => {
+  const opsChannel = tracingChannel('filesystem-mcp:ops');
+  let startEvent: Record<string, unknown> | undefined;
+  opsChannel.start.subscribe((msg: unknown) => {
+    startEvent = msg as Record<string, unknown>;
   });
+
+  await withToolDiagnostics('test-tool', async () => {
+    const consume = async () => {
+      for await (const _ of withOpsTrace({ op: 'inner-op' }, async function* () {
+        yield 1;
+      })) {
+        // drain
+      }
+    };
+    await consume();
+  });
+
+  assert.equal(startEvent?.tool, 'test-tool');
+  assert.equal(startEvent?.op, 'inner-op');
 });
 
 test('startPerfMeasure does not crash without subscribers', () => {
@@ -84,34 +96,48 @@ test('extracts error from structured outcome', async () => {
   assert.equal(lastEvent?.error, 'struct isError msg');
 });
 
-test('ops trace functions', () => {
-  const opsStartChannel = tracingChannel('filesystem-mcp:ops').start;
-  const opsEndChannel = tracingChannel('filesystem-mcp:ops').end;
-  const opsErrorChannel = tracingChannel('filesystem-mcp:ops').error;
+test('withOpsTrace emits start, end, and error events', async () => {
+  const opsChannel = tracingChannel('filesystem-mcp:ops');
 
   let startEvent: Record<string, unknown> | undefined;
   let endEvent: Record<string, unknown> | undefined;
   let errEvent: Record<string, unknown> | undefined;
 
-  opsStartChannel.subscribe((msg: unknown) => {
+  opsChannel.start.subscribe((msg: unknown) => {
     startEvent = msg as Record<string, unknown>;
   });
-  opsEndChannel.subscribe((msg: unknown) => {
+  opsChannel.end.subscribe((msg: unknown) => {
     endEvent = msg as Record<string, unknown>;
   });
-  opsErrorChannel.subscribe((msg: unknown) => {
+  opsChannel.error.subscribe((msg: unknown) => {
     errEvent = msg as Record<string, unknown>;
   });
 
-  publishOpsTraceStart({ op: 'test-op', path: 'test-path' });
-  assert.equal(startEvent?.op, 'test-op');
+  for await (const _ of withOpsTrace({ op: 'happy' }, async function* () {
+    yield 1;
+    yield 2;
+  })) {
+    // drain
+  }
 
-  publishOpsTraceEnd({ op: 'test-op-end', path: 'test-path' });
-  assert.equal(endEvent?.op, 'test-op-end');
+  assert.equal(startEvent?.op, 'happy');
+  assert.equal(endEvent?.op, 'happy');
+  assert.equal(errEvent, undefined);
 
-  publishOpsTraceError({ op: 'test-op-err', path: 'test-path' }, new Error('err'));
-  assert.equal(errEvent?.op, 'test-op-err');
-  assert.equal((errEvent?.error as Error)?.message, 'err');
+  await assert.rejects(
+    (async () => {
+      for await (const _ of withOpsTrace({ op: 'sad' }, async function* () {
+        yield 1;
+        throw new Error('boom');
+      })) {
+        // drain
+      }
+    })(),
+    /boom/,
+  );
+
+  assert.equal(errEvent?.op, 'sad');
+  assert.equal((errEvent?.error as Error).message, 'boom');
 });
 
 test('emitWideEvent emits canonical JSON with environment metadata', () => {

@@ -21,7 +21,12 @@ interface SessionContextData {
   sessionId?: string;
 }
 
-export const SessionContext = new AsyncLocalStorage<SessionContextData>();
+const SessionContext = new AsyncLocalStorage<SessionContextData>();
+
+export function withSession<T>(sessionId: string | undefined, run: () => Promise<T>): Promise<T> {
+  const store: SessionContextData = sessionId ? { sessionId } : {};
+  return SessionContext.run(store, run);
+}
 
 interface LogEvent {
   level: LoggingLevel;
@@ -566,23 +571,47 @@ function ensureObserver(): void {
 
 // --- Public API ---
 
-export function shouldPublishOpsTrace(): boolean {
+function shouldPublishOpsTrace(): boolean {
   return readConfig().enabled && CHANNELS.ops.hasSubscribers;
 }
 
-export function publishOpsTraceStart(context: OpsTraceContext): void {
+function publishOpsTraceStart(context: OpsTraceContext): void {
   CHANNELS.ops.start.publish(buildOpsTraceContext(context));
 }
 
-export function publishOpsTraceEnd(context: OpsTraceContext): void {
+function publishOpsTraceEnd(context: OpsTraceContext): void {
   CHANNELS.ops.end.publish(buildOpsTraceContext(context));
 }
 
-export function publishOpsTraceError(context: OpsTraceContext, error: unknown): void {
+function publishOpsTraceError(context: OpsTraceContext, error: unknown): void {
   CHANNELS.ops.error.publish({
     ...buildOpsTraceContext(context),
     error,
   });
+}
+
+/**
+ * Wraps an async generator with ops-trace start/end/error events. Tool context
+ * is auto-merged from the current `withToolDiagnostics` ALS. No-op when ops
+ * diagnostics are disabled or the channel has no subscribers.
+ */
+export async function* withOpsTrace<T>(
+  context: OpsTraceContext,
+  gen: () => AsyncGenerator<T>,
+): AsyncGenerator<T> {
+  if (!shouldPublishOpsTrace()) {
+    yield* gen();
+    return;
+  }
+  publishOpsTraceStart(context);
+  try {
+    yield* gen();
+  } catch (error) {
+    publishOpsTraceError(context, error);
+    throw error;
+  } finally {
+    publishOpsTraceEnd(context);
+  }
 }
 
 function buildOpsTraceContext(context: OpsTraceContext): OpsTraceContext {
@@ -606,10 +635,6 @@ function buildOpsTraceContext(context: OpsTraceContext): OpsTraceContext {
   }
 
   return merged;
-}
-
-export function getToolContextSnapshot(): { tool: string; path?: string } | undefined {
-  return toolContext.getStore();
 }
 
 export function getTraceContext(): TraceContext | undefined {
