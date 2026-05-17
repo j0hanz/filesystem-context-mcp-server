@@ -120,66 +120,15 @@ function getLocalIconInfo(): Promise<IconInfo | undefined> {
   return cachedIconInfo;
 }
 
-export async function createServer(
-  options: ServerOptions & { isInitialized?: () => boolean } = {},
-): Promise<FilesystemServerContext> {
-  const resourceStore = createInMemoryResourceStore();
-  const localIcon = await getLocalIconInfo();
-
-  const taskOrchestrator = new TaskOrchestrator();
-
-  const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> = {
-    capabilities: {
-      logging: {},
-      resources: { subscribe: true },
-      tools: {},
-      prompts: {},
-      completions: {},
-      extensions: {},
-      tasks: {
-        list: {},
-        cancel: {},
-        requests: { tools: { call: {} } },
-        taskStore: taskOrchestrator,
-        taskMessageQueue: new InMemoryTaskMessageQueue(),
-      },
-    },
-    enforceStrictCapabilities: true,
-  };
-
-  serverConfig.instructions =
-    'filesystem-mcp: Secure local filesystem MCP server. ' +
-    'Start with: roots -> ls/find -> stat -> read. Never guess paths. ' +
-    'For full guidance, read internal://instructions or run the get-help prompt.';
-
-  const implementation: Implementation = {
-    name: 'filesystem-mcp',
-    title: 'Filesystem MCP',
-    version: SERVER_VERSION,
-    ...(SERVER_DESCRIPTION ? { description: SERVER_DESCRIPTION } : {}),
-    ...(SERVER_HOMEPAGE ? { websiteUrl: SERVER_HOMEPAGE } : {}),
-  };
-  const server = new McpServer(withDefaultIcons(implementation, localIcon), serverConfig);
-
-  const loggingState = createLoggingState(LOG_LEVEL);
-  const pathGuard = new PathGuard(options, loggingState);
-  await pathGuard.recomputeAllowedDirectories();
-
-  server.server.setRequestHandler('logging/setLevel', (req: { params: SetLevelRequestParams }) => {
-    loggingState.minimumLevel = req.params.level;
-    Logger.notice(`Log level set to ${req.params.level}`);
-    return {};
-  });
-
-  // Track stdio server by default; HTTP overrides per-session via the registry.
-  logRouter.attachStdio({ server, loggingState });
-
-  const resourcesOptions = {
-    resourceStore,
-    pathGuard,
-    ...(localIcon ? { iconInfo: localIcon } : {}),
-  };
-  const resourceContracts = getResourceContracts(resourcesOptions);
+function setupResources(
+  server: McpServer,
+  options: {
+    resourceStore: ResourceStore;
+    pathGuard: PathGuard;
+    iconInfo?: IconInfo;
+  },
+): ResourcesHandle {
+  const resourceContracts = getResourceContracts(options);
 
   for (const contract of resourceContracts) {
     const config = withDefaultIcons(
@@ -189,7 +138,7 @@ export async function createServer(
         mimeType: contract.mimeType,
         annotations: contract.annotations,
       },
-      resourcesOptions.iconInfo,
+      options.iconInfo,
     );
 
     if (contract.uriTemplate) {
@@ -287,7 +236,7 @@ export async function createServer(
     },
   );
 
-  const resourcesHandle = {
+  return {
     destroy(): void {
       for (const contract of resourceContracts) {
         if (contract.destroy) {
@@ -296,23 +245,42 @@ export async function createServer(
       }
     },
   };
+}
 
+function setupPrompts(
+  server: McpServer,
+  options: {
+    pathGuard: PathGuard;
+    isInitialized: () => boolean;
+    iconInfo?: IconInfo;
+  },
+): void {
   const promptsOptions = {
-    pathGuard,
+    pathGuard: options.pathGuard,
     instructions: serverInstructionsContent,
-    isInitialized: options.isInitialized ?? (() => pathGuard.isInitialized()),
-    ...(localIcon ? { iconInfo: localIcon } : {}),
+    isInitialized: options.isInitialized,
+    ...(options.iconInfo ? { iconInfo: options.iconInfo } : {}),
   };
   for (const { register } of PROMPT_ENTRIES) {
     register(server, promptsOptions);
   }
+}
 
+function setupTools(
+  server: McpServer,
+  options: {
+    isInitialized: () => boolean;
+    pathGuard: PathGuard;
+    resourceStore: ResourceStore;
+    orchestrator: TaskOrchestrator;
+  },
+): void {
   const toolDeps = {
     server,
-    isInitialized: options.isInitialized ?? (() => pathGuard.isInitialized()),
-    pathGuard,
-    resourceStore,
-    orchestrator: taskOrchestrator,
+    isInitialized: options.isInitialized,
+    pathGuard: options.pathGuard,
+    resourceStore: options.resourceStore,
+    orchestrator: options.orchestrator,
   };
   const ALL_TOOLS = [
     CALCULATE_HASH,
@@ -332,11 +300,84 @@ export async function createServer(
   for (const tool of ALL_TOOLS) {
     tool.register(toolDeps);
   }
+}
+
+export async function createServer(
+  options: ServerOptions & { isInitialized?: () => boolean } = {},
+): Promise<FilesystemServerContext> {
+  const resourceStore = createInMemoryResourceStore();
+  const localIcon = await getLocalIconInfo();
+
+  const taskOrchestrator = new TaskOrchestrator();
+
+  const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> = {
+    capabilities: {
+      logging: {},
+      resources: { subscribe: true },
+      tools: {},
+      prompts: {},
+      completions: {},
+      extensions: {},
+      tasks: {
+        list: {},
+        cancel: {},
+        requests: { tools: { call: {} } },
+        taskStore: taskOrchestrator,
+        taskMessageQueue: new InMemoryTaskMessageQueue(),
+      },
+    },
+    enforceStrictCapabilities: true,
+  };
+
+  serverConfig.instructions =
+    'filesystem-mcp: Secure local filesystem MCP server. ' +
+    'Start with: roots -> ls/find -> stat -> read. Never guess paths. ' +
+    'For full guidance, read internal://instructions or run the get-help prompt.';
+
+  const implementation: Implementation = {
+    name: 'filesystem-mcp',
+    title: 'Filesystem MCP',
+    version: SERVER_VERSION,
+    ...(SERVER_DESCRIPTION ? { description: SERVER_DESCRIPTION } : {}),
+    ...(SERVER_HOMEPAGE ? { websiteUrl: SERVER_HOMEPAGE } : {}),
+  };
+  const server = new McpServer(withDefaultIcons(implementation, localIcon), serverConfig);
+
+  const loggingState = createLoggingState(LOG_LEVEL);
+  const pathGuard = new PathGuard(options, loggingState);
+  await pathGuard.recomputeAllowedDirectories();
+
+  server.server.setRequestHandler('logging/setLevel', (req: { params: SetLevelRequestParams }) => {
+    loggingState.minimumLevel = req.params.level;
+    Logger.notice(`Log level set to ${req.params.level}`);
+    return {};
+  });
+
+  // Track stdio server by default; HTTP overrides per-session via the registry.
+  logRouter.attachStdio({ server, loggingState });
+
+  const resourcesHandle = setupResources(server, {
+    resourceStore,
+    pathGuard,
+    ...(localIcon ? { iconInfo: localIcon } : {}),
+  });
+
+  setupPrompts(server, {
+    pathGuard,
+    isInitialized: options.isInitialized ?? (() => pathGuard.isInitialized()),
+    ...(localIcon ? { iconInfo: localIcon } : {}),
+  });
+
+  setupTools(server, {
+    isInitialized: options.isInitialized ?? (() => pathGuard.isInitialized()),
+    pathGuard,
+    resourceStore,
+    orchestrator: taskOrchestrator,
+  });
 
   return new FilesystemServerContext(
     server,
     pathGuard,
-
     resourceStore,
     resourcesHandle,
     taskOrchestrator,
