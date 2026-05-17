@@ -6,9 +6,12 @@ import {
   ProtocolError,
   ProtocolErrorCode,
   ResourceTemplate,
+  type ResourceUpdatedNotificationParams,
   resourceUrlFromServerUrl,
   type ServerCapabilities,
   type SetLevelRequestParams,
+  type SubscribeRequestParams,
+  type UnsubscribeRequestParams,
   UriTemplate,
 } from '@modelcontextprotocol/server';
 
@@ -172,7 +175,7 @@ function setupResources(
 
   server.server.setRequestHandler(
     'resources/subscribe',
-    (req: { params: { uri: string } }, ctx) => {
+    (req: { params: SubscribeRequestParams }, ctx) => {
       const requestedResource = resourceUrlFromServerUrl(req.params.uri);
       return withTelemetry(
         {
@@ -195,7 +198,8 @@ function setupResources(
             ) {
               foundMatch = true;
               contract.subscribe(requestedResource.toString(), (updatedUri) => {
-                void server.server.sendResourceUpdated({ uri: updatedUri }).catch(() => {
+                const updatePayload: ResourceUpdatedNotificationParams = { uri: updatedUri };
+                void server.server.sendResourceUpdated(updatePayload).catch(() => {
                   /* Transport may be closed */
                 });
               });
@@ -216,7 +220,7 @@ function setupResources(
 
   server.server.setRequestHandler(
     'resources/unsubscribe',
-    (req: { params: { uri: string } }, ctx) => {
+    (req: { params: UnsubscribeRequestParams }, ctx) => {
       const canonical = resourceUrlFromServerUrl(req.params.uri).toString();
       return withTelemetry(
         {
