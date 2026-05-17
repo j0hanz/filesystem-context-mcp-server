@@ -1,6 +1,7 @@
 import {
   assertToolsCallTaskCapability,
   type CallToolResult,
+  type ClientCapabilities,
   type CreateTaskResult,
   type CreateTaskServerContext,
   type GetTaskResult,
@@ -8,13 +9,13 @@ import {
   isTerminal,
   type McpServer,
   RELATED_TASK_META_KEY,
+  type StandardSchemaWithJSON,
   type Task,
   type TaskServerContext,
   type TaskStatus,
   type TaskStore,
   type ToolTaskHandler,
 } from '@modelcontextprotocol/server';
-import type { StandardSchemaWithJSON } from '@modelcontextprotocol/server';
 
 import { ErrorCode, FsError } from './core/errors.js';
 import { plainMessage } from './core/fmt.js';
@@ -162,20 +163,12 @@ export class TaskOrchestrator implements TaskStore {
 
       // Guard: assert the client declared tools/call task capability.
       if (options.server) {
-        const clientCaps = (
-          options.server as { server?: { getClientCapabilities?(): unknown } }
-        ).server?.getClientCapabilities?.() as
-          | {
-              experimental?: {
-                tasks?: { requests?: Parameters<typeof assertToolsCallTaskCapability>[0] };
-              };
-            }
+        const clientCaps: ClientCapabilities | undefined =
+          options.server.server.getClientCapabilities();
+        const experimental = clientCaps?.experimental as
+          | { tasks?: { requests?: Parameters<typeof assertToolsCallTaskCapability>[0] } }
           | undefined;
-        assertToolsCallTaskCapability(
-          clientCaps?.experimental?.tasks?.requests,
-          'tools/call',
-          'Client',
-        );
+        assertToolsCallTaskCapability(experimental?.tasks?.requests, 'tools/call', 'Client');
       }
 
       const { task } = ctx;
