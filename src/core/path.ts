@@ -630,6 +630,14 @@ export class PathGuard {
     const { normalizedRequested, allowedDirs, accessDeniedHint } =
       this.validateAccess(requestedPath);
 
+    if (this.isSensitive(requestedPath) || this.isSensitive(normalizedRequested)) {
+      throw new FsError(
+        ErrorCode.ACCESS_DENIED,
+        'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
+        requestedPath,
+      );
+    }
+
     let realPath: string;
     try {
       realPath = await realpath(normalizedRequested);

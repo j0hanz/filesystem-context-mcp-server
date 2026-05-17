@@ -119,7 +119,6 @@ function buildSummary(
 async function validateMoveSource(source: string, pathGuard: PathGuard): Promise<string> {
   try {
     const validSource = await pathGuard.validateExistingPath(source);
-    pathGuard.assertAllowedFileAccess(source);
     return validSource;
   } catch (error) {
     if (error instanceof FsError) throw error;

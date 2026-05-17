@@ -391,19 +391,13 @@ async function loadEditableFile(
     );
   }
 
-  const { content } = await readFileWithStats(
-    requestedPath,
-    validPath,
-    stats,
-    {
-      kind: 'full',
-      encoding: 'utf-8',
-      maxSize: MAX_TEXT_FILE_SIZE,
-      skipBinary: true,
-      ...(signal ? { signal } : {}),
-    },
-    pathGuard,
-  );
+  const { content } = await readFileWithStats(requestedPath, validPath, stats, {
+    kind: 'full',
+    encoding: 'utf-8',
+    maxSize: MAX_TEXT_FILE_SIZE,
+    skipBinary: true,
+    ...(signal ? { signal } : {}),
+  });
   return { validPath, content };
 }
 

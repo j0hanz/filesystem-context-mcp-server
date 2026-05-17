@@ -64,7 +64,6 @@ export async function stat(
   options?: { signal?: AbortSignal },
 ): Promise<{ stats: Stats; validPath: string }> {
   const validPath = await pathGuard.validateExistingPath(filePath);
-  pathGuard.assertAllowedFileAccess(filePath);
   const stats = await withAbort(fsStat(validPath), options?.signal);
   return { stats, validPath };
 }
@@ -75,7 +74,6 @@ export async function lstat(
   options?: { signal?: AbortSignal },
 ): Promise<{ stats: Stats; validPath: string }> {
   const validPath = await pathGuard.validateExistingPath(filePath);
-  pathGuard.assertAllowedFileAccess(filePath);
   const stats = await withAbort(fsLstat(validPath), options?.signal);
   return { stats, validPath };
 }
@@ -96,7 +94,6 @@ export async function rename(
   pathGuard: PathGuard,
 ): Promise<{ validOld: string; validNew: string }> {
   const validOld = await pathGuard.validateExistingPath(oldPath);
-  pathGuard.assertAllowedFileAccess(oldPath);
   const validNew = await pathGuard.validatePathForWrite(newPath);
   await fsRename(validOld, validNew);
   return { validOld, validNew };
@@ -128,7 +125,6 @@ export async function readlink(
   options?: Parameters<typeof fsReadlink>[1],
 ): Promise<{ linkString: string; validPath: string }> {
   const validPath = await pathGuard.validateExistingPath(filePath);
-  pathGuard.assertAllowedFileAccess(filePath);
   const linkString = (await fsReadlink(validPath, options)) as string;
   return { linkString, validPath };
 }
@@ -140,7 +136,6 @@ export async function cp(
   options?: Parameters<typeof fsCp>[2],
 ): Promise<{ validSource: string; validDest: string }> {
   const validSource = await pathGuard.validateExistingPath(source);
-  pathGuard.assertAllowedFileAccess(source);
   const validDest = await pathGuard.validatePathForWrite(destination);
   await fsCp(validSource, validDest, options);
   return { validSource, validDest };
@@ -830,10 +825,8 @@ async function readFileWithStatsInternal(
   stats: Stats,
   normalized: NormalizedOptions,
   mode: ReadMode,
-  pathGuard: PathGuard,
 ): Promise<ReadFileResult> {
   assertNotAborted(normalized.signal);
-  pathGuard.assertAllowedFileAccess(filePath);
 
   assertFileStats(filePath, stats);
 
@@ -853,7 +846,6 @@ export async function readFileRaw(
   options?: { signal?: AbortSignal },
 ): Promise<{ content: Buffer; mimeType: string; isBinary: boolean }> {
   const validPath = await pathGuard.validateExistingPath(filePath);
-  pathGuard.assertAllowedFileAccess(filePath);
   const stats = await withAbort(fsStat(validPath), options?.signal);
   assertFileStats(filePath, stats);
   const content = await withAbort(fsReadFile(validPath), options?.signal);
@@ -870,10 +862,9 @@ export async function readFileWithStats(
   validPath: string,
   stats: Stats,
   spec: ReadSpec | undefined,
-  pathGuard: PathGuard,
 ): Promise<ReadFileResult> {
   const { normalized, mode } = normalizeSpec(spec ?? { kind: 'full' });
-  return readFileWithStatsInternal(filePath, validPath, stats, normalized, mode, pathGuard);
+  return readFileWithStatsInternal(filePath, validPath, stats, normalized, mode);
 }
 
 export async function readFile(
@@ -885,7 +876,7 @@ export async function readFile(
   const validPath = await pathGuard.validateExistingPath(filePath);
   assertNotAborted(normalized.signal);
   const stats = await withAbort(fsStat(validPath), normalized.signal);
-  return readFileWithStatsInternal(filePath, validPath, stats, normalized, mode, pathGuard);
+  return readFileWithStatsInternal(filePath, validPath, stats, normalized, mode);
 }
 
 export async function atomicWriteFile(

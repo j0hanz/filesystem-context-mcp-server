@@ -123,8 +123,6 @@ async function getFileInfo(filePath: string, options: FileInfoOptions): Promise<
 
   const { requestedPath, isSymlink } = await pathGuard.validateExistingPathDetailed(filePath);
 
-  pathGuard.assertAllowedFileAccess(requestedPath);
-
   const { base: name, ext: rawExt } = parse(requestedPath);
   const includeMimeType = options.includeMimeType !== false;
   const mimeType =
