@@ -157,7 +157,7 @@ interface QueuedTask {
   request: {
     id: number;
     name: WorkerTaskName;
-    payload: TaskPayload<WorkerTaskName>;
+    payload: unknown;
   };
   entry: InflightEntry;
 }

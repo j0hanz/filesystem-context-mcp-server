@@ -102,7 +102,9 @@ interface MatcherOptions {
   fuzzy?: boolean;
 }
 
-type Matcher = (line: string) => number;
+export interface ContentMatcher {
+  matchCount(line: string): number;
+}
 
 interface RegexLikeMatcher {
   lastIndex: number;
@@ -128,47 +130,75 @@ function buildRegexPattern(pattern: string, options: MatcherOptions): string {
   return options.wholeWord ? `\\b${escaped}\\b` : escaped;
 }
 
-function buildLiteralMatcher(pattern: string, options: MatcherOptions): Matcher {
-  if (!options.caseSensitive) {
-    const final = escapeLiteral(pattern);
-    const regex = new RE2(final, 'gi');
-    return (line: string): number => countRegexLineMatches(regex, line);
+class RegexContentMatcher implements ContentMatcher {
+  private readonly regex: RE2;
+
+  constructor(pattern: string, options: MatcherOptions) {
+    const final = buildRegexPattern(pattern, options);
+    const flags = options.caseSensitive ? 'g' : 'gi';
+    this.regex = new RE2(final, flags);
   }
-  const needle = pattern;
-  if (needle.length === 0) return () => 0;
-  return (line: string): number => {
-    if (line.length === 0) return 0;
+
+  matchCount(line: string): number {
+    return countRegexLineMatches(this.regex, line);
+  }
+}
+
+class LiteralContentMatcher implements ContentMatcher {
+  private readonly needle: string;
+
+  constructor(pattern: string) {
+    this.needle = pattern;
+  }
+
+  matchCount(line: string): number {
+    if (this.needle.length === 0 || line.length === 0) return 0;
     let count = 0;
-    let pos = line.indexOf(needle);
+    let pos = line.indexOf(this.needle);
     while (pos !== -1) {
       count++;
-      pos = line.indexOf(needle, pos + needle.length);
+      pos = line.indexOf(this.needle, pos + this.needle.length);
     }
     return count;
-  };
+  }
 }
 
-function buildRegexMatcher(final: string, caseSensitive: boolean): Matcher {
-  const flags = caseSensitive ? 'g' : 'gi';
-  const regex = new RE2(final, flags);
-  return (line: string): number => countRegexLineMatches(regex, line);
+class FuzzyContentMatcher implements ContentMatcher {
+  private readonly lowerPattern: string;
+  private readonly threshold: number;
+
+  constructor(pattern: string) {
+    this.threshold = Math.floor(pattern.length / 4);
+    this.lowerPattern = pattern.toLowerCase();
+  }
+
+  matchCount(line: string): number {
+    const words = line.toLowerCase().split(/\s+/);
+    return words.some((word) => levenshtein(word, this.lowerPattern) <= this.threshold) ? 1 : 0;
+  }
 }
 
-function buildMatcher(pattern: string, options: MatcherOptions): Matcher {
+class EmptyContentMatcher implements ContentMatcher {
+  matchCount(): number {
+    return 0;
+  }
+}
+
+function buildMatcher(pattern: string, options: MatcherOptions): ContentMatcher {
   if (options.fuzzy === true) {
-    const threshold = Math.floor(pattern.length / 4);
-    const lowerPattern = pattern.toLowerCase();
-    return (line: string): number => {
-      const words = line.toLowerCase().split(/\s+/);
-      return words.some((word) => levenshtein(word, lowerPattern) <= threshold) ? 1 : 0;
-    };
+    return new FuzzyContentMatcher(pattern);
   }
-  if (options.isLiteral && pattern.length === 0) return () => 0;
+  if (options.isLiteral && pattern.length === 0) {
+    return new EmptyContentMatcher();
+  }
   if (options.isLiteral && !options.wholeWord) {
-    return buildLiteralMatcher(pattern, options);
+    if (!options.caseSensitive) {
+      // Literal but case-insensitive uses regex under the hood
+      return new RegexContentMatcher(pattern, { ...options, isLiteral: true });
+    }
+    return new LiteralContentMatcher(pattern);
   }
-  const final = buildRegexPattern(pattern, options);
-  return buildRegexMatcher(final, options.caseSensitive);
+  return new RegexContentMatcher(pattern, options);
 }
 
 // --- Fuzzy helpers ---
@@ -389,7 +419,7 @@ function processLineMatch(
 async function readMatches(
   handle: FileHandle,
   requestedPath: string,
-  matcher: Matcher,
+  matcher: ContentMatcher,
   options: ScanFileOptions,
   maxMatches: number,
   isCancelled: () => boolean,
@@ -410,7 +440,7 @@ async function readMatches(
       if (matches.length >= maxMatches) break;
       if (isCancelled()) break;
 
-      const matchCount = matcher(rawLine);
+      const matchCount = matcher.matchCount(rawLine);
       let trimmedLine = '';
 
       if (matchCount > 0) {
@@ -444,7 +474,7 @@ type BinaryDetector = (
 async function scanFileResolved(
   resolvedPath: string,
   requestedPath: string,
-  matcher: Matcher,
+  matcher: ContentMatcher,
   options: ScanFileOptions,
   signal?: AbortSignal,
   maxMatches: number = Number.POSITIVE_INFINITY,
@@ -1744,7 +1774,7 @@ interface ShutdownRequest {
 
 type WorkerRequest = ScanRequest | CancelRequest | ShutdownRequest;
 
-const matcherCache = new Map<string, Matcher>();
+const matcherCache = new Map<string, ContentMatcher>();
 const MAX_MATCHER_CACHE_SIZE = 100;
 
 function getMatcherCacheKey(pattern: string, options: MatcherOptions): string {
@@ -1755,7 +1785,7 @@ function getMatcherCacheKey(pattern: string, options: MatcherOptions): string {
   return `${pattern}|${cs}|${ww}|${lit}|${fz}`;
 }
 
-function getCachedMatcher(pattern: string, options: MatcherOptions): Matcher {
+function getCachedMatcher(pattern: string, options: MatcherOptions): ContentMatcher {
   const key = getMatcherCacheKey(pattern, options);
   const cached = matcherCache.get(key);
   if (cached) {
@@ -1768,7 +1798,7 @@ function getCachedMatcher(pattern: string, options: MatcherOptions): Matcher {
   return matcher;
 }
 
-function refreshMatcherCacheEntry(key: string, matcher: Matcher): void {
+function refreshMatcherCacheEntry(key: string, matcher: ContentMatcher): void {
   matcherCache.delete(key);
   matcherCache.set(key, matcher);
 }

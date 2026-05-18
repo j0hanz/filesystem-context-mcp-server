@@ -36,18 +36,6 @@ export const WORKER_ENTRY_URL = new URL(import.meta.url);
 
 // ---- shared types (used by both sides) ---------------------------------
 
-const WORKER_TASK_NAMES = [
-  'diff',
-  'formatPatch',
-  'applyPatch',
-  'createPatch',
-  'computeDiffStats',
-] as const;
-
-export type WorkerTaskName = (typeof WORKER_TASK_NAMES)[number];
-
-export { WORKER_TASK_NAMES };
-
 export interface DiffPayload {
   oldStr: string;
   newStr: string;
@@ -88,29 +76,30 @@ export interface ApplyPatchResult {
 
 /**
  * Unified registry of all worker task types.
- * Maps task name → { payload type, result type }
+ * Maps task name → { payload type, result type }.
+ * This is an empty interface by default so that domains can augment it.
  */
-export interface WorkerTaskRegistry {
-  diff: { payload: DiffPayload; result: StructuredPatch };
-  formatPatch: { payload: FormatPatchPayload; result: string };
-  applyPatch: { payload: ApplyPatchPayload; result: ApplyPatchResult };
-  createPatch: { payload: CreatePatchPayload; result: string };
-  computeDiffStats: {
-    payload: ComputeDiffStatsPayload;
-    result: { linesAdded: number; linesRemoved: number };
-  };
-}
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface WorkerTaskRegistry {}
+
+export type WorkerTaskName = keyof WorkerTaskRegistry;
 
 /** Extract payload type for a worker task by name. */
-export type TaskPayload<T extends WorkerTaskName> = WorkerTaskRegistry[T]['payload'];
+export type TaskPayload<T extends WorkerTaskName> = WorkerTaskRegistry[T] extends {
+  payload: infer P;
+}
+  ? P
+  : never;
 
 /** Extract result type for a worker task by name. */
-export type TaskResult<T extends WorkerTaskName> = WorkerTaskRegistry[T]['result'];
+export type TaskResult<T extends WorkerTaskName> = WorkerTaskRegistry[T] extends { result: infer R }
+  ? R
+  : never;
 
 export interface TaskRequest {
   id: number;
-  name: WorkerTaskName;
-  payload: TaskPayload<WorkerTaskName>;
+  name: string;
+  payload: unknown;
 }
 
 export interface SerializedFsError {
@@ -132,7 +121,7 @@ export type SerializedError = SerializedFsError | SerializedGenericError;
 export interface TaskResponseSuccess {
   id: number;
   ok: true;
-  value: TaskResult<WorkerTaskName>;
+  value: unknown;
 }
 
 export interface TaskResponseFailure {
@@ -180,52 +169,76 @@ function serializeError(e: unknown): SerializedError {
   return { kind: 'generic', message: String(e) };
 }
 
-const TASK_HANDLERS: {
-  [K in WorkerTaskName]: (payload: TaskPayload<K>) => TaskResult<K>;
-} = {
-  diff: (p) =>
-    structuredPatch(p.oldHeader, p.newHeader, p.oldStr, p.newStr, '', '', {
-      ...(p.context !== undefined ? { context: p.context } : {}),
-      ...(p.ignoreWhitespace ? { ignoreWhitespace: p.ignoreWhitespace } : {}),
-      ...(p.stripTrailingCr ? { stripTrailingCr: p.stripTrailingCr } : {}),
-    }),
-  formatPatch: (p) => formatPatch(p.patch),
-  applyPatch: (p) => {
-    const parsed = parsePatch(p.patchText);
-    const patch = parsed[0] ?? null;
-    const applied =
-      patch === null
-        ? false
-        : applyPatch(p.source, patch, {
-            ...(p.fuzzFactor !== undefined ? { fuzzFactor: p.fuzzFactor } : {}),
-            ...(p.autoConvertLineEndings !== undefined
-              ? { autoConvertLineEndings: p.autoConvertLineEndings }
-              : {}),
-          });
-    return { applied, patch };
-  },
-  createPatch: (p) => {
-    return createTwoFilesPatch(p.oldHeader, p.newHeader, p.oldStr, p.newStr, '', '');
-  },
-  computeDiffStats: (p) => {
-    const changes = diffLines(p.oldStr, p.newStr);
-    let linesAdded = 0;
-    let linesRemoved = 0;
-    for (const part of changes) {
-      if (part.added) linesAdded += part.count;
-      else if (part.removed) linesRemoved += part.count;
-    }
-    return { linesAdded, linesRemoved };
-  },
-};
+const TASK_HANDLERS = new Map<string, (payload: unknown) => unknown>();
 
-function runHandler<N extends WorkerTaskName>(name: N, payload: TaskPayload<N>): TaskResult<N> {
-  if (!Object.hasOwn(TASK_HANDLERS, name)) {
-    throw new Error(`Unknown worker task: ${name as string}`);
+export function registerWorkerTask<T extends WorkerTaskName>(
+  name: T,
+  handler: (payload: TaskPayload<T>) => TaskResult<T>,
+) {
+  TASK_HANDLERS.set(name, handler as (payload: unknown) => unknown);
+}
+
+function runHandler(name: string, payload: unknown): unknown {
+  const handler = TASK_HANDLERS.get(name);
+  if (!handler) {
+    throw new Error(`Unknown worker task: ${name}`);
   }
-  const handler = TASK_HANDLERS[name] as (p: TaskPayload<N>) => TaskResult<N>;
   return handler(payload);
 }
+
+// Register diff tasks
+declare module './worker.js' {
+  export interface WorkerTaskRegistry {
+    diff: { payload: DiffPayload; result: StructuredPatch };
+    formatPatch: { payload: FormatPatchPayload; result: string };
+    applyPatch: { payload: ApplyPatchPayload; result: ApplyPatchResult };
+    createPatch: { payload: CreatePatchPayload; result: string };
+    computeDiffStats: {
+      payload: ComputeDiffStatsPayload;
+      result: { linesAdded: number; linesRemoved: number };
+    };
+  }
+}
+
+registerWorkerTask('diff', (p: DiffPayload) =>
+  structuredPatch(p.oldHeader, p.newHeader, p.oldStr, p.newStr, '', '', {
+    ...(p.context !== undefined ? { context: p.context } : {}),
+    ...(p.ignoreWhitespace ? { ignoreWhitespace: p.ignoreWhitespace } : {}),
+    ...(p.stripTrailingCr ? { stripTrailingCr: p.stripTrailingCr } : {}),
+  }),
+);
+
+registerWorkerTask('formatPatch', (p: FormatPatchPayload) => formatPatch(p.patch));
+
+registerWorkerTask('applyPatch', (p: ApplyPatchPayload) => {
+  const parsed = parsePatch(p.patchText);
+  const patch = parsed[0] ?? null;
+  const applied =
+    patch === null
+      ? false
+      : applyPatch(p.source, patch, {
+          ...(p.fuzzFactor !== undefined ? { fuzzFactor: p.fuzzFactor } : {}),
+          ...(p.autoConvertLineEndings !== undefined
+            ? { autoConvertLineEndings: p.autoConvertLineEndings }
+            : {}),
+        });
+  return { applied, patch };
+});
+
+registerWorkerTask('createPatch', (p: CreatePatchPayload) => {
+  return createTwoFilesPatch(p.oldHeader, p.newHeader, p.oldStr, p.newStr, '', '');
+});
+
+registerWorkerTask('computeDiffStats', (p: ComputeDiffStatsPayload) => {
+  const changes = diffLines(p.oldStr, p.newStr);
+  let linesAdded = 0;
+  let linesRemoved = 0;
+  for (const part of changes) {
+    if (part.added) linesAdded += part.count;
+    else if (part.removed) linesRemoved += part.count;
+  }
+  return { linesAdded, linesRemoved };
+});
 
 // Only register as the diff/patch/hash message handler when this file is the
 // actual worker entry point (spawned with no workerData). Search-content workers
