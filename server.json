@@ -3,23 +3,16 @@
   "name": "io.github.j0hanz/filesystem-mcp",
   "title": "Filesystem MCP",
   "description": "Secure filesystem MCP server for reading, writing, searching, diffing, and patching files.",
+  "websiteUrl": "https://github.com/j0hanz/filesystem-mcp",
   "repository": {
     "url": "https://github.com/j0hanz/filesystem-mcp",
-    "source": "github"
+    "source": "github",
+    "id": "1115057681"
   },
-  "websiteUrl": "https://github.com/j0hanz/filesystem-mcp#readme",
-  "icons": [
-    {
-      "src": "https://raw.githubusercontent.com/j0hanz/filesystem-mcp/main/assets/logo.svg",
-      "mimeType": "image/svg+xml",
-      "sizes": ["any"]
-    }
-  ],
   "version": "1.19.1",
   "packages": [
     {
       "registryType": "npm",
-      "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@j0hanz/filesystem-mcp",
       "version": "1.19.1",
       "runtimeHint": "npx",
@@ -29,25 +22,17 @@
       "packageArguments": [
         {
           "type": "positional",
-          "valueHint": "directory",
-          "description": "Optional root directory path the MCP server is allowed to access. If omitted, roots can be provided by the MCP Roots protocol or --allow-cwd.",
-          "isRequired": false,
+          "valueHint": "allowed_directory",
+          "description": "Directory path the server is allowed to access. Repeat for multiple directories.",
           "format": "filepath",
+          "isRequired": false,
           "isRepeated": true
         },
         {
           "type": "named",
           "name": "--allow-cwd",
-          "description": "Allow the current working directory as an additional root.",
+          "description": "Allow the current working directory as an additional access root.",
           "format": "boolean",
-          "default": "false",
-          "isRequired": false
-        },
-        {
-          "type": "named",
-          "name": "--port",
-          "description": "Enable HTTP transport on the given port (Node Streamable HTTP).",
-          "format": "number",
           "isRequired": false
         }
       ]
@@ -58,44 +43,7 @@
       "runtimeHint": "docker",
       "transport": {
         "type": "stdio"
-      },
-      "runtimeArguments": [
-        {
-          "type": "named",
-          "name": "-i",
-          "description": "Keep stdin open for stdio transport."
-        },
-        {
-          "type": "named",
-          "name": "--rm",
-          "description": "Remove container after exit."
-        }
-      ],
-      "packageArguments": [
-        {
-          "type": "positional",
-          "valueHint": "directory",
-          "description": "Root directory path inside the container the server is allowed to access.",
-          "isRequired": false,
-          "format": "filepath",
-          "isRepeated": true
-        },
-        {
-          "type": "named",
-          "name": "--allow-cwd",
-          "description": "Allow the container working directory as an additional root.",
-          "format": "boolean",
-          "default": "false",
-          "isRequired": false
-        },
-        {
-          "type": "named",
-          "name": "--port",
-          "description": "Enable HTTP transport on the given port (Node Streamable HTTP).",
-          "format": "number",
-          "isRequired": false
-        }
-      ]
+      }
     }
   ]
 }

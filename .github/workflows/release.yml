@@ -28,9 +28,9 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
-  # ──────────────────────────────────────────────
+  # ─────────────────────────────────────────
   # 1. Bump versions, validate, tag & release
-  # ──────────────────────────────────────────────
+  # ─────────────────────────────────────────
   release:
     name: Release
     runs-on: ubuntu-latest
@@ -101,10 +101,7 @@ jobs:
       - name: Install & validate
         run: |
           npm ci
-          npm run lint
-          npm run type-check
-          npm run test
-          npm run build
+          npm run check
 
       - name: Commit, tag & push
         env:
@@ -121,9 +118,9 @@ jobs:
           VERSION: ${{ steps.ver.outputs.version }}
         run: gh release create "v$VERSION" --title "v$VERSION" --generate-notes
 
-  # ──────────────────────────────────────────────
+  # ─────────────────────────────────────────
   # 2. Publish to npm
-  # ──────────────────────────────────────────────
+  # ─────────────────────────────────────────
   publish-npm:
     name: npm
     needs: release
@@ -162,47 +159,12 @@ jobs:
           |---|---|
           | **Package** | [\`@j0hanz/filesystem-mcp@$VERSION\`](https://www.npmjs.com/package/@j0hanz/filesystem-mcp) |
           | **Auth** | Trusted Publishing (OIDC) |
-          | **Provenance** | ✅ |
+          | **Provenance** | ✓ |
           EOF
 
-  # ──────────────────────────────────────────────
-  # 3. Publish to MCP Registry
-  # ──────────────────────────────────────────────
-  publish-mcp:
-    name: MCP Registry
-    needs: [release, publish-npm, publish-docker]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      VERSION: ${{ needs.release.outputs.version }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: v${{ needs.release.outputs.version }}
-
-      - name: Publish
-        run: |
-          OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-          ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_${OS}_${ARCH}.tar.gz" \
-            | tar xz mcp-publisher
-          chmod +x mcp-publisher
-          ./mcp-publisher login github-oidc
-          ./mcp-publisher publish
-
-      - name: Summary
-        run: |
-          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          ## 📡 Published to MCP Registry
-          | | |
-          |---|---|
-          | **Server** | \`io.github.j0hanz/filesystem-mcp@$VERSION\` |
-          | **Registry** | [registry.modelcontextprotocol.io](https://registry.modelcontextprotocol.io) |
-          EOF
-
-  # ──────────────────────────────────────────────
-  # 4. Build & push Docker image
-  # ──────────────────────────────────────────────
+  # ─────────────────────────────────────────
+  # 3. Build & push Docker image
+  # ─────────────────────────────────────────
   publish-docker:
     name: Docker
     needs: release
@@ -254,4 +216,39 @@ jobs:
           |---|---|
           | **Image** | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION\` |
           | **Platforms** | linux/amd64, linux/arm64 |
+          EOF
+
+  # ─────────────────────────────────────────
+  # 4. Publish to MCP Registry
+  # ─────────────────────────────────────────
+  publish-mcp:
+    name: MCP Registry
+    needs: [release, publish-npm, publish-docker]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: v${{ needs.release.outputs.version }}
+
+      - name: Publish
+        run: |
+          OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+          ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_${OS}_${ARCH}.tar.gz" \
+            | tar xz mcp-publisher
+          chmod +x mcp-publisher
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
+
+      - name: Summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## 🟡 Published to MCP Registry
+          | | |
+          |---|---|
+          | **Server** | \`io.github.j0hanz/filesystem-mcp@$VERSION\` |
+          | **Registry** | [registry.modelcontextprotocol.io](https://registry.modelcontextprotocol.io) |
           EOF
