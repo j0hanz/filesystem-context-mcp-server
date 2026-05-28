@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/github/license/j0hanz/filesystem-mcp?style=for-the-badge)](https://github.com/j0hanz/filesystem-mcp/blob/main/LICENSE) [![npm version](https://img.shields.io/npm/v/%40j0hanz%2Ffilesystem-mcp?style=for-the-badge&logo=npm&logoColor=white)](https://www.npmjs.com/package/@j0hanz/filesystem-mcp) [![Build](https://img.shields.io/github/actions/workflow/status/j0hanz/filesystem-mcp/release.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=build)](https://github.com/j0hanz/filesystem-mcp/actions) [![GitHub stars](https://img.shields.io/github/stars/j0hanz/filesystem-mcp?style=for-the-badge&logo=github)](https://github.com/j0hanz/filesystem-mcp/stargazers)
 
-[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=filesystem&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40j0hanz%2Ffilesystem-mcp%40latest%22%5D%7D) [![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=filesystem&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40j0hanz%2Ffilesystem-mcp%40latest%22%5D%7D&quality=insiders) [![Install in Visual Studio](https://img.shields.io/badge/Visual_Studio-Install-C16FDE?logo=visualstudio&logoColor=white)](https://vs-open.link/mcp-install?%7B%22filesystem-mcp%22%3A%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40j0hanz%2Ffilesystem-mcp%40latest%22%5D%7D%7D) [![Install in Cursor](https://img.shields.io/badge/Cursor-Install-000000?style=flat-square&logo=cursor&logoColor=white)](cursor://anysphere.cursor-deeplink/mcp/install?name=filesystem&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBqMGhhbnovZmlsZXN5c3RlbS1tY3BAbGF0ZXN0Il19)
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect/mcp/install?name=filesystem&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40j0hanz%2Ffilesystem-mcp%40latest%22%5D%7D) [![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=filesystem&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40j0hanz%2Ffilesystem-mcp%40latest%22%5D%7D&quality=insiders) [![Install in Visual Studio](https://img.shields.io/badge/Visual_Studio-Install-C16FDE?logo=visualstudio&logoColor=white)](https://vs-open.link/mcp-install?%7B%22filesystem-mcp%22%3A%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40j0hanz%2Ffilesystem-mcp%40latest%22%5D%7D%7D) [![Install in Cursor](https://img.shields.io/badge/Cursor-Install-000000?style=flat-square&logo=cursor&logoColor=white)](cursor://anysphere.cursor-deeplink/mcp/install?name=filesystem&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBqMGhhbnovZmlsZXN5c3RlbS1tY3BAbGF0ZXN0Il19)
 
 ## Overview
 
@@ -95,6 +95,21 @@ Or install via CLI:
 code --add-mcp '{"name":"filesystem","command":"npx","args":["-y","@j0hanz/filesystem-mcp@latest"]}'
 ```
 
+### Configure in Visual Studio
+
+Add to `.vs\mcp.json` in your solution directory, or `%USERPROFILE%\.mcp.json` for a global configuration:
+
+```json
+{
+  "servers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+    }
+  }
+}
+```
+
 ### Configure in Claude Desktop
 
 Add to your `claude_desktop_config.json`:
@@ -104,7 +119,7 @@ Add to your `claude_desktop_config.json`:
   "mcpServers": {
     "filesystem": {
       "command": "npx",
-      "args": ["-y", "@j0hanz/filesystem-mcp", "/path/to/project"]
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest", "/path/to/project"]
     }
   }
 }
@@ -112,7 +127,7 @@ Add to your `claude_desktop_config.json`:
 
 ### Install in Cursor
 
-Add to `~/.cursor/mcp.json`:
+Add to `.cursor/mcp.json` in your project root (project-scoped), or `~/.cursor/mcp.json` for a global configuration:
 
 ```json
 {
@@ -125,7 +140,30 @@ Add to `~/.cursor/mcp.json`:
 }
 ```
 
-### Docker Configuration in Any IDE
+### Docker Configuration
+
+**VS Code** (`.vscode/mcp.json`) and **Visual Studio** (`.vs\mcp.json`):
+
+```json
+{
+  "servers": {
+    "filesystem": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-v",
+        "/path/to/project:/workspace",
+        "ghcr.io/j0hanz/filesystem-mcp:latest",
+        "/workspace"
+      ]
+    }
+  }
+}
+```
+
+**Claude Desktop** (`claude_desktop_config.json`) and **Cursor** (`mcp.json`):
 
 ```json
 {
@@ -137,7 +175,7 @@ Add to `~/.cursor/mcp.json`:
         "-i",
         "--rm",
         "-v",
-        "/path/to/project:/workspace:ro",
+        "/path/to/project:/workspace",
         "ghcr.io/j0hanz/filesystem-mcp:latest",
         "/workspace"
       ]
@@ -145,6 +183,9 @@ Add to `~/.cursor/mcp.json`:
   }
 }
 ```
+
+> [!NOTE]
+> Add `:ro` to the volume mount (e.g. `/path/to/project:/workspace:ro`) to restrict the server to read-only access. Write tools (`create`, `edit`, `move`, `delete`, `replace_text`) will be unavailable in that mode.
 
 ## Usage
 
