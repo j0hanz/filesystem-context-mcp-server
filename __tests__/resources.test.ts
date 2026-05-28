@@ -120,8 +120,8 @@ describe('resources and metadata', () => {
     const { prompts } = await env.client.listPrompts();
 
     assert.match(readme, /\*\*12 filesystem tools\*\*/u);
-    assert.match(readme, /\*\*Self-documenting\*\* — 3 built-in resources/u);
-    assert.match(readme, /4 built-in prompts/u);
+    assert.match(readme, /3 built-in resource definitions/u);
+    assert.match(readme, /4 built-in prompt definitions/u);
 
     assert.equal(tools.length, 12);
     assert.equal(resources.length, 1);
