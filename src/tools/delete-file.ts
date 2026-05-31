@@ -151,9 +151,8 @@ async function deleteSinglePath(
 ): Promise<{ item: DeletedItem } | { failure: DeleteFailure }> {
   let validPath: string;
   try {
-    validPath = inputPath;
+    validPath = await ctx.pathGuard.validatePathForWrite(inputPath);
   } catch (error) {
-    // Path guard violation: collect in failures[] instead of throwing
     return { failure: toDeleteFailure(inputPath, error) };
   }
 

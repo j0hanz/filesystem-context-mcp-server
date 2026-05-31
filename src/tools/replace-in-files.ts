@@ -310,7 +310,8 @@ async function readReplacementPlan(
     ctx.signal ? { signal: ctx.signal } : undefined,
   );
   if (stats.size > maxFileSize) {
-    throw new Error(
+    throw new FsError(
+      ErrorCode.TOO_LARGE,
       `File too large: ${validPath} (${String(stats.size)} bytes > ${String(maxFileSize)} bytes)`,
     );
   }

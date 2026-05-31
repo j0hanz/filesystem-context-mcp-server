@@ -28,6 +28,21 @@ import { LinkedTransport } from './linked-transport.js';
 // Disable worker threads in integration tests — workers are tested separately.
 process.env.FS_DISABLE_WORKERS ??= '1';
 
+const ALL_TOOLS = [
+  CALCULATE_HASH,
+  CREATE,
+  DELETE_FILE,
+  EDIT,
+  LIST,
+  MOVE,
+  READ_FILE,
+  SEARCH_AND_REPLACE,
+  LIST_ALLOWED_DIRECTORIES,
+  SEARCH_CONTENT,
+  SEARCH_FILES,
+  GET_FILE_INFO,
+] as const;
+
 interface TestContentBlock {
   type: string;
   text?: string;
@@ -88,20 +103,6 @@ export async function createTestEnv(): Promise<TestEnv> {
     isInitialized: () => true,
     orchestrator,
   };
-  const ALL_TOOLS = [
-    CALCULATE_HASH,
-    CREATE,
-    DELETE_FILE,
-    EDIT,
-    LIST,
-    MOVE,
-    READ_FILE,
-    SEARCH_AND_REPLACE,
-    LIST_ALLOWED_DIRECTORIES,
-    SEARCH_CONTENT,
-    SEARCH_FILES,
-    GET_FILE_INFO,
-  ];
   for (const tool of ALL_TOOLS) {
     tool.register(deps);
   }
@@ -192,20 +193,6 @@ export async function createTestEnvWithElicitation(handler: ElicitationHandler):
     isInitialized: () => true,
     orchestrator,
   };
-  const ALL_TOOLS = [
-    CALCULATE_HASH,
-    CREATE,
-    DELETE_FILE,
-    EDIT,
-    LIST,
-    MOVE,
-    READ_FILE,
-    SEARCH_AND_REPLACE,
-    LIST_ALLOWED_DIRECTORIES,
-    SEARCH_CONTENT,
-    SEARCH_FILES,
-    GET_FILE_INFO,
-  ];
   for (const tool of ALL_TOOLS) {
     tool.register(deps2);
   }

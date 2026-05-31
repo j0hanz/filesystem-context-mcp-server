@@ -11,17 +11,20 @@ import { pathToFileURL } from 'node:url';
 import { LinkedTransport } from './linked-transport.js';
 
 interface DistToolsModule {
-  registerAllTools: (
-    server: McpServer,
-    options: {
+  toolsRegistrar: {
+    register(deps: {
+      server: McpServer;
+      pathGuard: unknown;
       resourceStore: unknown;
       isInitialized: () => boolean;
-    },
-  ) => void;
+      orchestrator: unknown;
+    }): void;
+  };
 }
 
 interface DistPathsModule {
-  setAllowedDirectoriesResolved: (dirs: string[]) => Promise<void>;
+  PathGuard: new () => { initialize(state: unknown): void };
+  resolveAllowedDirectoriesState: (dirs: string[]) => Promise<unknown>;
 }
 
 interface DistResourceStoreModule {
@@ -41,8 +44,8 @@ function getStructured(result: unknown): Record<string, unknown> {
 }
 
 async function createDistEnv(): Promise<DistEnv> {
-  const distToolsUrl = pathToFileURL(resolve('dist/tools.js')).href;
-  const distPathsUrl = pathToFileURL(resolve('dist/core/paths.js')).href;
+  const distToolsUrl = pathToFileURL(resolve('dist/tools/index.js')).href;
+  const distPathsUrl = pathToFileURL(resolve('dist/core/path.js')).href;
   const distResourceStoreUrl = pathToFileURL(resolve('dist/core/store.js')).href;
 
   const [toolsModule, pathsModule, resourceStoreModule] = await Promise.all([
@@ -52,7 +55,10 @@ async function createDistEnv(): Promise<DistEnv> {
   ]);
 
   const tmpDir = await mkdtemp(join(tmpdir(), 'fsmcp-dist-'));
-  await pathsModule.setAllowedDirectoriesResolved([tmpDir]);
+
+  const pathGuard = new pathsModule.PathGuard();
+  const state = await pathsModule.resolveAllowedDirectoriesState([tmpDir]);
+  pathGuard.initialize(state);
 
   const server = new McpServer(
     { name: 'dist-test-server', version: '0.0.0' },
@@ -67,9 +73,15 @@ async function createDistEnv(): Promise<DistEnv> {
     },
   );
 
-  toolsModule.registerAllTools(server, {
+  // Stub orchestrator for read-only tools; not exercised in this test
+  const orchestrator = { cleanup: () => {} };
+
+  toolsModule.toolsRegistrar.register({
+    server,
+    pathGuard,
     resourceStore: resourceStoreModule.createInMemoryResourceStore(),
     isInitialized: () => true,
+    orchestrator,
   });
 
   const client = new Client({ name: 'dist-test-client', version: '1.0.0' });
