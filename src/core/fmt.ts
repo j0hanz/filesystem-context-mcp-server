@@ -1,13 +1,11 @@
-// src/core/fmt.ts
-
 const ESC = '\x1b[';
-const R = `${ESC}0m`; // reset
-const B = `${ESC}1m`; // bold
-const DIM = `${ESC}2m`; // dim
-const GRN = `${ESC}32m`; // green
-const RED = `${ESC}31m`; // red
-const CYN = `${ESC}36m`; // cyan
-const GRY = `${ESC}90m`; // gray
+const R = `${ESC}0m`;
+const B = `${ESC}1m`;
+const DIM = `${ESC}2m`;
+const GRN = `${ESC}32m`;
+const RED = `${ESC}31m`;
+const CYN = `${ESC}36m`;
+const GRY = `${ESC}90m`;
 
 const PLUS_PATTERN = /\+(\d+)/g;
 const MINUS_PATTERN = /-(\d+)/g;

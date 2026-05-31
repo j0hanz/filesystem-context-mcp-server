@@ -25,8 +25,6 @@ function joinLines(lines: readonly string[]): string {
   return lines.join('\n');
 }
 
-// ─── Problem model ───────────────────────────────────────────────────────────
-
 export interface Problem {
   readonly code: ErrorCode;
   readonly message: string;
@@ -113,8 +111,6 @@ export const Problem = {
   },
 } as const;
 
-// ─── Suggestions ─────────────────────────────────────────────────────────────
-
 const DEFAULT_SUGGESTIONS: Readonly<Partial<Record<ErrorCode, string>>> = {
   [ErrorCode.ACCESS_DENIED]: 'Run roots to list allowed directories.',
   [ErrorCode.NOT_FOUND]: 'Run ls or find to verify the path.',
@@ -164,7 +160,7 @@ function suggestionFromIssueMeta(schema: z.ZodType, issue: ProblemIssue): string
     cursor = cursor ? descend(cursor, segment) : undefined;
     trail.push(cursor);
   }
-  // Walk leaf → root, return first .meta().suggestion found.
+  // Walk leaf → root: first .meta().suggestion wins.
   for (let i = trail.length - 1; i >= 0; i -= 1) {
     const found = readSuggestionMeta(trail[i]);
     if (found !== undefined) return found;
@@ -190,8 +186,6 @@ export function resolveSuggestion(
   }
   return DEFAULT_SUGGESTIONS[p.code];
 }
-
-// ─── Classification ──────────────────────────────────────────────────────────
 
 const ERRNO_MAP: Readonly<Record<string, ErrorCode>> = {
   ENOENT: ErrorCode.NOT_FOUND,
@@ -358,8 +352,6 @@ export function classify(error: unknown, ctx?: { schema?: z.ZodType }): Problem 
   return buildProblemFromSignal(signal, error);
 }
 
-// ─── Type guard helpers ──────────────────────────────────────────────────────
-
 function isNativeError(error: unknown): error is Error {
   const candidate = Error;
   if (typeof candidate.isError === 'function') {
@@ -390,8 +382,6 @@ export function classifyError(error: unknown): ErrorCode {
 export function getSuggestion(code: ErrorCode): string | undefined {
   return DEFAULT_SUGGESTIONS[code];
 }
-
-// ─── DetailedError (kept for existing tool-response callers) ─────────────────
 
 interface DetailedError {
   code: ErrorCode;
@@ -453,14 +443,11 @@ function formatDetailedError(error: DetailedError): string {
   return joinLines(lines);
 }
 
-// ─── FsError ─────────────────────────────────────────────────────────────────
-
 export class FsError extends Error {
   readonly problem: Problem;
 
-  // Overload 1: new FsError(problem, cause?)
   constructor(problem: Problem, cause?: unknown);
-  // Overload 2 (legacy): new FsError(code, message, path?, details?, cause?)
+  // Legacy positional form: new FsError(code, message, path?, details?, cause?)
   constructor(
     code: ErrorCode,
     message: string,
@@ -476,7 +463,6 @@ export class FsError extends Error {
     arg5?: unknown,
   ) {
     if (typeof arg1 === 'string') {
-      // Legacy positional form
       const code = arg1;
       const message = (arg2 as string | undefined) ?? '';
       const path = arg3;
@@ -512,7 +498,6 @@ export class FsError extends Error {
       super(message, cause === undefined ? {} : { cause });
       this.problem = problem;
     } else {
-      // New Problem constructor form
       const problem = arg1;
       const cause = arg2;
       super(problem.message, cause === undefined ? {} : { cause });

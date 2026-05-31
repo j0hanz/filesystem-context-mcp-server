@@ -1,5 +1,3 @@
-// src/schema.ts
-// Centralized schema layer consolidating primitives, domain composites, and MCP JSON-Schema adapter
 import { z } from 'zod/v4';
 
 import { isSafeGlobSyntax } from './core/path.js';
@@ -11,9 +9,7 @@ export interface SchemaAndInfer<T extends z.ZodType> {
   inferred: z.infer<T>;
 }
 
-// ============ Primitives (from fields.ts) ============
-
-// Runtime: full ISO-8601 UTC validation. Wire: format only (pattern stripped by post-processor).
+// Runtime: full ISO-8601 UTC; format pattern stripped by post-processor on the wire.
 export const IsoDateTime = z.iso.datetime().meta({
   id: 'IsoDateTime',
   title: 'ISO Date-Time',
@@ -73,8 +69,6 @@ export const SafeGlobPattern = z
     examples: ['**/*.ts', 'src/**/*.js', '*.{ts,tsx}'],
     suggestion: 'Use forward-slash globs; absolute paths and ".." are forbidden.',
   });
-
-// ============ Schemas from schemas/shared.ts ============
 
 export const FileInfoSchema = z
   .strictObject({

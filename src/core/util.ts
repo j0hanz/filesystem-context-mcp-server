@@ -8,7 +8,6 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object';
 }
 
-// debounce
 export function debounce<Args extends unknown[]>(
   func: (...args: Args) => void,
   waitMs: number,
@@ -22,7 +21,6 @@ export function debounce<Args extends unknown[]>(
       timeoutId = undefined;
       func(...args);
     }, waitMs);
-    // Unref if in Node environment to not block process exit
     timeoutId.unref();
   };
   debounced.cancel = () => {
@@ -34,7 +32,6 @@ export function debounce<Args extends unknown[]>(
   return debounced;
 }
 
-// option-utils.ts
 export function mergeOptions<T extends object>(defaults: T, overrides: Partial<T>): T {
   return { ...defaults, ...overrides };
 }
@@ -48,12 +45,7 @@ export function omitOptionKeys<T extends object, K extends keyof T>(
   return output as Omit<T, K>;
 }
 
-/**
- * Mutates `target` by copying every property from `source` whose value is not
- * `undefined`. Designed for assembling structured tool outputs under
- * `exactOptionalPropertyTypes`, where `undefined` cannot be assigned to
- * optional properties.
- */
+// Copies non-undefined source properties onto target; safe under exactOptionalPropertyTypes.
 export function assignDefined<T extends object>(
   target: T,
   source: { [K in keyof T]?: T[K] | undefined },
@@ -76,7 +68,6 @@ type StructuredContentKey<T extends object> = Extract<keyof T, 'structuredConten
 export type MaybeStrippedStructuredContent<T extends object> = Omit<T, StructuredContentKey<T>> &
   Partial<Pick<T, StructuredContentKey<T>>>;
 
-// Strips structuredContent from a tool result if present, without modifying the original object.
 export function maybeStripStructuredContentFromResult<T extends object>(
   result: T,
 ): MaybeStrippedStructuredContent<T> {
@@ -112,7 +103,6 @@ function logInvalidEnvValue(
   );
 }
 
-// Helper for parsing environment variables (only used for configurable values)
 export function parseEnvInt(
   envVar: string,
   defaultValue: number,
@@ -170,11 +160,8 @@ function parseEnvLogLevel(envVar: string, defaultValue: ValidLogLevel): ValidLog
 
 export const LOG_LEVEL = parseEnvLogLevel('FILESYSTEM_MCP_LOG_LEVEL', 'info');
 
-// Default TTL for MCP tasks when the client does not specify one (5 minutes).
-export const TASK_TTL = 5 * 60 * 1000;
-
-// Interval for polling task status in the TaskOrchestrator (50ms).
-export const TASK_POLL_INTERVAL = 50;
+export const TASK_TTL = 5 * 60 * 1000; // 5 minutes
+export const TASK_POLL_INTERVAL = 50; // ms
 export const MAX_TASK_TTL_MS = parseEnvInt(
   'FILESYSTEM_MCP_MAX_TASK_TTL_MS',
   60 * 60 * 1000,
@@ -194,7 +181,6 @@ export function getInitHandshakeTimeoutMs(): number {
 
 export const INIT_TIMEOUT_CLOSE = parseTrueEnvFlag(process.env['FS_INIT_TIMEOUT_CLOSE']);
 
-// Auto-tuned parallelism based on CPU cores (no env override)
 const BYTES_PER_PARALLEL_TASK = 64 * MIB;
 const BYTES_PER_SEARCH_WORKER = 128 * MIB;
 
@@ -222,10 +208,8 @@ function getDefaultSearchWorkers(): number {
   return applyMemoryBound(cpuBound, BYTES_PER_SEARCH_WORKER, 1);
 }
 
-// Hardcoded optimal values (no env override needed)
 export const PARALLEL_CONCURRENCY = getOptimalParallelism();
 
-// Configurable via environment variables
 export const MAX_SEARCHABLE_FILE_SIZE = parseEnvInt('MAX_SEARCH_SIZE', MIB, 100 * KIB, 10 * MIB);
 export const MAX_TEXT_FILE_SIZE = parseEnvInt('MAX_FILE_SIZE', 10 * MIB, MIB, 100 * MIB);
 
