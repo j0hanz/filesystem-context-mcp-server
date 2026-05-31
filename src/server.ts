@@ -1,48 +1,25 @@
 import {
-  checkResourceAllowed,
   type Implementation,
   InMemoryTaskMessageQueue,
   McpServer,
-  ProtocolError,
-  ProtocolErrorCode,
-  ResourceTemplate,
-  type ResourceUpdatedNotificationParams,
-  resourceUrlFromServerUrl,
   type ServerCapabilities,
   type SetLevelRequestParams,
-  type SubscribeRequestParams,
-  type UnsubscribeRequestParams,
-  UriTemplate,
 } from '@modelcontextprotocol/server';
 
 import { readFile } from 'node:fs/promises';
 
 import { GuardedFileSystem } from './core/fs.js';
-import { createLoggingState, Logger, LogRouter, withTelemetry } from './core/observability.js';
+import { createLoggingState, Logger, LogRouter } from './core/observability.js';
 import { PathGuard, type ServerOptions } from './core/path.js';
+import type { Registrar, ServerDeps } from './core/registrar.js';
 import { createInMemoryResourceStore, type ResourceStore } from './core/store.js';
 import { LOG_LEVEL } from './core/util.js';
 import { pkgInfo } from './pkg-info.js';
-import { PROMPT_ENTRIES } from './prompts.js';
-import {
-  getResourceContracts,
-  type ResourcesHandle,
-  serverInstructionsContent,
-} from './resources.js';
+import { promptsRegistrar } from './prompts.js';
+import { resourcesRegistrar } from './resources.js';
 import { TaskOrchestrator } from './tasks.js';
-import { CALCULATE_HASH } from './tools/calculate-hash.js';
-import { CREATE } from './tools/create.js';
 import { type IconInfo, withDefaultIcons } from './tools/define.js';
-import { DELETE_FILE } from './tools/delete-file.js';
-import { EDIT } from './tools/edit.js';
-import { LIST } from './tools/list.js';
-import { MOVE } from './tools/move.js';
-import { READ_FILE } from './tools/read.js';
-import { SEARCH_AND_REPLACE } from './tools/replace-in-files.js';
-import { LIST_ALLOWED_DIRECTORIES } from './tools/roots.js';
-import { SEARCH_CONTENT } from './tools/search-content.js';
-import { SEARCH_FILES } from './tools/search-files.js';
-import { GET_FILE_INFO } from './tools/stat.js';
+import { toolsRegistrar } from './tools/index.js';
 
 // ═══════════════════════════════════════════════════════════════
 // bootstrap
@@ -61,16 +38,18 @@ export class FilesystemServerContext {
   public readonly pathGuard: PathGuard;
   public readonly fs: GuardedFileSystem;
   public readonly resources: ResourceStore;
-  public readonly resourcesHandle: ResourcesHandle;
+  public readonly resourcesHandle: { destroy(): void };
   private readonly orchestrator: TaskOrchestrator;
+  private readonly registrars: readonly Registrar[];
   private cleanedUp = false;
 
   constructor(
     mcp: McpServer,
     pathGuard: PathGuard,
     resources: ResourceStore,
-    resourcesHandle: ResourcesHandle,
+    resourcesHandle: { destroy(): void },
     orchestrator: TaskOrchestrator,
+    registrars: readonly Registrar[],
   ) {
     this.mcp = mcp;
     this.pathGuard = pathGuard;
@@ -78,6 +57,7 @@ export class FilesystemServerContext {
     this.resources = resources;
     this.resourcesHandle = resourcesHandle;
     this.orchestrator = orchestrator;
+    this.registrars = registrars;
   }
 
   disposeRuntimeState(): void {
@@ -85,7 +65,7 @@ export class FilesystemServerContext {
     this.cleanedUp = true;
     this.orchestrator.dispose();
     this.orchestrator.cleanup();
-    this.resourcesHandle.destroy();
+    for (const r of this.registrars) r.dispose();
     logRouter.detachStdio();
   }
 
@@ -125,203 +105,6 @@ function getLocalIconInfo(): Promise<IconInfo | undefined> {
   })();
 
   return cachedIconInfo;
-}
-
-function setupResources(
-  server: McpServer,
-  options: {
-    resourceStore: ResourceStore;
-    pathGuard: PathGuard;
-    iconInfo?: IconInfo;
-  },
-): ResourcesHandle {
-  const resourceContracts = getResourceContracts(options);
-
-  for (const contract of resourceContracts) {
-    const config = withDefaultIcons(
-      {
-        title: contract.title,
-        description: contract.description,
-        mimeType: contract.mimeType,
-        annotations: contract.annotations,
-      },
-      options.iconInfo,
-    );
-
-    if (contract.uriTemplate) {
-      const template = new ResourceTemplate(contract.uriTemplate, {
-        list: undefined,
-        ...(contract.complete
-          ? {
-              complete: Object.fromEntries(
-                new UriTemplate(contract.uriTemplate).variableNames.map((varName) => [
-                  varName,
-                  (value: string, ctx?: { arguments?: Record<string, string> }) => {
-                    const completeFn = contract.complete;
-                    return completeFn ? completeFn(varName, value, ctx) : [];
-                  },
-                ]),
-              ),
-            }
-          : {}),
-      });
-
-      server.registerResource(contract.name, template, config, async (uri, variables, ctx) => {
-        try {
-          return await contract.read(uri, variables, ctx);
-        } catch (error) {
-          throw new ProtocolError(
-            ProtocolErrorCode.InvalidRequest,
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-      });
-    } else if (contract.uri) {
-      server.registerResource(contract.name, contract.uri, config, async (uri, ctx) => {
-        try {
-          return await contract.read(uri, {}, ctx);
-        } catch (error) {
-          throw new ProtocolError(
-            ProtocolErrorCode.InvalidRequest,
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-      });
-    }
-  }
-
-  server.server.setRequestHandler(
-    'resources/subscribe',
-    (req: { params: SubscribeRequestParams }, ctx) => {
-      const requestedResource = resourceUrlFromServerUrl(req.params.uri);
-      return withTelemetry(
-        {
-          event: 'resource_subscription',
-          action: 'subscribe',
-          uri: requestedResource.toString(),
-          session_id: ctx.sessionId ?? null,
-        },
-        () => {
-          let foundMatch = false;
-          for (const contract of resourceContracts) {
-            if (!contract.subscribe) continue;
-            const configured = contract.uri ?? contract.uriTemplate.split('{')[0];
-            if (!configured) continue;
-            if (
-              checkResourceAllowed({
-                requestedResource,
-                configuredResource: configured,
-              })
-            ) {
-              foundMatch = true;
-              contract.subscribe(requestedResource.toString(), (updatedUri) => {
-                const updatePayload: ResourceUpdatedNotificationParams = { uri: updatedUri };
-                void server.server.sendResourceUpdated(updatePayload).catch(() => {
-                  /* Transport may be closed */
-                });
-              });
-              break;
-            }
-          }
-          if (!foundMatch) {
-            throw new ProtocolError(
-              ProtocolErrorCode.ResourceNotFound,
-              `Resource not found: ${requestedResource.toString()}`,
-            );
-          }
-          return {};
-        },
-      );
-    },
-  );
-
-  server.server.setRequestHandler(
-    'resources/unsubscribe',
-    (req: { params: UnsubscribeRequestParams }, ctx) => {
-      const canonical = resourceUrlFromServerUrl(req.params.uri).toString();
-      return withTelemetry(
-        {
-          event: 'resource_subscription',
-          action: 'unsubscribe',
-          uri: canonical,
-          session_id: ctx.sessionId ?? null,
-        },
-        () => {
-          for (const contract of resourceContracts) {
-            if (contract.unsubscribe) {
-              contract.unsubscribe(canonical);
-            }
-          }
-          return {};
-        },
-      );
-    },
-  );
-
-  return {
-    destroy(): void {
-      for (const contract of resourceContracts) {
-        if (contract.destroy) {
-          contract.destroy();
-        }
-      }
-    },
-  };
-}
-
-function setupPrompts(
-  server: McpServer,
-  options: {
-    pathGuard: PathGuard;
-    isInitialized: () => boolean;
-    iconInfo?: IconInfo;
-  },
-): void {
-  const promptsOptions = {
-    pathGuard: options.pathGuard,
-    instructions: serverInstructionsContent,
-    isInitialized: options.isInitialized,
-    ...(options.iconInfo ? { iconInfo: options.iconInfo } : {}),
-  };
-  for (const { register } of PROMPT_ENTRIES) {
-    register(server, promptsOptions);
-  }
-}
-
-function setupTools(
-  server: McpServer,
-  options: {
-    isInitialized: () => boolean;
-    pathGuard: PathGuard;
-    resourceStore: ResourceStore;
-    orchestrator: TaskOrchestrator;
-  },
-): void {
-  const toolDeps = {
-    server,
-    isInitialized: options.isInitialized,
-    pathGuard: options.pathGuard,
-    resourceStore: options.resourceStore,
-    orchestrator: options.orchestrator,
-  };
-  const ALL_TOOLS = [
-    CALCULATE_HASH,
-    CREATE,
-    DELETE_FILE,
-    EDIT,
-    LIST,
-    MOVE,
-    READ_FILE,
-    SEARCH_AND_REPLACE,
-    LIST_ALLOWED_DIRECTORIES,
-    SEARCH_CONTENT,
-    SEARCH_FILES,
-    GET_FILE_INFO,
-  ] as const;
-
-  for (const tool of ALL_TOOLS) {
-    tool.register(toolDeps);
-  }
 }
 
 export async function createServer(
@@ -379,24 +162,24 @@ export async function createServer(
   // Track stdio server by default; HTTP overrides per-session via the registry.
   logRouter.attachStdio({ server, loggingState });
 
-  const resourcesHandle = setupResources(server, {
-    resourceStore,
-    pathGuard,
-    ...(localIcon ? { iconInfo: localIcon } : {}),
-  });
-
-  setupPrompts(server, {
-    pathGuard,
-    isInitialized: options.isInitialized ?? (() => pathGuard.isInitialized()),
-    ...(localIcon ? { iconInfo: localIcon } : {}),
-  });
-
-  setupTools(server, {
-    isInitialized: options.isInitialized ?? (() => pathGuard.isInitialized()),
+  const isInitialized = options.isInitialized ?? (() => pathGuard.isInitialized());
+  const deps: ServerDeps = {
+    server,
     pathGuard,
     resourceStore,
     orchestrator: taskOrchestrator,
-  });
+    isInitialized,
+    ...(localIcon ? { iconInfo: localIcon } : {}),
+  };
+
+  const registrars: Registrar[] = [resourcesRegistrar, promptsRegistrar, toolsRegistrar];
+  for (const r of registrars) r.register(deps);
+
+  const resourcesHandle = {
+    destroy: () => {
+      resourcesRegistrar.dispose();
+    },
+  };
 
   return new FilesystemServerContext(
     server,
@@ -404,5 +187,6 @@ export async function createServer(
     resourceStore,
     resourcesHandle,
     taskOrchestrator,
+    registrars,
   );
 }

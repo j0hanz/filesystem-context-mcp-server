@@ -1,16 +1,32 @@
-import type { ReadResourceResult, Role, ServerContext } from '@modelcontextprotocol/server';
+import {
+  checkResourceAllowed,
+  type McpServer,
+  ProtocolError,
+  ProtocolErrorCode,
+  type ReadResourceResult,
+  ResourceTemplate,
+  type ResourceUpdatedNotificationParams,
+  resourceUrlFromServerUrl,
+  type Role,
+  type ServerContext,
+  type SubscribeRequestParams,
+  type UnsubscribeRequestParams,
+  UriTemplate,
+} from '@modelcontextprotocol/server';
 
 import { type FSWatcher, watch } from 'node:fs';
 
 import { readFileRaw } from './core/fs.js';
+import { withTelemetry } from './core/observability.js';
 import { PathCompleter, type PathGuard } from './core/path.js';
+import type { Registrar, ServerDeps } from './core/registrar.js';
 import type { ResourceStore } from './core/store.js';
 import {
   DEFAULT_SEARCH_CONTENT_RESULTS,
   MAX_SEARCH_RESULTS,
   MAX_TEXT_FILE_SIZE,
 } from './core/util.js';
-import type { IconInfo } from './tools/define.js';
+import { type IconInfo, withDefaultIcons } from './tools/define.js';
 
 // ═══════════════════════════════════════════════════════════════
 // shared
@@ -20,10 +36,6 @@ export interface ResourceRegistrationOptions {
   resourceStore: ResourceStore;
   iconInfo?: IconInfo;
   pathGuard?: PathGuard;
-}
-
-export interface ResourcesHandle {
-  destroy(): void;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -318,3 +330,160 @@ export function getResourceContracts(options: ResourceRegistrationOptions): Reso
     createFilesystemResource(options),
   ];
 }
+
+// ═══════════════════════════════════════════════════════════════
+// registrar
+// ═══════════════════════════════════════════════════════════════
+
+function registerResources(
+  server: McpServer,
+  options: ResourceRegistrationOptions,
+): ResourceContract[] {
+  const resourceContracts = getResourceContracts(options);
+
+  for (const contract of resourceContracts) {
+    const config = withDefaultIcons(
+      {
+        title: contract.title,
+        description: contract.description,
+        mimeType: contract.mimeType,
+        annotations: contract.annotations,
+      },
+      options.iconInfo,
+    );
+
+    if (contract.uriTemplate) {
+      const template = new ResourceTemplate(contract.uriTemplate, {
+        list: undefined,
+        ...(contract.complete
+          ? {
+              complete: Object.fromEntries(
+                new UriTemplate(contract.uriTemplate).variableNames.map((varName) => [
+                  varName,
+                  (value: string, ctx?: { arguments?: Record<string, string> }) => {
+                    const completeFn = contract.complete;
+                    return completeFn ? completeFn(varName, value, ctx) : [];
+                  },
+                ]),
+              ),
+            }
+          : {}),
+      });
+
+      server.registerResource(contract.name, template, config, async (uri, variables, ctx) => {
+        try {
+          return await contract.read(uri, variables, ctx);
+        } catch (error) {
+          throw new ProtocolError(
+            ProtocolErrorCode.InvalidRequest,
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      });
+    } else if (contract.uri) {
+      server.registerResource(contract.name, contract.uri, config, async (uri, ctx) => {
+        try {
+          return await contract.read(uri, {}, ctx);
+        } catch (error) {
+          throw new ProtocolError(
+            ProtocolErrorCode.InvalidRequest,
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      });
+    }
+  }
+
+  server.server.setRequestHandler(
+    'resources/subscribe',
+    (req: { params: SubscribeRequestParams }, ctx) => {
+      const requestedResource = resourceUrlFromServerUrl(req.params.uri);
+      return withTelemetry(
+        {
+          event: 'resource_subscription',
+          action: 'subscribe',
+          uri: requestedResource.toString(),
+          session_id: ctx.sessionId ?? null,
+        },
+        () => {
+          let foundMatch = false;
+          for (const contract of resourceContracts) {
+            if (!contract.subscribe) continue;
+            const configured = contract.uri ?? contract.uriTemplate.split('{')[0];
+            if (!configured) continue;
+            if (
+              checkResourceAllowed({
+                requestedResource,
+                configuredResource: configured,
+              })
+            ) {
+              foundMatch = true;
+              contract.subscribe(requestedResource.toString(), (updatedUri) => {
+                const updatePayload: ResourceUpdatedNotificationParams = { uri: updatedUri };
+                void server.server.sendResourceUpdated(updatePayload).catch(() => {
+                  /* Transport may be closed */
+                });
+              });
+              break;
+            }
+          }
+          if (!foundMatch) {
+            throw new ProtocolError(
+              ProtocolErrorCode.ResourceNotFound,
+              `Resource not found: ${requestedResource.toString()}`,
+            );
+          }
+          return {};
+        },
+      );
+    },
+  );
+
+  server.server.setRequestHandler(
+    'resources/unsubscribe',
+    (req: { params: UnsubscribeRequestParams }, ctx) => {
+      const canonical = resourceUrlFromServerUrl(req.params.uri).toString();
+      return withTelemetry(
+        {
+          event: 'resource_subscription',
+          action: 'unsubscribe',
+          uri: canonical,
+          session_id: ctx.sessionId ?? null,
+        },
+        () => {
+          for (const contract of resourceContracts) {
+            if (contract.unsubscribe) {
+              contract.unsubscribe(canonical);
+            }
+          }
+          return {};
+        },
+      );
+    },
+  );
+
+  return resourceContracts;
+}
+
+export const resourcesRegistrar: Registrar = (() => {
+  let contracts: ResourceContract[] = [];
+
+  return {
+    register(deps: ServerDeps): void {
+      contracts = registerResources(deps.server, {
+        resourceStore: deps.resourceStore,
+        pathGuard: deps.pathGuard,
+        ...(deps.iconInfo ? { iconInfo: deps.iconInfo } : {}),
+      });
+    },
+
+    dispose(): void {
+      for (const contract of contracts) {
+        if (contract.destroy) {
+          contract.destroy();
+        }
+      }
+      contracts = [];
+    },
+  };
+})();

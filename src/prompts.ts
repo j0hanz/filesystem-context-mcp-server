@@ -17,7 +17,8 @@ import { z } from 'zod/v4';
 import { Logger, withTelemetry } from './core/observability.js';
 import { PathCompleter } from './core/path.js';
 import type { PathGuard } from './core/path.js';
-import { INSTRUCTION_SECTIONS } from './resources.js';
+import type { Registrar } from './core/registrar.js';
+import { INSTRUCTION_SECTIONS, serverInstructionsContent } from './resources.js';
 import { type IconInfo, withDefaultIcons } from './tools/define.js';
 
 // --- Types ---
@@ -321,5 +322,22 @@ const SUMMARIZE_DIRECTORY: PromptEntry = {
 };
 
 const PROMPT_ENTRIES: PromptEntry[] = [GET_HELP, ANALYZE_PATH, FIND_IN_TREE, SUMMARIZE_DIRECTORY];
+
+export const promptsRegistrar: Registrar = {
+  register(deps): void {
+    const options = {
+      pathGuard: deps.pathGuard,
+      instructions: serverInstructionsContent,
+      isInitialized: deps.isInitialized,
+      ...(deps.iconInfo ? { iconInfo: deps.iconInfo } : {}),
+    };
+    for (const { register } of PROMPT_ENTRIES) {
+      register(deps.server, options);
+    }
+  },
+  dispose(): void {
+    /* no-op */
+  },
+};
 
 export { PROMPT_ENTRIES };
