@@ -272,6 +272,23 @@ function buildSuccessResponse<O>(result: RunResult<O>): CallToolResult {
   };
 }
 
+async function executeTool<I extends z.ZodType, O extends z.ZodType>(
+  def: ToolDef<I, O>,
+  ctx: ToolCtx,
+  deps: ToolDeps,
+  args: z.infer<I>,
+): Promise<CallToolResult> {
+  const executor = new ToolExecutor<I, O>(def.name, ctx, def, args);
+  return executor.execute(args, deps);
+}
+
+function createServerToolHandler<I extends z.ZodType, O extends z.ZodType>(
+  def: ToolDef<I, O>,
+  deps: ToolDeps,
+): (args: z.infer<I>, ctx: ServerContext) => Promise<CallToolResult> {
+  return async (args, ctx) => executeTool(def, toToolCtx(ctx, deps), deps, args);
+}
+
 function extractTracingMeta(meta: (RequestMeta & TracingMeta) | undefined): Record<string, string> {
   if (meta && 'traceparent' in meta && typeof meta['traceparent'] === 'string') {
     return { traceparent: meta['traceparent'] };
@@ -571,13 +588,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
         annotations: def.annotations,
       };
 
-      const serverCtxHandler = async (
-        args: z.infer<I>,
-        ctx: ServerContext,
-      ): Promise<CallToolResult> => {
-        const executor = new ToolExecutor<I, O>(def.name, toToolCtx(ctx, deps), def, args);
-        return executor.execute(args, deps);
-      };
+      const serverCtxHandler = createServerToolHandler(def, deps);
 
       const taskSupport = def.execution?.taskSupport;
       if (taskSupport && taskSupport !== 'forbidden' && deps.orchestrator) {
@@ -594,10 +605,10 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
           def.name,
           taskToolDefShape,
           deps.orchestrator.wrapToolTask(
-            async (args, ctx) => {
-              const executor = new ToolExecutor<I, O>(def.name, ctx, def, args as z.infer<I>);
-              return executor.execute(args, deps) as Promise<ToolResult<Record<string, unknown>>>;
-            },
+            async (args, ctx) =>
+              executeTool(def, ctx, deps, args as z.infer<I>) as Promise<
+                ToolResult<Record<string, unknown>>
+              >,
             {
               toolName: def.name,
               toolTitle: def.title,
