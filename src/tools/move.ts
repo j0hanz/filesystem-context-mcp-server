@@ -195,11 +195,22 @@ export const MOVE = defineTool({
         const validSource = await validateMoveSource(move.source, ctx.pathGuard);
         const validDest = await ctx.pathGuard.validatePathForWrite(move.destination);
 
-        if (resolve(validSource) === resolve(validDest)) {
+        const resolvedSource = resolve(validSource);
+        const resolvedDest = resolve(validDest);
+
+        if (resolvedSource === resolvedDest) {
           continue;
         }
 
-        if (resolve(validDest).startsWith(resolve(validSource) + sep)) {
+        const platform = process.platform;
+        const normalizedDest =
+          platform === 'win32' || platform === 'darwin' ? resolvedDest.toLowerCase() : resolvedDest;
+        const normalizedSource =
+          platform === 'win32' || platform === 'darwin'
+            ? (resolvedSource + sep).toLowerCase()
+            : resolvedSource + sep;
+
+        if (normalizedDest.startsWith(normalizedSource)) {
           throw new FsError(
             ErrorCode.INVALID_INPUT,
             'Cannot move a directory into its own subdirectory',

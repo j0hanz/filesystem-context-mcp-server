@@ -16,6 +16,7 @@ import {
   detectMimeType,
   globEntries,
   MIME_SAMPLE_SIZE,
+  readFileBufferWithLimit,
   stat,
 } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
@@ -251,18 +252,7 @@ function buildReplacementPlan(
 
 async function processEntry(entryPath: string, ctx: ReplaceContext): Promise<void> {
   const { options, signal, summary } = ctx;
-
-  let validPath: string;
-  try {
-    validPath = entryPath;
-  } catch (error) {
-    summary.failedFiles++;
-    recordFailure(summary.failures, {
-      path: entryPath,
-      error: Problem.fromUnknown(error, ErrorCode.UNKNOWN, entryPath),
-    });
-    return;
-  }
+  const validPath = entryPath;
 
   try {
     const plan = await readReplacementPlan(validPath, ctx);
@@ -318,11 +308,12 @@ async function readReplacementPlan(
 
   let content: string;
   if (matcher.testBuffer) {
-    const buffer = await fileHandle.readFile({ signal });
+    const buffer = await readFileBufferWithLimit(fileHandle, maxFileSize, validPath, signal);
     if (!matcher.testBuffer(buffer)) return undefined;
     content = buffer.toString('utf-8');
   } else {
-    content = await fileHandle.readFile({ encoding: 'utf-8', signal });
+    const buffer = await readFileBufferWithLimit(fileHandle, maxFileSize, validPath, signal);
+    content = buffer.toString('utf-8');
   }
 
   return buildReplacementPlan(content, replacement, matcher);
@@ -592,7 +583,8 @@ async function handleSearchAndReplace(
       const content = await (async (): Promise<string> => {
         const fd = await open(fullPath, 'r');
         try {
-          return await fd.readFile({ encoding: 'utf-8', signal });
+          const buffer = await readFileBufferWithLimit(fd, maxFileSize, fullPath, signal);
+          return buffer.toString('utf-8');
         } finally {
           await fd.close();
         }

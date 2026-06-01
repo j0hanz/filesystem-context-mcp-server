@@ -27,8 +27,8 @@ import ignore, { type Ignore } from 'ignore';
 
 import type { FileType } from '../schema.js';
 import { assertNotAborted, withAbort } from './concurrency.js';
-import { ErrorCode, FsError, isNodeError } from './errors.js';
-import { startPerfMeasure, withOpsTrace } from './observability.js';
+import { ErrorCode, formatUnknownErrorMessage, FsError, isNodeError } from './errors.js';
+import { Logger, startPerfMeasure, withOpsTrace } from './observability.js';
 import type { PathGuard } from './path.js';
 import { toPosixPath } from './path.js';
 import { BINARY_CHECK_BUFFER_SIZE, KNOWN_BINARY_EXTENSIONS, MAX_TEXT_FILE_SIZE } from './util.js';
@@ -412,7 +412,7 @@ function createTooLargeError(bytesRead: number, maxSize: number, requestedPath: 
   );
 }
 
-async function readFileBufferWithLimit(
+export async function readFileBufferWithLimit(
   handle: FileHandle,
   maxSize: number,
   requestedPath: string,
@@ -894,7 +894,14 @@ export async function atomicWriteFile(
     await fsWriteFile(tempPath, content, { encoding, signal });
     await withAbort(fsRename(tempPath, validPath), signal);
   } catch (error) {
-    await fsUnlink(tempPath).catch(() => undefined);
+    try {
+      await fsUnlink(tempPath);
+    } catch (cleanupError) {
+      // Log cleanup failure but don't mask original error
+      Logger.warn(
+        `Failed to clean up temp file ${tempPath}: ${formatUnknownErrorMessage(cleanupError)}`,
+      );
+    }
     throw error;
   }
   return { validPath };
