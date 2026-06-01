@@ -359,20 +359,6 @@ export const READ_FILE = defineTool({
     }
     return { label: READ_TOOL_LABEL, subject: name, ...(scope ? { scope } : {}) };
   },
-  inputSchemaAugment: (schema) => ({
-    ...schema,
-    allOf: [
-      { not: { required: ['head', 'tail'] } },
-      { not: { required: ['head', 'startLine'] } },
-      { not: { required: ['head', 'endLine'] } },
-      { not: { required: ['tail', 'startLine'] } },
-      { not: { required: ['tail', 'endLine'] } },
-      { not: { required: ['offset', 'head'] } },
-      { not: { required: ['offset', 'tail'] } },
-      { not: { required: ['offset', 'startLine'] } },
-      { not: { required: ['offset', 'endLine'] } },
-    ],
-  }),
   run: async (args, ctx) => {
     let pathList: string[];
     let skippedResults = new Map<number, PerPathResult<PerPathReadValue>>();
