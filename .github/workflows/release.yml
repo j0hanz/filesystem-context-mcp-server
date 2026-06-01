@@ -52,10 +52,12 @@ jobs:
 
       - name: Determine version
         id: ver
+        env:
+          CUSTOM_VERSION: ${{ inputs.custom_version }}
         run: |
           CURRENT=$(node -p "require('./package.json').version")
-          if [ -n "${{ inputs.custom_version }}" ]; then
-            NEW="${{ inputs.custom_version }}"
+          if [ -n "$CUSTOM_VERSION" ]; then
+            NEW="$CUSTOM_VERSION"
           else
             IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
             case "${{ inputs.bump }}" in
