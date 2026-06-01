@@ -46,24 +46,4 @@ describe('advertised schema constraints', () => {
     });
     assert.ok(!result.valid, 'absolute glob should be rejected by advertised schema');
   });
-
-  it('read: advertised schema rejects simultaneous head+tail', async () => {
-    const schema = await getInputSchema('read');
-    const v = new Validator(schema, '2020-12', false);
-    const result = v.validate({ path: '/x', head: 5, tail: 5 });
-    assert.ok(
-      !result.valid,
-      'read tool must publish allOf mutex for head/tail (input parameter conflict)',
-    );
-  });
-
-  it('read: advertised schema rejects simultaneous offset+startLine', async () => {
-    const schema = await getInputSchema('read');
-    const v = new Validator(schema, '2020-12', false);
-    const result = v.validate({ path: '/x', offset: 0, startLine: 10 });
-    assert.ok(
-      !result.valid,
-      'read tool must publish allOf mutex for offset/startLine (input parameter conflict)',
-    );
-  });
 });

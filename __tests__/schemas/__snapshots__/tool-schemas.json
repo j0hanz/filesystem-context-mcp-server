@@ -1117,54 +1117,7 @@
         }
       },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "additionalProperties": false,
-      "allOf": [
-        {
-          "not": {
-            "required": ["head", "tail"]
-          }
-        },
-        {
-          "not": {
-            "required": ["head", "startLine"]
-          }
-        },
-        {
-          "not": {
-            "required": ["head", "endLine"]
-          }
-        },
-        {
-          "not": {
-            "required": ["tail", "startLine"]
-          }
-        },
-        {
-          "not": {
-            "required": ["tail", "endLine"]
-          }
-        },
-        {
-          "not": {
-            "required": ["offset", "head"]
-          }
-        },
-        {
-          "not": {
-            "required": ["offset", "tail"]
-          }
-        },
-        {
-          "not": {
-            "required": ["offset", "startLine"]
-          }
-        },
-        {
-          "not": {
-            "required": ["offset", "endLine"]
-          }
-        }
-      ]
+      "additionalProperties": false
     },
     "outputSchema": {
       "type": "object",

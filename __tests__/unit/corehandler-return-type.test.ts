@@ -32,12 +32,14 @@ test('coreHandler has explicit Promise<CallToolResult> return type annotation', 
     'Unsafe "as unknown as CallToolResult" cast should be removed',
   );
 
-  // Verify serverCtxHandler has proper return type (allow multi-line declarations with newlines before =>)
+  // Verify createServerToolHandler has an explicit server-context handler return type.
   const serverCtxMatch =
-    /const serverCtxHandler = async[\s\S]*?\): Promise<CallToolResult> =>/.exec(fileContent);
+    /function createServerToolHandler<[^>]+>\([\s\S]*?\): \(args: z\.infer<I>, ctx: ServerContext\) => Promise<CallToolResult>/.exec(
+      fileContent,
+    );
   assert(
     serverCtxMatch,
-    'serverCtxHandler should have return type annotation: Promise<CallToolResult> before =>',
+    'createServerToolHandler should have explicit return type annotation: (args: z.infer<I>, ctx: ServerContext) => Promise<CallToolResult>',
   );
 });
 
