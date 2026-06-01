@@ -63,7 +63,6 @@
     "cli"
   ],
   "dependencies": {
-    "@modelcontextprotocol/client": "2.0.0-alpha.2",
     "@modelcontextprotocol/express": "2.0.0-alpha.2",
     "@modelcontextprotocol/node": "2.0.0-alpha.2",
     "@modelcontextprotocol/server": "2.0.0-alpha.2",
@@ -74,6 +73,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "2.0.0-alpha.2",
     "@cfworker/json-schema": "^4.1.1",
     "@eslint/js": "^10.0.1",
     "@trivago/prettier-plugin-sort-imports": "^6.0.2",
