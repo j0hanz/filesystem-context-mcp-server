@@ -25,6 +25,7 @@ import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_RESULTS,
   DEFAULT_SEARCH_TIMEOUT_MS,
+  escapeRegexLiteral,
   MAX_SEARCH_DEPTH,
   MAX_SEARCH_RESULTS,
   MAX_TEXT_FILE_SIZE,
@@ -187,16 +188,12 @@ function createRegexReplacementMatcher(regex: RE2): ReplacementMatcher {
   };
 }
 
-function createLiteralReplacementMatcher(
-  searchPattern: string,
-  caseSensitive: boolean,
-): ReplacementMatcher {
+function createCaseSensitiveLiteralMatcher(searchPattern: string): ReplacementMatcher {
   const patternLength = searchPattern.length;
-  const searchBuffer = caseSensitive ? Buffer.from(searchPattern, 'utf8') : null;
+  const searchBuffer = Buffer.from(searchPattern, 'utf8');
 
   return {
     testBuffer(buffer: Buffer): boolean {
-      if (!searchBuffer) return true;
       return buffer.indexOf(searchBuffer) !== -1;
     },
     count(content: string): number {
@@ -294,11 +291,7 @@ async function readReplacementPlan(
 ): Promise<ReplacementPlan | undefined> {
   const { matcher, replacement, maxFileSize, signal } = ctx;
   await using fileHandle = await open(validPath, 'r');
-  const { stats } = await stat(
-    validPath,
-    ctx.pathGuard,
-    ctx.signal ? { signal: ctx.signal } : undefined,
-  );
+  const stats = await fileHandle.stat();
   if (stats.size > maxFileSize) {
     throw new FsError(
       ErrorCode.TOO_LARGE,
@@ -473,15 +466,11 @@ async function resolveSearchRoot(
   return { root: resolvedPath, filePattern: undefined };
 }
 
-function escapeRegex(pattern: string): string {
-  return pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 function buildSearchPattern(args: SearchAndReplaceArgs): string {
   if (args.isRegex) {
     return args.wholeWord ? `\\b(?:${args.searchPattern})\\b` : args.searchPattern;
   }
-  const escaped = escapeRegex(args.searchPattern);
+  const escaped = escapeRegexLiteral(args.searchPattern);
   return args.wholeWord ? `\\b(?:${escaped})\\b` : escaped;
 }
 
@@ -492,7 +481,7 @@ function createReplacementMatcher(args: SearchAndReplaceArgs): ReplacementMatche
     const regex = createRegexMatcher(pattern, args.caseSensitive);
     return createRegexReplacementMatcher(regex);
   }
-  return createLiteralReplacementMatcher(args.searchPattern, args.caseSensitive);
+  return createCaseSensitiveLiteralMatcher(args.searchPattern);
 }
 
 async function handleSearchAndReplace(

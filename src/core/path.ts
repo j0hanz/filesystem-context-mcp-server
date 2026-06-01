@@ -508,6 +508,7 @@ function buildSensitivePatterns(): readonly string[] {
         .map((t) => t.trim())
         .filter((t) => t.length > 0)
     : [];
+  // FS_CONTEXT_ALLOW_SENSITIVE suppresses built-ins only; FS_CONTEXT_DENYLIST entries always apply
   return [...(allowSensitive ? [] : DEFAULT_SENSITIVE_PATTERNS), ...envDenylist];
 }
 
@@ -515,7 +516,7 @@ export class PathGuard {
   private allowedDirectoriesState: AllowedDirectoriesState | undefined;
   private denyPatterns: CompiledPatternSet;
   private rootDirectories: string[] = [];
-  private state: RootsManagerState = 'idle';
+  private state: RootsManagerState = 'initializing';
   private _debouncedUpdate: { (server: McpServer): void; cancel: () => void } | undefined;
   private initTimer: ReturnType<typeof setTimeout> | undefined;
   private pendingRootsUpdate = false;
@@ -556,6 +557,7 @@ export class PathGuard {
       primary: [...dedupePreserveOrder(state.primary)],
       expanded: [...dedupePreserveOrder(normalized)],
     };
+    this.state = 'idle';
   }
 
   getAllowedDirectories(): string[] {
@@ -797,7 +799,7 @@ export class PathGuard {
   }
 
   isInitialized(): boolean {
-    return this.state !== 'initializing';
+    return this.state === 'idle' || this.state === 'updating';
   }
 
   destroy(): void {
@@ -932,10 +934,12 @@ export class PathGuard {
       }
     } catch (error) {
       if (this.loggingState) {
+        const level =
+          error instanceof Error && error.message.includes('timeout') ? 'debug' : 'warning';
         logToMcp(
           server,
-          'debug',
-          `[DEBUG] MCP Roots protocol unavailable or failed: ${formatUnknownErrorMessage(error)}`,
+          level,
+          `[${level.toUpperCase()}] MCP Roots protocol unavailable or failed: ${formatUnknownErrorMessage(error)}`,
           this.loggingState.minimumLevel,
         );
       }

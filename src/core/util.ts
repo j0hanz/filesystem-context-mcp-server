@@ -324,3 +324,7 @@ export const KNOWN_BINARY_EXTENSIONS = new Set([
   '.bin',
   '.dat',
 ]);
+
+export function escapeRegexLiteral(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}

@@ -30,6 +30,7 @@ import {
   DEFAULT_SEARCH_CONTENT_RESULTS,
   DEFAULT_SEARCH_MAX_FILES,
   DEFAULT_SEARCH_TIMEOUT_MS,
+  escapeRegexLiteral,
   MAX_LINE_CONTENT_LENGTH,
   MAX_SEARCH_DEPTH,
   MAX_SEARCH_RESULTS,
@@ -121,12 +122,8 @@ function countRegexLineMatches(regex: RegexLikeMatcher, line: string): number {
   return count;
 }
 
-function escapeLiteral(pattern: string): string {
-  return pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 function buildRegexPattern(pattern: string, options: MatcherOptions): string {
-  const escaped = options.isLiteral ? escapeLiteral(pattern) : pattern;
+  const escaped = options.isLiteral ? escapeRegexLiteral(pattern) : pattern;
   return options.wholeWord ? `\\b${escaped}\\b` : escaped;
 }
 

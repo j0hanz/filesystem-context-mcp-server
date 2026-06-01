@@ -92,3 +92,18 @@ test('validatePathForWrite returns normalized path for new file', async () => {
   const result = await guard.validatePathForWrite(newPath);
   assert.ok(typeof result === 'string' && result.length > 0);
 });
+
+test('isInitialized returns false before initialize() is called', () => {
+  const freshGuard = new PathGuard();
+  assert.strictEqual(freshGuard.isInitialized(), false);
+});
+
+test('isInitialized returns true after initialize() is called', () => {
+  const freshGuard = new PathGuard();
+  const state: AllowedDirectoriesState = {
+    primary: [tmpDir],
+    expanded: [tmpDir],
+  };
+  freshGuard.initialize(state);
+  assert.strictEqual(freshGuard.isInitialized(), true);
+});

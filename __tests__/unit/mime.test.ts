@@ -133,4 +133,11 @@ describe('detectMimeType', () => {
       assert.equal(result.kind, expectedKind, `${path} should have kind '${expectedKind}'`);
     }
   });
+
+  it('classifies empty files with unknown extension as text', () => {
+    const emptyBuffer = Buffer.alloc(0);
+    const result = detectMimeType('unknown.xyz', emptyBuffer);
+    assert.equal(result.kind, 'text');
+    assert.equal(result.mimeType, 'text/plain');
+  });
 });

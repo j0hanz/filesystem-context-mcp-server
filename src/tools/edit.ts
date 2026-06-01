@@ -18,7 +18,7 @@ import {
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
-import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
+import { escapeRegexLiteral, MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import {
   defaultFalseBoolean,
   IsoDateTime,
@@ -137,10 +137,6 @@ interface EditResult {
   lineRange?: [number, number];
 }
 
-function escapeRegExp(string: string): string {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 function getLineNumberAtIndex(str: string, maxIndex: number = str.length): number {
   let count = 1;
   let pos = 0;
@@ -195,7 +191,7 @@ function findEditMatch(
   regexCache?: Map<string, RE2>,
 ): TextRange | undefined {
   if (ignoreWhitespace) {
-    const pattern = escapeRegExp(oldText).replace(/\s+/g, '\\s+');
+    const pattern = escapeRegexLiteral(oldText).replace(/\s+/g, '\\s+');
     let regex = regexCache?.get(pattern);
     if (!regex) {
       regex = new RE2(pattern);

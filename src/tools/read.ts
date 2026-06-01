@@ -395,13 +395,13 @@ export const READ_FILE = defineTool({
       { defaultErrorCode: ErrorCode.NOT_FILE },
     );
 
-    const survivorIter = batch.results[Symbol.iterator]();
+    const resultMap = new Map(batch.results.map((r) => [r.path, r]));
     const ordered: PerPathResult<PerPathReadValue>[] = pathList.map((path, idx) => {
       const skipped = skippedResults.get(idx);
       if (skipped) return skipped;
-      const next = survivorIter.next().value;
+      const result = resultMap.get(path);
       return (
-        next ?? {
+        result ?? {
           path,
           error: { code: ErrorCode.UNKNOWN, message: 'Unknown read failure' },
         }

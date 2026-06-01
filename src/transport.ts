@@ -384,18 +384,27 @@ export class HttpSessionRegistry {
     this.sweepTimer.unref();
   }
 
+  private closingSessionIds = new Set<string>();
+
   private sweepStale(): void {
     const now = Date.now();
     for (const [sessionId, session] of this.sessions) {
+      if (this.closingSessionIds.has(sessionId)) continue;
       if (!session.pathGuard.isInitialized() && now - session.createdAt > this.handshakeTimeoutMs) {
         Logger.warn(`[HTTP] Evicting stale session ${sessionId}`);
-        session.close().catch((err: unknown) => {
-          Logger.error(
-            `[HTTP] Error closing stale session ${sessionId}:`,
-            formatUnknownErrorMessage(err),
-          );
-          this.eventStore.delete(sessionId);
-        });
+        this.closingSessionIds.add(sessionId);
+        session
+          .close()
+          .catch((err: unknown) => {
+            Logger.error(
+              `[HTTP] Error closing stale session ${sessionId}:`,
+              formatUnknownErrorMessage(err),
+            );
+            this.remove(sessionId);
+          })
+          .finally(() => {
+            this.closingSessionIds.delete(sessionId);
+          });
       }
     }
   }

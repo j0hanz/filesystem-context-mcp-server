@@ -897,7 +897,7 @@ export async function atomicWriteFile(
     try {
       await fsUnlink(tempPath);
     } catch (cleanupError) {
-      // Log cleanup failure but don't mask original error
+      // temp file may persist on disk if cleanup fails — contains the new content
       Logger.warn(
         `Failed to clean up temp file ${tempPath}: ${formatUnknownErrorMessage(cleanupError)}`,
       );
@@ -1812,6 +1812,7 @@ export const MIME_SAMPLE_SIZE = 512;
 
 function looksLikeText(buffer: Buffer): boolean {
   const sample = buffer.subarray(0, MIME_SAMPLE_SIZE);
+  if (sample.length === 0) return true;
 
   // Count non-text bytes
   let nonTextCount = 0;
@@ -1874,9 +1875,11 @@ export function detectMimeType(path: string, sample?: Buffer): MimeInfo {
   }
 
   // 2. Check magic signatures then text heuristics if sample provided
-  if (sample && sample.length > 0) {
-    const magicResult = detectByMagic(sample);
-    if (magicResult !== null) return magicResult;
+  if (sample) {
+    if (sample.length > 0) {
+      const magicResult = detectByMagic(sample);
+      if (magicResult !== null) return magicResult;
+    }
     return looksLikeText(sample)
       ? { mimeType: 'text/plain', kind: 'text' }
       : { mimeType: 'application/octet-stream', kind: 'binary' };
