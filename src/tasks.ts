@@ -1,7 +1,5 @@
 import {
-  assertToolsCallTaskCapability,
   type CallToolResult,
-  type ClientCapabilities,
   type CreateTaskResult,
   type CreateTaskServerContext,
   type GetTaskResult,
@@ -159,16 +157,6 @@ export class TaskOrchestrator implements TaskStore {
         args = undefined;
       } else {
         [args, ctx] = params;
-      }
-
-      // Guard: assert the client declared tools/call task capability.
-      if (options.server) {
-        const clientCaps: ClientCapabilities | undefined =
-          options.server.server.getClientCapabilities();
-        const experimental = clientCaps?.experimental as
-          | { tasks?: { requests?: Parameters<typeof assertToolsCallTaskCapability>[0] } }
-          | undefined;
-        assertToolsCallTaskCapability(experimental?.tasks?.requests, 'tools/call', 'Client');
       }
 
       const { task } = ctx;
