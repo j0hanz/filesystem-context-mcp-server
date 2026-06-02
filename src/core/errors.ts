@@ -522,39 +522,4 @@ export class FsError extends Error {
     return { ...rest, ...extra };
   }
 
-  static notFound(
-    message: string,
-    path?: string,
-    details?: Record<string, unknown>,
-    cause?: unknown,
-  ): FsError {
-    return new FsError(ErrorCode.NOT_FOUND, message, path, details, cause);
-  }
-
-  static invalidInput(
-    message: string,
-    path?: string,
-    details?: Record<string, unknown>,
-    cause?: unknown,
-  ): FsError {
-    return new FsError(ErrorCode.INVALID_INPUT, message, path, details, cause);
-  }
-
-  static accessDenied(
-    message: string,
-    path?: string,
-    details?: Record<string, unknown>,
-    cause?: unknown,
-  ): FsError {
-    return new FsError(ErrorCode.ACCESS_DENIED, message, path, details, cause);
-  }
-
-  static timeout(
-    message: string,
-    path?: string,
-    details?: Record<string, unknown>,
-    cause?: unknown,
-  ): FsError {
-    return new FsError(ErrorCode.TIMEOUT, message, path, details, cause);
-  }
 }

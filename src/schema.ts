@@ -2,13 +2,6 @@ import { z } from 'zod/v4';
 
 import { isSafeGlobSyntax } from './core/path.js';
 
-export type ZodInfer<T> = T extends z.ZodType ? z.infer<T> : never;
-
-export interface SchemaAndInfer<T extends z.ZodType> {
-  schema: T;
-  inferred: z.infer<T>;
-}
-
 // Runtime: full ISO-8601 UTC; format pattern stripped by post-processor on the wire.
 export const IsoDateTime = z.iso.datetime().meta({
   id: 'IsoDateTime',

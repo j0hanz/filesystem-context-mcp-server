@@ -6,7 +6,7 @@ import { z } from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
-import { detectMimeType, MIME_SAMPLE_SIZE, type ReadSpec } from '../core/fs.js';
+import { detectMimeType, MIME_SAMPLE_SIZE, type ReadFileResult, type ReadSpec } from '../core/fs.js';
 import {
   DEFAULT_CONTINUATION_CHUNK_SIZE,
   DEFAULT_READ_MANY_MAX_TOTAL_SIZE,
@@ -121,40 +121,85 @@ export { ReadFileInputSchema };
 
 const READ_TOOL_LABEL = 'Read';
 
-function buildReadSpec(args: ReadFileInput, signal?: AbortSignal): ReadSpec {
-  const common = {
-    encoding: 'utf-8' as BufferEncoding,
+interface ReadSpecCommon {
+  encoding: BufferEncoding;
+  maxSize: number;
+  skipBinary: true;
+  signal?: AbortSignal;
+}
+
+interface ExtractedReadArgs {
+  offset: number | undefined;
+  length: number | undefined;
+  head: number | undefined;
+  tail: number | undefined;
+  start: number | undefined;
+  end: number | undefined;
+}
+
+function buildSpecCommon(signal?: AbortSignal): ReadSpecCommon {
+  return {
+    encoding: 'utf-8',
     maxSize: MAX_TEXT_FILE_SIZE,
-    skipBinary: true as const,
+    skipBinary: true,
     ...(signal ? { signal } : {}),
   };
+}
 
-  const offset = 'offset' in args && typeof args.offset === 'number' ? args.offset : undefined;
-  const length = 'length' in args && typeof args.length === 'number' ? args.length : undefined;
-  const head = 'head' in args && typeof args.head === 'number' ? args.head : undefined;
-  const tail = 'tail' in args && typeof args.tail === 'number' ? args.tail : undefined;
-  const start =
-    'startLine' in args && typeof args.startLine === 'number' ? args.startLine : undefined;
-  const end = 'endLine' in args && typeof args.endLine === 'number' ? args.endLine : undefined;
+function extractNumericArg(args: ReadFileInput, key: string): number | undefined {
+  return key in args && typeof (args as Record<string, unknown>)[key] === 'number'
+    ? (args as Record<string, unknown>)[key] as number
+    : undefined;
+}
 
-  if (offset !== undefined || length !== undefined) {
+function extractReadArgs(args: ReadFileInput): ExtractedReadArgs {
+  return {
+    offset: extractNumericArg(args, 'offset'),
+    length: extractNumericArg(args, 'length'),
+    head: extractNumericArg(args, 'head'),
+    tail: extractNumericArg(args, 'tail'),
+    start: extractNumericArg(args, 'startLine'),
+    end: extractNumericArg(args, 'endLine'),
+  };
+}
+
+function buildByteRangeSpec(
+  extracted: ExtractedReadArgs,
+  common: ReadSpecCommon,
+): ReadSpec {
+  return {
+    kind: 'byteRange',
+    ...(extracted.offset !== undefined ? { offset: extracted.offset } : {}),
+    ...(extracted.length !== undefined ? { length: extracted.length } : {}),
+    ...common,
+  };
+}
+
+function buildLineSpec(extracted: ExtractedReadArgs, common: ReadSpecCommon): ReadSpec {
+  if (extracted.head !== undefined) {
+    return { kind: 'head', lines: extracted.head, ...common };
+  }
+  if (extracted.tail !== undefined) {
+    return { kind: 'tail', lines: extracted.tail, ...common };
+  }
+  if (extracted.start !== undefined || extracted.end !== undefined) {
     return {
-      kind: 'byteRange',
-      ...(offset !== undefined ? { offset } : {}),
-      ...(length !== undefined ? { length } : {}),
+      kind: 'range',
+      start: extracted.start ?? 1,
+      ...(extracted.end !== undefined ? { end: extracted.end } : {}),
       ...common,
     };
   }
-  if (head !== undefined) {
-    return { kind: 'head', lines: head, ...common };
-  }
-  if (tail !== undefined) {
-    return { kind: 'tail', lines: tail, ...common };
-  }
-  if (start !== undefined || end !== undefined) {
-    return { kind: 'range', start: start ?? 1, ...(end !== undefined ? { end } : {}), ...common };
-  }
   return { kind: 'full', ...common };
+}
+
+function buildReadSpec(args: ReadFileInput, signal?: AbortSignal): ReadSpec {
+  const common = buildSpecCommon(signal);
+  const extracted = extractReadArgs(args);
+  if (extracted.offset !== undefined || extracted.length !== undefined) {
+    return buildByteRangeSpec(extracted, common);
+  }
+  return buildLineSpec(extracted, common);
 }
 
 function buildReadContinuation(result: {
@@ -266,6 +311,47 @@ function preFilterByBudget(
   return { skippedResults, survivors };
 }
 
+function applyContinuation(value: PerPathReadValue, result: ReadFileResult): void {
+  if (!result.hasMoreLines) return;
+  const continuation = buildReadContinuation({
+    path: result.path,
+    hasMoreLines: true,
+    ...(result.linesRead !== undefined ? { linesRead: result.linesRead } : {}),
+    ...(result.startLine !== undefined ? { startLine: result.startLine } : {}),
+    ...(result.endLine !== undefined ? { endLine: result.endLine } : {}),
+    ...(result.head !== undefined ? { head: result.head } : {}),
+    ...(result.totalLines !== undefined ? { totalLines: result.totalLines } : {}),
+  });
+  if (continuation) value.continuation = continuation;
+}
+
+function applyReadResultFields(value: PerPathReadValue, result: ReadFileResult): void {
+  if (result.totalLines !== undefined) value.totalLines = result.totalLines;
+  if (result.linesRead !== undefined) value.linesRead = result.linesRead;
+  if (result.hasMoreLines) value.hasMoreLines = true;
+  if (result.head !== undefined) value.head = result.head;
+  if (result.tail !== undefined) value.tail = result.tail;
+  if (result.startLine !== undefined) value.startLine = result.startLine;
+  if (result.endLine !== undefined) value.endLine = result.endLine;
+  if (result.offset !== undefined) value.offset = result.offset;
+  if (result.bytesRead !== undefined) value.bytesRead = result.bytesRead;
+  if (result.reachedEOF !== undefined) value.reachedEOF = result.reachedEOF;
+}
+
+async function applyOptionalFeatures(
+  value: PerPathReadValue,
+  result: ReadFileResult,
+  args: ReadFileInput,
+  ctx: ToolCtx,
+): Promise<void> {
+  if (args.includeHash) {
+    value.contentHash = await ctx.fs.hash(result.path);
+  }
+  if (ctx.resourceStore) {
+    value.resourceUri = `filesystem-mcp://file/${result.path.replace(/\\/g, '/')}`;
+  }
+}
+
 async function readOnePath(
   filePath: string,
   args: ReadFileInput,
@@ -285,37 +371,9 @@ async function readOnePath(
     kind: mimeInfo.kind,
   };
 
-  if (result.hasMoreLines) {
-    const continuation = buildReadContinuation({
-      path: result.path,
-      hasMoreLines: true,
-      ...(result.linesRead !== undefined ? { linesRead: result.linesRead } : {}),
-      ...(result.startLine !== undefined ? { startLine: result.startLine } : {}),
-      ...(result.endLine !== undefined ? { endLine: result.endLine } : {}),
-      ...(result.head !== undefined ? { head: result.head } : {}),
-      ...(result.totalLines !== undefined ? { totalLines: result.totalLines } : {}),
-    });
-    if (continuation) value.continuation = continuation;
-  }
-
-  if (result.totalLines !== undefined) value.totalLines = result.totalLines;
-  if (result.linesRead !== undefined) value.linesRead = result.linesRead;
-  if (result.hasMoreLines) value.hasMoreLines = true;
-  if (result.head !== undefined) value.head = result.head;
-  if (result.tail !== undefined) value.tail = result.tail;
-  if (result.startLine !== undefined) value.startLine = result.startLine;
-  if (result.endLine !== undefined) value.endLine = result.endLine;
-  if (result.offset !== undefined) value.offset = result.offset;
-  if (result.bytesRead !== undefined) value.bytesRead = result.bytesRead;
-  if (result.reachedEOF !== undefined) value.reachedEOF = result.reachedEOF;
-
-  if (args.includeHash) {
-    value.contentHash = await ctx.fs.hash(result.path);
-  }
-
-  if (ctx.resourceStore) {
-    value.resourceUri = `filesystem-mcp://file/${result.path.replace(/\\/g, '/')}`;
-  }
+  applyContinuation(value, result);
+  applyReadResultFields(value, result);
+  await applyOptionalFeatures(value, result, args, ctx);
 
   return value;
 }
