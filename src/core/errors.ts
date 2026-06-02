@@ -521,5 +521,4 @@ export class FsError extends Error {
     if (!extra) return Object.keys(rest).length > 0 ? rest : undefined;
     return { ...rest, ...extra };
   }
-
 }

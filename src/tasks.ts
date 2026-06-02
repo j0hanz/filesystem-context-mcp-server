@@ -32,10 +32,7 @@ import { type ToolCtx, type ToolDeps, type ToolResult, toToolCtx } from './tools
 // runExecution helpers
 // ═══════════════════════════════════════════════════════════════
 
-function buildInterceptedCtx(
-  baseCtx: ToolCtx,
-  execSignal?: AbortSignal,
-): ToolCtx {
+function buildInterceptedCtx(baseCtx: ToolCtx, execSignal?: AbortSignal): ToolCtx {
   return {
     ...baseCtx,
     ...(execSignal ? { signal: execSignal } : {}),
@@ -56,8 +53,8 @@ function stripImmediateResponseMeta(result: Record<string, unknown>): void {
     typeof result['_meta'] === 'object' &&
     IMMEDIATE_RESPONSE_KEY in result['_meta']
   ) {
-    result['_meta'] = { ...result['_meta'] };
-    delete (result['_meta'] as Record<string, unknown>)[IMMEDIATE_RESPONSE_KEY];
+    const { [IMMEDIATE_RESPONSE_KEY]: _, ...rest } = result['_meta'] as Record<string, unknown>;
+    result['_meta'] = rest;
   }
 }
 

@@ -332,7 +332,10 @@ export interface ReadFileResult {
   reachedEOF?: boolean;
 }
 
-type NormalizeResult = { normalized: NormalizedOptions; mode: ReadMode };
+interface NormalizeResult {
+  normalized: NormalizedOptions;
+  mode: ReadMode;
+}
 
 function buildBaseOptions(spec: ReadSpec): NormalizedOptions {
   if (spec.maxSize !== undefined) {
@@ -2023,5 +2026,4 @@ export class GuardedFileSystem {
   async readFile(filePath: string, spec: ReadSpec) {
     return readFile(filePath, spec, this.pathGuard);
   }
-
 }

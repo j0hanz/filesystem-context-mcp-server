@@ -6,7 +6,12 @@ import { z } from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
-import { detectMimeType, MIME_SAMPLE_SIZE, type ReadFileResult, type ReadSpec } from '../core/fs.js';
+import {
+  detectMimeType,
+  MIME_SAMPLE_SIZE,
+  type ReadFileResult,
+  type ReadSpec,
+} from '../core/fs.js';
 import {
   DEFAULT_CONTINUATION_CHUNK_SIZE,
   DEFAULT_READ_MANY_MAX_TOTAL_SIZE,
@@ -148,7 +153,7 @@ function buildSpecCommon(signal?: AbortSignal): ReadSpecCommon {
 
 function extractNumericArg(args: ReadFileInput, key: string): number | undefined {
   return key in args && typeof (args as Record<string, unknown>)[key] === 'number'
-    ? (args as Record<string, unknown>)[key] as number
+    ? ((args as Record<string, unknown>)[key] as number)
     : undefined;
 }
 
@@ -163,10 +168,7 @@ function extractReadArgs(args: ReadFileInput): ExtractedReadArgs {
   };
 }
 
-function buildByteRangeSpec(
-  extracted: ExtractedReadArgs,
-  common: ReadSpecCommon,
-): ReadSpec {
+function buildByteRangeSpec(extracted: ExtractedReadArgs, common: ReadSpecCommon): ReadSpec {
   return {
     kind: 'byteRange',
     ...(extracted.offset !== undefined ? { offset: extracted.offset } : {}),

@@ -281,10 +281,6 @@ abstract class WrappedStore implements InternalStore {
 // -----------------------------------------------------------------------------
 
 class DiagnosticStore extends WrappedStore {
-  constructor(wrapped: InternalStore) {
-    super(wrapped);
-  }
-
   removeEntry(uri: string, reason?: CacheEvictionReason): StoredEntry | undefined {
     const entry = this.wrapped.removeEntry(uri, reason);
     if (entry) {
