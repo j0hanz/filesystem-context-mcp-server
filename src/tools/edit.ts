@@ -516,22 +516,7 @@ async function handleEditFile(
 
 function toEditPerPathPayload(
   r: PerPathResult<{
-    structured: {
-      ok: true;
-      path?: string;
-      size?: number;
-      lineCount?: number;
-      mimeType?: string;
-      kind?: 'text' | 'binary' | 'image' | 'audio' | 'pdf';
-      resourceUri?: string;
-      modified?: string;
-      appliedEdits?: number;
-      linesAdded?: number;
-      linesRemoved?: number;
-      diff?: string;
-      unmatchedEdits?: string[];
-      lineRange?: [number, number];
-    };
+    structured: SingleEditStructured;
     resourceLink?: ContentBlock;
   }>,
 ): { perPath: z.infer<typeof EditPerPathSchema>; resourceLink?: ContentBlock } {

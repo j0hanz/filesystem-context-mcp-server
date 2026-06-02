@@ -329,5 +329,4 @@ export const CALCULATE_HASH = defineTool({
     return handleCalculateHash(args, ctx.pathGuard, ctx.resourceStore, ctx.signal, onProgress);
   },
 });
-export type HashOutput = z.infer<typeof HashOutputSchema>;
 export { HashOutputSchema, HashesSchema };

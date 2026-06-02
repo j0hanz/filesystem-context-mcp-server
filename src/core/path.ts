@@ -530,10 +530,6 @@ export class PathGuard {
     this.loggingState = loggingState;
   }
 
-  hasAllowedDirectories(): boolean {
-    return this.allowedDirectoriesState !== undefined;
-  }
-
   static async fromAllowedDirectories(
     dirs: readonly string[],
     signal?: AbortSignal,
@@ -580,15 +576,6 @@ export class PathGuard {
 
   isSafeGlob(pattern: string): boolean {
     return isSafeGlobSyntax(pattern);
-  }
-
-  assertSafeGlob(
-    pattern: string,
-    message = 'Invalid glob or unsafe path (absolute/.. forbidden)',
-  ): void {
-    if (!this.isSafeGlob(pattern)) {
-      throw new FsError(ErrorCode.INVALID_PATTERN, message);
-    }
   }
 
   async validateExistingPath(requestedPath: string): Promise<string> {

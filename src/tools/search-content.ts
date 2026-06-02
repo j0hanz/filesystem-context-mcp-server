@@ -64,7 +64,7 @@ import { defineTool } from './define.js';
 // Domain types
 // ---------------------------------------------------------------------------
 
-export interface ContentMatch {
+interface ContentMatch {
   readonly file: string;
   readonly line: number;
   readonly content: string;
@@ -73,7 +73,7 @@ export interface ContentMatch {
   readonly matchCount: number;
 }
 
-export interface SearchContentResult {
+interface SearchContentResult {
   readonly basePath: string;
   readonly pattern: string;
   readonly filePattern: string;
@@ -103,7 +103,7 @@ interface MatcherOptions {
   fuzzy?: boolean;
 }
 
-export interface ContentMatcher {
+interface ContentMatcher {
   matchCount(line: string): number;
 }
 

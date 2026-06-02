@@ -3,10 +3,8 @@ import { availableParallelism } from 'node:os';
 import { z } from 'zod/v4';
 
 import { Logger } from './observability.js';
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object';
-}
+import { parseTrueEnvFlag } from './primitives.js';
+export { isRecord, parseTrueEnvFlag } from './primitives.js';
 
 export function debounce<Args extends unknown[]>(
   func: (...args: Args) => void,
@@ -83,11 +81,6 @@ export function maybeStripStructuredContentFromResult<T extends object>(
 }
 
 const STRING_BOOL_SCHEMA = z.stringbool();
-
-export function parseTrueEnvFlag(value: string | undefined): boolean {
-  if (value === undefined) return false;
-  return STRING_BOOL_SCHEMA.safeParse(value.trim().toLowerCase()).data === true;
-}
 
 const KIB = 1024;
 const MIB = 1024 * KIB;

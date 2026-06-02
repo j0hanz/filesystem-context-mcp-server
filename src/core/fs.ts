@@ -332,63 +332,93 @@ export interface ReadFileResult {
   reachedEOF?: boolean;
 }
 
-function normalizeSpec(spec: ReadSpec): { normalized: NormalizedOptions; mode: ReadMode } {
+type NormalizeResult = { normalized: NormalizedOptions; mode: ReadMode };
+
+function buildBaseOptions(spec: ReadSpec): NormalizedOptions {
   if (spec.maxSize !== undefined) {
     assertPositiveSafeIntegerOption('maxSize', spec.maxSize, 'maxSize must be at least 1');
   }
-
-  const base: NormalizedOptions = {
+  return {
     encoding: spec.encoding ?? 'utf-8',
     maxSize: Math.min(spec.maxSize ?? MAX_TEXT_FILE_SIZE, MAX_TEXT_FILE_SIZE),
     skipBinary: spec.skipBinary ?? false,
     ...(spec.signal ? { signal: spec.signal } : {}),
   };
+}
 
+function normalizeHeadSpec(
+  spec: Extract<ReadSpec, { kind: 'head' }>,
+  base: NormalizedOptions,
+): NormalizeResult {
+  assertPositiveSafeIntegerOption('lines', spec.lines, 'lines must be at least 1');
+  return { normalized: { ...base, head: spec.lines }, mode: 'head' };
+}
+
+function normalizeTailSpec(
+  spec: Extract<ReadSpec, { kind: 'tail' }>,
+  base: NormalizedOptions,
+): NormalizeResult {
+  assertPositiveSafeIntegerOption('lines', spec.lines, 'lines must be at least 1');
+  return { normalized: { ...base, tail: spec.lines }, mode: 'tail' };
+}
+
+function normalizeRangeSpec(
+  spec: Extract<ReadSpec, { kind: 'range' }>,
+  base: NormalizedOptions,
+): NormalizeResult {
+  assertPositiveSafeIntegerOption('start', spec.start, 'start must be at least 1');
+  if (spec.end !== undefined) {
+    assertPositiveSafeIntegerOption('end', spec.end, 'end must be at least 1');
+    if (spec.end < spec.start) {
+      throw new FsError(
+        ErrorCode.INVALID_INPUT,
+        'end must be greater than or equal to start (default: 1)',
+      );
+    }
+  }
+  return {
+    normalized: {
+      ...base,
+      startLine: spec.start,
+      ...(spec.end !== undefined ? { endLine: spec.end } : {}),
+    },
+    mode: 'range',
+  };
+}
+
+function normalizeByteRangeSpec(
+  spec: Extract<ReadSpec, { kind: 'byteRange' }>,
+  base: NormalizedOptions,
+): NormalizeResult {
+  if (spec.offset !== undefined && spec.offset < 0) {
+    throw new FsError(ErrorCode.INVALID_INPUT, 'offset must be >= 0');
+  }
+  if (spec.length !== undefined && spec.length < 1) {
+    throw new FsError(ErrorCode.INVALID_INPUT, 'length must be >= 1');
+  }
+  return {
+    normalized: {
+      ...base,
+      ...(spec.offset !== undefined ? { offset: spec.offset } : {}),
+      ...(spec.length !== undefined ? { length: spec.length } : {}),
+    },
+    mode: 'byteRange',
+  };
+}
+
+function normalizeSpec(spec: ReadSpec): NormalizeResult {
+  const base = buildBaseOptions(spec);
   assertNotAborted(spec.signal);
 
   switch (spec.kind) {
     case 'head':
-      assertPositiveSafeIntegerOption('lines', spec.lines, 'lines must be at least 1');
-      return { normalized: { ...base, head: spec.lines }, mode: 'head' };
+      return normalizeHeadSpec(spec, base);
     case 'tail':
-      assertPositiveSafeIntegerOption('lines', spec.lines, 'lines must be at least 1');
-      return { normalized: { ...base, tail: spec.lines }, mode: 'tail' };
-    case 'range': {
-      assertPositiveSafeIntegerOption('start', spec.start, 'start must be at least 1');
-      if (spec.end !== undefined) {
-        assertPositiveSafeIntegerOption('end', spec.end, 'end must be at least 1');
-        if (spec.end < spec.start) {
-          throw new FsError(
-            ErrorCode.INVALID_INPUT,
-            'end must be greater than or equal to start (default: 1)',
-          );
-        }
-      }
-      return {
-        normalized: {
-          ...base,
-          startLine: spec.start,
-          ...(spec.end !== undefined ? { endLine: spec.end } : {}),
-        },
-        mode: 'range',
-      };
-    }
-    case 'byteRange': {
-      if (spec.offset !== undefined && spec.offset < 0) {
-        throw new FsError(ErrorCode.INVALID_INPUT, 'offset must be >= 0');
-      }
-      if (spec.length !== undefined && spec.length < 1) {
-        throw new FsError(ErrorCode.INVALID_INPUT, 'length must be >= 1');
-      }
-      return {
-        normalized: {
-          ...base,
-          ...(spec.offset !== undefined ? { offset: spec.offset } : {}),
-          ...(spec.length !== undefined ? { length: spec.length } : {}),
-        },
-        mode: 'byteRange',
-      };
-    }
+      return normalizeTailSpec(spec, base);
+    case 'range':
+      return normalizeRangeSpec(spec, base);
+    case 'byteRange':
+      return normalizeByteRangeSpec(spec, base);
     case 'full':
       return { normalized: base, mode: 'full' };
   }
@@ -1982,58 +2012,16 @@ export class GuardedFileSystem {
     return rmdir(filePath, this.pathGuard, options);
   }
 
-  async readlink(filePath: string, options?: Parameters<typeof fsReadlink>[1]) {
-    return readlink(filePath, this.pathGuard, options);
-  }
-
   async cp(source: string, destination: string, options?: Parameters<typeof fsCp>[2]) {
     return cp(source, destination, this.pathGuard, options);
-  }
-
-  async isProbablyBinary(filePath: string, existingHandle?: FileHandle, signal?: AbortSignal) {
-    return isProbablyBinary(filePath, existingHandle, signal);
   }
 
   async hash(filePath: string, signal?: AbortSignal) {
     return calculateFileContentHash(filePath, signal, 'hex' as const);
   }
 
-  async calculateFileContentHash(
-    filePath: string,
-    signal?: AbortSignal,
-    encoding?: BinaryToTextEncoding | null,
-  ): Promise<string | Buffer> {
-    if (encoding === null) {
-      return calculateFileContentHash(filePath, signal, null);
-    }
-    if (encoding === undefined) {
-      return calculateFileContentHash(filePath, signal);
-    }
-    return calculateFileContentHash(filePath, signal, encoding);
-  }
-
-  async readFileRaw(filePath: string, options?: { signal?: AbortSignal }) {
-    return readFileRaw(filePath, this.pathGuard, options);
-  }
-
-  async readFileWithStats(
-    filePath: string,
-    validPath: string,
-    stats: Stats,
-    spec: ReadSpec | undefined,
-  ) {
-    return readFileWithStats(filePath, validPath, stats, spec);
-  }
-
   async readFile(filePath: string, spec: ReadSpec) {
     return readFile(filePath, spec, this.pathGuard);
   }
 
-  async atomicWriteFile(
-    filePath: string,
-    content: string,
-    options?: { encoding?: BufferEncoding; signal?: AbortSignal | undefined },
-  ) {
-    return atomicWriteFile(filePath, content, this.pathGuard, options);
-  }
 }

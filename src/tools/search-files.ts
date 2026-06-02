@@ -56,14 +56,14 @@ import { defineTool } from './define.js';
 // Domain types
 // ---------------------------------------------------------------------------
 
-export interface SearchResult {
+interface SearchResult {
   readonly path: string;
   readonly type: FileType;
   readonly size?: number;
   readonly modified?: Date;
 }
 
-export interface SearchFilesResult {
+interface SearchFilesResult {
   readonly basePath: string;
   readonly pattern: string;
   readonly results: readonly SearchResult[];

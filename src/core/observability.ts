@@ -11,7 +11,7 @@ import { monitorEventLoopDelay, performance, PerformanceObserver } from 'node:pe
 import { inspect } from 'node:util';
 
 import { ansiLine, type Phase, type ProgressCtx } from './fmt.js';
-import { isRecord, parseTrueEnvFlag } from './util.js';
+import { isRecord, parseTrueEnvFlag } from './primitives.js';
 
 // Aliases for observability subsystem
 const AsyncLocalStorageImport = AsyncLocalStorage;

@@ -96,7 +96,7 @@ export type TaskResult<T extends WorkerTaskName> = WorkerTaskRegistry[T] extends
   ? R
   : never;
 
-export interface TaskRequest {
+interface TaskRequest {
   id: number;
   name: string;
   payload: unknown;
@@ -171,7 +171,7 @@ function serializeError(e: unknown): SerializedError {
 
 const TASK_HANDLERS = new Map<string, (payload: unknown) => unknown>();
 
-export function registerWorkerTask<T extends WorkerTaskName>(
+function registerWorkerTask<T extends WorkerTaskName>(
   name: T,
   handler: (payload: TaskPayload<T>) => TaskResult<T>,
 ) {

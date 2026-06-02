@@ -237,11 +237,11 @@ class RawStore implements InternalStore {
 }
 
 // -----------------------------------------------------------------------------
-// Diagnostic Decorator
+// Delegation Base
 // -----------------------------------------------------------------------------
 
-class DiagnosticStore implements InternalStore {
-  private readonly wrapped: InternalStore;
+abstract class WrappedStore implements InternalStore {
+  protected readonly wrapped: InternalStore;
 
   constructor(wrapped: InternalStore) {
     this.wrapped = wrapped;
@@ -256,7 +256,6 @@ class DiagnosticStore implements InternalStore {
   entries() {
     return this.wrapped.entries();
   }
-
   getEntryIfExists(uri: string) {
     return this.wrapped.getEntryIfExists(uri);
   }
@@ -265,6 +264,25 @@ class DiagnosticStore implements InternalStore {
   }
   bumpLru(uri: string, entry: StoredEntry) {
     this.wrapped.bumpLru(uri, entry);
+  }
+
+  abstract removeEntry(uri: string, reason?: CacheEvictionReason): StoredEntry | undefined;
+  abstract putText(params: { name: string; mimeType?: string; text: string }): TextResourceEntry;
+  abstract getText(uri: string): TextResourceEntry;
+  abstract putBlob(params: { name: string; mimeType: string; data: Buffer }): BlobResourceEntry;
+  abstract getBlob(uri: string): BlobResourceEntry;
+  abstract getEntry(uri: string): StoredEntry;
+  abstract clear(): void;
+  abstract keys(): string[];
+}
+
+// -----------------------------------------------------------------------------
+// Diagnostic Decorator
+// -----------------------------------------------------------------------------
+
+class DiagnosticStore extends WrappedStore {
+  constructor(wrapped: InternalStore) {
+    super(wrapped);
   }
 
   removeEntry(uri: string, reason?: CacheEvictionReason): StoredEntry | undefined {
@@ -338,33 +356,12 @@ class DiagnosticStore implements InternalStore {
 // Eviction & Cache Policy Decorator
 // -----------------------------------------------------------------------------
 
-class EvictionStore implements InternalStore {
+class EvictionStore extends WrappedStore {
   private readonly options: ResourceStoreOptions;
-  private readonly wrapped: InternalStore;
 
   constructor(wrapped: InternalStore, options: ResourceStoreOptions) {
-    this.wrapped = wrapped;
+    super(wrapped);
     this.options = options;
-  }
-
-  get totalBytes() {
-    return this.wrapped.totalBytes;
-  }
-  get entryCount() {
-    return this.wrapped.entryCount;
-  }
-  entries() {
-    return this.wrapped.entries();
-  }
-
-  getEntryIfExists(uri: string) {
-    return this.wrapped.getEntryIfExists(uri);
-  }
-  getEntryByHash(mimeType: string, contentHash: string) {
-    return this.wrapped.getEntryByHash(mimeType, contentHash);
-  }
-  bumpLru(uri: string, entry: StoredEntry) {
-    this.wrapped.bumpLru(uri, entry);
   }
 
   removeEntry(uri: string, reason?: CacheEvictionReason) {
