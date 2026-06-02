@@ -1446,6 +1446,47 @@ class AsyncGlobBatchQueue {
   }
 }
 
+function createExcludeFilter(
+  cwd: string,
+  excludePatterns: readonly string[],
+  gitignoreMatcher?: Ignore | null,
+): ((match: GlobMatch) => boolean) | readonly string[] {
+  if (!gitignoreMatcher) {
+    return excludePatterns;
+  }
+
+  return (match: GlobMatch) => {
+    const relPath =
+      typeof match === 'string'
+        ? match
+        : match.parentPath
+          ? relative(cwd, join(match.parentPath, match.name))
+          : match.name;
+
+    const posixRel = toPosixPath(relPath);
+
+    // Gitignore check
+    const isDir = typeof match === 'string' ? false : match.isDirectory();
+    if (
+      isIgnoredByGitignore(gitignoreMatcher, cwd, '', {
+        relativePath: posixRel,
+        isDirectory: isDir,
+      })
+    ) {
+      return true;
+    }
+
+    // Also check explicit exclude patterns
+    if (excludePatterns.length > 0) {
+      for (const ex of excludePatterns) {
+        if (posix.matchesGlob(posixRel, ex)) return true;
+      }
+    }
+
+    return false;
+  };
+}
+
 async function* nativeGlobEntries(
   options: GlobEntriesOptions,
   gitignoreMatcher?: Ignore | null,
@@ -1467,38 +1508,7 @@ async function* nativeGlobEntries(
   };
 
   const forceFileTypes = plan.useDirents || Boolean(gitignoreMatcher);
-  const excludeFunc = gitignoreMatcher
-    ? (match: GlobMatch) => {
-        const relPath =
-          typeof match === 'string'
-            ? match
-            : match.parentPath
-              ? relative(cwd, join(match.parentPath, match.name))
-              : match.name;
-
-        const posixRel = toPosixPath(relPath);
-
-        // Gitignore check
-        const isDir = typeof match === 'string' ? false : match.isDirectory();
-        if (
-          isIgnoredByGitignore(gitignoreMatcher, cwd, '', {
-            relativePath: posixRel,
-            isDirectory: isDir,
-          })
-        ) {
-          return true;
-        }
-
-        // Also check explicit exclude patterns
-        if (plan.exclude.length > 0) {
-          for (const ex of plan.exclude) {
-            if (posix.matchesGlob(posixRel, ex)) return true;
-          }
-        }
-
-        return false;
-      }
-    : plan.exclude;
+  const excludeFunc = createExcludeFilter(cwd, plan.exclude, gitignoreMatcher);
 
   for (const pattern of plan.patterns) {
     let iterable: AsyncIterable<GlobMatch>;

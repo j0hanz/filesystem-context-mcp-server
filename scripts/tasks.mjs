@@ -265,6 +265,81 @@ function rejectForbiddenFlags(values, forbidden, command) {
   return false;
 }
 
+function parseCheckOrFixCommand(values, command) {
+  if (
+    rejectForbiddenFlags(
+      values,
+      ['watch', 'timeout', 'name-pattern', 'shard', 'update-snapshots'],
+      command,
+    )
+  ) {
+    return null;
+  }
+  return {
+    command,
+    quick: !!values.quick,
+    all: values.all ?? false,
+    json: !!values.json,
+    llm: !!values.llm,
+  };
+}
+
+function parseTestCommand(values) {
+  if (rejectForbiddenFlags(values, ['quick', 'all'], 'test')) return null;
+
+  if (values.timeout !== undefined) {
+    const n = Number(values.timeout);
+    if (!Number.isInteger(n) || n < 1) {
+      process.stderr.write(`--timeout requires a positive integer ms.\n`);
+      process.exitCode = 2;
+      return null;
+    }
+  }
+
+  if (values.shard !== undefined && !/^\d+\/\d+$/.test(values.shard)) {
+    process.stderr.write(`--shard requires <index>/<total>.\n`);
+    process.exitCode = 2;
+    return null;
+  }
+
+  return {
+    command: 'test',
+    watch: !!values.watch,
+    testTimeout: values.timeout ? Number(values.timeout) : null,
+    testNamePattern: values['name-pattern'] ?? null,
+    testShard: values.shard ?? null,
+    updateSnapshots: !!values['update-snapshots'],
+    json: !!values.json,
+    llm: !!values.llm,
+  };
+}
+
+function parseDetailCommand(values, rawIndex) {
+  const n = rawIndex === undefined ? null : Number(rawIndex);
+  if (rawIndex !== undefined && (!Number.isInteger(n) || n < 1)) {
+    process.stderr.write(`'detail' requires a positive integer failure index.\n`);
+    process.exitCode = 2;
+    return null;
+  }
+
+  if (
+    rejectForbiddenFlags(
+      values,
+      ['quick', 'all', 'watch', 'timeout', 'name-pattern', 'shard', 'update-snapshots'],
+      'detail',
+    )
+  ) {
+    return null;
+  }
+
+  return {
+    command: 'detail',
+    index: n,
+    json: !!values.json,
+    llm: !!values.llm,
+  };
+}
+
 function parseCliConfig(args) {
   let parsed;
   try {
@@ -302,79 +377,15 @@ function parseCliConfig(args) {
   const command = positionals[0] ?? 'check';
 
   if (command === 'check' || command === 'fix') {
-    if (
-      rejectForbiddenFlags(
-        values,
-        ['watch', 'timeout', 'name-pattern', 'shard', 'update-snapshots'],
-        command,
-      )
-    ) {
-      return null;
-    }
-    return {
-      command,
-      quick: !!values.quick,
-      all: values.all ?? false,
-      json: !!values.json,
-      llm: !!values.llm,
-    };
+    return parseCheckOrFixCommand(values, command);
   }
 
   if (command === 'test') {
-    if (rejectForbiddenFlags(values, ['quick', 'all'], 'test')) return null;
-
-    if (values.timeout !== undefined) {
-      const n = Number(values.timeout);
-      if (!Number.isInteger(n) || n < 1) {
-        process.stderr.write(`--timeout requires a positive integer ms.\n`);
-        process.exitCode = 2;
-        return null;
-      }
-    }
-
-    if (values.shard !== undefined && !/^\d+\/\d+$/.test(values.shard)) {
-      process.stderr.write(`--shard requires <index>/<total>.\n`);
-      process.exitCode = 2;
-      return null;
-    }
-
-    return {
-      command: 'test',
-      watch: !!values.watch,
-      testTimeout: values.timeout ? Number(values.timeout) : null,
-      testNamePattern: values['name-pattern'] ?? null,
-      testShard: values.shard ?? null,
-      updateSnapshots: !!values['update-snapshots'],
-      json: !!values.json,
-      llm: !!values.llm,
-    };
+    return parseTestCommand(values);
   }
 
   if (command === 'detail') {
-    const rawIndex = positionals[1];
-    const n = rawIndex === undefined ? null : Number(rawIndex);
-    if (rawIndex !== undefined && (!Number.isInteger(n) || n < 1)) {
-      process.stderr.write(`'detail' requires a positive integer failure index.\n`);
-      process.exitCode = 2;
-      return null;
-    }
-
-    if (
-      rejectForbiddenFlags(
-        values,
-        ['quick', 'all', 'watch', 'timeout', 'name-pattern', 'shard', 'update-snapshots'],
-        'detail',
-      )
-    ) {
-      return null;
-    }
-
-    return {
-      command: 'detail',
-      index: n,
-      json: !!values.json,
-      llm: !!values.llm,
-    };
+    return parseDetailCommand(values, positionals[1]);
   }
 
   process.stderr.write(`Unknown command '${command}'.\n\n${HELP_TEXT}`);
