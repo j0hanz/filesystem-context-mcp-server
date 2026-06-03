@@ -5,6 +5,7 @@ import { describe, it, mock } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { PathGuard } from '../../src/core/path.js';
+import { McpRootsSynchronizer } from '../../src/core/registrar.js';
 
 function createFakeServer(): {
   server: McpServer;
@@ -41,9 +42,10 @@ function createFakeServer(): {
   };
 }
 
-describe('PathGuard Roots Management', () => {
+describe('McpRootsSynchronizer', () => {
   it('coalesces repeated roots change notifications into one update', async () => {
-    const manager = new PathGuard({}, { minimumLevel: 'debug' });
+    const pathGuard = new PathGuard({}, { minimumLevel: 'debug' });
+    const manager = new McpRootsSynchronizer(pathGuard, { minimumLevel: 'debug' });
     const fakeServer = createFakeServer();
     let updateCalls = 0;
 
@@ -79,10 +81,12 @@ describe('PathGuard Roots Management', () => {
 
     await delay(150);
     assert.equal(updateCalls, 2);
+    manager.destroy();
   });
 
   it('cancels pending debounced updates on destroy', async () => {
-    const manager = new PathGuard({}, { minimumLevel: 'debug' });
+    const pathGuard = new PathGuard({}, { minimumLevel: 'debug' });
+    const manager = new McpRootsSynchronizer(pathGuard, { minimumLevel: 'debug' });
     const fakeServer = createFakeServer();
     let updateCalls = 0;
 
@@ -106,7 +110,8 @@ describe('PathGuard Roots Management', () => {
   });
 
   it('clears init timer when initialized notification is received', async () => {
-    const manager = new PathGuard({}, { minimumLevel: 'debug' });
+    const pathGuard = new PathGuard({}, { minimumLevel: 'debug' });
+    const manager = new McpRootsSynchronizer(pathGuard, { minimumLevel: 'debug' });
     const fakeServer = createFakeServer();
 
     (manager as unknown as { updateRootsFromClient: () => Promise<void> }).updateRootsFromClient =
@@ -132,7 +137,8 @@ describe('PathGuard Roots Management', () => {
   });
 
   it('clears init timer on destroy before initialized', () => {
-    const manager = new PathGuard({}, { minimumLevel: 'debug' });
+    const pathGuard = new PathGuard({}, { minimumLevel: 'debug' });
+    const manager = new McpRootsSynchronizer(pathGuard, { minimumLevel: 'debug' });
     const fakeServer = createFakeServer();
 
     (manager as unknown as { updateRootsFromClient: () => Promise<void> }).updateRootsFromClient =
@@ -157,7 +163,8 @@ describe('PathGuard Roots Management', () => {
   it('invokes onInitTimeout callback when client never initializes', () => {
     mock.timers.enable({ apis: ['setTimeout'] });
     try {
-      const manager = new PathGuard({}, { minimumLevel: 'debug' });
+      const pathGuard = new PathGuard({}, { minimumLevel: 'debug' });
+      const manager = new McpRootsSynchronizer(pathGuard, { minimumLevel: 'debug' });
       const fakeServer = createFakeServer();
       let callbackInvoked = false;
 
@@ -181,7 +188,8 @@ describe('PathGuard Roots Management', () => {
   });
 
   it('does not invoke onInitTimeout when initialized arrives first', async () => {
-    const manager = new PathGuard({}, { minimumLevel: 'debug' });
+    const pathGuard = new PathGuard({}, { minimumLevel: 'debug' });
+    const manager = new McpRootsSynchronizer(pathGuard, { minimumLevel: 'debug' });
     const fakeServer = createFakeServer();
     let callbackInvoked = false;
 

@@ -11,7 +11,7 @@ import { readFile } from 'node:fs/promises';
 import { GuardedFileSystem } from './core/fs.js';
 import { createLoggingState, Logger, LogRouter } from './core/observability.js';
 import { PathGuard, type ServerOptions } from './core/path.js';
-import type { Registrar, ServerDeps } from './core/registrar.js';
+import { McpRootsSynchronizer, type Registrar, type ServerDeps } from './core/registrar.js';
 import { createInMemoryResourceStore, type ResourceStore } from './core/store.js';
 import { LOG_LEVEL } from './core/util.js';
 import { pkgInfo } from './pkg-info.js';
@@ -36,6 +36,7 @@ const {
 export class FilesystemServerContext {
   public readonly mcp: McpServer;
   public readonly pathGuard: PathGuard;
+  public readonly synchronizer: McpRootsSynchronizer;
   public readonly fs: GuardedFileSystem;
   public readonly resources: ResourceStore;
   public readonly resourcesHandle: { destroy(): void };
@@ -46,6 +47,7 @@ export class FilesystemServerContext {
   constructor(
     mcp: McpServer,
     pathGuard: PathGuard,
+    synchronizer: McpRootsSynchronizer,
     resources: ResourceStore,
     resourcesHandle: { destroy(): void },
     orchestrator: TaskOrchestrator,
@@ -53,6 +55,7 @@ export class FilesystemServerContext {
   ) {
     this.mcp = mcp;
     this.pathGuard = pathGuard;
+    this.synchronizer = synchronizer;
     this.fs = new GuardedFileSystem(pathGuard);
     this.resources = resources;
     this.resourcesHandle = resourcesHandle;
@@ -63,6 +66,7 @@ export class FilesystemServerContext {
   disposeRuntimeState(): void {
     if (this.cleanedUp) return;
     this.cleanedUp = true;
+    this.synchronizer.destroy();
     this.orchestrator.dispose();
     this.orchestrator.cleanup();
     for (const r of this.registrars) r.dispose();
@@ -152,6 +156,7 @@ export async function createServer(
   const loggingState = createLoggingState(LOG_LEVEL);
   const pathGuard = new PathGuard(options, loggingState);
   await pathGuard.recomputeAllowedDirectories();
+  const synchronizer = new McpRootsSynchronizer(pathGuard, loggingState);
 
   server.server.setRequestHandler('logging/setLevel', (req: { params: SetLevelRequestParams }) => {
     loggingState.minimumLevel = req.params.level;
@@ -162,7 +167,7 @@ export async function createServer(
   // Track stdio server by default; HTTP overrides per-session via the registry.
   logRouter.attachStdio({ server, loggingState });
 
-  const isInitialized = options.isInitialized ?? (() => pathGuard.isInitialized());
+  const isInitialized = options.isInitialized ?? (() => synchronizer.isInitialized());
   const deps: ServerDeps = {
     server,
     pathGuard,
@@ -184,6 +189,7 @@ export async function createServer(
   return new FilesystemServerContext(
     server,
     pathGuard,
+    synchronizer,
     resourceStore,
     resourcesHandle,
     taskOrchestrator,

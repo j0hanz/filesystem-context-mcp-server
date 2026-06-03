@@ -1,5 +1,3 @@
-import type { McpServer, Root } from '@modelcontextprotocol/server';
-
 import { channel } from 'node:diagnostics_channel';
 import type { Stats } from 'node:fs';
 import { readdir, realpath, stat } from 'node:fs/promises';
@@ -15,41 +13,21 @@ import {
   resolve,
   sep,
 } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { z } from 'zod/v4';
 
-import {
-  assertNotAborted,
-  createTimedAbortSignal,
-  processInParallel,
-  withAbort,
-} from './concurrency.js';
-import {
-  ErrorCode,
-  formatUnknownErrorMessage,
-  FsError,
-  isAbortError,
-  isNodeError,
-} from './errors.js';
-import { Logger, type LoggingState, logToMcp } from './observability.js';
-import {
-  debounce,
-  getInitHandshakeTimeoutMs,
-  PARALLEL_CONCURRENCY,
-  parseTrueEnvFlag,
-} from './util.js';
+import { assertNotAborted, createTimedAbortSignal, withAbort } from './concurrency.js';
+import { ErrorCode, FsError, isNodeError } from './errors.js';
+import type { LoggingState } from './observability.js';
+import { parseTrueEnvFlag } from './util.js';
 
 const ROOTS_TIMEOUT_MS = 5000;
-const ROOTS_DEBOUNCE_MS = 100;
-const LIFECYCLE_CHANNEL = channel('filesystem-mcp:lifecycle');
+export const LIFECYCLE_CHANNEL = channel('filesystem-mcp:lifecycle');
 
 export interface ServerOptions {
   allowCwd?: boolean;
   cliAllowedDirs?: string[];
 }
-
-type RootsManagerState = 'idle' | 'initializing' | 'updating' | 'shutting_down';
 
 function normalizeCLIDirectories(dirs: readonly string[]): string[] {
   const normalized: string[] = [];
@@ -59,16 +37,6 @@ function normalizeCLIDirectories(dirs: readonly string[]): string[] {
     normalized.push(normalizePath(trimmed));
   }
   return normalized;
-}
-
-async function resolveRootDirectories(roots: Root[]): Promise<string[]> {
-  if (roots.length === 0) return [];
-  const { signal, cleanup } = createTimedAbortSignal(undefined, ROOTS_TIMEOUT_MS);
-  try {
-    return await getValidRootDirectories(roots, signal);
-  } finally {
-    cleanup();
-  }
 }
 
 async function isRootWithinBaseline(
@@ -185,7 +153,7 @@ function normalizeCaseForComparison(value: string): string {
   return IS_WINDOWS ? value.toLowerCase() : value;
 }
 
-function isSamePath(left: string, right: string): boolean {
+export function isSamePath(left: string, right: string): boolean {
   if (left === right) return true;
   const leftResolved = normalizeCaseForComparison(resolve(left));
   const rightResolved = normalizeCaseForComparison(resolve(right));
@@ -516,12 +484,8 @@ export class PathGuard {
   private allowedDirectoriesState: AllowedDirectoriesState | undefined;
   private denyPatterns: CompiledPatternSet;
   private rootDirectories: string[] = [];
-  private state: RootsManagerState = 'initializing';
-  private _debouncedUpdate: { (server: McpServer): void; cancel: () => void } | undefined;
-  private initTimer: ReturnType<typeof setTimeout> | undefined;
-  private pendingRootsUpdate = false;
 
-  private readonly options: ServerOptions | undefined;
+  readonly options: ServerOptions | undefined;
   readonly loggingState: LoggingState | undefined;
 
   constructor(options?: ServerOptions, loggingState?: LoggingState) {
@@ -553,7 +517,15 @@ export class PathGuard {
       primary: [...dedupePreserveOrder(state.primary)],
       expanded: [...dedupePreserveOrder(normalized)],
     };
-    this.state = 'idle';
+  }
+
+  isInitialized(): boolean {
+    return this.allowedDirectoriesState !== undefined;
+  }
+
+  async setRoots(resolvedRoots: readonly string[]): Promise<void> {
+    this.rootDirectories = [...resolvedRoots];
+    await this.recomputeAllowedDirectories();
   }
 
   getAllowedDirectories(): string[] {
@@ -785,71 +757,6 @@ export class PathGuard {
     return normalizedRequested;
   }
 
-  isInitialized(): boolean {
-    return this.state === 'idle' || this.state === 'updating';
-  }
-
-  destroy(): void {
-    this.state = 'shutting_down';
-    if (this.initTimer) {
-      clearTimeout(this.initTimer);
-      this.initTimer = undefined;
-    }
-    if (this._debouncedUpdate) {
-      this._debouncedUpdate.cancel();
-      this._debouncedUpdate = undefined;
-    }
-  }
-
-  logMissingDirectoriesIfNeeded(server: McpServer): void {
-    if (this.getAllowedDirectories().length === 0 && this.loggingState) {
-      this.logMissingDirectories(server);
-    }
-  }
-
-  registerHandlers(server: McpServer, onInitTimeout?: () => void): void {
-    if (this.state === 'shutting_down') return;
-    this.state = 'initializing';
-    const initHandshakeTimeoutMs = getInitHandshakeTimeoutMs();
-
-    server.server.setNotificationHandler('notifications/initialized', async () => {
-      if (this.state === 'shutting_down') return;
-      if (this.initTimer) {
-        clearTimeout(this.initTimer);
-        this.initTimer = undefined;
-      }
-      this.state = 'idle';
-      await this.updateRootsFromClient(server);
-    });
-
-    server.server.setNotificationHandler('notifications/roots/list_changed', () => {
-      if (!this.isInitialized() || this.state === 'shutting_down') return;
-      this.scheduleRootsUpdate(server);
-    });
-
-    this.initTimer = setTimeout(() => {
-      if (this.state === 'initializing') {
-        if (LIFECYCLE_CHANNEL.hasSubscribers) {
-          LIFECYCLE_CHANNEL.publish({
-            phase: 'init_timeout',
-            timeoutMs: initHandshakeTimeoutMs,
-          });
-        }
-        if (this.loggingState) {
-          logToMcp(
-            server,
-            'warning',
-            `Client did not send notifications/initialized within ${String(initHandshakeTimeoutMs)}ms`,
-            this.loggingState.minimumLevel,
-          );
-        }
-        onInitTimeout?.();
-      }
-      this.initTimer = undefined;
-    }, initHandshakeTimeoutMs);
-    this.initTimer.unref();
-  }
-
   async recomputeAllowedDirectories(): Promise<void> {
     const cliAllowedDirs = normalizeCLIDirectories(this.options?.cliAllowedDirs ?? []);
     const allowCwd = Boolean(this.options?.allowCwd);
@@ -869,153 +776,6 @@ export class PathGuard {
       cleanup();
     }
   }
-
-  private scheduleRootsUpdate(server: McpServer): void {
-    this._debouncedUpdate ??= debounce((s: McpServer) => {
-      void this.updateRootsFromClient(s);
-    }, ROOTS_DEBOUNCE_MS);
-    this._debouncedUpdate(server);
-  }
-
-  private logMissingDirectories(server?: McpServer): void {
-    if (!this.loggingState) return;
-
-    if (this.options?.allowCwd) {
-      logToMcp(
-        server,
-        'notice',
-        'No allowed directories specified. Using the current working directory as an allowed directory.',
-        this.loggingState.minimumLevel,
-      );
-      return;
-    }
-
-    logToMcp(
-      server,
-      'warning',
-      'No allowed directories specified. Please provide directories as command-line arguments or enable --allow-cwd to use the current working directory.',
-      this.loggingState.minimumLevel,
-    );
-  }
-
-  private async updateRootsFromClient(server: McpServer): Promise<void> {
-    if (this.state === 'shutting_down') return;
-
-    if (this.state === 'updating') {
-      this.pendingRootsUpdate = true;
-      return;
-    }
-    this.state = 'updating';
-    try {
-      const clientCapabilities = server.server.getClientCapabilities();
-      if (!clientCapabilities?.roots) {
-        this.rootDirectories = [];
-      } else {
-        const rootsResult = await server.server.listRoots(undefined, {
-          timeout: ROOTS_TIMEOUT_MS,
-        });
-        const roots: Root[] = rootsResult.roots
-          .filter((r) => r.uri.startsWith('file://'))
-          .map((r) => (r.name ? { uri: r.uri, name: r.name } : { uri: r.uri }));
-        this.rootDirectories = await resolveRootDirectories(roots);
-      }
-    } catch (error) {
-      if (this.loggingState) {
-        const level =
-          error instanceof Error && error.message.includes('timeout') ? 'debug' : 'warning';
-        logToMcp(
-          server,
-          level,
-          `[${level.toUpperCase()}] MCP Roots protocol unavailable or failed: ${formatUnknownErrorMessage(error)}`,
-          this.loggingState.minimumLevel,
-        );
-      }
-    } finally {
-      const currentState = this.state as RootsManagerState;
-      if (currentState !== 'shutting_down') {
-        await this.recomputeAllowedDirectories();
-        Logger.info(
-          `Roots updated: ${this.rootDirectories.length} root(s), ${this.getAllowedDirectories().length} allowed dir(s)`,
-        );
-        this.state = 'idle';
-        if (this.pendingRootsUpdate) {
-          this.pendingRootsUpdate = false;
-          void this.updateRootsFromClient(server);
-        }
-      }
-    }
-  }
-}
-
-// ─── Root directory resolution (used by RootsManager) ───────────────────────
-
-function isFileRoot(root: Root): boolean {
-  return root.uri.startsWith('file://');
-}
-
-function rethrowIfAborted(error: unknown): void {
-  if (isAbortError(error)) throw error;
-}
-
-async function resolveRealPathIfExists(
-  normalizedPath: string,
-  signal?: AbortSignal,
-): Promise<string | null> {
-  try {
-    assertNotAborted(signal);
-    const realPath = await withAbort(realpath(normalizedPath), signal);
-    const normalizedReal = normalizePath(realPath);
-    return isSamePath(normalizedReal, normalizedPath) ? null : normalizedReal;
-  } catch (error) {
-    rethrowIfAborted(error);
-    return null;
-  }
-}
-
-async function resolveRootDirectory(root: Root, signal?: AbortSignal): Promise<string | null> {
-  try {
-    const dirPath = fileURLToPath(root.uri);
-    const normalizedPath = normalizePath(dirPath);
-    assertNotAborted(signal);
-    const stats = await withAbort(stat(normalizedPath), signal);
-    if (!stats.isDirectory()) return null;
-    return normalizedPath;
-  } catch (error) {
-    rethrowIfAborted(error);
-    return null;
-  }
-}
-
-async function getValidRootDirectories(roots: Root[], signal?: AbortSignal): Promise<string[]> {
-  const fileRoots = roots.filter(isFileRoot);
-  if (fileRoots.length === 0) return [];
-
-  const { results: resolvedResults } = await processInParallel(
-    fileRoots,
-    (root) => resolveRootDirectory(root, signal),
-    PARALLEL_CONCURRENCY,
-    signal,
-  );
-  const validPaths = resolvedResults.filter((p): p is string => p !== null);
-  if (validPaths.length === 0) return [];
-
-  const { results: realExpansions } = await processInParallel(
-    validPaths,
-    (normalizedPath) => resolveRealPathIfExists(normalizedPath, signal),
-    PARALLEL_CONCURRENCY,
-    signal,
-  );
-
-  const validDirs: string[] = [];
-  for (let i = 0; i < validPaths.length; i++) {
-    const validPath = validPaths[i];
-    if (validPath !== undefined) {
-      validDirs.push(validPath);
-    }
-    const expanded = realExpansions[i];
-    if (expanded) validDirs.push(expanded);
-  }
-  return validDirs;
 }
 
 // path-guard is in this file, no import needed
