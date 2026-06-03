@@ -306,7 +306,16 @@ describe('security: symlink escape for destructive ops', () => {
       name: 'create',
       arguments: { files: [{ path: linkPath, content: 'hacked' }] },
     });
-    assertToolError(raw, 'ACCESS_DENIED');
+    assertOk(raw);
+    const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
+    assert.ok(
+      Array.isArray(sc?.['failures']) && sc['failures'].length > 0,
+      'create must report ACCESS_DENIED in failures[]',
+    );
+    assert.equal(
+      (sc?.['failures'] as { error: { code: string } }[])[0]?.error?.code,
+      'ACCESS_DENIED',
+    );
   });
 
   it('edit: rejects editing through symlink to outside', async () => {
@@ -319,7 +328,11 @@ describe('security: symlink escape for destructive ops', () => {
         edits: [{ oldText: 'outside-content', newText: 'hacked' }],
       },
     });
-    assertToolError(raw, 'ACCESS_DENIED');
+    assertOk(raw);
+    const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
+    const results = sc?.['results'] as { error?: { code?: string } }[] | undefined;
+    assert.ok(Array.isArray(results) && results.length > 0, 'edit must return results[]');
+    assert.equal(results[0]?.error?.code, 'ACCESS_DENIED');
   });
 
   it('move: rejects moving symlink target outside allowed root', async () => {
@@ -331,7 +344,16 @@ describe('security: symlink escape for destructive ops', () => {
         moves: [{ source: linkPath, destination: join(env.tmpDir, 'moved.txt') }],
       },
     });
-    assertToolError(raw, 'ACCESS_DENIED');
+    assertOk(raw);
+    const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
+    assert.ok(
+      Array.isArray(sc?.['failures']) && sc['failures'].length > 0,
+      'move must report ACCESS_DENIED in failures[]',
+    );
+    assert.equal(
+      (sc?.['failures'] as { error: { code: string } }[])[0]?.error?.code,
+      'ACCESS_DENIED',
+    );
   });
 
   it('delete: rejects deleting through symlink to directory outside', async () => {

@@ -1,6 +1,6 @@
 import { channel } from 'node:diagnostics_channel';
 import type { Stats } from 'node:fs';
-import { readdir, realpath, stat } from 'node:fs/promises';
+import { lstat, readdir, readlink, realpath, stat } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
 import {
   basename,
@@ -604,6 +604,29 @@ export class PathGuard {
       realPath = await realpath(normalizedRequested);
     } catch (error) {
       if (isNodeError(error) && error.code === 'ENOENT') {
+        try {
+          const linkStats = await lstat(normalizedRequested);
+          if (linkStats.isSymbolicLink()) {
+            const target = await readlink(normalizedRequested);
+            const resolvedTarget = isAbsolute(target)
+              ? target
+              : resolve(dirname(normalizedRequested), target);
+            const normalizedTarget = normalizePath(resolvedTarget);
+            if (!isPathWithinDirectories(normalizedTarget, allowedDirs)) {
+              throw new FsError(
+                ErrorCode.ACCESS_DENIED,
+                `Outside allowed directories. ${accessDeniedHint}`,
+                requestedPath,
+                { resolvedPath: resolvedTarget, normalizedResolvedPath: normalizedTarget },
+              );
+            }
+          }
+        } catch (lstatErr) {
+          if (lstatErr instanceof FsError && lstatErr.code === ErrorCode.ACCESS_DENIED) {
+            throw lstatErr;
+          }
+        }
+
         throw new FsError(
           ErrorCode.NOT_FOUND,
           'Path not found',
