@@ -617,7 +617,6 @@ export class PathGuard {
                 ErrorCode.ACCESS_DENIED,
                 `Outside allowed directories. ${accessDeniedHint}`,
                 requestedPath,
-                { resolvedPath: resolvedTarget, normalizedResolvedPath: normalizedTarget },
               );
             }
           }
@@ -653,7 +652,6 @@ export class PathGuard {
         ErrorCode.ACCESS_DENIED,
         `Outside allowed directories. ${accessDeniedHint}`,
         requestedPath,
-        { resolvedPath: realPath, normalizedResolvedPath: normalizedReal },
       );
     }
 
@@ -774,7 +772,6 @@ export class PathGuard {
         ErrorCode.ACCESS_DENIED,
         `Outside allowed directories. ${accessDeniedHint}`,
         requestedPath,
-        { resolvedPath: realPath, normalizedResolvedPath: normalizedReal },
       );
     }
     return normalizedRequested;
