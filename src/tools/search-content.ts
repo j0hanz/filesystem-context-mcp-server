@@ -485,7 +485,20 @@ async function scanFileResolved(
   if (fsOps) {
     handle = await withAbort(fsOps.open(resolvedPath, 'r'), signal);
   } else {
-    const { open } = await import('node:fs/promises');
+    // Worker thread: no GuardedFileSystem available, so PathGuard's symlink
+    // re-validation does not run here. Re-check that the path is not a symlink
+    // before opening to close the swap-to-symlink TOCTOU window left open by the
+    // raw open(). (A narrow lstat→open race remains, but the symlink escape vector
+    // that enumeration already filters cannot be reintroduced silently.)
+    const { lstat, open } = await import('node:fs/promises');
+    const linkStats = await withAbort(lstat(resolvedPath), signal);
+    if (linkStats.isSymbolicLink()) {
+      throw new FsError(
+        ErrorCode.ACCESS_DENIED,
+        'Symlinked path blocked during worker scan',
+        resolvedPath,
+      );
+    }
     handle = await withAbort(open(resolvedPath, 'r'), signal);
   }
   await using _handleDisposer = handle;
@@ -925,7 +938,7 @@ async function executeSequential(
     }
 
     try {
-      pathGuard.assertAllowedFileAccess(file.requestedPath);
+      pathGuard.assertNotSensitiveFile(file.requestedPath);
       const remaining = Math.max(0, opts.maxResults - matches.length);
       const result = await scanFileResolved(
         file.resolvedPath,

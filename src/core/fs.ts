@@ -1,6 +1,6 @@
 import { isUtf8 } from 'node:buffer';
 import { type BinaryToTextEncoding, createHash, randomUUID } from 'node:crypto';
-import { createReadStream, type ReadStream, type Stats } from 'node:fs';
+import { createReadStream, constants as fsConstants, type ReadStream, type Stats } from 'node:fs';
 import {
   type FileHandle,
   cp as fsCp,
@@ -217,21 +217,18 @@ export async function isProbablyBinary(
 
 // ─── File hashing ────────────────────────────────────────────────────────────
 
-export async function calculateFileContentHash(
-  filePath: string,
-  signal?: AbortSignal,
-): Promise<string>;
-export async function calculateFileContentHash(
+async function calculateFileContentHash(filePath: string, signal?: AbortSignal): Promise<string>;
+async function calculateFileContentHash(
   filePath: string,
   signal: AbortSignal | undefined,
   encoding: BinaryToTextEncoding,
 ): Promise<string>;
-export async function calculateFileContentHash(
+async function calculateFileContentHash(
   filePath: string,
   signal: AbortSignal | undefined,
   encoding: null,
 ): Promise<Buffer>;
-export async function calculateFileContentHash(
+async function calculateFileContentHash(
   filePath: string,
   signal?: AbortSignal,
   encoding: BinaryToTextEncoding | null = 'hex',
@@ -2034,10 +2031,13 @@ export class GuardedFileSystem {
     flags: string | number,
     mode?: string | number,
   ): Promise<FileHandle> {
-    const isWrite = flags !== 'r';
-    const validPath = isWrite
-      ? await this.pathGuard.validatePathForWrite(filePath)
-      : await this.pathGuard.validateExistingPath(filePath);
+    // Only a plain read-only open ('r' / O_RDONLY) uses the existing-path guard.
+    // Every other flag (write, append, read-write, sync, numeric) is treated as
+    // write-capable and routed through the stricter write guard.
+    const isReadOnly = flags === 'r' || flags === fsConstants.O_RDONLY;
+    const validPath = isReadOnly
+      ? await this.pathGuard.validateExistingPath(filePath)
+      : await this.pathGuard.validatePathForWrite(filePath);
     return fsOpen(validPath, flags, mode);
   }
 

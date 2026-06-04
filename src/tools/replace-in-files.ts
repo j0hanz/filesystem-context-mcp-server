@@ -401,7 +401,16 @@ async function processEntriesConcurrently(
       stoppedByLimit = true;
       break;
     }
+    // Check the match cap before waiting for a slot so an in-flight task that
+    // already crossed the cap stops dispatch without an extra wait...
+    if (shouldStop?.()) {
+      stoppedByMatchCap = true;
+      break;
+    }
     await waitForSlot();
+    // ...and again after the slot frees, since tasks settle concurrently. The
+    // cap can still be exceeded by at most `concurrency - 1` already-dispatched
+    // tasks that are mid-flight; that overrun is inherent to concurrent dispatch.
     if (shouldStop?.()) {
       stoppedByMatchCap = true;
       break;
@@ -409,10 +418,13 @@ async function processEntriesConcurrently(
     onEntry();
     dispatched++;
 
-    const task = runEntry(entry.path);
-    pending.add(task);
-    void task.finally(() => {
-      pending.delete(task);
+    // Track a non-rejecting wrapper so a rejected task can never propagate out of
+    // Promise.race(pending) in waitForSlot() and abort the loop before the final
+    // drain below (which would silently abandon other in-flight tasks).
+    const tracked = runEntry(entry.path).catch(() => undefined);
+    pending.add(tracked);
+    void tracked.finally(() => {
+      pending.delete(tracked);
     });
   }
 

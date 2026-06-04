@@ -1,17 +1,18 @@
 import { createHash } from 'node:crypto';
 import { basename, relative, win32 } from 'node:path';
+import { pipeline } from 'node:stream/promises';
 
 import { z } from 'zod/v4';
 
 import { assertNotAborted } from '../core/concurrency.js';
 import { ErrorCode, FsError, Problem } from '../core/errors.js';
 import {
-  calculateFileContentHash,
   globEntries,
   type GuardedFileSystem,
   isIgnoredByGitignore,
   loadRootGitignore,
 } from '../core/fs.js';
+import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../core/util.js';
 import { NonNegInt, RequiredPath } from '../schema.js';
@@ -133,6 +134,8 @@ function updateCompositeHash(
 
 async function hashDirectory(
   dirPath: string,
+  fsOps: GuardedFileSystem,
+  pathGuard: PathGuard,
   options: {
     signal?: AbortSignal;
     onProgress?: (progress: { total?: number; current: number }) => void;
@@ -160,6 +163,12 @@ async function hashDirectory(
     if (gitignoreMatcher && isIgnoredByGitignore(gitignoreMatcher, dirPath, entry.path)) {
       continue;
     }
+    // Skip sensitive files so their content never enters the composite digest.
+    // Skipping (rather than aborting) keeps directories that legitimately
+    // contain a denylisted file (e.g. `.env`) hashable and deterministic.
+    if (pathGuard.isSensitive(entry.path)) {
+      continue;
+    }
     filteredPaths.push({
       filePath: entry.path,
       relativePath: toStableRelativePath(dirPath, entry.path),
@@ -180,7 +189,15 @@ async function hashDirectory(
       if (!task) break;
 
       assertNotAborted(signal);
-      const fileHash = await calculateFileContentHash(task.filePath, signal, null);
+      // Read through the guarded filesystem so each file is re-validated
+      // (sensitive denylist + realpath/root containment) before hashing.
+      const stream = await fsOps.createReadStream(task.filePath, {
+        signal,
+        highWaterMark: 64 * 1024,
+      });
+      const hasher = createHash('sha256');
+      await pipeline(stream, hasher, { signal });
+      const fileHash = hasher.digest();
       entries.push({ path: task.relativePath, hash: fileHash });
 
       filesHashed++;
@@ -213,6 +230,7 @@ async function hashDirectory(
 async function handleCalculateHash(
   args: z.infer<typeof HashInputSchema>,
   fsOps: GuardedFileSystem,
+  pathGuard: PathGuard,
   resourceStore: ResourceStore | undefined,
   signal?: AbortSignal,
   onProgress?: (progress: { total?: number; current: number }) => void,
@@ -226,9 +244,19 @@ async function handleCalculateHash(
   let fileCount: number | undefined;
 
   if (stats.isDirectory()) {
-    // For directories, we compute SHA-256 of directory contents
-    // and add it to the hashes map
-    const { hash, fileCount: count } = await hashDirectory(validPath, {
+    // Directory hashing produces a single SHA-256 composite of the tree.
+    // Other algorithms are not supported for directories; reject rather than
+    // silently returning a SHA-256 digest mislabeled as the requested algorithm.
+    const unsupported = algorithms.filter((algo) => algo !== 'sha256');
+    if (unsupported.length > 0) {
+      throw new FsError(
+        Problem.invalidInput(
+          `Directory hashing only supports sha256 (requested: ${unsupported.join(', ')}). ` +
+            'Hash individual files to use other algorithms.',
+        ),
+      );
+    }
+    const { hash, fileCount: count } = await hashDirectory(validPath, fsOps, pathGuard, {
       ...(signal ? { signal } : {}),
       ...(onProgress ? { onProgress } : {}),
     });
@@ -284,7 +312,8 @@ async function handleCalculateHash(
     structured: {
       ok: true as const,
       filePath: validPath,
-      algorithms: [...algorithms],
+      // Include all requested algorithms in output for clarity, even though directories only support sha256.
+      algorithms: Object.keys(hashes) as (typeof SUPPORTED_ALGORITHMS)[number][],
       hashes,
       resourceUri: entry.uri,
       isDirectory: stats.isDirectory(),
@@ -325,7 +354,14 @@ export const CALCULATE_HASH = defineTool({
           ctx.onProgress?.({ current, ...(total !== undefined ? { total } : {}) });
         }
       : undefined;
-    return handleCalculateHash(args, ctx.fs, ctx.resourceStore, ctx.signal, onProgress);
+    return handleCalculateHash(
+      args,
+      ctx.fs,
+      ctx.pathGuard,
+      ctx.resourceStore,
+      ctx.signal,
+      onProgress,
+    );
   },
 });
 export { HashOutputSchema, HashesSchema };

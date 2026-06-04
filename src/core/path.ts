@@ -718,7 +718,9 @@ export class PathGuard {
     return false;
   }
 
-  assertAllowedFileAccess(requestedPath: string): void {
+  // Checks ONLY the sensitive-file denylist. Root containment and symlink
+  // resolution must be verified separately (e.g. via validateExistingPath).
+  assertNotSensitiveFile(requestedPath: string): void {
     if (this.isSensitive(requestedPath)) {
       throw new FsError(
         ErrorCode.ACCESS_DENIED,

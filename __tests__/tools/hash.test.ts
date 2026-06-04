@@ -2,7 +2,7 @@
  * Integration tests for calculate_hash and diff_files tools.
  */
 import assert from 'node:assert/strict';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
@@ -146,6 +146,41 @@ describe('calculate_hash tool', () => {
     assert.equal(typeof sc['fileCount'], 'number');
     assert.equal(sc['algorithms'][0], 'sha256');
     assert.equal(typeof sc['hashes']['sha256'], 'string');
+  });
+
+  it('rejects a non-sha256 algorithm requested for a directory', async () => {
+    // Directory hashing is sha256-only; requesting another algorithm must error
+    // rather than silently returning a SHA-256 digest mislabeled as the request.
+    const raw = await env.client.callTool({
+      name: 'hash_file',
+      arguments: { path: env.tmpDir, algorithms: ['sha512'] },
+    });
+    assertToolError(raw, 'INVALID_INPUT');
+  });
+
+  it('excludes sensitive files from directory hashing', async () => {
+    const dir = join(env.tmpDir, 'sensitive-dir');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'data.txt'), 'public content\n', 'utf8');
+
+    const before = getStructured(
+      await env.client.callTool({ name: 'hash_file', arguments: { path: dir } }),
+    );
+
+    // `server.key` matches the default `*.key` denylist and is NOT hidden, so
+    // without the sensitive-file skip it would be folded into the composite hash.
+    await writeFile(join(dir, 'server.key'), 'PRIVATE KEY MATERIAL\n', 'utf8');
+
+    const after = getStructured(
+      await env.client.callTool({ name: 'hash_file', arguments: { path: dir } }),
+    );
+
+    assert.equal(after['fileCount'], before['fileCount'], 'sensitive file must not be counted');
+    assert.equal(
+      (after['hashes'] as Record<string, string>)['sha256'],
+      (before['hashes'] as Record<string, string>)['sha256'],
+      'sensitive file content must not affect the directory hash',
+    );
   });
 
   it('returns NOT_FOUND for a missing path', async () => {

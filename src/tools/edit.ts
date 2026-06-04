@@ -494,6 +494,9 @@ async function handleEditFile(
     );
   }
 
+  // `modified` is read from a post-write stat and is advisory: under a concurrent
+  // writer it may reflect that writer's mtime while `size`/content below come from
+  // this edit's atomic write. The file content itself is always consistent.
   const { stats: fileStats } = await stat(filePath, pathGuard, signal ? { signal } : undefined);
   const meta = buildEditFileMetadata(
     editResult.content,
