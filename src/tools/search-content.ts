@@ -1,5 +1,4 @@
 import { AsyncResource } from 'node:async_hooks';
-import { type FileHandle, open } from 'node:fs/promises';
 import { dirname, relative } from 'node:path';
 import { debuglog } from 'node:util';
 import { parentPort, threadId, Worker, workerData } from 'node:worker_threads';
@@ -13,12 +12,15 @@ import {
   formatUnknownErrorMessage,
   FsError,
   isTimeoutLikeError,
+  Problem,
 } from '../core/errors.js';
 import {
   buildGlobOptions,
   DEFAULT_EXCLUDE_PATTERNS,
+  type FileHandle,
   globEntries,
   type GlobEntry,
+  type GuardedFileSystem,
   isProbablyBinary,
   stat,
 } from '../core/fs.js';
@@ -476,9 +478,17 @@ async function scanFileResolved(
   signal?: AbortSignal,
   maxMatches: number = Number.POSITIVE_INFINITY,
   injectedBinaryDetector?: BinaryDetector,
+  fsOps?: GuardedFileSystem,
 ): Promise<ScanFileResult> {
   assertNotAborted(signal);
-  await using handle = await withAbort(open(resolvedPath, 'r'), signal);
+  let handle: FileHandle;
+  if (fsOps) {
+    handle = await withAbort(fsOps.open(resolvedPath, 'r'), signal);
+  } else {
+    const { open } = await import('node:fs/promises');
+    handle = await withAbort(open(resolvedPath, 'r'), signal);
+  }
+  await using _handleDisposer = handle;
   const stats = await withAbort(handle.stat(), signal);
 
   if (stats.size > options.maxFileSize) {
@@ -898,6 +908,7 @@ async function executeSequential(
   signal: AbortSignal,
   summary: ScanSummary,
   pathGuard: PathGuard,
+  fsOps?: GuardedFileSystem,
 ): Promise<ContentMatch[]> {
   const matches: ContentMatch[] = [];
   const matcher = buildMatcher(pattern, buildMatcherOptions(opts));
@@ -923,6 +934,8 @@ async function executeSequential(
         scanOpts,
         signal,
         remaining,
+        undefined,
+        fsOps,
       );
       applyScanOutcome(summary, result);
       matches.push(...result.matches);
@@ -1092,6 +1105,7 @@ async function searchSingleFile(
   opts: ResolvedOptions,
   pattern: string,
   signal: AbortSignal,
+  fsOps?: GuardedFileSystem,
 ): Promise<SearchContentResult> {
   const summary = createScanSummary();
   summary.filesScanned = 1;
@@ -1103,6 +1117,8 @@ async function searchSingleFile(
     buildScanFileOptions(opts),
     signal,
     opts.maxResults,
+    undefined,
+    fsOps,
   );
   if (result.matched) summary.filesMatched = 1;
   return buildSearchContentResult(
@@ -1134,6 +1150,7 @@ async function searchDirectory(
   pathGuard: PathGuard,
   onProgress?: (progress: { total?: number; current: number }) => void,
   maxDepth?: number,
+  fsOps?: GuardedFileSystem,
 ): Promise<SearchContentResult> {
   const root = await pathGuard.validateExistingDirectory(details.resolvedPath);
   const rootDirectories = [root];
@@ -1167,8 +1184,9 @@ async function searchDirectory(
       summary.filesScanned++;
       if (opts.fuzzy === true && summary.filesScanned > MAX_FUZZY_FILES) {
         throw new FsError(
-          ErrorCode.INVALID_INPUT,
-          `Fuzzy search is limited to ${MAX_FUZZY_FILES} files. Narrow your path or disable fuzzy mode.`,
+          Problem.invalidInput(
+            `Fuzzy search is limited to ${MAX_FUZZY_FILES} files. Narrow your path or disable fuzzy mode.`,
+          ),
         );
       }
 
@@ -1191,7 +1209,7 @@ async function searchDirectory(
 
   const matches = shouldUseWorkers()
     ? await executeParallel(fileGenerator(), pattern, opts, signal, summary)
-    : await executeSequential(fileGenerator(), pattern, opts, signal, summary, pathGuard);
+    : await executeSequential(fileGenerator(), pattern, opts, signal, summary, pathGuard, fsOps);
 
   return buildSearchContentResult(root, pattern, opts.filePattern, matches, summary);
 }
@@ -1211,6 +1229,7 @@ async function searchContent(
   pattern: string,
   options: SearchContentOptions = {},
   pathGuard?: PathGuard,
+  fsOps?: GuardedFileSystem,
 ): Promise<SearchContentResult> {
   if (!pathGuard) {
     throw new Error('pathGuard is required in searchContent');
@@ -1238,11 +1257,13 @@ async function searchContent(
       const { stats: fileStats } = await stat(basePath, pathGuard, { signal });
 
       if (fileStats.isFile()) {
-        return searchSingleFile(details, opts, pattern, signal);
+        return searchSingleFile(details, opts, pattern, signal, fsOps);
       }
 
       if (!fileStats.isDirectory()) {
-        throw new FsError(ErrorCode.INVALID_INPUT, 'Path must be file or directory', basePath);
+        throw new FsError(
+          Problem.invalidInput('Path must be file or directory', { path: basePath }),
+        );
       }
 
       return searchDirectory(
@@ -1253,6 +1274,7 @@ async function searchContent(
         pathGuard,
         options.onProgress,
         options.maxDepth,
+        fsOps,
       );
     });
   } catch (error: unknown) {
@@ -1540,17 +1562,18 @@ async function executeSearch(
   pathGuard: PathGuard,
   signal?: AbortSignal,
   onProgress?: (progress: { total?: number; current: number }) => void,
+  fsOps?: GuardedFileSystem,
 ): Promise<SearchResultValue> {
   const options = buildSearchContentOptions(args, signal, onProgress);
 
   try {
-    return await searchContent(basePath, args.searchPattern, options, pathGuard);
+    return await searchContent(basePath, args.searchPattern, options, pathGuard, fsOps);
   } catch (error) {
     if (error instanceof Error && /regular expression/i.test(error.message)) {
-      throw new FsError(
-        ErrorCode.INVALID_PATTERN,
-        `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`,
-      );
+      throw new FsError({
+        code: ErrorCode.INVALID_PATTERN,
+        message: `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`,
+      });
     }
     throw error;
   }
@@ -1562,10 +1585,10 @@ function createSearchMatcher(args: SearchInput): RE2 | undefined {
     const flags = args.caseSensitive ? '' : 'i';
     return new RE2(args.searchPattern, flags);
   } catch (error) {
-    throw new FsError(
-      ErrorCode.INVALID_PATTERN,
-      `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`,
-    );
+    throw new FsError({
+      code: ErrorCode.INVALID_PATTERN,
+      message: `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`,
+    });
   }
 }
 
@@ -1647,6 +1670,7 @@ function finalizeSearchOutput(
 
 async function handleSearchContent(
   args: SearchInput,
+  fsOps: GuardedFileSystem,
   pathGuard: PathGuard,
   signal?: AbortSignal,
   resourceStore?: ResourceStore,
@@ -1670,6 +1694,7 @@ async function handleSearchContent(
     pathGuard,
     signal,
     onProgress,
+    fsOps,
   );
 
   const { matchPayloads, nextCursor } = getPagedPayloads(result, args, regexMatcher, cursorOffset);
@@ -1740,6 +1765,7 @@ export const SEARCH_CONTENT = defineTool({
     };
     const { structured, link, matchCount, fileCount } = await handleSearchContent(
       args,
+      ctx.fs,
       ctx.pathGuard,
       ctx.signal,
       ctx.resourceStore,

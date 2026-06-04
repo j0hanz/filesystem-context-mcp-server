@@ -1,7 +1,6 @@
 import type { ContentBlock } from '@modelcontextprotocol/server';
 
 import { Buffer } from 'node:buffer';
-import { open } from 'node:fs/promises';
 import { basename, dirname, join, relative } from 'node:path';
 
 import { createTwoFilesPatch } from 'diff';
@@ -15,6 +14,7 @@ import {
   DEFAULT_EXCLUDE_PATTERNS,
   detectMimeType,
   globEntries,
+  type GuardedFileSystem,
   MIME_SAMPLE_SIZE,
   readFileBufferWithLimit,
   stat,
@@ -152,10 +152,10 @@ function createRegexMatcher(pattern: string, caseSensitive: boolean): RE2 {
   try {
     return new RE2(pattern, flags);
   } catch (error) {
-    throw new FsError(
-      ErrorCode.INVALID_PATTERN,
-      `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`,
-    );
+    throw new FsError({
+      code: ErrorCode.INVALID_PATTERN,
+      message: `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`,
+    });
   }
 }
 
@@ -222,6 +222,7 @@ interface ReplaceContext {
   signal: AbortSignal | undefined;
   summary: ReplaceSummary;
   pathGuard: PathGuard;
+  fs: GuardedFileSystem;
 }
 
 interface ReplacementPlan {
@@ -290,12 +291,13 @@ async function readReplacementPlan(
   ctx: ReplaceContext,
 ): Promise<ReplacementPlan | undefined> {
   const { matcher, replacement, maxFileSize, signal } = ctx;
-  await using fileHandle = await open(validPath, 'r');
+  await using fileHandle = await ctx.fs.open(validPath, 'r');
   const stats = await fileHandle.stat();
   if (stats.size > maxFileSize) {
     throw new FsError(
-      ErrorCode.TOO_LARGE,
-      `File too large: ${validPath} (${String(stats.size)} bytes > ${String(maxFileSize)} bytes)`,
+      Problem.tooLarge(
+        `File too large: ${validPath} (${String(stats.size)} bytes > ${String(maxFileSize)} bytes)`,
+      ),
     );
   }
 
@@ -486,6 +488,7 @@ function createReplacementMatcher(args: SearchAndReplaceArgs): ReplacementMatche
 
 async function handleSearchAndReplace(
   args: SearchAndReplaceArgs,
+  fsOps: GuardedFileSystem,
   pathGuard: PathGuard,
   signal?: AbortSignal,
   onProgress: (progress: { total?: number; current: number }) => void = () => undefined,
@@ -528,6 +531,7 @@ async function handleSearchAndReplace(
     signal,
     summary,
     pathGuard,
+    fs: fsOps,
   };
 
   const { stoppedByLimit, stoppedByMatchCap } = await processEntriesConcurrently(entries, {
@@ -570,7 +574,7 @@ async function handleSearchAndReplace(
 
     try {
       const content = await (async (): Promise<string> => {
-        const fd = await open(fullPath, 'r');
+        const fd = await fsOps.open(fullPath, 'r');
         try {
           const buffer = await readFileBufferWithLimit(fd, maxFileSize, fullPath, signal);
           return buffer.toString('utf-8');
@@ -656,6 +660,7 @@ export const SEARCH_AND_REPLACE = defineTool({
     };
     const { structured, link } = await handleSearchAndReplace(
       args,
+      ctx.fs,
       ctx.pathGuard,
       ctx.signal,
       onProgress,

@@ -2,7 +2,7 @@
  * Security tests: path traversal, boundary enforcement, symlink escape.
  */
 import assert from 'node:assert/strict';
-import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
@@ -356,7 +356,7 @@ describe('security: symlink escape for destructive ops', () => {
     );
   });
 
-  it('delete: rejects deleting through symlink to directory outside', async () => {
+  it('delete: allows deleting symlink pointing to directory outside', async () => {
     const linkPath = await createSymlink('rm-escape-dir', outsideDir);
     if (!linkPath) return;
     const raw = await env.client.callTool({
@@ -366,12 +366,26 @@ describe('security: symlink escape for destructive ops', () => {
     assertOk(raw);
     const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
     assert.ok(
-      Array.isArray(sc?.['failures']) && sc['failures'].length > 0,
-      'delete must report ACCESS_DENIED in failures[]',
+      !sc?.['failures'] || sc['failures'].length === 0,
+      'delete should not report failures',
     );
-    assert.equal(
-      (sc?.['failures'] as { error: { code: string } }[])[0]?.error?.code,
-      'ACCESS_DENIED',
-    );
+
+    // Verify the symlink itself was deleted
+    let linkExists = true;
+    try {
+      await lstat(linkPath);
+    } catch {
+      linkExists = false;
+    }
+    assert.equal(linkExists, false, 'Symlink itself should be deleted');
+
+    // Verify the outside target folder and its contents are NOT deleted
+    let targetExists = true;
+    try {
+      await stat(join(outsideDir, 'target.txt'));
+    } catch {
+      targetExists = false;
+    }
+    assert.equal(targetExists, true, 'Symlink target contents should still exist');
   });
 });

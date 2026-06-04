@@ -8,11 +8,10 @@ import { ErrorCode, FsError, Problem } from '../core/errors.js';
 import {
   calculateFileContentHash,
   globEntries,
+  type GuardedFileSystem,
   isIgnoredByGitignore,
   loadRootGitignore,
-  stat,
 } from '../core/fs.js';
-import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../core/util.js';
 import { NonNegInt, RequiredPath } from '../schema.js';
@@ -77,11 +76,11 @@ function comparePaths(left: { path: string }, right: { path: string }): number {
 }
 
 async function calculateMultipleHashes(
+  fsOps: GuardedFileSystem,
   filePath: string,
   algorithms: readonly (typeof SUPPORTED_ALGORITHMS)[number][],
   signal?: AbortSignal,
 ): Promise<Record<string, string>> {
-  const { createReadStream } = await import('node:fs');
   const { PassThrough } = await import('node:stream');
   const { pipeline: streamPipeline } = await import('node:stream/promises');
 
@@ -99,7 +98,7 @@ async function calculateMultipleHashes(
     streamPipeline(splitter, hasher, { signal }),
   );
 
-  const readStream = createReadStream(filePath, {
+  const readStream = await fsOps.createReadStream(filePath, {
     signal,
     highWaterMark: 64 * 1024,
   });
@@ -213,7 +212,7 @@ async function hashDirectory(
 
 async function handleCalculateHash(
   args: z.infer<typeof HashInputSchema>,
-  pathGuard: PathGuard,
+  fsOps: GuardedFileSystem,
   resourceStore: ResourceStore | undefined,
   signal?: AbortSignal,
   onProgress?: (progress: { total?: number; current: number }) => void,
@@ -221,7 +220,7 @@ async function handleCalculateHash(
   const { algorithms } = args;
 
   // Check if path is a directory or file
-  const { stats, validPath } = await stat(args.path, pathGuard, signal ? { signal } : undefined);
+  const { stats, validPath } = await fsOps.stat(args.path, signal ? { signal } : undefined);
 
   let hashes: Record<string, string>;
   let fileCount: number | undefined;
@@ -237,7 +236,7 @@ async function handleCalculateHash(
     fileCount = count;
   } else {
     // For files, calculate requested algorithms
-    hashes = await calculateMultipleHashes(validPath, algorithms, signal);
+    hashes = await calculateMultipleHashes(fsOps, validPath, algorithms, signal);
     onProgress?.({ current: 1 });
   }
 
@@ -326,7 +325,7 @@ export const CALCULATE_HASH = defineTool({
           ctx.onProgress?.({ current, ...(total !== undefined ? { total } : {}) });
         }
       : undefined;
-    return handleCalculateHash(args, ctx.pathGuard, ctx.resourceStore, ctx.signal, onProgress);
+    return handleCalculateHash(args, ctx.fs, ctx.resourceStore, ctx.signal, onProgress);
   },
 });
 export { HashOutputSchema, HashesSchema };

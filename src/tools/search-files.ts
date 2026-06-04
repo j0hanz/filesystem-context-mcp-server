@@ -1,4 +1,3 @@
-import type { Stats } from 'node:fs';
 import { basename, relative } from 'node:path';
 
 import { z } from 'zod/v4';
@@ -20,6 +19,7 @@ import {
   resolveEntryType,
   resolveStopReason,
   stableSortByDerivedString,
+  type Stats,
   withOptionalStoppedReason,
 } from '../core/fs.js';
 import { isPathWithinDirectories, normalizePath } from '../core/path.js';

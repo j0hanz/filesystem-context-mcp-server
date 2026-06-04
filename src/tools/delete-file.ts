@@ -10,7 +10,7 @@ import { basename } from 'node:path';
 import { z } from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
-import { ErrorCode, FsError, isNodeError, Problem } from '../core/errors.js';
+import { ErrorCode, isNodeError, Problem } from '../core/errors.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
@@ -151,7 +151,7 @@ async function deleteSinglePath(
 ): Promise<{ item: DeletedItem } | { failure: DeleteFailure }> {
   let validPath: string;
   try {
-    validPath = await ctx.pathGuard.validatePathForWrite(inputPath);
+    validPath = await ctx.pathGuard.validatePathForDelete(inputPath);
   } catch (error) {
     return { failure: toDeleteFailure(inputPath, error) };
   }
@@ -160,14 +160,9 @@ async function deleteSinglePath(
     return {
       failure: {
         path: validPath,
-        error: Problem.fromUnknown(
-          new FsError(
-            ErrorCode.ACCESS_DENIED,
-            'Deleting a workspace root directory is not allowed',
-          ),
-          ErrorCode.ACCESS_DENIED,
-          validPath,
-        ),
+        error: Problem.accessDenied('Deleting a workspace root directory is not allowed', {
+          path: validPath,
+        }),
       },
     };
   }
@@ -189,17 +184,37 @@ async function deleteSinglePath(
     return {
       failure: {
         path: validPath,
-        error: Problem.fromUnknown(
-          new FsError(ErrorCode.CANCELLED, 'Delete cancelled by user'),
-          ErrorCode.CANCELLED,
-          validPath,
+        error: Problem.cancelled('Delete cancelled by user', { path: validPath }),
+      },
+    };
+  }
+
+  // TOCTOU check: re-stat the path immediately before deletion
+  let currentStats: Awaited<ReturnType<GuardedFileSystem['lstat']>>;
+  try {
+    currentStats = await ctx.fs.lstat(validPath);
+  } catch (error) {
+    if (isNodeError(error) && error.code === 'ENOENT' && args.ignoreIfNotExists) {
+      return { item: { path: validPath } };
+    }
+    return { failure: toDeleteFailure(inputPath, error) };
+  }
+
+  const currentItemType = resolveItemType(currentStats);
+  if (itemType !== 'other' && currentItemType !== itemType) {
+    return {
+      failure: {
+        path: validPath,
+        error: Problem.invalidInput(
+          `Delete failed: item type changed from ${itemType} to ${currentItemType} during confirmation.`,
+          { path: validPath },
         ),
       },
     };
   }
 
   try {
-    await performDeletion(validPath, args, itemStats.stats.isDirectory(), ctx.fs);
+    await performDeletion(validPath, args, currentStats.stats.isDirectory(), ctx.fs);
   } catch (error) {
     return { failure: toDeleteFailure(inputPath, error) };
   }

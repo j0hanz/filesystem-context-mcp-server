@@ -7,7 +7,7 @@ import RE2 from 're2';
 import { z } from 'zod/v4';
 
 import { runWorkerOr } from '../core/concurrency.js';
-import { ErrorCode, FsError } from '../core/errors.js';
+import { ErrorCode, FsError, Problem } from '../core/errors.js';
 import {
   atomicWriteFile,
   detectMimeType,
@@ -380,10 +380,13 @@ async function loadEditableFile(
 
   if (stats.size > MAX_TEXT_FILE_SIZE) {
     throw new FsError(
-      ErrorCode.TOO_LARGE,
-      `File too large for edit (${stats.size} bytes > ${MAX_TEXT_FILE_SIZE} bytes)`,
-      requestedPath,
-      { size: stats.size, maxFileSize: MAX_TEXT_FILE_SIZE },
+      Problem.tooLarge(
+        `File too large for edit (${stats.size} bytes > ${MAX_TEXT_FILE_SIZE} bytes)`,
+        {
+          path: requestedPath,
+          details: { extra: { size: stats.size, maxFileSize: MAX_TEXT_FILE_SIZE } },
+        },
+      ),
     );
   }
 
@@ -472,9 +475,10 @@ async function handleEditFile(
 
   if (editResult.appliedEdits === 0 && editResult.unmatchedEdits.length > 0) {
     throw new FsError(
-      ErrorCode.INVALID_INPUT,
-      `All ${editResult.unmatchedEdits.length} edits failed. Verify oldText matches exact file content.`,
-      filePath,
+      Problem.invalidInput(
+        `All ${editResult.unmatchedEdits.length} edits failed. Verify oldText matches exact file content.`,
+        { path: filePath },
+      ),
     );
   }
 

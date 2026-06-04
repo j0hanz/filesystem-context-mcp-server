@@ -46,8 +46,8 @@ async function tryElicitOverwriteConfirmation(
   destination: string,
   validDest: string,
   ctx: Pick<ToolCtx, 'fs' | 'elicitInput'>,
-): Promise<void> {
-  if (!ctx.elicitInput) return;
+): Promise<boolean> {
+  if (!ctx.elicitInput) return false;
 
   let destExists = false;
   try {
@@ -57,7 +57,7 @@ async function tryElicitOverwriteConfirmation(
     // Destination does not exist - no confirmation needed.
   }
 
-  if (!destExists) return;
+  if (!destExists) return false;
 
   try {
     const confirmOverwriteField: PrimitiveSchemaDefinition = {
@@ -77,19 +77,24 @@ async function tryElicitOverwriteConfirmation(
     if (elicitResult.action !== 'accept' || elicitResult.content?.['confirmOverwrite'] !== true) {
       // User declined - surface as a cancellation error.
       throw new FsError(
-        ErrorCode.CANCELLED,
-        `Move cancelled: "${destination}" already exists and overwrite was declined.`,
+        Problem.cancelled(
+          `Move cancelled: "${destination}" already exists and overwrite was declined.`,
+          { path: destination },
+        ),
       );
     }
+    return true;
   } catch (err) {
     if (err instanceof FsError) throw err;
     if (err instanceof SdkError && err.code === SdkErrorCode.CapabilityNotSupported) {
       // Client doesn't support elicitation - proceed without asking.
+      return false;
     } else {
       // Transport or unexpected failure - fail closed, don't move.
       throw new FsError(
-        ErrorCode.CANCELLED,
-        `Move cancelled: could not confirm overwrite of "${destination}".`,
+        Problem.cancelled(`Move cancelled: could not confirm overwrite of "${destination}".`, {
+          path: destination,
+        }),
       );
     }
   }
@@ -121,7 +126,7 @@ async function validateMoveSource(
     return validSource;
   } catch (error) {
     if (error instanceof FsError) throw error;
-    throw new FsError(ErrorCode.ACCESS_DENIED, `Move failed for ${source}`, source);
+    throw new FsError(Problem.accessDenied(`Move failed for ${source}`, { path: source }));
   }
 }
 
@@ -139,7 +144,9 @@ async function performRenameWithFallback(
     }
 
     if (!isNodeError(error) || error.code !== 'EXDEV') {
-      throw new FsError(ErrorCode.UNKNOWN, `Move failed for ${originalSource}`, originalSource);
+      throw new FsError(
+        Problem.unknown(`Move failed for ${originalSource}`, { path: originalSource }),
+      );
     }
 
     try {
@@ -150,9 +157,7 @@ async function performRenameWithFallback(
         throw copyOrRemoveError;
       }
       throw new FsError(
-        ErrorCode.UNKNOWN,
-        `Cross-device move failed for ${originalSource}`,
-        originalSource,
+        Problem.unknown(`Cross-device move failed for ${originalSource}`, { path: originalSource }),
       );
     }
   }
@@ -212,14 +217,41 @@ export const MOVE = defineTool({
 
         if (normalizedDest.startsWith(normalizedSource)) {
           throw new FsError(
-            ErrorCode.INVALID_INPUT,
-            'Cannot move a directory into its own subdirectory',
-            move.source,
+            Problem.invalidInput('Cannot move a directory into its own subdirectory', {
+              path: move.source,
+            }),
           );
+        }
+
+        let destExistedOriginally = false;
+        try {
+          await ctx.fs.stat(validDest);
+          destExistedOriginally = true;
+        } catch {
+          // Doesn't exist
         }
 
         await withAbort(ctx.fs.mkdir(dirname(validDest), { recursive: true }), ctx.signal);
         await tryElicitOverwriteConfirmation(move.destination, validDest, ctx);
+
+        // TOCTOU check immediately before actual renaming/moving
+        let existsNow = false;
+        try {
+          await ctx.fs.stat(validDest);
+          existsNow = true;
+        } catch {
+          // Doesn't exist
+        }
+
+        if (existsNow && !destExistedOriginally) {
+          throw new FsError(
+            Problem.cancelled(
+              `Move cancelled: destination "${move.destination}" was created during confirmation.`,
+              { path: move.destination },
+            ),
+          );
+        }
+
         await performRenameWithFallback(validSource, validDest, ctx.fs, move.source);
 
         results.push({ ok: true as const, from: validSource, to: validDest });

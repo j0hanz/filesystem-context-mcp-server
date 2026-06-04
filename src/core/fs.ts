@@ -1,6 +1,6 @@
 import { isUtf8 } from 'node:buffer';
 import { type BinaryToTextEncoding, createHash, randomUUID } from 'node:crypto';
-import { createReadStream, type Stats } from 'node:fs';
+import { createReadStream, type ReadStream, type Stats } from 'node:fs';
 import {
   type FileHandle,
   cp as fsCp,
@@ -35,6 +35,8 @@ import { BINARY_CHECK_BUFFER_SIZE, KNOWN_BINARY_EXTENSIONS, MAX_TEXT_FILE_SIZE }
 
 // Re-export FileType from schema for external consumers
 export type { FileType };
+export type { Stats, ReadStream } from 'node:fs';
+export type { FileHandle } from 'node:fs/promises';
 
 const READ_ONLY_FILE_FLAG = 'r';
 const STREAM_CHUNK_SIZE = 64 * 1024;
@@ -73,7 +75,7 @@ async function lstat(
   pathGuard: PathGuard,
   options?: { signal?: AbortSignal },
 ): Promise<{ stats: Stats; validPath: string }> {
-  const validPath = await pathGuard.validateExistingPath(filePath);
+  const validPath = await pathGuard.validatePathForDelete(filePath);
   const stats = await withAbort(fsLstat(validPath), options?.signal);
   return { stats, validPath };
 }
@@ -104,7 +106,7 @@ async function rm(
   pathGuard: PathGuard,
   options?: Parameters<typeof fsRm>[1],
 ): Promise<{ validPath: string }> {
-  const validPath = await pathGuard.validatePathForWrite(filePath);
+  const validPath = await pathGuard.validatePathForDelete(filePath);
   await fsRm(validPath, options);
   return { validPath };
 }
@@ -114,7 +116,7 @@ async function rmdir(
   pathGuard: PathGuard,
   options?: Parameters<typeof fsRmdir>[1],
 ): Promise<{ validPath: string }> {
-  const validPath = await pathGuard.validatePathForWrite(filePath);
+  const validPath = await pathGuard.validatePathForDelete(filePath);
   await fsRmdir(validPath, options);
   return { validPath };
 }
@@ -2025,5 +2027,25 @@ export class GuardedFileSystem {
 
   async readFile(filePath: string, spec: ReadSpec) {
     return readFile(filePath, spec, this.pathGuard);
+  }
+
+  async open(
+    filePath: string,
+    flags: string | number,
+    mode?: string | number,
+  ): Promise<FileHandle> {
+    const isWrite = flags !== 'r';
+    const validPath = isWrite
+      ? await this.pathGuard.validatePathForWrite(filePath)
+      : await this.pathGuard.validateExistingPath(filePath);
+    return fsOpen(validPath, flags, mode);
+  }
+
+  async createReadStream(
+    filePath: string,
+    options?: Parameters<typeof createReadStream>[1],
+  ): Promise<ReadStream> {
+    const validPath = await this.pathGuard.validateExistingPath(filePath);
+    return createReadStream(validPath, options);
   }
 }

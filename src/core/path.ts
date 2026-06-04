@@ -777,6 +777,43 @@ export class PathGuard {
     return normalizedRequested;
   }
 
+  async validatePathForDelete(requestedPath: string): Promise<string> {
+    const { normalizedRequested, allowedDirs, accessDeniedHint } =
+      this.validateAccess(requestedPath);
+
+    if (this.isSensitive(requestedPath) || this.isSensitive(normalizedRequested)) {
+      throw new FsError(
+        ErrorCode.ACCESS_DENIED,
+        'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
+        requestedPath,
+      );
+    }
+
+    const parent = dirname(normalizedRequested);
+    let realParent: string;
+    try {
+      realParent = await realpath(parent);
+    } catch (error) {
+      throw new FsError(
+        ErrorCode.NOT_FOUND,
+        'Parent directory not found',
+        requestedPath,
+        { originalError: error instanceof Error ? error.message : String(error) },
+        error instanceof Error ? error : undefined,
+      );
+    }
+    const normalizedRealParent = normalizePath(realParent);
+
+    if (!isPathWithinDirectories(normalizedRealParent, allowedDirs)) {
+      throw new FsError(
+        ErrorCode.ACCESS_DENIED,
+        `Outside allowed directories. ${accessDeniedHint}`,
+        requestedPath,
+      );
+    }
+    return normalizedRequested;
+  }
+
   async recomputeAllowedDirectories(): Promise<void> {
     const cliAllowedDirs = normalizeCLIDirectories(this.options?.cliAllowedDirs ?? []);
     const allowCwd = Boolean(this.options?.allowCwd);

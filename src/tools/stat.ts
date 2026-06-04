@@ -1,6 +1,5 @@
 import type { ContentBlock } from '@modelcontextprotocol/server';
 
-import type { Stats } from 'node:fs';
 import { parse } from 'node:path';
 
 import { z } from 'zod/v4';
@@ -14,6 +13,7 @@ import {
   getFileType,
   isHidden,
   readlink,
+  type Stats,
 } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../core/util.js';
