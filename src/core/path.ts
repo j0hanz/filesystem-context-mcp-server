@@ -602,6 +602,70 @@ export class PathGuard {
     return { normalizedRequested, allowedDirs, accessDeniedHint };
   }
 
+  private async validateSymlinkAccess(
+    normalizedRequested: string,
+    allowedDirs: string[],
+    accessDeniedHint: string,
+    requestedPath: string,
+  ): Promise<void> {
+    try {
+      const linkStats = await lstat(normalizedRequested);
+      if (linkStats.isSymbolicLink()) {
+        const target = await readlink(normalizedRequested);
+        const resolvedTarget = isAbsolute(target)
+          ? target
+          : resolve(dirname(normalizedRequested), target);
+        const normalizedTarget = normalizePath(resolvedTarget);
+        if (!isPathWithinDirectories(normalizedTarget, allowedDirs)) {
+          throw new FsError(
+            ErrorCode.ACCESS_DENIED,
+            `Outside allowed directories. ${accessDeniedHint}`,
+            requestedPath,
+          );
+        }
+      }
+    } catch (lstatErr) {
+      if (lstatErr instanceof FsError && lstatErr.code === ErrorCode.ACCESS_DENIED) {
+        throw lstatErr;
+      }
+    }
+  }
+
+  private async handleRealpathError(
+    error: unknown,
+    normalizedRequested: string,
+    allowedDirs: string[],
+    accessDeniedHint: string,
+    requestedPath: string,
+  ): Promise<never> {
+    if (isNodeError(error) && error.code === 'ENOENT') {
+      await this.validateSymlinkAccess(
+        normalizedRequested,
+        allowedDirs,
+        accessDeniedHint,
+        requestedPath,
+      );
+
+      throw new FsError(
+        ErrorCode.NOT_FOUND,
+        'Path not found',
+        requestedPath,
+        { originalError: error.message },
+        error,
+      );
+    }
+
+    throw new FsError(
+      ErrorCode.UNKNOWN,
+      'Cannot access path',
+      requestedPath,
+      {
+        originalError: error instanceof Error ? error.message : String(error),
+      },
+      error instanceof Error ? error : undefined,
+    );
+  }
+
   async validateExistingPathDetailed(requestedPath: string): Promise<ValidatedPathDetails> {
     const { normalizedRequested, allowedDirs, accessDeniedHint } =
       this.validateAccess(requestedPath);
@@ -618,45 +682,12 @@ export class PathGuard {
     try {
       realPath = await realpath(normalizedRequested);
     } catch (error) {
-      if (isNodeError(error) && error.code === 'ENOENT') {
-        try {
-          const linkStats = await lstat(normalizedRequested);
-          if (linkStats.isSymbolicLink()) {
-            const target = await readlink(normalizedRequested);
-            const resolvedTarget = isAbsolute(target)
-              ? target
-              : resolve(dirname(normalizedRequested), target);
-            const normalizedTarget = normalizePath(resolvedTarget);
-            if (!isPathWithinDirectories(normalizedTarget, allowedDirs)) {
-              throw new FsError(
-                ErrorCode.ACCESS_DENIED,
-                `Outside allowed directories. ${accessDeniedHint}`,
-                requestedPath,
-              );
-            }
-          }
-        } catch (lstatErr) {
-          if (lstatErr instanceof FsError && lstatErr.code === ErrorCode.ACCESS_DENIED) {
-            throw lstatErr;
-          }
-        }
-
-        throw new FsError(
-          ErrorCode.NOT_FOUND,
-          'Path not found',
-          requestedPath,
-          { originalError: error.message },
-          error,
-        );
-      }
-      throw new FsError(
-        ErrorCode.UNKNOWN,
-        'Cannot access path',
+      realPath = await this.handleRealpathError(
+        error,
+        normalizedRequested,
+        allowedDirs,
+        accessDeniedHint,
         requestedPath,
-        {
-          originalError: error instanceof Error ? error.message : String(error),
-        },
-        error instanceof Error ? error : undefined,
       );
     }
 
