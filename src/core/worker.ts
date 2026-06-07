@@ -79,8 +79,16 @@ export interface ApplyPatchResult {
  * Maps task name → { payload type, result type }.
  * This is an empty interface by default so that domains can augment it.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface WorkerTaskRegistry {}
+export interface WorkerTaskRegistry {
+  diff: { payload: DiffPayload; result: StructuredPatch };
+  formatPatch: { payload: FormatPatchPayload; result: string };
+  applyPatch: { payload: ApplyPatchPayload; result: ApplyPatchResult };
+  createPatch: { payload: CreatePatchPayload; result: string };
+  computeDiffStats: {
+    payload: ComputeDiffStatsPayload;
+    result: { linesAdded: number; linesRemoved: number };
+  };
+}
 
 export type WorkerTaskName = keyof WorkerTaskRegistry;
 
@@ -187,18 +195,6 @@ function runHandler(name: string, payload: unknown): unknown {
 }
 
 // Register diff tasks
-declare module './worker.js' {
-  export interface WorkerTaskRegistry {
-    diff: { payload: DiffPayload; result: StructuredPatch };
-    formatPatch: { payload: FormatPatchPayload; result: string };
-    applyPatch: { payload: ApplyPatchPayload; result: ApplyPatchResult };
-    createPatch: { payload: CreatePatchPayload; result: string };
-    computeDiffStats: {
-      payload: ComputeDiffStatsPayload;
-      result: { linesAdded: number; linesRemoved: number };
-    };
-  }
-}
 
 registerWorkerTask('diff', (p: DiffPayload) =>
   structuredPatch(p.oldHeader, p.newHeader, p.oldStr, p.newStr, '', '', {

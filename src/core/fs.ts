@@ -1519,6 +1519,64 @@ function createExcludeFilter(
   };
 }
 
+async function* processGlobPattern(
+  pattern: string,
+  plan: NormalizedGlob,
+  context: ProcessContext,
+  excludeFunc: ((match: GlobMatch) => boolean) | readonly string[],
+  forceFileTypes: boolean,
+): AsyncGenerator<GlobEntry> {
+  const { cwd, suppressErrors } = plan;
+  let iterable: AsyncIterable<GlobMatch>;
+  try {
+    iterable = fsGlob(pattern, {
+      cwd,
+      exclude: excludeFunc,
+      withFileTypes: forceFileTypes,
+    }) as AsyncIterable<GlobMatch>;
+  } catch (error) {
+    if (suppressErrors) return;
+    throw error;
+  }
+
+  if (plan.useDirents) {
+    try {
+      for await (const match of iterable) {
+        yield* processDirentMatch(
+          match as GlobDirentLike,
+          context.cwd,
+          context.maxDepth,
+          context.seen,
+          context.onlyFiles,
+        );
+      }
+    } catch (error) {
+      if (!suppressErrors) throw error;
+    }
+  } else {
+    const queue = new AsyncGlobBatchQueue(context);
+    try {
+      for await (const match of iterable) {
+        let strMatch: string;
+        if (typeof match === 'string') {
+          strMatch = match;
+        } else {
+          strMatch = match.parentPath
+            ? relative(cwd, join(match.parentPath, match.name))
+            : match.name;
+        }
+        queue.add(strMatch);
+        if (queue.isFull()) {
+          yield* queue.flush();
+        }
+      }
+      yield* queue.flush();
+    } catch (error) {
+      if (!suppressErrors) throw error;
+    }
+  }
+}
+
 async function* nativeGlobEntries(
   options: GlobEntriesOptions,
   gitignoreMatcher?: Ignore | null,
@@ -1529,7 +1587,7 @@ async function* nativeGlobEntries(
   const { cwd, maxDepth, suppressErrors } = plan;
   const { onlyFiles, stats: returnStats, followSymbolicLinks: followSymlinks } = options;
 
-  const context = {
+  const context: ProcessContext = {
     cwd,
     maxDepth,
     seen,
@@ -1543,54 +1601,7 @@ async function* nativeGlobEntries(
   const excludeFunc = createExcludeFilter(cwd, plan.exclude, gitignoreMatcher);
 
   for (const pattern of plan.patterns) {
-    let iterable: AsyncIterable<GlobMatch>;
-    try {
-      iterable = fsGlob(pattern, {
-        cwd,
-        exclude: excludeFunc,
-        withFileTypes: forceFileTypes,
-      }) as AsyncIterable<GlobMatch>;
-    } catch (error) {
-      if (suppressErrors) continue;
-      throw error;
-    }
-
-    if (plan.useDirents) {
-      try {
-        for await (const match of iterable) {
-          yield* processDirentMatch(
-            match as GlobDirentLike,
-            context.cwd,
-            context.maxDepth,
-            context.seen,
-            context.onlyFiles,
-          );
-        }
-      } catch (error) {
-        if (!suppressErrors) throw error;
-      }
-    } else {
-      const queue = new AsyncGlobBatchQueue(context);
-      try {
-        for await (const match of iterable) {
-          let strMatch: string;
-          if (typeof match === 'string') {
-            strMatch = match;
-          } else {
-            strMatch = match.parentPath
-              ? relative(cwd, join(match.parentPath, match.name))
-              : match.name;
-          }
-          queue.add(strMatch);
-          if (queue.isFull()) {
-            yield* queue.flush();
-          }
-        }
-        yield* queue.flush();
-      } catch (error) {
-        if (!suppressErrors) throw error;
-      }
-    }
+    yield* processGlobPattern(pattern, plan, context, excludeFunc, forceFileTypes);
   }
 }
 
