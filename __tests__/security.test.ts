@@ -389,3 +389,52 @@ describe('security: symlink escape for destructive ops', () => {
     assert.equal(targetExists, true, 'Symlink target contents should still exist');
   });
 });
+
+// ─── list: symlink target boundary enforcement ───────────────────────────────
+
+describe('security: list hides symlinks escaping the allowed root', () => {
+  let env: TestEnv;
+  let outsideDir: string;
+
+  before(async () => {
+    env = await createTestEnv();
+    outsideDir = join(dirname(env.tmpDir), `outside-list-${Date.now()}`);
+    await mkdir(outsideDir, { recursive: true });
+    await writeFile(join(outsideDir, 'secret.txt'), 'outside-content', 'utf8');
+  });
+
+  after(async () => {
+    await env.cleanup();
+    await rm(outsideDir, { recursive: true, force: true });
+  });
+
+  it('omits a symlink whose target points outside the allowed root', async () => {
+    // A regular in-bounds file must always be listed.
+    await writeFile(join(env.tmpDir, 'inside.txt'), 'ok', 'utf8');
+
+    const escapeLink = join(env.tmpDir, 'escape-link.txt');
+    let linked = true;
+    try {
+      await symlink(join(outsideDir, 'secret.txt'), escapeLink);
+    } catch {
+      linked = false; // symlink creation may require privileges on Windows
+    }
+
+    const raw = await env.client.callTool({
+      name: 'list',
+      arguments: { path: env.tmpDir, maxDepth: 1 },
+    });
+    assertOk(raw);
+    const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
+    const entries = (sc?.['entries'] ?? []) as { name: string }[];
+    const names = entries.map((e) => e.name);
+
+    assert.ok(names.includes('inside.txt'), 'in-bounds file must be listed');
+    if (linked) {
+      assert.ok(
+        !names.includes('escape-link.txt'),
+        'symlink whose target escapes the allowed root must be omitted from the listing',
+      );
+    }
+  });
+});

@@ -567,6 +567,21 @@ export class PathGuard {
         requestedPath,
       );
     }
+    if (isWindowsDriveRelativePath(requestedPath)) {
+      throw new FsError(
+        ErrorCode.INVALID_INPUT,
+        'Drive-relative paths are not allowed. Use C:\\path or C:/path instead of C:path.',
+        requestedPath,
+      );
+    }
+    const reservedDevice = getReservedDeviceNameForPath(requestedPath);
+    if (reservedDevice) {
+      throw new FsError(
+        ErrorCode.ACCESS_DENIED,
+        `Reserved Windows device name not allowed: ${reservedDevice}.`,
+        requestedPath,
+      );
+    }
 
     const normalizedRequested = normalizePath(requestedPath);
     const allowedDirs = this.allowedDirectoriesState.expanded;
@@ -729,15 +744,20 @@ export class PathGuard {
       );
     }
   }
-
-  private async findNearestExistingAncestor(
+  private async resolveNearestExistingAncestor(
     requestedPath: string,
     currentPath: string,
-  ): Promise<string> {
+  ): Promise<{ realAncestor: string; resolvedTarget: string }> {
+    const missingSegments: string[] = [];
     let current = currentPath;
     for (;;) {
       try {
-        return await realpath(current);
+        const realAncestor = normalizePath(await realpath(current));
+        const resolvedTarget =
+          missingSegments.length === 0
+            ? realAncestor
+            : normalizePath(join(realAncestor, ...missingSegments.reverse()));
+        return { realAncestor, resolvedTarget };
       } catch (error) {
         const parent = dirname(current);
         if (parent === current) {
@@ -749,6 +769,7 @@ export class PathGuard {
             error instanceof Error ? error : undefined,
           );
         }
+        missingSegments.push(basename(current));
         current = parent;
       }
     }
@@ -766,17 +787,21 @@ export class PathGuard {
       );
     }
 
-    const realPath = await this.findNearestExistingAncestor(requestedPath, normalizedRequested);
-    const normalizedReal = normalizePath(realPath);
-
-    if (!isPathWithinDirectories(normalizedReal, allowedDirs)) {
+    const { realAncestor, resolvedTarget } = await this.resolveNearestExistingAncestor(
+      requestedPath,
+      normalizedRequested,
+    );
+    if (
+      !isPathWithinDirectories(realAncestor, allowedDirs) ||
+      !isPathWithinDirectories(resolvedTarget, allowedDirs)
+    ) {
       throw new FsError(
         ErrorCode.ACCESS_DENIED,
         `Outside allowed directories. ${accessDeniedHint}`,
         requestedPath,
       );
     }
-    return normalizedRequested;
+    return resolvedTarget;
   }
 
   async validatePathForDelete(requestedPath: string): Promise<string> {

@@ -6,12 +6,15 @@ import { withTimedAbortSignal } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
+  type EntryAccessDependencies,
   type EntryType,
   globEntries,
+  isEntryAccessibleByType,
   isIgnoredByGitignore,
   loadRootGitignore,
+  resolveEntryType,
 } from '../core/fs.js';
-import { toPosixPath } from '../core/path.js';
+import { isPathWithinDirectories, normalizePath, toPosixPath } from '../core/path.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import {
@@ -45,6 +48,7 @@ interface CollectOptions {
   includeHidden: boolean;
   includeIgnored: boolean;
   signal: AbortSignal;
+  pathGuard: PathGuard;
   onProgress?: (progress: { current: number; total?: number }) => void;
   progressOffset?: number;
   mode: 'inline' | 'full';
@@ -84,6 +88,13 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
   const gitignoreMatcher = options.includeIgnored
     ? null
     : await loadRootGitignore(rootPath, options.signal);
+
+  const accessDeps: EntryAccessDependencies = {
+    normalizePath,
+    isPathWithinDirectories,
+    isSensitivePath: (p: string) => options.pathGuard.isSensitive(p),
+    validateSymlinkPath: (p: string) => options.pathGuard.validateExistingPathDetailed(p),
+  };
 
   const entries: CollectedEntry[] = [];
   let scanned = 0;
@@ -125,8 +136,8 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
     scanned++;
     options.onProgress?.({ current: progressOffset + scanned });
 
-    const isDir = entry.dirent.isDirectory();
-    const entryType: EntryType = isDir ? 'directory' : 'file';
+    const entryType: EntryType = resolveEntryType(entry.dirent);
+    const isDir = entryType === 'directory';
     const relPath = relative(rootPath, entry.path);
     const name = basename(relPath);
 
@@ -137,6 +148,16 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
       })
     ) {
       continue;
+    }
+    if (entryType === 'symlink') {
+      const accessible = await isEntryAccessibleByType(
+        entry.path,
+        entryType,
+        [rootPath],
+        options.signal,
+        accessDeps,
+      );
+      if (!accessible) continue;
     }
 
     totalEntries++;
@@ -274,6 +295,7 @@ async function handleList(
       includeHidden: args.includeHidden,
       includeIgnored: args.includeIgnored,
       signal: timedSignal,
+      pathGuard,
       ...(onProgress ? { onProgress } : {}),
       mode: 'inline',
     });
@@ -289,6 +311,7 @@ async function handleList(
         includeHidden: args.includeHidden,
         includeIgnored: args.includeIgnored,
         signal: timedSignal,
+        pathGuard,
         ...(onProgress ? { onProgress } : {}),
         progressOffset: result.scannedEntries,
         mode: 'full',
