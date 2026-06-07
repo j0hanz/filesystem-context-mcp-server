@@ -1,9 +1,3 @@
-import type {
-  LoggingLevel,
-  LoggingMessageNotificationParams,
-  McpServer,
-} from '@modelcontextprotocol/server';
-
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { hash as hashFunc } from 'node:crypto';
 import { channel, tracingChannel } from 'node:diagnostics_channel';
@@ -12,6 +6,20 @@ import { inspect } from 'node:util';
 
 import { ansiLine, type Phase, type ProgressCtx } from './fmt.js';
 import { isRecord, parseTrueEnvFlag } from './primitives.js';
+
+export type LoggingLevel =
+  | 'debug'
+  | 'info'
+  | 'notice'
+  | 'warning'
+  | 'error'
+  | 'critical'
+  | 'alert'
+  | 'emergency';
+
+export interface LogSender {
+  send(level: LoggingLevel, message: string): Promise<void>;
+}
 
 // Aliases for observability subsystem
 const AsyncLocalStorageImport = AsyncLocalStorage;
@@ -36,7 +44,6 @@ interface LogEvent {
 }
 
 const LOG_CHANNEL = channel('filesystem-mcp:log');
-const MCP_LOGGER_NAME = 'filesystem-mcp';
 
 const LOG_LEVEL_ORDER: Record<LoggingLevel, number> = {
   debug: 0,
@@ -179,14 +186,8 @@ export function logRuntimeFailure(
   });
 }
 
-function canSendMcpLogs(server: McpServer): boolean {
-  const capabilities = server.server.getClientCapabilities();
-  if (!capabilities || typeof capabilities !== 'object') return false;
-  return 'logging' in capabilities && Boolean(capabilities.logging);
-}
-
-export function logToMcp(
-  server: McpServer | undefined,
+export function logToSender(
+  sender: LogSender | undefined,
   level: LoggingLevel,
   data: string,
   minLevel: LoggingLevel = 'debug',
@@ -194,19 +195,13 @@ export function logToMcp(
   if (LOG_LEVEL_ORDER[level] < LOG_LEVEL_ORDER[minLevel]) {
     return;
   }
-  if (!server || !canSendMcpLogs(server)) {
+  if (!sender) {
     console.error(`[${level.toUpperCase()}] ${data}`);
     return;
   }
 
-  const params: LoggingMessageNotificationParams = {
-    level,
-    logger: MCP_LOGGER_NAME,
-    data,
-  };
-
-  void server.sendLoggingMessage(params).catch((error: unknown) => {
-    console.error(`Failed to send MCP log: ${level} | ${data}`, formatTransportError(error));
+  void sender.send(level, data).catch((error: unknown) => {
+    console.error(`Failed to send log: ${level} | ${data}`, formatTransportError(error));
   });
 }
 
@@ -266,7 +261,7 @@ export const Logger = {
  * once on first construction.
  */
 export interface LogTarget {
-  server: McpServer;
+  sender: LogSender;
   loggingState: LoggingState;
 }
 
@@ -326,8 +321,8 @@ export class LogRouter {
     const target = event.sessionId ? this.sessions.get(event.sessionId) : this.stdio;
     const dataStr = stringifyLogData(event.data);
     if (target) {
-      logToMcp(
-        target.server,
+      logToSender(
+        target.sender,
         event.level,
         `${event.message}${dataStr}`,
         target.loggingState.minimumLevel,

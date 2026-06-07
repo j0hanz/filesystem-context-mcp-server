@@ -11,7 +11,12 @@ import { readFile } from 'node:fs/promises';
 import { GuardedFileSystem } from './core/fs.js';
 import { createLoggingState, Logger, LogRouter } from './core/observability.js';
 import { PathGuard, type ServerOptions } from './core/path.js';
-import { McpRootsSynchronizer, type Registrar, type ServerDeps } from './core/registrar.js';
+import {
+  McpLogSender,
+  McpRootsSynchronizer,
+  type Registrar,
+  type ServerDeps,
+} from './core/registrar.js';
 import { createInMemoryResourceStore, type ResourceStore } from './core/store.js';
 import { LOG_LEVEL } from './core/util.js';
 import { pkgInfo } from './pkg-info.js';
@@ -165,7 +170,7 @@ export async function createServer(
   });
 
   // Track stdio server by default; HTTP overrides per-session via the registry.
-  logRouter.attachStdio({ server, loggingState });
+  logRouter.attachStdio({ sender: new McpLogSender(server), loggingState });
 
   const isInitialized = options.isInitialized ?? (() => synchronizer.isInitialized());
   const deps: ServerDeps = {

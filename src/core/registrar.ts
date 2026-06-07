@@ -12,7 +12,12 @@ import {
   withAbort,
 } from './concurrency.js';
 import { isAbortError } from './errors.js';
-import { type LoggingState, logToMcp } from './observability.js';
+import {
+  type LoggingLevel,
+  type LoggingState,
+  type LogSender,
+  logToSender,
+} from './observability.js';
 import { isSamePath, LIFECYCLE_CHANNEL, normalizePath } from './path.js';
 import type { PathGuard, ServerOptions } from './path.js';
 import type { ResourceStore } from './store.js';
@@ -114,16 +119,48 @@ async function resolveRootDirectories(roots: Root[]): Promise<string[]> {
   }
 }
 
+export class McpLogSender implements LogSender {
+  private readonly server: McpServer;
+
+  constructor(server: McpServer) {
+    this.server = server;
+  }
+
+  async send(level: LoggingLevel, message: string): Promise<void> {
+    const capabilities = this.server.server.getClientCapabilities();
+    const canSend =
+      capabilities &&
+      typeof capabilities === 'object' &&
+      'logging' in capabilities &&
+      Boolean(capabilities.logging);
+
+    if (!canSend) {
+      console.error(`[${level.toUpperCase()}] ${message}`);
+      return;
+    }
+
+    await this.server
+      .sendLoggingMessage({
+        level,
+        logger: 'filesystem-mcp',
+        data: message,
+      })
+      .catch((error: unknown) => {
+        console.error(`Failed to send MCP log: ${level} | ${message}`, error);
+      });
+  }
+}
+
 function logMissingDirectories(
-  server: McpServer | undefined,
+  sender: LogSender | undefined,
   options: ServerOptions | undefined,
   loggingState: LoggingState | undefined,
 ): void {
   if (!loggingState) return;
 
   if (options?.allowCwd) {
-    logToMcp(
-      server,
+    logToSender(
+      sender,
       'notice',
       'No allowed directories specified. Using the current working directory as an allowed directory.',
       loggingState.minimumLevel,
@@ -131,8 +168,8 @@ function logMissingDirectories(
     return;
   }
 
-  logToMcp(
-    server,
+  logToSender(
+    sender,
     'warning',
     'No allowed directories specified. Please provide directories as command-line arguments or enable --allow-cwd to use the current working directory.',
     loggingState.minimumLevel,
@@ -141,7 +178,7 @@ function logMissingDirectories(
 
 function logMissingDirectoriesIfNeeded(server: McpServer, pathGuard: PathGuard): void {
   if (pathGuard.getAllowedDirectories().length === 0 && pathGuard.loggingState) {
-    logMissingDirectories(server, pathGuard.options, pathGuard.loggingState);
+    logMissingDirectories(new McpLogSender(server), pathGuard.options, pathGuard.loggingState);
   }
 }
 
@@ -196,8 +233,8 @@ export class McpRootsSynchronizer {
           });
         }
         if (this.loggingState) {
-          logToMcp(
-            server,
+          logToSender(
+            new McpLogSender(server),
             'warning',
             `Client did not send notifications/initialized within ${String(initHandshakeTimeoutMs)}ms`,
             this.loggingState.minimumLevel,
@@ -242,8 +279,8 @@ export class McpRootsSynchronizer {
       if (this.loggingState) {
         const level =
           error instanceof Error && error.message.includes('timeout') ? 'debug' : 'warning';
-        logToMcp(
-          server,
+        logToSender(
+          new McpLogSender(server),
           level,
           `[${level.toUpperCase()}] MCP Roots protocol unavailable or failed: ${error instanceof Error ? error.message : String(error)}`,
           this.loggingState.minimumLevel,

@@ -1,10 +1,14 @@
-// __tests__/unit/log-router.test.ts
-import type { LoggingLevel, McpServer } from '@modelcontextprotocol/server';
-
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 
-import { Logger, LogRouter, type LogTarget, withSession } from '../../src/core/observability.js';
+import {
+  Logger,
+  type LoggingLevel,
+  LogRouter,
+  type LogSender,
+  type LogTarget,
+  withSession,
+} from '../../src/core/observability.js';
 
 interface RecordedLog {
   level: LoggingLevel;
@@ -16,22 +20,16 @@ function makeRecordingTarget(): {
   records: RecordedLog[];
 } {
   const records: RecordedLog[] = [];
-  const fakeServer = {
-    server: {
-      getClientCapabilities(): unknown {
-        return { logging: true };
-      },
+  const fakeSender: LogSender = {
+    async send(level: LoggingLevel, message: string): Promise<void> {
+      records.push({ level, data: message });
     },
-    sendLoggingMessage(params: { level: LoggingLevel; data: unknown }): Promise<void> {
-      records.push({ level: params.level, data: String(params.data) });
-      return Promise.resolve();
-    },
-  } as unknown as McpServer;
+  };
 
   return {
     records,
     target: {
-      server: fakeServer,
+      sender: fakeSender,
       loggingState: { minimumLevel: 'debug' },
     },
   };
