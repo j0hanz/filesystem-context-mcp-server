@@ -26,8 +26,3 @@ Use **npm** — `npm install`, `npm run build`, `npm test`. Do not use pnpm or y
 - **Batch operations**: Multi-path tools use `runOverPaths()` from `src/tools/define.ts`; returns `BatchResult<T>` with per-path errors, not a thrown exception.
 - **Safe regex**: Use `import RE2 from 're2'` (not native `RegExp`) for any user-supplied pattern to prevent ReDoS.
 - **ESM imports**: All relative imports require `.js` extension (e.g., `import ... from '../core/errors.js'`).
-
-## Commit Attribution
-
-AI commits MUST include a `Co-Authored-By:` trailer.
-Example: `Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>`
