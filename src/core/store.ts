@@ -120,6 +120,8 @@ interface InternalStore extends ResourceStore {
 // Raw Storage
 // -----------------------------------------------------------------------------
 
+// RawStore is a simple in-memory store with no eviction or diagnostics.
+// It is the base layer of the decorated store returned by createInMemoryResourceStore.
 class RawStore implements InternalStore {
   private readonly byUri = new Map<string, StoredEntry>();
   private readonly byHashIndex = new Map<string, string>();

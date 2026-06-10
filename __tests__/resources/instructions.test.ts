@@ -44,7 +44,7 @@ describe('SERVER_INSTRUCTIONS_CONTENT', () => {
   it('describes cache expiry with TTL and eviction, not just restart', () => {
     const content = SERVER_INSTRUCTIONS_CONTENT;
     assert.match(content, /ephemeral/u);
-    assert.match(content, /30 min/u);
+    assert.match(content, /60 seconds/u);
     assert.match(content, /eviction/u);
     assert.doesNotMatch(content, /expire on server restart/u);
   });

@@ -1018,15 +1018,17 @@ function processScanResult(
   }
   if (winner.result) {
     const res = winner.result;
-    applyScanOutcome(summary, res);
+    // Count the file as scanned even if it was skipped for being binary or too large,
+    // since we did attempt to scan it and it wasn't inaccessible.
+    if (res.skippedBinary) summary.skippedBinary++;
+    if (res.skippedTooLarge) summary.skippedTooLarge++;
     const remaining = Math.max(0, maxResults - matches.length);
-    if (remaining > 0 && res.matches.length > 0) {
-      const take = Math.min(remaining, res.matches.length);
-      for (let index = 0; index < take; index += 1) {
-        const match = res.matches[index];
-        if (match) matches.push(match);
-      }
+    const take = remaining > 0 ? Math.min(remaining, res.matches.length) : 0;
+    for (let index = 0; index < take; index += 1) {
+      const match = res.matches[index];
+      if (match) matches.push(match);
     }
+    if (take > 0 && res.matched) summary.filesMatched++;
   }
 }
 

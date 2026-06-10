@@ -635,8 +635,9 @@ async function handlePostMcp(
         if (!res.headersSent) {
           sendJsonRpcError(res, 500, ProtocolErrorCode.InternalError, 'Internal Server Error');
         }
-        enrich({ http_status: res.statusCode });
-        throw error;
+        // Do NOT rethrow — an unhandled rejection here would trigger a process-wide shutdown.
+        // he error is already logged, and we've sent a 500 response if possible.
+        enrich({ http_status: res.statusCode, outcome: 'error' });
       }
     },
   );
@@ -687,8 +688,8 @@ async function handleGetOrDeleteMcp(
         if (!res.headersSent) {
           sendJsonRpcError(res, 500, ProtocolErrorCode.InternalError, 'Internal Server Error');
         }
-        enrich({ http_status: res.statusCode });
-        throw error;
+        // Do NOT rethrow — an unhandled rejection here would trigger a process-wide shutdown.
+        enrich({ http_status: res.statusCode, outcome: 'error' });
       }
     },
   );

@@ -114,24 +114,21 @@ export function encodeOffsetCursor(offset: number): string {
 }
 
 export function decodeOffsetCursor(cursor: string): number {
+  // safeParse normally reports failure via result.success, but a codec decode can
+  // also throw; treat either as an invalid cursor with one uniform error.
+  let result: ReturnType<typeof OffsetCursorCodec.safeParse> | undefined;
   try {
-    const result = OffsetCursorCodec.safeParse(cursor);
-    if (!result.success) {
-      throw new FsError(
-        ErrorCode.INVALID_INPUT,
-        `Invalid cursor. Request the first page without a cursor.`,
-      );
-    }
-    return result.data.offset;
-  } catch (error) {
-    if (error instanceof FsError) {
-      throw error;
-    }
+    result = OffsetCursorCodec.safeParse(cursor);
+  } catch {
+    result = undefined;
+  }
+  if (!result?.success) {
     throw new FsError(
       ErrorCode.INVALID_INPUT,
       `Invalid cursor. Request the first page without a cursor.`,
     );
   }
+  return result.data.offset;
 }
 
 export function truncateProgressPattern(pattern: string, maxLength = 40): string {

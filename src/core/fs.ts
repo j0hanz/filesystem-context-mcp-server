@@ -880,6 +880,11 @@ export async function readFileRaw(
   const validPath = await pathGuard.validateExistingPath(filePath);
   const stats = await withAbort(fsStat(validPath), options?.signal);
   assertFileStats(filePath, stats);
+  // Enforce size limit before reading to avoid loading large files into memory.
+  // Binary detection is best-effort, but this is a hard limit.
+  if (stats.size > MAX_TEXT_FILE_SIZE) {
+    throw createTooLargeError(stats.size, MAX_TEXT_FILE_SIZE, filePath);
+  }
   const content = await withAbort(fsReadFile(validPath), options?.signal);
   const mimeInfo = detectMimeType(validPath, content.subarray(0, MIME_SAMPLE_SIZE));
   return {
@@ -2030,7 +2035,9 @@ export class GuardedFileSystem {
   }
 
   async hash(filePath: string, signal?: AbortSignal) {
-    return calculateFileContentHash(filePath, signal, 'hex' as const);
+    // For hashing, we require the path to exist and be a file, so we use the stricter existing-path guard.
+    const validPath = await this.pathGuard.validateExistingPath(filePath);
+    return calculateFileContentHash(validPath, signal, 'hex' as const);
   }
 
   async readFile(filePath: string, spec: ReadSpec) {

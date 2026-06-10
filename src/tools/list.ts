@@ -317,12 +317,15 @@ async function handleList(
         mode: 'full',
       });
       const fullMarkdown = renderMarkdown(basename(validDir), fullResult.entries);
+      // Include a truncated flag in the full result in case the totalEntries count is inaccurate due to concurrent modifications.
+      const fullTruncated = fullResult.totalEntries > fullResult.entries.length;
       const fullOutput = {
         entries: fullResult.entries,
         markdown: fullMarkdown,
         totalEntries: fullResult.totalEntries,
         totalFiles: fullResult.totalFiles,
         totalDirectories: fullResult.totalDirectories,
+        ...(fullTruncated ? { truncated: true } : {}),
       };
       const { entry } = putResource({
         store: resourceStore,

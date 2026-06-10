@@ -73,9 +73,7 @@ describe('read tool', () => {
     assert.equal(value['endLine'], 2);
   });
 
-  it('hashes the full file content even for partial reads', async () => {
-    const expectedHash = createHash('sha256').update('line1\nline2\nline3\n', 'utf8').digest('hex');
-
+  it('hashes the returned content (not the full file) for partial reads', async () => {
     const raw = await env.client.callTool({
       name: 'read',
       arguments: { path: file, head: 1, includeHash: true },
@@ -85,7 +83,12 @@ describe('read tool', () => {
     const sc = getStructured(raw);
     const results = sc['results'] as Record<string, unknown>[];
     const value = results[0]?.['value'] as Record<string, unknown>;
+    const returnedContent = value['content'] as string;
+    const expectedHash = createHash('sha256').update(returnedContent, 'utf8').digest('hex');
     assert.equal(value['contentHash'], expectedHash);
+    const fullFileHash = createHash('sha256').update('line1\nline2\nline3\n', 'utf8').digest('hex');
+    assert.notEqual(value['contentHash'], fullFileHash);
+
     // Check for resource link
     assert.equal(raw.content.length, 2);
     assert.equal(raw.content[1].type, 'resource_link');

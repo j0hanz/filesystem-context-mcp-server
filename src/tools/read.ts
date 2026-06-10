@@ -1,5 +1,6 @@
 import type { ContentBlock } from '@modelcontextprotocol/server';
 
+import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
 
 import { z } from 'zod/v4';
@@ -340,14 +341,15 @@ function applyReadResultFields(value: PerPathReadValue, result: ReadFileResult):
   if (result.reachedEOF !== undefined) value.reachedEOF = result.reachedEOF;
 }
 
-async function applyOptionalFeatures(
+function applyOptionalFeatures(
   value: PerPathReadValue,
   result: ReadFileResult,
   args: ReadFileInput,
   ctx: ToolCtx,
-): Promise<void> {
+): void {
   if (args.includeHash) {
-    value.contentHash = await ctx.fs.hash(result.path);
+    // Hash the content as read (after truncation, if applicable) to avoid --- IGNORE ---
+    value.contentHash = createHash('sha256').update(result.content, 'utf-8').digest('hex');
   }
   if (ctx.resourceStore) {
     value.resourceUri = `filesystem-mcp://file/${result.path.replace(/\\/g, '/')}`;
@@ -375,7 +377,7 @@ async function readOnePath(
 
   applyContinuation(value, result);
   applyReadResultFields(value, result);
-  await applyOptionalFeatures(value, result, args, ctx);
+  applyOptionalFeatures(value, result, args, ctx);
 
   return value;
 }
