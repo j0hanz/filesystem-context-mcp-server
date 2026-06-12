@@ -6,7 +6,7 @@
 
 ## Overview
 
-filesystem-mcp is a [Model Context Protocol](https://modelcontextprotocol.io) server that gives AI assistants safe, structured access to a local filesystem. Every operation is confined to explicitly allowed root directories; sensitive paths are blocked by default. It exposes 12 tools, 3 resources, and 4 prompts over stdio or Streamable HTTP transport.
+Filesystem-MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server that lets AI assistants read and write files within explicitly allowed directories. Sensitive file patterns (.env, *.pem, *id_rsa\*) are blocked by default. It exposes 12 tools, 3 resources, and 4 prompts over stdio or Streamable HTTP transport.
 
 | Aspect       | Details             |
 | :----------- | :------------------ |
@@ -16,7 +16,7 @@ filesystem-mcp is a [Model Context Protocol](https://modelcontextprotocol.io) se
 | **Package**  | npm                 |
 | **License**  | MIT                 |
 
-## Highlights
+## Features
 
 | Feature                 | Description                                                                                                |
 | :---------------------- | :--------------------------------------------------------------------------------------------------------- |
@@ -41,8 +41,8 @@ filesystem-mcp is a [Model Context Protocol](https://modelcontextprotocol.io) se
 
 ## Quick Start
 
-> [!TIP]
-> Get running in under 60 seconds. Requires Node.js ≥ 24.
+> [!NOTE]
+> Requires Node.js ≥ 24.
 
 ### Prerequisites
 
@@ -142,7 +142,7 @@ Add to `.cursor/mcp.json` in your project root (project-scoped), or `~/.cursor/m
 
 ### Docker Configuration
 
-**VS Code** (`.vscode/mcp.json`) and **Visual Studio** (`.vs\mcp.json`):
+VS Code (`.vscode/mcp.json`) and Visual Studio (`.vs\mcp.json`):
 
 ```json
 {
@@ -163,7 +163,7 @@ Add to `.cursor/mcp.json` in your project root (project-scoped), or `~/.cursor/m
 }
 ```
 
-**Claude Desktop** (`claude_desktop_config.json`) and **Cursor** (`mcp.json`):
+Claude Desktop (`claude_desktop_config.json`) and Cursor (`mcp.json`):
 
 ```json
 {
@@ -321,7 +321,7 @@ filesystem-mcp --port 3000 /path/to/project
 ## Contributing
 
 1. Fork the repository.
-2. Create a feature branch — `git checkout -b feat/your-feature`.
+2. Create a feature branch: `git checkout -b feat/your-feature`.
 3. Commit your changes with a clear message.
 4. Run `npm run check` to confirm tests, types, lint, and knip all pass.
 5. Open a pull request.
