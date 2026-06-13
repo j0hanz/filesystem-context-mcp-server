@@ -496,7 +496,10 @@ const SearchFilesOutputSchema = z.strictObject({
   totalMatches: NonNegInt.optional().describe('Total matches found'),
   filesScanned: NonNegInt.optional().describe('Files scanned'),
   skippedInaccessible: NonNegInt.optional().describe('Inaccessible entries skipped'),
-  stoppedReason: z.string().optional().describe('Why search stopped early'),
+  stoppedReason: z
+    .enum(['maxResults', 'maxFiles', 'timeout'])
+    .optional()
+    .describe('Why search stopped early'),
   resourceUri: z.string().optional().describe('URI to stored search results JSON'),
   nextCursor: NextCursorSchema,
 });

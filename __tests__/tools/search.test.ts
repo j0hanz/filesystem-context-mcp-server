@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Integration tests for search tools: grep (search_content), find (search_files),
  * and search_and_replace.
  */
@@ -334,6 +334,24 @@ describe('find tool', () => {
     assert.ok(results.length > 0, 'Expected some matching files');
     assert.ok(sc['resourceUri'], 'Expected resourceUri in structured content');
     assert.equal(sc['resourceUri'], (linkBlock as { uri: string }).uri);
+  });
+
+  it('find_files respects maxResults and sets stoppedReason', async () => {
+    const subDir = join(env.tmpDir, 'manyfiles-stopped');
+    await mkdir(subDir);
+    for (let i = 0; i < 5; i++) {
+      await writeFile(join(subDir, `file${i}.ts`), '', 'utf8');
+    }
+
+    const raw = await env.client.callTool({
+      name: 'find_files',
+      arguments: { path: subDir, pattern: '**/*.ts', maxResults: 2 },
+    });
+    assertOk(raw);
+    const sc = getStructured(raw);
+    assert.equal(sc['stoppedReason'], 'maxResults');
+    const results = sc['results'] as Record<string, unknown>[];
+    assert.equal(results.length, 2);
   });
 });
 

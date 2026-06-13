@@ -33,6 +33,7 @@ import {
 } from '../core/util.js';
 import {
   defaultFalseBoolean,
+  FileKind,
   includeHiddenField,
   includeIgnoredField,
   NonNegInt,
@@ -66,11 +67,7 @@ const SearchAndReplaceInputSchema = z.strictObject({
   includeIgnored: includeIgnoredField(),
   caseSensitive: defaultFalseBoolean('Case-sensitive'),
   wholeWord: defaultFalseBoolean('Match whole words only'),
-  dryRun: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe('Preview changes without writing (default false = apply changes)'),
+  dryRun: defaultFalseBoolean('Preview changes without writing (default false = apply changes)'),
   returnDiff: defaultFalseBoolean('Include unified diff in output'),
   maxResults: z
     .uint32()
@@ -104,7 +101,7 @@ const SearchAndReplaceOutputSchema = z.strictObject({
       size: NonNegInt,
       lineCount: NonNegInt,
       mimeType: z.string(),
-      kind: z.enum(['text', 'binary', 'image', 'audio', 'pdf']),
+      kind: FileKind,
       resourceUri: z.string(),
     })
     .optional()

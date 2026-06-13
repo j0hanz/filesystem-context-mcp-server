@@ -294,7 +294,7 @@ const SUMMARIZE_DIRECTORY: PromptEntry = {
           argsSchema: z.strictObject({
             path: pathArg(options.pathGuard, 'path', 'Directory to summarize.'),
             depth: z.coerce
-              .number<number>()
+              .number()
               .pipe(z.int32().min(1).max(6))
               .default(3)
               .describe('Tree depth (1-6).'),

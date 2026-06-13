@@ -29,6 +29,10 @@ export const FILE_TYPES = ['file', 'directory', 'symlink', 'other'] as const;
 export type FileType = (typeof FILE_TYPES)[number];
 export const FileType = z.enum(FILE_TYPES).meta({ id: 'FileType', title: 'File Type' });
 
+export const FILE_KINDS = ['text', 'binary', 'image', 'audio', 'pdf'] as const;
+export type FileKind = (typeof FILE_KINDS)[number];
+export const FileKind = z.enum(FILE_KINDS).meta({ id: 'FileKind', title: 'File Kind' });
+
 const MAX_PATH_LENGTH = 4096;
 
 const PathBase = z
@@ -118,8 +122,18 @@ export function createReadRangeFields(descs: ReadRangeDescriptions) {
       .max(100000, { error: 'Max: 100,000' })
       .optional()
       .describe(descs.tail),
-    startLine: z.int32().min(1, { error: 'Min: 1' }).optional().describe(descs.startLine),
-    endLine: z.int32().min(1, { error: 'Min: 1' }).optional().describe(descs.endLine),
+    startLine: z
+      .int32()
+      .min(1, { error: 'Min: 1' })
+      .max(100000, { error: 'Max: 100,000' })
+      .optional()
+      .describe(descs.startLine),
+    endLine: z
+      .int32()
+      .min(1, { error: 'Min: 1' })
+      .max(100000, { error: 'Max: 100,000' })
+      .optional()
+      .describe(descs.endLine),
   };
 }
 
@@ -196,7 +210,7 @@ export function validateReadRange(
 }
 
 export function defaultFalseBoolean(description: string) {
-  return z.boolean().optional().default(false).describe(description);
+  return z.boolean().default(false).describe(description);
 }
 
 export const includeHiddenField = () =>

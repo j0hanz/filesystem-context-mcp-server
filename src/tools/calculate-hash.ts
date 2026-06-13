@@ -29,6 +29,9 @@ const HashInputSchema = z.strictObject({
     .array(z.enum(SUPPORTED_ALGORITHMS))
     .min(1)
     .max(SUPPORTED_ALGORITHMS.length)
+    .refine((arr) => new Set(arr).size === arr.length, {
+      message: 'Duplicate algorithms are not allowed',
+    })
     .optional()
     .default(['sha256'])
     .describe('Hash algorithms to compute (default: sha256)'),

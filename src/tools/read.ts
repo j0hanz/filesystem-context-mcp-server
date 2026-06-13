@@ -24,6 +24,7 @@ import {
   ContinuationSchema,
   createReadRangeFields,
   defaultFalseBoolean,
+  FileKind,
   NonNegInt,
   OperationSummarySchema,
   PerFileErrorSchema,
@@ -93,7 +94,7 @@ const ReadFileInputSchema = singleOrBatchPathsInput({
 const ReadPerPathValueSchema = z.strictObject({
   content: z.string().optional().describe('File content (text)'),
   mimeType: z.string().optional().describe('MIME type'),
-  kind: z.enum(['text', 'binary', 'image', 'audio', 'pdf']).optional().describe('File kind'),
+  kind: FileKind.optional().describe('File kind'),
   resourceUri: z.string().optional().describe('Per-file resource URI when externalized'),
   continuation: ContinuationSchema.optional().describe('Present when file was cut'),
   totalLines: NonNegInt.optional().describe('Total lines in file'),

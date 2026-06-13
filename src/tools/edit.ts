@@ -21,6 +21,7 @@ import type { ResourceStore } from '../core/store.js';
 import { escapeRegexLiteral, MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import {
   defaultFalseBoolean,
+  FileKind,
   IsoDateTime,
   NonNegInt,
   OperationSummarySchema,
@@ -82,7 +83,7 @@ const PerFileResultSchema = z.strictObject({
   size: NonNegInt.describe('File size in bytes'),
   lineCount: NonNegInt.describe('Number of lines'),
   mimeType: z.string().describe('MIME type'),
-  kind: z.enum(['text', 'binary', 'image', 'audio', 'pdf']).describe('File kind'),
+  kind: FileKind.describe('File kind'),
   resourceUri: z.string().describe('Resource URI'),
   modified: IsoDateTime.describe('Modified (ISO 8601 UTC)'),
   appliedEdits: NonNegInt.describe('Edits applied'),
@@ -111,7 +112,7 @@ interface SingleEditStructured {
   size?: number;
   lineCount?: number;
   mimeType?: string;
-  kind?: 'text' | 'binary' | 'image' | 'audio' | 'pdf';
+  kind?: FileKind;
   resourceUri?: string;
   modified?: string;
   appliedEdits?: number;
@@ -249,7 +250,7 @@ interface BuildStructuredEditOutputParams {
   size: number;
   lineCount: number;
   mimeType: string;
-  kind: 'text' | 'binary' | 'image' | 'audio' | 'pdf';
+  kind: FileKind;
   resourceUri: string;
   modified: string;
   result: EditResult;
@@ -306,7 +307,7 @@ interface EditFileMetadata {
   bytesWritten: number;
   lineCount: number;
   mimeType: string;
-  kind: 'text' | 'binary' | 'image' | 'audio' | 'pdf';
+  kind: FileKind;
   resourceUri: string;
   resourceLink: ContentBlock | undefined;
 }

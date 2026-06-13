@@ -157,6 +157,19 @@ describe('calculate_hash tool', () => {
     assertToolError(raw, 'INVALID_INPUT');
   });
 
+  it('rejects duplicate algorithms', async () => {
+    const raw = await env.client.callTool({
+      name: 'hash_file',
+      arguments: { path: file, algorithms: ['sha256', 'sha256'] },
+    });
+    assertToolError(raw);
+    const textBlock = raw.content.find(
+      (b): b is { type: string; text: string } => typeof b.text === 'string',
+    );
+    assert.ok(textBlock);
+    assert.match(textBlock.text, /Duplicate algorithms/);
+  });
+
   it('excludes sensitive files from directory hashing', async () => {
     const dir = join(env.tmpDir, 'sensitive-dir');
     await mkdir(dir, { recursive: true });

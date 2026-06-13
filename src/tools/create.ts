@@ -8,7 +8,7 @@ import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, isAbortError, Problem } from '../core/errors.js';
 import { atomicWriteFile, detectMimeType, MIME_SAMPLE_SIZE, mkdir, stat } from '../core/fs.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
-import { IsoDateTime, NonNegInt, PerFileErrorSchema, RequiredPath } from '../schema.js';
+import { FileKind, IsoDateTime, NonNegInt, PerFileErrorSchema, RequiredPath } from '../schema.js';
 import { formatBytes } from './_helpers.js';
 import { defineTool } from './define.js';
 
@@ -23,7 +23,7 @@ const CreateFileResultSchema = z.strictObject({
   size: NonNegInt.describe('File size in bytes'),
   lineCount: NonNegInt.describe('Number of lines in file'),
   mimeType: z.string().describe('MIME type of the file'),
-  kind: z.enum(['text', 'binary', 'image', 'audio', 'pdf']).describe('File kind'),
+  kind: FileKind.describe('File kind'),
   resourceUri: z.string().describe('Full content URI in resource store'),
   created: IsoDateTime.describe('Creation timestamp (ISO 8601 UTC)'),
   modified: IsoDateTime.describe('Last modification timestamp (ISO 8601 UTC)'),

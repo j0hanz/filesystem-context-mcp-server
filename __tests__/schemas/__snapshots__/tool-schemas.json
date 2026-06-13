@@ -68,9 +68,8 @@
                 "description": "MIME type of the file"
               },
               "kind": {
-                "type": "string",
-                "enum": ["text", "binary", "image", "audio", "pdf"],
-                "description": "File kind"
+                "description": "File kind",
+                "$ref": "#/$defs/FileKind"
               },
               "resourceUri": {
                 "type": "string",
@@ -127,6 +126,11 @@
           "minimum": 0,
           "maximum": 9007199254740991,
           "title": "Non-Negative Integer"
+        },
+        "FileKind": {
+          "type": "string",
+          "enum": ["text", "binary", "image", "audio", "pdf"],
+          "title": "File Kind"
         },
         "IsoDateTime": {
           "type": "string",
@@ -387,9 +391,8 @@
                     "description": "MIME type"
                   },
                   "kind": {
-                    "type": "string",
-                    "enum": ["text", "binary", "image", "audio", "pdf"],
-                    "description": "File kind"
+                    "description": "File kind",
+                    "$ref": "#/$defs/FileKind"
                   },
                   "resourceUri": {
                     "type": "string",
@@ -471,6 +474,11 @@
           "minimum": 0,
           "maximum": 9007199254740991,
           "title": "Non-Negative Integer"
+        },
+        "FileKind": {
+          "type": "string",
+          "enum": ["text", "binary", "image", "audio", "pdf"],
+          "title": "File Kind"
         },
         "IsoDateTime": {
           "type": "string",
@@ -649,7 +657,8 @@
         },
         "stoppedReason": {
           "description": "Why search stopped early",
-          "type": "string"
+          "type": "string",
+          "enum": ["maxResults", "maxFiles", "timeout"]
         },
         "resourceUri": {
           "description": "URI to stored search results JSON",
@@ -1075,13 +1084,13 @@
           "description": "Start line (1-indexed)",
           "type": "integer",
           "minimum": 1,
-          "maximum": 2147483647
+          "maximum": 100000
         },
         "endLine": {
           "description": "End line (1-indexed)",
           "type": "integer",
           "minimum": 1,
-          "maximum": 2147483647
+          "maximum": 100000
         },
         "offset": {
           "description": "Byte offset to start reading (single-file mode only; mutually exclusive with line params)",
@@ -1150,8 +1159,7 @@
                   },
                   "kind": {
                     "description": "File kind",
-                    "type": "string",
-                    "enum": ["text", "binary", "image", "audio", "pdf"]
+                    "$ref": "#/$defs/FileKind"
                   },
                   "resourceUri": {
                     "description": "Per-file resource URI when externalized",
@@ -1227,6 +1235,11 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {
+        "FileKind": {
+          "type": "string",
+          "enum": ["text", "binary", "image", "audio", "pdf"],
+          "title": "File Kind"
+        },
         "Continuation": {
           "type": "object",
           "properties": {
@@ -1474,8 +1487,7 @@
               "type": "string"
             },
             "kind": {
-              "type": "string",
-              "enum": ["text", "binary", "image", "audio", "pdf"]
+              "$ref": "#/$defs/FileKind"
             },
             "resourceUri": {
               "type": "string"
@@ -1552,6 +1564,11 @@
           "required": ["code", "message"],
           "additionalProperties": false,
           "title": "Per-File Error"
+        },
+        "FileKind": {
+          "type": "string",
+          "enum": ["text", "binary", "image", "audio", "pdf"],
+          "title": "File Kind"
         }
       }
     }
