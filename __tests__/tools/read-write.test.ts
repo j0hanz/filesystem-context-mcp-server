@@ -969,7 +969,7 @@ describe('edit tool', () => {
     assert.equal(actual, 'alpha\nbeta\n');
   });
 
-  it('returns ok:true even when some edits are unmatched', async () => {
+  it('fails when some edits are unmatched', async () => {
     const file = join(env.tmpDir, 'partial-edit.txt');
     await writeFile(file, 'hello world\n', 'utf8');
 
@@ -985,14 +985,14 @@ describe('edit tool', () => {
     });
     assertOk(raw);
     const sc = getStructured(raw);
-    assert.strictEqual(sc['ok'], true, 'ok must be literal true even for partial edits');
+    assert.strictEqual(sc['ok'], true);
     const results = sc['results'] as Record<string, unknown>[];
     assert.ok(Array.isArray(results));
     assert.equal(results.length, 1);
-    const value = results[0]?.['value'] as Record<string, unknown> | undefined;
-    assert.ok(value, 'edit result value must be present');
-    assert.ok(Array.isArray(value['unmatchedEdits']), 'unmatchedEdits must be present');
-    assert.strictEqual((value['unmatchedEdits'] as string[]).length, 1);
+    const error = results[0]?.['error'] as Record<string, unknown> | undefined;
+    assert.ok(error, 'edit result error must be present');
+    assert.equal(error['code'], 'INVALID_INPUT');
+    assert.match(error['message'] as string, /failed to match/);
   });
 
   it('rejects binary files instead of rewriting them as text', async () => {

@@ -8,6 +8,7 @@ import * as z from 'zod/v4';
 import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, FsError, isAbortError, isNodeError, Problem } from '../core/errors.js';
 import type { GuardedFileSystem } from '../core/fs.js';
+import { isSamePath } from '../core/path.js';
 import { PerFileErrorSchema, RequiredPath } from '../schema.js';
 import { defineTool, type ToolCtx } from './define.js';
 
@@ -223,24 +224,33 @@ export const MOVE = defineTool({
           );
         }
 
+        const isCaseOnlyRename = isSamePath(resolvedSource, resolvedDest);
         let destExistedOriginally = false;
-        try {
-          await ctx.fs.stat(validDest);
-          destExistedOriginally = true;
-        } catch {
-          // Doesn't exist
+
+        if (!isCaseOnlyRename) {
+          try {
+            await ctx.fs.stat(validDest);
+            destExistedOriginally = true;
+          } catch {
+            // Doesn't exist
+          }
         }
 
         await withAbort(ctx.fs.mkdir(dirname(validDest), { recursive: true }), ctx.signal);
-        await tryElicitOverwriteConfirmation(move.destination, validDest, ctx);
+
+        if (!isCaseOnlyRename) {
+          await tryElicitOverwriteConfirmation(move.destination, validDest, ctx);
+        }
 
         // TOCTOU check immediately before actual renaming/moving
         let existsNow = false;
-        try {
-          await ctx.fs.stat(validDest);
-          existsNow = true;
-        } catch {
-          // Doesn't exist
+        if (!isCaseOnlyRename) {
+          try {
+            await ctx.fs.stat(validDest);
+            existsNow = true;
+          } catch {
+            // Doesn't exist
+          }
         }
 
         if (existsNow && !destExistedOriginally) {

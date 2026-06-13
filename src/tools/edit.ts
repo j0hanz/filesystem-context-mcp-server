@@ -191,7 +191,9 @@ function findEditMatch(
   regexCache?: Map<string, RE2>,
 ): TextRange | undefined {
   if (ignoreWhitespace) {
-    const pattern = escapeRegexLiteral(oldText).replace(/\s+/g, '\\s+');
+    const pattern = escapeRegexLiteral(oldText)
+      .replace(/(\w)\s+(\w)/g, '$1\\s+$2')
+      .replace(/\s+/g, '\\s*');
     let regex = regexCache?.get(pattern);
     if (!regex) {
       regex = new RE2(pattern);
@@ -473,10 +475,10 @@ async function handleEditFile(
     };
   }
 
-  if (editResult.appliedEdits === 0 && editResult.unmatchedEdits.length > 0) {
+  if (editResult.unmatchedEdits.length > 0) {
     throw new FsError(
       Problem.invalidInput(
-        `All ${editResult.unmatchedEdits.length} edits failed. Verify oldText matches exact file content.`,
+        `${editResult.unmatchedEdits.length} edit(s) failed to match. Verify oldText matches exact file content.`,
         { path: filePath },
       ),
     );

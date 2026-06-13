@@ -17,7 +17,7 @@ import {
   unlink as fsUnlink,
   writeFile as fsWriteFile,
 } from 'node:fs/promises';
-import { extname, isAbsolute, join, posix, relative, resolve } from 'node:path';
+import { dirname, extname, isAbsolute, join, posix, relative, resolve } from 'node:path';
 import { text } from 'node:stream/consumers';
 import { pipeline } from 'node:stream/promises';
 
@@ -923,7 +923,19 @@ export async function atomicWriteFile(
   options: { encoding?: BufferEncoding; signal?: AbortSignal | undefined } = {},
 ): Promise<{ validPath: string }> {
   const { encoding = 'utf-8', signal } = options;
-  const validPath = await pathGuard.validatePathForWrite(filePath);
+  let validPath = await pathGuard.validatePathForWrite(filePath);
+
+  try {
+    const stats = await fsLstat(validPath);
+    if (stats.isSymbolicLink()) {
+      const target = await fsReadlink(validPath);
+      const resolvedTarget = isAbsolute(target) ? target : resolve(dirname(validPath), target);
+      validPath = await pathGuard.validatePathForWrite(resolvedTarget);
+    }
+  } catch {
+    // If lstat fails (e.g. file does not exist), proceed normally.
+  }
+
   const tempPath = `${validPath}.${randomUUID()}.tmp`;
 
   try {

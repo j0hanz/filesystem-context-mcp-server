@@ -92,7 +92,8 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
   const accessDeps: EntryAccessDependencies = {
     normalizePath,
     isPathWithinDirectories,
-    isSensitivePath: (p: string) => options.pathGuard.isSensitive(p),
+    isSensitivePath: (reqPath: string, resPath: string) =>
+      options.pathGuard.isSensitive(reqPath) || options.pathGuard.isSensitive(resPath),
     validateSymlinkPath: (p: string) => options.pathGuard.validateExistingPathDetailed(p),
   };
 
@@ -149,16 +150,14 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
     ) {
       continue;
     }
-    if (entryType === 'symlink') {
-      const accessible = await isEntryAccessibleByType(
-        entry.path,
-        entryType,
-        [rootPath],
-        options.signal,
-        accessDeps,
-      );
-      if (!accessible) continue;
-    }
+    const accessible = await isEntryAccessibleByType(
+      entry.path,
+      entryType,
+      [rootPath],
+      options.signal,
+      accessDeps,
+    );
+    if (!accessible) continue;
 
     totalEntries++;
     if (entryType === 'directory') {

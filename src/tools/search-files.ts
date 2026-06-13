@@ -319,7 +319,8 @@ async function collectSearchResults(
 
   const accessDeps = {
     ...SEARCH_FILES_ACCESS_DEPS_BASE,
-    isSensitivePath: (p: string) => pathGuard.isSensitive(p),
+    isSensitivePath: (reqPath: string, resPath: string) =>
+      pathGuard.isSensitive(reqPath) || pathGuard.isSensitive(resPath),
     validateSymlinkPath: (p: string) => pathGuard.validateExistingPathDetailed(p),
   };
 

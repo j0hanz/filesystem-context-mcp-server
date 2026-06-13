@@ -88,12 +88,21 @@ async function getValidRootDirectories(roots: Root[], signal?: AbortSignal): Pro
   const validPaths = resolvedResults.filter((p): p is string => p !== null);
   if (validPaths.length === 0) return [];
 
+  const indexedPaths = validPaths.map((path, index) => ({ path, index }));
   const { results: realExpansions } = await processInParallel(
-    validPaths,
-    (normalizedPath) => resolveRealPathIfExists(normalizedPath, signal),
+    indexedPaths,
+    async ({ path, index }) => {
+      const expanded = await resolveRealPathIfExists(path, signal);
+      return { index, expanded };
+    },
     PARALLEL_CONCURRENCY,
     signal,
   );
+
+  const expandedMap = new Map<number, string | null>();
+  for (const item of realExpansions) {
+    expandedMap.set(item.index, item.expanded);
+  }
 
   const validDirs: string[] = [];
   for (let i = 0; i < validPaths.length; i++) {
@@ -101,7 +110,7 @@ async function getValidRootDirectories(roots: Root[], signal?: AbortSignal): Pro
     if (validPath !== undefined) {
       validDirs.push(validPath);
     }
-    const expanded = realExpansions[i];
+    const expanded = expandedMap.get(i);
     if (expanded) validDirs.push(expanded);
   }
   return validDirs;
