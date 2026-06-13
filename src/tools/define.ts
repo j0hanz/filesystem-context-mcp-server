@@ -14,12 +14,11 @@ import type {
   Tool,
   ToolAnnotations,
   ToolExecution,
-  ToolTaskHandler,
 } from '@modelcontextprotocol/server';
 
 import { randomUUID } from 'node:crypto';
 
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode, Problem } from '../core/errors.js';
@@ -46,10 +45,10 @@ type ToolResponse<T> = {
   isError?: never;
 } & Record<string, unknown>;
 
-interface ToolErrorResponse extends Record<string, unknown> {
+type ToolErrorResponse = {
   content: ContentBlock[];
   isError: true;
-}
+} & Record<string, unknown>;
 
 export type ToolResult<T> = ToolResponse<T> | ToolErrorResponse;
 
@@ -90,28 +89,11 @@ export interface ToolCtx {
   readonly elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>;
 }
 
-export interface ToolOrchestrator {
-  wrapToolTask<
-    Args extends StandardSchemaWithJSON | undefined,
-    Result extends Record<string, unknown>,
-  >(
-    handler: (args: unknown, ctx: ToolCtx) => Promise<ToolResult<Result>>,
-    options: {
-      toolName: string;
-      toolTitle?: string;
-      startStatusMessage?: (args: unknown) => string;
-      deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore'>;
-      server?: McpServer;
-    },
-  ): ToolTaskHandler<Args>;
-}
-
 export interface ToolDeps {
   readonly isInitialized: () => boolean;
   readonly server: McpServer;
   readonly pathGuard: PathGuard;
   readonly resourceStore: ResourceStore | undefined;
-  readonly orchestrator?: ToolOrchestrator;
 }
 
 export type IconInfo = Icon & { mimeType: string };
@@ -589,38 +571,6 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
       };
 
       const serverCtxHandler = createServerToolHandler(def, deps);
-
-      const taskSupport = def.execution?.taskSupport;
-      if (taskSupport && taskSupport !== 'forbidden' && deps.orchestrator) {
-        const taskToolDefShape = {
-          title: def.title,
-          description: def.description,
-          inputSchema: inputSchemaWithJson,
-          outputSchema: outputSchemaWithJson,
-          annotations: def.annotations,
-          execution: { ...def.execution, taskSupport },
-        };
-
-        deps.server.experimental.tasks.registerToolTask(
-          def.name,
-          taskToolDefShape,
-          deps.orchestrator.wrapToolTask(
-            async (args, ctx) =>
-              executeTool(def, ctx, deps, args as z.infer<I>) as Promise<
-                ToolResult<Record<string, unknown>>
-              >,
-            {
-              toolName: def.name,
-              toolTitle: def.title,
-              startStatusMessage: (args: unknown) =>
-                plainMessage('start', resolveProgressCtx(def, args as z.infer<I>)),
-              deps,
-              server: deps.server,
-            },
-          ),
-        );
-        return;
-      }
 
       deps.server.registerTool(def.name, toolDefShape, serverCtxHandler);
     },

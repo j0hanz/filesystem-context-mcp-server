@@ -7,7 +7,7 @@ import { SdkError, SdkErrorCode } from '@modelcontextprotocol/server';
 
 import { basename } from 'node:path';
 
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode, isNodeError, Problem } from '../core/errors.js';

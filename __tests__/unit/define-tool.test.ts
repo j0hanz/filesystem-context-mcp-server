@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { channel } from 'node:diagnostics_channel';
 import { test } from 'node:test';
 
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 import { ErrorCode } from '../../src/core/errors.js';
 import type { PathGuard } from '../../src/core/path.js';

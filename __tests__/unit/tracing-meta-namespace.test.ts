@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 // This test validates the wire-format change for trace context keys.
 // Keys should be namespaced under io.opentelemetry/ per MCP spec.

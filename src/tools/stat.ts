@@ -2,7 +2,7 @@ import type { ContentBlock } from '@modelcontextprotocol/server';
 
 import { parse } from 'node:path';
 
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 import { assertNotAborted } from '../core/concurrency.js';
 import { ErrorCode, isAbortError } from '../core/errors.js';
@@ -174,7 +174,7 @@ export const GET_FILE_INFO = defineTool({
     destructiveHint: false,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'optional' },
+  execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   defaultErrorCode: ErrorCode.NOT_FOUND,
   progress: (args) => {

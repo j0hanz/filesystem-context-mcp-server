@@ -3,7 +3,7 @@ import type { ContentBlock } from '@modelcontextprotocol/server';
 import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
 
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
@@ -395,7 +395,7 @@ export const READ_FILE = defineTool({
     destructiveHint: false,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'optional' },
+  execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   nuances: [
     'Large content is externalized to `filesystem-mcp://file/{path}` and the value carries `resourceUri`.',

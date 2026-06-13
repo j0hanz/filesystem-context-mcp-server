@@ -34,7 +34,6 @@ export const toolsRegistrar: Registrar = {
       isInitialized: deps.isInitialized,
       pathGuard: deps.pathGuard,
       resourceStore: deps.resourceStore,
-      orchestrator: deps.orchestrator,
     };
     for (const tool of ALL_TOOLS) {
       tool.register(toolDeps);

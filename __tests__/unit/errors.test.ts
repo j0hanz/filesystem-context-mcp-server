@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readdirSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 import { ErrorCode } from '../../src/core/errors.js';
 import {

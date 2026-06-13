@@ -196,11 +196,6 @@ describe('grep tool', () => {
     assert.match(match['content'] as string, /rocket 🚀 line/);
   });
 
-  // Task support is disabled for all tools to ensure progress messages display correctly
-  // in the UI (matching main branch behavior). Task display in MCP v2 is immutable,
-  // so tasks would show "Ran search_text" instead of rich progress messages.
-  // See: https://github.com/j0hanz/filesystem-mcp/blob/main/src/tools/read.ts (taskSupport: 'forbidden')
-
   it('pattern without / matches files in subdirectories (baseNameMatch)', async () => {
     // env already has sub/deep.txt with 'another apple here'
     const raw = await env.client.callTool({

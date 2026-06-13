@@ -1,6 +1,6 @@
 import { Client } from '@modelcontextprotocol/client';
 import type { ElicitResult } from '@modelcontextprotocol/client';
-import { InMemoryTaskMessageQueue, McpServer } from '@modelcontextprotocol/server';
+import { McpServer } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -10,7 +10,6 @@ import { join } from 'node:path';
 
 import { PathGuard, resolveAllowedDirectoriesState } from '../src/core/path.js';
 import { createInMemoryResourceStore, type ResourceStore } from '../src/core/store.js';
-import { TaskOrchestrator } from '../src/tasks.js';
 import { CALCULATE_HASH } from '../src/tools/calculate-hash.js';
 import { CREATE } from '../src/tools/create.js';
 import { DELETE_FILE } from '../src/tools/delete-file.js';
@@ -69,9 +68,6 @@ export interface TestEnv {
 export async function createTestEnv(): Promise<TestEnv> {
   const tmpDir = await mkdtemp(join(tmpdir(), `fsmcp-${randomUUID().slice(0, 8)}-`));
 
-  const orchestrator = new TaskOrchestrator();
-  const taskStore = orchestrator;
-
   const server = new McpServer(
     { name: 'test-server', version: '0.0.0' },
     {
@@ -81,13 +77,6 @@ export async function createTestEnv(): Promise<TestEnv> {
         prompts: {},
         logging: {},
         completions: {},
-        tasks: {
-          list: {},
-          cancel: {},
-          requests: { tools: { call: {} } },
-          taskStore,
-          taskMessageQueue: new InMemoryTaskMessageQueue(),
-        },
       },
     },
   );
@@ -101,35 +90,17 @@ export async function createTestEnv(): Promise<TestEnv> {
     pathGuard,
     resourceStore,
     isInitialized: () => true,
-    orchestrator,
   };
   for (const tool of ALL_TOOLS) {
     tool.register(deps);
   }
 
-  const client = new Client(
-    { name: 'test-client', version: '1.0.0' },
-    {
-      capabilities: {
-        tasks: {},
-        experimental: {
-          tasks: {
-            requests: {
-              tools: {
-                call: {},
-              },
-            },
-          },
-        },
-      },
-    },
-  );
+  const client = new Client({ name: 'test-client', version: '1.0.0' });
   const [ct, st] = LinkedTransport.createLinkedPair();
   await server.connect(st);
   await client.connect(ct);
 
   const cleanup = async (): Promise<void> => {
-    taskStore.cleanup();
     try {
       await client.close();
     } catch {
@@ -159,9 +130,6 @@ export type ElicitationHandler = (params: {
 export async function createTestEnvWithElicitation(handler: ElicitationHandler): Promise<TestEnv> {
   const tmpDir = await mkdtemp(join(tmpdir(), `fsmcp-${randomUUID().slice(0, 8)}-`));
 
-  const orchestrator = new TaskOrchestrator();
-  const taskStore = orchestrator;
-
   const server = new McpServer(
     { name: 'test-server', version: '0.0.0' },
     {
@@ -171,13 +139,6 @@ export async function createTestEnvWithElicitation(handler: ElicitationHandler):
         prompts: {},
         logging: {},
         completions: {},
-        tasks: {
-          list: {},
-          cancel: {},
-          requests: { tools: { call: {} } },
-          taskStore,
-          taskMessageQueue: new InMemoryTaskMessageQueue(),
-        },
       },
     },
   );
@@ -191,7 +152,6 @@ export async function createTestEnvWithElicitation(handler: ElicitationHandler):
     pathGuard,
     resourceStore,
     isInitialized: () => true,
-    orchestrator,
   };
   for (const tool of ALL_TOOLS) {
     tool.register(deps2);
@@ -200,20 +160,7 @@ export async function createTestEnvWithElicitation(handler: ElicitationHandler):
   // Client advertises elicitation capability so the server will call elicitInput
   const client = new Client(
     { name: 'test-client', version: '1.0.0' },
-    {
-      capabilities: {
-        elicitation: {},
-        experimental: {
-          tasks: {
-            requests: {
-              tools: {
-                call: {},
-              },
-            },
-          },
-        },
-      },
-    },
+    { capabilities: { elicitation: {} } },
   );
 
   // Register the elicitation handler for server→client elicitation/create requests.
@@ -232,7 +179,6 @@ export async function createTestEnvWithElicitation(handler: ElicitationHandler):
   await client.connect(ct);
 
   const cleanup = async (): Promise<void> => {
-    taskStore.cleanup();
     try {
       await client.close();
     } catch {

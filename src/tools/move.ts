@@ -3,7 +3,7 @@ import { SdkError, SdkErrorCode } from '@modelcontextprotocol/server';
 
 import { basename, dirname, resolve, sep } from 'node:path';
 
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, FsError, isAbortError, isNodeError, Problem } from '../core/errors.js';

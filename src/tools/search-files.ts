@@ -1,6 +1,6 @@
 import { basename, relative } from 'node:path';
 
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 import { withTimedAbortSignal } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
@@ -630,7 +630,7 @@ export const SEARCH_FILES = defineTool({
     destructiveHint: false,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'optional' },
+  execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   nuances: [
     'Respects `.gitignore` unless `includeIgnored=true`.',

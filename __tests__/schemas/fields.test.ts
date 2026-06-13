@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 import { isSafeGlobSyntax } from '../../src/core/path.js';
 import {

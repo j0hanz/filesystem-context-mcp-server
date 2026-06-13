@@ -1,6 +1,6 @@
 import { availableParallelism } from 'node:os';
 
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 import { Logger } from './observability.js';
 import { isRecord, parseTrueEnvFlag } from './primitives.js';
@@ -153,21 +153,6 @@ function parseEnvLogLevel(envVar: string, defaultValue: ValidLogLevel): ValidLog
 }
 
 export const LOG_LEVEL = parseEnvLogLevel('FILESYSTEM_MCP_LOG_LEVEL', 'info');
-
-export const TASK_TTL = 5 * 60 * 1000; // 5 minutes
-export const TASK_POLL_INTERVAL = 50; // ms
-export const MAX_TASK_TTL_MS = parseEnvInt(
-  'FILESYSTEM_MCP_MAX_TASK_TTL_MS',
-  60 * 60 * 1000,
-  1_000,
-  24 * 60 * 60 * 1000,
-);
-export const MAX_CONCURRENT_TASKS = parseEnvInt(
-  'FILESYSTEM_MCP_MAX_CONCURRENT_TASKS',
-  100,
-  1,
-  10_000,
-);
 
 export function getInitHandshakeTimeoutMs(): number {
   return parseEnvInt('FS_INIT_HANDSHAKE_TIMEOUT_MS', 30_000, 1_000, 300_000);

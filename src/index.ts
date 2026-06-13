@@ -4,7 +4,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import type * as http from 'node:http';
 import process from 'node:process';
 
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 import { CliExitError, parseArgs } from './cli.js';
 import { shutdownWorkerPool } from './core/concurrency.js';

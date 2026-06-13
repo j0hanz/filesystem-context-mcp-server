@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { basename, relative, win32 } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 import { assertNotAborted } from '../core/concurrency.js';
 import { ErrorCode, FsError, Problem } from '../core/errors.js';
@@ -336,7 +336,7 @@ export const CALCULATE_HASH = defineTool({
     destructiveHint: false,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'optional' },
+  execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   nuances: [
     'Directory hashing respects root `.gitignore` and sorts paths for stable output.',

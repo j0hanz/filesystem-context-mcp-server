@@ -1,6 +1,5 @@
 import {
   type Implementation,
-  InMemoryTaskMessageQueue,
   McpServer,
   type ServerCapabilities,
   type SetLevelRequestParams,
@@ -22,7 +21,6 @@ import { LOG_LEVEL } from './core/util.js';
 import { pkgInfo } from './pkg-info.js';
 import { promptsRegistrar } from './prompts.js';
 import { resourcesRegistrar } from './resources.js';
-import { TaskOrchestrator } from './tasks.js';
 import { type IconInfo, withDefaultIcons } from './tools/define.js';
 import { toolsRegistrar } from './tools/index.js';
 
@@ -45,7 +43,6 @@ export class FilesystemServerContext {
   public readonly fs: GuardedFileSystem;
   public readonly resources: ResourceStore;
   public readonly resourcesHandle: { destroy(): void };
-  private readonly orchestrator: TaskOrchestrator;
   private readonly registrars: readonly Registrar[];
   private cleanedUp = false;
 
@@ -55,7 +52,6 @@ export class FilesystemServerContext {
     synchronizer: McpRootsSynchronizer,
     resources: ResourceStore,
     resourcesHandle: { destroy(): void },
-    orchestrator: TaskOrchestrator,
     registrars: readonly Registrar[],
   ) {
     this.mcp = mcp;
@@ -64,7 +60,6 @@ export class FilesystemServerContext {
     this.fs = new GuardedFileSystem(pathGuard);
     this.resources = resources;
     this.resourcesHandle = resourcesHandle;
-    this.orchestrator = orchestrator;
     this.registrars = registrars;
   }
 
@@ -72,8 +67,6 @@ export class FilesystemServerContext {
     if (this.cleanedUp) return;
     this.cleanedUp = true;
     this.synchronizer.destroy();
-    this.orchestrator.dispose();
-    this.orchestrator.cleanup();
     for (const r of this.registrars) r.dispose();
     logRouter.detachStdio();
   }
@@ -122,8 +115,6 @@ export async function createServer(
   const resourceStore = createInMemoryResourceStore();
   const localIcon = await getLocalIconInfo();
 
-  const taskOrchestrator = new TaskOrchestrator();
-
   const capabilities = {
     logging: {},
     resources: { subscribe: true },
@@ -131,14 +122,7 @@ export async function createServer(
     prompts: {},
     completions: {},
     extensions: {},
-    tasks: {
-      list: {},
-      cancel: {},
-      requests: { tools: { call: {} } },
-      taskStore: taskOrchestrator,
-      taskMessageQueue: new InMemoryTaskMessageQueue(),
-    },
-  } satisfies Omit<ServerCapabilities, 'tasks'> & { tasks: unknown };
+  } satisfies ServerCapabilities;
   const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> = {
     capabilities,
     enforceStrictCapabilities: true,
@@ -177,7 +161,6 @@ export async function createServer(
     server,
     pathGuard,
     resourceStore,
-    orchestrator: taskOrchestrator,
     isInitialized,
     ...(localIcon ? { iconInfo: localIcon } : {}),
   };
@@ -197,7 +180,6 @@ export async function createServer(
     synchronizer,
     resourceStore,
     resourcesHandle,
-    taskOrchestrator,
     registrars,
   );
 }

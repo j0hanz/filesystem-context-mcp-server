@@ -1,6 +1,6 @@
 import { basename, relative } from 'node:path';
 
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 import { withTimedAbortSignal } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';

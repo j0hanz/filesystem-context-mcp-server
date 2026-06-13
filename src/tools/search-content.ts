@@ -3,8 +3,8 @@ import { dirname, relative } from 'node:path';
 import { debuglog } from 'node:util';
 import { parentPort, threadId, Worker, workerData } from 'node:worker_threads';
 
+import * as z from 'zod/v4';
 import RE2 from 're2';
-import { z } from 'zod/v4';
 
 import { assertNotAborted, withAbort, withTimedAbortSignal } from '../core/concurrency.js';
 import {
@@ -1754,7 +1754,7 @@ export const SEARCH_CONTENT = defineTool({
     destructiveHint: false,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'optional' },
+  execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   nuances: ['Inline results capped at 50 matches; full results via `resourceUri`.'],
   gotchas: [

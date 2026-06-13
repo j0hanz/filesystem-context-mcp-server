@@ -6,7 +6,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 import { HashesSchema, HashOutputSchema } from '../../src/tools/calculate-hash.js';
 import {

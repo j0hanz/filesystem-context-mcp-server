@@ -2,9 +2,9 @@ import type { ContentBlock } from '@modelcontextprotocol/server';
 
 import { basename } from 'node:path';
 
+import * as z from 'zod/v4';
 import { createTwoFilesPatch, diffLines } from 'diff';
 import RE2 from 're2';
-import { z } from 'zod/v4';
 
 import { runWorkerOr } from '../core/concurrency.js';
 import { ErrorCode, FsError, Problem } from '../core/errors.js';

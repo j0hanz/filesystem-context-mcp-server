@@ -155,39 +155,6 @@ describe('Tool contract', () => {
     assert.equal(typeof value['size'], 'number');
   });
 
-  it('task-capable tools expose execution.taskSupport in tools/list', async () => {
-    const TASK_OPTIONAL_TOOLS = new Set<string>([
-      'hash_file',
-      'read',
-      'search_text',
-      'find_files',
-      'search_and_replace',
-      'replace_text',
-      'stat',
-    ]);
-
-    const { tools } = await env.client.listTools();
-    for (const tool of tools) {
-      const execution = (tool as Record<string, unknown>).execution as
-        | Record<string, unknown>
-        | undefined;
-      if (TASK_OPTIONAL_TOOLS.has(tool.name)) {
-        assert.equal(
-          execution?.taskSupport,
-          'optional',
-          `${tool.name}: expected execution.taskSupport='optional'`,
-        );
-      } else {
-        // forbidden tools should not have taskSupport or have it as 'forbidden'
-        const taskSupport = execution?.taskSupport;
-        assert.ok(
-          taskSupport === undefined || taskSupport === 'forbidden',
-          `${tool.name}: expected taskSupport undefined or 'forbidden', got '${String(taskSupport)}'`,
-        );
-      }
-    }
-  });
-
   it('all read-only tools return structuredContent with ok:true', async () => {
     // Create a test file so file-dependent tools have a target
     const testFile = join(env.tmpDir, 'contract-test.txt');

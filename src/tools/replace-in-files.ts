@@ -3,9 +3,9 @@ import type { ContentBlock } from '@modelcontextprotocol/server';
 import { Buffer } from 'node:buffer';
 import { basename, dirname, join, relative } from 'node:path';
 
+import * as z from 'zod/v4';
 import { createTwoFilesPatch } from 'diff';
 import RE2 from 're2';
-import { z } from 'zod/v4';
 
 import { runWorkerOr } from '../core/concurrency.js';
 import { ErrorCode, formatUnknownErrorMessage, FsError, Problem } from '../core/errors.js';
@@ -646,7 +646,7 @@ export const SEARCH_AND_REPLACE = defineTool({
     destructiveHint: true,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'optional' },
+  execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   gotchas: [
     'RE2 dialect: no lookahead, lookbehind, or backreferences.',

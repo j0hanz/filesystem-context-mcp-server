@@ -12,7 +12,7 @@ import {
 
 import { stat } from 'node:fs/promises';
 
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 import { Logger, withTelemetry } from './core/observability.js';
 import { PathCompleter } from './core/path.js';

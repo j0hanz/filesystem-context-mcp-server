@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 // Define the schema locally for testing (matches src/server.ts)
 const RootSchema = z.strictObject({

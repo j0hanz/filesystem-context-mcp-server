@@ -3,7 +3,6 @@ import type { McpServer, Root } from '@modelcontextprotocol/server';
 import { realpath, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-import type { TaskOrchestrator } from '../tasks.js';
 import type { IconInfo } from '../tools/define.js';
 import {
   assertNotAborted,
@@ -27,7 +26,6 @@ export interface ServerDeps {
   server: McpServer;
   pathGuard: PathGuard;
   resourceStore: ResourceStore;
-  orchestrator: TaskOrchestrator;
   isInitialized: () => boolean;
   iconInfo?: IconInfo;
 }

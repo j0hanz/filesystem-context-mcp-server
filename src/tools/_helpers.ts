@@ -1,6 +1,6 @@
 import type { ContentBlock, Role } from '@modelcontextprotocol/server';
 
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 import { ErrorCode, FsError } from '../core/errors.js';
 import type { FileInfo, MimeKind } from '../core/fs.js';

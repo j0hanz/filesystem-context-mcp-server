@@ -2,7 +2,7 @@ import type { ContentBlock } from '@modelcontextprotocol/server';
 
 import { basename, dirname } from 'node:path';
 
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, isAbortError, Problem } from '../core/errors.js';

@@ -14,7 +14,7 @@ import {
   sep,
 } from 'node:path';
 
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 import { assertNotAborted, createTimedAbortSignal, withAbort } from './concurrency.js';
 import { ErrorCode, FsError, isNodeError } from './errors.js';
