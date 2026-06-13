@@ -716,7 +716,11 @@ function setupExpressApp(
   app.use(originGuardMiddleware());
 
   app.options('/mcp', (req: Request, res: Response) => {
-    res.header('Access-Control-Allow-Origin', req.headers.origin ?? '*');
+    // Only reflect a present Origin (already constrained to localhost by
+    // originGuardMiddleware upstream). Avoid emitting a wildcard fallback.
+    if (req.headers.origin) {
+      res.header('Access-Control-Allow-Origin', req.headers.origin);
+    }
     res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     res.header(
       'Access-Control-Allow-Headers',

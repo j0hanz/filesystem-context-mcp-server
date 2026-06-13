@@ -180,3 +180,48 @@ test('validatePathForWrite returns the resolved target through a symlinked paren
     `resolved target must not retain the symlink component, got ${resolved}`,
   );
 });
+
+// ─── Symlink-to-sensitive-file denylist bypass ────────────────────────────────
+// A benign-named symlink inside an allowed root pointing at a sensitive file
+// must be blocked: the denylist has to be enforced on the resolved real path,
+// not only on the requested/normalized path.
+
+test('validateExistingPath rejects a benign symlink whose target is sensitive', async () => {
+  const secret = join(tmpDir, '.env');
+  const link = join(tmpDir, 'notes.txt'); // benign name — not on the denylist
+  await writeFile(secret, 'SECRET=1');
+
+  let linked = true;
+  try {
+    await symlink(secret, link, 'file');
+  } catch {
+    linked = false; // symlink creation may require privileges on Windows
+  }
+  if (!linked) return;
+
+  await assert.rejects(
+    () => guard.validateExistingPath(link),
+    (err: unknown) => hasErrorCode(err, ErrorCode.ACCESS_DENIED),
+    'read through a symlink to a sensitive file must be denied',
+  );
+});
+
+test('validatePathForWrite rejects a benign symlink whose target is sensitive', async () => {
+  const secret = join(tmpDir, '.env.write');
+  const link = join(tmpDir, 'write-notes.txt'); // benign name — not on the denylist
+  await writeFile(secret, 'SECRET=1');
+
+  let linked = true;
+  try {
+    await symlink(secret, link, 'file');
+  } catch {
+    linked = false;
+  }
+  if (!linked) return;
+
+  await assert.rejects(
+    () => guard.validatePathForWrite(link),
+    (err: unknown) => hasErrorCode(err, ErrorCode.ACCESS_DENIED),
+    'writing through a symlink to a sensitive file must be denied',
+  );
+});

@@ -25,6 +25,7 @@ import {
   DEFAULT_SEARCH_CONTENT_RESULTS,
   MAX_SEARCH_RESULTS,
   MAX_TEXT_FILE_SIZE,
+  parseEnvInt,
 } from './core/util.js';
 import { type IconInfo, withDefaultIcons } from './tools/define.js';
 
@@ -176,6 +177,10 @@ function createInstructionsResource(): ResourceContract {
 const FILESYSTEM_FILE_URI_TEMPLATE = 'filesystem-mcp://file/{+path}';
 const FILE_URI_PREFIX = 'filesystem-mcp://file';
 
+// Cap concurrent file watchers to avoid exhausting OS-level watch handles
+// (e.g. Linux inotify, default ~8192/user). One subscription == one watcher.
+const MAX_WATCHERS = parseEnvInt('FILESYSTEM_MCP_MAX_WATCHERS', 256, 1, 4096);
+
 let watchFactory: (path: string, listener: () => void) => FSWatcher = (path, listener) =>
   watch(path, listener);
 
@@ -199,6 +204,10 @@ function extractPath(uri: string): string | undefined {
 function createFilesystemResource(options: ResourceRegistrationOptions): ResourceContract {
   const completer = options.pathGuard ? new PathCompleter(options.pathGuard) : undefined;
   const watchers = new Map<string, FSWatcher>();
+  // Tracks URIs whose watcher is being created (validateExistingPath is async).
+  // Without it, two concurrent subscribe() calls for the same URI both pass the
+  // `watchers.has(uri)` check and the second watcher leaks (overwrites the first).
+  const pending = new Set<string>();
   const dropWatcher = (uri: string, watcher: FSWatcher): void => {
     const current = watchers.get(uri);
     if (current !== watcher) return;
@@ -245,13 +254,18 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     },
 
     subscribe(uri, notify) {
-      if (!options.pathGuard || watchers.has(uri)) return;
+      if (!options.pathGuard || watchers.has(uri) || pending.has(uri)) return;
+      if (watchers.size >= MAX_WATCHERS) return;
       const filePath = extractPath(uri);
       if (!filePath) return;
 
+      pending.add(uri);
       options.pathGuard
         .validateExistingPath(filePath)
         .then((resolved) => {
+          // Re-check after the async gap: the URI may have been subscribed or
+          // the cap reached while validation was in flight.
+          if (watchers.has(uri) || watchers.size >= MAX_WATCHERS) return;
           const watcher = watchFactory(resolved, () => {
             notify(uri);
           });
@@ -263,6 +277,9 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
         })
         .catch(() => {
           /* silent ignore for unallowed/missing files */
+        })
+        .finally(() => {
+          pending.delete(uri);
         });
     },
 

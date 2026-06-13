@@ -701,6 +701,17 @@ export class PathGuard {
       );
     }
 
+    // Re-check the resolved real path: a symlink inside an allowed root may
+    // point at a sensitive file (e.g. link -> .env). The early check above only
+    // sees the requested/normalized path, not the symlink target.
+    if (this.isSensitive(normalizedReal)) {
+      throw new FsError(
+        ErrorCode.ACCESS_DENIED,
+        'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
+        requestedPath,
+      );
+    }
+
     return {
       requestedPath: normalizedRequested,
       resolvedPath: normalizedReal,
@@ -829,6 +840,15 @@ export class PathGuard {
       throw new FsError(
         ErrorCode.ACCESS_DENIED,
         `Outside allowed directories. ${accessDeniedHint}`,
+        requestedPath,
+      );
+    }
+    // Re-check the resolved target: a symlink inside an allowed root may point
+    // at a sensitive file. Writing through such a link must be blocked too.
+    if (this.isSensitive(resolvedTarget)) {
+      throw new FsError(
+        ErrorCode.ACCESS_DENIED,
+        'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
         requestedPath,
       );
     }
