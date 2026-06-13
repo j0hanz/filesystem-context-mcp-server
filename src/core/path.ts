@@ -555,6 +555,22 @@ export class PathGuard {
     return details.resolvedPath;
   }
 
+  private validateAccessAndSensitivity(requestedPath: string): {
+    normalizedRequested: string;
+    allowedDirs: string[];
+    accessDeniedHint: string;
+  } {
+    const result = this.validateAccess(requestedPath);
+    if (this.isSensitive(requestedPath) || this.isSensitive(result.normalizedRequested)) {
+      throw new FsError(
+        ErrorCode.ACCESS_DENIED,
+        'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
+        requestedPath,
+      );
+    }
+    return result;
+  }
+
   private validateAccess(requestedPath: string): {
     normalizedRequested: string;
     allowedDirs: string[];
@@ -668,15 +684,7 @@ export class PathGuard {
 
   async validateExistingPathDetailed(requestedPath: string): Promise<ValidatedPathDetails> {
     const { normalizedRequested, allowedDirs, accessDeniedHint } =
-      this.validateAccess(requestedPath);
-
-    if (this.isSensitive(requestedPath) || this.isSensitive(normalizedRequested)) {
-      throw new FsError(
-        ErrorCode.ACCESS_DENIED,
-        'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
-        requestedPath,
-      );
-    }
+      this.validateAccessAndSensitivity(requestedPath);
 
     let realPath: string;
     try {
@@ -819,15 +827,7 @@ export class PathGuard {
 
   async validatePathForWrite(requestedPath: string): Promise<string> {
     const { normalizedRequested, allowedDirs, accessDeniedHint } =
-      this.validateAccess(requestedPath);
-
-    if (this.isSensitive(requestedPath) || this.isSensitive(normalizedRequested)) {
-      throw new FsError(
-        ErrorCode.ACCESS_DENIED,
-        'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
-        requestedPath,
-      );
-    }
+      this.validateAccessAndSensitivity(requestedPath);
 
     const { realAncestor, resolvedTarget } = await this.resolveNearestExistingAncestor(
       requestedPath,
@@ -857,15 +857,7 @@ export class PathGuard {
 
   async validatePathForDelete(requestedPath: string): Promise<string> {
     const { normalizedRequested, allowedDirs, accessDeniedHint } =
-      this.validateAccess(requestedPath);
-
-    if (this.isSensitive(requestedPath) || this.isSensitive(normalizedRequested)) {
-      throw new FsError(
-        ErrorCode.ACCESS_DENIED,
-        'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
-        requestedPath,
-      );
-    }
+      this.validateAccessAndSensitivity(requestedPath);
 
     const parent = dirname(normalizedRequested);
     let realParent: string;

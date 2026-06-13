@@ -37,21 +37,6 @@ import { PARALLEL_CONCURRENCY } from '../core/util.js';
 
 // ============ Type Definitions ============
 
-// ---- Result wire types ----
-
-type ToolResponse<T> = {
-  content: ContentBlock[];
-  structuredContent: T;
-  isError?: never;
-} & Record<string, unknown>;
-
-type ToolErrorResponse = {
-  content: ContentBlock[];
-  isError: true;
-} & Record<string, unknown>;
-
-export type ToolResult<T> = ToolResponse<T> | ToolErrorResponse;
-
 export interface PerPathError {
   code: ErrorCode;
   message: string;
@@ -141,7 +126,7 @@ export interface DefinedTool extends Tool {
 
 // ============ Context Builder ============
 
-export function toToolCtx(
+function toToolCtx(
   ctx: ServerContext | undefined,
   deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore'>,
 ): ToolCtx {
