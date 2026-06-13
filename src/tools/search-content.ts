@@ -17,7 +17,7 @@ import {
   executeSearch as executeCoreSearch,
   SearchWorkerPool,
 } from '../core/search/engine.js';
-import type { SearchOptions } from '../core/search/types.js';
+import type { SearchOptions } from '../core/search/engine.js';
 import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_CONTENT_RESULTS,

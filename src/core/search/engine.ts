@@ -8,7 +8,6 @@ import { formatUnknownErrorMessage } from '../errors.js';
 import type { GuardedFileSystem, Stats } from '../fs.js';
 import { globEntries } from '../fs.js';
 import { SEARCH_WORKERS } from '../util.js';
-import type { ContentMatch, FileMatch, SearchOptions, SearchResult } from './types.js';
 
 // Constants
 const ERROR_SCAN_CANCELLED = 'Scan cancelled';
@@ -21,6 +20,55 @@ const isSourceContext =
 const WORKER_SCRIPT_URL = new URL(import.meta.url);
 
 // ─── Interfaces ─────────────────────────────────────────────────────────────
+
+export interface SearchOptions {
+  pattern: string;
+  path?: string;
+  filePattern?: string;
+  excludePatterns?: string[];
+  caseSensitive?: boolean;
+  wholeWord?: boolean;
+  isLiteral?: boolean;
+  maxResults?: number;
+  maxFileSize?: number;
+  maxFilesScanned?: number;
+  timeoutMs?: number;
+  skipBinary?: boolean;
+  contextBefore?: number;
+  contextAfter?: number;
+  fileSearch?: boolean;
+  includeStats?: boolean;
+  signal?: AbortSignal;
+  maxDepth?: number;
+  baseNameMatch?: boolean;
+  includeHidden?: boolean;
+  respectGitignore?: boolean;
+  fuzzy?: boolean;
+}
+
+interface ContentMatch {
+  readonly line: number;
+  readonly content: string;
+  readonly before: readonly string[];
+  readonly after: readonly string[];
+}
+
+interface FileMatch {
+  readonly filePath: string;
+  readonly matches: readonly ContentMatch[];
+  readonly size?: number;
+  readonly modified?: Date;
+}
+
+export interface SearchResult {
+  readonly filesMatched: readonly FileMatch[];
+  readonly summary: {
+    readonly filesScanned: number;
+    readonly filesMatched: number;
+    readonly matchesCount: number;
+    readonly truncated: boolean;
+  };
+}
 
 export interface MatcherOptions {
   caseSensitive: boolean;
@@ -198,22 +246,16 @@ export class SearchWorkerPool {
   }
 
   private getLeastBusyWorkerIndex(): number {
-    let workerIndex = 0;
-    const workerPendingCounts = new Array<number>(this.size).fill(0);
+    const counts = new Array<number>(this.size).fill(0);
     for (const p of this.pending.values()) {
-      const idx = p.workerIndex;
-      workerPendingCounts[idx] = (workerPendingCounts[idx] ?? 0) + 1;
+      counts[p.workerIndex] = (counts[p.workerIndex] ?? 0) + 1;
     }
 
-    let minPending = workerPendingCounts[0] ?? 0;
+    let best = 0;
     for (let i = 1; i < this.size; i++) {
-      const pendingCount = workerPendingCounts[i] ?? 0;
-      if (pendingCount < minPending) {
-        minPending = pendingCount;
-        workerIndex = i;
-      }
+      if ((counts[i] ?? 0) < (counts[best] ?? 0)) best = i;
     }
-    return workerIndex;
+    return best;
   }
 
   private createWorkerScanPromise(
@@ -407,16 +449,9 @@ function levenshtein(a: string, b: string): number {
 }
 
 export function buildMatcher(pattern: string, options: MatcherOptions): ContentMatcher {
-  if (options.fuzzy) {
-    return new FuzzyContentMatcher(pattern, options.caseSensitive);
-  }
-  if (options.isLiteral && pattern.length === 0) {
-    return new EmptyContentMatcher();
-  }
-  if (options.isLiteral && !options.wholeWord) {
-    if (!options.caseSensitive) {
-      return new RegexContentMatcher(pattern, { ...options, isLiteral: true });
-    }
+  if (options.fuzzy) return new FuzzyContentMatcher(pattern, options.caseSensitive);
+  if (options.isLiteral && pattern.length === 0) return new EmptyContentMatcher();
+  if (options.isLiteral && !options.wholeWord && options.caseSensitive) {
     return new LiteralContentMatcher(pattern);
   }
   return new RegexContentMatcher(pattern, options);
@@ -433,105 +468,177 @@ function getPool(): SearchWorkerPool {
   return poolInstance;
 }
 
+// ─── Search Helpers ──────────────────────────────────────────────────────────
+
+interface ResolvedSearchOptions {
+  pattern: string;
+  isLiteral: boolean;
+  caseSensitive: boolean;
+  wholeWord: boolean;
+  skipBinary: boolean;
+  maxFileSize: number;
+  maxResults: number;
+  maxFilesScanned: number;
+}
+
+function resolveSearchOptions(options: SearchOptions): ResolvedSearchOptions {
+  return {
+    pattern: options.pattern,
+    isLiteral: options.isLiteral ?? false,
+    caseSensitive: options.caseSensitive ?? false,
+    wholeWord: options.wholeWord ?? false,
+    skipBinary: options.skipBinary ?? true,
+    maxFileSize: options.maxFileSize ?? 10 * 1024 * 1024, // 10 MB
+    maxResults: options.maxResults ?? 500,
+    maxFilesScanned: options.maxFilesScanned ?? 1000,
+  };
+}
+
+interface ScanFile {
+  resolvedPath: string;
+  requestedPath: string;
+  stats?: Stats;
+}
+
+async function collectFilesToScan(
+  fs: GuardedFileSystem,
+  options: SearchOptions,
+  resolved: Awaited<ReturnType<GuardedFileSystem['pathGuard']['validateExistingPathDetailed']>>,
+  targetStats: Stats,
+  maxFilesScanned: number,
+  caseSensitive: boolean,
+): Promise<ScanFile[]> {
+  if (targetStats.isFile()) {
+    return [
+      {
+        resolvedPath: resolved.resolvedPath,
+        requestedPath: resolved.requestedPath,
+        stats: targetStats,
+      },
+    ];
+  }
+
+  if (!targetStats.isDirectory()) return [];
+
+  const files: ScanFile[] = [];
+  const globStream = globEntries({
+    cwd: resolved.resolvedPath,
+    pattern: options.filePattern ?? '**/*',
+    excludePatterns: options.excludePatterns ?? [],
+    includeHidden: options.includeHidden ?? false,
+    baseNameMatch: options.baseNameMatch ?? false,
+    caseSensitiveMatch: caseSensitive,
+    followSymbolicLinks: false,
+    onlyFiles: true,
+    stats: options.includeStats ?? false,
+    suppressErrors: true,
+    respectGitignore: options.respectGitignore !== false,
+    ...(options.maxDepth !== undefined ? { maxDepth: options.maxDepth } : {}),
+  });
+
+  for await (const entry of globStream) {
+    if (files.length >= maxFilesScanned) break;
+    if (fs.pathGuard.isSensitive(entry.path)) continue;
+    files.push({
+      resolvedPath: entry.path,
+      requestedPath: entry.relativePath ?? entry.path,
+      ...(entry.stats !== undefined ? { stats: entry.stats } : {}),
+    });
+  }
+  return files;
+}
+
+function buildFileMatch(file: ScanFile, matches: readonly ContentMatch[]): FileMatch {
+  const size = file.stats?.isFile() === true ? file.stats.size : undefined;
+  const modified = file.stats?.mtime;
+  return {
+    filePath: file.resolvedPath,
+    matches,
+    ...(size !== undefined ? { size } : {}),
+    ...(modified !== undefined ? { modified } : {}),
+  };
+}
+
+function isBinaryBuffer(buffer: Buffer, bytesRead: number): boolean {
+  for (let i = 0; i < bytesRead; i++) {
+    if (buffer[i] === 0) return true;
+  }
+  return false;
+}
+
+function scanLinesForMatches(
+  allLines: string[],
+  matcher: ContentMatcher,
+  contextBefore: number,
+  contextAfter: number,
+  limit: number,
+): { matches: ContentMatch[]; matchesFound: number } {
+  const matches: ContentMatch[] = [];
+  let matchesFound = 0;
+  for (let i = 0; i < allLines.length; i++) {
+    if (matchesFound >= limit) break;
+    const line = allLines[i];
+    if (line !== undefined && matcher.matchCount(line) > 0) {
+      matches.push({
+        line: i + 1,
+        content: line,
+        before: allLines.slice(Math.max(0, i - contextBefore), i),
+        after: allLines.slice(i + 1, Math.min(allLines.length, i + 1 + contextAfter)),
+      });
+      matchesFound++;
+    }
+  }
+  return { matches, matchesFound };
+}
+
 export async function executeSearch(
   fs: GuardedFileSystem,
   options: SearchOptions,
 ): Promise<SearchResult> {
-  const searchPath = options.path ?? '.';
-  const pattern = options.pattern;
-  const isLiteral = options.isLiteral ?? false;
-  const caseSensitive = options.caseSensitive ?? false;
-  const wholeWord = options.wholeWord ?? false;
-  const skipBinary = options.skipBinary ?? true;
-  const maxFileSize = options.maxFileSize ?? 10 * 1024 * 1024; // 10MB
-  const maxResults = options.maxResults ?? 500;
-  const maxFilesScanned = options.maxFilesScanned ?? 1000;
+  const opts = resolveSearchOptions(options);
 
-  // Validate the search path first using GuardedFileSystem's stat
-  const resolvedTarget = await fs.pathGuard.validateExistingPathDetailed(searchPath);
+  const resolvedTarget = await fs.pathGuard.validateExistingPathDetailed(options.path ?? '.');
   const { stats: targetStats } = await fs.stat(resolvedTarget.resolvedPath);
 
-  const filesToScan: { resolvedPath: string; requestedPath: string; stats?: Stats }[] = [];
+  const filesToScan = await collectFilesToScan(
+    fs,
+    options,
+    resolvedTarget,
+    targetStats,
+    opts.maxFilesScanned,
+    opts.caseSensitive,
+  );
 
-  if (targetStats.isFile()) {
-    filesToScan.push({
-      resolvedPath: resolvedTarget.resolvedPath,
-      requestedPath: resolvedTarget.requestedPath,
-      stats: targetStats,
-    });
-  } else if (targetStats.isDirectory()) {
-    // Walk directory using globEntries
-    const excludePatterns = options.excludePatterns ?? [];
-    const globStream = globEntries({
-      cwd: resolvedTarget.resolvedPath,
-      pattern: options.filePattern ?? '**/*',
-      excludePatterns,
-      includeHidden: options.includeHidden ?? false,
-      baseNameMatch: options.baseNameMatch ?? false,
-      caseSensitiveMatch: caseSensitive,
-      followSymbolicLinks: false,
-      onlyFiles: true,
-      stats: options.includeStats ?? false,
-      suppressErrors: true,
-      respectGitignore: options.respectGitignore !== false,
-      ...(options.maxDepth !== undefined ? { maxDepth: options.maxDepth } : {}),
-    });
-
-    for await (const entry of globStream) {
-      if (filesToScan.length >= maxFilesScanned) break;
-      // Validate the path is not sensitive
-      if (fs.pathGuard.isSensitive(entry.path)) continue;
-      filesToScan.push({
-        resolvedPath: entry.path,
-        requestedPath: entry.relativePath ?? entry.path,
-        ...(entry.stats !== undefined ? { stats: entry.stats } : {}),
-      });
-    }
-  }
-
-  // Handle fileSearch early
   if (options.fileSearch) {
-    const filesMatched: FileMatch[] = filesToScan.map((file) => {
-      const size = file.stats?.isFile() === true ? file.stats.size : undefined;
-      const modified = file.stats?.mtime;
-      return {
-        filePath: file.resolvedPath,
-        matches: [],
-        ...(size !== undefined ? { size } : {}),
-        ...(modified !== undefined ? { modified } : {}),
-      };
-    });
+    const filesMatched = filesToScan.map((f) => buildFileMatch(f, []));
     return {
       filesMatched,
       summary: {
         filesScanned: filesToScan.length,
         filesMatched: filesMatched.length,
         matchesCount: 0,
-        truncated: filesToScan.length >= maxFilesScanned,
+        truncated: filesToScan.length >= opts.maxFilesScanned,
       },
     };
   }
 
-  // Compile matcher
   const matcherOptions: MatcherOptions = {
-    caseSensitive,
-    wholeWord,
-    isLiteral,
+    caseSensitive: opts.caseSensitive,
+    wholeWord: opts.wholeWord,
+    isLiteral: opts.isLiteral,
     ...(options.fuzzy !== undefined ? { fuzzy: options.fuzzy } : {}),
   };
-  const matcher = buildMatcher(pattern, matcherOptions);
 
   const filesMatched: FileMatch[] = [];
   let matchesCount = 0;
   let filesScanned = 0;
 
-  // Use worker threads for pattern matching if in production and concurrency is requested
   const shouldUseWorkers = !isSourceContext && SEARCH_WORKERS >= 2;
 
   if (shouldUseWorkers) {
     const pool = getPool();
     const pending = new Set<ScanTask>();
-    const taskToFile = new Map<ScanTask, (typeof filesToScan)[number]>();
+    const taskToFile = new Map<ScanTask, ScanFile>();
     const fileIterator = filesToScan[Symbol.iterator]();
     let iteratorDone = false;
 
@@ -543,17 +650,16 @@ export async function executeSearch(
           break;
         }
         const file = next.value;
-        const remainingMatches = maxResults - matchesCount;
+        const remainingMatches = opts.maxResults - matchesCount;
         if (remainingMatches <= 0) break;
-
         const task = pool.scan({
           resolvedPath: file.resolvedPath,
           requestedPath: file.requestedPath,
-          pattern,
+          pattern: opts.pattern,
           matcherOptions,
           scanOptions: {
-            maxFileSize,
-            skipBinary,
+            maxFileSize: opts.maxFileSize,
+            skipBinary: opts.skipBinary,
             contextBefore: options.contextBefore ?? 0,
             contextAfter: options.contextAfter ?? 0,
           },
@@ -567,16 +673,12 @@ export async function executeSearch(
     fillPool();
 
     const onAbort = () => {
-      for (const task of pending) {
-        task.cancel();
-      }
+      for (const task of pending) task.cancel();
     };
-    if (options.signal) {
-      options.signal.addEventListener('abort', onAbort, { once: true });
-    }
+    if (options.signal) options.signal.addEventListener('abort', onAbort, { once: true });
 
     try {
-      while (pending.size > 0 && matchesCount < maxResults) {
+      while (pending.size > 0 && matchesCount < opts.maxResults) {
         if (options.signal?.aborted) break;
         filesScanned++;
         const raceCandidates = Array.from(pending).map((task) =>
@@ -585,39 +687,28 @@ export async function executeSearch(
             (error: unknown) => ({ task, result: null, error }),
           ),
         );
-
         const winner = await Promise.race(raceCandidates);
         pending.delete(winner.task);
         const file = taskToFile.get(winner.task);
         taskToFile.delete(winner.task);
 
-        if (winner.error === null && winner.result?.matched === true) {
-          const size = file?.stats?.isFile() === true ? file.stats.size : undefined;
-          const modified = file?.stats?.mtime;
-          filesMatched.push({
-            filePath: file?.resolvedPath ?? '',
-            matches: winner.result.matches,
-            ...(size !== undefined ? { size } : {}),
-            ...(modified !== undefined ? { modified } : {}),
-          });
+        if (winner.error === null && winner.result?.matched === true && file !== undefined) {
+          filesMatched.push(buildFileMatch(file, winner.result.matches));
           matchesCount += winner.result.matches.length;
         }
-
         fillPool();
       }
     } finally {
-      if (options.signal) {
-        options.signal.removeEventListener('abort', onAbort);
-      }
-      for (const task of pending) {
-        task.cancel();
-      }
+      if (options.signal) options.signal.removeEventListener('abort', onAbort);
+      for (const task of pending) task.cancel();
     }
   } else {
-    // Sequential fallback
+    const matcher = buildMatcher(opts.pattern, matcherOptions);
+    const contextBefore = options.contextBefore ?? 0;
+    const contextAfter = options.contextAfter ?? 0;
+
     for (const file of filesToScan) {
-      if (options.signal?.aborted) break;
-      if (matchesCount >= maxResults) break;
+      if (options.signal?.aborted || matchesCount >= opts.maxResults) break;
       filesScanned++;
 
       try {
@@ -625,62 +716,28 @@ export async function executeSearch(
         await using _disposer = fileHandle;
         const stats = await fileHandle.stat();
 
-        if (stats.size > maxFileSize) {
-          continue;
-        }
+        if (stats.size > opts.maxFileSize) continue;
 
-        if (skipBinary) {
-          // Simple binary check: check first 512 bytes for null byte
+        if (opts.skipBinary) {
           const buffer = Buffer.alloc(512);
           const { bytesRead } = await fileHandle.read(buffer, 0, 512, 0);
-          let isBinary = false;
-          for (let i = 0; i < bytesRead; i++) {
-            if (buffer[i] === 0) {
-              isBinary = true;
-              break;
-            }
-          }
-          if (isBinary) continue;
+          if (isBinaryBuffer(buffer, bytesRead)) continue;
         }
 
-        // Read lines and match
-        const lines = fileHandle.readLines({ encoding: 'utf-8' });
-        const matches: ContentMatch[] = [];
-
-        const contextBefore = options.contextBefore ?? 0;
-        const contextAfter = options.contextAfter ?? 0;
-
         const allLines: string[] = [];
-        for await (const line of lines) {
+        for await (const line of fileHandle.readLines({ encoding: 'utf-8' })) {
           allLines.push(line);
         }
 
-        for (let i = 0; i < allLines.length; i++) {
-          if (matchesCount >= maxResults) break;
-          const line = allLines[i];
-          if (line !== undefined && matcher.matchCount(line) > 0) {
-            const before = allLines.slice(Math.max(0, i - contextBefore), i);
-            const after = allLines.slice(i + 1, Math.min(allLines.length, i + 1 + contextAfter));
-            matches.push({
-              line: i + 1,
-              content: line,
-              before,
-              after,
-            });
-            matchesCount++;
-          }
-        }
-
-        if (matches.length > 0) {
-          const size = file.stats?.isFile() === true ? file.stats.size : undefined;
-          const modified = file.stats?.mtime;
-          filesMatched.push({
-            filePath: file.resolvedPath,
-            matches,
-            ...(size !== undefined ? { size } : {}),
-            ...(modified !== undefined ? { modified } : {}),
-          });
-        }
+        const { matches, matchesFound } = scanLinesForMatches(
+          allLines,
+          matcher,
+          contextBefore,
+          contextAfter,
+          opts.maxResults - matchesCount,
+        );
+        matchesCount += matchesFound;
+        if (matches.length > 0) filesMatched.push(buildFileMatch(file, matches));
       } catch {
         // Ignore inaccessible files
       }
@@ -693,7 +750,7 @@ export async function executeSearch(
       filesScanned,
       filesMatched: filesMatched.length,
       matchesCount,
-      truncated: matchesCount >= maxResults,
+      truncated: matchesCount >= opts.maxResults,
     },
   };
 }
@@ -718,38 +775,18 @@ type WorkerRequest = ScanRequest | CancelRequest | ShutdownRequest;
 const matcherCache = new Map<string, ContentMatcher>();
 const MAX_MATCHER_CACHE_SIZE = 100;
 
-function getMatcherCacheKey(pattern: string, options: MatcherOptions): string {
-  const cs = options.caseSensitive ? '1' : '0';
-  const ww = options.wholeWord ? '1' : '0';
-  const lit = options.isLiteral ? '1' : '0';
-  const fz = options.fuzzy ? '1' : '0';
-  return `${pattern}|${cs}|${ww}|${lit}|${fz}`;
-}
-
 function getCachedMatcher(pattern: string, options: MatcherOptions): ContentMatcher {
-  const key = getMatcherCacheKey(pattern, options);
+  const key = `${pattern}|${options.caseSensitive ? 1 : 0}|${options.wholeWord ? 1 : 0}|${options.isLiteral ? 1 : 0}|${options.fuzzy ? 1 : 0}`;
   const cached = matcherCache.get(key);
-  if (cached) {
-    refreshMatcherCacheEntry(key, cached);
-    return cached;
-  }
-  const matcher = buildMatcher(pattern, options);
-  refreshMatcherCacheEntry(key, matcher);
-  evictOldestMatcherIfNeeded();
-  return matcher;
-}
-
-function refreshMatcherCacheEntry(key: string, matcher: ContentMatcher): void {
+  // LRU refresh: delete then re-insert to move to end of insertion order
   matcherCache.delete(key);
+  const matcher = cached ?? buildMatcher(pattern, options);
   matcherCache.set(key, matcher);
-}
-
-function evictOldestMatcherIfNeeded(): void {
-  if (matcherCache.size <= MAX_MATCHER_CACHE_SIZE) return;
-  const firstKey = matcherCache.keys().next().value;
-  if (firstKey !== undefined) {
-    matcherCache.delete(firstKey);
+  if (matcherCache.size > MAX_MATCHER_CACHE_SIZE) {
+    const oldest = matcherCache.keys().next().value;
+    if (oldest !== undefined) matcherCache.delete(oldest);
   }
+  return matcher;
 }
 
 const cancelledRequests = new Set<number>();
@@ -813,14 +850,7 @@ async function handleScanRequest(request: ScanRequest): Promise<void> {
     if (scanOptions.skipBinary) {
       const buffer = Buffer.alloc(512);
       const { bytesRead } = await handle.read(buffer, 0, 512, 0);
-      let isBinary = false;
-      for (let i = 0; i < bytesRead; i++) {
-        if (buffer[i] === 0) {
-          isBinary = true;
-          break;
-        }
-      }
-      if (isBinary) {
+      if (isBinaryBuffer(buffer, bytesRead)) {
         if (consumeCancelled(id)) return;
         parentPort?.postMessage(
           buildScanResponse(id, {
@@ -834,30 +864,18 @@ async function handleScanRequest(request: ScanRequest): Promise<void> {
       }
     }
 
-    const lines = handle.readLines({ encoding: 'utf-8' });
-    const matches: ContentMatch[] = [];
     const allLines: string[] = [];
-    for await (const line of lines) {
+    for await (const line of handle.readLines({ encoding: 'utf-8' })) {
       allLines.push(line);
     }
 
-    for (let i = 0; i < allLines.length; i++) {
-      if (matches.length >= maxMatches) break;
-      const line = allLines[i];
-      if (line !== undefined && matcher.matchCount(line) > 0) {
-        const before = allLines.slice(Math.max(0, i - scanOptions.contextBefore), i);
-        const after = allLines.slice(
-          i + 1,
-          Math.min(allLines.length, i + 1 + scanOptions.contextAfter),
-        );
-        matches.push({
-          line: i + 1,
-          content: line,
-          before,
-          after,
-        });
-      }
-    }
+    const { matches } = scanLinesForMatches(
+      allLines,
+      matcher,
+      scanOptions.contextBefore,
+      scanOptions.contextAfter,
+      maxMatches,
+    );
 
     if (consumeCancelled(id)) return;
     parentPort?.postMessage(
