@@ -1,46 +1,33 @@
-import { AsyncResource } from 'node:async_hooks';
-import { dirname, relative } from 'node:path';
-import { debuglog } from 'node:util';
-import { parentPort, threadId, Worker, workerData } from 'node:worker_threads';
+import { relative } from 'node:path';
 
 import * as z from 'zod/v4';
 import RE2 from 're2';
 
-import { assertNotAborted, withAbort, withTimedAbortSignal } from '../core/concurrency.js';
+import { withTimedAbortSignal } from '../core/concurrency.js';
 import {
   ErrorCode,
   formatUnknownErrorMessage,
   FsError,
   isTimeoutLikeError,
-  Problem,
 } from '../core/errors.js';
-import {
-  buildGlobOptions,
-  DEFAULT_EXCLUDE_PATTERNS,
-  type FileHandle,
-  globEntries,
-  type GlobEntry,
-  type GuardedFileSystem,
-  isProbablyBinary,
-  stat,
-} from '../core/fs.js';
-import { startPerfMeasure } from '../core/observability.js';
-import { isPathWithinDirectories, normalizePath } from '../core/path.js';
+import { DEFAULT_EXCLUDE_PATTERNS, type GuardedFileSystem } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
+import {
+  buildMatcher,
+  executeSearch as executeCoreSearch,
+  SearchWorkerPool,
+} from '../core/search/engine.js';
+import type { SearchOptions } from '../core/search/types.js';
 import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_CONTENT_RESULTS,
   DEFAULT_SEARCH_MAX_FILES,
   DEFAULT_SEARCH_TIMEOUT_MS,
-  escapeRegexLiteral,
-  MAX_LINE_CONTENT_LENGTH,
   MAX_SEARCH_DEPTH,
   MAX_SEARCH_RESULTS,
   MAX_SEARCHABLE_FILE_SIZE,
-  mergeOptions,
   omitOptionKeys,
   parseEnvInt,
-  SEARCH_WORKERS,
 } from '../core/util.js';
 import {
   CursorSchema,
@@ -93,148 +80,11 @@ interface SearchContentResult {
 }
 
 // ---------------------------------------------------------------------------
-// Private searchContent implementation (inlined from lib/file-operations/search.ts)
+// Re-export SearchWorkerPool for compatibility
 // ---------------------------------------------------------------------------
-
-// --- Matcher helpers ---
-
-interface MatcherOptions {
-  caseSensitive: boolean;
-  wholeWord: boolean;
-  isLiteral: boolean;
-  fuzzy?: boolean;
-}
-
-interface ContentMatcher {
-  matchCount(line: string): number;
-}
-
-interface RegexLikeMatcher {
-  lastIndex: number;
-  exec(input: string): unknown;
-}
-
-function countRegexLineMatches(regex: RegexLikeMatcher, line: string): number {
-  regex.lastIndex = 0;
-  let count = 0;
-  while (regex.exec(line) !== null) {
-    count++;
-    if (regex.lastIndex === 0) regex.lastIndex++;
-  }
-  return count;
-}
-
-function buildRegexPattern(pattern: string, options: MatcherOptions): string {
-  const escaped = options.isLiteral ? escapeRegexLiteral(pattern) : pattern;
-  return options.wholeWord ? `\\b${escaped}\\b` : escaped;
-}
-
-class RegexContentMatcher implements ContentMatcher {
-  private readonly regex: RE2;
-
-  constructor(pattern: string, options: MatcherOptions) {
-    const final = buildRegexPattern(pattern, options);
-    const flags = options.caseSensitive ? 'g' : 'gi';
-    this.regex = new RE2(final, flags);
-  }
-
-  matchCount(line: string): number {
-    return countRegexLineMatches(this.regex, line);
-  }
-}
-
-class LiteralContentMatcher implements ContentMatcher {
-  private readonly needle: string;
-
-  constructor(pattern: string) {
-    this.needle = pattern;
-  }
-
-  matchCount(line: string): number {
-    if (this.needle.length === 0 || line.length === 0) return 0;
-    let count = 0;
-    let pos = line.indexOf(this.needle);
-    while (pos !== -1) {
-      count++;
-      pos = line.indexOf(this.needle, pos + this.needle.length);
-    }
-    return count;
-  }
-}
-
-class FuzzyContentMatcher implements ContentMatcher {
-  private readonly lowerPattern: string;
-  private readonly threshold: number;
-
-  constructor(pattern: string) {
-    this.threshold = Math.floor(pattern.length / 4);
-    this.lowerPattern = pattern.toLowerCase();
-  }
-
-  matchCount(line: string): number {
-    const words = line.toLowerCase().split(/\s+/);
-    return words.some((word) => levenshtein(word, this.lowerPattern) <= this.threshold) ? 1 : 0;
-  }
-}
-
-class EmptyContentMatcher implements ContentMatcher {
-  matchCount(): number {
-    return 0;
-  }
-}
-
-function buildMatcher(pattern: string, options: MatcherOptions): ContentMatcher {
-  if (options.fuzzy === true) {
-    return new FuzzyContentMatcher(pattern);
-  }
-  if (options.isLiteral && pattern.length === 0) {
-    return new EmptyContentMatcher();
-  }
-  if (options.isLiteral && !options.wholeWord) {
-    if (!options.caseSensitive) {
-      // Literal but case-insensitive uses regex under the hood
-      return new RegexContentMatcher(pattern, { ...options, isLiteral: true });
-    }
-    return new LiteralContentMatcher(pattern);
-  }
-  return new RegexContentMatcher(pattern, options);
-}
-
-// --- Fuzzy helpers ---
-
-const MAX_FUZZY_FILES = 200;
-const MIN_FUZZY_PATTERN_LENGTH = 4;
-
-function levenshtein(a: string, b: string): number {
-  const m = a.length;
-  const n = b.length;
-  let prev = Array.from({ length: n + 1 }, (_, j) => j);
-  for (let i = 1; i <= m; i++) {
-    const curr = new Array<number>(n + 1);
-    curr[0] = i;
-    for (let j = 1; j <= n; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      curr[j] =
-        cost === 0
-          ? (prev[j - 1] ?? 0)
-          : 1 + Math.min(prev[j] ?? 0, curr[j - 1] ?? 0, prev[j - 1] ?? 0);
-    }
-    prev = curr;
-  }
-  return prev[n] ?? 0;
-}
-
-// --- Configuration & Schemas ---
+export { SearchWorkerPool };
 
 const SEARCH_CONTENT_MAX_RESULTS = 500;
-
-interface ScanFileOptions {
-  maxFileSize: number;
-  skipBinary: boolean;
-  contextLines: number;
-  contextBefore: number;
-  contextAfter: number;
-}
 
 const SearchOptionsSchema = z.strictObject({
   filePattern: SafeGlobPattern,
@@ -283,12 +133,14 @@ const SEARCH_CONTENT_DEFAULTS: ResolvedOptions = {
   respectGitignore: true,
 };
 
-const ERROR_SCAN_CANCELLED = 'Scan cancelled';
-const ERROR_WORKER_POOL_CLOSED = 'Worker pool closed';
-const SEARCH_WORKER_NAME_PREFIX = 'filesystem-search';
-const SEARCH_WORKER_RESOURCE_TYPE = 'SearchWorkerTask';
+const MIN_FUZZY_PATTERN_LENGTH = 4;
 
-type SearchContentStopReason = NonNullable<SearchContentResult['summary']['stoppedReason']>;
+function mergeOptions(
+  defaults: ResolvedOptions,
+  options: Partial<ResolvedOptions>,
+): ResolvedOptions {
+  return { ...defaults, ...options };
+}
 
 function resolveOptions(options: SearchContentOptions): ResolvedOptions {
   const normalizedOptions = omitOptionKeys(options, ['signal', 'onProgress', 'maxDepth']);
@@ -305,938 +157,27 @@ function resolveOptions(options: SearchContentOptions): ResolvedOptions {
   return result.data;
 }
 
-// --- Context Management ---
-
-interface PendingContext {
-  buffer: string[];
-  remaining: number;
-}
-
-class ContextBuffer {
-  private readonly beforeCapacity: number;
-  private readonly afterCapacity: number;
-  private buffer: string[];
-  private head = 0;
-  private size = 0;
-  private pending: PendingContext[] = [];
-
-  constructor(contextBefore: number, contextAfter: number) {
-    this.beforeCapacity = Math.max(0, contextBefore);
-    this.afterCapacity = Math.max(0, contextAfter);
-    this.buffer = new Array<string>(this.beforeCapacity);
-  }
-
-  flushPending(line: string): void {
-    if (this.pending.length === 0) return;
-    let writeIndex = 0;
-    for (const p of this.pending) {
-      if (p.remaining > 0) {
-        p.buffer.push(line);
-        p.remaining--;
-      }
-      if (p.remaining > 0) {
-        this.pending[writeIndex] = p;
-        writeIndex++;
-      }
-    }
-    this.pending.length = writeIndex;
-  }
-
-  updateBefore(line: string): void {
-    if (this.beforeCapacity === 0) return;
-    this.buffer[this.head] = line;
-    this.head = (this.head + 1) % this.beforeCapacity;
-    if (this.size < this.beforeCapacity) this.size++;
-  }
-
-  add(line: string): void {
-    this.flushPending(line);
-    this.updateBefore(line);
-  }
-
-  snapshotBefore(): string[] {
-    if (this.size === 0) return [];
-    const result = new Array<string>(this.size);
-    if (this.size < this.beforeCapacity) {
-      for (let i = 0; i < this.size; i++) {
-        result[i] = this.buffer[i] ?? '';
-      }
-      return result;
-    }
-    let outIndex = 0;
-    for (let i = this.head; i < this.beforeCapacity; i++) {
-      result[outIndex] = this.buffer[i] ?? '';
-      outIndex++;
-    }
-    for (let i = 0; i < this.head; i++) {
-      result[outIndex] = this.buffer[i] ?? '';
-      outIndex++;
-    }
-    return result;
-  }
-
-  scheduleAfter(): string[] {
-    if (this.afterCapacity === 0) return [];
-    const buffer: string[] = [];
-    this.pending.push({ buffer, remaining: this.afterCapacity });
-    return buffer;
-  }
-}
-
-function trimContent(line: string): string {
-  return line.length > MAX_LINE_CONTENT_LENGTH
-    ? `${line.slice(0, MAX_LINE_CONTENT_LENGTH)}\u2026`
-    : line;
-}
-
-// --- Scanning ---
-
-interface ScanFileResult {
-  readonly matches: readonly ContentMatch[];
-  readonly matched: boolean;
-  readonly skippedTooLarge: boolean;
-  readonly skippedBinary: boolean;
-}
-
-function processLineMatch(
-  matches: ContentMatch[],
-  trimmedLine: string,
-  lineNumber: number,
-  matchCount: number,
-  requestedPath: string,
-  ctx?: ContextBuffer,
-): void {
-  matches.push({
-    file: requestedPath,
-    line: lineNumber,
-    content: trimmedLine,
-    matchCount,
-    ...(ctx ? { contextBefore: ctx.snapshotBefore(), contextAfter: ctx.scheduleAfter() } : {}),
-  });
-}
-
-async function readMatches(
-  handle: FileHandle,
-  requestedPath: string,
-  matcher: ContentMatcher,
-  options: ScanFileOptions,
-  maxMatches: number,
-  isCancelled: () => boolean,
-  signal?: AbortSignal,
-): Promise<ContentMatch[]> {
-  if (maxMatches <= 0) return [];
-
-  const matches: ContentMatch[] = [];
-  const hasContext = options.contextBefore > 0 || options.contextAfter > 0;
-  const ctx = hasContext
-    ? new ContextBuffer(options.contextBefore, options.contextAfter)
-    : undefined;
-  let lineNumber = 1;
-
-  const lines = handle.readLines({ encoding: 'utf-8', signal });
-  try {
-    for await (const rawLine of lines) {
-      if (matches.length >= maxMatches) break;
-      if (isCancelled()) break;
-
-      const matchCount = matcher.matchCount(rawLine);
-      let trimmedLine = '';
-
-      if (matchCount > 0) {
-        trimmedLine = trimContent(rawLine);
-        ctx?.flushPending(trimmedLine);
-        processLineMatch(matches, trimmedLine, lineNumber, matchCount, requestedPath, ctx);
-        ctx?.updateBefore(trimmedLine);
-      } else if (hasContext) {
-        trimmedLine = trimContent(rawLine);
-        ctx?.add(trimmedLine);
-      }
-      lineNumber++;
-    }
-  } finally {
-    try {
-      lines.close();
-    } catch {
-      // Ignore close errors
-    }
-  }
-
-  return matches;
-}
-
-type BinaryDetector = (
-  resolvedPath: string,
-  handle: FileHandle,
-  signal?: AbortSignal,
-) => Promise<boolean>;
-
-async function scanFileResolved(
-  resolvedPath: string,
-  requestedPath: string,
-  matcher: ContentMatcher,
-  options: ScanFileOptions,
-  signal?: AbortSignal,
-  maxMatches: number = Number.POSITIVE_INFINITY,
-  injectedBinaryDetector?: BinaryDetector,
-  fsOps?: GuardedFileSystem,
-): Promise<ScanFileResult> {
-  assertNotAborted(signal);
-  let handle: FileHandle;
-  if (fsOps) {
-    handle = await withAbort(fsOps.open(resolvedPath, 'r'), signal);
-  } else {
-    // Worker thread: no GuardedFileSystem available, so PathGuard's symlink
-    // re-validation does not run here. Re-check that the path is not a symlink
-    // before opening to close the swap-to-symlink TOCTOU window left open by the
-    // raw open(). (A narrow lstat→open race remains, but the symlink escape vector
-    // that enumeration already filters cannot be reintroduced silently.)
-    const { lstat, open } = await import('node:fs/promises');
-    const linkStats = await withAbort(lstat(resolvedPath), signal);
-    if (linkStats.isSymbolicLink()) {
-      throw new FsError(
-        ErrorCode.ACCESS_DENIED,
-        'Symlinked path blocked during worker scan',
-        resolvedPath,
-      );
-    }
-    handle = await withAbort(open(resolvedPath, 'r'), signal);
-  }
-  await using _handleDisposer = handle;
-  const stats = await withAbort(handle.stat(), signal);
-
-  if (stats.size > options.maxFileSize) {
-    return {
-      matches: [],
-      matched: false,
-      skippedTooLarge: true,
-      skippedBinary: false,
-    };
-  }
-
-  if (options.skipBinary) {
-    const detect = injectedBinaryDetector ?? isProbablyBinary;
-    if (await detect(resolvedPath, handle, signal)) {
-      return {
-        matches: [],
-        matched: false,
-        skippedTooLarge: false,
-        skippedBinary: true,
-      };
-    }
-  }
-
-  const matches = await readMatches(
-    handle,
-    requestedPath,
-    matcher,
-    options,
-    maxMatches,
-    () => Boolean(signal?.aborted),
-    signal,
-  );
-
-  return {
-    matches,
-    matched: matches.length > 0,
-    skippedTooLarge: false,
-    skippedBinary: false,
-  };
-}
-
-// --- Orchestration ---
-
-interface ResolvedFile {
-  resolvedPath: string;
-  requestedPath: string;
-}
-
-interface ScanSummary {
-  filesScanned: number;
-  filesMatched: number;
-  skippedTooLarge: number;
-  skippedBinary: number;
-  skippedInaccessible: number;
-  truncated: boolean;
-  stoppedReason: SearchContentResult['summary']['stoppedReason'];
-}
-
-interface ScanOutcome {
-  matched: boolean;
-  skippedTooLarge: boolean;
-  skippedBinary: boolean;
-}
-
-function buildScanFileOptions(opts: ResolvedOptions): ScanFileOptions {
-  return {
-    maxFileSize: opts.maxFileSize,
-    skipBinary: opts.skipBinary,
-    contextLines: opts.contextLines,
-    contextBefore: opts.contextBefore ?? opts.contextLines,
-    contextAfter: opts.contextAfter ?? opts.contextLines,
-  };
-}
-
-function buildMatcherOptions(opts: ResolvedOptions): MatcherOptions {
-  return {
-    caseSensitive: opts.caseSensitive,
-    wholeWord: opts.wholeWord,
-    isLiteral: opts.isLiteral,
-    ...(opts.fuzzy === true ? { fuzzy: true } : {}),
-  };
-}
-
-function applyScanOutcome(summary: ScanSummary, outcome: ScanOutcome): void {
-  if (outcome.matched) summary.filesMatched++;
-  if (outcome.skippedBinary) summary.skippedBinary++;
-  if (outcome.skippedTooLarge) summary.skippedTooLarge++;
-}
-
-function markTruncated(summary: ScanSummary, reason: SearchContentStopReason): void {
-  summary.truncated = true;
-  summary.stoppedReason = reason;
-}
-
-function createScanSummary(): ScanSummary {
-  return {
-    filesScanned: 0,
-    filesMatched: 0,
-    skippedTooLarge: 0,
-    skippedBinary: 0,
-    skippedInaccessible: 0,
-    truncated: false,
-    stoppedReason: undefined,
-  };
-}
-
-function buildSearchContentResult(
-  root: string,
-  pattern: string,
-  filePattern: string,
-  matches: ContentMatch[],
-  summary: ScanSummary,
-): SearchContentResult {
-  const baseSummary = {
-    filesScanned: summary.filesScanned,
-    filesMatched: summary.filesMatched,
-    matches: matches.length,
-    truncated: summary.truncated,
-    skippedTooLarge: summary.skippedTooLarge,
-    skippedBinary: summary.skippedBinary,
-    skippedInaccessible: summary.skippedInaccessible,
-  };
-  const withReason =
-    summary.stoppedReason !== undefined
-      ? { ...baseSummary, stoppedReason: summary.stoppedReason }
-      : baseSummary;
-  return { basePath: root, pattern, filePattern, matches, summary: withReason };
-}
-
-interface ScanRequest {
-  type: 'scan';
-  id: number;
-  resolvedPath: string;
-  requestedPath: string;
-  pattern: string;
-  matcherOptions: MatcherOptions;
-  scanOptions: ScanFileOptions;
-  maxMatches: number;
-}
-
-interface ScanResult {
-  type: 'result';
-  id: number;
-  result: {
-    matches: readonly ContentMatch[];
-    matched: boolean;
-    skippedTooLarge: boolean;
-    skippedBinary: boolean;
-  };
-}
-
-interface ScanError {
-  type: 'error';
-  id: number;
-  error: string;
-}
-
-type WorkerResponse = ScanResult | ScanError;
-
-type WorkerScanRequest = Omit<ScanRequest, 'type' | 'id'>;
-type WorkerScanResult = ScanResult['result'];
-
-interface ScanTask {
-  id: number;
-  promise: Promise<WorkerScanResult>;
-  cancel: () => void;
-  racePromise?: Promise<{
-    task: ScanTask;
-    result: WorkerScanResult | undefined;
-    error: Error | undefined;
-  }>;
-}
-
-const isSourceContext =
-  import.meta.url.endsWith('.ts') || process.execArgv.some((a) => a.includes('tsx'));
-const WORKER_SCRIPT_URL = new URL(import.meta.url);
-
-class SearchWorkerTaskResource extends AsyncResource {
-  #settled = false;
-
-  constructor() {
-    super(SEARCH_WORKER_RESOURCE_TYPE);
-  }
-
-  resolve(resolver: (result: WorkerScanResult) => void, result: WorkerScanResult): void {
-    this.finish(resolver, result);
-  }
-
-  reject(rejector: (error: Error) => void, error: Error): void {
-    this.finish(rejector, error);
-  }
-
-  private finish<TArg>(callback: (value: TArg) => void, value: TArg): void {
-    if (this.#settled) return;
-    this.#settled = true;
-    this.runInAsyncScope(callback, undefined, value);
-    this.emitDestroy();
-  }
-}
-
-interface PendingWorkerRequest {
-  resolve: (result: WorkerScanResult) => void;
-  reject: (error: Error) => void;
-  workerIndex: number;
-}
-
-export class SearchWorkerPool {
-  private workers: (Worker | undefined)[];
-  private pending = new Map<number, PendingWorkerRequest>();
-  private nextRequestId = 0;
-  private closed = false;
-  private size: number;
-  private debug: boolean;
-
-  constructor(size: number, debug: boolean) {
-    this.size = size;
-    this.debug = debug;
-    if (size <= 0) throw new Error('Pool size must be positive');
-    this.workers = Array.from({ length: size }, (): Worker | undefined => undefined);
-  }
-
-  private normalizeWorkerError(error: unknown, fallbackMessage: string): Error {
-    if (error instanceof Error) return error;
-    return new Error(`${fallbackMessage}: ${formatUnknownErrorMessage(error)}`);
-  }
-
-  private rejectPendingForWorker(workerIndex: number, error: Error): void {
-    for (const [id, pendingRequest] of this.pending) {
-      if (pendingRequest.workerIndex !== workerIndex) continue;
-      this.pending.delete(id);
-      pendingRequest.reject(error);
-    }
-  }
-
-  private markWorkerAsUnavailable(workerIndex: number, expectedWorker: Worker): void {
-    if (this.closed) return;
-    if (this.workers[workerIndex] !== expectedWorker) return;
-    this.workers[workerIndex] = undefined;
-  }
-
-  private retireWorker(workerIndex: number, expectedWorker: Worker): void {
-    this.markWorkerAsUnavailable(workerIndex, expectedWorker);
-    void expectedWorker.terminate().catch(() => {
-      /* Worker may already be exiting */
-    });
-  }
-
-  private getWorker(workerIndex: number): Worker {
-    const existing = this.workers[workerIndex];
-    if (existing) return existing;
-    const worker = this.initWorker(workerIndex);
-    this.workers[workerIndex] = worker;
-    return worker;
-  }
-
-  private initWorker(index: number): Worker {
-    const worker = new Worker(WORKER_SCRIPT_URL, {
-      name: `${SEARCH_WORKER_NAME_PREFIX}-${String(index)}`,
-      workerData: { debug: this.debug },
-      execArgv: isSourceContext ? ['--import', 'tsx/esm'] : undefined,
-    });
-
-    worker.on('message', (msg: WorkerResponse) => {
-      const p = this.pending.get(msg.id);
-      if (!p) return;
-      this.pending.delete(msg.id);
-      if (msg.type === 'result') p.resolve(msg.result);
-      else p.reject(new Error(msg.error));
-    });
-
-    worker.on('messageerror', (error: unknown) => {
-      const normalized = this.normalizeWorkerError(
-        error,
-        `Worker ${String(index)} failed to deserialize a message`,
-      );
-      this.rejectPendingForWorker(index, normalized);
-      this.retireWorker(index, worker);
-    });
-
-    worker.on('error', (error: Error) => {
-      this.rejectPendingForWorker(index, error);
-      this.retireWorker(index, worker);
-    });
-
-    worker.on('exit', (exitCode: number) => {
-      if (this.closed) return;
-      this.rejectPendingForWorker(
-        index,
-        new Error(`Worker ${String(index)} exited with code ${String(exitCode)}`),
-      );
-      this.markWorkerAsUnavailable(index, worker);
-    });
-    worker.unref();
-    return worker;
-  }
-
-  private getLeastBusyWorkerIndex(): number {
-    let workerIndex = 0;
-    const workerPendingCounts = new Array<number>(this.size).fill(0);
-    for (const p of this.pending.values()) {
-      const idx = p.workerIndex;
-      workerPendingCounts[idx] = (workerPendingCounts[idx] ?? 0) + 1;
-    }
-
-    let minPending = workerPendingCounts[0] ?? 0;
-    for (let i = 1; i < this.size; i++) {
-      const pendingCount = workerPendingCounts[i] ?? 0;
-      if (pendingCount < minPending) {
-        minPending = pendingCount;
-        workerIndex = i;
-      }
-    }
-    return workerIndex;
-  }
-
-  private createWorkerScanPromise(
-    id: number,
-    worker: Worker,
-    workerIndex: number,
-    req: WorkerScanRequest,
-  ): Promise<WorkerScanResult> {
-    return new Promise<WorkerScanResult>((resolve, reject) => {
-      const resource = new SearchWorkerTaskResource();
-      const pendingRequest: PendingWorkerRequest = {
-        resolve: (result) => {
-          resource.resolve(resolve, result);
-        },
-        reject: (error) => {
-          resource.reject(reject, error);
-        },
-        workerIndex,
-      };
-
-      this.pending.set(id, pendingRequest);
-
-      try {
-        worker.postMessage({ type: 'scan', id, ...req });
-      } catch (error: unknown) {
-        this.pending.delete(id);
-        pendingRequest.reject(
-          this.normalizeWorkerError(
-            error,
-            `Failed to post scan request ${String(id)} to worker ${String(workerIndex)}`,
-          ),
-        );
-        this.retireWorker(workerIndex, worker);
-      }
-    });
-  }
-
-  private cancelPendingScan(id: number, worker: Worker): void {
-    const entry = this.pending.get(id);
-    if (!entry) return;
-    this.pending.delete(id);
-    try {
-      worker.postMessage({ type: 'cancel', id });
-    } catch {
-      /* Worker may be terminating */
-    }
-    entry.reject(new Error(ERROR_SCAN_CANCELLED));
-  }
-
-  scan(req: WorkerScanRequest): ScanTask {
-    if (this.closed) throw new Error(ERROR_WORKER_POOL_CLOSED);
-
-    const id = this.nextRequestId++;
-    const workerIndex = this.getLeastBusyWorkerIndex();
-
-    const worker = this.getWorker(workerIndex);
-
-    const promise = this.createWorkerScanPromise(id, worker, workerIndex, req);
-
-    return {
-      id,
-      promise,
-      cancel: () => {
-        this.cancelPendingScan(id, worker);
-      },
-    };
-  }
-
-  async close(): Promise<void> {
-    this.closed = true;
-    for (const p of this.pending.values()) p.reject(new Error(ERROR_WORKER_POOL_CLOSED));
-    this.pending.clear();
-    const terminations: Promise<number>[] = [];
-    for (let index = 0; index < this.workers.length; index += 1) {
-      const worker = this.workers[index];
-      if (!worker) continue;
-      terminations.push(worker.terminate());
-      this.workers[index] = undefined;
-    }
-    await Promise.all(terminations);
-  }
-}
-
-function shouldUseWorkers(): boolean {
-  return !isSourceContext && SEARCH_WORKERS >= 2;
-}
-
-let poolInstance: SearchWorkerPool | null = null;
-
-function getPool(): SearchWorkerPool {
-  if (!poolInstance) {
-    const debug = process.env['FS_CONTEXT_SEARCH_WORKERS_DEBUG'] === '1';
-    poolInstance = new SearchWorkerPool(SEARCH_WORKERS, debug);
-  }
-  return poolInstance;
-}
-
-// --- Execution Strategies ---
-
-async function executeSequential(
-  files: AsyncIterable<ResolvedFile>,
-  pattern: string,
-  opts: ResolvedOptions,
-  signal: AbortSignal,
-  summary: ScanSummary,
-  pathGuard: PathGuard,
-  fsOps?: GuardedFileSystem,
-): Promise<ContentMatch[]> {
-  const matches: ContentMatch[] = [];
-  const matcher = buildMatcher(pattern, buildMatcherOptions(opts));
-  const scanOpts = buildScanFileOptions(opts);
-
-  for await (const file of files) {
-    if (signal.aborted) {
-      markTruncated(summary, 'timeout');
-      break;
-    }
-    if (matches.length >= opts.maxResults) {
-      markTruncated(summary, 'maxResults');
-      break;
-    }
-
-    try {
-      pathGuard.assertNotSensitiveFile(file.requestedPath);
-      const remaining = Math.max(0, opts.maxResults - matches.length);
-      const result = await scanFileResolved(
-        file.resolvedPath,
-        file.requestedPath,
-        matcher,
-        scanOpts,
-        signal,
-        remaining,
-        undefined,
-        fsOps,
-      );
-      applyScanOutcome(summary, result);
-      matches.push(...result.matches);
-    } catch {
-      summary.skippedInaccessible++;
-    }
-  }
-  return matches;
-}
-
-interface FillWorkerPoolContext {
-  pool: SearchWorkerPool;
-  pending: Set<ScanTask>;
-  iterator: AsyncIterator<ResolvedFile>;
-  pattern: string;
-  matcherOpts: MatcherOptions;
-  scanOpts: ScanFileOptions;
-  maxResults: number;
-  currentMatches: number;
-  summary: ScanSummary;
-}
-
-async function fillWorkerPool(context: FillWorkerPoolContext): Promise<boolean> {
-  const {
-    pool,
-    pending,
-    iterator,
-    pattern,
-    matcherOpts,
-    scanOpts,
-    maxResults,
-    currentMatches,
-    summary,
-  } = context;
-
-  while (pending.size < SEARCH_WORKERS) {
-    const result = await iterator.next();
-    if (result.done) return true;
-
-    try {
-      const remaining = Math.max(1, maxResults - currentMatches);
-      const task = pool.scan({
-        resolvedPath: result.value.resolvedPath,
-        requestedPath: result.value.requestedPath,
-        pattern,
-        matcherOptions: matcherOpts,
-        scanOptions: scanOpts,
-        maxMatches: remaining,
-      });
-      pending.add(task);
-    } catch {
-      summary.skippedInaccessible++;
-    }
-  }
-  return false;
-}
-
-function processScanResult(
-  winner: { result: WorkerScanResult | undefined; error: Error | undefined },
-  summary: ScanSummary,
-  matches: ContentMatch[],
-  maxResults: number,
-): void {
-  if (winner.error) {
-    if (winner.error.message !== ERROR_SCAN_CANCELLED) summary.skippedInaccessible++;
-    return;
-  }
-  if (winner.result) {
-    const res = winner.result;
-    // Count the file as scanned even if it was skipped for being binary or too large,
-    // since we did attempt to scan it and it wasn't inaccessible.
-    if (res.skippedBinary) summary.skippedBinary++;
-    if (res.skippedTooLarge) summary.skippedTooLarge++;
-    const remaining = Math.max(0, maxResults - matches.length);
-    const take = remaining > 0 ? Math.min(remaining, res.matches.length) : 0;
-    for (let index = 0; index < take; index += 1) {
-      const match = res.matches[index];
-      if (match) matches.push(match);
-    }
-    if (take > 0 && res.matched) summary.filesMatched++;
-  }
-}
-
-async function waitForWinner(pending: Set<ScanTask>): Promise<{
-  task: ScanTask;
-  result: WorkerScanResult | undefined;
-  error: Error | undefined;
-}> {
-  const raceCandidates: Promise<{
-    task: ScanTask;
-    result: WorkerScanResult | undefined;
-    error: Error | undefined;
-  }>[] = [];
-  for (const task of pending) {
-    task.racePromise ??= task.promise.then(
-      (result) => ({ task, result, error: undefined }),
-      (err: unknown) => ({
-        task,
-        result: undefined,
-        error: err instanceof Error ? err : new Error(formatUnknownErrorMessage(err)),
-      }),
-    );
-    raceCandidates.push(task.racePromise);
-  }
-  return Promise.race(raceCandidates);
-}
-
-async function executeParallel(
-  files: AsyncIterable<ResolvedFile>,
-  pattern: string,
-  opts: ResolvedOptions,
-  signal: AbortSignal,
-  summary: ScanSummary,
-): Promise<ContentMatch[]> {
-  const pool = getPool();
-  const matches: ContentMatch[] = [];
-  const scanOpts = buildScanFileOptions(opts);
-  const matcherOpts = buildMatcherOptions(opts);
-  const pending = new Set<ScanTask>();
-  const iterator = files[Symbol.asyncIterator]();
-  let exhausted = false;
-
-  const onAbort = (): void => {
-    markTruncated(summary, 'timeout');
-    for (const t of pending) t.cancel();
-  };
-  signal.addEventListener('abort', onAbort, { once: true });
-
-  try {
-    for (;;) {
-      if (signal.aborted || matches.length >= opts.maxResults) break;
-
-      if (!exhausted) {
-        exhausted = await fillWorkerPool({
-          pool,
-          pending,
-          iterator,
-          pattern,
-          matcherOpts,
-          scanOpts,
-          maxResults: opts.maxResults,
-          currentMatches: matches.length,
-          summary,
-        });
-      }
-
-      if (pending.size === 0 && exhausted) break;
-
-      const winner = await waitForWinner(pending);
-      pending.delete(winner.task);
-      processScanResult(winner, summary, matches, opts.maxResults);
-    }
-  } finally {
-    signal.removeEventListener('abort', onAbort);
-    for (const t of pending) t.cancel();
-    if (iterator.return) await iterator.return();
-  }
-
-  if (signal.aborted) markTruncated(summary, 'timeout');
-  else if (matches.length >= opts.maxResults) markTruncated(summary, 'maxResults');
-
-  return matches;
-}
-
-// --- Entry Points ---
-
-async function searchSingleFile(
-  details: { resolvedPath: string; requestedPath: string },
-  opts: ResolvedOptions,
-  pattern: string,
-  signal: AbortSignal,
-  fsOps?: GuardedFileSystem,
-): Promise<SearchContentResult> {
-  const summary = createScanSummary();
-  summary.filesScanned = 1;
-  const matcher = buildMatcher(pattern, buildMatcherOptions(opts));
-  const result = await scanFileResolved(
-    details.resolvedPath,
-    details.requestedPath,
-    matcher,
-    buildScanFileOptions(opts),
-    signal,
-    opts.maxResults,
-    undefined,
-    fsOps,
-  );
-  if (result.matched) summary.filesMatched = 1;
-  return buildSearchContentResult(
-    dirname(details.resolvedPath),
-    pattern,
-    opts.filePattern,
-    result.matches as ContentMatch[],
-    summary,
-  );
-}
-
-function getValidatedFilePath(
-  entry: GlobEntry,
-  pathGuard: PathGuard,
-  rootDirectories: readonly string[],
-): string | null {
-  if (!entry.dirent.isFile()) return null;
-  const normalized = normalizePath(entry.path);
-  if (!isPathWithinDirectories(normalized, rootDirectories)) return null;
-  if (pathGuard.isSensitive(entry.path)) return null;
-  return normalized;
-}
-
-async function searchDirectory(
-  details: { resolvedPath: string; requestedPath: string },
-  opts: ResolvedOptions,
-  pattern: string,
-  signal: AbortSignal,
-  pathGuard: PathGuard,
-  onProgress?: (progress: { total?: number; current: number }) => void,
-  maxDepth?: number,
-  fsOps?: GuardedFileSystem,
-): Promise<SearchContentResult> {
-  const root = await pathGuard.validateExistingDirectory(details.resolvedPath);
-  const rootDirectories = [root];
-
-  const stream = globEntries(
-    buildGlobOptions({
-      cwd: root,
-      pattern: opts.filePattern,
-      excludePatterns: opts.excludePatterns,
-      includeHidden: opts.includeHidden,
-      baseNameMatch: opts.baseNameMatch,
-      caseSensitiveMatch: opts.caseSensitiveFileMatch,
-      followSymbolicLinks: false,
-      onlyFiles: true,
-      stats: false,
-      suppressErrors: true,
-      respectGitignore: opts.respectGitignore,
-      ...(maxDepth !== undefined ? { maxDepth } : {}),
-    }),
-  );
-
-  const summary = createScanSummary();
-
-  async function* fileGenerator(): AsyncGenerator<ResolvedFile> {
-    for await (const entry of stream) {
-      if (signal.aborted || summary.filesScanned >= opts.maxFilesScanned) break;
-
-      const normalized = getValidatedFilePath(entry, pathGuard, rootDirectories);
-      if (!normalized) continue;
-
-      summary.filesScanned++;
-      if (opts.fuzzy === true && summary.filesScanned > MAX_FUZZY_FILES) {
-        throw new FsError(
-          Problem.invalidInput(
-            `Fuzzy search is limited to ${MAX_FUZZY_FILES} files. Narrow your path or disable fuzzy mode.`,
-          ),
-        );
-      }
-
-      if (onProgress) {
-        onProgress({ current: summary.filesScanned, total: opts.maxFilesScanned });
-      }
-
-      yield { resolvedPath: normalized, requestedPath: entry.path };
-    }
-
-    if (summary.filesScanned >= opts.maxFilesScanned) {
-      summary.truncated = true;
-      summary.stoppedReason = 'maxFiles';
-    }
-
-    if (onProgress) {
-      onProgress({ current: summary.filesScanned, total: opts.maxFilesScanned });
-    }
-  }
-
-  const matches = shouldUseWorkers()
-    ? await executeParallel(fileGenerator(), pattern, opts, signal, summary)
-    : await executeSequential(fileGenerator(), pattern, opts, signal, summary, pathGuard, fsOps);
-
-  return buildSearchContentResult(root, pattern, opts.filePattern, matches, summary);
-}
-
 function buildTimeoutSearchResult(
   basePath: string,
   pattern: string,
   filePattern: string,
 ): SearchContentResult {
-  const timeoutSummary = createScanSummary();
-  markTruncated(timeoutSummary, 'timeout');
-  return buildSearchContentResult(basePath, pattern, filePattern, [], timeoutSummary);
+  return {
+    basePath,
+    pattern,
+    filePattern,
+    matches: [],
+    summary: {
+      filesScanned: 0,
+      filesMatched: 0,
+      matches: 0,
+      truncated: true,
+      skippedTooLarge: 0,
+      skippedBinary: 0,
+      skippedInaccessible: 0,
+      stoppedReason: 'timeout',
+    },
+  };
 }
 
 async function searchContent(
@@ -1248,6 +189,9 @@ async function searchContent(
 ): Promise<SearchContentResult> {
   if (!pathGuard) {
     throw new Error('pathGuard is required in searchContent');
+  }
+  if (!fsOps) {
+    throw new Error('fsOps is required in searchContent');
   }
   if (!basePath.trim()) throw new FsError(ErrorCode.INVALID_INPUT, 'basePath required');
   if (typeof pattern !== 'string') throw new FsError(ErrorCode.INVALID_INPUT, 'pattern required');
@@ -1268,29 +212,68 @@ async function searchContent(
 
   try {
     return await withTimedAbortSignal(options.signal, opts.timeoutMs, async (signal) => {
-      const details = await pathGuard.validateExistingPathDetailed(basePath);
-      const { stats: fileStats } = await stat(basePath, pathGuard, { signal });
-
-      if (fileStats.isFile()) {
-        return searchSingleFile(details, opts, pattern, signal, fsOps);
-      }
-
-      if (!fileStats.isDirectory()) {
-        throw new FsError(
-          Problem.invalidInput('Path must be file or directory', { path: basePath }),
-        );
-      }
-
-      return searchDirectory(
-        details,
-        opts,
+      const searchOpts: SearchOptions = {
         pattern,
+        path: basePath,
+        filePattern: opts.filePattern,
+        excludePatterns: opts.excludePatterns,
+        caseSensitive: opts.caseSensitive,
+        wholeWord: opts.wholeWord,
+        isLiteral: opts.isLiteral,
+        maxResults: opts.maxResults,
+        maxFileSize: opts.maxFileSize,
+        maxFilesScanned: opts.maxFilesScanned,
+        timeoutMs: opts.timeoutMs,
+        skipBinary: opts.skipBinary,
+        contextBefore: opts.contextBefore ?? opts.contextLines,
+        contextAfter: opts.contextAfter ?? opts.contextLines,
         signal,
-        pathGuard,
-        options.onProgress,
-        options.maxDepth,
-        fsOps,
-      );
+        baseNameMatch: opts.baseNameMatch,
+        includeHidden: opts.includeHidden,
+        respectGitignore: opts.respectGitignore,
+        ...(options.maxDepth !== undefined ? { maxDepth: options.maxDepth } : {}),
+        ...(opts.fuzzy !== undefined ? { fuzzy: opts.fuzzy } : {}),
+      };
+
+      const coreResult = await executeCoreSearch(fsOps, searchOpts);
+
+      const matcher = buildMatcher(pattern, {
+        caseSensitive: opts.caseSensitive,
+        wholeWord: opts.wholeWord,
+        isLiteral: opts.isLiteral,
+        ...(opts.fuzzy !== undefined ? { fuzzy: opts.fuzzy } : {}),
+      });
+
+      const matches: ContentMatch[] = [];
+      for (const fileMatch of coreResult.filesMatched) {
+        for (const match of fileMatch.matches) {
+          matches.push({
+            file: fileMatch.filePath,
+            line: match.line,
+            content: match.content,
+            contextBefore: match.before,
+            contextAfter: match.after,
+            matchCount: matcher.matchCount(match.content),
+          });
+        }
+      }
+
+      return {
+        basePath,
+        pattern,
+        filePattern: opts.filePattern,
+        matches,
+        summary: {
+          filesScanned: coreResult.summary.filesScanned,
+          filesMatched: coreResult.summary.filesMatched,
+          matches: coreResult.summary.matchesCount,
+          truncated: coreResult.summary.truncated,
+          skippedTooLarge: 0,
+          skippedBinary: 0,
+          skippedInaccessible: 0,
+          ...(coreResult.summary.truncated ? { stoppedReason: 'maxResults' as const } : {}),
+        },
+      };
     });
   } catch (error: unknown) {
     if (isTimeoutLikeError(error)) {
@@ -1796,155 +779,3 @@ export const SEARCH_CONTENT = defineTool({
     return { structured, text };
   },
 });
-
-// ---------------------------------------------------------------------------
-// Worker thread entry point (this file is also spawned as a worker via WORKER_SCRIPT_URL)
-// ---------------------------------------------------------------------------
-
-interface CancelRequest {
-  type: 'cancel';
-  id: number;
-}
-
-interface ShutdownRequest {
-  type: 'shutdown';
-}
-
-type WorkerRequest = ScanRequest | CancelRequest | ShutdownRequest;
-
-const matcherCache = new Map<string, ContentMatcher>();
-const MAX_MATCHER_CACHE_SIZE = 100;
-
-function getMatcherCacheKey(pattern: string, options: MatcherOptions): string {
-  const cs = options.caseSensitive ? '1' : '0';
-  const ww = options.wholeWord ? '1' : '0';
-  const lit = options.isLiteral ? '1' : '0';
-  const fz = options.fuzzy ? '1' : '0';
-  return `${pattern}|${cs}|${ww}|${lit}|${fz}`;
-}
-
-function getCachedMatcher(pattern: string, options: MatcherOptions): ContentMatcher {
-  const key = getMatcherCacheKey(pattern, options);
-  const cached = matcherCache.get(key);
-  if (cached) {
-    refreshMatcherCacheEntry(key, cached);
-    return cached;
-  }
-  const matcher = buildMatcher(pattern, options);
-  refreshMatcherCacheEntry(key, matcher);
-  evictOldestMatcherIfNeeded();
-  return matcher;
-}
-
-function refreshMatcherCacheEntry(key: string, matcher: ContentMatcher): void {
-  matcherCache.delete(key);
-  matcherCache.set(key, matcher);
-}
-
-function evictOldestMatcherIfNeeded(): void {
-  if (matcherCache.size <= MAX_MATCHER_CACHE_SIZE) return;
-  const firstKey = matcherCache.keys().next().value;
-  if (firstKey !== undefined) {
-    matcherCache.delete(firstKey);
-  }
-}
-
-const cancelledRequests = new Set<number>();
-const activeRequests = new Set<number>();
-let shuttingDown = false;
-
-function maybeFinishShutdown(): void {
-  if (!shuttingDown) return;
-  if (activeRequests.size > 0) return;
-  parentPort?.close();
-}
-
-function consumeCancelled(id: number): boolean {
-  if (!cancelledRequests.has(id)) return false;
-  cancelledRequests.delete(id);
-  return true;
-}
-
-function markCancelledIfActive(id: number): void {
-  if (activeRequests.has(id)) {
-    cancelledRequests.add(id);
-  }
-}
-
-function buildScanResponse(id: number, result: ScanResult['result']): ScanResult {
-  return { type: 'result', id, result };
-}
-
-function buildErrorResponse(id: number, error: unknown): ScanError {
-  return { type: 'error', id, error: formatUnknownErrorMessage(error) };
-}
-
-async function handleScanRequest(request: ScanRequest): Promise<void> {
-  const { id, resolvedPath, requestedPath, pattern, matcherOptions, scanOptions, maxMatches } =
-    request;
-
-  if (consumeCancelled(id)) return;
-  activeRequests.add(id);
-
-  const endMeasure = startPerfMeasure('searchWorker.scan', { maxMatches });
-  let ok = false;
-
-  try {
-    const matcher = getCachedMatcher(pattern, matcherOptions);
-
-    const result = await scanFileResolved(
-      resolvedPath,
-      requestedPath,
-      matcher,
-      scanOptions,
-      undefined,
-      maxMatches,
-      isProbablyBinary,
-    );
-
-    if (consumeCancelled(id)) return;
-    parentPort?.postMessage(buildScanResponse(id, result));
-    ok = true;
-  } catch (err) {
-    if (consumeCancelled(id)) return;
-    parentPort?.postMessage(buildErrorResponse(id, err));
-  } finally {
-    activeRequests.delete(id);
-    cancelledRequests.delete(id);
-    endMeasure?.(ok);
-    maybeFinishShutdown();
-  }
-}
-
-function handleMessage(message: WorkerRequest): void {
-  switch (message.type) {
-    case 'scan':
-      if (shuttingDown) return;
-      void handleScanRequest(message);
-      break;
-    case 'cancel':
-      markCancelledIfActive(message.id);
-      break;
-    case 'shutdown':
-      shuttingDown = true;
-      for (const id of activeRequests) {
-        markCancelledIfActive(id);
-      }
-      maybeFinishShutdown();
-      break;
-    default: {
-      const _exhaustive: never = message;
-      throw new Error(`Unhandled message type: ${JSON.stringify(_exhaustive)}`);
-    }
-  }
-}
-
-const workerLog = debuglog('search-worker');
-
-if (parentPort) {
-  parentPort.on('message', handleMessage);
-  const data = workerData as { debug?: boolean } | null;
-  if (data?.debug) {
-    workerLog(`Started with threadId=${String(threadId)}`);
-  }
-}

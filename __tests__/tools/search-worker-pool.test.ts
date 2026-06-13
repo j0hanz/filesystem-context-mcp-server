@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { SearchWorkerPool } from '../../src/tools/search-content.js';
+import { SearchWorkerPool } from '../../src/core/search/engine.js';
 
 describe('SearchWorkerPool', () => {
   it('retires a worker when posting a scan request fails', async () => {

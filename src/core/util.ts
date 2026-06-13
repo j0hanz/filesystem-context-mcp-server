@@ -31,10 +31,6 @@ export function debounce<Args extends unknown[]>(
   return debounced;
 }
 
-export function mergeOptions<T extends object>(defaults: T, overrides: Partial<T>): T {
-  return { ...defaults, ...overrides };
-}
-
 export function omitOptionKeys<T extends object, K extends keyof T>(
   input: T,
   keys: readonly K[],
@@ -258,7 +254,6 @@ export const MAX_SEARCH_DEPTH = 100;
 export const DEFAULT_SEARCH_CONTENT_RESULTS = 500;
 
 // Non-configurable constants
-export const MAX_LINE_CONTENT_LENGTH = 200;
 export const BINARY_CHECK_BUFFER_SIZE = 512;
 
 export const KNOWN_BINARY_EXTENSIONS = new Set([

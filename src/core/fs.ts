@@ -196,7 +196,7 @@ function isBinarySlice(slice: Buffer): boolean {
   return !isUtf8(slice);
 }
 
-export async function isProbablyBinary(
+async function isProbablyBinary(
   filePath: string,
   existingHandle?: FileHandle,
   signal?: AbortSignal,

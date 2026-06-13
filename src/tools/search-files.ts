@@ -77,7 +77,7 @@ interface SearchFilesResult {
 }
 
 // ---------------------------------------------------------------------------
-// Private searchFiles implementation (inlined from lib/file-operations/search.ts)
+// Private searchFiles implementation
 // ---------------------------------------------------------------------------
 
 const SEARCH_FILES_ACCESS_DEPS_BASE = {
@@ -87,6 +87,8 @@ const SEARCH_FILES_ACCESS_DEPS_BASE = {
 
 // Internal default for find tool - not exposed to MCP users
 const SEARCH_FILES_MAX_RESULTS = 1000;
+
+type SearchFilesStopReason = SearchFilesResult['summary']['stoppedReason'];
 
 type SortBy = 'name' | 'size' | 'modified' | 'path';
 
@@ -110,8 +112,6 @@ type SearchFilesNormalized = Required<
   maxDepth?: number;
   sortBy: NonNullable<SearchFilesOptions['sortBy']>;
 };
-
-type SearchFilesStopReason = SearchFilesResult['summary']['stoppedReason'];
 
 function normalizeSearchFilesOptions(options: SearchFilesOptions): SearchFilesNormalized {
   const normalized: SearchFilesNormalized = {
