@@ -39,10 +39,10 @@ describe('read tool', () => {
     const result = raw;
     assertOk(result);
 
-    // Check content blocks: first is summary text, second is resource_link
+    // Check content blocks: first is file content text, second is resource_link
     assert.equal(result.content.length, 2);
     assert.equal(result.content[0].type, 'text');
-    assert.ok((result.content[0] as Record<string, unknown>).text?.toString().includes('read:'));
+    assert.ok((result.content[0] as Record<string, unknown>).text?.toString().includes('line1'));
     assert.equal(result.content[1].type, 'resource_link');
 
     // Check structured content
@@ -165,11 +165,11 @@ describe('read tool', () => {
 
     assertOk(raw);
 
-    // Check text block contains summary pattern
+    // Check text block contains file content
     assert.equal(raw.content.length, 2);
     assert.equal(raw.content[0].type, 'text');
     const textContent = (raw.content[0] as Record<string, unknown>).text as string;
-    assert.ok(textContent.includes('read:'));
+    assert.ok(textContent.includes('const x'));
 
     // Check resource_link
     const resourceLink = raw.content[1] as Record<string, unknown>;
@@ -460,10 +460,10 @@ describe('read_many tool', () => {
     const result = raw;
     assertOk(result);
 
-    // Check content blocks: first is summary text, rest are resource_links
-    assert.equal(result.content.length, 3); // 1 summary + 2 resource_links
+    // Check content blocks: first is file content text, rest are resource_links
+    assert.equal(result.content.length, 3); // 1 content block + 2 resource_links
     assert.equal(result.content[0].type, 'text');
-    assert.ok((result.content[0] as Record<string, unknown>).text?.toString().includes('read:'));
+    assert.ok((result.content[0] as Record<string, unknown>).text?.toString().includes('content-'));
     assert.equal(result.content[1].type, 'resource_link');
     assert.equal(result.content[2].type, 'resource_link');
 
@@ -576,9 +576,7 @@ describe('read_many tool', () => {
     // Check content structure: 1 summary + 5 resource_links
     assert.equal(raw.content.length, 6);
     assert.equal(raw.content[0].type, 'text');
-    assert.ok(
-      (raw.content[0] as Record<string, unknown>).text?.toString().includes('read: 5 files'),
-    );
+    assert.ok((raw.content[0] as Record<string, unknown>).text?.toString().includes('content-'));
 
     // Verify all resource_links
     for (let i = 1; i < 6; i++) {

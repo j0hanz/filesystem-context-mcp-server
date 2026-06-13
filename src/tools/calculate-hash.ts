@@ -295,18 +295,15 @@ async function handleCalculateHash(
     content: hashJson,
   });
 
-  const fileName = basename(validPath);
-  const primaryAlgo = algorithms[0] ?? 'sha256';
   const ALGO_LABELS: Record<string, string> = {
     sha256: 'SHA-256',
     sha1: 'SHA-1',
     sha512: 'SHA-512',
     md5: 'MD5',
   };
-  const displayAlgo = ALGO_LABELS[primaryAlgo] ?? primaryAlgo.toUpperCase();
-  const primaryHash = hashes[primaryAlgo] ?? Object.values(hashes)[0] ?? '';
-  const hashDisplay = primaryHash.length > 16 ? `${primaryHash.slice(0, 16)}\u2026` : primaryHash;
-  const summary = `calculate-hash: ${fileName} \u00b7 ${displayAlgo}: ${hashDisplay}`;
+  const summary = Object.entries(hashes)
+    .map(([algo, hash]) => `${ALGO_LABELS[algo] ?? algo.toUpperCase()}: ${hash}`)
+    .join('\n');
 
   return {
     structured: {

@@ -1778,7 +1778,7 @@ export const SEARCH_CONTENT = defineTool({
         ...(params.total !== undefined ? { total: params.total } : {}),
       });
     };
-    const { structured, link, matchCount, fileCount } = await handleSearchContent(
+    const { structured, link } = await handleSearchContent(
       args,
       ctx.fs,
       ctx.pathGuard,
@@ -1786,14 +1786,14 @@ export const SEARCH_CONTENT = defineTool({
       ctx.resourceStore,
       onProgress,
     );
-    const summary =
-      `search-content: '${args.searchPattern}'` +
-      ` \u00b7 ${formatCount(matchCount, 'match', 'matches')}` +
-      ` in ${formatCount(fileCount, 'file', 'files')}`;
+    const text =
+      structured.matches.length > 0
+        ? structured.matches.map((m) => `${m.file}:${String(m.line)}: ${m.content}`).join('\n')
+        : `No matches for '${args.searchPattern}'`;
     if (link) {
-      return { structured, text: summary, resources: [link] };
+      return { structured, text, resources: [link] };
     }
-    return { structured, text: summary };
+    return { structured, text };
   },
 });
 

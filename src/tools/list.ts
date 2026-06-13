@@ -383,8 +383,6 @@ export const LIST = defineTool({
       ctx.resourceStore,
       ctx.onProgress,
     );
-    const path = args.path;
-    const label = 'List: ' + (path ? basename(path) : '.');
-    return { structured: output, text: label };
+    return { structured: output, text: output.markdown };
   },
 });

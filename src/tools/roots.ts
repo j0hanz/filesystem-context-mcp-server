@@ -26,8 +26,8 @@ export const LIST_ALLOWED_DIRECTORIES = defineTool({
   run: (_args, ctx) => {
     const dirs = ctx.pathGuard.getAllowedDirectories();
     const structured = { ok: true as const, roots: dirs };
-    const summary = `roots: ${String(dirs.length)} allowed director${dirs.length === 1 ? 'y' : 'ies'}`;
-    return Promise.resolve({ structured, text: summary });
+    const text = dirs.length > 0 ? dirs.join('\n') : 'No allowed directories';
+    return Promise.resolve({ structured, text });
   },
   defaultErrorCode: ErrorCode.UNKNOWN,
 });

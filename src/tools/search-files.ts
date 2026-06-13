@@ -652,21 +652,20 @@ export const SEARCH_FILES = defineTool({
         ...(params.total !== undefined ? { total: params.total } : {}),
       });
     };
-    const { structured, link, count } = await handleSearchFiles(
+    const { structured, link } = await handleSearchFiles(
       args,
       ctx.pathGuard,
       ctx.signal,
       onProgress,
       ctx.resourceStore,
     );
-    const summary = `search-files: '${args.pattern}' \u00b7 ${formatCount(
-      structured.totalMatches ?? count,
-      'match',
-      'matches',
-    )}`;
+    const text =
+      structured.results.length > 0
+        ? structured.results.map((r) => r.path).join('\n')
+        : `No files matching '${args.pattern}'`;
     if (link) {
-      return { structured, text: summary, resources: [link] };
+      return { structured, text, resources: [link] };
     }
-    return { structured, text: summary };
+    return { structured, text };
   },
 });

@@ -39,8 +39,8 @@ describe('stat tool', () => {
     assert.ok(result.content.length >= 1, 'Expected at least one content block');
     assert.equal(result.content[0].type, 'text');
     const summaryText = (result.content[0] as Record<string, unknown>).text as string;
-    assert.ok(summaryText.includes('stat:'), 'Summary should start with "stat:"');
-    assert.ok(summaryText.includes('1 file'), 'Summary should include file count');
+    assert.ok(summaryText.includes('stat-test.txt'), 'Summary should include filename');
+    assert.ok(summaryText.includes('file'), 'Summary should include file type');
 
     // Verify structured content has all metadata fields
     const sc = getStructured(result);
@@ -76,8 +76,7 @@ describe('stat tool', () => {
     assert.ok(result.content.length >= 1, 'Expected at least one content block');
     assert.equal(result.content[0].type, 'text');
     const summaryText = (result.content[0] as Record<string, unknown>).text as string;
-    assert.ok(summaryText.includes('stat:'), 'Summary should include "stat:"');
-    assert.ok(summaryText.includes('1 directory'), 'Summary should include directory count');
+    assert.ok(summaryText.includes('directory'), 'Summary should include directory type');
 
     // Verify structured content for directory
     const sc = getStructured(result);
@@ -165,12 +164,12 @@ describe('stat_many tool', () => {
     const result = raw;
     assertOk(result);
 
-    // Verify content blocks: first is summary text, second is resource_link
+    // Verify content blocks: first is file info text, second is resource_link
     assert.equal(result.content.length, 2);
     assert.equal(result.content[0].type, 'text');
     const summaryText = (result.content[0] as Record<string, unknown>).text?.toString() ?? '';
-    assert.ok(summaryText.includes('stat:'));
-    assert.ok(summaryText.includes('2 files'));
+    assert.ok(summaryText.split('\n').length >= 2, 'Expected multi-line text for batch stat');
+    assert.ok(summaryText.includes('file'), 'Expected file type in text');
 
     assert.equal(result.content[1].type, 'resource_link');
     const resourceLink = result.content[1] as Record<string, unknown>;

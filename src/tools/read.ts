@@ -491,9 +491,15 @@ export const READ_FILE = defineTool({
     }
 
     const text =
-      summary.total === 1
-        ? `read: ${basename(ordered[0]?.path ?? '')}`
-        : `read: ${String(summary.total)} file${summary.total === 1 ? '' : 's'}`;
+      ordered.length === 1
+        ? (ordered[0]?.value?.content ?? ordered[0]?.error?.message ?? 'read failed')
+        : ordered
+            .map((r) => {
+              const header = `// ${r.path}`;
+              if (r.value?.content !== undefined) return `${header}\n${r.value.content}`;
+              return `${header}\n// Error: ${r.error?.message ?? 'unknown'}`;
+            })
+            .join('\n\n');
 
     return {
       structured: { ok: true as const, results: ordered, summary },

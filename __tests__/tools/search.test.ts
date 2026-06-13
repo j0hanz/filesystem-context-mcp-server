@@ -42,13 +42,13 @@ describe('grep tool', () => {
     const result = raw;
     assertOk(result);
 
-    // Verify summary text and resource link
-    assert.ok(result.content.length >= 2, 'Expected summary text and resource link');
+    // Verify match text and resource link
+    assert.ok(result.content.length >= 2, 'Expected match text and resource link');
     const summaryBlock = result.content[0];
     assert.equal(summaryBlock.type, 'text');
     const summaryText = (summaryBlock as { text: string }).text;
-    assert.match(summaryText, /search-content: 'apple'/);
-    assert.match(summaryText, /matches in.*files/);
+    assert.ok(summaryText.includes('apple'), 'Expected match content to contain search term');
+    assert.match(summaryText, /:\d+:/);
 
     const linkBlock = result.content[1];
     assert.equal(linkBlock.type, 'resource_link');
@@ -183,10 +183,13 @@ describe('grep tool', () => {
     assertOk(raw);
     const result = raw as ToolResult;
 
-    // Verify summary text contains the search query
+    // Verify match text contains the matched content
     const summaryBlock = result.content[0];
     assert.equal(summaryBlock.type, 'text');
-    assert.match((summaryBlock as { text: string }).text, /search-content: 'rocket'/);
+    assert.ok(
+      (summaryBlock as { text: string }).text.includes('rocket'),
+      'Expected match text to contain search term',
+    );
 
     // Verify UTF-8 content is preserved in matches
     const sc = getStructured(result);
@@ -248,11 +251,11 @@ describe('find tool', () => {
     const result = raw;
     assertOk(result);
 
-    // Verify summary text and resource link
-    assert.ok(result.content.length >= 2, 'Expected summary text and resource link');
+    // Verify file list text and resource link
+    assert.ok(result.content.length >= 2, 'Expected file list text and resource link');
     const summaryBlock = result.content[0];
     assert.equal(summaryBlock.type, 'text');
-    assert.match((summaryBlock as { text: string }).text, /search-files:.*match/);
+    assert.match((summaryBlock as { text: string }).text, /\.ts$/m);
 
     const linkBlock = result.content[1];
     assert.equal(linkBlock.type, 'resource_link');
@@ -309,13 +312,13 @@ describe('find tool', () => {
     const result = raw;
     assertOk(result);
 
-    // Verify content structure: summary text + resource link
+    // Verify content structure: file list text + resource link
     assert.equal(result.content.length >= 2, true);
     const summaryBlock = result.content[0];
     assert.equal(summaryBlock.type, 'text');
     const summaryText = (summaryBlock as { text: string }).text;
-    assert.match(summaryText, /search-files:/);
-    assert.match(summaryText, /matches/);
+    assert.ok(summaryText.length > 0, 'Expected non-empty file list');
+    assert.match(summaryText, /\.ts/);
 
     const linkBlock = result.content[1];
     assert.equal(linkBlock.type, 'resource_link');

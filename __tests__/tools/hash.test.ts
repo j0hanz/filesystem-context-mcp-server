@@ -50,11 +50,10 @@ describe('calculate_hash tool', () => {
     assert.equal(typeof sc['resourceUri'], 'string');
     assert((sc['resourceUri'] as string).startsWith('filesystem-mcp://result/'));
 
-    // Verify summary contains file name and algorithm
+    // Verify summary contains algorithm and hash
     const summary = raw.content[0];
     assert(summary && 'text' in summary);
     const text = (summary as { type: string; text: string }).text;
-    assert(text.includes('hash-me.txt'));
     assert(text.includes('SHA-256'));
     assert(text.includes(':'));
 

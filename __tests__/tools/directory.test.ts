@@ -38,12 +38,11 @@ describe('roots tool', () => {
     const result = raw;
     assertOk(result);
 
-    // Verify content: terse summary, no resource links
+    // Verify content: directory paths, no resource links
     assert.equal(result.content.length, 1, 'Expected exactly one content block');
     assert.equal(result.content[0].type, 'text', 'Expected text content');
     const summaryText = result.content[0].text;
-    assert.ok(summaryText.startsWith('roots:'), 'Expected summary to start with "roots:"');
-    assert.ok(summaryText.includes('allowed'), 'Expected summary to include "allowed"');
+    assert.ok(summaryText.trim().length > 0, 'Expected non-empty roots text');
 
     // Verify structured content
     const sc = getStructured(result);

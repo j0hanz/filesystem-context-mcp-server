@@ -24,7 +24,7 @@ import {
   PerFileErrorSchema,
   singleOrBatchPathsInput,
 } from '../schema.js';
-import { buildFileInfoPayload, putResource } from './_helpers.js';
+import { buildFileInfoPayload, formatBytes, putResource } from './_helpers.js';
 import { defineTool, type PerPathResult, runOverPaths } from './define.js';
 
 const StatInputSchema = singleOrBatchPathsInput({
@@ -215,12 +215,15 @@ export const GET_FILE_INFO = defineTool({
       resources.push(link);
     }
 
-    const summary =
-      batch.summary.total === 1
-        ? `stat: ${fileCount === 1 ? '1 file' : dirCount === 1 ? '1 directory' : '1 path'}`
-        : `stat: ${String(fileCount)} file${fileCount === 1 ? '' : 's'} · ${String(
-            dirCount,
-          )} director${dirCount === 1 ? 'y' : 'ies'}`;
+    const text = perPathPayload
+      .map((r) => {
+        if (r.value) {
+          const { name, type, size } = r.value;
+          return `${name}: ${type}, ${formatBytes(size)}`;
+        }
+        return `${r.path}: ${r.error?.message ?? 'error'}`;
+      })
+      .join('\n');
 
     return {
       structured: {
@@ -231,7 +234,7 @@ export const GET_FILE_INFO = defineTool({
         dirCount,
         ...(resourceUri ? { resourceUri } : {}),
       },
-      text: summary,
+      text,
       ...(resources.length > 0 ? { resources } : {}),
     };
   },
