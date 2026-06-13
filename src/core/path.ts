@@ -233,16 +233,11 @@ function isWindowsAbsolutePosixPath(normalizedPattern: string): boolean {
 function compilePatternGlobs(normalizedPattern: string): readonly string[] {
   const globs = new Set<string>([normalizedPattern]);
 
-  if (!normalizedPattern.startsWith('**/') && !isWindowsAbsolutePosixPath(normalizedPattern)) {
-    let startIdx = 0;
-    while (
-      startIdx < normalizedPattern.length &&
-      normalizedPattern.charCodeAt(startIdx) === CHAR_FORWARD_SLASH
-    ) {
-      startIdx++;
-    }
-    const withoutRoot = normalizedPattern.slice(startIdx);
-    if (withoutRoot.length > 0) {
+  const isRooted =
+    normalizedPattern.startsWith('**/') || isWindowsAbsolutePosixPath(normalizedPattern);
+  if (!isRooted) {
+    const withoutRoot = normalizedPattern.replace(/^\/+/, '');
+    if (withoutRoot) {
       globs.add(`**/${withoutRoot}`);
     }
   }
@@ -251,24 +246,15 @@ function compilePatternGlobs(normalizedPattern: string): readonly string[] {
 }
 
 function compilePatterns(patterns: readonly string[]): CompiledPattern[] {
-  const unique = new Set<string>();
-  for (const pattern of patterns) {
-    const trimmed = pattern.trim();
-    if (trimmed.length > 0) {
-      unique.add(trimmed);
-    }
-  }
-
-  const compiled: CompiledPattern[] = [];
-  for (const pattern of unique) {
+  const deduped = Array.from(new Set(patterns.map((p) => p.trim()).filter((p) => p.length > 0)));
+  return deduped.map((pattern) => {
     const normalized = normalizeForMatch(pattern);
     const matchesPath = normalized.includes('/');
-    compiled.push({
+    return {
       globs: matchesPath ? compilePatternGlobs(normalized) : [normalized],
       matchesPath,
-    });
-  }
-  return compiled;
+    };
+  });
 }
 
 function toPatternSet(patterns: readonly CompiledPattern[]): CompiledPatternSet {
