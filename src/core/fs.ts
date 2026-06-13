@@ -145,7 +145,7 @@ async function cp(
 
 // ─── Input validation ────────────────────────────────────────────────────────
 
-function assertPositiveSafeIntegerOption(name: string, value: unknown, message?: string): void {
+function assertPositiveIntegerOption(name: string, value: unknown, message?: string): void {
   if (value === undefined) return;
   if (
     typeof value !== 'number' ||
@@ -338,7 +338,7 @@ interface NormalizeResult {
 
 function buildBaseOptions(spec: ReadSpec): NormalizedOptions {
   if (spec.maxSize !== undefined) {
-    assertPositiveSafeIntegerOption('maxSize', spec.maxSize, 'maxSize must be at least 1');
+    assertPositiveIntegerOption('maxSize', spec.maxSize, 'maxSize must be at least 1');
   }
   return {
     encoding: spec.encoding ?? 'utf-8',
@@ -352,7 +352,7 @@ function normalizeHeadSpec(
   spec: Extract<ReadSpec, { kind: 'head' }>,
   base: NormalizedOptions,
 ): NormalizeResult {
-  assertPositiveSafeIntegerOption('lines', spec.lines, 'lines must be at least 1');
+  assertPositiveIntegerOption('lines', spec.lines, 'lines must be at least 1');
   return { normalized: { ...base, head: spec.lines }, mode: 'head' };
 }
 
@@ -360,7 +360,7 @@ function normalizeTailSpec(
   spec: Extract<ReadSpec, { kind: 'tail' }>,
   base: NormalizedOptions,
 ): NormalizeResult {
-  assertPositiveSafeIntegerOption('lines', spec.lines, 'lines must be at least 1');
+  assertPositiveIntegerOption('lines', spec.lines, 'lines must be at least 1');
   return { normalized: { ...base, tail: spec.lines }, mode: 'tail' };
 }
 
@@ -368,9 +368,9 @@ function normalizeRangeSpec(
   spec: Extract<ReadSpec, { kind: 'range' }>,
   base: NormalizedOptions,
 ): NormalizeResult {
-  assertPositiveSafeIntegerOption('start', spec.start, 'start must be at least 1');
+  assertPositiveIntegerOption('start', spec.start, 'start must be at least 1');
   if (spec.end !== undefined) {
-    assertPositiveSafeIntegerOption('end', spec.end, 'end must be at least 1');
+    assertPositiveIntegerOption('end', spec.end, 'end must be at least 1');
     if (spec.end < spec.start) {
       throw new FsError(
         ErrorCode.INVALID_INPUT,
@@ -695,12 +695,12 @@ class FileReader {
 
   private async executeHeadRead(): Promise<ReadFileResult> {
     const head = this.requireOption('head');
-    const readOptions = buildReadContentOptions(this.context.normalized);
+    const contentOptions = buildReadContentOptions(this.context.normalized);
     const { content, truncated, linesRead, hasMoreLines } = await readRangeContent(
       this.context.handle,
       1,
       head,
-      readOptions,
+      contentOptions,
     );
 
     return {
@@ -717,12 +717,12 @@ class FileReader {
   private async executeRangeRead(): Promise<ReadFileResult> {
     const startLine = this.requireOption('startLine');
     const { endLine } = this.context.normalized;
-    const readOptions = buildReadContentOptions(this.context.normalized);
+    const contentOptions = buildReadContentOptions(this.context.normalized);
     const { content, truncated, linesRead, hasMoreLines } = await readRangeContent(
       this.context.handle,
       startLine,
       endLine,
-      readOptions,
+      contentOptions,
     );
 
     return {
@@ -764,11 +764,11 @@ class FileReader {
 
   private async executeTailRead(): Promise<ReadFileResult> {
     const tail = this.requireOption('tail');
-    const readOptions = buildReadContentOptions(this.context.normalized);
+    const contentOptions = buildReadContentOptions(this.context.normalized);
     const { content, truncated, linesRead, hasMoreLines } = await readTailContent(
       this.context.handle,
       tail,
-      readOptions,
+      contentOptions,
     );
 
     return {

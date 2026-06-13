@@ -50,7 +50,7 @@ function checkParallelAbort(signal?: AbortSignal): void {
   if (signal?.aborted) throw createParallelAbortError();
 }
 
-function assertPositiveSafeIntegerOption(name: string, value: unknown): void {
+function assertPositiveIntegerOption(name: string, value: unknown): void {
   if (value === undefined) return;
   if (
     typeof value !== 'number' ||
@@ -63,7 +63,7 @@ function assertPositiveSafeIntegerOption(name: string, value: unknown): void {
 }
 
 function normalizeConcurrency(concurrency: number): number {
-  assertPositiveSafeIntegerOption('concurrency', concurrency);
+  assertPositiveIntegerOption('concurrency', concurrency);
   return concurrency;
 }
 
