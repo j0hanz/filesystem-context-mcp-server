@@ -23,6 +23,7 @@ applyBridgeFlags(process.argv.slice(2));
 // bridge flags above are in effect when their module-level constants are set.
 const { CliExitError, parseArgs, runPrintConfig } = await import('./cli.js');
 const { shutdownWorkerPool } = await import('./core/concurrency.js');
+const { shutdownSearchWorkerPool } = await import('./core/search/engine.js');
 const { logRuntimeFailure } = await import('./core/observability.js');
 const { createServer } = await import('./server.js');
 const { startHttpServer, startServer } = await import('./transport.js');
@@ -75,6 +76,7 @@ async function shutdown(reason: string, exitCode = 0): Promise<void> {
       await activeServer.close();
     }
     await shutdownWorkerPool();
+    await shutdownSearchWorkerPool();
     keepForceExitTimer = false;
   } catch (error: unknown) {
     logRuntimeFailure('shutdown_error', 'process', 'shutdown', error);

@@ -28,19 +28,44 @@ export const BRIDGE_MAP: readonly (readonly [string, string, boolean])[] = [
 export function applyBridgeFlags(argv: string[]): void {
   const values = new Map<string, string[]>();
 
-  for (const [flag, envVar, isBoolean] of BRIDGE_MAP) {
-    let idx = -1;
-    while ((idx = argv.indexOf(flag, idx + 1)) !== -1) {
-      if (isBoolean) {
-        let list = values.get(envVar);
-        if (!list) {
-          list = [];
-          values.set(envVar, list);
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === undefined) continue;
+
+    for (const [flag, envVar, isBoolean] of BRIDGE_MAP) {
+      if (arg === flag) {
+        if (isBoolean) {
+          let list = values.get(envVar);
+          if (!list) {
+            list = [];
+            values.set(envVar, list);
+          }
+          list.push('1');
+        } else {
+          const val = argv[i + 1];
+          if (val !== undefined && !val.startsWith('-')) {
+            let list = values.get(envVar);
+            if (!list) {
+              list = [];
+              values.set(envVar, list);
+            }
+            list.push(val);
+            i++; // consume next arg
+          }
         }
-        list.push('1');
-      } else {
-        const val = argv[idx + 1];
-        if (val !== undefined && !val.startsWith('-')) {
+        break;
+      } else if (arg.startsWith(flag + '=')) {
+        const val = arg.slice(flag.length + 1);
+        if (isBoolean) {
+          if (val === 'true' || val === '1' || val === '') {
+            let list = values.get(envVar);
+            if (!list) {
+              list = [];
+              values.set(envVar, list);
+            }
+            list.push('1');
+          }
+        } else {
           let list = values.get(envVar);
           if (!list) {
             list = [];
@@ -48,6 +73,7 @@ export function applyBridgeFlags(argv: string[]): void {
           }
           list.push(val);
         }
+        break;
       }
     }
   }

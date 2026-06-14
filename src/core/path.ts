@@ -1009,6 +1009,7 @@ export class PathGuard {
     // Parse allowed directories from environment variable
     const envAllowedRaw = parseEnvDirList('FS_ALLOWED_DIRS');
     const envAllowedDirs: string[] = [];
+    const allowMissing = parseTrueEnvFlag(process.env['FS_ALLOW_MISSING_ROOTS']);
     for (const rawPath of envAllowedRaw) {
       const normalized = normalizePath(rawPath);
       try {
@@ -1024,12 +1025,16 @@ export class PathGuard {
           );
         }
       } catch (_error) {
-        logToSender(
-          sender,
-          'warning',
-          `Path configured in FS_ALLOWED_DIRS is invalid or does not exist: ${rawPath}`,
-          this.loggingState?.minimumLevel,
-        );
+        if (allowMissing) {
+          envAllowedDirs.push(normalized);
+        } else {
+          logToSender(
+            sender,
+            'warning',
+            `Path configured in FS_ALLOWED_DIRS is invalid or does not exist: ${rawPath}`,
+            this.loggingState?.minimumLevel,
+          );
+        }
       }
     }
 

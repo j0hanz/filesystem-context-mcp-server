@@ -446,6 +446,9 @@ function isFuzzyMatch(text: string, pattern: string, caseSensitive: boolean): bo
   if (p.length === 0) return false;
   if (t.includes(p)) return true; // fast path: exact substring
 
+  // Prevent Denial of Service / Event Loop block on very long lines (e.g., minified files)
+  if (t.length > 1000) return false;
+
   const maxDist = Math.max(1, Math.floor(p.length / 4));
   const minLen = Math.max(1, p.length - maxDist);
   const maxLen = Math.min(t.length, p.length + maxDist);
@@ -493,6 +496,13 @@ function getPool(): SearchWorkerPool {
     poolInstance = new SearchWorkerPool(SEARCH_WORKERS, debug);
   }
   return poolInstance;
+}
+
+export async function shutdownSearchWorkerPool(): Promise<void> {
+  if (poolInstance) {
+    await poolInstance.close();
+    poolInstance = null;
+  }
 }
 
 // ─── Search Helpers ──────────────────────────────────────────────────────────

@@ -9,7 +9,7 @@ import {
   normalizePath,
   PathGuard,
 } from './core/path.js';
-import { isRecord } from './core/primitives.js';
+import { isRecord, parseTrueEnvFlag } from './core/primitives.js';
 import {
   MAX_SEARCHABLE_FILE_SIZE,
   MAX_TEXT_FILE_SIZE,
@@ -275,13 +275,16 @@ export async function parseArgs(): Promise<{
     }
 
     const vals = parsed.values as Record<string, unknown>;
-    const walkCwd = (vals['walk-cwd'] as boolean) || false;
+    const walkCwd =
+      (vals['walk-cwd'] as boolean) || parseTrueEnvFlag(process.env['FS_ALLOW_CWD_WALK']);
     const allowCwd = (vals['allow-cwd'] as boolean) || walkCwd;
     const readOnly = (vals['read-only'] as boolean) || (vals['safe'] as boolean);
     const printConfig = vals['print-config'] as boolean;
     const json = vals['json'] as boolean;
     const port = parsePortOption(parsed.values.port);
-    const allowMissingRoots = (vals['allow-missing-roots'] as boolean) || false;
+    const allowMissingRoots =
+      (vals['allow-missing-roots'] as boolean) ||
+      parseTrueEnvFlag(process.env['FS_ALLOW_MISSING_ROOTS']);
 
     let allowedDirs: string[];
     try {

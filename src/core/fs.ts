@@ -615,50 +615,88 @@ async function readTailContent(
 ): Promise<PartialReadResult> {
   assertNotAborted(options.signal);
 
-  const ring: string[] = new Array<string>(tail);
-  let totalLines = 0;
-  let head = 0;
-  let size = 0;
-
-  for await (const line of handle.readLines({
-    encoding: options.encoding,
-    signal: options.signal,
-  })) {
-    ring[head] = line;
-    head = (head + 1) % tail;
-    if (size < tail) size++;
-    totalLines++;
+  const stats = await handle.stat();
+  const fileSize = stats.size;
+  if (fileSize === 0) {
+    return {
+      content: '',
+      truncated: false,
+      linesRead: 0,
+      hasMoreLines: false,
+    };
   }
 
-  const lines: string[] = new Array<string>(size);
-  const start = size < tail ? 0 : head;
-  for (let i = 0; i < size; i++) {
-    lines[i] = ring[(start + i) % tail] ?? '';
-  }
-
-  // Enforce maxSize by dropping oldest lines if necessary
+  const encoding = options.encoding;
+  const newlineBytes = Buffer.byteLength('\n', encoding);
+  const CHUNK_SIZE = 64 * 1024; // 64KB chunks
+  let position = fileSize;
+  let remainingContent = '';
+  const lines: string[] = [];
   let totalBytes = 0;
-  const newlineBytes = Buffer.byteLength('\n', options.encoding);
-  let linesToKeep = 0;
+  let hasMoreLines = false;
 
-  for (let i = size - 1; i >= 0; i--) {
-    const bytes = Buffer.byteLength(lines[i] ?? '', options.encoding) + newlineBytes;
-    if (totalBytes + bytes > options.maxSize && totalBytes > 0) {
+  while (position > 0) {
+    assertNotAborted(options.signal);
+    const chunkSize = Math.min(position, CHUNK_SIZE);
+    const buffer = Buffer.alloc(chunkSize);
+    await handle.read(buffer, 0, chunkSize, position - chunkSize);
+    position -= chunkSize;
+
+    const chunkStr = buffer.toString(encoding) + remainingContent;
+    const parts = chunkStr.split('\n');
+
+    if (position > 0) {
+      remainingContent = parts[0] ?? '';
+    } else {
+      remainingContent = '';
+    }
+
+    const startIdx = parts.length - 1;
+    const limitIdx = position > 0 ? 1 : 0;
+
+    let i = startIdx;
+    if (position + chunkSize === fileSize && chunkStr.endsWith('\n')) {
+      i--;
+    }
+
+    for (; i >= limitIdx; i--) {
+      let line = parts[i] ?? '';
+      if (line.endsWith('\r')) {
+        line = line.slice(0, -1);
+      }
+
+      if (lines.length >= tail) {
+        hasMoreLines = true;
+        break;
+      }
+
+      const bytes = Buffer.byteLength(line, encoding) + newlineBytes;
+      if (totalBytes + bytes > options.maxSize) {
+        if (lines.length > 0) {
+          hasMoreLines = true;
+          break;
+        }
+      }
+
+      lines.unshift(line);
+      totalBytes += bytes;
+    }
+
+    if (hasMoreLines || lines.length >= tail) {
+      hasMoreLines = true;
       break;
     }
-    totalBytes += bytes;
-    linesToKeep++;
   }
 
-  const finalLines = lines.slice(size - linesToKeep);
-  const content = finalLines.join('\n');
-  const linesRead = finalLines.length;
-  const hasMoreLines = totalLines > linesRead;
+  if (position > 0 || remainingContent.length > 0) {
+    hasMoreLines = true;
+  }
 
+  const content = lines.join('\n');
   return {
     content,
     truncated: hasMoreLines,
-    linesRead,
+    linesRead: lines.length,
     hasMoreLines,
   };
 }

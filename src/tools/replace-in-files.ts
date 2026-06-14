@@ -345,7 +345,7 @@ async function maybeAppendPatchDiff(
   },
 ): Promise<void> {
   if (!params.includeDiff) return;
-  const header = basename(params.filePath);
+  const header = relative(summary.root, params.filePath);
   const totalBytes =
     Buffer.byteLength(params.originalContent) + Buffer.byteLength(params.updatedContent);
 
