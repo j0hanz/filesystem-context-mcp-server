@@ -99,7 +99,7 @@ function assertDirectory(stats: Stats, inputPath: string): void {
   throw new Error(`${inputPath} is not a directory`);
 }
 
-async function validateDirectoryPath(inputPath: string): Promise<string> {
+async function validateDirectoryPath(inputPath: string, allowMissing = false): Promise<string> {
   const normalized = normalizePath(inputPath);
 
   try {
@@ -107,14 +107,23 @@ async function validateDirectoryPath(inputPath: string): Promise<string> {
     assertDirectory(stats, inputPath);
     return normalized;
   } catch (error) {
+    if (allowMissing) {
+      if (error instanceof Error && error.message.includes('is not a directory')) {
+        throw error;
+      }
+      return normalized;
+    }
     throw normalizeDirectoryError(error, inputPath);
   }
 }
 
-export async function normalizeAndValidateDirs(paths: readonly string[]): Promise<string[]> {
+export async function normalizeAndValidateDirs(
+  paths: readonly string[],
+  allowMissing = false,
+): Promise<string[]> {
   const { results, errors } = await processInParallel(
     [...paths],
-    validateDirectoryPath,
+    (p) => validateDirectoryPath(p, allowMissing),
     CLI_VALIDATE_CONCURRENCY,
   );
   if (errors.length === 0) {
@@ -129,8 +138,11 @@ export async function normalizeAndValidateDirs(paths: readonly string[]): Promis
   throw first?.error ?? new Error('Failed to validate directories');
 }
 
-async function normalizeCliDirectories(args: readonly string[]): Promise<string[]> {
-  return normalizeAndValidateDirs(args);
+async function normalizeCliDirectories(
+  args: readonly string[],
+  allowMissing = false,
+): Promise<string[]> {
+  return normalizeAndValidateDirs(args, allowMissing);
 }
 
 function printHelpAndExit(): never {
@@ -153,8 +165,11 @@ Options:
   --allow-sensitive          Allow access to sensitive system paths (env: FS_CONTEXT_ALLOW_SENSITIVE)
   --root-boundary <path>     Restrict allowed roots to be under this path (env: FS_ROOT_BOUNDARY)
   --max-file-size <bytes>    Override maximum file size for reads (env: MAX_FILE_SIZE)
+  --walk-cwd                 Walk up from CWD to find project root (requires --allow-cwd or implies it)
+  --deny <pattern>           Deny access to paths matching this pattern (can be specified multiple times)
+  --allow-missing-roots      Do not fail startup if configured allowed directories do not exist
 
-Environment variables (take precedence over flags when both are set):
+Environment variables (overridden by flags when both are set):
   FILESYSTEM_MCP_LOG_LEVEL   Log verbosity (debug|info|warn|error)
   FILESYSTEM_MCP_HTTP_HOST   HTTP bind host
   FILESYSTEM_MCP_API_KEY     HTTP API key
@@ -162,6 +177,9 @@ Environment variables (take precedence over flags when both are set):
   FS_ROOT_BOUNDARY           Path prefix that all allowed roots must fall under
   MAX_FILE_SIZE              Maximum file size in bytes for read operations
   FS_ALLOWED_DIRS            Colon-separated (Unix) or semicolon-separated (Windows) allowed dirs
+  FS_ALLOW_CWD_WALK          Walk up from CWD to find project root (set to any value to enable)
+  FS_CONTEXT_DENYLIST        Comma-separated list of paths/patterns to deny access to
+  FS_ALLOW_MISSING_ROOTS     Do not fail startup if configured allowed directories do not exist (set to any value to enable)
 
 Examples:
   $ filesystem-mcp /path/to/allowed/dir
@@ -215,6 +233,8 @@ export async function parseArgs(): Promise<{
   readOnly: boolean;
   printConfig: boolean;
   json: boolean;
+  walkCwd: boolean;
+  allowMissingRoots: boolean;
 }> {
   try {
     const parsed = utilParseArgs({
@@ -227,6 +247,15 @@ export async function parseArgs(): Promise<{
         port: { type: 'string' },
         help: { type: 'boolean', short: 'h' },
         version: { type: 'boolean', short: 'v' },
+        'log-level': { type: 'string' },
+        'http-host': { type: 'string' },
+        'api-key': { type: 'string' },
+        'allow-sensitive': { type: 'boolean', default: false },
+        'root-boundary': { type: 'string' },
+        'max-file-size': { type: 'string' },
+        'walk-cwd': { type: 'boolean', default: false },
+        deny: { type: 'string', multiple: true },
+        'allow-missing-roots': { type: 'boolean', default: false },
       },
       strict: true,
       allowPositionals: true,
@@ -246,22 +275,34 @@ export async function parseArgs(): Promise<{
     }
 
     const vals = parsed.values as Record<string, unknown>;
-    const allowCwd = vals['allow-cwd'] as boolean;
+    const walkCwd = (vals['walk-cwd'] as boolean) || false;
+    const allowCwd = (vals['allow-cwd'] as boolean) || walkCwd;
     const readOnly = (vals['read-only'] as boolean) || (vals['safe'] as boolean);
     const printConfig = vals['print-config'] as boolean;
     const json = vals['json'] as boolean;
     const port = parsePortOption(parsed.values.port);
+    const allowMissingRoots = (vals['allow-missing-roots'] as boolean) || false;
 
     let allowedDirs: string[];
     try {
-      allowedDirs = positionals.length > 0 ? await normalizeCliDirectories(positionals) : [];
+      allowedDirs =
+        positionals.length > 0 ? await normalizeCliDirectories(positionals, allowMissingRoots) : [];
     } catch (error: unknown) {
       throw new CliExitError(normalizeCliExitMessage(error), 1);
     }
 
     const deduplicatedDirs = deduplicateAllowedDirectories(allowedDirs);
 
-    return { allowedDirs: deduplicatedDirs, allowCwd, port, readOnly, printConfig, json };
+    return {
+      allowedDirs: deduplicatedDirs,
+      allowCwd,
+      port,
+      readOnly,
+      printConfig,
+      json,
+      walkCwd,
+      allowMissingRoots,
+    };
   } catch (error: unknown) {
     if (error instanceof CliExitError) {
       throw error;

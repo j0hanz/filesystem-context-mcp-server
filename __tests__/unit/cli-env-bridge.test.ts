@@ -61,11 +61,11 @@ describe('applyBridgeFlags — flag→env mapping (TASK-004/005)', () => {
     assert.equal(process.env['FS_ROOT_BOUNDARY'], '/tmp/safe');
   });
 
-  it('env var already set takes precedence over flag (env wins)', () => {
+  it('flag overrides env var already set (flag wins)', () => {
     snapshot();
     process.env['MAX_FILE_SIZE'] = '99999';
     applyBridgeFlags(['--max-file-size', '1048576']);
-    assert.equal(process.env['MAX_FILE_SIZE'], '99999');
+    assert.equal(process.env['MAX_FILE_SIZE'], '1048576');
   });
 
   it('flag with no following value is ignored', () => {
@@ -82,7 +82,7 @@ describe('applyBridgeFlags — flag→env mapping (TASK-004/005)', () => {
     }
   });
 
-  it('bridge covers all six expected mappings', () => {
+  it('bridge covers all nine expected mappings', () => {
     const expectedFlags = new Set([
       '--log-level',
       '--http-host',
@@ -90,10 +90,19 @@ describe('applyBridgeFlags — flag→env mapping (TASK-004/005)', () => {
       '--allow-sensitive',
       '--root-boundary',
       '--max-file-size',
+      '--walk-cwd',
+      '--allow-missing-roots',
+      '--deny',
     ]);
     const actualFlags = new Set(BRIDGE_MAP.map(([flag]) => flag));
     for (const f of expectedFlags) {
       assert.ok(actualFlags.has(f), `BRIDGE_MAP must include flag '${f}'`);
     }
+  });
+
+  it('maps multiple --deny flags to comma-separated list', () => {
+    snapshot();
+    applyBridgeFlags(['--deny', 'node_modules', '--deny', 'dist']);
+    assert.equal(process.env['FS_CONTEXT_DENYLIST'], 'node_modules,dist');
   });
 });

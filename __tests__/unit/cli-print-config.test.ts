@@ -137,4 +137,34 @@ describe('--print-config (TASK-006/007)', () => {
     assert.ok(joined.includes('transport'), 'text output must include transport');
     assert.ok(joined.includes('readOnly'), 'text output must include readOnly');
   });
+
+  it('parseArgs supports log-level and other bridged options without throwing', async () => {
+    process.argv = ['node', 'index.js', '--log-level', 'debug', '--max-file-size', '1048576'];
+    const { parseArgs } = await import('../../src/cli.js');
+    const result = await parseArgs();
+    assert.equal(result.printConfig, false);
+  });
+
+  it('parseArgs with --walk-cwd parses successfully and sets walkCwd and allowCwd to true', async () => {
+    process.argv = ['node', 'index.js', '--walk-cwd'];
+    const { parseArgs } = await import('../../src/cli.js');
+    const result = await parseArgs();
+    assert.equal(result.walkCwd, true);
+    assert.equal(result.allowCwd, true);
+  });
+
+  it('parseArgs supports multiple --deny flags', async () => {
+    process.argv = ['node', 'index.js', '--deny', 'node_modules', '--deny', 'dist'];
+    const { parseArgs } = await import('../../src/cli.js');
+    const result = await parseArgs();
+    assert.ok(result !== null);
+  });
+
+  it('parseArgs supports --allow-missing-roots', async () => {
+    process.argv = ['node', 'index.js', '--allow-missing-roots', '/nonexistent/path/here'];
+    const { parseArgs } = await import('../../src/cli.js');
+    const result = await parseArgs();
+    assert.equal(result.allowMissingRoots, true);
+    assert.ok(result.allowedDirs.length === 1);
+  });
 });

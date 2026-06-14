@@ -50,6 +50,26 @@ describe('Directory normalization unification (TASK-008)', () => {
     );
   });
 
+  it('normalizeAndValidateDirs with allowMissing=true tolerates non-existent path', async () => {
+    const { normalizeAndValidateDirs } = await import('../../src/cli.js');
+    const missingPath = '/this/path/does/not/exist/xyz123_missing';
+    const result = await normalizeAndValidateDirs([missingPath], true);
+    assert.ok(result.length === 1);
+  });
+
+  it('normalizeAndValidateDirs with allowMissing=true still throws for a file path', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'cli-dir-unify-'));
+    const { writeFile } = await import('node:fs/promises');
+    const filePath = join(tempDir, 'test.txt');
+    await writeFile(filePath, 'hello');
+
+    const { normalizeAndValidateDirs } = await import('../../src/cli.js');
+    await assert.rejects(
+      () => normalizeAndValidateDirs([filePath], true),
+      'Should throw for a file path even if allowMissing is true',
+    );
+  });
+
   it('normalizeAndValidateDirs deduplicates case-insensitively on Windows', async () => {
     if (process.platform !== 'win32') return;
     tempDir = await mkdtemp(join(tmpdir(), 'cli-dir-unify-'));
