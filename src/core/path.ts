@@ -28,6 +28,7 @@ export const LIFECYCLE_CHANNEL = channel('filesystem-mcp:lifecycle');
 export interface ServerOptions {
   allowCwd?: boolean;
   cliAllowedDirs?: string[];
+  readOnly?: boolean;
 }
 
 function normalizeCLIDirectories(dirs: readonly string[]): string[] {

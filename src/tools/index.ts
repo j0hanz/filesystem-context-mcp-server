@@ -27,6 +27,16 @@ const ALL_TOOLS = [
   GET_FILE_INFO,
 ] as const;
 
+export const MUTATING_TOOL_NAMES = new Set([
+  CREATE.name,
+  DELETE_FILE.name,
+  EDIT.name,
+  MOVE.name,
+  SEARCH_AND_REPLACE.name,
+]);
+
+export const ALL_REGISTERED_TOOL_NAMES: readonly string[] = ALL_TOOLS.map((t) => t.name);
+
 export const toolsRegistrar: Registrar = {
   register(deps): void {
     const toolDeps = {
@@ -36,6 +46,7 @@ export const toolsRegistrar: Registrar = {
       resourceStore: deps.resourceStore,
     };
     for (const tool of ALL_TOOLS) {
+      if (deps.readOnly && MUTATING_TOOL_NAMES.has(tool.name)) continue;
       tool.register(toolDeps);
     }
   },

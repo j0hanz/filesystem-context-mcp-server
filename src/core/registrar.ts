@@ -28,6 +28,7 @@ export interface ServerDeps {
   resourceStore: ResourceStore;
   isInitialized: () => boolean;
   iconInfo?: IconInfo;
+  readOnly?: boolean;
 }
 
 export interface Registrar {

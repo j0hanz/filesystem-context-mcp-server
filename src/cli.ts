@@ -7,9 +7,17 @@ import {
   getReservedDeviceNameForPath,
   isWindowsDriveRelativePath,
   normalizePath,
+  PathGuard,
 } from './core/path.js';
 import { isRecord } from './core/primitives.js';
+import {
+  MAX_SEARCHABLE_FILE_SIZE,
+  MAX_TEXT_FILE_SIZE,
+  SEARCH_WORKERS,
+  WORKER_POOL_MAX,
+} from './core/util.js';
 import { pkgInfo } from './pkg-info.js';
+import { ALL_REGISTERED_TOOL_NAMES, MUTATING_TOOL_NAMES } from './tools/index.js';
 
 const { version: SERVER_VERSION } = pkgInfo;
 const IS_WINDOWS = process.platform === 'win32';
@@ -103,14 +111,14 @@ async function validateDirectoryPath(inputPath: string): Promise<string> {
   }
 }
 
-async function normalizeCliDirectories(args: readonly string[]): Promise<string[]> {
+export async function normalizeAndValidateDirs(paths: readonly string[]): Promise<string[]> {
   const { results, errors } = await processInParallel(
-    [...args],
+    [...paths],
     validateDirectoryPath,
     CLI_VALIDATE_CONCURRENCY,
   );
   if (errors.length === 0) {
-    return results;
+    return deduplicateAllowedDirectories(results);
   }
   let first = errors[0];
   for (const failure of errors) {
@@ -121,22 +129,47 @@ async function normalizeCliDirectories(args: readonly string[]): Promise<string[
   throw first?.error ?? new Error('Failed to validate directories');
 }
 
+async function normalizeCliDirectories(args: readonly string[]): Promise<string[]> {
+  return normalizeAndValidateDirs(args);
+}
+
 function printHelpAndExit(): never {
   const help = `filesystem-mcp [options] [allowedDirs...]
 
 MCP filesystem server. Positional directories define allowed access roots.
 
 Options:
-  -h, --help              Display command help
-  -v, --version           Display server version
-  --allow-cwd             Allow the current working directory as an additional root
-  --port <number>         Enable HTTP transport on the given port (Node Streamable HTTP)
+  -h, --help                 Display command help
+  -v, --version              Display server version
+  --allow-cwd                Allow the current working directory as an additional root
+  --port <number>            Enable HTTP transport on the given port (Node Streamable HTTP)
+  --read-only                Disable all mutating tools (create, edit, delete, move, replace)
+  --safe                     Alias for --read-only
+  --print-config             Print effective configuration and exit (combine with --json)
+  --json                     Output --print-config as JSON instead of human-readable text
+  --log-level <level>        Set log level: debug|info|warn|error (env: FILESYSTEM_MCP_LOG_LEVEL)
+  --http-host <host>         Bind HTTP server to host (env: FILESYSTEM_MCP_HTTP_HOST)
+  --api-key <key>            Require this API key for HTTP requests (env: FILESYSTEM_MCP_API_KEY)
+  --allow-sensitive          Allow access to sensitive system paths (env: FS_CONTEXT_ALLOW_SENSITIVE)
+  --root-boundary <path>     Restrict allowed roots to be under this path (env: FS_ROOT_BOUNDARY)
+  --max-file-size <bytes>    Override maximum file size for reads (env: MAX_FILE_SIZE)
+
+Environment variables (take precedence over flags when both are set):
+  FILESYSTEM_MCP_LOG_LEVEL   Log verbosity (debug|info|warn|error)
+  FILESYSTEM_MCP_HTTP_HOST   HTTP bind host
+  FILESYSTEM_MCP_API_KEY     HTTP API key
+  FS_CONTEXT_ALLOW_SENSITIVE Allow sensitive system paths (set to any value to enable)
+  FS_ROOT_BOUNDARY           Path prefix that all allowed roots must fall under
+  MAX_FILE_SIZE              Maximum file size in bytes for read operations
+  FS_ALLOWED_DIRS            Colon-separated (Unix) or semicolon-separated (Windows) allowed dirs
 
 Examples:
   $ filesystem-mcp /path/to/allowed/dir
   $ filesystem-mcp --allow-cwd
   $ filesystem-mcp /project/src /project/tests --allow-cwd
   $ filesystem-mcp --port 3000 /path/to/allowed/dir
+  $ filesystem-mcp --read-only /data/readonly
+  $ filesystem-mcp --print-config --json /project
 `;
   process.stdout.write(help);
   process.exit(0);
@@ -179,11 +212,18 @@ export async function parseArgs(): Promise<{
   allowedDirs: string[];
   allowCwd: boolean;
   port: number | undefined;
+  readOnly: boolean;
+  printConfig: boolean;
+  json: boolean;
 }> {
   try {
     const parsed = utilParseArgs({
       options: {
         'allow-cwd': { type: 'boolean', default: false },
+        'read-only': { type: 'boolean', default: false },
+        safe: { type: 'boolean', default: false },
+        'print-config': { type: 'boolean', default: false },
+        json: { type: 'boolean', default: false },
         port: { type: 'string' },
         help: { type: 'boolean', short: 'h' },
         version: { type: 'boolean', short: 'v' },
@@ -205,7 +245,11 @@ export async function parseArgs(): Promise<{
       validateCliPath(positional);
     }
 
-    const allowCwd = (parsed.values as Record<string, unknown>)['allow-cwd'] as boolean;
+    const vals = parsed.values as Record<string, unknown>;
+    const allowCwd = vals['allow-cwd'] as boolean;
+    const readOnly = (vals['read-only'] as boolean) || (vals['safe'] as boolean);
+    const printConfig = vals['print-config'] as boolean;
+    const json = vals['json'] as boolean;
     const port = parsePortOption(parsed.values.port);
 
     let allowedDirs: string[];
@@ -217,7 +261,7 @@ export async function parseArgs(): Promise<{
 
     const deduplicatedDirs = deduplicateAllowedDirectories(allowedDirs);
 
-    return { allowedDirs: deduplicatedDirs, allowCwd, port };
+    return { allowedDirs: deduplicatedDirs, allowCwd, port, readOnly, printConfig, json };
   } catch (error: unknown) {
     if (error instanceof CliExitError) {
       throw error;
@@ -228,4 +272,71 @@ export async function parseArgs(): Promise<{
     const formattedMessage = message.startsWith('Error:') ? message : `Error: ${message}`;
     throw new CliExitError(formattedMessage, 1);
   }
+}
+
+export interface EffectiveConfig {
+  transport: string;
+  readOnly: boolean;
+  allowedRoots: string[];
+  tools: string[];
+  apiKey: string | null;
+  limits: {
+    maxFileSizeBytes: number;
+    maxSearchFileSizeBytes: number;
+    searchWorkers: number;
+    workerPoolMax: number;
+  };
+}
+
+export interface PrintConfigOptions {
+  allowedDirs: string[];
+  allowCwd: boolean;
+  readOnly: boolean;
+  json: boolean;
+  apiKey?: string;
+  stdout?: (chunk: string) => void;
+}
+
+export async function runPrintConfig(options: PrintConfigOptions): Promise<EffectiveConfig> {
+  const write = options.stdout ?? ((s: string) => process.stdout.write(s));
+
+  const pathGuard = new PathGuard({
+    allowCwd: options.allowCwd,
+    cliAllowedDirs: options.allowedDirs,
+  });
+  await pathGuard.recomputeAllowedDirectories();
+  const allowedRoots = pathGuard.getAllowedDirectories();
+
+  const tools = ALL_REGISTERED_TOOL_NAMES.filter(
+    (name) => !options.readOnly || !MUTATING_TOOL_NAMES.has(name),
+  );
+
+  const config: EffectiveConfig = {
+    transport: 'stdio',
+    readOnly: options.readOnly,
+    allowedRoots,
+    tools: [...tools],
+    apiKey: options.apiKey ? '***' : null,
+    limits: {
+      maxFileSizeBytes: MAX_TEXT_FILE_SIZE,
+      maxSearchFileSizeBytes: MAX_SEARCHABLE_FILE_SIZE,
+      searchWorkers: SEARCH_WORKERS,
+      workerPoolMax: WORKER_POOL_MAX,
+    },
+  };
+
+  if (options.json) {
+    write(JSON.stringify(config, null, 2));
+  } else {
+    write(`transport:    ${config.transport}\n`);
+    write(`readOnly:     ${String(config.readOnly)}\n`);
+    write(`apiKey:       ${config.apiKey ?? 'none'}\n`);
+    write(`allowedRoots: ${config.allowedRoots.join(', ') || '(none)'}\n`);
+    write(`tools:        ${config.tools.join(', ')}\n`);
+    write(`maxFileSize:  ${config.limits.maxFileSizeBytes}\n`);
+    write(`maxSearch:    ${config.limits.maxSearchFileSizeBytes}\n`);
+    write(`workers:      ${config.limits.searchWorkers}\n`);
+  }
+
+  return config;
 }

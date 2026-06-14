@@ -165,6 +165,7 @@ export async function createServer(
     resourceStore,
     isInitialized,
     ...(localIcon ? { iconInfo: localIcon } : {}),
+    ...(options.readOnly ? { readOnly: true } : {}),
   };
 
   const registrars: Registrar[] = [resourcesRegistrar, promptsRegistrar, toolsRegistrar];

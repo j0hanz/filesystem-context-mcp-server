@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Type-only imports are erased at runtime — safe to keep static.
 import type { McpServer } from '@modelcontextprotocol/server';
 
 import type * as http from 'node:http';
@@ -6,14 +7,25 @@ import process from 'node:process';
 
 import * as z from 'zod/v4';
 
-import { CliExitError, parseArgs } from './cli.js';
-import { shutdownWorkerPool } from './core/concurrency.js';
-import { logRuntimeFailure } from './core/observability.js';
-import { createServer } from './server.js';
-import { startHttpServer, startServer } from './transport.js';
+// bridge.ts has zero intra-package dependencies; statically importing it here
+// does NOT pull in util.ts or any config-bearing module.
+import { applyBridgeFlags } from './core/bridge.js';
 
-// Ensure consistent English error messages across all locales.
 z.config(z.locales.en());
+
+// Apply bridge flags BEFORE any config-bearing module is imported.
+// util.ts freezes env-derived constants (MAX_TEXT_FILE_SIZE, LOG_LEVEL, …)
+// on first import. Setting process.env here ensures those constants observe
+// the flag values when the dynamic imports below evaluate them.
+applyBridgeFlags(process.argv.slice(2));
+
+// Dynamically import all modules that transitively load util.ts so that the
+// bridge flags above are in effect when their module-level constants are set.
+const { CliExitError, parseArgs, runPrintConfig } = await import('./cli.js');
+const { shutdownWorkerPool } = await import('./core/concurrency.js');
+const { logRuntimeFailure } = await import('./core/observability.js');
+const { createServer } = await import('./server.js');
+const { startHttpServer, startServer } = await import('./transport.js');
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
 let activeServer: McpServer | undefined;
@@ -77,9 +89,12 @@ async function main(): Promise<void> {
   let allowedDirs: string[];
   let allowCwd: boolean;
   let port: number | undefined;
+  let readOnly: boolean;
+  let printConfig: boolean;
+  let json: boolean;
   try {
     const parsed = await parseArgs();
-    ({ allowedDirs, allowCwd, port } = parsed);
+    ({ allowedDirs, allowCwd, port, readOnly, printConfig, json } = parsed);
   } catch (error: unknown) {
     if (error instanceof CliExitError) {
       if (error.message.length > 0) {
@@ -89,6 +104,18 @@ async function main(): Promise<void> {
       return;
     }
     throw error;
+  }
+
+  if (printConfig) {
+    const apiKey = process.env['FILESYSTEM_MCP_API_KEY'];
+    await runPrintConfig({
+      allowedDirs,
+      allowCwd,
+      readOnly,
+      json,
+      ...(apiKey !== undefined ? { apiKey } : {}),
+    });
+    return;
   }
 
   if (allowedDirs.length > 0) {
@@ -102,15 +129,21 @@ async function main(): Promise<void> {
     );
   }
 
+  if (readOnly) {
+    console.error('Read-only mode: mutating tools disabled.');
+  }
+
   if (port !== undefined) {
     activeHttpServer = await startHttpServer(port, {
       allowCwd,
       cliAllowedDirs: allowedDirs,
+      readOnly,
     });
   } else {
     const ctx = await createServer({
       allowCwd,
       cliAllowedDirs: allowedDirs,
+      readOnly,
     });
     activeServer = ctx.mcp;
     await startServer(ctx);
