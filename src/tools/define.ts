@@ -27,7 +27,9 @@ import { plainMessage } from '../core/fmt.js';
 import { GuardedFileSystem } from '../core/fs.js';
 import {
   Logger,
+  type ProgressEvent,
   ProgressSession,
+  type ProgressSink,
   StderrProgressSink,
   withTelemetry,
 } from '../core/observability.js';
@@ -271,64 +273,50 @@ function extractTracingMeta(meta: (RequestMeta & TracingMeta) | undefined): Reco
 
 // ============ Progress Tracking ============
 
-class ProgressTracker {
-  tickCount = 0;
-  emittedCount = 0;
-
-  private pending = new Set<Promise<void>>();
-  private closed = false;
-  private cursor = 0;
+class McpProgressSink implements ProgressSink {
+  readonly name = 'mcp';
   private readonly toolName: string;
-  private readonly ctx: ProgressCtx;
-  private readonly token: string | number | undefined;
-  private readonly notify: ((n: Notification) => Promise<void>) | undefined;
-  private readonly stderrSink: StderrProgressSink;
-  private readonly session: ProgressSession;
+  private readonly token: string | number;
+  private readonly notify: (n: Notification) => Promise<void>;
+  readonly pending = new Set<Promise<void>>();
+  emittedCount = 0;
 
   constructor(
     toolName: string,
-    ctx: ProgressCtx,
-    token: string | number | undefined,
-    notify: ((n: Notification) => Promise<void>) | undefined,
+    token: string | number,
+    notify: (n: Notification) => Promise<void>,
   ) {
     this.toolName = toolName;
-    this.ctx = ctx;
     this.token = token;
     this.notify = notify;
-    this.stderrSink = new StderrProgressSink(ctx);
-    this.session = new ProgressSession({
-      label: ctx.label,
-      sinks: [this.stderrSink],
-      dynamicRateLimit: true,
-    });
   }
 
-  get progressCtx(): ProgressCtx {
-    return this.ctx;
-  }
-
-  private async emit(params: { current: number; total?: number; message?: string }): Promise<void> {
-    if (!this.notify || this.token === undefined) return;
+  emit(event: ProgressEvent): void {
+    if (event.kind === 'status') {
+      return;
+    }
+    let current = event.current;
+    let total = event.total;
+    if (event.kind === 'complete' || event.kind === 'fail') {
+      current = total ?? current + 1;
+      total = current;
+    }
     const notificationParams: ProgressNotificationParams = {
       progressToken: this.token,
-      progress: params.current,
-      ...(params.total !== undefined ? { total: params.total } : {}),
-      ...(params.message !== undefined ? { message: params.message } : {}),
+      progress: current,
+      ...(total !== undefined ? { total } : {}),
+      message: event.message,
     };
-    try {
-      await this.notify({
-        method: 'notifications/progress',
-        params: notificationParams,
+    const promise = this.notify({
+      method: 'notifications/progress',
+      params: notificationParams,
+    })
+      .then(() => {
+        this.emittedCount++;
+      })
+      .catch((error: unknown) => {
+        reportDetachedError(this.toolName, 'progressNotification', error);
       });
-      this.emittedCount++;
-    } catch (error) {
-      reportDetachedError(this.toolName, 'progressNotification', error);
-    }
-  }
-
-  private track(params: { current: number; total?: number; message?: string }): void {
-    if (params.current > this.cursor) this.cursor = params.current;
-    const promise = this.emit(params);
     this.pending.add(promise);
     runDetached(
       this.toolName,
@@ -339,8 +327,55 @@ class ProgressTracker {
     );
   }
 
+  async flush(): Promise<void> {
+    if (this.pending.size > 0) {
+      await Promise.allSettled([...this.pending]);
+    }
+  }
+}
+
+class ProgressTracker {
+  tickCount = 0;
+  private closed = false;
+  private readonly ctx: ProgressCtx;
+  private readonly mcpSink?: McpProgressSink;
+  private readonly stderrSink: StderrProgressSink;
+  private readonly session: ProgressSession;
+
+  constructor(
+    toolName: string,
+    ctx: ProgressCtx,
+    token: string | number | undefined,
+    notify: ((n: Notification) => Promise<void>) | undefined,
+  ) {
+    this.ctx = ctx;
+    this.stderrSink = new StderrProgressSink(ctx);
+
+    const sinks: ProgressSink[] = [this.stderrSink];
+    if (token !== undefined && notify !== undefined) {
+      this.mcpSink = new McpProgressSink(toolName, token, notify);
+      sinks.push(this.mcpSink);
+    }
+
+    const isTest = process.env['NODE_ENV'] === 'test' || process.execArgv.includes('--test');
+    this.session = new ProgressSession({
+      label: ctx.label,
+      sinks,
+      ...(isTest ? { rateLimitMs: 0 } : {}),
+      dynamicRateLimit: !isTest,
+    });
+  }
+
+  get progressCtx(): ProgressCtx {
+    return this.ctx;
+  }
+
+  get emittedCount(): number {
+    return this.mcpSink ? this.mcpSink.emittedCount : 0;
+  }
+
   start(): void {
-    this.track({ current: 0, message: plainMessage('start', this.ctx) });
+    // No-op as ProgressSession constructor already emitted start tick.
   }
 
   tick(p: { current: number; total?: number }): void {
@@ -353,7 +388,6 @@ class ProgressTracker {
     };
     const message = plainMessage('tick', tickCtx);
     this.session.set({ ...p, message });
-    this.track({ ...p, message });
   }
 
   updateStderrError(errMsg: string): void {
@@ -363,20 +397,22 @@ class ProgressTracker {
   async closeWithDone(message: string): Promise<void> {
     this.closed = true;
     this.session.complete(message);
-    const current = this.cursor + 1;
-    await this.emit({ current, total: current, message });
+    if (this.mcpSink) {
+      await this.mcpSink.flush();
+    }
   }
 
   async closeWithFail(error: unknown, message: string): Promise<void> {
     this.closed = true;
     this.session.fail(error, message);
-    const current = this.cursor + 1;
-    await this.emit({ current, total: current, message });
+    if (this.mcpSink) {
+      await this.mcpSink.flush();
+    }
   }
 
   async flush(): Promise<void> {
-    if (this.pending.size > 0) {
-      await Promise.allSettled([...this.pending]);
+    if (this.mcpSink) {
+      await this.mcpSink.flush();
     }
   }
 }

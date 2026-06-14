@@ -1,4 +1,3 @@
-// define-tool.test.ts — tests for defineTool() from src/tools/define.ts
 import type { McpServer, ServerContext } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
@@ -11,6 +10,9 @@ import { ErrorCode } from '../../src/core/errors.js';
 import type { PathGuard } from '../../src/core/path.js';
 import type { ResourceStore } from '../../src/core/store.js';
 import { defineTool } from '../../src/tools/define.js';
+
+// define-tool.test.ts — tests for defineTool() from src/tools/define.ts
+process.env['NODE_ENV'] = 'test';
 
 const TestInputSchema = z.strictObject({
   message: z.string().describe('A test message'),

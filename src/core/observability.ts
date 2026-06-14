@@ -106,15 +106,23 @@ function toLogfmt(obj: Record<string, unknown>): string {
         return `${k}=[${v.join(',')}]`;
       }
       if (typeof v === 'string') {
-        if (v.includes(' ') || v.includes('"') || v.includes('=')) {
-          return `${k}=${JSON.stringify(v)}`;
+        if (/[\s"=\\]/.test(v)) {
+          try {
+            return `${k}=${JSON.stringify(v)}`;
+          } catch {
+            return `${k}=[Unserializable]`;
+          }
         }
         return `${k}=${v}`;
       }
       if (typeof v === 'number') {
         return `${k}=${Number.isInteger(v) ? v : v.toFixed(2)}`;
       }
-      return `${k}=${JSON.stringify(v)}`;
+      try {
+        return `${k}=${JSON.stringify(v)}`;
+      } catch {
+        return `${k}=[Unserializable]`;
+      }
     })
     .join(' ');
 }
@@ -200,9 +208,16 @@ export function logToSender(
     return;
   }
 
-  void sender.send(level, data).catch((error: unknown) => {
-    console.error(`Failed to send log: ${level} | ${data}`, formatTransportError(error));
-  });
+  try {
+    void sender.send(level, data).catch((error: unknown) => {
+      console.error(`Failed to send log: ${level} | ${data}`, formatTransportError(error));
+    });
+  } catch (error) {
+    console.error(
+      `Failed to send log synchronously: ${level} | ${data}`,
+      formatTransportError(error),
+    );
+  }
 }
 
 function formatTransportError(error: unknown): string {
@@ -553,17 +568,22 @@ function ensureObserver(): void {
   if (perfObserver) return;
   perfObserver = new PerformanceObserver((list) => {
     const entries = list.getEntries();
+    const ours: { name: string }[] = [];
     for (const entry of entries) {
-      CHANNELS.perf.publish({
-        phase: 'measure',
-        name: entry.name,
-        durationMs: entry.duration,
-        detail: (entry as { detail?: unknown }).detail,
-      } satisfies PerfDiagnosticsEvent);
+      if (entry.name.startsWith('filesystem-mcp:')) {
+        ours.push(entry);
+        const originalName = entry.name.slice('filesystem-mcp:'.length);
+        CHANNELS.perf.publish({
+          phase: 'measure',
+          name: originalName,
+          durationMs: entry.duration,
+          detail: (entry as { detail?: unknown }).detail,
+        } satisfies PerfDiagnosticsEvent);
+      }
     }
     try {
       // Keep the global timeline bounded while preserving published events.
-      clearPublishedMeasures(entries);
+      clearPublishedMeasures(ours);
     } catch {
       // Never allow observability cleanup to affect tool execution.
     }
@@ -656,8 +676,9 @@ export function startPerfMeasure(
 
   ensureObserver();
   const id = ++traceCounter;
-  const startMark = `${name}:start:${id}`;
-  const endMark = `${name}:end:${id}`;
+  const prefixedName = `filesystem-mcp:${name}`;
+  const startMark = `${prefixedName}:start:${id}`;
+  const endMark = `${prefixedName}:end:${id}`;
   const runInCapturedContext = AsyncLocalStorageImport.snapshot();
   let finished = false;
 
@@ -677,7 +698,7 @@ export function startPerfMeasure(
             meta = { ...(meta ?? {}), ok };
           }
 
-          performance.measure(name, {
+          performance.measure(prefixedName, {
             start: startMark,
             end: endMark,
             detail: meta,
@@ -748,17 +769,24 @@ function finalizeObservation(
   eluStart?: ReturnType<typeof performance.eventLoopUtilization>,
   loopMonitor?: ReturnType<typeof monitorEventLoopDelay>,
 ): void {
-  loopMonitor?.disable();
-
-  if (options.pubPerf && eluStart) {
-    publishPerfEnd(tool, durationMs, eluStart, loopMonitor);
-  }
-  if (options.pubTool) {
-    publishToolEnd(tool, obs.ok, durationMs, obs.errorMsg, options.traceparent);
+  try {
+    loopMonitor?.disable();
+  } catch {
+    // Ignore disable failures
   }
 
-  if (options.logErrors && !obs.ok) {
-    logError(tool, durationMs, obs.errorMsg);
+  try {
+    if (options.pubPerf && eluStart) {
+      publishPerfEnd(tool, durationMs, eluStart, loopMonitor);
+    }
+    if (options.pubTool) {
+      publishToolEnd(tool, obs.ok, durationMs, obs.errorMsg, options.traceparent);
+    }
+    if (options.logErrors && !obs.ok) {
+      logError(tool, durationMs, obs.errorMsg);
+    }
+  } catch (err) {
+    console.error('Failed to finalize observation', err);
   }
 }
 
