@@ -274,6 +274,43 @@ Install it globally once and it works across all your workspaces with no per-pro
 2. **Environment Variable**: The `FS_ALLOWED_DIRS` environment variable lists fallback directory paths (separated by `:` on POSIX or `;` on Windows).
 3. **Current Working Directory**: The `--allow-cwd` flag grants access to the directory where the server started.
 
+### Authorizing directories via CLI
+
+If you install the server globally or run it via `npx`, you can easily authorize or de-authorize directories across all installed MCP clients using the built-in configuration helper subcommands: `allow`, `disallow`, and `list-allowed`.
+
+These commands scan and dynamically update configuration files for **Claude Desktop**, **Cursor**, **Cline**, **Roo Code**, and standard **global MCP configs** (`.mcp.json`).
+
+#### Examples
+
+- **Authorize a directory:**
+
+  ```bash
+  filesystem-mcp allow /path/to/my-project
+  ```
+
+  This adds `/path/to/my-project` to the arguments of `filesystem-mcp` in all detected client configuration files.
+
+- **De-authorize a directory:**
+
+  ```bash
+  filesystem-mcp disallow /path/to/my-project
+  ```
+
+- **List all authorized directories:**
+  ```bash
+  filesystem-mcp list-allowed
+  ```
+
+#### Subcommand options
+
+| Option / Flag          | Default      | Purpose                                                                                    |
+| :--------------------- | :----------- | :----------------------------------------------------------------------------------------- |
+| `--client <name>`      | —            | Limit modifications to configs matching `<name>` (e.g. `claude`, `cursor`, `cline`, `roo`) |
+| `--config <path>`      | —            | Target a specific configuration file path instead of scanning defaults                     |
+| `--server-name <name>` | `filesystem` | Target a specific server key in the configuration                                          |
+| `--dry-run`            | `false`      | Print changes without writing them to disk                                                 |
+| `--json`               | `false`      | Output the list in JSON format (only applicable for `list-allowed`)                        |
+
 ### Recommended global recipes
 
 #### VS Code / Cursor / Claude Code (primary recipe)
@@ -330,11 +367,14 @@ filesystem-mcp /path/to/project1 /path/to/project2
 
 #### CLI flags
 
-| Flag          | Default | Purpose                                            |
-| :------------ | :------ | :------------------------------------------------- |
-| `[dirs...]`   | —       | One or more allowed root directories (positional)  |
-| `--allow-cwd` | `false` | Also allow the current working directory as a root |
-| `--port <n>`  | —       | Enable Streamable HTTP transport on the given port |
+| Flag              | Default | Purpose                                                            |
+| :---------------- | :------ | :----------------------------------------------------------------- |
+| `[dirs...]`       | —       | One or more allowed root directories (positional)                  |
+| `--allow-cwd`     | `false` | Also allow the current working directory as a root                 |
+| `--port <n>`      | —       | Enable Streamable HTTP transport on the given port                 |
+| `allow <path>`    | —       | CLI subcommand to authorize a path across client configurations    |
+| `disallow <path>` | —       | CLI subcommand to de-authorize a path across client configurations |
+| `list-allowed`    | —       | CLI subcommand to list all currently authorized paths              |
 
 #### Environment variables
 
