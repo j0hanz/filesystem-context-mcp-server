@@ -1,5 +1,5 @@
 import { existsSync, type Stats } from 'node:fs';
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { getSystemErrorMessage, getSystemErrorName, parseArgs as utilParseArgs } from 'node:util';
@@ -7,6 +7,7 @@ import { getSystemErrorMessage, getSystemErrorName, parseArgs as utilParseArgs }
 import { processInParallel } from './core/concurrency.js';
 import {
   getReservedDeviceNameForPath,
+  isSamePath,
   isWindowsDriveRelativePath,
   normalizePath,
   PathGuard,
@@ -288,8 +289,10 @@ export async function parseArgs(): Promise<{
     if (firstPos === 'allow' || firstPos === 'disallow' || firstPos === 'list-allowed') {
       subcommand = firstPos;
       if (subcommand === 'allow' || subcommand === 'disallow') {
-        subcommandPath = parsed.positionals[1] ?? '.';
-        validateCliPath(subcommandPath);
+        subcommandPath = parsed.positionals[1];
+        if (subcommandPath !== undefined) {
+          validateCliPath(subcommandPath);
+        }
       }
     } else {
       const positionals = parsed.positionals;
@@ -541,11 +544,21 @@ export async function writeJsonAtomic(filePath: string, data: unknown): Promise<
     await rename(tempPath, filePath);
   } catch (error) {
     try {
-      await writeFile(filePath, JSON.stringify(data, null, 2) + '\n', 'utf8');
+      await unlink(tempPath);
     } catch {
       // ignore
     }
-    throw error;
+    try {
+      await writeFile(filePath, JSON.stringify(data, null, 2) + '\n', 'utf8');
+    } catch (fallbackError) {
+      throw new Error(
+        `Failed to write configuration atomically, and fallback write also failed.\nOriginal error: ${error instanceof Error ? error.message : String(error)}\nFallback error: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`,
+        { cause: fallbackError },
+      );
+    }
+    process.stderr.write(
+      `Warning: Atomic write failed. Successfully fell back to direct write for config file ${filePath}.\n`,
+    );
   }
 }
 
@@ -590,91 +603,129 @@ function findServerEntry(
   return null;
 }
 
+async function acquireLock(
+  lockFilePath: string,
+  retries = 10,
+  delay = 100,
+): Promise<() => Promise<void>> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const handle = await open(lockFilePath, 'wx');
+      await handle.close();
+      return async () => {
+        try {
+          await unlink(lockFilePath);
+        } catch {
+          // ignore
+        }
+      };
+    } catch (error) {
+      if (isRecord(error) && error['code'] === 'EEXIST') {
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, delay);
+        });
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error(`Failed to acquire lock on config file: ${lockFilePath}`);
+}
+
 async function modifySingleConfig(
   filePath: string,
   action: 'allow' | 'disallow',
   targetPath: string,
   options: ModifyOptions,
 ): Promise<void> {
-  const configData: Record<string, unknown> = { mcpServers: {} };
-  const fileExists = existsSync(filePath);
+  const lockFilePath = `${filePath}.lock`;
+  let release: (() => Promise<void>) | undefined;
 
-  if (fileExists) {
-    try {
-      const content = await readFile(filePath, 'utf8');
-      Object.assign(configData, JSON.parse(content) as Record<string, unknown>);
-    } catch (error) {
-      throw new CliExitError(
-        `Failed to parse configuration file ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
-        1,
+  try {
+    if (!options.dryRun) {
+      release = await acquireLock(lockFilePath);
+    }
+
+    const configData: Record<string, unknown> = { mcpServers: {} };
+    const fileExists = existsSync(filePath);
+
+    if (fileExists) {
+      try {
+        const content = await readFile(filePath, 'utf8');
+        Object.assign(configData, JSON.parse(content) as Record<string, unknown>);
+      } catch (error) {
+        throw new CliExitError(
+          `Failed to parse configuration file ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+          1,
+        );
+      }
+    }
+
+    const mcpServersKey =
+      !configData['mcpServers'] && configData['servers'] ? 'servers' : 'mcpServers';
+    configData[mcpServersKey] ??= {};
+
+    const mcpServers = configData[mcpServersKey] as Record<string, unknown>;
+    const matched = findServerEntry(mcpServers, options.serverName);
+
+    const key = matched ? matched.key : (options.serverName ?? 'filesystem');
+    let entry = matched ? matched.entry : null;
+
+    if (!entry) {
+      if (action === 'disallow') {
+        return;
+      }
+      entry = {
+        command: 'npx',
+        args: ['-y', '@j0hanz/filesystem-mcp'],
+      };
+      mcpServers[key] = entry;
+    }
+
+    if (!Array.isArray(entry['args'])) {
+      entry['args'] = ['-y', '@j0hanz/filesystem-mcp'];
+    }
+
+    const argsArray = entry['args'] as string[];
+
+    const cmdVal = entry['command'];
+    const cmdStr = typeof cmdVal === 'string' ? cmdVal : '';
+    if (cmdStr.includes('docker') && action === 'allow') {
+      process.stderr.write(
+        `Warning: Server '${key}' in config ${filePath} appears to be running via Docker. Path allowance via command line arguments might not map correctly inside the container.\n`,
       );
     }
-  }
 
-  const mcpServersKey =
-    !configData['mcpServers'] && configData['servers'] ? 'servers' : 'mcpServers';
-  configData[mcpServersKey] ??= {};
+    if (action === 'allow') {
+      const alreadyExists = argsArray.some((arg: string) => {
+        try {
+          return isAbsolute(arg) && isSamePath(arg, targetPath);
+        } catch {
+          return false;
+        }
+      });
 
-  const mcpServers = configData[mcpServersKey] as Record<string, unknown>;
-  const matched = findServerEntry(mcpServers, options.serverName);
-
-  const key = matched ? matched.key : (options.serverName ?? 'filesystem');
-  let entry = matched ? matched.entry : null;
-
-  if (!entry) {
-    if (action === 'disallow') {
-      return;
-    }
-    entry = {
-      command: 'npx',
-      args: ['-y', '@j0hanz/filesystem-mcp'],
-    };
-    mcpServers[key] = entry;
-  }
-
-  if (!Array.isArray(entry['args'])) {
-    entry['args'] = ['-y', '@j0hanz/filesystem-mcp'];
-  }
-
-  const argsArray = entry['args'] as string[];
-
-  const cmdVal = entry['command'];
-  const cmdStr = typeof cmdVal === 'string' ? cmdVal : '';
-  if (cmdStr.includes('docker') && action === 'allow') {
-    process.stderr.write(
-      `Warning: Server '${key}' in config ${filePath} appears to be running via Docker. Path allowance via command line arguments might not map correctly inside the container.\n`,
-    );
-  }
-
-  const normalizedTarget = normalizePath(targetPath);
-
-  if (action === 'allow') {
-    const alreadyExists = argsArray.some((arg: string) => {
-      try {
-        return (
-          isAbsolute(arg) && normalizePath(arg).toLowerCase() === normalizedTarget.toLowerCase()
-        );
-      } catch {
-        return false;
+      if (!alreadyExists) {
+        argsArray.push(targetPath);
       }
-    });
-
-    if (!alreadyExists) {
-      argsArray.push(targetPath);
+    } else {
+      entry['args'] = argsArray.filter((arg: string) => {
+        try {
+          if (!isAbsolute(arg)) return true;
+          return !isSamePath(arg, targetPath);
+        } catch {
+          return true;
+        }
+      });
     }
-  } else {
-    entry['args'] = argsArray.filter((arg: string) => {
-      try {
-        if (!isAbsolute(arg)) return true;
-        return normalizePath(arg).toLowerCase() !== normalizedTarget.toLowerCase();
-      } catch {
-        return true;
-      }
-    });
-  }
 
-  if (!options.dryRun) {
-    await writeJsonAtomic(filePath, configData);
+    if (!options.dryRun) {
+      await writeJsonAtomic(filePath, configData);
+    }
+  } finally {
+    if (release) {
+      await release();
+    }
   }
 }
 
@@ -744,8 +795,10 @@ export async function listAllowedPaths(options: ModifyOptions = {}): Promise<str
         const argsArray = matched.entry['args'] as string[];
         return argsArray.filter((arg: string) => isAbsolute(arg));
       }
-    } catch {
-      // ignore
+    } catch (error: unknown) {
+      process.stderr.write(
+        `Warning: Failed to parse configuration file ${filePath}: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
     }
     return [];
   };
