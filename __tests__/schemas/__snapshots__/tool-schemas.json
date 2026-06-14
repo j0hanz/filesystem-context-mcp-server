@@ -585,7 +585,7 @@
           "maximum": 100
         },
         "cursor": {
-          "description": "Opaque pagination cursor from a prior response; pass unchanged to fetch the next page. list cursors expire after ~5 min or server restart; find_files cursors re-run the full query per page.",
+          "description": "Opaque pagination cursor from a prior response; pass unchanged to fetch the next page. list cursors expire after ~5 min or server restart; find_files cursors re-run the full query per page, so matches may shift (duplicate or skip) if files change between page requests.",
           "type": "string",
           "format": "base64url",
           "contentEncoding": "base64url",
@@ -1656,7 +1656,7 @@
           "maximum": 100
         },
         "cursor": {
-          "description": "Opaque pagination cursor from a prior response; pass unchanged to fetch the next page. list cursors expire after ~5 min or server restart; find_files cursors re-run the full query per page.",
+          "description": "Opaque pagination cursor from a prior response; pass unchanged to fetch the next page. list cursors expire after ~5 min or server restart; find_files cursors re-run the full query per page, so matches may shift (duplicate or skip) if files change between page requests.",
           "type": "string",
           "format": "base64url",
           "contentEncoding": "base64url",

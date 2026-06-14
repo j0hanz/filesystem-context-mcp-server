@@ -248,3 +248,76 @@ describe('edit tool — files[] mode', () => {
     assert.ok(cont.includes('const x = 0;'), 'file should not be modified in dryRun');
   });
 });
+
+describe('edit tool — ignoreWhitespace matching', () => {
+  let env: TestEnv;
+
+  before(async () => {
+    env = await createTestEnv();
+  });
+
+  after(async () => {
+    await env.cleanup();
+  });
+
+  it('tolerates horizontal whitespace differences on the same line', async () => {
+    const a = join(env.tmpDir, 'ws-flex.ts');
+    await writeFile(a, 'const   x    =   1;\n', 'utf8');
+
+    const res = await env.client.callTool({
+      name: 'edit',
+      arguments: {
+        path: a,
+        edits: [{ oldText: 'const x = 1;', newText: 'const x = 2;' }],
+        ignoreWhitespace: true,
+      },
+    });
+
+    assertOk(res);
+    const cont = await readFile(a, 'utf8');
+    assert.ok(cont.includes('const x = 2;'), 'flexible horizontal whitespace should match');
+  });
+
+  it('does not let a single-line oldText match across a newline boundary', async () => {
+    const a = join(env.tmpDir, 'ws-boundary.ts');
+    // The two statements live on separate lines; a single-line oldText must not
+    // collapse the newline and match across the boundary.
+    await writeFile(a, 'x = 1;\ny = 2;\n', 'utf8');
+
+    const res = await env.client.callTool({
+      name: 'edit',
+      arguments: {
+        path: a,
+        edits: [{ oldText: 'x = 1; y = 2;', newText: 'z = 0;' }],
+        ignoreWhitespace: true,
+      },
+    });
+
+    // A no-match is surfaced as a per-path failure in the batch envelope.
+    const s = getStructured(res);
+    const results = s['results'] as Record<string, unknown>[];
+    assert.equal(results.length, 1);
+    assert.ok(results[0]?.['error'], 'single-line oldText must not match across the newline');
+    const cont = await readFile(a, 'utf8');
+    assert.equal(cont, 'x = 1;\ny = 2;\n', 'file must be unchanged when no real match exists');
+  });
+
+  it('matches a multi-line oldText against the same multi-line block', async () => {
+    const a = join(env.tmpDir, 'ws-multiline.ts');
+    await writeFile(a, 'if (a) {\n    return 1;\n}\n', 'utf8');
+
+    const res = await env.client.callTool({
+      name: 'edit',
+      arguments: {
+        path: a,
+        // Differing indentation but the same line structure must still match.
+        edits: [{ oldText: 'if (a) {\nreturn 1;\n}', newText: 'if (a) {\n  return 2;\n}' }],
+        ignoreWhitespace: true,
+      },
+    });
+
+    assertOk(res);
+    const cont = await readFile(a, 'utf8');
+    assert.ok(cont.includes('return 2;'), 'multi-line block should match across real newlines');
+  });
+});

@@ -737,6 +737,10 @@ export async function executeSearch(
       }
     } finally {
       if (options.signal) options.signal.removeEventListener('abort', onAbort);
+      // Tasks still in flight when the loop exits (e.g. maxResults reached) were
+      // dispatched to workers and partially scanned; count them before cancelling
+      // so filesScanned reflects every file actually touched.
+      filesScanned += pending.size;
       for (const task of pending) task.cancel();
     }
   } else {

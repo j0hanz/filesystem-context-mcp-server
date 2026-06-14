@@ -217,9 +217,16 @@ function findEditMatch(
   regexCache?: Map<string, Regex>,
 ): TextRange | undefined {
   if (ignoreWhitespace) {
+    // Make whitespace flexible (tolerate indentation/spacing differences)
+    // without letting it cross line boundaries: a whitespace run that contains
+    // a newline keeps at least one newline, so a single-line oldText cannot
+    // match across a newline and a multi-line oldText cannot collapse onto one
+    // line. Horizontal whitespace stays mandatory between word characters so
+    // adjacent identifiers are not merged.
     const pattern = escapeRegexLiteral(oldText)
-      .replace(/(\w)\s+(\w)/g, '$1\\s+$2')
-      .replace(/\s+/g, '\\s*');
+      .replace(/[^\S\n]*\n\s*/g, '[^\\S\\n]*\\n+[^\\S\\n]*')
+      .replace(/(\w)[^\S\n]+(\w)/g, '$1[^\\S\\n]+$2')
+      .replace(/[^\S\n]+/g, '[^\\S\\n]*');
     let regex = regexCache?.get(pattern);
     if (!regex) {
       regex = compileRegex(pattern, { caseSensitive: true });

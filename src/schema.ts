@@ -330,7 +330,8 @@ export const CursorSchema = z
   .optional()
   .describe(
     'Opaque pagination cursor from a prior response; pass unchanged to fetch the next page. ' +
-      'list cursors expire after ~5 min or server restart; find_files cursors re-run the full query per page.',
+      'list cursors expire after ~5 min or server restart; find_files cursors re-run the full query per page, ' +
+      'so matches may shift (duplicate or skip) if files change between page requests.',
   );
 
 export const NextCursorSchema = z
