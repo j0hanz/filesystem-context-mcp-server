@@ -1573,6 +1573,40 @@
       }
     }
   },
+  "request_access": {
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "The absolute directory path to request access to"
+        }
+      },
+      "required": ["path"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "True if access was granted, false otherwise"
+        },
+        "granted": {
+          "description": "The resolved path that was granted access",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Reason for refusal if ok is false",
+          "type": "string"
+        }
+      },
+      "required": ["ok"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    }
+  },
   "search_text": {
     "inputSchema": {
       "type": "object",

@@ -119,11 +119,11 @@ describe('resources and metadata', () => {
     const { resourceTemplates } = await env.client.listResourceTemplates();
     const { prompts } = await env.client.listPrompts();
 
-    assert.match(readme, /\*\*12 filesystem tools\*\*/u);
+    assert.match(readme, /\*\*13 filesystem tools\*\*/u);
     assert.match(readme, /3 built-in resource definitions/u);
     assert.match(readme, /4 built-in prompt definitions/u);
 
-    assert.equal(tools.length, 12);
+    assert.equal(tools.length, 13);
     assert.equal(resources.length, 1);
     assert.equal(resourceTemplates.length, 2);
     assert.equal(prompts.length, 4);

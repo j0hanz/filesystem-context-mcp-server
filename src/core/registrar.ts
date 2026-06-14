@@ -18,7 +18,7 @@ import {
   logToSender,
 } from './observability.js';
 import { isSamePath, LIFECYCLE_CHANNEL, normalizePath } from './path.js';
-import type { PathGuard, ServerOptions } from './path.js';
+import type { PathGuard } from './path.js';
 import type { ResourceStore } from './store.js';
 import { debounce, getInitHandshakeTimeoutMs, PARALLEL_CONCURRENCY } from './util.js';
 
@@ -28,6 +28,7 @@ export interface ServerDeps {
   resourceStore: ResourceStore;
   isInitialized: () => boolean;
   iconInfo?: IconInfo;
+  denialCache?: Map<string, boolean>;
 }
 
 export interface Registrar {
@@ -160,16 +161,27 @@ export class McpLogSender implements LogSender {
 
 function logMissingDirectories(
   sender: LogSender | undefined,
-  options: ServerOptions | undefined,
+  pathGuard: PathGuard,
   loggingState: LoggingState | undefined,
 ): void {
   if (!loggingState) return;
 
-  if (options?.allowCwd) {
+  const boundaries = pathGuard.getRootBoundaries();
+  if (boundaries.length > 0) {
+    logToSender(
+      sender,
+      'warning',
+      'No allowed directories. A root boundary is configured, but no workspace roots have been granted by the client yet.',
+      loggingState.minimumLevel,
+    );
+    return;
+  }
+
+  if (pathGuard.options?.allowCwd) {
     logToSender(
       sender,
       'notice',
-      'No allowed directories specified. Using the current working directory as an allowed directory.',
+      'No allowed directories specified via CLI arguments, the FS_ALLOWED_DIRS environment variable, or the MCP Roots protocol. Using the current working directory via --allow-cwd.',
       loggingState.minimumLevel,
     );
     return;
@@ -178,14 +190,14 @@ function logMissingDirectories(
   logToSender(
     sender,
     'warning',
-    'No allowed directories specified. Please provide directories as command-line arguments or enable --allow-cwd to use the current working directory.',
+    'No allowed directories specified. Please configure directories via CLI arguments, the FS_ALLOWED_DIRS environment variable, the MCP Roots protocol (notifications/roots/list_changed), or enable --allow-cwd.',
     loggingState.minimumLevel,
   );
 }
 
 function logMissingDirectoriesIfNeeded(server: McpServer, pathGuard: PathGuard): void {
   if (pathGuard.getAllowedDirectories().length === 0 && pathGuard.loggingState) {
-    logMissingDirectories(new McpLogSender(server), pathGuard.options, pathGuard.loggingState);
+    logMissingDirectories(new McpLogSender(server), pathGuard, pathGuard.loggingState);
   }
 }
 
@@ -296,7 +308,7 @@ export class McpRootsSynchronizer {
     } finally {
       const currentState = this.state as RootsManagerState;
       if (currentState !== 'shutting_down') {
-        await this.pathGuard.setRoots(this.rootDirectories);
+        await this.pathGuard.setRoots(this.rootDirectories, new McpLogSender(server));
         this.state = 'idle';
         if (this.pendingRootsUpdate) {
           this.pendingRootsUpdate = false;

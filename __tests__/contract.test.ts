@@ -14,7 +14,7 @@ import { after, before, describe, it } from 'node:test';
 
 import { assertOk, createTestEnv, getStructured, type TestEnv } from './helpers.js';
 
-// Names of all 12 tools as registered
+// Names of all 13 tools as registered
 const ALL_TOOLS = new Set([
   'create',
   'hash_file',
@@ -28,6 +28,7 @@ const ALL_TOOLS = new Set([
   'search_text',
   'find_files',
   'stat',
+  'request_access',
 ]);
 
 // Annotations by category
@@ -54,9 +55,9 @@ describe('Tool contract', () => {
     await env.cleanup();
   });
 
-  it('registers exactly 12 tools with correct names', async () => {
+  it('registers exactly 13 tools with correct names', async () => {
     const { tools } = await env.client.listTools();
-    assert.equal(tools.length, ALL_TOOLS.size, 'Expected 12 tools');
+    assert.equal(tools.length, ALL_TOOLS.size, 'Expected 13 tools');
     for (const tool of tools) {
       assert.ok(ALL_TOOLS.has(tool.name), `Unexpected tool name: ${tool.name}`);
     }

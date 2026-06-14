@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 
+import type { ServerDeps } from '../../src/core/registrar.js';
 import { maybeStripStructuredContentFromResult } from '../../src/core/util.js';
 
 describe('FS_CONTEXT_STRIP_STRUCTURED', () => {
@@ -49,5 +50,28 @@ describe('FS_CONTEXT_STRIP_STRUCTURED', () => {
     const result = { content: [], isError: true as const };
     const stripped = maybeStripStructuredContentFromResult(result);
     assert.deepEqual(stripped, result);
+  });
+});
+
+describe('Tool Registration', () => {
+  it('registers request_access along with other tools', async () => {
+    const { toolsRegistrar } = await import('../../src/tools/index.js');
+    const registered: string[] = [];
+    const mockDeps = {
+      server: {
+        registerTool(name: string) {
+          registered.push(name);
+        },
+      },
+      isInitialized: () => true,
+      pathGuard: {},
+      resourceStore: {},
+    };
+
+    toolsRegistrar.register(mockDeps as unknown as ServerDeps);
+
+    assert.ok(registered.includes('request_access'), 'Expected request_access to be registered');
+    assert.ok(registered.includes('read'), 'Expected read to be registered');
+    assert.ok(registered.includes('stat'), 'Expected stat to be registered');
   });
 });

@@ -72,6 +72,8 @@ export interface ToolCtx {
   readonly sendNotification?: (notification: Notification) => Promise<void>;
   readonly onProgress?: (params: { current: number; total?: number }) => void;
   readonly elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>;
+  readonly server?: McpServer;
+  readonly denialCache?: Map<string, boolean> | undefined;
 }
 
 export interface ToolDeps {
@@ -79,6 +81,7 @@ export interface ToolDeps {
   readonly server: McpServer;
   readonly pathGuard: PathGuard;
   readonly resourceStore: ResourceStore | undefined;
+  readonly denialCache?: Map<string, boolean> | undefined;
 }
 
 export type IconInfo = Icon & { mimeType: string };
@@ -121,6 +124,8 @@ export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
 export interface DefinedTool extends Tool {
   readonly nuances: readonly string[];
   readonly gotchas: readonly string[];
+  readonly _def?: unknown;
+
   register(deps: ToolDeps): void;
 }
 
@@ -128,7 +133,7 @@ export interface DefinedTool extends Tool {
 
 function toToolCtx(
   ctx: ServerContext | undefined,
-  deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore'>,
+  deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore' | 'server' | 'denialCache'>,
 ): ToolCtx {
   if (!ctx) {
     const signal = new AbortController().signal;
@@ -137,6 +142,8 @@ function toToolCtx(
       pathGuard: deps.pathGuard,
       fs: new GuardedFileSystem(deps.pathGuard),
       resourceStore: deps.resourceStore,
+      server: deps.server,
+      denialCache: deps.denialCache,
     };
   }
   return {
@@ -151,6 +158,8 @@ function toToolCtx(
       runDetached('mcp', ctx.mcpReq.log(level, data, logger), 'log');
     },
     elicitInput: (params) => ctx.mcpReq.elicitInput(params),
+    server: deps.server,
+    denialCache: deps.denialCache,
   };
 }
 
@@ -167,6 +176,8 @@ function buildExecutionCtx(
     pathGuard: ctx.pathGuard,
     fs: new GuardedFileSystem(ctx.pathGuard),
     resourceStore: ctx.resourceStore,
+    ...(ctx.server ? { server: ctx.server } : {}),
+    denialCache: ctx.denialCache,
     ...(ctxLog
       ? {
           log: (level: LoggingLevel, data: unknown, logger?: string) => {
@@ -545,6 +556,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
     gotchas: def.gotchas ?? [],
     inputSchema: inputJsonSchema as Tool['inputSchema'],
     outputSchema: outputJsonSchema as Tool['outputSchema'],
+    _def: def,
 
     register(deps: ToolDeps) {
       const toolDefShape = {

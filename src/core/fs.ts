@@ -10,6 +10,7 @@ import {
   open as fsOpen,
   readFile as fsReadFile,
   readlink as fsReadlink,
+  realpath as fsRealpath,
   rename as fsRename,
   rm as fsRm,
   rmdir as fsRmdir,
@@ -2122,5 +2123,17 @@ export class GuardedFileSystem {
   ): Promise<ReadStream> {
     const validPath = await this.pathGuard.validateExistingPath(filePath);
     return createReadStream(validPath, options);
+  }
+
+  async setRoots(resolvedRoots: readonly string[]): Promise<void> {
+    await this.pathGuard.setRoots(resolvedRoots);
+  }
+
+  async statUnchecked(filePath: string, options?: { signal?: AbortSignal }): Promise<Stats> {
+    return withAbort(fsStat(filePath), options?.signal);
+  }
+
+  async realpathUnchecked(filePath: string, options?: { signal?: AbortSignal }): Promise<string> {
+    return withAbort(fsRealpath(filePath), options?.signal);
   }
 }

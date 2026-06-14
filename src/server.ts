@@ -43,6 +43,7 @@ export class FilesystemServerContext {
   public readonly fs: GuardedFileSystem;
   public readonly resources: ResourceStore;
   public readonly resourcesHandle: { destroy(): void };
+  public readonly denialCache: Map<string, boolean>;
   private readonly registrars: readonly Registrar[];
   private cleanedUp = false;
 
@@ -53,6 +54,7 @@ export class FilesystemServerContext {
     resources: ResourceStore,
     resourcesHandle: { destroy(): void },
     registrars: readonly Registrar[],
+    denialCache: Map<string, boolean>,
   ) {
     this.mcp = mcp;
     this.pathGuard = pathGuard;
@@ -61,6 +63,7 @@ export class FilesystemServerContext {
     this.resources = resources;
     this.resourcesHandle = resourcesHandle;
     this.registrars = registrars;
+    this.denialCache = denialCache;
   }
 
   disposeRuntimeState(): void {
@@ -69,6 +72,7 @@ export class FilesystemServerContext {
     this.synchronizer.destroy();
     for (const r of this.registrars) r.dispose();
     logRouter.detachStdio();
+    this.denialCache.clear();
   }
 
   async close(): Promise<void> {
@@ -144,7 +148,8 @@ export async function createServer(
 
   const loggingState = createLoggingState(LOG_LEVEL);
   const pathGuard = new PathGuard(options, loggingState);
-  await pathGuard.recomputeAllowedDirectories();
+  await pathGuard.recomputeAllowedDirectories(new McpLogSender(server));
+
   const synchronizer = new McpRootsSynchronizer(pathGuard, loggingState);
 
   server.server.setRequestHandler('logging/setLevel', (req: { params: SetLevelRequestParams }) => {
@@ -156,12 +161,15 @@ export async function createServer(
   // Track stdio server by default; HTTP overrides per-session via the registry.
   logRouter.attachStdio({ sender: new McpLogSender(server), loggingState });
 
+  const denialCache = new Map<string, boolean>();
+
   const isInitialized = options.isInitialized ?? (() => synchronizer.isInitialized());
-  const deps: ServerDeps = {
+  const deps: ServerDeps & { denialCache?: Map<string, boolean> } = {
     server,
     pathGuard,
     resourceStore,
     isInitialized,
+    denialCache,
     ...(localIcon ? { iconInfo: localIcon } : {}),
   };
 
@@ -181,5 +189,6 @@ export async function createServer(
     resourceStore,
     resourcesHandle,
     registrars,
+    denialCache,
   );
 }

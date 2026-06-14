@@ -159,7 +159,8 @@ export async function startServer(ctx: FilesystemServerContext): Promise<void> {
         }
       : undefined,
   );
-  await ctx.pathGuard.recomputeAllowedDirectories();
+  await ctx.pathGuard.recomputeAllowedDirectories(new McpLogSender(server));
+
   await server.connect(transport);
   const sdkOnClose = transport.onclose;
   transport.onclose = () => {

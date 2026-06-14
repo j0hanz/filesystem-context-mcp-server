@@ -8,7 +8,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { PathGuard, resolveAllowedDirectoriesState } from '../src/core/path.js';
+import { PathGuard } from '../src/core/path.js';
 import { createInMemoryResourceStore, type ResourceStore } from '../src/core/store.js';
 import { CALCULATE_HASH } from '../src/tools/calculate-hash.js';
 import { CREATE } from '../src/tools/create.js';
@@ -18,6 +18,7 @@ import { LIST } from '../src/tools/list.js';
 import { MOVE } from '../src/tools/move.js';
 import { READ_FILE } from '../src/tools/read.js';
 import { SEARCH_AND_REPLACE } from '../src/tools/replace-in-files.js';
+import { REQUEST_ACCESS } from '../src/tools/request-access.js';
 import { LIST_ALLOWED_DIRECTORIES } from '../src/tools/roots.js';
 import { SEARCH_CONTENT } from '../src/tools/search-content.js';
 import { SEARCH_FILES } from '../src/tools/search-files.js';
@@ -40,6 +41,7 @@ const ALL_TOOLS = [
   SEARCH_CONTENT,
   SEARCH_FILES,
   GET_FILE_INFO,
+  REQUEST_ACCESS,
 ] as const;
 
 interface TestContentBlock {
@@ -83,13 +85,14 @@ export async function createTestEnv(): Promise<TestEnv> {
 
   const resourceStore = createInMemoryResourceStore();
   const pathGuard = new PathGuard();
-  const state = await resolveAllowedDirectoriesState([tmpDir]);
-  pathGuard.initialize(state);
+  await pathGuard.setRoots([tmpDir]);
+  const denialCache = new Map<string, boolean>();
   const deps = {
     server,
     pathGuard,
     resourceStore,
     isInitialized: () => true,
+    denialCache,
   };
   for (const tool of ALL_TOOLS) {
     tool.register(deps);
@@ -145,13 +148,14 @@ export async function createTestEnvWithElicitation(handler: ElicitationHandler):
 
   const resourceStore = createInMemoryResourceStore();
   const pathGuard = new PathGuard();
-  const state = await resolveAllowedDirectoriesState([tmpDir]);
-  pathGuard.initialize(state);
+  await pathGuard.setRoots([tmpDir]);
+  const denialCache = new Map<string, boolean>();
   const deps2 = {
     server,
     pathGuard,
     resourceStore,
     isInitialized: () => true,
+    denialCache,
   };
   for (const tool of ALL_TOOLS) {
     tool.register(deps2);

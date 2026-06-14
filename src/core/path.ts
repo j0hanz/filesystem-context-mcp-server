@@ -18,8 +18,9 @@ import * as z from 'zod/v4';
 
 import { assertNotAborted, createTimedAbortSignal, withAbort } from './concurrency.js';
 import { ErrorCode, FsError, isNodeError } from './errors.js';
-import type { LoggingState } from './observability.js';
-import { parseTrueEnvFlag } from './primitives.js';
+import { logToSender } from './observability.js';
+import type { LoggingState, LogSender } from './observability.js';
+import { parseEnvDirList, parseTrueEnvFlag } from './primitives.js';
 
 const ROOTS_TIMEOUT_MS = 5000;
 export const LIFECYCLE_CHANNEL = channel('filesystem-mcp:lifecycle');
@@ -70,6 +71,42 @@ async function filterRootsWithinBaseline(
   const results = await Promise.allSettled(
     normalizedRoots.map((normalizedRoot) =>
       isRootWithinBaseline(normalizedRoot, normalizedBaseline, signal),
+    ),
+  );
+
+  return normalizedRoots.filter((_, i) => {
+    const result = results[i];
+    return result?.status === 'fulfilled' && result.value;
+  });
+}
+
+async function isRootWithinBoundaries(
+  normalizedRoot: string,
+  boundaries: readonly string[],
+  signal?: AbortSignal,
+): Promise<boolean> {
+  try {
+    assertNotAborted(signal);
+    const realPath = await withAbort(realpath(normalizedRoot), signal);
+    const normalizedReal = normalizePath(realPath);
+    return isPathWithinDirectories(normalizedReal, boundaries);
+  } catch {
+    return false;
+  }
+}
+
+async function filterRootsWithinBoundaries(
+  roots: readonly string[],
+  boundaries: readonly string[],
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const normalizedBoundaries = normalizeCLIDirectories(boundaries);
+  const normalizedRoots = roots.map(normalizePath);
+  if (normalizedRoots.length === 0) return [];
+
+  const results = await Promise.allSettled(
+    normalizedRoots.map((normalizedRoot) =>
+      isRootWithinBoundaries(normalizedRoot, normalizedBoundaries, signal),
     ),
   );
 
@@ -470,6 +507,7 @@ export class PathGuard {
   private allowedDirectoriesState: AllowedDirectoriesState | undefined;
   private denyPatterns: CompiledPatternSet;
   private rootDirectories: string[] = [];
+  private rootBoundaries: string[] = [];
 
   readonly options: ServerOptions | undefined;
   readonly loggingState: LoggingState | undefined;
@@ -509,9 +547,9 @@ export class PathGuard {
     return this.allowedDirectoriesState !== undefined;
   }
 
-  async setRoots(resolvedRoots: readonly string[]): Promise<void> {
+  async setRoots(resolvedRoots: readonly string[], sender?: LogSender): Promise<void> {
     this.rootDirectories = [...resolvedRoots];
-    await this.recomputeAllowedDirectories();
+    await this.recomputeAllowedDirectories(sender);
   }
 
   getAllowedDirectories(): string[] {
@@ -519,6 +557,10 @@ export class PathGuard {
       return [];
     }
     return [...this.allowedDirectoriesState.expanded];
+  }
+
+  getRootBoundaries(): string[] {
+    return [...this.rootBoundaries];
   }
 
   isSensitive(filePath: string): boolean {
@@ -870,17 +912,95 @@ export class PathGuard {
     return normalizedRequested;
   }
 
-  async recomputeAllowedDirectories(): Promise<void> {
+  async recomputeAllowedDirectories(sender?: LogSender): Promise<void> {
     const cliAllowedDirs = normalizeCLIDirectories(this.options?.cliAllowedDirs ?? []);
+
+    // Parse allowed directories from environment variable
+    const envAllowedRaw = parseEnvDirList('FS_ALLOWED_DIRS');
+    const envAllowedDirs: string[] = [];
+    for (const rawPath of envAllowedRaw) {
+      const normalized = normalizePath(rawPath);
+      try {
+        const s = await stat(normalized);
+        if (s.isDirectory()) {
+          envAllowedDirs.push(normalized);
+        } else {
+          logToSender(
+            sender,
+            'warning',
+            `Path configured in FS_ALLOWED_DIRS is not a directory: ${rawPath}`,
+            this.loggingState?.minimumLevel,
+          );
+        }
+      } catch (_error) {
+        logToSender(
+          sender,
+          'warning',
+          `Path configured in FS_ALLOWED_DIRS is invalid or does not exist: ${rawPath}`,
+          this.loggingState?.minimumLevel,
+        );
+      }
+    }
+
+    // Parse FS_ROOT_BOUNDARY
+    const boundaryRaw = parseEnvDirList('FS_ROOT_BOUNDARY');
+    const boundaries: string[] = [];
+    for (const rawPath of boundaryRaw) {
+      const normalized = normalizePath(rawPath);
+      try {
+        const s = await stat(normalized);
+        if (s.isDirectory()) {
+          const realBoundary = await realpath(normalized);
+          boundaries.push(normalizePath(realBoundary));
+        } else {
+          logToSender(
+            sender,
+            'warning',
+            `Path configured in FS_ROOT_BOUNDARY is not a directory: ${rawPath}`,
+            this.loggingState?.minimumLevel,
+          );
+        }
+      } catch (_error) {
+        logToSender(
+          sender,
+          'warning',
+          `Path configured in FS_ROOT_BOUNDARY is invalid or does not exist: ${rawPath}`,
+          this.loggingState?.minimumLevel,
+        );
+      }
+    }
+    this.rootBoundaries = boundaries;
+
     const allowCwd = Boolean(this.options?.allowCwd);
-    const allowCwdDirs = allowCwd ? [normalizePath(process.cwd())] : [];
-    const baseline = [...cliAllowedDirs, ...allowCwdDirs];
+    const allowCwdDirs: string[] = [];
+    if (allowCwd) {
+      let cwd = normalizePath(process.cwd());
+      const walkCwd = parseTrueEnvFlag(process.env['FS_ALLOW_CWD_WALK']);
+      if (walkCwd) {
+        cwd = await findProjectRoot(cwd, [...this.rootBoundaries, homedir()]);
+      }
+      if (isUnsafeCwdPath(cwd)) {
+        logToSender(
+          sender,
+          'warning',
+          `Skipped adding unsafe current working directory to allowed list: ${cwd}`,
+          this.loggingState?.minimumLevel,
+        );
+      } else {
+        allowCwdDirs.push(cwd);
+      }
+    }
+
+    const baseline = [...cliAllowedDirs, ...envAllowedDirs, ...allowCwdDirs];
+
     const { signal, cleanup } = createTimedAbortSignal(undefined, ROOTS_TIMEOUT_MS);
     try {
       const rootsToInclude =
-        baseline.length > 0
-          ? await filterRootsWithinBaseline(this.rootDirectories, baseline, signal)
-          : this.rootDirectories;
+        this.rootBoundaries.length > 0
+          ? await filterRootsWithinBoundaries(this.rootDirectories, this.rootBoundaries, signal)
+          : baseline.length > 0
+            ? await filterRootsWithinBaseline(this.rootDirectories, baseline, signal)
+            : this.rootDirectories;
 
       const combined = [...baseline, ...rootsToInclude];
       const nextState = await resolveAllowedDirectoriesState(combined, signal);
@@ -1306,4 +1426,77 @@ export function decodeOffsetCursor(cursor: string): number {
     );
   }
   return result.data.offset;
+}
+
+const UNSAFE_CWD_PATHS = new Set(
+  [
+    '/usr',
+    '/etc',
+    '/bin',
+    '/sbin',
+    '/System',
+    'C:\\Windows',
+    'C:\\Program Files',
+    'C:\\Program Files (x86)',
+  ].map((p) => normalizePath(p).toLowerCase()),
+);
+
+export function isUnsafeCwdPath(normalizedCwd: string): boolean {
+  const norm = normalizedCwd.toLowerCase();
+
+  // 1. Filesystem root check
+  const root = parse(normalizedCwd).root;
+  if (isSamePath(normalizedCwd, root)) {
+    return true;
+  }
+
+  // 2. Home directory check
+  if (isSamePath(normalizedCwd, homedir())) {
+    return true;
+  }
+
+  // 3. Hard-coded unsafe paths check
+  if (UNSAFE_CWD_PATHS.has(norm)) {
+    return true;
+  }
+
+  return false;
+}
+
+export async function findProjectRoot(startDir: string, ceiling: string[]): Promise<string> {
+  const normCeiling = ceiling.map(normalizePath);
+  let current = normalizePath(startDir);
+
+  for (;;) {
+    // Check if the current directory contains any markers
+    const markers = ['.git', 'package.json', 'pyproject.toml'];
+    for (const marker of markers) {
+      const markerPath = join(current, marker);
+      try {
+        const s = await stat(markerPath);
+        if (s.isDirectory() || s.isFile()) {
+          return current;
+        }
+      } catch (_error) {
+        // Skip and try next marker
+      }
+    }
+
+    // Move to parent directory
+    const parent = normalizePath(dirname(current));
+
+    // Check if we hit the filesystem root
+    if (parent === current) {
+      break;
+    }
+
+    // Check if the parent is still within the ceiling
+    if (!isPathWithinDirectories(parent, normCeiling)) {
+      break;
+    }
+
+    current = parent;
+  }
+
+  return normalizePath(startDir);
 }

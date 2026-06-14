@@ -19,3 +19,13 @@ export function parseTrueEnvFlag(value: string | undefined): boolean {
 export function escapeRegexLiteral(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
+
+export function parseEnvDirList(envVar: string): string[] {
+  const val = process.env[envVar];
+  if (!val) return [];
+  const sep = process.platform === 'win32' ? ';' : ':';
+  return val
+    .split(sep)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+}

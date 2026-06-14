@@ -21,7 +21,7 @@ Filesystem-MCP is a [Model Context Protocol](https://modelcontextprotocol.io) se
 | Feature                 | Description                                                                                                |
 | :---------------------- | :--------------------------------------------------------------------------------------------------------- |
 | **Path guarding**       | Every path is validated against allowed roots; `.env`, `*.pem`, `*id_rsa*` and similar patterns are denied |
-| **12 filesystem tools** | Navigate, inspect, read, and write across all major file operations                                        |
+| **13 filesystem tools** | Navigate, inspect, read, and write across all major file operations                                        |
 | **Batch operations**    | Most tools accept `path`, `paths[]`, or `files[]` for parallel execution                                   |
 | **Dual transport**      | stdio by default; `--port` enables Streamable HTTP                                                         |
 | **File subscriptions**  | Resource subscriptions push change notifications when watched files update                                 |
@@ -268,30 +268,88 @@ filesystem-mcp/
 
 ## Configuration
 
-All configuration is provided as CLI flags at startup. There are no environment variables.
+This server is designed to work fully when installed globally across multiple workspaces without per-project configuration. It automatically determines allowed directories through three different methods (in order of preference):
 
-### CLI Flags
+1. **MCP Roots Protocol**: For clients supporting the roots capability (VS Code, Cursor, Claude Code), it dynamically queries allowed folders using the workspace roots.
+2. **Environment Variable**: The `FS_ALLOWED_DIRS` environment variable lists fallback directory paths (separated by `:` on POSIX or `;` on Windows).
+3. **Current Working Directory**: The `--allow-cwd` flag allows access to the directory from which the server was launched.
+
+### Recommended Global Recipes
+
+#### VS Code / Cursor / Claude Code (Primary Recipe)
+
+Because these clients support the MCP Roots protocol, you do not need to configure any positional arguments. The server will dynamically query the workspace roots.
+
+Add to your global or project-scoped configuration:
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+    }
+  }
+}
+```
+
+#### Claude Desktop (Fallback Recipe via Environment Variable)
+
+For clients that do not support the MCP Roots protocol (like Claude Desktop), configure the allowed folders using the `FS_ALLOWED_DIRS` environment variable.
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest"],
+      "env": {
+        "FS_ALLOWED_DIRS": "/path/to/project1:/path/to/project2"
+      }
+    }
+  }
+}
+```
+
+_(On Windows, separate directories with a semicolon `;` instead of a colon `:`)._
+
+### Advanced / Per-Project Positional Arguments
+
+You can also restrict access to specific directories by passing positional arguments directly:
+
+```bash
+# Start with explicit positional paths
+filesystem-mcp /path/to/project1 /path/to/project2
+```
+
+---
+
+### Configuration Reference
+
+#### CLI Flags
 
 | Flag          | Default | Purpose                                            |
 | :------------ | :------ | :------------------------------------------------- |
-| `[dirs...]`   | —       | One or more allowed root directories               |
+| `[dirs...]`   | —       | One or more allowed root directories (positional)  |
 | `--allow-cwd` | `false` | Also allow the current working directory as a root |
 | `--port <n>`  | —       | Enable Streamable HTTP transport on the given port |
+
+#### Environment Variables
+
+| Variable          | Purpose                                                                                           |
+| :---------------- | :------------------------------------------------------------------------------------------------ |
+| `FS_ALLOWED_DIRS` | Colon-separated (POSIX) or semicolon-separated (Windows) list of directories allowed by baseline. |
 
 ### Examples
 
 ```bash
-# Single root
-filesystem-mcp /path/to/project
-
-# Multiple roots
-filesystem-mcp /project/src /project/docs
-
 # Allow current working directory
 filesystem-mcp --allow-cwd
 
 # HTTP transport on port 3000
-filesystem-mcp --port 3000 /path/to/project
+filesystem-mcp --port 3000
 ```
 
 ## Scripts
