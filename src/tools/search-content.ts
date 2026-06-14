@@ -263,7 +263,9 @@ async function searchContent(
           skippedTooLarge: 0,
           skippedBinary: 0,
           skippedInaccessible: 0,
-          ...(coreResult.summary.truncated ? { stoppedReason: 'maxResults' as const } : {}),
+          ...(coreResult.summary.truncated
+            ? { stoppedReason: coreResult.summary.truncatedReason ?? ('maxResults' as const) }
+            : {}),
         },
       };
     });
