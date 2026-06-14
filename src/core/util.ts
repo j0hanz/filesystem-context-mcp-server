@@ -3,9 +3,7 @@ import { availableParallelism } from 'node:os';
 import * as z from 'zod/v4';
 
 import { Logger } from './observability.js';
-import { isRecord, parseTrueEnvFlag } from './primitives.js';
-
-export { isRecord, parseTrueEnvFlag };
+import { parseTrueEnvFlag } from './primitives.js';
 
 export function debounce<Args extends unknown[]>(
   func: (...args: Args) => void,

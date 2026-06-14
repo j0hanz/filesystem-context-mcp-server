@@ -19,7 +19,7 @@ import * as z from 'zod/v4';
 import { assertNotAborted, createTimedAbortSignal, withAbort } from './concurrency.js';
 import { ErrorCode, FsError, isNodeError } from './errors.js';
 import type { LoggingState } from './observability.js';
-import { parseTrueEnvFlag } from './util.js';
+import { parseTrueEnvFlag } from './primitives.js';
 
 const ROOTS_TIMEOUT_MS = 5000;
 export const LIFECYCLE_CHANNEL = channel('filesystem-mcp:lifecycle');
