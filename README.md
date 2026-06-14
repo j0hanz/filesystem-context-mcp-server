@@ -27,7 +27,7 @@ Filesystem-MCP is a [Model Context Protocol](https://modelcontextprotocol.io) se
 | **File subscriptions**  | Resource subscriptions push change notifications when watched files update                                 |
 | **RE2 regex**           | Safe, non-backtracking regex engine in all search tools                                                    |
 
-## Built With
+## Built with
 
 [![Node.js](https://img.shields.io/badge/node-%3E%3D24-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org) [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org) [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com)
 
@@ -39,7 +39,7 @@ Filesystem-MCP is a [Model Context Protocol](https://modelcontextprotocol.io) se
 | Regex     | RE2 (non-backtracking, safe for untrusted input)  |
 | Container | Docker alpine · multi-stage build · non-root user |
 
-## Quick Start
+## Quick start
 
 > [!NOTE]
 > Requires Node.js ≥ 24.
@@ -140,7 +140,7 @@ Add to `.cursor/mcp.json` in your project root (project-scoped), or `~/.cursor/m
 }
 ```
 
-### Docker Configuration
+### Docker configuration
 
 VS Code (`.vscode/mcp.json`) and Visual Studio (`.vs\mcp.json`):
 
@@ -242,7 +242,7 @@ All tools are scoped to the configured roots. Call `list_roots` first to discove
 | `find-in-tree`        | Locate files and content matches by name, content pattern, or both.           |
 | `summarize-directory` | Onboarding summary: purpose, tech stack, entry points, and project structure. |
 
-## Project Structure
+## Project structure
 
 ```text
 filesystem-mcp/
@@ -268,17 +268,17 @@ filesystem-mcp/
 
 ## Configuration
 
-This server is designed to work fully when installed globally across multiple workspaces without per-project configuration. It automatically determines allowed directories through three different methods (in order of preference):
+Install it globally once and it works across all your workspaces with no per-project config needed. The server determines which directories are allowed using three methods, tried in this order:
 
-1. **MCP Roots Protocol**: For clients supporting the roots capability (VS Code, Cursor, Claude Code), it dynamically queries allowed folders using the workspace roots.
+1. **MCP Roots Protocol**: VS Code, Cursor, and Claude Code support the roots capability, so the server queries allowed folders from the client directly.
 2. **Environment Variable**: The `FS_ALLOWED_DIRS` environment variable lists fallback directory paths (separated by `:` on POSIX or `;` on Windows).
-3. **Current Working Directory**: The `--allow-cwd` flag allows access to the directory from which the server was launched.
+3. **Current Working Directory**: The `--allow-cwd` flag grants access to the directory where the server started.
 
-### Recommended Global Recipes
+### Recommended global recipes
 
-#### VS Code / Cursor / Claude Code (Primary Recipe)
+#### VS Code / Cursor / Claude Code (primary recipe)
 
-Because these clients support the MCP Roots protocol, you do not need to configure any positional arguments. The server will dynamically query the workspace roots.
+These clients support the MCP Roots protocol, so no positional arguments are needed. The server queries workspace roots automatically.
 
 Add to your global or project-scoped configuration:
 
@@ -293,9 +293,9 @@ Add to your global or project-scoped configuration:
 }
 ```
 
-#### Claude Desktop (Fallback Recipe via Environment Variable)
+#### Claude Desktop (fallback recipe via environment variable)
 
-For clients that do not support the MCP Roots protocol (like Claude Desktop), configure the allowed folders using the `FS_ALLOWED_DIRS` environment variable.
+Claude Desktop and similar clients don't support the MCP Roots protocol. Use the `FS_ALLOWED_DIRS` environment variable to configure allowed folders.
 
 Add to your `claude_desktop_config.json`:
 
@@ -315,7 +315,7 @@ Add to your `claude_desktop_config.json`:
 
 _(On Windows, separate directories with a semicolon `;` instead of a colon `:`)._
 
-### Advanced / Per-Project Positional Arguments
+### Advanced / per-project positional arguments
 
 You can also restrict access to specific directories by passing positional arguments directly:
 
@@ -326,9 +326,9 @@ filesystem-mcp /path/to/project1 /path/to/project2
 
 ---
 
-### Configuration Reference
+### Configuration reference
 
-#### CLI Flags
+#### CLI flags
 
 | Flag          | Default | Purpose                                            |
 | :------------ | :------ | :------------------------------------------------- |
@@ -336,7 +336,7 @@ filesystem-mcp /path/to/project1 /path/to/project2
 | `--allow-cwd` | `false` | Also allow the current working directory as a root |
 | `--port <n>`  | —       | Enable Streamable HTTP transport on the given port |
 
-#### Environment Variables
+#### Environment variables
 
 | Variable            | Purpose                                                                                           |
 | :------------------ | :------------------------------------------------------------------------------------------------ |
