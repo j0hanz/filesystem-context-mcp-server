@@ -194,11 +194,10 @@ function createRegexReplacementMatcher(regex: Regex): ReplacementMatcher {
     count(content: string): number {
       regex.lastIndex = 0;
       let matchCount = 0;
-      while (regex.exec(content) !== null) {
+      let m: RegExpExecArray | null;
+      while ((m = regex.exec(content)) !== null) {
         matchCount++;
-        if (regex.lastIndex === 0) {
-          regex.lastIndex++;
-        }
+        if (m[0].length === 0) regex.lastIndex++;
       }
       return matchCount;
     },

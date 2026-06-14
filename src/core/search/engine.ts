@@ -372,9 +372,10 @@ export function compileRegex(pattern: string, options: RegexCompileOptions = {})
 function countRegexLineMatches(regex: RE2, line: string): number {
   regex.lastIndex = 0;
   let count = 0;
-  while (regex.exec(line) !== null) {
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(line)) !== null) {
     count++;
-    if (regex.lastIndex === 0) regex.lastIndex++;
+    if (m[0].length === 0) regex.lastIndex++;
   }
   return count;
 }
