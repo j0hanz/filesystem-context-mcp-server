@@ -54,7 +54,7 @@ describe('FS_CONTEXT_STRIP_STRUCTURED', () => {
 });
 
 describe('Tool Registration', () => {
-  it('registers request_access along with other tools', async () => {
+  it('registers all tools except request_access', async () => {
     const { toolsRegistrar } = await import('../../src/tools/index.js');
     const registered: string[] = [];
     const mockDeps = {
@@ -70,7 +70,7 @@ describe('Tool Registration', () => {
 
     toolsRegistrar.register(mockDeps as unknown as ServerDeps);
 
-    assert.ok(registered.includes('request_access'), 'Expected request_access to be registered');
+    assert.ok(!registered.includes('request_access'), 'request_access must NOT be registered');
     assert.ok(registered.includes('read'), 'Expected read to be registered');
     assert.ok(registered.includes('stat'), 'Expected stat to be registered');
   });

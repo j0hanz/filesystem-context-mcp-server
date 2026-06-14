@@ -7,7 +7,6 @@ import { LIST } from './list.js';
 import { MOVE } from './move.js';
 import { READ_FILE } from './read.js';
 import { SEARCH_AND_REPLACE } from './replace-in-files.js';
-import { REQUEST_ACCESS } from './request-access.js';
 import { LIST_ALLOWED_DIRECTORIES } from './roots.js';
 import { SEARCH_CONTENT } from './search-content.js';
 import { SEARCH_FILES } from './search-files.js';
@@ -26,7 +25,6 @@ const ALL_TOOLS = [
   SEARCH_CONTENT,
   SEARCH_FILES,
   GET_FILE_INFO,
-  REQUEST_ACCESS,
 ] as const;
 
 export const toolsRegistrar: Registrar = {

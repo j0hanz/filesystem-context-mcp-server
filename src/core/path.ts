@@ -511,6 +511,7 @@ export class PathGuard {
 
   readonly options: ServerOptions | undefined;
   readonly loggingState: LoggingState | undefined;
+  onAccessDenied?: (blockedPath: string) => Promise<boolean>;
 
   constructor(options?: ServerOptions, loggingState?: LoggingState) {
     this.denyPatterns = toPatternSet(compilePatterns(buildSensitivePatterns()));
@@ -583,12 +584,17 @@ export class PathGuard {
     return details.resolvedPath;
   }
 
-  private validateAccessAndSensitivity(requestedPath: string): {
+  private async checkAndPromptAccess(checkPath: string): Promise<boolean> {
+    if (!this.onAccessDenied) return false;
+    return this.onAccessDenied(checkPath);
+  }
+
+  private async validateAccessAndSensitivity(requestedPath: string): Promise<{
     normalizedRequested: string;
     allowedDirs: string[];
     accessDeniedHint: string;
-  } {
-    const result = this.validateAccess(requestedPath);
+  }> {
+    const result = await this.validateAccess(requestedPath);
     if (this.isSensitive(requestedPath) || this.isSensitive(result.normalizedRequested)) {
       throw new FsError(
         ErrorCode.ACCESS_DENIED,
@@ -599,11 +605,11 @@ export class PathGuard {
     return result;
   }
 
-  private validateAccess(requestedPath: string): {
+  private async validateAccess(requestedPath: string): Promise<{
     normalizedRequested: string;
     allowedDirs: string[];
     accessDeniedHint: string;
-  } {
+  }> {
     if (!this.allowedDirectoriesState) {
       throw new FsError(
         ErrorCode.UNKNOWN,
@@ -636,14 +642,30 @@ export class PathGuard {
         : 'No allowed directories configured.';
 
     if (!isPathWithinDirectories(normalizedRequested, allowedDirs)) {
-      throw new FsError(
-        ErrorCode.ACCESS_DENIED,
-        `Outside allowed directories. ${accessDeniedHint}`,
-        requestedPath,
-      );
+      const granted = await this.checkAndPromptAccess(normalizedRequested);
+      if (granted) {
+        const updatedDirs = this.allowedDirectoriesState.expanded;
+        if (!isPathWithinDirectories(normalizedRequested, updatedDirs)) {
+          throw new FsError(
+            ErrorCode.ACCESS_DENIED,
+            `Outside allowed directories. ${accessDeniedHint}`,
+            requestedPath,
+          );
+        }
+      } else {
+        throw new FsError(
+          ErrorCode.ACCESS_DENIED,
+          `Outside allowed directories. ${accessDeniedHint}`,
+          requestedPath,
+        );
+      }
     }
 
-    return { normalizedRequested, allowedDirs, accessDeniedHint };
+    return {
+      normalizedRequested,
+      allowedDirs: this.allowedDirectoriesState.expanded,
+      accessDeniedHint,
+    };
   }
 
   private async validateSymlinkAccess(
@@ -712,7 +734,7 @@ export class PathGuard {
 
   async validateExistingPathDetailed(requestedPath: string): Promise<ValidatedPathDetails> {
     const { normalizedRequested, allowedDirs, accessDeniedHint } =
-      this.validateAccessAndSensitivity(requestedPath);
+      await this.validateAccessAndSensitivity(requestedPath);
 
     let realPath: string;
     try {
@@ -855,7 +877,7 @@ export class PathGuard {
 
   async validatePathForWrite(requestedPath: string): Promise<string> {
     const { normalizedRequested, allowedDirs, accessDeniedHint } =
-      this.validateAccessAndSensitivity(requestedPath);
+      await this.validateAccessAndSensitivity(requestedPath);
 
     const { realAncestor, resolvedTarget } = await this.resolveNearestExistingAncestor(
       requestedPath,
@@ -885,7 +907,7 @@ export class PathGuard {
 
   async validatePathForDelete(requestedPath: string): Promise<string> {
     const { normalizedRequested, allowedDirs, accessDeniedHint } =
-      this.validateAccessAndSensitivity(requestedPath);
+      await this.validateAccessAndSensitivity(requestedPath);
 
     const parent = dirname(normalizedRequested);
     let realParent: string;

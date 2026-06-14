@@ -18,7 +18,6 @@ import { LIST } from '../src/tools/list.js';
 import { MOVE } from '../src/tools/move.js';
 import { READ_FILE } from '../src/tools/read.js';
 import { SEARCH_AND_REPLACE } from '../src/tools/replace-in-files.js';
-import { REQUEST_ACCESS } from '../src/tools/request-access.js';
 import { LIST_ALLOWED_DIRECTORIES } from '../src/tools/roots.js';
 import { SEARCH_CONTENT } from '../src/tools/search-content.js';
 import { SEARCH_FILES } from '../src/tools/search-files.js';
@@ -41,7 +40,6 @@ const ALL_TOOLS = [
   SEARCH_CONTENT,
   SEARCH_FILES,
   GET_FILE_INFO,
-  REQUEST_ACCESS,
 ] as const;
 
 interface TestContentBlock {

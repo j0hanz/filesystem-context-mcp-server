@@ -543,7 +543,7 @@ describe('HTTP transport', () => {
       const { resourceTemplates } = await client.listResourceTemplates();
       const { prompts } = await client.listPrompts();
 
-      assert.equal(tools.length, 13);
+      assert.equal(tools.length, 12);
       assert.equal(resources.length, 1);
       assert.equal(resources[0]?.uri, 'internal://instructions');
       assert.deepEqual(resourceTemplates.map((template) => template.uriTemplate).sort(), [

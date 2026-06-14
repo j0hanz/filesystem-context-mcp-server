@@ -21,7 +21,7 @@ Filesystem-MCP is a [Model Context Protocol](https://modelcontextprotocol.io) se
 | Feature                 | Description                                                                                                |
 | :---------------------- | :--------------------------------------------------------------------------------------------------------- |
 | **Path guarding**       | Every path is validated against allowed roots; `.env`, `*.pem`, `*id_rsa*` and similar patterns are denied |
-| **13 filesystem tools** | Navigate, inspect, read, and write across all major file operations                                        |
+| **12 filesystem tools** | Navigate, inspect, read, and write across all major file operations                                        |
 | **Batch operations**    | Most tools accept `path`, `paths[]`, or `files[]` for parallel execution                                   |
 | **Dual transport**      | stdio by default; `--port` enables Streamable HTTP                                                         |
 | **File subscriptions**  | Resource subscriptions push change notifications when watched files update                                 |
@@ -338,9 +338,11 @@ filesystem-mcp /path/to/project1 /path/to/project2
 
 #### Environment Variables
 
-| Variable          | Purpose                                                                                           |
-| :---------------- | :------------------------------------------------------------------------------------------------ |
-| `FS_ALLOWED_DIRS` | Colon-separated (POSIX) or semicolon-separated (Windows) list of directories allowed by baseline. |
+| Variable            | Purpose                                                                                           |
+| :------------------ | :------------------------------------------------------------------------------------------------ |
+| `FS_ALLOWED_DIRS`   | Colon-separated (POSIX) or semicolon-separated (Windows) list of directories allowed by baseline. |
+| `FS_ROOT_BOUNDARY`  | Boundary ceiling limiting client-granted workspace roots to specific directory trees.             |
+| `FS_ALLOW_CWD_WALK` | Set to `1` to enable ancestor walking from CWD to discover the project root directory.            |
 
 ### Examples
 

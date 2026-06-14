@@ -17,6 +17,7 @@ import type {
 } from '@modelcontextprotocol/server';
 
 import { randomUUID } from 'node:crypto';
+import { dirname } from 'node:path';
 
 import * as z from 'zod/v4';
 
@@ -32,6 +33,8 @@ import {
   withTelemetry,
 } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
+import { isPathWithinDirectories, normalizePath } from '../core/path.js';
+import { parseEnvDirList } from '../core/primitives.js';
 import type { ResourceStore } from '../core/store.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 
@@ -440,6 +443,83 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     };
   }
 
+  private buildAccessDeniedHandler(): ((blockedPath: string) => Promise<boolean>) | undefined {
+    if (!this.toolCtx.elicitInput) return undefined;
+    const elicitInput = this.toolCtx.elicitInput;
+    const mcpServer = this.toolCtx.server;
+    if (mcpServer == null) return undefined;
+    let caps: ReturnType<typeof mcpServer.server.getClientCapabilities>;
+    try {
+      caps = mcpServer.server.getClientCapabilities();
+    } catch {
+      return undefined;
+    }
+    if (!caps?.elicitation) return undefined;
+
+    return async (blockedPath: string): Promise<boolean> => {
+      // Find closest existing ancestor directory
+      let targetDir = blockedPath;
+      for (;;) {
+        try {
+          const s = await this.toolCtx.fs.statUnchecked(targetDir);
+          if (s.isDirectory()) break;
+          // If it's a file, go up one level
+          const parent = dirname(targetDir);
+          if (parent === targetDir) break;
+          targetDir = parent;
+          break; // found a file, use its parent dir
+        } catch {
+          const parent = dirname(targetDir);
+          if (parent === targetDir) break;
+          targetDir = parent;
+        }
+      }
+
+      // Check denial cache
+      const denialCache = this.toolCtx.denialCache;
+      if (denialCache?.has(targetDir)) return false;
+
+      // Elicit user approval
+      let approved: boolean;
+      try {
+        const response = await elicitInput({
+          mode: 'form',
+          message: `Grant filesystem access to: ${targetDir}?`,
+          requestedSchema: {
+            type: 'object',
+            properties: { confirm: { type: 'boolean', title: 'Confirm' } },
+            required: ['confirm'],
+          },
+        });
+        approved = response.action === 'accept' && response.content?.['confirm'] === true;
+      } catch {
+        return false;
+      }
+
+      if (!approved) {
+        denialCache?.set(targetDir, true);
+        return false;
+      }
+
+      // Check FS_ROOT_BOUNDARY
+      const boundaries = parseEnvDirList('FS_ROOT_BOUNDARY');
+      if (boundaries.length > 0) {
+        const normalizedTarget = normalizePath(targetDir);
+        const normalizedBoundaries = boundaries.map((b) => normalizePath(b));
+        if (!isPathWithinDirectories(normalizedTarget, normalizedBoundaries)) {
+          return false;
+        }
+      }
+
+      // Add to allowed directories
+      const pathGuard = this.toolCtx.pathGuard;
+      const existingDirs = pathGuard.getAllowedDirectories();
+      await this.toolCtx.fs.setRoots([...existingDirs, targetDir]);
+
+      return true;
+    };
+  }
+
   async execute(args: unknown, deps: ToolDeps): Promise<CallToolResult> {
     if (!deps.isInitialized()) {
       return {
@@ -448,52 +528,63 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
       };
     }
 
-    return withTelemetry(
-      {
-        event: 'tool_execution',
-        tool_name: this.def.name,
-        ...(this.toolCtx.sessionId ? { session_id: this.toolCtx.sessionId } : {}),
-        ...extractTracingMeta(this.toolCtx._meta),
-      },
-      async (enrich) => {
-        enrich({ execution_id: this.executionId });
-        const { inputKeys, inputSizeBytes } = measureInput(args);
-        let resultSizeBytes: number | undefined;
+    const handler = this.buildAccessDeniedHandler();
+    if (handler !== undefined && (this.toolCtx.pathGuard as unknown) != null) {
+      this.toolCtx.pathGuard.onAccessDenied = handler;
+    }
 
-        try {
-          this.tracker.start();
-          const result = await this.def.run(this.parsedArgs, this.toolCtx);
-          await this.completeProgress(result.structured);
-          this.outcome = this.signal.aborted ? 'cancelled' : 'success';
-          resultSizeBytes = tryMeasureBytes(result.structured);
-          return buildSuccessResponse(result);
-        } catch (error) {
-          const response = await this.failProgress(error);
-          this.outcome = this.signal.aborted ? 'cancelled' : 'error';
-          if (error instanceof Error) {
-            this.errorType = error.name;
-            this.errorMessage = error.message;
-          } else {
-            this.errorType = 'UnknownError';
-            this.errorMessage = String(error);
+    try {
+      return await withTelemetry(
+        {
+          event: 'tool_execution',
+          tool_name: this.def.name,
+          ...(this.toolCtx.sessionId ? { session_id: this.toolCtx.sessionId } : {}),
+          ...extractTracingMeta(this.toolCtx._meta),
+        },
+        async (enrich) => {
+          enrich({ execution_id: this.executionId });
+          const { inputKeys, inputSizeBytes } = measureInput(args);
+          let resultSizeBytes: number | undefined;
+
+          try {
+            this.tracker.start();
+            const result = await this.def.run(this.parsedArgs, this.toolCtx);
+            await this.completeProgress(result.structured);
+            this.outcome = this.signal.aborted ? 'cancelled' : 'success';
+            resultSizeBytes = tryMeasureBytes(result.structured);
+            return buildSuccessResponse(result);
+          } catch (error) {
+            const response = await this.failProgress(error);
+            this.outcome = this.signal.aborted ? 'cancelled' : 'error';
+            if (error instanceof Error) {
+              this.errorType = error.name;
+              this.errorMessage = error.message;
+            } else {
+              this.errorType = 'UnknownError';
+              this.errorMessage = String(error);
+            }
+            return response;
+          } finally {
+            await this.tracker.flush();
+            enrich({
+              ...(inputKeys ? { input_keys: inputKeys } : {}),
+              ...(inputSizeBytes !== undefined ? { input_size_bytes: inputSizeBytes } : {}),
+              ...(resultSizeBytes !== undefined ? { result_size_bytes: resultSizeBytes } : {}),
+              outcome: this.outcome,
+              ...(this.errorType ? { error_type: this.errorType } : {}),
+              ...(this.errorMessage ? { error_message: this.errorMessage } : {}),
+              memory_delta_mb: (process.memoryUsage().rss - this.startMemory) / 1024 / 1024,
+              tool_progress_ticks: this.tracker.tickCount,
+              progress_notifications_emitted: this.tracker.emittedCount,
+            });
           }
-          return response;
-        } finally {
-          await this.tracker.flush();
-          enrich({
-            ...(inputKeys ? { input_keys: inputKeys } : {}),
-            ...(inputSizeBytes !== undefined ? { input_size_bytes: inputSizeBytes } : {}),
-            ...(resultSizeBytes !== undefined ? { result_size_bytes: resultSizeBytes } : {}),
-            outcome: this.outcome,
-            ...(this.errorType ? { error_type: this.errorType } : {}),
-            ...(this.errorMessage ? { error_message: this.errorMessage } : {}),
-            memory_delta_mb: (process.memoryUsage().rss - this.startMemory) / 1024 / 1024,
-            tool_progress_ticks: this.tracker.tickCount,
-            progress_notifications_emitted: this.tracker.emittedCount,
-          });
-        }
-      },
-    );
+        },
+      );
+    } finally {
+      if ((this.toolCtx.pathGuard as unknown) != null) {
+        delete this.toolCtx.pathGuard.onAccessDenied;
+      }
+    }
   }
 }
 

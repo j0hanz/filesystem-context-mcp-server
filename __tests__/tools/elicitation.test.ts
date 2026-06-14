@@ -274,11 +274,12 @@ describe('move: elicitation handler throws', () => {
   });
 });
 
-// ─── request_access: client accepts/grants access ────────────────────────────
+// ─── implicit access: client accepts elicitation ──────────────────────────────
 
-describe('request_access: client accepts elicitation', () => {
+describe('implicit access grant: client accepts elicitation', () => {
   let env: TestEnv;
-  let dirToRequest: string;
+  let dirOutside: string;
+  let fileOutside: string;
 
   before(async () => {
     env = await createTestEnvWithElicitation(async () => ({
@@ -287,54 +288,37 @@ describe('request_access: client accepts elicitation', () => {
     }));
     const { tmpdir } = await import('node:os');
     const { randomUUID } = await import('node:crypto');
-    dirToRequest = join(tmpdir(), `fsmcp-req-${randomUUID().slice(0, 8)}`);
-    await mkdir(dirToRequest, { recursive: true });
-    await writeFile(join(dirToRequest, 'secret.txt'), 'secret data');
+    dirOutside = join(tmpdir(), `fsmcp-implicit-${randomUUID().slice(0, 8)}`);
+    await mkdir(dirOutside, { recursive: true });
+    fileOutside = join(dirOutside, 'data.txt');
+    await writeFile(fileOutside, 'implicit access content');
   });
 
   after(async () => {
     const { rm } = await import('node:fs/promises');
-    await rm(dirToRequest, { recursive: true, force: true });
+    await rm(dirOutside, { recursive: true, force: true });
     await env.cleanup();
   });
 
-  it('grants access, registers root, and allows reading files', async () => {
+  it('read succeeds after inline elicitation grants access', async () => {
+    const result = await env.client.callTool({
+      name: 'read',
+      arguments: { path: fileOutside },
+    });
+    assertOk(result);
     const { getStructured } = await import('../helpers.js');
-    const filePath = join(dirToRequest, 'secret.txt');
-
-    // 1. Reading must fail initially
-    const readResult1 = await env.client.callTool({
-      name: 'read',
-      arguments: { path: filePath },
-    });
-    assertOk(readResult1);
-    const sc1 = getStructured(readResult1);
-    const results1 = sc1['results'] as Record<string, unknown>[];
-    const error1 = results1[0]?.['error'] as Record<string, unknown>;
-    assert.equal(error1?.['code'], 'ACCESS_DENIED');
-
-    // 2. Request access
-    const reqResult = await env.client.callTool({
-      name: 'request_access',
-      arguments: { path: dirToRequest },
-    });
-    assertOk(reqResult);
-    const structured = getStructured(reqResult);
-    assert.equal(structured.ok, true);
-    assert.equal(structured.granted, dirToRequest);
-
-    // 3. Reading must now succeed
-    const readResult2 = await env.client.callTool({
-      name: 'read',
-      arguments: { path: filePath },
-    });
-    assertOk(readResult2);
+    const sc = getStructured(result);
+    const results = sc['results'] as Record<string, unknown>[];
+    assert.ok(results[0]?.['value'] !== undefined, 'Expected successful read result');
   });
 });
 
-describe('request_access: client declines elicitation', () => {
+// ─── implicit access: client declines elicitation ────────────────────────────
+
+describe('implicit access denial: client declines elicitation', () => {
   let env: TestEnv;
-  let dirToRequest: string;
+  let dirOutside: string;
+  let fileOutside: string;
 
   before(async () => {
     env = await createTestEnvWithElicitation(async () => ({
@@ -342,32 +326,39 @@ describe('request_access: client declines elicitation', () => {
     }));
     const { tmpdir } = await import('node:os');
     const { randomUUID } = await import('node:crypto');
-    dirToRequest = join(tmpdir(), `fsmcp-req-${randomUUID().slice(0, 8)}`);
-    await mkdir(dirToRequest, { recursive: true });
+    dirOutside = join(tmpdir(), `fsmcp-implicit-deny-${randomUUID().slice(0, 8)}`);
+    await mkdir(dirOutside, { recursive: true });
+    fileOutside = join(dirOutside, 'data.txt');
+    await writeFile(fileOutside, 'should not be accessible');
   });
 
   after(async () => {
     const { rm } = await import('node:fs/promises');
-    await rm(dirToRequest, { recursive: true, force: true });
+    await rm(dirOutside, { recursive: true, force: true });
     await env.cleanup();
   });
 
-  it('returns ok: false when user declines elicitation', async () => {
+  it('read fails with ACCESS_DENIED when elicitation is declined', async () => {
     const { getStructured } = await import('../helpers.js');
-    const reqResult = await env.client.callTool({
-      name: 'request_access',
-      arguments: { path: dirToRequest },
+    const result = await env.client.callTool({
+      name: 'read',
+      arguments: { path: fileOutside },
     });
-    assertOk(reqResult);
-    const structured = getStructured(reqResult);
-    assert.equal(structured.ok, false);
-    assert.ok(structured.reason !== undefined);
+    assertOk(result);
+    const sc = getStructured(result);
+    const results = sc['results'] as Record<string, unknown>[];
+    const error = results[0]?.['error'] as Record<string, unknown> | undefined;
+    assert.ok(error !== undefined, 'Expected error in result');
+    assert.equal(error['code'], 'ACCESS_DENIED');
   });
 });
 
-describe('request_access: cache denial', () => {
+// ─── implicit access: cached denial ──────────────────────────────────────────
+
+describe('implicit access: cached denial', () => {
   let env: TestEnv;
-  let dirToRequest: string;
+  let dirOutside: string;
+  let fileOutside: string;
   let callCount = 0;
 
   before(async () => {
@@ -377,84 +368,105 @@ describe('request_access: cache denial', () => {
     });
     const { tmpdir } = await import('node:os');
     const { randomUUID } = await import('node:crypto');
-    dirToRequest = join(tmpdir(), `fsmcp-req-${randomUUID().slice(0, 8)}`);
-    await mkdir(dirToRequest, { recursive: true });
+    dirOutside = join(tmpdir(), `fsmcp-implicit-cache-${randomUUID().slice(0, 8)}`);
+    await mkdir(dirOutside, { recursive: true });
+    fileOutside = join(dirOutside, 'data.txt');
+    await writeFile(fileOutside, 'cached denial test');
   });
 
   after(async () => {
     const { rm } = await import('node:fs/promises');
-    await rm(dirToRequest, { recursive: true, force: true });
+    await rm(dirOutside, { recursive: true, force: true });
     await env.cleanup();
   });
 
-  it('second request uses cache and does not prompt client again', async () => {
+  it('second read does not re-elicit after cached denial', async () => {
     const { getStructured } = await import('../helpers.js');
 
-    // First request
-    const res1 = await env.client.callTool({
-      name: 'request_access',
-      arguments: { path: dirToRequest },
+    // First read: elicitation fires, user declines
+    const result1 = await env.client.callTool({
+      name: 'read',
+      arguments: { path: fileOutside },
     });
-    assertOk(res1);
-    assert.equal(getStructured(res1).ok, false);
+    assertOk(result1);
+    const sc1 = getStructured(result1);
+    const results1 = sc1['results'] as Record<string, unknown>[];
+    const error1 = results1[0]?.['error'] as Record<string, unknown> | undefined;
+    assert.equal(error1?.['code'], 'ACCESS_DENIED');
     assert.equal(callCount, 1);
 
-    // Second request
-    const res2 = await env.client.callTool({
-      name: 'request_access',
-      arguments: { path: dirToRequest },
+    // Second read: denial is cached, no new elicitation
+    const result2 = await env.client.callTool({
+      name: 'read',
+      arguments: { path: fileOutside },
     });
-    assertOk(res2);
-    assert.equal(getStructured(res2).ok, false);
-    assert.equal(callCount, 1); // should still be 1!
+    assertOk(result2);
+    const sc2 = getStructured(result2);
+    const results2 = sc2['results'] as Record<string, unknown>[];
+    const error2 = results2[0]?.['error'] as Record<string, unknown> | undefined;
+    assert.equal(error2?.['code'], 'ACCESS_DENIED');
+    assert.equal(callCount, 1, 'Elicitation handler should not be called again (cached denial)');
   });
 });
 
-describe('request_access: client without elicitation capability', () => {
+// ─── implicit access: client without elicitation capability ──────────────────
+
+describe('implicit access: client without elicitation capability', () => {
   let env: TestEnv;
-  let dirToRequest: string;
+  let dirOutside: string;
+  let fileOutside: string;
 
   before(async () => {
     env = await createTestEnv(); // no elicitation capability
     const { tmpdir } = await import('node:os');
     const { randomUUID } = await import('node:crypto');
-    dirToRequest = join(tmpdir(), `fsmcp-req-${randomUUID().slice(0, 8)}`);
-    await mkdir(dirToRequest, { recursive: true });
+    dirOutside = join(tmpdir(), `fsmcp-implicit-nocap-${randomUUID().slice(0, 8)}`);
+    await mkdir(dirOutside, { recursive: true });
+    fileOutside = join(dirOutside, 'data.txt');
+    await writeFile(fileOutside, 'no capability test');
   });
 
   after(async () => {
     const { rm } = await import('node:fs/promises');
-    await rm(dirToRequest, { recursive: true, force: true });
+    await rm(dirOutside, { recursive: true, force: true });
     await env.cleanup();
   });
 
-  it('fails with ACCESS_DENIED', async () => {
+  it('fails with ACCESS_DENIED without prompting when no elicitation capability', async () => {
+    const { getStructured } = await import('../helpers.js');
     const result = await env.client.callTool({
-      name: 'request_access',
-      arguments: { path: dirToRequest },
+      name: 'read',
+      arguments: { path: fileOutside },
     });
-    assertToolError(result, 'ACCESS_DENIED');
+    assertOk(result);
+    const sc = getStructured(result);
+    const results = sc['results'] as Record<string, unknown>[];
+    const error = results[0]?.['error'] as Record<string, unknown> | undefined;
+    assert.ok(error !== undefined, 'Expected error in result');
+    assert.equal(error['code'], 'ACCESS_DENIED');
   });
 });
 
-describe('request_access: with FS_ROOT_BOUNDARY', () => {
+// ─── implicit access: FS_ROOT_BOUNDARY blocks approval ───────────────────────
+
+describe('implicit access: FS_ROOT_BOUNDARY blocks approval', () => {
   const ORIG_BOUNDARY = process.env['FS_ROOT_BOUNDARY'];
   let env: TestEnv;
   let boundaryDir: string;
-  let insideDir: string;
   let outsideDir: string;
+  let fileOutside: string;
 
   before(async () => {
-    const { mkdtemp, mkdir } = await import('node:fs/promises');
+    const { mkdtemp, mkdir: mkdirFs } = await import('node:fs/promises');
     const { tmpdir } = await import('node:os');
-    const tempDir = await mkdtemp(join(tmpdir(), 'req-bound-'));
+    const { randomUUID } = await import('node:crypto');
+    const tempDir = await mkdtemp(join(tmpdir(), 'implicit-bound-'));
     boundaryDir = join(tempDir, 'boundary');
-    insideDir = join(boundaryDir, 'project-a');
-    outsideDir = join(tempDir, 'outside-project');
-
-    await mkdir(boundaryDir);
-    await mkdir(insideDir);
-    await mkdir(outsideDir);
+    outsideDir = join(tempDir, `outside-${randomUUID().slice(0, 8)}`);
+    await mkdirFs(boundaryDir);
+    await mkdirFs(outsideDir);
+    fileOutside = join(outsideDir, 'secret.txt');
+    await writeFile(fileOutside, 'should remain blocked');
 
     process.env['FS_ROOT_BOUNDARY'] = boundaryDir;
 
@@ -475,23 +487,17 @@ describe('request_access: with FS_ROOT_BOUNDARY', () => {
     await env.cleanup();
   });
 
-  it('allows access to path inside boundary', async () => {
+  it('read fails with ACCESS_DENIED when path is outside FS_ROOT_BOUNDARY even if user approves', async () => {
     const { getStructured } = await import('../helpers.js');
     const result = await env.client.callTool({
-      name: 'request_access',
-      arguments: { path: insideDir },
+      name: 'read',
+      arguments: { path: fileOutside },
     });
     assertOk(result);
-    const structured = getStructured(result);
-    assert.equal(structured.ok, true);
-    assert.equal(structured.granted, insideDir);
-  });
-
-  it('rejects access to path outside boundary with ACCESS_DENIED', async () => {
-    const result = await env.client.callTool({
-      name: 'request_access',
-      arguments: { path: outsideDir },
-    });
-    assertToolError(result, 'ACCESS_DENIED');
+    const sc = getStructured(result);
+    const results = sc['results'] as Record<string, unknown>[];
+    const error = results[0]?.['error'] as Record<string, unknown> | undefined;
+    assert.ok(error !== undefined, 'Expected error when outside FS_ROOT_BOUNDARY');
+    assert.equal(error['code'], 'ACCESS_DENIED');
   });
 });
