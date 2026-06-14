@@ -31,7 +31,7 @@ import { ErrorCode, formatUnknownErrorMessage, FsError, isNodeError } from './er
 import { Logger, startPerfMeasure, withOpsTrace } from './observability.js';
 import type { PathGuard } from './path.js';
 import { toPosixPath } from './path.js';
-import { BINARY_CHECK_BUFFER_SIZE, KNOWN_BINARY_EXTENSIONS, MAX_TEXT_FILE_SIZE } from './util.js';
+import { MAX_TEXT_FILE_SIZE } from './util.js';
 
 // Re-export FileType from schema for external consumers
 export type { FileType };
@@ -158,6 +158,51 @@ function assertPositiveIntegerOption(name: string, value: unknown, message?: str
 }
 
 // ─── Binary detection ────────────────────────────────────────────────────────
+
+const BINARY_CHECK_BUFFER_SIZE = 512;
+
+const KNOWN_BINARY_EXTENSIONS = new Set([
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+  '.bmp',
+  '.ico',
+  '.mp3',
+  '.wav',
+  '.flac',
+  '.mp4',
+  '.mov',
+  '.avi',
+  '.mkv',
+  '.webm',
+  '.zip',
+  '.tar',
+  '.gz',
+  '.7z',
+  '.rar',
+  '.exe',
+  '.dll',
+  '.so',
+  '.dylib',
+  '.ttf',
+  '.otf',
+  '.woff',
+  '.woff2',
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
+  '.sqlite',
+  '.db',
+  '.wasm',
+  '.bin',
+  '.dat',
+]);
 
 function hasKnownBinaryExtension(filePath: string): boolean {
   const ext = extname(filePath).toLowerCase();

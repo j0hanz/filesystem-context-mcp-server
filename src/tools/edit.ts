@@ -17,8 +17,9 @@ import {
 } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
+import { escapeRegexLiteral } from '../core/primitives.js';
 import type { ResourceStore } from '../core/store.js';
-import { escapeRegexLiteral, MAX_TEXT_FILE_SIZE } from '../core/util.js';
+import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import {
   defaultFalseBoolean,
   FileKind,

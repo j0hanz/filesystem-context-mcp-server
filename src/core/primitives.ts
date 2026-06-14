@@ -15,3 +15,7 @@ export function parseTrueEnvFlag(value: string | undefined): boolean {
   if (value === undefined) return false;
   return STRING_BOOL_SCHEMA.safeParse(value.trim().toLowerCase()).data === true;
 }
+
+export function escapeRegexLiteral(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}

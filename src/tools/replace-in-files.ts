@@ -22,11 +22,11 @@ import {
 } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
+import { escapeRegexLiteral } from '../core/primitives.js';
 import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_RESULTS,
   DEFAULT_SEARCH_TIMEOUT_MS,
-  escapeRegexLiteral,
   MAX_SEARCH_DEPTH,
   MAX_SEARCH_RESULTS,
   MAX_TEXT_FILE_SIZE,
