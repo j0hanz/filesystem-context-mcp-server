@@ -3,32 +3,36 @@ import { describe, it } from 'node:test';
 
 import * as z from 'zod/v4';
 
-// Define the schema locally for testing (matches src/server.ts)
-const RootSchema = z.strictObject({
+// Define the schema locally for testing (matches src/server.ts).
+// Named LocalRootSchema to avoid shadowing the SDK's reserved spec-type name.
+const LocalRootSchema = z.strictObject({
   uri: z.string().startsWith('file://', { message: "Root.uri must start with 'file://'" }),
   name: z.string().optional(),
 });
 
 const RootsResponseSchema = z.strictObject({
-  roots: z.array(RootSchema).optional(),
+  roots: z.array(LocalRootSchema).optional(),
 });
 
-describe('RootSchema validation', () => {
+describe('Root schema validation', () => {
   describe('valid file:// URIs', () => {
     it('accepts file:// with absolute path', () => {
-      const result = RootSchema.safeParse({ uri: 'file:///path/to/dir' });
+      const result = LocalRootSchema.safeParse({ uri: 'file:///path/to/dir' });
       assert.ok(result.success, 'Should accept file:///path/to/dir');
       assert.deepStrictEqual(result.data, { uri: 'file:///path/to/dir' });
     });
 
     it('accepts file:// with relative path components', () => {
-      const result = RootSchema.safeParse({ uri: 'file://localhost/path' });
+      const result = LocalRootSchema.safeParse({ uri: 'file://localhost/path' });
       assert.ok(result.success, 'Should accept file://localhost/path');
       assert.deepStrictEqual(result.data, { uri: 'file://localhost/path' });
     });
 
     it('accepts file:// URI with name', () => {
-      const result = RootSchema.safeParse({ uri: 'file:///home/user/project', name: 'My Project' });
+      const result = LocalRootSchema.safeParse({
+        uri: 'file:///home/user/project',
+        name: 'My Project',
+      });
       assert.ok(result.success, 'Should accept file:// URI with name');
       assert.deepStrictEqual(result.data, {
         uri: 'file:///home/user/project',
@@ -37,13 +41,13 @@ describe('RootSchema validation', () => {
     });
 
     it('accepts file:// URI with Windows-style path', () => {
-      const result = RootSchema.safeParse({ uri: 'file:///C:/Users/user/project' });
+      const result = LocalRootSchema.safeParse({ uri: 'file:///C:/Users/user/project' });
       assert.ok(result.success, 'Should accept Windows-style file URI');
       assert.deepStrictEqual(result.data, { uri: 'file:///C:/Users/user/project' });
     });
 
     it('accepts file:// URI with special characters in path', () => {
-      const result = RootSchema.safeParse({ uri: 'file:///path/to/dir%20with%20spaces' });
+      const result = LocalRootSchema.safeParse({ uri: 'file:///path/to/dir%20with%20spaces' });
       assert.ok(result.success, 'Should accept file:// URI with encoded special chars');
       assert.deepStrictEqual(result.data, { uri: 'file:///path/to/dir%20with%20spaces' });
     });
@@ -51,35 +55,35 @@ describe('RootSchema validation', () => {
 
   describe('invalid non-file:// URIs', () => {
     it('rejects URI without prefix', () => {
-      const result = RootSchema.safeParse({ uri: '/path/to/dir' });
+      const result = LocalRootSchema.safeParse({ uri: '/path/to/dir' });
       assert.ok(!result.success, 'Should reject URI without file:// prefix');
       assert.ok(result.error?.issues.length > 0, 'Should have validation errors');
     });
 
     it('rejects http:// URI', () => {
-      const result = RootSchema.safeParse({ uri: 'http://example.com/path' });
+      const result = LocalRootSchema.safeParse({ uri: 'http://example.com/path' });
       assert.ok(!result.success, 'Should reject http:// URI');
       assert.ok(result.error?.issues.length > 0, 'Should have validation errors');
     });
 
     it('rejects https:// URI', () => {
-      const result = RootSchema.safeParse({ uri: 'https://example.com/path' });
+      const result = LocalRootSchema.safeParse({ uri: 'https://example.com/path' });
       assert.ok(!result.success, 'Should reject https:// URI');
       assert.ok(result.error?.issues.length > 0, 'Should have validation errors');
     });
 
     it('rejects empty string', () => {
-      const result = RootSchema.safeParse({ uri: '' });
+      const result = LocalRootSchema.safeParse({ uri: '' });
       assert.ok(!result.success, 'Should reject empty string');
     });
 
     it('rejects relative path without file:// prefix', () => {
-      const result = RootSchema.safeParse({ uri: './relative/path' });
+      const result = LocalRootSchema.safeParse({ uri: './relative/path' });
       assert.ok(!result.success, 'Should reject relative path without file:// prefix');
     });
 
     it('rejects ftp:// URI', () => {
-      const result = RootSchema.safeParse({ uri: 'ftp://server/path' });
+      const result = LocalRootSchema.safeParse({ uri: 'ftp://server/path' });
       assert.ok(!result.success, 'Should reject ftp:// URI');
     });
   });
@@ -164,7 +168,7 @@ describe('RootSchema validation', () => {
 
   describe('error messages', () => {
     it('provides clear error message when URI is missing file:// prefix', () => {
-      const result = RootSchema.safeParse({ uri: '/home/user' });
+      const result = LocalRootSchema.safeParse({ uri: '/home/user' });
       assert.ok(!result.success);
       const errorMessage = result.error?.issues[0]?.message;
       assert.ok(errorMessage?.includes("'file://'"), 'Error message should mention file:// prefix');

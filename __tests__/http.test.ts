@@ -1,5 +1,10 @@
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
-import { DEFAULT_REQUEST_TIMEOUT_MSEC } from '@modelcontextprotocol/server';
+import {
+  DEFAULT_REQUEST_TIMEOUT_MSEC,
+  LATEST_PROTOCOL_VERSION,
+  ProtocolErrorCode,
+  SUPPORTED_PROTOCOL_VERSIONS,
+} from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { channel } from 'node:diagnostics_channel';
@@ -12,6 +17,10 @@ import { afterEach, describe, it } from 'node:test';
 
 import { Logger } from '../src/core/observability.js';
 import { startHttpServer } from '../src/transport.js';
+
+// A supported protocol version other than the latest, for negotiation tests.
+const OLDER_SUPPORTED_PROTOCOL_VERSION =
+  SUPPORTED_PROTOCOL_VERSIONS.find((v) => v !== LATEST_PROTOCOL_VERSION) ?? LATEST_PROTOCOL_VERSION;
 
 function getServerPort(server: Server): number {
   const address = server.address();
@@ -144,7 +153,7 @@ describe('HTTP transport', () => {
         id: 1,
         method: 'initialize',
         params: {
-          protocolVersion: '2025-06-18',
+          protocolVersion: OLDER_SUPPORTED_PROTOCOL_VERSION,
           capabilities: {},
           clientInfo: { name: 'http-test', version: '1.0.0' },
         },
@@ -162,7 +171,7 @@ describe('HTTP transport', () => {
         capabilities?: Record<string, unknown>;
       };
     };
-    assert.equal(initPayload.result?.protocolVersion, '2025-06-18');
+    assert.equal(initPayload.result?.protocolVersion, OLDER_SUPPORTED_PROTOCOL_VERSION);
     assert.equal(initPayload.result?.serverInfo?.name, 'filesystem-mcp');
     assert.ok(initPayload.result?.serverInfo?.version);
     assert.match(initPayload.result?.instructions ?? '', /Start with:/u);
@@ -177,7 +186,7 @@ describe('HTTP transport', () => {
       headers: {
         accept: 'application/json, text/event-stream',
         'content-type': 'application/json',
-        'mcp-protocol-version': '2025-06-18',
+        'mcp-protocol-version': OLDER_SUPPORTED_PROTOCOL_VERSION,
         'mcp-session-id': sessionId,
       },
       body: JSON.stringify({
@@ -217,7 +226,7 @@ describe('HTTP transport', () => {
         id: 1,
         method: 'initialize',
         params: {
-          protocolVersion: '2025-11-25',
+          protocolVersion: LATEST_PROTOCOL_VERSION,
           capabilities: {},
           clientInfo: { name: 'http-test', version: '1.0.0' },
         },
@@ -256,7 +265,7 @@ describe('HTTP transport', () => {
         id: 1,
         method: 'initialize',
         params: {
-          protocolVersion: '2025-11-25',
+          protocolVersion: LATEST_PROTOCOL_VERSION,
           capabilities: {},
           clientInfo: { name: 'http-test', version: '1.0.0' },
         },
@@ -272,7 +281,7 @@ describe('HTTP transport', () => {
       headers: {
         accept: 'application/json, text/event-stream',
         'content-type': 'application/json',
-        'mcp-protocol-version': '2025-11-25',
+        'mcp-protocol-version': LATEST_PROTOCOL_VERSION,
         'mcp-session-id': sessionId,
       },
       body: JSON.stringify({
@@ -301,7 +310,7 @@ describe('HTTP transport', () => {
         id: 1,
         method: 'initialize',
         params: {
-          protocolVersion: '2025-11-25',
+          protocolVersion: LATEST_PROTOCOL_VERSION,
           capabilities: {},
           clientInfo: { name: 'http-test', version: '1.0.0' },
         },
@@ -363,7 +372,7 @@ describe('HTTP transport', () => {
     };
     assert.equal(
       initPayload.result?.protocolVersion,
-      '2025-11-25',
+      LATEST_PROTOCOL_VERSION,
       `Expected the server to negotiate to its latest supported protocol version, got ${JSON.stringify(initPayload)}`,
     );
 
@@ -372,7 +381,7 @@ describe('HTTP transport', () => {
       headers: {
         accept: 'application/json, text/event-stream',
         'content-type': 'application/json',
-        'mcp-protocol-version': '2025-11-25',
+        'mcp-protocol-version': LATEST_PROTOCOL_VERSION,
         'mcp-session-id': sessionId,
       },
       body: JSON.stringify({
@@ -419,7 +428,7 @@ describe('HTTP transport', () => {
       headers: {
         accept: 'application/json, text/event-stream',
         'content-type': 'application/json',
-        'mcp-protocol-version': '2025-06-18',
+        'mcp-protocol-version': OLDER_SUPPORTED_PROTOCOL_VERSION,
         'mcp-session-id': sessionId,
       },
       body: JSON.stringify({
@@ -449,7 +458,7 @@ describe('HTTP transport', () => {
         id: 1,
         method: 'initialize',
         params: {
-          protocolVersion: '2025-11-25',
+          protocolVersion: LATEST_PROTOCOL_VERSION,
           capabilities: {},
           clientInfo: { name: 'http-test', version: '1.0.0' },
         },
@@ -479,7 +488,7 @@ describe('HTTP transport', () => {
         id: 1,
         method: 'initialize',
         params: {
-          protocolVersion: '2025-11-25',
+          protocolVersion: LATEST_PROTOCOL_VERSION,
           capabilities: {},
           clientInfo: { name: 'http-test', version: '1.0.0' },
         },
@@ -583,7 +592,7 @@ describe('HTTP transport', () => {
         id: 1,
         method: 'initialize',
         params: {
-          protocolVersion: '2025-11-25',
+          protocolVersion: LATEST_PROTOCOL_VERSION,
           capabilities: {},
           clientInfo: { name: 'http-test', version: '1.0.0' },
         },
@@ -601,7 +610,7 @@ describe('HTTP transport', () => {
       headers: {
         accept: 'application/json, text/event-stream',
         'content-type': 'application/json',
-        'mcp-protocol-version': '2025-11-25',
+        'mcp-protocol-version': LATEST_PROTOCOL_VERSION,
         'mcp-session-id': sessionId,
       },
       body: JSON.stringify({
@@ -746,7 +755,7 @@ describe('HTTP transport', () => {
 
     assert.equal(res.statusCode, 400, 'response messages without a session must be rejected');
     const body = JSON.parse(res.body) as { error?: { code?: number; message?: string } };
-    assert.equal(body.error?.code, -32600);
+    assert.equal(body.error?.code, ProtocolErrorCode.InvalidRequest);
     assert.match(body.error?.message ?? '', /response|notification/iu);
   });
 
@@ -782,7 +791,7 @@ describe('HTTP transport', () => {
           id: 1,
           method: 'initialize',
           params: {
-            protocolVersion: '2025-11-25',
+            protocolVersion: LATEST_PROTOCOL_VERSION,
             capabilities: {},
             clientInfo: { name: 'test', version: '0' },
           },

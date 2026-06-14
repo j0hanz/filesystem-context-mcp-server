@@ -1,5 +1,9 @@
 // __tests__/unit/transport-body-validation.test.ts
-import { parseJSONRPCMessage, ProtocolErrorCode } from '@modelcontextprotocol/server';
+import {
+  LATEST_PROTOCOL_VERSION,
+  parseJSONRPCMessage,
+  ProtocolErrorCode,
+} from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -243,7 +247,7 @@ describe('HTTP transport JSON-RPC validation (integration)', () => {
       id: 1,
       method: 'initialize',
       params: {
-        protocolVersion: '2024-11-05',
+        protocolVersion: LATEST_PROTOCOL_VERSION,
         capabilities: {},
         clientInfo: {
           name: 'test-client',
