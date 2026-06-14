@@ -13,24 +13,35 @@ import { FileKind, IsoDateTime, NonNegInt, PerFileErrorSchema, RequiredPath } fr
 import { defineTool } from './define.js';
 
 const CreateFileItemSchema = z.strictObject({
-  path: RequiredPath.describe('Target file path'),
-  content: z.string().max(MAX_TEXT_FILE_SIZE).describe('File content to write'),
+  path: RequiredPath.describe('Absolute path where the file will be created'),
+  content: z
+    .string()
+    .max(MAX_TEXT_FILE_SIZE)
+    .describe('Text content to write; overwrites any existing file at this path'),
 });
 
 const CreateFileResultSchema = z.strictObject({
-  ok: z.literal(true).describe('Success indicator'),
-  path: z.string().describe('Written file path'),
-  size: NonNegInt.describe('File size in bytes'),
-  lineCount: NonNegInt.describe('Number of lines in file'),
-  mimeType: z.string().describe('MIME type of the file'),
-  kind: FileKind.describe('File kind'),
-  resourceUri: z.string().describe('Full content URI in resource store'),
-  created: IsoDateTime.describe('Creation timestamp (ISO 8601 UTC)'),
-  modified: IsoDateTime.describe('Last modification timestamp (ISO 8601 UTC)'),
+  ok: z
+    .literal(true)
+    .describe('Always true; per-file failures are reported in the outer failures array'),
+  path: z.string().describe('Resolved absolute path of the created file'),
+  size: NonNegInt.describe('File size in bytes after writing'),
+  lineCount: NonNegInt.describe('Number of lines in the written file'),
+  mimeType: z.string().describe('Detected MIME type of the file'),
+  kind: FileKind.describe('Broad file kind: text, binary, image, audio, or pdf'),
+  resourceUri: z
+    .string()
+    .describe('Resource URI pointing to the created file content in the resource store'),
+  created: IsoDateTime.describe('File creation timestamp (ISO 8601 UTC)'),
+  modified: IsoDateTime.describe('File last-modification timestamp (ISO 8601 UTC)'),
 });
 
 const CreateInputSchema = z.strictObject({
-  files: z.array(CreateFileItemSchema).min(1).max(100).describe('Files to create'),
+  files: z
+    .array(CreateFileItemSchema)
+    .min(1)
+    .max(100)
+    .describe('List of files to create (max 100); each entry requires path and content'),
 });
 
 const CreateFailureItemSchema = z.strictObject({
@@ -41,9 +52,12 @@ const CreateFailureItemSchema = z.strictObject({
 type CreateFailureItem = z.infer<typeof CreateFailureItemSchema>;
 
 const CreateOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Success indicator'),
-  files: z.array(CreateFileResultSchema).describe('Created files'),
-  failures: z.array(CreateFailureItemSchema).optional().describe('Per-file errors'),
+  ok: z.literal(true).describe('Always true; per-file errors are in failures[]'),
+  files: z.array(CreateFileResultSchema).describe('Successfully created files'),
+  failures: z
+    .array(CreateFailureItemSchema)
+    .optional()
+    .describe('Files that failed to create with per-file error details'),
 });
 
 type CreateFileResult = z.infer<typeof CreateFileResultSchema>;
@@ -68,7 +82,8 @@ export const CREATE = defineTool({
   name: 'create',
   title: 'Create Files',
   description:
-    'Create one or more files, overwriting existing content and creating parent directories as needed.',
+    'Create one or more files (max 100), writing or overwriting content and creating parent directories as needed. ' +
+    'Silently overwrites existing files — read first if you need to preserve existing content.',
   input: CreateInputSchema,
   output: CreateOutputSchema,
   annotations: {
@@ -78,8 +93,8 @@ export const CREATE = defineTool({
     openWorldHint: false,
   },
   gotchas: [
-    'Overwrites silently - read existing content first if you need to merge.',
-    'Use edit for partial changes.',
+    'Silently overwrites existing files; read existing content first if you need to preserve it.',
+    'For partial changes to existing files, use edit instead.',
   ],
   run: async (args, ctx) => {
     const results: CreateFileResult[] = [];

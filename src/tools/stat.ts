@@ -33,23 +33,25 @@ const StatInputSchema = singleOrBatchPathsInput({
 });
 
 const StatPerPathSchema = z.strictObject({
-  path: z.string().describe('Requested path'),
-  value: FileInfoSchema.optional().describe('File info (success)'),
-  error: PerFileErrorSchema.optional().describe('Per-path error'),
+  path: z.string().describe('The requested path'),
+  value: FileInfoSchema.optional().describe('File metadata; present on success'),
+  error: PerFileErrorSchema.optional().describe('Error details; present on failure'),
 });
 
 const StatOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Success indicator'),
+  ok: z.literal(true).describe('Always true; per-path errors are in results[].error'),
   results: z
     .array(StatPerPathSchema)
-    .describe('Per-path results (always present, ordered as input)'),
-  summary: OperationSummarySchema.describe('Aggregate counts'),
-  fileCount: NonNegInt.optional().describe('Count of regular files in results'),
-  dirCount: NonNegInt.optional().describe('Count of directories in results'),
+    .describe('Per-path metadata results ordered to match the input paths'),
+  summary: OperationSummarySchema.describe('Aggregate counts: total, succeeded, failed'),
+  fileCount: NonNegInt.optional().describe('Number of regular files in the results'),
+  dirCount: NonNegInt.optional().describe('Number of directories in the results'),
   resourceUri: z
     .string()
     .optional()
-    .describe('URI to aggregated stats.json (present when resourceStore available)'),
+    .describe(
+      'URI to aggregated stats.json in the resource store (present when resource store is available)',
+    ),
 });
 
 const PERM_STRINGS = [
@@ -164,9 +166,9 @@ export const GET_FILE_INFO = defineTool({
   name: 'stat',
   title: 'Get File Info',
   description:
-    'Get file/directory metadata: size, modified, permissions, mime, tokenEstimate. ' +
-    'Use `tokenEstimate` (size\u00f74) to pre-screen token cost before reading. ' +
-    'Pass `paths` array for batch mode.',
+    'Get metadata for one or more files or directories: size, type, permissions, MIME type, timestamps, and tokenEstimate. ' +
+    'Use tokenEstimate (size / 4) to pre-screen read cost before calling read. ' +
+    'Single path: pass path. Batch mode: pass paths[].',
   input: StatInputSchema,
   output: StatOutputSchema,
   annotations: {

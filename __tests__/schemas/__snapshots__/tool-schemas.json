@@ -14,19 +14,19 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 4096,
-                "description": "Target file path",
-                "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
+                "description": "Absolute path where the file will be created",
+                "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
               },
               "content": {
                 "type": "string",
                 "maxLength": 10485760,
-                "description": "File content to write"
+                "description": "Text content to write; overwrites any existing file at this path"
               }
             },
             "required": ["path", "content"],
             "additionalProperties": false
           },
-          "description": "Files to create"
+          "description": "List of files to create (max 100); each entry requires path and content"
         }
       },
       "required": ["files"],
@@ -39,7 +39,7 @@
         "ok": {
           "type": "boolean",
           "const": true,
-          "description": "Success indicator"
+          "description": "Always true; per-file errors are in failures[]"
         },
         "files": {
           "type": "array",
@@ -49,38 +49,38 @@
               "ok": {
                 "type": "boolean",
                 "const": true,
-                "description": "Success indicator"
+                "description": "Always true; per-file failures are reported in the outer failures array"
               },
               "path": {
                 "type": "string",
-                "description": "Written file path"
+                "description": "Resolved absolute path of the created file"
               },
               "size": {
-                "description": "File size in bytes",
+                "description": "File size in bytes after writing",
                 "$ref": "#/$defs/NonNegInt"
               },
               "lineCount": {
-                "description": "Number of lines in file",
+                "description": "Number of lines in the written file",
                 "$ref": "#/$defs/NonNegInt"
               },
               "mimeType": {
                 "type": "string",
-                "description": "MIME type of the file"
+                "description": "Detected MIME type of the file"
               },
               "kind": {
-                "description": "File kind",
+                "description": "Broad file kind: text, binary, image, audio, or pdf",
                 "$ref": "#/$defs/FileKind"
               },
               "resourceUri": {
                 "type": "string",
-                "description": "Full content URI in resource store"
+                "description": "Resource URI pointing to the created file content in the resource store"
               },
               "created": {
-                "description": "Creation timestamp (ISO 8601 UTC)",
+                "description": "File creation timestamp (ISO 8601 UTC)",
                 "$ref": "#/$defs/IsoDateTime"
               },
               "modified": {
-                "description": "Last modification timestamp (ISO 8601 UTC)",
+                "description": "File last-modification timestamp (ISO 8601 UTC)",
                 "$ref": "#/$defs/IsoDateTime"
               }
             },
@@ -97,10 +97,10 @@
             ],
             "additionalProperties": false
           },
-          "description": "Created files"
+          "description": "Successfully created files"
         },
         "failures": {
-          "description": "Per-file errors",
+          "description": "Files that failed to create with per-file error details",
           "type": "array",
           "items": {
             "type": "object",
@@ -137,7 +137,7 @@
           "format": "date-time",
           "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
           "title": "ISO Date-Time",
-          "description": "ISO 8601 date-time (UTC)"
+          "description": "ISO 8601 UTC date-time string (e.g. 2024-01-15T12:00:00.000Z)"
         },
         "PerFileError": {
           "type": "object",
@@ -178,19 +178,19 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4096,
-            "description": "Path inside an allowed root",
-            "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
+            "description": "Absolute path within an allowed workspace root",
+            "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
           },
-          "description": "One or more paths to delete (max 1000)"
+          "description": "Paths to delete (max 1000); accepts files, directories, or symlinks"
         },
         "recursive": {
           "default": false,
-          "description": "Delete directories recursively",
+          "description": "Delete directories and all their contents recursively (required for non-empty directories)",
           "type": "boolean"
         },
         "ignoreIfNotExists": {
           "default": false,
-          "description": "No error if path does not exist",
+          "description": "Silently succeed if a path does not exist instead of returning an error",
           "type": "boolean"
         }
       },
@@ -203,21 +203,21 @@
       "properties": {
         "ok": {
           "type": "boolean",
-          "description": "Success indicator — false only when every path failed"
+          "description": "False only when every requested path failed; true if at least one succeeded"
         },
         "path": {
-          "description": "Deleted path",
+          "description": "Deleted path (present when exactly one path was deleted)",
           "type": "string"
         },
         "paths": {
-          "description": "Deleted paths (multi-path mode)",
+          "description": "Deleted paths (present when multiple paths were deleted)",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "failures": {
-          "description": "Per-path errors",
+          "description": "Per-path error details for paths that could not be deleted",
           "type": "array",
           "items": {
             "type": "object",
@@ -254,7 +254,7 @@
       "type": "object",
       "properties": {
         "edits": {
-          "description": "Edits applied to path or every entry in paths (forbidden when using files)",
+          "description": "Replacements applied to path or to every file in paths; not allowed when using files (each file carries its own edits)",
           "minItems": 1,
           "type": "array",
           "items": {
@@ -263,12 +263,12 @@
               "oldText": {
                 "type": "string",
                 "minLength": 1,
-                "description": "Exact text to find (must match literally)",
+                "description": "Exact literal text to locate in the file (include 3-5 lines of context to ensure uniqueness)",
                 "examples": ["const x = 1;", "function oldName("]
               },
               "newText": {
                 "type": "string",
-                "description": "Replacement text (empty string to delete)",
+                "description": "Replacement text; use an empty string to delete the matched text",
                 "examples": ["const x = 2;", "function newName(", ""]
               }
             },
@@ -278,23 +278,23 @@
         },
         "dryRun": {
           "default": false,
-          "description": "Preview changes without writing",
+          "description": "Preview diffs without writing to disk (default: false = apply edits)",
           "type": "boolean"
         },
         "ignoreWhitespace": {
           "default": false,
-          "description": "Ignore leading/trailing whitespace when matching",
+          "description": "Ignore leading/trailing whitespace differences when matching oldText",
           "type": "boolean"
         },
         "path": {
-          "description": "File path (single-path mode)",
+          "description": "Single file path; mutually exclusive with paths and files",
           "type": "string",
           "minLength": 1,
           "maxLength": 4096,
-          "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
+          "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
         },
         "paths": {
-          "description": "File paths (batch mode; max 5)",
+          "description": "Array of file paths for batch mode (max 5); mutually exclusive with path and files",
           "minItems": 1,
           "maxItems": 5,
           "type": "array",
@@ -302,8 +302,8 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4096,
-            "description": "Path inside an allowed root",
-            "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
+            "description": "Absolute path within an allowed workspace root",
+            "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
           }
         },
         "files": {
@@ -317,8 +317,8 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 4096,
-                "description": "Path inside an allowed root",
-                "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
+                "description": "Absolute path within an allowed workspace root",
+                "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
               },
               "edits": {
                 "minItems": 1,
@@ -329,19 +329,19 @@
                     "oldText": {
                       "type": "string",
                       "minLength": 1,
-                      "description": "Exact text to find (must match literally)",
+                      "description": "Exact literal text to locate in the file (include 3-5 lines of context to ensure uniqueness)",
                       "examples": ["const x = 1;", "function oldName("]
                     },
                     "newText": {
                       "type": "string",
-                      "description": "Replacement text (empty string to delete)",
+                      "description": "Replacement text; use an empty string to delete the matched text",
                       "examples": ["const x = 2;", "function newName(", ""]
                     }
                   },
                   "required": ["oldText", "newText"],
                   "additionalProperties": false
                 },
-                "description": "Edits for this file"
+                "description": "Replacements to apply to this specific file"
               }
             },
             "required": ["path", "edits"],
@@ -359,7 +359,7 @@
         "ok": {
           "type": "boolean",
           "const": true,
-          "description": "Success indicator"
+          "description": "Always true; per-file errors are reported in results[].error"
         },
         "results": {
           "type": "array",
@@ -368,65 +368,65 @@
             "properties": {
               "path": {
                 "type": "string",
-                "description": "Requested path"
+                "description": "The requested file path"
               },
               "value": {
-                "description": "Per-file edit result (success)",
+                "description": "Edit result; present on success",
                 "type": "object",
                 "properties": {
                   "path": {
                     "type": "string",
-                    "description": "File path"
+                    "description": "Resolved absolute path of the edited file"
                   },
                   "size": {
-                    "description": "File size in bytes",
+                    "description": "File size in bytes after edits",
                     "$ref": "#/$defs/NonNegInt"
                   },
                   "lineCount": {
-                    "description": "Number of lines",
+                    "description": "Number of lines in the file after edits",
                     "$ref": "#/$defs/NonNegInt"
                   },
                   "mimeType": {
                     "type": "string",
-                    "description": "MIME type"
+                    "description": "Detected MIME type of the file"
                   },
                   "kind": {
-                    "description": "File kind",
+                    "description": "Broad file kind: text, binary, image, audio, or pdf",
                     "$ref": "#/$defs/FileKind"
                   },
                   "resourceUri": {
                     "type": "string",
-                    "description": "Resource URI"
+                    "description": "Resource URI pointing to the updated file content"
                   },
                   "modified": {
-                    "description": "Modified (ISO 8601 UTC)",
+                    "description": "Last modification timestamp after edits (ISO 8601 UTC)",
                     "$ref": "#/$defs/IsoDateTime"
                   },
                   "appliedEdits": {
-                    "description": "Edits applied",
+                    "description": "Number of edits successfully applied",
                     "$ref": "#/$defs/NonNegInt"
                   },
                   "linesAdded": {
-                    "description": "Lines added",
+                    "description": "Net lines added by all applied edits",
                     "$ref": "#/$defs/NonNegInt"
                   },
                   "linesRemoved": {
-                    "description": "Lines removed",
+                    "description": "Net lines removed by all applied edits",
                     "$ref": "#/$defs/NonNegInt"
                   },
                   "diff": {
-                    "description": "Unified diff (dryRun or when changes present)",
+                    "description": "Unified diff of all changes (present in dryRun mode or when changes were made)",
                     "type": "string"
                   },
                   "unmatchedEdits": {
-                    "description": "oldText with no match",
+                    "description": "oldText values that did not match any content in the file",
                     "type": "array",
                     "items": {
                       "type": "string"
                     }
                   },
                   "lineRange": {
-                    "description": "[firstLine, lastLine]",
+                    "description": "Line range [firstLine, lastLine] covering all applied edits",
                     "type": "array",
                     "prefixItems": [
                       {
@@ -451,17 +451,17 @@
                 "additionalProperties": false
               },
               "error": {
-                "description": "Per-path error",
+                "description": "Error details; present on failure",
                 "$ref": "#/$defs/PerFileError"
               }
             },
             "required": ["path"],
             "additionalProperties": false
           },
-          "description": "Per-path results (always present)"
+          "description": "Per-path edit results ordered to match the input paths"
         },
         "summary": {
-          "description": "Aggregate counts",
+          "description": "Aggregate counts: total, succeeded, failed",
           "$ref": "#/$defs/OperationSummary"
         }
       },
@@ -485,7 +485,7 @@
           "format": "date-time",
           "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
           "title": "ISO Date-Time",
-          "description": "ISO 8601 date-time (UTC)"
+          "description": "ISO 8601 UTC date-time string (e.g. 2024-01-15T12:00:00.000Z)"
         },
         "PositiveInt": {
           "type": "integer",
@@ -545,19 +545,19 @@
       "type": "object",
       "properties": {
         "path": {
-          "description": "Base directory (default: root)",
+          "description": "Base directory to search under (default: first allowed root)",
           "type": "string",
           "minLength": 1,
           "maxLength": 4096,
-          "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
+          "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
         },
         "pattern": {
-          "description": "Glob pattern to search",
+          "description": "Glob pattern to match file paths (e.g. **/*.ts, src/**/*.js)",
           "$ref": "#/$defs/SafeGlobPattern"
         },
         "maxResults": {
           "default": 100,
-          "description": "Max files to return",
+          "description": "Maximum number of matching files to return per page",
           "type": "integer",
           "minimum": 1,
           "maximum": 10000
@@ -574,18 +574,18 @@
         },
         "sortBy": {
           "default": "path",
-          "description": "Sort order",
+          "description": "Sort order: path = full path (default), name = basename only, size = bytes descending, modified = newest first",
           "type": "string",
           "enum": ["name", "size", "modified", "path"]
         },
         "maxDepth": {
-          "description": "Max directory depth",
+          "description": "Max directory depth to scan; 0 = base directory only, omit for unlimited",
           "type": "integer",
           "minimum": 0,
           "maximum": 100
         },
         "cursor": {
-          "description": "Pagination cursor from a previous response. Treat as opaque. `ls` cursors are snapshot-backed (expire after ~5 min or restart); `find` cursors are offset-based and re-run the query each page.",
+          "description": "Opaque pagination cursor from a prior response; pass unchanged to fetch the next page. list cursors expire after ~5 min or server restart; find_files cursors re-run the full query per page.",
           "type": "string",
           "format": "base64url",
           "contentEncoding": "base64url",
@@ -601,7 +601,7 @@
           "minLength": 1,
           "maxLength": 1000,
           "pattern": "^(?!\\/)(?![a-zA-Z]:[\\\\/])(?!.*\\.\\.).+$",
-          "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
+          "description": "Relative glob pattern matching files under the search root (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
           "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"],
           "suggestion": "Use forward-slash globs; absolute paths and \"..\" are forbidden."
@@ -614,11 +614,11 @@
         "ok": {
           "type": "boolean",
           "const": true,
-          "description": "Success indicator"
+          "description": "Always true; call succeeded"
         },
         "root": {
           "type": "string",
-          "description": "Search root path"
+          "description": "Resolved base directory used as the search root"
         },
         "results": {
           "type": "array",
@@ -627,45 +627,45 @@
             "properties": {
               "path": {
                 "type": "string",
-                "description": "Relative path from search root"
+                "description": "File path relative to the search root"
               },
               "size": {
-                "description": "Size in bytes",
+                "description": "File size in bytes (present when sortBy=size)",
                 "$ref": "#/$defs/NonNegInt"
               },
               "modified": {
-                "description": "ISO 8601 last modified time",
+                "description": "Last modification time (present when sortBy=modified)",
                 "$ref": "#/$defs/IsoDateTime"
               }
             },
             "required": ["path"],
             "additionalProperties": false
           },
-          "description": "Matching files"
+          "description": "Matched files ordered by sortBy"
         },
         "totalMatches": {
-          "description": "Total matches found",
+          "description": "Total number of matching files found",
           "$ref": "#/$defs/NonNegInt"
         },
         "filesScanned": {
-          "description": "Files scanned",
+          "description": "Total number of files examined during the search",
           "$ref": "#/$defs/NonNegInt"
         },
         "skippedInaccessible": {
-          "description": "Inaccessible entries skipped",
+          "description": "Files skipped due to permission or access errors",
           "$ref": "#/$defs/NonNegInt"
         },
         "stoppedReason": {
-          "description": "Why search stopped early",
+          "description": "Why the search ended early: maxResults = result cap reached, maxFiles = scan cap reached, timeout = time limit hit",
           "type": "string",
           "enum": ["maxResults", "maxFiles", "timeout"]
         },
         "resourceUri": {
-          "description": "URI to stored search results JSON",
+          "description": "URI to the full results JSON in the resource store (present when results are paginated)",
           "type": "string"
         },
         "nextCursor": {
-          "description": "Cursor for the next page; absent on the final page.",
+          "description": "Cursor for the next page; omitted when this is the final page.",
           "type": "string",
           "format": "base64url",
           "contentEncoding": "base64url",
@@ -687,7 +687,7 @@
           "format": "date-time",
           "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
           "title": "ISO Date-Time",
-          "description": "ISO 8601 date-time (UTC)"
+          "description": "ISO 8601 UTC date-time string (e.g. 2024-01-15T12:00:00.000Z)"
         }
       }
     }
@@ -700,12 +700,12 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096,
-          "description": "Path inside an allowed root",
-          "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
+          "description": "Absolute path within an allowed workspace root",
+          "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
         },
         "algorithms": {
           "default": ["sha256"],
-          "description": "Hash algorithms to compute (default: sha256)",
+          "description": "Hash algorithms to compute (default: [sha256]); specify multiple to compute several hashes in one call",
           "minItems": 1,
           "maxItems": 4,
           "type": "array",
@@ -725,11 +725,11 @@
         "ok": {
           "type": "boolean",
           "const": true,
-          "description": "Success indicator"
+          "description": "Always true; call succeeded"
         },
         "filePath": {
           "type": "string",
-          "description": "Resolved file or directory path"
+          "description": "Resolved absolute path of the hashed file or directory"
         },
         "algorithms": {
           "minItems": 1,
@@ -739,7 +739,7 @@
             "type": "string",
             "enum": ["sha256", "md5", "sha1", "sha512"]
           },
-          "description": "Algorithms computed"
+          "description": "List of algorithms that were computed"
         },
         "hashes": {
           "type": "object",
@@ -751,18 +751,18 @@
             "type": "string",
             "pattern": "^[a-f0-9]+$"
           },
-          "description": "Algorithm → hex digest mapping"
+          "description": "Map of algorithm name to lowercase hex digest (e.g. { sha256: \"abc123...\" })"
         },
         "resourceUri": {
           "type": "string",
-          "description": "URI to hashes.json resource"
+          "description": "URI to the hashes.json resource in the resource store"
         },
         "isDirectory": {
           "type": "boolean",
-          "description": "True when hashing a directory"
+          "description": "True when the target was a directory (hashes represent all files within)"
         },
         "fileCount": {
-          "description": "Files hashed (directories only)",
+          "description": "Number of files hashed (present for directories only)",
           "$ref": "#/$defs/NonNegInt"
         }
       },
@@ -787,18 +787,18 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096,
-          "description": "Path inside an allowed root",
-          "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
+          "description": "Absolute path within an allowed workspace root",
+          "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
         },
         "maxDepth": {
           "default": 1,
-          "description": "Max directory depth (default: 1, flat listing)",
+          "description": "Max directory depth to traverse (default: 1 = top-level only; increase to recurse deeper)",
           "maximum": 50,
           "$ref": "#/$defs/PositiveInt"
         },
         "maxEntries": {
           "default": 1000,
-          "description": "Max entries to return (default: 1000)",
+          "description": "Maximum number of entries to include in the inline result (default: 1000); full result is stored at resourceUri when exceeded",
           "maximum": 20000,
           "$ref": "#/$defs/PositiveInt"
         },
@@ -832,7 +832,7 @@
           "const": true
         },
         "path": {
-          "description": "Listed directory path",
+          "description": "Resolved absolute path of the listed directory",
           "type": "string"
         },
         "entries": {
@@ -842,44 +842,44 @@
             "properties": {
               "name": {
                 "type": "string",
-                "description": "Entry name"
+                "description": "Entry basename"
               },
               "relativePath": {
                 "type": "string",
-                "description": "POSIX path relative to directory"
+                "description": "POSIX path relative to the listed directory"
               },
               "type": {
-                "description": "Entry type",
+                "description": "Entry type: file, directory, symlink, or other",
                 "$ref": "#/$defs/FileType"
               }
             },
             "required": ["name", "relativePath", "type"],
             "additionalProperties": false
           },
-          "description": "Directory entries, dirs-first then alphabetical"
+          "description": "Inline directory entries sorted directories-first then alphabetically by name"
         },
         "markdown": {
           "type": "string",
-          "description": "ASCII tree representation"
+          "description": "ASCII tree representation of the directory structure"
         },
         "entryCount": {
-          "description": "Number of entries returned",
+          "description": "Number of entries included in this response",
           "$ref": "#/$defs/NonNegInt"
         },
         "totalEntries": {
-          "description": "Total entries found before cap",
+          "description": "Total entries found before the maxEntries cap was applied",
           "$ref": "#/$defs/NonNegInt"
         },
         "totalFiles": {
-          "description": "Total files",
+          "description": "Total number of files found",
           "$ref": "#/$defs/NonNegInt"
         },
         "totalDirectories": {
-          "description": "Total directories",
+          "description": "Total number of directories found",
           "$ref": "#/$defs/NonNegInt"
         },
         "resourceUri": {
-          "description": "Full result (present when result is truncated)",
+          "description": "URI to the full entry list in the resource store (present when entries were truncated)",
           "type": "string"
         }
       },
@@ -922,14 +922,14 @@
         "ok": {
           "type": "boolean",
           "const": true,
-          "description": "Success indicator"
+          "description": "Always true"
         },
         "roots": {
           "type": "array",
           "items": {
             "type": "string"
           },
-          "description": "Allowed root directory paths"
+          "description": "Absolute paths of the allowed workspace root directories"
         }
       },
       "required": ["ok", "roots"],
@@ -952,21 +952,21 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 4096,
-                "description": "Source path to move",
-                "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
+                "description": "Absolute path of the file or directory to move",
+                "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
               },
               "destination": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 4096,
-                "description": "Destination path",
-                "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
+                "description": "Absolute destination path; parent directories are created automatically",
+                "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
               }
             },
             "required": ["source", "destination"],
             "additionalProperties": false
           },
-          "description": "Move operations to perform"
+          "description": "List of move operations to perform (max 100); each requires source and destination"
         }
       },
       "required": ["moves"],
@@ -979,7 +979,7 @@
         "ok": {
           "type": "boolean",
           "const": true,
-          "description": "Success indicator"
+          "description": "Always true; per-move errors are in failures[]"
         },
         "moves": {
           "type": "array",
@@ -988,36 +988,36 @@
             "properties": {
               "from": {
                 "type": "string",
-                "description": "Resolved source path"
+                "description": "Resolved absolute source path"
               },
               "to": {
                 "type": "string",
-                "description": "Resolved destination path"
+                "description": "Resolved absolute destination path"
               },
               "ok": {
                 "type": "boolean",
                 "const": true,
-                "description": "Success indicator"
+                "description": "Always true for this entry; failures are in the outer failures array"
               }
             },
             "required": ["from", "to", "ok"],
             "additionalProperties": false
           },
-          "description": "Completed move operations"
+          "description": "Successfully completed move operations"
         },
         "failures": {
-          "description": "Per-move errors",
+          "description": "Move operations that failed with per-item error details",
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
               "source": {
                 "type": "string",
-                "description": "Source path that failed"
+                "description": "The source path that could not be moved"
               },
               "destination": {
                 "type": "string",
-                "description": "Destination path for the failed move"
+                "description": "The intended destination path for the failed move"
               },
               "error": {
                 "$ref": "#/$defs/PerFileError"
@@ -1065,7 +1065,7 @@
       "properties": {
         "includeHash": {
           "default": false,
-          "description": "Include SHA-256 hash of the content",
+          "description": "Include SHA-256 hash of the returned content in the response",
           "type": "boolean"
         },
         "head": {
@@ -1093,26 +1093,26 @@
           "maximum": 100000
         },
         "offset": {
-          "description": "Byte offset to start reading (single-file mode only; mutually exclusive with line params)",
+          "description": "Byte offset at which to start reading (single-file mode only; mutually exclusive with head/tail/startLine/endLine)",
           "type": "integer",
           "minimum": 0,
           "maximum": 4294967295
         },
         "length": {
-          "description": "Number of bytes to read (single-file mode only; used with offset; reads to EOF if omitted)",
+          "description": "Number of bytes to read starting at offset (single-file mode only; reads to EOF when omitted)",
           "type": "integer",
           "minimum": 1,
           "maximum": 4294967295
         },
         "path": {
-          "description": "File path (single-path mode)",
+          "description": "Single file path; mutually exclusive with paths and files",
           "type": "string",
           "minLength": 1,
           "maxLength": 4096,
-          "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
+          "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
         },
         "paths": {
-          "description": "File paths (batch mode; max 1000)",
+          "description": "Array of file paths for batch mode (max 1000); mutually exclusive with path and files",
           "minItems": 1,
           "maxItems": 1000,
           "type": "array",
@@ -1120,8 +1120,8 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4096,
-            "description": "Path inside an allowed root",
-            "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
+            "description": "Absolute path within an allowed workspace root",
+            "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
           }
         }
       },
@@ -1134,7 +1134,7 @@
         "ok": {
           "type": "boolean",
           "const": true,
-          "description": "Success indicator"
+          "description": "Always true; errors are reported per-path in results[].error"
         },
         "results": {
           "type": "array",
@@ -1143,42 +1143,42 @@
             "properties": {
               "path": {
                 "type": "string",
-                "description": "Requested path"
+                "description": "The requested file path"
               },
               "value": {
-                "description": "Read result (success)",
+                "description": "Read result; present on success",
                 "type": "object",
                 "properties": {
                   "content": {
-                    "description": "File content (text)",
+                    "description": "File text content",
                     "type": "string"
                   },
                   "mimeType": {
-                    "description": "MIME type",
+                    "description": "Detected MIME type (e.g. text/typescript)",
                     "type": "string"
                   },
                   "kind": {
-                    "description": "File kind",
+                    "description": "Broad file kind: text, binary, image, audio, or pdf",
                     "$ref": "#/$defs/FileKind"
                   },
                   "resourceUri": {
-                    "description": "Per-file resource URI when externalized",
+                    "description": "Resource URI for externalized content (present when file is stored in resource store)",
                     "type": "string"
                   },
                   "continuation": {
-                    "description": "Present when file was cut",
+                    "description": "Next-read arguments; present when content was truncated due to size limits",
                     "$ref": "#/$defs/Continuation"
                   },
                   "totalLines": {
-                    "description": "Total lines in file",
+                    "description": "Total line count in the full file",
                     "$ref": "#/$defs/NonNegInt"
                   },
                   "linesRead": {
-                    "description": "Lines returned",
+                    "description": "Number of lines returned in this response",
                     "$ref": "#/$defs/NonNegInt"
                   },
                   "hasMoreLines": {
-                    "description": "More lines available",
+                    "description": "True when additional lines remain beyond what was returned",
                     "type": "boolean"
                   },
                   "head": {
@@ -1198,36 +1198,36 @@
                     "$ref": "#/$defs/PositiveInt"
                   },
                   "contentHash": {
-                    "description": "SHA-256 of content (when includeHash)",
+                    "description": "SHA-256 hex digest of the returned content (present when includeHash=true)",
                     "$ref": "#/$defs/Sha256Hex"
                   },
                   "offset": {
-                    "description": "Byte offset used",
+                    "description": "Byte offset at which reading started",
                     "$ref": "#/$defs/NonNegInt"
                   },
                   "bytesRead": {
-                    "description": "Bytes returned",
+                    "description": "Number of bytes returned in this response",
                     "$ref": "#/$defs/NonNegInt"
                   },
                   "reachedEOF": {
-                    "description": "Read reached end of file",
+                    "description": "True when the read reached the end of the file",
                     "type": "boolean"
                   }
                 },
                 "additionalProperties": false
               },
               "error": {
-                "description": "Per-path error",
+                "description": "Error details; present on failure",
                 "$ref": "#/$defs/PerFileError"
               }
             },
             "required": ["path"],
             "additionalProperties": false
           },
-          "description": "Per-path results (always present)"
+          "description": "Per-path results ordered to match the input paths"
         },
         "summary": {
-          "description": "Aggregate counts",
+          "description": "Aggregate counts: total, succeeded, failed",
           "$ref": "#/$defs/OperationSummary"
         }
       },
@@ -1245,7 +1245,7 @@
           "properties": {
             "tool": {
               "type": "string",
-              "description": "Tool name to call"
+              "description": "Tool name to call for the next chunk"
             },
             "args": {
               "type": "object",
@@ -1253,11 +1253,11 @@
                 "type": "string"
               },
               "additionalProperties": {},
-              "description": "Ready-to-use arguments"
+              "description": "Ready-to-use arguments for the next call; pass verbatim"
             },
             "hint": {
               "type": "string",
-              "description": "One sentence: what data remains"
+              "description": "One-sentence description of the data still remaining to be read"
             }
           },
           "required": ["tool", "args", "hint"],
@@ -1281,7 +1281,7 @@
           "format": "sha256_hex",
           "pattern": "^[0-9a-fA-F]{64}$",
           "title": "SHA-256 Hash",
-          "description": "SHA-256 hex digest"
+          "description": "SHA-256 digest as a 64-character lowercase hex string"
         },
         "PerFileError": {
           "type": "object",
@@ -1338,29 +1338,29 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096,
-          "description": "Path inside an allowed root",
-          "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
+          "description": "Absolute path within an allowed workspace root",
+          "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
         },
         "pattern": {
-          "description": "File glob filter (default: **/* text files)",
+          "description": "Glob to restrict replacements to specific file types (e.g. **/*.ts); default: all text files",
           "$ref": "#/$defs/SafeGlobPattern"
         },
         "searchPattern": {
           "type": "string",
           "minLength": 1,
           "maxLength": 10000,
-          "description": "Text or regex to find (RE2: no lookahead/lookbehind/backrefs when isRegex=true)",
+          "description": "Text or regex to find. When isRegex=true, uses RE2 syntax with capture groups ($1, $2); no lookahead/lookbehind/backreferences.",
           "examples": ["TODO", "function\\s+(\\w+)", "import.*from"]
         },
         "replacement": {
           "type": "string",
           "maxLength": 10000,
-          "description": "Replacement text",
+          "description": "Replacement text; use capture group references ($1, $2) when isRegex=true, empty string to delete matches",
           "examples": ["$1_renamed", "", "TODO: fix"]
         },
         "isRegex": {
           "default": false,
-          "description": "Treat searchPattern as regex",
+          "description": "Treat searchPattern as a RE2 regex (default: literal text match)",
           "type": "boolean"
         },
         "includeHidden": {
@@ -1375,39 +1375,39 @@
         },
         "caseSensitive": {
           "default": false,
-          "description": "Case-sensitive",
+          "description": "Enable case-sensitive matching (default: case-insensitive)",
           "type": "boolean"
         },
         "wholeWord": {
           "default": false,
-          "description": "Match whole words only",
+          "description": "Match whole words only (word boundary anchoring)",
           "type": "boolean"
         },
         "dryRun": {
           "default": false,
-          "description": "Preview changes without writing (default false = apply changes)",
+          "description": "Preview replacements without writing to disk (default: false = apply changes)",
           "type": "boolean"
         },
         "returnDiff": {
           "default": false,
-          "description": "Include unified diff in output",
+          "description": "Include a unified diff of all changes in the response",
           "type": "boolean"
         },
         "maxResults": {
           "default": 100,
-          "description": "Max matches across all files",
+          "description": "Maximum total match count across all files before stopping",
           "type": "integer",
           "minimum": 1,
           "maximum": 10000
         },
         "maxFiles": {
-          "description": "Max files to process",
+          "description": "Maximum number of files to process",
           "type": "integer",
           "minimum": 1,
           "maximum": 10000
         },
         "maxDepth": {
-          "description": "Max directory depth",
+          "description": "Max directory depth to scan; 0 = base directory only, omit for unlimited",
           "type": "integer",
           "minimum": 0,
           "maximum": 100
@@ -1422,7 +1422,7 @@
           "minLength": 1,
           "maxLength": 1000,
           "pattern": "^(?!\\/)(?![a-zA-Z]:[\\\\/])(?!.*\\.\\.).+$",
-          "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
+          "description": "Relative glob pattern matching files under the search root (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
           "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"],
           "suggestion": "Use forward-slash globs; absolute paths and \"..\" are forbidden."
@@ -1435,26 +1435,26 @@
         "ok": {
           "type": "boolean",
           "const": true,
-          "description": "Success indicator"
+          "description": "Always true; per-file errors are in failures[]"
         },
         "filesModified": {
-          "description": "Files changed",
+          "description": "Number of files that had at least one replacement applied",
           "$ref": "#/$defs/NonNegInt"
         },
         "totalMatches": {
-          "description": "Total match count",
+          "description": "Total number of replacements made across all files",
           "$ref": "#/$defs/NonNegInt"
         },
         "processedFiles": {
-          "description": "Files scanned",
+          "description": "Total number of files examined",
           "$ref": "#/$defs/NonNegInt"
         },
         "failedFiles": {
-          "description": "Files that failed",
+          "description": "Number of files that could not be processed",
           "$ref": "#/$defs/NonNegInt"
         },
         "failures": {
-          "description": "Per-file failures",
+          "description": "Per-file error details for files that could not be processed",
           "type": "array",
           "items": {
             "type": "object",
@@ -1471,7 +1471,7 @@
           }
         },
         "primaryFile": {
-          "description": "Primary file with resource link",
+          "description": "Metadata for the first modified file including its resource URI",
           "type": "object",
           "properties": {
             "path": {
@@ -1497,7 +1497,7 @@
           "additionalProperties": false
         },
         "results": {
-          "description": "Changed files with match counts",
+          "description": "List of modified files with their replacement counts",
           "type": "array",
           "items": {
             "type": "object",
@@ -1514,19 +1514,19 @@
           }
         },
         "resultsTruncated": {
-          "description": "results list was truncated",
+          "description": "True when the results list was cut due to the MAX_CHANGED_FILES cap",
           "type": "boolean"
         },
         "diff": {
-          "description": "Unified diff (when returnDiff or dryRun)",
+          "description": "Unified diff of all changes (present when returnDiff=true or dryRun=true)",
           "type": "string"
         },
         "diffTruncated": {
-          "description": "Diff was truncated",
+          "description": "True when the diff was cut due to the size limit",
           "type": "boolean"
         },
         "stoppedReason": {
-          "description": "Why enumeration stopped early",
+          "description": "Why enumeration stopped early: maxResults = match cap reached, maxFiles = file cap reached, timeout = time limit hit",
           "type": "string",
           "enum": ["maxResults", "maxFiles", "timeout"]
         }
@@ -1581,23 +1581,23 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096,
-          "description": "Path inside an allowed root",
-          "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
+          "description": "Absolute path within an allowed workspace root",
+          "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
         },
         "pattern": {
-          "description": "File glob filter (default: all text files)",
+          "description": "Glob to restrict search to specific file types (e.g. **/*.ts); default: all text files",
           "$ref": "#/$defs/SafeGlobPattern"
         },
         "searchPattern": {
           "type": "string",
           "minLength": 1,
           "maxLength": 10000,
-          "description": "Text or regex to search for (RE2: no lookahead/lookbehind/backrefs when isRegex=true)",
+          "description": "Text or regex to find in file contents. When isRegex=true, uses RE2 syntax (no lookahead, lookbehind, or backreferences).",
           "examples": ["TODO", "function\\s+(\\w+)", "import.*from"]
         },
         "isRegex": {
           "default": false,
-          "description": "Treat searchPattern as regex",
+          "description": "Treat searchPattern as a RE2 regex (default: literal text match)",
           "type": "boolean"
         },
         "includeHidden": {
@@ -1612,51 +1612,51 @@
         },
         "caseSensitive": {
           "default": false,
-          "description": "Case-sensitive",
+          "description": "Enable case-sensitive matching (default: case-insensitive)",
           "type": "boolean"
         },
         "wholeWord": {
           "default": false,
-          "description": "Match whole words only",
+          "description": "Match whole words only (word boundary anchoring)",
           "type": "boolean"
         },
         "contextLines": {
-          "description": "Lines of context before AND after each match (symmetric; overridden by contextBefore/contextAfter)",
+          "description": "Symmetric context: N lines before AND after each match. Overridden per-side by contextBefore/contextAfter.",
           "type": "integer",
           "minimum": 0,
           "maximum": 20
         },
         "contextBefore": {
-          "description": "Lines of context before each match (overrides contextLines for before)",
+          "description": "Lines of context to include before each match (overrides the before half of contextLines)",
           "type": "integer",
           "minimum": 0,
           "maximum": 20
         },
         "contextAfter": {
-          "description": "Lines of context after each match (overrides contextLines for after)",
+          "description": "Lines of context to include after each match (overrides the after half of contextLines)",
           "type": "integer",
           "minimum": 0,
           "maximum": 20
         },
         "fuzzy": {
-          "description": "Approximate string matching (Levenshtein-based, ≤25% char difference). Incompatible with isRegex.",
+          "description": "Enable approximate (fuzzy) matching using Levenshtein distance (≤25% character difference). Incompatible with isRegex. Requires searchPattern of at least 4 characters.",
           "type": "boolean"
         },
         "maxResults": {
           "default": 500,
-          "description": "Max matches to return per page",
+          "description": "Maximum number of matching lines to return per page",
           "type": "integer",
           "minimum": 1,
           "maximum": 10000
         },
         "maxDepth": {
-          "description": "Max directory depth",
+          "description": "Max directory depth to scan; 0 = base directory only, omit for unlimited",
           "type": "integer",
           "minimum": 0,
           "maximum": 100
         },
         "cursor": {
-          "description": "Pagination cursor from a previous response. Treat as opaque. `ls` cursors are snapshot-backed (expire after ~5 min or restart); `find` cursors are offset-based and re-run the query each page.",
+          "description": "Opaque pagination cursor from a prior response; pass unchanged to fetch the next page. list cursors expire after ~5 min or server restart; find_files cursors re-run the full query per page.",
           "type": "string",
           "format": "base64url",
           "contentEncoding": "base64url",
@@ -1672,7 +1672,7 @@
           "minLength": 1,
           "maxLength": 1000,
           "pattern": "^(?!\\/)(?![a-zA-Z]:[\\\\/])(?!.*\\.\\.).+$",
-          "description": "Glob pattern (e.g. \"**/*.ts\", \"src/**/*.js\")",
+          "description": "Relative glob pattern matching files under the search root (e.g. \"**/*.ts\", \"src/**/*.js\")",
           "title": "Glob Pattern",
           "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"],
           "suggestion": "Use forward-slash globs; absolute paths and \"..\" are forbidden."
@@ -1685,7 +1685,7 @@
         "ok": {
           "type": "boolean",
           "const": true,
-          "description": "Success indicator"
+          "description": "Always true; errors are surfaced in stoppedReason or per-file skip counts"
         },
         "matches": {
           "type": "array",
@@ -1694,33 +1694,33 @@
             "properties": {
               "file": {
                 "type": "string",
-                "description": "Relative file path"
+                "description": "File path relative to the search root"
               },
               "line": {
-                "description": "Line number",
+                "description": "1-indexed line number of the match",
                 "$ref": "#/$defs/PositiveInt"
               },
               "column": {
-                "description": "Column (0-indexed)",
+                "description": "0-indexed column offset of the match start",
                 "$ref": "#/$defs/NonNegInt"
               },
               "content": {
                 "type": "string",
-                "description": "Matched line content"
+                "description": "Full text of the matching line"
               },
               "matchCount": {
-                "description": "Match count on this line",
+                "description": "Number of pattern occurrences on this line",
                 "$ref": "#/$defs/NonNegInt"
               },
               "contextBefore": {
-                "description": "Context lines before",
+                "description": "Lines immediately before the match (contextBefore or contextLines)",
                 "type": "array",
                 "items": {
                   "type": "string"
                 }
               },
               "contextAfter": {
-                "description": "Context lines after",
+                "description": "Lines immediately after the match (contextAfter or contextLines)",
                 "type": "array",
                 "items": {
                   "type": "string"
@@ -1730,47 +1730,47 @@
             "required": ["file", "line", "content"],
             "additionalProperties": false
           },
-          "description": "Flat list of matches (sorted by file then line)"
+          "description": "Flat list of matches sorted by file path then line number"
         },
         "totalMatches": {
-          "description": "Total match count",
+          "description": "Total number of matching lines found",
           "$ref": "#/$defs/NonNegInt"
         },
         "filesMatched": {
-          "description": "Files with matches",
+          "description": "Number of files containing at least one match",
           "$ref": "#/$defs/NonNegInt"
         },
         "filesScanned": {
-          "description": "Files scanned",
+          "description": "Total number of files examined",
           "$ref": "#/$defs/NonNegInt"
         },
         "skippedTooLarge": {
-          "description": "Files skipped (too large)",
+          "description": "Files skipped because they exceeded the size limit",
           "$ref": "#/$defs/NonNegInt"
         },
         "skippedBinary": {
-          "description": "Files skipped (binary)",
+          "description": "Files skipped because they were detected as binary",
           "$ref": "#/$defs/NonNegInt"
         },
         "skippedInaccessible": {
-          "description": "Files skipped (inaccessible)",
+          "description": "Files skipped due to permission or access errors",
           "$ref": "#/$defs/NonNegInt"
         },
         "truncated": {
-          "description": "Results truncated",
+          "description": "True when the match list was cut due to maxResults or timeout",
           "type": "boolean"
         },
         "stoppedReason": {
-          "description": "Why search stopped early",
+          "description": "Why the search ended early: maxResults = match cap reached, maxFiles = scan cap reached, timeout = time limit hit",
           "type": "string",
           "enum": ["maxResults", "maxFiles", "timeout"]
         },
         "resourceUri": {
-          "description": "Full results URI when truncated",
+          "description": "URI to the full match list in the resource store (present when matches exceed the inline limit)",
           "type": "string"
         },
         "nextCursor": {
-          "description": "Cursor for the next page; absent on the final page.",
+          "description": "Cursor for the next page; omitted when this is the final page.",
           "type": "string",
           "format": "base64url",
           "contentEncoding": "base64url",
@@ -1801,14 +1801,14 @@
       "type": "object",
       "properties": {
         "path": {
-          "description": "File path (single-path mode)",
+          "description": "Single file path; mutually exclusive with paths and files",
           "type": "string",
           "minLength": 1,
           "maxLength": 4096,
-          "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
+          "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
         },
         "paths": {
-          "description": "File paths (batch mode; max 1000)",
+          "description": "Array of file paths for batch mode (max 1000); mutually exclusive with path and files",
           "minItems": 1,
           "maxItems": 1000,
           "type": "array",
@@ -1816,8 +1816,8 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4096,
-            "description": "Path inside an allowed root",
-            "suggestion": "Path must be inside an allowed root. Run the roots tool to list allowed directories."
+            "description": "Absolute path within an allowed workspace root",
+            "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
           }
         }
       },
@@ -1830,7 +1830,7 @@
         "ok": {
           "type": "boolean",
           "const": true,
-          "description": "Success indicator"
+          "description": "Always true; per-path errors are in results[].error"
         },
         "results": {
           "type": "array",
@@ -1839,36 +1839,36 @@
             "properties": {
               "path": {
                 "type": "string",
-                "description": "Requested path"
+                "description": "The requested path"
               },
               "value": {
-                "description": "File info (success)",
+                "description": "File metadata; present on success",
                 "$ref": "#/$defs/FileInfo"
               },
               "error": {
-                "description": "Per-path error",
+                "description": "Error details; present on failure",
                 "$ref": "#/$defs/PerFileError"
               }
             },
             "required": ["path"],
             "additionalProperties": false
           },
-          "description": "Per-path results (always present, ordered as input)"
+          "description": "Per-path metadata results ordered to match the input paths"
         },
         "summary": {
-          "description": "Aggregate counts",
+          "description": "Aggregate counts: total, succeeded, failed",
           "$ref": "#/$defs/OperationSummary"
         },
         "fileCount": {
-          "description": "Count of regular files in results",
+          "description": "Number of regular files in the results",
           "$ref": "#/$defs/NonNegInt"
         },
         "dirCount": {
-          "description": "Count of directories in results",
+          "description": "Number of directories in the results",
           "$ref": "#/$defs/NonNegInt"
         },
         "resourceUri": {
-          "description": "URI to aggregated stats.json (present when resourceStore available)",
+          "description": "URI to aggregated stats.json in the resource store (present when resource store is available)",
           "type": "string"
         }
       },
@@ -1896,7 +1896,7 @@
               "$ref": "#/$defs/NonNegInt"
             },
             "tokenEstimate": {
-              "description": "Est. tokens (size÷4)",
+              "description": "Estimated token count (file size ÷ 4); use to pre-screen read cost",
               "$ref": "#/$defs/NonNegInt"
             },
             "created": {
@@ -1958,7 +1958,7 @@
           "format": "date-time",
           "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
           "title": "ISO Date-Time",
-          "description": "ISO 8601 date-time (UTC)"
+          "description": "ISO 8601 UTC date-time string (e.g. 2024-01-15T12:00:00.000Z)"
         },
         "PerFileError": {
           "type": "object",

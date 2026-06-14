@@ -6,13 +6,13 @@ import { isSafeGlobSyntax } from './core/path.js';
 export const IsoDateTime = z.iso.datetime().meta({
   id: 'IsoDateTime',
   title: 'ISO Date-Time',
-  description: 'ISO 8601 date-time (UTC)',
+  description: 'ISO 8601 UTC date-time string (e.g. 2024-01-15T12:00:00.000Z)',
 });
 
 export const Sha256Hex = z.hash('sha256').meta({
   id: 'Sha256Hex',
   title: 'SHA-256 Hash',
-  description: 'SHA-256 hex digest',
+  description: 'SHA-256 digest as a 64-character lowercase hex string',
 });
 
 export const NonNegInt = z
@@ -39,10 +39,9 @@ const PathBase = z
   .string()
   .min(1, { error: 'Path required' })
   .max(MAX_PATH_LENGTH, { error: `Path too long (max ${MAX_PATH_LENGTH} chars)` })
-  .describe('Path inside an allowed root')
+  .describe('Absolute path within an allowed workspace root')
   .meta({
-    suggestion:
-      'Path must be inside an allowed root. Run the roots tool to list allowed directories.',
+    suggestion: 'Path must be inside an allowed root. Call list_roots to see allowed directories.',
   });
 
 export const OptionalPath = PathBase.optional();
@@ -59,7 +58,9 @@ export const SafeGlobPattern = z
   .refine((val) => isSafeGlobSyntax(val), {
     message: 'Invalid glob or unsafe path (absolute/.. forbidden)',
   })
-  .describe('Glob pattern (e.g. "**/*.ts", "src/**/*.js")')
+  .describe(
+    'Relative glob pattern matching files under the search root (e.g. "**/*.ts", "src/**/*.js")',
+  )
   .meta({
     id: 'SafeGlobPattern',
     title: 'Glob Pattern',
@@ -73,7 +74,9 @@ export const FileInfoSchema = z
     path: z.string().describe('Absolute path'),
     type: FileType.describe('Type'),
     size: NonNegInt.describe('Size (bytes)'),
-    tokenEstimate: NonNegInt.optional().describe('Est. tokens (size÷4)'),
+    tokenEstimate: NonNegInt.optional().describe(
+      'Estimated token count (file size ÷ 4); use to pre-screen read cost',
+    ),
     created: IsoDateTime.describe('Created'),
     modified: IsoDateTime.describe('Modified'),
     accessed: IsoDateTime.describe('Accessed'),
@@ -251,13 +254,17 @@ export function singleOrBatchPathsInput<
 
   const shape: z.ZodRawShape = {
     ...opts.extra,
-    path: RequiredPath.optional().describe('File path (single-path mode)'),
+    path: RequiredPath.optional().describe(
+      'Single file path; mutually exclusive with paths and files',
+    ),
     paths: z
       .array(RequiredPath)
       .min(1)
       .max(maxBatch)
       .optional()
-      .describe(`File paths (batch mode; max ${String(maxBatch)})`),
+      .describe(
+        `Array of file paths for batch mode (max ${String(maxBatch)}); mutually exclusive with path and files`,
+      ),
     ...(filesSchema ? { files: filesSchema.optional() } : {}),
   };
 
@@ -293,9 +300,11 @@ export function singleOrBatchPathsInput<
 
 export const ContinuationSchema = z
   .strictObject({
-    tool: z.string().describe('Tool name to call'),
-    args: z.record(z.string(), z.unknown()).describe('Ready-to-use arguments'),
-    hint: z.string().describe('One sentence: what data remains'),
+    tool: z.string().describe('Tool name to call for the next chunk'),
+    args: z
+      .record(z.string(), z.unknown())
+      .describe('Ready-to-use arguments for the next call; pass verbatim'),
+    hint: z.string().describe('One-sentence description of the data still remaining to be read'),
   })
   .meta({ id: 'Continuation', title: 'Continuation' });
 
@@ -303,12 +312,11 @@ export const CursorSchema = z
   .base64url()
   .optional()
   .describe(
-    'Pagination cursor from a previous response. Treat as opaque. ' +
-      '`ls` cursors are snapshot-backed (expire after ~5 min or restart); ' +
-      '`find` cursors are offset-based and re-run the query each page.',
+    'Opaque pagination cursor from a prior response; pass unchanged to fetch the next page. ' +
+      'list cursors expire after ~5 min or server restart; find_files cursors re-run the full query per page.',
   );
 
 export const NextCursorSchema = z
   .base64url()
   .optional()
-  .describe('Cursor for the next page; absent on the final page.');
+  .describe('Cursor for the next page; omitted when this is the final page.');

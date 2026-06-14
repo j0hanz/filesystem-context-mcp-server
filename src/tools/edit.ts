@@ -1,4 +1,4 @@
-import type { ContentBlock } from '@modelcontextprotocol/server';
+﻿import type { ContentBlock } from '@modelcontextprotocol/server';
 
 import { basename } from 'node:path';
 
@@ -36,11 +36,13 @@ const EditSpecSchema = z.strictObject({
   oldText: z
     .string()
     .min(1, 'oldText required')
-    .describe('Exact text to find (must match literally)')
+    .describe(
+      'Exact literal text to locate in the file (include 3-5 lines of context to ensure uniqueness)',
+    )
     .meta({ examples: ['const x = 1;', 'function oldName('] }),
   newText: z
     .string()
-    .describe('Replacement text (empty string to delete)')
+    .describe('Replacement text; use an empty string to delete the matched text')
     .meta({ examples: ['const x = 2;', 'function newName(', ''] }),
 });
 
@@ -52,12 +54,18 @@ const EditFileInputSchema = singleOrBatchPathsInput({
       .array(EditSpecSchema)
       .min(1)
       .optional()
-      .describe('Edits applied to path or every entry in paths (forbidden when using files)'),
-    dryRun: defaultFalseBoolean('Preview changes without writing'),
-    ignoreWhitespace: defaultFalseBoolean('Ignore leading/trailing whitespace when matching'),
+      .describe(
+        'Replacements applied to path or to every file in paths; not allowed when using files (each file carries its own edits)',
+      ),
+    dryRun: defaultFalseBoolean(
+      'Preview diffs without writing to disk (default: false = apply edits)',
+    ),
+    ignoreWhitespace: defaultFalseBoolean(
+      'Ignore leading/trailing whitespace differences when matching oldText',
+    ),
   },
   perFile: {
-    edits: z.array(EditSpecSchema).min(1).describe('Edits for this file'),
+    edits: z.array(EditSpecSchema).min(1).describe('Replacements to apply to this specific file'),
   },
   maxBatch: MAX_MULTI_FILES,
 }).superRefine((value, ctx) => {
@@ -80,31 +88,42 @@ const EditFileInputSchema = singleOrBatchPathsInput({
 });
 
 const PerFileResultSchema = z.strictObject({
-  path: z.string().describe('File path'),
-  size: NonNegInt.describe('File size in bytes'),
-  lineCount: NonNegInt.describe('Number of lines'),
-  mimeType: z.string().describe('MIME type'),
-  kind: FileKind.describe('File kind'),
-  resourceUri: z.string().describe('Resource URI'),
-  modified: IsoDateTime.describe('Modified (ISO 8601 UTC)'),
-  appliedEdits: NonNegInt.describe('Edits applied'),
-  linesAdded: NonNegInt.optional().describe('Lines added'),
-  linesRemoved: NonNegInt.optional().describe('Lines removed'),
-  diff: z.string().optional().describe('Unified diff (dryRun or when changes present)'),
-  unmatchedEdits: z.array(z.string()).optional().describe('oldText with no match'),
-  lineRange: z.tuple([PositiveInt, PositiveInt]).optional().describe('[firstLine, lastLine]'),
+  path: z.string().describe('Resolved absolute path of the edited file'),
+  size: NonNegInt.describe('File size in bytes after edits'),
+  lineCount: NonNegInt.describe('Number of lines in the file after edits'),
+  mimeType: z.string().describe('Detected MIME type of the file'),
+  kind: FileKind.describe('Broad file kind: text, binary, image, audio, or pdf'),
+  resourceUri: z.string().describe('Resource URI pointing to the updated file content'),
+  modified: IsoDateTime.describe('Last modification timestamp after edits (ISO 8601 UTC)'),
+  appliedEdits: NonNegInt.describe('Number of edits successfully applied'),
+  linesAdded: NonNegInt.optional().describe('Net lines added by all applied edits'),
+  linesRemoved: NonNegInt.optional().describe('Net lines removed by all applied edits'),
+  diff: z
+    .string()
+    .optional()
+    .describe('Unified diff of all changes (present in dryRun mode or when changes were made)'),
+  unmatchedEdits: z
+    .array(z.string())
+    .optional()
+    .describe('oldText values that did not match any content in the file'),
+  lineRange: z
+    .tuple([PositiveInt, PositiveInt])
+    .optional()
+    .describe('Line range [firstLine, lastLine] covering all applied edits'),
 });
 
 const EditPerPathSchema = z.strictObject({
-  path: z.string().describe('Requested path'),
-  value: PerFileResultSchema.optional().describe('Per-file edit result (success)'),
-  error: PerFileErrorSchema.optional().describe('Per-path error'),
+  path: z.string().describe('The requested file path'),
+  value: PerFileResultSchema.optional().describe('Edit result; present on success'),
+  error: PerFileErrorSchema.optional().describe('Error details; present on failure'),
 });
 
 const EditFileOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Success indicator'),
-  results: z.array(EditPerPathSchema).describe('Per-path results (always present)'),
-  summary: OperationSummarySchema.describe('Aggregate counts'),
+  ok: z.literal(true).describe('Always true; per-file errors are reported in results[].error'),
+  results: z
+    .array(EditPerPathSchema)
+    .describe('Per-path edit results ordered to match the input paths'),
+  summary: OperationSummarySchema.describe('Aggregate counts: total, succeeded, failed'),
 });
 
 interface SingleEditStructured {
@@ -594,11 +613,11 @@ export const EDIT = defineTool({
   name: 'edit',
   title: 'Edit Files',
   description:
-    'Apply sequential literal string replacements to one or more files (max 5). ' +
-    'Single-file: { path, edits }. Multi-file shared: { paths, edits } — same edits applied to each file. ' +
-    'Multi-file per-file: { files: [{ path, edits }, \u2026] }. ' +
-    '`oldText` must match exactly — include 3\u20135 lines of context. ' +
-    'Use `dryRun:true` to preview. For glob-driven bulk regex replacement, use `replace_text` instead.',
+    'Apply sequential literal string replacements to one or more files (max 5 files per call). ' +
+    'Modes: single-file { path, edits }, multi-file shared edits { paths, edits } (same edits on each file), or per-file { files: [{ path, edits }] }. ' +
+    'oldText must match file content exactly; include 3-5 lines of surrounding context to ensure uniqueness. ' +
+    'Set dryRun=true to preview diffs without writing. ' +
+    'For glob-based bulk regex replacement across many files, use replace_text instead.',
   input: EditFileInputSchema,
   output: EditFileOutputSchema,
   annotations: {
@@ -607,7 +626,9 @@ export const EDIT = defineTool({
     destructiveHint: true,
     openWorldHint: false,
   },
-  nuances: ['Each edit applies to the output of the previous edit.'],
+  nuances: [
+    'Edits are applied sequentially: each edit operates on the result of the previous one.',
+  ],
   progress: (args) => {
     const dryLabel = args.dryRun ? ' [dry run]' : '';
     let subject: string;

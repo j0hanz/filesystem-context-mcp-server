@@ -461,46 +461,64 @@ async function searchFiles(
 // ---------------------------------------------------------------------------
 
 const SearchFilesInputSchema = z.strictObject({
-  path: OptionalPath.describe('Base directory (default: root)'),
-  pattern: SafeGlobPattern.describe('Glob pattern to search'),
+  path: OptionalPath.describe('Base directory to search under (default: first allowed root)'),
+  pattern: SafeGlobPattern.describe('Glob pattern to match file paths (e.g. **/*.ts, src/**/*.js)'),
   maxResults: z
     .uint32()
     .min(1)
     .max(MAX_SEARCH_RESULTS)
     .optional()
     .default(DEFAULT_SEARCH_RESULTS)
-    .describe('Max files to return'),
+    .describe('Maximum number of matching files to return per page'),
   includeIgnored: includeIgnoredField(),
   includeHidden: includeHiddenField(),
   sortBy: z
     .enum(['name', 'size', 'modified', 'path'])
     .optional()
     .default('path')
-    .describe('Sort order'),
-  maxDepth: z.uint32().min(0).max(MAX_SEARCH_DEPTH).optional().describe('Max directory depth'),
+    .describe(
+      'Sort order: path = full path (default), name = basename only, size = bytes descending, modified = newest first',
+    ),
+  maxDepth: z
+    .uint32()
+    .min(0)
+    .max(MAX_SEARCH_DEPTH)
+    .optional()
+    .describe('Max directory depth to scan; 0 = base directory only, omit for unlimited'),
   cursor: CursorSchema,
 });
 
 const SearchFilesOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Success indicator'),
-  root: z.string().describe('Search root path'),
+  ok: z.literal(true).describe('Always true; call succeeded'),
+  root: z.string().describe('Resolved base directory used as the search root'),
   results: z
     .array(
       z.strictObject({
-        path: z.string().describe('Relative path from search root'),
-        size: NonNegInt.optional().describe('Size in bytes'),
-        modified: IsoDateTime.optional().describe('ISO 8601 last modified time'),
+        path: z.string().describe('File path relative to the search root'),
+        size: NonNegInt.optional().describe('File size in bytes (present when sortBy=size)'),
+        modified: IsoDateTime.optional().describe(
+          'Last modification time (present when sortBy=modified)',
+        ),
       }),
     )
-    .describe('Matching files'),
-  totalMatches: NonNegInt.optional().describe('Total matches found'),
-  filesScanned: NonNegInt.optional().describe('Files scanned'),
-  skippedInaccessible: NonNegInt.optional().describe('Inaccessible entries skipped'),
+    .describe('Matched files ordered by sortBy'),
+  totalMatches: NonNegInt.optional().describe('Total number of matching files found'),
+  filesScanned: NonNegInt.optional().describe('Total number of files examined during the search'),
+  skippedInaccessible: NonNegInt.optional().describe(
+    'Files skipped due to permission or access errors',
+  ),
   stoppedReason: z
     .enum(['maxResults', 'maxFiles', 'timeout'])
     .optional()
-    .describe('Why search stopped early'),
-  resourceUri: z.string().optional().describe('URI to stored search results JSON'),
+    .describe(
+      'Why the search ended early: maxResults = result cap reached, maxFiles = scan cap reached, timeout = time limit hit',
+    ),
+  resourceUri: z
+    .string()
+    .optional()
+    .describe(
+      'URI to the full results JSON in the resource store (present when results are paginated)',
+    ),
   nextCursor: NextCursorSchema,
 });
 
@@ -623,9 +641,9 @@ export const SEARCH_FILES = defineTool({
   name: 'find_files',
   title: 'Find Files',
   description:
-    'Find files by glob pattern (e.g. `**/*.ts`). Returns matching files with metadata. ' +
-    'Cursors are offset-based: each page re-runs the query from the stored offset. ' +
-    'For content search, use `grep`. For bulk edits, pass the same glob to `search_and_replace`.',
+    'Find files matching a glob pattern. Returns matched paths with optional metadata. ' +
+    'Pagination: cursors are offset-based and re-run the full query per page. ' +
+    'For content search use search_text; for bulk regex replacements use replace_text with the same glob.',
   input: SearchFilesInputSchema,
   output: SearchFilesOutputSchema,
   annotations: {
@@ -637,10 +655,12 @@ export const SEARCH_FILES = defineTool({
   execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   nuances: [
-    'Respects `.gitignore` unless `includeIgnored=true`.',
+    'Respects .gitignore by default; set includeIgnored=true to include ignored files.',
     'Result paths are relative to the search root, not the workspace root.',
   ],
-  gotchas: ['Bare names match only at the root; use `**/README.md` for recursive match.'],
+  gotchas: [
+    'Bare filename patterns (e.g. README.md) match only at the root; prefix with **/ (e.g. **/README.md) for a recursive match.',
+  ],
   defaultErrorCode: ErrorCode.UNKNOWN,
   progress: (args) => ({
     label: 'Find',

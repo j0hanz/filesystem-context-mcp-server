@@ -34,7 +34,9 @@ const HashInputSchema = z.strictObject({
     })
     .optional()
     .default(['sha256'])
-    .describe('Hash algorithms to compute (default: sha256)'),
+    .describe(
+      'Hash algorithms to compute (default: [sha256]); specify multiple to compute several hashes in one call',
+    ),
 });
 
 // Native Zod v4 record schema: constrains keys to algorithms and values to lowercase hex
@@ -53,17 +55,21 @@ const HashesSchema = z.partialRecord(
 );
 
 const HashOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Success indicator'),
-  filePath: z.string().describe('Resolved file or directory path'),
+  ok: z.literal(true).describe('Always true; call succeeded'),
+  filePath: z.string().describe('Resolved absolute path of the hashed file or directory'),
   algorithms: z
     .array(z.enum(SUPPORTED_ALGORITHMS))
     .min(1)
     .max(SUPPORTED_ALGORITHMS.length)
-    .describe('Algorithms computed'),
-  hashes: HashesSchema.describe('Algorithm → hex digest mapping'),
-  resourceUri: z.string().describe('URI to hashes.json resource'),
-  isDirectory: z.boolean().describe('True when hashing a directory'),
-  fileCount: NonNegInt.optional().describe('Files hashed (directories only)'),
+    .describe('List of algorithms that were computed'),
+  hashes: HashesSchema.describe(
+    'Map of algorithm name to lowercase hex digest (e.g. { sha256: "abc123..." })',
+  ),
+  resourceUri: z.string().describe('URI to the hashes.json resource in the resource store'),
+  isDirectory: z
+    .boolean()
+    .describe('True when the target was a directory (hashes represent all files within)'),
+  fileCount: NonNegInt.optional().describe('Number of files hashed (present for directories only)'),
 });
 
 function toStableRelativePath(root: string, entryPath: string): string {
@@ -327,7 +333,10 @@ async function handleCalculateHash(
 export const CALCULATE_HASH = defineTool({
   name: 'hash_file',
   title: 'Calculate Hash',
-  description: 'Calculate SHA-256, MD5, or other hashes for a file or directory.',
+  description:
+    'Compute cryptographic hashes for a file or all files within a directory. ' +
+    'Supported algorithms: sha256 (default), sha1, sha512, md5. ' +
+    'Pass multiple algorithms in one call to get all digests at once.',
   input: HashInputSchema,
   output: HashOutputSchema,
   annotations: {

@@ -13,32 +13,43 @@ import { PerFileErrorSchema, RequiredPath } from '../schema.js';
 import { defineTool, type ToolCtx } from './define.js';
 
 const MoveItemSchema = z.strictObject({
-  source: RequiredPath.describe('Source path to move'),
-  destination: RequiredPath.describe('Destination path'),
+  source: RequiredPath.describe('Absolute path of the file or directory to move'),
+  destination: RequiredPath.describe(
+    'Absolute destination path; parent directories are created automatically',
+  ),
 });
 
 const MoveItemResultSchema = z.strictObject({
-  from: z.string().describe('Resolved source path'),
-  to: z.string().describe('Resolved destination path'),
-  ok: z.literal(true).describe('Success indicator'),
+  from: z.string().describe('Resolved absolute source path'),
+  to: z.string().describe('Resolved absolute destination path'),
+  ok: z
+    .literal(true)
+    .describe('Always true for this entry; failures are in the outer failures array'),
 });
 
 const MoveInputSchema = z.strictObject({
-  moves: z.array(MoveItemSchema).min(1).max(100).describe('Move operations to perform'),
+  moves: z
+    .array(MoveItemSchema)
+    .min(1)
+    .max(100)
+    .describe('List of move operations to perform (max 100); each requires source and destination'),
 });
 
 const MoveFailureItemSchema = z.strictObject({
-  source: z.string().describe('Source path that failed'),
-  destination: z.string().describe('Destination path for the failed move'),
+  source: z.string().describe('The source path that could not be moved'),
+  destination: z.string().describe('The intended destination path for the failed move'),
   error: PerFileErrorSchema,
 });
 
 type MoveFailureItem = z.infer<typeof MoveFailureItemSchema>;
 
 const MoveOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Success indicator'),
-  moves: z.array(MoveItemResultSchema).describe('Completed move operations'),
-  failures: z.array(MoveFailureItemSchema).optional().describe('Per-move errors'),
+  ok: z.literal(true).describe('Always true; per-move errors are in failures[]'),
+  moves: z.array(MoveItemResultSchema).describe('Successfully completed move operations'),
+  failures: z
+    .array(MoveFailureItemSchema)
+    .optional()
+    .describe('Move operations that failed with per-item error details'),
 });
 
 type MoveItemResult = z.infer<typeof MoveItemResultSchema>;
@@ -167,7 +178,9 @@ async function performRenameWithFallback(
 export const MOVE = defineTool({
   name: 'move',
   title: 'Move Files',
-  description: 'Move or rename one or more files/directories to explicit destinations.',
+  description:
+    'Move or rename files and directories to explicit destination paths (max 100 operations per call). ' +
+    'Parent directories are created automatically. Self-moves are silently skipped.',
   input: MoveInputSchema,
   output: MoveOutputSchema,
   annotations: {
@@ -177,9 +190,9 @@ export const MOVE = defineTool({
     openWorldHint: false,
   },
   gotchas: [
-    'Existing destinations may be overwritten after confirmation when elicitation is available.',
-    'If the client does not support elicitation, overwrite confirmation is skipped.',
-    'Self-moves are skipped without error.',
+    'If the destination already exists, the user is prompted to confirm overwrite when the client supports elicitation.',
+    'If the client does not support elicitation, existing destinations are silently overwritten.',
+    'Self-moves (source == destination) are silently skipped without error.',
   ],
   progress: (args) => {
     if (args.moves.length === 1) {

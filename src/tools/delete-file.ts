@@ -18,9 +18,17 @@ import { defaultFalseBoolean, RequiredPath } from '../schema.js';
 import { defineTool, type ToolCtx } from './define.js';
 
 const DeleteInputSchema = z.strictObject({
-  paths: z.array(RequiredPath).min(1).max(1000).describe('One or more paths to delete (max 1000)'),
-  recursive: defaultFalseBoolean('Delete directories recursively'),
-  ignoreIfNotExists: defaultFalseBoolean('No error if path does not exist'),
+  paths: z
+    .array(RequiredPath)
+    .min(1)
+    .max(1000)
+    .describe('Paths to delete (max 1000); accepts files, directories, or symlinks'),
+  recursive: defaultFalseBoolean(
+    'Delete directories and all their contents recursively (required for non-empty directories)',
+  ),
+  ignoreIfNotExists: defaultFalseBoolean(
+    'Silently succeed if a path does not exist instead of returning an error',
+  ),
 });
 
 const DeleteFailureItemSchema = z.strictObject({
@@ -32,10 +40,18 @@ const DeleteFailureItemSchema = z.strictObject({
 });
 
 const DeleteOutputSchema = z.strictObject({
-  ok: z.boolean().describe('Success indicator — false only when every path failed'),
-  path: z.string().optional().describe('Deleted path'),
-  paths: z.array(z.string()).optional().describe('Deleted paths (multi-path mode)'),
-  failures: z.array(DeleteFailureItemSchema).optional().describe('Per-path errors'),
+  ok: z
+    .boolean()
+    .describe('False only when every requested path failed; true if at least one succeeded'),
+  path: z.string().optional().describe('Deleted path (present when exactly one path was deleted)'),
+  paths: z
+    .array(z.string())
+    .optional()
+    .describe('Deleted paths (present when multiple paths were deleted)'),
+  failures: z
+    .array(DeleteFailureItemSchema)
+    .optional()
+    .describe('Per-path error details for paths that could not be deleted'),
 });
 
 type DeleteInput = z.infer<typeof DeleteInputSchema>;
@@ -273,7 +289,10 @@ async function handleDelete(args: DeleteInput, ctx: ToolCtx): Promise<DeleteOutp
 export const DELETE_FILE = defineTool({
   name: 'delete',
   title: 'Delete File',
-  description: 'Permanently delete one or more files or directories. This action is irreversible.',
+  description:
+    'Permanently delete one or more files, directories, or symlinks (max 1000 per call). This action is irreversible. ' +
+    'Non-empty directories require recursive=true. ' +
+    'Workspace root directories cannot be deleted.',
   input: DeleteInputSchema,
   output: DeleteOutputSchema,
   annotations: {
@@ -283,8 +302,8 @@ export const DELETE_FILE = defineTool({
     openWorldHint: false,
   },
   gotchas: [
-    'Non-empty directories require `recursive=true`.',
-    'ok: false only when every path failed. Partial failures return ok: true — always check failures[] for per-path errors.',
+    'Non-empty directories require recursive=true; attempting to delete one without it returns an error.',
+    'ok=false only when every requested path failed. Partial failures still return ok=true — always inspect failures[] to detect per-path errors.',
   ],
   defaultErrorCode: ErrorCode.UNKNOWN,
   progress: (args) => ({

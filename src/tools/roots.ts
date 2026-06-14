@@ -6,15 +6,15 @@ import { defineTool } from './define.js';
 const RootsInputSchema = z.strictObject({});
 
 const RootsOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Success indicator'),
-  roots: z.array(z.string()).describe('Allowed root directory paths'),
+  ok: z.literal(true).describe('Always true'),
+  roots: z.array(z.string()).describe('Absolute paths of the allowed workspace root directories'),
 });
 
 export const LIST_ALLOWED_DIRECTORIES = defineTool({
   name: 'list_roots',
   title: 'Workspace Roots',
   description:
-    'List allowed workspace roots. Call first \u2014 all other tools are scoped to these directories.',
+    'List the allowed workspace root directories. Call this first to discover what paths are accessible; all other tools are scoped to these roots.',
   input: RootsInputSchema,
   output: RootsOutputSchema,
   annotations: {

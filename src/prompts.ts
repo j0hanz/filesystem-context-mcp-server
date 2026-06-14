@@ -139,7 +139,8 @@ const GET_HELP: PromptEntry = {
   contract: {
     name: 'get-help',
     title: 'Get Help',
-    description: 'Return filesystem-mcp usage instructions, optionally filtered to a section.',
+    description:
+      'Return filesystem-mcp server usage instructions, optionally filtered to a named section.',
     requiresPathGuard: false,
   },
   register(server, options) {
@@ -153,7 +154,7 @@ const GET_HELP: PromptEntry = {
           argsSchema: z.strictObject({
             topic: topicArg(
               topics,
-              'Optional section key. Omit to return full instructions.',
+              'Section key to filter instructions (e.g. "tools", "paths"); omit to return all instructions.',
             ).optional(),
           }),
         },
@@ -180,7 +181,8 @@ const ANALYZE_PATH: PromptEntry = {
   contract: {
     name: 'analyze-path',
     title: 'Analyze Path',
-    description: 'Workflow for analyzing a file or directory using stat, read, and tree.',
+    description:
+      'Guided workflow to analyze a file or directory: runs stat, read, and tree, then reports type, size, permissions, and key observations.',
     requiresPathGuard: true,
   },
   register(server, options) {
@@ -191,7 +193,11 @@ const ANALYZE_PATH: PromptEntry = {
           title: ANALYZE_PATH.contract.title,
           description: ANALYZE_PATH.contract.description,
           argsSchema: z.strictObject({
-            path: pathArg(options.pathGuard, 'path', 'Path to explore'),
+            path: pathArg(
+              options.pathGuard,
+              'path',
+              'Absolute or relative path of the file or directory to analyze',
+            ),
           }),
         },
         options.iconInfo,
@@ -220,7 +226,8 @@ const FIND_IN_TREE: PromptEntry = {
   contract: {
     name: 'find-in-tree',
     title: 'Find in Tree',
-    description: 'Locate files and matches by name and content under a directory.',
+    description:
+      'Locate files by name pattern or content match under a directory; combines find_files and search_text.',
     requiresPathGuard: true,
   },
   register(server, options) {
@@ -231,13 +238,18 @@ const FIND_IN_TREE: PromptEntry = {
           title: FIND_IN_TREE.contract.title,
           description: FIND_IN_TREE.contract.description,
           argsSchema: z.strictObject({
-            query: z.string().min(1).describe('Search term (name pattern or content regex).'),
+            query: z
+              .string()
+              .min(1)
+              .describe('Search term: a glob pattern for name mode or a regex for content mode.'),
             root: pathArg(
               options.pathGuard,
               'root',
-              'Directory to search under. Defaults to first allowed root.',
+              'Directory to search under (must be within an allowed root); defaults to the first allowed root.',
             ).optional(),
-            mode: FIND_IN_TREE_MODE.default('both').describe('Search by name, content, or both.'),
+            mode: FIND_IN_TREE_MODE.default('both').describe(
+              'Search scope: name = filename patterns only, content = file content only, both = all.',
+            ),
           }),
         },
         options.iconInfo,
@@ -281,7 +293,8 @@ const SUMMARIZE_DIRECTORY: PromptEntry = {
   contract: {
     name: 'summarize-directory',
     title: 'Summarize Directory',
-    description: 'Onboarding summary: purpose, tech stack, entry points, structure.',
+    description:
+      'Generate an onboarding summary for a project directory: purpose, tech stack, entry points, and directory structure.',
     requiresPathGuard: true,
   },
   register(server, options) {
@@ -292,12 +305,18 @@ const SUMMARIZE_DIRECTORY: PromptEntry = {
           title: SUMMARIZE_DIRECTORY.contract.title,
           description: SUMMARIZE_DIRECTORY.contract.description,
           argsSchema: z.strictObject({
-            path: pathArg(options.pathGuard, 'path', 'Directory to summarize.'),
+            path: pathArg(
+              options.pathGuard,
+              'path',
+              'Absolute or relative path of the directory to summarize',
+            ),
             depth: z.coerce
               .number()
               .pipe(z.int32().min(1).max(6))
               .default(3)
-              .describe('Tree depth (1-6).'),
+              .describe(
+                'Maximum tree depth for directory listing (1 = top-level only, 6 = deep; default 3).',
+              ),
           }),
         },
         options.iconInfo,

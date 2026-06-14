@@ -354,45 +354,51 @@ function buildSearchPreviewState(payloads: SearchMatchPayload[]): SearchPreviewS
 
 const GrepInputSchema = z.strictObject({
   path: OptionalPath,
-  pattern: SafeGlobPattern.optional().describe('File glob filter (default: all text files)'),
+  pattern: SafeGlobPattern.optional().describe(
+    'Glob to restrict search to specific file types (e.g. **/*.ts); default: all text files',
+  ),
   searchPattern: z
     .string()
     .min(1)
     .max(10000)
     .describe(
-      'Text or regex to search for (RE2: no lookahead/lookbehind/backrefs when isRegex=true)',
+      'Text or regex to find in file contents. When isRegex=true, uses RE2 syntax (no lookahead, lookbehind, or backreferences).',
     )
     .meta({ examples: ['TODO', 'function\\s+(\\w+)', 'import.*from'] }),
-  isRegex: defaultFalseBoolean('Treat searchPattern as regex'),
+  isRegex: defaultFalseBoolean('Treat searchPattern as a RE2 regex (default: literal text match)'),
   includeHidden: includeHiddenField(),
   includeIgnored: includeIgnoredField(),
-  caseSensitive: defaultFalseBoolean('Case-sensitive'),
-  wholeWord: defaultFalseBoolean('Match whole words only'),
+  caseSensitive: defaultFalseBoolean('Enable case-sensitive matching (default: case-insensitive)'),
+  wholeWord: defaultFalseBoolean('Match whole words only (word boundary anchoring)'),
   contextLines: z
     .int32()
     .min(0)
     .max(20)
     .optional()
     .describe(
-      'Lines of context before AND after each match (symmetric; overridden by contextBefore/contextAfter)',
+      'Symmetric context: N lines before AND after each match. Overridden per-side by contextBefore/contextAfter.',
     ),
   contextBefore: z
     .int32()
     .min(0)
     .max(20)
     .optional()
-    .describe('Lines of context before each match (overrides contextLines for before)'),
+    .describe(
+      'Lines of context to include before each match (overrides the before half of contextLines)',
+    ),
   contextAfter: z
     .int32()
     .min(0)
     .max(20)
     .optional()
-    .describe('Lines of context after each match (overrides contextLines for after)'),
+    .describe(
+      'Lines of context to include after each match (overrides the after half of contextLines)',
+    ),
   fuzzy: z
     .boolean()
     .optional()
     .describe(
-      'Approximate string matching (Levenshtein-based, \u226425% char difference). Incompatible with isRegex.',
+      'Enable approximate (fuzzy) matching using Levenshtein distance (\u226425% character difference). Incompatible with isRegex. Requires searchPattern of at least 4 characters.',
     ),
 
   maxResults: z
@@ -401,38 +407,67 @@ const GrepInputSchema = z.strictObject({
     .max(MAX_SEARCH_RESULTS)
     .optional()
     .default(DEFAULT_SEARCH_CONTENT_RESULTS)
-    .describe('Max matches to return per page'),
-  maxDepth: z.uint32().min(0).max(MAX_SEARCH_DEPTH).optional().describe('Max directory depth'),
+    .describe('Maximum number of matching lines to return per page'),
+  maxDepth: z
+    .uint32()
+    .min(0)
+    .max(MAX_SEARCH_DEPTH)
+    .optional()
+    .describe('Max directory depth to scan; 0 = base directory only, omit for unlimited'),
   cursor: CursorSchema,
 });
 
 const GrepOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Success indicator'),
+  ok: z
+    .literal(true)
+    .describe('Always true; errors are surfaced in stoppedReason or per-file skip counts'),
   matches: z
     .array(
       z.strictObject({
-        file: z.string().describe('Relative file path'),
-        line: PositiveInt.describe('Line number'),
-        column: NonNegInt.optional().describe('Column (0-indexed)'),
-        content: z.string().describe('Matched line content'),
-        matchCount: NonNegInt.optional().describe('Match count on this line'),
-        contextBefore: z.array(z.string()).optional().describe('Context lines before'),
-        contextAfter: z.array(z.string()).optional().describe('Context lines after'),
+        file: z.string().describe('File path relative to the search root'),
+        line: PositiveInt.describe('1-indexed line number of the match'),
+        column: NonNegInt.optional().describe('0-indexed column offset of the match start'),
+        content: z.string().describe('Full text of the matching line'),
+        matchCount: NonNegInt.optional().describe('Number of pattern occurrences on this line'),
+        contextBefore: z
+          .array(z.string())
+          .optional()
+          .describe('Lines immediately before the match (contextBefore or contextLines)'),
+        contextAfter: z
+          .array(z.string())
+          .optional()
+          .describe('Lines immediately after the match (contextAfter or contextLines)'),
       }),
     )
-    .describe('Flat list of matches (sorted by file then line)'),
-  totalMatches: NonNegInt.optional().describe('Total match count'),
-  filesMatched: NonNegInt.optional().describe('Files with matches'),
-  filesScanned: NonNegInt.optional().describe('Files scanned'),
-  skippedTooLarge: NonNegInt.optional().describe('Files skipped (too large)'),
-  skippedBinary: NonNegInt.optional().describe('Files skipped (binary)'),
-  skippedInaccessible: NonNegInt.optional().describe('Files skipped (inaccessible)'),
-  truncated: z.boolean().optional().describe('Results truncated'),
+    .describe('Flat list of matches sorted by file path then line number'),
+  totalMatches: NonNegInt.optional().describe('Total number of matching lines found'),
+  filesMatched: NonNegInt.optional().describe('Number of files containing at least one match'),
+  filesScanned: NonNegInt.optional().describe('Total number of files examined'),
+  skippedTooLarge: NonNegInt.optional().describe(
+    'Files skipped because they exceeded the size limit',
+  ),
+  skippedBinary: NonNegInt.optional().describe(
+    'Files skipped because they were detected as binary',
+  ),
+  skippedInaccessible: NonNegInt.optional().describe(
+    'Files skipped due to permission or access errors',
+  ),
+  truncated: z
+    .boolean()
+    .optional()
+    .describe('True when the match list was cut due to maxResults or timeout'),
   stoppedReason: z
     .enum(['maxResults', 'maxFiles', 'timeout'])
     .optional()
-    .describe('Why search stopped early'),
-  resourceUri: z.string().optional().describe('Full results URI when truncated'),
+    .describe(
+      'Why the search ended early: maxResults = match cap reached, maxFiles = scan cap reached, timeout = time limit hit',
+    ),
+  resourceUri: z
+    .string()
+    .optional()
+    .describe(
+      'URI to the full match list in the resource store (present when matches exceed the inline limit)',
+    ),
   nextCursor: NextCursorSchema,
 });
 
@@ -722,9 +757,9 @@ export const SEARCH_CONTENT = defineTool({
   name: 'search_text',
   title: 'Search Content',
   description:
-    'Search file contents for text (grep-like). Returns matching lines. ' +
-    'Scope with `pattern` (e.g. `**/*.ts`) to reduce noise. ' +
-    '`includeHidden=true` for dotfiles.',
+    'Search file contents by text or regex (grep-style). Returns matching lines with file path, line number, and optional context. ' +
+    'Scope to specific file types with pattern (e.g. **/*.ts). ' +
+    'Set includeHidden=true to include dotfiles. Use find_files to search by filename instead.',
   input: GrepInputSchema,
   output: GrepOutputSchema,
   annotations: {
@@ -735,12 +770,14 @@ export const SEARCH_CONTENT = defineTool({
   },
   execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-  nuances: ['Inline results capped at 50 matches; full results via `resourceUri`.'],
+  nuances: [
+    'Inline results are capped at 50 matches; the full list is stored at resourceUri when exceeded.',
+  ],
   gotchas: [
-    'RE2 dialect: no lookahead, lookbehind, or backreferences.',
-    'Use `pattern` to scope to specific files; without it, scans every text file.',
-    'Skips binary/oversized files silently \u2014 verify with `stat` if no matches.',
-    "Patterns without '/' match by filename anywhere in the tree (e.g. *.ts finds all .ts files). Add a path prefix like src/*.ts to restrict to a subtree.",
+    'isRegex=true uses RE2 syntax: lookahead, lookbehind, and backreferences are not supported.',
+    'Without pattern, every text file is scanned; always set pattern to a specific glob to limit scope.',
+    'Binary and oversized files are silently skipped; use stat to verify a file is readable if you expect matches.',
+    'File patterns without a slash (e.g. *.ts) match by basename anywhere in the tree. Add a path prefix (e.g. src/*.ts) to restrict to a subtree.',
   ],
   defaultErrorCode: ErrorCode.UNKNOWN,
   progress: (args) => ({

@@ -44,20 +44,22 @@ const readRangeFields = createReadRangeFields({
 
 const ReadFileInputSchema = singleOrBatchPathsInput({
   extra: {
-    includeHash: defaultFalseBoolean('Include SHA-256 hash of the content'),
+    includeHash: defaultFalseBoolean(
+      'Include SHA-256 hash of the returned content in the response',
+    ),
     ...readRangeFields,
     offset: z
       .uint32()
       .optional()
       .describe(
-        'Byte offset to start reading (single-file mode only; mutually exclusive with line params)',
+        'Byte offset at which to start reading (single-file mode only; mutually exclusive with head/tail/startLine/endLine)',
       ),
     length: z
       .uint32()
       .min(1)
       .optional()
       .describe(
-        'Number of bytes to read (single-file mode only; used with offset; reads to EOF if omitted)',
+        'Number of bytes to read starting at offset (single-file mode only; reads to EOF when omitted)',
       ),
   },
 }).superRefine((value, ctx) => {
@@ -92,34 +94,46 @@ const ReadFileInputSchema = singleOrBatchPathsInput({
 });
 
 const ReadPerPathValueSchema = z.strictObject({
-  content: z.string().optional().describe('File content (text)'),
-  mimeType: z.string().optional().describe('MIME type'),
-  kind: FileKind.optional().describe('File kind'),
-  resourceUri: z.string().optional().describe('Per-file resource URI when externalized'),
-  continuation: ContinuationSchema.optional().describe('Present when file was cut'),
-  totalLines: NonNegInt.optional().describe('Total lines in file'),
-  linesRead: NonNegInt.optional().describe('Lines returned'),
-  hasMoreLines: z.boolean().optional().describe('More lines available'),
+  content: z.string().optional().describe('File text content'),
+  mimeType: z.string().optional().describe('Detected MIME type (e.g. text/typescript)'),
+  kind: FileKind.optional().describe('Broad file kind: text, binary, image, audio, or pdf'),
+  resourceUri: z
+    .string()
+    .optional()
+    .describe(
+      'Resource URI for externalized content (present when file is stored in resource store)',
+    ),
+  continuation: ContinuationSchema.optional().describe(
+    'Next-read arguments; present when content was truncated due to size limits',
+  ),
+  totalLines: NonNegInt.optional().describe('Total line count in the full file'),
+  linesRead: NonNegInt.optional().describe('Number of lines returned in this response'),
+  hasMoreLines: z
+    .boolean()
+    .optional()
+    .describe('True when additional lines remain beyond what was returned'),
   head: PositiveInt.optional().describe('Head lines requested'),
   tail: PositiveInt.optional().describe('Tail lines requested'),
   startLine: PositiveInt.optional().describe('Start line'),
   endLine: PositiveInt.optional().describe('End line'),
-  contentHash: Sha256Hex.optional().describe('SHA-256 of content (when includeHash)'),
-  offset: NonNegInt.optional().describe('Byte offset used'),
-  bytesRead: NonNegInt.optional().describe('Bytes returned'),
-  reachedEOF: z.boolean().optional().describe('Read reached end of file'),
+  contentHash: Sha256Hex.optional().describe(
+    'SHA-256 hex digest of the returned content (present when includeHash=true)',
+  ),
+  offset: NonNegInt.optional().describe('Byte offset at which reading started'),
+  bytesRead: NonNegInt.optional().describe('Number of bytes returned in this response'),
+  reachedEOF: z.boolean().optional().describe('True when the read reached the end of the file'),
 });
 
 const ReadPerPathSchema = z.strictObject({
-  path: z.string().describe('Requested path'),
-  value: ReadPerPathValueSchema.optional().describe('Read result (success)'),
-  error: PerFileErrorSchema.optional().describe('Per-path error'),
+  path: z.string().describe('The requested file path'),
+  value: ReadPerPathValueSchema.optional().describe('Read result; present on success'),
+  error: PerFileErrorSchema.optional().describe('Error details; present on failure'),
 });
 
 const ReadFileOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Success indicator'),
-  results: z.array(ReadPerPathSchema).describe('Per-path results (always present)'),
-  summary: OperationSummarySchema.describe('Aggregate counts'),
+  ok: z.literal(true).describe('Always true; errors are reported per-path in results[].error'),
+  results: z.array(ReadPerPathSchema).describe('Per-path results ordered to match the input paths'),
+  summary: OperationSummarySchema.describe('Aggregate counts: total, succeeded, failed'),
 });
 
 type ReadFileInput = z.infer<typeof ReadFileInputSchema>;
@@ -387,7 +401,10 @@ export const READ_FILE = defineTool({
   name: 'read',
   title: 'Read File',
   description:
-    'Read a text file. Use head/tail/startLine/endLine for partial line reads; use offset/length for byte-range reads; use read_many for batches.',
+    'Read one or more text files and return content. ' +
+    'Partial line reads: head (first N lines), tail (last N lines), startLine/endLine (line range). ' +
+    'Byte-range reads: offset/length (single-file only; mutually exclusive with line params). ' +
+    'Batch mode: pass paths[] instead of path; line/byte params are shared across all files.',
   input: ReadFileInputSchema,
   output: ReadFileOutputSchema,
   annotations: {
@@ -399,7 +416,7 @@ export const READ_FILE = defineTool({
   execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   nuances: [
-    'Large content is externalized to `filesystem-mcp://file/{path}` and the value carries `resourceUri`.',
+    'When file content exceeds the inline limit, it is stored in the resource store at filesystem-mcp://file/{path} and the result includes resourceUri.',
   ],
   defaultErrorCode: ErrorCode.NOT_FILE,
   progress: (args) => {

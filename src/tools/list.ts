@@ -246,32 +246,41 @@ const ListInputSchema = z.strictObject({
   path: OptionalPath,
   maxDepth: PositiveInt.max(MAX_TREE_DEPTH)
     .default(DEFAULT_LIST_DEPTH)
-    .describe(`Max directory depth (default: ${String(DEFAULT_LIST_DEPTH)}, flat listing)`),
+    .describe(
+      `Max directory depth to traverse (default: ${String(DEFAULT_LIST_DEPTH)} = top-level only; increase to recurse deeper)`,
+    ),
   maxEntries: PositiveInt.max(MAX_LIST_ENTRIES)
     .default(DEFAULT_LIST_ENTRIES)
-    .describe(`Max entries to return (default: ${String(DEFAULT_LIST_ENTRIES)})`),
+    .describe(
+      `Maximum number of entries to include in the inline result (default: ${String(DEFAULT_LIST_ENTRIES)}); full result is stored at resourceUri when exceeded`,
+    ),
   includeHidden: includeHiddenField(),
   includeIgnored: includeIgnoredField(),
 });
 
 const ListOutputSchema = z.strictObject({
   ok: z.literal(true),
-  path: z.string().optional().describe('Listed directory path'),
+  path: z.string().optional().describe('Resolved absolute path of the listed directory'),
   entries: z
     .array(
       z.strictObject({
-        name: z.string().describe('Entry name'),
-        relativePath: z.string().describe('POSIX path relative to directory'),
-        type: FileTypeEnum.describe('Entry type'),
+        name: z.string().describe('Entry basename'),
+        relativePath: z.string().describe('POSIX path relative to the listed directory'),
+        type: FileTypeEnum.describe('Entry type: file, directory, symlink, or other'),
       }),
     )
-    .describe('Directory entries, dirs-first then alphabetical'),
-  markdown: z.string().describe('ASCII tree representation'),
-  entryCount: NonNegInt.describe('Number of entries returned'),
-  totalEntries: NonNegInt.describe('Total entries found before cap'),
-  totalFiles: NonNegInt.describe('Total files'),
-  totalDirectories: NonNegInt.describe('Total directories'),
-  resourceUri: z.string().optional().describe('Full result (present when result is truncated)'),
+    .describe('Inline directory entries sorted directories-first then alphabetically by name'),
+  markdown: z.string().describe('ASCII tree representation of the directory structure'),
+  entryCount: NonNegInt.describe('Number of entries included in this response'),
+  totalEntries: NonNegInt.describe('Total entries found before the maxEntries cap was applied'),
+  totalFiles: NonNegInt.describe('Total number of files found'),
+  totalDirectories: NonNegInt.describe('Total number of directories found'),
+  resourceUri: z
+    .string()
+    .optional()
+    .describe(
+      'URI to the full entry list in the resource store (present when entries were truncated)',
+    ),
 });
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
@@ -358,9 +367,9 @@ export const LIST = defineTool({
   name: 'list',
   title: 'List',
   description:
-    'List directory contents. Returns entries (dirs-first, alphabetical) and a markdown ASCII tree. ' +
-    'Default maxDepth=1 lists top-level only; maxDepth>1 recurses. ' +
-    'Full result stored as resourceUri when truncated.',
+    'List directory contents. Returns entries sorted directories-first then alphabetically, plus a markdown ASCII tree. ' +
+    'Default maxDepth=1 lists top-level entries only; increase to recurse deeper. ' +
+    'When results exceed maxEntries, the full list is stored at resourceUri.',
   input: ListInputSchema,
   output: ListOutputSchema,
   annotations: {

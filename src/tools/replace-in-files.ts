@@ -50,42 +50,60 @@ function globEscape(name: string): string {
 
 const SearchAndReplaceInputSchema = z.strictObject({
   path: OptionalPath,
-  pattern: SafeGlobPattern.optional().describe('File glob filter (default: **/* text files)'),
+  pattern: SafeGlobPattern.optional().describe(
+    'Glob to restrict replacements to specific file types (e.g. **/*.ts); default: all text files',
+  ),
   searchPattern: z
     .string()
     .min(1)
     .max(10000)
-    .describe('Text or regex to find (RE2: no lookahead/lookbehind/backrefs when isRegex=true)')
+    .describe(
+      'Text or regex to find. When isRegex=true, uses RE2 syntax with capture groups ($1, $2); no lookahead/lookbehind/backreferences.',
+    )
     .meta({ examples: ['TODO', 'function\\s+(\\w+)', 'import.*from'] }),
   replacement: z
     .string()
     .max(10000)
-    .describe('Replacement text')
+    .describe(
+      'Replacement text; use capture group references ($1, $2) when isRegex=true, empty string to delete matches',
+    )
     .meta({ examples: ['$1_renamed', '', 'TODO: fix'] }),
-  isRegex: defaultFalseBoolean('Treat searchPattern as regex'),
+  isRegex: defaultFalseBoolean('Treat searchPattern as a RE2 regex (default: literal text match)'),
   includeHidden: includeHiddenField(),
   includeIgnored: includeIgnoredField(),
-  caseSensitive: defaultFalseBoolean('Case-sensitive'),
-  wholeWord: defaultFalseBoolean('Match whole words only'),
-  dryRun: defaultFalseBoolean('Preview changes without writing (default false = apply changes)'),
-  returnDiff: defaultFalseBoolean('Include unified diff in output'),
+  caseSensitive: defaultFalseBoolean('Enable case-sensitive matching (default: case-insensitive)'),
+  wholeWord: defaultFalseBoolean('Match whole words only (word boundary anchoring)'),
+  dryRun: defaultFalseBoolean(
+    'Preview replacements without writing to disk (default: false = apply changes)',
+  ),
+  returnDiff: defaultFalseBoolean('Include a unified diff of all changes in the response'),
   maxResults: z
     .uint32()
     .min(1)
     .max(MAX_SEARCH_RESULTS)
     .optional()
     .default(DEFAULT_SEARCH_RESULTS)
-    .describe('Max matches across all files'),
-  maxFiles: z.uint32().min(1).max(MAX_SEARCH_RESULTS).optional().describe('Max files to process'),
-  maxDepth: z.uint32().min(0).max(MAX_SEARCH_DEPTH).optional().describe('Max directory depth'),
+    .describe('Maximum total match count across all files before stopping'),
+  maxFiles: z
+    .uint32()
+    .min(1)
+    .max(MAX_SEARCH_RESULTS)
+    .optional()
+    .describe('Maximum number of files to process'),
+  maxDepth: z
+    .uint32()
+    .min(0)
+    .max(MAX_SEARCH_DEPTH)
+    .optional()
+    .describe('Max directory depth to scan; 0 = base directory only, omit for unlimited'),
 });
 
 const SearchAndReplaceOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Success indicator'),
-  filesModified: NonNegInt.describe('Files changed'),
-  totalMatches: NonNegInt.describe('Total match count'),
-  processedFiles: NonNegInt.describe('Files scanned'),
-  failedFiles: NonNegInt.optional().describe('Files that failed'),
+  ok: z.literal(true).describe('Always true; per-file errors are in failures[]'),
+  filesModified: NonNegInt.describe('Number of files that had at least one replacement applied'),
+  totalMatches: NonNegInt.describe('Total number of replacements made across all files'),
+  processedFiles: NonNegInt.describe('Total number of files examined'),
+  failedFiles: NonNegInt.optional().describe('Number of files that could not be processed'),
   failures: z
     .array(
       z.strictObject({
@@ -94,7 +112,7 @@ const SearchAndReplaceOutputSchema = z.strictObject({
       }),
     )
     .optional()
-    .describe('Per-file failures'),
+    .describe('Per-file error details for files that could not be processed'),
   primaryFile: z
     .strictObject({
       path: z.string(),
@@ -105,18 +123,29 @@ const SearchAndReplaceOutputSchema = z.strictObject({
       resourceUri: z.string(),
     })
     .optional()
-    .describe('Primary file with resource link'),
+    .describe('Metadata for the first modified file including its resource URI'),
   results: z
     .array(z.strictObject({ path: z.string(), matches: NonNegInt }))
     .optional()
-    .describe('Changed files with match counts'),
-  resultsTruncated: z.boolean().optional().describe('results list was truncated'),
-  diff: z.string().optional().describe('Unified diff (when returnDiff or dryRun)'),
-  diffTruncated: z.boolean().optional().describe('Diff was truncated'),
+    .describe('List of modified files with their replacement counts'),
+  resultsTruncated: z
+    .boolean()
+    .optional()
+    .describe('True when the results list was cut due to the MAX_CHANGED_FILES cap'),
+  diff: z
+    .string()
+    .optional()
+    .describe('Unified diff of all changes (present when returnDiff=true or dryRun=true)'),
+  diffTruncated: z
+    .boolean()
+    .optional()
+    .describe('True when the diff was cut due to the size limit'),
   stoppedReason: z
     .enum(['maxResults', 'maxFiles', 'timeout'])
     .optional()
-    .describe('Why enumeration stopped early'),
+    .describe(
+      'Why enumeration stopped early: maxResults = match cap reached, maxFiles = file cap reached, timeout = time limit hit',
+    ),
 });
 
 const MAX_FAILURES = 20;
@@ -631,10 +660,10 @@ export const SEARCH_AND_REPLACE = defineTool({
   name: 'replace_text',
   title: 'Search and Replace',
   description:
-    'Bulk search-and-replace across files matching a glob. ' +
-    'Replaces ALL occurrences per file (unlike `edit`: first only). ' +
-    'Use `returnDiff:true` to preview changes as a unified diff before or alongside writing. ' +
-    'Literal matching by default; `isRegex:true` enables RE2 with capture groups ($1, $2).',
+    'Bulk search-and-replace across files matching a glob pattern. ' +
+    'Replaces ALL occurrences per file (unlike edit, which replaces only the first match). ' +
+    'Set returnDiff=true to preview changes as a unified diff before or after writing. ' +
+    'Literal matching by default; set isRegex=true to enable RE2 regex with capture groups ($1, $2).',
   input: SearchAndReplaceInputSchema,
   output: SearchAndReplaceOutputSchema,
   annotations: {
@@ -646,10 +675,10 @@ export const SEARCH_AND_REPLACE = defineTool({
   execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   gotchas: [
-    'RE2 dialect: no lookahead, lookbehind, or backreferences.',
-    'Replaces ALL occurrences per file; use `edit` for first-only replacement.',
-    "Patterns without '/' match by filename anywhere in the tree (e.g. *.ts finds all .ts files). Add a path prefix like src/*.ts to restrict to a subtree.",
-    'Passing a file path auto-scopes the search to that single file. To combine a directory scope with a glob filter, pass the directory as path and use the pattern field.',
+    'isRegex=true uses RE2 syntax: lookahead, lookbehind, and backreferences are not supported.',
+    'Replaces ALL occurrences per file; use edit if you need to replace only the first occurrence.',
+    'File patterns without a slash (e.g. *.ts) match by basename anywhere in the tree. Add a path prefix (e.g. src/*.ts) to restrict to a subtree.',
+    'Passing a file path as the path argument auto-scopes the search to that single file. To scope to a directory with a glob filter, set path to the directory and use the pattern field.',
   ],
   defaultErrorCode: ErrorCode.UNKNOWN,
   progress: (args) => {
