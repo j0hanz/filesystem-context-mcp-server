@@ -227,11 +227,11 @@ All tools are scoped to the configured roots. Call `list_roots` first to discove
 
 ### Resources
 
-| URI                             | Description                                                                |
-| :------------------------------ | :------------------------------------------------------------------------- |
-| `internal://instructions`       | Server navigation guide — tools overview, constraints, and error recovery. |
-| `filesystem-mcp://file/{+path}` | Read a workspace file. Subscribe to receive push notifications on change.  |
-| `filesystem-mcp://result/{id}`  | Ephemeral cached tool output. Expires after 30 minutes or server restart.  |
+| URI                             | Description                                                                           |
+| :------------------------------ | :------------------------------------------------------------------------------------ |
+| `internal://instructions`       | Server navigation guide — tools overview, constraints, and error recovery.            |
+| `filesystem-mcp://file/{+path}` | Read a workspace file. Subscribe to receive push notifications on change.             |
+| `filesystem-mcp://result/{id}`  | Ephemeral cached tool output. Expires after ~60 seconds, eviction, or server restart. |
 
 ### Prompts
 
@@ -246,7 +246,7 @@ All tools are scoped to the configured roots. Call `list_roots` first to discove
 
 ```text
 filesystem-mcp/
-├── __tests__/        Test suites (integration, unit, contract, security)
+├── __tests__/        Test suites (unit/, tools/, resources/, schemas/, contract, security, http)
 ├── assets/           Server logo (embedded in protocol responses)
 ├── scripts/          Build and task utilities
 ├── src/
@@ -276,15 +276,34 @@ Install it globally once and it works across all your workspaces with no per-pro
 
 ### Authorizing directories via CLI
 
-If you install the server globally or run it via `npx`, you can easily authorize or de-authorize directories across all installed MCP clients using the built-in configuration helper subcommands: `allow`, `disallow`, and `list-allowed`.
+The built-in subcommands `allow`, `disallow`, and `list-allowed` scan and update configuration files for **Claude Desktop**, **Cursor**, **Cline**, **Roo Code**, and standard **global MCP configs** (`.mcp.json`) automatically.
 
-These commands scan and dynamically update configuration files for **Claude Desktop**, **Cursor**, **Cline**, **Roo Code**, and standard **global MCP configs** (`.mcp.json`).
+> [!IMPORTANT]
+> **How to invoke the CLI**
+>
+> - **`npx` (recommended — always works, no setup needed):**
+>
+>   ```bash
+>   npx @j0hanz/filesystem-mcp list-allowed
+>   ```
+>
+> - **Globally installed binary** — only works if the npm global bin directory is in your `PATH`. If you see _"not recognized as a name of a cmdlet"_ (Windows) or _"command not found"_ (macOS/Linux), use the `npx` form above, or find and add the npm bin directory to your `PATH`:
+>
+>   ```bash
+>   # Find the npm global bin directory:
+>   npm config get prefix
+>   # Then add <prefix>\bin (Windows) or <prefix>/bin (macOS/Linux) to your PATH.
+>   ```
 
 #### Examples using the CLI helper
 
 - **Authorize a directory:**
 
   ```bash
+  # via npx
+  npx @j0hanz/filesystem-mcp allow /path/to/my-project
+
+  # or if 'filesystem-mcp' is in PATH after global install
   filesystem-mcp allow /path/to/my-project
   ```
 
@@ -293,13 +312,13 @@ These commands scan and dynamically update configuration files for **Claude Desk
 - **De-authorize a directory:**
 
   ```bash
-  filesystem-mcp disallow /path/to/my-project
+  npx @j0hanz/filesystem-mcp disallow /path/to/my-project
   ```
 
 - **List all authorized directories:**
 
   ```bash
-  filesystem-mcp list-allowed
+  npx @j0hanz/filesystem-mcp list-allowed
   ```
 
 #### Subcommand options
@@ -368,22 +387,42 @@ filesystem-mcp /path/to/project1 /path/to/project2
 
 #### CLI flags
 
-| Flag              | Default | Purpose                                                            |
-| :---------------- | :------ | :----------------------------------------------------------------- |
-| `[dirs...]`       | —       | One or more allowed root directories (positional)                  |
-| `--allow-cwd`     | `false` | Also allow the current working directory as a root                 |
-| `--port <n>`      | —       | Enable Streamable HTTP transport on the given port                 |
-| `allow <path>`    | —       | CLI subcommand to authorize a path across client configurations    |
-| `disallow <path>` | —       | CLI subcommand to de-authorize a path across client configurations |
-| `list-allowed`    | —       | CLI subcommand to list all currently authorized paths              |
+| Flag                      | Default | Purpose                                                                            |
+| :------------------------ | :------ | :--------------------------------------------------------------------------------- |
+| `[dirs...]`               | —       | One or more allowed root directories (positional)                                  |
+| `--allow-cwd`             | `false` | Also allow the current working directory as a root                                 |
+| `--walk-cwd`              | `false` | Walk up from CWD to find a project root; implies `--allow-cwd`                     |
+| `--allow-missing-roots`   | `false` | Start even if configured allowed directories do not exist                          |
+| `--port <n>`              | —       | Enable Streamable HTTP transport on the given port                                 |
+| `--http-host <host>`      | —       | HTTP server bind address (env: `FILESYSTEM_MCP_HTTP_HOST`)                         |
+| `--api-key <key>`         | —       | Require this API key on HTTP requests (env: `FILESYSTEM_MCP_API_KEY`)              |
+| `--read-only`             | `false` | Disable write tools: `create`, `edit`, `delete`, `move`, `replace_text`            |
+| `--safe`                  | `false` | Alias for `--read-only`                                                            |
+| `--deny <pattern>`        | —       | Block paths matching this pattern; repeatable                                      |
+| `--allow-sensitive`       | `false` | Allow access to sensitive system paths (env: `FS_CONTEXT_ALLOW_SENSITIVE`)         |
+| `--root-boundary <path>`  | —       | Require all allowed roots to fall under this path (env: `FS_ROOT_BOUNDARY`)        |
+| `--max-file-size <bytes>` | —       | Maximum file size for reads in bytes (env: `MAX_FILE_SIZE`)                        |
+| `--log-level <level>`     | `info`  | Log level: debug, info, warn, or error (env: `FILESYSTEM_MCP_LOG_LEVEL`)           |
+| `--print-config`          | `false` | Print the active configuration and exit (use `--json` for machine-readable output) |
+| `--json`                  | `false` | Output `--print-config` as JSON                                                    |
+| `allow <path>`            | —       | CLI subcommand to authorize a path across client configurations                    |
+| `disallow <path>`         | —       | CLI subcommand to de-authorize a path across client configurations                 |
+| `list-allowed`            | —       | CLI subcommand to list all currently authorized paths                              |
 
 #### Environment variables
 
-| Variable            | Purpose                                                                                           |
-| :------------------ | :------------------------------------------------------------------------------------------------ |
-| `FS_ALLOWED_DIRS`   | Colon-separated (POSIX) or semicolon-separated (Windows) list of directories allowed by baseline. |
-| `FS_ROOT_BOUNDARY`  | Boundary ceiling limiting client-granted workspace roots to specific directory trees.             |
-| `FS_ALLOW_CWD_WALK` | Set to `1` to enable ancestor walking from CWD to discover the project root directory.            |
+| Variable                     | Purpose                                                                                   |
+| :--------------------------- | :---------------------------------------------------------------------------------------- |
+| `FS_ALLOWED_DIRS`            | Colon-separated (POSIX) or semicolon-separated (Windows) list of directories to allow.    |
+| `FS_ROOT_BOUNDARY`           | Path prefix all allowed roots must fall under (mirrors `--root-boundary`).                |
+| `FS_ALLOW_CWD_WALK`          | Set to any value to walk up from CWD to find a project root (mirrors `--walk-cwd`).       |
+| `FS_ALLOW_MISSING_ROOTS`     | Set to any value to start even if configured directories do not exist.                    |
+| `FS_CONTEXT_ALLOW_SENSITIVE` | Set to any value to allow access to sensitive system paths (mirrors `--allow-sensitive`). |
+| `FS_CONTEXT_DENYLIST`        | Comma-separated list of paths or patterns to block (mirrors `--deny`).                    |
+| `MAX_FILE_SIZE`              | Maximum file size for reads in bytes (mirrors `--max-file-size`).                         |
+| `FILESYSTEM_MCP_LOG_LEVEL`   | Log level: debug, info, warn, or error (mirrors `--log-level`).                           |
+| `FILESYSTEM_MCP_HTTP_HOST`   | HTTP server bind address (mirrors `--http-host`).                                         |
+| `FILESYSTEM_MCP_API_KEY`     | API key required on HTTP requests (mirrors `--api-key`).                                  |
 
 ### Examples
 

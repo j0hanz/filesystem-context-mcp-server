@@ -176,7 +176,7 @@ describe('mcp-config-helper', () => {
       execSync(cmd4, { stdio: 'pipe' });
 
       const outputAfter = execSync(cmd2, { encoding: 'utf8' }).trim();
-      assert.strictEqual(outputAfter, '');
+      assert.strictEqual(outputAfter, 'No directories are currently authorized.');
     } finally {
       try {
         import('node:fs').then((fs) => fs.default.unlinkSync(tempFile));

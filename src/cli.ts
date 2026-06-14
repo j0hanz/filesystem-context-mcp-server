@@ -446,7 +446,10 @@ export function getExistingConfigPaths(
     }
   };
 
-  // 1. Claude Desktop config
+  // 1. Claude Code user-level config (~/.claude.json) — official Claude Code MCP config
+  addIfExist('Claude Code', join(homeDir, '.claude.json'));
+
+  // 2. Claude Desktop config
   if (osPlatform === 'win32') {
     addIfExist('Claude Desktop', join(appData, 'Claude', 'claude_desktop_config.json'));
   } else if (osPlatform === 'darwin') {
@@ -458,7 +461,7 @@ export function getExistingConfigPaths(
     addIfExist('Claude Desktop', join(homeDir, '.config', 'Claude', 'claude_desktop_config.json'));
   }
 
-  // 2. Cursor Global config
+  // 3. Cursor Global config
   addIfExist('Cursor Global', join(homeDir, '.cursor', 'mcp.json'));
 
   // 3. Global MCP (.mcp.json)
@@ -653,6 +656,7 @@ async function modifySingleConfig(
 
   try {
     if (!options.dryRun) {
+      await mkdir(dirname(filePath), { recursive: true });
       release = await acquireLock(lockFilePath);
     }
 
@@ -706,6 +710,8 @@ async function modifySingleConfig(
       );
     }
 
+    let changed = false;
+
     if (action === 'allow') {
       const alreadyExists = argsArray.some((arg: string) => {
         try {
@@ -720,9 +726,10 @@ async function modifySingleConfig(
 
       if (!alreadyExists) {
         argsArray.push(targetPath);
+        changed = true;
       }
     } else {
-      entry['args'] = argsArray.filter((arg: string) => {
+      const filtered = argsArray.filter((arg: string) => {
         try {
           if (!isAbsolute(arg)) return true;
           return !isSamePath(arg, targetPath);
@@ -733,12 +740,14 @@ async function modifySingleConfig(
           return true;
         }
       });
+      changed = filtered.length < argsArray.length;
+      entry['args'] = filtered;
     }
 
-    if (!options.dryRun) {
+    if (changed && !options.dryRun) {
       await writeJsonAtomic(filePath, configData);
     }
-    return true;
+    return changed;
   } finally {
     if (release) {
       await release();
@@ -750,8 +759,15 @@ export async function allowPath(pathToAdd: string, options: ModifyOptions = {}):
   validateCliPath(pathToAdd);
   const resolvedPath = resolve(pathToAdd);
 
+  const prefix = options.dryRun ? '[dry-run] ' : '';
+
   if (options.config) {
-    await modifySingleConfig(options.config, 'allow', resolvedPath, options);
+    const added = await modifySingleConfig(options.config, 'allow', resolvedPath, options);
+    if (added) {
+      process.stdout.write(`${prefix}Authorized '${resolvedPath}' → ${options.config}\n`);
+    } else {
+      process.stdout.write(`'${resolvedPath}' is already authorized in ${options.config}\n`);
+    }
     return;
   }
 
@@ -762,20 +778,21 @@ export async function allowPath(pathToAdd: string, options: ModifyOptions = {}):
     : targets;
 
   if (filtered.length === 0) {
-    if (clientOpt) {
-      throw new CliExitError(
-        `No existing configuration file found for client matching '${clientOpt}'. Use --config to specify a path explicitly.`,
-        1,
-      );
-    }
-    const defaultPath = getClaudeConfigPath();
-    await modifySingleConfig(defaultPath, 'allow', resolvedPath, options);
-    process.stdout.write(`Initialized new configuration for Claude Desktop at: ${defaultPath}\n`);
-    return;
+    const hint = clientOpt
+      ? `No configuration file found for client matching '${clientOpt}'.`
+      : 'No supported MCP configuration files were found on this system.';
+    throw new CliExitError(`${hint} Use --config <path> to target a specific file explicitly.`, 1);
   }
 
   for (const target of filtered) {
-    await modifySingleConfig(target.path, 'allow', resolvedPath, options);
+    const added = await modifySingleConfig(target.path, 'allow', resolvedPath, options);
+    if (added) {
+      process.stdout.write(
+        `${prefix}Authorized '${resolvedPath}' → ${target.name} (${target.path})\n`,
+      );
+    } else {
+      process.stdout.write(`'${resolvedPath}' is already authorized in ${target.name}\n`);
+    }
   }
 }
 
@@ -786,8 +803,15 @@ export async function disallowPath(
   validateCliPath(pathToRemove);
   const resolvedPath = resolve(pathToRemove);
 
+  const prefix = options.dryRun ? '[dry-run] ' : '';
+
   if (options.config) {
-    await modifySingleConfig(options.config, 'disallow', resolvedPath, options);
+    const removed = await modifySingleConfig(options.config, 'disallow', resolvedPath, options);
+    if (removed) {
+      process.stdout.write(`${prefix}Removed '${resolvedPath}' from ${options.config}\n`);
+    } else {
+      process.stderr.write(`Warning: Path '${resolvedPath}' was not found in ${options.config}\n`);
+    }
     return;
   }
 
@@ -801,6 +825,9 @@ export async function disallowPath(
   for (const target of filtered) {
     if (await modifySingleConfig(target.path, 'disallow', resolvedPath, options)) {
       anyModified = true;
+      process.stdout.write(
+        `${prefix}Removed '${resolvedPath}' from ${target.name} (${target.path})\n`,
+      );
     }
   }
   if (!anyModified) {
@@ -855,22 +882,4 @@ export async function listAllowedPaths(options: ModifyOptions = {}): Promise<str
   }
 
   return allPaths;
-}
-
-function getClaudeConfigPath(): string {
-  const osPlatform = platform();
-  if (osPlatform === 'win32') {
-    const appData = process.env['APPDATA'] ?? join(homedir(), 'AppData', 'Roaming');
-    return join(appData, 'Claude', 'claude_desktop_config.json');
-  } else if (osPlatform === 'darwin') {
-    return join(
-      homedir(),
-      'Library',
-      'Application Support',
-      'Claude',
-      'claude_desktop_config.json',
-    );
-  } else {
-    return join(homedir(), '.config', 'Claude', 'claude_desktop_config.json');
-  }
 }

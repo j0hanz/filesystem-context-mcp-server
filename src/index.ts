@@ -145,6 +145,8 @@ async function main(): Promise<void> {
         const allowed = await listAllowedPaths({ client, config, serverName });
         if (json) {
           process.stdout.write(JSON.stringify(allowed, null, 2) + '\n');
+        } else if (allowed.length === 0) {
+          process.stdout.write('No directories are currently authorized.\n');
         } else {
           for (const p of allowed) {
             process.stdout.write(`${p}\n`);
