@@ -86,8 +86,9 @@ function normalizeDirectoryError(error: unknown, inputPath: string): Error {
       const message = getSystemErrorMessage(errno);
       return new Error(`Cannot access directory ${inputPath} (${name}: ${message})`);
     } catch {
-      // Fall through to best-effort formatting.
+      // Fall through, but preserve the raw errno value.
     }
+    return new Error(`Cannot access directory ${inputPath} (errno ${errno})`);
   }
 
   if (code) {
@@ -330,10 +331,8 @@ export async function parseArgs(): Promise<{
       }
     }
 
-    const deduplicatedDirs = deduplicateAllowedDirectories(allowedDirs);
-
     return {
-      allowedDirs: deduplicatedDirs,
+      allowedDirs,
       allowCwd,
       port,
       readOnly,
@@ -474,61 +473,57 @@ export function getExistingConfigPaths(
         ? join(homeDir, 'Library', 'Application Support', 'Code', 'User')
         : join(homeDir, '.config', 'Code', 'User');
 
-  if (vscodeUserData) {
-    // Cline
-    addIfExist(
-      'VS Code Cline Extension',
-      join(
-        vscodeUserData,
-        'globalStorage',
-        'saoudrizwan.claude-dev',
-        'settings',
-        'cline_mcp_settings.json',
-      ),
-    );
-    // Roo Code
-    addIfExist(
-      'VS Code Roo Code Extension',
-      join(
-        vscodeUserData,
-        'globalStorage',
-        'rooveterinaryinc.roo-cline',
-        'settings',
-        'mcp_settings.json',
-      ),
-    );
+  // Cline
+  addIfExist(
+    'VS Code Cline Extension',
+    join(
+      vscodeUserData,
+      'globalStorage',
+      'saoudrizwan.claude-dev',
+      'settings',
+      'cline_mcp_settings.json',
+    ),
+  );
+  // Roo Code
+  addIfExist(
+    'VS Code Roo Code Extension',
+    join(
+      vscodeUserData,
+      'globalStorage',
+      'rooveterinaryinc.roo-cline',
+      'settings',
+      'mcp_settings.json',
+    ),
+  );
 
-    // VS Code Insiders versions
-    const vscodeInsidersUserData =
-      osPlatform === 'win32'
-        ? join(appData, 'Code - Insiders', 'User')
-        : osPlatform === 'darwin'
-          ? join(homeDir, 'Library', 'Application Support', 'Code - Insiders', 'User')
-          : join(homeDir, '.config', 'Code - Insiders', 'User');
+  // VS Code Insiders versions
+  const vscodeInsidersUserData =
+    osPlatform === 'win32'
+      ? join(appData, 'Code - Insiders', 'User')
+      : osPlatform === 'darwin'
+        ? join(homeDir, 'Library', 'Application Support', 'Code - Insiders', 'User')
+        : join(homeDir, '.config', 'Code - Insiders', 'User');
 
-    if (vscodeInsidersUserData) {
-      addIfExist(
-        'VS Code Insiders Cline Extension',
-        join(
-          vscodeInsidersUserData,
-          'globalStorage',
-          'saoudrizwan.claude-dev',
-          'settings',
-          'cline_mcp_settings.json',
-        ),
-      );
-      addIfExist(
-        'VS Code Insiders Roo Code Extension',
-        join(
-          vscodeInsidersUserData,
-          'globalStorage',
-          'rooveterinaryinc.roo-cline',
-          'settings',
-          'mcp_settings.json',
-        ),
-      );
-    }
-  }
+  addIfExist(
+    'VS Code Insiders Cline Extension',
+    join(
+      vscodeInsidersUserData,
+      'globalStorage',
+      'saoudrizwan.claude-dev',
+      'settings',
+      'cline_mcp_settings.json',
+    ),
+  );
+  addIfExist(
+    'VS Code Insiders Roo Code Extension',
+    join(
+      vscodeInsidersUserData,
+      'globalStorage',
+      'rooveterinaryinc.roo-cline',
+      'settings',
+      'mcp_settings.json',
+    ),
+  );
 
   return targets;
 }
@@ -543,10 +538,15 @@ export async function writeJsonAtomic(filePath: string, data: unknown): Promise<
     await writeFile(tempPath, content, 'utf8');
     await rename(tempPath, filePath);
   } catch (error) {
+    process.stderr.write(
+      `Warning: Atomic write failed for ${filePath}. Falling back to direct write (non-atomic).\n`,
+    );
     try {
       await unlink(tempPath);
-    } catch {
-      // ignore
+    } catch (unlinkErr) {
+      process.stderr.write(
+        `Warning: Failed to remove temp file ${tempPath}: ${unlinkErr instanceof Error ? unlinkErr.message : String(unlinkErr)}\n`,
+      );
     }
     try {
       await writeFile(filePath, JSON.stringify(data, null, 2) + '\n', 'utf8');
@@ -556,9 +556,6 @@ export async function writeJsonAtomic(filePath: string, data: unknown): Promise<
         { cause: fallbackError },
       );
     }
-    process.stderr.write(
-      `Warning: Atomic write failed. Successfully fell back to direct write for config file ${filePath}.\n`,
-    );
   }
 }
 
@@ -607,6 +604,7 @@ async function acquireLock(
   lockFilePath: string,
   retries = 10,
   delay = 100,
+  staleLockMs = 30_000,
 ): Promise<() => Promise<void>> {
   for (let i = 0; i < retries; i++) {
     try {
@@ -615,12 +613,24 @@ async function acquireLock(
       return async () => {
         try {
           await unlink(lockFilePath);
-        } catch {
-          // ignore
+        } catch (releaseErr) {
+          process.stderr.write(
+            `Warning: Failed to release lock file ${lockFilePath}: ${releaseErr instanceof Error ? releaseErr.message : String(releaseErr)}\n`,
+          );
         }
       };
     } catch (error) {
       if (isRecord(error) && error['code'] === 'EEXIST') {
+        try {
+          const lockStat = await stat(lockFilePath);
+          if (Date.now() - lockStat.mtimeMs > staleLockMs) {
+            process.stderr.write(`Warning: Removing stale lock file ${lockFilePath}.\n`);
+            await unlink(lockFilePath).catch((_: unknown) => undefined);
+            continue;
+          }
+        } catch {
+          // Lock may have been released between EEXIST and stat — just retry.
+        }
         await new Promise<void>((resolve) => {
           setTimeout(resolve, delay);
         });
@@ -637,7 +647,7 @@ async function modifySingleConfig(
   action: 'allow' | 'disallow',
   targetPath: string,
   options: ModifyOptions,
-): Promise<void> {
+): Promise<boolean> {
   const lockFilePath = `${filePath}.lock`;
   let release: (() => Promise<void>) | undefined;
 
@@ -673,7 +683,7 @@ async function modifySingleConfig(
 
     if (!entry) {
       if (action === 'disallow') {
-        return;
+        return false;
       }
       entry = {
         command: 'npx',
@@ -700,7 +710,10 @@ async function modifySingleConfig(
       const alreadyExists = argsArray.some((arg: string) => {
         try {
           return isAbsolute(arg) && isSamePath(arg, targetPath);
-        } catch {
+        } catch (compareErr) {
+          process.stderr.write(
+            `Warning: Could not compare path '${arg}' with '${targetPath}': ${compareErr instanceof Error ? compareErr.message : String(compareErr)}\n`,
+          );
           return false;
         }
       });
@@ -713,7 +726,10 @@ async function modifySingleConfig(
         try {
           if (!isAbsolute(arg)) return true;
           return !isSamePath(arg, targetPath);
-        } catch {
+        } catch (compareErr) {
+          process.stderr.write(
+            `Warning: Could not compare path '${arg}' with '${targetPath}': ${compareErr instanceof Error ? compareErr.message : String(compareErr)}\n`,
+          );
           return true;
         }
       });
@@ -722,6 +738,7 @@ async function modifySingleConfig(
     if (!options.dryRun) {
       await writeJsonAtomic(filePath, configData);
     }
+    return true;
   } finally {
     if (release) {
       await release();
@@ -745,6 +762,12 @@ export async function allowPath(pathToAdd: string, options: ModifyOptions = {}):
     : targets;
 
   if (filtered.length === 0) {
+    if (clientOpt) {
+      throw new CliExitError(
+        `No existing configuration file found for client matching '${clientOpt}'. Use --config to specify a path explicitly.`,
+        1,
+      );
+    }
     const defaultPath = getClaudeConfigPath();
     await modifySingleConfig(defaultPath, 'allow', resolvedPath, options);
     process.stdout.write(`Initialized new configuration for Claude Desktop at: ${defaultPath}\n`);
@@ -774,13 +797,20 @@ export async function disallowPath(
     ? targets.filter((t) => t.name.toLowerCase().includes(clientOpt.toLowerCase()))
     : targets;
 
+  let anyModified = false;
   for (const target of filtered) {
-    await modifySingleConfig(target.path, 'disallow', resolvedPath, options);
+    if (await modifySingleConfig(target.path, 'disallow', resolvedPath, options)) {
+      anyModified = true;
+    }
+  }
+  if (!anyModified) {
+    process.stderr.write(`Warning: Path '${resolvedPath}' was not found in any configuration.\n`);
   }
 }
 
 export async function listAllowedPaths(options: ModifyOptions = {}): Promise<string[]> {
-  const allPaths = new Set<string>();
+  const seen = new Set<string>();
+  const allPaths: string[] = [];
 
   const getPathsFromFile = async (filePath: string): Promise<string[]> => {
     if (!existsSync(filePath)) return [];
@@ -797,7 +827,7 @@ export async function listAllowedPaths(options: ModifyOptions = {}): Promise<str
       }
     } catch (error: unknown) {
       process.stderr.write(
-        `Warning: Failed to parse configuration file ${filePath}: ${error instanceof Error ? error.message : String(error)}\n`,
+        `Warning: Skipping ${filePath} — could not parse (results may be incomplete): ${error instanceof Error ? error.message : String(error)}\n`,
       );
     }
     return [];
@@ -816,11 +846,15 @@ export async function listAllowedPaths(options: ModifyOptions = {}): Promise<str
   for (const target of filtered) {
     const paths = await getPathsFromFile(target.path);
     for (const p of paths) {
-      allPaths.add(p);
+      const key = IS_WINDOWS ? p.toLowerCase() : p;
+      if (!seen.has(key)) {
+        seen.add(key);
+        allPaths.push(p);
+      }
     }
   }
 
-  return Array.from(allPaths);
+  return allPaths;
 }
 
 function getClaudeConfigPath(): string {
