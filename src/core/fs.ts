@@ -129,7 +129,8 @@ export async function readlink(
   options?: Parameters<typeof fsReadlink>[1],
 ): Promise<{ linkString: string; validPath: string }> {
   const validPath = await pathGuard.validateExistingPath(filePath);
-  const linkString = (await fsReadlink(validPath, options)) as string;
+  const raw = await fsReadlink(validPath, options);
+  const linkString = Buffer.isBuffer(raw) ? raw.toString('utf-8') : raw;
   return { linkString, validPath };
 }
 
@@ -219,8 +220,10 @@ async function openReadableFileHandle(filePath: string, signal?: AbortSignal): P
   } catch (error) {
     void handlePromise
       .then((handle) => {
-        void handle.close().catch(() => {
-          /* ignore close error */
+        void handle.close().catch((closeErr: unknown) => {
+          Logger.warn(
+            `Failed to close file handle for ${filePath} after abort: ${formatUnknownErrorMessage(closeErr)}`,
+          );
         });
       })
       .catch(() => {
@@ -551,6 +554,9 @@ export async function readFileBufferWithLimit(
     }
   } finally {
     if (!stream.destroyed) {
+      stream.on('error', (_err: unknown) => {
+        /* suppress post-destroy error event */
+      });
       stream.destroy();
     }
   }
@@ -1072,9 +1078,8 @@ export async function atomicWriteFile(
     try {
       await fsUnlink(tempPath);
     } catch (cleanupError) {
-      // temp file may persist on disk if cleanup fails — contains the new content
       Logger.warn(
-        `Failed to clean up temp file ${tempPath}: ${formatUnknownErrorMessage(cleanupError)}`,
+        `Failed to clean up temp file ${tempPath} after write error (${formatUnknownErrorMessage(error)}): ${formatUnknownErrorMessage(cleanupError)}`,
       );
     }
     throw error;
@@ -1230,9 +1235,26 @@ export async function isEntryAccessibleByType(
   try {
     const validated = await deps.validateSymlinkPath(entryPath, signal);
     return !deps.isSensitivePath(validated.requestedPath, validated.resolvedPath);
-  } catch {
-    return false;
+  } catch (error) {
+    if (
+      isNodeError(error) &&
+      (error.code === 'ENOENT' || error.code === 'EACCES' || error.code === 'ELOOP')
+    ) {
+      return false;
+    }
+    throw error;
   }
+}
+
+async function runConcurrentTasks(tasks: (() => Promise<void>)[], limit: number): Promise<void> {
+  let index = 0;
+  async function next(): Promise<void> {
+    while (index < tasks.length) {
+      const i = index++;
+      await tasks[i]?.();
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, next));
 }
 
 function parseGitignoreLines(contents: string): string[] {
@@ -1269,8 +1291,8 @@ export class GitignoreManager {
         gitignorePaths.push(match);
       }
 
-      await Promise.all(
-        gitignorePaths.map(async (relPath) => {
+      await runConcurrentTasks(
+        gitignorePaths.map((relPath) => async () => {
           const absPath = join(root, relPath);
           try {
             const contents = await fsReadFile(absPath, {
@@ -1281,13 +1303,20 @@ export class GitignoreManager {
             matcher.add(parseGitignoreLines(contents));
             const dir = toPosixPath(dirname(relPath));
             manager.matchers.set(dir === '.' ? '' : dir, matcher);
-          } catch {
-            // Ignore read errors (e.g. permission denied)
+          } catch (error) {
+            if (error instanceof Error && error.name === 'AbortError') throw error;
+            Logger.warn(
+              `Failed to read .gitignore at ${absPath}: ${formatUnknownErrorMessage(error)}`,
+            );
           }
         }),
+        GLOB_BATCH_CONCURRENCY,
       );
-    } catch {
-      // Ignore glob errors
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') throw error;
+      Logger.warn(
+        `Failed to enumerate .gitignore files under ${root}: ${formatUnknownErrorMessage(error)}`,
+      );
     }
     return manager;
   }
@@ -1794,6 +1823,9 @@ async function* processGlobPattern(
       }
     } catch (error) {
       if (!suppressErrors) throw error;
+      Logger.warn(
+        `globEntries: suppressed mid-walk error for pattern "${pattern}": ${formatUnknownErrorMessage(error)}`,
+      );
     }
   } else {
     const queue = new AsyncGlobBatchQueue(context);
@@ -1815,6 +1847,9 @@ async function* processGlobPattern(
       yield* queue.flush();
     } catch (error) {
       if (!suppressErrors) throw error;
+      Logger.warn(
+        `globEntries: suppressed mid-walk error for pattern "${pattern}": ${formatUnknownErrorMessage(error)}`,
+      );
     }
   }
 }
@@ -2322,7 +2357,11 @@ export class GuardedFileSystem {
       const entry = await dir.read();
       return entry !== null;
     } finally {
-      await dir.close();
+      await dir.close().catch((closeErr: unknown) => {
+        Logger.warn(
+          `Failed to close dir handle for ${dirPath}: ${formatUnknownErrorMessage(closeErr)}`,
+        );
+      });
     }
   }
 }
