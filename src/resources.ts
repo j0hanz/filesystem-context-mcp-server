@@ -286,6 +286,7 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
         })
         .finally(() => {
           pending.delete(uri);
+          cancelledSubscriptions.delete(uri);
         });
     },
 

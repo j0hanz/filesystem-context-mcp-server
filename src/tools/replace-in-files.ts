@@ -345,11 +345,6 @@ async function maybeAppendPatchDiff(
   },
 ): Promise<void> {
   if (!params.includeDiff) return;
-  if (summary.diff.length >= MAX_DIFF_SIZE) {
-    summary.diffTruncated = true;
-    return;
-  }
-
   const header = basename(params.filePath);
   const totalBytes =
     Buffer.byteLength(params.originalContent) + Buffer.byteLength(params.updatedContent);
@@ -384,6 +379,11 @@ async function maybeAppendPatchDiff(
         });
       }),
   );
+
+  if (summary.diff.length >= MAX_DIFF_SIZE) {
+    summary.diffTruncated = true;
+    return;
+  }
 
   if (summary.diff.length + patch.length <= MAX_DIFF_SIZE + DIFF_APPEND_BUFFER) {
     summary.diff += patch;
