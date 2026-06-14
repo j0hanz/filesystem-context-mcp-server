@@ -833,7 +833,7 @@ describe('delete: processes all paths in batch', () => {
     assert.ok(Array.isArray(failures) && failures.length === 2, 'Expected 2 failures');
   });
 
-  it('returns ok:true when at least one path succeeds (partial failure)', async () => {
+  it('returns ok:false on partial failure (any path failed)', async () => {
     const goodFile = join(env.tmpDir, 'partial-good.txt');
     await writeFile(goodFile, '', 'utf8');
     const raw = await env.client.callTool({
@@ -844,7 +844,7 @@ describe('delete: processes all paths in batch', () => {
     });
     assertOk(raw);
     const sc = getStructured(raw);
-    assert.equal(sc['ok'], true, 'ok must be true when at least one path succeeds');
+    assert.equal(sc['ok'], false, 'ok must be false when any path fails');
     const failures = sc['failures'] as Record<string, unknown>[] | undefined;
     assert.ok(Array.isArray(failures) && failures.length === 1, 'Expected 1 failure');
   });

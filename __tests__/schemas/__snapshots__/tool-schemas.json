@@ -203,7 +203,7 @@
       "properties": {
         "ok": {
           "type": "boolean",
-          "description": "False only when every requested path failed; true if at least one succeeded"
+          "description": "True only when all requested paths were deleted successfully; false if any path failed"
         },
         "path": {
           "description": "Deleted path (present when exactly one path was deleted)",

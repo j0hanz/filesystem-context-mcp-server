@@ -42,7 +42,9 @@ const DeleteFailureItemSchema = z.strictObject({
 const DeleteOutputSchema = z.strictObject({
   ok: z
     .boolean()
-    .describe('False only when every requested path failed; true if at least one succeeded'),
+    .describe(
+      'True only when all requested paths were deleted successfully; false if any path failed',
+    ),
   path: z.string().optional().describe('Deleted path (present when exactly one path was deleted)'),
   paths: z
     .array(z.string())
@@ -111,13 +113,19 @@ function resolveItemType(
 }
 
 async function tryElicitConfirmation(
-  inputPath: string,
+  validPath: string,
   args: Pick<DeleteInput, 'recursive'>,
   itemStats: Awaited<ReturnType<GuardedFileSystem['lstat']>>,
+  fs: Pick<GuardedFileSystem, 'hasChildrenUnchecked'>,
   elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>,
 ): Promise<boolean> {
   if (!elicitInput || !args.recursive || !itemStats.stats.isDirectory()) {
     return true; // Proceed if not applicable
+  }
+
+  const nonEmpty = await fs.hasChildrenUnchecked(validPath);
+  if (!nonEmpty) {
+    return true; // Empty directory — nothing to recursively destroy, no prompt needed
   }
 
   try {
@@ -127,7 +135,7 @@ async function tryElicitConfirmation(
     };
     const elicitResult = await elicitInput({
       mode: 'form',
-      message: `Permanently delete "${inputPath}" and all its contents? This cannot be undone.`,
+      message: `Permanently delete "${validPath}" and all its contents? This cannot be undone.`,
       requestedSchema: {
         type: 'object',
         properties: { confirm: confirmField },
@@ -194,7 +202,13 @@ async function deleteSinglePath(
   }
 
   const itemType = resolveItemType(itemStats);
-  const shouldProceed = await tryElicitConfirmation(inputPath, args, itemStats, ctx.elicitInput);
+  const shouldProceed = await tryElicitConfirmation(
+    validPath,
+    args,
+    itemStats,
+    ctx.fs,
+    ctx.elicitInput,
+  );
 
   if (!shouldProceed) {
     return {
@@ -273,7 +287,7 @@ async function handleDelete(args: DeleteInput, ctx: ToolCtx): Promise<DeleteOutp
     });
   }
 
-  const ok = successPaths.length > 0 || args.paths.length === 0;
+  const ok = failures.length === 0;
   const output: DeleteOutput = { ok };
   if (successPaths.length === 1) {
     output.path = successPaths[0];
@@ -303,7 +317,6 @@ export const DELETE_FILE = defineTool({
   },
   gotchas: [
     'Non-empty directories require recursive=true; attempting to delete one without it returns an error.',
-    'ok=false only when every requested path failed. Partial failures still return ok=true — always inspect failures[] to detect per-path errors.',
   ],
   defaultErrorCode: ErrorCode.UNKNOWN,
   progress: (args) => ({

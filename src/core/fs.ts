@@ -8,6 +8,7 @@ import {
   lstat as fsLstat,
   mkdir as fsMkdir,
   open as fsOpen,
+  opendir as fsOpendir,
   readFile as fsReadFile,
   readlink as fsReadlink,
   realpath as fsRealpath,
@@ -2313,5 +2314,15 @@ export class GuardedFileSystem {
 
   async realpathUnchecked(filePath: string, options?: { signal?: AbortSignal }): Promise<string> {
     return withAbort(fsRealpath(filePath), options?.signal);
+  }
+
+  async hasChildrenUnchecked(dirPath: string): Promise<boolean> {
+    const dir = await fsOpendir(dirPath);
+    try {
+      const entry = await dir.read();
+      return entry !== null;
+    } finally {
+      await dir.close();
+    }
   }
 }
