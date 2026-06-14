@@ -503,11 +503,21 @@ function buildSensitivePatterns(): readonly string[] {
   return [...(allowSensitive ? [] : DEFAULT_SENSITIVE_PATTERNS), ...envDenylist];
 }
 
+export interface AccessGrantDeps {
+  /** Probe whether a path is an existing directory, an existing file, or missing.
+   *  Injected so PathGuard stays free of node:fs. */
+  probe: (path: string) => Promise<'directory' | 'file' | 'missing'>;
+  /** Ask the user to approve granting access to targetDir.
+   *  Injected so PathGuard stays free of the MCP elicitation surface. */
+  confirm: (targetDir: string) => Promise<boolean>;
+}
+
 export class PathGuard {
   private allowedDirectoriesState: AllowedDirectoriesState | undefined;
   private denyPatterns: CompiledPatternSet;
   private rootDirectories: string[] = [];
   private rootBoundaries: string[] = [];
+  private readonly denialCache = new Map<string, boolean>();
 
   readonly options: ServerOptions | undefined;
   readonly loggingState: LoggingState | undefined;
@@ -587,6 +597,64 @@ export class PathGuard {
   private async checkAndPromptAccess(checkPath: string): Promise<boolean> {
     if (!this.onAccessDenied) return false;
     return this.onAccessDenied(checkPath);
+  }
+
+  /** Clear remembered denials (e.g. on server teardown). */
+  clearDenialCache(): void {
+    this.denialCache.clear();
+  }
+
+  /** Walk up from a blocked path to the closest existing ancestor directory. */
+  private async resolveGrantTargetDir(
+    blockedPath: string,
+    probe: AccessGrantDeps['probe'],
+  ): Promise<string> {
+    let targetDir = blockedPath;
+    for (;;) {
+      const kind = await probe(targetDir);
+      if (kind === 'directory') break;
+      const parent = dirname(targetDir);
+      if (parent === targetDir) break;
+      targetDir = parent;
+      if (kind === 'file') break;
+    }
+    return targetDir;
+  }
+
+  /**
+   * Access-grant policy: resolve the target directory, honor remembered denials,
+   * ask the user, enforce FS_ROOT_BOUNDARY, then grant by extending the roots.
+   * MCP elicitation and filesystem probing are injected via `deps` so this stays
+   * a pure access-control concern.
+   */
+  async requestAccessGrant(blockedPath: string, deps: AccessGrantDeps): Promise<boolean> {
+    const targetDir = await this.resolveGrantTargetDir(blockedPath, deps.probe);
+
+    if (this.denialCache.has(targetDir)) return false;
+
+    let approved: boolean;
+    try {
+      approved = await deps.confirm(targetDir);
+    } catch {
+      return false;
+    }
+
+    if (!approved) {
+      this.denialCache.set(targetDir, true);
+      return false;
+    }
+
+    const boundaries = parseEnvDirList('FS_ROOT_BOUNDARY');
+    if (boundaries.length > 0) {
+      const normalizedTarget = normalizePath(targetDir);
+      const normalizedBoundaries = boundaries.map((b) => normalizePath(b));
+      if (!isPathWithinDirectories(normalizedTarget, normalizedBoundaries)) {
+        return false;
+      }
+    }
+
+    await this.setRoots([...this.getAllowedDirectories(), targetDir]);
+    return true;
   }
 
   private async validateAccessAndSensitivity(requestedPath: string): Promise<{

@@ -28,7 +28,6 @@ export interface ServerDeps {
   resourceStore: ResourceStore;
   isInitialized: () => boolean;
   iconInfo?: IconInfo;
-  denialCache?: Map<string, boolean>;
 }
 
 export interface Registrar {

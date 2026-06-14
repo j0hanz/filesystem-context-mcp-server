@@ -7,6 +7,7 @@ import RE2 from 're2';
 import { ErrorCode, formatUnknownErrorMessage, FsError } from '../errors.js';
 import type { GuardedFileSystem, Stats } from '../fs.js';
 import { globEntries } from '../fs.js';
+import { escapeRegexLiteral } from '../primitives.js';
 import { SEARCH_WORKERS } from '../util.js';
 
 // Re-export the RE2 type so callers keep `Map<string, Regex>` / `Regex | undefined`
@@ -355,7 +356,7 @@ export interface RegexCompileOptions {
 // Single owned RE2 compiler: derives flags, applies literal/wholeWord transforms,
 // and wraps construction failures in the canonical INVALID_PATTERN error.
 export function compileRegex(pattern: string, options: RegexCompileOptions = {}): RE2 {
-  const escaped = options.literal ? escapeRegex(pattern) : pattern;
+  const escaped = options.literal ? escapeRegexLiteral(pattern) : pattern;
   const final = options.wholeWord ? `\\b${escaped}\\b` : escaped;
   const flags = `${options.global ? 'g' : ''}${options.caseSensitive ? '' : 'i'}`;
   try {
@@ -778,10 +779,6 @@ export async function executeSearch(
       truncated: matchesCount >= opts.maxResults,
     },
   };
-}
-
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // ─── Worker Thread Execution Setup ──────────────────────────────────────────

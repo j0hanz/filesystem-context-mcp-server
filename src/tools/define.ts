@@ -17,7 +17,6 @@ import type {
 } from '@modelcontextprotocol/server';
 
 import { randomUUID } from 'node:crypto';
-import { dirname } from 'node:path';
 
 import * as z from 'zod/v4';
 
@@ -33,8 +32,6 @@ import {
   withTelemetry,
 } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
-import { isPathWithinDirectories, normalizePath } from '../core/path.js';
-import { parseEnvDirList } from '../core/primitives.js';
 import type { ResourceStore } from '../core/store.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 
@@ -76,7 +73,6 @@ export interface ToolCtx {
   readonly onProgress?: (params: { current: number; total?: number }) => void;
   readonly elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>;
   readonly server?: McpServer;
-  readonly denialCache?: Map<string, boolean> | undefined;
 }
 
 export interface ToolDeps {
@@ -84,7 +80,6 @@ export interface ToolDeps {
   readonly server: McpServer;
   readonly pathGuard: PathGuard;
   readonly resourceStore: ResourceStore | undefined;
-  readonly denialCache?: Map<string, boolean> | undefined;
 }
 
 export type IconInfo = Icon & { mimeType: string };
@@ -136,7 +131,7 @@ export interface DefinedTool extends Tool {
 
 function toToolCtx(
   ctx: ServerContext | undefined,
-  deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore' | 'server' | 'denialCache'>,
+  deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore' | 'server'>,
 ): ToolCtx {
   if (!ctx) {
     const signal = new AbortController().signal;
@@ -146,7 +141,6 @@ function toToolCtx(
       fs: new GuardedFileSystem(deps.pathGuard),
       resourceStore: deps.resourceStore,
       server: deps.server,
-      denialCache: deps.denialCache,
     };
   }
   return {
@@ -162,7 +156,6 @@ function toToolCtx(
     },
     elicitInput: (params) => ctx.mcpReq.elicitInput(params),
     server: deps.server,
-    denialCache: deps.denialCache,
   };
 }
 
@@ -180,7 +173,6 @@ function buildExecutionCtx(
     fs: new GuardedFileSystem(ctx.pathGuard),
     resourceStore: ctx.resourceStore,
     ...(ctx.server ? { server: ctx.server } : {}),
-    denialCache: ctx.denialCache,
     ...(ctxLog
       ? {
           log: (level: LoggingLevel, data: unknown, logger?: string) => {
@@ -456,68 +448,32 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     }
     if (!caps?.elicitation) return undefined;
 
-    return async (blockedPath: string): Promise<boolean> => {
-      // Find closest existing ancestor directory
-      let targetDir = blockedPath;
-      for (;;) {
-        try {
-          const s = await this.toolCtx.fs.statUnchecked(targetDir);
-          if (s.isDirectory()) break;
-          // If it's a file, go up one level
-          const parent = dirname(targetDir);
-          if (parent === targetDir) break;
-          targetDir = parent;
-          break; // found a file, use its parent dir
-        } catch {
-          const parent = dirname(targetDir);
-          if (parent === targetDir) break;
-          targetDir = parent;
-        }
-      }
+    const fs = this.toolCtx.fs;
+    const pathGuard = this.toolCtx.pathGuard;
 
-      // Check denial cache
-      const denialCache = this.toolCtx.denialCache;
-      if (denialCache?.has(targetDir)) return false;
-
-      // Elicit user approval
-      let approved: boolean;
+    const probe = async (path: string): Promise<'directory' | 'file' | 'missing'> => {
       try {
-        const response = await elicitInput({
-          mode: 'form',
-          message: `Grant filesystem access to: ${targetDir}?`,
-          requestedSchema: {
-            type: 'object',
-            properties: { confirm: { type: 'boolean', title: 'Confirm' } },
-            required: ['confirm'],
-          },
-        });
-        approved = response.action === 'accept' && response.content?.['confirm'] === true;
+        const s = await fs.statUnchecked(path);
+        return s.isDirectory() ? 'directory' : 'file';
       } catch {
-        return false;
+        return 'missing';
       }
-
-      if (!approved) {
-        denialCache?.set(targetDir, true);
-        return false;
-      }
-
-      // Check FS_ROOT_BOUNDARY
-      const boundaries = parseEnvDirList('FS_ROOT_BOUNDARY');
-      if (boundaries.length > 0) {
-        const normalizedTarget = normalizePath(targetDir);
-        const normalizedBoundaries = boundaries.map((b) => normalizePath(b));
-        if (!isPathWithinDirectories(normalizedTarget, normalizedBoundaries)) {
-          return false;
-        }
-      }
-
-      // Add to allowed directories
-      const pathGuard = this.toolCtx.pathGuard;
-      const existingDirs = pathGuard.getAllowedDirectories();
-      await this.toolCtx.fs.setRoots([...existingDirs, targetDir]);
-
-      return true;
     };
+
+    const confirm = async (targetDir: string): Promise<boolean> => {
+      const response = await elicitInput({
+        mode: 'form',
+        message: `Grant filesystem access to: ${targetDir}?`,
+        requestedSchema: {
+          type: 'object',
+          properties: { confirm: { type: 'boolean', title: 'Confirm' } },
+          required: ['confirm'],
+        },
+      });
+      return response.action === 'accept' && response.content?.['confirm'] === true;
+    };
+
+    return (blockedPath: string) => pathGuard.requestAccessGrant(blockedPath, { probe, confirm });
   }
 
   async execute(args: unknown, deps: ToolDeps): Promise<CallToolResult> {

@@ -84,13 +84,11 @@ export async function createTestEnv(): Promise<TestEnv> {
   const resourceStore = createInMemoryResourceStore();
   const pathGuard = new PathGuard();
   await pathGuard.setRoots([tmpDir]);
-  const denialCache = new Map<string, boolean>();
   const deps = {
     server,
     pathGuard,
     resourceStore,
     isInitialized: () => true,
-    denialCache,
   };
   for (const tool of ALL_TOOLS) {
     tool.register(deps);
@@ -147,13 +145,11 @@ export async function createTestEnvWithElicitation(handler: ElicitationHandler):
   const resourceStore = createInMemoryResourceStore();
   const pathGuard = new PathGuard();
   await pathGuard.setRoots([tmpDir]);
-  const denialCache = new Map<string, boolean>();
   const deps2 = {
     server,
     pathGuard,
     resourceStore,
     isInitialized: () => true,
-    denialCache,
   };
   for (const tool of ALL_TOOLS) {
     tool.register(deps2);
