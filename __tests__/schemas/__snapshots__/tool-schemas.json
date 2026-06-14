@@ -20,7 +20,7 @@
               "content": {
                 "type": "string",
                 "maxLength": 10485760,
-                "description": "Text content to write; overwrites any existing file at this path"
+                "description": "Text content to write. Overwrites any existing file at this path. Cannot contain shell commands or malicious injection sequences."
               }
             },
             "required": ["path", "content"],
@@ -178,7 +178,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4096,
-            "description": "Absolute path within an allowed workspace root",
+            "description": "Absolute or relative path within an allowed workspace root. Must not contain directory traversal sequences (e.g. \"..\") or shell metacharacters, and cannot be empty or whitespace-only.",
             "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
           },
           "description": "Paths to delete (max 1000); accepts files, directories, or symlinks"
@@ -263,12 +263,12 @@
               "oldText": {
                 "type": "string",
                 "minLength": 1,
-                "description": "Exact literal text to locate in the file (include 3-5 lines of context to ensure uniqueness)",
+                "description": "Exact literal text to locate in the file. Must include 3-5 lines of context to ensure uniqueness and avoid matching the wrong block.",
                 "examples": ["const x = 1;", "function oldName("]
               },
               "newText": {
                 "type": "string",
-                "description": "Replacement text; use an empty string to delete the matched text",
+                "description": "Replacement text. Use an empty string to delete the matched oldText. Cannot contain shell commands or malicious injection sequences.",
                 "examples": ["const x = 2;", "function newName(", ""]
               }
             },
@@ -302,7 +302,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4096,
-            "description": "Absolute path within an allowed workspace root",
+            "description": "Absolute or relative path within an allowed workspace root. Must not contain directory traversal sequences (e.g. \"..\") or shell metacharacters, and cannot be empty or whitespace-only.",
             "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
           }
         },
@@ -317,7 +317,7 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 4096,
-                "description": "Absolute path within an allowed workspace root",
+                "description": "Absolute or relative path within an allowed workspace root. Must not contain directory traversal sequences (e.g. \"..\") or shell metacharacters, and cannot be empty or whitespace-only.",
                 "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
               },
               "edits": {
@@ -329,12 +329,12 @@
                     "oldText": {
                       "type": "string",
                       "minLength": 1,
-                      "description": "Exact literal text to locate in the file (include 3-5 lines of context to ensure uniqueness)",
+                      "description": "Exact literal text to locate in the file. Must include 3-5 lines of context to ensure uniqueness and avoid matching the wrong block.",
                       "examples": ["const x = 1;", "function oldName("]
                     },
                     "newText": {
                       "type": "string",
-                      "description": "Replacement text; use an empty string to delete the matched text",
+                      "description": "Replacement text. Use an empty string to delete the matched oldText. Cannot contain shell commands or malicious injection sequences.",
                       "examples": ["const x = 2;", "function newName(", ""]
                     }
                   },
@@ -601,7 +601,7 @@
           "minLength": 1,
           "maxLength": 1000,
           "pattern": "^(?!\\/)(?![a-zA-Z]:[\\\\/])(?!.*\\.\\.).+$",
-          "description": "Relative glob pattern matching files under the search root (e.g. \"**/*.ts\", \"src/**/*.js\")",
+          "description": "A strictly relative glob pattern matching files under the search root (e.g. \"**/*.ts\", \"src/**/*.js\"). Cannot start with a slash, must not be empty or whitespace-only, and must not contain directory traversal sequences like \"..\" or shell metacharacters.",
           "title": "Glob Pattern",
           "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"],
           "suggestion": "Use forward-slash globs; absolute paths and \"..\" are forbidden."
@@ -700,7 +700,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096,
-          "description": "Absolute path within an allowed workspace root",
+          "description": "Absolute or relative path within an allowed workspace root. Must not contain directory traversal sequences (e.g. \"..\") or shell metacharacters, and cannot be empty or whitespace-only.",
           "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
         },
         "algorithms": {
@@ -787,7 +787,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096,
-          "description": "Absolute path within an allowed workspace root",
+          "description": "Absolute or relative path within an allowed workspace root. Must not contain directory traversal sequences (e.g. \"..\") or shell metacharacters, and cannot be empty or whitespace-only.",
           "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
         },
         "maxDepth": {
@@ -1120,7 +1120,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4096,
-            "description": "Absolute path within an allowed workspace root",
+            "description": "Absolute or relative path within an allowed workspace root. Must not contain directory traversal sequences (e.g. \"..\") or shell metacharacters, and cannot be empty or whitespace-only.",
             "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
           }
         }
@@ -1338,7 +1338,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096,
-          "description": "Absolute path within an allowed workspace root",
+          "description": "Absolute or relative path within an allowed workspace root. Must not contain directory traversal sequences (e.g. \"..\") or shell metacharacters, and cannot be empty or whitespace-only.",
           "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
         },
         "pattern": {
@@ -1349,13 +1349,13 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 10000,
-          "description": "Text or regex to find. When isRegex=true, uses RE2 syntax with capture groups ($1, $2); no lookahead/lookbehind/backreferences.",
+          "description": "Exact literal text or RE2 regex pattern to search for. When isRegex=true, uses RE2 syntax (no lookahead, lookbehind, or backreferences are supported). Cannot be empty or whitespace-only.",
           "examples": ["TODO", "function\\s+(\\w+)", "import.*from"]
         },
         "replacement": {
           "type": "string",
           "maxLength": 10000,
-          "description": "Replacement text; use capture group references ($1, $2) when isRegex=true, empty string to delete matches",
+          "description": "Replacement text. Use capture group references ($1, $2, etc.) when isRegex=true. Use an empty string to delete all matches. Cannot contain shell commands or malicious injection sequences.",
           "examples": ["$1_renamed", "", "TODO: fix"]
         },
         "isRegex": {
@@ -1422,7 +1422,7 @@
           "minLength": 1,
           "maxLength": 1000,
           "pattern": "^(?!\\/)(?![a-zA-Z]:[\\\\/])(?!.*\\.\\.).+$",
-          "description": "Relative glob pattern matching files under the search root (e.g. \"**/*.ts\", \"src/**/*.js\")",
+          "description": "A strictly relative glob pattern matching files under the search root (e.g. \"**/*.ts\", \"src/**/*.js\"). Cannot start with a slash, must not be empty or whitespace-only, and must not contain directory traversal sequences like \"..\" or shell metacharacters.",
           "title": "Glob Pattern",
           "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"],
           "suggestion": "Use forward-slash globs; absolute paths and \"..\" are forbidden."
@@ -1581,7 +1581,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096,
-          "description": "Absolute path within an allowed workspace root",
+          "description": "Absolute or relative path within an allowed workspace root. Must not contain directory traversal sequences (e.g. \"..\") or shell metacharacters, and cannot be empty or whitespace-only.",
           "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
         },
         "pattern": {
@@ -1592,7 +1592,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 10000,
-          "description": "Text or regex to find in file contents. When isRegex=true, uses RE2 syntax (no lookahead, lookbehind, or backreferences).",
+          "description": "Exact literal text or RE2 regex pattern to search for in file contents. When isRegex=true, uses RE2 syntax (no lookahead, lookbehind, or backreferences are supported). Cannot be empty or whitespace-only.",
           "examples": ["TODO", "function\\s+(\\w+)", "import.*from"]
         },
         "isRegex": {
@@ -1672,7 +1672,7 @@
           "minLength": 1,
           "maxLength": 1000,
           "pattern": "^(?!\\/)(?![a-zA-Z]:[\\\\/])(?!.*\\.\\.).+$",
-          "description": "Relative glob pattern matching files under the search root (e.g. \"**/*.ts\", \"src/**/*.js\")",
+          "description": "A strictly relative glob pattern matching files under the search root (e.g. \"**/*.ts\", \"src/**/*.js\"). Cannot start with a slash, must not be empty or whitespace-only, and must not contain directory traversal sequences like \"..\" or shell metacharacters.",
           "title": "Glob Pattern",
           "examples": ["**/*.ts", "src/**/*.js", "*.{ts,tsx}"],
           "suggestion": "Use forward-slash globs; absolute paths and \"..\" are forbidden."
@@ -1816,7 +1816,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4096,
-            "description": "Absolute path within an allowed workspace root",
+            "description": "Absolute or relative path within an allowed workspace root. Must not contain directory traversal sequences (e.g. \"..\") or shell metacharacters, and cannot be empty or whitespace-only.",
             "suggestion": "Path must be inside an allowed root. Call list_roots to see allowed directories."
           }
         }

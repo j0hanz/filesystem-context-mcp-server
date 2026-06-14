@@ -361,8 +361,11 @@ const GrepInputSchema = z.strictObject({
     .string()
     .min(1)
     .max(10000)
+    .refine((val) => val.trim().length > 0, {
+      message: 'searchPattern cannot be empty or whitespace-only',
+    })
     .describe(
-      'Text or regex to find in file contents. When isRegex=true, uses RE2 syntax (no lookahead, lookbehind, or backreferences).',
+      'Exact literal text or RE2 regex pattern to search for in file contents. When isRegex=true, uses RE2 syntax (no lookahead, lookbehind, or backreferences are supported). Cannot be empty or whitespace-only.',
     )
     .meta({ examples: ['TODO', 'function\\s+(\\w+)', 'import.*from'] }),
   isRegex: defaultFalseBoolean('Treat searchPattern as a RE2 regex (default: literal text match)'),

@@ -50,8 +50,23 @@ function pathArg(
   description: string,
 ): ReturnType<typeof completable<z.ZodString>> {
   const completer = new PathCompleter(guard);
-  return completable(z.string().describe(description), (value, ctx) =>
-    completer.suggest(value, argumentName, ctx?.arguments ?? undefined),
+  return completable(
+    z
+      .string()
+      .min(1, { message: 'Path required' })
+      .refine((val) => val.trim().length > 0, {
+        message: 'Path cannot be empty or whitespace-only',
+      })
+      .refine((val) => !val.includes('..'), {
+        message: 'Directory traversal sequences ("..") are forbidden',
+      })
+      .refine((val) => !/[\n\r;|`]/g.test(val), {
+        message: 'Path contains prohibited characters (newlines or shell metacharacters)',
+      })
+      .describe(
+        `${description}. Must not contain directory traversal sequences (e.g. "..") or shell metacharacters, and cannot be empty or whitespace-only.`,
+      ),
+    (value, ctx) => completer.suggest(value, argumentName, ctx?.arguments ?? undefined),
   );
 }
 
@@ -59,10 +74,24 @@ function topicArg(
   topics: readonly string[],
   description: string,
 ): ReturnType<typeof completable<z.ZodString>> {
-  return completable(z.string().describe(description), (value) => {
-    const lower = value.toLowerCase();
-    return lower ? topics.filter((t) => t.startsWith(lower)) : [...topics];
-  });
+  return completable(
+    z
+      .string()
+      .min(1, { message: 'Topic required' })
+      .refine((val) => val.trim().length > 0, {
+        message: 'Topic cannot be empty or whitespace-only',
+      })
+      .refine((val) => !/[\n\r;|`]/g.test(val), {
+        message: 'Topic contains prohibited characters (newlines or shell metacharacters)',
+      })
+      .describe(
+        `${description} Must not contain shell metacharacters and cannot be empty or whitespace-only.`,
+      ),
+    (value) => {
+      const lower = value.toLowerCase();
+      return lower ? topics.filter((t) => t.startsWith(lower)) : [...topics];
+    },
+  );
 }
 
 function userText(text: string): PromptMessage {
@@ -241,7 +270,15 @@ const FIND_IN_TREE: PromptEntry = {
             query: z
               .string()
               .min(1)
-              .describe('Search term: a glob pattern for name mode or a regex for content mode.'),
+              .refine((val) => val.trim().length > 0, {
+                message: 'Query cannot be empty or whitespace-only',
+              })
+              .refine((val) => !/[\n\r;|`]/g.test(val), {
+                message: 'Query contains prohibited characters (newlines or shell metacharacters)',
+              })
+              .describe(
+                'Search term. Glob pattern for name mode or RE2 regex pattern for content/both modes. Cannot be empty or whitespace-only, and must not contain shell metacharacters.',
+              ),
             root: pathArg(
               options.pathGuard,
               'root',

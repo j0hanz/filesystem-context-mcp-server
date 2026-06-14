@@ -1,4 +1,4 @@
-﻿import type { ContentBlock } from '@modelcontextprotocol/server';
+import type { ContentBlock } from '@modelcontextprotocol/server';
 
 import { basename } from 'node:path';
 
@@ -36,13 +36,18 @@ const EditSpecSchema = z.strictObject({
   oldText: z
     .string()
     .min(1, 'oldText required')
+    .refine((val) => val.trim().length > 0, {
+      message: 'oldText cannot be empty or whitespace-only',
+    })
     .describe(
-      'Exact literal text to locate in the file (include 3-5 lines of context to ensure uniqueness)',
+      'Exact literal text to locate in the file. Must include 3-5 lines of context to ensure uniqueness and avoid matching the wrong block.',
     )
     .meta({ examples: ['const x = 1;', 'function oldName('] }),
   newText: z
     .string()
-    .describe('Replacement text; use an empty string to delete the matched text')
+    .describe(
+      'Replacement text. Use an empty string to delete the matched oldText. Cannot contain shell commands or malicious injection sequences.',
+    )
     .meta({ examples: ['const x = 2;', 'function newName(', ''] }),
 });
 

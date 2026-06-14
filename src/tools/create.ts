@@ -17,7 +17,9 @@ const CreateFileItemSchema = z.strictObject({
   content: z
     .string()
     .max(MAX_TEXT_FILE_SIZE)
-    .describe('Text content to write; overwrites any existing file at this path'),
+    .describe(
+      'Text content to write. Overwrites any existing file at this path. Cannot contain shell commands or malicious injection sequences.',
+    ),
 });
 
 const CreateFileResultSchema = z.strictObject({

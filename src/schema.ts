@@ -39,7 +39,18 @@ const PathBase = z
   .string()
   .min(1, { error: 'Path required' })
   .max(MAX_PATH_LENGTH, { error: `Path too long (max ${MAX_PATH_LENGTH} chars)` })
-  .describe('Absolute path within an allowed workspace root')
+  .refine((val) => val.trim().length > 0, {
+    message: 'Path cannot be empty or whitespace-only',
+  })
+  .refine((val) => !val.includes('..'), {
+    message: 'Directory traversal sequences ("..") are forbidden',
+  })
+  .refine((val) => !/[\n\r;|`]/g.test(val), {
+    message: 'Path contains prohibited characters (newlines or shell metacharacters)',
+  })
+  .describe(
+    'Absolute or relative path within an allowed workspace root. Must not contain directory traversal sequences (e.g. "..") or shell metacharacters, and cannot be empty or whitespace-only.',
+  )
   .meta({
     suggestion: 'Path must be inside an allowed root. Call list_roots to see allowed directories.',
   });
@@ -58,8 +69,14 @@ export const SafeGlobPattern = z
   .refine((val) => isSafeGlobSyntax(val), {
     message: 'Invalid glob or unsafe path (absolute/.. forbidden)',
   })
+  .refine((val) => val.trim().length > 0, {
+    message: 'Pattern cannot be empty or whitespace-only',
+  })
+  .refine((val) => !/[\n\r;|`]/g.test(val), {
+    message: 'Pattern contains prohibited characters (newlines or shell metacharacters)',
+  })
   .describe(
-    'Relative glob pattern matching files under the search root (e.g. "**/*.ts", "src/**/*.js")',
+    'A strictly relative glob pattern matching files under the search root (e.g. "**/*.ts", "src/**/*.js"). Cannot start with a slash, must not be empty or whitespace-only, and must not contain directory traversal sequences like ".." or shell metacharacters.',
   )
   .meta({
     id: 'SafeGlobPattern',

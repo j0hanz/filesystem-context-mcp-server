@@ -57,15 +57,18 @@ const SearchAndReplaceInputSchema = z.strictObject({
     .string()
     .min(1)
     .max(10000)
+    .refine((val) => val.trim().length > 0, {
+      message: 'searchPattern cannot be empty or whitespace-only',
+    })
     .describe(
-      'Text or regex to find. When isRegex=true, uses RE2 syntax with capture groups ($1, $2); no lookahead/lookbehind/backreferences.',
+      'Exact literal text or RE2 regex pattern to search for. When isRegex=true, uses RE2 syntax (no lookahead, lookbehind, or backreferences are supported). Cannot be empty or whitespace-only.',
     )
     .meta({ examples: ['TODO', 'function\\s+(\\w+)', 'import.*from'] }),
   replacement: z
     .string()
     .max(10000)
     .describe(
-      'Replacement text; use capture group references ($1, $2) when isRegex=true, empty string to delete matches',
+      'Replacement text. Use capture group references ($1, $2, etc.) when isRegex=true. Use an empty string to delete all matches. Cannot contain shell commands or malicious injection sequences.',
     )
     .meta({ examples: ['$1_renamed', '', 'TODO: fix'] }),
   isRegex: defaultFalseBoolean('Treat searchPattern as a RE2 regex (default: literal text match)'),
