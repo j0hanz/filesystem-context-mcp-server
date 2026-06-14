@@ -21,7 +21,8 @@ applyBridgeFlags(process.argv.slice(2));
 
 // Dynamically import all modules that transitively load util.ts so that the
 // bridge flags above are in effect when their module-level constants are set.
-const { CliExitError, parseArgs, runPrintConfig } = await import('./cli.js');
+const { CliExitError, parseArgs, runPrintConfig, allowPath, disallowPath, listAllowedPaths } =
+  await import('./cli.js');
 const { shutdownWorkerPool } = await import('./core/concurrency.js');
 const { shutdownSearchWorkerPool } = await import('./core/search/engine.js');
 const { logRuntimeFailure } = await import('./core/observability.js');
@@ -94,9 +95,29 @@ async function main(): Promise<void> {
   let readOnly: boolean;
   let printConfig: boolean;
   let json: boolean;
+  let subcommand: 'allow' | 'disallow' | 'list-allowed' | undefined;
+  let subcommandPath: string | undefined;
+  let client: string | undefined;
+  let config: string | undefined;
+  let serverName: string | undefined;
+  let dryRun: boolean;
+
   try {
     const parsed = await parseArgs();
-    ({ allowedDirs, allowCwd, port, readOnly, printConfig, json } = parsed);
+    ({
+      allowedDirs,
+      allowCwd,
+      port,
+      readOnly,
+      printConfig,
+      json,
+      subcommand,
+      subcommandPath,
+      client,
+      config,
+      serverName,
+      dryRun,
+    } = parsed);
   } catch (error: unknown) {
     if (error instanceof CliExitError) {
       if (error.message.length > 0) {
@@ -106,6 +127,39 @@ async function main(): Promise<void> {
       return;
     }
     throw error;
+  }
+
+  if (subcommand) {
+    try {
+      if (subcommand === 'allow') {
+        if (!subcommandPath) {
+          throw new CliExitError('Path is required', 1);
+        }
+        await allowPath(subcommandPath, { client, config, serverName, dryRun });
+      } else if (subcommand === 'disallow') {
+        if (!subcommandPath) {
+          throw new CliExitError('Path is required', 1);
+        }
+        await disallowPath(subcommandPath, { client, config, serverName, dryRun });
+      } else {
+        const allowed = await listAllowedPaths({ client, config, serverName });
+        if (json) {
+          process.stdout.write(JSON.stringify(allowed, null, 2) + '\n');
+        } else {
+          for (const p of allowed) {
+            process.stdout.write(`${p}\n`);
+          }
+        }
+      }
+    } catch (error: unknown) {
+      if (error instanceof CliExitError) {
+        process.stderr.write(`${error.message}\n`);
+        process.exitCode = error.exitCode;
+        return;
+      }
+      throw error;
+    }
+    return;
   }
 
   if (printConfig) {
