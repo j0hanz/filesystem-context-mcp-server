@@ -222,6 +222,7 @@ function buildSearchStream(
       followSymbolicLinks: false,
       onlyFiles: true,
       stats: needsStats,
+      suppressErrors: true,
       ...(normalized.maxDepth !== undefined ? { maxDepth: normalized.maxDepth } : {}),
     }),
   );

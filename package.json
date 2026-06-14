@@ -25,6 +25,7 @@
   },
   "files": [
     "dist",
+    "assets",
     "README.md"
   ],
   "scripts": {

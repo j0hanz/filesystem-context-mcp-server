@@ -208,6 +208,7 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
   // Without it, two concurrent subscribe() calls for the same URI both pass the
   // `watchers.has(uri)` check and the second watcher leaks (overwrites the first).
   const pending = new Set<string>();
+  const cancelledSubscriptions = new Set<string>();
   const dropWatcher = (uri: string, watcher: FSWatcher): void => {
     const current = watchers.get(uri);
     if (current !== watcher) return;
@@ -259,10 +260,15 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
       const filePath = extractPath(uri);
       if (!filePath) return;
 
+      cancelledSubscriptions.delete(uri);
       pending.add(uri);
       options.pathGuard
         .validateExistingPath(filePath)
         .then((resolved) => {
+          if (cancelledSubscriptions.has(uri)) {
+            cancelledSubscriptions.delete(uri);
+            return;
+          }
           // Re-check after the async gap: the URI may have been subscribed or
           // the cap reached while validation was in flight.
           if (watchers.has(uri) || watchers.size >= MAX_WATCHERS) return;
@@ -287,6 +293,8 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
       const watcher = watchers.get(uri);
       if (watcher) {
         dropWatcher(uri, watcher);
+      } else if (pending.has(uri)) {
+        cancelledSubscriptions.add(uri);
       }
     },
 

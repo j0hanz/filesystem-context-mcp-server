@@ -1675,11 +1675,11 @@ export async function* globEntries(options: GlobEntriesOptions): AsyncGenerator<
   let ok = false;
   try {
     yield* withOpsTrace({ op: 'globEntries', engine }, async function* () {
+      assertOptionsShape(options);
       let gitignoreMatcher: Ignore | null = null;
       if (options.respectGitignore) {
         gitignoreMatcher = await loadRootGitignore(options.cwd);
       }
-      assertOptionsShape(options);
       yield* nativeGlobEntries(options, gitignoreMatcher);
     });
     ok = true;
