@@ -13,6 +13,7 @@ import {
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
 import { DEFAULT_EXCLUDE_PATTERNS, type GuardedFileSystem } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
+import { decodeOffsetCursor, encodeOffsetCursor } from '../core/path.js';
 import {
   buildMatcher,
   executeSearch as executeCoreSearch,
@@ -41,7 +42,7 @@ import {
   PositiveInt,
   SafeGlobPattern,
 } from '../schema.js';
-import { decodeOffsetCursor, encodeOffsetCursor, putResource } from './_helpers.js';
+import { putResource } from './_helpers.js';
 import { defineTool } from './define.js';
 
 // ---------------------------------------------------------------------------

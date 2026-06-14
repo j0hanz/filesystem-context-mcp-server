@@ -1,12 +1,7 @@
 import type { ContentBlock, Role } from '@modelcontextprotocol/server';
 
-import * as z from 'zod/v4';
-
-import { ErrorCode, FsError } from '../core/errors.js';
 import type { FileInfo, MimeKind } from '../core/fs.js';
-import { createBase64JsonCodec } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
-import { NonNegInt } from '../schema.js';
 
 // ============ Resource Store Helpers ============
 
@@ -82,36 +77,6 @@ export function putResource(params: PutResourceParams): PutResourceResult {
     },
     link,
   };
-}
-
-// ============ Cursor Helpers ============
-
-const OffsetCursorSchema = z.strictObject({
-  offset: NonNegInt,
-});
-
-const OffsetCursorCodec = createBase64JsonCodec(OffsetCursorSchema);
-
-export function encodeOffsetCursor(offset: number): string {
-  return z.encode(OffsetCursorCodec, { offset });
-}
-
-export function decodeOffsetCursor(cursor: string): number {
-  // safeParse normally reports failure via result.success, but a codec decode can
-  // also throw; treat either as an invalid cursor with one uniform error.
-  let result: ReturnType<typeof OffsetCursorCodec.safeParse> | undefined;
-  try {
-    result = OffsetCursorCodec.safeParse(cursor);
-  } catch {
-    result = undefined;
-  }
-  if (!result?.success) {
-    throw new FsError(
-      ErrorCode.INVALID_INPUT,
-      `Invalid cursor. Request the first page without a cursor.`,
-    );
-  }
-  return result.data.offset;
 }
 
 // ============ FileInfo Helper ============

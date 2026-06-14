@@ -1245,7 +1245,7 @@ export class PathCompleter {
   }
 }
 
-export function createBase64JsonCodec<Schema extends z.ZodType>(
+function createBase64JsonCodec<Schema extends z.ZodType>(
   schema: Schema,
 ): z.ZodCodec<z.ZodString, Schema> {
   return z.codec(z.string(), schema, {
@@ -1278,4 +1278,32 @@ export function createBase64JsonCodec<Schema extends z.ZodType>(
     },
     encode: (value) => Buffer.from(JSON.stringify(value)).toString('base64url'),
   });
+}
+
+const OffsetCursorSchema = z.strictObject({
+  offset: z.int().nonnegative(),
+});
+
+const OffsetCursorCodec = createBase64JsonCodec(OffsetCursorSchema);
+
+export function encodeOffsetCursor(offset: number): string {
+  return z.encode(OffsetCursorCodec, { offset });
+}
+
+export function decodeOffsetCursor(cursor: string): number {
+  // safeParse normally reports failure via result.success, but a codec decode can
+  // also throw; treat either as an invalid cursor with one uniform error.
+  let result: ReturnType<typeof OffsetCursorCodec.safeParse> | undefined;
+  try {
+    result = OffsetCursorCodec.safeParse(cursor);
+  } catch {
+    result = undefined;
+  }
+  if (!result?.success) {
+    throw new FsError(
+      ErrorCode.INVALID_INPUT,
+      `Invalid cursor. Request the first page without a cursor.`,
+    );
+  }
+  return result.data.offset;
 }

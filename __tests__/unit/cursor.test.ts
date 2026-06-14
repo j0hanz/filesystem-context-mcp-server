@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { ErrorCode, FsError } from '../../src/core/errors.js';
-import { decodeOffsetCursor, encodeOffsetCursor } from '../../src/tools/_helpers.js';
+import { decodeOffsetCursor, encodeOffsetCursor } from '../../src/core/path.js';
 
 // ─── Helper functions ───────────────────────────────────────────────────────
 

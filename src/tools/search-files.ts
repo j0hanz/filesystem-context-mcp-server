@@ -23,8 +23,13 @@ import {
   type Stats,
   withOptionalStoppedReason,
 } from '../core/fs.js';
-import { isPathWithinDirectories, normalizePath } from '../core/path.js';
-import type { PathGuard } from '../core/path.js';
+import {
+  decodeOffsetCursor,
+  encodeOffsetCursor,
+  isPathWithinDirectories,
+  normalizePath,
+  type PathGuard,
+} from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import {
   assignDefined,
@@ -44,7 +49,7 @@ import {
   OptionalPath,
   SafeGlobPattern,
 } from '../schema.js';
-import { decodeOffsetCursor, encodeOffsetCursor, putResource } from './_helpers.js';
+import { putResource } from './_helpers.js';
 import { defineTool } from './define.js';
 
 // ---------------------------------------------------------------------------
