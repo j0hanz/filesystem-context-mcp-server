@@ -148,38 +148,38 @@ async function normalizeCliDirectories(
 function printHelpAndExit(): never {
   const help = `filesystem-mcp [options] [allowedDirs...]
 
-MCP filesystem server. Positional directories define allowed access roots.
+Filesystem MCP server. Pass one or more directories to set the allowed access roots.
 
 Options:
-  -h, --help                 Display command help
-  -v, --version              Display server version
-  --allow-cwd                Allow the current working directory as an additional root
-  --port <number>            Enable HTTP transport on the given port (Node Streamable HTTP)
-  --read-only                Disable all mutating tools (create, edit, delete, move, replace)
+  -h, --help                 Show this help message
+  -v, --version              Show the server version
+  --allow-cwd                Add the current working directory as an allowed root
+  --port <number>            Start HTTP transport on this port (Node Streamable HTTP)
+  --read-only                Disable write tools: create, edit, delete, move, replace
   --safe                     Alias for --read-only
-  --print-config             Print effective configuration and exit (combine with --json)
-  --json                     Output --print-config as JSON instead of human-readable text
-  --log-level <level>        Set log level: debug|info|warn|error (env: FILESYSTEM_MCP_LOG_LEVEL)
-  --http-host <host>         Bind HTTP server to host (env: FILESYSTEM_MCP_HTTP_HOST)
-  --api-key <key>            Require this API key for HTTP requests (env: FILESYSTEM_MCP_API_KEY)
+  --print-config             Print the active configuration and exit (use with --json for machine output)
+  --json                     Output --print-config as JSON
+  --log-level <level>        Log level: debug|info|warn|error (env: FILESYSTEM_MCP_LOG_LEVEL)
+  --http-host <host>         HTTP server bind address (env: FILESYSTEM_MCP_HTTP_HOST)
+  --api-key <key>            Require this API key on HTTP requests (env: FILESYSTEM_MCP_API_KEY)
   --allow-sensitive          Allow access to sensitive system paths (env: FS_CONTEXT_ALLOW_SENSITIVE)
-  --root-boundary <path>     Restrict allowed roots to be under this path (env: FS_ROOT_BOUNDARY)
-  --max-file-size <bytes>    Override maximum file size for reads (env: MAX_FILE_SIZE)
-  --walk-cwd                 Walk up from CWD to find project root (requires --allow-cwd or implies it)
-  --deny <pattern>           Deny access to paths matching this pattern (can be specified multiple times)
-  --allow-missing-roots      Do not fail startup if configured allowed directories do not exist
+  --root-boundary <path>     Require all allowed roots to fall under this path (env: FS_ROOT_BOUNDARY)
+  --max-file-size <bytes>    Maximum file size for reads in bytes (env: MAX_FILE_SIZE)
+  --walk-cwd                 Walk up from CWD to find a project root; implies --allow-cwd
+  --deny <pattern>           Block paths matching this pattern; repeatable
+  --allow-missing-roots      Start even if configured allowed directories do not exist
 
-Environment variables (overridden by flags when both are set):
-  FILESYSTEM_MCP_LOG_LEVEL   Log verbosity (debug|info|warn|error)
-  FILESYSTEM_MCP_HTTP_HOST   HTTP bind host
+Environment variables (flags take precedence when both are set):
+  FILESYSTEM_MCP_LOG_LEVEL   Log level: debug|info|warn|error
+  FILESYSTEM_MCP_HTTP_HOST   HTTP bind address
   FILESYSTEM_MCP_API_KEY     HTTP API key
-  FS_CONTEXT_ALLOW_SENSITIVE Allow sensitive system paths (set to any value to enable)
-  FS_ROOT_BOUNDARY           Path prefix that all allowed roots must fall under
-  MAX_FILE_SIZE              Maximum file size in bytes for read operations
-  FS_ALLOWED_DIRS            Colon-separated (Unix) or semicolon-separated (Windows) allowed dirs
-  FS_ALLOW_CWD_WALK          Walk up from CWD to find project root (set to any value to enable)
-  FS_CONTEXT_DENYLIST        Comma-separated list of paths/patterns to deny access to
-  FS_ALLOW_MISSING_ROOTS     Do not fail startup if configured allowed directories do not exist (set to any value to enable)
+  FS_CONTEXT_ALLOW_SENSITIVE Allow sensitive system paths (any value enables this)
+  FS_ROOT_BOUNDARY           Path prefix all allowed roots must fall under
+  MAX_FILE_SIZE              Maximum file size for reads in bytes
+  FS_ALLOWED_DIRS            Allowed dirs: colon-separated (Unix), semicolon-separated (Windows)
+  FS_ALLOW_CWD_WALK          Walk up from CWD to find a project root (any value enables this)
+  FS_CONTEXT_DENYLIST        Paths/patterns to block, comma-separated
+  FS_ALLOW_MISSING_ROOTS     Start even if configured allowed directories do not exist (any value enables this)
 
 Examples:
   $ filesystem-mcp /path/to/allowed/dir
