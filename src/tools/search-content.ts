@@ -180,10 +180,10 @@ async function searchContent(
   fsOps?: GuardedFileSystem,
 ): Promise<SearchContentResult> {
   if (!pathGuard) {
-    throw new Error('pathGuard is required in searchContent');
+    throw new FsError(ErrorCode.INVALID_INPUT, 'pathGuard is required in searchContent');
   }
   if (!fsOps) {
-    throw new Error('fsOps is required in searchContent');
+    throw new FsError(ErrorCode.INVALID_INPUT, 'fsOps is required in searchContent');
   }
   if (!basePath.trim()) throw new FsError(ErrorCode.INVALID_INPUT, 'basePath required');
   if (typeof pattern !== 'string') throw new FsError(ErrorCode.INVALID_INPUT, 'pattern required');

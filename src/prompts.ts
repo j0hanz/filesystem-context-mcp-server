@@ -304,7 +304,10 @@ const FIND_IN_TREE: PromptEntry = {
           const allowed = options.pathGuard.getAllowedDirectories();
           const candidate = root ?? allowed[0];
           if (!candidate) {
-            throw new Error('find-in-tree: no root provided and no allowed directories');
+            throw new ProtocolError(
+              ProtocolErrorCode.InvalidRequest,
+              'find-in-tree: no root provided and no allowed directories',
+            );
           }
           const resolved = await options.pathGuard.validateExistingDirectory(candidate);
           const steps: string[] = [];

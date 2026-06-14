@@ -225,11 +225,14 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
 
     async read(uri, variables, _ctx: ServerContext) {
       if (!options.pathGuard) {
-        throw new Error('PathGuard not configured');
+        throw new ProtocolError(ProtocolErrorCode.InternalError, 'PathGuard not configured');
       }
       const rawPath = variables['path'];
       if (typeof rawPath !== 'string') {
-        throw new Error('Path variable is required and must be a string');
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
+          'Path variable is required and must be a string',
+        );
       }
       await options.pathGuard.validateExistingPath(rawPath);
       const readResult = await readFileRaw(rawPath, options.pathGuard);
@@ -323,7 +326,10 @@ function createResultResource(options: ResourceRegistrationOptions): ResourceCon
     read(uri, variables) {
       const { id } = variables;
       if (typeof id !== 'string' || id.length === 0) {
-        throw new Error('Cached result expired. Re-run the tool to regenerate.');
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
+          'Cached result expired. Re-run the tool to regenerate.',
+        );
       }
 
       const entry = options.resourceStore.getEntry(uri.toString());

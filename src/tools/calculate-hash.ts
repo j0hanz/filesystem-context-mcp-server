@@ -292,7 +292,10 @@ async function handleCalculateHash(
 
   // Store hashes as JSON - resourceStore should always be available
   if (!resourceStore) {
-    throw new Error('Resource store is required for calculate_hash tool');
+    throw new FsError(
+      ErrorCode.INVALID_INPUT,
+      'Resource store is required for calculate_hash tool',
+    );
   }
 
   const hashJson = JSON.stringify(hashes, null, 2);

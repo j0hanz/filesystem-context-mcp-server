@@ -21,7 +21,7 @@ import { randomUUID } from 'node:crypto';
 import * as z from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
-import { ErrorCode, Problem } from '../core/errors.js';
+import { ErrorCode, FsError, Problem } from '../core/errors.js';
 import type { ProgressCtx } from '../core/fmt.js';
 import { plainMessage } from '../core/fmt.js';
 import { GuardedFileSystem } from '../core/fs.js';
@@ -662,7 +662,10 @@ export async function runOverPaths<TOverride, TPerPath>(
 ): Promise<BatchResult<TPerPath>> {
   const items = normalizeBatchItems(args);
   if (items.length === 0) {
-    throw new Error("runOverPaths: at least one of 'path', 'paths', or 'files' must be provided");
+    throw new FsError(
+      ErrorCode.INVALID_INPUT,
+      "runOverPaths: at least one of 'path', 'paths', or 'files' must be provided",
+    );
   }
 
   const defaultErrorCode = options?.defaultErrorCode ?? ErrorCode.UNKNOWN;

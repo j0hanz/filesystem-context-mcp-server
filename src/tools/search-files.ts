@@ -3,7 +3,7 @@ import { basename, relative } from 'node:path';
 import * as z from 'zod/v4';
 
 import { withTimedAbortSignal } from '../core/concurrency.js';
-import { ErrorCode } from '../core/errors.js';
+import { ErrorCode, FsError } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
 import {
   buildGlobOptions,
@@ -406,7 +406,7 @@ async function runSearchFiles(
   pathGuard?: PathGuard,
 ): Promise<{ results: SearchResult[]; summary: SearchFilesResult['summary'] }> {
   if (!pathGuard) {
-    throw new Error('pathGuard is required in runSearchFiles');
+    throw new FsError(ErrorCode.INVALID_INPUT, 'pathGuard is required in runSearchFiles');
   }
   const { results, filesScanned, truncated, stoppedReason, skippedInaccessible } =
     await collectSearchResults(
@@ -441,7 +441,7 @@ async function searchFiles(
   pathGuard?: PathGuard,
 ): Promise<SearchFilesResult> {
   if (!pathGuard) {
-    throw new Error('pathGuard is required in searchFiles');
+    throw new FsError(ErrorCode.INVALID_INPUT, 'pathGuard is required in searchFiles');
   }
   const normalized = normalizeSearchFilesOptions(options);
   return withTimedAbortSignal(options.signal, normalized.timeoutMs, async (signal) => {
