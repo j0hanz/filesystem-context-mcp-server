@@ -18,7 +18,7 @@ import {
   unlink as fsUnlink,
   writeFile as fsWriteFile,
 } from 'node:fs/promises';
-import { dirname, extname, isAbsolute, join, posix, relative, resolve } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, posix, relative, resolve } from 'node:path';
 import { text } from 'node:stream/consumers';
 import { pipeline } from 'node:stream/promises';
 
@@ -211,7 +211,22 @@ function hasKnownBinaryExtension(filePath: string): boolean {
 }
 
 async function openReadableFileHandle(filePath: string, signal?: AbortSignal): Promise<FileHandle> {
-  return withAbort(fsOpen(filePath, READ_ONLY_FILE_FLAG), signal);
+  const handlePromise = fsOpen(filePath, READ_ONLY_FILE_FLAG);
+  if (!signal) return handlePromise;
+  try {
+    return await withAbort(handlePromise, signal);
+  } catch (error) {
+    void handlePromise
+      .then((handle) => {
+        void handle.close().catch(() => {
+          /* ignore close error */
+        });
+      })
+      .catch(() => {
+        /* ignore open error */
+      });
+    throw error;
+  }
 }
 
 async function readProbe(handle: FileHandle, signal?: AbortSignal): Promise<Buffer> {
@@ -438,11 +453,25 @@ function normalizeByteRangeSpec(
   spec: Extract<ReadSpec, { kind: 'byteRange' }>,
   base: NormalizedOptions,
 ): NormalizeResult {
-  if (spec.offset !== undefined && spec.offset < 0) {
-    throw new FsError(ErrorCode.INVALID_INPUT, 'offset must be >= 0');
+  if (spec.offset !== undefined) {
+    if (
+      typeof spec.offset !== 'number' ||
+      !Number.isFinite(spec.offset) ||
+      !Number.isSafeInteger(spec.offset) ||
+      spec.offset < 0
+    ) {
+      throw new FsError(ErrorCode.INVALID_INPUT, 'offset must be a non-negative integer');
+    }
   }
-  if (spec.length !== undefined && spec.length < 1) {
-    throw new FsError(ErrorCode.INVALID_INPUT, 'length must be >= 1');
+  if (spec.length !== undefined) {
+    if (
+      typeof spec.length !== 'number' ||
+      !Number.isFinite(spec.length) ||
+      !Number.isSafeInteger(spec.length) ||
+      spec.length < 1
+    ) {
+      throw new FsError(ErrorCode.INVALID_INPUT, 'length must be a positive integer');
+    }
   }
   return {
     normalized: {
@@ -612,6 +641,7 @@ async function readTailContent(
   handle: FileHandle,
   tail: number,
   options: ReadContentOptions,
+  filePath: string,
 ): Promise<PartialReadResult> {
   assertNotAborted(options.signal);
 
@@ -675,6 +705,13 @@ async function readTailContent(
         if (lines.length > 0) {
           hasMoreLines = true;
           break;
+        } else {
+          throw new FsError(
+            ErrorCode.TOO_LARGE,
+            `File too large (${bytes} > ${options.maxSize} bytes). Use head to preview.`,
+            filePath,
+            { size: bytes, maxSize: options.maxSize },
+          );
         }
       }
 
@@ -853,6 +890,7 @@ class FileReader {
       this.context.handle,
       tail,
       contentOptions,
+      this.context.validPath,
     );
 
     return {
@@ -1016,11 +1054,14 @@ export async function atomicWriteFile(
       const resolvedTarget = isAbsolute(target) ? target : resolve(dirname(validPath), target);
       validPath = await pathGuard.validatePathForWrite(resolvedTarget);
     }
-  } catch {
-    // If lstat fails (e.g. file does not exist), proceed normally.
+  } catch (error) {
+    if (!isNodeError(error) || error.code !== 'ENOENT') {
+      throw error;
+    }
   }
 
-  const tempPath = `${validPath}.${randomUUID()}.tmp`;
+  const tempSuffix = randomUUID().replace(/-/g, '').slice(0, 12);
+  const tempPath = `${validPath}.${tempSuffix}.tmp`;
 
   try {
     assertNotAborted(signal);
@@ -1205,30 +1246,134 @@ function parseGitignoreLines(contents: string): string[] {
   return lines;
 }
 
-export async function loadRootGitignore(
-  root: string,
-  signal?: AbortSignal,
-): Promise<Ignore | null> {
-  const gitignorePath = join(root, '.gitignore');
+export class GitignoreManager {
+  private matchers = new Map<string, Ignore>();
 
-  try {
-    const contents = await fsReadFile(gitignorePath, {
-      encoding: 'utf-8',
-      signal,
-    });
-    const matcher = ignore();
-    matcher.add(parseGitignoreLines(contents));
-    return matcher;
-  } catch (error) {
-    if (isNodeError(error) && error.code === 'ENOENT') {
-      return null;
+  static async load(root: string, signal?: AbortSignal): Promise<GitignoreManager> {
+    const manager = new GitignoreManager();
+    try {
+      const gitignorePaths: string[] = [];
+      const gitignoreEntries = fsGlob('**/.gitignore', {
+        cwd: root,
+        exclude: (entry: string) => {
+          const name = basename(entry);
+          if (name === 'node_modules' || name === '.git' || name === '.hg' || name === '.svn') {
+            return true;
+          }
+          return false;
+        },
+      });
+      for await (const match of gitignoreEntries) {
+        if (signal?.aborted) break;
+        gitignorePaths.push(match);
+      }
+
+      await Promise.all(
+        gitignorePaths.map(async (relPath) => {
+          const absPath = join(root, relPath);
+          try {
+            const contents = await fsReadFile(absPath, {
+              encoding: 'utf-8',
+              signal,
+            });
+            const matcher = ignore();
+            matcher.add(parseGitignoreLines(contents));
+            const dir = toPosixPath(dirname(relPath));
+            manager.matchers.set(dir === '.' ? '' : dir, matcher);
+          } catch {
+            // Ignore read errors (e.g. permission denied)
+          }
+        }),
+      );
+    } catch {
+      // Ignore glob errors
     }
-    throw error;
+    return manager;
+  }
+
+  size(): number {
+    return this.matchers.size;
+  }
+
+  isIgnored(relativePath: string, isDirectory: boolean): boolean {
+    const normalized = toPosixPath(relativePath);
+    if (normalized === '' || normalized === '.') return false;
+    const parts = normalized.split('/');
+
+    // 1. Check parent directories first
+    let currentDir = '';
+    for (let i = 0; i < parts.length - 1; i++) {
+      const part = parts[i];
+      if (!part) continue;
+      currentDir = currentDir ? `${currentDir}/${part}` : part;
+
+      if (this.checkPath(currentDir, true)) {
+        return true;
+      }
+    }
+
+    // 2. Check the file/directory itself
+    return this.checkPath(normalized, isDirectory);
+  }
+
+  private checkPath(posixPath: string, isDirectory: boolean): boolean {
+    const parts = posixPath.split('/');
+    const pathToCheck = isDirectory
+      ? posixPath.endsWith('/')
+        ? posixPath
+        : `${posixPath}/`
+      : posixPath;
+
+    let ignored = false;
+
+    // Check root level
+    const rootMatcher = this.matchers.get('');
+    if (rootMatcher) {
+      const res = rootMatcher.test(pathToCheck);
+      if (res.ignored) ignored = true;
+      if (res.unignored) ignored = false;
+    }
+
+    // Check subdirectories
+    let currentDir = '';
+    for (let i = 0; i < parts.length - 1; i++) {
+      const part = parts[i];
+      if (!part) continue;
+      currentDir = currentDir ? `${currentDir}/${part}` : part;
+
+      const matcher = this.matchers.get(currentDir);
+      if (matcher) {
+        const relParts = parts.slice(i + 1);
+        const relPath = relParts.join('/');
+        const relPathToCheck = isDirectory
+          ? relPath.endsWith('/')
+            ? relPath
+            : `${relPath}/`
+          : relPath;
+
+        const res = matcher.test(relPathToCheck);
+        if (res.ignored) ignored = true;
+        if (res.unignored) ignored = false;
+      }
+    }
+
+    return ignored;
   }
 }
 
+export async function loadRootGitignore(
+  root: string,
+  signal?: AbortSignal,
+): Promise<GitignoreManager | null> {
+  const manager = await GitignoreManager.load(root, signal);
+  if (manager.size() === 0) {
+    return null;
+  }
+  return manager;
+}
+
 export function isIgnoredByGitignore(
-  matcher: Ignore,
+  matcher: GitignoreManager,
   root: string,
   absolutePath: string,
   options: { isDirectory?: boolean; relativePath?: string } = {},
@@ -1236,12 +1381,7 @@ export function isIgnoredByGitignore(
   let { relativePath } = options;
   relativePath ??= relative(root, absolutePath);
   if (relativePath.length === 0) return false;
-
-  const normalized = toPosixPath(relativePath);
-  if (options.isDirectory) {
-    return matcher.ignores(normalized.endsWith('/') ? normalized : `${normalized}/`);
-  }
-  return matcher.ignores(normalized);
+  return matcher.isIgnored(relativePath, Boolean(options.isDirectory));
 }
 
 interface GlobDirentLike extends DirentLike {
@@ -1582,7 +1722,7 @@ class AsyncGlobBatchQueue {
 function createExcludeFilter(
   cwd: string,
   excludePatterns: readonly string[],
-  gitignoreMatcher?: Ignore | null,
+  gitignoreMatcher?: GitignoreManager | null,
 ): ((match: GlobMatch) => boolean) | readonly string[] {
   if (!gitignoreMatcher) {
     return excludePatterns;
@@ -1680,7 +1820,7 @@ async function* processGlobPattern(
 
 async function* nativeGlobEntries(
   options: GlobEntriesOptions,
-  gitignoreMatcher?: Ignore | null,
+  gitignoreMatcher?: GitignoreManager | null,
 ): AsyncGenerator<GlobEntry> {
   const plan = normalizeGlobOptions(options);
   const seen = new Set<string>();
@@ -1714,7 +1854,7 @@ export async function* globEntries(options: GlobEntriesOptions): AsyncGenerator<
   try {
     yield* withOpsTrace({ op: 'globEntries', engine }, async function* () {
       assertOptionsShape(options);
-      let gitignoreMatcher: Ignore | null = null;
+      let gitignoreMatcher: GitignoreManager | null = null;
       if (options.respectGitignore) {
         gitignoreMatcher = await loadRootGitignore(options.cwd);
       }
