@@ -9,6 +9,7 @@ import RE2 from 're2';
 
 import { runWorkerOr } from '../core/concurrency.js';
 import { ErrorCode, formatUnknownErrorMessage, FsError, Problem } from '../core/errors.js';
+import { truncateProgressPattern } from '../core/fmt.js';
 import {
   atomicWriteFile,
   DEFAULT_EXCLUDE_PATTERNS,
@@ -41,7 +42,6 @@ import {
   PerFileErrorSchema,
   SafeGlobPattern,
 } from '../schema.js';
-import { truncateProgressPattern } from './_helpers.js';
 import { defineTool } from './define.js';
 
 function globEscape(name: string): string {

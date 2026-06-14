@@ -8,23 +8,6 @@ import { createBase64JsonCodec } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { NonNegInt } from '../schema.js';
 
-// ============ Formatting ============
-
-export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
-  const KIB_LOCAL = 1024;
-  const MIB_LOCAL = 1024 * 1024;
-  const GIB_LOCAL = 1024 * 1024 * 1024;
-  if (bytes < KIB_LOCAL) return `${bytes} B`;
-  if (bytes < MIB_LOCAL) return `${(bytes / KIB_LOCAL).toFixed(1)} KB`;
-  if (bytes < GIB_LOCAL) return `${(bytes / MIB_LOCAL).toFixed(1)} MB`;
-  return `${(bytes / GIB_LOCAL).toFixed(1)} GB`;
-}
-
-export function formatCount(count: number, singular: string, plural = `${singular}s`): string {
-  return `${String(count)} ${count === 1 ? singular : plural}`;
-}
-
 // ============ Resource Store Helpers ============
 
 interface PutResourceParams {
@@ -129,18 +112,6 @@ export function decodeOffsetCursor(cursor: string): number {
     );
   }
   return result.data.offset;
-}
-
-export function truncateProgressPattern(pattern: string, maxLength = 40): string {
-  if (pattern.length <= maxLength) return pattern;
-  if (pattern.includes('|')) {
-    const segments = pattern.split('|');
-    const first = segments[0] ?? '';
-    const second = segments[1];
-    const preview = second !== undefined ? `${first}|${second}` : first;
-    return preview.length <= maxLength ? `${preview}…` : `${preview.slice(0, maxLength)}…`;
-  }
-  return `${pattern.slice(0, maxLength)}…`;
 }
 
 // ============ FileInfo Helper ============

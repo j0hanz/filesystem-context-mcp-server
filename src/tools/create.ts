@@ -6,10 +6,10 @@ import * as z from 'zod/v4';
 
 import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, isAbortError, Problem } from '../core/errors.js';
+import { formatBytes } from '../core/fmt.js';
 import { atomicWriteFile, detectMimeType, MIME_SAMPLE_SIZE, mkdir, stat } from '../core/fs.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import { FileKind, IsoDateTime, NonNegInt, PerFileErrorSchema, RequiredPath } from '../schema.js';
-import { formatBytes } from './_helpers.js';
 import { defineTool } from './define.js';
 
 const CreateFileItemSchema = z.strictObject({

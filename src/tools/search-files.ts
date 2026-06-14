@@ -4,6 +4,7 @@ import * as z from 'zod/v4';
 
 import { withTimedAbortSignal } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
+import { formatCount, truncateProgressPattern } from '../core/fmt.js';
 import {
   buildGlobOptions,
   compareOptionalNumberDesc,
@@ -43,13 +44,7 @@ import {
   OptionalPath,
   SafeGlobPattern,
 } from '../schema.js';
-import {
-  decodeOffsetCursor,
-  encodeOffsetCursor,
-  formatCount,
-  putResource,
-  truncateProgressPattern,
-} from './_helpers.js';
+import { decodeOffsetCursor, encodeOffsetCursor, putResource } from './_helpers.js';
 import { defineTool } from './define.js';
 
 // ---------------------------------------------------------------------------

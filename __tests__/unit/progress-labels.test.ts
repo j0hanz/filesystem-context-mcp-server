@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { truncateProgressPattern } from '../../src/tools/_helpers.js';
+import { truncateProgressPattern } from '../../src/core/fmt.js';
 
 describe('truncateProgressPattern', () => {
   it('returns short patterns unchanged', () => {

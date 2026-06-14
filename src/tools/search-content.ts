@@ -10,6 +10,7 @@ import {
   FsError,
   isTimeoutLikeError,
 } from '../core/errors.js';
+import { formatCount, truncateProgressPattern } from '../core/fmt.js';
 import { DEFAULT_EXCLUDE_PATTERNS, type GuardedFileSystem } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
 import {
@@ -40,13 +41,7 @@ import {
   PositiveInt,
   SafeGlobPattern,
 } from '../schema.js';
-import {
-  decodeOffsetCursor,
-  encodeOffsetCursor,
-  formatCount,
-  putResource,
-  truncateProgressPattern,
-} from './_helpers.js';
+import { decodeOffsetCursor, encodeOffsetCursor, putResource } from './_helpers.js';
 import { defineTool } from './define.js';
 
 // ---------------------------------------------------------------------------

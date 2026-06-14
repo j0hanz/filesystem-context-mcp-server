@@ -6,6 +6,7 @@ import * as z from 'zod/v4';
 
 import { assertNotAborted } from '../core/concurrency.js';
 import { ErrorCode, isAbortError } from '../core/errors.js';
+import { formatBytes } from '../core/fmt.js';
 import {
   detectMimeType,
   type FileInfo,
@@ -24,7 +25,7 @@ import {
   PerFileErrorSchema,
   singleOrBatchPathsInput,
 } from '../schema.js';
-import { buildFileInfoPayload, formatBytes, putResource } from './_helpers.js';
+import { buildFileInfoPayload, putResource } from './_helpers.js';
 import { defineTool, type PerPathResult, runOverPaths } from './define.js';
 
 const StatInputSchema = singleOrBatchPathsInput({
