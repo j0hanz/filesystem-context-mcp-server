@@ -225,3 +225,73 @@ test('validatePathForWrite rejects a benign symlink whose target is sensitive', 
     'writing through a symlink to a sensitive file must be denied',
   );
 });
+
+// ─── REQ-001: Nonexistent file via out-of-sandbox symlink parent ──────────────
+
+test('validateExistingPath throws ACCESS_DENIED for nonexistent file via out-of-sandbox symlink parent', async () => {
+  const outsideDir = await mkdtemp(join(tmpdir(), 'path-guard-outside-'));
+  const linkPath = join(tmpDir, 'out-link-dir');
+
+  let linked = true;
+  try {
+    await symlink(outsideDir, linkPath, 'dir');
+  } catch {
+    linked = false;
+  }
+
+  try {
+    if (!linked) return;
+    await assert.rejects(
+      () => guard.validateExistingPath(join(linkPath, 'nonexistent.txt')),
+      (err: unknown) => hasErrorCode(err, ErrorCode.ACCESS_DENIED),
+      'nonexistent file under out-of-sandbox symlink parent must throw ACCESS_DENIED, not NOT_FOUND',
+    );
+  } finally {
+    await rm(outsideDir, { recursive: true, force: true });
+  }
+});
+
+// ─── REQ-002: NTFS Alternate Data Stream bypass ───────────────────────────────
+
+test('isSensitive blocks .env:secret ADS path on Windows', (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('ADS stripping is Windows-only');
+    return;
+  }
+  assert.strictEqual(guard.isSensitive('.env:secret'), true, '.env:secret must be blocked');
+  assert.strictEqual(
+    guard.isSensitive('.env.local:stream'),
+    true,
+    '.env.local:stream must be blocked',
+  );
+  assert.strictEqual(guard.isSensitive('key.pem:hidden'), true, 'key.pem:hidden must be blocked');
+});
+
+test('isSensitive blocks sensitive filename with ADS in a directory path on Windows', (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('ADS stripping is Windows-only');
+    return;
+  }
+  assert.strictEqual(
+    guard.isSensitive('subdir\\.env:stream'),
+    true,
+    '.env:stream as final segment must be blocked',
+  );
+});
+
+test('isSensitive does not break Windows drive-letter colon', (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('Drive-letter paths are Windows-only');
+    return;
+  }
+  assert.strictEqual(
+    guard.isSensitive('C:\\path\\normal.txt'),
+    false,
+    'C:\\ absolute path must not be broken',
+  );
+  assert.strictEqual(
+    guard.isSensitive('D:\\logs\\app.log'),
+    false,
+    'D:\\ absolute path must not be broken',
+  );
+});

@@ -1,10 +1,13 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it, mock } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { PathGuard } from '../../src/core/path.js';
+import { PathGuard, resolveAllowedDirectoriesState } from '../../src/core/path.js';
 import { McpRootsSynchronizer } from '../../src/core/registrar.js';
 
 function createFakeServer(): {
@@ -184,6 +187,24 @@ describe('McpRootsSynchronizer', () => {
       manager.destroy();
     } finally {
       mock.timers.reset();
+    }
+  });
+
+  // ─── REQ-005: AbortError must not be swallowed in root checks ────────────────
+
+  it('resolveAllowedDirectoriesState propagates AbortError from a pre-aborted signal', async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), 'path-guard-roots-abort-'));
+    try {
+      const controller = new AbortController();
+      controller.abort(new DOMException('Aborted', 'AbortError'));
+
+      await assert.rejects(
+        () => resolveAllowedDirectoriesState([tmpDir], controller.signal),
+        (err: unknown) => err instanceof Error && err.name === 'AbortError',
+        'pre-aborted signal must propagate as AbortError, not be swallowed',
+      );
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
     }
   });
 

@@ -92,4 +92,29 @@ test('path-completer', async (t) => {
       assert.deepEqual(results, [normalizePath(join(namedRoot, 'test.txt'))]);
     });
   });
+
+  // ─── REQ-003: Sensitive files must not appear in completion suggestions ───────
+
+  await t.test('omits sensitive files from completion suggestions', async () => {
+    await withTestDir(async (tmpDir) => {
+      await writeFile(join(tmpDir, '.env'), 'SECRET=1');
+      await writeFile(join(tmpDir, 'normal.txt'), 'hello');
+
+      const pathGuard = new PathGuard();
+      const state = await resolveAllowedDirectoriesState([tmpDir]);
+      pathGuard.initialize(state);
+
+      const completer = new PathCompleter(pathGuard);
+      const results = await completer.suggest(tmpDir + sep);
+
+      assert.ok(
+        !results.some((r) => r.includes('.env')),
+        `sensitive .env must not appear in suggestions, got: ${results.join(', ')}`,
+      );
+      assert.ok(
+        results.some((r) => r.includes('normal.txt')),
+        'normal.txt must appear in suggestions',
+      );
+    });
+  });
 });

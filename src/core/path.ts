@@ -1,6 +1,6 @@
 import { channel } from 'node:diagnostics_channel';
 import type { Stats } from 'node:fs';
-import { lstat, readdir, readlink, realpath, stat } from 'node:fs/promises';
+import { readdir, realpath, stat } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
 import {
   basename,
@@ -17,7 +17,7 @@ import {
 import * as z from 'zod/v4';
 
 import { assertNotAborted, createTimedAbortSignal, withAbort } from './concurrency.js';
-import { ErrorCode, FsError, isNodeError } from './errors.js';
+import { ErrorCode, FsError, isAbortError, isNodeError } from './errors.js';
 import { logToSender } from './observability.js';
 import type { LoggingState, LogSender } from './observability.js';
 import { parseEnvDirList, parseTrueEnvFlag } from './primitives.js';
@@ -55,7 +55,8 @@ async function isRootWithinBaseline(
     const realPath = await withAbort(realpath(normalizedRoot), signal);
     const normalizedReal = normalizePath(realPath);
     return isPathWithinDirectories(normalizedReal, baseline);
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) throw error;
     return false;
   }
 }
@@ -91,7 +92,8 @@ async function isRootWithinBoundaries(
     const realPath = await withAbort(realpath(normalizedRoot), signal);
     const normalizedReal = normalizePath(realPath);
     return isPathWithinDirectories(normalizedReal, boundaries);
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) throw error;
     return false;
   }
 }
@@ -504,6 +506,24 @@ function buildSensitivePatterns(): readonly string[] {
   return [...(allowSensitive ? [] : DEFAULT_SENSITIVE_PATTERNS), ...envDenylist];
 }
 
+function stripAdsFromPath(filePath: string): string {
+  const parts = filePath.split(/[\\/]/);
+  const stripped = parts.map((segment, i) => {
+    // Preserve the Windows drive-letter colon (e.g. "C:" at index 0 of absolute paths).
+    if (
+      i === 0 &&
+      segment.length === 2 &&
+      isAlpha(segment.charCodeAt(0)) &&
+      segment.charCodeAt(1) === CHAR_COLON
+    ) {
+      return segment;
+    }
+    const colonIdx = segment.indexOf(':');
+    return colonIdx !== -1 ? segment.slice(0, colonIdx) : segment;
+  });
+  return stripped.join(filePath.includes('\\') ? '\\' : '/');
+}
+
 export interface AccessGrantDeps {
   /** Probe whether a path is an existing directory, an existing file, or missing.
    *  Injected so PathGuard stays free of node:fs. */
@@ -579,7 +599,8 @@ export class PathGuard {
     if (this.denyPatterns.pathGlobs.length === 0 && this.denyPatterns.nameGlobs.length === 0) {
       return false;
     }
-    const normalizedPath = normalizeForMatch(filePath);
+    const pathToCheck = IS_WINDOWS ? stripAdsFromPath(filePath) : filePath;
+    const normalizedPath = normalizeForMatch(pathToCheck);
     return (
       matchesAnyGlob(this.denyPatterns.pathGlobs, normalizedPath) ||
       matchesAnyGlob(this.denyPatterns.nameGlobs, posix.basename(normalizedPath))
@@ -737,35 +758,6 @@ export class PathGuard {
     };
   }
 
-  private async validateSymlinkAccess(
-    normalizedRequested: string,
-    allowedDirs: string[],
-    accessDeniedHint: string,
-    requestedPath: string,
-  ): Promise<void> {
-    try {
-      const linkStats = await lstat(normalizedRequested);
-      if (linkStats.isSymbolicLink()) {
-        const target = await readlink(normalizedRequested);
-        const resolvedTarget = isAbsolute(target)
-          ? target
-          : resolve(dirname(normalizedRequested), target);
-        const normalizedTarget = normalizePath(resolvedTarget);
-        if (!isPathWithinDirectories(normalizedTarget, allowedDirs)) {
-          throw new FsError(
-            ErrorCode.ACCESS_DENIED,
-            `Outside allowed directories. ${accessDeniedHint}`,
-            requestedPath,
-          );
-        }
-      }
-    } catch (lstatErr) {
-      if (lstatErr instanceof FsError && lstatErr.code === ErrorCode.ACCESS_DENIED) {
-        throw lstatErr;
-      }
-    }
-  }
-
   private async handleRealpathError(
     error: unknown,
     normalizedRequested: string,
@@ -774,12 +766,29 @@ export class PathGuard {
     requestedPath: string,
   ): Promise<never> {
     if (isNodeError(error) && error.code === 'ENOENT') {
-      await this.validateSymlinkAccess(
-        normalizedRequested,
-        allowedDirs,
-        accessDeniedHint,
-        requestedPath,
-      );
+      // Resolve the nearest existing ancestor to detect out-of-sandbox symlinks.
+      // e.g. if `link -> C:\external` and path is `link\nonexistent.txt`, the
+      // ancestor resolves outside allowed dirs → ACCESS_DENIED, not NOT_FOUND.
+      try {
+        const { realAncestor, resolvedTarget } = await this.resolveNearestExistingAncestor(
+          requestedPath,
+          normalizedRequested,
+        );
+        if (
+          !isPathWithinDirectories(realAncestor, allowedDirs) ||
+          !isPathWithinDirectories(resolvedTarget, allowedDirs)
+        ) {
+          throw new FsError(
+            ErrorCode.ACCESS_DENIED,
+            `Outside allowed directories. ${accessDeniedHint}`,
+            requestedPath,
+          );
+        }
+      } catch (ancestorErr) {
+        if (ancestorErr instanceof FsError && ancestorErr.code === ErrorCode.ACCESS_DENIED) {
+          throw ancestorErr;
+        }
+      }
 
       throw new FsError(
         ErrorCode.NOT_FOUND,
@@ -1369,6 +1378,7 @@ export class PathCompleter {
     searchDir: string,
     prefix: string,
     allowed: string[],
+    isSensitive?: (path: string) => boolean,
   ): Promise<string[]> {
     const matches: string[] = [];
     if (!(await PathCompleter.isAllowedCompletionDirectory(searchDir, allowed))) return matches;
@@ -1378,6 +1388,7 @@ export class PathCompleter {
       if (prefix === '') {
         for (const entry of entries) {
           const fullPath = join(searchDir, entry.name);
+          if (isSensitive?.(fullPath)) continue;
           matches.push(entry.isDirectory() ? `${fullPath}${sep}` : fullPath);
         }
       } else {
@@ -1385,6 +1396,7 @@ export class PathCompleter {
         for (const entry of entries) {
           if (entry.name.toLowerCase().startsWith(lowerPrefix)) {
             const fullPath = join(searchDir, entry.name);
+            if (isSensitive?.(fullPath)) continue;
             matches.push(entry.isDirectory() ? `${fullPath}${sep}` : fullPath);
           }
         }
@@ -1449,7 +1461,12 @@ export class PathCompleter {
       }
 
       const { searchDir, prefix } = context;
-      const dirMatches = await PathCompleter.findMatchesInDirectory(searchDir, prefix, allowed);
+      const dirMatches = await PathCompleter.findMatchesInDirectory(
+        searchDir,
+        prefix,
+        allowed,
+        options.pathGuard.isSensitive.bind(options.pathGuard),
+      );
       const rootMatches = PathCompleter.findMatchingRoots(searchDir, prefix, allowed);
       return PathCompleter.mergeCompletionMatches(dirMatches, rootMatches).slice(
         0,
@@ -1470,21 +1487,39 @@ function createBase64JsonCodec<Schema extends z.ZodType>(
       try {
         buffer = Buffer.from(value, 'base64url');
       } catch (error) {
-        throw new Error('Invalid base64url encoding.', { cause: error });
+        throw new FsError(
+          ErrorCode.INVALID_INPUT,
+          'Invalid base64url encoding.',
+          undefined,
+          { originalError: error instanceof Error ? error.message : String(error) },
+          error instanceof Error ? error : undefined,
+        );
       }
 
       let text: string;
       try {
         text = buffer.toString('utf-8');
       } catch (error) {
-        throw new Error('UTF-8 decode failed (corrupted payload).', { cause: error });
+        throw new FsError(
+          ErrorCode.INVALID_INPUT,
+          'UTF-8 decode failed (corrupted payload).',
+          undefined,
+          { originalError: error instanceof Error ? error.message : String(error) },
+          error instanceof Error ? error : undefined,
+        );
       }
 
       let parsed: unknown;
       try {
         parsed = JSON.parse(text);
       } catch (error) {
-        throw new Error('Invalid JSON in payload.', { cause: error });
+        throw new FsError(
+          ErrorCode.INVALID_INPUT,
+          'Invalid JSON in payload.',
+          undefined,
+          { originalError: error instanceof Error ? error.message : String(error) },
+          error instanceof Error ? error : undefined,
+        );
       }
 
       // Cast to the codec's declared decode return type. The downstream
