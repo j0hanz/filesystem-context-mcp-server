@@ -280,7 +280,7 @@ If you install the server globally or run it via `npx`, you can easily authorize
 
 These commands scan and dynamically update configuration files for **Claude Desktop**, **Cursor**, **Cline**, **Roo Code**, and standard **global MCP configs** (`.mcp.json`).
 
-#### Examples
+#### Examples using the CLI helper
 
 - **Authorize a directory:**
 
@@ -297,6 +297,7 @@ These commands scan and dynamically update configuration files for **Claude Desk
   ```
 
 - **List all authorized directories:**
+
   ```bash
   filesystem-mcp list-allowed
   ```
