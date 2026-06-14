@@ -4,10 +4,14 @@ import { parentPort, threadId, Worker, workerData } from 'node:worker_threads';
 
 import RE2 from 're2';
 
-import { formatUnknownErrorMessage } from '../errors.js';
+import { ErrorCode, formatUnknownErrorMessage, FsError } from '../errors.js';
 import type { GuardedFileSystem, Stats } from '../fs.js';
 import { globEntries } from '../fs.js';
 import { SEARCH_WORKERS } from '../util.js';
+
+// Re-export the RE2 type so callers keep `Map<string, Regex>` / `Regex | undefined`
+// signatures without importing the `re2` package directly.
+export type { default as Regex } from 're2';
 
 // Constants
 const ERROR_SCAN_CANCELLED = 'Scan cancelled';
@@ -341,9 +345,27 @@ export class SearchWorkerPool {
 
 // ─── Search Matchers ────────────────────────────────────────────────────────
 
-function buildRegexPattern(pattern: string, options: MatcherOptions): string {
-  const escaped = options.isLiteral ? escapeRegex(pattern) : pattern;
-  return options.wholeWord ? `\\b${escaped}\\b` : escaped;
+export interface RegexCompileOptions {
+  caseSensitive?: boolean; // default false → flag 'i'
+  global?: boolean; // default false → flag 'g'
+  wholeWord?: boolean; // wrap \b…\b
+  literal?: boolean; // escape pattern before compiling
+}
+
+// Single owned RE2 compiler: derives flags, applies literal/wholeWord transforms,
+// and wraps construction failures in the canonical INVALID_PATTERN error.
+export function compileRegex(pattern: string, options: RegexCompileOptions = {}): RE2 {
+  const escaped = options.literal ? escapeRegex(pattern) : pattern;
+  const final = options.wholeWord ? `\\b${escaped}\\b` : escaped;
+  const flags = `${options.global ? 'g' : ''}${options.caseSensitive ? '' : 'i'}`;
+  try {
+    return new RE2(final, flags);
+  } catch (error) {
+    throw new FsError({
+      code: ErrorCode.INVALID_PATTERN,
+      message: `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`,
+    });
+  }
 }
 
 function countRegexLineMatches(regex: RE2, line: string): number {
@@ -364,9 +386,12 @@ class RegexContentMatcher implements ContentMatcher {
   private readonly regex: RE2;
 
   constructor(pattern: string, options: MatcherOptions) {
-    const final = buildRegexPattern(pattern, options);
-    const flags = options.caseSensitive ? 'g' : 'gi';
-    this.regex = new RE2(final, flags);
+    this.regex = compileRegex(pattern, {
+      caseSensitive: options.caseSensitive,
+      global: true,
+      wholeWord: options.wholeWord,
+      literal: options.isLiteral,
+    });
   }
 
   matchCount(line: string): number {

@@ -4,7 +4,6 @@ import { basename } from 'node:path';
 
 import * as z from 'zod/v4';
 import { createTwoFilesPatch, diffLines } from 'diff';
-import RE2 from 're2';
 
 import { runWorkerOr } from '../core/concurrency.js';
 import { ErrorCode, FsError, Problem } from '../core/errors.js';
@@ -18,6 +17,7 @@ import {
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
+import { compileRegex, type Regex } from '../core/search/engine.js';
 import type { ResourceStore } from '../core/store.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import {
@@ -214,7 +214,7 @@ function findEditMatch(
   content: string,
   oldText: string,
   ignoreWhitespace: boolean,
-  regexCache?: Map<string, RE2>,
+  regexCache?: Map<string, Regex>,
 ): TextRange | undefined {
   if (ignoreWhitespace) {
     const pattern = escapeRegexLiteral(oldText)
@@ -222,7 +222,7 @@ function findEditMatch(
       .replace(/\s+/g, '\\s*');
     let regex = regexCache?.get(pattern);
     if (!regex) {
-      regex = new RE2(pattern);
+      regex = compileRegex(pattern, { caseSensitive: true });
       if (regexCache) regexCache.set(pattern, regex);
     }
     const match = regex.exec(content);
@@ -438,7 +438,7 @@ async function applyEdits(
   let appliedEdits = 0;
   const unmatchedEdits: string[] = [];
   let lineRange: EditResult['lineRange'];
-  const regexCache = ignoreWhitespace ? new Map<string, RE2>() : undefined;
+  const regexCache = ignoreWhitespace ? new Map<string, Regex>() : undefined;
 
   for (const edit of edits) {
     const match = findEditMatch(newContent, edit.oldText, ignoreWhitespace, regexCache);

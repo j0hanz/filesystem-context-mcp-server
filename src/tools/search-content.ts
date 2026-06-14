@@ -1,22 +1,18 @@
 import { relative } from 'node:path';
 
 import * as z from 'zod/v4';
-import RE2 from 're2';
 
 import { withTimedAbortSignal } from '../core/concurrency.js';
-import {
-  ErrorCode,
-  formatUnknownErrorMessage,
-  FsError,
-  isTimeoutLikeError,
-} from '../core/errors.js';
+import { ErrorCode, FsError, isTimeoutLikeError } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
 import { DEFAULT_EXCLUDE_PATTERNS, type GuardedFileSystem } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
 import { decodeOffsetCursor, encodeOffsetCursor } from '../core/path.js';
 import {
   buildMatcher,
+  compileRegex,
   executeSearch as executeCoreSearch,
+  type Regex,
   SearchWorkerPool,
 } from '../core/search/engine.js';
 import type { SearchOptions } from '../core/search/engine.js';
@@ -313,7 +309,7 @@ interface SearchPreviewState {
 
 interface SearchContext {
   pattern: string;
-  matcher?: RE2;
+  matcher?: Regex;
   caseSensitive: boolean;
   foldedPattern?: string;
 }
@@ -597,34 +593,15 @@ async function executeSearch(
   fsOps?: GuardedFileSystem,
 ): Promise<SearchResultValue> {
   const options = buildSearchContentOptions(args, signal, onProgress);
-
-  try {
-    return await searchContent(basePath, args.searchPattern, options, pathGuard, fsOps);
-  } catch (error) {
-    if (error instanceof Error && /regular expression/i.test(error.message)) {
-      throw new FsError({
-        code: ErrorCode.INVALID_PATTERN,
-        message: `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`,
-      });
-    }
-    throw error;
-  }
+  return searchContent(basePath, args.searchPattern, options, pathGuard, fsOps);
 }
 
-function createSearchMatcher(args: SearchInput): RE2 | undefined {
+function createSearchMatcher(args: SearchInput): Regex | undefined {
   if (!args.isRegex) return undefined;
-  try {
-    const flags = args.caseSensitive ? '' : 'i';
-    return new RE2(args.searchPattern, flags);
-  } catch (error) {
-    throw new FsError({
-      code: ErrorCode.INVALID_PATTERN,
-      message: `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`,
-    });
-  }
+  return compileRegex(args.searchPattern, { caseSensitive: args.caseSensitive });
 }
 
-function createSearchContext(args: SearchInput, matcher: RE2 | undefined): SearchContext {
+function createSearchContext(args: SearchInput, matcher: Regex | undefined): SearchContext {
   return {
     pattern: args.searchPattern,
     caseSensitive: args.caseSensitive,
@@ -666,7 +643,7 @@ function buildExternalizedResponse(
 function getPagedPayloads(
   result: SearchResultValue,
   args: SearchInput,
-  regexMatcher: RE2 | undefined,
+  regexMatcher: Regex | undefined,
   cursorOffset: number,
 ): { matchPayloads: SearchMatchPayload[]; nextCursor: string | undefined } {
   const searchContext = createSearchContext(args, regexMatcher);

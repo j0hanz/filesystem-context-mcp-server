@@ -5,7 +5,6 @@ import { basename, dirname, join, relative } from 'node:path';
 
 import * as z from 'zod/v4';
 import { createTwoFilesPatch } from 'diff';
-import RE2 from 're2';
 
 import { runWorkerOr } from '../core/concurrency.js';
 import { ErrorCode, formatUnknownErrorMessage, FsError, Problem } from '../core/errors.js';
@@ -23,6 +22,7 @@ import {
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
+import { compileRegex, type Regex } from '../core/search/engine.js';
 import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_RESULTS,
@@ -176,16 +176,8 @@ function recordChangedFile(summary: ReplaceSummary, filePath: string, matchCount
   summary.changedFilesTruncated = true;
 }
 
-function createRegexMatcher(pattern: string, caseSensitive: boolean): RE2 {
-  const flags = caseSensitive ? 'g' : 'gi';
-  try {
-    return new RE2(pattern, flags);
-  } catch (error) {
-    throw new FsError({
-      code: ErrorCode.INVALID_PATTERN,
-      message: `Invalid regex pattern: ${formatUnknownErrorMessage(error)} (RE2: no lookahead/lookbehind/backrefs)`,
-    });
-  }
+function createRegexMatcher(pattern: string, caseSensitive: boolean): Regex {
+  return compileRegex(pattern, { caseSensitive, global: true });
 }
 
 interface ReplacementMatcher {
@@ -194,7 +186,7 @@ interface ReplacementMatcher {
   testBuffer?(buffer: Buffer): boolean;
 }
 
-function createRegexReplacementMatcher(regex: RE2): ReplacementMatcher {
+function createRegexReplacementMatcher(regex: Regex): ReplacementMatcher {
   return {
     testBuffer(buffer: Buffer): boolean {
       return regex.test(buffer);
