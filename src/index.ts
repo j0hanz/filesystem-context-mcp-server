@@ -47,7 +47,12 @@ function registerShutdownTrigger(event: NodeJS.Signals | 'end' | 'close'): void 
 }
 
 async function shutdown(reason: string, exitCode = 0): Promise<void> {
-  if (shutdownStarted) return;
+  if (shutdownStarted) {
+    if (reason === 'SIGINT' || reason === 'SIGTERM') {
+      process.exit(130);
+    }
+    return;
+  }
   shutdownStarted = true;
 
   process.exitCode = exitCode;
@@ -67,17 +72,34 @@ async function shutdown(reason: string, exitCode = 0): Promise<void> {
   try {
     if (activeHttpServer) {
       const server = activeHttpServer;
-      await new Promise<void>((resolve) => {
-        server.close(() => {
-          resolve();
+      try {
+        await new Promise<void>((resolve, reject) => {
+          server.close((err) => {
+            if (err) reject(err);
+            else resolve();
+          });
         });
-      });
+      } catch (error: unknown) {
+        logRuntimeFailure('shutdown_http_error', 'process', 'shutdown', error);
+      }
     }
     if (activeServer) {
-      await activeServer.close();
+      try {
+        await activeServer.close();
+      } catch (error: unknown) {
+        logRuntimeFailure('shutdown_mcp_error', 'process', 'shutdown', error);
+      }
     }
-    await shutdownWorkerPool();
-    await shutdownSearchWorkerPool();
+    try {
+      await shutdownWorkerPool();
+    } catch (error: unknown) {
+      logRuntimeFailure('shutdown_worker_pool_error', 'process', 'shutdown', error);
+    }
+    try {
+      await shutdownSearchWorkerPool();
+    } catch (error: unknown) {
+      logRuntimeFailure('shutdown_search_pool_error', 'process', 'shutdown', error);
+    }
     keepForceExitTimer = false;
   } catch (error: unknown) {
     logRuntimeFailure('shutdown_error', 'process', 'shutdown', error);
@@ -159,7 +181,10 @@ async function main(): Promise<void> {
         process.exitCode = error.exitCode;
         return;
       }
-      throw error;
+      const msg = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`Error: ${msg}\n`);
+      process.exitCode = 1;
+      return;
     }
     return;
   }
@@ -198,6 +223,8 @@ async function main(): Promise<void> {
       readOnly,
     });
   } else {
+    registerShutdownTrigger('end');
+    registerShutdownTrigger('close');
     const ctx = await createServer({
       allowCwd,
       cliAllowedDirs: allowedDirs,
@@ -210,8 +237,6 @@ async function main(): Promise<void> {
 
 registerShutdownTrigger('SIGTERM');
 registerShutdownTrigger('SIGINT');
-registerShutdownTrigger('end');
-registerShutdownTrigger('close');
 
 process.once('unhandledRejection', (reason: unknown) => {
   logRuntimeFailure('unhandled_rejection', 'process', 'unhandledRejection', reason);
