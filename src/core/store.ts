@@ -162,7 +162,19 @@ class RawStore implements InternalStore {
     if (!existing) return undefined;
     this._totalBytes -= existing.size;
     this.byUri.delete(uri);
-    this.byHashIndex.delete(buildIndexKey(existing.mimeType, existing.hash));
+    const indexKey = buildIndexKey(existing.mimeType, existing.hash);
+    if (this.byHashIndex.get(indexKey) === uri) {
+      this.byHashIndex.delete(indexKey);
+      // Restore index mapping to another valid entry with the same hash and mimeType if one exists
+      for (const [otherUri, otherEntry] of this.byUri.entries()) {
+        if (otherEntry.mimeType === existing.mimeType && otherEntry.hash === existing.hash) {
+          if (!isExpired(otherEntry)) {
+            this.byHashIndex.set(indexKey, otherUri);
+            break;
+          }
+        }
+      }
+    }
     return existing;
   }
 
@@ -432,6 +444,7 @@ class EvictionStore extends WrappedStore {
     kind: 'text' | 'blob',
     mimeType: string,
     data: string | Buffer,
+    name: string,
   ): StoredEntry | undefined {
     const contentHash = computeSha256(data);
     const cached = this.wrapped.getEntryByHash(mimeType, contentHash);
@@ -439,6 +452,12 @@ class EvictionStore extends WrappedStore {
       if (isExpired(cached)) {
         this.removeEntry(cached.uri, 'expired');
       } else if (cached.kind === kind) {
+        // Update name and refresh TTL on write (put)
+        cached.name = name;
+        const now = Date.now();
+        cached.storedAt = new Date(now).toISOString();
+        cached.expiresAt = new Date(now + this.options.entryTtlMs).toISOString();
+
         this.bumpLru(cached.uri, cached);
         publishResourceStoreDiagnostics({
           phase: 'cache_hit',
@@ -469,7 +488,12 @@ class EvictionStore extends WrappedStore {
     kind: 'text';
   } {
     this._checkBeforePut(params.text);
-    const hit = this._tryReturnHashHit('text', params.mimeType ?? 'text/plain', params.text);
+    const hit = this._tryReturnHashHit(
+      'text',
+      params.mimeType ?? 'text/plain',
+      params.text,
+      params.name,
+    );
     if (hit) return hit as TextResourceEntry & { kind: 'text' };
 
     const entry = this.wrapped.putText(params) as TextResourceEntry & { kind: 'text' };
@@ -486,7 +510,7 @@ class EvictionStore extends WrappedStore {
     data: Buffer;
   }): BlobResourceEntry & { kind: 'blob' } {
     this._checkBeforePut(params.data);
-    const hit = this._tryReturnHashHit('blob', params.mimeType, params.data);
+    const hit = this._tryReturnHashHit('blob', params.mimeType, params.data, params.name);
     if (hit) return hit as BlobResourceEntry & { kind: 'blob' };
 
     const entry = this.wrapped.putBlob(params) as BlobResourceEntry & { kind: 'blob' };
