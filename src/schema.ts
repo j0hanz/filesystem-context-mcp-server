@@ -16,13 +16,13 @@ export const Sha256Hex = z.hash('sha256').meta({
 });
 
 export const NonNegInt = z
-  .int({ error: 'Must be integer' })
-  .nonnegative({ error: 'Must be ≥ 0' })
+  .int({ message: 'Must be integer' })
+  .nonnegative({ message: 'Must be ≥ 0' })
   .meta({ id: 'NonNegInt', title: 'Non-Negative Integer' });
 
 export const PositiveInt = z
-  .int({ error: 'Must be integer' })
-  .positive({ error: 'Must be > 0' })
+  .int({ message: 'Must be integer' })
+  .positive({ message: 'Must be > 0' })
   .meta({ id: 'PositiveInt', title: 'Positive Integer' });
 
 export const FILE_TYPES = ['file', 'directory', 'symlink', 'other'] as const;
@@ -37,18 +37,44 @@ const MAX_PATH_LENGTH = 4096;
 
 const PathBase = z
   .string()
-  .min(1, { error: 'Path required' })
-  .max(MAX_PATH_LENGTH, { error: `Path too long (max ${MAX_PATH_LENGTH} chars)` })
-  .refine((val) => val.trim().length > 0, {
-    message: 'Path cannot be empty or whitespace-only',
-  })
-  .refine((val) => !val.includes('..'), {
-    message: 'Directory traversal sequences ("..") are forbidden',
-    abort: true,
-  })
-  .refine((val) => !/[\n\r;|`]/.test(val), {
-    message: 'Path contains prohibited characters (newlines or shell metacharacters)',
-    abort: true,
+  .min(1, { message: 'Path required' })
+  .max(MAX_PATH_LENGTH, { message: `Path too long (max ${MAX_PATH_LENGTH} chars)` })
+  .superRefine((val, ctx) => {
+    if (val.length === 0) {
+      return;
+    }
+    if (val.trim().length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Path cannot be empty or whitespace-only',
+        fatal: true,
+      });
+      return z.NEVER;
+    }
+    if (val.includes('\0')) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Path cannot contain null bytes',
+        fatal: true,
+      });
+      return z.NEVER;
+    }
+    if (val.includes('..')) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Directory traversal sequences ("..") are forbidden',
+        fatal: true,
+      });
+      return z.NEVER;
+    }
+    if (/[\n\r;|`]/.test(val)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Path contains prohibited characters (newlines or shell metacharacters)',
+        fatal: true,
+      });
+      return z.NEVER;
+    }
   })
   .describe(
     'Absolute or relative path within an allowed workspace root. Must not contain directory traversal sequences (e.g. "..") or shell metacharacters, and cannot be empty or whitespace-only.',
@@ -62,21 +88,47 @@ export const RequiredPath = PathBase;
 
 export const SafeGlobPattern = z
   .string()
-  .min(1, { error: 'Pattern required' })
-  .max(1000, { error: 'Max 1000 chars' })
-  .refine((val) => val.trim().length > 0, {
-    message: 'Pattern cannot be empty or whitespace-only',
-    abort: true,
-  })
-  .regex(/^(?!\/)(?![a-zA-Z]:[\\/])(?!.*\.\.).+$/, {
-    error: 'Invalid glob or unsafe path (absolute/.. forbidden)',
-    abort: true,
-  })
-  .refine((val) => isSafeGlobSyntax(val), {
+  .min(1, { message: 'Pattern required' })
+  .max(1000, { message: 'Max 1000 chars' })
+  .regex(/^(?![\\/])(?![a-zA-Z]:[\\/])(?!.*\.\.).*$/, {
     message: 'Invalid glob or unsafe path (absolute/.. forbidden)',
   })
-  .refine((val) => !/[\n\r;|`]/.test(val), {
-    message: 'Pattern contains prohibited characters (newlines or shell metacharacters)',
+  .superRefine((val, ctx) => {
+    if (val.length === 0) {
+      return;
+    }
+    if (val.trim().length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Pattern cannot be empty or whitespace-only',
+        fatal: true,
+      });
+      return z.NEVER;
+    }
+    if (val.includes('\0')) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Pattern cannot contain null bytes',
+        fatal: true,
+      });
+      return z.NEVER;
+    }
+    if (!isSafeGlobSyntax(val)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Invalid glob or unsafe path (absolute/.. forbidden)',
+        fatal: true,
+      });
+      return z.NEVER;
+    }
+    if (/[\n\r;|`]/.test(val)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Pattern contains prohibited characters (newlines or shell metacharacters)',
+        fatal: true,
+      });
+      return z.NEVER;
+    }
   })
   .describe(
     'A strictly relative glob pattern matching files under the search root (e.g. "**/*.ts", "src/**/*.js"). Cannot start with a slash, must not be empty or whitespace-only, and must not contain directory traversal sequences like ".." or shell metacharacters.',
@@ -137,26 +189,26 @@ export function createReadRangeFields(descs: ReadRangeDescriptions) {
   return {
     head: z
       .int32()
-      .min(1, { error: 'Min: 1' })
-      .max(100000, { error: 'Max: 100,000' })
+      .min(1, { message: 'Min: 1' })
+      .max(100000, { message: 'Max: 100,000' })
       .optional()
       .describe(descs.head),
     tail: z
       .int32()
-      .min(1, { error: 'Min: 1' })
-      .max(100000, { error: 'Max: 100,000' })
+      .min(1, { message: 'Min: 1' })
+      .max(100000, { message: 'Max: 100,000' })
       .optional()
       .describe(descs.tail),
     startLine: z
       .int32()
-      .min(1, { error: 'Min: 1' })
-      .max(100000, { error: 'Max: 100,000' })
+      .min(1, { message: 'Min: 1' })
+      .max(100000, { message: 'Max: 100,000' })
       .optional()
       .describe(descs.startLine),
     endLine: z
       .int32()
-      .min(1, { error: 'Min: 1' })
-      .max(100000, { error: 'Max: 100,000' })
+      .min(1, { message: 'Min: 1' })
+      .max(100000, { message: 'Max: 100,000' })
       .optional()
       .describe(descs.endLine),
   };
@@ -232,10 +284,11 @@ export function validateReadRange(
     });
   }
   if (hasByteRange && (hasHead || hasTail || hasStart || hasEnd)) {
+    const errorPath = value.offset !== undefined ? 'offset' : 'length';
     ctx.addIssue({
       code: 'custom',
-      path: ['offset'],
-      message: "Cannot use 'offset'/'length' with line-based params (head/tail/startLine/endLine)",
+      path: [errorPath],
+      message: `Cannot use '${errorPath}' with line-based params (head/tail/startLine/endLine)`,
       params: {
         rule: 'byte_range_no_line_params',
         conflictsWith: ['head', 'tail', 'startLine', 'endLine'],
