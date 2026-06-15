@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { getSystemErrorMessage, getSystemErrorName, parseArgs as utilParseArgs } from 'node:util';
 
 import { processInParallel } from './core/concurrency.js';
+import { cliFmt, padEndVisible } from './core/fmt.js';
 import {
   getReservedDeviceNameForPath,
   isSamePath,
@@ -54,28 +55,18 @@ function validateCliPath(inputPath: string): void {
   }
 }
 
-function getNodeErrorProperty(error: unknown, key: 'code' | 'errno'): string | number | undefined {
-  if (!isRecord(error)) return undefined;
-  const value = error[key];
-  if (typeof value === 'string' || typeof value === 'number') {
-    return value;
-  }
-  return undefined;
-}
-
-function getNodeErrorCode(error: unknown): string | undefined {
-  const code = getNodeErrorProperty(error, 'code');
-  return typeof code === 'string' ? code : undefined;
-}
-
-function getNodeErrorErrno(error: unknown): number | undefined {
-  const errno = getNodeErrorProperty(error, 'errno');
-  return typeof errno === 'number' ? errno : undefined;
+function getSystemErrorDetails(error: unknown): {
+  code: string | undefined;
+  errno: number | undefined;
+} {
+  if (!isRecord(error)) return { code: undefined, errno: undefined };
+  const code = typeof error['code'] === 'string' ? error['code'] : undefined;
+  const errno = typeof error['errno'] === 'number' ? error['errno'] : undefined;
+  return { code, errno };
 }
 
 function normalizeDirectoryError(error: unknown, inputPath: string): Error {
-  const code = getNodeErrorCode(error);
-  const errno = getNodeErrorErrno(error);
+  const { code, errno } = getSystemErrorDetails(error);
   if (error instanceof Error && code === undefined && errno === undefined) {
     return error;
   }
@@ -86,7 +77,7 @@ function normalizeDirectoryError(error: unknown, inputPath: string): Error {
       const message = getSystemErrorMessage(errno);
       return new Error(`Cannot access directory ${inputPath} (${name}: ${message})`);
     } catch {
-      // Fall through, but preserve the raw errno value.
+      // Fall through, but preserve raw errno value
     }
     return new Error(`Cannot access directory ${inputPath} (errno ${errno})`);
   }
@@ -133,72 +124,128 @@ export async function normalizeAndValidateDirs(
   if (errors.length === 0) {
     return deduplicateAllowedDirectories(results);
   }
-  let first = errors[0];
-  for (const failure of errors) {
-    if (first && failure.index < first.index) {
-      first = failure;
-    }
-  }
-  throw first?.error ?? new Error('Failed to validate directories');
+  const first = errors.reduce((prev, curr) => (curr.index < prev.index ? curr : prev));
+  throw first.error;
 }
 
-async function normalizeCliDirectories(
-  args: readonly string[],
-  allowMissing = false,
-): Promise<string[]> {
-  return normalizeAndValidateDirs(args, allowMissing);
+interface HelpRow {
+  flags: string;
+  desc: string;
 }
+
+const OPTIONS_HELP: HelpRow[] = [
+  { flags: '-h, --help', desc: 'Show this help message' },
+  { flags: '-v, --version', desc: 'Show the server version' },
+  { flags: '--allow-cwd', desc: 'Add the current working directory as an allowed root' },
+  { flags: '--port <number>', desc: 'Start HTTP transport on this port (Node Streamable HTTP)' },
+  { flags: '--read-only', desc: 'Disable write tools: create, edit, delete, move, replace' },
+  { flags: '--safe', desc: 'Alias for --read-only' },
+  {
+    flags: '--print-config',
+    desc: 'Print the active configuration and exit (use with --json for machine output)',
+  },
+  { flags: '--json', desc: 'Output --print-config as JSON' },
+  {
+    flags: '--log-level <level>',
+    desc: 'Log level: debug|info|warn|error (env: FILESYSTEM_MCP_LOG_LEVEL)',
+  },
+  { flags: '--http-host <host>', desc: 'HTTP server bind address (env: FILESYSTEM_MCP_HTTP_HOST)' },
+  {
+    flags: '--api-key <key>',
+    desc: 'Require this API key on HTTP requests (env: FILESYSTEM_MCP_API_KEY)',
+  },
+  {
+    flags: '--allow-sensitive',
+    desc: 'Allow access to sensitive system paths (env: FS_CONTEXT_ALLOW_SENSITIVE)',
+  },
+  {
+    flags: '--root-boundary <path>',
+    desc: 'Require all allowed roots to fall under this path (env: FS_ROOT_BOUNDARY)',
+  },
+  {
+    flags: '--max-file-size <bytes>',
+    desc: 'Maximum file size for reads in bytes (env: MAX_FILE_SIZE)',
+  },
+  { flags: '--walk-cwd', desc: 'Walk up from CWD to find a project root; implies --allow-cwd' },
+  { flags: '--deny <pattern>', desc: 'Block paths matching this pattern; repeatable' },
+  {
+    flags: '--allow-missing-roots',
+    desc: 'Start even if configured allowed directories do not exist',
+  },
+];
+
+const ENV_HELP: HelpRow[] = [
+  { flags: 'FILESYSTEM_MCP_LOG_LEVEL', desc: 'Log level: debug|info|warn|error' },
+  { flags: 'FILESYSTEM_MCP_HTTP_HOST', desc: 'HTTP bind address' },
+  { flags: 'FILESYSTEM_MCP_API_KEY', desc: 'HTTP API key' },
+  {
+    flags: 'FS_CONTEXT_ALLOW_SENSITIVE',
+    desc: 'Allow sensitive system paths (any value enables this)',
+  },
+  { flags: 'FS_ROOT_BOUNDARY', desc: 'Path prefix all allowed roots must fall under' },
+  { flags: 'MAX_FILE_SIZE', desc: 'Maximum file size for reads in bytes' },
+  {
+    flags: 'FS_ALLOWED_DIRS',
+    desc: 'Allowed dirs: colon-separated (Unix), semicolon-separated (Windows)',
+  },
+  {
+    flags: 'FS_ALLOW_CWD_WALK',
+    desc: 'Walk up from CWD to find a project root (any value enables this)',
+  },
+  { flags: 'FS_CONTEXT_DENYLIST', desc: 'Paths/patterns to block, comma-separated' },
+  {
+    flags: 'FS_ALLOW_MISSING_ROOTS',
+    desc: 'Start even if configured allowed directories do not exist (any value enables this)',
+  },
+];
+
+const EXAMPLES_HELP = [
+  '$ filesystem-mcp /path/to/allowed/dir',
+  '$ filesystem-mcp --allow-cwd',
+  '$ filesystem-mcp /project/src /project/tests --allow-cwd',
+  '$ filesystem-mcp --port 3000 /path/to/allowed/dir',
+  '$ filesystem-mcp --read-only /data/readonly',
+  '$ filesystem-mcp --print-config --json /project',
+];
 
 function printHelpAndExit(): never {
-  const help = `filesystem-mcp [options] [allowedDirs...]
+  const { bold, dim, section, flag, placeholder, cyan } = cliFmt;
+  const COL = 27;
 
-Filesystem MCP server. Pass one or more directories to set the allowed access roots.
+  const optRow = (flags: string, desc: string): string => {
+    const colored = flags
+      .replace(/<[^>]+>/g, (m) => placeholder(m))
+      .replace(/-{1,2}[\w-]+/g, (m) => flag(m));
+    return `  ${padEndVisible(colored, COL)}${desc}`;
+  };
 
-Options:
-  -h, --help                 Show this help message
-  -v, --version              Show the server version
-  --allow-cwd                Add the current working directory as an allowed root
-  --port <number>            Start HTTP transport on this port (Node Streamable HTTP)
-  --read-only                Disable write tools: create, edit, delete, move, replace
-  --safe                     Alias for --read-only
-  --print-config             Print the active configuration and exit (use with --json for machine output)
-  --json                     Output --print-config as JSON
-  --log-level <level>        Log level: debug|info|warn|error (env: FILESYSTEM_MCP_LOG_LEVEL)
-  --http-host <host>         HTTP server bind address (env: FILESYSTEM_MCP_HTTP_HOST)
-  --api-key <key>            Require this API key on HTTP requests (env: FILESYSTEM_MCP_API_KEY)
-  --allow-sensitive          Allow access to sensitive system paths (env: FS_CONTEXT_ALLOW_SENSITIVE)
-  --root-boundary <path>     Require all allowed roots to fall under this path (env: FS_ROOT_BOUNDARY)
-  --max-file-size <bytes>    Maximum file size for reads in bytes (env: MAX_FILE_SIZE)
-  --walk-cwd                 Walk up from CWD to find a project root; implies --allow-cwd
-  --deny <pattern>           Block paths matching this pattern; repeatable
-  --allow-missing-roots      Start even if configured allowed directories do not exist
+  const envRow = (name: string, desc: string): string => {
+    return `  ${padEndVisible(cyan(name), COL)}${desc}`;
+  };
 
-Environment variables (flags take precedence when both are set):
-  FILESYSTEM_MCP_LOG_LEVEL   Log level: debug|info|warn|error
-  FILESYSTEM_MCP_HTTP_HOST   HTTP bind address
-  FILESYSTEM_MCP_API_KEY     HTTP API key
-  FS_CONTEXT_ALLOW_SENSITIVE Allow sensitive system paths (any value enables this)
-  FS_ROOT_BOUNDARY           Path prefix all allowed roots must fall under
-  MAX_FILE_SIZE              Maximum file size for reads in bytes
-  FS_ALLOWED_DIRS            Allowed dirs: colon-separated (Unix), semicolon-separated (Windows)
-  FS_ALLOW_CWD_WALK          Walk up from CWD to find a project root (any value enables this)
-  FS_CONTEXT_DENYLIST        Paths/patterns to block, comma-separated
-  FS_ALLOW_MISSING_ROOTS     Start even if configured allowed directories do not exist (any value enables this)
+  const lines = [
+    '',
+    `${bold('Filesystem MCP')} ${dim(`v${SERVER_VERSION}`)}`,
+    '',
+    dim('Pass one or more directories to set the allowed access roots.'),
+    '',
+    section('Options:'),
+    ...OPTIONS_HELP.map(({ flags, desc }) => optRow(flags, desc)),
+    '',
+    `${section('Environment variables:')} ${dim('(flags take precedence when both are set)')}`,
+    ...ENV_HELP.map(({ flags, desc }) => envRow(flags, desc)),
+    '',
+    section('Examples:'),
+    ...EXAMPLES_HELP.map((ex) => `  ${dim(ex)}`),
+    '',
+  ];
 
-Examples:
-  $ filesystem-mcp /path/to/allowed/dir
-  $ filesystem-mcp --allow-cwd
-  $ filesystem-mcp /project/src /project/tests --allow-cwd
-  $ filesystem-mcp --port 3000 /path/to/allowed/dir
-  $ filesystem-mcp --read-only /data/readonly
-  $ filesystem-mcp --print-config --json /project
-`;
-  process.stdout.write(help);
+  process.stdout.write(lines.join('\n'));
   process.exit(0);
 }
 
 function printVersionAndExit(): never {
-  process.stdout.write(`${SERVER_VERSION}\n`);
+  process.stdout.write(`${cliFmt.cyan(SERVER_VERSION)}\n`);
   process.exit(0);
 }
 
@@ -230,6 +277,34 @@ function parsePortOption(raw: unknown): number | undefined {
   return n;
 }
 
+const CLI_PARSER_CONFIG = {
+  options: {
+    'allow-cwd': { type: 'boolean', default: false },
+    'read-only': { type: 'boolean', default: false },
+    safe: { type: 'boolean', default: false },
+    'print-config': { type: 'boolean', default: false },
+    json: { type: 'boolean', default: false },
+    port: { type: 'string' },
+    help: { type: 'boolean', short: 'h' },
+    version: { type: 'boolean', short: 'v' },
+    'log-level': { type: 'string' },
+    'http-host': { type: 'string' },
+    'api-key': { type: 'string' },
+    'allow-sensitive': { type: 'boolean', default: false },
+    'root-boundary': { type: 'string' },
+    'max-file-size': { type: 'string' },
+    'walk-cwd': { type: 'boolean', default: false },
+    deny: { type: 'string', multiple: true },
+    'allow-missing-roots': { type: 'boolean', default: false },
+    client: { type: 'string' },
+    config: { type: 'string' },
+    'server-name': { type: 'string' },
+    'dry-run': { type: 'boolean', default: false },
+  },
+  strict: true,
+  allowPositionals: true,
+} as const;
+
 export async function parseArgs(): Promise<{
   allowedDirs: string[];
   allowCwd: boolean;
@@ -247,33 +322,7 @@ export async function parseArgs(): Promise<{
   dryRun: boolean;
 }> {
   try {
-    const parsed = utilParseArgs({
-      options: {
-        'allow-cwd': { type: 'boolean', default: false },
-        'read-only': { type: 'boolean', default: false },
-        safe: { type: 'boolean', default: false },
-        'print-config': { type: 'boolean', default: false },
-        json: { type: 'boolean', default: false },
-        port: { type: 'string' },
-        help: { type: 'boolean', short: 'h' },
-        version: { type: 'boolean', short: 'v' },
-        'log-level': { type: 'string' },
-        'http-host': { type: 'string' },
-        'api-key': { type: 'string' },
-        'allow-sensitive': { type: 'boolean', default: false },
-        'root-boundary': { type: 'string' },
-        'max-file-size': { type: 'string' },
-        'walk-cwd': { type: 'boolean', default: false },
-        deny: { type: 'string', multiple: true },
-        'allow-missing-roots': { type: 'boolean', default: false },
-        client: { type: 'string' },
-        config: { type: 'string' },
-        'server-name': { type: 'string' },
-        'dry-run': { type: 'boolean', default: false },
-      },
-      strict: true,
-      allowPositionals: true,
-    });
+    const parsed = utilParseArgs(CLI_PARSER_CONFIG);
 
     if (parsed.values.help) {
       printHelpAndExit();
@@ -296,8 +345,7 @@ export async function parseArgs(): Promise<{
         }
       }
     } else {
-      const positionals = parsed.positionals;
-      for (const positional of positionals) {
+      for (const positional of parsed.positionals) {
         validateCliPath(positional);
       }
     }
@@ -324,7 +372,7 @@ export async function parseArgs(): Promise<{
       try {
         allowedDirs =
           parsed.positionals.length > 0
-            ? await normalizeCliDirectories(parsed.positionals, allowMissingRoots)
+            ? await normalizeAndValidateDirs(parsed.positionals, allowMissingRoots)
             : [];
       } catch (error: unknown) {
         throw new CliExitError(normalizeCliExitMessage(error), 1);
@@ -352,9 +400,7 @@ export async function parseArgs(): Promise<{
       throw error;
     }
 
-    const message = error instanceof Error ? error.message : String(error);
-    const formattedMessage = message.startsWith('Error:') ? message : `Error: ${message}`;
-    throw new CliExitError(formattedMessage, 1);
+    throw new CliExitError(normalizeCliExitMessage(error), 1);
   }
 }
 
@@ -412,14 +458,15 @@ export async function runPrintConfig(options: PrintConfigOptions): Promise<Effec
   if (options.json) {
     write(JSON.stringify(config, null, 2));
   } else {
-    write(`transport:    ${config.transport}\n`);
-    write(`readOnly:     ${String(config.readOnly)}\n`);
-    write(`apiKey:       ${config.apiKey ?? 'none'}\n`);
-    write(`allowedRoots: ${config.allowedRoots.join(', ') || '(none)'}\n`);
-    write(`tools:        ${config.tools.join(', ')}\n`);
-    write(`maxFileSize:  ${config.limits.maxFileSizeBytes}\n`);
-    write(`maxSearch:    ${config.limits.maxSearchFileSizeBytes}\n`);
-    write(`workers:      ${config.limits.searchWorkers}\n`);
+    const key = (k: string) => padEndVisible(cliFmt.cyan(k), 14);
+    write(`${key('transport:')}${config.transport}\n`);
+    write(`${key('readOnly:')}${cliFmt.bool(config.readOnly)}\n`);
+    write(`${key('apiKey:')}${cliFmt.dim(config.apiKey ?? 'none')}\n`);
+    write(`${key('allowedRoots:')}${config.allowedRoots.join(', ') || cliFmt.dim('(none)')}\n`);
+    write(`${key('tools:')}${cliFmt.dim(config.tools.join(', '))}\n`);
+    write(`${key('maxFileSize:')}${cliFmt.yellow(String(config.limits.maxFileSizeBytes))}\n`);
+    write(`${key('maxSearch:')}${cliFmt.yellow(String(config.limits.maxSearchFileSizeBytes))}\n`);
+    write(`${key('workers:')}${cliFmt.yellow(String(config.limits.searchWorkers))}\n`);
   }
 
   return config;
@@ -446,87 +493,41 @@ export function getExistingConfigPaths(
     }
   };
 
-  // 1. Claude Code user-level config (~/.claude.json) — official Claude Code MCP config
+  // 1. Claude Code config
   addIfExist('Claude Code', join(homeDir, '.claude.json'));
 
   // 2. Claude Desktop config
-  if (osPlatform === 'win32') {
-    addIfExist('Claude Desktop', join(appData, 'Claude', 'claude_desktop_config.json'));
-  } else if (osPlatform === 'darwin') {
-    addIfExist(
-      'Claude Desktop',
-      join(homeDir, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json'),
-    );
-  } else {
-    addIfExist('Claude Desktop', join(homeDir, '.config', 'Claude', 'claude_desktop_config.json'));
-  }
+  const claudeDesktopPath =
+    osPlatform === 'win32'
+      ? join(appData, 'Claude', 'claude_desktop_config.json')
+      : osPlatform === 'darwin'
+        ? join(homeDir, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json')
+        : join(homeDir, '.config', 'Claude', 'claude_desktop_config.json');
+  addIfExist('Claude Desktop', claudeDesktopPath);
 
-  // 3. Cursor Global config
+  // 3. Cursor Global and Global MCP configs
   addIfExist('Cursor Global', join(homeDir, '.cursor', 'mcp.json'));
-
-  // 3. Global MCP (.mcp.json)
   addIfExist('Global MCP (.mcp.json)', join(homeDir, '.mcp.json'));
   addIfExist('Global MCP (.mcp/mcp.json)', join(homeDir, '.mcp', 'mcp.json'));
 
-  // 4. VS Code Extensions (Cline, Roo Code)
-  const vscodeUserData =
-    osPlatform === 'win32'
-      ? join(appData, 'Code', 'User')
-      : osPlatform === 'darwin'
-        ? join(homeDir, 'Library', 'Application Support', 'Code', 'User')
-        : join(homeDir, '.config', 'Code', 'User');
+  // 4. VS Code Extensions (Cline, Roo Code) for stable and insiders
+  const getVSCodeUserData = (prefix: string) => {
+    if (osPlatform === 'win32') return join(appData, prefix, 'User');
+    if (osPlatform === 'darwin')
+      return join(homeDir, 'Library', 'Application Support', prefix, 'User');
+    return join(homeDir, '.config', prefix, 'User');
+  };
 
-  // Cline
-  addIfExist(
-    'VS Code Cline Extension',
-    join(
-      vscodeUserData,
-      'globalStorage',
-      'saoudrizwan.claude-dev',
-      'settings',
-      'cline_mcp_settings.json',
-    ),
-  );
-  // Roo Code
-  addIfExist(
-    'VS Code Roo Code Extension',
-    join(
-      vscodeUserData,
-      'globalStorage',
-      'rooveterinaryinc.roo-cline',
-      'settings',
-      'mcp_settings.json',
-    ),
-  );
+  const addExtensionConfig = (prefix: string, name: string, settingsPath: string) => {
+    const isInsiders = prefix.includes('Insiders');
+    const label = `VS Code${isInsiders ? ' Insiders' : ''} ${name} Extension`;
+    addIfExist(label, join(getVSCodeUserData(prefix), 'globalStorage', settingsPath));
+  };
 
-  // VS Code Insiders versions
-  const vscodeInsidersUserData =
-    osPlatform === 'win32'
-      ? join(appData, 'Code - Insiders', 'User')
-      : osPlatform === 'darwin'
-        ? join(homeDir, 'Library', 'Application Support', 'Code - Insiders', 'User')
-        : join(homeDir, '.config', 'Code - Insiders', 'User');
-
-  addIfExist(
-    'VS Code Insiders Cline Extension',
-    join(
-      vscodeInsidersUserData,
-      'globalStorage',
-      'saoudrizwan.claude-dev',
-      'settings',
-      'cline_mcp_settings.json',
-    ),
-  );
-  addIfExist(
-    'VS Code Insiders Roo Code Extension',
-    join(
-      vscodeInsidersUserData,
-      'globalStorage',
-      'rooveterinaryinc.roo-cline',
-      'settings',
-      'mcp_settings.json',
-    ),
-  );
+  for (const prefix of ['Code', 'Code - Insiders']) {
+    addExtensionConfig(prefix, 'Cline', 'saoudrizwan.claude-dev/settings/cline_mcp_settings.json');
+    addExtensionConfig(prefix, 'Roo Code', 'rooveterinaryinc.roo-cline/settings/mcp_settings.json');
+  }
 
   return targets;
 }
@@ -535,27 +536,32 @@ export async function writeJsonAtomic(filePath: string, data: unknown): Promise<
   const dir = dirname(filePath);
   await mkdir(dir, { recursive: true });
 
+  const content = JSON.stringify(data, null, 2) + '\n';
   const tempPath = `${filePath}.${Math.random().toString(36).slice(2, 9)}.tmp`;
+
   try {
-    const content = JSON.stringify(data, null, 2) + '\n';
     await writeFile(tempPath, content, 'utf8');
     await rename(tempPath, filePath);
   } catch (error) {
     process.stderr.write(
-      `Warning: Atomic write failed for ${filePath}. Falling back to direct write (non-atomic).\n`,
+      `${cliFmt.stderrWarn(`Atomic write failed for ${filePath}. Falling back to direct write (non-atomic).`)}\n`,
     );
     try {
       await unlink(tempPath);
     } catch (unlinkErr) {
+      const unlinkMsg = unlinkErr instanceof Error ? unlinkErr.message : String(unlinkErr);
       process.stderr.write(
-        `Warning: Failed to remove temp file ${tempPath}: ${unlinkErr instanceof Error ? unlinkErr.message : String(unlinkErr)}\n`,
+        `${cliFmt.stderrWarn(`Failed to remove temp file ${tempPath}: ${unlinkMsg}`)}\n`,
       );
     }
     try {
-      await writeFile(filePath, JSON.stringify(data, null, 2) + '\n', 'utf8');
+      await writeFile(filePath, content, 'utf8');
     } catch (fallbackError) {
+      const origMsg = error instanceof Error ? error.message : String(error);
+      const fallbackMsg =
+        fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
       throw new Error(
-        `Failed to write configuration atomically, and fallback write also failed.\nOriginal error: ${error instanceof Error ? error.message : String(error)}\nFallback error: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`,
+        `Failed to write configuration atomically, and fallback write also failed.\nOriginal error: ${origMsg}\nFallback error: ${fallbackMsg}`,
         { cause: fallbackError },
       );
     }
@@ -576,23 +582,28 @@ function findServerEntry(
 ): { key: string; entry: Record<string, unknown> } | null {
   if (!mcpServers || typeof mcpServers !== 'object') return null;
 
-  if (serverNameOpt && mcpServers[serverNameOpt] && typeof mcpServers[serverNameOpt] === 'object') {
-    return { key: serverNameOpt, entry: mcpServers[serverNameOpt] as Record<string, unknown> };
-  }
-
-  const defaults = ['filesystem', 'filesystem-mcp'];
-  for (const d of defaults) {
-    if (mcpServers[d] && typeof mcpServers[d] === 'object') {
-      return { key: d, entry: mcpServers[d] as Record<string, unknown> };
-    }
-  }
-
-  for (const key of Object.keys(mcpServers)) {
+  const getValidEntry = (key: string): Record<string, unknown> | null => {
     const entry = mcpServers[key];
+    return entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : null;
+  };
+
+  // 1. Explicit server name request
+  if (serverNameOpt) {
+    const entry = getValidEntry(serverNameOpt);
+    if (entry) return { key: serverNameOpt, entry };
+  }
+
+  // 2. Default standard keys
+  for (const key of ['filesystem', 'filesystem-mcp']) {
+    const entry = getValidEntry(key);
+    if (entry) return { key, entry };
+  }
+
+  // 3. Fallback: inspect command or arguments containing 'filesystem-mcp'
+  for (const [key, entry] of Object.entries(mcpServers)) {
     if (entry && typeof entry === 'object') {
       const entryObj = entry as Record<string, unknown>;
-      const commandValue = entryObj['command'];
-      const cmd = typeof commandValue === 'string' ? commandValue : '';
+      const cmd = typeof entryObj['command'] === 'string' ? entryObj['command'] : '';
       const args = Array.isArray(entryObj['args']) ? entryObj['args'].map(String).join(' ') : '';
       if (cmd.includes('filesystem-mcp') || args.includes('filesystem-mcp')) {
         return { key, entry: entryObj };
@@ -617,8 +628,9 @@ async function acquireLock(
         try {
           await unlink(lockFilePath);
         } catch (releaseErr) {
+          const releaseMsg = releaseErr instanceof Error ? releaseErr.message : String(releaseErr);
           process.stderr.write(
-            `Warning: Failed to release lock file ${lockFilePath}: ${releaseErr instanceof Error ? releaseErr.message : String(releaseErr)}\n`,
+            `${cliFmt.stderrWarn(`Failed to release lock file ${lockFilePath}: ${releaseMsg}`)}\n`,
           );
         }
       };
@@ -627,7 +639,9 @@ async function acquireLock(
         try {
           const lockStat = await stat(lockFilePath);
           if (Date.now() - lockStat.mtimeMs > staleLockMs) {
-            process.stderr.write(`Warning: Removing stale lock file ${lockFilePath}.\n`);
+            process.stderr.write(
+              `${cliFmt.stderrWarn(`Removing stale lock file ${lockFilePath}.`)}\n`,
+            );
             await unlink(lockFilePath).catch((_: unknown) => undefined);
             continue;
           }
@@ -645,6 +659,52 @@ async function acquireLock(
   throw new Error(`Failed to acquire lock on config file: ${lockFilePath}`);
 }
 
+async function readOrCreateConfig(filePath: string): Promise<Record<string, unknown>> {
+  if (!existsSync(filePath)) {
+    return { mcpServers: {} };
+  }
+  try {
+    const content = await readFile(filePath, 'utf8');
+    return JSON.parse(content) as Record<string, unknown>;
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    throw new CliExitError(`Failed to parse configuration file ${filePath}: ${msg}`, 1);
+  }
+}
+
+function tryComparePaths(arg: string, targetPath: string): boolean {
+  try {
+    return isAbsolute(arg) && isSamePath(arg, targetPath);
+  } catch (compareErr) {
+    const msg = compareErr instanceof Error ? compareErr.message : String(compareErr);
+    process.stderr.write(
+      `${cliFmt.stderrWarn(`Could not compare path '${arg}' with '${targetPath}': ${msg}`)}\n`,
+    );
+    return false;
+  }
+}
+
+function updateArgsForPath(
+  args: string[],
+  action: 'allow' | 'disallow',
+  targetPath: string,
+): { newArgs: string[]; changed: boolean } {
+  if (action === 'allow') {
+    const alreadyExists = args.some((arg) => tryComparePaths(arg, targetPath));
+    if (!alreadyExists) {
+      return { newArgs: [...args, targetPath], changed: true };
+    }
+    return { newArgs: args, changed: false };
+  } else {
+    const filtered = args.filter((arg) => {
+      if (!isAbsolute(arg)) return true;
+      return !tryComparePaths(arg, targetPath);
+    });
+    const changed = filtered.length < args.length;
+    return { newArgs: filtered, changed };
+  }
+}
+
 async function modifySingleConfig(
   filePath: string,
   action: 'allow' | 'disallow',
@@ -660,21 +720,7 @@ async function modifySingleConfig(
       release = await acquireLock(lockFilePath);
     }
 
-    const configData: Record<string, unknown> = { mcpServers: {} };
-    const fileExists = existsSync(filePath);
-
-    if (fileExists) {
-      try {
-        const content = await readFile(filePath, 'utf8');
-        Object.assign(configData, JSON.parse(content) as Record<string, unknown>);
-      } catch (error) {
-        throw new CliExitError(
-          `Failed to parse configuration file ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
-          1,
-        );
-      }
-    }
-
+    const configData = await readOrCreateConfig(filePath);
     const mcpServersKey =
       !configData['mcpServers'] && configData['servers'] ? 'servers' : 'mcpServers';
     configData[mcpServersKey] ??= {};
@@ -696,57 +742,26 @@ async function modifySingleConfig(
       mcpServers[key] = entry;
     }
 
-    if (!Array.isArray(entry['args'])) {
-      entry['args'] = ['-y', '@j0hanz/filesystem-mcp'];
-    }
-
-    const argsArray = entry['args'] as string[];
+    const currentArgs = Array.isArray(entry['args'])
+      ? entry['args'].map(String)
+      : ['-y', '@j0hanz/filesystem-mcp'];
 
     const cmdVal = entry['command'];
     const cmdStr = typeof cmdVal === 'string' ? cmdVal : '';
     if (cmdStr.includes('docker') && action === 'allow') {
       process.stderr.write(
-        `Warning: Server '${key}' in config ${filePath} appears to be running via Docker. Path allowance via command line arguments might not map correctly inside the container.\n`,
+        `${cliFmt.stderrWarn(`Server '${key}' in config ${filePath} appears to be running via Docker. Path allowance via command line arguments might not map correctly inside the container.`)}\n`,
       );
     }
 
-    let changed = false;
-
-    if (action === 'allow') {
-      const alreadyExists = argsArray.some((arg: string) => {
-        try {
-          return isAbsolute(arg) && isSamePath(arg, targetPath);
-        } catch (compareErr) {
-          process.stderr.write(
-            `Warning: Could not compare path '${arg}' with '${targetPath}': ${compareErr instanceof Error ? compareErr.message : String(compareErr)}\n`,
-          );
-          return false;
-        }
-      });
-
-      if (!alreadyExists) {
-        argsArray.push(targetPath);
-        changed = true;
+    const { newArgs, changed } = updateArgsForPath(currentArgs, action, targetPath);
+    if (changed) {
+      entry['args'] = newArgs;
+      if (!options.dryRun) {
+        await writeJsonAtomic(filePath, configData);
       }
-    } else {
-      const filtered = argsArray.filter((arg: string) => {
-        try {
-          if (!isAbsolute(arg)) return true;
-          return !isSamePath(arg, targetPath);
-        } catch (compareErr) {
-          process.stderr.write(
-            `Warning: Could not compare path '${arg}' with '${targetPath}': ${compareErr instanceof Error ? compareErr.message : String(compareErr)}\n`,
-          );
-          return true;
-        }
-      });
-      changed = filtered.length < argsArray.length;
-      entry['args'] = filtered;
     }
 
-    if (changed && !options.dryRun) {
-      await writeJsonAtomic(filePath, configData);
-    }
     return changed;
   } finally {
     if (release) {
@@ -755,44 +770,48 @@ async function modifySingleConfig(
   }
 }
 
+function getTargetConfigs(options: ModifyOptions): ClientConfigTarget[] {
+  const targets = getExistingConfigPaths();
+  const clientOpt = options.client;
+  if (!clientOpt) {
+    return targets;
+  }
+  const search = clientOpt.toLowerCase();
+  return targets.filter((t) => t.name.toLowerCase().includes(search));
+}
+
 export async function allowPath(pathToAdd: string, options: ModifyOptions = {}): Promise<void> {
   validateCliPath(pathToAdd);
   const resolvedPath = resolve(pathToAdd);
-
   const prefix = options.dryRun ? '[dry-run] ' : '';
 
   if (options.config) {
     const added = await modifySingleConfig(options.config, 'allow', resolvedPath, options);
-    if (added) {
-      process.stdout.write(`${prefix}Authorized '${resolvedPath}' → ${options.config}\n`);
-    } else {
-      process.stdout.write(`'${resolvedPath}' is already authorized in ${options.config}\n`);
-    }
+    const msg = added
+      ? cliFmt.success(
+          `${prefix}Authorized ${cliFmt.pathStr(`'${resolvedPath}'`)} → ${options.config}`,
+        )
+      : `${cliFmt.pathStr(`'${resolvedPath}'`)} is already authorized in ${options.config}`;
+    process.stdout.write(`${msg}\n`);
     return;
   }
 
-  const targets = getExistingConfigPaths();
-  const clientOpt = options.client;
-  const filtered = clientOpt
-    ? targets.filter((t) => t.name.toLowerCase().includes(clientOpt.toLowerCase()))
-    : targets;
-
+  const filtered = getTargetConfigs(options);
   if (filtered.length === 0) {
-    const hint = clientOpt
-      ? `No configuration file found for client matching '${clientOpt}'.`
+    const hint = options.client
+      ? `No configuration file found for client matching '${options.client}'.`
       : 'No supported MCP configuration files were found on this system.';
     throw new CliExitError(`${hint} Use --config <path> to target a specific file explicitly.`, 1);
   }
 
   for (const target of filtered) {
     const added = await modifySingleConfig(target.path, 'allow', resolvedPath, options);
-    if (added) {
-      process.stdout.write(
-        `${prefix}Authorized '${resolvedPath}' → ${target.name} (${target.path})\n`,
-      );
-    } else {
-      process.stdout.write(`'${resolvedPath}' is already authorized in ${target.name}\n`);
-    }
+    const msg = added
+      ? cliFmt.success(
+          `${prefix}Authorized ${cliFmt.pathStr(`'${resolvedPath}'`)} → ${target.name} ${cliFmt.dim(`(${target.path})`)}`,
+        )
+      : `${cliFmt.pathStr(`'${resolvedPath}'`)} is already authorized in ${target.name}`;
+    process.stdout.write(`${msg}\n`);
   }
 }
 
@@ -802,36 +821,36 @@ export async function disallowPath(
 ): Promise<void> {
   validateCliPath(pathToRemove);
   const resolvedPath = resolve(pathToRemove);
-
   const prefix = options.dryRun ? '[dry-run] ' : '';
 
   if (options.config) {
     const removed = await modifySingleConfig(options.config, 'disallow', resolvedPath, options);
     if (removed) {
-      process.stdout.write(`${prefix}Removed '${resolvedPath}' from ${options.config}\n`);
+      process.stdout.write(
+        `${cliFmt.success(`${prefix}Removed ${cliFmt.pathStr(`'${resolvedPath}'`)} from ${options.config}`)}\n`,
+      );
     } else {
-      process.stderr.write(`Warning: Path '${resolvedPath}' was not found in ${options.config}\n`);
+      process.stderr.write(
+        `${cliFmt.stderrWarn(`Path '${resolvedPath}' was not found in ${options.config}`)}\n`,
+      );
     }
     return;
   }
 
-  const targets = getExistingConfigPaths();
-  const clientOpt = options.client;
-  const filtered = clientOpt
-    ? targets.filter((t) => t.name.toLowerCase().includes(clientOpt.toLowerCase()))
-    : targets;
-
+  const filtered = getTargetConfigs(options);
   let anyModified = false;
   for (const target of filtered) {
     if (await modifySingleConfig(target.path, 'disallow', resolvedPath, options)) {
       anyModified = true;
       process.stdout.write(
-        `${prefix}Removed '${resolvedPath}' from ${target.name} (${target.path})\n`,
+        `${cliFmt.success(`${prefix}Removed ${cliFmt.pathStr(`'${resolvedPath}'`)} from ${target.name} ${cliFmt.dim(`(${target.path})`)}`)}\n`,
       );
     }
   }
   if (!anyModified) {
-    process.stderr.write(`Warning: Path '${resolvedPath}' was not found in any configuration.\n`);
+    process.stderr.write(
+      `${cliFmt.stderrWarn(`Path '${resolvedPath}' was not found in any configuration.`)}\n`,
+    );
   }
 }
 
@@ -853,8 +872,9 @@ export async function listAllowedPaths(options: ModifyOptions = {}): Promise<str
         return argsArray.filter((arg: string) => isAbsolute(arg));
       }
     } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
       process.stderr.write(
-        `Warning: Skipping ${filePath} — could not parse (results may be incomplete): ${error instanceof Error ? error.message : String(error)}\n`,
+        `${cliFmt.stderrWarn(`Skipping ${filePath} — could not parse (results may be incomplete): ${msg}`)}\n`,
       );
     }
     return [];
@@ -864,12 +884,7 @@ export async function listAllowedPaths(options: ModifyOptions = {}): Promise<str
     return await getPathsFromFile(options.config);
   }
 
-  const targets = getExistingConfigPaths();
-  const clientOpt = options.client;
-  const filtered = clientOpt
-    ? targets.filter((t) => t.name.toLowerCase().includes(clientOpt.toLowerCase()))
-    : targets;
-
+  const filtered = getTargetConfigs(options);
   for (const target of filtered) {
     const paths = await getPathsFromFile(target.path);
     for (const p of paths) {
