@@ -61,4 +61,53 @@ describe('search engine matching', () => {
       await rm(tempDir, { recursive: true, force: true });
     }
   });
+
+  it('should match whole-word containing punctuation', async () => {
+    const tempDir = join(tmpdir(), `test-search-engine-wholeword-punc-${Date.now()}`);
+    await mkdir(tempDir, { recursive: true });
+    try {
+      const filePath = join(tempDir, 'data.txt');
+      await writeFile(filePath, 'hello foo!\nbar\n', 'utf8');
+
+      const guard = await PathGuard.fromAllowedDirectories([tempDir]);
+      const fs = new GuardedFileSystem(guard);
+
+      const result = await executeSearch(fs, {
+        pattern: 'foo!',
+        path: filePath,
+        wholeWord: true,
+        isLiteral: true,
+      });
+
+      assert.equal(result.summary.filesMatched, 1);
+      assert.equal(result.filesMatched.length, 1);
+      assert.equal(result.filesMatched[0].matches[0].content, 'hello foo!');
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('should respect maxResults in file-only search', async () => {
+    const tempDir = join(tmpdir(), `test-search-engine-file-only-limit-${Date.now()}`);
+    await mkdir(tempDir, { recursive: true });
+    try {
+      await writeFile(join(tempDir, 'a.txt'), 'content', 'utf8');
+      await writeFile(join(tempDir, 'b.txt'), 'content', 'utf8');
+      await writeFile(join(tempDir, 'c.txt'), 'content', 'utf8');
+
+      const guard = await PathGuard.fromAllowedDirectories([tempDir]);
+      const fs = new GuardedFileSystem(guard);
+
+      const result = await executeSearch(fs, {
+        path: tempDir,
+        fileSearch: true,
+        maxResults: 2,
+      });
+
+      assert.equal(result.filesMatched.length, 2);
+      assert.equal(result.summary.filesMatched, 2);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
 });

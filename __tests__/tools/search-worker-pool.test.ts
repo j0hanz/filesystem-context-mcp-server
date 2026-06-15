@@ -48,4 +48,43 @@ describe('SearchWorkerPool', () => {
 
     await pool.close();
   });
+
+  it('does not trigger unhandled rejection when cancelled immediately', async () => {
+    const pool = new SearchWorkerPool(1, false);
+
+    let unhandledRejection: Error | undefined;
+    const onUnhandledRejection = (reason: unknown) => {
+      unhandledRejection = reason as Error;
+    };
+    process.on('unhandledRejection', onUnhandledRejection);
+
+    try {
+      const task = pool.scan({
+        resolvedPath: 'x',
+        requestedPath: 'x',
+        pattern: 'needle',
+        matcherOptions: {
+          caseSensitive: false,
+          wholeWord: false,
+          isLiteral: true,
+        },
+        scanOptions: {
+          maxFileSize: 1024,
+          skipBinary: true,
+          contextBefore: 0,
+          contextAfter: 0,
+        },
+        maxMatches: 1,
+      });
+
+      task.cancel();
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      assert.equal(unhandledRejection, undefined, 'Should not trigger unhandled promise rejection');
+    } finally {
+      process.off('unhandledRejection', onUnhandledRejection);
+      await pool.close();
+    }
+  });
 });

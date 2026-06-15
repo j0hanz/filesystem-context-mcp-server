@@ -1,4 +1,5 @@
 import { AsyncResource } from 'node:async_hooks';
+import { open } from 'node:fs/promises';
 import { debuglog } from 'node:util';
 import { parentPort, threadId, Worker, workerData } from 'node:worker_threads';
 
@@ -140,6 +141,7 @@ interface PendingWorkerRequest {
   resolve: (result: WorkerScanResult) => void;
   reject: (error: Error) => void;
   workerIndex: number;
+  worker: Worker;
 }
 
 // ─── Worker Task Resource ───────────────────────────────────────────────────
@@ -190,9 +192,9 @@ export class SearchWorkerPool {
     return new Error(`${fallbackMessage}: ${formatUnknownErrorMessage(error)}`);
   }
 
-  private rejectPendingForWorker(workerIndex: number, error: Error): void {
+  private rejectPendingForWorker(worker: Worker, error: Error): void {
     for (const [id, pendingRequest] of this.pending) {
-      if (pendingRequest.workerIndex !== workerIndex) continue;
+      if (pendingRequest.worker !== worker) continue;
       this.pending.delete(id);
       clearTimeout(this.pendingTimeouts.get(id));
       this.pendingTimeouts.delete(id);
@@ -243,19 +245,19 @@ export class SearchWorkerPool {
         error,
         `Worker ${String(index)} failed to deserialize a message`,
       );
-      this.rejectPendingForWorker(index, normalized);
+      this.rejectPendingForWorker(worker, normalized);
       this.retireWorker(index, worker);
     });
 
     worker.on('error', (error: Error) => {
-      this.rejectPendingForWorker(index, error);
+      this.rejectPendingForWorker(worker, error);
       this.retireWorker(index, worker);
     });
 
     worker.on('exit', (exitCode: number) => {
       if (this.closed) return;
       this.rejectPendingForWorker(
-        index,
+        worker,
         new Error(`Worker ${String(index)} exited with code ${String(exitCode)}`),
       );
       this.markWorkerAsUnavailable(index, worker);
@@ -293,6 +295,7 @@ export class SearchWorkerPool {
           resource.reject(reject, error);
         },
         workerIndex,
+        worker,
       };
 
       this.pending.set(id, pendingRequest);
@@ -302,6 +305,11 @@ export class SearchWorkerPool {
           if (!this.pending.has(id)) return;
           this.pending.delete(id);
           this.pendingTimeouts.delete(id);
+          try {
+            worker.postMessage({ type: 'cancel', id });
+          } catch {
+            this.retireWorker(workerIndex, worker);
+          }
           pendingRequest.reject(new Error(`Scan request ${String(id)} timed out`));
         }, SCAN_REQUEST_TIMEOUT_MS),
       );
@@ -347,6 +355,9 @@ export class SearchWorkerPool {
     const worker = this.getWorker(workerIndex);
 
     const promise = this.createWorkerScanPromise(id, worker, workerIndex, req);
+    promise.catch(() => {
+      /* ignore cancellation/error rejections; handled by down-stream consumers */
+    }); // Prevent unhandled rejection crashes
 
     return {
       id,
@@ -387,7 +398,12 @@ export interface RegexCompileOptions {
 // and wraps construction failures in the canonical INVALID_PATTERN error.
 export function compileRegex(pattern: string, options: RegexCompileOptions = {}): RE2 {
   const escaped = options.literal ? escapeRegexLiteral(pattern) : pattern;
-  const final = options.wholeWord ? `\\b${escaped}\\b` : escaped;
+  let final = escaped;
+  if (options.wholeWord) {
+    const startBoundary = /^\w/.test(escaped) ? '\\b' : '';
+    const endBoundary = /\w$/.test(escaped) ? '\\b' : '';
+    final = `${startBoundary}${escaped}${endBoundary}`;
+  }
   const flags = `${options.global ? 'g' : ''}${options.caseSensitive ? '' : 'i'}`;
   try {
     return new RE2(final, flags);
@@ -477,33 +493,47 @@ function isFuzzyMatch(text: string, pattern: string, caseSensitive: boolean): bo
   if (t.includes(p)) return true; // fast path: exact substring
 
   // Prevent DoS from large patterns (Levenshtein is O(m·n) per window) or long lines.
-  if (p.length > 100) return false;
+  if (p.length > 50) return false;
   if (t.length > 1000) return false;
 
   const maxDist = Math.max(1, Math.floor(p.length / 4));
   const minLen = Math.max(1, p.length - maxDist);
   const maxLen = Math.min(t.length, p.length + maxDist);
 
+  const dp = new Array<number>(p.length + 1);
+
   for (let len = minLen; len <= maxLen; len++) {
     for (let start = 0; start <= t.length - len; start++) {
       const win = t.slice(start, start + len);
-      if (levenshtein(win, p) <= maxDist) return true;
+      if (levenshtein(win, p, maxDist, dp) <= maxDist) return true;
     }
   }
   return false;
 }
 
-function levenshtein(a: string, b: string): number {
+function levenshtein(a: string, b: string, maxDist: number, dp: number[]): number {
   const m = a.length;
   const n = b.length;
-  const dp: number[] = Array.from({ length: n + 1 }, (_, i) => i);
+  if (Math.abs(m - n) > maxDist) return maxDist + 1;
+
+  for (let i = 0; i <= n; i++) dp[i] = i;
+
   for (let i = 1; i <= m; i++) {
     let prev = dp[0] ?? 0;
     dp[0] = i;
+    let minInRow = i;
+    const charA = a[i - 1];
     for (let j = 1; j <= n; j++) {
       const temp = dp[j] ?? 0;
-      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j] ?? 0, dp[j - 1] ?? 0);
+      const val = charA === b[j - 1] ? prev : 1 + Math.min(prev, temp, dp[j - 1] ?? 0);
+      dp[j] = val;
       prev = temp;
+      if (val < minInRow) {
+        minInRow = val;
+      }
+    }
+    if (minInRow > maxDist) {
+      return maxDist + 1;
     }
   }
   return dp[n] ?? 0;
@@ -637,28 +667,105 @@ function isBinaryBuffer(buffer: Buffer, bytesRead: number): boolean {
   return false;
 }
 
-function scanLinesForMatches(
-  allLines: string[],
+interface PendingMatch {
+  line: number;
+  content: string;
+  before: string[];
+  after: string[];
+  remainingAfter: number;
+}
+
+async function scanStreamForMatches(
+  lineIterable: AsyncIterable<string>,
   matcher: ContentMatcher,
   contextBefore: number,
   contextAfter: number,
   limit: number,
-): { matches: ContentMatch[]; matchesFound: number } {
+  signalCheck?: () => boolean,
+): Promise<{ matches: ContentMatch[]; matchesFound: number }> {
   const matches: ContentMatch[] = [];
   let matchesFound = 0;
-  for (let i = 0; i < allLines.length; i++) {
-    if (matchesFound >= limit) break;
-    const line = allLines[i];
-    if (line !== undefined && matcher.matchCount(line) > 0) {
-      matches.push({
-        line: i + 1,
-        content: line,
-        before: allLines.slice(Math.max(0, i - contextBefore), i),
-        after: allLines.slice(i + 1, Math.min(allLines.length, i + 1 + contextAfter)),
-      });
+
+  const beforeWindow: string[] = [];
+  const pendingMatches: PendingMatch[] = [];
+
+  let lineIndex = 0;
+
+  for await (const line of lineIterable) {
+    if (signalCheck?.()) {
+      break;
+    }
+    if (matchesFound >= limit && pendingMatches.length === 0) {
+      break;
+    }
+
+    lineIndex++;
+
+    // 1. Update pending matches with the new line as "after" context
+    for (let i = 0; i < pendingMatches.length; i++) {
+      const pending = pendingMatches[i];
+      if (pending && pending.remainingAfter > 0) {
+        pending.after.push(line);
+        pending.remainingAfter--;
+        if (pending.remainingAfter === 0) {
+          matches.push({
+            line: pending.line,
+            content: pending.content,
+            before: pending.before,
+            after: pending.after,
+          });
+          pendingMatches.splice(i, 1);
+          i--;
+        }
+      }
+    }
+
+    // 2. Check if the current line matches (only if we haven't hit the limit)
+    if (matchesFound < limit && matcher.matchCount(line) > 0) {
       matchesFound++;
+      const matchObj: PendingMatch = {
+        line: lineIndex,
+        content: line,
+        before: [...beforeWindow],
+        after: [],
+        remainingAfter: contextAfter,
+      };
+
+      if (contextAfter === 0) {
+        matches.push({
+          line: matchObj.line,
+          content: matchObj.content,
+          before: matchObj.before,
+          after: matchObj.after,
+        });
+      } else {
+        pendingMatches.push(matchObj);
+      }
+    }
+
+    // 3. Update the before sliding window
+    if (contextBefore > 0) {
+      beforeWindow.push(line);
+      if (beforeWindow.length > contextBefore) {
+        beforeWindow.shift();
+      }
+    }
+
+    if (lineIndex >= MAX_LINES_PER_FILE) {
+      break;
     }
   }
+
+  // 4. Finalize any remaining pending matches (file ended before getting all contextAfter lines)
+  for (const pending of pendingMatches) {
+    matches.push({
+      line: pending.line,
+      content: pending.content,
+      before: pending.before,
+      after: pending.after,
+    });
+  }
+
   return { matches, matchesFound };
 }
 
@@ -681,15 +788,24 @@ export async function executeSearch(
   );
 
   if (options.fileSearch) {
-    const filesMatched = filesToScan.map((f) => buildFileMatch(f, []));
+    const truncatedByResults = filesToScan.length > opts.maxResults;
+    const filesToReturn = truncatedByResults ? filesToScan.slice(0, opts.maxResults) : filesToScan;
+    const filesMatched = filesToReturn.map((f) => buildFileMatch(f, []));
+    const truncated = truncatedByResults || filesCapped;
+    const truncatedReason = truncatedByResults
+      ? ('maxResults' as const)
+      : filesCapped
+        ? ('maxFiles' as const)
+        : undefined;
+
     return {
       filesMatched,
       summary: {
         filesScanned: filesToScan.length,
         filesMatched: filesMatched.length,
         matchesCount: 0,
-        truncated: filesCapped,
-        ...(filesCapped ? { truncatedReason: 'maxFiles' as const } : {}),
+        truncated,
+        ...(truncatedReason !== undefined ? { truncatedReason } : {}),
       },
     };
   }
@@ -700,6 +816,9 @@ export async function executeSearch(
     isLiteral: opts.isLiteral,
     ...(options.fuzzy !== undefined ? { fuzzy: options.fuzzy } : {}),
   };
+
+  // Compile / validate the regex pattern early on the main thread (throws if invalid)
+  buildMatcher(opts.pattern, matcherOptions);
 
   const filesMatched: FileMatch[] = [];
   let matchesCount = 0;
@@ -712,6 +831,10 @@ export async function executeSearch(
     const pool = getPool();
     const pending = new Set<ScanTask>();
     const taskToFile = new Map<ScanTask, ScanFile>();
+    const taskPromises = new Map<
+      ScanTask,
+      Promise<{ task: ScanTask; result: WorkerScanResult | null; error: unknown }>
+    >();
     const fileIterator = filesToScan[Symbol.iterator]();
     let iteratorDone = false;
 
@@ -740,10 +863,15 @@ export async function executeSearch(
         });
         taskToFile.set(task, file);
         pending.add(task);
+        taskPromises.set(
+          task,
+          task.promise.then(
+            (result) => ({ task, result, error: null }),
+            (error: unknown) => ({ task, result: null, error }),
+          ),
+        );
       }
     };
-
-    fillPool();
 
     const onAbort = () => {
       for (const task of pending) task.cancel();
@@ -751,16 +879,17 @@ export async function executeSearch(
 
     try {
       if (options.signal) options.signal.addEventListener('abort', onAbort, { once: true });
+      fillPool();
       while (pending.size > 0 && matchesCount < opts.maxResults) {
         if (options.signal?.aborted) break;
-        const raceCandidates = Array.from(pending).map((task) =>
-          task.promise.then(
-            (result) => ({ task, result, error: null }),
-            (error: unknown) => ({ task, result: null, error }),
-          ),
-        );
+        const raceCandidates = Array.from(pending).map((task) => {
+          const p = taskPromises.get(task);
+          if (!p) throw new Error('Race promise not found');
+          return p;
+        });
         const winner = await Promise.race(raceCandidates);
         pending.delete(winner.task);
+        taskPromises.delete(winner.task);
         filesScanned++;
         const file = taskToFile.get(winner.task);
         taskToFile.delete(winner.task);
@@ -773,8 +902,14 @@ export async function executeSearch(
             formatUnknownErrorMessage(winner.error),
           );
         } else if (winner.result?.matched === true && file !== undefined) {
-          filesMatched.push(buildFileMatch(file, winner.result.matches));
-          matchesCount += winner.result.matches.length;
+          const remaining = opts.maxResults - matchesCount;
+          if (remaining > 0) {
+            const matchesToTake = winner.result.matches.slice(0, remaining);
+            if (matchesToTake.length > 0) {
+              filesMatched.push(buildFileMatch(file, matchesToTake));
+              matchesCount += matchesToTake.length;
+            }
+          }
         }
         fillPool();
       }
@@ -808,18 +943,13 @@ export async function executeSearch(
           if (isBinaryBuffer(buffer, bytesRead)) continue;
         }
 
-        const allLines: string[] = [];
-        for await (const line of fileHandle.readLines({ encoding: 'utf-8' })) {
-          allLines.push(line);
-          if (allLines.length >= MAX_LINES_PER_FILE) break;
-        }
-
-        const { matches, matchesFound } = scanLinesForMatches(
-          allLines,
+        const { matches, matchesFound } = await scanStreamForMatches(
+          fileHandle.readLines({ encoding: 'utf-8' }),
           matcher,
           contextBefore,
           contextAfter,
           opts.maxResults - matchesCount,
+          () => options.signal?.aborted ?? false,
         );
         matchesCount += matchesFound;
         if (matches.length > 0) filesMatched.push(buildFileMatch(file, matches));
@@ -930,8 +1060,6 @@ async function handleScanRequest(request: ScanRequest): Promise<void> {
   try {
     const matcher = getCachedMatcher(pattern, matcherOptions);
 
-    // Read matches and check
-    const { open } = await import('node:fs/promises');
     const handle = await open(resolvedPath, 'r');
     await using _disposer = handle;
 
@@ -966,18 +1094,13 @@ async function handleScanRequest(request: ScanRequest): Promise<void> {
       }
     }
 
-    const allLines: string[] = [];
-    for await (const line of handle.readLines({ encoding: 'utf-8' })) {
-      allLines.push(line);
-      if (allLines.length >= MAX_LINES_PER_FILE) break;
-    }
-
-    const { matches } = scanLinesForMatches(
-      allLines,
+    const { matches } = await scanStreamForMatches(
+      handle.readLines({ encoding: 'utf-8' }),
       matcher,
       scanOptions.contextBefore,
       scanOptions.contextAfter,
       maxMatches,
+      () => cancelledRequests.has(id),
     );
 
     if (consumeCancelled(id)) return;
