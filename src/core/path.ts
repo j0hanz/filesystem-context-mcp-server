@@ -57,6 +57,11 @@ async function isRootWithinBaseline(
     return isPathWithinDirectories(normalizedReal, baseline);
   } catch (error) {
     if (isAbortError(error)) throw error;
+    if (isNodeError(error) && error.code === 'ENOENT') return false;
+    Logger.warn('isRootWithinBaseline: realpath failed unexpectedly', {
+      root: normalizedRoot,
+      error: String(error),
+    });
     return false;
   }
 }
@@ -76,8 +81,15 @@ async function filterRootsWithinBaseline(
     ),
   );
 
-  return normalizedRoots.filter((_, i) => {
+  return normalizedRoots.filter((root, i) => {
     const result = results[i];
+    if (result?.status === 'rejected') {
+      Logger.warn('filterRootsWithinBaseline: root check threw unexpectedly', {
+        root,
+        error: String(result.reason),
+      });
+      return false;
+    }
     return result?.status === 'fulfilled' && result.value;
   });
 }
@@ -94,6 +106,11 @@ async function isRootWithinBoundaries(
     return isPathWithinDirectories(normalizedReal, boundaries);
   } catch (error) {
     if (isAbortError(error)) throw error;
+    if (isNodeError(error) && error.code === 'ENOENT') return false;
+    Logger.warn('isRootWithinBoundaries: realpath failed unexpectedly', {
+      root: normalizedRoot,
+      error: String(error),
+    });
     return false;
   }
 }
@@ -113,8 +130,15 @@ async function filterRootsWithinBoundaries(
     ),
   );
 
-  return normalizedRoots.filter((_, i) => {
+  return normalizedRoots.filter((root, i) => {
     const result = results[i];
+    if (result?.status === 'rejected') {
+      Logger.warn('filterRootsWithinBoundaries: root check threw unexpectedly', {
+        root,
+        error: String(result.reason),
+      });
+      return false;
+    }
     return result?.status === 'fulfilled' && result.value;
   });
 }
@@ -182,6 +206,11 @@ function expandHome(filepath: string): string {
 export function normalizePath(p: string): string {
   const resolved = resolve(expandHome(p));
 
+  // On Windows only the drive letter is lowercased (e.g. "C:\Foo\Bar").
+  // The rest of the path retains its original casing.
+  // IMPORTANT: callers must use isSamePath / isPathInsideDirectory for all
+  // equality and containment checks — never raw string equality — because
+  // those helpers apply full case-folding before comparing.
   if (IS_WINDOWS && resolved.length >= 2 && resolved.charCodeAt(1) === CHAR_COLON) {
     return resolved.charAt(0).toLowerCase() + resolved.slice(1);
   }
@@ -356,14 +385,12 @@ async function resolveRealPath(normalized: string, signal?: AbortSignal): Promis
     const realPath = await withAbort(realpath(normalized), signal);
     return normalizeAllowedDirectory(realPath);
   } catch (error) {
-    if (
-      error instanceof Error &&
-      (error.name === 'AbortError' ||
-        ('code' in error && (error as NodeJS.ErrnoException).code === 'ERR_ABORTED'))
-    ) {
-      throw error;
-    }
-    return null;
+    if (isAbortError(error)) throw error;
+    // Only suppress ENOENT — the path genuinely does not exist.
+    // EACCES, EIO, and other unexpected errors are rethrown so callers
+    // cannot silently operate with a narrowed allowed-directory set.
+    if (isNodeError(error) && error.code === 'ENOENT') return null;
+    throw error;
   }
 }
 
@@ -453,7 +480,10 @@ export function getReservedDeviceNameForPath(requestedPath: string): string | un
 }
 
 export function isWindowsDriveRelativePath(requestedPath: string): boolean {
-  if (!IS_WINDOWS || requestedPath.length < 2) return false;
+  // Check on all platforms so cross-platform clients cannot smuggle drive-relative
+  // inputs (e.g. C:relative) to a POSIX-hosted server where path.resolve would
+  // silently expand them relative to CWD.
+  if (requestedPath.length < 2) return false;
   if (requestedPath.charCodeAt(1) !== CHAR_COLON) return false;
   if (!isAlpha(requestedPath.charCodeAt(0))) return false;
 
@@ -473,6 +503,10 @@ export function isSafeGlobSyntax(pattern: string): boolean {
   if (isAbsolute(pattern)) return false;
   if (isWindowsDriveRelativePath(pattern)) return false;
   if (pattern.includes('..')) return false;
+  // Reject glob-engine-specific traversal bypass forms that some engines
+  // expand as path separators or parent-directory references.
+  if (/\{[^}]*\.\.[^}]*\}/u.test(pattern)) return false;
+  if (pattern.includes('[..]')) return false;
   return true;
 }
 
@@ -522,7 +556,7 @@ function stripAdsFromPath(filePath: string): string {
     const colonIdx = segment.indexOf(':');
     return colonIdx !== -1 ? segment.slice(0, colonIdx) : segment;
   });
-  return stripped.join(filePath.includes('\\') ? '\\' : '/');
+  return stripped.join(PATH_SEPARATOR);
 }
 
 export interface AccessGrantDeps {
@@ -658,7 +692,11 @@ export class PathGuard {
     let approved: boolean;
     try {
       approved = await deps.confirm(targetDir);
-    } catch {
+    } catch (err) {
+      Logger.warn('requestAccessGrant: confirm threw, treating as denial', {
+        targetDir,
+        error: String(err),
+      });
       return false;
     }
 
@@ -669,9 +707,24 @@ export class PathGuard {
 
     const boundaries = parseEnvDirList('ROOT_BOUNDARY');
     if (boundaries.length > 0) {
-      const normalizedTarget = normalizePath(targetDir);
-      const normalizedBoundaries = boundaries.map((b) => normalizePath(b));
-      if (!isPathWithinDirectories(normalizedTarget, normalizedBoundaries)) {
+      // Resolve both target and boundaries through symlinks so a symlink inside
+      // the boundary that points outside cannot bypass the ROOT_BOUNDARY constraint.
+      let resolvedTarget: string;
+      try {
+        resolvedTarget = normalizePath(await realpath(targetDir));
+      } catch {
+        resolvedTarget = normalizePath(targetDir);
+      }
+      const resolvedBoundaries = await Promise.all(
+        boundaries.map(async (b) => {
+          try {
+            return normalizePath(await realpath(b));
+          } catch {
+            return normalizePath(b);
+          }
+        }),
+      );
+      if (!isPathWithinDirectories(resolvedTarget, resolvedBoundaries)) {
         return false;
       }
     }
@@ -786,9 +839,9 @@ export class PathGuard {
           );
         }
       } catch (ancestorErr) {
-        if (ancestorErr instanceof FsError && ancestorErr.code === ErrorCode.ACCESS_DENIED) {
-          throw ancestorErr;
-        }
+        // Rethrow any FsError — collapsing e.g. UNKNOWN to NOT_FOUND would mask
+        // incomplete sandbox checks and make bugs invisible to callers.
+        if (ancestorErr instanceof FsError) throw ancestorErr;
       }
 
       throw new FsError(
@@ -957,6 +1010,17 @@ export class PathGuard {
           if (lstatErr instanceof FsError && lstatErr.code === ErrorCode.ACCESS_DENIED) {
             throw lstatErr;
           }
+          // ENOENT is expected during ancestor walk — the entry simply doesn't exist.
+          // Any other error (EACCES, EIO, ELOOP) is unexpected; fail safe.
+          if (!isNodeError(lstatErr) || lstatErr.code !== 'ENOENT') {
+            throw new FsError(
+              ErrorCode.UNKNOWN,
+              'Cannot probe symlink ancestor',
+              requestedPath,
+              { originalError: lstatErr instanceof Error ? lstatErr.message : String(lstatErr) },
+              lstatErr instanceof Error ? lstatErr : undefined,
+            );
+          }
         }
         const parent = dirname(current);
         if (parent === current) {
@@ -1030,6 +1094,32 @@ export class PathGuard {
         requestedPath,
       );
     }
+
+    // Resolve the final component when it exists so a symlink pointing outside
+    // the sandbox (e.g. /allowed/link -> /etc) is caught before deletion.
+    let realTarget: string | null = null;
+    try {
+      realTarget = normalizePath(await realpath(normalizedRequested));
+    } catch {
+      // ENOENT — target does not exist; parent check above is sufficient.
+    }
+    if (realTarget !== null) {
+      if (!isPathWithinDirectories(realTarget, allowedDirs)) {
+        throw new FsError(
+          ErrorCode.ACCESS_DENIED,
+          `Outside allowed directories. ${accessDeniedHint}`,
+          requestedPath,
+        );
+      }
+      if (this.isSensitive(realTarget)) {
+        throw new FsError(
+          ErrorCode.ACCESS_DENIED,
+          'Sensitive file blocked. Set ALLOW_SENSITIVE=1 to override.',
+          requestedPath,
+        );
+      }
+      return realTarget;
+    }
     return normalizedRequested;
   }
 
@@ -1061,7 +1151,7 @@ export class PathGuard {
           logToSender(
             sender,
             'warning',
-            `Path configured in FS_ALLOWED_DIRS is invalid or does not exist: ${rawPath}`,
+            `Path configured in FS_ALLOWED_DIRS is invalid or does not exist: ${rawPath} (${_error instanceof Error ? _error.message : String(_error)})`,
             this.loggingState?.minimumLevel,
           );
         }
@@ -1090,7 +1180,7 @@ export class PathGuard {
         logToSender(
           sender,
           'warning',
-          `Path configured in ROOT_BOUNDARY is invalid or does not exist: ${rawPath}`,
+          `Path configured in ROOT_BOUNDARY is invalid or does not exist: ${rawPath} (${_error instanceof Error ? _error.message : String(_error)})`,
           this.loggingState?.minimumLevel,
         );
       }
@@ -1281,7 +1371,13 @@ export class PathCompleter {
       const [stats, resolvedRealPath] = await Promise.all([stat(path), realpath(path)]);
       if (!stats.isDirectory()) return false;
       return isPathWithinDirectories(normalizePath(resolvedRealPath), allowed);
-    } catch {
+    } catch (err) {
+      if (!isNodeError(err) || (err.code !== 'ENOENT' && err.code !== 'EACCES')) {
+        Logger.debug('isAllowedCompletionDirectory: unexpected probe error', {
+          path,
+          error: String(err),
+        });
+      }
       return false;
     }
   }
@@ -1422,8 +1518,13 @@ export class PathCompleter {
           }
         }
       }
-    } catch {
-      // Access denied or not found — skip.
+    } catch (err) {
+      if (!isNodeError(err) || (err.code !== 'ENOENT' && err.code !== 'EACCES')) {
+        Logger.warn('PathCompleter.findMatchesInDirectory: readdir failed', {
+          searchDir,
+          error: String(err),
+        });
+      }
     }
     return matches;
   }
@@ -1494,8 +1595,9 @@ export class PathCompleter {
         MAX_COMPLETION_ITEMS,
       );
     } catch (error) {
+      if (isAbortError(error)) throw error;
       Logger.warn('PathCompleter: completion failed, returning empty list', {
-        error: error instanceof Error ? error.message : String(error),
+        error: error instanceof Error ? (error.stack ?? error.message) : String(error),
       });
       return [];
     }
@@ -1569,15 +1671,29 @@ export function decodeOffsetCursor(cursor: string): number {
   // safeParse normally reports failure via result.success, but a codec decode can
   // also throw; treat either as an invalid cursor with one uniform error.
   let result: ReturnType<typeof OffsetCursorCodec.safeParse> | undefined;
+  let caughtError: unknown;
   try {
     result = OffsetCursorCodec.safeParse(cursor);
-  } catch {
+  } catch (err) {
+    caughtError = err;
     result = undefined;
   }
   if (!result?.success) {
     throw new FsError(
       ErrorCode.INVALID_INPUT,
-      `Invalid cursor. Request the first page without a cursor.`,
+      'Invalid cursor. Request the first page without a cursor.',
+      undefined,
+      {
+        originalError:
+          caughtError instanceof Error
+            ? caughtError.message
+            : typeof caughtError === 'string' ||
+                typeof caughtError === 'number' ||
+                typeof caughtError === 'boolean'
+              ? String(caughtError)
+              : undefined,
+      },
+      caughtError instanceof Error ? caughtError : undefined,
     );
   }
   return result.data.offset;
@@ -1618,11 +1734,15 @@ export function isUnsafeCwdPath(normalizedCwd: string): boolean {
   return false;
 }
 
+const MAX_PROJECT_ROOT_WALK_DEPTH = 32;
+
 export async function findProjectRoot(startDir: string, ceiling: string[]): Promise<string> {
   const normCeiling = ceiling.map(normalizePath);
   let current = normalizePath(startDir);
+  let depth = 0;
 
   for (;;) {
+    if (depth++ > MAX_PROJECT_ROOT_WALK_DEPTH) break;
     // Check if the current directory contains any markers
     const markers = ['.git', 'package.json', 'pyproject.toml'];
     for (const marker of markers) {
