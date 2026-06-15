@@ -3,38 +3,41 @@ import { describe, it } from 'node:test';
 
 import { ReadFileInputSchema } from '../../src/tools/read.js';
 
-describe('ReadFileInputSchema superRefine early returns', () => {
-  it('emits only the path-missing error when conflicting range params are also present', () => {
-    // Root cause: no path provided. Secondary issue: head+startLine conflict.
-    // After the fix, only the root-cause error should be reported.
+describe('ReadFileInputSchema superRefine validation', () => {
+  it('reports both the path-missing error and conflicting range params', () => {
+    // All validation errors are reported regardless of path-selection state.
     const result = ReadFileInputSchema.safeParse({
       head: 5,
       startLine: 1,
     });
     assert.equal(result.success, false);
-    const issues = result.error.issues;
-    assert.equal(
-      issues.length,
-      1,
-      `Expected 1 issue, got ${issues.length}: ${JSON.stringify(issues.map((i) => i.message))}`,
+    const messages = result.error.issues.map((i) => i.message);
+    assert.ok(
+      messages.includes("Either 'path' or 'paths' must be provided"),
+      `Missing path error. Got: ${JSON.stringify(messages)}`,
     );
-    assert.equal(issues[0]?.message, "Either 'path' or 'paths' must be provided");
+    assert.ok(
+      messages.includes("Cannot use 'head' with 'startLine'/'endLine'"),
+      `Missing range conflict error. Got: ${JSON.stringify(messages)}`,
+    );
   });
 
-  it('emits only the mutual-exclusion error when both path and paths are given with offset', () => {
-    // Root cause: both path and paths provided. Secondary issue: offset-in-batch-mode.
+  it('reports both the mutual-exclusion error and offset-in-batch-mode error', () => {
+    // All validation errors are reported regardless of path-selection state.
     const result = ReadFileInputSchema.safeParse({
       path: '/tmp/file.txt',
       paths: ['/tmp/file.txt'],
       offset: 0,
     });
     assert.equal(result.success, false);
-    const issues = result.error.issues;
-    assert.equal(
-      issues.length,
-      1,
-      `Expected 1 issue, got ${issues.length}: ${JSON.stringify(issues.map((i) => i.message))}`,
+    const messages = result.error.issues.map((i) => i.message);
+    assert.ok(
+      messages.includes("Cannot use both 'path' and 'paths'"),
+      `Missing mutual-exclusion error. Got: ${JSON.stringify(messages)}`,
     );
-    assert.equal(issues[0]?.message, "Cannot use both 'path' and 'paths'");
+    assert.ok(
+      messages.includes("'offset' and 'length' are not supported in batch mode"),
+      `Missing batch-mode error. Got: ${JSON.stringify(messages)}`,
+    );
   });
 });

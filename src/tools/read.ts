@@ -64,22 +64,7 @@ const ReadFileInputSchema = singleOrBatchPathsInput({
       ),
   },
 }).superRefine((value, ctx) => {
-  const hasPath = value.path !== undefined;
   const hasPaths = value.paths !== undefined;
-
-  // Preserve root-cause-only validation behavior from the previous schema.
-  if (!hasPath && !hasPaths) return;
-  if (hasPath && hasPaths) return;
-
-  if (value.paths !== undefined && (value.offset !== undefined || value.length !== undefined)) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['offset'],
-      message: "'offset' and 'length' are not supported in batch mode",
-      input: value,
-    });
-    return;
-  }
 
   validateReadRange(
     {
@@ -92,6 +77,16 @@ const ReadFileInputSchema = singleOrBatchPathsInput({
     },
     ctx,
   );
+
+  // Batch mode: offset/length are single-file-only.
+  if (hasPaths && (value.offset !== undefined || value.length !== undefined)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['offset'],
+      message: "'offset' and 'length' are not supported in batch mode",
+      input: value,
+    });
+  }
 });
 
 const ReadPerPathValueSchema = z.strictObject({

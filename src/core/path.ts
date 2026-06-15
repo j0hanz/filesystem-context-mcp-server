@@ -471,6 +471,7 @@ export function isWindowsDriveRelativePath(requestedPath: string): boolean {
 export function isSafeGlobSyntax(pattern: string): boolean {
   if (!pattern || pattern.trim().length === 0) return false;
   if (isAbsolute(pattern)) return false;
+  if (isWindowsDriveRelativePath(pattern)) return false;
   if (pattern.includes('..')) return false;
   return true;
 }

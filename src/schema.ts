@@ -44,8 +44,9 @@ const PathBase = z
   })
   .refine((val) => !val.includes('..'), {
     message: 'Directory traversal sequences ("..") are forbidden',
+    abort: true,
   })
-  .refine((val) => !/[\n\r;|`]/g.test(val), {
+  .refine((val) => !/[\n\r;|`]/.test(val), {
     message: 'Path contains prohibited characters (newlines or shell metacharacters)',
   })
   .describe(
@@ -66,13 +67,13 @@ export const SafeGlobPattern = z
     error: 'Invalid glob or unsafe path (absolute/.. forbidden)',
     abort: true,
   })
-  .refine((val) => isSafeGlobSyntax(val), {
-    message: 'Invalid glob or unsafe path (absolute/.. forbidden)',
-  })
   .refine((val) => val.trim().length > 0, {
     message: 'Pattern cannot be empty or whitespace-only',
   })
-  .refine((val) => !/[\n\r;|`]/g.test(val), {
+  .refine((val) => isSafeGlobSyntax(val), {
+    message: 'Invalid glob or unsafe path (absolute/.. forbidden)',
+  })
+  .refine((val) => !/[\n\r;|`]/.test(val), {
     message: 'Pattern contains prohibited characters (newlines or shell metacharacters)',
   })
   .describe(
@@ -121,6 +122,8 @@ export const PerFileErrorSchema = z
   })
   .meta({ id: 'PerFileError', title: 'Per-File Error' });
 
+// TODO(future): Wrap createReadRangeFields output in a typed Zod object with built-in
+// cross-validation. Safe for now — the only caller (read.ts) calls validateReadRange in its own superRefine.
 interface ReadRangeDescriptions {
   head: string;
   tail: string;
@@ -196,6 +199,18 @@ export function validateReadRange(
         rule: 'tail_exclusive',
         conflictsWith: ['head', 'startLine', 'endLine'],
         suggestion: "Use 'tail' alone or use 'startLine'/'endLine' without 'tail'.",
+      },
+      input: value,
+    });
+  }
+  if (hasEnd && !hasStart) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['endLine'],
+      message: "'endLine' requires 'startLine' to be set",
+      params: {
+        rule: 'endLine_requires_startLine',
+        suggestion: "Provide both 'startLine' and 'endLine' together.",
       },
       input: value,
     });
@@ -288,6 +303,7 @@ export function singleOrBatchPathsInput<
   return z.strictObject(shape).superRefine((value, ctx) => {
     const hasPath = value['path'] !== undefined;
     const hasPaths = value['paths'] !== undefined;
+    // Safety: z.strictObject above rejects unknown keys (including `files` when !triadic) before this runs.
     const hasFiles = triadic && value['files'] !== undefined;
     const provided = [hasPath, hasPaths, hasFiles].filter(Boolean).length;
 
@@ -312,7 +328,7 @@ export function singleOrBatchPathsInput<
         input: value,
       });
     }
-  }) as never;
+  }) as unknown as ReturnType<typeof singleOrBatchPathsInput<TExtra, TPerFile>>;
 }
 
 export const ContinuationSchema = z
