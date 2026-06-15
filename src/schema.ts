@@ -48,6 +48,7 @@ const PathBase = z
   })
   .refine((val) => !/[\n\r;|`]/.test(val), {
     message: 'Path contains prohibited characters (newlines or shell metacharacters)',
+    abort: true,
   })
   .describe(
     'Absolute or relative path within an allowed workspace root. Must not contain directory traversal sequences (e.g. "..") or shell metacharacters, and cannot be empty or whitespace-only.',
@@ -63,12 +64,13 @@ export const SafeGlobPattern = z
   .string()
   .min(1, { error: 'Pattern required' })
   .max(1000, { error: 'Max 1000 chars' })
+  .refine((val) => val.trim().length > 0, {
+    message: 'Pattern cannot be empty or whitespace-only',
+    abort: true,
+  })
   .regex(/^(?!\/)(?![a-zA-Z]:[\\/])(?!.*\.\.).+$/, {
     error: 'Invalid glob or unsafe path (absolute/.. forbidden)',
     abort: true,
-  })
-  .refine((val) => val.trim().length > 0, {
-    message: 'Pattern cannot be empty or whitespace-only',
   })
   .refine((val) => isSafeGlobSyntax(val), {
     message: 'Invalid glob or unsafe path (absolute/.. forbidden)',
