@@ -98,30 +98,48 @@ interface WideEventPayload {
   uri?: string;
 }
 
-function toLogfmt(obj: Record<string, unknown>): string {
+export function toLogfmt(obj: Record<string, unknown>): string {
   return Object.entries(obj)
     .filter(([_, v]) => v !== undefined && v !== null)
     .map(([k, v]) => {
+      const escapedKey = /[\s"=\\]/.test(k) ? JSON.stringify(k) : k;
+
       if (Array.isArray(v)) {
-        return `${k}=[${v.join(',')}]`;
+        const mapped = v.map((item) => {
+          if (typeof item === 'string' && /[\s"=\\]/.test(item)) {
+            try {
+              return JSON.stringify(item);
+            } catch {
+              return item;
+            }
+          }
+          return String(item);
+        });
+        return `${escapedKey}=[${mapped.join(',')}]`;
+      }
+      if (v instanceof Error) {
+        return `${escapedKey}=${JSON.stringify(v.stack ?? v.message)}`;
+      }
+      if (typeof v === 'bigint') {
+        return `${escapedKey}=${v.toString()}`;
       }
       if (typeof v === 'string') {
         if (/[\s"=\\]/.test(v)) {
           try {
-            return `${k}=${JSON.stringify(v)}`;
+            return `${escapedKey}=${JSON.stringify(v)}`;
           } catch {
-            return `${k}=[Unserializable]`;
+            return `${escapedKey}=[Unserializable]`;
           }
         }
-        return `${k}=${v}`;
+        return `${escapedKey}=${v}`;
       }
       if (typeof v === 'number') {
-        return `${k}=${Number.isInteger(v) ? v : v.toFixed(2)}`;
+        return `${escapedKey}=${Number.isInteger(v) ? v : v.toFixed(2)}`;
       }
       try {
-        return `${k}=${JSON.stringify(v)}`;
+        return `${escapedKey}=${JSON.stringify(v)}`;
       } catch {
-        return `${k}=[Unserializable]`;
+        return `${escapedKey}=[Unserializable]`;
       }
     })
     .join(' ');
@@ -168,9 +186,11 @@ export async function withTelemetry<T>(
     }
     return result;
   } catch (error) {
+    const rawOutcome = extraData['outcome'];
     const outcome =
-      (extraData['outcome'] as 'success' | 'error' | 'cancelled' | 'rejected' | undefined) ??
-      'error';
+      rawOutcome === 'cancelled' || rawOutcome === 'rejected' || rawOutcome === 'error'
+        ? rawOutcome
+        : 'error';
     try {
       emitWideEvent('error', {
         ...baseEvent,
@@ -228,10 +248,20 @@ export function logToSender(
   }
 }
 
-function formatTransportError(error: unknown): string {
-  if (error instanceof Error) return error.message;
+export function formatTransportError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.stack ?? error.message;
+  }
   if (typeof error === 'string') return error;
-  return JSON.stringify(error);
+  try {
+    return JSON.stringify(error);
+  } catch {
+    try {
+      return inspect(error, { depth: 2, colors: false });
+    } catch {
+      return String(error);
+    }
+  }
 }
 
 export const Logger = {
@@ -352,7 +382,10 @@ export class LogRouter {
       );
       return;
     }
-    console.error(`[${event.level.toUpperCase()}] ${event.message}${dataStr}`);
+    const fallbackMinLevel = (ENV['FS_CONTEXT_MIN_LOG_LEVEL'] ?? 'notice') as LoggingLevel;
+    if (LOG_LEVEL_ORDER[event.level] >= LOG_LEVEL_ORDER[fallbackMinLevel]) {
+      console.error(`[${event.level.toUpperCase()}] ${event.message}${dataStr}`);
+    }
   }
 }
 
@@ -447,7 +480,20 @@ const toolContext = new AsyncLocalStorageImport<ToolAsyncContext>({
 });
 
 let perfObserver: PerformanceObserver | undefined;
+let globalLoopMonitor: ReturnType<typeof monitorEventLoopDelay> | undefined;
 let traceCounter = 0;
+
+function getGlobalLoopMonitor(): ReturnType<typeof monitorEventLoopDelay> {
+  if (!globalLoopMonitor) {
+    globalLoopMonitor = monitorEventLoopDelay({ resolution: 20 });
+    try {
+      globalLoopMonitor.enable();
+    } catch (err) {
+      console.error('Failed to enable event loop delay monitor:', err);
+    }
+  }
+  return globalLoopMonitor;
+}
 
 // --- Helpers: Result Analysis ---
 
@@ -483,7 +529,10 @@ function extractErrorMessage(source: unknown): string {
   return safeStringify(source);
 }
 
-function extractOutcome(result: unknown): { ok: boolean; error?: string } {
+export function extractOutcome(result: unknown): { ok: boolean; error?: string } {
+  if (result instanceof Error) {
+    return { ok: false, error: result.message };
+  }
   if (!isRecord(result)) return { ok: true };
 
   if (result['isError'] === true) {
@@ -494,16 +543,25 @@ function extractOutcome(result: unknown): { ok: boolean; error?: string } {
     return result['ok'] ? { ok: true } : { ok: false, error: extractErrorMessage(result) };
   }
 
+  if (result['error'] !== undefined) {
+    return { ok: false, error: extractErrorMessage(result) };
+  }
+
   const struct = result['structuredContent'];
-  if (isRecord(struct) && typeof struct['ok'] === 'boolean') {
-    if (struct['ok']) return { ok: true };
-    const err =
-      typeof struct['error'] === 'string'
-        ? struct['error']
-        : isRecord(struct['error']) && typeof struct['error']['message'] === 'string'
-          ? struct['error']['message']
-          : undefined;
-    return err ? { ok: false, error: err } : { ok: false };
+  if (isRecord(struct)) {
+    if (typeof struct['ok'] === 'boolean') {
+      if (struct['ok']) return { ok: true };
+      const err =
+        typeof struct['error'] === 'string'
+          ? struct['error']
+          : isRecord(struct['error']) && typeof struct['error']['message'] === 'string'
+            ? struct['error']['message']
+            : undefined;
+      return err ? { ok: false, error: err } : { ok: false };
+    }
+    if (struct['error'] !== undefined) {
+      return { ok: false, error: extractErrorMessage(struct) };
+    }
   }
 
   return { ok: true };
@@ -517,11 +575,15 @@ function safeStringify(source: unknown): string {
   }
 }
 
-function sanitizePathForDiagnostics(path: string | undefined): string | undefined {
+export function sanitizePathForDiagnostics(path: string | undefined): string | undefined {
   const { detail } = readConfig();
-  if (!path || detail === 0) return undefined;
+  if (typeof path !== 'string' || !path || detail === 0) return undefined;
   if (detail === 2) return path;
-  return hashFunc('sha256', path, 'hex').slice(0, 16);
+  try {
+    return hashFunc('sha256', path, 'hex').slice(0, 16);
+  } catch {
+    return undefined;
+  }
 }
 
 function enrichWithToolContext(
@@ -581,12 +643,16 @@ function ensureObserver(): void {
       if (entry.name.startsWith('filesystem-mcp:')) {
         ours.push(entry);
         const originalName = entry.name.slice('filesystem-mcp:'.length);
-        CHANNELS.perf.publish({
-          phase: 'measure',
-          name: originalName,
-          durationMs: entry.duration,
-          detail: (entry as { detail?: unknown }).detail,
-        } satisfies PerfDiagnosticsEvent);
+        try {
+          CHANNELS.perf.publish({
+            phase: 'measure',
+            name: originalName,
+            durationMs: entry.duration,
+            detail: (entry as { detail?: unknown }).detail,
+          } satisfies PerfDiagnosticsEvent);
+        } catch (err) {
+          console.error('[ensureObserver] Failed to publish perf measure event', err);
+        }
       }
     }
     try {
@@ -606,18 +672,30 @@ function shouldPublishOpsTrace(): boolean {
 }
 
 function publishOpsTraceStart(context: OpsTraceContext): void {
-  CHANNELS.ops.start.publish(buildOpsTraceContext(context));
+  try {
+    CHANNELS.ops.start.publish(buildOpsTraceContext(context));
+  } catch (err) {
+    console.error('[publishOpsTraceStart] Failed', err);
+  }
 }
 
 function publishOpsTraceEnd(context: OpsTraceContext): void {
-  CHANNELS.ops.end.publish(buildOpsTraceContext(context));
+  try {
+    CHANNELS.ops.end.publish(buildOpsTraceContext(context));
+  } catch (err) {
+    console.error('[publishOpsTraceEnd] Failed', err);
+  }
 }
 
 function publishOpsTraceError(context: OpsTraceContext, error: unknown): void {
-  CHANNELS.ops.error.publish({
-    ...buildOpsTraceContext(context),
-    error,
-  });
+  try {
+    CHANNELS.ops.error.publish({
+      ...buildOpsTraceContext(context),
+      error,
+    });
+  } catch (err) {
+    console.error('[publishOpsTraceError] Failed', err);
+  }
 }
 
 /**
@@ -692,9 +770,23 @@ export function startPerfMeasure(
 
   performance.mark(startMark);
 
+  // Safety timeout: auto-clear marks after 5 minutes if never finished to prevent timeline leak
+  const safetyTimeout = setTimeout(() => {
+    if (!finished) {
+      finished = true;
+      clearMeasureMarks(startMark, endMark);
+    }
+  }, 300000);
+  try {
+    safetyTimeout.unref();
+  } catch {
+    // Ignore unref failures in non-Node environments
+  }
+
   return (ok?: boolean) => {
     if (finished) return;
     finished = true;
+    clearTimeout(safetyTimeout);
 
     try {
       runInCapturedContext(() => {
@@ -725,7 +817,11 @@ function publishToolStart(tool: string, pathVal?: string, traceparent?: string):
   const event: ToolDiagnosticsEvent = { phase: 'start', tool };
   if (pathVal) event.path = pathVal;
   if (traceparent) event.traceparent = traceparent;
-  CHANNELS.tool.publish(event);
+  try {
+    CHANNELS.tool.publish(event);
+  } catch (err) {
+    console.error('[publishToolStart] Failed', err);
+  }
 }
 
 function publishToolEnd(
@@ -738,7 +834,11 @@ function publishToolEnd(
   const event: ToolDiagnosticsEvent = { phase: 'end', tool, ok, durationMs };
   if (errorMsg) event.error = errorMsg;
   if (traceparent) event.traceparent = traceparent;
-  CHANNELS.tool.publish(event);
+  try {
+    CHANNELS.tool.publish(event);
+  } catch (err) {
+    console.error('[publishToolEnd] Failed', err);
+  }
 }
 
 function publishPerfEnd(
@@ -758,7 +858,11 @@ function publishPerfEnd(
     const delays = getDelayStats(loopMonitor);
     if (delays) event.eventLoopDelay = delays;
   }
-  CHANNELS.perf.publish(event);
+  try {
+    CHANNELS.perf.publish(event);
+  } catch (err) {
+    console.error('[publishPerfEnd] Failed', err);
+  }
 }
 
 interface ObserveOptions {
@@ -777,12 +881,6 @@ function finalizeObservation(
   eluStart?: ReturnType<typeof performance.eventLoopUtilization>,
   loopMonitor?: ReturnType<typeof monitorEventLoopDelay>,
 ): void {
-  try {
-    loopMonitor?.disable();
-  } catch {
-    // Ignore disable failures
-  }
-
   try {
     if (options.pubPerf && eluStart) {
       publishPerfEnd(tool, durationMs, eluStart, loopMonitor);
@@ -805,16 +903,16 @@ async function runAndObserve<T>(
 ): Promise<T> {
   const startMs = performance.now();
   const eluStart = options.pubPerf ? performance.eventLoopUtilization() : undefined;
-  const loopMonitor = options.pubPerf ? monitorEventLoopDelay() : undefined;
-  loopMonitor?.enable();
-
-  if (options.pubTool) publishToolStart(tool, options.pathVal, options.traceparent);
+  const loopMonitor = options.pubPerf ? getGlobalLoopMonitor() : undefined;
 
   let result: T;
   let ok = false;
   let errorMsg: string | undefined;
 
   try {
+    if (options.pubTool) {
+      publishToolStart(tool, options.pathVal, options.traceparent);
+    }
     result = await run();
     const outcome = extractOutcome(result);
     ok = outcome.ok;
@@ -836,11 +934,21 @@ async function runWithBasicErrorLogging<T>(tool: string, run: () => Promise<T>):
     const res = await run();
     const duration = performance.now() - start;
     const { ok, error } = extractOutcome(res);
-    if (!ok) logError(tool, duration, error);
+    if (!ok) {
+      try {
+        logError(tool, duration, error);
+      } catch (logErr) {
+        console.error('[runWithBasicErrorLogging] Failed to log tool error', logErr);
+      }
+    }
     return res;
   } catch (e) {
     const duration = performance.now() - start;
-    logError(tool, duration, extractErrorMessage(e));
+    try {
+      logError(tool, duration, extractErrorMessage(e));
+    } catch (logErr) {
+      console.error('[runWithBasicErrorLogging] Failed to log tool error', logErr);
+    }
     throw e;
   }
 }
@@ -1125,6 +1233,7 @@ export class StderrProgressSink implements ProgressSink {
 
     const merged: ProgressCtx = {
       ...this.#ctx,
+      ...(event.message ? { subject: event.message } : {}),
       ...(event.kind === 'tick' || event.kind === 'complete'
         ? { current: event.current, total: event.total }
         : {}),

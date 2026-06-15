@@ -12,6 +12,7 @@ dist/
 .tsbuildinfo.build
 .tsbuildinfo.examples
 .tsbuildinfo.tests
+temp_integration_config.json
 
 # Environment variables
 .env
