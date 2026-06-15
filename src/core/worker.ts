@@ -174,6 +174,20 @@ function serializeError(e: unknown): SerializedError {
       ...(e.stack ? { stack: e.stack } : {}),
     };
   }
+  if (typeof e === 'object' && e !== null) {
+    try {
+      return { kind: 'generic', message: JSON.stringify(e) };
+    } catch {
+      if (
+        'toString' in e &&
+        typeof e.toString === 'function' &&
+        e.toString !== Object.prototype.toString
+      ) {
+        return { kind: 'generic', message: (e as { toString(): string }).toString() };
+      }
+      return { kind: 'generic', message: '[Unserializable Object]' };
+    }
+  }
   return { kind: 'generic', message: String(e) };
 }
 

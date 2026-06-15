@@ -219,6 +219,7 @@ class WorkerPool {
   private queue = new FastQueue<QueuedTask>();
   private nextId = 1;
   private sweepTimer?: NodeJS.Timeout | undefined;
+  private consecutiveStartupFailures = 0;
 
   public run<N extends WorkerTaskName>(
     name: N,
@@ -369,6 +370,12 @@ class WorkerPool {
   }
 
   private handleWorkerExit(pw: PoolWorker, code: number): void {
+    const isStarting = pw.state === 'starting';
+    if (isStarting) {
+      this.consecutiveStartupFailures++;
+      console.error(`Worker exited during startup with code ${code}`);
+    }
+
     this.removeWorker(pw);
     if (pw.current) {
       this.cleanupEntry(pw.current);
@@ -380,6 +387,14 @@ class WorkerPool {
       );
     }
     this.stopSweepTimerIfPossible();
+
+    if (isStarting && this.consecutiveStartupFailures >= 3) {
+      const errorMsg = `Worker pool failed to initialize (worker exited with code ${code})`;
+      this.rejectAllQueued(new FsError(ErrorCode.UNKNOWN, errorMsg));
+      this.consecutiveStartupFailures = 0;
+      return;
+    }
+
     // Resume queue scheduling after worker removal, in case tasks were queued
     // while the pool was at capacity.
     this.drainQueue();
@@ -397,6 +412,7 @@ class WorkerPool {
       pw.startedReady = true;
       if (pw.state === 'starting') {
         pw.state = 'idle';
+        this.consecutiveStartupFailures = 0;
         this.drainQueue();
       }
     });
@@ -421,7 +437,18 @@ class WorkerPool {
   private dispatch(pw: PoolWorker, qt: QueuedTask): void {
     pw.state = 'busy';
     pw.current = qt.entry;
-    pw.worker.postMessage(qt.request);
+    try {
+      pw.worker.postMessage(qt.request);
+    } catch (err) {
+      this.cleanupEntry(qt.entry);
+      delete pw.current;
+      pw.state = 'idle';
+      pw.lastIdleAt = Date.now();
+      qt.entry.reject(normalizeUnknownError(err));
+      setTimeout(() => {
+        this.drainQueue();
+      }, 0);
+    }
   }
 
   private drainQueue(): void {
@@ -437,6 +464,13 @@ class WorkerPool {
         return;
       }
       return;
+    }
+  }
+
+  private rejectAllQueued(err: Error): void {
+    for (const qt of this.queue.clear()) {
+      this.cleanupEntry(qt.entry);
+      qt.entry.reject(err);
     }
   }
 
@@ -461,13 +495,30 @@ class WorkerPool {
   }
 
   private handleWorkerError(pw: PoolWorker, err: unknown): void {
+    const isStarting = pw.state === 'starting';
+    if (isStarting) {
+      this.consecutiveStartupFailures++;
+    }
+
     if (pw.current) {
       this.cleanupEntry(pw.current);
-      pw.current.reject(err instanceof Error ? err : new Error(String(err)));
+      pw.current.reject(normalizeUnknownError(err));
       delete pw.current;
+    } else if (isStarting) {
+      console.error('Worker failed to initialize:', err);
     }
     // Retire the worker to prevent further task scheduling on it.
     this.retireWorker(pw);
+
+    if (isStarting && this.consecutiveStartupFailures >= 3) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      this.rejectAllQueued(
+        new FsError(ErrorCode.UNKNOWN, `Worker pool failed to initialize: ${errorMsg}`),
+      );
+      this.consecutiveStartupFailures = 0;
+      return;
+    }
+
     // Resume queue scheduling in case tasks were queued while at capacity.
     this.drainQueue();
   }
@@ -593,14 +644,25 @@ export function createTimedAbortSignal(
     }, timeoutMs);
     timer.unref();
 
-    const combined = baseSignal
-      ? AbortSignal.any([baseSignal, controller.signal])
-      : controller.signal;
+    let onBaseAbort: (() => void) | undefined;
+    if (baseSignal) {
+      if (baseSignal.aborted) {
+        controller.abort(baseSignal.reason);
+      } else {
+        onBaseAbort = () => {
+          controller.abort(baseSignal.reason);
+        };
+        baseSignal.addEventListener('abort', onBaseAbort, { once: true });
+      }
+    }
 
     return {
-      signal: combined,
+      signal: controller.signal,
       cleanup: () => {
         clearTimeout(timer);
+        if (baseSignal && onBaseAbort) {
+          baseSignal.removeEventListener('abort', onBaseAbort);
+        }
       },
     };
   }

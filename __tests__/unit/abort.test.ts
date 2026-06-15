@@ -45,4 +45,16 @@ describe('createTimedAbortSignal', () => {
       cleanup();
     }
   });
+
+  it('removes listener on base signal after cleanup', () => {
+    const ctrl = new AbortController();
+    const { signal, cleanup } = createTimedAbortSignal(ctrl.signal, 1000);
+    cleanup();
+    ctrl.abort(new Error('base abort'));
+    assert.equal(
+      signal.aborted,
+      false,
+      'Signal must NOT be aborted if base signal aborts after cleanup',
+    );
+  });
 });
