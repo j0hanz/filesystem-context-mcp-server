@@ -87,23 +87,20 @@ export const Problem = {
   validationFailed: (msg: string, o?: ProblemFactoryOptions): Problem =>
     build(ErrorCode.VALIDATION_FAILED, msg, o),
   unknown: (msg: string, o?: ProblemFactoryOptions): Problem => build(ErrorCode.UNKNOWN, msg, o),
-  fromUnknown(
-    error: unknown,
-    defaultCode: ErrorCode,
-    path?: string,
-  ): { code: ErrorCode; message: string; path?: string; suggestion?: string } {
+  fromUnknown(error: unknown, defaultCode: ErrorCode, path?: string): Problem {
     const detailed = createDetailedError(error, path);
     const shouldOverride =
       detailed.code === ErrorCode.UNKNOWN || detailed.code === ErrorCode.IO_ERROR;
     const code = shouldOverride ? defaultCode : detailed.code;
     const defaultSuggestion = shouldOverride ? getSuggestion(code) : undefined;
     const suggestion = defaultSuggestion ?? detailed.suggestion;
-    return {
-      code,
-      message: detailed.message,
+    return build(code, detailed.message, {
       ...(detailed.path !== undefined ? { path: detailed.path } : {}),
       ...(suggestion !== undefined ? { suggestion } : {}),
-    };
+      ...(detailed.issues !== undefined && detailed.issues.length > 0
+        ? { issues: detailed.issues }
+        : {}),
+    });
   },
   toText(error: unknown, defaultCode: ErrorCode): { code: ErrorCode; text: string } {
     const resolved = Problem.fromUnknown(error, defaultCode);
@@ -125,14 +122,24 @@ const DEFAULT_SUGGESTIONS: Readonly<Partial<Record<ErrorCode, string>>> = {
 
 function readSuggestionMeta(schema: z.ZodType | undefined): string | undefined {
   if (schema === undefined || typeof schema !== 'object') return undefined;
-  const meta = z.globalRegistry.get(schema) as { suggestion?: unknown } | undefined;
+  let meta: { suggestion?: unknown } | undefined;
+  try {
+    meta = z.globalRegistry.get(schema) as { suggestion?: unknown } | undefined;
+  } catch {
+    return undefined;
+  }
   if (meta && typeof meta.suggestion === 'string') return meta.suggestion;
+  const def = getZodDef(schema);
+  const inner = def?.innerType ?? def?.schema;
+  if (inner) return readSuggestionMeta(inner);
   return undefined;
 }
 
 interface ZodDef {
   shape?: Record<string, z.ZodType>;
-  type?: z.ZodType;
+  type?: z.ZodType; // ZodArray inner type
+  innerType?: z.ZodType; // ZodOptional, ZodNullable, ZodDefault
+  schema?: z.ZodType; // ZodEffects
 }
 
 function getZodDef(schema: z.ZodType): ZodDef | undefined {
@@ -144,7 +151,11 @@ function getZodDef(schema: z.ZodType): ZodDef | undefined {
 }
 
 function descend(schema: z.ZodType, segment: string | number): z.ZodType | undefined {
-  const def = getZodDef(schema);
+  let target: z.ZodType = schema;
+  const wrapDef = getZodDef(target);
+  if (wrapDef?.innerType) target = wrapDef.innerType;
+  else if (wrapDef?.schema) target = wrapDef.schema;
+  const def = getZodDef(target);
   if (!def) return undefined;
   if (typeof segment === 'string' && def.shape !== undefined && segment in def.shape) {
     return def.shape[segment];
@@ -264,7 +275,11 @@ function walkCauseChain(error: unknown): ClassificationSignal {
         errnoSignal = signal;
       }
     }
-    if (!(current instanceof Error)) break;
+    if (!(current instanceof Error)) {
+      visited.add(current);
+      current = (current as { cause?: unknown }).cause;
+      continue;
+    }
     visited.add(current);
     current = (current as { cause?: unknown }).cause;
   }
@@ -294,10 +309,16 @@ function buildProblemFromSignal(signal: ClassificationSignal, error: unknown): P
       });
     }
     case 'unknown':
-      return Problem.ioError(message);
+      return Problem.unknown(message);
     default: {
       const _exhaustive: never = signal;
-      return Problem.ioError(`Unhandled error kind: ${JSON.stringify(_exhaustive)}`);
+      let kindStr: string;
+      try {
+        kindStr = JSON.stringify(_exhaustive);
+      } catch {
+        kindStr = String(_exhaustive);
+      }
+      return Problem.ioError(`Unhandled error kind: ${kindStr}`);
     }
   }
 }
@@ -310,14 +331,18 @@ function toProblemIssue(issue: z.core.$ZodIssue): ProblemIssue {
   };
   const expected = (issue as { expected?: string }).expected;
   const received = (issue as { received?: string }).received;
-  const params = (issue as { params?: unknown }).params;
+  const rawParams = (issue as { params?: unknown }).params;
+  const params =
+    rawParams === undefined || rawParams === null
+      ? undefined
+      : typeof rawParams === 'object'
+        ? (rawParams as Record<string, unknown>)
+        : { value: rawParams };
   return {
     ...base,
     ...(expected !== undefined ? { expected } : {}),
     ...(received !== undefined ? { received } : {}),
-    ...(params !== null && typeof params === 'object'
-      ? { params: params as Record<string, unknown> }
-      : {}),
+    ...(params !== undefined ? { params } : {}),
   };
 }
 
@@ -331,12 +356,12 @@ export function zodErrorToProblem(err: z.ZodError, schema?: z.ZodType): Problem 
 }
 
 function isFsErrorCarrier(error: unknown): error is { problem: Problem } {
-  return (
-    error instanceof Error &&
-    error.name === 'FsError' &&
-    'problem' in error &&
-    typeof (error as { problem?: unknown }).problem === 'object'
-  );
+  if (!(error instanceof Error) || error.name !== 'FsError') return false;
+  if (!('problem' in error)) return false;
+  const p = (error as { problem?: unknown }).problem;
+  if (p === null || typeof p !== 'object') return false;
+  const c = p as Record<string, unknown>;
+  return typeof c['code'] === 'string' && typeof c['message'] === 'string';
 }
 
 export function classify(error: unknown, ctx?: { schema?: z.ZodType }): Problem {
@@ -398,7 +423,7 @@ export function formatUnknownErrorMessage(error: unknown): string {
   try {
     return JSON.stringify(error);
   } catch {
-    return String(error);
+    return `[non-serializable: ${Object.prototype.toString.call(error)}]`;
   }
 }
 
@@ -413,8 +438,12 @@ export function createDetailedError(
 ): DetailedError {
   const problem = classify(error);
   const trace = getTraceContext();
+  const traceEntries: Record<string, unknown> = {};
+  if (trace?.traceparent) traceEntries['io.opentelemetry/traceparent'] = trace.traceparent;
+  if (trace?.tracestate) traceEntries['io.opentelemetry/tracestate'] = trace.tracestate;
+  if (trace?.baggage) traceEntries['io.opentelemetry/baggage'] = trace.baggage;
   const merged: Record<string, unknown> = {
-    ...(trace ?? {}),
+    ...traceEntries,
     ...(problem.details ?? {}),
     ...(additionalDetails ?? {}),
   };
@@ -432,7 +461,7 @@ export function createDetailedError(
   };
 }
 
-function formatDetailedError(error: DetailedError): string {
+function formatDetailedError(error: Pick<Problem, 'code' | 'message' | 'path' | 'suggestion'>): string {
   const lines: string[] = [`${error.code}: ${error.message}`];
   if (error.path && !error.message.includes(error.path)) {
     lines.push(error.path);
@@ -464,7 +493,8 @@ export class FsError extends Error {
   ) {
     if (typeof arg1 === 'string') {
       const code = arg1;
-      const message = (arg2 as string | undefined) ?? '';
+      const message =
+        typeof arg2 === 'string' ? arg2 : arg2 == null ? '' : formatUnknownErrorMessage(arg2);
       const path = arg3;
       const detailsArg = arg4;
       const cause = arg5;

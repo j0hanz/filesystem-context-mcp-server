@@ -19,15 +19,15 @@ describe('classify', () => {
     assert.equal(classify({}).code, ErrorCode.UNKNOWN);
   });
 
-  it('returns IO_ERROR for plain Error with no errno and no cause', () => {
-    assert.equal(classify(new Error('boom')).code, ErrorCode.IO_ERROR);
+  it('returns UNKNOWN for plain Error with no errno and no cause', () => {
+    assert.equal(classify(new Error('boom')).code, ErrorCode.UNKNOWN);
   });
 
   it('does NOT classify by message substring', () => {
-    // Locks the no-sniffing property.
-    assert.equal(classify(new Error('permission denied')).code, ErrorCode.IO_ERROR);
-    assert.equal(classify(new Error('no such file or directory')).code, ErrorCode.IO_ERROR);
-    assert.equal(classify(new Error('operation timed out')).code, ErrorCode.IO_ERROR);
+    // Locks the no-sniffing property — code is UNKNOWN, not the code that the message suggests.
+    assert.equal(classify(new Error('permission denied')).code, ErrorCode.UNKNOWN);
+    assert.equal(classify(new Error('no such file or directory')).code, ErrorCode.UNKNOWN);
+    assert.equal(classify(new Error('operation timed out')).code, ErrorCode.UNKNOWN);
   });
 });
 
@@ -108,6 +108,13 @@ describe('classify — cause chain', () => {
     const outer = new Error('wrapper', { cause: abort });
     assert.equal(classify(outer).code, ErrorCode.CANCELLED);
   });
+  it('walks through non-Error cause values to find errno deeper in chain (Finding 9)', () => {
+    const errno = makeErrno('ENOENT', 'file missing');
+    // non-Error plain object sits between outer Error and the errno Error
+    const nonErrorCause = { message: 'intermediate', cause: errno };
+    const outer = new Error('wrapper', { cause: nonErrorCause });
+    assert.equal(classify(outer).code, ErrorCode.NOT_FOUND);
+  });
 });
 
 describe('classify — Problem details propagate errno', () => {
@@ -170,6 +177,25 @@ describe('zodErrorToProblem', () => {
     if (result.success) return;
     assert.equal(classify(result.error).code, ErrorCode.VALIDATION_FAILED);
   });
+
+  it('coerces primitive params into { value } wrapper (Finding 4)', () => {
+    const schema = z.string().superRefine((val, ctx) => {
+      if (val.length < 3) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'too short',
+          params: 42 as unknown as Record<string, unknown>,
+        });
+      }
+    });
+    const result = schema.safeParse('a');
+    assert.equal(result.success, false);
+    if (result.success) return;
+    const p = zodErrorToProblem(result.error);
+    const issue = p.issues?.[0];
+    assert.ok(issue, 'should have an issue');
+    assert.equal(issue?.params?.['value'], 42, 'primitive params should be wrapped in { value }');
+  });
 });
 
 describe('resolveSuggestion', () => {
@@ -217,5 +243,19 @@ describe('resolveSuggestion', () => {
       schema,
     );
     assert.equal(s, 'meta wins');
+  });
+
+  it('finds meta suggestion through z.optional wrapper (Finding 7)', () => {
+    const schema = z.strictObject({
+      name: z.optional(z.string().meta({ suggestion: 'provide a name' })),
+    });
+    const s = resolveSuggestion(
+      {
+        code: ErrorCode.VALIDATION_FAILED,
+        issues: [{ path: ['name'], code: 'invalid_type', message: 'Expected string' }],
+      },
+      schema,
+    );
+    assert.equal(s, 'provide a name');
   });
 });

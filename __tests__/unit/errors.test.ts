@@ -6,8 +6,10 @@ import * as z from 'zod/v4';
 
 import { ErrorCode } from '../../src/core/errors.js';
 import {
+  classify,
   classifyError,
   createDetailedError,
+  formatUnknownErrorMessage,
   FsError,
   getSuggestion,
   isAbortError,
@@ -148,15 +150,15 @@ describe('getSuggestion', () => {
 // ─── classifyError — no message sniffing ────────────────────────────────────
 
 describe('classifyError — no message sniffing', () => {
-  it('classifies plain Error with no errno as IO_ERROR', () => {
-    assert.equal(classifyError(new Error('boom')), ErrorCode.IO_ERROR);
+  it('classifies plain Error with no errno as UNKNOWN', () => {
+    assert.equal(classifyError(new Error('boom')), ErrorCode.UNKNOWN);
   });
 
   it('does NOT classify by message substring', () => {
-    // Locks the no-sniffing invariant.
-    assert.equal(classifyError(new Error('permission denied')), ErrorCode.IO_ERROR);
-    assert.equal(classifyError(new Error('no such file or directory')), ErrorCode.IO_ERROR);
-    assert.equal(classifyError(new Error('ENOENT: file not found')), ErrorCode.IO_ERROR);
+    // Locks the no-sniffing invariant — code is UNKNOWN, not what the message implies.
+    assert.equal(classifyError(new Error('permission denied')), ErrorCode.UNKNOWN);
+    assert.equal(classifyError(new Error('no such file or directory')), ErrorCode.UNKNOWN);
+    assert.equal(classifyError(new Error('ENOENT: file not found')), ErrorCode.UNKNOWN);
   });
 
   it('classifies by errno code when present', () => {
@@ -256,7 +258,7 @@ describe('createDetailedError', () => {
 });
 
 describe('Problem.fromUnknown', () => {
-  it('overrides IO_ERROR from plain Error with defaultCode', () => {
+  it('overrides UNKNOWN from plain Error with defaultCode', () => {
     const err = new Error('boom');
     const result = Problem.fromUnknown(err, ErrorCode.UNKNOWN);
     assert.equal(result.code, ErrorCode.UNKNOWN);
@@ -297,7 +299,7 @@ describe('Problem.fromUnknown', () => {
     assert.equal(result.path, '/some/path');
   });
 
-  it('does not include issues or details fields', () => {
+  it('plain Error produces no issues or details in result', () => {
     const err = new Error('oops');
     const result = Problem.fromUnknown(err, ErrorCode.UNKNOWN) as Record<string, unknown>;
     assert.equal('issues' in result, false);
@@ -312,6 +314,59 @@ describe('Problem.fromUnknown', () => {
     assert.equal(result.path, '/locked');
   });
 });
+
+// ─── classify — isFsErrorCarrier guard ──────────────────────────────────────
+
+describe('classify — isFsErrorCarrier guard (Finding 5)', () => {
+  it('does not crash when problem is null on a spoofed FsError', () => {
+    const spoofed = Object.assign(new Error('spoofed'), { name: 'FsError', problem: null });
+    // Must not throw and must not return null — falls through to generic classification.
+    const result = classify(spoofed);
+    assert.ok(result !== null && typeof result === 'object');
+    assert.ok(typeof result.code === 'string');
+  });
+
+  it('returns the embedded problem for a valid FsError carrier', () => {
+    const err = new FsError(ErrorCode.NOT_FOUND, 'missing', '/foo');
+    const result = classify(err);
+    assert.equal(result.code, ErrorCode.NOT_FOUND);
+    assert.equal(result.message, 'missing');
+    assert.equal(result.path, '/foo');
+  });
+});
+
+// ─── formatUnknownErrorMessage ───────────────────────────────────────────────
+
+describe('formatUnknownErrorMessage (Finding 1)', () => {
+  it('returns string values unchanged', () => {
+    assert.equal(formatUnknownErrorMessage('hello'), 'hello');
+  });
+
+  it('returns error.message for Error instances', () => {
+    assert.equal(formatUnknownErrorMessage(new Error('boom')), 'boom');
+  });
+
+  it('returns JSON for plain serializable objects', () => {
+    assert.equal(formatUnknownErrorMessage({ code: 42 }), '{"code":42}');
+  });
+
+  it('returns [non-serializable: ...] tag for circular objects', () => {
+    const circular: Record<string, unknown> = {};
+    circular['self'] = circular;
+    const result = formatUnknownErrorMessage(circular);
+    assert.ok(
+      result.startsWith('[non-serializable:'),
+      `Expected non-serializable tag, got: ${result}`,
+    );
+    assert.notEqual(
+      result,
+      '[object Object]',
+      'Should not be the bare Object.prototype.toString fallback',
+    );
+  });
+});
+
+// ─── toProblemIssue — path segment types ─────────────────────────────────────
 
 describe('toProblemIssue — path segment types', () => {
   it('preserves numeric path segments from array-indexed Zod issues', () => {
