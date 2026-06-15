@@ -461,7 +461,9 @@ export function createDetailedError(
   };
 }
 
-function formatDetailedError(error: Pick<Problem, 'code' | 'message' | 'path' | 'suggestion'>): string {
+function formatDetailedError(
+  error: Pick<Problem, 'code' | 'message' | 'path' | 'suggestion'>,
+): string {
   const lines: string[] = [`${error.code}: ${error.message}`];
   if (error.path && !error.message.includes(error.path)) {
     lines.push(error.path);

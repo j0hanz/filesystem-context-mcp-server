@@ -67,7 +67,7 @@ export class FilesystemServerContext {
     if (this.cleanedUp) return;
     this.cleanedUp = true;
     this.synchronizer.destroy();
-    for (const r of this.registrars) r.dispose();
+    for (const r of this.registrars) r.dispose(this.mcp);
     logRouter.detachStdio();
     this.pathGuard.clearDenialCache();
   }
@@ -173,7 +173,7 @@ export async function createServer(
 
   const resourcesHandle = {
     destroy: () => {
-      resourcesRegistrar.dispose();
+      resourcesRegistrar.dispose(server);
     },
   };
 

@@ -33,7 +33,7 @@ export interface ServerDeps {
 
 export interface Registrar {
   register(deps: ServerDeps): void;
-  dispose(): void;
+  dispose(server?: McpServer): void;
 }
 
 // ─── Root directory resolution helpers (relocated from path.ts) ───────────────

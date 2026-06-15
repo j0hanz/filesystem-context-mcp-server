@@ -37,6 +37,7 @@ export interface ResourceRegistrationOptions {
   resourceStore: ResourceStore;
   iconInfo?: IconInfo;
   pathGuard?: PathGuard;
+  server?: McpServer;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -175,7 +176,6 @@ function createInstructionsResource(): ResourceContract {
 // ═══════════════════════════════════════════════════════════════
 
 const FILESYSTEM_FILE_URI_TEMPLATE = 'filesystem-mcp://file/{+path}';
-const FILE_URI_PREFIX = 'filesystem-mcp://file';
 
 // Cap concurrent file watchers to avoid exhausting OS-level watch handles
 // (e.g. Linux inotify, default ~8192/user). One subscription == one watcher.
@@ -191,11 +191,10 @@ export function setWatchFactoryForTests(
 }
 
 function extractPath(uri: string): string | undefined {
-  if (!uri.startsWith(FILE_URI_PREFIX)) return undefined;
-  const rawPath = uri.slice(FILE_URI_PREFIX.length);
-  if (!rawPath.startsWith('/')) return undefined;
   try {
-    return decodeURIComponent(rawPath.slice(1));
+    const url = new URL(uri);
+    if (url.protocol !== 'filesystem-mcp:' || url.host !== 'file') return undefined;
+    return decodeURIComponent(url.pathname.slice(1));
   } catch {
     return undefined;
   }
@@ -204,16 +203,18 @@ function extractPath(uri: string): string | undefined {
 function createFilesystemResource(options: ResourceRegistrationOptions): ResourceContract {
   const completer = options.pathGuard ? new PathCompleter(options.pathGuard) : undefined;
   const watchers = new Map<string, FSWatcher>();
+  const activeCallbacks = new Map<string, Set<(uri: string) => void>>();
+  const desiredState = new Map<string, 'subscribed' | 'unsubscribed'>();
   // Tracks URIs whose watcher is being created (validateExistingPath is async).
-  // Without it, two concurrent subscribe() calls for the same URI both pass the
-  // `watchers.has(uri)` check and the second watcher leaks (overwrites the first).
   const pending = new Set<string>();
-  const cancelledSubscriptions = new Set<string>();
+
   const dropWatcher = (uri: string, watcher: FSWatcher): void => {
     const current = watchers.get(uri);
     if (current !== watcher) return;
     watcher.close();
     watchers.delete(uri);
+    activeCallbacks.delete(uri);
+    desiredState.set(uri, 'unsubscribed');
   };
 
   return {
@@ -258,47 +259,101 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     },
 
     subscribe(uri, notify) {
-      if (!options.pathGuard || watchers.has(uri) || pending.has(uri)) return;
-      if (watchers.size >= MAX_WATCHERS) return;
+      if (!options.pathGuard) return;
+
+      let callbacks = activeCallbacks.get(uri);
+      if (!callbacks) {
+        callbacks = new Set();
+        activeCallbacks.set(uri, callbacks);
+      }
+      callbacks.add(notify);
+
+      desiredState.set(uri, 'subscribed');
+
+      if (watchers.has(uri)) return;
+
+      if (watchers.size >= MAX_WATCHERS) {
+        options.server
+          ?.sendLoggingMessage({
+            level: 'warning',
+            logger: 'filesystem-mcp',
+            data: `Cannot subscribe to ${uri}: MAX_WATCHERS limit (${MAX_WATCHERS}) reached.`,
+          })
+          .catch(() => {
+            /* ignore */
+          });
+        return;
+      }
+
+      if (pending.has(uri)) return;
+
       const filePath = extractPath(uri);
       if (!filePath) return;
 
-      cancelledSubscriptions.delete(uri);
       pending.add(uri);
       options.pathGuard
         .validateExistingPath(filePath)
         .then((resolved) => {
-          if (cancelledSubscriptions.has(uri)) {
-            cancelledSubscriptions.delete(uri);
+          if (desiredState.get(uri) === 'unsubscribed') {
             return;
           }
-          // Re-check after the async gap: the URI may have been subscribed or
-          // the cap reached while validation was in flight.
-          if (watchers.has(uri) || watchers.size >= MAX_WATCHERS) return;
-          const watcher = watchFactory(resolved, () => {
-            notify(uri);
-          });
-          watcher.on('error', () => {
-            // Remove broken watchers so future subscribe calls can recover.
-            dropWatcher(uri, watcher);
-          });
-          watchers.set(uri, watcher);
+          if (watchers.has(uri)) return;
+          if (watchers.size >= MAX_WATCHERS) {
+            options.server
+              ?.sendLoggingMessage({
+                level: 'warning',
+                logger: 'filesystem-mcp',
+                data: `Cannot subscribe to ${uri}: MAX_WATCHERS limit (${MAX_WATCHERS}) reached.`,
+              })
+              .catch(() => {
+                /* ignore */
+              });
+            return;
+          }
+
+          try {
+            const watcher = watchFactory(resolved, () => {
+              const currentCallbacks = activeCallbacks.get(uri);
+              if (currentCallbacks) {
+                for (const cb of currentCallbacks) {
+                  try {
+                    cb(uri);
+                  } catch {
+                    /* ignore callback errors */
+                  }
+                }
+              }
+            });
+            watcher.on('error', () => {
+              dropWatcher(uri, watcher);
+            });
+            watchers.set(uri, watcher);
+          } catch (err) {
+            options.server
+              ?.sendLoggingMessage({
+                level: 'error',
+                logger: 'filesystem-mcp',
+                data: `Failed to create watcher for ${uri}: ${err instanceof Error ? err.message : String(err)}`,
+              })
+              .catch(() => {
+                /* ignore */
+              });
+          }
         })
         .catch(() => {
           /* silent ignore for unallowed/missing files */
         })
         .finally(() => {
           pending.delete(uri);
-          cancelledSubscriptions.delete(uri);
         });
     },
 
     unsubscribe(uri) {
+      desiredState.set(uri, 'unsubscribed');
+      activeCallbacks.delete(uri);
       const watcher = watchers.get(uri);
       if (watcher) {
         dropWatcher(uri, watcher);
-      } else if (pending.has(uri)) {
-        cancelledSubscriptions.add(uri);
       }
     },
 
@@ -307,6 +362,8 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
         watcher.close();
       }
       watchers.clear();
+      activeCallbacks.clear();
+      desiredState.clear();
     },
   };
 }
@@ -371,7 +428,7 @@ function registerResources(
   server: McpServer,
   options: ResourceRegistrationOptions,
 ): ResourceContract[] {
-  const resourceContracts = getResourceContracts(options);
+  const resourceContracts = getResourceContracts({ ...options, server });
 
   for (const contract of resourceContracts) {
     const config = withDefaultIcons(
@@ -406,6 +463,9 @@ function registerResources(
         try {
           return await contract.read(uri, variables, ctx);
         } catch (error) {
+          if (error instanceof ProtocolError) {
+            throw error;
+          }
           throw new ProtocolError(
             ProtocolErrorCode.InvalidRequest,
             error instanceof Error ? error.message : String(error),
@@ -417,6 +477,9 @@ function registerResources(
         try {
           return await contract.read(uri, {}, ctx);
         } catch (error) {
+          if (error instanceof ProtocolError) {
+            throw error;
+          }
           throw new ProtocolError(
             ProtocolErrorCode.InvalidRequest,
             error instanceof Error ? error.message : String(error),
@@ -498,24 +561,40 @@ function registerResources(
 }
 
 export const resourcesRegistrar: Registrar = (() => {
-  let contracts: ResourceContract[] = [];
+  const serverContracts = new Map<McpServer, ResourceContract[]>();
 
   return {
     register(deps: ServerDeps): void {
-      contracts = registerResources(deps.server, {
+      const contracts = registerResources(deps.server, {
         resourceStore: deps.resourceStore,
         pathGuard: deps.pathGuard,
+        server: deps.server,
         ...(deps.iconInfo ? { iconInfo: deps.iconInfo } : {}),
       });
+      serverContracts.set(deps.server, contracts);
     },
 
-    dispose(): void {
-      for (const contract of contracts) {
-        if (contract.destroy) {
-          contract.destroy();
+    dispose(server?: McpServer): void {
+      if (server) {
+        const contracts = serverContracts.get(server);
+        if (contracts) {
+          for (const contract of contracts) {
+            if (contract.destroy) {
+              contract.destroy();
+            }
+          }
+          serverContracts.delete(server);
         }
+      } else {
+        for (const contracts of serverContracts.values()) {
+          for (const contract of contracts) {
+            if (contract.destroy) {
+              contract.destroy();
+            }
+          }
+        }
+        serverContracts.clear();
       }
-      contracts = [];
     },
   };
 })();
