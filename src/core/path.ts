@@ -18,7 +18,7 @@ import * as z from 'zod/v4';
 
 import { assertNotAborted, createTimedAbortSignal, withAbort } from './concurrency.js';
 import { ErrorCode, FsError, isAbortError, isNodeError } from './errors.js';
-import { logToSender } from './observability.js';
+import { Logger, logToSender } from './observability.js';
 import type { LoggingState, LogSender } from './observability.js';
 import { parseEnvDirList, parseTrueEnvFlag } from './primitives.js';
 
@@ -1472,7 +1472,10 @@ export class PathCompleter {
         0,
         MAX_COMPLETION_ITEMS,
       );
-    } catch {
+    } catch (error) {
+      Logger.warn('PathCompleter: completion failed, returning empty list', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return [];
     }
   }

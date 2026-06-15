@@ -6,6 +6,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
+import { pathToFileURL } from 'node:url';
 
 import { createServer } from '../src/server.js';
 import { LinkedTransport } from './linked-transport.js';
@@ -132,7 +133,7 @@ describe('prompts', () => {
     expectText(m0);
     assert.match(m0.content.text, /Analyze this file:/u);
     expectLink(m1);
-    assert.equal(m1.content.uri.toLowerCase(), `file://${filePath}`.toLowerCase());
+    assert.equal(m1.content.uri.toLowerCase(), pathToFileURL(filePath).href.toLowerCase());
     expectLink(m2);
     assert.equal(m2.content.uri, 'internal://instructions');
   });
@@ -195,7 +196,7 @@ describe('prompts', () => {
     assert.match(m0.content.text, /Summarize this project/u);
     assert.match(m0.content.text, /maxDepth=3/u);
     expectLink(m1);
-    assert.equal(m1.content.uri.toLowerCase(), `file://${env.tempDir}`.toLowerCase());
+    assert.equal(m1.content.uri.toLowerCase(), pathToFileURL(env.tempDir).href.toLowerCase());
   });
 
   it('summarize-directory honors custom depth', async () => {

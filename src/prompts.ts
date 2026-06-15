@@ -10,7 +10,8 @@ import {
   type TextContent,
 } from '@modelcontextprotocol/server';
 
-import { stat } from 'node:fs/promises';
+import { lstat } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
 
 import * as z from 'zod/v4';
 
@@ -33,6 +34,7 @@ interface PromptContract {
 interface PromptRegistrationOptions {
   pathGuard: PathGuard;
   instructions: string;
+  instructionsUri: string;
   isInitialized: () => boolean;
   iconInfo?: IconInfo;
 }
@@ -60,7 +62,7 @@ function pathArg(
       .refine((val) => !val.includes('..'), {
         message: 'Directory traversal sequences ("..") are forbidden',
       })
-      .refine((val) => !/[\n\r;|`]/g.test(val), {
+      .refine((val) => !/[\n\r;|`]/.test(val), {
         message: 'Path contains prohibited characters (newlines or shell metacharacters)',
       })
       .describe(
@@ -81,7 +83,7 @@ function topicArg(
       .refine((val) => val.trim().length > 0, {
         message: 'Topic cannot be empty or whitespace-only',
       })
-      .refine((val) => !/[\n\r;|`]/g.test(val), {
+      .refine((val) => !/[\n\r;|`]/.test(val), {
         message: 'Topic contains prohibited characters (newlines or shell metacharacters)',
       })
       .describe(
@@ -103,10 +105,10 @@ function userText(text: string): PromptMessage {
   return { role: 'user', content };
 }
 
-function linkToInstructions(): PromptMessage {
+function linkToInstructions(uri: string): PromptMessage {
   const content: ResourceLink = {
     type: 'resource_link',
-    uri: 'internal://instructions',
+    uri,
     name: 'filesystem-mcp-instructions',
     mimeType: 'text/markdown',
     annotations: { audience: ['assistant'], priority: 0.5 },
@@ -117,7 +119,7 @@ function linkToInstructions(): PromptMessage {
 function linkToPath(absPath: string): PromptMessage {
   const content: ResourceLink = {
     type: 'resource_link',
-    uri: `file://${absPath}`,
+    uri: pathToFileURL(absPath).href,
     name: absPath,
     annotations: { audience: ['assistant'], priority: 1 },
   };
@@ -153,6 +155,7 @@ function wrapHandler<T>(
         });
         return result;
       } catch (error) {
+        if (error instanceof ProtocolError) throw error;
         throw new ProtocolError(
           ProtocolErrorCode.InvalidRequest,
           error instanceof Error ? error.message : String(error),
@@ -192,6 +195,9 @@ const GET_HELP: PromptEntry = {
       ({ topic }: { topic?: string | undefined }): GetPromptResult | Promise<GetPromptResult> =>
         wrapHandler(GET_HELP.contract, options, false, () => {
           const section = topic ? INSTRUCTION_SECTIONS[topic.toLowerCase()] : undefined;
+          if (topic && !section) {
+            Logger.debug('get-help: unknown topic requested', { topic });
+          }
           const text =
             section ??
             (topic
@@ -234,7 +240,7 @@ const ANALYZE_PATH: PromptEntry = {
       async ({ path: rawPath }: { path: string }): Promise<GetPromptResult> =>
         wrapHandler(ANALYZE_PATH.contract, options, true, async () => {
           const resolved = await options.pathGuard.validateExistingPath(rawPath);
-          const stats = await stat(resolved);
+          const stats = await lstat(resolved);
           const kind = stats.isDirectory() ? 'directory' : 'file';
           const task =
             kind === 'file'
@@ -242,7 +248,11 @@ const ANALYZE_PATH: PromptEntry = {
               : `Analyze this directory: ${resolved}\n\n- Call \`tree\` (maxDepth: 3) for layout.\n- Call \`ls\` for top-level entries.\n- Report: structure, notable files/subdirs, observations.`;
           return {
             description: ANALYZE_PATH.contract.description,
-            messages: [userText(task), linkToPath(resolved), linkToInstructions()],
+            messages: [
+              userText(task),
+              linkToPath(resolved),
+              linkToInstructions(options.instructionsUri),
+            ],
           };
         }),
     );
@@ -273,7 +283,7 @@ const FIND_IN_TREE: PromptEntry = {
               .refine((val) => val.trim().length > 0, {
                 message: 'Query cannot be empty or whitespace-only',
               })
-              .refine((val) => !/[\n\r;|`]/g.test(val), {
+              .refine((val) => !/[\n\r;|`]/.test(val), {
                 message: 'Query contains prohibited characters (newlines or shell metacharacters)',
               })
               .describe(
@@ -303,7 +313,7 @@ const FIND_IN_TREE: PromptEntry = {
         wrapHandler(FIND_IN_TREE.contract, options, true, async () => {
           const allowed = options.pathGuard.getAllowedDirectories();
           const candidate = root ?? allowed[0];
-          if (!candidate) {
+          if (candidate === undefined) {
             throw new ProtocolError(
               ProtocolErrorCode.InvalidRequest,
               'find-in-tree: no root provided and no allowed directories',
@@ -322,7 +332,7 @@ const FIND_IN_TREE: PromptEntry = {
           const text = [`Find "${query}" in ${resolved} (mode=${mode}):`, '', ...steps].join('\n');
           return {
             description: FIND_IN_TREE.contract.description,
-            messages: [userText(text), linkToInstructions()],
+            messages: [userText(text), linkToInstructions(options.instructionsUri)],
           };
         }),
     );
@@ -387,6 +397,7 @@ export const promptsRegistrar: Registrar = {
     const options = {
       pathGuard: deps.pathGuard,
       instructions: serverInstructionsContent,
+      instructionsUri: 'internal://instructions',
       isInitialized: deps.isInitialized,
       ...(deps.iconInfo ? { iconInfo: deps.iconInfo } : {}),
     };

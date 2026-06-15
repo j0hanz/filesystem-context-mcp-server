@@ -156,24 +156,32 @@ export async function withTelemetry<T>(
       (extraData['outcome'] as 'success' | 'error' | 'cancelled' | 'rejected' | undefined) ??
       'success';
     const level = outcome === 'error' || outcome === 'rejected' ? 'error' : 'info';
-    emitWideEvent(level, {
-      ...baseEvent,
-      outcome,
-      duration_ms: performance.now() - start,
-      ...extraData,
-    });
+    try {
+      emitWideEvent(level, {
+        ...baseEvent,
+        outcome,
+        duration_ms: performance.now() - start,
+        ...extraData,
+      });
+    } catch (telemetryError) {
+      console.error('[withTelemetry] emitWideEvent failed on success path', telemetryError);
+    }
     return result;
   } catch (error) {
     const outcome =
       (extraData['outcome'] as 'success' | 'error' | 'cancelled' | 'rejected' | undefined) ??
       'error';
-    emitWideEvent('error', {
-      ...baseEvent,
-      outcome,
-      error_message: error instanceof Error ? error.message : String(error),
-      duration_ms: performance.now() - start,
-      ...extraData,
-    });
+    try {
+      emitWideEvent('error', {
+        ...baseEvent,
+        outcome,
+        error_message: error instanceof Error ? error.message : String(error),
+        duration_ms: performance.now() - start,
+        ...extraData,
+      });
+    } catch (telemetryError) {
+      console.error('[withTelemetry] emitWideEvent failed on error path', telemetryError);
+    }
     throw error;
   }
 }
