@@ -34,7 +34,7 @@ import {
 
 import type { Express, NextFunction, Request, RequestHandler, Response } from 'express';
 
-import { formatUnknownErrorMessage } from './core/errors.js';
+import { ErrorCode, formatUnknownErrorMessage, FsError } from './core/errors.js';
 import {
   Logger,
   type LogRouter,
@@ -101,25 +101,28 @@ export class InMemoryEventStore implements EventStore {
   ): Promise<StreamId> {
     const streamId = this.eventIdToStreamId.get(lastEventId);
     if (!streamId) {
-      throw new Error(`Event ID ${lastEventId} not found or expired`);
+      throw new FsError(ErrorCode.NOT_FOUND, `Event ID ${lastEventId} not found or expired`);
     }
 
     const stream = this.streams.get(streamId);
     if (!stream) {
-      throw new Error(`Stream ${streamId} not found`);
+      throw new FsError(ErrorCode.NOT_FOUND, `Stream ${streamId} not found`);
     }
 
     const eventIndex = stream.findIndex((e) => e.id === lastEventId);
     if (eventIndex === -1) {
-      throw new Error(`Event ID ${lastEventId} not found in stream ${streamId}`);
+      throw new FsError(
+        ErrorCode.NOT_FOUND,
+        `Event ID ${lastEventId} not found in stream ${streamId}`,
+      );
     }
 
-    // Replay all events after the found index
-    for (let i = eventIndex + 1; i < stream.length; i++) {
-      const event = stream[i];
-      if (event) {
-        await callbacks.send(event.id, event.message);
-      }
+    // Take a snapshot of the remaining events synchronously
+    const eventsToReplay = stream.slice(eventIndex + 1);
+
+    // Replay all events from the snapshot
+    for (const event of eventsToReplay) {
+      await callbacks.send(event.id, event.message);
     }
 
     return streamId;
@@ -155,13 +158,25 @@ export async function startServer(ctx: FilesystemServerContext): Promise<void> {
     server,
     INIT_TIMEOUT_CLOSE
       ? () => {
-          void server.close();
+          server.close().catch((err: unknown) => {
+            Logger.error('Error closing MCP server on timeout:', formatUnknownErrorMessage(err));
+          });
         }
       : undefined,
   );
   await ctx.pathGuard.recomputeAllowedDirectories(new McpLogSender(server));
 
-  await server.connect(transport);
+  transport.onerror = (error: unknown) => {
+    Logger.error('[Stdio] Transport error:', formatUnknownErrorMessage(error));
+  };
+
+  try {
+    await server.connect(transport);
+  } catch (error) {
+    ctx.disposeRuntimeState();
+    throw error;
+  }
+
   const sdkOnClose = transport.onclose;
   transport.onclose = () => {
     ctx.disposeRuntimeState();
@@ -270,7 +285,8 @@ export function validateBearerAuthorization(apiKey: string, authHeader: unknown)
 export function assertHttpBindingPolicy(host: string, apiKey: string | undefined): void {
   if (isLoopbackHttpHost(host)) return;
   if (apiKey) return;
-  throw new Error(
+  throw new FsError(
+    ErrorCode.PERMISSION_DENIED,
     `Refusing to bind HTTP server to non-loopback host '${host}' without FILESYSTEM_MCP_API_KEY.`,
   );
 }
@@ -460,7 +476,9 @@ async function createHttpSession(
 
   synchronizer.registerHandlers(mcpServer, () => {
     cleanup();
-    void mcpServer.close();
+    mcpServer.close().catch((err: unknown) => {
+      Logger.error('Error closing MCP server on registry event:', formatUnknownErrorMessage(err));
+    });
   });
 
   const close = async (): Promise<void> => {
@@ -474,7 +492,9 @@ async function createHttpSession(
     retryInterval: 2_000,
     onsessioninitialized: (sessionId) => {
       const loggingState = pathGuard.loggingState;
-      if (!loggingState) throw new Error('LoggingState is required');
+      if (!loggingState) {
+        throw new FsError(ErrorCode.VALIDATION_FAILED, 'LoggingState is required');
+      }
       registry.add(
         sessionId,
         {
@@ -497,9 +517,18 @@ async function createHttpSession(
     },
   });
 
+  transport.onerror = (error: unknown) => {
+    Logger.error('[HTTP] Transport error:', formatUnknownErrorMessage(error));
+  };
+
   transport.onclose = cleanup;
 
-  await mcpServer.connect(transport);
+  try {
+    await mcpServer.connect(transport);
+  } catch (error) {
+    cleanup();
+    throw error;
+  }
 
   return {
     server: mcpServer,
@@ -629,7 +658,12 @@ async function handlePostMcp(
           return;
         }
         const session = await createHttpSession(options, registry, eventStore);
-        await handleSessionTransportRequest(session, req, res, message);
+        try {
+          await handleSessionTransportRequest(session, req, res, message);
+        } catch (error) {
+          await session.close();
+          throw error;
+        }
         enrich({ http_status: res.statusCode });
       } catch (error) {
         Logger.error('[HTTP] Error handling POST request:', formatUnknownErrorMessage(error));
@@ -734,12 +768,12 @@ function setupExpressApp(
 
   app.use(errorHandlerMiddleware);
 
-  app.post('/mcp', (req: Request, res: Response) => {
-    void handlePostMcp(req, res, options, registry, eventStore);
+  app.post('/mcp', (req: Request, res: Response, next: NextFunction) => {
+    handlePostMcp(req, res, options, registry, eventStore).catch(next);
   });
 
-  const getOrDeleteHandler = (req: Request, res: Response) => {
-    void handleGetOrDeleteMcp(req, res, registry);
+  const getOrDeleteHandler = (req: Request, res: Response, next: NextFunction) => {
+    handleGetOrDeleteMcp(req, res, registry).catch(next);
   };
 
   app.get('/mcp', getOrDeleteHandler);
@@ -784,12 +818,24 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
 
   const originalClose = httpServer.close.bind(httpServer);
   httpServer.close = function (callback?: (error?: Error) => void) {
-    void registry.closeAll();
-    return originalClose(callback);
+    registry
+      .closeAll()
+      .then(() => {
+        originalClose(callback);
+      })
+      .catch((err: unknown) => {
+        Logger.error(
+          '[HTTP] Error closing sessions during HTTP server close:',
+          formatUnknownErrorMessage(err),
+        );
+        originalClose(callback);
+      });
+    return httpServer;
   };
 
   return new Promise((resolve, reject) => {
     const onError = (err: Error) => {
+      void registry.closeAll();
       reject(err);
     };
     httpServer.once('error', onError);
