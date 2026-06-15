@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync, type Stats } from 'node:fs';
 import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
@@ -573,7 +574,7 @@ export async function writeJsonAtomic(filePath: string, data: unknown): Promise<
   await mkdir(dir, { recursive: true });
 
   const content = JSON.stringify(data, null, 2) + '\n';
-  const tempPath = `${filePath}.${Math.random().toString(36).slice(2, 9)}.tmp`;
+  const tempPath = `${filePath}.${randomUUID().replace(/-/g, '').slice(0, 12)}.tmp`;
 
   try {
     await writeFile(tempPath, content, 'utf8');

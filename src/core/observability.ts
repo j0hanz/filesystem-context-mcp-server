@@ -21,10 +21,6 @@ export interface LogSender {
   send(level: LoggingLevel, message: string): Promise<void>;
 }
 
-// Aliases for observability subsystem
-const AsyncLocalStorageImport = AsyncLocalStorage;
-const channelFunc = channel;
-
 interface SessionContextData {
   sessionId?: string;
 }
@@ -382,7 +378,7 @@ export class LogRouter {
       );
       return;
     }
-    const fallbackMinLevel = (ENV['FS_CONTEXT_MIN_LOG_LEVEL'] ?? 'notice') as LoggingLevel;
+    const fallbackMinLevel = (process.env['FS_CONTEXT_MIN_LOG_LEVEL'] ?? 'notice') as LoggingLevel;
     if (LOG_LEVEL_ORDER[event.level] >= LOG_LEVEL_ORDER[fallbackMinLevel]) {
       console.error(`[${event.level.toUpperCase()}] ${event.message}${dataStr}`);
     }
@@ -390,8 +386,6 @@ export class LogRouter {
 }
 
 // --- Configuration ---
-
-const ENV = process.env;
 
 interface Config {
   enabled: boolean;
@@ -403,9 +397,9 @@ let _cachedConfig: Config | undefined;
 
 function readConfig(): Config {
   _cachedConfig ??= {
-    enabled: parseTrueEnvFlag(ENV['FS_CONTEXT_DIAGNOSTICS']),
-    detail: parseDetail(ENV['FS_CONTEXT_DIAGNOSTICS_DETAIL']),
-    logToolErrors: parseTrueEnvFlag(ENV['FS_CONTEXT_TOOL_LOG_ERRORS']),
+    enabled: parseTrueEnvFlag(process.env['FS_CONTEXT_DIAGNOSTICS']),
+    detail: parseDetail(process.env['FS_CONTEXT_DIAGNOSTICS_DETAIL']),
+    logToolErrors: parseTrueEnvFlag(process.env['FS_CONTEXT_TOOL_LOG_ERRORS']),
   };
   return _cachedConfig;
 }
@@ -470,12 +464,12 @@ interface PerfDiagnosticsEvent {
 // --- Channels & Observability State ---
 
 const CHANNELS = {
-  tool: channelFunc('filesystem-mcp:tool'),
-  perf: channelFunc('filesystem-mcp:perf'),
+  tool: channel('filesystem-mcp:tool'),
+  perf: channel('filesystem-mcp:perf'),
   ops: tracingChannel<unknown, OpsTraceContext>('filesystem-mcp:ops'),
 };
 
-const toolContext = new AsyncLocalStorageImport<ToolAsyncContext>({
+const toolContext = new AsyncLocalStorage<ToolAsyncContext>({
   name: 'filesystem-mcp:tool',
 });
 
@@ -765,7 +759,7 @@ export function startPerfMeasure(
   const prefixedName = `filesystem-mcp:${name}`;
   const startMark = `${prefixedName}:start:${id}`;
   const endMark = `${prefixedName}:end:${id}`;
-  const runInCapturedContext = AsyncLocalStorageImport.snapshot();
+  const runInCapturedContext = AsyncLocalStorage.snapshot();
   let finished = false;
 
   performance.mark(startMark);

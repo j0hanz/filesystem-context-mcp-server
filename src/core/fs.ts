@@ -23,8 +23,6 @@ import { basename, dirname, extname, isAbsolute, join, posix, relative, resolve 
 import { text } from 'node:stream/consumers';
 import { pipeline } from 'node:stream/promises';
 
-// fs-walk.ts
-
 import ignore, { type Ignore } from 'ignore';
 
 import type { FileType } from '../schema.js';
@@ -2185,9 +2183,6 @@ function looksLikeText(buffer: Buffer): boolean {
   return nonTextCount / sample.length < 0.3;
 }
 
-/**
- * Detect MIME type by checking magic signatures in buffer.
- */
 const WEBP_MARKER_BYTES = Buffer.from([0x57, 0x45, 0x42, 0x50]);
 
 function detectByMagic(buffer: Buffer): MimeInfo | null {
@@ -2209,22 +2204,10 @@ function detectByMagic(buffer: Buffer): MimeInfo | null {
   return null;
 }
 
-// ─── Main Function ──────────────────────────────────────────────────────────
-
-/**
- * Detect MIME type from file path and optional buffer sample.
- * Prioritizes extension, then magic bytes, then text/binary heuristics.
- *
- * @param path - File path or name
- * @param sample - Optional buffer sample from file (first 512+ bytes recommended)
- * @returns Object with mimeType string and kind classification
- */
 export function detectMimeType(path: string, sample?: Buffer): MimeInfo {
-  // Extract extension (lowercase, no dot)
   const lastDot = path.lastIndexOf('.');
   const ext = lastDot > -1 ? path.slice(lastDot + 1).toLowerCase() : '';
 
-  // 1. Check extension map
   if (ext && Object.hasOwn(EXT_MAP, ext)) {
     const entry = EXT_MAP[ext];
     if (entry !== undefined) {
@@ -2232,7 +2215,7 @@ export function detectMimeType(path: string, sample?: Buffer): MimeInfo {
     }
   }
 
-  // 2. Check magic signatures then text heuristics if sample provided
+  // magic bytes then text heuristic
   if (sample) {
     if (sample.length > 0) {
       const magicResult = detectByMagic(sample);
@@ -2291,14 +2274,6 @@ export const DEFAULT_EXCLUDE_PATTERNS = [
   '**/Thumbs.db',
 ];
 
-// ─── GuardedFileSystem Facade ──────────────────────────────────────────────────
-
-/**
- * A facade over file system operations that automatically validates all paths
- * against the provided PathGuard. This deepens the file system module by
- * encapsulating path validation, so callers do not need to thread PathGuard
- * into every individual function call.
- */
 export class GuardedFileSystem {
   readonly pathGuard: PathGuard;
 

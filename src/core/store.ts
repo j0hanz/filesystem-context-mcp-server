@@ -2,6 +2,7 @@ import { hash, randomUUID } from 'node:crypto';
 import { channel } from 'node:diagnostics_channel';
 
 import { ErrorCode, FsError } from './errors.js';
+import { Logger } from './observability.js';
 
 interface ResourceEntryBase {
   uri: string;
@@ -431,9 +432,8 @@ class EvictionStore extends WrappedStore {
     while (this.wrapped.entryCount > this.options.maxEntries) this.evictOldest();
     while (this.wrapped.totalBytes > this.options.maxTotalBytes) {
       if (this.wrapped.entryCount === 0) {
-        console.error(
-          '[filesystem-mcp:resource-store] enforceLimits invariant violation: ' +
-            `totalBytes=${this.wrapped.totalBytes} but entryCount=0`,
+        Logger.error(
+          `[resource-store] enforceLimits invariant violation: totalBytes=${this.wrapped.totalBytes} but entryCount=0`,
         );
         break;
       }

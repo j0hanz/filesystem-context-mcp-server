@@ -522,8 +522,6 @@ async function handleEditFile(
       encoding: 'utf-8',
       signal,
     });
-    // In case the path changed due to case sensitivity, though unlikely.
-    /* validPath handled by atomicWriteFile */
     Logger.info(
       `edit: ${filePath} (${editResult.appliedEdits} edits, +${editResult.linesAdded}/-${editResult.linesRemoved})`,
     );

@@ -763,7 +763,7 @@ async function handlePostMcp(
           sendJsonRpcError(res, 500, ProtocolErrorCode.InternalError, 'Internal Server Error');
         }
         // Do NOT rethrow — an unhandled rejection here would trigger a process-wide shutdown.
-        // he error is already logged, and we've sent a 500 response if possible.
+        // The error is already logged, and we've sent a 500 response if possible.
         enrich({ http_status: res.statusCode, outcome: 'error' });
       }
     },
