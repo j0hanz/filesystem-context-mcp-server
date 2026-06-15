@@ -64,6 +64,23 @@ export class InMemoryEventStore implements EventStore {
   private streams = new Map<StreamId, StoredEvent[]>();
   // Map of eventId -> streamId for fast lookup
   private eventIdToStreamId = new Map<EventId, StreamId>();
+  // Track active replays by streamId
+  private activeReplays = new Set<StreamId>();
+  // Replay completion listeners by streamId
+  private replayCompleteListeners = new Map<StreamId, (() => void)[]>();
+
+  isReplaying(streamId: StreamId): boolean {
+    return this.activeReplays.has(streamId);
+  }
+
+  onReplayComplete(streamId: StreamId, cb: () => void): void {
+    let list = this.replayCompleteListeners.get(streamId);
+    if (!list) {
+      list = [];
+      this.replayCompleteListeners.set(streamId, list);
+    }
+    list.push(cb);
+  }
 
   storeEvent(streamId: StreamId, message: JSONRPCMessage): Promise<EventId> {
     const eventId = randomUUID();
@@ -120,9 +137,21 @@ export class InMemoryEventStore implements EventStore {
     // Take a snapshot of the remaining events synchronously
     const eventsToReplay = stream.slice(eventIndex + 1);
 
-    // Replay all events from the snapshot
-    for (const event of eventsToReplay) {
-      await callbacks.send(event.id, event.message);
+    this.activeReplays.add(streamId);
+    try {
+      // Replay all events from the snapshot
+      for (const event of eventsToReplay) {
+        await callbacks.send(event.id, event.message);
+      }
+    } finally {
+      this.activeReplays.delete(streamId);
+      const listeners = this.replayCompleteListeners.get(streamId);
+      if (listeners) {
+        this.replayCompleteListeners.delete(streamId);
+        for (const cb of listeners) {
+          cb();
+        }
+      }
     }
 
     return streamId;
@@ -278,16 +307,28 @@ export function validateBearerAuthorization(apiKey: string, authHeader: unknown)
   return timingSafeEqual(expectedHash, actualHash);
 }
 
+function isSecureApiKey(key: string | undefined): boolean {
+  return typeof key === 'string' && key.trim().length >= 16;
+}
+
 /**
  * Refuse to bind to a non-loopback host without an API key. Throws on
  * policy violation; returns silently when allowed.
  */
 export function assertHttpBindingPolicy(host: string, apiKey: string | undefined): void {
-  if (isLoopbackHttpHost(host)) return;
-  if (apiKey) return;
+  if (isLoopbackHttpHost(host)) {
+    if (apiKey !== undefined && !isSecureApiKey(apiKey)) {
+      throw new FsError(
+        ErrorCode.PERMISSION_DENIED,
+        'FILESYSTEM_MCP_API_KEY is configured but is insecure (minimum 16 characters).',
+      );
+    }
+    return;
+  }
+  if (isSecureApiKey(apiKey)) return;
   throw new FsError(
     ErrorCode.PERMISSION_DENIED,
-    `Refusing to bind HTTP server to non-loopback host '${host}' without FILESYSTEM_MCP_API_KEY.`,
+    `Refusing to bind HTTP server to non-loopback host '${host}' without a secure FILESYSTEM_MCP_API_KEY (minimum 16 characters).`,
   );
 }
 
@@ -314,7 +355,7 @@ function bearerAuthMiddleware(): RequestHandler {
       next();
       return;
     }
-    if (validateBearerAuthorization(apiKey, req.headers.authorization)) {
+    if (isSecureApiKey(apiKey) && validateBearerAuthorization(apiKey, req.headers.authorization)) {
       next();
       return;
     }
@@ -407,27 +448,34 @@ export class HttpSessionRegistry {
 
   private sweepStale(): void {
     const now = Date.now();
+    const staleSessionIds: string[] = [];
     for (const [sessionId, session] of this.sessions) {
       if (this.closingSessionIds.has(sessionId)) continue;
       const isSessionInitialized = session.synchronizer
         ? session.synchronizer.isInitialized()
         : session.pathGuard.isInitialized();
       if (!isSessionInitialized && now - session.createdAt > this.handshakeTimeoutMs) {
-        Logger.warn(`[HTTP] Evicting stale session ${sessionId}`);
-        this.closingSessionIds.add(sessionId);
-        session
-          .close()
-          .catch((err: unknown) => {
-            Logger.error(
-              `[HTTP] Error closing stale session ${sessionId}:`,
-              formatUnknownErrorMessage(err),
-            );
-            this.remove(sessionId);
-          })
-          .finally(() => {
-            this.closingSessionIds.delete(sessionId);
-          });
+        staleSessionIds.push(sessionId);
       }
+    }
+
+    for (const sessionId of staleSessionIds) {
+      const session = this.sessions.get(sessionId);
+      if (!session) continue;
+      Logger.warn(`[HTTP] Evicting stale session ${sessionId}`);
+      this.closingSessionIds.add(sessionId);
+      session
+        .close()
+        .catch((err: unknown) => {
+          Logger.error(
+            `[HTTP] Error closing stale session ${sessionId}:`,
+            formatUnknownErrorMessage(err),
+          );
+          this.remove(sessionId);
+        })
+        .finally(() => {
+          this.closingSessionIds.delete(sessionId);
+        });
     }
   }
 
@@ -486,11 +534,18 @@ async function createHttpSession(
     await mcpServer.close();
   };
 
+  let currentSessionId: string | undefined;
+  const outboundQueue: JSONRPCMessage[] = [];
+
   const transport = new NodeStreamableHTTPServerTransport({
-    sessionIdGenerator: () => randomUUID(),
+    sessionIdGenerator: () => {
+      currentSessionId = randomUUID();
+      return currentSessionId;
+    },
     eventStore,
     retryInterval: 2_000,
     onsessioninitialized: (sessionId) => {
+      currentSessionId = sessionId;
       const loggingState = pathGuard.loggingState;
       if (!loggingState) {
         throw new FsError(ErrorCode.VALIDATION_FAILED, 'LoggingState is required');
@@ -508,14 +563,44 @@ async function createHttpSession(
         { sender: new McpLogSender(mcpServer), loggingState },
       );
       synchronizer.logMissingDirectoriesIfNeeded(mcpServer);
+
+      eventStore.onReplayComplete(sessionId, () => {
+        while (outboundQueue.length > 0) {
+          const msg = outboundQueue.shift();
+          if (msg) {
+            originalSend(msg).catch((err: unknown) => {
+              Logger.error(
+                `[HTTP] Error sending queued message after replay for session ${sessionId}:`,
+                formatUnknownErrorMessage(err),
+              );
+            });
+          }
+        }
+      });
     },
     onsessionclosed: async (sessionId) => {
       const session = registry.get(sessionId);
       if (session) {
-        await session.close();
+        try {
+          await session.close();
+        } catch (err) {
+          Logger.error(
+            `[HTTP] Error closing session ${sessionId} in onsessionclosed:`,
+            formatUnknownErrorMessage(err),
+          );
+        }
       }
     },
   });
+
+  const originalSend = transport.send.bind(transport);
+  transport.send = async (message: JSONRPCMessage) => {
+    if (currentSessionId && eventStore.isReplaying(currentSessionId)) {
+      outboundQueue.push(message);
+    } else {
+      await originalSend(message);
+    }
+  };
 
   transport.onerror = (error: unknown) => {
     Logger.error('[HTTP] Transport error:', formatUnknownErrorMessage(error));
@@ -661,7 +746,14 @@ async function handlePostMcp(
         try {
           await handleSessionTransportRequest(session, req, res, message);
         } catch (error) {
-          await session.close();
+          try {
+            await session.close();
+          } catch (closeError) {
+            Logger.error(
+              '[HTTP] Error closing session after request failure:',
+              formatUnknownErrorMessage(closeError),
+            );
+          }
           throw error;
         }
         enrich({ http_status: res.statusCode });
@@ -736,16 +828,29 @@ function setupExpressApp(
   registry: HttpSessionRegistry,
   eventStore: InMemoryEventStore,
 ): Express {
+  const allowedHostsEnv = process.env['FILESYSTEM_MCP_ALLOWED_HOSTS'];
+  const allowedHosts = allowedHostsEnv
+    ? allowedHostsEnv.split(',').map((h) => h.trim())
+    : httpHost === '0.0.0.0' || httpHost === '::'
+      ? []
+      : [httpHost];
+
   const app = createMcpExpressApp({
     host: httpHost,
-    ...(!isLoopbackHttpHost(httpHost) ? { allowedHosts: [httpHost] } : {}),
+    ...(allowedHosts.length > 0 ? { allowedHosts } : {}),
     jsonLimit: `${MAX_REQUEST_BODY_BYTES}b`,
   });
 
-  if (isLoopbackHttpHost(httpHost)) {
+  if (allowedHostsEnv) {
+    app.use('/mcp', hostHeaderValidation(allowedHosts));
+  } else if (isLoopbackHttpHost(httpHost)) {
     app.use('/mcp', localhostHostValidation());
+  } else if (allowedHosts.length > 0) {
+    app.use('/mcp', hostHeaderValidation(allowedHosts));
   } else {
-    app.use('/mcp', hostHeaderValidation([httpHost]));
+    Logger.warn(
+      '[HTTP] Binding globally without Host validation. Please set FILESYSTEM_MCP_ALLOWED_HOSTS for security.',
+    );
   }
 
   app.use(originGuardMiddleware());
@@ -753,8 +858,9 @@ function setupExpressApp(
   app.options('/mcp', (req: Request, res: Response) => {
     // Only reflect a present Origin (already constrained to localhost by
     // originGuardMiddleware upstream). Avoid emitting a wildcard fallback.
-    if (req.headers.origin) {
-      res.header('Access-Control-Allow-Origin', req.headers.origin);
+    const origin = req.headers.origin;
+    if (origin && isAllowedLocalhostOrigin(origin)) {
+      res.header('Access-Control-Allow-Origin', origin);
     }
     res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     res.header(
@@ -765,8 +871,6 @@ function setupExpressApp(
   });
 
   app.use('/mcp', bearerAuthMiddleware());
-
-  app.use(errorHandlerMiddleware);
 
   app.post('/mcp', (req: Request, res: Response, next: NextFunction) => {
     handlePostMcp(req, res, options, registry, eventStore).catch(next);
@@ -782,6 +886,8 @@ function setupExpressApp(
   app.all('/mcp', (_req: Request, res: Response) => {
     res.status(405).set('Allow', 'GET, POST, DELETE, OPTIONS').end();
   });
+
+  app.use(errorHandlerMiddleware);
 
   return app;
 }
@@ -835,7 +941,12 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
 
   return new Promise((resolve, reject) => {
     const onError = (err: Error) => {
-      void registry.closeAll();
+      registry.closeAll().catch((closeErr: unknown) => {
+        Logger.error(
+          '[HTTP] Error closing sessions on startup failure:',
+          formatUnknownErrorMessage(closeErr),
+        );
+      });
       reject(err);
     };
     httpServer.once('error', onError);

@@ -246,4 +246,108 @@ describe('HttpSessionRegistry', () => {
     assert.equal(failing.closeCalls, 1);
     assert.equal(ok.closeCalls, 1);
   });
+
+  it('startSweep evicts multiple stale sessions without missing any due to Map iteration modifications', async () => {
+    const registry = new HttpSessionRegistry({
+      eventStore: new InMemoryEventStore(),
+      logRouter: LogRouter.global(),
+      handshakeTimeoutMs: 500,
+      sweepIntervalMs: 25,
+    });
+
+    const sessions: FakeSession[] = [];
+    for (let i = 0; i < 5; i++) {
+      const id = `stale_${i}`;
+      const session = makeFakeSession({
+        initialized: false,
+        createdAt: Date.now() - 5000,
+      });
+      const originalClose = session.close;
+      session.close = async (): Promise<void> => {
+        registry.remove(id);
+        await originalClose();
+      };
+      registry.add(id, session, stubTarget());
+      sessions.push(session);
+    }
+
+    registry.startSweep();
+    await sleep(80);
+
+    for (let i = 0; i < 5; i++) {
+      const session = sessions[i];
+      assert.ok(session);
+      assert.equal(session.closeCalls, 1, `stale session ${i} must be closed`);
+    }
+    await registry.closeAll();
+  });
+
+  it('InMemoryEventStore tracks active replays and allows queueing / flushing of messages', async () => {
+    const eventStore = new InMemoryEventStore();
+    const streamId = 'session-123';
+
+    // Store some event first
+    const eventId = await eventStore.storeEvent(streamId, {
+      jsonrpc: '2.0',
+      method: 'test-seen',
+    });
+
+    // Store a second event that needs to be replayed
+    await eventStore.storeEvent(streamId, {
+      jsonrpc: '2.0',
+      method: 'test-to-replay',
+    });
+
+    const sent: unknown[] = [];
+    const replayPromise = eventStore.replayEventsAfter(eventId, {
+      send: async (_id, msg) => {
+        // Yield to event loop to simulate async behavior
+        await sleep(10);
+        sent.push(msg);
+      },
+    });
+
+    // Yield to let the async function start executing
+    await sleep(2);
+
+    // Verify replay is active for streamId
+    assert.ok(eventStore.isReplaying(streamId));
+
+    // Simulate sending a message while replaying is true
+    const queue: unknown[] = [];
+    const sendOrQueue = async (msg: unknown) => {
+      if (eventStore.isReplaying(streamId)) {
+        queue.push(msg);
+      } else {
+        sent.push(msg);
+      }
+    };
+
+    // Send a concurrent message
+    await sendOrQueue({ jsonrpc: '2.0', method: 'concurrent' });
+
+    // Ensure concurrent message is queued, not sent immediately
+    assert.equal(queue.length, 1);
+    assert.equal(sent.length, 0);
+
+    // Setup listener to flush once replay is complete
+    let flushCalled = false;
+    eventStore.onReplayComplete(streamId, () => {
+      flushCalled = true;
+      while (queue.length > 0) {
+        sent.push(queue.shift());
+      }
+    });
+
+    await replayPromise;
+
+    // Verify replay finished, queue flushed, and messages are in correct order
+    assert.ok(flushCalled);
+    assert.equal(eventStore.isReplaying(streamId), false);
+    assert.equal(sent.length, 2);
+    const firstMsg = sent[0] as { method: string };
+    const secondMsg = sent[1] as { method: string };
+    assert.equal(firstMsg.method, 'test-to-replay'); // Replayed message should come first!
+    assert.equal(secondMsg.method, 'concurrent'); // Concurrent message should come after!
+  });
 });

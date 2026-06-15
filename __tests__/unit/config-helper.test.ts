@@ -97,6 +97,7 @@ describe('mcp-config-helper', () => {
 
   it('writeJsonAtomic writes JSON data atomically and preserves formatting', async () => {
     const tempFile = join(process.cwd(), 'temp_test_config.json');
+    await fs.unlink(tempFile).catch(() => {});
     try {
       const data = { test: 'value', nested: { val: 1 } };
       await writeJsonAtomic(tempFile, data);
@@ -114,6 +115,7 @@ describe('mcp-config-helper', () => {
 
   it('allowPath, listAllowedPaths, and disallowPath modify config correctly', async () => {
     const tempFile = join(process.cwd(), 'temp_test_config_2.json');
+    await fs.unlink(tempFile).catch(() => {});
     try {
       // 1. allowPath creates file and adds path (simulating Windows absolute path)
       await allowPath('C:\\test-dir-1', { config: tempFile });
@@ -154,8 +156,9 @@ describe('mcp-config-helper', () => {
     }
   });
 
-  it('CLI subcommand integration runs end-to-end', () => {
+  it('CLI subcommand integration runs end-to-end', async () => {
     const tempFile = join(process.cwd(), 'temp_integration_config.json');
+    await fs.unlink(tempFile).catch(() => {});
     try {
       // Allow C:\test-dir
       const cmd1 = `node --import tsx src/index.ts allow C:\\test-dir --config ${tempFile}`;
@@ -179,7 +182,7 @@ describe('mcp-config-helper', () => {
       assert.strictEqual(outputAfter, 'No directories are currently authorized.');
     } finally {
       try {
-        import('node:fs').then((fs) => fs.default.unlinkSync(tempFile));
+        await fs.unlink(tempFile);
       } catch {
         // ignore
       }

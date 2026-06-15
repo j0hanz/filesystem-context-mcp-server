@@ -718,6 +718,23 @@ describe('HTTP transport', () => {
     assert.match(String(response.headers['access-control-allow-methods'] ?? ''), /OPTIONS/iu);
   });
 
+  it('does not reflect disallowed origins in CORS preflight OPTIONS requests', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+    const port = getServerPort(server);
+
+    const response = await rawHttpRequest({
+      port,
+      method: 'OPTIONS',
+      path: '/mcp',
+      headers: { origin: 'https://evil.com' },
+    });
+
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.headers['access-control-allow-origin'], undefined);
+  });
+
   it('returns 400 for non-object/array JSON primitives when strict parser is used', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
     const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
@@ -836,5 +853,80 @@ describe('HTTP transport', () => {
         });
       }
     }
+  });
+
+  it('accepts allowed hosts when FILESYSTEM_MCP_ALLOWED_HOSTS is set', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
+    process.env['FILESYSTEM_MCP_HTTP_HOST'] = '127.0.0.1';
+    process.env['FILESYSTEM_MCP_ALLOWED_HOSTS'] = '127.0.0.1, localhost, custom-host.local';
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+    const port = getServerPort(server);
+
+    // Should accept 127.0.0.1
+    const res1 = await rawHttpRequest({
+      port,
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+        host: '127.0.0.1',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: LATEST_PROTOCOL_VERSION,
+          capabilities: {},
+          clientInfo: { name: 'http-test', version: '1.0.0' },
+        },
+      }),
+    });
+    assert.equal(res1.statusCode, 200);
+
+    // Should accept custom-host.local
+    const res2 = await rawHttpRequest({
+      port,
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+        host: 'custom-host.local',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'initialize',
+        params: {
+          protocolVersion: LATEST_PROTOCOL_VERSION,
+          capabilities: {},
+          clientInfo: { name: 'http-test', version: '1.0.0' },
+        },
+      }),
+    });
+    assert.equal(res2.statusCode, 200);
+
+    // Should reject disallowed-host.local
+    const res3 = await rawHttpRequest({
+      port,
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+        host: 'disallowed-host.local',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 3,
+        method: 'initialize',
+        params: {
+          protocolVersion: LATEST_PROTOCOL_VERSION,
+          capabilities: {},
+          clientInfo: { name: 'http-test', version: '1.0.0' },
+        },
+      }),
+    });
+    assert.equal(res3.statusCode, 403);
   });
 });

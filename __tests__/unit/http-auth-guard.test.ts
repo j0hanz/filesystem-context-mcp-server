@@ -110,13 +110,16 @@ describe('assertHttpBindingPolicy', () => {
     });
   });
 
-  it('allows non-loopback bind when an API key is set', () => {
+  it('allows non-loopback bind when a secure API key (>= 16 chars) is set', () => {
     assert.doesNotThrow(() => {
-      assertHttpBindingPolicy('0.0.0.0', 'a-key');
+      assertHttpBindingPolicy('0.0.0.0', 'a-very-long-secure-key-12345');
     });
   });
 
-  it('refuses non-loopback bind without an API key', () => {
+  it('refuses non-loopback bind when an API key is weak or missing', () => {
+    assert.throws(() => {
+      assertHttpBindingPolicy('0.0.0.0', 'too-short');
+    }, /FILESYSTEM_MCP_API_KEY.*insecure|Refusing to bind/);
     assert.throws(() => {
       assertHttpBindingPolicy('0.0.0.0', undefined);
     }, /Refusing to bind HTTP server to non-loopback host/);
