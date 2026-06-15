@@ -277,7 +277,7 @@ async function collectFileBudget(
   );
 
   const byIndex = new Map<number, number>();
-  for (const item of results) {
+  for (const { value: item } of results) {
     if (!item) continue;
     byIndex.set(item.index, item.size);
   }

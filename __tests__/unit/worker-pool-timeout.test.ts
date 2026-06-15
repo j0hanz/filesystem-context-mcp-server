@@ -1,7 +1,11 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { runInWorker, shutdownWorkerPool } from '../../src/core/concurrency.js';
+import {
+  createTimedAbortSignal,
+  runInWorker,
+  shutdownWorkerPool,
+} from '../../src/core/concurrency.js';
 
 test('runInWorker removes task from queue on timeout', async () => {
   // Fill the pool to force queueing with moderately sized tasks
@@ -32,6 +36,19 @@ test('runInWorker removes task from queue on timeout', async () => {
   await Promise.all(workers);
 
   await shutdownWorkerPool();
+});
+
+test('createTimedAbortSignal with already-aborted baseSignal returns immediately-aborted signal without starting a timer', () => {
+  const base = new AbortController();
+  base.abort(new Error('pre-aborted'));
+
+  const { signal, cleanup } = createTimedAbortSignal(base.signal, 60_000);
+
+  assert.ok(signal.aborted, 'returned signal must be immediately aborted');
+  // cleanup must be callable without throwing (no timer to clear)
+  assert.doesNotThrow(() => {
+    cleanup();
+  });
 });
 
 test('runInWorker rejects with backpressure error when queue reaches capacity', async () => {

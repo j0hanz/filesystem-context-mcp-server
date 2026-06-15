@@ -38,7 +38,7 @@ const UNFILLED = Symbol('UNFILLED');
 type Unfilled = typeof UNFILLED;
 
 export interface ParallelResult<R> {
-  results: R[];
+  results: { index: number; value: R }[];
   errors: { index: number; error: Error }[];
 }
 
@@ -104,7 +104,6 @@ export async function processInParallel<T, R>(
         checkParallelAbort(signal);
         resultSlots[index] = result;
       } catch (error) {
-        checkParallelAbort(signal);
         errors.push({
           index,
           error: normalizeUnknownError(error),
@@ -123,12 +122,12 @@ export async function processInParallel<T, R>(
 
   checkParallelAbort(signal);
 
-  const results: R[] = [];
-  for (const slot of resultSlots) {
+  const results: { index: number; value: R }[] = [];
+  resultSlots.forEach((slot, index) => {
     if (slot !== UNFILLED) {
-      results.push(slot);
+      results.push({ index, value: slot });
     }
-  }
+  });
   return { results, errors };
 }
 
@@ -173,9 +172,11 @@ interface PoolWorker {
 class FastQueue<T> {
   private items: (T | undefined)[] = [];
   private head = 0;
+  private _size = 0;
 
   push(item: T): void {
     this.items.push(item);
+    this._size++;
   }
 
   shift(): T | undefined {
@@ -183,6 +184,7 @@ class FastQueue<T> {
       const item = this.items[this.head];
       this.items[this.head] = undefined;
       this.head++;
+      this._size--;
       if (this.head > 1000 && this.head * 2 >= this.items.length) {
         this.items = this.items.slice(this.head);
         this.head = 0;
@@ -193,14 +195,16 @@ class FastQueue<T> {
   }
 
   get length(): number {
-    return this.items.length - this.head;
+    return this._size;
   }
 
   remove(predicate: (item: T) => boolean): void {
     for (let i = this.head; i < this.items.length; i++) {
       const item = this.items[i];
       if (item !== undefined && predicate(item)) {
-        this.items.splice(i, 1);
+        // Tombstone instead of splice to avoid O(n) array reallocation.
+        this.items[i] = undefined;
+        this._size--;
         return;
       }
     }
@@ -210,6 +214,7 @@ class FastQueue<T> {
     const remaining = this.items.slice(this.head).filter((x): x is T => x !== undefined);
     this.items = [];
     this.head = 0;
+    this._size = 0;
     return remaining;
   }
 }
@@ -220,6 +225,8 @@ class WorkerPool {
   private nextId = 1;
   private sweepTimer?: NodeJS.Timeout | undefined;
   private consecutiveStartupFailures = 0;
+  private shuttingDown = false;
+  private poolDisabled = false;
 
   public run<N extends WorkerTaskName>(
     name: N,
@@ -234,13 +241,33 @@ class WorkerPool {
         ),
       );
     }
+    if (this.shuttingDown) {
+      return Promise.reject(new FsError(ErrorCode.UNKNOWN, 'Worker pool shutting down'));
+    }
+    if (this.poolDisabled) {
+      return Promise.reject(
+        new FsError(ErrorCode.UNKNOWN, 'Worker pool permanently disabled due to startup failures'),
+      );
+    }
 
     return new Promise<TaskResult<N>>((resolve, reject) => {
+      let settled = false;
+      const settledResolve = (value: unknown): void => {
+        if (settled) return;
+        settled = true;
+        (resolve as (v: unknown) => void)(value);
+      };
+      const settledReject = (err: Error): void => {
+        if (settled) return;
+        settled = true;
+        reject(err);
+      };
+
       const id = this.nextId++;
       const entry: InflightEntry = {
         id,
-        resolve: resolve as (v: unknown) => void,
-        reject,
+        resolve: settledResolve,
+        reject: settledReject,
       };
 
       if (opts.signal) {
@@ -253,7 +280,7 @@ class WorkerPool {
               (reason.name === 'FsError' &&
                 (reason as unknown as { code: string }).code === ErrorCode.TIMEOUT));
           this.abortEntry(entry, isTimeout);
-          reject(
+          settledReject(
             reason instanceof Error ? reason : new DOMException('Operation aborted', 'AbortError'),
           );
         };
@@ -268,7 +295,7 @@ class WorkerPool {
       // Reject immediately if queue is at capacity to prevent unbounded growth.
       if (this.queue.length >= WORKER_QUEUE_MAX) {
         this.cleanupEntry(entry);
-        reject(
+        settledReject(
           new FsError(
             ErrorCode.UNKNOWN,
             `Worker pool task queue is full (${String(WORKER_QUEUE_MAX)} pending tasks); rejecting new submission`,
@@ -286,6 +313,7 @@ class WorkerPool {
   }
 
   public async shutdown(): Promise<void> {
+    this.shuttingDown = true;
     // Reject everything that's still queued.
     for (const qt of this.queue.clear()) {
       this.cleanupEntry(qt.entry);
@@ -303,14 +331,18 @@ class WorkerPool {
         if (pw.current) {
           this.cleanupEntry(pw.current);
           pw.current.reject(new FsError(ErrorCode.UNKNOWN, 'Worker pool shutting down'));
+          delete pw.current;
         }
+        pw.state = 'terminating';
         try {
           await pw.worker.terminate();
-        } catch {
-          /* ignore */
+        } catch (err) {
+          console.error('Failed to terminate worker during shutdown:', err);
         }
       }),
     );
+    // Pool is fully drained — allow reuse (e.g., test afterEach then next test).
+    this.shuttingDown = false;
   }
 
   private startSweepTimerIfNeeded(): void {
@@ -347,6 +379,7 @@ class WorkerPool {
   }
 
   private retireWorker(pw: PoolWorker): void {
+    if (pw.state === 'terminating') return;
     pw.state = 'terminating';
     this.removeWorker(pw);
     void pw.worker.terminate();
@@ -385,13 +418,14 @@ class WorkerPool {
           `Worker terminated unexpectedly (exit code ${String(code)})`,
         ),
       );
+      delete pw.current;
     }
     this.stopSweepTimerIfPossible();
 
     if (isStarting && this.consecutiveStartupFailures >= 3) {
       const errorMsg = `Worker pool failed to initialize (worker exited with code ${code})`;
+      this.poolDisabled = true;
       this.rejectAllQueued(new FsError(ErrorCode.UNKNOWN, errorMsg));
-      this.consecutiveStartupFailures = 0;
       return;
     }
 
@@ -442,16 +476,15 @@ class WorkerPool {
     } catch (err) {
       this.cleanupEntry(qt.entry);
       delete pw.current;
-      pw.state = 'idle';
-      pw.lastIdleAt = Date.now();
       qt.entry.reject(normalizeUnknownError(err));
-      setTimeout(() => {
-        this.drainQueue();
-      }, 0);
+      // postMessage only throws when the worker channel is already closed.
+      // Retire the worker; its 'exit' event will call drainQueue.
+      this.retireWorker(pw);
     }
   }
 
   private drainQueue(): void {
+    if (this.shuttingDown || this.poolDisabled) return;
     while (this.queue.length > 0) {
       const idle = this.pickIdleWorker();
       if (idle) {
@@ -461,7 +494,7 @@ class WorkerPool {
       }
       if (this.workers.length < WORKER_POOL_MAX) {
         this.spawnWorker();
-        return;
+        continue;
       }
       return;
     }
@@ -506,16 +539,18 @@ class WorkerPool {
       delete pw.current;
     } else if (isStarting) {
       console.error('Worker failed to initialize:', err);
+    } else {
+      console.error('Worker error with no current task (state:', pw.state, '):', err);
     }
     // Retire the worker to prevent further task scheduling on it.
     this.retireWorker(pw);
 
     if (isStarting && this.consecutiveStartupFailures >= 3) {
       const errorMsg = err instanceof Error ? err.message : String(err);
+      this.poolDisabled = true;
       this.rejectAllQueued(
         new FsError(ErrorCode.UNKNOWN, `Worker pool failed to initialize: ${errorMsg}`),
       );
-      this.consecutiveStartupFailures = 0;
       return;
     }
 
@@ -604,12 +639,20 @@ function getAbortError(signal: AbortSignal, message?: string): Error {
   return createAbortError(message);
 }
 
+/**
+ * @remarks The inner `promise` must eventually settle. If it never resolves or rejects,
+ * the `abort` event listener on `signal` will not be removed — a listener leak for the
+ * lifetime of `signal`.
+ */
 export function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return promise;
   signal.throwIfAborted();
 
   return new Promise<T>((resolve, reject) => {
+    let settled = false;
     const onAbort = (): void => {
+      if (settled) return;
+      settled = true;
       reject(getAbortError(signal));
     };
 
@@ -623,10 +666,14 @@ export function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise
     promise.then(
       (value) => {
         signal.removeEventListener('abort', onAbort);
+        if (settled) return;
+        settled = true;
         resolve(value);
       },
       (error: unknown) => {
         signal.removeEventListener('abort', onAbort);
+        if (settled) return;
+        settled = true;
         reject(normalizeUnknownError(error));
       },
     );
@@ -638,6 +685,13 @@ export function createTimedAbortSignal(
   timeoutMs?: number,
 ): { signal: AbortSignal; cleanup: () => void } {
   if (isFiniteNumber(timeoutMs)) {
+    // If the base signal is already aborted, propagate immediately without starting a timer.
+    if (baseSignal?.aborted) {
+      const controller = new AbortController();
+      controller.abort(baseSignal.reason);
+      return { signal: controller.signal, cleanup: () => undefined };
+    }
+
     const controller = new AbortController();
     const timer = setTimeout(() => {
       controller.abort(new DOMException('The operation timed out', 'TimeoutError'));

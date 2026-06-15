@@ -144,7 +144,7 @@ export async function normalizeAndValidateDirs(
     CLI_VALIDATE_CONCURRENCY,
   );
   if (errors.length === 0) {
-    return deduplicateAllowedDirectories(results);
+    return deduplicateAllowedDirectories(results.map((r) => r.value));
   }
   const first = errors.reduce((prev, curr) => (curr.index < prev.index ? curr : prev));
   throw first.error;

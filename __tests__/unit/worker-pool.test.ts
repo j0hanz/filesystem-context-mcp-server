@@ -148,6 +148,21 @@ test('queued tasks complete after large burst of concurrent requests', async () 
   }
 });
 
+test('run() after shutdown() rejects with shutting-down error', async () => {
+  // Warm the pool so there is a real worker to shut down.
+  await runInWorker('diff', { oldStr: 'a', newStr: 'b', oldHeader: 'o', newHeader: 'n' });
+
+  // Shut down without awaiting so the next call races the drain.
+  const shutdownPromise = shutdownWorkerPool();
+
+  await assert.rejects(
+    runInWorker('diff', { oldStr: 'a', newStr: 'b', oldHeader: 'o', newHeader: 'n' }),
+    (err: Error) => /shutting down/i.test(err.message),
+  );
+
+  await shutdownPromise;
+});
+
 test('queued tasks continue after mixed task types', async () => {
   // Submit a mix of diff and createPatch tasks, exceeding pool capacity.
   // Verifies queue draining works across task boundaries.

@@ -86,7 +86,7 @@ async function getValidRootDirectories(roots: Root[], signal?: AbortSignal): Pro
     PARALLEL_CONCURRENCY,
     signal,
   );
-  const validPaths = resolvedResults.filter((p): p is string => p !== null);
+  const validPaths = resolvedResults.map((r) => r.value).filter((p): p is string => p !== null);
   if (validPaths.length === 0) return [];
 
   const indexedPaths = validPaths.map((path, index) => ({ path, index }));
@@ -101,7 +101,7 @@ async function getValidRootDirectories(roots: Root[], signal?: AbortSignal): Pro
   );
 
   const expandedMap = new Map<number, string | null>();
-  for (const item of realExpansions) {
+  for (const { value: item } of realExpansions) {
     expandedMap.set(item.index, item.expanded);
   }
 

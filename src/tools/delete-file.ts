@@ -267,7 +267,7 @@ async function handleDelete(args: DeleteInput, ctx: ToolCtx): Promise<DeleteOutp
   const successPaths: string[] = [];
   const failures: DeleteFailureItem[] = [];
 
-  for (const r of results) {
+  for (const { value: r } of results) {
     if ('failure' in r) {
       failures.push({
         path: r.failure.path,
