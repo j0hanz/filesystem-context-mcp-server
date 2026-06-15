@@ -262,7 +262,8 @@ async function searchContent(
           truncated: coreResult.summary.truncated,
           skippedTooLarge: 0,
           skippedBinary: 0,
-          skippedInaccessible: 0,
+          // Engine reports total skipped files but not per-reason breakdown
+          skippedInaccessible: coreResult.summary.skippedFiles ?? 0,
           ...(coreResult.summary.truncated
             ? { stoppedReason: coreResult.summary.truncatedReason ?? ('maxResults' as const) }
             : {}),

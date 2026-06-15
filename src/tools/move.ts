@@ -8,6 +8,7 @@ import * as z from 'zod/v4';
 import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, FsError, isAbortError, isNodeError, Problem } from '../core/errors.js';
 import type { GuardedFileSystem } from '../core/fs.js';
+import { Logger } from '../core/observability.js';
 import { isSamePath } from '../core/path.js';
 import { PerFileErrorSchema, RequiredPath } from '../schema.js';
 import { defineTool, type ToolCtx } from './define.js';
@@ -244,8 +245,10 @@ export const MOVE = defineTool({
           try {
             await ctx.fs.stat(validDest);
             destExistedOriginally = true;
-          } catch {
-            // Doesn't exist
+          } catch (err) {
+            if (isNodeError(err) && err.code !== 'ENOENT') {
+              Logger.warn(`move: dest stat failed unexpectedly for "${validDest}": ${String(err)}`);
+            }
           }
         }
 
@@ -261,8 +264,10 @@ export const MOVE = defineTool({
           try {
             await ctx.fs.stat(validDest);
             existsNow = true;
-          } catch {
-            // Doesn't exist
+          } catch (err) {
+            if (isNodeError(err) && err.code !== 'ENOENT') {
+              Logger.warn(`move: dest stat failed unexpectedly for "${validDest}": ${String(err)}`);
+            }
           }
         }
 

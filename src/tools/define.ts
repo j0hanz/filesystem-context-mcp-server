@@ -210,7 +210,8 @@ function resolveProgressCtx<I extends z.ZodType, O extends z.ZodType>(
   if (!def.progress) return { label: def.title };
   try {
     return def.progress(args);
-  } catch {
+  } catch (err: unknown) {
+    Logger.warn(`resolveProgressCtx: ${def.name}.progress threw: ${String(err)}`);
     return { label: def.title };
   }
 }
@@ -225,7 +226,8 @@ function measureInput(args: unknown): { inputKeys?: string[]; inputSizeBytes?: n
   const inputKeys = Object.keys(args);
   try {
     return { inputKeys, inputSizeBytes: Buffer.byteLength(JSON.stringify(args), 'utf8') };
-  } catch {
+  } catch (err: unknown) {
+    Logger.debug(`measureInput: JSON.stringify failed: ${String(err)}`);
     return { inputKeys };
   }
 }
@@ -233,7 +235,8 @@ function measureInput(args: unknown): { inputKeys?: string[]; inputSizeBytes?: n
 function tryMeasureBytes(value: unknown): number | undefined {
   try {
     return Buffer.byteLength(JSON.stringify(value), 'utf8');
-  } catch {
+  } catch (err: unknown) {
+    Logger.debug(`tryMeasureBytes: JSON.stringify failed: ${String(err)}`);
     return undefined;
   }
 }

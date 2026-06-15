@@ -16,6 +16,7 @@ import {
   readlink,
   type Stats,
 } from '../core/fs.js';
+import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../core/util.js';
 import {
@@ -109,6 +110,7 @@ async function getSymlinkTarget(
     return linkString;
   } catch (error) {
     if (isAbortError(error)) throw error;
+    Logger.warn(`stat: readlink failed for "${pathToRead}": ${String(error)}`);
     return undefined;
   }
 }

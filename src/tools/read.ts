@@ -13,6 +13,7 @@ import {
   type ReadFileResult,
   type ReadSpec,
 } from '../core/fs.js';
+import { Logger } from '../core/observability.js';
 import {
   DEFAULT_CONTINUATION_CHUNK_SIZE,
   DEFAULT_READ_MANY_MAX_TOTAL_SIZE,
@@ -271,7 +272,8 @@ async function collectFileBudget(
       try {
         const out = await ctx.fs.stat(path);
         return { index, size: Math.min(out.stats.size, maxSize) };
-      } catch {
+      } catch (err: unknown) {
+        Logger.debug(`collectFileBudget: stat failed for "${path}": ${String(err)}`);
         return undefined;
       }
     },
@@ -416,7 +418,7 @@ export const READ_FILE = defineTool({
   execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   nuances: [
-    'When file content exceeds the inline limit, it is stored in the resource store at filesystem-mcp://file/{path} and the result includes resourceUri.',
+    'File content is always returned inline. resourceUri (filesystem-mcp://file/{path}) points to an on-demand resource handler — clients can subscribe to it for live change notifications.',
   ],
   defaultErrorCode: ErrorCode.NOT_FILE,
   progress: (args) => {

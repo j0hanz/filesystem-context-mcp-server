@@ -7,7 +7,13 @@ import * as z from 'zod/v4';
 import { createTwoFilesPatch } from 'diff';
 
 import { runWorkerOr } from '../core/concurrency.js';
-import { ErrorCode, formatUnknownErrorMessage, FsError, Problem } from '../core/errors.js';
+import {
+  ErrorCode,
+  formatUnknownErrorMessage,
+  FsError,
+  isAbortError,
+  Problem,
+} from '../core/errors.js';
 import { truncateProgressPattern } from '../core/fmt.js';
 import {
   atomicWriteFile,
@@ -401,11 +407,12 @@ async function processEntriesConcurrently(
     maxEntries?: number;
     shouldStop?: () => boolean;
     onEntry: () => void;
+    onError?: (entryPath: string, err: unknown) => void;
     runEntry: (entryPath: string) => Promise<void>;
   },
 ): Promise<{ stoppedByLimit: boolean; stoppedByMatchCap: boolean }> {
   const pending = new Set<Promise<void>>();
-  const { signal, concurrency, maxEntries, shouldStop, onEntry, runEntry } = options;
+  const { signal, concurrency, maxEntries, shouldStop, onEntry, onError, runEntry } = options;
   let dispatched = 0;
   let stoppedByLimit = false;
   let stoppedByMatchCap = false;
@@ -441,7 +448,11 @@ async function processEntriesConcurrently(
     // Track a non-rejecting wrapper so a rejected task can never propagate out of
     // Promise.race(pending) in waitForSlot() and abort the loop before the final
     // drain below (which would silently abandon other in-flight tasks).
-    const tracked = runEntry(entry.path).catch(() => undefined);
+    // processEntry catches all expected errors internally; if it unexpectedly
+    // throws, record it as a failure rather than silently dropping it.
+    const tracked = runEntry(entry.path).catch((err: unknown) => {
+      onError?.(entry.path, err);
+    });
     pending.add(tracked);
     void tracked.finally(() => {
       pending.delete(tracked);
@@ -575,6 +586,13 @@ async function handleSearchAndReplace(
       summary.processedFiles++;
       onProgress({ current: summary.processedFiles });
     },
+    onError: (entryPath, err) => {
+      summary.failedFiles++;
+      recordFailure(summary.failures, {
+        path: entryPath,
+        error: Problem.fromUnknown(err, ErrorCode.UNKNOWN, entryPath),
+      });
+    },
     runEntry: (entryPath) => processEntry(entryPath, context),
   });
 
@@ -640,6 +658,7 @@ async function handleSearchAndReplace(
 
       return { structured, link };
     } catch (error) {
+      if (isAbortError(error)) throw error;
       // Gracefully fall back if resource storage fails
       Logger.error(
         `Failed to store primary file in resource store: ${formatUnknownErrorMessage(error)}`,

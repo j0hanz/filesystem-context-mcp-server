@@ -299,40 +299,28 @@ async function handleList(
   return withTimedAbortSignal(signal, DEFAULT_SEARCH_TIMEOUT_MS, async (timedSignal) => {
     const result = await collect(validDir, {
       maxDepth: args.maxDepth,
-      maxEntries: args.maxEntries,
+      maxEntries: MAX_LIST_ENTRIES,
       includeHidden: args.includeHidden,
       includeIgnored: args.includeIgnored,
       signal: timedSignal,
       pathGuard,
       ...(onProgress ? { onProgress } : {}),
-      mode: 'inline',
+      mode: 'full',
     });
 
-    const inlineEntries = result.entries;
+    const inlineEntries = result.entries.slice(0, args.maxEntries);
     const markdown = renderMarkdown(basename(validDir), inlineEntries);
 
     let resourceUri: string | undefined;
     if (result.totalEntries > inlineEntries.length && resourceStore) {
-      const fullResult = await collect(validDir, {
-        maxDepth: args.maxDepth,
-        maxEntries: args.maxEntries,
-        includeHidden: args.includeHidden,
-        includeIgnored: args.includeIgnored,
-        signal: timedSignal,
-        pathGuard,
-        ...(onProgress ? { onProgress } : {}),
-        progressOffset: result.scannedEntries,
-        mode: 'full',
-      });
-      const fullMarkdown = renderMarkdown(basename(validDir), fullResult.entries);
-      // Include a truncated flag in the full result in case the totalEntries count is inaccurate due to concurrent modifications.
-      const fullTruncated = fullResult.totalEntries > fullResult.entries.length;
+      const fullMarkdown = renderMarkdown(basename(validDir), result.entries);
+      const fullTruncated = result.totalEntries > result.entries.length;
       const fullOutput = {
-        entries: fullResult.entries,
+        entries: result.entries,
         markdown: fullMarkdown,
-        totalEntries: fullResult.totalEntries,
-        totalFiles: fullResult.totalFiles,
-        totalDirectories: fullResult.totalDirectories,
+        totalEntries: result.totalEntries,
+        totalFiles: result.totalFiles,
+        totalDirectories: result.totalDirectories,
         ...(fullTruncated ? { truncated: true } : {}),
       };
       const { entry } = putResource({

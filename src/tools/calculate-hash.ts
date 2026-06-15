@@ -92,7 +92,6 @@ async function calculateMultipleHashes(
   signal?: AbortSignal,
 ): Promise<Record<string, string>> {
   const { PassThrough } = await import('node:stream');
-  const { pipeline: streamPipeline } = await import('node:stream/promises');
 
   const hashers = new Map<(typeof SUPPORTED_ALGORITHMS)[number], ReturnType<typeof createHash>>();
   for (const algo of algorithms) {
@@ -105,7 +104,7 @@ async function calculateMultipleHashes(
 
   // Create pipeline that feeds the file into all hashers
   const hashPromises = Array.from(hashers.values()).map((hasher) =>
-    streamPipeline(splitter, hasher, { signal }),
+    pipeline(splitter, hasher, { signal }),
   );
 
   const readStream = await fsOps.createReadStream(filePath, {
@@ -114,7 +113,7 @@ async function calculateMultipleHashes(
   });
 
   // Feed file data to splitter, which feeds it to all hashers
-  await streamPipeline(readStream, splitter, { signal });
+  await pipeline(readStream, splitter, { signal });
 
   // Wait for all hashers to finish
   await Promise.all(hashPromises);

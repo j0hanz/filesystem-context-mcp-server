@@ -148,6 +148,7 @@ async function tryElicitConfirmation(
     if (err instanceof SdkError && err.code === SdkErrorCode.CapabilityNotSupported) {
       return true; // Proceed if client doesn't support elicitation
     }
+    Logger.warn(`delete: elicitation failed for "${validPath}": ${String(err)}`);
     return false; // Fail closed for unknown transport errors
   }
 }
@@ -214,7 +215,9 @@ async function deleteSinglePath(
     return {
       failure: {
         path: validPath,
-        error: Problem.cancelled('Delete cancelled by user', { path: validPath }),
+        error: Problem.cancelled('Delete cancelled: confirmation prompt failed or was declined', {
+          path: validPath,
+        }),
       },
     };
   }

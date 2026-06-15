@@ -122,13 +122,12 @@ export const CREATE = defineTool({
 
         const resourceUri = `filesystem-mcp://file/${validPath.replace(/\\/g, '/')}`;
         if (ctx.resourceStore) {
-          const contentSize = Buffer.byteLength(file.content, 'utf-8');
           links.push({
             type: 'resource_link',
             uri: resourceUri,
             name: basename(validPath),
             mimeType: mimeInfo.mimeType,
-            size: contentSize,
+            size: bytesWritten,
             annotations: { audience: ['user', 'assistant'] },
           });
         }
