@@ -16,9 +16,15 @@ export function debounce<Args extends unknown[]>(
     }
     timeoutId = setTimeout(() => {
       timeoutId = undefined;
-      func(...args);
+      try {
+        func(...args);
+      } catch (error) {
+        Logger.error('Unhandled exception in debounced function:', error);
+      }
     }, waitMs);
-    timeoutId.unref();
+    if (typeof timeoutId.unref === 'function') {
+      timeoutId.unref();
+    }
   };
   debounced.cancel = () => {
     if (timeoutId !== undefined) {
@@ -33,8 +39,25 @@ export function omitOptionKeys<T extends object, K extends keyof T>(
   input: T,
   keys: readonly K[],
 ): Omit<T, K> {
-  const keySet = new Set<PropertyKey>(keys as readonly PropertyKey[]);
-  const output = Object.fromEntries(Object.entries(input).filter(([key]) => !keySet.has(key)));
+  const keySet = new Set<PropertyKey>();
+  for (const k of keys) {
+    keySet.add(k);
+    if (typeof k === 'number') {
+      keySet.add(String(k));
+    } else if (typeof k === 'string') {
+      const num = Number(k);
+      if (!Number.isNaN(num)) {
+        keySet.add(num);
+      }
+    }
+  }
+
+  const output = {} as Record<PropertyKey, unknown>;
+  for (const key of Reflect.ownKeys(input)) {
+    if (!keySet.has(key)) {
+      output[key] = (input as Record<PropertyKey, unknown>)[key];
+    }
+  }
   return output as Omit<T, K>;
 }
 
@@ -43,10 +66,14 @@ export function assignDefined<T extends object>(
   target: T,
   source: { [K in keyof T]?: T[K] | undefined },
 ): T {
-  for (const key of Object.keys(source) as (keyof T)[]) {
-    const value = source[key];
+  for (const key of Reflect.ownKeys(source) as (keyof T)[]) {
+    const value = (source as Record<PropertyKey, unknown>)[key];
     if (value !== undefined) {
-      (target as Record<PropertyKey, unknown>)[key] = value;
+      try {
+        (target as Record<PropertyKey, unknown>)[key] = value;
+      } catch (err) {
+        Logger.warn(`Failed to assign defined property: ${String(key)}`, err);
+      }
     }
   }
   return target;
@@ -67,12 +94,9 @@ export function maybeStripStructuredContentFromResult<T extends object>(
   if (!shouldStripStructuredOutput()) return result;
   if (!Object.hasOwn(result, 'structuredContent')) return result;
 
-  const stripped = Object.fromEntries(
-    Object.entries(result as Record<string, unknown>).filter(
-      ([key]) => key !== 'structuredContent',
-    ),
-  );
-  return stripped as MaybeStrippedStructuredContent<T>;
+  return omitOptionKeys(result, [
+    'structuredContent',
+  ] as unknown as readonly (keyof T)[]) as MaybeStrippedStructuredContent<T>;
 }
 
 const STRING_BOOL_SCHEMA = z.stringbool();
@@ -100,8 +124,15 @@ export function parseEnvInt(
   const value = process.env[envVar];
   if (!value) return defaultValue;
 
-  const parsed = parseInt(value, 10);
-  if (Number.isNaN(parsed) || parsed < min || parsed > max) {
+  const trimmed = value.trim();
+  const parsed = Number(trimmed);
+  if (
+    trimmed === '' ||
+    Number.isNaN(parsed) ||
+    !Number.isInteger(parsed) ||
+    parsed < min ||
+    parsed > max
+  ) {
     logInvalidEnvValue(envVar, value, `${String(min)}-${String(max)}`, defaultValue);
     return defaultValue;
   }
