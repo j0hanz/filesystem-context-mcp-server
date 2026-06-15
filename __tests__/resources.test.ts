@@ -230,4 +230,79 @@ describe('resources and metadata', () => {
       'failed watcher should be closed during cleanup',
     );
   });
+
+  it('does not create a watcher when destroy() is called while validateExistingPath is pending', async () => {
+    class FakeWatcher extends EventEmitter {
+      public closed = false;
+      close(): void {
+        this.closed = true;
+      }
+    }
+
+    const env = await createDiscoveryEnv();
+    cleanups.push(env.cleanup);
+
+    const filePath = join(env.tempDir, 'race-file.txt');
+    await writeFile(filePath, 'hello', 'utf8');
+
+    const createdWatchers: FakeWatcher[] = [];
+    setWatchFactoryForTests((_path: string, _listener: () => void) => {
+      const watcher = new FakeWatcher();
+      createdWatchers.push(watcher);
+      return watcher as unknown as import('node:fs').FSWatcher;
+    });
+
+    const uri = 'filesystem-mcp://file/' + encodeURIComponent(filePath);
+
+    // Start subscription but do not await — keep validateExistingPath in-flight.
+    void env.client.subscribeResource({ uri }).catch(() => {});
+
+    // Destroy immediately before the async validation can resolve.
+    // createServer exposes resourcesHandle.destroy() which calls destroy() on
+    // all resource contracts, setting the `destroyed` flag.
+    // We need the server-side destroy, not the client disconnect.
+    // Access it via the cleanup: the env.cleanup calls ctx.resourcesHandle.destroy().
+    // Instead, call it directly on the server context.
+    // Since createDiscoveryEnv doesn't expose the ctx directly, we rely on the
+    // fact that the subscription travels via the LinkedTransport (microtask queue)
+    // and validateExistingPath is itself async — so calling env.cleanup() synchronously
+    // triggers destroy() before any .then() can fire.
+    await env.cleanup();
+
+    // Give any in-flight microtasks / promises time to settle.
+    await delay(50);
+
+    assert.equal(
+      createdWatchers.length,
+      0,
+      'No watcher should be created after destroy() is called during pending validation',
+    );
+  });
+
+  it('returns ResourceNotFound when reading a missing or expired cached result', async () => {
+    const { ProtocolError, ProtocolErrorCode } = await import('@modelcontextprotocol/client');
+
+    const env = await createDiscoveryEnv();
+    cleanups.push(env.cleanup);
+
+    const missingResultUri = 'filesystem-mcp://result/00000000-0000-0000-0000-000000000000';
+
+    let thrownError: unknown;
+    try {
+      await env.client.readResource({ uri: missingResultUri });
+    } catch (error) {
+      thrownError = error;
+    }
+
+    assert.ok(thrownError instanceof Error, `Expected an error, got: ${String(thrownError)}`);
+    assert.ok(
+      thrownError instanceof ProtocolError,
+      `Expected ProtocolError, got: ${thrownError.message}`,
+    );
+    assert.equal(
+      (thrownError as ProtocolError).code,
+      ProtocolErrorCode.ResourceNotFound,
+      'Cache miss should surface as ResourceNotFound, not InvalidRequest',
+    );
+  });
 });

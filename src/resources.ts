@@ -16,6 +16,7 @@ import {
 
 import { type FSWatcher, watch } from 'node:fs';
 
+import { ErrorCode, FsError } from './core/errors.js';
 import { readFileRaw } from './core/fs.js';
 import { withTelemetry } from './core/observability.js';
 import { PathCompleter, type PathGuard } from './core/path.js';
@@ -58,7 +59,7 @@ interface BaseResourceContract {
     variables: Record<string, string | string[]>,
     ctx: ServerContext,
   ): Promise<ReadResourceResult> | ReadResourceResult;
-  subscribe?: (uri: string, notify: (uri: string) => void) => void;
+  subscribe?: (uri: string, notify: (uri: string) => void) => boolean | undefined;
   unsubscribe?: (uri: string) => void;
   destroy?: () => void;
 }
@@ -207,6 +208,7 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
   const desiredState = new Map<string, 'subscribed' | 'unsubscribed'>();
   // Tracks URIs whose watcher is being created (validateExistingPath is async).
   const pending = new Set<string>();
+  let destroyed = false;
 
   const dropWatcher = (uri: string, watcher: FSWatcher): void => {
     const current = watchers.get(uri);
@@ -282,18 +284,30 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
           .catch(() => {
             /* ignore */
           });
-        return;
+        return false;
       }
 
-      if (pending.has(uri)) return;
+      if (pending.has(uri)) return true;
 
       const filePath = extractPath(uri);
-      if (!filePath) return;
+      if (!filePath) {
+        options.server
+          ?.sendLoggingMessage({
+            level: 'warning',
+            logger: 'filesystem-mcp',
+            data: `Cannot subscribe to malformed or non-filesystem URI: ${uri}`,
+          })
+          .catch(() => {
+            /* ignore */
+          });
+        return;
+      }
 
       pending.add(uri);
       options.pathGuard
         .validateExistingPath(filePath)
         .then((resolved) => {
+          if (destroyed) return;
           if (desiredState.get(uri) === 'unsubscribed') {
             return;
           }
@@ -318,13 +332,30 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
                 for (const cb of currentCallbacks) {
                   try {
                     cb(uri);
-                  } catch {
-                    /* ignore callback errors */
+                  } catch (err) {
+                    options.server
+                      ?.sendLoggingMessage({
+                        level: 'warning',
+                        logger: 'filesystem-mcp',
+                        data: `Notify callback error for ${uri}: ${err instanceof Error ? err.message : String(err)}`,
+                      })
+                      .catch(() => {
+                        /* ignore */
+                      });
                   }
                 }
               }
             });
-            watcher.on('error', () => {
+            watcher.on('error', (err: Error) => {
+              options.server
+                ?.sendLoggingMessage({
+                  level: 'warning',
+                  logger: 'filesystem-mcp',
+                  data: `Watcher error for ${uri}: ${err.message}`,
+                })
+                .catch(() => {
+                  /* ignore */
+                });
               dropWatcher(uri, watcher);
             });
             watchers.set(uri, watcher);
@@ -340,12 +371,26 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
               });
           }
         })
-        .catch(() => {
-          /* silent ignore for unallowed/missing files */
+        .catch((err: unknown) => {
+          const isExpected =
+            err instanceof FsError &&
+            (err.code === ErrorCode.NOT_FOUND || err.code === ErrorCode.ACCESS_DENIED);
+          if (!isExpected) {
+            options.server
+              ?.sendLoggingMessage({
+                level: 'warning',
+                logger: 'filesystem-mcp',
+                data: `Unexpected error validating path for watcher ${uri}: ${err instanceof Error ? err.message : String(err)}`,
+              })
+              .catch(() => {
+                /* ignore */
+              });
+          }
         })
         .finally(() => {
           pending.delete(uri);
         });
+      return undefined;
     },
 
     unsubscribe(uri) {
@@ -358,8 +403,13 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     },
 
     destroy() {
+      destroyed = true;
       for (const watcher of watchers.values()) {
-        watcher.close();
+        try {
+          watcher.close();
+        } catch {
+          /* ignore close errors so all watchers are attempted */
+        }
       }
       watchers.clear();
       activeCallbacks.clear();
@@ -389,7 +439,18 @@ function createResultResource(options: ResourceRegistrationOptions): ResourceCon
         );
       }
 
-      const entry = options.resourceStore.getEntry(uri.toString());
+      let entry;
+      try {
+        entry = options.resourceStore.getEntry(uri.toString());
+      } catch (err) {
+        if (err instanceof FsError && err.code === ErrorCode.NOT_FOUND) {
+          throw new ProtocolError(
+            ProtocolErrorCode.ResourceNotFound,
+            'Cached result not found or expired. Re-run the tool to regenerate.',
+          );
+        }
+        throw err;
+      }
       if (entry.kind === 'text') {
         return {
           contents: [{ uri: entry.uri, mimeType: entry.mimeType, text: entry.text }],
@@ -513,12 +574,32 @@ function registerResources(
               })
             ) {
               foundMatch = true;
-              contract.subscribe(requestedResource.toString(), (updatedUri) => {
-                const updatePayload: ResourceUpdatedNotificationParams = { uri: updatedUri };
-                void server.server.sendResourceUpdated(updatePayload).catch(() => {
-                  /* Transport may be closed */
-                });
-              });
+              const subscribeResult = contract.subscribe(
+                requestedResource.toString(),
+                (updatedUri) => {
+                  const updatePayload: ResourceUpdatedNotificationParams = { uri: updatedUri };
+                  void server.server.sendResourceUpdated(updatePayload).catch((err: unknown) => {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    if (!msg.includes('closed') && !msg.includes('Transport')) {
+                      void options.server
+                        ?.sendLoggingMessage({
+                          level: 'warning',
+                          logger: 'filesystem-mcp',
+                          data: `Failed to send resource update for ${updatedUri}: ${msg}`,
+                        })
+                        .catch(() => {
+                          /* ignore */
+                        });
+                    }
+                  });
+                },
+              );
+              if (subscribeResult === false) {
+                throw new ProtocolError(
+                  ProtocolErrorCode.InternalError,
+                  `Subscription rejected: watcher limit (${MAX_WATCHERS}) reached.`,
+                );
+              }
               break;
             }
           }
