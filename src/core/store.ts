@@ -99,7 +99,8 @@ function buildIndexKey(mimeType: string, contentHash: string): string {
 
 function isExpired(entry: TextResourceEntry | BlobResourceEntry, now = Date.now()): boolean {
   const expiresAt = Date.parse(entry.expiresAt);
-  return Number.isFinite(expiresAt) && expiresAt <= now;
+  if (!Number.isFinite(expiresAt)) return true;
+  return expiresAt <= now;
 }
 
 // -----------------------------------------------------------------------------
@@ -153,6 +154,7 @@ class RawStore implements InternalStore {
   }
 
   bumpLru(uri: string, entry: StoredEntry): void {
+    if (!this.byUri.has(uri)) return;
     this.byUri.delete(uri);
     this.byUri.set(uri, entry);
   }
@@ -360,17 +362,48 @@ class DiagnosticStore extends WrappedStore {
   keys(): string[] {
     return this.wrapped.keys();
   }
+
+  putTextSilent(params: {
+    name: string;
+    mimeType?: string;
+    text: string;
+  }): TextResourceEntry & { kind: 'text' } {
+    return this.wrapped.putText(params) as TextResourceEntry & { kind: 'text' };
+  }
+
+  putBlobSilent(params: {
+    name: string;
+    mimeType: string;
+    data: Buffer;
+  }): BlobResourceEntry & { kind: 'blob' } {
+    return this.wrapped.putBlob(params) as BlobResourceEntry & { kind: 'blob' };
+  }
 }
 
 // -----------------------------------------------------------------------------
 // Eviction & Cache Policy Decorator
 // -----------------------------------------------------------------------------
 
+interface SilentPutStore extends InternalStore {
+  putTextSilent(params: {
+    name: string;
+    mimeType?: string;
+    text: string;
+  }): TextResourceEntry & { kind: 'text' };
+  putBlobSilent(params: {
+    name: string;
+    mimeType: string;
+    data: Buffer;
+  }): BlobResourceEntry & { kind: 'blob' };
+}
+
 class EvictionStore extends WrappedStore {
   private readonly options: ResourceStoreOptions;
+  private readonly diagWrapped: SilentPutStore;
 
-  constructor(wrapped: InternalStore, options: ResourceStoreOptions) {
+  constructor(wrapped: SilentPutStore, options: ResourceStoreOptions) {
     super(wrapped);
+    this.diagWrapped = wrapped;
     this.options = options;
   }
 
@@ -381,34 +414,44 @@ class EvictionStore extends WrappedStore {
   private evictOldest(): void {
     const first = this.wrapped.entries().next();
     if (first.done) return;
-    this.removeEntry(first.value.uri);
+    this.removeEntry(first.value.uri, 'evicted_immediately');
   }
 
   private pruneExpiredEntries(now = Date.now()): void {
+    const toRemove: string[] = [];
     for (const entry of this.wrapped.entries()) {
-      if (isExpired(entry, now)) {
-        this.removeEntry(entry.uri, 'expired');
-      }
+      if (isExpired(entry, now)) toRemove.push(entry.uri);
+    }
+    for (const uri of toRemove) {
+      this.removeEntry(uri, 'expired');
     }
   }
 
   private enforceLimits(): void {
     while (this.wrapped.entryCount > this.options.maxEntries) this.evictOldest();
     while (this.wrapped.totalBytes > this.options.maxTotalBytes) {
-      if (this.wrapped.entryCount === 0) break;
+      if (this.wrapped.entryCount === 0) {
+        console.error(
+          '[filesystem-mcp:resource-store] enforceLimits invariant violation: ' +
+            `totalBytes=${this.wrapped.totalBytes} but entryCount=0`,
+        );
+        break;
+      }
       this.evictOldest();
     }
   }
 
   private _getExisting(uri: string, expectedKind?: 'text' | 'blob'): StoredEntry {
     const existing = this.wrapped.getEntryIfExists(uri);
-    if (!existing || (expectedKind && existing.kind !== expectedKind)) {
+
+    if (!existing) {
       publishResourceStoreDiagnostics({ phase: 'cache_miss', uri, reason: 'not_found' });
       throw new FsError(
         ErrorCode.NOT_FOUND,
         `Resource not found: ${uri}. Re-run the tool to regenerate.`,
       );
     }
+
     if (isExpired(existing)) {
       this.removeEntry(uri, 'expired');
       publishResourceStoreDiagnostics({ phase: 'cache_miss', uri, reason: 'expired' });
@@ -417,6 +460,15 @@ class EvictionStore extends WrappedStore {
         `Resource expired: ${uri}. Re-run the tool to regenerate.`,
       );
     }
+
+    if (expectedKind && existing.kind !== expectedKind) {
+      publishResourceStoreDiagnostics({ phase: 'cache_miss', uri, reason: 'not_found' });
+      throw new FsError(
+        ErrorCode.NOT_FOUND,
+        `Resource not found: ${uri}. Re-run the tool to regenerate.`,
+      );
+    }
+
     this.bumpLru(uri, existing);
     publishResourceStoreDiagnostics({
       phase: 'cache_hit',
@@ -452,20 +504,24 @@ class EvictionStore extends WrappedStore {
       if (isExpired(cached)) {
         this.removeEntry(cached.uri, 'expired');
       } else if (cached.kind === kind) {
-        // Update name and refresh TTL on write (put)
-        cached.name = name;
         const now = Date.now();
-        cached.storedAt = new Date(now).toISOString();
-        cached.expiresAt = new Date(now + this.options.entryTtlMs).toISOString();
-
-        this.bumpLru(cached.uri, cached);
+        const refreshed: StoredEntry = {
+          ...cached,
+          name,
+          storedAt: new Date(now).toISOString(),
+          expiresAt: new Date(now + this.options.entryTtlMs).toISOString(),
+        };
+        this.bumpLru(refreshed.uri, refreshed);
         publishResourceStoreDiagnostics({
           phase: 'cache_hit',
-          uri: cached.uri,
-          name: cached.name,
-          bytes: cached.size,
+          uri: refreshed.uri,
+          name: refreshed.name,
+          bytes: refreshed.size,
         });
-        return cached;
+        return refreshed;
+      } else {
+        // Kind mismatch: remove orphan so _put can safely take over the byHashIndex slot.
+        this.removeEntry(cached.uri);
       }
     }
     return undefined;
@@ -496,8 +552,14 @@ class EvictionStore extends WrappedStore {
     );
     if (hit) return hit as TextResourceEntry & { kind: 'text' };
 
-    const entry = this.wrapped.putText(params) as TextResourceEntry & { kind: 'text' };
+    const entry = this.diagWrapped.putTextSilent(params);
     this._enforceAfterPut(entry);
+    publishResourceStoreDiagnostics({
+      phase: 'cache_store',
+      uri: entry.uri,
+      name: entry.name,
+      bytes: entry.size,
+    });
     return entry;
   }
   getText(uri: string): TextResourceEntry & { kind: 'text' } {
@@ -513,8 +575,14 @@ class EvictionStore extends WrappedStore {
     const hit = this._tryReturnHashHit('blob', params.mimeType, params.data, params.name);
     if (hit) return hit as BlobResourceEntry & { kind: 'blob' };
 
-    const entry = this.wrapped.putBlob(params) as BlobResourceEntry & { kind: 'blob' };
+    const entry = this.diagWrapped.putBlobSilent(params);
     this._enforceAfterPut(entry);
+    publishResourceStoreDiagnostics({
+      phase: 'cache_store',
+      uri: entry.uri,
+      name: entry.name,
+      bytes: entry.size,
+    });
     return entry;
   }
 
@@ -530,6 +598,10 @@ class EvictionStore extends WrappedStore {
     this.wrapped.clear();
   }
 
+  /**
+   * Returns live URIs currently in the store.
+   * Side effect: prunes expired entries before returning.
+   */
   keys(): string[] {
     this.pruneExpiredEntries();
     return this.wrapped.keys();
@@ -540,6 +612,11 @@ export function createInMemoryResourceStore(
   options: Partial<ResourceStoreOptions> = {},
 ): ResourceStore {
   const resolved = { ...DEFAULT_RESOURCE_STORE_OPTIONS, ...options };
+  if (resolved.maxEntryBytes > resolved.maxTotalBytes) {
+    throw new Error(
+      `Invalid store options: maxEntryBytes (${resolved.maxEntryBytes}) must not exceed maxTotalBytes (${resolved.maxTotalBytes}).`,
+    );
+  }
   const raw = new RawStore(resolved.entryTtlMs);
   const diagnostic = new DiagnosticStore(raw);
   const eviction = new EvictionStore(diagnostic, resolved);

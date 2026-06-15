@@ -51,4 +51,47 @@ describe('resource store', () => {
 
     assert.deepEqual(store.keys().sort(), [entry1.uri, entry3.uri].sort());
   });
+
+  it('does not mutate the previously returned entry on dedup-hit with a different name', () => {
+    const store = createInMemoryResourceStore();
+    const first = store.putText({ name: 'original', text: 'hello' });
+    const snapshotName = first.name;
+    const snapshotExpiry = first.expiresAt;
+    store.putText({ name: 'updated', text: 'hello' });
+    assert.equal(first.name, snapshotName);
+    assert.equal(first.expiresAt, snapshotExpiry);
+  });
+
+  it('prunes multiple expired entries without iterator corruption', async () => {
+    const store = createInMemoryResourceStore({ entryTtlMs: 10, maxEntries: 10 });
+    store.putText({ name: 'a', text: 'one' });
+    store.putText({ name: 'b', text: 'two' });
+    store.putText({ name: 'c', text: 'three' });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(store.keys().length, 0);
+  });
+
+  it('does not emit cache_store when entry is immediately evicted', async () => {
+    const { channel } = await import('node:diagnostics_channel');
+    const ch = channel('filesystem-mcp:resource-store');
+    const phases: string[] = [];
+    const sub = (msg: unknown) => phases.push((msg as { phase: string }).phase);
+    ch.subscribe(sub);
+    try {
+      // maxEntries: 0 causes any inserted entry to be immediately evicted by enforceLimits
+      const store = createInMemoryResourceStore({ maxEntries: 0 });
+      assert.throws(() => store.putText({ name: 'x', text: 'hello world' }));
+      assert.ok(!phases.includes('cache_store'), 'cache_store must not fire for evicted entries');
+      assert.ok(phases.includes('cache_reject'), 'cache_reject must fire');
+    } finally {
+      ch.unsubscribe(sub);
+    }
+  });
+
+  it('throws at construction when maxEntryBytes exceeds maxTotalBytes', () => {
+    assert.throws(
+      () => createInMemoryResourceStore({ maxEntryBytes: 500, maxTotalBytes: 100 }),
+      (err: unknown) => err instanceof Error && (err).message.includes('maxEntryBytes'),
+    );
+  });
 });

@@ -142,6 +142,14 @@ test('putBlob rejects data larger than maxEntryBytes', () => {
   );
 });
 
+test('getBlob on an expired wrong-kind entry removes the entry from the store', async () => {
+  const store = createInMemoryResourceStore({ entryTtlMs: 10 });
+  const entry = store.putText({ name: 'file', mimeType: 'text/plain', text: 'hello' });
+  await new Promise((r) => setTimeout(r, 30));
+  assert.throws(() => store.getBlob(entry.uri));
+  assert.deepEqual(store.keys(), []);
+});
+
 test('getBlob expires after TTL', () => {
   const store = createInMemoryResourceStore({
     entryTtlMs: 100, // 100ms TTL for testing
