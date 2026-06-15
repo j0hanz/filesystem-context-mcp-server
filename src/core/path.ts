@@ -495,15 +495,15 @@ const DEFAULT_SENSITIVE_PATTERNS = [
 ] as const;
 
 function buildSensitivePatterns(): readonly string[] {
-  const allowSensitive = parseTrueEnvFlag(process.env['FS_CONTEXT_ALLOW_SENSITIVE']);
-  const envValue = process.env['FS_CONTEXT_DENYLIST'];
+  const allowSensitive = parseTrueEnvFlag(process.env['ALLOW_SENSITIVE']);
+  const envValue = process.env['DENYLIST'];
   const envDenylist = envValue
     ? envValue
         .split(/[,\n]/u)
         .map((t) => t.trim())
         .filter((t) => t.length > 0)
     : [];
-  // FS_CONTEXT_ALLOW_SENSITIVE suppresses built-ins only; FS_CONTEXT_DENYLIST entries always apply
+  // ALLOW_SENSITIVE suppresses built-ins only; DENYLIST entries always apply
   return [...(allowSensitive ? [] : DEFAULT_SENSITIVE_PATTERNS), ...envDenylist];
 }
 
@@ -646,7 +646,7 @@ export class PathGuard {
 
   /**
    * Access-grant policy: resolve the target directory, honor remembered denials,
-   * ask the user, enforce FS_ROOT_BOUNDARY, then grant by extending the roots.
+   * ask the user, enforce ROOT_BOUNDARY, then grant by extending the roots.
    * MCP elicitation and filesystem probing are injected via `deps` so this stays
    * a pure access-control concern.
    */
@@ -667,7 +667,7 @@ export class PathGuard {
       return false;
     }
 
-    const boundaries = parseEnvDirList('FS_ROOT_BOUNDARY');
+    const boundaries = parseEnvDirList('ROOT_BOUNDARY');
     if (boundaries.length > 0) {
       const normalizedTarget = normalizePath(targetDir);
       const normalizedBoundaries = boundaries.map((b) => normalizePath(b));
@@ -689,7 +689,7 @@ export class PathGuard {
     if (this.isSensitive(requestedPath) || this.isSensitive(result.normalizedRequested)) {
       throw new FsError(
         ErrorCode.ACCESS_DENIED,
-        'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
+        'Sensitive file blocked. Set ALLOW_SENSITIVE=1 to override.',
         requestedPath,
       );
     }
@@ -844,7 +844,7 @@ export class PathGuard {
     if (this.isSensitive(normalizedReal)) {
       throw new FsError(
         ErrorCode.ACCESS_DENIED,
-        'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
+        'Sensitive file blocked. Set ALLOW_SENSITIVE=1 to override.',
         requestedPath,
       );
     }
@@ -918,7 +918,7 @@ export class PathGuard {
     if (this.isSensitive(requestedPath)) {
       throw new FsError(
         ErrorCode.ACCESS_DENIED,
-        'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
+        'Sensitive file blocked. Set ALLOW_SENSITIVE=1 to override.',
         requestedPath,
       );
     }
@@ -997,7 +997,7 @@ export class PathGuard {
     if (this.isSensitive(resolvedTarget)) {
       throw new FsError(
         ErrorCode.ACCESS_DENIED,
-        'Sensitive file blocked. Set FS_CONTEXT_ALLOW_SENSITIVE=1 to override.',
+        'Sensitive file blocked. Set ALLOW_SENSITIVE=1 to override.',
         requestedPath,
       );
     }
@@ -1039,7 +1039,7 @@ export class PathGuard {
     // Parse allowed directories from environment variable
     const envAllowedRaw = parseEnvDirList('FS_ALLOWED_DIRS');
     const envAllowedDirs: string[] = [];
-    const allowMissing = parseTrueEnvFlag(process.env['FS_ALLOW_MISSING_ROOTS']);
+    const allowMissing = parseTrueEnvFlag(process.env['ALLOW_MISSING_ROOTS']);
     for (const rawPath of envAllowedRaw) {
       const normalized = normalizePath(rawPath);
       try {
@@ -1068,8 +1068,8 @@ export class PathGuard {
       }
     }
 
-    // Parse FS_ROOT_BOUNDARY
-    const boundaryRaw = parseEnvDirList('FS_ROOT_BOUNDARY');
+    // Parse ROOT_BOUNDARY
+    const boundaryRaw = parseEnvDirList('ROOT_BOUNDARY');
     const boundaries: string[] = [];
     for (const rawPath of boundaryRaw) {
       const normalized = normalizePath(rawPath);
@@ -1082,7 +1082,7 @@ export class PathGuard {
           logToSender(
             sender,
             'warning',
-            `Path configured in FS_ROOT_BOUNDARY is not a directory: ${rawPath}`,
+            `Path configured in ROOT_BOUNDARY is not a directory: ${rawPath}`,
             this.loggingState?.minimumLevel,
           );
         }
@@ -1090,7 +1090,7 @@ export class PathGuard {
         logToSender(
           sender,
           'warning',
-          `Path configured in FS_ROOT_BOUNDARY is invalid or does not exist: ${rawPath}`,
+          `Path configured in ROOT_BOUNDARY is invalid or does not exist: ${rawPath}`,
           this.loggingState?.minimumLevel,
         );
       }
@@ -1101,7 +1101,7 @@ export class PathGuard {
     const allowCwdDirs: string[] = [];
     if (allowCwd) {
       let cwd = normalizePath(process.cwd());
-      const walkCwd = parseTrueEnvFlag(process.env['FS_ALLOW_CWD_WALK']);
+      const walkCwd = parseTrueEnvFlag(process.env['ALLOW_CWD_WALK']);
       if (walkCwd) {
         cwd = await findProjectRoot(cwd, [...this.rootBoundaries, homedir()]);
       }

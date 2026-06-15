@@ -10,15 +10,15 @@
 
 /** [flag, envVar, isBoolean] */
 export const BRIDGE_MAP: readonly (readonly [string, string, boolean])[] = [
-  ['--log-level', 'FILESYSTEM_MCP_LOG_LEVEL', false],
-  ['--http-host', 'FILESYSTEM_MCP_HTTP_HOST', false],
-  ['--api-key', 'FILESYSTEM_MCP_API_KEY', false],
-  ['--allow-sensitive', 'FS_CONTEXT_ALLOW_SENSITIVE', true],
-  ['--root-boundary', 'FS_ROOT_BOUNDARY', false],
+  ['--log-level', 'LOG_LEVEL', false],
+  ['--http-host', 'HTTP_HOST', false],
+  ['--api-key', 'API_KEY', false],
+  ['--allow-sensitive', 'ALLOW_SENSITIVE', true],
+  ['--root-boundary', 'ROOT_BOUNDARY', false],
   ['--max-file-size', 'MAX_FILE_SIZE', false],
-  ['--walk-cwd', 'FS_ALLOW_CWD_WALK', true],
-  ['--allow-missing-roots', 'FS_ALLOW_MISSING_ROOTS', true],
-  ['--deny', 'FS_CONTEXT_DENYLIST', false],
+  ['--walk-cwd', 'ALLOW_CWD_WALK', true],
+  ['--allow-missing-roots', 'ALLOW_MISSING_ROOTS', true],
+  ['--deny', 'DENYLIST', false],
 ];
 
 /**
@@ -79,7 +79,7 @@ export function applyBridgeFlags(argv: string[]): void {
   }
 
   for (const [envVar, list] of values.entries()) {
-    if (envVar === 'FS_CONTEXT_DENYLIST') {
+    if (envVar === 'DENYLIST') {
       process.env[envVar] = list.join(',');
     } else {
       process.env[envVar] = list[list.length - 1];

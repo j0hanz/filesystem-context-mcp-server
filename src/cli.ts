@@ -26,6 +26,23 @@ import { ALL_REGISTERED_TOOL_NAMES, MUTATING_TOOL_NAMES } from './tools/index.js
 const { version: SERVER_VERSION } = pkgInfo;
 const IS_WINDOWS = process.platform === 'win32';
 const CLI_VALIDATE_CONCURRENCY = 8;
+const ENV_DIR_SEP = IS_WINDOWS ? ';' : ':';
+
+const CONFIG_KEY_MAP: Record<string, string> = {
+  logLevel: 'LOG_LEVEL',
+  httpHost: 'HTTP_HOST',
+  apiKey: 'API_KEY',
+  allowSensitive: 'ALLOW_SENSITIVE',
+  rootBoundary: 'ROOT_BOUNDARY',
+  maxFileSize: 'MAX_FILE_SIZE',
+  walkCwd: 'ALLOW_CWD_WALK',
+  allowMissingRoots: 'ALLOW_MISSING_ROOTS',
+  deny: 'DENYLIST',
+};
+
+function resolveConfigKey(key: string): string {
+  return CONFIG_KEY_MAP[key] ?? key;
+}
 
 export class CliExitError extends Error {
   readonly exitCode: number;
@@ -147,20 +164,20 @@ const OPTIONS_HELP: HelpRow[] = [
   { flags: '--json', desc: 'Output --print-config as JSON' },
   {
     flags: '--log-level <level>',
-    desc: 'Log level: debug|info|warn|error (env: FILESYSTEM_MCP_LOG_LEVEL)',
+    desc: 'Log level: debug|info|warn|error (env: LOG_LEVEL)',
   },
-  { flags: '--http-host <host>', desc: 'HTTP server bind address (env: FILESYSTEM_MCP_HTTP_HOST)' },
+  { flags: '--http-host <host>', desc: 'HTTP server bind address (env: HTTP_HOST)' },
   {
     flags: '--api-key <key>',
-    desc: 'Require this API key on HTTP requests (env: FILESYSTEM_MCP_API_KEY)',
+    desc: 'Require this API key on HTTP requests (env: API_KEY)',
   },
   {
     flags: '--allow-sensitive',
-    desc: 'Allow access to sensitive system paths (env: FS_CONTEXT_ALLOW_SENSITIVE)',
+    desc: 'Allow access to sensitive system paths (env: ALLOW_SENSITIVE)',
   },
   {
     flags: '--root-boundary <path>',
-    desc: 'Require all allowed roots to fall under this path (env: FS_ROOT_BOUNDARY)',
+    desc: 'Require all allowed roots to fall under this path (env: ROOT_BOUNDARY)',
   },
   {
     flags: '--max-file-size <bytes>',
@@ -175,26 +192,26 @@ const OPTIONS_HELP: HelpRow[] = [
 ];
 
 const ENV_HELP: HelpRow[] = [
-  { flags: 'FILESYSTEM_MCP_LOG_LEVEL', desc: 'Log level: debug|info|warn|error' },
-  { flags: 'FILESYSTEM_MCP_HTTP_HOST', desc: 'HTTP bind address' },
-  { flags: 'FILESYSTEM_MCP_API_KEY', desc: 'HTTP API key' },
+  { flags: 'LOG_LEVEL', desc: 'Log level: debug|info|warn|error' },
+  { flags: 'HTTP_HOST', desc: 'HTTP bind address' },
+  { flags: 'API_KEY', desc: 'HTTP API key' },
   {
-    flags: 'FS_CONTEXT_ALLOW_SENSITIVE',
+    flags: 'ALLOW_SENSITIVE',
     desc: 'Allow sensitive system paths (any value enables this)',
   },
-  { flags: 'FS_ROOT_BOUNDARY', desc: 'Path prefix all allowed roots must fall under' },
+  { flags: 'ROOT_BOUNDARY', desc: 'Path prefix all allowed roots must fall under' },
   { flags: 'MAX_FILE_SIZE', desc: 'Maximum file size for reads in bytes' },
   {
     flags: 'FS_ALLOWED_DIRS',
     desc: 'Allowed dirs: colon-separated (Unix), semicolon-separated (Windows)',
   },
   {
-    flags: 'FS_ALLOW_CWD_WALK',
+    flags: 'ALLOW_CWD_WALK',
     desc: 'Walk up from CWD to find a project root (any value enables this)',
   },
-  { flags: 'FS_CONTEXT_DENYLIST', desc: 'Paths/patterns to block, comma-separated' },
+  { flags: 'DENYLIST', desc: 'Paths/patterns to block, comma-separated' },
   {
-    flags: 'FS_ALLOW_MISSING_ROOTS',
+    flags: 'ALLOW_MISSING_ROOTS',
     desc: 'Start even if configured allowed directories do not exist (any value enables this)',
   },
 ];
@@ -314,8 +331,11 @@ export async function parseArgs(): Promise<{
   json: boolean;
   walkCwd: boolean;
   allowMissingRoots: boolean;
-  subcommand: 'allow' | 'disallow' | 'list-allowed' | undefined;
+  subcommand: 'allow' | 'disallow' | 'list-allowed' | 'config' | undefined;
   subcommandPath: string | undefined;
+  configAction: 'set' | 'get' | 'list' | 'reset' | undefined;
+  configKey: string | undefined;
+  configValue: string | undefined;
   client: string | undefined;
   config: string | undefined;
   serverName: string | undefined;
@@ -333,8 +353,11 @@ export async function parseArgs(): Promise<{
     }
 
     const firstPos = parsed.positionals[0];
-    let subcommand: 'allow' | 'disallow' | 'list-allowed' | undefined;
+    let subcommand: 'allow' | 'disallow' | 'list-allowed' | 'config' | undefined;
     let subcommandPath: string | undefined;
+    let configAction: 'set' | 'get' | 'list' | 'reset' | undefined;
+    let configKey: string | undefined;
+    let configValue: string | undefined;
 
     if (firstPos === 'allow' || firstPos === 'disallow' || firstPos === 'list-allowed') {
       subcommand = firstPos;
@@ -344,6 +367,16 @@ export async function parseArgs(): Promise<{
           validateCliPath(subcommandPath);
         }
       }
+    } else if (firstPos === 'config') {
+      subcommand = 'config';
+      const action = parsed.positionals[1];
+      if (action === 'set' || action === 'get' || action === 'list' || action === 'reset') {
+        configAction = action;
+        configKey = parsed.positionals[2];
+        configValue = parsed.positionals[3];
+      } else if (action !== undefined) {
+        throw new CliExitError(`Unknown config action '${action}'. Use: set, get, list, reset`, 1);
+      }
     } else {
       for (const positional of parsed.positionals) {
         validateCliPath(positional);
@@ -352,7 +385,7 @@ export async function parseArgs(): Promise<{
 
     const vals = parsed.values as Record<string, unknown>;
     const walkCwd =
-      (vals['walk-cwd'] as boolean) || parseTrueEnvFlag(process.env['FS_ALLOW_CWD_WALK']);
+      (vals['walk-cwd'] as boolean) || parseTrueEnvFlag(process.env['ALLOW_CWD_WALK']);
     const allowCwd = (vals['allow-cwd'] as boolean) || walkCwd;
     const readOnly = (vals['read-only'] as boolean) || (vals['safe'] as boolean);
     const printConfig = vals['print-config'] as boolean;
@@ -360,7 +393,7 @@ export async function parseArgs(): Promise<{
     const port = parsePortOption(parsed.values.port);
     const allowMissingRoots =
       (vals['allow-missing-roots'] as boolean) ||
-      parseTrueEnvFlag(process.env['FS_ALLOW_MISSING_ROOTS']);
+      parseTrueEnvFlag(process.env['ALLOW_MISSING_ROOTS']);
 
     const client = vals['client'] as string | undefined;
     const config = vals['config'] as string | undefined;
@@ -390,6 +423,9 @@ export async function parseArgs(): Promise<{
       allowMissingRoots,
       subcommand,
       subcommandPath,
+      configAction,
+      configKey,
+      configValue,
       client,
       config,
       serverName,
@@ -684,24 +720,39 @@ function tryComparePaths(arg: string, targetPath: string): boolean {
   }
 }
 
-function updateArgsForPath(
-  args: string[],
+function readDirsFromEnv(entry: Record<string, unknown>): string[] {
+  const env = isRecord(entry['env']) ? entry['env'] : {};
+  const raw = typeof env['FS_ALLOWED_DIRS'] === 'string' ? env['FS_ALLOWED_DIRS'] : '';
+  return raw
+    .split(ENV_DIR_SEP)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function updateEnvForPath(
+  entry: Record<string, unknown>,
   action: 'allow' | 'disallow',
   targetPath: string,
-): { newArgs: string[]; changed: boolean } {
+): boolean {
+  if (!isRecord(entry['env'])) {
+    entry['env'] = {};
+  }
+  const env = entry['env'] as Record<string, unknown>;
+  const current = readDirsFromEnv(entry);
+
   if (action === 'allow') {
-    const alreadyExists = args.some((arg) => tryComparePaths(arg, targetPath));
-    if (!alreadyExists) {
-      return { newArgs: [...args, targetPath], changed: true };
-    }
-    return { newArgs: args, changed: false };
+    if (current.some((d) => tryComparePaths(d, targetPath))) return false;
+    env['FS_ALLOWED_DIRS'] = [...current, targetPath].join(ENV_DIR_SEP);
+    return true;
   } else {
-    const filtered = args.filter((arg) => {
-      if (!isAbsolute(arg)) return true;
-      return !tryComparePaths(arg, targetPath);
-    });
-    const changed = filtered.length < args.length;
-    return { newArgs: filtered, changed };
+    const filtered = current.filter((d) => !tryComparePaths(d, targetPath));
+    if (filtered.length === current.length) return false;
+    if (filtered.length === 0) {
+      delete env['FS_ALLOWED_DIRS'];
+    } else {
+      env['FS_ALLOWED_DIRS'] = filtered.join(ENV_DIR_SEP);
+    }
+    return true;
   }
 }
 
@@ -738,28 +789,22 @@ async function modifySingleConfig(
       entry = {
         command: 'npx',
         args: ['-y', '@j0hanz/filesystem-mcp'],
+        env: {},
       };
       mcpServers[key] = entry;
     }
-
-    const currentArgs = Array.isArray(entry['args'])
-      ? entry['args'].map(String)
-      : ['-y', '@j0hanz/filesystem-mcp'];
 
     const cmdVal = entry['command'];
     const cmdStr = typeof cmdVal === 'string' ? cmdVal : '';
     if (cmdStr.includes('docker') && action === 'allow') {
       process.stderr.write(
-        `${cliFmt.stderrWarn(`Server '${key}' in config ${filePath} appears to be running via Docker. Path allowance via command line arguments might not map correctly inside the container.`)}\n`,
+        `${cliFmt.stderrWarn(`Server '${key}' in config ${filePath} appears to be running via Docker. Path allowance via env.FS_ALLOWED_DIRS might not map correctly inside the container.`)}\n`,
       );
     }
 
-    const { newArgs, changed } = updateArgsForPath(currentArgs, action, targetPath);
-    if (changed) {
-      entry['args'] = newArgs;
-      if (!options.dryRun) {
-        await writeJsonAtomic(filePath, configData);
-      }
+    const changed = updateEnvForPath(entry, action, targetPath);
+    if (changed && !options.dryRun) {
+      await writeJsonAtomic(filePath, configData);
     }
 
     return changed;
@@ -867,9 +912,8 @@ export async function listAllowedPaths(options: ModifyOptions = {}): Promise<str
         | Record<string, unknown>
         | undefined;
       const matched = findServerEntry(mcpServers, options.serverName);
-      if (matched?.entry && Array.isArray(matched.entry['args'])) {
-        const argsArray = matched.entry['args'] as string[];
-        return argsArray.filter((arg: string) => isAbsolute(arg));
+      if (matched?.entry) {
+        return readDirsFromEnv(matched.entry);
       }
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -897,4 +941,121 @@ export async function listAllowedPaths(options: ModifyOptions = {}): Promise<str
   }
 
   return allPaths;
+}
+
+async function modifyConfig(
+  filePath: string,
+  action: 'set' | 'get' | 'list' | 'reset',
+  envVar: string | undefined,
+  value: string | undefined,
+  options: ModifyOptions,
+): Promise<void> {
+  const lockFilePath = `${filePath}.lock`;
+  let release: (() => Promise<void>) | undefined;
+
+  try {
+    if (action !== 'get' && action !== 'list' && !options.dryRun) {
+      await mkdir(dirname(filePath), { recursive: true });
+      release = await acquireLock(lockFilePath);
+    }
+
+    const configData = await readOrCreateConfig(filePath);
+    const mcpServersKey =
+      !configData['mcpServers'] && configData['servers'] ? 'servers' : 'mcpServers';
+    configData[mcpServersKey] ??= {};
+
+    const mcpServers = configData[mcpServersKey] as Record<string, unknown>;
+    const matched = findServerEntry(mcpServers, options.serverName);
+
+    if (!matched) {
+      if (action === 'get' || action === 'list' || action === 'reset') {
+        process.stdout.write('(no server entry found)\n');
+        return;
+      }
+      if (!envVar) throw new CliExitError('Key is required for config set', 1);
+      const entryKey = options.serverName ?? 'filesystem';
+      const newEntry: Record<string, unknown> = {
+        command: 'npx',
+        args: ['-y', '@j0hanz/filesystem-mcp'],
+        env: { [envVar]: value ?? '' },
+      };
+      mcpServers[entryKey] = newEntry;
+      if (!options.dryRun) {
+        await writeJsonAtomic(filePath, configData);
+      }
+      process.stdout.write(`${cliFmt.success(`Set ${envVar} = ${value ?? ''}`)}\n`);
+      return;
+    }
+
+    const { entry } = matched;
+    if (!isRecord(entry['env'])) {
+      entry['env'] = {};
+    }
+    const env = entry['env'] as Record<string, unknown>;
+
+    if (action === 'set') {
+      if (!envVar) throw new CliExitError('Key is required for config set', 1);
+      env[envVar] = value ?? '';
+      if (!options.dryRun) await writeJsonAtomic(filePath, configData);
+      process.stdout.write(`${cliFmt.success(`Set ${envVar} = ${value ?? ''}`)}\n`);
+    } else if (action === 'get') {
+      if (!envVar) throw new CliExitError('Key is required for config get', 1);
+      const val = env[envVar];
+      process.stdout.write(
+        val !== undefined
+          ? `${typeof val === 'string' ? val : JSON.stringify(val)}\n`
+          : '(not set)\n',
+      );
+    } else if (action === 'list') {
+      const keys = Object.keys(env);
+      if (keys.length === 0) {
+        process.stdout.write('(no env vars configured)\n');
+      } else {
+        for (const k of keys) {
+          process.stdout.write(`${k}=${String(env[k])}\n`);
+        }
+      }
+    } else {
+      if (!envVar) throw new CliExitError('Key is required for config reset', 1);
+      if (!(envVar in env)) {
+        process.stdout.write(`(${envVar} was not set)\n`);
+        return;
+      }
+      Reflect.deleteProperty(env, envVar);
+      if (Object.keys(env).length === 0) delete entry['env'];
+      if (!options.dryRun) await writeJsonAtomic(filePath, configData);
+      process.stdout.write(`${cliFmt.success(`Removed ${envVar}`)}\n`);
+    }
+  } finally {
+    if (release) await release();
+  }
+}
+
+export async function manageConfig(
+  action: 'set' | 'get' | 'list' | 'reset',
+  key: string | undefined,
+  value: string | undefined,
+  options: ModifyOptions = {},
+): Promise<void> {
+  const envVar = key !== undefined ? resolveConfigKey(key) : undefined;
+
+  if (options.config) {
+    await modifyConfig(options.config, action, envVar, value, options);
+    return;
+  }
+
+  const filtered = getTargetConfigs(options);
+  if (filtered.length === 0) {
+    const hint = options.client
+      ? `No configuration file found for client matching '${options.client}'.`
+      : 'No supported MCP configuration files were found on this system.';
+    throw new CliExitError(`${hint} Use --config <path> to target a specific file explicitly.`, 1);
+  }
+
+  for (const target of filtered) {
+    if (filtered.length > 1) {
+      process.stdout.write(`\n${cliFmt.dim(target.name)} ${cliFmt.dim(`(${target.path})`)}\n`);
+    }
+    await modifyConfig(target.path, action, envVar, value, options);
+  }
 }

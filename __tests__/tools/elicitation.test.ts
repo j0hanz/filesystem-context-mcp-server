@@ -447,10 +447,10 @@ describe('implicit access: client without elicitation capability', () => {
   });
 });
 
-// ─── implicit access: FS_ROOT_BOUNDARY blocks approval ───────────────────────
+// ─── implicit access: ROOT_BOUNDARY blocks approval ───────────────────────
 
-describe('implicit access: FS_ROOT_BOUNDARY blocks approval', () => {
-  const ORIG_BOUNDARY = process.env['FS_ROOT_BOUNDARY'];
+describe('implicit access: ROOT_BOUNDARY blocks approval', () => {
+  const ORIG_BOUNDARY = process.env['ROOT_BOUNDARY'];
   let env: TestEnv;
   let boundaryDir: string;
   let outsideDir: string;
@@ -468,7 +468,7 @@ describe('implicit access: FS_ROOT_BOUNDARY blocks approval', () => {
     fileOutside = join(outsideDir, 'secret.txt');
     await writeFile(fileOutside, 'should remain blocked');
 
-    process.env['FS_ROOT_BOUNDARY'] = boundaryDir;
+    process.env['ROOT_BOUNDARY'] = boundaryDir;
 
     env = await createTestEnvWithElicitation(async () => ({
       action: 'accept' as const,
@@ -478,16 +478,16 @@ describe('implicit access: FS_ROOT_BOUNDARY blocks approval', () => {
 
   after(async () => {
     if (ORIG_BOUNDARY === undefined) {
-      delete process.env['FS_ROOT_BOUNDARY'];
+      delete process.env['ROOT_BOUNDARY'];
     } else {
-      process.env['FS_ROOT_BOUNDARY'] = ORIG_BOUNDARY;
+      process.env['ROOT_BOUNDARY'] = ORIG_BOUNDARY;
     }
     const { rm } = await import('node:fs/promises');
     await rm(join(boundaryDir, '..'), { recursive: true, force: true });
     await env.cleanup();
   });
 
-  it('read fails with ACCESS_DENIED when path is outside FS_ROOT_BOUNDARY even if user approves', async () => {
+  it('read fails with ACCESS_DENIED when path is outside ROOT_BOUNDARY even if user approves', async () => {
     const { getStructured } = await import('../helpers.js');
     const result = await env.client.callTool({
       name: 'read',
@@ -497,7 +497,7 @@ describe('implicit access: FS_ROOT_BOUNDARY blocks approval', () => {
     const sc = getStructured(result);
     const results = sc['results'] as Record<string, unknown>[];
     const error = results[0]?.['error'] as Record<string, unknown> | undefined;
-    assert.ok(error !== undefined, 'Expected error when outside FS_ROOT_BOUNDARY');
+    assert.ok(error !== undefined, 'Expected error when outside ROOT_BOUNDARY');
     assert.equal(error['code'], 'ACCESS_DENIED');
   });
 });

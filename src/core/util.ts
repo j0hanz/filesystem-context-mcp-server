@@ -177,7 +177,7 @@ function parseEnvLogLevel(envVar: string, defaultValue: ValidLogLevel): ValidLog
   return defaultValue;
 }
 
-export const LOG_LEVEL = parseEnvLogLevel('FILESYSTEM_MCP_LOG_LEVEL', 'info');
+export const LOG_LEVEL = parseEnvLogLevel('LOG_LEVEL', 'info');
 
 export function getInitHandshakeTimeoutMs(): number {
   return parseEnvInt('FS_INIT_HANDSHAKE_TIMEOUT_MS', 30_000, 1_000, 300_000);

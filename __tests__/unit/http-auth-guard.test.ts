@@ -91,13 +91,13 @@ describe('validateBearerAuthorization', () => {
 });
 
 describe('assertHttpBindingPolicy', () => {
-  const originalKey = process.env['FILESYSTEM_MCP_API_KEY'];
+  const originalKey = process.env['API_KEY'];
 
   afterEach(() => {
     if (originalKey === undefined) {
-      delete process.env['FILESYSTEM_MCP_API_KEY'];
+      delete process.env['API_KEY'];
     } else {
-      process.env['FILESYSTEM_MCP_API_KEY'] = originalKey;
+      process.env['API_KEY'] = originalKey;
     }
   });
 
@@ -119,7 +119,7 @@ describe('assertHttpBindingPolicy', () => {
   it('refuses non-loopback bind when an API key is weak or missing', () => {
     assert.throws(() => {
       assertHttpBindingPolicy('0.0.0.0', 'too-short');
-    }, /FILESYSTEM_MCP_API_KEY.*insecure|Refusing to bind/);
+    }, /API_KEY.*insecure|Refusing to bind/);
     assert.throws(() => {
       assertHttpBindingPolicy('0.0.0.0', undefined);
     }, /Refusing to bind HTTP server to non-loopback host/);

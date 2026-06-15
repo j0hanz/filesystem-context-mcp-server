@@ -131,8 +131,8 @@ describe('HTTP transport', () => {
       tempDir = undefined;
     }
 
-    delete process.env['FILESYSTEM_MCP_HTTP_HOST'];
-    delete process.env['FILESYSTEM_MCP_API_KEY'];
+    delete process.env['HTTP_HOST'];
+    delete process.env['API_KEY'];
     delete process.env['FS_INIT_HANDSHAKE_TIMEOUT_MS'];
   });
 
@@ -526,7 +526,7 @@ describe('HTTP transport', () => {
     // `__tests__/unit/http-auth-guard.test.ts`.
     tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
     const dir = tempDir;
-    process.env['FILESYSTEM_MCP_HTTP_HOST'] = '0.0.0.0';
+    process.env['HTTP_HOST'] = '0.0.0.0';
 
     await assert.rejects(
       () => startHttpServer(0, { cliAllowedDirs: [dir] }),
@@ -857,7 +857,7 @@ describe('HTTP transport', () => {
 
   it('accepts allowed hosts when FILESYSTEM_MCP_ALLOWED_HOSTS is set', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
-    process.env['FILESYSTEM_MCP_HTTP_HOST'] = '127.0.0.1';
+    process.env['HTTP_HOST'] = '127.0.0.1';
     process.env['FILESYSTEM_MCP_ALLOWED_HOSTS'] = '127.0.0.1, localhost, custom-host.local';
     const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
     servers.push(server);

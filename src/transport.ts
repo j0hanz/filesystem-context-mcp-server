@@ -320,7 +320,7 @@ export function assertHttpBindingPolicy(host: string, apiKey: string | undefined
     if (apiKey !== undefined && !isSecureApiKey(apiKey)) {
       throw new FsError(
         ErrorCode.PERMISSION_DENIED,
-        'FILESYSTEM_MCP_API_KEY is configured but is insecure (minimum 16 characters).',
+        'API_KEY is configured but is insecure (minimum 16 characters).',
       );
     }
     return;
@@ -328,7 +328,7 @@ export function assertHttpBindingPolicy(host: string, apiKey: string | undefined
   if (isSecureApiKey(apiKey)) return;
   throw new FsError(
     ErrorCode.PERMISSION_DENIED,
-    `Refusing to bind HTTP server to non-loopback host '${host}' without a secure FILESYSTEM_MCP_API_KEY (minimum 16 characters).`,
+    `Refusing to bind HTTP server to non-loopback host '${host}' without a secure API_KEY (minimum 16 characters).`,
   );
 }
 
@@ -345,11 +345,11 @@ function originGuardMiddleware(): RequestHandler {
 }
 
 /**
- * Express middleware: when `FILESYSTEM_MCP_API_KEY` is set, require a
+ * Express middleware: when `API_KEY` is set, require a
  * matching bearer token. No key set = open access (loopback dev mode).
  */
 function bearerAuthMiddleware(): RequestHandler {
-  const apiKey = process.env['FILESYSTEM_MCP_API_KEY'];
+  const apiKey = process.env['API_KEY'];
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!apiKey) {
       next();
@@ -894,8 +894,8 @@ function setupExpressApp(
 
 export async function startHttpServer(port: number, options: ServerOptions): Promise<Server> {
   const eventStore = new InMemoryEventStore();
-  const httpHost = process.env['FILESYSTEM_MCP_HTTP_HOST'] ?? '127.0.0.1';
-  assertHttpBindingPolicy(httpHost, process.env['FILESYSTEM_MCP_API_KEY']);
+  const httpHost = process.env['HTTP_HOST'] ?? '127.0.0.1';
+  assertHttpBindingPolicy(httpHost, process.env['API_KEY']);
 
   const registry = new HttpSessionRegistry({
     eventStore,

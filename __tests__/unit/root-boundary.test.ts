@@ -5,15 +5,15 @@ import { afterEach, describe, it } from 'node:test';
 
 import { PathGuard } from '../../src/core/path.js';
 
-describe('FS_ROOT_BOUNDARY filtering', () => {
-  const ORIG_BOUNDARY = process.env['FS_ROOT_BOUNDARY'];
+describe('ROOT_BOUNDARY filtering', () => {
+  const ORIG_BOUNDARY = process.env['ROOT_BOUNDARY'];
   const ORIG_DIRS = process.env['FS_ALLOWED_DIRS'];
 
   afterEach(() => {
     if (ORIG_BOUNDARY === undefined) {
-      delete process.env['FS_ROOT_BOUNDARY'];
+      delete process.env['ROOT_BOUNDARY'];
     } else {
-      process.env['FS_ROOT_BOUNDARY'] = ORIG_BOUNDARY;
+      process.env['ROOT_BOUNDARY'] = ORIG_BOUNDARY;
     }
     if (ORIG_DIRS === undefined) {
       delete process.env['FS_ALLOWED_DIRS'];
@@ -37,7 +37,7 @@ describe('FS_ROOT_BOUNDARY filtering', () => {
     await mkdir(insideDir);
     await mkdir(outsideDir);
 
-    process.env['FS_ROOT_BOUNDARY'] = boundaryDir;
+    process.env['ROOT_BOUNDARY'] = boundaryDir;
     // Clear FS_ALLOWED_DIRS so baseline has no folders
     delete process.env['FS_ALLOWED_DIRS'];
 
@@ -74,13 +74,13 @@ describe('FS_ROOT_BOUNDARY filtering', () => {
 
     const guard = new PathGuard({ allowCwd: false }, { minimumLevel: 'debug' });
 
-    // Set FS_ROOT_BOUNDARY to a valid temp dir
+    // Set ROOT_BOUNDARY to a valid temp dir
     const { mkdtemp, rm } = await import('node:fs/promises');
     const { tmpdir } = await import('node:os');
     const path = await import('node:path');
     const tempDir = await mkdtemp(path.join(tmpdir(), 'root-boundary-warn-'));
 
-    process.env['FS_ROOT_BOUNDARY'] = tempDir;
+    process.env['ROOT_BOUNDARY'] = tempDir;
     await guard.recomputeAllowedDirectories();
 
     const synchronizer = new McpRootsSynchronizer(guard, { minimumLevel: 'debug' });
@@ -119,7 +119,7 @@ describe('FS_ROOT_BOUNDARY filtering', () => {
     await symlink(realInsideDir, symlinkInside, 'junction');
     await symlink(realOutsideDir, symlinkOutside, 'junction');
 
-    process.env['FS_ROOT_BOUNDARY'] = boundaryDir;
+    process.env['ROOT_BOUNDARY'] = boundaryDir;
     delete process.env['FS_ALLOWED_DIRS'];
 
     const guard = new PathGuard({ allowCwd: false });

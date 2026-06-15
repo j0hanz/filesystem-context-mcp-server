@@ -31,34 +31,34 @@ describe('applyBridgeFlags — flag→env mapping (TASK-004/005)', () => {
     assert.equal(process.env['MAX_FILE_SIZE'], '1048576');
   });
 
-  it('maps --log-level to FILESYSTEM_MCP_LOG_LEVEL', () => {
+  it('maps --log-level to LOG_LEVEL', () => {
     snapshot();
     applyBridgeFlags(['--log-level', 'debug']);
-    assert.equal(process.env['FILESYSTEM_MCP_LOG_LEVEL'], 'debug');
+    assert.equal(process.env['LOG_LEVEL'], 'debug');
   });
 
-  it('maps --http-host to FILESYSTEM_MCP_HTTP_HOST', () => {
+  it('maps --http-host to HTTP_HOST', () => {
     snapshot();
     applyBridgeFlags(['--http-host', '0.0.0.0']);
-    assert.equal(process.env['FILESYSTEM_MCP_HTTP_HOST'], '0.0.0.0');
+    assert.equal(process.env['HTTP_HOST'], '0.0.0.0');
   });
 
-  it('maps --api-key to FILESYSTEM_MCP_API_KEY', () => {
+  it('maps --api-key to API_KEY', () => {
     snapshot();
     applyBridgeFlags(['--api-key', 'secret123']);
-    assert.equal(process.env['FILESYSTEM_MCP_API_KEY'], 'secret123');
+    assert.equal(process.env['API_KEY'], 'secret123');
   });
 
-  it('maps --allow-sensitive (boolean) to FS_CONTEXT_ALLOW_SENSITIVE=1', () => {
+  it('maps --allow-sensitive (boolean) to ALLOW_SENSITIVE=1', () => {
     snapshot();
     applyBridgeFlags(['--allow-sensitive']);
-    assert.equal(process.env['FS_CONTEXT_ALLOW_SENSITIVE'], '1');
+    assert.equal(process.env['ALLOW_SENSITIVE'], '1');
   });
 
-  it('maps --root-boundary to FS_ROOT_BOUNDARY', () => {
+  it('maps --root-boundary to ROOT_BOUNDARY', () => {
     snapshot();
     applyBridgeFlags(['--root-boundary', '/tmp/safe']);
-    assert.equal(process.env['FS_ROOT_BOUNDARY'], '/tmp/safe');
+    assert.equal(process.env['ROOT_BOUNDARY'], '/tmp/safe');
   });
 
   it('flag overrides env var already set (flag wins)', () => {
@@ -103,6 +103,6 @@ describe('applyBridgeFlags — flag→env mapping (TASK-004/005)', () => {
   it('maps multiple --deny flags to comma-separated list', () => {
     snapshot();
     applyBridgeFlags(['--deny', 'node_modules', '--deny', 'dist']);
-    assert.equal(process.env['FS_CONTEXT_DENYLIST'], 'node_modules,dist');
+    assert.equal(process.env['DENYLIST'], 'node_modules,dist');
   });
 });

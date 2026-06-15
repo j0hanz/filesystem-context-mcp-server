@@ -91,7 +91,7 @@ describe('resource store', () => {
   it('throws at construction when maxEntryBytes exceeds maxTotalBytes', () => {
     assert.throws(
       () => createInMemoryResourceStore({ maxEntryBytes: 500, maxTotalBytes: 100 }),
-      (err: unknown) => err instanceof Error && (err).message.includes('maxEntryBytes'),
+      (err: unknown) => err instanceof Error && err.message.includes('maxEntryBytes'),
     );
   });
 });

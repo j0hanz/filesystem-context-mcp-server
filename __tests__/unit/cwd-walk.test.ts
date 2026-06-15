@@ -39,7 +39,7 @@ describe('findProjectRoot ancestor walk', () => {
     root = await findProjectRoot(nestedDir, [tempDir]);
     assert.strictEqual(root.toLowerCase(), nestedDir.toLowerCase());
 
-    // (e) walk stops at FS_ROOT_BOUNDARY ceiling
+    // (e) walk stops at ROOT_BOUNDARY ceiling
     // Create marker at tempDir level (outside parentDir boundary)
     await writeFile(path.join(tempDir, 'package.json'), '{}');
     root = await findProjectRoot(nestedDir, [parentDir]); // ceiling is parentDir
@@ -57,7 +57,7 @@ describe('findProjectRoot ancestor walk', () => {
     assert.strictEqual(root.toLowerCase(), normalizePath(home).toLowerCase());
   });
 
-  it('integration: recomputeAllowedDirectories uses FS_ALLOW_CWD_WALK', async () => {
+  it('integration: recomputeAllowedDirectories uses ALLOW_CWD_WALK', async () => {
     const { mkdtemp, rm, writeFile, mkdir } = await import('node:fs/promises');
     const { tmpdir } = await import('node:os');
     const path = await import('node:path');
@@ -73,8 +73,8 @@ describe('findProjectRoot ancestor walk', () => {
     const originalCwd = process.cwd.bind(process);
     process.cwd = () => srcDir;
 
-    const ORIG_WALK = process.env['FS_ALLOW_CWD_WALK'];
-    process.env['FS_ALLOW_CWD_WALK'] = '1';
+    const ORIG_WALK = process.env['ALLOW_CWD_WALK'];
+    process.env['ALLOW_CWD_WALK'] = '1';
 
     try {
       const guard = new PathGuard({ allowCwd: true });
@@ -89,9 +89,9 @@ describe('findProjectRoot ancestor walk', () => {
     } finally {
       process.cwd = originalCwd;
       if (ORIG_WALK === undefined) {
-        delete process.env['FS_ALLOW_CWD_WALK'];
+        delete process.env['ALLOW_CWD_WALK'];
       } else {
-        process.env['FS_ALLOW_CWD_WALK'] = ORIG_WALK;
+        process.env['ALLOW_CWD_WALK'] = ORIG_WALK;
       }
       await rm(tempDir, { recursive: true, force: true });
     }

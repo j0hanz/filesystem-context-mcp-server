@@ -21,8 +21,15 @@ applyBridgeFlags(process.argv.slice(2));
 
 // Dynamically import all modules that transitively load util.ts so that the
 // bridge flags above are in effect when their module-level constants are set.
-const { CliExitError, parseArgs, runPrintConfig, allowPath, disallowPath, listAllowedPaths } =
-  await import('./cli.js');
+const {
+  CliExitError,
+  parseArgs,
+  runPrintConfig,
+  allowPath,
+  disallowPath,
+  listAllowedPaths,
+  manageConfig,
+} = await import('./cli.js');
 const { shutdownWorkerPool } = await import('./core/concurrency.js');
 const { shutdownSearchWorkerPool } = await import('./core/search/engine.js');
 const { logRuntimeFailure } = await import('./core/observability.js');
@@ -117,8 +124,11 @@ async function main(): Promise<void> {
   let readOnly: boolean;
   let printConfig: boolean;
   let json: boolean;
-  let subcommand: 'allow' | 'disallow' | 'list-allowed' | undefined;
+  let subcommand: 'allow' | 'disallow' | 'list-allowed' | 'config' | undefined;
   let subcommandPath: string | undefined;
+  let configAction: 'set' | 'get' | 'list' | 'reset' | undefined;
+  let configKey: string | undefined;
+  let configValue: string | undefined;
   let client: string | undefined;
   let config: string | undefined;
   let serverName: string | undefined;
@@ -135,6 +145,9 @@ async function main(): Promise<void> {
       json,
       subcommand,
       subcommandPath,
+      configAction,
+      configKey,
+      configValue,
       client,
       config,
       serverName,
@@ -163,6 +176,16 @@ async function main(): Promise<void> {
           throw new CliExitError('Path is required', 1);
         }
         await disallowPath(subcommandPath, { client, config, serverName, dryRun });
+      } else if (subcommand === 'config') {
+        if (!configAction) {
+          throw new CliExitError('Usage: config <set|get|list|reset> [key] [value]', 1);
+        }
+        await manageConfig(configAction, configKey, configValue, {
+          client,
+          config,
+          serverName,
+          dryRun,
+        });
       } else {
         const allowed = await listAllowedPaths({ client, config, serverName });
         if (json) {
@@ -190,7 +213,7 @@ async function main(): Promise<void> {
   }
 
   if (printConfig) {
-    const apiKey = process.env['FILESYSTEM_MCP_API_KEY'];
+    const apiKey = process.env['API_KEY'];
     await runPrintConfig({
       allowedDirs,
       allowCwd,

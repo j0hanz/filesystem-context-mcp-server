@@ -394,15 +394,15 @@ filesystem-mcp /path/to/project1 /path/to/project2
 | `--walk-cwd`              | `false` | Walk up from CWD to find a project root; implies `--allow-cwd`                     |
 | `--allow-missing-roots`   | `false` | Start even if configured allowed directories do not exist                          |
 | `--port <n>`              | —       | Enable Streamable HTTP transport on the given port                                 |
-| `--http-host <host>`      | —       | HTTP server bind address (env: `FILESYSTEM_MCP_HTTP_HOST`)                         |
-| `--api-key <key>`         | —       | Require this API key on HTTP requests (env: `FILESYSTEM_MCP_API_KEY`)              |
+| `--http-host <host>`      | —       | HTTP server bind address (env: `HTTP_HOST`)                                        |
+| `--api-key <key>`         | —       | Require this API key on HTTP requests (env: `API_KEY`)                             |
 | `--read-only`             | `false` | Disable write tools: `create`, `edit`, `delete`, `move`, `replace_text`            |
 | `--safe`                  | `false` | Alias for `--read-only`                                                            |
 | `--deny <pattern>`        | —       | Block paths matching this pattern; repeatable                                      |
-| `--allow-sensitive`       | `false` | Allow access to sensitive system paths (env: `FS_CONTEXT_ALLOW_SENSITIVE`)         |
-| `--root-boundary <path>`  | —       | Require all allowed roots to fall under this path (env: `FS_ROOT_BOUNDARY`)        |
+| `--allow-sensitive`       | `false` | Allow access to sensitive system paths (env: `ALLOW_SENSITIVE`)                    |
+| `--root-boundary <path>`  | —       | Require all allowed roots to fall under this path (env: `ROOT_BOUNDARY`)           |
 | `--max-file-size <bytes>` | —       | Maximum file size for reads in bytes (env: `MAX_FILE_SIZE`)                        |
-| `--log-level <level>`     | `info`  | Log level: debug, info, warn, or error (env: `FILESYSTEM_MCP_LOG_LEVEL`)           |
+| `--log-level <level>`     | `info`  | Log level: debug, info, warn, or error (env: `LOG_LEVEL`)                          |
 | `--print-config`          | `false` | Print the active configuration and exit (use `--json` for machine-readable output) |
 | `--json`                  | `false` | Output `--print-config` as JSON                                                    |
 | `allow <path>`            | —       | CLI subcommand to authorize a path across client configurations                    |
@@ -411,18 +411,18 @@ filesystem-mcp /path/to/project1 /path/to/project2
 
 #### Environment variables
 
-| Variable                     | Purpose                                                                                   |
-| :--------------------------- | :---------------------------------------------------------------------------------------- |
-| `FS_ALLOWED_DIRS`            | Colon-separated (POSIX) or semicolon-separated (Windows) list of directories to allow.    |
-| `FS_ROOT_BOUNDARY`           | Path prefix all allowed roots must fall under (mirrors `--root-boundary`).                |
-| `FS_ALLOW_CWD_WALK`          | Set to any value to walk up from CWD to find a project root (mirrors `--walk-cwd`).       |
-| `FS_ALLOW_MISSING_ROOTS`     | Set to any value to start even if configured directories do not exist.                    |
-| `FS_CONTEXT_ALLOW_SENSITIVE` | Set to any value to allow access to sensitive system paths (mirrors `--allow-sensitive`). |
-| `FS_CONTEXT_DENYLIST`        | Comma-separated list of paths or patterns to block (mirrors `--deny`).                    |
-| `MAX_FILE_SIZE`              | Maximum file size for reads in bytes (mirrors `--max-file-size`).                         |
-| `FILESYSTEM_MCP_LOG_LEVEL`   | Log level: debug, info, warn, or error (mirrors `--log-level`).                           |
-| `FILESYSTEM_MCP_HTTP_HOST`   | HTTP server bind address (mirrors `--http-host`).                                         |
-| `FILESYSTEM_MCP_API_KEY`     | API key required on HTTP requests (mirrors `--api-key`).                                  |
+| Variable              | Purpose                                                                                   |
+| :-------------------- | :---------------------------------------------------------------------------------------- |
+| `FS_ALLOWED_DIRS`     | Colon-separated (POSIX) or semicolon-separated (Windows) list of directories to allow.    |
+| `ROOT_BOUNDARY`       | Path prefix all allowed roots must fall under (mirrors `--root-boundary`).                |
+| `ALLOW_CWD_WALK`      | Set to any value to walk up from CWD to find a project root (mirrors `--walk-cwd`).       |
+| `ALLOW_MISSING_ROOTS` | Set to any value to start even if configured directories do not exist.                    |
+| `ALLOW_SENSITIVE`     | Set to any value to allow access to sensitive system paths (mirrors `--allow-sensitive`). |
+| `DENYLIST`            | Comma-separated list of paths or patterns to block (mirrors `--deny`).                    |
+| `MAX_FILE_SIZE`       | Maximum file size for reads in bytes (mirrors `--max-file-size`).                         |
+| `LOG_LEVEL`           | Log level: debug, info, warn, or error (mirrors `--log-level`).                           |
+| `HTTP_HOST`           | HTTP server bind address (mirrors `--http-host`).                                         |
+| `API_KEY`             | API key required on HTTP requests (mirrors `--api-key`).                                  |
 
 ### Examples
 
