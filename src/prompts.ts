@@ -126,7 +126,7 @@ function linkToPath(absPath: string): PromptMessage {
   return { role: 'user', content };
 }
 
-function wrapHandler<T>(
+async function wrapHandler<T>(
   contract: PromptContract,
   options: PromptRegistrationOptions,
   requiresInit: boolean,
@@ -140,7 +140,7 @@ function wrapHandler<T>(
   }
   const displayName = getDisplayName(contract);
 
-  return withTelemetry(
+  return await withTelemetry(
     {
       event: 'prompt_complete',
       prompt_name: contract.name,
@@ -156,10 +156,14 @@ function wrapHandler<T>(
         return result;
       } catch (error) {
         if (error instanceof ProtocolError) throw error;
-        throw new ProtocolError(
-          ProtocolErrorCode.InvalidRequest,
-          error instanceof Error ? error.message : String(error),
-        );
+        const message = error instanceof Error ? error.message : String(error);
+        Logger.error(`Prompt handler failed: ${message}`, {
+          promptName: contract.name,
+          error,
+        });
+        const protocolError = new ProtocolError(ProtocolErrorCode.InvalidRequest, message);
+        protocolError.cause = error;
+        throw protocolError;
       }
     },
   );
@@ -194,7 +198,11 @@ const GET_HELP: PromptEntry = {
       ),
       ({ topic }: { topic?: string | undefined }): GetPromptResult | Promise<GetPromptResult> =>
         wrapHandler(GET_HELP.contract, options, false, () => {
-          const section = topic ? INSTRUCTION_SECTIONS[topic.toLowerCase()] : undefined;
+          const lowerTopic = topic?.toLowerCase();
+          const section =
+            lowerTopic && Object.hasOwn(INSTRUCTION_SECTIONS, lowerTopic)
+              ? INSTRUCTION_SECTIONS[lowerTopic]
+              : undefined;
           if (topic && !section) {
             Logger.debug('get-help: unknown topic requested', { topic });
           }
