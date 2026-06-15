@@ -29,6 +29,10 @@ const IS_WINDOWS = process.platform === 'win32';
 const CLI_VALIDATE_CONCURRENCY = 8;
 const ENV_DIR_SEP = IS_WINDOWS ? ';' : ':';
 
+// ════════════════════════════════════════════════════════════
+// Path & Config Utilities — pure functions and error types
+// ════════════════════════════════════════════════════════════
+
 const CONFIG_KEY_MAP: Record<string, string> = {
   logLevel: 'LOG_LEVEL',
   httpHost: 'HTTP_HOST',
@@ -150,6 +154,10 @@ interface HelpRow {
   flags: string;
   desc: string;
 }
+
+// ════════════════════════════════════════════════════════════
+// CLI Display & Argument Parsing — impure, calls process.exit
+// ════════════════════════════════════════════════════════════
 
 const OPTIONS_HELP: HelpRow[] = [
   { flags: '-h, --help', desc: 'Show this help message' },
@@ -440,6 +448,10 @@ export async function parseArgs(): Promise<{
     throw new CliExitError(normalizeCliExitMessage(error), 1);
   }
 }
+
+// ════════════════════════════════════════════════════════════
+// Config File Management — reads/writes MCP client config files
+// ════════════════════════════════════════════════════════════
 
 export interface EffectiveConfig {
   transport: string;

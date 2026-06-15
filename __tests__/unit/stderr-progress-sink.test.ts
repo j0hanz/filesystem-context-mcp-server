@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 
 import type { ProgressCtx } from '../../src/core/fmt.js';
-import { StderrProgressSink } from '../../src/core/observability.js';
+import { StderrProgressSink } from '../../src/tools/define.js';
 
 const ANSI_ESCAPE_RE = new RegExp(String.raw`\x1b\[[0-9;]*m`, 'g');
 
