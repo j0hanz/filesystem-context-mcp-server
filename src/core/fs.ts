@@ -254,11 +254,35 @@ function hasUtf16Bom(slice: Buffer): boolean {
   );
 }
 
+function stripTrailingTruncatedUtf8(buf: Buffer): Buffer {
+  const len = buf.length;
+  const maxSearch = Math.min(3, len);
+  for (let i = 1; i <= maxSearch; i++) {
+    const byte = buf[len - i];
+    if (byte === undefined) continue;
+    if ((byte & 0xc0) === 0xc0) {
+      let expectedLength = 0;
+      if ((byte & 0xe0) === 0xc0) expectedLength = 2;
+      else if ((byte & 0xf0) === 0xe0) expectedLength = 3;
+      else if ((byte & 0xf8) === 0xf0) expectedLength = 4;
+
+      if (i < expectedLength) {
+        return buf.subarray(0, len - i);
+      }
+      break;
+    }
+    if ((byte & 0x80) === 0x00) {
+      break;
+    }
+  }
+  return buf;
+}
+
 function isBinarySlice(slice: Buffer): boolean {
   if (slice.length === 0) return false;
   if (hasUtf16Bom(slice)) return false;
   if (slice.includes(0)) return true;
-  return !isUtf8(slice);
+  return !isUtf8(stripTrailingTruncatedUtf8(slice));
 }
 
 async function isProbablyBinary(
@@ -727,7 +751,7 @@ async function readTailContent(
     }
 
     if (hasMoreLines || lines.length >= tail) {
-      hasMoreLines = true;
+      hasMoreLines = hasMoreLines || position > 0 || remainingContent.length > 0;
       break;
     }
   }
@@ -1238,7 +1262,11 @@ export async function isEntryAccessibleByType(
   } catch (error) {
     if (
       isNodeError(error) &&
-      (error.code === 'ENOENT' || error.code === 'EACCES' || error.code === 'ELOOP')
+      (error.code === 'ENOENT' ||
+        error.code === 'EACCES' ||
+        error.code === 'ELOOP' ||
+        error.code === 'ACCESS_DENIED' ||
+        error.code === 'SYMLINK_NOT_ALLOWED')
     ) {
       return false;
     }

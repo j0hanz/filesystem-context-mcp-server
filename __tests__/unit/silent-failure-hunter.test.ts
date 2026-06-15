@@ -5,7 +5,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-import { atomicWriteFile, isIgnoredByGitignore, loadRootGitignore } from '../../src/core/fs.js';
+import {
+  atomicWriteFile,
+  GuardedFileSystem,
+  isIgnoredByGitignore,
+  loadRootGitignore,
+} from '../../src/core/fs.js';
 import { PathGuard } from '../../src/core/path.js';
 
 describe('silent-failure-hunter fixes', () => {
@@ -83,6 +88,49 @@ describe('silent-failure-hunter fixes', () => {
       // Mock validatePathForWrite to return target
       const { validPath } = await atomicWriteFile(target, 'content', pg);
       assert.equal(validPath.toLowerCase(), target.toLowerCase());
+    });
+  });
+
+  describe('isProbablyBinary (boundary UTF-8 split)', () => {
+    it('does not classify a text file with emoji at boundary as binary', async () => {
+      const target = join(tempDir, 'boundary-emoji.txt');
+      const content = 'a'.repeat(511) + '😊';
+      await writeFile(target, content, 'utf8');
+
+      const pg = await PathGuard.fromAllowedDirectories([tempDir]);
+      const gfs = new GuardedFileSystem(pg);
+
+      const result = await gfs.readFile(target, { kind: 'full', skipBinary: true });
+      assert.equal(result.content, content);
+      assert.equal(result.truncated, false);
+    });
+  });
+
+  describe('readTailContent (hasMoreLines accuracy)', () => {
+    it('reports hasMoreLines as false when exactly tail lines are requested and read', async () => {
+      const target = join(tempDir, 'tail-exact.txt');
+      const lines = ['line 1', 'line 2', 'line 3'];
+      await writeFile(target, lines.join('\n'), 'utf8');
+
+      const pg = await PathGuard.fromAllowedDirectories([tempDir]);
+      const gfs = new GuardedFileSystem(pg);
+
+      const result = await gfs.readFile(target, { kind: 'tail', lines: 3 });
+      assert.equal(result.content, lines.join('\n'));
+      assert.equal(result.hasMoreLines, false);
+    });
+
+    it('reports hasMoreLines as true when more lines exist than requested tail', async () => {
+      const target = join(tempDir, 'tail-more.txt');
+      const lines = ['line 1', 'line 2', 'line 3', 'line 4'];
+      await writeFile(target, lines.join('\n'), 'utf8');
+
+      const pg = await PathGuard.fromAllowedDirectories([tempDir]);
+      const gfs = new GuardedFileSystem(pg);
+
+      const result = await gfs.readFile(target, { kind: 'tail', lines: 3 });
+      assert.equal(result.content, ['line 2', 'line 3', 'line 4'].join('\n'));
+      assert.equal(result.hasMoreLines, true);
     });
   });
 });
