@@ -160,7 +160,7 @@ function buildExecutionCtx(
     ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
     ...(ctx._meta ? { _meta: ctx._meta } : {}),
     pathGuard: ctx.pathGuard,
-    fs: new GuardedFileSystem(ctx.pathGuard),
+    fs: ctx.fs,
     resourceStore: ctx.resourceStore,
     ...(ctx.server ? { server: ctx.server } : {}),
     ...(ctxLog

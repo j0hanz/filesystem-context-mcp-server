@@ -33,7 +33,6 @@ import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_RESULTS,
   DEFAULT_SEARCH_TIMEOUT_MS,
-  MAX_SEARCH_DEPTH,
   MAX_SEARCH_RESULTS,
   MAX_TEXT_FILE_SIZE,
   PARALLEL_CONCURRENCY,
@@ -43,6 +42,7 @@ import {
   FileKind,
   includeHiddenField,
   includeIgnoredField,
+  maxDepthField,
   NonNegInt,
   OptionalPath,
   PerFileErrorSchema,
@@ -99,12 +99,7 @@ const SearchAndReplaceInputSchema = z.strictObject({
     .max(MAX_SEARCH_RESULTS)
     .optional()
     .describe('Maximum number of files to process'),
-  maxDepth: z
-    .uint32()
-    .min(0)
-    .max(MAX_SEARCH_DEPTH)
-    .optional()
-    .describe('Max directory depth to scan; 0 = base directory only, omit for unlimited'),
+  maxDepth: maxDepthField(),
 });
 
 const SearchAndReplaceOutputSchema = z.strictObject({

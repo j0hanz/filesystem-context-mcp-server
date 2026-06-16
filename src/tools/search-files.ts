@@ -36,7 +36,6 @@ import {
   DEFAULT_SEARCH_MAX_FILES,
   DEFAULT_SEARCH_RESULTS,
   DEFAULT_SEARCH_TIMEOUT_MS,
-  MAX_SEARCH_DEPTH,
   MAX_SEARCH_RESULTS,
 } from '../core/util.js';
 import {
@@ -44,6 +43,7 @@ import {
   includeHiddenField,
   includeIgnoredField,
   IsoDateTime,
+  maxDepthField,
   NextCursorSchema,
   NonNegInt,
   OptionalPath,
@@ -480,12 +480,7 @@ const SearchFilesInputSchema = z.strictObject({
     .describe(
       'Sort order: path = full path (default), name = basename only, size = bytes descending, modified = newest first',
     ),
-  maxDepth: z
-    .uint32()
-    .min(0)
-    .max(MAX_SEARCH_DEPTH)
-    .optional()
-    .describe('Max directory depth to scan; 0 = base directory only, omit for unlimited'),
+  maxDepth: maxDepthField(),
   cursor: CursorSchema,
 });
 

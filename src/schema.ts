@@ -1,6 +1,7 @@
 import * as z from 'zod/v4';
 
 import { isSafeGlobSyntax } from './core/path.js';
+import { MAX_SEARCH_DEPTH } from './core/util.js';
 
 // Runtime: full ISO-8601 UTC; format pattern stripped by post-processor on the wire.
 export const IsoDateTime = z.iso.datetime().meta({
@@ -307,6 +308,13 @@ export const includeHiddenField = () =>
   defaultFalseBoolean('Include hidden items (starting with .)');
 export const includeIgnoredField = () =>
   defaultFalseBoolean('Include ignored items (node_modules, .git, etc).');
+export const maxDepthField = () =>
+  z
+    .uint32()
+    .min(0)
+    .max(MAX_SEARCH_DEPTH)
+    .optional()
+    .describe('Max directory depth to scan; 0 = base directory only, omit for unlimited');
 
 const DEFAULT_MAX_BATCH = 1000;
 

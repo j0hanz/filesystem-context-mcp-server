@@ -21,7 +21,6 @@ import {
   DEFAULT_SEARCH_CONTENT_RESULTS,
   DEFAULT_SEARCH_MAX_FILES,
   DEFAULT_SEARCH_TIMEOUT_MS,
-  MAX_SEARCH_DEPTH,
   MAX_SEARCH_RESULTS,
   MAX_SEARCHABLE_FILE_SIZE,
   omitOptionKeys,
@@ -32,6 +31,7 @@ import {
   defaultFalseBoolean,
   includeHiddenField,
   includeIgnoredField,
+  maxDepthField,
   NextCursorSchema,
   NonNegInt,
   OptionalPath,
@@ -410,12 +410,7 @@ const GrepInputSchema = z.strictObject({
     .optional()
     .default(DEFAULT_SEARCH_CONTENT_RESULTS)
     .describe('Maximum number of matching lines to return per page'),
-  maxDepth: z
-    .uint32()
-    .min(0)
-    .max(MAX_SEARCH_DEPTH)
-    .optional()
-    .describe('Max directory depth to scan; 0 = base directory only, omit for unlimited'),
+  maxDepth: maxDepthField(),
   cursor: CursorSchema,
 });
 
