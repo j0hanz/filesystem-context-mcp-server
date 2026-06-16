@@ -258,4 +258,41 @@ describe('resolveSuggestion', () => {
     );
     assert.equal(s, 'provide a name');
   });
+
+  it('finds meta suggestion through multiple layers (optional + refine)', () => {
+    const schema = z.strictObject({
+      name: z.optional(
+        z
+          .string()
+          .meta({ suggestion: 'deep meta' })
+          .refine((s) => s.length > 0),
+      ),
+    });
+    const s = resolveSuggestion(
+      {
+        code: ErrorCode.VALIDATION_FAILED,
+        issues: [{ path: ['name'], code: 'invalid_type', message: 'Expected string' }],
+      },
+      schema,
+    );
+    assert.equal(s, 'deep meta');
+  });
+
+  it('finds meta suggestion through triple layers (optional + nullable + object)', () => {
+    const schema = z.optional(
+      z.nullable(
+        z.strictObject({
+          name: z.string().meta({ suggestion: 'triple meta' }),
+        }),
+      ),
+    );
+    const s = resolveSuggestion(
+      {
+        code: ErrorCode.VALIDATION_FAILED,
+        issues: [{ path: ['name'], code: 'invalid_type', message: 'Expected string' }],
+      },
+      schema,
+    );
+    assert.equal(s, 'triple meta');
+  });
 });

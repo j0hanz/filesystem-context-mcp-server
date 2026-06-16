@@ -1097,15 +1097,27 @@ export class PathGuard {
       );
     }
 
-    // Resolve the final component when it exists so a symlink pointing outside
-    // the sandbox (e.g. /allowed/link -> /etc) is caught before deletion.
-    let realTarget: string | null = null;
+    // Resolve the final component when it exists. For deletion, we ONLY
+    // block if the real target is outside the sandbox IF the target is
+    // NOT a symlink. Deleting a symlink is safe even if it points outside.
     try {
-      realTarget = normalizePath(await realpath(normalizedRequested));
-    } catch {
-      // ENOENT — target does not exist; parent check above is sufficient.
-    }
-    if (realTarget !== null) {
+      const stats = await lstat(normalizedRequested);
+      if (stats.isSymbolicLink()) {
+        // Symlink: check link sensitivity but don't resolve target.
+        // The parent check above ensures the link itself is in an allowed root.
+        if (this.isSensitive(normalizedRequested)) {
+          throw new FsError(
+            ErrorCode.ACCESS_DENIED,
+            'Sensitive file blocked. Set ALLOW_SENSITIVE=1 to override.',
+            requestedPath,
+          );
+        }
+        return normalizedRequested as ValidatedPath;
+      }
+
+      // Not a symlink: resolve to catch path escapes (e.g. /allowed/dir/../../etc)
+      // and block sensitive files.
+      const realTarget = normalizePath(await realpath(normalizedRequested));
       if (!isPathWithinDirectories(realTarget, allowedDirs)) {
         throw new FsError(
           ErrorCode.ACCESS_DENIED,
@@ -1121,6 +1133,8 @@ export class PathGuard {
         );
       }
       return realTarget as ValidatedPath;
+    } catch {
+      // ENOENT or other error; parent check is sufficient for non-existent paths.
     }
     return normalizedRequested as ValidatedPath;
   }

@@ -390,6 +390,40 @@ describe('security: symlink escape for destructive ops', () => {
   });
 });
 
+// ─── Sensitive file blocking ────────────────────────────────────────────────
+
+describe('security: sensitive file blocking', () => {
+  let env: TestEnv;
+
+  before(async () => {
+    env = await createTestEnv();
+    await writeFile(join(env.tmpDir, '.env'), 'SECRET=1', 'utf8');
+  });
+
+  after(async () => {
+    await env.cleanup();
+  });
+
+  it('move: rejects renaming a sensitive file', async () => {
+    const raw = await env.client.callTool({
+      name: 'move',
+      arguments: {
+        moves: [{ source: join(env.tmpDir, '.env'), destination: join(env.tmpDir, '.env.bak') }],
+      },
+    });
+    assertOk(raw);
+    const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
+    assert.ok(
+      Array.isArray(sc?.['failures']) && sc['failures'].length > 0,
+      'move must report ACCESS_DENIED for sensitive file',
+    );
+    assert.equal(
+      (sc?.['failures'] as { error: { code: string } }[])[0]?.error?.code,
+      'ACCESS_DENIED',
+    );
+  });
+});
+
 // ─── list: symlink target boundary enforcement ───────────────────────────────
 
 describe('security: list hides symlinks escaping the allowed root', () => {

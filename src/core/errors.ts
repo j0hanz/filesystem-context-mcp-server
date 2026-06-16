@@ -155,16 +155,28 @@ function getZodDef(schema: z.ZodType): ZodDef | undefined {
 }
 
 function descend(schema: z.ZodType, segment: string | number): z.ZodType | undefined {
-  let target: z.ZodType = schema;
-  const wrapDef = getZodDef(target);
-  if (wrapDef?.innerType) target = wrapDef.innerType;
-  else if (wrapDef?.schema) target = wrapDef.schema;
-  const def = getZodDef(target);
-  if (!def) return undefined;
-  if (typeof segment === 'string' && def.shape !== undefined && segment in def.shape) {
-    return def.shape[segment];
+  let target: z.ZodType | undefined = schema;
+  while (target) {
+    const def = getZodDef(target);
+    if (!def) {
+      return undefined;
+    }
+
+    if (typeof segment === 'string' && def.shape !== undefined && segment in def.shape) {
+      return def.shape[segment];
+    }
+    if (typeof segment === 'number' && def.type !== undefined) {
+      return def.type;
+    }
+
+    if (def.innerType) {
+      target = def.innerType;
+    } else if (def.schema) {
+      target = def.schema;
+    } else {
+      target = undefined;
+    }
   }
-  if (typeof segment === 'number' && def.type !== undefined) return def.type;
   return undefined;
 }
 
