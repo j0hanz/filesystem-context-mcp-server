@@ -145,9 +145,13 @@ interface ZodDef {
 function getZodDef(schema: z.ZodType): ZodDef | undefined {
   if (typeof schema !== 'object') return undefined;
   if (!('_def' in schema)) return undefined;
-  const def: unknown = (schema as { _def: unknown })._def;
-  if (def === null || typeof def !== 'object') return undefined;
-  return def;
+  try {
+    const def: unknown = (schema as { _def: unknown })._def;
+    if (def === null || typeof def !== 'object') return undefined;
+    return def;
+  } catch {
+    return undefined;
+  }
 }
 
 function descend(schema: z.ZodType, segment: string | number): z.ZodType | undefined {

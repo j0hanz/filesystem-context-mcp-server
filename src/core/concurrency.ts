@@ -169,7 +169,7 @@ interface PoolWorker {
   startedReady: boolean;
 }
 
-class FastQueue<T> {
+class FastQueue<T extends NonNullable<unknown>> {
   private items: (T | undefined)[] = [];
   private head = 0;
   private _size = 0;

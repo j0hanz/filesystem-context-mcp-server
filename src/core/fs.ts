@@ -1222,10 +1222,15 @@ export function stableSortByDerivedString<T>(
   const sortedItems = new Array<T>(len);
   for (let i = 0; i < len; i++) {
     const idx = indices[i];
-    sortedItems[i] = items[idx ?? 0] as T;
+    if (idx === undefined)
+      throw new Error('stableSortByDerivedString: sort invariant violated — undefined index');
+    sortedItems[i] = items[idx] as T;
   }
   for (let i = 0; i < len; i++) {
-    items[i] = sortedItems[i] as T;
+    const item = sortedItems[i];
+    if (item === undefined)
+      throw new Error('stableSortByDerivedString: sort invariant violated — undefined item');
+    items[i] = item;
   }
 }
 
@@ -1928,20 +1933,7 @@ export async function* globEntries(options: GlobEntriesOptions): AsyncGenerator<
   }
 }
 
-interface GlobConfig {
-  cwd: string;
-  pattern: string;
-  excludePatterns?: readonly string[];
-  includeHidden?: boolean;
-  baseNameMatch?: boolean;
-  caseSensitiveMatch?: boolean;
-  followSymbolicLinks?: boolean;
-  onlyFiles?: boolean;
-  stats?: boolean;
-  maxDepth?: number;
-  suppressErrors?: boolean;
-  respectGitignore?: boolean;
-}
+type GlobConfig = Partial<GlobEntriesOptions> & Pick<GlobEntriesOptions, 'cwd' | 'pattern'>;
 
 export function buildGlobOptions(config: GlobConfig): Parameters<typeof globEntries>[0] {
   const options: Parameters<typeof globEntries>[0] = {

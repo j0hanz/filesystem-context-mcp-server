@@ -149,7 +149,7 @@ function classifyTypeCounts(results: readonly PerPathResult<FileInfo>[]): {
   let fileCount = 0;
   let dirCount = 0;
   for (const result of results) {
-    if (result.value === undefined) continue;
+    if ('error' in result) continue;
     if (result.value.type === 'directory') dirCount += 1;
     else fileCount += 1;
   }
@@ -157,10 +157,15 @@ function classifyTypeCounts(results: readonly PerPathResult<FileInfo>[]): {
 }
 
 function toStatPerPathPayload(r: PerPathResult<FileInfo>): z.infer<typeof StatPerPathSchema> {
+  if ('error' in r) {
+    return {
+      path: r.path,
+      error: r.error,
+    };
+  }
   return {
     path: r.path,
-    ...(r.value ? { value: buildFileInfoPayload(r.value) } : {}),
-    ...(r.error ? { error: r.error } : {}),
+    value: buildFileInfoPayload(r.value),
   };
 }
 

@@ -560,20 +560,11 @@ function toEditPerPathPayload(
     resourceLink?: ContentBlock;
   }>,
 ): { perPath: z.infer<typeof EditPerPathSchema>; resourceLink?: ContentBlock } {
-  if (r.error) {
+  if ('error' in r) {
     return { perPath: { path: r.path, error: r.error } };
   }
 
   const inner = r.value;
-  if (!inner) {
-    return {
-      perPath: {
-        path: r.path,
-        error: { code: ErrorCode.UNKNOWN, message: 'Unknown edit failure', path: r.path },
-      },
-    };
-  }
-
   const s = inner.structured;
   const value: z.infer<typeof PerFileResultSchema> = {
     path: s.path ?? r.path,

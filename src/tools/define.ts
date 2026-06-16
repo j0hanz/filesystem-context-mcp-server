@@ -38,11 +38,7 @@ export interface PerPathError {
   suggestion?: string;
 }
 
-export interface PerPathResult<T> {
-  path: string;
-  value?: T;
-  error?: PerPathError;
-}
+export type PerPathResult<T> = { path: string; value: T } | { path: string; error: PerPathError };
 
 export interface BatchResult<T> {
   results: PerPathResult<T>[];
@@ -116,7 +112,7 @@ export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
 export interface DefinedTool extends Tool {
   readonly nuances: readonly string[];
   readonly gotchas: readonly string[];
-  readonly _def?: unknown;
+  readonly _def?: ToolDef<z.ZodType, z.ZodType>;
 
   register(deps: ToolDeps): void;
 }
@@ -233,6 +229,10 @@ function tryMeasureBytes(value: unknown): number | undefined {
   }
 }
 
+/**
+ * The cast `result.structured as Record<string, unknown>` is required by the MCP SDK's `CallToolResult.structuredContent` type.
+ * Callers MUST ensure tool output schemas resolve to object types (not primitives), otherwise the cast is silently unsound.
+ */
 function buildSuccessResponse<O>(result: RunResult<O>): CallToolResult {
   const text = result.text ?? JSON.stringify(result.structured);
   const content: ContentBlock[] = [{ type: 'text' as const, text }, ...(result.resources ?? [])];
@@ -886,11 +886,10 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
 
 // ============ Batch Execution ============
 
-interface BatchInput<TOverride> {
-  path?: string | undefined;
-  paths?: string[] | undefined;
-  files?: ({ path: string } & TOverride)[] | undefined;
-}
+type BatchInput<TOverride> =
+  | { path: string }
+  | { paths: string[] }
+  | { files: ({ path: string } & TOverride)[] };
 
 interface RunOverPathsOptions {
   defaultErrorCode?: ErrorCode;
@@ -900,18 +899,19 @@ interface RunOverPathsOptions {
 function normalizeBatchItems<TOverride>(
   args: BatchInput<TOverride>,
 ): { path: string; override?: TOverride }[] {
-  if (args.path !== undefined) {
+  if ('path' in args) {
     return [{ path: args.path }];
   }
-  if (args.paths !== undefined) {
+  if ('paths' in args) {
     return args.paths.map((path) => ({ path }));
   }
-  if (args.files !== undefined) {
+  if ('files' in args) {
     return args.files.map(({ path, ...rest }) => ({
       path,
       override: rest as unknown as TOverride,
     }));
   }
+  // For invalid input not matching the discriminated union
   return [];
 }
 
@@ -970,7 +970,7 @@ export async function runOverPaths<TOverride, TPerPath>(
 
   let succeeded = 0;
   for (const result of results) {
-    if (result.error === undefined) succeeded += 1;
+    if (!('error' in result)) succeeded += 1;
   }
 
   return {

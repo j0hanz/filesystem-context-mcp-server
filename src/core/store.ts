@@ -23,10 +23,18 @@ interface BlobResourceEntry extends ResourceEntryBase {
 }
 
 export interface ResourceStore {
-  putText(params: { name: string; mimeType?: string; text: string }): TextResourceEntry;
-  getText(uri: string): TextResourceEntry;
-  putBlob(params: { name: string; mimeType: string; data: Buffer }): BlobResourceEntry;
-  getBlob(uri: string): BlobResourceEntry;
+  putText(params: {
+    name: string;
+    mimeType?: string;
+    text: string;
+  }): TextResourceEntry & { kind: 'text' };
+  getText(uri: string): TextResourceEntry & { kind: 'text' };
+  putBlob(params: {
+    name: string;
+    mimeType: string;
+    data: Buffer;
+  }): BlobResourceEntry & { kind: 'blob' };
+  getBlob(uri: string): BlobResourceEntry & { kind: 'blob' };
   getEntry(uri: string): StoredEntry;
   clear(): void;
   keys(): string[];
@@ -206,7 +214,11 @@ class RawStore implements InternalStore {
     return entry;
   }
 
-  putText(params: { name: string; mimeType?: string; text: string }): TextResourceEntry {
+  putText(params: {
+    name: string;
+    mimeType?: string;
+    text: string;
+  }): TextResourceEntry & { kind: 'text' } {
     return this._put(
       'text',
       { name: params.name, mimeType: params.mimeType ?? 'text/plain', data: params.text },
@@ -221,7 +233,11 @@ class RawStore implements InternalStore {
     return entry;
   }
 
-  putBlob(params: { name: string; mimeType: string; data: Buffer }): BlobResourceEntry {
+  putBlob(params: {
+    name: string;
+    mimeType: string;
+    data: Buffer;
+  }): BlobResourceEntry & { kind: 'blob' } {
     return this._put(
       'blob',
       { name: params.name, mimeType: params.mimeType, data: params.data },
@@ -229,7 +245,7 @@ class RawStore implements InternalStore {
     ) as BlobResourceEntry & { kind: 'blob' };
   }
 
-  getBlob(uri: string): BlobResourceEntry {
+  getBlob(uri: string): BlobResourceEntry & { kind: 'blob' } {
     const entry = this.getEntry(uri);
     if (entry.kind !== 'blob')
       throw new FsError(ErrorCode.NOT_FOUND, `Resource is not blob: ${uri}`);
@@ -284,10 +300,18 @@ abstract class WrappedStore implements InternalStore {
   }
 
   abstract removeEntry(uri: string, reason?: CacheEvictionReason): StoredEntry | undefined;
-  abstract putText(params: { name: string; mimeType?: string; text: string }): TextResourceEntry;
-  abstract getText(uri: string): TextResourceEntry;
-  abstract putBlob(params: { name: string; mimeType: string; data: Buffer }): BlobResourceEntry;
-  abstract getBlob(uri: string): BlobResourceEntry;
+  abstract putText(params: {
+    name: string;
+    mimeType?: string;
+    text: string;
+  }): TextResourceEntry & { kind: 'text' };
+  abstract getText(uri: string): TextResourceEntry & { kind: 'text' };
+  abstract putBlob(params: {
+    name: string;
+    mimeType: string;
+    data: Buffer;
+  }): BlobResourceEntry & { kind: 'blob' };
+  abstract getBlob(uri: string): BlobResourceEntry & { kind: 'blob' };
   abstract getEntry(uri: string): StoredEntry;
   abstract clear(): void;
   abstract keys(): string[];
@@ -317,7 +341,7 @@ class DiagnosticStore extends WrappedStore {
     mimeType?: string;
     text: string;
   }): TextResourceEntry & { kind: 'text' } {
-    const entry = this.wrapped.putText(params) as TextResourceEntry & { kind: 'text' };
+    const entry = this.wrapped.putText(params);
     publishResourceStoreDiagnostics({
       phase: 'cache_store',
       uri: entry.uri,
@@ -328,7 +352,7 @@ class DiagnosticStore extends WrappedStore {
   }
 
   getText(uri: string): TextResourceEntry & { kind: 'text' } {
-    return this.wrapped.getText(uri) as TextResourceEntry & { kind: 'text' };
+    return this.wrapped.getText(uri);
   }
 
   putBlob(params: {
@@ -336,7 +360,7 @@ class DiagnosticStore extends WrappedStore {
     mimeType: string;
     data: Buffer;
   }): BlobResourceEntry & { kind: 'blob' } {
-    const entry = this.wrapped.putBlob(params) as BlobResourceEntry & { kind: 'blob' };
+    const entry = this.wrapped.putBlob(params);
     publishResourceStoreDiagnostics({
       phase: 'cache_store',
       uri: entry.uri,
@@ -347,7 +371,7 @@ class DiagnosticStore extends WrappedStore {
   }
 
   getBlob(uri: string): BlobResourceEntry & { kind: 'blob' } {
-    return this.wrapped.getBlob(uri) as BlobResourceEntry & { kind: 'blob' };
+    return this.wrapped.getBlob(uri);
   }
 
   getEntry(uri: string): StoredEntry {
@@ -369,7 +393,7 @@ class DiagnosticStore extends WrappedStore {
     mimeType?: string;
     text: string;
   }): TextResourceEntry & { kind: 'text' } {
-    return this.wrapped.putText(params) as TextResourceEntry & { kind: 'text' };
+    return this.wrapped.putText(params);
   }
 
   putBlobSilent(params: {
@@ -377,7 +401,7 @@ class DiagnosticStore extends WrappedStore {
     mimeType: string;
     data: Buffer;
   }): BlobResourceEntry & { kind: 'blob' } {
-    return this.wrapped.putBlob(params) as BlobResourceEntry & { kind: 'blob' };
+    return this.wrapped.putBlob(params);
   }
 }
 
@@ -586,7 +610,7 @@ class EvictionStore extends WrappedStore {
     return entry;
   }
 
-  getBlob(uri: string): BlobResourceEntry {
+  getBlob(uri: string): BlobResourceEntry & { kind: 'blob' } {
     return this._getExisting(uri, 'blob') as BlobResourceEntry & { kind: 'blob' };
   }
 

@@ -22,6 +22,8 @@ import { Logger, logToSender } from './observability.js';
 import type { LoggingState, LogSender } from './observability.js';
 import { parseEnvDirList, parseTrueEnvFlag } from './primitives.js';
 
+export type ValidatedPath = string & { readonly __validated: unique symbol };
+
 const ROOTS_TIMEOUT_MS = 5000;
 export const LIFECYCLE_CHANNEL = channel('filesystem-mcp:lifecycle');
 
@@ -646,9 +648,9 @@ export class PathGuard {
     return isSafeGlobSyntax(pattern);
   }
 
-  async validateExistingPath(requestedPath: string): Promise<string> {
+  async validateExistingPath(requestedPath: string): Promise<ValidatedPath> {
     const details = await this.validateExistingPathDetailed(requestedPath);
-    return details.resolvedPath;
+    return details.resolvedPath as ValidatedPath;
   }
 
   private async checkAndPromptAccess(checkPath: string): Promise<boolean> {
@@ -1038,7 +1040,7 @@ export class PathGuard {
     }
   }
 
-  async validatePathForWrite(requestedPath: string): Promise<string> {
+  async validatePathForWrite(requestedPath: string): Promise<ValidatedPath> {
     const { normalizedRequested, allowedDirs, accessDeniedHint } =
       await this.validateAccessAndSensitivity(requestedPath);
 
@@ -1065,10 +1067,10 @@ export class PathGuard {
         requestedPath,
       );
     }
-    return resolvedTarget;
+    return resolvedTarget as ValidatedPath;
   }
 
-  async validatePathForDelete(requestedPath: string): Promise<string> {
+  async validatePathForDelete(requestedPath: string): Promise<ValidatedPath> {
     const { normalizedRequested, allowedDirs, accessDeniedHint } =
       await this.validateAccessAndSensitivity(requestedPath);
 
@@ -1118,9 +1120,9 @@ export class PathGuard {
           requestedPath,
         );
       }
-      return realTarget;
+      return realTarget as ValidatedPath;
     }
-    return normalizedRequested;
+    return normalizedRequested as ValidatedPath;
   }
 
   async recomputeAllowedDirectories(sender?: LogSender): Promise<void> {

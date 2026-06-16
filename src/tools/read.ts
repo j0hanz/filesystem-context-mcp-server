@@ -460,9 +460,10 @@ export const READ_FILE = defineTool({
       survivors = [...pathList];
     }
 
+    const firstSurvivor = survivors[0];
     const batchInput =
-      survivors.length === 1 && args.path !== undefined
-        ? { path: survivors[0] }
+      firstSurvivor !== undefined && survivors.length === 1 && args.path !== undefined
+        ? { path: firstSurvivor }
         : { paths: survivors };
 
     const batch = await runOverPaths<undefined, PerPathReadValue>(
@@ -485,7 +486,7 @@ export const READ_FILE = defineTool({
       );
     });
 
-    const failed = ordered.filter((r) => r.error !== undefined).length;
+    const failed = ordered.filter((r) => 'error' in r).length;
     const summary = {
       total: ordered.length,
       succeeded: ordered.length - failed,
@@ -494,7 +495,8 @@ export const READ_FILE = defineTool({
 
     const resources: ContentBlock[] = [];
     for (const result of ordered) {
-      if (!result.value?.resourceUri || !result.value.content) continue;
+      if ('error' in result) continue;
+      if (!result.value.resourceUri || !result.value.content) continue;
       resources.push({
         type: 'resource_link',
         uri: result.value.resourceUri,
@@ -505,14 +507,17 @@ export const READ_FILE = defineTool({
       });
     }
 
+    const [firstOrdered] = ordered;
     const text =
-      ordered.length === 1
-        ? (ordered[0]?.value?.content ?? ordered[0]?.error?.message ?? 'read failed')
+      ordered.length === 1 && firstOrdered !== undefined
+        ? 'error' in firstOrdered
+          ? firstOrdered.error.message
+          : (firstOrdered.value.content ?? 'read failed')
         : ordered
             .map((r) => {
               const header = `// ${r.path}`;
-              if (r.value?.content !== undefined) return `${header}\n${r.value.content}`;
-              return `${header}\n// Error: ${r.error?.message ?? 'unknown'}`;
+              if ('value' in r) return `${header}\n${r.value.content}`;
+              return `${header}\n// Error: ${r.error.message}`;
             })
             .join('\n\n');
 
