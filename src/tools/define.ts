@@ -542,89 +542,6 @@ class McpProgressSink implements ProgressSink {
   }
 }
 
-class ProgressTracker {
-  tickCount = 0;
-  private closed = false;
-  private readonly ctx: ProgressCtx;
-  private readonly mcpSink?: McpProgressSink;
-  private readonly stderrSink: StderrProgressSink;
-  private readonly session: ProgressSession;
-
-  constructor(
-    toolName: string,
-    ctx: ProgressCtx,
-    token: string | number | undefined,
-    notify: ((n: Notification) => Promise<void>) | undefined,
-  ) {
-    this.ctx = ctx;
-    this.stderrSink = new StderrProgressSink(ctx);
-
-    const sinks: ProgressSink[] = [this.stderrSink];
-    if (token !== undefined && notify !== undefined) {
-      this.mcpSink = new McpProgressSink(toolName, token, notify);
-      sinks.push(this.mcpSink);
-    }
-
-    const isTest = process.env['NODE_ENV'] === 'test' || process.execArgv.includes('--test');
-    this.session = new ProgressSession({
-      label: ctx.label,
-      sinks,
-      ...(isTest ? { rateLimitMs: 0 } : {}),
-      dynamicRateLimit: !isTest,
-    });
-  }
-
-  get progressCtx(): ProgressCtx {
-    return this.ctx;
-  }
-
-  get emittedCount(): number {
-    return this.mcpSink ? this.mcpSink.emittedCount : 0;
-  }
-
-  start(): void {
-    // No-op as ProgressSession constructor already emitted start tick.
-  }
-
-  tick(p: { current: number; total?: number }): void {
-    if (this.closed) return;
-    this.tickCount++;
-    const tickCtx: ProgressCtx = {
-      ...this.ctx,
-      current: p.current,
-      ...(p.total !== undefined ? { total: p.total } : {}),
-    };
-    const message = plainMessage('tick', tickCtx);
-    this.session.set({ ...p, message });
-  }
-
-  updateStderrError(errMsg: string): void {
-    this.stderrSink.updateCtx({ error: errMsg });
-  }
-
-  async closeWithDone(message: string): Promise<void> {
-    this.closed = true;
-    this.session.complete(message);
-    if (this.mcpSink) {
-      await this.mcpSink.flush();
-    }
-  }
-
-  async closeWithFail(error: unknown, message: string): Promise<void> {
-    this.closed = true;
-    this.session.fail(error, message);
-    if (this.mcpSink) {
-      await this.mcpSink.flush();
-    }
-  }
-
-  async flush(): Promise<void> {
-    if (this.mcpSink) {
-      await this.mcpSink.flush();
-    }
-  }
-}
-
 // ============ Tool Execution ============
 
 class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
@@ -634,41 +551,81 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
   readonly signal: AbortSignal;
   private readonly def: ToolDef<I, O>;
   private readonly parsedArgs: z.infer<I>;
-  private readonly tracker: ProgressTracker;
   private readonly toolCtx: ToolCtx;
 
   private outcome: 'success' | 'error' | 'cancelled' = 'success';
   private errorType: string | undefined;
   private errorMessage: string | undefined;
 
+  #progressClosed = false;
+  #progressTickCount = 0;
+  readonly #progressCtx: ProgressCtx;
+  readonly #mcpSink?: McpProgressSink;
+  readonly #stderrSink: StderrProgressSink;
+  readonly #progressSession: ProgressSession;
+
   constructor(toolName: string, ctx: ToolCtx, def: ToolDef<I, O>, parsedArgs: z.infer<I>) {
     this.def = def;
     this.parsedArgs = parsedArgs;
     this.signal = composeSignal(ctx.signal, def.timeoutMs);
-    const progressCtx = resolveProgressCtx(def, parsedArgs);
-    this.tracker = new ProgressTracker(
-      toolName,
-      progressCtx,
-      ctx._meta?.progressToken,
-      ctx.sendNotification,
-    );
-    this.toolCtx = buildExecutionCtx(ctx, this.signal, (p) => {
-      this.tracker.tick(p);
+    this.#progressCtx = resolveProgressCtx(def, parsedArgs);
+    this.#stderrSink = new StderrProgressSink(this.#progressCtx);
+    const sinks: ProgressSink[] = [this.#stderrSink];
+    if (ctx._meta?.progressToken !== undefined && ctx.sendNotification !== undefined) {
+      this.#mcpSink = new McpProgressSink(toolName, ctx._meta.progressToken, ctx.sendNotification);
+      sinks.push(this.#mcpSink);
+    }
+    const isTest = process.env['NODE_ENV'] === 'test' || process.execArgv.includes('--test');
+    this.#progressSession = new ProgressSession({
+      label: this.#progressCtx.label,
+      sinks,
+      ...(isTest ? { rateLimitMs: 0 } : {}),
+      dynamicRateLimit: !isTest,
     });
+    this.toolCtx = buildExecutionCtx(ctx, this.signal, (p) => {
+      this.#tick(p);
+    });
+  }
+
+  #tick(p: { current: number; total?: number }): void {
+    if (this.#progressClosed) return;
+    this.#progressTickCount++;
+    const tickCtx: ProgressCtx = {
+      ...this.#progressCtx,
+      current: p.current,
+      ...(p.total !== undefined ? { total: p.total } : {}),
+    };
+    this.#progressSession.set({ ...p, message: plainMessage('tick', tickCtx) });
+  }
+
+  async #closeWithDone(message: string): Promise<void> {
+    this.#progressClosed = true;
+    this.#progressSession.complete(message);
+    if (this.#mcpSink) await this.#mcpSink.flush();
+  }
+
+  async #closeWithFail(error: unknown, message: string): Promise<void> {
+    this.#progressClosed = true;
+    this.#progressSession.fail(error, message);
+    if (this.#mcpSink) await this.#mcpSink.flush();
+  }
+
+  async #flushProgress(): Promise<void> {
+    if (this.#mcpSink) await this.#mcpSink.flush();
   }
 
   private async completeProgress(result: z.infer<O>): Promise<void> {
     const doneCtx: ProgressCtx = this.def.progressDone
-      ? { ...this.tracker.progressCtx, ...this.def.progressDone(this.parsedArgs, result) }
-      : this.tracker.progressCtx;
-    await this.tracker.closeWithDone(plainMessage('done', doneCtx));
+      ? { ...this.#progressCtx, ...this.def.progressDone(this.parsedArgs, result) }
+      : this.#progressCtx;
+    await this.#closeWithDone(plainMessage('done', doneCtx));
   }
 
   private async failProgress(error: unknown): Promise<{ isError: true; content: ContentBlock[] }> {
     const errMsg = error instanceof Error ? error.message : String(error);
-    this.tracker.updateStderrError(errMsg);
-    const message = plainMessage('fail', { ...this.tracker.progressCtx, error: errMsg });
-    await this.tracker.closeWithFail(error, message);
+    this.#stderrSink.updateCtx({ error: errMsg });
+    const message = plainMessage('fail', { ...this.#progressCtx, error: errMsg });
+    await this.#closeWithFail(error, message);
     const { text: errorText } = Problem.toText(
       error,
       this.def.defaultErrorCode ?? ErrorCode.UNKNOWN,
@@ -747,7 +704,6 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
           let resultSizeBytes: number | undefined;
 
           try {
-            this.tracker.start();
             const result = await this.def.run(this.parsedArgs, this.toolCtx);
             await this.completeProgress(result.structured);
             this.outcome = this.signal.aborted ? 'cancelled' : 'success';
@@ -765,7 +721,7 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
             }
             return response;
           } finally {
-            await this.tracker.flush();
+            await this.#flushProgress();
             enrich({
               ...(inputKeys ? { input_keys: inputKeys } : {}),
               ...(inputSizeBytes !== undefined ? { input_size_bytes: inputSizeBytes } : {}),
@@ -774,8 +730,8 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
               ...(this.errorType ? { error_type: this.errorType } : {}),
               ...(this.errorMessage ? { error_message: this.errorMessage } : {}),
               memory_delta_mb: (process.memoryUsage().rss - this.startMemory) / 1024 / 1024,
-              tool_progress_ticks: this.tracker.tickCount,
-              progress_notifications_emitted: this.tracker.emittedCount,
+              tool_progress_ticks: this.#progressTickCount,
+              progress_notifications_emitted: this.#mcpSink ? this.#mcpSink.emittedCount : 0,
             });
           }
         },
