@@ -208,10 +208,10 @@ export const GET_FILE_INFO = defineTool({
 
     let resourceUri: string | undefined;
     const resources: ContentBlock[] = [];
-    if (ctx.resourceStore) {
+    if (ctx.resourceStore && batch.summary.total > 1) {
       const { entry, link } = putResource({
         store: ctx.resourceStore,
-        name: `${String(batch.summary.total)} path${batch.summary.total === 1 ? '' : 's'}`,
+        name: `${String(batch.summary.total)} paths`,
         mimeType: 'application/json',
         kind: 'text',
         content: JSON.stringify(perPathPayload, null, 2),

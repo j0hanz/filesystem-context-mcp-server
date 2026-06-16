@@ -335,8 +335,8 @@ export const DELETE_FILE = defineTool({
       failCount > 0 ? `, ${String(failCount)} failure${failCount === 1 ? '' : 's'}` : '';
     const summary =
       delCount > 0
-        ? `delete-file: deleted ${delCount === 1 ? (deleted[0] ?? '') : `${String(delCount)} paths`}${failSuffix}`
-        : `delete-file: ${String(failCount)} failure${failCount === 1 ? '' : 's'}`;
+        ? `delete: deleted ${delCount === 1 ? (deleted[0] ?? '') : `${String(delCount)} paths`}${failSuffix}`
+        : `delete: ${String(failCount)} failure${failCount === 1 ? '' : 's'}`;
     return { structured, text: summary };
   },
 });

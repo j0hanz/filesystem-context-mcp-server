@@ -614,8 +614,8 @@ async function handleSearchFiles(
   };
   applySummaryFields(structured, result.summary, nextCursor);
 
-  // If resourceStore is available, store results as JSON and build resource response
-  if (resourceStore !== undefined && relativeResults.length > 0) {
+  // If results were paginated, store the full list in the resource store
+  if (resourceStore !== undefined && result.summary.truncated) {
     const resultsJson = JSON.stringify(relativeResults, null, 2);
     const { entry, link } = putResource({
       store: resourceStore,

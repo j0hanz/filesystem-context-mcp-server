@@ -754,8 +754,8 @@
           "description": "Map of algorithm name to lowercase hex digest (e.g. { sha256: \"abc123...\" })"
         },
         "resourceUri": {
-          "type": "string",
-          "description": "URI to the hashes.json resource in the resource store"
+          "description": "URI to the hashes.json resource in the resource store (present when resource store is available)",
+          "type": "string"
         },
         "isDirectory": {
           "type": "boolean",
@@ -766,7 +766,7 @@
           "$ref": "#/$defs/NonNegInt"
         }
       },
-      "required": ["ok", "filePath", "algorithms", "hashes", "resourceUri", "isDirectory"],
+      "required": ["ok", "filePath", "algorithms", "hashes", "isDirectory"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "$defs": {

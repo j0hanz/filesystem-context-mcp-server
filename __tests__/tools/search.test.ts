@@ -42,16 +42,13 @@ describe('grep tool', () => {
     const result = raw;
     assertOk(result);
 
-    // Verify match text and resource link
-    assert.ok(result.content.length >= 2, 'Expected match text and resource link');
+    // Verify match text (no resource link for small result sets)
+    assert.ok(result.content.length >= 1, 'Expected match text');
     const summaryBlock = result.content[0];
     assert.equal(summaryBlock.type, 'text');
     const summaryText = (summaryBlock as { text: string }).text;
     assert.ok(summaryText.includes('apple'), 'Expected match content to contain search term');
     assert.match(summaryText, /:\d+:/);
-
-    const linkBlock = result.content[1];
-    assert.equal(linkBlock.type, 'resource_link');
 
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
@@ -60,7 +57,6 @@ describe('grep tool', () => {
       Array.isArray(matches) && matches.length >= 2,
       'Should match apple in at least 2 files',
     );
-    assert.ok(sc['resourceUri'], 'Expected resourceUri in structured content');
   });
 
   it('finds regex matches', async () => {
@@ -71,15 +67,9 @@ describe('grep tool', () => {
     const result = raw;
     assertOk(result);
 
-    // Verify resource link structure
-    assert.ok(result.content.length >= 2, 'Expected summary and resource link');
-    const linkBlock = result.content[1];
-    assert.equal(linkBlock.type, 'resource_link');
-
     const sc = getStructured(result);
     const matches = sc['matches'] as Record<string, unknown>[];
     assert.ok(Array.isArray(matches) && matches.length > 0, 'Should find lines starting with "a"');
-    assert.ok(sc['resourceUri'], 'Expected resourceUri in structured content');
   });
 
   it('restricts search using filePattern', async () => {
@@ -251,20 +241,16 @@ describe('find tool', () => {
     const result = raw;
     assertOk(result);
 
-    // Verify file list text and resource link
-    assert.ok(result.content.length >= 2, 'Expected file list text and resource link');
+    // Verify file list text (no resource link for non-paginated results)
+    assert.ok(result.content.length >= 1, 'Expected file list text');
     const summaryBlock = result.content[0];
     assert.equal(summaryBlock.type, 'text');
     assert.match((summaryBlock as { text: string }).text, /\.ts$/m);
-
-    const linkBlock = result.content[1];
-    assert.equal(linkBlock.type, 'resource_link');
 
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
     const results = sc['results'] as Record<string, unknown>[];
     assert.ok(results.length >= 3, 'Expected at least 3 .ts files');
-    assert.ok(sc['resourceUri'], 'Expected resourceUri in structured content');
   });
 
   it('excludes non-matching files', async () => {
@@ -274,11 +260,6 @@ describe('find tool', () => {
     });
     const result = raw;
     assertOk(result);
-
-    // Verify resource link structure
-    assert.ok(result.content.length >= 2, 'Expected summary and resource link');
-    const linkBlock = result.content[1];
-    assert.equal(linkBlock.type, 'resource_link');
 
     const sc = getStructured(result);
     const results = sc['results'] as Record<string, unknown>[];
@@ -297,8 +278,8 @@ describe('find tool', () => {
     assert.equal(results.length, 0);
   });
 
-  it('search-files with many results stores in resource', async () => {
-    // Create multiple files to generate substantial results
+  it('search-files stores resource in resource store when results are paginated', async () => {
+    // Create enough files to force truncation with a low maxResults cap
     const subDir = join(env.tmpDir, 'manyfiles');
     await mkdir(subDir);
     for (let i = 0; i < 5; i++) {
@@ -307,12 +288,12 @@ describe('find tool', () => {
 
     const raw = await env.client.callTool({
       name: 'find_files',
-      arguments: { path: env.tmpDir, pattern: '**/*.ts' },
+      arguments: { path: subDir, pattern: '**/*.ts', maxResults: 2 },
     });
     const result = raw;
     assertOk(result);
 
-    // Verify content structure: file list text + resource link
+    // Verify content structure: file list text + resource link (only when truncated)
     assert.equal(result.content.length >= 2, true);
     const summaryBlock = result.content[0];
     assert.equal(summaryBlock.type, 'text');
@@ -331,7 +312,7 @@ describe('find tool', () => {
     const sc = getStructured(result);
     assert.equal(sc['ok'], true);
     const results = sc['results'] as Record<string, unknown>[];
-    assert.ok(results.length > 0, 'Expected some matching files');
+    assert.equal(results.length, 2, 'Expected exactly maxResults entries inline');
     assert.ok(sc['resourceUri'], 'Expected resourceUri in structured content');
     assert.equal(sc['resourceUri'], (linkBlock as { uri: string }).uri);
   });

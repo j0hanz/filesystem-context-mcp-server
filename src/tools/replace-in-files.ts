@@ -726,7 +726,7 @@ export const SEARCH_AND_REPLACE = defineTool({
     }
     const dryLabel = args.dryRun ? ' [dry run]' : '';
     const summaryText =
-      `search-and-replace: '${truncatedPattern}'${dryLabel}` +
+      `replace_text: '${truncatedPattern}'${dryLabel}` +
       ` \u00b7 ${String(structured.totalMatches)} match(es)` +
       ` in ${String(structured.filesModified)} file(s)`;
     if (link) {

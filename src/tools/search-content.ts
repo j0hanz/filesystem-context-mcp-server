@@ -664,11 +664,10 @@ function getPagedPayloads(
 function finalizeSearchOutput(
   fullStructured: SearchOutput,
   preview: SearchPreviewState,
-  matchPayloads: SearchMatchPayload[],
   resourceStore?: ResourceStore,
   searchPattern?: string,
 ): { structured: SearchOutput; link?: ReturnType<typeof putResource>['link'] } {
-  if (resourceStore && matchPayloads.length > 0) {
+  if (resourceStore && preview.needsExternalize) {
     return buildExternalizedResponse(fullStructured, preview, resourceStore, searchPattern ?? '');
   }
 
@@ -723,7 +722,6 @@ async function handleSearchContent(
   const { structured, link } = finalizeSearchOutput(
     fullStructured,
     preview,
-    matchPayloads,
     resourceStore,
     args.searchPattern,
   );

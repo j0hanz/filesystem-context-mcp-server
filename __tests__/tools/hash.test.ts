@@ -31,7 +31,7 @@ describe('calculate_hash tool', () => {
     await env.cleanup();
   });
 
-  it('calculates file hash and stores in resource', async () => {
+  it('calculates file hash', async () => {
     const raw = await env.client.callTool({
       name: 'hash_file',
       arguments: { path: file },
@@ -47,8 +47,6 @@ describe('calculate_hash tool', () => {
     assert.equal(typeof sc['hashes']['sha256'], 'string');
     assert.ok((sc['hashes']['sha256'] as string).length > 0);
     assert.equal(sc['isDirectory'], false);
-    assert.equal(typeof sc['resourceUri'], 'string');
-    assert((sc['resourceUri'] as string).startsWith('filesystem-mcp://result/'));
 
     // Verify summary contains algorithm and hash
     const summary = raw.content[0];
@@ -56,11 +54,6 @@ describe('calculate_hash tool', () => {
     const text = (summary as { type: string; text: string }).text;
     assert(text.includes('SHA-256'));
     assert(text.includes(':'));
-
-    // Verify resource link
-    const resourceLink = raw.content.find((c) => c && 'type' in c && c.type === 'resource_link');
-    assert(resourceLink, 'Should have a resource_link');
-    assert.equal((resourceLink as { name: string }).name, 'hash-me.txt');
   });
 
   it('calculate-hash with multiple algorithms', async () => {
@@ -78,15 +71,12 @@ describe('calculate_hash tool', () => {
     assert.ok((sc['hashes']['sha256'] as string).length > 0);
     assert.ok((sc['hashes']['md5'] as string).length > 0);
 
-    // Verify summary shows primary algorithm (sha256)
+    // Verify summary shows both algorithms
     const summary = raw.content[0];
     assert(summary && 'text' in summary);
     const text = (summary as { type: string; text: string }).text;
     assert(text.includes('SHA-256'));
-
-    // Verify resource link still present
-    const resourceLink = raw.content.find((c) => c && 'type' in c && c.type === 'resource_link');
-    assert(resourceLink, 'Should have a resource_link');
+    assert(text.includes('MD5'));
   });
 
   it('returns the same hash for identical content', async () => {

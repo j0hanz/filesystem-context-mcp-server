@@ -492,10 +492,7 @@ describe('rm tool', () => {
     );
     assert.equal(raw.content[0].type, 'text', 'Expected text content');
     const summaryText = raw.content[0].text;
-    assert.ok(
-      summaryText.startsWith('delete-file:'),
-      'Expected summary to start with "delete-file:"',
-    );
+    assert.ok(summaryText.startsWith('delete:'), 'Expected summary to start with "delete-file:"');
 
     // Verify structured content has path and ok (P3 pattern)
     const sc = getStructured(raw);
@@ -535,10 +532,7 @@ describe('rm tool', () => {
     );
     assert.equal(raw.content[0].type, 'text', 'Expected text content');
     const summaryText = raw.content[0].text;
-    assert.ok(
-      summaryText.startsWith('delete-file:'),
-      'Expected summary to start with "delete-file:"',
-    );
+    assert.ok(summaryText.startsWith('delete:'), 'Expected summary to start with "delete-file:"');
 
     // Verify structured content has path and ok (P3 pattern)
     const sc = getStructured(raw);

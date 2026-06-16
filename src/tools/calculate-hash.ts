@@ -65,7 +65,12 @@ const HashOutputSchema = z.strictObject({
   hashes: HashesSchema.describe(
     'Map of algorithm name to lowercase hex digest (e.g. { sha256: "abc123..." })',
   ),
-  resourceUri: z.string().describe('URI to the hashes.json resource in the resource store'),
+  resourceUri: z
+    .string()
+    .optional()
+    .describe(
+      'URI to the hashes.json resource in the resource store (present when resource store is available)',
+    ),
   isDirectory: z
     .boolean()
     .describe('True when the target was a directory (hashes represent all files within)'),
@@ -289,23 +294,6 @@ async function handleCalculateHash(
     }
   }
 
-  // Store hashes as JSON - resourceStore should always be available
-  if (!resourceStore) {
-    throw new FsError(
-      ErrorCode.INVALID_INPUT,
-      'Resource store is required for calculate_hash tool',
-    );
-  }
-
-  const hashJson = JSON.stringify(hashes, null, 2);
-  const { entry, link } = putResource({
-    store: resourceStore,
-    name: basename(validPath),
-    mimeType: 'application/json',
-    kind: 'text',
-    content: hashJson,
-  });
-
   const ALGO_LABELS: Record<string, string> = {
     sha256: 'SHA-256',
     sha1: 'SHA-1',
@@ -316,6 +304,21 @@ async function handleCalculateHash(
     .map(([algo, hash]) => `${ALGO_LABELS[algo] ?? algo.toUpperCase()}: ${hash}`)
     .join('\n');
 
+  let resourceUri: string | undefined;
+  let link: ReturnType<typeof putResource>['link'] | undefined;
+  if (resourceStore) {
+    const hashJson = JSON.stringify(hashes, null, 2);
+    const result = putResource({
+      store: resourceStore,
+      name: basename(validPath),
+      mimeType: 'application/json',
+      kind: 'text',
+      content: hashJson,
+    });
+    resourceUri = result.entry.uri;
+    link = result.link;
+  }
+
   return {
     structured: {
       ok: true as const,
@@ -323,12 +326,12 @@ async function handleCalculateHash(
       // Include all requested algorithms in output for clarity, even though directories only support sha256.
       algorithms: Object.keys(hashes) as (typeof SUPPORTED_ALGORITHMS)[number][],
       hashes,
-      resourceUri: entry.uri,
+      ...(resourceUri !== undefined ? { resourceUri } : {}),
       isDirectory: stats.isDirectory(),
       ...(fileCount !== undefined ? { fileCount } : {}),
     },
     text: summary,
-    resources: [link],
+    ...(link !== undefined ? { resources: [link] } : {}),
   };
 }
 
