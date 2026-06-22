@@ -1,13 +1,12 @@
 import type { ContentBlock } from '@modelcontextprotocol/server';
 
-import { basename, dirname } from 'node:path';
-
 import * as z from 'zod/v4';
 
 import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, isAbortError, Problem } from '../core/errors.js';
 import { formatBytes } from '../core/fmt.js';
 import { atomicWriteFile, detectMimeType, MIME_SAMPLE_SIZE, mkdir, stat } from '../core/fs.js';
+import { PathFormatter } from '../core/path-formatter.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import { FileKind, IsoDateTime, NonNegInt, PerFileErrorSchema, RequiredPath } from '../schema.js';
 import { defineTool } from './define.js';
@@ -69,7 +68,7 @@ function buildSummary(results: readonly CreateFileResult[], failCount: number): 
     const result = results[0];
     if (result) {
       return [
-        `create: ${basename(result.path)}`,
+        `create: ${PathFormatter.basename(result.path)}`,
         formatBytes(result.size),
         `${String(result.lineCount)} lines`,
       ].join(' \u00b7 ');
@@ -105,7 +104,10 @@ export const CREATE = defineTool({
 
     for (const file of args.files) {
       try {
-        await withAbort(mkdir(dirname(file.path), ctx.pathGuard, { recursive: true }), ctx.signal);
+        await withAbort(
+          mkdir(PathFormatter.dirname(file.path), ctx.pathGuard, { recursive: true }),
+          ctx.signal,
+        );
 
         const { validPath } = await atomicWriteFile(file.path, file.content, ctx.pathGuard, {
           encoding: 'utf-8',
@@ -125,7 +127,7 @@ export const CREATE = defineTool({
           links.push({
             type: 'resource_link',
             uri: resourceUri,
-            name: basename(validPath),
+            name: PathFormatter.basename(validPath),
             mimeType: mimeInfo.mimeType,
             size: bytesWritten,
             annotations: { audience: ['user', 'assistant'] },
@@ -169,7 +171,7 @@ export const CREATE = defineTool({
     label: 'Create',
     subject:
       args.files.length === 1
-        ? basename(args.files[0]?.path ?? '')
+        ? PathFormatter.basename(args.files[0]?.path ?? '')
         : `${String(args.files.length)} files`,
   }),
   defaultErrorCode: ErrorCode.UNKNOWN,

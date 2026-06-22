@@ -1,14 +1,13 @@
 import type { PrimitiveSchemaDefinition } from '@modelcontextprotocol/server';
 import { SdkError, SdkErrorCode } from '@modelcontextprotocol/server';
 
-import { basename, dirname, resolve, sep } from 'node:path';
-
 import * as z from 'zod/v4';
 
 import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, FsError, isAbortError, isNodeError, Problem } from '../core/errors.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
+import { PathFormatter } from '../core/path-formatter.js';
 import { isSamePath } from '../core/path.js';
 import { PerFileErrorSchema, RequiredPath } from '../schema.js';
 import type { ToolCtx } from './define.js';
@@ -123,7 +122,7 @@ function buildSummary(
   if (failCount === 0 && successCount === 1) {
     const result = results[0];
     if (result) {
-      return `move: ${basename(result.from)} → ${basename(result.to)}`;
+      return `move: ${PathFormatter.basename(result.from)} → ${PathFormatter.basename(result.to)}`;
     }
   }
   const parts = [`move: ${String(successCount)} item${successCount === 1 ? '' : 's'}`];
@@ -201,7 +200,7 @@ export const MOVE = defineTool({
       const move = args.moves[0];
       return {
         label: 'Move',
-        subject: `${basename(move?.source ?? '')} → ${basename(move?.destination ?? '')}`,
+        subject: `${PathFormatter.basename(move?.source ?? '')} → ${PathFormatter.basename(move?.destination ?? '')}`,
       };
     }
     return { label: 'Move', subject: `${String(args.moves.length)} files` };
@@ -216,8 +215,8 @@ export const MOVE = defineTool({
         const validSource = await validateMoveSource(move.source, ctx.pathGuard);
         const validDest = await ctx.pathGuard.validatePathForWrite(move.destination);
 
-        const resolvedSource = resolve(validSource);
-        const resolvedDest = resolve(validDest);
+        const resolvedSource = PathFormatter.resolve(validSource);
+        const resolvedDest = PathFormatter.resolve(validDest);
 
         if (resolvedSource === resolvedDest) {
           continue;
@@ -228,8 +227,8 @@ export const MOVE = defineTool({
           platform === 'win32' || platform === 'darwin' ? resolvedDest.toLowerCase() : resolvedDest;
         const normalizedSource =
           platform === 'win32' || platform === 'darwin'
-            ? (resolvedSource + sep).toLowerCase()
-            : resolvedSource + sep;
+            ? (resolvedSource + PathFormatter.sep).toLowerCase()
+            : resolvedSource + PathFormatter.sep;
 
         if (normalizedDest.startsWith(normalizedSource)) {
           throw new FsError(
@@ -253,7 +252,10 @@ export const MOVE = defineTool({
           }
         }
 
-        await withAbort(ctx.fs.mkdir(dirname(validDest), { recursive: true }), ctx.signal);
+        await withAbort(
+          ctx.fs.mkdir(PathFormatter.dirname(validDest), { recursive: true }),
+          ctx.signal,
+        );
 
         if (!isCaseOnlyRename) {
           await tryElicitOverwriteConfirmation(move.destination, validDest, ctx);

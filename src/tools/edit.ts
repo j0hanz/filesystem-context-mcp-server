@@ -1,7 +1,5 @@
 import type { ContentBlock } from '@modelcontextprotocol/server';
 
-import { basename } from 'node:path';
-
 import * as z from 'zod/v4';
 import { createTwoFilesPatch, diffLines } from 'diff';
 
@@ -15,6 +13,7 @@ import {
   stat,
 } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
+import { PathFormatter } from '../core/path-formatter.js';
 import type { PathGuard } from '../core/path.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
 import type { Regex } from '../core/search/engine.js';
@@ -362,7 +361,7 @@ function buildEditFileMetadata(
     resourceLink = {
       type: 'resource_link',
       uri: resourceUri,
-      name: basename(validPath),
+      name: PathFormatter.basename(validPath),
       mimeType: mimeInfo.mimeType,
       size: bytesWritten,
       annotations: { audience: ['user', 'assistant'] },
@@ -384,7 +383,7 @@ async function buildDiff(
   modified: string,
   signal?: AbortSignal,
 ): Promise<string> {
-  const fileName = basename(validPath);
+  const fileName = PathFormatter.basename(validPath);
   const totalBytes = Buffer.byteLength(original) + Buffer.byteLength(modified);
   return runWorkerOr(
     'createPatch',
@@ -596,14 +595,15 @@ function formatEditSummary(
 ): string {
   const tag = dryRun ? ' [dry run]' : '';
   const tokens = results.map((r) => {
-    if (r.error) return `${basename(r.path)} FAILED`;
+    if (r.error) return `${PathFormatter.basename(r.path)} FAILED`;
     const v = r.value;
-    if (!v) return `${basename(r.path)} (no result)`;
-    if (v.unmatchedEdits && v.unmatchedEdits.length > 0) return `${basename(v.path)} NO MATCH`;
+    if (!v) return `${PathFormatter.basename(r.path)} (no result)`;
+    if (v.unmatchedEdits && v.unmatchedEdits.length > 0)
+      return `${PathFormatter.basename(v.path)} NO MATCH`;
     const added = v.linesAdded ?? 0;
     const removed = v.linesRemoved ?? 0;
-    if (added === 0 && removed === 0) return `${basename(v.path)} (no change)`;
-    return `${basename(v.path)} +${String(added)} -${String(removed)}`;
+    if (added === 0 && removed === 0) return `${PathFormatter.basename(v.path)} (no change)`;
+    return `${PathFormatter.basename(v.path)} +${String(added)} -${String(removed)}`;
   });
 
   const failed = results.filter((r) => r.error !== undefined).length;
@@ -636,7 +636,7 @@ export const EDIT = defineTool({
     const dryLabel = args.dryRun ? ' [dry run]' : '';
     let subject: string;
     if (args.path !== undefined) {
-      subject = basename(args.path);
+      subject = PathFormatter.basename(args.path);
     } else if (args.paths !== undefined) {
       subject = `${args.paths.length} files`;
     } else if (args.files !== undefined) {

@@ -1,10 +1,9 @@
-import { relative } from 'node:path';
-
 import * as z from 'zod/v4';
 
 import { ErrorCode } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../core/fs.js';
+import { PathFormatter } from '../core/path-formatter.js';
 import type { PathGuard } from '../core/path.js';
 import { decodeOffsetCursor, encodeOffsetCursor } from '../core/path.js';
 import { searchFiles } from '../core/search/index.js';
@@ -95,7 +94,7 @@ function buildRelativeResults(
   const relativeResults: NonNullable<z.infer<typeof SearchFilesOutputSchema>['results']> = [];
   for (const entry of displayResults) {
     relativeResults.push({
-      path: relative(basePath, entry.path),
+      path: PathFormatter.relative(basePath, entry.path),
       size: entry.size,
       modified: entry.modified?.toISOString(),
     });

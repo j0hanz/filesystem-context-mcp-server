@@ -1,7 +1,6 @@
 import type { ContentBlock } from '@modelcontextprotocol/server';
 
 import { Buffer } from 'node:buffer';
-import { basename, dirname, join, relative } from 'node:path';
 
 import * as z from 'zod/v4';
 import { createTwoFilesPatch } from 'diff';
@@ -26,6 +25,7 @@ import {
   stat,
 } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
+import { PathFormatter } from '../core/path-formatter.js';
 import type { PathGuard } from '../core/path.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
 import type { Regex } from '../core/search/engine.js';
@@ -170,7 +170,7 @@ function recordFailure(failures: Failure[], failure: Failure): void {
 }
 
 function recordChangedFile(summary: ReplaceSummary, filePath: string, matchCount: number): void {
-  const relativePath = relative(summary.root, filePath);
+  const relativePath = PathFormatter.relative(summary.root, filePath);
   if (summary.changedFiles.length < MAX_CHANGED_FILES) {
     summary.changedFiles.push({ path: relativePath, matches: matchCount });
     return;
@@ -347,7 +347,7 @@ async function maybeAppendPatchDiff(
   },
 ): Promise<void> {
   if (!params.includeDiff) return;
-  const header = relative(summary.root, params.filePath);
+  const header = PathFormatter.relative(summary.root, params.filePath);
   const totalBytes =
     Buffer.byteLength(params.originalContent) + Buffer.byteLength(params.updatedContent);
 
@@ -502,7 +502,10 @@ async function resolveSearchRoot(
   const resolvedPath = await pathGuard.validateExistingPath(pathValue);
   const { stats: fileStats } = await stat(resolvedPath, pathGuard);
   if (fileStats.isFile()) {
-    return { root: dirname(resolvedPath), filePattern: globEscape(basename(resolvedPath)) };
+    return {
+      root: PathFormatter.dirname(resolvedPath),
+      filePattern: globEscape(PathFormatter.basename(resolvedPath)),
+    };
   }
   return { root: resolvedPath, filePattern: undefined };
 }
@@ -616,7 +619,7 @@ async function handleSearchAndReplace(
     if (!primaryFile) return { structured };
 
     const primaryFilePath = primaryFile.path;
-    const fullPath = join(summary.root, primaryFilePath);
+    const fullPath = PathFormatter.join(summary.root, primaryFilePath);
 
     try {
       const content = await (async (): Promise<string> => {
@@ -637,7 +640,7 @@ async function handleSearchAndReplace(
       const link: ContentBlock = {
         type: 'resource_link',
         uri: fileUri,
-        name: basename(fullPath),
+        name: PathFormatter.basename(fullPath),
         mimeType: mimeInfo.mimeType,
         size,
         annotations: { audience: ['user', 'assistant'] },

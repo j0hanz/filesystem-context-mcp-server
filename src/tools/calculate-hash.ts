@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { basename, relative, win32 } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
 import * as z from 'zod/v4';
@@ -12,14 +11,13 @@ import {
   isIgnoredByGitignore,
   loadRootGitignore,
 } from '../core/fs.js';
+import { PathFormatter } from '../core/path-formatter.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../core/util.js';
 import { NonNegInt, RequiredPath } from '../schema.js';
 import { putResource } from './_helpers.js';
 import { defineTool } from './define.js';
-
-const WINDOWS_PATH_SEPARATOR = /\\/gu;
 
 const SUPPORTED_ALGORITHMS = ['sha256', 'md5', 'sha1', 'sha512'] as const;
 
@@ -78,10 +76,7 @@ const HashOutputSchema = z.strictObject({
 });
 
 function toStableRelativePath(root: string, entryPath: string): string {
-  const relativePath = relative(root, entryPath);
-  return relativePath.includes(win32.sep)
-    ? relativePath.replace(WINDOWS_PATH_SEPARATOR, '/')
-    : relativePath;
+  return PathFormatter.relative(root, entryPath);
 }
 
 function comparePaths(left: { path: string }, right: { path: string }): number {
@@ -310,7 +305,7 @@ async function handleCalculateHash(
     const hashJson = JSON.stringify(hashes, null, 2);
     const result = putResource({
       store: resourceStore,
-      name: basename(validPath),
+      name: PathFormatter.basename(validPath),
       mimeType: 'application/json',
       kind: 'text',
       content: hashJson,
@@ -360,7 +355,7 @@ export const CALCULATE_HASH = defineTool({
   defaultErrorCode: ErrorCode.UNKNOWN,
   progress: (args) => ({
     label: 'Hash',
-    subject: basename(args.path),
+    subject: PathFormatter.basename(args.path),
   }),
   run: async (args, ctx) => {
     const onProgress = ctx.onProgress

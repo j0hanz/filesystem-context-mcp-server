@@ -1,7 +1,6 @@
 import type { ContentBlock } from '@modelcontextprotocol/server';
 
 import { createHash } from 'node:crypto';
-import { basename } from 'node:path';
 
 import * as z from 'zod/v4';
 
@@ -14,6 +13,7 @@ import {
   type ReadSpec,
 } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
+import { PathFormatter } from '../core/path-formatter.js';
 import {
   DEFAULT_CONTINUATION_CHUNK_SIZE,
   DEFAULT_READ_MANY_MAX_TOTAL_SIZE,
@@ -419,7 +419,9 @@ export const READ_FILE = defineTool({
   defaultErrorCode: ErrorCode.NOT_FILE,
   progress: (args) => {
     const isBatch = args.paths !== undefined;
-    const name = isBatch ? `${String(args.paths?.length ?? 0)} files` : basename(args.path ?? '');
+    const name = isBatch
+      ? `${String(args.paths?.length ?? 0)} files`
+      : PathFormatter.basename(args.path ?? '');
     if (isBatch) {
       return { label: READ_TOOL_LABEL, subject: name };
     }
@@ -501,7 +503,7 @@ export const READ_FILE = defineTool({
       resources.push({
         type: 'resource_link',
         uri: result.value.resourceUri,
-        name: basename(result.path),
+        name: PathFormatter.basename(result.path),
         mimeType: result.value.mimeType ?? 'application/octet-stream',
         size: Buffer.byteLength(result.value.content, 'utf8'),
         annotations: { audience: ['user', 'assistant'] },

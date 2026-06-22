@@ -1,11 +1,10 @@
-import { relative } from 'node:path';
-
 import * as z from 'zod/v4';
 
 import { ErrorCode } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../core/fs.js';
+import { PathFormatter } from '../core/path-formatter.js';
 import type { PathGuard } from '../core/path.js';
 import { decodeOffsetCursor, encodeOffsetCursor } from '../core/path.js';
 import {
@@ -269,7 +268,7 @@ function buildSortedPayloads(
     const cached = relativeByFile.get(file);
     if (cached !== undefined) return cached;
 
-    const rel = relative(result.basePath, file);
+    const rel = PathFormatter.relative(result.basePath, file);
     relativeByFile.set(file, rel);
     return rel;
   };

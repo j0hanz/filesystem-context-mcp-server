@@ -1,5 +1,3 @@
-import { basename, relative } from 'node:path';
-
 import * as z from 'zod/v4';
 
 import { withTimedAbortSignal } from '../core/concurrency.js';
@@ -14,7 +12,8 @@ import {
   loadRootGitignore,
   resolveEntryType,
 } from '../core/fs.js';
-import { isPathWithinDirectories, normalizePath, toPosixPath } from '../core/path.js';
+import { PathFormatter } from '../core/path-formatter.js';
+import { isPathWithinDirectories, normalizePath } from '../core/path.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import {
@@ -139,8 +138,8 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
 
     const entryType: EntryType = resolveEntryType(entry.dirent);
     const isDir = entryType === 'directory';
-    const relPath = relative(rootPath, entry.path);
-    const name = basename(relPath);
+    const relPath = PathFormatter.relative(rootPath, entry.path);
+    const name = PathFormatter.basename(relPath);
 
     if (
       gitignoreMatcher &&
@@ -168,7 +167,7 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
 
     const collectedEntry: CollectedEntry = {
       name,
-      relativePath: toPosixPath(relPath),
+      relativePath: relPath,
       type: entryType,
     };
 
@@ -309,11 +308,11 @@ async function handleList(
     });
 
     const inlineEntries = result.entries.slice(0, args.maxEntries);
-    const markdown = renderMarkdown(basename(validDir), inlineEntries);
+    const markdown = renderMarkdown(PathFormatter.basename(validDir), inlineEntries);
 
     let resourceUri: string | undefined;
     if (result.totalEntries > inlineEntries.length && resourceStore) {
-      const fullMarkdown = renderMarkdown(basename(validDir), result.entries);
+      const fullMarkdown = renderMarkdown(PathFormatter.basename(validDir), result.entries);
       const fullTruncated = result.totalEntries > result.entries.length;
       const fullOutput = {
         entries: result.entries,
@@ -369,7 +368,7 @@ export const LIST = defineTool({
   defaultErrorCode: ErrorCode.NOT_DIRECTORY,
   progress: (args) => ({
     label: 'List',
-    subject: args.path ? basename(args.path) : '.',
+    subject: args.path ? PathFormatter.basename(args.path) : '.',
   }),
   run: async (args, ctx) => {
     const output = await handleList(
