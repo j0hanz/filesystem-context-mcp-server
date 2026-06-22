@@ -1,27 +1,26 @@
-import {
-  type Implementation,
-  McpServer,
-  type ServerCapabilities,
-  type SetLevelRequestParams,
+import type {
+  Implementation,
+  ServerCapabilities,
+  SetLevelRequestParams,
 } from '@modelcontextprotocol/server';
+import { McpServer } from '@modelcontextprotocol/server';
 
 import { readFile } from 'node:fs/promises';
 
 import { GuardedFileSystem } from './core/fs.js';
 import { createLoggingState, Logger, LogRouter } from './core/observability.js';
-import { PathGuard, type ServerOptions } from './core/path.js';
-import {
-  McpLogSender,
-  McpRootsSynchronizer,
-  type Registrar,
-  type ServerDeps,
-} from './core/registrar.js';
-import { createInMemoryResourceStore, type ResourceStore } from './core/store.js';
+import type { ServerOptions } from './core/path.js';
+import { PathGuard } from './core/path.js';
+import type { Registrar, ServerDeps } from './core/registrar.js';
+import { McpLogSender, McpRootsSynchronizer } from './core/registrar.js';
+import type { ResourceStore } from './core/store.js';
+import { createInMemoryResourceStore } from './core/store.js';
 import { LOG_LEVEL } from './core/util.js';
 import { pkgInfo } from './pkg-info.js';
 import { promptsRegistrar } from './prompts.js';
 import { resourcesRegistrar } from './resources.js';
-import { type IconInfo, withDefaultIcons } from './tools/define.js';
+import type { IconInfo } from './tools/define.js';
+import { withDefaultIcons } from './tools/define.js';
 import { toolsRegistrar } from './tools/index.js';
 
 // ═══════════════════════════════════════════════════════════════

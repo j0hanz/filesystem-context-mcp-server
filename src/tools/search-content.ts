@@ -5,7 +5,8 @@ import * as z from 'zod/v4';
 import { withTimedAbortSignal } from '../core/concurrency.js';
 import { ErrorCode, FsError, isTimeoutLikeError } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
-import { DEFAULT_EXCLUDE_PATTERNS, type GuardedFileSystem } from '../core/fs.js';
+import type { GuardedFileSystem } from '../core/fs.js';
+import { DEFAULT_EXCLUDE_PATTERNS } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
 import { decodeOffsetCursor, encodeOffsetCursor } from '../core/path.js';
 import {

@@ -1,8 +1,10 @@
 import { isUtf8 } from 'node:buffer';
-import { type BinaryToTextEncoding, createHash, randomUUID } from 'node:crypto';
-import { createReadStream, constants as fsConstants, type ReadStream, type Stats } from 'node:fs';
+import type { BinaryToTextEncoding } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import type { ReadStream, Stats } from 'node:fs';
+import { createReadStream, constants as fsConstants } from 'node:fs';
+import type { FileHandle } from 'node:fs/promises';
 import {
-  type FileHandle,
   cp as fsCp,
   glob as fsGlob,
   lstat as fsLstat,
@@ -23,7 +25,8 @@ import { basename, dirname, extname, isAbsolute, join, posix, relative, resolve 
 import { text } from 'node:stream/consumers';
 import { pipeline } from 'node:stream/promises';
 
-import ignore, { type Ignore } from 'ignore';
+import type { Ignore } from 'ignore';
+import ignore from 'ignore';
 
 import type { FileType } from '../schema.js';
 import { assertNotAborted, withAbort } from './concurrency.js';
@@ -35,8 +38,8 @@ import { MAX_TEXT_FILE_SIZE } from './util.js';
 
 // Re-export FileType from schema for external consumers
 export type { FileType };
-export type { Stats, ReadStream } from 'node:fs';
-export type { FileHandle } from 'node:fs/promises';
+export type { Stats, ReadStream };
+export type { FileHandle };
 
 const READ_ONLY_FILE_FLAG = 'r';
 const STREAM_CHUNK_SIZE = 64 * 1024;

@@ -34,7 +34,8 @@ import {
   singleOrBatchPathsInput,
   validateReadRange,
 } from '../schema.js';
-import { defineTool, type PerPathResult, runOverPaths, type ToolCtx } from './define.js';
+import type { PerPathResult, ToolCtx } from './define.js';
+import { defineTool, runOverPaths } from './define.js';
 
 const readRangeFields = createReadRangeFields({
   head: 'Return first N lines',

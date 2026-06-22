@@ -15,7 +15,8 @@ import type { GuardedFileSystem } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import { defaultFalseBoolean, RequiredPath } from '../schema.js';
-import { defineTool, type ToolCtx } from './define.js';
+import type { ToolCtx } from './define.js';
+import { defineTool } from './define.js';
 
 const DeleteInputSchema = z.strictObject({
   paths: z

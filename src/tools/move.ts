@@ -11,7 +11,8 @@ import type { GuardedFileSystem } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import { isSamePath } from '../core/path.js';
 import { PerFileErrorSchema, RequiredPath } from '../schema.js';
-import { defineTool, type ToolCtx } from './define.js';
+import type { ToolCtx } from './define.js';
+import { defineTool } from './define.js';
 
 const MoveItemSchema = z.strictObject({
   source: RequiredPath.describe('Absolute path of the file or directory to move'),

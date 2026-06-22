@@ -1,13 +1,15 @@
+import type {
+  GetPromptResult,
+  McpServer,
+  PromptMessage,
+  ResourceLink,
+  TextContent,
+} from '@modelcontextprotocol/server';
 import {
   completable,
   getDisplayName,
-  type GetPromptResult,
-  type McpServer,
-  type PromptMessage,
   ProtocolError,
   ProtocolErrorCode,
-  type ResourceLink,
-  type TextContent,
 } from '@modelcontextprotocol/server';
 
 import { lstat } from 'node:fs/promises';
@@ -20,7 +22,8 @@ import { PathCompleter } from './core/path.js';
 import type { PathGuard } from './core/path.js';
 import type { Registrar } from './core/registrar.js';
 import { INSTRUCTION_SECTIONS, serverInstructionsContent } from './resources.js';
-import { type IconInfo, withDefaultIcons } from './tools/define.js';
+import type { IconInfo } from './tools/define.js';
+import { withDefaultIcons } from './tools/define.js';
 
 // --- Types ---
 

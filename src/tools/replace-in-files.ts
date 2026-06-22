@@ -28,7 +28,8 @@ import {
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
-import { compileRegex, type Regex } from '../core/search/engine.js';
+import type { Regex } from '../core/search/engine.js';
+import { compileRegex } from '../core/search/engine.js';
 import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_RESULTS,

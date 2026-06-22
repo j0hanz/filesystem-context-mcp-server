@@ -22,7 +22,8 @@ import * as z from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode, FsError, Problem } from '../core/errors.js';
-import { ansiLine, type Phase, plainMessage, type ProgressCtx } from '../core/fmt.js';
+import type { Phase, ProgressCtx } from '../core/fmt.js';
+import { ansiLine, plainMessage } from '../core/fmt.js';
 import { GuardedFileSystem } from '../core/fs.js';
 import { Logger, withTelemetry } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';

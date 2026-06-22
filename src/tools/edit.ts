@@ -17,7 +17,8 @@ import {
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
-import { compileRegex, type Regex } from '../core/search/engine.js';
+import type { Regex } from '../core/search/engine.js';
+import { compileRegex } from '../core/search/engine.js';
 import type { ResourceStore } from '../core/store.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import {
@@ -30,7 +31,8 @@ import {
   PositiveInt,
   singleOrBatchPathsInput,
 } from '../schema.js';
-import { defineTool, type PerPathResult, runOverPaths } from './define.js';
+import type { PerPathResult } from './define.js';
+import { defineTool, runOverPaths } from './define.js';
 
 const EditSpecSchema = z.strictObject({
   oldText: z

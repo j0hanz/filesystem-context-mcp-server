@@ -43,7 +43,8 @@ import {
   withTelemetry,
 } from './core/observability.js';
 import type { PathGuard, ServerOptions } from './core/path.js';
-import { McpLogSender, type McpRootsSynchronizer } from './core/registrar.js';
+import type { McpRootsSynchronizer } from './core/registrar.js';
+import { McpLogSender } from './core/registrar.js';
 import { getInitHandshakeTimeoutMs, INIT_TIMEOUT_CLOSE, parseEnvInt } from './core/util.js';
 import type { FilesystemServerContext } from './server.js';
 import { createServer, logRouter } from './server.js';

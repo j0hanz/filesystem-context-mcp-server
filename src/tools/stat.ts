@@ -27,7 +27,8 @@ import {
   singleOrBatchPathsInput,
 } from '../schema.js';
 import { buildFileInfoPayload, putResource } from './_helpers.js';
-import { defineTool, type PerPathResult, runOverPaths } from './define.js';
+import type { PerPathResult } from './define.js';
+import { defineTool, runOverPaths } from './define.js';
 
 const StatInputSchema = singleOrBatchPathsInput({
   extra: {},

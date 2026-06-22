@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, type Stats } from 'node:fs';
+import type { Stats } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';

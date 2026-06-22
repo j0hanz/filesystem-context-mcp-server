@@ -1,25 +1,29 @@
+import type {
+  McpServer,
+  ReadResourceResult,
+  ResourceUpdatedNotificationParams,
+  Role,
+  ServerContext,
+  SubscribeRequestParams,
+  UnsubscribeRequestParams,
+} from '@modelcontextprotocol/server';
 import {
   checkResourceAllowed,
-  type McpServer,
   ProtocolError,
   ProtocolErrorCode,
-  type ReadResourceResult,
   ResourceTemplate,
-  type ResourceUpdatedNotificationParams,
   resourceUrlFromServerUrl,
-  type Role,
-  type ServerContext,
-  type SubscribeRequestParams,
-  type UnsubscribeRequestParams,
   UriTemplate,
 } from '@modelcontextprotocol/server';
 
-import { type FSWatcher, watch } from 'node:fs';
+import type { FSWatcher } from 'node:fs';
+import { watch } from 'node:fs';
 
 import { ErrorCode, FsError } from './core/errors.js';
 import { readFileRaw } from './core/fs.js';
 import { withTelemetry } from './core/observability.js';
-import { PathCompleter, type PathGuard } from './core/path.js';
+import type { PathGuard } from './core/path.js';
+import { PathCompleter } from './core/path.js';
 import type { Registrar, ServerDeps } from './core/registrar.js';
 import type { ResourceStore } from './core/store.js';
 import {
@@ -28,7 +32,8 @@ import {
   MAX_TEXT_FILE_SIZE,
   parseEnvInt,
 } from './core/util.js';
-import { type IconInfo, withDefaultIcons } from './tools/define.js';
+import type { IconInfo } from './tools/define.js';
+import { withDefaultIcons } from './tools/define.js';
 
 // ═══════════════════════════════════════════════════════════════
 // shared
