@@ -23,7 +23,6 @@ import {
   DEFAULT_SEARCH_TIMEOUT_MS,
   MAX_SEARCH_RESULTS,
   MAX_SEARCHABLE_FILE_SIZE,
-  omitOptionKeys,
   parseEnvInt,
 } from '../core/util.js';
 import {
@@ -135,7 +134,7 @@ function mergeOptions(
 }
 
 function resolveOptions(options: SearchContentOptions): ResolvedOptions {
-  const normalizedOptions = omitOptionKeys(options, ['signal', 'onProgress', 'maxDepth']);
+  const { signal, onProgress, maxDepth, ...normalizedOptions } = options;
   const merged = mergeOptions(SEARCH_CONTENT_DEFAULTS, normalizedOptions);
   const result = SearchOptionsSchema.safeParse(merged);
   if (!result.success) {

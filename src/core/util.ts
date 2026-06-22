@@ -35,32 +35,6 @@ export function debounce<Args extends unknown[]>(
   return debounced;
 }
 
-export function omitOptionKeys<T extends object, K extends keyof T>(
-  input: T,
-  keys: readonly K[],
-): Omit<T, K> {
-  const keySet = new Set<PropertyKey>();
-  for (const k of keys) {
-    keySet.add(k);
-    if (typeof k === 'number') {
-      keySet.add(String(k));
-    } else if (typeof k === 'string') {
-      const num = Number(k);
-      if (!Number.isNaN(num)) {
-        keySet.add(num);
-      }
-    }
-  }
-
-  const output = {} as Record<PropertyKey, unknown>;
-  for (const key of Reflect.ownKeys(input)) {
-    if (!keySet.has(key)) {
-      output[key] = (input as Record<PropertyKey, unknown>)[key];
-    }
-  }
-  return output as Omit<T, K>;
-}
-
 // Copies non-undefined source properties onto target; safe under exactOptionalPropertyTypes.
 export function assignDefined<T extends object>(
   target: T,
@@ -94,9 +68,8 @@ export function maybeStripStructuredContentFromResult<T extends object>(
   if (!shouldStripStructuredOutput()) return result;
   if (!Object.hasOwn(result, 'structuredContent')) return result;
 
-  return omitOptionKeys(result, [
-    'structuredContent',
-  ] as unknown as readonly (keyof T)[]) as MaybeStrippedStructuredContent<T>;
+  const { structuredContent, ...rest } = result as Record<string, unknown>;
+  return rest as MaybeStrippedStructuredContent<T>;
 }
 
 const STRING_BOOL_SCHEMA = z.stringbool();

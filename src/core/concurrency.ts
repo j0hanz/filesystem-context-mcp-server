@@ -169,59 +169,9 @@ interface PoolWorker {
   startedReady: boolean;
 }
 
-class FastQueue<T extends NonNullable<unknown>> {
-  private items: (T | undefined)[] = [];
-  private head = 0;
-  private _size = 0;
-
-  push(item: T): void {
-    this.items.push(item);
-    this._size++;
-  }
-
-  shift(): T | undefined {
-    if (this.head < this.items.length) {
-      const item = this.items[this.head];
-      this.items[this.head] = undefined;
-      this.head++;
-      this._size--;
-      if (this.head > 1000 && this.head * 2 >= this.items.length) {
-        this.items = this.items.slice(this.head);
-        this.head = 0;
-      }
-      return item;
-    }
-    return undefined;
-  }
-
-  get length(): number {
-    return this._size;
-  }
-
-  remove(predicate: (item: T) => boolean): void {
-    for (let i = this.head; i < this.items.length; i++) {
-      const item = this.items[i];
-      if (item !== undefined && predicate(item)) {
-        // Tombstone instead of splice to avoid O(n) array reallocation.
-        this.items[i] = undefined;
-        this._size--;
-        return;
-      }
-    }
-  }
-
-  clear(): T[] {
-    const remaining = this.items.slice(this.head).filter((x): x is T => x !== undefined);
-    this.items = [];
-    this.head = 0;
-    this._size = 0;
-    return remaining;
-  }
-}
-
 class WorkerPool {
   private workers: PoolWorker[] = [];
-  private queue = new FastQueue<QueuedTask>();
+  private queue: QueuedTask[] = [];
   private nextId = 1;
   private sweepTimer?: NodeJS.Timeout | undefined;
   private consecutiveStartupFailures = 0;
@@ -315,7 +265,7 @@ class WorkerPool {
   public async shutdown(): Promise<void> {
     this.shuttingDown = true;
     // Reject everything that's still queued.
-    for (const qt of this.queue.clear()) {
+    for (const qt of this.clearQueue()) {
       this.cleanupEntry(qt.entry);
       qt.entry.reject(new FsError(ErrorCode.UNKNOWN, 'Worker pool shutting down'));
     }
@@ -500,8 +450,14 @@ class WorkerPool {
     }
   }
 
+  private clearQueue(): QueuedTask[] {
+    const remaining = this.queue;
+    this.queue = [];
+    return remaining;
+  }
+
   private rejectAllQueued(err: Error): void {
-    for (const qt of this.queue.clear()) {
+    for (const qt of this.clearQueue()) {
       this.cleanupEntry(qt.entry);
       qt.entry.reject(err);
     }
@@ -523,7 +479,10 @@ class WorkerPool {
         }, WORKER_CANCEL_GRACE_MS).unref();
       }
     } else {
-      this.queue.remove((q) => q.entry === entry);
+      const idx = this.queue.findIndex((q) => q.entry === entry);
+      if (idx !== -1) {
+        this.queue.splice(idx, 1);
+      }
     }
   }
 

@@ -243,14 +243,16 @@ class RawStore implements InternalStore {
 }
 
 // -----------------------------------------------------------------------------
-// Delegation Base
+// Eviction & Cache Policy Decorator
 // -----------------------------------------------------------------------------
 
-abstract class WrappedStore implements InternalStore {
-  protected readonly wrapped: InternalStore;
+class EvictionStore implements ResourceStore {
+  private readonly options: ResourceStoreOptions;
+  private readonly wrapped: InternalStore;
 
-  constructor(wrapped: InternalStore) {
+  constructor(wrapped: InternalStore, options: ResourceStoreOptions) {
     this.wrapped = wrapped;
+    this.options = options;
   }
 
   get totalBytes() {
@@ -272,114 +274,7 @@ abstract class WrappedStore implements InternalStore {
     this.wrapped.bumpLru(uri, entry);
   }
 
-  abstract removeEntry(uri: string, reason?: CacheEvictionReason): StoredEntry | undefined;
-  abstract putText(params: {
-    name: string;
-    mimeType?: string;
-    text: string;
-  }): TextResourceEntry & { kind: 'text' };
-  abstract getText(uri: string): TextResourceEntry & { kind: 'text' };
-  abstract putBlob(params: {
-    name: string;
-    mimeType: string;
-    data: Buffer;
-  }): BlobResourceEntry & { kind: 'blob' };
-  abstract getBlob(uri: string): BlobResourceEntry & { kind: 'blob' };
-  abstract getEntry(uri: string): StoredEntry;
-  abstract clear(): void;
-  abstract keys(): string[];
-}
-
-// -----------------------------------------------------------------------------
-// Diagnostic Decorator
-// -----------------------------------------------------------------------------
-
-class DiagnosticStore extends WrappedStore {
   removeEntry(uri: string, reason?: CacheEvictionReason): StoredEntry | undefined {
-    return this.wrapped.removeEntry(uri, reason);
-  }
-
-  putText(params: {
-    name: string;
-    mimeType?: string;
-    text: string;
-  }): TextResourceEntry & { kind: 'text' } {
-    return this.wrapped.putText(params);
-  }
-
-  getText(uri: string): TextResourceEntry & { kind: 'text' } {
-    return this.wrapped.getText(uri);
-  }
-
-  putBlob(params: {
-    name: string;
-    mimeType: string;
-    data: Buffer;
-  }): BlobResourceEntry & { kind: 'blob' } {
-    return this.wrapped.putBlob(params);
-  }
-
-  getBlob(uri: string): BlobResourceEntry & { kind: 'blob' } {
-    return this.wrapped.getBlob(uri);
-  }
-
-  getEntry(uri: string): StoredEntry {
-    return this.wrapped.getEntry(uri);
-  }
-
-  clear(): void {
-    this.wrapped.clear();
-  }
-
-  keys(): string[] {
-    return this.wrapped.keys();
-  }
-
-  putTextSilent(params: {
-    name: string;
-    mimeType?: string;
-    text: string;
-  }): TextResourceEntry & { kind: 'text' } {
-    return this.wrapped.putText(params);
-  }
-
-  putBlobSilent(params: {
-    name: string;
-    mimeType: string;
-    data: Buffer;
-  }): BlobResourceEntry & { kind: 'blob' } {
-    return this.wrapped.putBlob(params);
-  }
-}
-
-// -----------------------------------------------------------------------------
-// Eviction & Cache Policy Decorator
-// -----------------------------------------------------------------------------
-
-interface SilentPutStore extends InternalStore {
-  putTextSilent(params: {
-    name: string;
-    mimeType?: string;
-    text: string;
-  }): TextResourceEntry & { kind: 'text' };
-  putBlobSilent(params: {
-    name: string;
-    mimeType: string;
-    data: Buffer;
-  }): BlobResourceEntry & { kind: 'blob' };
-}
-
-class EvictionStore extends WrappedStore {
-  private readonly options: ResourceStoreOptions;
-  private readonly diagWrapped: SilentPutStore;
-
-  constructor(wrapped: SilentPutStore, options: ResourceStoreOptions) {
-    super(wrapped);
-    this.diagWrapped = wrapped;
-    this.options = options;
-  }
-
-  removeEntry(uri: string, reason?: CacheEvictionReason) {
     return this.wrapped.removeEntry(uri, reason);
   }
 
@@ -484,6 +379,7 @@ class EvictionStore extends WrappedStore {
       throw new FsError(ErrorCode.TOO_LARGE, 'Cache full: entry evicted.');
     }
   }
+
   putText(params: { name: string; mimeType?: string; text: string }): TextResourceEntry & {
     kind: 'text';
   } {
@@ -496,10 +392,11 @@ class EvictionStore extends WrappedStore {
     );
     if (hit) return hit as TextResourceEntry & { kind: 'text' };
 
-    const entry = this.diagWrapped.putTextSilent(params);
+    const entry = this.wrapped.putText(params);
     this._enforceAfterPut(entry);
     return entry;
   }
+
   getText(uri: string): TextResourceEntry & { kind: 'text' } {
     return this._getExisting(uri, 'text') as TextResourceEntry & { kind: 'text' };
   }
@@ -513,7 +410,7 @@ class EvictionStore extends WrappedStore {
     const hit = this._tryReturnHashHit('blob', params.mimeType, params.data, params.name);
     if (hit) return hit as BlobResourceEntry & { kind: 'blob' };
 
-    const entry = this.diagWrapped.putBlobSilent(params);
+    const entry = this.wrapped.putBlob(params);
     this._enforceAfterPut(entry);
     return entry;
   }
@@ -550,7 +447,6 @@ export function createInMemoryResourceStore(
     );
   }
   const raw = new RawStore(resolved.entryTtlMs);
-  const diagnostic = new DiagnosticStore(raw);
-  const eviction = new EvictionStore(diagnostic, resolved);
+  const eviction = new EvictionStore(raw, resolved);
   return eviction;
 }

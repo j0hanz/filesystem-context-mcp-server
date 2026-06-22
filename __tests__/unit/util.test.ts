@@ -1,30 +1,9 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 
-import { assignDefined, debounce, omitOptionKeys, parseEnvInt } from '../../src/core/util.js';
+import { assignDefined, debounce, parseEnvInt } from '../../src/core/util.js';
 
 describe('util.ts utilities', () => {
-  describe('omitOptionKeys', () => {
-    it('removes specified string keys', () => {
-      const input = { a: 1, b: 2, c: 3 };
-      const result = omitOptionKeys(input, ['a', 'c']);
-      assert.deepEqual(result, { b: 2 });
-    });
-
-    it('retains Symbol keys even if other keys are omitted', () => {
-      const sym = Symbol('meta');
-      const input = { a: 1, b: 2, [sym]: 'secret' };
-      const result = omitOptionKeys(input, ['a']);
-      assert.deepEqual(result, { b: 2, [sym]: 'secret' });
-    });
-
-    it('correctly omits numeric keys when passed as numbers', () => {
-      const input = { 1: 'one', 2: 'two', a: 'letter' };
-      const result = omitOptionKeys(input, [1]);
-      assert.deepEqual(result, { 2: 'two', a: 'letter' });
-    });
-  });
-
   describe('assignDefined', () => {
     it('assigns defined properties, ignoring undefined ones', () => {
       const target = { a: 1, b: 2 };
