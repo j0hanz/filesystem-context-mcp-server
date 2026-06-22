@@ -1,7 +1,5 @@
 import * as z from 'zod/v4';
 
-import { getTraceContext } from './observability.js';
-
 export const ErrorCode = {
   ACCESS_DENIED: 'ACCESS_DENIED',
   NOT_FOUND: 'NOT_FOUND',
@@ -44,9 +42,6 @@ interface ProblemIssue {
 }
 
 interface ProblemDetails {
-  readonly 'io.opentelemetry/traceparent'?: string;
-  readonly 'io.opentelemetry/tracestate'?: string;
-  readonly 'io.opentelemetry/baggage'?: string;
   readonly errno?: string;
   readonly syscall?: string;
   readonly tool?: string;
@@ -453,13 +448,7 @@ export function createDetailedError(
   additionalDetails?: Record<string, unknown>,
 ): DetailedError {
   const problem = classify(error);
-  const trace = getTraceContext();
-  const traceEntries: Record<string, unknown> = {};
-  if (trace?.traceparent) traceEntries['io.opentelemetry/traceparent'] = trace.traceparent;
-  if (trace?.tracestate) traceEntries['io.opentelemetry/tracestate'] = trace.tracestate;
-  if (trace?.baggage) traceEntries['io.opentelemetry/baggage'] = trace.baggage;
   const merged: Record<string, unknown> = {
-    ...traceEntries,
     ...(problem.details ?? {}),
     ...(additionalDetails ?? {}),
   };
@@ -516,24 +505,9 @@ export class FsError extends Error {
       const path = arg3;
       const detailsArg = arg4;
       const cause = arg5;
-      const trace = getTraceContext();
-      const traceDetails: Partial<ProblemDetails> = {
-        ...(trace?.traceparent !== undefined
-          ? { 'io.opentelemetry/traceparent': trace.traceparent }
-          : {}),
-        ...(trace?.tracestate !== undefined
-          ? { 'io.opentelemetry/tracestate': trace.tracestate }
-          : {}),
-        ...(trace?.baggage !== undefined ? { 'io.opentelemetry/baggage': trace.baggage } : {}),
-      };
 
       const details: ProblemDetails | undefined =
-        Object.keys(traceDetails).length > 0 || detailsArg !== undefined
-          ? {
-              ...traceDetails,
-              ...(detailsArg !== undefined ? { extra: detailsArg } : {}),
-            }
-          : undefined;
+        detailsArg !== undefined ? { extra: detailsArg } : undefined;
 
       const suggestion = DEFAULT_SUGGESTIONS[code];
       const problem: Problem = {
