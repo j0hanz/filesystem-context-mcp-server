@@ -2,28 +2,24 @@ import { relative } from 'node:path';
 
 import * as z from 'zod/v4';
 
-import { withTimedAbortSignal } from '../core/concurrency.js';
-import { ErrorCode, FsError, isTimeoutLikeError } from '../core/errors.js';
+import { ErrorCode } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../core/fs.js';
 import type { PathGuard } from '../core/path.js';
 import { decodeOffsetCursor, encodeOffsetCursor } from '../core/path.js';
 import {
-  buildMatcher,
   compileRegex,
-  executeSearch as executeCoreSearch,
   type Regex,
+  searchContent,
+  type SearchContentOptions,
   SearchWorkerPool,
-} from '../core/search/engine.js';
-import type { SearchOptions } from '../core/search/engine.js';
+} from '../core/search/index.js';
 import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_CONTENT_RESULTS,
-  DEFAULT_SEARCH_MAX_FILES,
   DEFAULT_SEARCH_TIMEOUT_MS,
   MAX_SEARCH_RESULTS,
-  MAX_SEARCHABLE_FILE_SIZE,
   parseEnvInt,
 } from '../core/util.js';
 import {
@@ -42,241 +38,9 @@ import { putResource } from './_helpers.js';
 import { defineTool } from './define.js';
 
 // ---------------------------------------------------------------------------
-// Domain types
-// ---------------------------------------------------------------------------
-
-interface ContentMatch {
-  readonly file: string;
-  readonly line: number;
-  readonly content: string;
-  readonly contextBefore?: readonly string[];
-  readonly contextAfter?: readonly string[];
-  readonly matchCount: number;
-}
-
-interface SearchContentResult {
-  readonly basePath: string;
-  readonly pattern: string;
-  readonly filePattern: string;
-  readonly matches: readonly ContentMatch[];
-  readonly summary: {
-    readonly filesScanned: number;
-    readonly filesMatched: number;
-    readonly matches: number;
-    readonly truncated: boolean;
-    readonly skippedTooLarge: number;
-    readonly skippedBinary: number;
-    readonly skippedInaccessible: number;
-    readonly stoppedReason?: 'maxResults' | 'maxFiles' | 'timeout';
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Re-export SearchWorkerPool for compatibility
 // ---------------------------------------------------------------------------
 export { SearchWorkerPool };
-
-const SEARCH_CONTENT_MAX_RESULTS = 500;
-
-const SearchOptionsSchema = z.strictObject({
-  filePattern: SafeGlobPattern,
-  excludePatterns: z.array(z.string()),
-  caseSensitive: z.boolean(),
-  maxResults: NonNegInt,
-  maxFileSize: NonNegInt,
-  maxFilesScanned: NonNegInt,
-  timeoutMs: NonNegInt,
-  skipBinary: z.boolean(),
-  contextLines: NonNegInt,
-  contextBefore: z.int32().min(0).max(20).optional(),
-  contextAfter: z.int32().min(0).max(20).optional(),
-  fuzzy: z.boolean().optional(),
-  wholeWord: z.boolean(),
-  isLiteral: z.boolean(),
-  includeHidden: z.boolean(),
-  baseNameMatch: z.boolean(),
-  caseSensitiveFileMatch: z.boolean(),
-  respectGitignore: z.boolean(),
-});
-
-type ResolvedOptions = z.infer<typeof SearchOptionsSchema>;
-
-interface SearchContentOptions extends Partial<ResolvedOptions> {
-  signal?: AbortSignal;
-  onProgress?: (progress: { total?: number; current: number }) => void;
-  maxDepth?: number;
-}
-
-const SEARCH_CONTENT_DEFAULTS: ResolvedOptions = {
-  filePattern: '**/*',
-  excludePatterns: DEFAULT_EXCLUDE_PATTERNS,
-  caseSensitive: false,
-  maxResults: SEARCH_CONTENT_MAX_RESULTS,
-  maxFileSize: MAX_SEARCHABLE_FILE_SIZE,
-  maxFilesScanned: DEFAULT_SEARCH_MAX_FILES,
-  timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-  skipBinary: true,
-  contextLines: 0,
-  wholeWord: false,
-  isLiteral: true,
-  includeHidden: false,
-  baseNameMatch: true,
-  caseSensitiveFileMatch: true,
-  respectGitignore: true,
-};
-
-const MIN_FUZZY_PATTERN_LENGTH = 4;
-
-function mergeOptions(
-  defaults: ResolvedOptions,
-  options: Partial<ResolvedOptions>,
-): ResolvedOptions {
-  return { ...defaults, ...options };
-}
-
-function resolveOptions(options: SearchContentOptions): ResolvedOptions {
-  const { signal, onProgress, maxDepth, ...normalizedOptions } = options;
-  const merged = mergeOptions(SEARCH_CONTENT_DEFAULTS, normalizedOptions);
-  const result = SearchOptionsSchema.safeParse(merged);
-  if (!result.success) {
-    throw new FsError(
-      ErrorCode.INVALID_INPUT,
-      `Invalid search options:\n${z.prettifyError(result.error)}`,
-      undefined,
-      { errors: z.treeifyError(result.error) },
-    );
-  }
-  return result.data;
-}
-
-function buildTimeoutSearchResult(
-  basePath: string,
-  pattern: string,
-  filePattern: string,
-): SearchContentResult {
-  return {
-    basePath,
-    pattern,
-    filePattern,
-    matches: [],
-    summary: {
-      filesScanned: 0,
-      filesMatched: 0,
-      matches: 0,
-      truncated: true,
-      skippedTooLarge: 0,
-      skippedBinary: 0,
-      skippedInaccessible: 0,
-      stoppedReason: 'timeout',
-    },
-  };
-}
-
-async function searchContent(
-  basePath: string,
-  pattern: string,
-  options: SearchContentOptions = {},
-  pathGuard?: PathGuard,
-  fsOps?: GuardedFileSystem,
-): Promise<SearchContentResult> {
-  if (!pathGuard) {
-    throw new FsError(ErrorCode.INVALID_INPUT, 'pathGuard is required in searchContent');
-  }
-  if (!fsOps) {
-    throw new FsError(ErrorCode.INVALID_INPUT, 'fsOps is required in searchContent');
-  }
-  if (!basePath.trim()) throw new FsError(ErrorCode.INVALID_INPUT, 'basePath required');
-  if (typeof pattern !== 'string') throw new FsError(ErrorCode.INVALID_INPUT, 'pattern required');
-
-  const opts = resolveOptions(options);
-
-  if (opts.fuzzy === true) {
-    if (!opts.isLiteral) {
-      throw new FsError(ErrorCode.INVALID_INPUT, "Cannot use 'fuzzy' with 'isRegex'");
-    }
-    if (pattern.length < MIN_FUZZY_PATTERN_LENGTH) {
-      throw new FsError(
-        ErrorCode.INVALID_INPUT,
-        `Fuzzy pattern must be at least ${MIN_FUZZY_PATTERN_LENGTH} characters`,
-      );
-    }
-  }
-
-  try {
-    return await withTimedAbortSignal(options.signal, opts.timeoutMs, async (signal) => {
-      const searchOpts: SearchOptions = {
-        pattern,
-        path: basePath,
-        filePattern: opts.filePattern,
-        excludePatterns: opts.excludePatterns,
-        caseSensitive: opts.caseSensitive,
-        wholeWord: opts.wholeWord,
-        isLiteral: opts.isLiteral,
-        maxResults: opts.maxResults,
-        maxFileSize: opts.maxFileSize,
-        maxFilesScanned: opts.maxFilesScanned,
-        timeoutMs: opts.timeoutMs,
-        skipBinary: opts.skipBinary,
-        contextBefore: opts.contextBefore ?? opts.contextLines,
-        contextAfter: opts.contextAfter ?? opts.contextLines,
-        signal,
-        baseNameMatch: opts.baseNameMatch,
-        includeHidden: opts.includeHidden,
-        respectGitignore: opts.respectGitignore,
-        ...(options.maxDepth !== undefined ? { maxDepth: options.maxDepth } : {}),
-        ...(opts.fuzzy !== undefined ? { fuzzy: opts.fuzzy } : {}),
-      };
-
-      const coreResult = await executeCoreSearch(fsOps, searchOpts);
-
-      const matcher = buildMatcher(pattern, {
-        caseSensitive: opts.caseSensitive,
-        wholeWord: opts.wholeWord,
-        isLiteral: opts.isLiteral,
-        ...(opts.fuzzy !== undefined ? { fuzzy: opts.fuzzy } : {}),
-      });
-
-      const matches: ContentMatch[] = [];
-      for (const fileMatch of coreResult.filesMatched) {
-        for (const match of fileMatch.matches) {
-          matches.push({
-            file: fileMatch.filePath,
-            line: match.line,
-            content: match.content,
-            contextBefore: match.before,
-            contextAfter: match.after,
-            matchCount: matcher.matchCount(match.content),
-          });
-        }
-      }
-
-      return {
-        basePath,
-        pattern,
-        filePattern: opts.filePattern,
-        matches,
-        summary: {
-          filesScanned: coreResult.summary.filesScanned,
-          filesMatched: coreResult.summary.filesMatched,
-          matches: coreResult.summary.matchesCount,
-          truncated: coreResult.summary.truncated,
-          skippedTooLarge: 0,
-          skippedBinary: 0,
-          // Engine reports total skipped files but not per-reason breakdown
-          skippedInaccessible: coreResult.summary.skippedFiles ?? 0,
-          ...(coreResult.summary.truncated
-            ? { stoppedReason: coreResult.summary.truncatedReason ?? ('maxResults' as const) }
-            : {}),
-        },
-      };
-    });
-  } catch (error: unknown) {
-    if (isTimeoutLikeError(error)) {
-      return buildTimeoutSearchResult(basePath, pattern, opts.filePattern);
-    }
-    throw error;
-  }
-}
 
 // ---------------------------------------------------------------------------
 
