@@ -17,7 +17,7 @@ import {
   type LogSender,
   logToSender,
 } from './observability.js';
-import { isSamePath, LIFECYCLE_CHANNEL, normalizePath } from './path.js';
+import { isSamePath, normalizePath } from './path.js';
 import type { PathGuard } from './path.js';
 import type { ResourceStore } from './store.js';
 import { debounce, getInitHandshakeTimeoutMs, PARALLEL_CONCURRENCY } from './util.js';
@@ -245,12 +245,6 @@ export class McpRootsSynchronizer {
 
     this.initTimer = setTimeout(() => {
       if (this.state === 'initializing') {
-        if (LIFECYCLE_CHANNEL.hasSubscribers) {
-          LIFECYCLE_CHANNEL.publish({
-            phase: 'init_timeout',
-            timeoutMs: initHandshakeTimeoutMs,
-          });
-        }
         if (this.loggingState) {
           logToSender(
             new McpLogSender(server),

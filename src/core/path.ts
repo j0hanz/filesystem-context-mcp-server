@@ -1,4 +1,3 @@
-import { channel } from 'node:diagnostics_channel';
 import type { Stats } from 'node:fs';
 import { lstat, readdir, readlink, realpath, stat } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
@@ -25,7 +24,6 @@ import { parseEnvDirList, parseTrueEnvFlag } from './primitives.js';
 export type ValidatedPath = string & { readonly __validated: unique symbol };
 
 const ROOTS_TIMEOUT_MS = 5000;
-export const LIFECYCLE_CHANNEL = channel('filesystem-mcp:lifecycle');
 
 export interface ServerOptions {
   allowCwd?: boolean;
