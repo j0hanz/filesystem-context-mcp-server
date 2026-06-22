@@ -71,21 +71,10 @@ describe('resource store', () => {
     assert.equal(store.keys().length, 0);
   });
 
-  it('does not emit cache_store when entry is immediately evicted', async () => {
-    const { channel } = await import('node:diagnostics_channel');
-    const ch = channel('filesystem-mcp:resource-store');
-    const phases: string[] = [];
-    const sub = (msg: unknown) => phases.push((msg as { phase: string }).phase);
-    ch.subscribe(sub);
-    try {
-      // maxEntries: 0 causes any inserted entry to be immediately evicted by enforceLimits
-      const store = createInMemoryResourceStore({ maxEntries: 0 });
-      assert.throws(() => store.putText({ name: 'x', text: 'hello world' }));
-      assert.ok(!phases.includes('cache_store'), 'cache_store must not fire for evicted entries');
-      assert.ok(phases.includes('cache_reject'), 'cache_reject must fire');
-    } finally {
-      ch.unsubscribe(sub);
-    }
+  it('throws when entry is immediately evicted', () => {
+    // maxEntries: 0 causes any inserted entry to be immediately evicted by enforceLimits
+    const store = createInMemoryResourceStore({ maxEntries: 0 });
+    assert.throws(() => store.putText({ name: 'x', text: 'hello world' }));
   });
 
   it('throws at construction when maxEntryBytes exceeds maxTotalBytes', () => {

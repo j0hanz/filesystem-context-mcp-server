@@ -1,5 +1,4 @@
 import { hash, randomUUID } from 'node:crypto';
-import { channel } from 'node:diagnostics_channel';
 
 import { ErrorCode, FsError } from './errors.js';
 import { Logger } from './observability.js';
@@ -56,17 +55,6 @@ const DEFAULT_RESOURCE_STORE_OPTIONS: ResourceStoreOptions = {
 
 type StoredEntry = (TextResourceEntry & { kind: 'text' }) | (BlobResourceEntry & { kind: 'blob' });
 
-const _CACHE_PHASES = [
-  'cache_hit',
-  'cache_miss',
-  'cache_store',
-  'cache_evict',
-  'cache_clear',
-  'cache_reject',
-] as const;
-
-type CachePhase = (typeof _CACHE_PHASES)[number];
-
 const _CACHE_EVICTION_REASONS = [
   'entry_too_large',
   'evicted_immediately',
@@ -75,21 +63,6 @@ const _CACHE_EVICTION_REASONS = [
 ] as const;
 
 type CacheEvictionReason = (typeof _CACHE_EVICTION_REASONS)[number];
-
-interface ResourceStoreDiagnosticsEvent {
-  phase: CachePhase;
-  uri?: string;
-  name?: string;
-  bytes?: number;
-  reason?: CacheEvictionReason;
-}
-
-const RESOURCE_STORE_DIAGNOSTICS_CHANNEL = channel('filesystem-mcp:resource-store');
-
-function publishResourceStoreDiagnostics(event: ResourceStoreDiagnosticsEvent): void {
-  if (!RESOURCE_STORE_DIAGNOSTICS_CHANNEL.hasSubscribers) return;
-  RESOURCE_STORE_DIAGNOSTICS_CHANNEL.publish(event);
-}
 
 function estimateBytes(text: string | Buffer): number {
   if (Buffer.isBuffer(text)) {
@@ -323,17 +296,7 @@ abstract class WrappedStore implements InternalStore {
 
 class DiagnosticStore extends WrappedStore {
   removeEntry(uri: string, reason?: CacheEvictionReason): StoredEntry | undefined {
-    const entry = this.wrapped.removeEntry(uri, reason);
-    if (entry) {
-      publishResourceStoreDiagnostics({
-        phase: 'cache_evict',
-        uri,
-        name: entry.name,
-        bytes: entry.size,
-        ...(reason !== undefined ? { reason } : {}),
-      });
-    }
-    return entry;
+    return this.wrapped.removeEntry(uri, reason);
   }
 
   putText(params: {
@@ -341,14 +304,7 @@ class DiagnosticStore extends WrappedStore {
     mimeType?: string;
     text: string;
   }): TextResourceEntry & { kind: 'text' } {
-    const entry = this.wrapped.putText(params);
-    publishResourceStoreDiagnostics({
-      phase: 'cache_store',
-      uri: entry.uri,
-      name: entry.name,
-      bytes: entry.size,
-    });
-    return entry;
+    return this.wrapped.putText(params);
   }
 
   getText(uri: string): TextResourceEntry & { kind: 'text' } {
@@ -360,14 +316,7 @@ class DiagnosticStore extends WrappedStore {
     mimeType: string;
     data: Buffer;
   }): BlobResourceEntry & { kind: 'blob' } {
-    const entry = this.wrapped.putBlob(params);
-    publishResourceStoreDiagnostics({
-      phase: 'cache_store',
-      uri: entry.uri,
-      name: entry.name,
-      bytes: entry.size,
-    });
-    return entry;
+    return this.wrapped.putBlob(params);
   }
 
   getBlob(uri: string): BlobResourceEntry & { kind: 'blob' } {
@@ -379,9 +328,7 @@ class DiagnosticStore extends WrappedStore {
   }
 
   clear(): void {
-    const bytesBeforeClear = this.wrapped.totalBytes;
     this.wrapped.clear();
-    publishResourceStoreDiagnostics({ phase: 'cache_clear', bytes: bytesBeforeClear });
   }
 
   keys(): string[] {
@@ -469,7 +416,6 @@ class EvictionStore extends WrappedStore {
     const existing = this.wrapped.getEntryIfExists(uri);
 
     if (!existing) {
-      publishResourceStoreDiagnostics({ phase: 'cache_miss', uri, reason: 'not_found' });
       throw new FsError(
         ErrorCode.NOT_FOUND,
         `Resource not found: ${uri}. Re-run the tool to regenerate.`,
@@ -478,7 +424,6 @@ class EvictionStore extends WrappedStore {
 
     if (isExpired(existing)) {
       this.removeEntry(uri, 'expired');
-      publishResourceStoreDiagnostics({ phase: 'cache_miss', uri, reason: 'expired' });
       throw new FsError(
         ErrorCode.NOT_FOUND,
         `Resource expired: ${uri}. Re-run the tool to regenerate.`,
@@ -486,7 +431,6 @@ class EvictionStore extends WrappedStore {
     }
 
     if (expectedKind && existing.kind !== expectedKind) {
-      publishResourceStoreDiagnostics({ phase: 'cache_miss', uri, reason: 'not_found' });
       throw new FsError(
         ErrorCode.NOT_FOUND,
         `Resource not found: ${uri}. Re-run the tool to regenerate.`,
@@ -494,12 +438,6 @@ class EvictionStore extends WrappedStore {
     }
 
     this.bumpLru(uri, existing);
-    publishResourceStoreDiagnostics({
-      phase: 'cache_hit',
-      uri: existing.uri,
-      name: existing.name,
-      bytes: existing.size,
-    });
     return existing;
   }
 
@@ -507,11 +445,6 @@ class EvictionStore extends WrappedStore {
     this.pruneExpiredEntries();
     const entryBytes = estimateBytes(data);
     if (entryBytes > this.options.maxEntryBytes) {
-      publishResourceStoreDiagnostics({
-        phase: 'cache_reject',
-        bytes: entryBytes,
-        reason: 'entry_too_large',
-      });
       throw new FsError(ErrorCode.TOO_LARGE, `Resource too large to cache (${entryBytes} bytes).`);
     }
   }
@@ -536,12 +469,6 @@ class EvictionStore extends WrappedStore {
           expiresAt: new Date(now + this.options.entryTtlMs).toISOString(),
         };
         this.bumpLru(refreshed.uri, refreshed);
-        publishResourceStoreDiagnostics({
-          phase: 'cache_hit',
-          uri: refreshed.uri,
-          name: refreshed.name,
-          bytes: refreshed.size,
-        });
         return refreshed;
       } else {
         // Kind mismatch: remove orphan so _put can safely take over the byHashIndex slot.
@@ -554,13 +481,6 @@ class EvictionStore extends WrappedStore {
   private _enforceAfterPut(entry: StoredEntry): void {
     this.enforceLimits();
     if (!this.wrapped.getEntryIfExists(entry.uri)) {
-      publishResourceStoreDiagnostics({
-        phase: 'cache_reject',
-        uri: entry.uri,
-        name: entry.name,
-        bytes: entry.size,
-        reason: 'evicted_immediately',
-      });
       throw new FsError(ErrorCode.TOO_LARGE, 'Cache full: entry evicted.');
     }
   }
@@ -578,12 +498,6 @@ class EvictionStore extends WrappedStore {
 
     const entry = this.diagWrapped.putTextSilent(params);
     this._enforceAfterPut(entry);
-    publishResourceStoreDiagnostics({
-      phase: 'cache_store',
-      uri: entry.uri,
-      name: entry.name,
-      bytes: entry.size,
-    });
     return entry;
   }
   getText(uri: string): TextResourceEntry & { kind: 'text' } {
@@ -601,12 +515,6 @@ class EvictionStore extends WrappedStore {
 
     const entry = this.diagWrapped.putBlobSilent(params);
     this._enforceAfterPut(entry);
-    publishResourceStoreDiagnostics({
-      phase: 'cache_store',
-      uri: entry.uri,
-      name: entry.name,
-      bytes: entry.size,
-    });
     return entry;
   }
 
