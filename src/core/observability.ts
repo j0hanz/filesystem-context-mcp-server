@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { hash as hashFunc } from 'node:crypto';
-import { channel, tracingChannel } from 'node:diagnostics_channel';
-import { performance, PerformanceObserver } from 'node:perf_hooks';
+import { channel } from 'node:diagnostics_channel';
+import { performance } from 'node:perf_hooks';
 import { inspect } from 'node:util';
 
 import { parseTrueEnvFlag } from './primitives.js';
@@ -419,14 +419,6 @@ function parseDetail(val?: string): 0 | 1 | 2 {
 
 // --- Domain Types ---
 
-interface OpsTraceContext {
-  op: string;
-  engine?: string;
-  tool?: string;
-  path?: string | undefined;
-  [key: string]: unknown;
-}
-
 export interface TraceContext {
   traceparent: string;
   tracestate?: string;
@@ -440,38 +432,11 @@ interface ToolAsyncContext {
   traceContext?: TraceContext;
 }
 
-interface PerfDiagnosticsEvent {
-  phase: 'end' | 'measure';
-  tool?: string;
-  name?: string;
-  durationMs: number;
-  elu?: { idle: number; active: number; utilization: number };
-  eventLoopDelay?: {
-    min: number;
-    max: number;
-    mean: number;
-    p50: number;
-    p95: number;
-    p99: number;
-    exceeds: number;
-  };
-  detail?: unknown;
-}
-
 // --- Channels & Observability State ---
-
-const CHANNELS = {
-  tool: channel('filesystem-mcp:tool'),
-  perf: channel('filesystem-mcp:perf'),
-  ops: tracingChannel<unknown, OpsTraceContext>('filesystem-mcp:ops'),
-};
 
 const toolContext = new AsyncLocalStorage<ToolAsyncContext>({
   name: 'filesystem-mcp:tool',
 });
-
-let perfObserver: PerformanceObserver | undefined;
-let traceCounter = 0;
 
 export function sanitizePathForDiagnostics(path: string | undefined): string | undefined {
   const { detail } = readConfig();
@@ -484,219 +449,7 @@ export function sanitizePathForDiagnostics(path: string | undefined): string | u
   }
 }
 
-function enrichWithToolContext(
-  detail?: Record<string, unknown>,
-): Record<string, unknown> | undefined {
-  const current = toolContext.getStore();
-  if (!current) return detail;
-
-  const merged: Record<string, unknown> = { ...(detail ?? {}) };
-  if (merged['tool'] === undefined) {
-    merged['tool'] = current.tool;
-  }
-
-  if (merged['path'] === undefined && current.normalizedPath) {
-    merged['path'] = current.normalizedPath;
-  } else if (merged['path'] !== undefined) {
-    const hashed = sanitizePathForDiagnostics(merged['path'] as string);
-    if (hashed) {
-      merged['path'] = hashed;
-    } else {
-      delete merged['path'];
-    }
-  }
-
-  return merged;
-}
-
-// ════════════════════════════════════════════════════════════
-// Perf / Tracing — startPerfMeasure, withOpsTrace, event loop
-// ════════════════════════════════════════════════════════════
-
-// --- Perf Helpers ---
-
-function clearPublishedMeasures(entries: readonly { name: string }[]): void {
-  for (const entry of entries) {
-    performance.clearMeasures(entry.name);
-  }
-}
-
-function ensureObserver(): void {
-  if (perfObserver) return;
-  perfObserver = new PerformanceObserver((list) => {
-    const entries = list.getEntries();
-    const ours: { name: string }[] = [];
-    for (const entry of entries) {
-      if (entry.name.startsWith('filesystem-mcp:')) {
-        ours.push(entry);
-        const originalName = entry.name.slice('filesystem-mcp:'.length);
-        try {
-          CHANNELS.perf.publish({
-            phase: 'measure',
-            name: originalName,
-            durationMs: entry.duration,
-            detail: (entry as { detail?: unknown }).detail,
-          } satisfies PerfDiagnosticsEvent);
-        } catch (err) {
-          console.error('[ensureObserver] Failed to publish perf measure event', err);
-        }
-      }
-    }
-    try {
-      // Keep the global timeline bounded while preserving published events.
-      clearPublishedMeasures(ours);
-    } catch {
-      // Never allow observability cleanup to affect tool execution.
-    }
-  });
-  perfObserver.observe({ entryTypes: ['measure'] });
-}
-
-// --- Public API ---
-
-function shouldPublishOpsTrace(): boolean {
-  return readConfig().enabled && CHANNELS.ops.hasSubscribers;
-}
-
-function publishOpsTraceStart(context: OpsTraceContext): void {
-  try {
-    CHANNELS.ops.start.publish(buildOpsTraceContext(context));
-  } catch (err) {
-    console.error('[publishOpsTraceStart] Failed', err);
-  }
-}
-
-function publishOpsTraceEnd(context: OpsTraceContext): void {
-  try {
-    CHANNELS.ops.end.publish(buildOpsTraceContext(context));
-  } catch (err) {
-    console.error('[publishOpsTraceEnd] Failed', err);
-  }
-}
-
-function publishOpsTraceError(context: OpsTraceContext, error: unknown): void {
-  try {
-    CHANNELS.ops.error.publish({
-      ...buildOpsTraceContext(context),
-      error,
-    });
-  } catch (err) {
-    console.error('[publishOpsTraceError] Failed', err);
-  }
-}
-
-/**
- * Wraps an async generator with ops-trace start/end/error events. Tool context
- * is auto-merged from the current `toolContext` ALS. No-op when ops
- * diagnostics are disabled or the channel has no subscribers.
- */
-export async function* withOpsTrace<T>(
-  context: OpsTraceContext,
-  gen: () => AsyncGenerator<T>,
-): AsyncGenerator<T> {
-  if (!shouldPublishOpsTrace()) {
-    yield* gen();
-    return;
-  }
-  publishOpsTraceStart(context);
-  try {
-    yield* gen();
-  } catch (error) {
-    publishOpsTraceError(context, error);
-    throw error;
-  } finally {
-    publishOpsTraceEnd(context);
-  }
-}
-
-function buildOpsTraceContext(context: OpsTraceContext): OpsTraceContext {
-  const current = toolContext.getStore();
-  const merged: OpsTraceContext = { ...context };
-
-  if (current && merged.tool === undefined) {
-    merged.tool = current.tool;
-  }
-
-  const path = merged.path ?? current?.path;
-  if (path) {
-    const hashed = sanitizePathForDiagnostics(path);
-    if (hashed) {
-      merged.path = hashed;
-    } else {
-      delete merged.path;
-    }
-  } else {
-    delete merged.path;
-  }
-
-  return merged;
-}
-
 export function getTraceContext(): TraceContext | undefined {
   return toolContext.getStore()?.traceContext;
-}
-
-function clearMeasureMarks(startMark: string, endMark: string): void {
-  performance.clearMarks(startMark);
-  performance.clearMarks(endMark);
-}
-
-export function startPerfMeasure(
-  name: string,
-  detail?: Record<string, unknown>,
-): ((ok?: boolean) => void) | undefined {
-  if (!readConfig().enabled || !CHANNELS.perf.hasSubscribers) return undefined;
-
-  ensureObserver();
-  const id = ++traceCounter;
-  const prefixedName = `filesystem-mcp:${name}`;
-  const startMark = `${prefixedName}:start:${id}`;
-  const endMark = `${prefixedName}:end:${id}`;
-  const runInCapturedContext = AsyncLocalStorage.snapshot();
-  let finished = false;
-
-  performance.mark(startMark);
-
-  // Safety timeout: auto-clear marks after 5 minutes if never finished to prevent timeline leak
-  const safetyTimeout = setTimeout(() => {
-    if (!finished) {
-      finished = true;
-      clearMeasureMarks(startMark, endMark);
-    }
-  }, 300000);
-  try {
-    safetyTimeout.unref();
-  } catch {
-    // Ignore unref failures in non-Node environments
-  }
-
-  return (ok?: boolean) => {
-    if (finished) return;
-    finished = true;
-    clearTimeout(safetyTimeout);
-
-    try {
-      runInCapturedContext(() => {
-        try {
-          performance.mark(endMark);
-
-          let meta = enrichWithToolContext(detail);
-          if (ok !== undefined) {
-            meta = { ...(meta ?? {}), ok };
-          }
-
-          performance.measure(prefixedName, {
-            start: startMark,
-            end: endMark,
-            detail: meta,
-          });
-        } finally {
-          clearMeasureMarks(startMark, endMark);
-        }
-      });
-    } catch {
-      clearMeasureMarks(startMark, endMark);
-    }
-  };
 }
 
