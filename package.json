@@ -70,7 +70,7 @@
     "diff": "^9",
     "express": "^5.2.1",
     "ignore": "^7.0.5",
-    "re2": "^1.24.1",
+    "re2": "^1.25.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -82,11 +82,11 @@
     "@types/node": "^24",
     "eslint": "^10.5.0",
     "eslint-config-prettier": "^10.1.8",
-    "knip": "^6.16.1",
+    "knip": "^6.18.0",
     "prettier": "^3.8.4",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.61.1"
+    "typescript-eslint": "^8.62.0"
   },
   "engines": {
     "node": ">=24"
