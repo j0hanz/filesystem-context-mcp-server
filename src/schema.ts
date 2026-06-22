@@ -36,6 +36,12 @@ export const FileKind = z.enum(FILE_KINDS).meta({ id: 'FileKind', title: 'File K
 
 const MAX_PATH_LENGTH = 4096;
 
+export const SHELL_METACHAR_RE = /[\n\r;|`]/;
+
+export function isBlank(val: string): boolean {
+  return val.trim().length === 0;
+}
+
 const PathBase = z
   .string()
   .min(1, { message: 'Path required' })
@@ -68,7 +74,7 @@ const PathBase = z
       });
       return z.NEVER;
     }
-    if (/[\n\r;|`]/.test(val)) {
+    if (SHELL_METACHAR_RE.test(val)) {
       ctx.addIssue({
         code: 'custom',
         message: 'Path contains prohibited characters (newlines or shell metacharacters)',
@@ -122,7 +128,7 @@ export const SafeGlobPattern = z
       });
       return z.NEVER;
     }
-    if (/[\n\r;|`]/.test(val)) {
+    if (SHELL_METACHAR_RE.test(val)) {
       ctx.addIssue({
         code: 'custom',
         message: 'Pattern contains prohibited characters (newlines or shell metacharacters)',

@@ -23,6 +23,7 @@ import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import {
   defaultFalseBoolean,
   FileKind,
+  isBlank,
   IsoDateTime,
   NonNegInt,
   OperationSummarySchema,
@@ -37,7 +38,7 @@ const EditSpecSchema = z.strictObject({
   oldText: z
     .string()
     .min(1, 'oldText required')
-    .refine((val) => val.trim().length > 0, {
+    .refine((val) => !isBlank(val), {
       message: 'oldText cannot be empty or whitespace-only',
     })
     .describe(

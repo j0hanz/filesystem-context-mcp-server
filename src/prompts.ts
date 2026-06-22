@@ -22,6 +22,7 @@ import { PathCompleter } from './core/path.js';
 import type { PathGuard } from './core/path.js';
 import type { Registrar } from './core/registrar.js';
 import { INSTRUCTION_SECTIONS, serverInstructionsContent } from './resources.js';
+import { isBlank, RequiredPath, SHELL_METACHAR_RE } from './schema.js';
 import type { IconInfo } from './tools/define.js';
 import { withDefaultIcons } from './tools/define.js';
 
@@ -56,21 +57,9 @@ function pathArg(
 ): ReturnType<typeof completable<z.ZodString>> {
   const completer = new PathCompleter(guard);
   return completable(
-    z
-      .string()
-      .min(1, { message: 'Path required' })
-      .refine((val) => val.trim().length > 0, {
-        message: 'Path cannot be empty or whitespace-only',
-      })
-      .refine((val) => !val.includes('..'), {
-        message: 'Directory traversal sequences ("..") are forbidden',
-      })
-      .refine((val) => !/[\n\r;|`]/.test(val), {
-        message: 'Path contains prohibited characters (newlines or shell metacharacters)',
-      })
-      .describe(
-        `${description}. Must not contain directory traversal sequences (e.g. "..") or shell metacharacters, and cannot be empty or whitespace-only.`,
-      ),
+    RequiredPath.describe(
+      `${description}. Must not contain directory traversal sequences (e.g. "..") or shell metacharacters, and cannot be empty or whitespace-only.`,
+    ),
     (value, ctx) => completer.suggest(value, argumentName, ctx?.arguments ?? undefined),
   );
 }
@@ -83,10 +72,10 @@ function topicArg(
     z
       .string()
       .min(1, { message: 'Topic required' })
-      .refine((val) => val.trim().length > 0, {
+      .refine((val) => !isBlank(val), {
         message: 'Topic cannot be empty or whitespace-only',
       })
-      .refine((val) => !/[\n\r;|`]/.test(val), {
+      .refine((val) => !SHELL_METACHAR_RE.test(val), {
         message: 'Topic contains prohibited characters (newlines or shell metacharacters)',
       })
       .describe(
@@ -291,10 +280,10 @@ const FIND_IN_TREE: PromptEntry = {
             query: z
               .string()
               .min(1)
-              .refine((val) => val.trim().length > 0, {
+              .refine((val) => !isBlank(val), {
                 message: 'Query cannot be empty or whitespace-only',
               })
-              .refine((val) => !/[\n\r;|`]/.test(val), {
+              .refine((val) => !SHELL_METACHAR_RE.test(val), {
                 message: 'Query contains prohibited characters (newlines or shell metacharacters)',
               })
               .describe(

@@ -43,6 +43,7 @@ import {
   FileKind,
   includeHiddenField,
   includeIgnoredField,
+  isBlank,
   maxDepthField,
   NonNegInt,
   OptionalPath,
@@ -64,7 +65,7 @@ const SearchAndReplaceInputSchema = z.strictObject({
     .string()
     .min(1)
     .max(10000)
-    .refine((val) => val.trim().length > 0, {
+    .refine((val) => !isBlank(val), {
       message: 'searchPattern cannot be empty or whitespace-only',
     })
     .describe(
