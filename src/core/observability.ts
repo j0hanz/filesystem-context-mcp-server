@@ -1,10 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { hash as hashFunc } from 'node:crypto';
 import { channel } from 'node:diagnostics_channel';
 import { performance } from 'node:perf_hooks';
 import { inspect } from 'node:util';
-
-import { parseTrueEnvFlag } from './primitives.js';
 
 // ════════════════════════════════════════════════════════════
 // Logging — Logger singleton, LogRouter, structured log emit
@@ -391,65 +388,4 @@ export class LogRouter {
 // ════════════════════════════════════════════════════════════
 // Telemetry — withTelemetry, wide events
 // ════════════════════════════════════════════════════════════
-
-// --- Configuration ---
-
-interface Config {
-  enabled: boolean;
-  detail: 0 | 1 | 2;
-  logToolErrors: boolean;
-}
-
-let _cachedConfig: Config | undefined;
-
-function readConfig(): Config {
-  _cachedConfig ??= {
-    enabled: parseTrueEnvFlag(process.env['FS_CONTEXT_DIAGNOSTICS']),
-    detail: parseDetail(process.env['FS_CONTEXT_DIAGNOSTICS_DETAIL']),
-    logToolErrors: parseTrueEnvFlag(process.env['FS_CONTEXT_TOOL_LOG_ERRORS']),
-  };
-  return _cachedConfig;
-}
-
-function parseDetail(val?: string): 0 | 1 | 2 {
-  if (val === '2') return 2;
-  if (val === '1') return 1;
-  return 0;
-}
-
-// --- Domain Types ---
-
-export interface TraceContext {
-  traceparent: string;
-  tracestate?: string;
-  baggage?: string;
-}
-
-interface ToolAsyncContext {
-  tool: string;
-  path?: string;
-  normalizedPath?: string;
-  traceContext?: TraceContext;
-}
-
-// --- Channels & Observability State ---
-
-const toolContext = new AsyncLocalStorage<ToolAsyncContext>({
-  name: 'filesystem-mcp:tool',
-});
-
-export function sanitizePathForDiagnostics(path: string | undefined): string | undefined {
-  const { detail } = readConfig();
-  if (typeof path !== 'string' || !path || detail === 0) return undefined;
-  if (detail === 2) return path;
-  try {
-    return hashFunc('sha256', path, 'hex').slice(0, 16);
-  } catch {
-    return undefined;
-  }
-}
-
-export function getTraceContext(): TraceContext | undefined {
-  return toolContext.getStore()?.traceContext;
-}
 
