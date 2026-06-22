@@ -28,7 +28,7 @@ import ignore, { type Ignore } from 'ignore';
 import type { FileType } from '../schema.js';
 import { assertNotAborted, withAbort } from './concurrency.js';
 import { ErrorCode, formatUnknownErrorMessage, FsError, isNodeError } from './errors.js';
-import { Logger, startPerfMeasure, withOpsTrace } from './observability.js';
+import { Logger } from './observability.js';
 import type { PathGuard } from './path.js';
 import { toPosixPath } from './path.js';
 import { MAX_TEXT_FILE_SIZE } from './util.js';
@@ -1914,23 +1914,12 @@ async function* nativeGlobEntries(
 }
 
 export async function* globEntries(options: GlobEntriesOptions): AsyncGenerator<GlobEntry> {
-  const engine = 'node:fs/promises.glob';
-  const endMeasure = startPerfMeasure('globEntries', { engine });
-
-  let ok = false;
-  try {
-    yield* withOpsTrace({ op: 'globEntries', engine }, async function* () {
-      assertOptionsShape(options);
-      let gitignoreMatcher: GitignoreManager | null = null;
-      if (options.respectGitignore) {
-        gitignoreMatcher = await loadRootGitignore(options.cwd);
-      }
-      yield* nativeGlobEntries(options, gitignoreMatcher);
-    });
-    ok = true;
-  } finally {
-    endMeasure?.(ok);
+  assertOptionsShape(options);
+  let gitignoreMatcher: GitignoreManager | null = null;
+  if (options.respectGitignore) {
+    gitignoreMatcher = await loadRootGitignore(options.cwd);
   }
+  yield* nativeGlobEntries(options, gitignoreMatcher);
 }
 
 type GlobConfig = Partial<GlobEntriesOptions> & Pick<GlobEntriesOptions, 'cwd' | 'pattern'>;
