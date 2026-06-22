@@ -55,15 +55,6 @@ const DEFAULT_RESOURCE_STORE_OPTIONS: ResourceStoreOptions = {
 
 type StoredEntry = (TextResourceEntry & { kind: 'text' }) | (BlobResourceEntry & { kind: 'blob' });
 
-const _CACHE_EVICTION_REASONS = [
-  'entry_too_large',
-  'evicted_immediately',
-  'expired',
-  'not_found',
-] as const;
-
-type CacheEvictionReason = (typeof _CACHE_EVICTION_REASONS)[number];
-
 function estimateBytes(text: string | Buffer): number {
   if (Buffer.isBuffer(text)) {
     return text.length;
@@ -86,62 +77,50 @@ function isExpired(entry: TextResourceEntry | BlobResourceEntry, now = Date.now(
 }
 
 // -----------------------------------------------------------------------------
-// Internal Interfaces
+// ResourceStore implementation — storage + eviction + TTL in one class
 // -----------------------------------------------------------------------------
 
-interface InternalStore extends ResourceStore {
-  removeEntry(uri: string, reason?: CacheEvictionReason): StoredEntry | undefined;
-  getEntryIfExists(uri: string): StoredEntry | undefined;
-  getEntryByHash(mimeType: string, contentHash: string): StoredEntry | undefined;
-  bumpLru(uri: string, entry: StoredEntry): void;
-  readonly totalBytes: number;
-  readonly entryCount: number;
-  entries(): IterableIterator<StoredEntry>;
-}
-
-// -----------------------------------------------------------------------------
-// Raw Storage
-// -----------------------------------------------------------------------------
-
-// RawStore is a simple in-memory store with no eviction or diagnostics.
-// It is the base layer of the decorated store returned by createInMemoryResourceStore.
-class RawStore implements InternalStore {
+class InMemoryResourceStore implements ResourceStore {
   private readonly byUri = new Map<string, StoredEntry>();
   private readonly byHashIndex = new Map<string, string>();
   private _totalBytes = 0;
-  private readonly ttlMs: number;
+  private readonly options: ResourceStoreOptions;
 
-  constructor(ttlMs: number) {
-    this.ttlMs = ttlMs;
+  constructor(options: ResourceStoreOptions) {
+    this.options = options;
   }
 
-  get totalBytes(): number {
+  // ── low-level storage ────────────────────────────────────────────────────
+
+  private get totalBytes(): number {
     return this._totalBytes;
   }
-  get entryCount(): number {
+
+  private get entryCount(): number {
     return this.byUri.size;
   }
-  entries(): IterableIterator<StoredEntry> {
+
+  private entries(): IterableIterator<StoredEntry> {
     return this.byUri.values();
   }
 
-  getEntryIfExists(uri: string): StoredEntry | undefined {
+  private getEntryIfExists(uri: string): StoredEntry | undefined {
     return this.byUri.get(uri);
   }
 
-  getEntryByHash(mimeType: string, contentHash: string): StoredEntry | undefined {
+  private getEntryByHash(mimeType: string, contentHash: string): StoredEntry | undefined {
     const indexKey = buildIndexKey(mimeType, contentHash);
     const existingUri = this.byHashIndex.get(indexKey);
     return existingUri ? this.byUri.get(existingUri) : undefined;
   }
 
-  bumpLru(uri: string, entry: StoredEntry): void {
+  private bumpLru(uri: string, entry: StoredEntry): void {
     if (!this.byUri.has(uri)) return;
     this.byUri.delete(uri);
     this.byUri.set(uri, entry);
   }
 
-  removeEntry(uri: string, _reason?: CacheEvictionReason): StoredEntry | undefined {
+  private removeEntry(uri: string): StoredEntry | undefined {
     const existing = this.byUri.get(uri);
     if (!existing) return undefined;
     this._totalBytes -= existing.size;
@@ -162,8 +141,7 @@ class RawStore implements InternalStore {
     return existing;
   }
 
-  private _put(
-    _kind: 'text' | 'blob',
+  private _rawPut(
     params: { name: string; mimeType: string; data: string | Buffer },
     createFn: (base: Omit<TextResourceEntry | BlobResourceEntry, 'text' | 'data'>) => StoredEntry,
   ): StoredEntry {
@@ -178,7 +156,7 @@ class RawStore implements InternalStore {
       hash: contentHash,
       size: entryBytes,
       storedAt: storedAt.toISOString(),
-      expiresAt: new Date(storedAt.getTime() + this.ttlMs).toISOString(),
+      expiresAt: new Date(storedAt.getTime() + this.options.entryTtlMs).toISOString(),
     });
 
     this.byUri.set(uri, entry);
@@ -187,119 +165,30 @@ class RawStore implements InternalStore {
     return entry;
   }
 
-  putText(params: {
-    name: string;
-    mimeType?: string;
-    text: string;
-  }): TextResourceEntry & { kind: 'text' } {
-    return this._put(
-      'text',
-      { name: params.name, mimeType: params.mimeType ?? 'text/plain', data: params.text },
-      (base) => ({ ...base, kind: 'text', text: params.text }),
-    ) as TextResourceEntry & { kind: 'text' };
-  }
-
-  getText(uri: string): TextResourceEntry & { kind: 'text' } {
-    const entry = this.getEntry(uri);
-    if (entry.kind !== 'text')
-      throw new FsError(ErrorCode.NOT_FOUND, `Resource is not text: ${uri}`);
-    return entry;
-  }
-
-  putBlob(params: {
-    name: string;
-    mimeType: string;
-    data: Buffer;
-  }): BlobResourceEntry & { kind: 'blob' } {
-    return this._put(
-      'blob',
-      { name: params.name, mimeType: params.mimeType, data: params.data },
-      (base) => ({ ...base, kind: 'blob', data: params.data }),
-    ) as BlobResourceEntry & { kind: 'blob' };
-  }
-
-  getBlob(uri: string): BlobResourceEntry & { kind: 'blob' } {
-    const entry = this.getEntry(uri);
-    if (entry.kind !== 'blob')
-      throw new FsError(ErrorCode.NOT_FOUND, `Resource is not blob: ${uri}`);
-    return entry;
-  }
-
-  getEntry(uri: string): StoredEntry {
-    const existing = this.byUri.get(uri);
-    if (!existing) throw new FsError(ErrorCode.NOT_FOUND, `Resource not found: ${uri}`);
-    return existing;
-  }
-
-  clear(): void {
-    this.byUri.clear();
-    this.byHashIndex.clear();
-    this._totalBytes = 0;
-  }
-
-  keys(): string[] {
-    return Array.from(this.byUri.keys());
-  }
-}
-
-// -----------------------------------------------------------------------------
-// Eviction & Cache Policy Decorator
-// -----------------------------------------------------------------------------
-
-class EvictionStore implements ResourceStore {
-  private readonly options: ResourceStoreOptions;
-  private readonly wrapped: InternalStore;
-
-  constructor(wrapped: InternalStore, options: ResourceStoreOptions) {
-    this.wrapped = wrapped;
-    this.options = options;
-  }
-
-  get totalBytes() {
-    return this.wrapped.totalBytes;
-  }
-  get entryCount() {
-    return this.wrapped.entryCount;
-  }
-  entries() {
-    return this.wrapped.entries();
-  }
-  getEntryIfExists(uri: string) {
-    return this.wrapped.getEntryIfExists(uri);
-  }
-  getEntryByHash(mimeType: string, contentHash: string) {
-    return this.wrapped.getEntryByHash(mimeType, contentHash);
-  }
-  bumpLru(uri: string, entry: StoredEntry) {
-    this.wrapped.bumpLru(uri, entry);
-  }
-
-  removeEntry(uri: string, reason?: CacheEvictionReason): StoredEntry | undefined {
-    return this.wrapped.removeEntry(uri, reason);
-  }
+  // ── eviction & cache policy ──────────────────────────────────────────────
 
   private evictOldest(): void {
-    const first = this.wrapped.entries().next();
+    const first = this.entries().next();
     if (first.done) return;
-    this.removeEntry(first.value.uri, 'evicted_immediately');
+    this.removeEntry(first.value.uri);
   }
 
   private pruneExpiredEntries(now = Date.now()): void {
     const toRemove: string[] = [];
-    for (const entry of this.wrapped.entries()) {
+    for (const entry of this.entries()) {
       if (isExpired(entry, now)) toRemove.push(entry.uri);
     }
     for (const uri of toRemove) {
-      this.removeEntry(uri, 'expired');
+      this.removeEntry(uri);
     }
   }
 
   private enforceLimits(): void {
-    while (this.wrapped.entryCount > this.options.maxEntries) this.evictOldest();
-    while (this.wrapped.totalBytes > this.options.maxTotalBytes) {
-      if (this.wrapped.entryCount === 0) {
+    while (this.entryCount > this.options.maxEntries) this.evictOldest();
+    while (this.totalBytes > this.options.maxTotalBytes) {
+      if (this.entryCount === 0) {
         Logger.error(
-          `[resource-store] enforceLimits invariant violation: totalBytes=${this.wrapped.totalBytes} but entryCount=0`,
+          `[resource-store] enforceLimits invariant violation: totalBytes=${this.totalBytes} but entryCount=0`,
         );
         break;
       }
@@ -308,7 +197,7 @@ class EvictionStore implements ResourceStore {
   }
 
   private _getExisting(uri: string, expectedKind?: 'text' | 'blob'): StoredEntry {
-    const existing = this.wrapped.getEntryIfExists(uri);
+    const existing = this.getEntryIfExists(uri);
 
     if (!existing) {
       throw new FsError(
@@ -318,7 +207,7 @@ class EvictionStore implements ResourceStore {
     }
 
     if (isExpired(existing)) {
-      this.removeEntry(uri, 'expired');
+      this.removeEntry(uri);
       throw new FsError(
         ErrorCode.NOT_FOUND,
         `Resource expired: ${uri}. Re-run the tool to regenerate.`,
@@ -351,10 +240,10 @@ class EvictionStore implements ResourceStore {
     name: string,
   ): StoredEntry | undefined {
     const contentHash = computeSha256(data);
-    const cached = this.wrapped.getEntryByHash(mimeType, contentHash);
+    const cached = this.getEntryByHash(mimeType, contentHash);
     if (cached !== undefined) {
       if (isExpired(cached)) {
-        this.removeEntry(cached.uri, 'expired');
+        this.removeEntry(cached.uri);
       } else if (cached.kind === kind) {
         const now = Date.now();
         const refreshed: StoredEntry = {
@@ -366,7 +255,7 @@ class EvictionStore implements ResourceStore {
         this.bumpLru(refreshed.uri, refreshed);
         return refreshed;
       } else {
-        // Kind mismatch: remove orphan so _put can safely take over the byHashIndex slot.
+        // Kind mismatch: remove orphan so _rawPut can safely take over the byHashIndex slot.
         this.removeEntry(cached.uri);
       }
     }
@@ -375,10 +264,12 @@ class EvictionStore implements ResourceStore {
 
   private _enforceAfterPut(entry: StoredEntry): void {
     this.enforceLimits();
-    if (!this.wrapped.getEntryIfExists(entry.uri)) {
+    if (!this.getEntryIfExists(entry.uri)) {
       throw new FsError(ErrorCode.TOO_LARGE, 'Cache full: entry evicted.');
     }
   }
+
+  // ── public ResourceStore ─────────────────────────────────────────────────
 
   putText(params: { name: string; mimeType?: string; text: string }): TextResourceEntry & {
     kind: 'text';
@@ -392,9 +283,12 @@ class EvictionStore implements ResourceStore {
     );
     if (hit) return hit as TextResourceEntry & { kind: 'text' };
 
-    const entry = this.wrapped.putText(params);
+    const entry = this._rawPut(
+      { name: params.name, mimeType: params.mimeType ?? 'text/plain', data: params.text },
+      (base) => ({ ...base, kind: 'text', text: params.text }),
+    );
     this._enforceAfterPut(entry);
-    return entry;
+    return entry as TextResourceEntry & { kind: 'text' };
   }
 
   getText(uri: string): TextResourceEntry & { kind: 'text' } {
@@ -410,9 +304,12 @@ class EvictionStore implements ResourceStore {
     const hit = this._tryReturnHashHit('blob', params.mimeType, params.data, params.name);
     if (hit) return hit as BlobResourceEntry & { kind: 'blob' };
 
-    const entry = this.wrapped.putBlob(params);
+    const entry = this._rawPut(
+      { name: params.name, mimeType: params.mimeType, data: params.data },
+      (base) => ({ ...base, kind: 'blob', data: params.data }),
+    );
     this._enforceAfterPut(entry);
-    return entry;
+    return entry as BlobResourceEntry & { kind: 'blob' };
   }
 
   getBlob(uri: string): BlobResourceEntry & { kind: 'blob' } {
@@ -424,7 +321,9 @@ class EvictionStore implements ResourceStore {
   }
 
   clear(): void {
-    this.wrapped.clear();
+    this.byUri.clear();
+    this.byHashIndex.clear();
+    this._totalBytes = 0;
   }
 
   /**
@@ -433,7 +332,7 @@ class EvictionStore implements ResourceStore {
    */
   keys(): string[] {
     this.pruneExpiredEntries();
-    return this.wrapped.keys();
+    return Array.from(this.byUri.keys());
   }
 }
 
@@ -446,7 +345,5 @@ export function createInMemoryResourceStore(
       `Invalid store options: maxEntryBytes (${resolved.maxEntryBytes}) must not exceed maxTotalBytes (${resolved.maxTotalBytes}).`,
     );
   }
-  const raw = new RawStore(resolved.entryTtlMs);
-  const eviction = new EvictionStore(raw, resolved);
-  return eviction;
+  return new InMemoryResourceStore(resolved);
 }

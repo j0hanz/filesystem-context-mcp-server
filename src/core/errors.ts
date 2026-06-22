@@ -19,10 +19,6 @@ export const ErrorCode = {
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
 
-function joinLines(lines: readonly string[]): string {
-  return lines.join('\n');
-}
-
 export interface Problem {
   readonly code: ErrorCode;
   readonly message: string;
@@ -476,7 +472,7 @@ function formatDetailedError(
   if (error.suggestion) {
     lines.push(error.suggestion);
   }
-  return joinLines(lines);
+  return lines.join('\n');
 }
 
 export class FsError extends Error {

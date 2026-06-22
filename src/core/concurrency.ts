@@ -42,12 +42,8 @@ export interface ParallelResult<R> {
   errors: { index: number; error: Error }[];
 }
 
-function createParallelAbortError(): Error {
-  return new DOMException('Operation aborted', 'AbortError');
-}
-
 function checkParallelAbort(signal?: AbortSignal): void {
-  if (signal?.aborted) throw createParallelAbortError();
+  if (signal?.aborted) throw new DOMException('Operation aborted', 'AbortError');
 }
 
 function assertPositiveIntegerOption(name: string, value: unknown): void {
@@ -576,10 +572,6 @@ function normalizeAbortReason(reason: unknown, message?: string): Error {
   return createAbortError(message);
 }
 
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
-}
-
 export function assertNotAborted(signal?: AbortSignal, message?: string): void {
   if (!signal) return;
   try {
@@ -643,7 +635,7 @@ export function createTimedAbortSignal(
   baseSignal: AbortSignal | undefined,
   timeoutMs?: number,
 ): { signal: AbortSignal; cleanup: () => void } {
-  if (isFiniteNumber(timeoutMs)) {
+  if (typeof timeoutMs === 'number' && Number.isFinite(timeoutMs)) {
     // If the base signal is already aborted, propagate immediately without starting a timer.
     if (baseSignal?.aborted) {
       const controller = new AbortController();

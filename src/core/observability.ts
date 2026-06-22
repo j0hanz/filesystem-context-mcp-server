@@ -60,8 +60,6 @@ export function createLoggingState(minimumLevel: LoggingLevel = 'debug'): Loggin
   return { minimumLevel };
 }
 
-type WideEventLevel = LoggingLevel;
-
 interface WideEventPayload {
   event: string;
   action?: string;
@@ -142,7 +140,7 @@ export function toLogfmt(obj: Record<string, unknown>): string {
 }
 
 export function emitWideEvent(
-  level: WideEventLevel,
+  level: LoggingLevel,
   payload: WideEventPayload & Record<string, unknown>,
 ): void {
   // We omit the heavy static wide event context here to make logs LLM-friendly,

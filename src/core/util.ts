@@ -1,7 +1,5 @@
 import { availableParallelism } from 'node:os';
 
-import * as z from 'zod/v4';
-
 import { Logger } from './observability.js';
 import { parseTrueEnvFlag } from './primitives.js';
 
@@ -72,8 +70,6 @@ export function maybeStripStructuredContentFromResult<T extends object>(
   return rest as MaybeStrippedStructuredContent<T>;
 }
 
-const STRING_BOOL_SCHEMA = z.stringbool();
-
 const KIB = 1024;
 const MIB = 1024 * KIB;
 
@@ -115,13 +111,17 @@ export function parseEnvInt(
 function parseEnvBool(envVar: string, defaultValue: boolean): boolean {
   const value = process.env[envVar];
   if (value === undefined) return defaultValue;
+  if (parseTrueEnvFlag(value)) return true;
+  // parseTrueEnvFlag returns false for both invalid and explicitly false values;
+  // distinguish them by checking for known false strings.
   const normalized = value.trim().toLowerCase();
-  const result = STRING_BOOL_SCHEMA.safeParse(normalized);
-  if (!result.success) {
+  const isFalse =
+    normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'off';
+  if (!isFalse) {
     logInvalidEnvValue(envVar, value, 'true/false', defaultValue);
     return defaultValue;
   }
-  return result.data;
+  return false;
 }
 
 const VALID_LOG_LEVELS = [
