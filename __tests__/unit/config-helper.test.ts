@@ -9,9 +9,9 @@ import {
   disallowPath,
   getExistingConfigPaths,
   listAllowedPaths,
-  parseArgs,
   writeJsonAtomic,
-} from '../../src/cli.js';
+} from '../../src/client-config.js';
+import { parseArgs } from '../../src/cli.js';
 
 describe('mcp-config-helper', () => {
   it('getExistingConfigPaths returns Windows paths when config files exist', () => {

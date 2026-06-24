@@ -500,11 +500,3 @@ export async function runPrintConfig(options: PrintConfigOptions): Promise<Effec
   return config;
 }
 
-export {
-  getExistingConfigPaths,
-  writeJsonAtomic,
-  allowPath,
-  disallowPath,
-  listAllowedPaths,
-  manageConfig,
-} from './client-config.js';
