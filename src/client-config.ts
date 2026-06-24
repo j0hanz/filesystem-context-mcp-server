@@ -29,7 +29,7 @@ function resolveConfigKey(key: string): string {
   return CONFIG_KEY_MAP[key] ?? key;
 }
 
-const ENV_DIR_SEP = (process.platform === 'win32') ? ';' : ':';
+const ENV_DIR_SEP = process.platform === 'win32' ? ';' : ':';
 
 // ════════════════════════════════════════════════════════════
 // Config Helper Functions (Installer Block)

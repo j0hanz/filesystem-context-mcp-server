@@ -499,4 +499,3 @@ export async function runPrintConfig(options: PrintConfigOptions): Promise<Effec
 
   return config;
 }
-

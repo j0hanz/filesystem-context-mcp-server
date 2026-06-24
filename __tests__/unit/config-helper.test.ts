@@ -4,6 +4,7 @@ import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
+import { parseArgs } from '../../src/cli.js';
 import {
   allowPath,
   disallowPath,
@@ -11,7 +12,6 @@ import {
   listAllowedPaths,
   writeJsonAtomic,
 } from '../../src/client-config.js';
-import { parseArgs } from '../../src/cli.js';
 
 describe('mcp-config-helper', () => {
   it('getExistingConfigPaths returns Windows paths when config files exist', () => {

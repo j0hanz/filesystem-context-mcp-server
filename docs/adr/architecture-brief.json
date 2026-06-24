@@ -1,0 +1,54 @@
+{
+  "module_name": "client-config",
+  "mode": "DIAGNOSE",
+  "problem_statement": "src/cli.ts (1075 lines, 2nd-highest churn file in the repo) mixes CLI bootstrap/arg-parsing with a client-config installer that reads/writes third-party MCP client JSON config files under locking and atomic-write guarantees. The two concerns change for unrelated reasons but share one file and one git history.",
+  "chosen_pattern": "None applied yet — boundary recorded, no physical split performed (single-caller deletion test was mixed; value is locality/churn-separation, not reuse).",
+  "interface": {
+    "exports": [
+      "getExistingConfigPaths",
+      "writeJsonAtomic",
+      "allowPath",
+      "disallowPath",
+      "listAllowedPaths",
+      "manageConfig"
+    ],
+    "dependencies": [
+      "node:fs/promises",
+      "node:fs (existsSync)",
+      "node:path",
+      "node:os",
+      "node:crypto (randomUUID)",
+      "src/core/path.js (isSamePath)",
+      "src/core/primitives.js (isRecord)",
+      "src/core/fmt.js (cliFmt)",
+      "src/cli.js (CliExitError, IS_WINDOWS, validateCliPath — latter two newly exported)"
+    ]
+  },
+  "constraints": [
+    "Preserve acquireLock's stale-lock takeover (30s) and retry/backoff behavior exactly",
+    "Preserve writeJsonAtomic's temp-file+rename with non-atomic direct-write fallback on rename failure",
+    "Keep ModifyOptions (client, config, serverName, dryRun) as the stable external CLI flag surface",
+    "runPrintConfig/EffectiveConfig/PrintConfigOptions stay with CLI bootstrap, not client-config, despite current section-comment placement",
+    "acquireLock and writeJsonAtomic remain internal to client-config — no shared utils location"
+  ],
+  "risk_register": [
+    {
+      "risk": "A future split accidentally moves runPrintConfig into client-config because it currently sits inside the same section comment",
+      "mitigation": "ADR-0001 explicitly calls out runPrintConfig as CLI bootstrap, not installer, independent of its current location in the file"
+    },
+    {
+      "risk": "Splitting breaks __tests__/unit/config-helper.test.ts's direct import of writeJsonAtomic from src/cli.js",
+      "mitigation": "Any future split must update that test's import path in the same change, not as a follow-up"
+    },
+    {
+      "risk": "Re-implementing acquireLock/writeJsonAtomic introduces a regression in the stale-lock or atomic-write fallback path, corrupting a user's real client config file",
+      "mitigation": "Treat both functions as preserve-verbatim during any move; do not rewrite alongside the relocation"
+    }
+  ],
+  "adr_link": "docs/adr/0001-cli-client-config-boundary.md",
+  "next_steps": [
+    "No file split performed in this pass — boundary recorded only, per explicit user direction",
+    "When cli.ts is next touched for either bootstrap or installer work, consult ADR-0001 before adding new exports to either side",
+    "If/when physically splitting: move the client-config export list above verbatim into a new file, keep writeJsonAtomic exported for the existing test import, leave runPrintConfig/EffectiveConfig/PrintConfigOptions in cli.ts"
+  ]
+}
