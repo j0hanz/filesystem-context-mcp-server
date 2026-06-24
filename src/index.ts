@@ -21,15 +21,9 @@ applyBridgeFlags(process.argv.slice(2));
 
 // Dynamically import all modules that transitively load util.ts so that the
 // bridge flags above are in effect when their module-level constants are set.
-const {
-  CliExitError,
-  parseArgs,
-  runPrintConfig,
-  allowPath,
-  disallowPath,
-  listAllowedPaths,
-  manageConfig,
-} = await import('./cli.js');
+const { CliExitError, parseArgs, runPrintConfig } = await import('./cli.js');
+const { allowPath, disallowPath, listAllowedPaths, manageConfig } =
+  await import('./client-config.js');
 const { shutdownWorkerPool } = await import('./core/concurrency.js');
 const { shutdownSearchWorkerPool } = await import('./core/search/engine.js');
 const { logRuntimeFailure } = await import('./core/observability.js');
