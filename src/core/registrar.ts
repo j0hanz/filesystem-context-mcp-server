@@ -3,7 +3,6 @@ import type { McpServer, Root } from '@modelcontextprotocol/server';
 import { realpath, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-import type { IconInfo } from '../tools/define.js';
 import {
   assertNotAborted,
   createTimedAbortSignal,
@@ -19,6 +18,7 @@ import {
 } from './observability.js';
 import { isSamePath, normalizePath } from './path.js';
 import type { PathGuard } from './path.js';
+import type { IconInfo } from './primitives.js';
 import type { ResourceStore } from './store.js';
 import { debounce, getInitHandshakeTimeoutMs, PARALLEL_CONCURRENCY } from './util.js';
 

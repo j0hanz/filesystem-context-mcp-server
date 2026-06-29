@@ -1,3 +1,5 @@
+import type { Icon } from '@modelcontextprotocol/server';
+
 import * as z from 'zod/v4';
 
 /**
@@ -29,3 +31,5 @@ export function parseEnvDirList(envVar: string): string[] {
     .map((p) => p.trim())
     .filter((p) => p.length > 0);
 }
+
+export type IconInfo = Icon & { mimeType: string };

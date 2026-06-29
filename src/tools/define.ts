@@ -27,6 +27,7 @@ import { ansiLine, plainMessage } from '../core/fmt.js';
 import { GuardedFileSystem } from '../core/fs.js';
 import { Logger, withTelemetry } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
+import type { IconInfo } from '../core/primitives.js';
 import type { ResourceStore } from '../core/store.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 
@@ -73,7 +74,7 @@ export interface ToolDeps {
   readonly resourceStore: ResourceStore | undefined;
 }
 
-export type IconInfo = Icon & { mimeType: string };
+export type { IconInfo };
 
 export function withDefaultIcons<T extends object>(
   obj: T,
