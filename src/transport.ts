@@ -35,148 +35,42 @@ import {
 import type { Express, NextFunction, Request, RequestHandler, Response } from 'express';
 
 import { ErrorCode, formatUnknownErrorMessage, FsError } from './core/errors.js';
-import {
-  Logger,
-  type LogRouter,
-  type LogTarget,
-  withSession,
-  withTelemetry,
-} from './core/observability.js';
+import { Logger, withSession, withTelemetry } from './core/observability.js';
 import type { PathGuard, ServerOptions } from './core/path.js';
 import type { McpRootsSynchronizer } from './core/registrar.js';
 import { McpLogSender } from './core/registrar.js';
 import { getInitHandshakeTimeoutMs, INIT_TIMEOUT_CLOSE, parseEnvInt } from './core/util.js';
 import type { FilesystemServerContext } from './server.js';
-import { createServer, logRouter } from './server.js';
+import { createServer } from './server.js';
 
 // ═══════════════════════════════════════════════════════════════
 // event-store
 // ═══════════════════════════════════════════════════════════════
 
-const MAX_EVENTS_PER_STREAM = 1000;
-
-interface StoredEvent {
-  id: EventId;
-  message: JSONRPCMessage;
-}
-
-export class InMemoryEventStore implements EventStore {
-  // Map of streamId -> StoredEvent[]
-  private streams = new Map<StreamId, StoredEvent[]>();
-  // Map of eventId -> streamId for fast lookup
-  private eventIdToStreamId = new Map<EventId, StreamId>();
-  // Track active replays by streamId
-  private activeReplays = new Set<StreamId>();
-  // Replay completion listeners by streamId
-  private replayCompleteListeners = new Map<StreamId, (() => void)[]>();
-
-  isReplaying(streamId: StreamId): boolean {
-    return this.activeReplays.has(streamId);
+class InMemoryEventStore implements EventStore {
+  storeEvent(_streamId: StreamId, _message: JSONRPCMessage): Promise<EventId> {
+    return Promise.resolve(randomUUID());
   }
 
-  onReplayComplete(streamId: StreamId, cb: () => void): void {
-    let list = this.replayCompleteListeners.get(streamId);
-    if (!list) {
-      list = [];
-      this.replayCompleteListeners.set(streamId, list);
-    }
-    list.push(cb);
+  getStreamIdForEventId(_eventId: EventId): Promise<StreamId | undefined> {
+    return Promise.resolve(undefined);
   }
 
-  storeEvent(streamId: StreamId, message: JSONRPCMessage): Promise<EventId> {
-    const eventId = randomUUID();
-    let stream = this.streams.get(streamId);
-
-    if (!stream) {
-      stream = [];
-      this.streams.set(streamId, stream);
-    }
-
-    // Add new event
-    stream.push({ id: eventId, message });
-    this.eventIdToStreamId.set(eventId, streamId);
-
-    // Enforce limits
-    if (stream.length > MAX_EVENTS_PER_STREAM) {
-      const removed = stream.shift();
-      if (removed) {
-        this.eventIdToStreamId.delete(removed.id);
-      }
-    }
-
-    return Promise.resolve(eventId);
-  }
-
-  getStreamIdForEventId(eventId: EventId): Promise<StreamId | undefined> {
-    return Promise.resolve(this.eventIdToStreamId.get(eventId));
-  }
-
-  async replayEventsAfter(
-    lastEventId: EventId,
-    callbacks: {
+  replayEventsAfter(
+    _lastEventId: EventId,
+    _callbacks: {
       send: (eventId: EventId, message: JSONRPCMessage) => Promise<void>;
     },
   ): Promise<StreamId> {
-    const streamId = this.eventIdToStreamId.get(lastEventId);
-    if (!streamId) {
-      throw new FsError(ErrorCode.NOT_FOUND, `Event ID ${lastEventId} not found or expired`);
-    }
-
-    const stream = this.streams.get(streamId);
-    if (!stream) {
-      throw new FsError(ErrorCode.NOT_FOUND, `Stream ${streamId} not found`);
-    }
-
-    const eventIndex = stream.findIndex((e) => e.id === lastEventId);
-    if (eventIndex === -1) {
-      throw new FsError(
-        ErrorCode.NOT_FOUND,
-        `Event ID ${lastEventId} not found in stream ${streamId}`,
-      );
-    }
-
-    // Take a snapshot of the remaining events synchronously
-    const eventsToReplay = stream.slice(eventIndex + 1);
-
-    this.activeReplays.add(streamId);
-    try {
-      // Replay all events from the snapshot
-      for (const event of eventsToReplay) {
-        await callbacks.send(event.id, event.message);
-      }
-    } finally {
-      this.activeReplays.delete(streamId);
-      const listeners = this.replayCompleteListeners.get(streamId);
-      if (listeners) {
-        this.replayCompleteListeners.delete(streamId);
-        for (const cb of listeners) {
-          cb();
-        }
-      }
-    }
-
-    return streamId;
+    return Promise.reject(new FsError(ErrorCode.NOT_FOUND, 'Replay not supported'));
   }
 
-  /**
-   * Cleans up all events for a given streamId.
-   */
-  delete(streamId: string): void {
-    const stream = this.streams.get(streamId);
-    if (stream) {
-      for (const event of stream) {
-        this.eventIdToStreamId.delete(event.id);
-      }
-      this.streams.delete(streamId);
-    }
+  delete(_streamId: string): void {
+    return;
   }
 
-  /**
-   * Cleans up all streams.
-   */
   clear(): void {
-    this.streams.clear();
-    this.eventIdToStreamId.clear();
+    return;
   }
 }
 
@@ -373,7 +267,7 @@ function bearerAuthMiddleware(): RequestHandler {
 // HttpSessionRegistry — owns session map, sweep timer, log-router wiring
 // ---------------------------------------------------------------------------
 
-export interface HttpSession {
+interface HttpSession {
   server: McpServer;
   pathGuard: PathGuard;
   synchronizer?: McpRootsSynchronizer;
@@ -384,7 +278,7 @@ export interface HttpSession {
 
 interface HttpSessionRegistryOptions {
   eventStore: InMemoryEventStore;
-  logRouter: LogRouter;
+
   handshakeTimeoutMs: number;
   sweepIntervalMs?: number;
 }
@@ -394,17 +288,17 @@ interface HttpSessionRegistryOptions {
  * pair of parallel maps (`sessions` + `activeServers`) and the inline sweep
  * timer in `startHttpServer`. HTTP-specific by design — stdio has no sessions.
  */
-export class HttpSessionRegistry {
+class HttpSessionRegistry {
   private readonly sessions = new Map<string, HttpSession>();
   private readonly eventStore: InMemoryEventStore;
-  private readonly logRouter: LogRouter;
+
   private readonly handshakeTimeoutMs: number;
   private readonly sweepIntervalMs: number;
   private sweepTimer: NodeJS.Timeout | undefined;
 
   constructor(opts: HttpSessionRegistryOptions) {
     this.eventStore = opts.eventStore;
-    this.logRouter = opts.logRouter;
+
     this.handshakeTimeoutMs = opts.handshakeTimeoutMs;
     this.sweepIntervalMs = opts.sweepIntervalMs ?? opts.handshakeTimeoutMs * 2;
   }
@@ -417,14 +311,12 @@ export class HttpSessionRegistry {
     return this.sessions.get(sessionId);
   }
 
-  add(sessionId: string, session: HttpSession, logTarget: LogTarget): void {
+  add(sessionId: string, session: HttpSession): void {
     this.sessions.set(sessionId, session);
-    this.logRouter.attachSession(sessionId, logTarget);
   }
 
   remove(sessionId: string): void {
     this.sessions.delete(sessionId);
-    this.logRouter.detachSession(sessionId);
     this.eventStore.delete(sessionId);
   }
 
@@ -536,7 +428,6 @@ async function createHttpSession(
   };
 
   let currentSessionId: string | undefined;
-  const outboundQueue: JSONRPCMessage[] = [];
 
   const transport = new NodeStreamableHTTPServerTransport({
     sessionIdGenerator: () => {
@@ -551,33 +442,15 @@ async function createHttpSession(
       if (!loggingState) {
         throw new FsError(ErrorCode.VALIDATION_FAILED, 'LoggingState is required');
       }
-      registry.add(
-        sessionId,
-        {
-          server: mcpServer,
-          pathGuard,
-          synchronizer,
-          transport,
-          createdAt: Date.now(),
-          close,
-        },
-        { sender: new McpLogSender(mcpServer), loggingState },
-      );
-      synchronizer.logMissingDirectoriesIfNeeded(mcpServer);
-
-      eventStore.onReplayComplete(sessionId, () => {
-        while (outboundQueue.length > 0) {
-          const msg = outboundQueue.shift();
-          if (msg) {
-            originalSend(msg).catch((err: unknown) => {
-              Logger.error(
-                `[HTTP] Error sending queued message after replay for session ${sessionId}:`,
-                formatUnknownErrorMessage(err),
-              );
-            });
-          }
-        }
+      registry.add(sessionId, {
+        server: mcpServer,
+        pathGuard,
+        synchronizer,
+        transport,
+        createdAt: Date.now(),
+        close,
       });
+      synchronizer.logMissingDirectoriesIfNeeded(mcpServer);
     },
     onsessionclosed: async (sessionId) => {
       const session = registry.get(sessionId);
@@ -593,15 +466,6 @@ async function createHttpSession(
       }
     },
   });
-
-  const originalSend = transport.send.bind(transport);
-  transport.send = async (message: JSONRPCMessage) => {
-    if (currentSessionId && eventStore.isReplaying(currentSessionId)) {
-      outboundQueue.push(message);
-    } else {
-      await originalSend(message);
-    }
-  };
 
   transport.onerror = (error: unknown) => {
     Logger.error('[HTTP] Transport error:', formatUnknownErrorMessage(error));
@@ -673,7 +537,7 @@ async function handlePostMcp(
       path,
       ...(sessionId ? { session_id: sessionId } : {}),
     },
-    async (enrich) => {
+    async (enrich: (extraData: Record<string, unknown>) => void) => {
       let jsonrpcMethod: string | undefined;
 
       try {
@@ -789,7 +653,7 @@ async function handleGetOrDeleteMcp(
       request_kind: 'unknown',
       ...(sessionId ? { session_id: sessionId } : {}),
     },
-    async (enrich) => {
+    async (enrich: (extraData: Record<string, unknown>) => void) => {
       try {
         if (!sessionId) {
           sendJsonRpcError(
@@ -900,7 +764,7 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
 
   const registry = new HttpSessionRegistry({
     eventStore,
-    logRouter,
+
     handshakeTimeoutMs: getInitHandshakeTimeoutMs(),
   });
 

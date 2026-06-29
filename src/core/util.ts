@@ -231,19 +231,6 @@ export const WORKER_CANCEL_GRACE_MS = parseEnvInt('FS_WORKER_CANCEL_GRACE_MS', 5
 
 export const WORKERS_DISABLED = parseEnvBool('FS_DISABLE_WORKERS', false);
 
-/**
- * Maximum number of tasks queued in the worker pool before new submissions
- * are rejected with a backpressure error. Prevent unbounded queue growth under
- * sustained high-load submission bursts. Configurable via FS_WORKER_QUEUE_MAX.
- * Default is 100 tasks (permits up to WORKER_POOL_MAX in-flight plus headroom
- * for bursts).
- */
-export const WORKER_QUEUE_MAX = parseEnvInt('FS_WORKER_QUEUE_MAX', 100, 1, 10_000);
-
-// Hardcoded defaults
-export const DEFAULT_SEARCH_MAX_FILES = 20000;
-
-// Schema limits and defaults
 export const MAX_TREE_DEPTH = 50;
 export const DEFAULT_TREE_ENTRIES = 1000;
 

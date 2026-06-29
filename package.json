@@ -70,13 +70,12 @@
     "diff": "^9",
     "express": "^5.2.1",
     "ignore": "^7.0.5",
-    "re2": "^1.25.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@modelcontextprotocol/client": "2.0.0-alpha.2",
     "@cfworker/json-schema": "^4.1.1",
     "@eslint/js": "^10.0.1",
+    "@modelcontextprotocol/client": "2.0.0-alpha.2",
     "@trivago/prettier-plugin-sort-imports": "^6.0.2",
     "@types/express": "^5.0.6",
     "@types/node": "^24",

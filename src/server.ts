@@ -8,7 +8,7 @@ import { McpServer } from '@modelcontextprotocol/server';
 import { readFile } from 'node:fs/promises';
 
 import { GuardedFileSystem } from './core/fs.js';
-import { createLoggingState, Logger, LogRouter } from './core/observability.js';
+import { createLoggingState, Logger } from './core/observability.js';
 import type { ServerOptions } from './core/path.js';
 import { PathGuard } from './core/path.js';
 import type { Registrar, ServerDeps } from './core/registrar.js';
@@ -26,8 +26,6 @@ import { toolsRegistrar } from './tools/index.js';
 // ═══════════════════════════════════════════════════════════════
 // bootstrap
 // ═══════════════════════════════════════════════════════════════
-
-export const logRouter = LogRouter.global();
 
 const {
   version: SERVER_VERSION,
@@ -67,7 +65,6 @@ export class FilesystemServerContext {
     this.cleanedUp = true;
     this.synchronizer.destroy();
     for (const r of this.registrars) r.dispose(this.mcp);
-    logRouter.detachStdio();
     this.pathGuard.clearDenialCache();
   }
 
@@ -150,12 +147,9 @@ export async function createServer(
 
   server.server.setRequestHandler('logging/setLevel', (req: { params: SetLevelRequestParams }) => {
     loggingState.minimumLevel = req.params.level;
-    Logger.notice(`Log level set to ${req.params.level}`);
+    Logger.info(`Log level set to ${req.params.level}`);
     return {};
   });
-
-  // Track stdio server by default; HTTP overrides per-session via the registry.
-  logRouter.attachStdio({ sender: new McpLogSender(server), loggingState });
 
   const isInitialized = options.isInitialized ?? (() => synchronizer.isInitialized());
   const deps: ServerDeps = {

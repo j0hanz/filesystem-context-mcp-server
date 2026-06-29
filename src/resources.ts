@@ -187,14 +187,8 @@ const FILESYSTEM_FILE_URI_TEMPLATE = 'filesystem-mcp://file/{+path}';
 // (e.g. Linux inotify, default ~8192/user). One subscription == one watcher.
 const MAX_WATCHERS = parseEnvInt('FILESYSTEM_MCP_MAX_WATCHERS', 256, 1, 4096);
 
-let watchFactory: (path: string, listener: () => void) => FSWatcher = (path, listener) =>
+const watchFactory: (path: string, listener: () => void) => FSWatcher = (path, listener) =>
   watch(path, listener);
-
-export function setWatchFactoryForTests(
-  factory?: (path: string, listener: () => void) => FSWatcher,
-): void {
-  watchFactory = factory ?? ((path, listener) => watch(path, listener));
-}
 
 function extractPath(uri: string): string | undefined {
   try {

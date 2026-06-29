@@ -21,7 +21,7 @@ import { pkgInfo } from './pkg-info.js';
 import { ALL_REGISTERED_TOOL_NAMES, MUTATING_TOOL_NAMES } from './tools/index.js';
 
 const { version: SERVER_VERSION } = pkgInfo;
-export const IS_WINDOWS = process.platform === 'win32';
+const IS_WINDOWS = process.platform === 'win32';
 const CLI_VALIDATE_CONCURRENCY = 8;
 
 // ════════════════════════════════════════════════════════════
@@ -38,7 +38,7 @@ export class CliExitError extends Error {
   }
 }
 
-export function validateCliPath(inputPath: string): void {
+function validateCliPath(inputPath: string): void {
   if (inputPath.includes('\0')) {
     throw new CliExitError('Path contains null bytes.', 1);
   }

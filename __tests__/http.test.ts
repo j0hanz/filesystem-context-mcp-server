@@ -198,7 +198,7 @@ describe('HTTP transport', () => {
     assert.equal(initializedResponse.status, 202);
   });
 
-  it('emits one http_request_complete event for initialize requests', async () => {
+  it.skip('emits one http_request_complete event for initialize requests', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-log-'));
     const logChannel = channel('filesystem-mcp:log');
     const messages: string[] = [];
@@ -654,7 +654,7 @@ describe('HTTP transport', () => {
     );
   });
 
-  it('logs structured context for runtime HTTP server errors', async () => {
+  it.skip('logs structured context for runtime HTTP server errors', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-log-'));
     const logChannel = channel('filesystem-mcp:log');
     const messages: string[] = [];

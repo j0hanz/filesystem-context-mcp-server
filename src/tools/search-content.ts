@@ -12,7 +12,6 @@ import {
   type Regex,
   searchContent,
   type SearchContentOptions,
-  SearchWorkerPool,
 } from '../core/search/index.js';
 import type { ResourceStore } from '../core/store.js';
 import {
@@ -38,9 +37,6 @@ import { putResource } from './_helpers.js';
 import { defineTool } from './define.js';
 
 // ---------------------------------------------------------------------------
-// Re-export SearchWorkerPool for compatibility
-// ---------------------------------------------------------------------------
-export { SearchWorkerPool };
 
 // ---------------------------------------------------------------------------
 
@@ -98,9 +94,6 @@ function buildStructuredSummaryFields(summary: SearchSummary): Partial<SearchOut
   }
   if (summary.truncated) {
     result.truncated = true;
-  }
-  if (summary.stoppedReason) {
-    result.stoppedReason = summary.stoppedReason;
   }
   return result;
 }

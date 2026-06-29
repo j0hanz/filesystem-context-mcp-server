@@ -1123,22 +1123,6 @@ export function isHidden(name: string): boolean {
   return name.startsWith('.');
 }
 
-export function needsStatsForSort(sortBy: string): boolean {
-  return sortBy === 'size' || sortBy === 'modified';
-}
-
-const collator = new Intl.Collator(undefined, { numeric: true });
-
-export function withOptionalStoppedReason<T extends object, R extends string>(
-  summary: T,
-  stoppedReason: R | undefined,
-): T & { stoppedReason?: R } {
-  if (stoppedReason === undefined) {
-    return summary;
-  }
-  return { ...summary, stoppedReason };
-}
-
 export interface DirentLike {
   isDirectory(): boolean;
   isFile(): boolean;
@@ -1152,89 +1136,6 @@ export function resolveEntryType(dirent: DirentLike): EntryType {
   if (dirent.isFile()) return 'file';
   if (dirent.isSymbolicLink()) return 'symlink';
   return 'other';
-}
-
-export function resolveStopReason<R extends string>(options: {
-  signal: AbortSignal;
-  current: number;
-  max: number;
-  abortedReason: R;
-  maxReason: R;
-}): R | undefined {
-  if (options.signal.aborted) return options.abortedReason;
-  if (options.current >= options.max) return options.maxReason;
-  return undefined;
-}
-
-export function compareStringValues(left?: string, right?: string): number {
-  if (left === right) return 0;
-  return collator.compare(left ?? '', right ?? '');
-}
-
-export function compareOptionalNumberDesc(
-  left: number | undefined,
-  right: number | undefined,
-  tieBreak: () => number,
-): number {
-  const diff = (right ?? 0) - (left ?? 0);
-  if (diff !== 0) return diff;
-  return tieBreak();
-}
-
-export function stableSortByDerivedString<T>(
-  items: T[],
-  derive: (item: T) => string,
-  tieBreak: (left: T, right: T) => number,
-): void {
-  const len = items.length;
-  if (len <= 1) return;
-
-  const derived = new Array<string>(len);
-  const indices = new Int32Array(len);
-
-  for (let i = 0; i < len; i++) {
-    const item = items[i];
-    if (item !== undefined) {
-      derived[i] = derive(item);
-    }
-    indices[i] = i;
-  }
-
-  indices.sort((a, b) => {
-    const itemA = items[a];
-    const itemB = items[b];
-
-    if (itemA === undefined && itemB === undefined) return 0;
-    if (itemA === undefined) return 1;
-    if (itemB === undefined) return -1;
-
-    const derivedA = derived[a] ?? '';
-    const derivedB = derived[b] ?? '';
-
-    if (derivedA !== derivedB) {
-      const derivedCompare = collator.compare(derivedA, derivedB);
-      if (derivedCompare !== 0) return derivedCompare;
-    }
-
-    const tiedCompare = tieBreak(itemA, itemB);
-    if (tiedCompare !== 0) return tiedCompare;
-
-    return a - b;
-  });
-
-  const sortedItems = new Array<T>(len);
-  for (let i = 0; i < len; i++) {
-    const idx = indices[i];
-    if (idx === undefined)
-      throw new Error('stableSortByDerivedString: sort invariant violated — undefined index');
-    sortedItems[i] = items[idx] as T;
-  }
-  for (let i = 0; i < len; i++) {
-    const item = sortedItems[i];
-    if (item === undefined)
-      throw new Error('stableSortByDerivedString: sort invariant violated — undefined item');
-    items[i] = item;
-  }
 }
 
 export interface EntryAccessDependencies {

@@ -1726,7 +1726,7 @@ const UNSAFE_CWD_PATHS = new Set(
   ].map((p) => normalizePath(p).toLowerCase()),
 );
 
-export function isUnsafeCwdPath(normalizedCwd: string): boolean {
+function isUnsafeCwdPath(normalizedCwd: string): boolean {
   const norm = normalizedCwd.toLowerCase();
 
   // 1. Filesystem root check

@@ -180,7 +180,7 @@ function recordChangedFile(summary: ReplaceSummary, filePath: string, matchCount
 }
 
 function createRegexMatcher(pattern: string, caseSensitive: boolean): Regex {
-  return compileRegex(pattern, { caseSensitive, global: true });
+  return compileRegex(pattern, { caseSensitive });
 }
 
 interface ReplacementMatcher {
@@ -192,7 +192,7 @@ interface ReplacementMatcher {
 function createRegexReplacementMatcher(regex: Regex): ReplacementMatcher {
   return {
     testBuffer(buffer: Buffer): boolean {
-      return regex.test(buffer);
+      return regex.test(buffer.toString('utf-8'));
     },
     count(content: string): number {
       regex.lastIndex = 0;

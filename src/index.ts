@@ -9,21 +9,12 @@ import * as z from 'zod/v4';
 
 // bridge.ts has zero intra-package dependencies; statically importing it here
 // does NOT pull in util.ts or any config-bearing module.
-import { applyBridgeFlags } from './core/bridge.js';
 
 z.config(z.locales.en());
-
-// Apply bridge flags BEFORE any config-bearing module is imported.
-// util.ts freezes env-derived constants (MAX_TEXT_FILE_SIZE, LOG_LEVEL, …)
-// on first import. Setting process.env here ensures those constants observe
-// the flag values when the dynamic imports below evaluate them.
-applyBridgeFlags(process.argv.slice(2));
 
 // Dynamically import all modules that transitively load util.ts so that the
 // bridge flags above are in effect when their module-level constants are set.
 const { CliExitError, parseArgs, runPrintConfig } = await import('./cli.js');
-const { allowPath, disallowPath, listAllowedPaths, manageConfig } =
-  await import('./client-config.js');
 const { shutdownWorkerPool } = await import('./core/concurrency.js');
 const { shutdownSearchWorkerPool } = await import('./core/search/engine.js');
 const { logRuntimeFailure } = await import('./core/observability.js');
@@ -118,35 +109,15 @@ async function main(): Promise<void> {
   let readOnly: boolean;
   let printConfig: boolean;
   let json: boolean;
-  let subcommand: 'allow' | 'disallow' | 'list-allowed' | 'config' | undefined;
-  let subcommandPath: string | undefined;
-  let configAction: 'set' | 'get' | 'list' | 'reset' | undefined;
-  let configKey: string | undefined;
-  let configValue: string | undefined;
-  let client: string | undefined;
-  let config: string | undefined;
-  let serverName: string | undefined;
-  let dryRun: boolean;
 
   try {
     const parsed = await parseArgs();
-    ({
-      allowedDirs,
-      allowCwd,
-      port,
-      readOnly,
-      printConfig,
-      json,
-      subcommand,
-      subcommandPath,
-      configAction,
-      configKey,
-      configValue,
-      client,
-      config,
-      serverName,
-      dryRun,
-    } = parsed);
+    allowedDirs = parsed.allowedDirs;
+    allowCwd = parsed.allowCwd;
+    port = parsed.port;
+    readOnly = parsed.readOnly;
+    printConfig = parsed.printConfig;
+    json = parsed.json;
   } catch (error: unknown) {
     if (error instanceof CliExitError) {
       if (error.message.length > 0) {
@@ -156,54 +127,6 @@ async function main(): Promise<void> {
       return;
     }
     throw error;
-  }
-
-  if (subcommand) {
-    try {
-      if (subcommand === 'allow') {
-        if (!subcommandPath) {
-          throw new CliExitError('Path is required', 1);
-        }
-        await allowPath(subcommandPath, { client, config, serverName, dryRun });
-      } else if (subcommand === 'disallow') {
-        if (!subcommandPath) {
-          throw new CliExitError('Path is required', 1);
-        }
-        await disallowPath(subcommandPath, { client, config, serverName, dryRun });
-      } else if (subcommand === 'config') {
-        if (!configAction) {
-          throw new CliExitError('Usage: config <set|get|list|reset> [key] [value]', 1);
-        }
-        await manageConfig(configAction, configKey, configValue, {
-          client,
-          config,
-          serverName,
-          dryRun,
-        });
-      } else {
-        const allowed = await listAllowedPaths({ client, config, serverName });
-        if (json) {
-          process.stdout.write(JSON.stringify(allowed, null, 2) + '\n');
-        } else if (allowed.length === 0) {
-          process.stdout.write('No directories are currently authorized.\n');
-        } else {
-          for (const p of allowed) {
-            process.stdout.write(`${p}\n`);
-          }
-        }
-      }
-    } catch (error: unknown) {
-      if (error instanceof CliExitError) {
-        process.stderr.write(`${error.message}\n`);
-        process.exitCode = error.exitCode;
-        return;
-      }
-      const msg = error instanceof Error ? error.message : String(error);
-      process.stderr.write(`Error: ${msg}\n`);
-      process.exitCode = 1;
-      return;
-    }
-    return;
   }
 
   if (printConfig) {

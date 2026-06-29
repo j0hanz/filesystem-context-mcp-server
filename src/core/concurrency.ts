@@ -1,38 +1,5 @@
-import { Worker } from 'node:worker_threads';
-
-/**
- * Main-thread worker pool.
- *
- * Exports shouldOffload(), runInWorker(), and shutdownWorkerPool().
- * Workers are spawned lazily using WORKER_ENTRY_URL from worker.ts, which
- * resolves to the correct .ts or .js file depending on context (tsx vs
- * compiled). The worker entry file (worker.ts) has no project imports, so
- * workers load without needing tsx's ESM hooks.
- *
- * Security note: this pool is process-global. Workers receive only the
- *   strings they need (oldStr, newStr, patchText) — never paths, session
- *   tokens, or AsyncLocalStorage state. Path validation always runs on the
- *   main thread before runInWorker is called.
- */
-
-import { ErrorCode, FsError, normalizeUnknownError } from './errors.js';
-import {
-  PARALLEL_CONCURRENCY,
-  WORKER_CANCEL_GRACE_MS,
-  WORKER_IDLE_TIMEOUT_MS,
-  WORKER_OFFLOAD_THRESHOLD_BYTES,
-  WORKER_POOL_MAX,
-  WORKER_QUEUE_MAX,
-  WORKERS_DISABLED,
-} from './util.js';
-import { WORKER_ENTRY_URL } from './worker.js';
-import type {
-  SerializedError,
-  TaskPayload,
-  TaskResponse,
-  TaskResult,
-  WorkerTaskName,
-} from './worker.js';
+import { normalizeUnknownError } from './errors.js';
+import { PARALLEL_CONCURRENCY } from './util.js';
 
 const UNFILLED = Symbol('UNFILLED');
 type Unfilled = typeof UNFILLED;
@@ -73,15 +40,12 @@ export async function processInParallel<T, R>(
   if (itemCount === 0) return { results: [], errors: [] };
   const effectiveConcurrency = normalizeConcurrency(concurrency);
 
-  // Pre-allocate slots by index to guarantee input-order output.
-  // Use UNFILLED sentinel to distinguish "not yet filled" from "filled with undefined".
   const resultSlots: (R | Unfilled)[] = new Array<R | Unfilled>(itemCount);
   const errors: { index: number; error: Error }[] = [];
 
   checkParallelAbort(signal);
 
   let nextIndex = 0;
-
   resultSlots.fill(UNFILLED);
 
   const next = async (): Promise<void> => {
@@ -90,9 +54,6 @@ export async function processInParallel<T, R>(
 
       const index = nextIndex;
       nextIndex += 1;
-
-      // Safe: `index < itemCount === items.length`, so `items[index]` is defined.
-      // Cast bypasses `noUncheckedIndexedAccess` widening to `T | undefined`.
       const item = items[index] as T;
 
       try {
@@ -115,7 +76,6 @@ export async function processInParallel<T, R>(
   }
 
   await Promise.allSettled(workers);
-
   checkParallelAbort(signal);
 
   const results: { index: number; value: R }[] = [];
@@ -127,438 +87,18 @@ export async function processInParallel<T, R>(
   return { results, errors };
 }
 
-// ---- public API --------------------------------------------------------
-
-function shouldOffload(payloadBytes: number): boolean {
-  if (WORKERS_DISABLED) return false;
-  return payloadBytes >= WORKER_OFFLOAD_THRESHOLD_BYTES;
-}
-
-export interface RunInWorkerOptions {
-  signal?: AbortSignal;
-}
-
-// ---- pool internals ----------------------------------------------------
-
-interface InflightEntry {
-  id: number;
-  resolve: (value: unknown) => void;
-  reject: (err: Error) => void;
-  signal?: AbortSignal;
-  abortHandler?: () => void;
-}
-
-interface QueuedTask {
-  request: {
-    id: number;
-    name: WorkerTaskName;
-    payload: unknown;
-  };
-  entry: InflightEntry;
-}
-
-interface PoolWorker {
-  worker: Worker;
-  state: 'starting' | 'idle' | 'busy' | 'terminating';
-  current?: InflightEntry;
-  lastIdleAt: number;
-  startedReady: boolean;
-}
-
-class WorkerPool {
-  private workers: PoolWorker[] = [];
-  private queue: QueuedTask[] = [];
-  private nextId = 1;
-  private sweepTimer?: NodeJS.Timeout | undefined;
-  private consecutiveStartupFailures = 0;
-  private shuttingDown = false;
-  private poolDisabled = false;
-
-  public run<N extends WorkerTaskName>(
-    name: N,
-    payload: TaskPayload<N>,
-    opts: RunInWorkerOptions = {},
-  ): Promise<TaskResult<N>> {
-    if (WORKERS_DISABLED) {
-      return Promise.reject(
-        new FsError(
-          ErrorCode.UNKNOWN,
-          'runInWorker called while FS_DISABLE_WORKERS=1 — caller bug',
-        ),
-      );
-    }
-    if (this.shuttingDown) {
-      return Promise.reject(new FsError(ErrorCode.UNKNOWN, 'Worker pool shutting down'));
-    }
-    if (this.poolDisabled) {
-      return Promise.reject(
-        new FsError(ErrorCode.UNKNOWN, 'Worker pool permanently disabled due to startup failures'),
-      );
-    }
-
-    return new Promise<TaskResult<N>>((resolve, reject) => {
-      let settled = false;
-      const settledResolve = (value: unknown): void => {
-        if (settled) return;
-        settled = true;
-        (resolve as (v: unknown) => void)(value);
-      };
-      const settledReject = (err: Error): void => {
-        if (settled) return;
-        settled = true;
-        reject(err);
-      };
-
-      const id = this.nextId++;
-      const entry: InflightEntry = {
-        id,
-        resolve: settledResolve,
-        reject: settledReject,
-      };
-
-      if (opts.signal) {
-        entry.signal = opts.signal;
-        const handler = (): void => {
-          const reason: unknown = opts.signal?.reason;
-          const isTimeout =
-            reason instanceof Error &&
-            (reason.name === 'TimeoutError' ||
-              (reason.name === 'FsError' &&
-                (reason as unknown as { code: string }).code === ErrorCode.TIMEOUT));
-          this.abortEntry(entry, isTimeout);
-          settledReject(
-            reason instanceof Error ? reason : new DOMException('Operation aborted', 'AbortError'),
-          );
-        };
-        entry.abortHandler = handler;
-        if (opts.signal.aborted) {
-          handler();
-          return;
-        }
-        opts.signal.addEventListener('abort', handler, { once: true });
-      }
-
-      // Reject immediately if queue is at capacity to prevent unbounded growth.
-      if (this.queue.length >= WORKER_QUEUE_MAX) {
-        this.cleanupEntry(entry);
-        settledReject(
-          new FsError(
-            ErrorCode.UNKNOWN,
-            `Worker pool task queue is full (${String(WORKER_QUEUE_MAX)} pending tasks); rejecting new submission`,
-          ),
-        );
-        return;
-      }
-
-      this.queue.push({
-        request: { id, name, payload },
-        entry,
-      });
-      this.drainQueue();
-    });
-  }
-
-  public async shutdown(): Promise<void> {
-    this.shuttingDown = true;
-    // Reject everything that's still queued.
-    for (const qt of this.clearQueue()) {
-      this.cleanupEntry(qt.entry);
-      qt.entry.reject(new FsError(ErrorCode.UNKNOWN, 'Worker pool shutting down'));
-    }
-    // Reject in-flight tasks; terminate workers.
-    const toTerminate = [...this.workers];
-    this.workers = [];
-    if (this.sweepTimer) {
-      clearInterval(this.sweepTimer);
-      this.sweepTimer = undefined;
-    }
-    await Promise.all(
-      toTerminate.map(async (pw) => {
-        if (pw.current) {
-          this.cleanupEntry(pw.current);
-          pw.current.reject(new FsError(ErrorCode.UNKNOWN, 'Worker pool shutting down'));
-          delete pw.current;
-        }
-        pw.state = 'terminating';
-        try {
-          await pw.worker.terminate();
-        } catch (err) {
-          console.error('Failed to terminate worker during shutdown:', err);
-        }
-      }),
-    );
-    // Pool is fully drained — allow reuse (e.g., test afterEach then next test).
-    this.shuttingDown = false;
-  }
-
-  private startSweepTimerIfNeeded(): void {
-    if (this.sweepTimer) return;
-    this.sweepTimer = setInterval(() => {
-      this.sweepIdleWorkers();
-    }, 10_000);
-    this.sweepTimer.unref();
-  }
-
-  private stopSweepTimerIfPossible(): void {
-    if (this.workers.length === 0 && this.sweepTimer) {
-      clearInterval(this.sweepTimer);
-      this.sweepTimer = undefined;
-    }
-  }
-
-  private sweepIdleWorkers(): void {
-    const now = Date.now();
-    for (let i = this.workers.length - 1; i >= 0; i--) {
-      const pw = this.workers[i];
-      if (pw?.state === 'idle' && now - pw.lastIdleAt >= WORKER_IDLE_TIMEOUT_MS) {
-        this.retireWorker(pw);
-      }
-    }
-    this.stopSweepTimerIfPossible();
-  }
-
-  private removeWorker(pw: PoolWorker): void {
-    const idx = this.workers.indexOf(pw);
-    if (idx !== -1) {
-      this.workers.splice(idx, 1);
-    }
-  }
-
-  private retireWorker(pw: PoolWorker): void {
-    if (pw.state === 'terminating') return;
-    pw.state = 'terminating';
-    this.removeWorker(pw);
-    void pw.worker.terminate();
-  }
-
-  private handleResponse(pw: PoolWorker, response: TaskResponse): void {
-    const entry = pw.current;
-    if (entry?.id !== response.id) return;
-    this.cleanupEntry(entry);
-    delete pw.current;
-
-    if (response.ok) {
-      entry.resolve(response.value);
-    } else {
-      entry.reject(this.rehydrateError(response.error));
-    }
-
-    pw.state = 'idle';
-    pw.lastIdleAt = Date.now();
-    this.drainQueue();
-  }
-
-  private handleWorkerExit(pw: PoolWorker, code: number): void {
-    const isStarting = pw.state === 'starting';
-    if (isStarting) {
-      this.consecutiveStartupFailures++;
-      console.error(`Worker exited during startup with code ${code}`);
-    }
-
-    this.removeWorker(pw);
-    if (pw.current) {
-      this.cleanupEntry(pw.current);
-      pw.current.reject(
-        new FsError(
-          ErrorCode.UNKNOWN,
-          `Worker terminated unexpectedly (exit code ${String(code)})`,
-        ),
-      );
-      delete pw.current;
-    }
-    this.stopSweepTimerIfPossible();
-
-    if (isStarting && this.consecutiveStartupFailures >= 3) {
-      const errorMsg = `Worker pool failed to initialize (worker exited with code ${code})`;
-      this.poolDisabled = true;
-      this.rejectAllQueued(new FsError(ErrorCode.UNKNOWN, errorMsg));
-      return;
-    }
-
-    // Resume queue scheduling after worker removal, in case tasks were queued
-    // while the pool was at capacity.
-    this.drainQueue();
-  }
-
-  private spawnWorker(): PoolWorker {
-    const w = new Worker(WORKER_ENTRY_URL);
-    const pw: PoolWorker = {
-      worker: w,
-      state: 'starting',
-      lastIdleAt: Date.now(),
-      startedReady: false,
-    };
-    w.on('online', () => {
-      pw.startedReady = true;
-      if (pw.state === 'starting') {
-        pw.state = 'idle';
-        this.consecutiveStartupFailures = 0;
-        this.drainQueue();
-      }
-    });
-    w.on('message', (msg: TaskResponse) => {
-      this.handleResponse(pw, msg);
-    });
-    w.on('error', (err) => {
-      this.handleWorkerError(pw, err);
-    });
-    w.on('exit', (code) => {
-      this.handleWorkerExit(pw, code);
-    });
-    this.workers.push(pw);
-    this.startSweepTimerIfNeeded();
-    return pw;
-  }
-
-  private pickIdleWorker(): PoolWorker | undefined {
-    return this.workers.find((p) => p.state === 'idle');
-  }
-
-  private dispatch(pw: PoolWorker, qt: QueuedTask): void {
-    pw.state = 'busy';
-    pw.current = qt.entry;
-    try {
-      pw.worker.postMessage(qt.request);
-    } catch (err) {
-      this.cleanupEntry(qt.entry);
-      delete pw.current;
-      qt.entry.reject(normalizeUnknownError(err));
-      // postMessage only throws when the worker channel is already closed.
-      // Retire the worker; its 'exit' event will call drainQueue.
-      this.retireWorker(pw);
-    }
-  }
-
-  private drainQueue(): void {
-    if (this.shuttingDown || this.poolDisabled) return;
-    while (this.queue.length > 0) {
-      const idle = this.pickIdleWorker();
-      if (idle) {
-        const next = this.queue.shift();
-        if (next) this.dispatch(idle, next);
-        continue;
-      }
-      if (this.workers.length < WORKER_POOL_MAX) {
-        this.spawnWorker();
-        continue;
-      }
-      return;
-    }
-  }
-
-  private clearQueue(): QueuedTask[] {
-    const remaining = this.queue;
-    this.queue = [];
-    return remaining;
-  }
-
-  private rejectAllQueued(err: Error): void {
-    for (const qt of this.clearQueue()) {
-      this.cleanupEntry(qt.entry);
-      qt.entry.reject(err);
-    }
-  }
-
-  private findWorkerForEntry(entry: InflightEntry): PoolWorker | undefined {
-    return this.workers.find((p) => p.current === entry);
-  }
-
-  private abortEntry(entry: InflightEntry, isTimeout: boolean): void {
-    this.cleanupEntry(entry);
-    const pw = this.findWorkerForEntry(entry);
-    if (pw) {
-      if (isTimeout) {
-        this.retireWorker(pw);
-      } else {
-        setTimeout(() => {
-          if (this.workers.includes(pw) && pw.current === entry) this.retireWorker(pw);
-        }, WORKER_CANCEL_GRACE_MS).unref();
-      }
-    } else {
-      const idx = this.queue.findIndex((q) => q.entry === entry);
-      if (idx !== -1) {
-        this.queue.splice(idx, 1);
-      }
-    }
-  }
-
-  private handleWorkerError(pw: PoolWorker, err: unknown): void {
-    const isStarting = pw.state === 'starting';
-    if (isStarting) {
-      this.consecutiveStartupFailures++;
-    }
-
-    if (pw.current) {
-      this.cleanupEntry(pw.current);
-      pw.current.reject(normalizeUnknownError(err));
-      delete pw.current;
-    } else if (isStarting) {
-      console.error('Worker failed to initialize:', err);
-    } else {
-      console.error('Worker error with no current task (state:', pw.state, '):', err);
-    }
-    // Retire the worker to prevent further task scheduling on it.
-    this.retireWorker(pw);
-
-    if (isStarting && this.consecutiveStartupFailures >= 3) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      this.poolDisabled = true;
-      this.rejectAllQueued(
-        new FsError(ErrorCode.UNKNOWN, `Worker pool failed to initialize: ${errorMsg}`),
-      );
-      return;
-    }
-
-    // Resume queue scheduling in case tasks were queued while at capacity.
-    this.drainQueue();
-  }
-
-  private cleanupEntry(entry: InflightEntry): void {
-    if (entry.abortHandler && entry.signal) {
-      entry.signal.removeEventListener('abort', entry.abortHandler);
-    }
-  }
-
-  private rehydrateError(err: SerializedError): Error {
-    if (err.kind === 'mcp') {
-      return new FsError(
-        err.code,
-        err.message,
-        ...(err.path !== undefined ? [err.path] : [undefined]),
-        ...(err.details !== undefined ? [err.details] : []),
-      );
-    }
-    const e = new Error(err.message);
-    if (err.stack) e.stack = err.stack;
-    return e;
-  }
-}
-
-const globalWorkerPool = new WorkerPool();
-
-export function runInWorker<N extends WorkerTaskName>(
-  name: N,
-  payload: TaskPayload<N>,
-  opts: RunInWorkerOptions = {},
-): Promise<TaskResult<N>> {
-  return globalWorkerPool.run(name, payload, opts);
-}
-
-export async function runWorkerOr<N extends WorkerTaskName>(
-  name: N,
-  payload: TaskPayload<N>,
-  payloadBytes: number,
-  opts: RunInWorkerOptions,
-  inline: () => Promise<TaskResult<N>>,
-): Promise<TaskResult<N>> {
-  if (shouldOffload(payloadBytes)) {
-    return runInWorker(name, payload, opts);
-  }
+export async function runWorkerOr<T>(
+  _name: string,
+  _payload: unknown,
+  _payloadBytes: number,
+  _opts: unknown,
+  inline: () => Promise<T>,
+): Promise<T> {
   return inline();
 }
 
 export async function shutdownWorkerPool(): Promise<void> {
-  return globalWorkerPool.shutdown();
+  // no-op, worker pool removed
 }
 
 function createAbortError(message = 'Operation aborted'): Error {
@@ -590,11 +130,6 @@ function getAbortError(signal: AbortSignal, message?: string): Error {
   return createAbortError(message);
 }
 
-/**
- * @remarks The inner `promise` must eventually settle. If it never resolves or rejects,
- * the `abort` event listener on `signal` will not be removed — a listener leak for the
- * lifetime of `signal`.
- */
 export function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return promise;
   signal.throwIfAborted();
@@ -636,7 +171,6 @@ export function createTimedAbortSignal(
   timeoutMs?: number,
 ): { signal: AbortSignal; cleanup: () => void } {
   if (typeof timeoutMs === 'number' && Number.isFinite(timeoutMs)) {
-    // If the base signal is already aborted, propagate immediately without starting a timer.
     if (baseSignal?.aborted) {
       const controller = new AbortController();
       controller.abort(baseSignal.reason);
