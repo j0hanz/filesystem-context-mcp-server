@@ -1,31 +1,22 @@
 # Agent Instructions
 
-purpose: Secure filesystem server (Model Context Protocol) for reading, writing, searching, diffing, and patching files.
+## Project
+
+- Secure filesystem MCP server for reading, writing, searching, diffing, and patching files
+- TypeScript (strict, ES2024, ESM) + Node.js >=24, MCP SDK v2, Zod v4
 
 ## Hard Rules
 
-commit: free-form commit messages allowed
-maturity: breaking changes are fine — never add fallback/legacy-compat shims, rewrite to the better approach directly
-testing: test/typecheck files you changed; don't require full-suite runs
-
-<!-- codebase-init:hard-rules v1 commit=relaxed maturity=development testing=touched-files -->
+- Free-form commit messages allowed (see `pr-workflow` skill)
+- Breaking changes are fine. Never add fallback/legacy-compat shims; rewrite to the better approach directly
+- Test/typecheck only files you changed; do not require full-suite runs
+- Automated CI runs on GitHub Actions
 
 ## Package Manager
 
-pm: npm
-install: `npm install`
-build: `npm run build`
-start: `npm start`
-test: `npm test`
-typecheck: `npm run type-check`
-lint: `npm run lint`
-check: `npm run check` (build + type-check + eslint + prettier + knip + test)
+- npm
 
-## Dependency Locations
-
-node_modules: `node_modules/`
-
-## Common Commands
+### Common Commands
 
 | Mode                | Command                             |
 | ------------------- | ----------------------------------- |
@@ -35,12 +26,35 @@ node_modules: `node_modules/`
 | Tests only          | `node scripts/tasks.mjs test`       |
 | Test failure detail | `node scripts/tasks.mjs detail [n]` |
 
+## Dependency Locations
+
+- `node_modules/`
+
 ## Key Conventions
 
-architecture: monolith + CLI — `src/server.ts` (protocol server entry) and `src/cli.ts` (CLI entry) share `src/core/` and `src/tools/`
-tools: each tool lives in `src/tools/<name>.ts`, built via `defineTool()` ([define.ts](src/tools/define.ts)) and registered in [index.ts](src/tools/index.ts)
-errors: throw `FsError` carrying a `Problem` ([errors.ts](src/core/errors.ts)); never throw raw `Error` — use `Problem.notFound()`, `Problem.invalidInput()`, etc.
-batch-ops: multi-path tools use `runOverPaths()` ([define.ts](src/tools/define.ts)) for per-path concurrency and partial-failure results
-imports: ESM only — relative imports require explicit `.js` extensions
-zod: import as `import * as z from 'zod/v4'` (not bare `zod`)
-path-safety: all filesystem access goes through `GuardedFileSystem`/`PathGuard` ([fs.ts](src/core/fs.ts), [path.ts](src/core/path.ts)) — never use `node:fs` directly in tool code
+- `src/server.ts` = protocol server entry
+- `src/cli.ts` = CLI entry
+- Shared code lives in `src/core/` and `src/tools/`
+- Use `runOverPaths()` (`src/tools/define.ts`)
+- Support per-path concurrency and partial-failure results
+- Throw `FsError` carrying a `Problem` (`src/core/errors.ts`)
+- Never throw raw `Error`
+- Use `Problem.notFound()`, `Problem.invalidInput()`, etc.
+- ESM only
+- Relative imports require explicit `.js` extensions
+- All access goes through `GuardedFileSystem` / `PathGuard`
+- Never use `node:fs` directly in tool code
+- See `src/core/fs.ts` and `src/core/path.ts`
+- Each tool lives in `src/tools/<name>.ts`
+- Build tools with `defineTool()` (`src/tools/define.ts`)
+- Register tools in `src/tools/index.ts`
+- Zod:
+  - Import as:
+
+    ```ts
+    import * as z from 'zod/v4';
+    ```
+
+  - Never import from bare `zod`
+
+<!-- project-init:hard-rules v1 commit=relaxed maturity=development testing=touched-files ci=github-actions sections=none -->
