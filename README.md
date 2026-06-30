@@ -39,6 +39,17 @@ Filesystem-MCP is a [Model Context Protocol](https://modelcontextprotocol.io) se
 | Regex     | RE2 (non-backtracking, safe for untrusted input)  |
 | Container | Docker alpine · multi-stage build · non-root user |
 
+## Table of Contents
+
+- [Quick start](#quick-start)
+- [Usage](#usage)
+- [Project structure](#project-structure)
+- [Configuration](#configuration)
+- [Scripts](#scripts)
+- [Security](#security)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## Quick start
 
 > [!NOTE]
@@ -436,15 +447,13 @@ filesystem-mcp --port 3000
 
 ## Scripts
 
-| Command              | Description                                         |
-| :------------------- | :-------------------------------------------------- |
-| `npm run build`      | Compile TypeScript to `dist/`                       |
-| `npm test`           | Run all tests with the Node.js built-in test runner |
-| `npm run lint`       | Run ESLint (zero warnings enforced)                 |
-| `npm run format`     | Format source with Prettier                         |
-| `npm run type-check` | TypeScript type check without emit                  |
-| `npm run knip`       | Check for unused exports and dependencies           |
-| `npm run check`      | Full static analysis + tests                        |
+| Mode                | Command                             | Description                                           |
+| :------------------ | :---------------------------------- | :---------------------------------------------------- |
+| Full check          | `node scripts/tasks.mjs`            | Run build, type check, lint, format, knip, and tests  |
+| Auto-fix + check    | `node scripts/tasks.mjs fix`        | Auto-fix linting/formatting issues and run full check |
+| Static only         | `node scripts/tasks.mjs --quick`    | Run static analysis without tests                     |
+| Tests only          | `node scripts/tasks.mjs test`       | Run all tests                                         |
+| Test failure detail | `node scripts/tasks.mjs detail [n]` | Re-run a failed test file with detailed output        |
 
 ## Security
 
