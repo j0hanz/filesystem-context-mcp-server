@@ -20,9 +20,11 @@ import {
   type JSONRPCMessage,
   parseJSONRPCMessage,
   ProtocolErrorCode,
-  StdioServerTransport,
   type StreamId,
 } from '@modelcontextprotocol/server';
+// Moved to a Node-only subpath export upstream (not re-exported from the
+// package root, which stays platform-agnostic for non-Node runtimes).
+import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import {
@@ -38,7 +40,6 @@ import { ErrorCode, formatUnknownErrorMessage, FsError } from './core/errors.js'
 import { Logger, withSession, withTelemetry } from './core/observability.js';
 import type { PathGuard, ServerOptions } from './core/path.js';
 import type { McpRootsSynchronizer } from './core/registrar.js';
-import { McpLogSender } from './core/registrar.js';
 import { getInitHandshakeTimeoutMs, INIT_TIMEOUT_CLOSE, parseEnvInt } from './core/util.js';
 import type { FilesystemServerContext } from './server.js';
 import { createServer } from './server.js';
@@ -47,30 +48,94 @@ import { createServer } from './server.js';
 // event-store
 // ═══════════════════════════════════════════════════════════════
 
-class InMemoryEventStore implements EventStore {
-  storeEvent(_streamId: StreamId, _message: JSONRPCMessage): Promise<EventId> {
-    return Promise.resolve(randomUUID());
+const MAX_EVENTS_PER_STREAM = 1000;
+
+interface StoredEvent {
+  readonly id: EventId;
+  readonly message: JSONRPCMessage;
+}
+
+/**
+ * Bounded in-memory ring buffer supporting resumable streams (`Last-Event-ID`).
+ * Each stream keeps at most `MAX_EVENTS_PER_STREAM` events (FIFO eviction);
+ * events are lost across process restarts and once evicted, matching the
+ * "best-effort" resumability contract of the streamable HTTP transport.
+ */
+export class InMemoryEventStore implements EventStore {
+  private readonly streams = new Map<StreamId, StoredEvent[]>();
+  private readonly eventIdToStreamId = new Map<EventId, StreamId>();
+
+  storeEvent(streamId: StreamId, message: JSONRPCMessage): Promise<EventId> {
+    const eventId = randomUUID();
+    let stream = this.streams.get(streamId);
+    if (!stream) {
+      stream = [];
+      this.streams.set(streamId, stream);
+    }
+
+    stream.push({ id: eventId, message });
+    this.eventIdToStreamId.set(eventId, streamId);
+
+    if (stream.length > MAX_EVENTS_PER_STREAM) {
+      const removed = stream.shift();
+      if (removed) {
+        this.eventIdToStreamId.delete(removed.id);
+      }
+    }
+
+    return Promise.resolve(eventId);
   }
 
-  getStreamIdForEventId(_eventId: EventId): Promise<StreamId | undefined> {
-    return Promise.resolve(undefined);
+  getStreamIdForEventId(eventId: EventId): Promise<StreamId | undefined> {
+    return Promise.resolve(this.eventIdToStreamId.get(eventId));
   }
 
-  replayEventsAfter(
-    _lastEventId: EventId,
-    _callbacks: {
+  async replayEventsAfter(
+    lastEventId: EventId,
+    callbacks: {
       send: (eventId: EventId, message: JSONRPCMessage) => Promise<void>;
     },
   ): Promise<StreamId> {
-    return Promise.reject(new FsError(ErrorCode.NOT_FOUND, 'Replay not supported'));
+    const streamId = this.eventIdToStreamId.get(lastEventId);
+    if (!streamId) {
+      throw new FsError(ErrorCode.NOT_FOUND, `Event ID ${lastEventId} not found or expired`);
+    }
+
+    const stream = this.streams.get(streamId);
+    if (!stream) {
+      throw new FsError(ErrorCode.NOT_FOUND, `Stream ${streamId} not found`);
+    }
+
+    const eventIndex = stream.findIndex((event) => event.id === lastEventId);
+    if (eventIndex === -1) {
+      throw new FsError(
+        ErrorCode.NOT_FOUND,
+        `Event ID ${lastEventId} not found in stream ${streamId}`,
+      );
+    }
+
+    for (let i = eventIndex + 1; i < stream.length; i++) {
+      const event = stream[i];
+      if (event) {
+        await callbacks.send(event.id, event.message);
+      }
+    }
+
+    return streamId;
   }
 
-  delete(_streamId: string): void {
-    return;
+  delete(streamId: string): void {
+    const stream = this.streams.get(streamId);
+    if (!stream) return;
+    for (const event of stream) {
+      this.eventIdToStreamId.delete(event.id);
+    }
+    this.streams.delete(streamId);
   }
 
   clear(): void {
-    return;
+    this.streams.clear();
+    this.eventIdToStreamId.clear();
   }
 }
 
@@ -88,7 +153,7 @@ export async function startServer(ctx: FilesystemServerContext): Promise<void> {
         }
       : undefined,
   );
-  await ctx.pathGuard.recomputeAllowedDirectories(new McpLogSender(server));
+  await ctx.pathGuard.recomputeAllowedDirectories();
 
   transport.onerror = (error: unknown) => {
     Logger.error('[Stdio] Transport error:', formatUnknownErrorMessage(error));
@@ -107,7 +172,7 @@ export async function startServer(ctx: FilesystemServerContext): Promise<void> {
     sdkOnClose?.();
   };
 
-  ctx.synchronizer.logMissingDirectoriesIfNeeded(server);
+  ctx.synchronizer.logMissingDirectoriesIfNeeded();
 }
 
 const MAX_SESSION_ID_LENGTH = 256;
@@ -225,18 +290,6 @@ export function assertHttpBindingPolicy(host: string, apiKey: string | undefined
     ErrorCode.PERMISSION_DENIED,
     `Refusing to bind HTTP server to non-loopback host '${host}' without a secure API_KEY (minimum 16 characters).`,
   );
-}
-
-/** Express middleware: reject browser origins outside localhost. */
-function originGuardMiddleware(): RequestHandler {
-  return (req: Request, res: Response, next: NextFunction): void => {
-    const origin = req.get('origin');
-    if (origin && !isAllowedLocalhostOrigin(origin)) {
-      res.status(403).send('Forbidden: disallowed origin');
-      return;
-    }
-    next();
-  };
 }
 
 /**
@@ -450,7 +503,7 @@ async function createHttpSession(
         createdAt: Date.now(),
         close,
       });
-      synchronizer.logMissingDirectoriesIfNeeded(mcpServer);
+      synchronizer.logMissingDirectoriesIfNeeded();
     },
     onsessionclosed: async (sessionId) => {
       const session = registry.get(sessionId);
@@ -703,6 +756,10 @@ function setupExpressApp(
   const app = createMcpExpressApp({
     host: httpHost,
     ...(allowedHosts.length > 0 ? { allowedHosts } : {}),
+    // Origin validation is enforced by the SDK app itself (not left to its
+    // localhost-bind-only default) so non-loopback binds are covered too —
+    // matches the hostnames isAllowedLocalhostOrigin() reflects for CORS below.
+    allowedOrigins: ['localhost', '127.0.0.1'],
     jsonLimit: `${MAX_REQUEST_BODY_BYTES}b`,
   });
 
@@ -718,11 +775,9 @@ function setupExpressApp(
     );
   }
 
-  app.use(originGuardMiddleware());
-
   app.options('/mcp', (req: Request, res: Response) => {
-    // Only reflect a present Origin (already constrained to localhost by
-    // originGuardMiddleware upstream). Avoid emitting a wildcard fallback.
+    // Only reflect a present Origin (already constrained to localhost by the
+    // SDK app's own Origin validation above). Avoid emitting a wildcard fallback.
     const origin = req.headers.origin;
     if (origin && isAllowedLocalhostOrigin(origin)) {
       res.header('Access-Control-Allow-Origin', origin);

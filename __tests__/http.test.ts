@@ -466,7 +466,9 @@ describe('HTTP transport', () => {
     });
 
     assert.equal(response.status, 403);
-    assert.match(await response.text(), /Forbidden: disallowed origin/u);
+    const body = (await response.json()) as { error?: { code?: number; message?: string } };
+    assert.equal(body.error?.code, -32000);
+    assert.match(body.error?.message ?? '', /Invalid Origin/u);
   });
 
   it('rejects loopback requests with a disallowed Host header', async () => {

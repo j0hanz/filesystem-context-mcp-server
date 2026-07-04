@@ -1,18 +1,15 @@
-import type {
-  Implementation,
-  ServerCapabilities,
-  SetLevelRequestParams,
-} from '@modelcontextprotocol/server';
+import type { Implementation, ServerCapabilities } from '@modelcontextprotocol/server';
 import { McpServer } from '@modelcontextprotocol/server';
 
 import { readFile } from 'node:fs/promises';
 
 import { GuardedFileSystem } from './core/fs.js';
 import { createLoggingState, Logger } from './core/observability.js';
+import type { LoggingLevel } from './core/observability.js';
 import type { ServerOptions } from './core/path.js';
 import { PathGuard } from './core/path.js';
 import type { Registrar, ServerDeps } from './core/registrar.js';
-import { McpLogSender, McpRootsSynchronizer } from './core/registrar.js';
+import { McpRootsSynchronizer } from './core/registrar.js';
 import type { ResourceStore } from './core/store.js';
 import { createInMemoryResourceStore } from './core/store.js';
 import { LOG_LEVEL } from './core/util.js';
@@ -141,15 +138,18 @@ export async function createServer(
 
   const loggingState = createLoggingState(LOG_LEVEL);
   const pathGuard = new PathGuard(options, loggingState);
-  await pathGuard.recomputeAllowedDirectories(new McpLogSender(server));
+  await pathGuard.recomputeAllowedDirectories();
 
   const synchronizer = new McpRootsSynchronizer(pathGuard, loggingState);
 
-  server.server.setRequestHandler('logging/setLevel', (req: { params: SetLevelRequestParams }) => {
-    loggingState.minimumLevel = req.params.level;
-    Logger.info(`Log level set to ${req.params.level}`);
-    return {};
-  });
+  server.server.setRequestHandler(
+    'logging/setLevel',
+    (req: { params: { level: LoggingLevel } }) => {
+      loggingState.minimumLevel = req.params.level;
+      Logger.info(`Log level set to ${req.params.level}`);
+      return {};
+    },
+  );
 
   const isInitialized = options.isInitialized ?? (() => synchronizer.isInitialized());
   const deps: ServerDeps = {

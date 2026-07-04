@@ -21,7 +21,7 @@ import { watch } from 'node:fs';
 
 import { ErrorCode, FsError } from './core/errors.js';
 import { readFileRaw } from './core/fs.js';
-import { withTelemetry } from './core/observability.js';
+import { Logger, withTelemetry } from './core/observability.js';
 import type { PathGuard } from './core/path.js';
 import { PathCompleter } from './core/path.js';
 import type { Registrar, ServerDeps } from './core/registrar.js';
@@ -274,15 +274,7 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
       if (watchers.has(uri)) return;
 
       if (watchers.size >= MAX_WATCHERS) {
-        options.server
-          ?.sendLoggingMessage({
-            level: 'warning',
-            logger: 'filesystem-mcp',
-            data: `Cannot subscribe to ${uri}: MAX_WATCHERS limit (${MAX_WATCHERS}) reached.`,
-          })
-          .catch(() => {
-            /* ignore */
-          });
+        Logger.warn(`Cannot subscribe to ${uri}: MAX_WATCHERS limit (${MAX_WATCHERS}) reached.`);
         return false;
       }
 
@@ -290,15 +282,7 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
 
       const filePath = extractPath(uri);
       if (!filePath) {
-        options.server
-          ?.sendLoggingMessage({
-            level: 'warning',
-            logger: 'filesystem-mcp',
-            data: `Cannot subscribe to malformed or non-filesystem URI: ${uri}`,
-          })
-          .catch(() => {
-            /* ignore */
-          });
+        Logger.warn(`Cannot subscribe to malformed or non-filesystem URI: ${uri}`);
         return;
       }
 
@@ -312,15 +296,9 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
           }
           if (watchers.has(uri)) return;
           if (watchers.size >= MAX_WATCHERS) {
-            options.server
-              ?.sendLoggingMessage({
-                level: 'warning',
-                logger: 'filesystem-mcp',
-                data: `Cannot subscribe to ${uri}: MAX_WATCHERS limit (${MAX_WATCHERS}) reached.`,
-              })
-              .catch(() => {
-                /* ignore */
-              });
+            Logger.warn(
+              `Cannot subscribe to ${uri}: MAX_WATCHERS limit (${MAX_WATCHERS}) reached.`,
+            );
             return;
           }
 
@@ -332,42 +310,22 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
                   try {
                     cb(uri);
                   } catch (err) {
-                    options.server
-                      ?.sendLoggingMessage({
-                        level: 'warning',
-                        logger: 'filesystem-mcp',
-                        data: `Notify callback error for ${uri}: ${err instanceof Error ? err.message : String(err)}`,
-                      })
-                      .catch(() => {
-                        /* ignore */
-                      });
+                    Logger.warn(
+                      `Notify callback error for ${uri}: ${err instanceof Error ? err.message : String(err)}`,
+                    );
                   }
                 }
               }
             });
             watcher.on('error', (err: Error) => {
-              options.server
-                ?.sendLoggingMessage({
-                  level: 'warning',
-                  logger: 'filesystem-mcp',
-                  data: `Watcher error for ${uri}: ${err.message}`,
-                })
-                .catch(() => {
-                  /* ignore */
-                });
+              Logger.warn(`Watcher error for ${uri}: ${err.message}`);
               dropWatcher(uri, watcher);
             });
             watchers.set(uri, watcher);
           } catch (err) {
-            options.server
-              ?.sendLoggingMessage({
-                level: 'error',
-                logger: 'filesystem-mcp',
-                data: `Failed to create watcher for ${uri}: ${err instanceof Error ? err.message : String(err)}`,
-              })
-              .catch(() => {
-                /* ignore */
-              });
+            Logger.error(
+              `Failed to create watcher for ${uri}: ${err instanceof Error ? err.message : String(err)}`,
+            );
           }
         })
         .catch((err: unknown) => {
@@ -375,15 +333,9 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
             err instanceof FsError &&
             (err.code === ErrorCode.NOT_FOUND || err.code === ErrorCode.ACCESS_DENIED);
           if (!isExpected) {
-            options.server
-              ?.sendLoggingMessage({
-                level: 'warning',
-                logger: 'filesystem-mcp',
-                data: `Unexpected error validating path for watcher ${uri}: ${err instanceof Error ? err.message : String(err)}`,
-              })
-              .catch(() => {
-                /* ignore */
-              });
+            Logger.warn(
+              `Unexpected error validating path for watcher ${uri}: ${err instanceof Error ? err.message : String(err)}`,
+            );
           }
         })
         .finally(() => {
@@ -580,15 +532,7 @@ function registerResources(
                   void server.server.sendResourceUpdated(updatePayload).catch((err: unknown) => {
                     const msg = err instanceof Error ? err.message : String(err);
                     if (!msg.includes('closed') && !msg.includes('Transport')) {
-                      void options.server
-                        ?.sendLoggingMessage({
-                          level: 'warning',
-                          logger: 'filesystem-mcp',
-                          data: `Failed to send resource update for ${updatedUri}: ${msg}`,
-                        })
-                        .catch(() => {
-                          /* ignore */
-                        });
+                      Logger.warn(`Failed to send resource update for ${updatedUri}: ${msg}`);
                     }
                   });
                 },

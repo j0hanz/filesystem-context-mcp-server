@@ -3,10 +3,6 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 export type LoggingLevel =
   'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency';
 
-export interface LogSender {
-  send(level: LoggingLevel, message: string): Promise<void>;
-}
-
 interface SessionContextData {
   sessionId?: string;
 }
@@ -42,8 +38,6 @@ export const Logger = {
   debug: (message: string, ...args: unknown[]) => {
     console.error(`[debug] ${message}`, ...args);
   },
-  setRouter: (): void => undefined,
-  getRouter: () => null as unknown as LogRouter,
 };
 
 export async function withTelemetry<T>(
@@ -61,20 +55,4 @@ export async function withTelemetry<T>(
 
 export function logRuntimeFailure(id: string, scope: string, method: string, error: unknown): void {
   console.error(`Runtime failure: ${id} [${scope}.${method}]`, error);
-}
-
-export function logToSender(
-  _sender: LogSender | undefined,
-  level: LoggingLevel,
-  message: string,
-  _minLevel?: LoggingLevel,
-): void {
-  Logger.emit(level, message);
-}
-
-export interface LogRouter {
-  addSender(sender: LogSender): void;
-  removeSender(sender: LogSender): void;
-  attachSession(sessionId: string, sender: LogSender): void;
-  detachSession(sessionId: string): void;
 }

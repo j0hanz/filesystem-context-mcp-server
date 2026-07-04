@@ -10,12 +10,7 @@ import {
   withAbort,
 } from './concurrency.js';
 import { isAbortError } from './errors.js';
-import {
-  type LoggingLevel,
-  type LoggingState,
-  type LogSender,
-  logToSender,
-} from './observability.js';
+import { Logger, type LoggingState } from './observability.js';
 import { isSamePath, normalizePath } from './path.js';
 import type { PathGuard } from './path.js';
 import type { IconInfo } from './primitives.js';
@@ -37,6 +32,12 @@ export interface Registrar {
 }
 
 // ─── Root directory resolution helpers (relocated from path.ts) ───────────────
+// `Root` is deprecated (SEP-2577, 2026-07-28 era) in favor of passing paths via
+// tool parameters/resource URIs/config, but the MCP Roots protocol remains the
+// live, negotiated mechanism on the current default protocol version
+// (2025-11-25) and works correctly there. Migrating fully requires the new
+// input_required multi-round-trip pattern; tracked in repo memory, not done here.
+/* eslint-disable @typescript-eslint/no-deprecated -- Root: see comment above */
 const ROOTS_TIMEOUT_MS = 5000;
 
 function isFileRoot(root: Root): boolean {
@@ -126,78 +127,37 @@ async function resolveRootDirectories(roots: Root[]): Promise<string[]> {
     cleanup();
   }
 }
+/* eslint-enable @typescript-eslint/no-deprecated */
 
-export class McpLogSender implements LogSender {
-  private readonly server: McpServer;
-
-  constructor(server: McpServer) {
-    this.server = server;
-  }
-
-  async send(level: LoggingLevel, message: string): Promise<void> {
-    const capabilities = this.server.server.getClientCapabilities();
-    const canSend =
-      capabilities &&
-      typeof capabilities === 'object' &&
-      'logging' in capabilities &&
-      Boolean(capabilities.logging);
-
-    if (!canSend) {
-      console.error(`[${level.toUpperCase()}] ${message}`);
-      return;
-    }
-
-    await this.server
-      .sendLoggingMessage({
-        level,
-        logger: 'filesystem-mcp',
-        data: message,
-      })
-      .catch((error: unknown) => {
-        console.error(`Failed to send MCP log: ${level} | ${message}`, error);
-      });
-  }
-}
-
-function logMissingDirectories(
-  sender: LogSender | undefined,
-  pathGuard: PathGuard,
-  loggingState: LoggingState | undefined,
-): void {
+function logMissingDirectories(pathGuard: PathGuard, loggingState: LoggingState | undefined): void {
   if (!loggingState) return;
 
   const boundaries = pathGuard.getRootBoundaries();
   if (boundaries.length > 0) {
-    logToSender(
-      sender,
+    Logger.emit(
       'warning',
       'No allowed directories. A root boundary is configured, but no workspace roots have been granted by the client yet.',
-      loggingState.minimumLevel,
     );
     return;
   }
 
   if (pathGuard.options?.allowCwd) {
-    logToSender(
-      sender,
+    Logger.emit(
       'notice',
       'No allowed directories specified via CLI arguments, the FS_ALLOWED_DIRS environment variable, or the MCP Roots protocol. Using the current working directory via --allow-cwd.',
-      loggingState.minimumLevel,
     );
     return;
   }
 
-  logToSender(
-    sender,
+  Logger.emit(
     'warning',
     'No allowed directories specified. Please configure directories via CLI arguments, the FS_ALLOWED_DIRS environment variable, the MCP Roots protocol (notifications/roots/list_changed), or enable --allow-cwd.',
-    loggingState.minimumLevel,
   );
 }
 
-function logMissingDirectoriesIfNeeded(server: McpServer, pathGuard: PathGuard): void {
+function logMissingDirectoriesIfNeeded(pathGuard: PathGuard): void {
   if (pathGuard.getAllowedDirectories().length === 0 && pathGuard.loggingState) {
-    logMissingDirectories(new McpLogSender(server), pathGuard, pathGuard.loggingState);
+    logMissingDirectories(pathGuard, pathGuard.loggingState);
   }
 }
 
@@ -246,11 +206,9 @@ export class McpRootsSynchronizer {
     this.initTimer = setTimeout(() => {
       if (this.state === 'initializing') {
         if (this.loggingState) {
-          logToSender(
-            new McpLogSender(server),
+          Logger.emit(
             'warning',
             `Client did not send notifications/initialized within ${String(initHandshakeTimeoutMs)}ms`,
-            this.loggingState.minimumLevel,
           );
         }
         onInitTimeout?.();
@@ -275,6 +233,12 @@ export class McpRootsSynchronizer {
       return;
     }
     this.state = 'updating';
+    // getClientCapabilities()/listRoots(): deprecated (SEP-2577, 2026-07-28 era);
+    // listRoots() throws on that era (push-style request model is replaced by
+    // input_required there). Both remain correct on the current default protocol
+    // version (2025-11-25); full migration needs the new multi-round-trip
+    // pattern, tracked in repo memory, not done here.
+    /* eslint-disable @typescript-eslint/no-deprecated -- see comment above */
     try {
       const clientCapabilities = server.server.getClientCapabilities();
       if (!clientCapabilities?.roots) {
@@ -289,20 +253,19 @@ export class McpRootsSynchronizer {
         this.rootDirectories = await resolveRootDirectories(roots);
       }
     } catch (error) {
+      /* eslint-enable @typescript-eslint/no-deprecated */
       if (this.loggingState) {
         const level =
           error instanceof Error && error.message.includes('timeout') ? 'debug' : 'warning';
-        logToSender(
-          new McpLogSender(server),
+        Logger.emit(
           level,
           `[${level.toUpperCase()}] MCP Roots protocol unavailable or failed: ${error instanceof Error ? error.message : String(error)}`,
-          this.loggingState.minimumLevel,
         );
       }
     } finally {
       const currentState = this.state as RootsManagerState;
       if (currentState !== 'shutting_down') {
-        await this.pathGuard.setRoots(this.rootDirectories, new McpLogSender(server));
+        await this.pathGuard.setRoots(this.rootDirectories);
         this.state = 'idle';
         if (this.pendingRootsUpdate) {
           this.pendingRootsUpdate = false;
@@ -312,8 +275,8 @@ export class McpRootsSynchronizer {
     }
   }
 
-  logMissingDirectoriesIfNeeded(server: McpServer): void {
-    logMissingDirectoriesIfNeeded(server, this.pathGuard);
+  logMissingDirectoriesIfNeeded(): void {
+    logMissingDirectoriesIfNeeded(this.pathGuard);
   }
 
   destroy(): void {

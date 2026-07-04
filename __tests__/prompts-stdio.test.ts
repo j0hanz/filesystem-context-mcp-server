@@ -1,4 +1,5 @@
-import { Client, StdioClientTransport } from '@modelcontextprotocol/client';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 import assert from 'node:assert/strict';
 import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';

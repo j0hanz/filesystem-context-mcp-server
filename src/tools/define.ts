@@ -4,7 +4,6 @@ import type {
   ElicitRequestFormParams,
   ElicitResult,
   Icon,
-  LoggingLevel,
   McpServer,
   Notification,
   ProgressNotificationParams,
@@ -26,6 +25,7 @@ import type { Phase, ProgressCtx } from '../core/fmt.js';
 import { ansiLine, plainMessage } from '../core/fmt.js';
 import { GuardedFileSystem } from '../core/fs.js';
 import { Logger, withTelemetry } from '../core/observability.js';
+import type { LoggingLevel } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { IconInfo } from '../core/primitives.js';
 import type { ResourceStore } from '../core/store.js';
@@ -143,9 +143,13 @@ function toToolCtx(
     fs: new GuardedFileSystem(deps.pathGuard),
     resourceStore: deps.resourceStore,
     sendNotification: async (notification) => ctx.mcpReq.notify(notification),
-    log: (level, data, logger) => {
-      runDetached('mcp', ctx.mcpReq.log(level, data, logger), 'log');
-    },
+    // elicitInput: deprecated (SEP-2577, 2026-07-28 era) — throws there since the
+    // push-style server-to-client request model is replaced by input_required.
+    // Remains correct on the current default protocol version (2025-11-25); the
+    // access-grant confirmation flow already treats a throw as a denial (see
+    // PathGuard.requestAccessGrant). Full migration needs the new
+    // multi-round-trip pattern, tracked in repo memory, not done here.
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- see comment above
     elicitInput: (params) => ctx.mcpReq.elicitInput(params),
     server: deps.server,
   };
@@ -156,7 +160,6 @@ function buildExecutionCtx(
   signal: AbortSignal,
   onProgress: (p: { current: number; total?: number }) => void,
 ): ToolCtx {
-  const ctxLog = ctx.log;
   return {
     signal,
     ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
@@ -165,15 +168,9 @@ function buildExecutionCtx(
     fs: ctx.fs,
     resourceStore: ctx.resourceStore,
     ...(ctx.server ? { server: ctx.server } : {}),
-    ...(ctxLog
-      ? {
-          log: (level: LoggingLevel, data: unknown, logger?: string) => {
-            const msg = typeof data === 'string' ? data : String(data);
-            Logger.emit(level, msg);
-            ctxLog(level, data, logger);
-          },
-        }
-      : {}),
+    log: (level: LoggingLevel, data: unknown) => {
+      Logger.emit(level, typeof data === 'string' ? data : String(data));
+    },
     ...(ctx.sendNotification ? { sendNotification: ctx.sendNotification } : {}),
     onProgress,
     ...(ctx.elicitInput ? { elicitInput: ctx.elicitInput } : {}),
@@ -240,7 +237,7 @@ function buildSuccessResponse<O>(result: RunResult<O>): CallToolResult {
   const content: ContentBlock[] = [{ type: 'text' as const, text }, ...(result.resources ?? [])];
   return {
     content,
-    structuredContent: result.structured as Record<string, unknown>,
+    structuredContent: result.structured,
   };
 }
 
@@ -643,8 +640,15 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     const elicitInput = this.toolCtx.elicitInput;
     const mcpServer = this.toolCtx.server;
     if (mcpServer == null) return undefined;
+    // getClientCapabilities(): deprecated (SEP-2577, 2026-07-28 era) in favor of
+    // reading ctx.mcpReq.envelope per-request, but this runs outside a live
+    // per-request context (a lazily-built access-grant handler) where no
+    // envelope is available. The SDK backfills this accessor correctly for both
+    // protocol eras, so behavior remains correct; tracked in repo memory.
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- see comment above
     let caps: ReturnType<typeof mcpServer.server.getClientCapabilities>;
     try {
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- see comment above
       caps = mcpServer.server.getClientCapabilities();
     } catch {
       return undefined;
@@ -821,7 +825,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
     nuances: def.nuances ?? [],
     gotchas: def.gotchas ?? [],
     inputSchema: inputJsonSchema as Tool['inputSchema'],
-    outputSchema: outputJsonSchema as Tool['outputSchema'],
+    outputSchema: outputJsonSchema,
     _def: def,
 
     register(deps: ToolDeps) {

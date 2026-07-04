@@ -17,8 +17,8 @@ import * as z from 'zod/v4';
 
 import { assertNotAborted, createTimedAbortSignal, withAbort } from './concurrency.js';
 import { ErrorCode, FsError, isAbortError, isNodeError } from './errors.js';
-import { Logger, logToSender } from './observability.js';
-import type { LoggingState, LogSender } from './observability.js';
+import { Logger } from './observability.js';
+import type { LoggingState } from './observability.js';
 import { parseEnvDirList, parseTrueEnvFlag } from './primitives.js';
 
 export type ValidatedPath = string & { readonly __validated: unique symbol };
@@ -568,6 +568,17 @@ export interface AccessGrantDeps {
   confirm: (targetDir: string) => Promise<boolean>;
 }
 
+/**
+ * Accepted risk: validation methods resolve/verify a path (symlinks, boundaries,
+ * sensitivity) and then return a plain string; the actual fs operation happens
+ * afterward as a separate syscall (classic TOCTOU). A symlink swapped in that
+ * exact window could redirect the follow-up operation. This is mitigated by
+ * re-validating the resolved real path (not just the requested path) and by
+ * walking ancestors to catch escapes before the target exists, but it is not
+ * eliminated — doing so would require fd-based operations (open with
+ * O_NOFOLLOW / operate on the resolved fd) throughout core/fs.ts. Acceptable
+ * tradeoff for a local, single-user filesystem server today.
+ */
 export class PathGuard {
   private allowedDirectoriesState: AllowedDirectoriesState | undefined;
   private denyPatterns: CompiledPatternSet;
@@ -614,9 +625,9 @@ export class PathGuard {
     return this.allowedDirectoriesState !== undefined;
   }
 
-  async setRoots(resolvedRoots: readonly string[], sender?: LogSender): Promise<void> {
+  async setRoots(resolvedRoots: readonly string[]): Promise<void> {
     this.rootDirectories = [...resolvedRoots];
-    await this.recomputeAllowedDirectories(sender);
+    await this.recomputeAllowedDirectories();
   }
 
   getAllowedDirectories(): string[] {
@@ -1137,7 +1148,7 @@ export class PathGuard {
     return normalizedRequested as ValidatedPath;
   }
 
-  async recomputeAllowedDirectories(sender?: LogSender): Promise<void> {
+  async recomputeAllowedDirectories(): Promise<void> {
     const cliAllowedDirs = normalizeCLIDirectories(this.options?.cliAllowedDirs ?? []);
 
     // Parse allowed directories from environment variable
@@ -1151,22 +1162,18 @@ export class PathGuard {
         if (s.isDirectory()) {
           envAllowedDirs.push(normalized);
         } else {
-          logToSender(
-            sender,
+          Logger.emit(
             'warning',
             `Path configured in FS_ALLOWED_DIRS is not a directory: ${rawPath}`,
-            this.loggingState?.minimumLevel,
           );
         }
       } catch (_error) {
         if (allowMissing) {
           envAllowedDirs.push(normalized);
         } else {
-          logToSender(
-            sender,
+          Logger.emit(
             'warning',
             `Path configured in FS_ALLOWED_DIRS is invalid or does not exist: ${rawPath} (${_error instanceof Error ? _error.message : String(_error)})`,
-            this.loggingState?.minimumLevel,
           );
         }
       }
@@ -1183,19 +1190,12 @@ export class PathGuard {
           const realBoundary = await realpath(normalized);
           boundaries.push(normalizePath(realBoundary));
         } else {
-          logToSender(
-            sender,
-            'warning',
-            `Path configured in ROOT_BOUNDARY is not a directory: ${rawPath}`,
-            this.loggingState?.minimumLevel,
-          );
+          Logger.emit('warning', `Path configured in ROOT_BOUNDARY is not a directory: ${rawPath}`);
         }
       } catch (_error) {
-        logToSender(
-          sender,
+        Logger.emit(
           'warning',
           `Path configured in ROOT_BOUNDARY is invalid or does not exist: ${rawPath} (${_error instanceof Error ? _error.message : String(_error)})`,
-          this.loggingState?.minimumLevel,
         );
       }
     }
@@ -1210,11 +1210,9 @@ export class PathGuard {
         cwd = await findProjectRoot(cwd, [...this.rootBoundaries, homedir()]);
       }
       if (isUnsafeCwdPath(cwd)) {
-        logToSender(
-          sender,
+        Logger.emit(
           'warning',
           `Skipped adding unsafe current working directory to allowed list: ${cwd}`,
-          this.loggingState?.minimumLevel,
         );
       } else {
         allowCwdDirs.push(cwd);
