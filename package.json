@@ -64,9 +64,9 @@
     "cli"
   ],
   "dependencies": {
-    "@modelcontextprotocol/express": "2.0.0-alpha.2",
-    "@modelcontextprotocol/node": "2.0.0-alpha.2",
-    "@modelcontextprotocol/server": "2.0.0-alpha.2",
+    "@modelcontextprotocol/express": "2.0.0-beta.2",
+    "@modelcontextprotocol/node": "2.0.0-beta.2",
+    "@modelcontextprotocol/server": "2.0.0-beta.2",
     "diff": "^9",
     "express": "^5.2.1",
     "ignore": "^7.0.5",
@@ -75,19 +75,22 @@
   "devDependencies": {
     "@cfworker/json-schema": "^4.1.1",
     "@eslint/js": "^10.0.1",
-    "@modelcontextprotocol/client": "2.0.0-alpha.2",
+    "@modelcontextprotocol/client": "2.0.0-beta.2",
     "@trivago/prettier-plugin-sort-imports": "^6.0.2",
     "@types/express": "^5.0.6",
     "@types/node": "^24",
-    "eslint": "^10.5.0",
+    "eslint": "^10.6.0",
     "eslint-config-prettier": "^10.1.8",
-    "knip": "^6.18.0",
-    "prettier": "^3.8.4",
-    "tsx": "^4.22.4",
+    "knip": "^6.24.0",
+    "prettier": "^3.9.4",
+    "tsx": "^4.23.0",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.62.0"
+    "typescript-eslint": "^8.62.1"
   },
   "engines": {
     "node": ">=24"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true
   }
 }
