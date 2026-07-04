@@ -785,8 +785,7 @@ describe('HTTP transport', () => {
     // Capture Logger.debug calls
     const debugLogs: { message: string; data: unknown }[] = [];
     const originalDebug = Object.getOwnPropertyDescriptor(Logger, 'debug')?.value as
-      | ((message: string, data: unknown) => void)
-      | undefined;
+      ((message: string, data: unknown) => void) | undefined;
     Object.defineProperty(Logger, 'debug', {
       value: (message: string, data: unknown): void => {
         debugLogs.push({ message, data });

@@ -845,9 +845,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
 // ============ Batch Execution ============
 
 type BatchInput<TOverride> =
-  | { path: string }
-  | { paths: string[] }
-  | { files: ({ path: string } & TOverride)[] };
+  { path: string } | { paths: string[] } | { files: ({ path: string } & TOverride)[] };
 
 interface RunOverPathsOptions {
   defaultErrorCode?: ErrorCode;

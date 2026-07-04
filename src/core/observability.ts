@@ -1,14 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 export type LoggingLevel =
-  | 'debug'
-  | 'info'
-  | 'notice'
-  | 'warning'
-  | 'error'
-  | 'critical'
-  | 'alert'
-  | 'emergency';
+  'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency';
 
 export interface LogSender {
   send(level: LoggingLevel, message: string): Promise<void>;

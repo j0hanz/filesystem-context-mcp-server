@@ -59,10 +59,7 @@ type SearchMatchPayload = NonNullable<SearchOutput['matches']>[number];
 type SearchResultValue = Awaited<ReturnType<typeof searchContent>>;
 type SearchSummary = SearchResultValue['summary'];
 type TruthySummaryField =
-  | 'filesMatched'
-  | 'skippedTooLarge'
-  | 'skippedBinary'
-  | 'skippedInaccessible';
+  'filesMatched' | 'skippedTooLarge' | 'skippedBinary' | 'skippedInaccessible';
 
 interface SearchPreviewState {
   needsExternalize: boolean;
