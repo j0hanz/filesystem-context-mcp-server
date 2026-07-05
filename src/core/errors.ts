@@ -371,6 +371,28 @@ function isFsErrorCarrier(error: unknown): error is { problem: Problem } {
   return typeof c['code'] === 'string' && typeof c['message'] === 'string';
 }
 
+/**
+ * Structural discriminator for SDK error classes (`ProtocolError`, `SdkError`).
+ * Checks `name` + `code` properties rather than `instanceof` so discrimination
+ * survives cross-realm / multi-SDK-copy conditions where the prototype chain
+ * breaks. Mirrors the isFsErrorCarrier pattern.
+ */
+export function hasErrorShape(
+  error: unknown,
+  name: string,
+  code?: string,
+): error is Error & { code: string } {
+  if (!(error instanceof Error) || error.name !== name) return false;
+  const c = (error as { code?: unknown }).code;
+  if (typeof c !== 'string') return false;
+  return code === undefined || c === code;
+}
+
+/** Structural `FsError` check (cross-realm safe); see isFsErrorCarrier. */
+export function isFsError(error: unknown): error is FsError {
+  return isFsErrorCarrier(error);
+}
+
 export function classify(error: unknown, ctx?: { schema?: z.ZodType }): Problem {
   if (error === null || error === undefined) {
     return Problem.unknown('Unknown error');

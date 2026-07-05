@@ -19,7 +19,7 @@ import {
 import type { FSWatcher } from 'node:fs';
 import { watch } from 'node:fs';
 
-import { ErrorCode, FsError } from './core/errors.js';
+import { ErrorCode, FsError, hasErrorShape } from './core/errors.js';
 import { readFileRaw } from './core/fs.js';
 import { Logger, withTelemetry } from './core/observability.js';
 import type { PathGuard } from './core/path.js';
@@ -475,7 +475,7 @@ function registerResources(
         try {
           return await contract.read(uri, variables, ctx);
         } catch (error) {
-          if (error instanceof ProtocolError) {
+          if (hasErrorShape(error, 'ProtocolError')) {
             throw error;
           }
           throw new ProtocolError(
@@ -489,7 +489,7 @@ function registerResources(
         try {
           return await contract.read(uri, {}, ctx);
         } catch (error) {
-          if (error instanceof ProtocolError) {
+          if (hasErrorShape(error, 'ProtocolError')) {
             throw error;
           }
           throw new ProtocolError(

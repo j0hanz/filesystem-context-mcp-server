@@ -1,10 +1,18 @@
 import type { PrimitiveSchemaDefinition } from '@modelcontextprotocol/server';
-import { SdkError, SdkErrorCode } from '@modelcontextprotocol/server';
+import { SdkErrorCode } from '@modelcontextprotocol/server';
 
 import * as z from 'zod/v4';
 
 import { withAbort } from '../core/concurrency.js';
-import { ErrorCode, FsError, isAbortError, isNodeError, Problem } from '../core/errors.js';
+import {
+  ErrorCode,
+  FsError,
+  hasErrorShape,
+  isAbortError,
+  isFsError,
+  isNodeError,
+  Problem,
+} from '../core/errors.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import { PathFormatter } from '../core/path-formatter.js';
@@ -98,8 +106,8 @@ async function tryElicitOverwriteConfirmation(
     }
     return true;
   } catch (err) {
-    if (err instanceof FsError) throw err;
-    if (err instanceof SdkError && err.code === SdkErrorCode.CapabilityNotSupported) {
+    if (isFsError(err)) throw err;
+    if (hasErrorShape(err, 'SdkError', SdkErrorCode.CapabilityNotSupported)) {
       // Client doesn't support elicitation - proceed without asking.
       return false;
     } else {

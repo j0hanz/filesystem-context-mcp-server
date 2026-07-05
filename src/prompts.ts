@@ -17,6 +17,7 @@ import { pathToFileURL } from 'node:url';
 
 import * as z from 'zod/v4';
 
+import { hasErrorShape } from './core/errors.js';
 import { Logger, withTelemetry } from './core/observability.js';
 import { PathCompleter } from './core/path.js';
 import type { PathGuard } from './core/path.js';
@@ -147,7 +148,7 @@ async function wrapHandler<T>(
         });
         return result;
       } catch (error) {
-        if (error instanceof ProtocolError) throw error;
+        if (hasErrorShape(error, 'ProtocolError')) throw error;
         const message = error instanceof Error ? error.message : String(error);
         Logger.error(`Prompt handler failed: ${message}`, {
           promptName: contract.name,

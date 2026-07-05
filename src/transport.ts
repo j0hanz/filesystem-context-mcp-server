@@ -178,6 +178,18 @@ export async function startServer(ctx: FilesystemServerContext): Promise<void> {
 const MAX_SESSION_ID_LENGTH = 256;
 const MAX_BEARER_TOKEN_LENGTH = 4096;
 
+// Session ids must be non-empty, printable, and whitespace-free. The SDK's
+// default generator emits crypto.randomUUID() (UUID v4), which satisfies this;
+// the guard blocks control chars / whitespace without over-restricting custom
+// opaque tokens.
+// eslint-disable-next-line no-control-regex -- intentionally reject control chars at this trust boundary
+const SESSION_ID_CHARSET_RE = /^[^\s\x00-\x1F\x7F]+$/u;
+
+/** Structural session-id check: non-empty, ≤ max length, printable, no whitespace. */
+export function isValidSessionId(id: string): boolean {
+  return id.length > 0 && id.length <= MAX_SESSION_ID_LENGTH && SESSION_ID_CHARSET_RE.test(id);
+}
+
 const ALLOWED_ORIGIN_PATTERNS: readonly RegExp[] = [
   /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/u,
 ];
@@ -207,9 +219,8 @@ function sendJsonRpcError(
 
 function getSessionId(req: IncomingMessage): string | undefined {
   const rawSessionId = req.headers['mcp-session-id'];
-  return typeof rawSessionId === 'string' && rawSessionId.length <= MAX_SESSION_ID_LENGTH
-    ? rawSessionId
-    : undefined;
+  if (typeof rawSessionId !== 'string' || !isValidSessionId(rawSessionId)) return undefined;
+  return rawSessionId;
 }
 
 type JsonRpcKind = 'request' | 'notification' | 'result' | 'error' | 'unknown';
@@ -241,8 +252,28 @@ export function isAllowedLocalhostOrigin(origin: string): boolean {
   return ALLOWED_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin));
 }
 
-let cachedApiKey: string | undefined;
-let cachedExpectedHash: Buffer | undefined;
+function originHostname(origin: string): string | undefined {
+  try {
+    return new URL(origin).hostname;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * True if `origin` (a raw `Origin` request header) is allowed given the
+ * env-derived `allowedHostnames` set (hostname-form, no scheme/port). Localhost
+ * origins are always accepted via {@link isAllowedLocalhostOrigin}; a remote
+ * origin is accepted iff its parsed hostname is in the set. Both the SDK app's
+ * `allowedOrigins` and this OPTIONS-handler check consume hostname-form, so a
+ * remote origin allowed via `FILESYSTEM_MCP_ALLOWED_ORIGINS` is reflected
+ * end-to-end in `Access-Control-Allow-Origin`.
+ */
+export function isOriginAllowed(origin: string, allowedHostnames: readonly string[]): boolean {
+  if (isAllowedLocalhostOrigin(origin)) return true;
+  const host = originHostname(origin);
+  return host !== undefined && allowedHostnames.includes(host);
+}
 
 export function validateBearerAuthorization(apiKey: string, authHeader: unknown): boolean {
   const bearerPrefix = 'Bearer ';
@@ -254,15 +285,10 @@ export function validateBearerAuthorization(apiKey: string, authHeader: unknown)
     return false;
   }
 
-  let expectedHash: Buffer;
-  if (apiKey === cachedApiKey && cachedExpectedHash !== undefined) {
-    expectedHash = cachedExpectedHash;
-  } else {
-    expectedHash = createHash('sha256').update(apiKey).digest();
-    cachedApiKey = apiKey;
-    cachedExpectedHash = expectedHash;
-  }
-
+  // Pure: hash per call. createHash is negligible next to the timingSafeEqual
+  // already done per request, and avoiding module-level cache state keeps this
+  // testable without post-import env-mutation footguns.
+  const expectedHash = createHash('sha256').update(apiKey).digest();
   const actualHash = createHash('sha256').update(userKey).digest();
   return timingSafeEqual(expectedHash, actualHash);
 }
@@ -293,11 +319,36 @@ export function assertHttpBindingPolicy(host: string, apiKey: string | undefined
 }
 
 /**
- * Express middleware: when `API_KEY` is set, require a
- * matching bearer token. No key set = open access (loopback dev mode).
+ * Refuse to bind a wildcard host (`0.0.0.0` / `::`) without an explicit
+ * `FILESYSTEM_MCP_ALLOWED_HOSTS` list. Clients never send `Host: 0.0.0.0`, so
+ * defaulting the allowed-host set to the wildcard string would reject all real
+ * traffic. Operators who accept the risk can set
+ * `FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS=1` to restore warn-and-bind.
+ * Loopback and concrete non-loopback hosts are unaffected.
  */
-function bearerAuthMiddleware(): RequestHandler {
-  const apiKey = process.env['API_KEY'];
+export function assertHttpHostPolicy(
+  host: string,
+  allowedHostsEnv: string | undefined,
+  allowUnrestricted: boolean,
+): void {
+  if (isLoopbackHttpHost(host)) return;
+  const isWildcard = host === '0.0.0.0' || host === '::';
+  if (!isWildcard) return; // concrete non-loopback: Host validated against the bind host.
+  if (allowUnrestricted) return;
+  if (allowedHostsEnv !== undefined && allowedHostsEnv.trim().length > 0) return;
+  throw new FsError(
+    ErrorCode.PERMISSION_DENIED,
+    `Refusing to bind wildcard host '${host}' without FILESYSTEM_MCP_ALLOWED_HOSTS. Set it to the public hostname(s) clients send, or set FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS=1 to accept the risk.`,
+  );
+}
+
+/**
+ * Express middleware: when `apiKey` is set, require a matching bearer token.
+ * No key set = open access (loopback dev mode). `apiKey` is captured once per
+ * app setup (passed in from startHttpServer) so the middleware and
+ * assertHttpBindingPolicy share one source of truth.
+ */
+function bearerAuthMiddleware(apiKey: string | undefined): RequestHandler {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!apiKey) {
       next();
@@ -742,6 +793,7 @@ async function handleGetOrDeleteMcp(
 
 function setupExpressApp(
   httpHost: string,
+  apiKey: string | undefined,
   options: ServerOptions,
   registry: HttpSessionRegistry,
   eventStore: InMemoryEventStore,
@@ -753,13 +805,26 @@ function setupExpressApp(
       ? []
       : [httpHost];
 
+  // Env-derived CORS origins (hostname-form, no scheme/port — matches the SDK
+  // app's allowedOrigins consumer). Default to the localhost set so loopback
+  // browser clients keep working; operators set FILESYSTEM_MCP_ALLOWED_ORIGINS
+  // to allow remote clients on non-loopback binds. The same set is consulted by
+  // the OPTIONS preflight handler below so a remote origin is reflected
+  // end-to-end in Access-Control-Allow-Origin.
+  const allowedOriginHostnames = (
+    process.env['FILESYSTEM_MCP_ALLOWED_ORIGINS'] ?? 'localhost,127.0.0.1'
+  )
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+
   const app = createMcpExpressApp({
     host: httpHost,
     ...(allowedHosts.length > 0 ? { allowedHosts } : {}),
     // Origin validation is enforced by the SDK app itself (not left to its
     // localhost-bind-only default) so non-loopback binds are covered too —
-    // matches the hostnames isAllowedLocalhostOrigin() reflects for CORS below.
-    allowedOrigins: ['localhost', '127.0.0.1'],
+    // matches the hostnames isOriginAllowed() reflects for CORS below.
+    ...(allowedOriginHostnames.length > 0 ? { allowedOrigins: allowedOriginHostnames } : {}),
     jsonLimit: `${MAX_REQUEST_BODY_BYTES}b`,
   });
 
@@ -770,16 +835,18 @@ function setupExpressApp(
   } else if (allowedHosts.length > 0) {
     app.use('/mcp', hostHeaderValidation(allowedHosts));
   } else {
+    // Reachable only under FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS=1 —
+    // assertHttpHostPolicy throws for a wildcard bind without allowed hosts.
     Logger.warn(
-      '[HTTP] Binding globally without Host validation. Please set FILESYSTEM_MCP_ALLOWED_HOSTS for security.',
+      '[HTTP] FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS is set: binding globally without Host validation.',
     );
   }
 
   app.options('/mcp', (req: Request, res: Response) => {
-    // Only reflect a present Origin (already constrained to localhost by the
-    // SDK app's own Origin validation above). Avoid emitting a wildcard fallback.
+    // Reflect a present Origin if it is allowed — localhost, or in the
+    // env-derived FILESYSTEM_MCP_ALLOWED_ORIGINS set. Avoid emitting a wildcard fallback.
     const origin = req.headers.origin;
-    if (origin && isAllowedLocalhostOrigin(origin)) {
+    if (origin && isOriginAllowed(origin, allowedOriginHostnames)) {
       res.header('Access-Control-Allow-Origin', origin);
     }
     res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
@@ -790,7 +857,7 @@ function setupExpressApp(
     res.status(204).end();
   });
 
-  app.use('/mcp', bearerAuthMiddleware());
+  app.use('/mcp', bearerAuthMiddleware(apiKey));
 
   app.post('/mcp', (req: Request, res: Response, next: NextFunction) => {
     handlePostMcp(req, res, options, registry, eventStore).catch(next);
@@ -815,7 +882,13 @@ function setupExpressApp(
 export async function startHttpServer(port: number, options: ServerOptions): Promise<Server> {
   const eventStore = new InMemoryEventStore();
   const httpHost = process.env['HTTP_HOST'] ?? '127.0.0.1';
-  assertHttpBindingPolicy(httpHost, process.env['API_KEY']);
+  const apiKey = process.env['API_KEY'];
+  assertHttpBindingPolicy(httpHost, apiKey);
+  assertHttpHostPolicy(
+    httpHost,
+    process.env['FILESYSTEM_MCP_ALLOWED_HOSTS'],
+    process.env['FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS'] === '1',
+  );
 
   const registry = new HttpSessionRegistry({
     eventStore,
@@ -823,7 +896,7 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
     handshakeTimeoutMs: getInitHandshakeTimeoutMs(),
   });
 
-  const app = setupExpressApp(httpHost, options, registry, eventStore);
+  const app = setupExpressApp(httpHost, apiKey, options, registry, eventStore);
 
   const httpServer = createHttpServer(app);
   httpServer.headersTimeout = 10_000;

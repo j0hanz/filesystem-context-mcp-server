@@ -12,7 +12,9 @@ import {
   formatUnknownErrorMessage,
   FsError,
   getSuggestion,
+  hasErrorShape,
   isAbortError,
+  isFsError,
   isNodeError,
   isTimeoutLikeError,
   Problem,
@@ -332,6 +334,48 @@ describe('classify — isFsErrorCarrier guard (Finding 5)', () => {
     assert.equal(result.code, ErrorCode.NOT_FOUND);
     assert.equal(result.message, 'missing');
     assert.equal(result.path, '/foo');
+  });
+});
+
+// ─── hasErrorShape / isFsError — structural SDK-error discrimination ────────
+
+describe('hasErrorShape / isFsError (REQ-001)', () => {
+  it('isFsError returns true for a factory-constructed FsError (move.ts rethrow)', () => {
+    // Covers the move.ts:101 `if (isFsError(err)) throw err;` rethrow branch:
+    // a factory-constructed FsError must still be recognized after the
+    // instanceof -> structural swap.
+    const err = new FsError(Problem.cancelled('declined', { path: '/x' }));
+    assert.equal(isFsError(err), true);
+  });
+
+  it('isFsError is stricter than instanceof: rejects spoofed name without well-formed problem', () => {
+    // M7 tightening: an FsError with a malformed problem must NOT pass isFsError
+    // (would fall through to the fail-closed branch). instanceof would pass.
+    const spoofed = Object.assign(new Error('spoofed'), { name: 'FsError' });
+    assert.equal(spoofed instanceof FsError, false);
+    assert.equal(isFsError(spoofed), false);
+    const nullProblem = Object.assign(new Error('spoofed'), {
+      name: 'FsError',
+      problem: null,
+    });
+    assert.equal(isFsError(nullProblem), false);
+  });
+
+  it('hasErrorShape matches by name + code and is realm-safe (no instanceof)', () => {
+    const protocolErr = Object.assign(new Error('bad request'), {
+      name: 'ProtocolError',
+      code: 'invalid_request',
+    });
+    assert.equal(hasErrorShape(protocolErr, 'ProtocolError'), true);
+    assert.equal(hasErrorShape(protocolErr, 'ProtocolError', 'invalid_request'), true);
+    assert.equal(hasErrorShape(protocolErr, 'ProtocolError', 'other'), false);
+    assert.equal(hasErrorShape(protocolErr, 'SdkError'), false);
+    // A plain Error with no code property does not match even if name is set.
+    const noCode = Object.assign(new Error('x'), { name: 'ProtocolError' });
+    assert.equal(hasErrorShape(noCode, 'ProtocolError'), false);
+    // Non-Error values are rejected.
+    assert.equal(hasErrorShape({ name: 'ProtocolError', code: 'x' }, 'ProtocolError'), false);
+    assert.equal(hasErrorShape(null, 'ProtocolError'), false);
   });
 });
 

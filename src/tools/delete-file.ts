@@ -3,12 +3,12 @@ import type {
   ElicitResult,
   PrimitiveSchemaDefinition,
 } from '@modelcontextprotocol/server';
-import { SdkError, SdkErrorCode } from '@modelcontextprotocol/server';
+import { SdkErrorCode } from '@modelcontextprotocol/server';
 
 import * as z from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
-import { ErrorCode, isNodeError, Problem } from '../core/errors.js';
+import { ErrorCode, hasErrorShape, isNodeError, Problem } from '../core/errors.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import { PathFormatter } from '../core/path-formatter.js';
@@ -145,7 +145,7 @@ async function tryElicitConfirmation(
 
     return elicitResult.action === 'accept' && elicitResult.content?.['confirm'] === true;
   } catch (err) {
-    if (err instanceof SdkError && err.code === SdkErrorCode.CapabilityNotSupported) {
+    if (hasErrorShape(err, 'SdkError', SdkErrorCode.CapabilityNotSupported)) {
       return true; // Proceed if client doesn't support elicitation
     }
     Logger.warn(`delete: elicitation failed for "${validPath}": ${String(err)}`);
