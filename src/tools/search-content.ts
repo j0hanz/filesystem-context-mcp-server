@@ -1,10 +1,10 @@
 import * as z from 'zod/v4';
 
+import { decodeOffsetCursor, encodeOffsetCursor } from '../core/cursor.js';
 import { ErrorCode } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../core/fs.js';
-import type { PathGuard } from '../core/path.js';
-import { decodeOffsetCursor, encodeOffsetCursor, toPosixRelative } from '../core/path.js';
+import { type PathGuard, toPosixRelative } from '../core/path.js';
 import {
   compileRegex,
   type Regex,

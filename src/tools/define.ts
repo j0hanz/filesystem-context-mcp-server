@@ -643,7 +643,7 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     }
 
     const handler = this.buildAccessDeniedHandler();
-    if (handler !== undefined && (this.toolCtx.pathGuard as unknown) != null) {
+    if (handler !== undefined) {
       this.toolCtx.pathGuard.onAccessDenied = handler;
     }
 
@@ -658,9 +658,7 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
         await this.#flushProgress();
       }
     } finally {
-      if ((this.toolCtx.pathGuard as unknown) != null) {
-        delete this.toolCtx.pathGuard.onAccessDenied;
-      }
+      delete this.toolCtx.pathGuard.onAccessDenied;
     }
   }
 }
