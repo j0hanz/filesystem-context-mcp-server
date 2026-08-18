@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import { ErrorCode } from '../../src/core/errors.js';
-import { type AllowedDirectoriesState, PathGuard } from '../../src/core/path.js';
+import { type AllowedDirectoriesState, isSafeGlobSyntax, PathGuard } from '../../src/core/path.js';
 
 function hasErrorCode(err: unknown, code: ErrorCode): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === code;
@@ -55,15 +55,15 @@ test('isSensitive returns false for normal files', () => {
   assert.strictEqual(guard.isSensitive('README.md'), false);
 });
 
-test('isSafeGlob returns false for traversal patterns', () => {
-  assert.strictEqual(guard.isSafeGlob('../**'), false);
-  assert.strictEqual(guard.isSafeGlob('/etc/passwd'), false);
-  assert.strictEqual(guard.isSafeGlob(''), false);
+test('isSafeGlobSyntax returns false for traversal patterns', () => {
+  assert.strictEqual(isSafeGlobSyntax('../**'), false);
+  assert.strictEqual(isSafeGlobSyntax('/etc/passwd'), false);
+  assert.strictEqual(isSafeGlobSyntax(''), false);
 });
 
-test('isSafeGlob returns true for safe patterns', () => {
-  assert.strictEqual(guard.isSafeGlob('*.ts'), true);
-  assert.strictEqual(guard.isSafeGlob('src/**/*.ts'), true);
+test('isSafeGlobSyntax returns true for safe patterns', () => {
+  assert.strictEqual(isSafeGlobSyntax('*.ts'), true);
+  assert.strictEqual(isSafeGlobSyntax('src/**/*.ts'), true);
 });
 
 test('isSensitive works before initialize()', () => {

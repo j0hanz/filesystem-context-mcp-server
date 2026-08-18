@@ -6,13 +6,8 @@ import * as z from 'zod/v4';
 import { createTwoFilesPatch, diffLines } from 'diff';
 
 import { ErrorCode, FsError } from '../core/errors.js';
-import {
-  atomicWriteFile,
-  detectMimeType,
-  MIME_SAMPLE_SIZE,
-  readFileWithStats,
-  stat,
-} from '../core/fs.js';
+import { atomicWriteFile, countLines, readFileWithStats, stat } from '../core/fs.js';
+import { detectMimeType, MIME_SAMPLE_SIZE } from '../core/mime.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
@@ -31,7 +26,9 @@ import {
   PositiveInt,
   singleOrBatchPathsInput,
 } from '../schema.js';
-import { defineTool, runOverPaths } from './define.js';
+import { buildFileResourceLink, buildFileResourceUri } from './_helpers.js';
+import { runOverPaths } from './batch.js';
+import { defineTool } from './define.js';
 
 const EditSpecSchema = z.strictObject({
   oldText: z
@@ -312,21 +309,13 @@ function buildEditFileMetadata(
   resourceStore: ResourceStore | undefined,
 ): EditFileMetadata {
   const bytesWritten = Buffer.byteLength(content, 'utf-8');
-  const lineCount = content.split('\n').length;
+  const lineCount = countLines(content);
   const mimeInfo = detectMimeType(validPath, Buffer.from(content.slice(0, MIME_SAMPLE_SIZE)));
-  const resourceUri =
-    appliedEdits > 0 ? `filesystem-mcp://file/${validPath.replace(/\\/g, '/')}` : '';
-  let resourceLink: ContentBlock | undefined;
-  if (appliedEdits > 0 && resourceStore) {
-    resourceLink = {
-      type: 'resource_link',
-      uri: resourceUri,
-      name: basename(validPath),
-      mimeType: mimeInfo.mimeType,
-      size: bytesWritten,
-      annotations: { audience: ['user', 'assistant'] },
-    };
-  }
+  const resourceUri = appliedEdits > 0 ? buildFileResourceUri(validPath) : '';
+  const resourceLink =
+    appliedEdits > 0 && resourceStore
+      ? buildFileResourceLink(validPath, mimeInfo.mimeType, bytesWritten)
+      : undefined;
   return {
     bytesWritten,
     lineCount,

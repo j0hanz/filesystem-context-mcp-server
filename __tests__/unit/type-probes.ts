@@ -1,5 +1,5 @@
 import { FastQueue } from '../../src/core/concurrency.js';
-import type { PerPathResult } from '../../src/tools/define.js';
+import type { PerPathResult } from '../../src/tools/batch.js';
 
 // Probe AC-003: unnarrowed access must fail
 declare const result: PerPathResult<string>;

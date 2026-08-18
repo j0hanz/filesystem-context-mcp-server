@@ -1,6 +1,9 @@
 import type { ContentBlock, Role } from '@modelcontextprotocol/server';
 
-import type { FileInfo, MimeKind } from '../core/fs.js';
+import { basename } from 'node:path';
+
+import type { FileInfo } from '../core/fs.js';
+import type { MimeKind } from '../core/mime.js';
 import type { ResourceStore } from '../core/store.js';
 
 // ============ Resource Store Helpers ============
@@ -43,6 +46,22 @@ function buildLinkBlock(
     ...(params?.description ? { description: params.description } : {}),
     annotations: { audience },
   };
+}
+
+// ============ File Resource Link Helpers ============
+
+export function buildFileResourceUri(validPath: string): string {
+  return `filesystem-mcp://file/${validPath.replace(/\\/g, '/')}`;
+}
+
+export function buildFileResourceLink(
+  validPath: string,
+  mimeType: string,
+  size: number,
+): ContentBlock {
+  return buildLinkBlock(buildFileResourceUri(validPath), basename(validPath), mimeType, size, {
+    audience: ['user', 'assistant'],
+  });
 }
 
 export function putResource(params: PutResourceParams): PutResourceResult {

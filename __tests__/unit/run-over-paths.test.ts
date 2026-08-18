@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { ErrorCode } from '../../src/core/errors.js';
-import { runOverPaths, type ToolCtx } from '../../src/tools/define.js';
+import { runOverPaths } from '../../src/tools/batch.js';
+import type { ToolCtx } from '../../src/tools/define.js';
 
 function fakeCtx(overrides: Partial<ToolCtx> = {}): ToolCtx {
   const ctx: ToolCtx = {

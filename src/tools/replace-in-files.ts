@@ -16,14 +16,13 @@ import {
 import { truncateProgressPattern } from '../core/fmt.js';
 import {
   atomicWriteFile,
-  DEFAULT_EXCLUDE_PATTERNS,
-  detectMimeType,
-  globEntries,
+  countLines,
   type GuardedFileSystem,
-  MIME_SAMPLE_SIZE,
   readFileBufferWithLimit,
   stat,
 } from '../core/fs.js';
+import { DEFAULT_EXCLUDE_PATTERNS, globEntries } from '../core/glob.js';
+import { detectMimeType, MIME_SAMPLE_SIZE } from '../core/mime.js';
 import { Logger } from '../core/observability.js';
 import { toPosixRelative } from '../core/path.js';
 import type { PathGuard } from '../core/path.js';
@@ -50,6 +49,7 @@ import {
   PerFileErrorSchema,
   SafeGlobPattern,
 } from '../schema.js';
+import { buildFileResourceLink, buildFileResourceUri } from './_helpers.js';
 import { defineTool } from './define.js';
 
 function globEscape(name: string): string {
@@ -602,18 +602,11 @@ async function handleSearchAndReplace(
       })();
 
       const mimeInfo = detectMimeType(fullPath, Buffer.from(content.slice(0, MIME_SAMPLE_SIZE)));
-      const lineCount = content.split('\n').length;
+      const lineCount = countLines(content);
       const size = Buffer.byteLength(content, 'utf-8');
 
-      const fileUri = `filesystem-mcp://file/${fullPath.replace(/\\/g, '/')}`;
-      const link: ContentBlock = {
-        type: 'resource_link',
-        uri: fileUri,
-        name: basename(fullPath),
-        mimeType: mimeInfo.mimeType,
-        size,
-        annotations: { audience: ['user', 'assistant'] },
-      };
+      const fileUri = buildFileResourceUri(fullPath);
+      const link = buildFileResourceLink(fullPath, mimeInfo.mimeType, size);
 
       structured.primaryFile = {
         path: primaryFilePath,

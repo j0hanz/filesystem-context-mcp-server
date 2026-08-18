@@ -15,7 +15,12 @@ import { isSamePath, normalizePath } from './path.js';
 import type { PathGuard } from './path.js';
 import type { IconInfo } from './primitives.js';
 import type { ResourceStore } from './store.js';
-import { debounce, getInitHandshakeTimeoutMs, PARALLEL_CONCURRENCY } from './util.js';
+import {
+  debounce,
+  getInitHandshakeTimeoutMs,
+  PARALLEL_CONCURRENCY,
+  ROOTS_TIMEOUT_MS,
+} from './util.js';
 
 export interface ServerDeps {
   server: McpServer;
@@ -38,7 +43,6 @@ export interface Registrar {
 // (2025-11-25) and works correctly there. Migrating fully requires the new
 // input_required multi-round-trip pattern; tracked in repo memory, not done here.
 /* eslint-disable @typescript-eslint/no-deprecated -- Root: see comment above */
-const ROOTS_TIMEOUT_MS = 5000;
 
 function isFileRoot(root: Root): boolean {
   return root.uri.startsWith('file://');

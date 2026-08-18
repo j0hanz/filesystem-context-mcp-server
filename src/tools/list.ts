@@ -13,7 +13,7 @@ import {
   isIgnoredByGitignore,
   loadRootGitignore,
   resolveEntryType,
-} from '../core/fs.js';
+} from '../core/glob.js';
 import type { PathGuard } from '../core/path.js';
 import { isPathWithinDirectories, normalizePath, toPosixRelative } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';

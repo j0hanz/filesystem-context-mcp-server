@@ -137,6 +137,8 @@ function getOptimalParallelism(): number {
 
 export const PARALLEL_CONCURRENCY = getOptimalParallelism();
 
+export const ROOTS_TIMEOUT_MS = 5000;
+
 export const MAX_TEXT_FILE_SIZE = parseEnvInt('MAX_FILE_SIZE', 10 * MIB, MIB, 100 * MIB);
 
 export const DEFAULT_READ_MANY_MAX_TOTAL_SIZE = parseEnvInt(

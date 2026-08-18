@@ -8,7 +8,6 @@ import { assertNotAborted } from '../core/concurrency.js';
 import { ErrorCode, isAbortError } from '../core/errors.js';
 import { formatBytes } from '../core/fmt.js';
 import {
-  detectMimeType,
   type FileInfo,
   stat as fsStat,
   getFileType,
@@ -16,6 +15,7 @@ import {
   readlink,
   type Stats,
 } from '../core/fs.js';
+import { detectMimeType } from '../core/mime.js';
 import { Logger } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../core/util.js';
@@ -27,8 +27,9 @@ import {
   singleOrBatchPathsInput,
 } from '../schema.js';
 import { buildFileInfoPayload, putResource } from './_helpers.js';
-import type { PerPathResult } from './define.js';
-import { defineTool, runOverPaths } from './define.js';
+import type { PerPathResult } from './batch.js';
+import { runOverPaths } from './batch.js';
+import { defineTool } from './define.js';
 
 const StatInputSchema = singleOrBatchPathsInput({
   extra: {},

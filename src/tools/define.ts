@@ -6,7 +6,6 @@ import type {
   Icon,
   McpServer,
   Notification,
-  ProgressNotificationParams,
   RequestMeta,
   ServerContext,
   StandardSchemaWithJSON,
@@ -17,33 +16,23 @@ import type {
 
 import * as z from 'zod/v4';
 
-import { processInParallel } from '../core/concurrency.js';
-import { ErrorCode, FsError, Problem } from '../core/errors.js';
-import type { Phase, ProgressCtx } from '../core/fmt.js';
-import { ansiLine, plainMessage } from '../core/fmt.js';
+import { ErrorCode, Problem } from '../core/errors.js';
+import type { ProgressCtx } from '../core/fmt.js';
+import { plainMessage } from '../core/fmt.js';
 import { GuardedFileSystem } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import type { LoggingLevel } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { IconInfo } from '../core/primitives.js';
 import type { ResourceStore } from '../core/store.js';
-import { PARALLEL_CONCURRENCY } from '../core/util.js';
+import {
+  McpProgressSink,
+  ProgressSession,
+  type ProgressSink,
+  StderrProgressSink,
+} from './progress.js';
 
 // ============ Type Definitions ============
-
-interface PerPathError {
-  code: ErrorCode;
-  message: string;
-  path?: string;
-  suggestion?: string;
-}
-
-export type PerPathResult<T> = { path: string; value: T } | { path: string; error: PerPathError };
-
-export interface BatchResult<T> {
-  results: PerPathResult<T>[];
-  summary: { total: number; succeeded: number; failed: number };
-}
 
 export interface ToolCtx {
   readonly signal: AbortSignal;
@@ -171,17 +160,6 @@ function buildExecutionCtx(
 
 // ============ Execution Helpers ============
 
-function reportDetachedError(toolName: string, context: string, error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error);
-  Logger.emit('warning', `${toolName}: ${context} failed: ${message}`);
-}
-
-function runDetached(toolName: string, work: Promise<unknown>, context: string): void {
-  void work.catch((error: unknown) => {
-    reportDetachedError(toolName, context, error);
-  });
-}
-
 function resolveProgressCtx<I extends z.ZodType, O extends z.ZodType>(
   def: ToolDef<I, O>,
   args: z.infer<I>,
@@ -211,294 +189,6 @@ function buildSuccessResponse<O>(result: RunResult<O>): CallToolResult {
     content,
     structuredContent: result.structured,
   };
-}
-
-// ============ Progress Types ============
-
-export type ProgressEvent =
-  | { kind: 'tick'; current: number; total?: number; message: string }
-  | { kind: 'status'; message: string }
-  | { kind: 'complete'; current: number; total?: number; message: string }
-  | {
-      kind: 'fail';
-      current: number;
-      total?: number;
-      message: string;
-      error: unknown;
-    };
-
-export interface ProgressSink {
-  readonly name: string;
-  emit(event: ProgressEvent): Promise<void> | void;
-}
-
-interface ProgressSessionOptions {
-  label: string;
-  total?: number;
-  sinks: ProgressSink[];
-  /** Clock injection for deterministic rate-limit tests. Defaults to Date.now. */
-  now?: () => number;
-  /** Override the rate limit window. Default: 50ms. */
-  rateLimitMs?: number;
-  /** If true, rate limit window increases after 5 seconds of execution. */
-  dynamicRateLimit?: boolean;
-}
-
-const DEFAULT_RATE_LIMIT_MS = 50;
-
-export class ProgressSession {
-  readonly #label: string;
-  readonly #total: number | undefined;
-  readonly #sinks: ProgressSink[];
-  readonly #now: () => number;
-  readonly #rateLimitMs: number;
-  readonly #dynamicRateLimit: boolean;
-  readonly #startTime: number;
-
-  #cursor = 0;
-  #lastSentMs = 0;
-  #done = false;
-
-  constructor(opts: ProgressSessionOptions) {
-    this.#label = opts.label;
-    this.#total = opts.total;
-    this.#sinks = opts.sinks;
-    this.#now = opts.now ?? Date.now;
-    this.#rateLimitMs = opts.rateLimitMs ?? DEFAULT_RATE_LIMIT_MS;
-    this.#dynamicRateLimit = opts.dynamicRateLimit ?? false;
-
-    const now = this.#now();
-    this.#startTime = now;
-    this.#lastSentMs = now - this.#rateLimitMs;
-
-    // Synthetic start tick — preserves today's "fire 0/total at session creation" wire behavior.
-    this.#dispatch({
-      kind: 'tick',
-      current: 0,
-      ...(this.#total !== undefined ? { total: this.#total } : {}),
-      message: this.#label,
-    });
-  }
-
-  get current(): number {
-    return this.#cursor;
-  }
-
-  step(message: string): void {
-    if (this.#done) return;
-    this.#cursor += 1;
-    this.#dispatch({
-      kind: 'tick',
-      current: this.#cursor,
-      ...(this.#total !== undefined ? { total: this.#total } : {}),
-      message,
-    });
-  }
-
-  set(input: { current: number; total?: number; message?: string }): void {
-    if (this.#done) return;
-    if (input.current > this.#cursor) {
-      this.#cursor = input.current;
-    }
-    const total = input.total ?? this.#total;
-    this.#dispatch({
-      kind: 'tick',
-      current: this.#cursor,
-      ...(total !== undefined ? { total } : {}),
-      message: input.message ?? this.#label,
-    });
-  }
-
-  status(message: string): void {
-    if (this.#done) return;
-    this.#dispatch({
-      kind: 'status',
-      message,
-    });
-  }
-
-  complete(message: string): void {
-    if (this.#done) return;
-    this.#done = true;
-    this.#dispatch({
-      kind: 'complete',
-      current: this.#cursor,
-      ...(this.#total !== undefined ? { total: this.#total } : {}),
-      message,
-    });
-  }
-
-  fail(error: unknown, message?: string): void {
-    if (this.#done) return;
-    this.#done = true;
-    this.#dispatch({
-      kind: 'fail',
-      current: this.#cursor,
-      ...(this.#total !== undefined ? { total: this.#total } : {}),
-      message: message ?? this.#label,
-      error,
-    });
-  }
-
-  #dispatch(event: ProgressEvent): void {
-    if (this.#shouldRateLimit(event)) {
-      return;
-    }
-
-    if (event.kind !== 'status') {
-      this.#lastSentMs = this.#now();
-    }
-
-    for (const sink of this.#sinks) {
-      this.#emitGuarded(sink, event);
-    }
-  }
-
-  #shouldRateLimit(event: ProgressEvent): boolean {
-    if (event.kind !== 'tick') {
-      return false;
-    }
-
-    const now = this.#now();
-    const effectiveRateLimit =
-      this.#dynamicRateLimit && now - this.#startTime > 5000
-        ? Math.max(this.#rateLimitMs, 250)
-        : this.#rateLimitMs;
-
-    const elapsed = now - this.#lastSentMs;
-    return elapsed < effectiveRateLimit;
-  }
-
-  #emitGuarded(sink: ProgressSink, event: ProgressEvent): void {
-    try {
-      const result = sink.emit(event);
-      if (result instanceof Promise) {
-        result.catch((err: unknown) => {
-          Logger.warn('ProgressSink emit failed', {
-            sink: sink.name,
-            eventKind: event.kind,
-            err,
-          });
-        });
-      }
-    } catch (err) {
-      Logger.warn('ProgressSink emit failed', {
-        sink: sink.name,
-        eventKind: event.kind,
-        err,
-      });
-    }
-  }
-}
-
-export class StderrProgressSink implements ProgressSink {
-  readonly name = 'stderr';
-  readonly #startMs: number;
-  #ctx: ProgressCtx;
-  readonly #writeFn: (line: string) => void;
-
-  constructor(ctx: ProgressCtx, writeFn?: (line: string) => void) {
-    this.#ctx = ctx;
-    this.#startMs = Date.now();
-    this.#writeFn =
-      writeFn ??
-      ((line) => {
-        process.stderr.write(line + '\n');
-      });
-  }
-
-  updateCtx(extra: Partial<ProgressCtx>): void {
-    this.#ctx = { ...this.#ctx, ...extra };
-  }
-
-  emit(event: ProgressEvent): void {
-    if (!process.stderr.isTTY) return;
-
-    const phase: Phase =
-      event.kind === 'complete'
-        ? 'done'
-        : event.kind === 'fail'
-          ? 'fail'
-          : event.kind === 'tick' && event.current === 0
-            ? 'start'
-            : 'tick';
-
-    const merged: ProgressCtx = {
-      ...this.#ctx,
-      ...(event.message ? { subject: event.message } : {}),
-      ...(event.kind === 'tick' || event.kind === 'complete'
-        ? { current: event.current, total: event.total }
-        : {}),
-      ...(event.kind === 'fail'
-        ? { error: event.error instanceof Error ? event.error.message : String(event.error) }
-        : {}),
-      durationMs: Date.now() - this.#startMs,
-    };
-
-    try {
-      this.#writeFn(ansiLine(phase, merged));
-    } catch {
-      // never allow observability failures to affect tool execution
-    }
-  }
-}
-
-// ============ Progress Tracking ============
-
-class McpProgressSink implements ProgressSink {
-  readonly name = 'mcp';
-  private readonly toolName: string;
-  private readonly token: string | number;
-  private readonly notify: (n: Notification) => Promise<void>;
-  readonly pending = new Set<Promise<void>>();
-
-  constructor(
-    toolName: string,
-    token: string | number,
-    notify: (n: Notification) => Promise<void>,
-  ) {
-    this.toolName = toolName;
-    this.token = token;
-    this.notify = notify;
-  }
-
-  emit(event: ProgressEvent): void {
-    if (event.kind === 'status') {
-      return;
-    }
-    let current = event.current;
-    let total = event.total;
-    if (event.kind === 'complete' || event.kind === 'fail') {
-      current = total ?? current + 1;
-      total = current;
-    }
-    const notificationParams: ProgressNotificationParams = {
-      progressToken: this.token,
-      progress: current,
-      ...(total !== undefined ? { total } : {}),
-      message: event.message,
-    };
-    const promise = this.notify({
-      method: 'notifications/progress',
-      params: notificationParams,
-    }).catch((error: unknown) => {
-      reportDetachedError(this.toolName, 'progressNotification', error);
-    });
-    this.pending.add(promise);
-    runDetached(
-      this.toolName,
-      promise.finally(() => {
-        this.pending.delete(promise);
-      }),
-      'progressNotification',
-    );
-  }
-
-  async flush(): Promise<void> {
-    if (this.pending.size > 0) {
-      await Promise.allSettled([...this.pending]);
-    }
-  }
 }
 
 // ============ Tool Execution ============
@@ -757,97 +447,4 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
   };
 
   return tool;
-}
-
-// ============ Batch Execution ============
-
-type BatchInput<TOverride> =
-  { path: string } | { paths: string[] } | { files: ({ path: string } & TOverride)[] };
-
-interface RunOverPathsOptions {
-  defaultErrorCode?: ErrorCode;
-  concurrency?: number;
-}
-
-function normalizeBatchItems<TOverride>(
-  args: BatchInput<TOverride>,
-): { path: string; override?: TOverride }[] {
-  if ('path' in args) {
-    return [{ path: args.path }];
-  }
-  if ('paths' in args) {
-    return args.paths.map((path) => ({ path }));
-  }
-  if ('files' in args) {
-    return args.files.map(({ path, ...rest }) => ({
-      path,
-      override: rest as unknown as TOverride,
-    }));
-  }
-  // For invalid input not matching the discriminated union
-  return [];
-}
-
-export async function runOverPaths<TOverride, TPerPath>(
-  args: BatchInput<TOverride>,
-  ctx: ToolCtx,
-  perPath: (item: { path: string; override?: TOverride }, ctx: ToolCtx) => Promise<TPerPath>,
-  options?: RunOverPathsOptions,
-): Promise<BatchResult<TPerPath>> {
-  const items = normalizeBatchItems(args);
-  if (items.length === 0) {
-    throw new FsError(
-      ErrorCode.INVALID_INPUT,
-      "runOverPaths: at least one of 'path', 'paths', or 'files' must be provided",
-    );
-  }
-
-  const defaultErrorCode = options?.defaultErrorCode ?? ErrorCode.UNKNOWN;
-  const concurrency = options?.concurrency ?? PARALLEL_CONCURRENCY;
-
-  const total = items.length;
-  let completed = 0;
-  const results: PerPathResult<TPerPath>[] = new Array<PerPathResult<TPerPath>>(total);
-
-  const tick = (): void => {
-    completed += 1;
-    ctx.onProgress?.({ current: completed, total });
-  };
-
-  await processInParallel<
-    { item: { path: string; override?: TOverride }; index: number },
-    undefined
-  >(
-    items.map((item, index) => ({ item, index })),
-    async ({ item, index }) => {
-      try {
-        const value = await perPath(item, ctx);
-        results[index] = { path: item.path, value };
-      } catch (error: unknown) {
-        const problem = Problem.fromUnknown(error, defaultErrorCode, item.path);
-        const perPathError: PerPathError = {
-          code: problem.code,
-          message: problem.message,
-          ...(problem.path !== undefined ? { path: problem.path } : {}),
-          ...(problem.suggestion !== undefined ? { suggestion: problem.suggestion } : {}),
-        };
-        results[index] = { path: item.path, error: perPathError };
-      } finally {
-        tick();
-      }
-      return undefined;
-    },
-    concurrency,
-    ctx.signal,
-  );
-
-  let succeeded = 0;
-  for (const result of results) {
-    if (!('error' in result)) succeeded += 1;
-  }
-
-  return {
-    results,
-    summary: { total, succeeded, failed: total - succeeded },
-  };
 }

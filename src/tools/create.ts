@@ -7,9 +7,11 @@ import * as z from 'zod/v4';
 import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, isAbortError, Problem } from '../core/errors.js';
 import { formatBytes } from '../core/fmt.js';
-import { atomicWriteFile, detectMimeType, MIME_SAMPLE_SIZE, mkdir, stat } from '../core/fs.js';
+import { atomicWriteFile, countLines, mkdir, stat } from '../core/fs.js';
+import { detectMimeType, MIME_SAMPLE_SIZE } from '../core/mime.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import { FileKind, IsoDateTime, NonNegInt, PerFileErrorSchema, RequiredPath } from '../schema.js';
+import { buildFileResourceLink, buildFileResourceUri } from './_helpers.js';
 import { defineTool } from './define.js';
 
 const CreateFileItemSchema = z.strictObject({
@@ -114,22 +116,15 @@ export const CREATE = defineTool({
 
         const { stats: fileStats } = await stat(file.path, ctx.pathGuard, { signal: ctx.signal });
         const bytesWritten = Buffer.byteLength(file.content, 'utf-8');
-        const lineCount = file.content.split('\n').length;
+        const lineCount = countLines(file.content);
         const mimeInfo = detectMimeType(
           validPath,
           Buffer.from(file.content.slice(0, MIME_SAMPLE_SIZE)),
         );
 
-        const resourceUri = `filesystem-mcp://file/${validPath.replace(/\\/g, '/')}`;
+        const resourceUri = buildFileResourceUri(validPath);
         if (ctx.resourceStore) {
-          links.push({
-            type: 'resource_link',
-            uri: resourceUri,
-            name: basename(validPath),
-            mimeType: mimeInfo.mimeType,
-            size: bytesWritten,
-            annotations: { audience: ['user', 'assistant'] },
-          });
+          links.push(buildFileResourceLink(validPath, mimeInfo.mimeType, bytesWritten));
         }
 
         results.push({

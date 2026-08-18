@@ -5,12 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-import {
-  atomicWriteFile,
-  GuardedFileSystem,
-  isIgnoredByGitignore,
-  loadRootGitignore,
-} from '../../src/core/fs.js';
+import { atomicWriteFile, GuardedFileSystem } from '../../src/core/fs.js';
+import { isIgnoredByGitignore, loadRootGitignore } from '../../src/core/glob.js';
 import { PathGuard } from '../../src/core/path.js';
 
 describe('silent-failure-hunter fixes', () => {

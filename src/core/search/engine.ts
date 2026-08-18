@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 
-import { buildGlobOptions, globEntries } from '../fs.js';
+import { buildGlobOptions, globEntries } from '../glob.js';
 import type { PathGuard } from '../path.js';
 import { escapeRegexLiteral } from '../primitives.js';
 

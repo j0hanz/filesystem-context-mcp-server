@@ -7,12 +7,8 @@ import * as z from 'zod/v4';
 
 import { assertNotAborted } from '../core/concurrency.js';
 import { ErrorCode, FsError } from '../core/errors.js';
-import {
-  globEntries,
-  type GuardedFileSystem,
-  isIgnoredByGitignore,
-  loadRootGitignore,
-} from '../core/fs.js';
+import type { GuardedFileSystem } from '../core/fs.js';
+import { globEntries, isIgnoredByGitignore, loadRootGitignore } from '../core/glob.js';
 import { toPosixRelative } from '../core/path.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';

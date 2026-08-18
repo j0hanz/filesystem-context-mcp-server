@@ -18,6 +18,7 @@ import { assertNotAborted, createTimedAbortSignal, withAbort } from './concurren
 import { ErrorCode, FsError, isAbortError, isNodeError } from './errors.js';
 import { Logger } from './observability.js';
 import { parseEnvDirList, parseTrueEnvFlag } from './primitives.js';
+import { ROOTS_TIMEOUT_MS } from './util.js';
 
 // ponytail: ~1.3k lines, over the 1k bar. PathGuard and its access-control
 // support (path primitives, glob/sensitive-pattern engine, Windows
@@ -26,8 +27,6 @@ import { parseEnvDirList, parseTrueEnvFlag } from './primitives.js';
 // Further cuts are <100-line fragments of a single concept and would scatter
 // access control across files; revisit when a new separable concern emerges.
 export type ValidatedPath = string & { readonly __validated: unique symbol };
-
-const ROOTS_TIMEOUT_MS = 5000;
 
 export interface ServerOptions {
   allowCwd?: boolean;
@@ -620,10 +619,6 @@ export class PathGuard {
     );
   }
 
-  isSafeGlob(pattern: string): boolean {
-    return isSafeGlobSyntax(pattern);
-  }
-
   async validateExistingPath(requestedPath: string): Promise<ValidatedPath> {
     const details = await this.validateExistingPathDetailed(requestedPath);
     return details.resolvedPath as ValidatedPath;
@@ -717,13 +712,8 @@ export class PathGuard {
     accessDeniedHint: string;
   }> {
     const result = await this.validateAccess(requestedPath);
-    if (this.isSensitive(requestedPath) || this.isSensitive(result.normalizedRequested)) {
-      throw new FsError(
-        ErrorCode.ACCESS_DENIED,
-        'Sensitive file blocked. Set ALLOW_SENSITIVE=1 to override.',
-        requestedPath,
-      );
-    }
+    this.assertNotSensitiveFile(requestedPath, requestedPath);
+    this.assertNotSensitiveFile(result.normalizedRequested, requestedPath);
     return result;
   }
 
@@ -872,13 +862,7 @@ export class PathGuard {
     // Re-check the resolved real path: a symlink inside an allowed root may
     // point at a sensitive file (e.g. link -> .env). The early check above only
     // sees the requested/normalized path, not the symlink target.
-    if (this.isSensitive(normalizedReal)) {
-      throw new FsError(
-        ErrorCode.ACCESS_DENIED,
-        'Sensitive file blocked. Set ALLOW_SENSITIVE=1 to override.',
-        requestedPath,
-      );
-    }
+    this.assertNotSensitiveFile(normalizedReal, requestedPath);
 
     return {
       requestedPath: normalizedRequested,
@@ -945,8 +929,8 @@ export class PathGuard {
 
   // Checks ONLY the sensitive-file denylist. Root containment and symlink
   // resolution must be verified separately (e.g. via validateExistingPath).
-  assertNotSensitiveFile(requestedPath: string): void {
-    if (this.isSensitive(requestedPath)) {
+  private assertNotSensitiveFile(checkPath: string, requestedPath: string): void {
+    if (this.isSensitive(checkPath)) {
       throw new FsError(
         ErrorCode.ACCESS_DENIED,
         'Sensitive file blocked. Set ALLOW_SENSITIVE=1 to override.',
@@ -1036,13 +1020,7 @@ export class PathGuard {
     }
     // Re-check the resolved target: a symlink inside an allowed root may point
     // at a sensitive file. Writing through such a link must be blocked too.
-    if (this.isSensitive(resolvedTarget)) {
-      throw new FsError(
-        ErrorCode.ACCESS_DENIED,
-        'Sensitive file blocked. Set ALLOW_SENSITIVE=1 to override.',
-        requestedPath,
-      );
-    }
+    this.assertNotSensitiveFile(resolvedTarget, requestedPath);
     return resolvedTarget as ValidatedPath;
   }
 
@@ -1081,13 +1059,7 @@ export class PathGuard {
       if (stats.isSymbolicLink()) {
         // Symlink: check link sensitivity but don't resolve target.
         // The parent check above ensures the link itself is in an allowed root.
-        if (this.isSensitive(normalizedRequested)) {
-          throw new FsError(
-            ErrorCode.ACCESS_DENIED,
-            'Sensitive file blocked. Set ALLOW_SENSITIVE=1 to override.',
-            requestedPath,
-          );
-        }
+        this.assertNotSensitiveFile(normalizedRequested, requestedPath);
         return normalizedRequested as ValidatedPath;
       }
 
@@ -1101,13 +1073,7 @@ export class PathGuard {
           requestedPath,
         );
       }
-      if (this.isSensitive(realTarget)) {
-        throw new FsError(
-          ErrorCode.ACCESS_DENIED,
-          'Sensitive file blocked. Set ALLOW_SENSITIVE=1 to override.',
-          requestedPath,
-        );
-      }
+      this.assertNotSensitiveFile(realTarget, requestedPath);
       return realTarget as ValidatedPath;
     } catch {
       // ENOENT or other error; parent check is sufficient for non-existent paths.

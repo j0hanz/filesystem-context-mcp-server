@@ -7,12 +7,8 @@ import * as z from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
-import {
-  detectMimeType,
-  MIME_SAMPLE_SIZE,
-  type ReadFileResult,
-  type ReadSpec,
-} from '../core/fs.js';
+import type { ReadFileResult, ReadSpec } from '../core/fs.js';
+import { detectMimeType, MIME_SAMPLE_SIZE } from '../core/mime.js';
 import { Logger } from '../core/observability.js';
 import {
   DEFAULT_CONTINUATION_CHUNK_SIZE,
@@ -34,8 +30,11 @@ import {
   singleOrBatchPathsInput,
   validateReadRange,
 } from '../schema.js';
-import type { PerPathResult, ToolCtx } from './define.js';
-import { defineTool, runOverPaths } from './define.js';
+import { buildFileResourceLink, buildFileResourceUri } from './_helpers.js';
+import type { PerPathResult } from './batch.js';
+import { runOverPaths } from './batch.js';
+import type { ToolCtx } from './define.js';
+import { defineTool } from './define.js';
 
 const readRangeFields = createReadRangeFields({
   head: 'Return first N lines',
@@ -324,7 +323,7 @@ function applyOptionalFeatures(
     value.contentHash = createHash('sha256').update(result.content, 'utf-8').digest('hex');
   }
   if (ctx.resourceStore) {
-    value.resourceUri = `filesystem-mcp://file/${result.path.replace(/\\/g, '/')}`;
+    value.resourceUri = buildFileResourceUri(result.path);
   }
 }
 
@@ -457,14 +456,13 @@ export const READ_FILE = defineTool({
     for (const result of ordered) {
       if ('error' in result) continue;
       if (!result.value.resourceUri || !result.value.content) continue;
-      resources.push({
-        type: 'resource_link',
-        uri: result.value.resourceUri,
-        name: basename(result.path),
-        mimeType: result.value.mimeType ?? 'application/octet-stream',
-        size: Buffer.byteLength(result.value.content, 'utf8'),
-        annotations: { audience: ['user', 'assistant'] },
-      });
+      resources.push(
+        buildFileResourceLink(
+          result.path,
+          result.value.mimeType ?? 'application/octet-stream',
+          Buffer.byteLength(result.value.content, 'utf8'),
+        ),
+      );
     }
 
     const [firstOrdered] = ordered;

@@ -1,7 +1,11 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 
-import { type ProgressEvent, ProgressSession, type ProgressSink } from '../../src/tools/define.js';
+import {
+  type ProgressEvent,
+  ProgressSession,
+  type ProgressSink,
+} from '../../src/tools/progress.js';
 
 class MemorySink implements ProgressSink {
   readonly name = 'memory';
