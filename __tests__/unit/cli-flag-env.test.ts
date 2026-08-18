@@ -32,6 +32,8 @@ describe('liftFlagsToEnv / CLI_PARSER_CONFIG agreement', () => {
       '--root-boundary',
       '/srv/projects',
       '--allow-sensitive',
+      '--walk-cwd',
+      '--allow-missing-roots',
       '--deny',
       '*.pem',
       '--deny',
@@ -45,8 +47,20 @@ describe('liftFlagsToEnv / CLI_PARSER_CONFIG agreement', () => {
       MAX_FILE_SIZE: '2097152',
       ROOT_BOUNDARY: '/srv/projects',
       ALLOW_SENSITIVE: '1',
+      ALLOW_CWD_WALK: '1',
+      ALLOW_MISSING_ROOTS: '1',
       DENYLIST: '*.pem,secrets/**',
     });
+  });
+
+  it('--walk-cwd reaches the env var PathGuard actually reads', () => {
+    // Guards the half-wired flag: --walk-cwd set allowCwd but never enabled the
+    // project-root walk, which recomputeAllowedDirectories gates on ALLOW_CWD_WALK.
+    assert.equal(lift(['--walk-cwd'])['ALLOW_CWD_WALK'], '1');
+  });
+
+  it('--allow-missing-roots reaches the env var FS_ALLOWED_DIRS validation reads', () => {
+    assert.equal(lift(['--allow-missing-roots'])['ALLOW_MISSING_ROOTS'], '1');
   });
 });
 

@@ -26,8 +26,13 @@ export const FLAG_TO_ENV = {
 /** Flags whose env var is not a plain string copy. */
 export const SPECIAL_FLAG_TO_ENV = {
   'allow-sensitive': 'ALLOW_SENSITIVE',
+  'walk-cwd': 'ALLOW_CWD_WALK',
+  'allow-missing-roots': 'ALLOW_MISSING_ROOTS',
   deny: 'DENYLIST',
 } as const satisfies Record<string, string>;
+
+/** Boolean flags lifted as "1" when present. */
+const BOOLEAN_FLAGS = ['allow-sensitive', 'walk-cwd', 'allow-missing-roots'] as const;
 
 /**
  * Copies env-backed CLI flags into `process.env`. `cli.ts` still owns strict
@@ -49,7 +54,7 @@ export function liftFlagsToEnv(
         ...Object.fromEntries(
           Object.keys(FLAG_TO_ENV).map((flag) => [flag, { type: 'string' } as const]),
         ),
-        'allow-sensitive': { type: 'boolean' },
+        ...Object.fromEntries(BOOLEAN_FLAGS.map((flag) => [flag, { type: 'boolean' } as const])),
         deny: { type: 'string', multiple: true },
       },
       strict: false,
@@ -64,7 +69,9 @@ export function liftFlagsToEnv(
     if (typeof value === 'string') env[envVar] = value;
   }
 
-  if (values['allow-sensitive'] === true) env['ALLOW_SENSITIVE'] = '1';
+  for (const flag of BOOLEAN_FLAGS) {
+    if (values[flag] === true) env[SPECIAL_FLAG_TO_ENV[flag]] = '1';
+  }
 
   const deny = values['deny'];
   if (Array.isArray(deny) && deny.length > 0) env['DENYLIST'] = deny.join(',');
