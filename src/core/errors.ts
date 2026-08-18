@@ -63,20 +63,14 @@ function build(code: ErrorCode, message: string, opts: ProblemFactoryOptions = {
 }
 
 export const Problem = {
-  notFound: (msg: string, o?: ProblemFactoryOptions): Problem => build(ErrorCode.NOT_FOUND, msg, o),
   invalidInput: (msg: string, o?: ProblemFactoryOptions): Problem =>
     build(ErrorCode.INVALID_INPUT, msg, o),
   accessDenied: (msg: string, o?: ProblemFactoryOptions): Problem =>
     build(ErrorCode.ACCESS_DENIED, msg, o),
-  permissionDenied: (msg: string, o?: ProblemFactoryOptions): Problem =>
-    build(ErrorCode.PERMISSION_DENIED, msg, o),
   timeout: (msg: string, o?: ProblemFactoryOptions): Problem => build(ErrorCode.TIMEOUT, msg, o),
   cancelled: (msg: string, o?: ProblemFactoryOptions): Problem =>
     build(ErrorCode.CANCELLED, msg, o),
-  tooLarge: (msg: string, o?: ProblemFactoryOptions): Problem => build(ErrorCode.TOO_LARGE, msg, o),
   ioError: (msg: string, o?: ProblemFactoryOptions): Problem => build(ErrorCode.IO_ERROR, msg, o),
-  validationFailed: (msg: string, o?: ProblemFactoryOptions): Problem =>
-    build(ErrorCode.VALIDATION_FAILED, msg, o),
   unknown: (msg: string, o?: ProblemFactoryOptions): Problem => build(ErrorCode.UNKNOWN, msg, o),
   fromUnknown(error: unknown, defaultCode: ErrorCode, path?: string): Problem {
     const detailed = createDetailedError(error, path);
@@ -500,49 +494,22 @@ function formatDetailedError(
 export class FsError extends Error {
   readonly problem: Problem;
 
-  constructor(problem: Problem, cause?: unknown);
-  // Legacy positional form: new FsError(code, message, path?, details?, cause?)
   constructor(
     code: ErrorCode,
     message: string,
     path?: string,
     details?: Record<string, unknown>,
     cause?: unknown,
-  );
-  constructor(
-    arg1: Problem | ErrorCode,
-    arg2?: unknown,
-    arg3?: string,
-    arg4?: Record<string, unknown>,
-    arg5?: unknown,
   ) {
-    if (typeof arg1 === 'string') {
-      const code = arg1;
-      const message =
-        typeof arg2 === 'string' ? arg2 : arg2 == null ? '' : formatUnknownErrorMessage(arg2);
-      const path = arg3;
-      const detailsArg = arg4;
-      const cause = arg5;
-
-      const details: ProblemDetails | undefined =
-        detailsArg !== undefined ? { extra: detailsArg } : undefined;
-
-      const suggestion = DEFAULT_SUGGESTIONS[code];
-      const problem: Problem = {
-        code,
-        message,
-        ...(path !== undefined ? { path } : {}),
-        ...(details !== undefined ? { details } : {}),
-        ...(suggestion !== undefined ? { suggestion } : {}),
-      };
-      super(message, cause === undefined ? {} : { cause });
-      this.problem = problem;
-    } else {
-      const problem = arg1;
-      const cause = arg2;
-      super(problem.message, cause === undefined ? {} : { cause });
-      this.problem = problem;
-    }
+    super(message, cause === undefined ? {} : { cause });
+    const suggestion = DEFAULT_SUGGESTIONS[code];
+    this.problem = {
+      code,
+      message,
+      ...(path !== undefined ? { path } : {}),
+      ...(details !== undefined ? { details: { extra: details } } : {}),
+      ...(suggestion !== undefined ? { suggestion } : {}),
+    };
     this.name = 'FsError';
     Object.setPrototypeOf(this, FsError.prototype);
   }

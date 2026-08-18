@@ -2,17 +2,15 @@ import * as z from 'zod/v4';
 
 import { ErrorCode } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
-import type { GuardedFileSystem } from '../core/fs.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../core/fs.js';
-import { PathFormatter } from '../core/path-formatter.js';
 import type { PathGuard } from '../core/path.js';
-import { decodeOffsetCursor, encodeOffsetCursor } from '../core/path.js';
+import { decodeOffsetCursor, encodeOffsetCursor, toPosixRelative } from '../core/path.js';
 import {
   compileRegex,
   type Regex,
   searchContent,
   type SearchContentOptions,
-} from '../core/search/index.js';
+} from '../core/search/engine.js';
 import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_CONTENT_RESULTS,
@@ -45,11 +43,6 @@ import { defineTool } from './define.js';
  */
 const CONFIG = {
   MAX_INLINE_MATCHES: parseEnvInt('FS_CONTEXT_MAX_INLINE_MATCHES', 50, 1, 10_000),
-  COMPLETION_LABELS: {
-    timeout: 'timeout',
-    maxResults: 'max results',
-    maxFiles: 'max files',
-  } as const,
 } as const;
 
 // Type Definitions
@@ -58,8 +51,6 @@ type SearchOutput = z.infer<typeof GrepOutputSchema>;
 type SearchMatchPayload = NonNullable<SearchOutput['matches']>[number];
 type SearchResultValue = Awaited<ReturnType<typeof searchContent>>;
 type SearchSummary = SearchResultValue['summary'];
-type TruthySummaryField =
-  'filesMatched' | 'skippedTooLarge' | 'skippedBinary' | 'skippedInaccessible';
 
 interface SearchPreviewState {
   needsExternalize: boolean;
@@ -74,26 +65,13 @@ interface SearchContext {
   foldedPattern?: string;
 }
 
-const TRUTHY_SUMMARY_FIELDS: readonly TruthySummaryField[] = [
-  'filesMatched',
-  'skippedTooLarge',
-  'skippedBinary',
-  'skippedInaccessible',
-];
-
 function buildStructuredSummaryFields(summary: SearchSummary): Partial<SearchOutput> {
-  const result: Partial<SearchOutput> = {};
-  for (const key of TRUTHY_SUMMARY_FIELDS) {
-    const value = summary[key];
-    if (value) {
-      result[key] = value;
-    }
-  }
-  if (summary.truncated) {
-    result.truncated = true;
-  }
-  return result;
+  return {
+    ...(summary.filesMatched ? { filesMatched: summary.filesMatched } : {}),
+    ...(summary.truncated ? { truncated: true } : {}),
+  };
 }
+
 function buildSearchPreviewState(payloads: SearchMatchPayload[]): SearchPreviewState {
   const needsExternalize = payloads.length > CONFIG.MAX_INLINE_MATCHES;
   const visibleCount = needsExternalize ? CONFIG.MAX_INLINE_MATCHES : payloads.length;
@@ -125,38 +103,6 @@ const GrepInputSchema = z.strictObject({
   includeHidden: includeHiddenField(),
   includeIgnored: includeIgnoredField(),
   caseSensitive: defaultFalseBoolean('Enable case-sensitive matching (default: case-insensitive)'),
-  wholeWord: defaultFalseBoolean('Match whole words only (word boundary anchoring)'),
-  contextLines: z
-    .int32()
-    .min(0)
-    .max(20)
-    .optional()
-    .describe(
-      'Symmetric context: N lines before AND after each match. Overridden per-side by contextBefore/contextAfter.',
-    ),
-  contextBefore: z
-    .int32()
-    .min(0)
-    .max(20)
-    .optional()
-    .describe(
-      'Lines of context to include before each match (overrides the before half of contextLines)',
-    ),
-  contextAfter: z
-    .int32()
-    .min(0)
-    .max(20)
-    .optional()
-    .describe(
-      'Lines of context to include after each match (overrides the after half of contextLines)',
-    ),
-  fuzzy: z
-    .boolean()
-    .optional()
-    .describe(
-      'Enable approximate (fuzzy) matching using Levenshtein distance (\u226425% character difference). Incompatible with isRegex. Requires searchPattern of at least 4 characters.',
-    ),
-
   maxResults: z
     .uint32()
     .min(1)
@@ -169,9 +115,7 @@ const GrepInputSchema = z.strictObject({
 });
 
 const GrepOutputSchema = z.strictObject({
-  ok: z
-    .literal(true)
-    .describe('Always true; errors are surfaced in stoppedReason or per-file skip counts'),
+  ok: z.literal(true).describe('Always true; unreadable files are skipped silently'),
   matches: z
     .array(
       z.strictObject({
@@ -180,39 +124,16 @@ const GrepOutputSchema = z.strictObject({
         column: NonNegInt.optional().describe('0-indexed column offset of the match start'),
         content: z.string().describe('Full text of the matching line'),
         matchCount: NonNegInt.optional().describe('Number of pattern occurrences on this line'),
-        contextBefore: z
-          .array(z.string())
-          .optional()
-          .describe('Lines immediately before the match (contextBefore or contextLines)'),
-        contextAfter: z
-          .array(z.string())
-          .optional()
-          .describe('Lines immediately after the match (contextAfter or contextLines)'),
       }),
     )
     .describe('Flat list of matches sorted by file path then line number'),
   totalMatches: NonNegInt.optional().describe('Total number of matching lines found'),
   filesMatched: NonNegInt.optional().describe('Number of files containing at least one match'),
   filesScanned: NonNegInt.optional().describe('Total number of files examined'),
-  skippedTooLarge: NonNegInt.optional().describe(
-    'Files skipped because they exceeded the size limit',
-  ),
-  skippedBinary: NonNegInt.optional().describe(
-    'Files skipped because they were detected as binary',
-  ),
-  skippedInaccessible: NonNegInt.optional().describe(
-    'Files skipped due to permission or access errors',
-  ),
   truncated: z
     .boolean()
     .optional()
     .describe('True when the match list was cut due to maxResults or timeout'),
-  stoppedReason: z
-    .enum(['maxResults', 'maxFiles', 'timeout'])
-    .optional()
-    .describe(
-      'Why the search ended early: maxResults = match cap reached, maxFiles = scan cap reached, timeout = time limit hit',
-    ),
   resourceUri: z
     .string()
     .optional()
@@ -259,7 +180,7 @@ function buildSortedPayloads(
     const cached = relativeByFile.get(file);
     if (cached !== undefined) return cached;
 
-    const rel = PathFormatter.relative(result.basePath, file);
+    const rel = toPosixRelative(result.basePath, file);
     relativeByFile.set(file, rel);
     return rel;
   };
@@ -274,8 +195,6 @@ function buildSortedPayloads(
       ...(column !== undefined ? { column } : {}),
       content: match.content,
       matchCount: match.matchCount,
-      ...(match.contextBefore ? { contextBefore: [...match.contextBefore] } : {}),
-      ...(match.contextAfter ? { contextAfter: [...match.contextAfter] } : {}),
     };
 
     return { payload, originalIndex };
@@ -309,43 +228,18 @@ function findColumnOffset(content: string, context: SearchContext): number | und
   }
 }
 
-function buildSearchContentOptions(
-  args: SearchInput,
-  signal?: AbortSignal,
-  onProgress?: (progress: { total?: number; current: number }) => void,
-): SearchContentOptions {
-  const options: SearchContentOptions = {
+function buildSearchContentOptions(args: SearchInput, signal?: AbortSignal): SearchContentOptions {
+  return {
     includeHidden: args.includeHidden,
     excludePatterns: args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS,
     filePattern: args.pattern ?? '**/*',
     caseSensitive: args.caseSensitive,
-    wholeWord: args.wholeWord,
+    isRegex: args.isRegex,
     maxResults: args.maxResults,
-    isLiteral: !args.isRegex,
     respectGitignore: !args.includeIgnored,
+    ...(args.maxDepth !== undefined ? { maxDepth: args.maxDepth } : {}),
+    ...(signal ? { signal } : {}),
   };
-
-  if (args.contextLines !== undefined) options.contextLines = args.contextLines;
-  if (args.contextBefore !== undefined) options.contextBefore = args.contextBefore;
-  if (args.contextAfter !== undefined) options.contextAfter = args.contextAfter;
-  if (args.fuzzy === true) options.fuzzy = true;
-  if (args.maxDepth !== undefined) options.maxDepth = args.maxDepth;
-  if (signal) options.signal = signal;
-  if (onProgress) options.onProgress = onProgress;
-
-  return options;
-}
-
-async function executeSearch(
-  args: SearchInput,
-  basePath: string,
-  pathGuard: PathGuard,
-  signal?: AbortSignal,
-  onProgress?: (progress: { total?: number; current: number }) => void,
-  fsOps?: GuardedFileSystem,
-): Promise<SearchResultValue> {
-  const options = buildSearchContentOptions(args, signal, onProgress);
-  return searchContent(basePath, args.searchPattern, options, pathGuard, fsOps);
 }
 
 function createSearchMatcher(args: SearchInput): Regex | undefined {
@@ -430,11 +324,9 @@ function finalizeSearchOutput(
 
 async function handleSearchContent(
   args: SearchInput,
-  fsOps: GuardedFileSystem,
   pathGuard: PathGuard,
   signal?: AbortSignal,
   resourceStore?: ResourceStore,
-  onProgress?: (progress: { total?: number; current: number }) => void,
 ): Promise<{
   structured: SearchOutput;
   link?: ReturnType<typeof putResource>['link'];
@@ -448,13 +340,11 @@ async function handleSearchContent(
   const pageSize = args.maxResults;
   const fetchMax = cursorOffset + pageSize;
 
-  const result = await executeSearch(
-    { ...args, maxResults: fetchMax },
+  const result = await searchContent(
     basePath,
+    args.searchPattern,
+    buildSearchContentOptions({ ...args, maxResults: fetchMax }, signal),
     pathGuard,
-    signal,
-    onProgress,
-    fsOps,
   );
 
   const { matchPayloads, nextCursor } = getPagedPayloads(result, args, regexMatcher, cursorOffset);
@@ -487,7 +377,7 @@ export const SEARCH_CONTENT = defineTool({
   name: 'search_text',
   title: 'Search Content',
   description:
-    'Search file contents by text or regex (grep-style). Returns matching lines with file path, line number, and optional context. ' +
+    'Search file contents by text or regex (grep-style). Returns matching lines with file path and line number. ' +
     'Scope to specific file types with pattern (e.g. **/*.ts). ' +
     'Set includeHidden=true to include dotfiles. Use find_files to search by filename instead.',
   input: GrepInputSchema,
@@ -506,7 +396,7 @@ export const SEARCH_CONTENT = defineTool({
   gotchas: [
     'isRegex=true uses RE2 syntax: lookahead, lookbehind, and backreferences are not supported.',
     'Without pattern, every text file is scanned; always set pattern to a specific glob to limit scope.',
-    'Binary and oversized files are silently skipped; use stat to verify a file is readable if you expect matches.',
+    'Unreadable files (binary, permission-denied) are silently skipped; use stat to verify a file is readable if you expect matches.',
     'File patterns without a slash (e.g. *.ts) match by basename anywhere in the tree. Add a path prefix (e.g. src/*.ts) to restrict to a subtree.',
   ],
   defaultErrorCode: ErrorCode.UNKNOWN,
@@ -518,19 +408,11 @@ export const SEARCH_CONTENT = defineTool({
     detail: buildSearchMatchDetail(result.totalMatches ?? 0, result.filesMatched ?? 0),
   }),
   run: async (args, ctx) => {
-    const onProgress = (params: { current: number; total?: number }): void => {
-      ctx.onProgress?.({
-        current: params.current,
-        ...(params.total !== undefined ? { total: params.total } : {}),
-      });
-    };
     const { structured, link } = await handleSearchContent(
       args,
-      ctx.fs,
       ctx.pathGuard,
       ctx.signal,
       ctx.resourceStore,
-      onProgress,
     );
     const text =
       structured.matches.length > 0

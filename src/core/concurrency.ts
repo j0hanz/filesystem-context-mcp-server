@@ -13,20 +13,14 @@ function checkParallelAbort(signal?: AbortSignal): void {
   if (signal?.aborted) throw new DOMException('Operation aborted', 'AbortError');
 }
 
-function assertPositiveIntegerOption(name: string, value: unknown): void {
-  if (value === undefined) return;
-  if (
-    typeof value !== 'number' ||
-    !Number.isFinite(value) ||
-    !Number.isSafeInteger(value) ||
-    value < 1
-  ) {
-    throw new TypeError(`${name} must be a positive integer`);
-  }
+export function isPositiveInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;
 }
 
 function normalizeConcurrency(concurrency: number): number {
-  assertPositiveIntegerOption('concurrency', concurrency);
+  if (!isPositiveInteger(concurrency)) {
+    throw new TypeError('concurrency must be a positive integer');
+  }
   return concurrency;
 }
 
@@ -85,20 +79,6 @@ export async function processInParallel<T, R>(
     }
   });
   return { results, errors };
-}
-
-export async function runWorkerOr<T>(
-  _name: string,
-  _payload: unknown,
-  _payloadBytes: number,
-  _opts: unknown,
-  inline: () => Promise<T>,
-): Promise<T> {
-  return inline();
-}
-
-export async function shutdownWorkerPool(): Promise<void> {
-  // no-op, worker pool removed
 }
 
 function createAbortError(message = 'Operation aborted'): Error {

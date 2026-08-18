@@ -21,8 +21,6 @@ liftFlagsToEnv();
 // Dynamically import all modules that transitively load util.ts so that the
 // bridge flags above are in effect when their module-level constants are set.
 const { CliExitError, parseArgs, runPrintConfig } = await import('./cli.js');
-const { shutdownWorkerPool } = await import('./core/concurrency.js');
-const { shutdownSearchWorkerPool } = await import('./core/search/engine.js');
 const { logRuntimeFailure } = await import('./core/observability.js');
 const { createServer } = await import('./server.js');
 const { startHttpServer, startServer } = await import('./transport.js');
@@ -87,16 +85,6 @@ async function shutdown(reason: string, exitCode = 0): Promise<void> {
       } catch (error: unknown) {
         logRuntimeFailure('shutdown_mcp_error', 'process', 'shutdown', error);
       }
-    }
-    try {
-      await shutdownWorkerPool();
-    } catch (error: unknown) {
-      logRuntimeFailure('shutdown_worker_pool_error', 'process', 'shutdown', error);
-    }
-    try {
-      await shutdownSearchWorkerPool();
-    } catch (error: unknown) {
-      logRuntimeFailure('shutdown_search_pool_error', 'process', 'shutdown', error);
     }
     keepForceExitTimer = false;
   } catch (error: unknown) {

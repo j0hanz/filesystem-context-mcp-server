@@ -18,7 +18,7 @@ import { pathToFileURL } from 'node:url';
 import * as z from 'zod/v4';
 
 import { hasErrorShape } from './core/errors.js';
-import { Logger, withTelemetry } from './core/observability.js';
+import { Logger } from './core/observability.js';
 import { PathCompleter } from './core/path.js';
 import type { PathGuard } from './core/path.js';
 import type { Registrar } from './core/registrar.js';
@@ -33,7 +33,6 @@ interface PromptContract {
   readonly name: string;
   readonly title: string;
   readonly description: string;
-  readonly requiresPathGuard: boolean;
 }
 
 interface PromptRegistrationOptions {
@@ -133,33 +132,21 @@ async function wrapHandler<T>(
   }
   const displayName = getDisplayName(contract);
 
-  return await withTelemetry(
-    {
-      event: 'prompt_complete',
-      prompt_name: contract.name,
-      display_name: displayName,
-    },
-    async () => {
-      try {
-        const result = await fn();
-        Logger.debug(`prompt resolved`, {
-          name: contract.name,
-          displayName,
-        });
-        return result;
-      } catch (error) {
-        if (hasErrorShape(error, 'ProtocolError')) throw error;
-        const message = error instanceof Error ? error.message : String(error);
-        Logger.error(`Prompt handler failed: ${message}`, {
-          promptName: contract.name,
-          error,
-        });
-        const protocolError = new ProtocolError(ProtocolErrorCode.InvalidRequest, message);
-        protocolError.cause = error;
-        throw protocolError;
-      }
-    },
-  );
+  try {
+    const result = await fn();
+    Logger.debug(`prompt resolved`, { name: contract.name, displayName });
+    return result;
+  } catch (error) {
+    if (hasErrorShape(error, 'ProtocolError')) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    Logger.error(`Prompt handler failed: ${message}`, {
+      promptName: contract.name,
+      error,
+    });
+    const protocolError = new ProtocolError(ProtocolErrorCode.InvalidRequest, message);
+    protocolError.cause = error;
+    throw protocolError;
+  }
 }
 
 // --- Prompt entries (filled in by later tasks) ---
@@ -170,7 +157,6 @@ const GET_HELP: PromptEntry = {
     title: 'Get Help',
     description:
       'Return filesystem-mcp server usage instructions, optionally filtered to a named section.',
-    requiresPathGuard: false,
   },
   register(server, options) {
     const topics = Object.keys(INSTRUCTION_SECTIONS);
@@ -219,7 +205,6 @@ const ANALYZE_PATH: PromptEntry = {
     title: 'Analyze Path',
     description:
       'Guided workflow to analyze a file or directory: runs stat, read, and tree, then reports type, size, permissions, and key observations.',
-    requiresPathGuard: true,
   },
   register(server, options) {
     server.registerPrompt(
@@ -268,7 +253,6 @@ const FIND_IN_TREE: PromptEntry = {
     title: 'Find in Tree',
     description:
       'Locate files by name pattern or content match under a directory; combines find_files and search_text.',
-    requiresPathGuard: true,
   },
   register(server, options) {
     server.registerPrompt(
@@ -346,7 +330,6 @@ const SUMMARIZE_DIRECTORY: PromptEntry = {
     title: 'Summarize Directory',
     description:
       'Generate an onboarding summary for a project directory: purpose, tech stack, entry points, and directory structure.',
-    requiresPathGuard: true,
   },
   register(server, options) {
     server.registerPrompt(

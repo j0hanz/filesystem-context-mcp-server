@@ -1,6 +1,8 @@
 import type { PrimitiveSchemaDefinition } from '@modelcontextprotocol/server';
 import { SdkErrorCode } from '@modelcontextprotocol/server';
 
+import { basename, dirname, resolve, sep } from 'node:path';
+
 import * as z from 'zod/v4';
 
 import { withAbort } from '../core/concurrency.js';
@@ -15,7 +17,6 @@ import {
 } from '../core/errors.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
-import { PathFormatter } from '../core/path-formatter.js';
 import { isSamePath } from '../core/path.js';
 import { PerFileErrorSchema, RequiredPath } from '../schema.js';
 import type { ToolCtx } from './define.js';
@@ -98,10 +99,9 @@ async function tryElicitOverwriteConfirmation(
     if (elicitResult.action !== 'accept' || elicitResult.content?.['confirmOverwrite'] !== true) {
       // User declined - surface as a cancellation error.
       throw new FsError(
-        Problem.cancelled(
-          `Move cancelled: "${destination}" already exists and overwrite was declined.`,
-          { path: destination },
-        ),
+        ErrorCode.CANCELLED,
+        `Move cancelled: "${destination}" already exists and overwrite was declined.`,
+        destination,
       );
     }
     return true;
@@ -113,9 +113,9 @@ async function tryElicitOverwriteConfirmation(
     } else {
       // Transport or unexpected failure - fail closed, don't move.
       throw new FsError(
-        Problem.cancelled(`Move cancelled: could not confirm overwrite of "${destination}".`, {
-          path: destination,
-        }),
+        ErrorCode.CANCELLED,
+        `Move cancelled: could not confirm overwrite of "${destination}".`,
+        destination,
       );
     }
   }
@@ -130,7 +130,7 @@ function buildSummary(
   if (failCount === 0 && successCount === 1) {
     const result = results[0];
     if (result) {
-      return `move: ${PathFormatter.basename(result.from)} → ${PathFormatter.basename(result.to)}`;
+      return `move: ${basename(result.from)} → ${basename(result.to)}`;
     }
   }
   const parts = [`move: ${String(successCount)} item${successCount === 1 ? '' : 's'}`];
@@ -147,7 +147,7 @@ async function validateMoveSource(
     return validSource;
   } catch (error) {
     if (error instanceof FsError) throw error;
-    throw new FsError(Problem.accessDenied(`Move failed for ${source}`, { path: source }));
+    throw new FsError(ErrorCode.ACCESS_DENIED, `Move failed for ${source}`, source);
   }
 }
 
@@ -165,9 +165,7 @@ async function performRenameWithFallback(
     }
 
     if (!isNodeError(error) || error.code !== 'EXDEV') {
-      throw new FsError(
-        Problem.unknown(`Move failed for ${originalSource}`, { path: originalSource }),
-      );
+      throw new FsError(ErrorCode.UNKNOWN, `Move failed for ${originalSource}`, originalSource);
     }
 
     try {
@@ -178,7 +176,9 @@ async function performRenameWithFallback(
         throw copyOrRemoveError;
       }
       throw new FsError(
-        Problem.unknown(`Cross-device move failed for ${originalSource}`, { path: originalSource }),
+        ErrorCode.UNKNOWN,
+        `Cross-device move failed for ${originalSource}`,
+        originalSource,
       );
     }
   }
@@ -208,7 +208,7 @@ export const MOVE = defineTool({
       const move = args.moves[0];
       return {
         label: 'Move',
-        subject: `${PathFormatter.basename(move?.source ?? '')} → ${PathFormatter.basename(move?.destination ?? '')}`,
+        subject: `${basename(move?.source ?? '')} → ${basename(move?.destination ?? '')}`,
       };
     }
     return { label: 'Move', subject: `${String(args.moves.length)} files` };
@@ -223,8 +223,8 @@ export const MOVE = defineTool({
         const validSource = await validateMoveSource(move.source, ctx.pathGuard);
         const validDest = await ctx.pathGuard.validatePathForWrite(move.destination);
 
-        const resolvedSource = PathFormatter.resolve(validSource);
-        const resolvedDest = PathFormatter.resolve(validDest);
+        const resolvedSource = resolve(validSource);
+        const resolvedDest = resolve(validDest);
 
         if (resolvedSource === resolvedDest) {
           continue;
@@ -235,14 +235,14 @@ export const MOVE = defineTool({
           platform === 'win32' || platform === 'darwin' ? resolvedDest.toLowerCase() : resolvedDest;
         const normalizedSource =
           platform === 'win32' || platform === 'darwin'
-            ? (resolvedSource + PathFormatter.sep).toLowerCase()
-            : resolvedSource + PathFormatter.sep;
+            ? (resolvedSource + sep).toLowerCase()
+            : resolvedSource + sep;
 
         if (normalizedDest.startsWith(normalizedSource)) {
           throw new FsError(
-            Problem.invalidInput('Cannot move a directory into its own subdirectory', {
-              path: move.source,
-            }),
+            ErrorCode.INVALID_INPUT,
+            'Cannot move a directory into its own subdirectory',
+            move.source,
           );
         }
 
@@ -260,10 +260,7 @@ export const MOVE = defineTool({
           }
         }
 
-        await withAbort(
-          ctx.fs.mkdir(PathFormatter.dirname(validDest), { recursive: true }),
-          ctx.signal,
-        );
+        await withAbort(ctx.fs.mkdir(dirname(validDest), { recursive: true }), ctx.signal);
 
         if (!isCaseOnlyRename) {
           await tryElicitOverwriteConfirmation(move.destination, validDest, ctx);
@@ -284,10 +281,9 @@ export const MOVE = defineTool({
 
         if (existsNow && !destExistedOriginally) {
           throw new FsError(
-            Problem.cancelled(
-              `Move cancelled: destination "${move.destination}" was created during confirmation.`,
-              { path: move.destination },
-            ),
+            ErrorCode.CANCELLED,
+            `Move cancelled: destination "${move.destination}" was created during confirmation.`,
+            move.destination,
           );
         }
 

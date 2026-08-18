@@ -108,22 +108,6 @@ export function parseEnvInt(
   return parsed;
 }
 
-function parseEnvBool(envVar: string, defaultValue: boolean): boolean {
-  const value = process.env[envVar];
-  if (value === undefined) return defaultValue;
-  if (parseTrueEnvFlag(value)) return true;
-  // parseTrueEnvFlag returns false for both invalid and explicitly false values;
-  // distinguish them by checking for known false strings.
-  const normalized = value.trim().toLowerCase();
-  const isFalse =
-    normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'off';
-  if (!isFalse) {
-    logInvalidEnvValue(envVar, value, 'true/false', defaultValue);
-    return defaultValue;
-  }
-  return false;
-}
-
 export function getInitHandshakeTimeoutMs(): number {
   return parseEnvInt('FS_INIT_HANDSHAKE_TIMEOUT_MS', 30_000, 1_000, 300_000);
 }
@@ -131,7 +115,6 @@ export function getInitHandshakeTimeoutMs(): number {
 export const INIT_TIMEOUT_CLOSE = parseTrueEnvFlag(process.env['FS_INIT_TIMEOUT_CLOSE']);
 
 const BYTES_PER_PARALLEL_TASK = 64 * MIB;
-const BYTES_PER_SEARCH_WORKER = 128 * MIB;
 
 function getAvailableMemory(): number | undefined {
   if (typeof process.availableMemory !== 'function') return undefined;
@@ -152,14 +135,8 @@ function getOptimalParallelism(): number {
   return applyMemoryBound(cpuBound, BYTES_PER_PARALLEL_TASK, 2);
 }
 
-function getDefaultSearchWorkers(): number {
-  const cpuBound = Math.min(availableParallelism(), 8);
-  return applyMemoryBound(cpuBound, BYTES_PER_SEARCH_WORKER, 1);
-}
-
 export const PARALLEL_CONCURRENCY = getOptimalParallelism();
 
-export const MAX_SEARCHABLE_FILE_SIZE = parseEnvInt('MAX_SEARCH_SIZE', MIB, 100 * KIB, 10 * MIB);
 export const MAX_TEXT_FILE_SIZE = parseEnvInt('MAX_FILE_SIZE', 10 * MIB, MIB, 100 * MIB);
 
 export const DEFAULT_READ_MANY_MAX_TOTAL_SIZE = parseEnvInt(
@@ -173,35 +150,6 @@ export const DEFAULT_READ_MANY_MAX_TOTAL_SIZE = parseEnvInt(
 export const DEFAULT_CONTINUATION_CHUNK_SIZE = 200;
 
 export const DEFAULT_SEARCH_TIMEOUT_MS = parseEnvInt('DEFAULT_SEARCH_TIMEOUT', 5000, 100, 60000);
-
-/**
- * Number of search worker threads to use.
- * Default: CPU cores (capped at 8 for optimal I/O performance).
- * Configurable via FS_CONTEXT_SEARCH_WORKERS env var.
- */
-export const SEARCH_WORKERS = parseEnvInt(
-  'FS_CONTEXT_SEARCH_WORKERS',
-  getDefaultSearchWorkers(),
-  1,
-  16,
-);
-
-const WORKER_POOL_MAX_DEFAULT = Math.min(4, Math.max(1, availableParallelism() - 1));
-
-export const WORKER_POOL_MAX = parseEnvInt('FS_WORKER_POOL_MAX', WORKER_POOL_MAX_DEFAULT, 1, 16);
-
-export const WORKER_IDLE_TIMEOUT_MS = parseEnvInt('FS_WORKER_IDLE_MS', 30_000, 1_000, 10 * 60_000);
-
-export const WORKER_OFFLOAD_THRESHOLD_BYTES = parseEnvInt(
-  'FS_WORKER_OFFLOAD_THRESHOLD',
-  256 * KIB,
-  KIB,
-  100 * MIB,
-);
-
-export const WORKER_CANCEL_GRACE_MS = parseEnvInt('FS_WORKER_CANCEL_GRACE_MS', 500, 0, 60_000);
-
-export const WORKERS_DISABLED = parseEnvBool('FS_DISABLE_WORKERS', false);
 
 export const MAX_TREE_DEPTH = 50;
 export const DEFAULT_TREE_ENTRIES = 1000;

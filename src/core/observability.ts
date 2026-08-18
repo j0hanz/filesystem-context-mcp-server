@@ -76,19 +76,6 @@ export const Logger = {
   },
 };
 
-export async function withTelemetry<T>(
-  baseEvent: { event: string; [key: string]: unknown },
-  handler: (enrich: (extraData: Record<string, unknown>) => void) => Promise<T> | T,
-): Promise<T> {
-  const enrich = (): void => undefined;
-  try {
-    return await handler(enrich);
-  } catch (error) {
-    console.error(`[withTelemetry] error in ${baseEvent.event}:`, error);
-    throw error;
-  }
-}
-
 export function logRuntimeFailure(id: string, scope: string, method: string, error: unknown): void {
   console.error(`Runtime failure: ${id} [${scope}.${method}]`, error);
 }

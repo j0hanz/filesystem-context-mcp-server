@@ -15,8 +15,6 @@ import type {
   ToolExecution,
 } from '@modelcontextprotocol/server';
 
-import { randomUUID } from 'node:crypto';
-
 import * as z from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
@@ -24,7 +22,7 @@ import { ErrorCode, FsError, Problem } from '../core/errors.js';
 import type { Phase, ProgressCtx } from '../core/fmt.js';
 import { ansiLine, plainMessage } from '../core/fmt.js';
 import { GuardedFileSystem } from '../core/fs.js';
-import { Logger, withTelemetry } from '../core/observability.js';
+import { Logger } from '../core/observability.js';
 import type { LoggingLevel } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { IconInfo } from '../core/primitives.js';
@@ -33,7 +31,7 @@ import { PARALLEL_CONCURRENCY } from '../core/util.js';
 
 // ============ Type Definitions ============
 
-export interface PerPathError {
+interface PerPathError {
   code: ErrorCode;
   message: string;
   path?: string;
@@ -47,16 +45,10 @@ export interface BatchResult<T> {
   summary: { total: number; succeeded: number; failed: number };
 }
 
-interface TracingMeta {
-  'io.opentelemetry/traceparent'?: string | undefined;
-  'io.opentelemetry/tracestate'?: string | undefined;
-  'io.opentelemetry/baggage'?: string | undefined;
-}
-
 export interface ToolCtx {
   readonly signal: AbortSignal;
   readonly sessionId?: string;
-  readonly _meta?: (RequestMeta & TracingMeta) | undefined;
+  readonly _meta?: RequestMeta | undefined;
   readonly pathGuard: PathGuard;
   readonly fs: GuardedFileSystem;
   readonly resourceStore: ResourceStore | undefined;
@@ -67,7 +59,7 @@ export interface ToolCtx {
   readonly server?: McpServer;
 }
 
-export interface ToolDeps {
+interface ToolDeps {
   readonly isInitialized: () => boolean;
   readonly server: McpServer;
   readonly pathGuard: PathGuard;
@@ -86,7 +78,7 @@ export function withDefaultIcons<T extends object>(
   return { ...obj, icons: [{ src: iconInfo.src, mimeType: iconInfo.mimeType }] };
 }
 
-export interface RunResult<T> {
+interface RunResult<T> {
   readonly structured: T;
   readonly text?: string;
   readonly resources?: ContentBlock[];
@@ -208,26 +200,6 @@ function composeSignal(base: AbortSignal, timeoutMs?: number): AbortSignal {
   return AbortSignal.any([base, AbortSignal.timeout(timeoutMs)]);
 }
 
-function measureInput(args: unknown): { inputKeys?: string[]; inputSizeBytes?: number } {
-  if (!args || typeof args !== 'object') return {};
-  const inputKeys = Object.keys(args);
-  try {
-    return { inputKeys, inputSizeBytes: Buffer.byteLength(JSON.stringify(args), 'utf8') };
-  } catch (err: unknown) {
-    Logger.debug(`measureInput: JSON.stringify failed: ${String(err)}`);
-    return { inputKeys };
-  }
-}
-
-function tryMeasureBytes(value: unknown): number | undefined {
-  try {
-    return Buffer.byteLength(JSON.stringify(value), 'utf8');
-  } catch (err: unknown) {
-    Logger.debug(`tryMeasureBytes: JSON.stringify failed: ${String(err)}`);
-    return undefined;
-  }
-}
-
 /**
  * The cast `result.structured as Record<string, unknown>` is required by the MCP SDK's `CallToolResult.structuredContent` type.
  * Callers MUST ensure tool output schemas resolve to object types (not primitives), otherwise the cast is silently unsound.
@@ -239,13 +211,6 @@ function buildSuccessResponse<O>(result: RunResult<O>): CallToolResult {
     content,
     structuredContent: result.structured,
   };
-}
-
-function extractTracingMeta(meta: (RequestMeta & TracingMeta) | undefined): Record<string, string> {
-  if (meta && 'traceparent' in meta && typeof meta['traceparent'] === 'string') {
-    return { traceparent: meta['traceparent'] };
-  }
-  return {};
 }
 
 // ============ Progress Types ============
@@ -486,7 +451,6 @@ class McpProgressSink implements ProgressSink {
   private readonly token: string | number;
   private readonly notify: (n: Notification) => Promise<void>;
   readonly pending = new Set<Promise<void>>();
-  emittedCount = 0;
 
   constructor(
     toolName: string,
@@ -517,13 +481,9 @@ class McpProgressSink implements ProgressSink {
     const promise = this.notify({
       method: 'notifications/progress',
       params: notificationParams,
-    })
-      .then(() => {
-        this.emittedCount++;
-      })
-      .catch((error: unknown) => {
-        reportDetachedError(this.toolName, 'progressNotification', error);
-      });
+    }).catch((error: unknown) => {
+      reportDetachedError(this.toolName, 'progressNotification', error);
+    });
     this.pending.add(promise);
     runDetached(
       this.toolName,
@@ -544,20 +504,12 @@ class McpProgressSink implements ProgressSink {
 // ============ Tool Execution ============
 
 class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
-  private readonly executionId = randomUUID();
-  private readonly startMemory = process.memoryUsage().rss;
-
   readonly signal: AbortSignal;
   private readonly def: ToolDef<I, O>;
   private readonly parsedArgs: z.infer<I>;
   private readonly toolCtx: ToolCtx;
 
-  private outcome: 'success' | 'error' | 'cancelled' = 'success';
-  private errorType: string | undefined;
-  private errorMessage: string | undefined;
-
   #progressClosed = false;
-  #progressTickCount = 0;
   readonly #progressCtx: ProgressCtx;
   readonly #mcpSink?: McpProgressSink;
   readonly #stderrSink: StderrProgressSink;
@@ -588,7 +540,6 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
 
   #tick(p: { current: number; total?: number }): void {
     if (this.#progressClosed) return;
-    this.#progressTickCount++;
     const tickCtx: ProgressCtx = {
       ...this.#progressCtx,
       current: p.current,
@@ -683,7 +634,7 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     return (blockedPath: string) => pathGuard.requestAccessGrant(blockedPath, { probe, confirm });
   }
 
-  async execute(args: unknown, deps: ToolDeps): Promise<CallToolResult> {
+  async execute(deps: ToolDeps): Promise<CallToolResult> {
     if (!deps.isInitialized()) {
       return {
         isError: true as const,
@@ -697,51 +648,15 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     }
 
     try {
-      return await withTelemetry(
-        {
-          event: 'tool_execution',
-          tool_name: this.def.name,
-          ...(this.toolCtx.sessionId ? { session_id: this.toolCtx.sessionId } : {}),
-          ...extractTracingMeta(this.toolCtx._meta),
-        },
-        async (enrich) => {
-          enrich({ execution_id: this.executionId });
-          const { inputKeys, inputSizeBytes } = measureInput(args);
-          let resultSizeBytes: number | undefined;
-
-          try {
-            const result = await this.def.run(this.parsedArgs, this.toolCtx);
-            await this.completeProgress(result.structured);
-            this.outcome = this.signal.aborted ? 'cancelled' : 'success';
-            resultSizeBytes = tryMeasureBytes(result.structured);
-            return buildSuccessResponse(result);
-          } catch (error) {
-            const response = await this.failProgress(error);
-            this.outcome = this.signal.aborted ? 'cancelled' : 'error';
-            if (error instanceof Error) {
-              this.errorType = error.name;
-              this.errorMessage = error.message;
-            } else {
-              this.errorType = 'UnknownError';
-              this.errorMessage = String(error);
-            }
-            return response;
-          } finally {
-            await this.#flushProgress();
-            enrich({
-              ...(inputKeys ? { input_keys: inputKeys } : {}),
-              ...(inputSizeBytes !== undefined ? { input_size_bytes: inputSizeBytes } : {}),
-              ...(resultSizeBytes !== undefined ? { result_size_bytes: resultSizeBytes } : {}),
-              outcome: this.outcome,
-              ...(this.errorType ? { error_type: this.errorType } : {}),
-              ...(this.errorMessage ? { error_message: this.errorMessage } : {}),
-              memory_delta_mb: (process.memoryUsage().rss - this.startMemory) / 1024 / 1024,
-              tool_progress_ticks: this.#progressTickCount,
-              progress_notifications_emitted: this.#mcpSink ? this.#mcpSink.emittedCount : 0,
-            });
-          }
-        },
-      );
+      try {
+        const result = await this.def.run(this.parsedArgs, this.toolCtx);
+        await this.completeProgress(result.structured);
+        return buildSuccessResponse(result);
+      } catch (error) {
+        return await this.failProgress(error);
+      } finally {
+        await this.#flushProgress();
+      }
     } finally {
       if ((this.toolCtx.pathGuard as unknown) != null) {
         delete this.toolCtx.pathGuard.onAccessDenied;
@@ -757,7 +672,7 @@ async function executeTool<I extends z.ZodType, O extends z.ZodType>(
   args: z.infer<I>,
 ): Promise<CallToolResult> {
   const executor = new ToolExecutor<I, O>(def.name, ctx, def, args);
-  return executor.execute(args, deps);
+  return executor.execute(deps);
 }
 
 function createServerToolHandler<I extends z.ZodType, O extends z.ZodType>(

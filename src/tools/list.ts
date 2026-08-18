@@ -1,3 +1,5 @@
+import { basename } from 'node:path';
+
 import * as z from 'zod/v4';
 
 import { withTimedAbortSignal } from '../core/concurrency.js';
@@ -12,9 +14,8 @@ import {
   loadRootGitignore,
   resolveEntryType,
 } from '../core/fs.js';
-import { PathFormatter } from '../core/path-formatter.js';
-import { isPathWithinDirectories, normalizePath } from '../core/path.js';
 import type { PathGuard } from '../core/path.js';
+import { isPathWithinDirectories, normalizePath, toPosixRelative } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_TIMEOUT_MS,
@@ -43,14 +44,11 @@ interface CollectedEntry {
 
 interface CollectOptions {
   maxDepth: number;
-  maxEntries: number;
   includeHidden: boolean;
   includeIgnored: boolean;
   signal: AbortSignal;
   pathGuard: PathGuard;
   onProgress?: (progress: { current: number; total?: number }) => void;
-  progressOffset?: number;
-  mode: 'inline' | 'full';
 }
 
 interface CollectResult {
@@ -101,24 +99,6 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
   let totalEntries = 0;
   let totalFiles = 0;
   let totalDirectories = 0;
-  const progressOffset = options.progressOffset ?? 0;
-
-  function insertBounded(entry: CollectedEntry): void {
-    let low = 0;
-    let high = entries.length;
-    while (low < high) {
-      const middle = Math.floor((low + high) / 2);
-      const current = entries[middle];
-      if (current !== undefined && compareEntries(current, entry) <= 0) {
-        low = middle + 1;
-      } else {
-        high = middle;
-      }
-    }
-    if (low >= options.maxEntries) return;
-    entries.splice(low, 0, entry);
-    if (entries.length > options.maxEntries) entries.pop();
-  }
 
   for await (const entry of globEntries({
     cwd: rootPath,
@@ -134,12 +114,12 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
   })) {
     if (options.signal.aborted) break;
     scanned++;
-    options.onProgress?.({ current: progressOffset + scanned });
+    options.onProgress?.({ current: scanned });
 
     const entryType: EntryType = resolveEntryType(entry.dirent);
     const isDir = entryType === 'directory';
-    const relPath = PathFormatter.relative(rootPath, entry.path);
-    const name = PathFormatter.basename(relPath);
+    const relPath = toPosixRelative(rootPath, entry.path);
+    const name = basename(relPath);
 
     if (
       gitignoreMatcher &&
@@ -171,18 +151,12 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
       type: entryType,
     };
 
-    if (options.mode === 'full') {
-      if (entries.length < MAX_LIST_ENTRIES) {
-        entries.push(collectedEntry);
-      }
-    } else {
-      insertBounded(collectedEntry);
+    if (entries.length < MAX_LIST_ENTRIES) {
+      entries.push(collectedEntry);
     }
   }
 
-  if (options.mode === 'full') {
-    entries.sort(compareEntries);
-  }
+  entries.sort(compareEntries);
 
   return {
     entries,
@@ -298,21 +272,19 @@ async function handleList(
   return withTimedAbortSignal(signal, DEFAULT_SEARCH_TIMEOUT_MS, async (timedSignal) => {
     const result = await collect(validDir, {
       maxDepth: args.maxDepth,
-      maxEntries: MAX_LIST_ENTRIES,
       includeHidden: args.includeHidden,
       includeIgnored: args.includeIgnored,
       signal: timedSignal,
       pathGuard,
       ...(onProgress ? { onProgress } : {}),
-      mode: 'full',
     });
 
     const inlineEntries = result.entries.slice(0, args.maxEntries);
-    const markdown = renderMarkdown(PathFormatter.basename(validDir), inlineEntries);
+    const markdown = renderMarkdown(basename(validDir), inlineEntries);
 
     let resourceUri: string | undefined;
     if (result.totalEntries > inlineEntries.length && resourceStore) {
-      const fullMarkdown = renderMarkdown(PathFormatter.basename(validDir), result.entries);
+      const fullMarkdown = renderMarkdown(basename(validDir), result.entries);
       const fullTruncated = result.totalEntries > result.entries.length;
       const fullOutput = {
         entries: result.entries,
@@ -368,7 +340,7 @@ export const LIST = defineTool({
   defaultErrorCode: ErrorCode.NOT_DIRECTORY,
   progress: (args) => ({
     label: 'List',
-    subject: args.path ? PathFormatter.basename(args.path) : '.',
+    subject: args.path ? basename(args.path) : '.',
   }),
   run: async (args, ctx) => {
     const output = await handleList(

@@ -1,11 +1,11 @@
 import type { ContentBlock } from '@modelcontextprotocol/server';
 
 import { Buffer } from 'node:buffer';
+import { basename, dirname, join } from 'node:path';
 
 import * as z from 'zod/v4';
 import { createTwoFilesPatch } from 'diff';
 
-import { runWorkerOr } from '../core/concurrency.js';
 import {
   ErrorCode,
   formatUnknownErrorMessage,
@@ -25,7 +25,7 @@ import {
   stat,
 } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
-import { PathFormatter } from '../core/path-formatter.js';
+import { toPosixRelative } from '../core/path.js';
 import type { PathGuard } from '../core/path.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
 import type { Regex } from '../core/search/engine.js';
@@ -171,7 +171,7 @@ function recordFailure(failures: Failure[], failure: Failure): void {
 }
 
 function recordChangedFile(summary: ReplaceSummary, filePath: string, matchCount: number): void {
-  const relativePath = PathFormatter.relative(summary.root, filePath);
+  const relativePath = toPosixRelative(summary.root, filePath);
   if (summary.changedFiles.length < MAX_CHANGED_FILES) {
     summary.changedFiles.push({ path: relativePath, matches: matchCount });
     return;
@@ -179,14 +179,10 @@ function recordChangedFile(summary: ReplaceSummary, filePath: string, matchCount
   summary.changedFilesTruncated = true;
 }
 
-function createRegexMatcher(pattern: string, caseSensitive: boolean): Regex {
-  return compileRegex(pattern, { caseSensitive });
-}
-
 interface ReplacementMatcher {
   count(content: string): number;
   replace(content: string, replacement: string): string;
-  testBuffer?(buffer: Buffer): boolean;
+  testBuffer(buffer: Buffer): boolean;
 }
 
 function createRegexReplacementMatcher(regex: Regex): ReplacementMatcher {
@@ -318,23 +314,15 @@ async function readReplacementPlan(
   const stats = await fileHandle.stat();
   if (stats.size > maxFileSize) {
     throw new FsError(
-      Problem.tooLarge(
-        `File too large: ${validPath} (${String(stats.size)} bytes > ${String(maxFileSize)} bytes)`,
-      ),
+      ErrorCode.TOO_LARGE,
+      `File too large: ${validPath} (${String(stats.size)} bytes > ${String(maxFileSize)} bytes)`,
     );
   }
 
-  let content: string;
-  if (matcher.testBuffer) {
-    const buffer = await readFileBufferWithLimit(fileHandle, maxFileSize, validPath, signal);
-    if (!matcher.testBuffer(buffer)) return undefined;
-    content = buffer.toString('utf-8');
-  } else {
-    const buffer = await readFileBufferWithLimit(fileHandle, maxFileSize, validPath, signal);
-    content = buffer.toString('utf-8');
-  }
+  const buffer = await readFileBufferWithLimit(fileHandle, maxFileSize, validPath, signal);
+  if (!matcher.testBuffer(buffer)) return undefined;
 
-  return buildReplacementPlan(content, replacement, matcher);
+  return buildReplacementPlan(buffer.toString('utf-8'), replacement, matcher);
 }
 
 async function maybeAppendPatchDiff(
@@ -348,40 +336,26 @@ async function maybeAppendPatchDiff(
   },
 ): Promise<void> {
   if (!params.includeDiff) return;
-  const header = PathFormatter.relative(summary.root, params.filePath);
-  const totalBytes =
-    Buffer.byteLength(params.originalContent) + Buffer.byteLength(params.updatedContent);
+  const header = toPosixRelative(summary.root, params.filePath);
 
-  const patch = await runWorkerOr(
-    'createPatch',
-    {
-      oldStr: params.originalContent,
-      newStr: params.updatedContent,
-      oldHeader: header,
-      newHeader: header,
-    },
-    totalBytes,
-    params.signal ? { signal: params.signal } : {},
-    () =>
-      new Promise<string>((resolve) => {
-        // Defer to event loop to avoid blocking on large diffs
-        setImmediate(() => {
-          createTwoFilesPatch(
-            header,
-            header,
-            params.originalContent,
-            params.updatedContent,
-            'Original',
-            'Modified',
-            {
-              callback: (res: string | undefined) => {
-                resolve(res ?? '');
-              },
-            },
-          );
-        });
-      }),
-  );
+  const patch = await new Promise<string>((resolve) => {
+    // Defer to event loop to avoid blocking on large diffs
+    setImmediate(() => {
+      createTwoFilesPatch(
+        header,
+        header,
+        params.originalContent,
+        params.updatedContent,
+        'Original',
+        'Modified',
+        {
+          callback: (res: string | undefined) => {
+            resolve(res ?? '');
+          },
+        },
+      );
+    });
+  });
 
   if (summary.diff.length >= MAX_DIFF_SIZE) {
     summary.diffTruncated = true;
@@ -475,7 +449,6 @@ interface ReplaceSummary {
   diff: string;
   diffTruncated: boolean;
   stoppedReason?: 'maxFiles' | 'maxResults';
-  perfTimeMs?: number;
 }
 
 function createReplaceSummary(root: string): ReplaceSummary {
@@ -504,8 +477,8 @@ async function resolveSearchRoot(
   const { stats: fileStats } = await stat(resolvedPath, pathGuard);
   if (fileStats.isFile()) {
     return {
-      root: PathFormatter.dirname(resolvedPath),
-      filePattern: globEscape(PathFormatter.basename(resolvedPath)),
+      root: dirname(resolvedPath),
+      filePattern: globEscape(basename(resolvedPath)),
     };
   }
   return { root: resolvedPath, filePattern: undefined };
@@ -522,8 +495,7 @@ function buildSearchPattern(args: SearchAndReplaceArgs): string {
 function createReplacementMatcher(args: SearchAndReplaceArgs): ReplacementMatcher {
   // Use regex when isRegex, wholeWord, or case-insensitive (all require RE2)
   if (args.isRegex || args.wholeWord || !args.caseSensitive) {
-    const pattern = buildSearchPattern(args);
-    const regex = createRegexMatcher(pattern, args.caseSensitive);
+    const regex = compileRegex(buildSearchPattern(args), { caseSensitive: args.caseSensitive });
     return createRegexReplacementMatcher(regex);
   }
   return createCaseSensitiveLiteralMatcher(args.searchPattern);
@@ -561,8 +533,6 @@ async function handleSearchAndReplace(
 
   const summary = createReplaceSummary(root);
 
-  const t0 = performance.now();
-
   const context: ReplaceContext = {
     options: {
       dryRun: args.dryRun,
@@ -596,8 +566,6 @@ async function handleSearchAndReplace(
     runEntry: (entryPath) => processEntry(entryPath, context),
   });
 
-  summary.perfTimeMs = performance.now() - t0;
-
   if (stoppedByLimit) {
     summary.stoppedReason = 'maxFiles';
   } else if (stoppedByMatchCap) {
@@ -620,7 +588,7 @@ async function handleSearchAndReplace(
     if (!primaryFile) return { structured };
 
     const primaryFilePath = primaryFile.path;
-    const fullPath = PathFormatter.join(summary.root, primaryFilePath);
+    const fullPath = join(summary.root, primaryFilePath);
 
     try {
       const content = await (async (): Promise<string> => {
@@ -641,7 +609,7 @@ async function handleSearchAndReplace(
       const link: ContentBlock = {
         type: 'resource_link',
         uri: fileUri,
-        name: PathFormatter.basename(fullPath),
+        name: basename(fullPath),
         mimeType: mimeInfo.mimeType,
         size,
         annotations: { audience: ['user', 'assistant'] },

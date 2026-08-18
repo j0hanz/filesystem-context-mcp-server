@@ -2,25 +2,13 @@ import { readFile } from 'node:fs/promises';
 
 import { buildGlobOptions, globEntries } from '../fs.js';
 import type { PathGuard } from '../path.js';
-
-interface SearchOptions {
-  include?: string[];
-  exclude?: string[];
-  caseSensitive?: boolean;
-  isRegex?: boolean;
-  matchPerLine?: boolean;
-  maxResults?: number;
-  maxFilesToSearch?: number;
-  abortSignal?: AbortSignal;
-}
+import { escapeRegexLiteral } from '../primitives.js';
 
 export interface SearchResult {
   file: string;
   line: number;
   content: string;
   matchCount?: number;
-  contextBefore?: string[];
-  contextAfter?: string[];
 }
 
 export type Regex = RegExp;
@@ -33,24 +21,16 @@ export function compileRegex(pattern: string, options: RegexCompileOptions = {})
   return new RegExp(pattern, flags);
 }
 
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-export interface SearchContentOptions extends SearchOptions {
+export interface SearchContentOptions {
+  caseSensitive?: boolean;
+  isRegex?: boolean;
+  maxResults?: number;
   filePattern?: string;
   excludePatterns?: string[];
-  wholeWord?: boolean;
-  isLiteral?: boolean;
   respectGitignore?: boolean;
   includeHidden?: boolean;
-  contextLines?: number;
-  contextBefore?: number;
-  contextAfter?: number;
-  fuzzy?: boolean;
   maxDepth?: number;
   signal?: AbortSignal;
-  onProgress?: (p: { total?: number; current: number }) => void;
 }
 
 export async function searchContent(
@@ -58,7 +38,6 @@ export async function searchContent(
   pattern: string,
   options: SearchContentOptions,
   pathGuard: PathGuard,
-  _fsOps?: unknown,
 ): Promise<{
   basePath: string;
   matches: SearchResult[];
@@ -66,12 +45,7 @@ export async function searchContent(
     matches: number;
     filesScanned: number;
     filesMatched: number;
-    bytesScanned: number;
     truncated: boolean;
-    truncatedReason?: string;
-    skippedTooLarge?: number;
-    skippedBinary?: number;
-    skippedInaccessible?: number;
   };
 }> {
   const matches: SearchResult[] = [];
@@ -88,12 +62,11 @@ export async function searchContent(
 
   const entries = globEntries(globOpts);
 
-  const regexPattern = options.isRegex ? pattern || '' : escapeRegex(pattern || '');
+  const regexPattern = options.isRegex ? pattern || '' : escapeRegexLiteral(pattern || '');
   const regex = compileRegex(regexPattern, { caseSensitive: Boolean(options.caseSensitive) });
 
   let filesScanned = 0;
   let filesMatched = 0;
-  let bytesScanned = 0;
   let matchesFound = 0;
 
   for await (const entry of entries) {
@@ -113,8 +86,6 @@ export async function searchContent(
 
     try {
       const content = await readFile(entry.path, 'utf-8');
-      bytesScanned += Buffer.byteLength(content, 'utf8');
-
       const lines = content.split('\n');
       let matchedFile = false;
       for (let i = 0; i < lines.length; i++) {
@@ -146,14 +117,9 @@ export async function searchContent(
       matches: matchesFound,
       filesScanned,
       filesMatched,
-      bytesScanned,
       truncated: matches.length >= maxResults,
     },
   };
-}
-
-export async function shutdownSearchWorkerPool(): Promise<void> {
-  // No-op
 }
 
 export async function searchFiles(
@@ -166,7 +132,6 @@ export async function searchFiles(
     sortBy?: 'name' | 'size' | 'modified' | 'path';
     respectGitignore?: boolean;
     maxDepth?: number;
-    onProgress?: (p: { total?: number; current: number }) => void;
     signal?: AbortSignal;
   },
   pathGuard: PathGuard,

@@ -1,10 +1,11 @@
 import type { ContentBlock } from '@modelcontextprotocol/server';
 
+import { basename } from 'node:path';
+
 import * as z from 'zod/v4';
 import { createTwoFilesPatch, diffLines } from 'diff';
 
-import { runWorkerOr } from '../core/concurrency.js';
-import { ErrorCode, FsError, Problem } from '../core/errors.js';
+import { ErrorCode, FsError } from '../core/errors.js';
 import {
   atomicWriteFile,
   detectMimeType,
@@ -13,7 +14,6 @@ import {
   stat,
 } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
-import { PathFormatter } from '../core/path-formatter.js';
 import type { PathGuard } from '../core/path.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
 import type { Regex } from '../core/search/engine.js';
@@ -31,7 +31,6 @@ import {
   PositiveInt,
   singleOrBatchPathsInput,
 } from '../schema.js';
-import type { PerPathResult } from './define.js';
 import { defineTool, runOverPaths } from './define.js';
 
 const EditSpecSchema = z.strictObject({
@@ -133,22 +132,7 @@ const EditFileOutputSchema = z.strictObject({
   summary: OperationSummarySchema.describe('Aggregate counts: total, succeeded, failed'),
 });
 
-interface SingleEditStructured {
-  ok: true;
-  path?: string;
-  size?: number;
-  lineCount?: number;
-  mimeType?: string;
-  kind?: FileKind;
-  resourceUri?: string;
-  modified?: string;
-  appliedEdits?: number;
-  linesAdded?: number;
-  linesRemoved?: number;
-  diff?: string;
-  unmatchedEdits?: string[];
-  lineRange?: [number, number];
-}
+type EditFileValue = z.infer<typeof PerFileResultSchema>;
 
 interface TextRange {
   startIndex: number;
@@ -177,39 +161,26 @@ function getLineNumberAtIndex(str: string, maxIndex: number = str.length): numbe
   return count;
 }
 
-function countLines(str: string): number {
-  return getLineNumberAtIndex(str);
-}
-
 async function computeDiffStats(
   original: string,
   modified: string,
-  signal?: AbortSignal,
 ): Promise<{ linesAdded: number; linesRemoved: number }> {
-  const totalBytes = Buffer.byteLength(original) + Buffer.byteLength(modified);
-  return runWorkerOr(
-    'computeDiffStats',
-    { oldStr: original, newStr: modified },
-    totalBytes,
-    signal ? { signal } : {},
-    () =>
-      new Promise((resolve) => {
-        // Yield to the event loop so we don't completely block
-        setImmediate(() => {
-          diffLines(original, modified, {
-            callback: (changes) => {
-              let linesAdded = 0;
-              let linesRemoved = 0;
-              for (const part of changes) {
-                if (part.added) linesAdded += part.count;
-                else if (part.removed) linesRemoved += part.count;
-              }
-              resolve({ linesAdded, linesRemoved });
-            },
-          });
-        });
-      }),
-  );
+  return new Promise((resolve) => {
+    // Yield to the event loop so we don't completely block
+    setImmediate(() => {
+      diffLines(original, modified, {
+        callback: (changes) => {
+          let linesAdded = 0;
+          let linesRemoved = 0;
+          for (const part of changes) {
+            if (part.added) linesAdded += part.count;
+            else if (part.removed) linesRemoved += part.count;
+          }
+          resolve({ linesAdded, linesRemoved });
+        },
+      });
+    });
+  });
 }
 
 function findEditMatch(
@@ -270,7 +241,7 @@ function mergeLineRange(
   newText: string,
 ): [number, number] {
   const startLine = getLineNumberAtIndex(content, matchStartIndex);
-  const endLine = startLine + countLines(newText) - 1;
+  const endLine = startLine + getLineNumberAtIndex(newText) - 1;
 
   if (!currentRange) {
     return [startLine, endLine];
@@ -279,35 +250,24 @@ function mergeLineRange(
   return [Math.min(currentRange[0], startLine), Math.max(currentRange[1], endLine)];
 }
 
-interface BuildStructuredEditOutputParams {
-  validPath: string;
-  size: number;
-  lineCount: number;
-  mimeType: string;
-  kind: FileKind;
-  resourceUri: string;
-  modified: string;
-  result: EditResult;
-}
-
-function buildStructuredEditOutput(params: BuildStructuredEditOutputParams): SingleEditStructured {
-  const { validPath, size, lineCount, mimeType, kind, resourceUri, modified, result } = params;
+function buildEditFileValue(
+  validPath: string,
+  meta: EditFileMetadata,
+  modified: string,
+  result: EditResult,
+): EditFileValue {
   return {
-    ok: true as const,
     path: validPath,
-    size,
-    lineCount,
-    mimeType,
-    kind,
-    resourceUri,
+    size: meta.bytesWritten,
+    lineCount: meta.lineCount,
+    mimeType: meta.mimeType,
+    kind: meta.kind,
+    resourceUri: meta.resourceUri,
     modified,
+    appliedEdits: result.appliedEdits,
     ...(result.appliedEdits > 0
-      ? {
-          appliedEdits: result.appliedEdits,
-          linesAdded: result.linesAdded,
-          linesRemoved: result.linesRemoved,
-        }
-      : { appliedEdits: 0 }),
+      ? { linesAdded: result.linesAdded, linesRemoved: result.linesRemoved }
+      : {}),
     ...(result.unmatchedEdits.length > 0 ? { unmatchedEdits: result.unmatchedEdits } : {}),
     ...(result.diff ? { diff: result.diff } : {}),
     ...(result.lineRange ? { lineRange: result.lineRange } : {}),
@@ -320,11 +280,10 @@ async function finalizeEditResult(
   appliedEdits: number,
   unmatchedEdits: string[],
   lineRange: EditResult['lineRange'],
-  signal?: AbortSignal,
 ): Promise<EditResult> {
   const { linesAdded, linesRemoved } =
     appliedEdits > 0
-      ? await computeDiffStats(originalContent, updatedContent, signal)
+      ? await computeDiffStats(originalContent, updatedContent)
       : { linesAdded: 0, linesRemoved: 0 };
 
   return {
@@ -362,7 +321,7 @@ function buildEditFileMetadata(
     resourceLink = {
       type: 'resource_link',
       uri: resourceUri,
-      name: PathFormatter.basename(validPath),
+      name: basename(validPath),
       mimeType: mimeInfo.mimeType,
       size: bytesWritten,
       annotations: { audience: ['user', 'assistant'] },
@@ -378,30 +337,17 @@ function buildEditFileMetadata(
   };
 }
 
-async function buildDiff(
-  validPath: string,
-  original: string,
-  modified: string,
-  signal?: AbortSignal,
-): Promise<string> {
-  const fileName = PathFormatter.basename(validPath);
-  const totalBytes = Buffer.byteLength(original) + Buffer.byteLength(modified);
-  return runWorkerOr(
-    'createPatch',
-    { oldStr: original, newStr: modified, oldHeader: fileName, newHeader: fileName },
-    totalBytes,
-    signal ? { signal } : {},
-    () =>
-      new Promise<string>((resolve) => {
-        setImmediate(() => {
-          createTwoFilesPatch(fileName, fileName, original, modified, 'Original', 'Modified', {
-            callback: (res: string | undefined) => {
-              resolve(res ?? '');
-            },
-          });
-        });
-      }),
-  );
+async function buildDiff(validPath: string, original: string, modified: string): Promise<string> {
+  const fileName = basename(validPath);
+  return new Promise<string>((resolve) => {
+    setImmediate(() => {
+      createTwoFilesPatch(fileName, fileName, original, modified, 'Original', 'Modified', {
+        callback: (res: string | undefined) => {
+          resolve(res ?? '');
+        },
+      });
+    });
+  });
 }
 
 async function loadEditableFile(
@@ -417,13 +363,10 @@ async function loadEditableFile(
 
   if (stats.size > MAX_TEXT_FILE_SIZE) {
     throw new FsError(
-      Problem.tooLarge(
-        `File too large for edit (${stats.size} bytes > ${MAX_TEXT_FILE_SIZE} bytes)`,
-        {
-          path: requestedPath,
-          details: { extra: { size: stats.size, maxFileSize: MAX_TEXT_FILE_SIZE } },
-        },
-      ),
+      ErrorCode.TOO_LARGE,
+      `File too large for edit (${stats.size} bytes > ${MAX_TEXT_FILE_SIZE} bytes)`,
+      requestedPath,
+      { size: stats.size, maxFileSize: MAX_TEXT_FILE_SIZE },
     );
   }
 
@@ -441,7 +384,6 @@ async function applyEdits(
   content: string,
   edits: z.infer<typeof EditSpecSchema>[],
   ignoreWhitespace: boolean,
-  signal?: AbortSignal,
 ): Promise<EditResult> {
   let newContent = content;
   let appliedEdits = 0;
@@ -462,7 +404,7 @@ async function applyEdits(
     appliedEdits += 1;
   }
 
-  return finalizeEditResult(content, newContent, appliedEdits, unmatchedEdits, lineRange, signal);
+  return finalizeEditResult(content, newContent, appliedEdits, unmatchedEdits, lineRange);
 }
 
 async function handleEditFile(
@@ -473,18 +415,13 @@ async function handleEditFile(
   pathGuard: PathGuard,
   resourceStore: ResourceStore | undefined,
   signal?: AbortSignal,
-): Promise<{
-  structured: SingleEditStructured;
-  editedContent: string;
-  validPath: string;
-  resourceLink?: ContentBlock;
-}> {
+): Promise<{ value: EditFileValue; resourceLink?: ContentBlock }> {
   const { validPath, content } = await loadEditableFile(filePath, pathGuard, signal);
-  const editResult = await applyEdits(content, edits, ignoreWhitespace, signal);
+  const editResult = await applyEdits(content, edits, ignoreWhitespace);
 
   if (dryRun) {
     if (editResult.appliedEdits > 0) {
-      editResult.diff = await buildDiff(validPath, content, editResult.content, signal);
+      editResult.diff = await buildDiff(validPath, content, editResult.content);
     }
 
     const meta = buildEditFileMetadata(
@@ -494,28 +431,16 @@ async function handleEditFile(
       resourceStore,
     );
     return {
-      structured: buildStructuredEditOutput({
-        validPath,
-        size: meta.bytesWritten,
-        lineCount: meta.lineCount,
-        mimeType: meta.mimeType,
-        kind: meta.kind,
-        resourceUri: meta.resourceUri,
-        modified: new Date().toISOString(),
-        result: editResult,
-      }),
-      editedContent: editResult.content,
-      validPath,
+      value: buildEditFileValue(validPath, meta, new Date().toISOString(), editResult),
       ...(meta.resourceLink ? { resourceLink: meta.resourceLink } : {}),
     };
   }
 
   if (editResult.unmatchedEdits.length > 0) {
     throw new FsError(
-      Problem.invalidInput(
-        `${editResult.unmatchedEdits.length} edit(s) failed to match. Verify oldText matches exact file content.`,
-        { path: filePath },
-      ),
+      ErrorCode.INVALID_INPUT,
+      `${editResult.unmatchedEdits.length} edit(s) failed to match. Verify oldText matches exact file content.`,
+      filePath,
     );
   }
 
@@ -540,53 +465,8 @@ async function handleEditFile(
     resourceStore,
   );
   return {
-    structured: buildStructuredEditOutput({
-      validPath,
-      size: meta.bytesWritten,
-      lineCount: meta.lineCount,
-      mimeType: meta.mimeType,
-      kind: meta.kind,
-      resourceUri: meta.resourceUri,
-      modified: fileStats.mtime.toISOString(),
-      result: editResult,
-    }),
-    editedContent: editResult.content,
-    validPath,
+    value: buildEditFileValue(validPath, meta, fileStats.mtime.toISOString(), editResult),
     ...(meta.resourceLink ? { resourceLink: meta.resourceLink } : {}),
-  };
-}
-
-function toEditPerPathPayload(
-  r: PerPathResult<{
-    structured: SingleEditStructured;
-    resourceLink?: ContentBlock;
-  }>,
-): { perPath: z.infer<typeof EditPerPathSchema>; resourceLink?: ContentBlock } {
-  if ('error' in r) {
-    return { perPath: { path: r.path, error: r.error } };
-  }
-
-  const inner = r.value;
-  const s = inner.structured;
-  const value: z.infer<typeof PerFileResultSchema> = {
-    path: s.path ?? r.path,
-    size: s.size ?? 0,
-    lineCount: s.lineCount ?? 0,
-    mimeType: s.mimeType ?? 'application/octet-stream',
-    kind: s.kind ?? 'text',
-    resourceUri: s.resourceUri ?? '',
-    modified: s.modified ?? new Date().toISOString(),
-    appliedEdits: s.appliedEdits ?? 0,
-    ...(s.linesAdded !== undefined ? { linesAdded: s.linesAdded } : {}),
-    ...(s.linesRemoved !== undefined ? { linesRemoved: s.linesRemoved } : {}),
-    ...(s.diff !== undefined ? { diff: s.diff } : {}),
-    ...(s.unmatchedEdits !== undefined ? { unmatchedEdits: s.unmatchedEdits } : {}),
-    ...(s.lineRange !== undefined ? { lineRange: s.lineRange } : {}),
-  };
-
-  return {
-    perPath: { path: r.path, value },
-    ...(inner.resourceLink ? { resourceLink: inner.resourceLink } : {}),
   };
 }
 
@@ -596,15 +476,14 @@ function formatEditSummary(
 ): string {
   const tag = dryRun ? ' [dry run]' : '';
   const tokens = results.map((r) => {
-    if (r.error) return `${PathFormatter.basename(r.path)} FAILED`;
+    if (r.error) return `${basename(r.path)} FAILED`;
     const v = r.value;
-    if (!v) return `${PathFormatter.basename(r.path)} (no result)`;
-    if (v.unmatchedEdits && v.unmatchedEdits.length > 0)
-      return `${PathFormatter.basename(v.path)} NO MATCH`;
+    if (!v) return `${basename(r.path)} (no result)`;
+    if (v.unmatchedEdits && v.unmatchedEdits.length > 0) return `${basename(v.path)} NO MATCH`;
     const added = v.linesAdded ?? 0;
     const removed = v.linesRemoved ?? 0;
-    if (added === 0 && removed === 0) return `${PathFormatter.basename(v.path)} (no change)`;
-    return `${PathFormatter.basename(v.path)} +${String(added)} -${String(removed)}`;
+    if (added === 0 && removed === 0) return `${basename(v.path)} (no change)`;
+    return `${basename(v.path)} +${String(added)} -${String(removed)}`;
   });
 
   const failed = results.filter((r) => r.error !== undefined).length;
@@ -637,7 +516,7 @@ export const EDIT = defineTool({
     const dryLabel = args.dryRun ? ' [dry run]' : '';
     let subject: string;
     if (args.path !== undefined) {
-      subject = PathFormatter.basename(args.path);
+      subject = basename(args.path);
     } else if (args.paths !== undefined) {
       subject = `${args.paths.length} files`;
     } else if (args.files !== undefined) {
@@ -658,32 +537,32 @@ export const EDIT = defineTool({
 
     const batch = await runOverPaths<
       { edits: z.infer<typeof EditSpecSchema>[] },
-      { structured: SingleEditStructured; resourceLink?: ContentBlock }
+      { value: EditFileValue; resourceLink?: ContentBlock }
     >(
       batchInput,
       ctx,
-      async ({ path, override }) => {
-        const edits = override?.edits ?? sharedEdits;
-        const { structured, resourceLink } = await handleEditFile(
+      ({ path, override }) =>
+        handleEditFile(
           path,
-          edits,
+          override?.edits ?? sharedEdits,
           args.dryRun,
           args.ignoreWhitespace,
           ctx.pathGuard,
           ctx.resourceStore,
           ctx.signal,
-        );
-        return resourceLink ? { structured, resourceLink } : { structured };
-      },
+        ),
       { defaultErrorCode: ErrorCode.UNKNOWN },
     );
 
     const perPathResults: z.infer<typeof EditPerPathSchema>[] = [];
     const resourceLinks: ContentBlock[] = [];
     for (const r of batch.results) {
-      const { perPath, resourceLink } = toEditPerPathPayload(r);
-      perPathResults.push(perPath);
-      if (resourceLink) resourceLinks.push(resourceLink);
+      if ('error' in r) {
+        perPathResults.push({ path: r.path, error: r.error });
+        continue;
+      }
+      perPathResults.push({ path: r.path, value: r.value.value });
+      if (r.value.resourceLink) resourceLinks.push(r.value.resourceLink);
     }
 
     const summaryText = formatEditSummary(perPathResults, args.dryRun);

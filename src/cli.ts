@@ -11,12 +11,7 @@ import {
   PathGuard,
 } from './core/path.js';
 import { isRecord, parseTrueEnvFlag } from './core/primitives.js';
-import {
-  MAX_SEARCHABLE_FILE_SIZE,
-  MAX_TEXT_FILE_SIZE,
-  SEARCH_WORKERS,
-  WORKER_POOL_MAX,
-} from './core/util.js';
+import { MAX_TEXT_FILE_SIZE } from './core/util.js';
 import { pkgInfo } from './pkg-info.js';
 import { ALL_REGISTERED_TOOL_NAMES, MUTATING_TOOL_NAMES } from './tools/index.js';
 
@@ -301,10 +296,6 @@ export const CLI_PARSER_CONFIG = {
     'walk-cwd': { type: 'boolean', default: false },
     deny: { type: 'string', multiple: true },
     'allow-missing-roots': { type: 'boolean', default: false },
-    client: { type: 'string' },
-    config: { type: 'string' },
-    'server-name': { type: 'string' },
-    'dry-run': { type: 'boolean', default: false },
   },
   strict: true,
   allowPositionals: true,
@@ -319,15 +310,6 @@ export async function parseArgs(): Promise<{
   json: boolean;
   walkCwd: boolean;
   allowMissingRoots: boolean;
-  subcommand: 'allow' | 'disallow' | 'list-allowed' | 'config' | undefined;
-  subcommandPath: string | undefined;
-  configAction: 'set' | 'get' | 'list' | 'reset' | undefined;
-  configKey: string | undefined;
-  configValue: string | undefined;
-  client: string | undefined;
-  config: string | undefined;
-  serverName: string | undefined;
-  dryRun: boolean;
 }> {
   try {
     const parsed = utilParseArgs(CLI_PARSER_CONFIG);
@@ -340,35 +322,8 @@ export async function parseArgs(): Promise<{
       printVersionAndExit();
     }
 
-    const firstPos = parsed.positionals[0];
-    let subcommand: 'allow' | 'disallow' | 'list-allowed' | 'config' | undefined;
-    let subcommandPath: string | undefined;
-    let configAction: 'set' | 'get' | 'list' | 'reset' | undefined;
-    let configKey: string | undefined;
-    let configValue: string | undefined;
-
-    if (firstPos === 'allow' || firstPos === 'disallow' || firstPos === 'list-allowed') {
-      subcommand = firstPos;
-      if (subcommand === 'allow' || subcommand === 'disallow') {
-        subcommandPath = parsed.positionals[1];
-        if (subcommandPath !== undefined) {
-          validateCliPath(subcommandPath);
-        }
-      }
-    } else if (firstPos === 'config') {
-      subcommand = 'config';
-      const action = parsed.positionals[1];
-      if (action === 'set' || action === 'get' || action === 'list' || action === 'reset') {
-        configAction = action;
-        configKey = parsed.positionals[2];
-        configValue = parsed.positionals[3];
-      } else if (action !== undefined) {
-        throw new CliExitError(`Unknown config action '${action}'. Use: set, get, list, reset`, 1);
-      }
-    } else {
-      for (const positional of parsed.positionals) {
-        validateCliPath(positional);
-      }
+    for (const positional of parsed.positionals) {
+      validateCliPath(positional);
     }
 
     const vals = parsed.values as Record<string, unknown>;
@@ -383,21 +338,14 @@ export async function parseArgs(): Promise<{
       (vals['allow-missing-roots'] as boolean) ||
       parseTrueEnvFlag(process.env['ALLOW_MISSING_ROOTS']);
 
-    const client = vals['client'] as string | undefined;
-    const config = vals['config'] as string | undefined;
-    const serverName = vals['server-name'] as string | undefined;
-    const dryRun = vals['dry-run'] as boolean;
-
     let allowedDirs: string[] = [];
-    if (!subcommand) {
-      try {
-        allowedDirs =
-          parsed.positionals.length > 0
-            ? await normalizeAndValidateDirs(parsed.positionals, allowMissingRoots)
-            : [];
-      } catch (error: unknown) {
-        throw new CliExitError(normalizeCliExitMessage(error), 1);
-      }
+    try {
+      allowedDirs =
+        parsed.positionals.length > 0
+          ? await normalizeAndValidateDirs(parsed.positionals, allowMissingRoots)
+          : [];
+    } catch (error: unknown) {
+      throw new CliExitError(normalizeCliExitMessage(error), 1);
     }
 
     return {
@@ -409,15 +357,6 @@ export async function parseArgs(): Promise<{
       json,
       walkCwd,
       allowMissingRoots,
-      subcommand,
-      subcommandPath,
-      configAction,
-      configKey,
-      configValue,
-      client,
-      config,
-      serverName,
-      dryRun,
     };
   } catch (error: unknown) {
     if (error instanceof CliExitError) {
@@ -438,12 +377,7 @@ export interface EffectiveConfig {
   allowedRoots: string[];
   tools: string[];
   apiKey: string | null;
-  limits: {
-    maxFileSizeBytes: number;
-    maxSearchFileSizeBytes: number;
-    searchWorkers: number;
-    workerPoolMax: number;
-  };
+  limits: { maxFileSizeBytes: number };
 }
 
 export interface PrintConfigOptions {
@@ -475,12 +409,7 @@ export async function runPrintConfig(options: PrintConfigOptions): Promise<Effec
     allowedRoots,
     tools: [...tools],
     apiKey: options.apiKey ? '***' : null,
-    limits: {
-      maxFileSizeBytes: MAX_TEXT_FILE_SIZE,
-      maxSearchFileSizeBytes: MAX_SEARCHABLE_FILE_SIZE,
-      searchWorkers: SEARCH_WORKERS,
-      workerPoolMax: WORKER_POOL_MAX,
-    },
+    limits: { maxFileSizeBytes: MAX_TEXT_FILE_SIZE },
   };
 
   if (options.json) {
@@ -493,8 +422,6 @@ export async function runPrintConfig(options: PrintConfigOptions): Promise<Effec
     write(`${key('allowedRoots:')}${config.allowedRoots.join(', ') || cliFmt.dim('(none)')}\n`);
     write(`${key('tools:')}${cliFmt.dim(config.tools.join(', '))}\n`);
     write(`${key('maxFileSize:')}${cliFmt.yellow(String(config.limits.maxFileSizeBytes))}\n`);
-    write(`${key('maxSearch:')}${cliFmt.yellow(String(config.limits.maxSearchFileSizeBytes))}\n`);
-    write(`${key('workers:')}${cliFmt.yellow(String(config.limits.searchWorkers))}\n`);
   }
 
   return config;

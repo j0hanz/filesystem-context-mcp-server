@@ -3,10 +3,9 @@ import * as z from 'zod/v4';
 import { ErrorCode } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../core/fs.js';
-import { PathFormatter } from '../core/path-formatter.js';
 import type { PathGuard } from '../core/path.js';
-import { decodeOffsetCursor, encodeOffsetCursor } from '../core/path.js';
-import { searchFiles } from '../core/search/index.js';
+import { decodeOffsetCursor, encodeOffsetCursor, toPosixRelative } from '../core/path.js';
+import { searchFiles } from '../core/search/engine.js';
 import type { ResourceStore } from '../core/store.js';
 import {
   assignDefined,
@@ -94,7 +93,7 @@ function buildRelativeResults(
   const relativeResults: NonNullable<z.infer<typeof SearchFilesOutputSchema>['results']> = [];
   for (const entry of displayResults) {
     relativeResults.push({
-      path: PathFormatter.relative(basePath, entry.path),
+      path: toPosixRelative(basePath, entry.path),
       size: entry.size,
       modified: entry.modified?.toISOString(),
     });
@@ -133,7 +132,6 @@ async function handleSearchFiles(
   args: z.infer<typeof SearchFilesInputSchema>,
   pathGuard: PathGuard,
   signal?: AbortSignal,
-  onProgress?: (progress: { total?: number; current: number }) => void,
   resourceStore?: ResourceStore,
 ): Promise<{
   structured: z.infer<typeof SearchFilesOutputSchema>;
@@ -151,11 +149,7 @@ async function handleSearchFiles(
     sortBy: args.sortBy,
     respectGitignore: !args.includeIgnored,
   };
-  assignDefined(searchOptions, {
-    maxDepth: args.maxDepth,
-    onProgress,
-    signal,
-  });
+  assignDefined(searchOptions, { maxDepth: args.maxDepth, signal });
   const result = await searchFiles(
     basePath,
     args.pattern,
@@ -235,17 +229,10 @@ export const SEARCH_FILES = defineTool({
     detail: formatCount(result.totalMatches ?? 0, 'match', 'matches'),
   }),
   run: async (args, ctx) => {
-    const onProgress = (params: { current: number; total?: number }): void => {
-      ctx.onProgress?.({
-        current: params.current,
-        ...(params.total !== undefined ? { total: params.total } : {}),
-      });
-    };
     const { structured, link } = await handleSearchFiles(
       args,
       ctx.pathGuard,
       ctx.signal,
-      onProgress,
       ctx.resourceStore,
     );
     const text =

@@ -1,6 +1,7 @@
 import type { ContentBlock } from '@modelcontextprotocol/server';
 
 import { createHash } from 'node:crypto';
+import { basename } from 'node:path';
 
 import * as z from 'zod/v4';
 
@@ -13,7 +14,6 @@ import {
   type ReadSpec,
 } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
-import { PathFormatter } from '../core/path-formatter.js';
 import {
   DEFAULT_CONTINUATION_CHUNK_SIZE,
   DEFAULT_READ_MANY_MAX_TOTAL_SIZE,
@@ -146,75 +146,34 @@ interface ReadSpecCommon {
   signal?: AbortSignal;
 }
 
-interface ExtractedReadArgs {
-  offset: number | undefined;
-  length: number | undefined;
-  head: number | undefined;
-  tail: number | undefined;
-  start: number | undefined;
-  end: number | undefined;
-}
-
-function buildSpecCommon(signal?: AbortSignal): ReadSpecCommon {
-  return {
+function buildReadSpec(args: ReadFileInput, signal?: AbortSignal): ReadSpec {
+  const common: ReadSpecCommon = {
     encoding: 'utf-8',
     maxSize: MAX_TEXT_FILE_SIZE,
     skipBinary: true,
     ...(signal ? { signal } : {}),
   };
-}
+  const { offset, length, head, tail, startLine, endLine } = args;
 
-function extractNumericArg(args: ReadFileInput, key: string): number | undefined {
-  return key in args && typeof (args as Record<string, unknown>)[key] === 'number'
-    ? ((args as Record<string, unknown>)[key] as number)
-    : undefined;
-}
-
-function extractReadArgs(args: ReadFileInput): ExtractedReadArgs {
-  return {
-    offset: extractNumericArg(args, 'offset'),
-    length: extractNumericArg(args, 'length'),
-    head: extractNumericArg(args, 'head'),
-    tail: extractNumericArg(args, 'tail'),
-    start: extractNumericArg(args, 'startLine'),
-    end: extractNumericArg(args, 'endLine'),
-  };
-}
-
-function buildByteRangeSpec(extracted: ExtractedReadArgs, common: ReadSpecCommon): ReadSpec {
-  return {
-    kind: 'byteRange',
-    ...(extracted.offset !== undefined ? { offset: extracted.offset } : {}),
-    ...(extracted.length !== undefined ? { length: extracted.length } : {}),
-    ...common,
-  };
-}
-
-function buildLineSpec(extracted: ExtractedReadArgs, common: ReadSpecCommon): ReadSpec {
-  if (extracted.head !== undefined) {
-    return { kind: 'head', lines: extracted.head, ...common };
+  if (offset !== undefined || length !== undefined) {
+    return {
+      kind: 'byteRange',
+      ...(offset !== undefined ? { offset } : {}),
+      ...(length !== undefined ? { length } : {}),
+      ...common,
+    };
   }
-  if (extracted.tail !== undefined) {
-    return { kind: 'tail', lines: extracted.tail, ...common };
-  }
-  if (extracted.start !== undefined || extracted.end !== undefined) {
+  if (head !== undefined) return { kind: 'head', lines: head, ...common };
+  if (tail !== undefined) return { kind: 'tail', lines: tail, ...common };
+  if (startLine !== undefined || endLine !== undefined) {
     return {
       kind: 'range',
-      start: extracted.start ?? 1,
-      ...(extracted.end !== undefined ? { end: extracted.end } : {}),
+      start: startLine ?? 1,
+      ...(endLine !== undefined ? { end: endLine } : {}),
       ...common,
     };
   }
   return { kind: 'full', ...common };
-}
-
-function buildReadSpec(args: ReadFileInput, signal?: AbortSignal): ReadSpec {
-  const common = buildSpecCommon(signal);
-  const extracted = extractReadArgs(args);
-  if (extracted.offset !== undefined || extracted.length !== undefined) {
-    return buildByteRangeSpec(extracted, common);
-  }
-  return buildLineSpec(extracted, common);
 }
 
 function buildReadContinuation(result: {
@@ -419,9 +378,7 @@ export const READ_FILE = defineTool({
   defaultErrorCode: ErrorCode.NOT_FILE,
   progress: (args) => {
     const isBatch = args.paths !== undefined;
-    const name = isBatch
-      ? `${String(args.paths?.length ?? 0)} files`
-      : PathFormatter.basename(args.path ?? '');
+    const name = isBatch ? `${String(args.paths?.length ?? 0)} files` : basename(args.path ?? '');
     if (isBatch) {
       return { label: READ_TOOL_LABEL, subject: name };
     }
@@ -503,7 +460,7 @@ export const READ_FILE = defineTool({
       resources.push({
         type: 'resource_link',
         uri: result.value.resourceUri,
-        name: PathFormatter.basename(result.path),
+        name: basename(result.path),
         mimeType: result.value.mimeType ?? 'application/octet-stream',
         size: Buffer.byteLength(result.value.content, 'utf8'),
         annotations: { audience: ['user', 'assistant'] },

@@ -1,17 +1,19 @@
 import { createHash } from 'node:crypto';
+import { basename } from 'node:path';
+import { PassThrough } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 import * as z from 'zod/v4';
 
 import { assertNotAborted } from '../core/concurrency.js';
-import { ErrorCode, FsError, Problem } from '../core/errors.js';
+import { ErrorCode, FsError } from '../core/errors.js';
 import {
   globEntries,
   type GuardedFileSystem,
   isIgnoredByGitignore,
   loadRootGitignore,
 } from '../core/fs.js';
-import { PathFormatter } from '../core/path-formatter.js';
+import { toPosixRelative } from '../core/path.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../core/util.js';
@@ -36,14 +38,6 @@ const HashInputSchema = z.strictObject({
       'Hash algorithms to compute (default: [sha256]); specify multiple to compute several hashes in one call',
     ),
 });
-
-// Native Zod v4 record schema: constrains keys to algorithms and values to lowercase hex
-const ALGO_LENGTHS: Record<(typeof SUPPORTED_ALGORITHMS)[number], number> = {
-  sha256: 64, // 256 bits = 64 hex chars
-  sha512: 128, // 512 bits = 128 hex chars
-  sha1: 40, // 160 bits = 40 hex chars
-  md5: 32, // 128 bits = 32 hex chars
-};
 
 // z.partialRecord: keys are optional but MUST be from the enum; rejects unknown keys.
 // Generates propertyNames.enum in JSON Schema so clients can validate key names client-side.
@@ -75,9 +69,12 @@ const HashOutputSchema = z.strictObject({
   fileCount: NonNegInt.optional().describe('Number of files hashed (present for directories only)'),
 });
 
-function toStableRelativePath(root: string, entryPath: string): string {
-  return PathFormatter.relative(root, entryPath);
-}
+const ALGO_LABELS: Record<string, string> = {
+  sha256: 'SHA-256',
+  sha1: 'SHA-1',
+  sha512: 'SHA-512',
+  md5: 'MD5',
+};
 
 function comparePaths(left: { path: string }, right: { path: string }): number {
   if (left.path < right.path) return -1;
@@ -91,8 +88,6 @@ async function calculateMultipleHashes(
   algorithms: readonly (typeof SUPPORTED_ALGORITHMS)[number][],
   signal?: AbortSignal,
 ): Promise<Record<string, string>> {
-  const { PassThrough } = await import('node:stream');
-
   const hashers = new Map<(typeof SUPPORTED_ALGORITHMS)[number], ReturnType<typeof createHash>>();
   for (const algo of algorithms) {
     hashers.set(algo, createHash(algo));
@@ -179,7 +174,7 @@ async function hashDirectory(
     }
     filteredPaths.push({
       filePath: entry.path,
-      relativePath: toStableRelativePath(dirPath, entry.path),
+      relativePath: toPosixRelative(dirPath, entry.path),
     });
   }
 
@@ -258,10 +253,9 @@ async function handleCalculateHash(
     const unsupported = algorithms.filter((algo) => algo !== 'sha256');
     if (unsupported.length > 0) {
       throw new FsError(
-        Problem.invalidInput(
-          `Directory hashing only supports sha256 (requested: ${unsupported.join(', ')}). ` +
-            'Hash individual files to use other algorithms.',
-        ),
+        ErrorCode.INVALID_INPUT,
+        `Directory hashing only supports sha256 (requested: ${unsupported.join(', ')}). ` +
+          'Hash individual files to use other algorithms.',
       );
     }
     const { hash, fileCount: count } = await hashDirectory(validPath, fsOps, pathGuard, {
@@ -276,25 +270,6 @@ async function handleCalculateHash(
     onProgress?.({ current: 1 });
   }
 
-  // Runtime invariant: native crypto always produces fixed-length digests.
-  // If this ever fires, it indicates a logic error in the hash computation path.
-  for (const [algo, digest] of Object.entries(hashes)) {
-    const expectedLength = ALGO_LENGTHS[algo as (typeof SUPPORTED_ALGORITHMS)[number]];
-    if (digest.length !== expectedLength) {
-      throw new FsError(
-        Problem.invalidInput(
-          `Hash computation produced wrong-length ${algo} digest: expected ${String(expectedLength)} hex characters, got ${String(digest.length)}`,
-        ),
-      );
-    }
-  }
-
-  const ALGO_LABELS: Record<string, string> = {
-    sha256: 'SHA-256',
-    sha1: 'SHA-1',
-    sha512: 'SHA-512',
-    md5: 'MD5',
-  };
   const summary = Object.entries(hashes)
     .map(([algo, hash]) => `${ALGO_LABELS[algo] ?? algo.toUpperCase()}: ${hash}`)
     .join('\n');
@@ -305,7 +280,7 @@ async function handleCalculateHash(
     const hashJson = JSON.stringify(hashes, null, 2);
     const result = putResource({
       store: resourceStore,
-      name: PathFormatter.basename(validPath),
+      name: basename(validPath),
       mimeType: 'application/json',
       kind: 'text',
       content: hashJson,
@@ -355,7 +330,7 @@ export const CALCULATE_HASH = defineTool({
   defaultErrorCode: ErrorCode.UNKNOWN,
   progress: (args) => ({
     label: 'Hash',
-    subject: PathFormatter.basename(args.path),
+    subject: basename(args.path),
   }),
   run: async (args, ctx) => {
     const onProgress = ctx.onProgress

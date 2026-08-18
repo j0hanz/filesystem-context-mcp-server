@@ -34,7 +34,7 @@ import {
 import type { Express, NextFunction, Request, RequestHandler, Response } from 'express';
 
 import { ErrorCode, formatUnknownErrorMessage, FsError } from './core/errors.js';
-import { Logger, withSession, withTelemetry } from './core/observability.js';
+import { Logger, withSession } from './core/observability.js';
 import type { PathGuard, ServerOptions } from './core/path.js';
 import type { McpRootsSynchronizer } from './core/registrar.js';
 import { getInitHandshakeTimeoutMs, INIT_TIMEOUT_CLOSE, parseEnvInt } from './core/util.js';
@@ -655,124 +655,93 @@ async function handlePostMcp(
   registry: HttpSessionRegistry,
   eventStore: InMemoryEventStore,
 ): Promise<void> {
-  const method = req.method;
-  const path = req.originalUrl;
   const sessionId = getSessionId(req);
+  // Hoisted so the catch below can echo the id back — a client awaiting a
+  // response otherwise blocks to timeout on an uncorrelatable error.
+  let requestId: RequestId | null = null;
 
-  return withTelemetry(
-    {
-      event: 'http_request_complete',
-      transport: 'http',
-      method,
-      path,
-      ...(sessionId ? { session_id: sessionId } : {}),
-    },
-    async (enrich: (extraData: Record<string, unknown>) => void) => {
-      let jsonrpcMethod: string | undefined;
-      // Hoisted so the catch below can echo the id back — a client awaiting a
-      // response otherwise blocks to timeout on an uncorrelatable error.
-      let requestId: RequestId | null = null;
+  try {
+    const body = req.body as unknown;
+    let message: JSONRPCMessage;
+    try {
+      message = parseJSONRPCMessage(body);
+    } catch {
+      // Invalid JSON-RPC shape
+      sendJsonRpcError(res, 400, ProtocolErrorCode.InvalidRequest, 'Invalid Request');
+      return;
+    }
 
-      try {
-        const body = req.body as unknown;
-        let message: JSONRPCMessage;
-        try {
-          message = parseJSONRPCMessage(body);
-        } catch {
-          // Invalid JSON-RPC shape
-          sendJsonRpcError(res, 400, ProtocolErrorCode.InvalidRequest, 'Invalid Request');
-          enrich({ http_status: 400, outcome: 'rejected', request_kind: 'unknown' });
-          return;
-        }
+    const kind = classifyJsonRpcMessage(message);
+    if (isJSONRPCRequest(message)) requestId = message.id;
 
-        const kind = classifyJsonRpcMessage(message);
-        jsonrpcMethod =
-          'method' in message && typeof message.method === 'string' ? message.method : undefined;
-        if (isJSONRPCRequest(message)) requestId = message.id;
+    Logger.debug('[HTTP] inbound', { kind, sessionId: sessionId ?? null });
+    if (isInitializedNotification(message)) {
+      Logger.debug('[HTTP] initialized notification received', {
+        sessionId: sessionId ?? null,
+      });
+    }
 
-        enrich({
-          request_kind: kind,
-          ...(jsonrpcMethod ? { jsonrpc_method: jsonrpcMethod } : {}),
-        });
-
-        Logger.debug('[HTTP] inbound', { kind, sessionId: sessionId ?? null });
-        if (isInitializedNotification(message)) {
-          Logger.debug('[HTTP] initialized notification received', {
-            sessionId: sessionId ?? null,
-          });
-        }
-
-        if (sessionId) {
-          const session = registry.getOrRespondNotFound(sessionId, res);
-          if (session) {
-            await handleSessionTransportRequest(session, req, res, message);
-            enrich({ http_status: res.statusCode });
-          } else {
-            enrich({ http_status: res.statusCode, outcome: 'rejected' });
-          }
-          return;
-        }
-
-        // No session yet — only an initialize request may open one.
-        if (kind === 'result' || kind === 'error') {
-          sendJsonRpcError(
-            res,
-            400,
-            ProtocolErrorCode.InvalidRequest,
-            'JSON-RPC response or notification cannot start a new session',
-          );
-          enrich({ http_status: 400, outcome: 'rejected' });
-          return;
-        }
-
-        if (!isInitializeRequest(message)) {
-          sendJsonRpcError(
-            res,
-            400,
-            ProtocolErrorCode.InvalidRequest,
-            'Bad Request: No valid session ID provided',
-          );
-          enrich({ http_status: 400, outcome: 'rejected' });
-          return;
-        }
-        const maxSessions = parseEnvInt('FILESYSTEM_MCP_MAX_HTTP_SESSIONS', 100, 1, 10_000);
-        if (registry.size() >= maxSessions) {
-          sendJsonRpcError(res, 503, ProtocolErrorCode.InternalError, 'Too many sessions');
-          enrich({ http_status: 503, outcome: 'rejected' });
-          return;
-        }
-        const session = await createHttpSession(options, registry, eventStore);
-        try {
-          await handleSessionTransportRequest(session, req, res, message);
-        } catch (error) {
-          try {
-            await session.close();
-          } catch (closeError) {
-            Logger.error(
-              '[HTTP] Error closing session after request failure:',
-              formatUnknownErrorMessage(closeError),
-            );
-          }
-          throw error;
-        }
-        enrich({ http_status: res.statusCode });
-      } catch (error) {
-        Logger.error('[HTTP] Error handling POST request:', formatUnknownErrorMessage(error));
-        if (!res.headersSent) {
-          sendJsonRpcError(
-            res,
-            500,
-            ProtocolErrorCode.InternalError,
-            'Internal Server Error',
-            requestId,
-          );
-        }
-        // Do NOT rethrow — an unhandled rejection here would trigger a process-wide shutdown.
-        // The error is already logged, and we've sent a 500 response if possible.
-        enrich({ http_status: res.statusCode, outcome: 'error' });
+    if (sessionId) {
+      const session = registry.getOrRespondNotFound(sessionId, res);
+      if (session) {
+        await handleSessionTransportRequest(session, req, res, message);
       }
-    },
-  );
+      return;
+    }
+
+    // No session yet — only an initialize request may open one.
+    if (kind === 'result' || kind === 'error') {
+      sendJsonRpcError(
+        res,
+        400,
+        ProtocolErrorCode.InvalidRequest,
+        'JSON-RPC response or notification cannot start a new session',
+      );
+      return;
+    }
+
+    if (!isInitializeRequest(message)) {
+      sendJsonRpcError(
+        res,
+        400,
+        ProtocolErrorCode.InvalidRequest,
+        'Bad Request: No valid session ID provided',
+      );
+      return;
+    }
+    const maxSessions = parseEnvInt('FILESYSTEM_MCP_MAX_HTTP_SESSIONS', 100, 1, 10_000);
+    if (registry.size() >= maxSessions) {
+      sendJsonRpcError(res, 503, ProtocolErrorCode.InternalError, 'Too many sessions');
+      return;
+    }
+    const session = await createHttpSession(options, registry, eventStore);
+    try {
+      await handleSessionTransportRequest(session, req, res, message);
+    } catch (error) {
+      try {
+        await session.close();
+      } catch (closeError) {
+        Logger.error(
+          '[HTTP] Error closing session after request failure:',
+          formatUnknownErrorMessage(closeError),
+        );
+      }
+      throw error;
+    }
+  } catch (error) {
+    Logger.error('[HTTP] Error handling POST request:', formatUnknownErrorMessage(error));
+    if (!res.headersSent) {
+      sendJsonRpcError(
+        res,
+        500,
+        ProtocolErrorCode.InternalError,
+        'Internal Server Error',
+        requestId,
+      );
+    }
+    // Do NOT rethrow — an unhandled rejection here would trigger a process-wide shutdown.
+    // The error is already logged, and we've sent a 500 response if possible.
+  }
 }
 
 async function handleGetOrDeleteMcp(
@@ -780,51 +749,29 @@ async function handleGetOrDeleteMcp(
   res: Response,
   registry: HttpSessionRegistry,
 ): Promise<void> {
-  const method = req.method;
-  const path = req.originalUrl;
   const sessionId = getSessionId(req);
 
-  return withTelemetry(
-    {
-      event: 'http_request_complete',
-      transport: 'http',
-      method,
-      path,
-      request_kind: 'unknown',
-      ...(sessionId ? { session_id: sessionId } : {}),
-    },
-    async (enrich: (extraData: Record<string, unknown>) => void) => {
-      try {
-        if (!sessionId) {
-          sendJsonRpcError(
-            res,
-            400,
-            ProtocolErrorCode.InvalidRequest,
-            'Bad Request: Missing session ID',
-          );
-          enrich({ http_status: 400, outcome: 'rejected' });
-          return;
-        }
-        const session = registry.getOrRespondNotFound(sessionId, res);
-        if (session) {
-          await handleSessionTransportRequest(session, req, res);
-          enrich({ http_status: res.statusCode });
-        } else {
-          enrich({ http_status: res.statusCode, outcome: 'rejected' });
-        }
-      } catch (error) {
-        Logger.error(
-          `[HTTP] Error handling ${req.method} request:`,
-          formatUnknownErrorMessage(error),
-        );
-        if (!res.headersSent) {
-          sendJsonRpcError(res, 500, ProtocolErrorCode.InternalError, 'Internal Server Error');
-        }
-        // Do NOT rethrow — an unhandled rejection here would trigger a process-wide shutdown.
-        enrich({ http_status: res.statusCode, outcome: 'error' });
-      }
-    },
-  );
+  try {
+    if (!sessionId) {
+      sendJsonRpcError(
+        res,
+        400,
+        ProtocolErrorCode.InvalidRequest,
+        'Bad Request: Missing session ID',
+      );
+      return;
+    }
+    const session = registry.getOrRespondNotFound(sessionId, res);
+    if (session) {
+      await handleSessionTransportRequest(session, req, res);
+    }
+  } catch (error) {
+    Logger.error(`[HTTP] Error handling ${req.method} request:`, formatUnknownErrorMessage(error));
+    if (!res.headersSent) {
+      sendJsonRpcError(res, 500, ProtocolErrorCode.InternalError, 'Internal Server Error');
+    }
+    // Do NOT rethrow — an unhandled rejection here would trigger a process-wide shutdown.
+  }
 }
 
 function setupExpressApp(

@@ -1615,33 +1615,6 @@
           "description": "Enable case-sensitive matching (default: case-insensitive)",
           "type": "boolean"
         },
-        "wholeWord": {
-          "default": false,
-          "description": "Match whole words only (word boundary anchoring)",
-          "type": "boolean"
-        },
-        "contextLines": {
-          "description": "Symmetric context: N lines before AND after each match. Overridden per-side by contextBefore/contextAfter.",
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 20
-        },
-        "contextBefore": {
-          "description": "Lines of context to include before each match (overrides the before half of contextLines)",
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 20
-        },
-        "contextAfter": {
-          "description": "Lines of context to include after each match (overrides the after half of contextLines)",
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 20
-        },
-        "fuzzy": {
-          "description": "Enable approximate (fuzzy) matching using Levenshtein distance (≤25% character difference). Incompatible with isRegex. Requires searchPattern of at least 4 characters.",
-          "type": "boolean"
-        },
         "maxResults": {
           "default": 500,
           "description": "Maximum number of matching lines to return per page",
@@ -1685,7 +1658,7 @@
         "ok": {
           "type": "boolean",
           "const": true,
-          "description": "Always true; errors are surfaced in stoppedReason or per-file skip counts"
+          "description": "Always true; unreadable files are skipped silently"
         },
         "matches": {
           "type": "array",
@@ -1711,20 +1684,6 @@
               "matchCount": {
                 "description": "Number of pattern occurrences on this line",
                 "$ref": "#/$defs/NonNegInt"
-              },
-              "contextBefore": {
-                "description": "Lines immediately before the match (contextBefore or contextLines)",
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "contextAfter": {
-                "description": "Lines immediately after the match (contextAfter or contextLines)",
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
               }
             },
             "required": ["file", "line", "content"],
@@ -1744,26 +1703,9 @@
           "description": "Total number of files examined",
           "$ref": "#/$defs/NonNegInt"
         },
-        "skippedTooLarge": {
-          "description": "Files skipped because they exceeded the size limit",
-          "$ref": "#/$defs/NonNegInt"
-        },
-        "skippedBinary": {
-          "description": "Files skipped because they were detected as binary",
-          "$ref": "#/$defs/NonNegInt"
-        },
-        "skippedInaccessible": {
-          "description": "Files skipped due to permission or access errors",
-          "$ref": "#/$defs/NonNegInt"
-        },
         "truncated": {
           "description": "True when the match list was cut due to maxResults or timeout",
           "type": "boolean"
-        },
-        "stoppedReason": {
-          "description": "Why the search ended early: maxResults = match cap reached, maxFiles = scan cap reached, timeout = time limit hit",
-          "type": "string",
-          "enum": ["maxResults", "maxFiles", "timeout"]
         },
         "resourceUri": {
           "description": "URI to the full match list in the resource store (present when matches exceed the inline limit)",

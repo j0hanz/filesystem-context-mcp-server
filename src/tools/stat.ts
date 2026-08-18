@@ -1,5 +1,7 @@
 import type { ContentBlock } from '@modelcontextprotocol/server';
 
+import { parse } from 'node:path';
+
 import * as z from 'zod/v4';
 
 import { assertNotAborted } from '../core/concurrency.js';
@@ -15,7 +17,6 @@ import {
   type Stats,
 } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
-import { PathFormatter } from '../core/path-formatter.js';
 import type { PathGuard } from '../core/path.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../core/util.js';
 import {
@@ -128,7 +129,7 @@ async function getFileInfo(filePath: string, options: FileInfoOptions): Promise<
 
   const { requestedPath, isSymlink } = await pathGuard.validateExistingPathDetailed(filePath);
 
-  const { base: name, ext: rawExt } = PathFormatter.parse(requestedPath);
+  const { base: name, ext: rawExt } = parse(requestedPath);
   const includeMimeType = options.includeMimeType !== false;
   const mimeType =
     includeMimeType && rawExt.length > 0 ? detectMimeType(requestedPath).mimeType : undefined;

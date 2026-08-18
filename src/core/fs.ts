@@ -1,5 +1,4 @@
 import { isUtf8 } from 'node:buffer';
-import type { BinaryToTextEncoding } from 'node:crypto';
 import { createHash, randomUUID } from 'node:crypto';
 import type { ReadStream, Stats } from 'node:fs';
 import { createReadStream, constants as fsConstants } from 'node:fs';
@@ -29,7 +28,7 @@ import type { Ignore } from 'ignore';
 import ignore from 'ignore';
 
 import type { FileType } from '../schema.js';
-import { assertNotAborted, withAbort } from './concurrency.js';
+import { assertNotAborted, isPositiveInteger, withAbort } from './concurrency.js';
 import { ErrorCode, formatUnknownErrorMessage, FsError, isNodeError } from './errors.js';
 import { Logger } from './observability.js';
 import type { PathGuard } from './path.js';
@@ -73,16 +72,6 @@ export async function stat(
   return { stats, validPath };
 }
 
-async function lstat(
-  filePath: string,
-  pathGuard: PathGuard,
-  options?: { signal?: AbortSignal },
-): Promise<{ stats: Stats; validPath: string }> {
-  const validPath = await pathGuard.validatePathForDelete(filePath);
-  const stats = await withAbort(fsLstat(validPath), options?.signal);
-  return { stats, validPath };
-}
-
 export async function mkdir(
   filePath: string,
   pathGuard: PathGuard,
@@ -91,37 +80,6 @@ export async function mkdir(
   const validPath = await pathGuard.validatePathForWrite(filePath);
   const result = await fsMkdir(validPath, options);
   return { validPath, result };
-}
-
-async function rename(
-  oldPath: string,
-  newPath: string,
-  pathGuard: PathGuard,
-): Promise<{ validOld: string; validNew: string }> {
-  const validOld = await pathGuard.validateExistingPath(oldPath);
-  const validNew = await pathGuard.validatePathForWrite(newPath);
-  await fsRename(validOld, validNew);
-  return { validOld, validNew };
-}
-
-async function rm(
-  filePath: string,
-  pathGuard: PathGuard,
-  options?: Parameters<typeof fsRm>[1],
-): Promise<{ validPath: string }> {
-  const validPath = await pathGuard.validatePathForDelete(filePath);
-  await fsRm(validPath, options);
-  return { validPath };
-}
-
-async function rmdir(
-  filePath: string,
-  pathGuard: PathGuard,
-  options?: Parameters<typeof fsRmdir>[1],
-): Promise<{ validPath: string }> {
-  const validPath = await pathGuard.validatePathForDelete(filePath);
-  await fsRmdir(validPath, options);
-  return { validPath };
 }
 
 export async function readlink(
@@ -135,30 +93,11 @@ export async function readlink(
   return { linkString, validPath };
 }
 
-async function cp(
-  source: string,
-  destination: string,
-  pathGuard: PathGuard,
-  options?: Parameters<typeof fsCp>[2],
-): Promise<{ validSource: string; validDest: string }> {
-  const validSource = await pathGuard.validateExistingPath(source);
-  const validDest = await pathGuard.validatePathForWrite(destination);
-  await fsCp(validSource, validDest, options);
-  return { validSource, validDest };
-}
-
 // ─── Input validation ────────────────────────────────────────────────────────
 
 function assertPositiveIntegerOption(name: string, value: unknown, message?: string): void {
-  if (value === undefined) return;
-  if (
-    typeof value !== 'number' ||
-    !Number.isFinite(value) ||
-    !Number.isSafeInteger(value) ||
-    value < 1
-  ) {
-    throw new FsError(ErrorCode.INVALID_INPUT, message ?? `${name} must be a positive integer`);
-  }
+  if (value === undefined || isPositiveInteger(value)) return;
+  throw new FsError(ErrorCode.INVALID_INPUT, message ?? `${name} must be a positive integer`);
 }
 
 // ─── Binary detection ────────────────────────────────────────────────────────
@@ -307,27 +246,12 @@ async function isProbablyBinary(
 
 // ─── File hashing ────────────────────────────────────────────────────────────
 
-async function calculateFileContentHash(filePath: string, signal?: AbortSignal): Promise<string>;
-async function calculateFileContentHash(
-  filePath: string,
-  signal: AbortSignal | undefined,
-  encoding: BinaryToTextEncoding,
-): Promise<string>;
-async function calculateFileContentHash(
-  filePath: string,
-  signal: AbortSignal | undefined,
-  encoding: null,
-): Promise<Buffer>;
-async function calculateFileContentHash(
-  filePath: string,
-  signal?: AbortSignal,
-  encoding: BinaryToTextEncoding | null = 'hex',
-): Promise<string | Buffer> {
+async function calculateFileContentHash(filePath: string, signal?: AbortSignal): Promise<string> {
   const hasher = createHash('sha256');
   await pipeline(createReadStream(filePath, { signal, highWaterMark: STREAM_CHUNK_SIZE }), hasher, {
     signal,
   });
-  return encoding === null ? hasher.digest() : hasher.digest(encoding);
+  return hasher.digest('hex');
 }
 
 // ─── File reading ────────────────────────────────────────────────────────────
@@ -482,26 +406,10 @@ function normalizeByteRangeSpec(
   spec: Extract<ReadSpec, { kind: 'byteRange' }>,
   base: NormalizedOptions,
 ): NormalizeResult {
-  if (spec.offset !== undefined) {
-    if (
-      typeof spec.offset !== 'number' ||
-      !Number.isFinite(spec.offset) ||
-      !Number.isSafeInteger(spec.offset) ||
-      spec.offset < 0
-    ) {
-      throw new FsError(ErrorCode.INVALID_INPUT, 'offset must be a non-negative integer');
-    }
+  if (spec.offset !== undefined && !(Number.isSafeInteger(spec.offset) && spec.offset >= 0)) {
+    throw new FsError(ErrorCode.INVALID_INPUT, 'offset must be a non-negative integer');
   }
-  if (spec.length !== undefined) {
-    if (
-      typeof spec.length !== 'number' ||
-      !Number.isFinite(spec.length) ||
-      !Number.isSafeInteger(spec.length) ||
-      spec.length < 1
-    ) {
-      throw new FsError(ErrorCode.INVALID_INPUT, 'length must be a positive integer');
-    }
-  }
+  assertPositiveIntegerOption('length', spec.length);
   return {
     normalized: {
       ...base,
@@ -1055,18 +963,6 @@ export async function readFileWithStats(
   spec: ReadSpec | undefined,
 ): Promise<ReadFileResult> {
   const { normalized, mode } = normalizeSpec(spec ?? { kind: 'full' });
-  return readFileWithStatsInternal(filePath, validPath, stats, normalized, mode);
-}
-
-async function readFile(
-  filePath: string,
-  spec: ReadSpec,
-  pathGuard: PathGuard,
-): Promise<ReadFileResult> {
-  const { normalized, mode } = normalizeSpec(spec);
-  const validPath = await pathGuard.validateExistingPath(filePath);
-  assertNotAborted(normalized.signal);
-  const stats = await withAbort(fsStat(validPath), normalized.signal);
   return readFileWithStatsInternal(filePath, validPath, stats, normalized, mode);
 }
 
@@ -2171,7 +2067,9 @@ export class GuardedFileSystem {
   }
 
   async lstat(filePath: string, options?: { signal?: AbortSignal }) {
-    return lstat(filePath, this.pathGuard, options);
+    const validPath = await this.pathGuard.validatePathForDelete(filePath);
+    const stats = await withAbort(fsLstat(validPath), options?.signal);
+    return { stats, validPath };
   }
 
   async mkdir(filePath: string, options?: Parameters<typeof fsMkdir>[1]) {
@@ -2179,29 +2077,43 @@ export class GuardedFileSystem {
   }
 
   async rename(oldPath: string, newPath: string) {
-    return rename(oldPath, newPath, this.pathGuard);
+    const validOld = await this.pathGuard.validateExistingPath(oldPath);
+    const validNew = await this.pathGuard.validatePathForWrite(newPath);
+    await fsRename(validOld, validNew);
+    return { validOld, validNew };
   }
 
   async rm(filePath: string, options?: Parameters<typeof fsRm>[1]) {
-    return rm(filePath, this.pathGuard, options);
+    const validPath = await this.pathGuard.validatePathForDelete(filePath);
+    await fsRm(validPath, options);
+    return { validPath };
   }
 
   async rmdir(filePath: string, options?: Parameters<typeof fsRmdir>[1]) {
-    return rmdir(filePath, this.pathGuard, options);
+    const validPath = await this.pathGuard.validatePathForDelete(filePath);
+    await fsRmdir(validPath, options);
+    return { validPath };
   }
 
   async cp(source: string, destination: string, options?: Parameters<typeof fsCp>[2]) {
-    return cp(source, destination, this.pathGuard, options);
+    const validSource = await this.pathGuard.validateExistingPath(source);
+    const validDest = await this.pathGuard.validatePathForWrite(destination);
+    await fsCp(validSource, validDest, options);
+    return { validSource, validDest };
   }
 
   async hash(filePath: string, signal?: AbortSignal) {
     // For hashing, we require the path to exist and be a file, so we use the stricter existing-path guard.
     const validPath = await this.pathGuard.validateExistingPath(filePath);
-    return calculateFileContentHash(validPath, signal, 'hex' as const);
+    return calculateFileContentHash(validPath, signal);
   }
 
   async readFile(filePath: string, spec: ReadSpec) {
-    return readFile(filePath, spec, this.pathGuard);
+    const { normalized, mode } = normalizeSpec(spec);
+    const validPath = await this.pathGuard.validateExistingPath(filePath);
+    assertNotAborted(normalized.signal);
+    const stats = await withAbort(fsStat(validPath), normalized.signal);
+    return readFileWithStatsInternal(filePath, validPath, stats, normalized, mode);
   }
 
   async open(

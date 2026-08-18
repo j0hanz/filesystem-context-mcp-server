@@ -23,9 +23,6 @@ import { SEARCH_CONTENT } from '../src/tools/search-content.js';
 import { SEARCH_FILES } from '../src/tools/search-files.js';
 import { GET_FILE_INFO } from '../src/tools/stat.js';
 
-// Disable worker threads in integration tests — workers are tested separately.
-process.env.FS_DISABLE_WORKERS ??= '1';
-
 const ALL_TOOLS = [
   CALCULATE_HASH,
   CREATE,

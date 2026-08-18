@@ -9,6 +9,7 @@ import {
   normalize,
   parse,
   posix,
+  relative,
   resolve,
   sep,
 } from 'node:path';
@@ -40,24 +41,27 @@ function normalizeCLIDirectories(dirs: readonly string[]): string[] {
   return normalized;
 }
 
-async function isRootWithinBaseline(
+async function isRootWithin(
   normalizedRoot: string,
-  baseline: readonly string[],
+  bounds: readonly string[],
+  label: string,
+  requireRequestedInside: boolean,
   signal?: AbortSignal,
 ): Promise<boolean> {
-  if (!isPathWithinDirectories(normalizedRoot, baseline)) {
+  // Baseline checks the requested path too; a ROOT_BOUNDARY only constrains
+  // where the root really resolves to.
+  if (requireRequestedInside && !isPathWithinDirectories(normalizedRoot, bounds)) {
     return false;
   }
 
   try {
     assertNotAborted(signal);
     const realPath = await withAbort(realpath(normalizedRoot), signal);
-    const normalizedReal = normalizePath(realPath);
-    return isPathWithinDirectories(normalizedReal, baseline);
+    return isPathWithinDirectories(normalizePath(realPath), bounds);
   } catch (error) {
     if (isAbortError(error)) throw error;
     if (isNodeError(error) && error.code === 'ENOENT') return false;
-    Logger.warn('isRootWithinBaseline: realpath failed unexpectedly', {
+    Logger.warn(`${label}: realpath failed unexpectedly`, {
       root: normalizedRoot,
       error: String(error),
     });
@@ -65,74 +69,27 @@ async function isRootWithinBaseline(
   }
 }
 
-async function filterRootsWithinBaseline(
+async function filterRootsWithin(
   roots: readonly string[],
-  baseline: readonly string[],
+  bounds: readonly string[],
+  label: string,
+  requireRequestedInside: boolean,
   signal?: AbortSignal,
 ): Promise<string[]> {
-  const normalizedBaseline = normalizeCLIDirectories(baseline);
+  const normalizedBounds = normalizeCLIDirectories(bounds);
   const normalizedRoots = roots.map(normalizePath);
   if (normalizedRoots.length === 0) return [];
 
   const results = await Promise.allSettled(
-    normalizedRoots.map((normalizedRoot) =>
-      isRootWithinBaseline(normalizedRoot, normalizedBaseline, signal),
+    normalizedRoots.map((root) =>
+      isRootWithin(root, normalizedBounds, label, requireRequestedInside, signal),
     ),
   );
 
   return normalizedRoots.filter((root, i) => {
     const result = results[i];
     if (result?.status === 'rejected') {
-      Logger.warn('filterRootsWithinBaseline: root check threw unexpectedly', {
-        root,
-        error: String(result.reason),
-      });
-      return false;
-    }
-    return result?.status === 'fulfilled' && result.value;
-  });
-}
-
-async function isRootWithinBoundaries(
-  normalizedRoot: string,
-  boundaries: readonly string[],
-  signal?: AbortSignal,
-): Promise<boolean> {
-  try {
-    assertNotAborted(signal);
-    const realPath = await withAbort(realpath(normalizedRoot), signal);
-    const normalizedReal = normalizePath(realPath);
-    return isPathWithinDirectories(normalizedReal, boundaries);
-  } catch (error) {
-    if (isAbortError(error)) throw error;
-    if (isNodeError(error) && error.code === 'ENOENT') return false;
-    Logger.warn('isRootWithinBoundaries: realpath failed unexpectedly', {
-      root: normalizedRoot,
-      error: String(error),
-    });
-    return false;
-  }
-}
-
-async function filterRootsWithinBoundaries(
-  roots: readonly string[],
-  boundaries: readonly string[],
-  signal?: AbortSignal,
-): Promise<string[]> {
-  const normalizedBoundaries = normalizeCLIDirectories(boundaries);
-  const normalizedRoots = roots.map(normalizePath);
-  if (normalizedRoots.length === 0) return [];
-
-  const results = await Promise.allSettled(
-    normalizedRoots.map((normalizedRoot) =>
-      isRootWithinBoundaries(normalizedRoot, normalizedBoundaries, signal),
-    ),
-  );
-
-  return normalizedRoots.filter((root, i) => {
-    const result = results[i];
-    if (result?.status === 'rejected') {
-      Logger.warn('filterRootsWithinBoundaries: root check threw unexpectedly', {
+      Logger.warn(`${label}: root check threw unexpectedly`, {
         root,
         error: String(result.reason),
       });
@@ -170,6 +127,11 @@ export function toPosixPath(value: string): string {
   return value.includes(WINDOWS_PATH_SEPARATOR)
     ? value.replaceAll(WINDOWS_PATH_SEPARATOR, POSIX_PATH_SEPARATOR)
     : value;
+}
+
+/** `path.relative` with forward slashes, so displayed paths match across platforms. */
+export function toPosixRelative(from: string, to: string): string {
+  return toPosixPath(relative(from, to));
 }
 
 function normalizePathForMatch(input: string): string {
@@ -1229,9 +1191,15 @@ export class PathGuard {
     try {
       const rootsToInclude =
         this.rootBoundaries.length > 0
-          ? await filterRootsWithinBoundaries(this.rootDirectories, this.rootBoundaries, signal)
+          ? await filterRootsWithin(
+              this.rootDirectories,
+              this.rootBoundaries,
+              'rootBoundary',
+              false,
+              signal,
+            )
           : baseline.length > 0
-            ? await filterRootsWithinBaseline(this.rootDirectories, baseline, signal)
+            ? await filterRootsWithin(this.rootDirectories, baseline, 'baseline', true, signal)
             : this.rootDirectories;
 
       const combined = [...baseline, ...rootsToInclude];

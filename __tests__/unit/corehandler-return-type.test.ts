@@ -19,8 +19,7 @@ test('coreHandler has explicit Promise<CallToolResult> return type annotation', 
   );
 
   // Verify ToolExecutor execute has explicit return type annotation
-  const executeMatch =
-    /async execute\(args: unknown, deps: ToolDeps\): Promise<CallToolResult>/.exec(fileContent);
+  const executeMatch = /async execute\(deps: ToolDeps\): Promise<CallToolResult>/.exec(fileContent);
   assert(
     executeMatch,
     'execute should have explicit return type annotation: Promise<CallToolResult>',

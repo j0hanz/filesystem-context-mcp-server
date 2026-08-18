@@ -92,40 +92,28 @@ describe('FsError — legacy constructor', () => {
   });
 });
 
-// ─── FsError — Problem constructor ──────────────────────────────────────────
+// ─── FsError — details and cause ────────────────────────────────────────────
 
-describe('FsError — Problem constructor', () => {
-  it('wraps a Problem directly', () => {
-    const problem: Problem = {
-      code: ErrorCode.VALIDATION_FAILED,
-      message: 'bad input',
-      issues: [{ code: 'invalid_type', message: 'Expected string', path: ['name'] }],
-    };
-    const err = new FsError(problem);
+describe('FsError — details and cause', () => {
+  it('carries code, message and path', () => {
+    const err = new FsError(ErrorCode.VALIDATION_FAILED, 'bad input', '/x');
     assert.equal(err.code, ErrorCode.VALIDATION_FAILED);
     assert.equal(err.message, 'bad input');
-    assert.equal(err.problem, problem);
+    assert.equal(err.path, '/x');
     assert.ok(err instanceof Error);
     assert.ok(err instanceof FsError);
   });
 
-  it('wraps a Problem with cause', () => {
-    const cause = new Error('underlying');
-    const problem: Problem = { code: ErrorCode.IO_ERROR, message: 'io failed' };
-    const err = new FsError(problem, cause);
-    assert.equal(err.cause, cause);
-    assert.equal(err.code, ErrorCode.IO_ERROR);
+  it('exposes details passed positionally', () => {
+    const err = new FsError(ErrorCode.TOO_LARGE, 'too big', '/x', { size: 9, maxSize: 4 });
+    assert.deepEqual(err.details, { size: 9, maxSize: 4 });
   });
 
-  it('VALIDATION_FAILED problem exposes issues', () => {
-    const problem: Problem = {
-      code: ErrorCode.VALIDATION_FAILED,
-      message: 'validation failed',
-      issues: [{ code: 'custom', message: 'required', path: ['field'] }],
-    };
-    const err = new FsError(problem);
-    assert.ok(Array.isArray(err.problem.issues));
-    assert.equal(err.problem.issues?.length, 1);
+  it('preserves cause', () => {
+    const cause = new Error('underlying');
+    const err = new FsError(ErrorCode.IO_ERROR, 'io failed', undefined, undefined, cause);
+    assert.equal(err.cause, cause);
+    assert.equal(err.code, ErrorCode.IO_ERROR);
   });
 });
 
@@ -250,9 +238,9 @@ describe('createDetailedError', () => {
     const schema = z.strictObject({ name: z.string() });
     const parsed = schema.safeParse({ name: 42 });
     assert.ok(!parsed.success);
-    const problem = zodErrorToProblem(parsed.error, schema);
-    const err = new FsError(problem);
-    const d = createDetailedError(err);
+    // classify() maps a raw ZodError straight to a VALIDATION_FAILED problem —
+    // this is the path tool input validation actually takes.
+    const d = createDetailedError(parsed.error);
     assert.equal(d.code, ErrorCode.VALIDATION_FAILED);
     assert.ok(Array.isArray(d.issues));
     assert.ok((d.issues?.length ?? 0) > 0);
@@ -344,7 +332,7 @@ describe('hasErrorShape / isFsError (REQ-001)', () => {
     // Covers the move.ts:101 `if (isFsError(err)) throw err;` rethrow branch:
     // a factory-constructed FsError must still be recognized after the
     // instanceof -> structural swap.
-    const err = new FsError(Problem.cancelled('declined', { path: '/x' }));
+    const err = new FsError(ErrorCode.CANCELLED, 'declined', '/x');
     assert.equal(isFsError(err), true);
   });
 

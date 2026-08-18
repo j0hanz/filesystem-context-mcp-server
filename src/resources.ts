@@ -21,7 +21,7 @@ import { watch } from 'node:fs';
 
 import { ErrorCode, FsError, hasErrorShape } from './core/errors.js';
 import { readFileRaw } from './core/fs.js';
-import { Logger, withTelemetry } from './core/observability.js';
+import { Logger } from './core/observability.js';
 import type { PathGuard } from './core/path.js';
 import { PathCompleter } from './core/path.js';
 import type { Registrar, ServerDeps } from './core/registrar.js';
@@ -93,21 +93,15 @@ type ResourceContract = StaticResourceContract | TemplateResourceContract;
 // instructions
 // ═══════════════════════════════════════════════════════════════
 
-function pickAvailableToolNames(names: readonly string[]): string[] {
-  return [...names];
-}
-
 function buildToolsOverview(): string {
   const rows: [string, string[]][] = [
-    ['Navigate', pickAvailableToolNames(['list_roots', 'list', 'find_files'])],
-    ['Inspect', pickAvailableToolNames(['stat', 'search_text', 'hash_file'])],
-    ['Read', pickAvailableToolNames(['read'])],
-    ['Write', pickAvailableToolNames(['create', 'edit', 'move', 'delete', 'replace_text'])],
+    ['Navigate', ['list_roots', 'list', 'find_files']],
+    ['Inspect', ['stat', 'search_text', 'hash_file']],
+    ['Read', ['read']],
+    ['Write', ['create', 'edit', 'move', 'delete', 'replace_text']],
   ];
 
-  const rowLines = rows
-    .filter(([, names]) => names.length > 0)
-    .map(([cat, names]) => `${cat}: ${names.join(', ')}`);
+  const rowLines = rows.map(([cat, names]) => `${cat}: ${names.join(', ')}`);
   return `\`\`\`\n${rowLines.join('\n')}\n\`\`\``;
 }
 
@@ -503,81 +497,58 @@ function registerResources(
 
   server.server.setRequestHandler(
     'resources/subscribe',
-    (req: { params: SubscribeRequestParams }, ctx) => {
+    (req: { params: SubscribeRequestParams }) => {
       const requestedResource = resourceUrlFromServerUrl(req.params.uri);
-      return withTelemetry(
-        {
-          event: 'resource_subscription',
-          action: 'subscribe',
-          uri: requestedResource.toString(),
-          session_id: ctx.sessionId ?? null,
-        },
-        () => {
-          let foundMatch = false;
-          for (const contract of resourceContracts) {
-            if (!contract.subscribe) continue;
-            const configured = contract.uri ?? contract.uriTemplate.split('{')[0];
-            if (!configured) continue;
-            if (
-              checkResourceAllowed({
-                requestedResource,
-                configuredResource: configured,
-              })
-            ) {
-              foundMatch = true;
-              const subscribeResult = contract.subscribe(
-                requestedResource.toString(),
-                (updatedUri) => {
-                  const updatePayload: ResourceUpdatedNotificationParams = { uri: updatedUri };
-                  void server.server.sendResourceUpdated(updatePayload).catch((err: unknown) => {
-                    const msg = err instanceof Error ? err.message : String(err);
-                    if (!msg.includes('closed') && !msg.includes('Transport')) {
-                      Logger.warn(`Failed to send resource update for ${updatedUri}: ${msg}`);
-                    }
-                  });
-                },
-              );
-              if (subscribeResult === false) {
-                throw new ProtocolError(
-                  ProtocolErrorCode.InternalError,
-                  `Subscription rejected: watcher limit (${MAX_WATCHERS}) reached.`,
-                );
+      let foundMatch = false;
+      for (const contract of resourceContracts) {
+        if (!contract.subscribe) continue;
+        const configured = contract.uri ?? contract.uriTemplate.split('{')[0];
+        if (!configured) continue;
+        if (
+          checkResourceAllowed({
+            requestedResource,
+            configuredResource: configured,
+          })
+        ) {
+          foundMatch = true;
+          const subscribeResult = contract.subscribe(requestedResource.toString(), (updatedUri) => {
+            const updatePayload: ResourceUpdatedNotificationParams = { uri: updatedUri };
+            void server.server.sendResourceUpdated(updatePayload).catch((err: unknown) => {
+              const msg = err instanceof Error ? err.message : String(err);
+              if (!msg.includes('closed') && !msg.includes('Transport')) {
+                Logger.warn(`Failed to send resource update for ${updatedUri}: ${msg}`);
               }
-              break;
-            }
-          }
-          if (!foundMatch) {
+            });
+          });
+          if (subscribeResult === false) {
             throw new ProtocolError(
-              ProtocolErrorCode.ResourceNotFound,
-              `Resource not found: ${requestedResource.toString()}`,
+              ProtocolErrorCode.InternalError,
+              `Subscription rejected: watcher limit (${MAX_WATCHERS}) reached.`,
             );
           }
-          return {};
-        },
-      );
+          break;
+        }
+      }
+      if (!foundMatch) {
+        throw new ProtocolError(
+          ProtocolErrorCode.ResourceNotFound,
+          `Resource not found: ${requestedResource.toString()}`,
+        );
+      }
+      return {};
     },
   );
 
   server.server.setRequestHandler(
     'resources/unsubscribe',
-    (req: { params: UnsubscribeRequestParams }, ctx) => {
+    (req: { params: UnsubscribeRequestParams }) => {
       const canonical = resourceUrlFromServerUrl(req.params.uri).toString();
-      return withTelemetry(
-        {
-          event: 'resource_subscription',
-          action: 'unsubscribe',
-          uri: canonical,
-          session_id: ctx.sessionId ?? null,
-        },
-        () => {
-          for (const contract of resourceContracts) {
-            if (contract.unsubscribe) {
-              contract.unsubscribe(canonical);
-            }
-          }
-          return {};
-        },
-      );
+      for (const contract of resourceContracts) {
+        if (contract.unsubscribe) {
+          contract.unsubscribe(canonical);
+        }
+      }
+      return {};
     },
   );
 

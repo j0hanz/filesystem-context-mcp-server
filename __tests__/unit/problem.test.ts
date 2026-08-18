@@ -32,10 +32,10 @@ describe('classify', () => {
 });
 
 describe('Problem factories', () => {
-  it('Problem.notFound builds a NOT_FOUND problem', () => {
-    const p = Problem.notFound('missing', { path: '/x' });
-    assert.equal(p.code, ErrorCode.NOT_FOUND);
-    assert.equal(p.message, 'missing');
+  it('Problem.accessDenied builds an ACCESS_DENIED problem', () => {
+    const p = Problem.accessDenied('nope', { path: '/x' });
+    assert.equal(p.code, ErrorCode.ACCESS_DENIED);
+    assert.equal(p.message, 'nope');
     assert.equal(p.path, '/x');
   });
 });
