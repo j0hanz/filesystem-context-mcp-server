@@ -157,7 +157,7 @@ const OPTIONS_HELP: HelpRow[] = [
   { flags: '--http-host <host>', desc: 'HTTP server bind address (env: HTTP_HOST)' },
   {
     flags: '--api-key <key>',
-    desc: 'Require this API key on HTTP requests (env: API_KEY)',
+    desc: 'Require this API key on HTTP requests; prefer API_KEY (argv is world-readable)',
   },
   {
     flags: '--allow-sensitive',
@@ -282,7 +282,7 @@ function parsePortOption(raw: unknown): number | undefined {
   return n;
 }
 
-const CLI_PARSER_CONFIG = {
+export const CLI_PARSER_CONFIG = {
   options: {
     'allow-cwd': { type: 'boolean', default: false },
     'read-only': { type: 'boolean', default: false },

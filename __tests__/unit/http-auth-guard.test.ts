@@ -6,8 +6,10 @@ import { afterEach, describe, it } from 'node:test';
 
 import {
   assertHttpBindingPolicy,
+  assertHttpHostPolicy,
   isAllowedLocalhostOrigin,
   isLoopbackHttpHost,
+  parseAllowedHostsEnv,
   validateBearerAuthorization,
 } from '../../src/transport.js';
 
@@ -87,6 +89,28 @@ describe('validateBearerAuthorization', () => {
   it('rejects a token exceeding the 4096-byte cap', () => {
     const oversized = 'x'.repeat(4097);
     assert.equal(validateBearerAuthorization(apiKey, `Bearer ${oversized}`), false);
+  });
+});
+
+describe('parseAllowedHostsEnv', () => {
+  it('trims entries and drops empty ones', () => {
+    assert.deepEqual(parseAllowedHostsEnv(' a.local , b.local ,'), ['a.local', 'b.local']);
+  });
+
+  it('reads a whitespace- or separator-only value as unset', () => {
+    // A list that survived as [''] would 403 every Host while looking configured.
+    for (const value of [undefined, '', ' ', ',', ', ,']) {
+      assert.deepEqual(parseAllowedHostsEnv(value), [], JSON.stringify(value));
+    }
+  });
+
+  it('agrees with assertHttpHostPolicy on what counts as configured', () => {
+    assert.throws(() => {
+      assertHttpHostPolicy('0.0.0.0', ', ,', false);
+    }, /Refusing to bind wildcard host/);
+    assert.doesNotThrow(() => {
+      assertHttpHostPolicy('0.0.0.0', 'public.example', false);
+    });
   });
 });
 

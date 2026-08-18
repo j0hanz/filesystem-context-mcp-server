@@ -18,7 +18,6 @@ import * as z from 'zod/v4';
 import { assertNotAborted, createTimedAbortSignal, withAbort } from './concurrency.js';
 import { ErrorCode, FsError, isAbortError, isNodeError } from './errors.js';
 import { Logger } from './observability.js';
-import type { LoggingState } from './observability.js';
 import { parseEnvDirList, parseTrueEnvFlag } from './primitives.js';
 
 export type ValidatedPath = string & { readonly __validated: unique symbol };
@@ -587,13 +586,18 @@ export class PathGuard {
   private readonly denialCache = new Map<string, boolean>();
 
   readonly options: ServerOptions | undefined;
-  readonly loggingState: LoggingState | undefined;
+  /**
+   * True when this guard backs a live MCP server rather than a one-shot CLI
+   * invocation. Operator-facing configuration warnings are suppressed unless
+   * it is set, so `--print-config` and unit construction stay quiet.
+   */
+  readonly isServerContext: boolean;
   onAccessDenied?: (blockedPath: string) => Promise<boolean>;
 
-  constructor(options?: ServerOptions, loggingState?: LoggingState) {
+  constructor(options?: ServerOptions, isServerContext = false) {
     this.denyPatterns = toPatternSet(compilePatterns(buildSensitivePatterns()));
     this.options = options;
-    this.loggingState = loggingState;
+    this.isServerContext = isServerContext;
   }
 
   static async fromAllowedDirectories(

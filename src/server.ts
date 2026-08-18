@@ -4,15 +4,12 @@ import { McpServer } from '@modelcontextprotocol/server';
 import { readFile } from 'node:fs/promises';
 
 import { GuardedFileSystem } from './core/fs.js';
-import { createLoggingState, Logger } from './core/observability.js';
-import type { LoggingLevel } from './core/observability.js';
 import type { ServerOptions } from './core/path.js';
 import { PathGuard } from './core/path.js';
 import type { Registrar, ServerDeps } from './core/registrar.js';
 import { McpRootsSynchronizer } from './core/registrar.js';
 import type { ResourceStore } from './core/store.js';
 import { createInMemoryResourceStore } from './core/store.js';
-import { LOG_LEVEL } from './core/util.js';
 import { pkgInfo } from './pkg-info.js';
 import { promptsRegistrar } from './prompts.js';
 import { resourcesRegistrar } from './resources.js';
@@ -109,8 +106,10 @@ export async function createServer(
   const resourceStore = createInMemoryResourceStore();
   const localIcon = await getLocalIconInfo();
 
+  // No `logging` capability: SEP-2577 deprecates the subsystem, and this server
+  // routes every diagnostic to stderr rather than notifications/message.
+  // Advertising it would promise a setLevel that changes nothing.
   const capabilities = {
-    logging: {},
     resources: { subscribe: true },
     tools: {},
     prompts: {},
@@ -136,20 +135,10 @@ export async function createServer(
   };
   const server = new McpServer(withDefaultIcons(implementation, localIcon), serverConfig);
 
-  const loggingState = createLoggingState(LOG_LEVEL);
-  const pathGuard = new PathGuard(options, loggingState);
+  const pathGuard = new PathGuard(options, true);
   await pathGuard.recomputeAllowedDirectories();
 
-  const synchronizer = new McpRootsSynchronizer(pathGuard, loggingState);
-
-  server.server.setRequestHandler(
-    'logging/setLevel',
-    (req: { params: { level: LoggingLevel } }) => {
-      loggingState.minimumLevel = req.params.level;
-      Logger.info(`Log level set to ${req.params.level}`);
-      return {};
-    },
-  );
+  const synchronizer = new McpRootsSynchronizer(pathGuard, true);
 
   const isInitialized = options.isInitialized ?? (() => synchronizer.isInitialized());
   const deps: ServerDeps = {

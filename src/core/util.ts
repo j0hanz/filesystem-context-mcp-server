@@ -124,34 +124,6 @@ function parseEnvBool(envVar: string, defaultValue: boolean): boolean {
   return false;
 }
 
-const VALID_LOG_LEVELS = [
-  'debug',
-  'info',
-  'notice',
-  'warning',
-  'error',
-  'critical',
-  'alert',
-  'emergency',
-] as const;
-
-type ValidLogLevel = (typeof VALID_LOG_LEVELS)[number];
-
-function parseEnvLogLevel(envVar: string, defaultValue: ValidLogLevel): ValidLogLevel {
-  const value = process.env[envVar];
-  if (!value) return defaultValue;
-  const normalized = value.trim().toLowerCase();
-  if ((VALID_LOG_LEVELS as readonly string[]).includes(normalized)) {
-    return normalized as ValidLogLevel;
-  }
-  Logger.warn(
-    `Invalid ${envVar} value: ${value} (must be ${VALID_LOG_LEVELS.join('|')}). Using default: ${defaultValue}`,
-  );
-  return defaultValue;
-}
-
-export const LOG_LEVEL = parseEnvLogLevel('LOG_LEVEL', 'info');
-
 export function getInitHandshakeTimeoutMs(): number {
   return parseEnvInt('FS_INIT_HANDSHAKE_TIMEOUT_MS', 30_000, 1_000, 300_000);
 }

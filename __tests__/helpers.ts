@@ -1,6 +1,6 @@
 import { Client } from '@modelcontextprotocol/client';
 import type { ElicitResult } from '@modelcontextprotocol/client';
-import { McpServer } from '@modelcontextprotocol/server';
+import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -22,7 +22,6 @@ import { LIST_ALLOWED_DIRECTORIES } from '../src/tools/roots.js';
 import { SEARCH_CONTENT } from '../src/tools/search-content.js';
 import { SEARCH_FILES } from '../src/tools/search-files.js';
 import { GET_FILE_INFO } from '../src/tools/stat.js';
-import { LinkedTransport } from './linked-transport.js';
 
 // Disable worker threads in integration tests — workers are tested separately.
 process.env.FS_DISABLE_WORKERS ??= '1';
@@ -95,7 +94,7 @@ export async function createTestEnv(): Promise<TestEnv> {
   }
 
   const client = new Client({ name: 'test-client', version: '1.0.0' });
-  const [ct, st] = LinkedTransport.createLinkedPair();
+  const [ct, st] = InMemoryTransport.createLinkedPair();
   await server.connect(st);
   await client.connect(ct);
 
@@ -172,7 +171,7 @@ export async function createTestEnvWithElicitation(handler: ElicitationHandler):
     ),
   );
 
-  const [ct, st] = LinkedTransport.createLinkedPair();
+  const [ct, st] = InMemoryTransport.createLinkedPair();
   await server.connect(st);
   await client.connect(ct);
 

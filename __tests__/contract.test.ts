@@ -251,8 +251,7 @@ describe('Completion contract', () => {
     const { getResourceContracts } = await import('../src/resources.js');
     const { PathGuard } = await import('../src/core/path.js');
     const { createInMemoryResourceStore } = await import('../src/core/store.js');
-    const { LinkedTransport } = await import('./linked-transport.js');
-    const { ResourceTemplate } = await import('@modelcontextprotocol/server');
+    const { InMemoryTransport, ResourceTemplate } = await import('@modelcontextprotocol/server');
 
     const tmpDir = await mkdtemp(join(tmpdir(), `fsmcp-cc-${randomUUID().slice(0, 8)}-`));
     await writeFile(join(tmpDir, 'sample.txt'), 'sample');
@@ -291,7 +290,7 @@ describe('Completion contract', () => {
     }
 
     const client = new Client({ name: 'contract-client', version: '1.0.0' });
-    const [ct, st] = LinkedTransport.createLinkedPair();
+    const [ct, st] = InMemoryTransport.createLinkedPair();
     await server.connect(st);
     await client.connect(ct);
 

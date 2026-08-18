@@ -10,7 +10,7 @@ import {
   withAbort,
 } from './concurrency.js';
 import { isAbortError } from './errors.js';
-import { Logger, type LoggingState } from './observability.js';
+import { Logger } from './observability.js';
 import { isSamePath, normalizePath } from './path.js';
 import type { PathGuard } from './path.js';
 import type { IconInfo } from './primitives.js';
@@ -129,9 +129,7 @@ async function resolveRootDirectories(roots: Root[]): Promise<string[]> {
 }
 /* eslint-enable @typescript-eslint/no-deprecated */
 
-function logMissingDirectories(pathGuard: PathGuard, loggingState: LoggingState | undefined): void {
-  if (!loggingState) return;
-
+function logMissingDirectories(pathGuard: PathGuard): void {
   const boundaries = pathGuard.getRootBoundaries();
   if (boundaries.length > 0) {
     Logger.emit(
@@ -156,8 +154,8 @@ function logMissingDirectories(pathGuard: PathGuard, loggingState: LoggingState 
 }
 
 function logMissingDirectoriesIfNeeded(pathGuard: PathGuard): void {
-  if (pathGuard.getAllowedDirectories().length === 0 && pathGuard.loggingState) {
-    logMissingDirectories(pathGuard, pathGuard.loggingState);
+  if (pathGuard.getAllowedDirectories().length === 0 && pathGuard.isServerContext) {
+    logMissingDirectories(pathGuard);
   }
 }
 
@@ -172,11 +170,12 @@ export class McpRootsSynchronizer {
   private _debouncedUpdate: { (server: McpServer): void; cancel: () => void } | undefined;
 
   private readonly pathGuard: PathGuard;
-  private readonly loggingState: LoggingState | undefined;
+  /** See {@link PathGuard.isServerContext} — gates operator-facing warnings. */
+  private readonly isServerContext: boolean;
 
-  constructor(pathGuard: PathGuard, loggingState?: LoggingState) {
+  constructor(pathGuard: PathGuard, isServerContext = false) {
     this.pathGuard = pathGuard;
-    this.loggingState = loggingState;
+    this.isServerContext = isServerContext;
   }
 
   isInitialized(): boolean {
@@ -205,7 +204,7 @@ export class McpRootsSynchronizer {
 
     this.initTimer = setTimeout(() => {
       if (this.state === 'initializing') {
-        if (this.loggingState) {
+        if (this.isServerContext) {
           Logger.emit(
             'warning',
             `Client did not send notifications/initialized within ${String(initHandshakeTimeoutMs)}ms`,
@@ -254,14 +253,14 @@ export class McpRootsSynchronizer {
       }
     } catch (error) {
       /* eslint-enable @typescript-eslint/no-deprecated */
-      if (this.loggingState) {
-        const level =
-          error instanceof Error && error.message.includes('timeout') ? 'debug' : 'warning';
-        Logger.emit(
-          level,
-          `[${level.toUpperCase()}] MCP Roots protocol unavailable or failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
+      // Ungated — a degraded-to-zero-roots server is exactly the case an
+      // operator must be told about. listRoots() throws outright on the
+      // 2026-07-28 protocol era, where the push-style request model is gone.
+      const detail = error instanceof Error ? error.message : String(error);
+      Logger.emit(
+        detail.includes('timeout') ? 'debug' : 'warning',
+        `MCP Roots unavailable (${detail}). No roots discovered from the client — pass allowed directories as CLI arguments or set FS_ALLOWED_DIRS.`,
+      );
     } finally {
       const currentState = this.state as RootsManagerState;
       if (currentState !== 'shutting_down') {

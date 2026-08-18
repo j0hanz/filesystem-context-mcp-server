@@ -1,5 +1,5 @@
 import { Client } from '@modelcontextprotocol/client';
-import { McpServer } from '@modelcontextprotocol/server';
+import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { ResourceTemplate } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
@@ -13,7 +13,6 @@ import { normalizePath, PathGuard } from '../../src/core/path.js';
 import { createInMemoryResourceStore } from '../../src/core/store.js';
 import { PROMPT_ENTRIES } from '../../src/prompts.js';
 import { getResourceContracts } from '../../src/resources.js';
-import { LinkedTransport } from '../linked-transport.js';
 
 const mockPathGuard = {
   getAllowedDirectories: () => [],
@@ -57,7 +56,7 @@ async function connectPair(
   server: McpServer,
 ): Promise<{ client: Client; cleanup: () => Promise<void> }> {
   const client = new Client({ name: 'test-client', version: '1.0.0' });
-  const [clientTransport, serverTransport] = LinkedTransport.createLinkedPair();
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   await client.connect(clientTransport);
   return {

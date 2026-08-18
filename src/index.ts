@@ -9,8 +9,14 @@ import * as z from 'zod/v4';
 
 // bridge.ts has zero intra-package dependencies; statically importing it here
 // does NOT pull in util.ts or any config-bearing module.
+import { liftFlagsToEnv } from './cli-env.js';
 
 z.config(z.locales.en());
+
+// Must run before the dynamic imports below: core/observability.ts and
+// core/util.ts freeze LOG_LEVEL and MAX_FILE_SIZE into module-level constants
+// at import time.
+liftFlagsToEnv();
 
 // Dynamically import all modules that transitively load util.ts so that the
 // bridge flags above are in effect when their module-level constants are set.

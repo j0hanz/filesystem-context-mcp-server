@@ -7,7 +7,6 @@ import {
 } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
-import { channel } from 'node:diagnostics_channel';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
 import type { Server } from 'node:http';
@@ -134,6 +133,7 @@ describe('HTTP transport', () => {
     delete process.env['HTTP_HOST'];
     delete process.env['API_KEY'];
     delete process.env['FS_INIT_HANDSHAKE_TIMEOUT_MS'];
+    delete process.env['FILESYSTEM_MCP_ALLOWED_HOSTS'];
   });
 
   it('accepts negotiated supported protocol versions after initialize', async () => {
@@ -179,7 +179,8 @@ describe('HTTP transport', () => {
     assert.ok(initPayload.result?.capabilities?.['resources']);
     assert.ok(initPayload.result?.capabilities?.['prompts']);
     assert.ok(initPayload.result?.capabilities?.['completions']);
-    assert.ok(initPayload.result?.capabilities?.['logging']);
+    // `logging` is deliberately not advertised — see createServer().
+    assert.equal(initPayload.result?.capabilities?.['logging'], undefined);
 
     const initializedResponse = await fetch(`http://127.0.0.1:${String(port)}/mcp`, {
       method: 'POST',
@@ -196,56 +197,6 @@ describe('HTTP transport', () => {
     });
 
     assert.equal(initializedResponse.status, 202);
-  });
-
-  it.skip('emits one http_request_complete event for initialize requests', async () => {
-    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-log-'));
-    const logChannel = channel('filesystem-mcp:log');
-    const messages: string[] = [];
-    const subscription = (msg: unknown): void => {
-      const event = msg as { message?: string };
-      if (typeof event.message === 'string') {
-        messages.push(event.message);
-      }
-    };
-    logChannel.subscribe(subscription);
-
-    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
-    servers.push(server);
-
-    const port = getServerPort(server);
-    const response = await rawHttpRequest({
-      port,
-      method: 'POST',
-      headers: {
-        accept: 'application/json, text/event-stream',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'initialize',
-        params: {
-          protocolVersion: LATEST_PROTOCOL_VERSION,
-          capabilities: {},
-          clientInfo: { name: 'http-test', version: '1.0.0' },
-        },
-      }),
-    });
-
-    assert.equal(response.statusCode, 200);
-
-    const completion = messages.find((event) => event.includes('event=http_request_complete'));
-
-    assert.ok(completion, 'expected http_request_complete event');
-    assert.ok(completion?.includes('transport=http'));
-    assert.ok(completion?.includes('method=POST'));
-    assert.ok(completion?.includes('jsonrpc_method=initialize'));
-    assert.ok(completion?.includes('http_status=200'));
-    assert.ok(completion?.includes('outcome=success'));
-    assert.ok(completion?.includes('duration_ms='));
-
-    logChannel.unsubscribe(subscription);
   });
 
   it('accepts the current protocol version (2025-11-25)', async () => {
@@ -656,31 +607,6 @@ describe('HTTP transport', () => {
     );
   });
 
-  it.skip('logs structured context for runtime HTTP server errors', async () => {
-    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-log-'));
-    const logChannel = channel('filesystem-mcp:log');
-    const messages: string[] = [];
-    const subscription = (msg: unknown): void => {
-      const event = msg as { message?: string };
-      if (typeof event.message === 'string') {
-        messages.push(event.message);
-      }
-    };
-    logChannel.subscribe(subscription);
-
-    try {
-      const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
-      servers.push(server);
-
-      server.emit('error', new Error('runtime boom'));
-
-      const logged = messages.find((message) => message.includes('[HTTP] runtime server error'));
-      assert.ok(logged, 'expected explicit runtime server error log entry');
-    } finally {
-      logChannel.unsubscribe(subscription);
-    }
-  });
-
   it('returns 413 for request bodies exceeding the size limit', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
     const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
@@ -929,5 +855,122 @@ describe('HTTP transport', () => {
       }),
     });
     assert.equal(res3.statusCode, 403);
+  });
+
+  it('accepts every loopback spelling of Host on a default bind', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+    const port = getServerPort(server);
+
+    // Regression: a bare ['127.0.0.1'] allowed-host list 403s the URL users
+    // actually type (http://localhost:<port>/mcp).
+    for (const host of ['127.0.0.1', 'localhost', '[::1]']) {
+      const response = await rawHttpRequest({
+        port,
+        method: 'POST',
+        headers: {
+          accept: 'application/json, text/event-stream',
+          'content-type': 'application/json',
+          host,
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {
+            protocolVersion: LATEST_PROTOCOL_VERSION,
+            capabilities: {},
+            clientInfo: { name: 'http-test', version: '1.0.0' },
+          },
+        }),
+      });
+      assert.equal(response.statusCode, 200, `Host: ${host} must be accepted`);
+    }
+  });
+
+  describe('bearer auth', () => {
+    const API_KEY = 'test-api-key-at-least-16-chars';
+
+    async function startAuthedServer(): Promise<number> {
+      tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-auth-'));
+      process.env['API_KEY'] = API_KEY;
+      const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+      servers.push(server);
+      return getServerPort(server);
+    }
+
+    function initializeBody(): string {
+      return JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: LATEST_PROTOCOL_VERSION,
+          capabilities: {},
+          clientInfo: { name: 'http-test', version: '1.0.0' },
+        },
+      });
+    }
+
+    const jsonHeaders = {
+      accept: 'application/json, text/event-stream',
+      'content-type': 'application/json',
+    };
+
+    it('rejects an unauthenticated request with 401 and a Bearer challenge', async () => {
+      const port = await startAuthedServer();
+
+      const response = await rawHttpRequest({
+        port,
+        method: 'POST',
+        headers: jsonHeaders,
+        body: initializeBody(),
+      });
+
+      assert.equal(response.statusCode, 401);
+      assert.equal(response.headers['www-authenticate'], 'Bearer');
+      const parsed = JSON.parse(response.body) as { error?: { message?: string } };
+      assert.equal(parsed.error?.message, 'Unauthorized');
+    });
+
+    it('rejects a wrong bearer token with 401', async () => {
+      const port = await startAuthedServer();
+
+      const response = await rawHttpRequest({
+        port,
+        method: 'POST',
+        headers: { ...jsonHeaders, authorization: 'Bearer not-the-right-key-1234' },
+        body: initializeBody(),
+      });
+
+      assert.equal(response.statusCode, 401);
+    });
+
+    it('accepts the matching bearer token', async () => {
+      const port = await startAuthedServer();
+
+      const response = await rawHttpRequest({
+        port,
+        method: 'POST',
+        headers: { ...jsonHeaders, authorization: `Bearer ${API_KEY}` },
+        body: initializeBody(),
+      });
+
+      assert.equal(response.statusCode, 200);
+    });
+
+    it('guards GET and DELETE, not just POST', async () => {
+      const port = await startAuthedServer();
+
+      for (const method of ['GET', 'DELETE']) {
+        const response = await rawHttpRequest({
+          port,
+          method,
+          headers: { accept: 'text/event-stream' },
+        });
+        assert.equal(response.statusCode, 401, `${method} must require auth`);
+      }
+    });
   });
 });

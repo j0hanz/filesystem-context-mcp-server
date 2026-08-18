@@ -1,8 +1,4 @@
-import {
-  createMcpExpressApp,
-  hostHeaderValidation,
-  localhostHostValidation,
-} from '@modelcontextprotocol/express';
+import { createMcpExpressApp } from '@modelcontextprotocol/express';
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import type { McpServer } from '@modelcontextprotocol/server';
 import {
@@ -16,10 +12,11 @@ import {
   isJSONRPCRequest,
   isJSONRPCResultResponse,
   JSONRPC_VERSION,
-  type JSONRPCErrorResponse,
   type JSONRPCMessage,
+  localhostAllowedHostnames,
   parseJSONRPCMessage,
   ProtocolErrorCode,
+  type RequestId,
   type StreamId,
 } from '@modelcontextprotocol/server';
 // Moved to a Node-only subpath export upstream (not re-exported from the
@@ -195,16 +192,29 @@ const ALLOWED_ORIGIN_PATTERNS: readonly RegExp[] = [
 ];
 
 /**
- * Builds a JSON-RPC error response object with the given code and message.
- * The `id` field is set to `null` since this is a response to an invalid request that may not have a valid ID.
+ * Wire shape for a JSON-RPC error emitted outside the transport's own dispatch.
+ * `id` echoes the request when one was parsed, and is `null` when it was not —
+ * the form JSON-RPC 2.0 mandates for errors raised before a request is
+ * identified. The SDK's `JSONRPCErrorResponse` models `id` as
+ * optional-but-never-null, so this is deliberately its own type rather than a
+ * cast. Only ever handed to `JSON.stringify`.
  */
-function buildJsonRpcError(code: number, message: string): JSONRPCErrorResponse {
-  const payload: Omit<JSONRPCErrorResponse, 'id'> & { id: null } = {
+interface PreDispatchJsonRpcError {
+  jsonrpc: typeof JSONRPC_VERSION;
+  id: RequestId | null;
+  error: { code: number; message: string };
+}
+
+function buildJsonRpcError(
+  code: number,
+  message: string,
+  id: RequestId | null = null,
+): PreDispatchJsonRpcError {
+  return {
     jsonrpc: JSONRPC_VERSION,
-    id: null,
+    id,
     error: { code, message },
   };
-  return payload as unknown as JSONRPCErrorResponse;
 }
 
 function sendJsonRpcError(
@@ -212,9 +222,10 @@ function sendJsonRpcError(
   status: number,
   code: number,
   message: string,
+  id: RequestId | null = null,
 ): void {
   res.writeHead(status, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(buildJsonRpcError(code, message)));
+  res.end(JSON.stringify(buildJsonRpcError(code, message, id)));
 }
 
 function getSessionId(req: IncomingMessage): string | undefined {
@@ -319,6 +330,19 @@ export function assertHttpBindingPolicy(host: string, apiKey: string | undefined
 }
 
 /**
+ * Splits `FILESYSTEM_MCP_ALLOWED_HOSTS` into trimmed, non-empty hostnames.
+ * Empty entries are dropped so a value of "," or " " reads as unset rather than
+ * as a list that rejects every Host. Shared by the binding policy and the app
+ * wiring so both agree on what "configured" means.
+ */
+export function parseAllowedHostsEnv(value: string | undefined): string[] {
+  return (value ?? '')
+    .split(',')
+    .map((h) => h.trim())
+    .filter((h) => h.length > 0);
+}
+
+/**
  * Refuse to bind a wildcard host (`0.0.0.0` / `::`) without an explicit
  * `FILESYSTEM_MCP_ALLOWED_HOSTS` list. Clients never send `Host: 0.0.0.0`, so
  * defaulting the allowed-host set to the wildcard string would reject all real
@@ -335,7 +359,7 @@ export function assertHttpHostPolicy(
   const isWildcard = host === '0.0.0.0' || host === '::';
   if (!isWildcard) return; // concrete non-loopback: Host validated against the bind host.
   if (allowUnrestricted) return;
-  if (allowedHostsEnv !== undefined && allowedHostsEnv.trim().length > 0) return;
+  if (parseAllowedHostsEnv(allowedHostsEnv).length > 0) return;
   throw new FsError(
     ErrorCode.PERMISSION_DENIED,
     `Refusing to bind wildcard host '${host}' without FILESYSTEM_MCP_ALLOWED_HOSTS. Set it to the public hostname(s) clients send, or set FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS=1 to accept the risk.`,
@@ -542,9 +566,11 @@ async function createHttpSession(
     retryInterval: 2_000,
     onsessioninitialized: (sessionId) => {
       currentSessionId = sessionId;
-      const loggingState = pathGuard.loggingState;
-      if (!loggingState) {
-        throw new FsError(ErrorCode.VALIDATION_FAILED, 'LoggingState is required');
+      if (!pathGuard.isServerContext) {
+        throw new FsError(
+          ErrorCode.VALIDATION_FAILED,
+          'PathGuard must be constructed with isServerContext for an HTTP session',
+        );
       }
       registry.add(sessionId, {
         server: mcpServer,
@@ -643,6 +669,9 @@ async function handlePostMcp(
     },
     async (enrich: (extraData: Record<string, unknown>) => void) => {
       let jsonrpcMethod: string | undefined;
+      // Hoisted so the catch below can echo the id back — a client awaiting a
+      // response otherwise blocks to timeout on an uncorrelatable error.
+      let requestId: RequestId | null = null;
 
       try {
         const body = req.body as unknown;
@@ -659,6 +688,7 @@ async function handlePostMcp(
         const kind = classifyJsonRpcMessage(message);
         jsonrpcMethod =
           'method' in message && typeof message.method === 'string' ? message.method : undefined;
+        if (isJSONRPCRequest(message)) requestId = message.id;
 
         enrich({
           request_kind: kind,
@@ -729,7 +759,13 @@ async function handlePostMcp(
       } catch (error) {
         Logger.error('[HTTP] Error handling POST request:', formatUnknownErrorMessage(error));
         if (!res.headersSent) {
-          sendJsonRpcError(res, 500, ProtocolErrorCode.InternalError, 'Internal Server Error');
+          sendJsonRpcError(
+            res,
+            500,
+            ProtocolErrorCode.InternalError,
+            'Internal Server Error',
+            requestId,
+          );
         }
         // Do NOT rethrow — an unhandled rejection here would trigger a process-wide shutdown.
         // The error is already logged, and we've sent a 500 response if possible.
@@ -798,12 +834,19 @@ function setupExpressApp(
   registry: HttpSessionRegistry,
   eventStore: InMemoryEventStore,
 ): Express {
-  const allowedHostsEnv = process.env['FILESYSTEM_MCP_ALLOWED_HOSTS'];
-  const allowedHosts = allowedHostsEnv
-    ? allowedHostsEnv.split(',').map((h) => h.trim())
-    : httpHost === '0.0.0.0' || httpHost === '::'
-      ? []
-      : [httpHost];
+  const configuredHosts = parseAllowedHostsEnv(process.env['FILESYSTEM_MCP_ALLOWED_HOSTS']);
+
+  // A loopback bind gets the whole localhost hostname set, not just the bind
+  // address: a client dialing http://localhost:<port> sends `Host: localhost`,
+  // which a bare ['127.0.0.1'] list would 403.
+  const allowedHosts =
+    configuredHosts.length > 0
+      ? configuredHosts
+      : isLoopbackHttpHost(httpHost)
+        ? localhostAllowedHostnames()
+        : httpHost === '0.0.0.0' || httpHost === '::'
+          ? []
+          : [httpHost];
 
   // Env-derived CORS origins (hostname-form, no scheme/port — matches the SDK
   // app's allowedOrigins consumer). Default to the localhost set so loopback
@@ -828,13 +871,10 @@ function setupExpressApp(
     jsonLimit: `${MAX_REQUEST_BODY_BYTES}b`,
   });
 
-  if (allowedHostsEnv) {
-    app.use('/mcp', hostHeaderValidation(allowedHosts));
-  } else if (isLoopbackHttpHost(httpHost)) {
-    app.use('/mcp', localhostHostValidation());
-  } else if (allowedHosts.length > 0) {
-    app.use('/mcp', hostHeaderValidation(allowedHosts));
-  } else {
+  // createMcpExpressApp already mounts hostHeaderValidation(allowedHosts)
+  // app-wide when the list is non-empty — a second /mcp-scoped copy here would
+  // be dead code, since the app-wide check rejects first.
+  if (allowedHosts.length === 0) {
     // Reachable only under FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS=1 —
     // assertHttpHostPolicy throws for a wildcard bind without allowed hosts.
     Logger.warn(
