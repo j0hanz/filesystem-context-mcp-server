@@ -185,7 +185,10 @@ interface ReplacementMatcher {
   testBuffer(buffer: Buffer): boolean;
 }
 
-function createRegexReplacementMatcher(regex: Regex): ReplacementMatcher {
+function createRegexReplacementMatcher(
+  regex: Regex,
+  expandReplacement: boolean,
+): ReplacementMatcher {
   return {
     testBuffer(buffer: Buffer): boolean {
       return regex.test(buffer.toString('utf-8'));
@@ -202,7 +205,13 @@ function createRegexReplacementMatcher(regex: Regex): ReplacementMatcher {
     },
     replace(content: string, replacement: string): string {
       regex.lastIndex = 0;
-      return content.replace(regex, replacement);
+      // Only isRegex=true opts into $1/$& substitution. A literal search reaches
+      // this matcher too (case-insensitive and wholeWord both need a regex), and
+      // there the replacement must be inserted verbatim — the callback form of
+      // String.replace disables $-expansion entirely.
+      return expandReplacement
+        ? content.replace(regex, replacement)
+        : content.replace(regex, () => replacement);
     },
   };
 }
@@ -505,7 +514,7 @@ function createReplacementMatcher(args: SearchAndReplaceArgs): ReplacementMatche
   // Use regex when isRegex, wholeWord, or case-insensitive (all require RE2)
   if (args.isRegex || args.wholeWord || !args.caseSensitive) {
     const regex = compileRegex(buildSearchPattern(args), { caseSensitive: args.caseSensitive });
-    return createRegexReplacementMatcher(regex);
+    return createRegexReplacementMatcher(regex, args.isRegex);
   }
   return createCaseSensitiveLiteralMatcher(args.searchPattern);
 }

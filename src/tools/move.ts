@@ -138,15 +138,30 @@ function buildSummary(
   return parts.join(' · ');
 }
 
+interface MoveSource {
+  /** Symlink preserved — the path actually handed to rename/cp/rm. */
+  renamePath: string;
+  /** Symlink resolved — the identity used for every same-target comparison. */
+  realPath: string;
+}
+
+/**
+ * A move needs two views of its source. Renaming must operate on the link
+ * itself, or moving a symlink would rename the file it points at and leave the
+ * link dangling. Every collision check must instead compare the resolved
+ * target, or a link moved onto itself (or onto its own target) reads as a real
+ * move and renames the link over that target, destroying it.
+ */
 async function validateMoveSource(
   source: string,
   pathGuard: ToolCtx['pathGuard'],
-): Promise<string> {
+): Promise<MoveSource> {
   try {
-    const validSource = await pathGuard.validateExistingPath(source);
-    return validSource;
+    const realPath = await pathGuard.validateExistingPath(source);
+    const renamePath = await pathGuard.validatePathForDelete(source);
+    return { renamePath, realPath };
   } catch (error) {
-    if (error instanceof FsError) throw error;
+    if (isFsError(error)) throw error;
     throw new FsError(ErrorCode.ACCESS_DENIED, `Move failed for ${source}`, source);
   }
 }
@@ -251,10 +266,13 @@ export const MOVE = defineTool({
 
     for (const move of args.moves) {
       try {
-        const validSource = await validateMoveSource(move.source, ctx.pathGuard);
+        const { renamePath, realPath } = await validateMoveSource(move.source, ctx.pathGuard);
         const validDest = await ctx.pathGuard.validatePathForWrite(move.destination);
 
-        const resolvedSource = resolve(validSource);
+        // Comparisons run on the resolved source; only the fs call below uses
+        // renamePath. validatePathForWrite resolves the destination through a
+        // symlink too, so both sides of every check must be resolved to match.
+        const resolvedSource = resolve(realPath);
         const resolvedDest = resolve(validDest);
 
         if (resolvedSource === resolvedDest) {
@@ -318,9 +336,9 @@ export const MOVE = defineTool({
           );
         }
 
-        await performRenameWithFallback(validSource, validDest, ctx.fs, move.source);
+        await performRenameWithFallback(renamePath, validDest, ctx.fs, move.source);
 
-        results.push({ ok: true as const, from: validSource, to: validDest });
+        results.push({ ok: true as const, from: renamePath, to: validDest });
         ctx.log?.('info', `move: ${move.source} -> ${move.destination}`, 'move');
       } catch (err) {
         // Re-throw cancellation (user-declined overwrite or abort signal)

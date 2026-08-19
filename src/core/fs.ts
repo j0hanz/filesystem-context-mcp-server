@@ -4,6 +4,7 @@ import type { ReadStream, Stats } from 'node:fs';
 import { createReadStream, constants as fsConstants } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import {
+  chmod as fsChmod,
   cp as fsCp,
   lstat as fsLstat,
   mkdir as fsMkdir,
@@ -83,7 +84,10 @@ export async function readlink(
   pathGuard: PathGuard,
   options?: Parameters<typeof fsReadlink>[1],
 ): Promise<{ linkString: string; validPath: string }> {
-  const validPath = await pathGuard.validateExistingPath(filePath);
+  // validateExistingPath resolves through the symlink, so readlink would always
+  // be handed the final target — a regular file — and fail EINVAL. This guard
+  // keeps the link itself while still enforcing containment and the denylist.
+  const validPath = await pathGuard.validatePathForDelete(filePath);
   const raw = await fsReadlink(validPath, options);
   const linkString = Buffer.isBuffer(raw) ? raw.toString('utf-8') : raw;
   return { linkString, validPath };
@@ -1007,9 +1011,30 @@ export async function atomicWriteFile(
   const tempSuffix = randomUUID().replace(/-/g, '').slice(0, 12);
   const tempPath = `${validPath}.${tempSuffix}.tmp`;
 
+  // The rename below swaps in the temp file's inode, so the target would
+  // inherit fsWriteFile's default 0o666 & ~umask — silently widening a 0600
+  // file to 0644 on every write. Carry the existing mode across instead.
+  let existingMode: number | undefined;
+  try {
+    existingMode = (await fsStat(validPath)).mode & 0o777;
+  } catch (error) {
+    // ENOENT is the normal new-file case: the default mode is correct there.
+    // Anything else (EACCES, EIO) means the mode about to be overwritten could
+    // not be read, and the write will silently widen the file — say so rather
+    // than swallowing it.
+    if (!isNodeError(error) || error.code !== 'ENOENT') {
+      Logger.warn(
+        `atomicWriteFile: cannot read the existing mode of ${validPath}; the write will use the default mode: ${formatUnknownErrorMessage(error)}`,
+      );
+    }
+  }
+
   try {
     assertNotAborted(signal);
     await fsWriteFile(tempPath, content, { encoding, signal });
+    if (existingMode !== undefined) {
+      await fsChmod(tempPath, existingMode);
+    }
     await withAbort(fsRename(tempPath, validPath), signal);
   } catch (error) {
     try {
@@ -1057,7 +1082,9 @@ export class GuardedFileSystem {
   }
 
   async rename(oldPath: string, newPath: string) {
-    const validOld = await this.pathGuard.validateExistingPath(oldPath);
+    // Not validateExistingPath: that resolves through a symlink, so renaming a
+    // link would rename its target and leave the link dangling.
+    const validOld = await this.pathGuard.validatePathForDelete(oldPath);
     const validNew = await this.pathGuard.validatePathForWrite(newPath);
     await fsRename(validOld, validNew);
     return { validOld, validNew };
@@ -1076,7 +1103,9 @@ export class GuardedFileSystem {
   }
 
   async cp(source: string, destination: string, options?: Parameters<typeof fsCp>[2]) {
-    const validSource = await this.pathGuard.validateExistingPath(source);
+    // As in rename: keep the link itself so callers passing verbatimSymlinks
+    // actually copy the link rather than a dereferenced target.
+    const validSource = await this.pathGuard.validatePathForDelete(source);
     const validDest = await this.pathGuard.validatePathForWrite(destination);
     await fsCp(validSource, validDest, options);
     return { validSource, validDest };

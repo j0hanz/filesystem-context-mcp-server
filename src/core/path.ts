@@ -16,7 +16,7 @@ import {
 } from 'node:path';
 
 import { assertNotAborted, createTimedAbortSignal, withAbort } from './concurrency.js';
-import { ErrorCode, FsError, isAbortError, isNodeError } from './errors.js';
+import { ErrorCode, FsError, isAbortError, isFsError, isNodeError } from './errors.js';
 import { Logger } from './observability.js';
 import { parseEnvDirList, parseTrueEnvFlag } from './primitives.js';
 import { ROOTS_TIMEOUT_MS } from './util.js';
@@ -834,7 +834,7 @@ export class PathGuard {
       } catch (ancestorErr) {
         // Rethrow any FsError — collapsing e.g. UNKNOWN to NOT_FOUND would mask
         // incomplete sandbox checks and make bugs invisible to callers.
-        if (ancestorErr instanceof FsError) throw ancestorErr;
+        if (isFsError(ancestorErr)) throw ancestorErr;
       }
 
       throw new FsError(
@@ -994,7 +994,7 @@ export class PathGuard {
             }
           }
         } catch (lstatErr) {
-          if (lstatErr instanceof FsError && lstatErr.code === ErrorCode.ACCESS_DENIED) {
+          if (isFsError(lstatErr) && lstatErr.code === ErrorCode.ACCESS_DENIED) {
             throw lstatErr;
           }
           // ENOENT is expected during ancestor walk — the entry simply doesn't exist.
@@ -1100,8 +1100,12 @@ export class PathGuard {
       }
       this.assertNotSensitiveFile(realTarget, requestedPath);
       return realTarget as ValidatedPath;
-    } catch {
-      // ENOENT or other error; parent check is sufficient for non-existent paths.
+    } catch (error) {
+      // A denial raised inside this block (out-of-root real target, or a
+      // sensitive file reached through a symlinked parent) must propagate.
+      // Only a probe failure — ENOENT and friends — falls through to the
+      // parent check, which is sufficient for a path that does not exist.
+      if (isFsError(error)) throw error;
     }
     return normalizedRequested as ValidatedPath;
   }

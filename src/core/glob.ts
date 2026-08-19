@@ -59,6 +59,10 @@ export async function isEntryAccessibleByType(
         error.code === 'EACCES' ||
         error.code === 'ELOOP' ||
         error.code === 'ACCESS_DENIED' ||
+        // A dangling symlink whose target path sits inside an allowed root
+        // surfaces as FsError NOT_FOUND, not ENOENT. Skipping the entry is the
+        // point of this list; rethrowing would fail the whole listing.
+        error.code === 'NOT_FOUND' ||
         error.code === 'SYMLINK_NOT_ALLOWED')
     ) {
       return false;

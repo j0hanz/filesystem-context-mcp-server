@@ -287,6 +287,10 @@ function preFilterByBudget(
 
 function applyContinuation(value: PerPathReadValue, result: ReadFileResult): void {
   if (!result.hasMoreLines) return;
+  // A tail read counts from the end of the file and reports no startLine, so a
+  // line-range continuation would be computed from line 1 and point at an
+  // unrelated region the caller already skipped past.
+  if (result.readMode === 'tail') return;
   const continuation = buildReadContinuation({
     path: result.path,
     hasMoreLines: true,
@@ -425,12 +429,18 @@ export const READ_FILE = defineTool({
         ? { path: firstSurvivor }
         : { paths: survivors };
 
-    const batch = await runOverPaths<undefined, PerPathReadValue>(
-      batchInput,
-      ctx,
-      ({ path }) => readOnePath(path, args, ctx),
-      { defaultErrorCode: ErrorCode.NOT_FILE },
-    );
+    // Every path can be budget-skipped (a single file over maxTotalSize does
+    // it), and runOverPaths rejects an empty list. The per-path TOO_LARGE
+    // results are already built — return those rather than failing the call.
+    const batch =
+      survivors.length === 0
+        ? { results: [] as PerPathResult<PerPathReadValue>[] }
+        : await runOverPaths<undefined, PerPathReadValue>(
+            batchInput,
+            ctx,
+            ({ path }) => readOnePath(path, args, ctx),
+            { defaultErrorCode: ErrorCode.NOT_FILE },
+          );
 
     const resultMap = new Map(batch.results.map((r) => [r.path, r]));
     const ordered: PerPathResult<PerPathReadValue>[] = pathList.map((path, idx) => {

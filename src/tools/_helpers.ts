@@ -51,7 +51,12 @@ function buildLinkBlock(
 // ============ File Resource Link Helpers ============
 
 export function buildFileResourceUri(validPath: string): string {
-  return `filesystem-mcp://file/${validPath.replace(/\\/g, '/')}`;
+  const posix = validPath.replace(/\\/g, '/');
+  // Percent-encode so resources.ts extractPath's decodeURIComponent round-trips.
+  // Unescaped, a '#' or '?' in a filename truncates the URI into a fragment or
+  // query (silently naming a different path) and a '%' makes the decode throw.
+  // Separators are restored so the {+path} template still reads as a path.
+  return `filesystem-mcp://file/${encodeURIComponent(posix).replace(/%2F/gi, '/')}`;
 }
 
 export function buildFileResourceLink(

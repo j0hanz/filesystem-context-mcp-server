@@ -20,7 +20,7 @@ import {
 import type { FSWatcher } from 'node:fs';
 import { watch } from 'node:fs';
 
-import { ErrorCode, FsError, hasErrorShape } from './core/errors.js';
+import { ErrorCode, hasErrorShape, isFsError } from './core/errors.js';
 import { readFileRaw } from './core/fs.js';
 import { Logger } from './core/observability.js';
 import type { PathGuard } from './core/path.js';
@@ -138,8 +138,8 @@ function buildSectionsRecord(): Record<string, string> {
       'Error Recovery:',
       '```',
       'ACCESS_DENIED: Run list_roots to list allowed directories, retry with a valid path.',
-      'NOT_FOUND: Run ls or find to verify the path.',
-      'TOO_LARGE: Use head/tail, line ranges, or split across read_many.',
+      'NOT_FOUND: Run list or find_files to verify the path.',
+      'TOO_LARGE: Use read with head/tail or startLine/endLine, or split across several read calls.',
       'TIMEOUT: Reduce scope, depth, or maxResults.',
       'INVALID_INPUT: Re-read the tool schema in tools/list.',
       '```',
@@ -225,7 +225,11 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
       if (!options.pathGuard) {
         throw new ProtocolError(ProtocolErrorCode.InternalError, 'PathGuard not configured');
       }
-      const rawPath = variables['path'];
+      // Decode via extractPath — the same decoder resources/subscribe uses — so
+      // both consumers are symmetric with buildFileResourceUri's encoding. The
+      // {+path} template variable arrives still percent-encoded, so validating
+      // it directly would treat "c%3A/proj/a.ts" as a literal relative path.
+      const rawPath = extractPath(uri.href) ?? variables['path'];
       if (typeof rawPath !== 'string') {
         throw new ProtocolError(
           ProtocolErrorCode.InvalidParams,
@@ -284,7 +288,7 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
         resolved = await options.pathGuard.validateExistingPath(filePath);
       } catch (err: unknown) {
         if (
-          err instanceof FsError &&
+          isFsError(err) &&
           (err.code === ErrorCode.NOT_FOUND || err.code === ErrorCode.ACCESS_DENIED)
         ) {
           throw new ResourceNotFoundError(uri, `Cannot subscribe to ${uri}: ${err.message}`);
@@ -381,7 +385,7 @@ function createResultResource(options: ResourceRegistrationOptions): ResourceCon
       try {
         entry = options.resourceStore.getEntry(uri.toString());
       } catch (err) {
-        if (err instanceof FsError && err.code === ErrorCode.NOT_FOUND) {
+        if (isFsError(err) && err.code === ErrorCode.NOT_FOUND) {
           throw new ResourceNotFoundError(
             uri.toString(),
             'Cached result not found or expired. Re-run the tool to regenerate.',

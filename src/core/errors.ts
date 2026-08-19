@@ -94,8 +94,8 @@ export const Problem = {
 } as const;
 
 const DEFAULT_SUGGESTIONS: Readonly<Partial<Record<ErrorCode, string>>> = {
-  [ErrorCode.ACCESS_DENIED]: 'Run roots to list allowed directories.',
-  [ErrorCode.NOT_FOUND]: 'Run ls or find to verify the path.',
+  [ErrorCode.ACCESS_DENIED]: 'Run list_roots to list allowed directories.',
+  [ErrorCode.NOT_FOUND]: 'Run list or find_files to verify the path.',
   [ErrorCode.NOT_FILE]: 'Target is a directory, not a file.',
   [ErrorCode.NOT_DIRECTORY]: 'Target is a file, not a directory.',
   [ErrorCode.TOO_LARGE]: 'Use head/tail or line ranges to read partially.',

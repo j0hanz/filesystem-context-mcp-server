@@ -252,7 +252,10 @@ function computeChangedLineRange(original: string, modified: string): [number, n
     lastChangedOrig--;
   }
 
-  return [firstChanged + 1, lastChangedMod + 1];
+  // When the modified content is a strict prefix of the original (a tail trim on
+  // a file with no final newline), the loop above never runs and lastChangedMod
+  // lands one below firstChanged. Clamp so the range is never inverted.
+  return [firstChanged + 1, Math.max(firstChanged, lastChangedMod) + 1];
 }
 
 function buildEditFileValue(

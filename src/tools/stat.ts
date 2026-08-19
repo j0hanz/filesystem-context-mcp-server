@@ -136,10 +136,6 @@ async function getFileInfo(filePath: string, options: FileInfoOptions): Promise<
   const mimeType =
     includeMimeType && rawExt.length > 0 ? detectMimeType(requestedPath).mimeType : undefined;
 
-  const symlinkTarget = isSymlink
-    ? await getSymlinkTarget(requestedPath, pathGuard, signal)
-    : undefined;
-
   const { stats: followedStats } = await fsStat(
     requestedPath,
     pathGuard,
@@ -160,7 +156,16 @@ async function getFileInfo(filePath: string, options: FileInfoOptions): Promise<
     }
   }
 
-  return buildFileInfoResult(name, requestedPath, isSymlink, stats, mimeType, symlinkTarget);
+  // isSymlink above is true whenever ANY ancestor is a symlink, because it
+  // compares the requested path with its fully-resolved real path. Only the
+  // entry's own lstat says whether THIS path is a link, so a regular file under
+  // a symlinked parent is reported as a file and no readlink is attempted.
+  const isOwnSymlink = stats.isSymbolicLink();
+  const symlinkTarget = isOwnSymlink
+    ? await getSymlinkTarget(requestedPath, pathGuard, signal)
+    : undefined;
+
+  return buildFileInfoResult(name, requestedPath, isOwnSymlink, stats, mimeType, symlinkTarget);
 }
 
 function classifyTypeCounts(results: readonly PerPathResult<FileInfo>[]): {

@@ -231,7 +231,7 @@ const ANALYZE_PATH: PromptEntry = {
           const task =
             kind === 'file'
               ? `Analyze this file: ${resolved}\n\n- Call \`stat\` to confirm size and permissions.\n- Call \`read\` (with \`includeHash: true\`) and summarize contents.\n- Report: type, size, permissions, key observations.`
-              : `Analyze this directory: ${resolved}\n\n- Call \`tree\` (maxDepth: 3) for layout.\n- Call \`ls\` for top-level entries.\n- Report: structure, notable files/subdirs, observations.`;
+              : `Analyze this directory: ${resolved}\n\n- Call \`list\` (maxDepth: 3) for the layout and its top-level entries.\n- Report: structure, notable files/subdirs, observations.`;
           return {
             description: ANALYZE_PATH.contract.description,
             messages: [
@@ -307,11 +307,11 @@ const FIND_IN_TREE: PromptEntry = {
           const resolved = await options.pathGuard.validateExistingDirectory(candidate);
           const steps: string[] = [];
           if (mode === 'name' || mode === 'both') {
-            steps.push(`- Call \`find\` with pattern "${query}" under "${resolved}".`);
+            steps.push(`- Call \`find_files\` with pattern "${query}" under "${resolved}".`);
           }
           if (mode === 'content' || mode === 'both') {
             steps.push(
-              `- Call \`grep\` with pattern "${query}" under "${resolved}". Report relative paths, line numbers, and a 1-line context for each match.`,
+              `- Call \`search_text\` with pattern "${query}" under "${resolved}". Report relative paths, line numbers, and a 1-line context for each match.`,
             );
           }
           const text = [`Find "${query}" in ${resolved} (mode=${mode}):`, '', ...steps].join('\n');
@@ -361,8 +361,8 @@ const SUMMARIZE_DIRECTORY: PromptEntry = {
           const text = [
             `Summarize this project at ${resolved}:`,
             '',
-            `- Call \`tree\` with maxDepth=${depth}.`,
-            '- Call `read_many` for top-level manifests when present: README.md, package.json, Cargo.toml, pyproject.toml, go.mod, build.gradle, pom.xml, Dockerfile.',
+            `- Call \`list\` with maxDepth=${depth}.`,
+            '- Call `read` with paths[] for top-level manifests when present: README.md, package.json, Cargo.toml, pyproject.toml, go.mod, build.gradle, pom.xml, Dockerfile.',
             '- Produce: purpose, tech stack, entry points, notable directories.',
           ].join('\n');
           return {

@@ -104,7 +104,7 @@ describe('prompts over stdio transport', () => {
     const [m0, m1] = result.messages;
     assert.ok(m0 && m1);
     assert.equal(m0.content.type, 'text');
-    assert.match(m0.content.text, /Call `find`/u);
+    assert.match(m0.content.text, /Call `find_files`/u);
     assert.equal(m1.content.type, 'resource_link');
     assert.equal(m1.content.uri, 'internal://instructions');
   });
