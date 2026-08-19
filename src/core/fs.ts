@@ -516,6 +516,7 @@ async function readRangeContent(
   startLine: number,
   endLine: number | undefined,
   options: ReadContentOptions,
+  filePath: string,
 ): Promise<PartialReadResult> {
   assertNotAborted(options.signal);
 
@@ -549,10 +550,23 @@ async function readRangeContent(
         break;
       }
 
+      // ponytail: a single line longer than maxSize is already materialized by
+      // node's readLines before we can check it; this guard bounds accumulation
+      // and reports the abuse case, but does not prevent the one-line OOM. A
+      // byte-bounded line reader is the upgrade path.
+      if (lines.length === 0 && Buffer.byteLength(line, options.encoding) > options.maxSize) {
+        throw new FsError(
+          ErrorCode.TOO_LARGE,
+          `File too large (single line ${Buffer.byteLength(line, options.encoding)} > ${options.maxSize} bytes). Use a narrower range or head.`,
+          filePath,
+          { size: Buffer.byteLength(line, options.encoding), maxSize: options.maxSize },
+        );
+      }
+
       lines.push(line);
 
       estimatedBytes += Buffer.byteLength(line, options.encoding) + newlineBytes;
-      if (estimatedBytes >= options.maxSize) {
+      if (estimatedBytes > options.maxSize) {
         stoppedByLimit = true;
         hasMoreLines = await peekHasMore(iterator);
         break;
@@ -595,76 +609,78 @@ async function readTailContent(
   }
 
   const encoding = options.encoding;
-  const newlineBytes = Buffer.byteLength('\n', encoding);
   const CHUNK_SIZE = 64 * 1024; // 64KB chunks
+  // Accumulate raw bytes from the end rather than decoding each chunk
+  // independently: decoding a chunk that ends mid-codepoint corrupts the
+  // trailing multi-byte UTF-8 sequence into U+FFFD. 0x0A (newline) is a single
+  // byte and never part of a multibyte sequence, so counting newlines on the
+  // raw buffer is safe; we decode the whole bounded buffer once at the end.
   let position = fileSize;
-  let remainingContent = '';
-  const lines: string[] = [];
-  let totalBytes = 0;
-  let hasMoreLines = false;
+  const chunks: Buffer[] = [];
+  let totalLen = 0;
+  let newlines = 0;
+  let stoppedByLimit = false;
 
   while (position > 0) {
     assertNotAborted(options.signal);
     const chunkSize = Math.min(position, CHUNK_SIZE);
-    const buffer = Buffer.alloc(chunkSize);
-    await handle.read(buffer, 0, chunkSize, position - chunkSize);
+    const buffer = Buffer.allocUnsafe(chunkSize);
+    const { bytesRead } = await handle.read(buffer, 0, chunkSize, position - chunkSize);
+    if (bytesRead < chunkSize) {
+      // The file shrank under us. Bytes from `position` on are still a
+      // contiguous suffix, so keep those and stop — splicing this short chunk in
+      // would leave a hole (and, with an alloc'd buffer, NULs) mid-content.
+      // `position` stays put, so the result is reported as having more lines.
+      break;
+    }
     position -= chunkSize;
 
-    const chunkStr = buffer.toString(encoding) + remainingContent;
-    const parts = chunkStr.split('\n');
-
-    if (position > 0) {
-      remainingContent = parts[0] ?? '';
-    } else {
-      remainingContent = '';
+    for (const byte of buffer) {
+      if (byte === 0x0a) newlines++;
     }
 
-    const startIdx = parts.length - 1;
-    const limitIdx = position > 0 ? 1 : 0;
+    chunks.unshift(buffer);
+    totalLen += chunkSize;
 
-    let i = startIdx;
-    if (position + chunkSize === fileSize && chunkStr.endsWith('\n')) {
-      i--;
-    }
-
-    for (; i >= limitIdx; i--) {
-      let line = parts[i] ?? '';
-      if (line.endsWith('\r')) {
-        line = line.slice(0, -1);
-      }
-
-      if (lines.length >= tail) {
-        hasMoreLines = true;
-        break;
-      }
-
-      const bytes = Buffer.byteLength(line, encoding) + newlineBytes;
-      if (totalBytes + bytes > options.maxSize) {
-        if (lines.length > 0) {
-          hasMoreLines = true;
-          break;
-        } else {
-          throw new FsError(
-            ErrorCode.TOO_LARGE,
-            `File too large (${bytes} > ${options.maxSize} bytes). Use head to preview.`,
-            filePath,
-            { size: bytes, maxSize: options.maxSize },
-          );
-        }
-      }
-
-      lines.unshift(line);
-      totalBytes += bytes;
-    }
-
-    if (hasMoreLines || lines.length >= tail) {
-      hasMoreLines = hasMoreLines || position > 0 || remainingContent.length > 0;
+    // One newline more than `tail`: the oldest segment in the buffer starts
+    // mid-line whenever we stop before the file start, and gets dropped below.
+    if (newlines > tail) break;
+    if (totalLen > options.maxSize) {
+      stoppedByLimit = true;
       break;
     }
   }
 
-  if (position > 0 || remainingContent.length > 0) {
+  const allBytes = Buffer.concat(chunks, totalLen);
+  let lines = allBytes.toString(encoding).split('\n');
+
+  // A trailing newline produces a spurious empty final segment; drop it.
+  if (lines.length > 0 && lines[lines.length - 1] === '') {
+    lines = lines.slice(0, -1);
+  }
+  // Normalize CRLF.
+  lines = lines.map((l) => (l.endsWith('\r') ? l.slice(0, -1) : l));
+
+  // We stopped before the file start, so the first segment is the tail of a
+  // line whose beginning was never read. Drop it instead of reporting a
+  // fragment as a complete line.
+  if (position > 0 && lines.length > 0) {
+    lines = lines.slice(1);
+  }
+
+  if (stoppedByLimit && lines.length < tail) {
+    throw new FsError(
+      ErrorCode.TOO_LARGE,
+      `File too large (${totalLen} > ${options.maxSize} bytes, could not collect ${tail} lines). Use a narrower tail or head.`,
+      filePath,
+      { size: totalLen, maxSize: options.maxSize },
+    );
+  }
+
+  let hasMoreLines = stoppedByLimit || position > 0;
+  if (lines.length > tail) {
     hasMoreLines = true;
+    lines = lines.slice(lines.length - tail);
   }
 
   const content = lines.join('\n');
@@ -760,6 +776,7 @@ class FileReader {
       1,
       head,
       contentOptions,
+      this.context.filePath,
     );
 
     return {
@@ -782,6 +799,7 @@ class FileReader {
       startLine,
       endLine,
       contentOptions,
+      this.context.filePath,
     );
 
     return {

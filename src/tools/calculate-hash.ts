@@ -153,9 +153,7 @@ async function hashDirectory(
     includeHidden: false,
     baseNameMatch: false,
     caseSensitiveMatch: true,
-    followSymbolicLinks: false,
     onlyFiles: true,
-    stats: false,
     suppressErrors: true,
   })) {
     assertNotAborted(signal);

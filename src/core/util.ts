@@ -51,25 +51,6 @@ export function assignDefined<T extends object>(
   return target;
 }
 
-function shouldStripStructuredOutput(): boolean {
-  return parseTrueEnvFlag(process.env['FS_CONTEXT_STRIP_STRUCTURED']);
-}
-
-type StructuredContentKey<T extends object> = Extract<keyof T, 'structuredContent'>;
-
-export type MaybeStrippedStructuredContent<T extends object> = Omit<T, StructuredContentKey<T>> &
-  Partial<Pick<T, StructuredContentKey<T>>>;
-
-export function maybeStripStructuredContentFromResult<T extends object>(
-  result: T,
-): MaybeStrippedStructuredContent<T> {
-  if (!shouldStripStructuredOutput()) return result;
-  if (!Object.hasOwn(result, 'structuredContent')) return result;
-
-  const { structuredContent, ...rest } = result as Record<string, unknown>;
-  return rest as MaybeStrippedStructuredContent<T>;
-}
-
 const KIB = 1024;
 const MIB = 1024 * KIB;
 

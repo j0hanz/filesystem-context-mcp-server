@@ -192,6 +192,10 @@ export class McpRootsSynchronizer {
     const initHandshakeTimeoutMs = getInitHandshakeTimeoutMs();
 
     server.server.setNotificationHandler('notifications/initialized', async () => {
+      // The low-level Server registers this same notification to fire its
+      // `oninitialized` callback; setNotificationHandler replaces that handler,
+      // so call it ourselves to preserve the SDK's contract.
+      server.server.oninitialized?.();
       if (this.state === 'shutting_down') return;
       if (this.initTimer) {
         clearTimeout(this.initTimer);

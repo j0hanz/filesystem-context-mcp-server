@@ -1,15 +1,12 @@
 # ---- Builder Stage ----
 FROM node:24-alpine AS builder
 
-# Install build tools required for re2 native module
-RUN apk add --no-cache python3 make g++
-
 WORKDIR /app
 
 # Install dependencies first (layer caching)
 # --ignore-scripts avoids triggering `prepare` (build) before source is copied
 COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts && npm rebuild
+RUN npm ci --ignore-scripts
 
 # Copy source and build
 COPY src/ ./src/
@@ -18,7 +15,7 @@ COPY scripts/ ./scripts/
 COPY assets/ ./assets/
 RUN npm run build
 
-# Remove dev dependencies (keep pre-compiled native modules)
+# Remove dev dependencies
 RUN npm prune --production
 
 # ---- Release Stage ----

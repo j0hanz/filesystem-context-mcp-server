@@ -108,9 +108,7 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
     baseNameMatch: false,
     caseSensitiveMatch: true,
     maxDepth: options.maxDepth,
-    followSymbolicLinks: false,
     onlyFiles: false,
-    stats: false,
   })) {
     if (options.signal.aborted) break;
     scanned++;
@@ -252,7 +250,7 @@ const ListOutputSchema = z.strictObject({
     .string()
     .optional()
     .describe(
-      'URI to the full entry list in the resource store (present when entries were truncated)',
+      'URI to the entry list in the resource store (present when inline entries were truncated; the stored list is itself capped at the hard limit and marked truncated if total entries exceed it)',
     ),
 });
 

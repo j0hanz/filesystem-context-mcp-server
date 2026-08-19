@@ -574,9 +574,9 @@
         },
         "sortBy": {
           "default": "path",
-          "description": "Sort order: path = full path (default), name = basename only, size = bytes descending, modified = newest first",
+          "description": "Sort order: path = full path (default), name = basename only",
           "type": "string",
-          "enum": ["name", "size", "modified", "path"]
+          "enum": ["name", "path"]
         },
         "maxDepth": {
           "description": "Max directory depth to scan; 0 = base directory only, omit for unlimited",
@@ -628,14 +628,6 @@
               "path": {
                 "type": "string",
                 "description": "File path relative to the search root"
-              },
-              "size": {
-                "description": "File size in bytes (present when sortBy=size)",
-                "$ref": "#/$defs/NonNegInt"
-              },
-              "modified": {
-                "description": "Last modification time (present when sortBy=modified)",
-                "$ref": "#/$defs/IsoDateTime"
               }
             },
             "required": ["path"],
@@ -656,9 +648,9 @@
           "$ref": "#/$defs/NonNegInt"
         },
         "stoppedReason": {
-          "description": "Why the search ended early: maxResults = result cap reached, maxFiles = scan cap reached, timeout = time limit hit",
+          "description": "Why the search ended early: maxResults = result cap reached, timeout = time limit hit or the request was cancelled. Absent when the scan ran to completion.",
           "type": "string",
-          "enum": ["maxResults", "maxFiles", "timeout"]
+          "enum": ["maxResults", "timeout"]
         },
         "resourceUri": {
           "description": "URI to the full results JSON in the resource store (present when results are paginated)",
@@ -681,13 +673,6 @@
           "minimum": 0,
           "maximum": 9007199254740991,
           "title": "Non-Negative Integer"
-        },
-        "IsoDateTime": {
-          "type": "string",
-          "format": "date-time",
-          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-          "title": "ISO Date-Time",
-          "description": "ISO 8601 UTC date-time string (e.g. 2024-01-15T12:00:00.000Z)"
         }
       }
     }
@@ -879,7 +864,7 @@
           "$ref": "#/$defs/NonNegInt"
         },
         "resourceUri": {
-          "description": "URI to the full entry list in the resource store (present when entries were truncated)",
+          "description": "URI to the entry list in the resource store (present when inline entries were truncated; the stored list is itself capped at the hard limit and marked truncated if total entries exceed it)",
           "type": "string"
         }
       },
@@ -1526,7 +1511,7 @@
           "type": "boolean"
         },
         "stoppedReason": {
-          "description": "Why enumeration stopped early: maxResults = match cap reached, maxFiles = file cap reached, timeout = time limit hit",
+          "description": "Why enumeration stopped early: maxResults = match cap reached, maxFiles = file cap reached, timeout = time limit hit or the request was cancelled. Absent when every matching file was enumerated. Files already dispatched still complete, so this marks the sweep incomplete, not the writes partial.",
           "type": "string",
           "enum": ["maxResults", "maxFiles", "timeout"]
         }
@@ -1592,12 +1577,12 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 10000,
-          "description": "Exact literal text or RE2 regex pattern to search for in file contents. When isRegex=true, uses RE2 syntax (no lookahead, lookbehind, or backreferences are supported). Cannot be empty or whitespace-only.",
+          "description": "Exact literal text or regex pattern to search for in file contents. When isRegex=true, lookahead, lookbehind, and backreferences are rejected (unsupported). Cannot be empty or whitespace-only.",
           "examples": ["TODO", "function\\s+(\\w+)", "import.*from"]
         },
         "isRegex": {
           "default": false,
-          "description": "Treat searchPattern as a RE2 regex (default: literal text match)",
+          "description": "Treat searchPattern as a regex (default: literal text match)",
           "type": "boolean"
         },
         "includeHidden": {
@@ -1692,7 +1677,7 @@
           "description": "Flat list of matches sorted by file path then line number"
         },
         "totalMatches": {
-          "description": "Total number of matching lines found",
+          "description": "Total number of matching lines found: one per entry in matches, not per occurrence. A line with several occurrences counts once here; see that entry matchCount for its occurrence count.",
           "$ref": "#/$defs/NonNegInt"
         },
         "filesMatched": {
@@ -1701,6 +1686,14 @@
         },
         "filesScanned": {
           "description": "Total number of files examined",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "skippedInaccessible": {
+          "description": "Files skipped unread due to permission or access errors",
+          "$ref": "#/$defs/NonNegInt"
+        },
+        "skippedTooLarge": {
+          "description": "Files skipped unread because they exceed the text-file size limit; raise the limit or narrow pattern if a match was expected in one",
           "$ref": "#/$defs/NonNegInt"
         },
         "truncated": {

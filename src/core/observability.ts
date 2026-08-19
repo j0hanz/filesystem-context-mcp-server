@@ -34,6 +34,8 @@ function isLoggingLevel(value: string): value is LoggingLevel {
 function parseLogLevelEnv(): LoggingLevel {
   const raw = process.env['LOG_LEVEL']?.trim().toLowerCase();
   if (!raw) return 'info';
+  // `warn` is the common short form; the canonical RFC 5424 level is `warning`.
+  if (raw === 'warn') return 'warning';
   if (isLoggingLevel(raw)) return raw;
   console.error(
     `[warning] Invalid LOG_LEVEL value: ${raw} (must be ${LEVEL_ORDER.join('|')}). Using default: info`,
@@ -55,7 +57,9 @@ export function isLevelEnabled(level: LoggingLevel, minimum: LoggingLevel = LOG_
 
 function write(level: LoggingLevel, message: string, args: readonly unknown[]): void {
   if (!isLevelEnabled(level)) return;
-  console.error(`[${level}] ${message}`, ...args);
+  const sessionId = SessionContext.getStore()?.sessionId;
+  const prefix = sessionId ? `[${level}] [session ${sessionId}]` : `[${level}]`;
+  console.error(`${prefix} ${message}`, ...args);
 }
 
 export const Logger = {
@@ -77,5 +81,5 @@ export const Logger = {
 };
 
 export function logRuntimeFailure(id: string, scope: string, method: string, error: unknown): void {
-  console.error(`Runtime failure: ${id} [${scope}.${method}]`, error);
+  write('error', `Runtime failure: ${id} [${scope}.${method}]`, [error]);
 }

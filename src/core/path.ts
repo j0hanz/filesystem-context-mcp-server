@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Stats } from 'node:fs';
 import { lstat, readlink, realpath, stat } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
@@ -554,12 +555,35 @@ export class PathGuard {
    * it is set, so `--print-config` and unit construction stay quiet.
    */
   readonly isServerContext: boolean;
-  onAccessDenied?: (blockedPath: string) => Promise<boolean>;
+
+  /**
+   * Per-request access-denied handler, scoped via AsyncLocalStorage so concurrent
+   * tools/call invocations sharing one PathGuard cannot clobber each other's
+   * handler. Set by {@link PathGuard.runWithAccessDeniedHandler} for the duration
+   * of a single tool execution; read by {@link PathGuard.checkAndPromptAccess}.
+   * Per-instance, not static: each server builds its own guard, and one guard's
+   * handler must not be visible through another.
+   */
+  readonly #accessDeniedStorage = new AsyncLocalStorage<
+    (blockedPath: string) => Promise<boolean>
+  >();
 
   constructor(options?: ServerOptions, isServerContext = false) {
     this.denyPatterns = toPatternSet(compilePatterns(buildSensitivePatterns()));
     this.options = options;
     this.isServerContext = isServerContext;
+  }
+
+  /**
+   * Run `fn` with `handler` as the active access-denied callback for this
+   * async chain. Used by the tool executor to attach a per-request elicitation
+   * handler without mutating shared state.
+   */
+  runWithAccessDeniedHandler<R>(
+    handler: (blockedPath: string) => Promise<boolean>,
+    fn: () => Promise<R>,
+  ): Promise<R> {
+    return this.#accessDeniedStorage.run(handler, fn);
   }
 
   static async fromAllowedDirectories(
@@ -625,8 +649,9 @@ export class PathGuard {
   }
 
   private async checkAndPromptAccess(checkPath: string): Promise<boolean> {
-    if (!this.onAccessDenied) return false;
-    return this.onAccessDenied(checkPath);
+    const handler = this.#accessDeniedStorage.getStore();
+    if (!handler) return false;
+    return handler(checkPath);
   }
 
   /** Clear remembered denials (e.g. on server teardown). */
@@ -1223,7 +1248,7 @@ export async function findProjectRoot(startDir: string, ceiling: string[]): Prom
   let depth = 0;
 
   for (;;) {
-    if (depth++ > MAX_PROJECT_ROOT_WALK_DEPTH) break;
+    if (depth++ >= MAX_PROJECT_ROOT_WALK_DEPTH) break;
     // Check if the current directory contains any markers
     const markers = ['.git', 'package.json', 'pyproject.toml'];
     for (const marker of markers) {

@@ -146,18 +146,6 @@ interface EditResult {
   lineRange?: [number, number];
 }
 
-function getLineNumberAtIndex(str: string, maxIndex: number = str.length): number {
-  let count = 1;
-  let pos = 0;
-  while (pos < maxIndex) {
-    pos = str.indexOf('\n', pos);
-    if (pos === -1 || pos >= maxIndex) break;
-    count++;
-    pos++;
-  }
-  return count;
-}
-
 async function computeDiffStats(
   original: string,
   modified: string,
@@ -231,20 +219,40 @@ function replaceEditMatch(content: string, match: TextRange, newText: string): s
   );
 }
 
-function mergeLineRange(
-  currentRange: EditResult['lineRange'],
-  content: string,
-  matchStartIndex: number,
-  newText: string,
-): [number, number] {
-  const startLine = getLineNumberAtIndex(content, matchStartIndex);
-  const endLine = startLine + getLineNumberAtIndex(newText) - 1;
+/**
+ * Compute the 1-indexed line range of changed lines in `modified` relative to
+ * `original`, using a common-prefix/suffix line scan. This is a conservative
+ * bound (it widens to cover independent changes between matching bookends), but
+ * it is computed against the FINAL content so it is not skewed by earlier edits
+ * inserting or removing lines — which the per-edit merge could not account for.
+ */
+function computeChangedLineRange(original: string, modified: string): [number, number] | undefined {
+  const origLines = original.split('\n');
+  const modLines = modified.split('\n');
+  const minLen = Math.min(origLines.length, modLines.length);
 
-  if (!currentRange) {
-    return [startLine, endLine];
+  let firstChanged = -1;
+  for (let i = 0; i < minLen; i++) {
+    if (origLines[i] !== modLines[i]) {
+      firstChanged = i;
+      break;
+    }
+  }
+  if (firstChanged === -1 && origLines.length === modLines.length) return undefined;
+  if (firstChanged === -1) firstChanged = minLen; // pure append/trim at the tail
+
+  let lastChangedMod = modLines.length - 1;
+  let lastChangedOrig = origLines.length - 1;
+  while (
+    lastChangedMod > firstChanged &&
+    lastChangedOrig >= 0 &&
+    modLines[lastChangedMod] === origLines[lastChangedOrig]
+  ) {
+    lastChangedMod--;
+    lastChangedOrig--;
   }
 
-  return [Math.min(currentRange[0], startLine), Math.max(currentRange[1], endLine)];
+  return [firstChanged + 1, lastChangedMod + 1];
 }
 
 function buildEditFileValue(
@@ -377,7 +385,6 @@ async function applyEdits(
   let newContent = content;
   let appliedEdits = 0;
   const unmatchedEdits: string[] = [];
-  let lineRange: EditResult['lineRange'];
   const regexCache = ignoreWhitespace ? new Map<string, Regex>() : undefined;
 
   for (const edit of edits) {
@@ -388,10 +395,13 @@ async function applyEdits(
       continue;
     }
 
-    lineRange = mergeLineRange(lineRange, newContent, match.startIndex, edit.newText);
     newContent = replaceEditMatch(newContent, match, edit.newText);
     appliedEdits += 1;
   }
+
+  // Compute the line range against the final content so earlier edits whose
+  // lines were shifted by later edits are still covered.
+  const lineRange = appliedEdits > 0 ? computeChangedLineRange(content, newContent) : undefined;
 
   return finalizeEditResult(content, newContent, appliedEdits, unmatchedEdits, lineRange);
 }

@@ -1,10 +1,11 @@
 import type { ContentBlock } from '@modelcontextprotocol/server';
 
+import { lstat as fsLstat } from 'node:fs/promises';
 import { parse } from 'node:path';
 
 import * as z from 'zod/v4';
 
-import { assertNotAborted } from '../core/concurrency.js';
+import { assertNotAborted, withAbort } from '../core/concurrency.js';
 import { ErrorCode, isAbortError } from '../core/errors.js';
 import { formatBytes } from '../core/fmt.js';
 import {
@@ -139,7 +140,25 @@ async function getFileInfo(filePath: string, options: FileInfoOptions): Promise<
     ? await getSymlinkTarget(requestedPath, pathGuard, signal)
     : undefined;
 
-  const { stats } = await fsStat(requestedPath, pathGuard, signal ? { signal } : undefined);
+  const { stats: followedStats } = await fsStat(
+    requestedPath,
+    pathGuard,
+    signal ? { signal } : undefined,
+  );
+
+  // For a symlink, fsStat follows the link and reports the target's metadata.
+  // Report the link's own metadata instead so size/permissions/timestamps
+  // describe the link the user asked about, not its target.
+  let stats = followedStats;
+  if (isSymlink) {
+    try {
+      stats = await withAbort(fsLstat(requestedPath), signal);
+    } catch (error) {
+      // A cancelled request is not a "link metadata unavailable" fallback.
+      if (isAbortError(error)) throw error;
+      stats = followedStats;
+    }
+  }
 
   return buildFileInfoResult(name, requestedPath, isSymlink, stats, mimeType, symlinkTarget);
 }

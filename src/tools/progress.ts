@@ -12,7 +12,6 @@ function reportDetachedError(toolName: string, context: string, error: unknown):
 
 export type ProgressEvent =
   | { kind: 'tick'; current: number; total?: number; message: string }
-  | { kind: 'status'; message: string }
   | { kind: 'complete'; current: number; total?: number; message: string }
   | {
       kind: 'fail';
@@ -75,21 +74,6 @@ export class ProgressSession {
     });
   }
 
-  get current(): number {
-    return this.#cursor;
-  }
-
-  step(message: string): void {
-    if (this.#done) return;
-    this.#cursor += 1;
-    this.#dispatch({
-      kind: 'tick',
-      current: this.#cursor,
-      ...(this.#total !== undefined ? { total: this.#total } : {}),
-      message,
-    });
-  }
-
   set(input: { current: number; total?: number; message?: string }): void {
     if (this.#done) return;
     if (input.current > this.#cursor) {
@@ -101,14 +85,6 @@ export class ProgressSession {
       current: this.#cursor,
       ...(total !== undefined ? { total } : {}),
       message: input.message ?? this.#label,
-    });
-  }
-
-  status(message: string): void {
-    if (this.#done) return;
-    this.#dispatch({
-      kind: 'status',
-      message,
     });
   }
 
@@ -140,9 +116,7 @@ export class ProgressSession {
       return;
     }
 
-    if (event.kind !== 'status') {
-      this.#lastSentMs = this.#now();
-    }
+    this.#lastSentMs = this.#now();
 
     for (const sink of this.#sinks) {
       this.#emitGuarded(sink, event);
@@ -214,7 +188,7 @@ export class StderrProgressSink implements ProgressSink {
         ? 'done'
         : event.kind === 'fail'
           ? 'fail'
-          : event.kind === 'tick' && event.current === 0
+          : event.current === 0
             ? 'start'
             : 'tick';
 
@@ -245,7 +219,7 @@ export class McpProgressSink implements ProgressSink {
   private readonly toolName: string;
   private readonly token: string | number;
   private readonly notify: (n: Notification) => Promise<void>;
-  readonly pending = new Set<Promise<void>>();
+  readonly #pending = new Set<Promise<void>>();
 
   constructor(
     toolName: string,
@@ -258,9 +232,6 @@ export class McpProgressSink implements ProgressSink {
   }
 
   emit(event: ProgressEvent): void {
-    if (event.kind === 'status') {
-      return;
-    }
     let current = event.current;
     let total = event.total;
     if (event.kind === 'complete' || event.kind === 'fail') {
@@ -279,10 +250,10 @@ export class McpProgressSink implements ProgressSink {
     }).catch((error: unknown) => {
       reportDetachedError(this.toolName, 'progressNotification', error);
     });
-    this.pending.add(promise);
+    this.#pending.add(promise);
     void promise
       .finally(() => {
-        this.pending.delete(promise);
+        this.#pending.delete(promise);
       })
       .catch((error: unknown) => {
         reportDetachedError(this.toolName, 'progressNotification', error);
@@ -290,8 +261,8 @@ export class McpProgressSink implements ProgressSink {
   }
 
   async flush(): Promise<void> {
-    if (this.pending.size > 0) {
-      await Promise.allSettled([...this.pending]);
+    if (this.#pending.size > 0) {
+      await Promise.allSettled([...this.#pending]);
     }
   }
 }

@@ -74,5 +74,16 @@ export function liftFlagsToEnv(
   }
 
   const deny = values['deny'];
-  if (Array.isArray(deny) && deny.length > 0) env['DENYLIST'] = deny.join(',');
+  if (Array.isArray(deny) && deny.length > 0) {
+    // Deny is additive — a CLI `--deny` extends the env `DENYLIST` rather than
+    // replacing it, so operators can layer extra entries onto a base denylist.
+    // Deduped so a second lift over the same argv is a no-op, like every other
+    // flag here (which simply overwrite).
+    const existing = env['DENYLIST'];
+    const entries = existing ? existing.split(',') : [];
+    for (const entry of deny) {
+      if (typeof entry === 'string' && !entries.includes(entry)) entries.push(entry);
+    }
+    env['DENYLIST'] = entries.join(',');
+  }
 }

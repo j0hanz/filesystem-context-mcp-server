@@ -25,7 +25,7 @@ function normalizeConcurrency(concurrency: number): number {
 }
 
 export async function processInParallel<T, R>(
-  items: T[],
+  items: readonly T[],
   processor: (item: T) => Promise<R>,
   concurrency: number = PARALLEL_CONCURRENCY,
   signal?: AbortSignal,

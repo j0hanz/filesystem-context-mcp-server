@@ -25,6 +25,19 @@ function makeClock(): { now: () => number; advance: (ms: number) => void } {
   };
 }
 
+function tickOf(
+  events: ProgressEvent[],
+  index: number,
+): { current: number; total?: number; message: string } {
+  const ev = events[index];
+  assert.ok(ev?.kind === 'tick', `expected tick at ${index}`);
+  return {
+    current: ev.current,
+    ...(ev.total !== undefined ? { total: ev.total } : {}),
+    message: ev.message,
+  };
+}
+
 void describe('ProgressSession', () => {
   void it('emits a synthetic start tick on construction', () => {
     const sink = new MemorySink();
@@ -43,7 +56,7 @@ void describe('ProgressSession', () => {
     });
   });
 
-  void it('step advances cursor by one and emits a tick', () => {
+  void it('set advances the cursor monotonically and emits a tick per call', () => {
     const sink = new MemorySink();
     const clock = makeClock();
     const session = new ProgressSession({
@@ -55,24 +68,13 @@ void describe('ProgressSession', () => {
     sink.events.length = 0;
 
     clock.advance(100);
-    session.step('one');
+    session.set({ current: 1, message: 'one' });
     clock.advance(100);
-    session.step('two');
+    session.set({ current: 2, message: 'two' });
 
-    assert.equal(session.current, 2);
     assert.equal(sink.events.length, 2);
-    assert.deepEqual(sink.events[0], {
-      kind: 'tick',
-      current: 1,
-      total: 3,
-      message: 'one',
-    });
-    assert.deepEqual(sink.events[1], {
-      kind: 'tick',
-      current: 2,
-      total: 3,
-      message: 'two',
-    });
+    assert.deepEqual(tickOf(sink.events, 0), { current: 1, total: 3, message: 'one' });
+    assert.deepEqual(tickOf(sink.events, 1), { current: 2, total: 3, message: 'two' });
   });
 
   void it('set clamps cursor monotonically and emits with provided fields', () => {
@@ -91,31 +93,23 @@ void describe('ProgressSession', () => {
     // Regress attempt: should clamp to existing cursor (5).
     session.set({ current: 2, message: 'should clamp' });
 
-    assert.equal(session.current, 5);
     assert.equal(sink.events.length, 2);
-    assert.deepEqual(sink.events[0], {
-      kind: 'tick',
-      current: 5,
-      total: 10,
-      message: 'five',
-    });
-    assert.deepEqual(sink.events[1], {
-      kind: 'tick',
-      current: 5,
-      message: 'should clamp',
-    });
+    assert.deepEqual(tickOf(sink.events, 0), { current: 5, total: 10, message: 'five' });
+    assert.deepEqual(tickOf(sink.events, 1), { current: 5, message: 'should clamp' });
   });
 
   void it('complete emits a complete event carrying the current cursor', () => {
     const sink = new MemorySink();
+    const clock = makeClock();
     const session = new ProgressSession({
       label: 'job',
       total: 5,
       sinks: [sink],
-      now: makeClock().now,
+      now: clock.now,
     });
-    session.step('a');
-    session.step('b');
+    sink.events.length = 0;
+    clock.advance(100);
+    session.set({ current: 2, message: 'two' });
     sink.events.length = 0;
 
     session.complete('done');
@@ -160,31 +154,11 @@ void describe('ProgressSession', () => {
     session.complete('done');
     sink.events.length = 0;
 
-    session.step('ignored');
     session.set({ current: 99, message: 'ignored' });
     session.complete('again');
     session.fail(new Error('again'));
 
     assert.equal(sink.events.length, 0);
-    assert.equal(session.current, 0);
-  });
-
-  void it('status emits a status event without advancing cursor', () => {
-    const sink = new MemorySink();
-    const session = new ProgressSession({
-      label: 'job',
-      sinks: [sink],
-    });
-    sink.events.length = 0;
-
-    session.status('connecting...');
-
-    assert.equal(session.current, 0);
-    assert.equal(sink.events.length, 1);
-    assert.deepEqual(sink.events[0], {
-      kind: 'status',
-      message: 'connecting...',
-    });
   });
 
   void it('rate-limits tick events within 50ms window', () => {
@@ -198,22 +172,20 @@ void describe('ProgressSession', () => {
     sink.events.length = 0;
 
     clock.advance(100);
-    session.step('a'); // emitted
+    session.set({ current: 1, message: 'a' }); // emitted
 
     clock.advance(10);
-    session.step('b'); // suppressed (within 50ms)
+    session.set({ current: 2, message: 'b' }); // suppressed (within 50ms)
 
     clock.advance(10);
-    session.step('c'); // suppressed
+    session.set({ current: 3, message: 'c' }); // suppressed
 
     clock.advance(50);
-    session.step('d'); // emitted (60ms since last sent)
+    session.set({ current: 4, message: 'd' }); // emitted (60ms since last sent)
 
     assert.equal(sink.events.length, 2);
-    assert.equal(sink.events[0]?.kind === 'tick' && sink.events[0].message, 'a');
-    assert.equal(sink.events[1]?.kind === 'tick' && sink.events[1].message, 'd');
-    // Cursor still advanced even when ticks were suppressed.
-    assert.equal(session.current, 4);
+    assert.equal(tickOf(sink.events, 0).message, 'a');
+    assert.equal(tickOf(sink.events, 1).message, 'd');
   });
 
   void it('terminal events bypass the rate limit', () => {
@@ -227,36 +199,13 @@ void describe('ProgressSession', () => {
     sink.events.length = 0;
 
     clock.advance(100);
-    session.step('a'); // emitted, marks lastSentMs
+    session.set({ current: 1, message: 'a' }); // emitted, marks lastSentMs
 
     clock.advance(5);
     session.complete('done'); // must emit despite being within 50ms
 
     assert.equal(sink.events.length, 2);
     assert.equal(sink.events[1]?.kind, 'complete');
-  });
-
-  void it('status events bypass the rate limit', () => {
-    const sink = new MemorySink();
-    const clock = makeClock();
-    const session = new ProgressSession({
-      label: 'job',
-      sinks: [sink],
-      now: clock.now,
-    });
-    sink.events.length = 0;
-
-    clock.advance(100);
-    session.step('a'); // emitted
-
-    clock.advance(5);
-    session.status('s1'); // emitted (status not rate-limited)
-    clock.advance(5);
-    session.status('s2'); // emitted
-
-    assert.equal(sink.events.length, 3);
-    assert.equal(sink.events[1]?.kind, 'status');
-    assert.equal(sink.events[2]?.kind, 'status');
   });
 
   void it('sync sink errors are caught and other sinks still receive the event', () => {
@@ -309,11 +258,9 @@ void describe('ProgressSession', () => {
       sinks: [],
       now: makeClock().now,
     });
-    session.step('a');
-    session.step('b');
     session.set({ current: 3, message: 'three' });
-    session.status('s');
     session.complete('done');
-    assert.equal(session.current, 3);
+    // No sinks — nothing to assert beyond "no throw".
+    assert.ok(session);
   });
 });

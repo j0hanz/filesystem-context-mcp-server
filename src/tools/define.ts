@@ -89,7 +89,6 @@ export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
   readonly run: (args: z.infer<I>, ctx: ToolCtx) => Promise<RunResult<z.infer<O>>>;
   readonly nuances?: readonly string[];
   readonly gotchas?: readonly string[];
-  readonly inputSchemaAugment?: (schema: Record<string, unknown>) => Record<string, unknown>;
 }
 
 export interface DefinedTool extends Tool {
@@ -332,12 +331,7 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
       };
     }
 
-    const handler = this.buildAccessDeniedHandler();
-    if (handler !== undefined) {
-      this.toolCtx.pathGuard.onAccessDenied = handler;
-    }
-
-    try {
+    const runTool = async (): Promise<CallToolResult> => {
       try {
         const result = await this.def.run(this.parsedArgs, this.toolCtx);
         await this.completeProgress(result.structured);
@@ -347,9 +341,16 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
       } finally {
         await this.#flushProgress();
       }
-    } finally {
-      delete this.toolCtx.pathGuard.onAccessDenied;
+    };
+
+    const handler = this.buildAccessDeniedHandler();
+    // Scope the access-denied (elicitation) handler to this request's async
+    // chain via AsyncLocalStorage so concurrent tools/call calls sharing one
+    // PathGuard cannot overwrite each other's handler.
+    if (handler !== undefined) {
+      return this.toolCtx.pathGuard.runWithAccessDeniedHandler(handler, runTool);
     }
+    return runTool();
   }
 }
 
@@ -375,11 +376,10 @@ function createServerToolHandler<I extends z.ZodType, O extends z.ZodType>(
 // WHY THIS EXISTS: The SDK exports fromJsonSchema(rawSchema) which creates a
 // StandardSchemaWithJSON from a plain JSON Schema, but it validates at runtime using
 // CfWorkerJsonSchemaValidator instead of Zod. We need Zod validation (for structured
-// error messages) while serving the augmented JSON Schema (with head/tail/offset mutex
-// constraints added by inputSchemaAugment) to clients. This function keeps Zod's
-// ~standard.validate intact while replacing ~standard.jsonSchema with the augmented
-// schema. Remove when the SDK supports separate validate/publication schemas in
-// registerTool, or when inputSchemaAugment constraints can be expressed in Zod directly.
+// error messages) while serving a draft-2020-12 JSON Schema to clients. This function
+// keeps Zod's ~standard.validate intact while replacing ~standard.jsonSchema with the
+// precomputed draft-2020-12 schema. Remove when the SDK supports separate
+// validate/publication schemas in registerTool.
 function withJsonSchema<T extends z.ZodType>(
   schema: T,
   precomputedJsonSchema: Record<string, unknown>,
@@ -404,13 +404,10 @@ function withJsonSchema<T extends z.ZodType>(
 export function defineTool<I extends z.ZodType, O extends z.ZodType>(
   def: ToolDef<I, O>,
 ): DefinedTool {
-  const baseInputJsonSchema = z.toJSONSchema(def.input, {
+  const inputJsonSchema = z.toJSONSchema(def.input, {
     target: 'draft-2020-12',
     io: 'input',
   }) as Record<string, unknown>;
-  const inputJsonSchema: Record<string, unknown> = def.inputSchemaAugment
-    ? { ...def.inputSchemaAugment(baseInputJsonSchema) }
-    : baseInputJsonSchema;
   const outputJsonSchema = z.toJSONSchema(def.output, {
     target: 'draft-2020-12',
     io: 'output',

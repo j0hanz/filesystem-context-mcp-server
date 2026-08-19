@@ -165,20 +165,51 @@ async function performRenameWithFallback(
     }
 
     if (!isNodeError(error) || error.code !== 'EXDEV') {
-      throw new FsError(ErrorCode.UNKNOWN, `Move failed for ${originalSource}`, originalSource);
+      // Preserve the original error code/message via cause so EPERM/EACCES/ENOSPC
+      // surface instead of a generic UNKNOWN.
+      throw new FsError(
+        ErrorCode.UNKNOWN,
+        `Move failed for ${originalSource}`,
+        originalSource,
+        undefined,
+        error,
+      );
     }
 
+    // EXDEV: cross-device rename. Copy then remove, preserving symlinks and
+    // timestamps so link semantics survive the move.
+    let copied = false;
     try {
-      await fsOps.cp(validSource, validDest, { recursive: true });
+      await fsOps.cp(validSource, validDest, {
+        recursive: true,
+        verbatimSymlinks: true,
+        preserveTimestamps: true,
+      });
+      copied = true;
       await fsOps.rm(validSource, { recursive: true, force: true });
     } catch (copyOrRemoveError) {
       if (isAbortError(copyOrRemoveError)) {
         throw copyOrRemoveError;
       }
+      if (copied) {
+        // cp succeeded but rm failed: the destination already holds a complete
+        // copy and the source remains. Surface the rm error as the cause so the
+        // caller can recover (clean up the duplicate) instead of a silent generic
+        // failure that hides the partial completion.
+        throw new FsError(
+          ErrorCode.UNKNOWN,
+          `Cross-device move of ${originalSource}: copy succeeded but source removal failed (destination holds a copy)`,
+          originalSource,
+          undefined,
+          copyOrRemoveError,
+        );
+      }
       throw new FsError(
         ErrorCode.UNKNOWN,
         `Cross-device move failed for ${originalSource}`,
         originalSource,
+        undefined,
+        copyOrRemoveError,
       );
     }
   }

@@ -1,15 +1,10 @@
-import type { Stats } from 'node:fs';
-import {
-  glob as fsGlob,
-  lstat as fsLstat,
-  readFile as fsReadFile,
-  stat as fsStat,
-} from 'node:fs/promises';
+import { glob as fsGlob, readFile as fsReadFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, posix, relative, resolve } from 'node:path';
 
 import type { Ignore } from 'ignore';
 import ignore from 'ignore';
 
+import { processInParallel } from './concurrency.js';
 import { formatUnknownErrorMessage, isNodeError } from './errors.js';
 import { Logger } from './observability.js';
 import { toPosixPath } from './path.js';
@@ -72,15 +67,30 @@ export async function isEntryAccessibleByType(
   }
 }
 
-async function runConcurrentTasks(tasks: (() => Promise<void>)[], limit: number): Promise<void> {
-  let index = 0;
-  async function next(): Promise<void> {
-    while (index < tasks.length) {
-      const i = index++;
-      await tasks[i]?.();
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, next));
+async function loadGitignoreFiles(
+  root: string,
+  gitignorePaths: readonly string[],
+  manager: GitignoreManager,
+  signal?: AbortSignal,
+): Promise<void> {
+  await processInParallel(
+    gitignorePaths,
+    async (relPath) => {
+      const absPath = join(root, relPath);
+      try {
+        const contents = await fsReadFile(absPath, { encoding: 'utf-8', signal });
+        const matcher = ignore();
+        matcher.add(parseGitignoreLines(contents));
+        const dir = toPosixPath(dirname(relPath));
+        manager.addMatcher(dir === '.' ? '' : dir, matcher);
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') throw error;
+        Logger.warn(`Failed to read .gitignore at ${absPath}: ${formatUnknownErrorMessage(error)}`);
+      }
+    },
+    GLOB_BATCH_CONCURRENCY,
+    signal,
+  );
 }
 
 function parseGitignoreLines(contents: string): string[] {
@@ -97,6 +107,10 @@ function parseGitignoreLines(contents: string): string[] {
 
 export class GitignoreManager {
   private matchers = new Map<string, Ignore>();
+
+  addMatcher(dir: string, matcher: Ignore): void {
+    this.matchers.set(dir, matcher);
+  }
 
   static async load(root: string, signal?: AbortSignal): Promise<GitignoreManager> {
     const manager = new GitignoreManager();
@@ -117,27 +131,7 @@ export class GitignoreManager {
         gitignorePaths.push(match);
       }
 
-      await runConcurrentTasks(
-        gitignorePaths.map((relPath) => async () => {
-          const absPath = join(root, relPath);
-          try {
-            const contents = await fsReadFile(absPath, {
-              encoding: 'utf-8',
-              signal,
-            });
-            const matcher = ignore();
-            matcher.add(parseGitignoreLines(contents));
-            const dir = toPosixPath(dirname(relPath));
-            manager.matchers.set(dir === '.' ? '' : dir, matcher);
-          } catch (error) {
-            if (error instanceof Error && error.name === 'AbortError') throw error;
-            Logger.warn(
-              `Failed to read .gitignore at ${absPath}: ${formatUnknownErrorMessage(error)}`,
-            );
-          }
-        }),
-        GLOB_BATCH_CONCURRENCY,
-      );
+      await loadGitignoreFiles(root, gitignorePaths, manager, signal);
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') throw error;
       Logger.warn(
@@ -249,7 +243,6 @@ export interface GlobEntry {
   path: string;
   relativePath?: string;
   dirent: DirentLike;
-  stats?: Stats;
 }
 
 interface GlobEntriesOptions {
@@ -260,9 +253,7 @@ interface GlobEntriesOptions {
   baseNameMatch: boolean;
   caseSensitiveMatch: boolean;
   maxDepth?: number;
-  followSymbolicLinks: boolean;
   onlyFiles: boolean;
-  stats: boolean;
   suppressErrors?: boolean;
   respectGitignore?: boolean;
 }
@@ -273,7 +264,6 @@ interface NormalizedGlob {
   cwd: string;
   patterns: readonly string[];
   exclude: readonly string[];
-  useDirents: boolean;
   suppressErrors: boolean;
   maxDepth?: number;
   respectGitignore: boolean;
@@ -284,15 +274,6 @@ const DEFAULT_MAX_HIDDEN_DEPTH = 10;
 const GLOB_BATCH_CONCURRENCY = 64;
 const SEP = '/';
 const DOT_CHAR_CODE = 46;
-const GLOB_BOOLEAN_OPTION_KEYS: readonly (keyof GlobEntriesOptions)[] = [
-  'includeHidden',
-  'baseNameMatch',
-  'caseSensitiveMatch',
-  'followSymbolicLinks',
-  'onlyFiles',
-  'stats',
-];
-
 function normalizePattern(pattern: string, baseNameMatch: boolean): string {
   const normalized = toPosixPath(pattern);
 
@@ -366,48 +347,6 @@ function buildHiddenPatterns(normalizedPattern: string, maxDepth: number): reado
   return Array.from(patterns);
 }
 
-function assertOptionsShape(options: GlobEntriesOptions): void {
-  const optsUnknown = options as unknown;
-  if (typeof optsUnknown !== 'object' || optsUnknown === null) {
-    throw new TypeError('globEntries: options must be an object');
-  }
-
-  const opts = optsUnknown as Record<string, unknown>;
-
-  if (typeof opts['cwd'] !== 'string')
-    throw new TypeError('globEntries: options.cwd must be a string');
-  if (typeof opts['pattern'] !== 'string')
-    throw new TypeError('globEntries: options.pattern must be a string');
-
-  if (
-    !Array.isArray(opts['excludePatterns']) ||
-    opts['excludePatterns'].some((p) => typeof p !== 'string')
-  ) {
-    throw new TypeError('globEntries: options.excludePatterns must be an array of strings');
-  }
-
-  for (const key of GLOB_BOOLEAN_OPTION_KEYS) {
-    if (typeof opts[key] !== 'boolean') {
-      throw new TypeError(`globEntries: options.${key} must be a boolean`);
-    }
-  }
-
-  if (
-    opts['maxDepth'] !== undefined &&
-    (!Number.isFinite(opts['maxDepth']) || typeof opts['maxDepth'] !== 'number')
-  ) {
-    throw new TypeError('globEntries: options.maxDepth must be a finite number');
-  }
-
-  if (opts['suppressErrors'] !== undefined && typeof opts['suppressErrors'] !== 'boolean') {
-    throw new TypeError('globEntries: options.suppressErrors must be a boolean');
-  }
-
-  if (opts['respectGitignore'] !== undefined && typeof opts['respectGitignore'] !== 'boolean') {
-    throw new TypeError('globEntries: options.respectGitignore must be a boolean');
-  }
-}
-
 function normalizeGlobOptions(options: GlobEntriesOptions): NormalizedGlob {
   const cwd = resolve(options.cwd);
   const normalizedPattern = normalizePattern(options.pattern, options.baseNameMatch);
@@ -420,7 +359,6 @@ function normalizeGlobOptions(options: GlobEntriesOptions): NormalizedGlob {
     cwd,
     patterns,
     exclude: options.excludePatterns.map(toPosixPath),
-    useDirents: !options.stats && !options.followSymbolicLinks,
     suppressErrors: options.suppressErrors ?? false,
     respectGitignore: options.respectGitignore ?? false,
   };
@@ -450,10 +388,6 @@ function resolveDirentBase(cwd: string, parentPath: string | undefined): string 
   return isAbsolute(parentPath) ? parentPath : resolve(cwd, parentPath);
 }
 
-function resolveStringMatchPath(cwd: string, match: string): string {
-  return isAbsolute(match) ? match : resolve(cwd, match);
-}
-
 function* processDirentMatch(
   match: GlobDirentLike,
   cwd: string,
@@ -476,103 +410,12 @@ function* processDirentMatch(
   yield { path: absolutePath, dirent: match };
 }
 
-async function resolveStringMatch(
-  match: string,
-  cwd: string,
-  maxDepth: number | undefined,
-  seen: Set<string>,
-  onlyFiles: boolean,
-  followSymlinks: boolean,
-  returnStats: boolean,
-  suppressErrors: boolean,
-): Promise<GlobEntry | null> {
-  if (maxDepth !== undefined) {
-    const depth = getRelativeDepth(match);
-    if (depth > maxDepth) return null;
-  }
-
-  const absolutePath = resolveStringMatchPath(cwd, match);
-
-  if (seen.has(absolutePath)) return null;
-  seen.add(absolutePath);
-
-  try {
-    const stats = followSymlinks ? await fsStat(absolutePath) : await fsLstat(absolutePath);
-
-    if (onlyFiles && !stats.isFile()) return null;
-
-    const entry: GlobEntry = { path: absolutePath, dirent: stats };
-    if (!isAbsolute(match)) {
-      entry.relativePath = match;
-    }
-    if (returnStats) entry.stats = stats;
-    return entry;
-  } catch (error) {
-    if (!suppressErrors) throw error;
-    return null;
-  }
-}
-
 interface ProcessContext {
   cwd: string;
   maxDepth: number | undefined;
   seen: Set<string>;
   onlyFiles: boolean;
-  followSymlinks: boolean;
-  returnStats: boolean;
   suppressErrors: boolean;
-}
-
-class AsyncGlobBatchQueue {
-  private buffer: string[];
-  private bufferLength = 0;
-  private readonly context: ProcessContext;
-
-  constructor(context: ProcessContext) {
-    this.context = context;
-    this.buffer = new Array<string>(GLOB_BATCH_CONCURRENCY);
-  }
-
-  add(match: string): void {
-    this.buffer[this.bufferLength++] = match;
-  }
-
-  isFull(): boolean {
-    return this.bufferLength >= GLOB_BATCH_CONCURRENCY;
-  }
-
-  hasItems(): boolean {
-    return this.bufferLength > 0;
-  }
-
-  async *flush(): AsyncGenerator<GlobEntry> {
-    if (this.bufferLength === 0) return;
-
-    const count = this.bufferLength;
-    this.bufferLength = 0;
-
-    const promises = new Array<Promise<GlobEntry | null>>(count);
-    for (let i = 0; i < count; i++) {
-      const matchPath = this.buffer[i];
-      promises[i] = resolveStringMatch(
-        matchPath ?? '',
-        this.context.cwd,
-        this.context.maxDepth,
-        this.context.seen,
-        this.context.onlyFiles,
-        this.context.followSymlinks,
-        this.context.returnStats,
-        this.context.suppressErrors,
-      );
-    }
-
-    const results = await Promise.all(promises);
-
-    for (let i = 0; i < count; i++) {
-      const entry = results[i];
-      if (entry !== null && entry !== undefined) yield entry;
-    }
-  }
 }
 
 function createExcludeFilter(
@@ -621,7 +464,6 @@ async function* processGlobPattern(
   plan: NormalizedGlob,
   context: ProcessContext,
   excludeFunc: ((match: GlobMatch) => boolean) | readonly string[],
-  forceFileTypes: boolean,
 ): AsyncGenerator<GlobEntry> {
   const { cwd, suppressErrors } = plan;
   let iterable: AsyncIterable<GlobMatch>;
@@ -629,54 +471,28 @@ async function* processGlobPattern(
     iterable = fsGlob(pattern, {
       cwd,
       exclude: excludeFunc,
-      withFileTypes: forceFileTypes,
+      withFileTypes: true,
     }) as AsyncIterable<GlobMatch>;
   } catch (error) {
     if (suppressErrors) return;
     throw error;
   }
 
-  if (plan.useDirents) {
-    try {
-      for await (const match of iterable) {
-        yield* processDirentMatch(
-          match as GlobDirentLike,
-          context.cwd,
-          context.maxDepth,
-          context.seen,
-          context.onlyFiles,
-        );
-      }
-    } catch (error) {
-      if (!suppressErrors) throw error;
-      Logger.warn(
-        `globEntries: suppressed mid-walk error for pattern "${pattern}": ${formatUnknownErrorMessage(error)}`,
+  try {
+    for await (const match of iterable) {
+      yield* processDirentMatch(
+        match as GlobDirentLike,
+        context.cwd,
+        context.maxDepth,
+        context.seen,
+        context.onlyFiles,
       );
     }
-  } else {
-    const queue = new AsyncGlobBatchQueue(context);
-    try {
-      for await (const match of iterable) {
-        let strMatch: string;
-        if (typeof match === 'string') {
-          strMatch = match;
-        } else {
-          strMatch = match.parentPath
-            ? relative(cwd, join(match.parentPath, match.name))
-            : match.name;
-        }
-        queue.add(strMatch);
-        if (queue.isFull()) {
-          yield* queue.flush();
-        }
-      }
-      yield* queue.flush();
-    } catch (error) {
-      if (!suppressErrors) throw error;
-      Logger.warn(
-        `globEntries: suppressed mid-walk error for pattern "${pattern}": ${formatUnknownErrorMessage(error)}`,
-      );
-    }
+  } catch (error) {
+    if (!suppressErrors) throw error;
+    Logger.warn(
+      `globEntries: suppressed mid-walk error for pattern "${pattern}": ${formatUnknownErrorMessage(error)}`,
+    );
   }
 }
 
@@ -688,28 +504,24 @@ async function* nativeGlobEntries(
   const seen = new Set<string>();
 
   const { cwd, maxDepth, suppressErrors } = plan;
-  const { onlyFiles, stats: returnStats, followSymbolicLinks: followSymlinks } = options;
+  const { onlyFiles } = options;
 
   const context: ProcessContext = {
     cwd,
     maxDepth,
     seen,
     onlyFiles,
-    followSymlinks,
-    returnStats,
     suppressErrors,
   };
 
-  const forceFileTypes = plan.useDirents || Boolean(gitignoreMatcher);
   const excludeFunc = createExcludeFilter(cwd, plan.exclude, gitignoreMatcher);
 
   for (const pattern of plan.patterns) {
-    yield* processGlobPattern(pattern, plan, context, excludeFunc, forceFileTypes);
+    yield* processGlobPattern(pattern, plan, context, excludeFunc);
   }
 }
 
 export async function* globEntries(options: GlobEntriesOptions): AsyncGenerator<GlobEntry> {
-  assertOptionsShape(options);
   let gitignoreMatcher: GitignoreManager | null = null;
   if (options.respectGitignore) {
     gitignoreMatcher = await loadRootGitignore(options.cwd);
@@ -727,9 +539,7 @@ export function buildGlobOptions(config: GlobConfig): Parameters<typeof globEntr
     includeHidden: config.includeHidden ?? false,
     baseNameMatch: config.baseNameMatch ?? false,
     caseSensitiveMatch: config.caseSensitiveMatch ?? true,
-    followSymbolicLinks: config.followSymbolicLinks ?? false,
     onlyFiles: config.onlyFiles ?? true,
-    stats: config.stats ?? false,
   };
 
   if (config.suppressErrors) {

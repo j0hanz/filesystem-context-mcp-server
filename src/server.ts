@@ -79,22 +79,16 @@ function getLocalIconInfo(): Promise<IconInfo | undefined> {
     const name = 'logo.svg';
     const mime = 'image/svg+xml';
     // From src/server.ts, ../assets/ resolves to the root-level assets/ folder
-    const candidates = [`../assets/${name}`];
-
-    for (const candidate of candidates) {
-      try {
-        const iconPath = new URL(candidate, import.meta.url);
-        const buffer = await readFile(iconPath);
-        return {
-          src: `data:${mime};base64,${buffer.toString('base64')}`,
-          mimeType: mime,
-        };
-      } catch {
-        // Try next candidate.
-      }
+    try {
+      const iconPath = new URL(`../assets/${name}`, import.meta.url);
+      const buffer = await readFile(iconPath);
+      return {
+        src: `data:${mime};base64,${buffer.toString('base64')}`,
+        mimeType: mime,
+      };
+    } catch {
+      return undefined;
     }
-
-    return undefined;
   })();
 
   return cachedIconInfo;

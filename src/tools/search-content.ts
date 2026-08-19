@@ -69,6 +69,8 @@ function buildStructuredSummaryFields(summary: SearchSummary): Partial<SearchOut
   return {
     ...(summary.filesMatched ? { filesMatched: summary.filesMatched } : {}),
     ...(summary.truncated ? { truncated: true } : {}),
+    ...(summary.skippedInaccessible ? { skippedInaccessible: summary.skippedInaccessible } : {}),
+    ...(summary.skippedTooLarge ? { skippedTooLarge: summary.skippedTooLarge } : {}),
   };
 }
 
@@ -96,10 +98,10 @@ const GrepInputSchema = z.strictObject({
       message: 'searchPattern cannot be empty or whitespace-only',
     })
     .describe(
-      'Exact literal text or RE2 regex pattern to search for in file contents. When isRegex=true, uses RE2 syntax (no lookahead, lookbehind, or backreferences are supported). Cannot be empty or whitespace-only.',
+      'Exact literal text or regex pattern to search for in file contents. When isRegex=true, lookahead, lookbehind, and backreferences are rejected (unsupported). Cannot be empty or whitespace-only.',
     )
     .meta({ examples: ['TODO', 'function\\s+(\\w+)', 'import.*from'] }),
-  isRegex: defaultFalseBoolean('Treat searchPattern as a RE2 regex (default: literal text match)'),
+  isRegex: defaultFalseBoolean('Treat searchPattern as a regex (default: literal text match)'),
   includeHidden: includeHiddenField(),
   includeIgnored: includeIgnoredField(),
   caseSensitive: defaultFalseBoolean('Enable case-sensitive matching (default: case-insensitive)'),
@@ -127,9 +129,17 @@ const GrepOutputSchema = z.strictObject({
       }),
     )
     .describe('Flat list of matches sorted by file path then line number'),
-  totalMatches: NonNegInt.optional().describe('Total number of matching lines found'),
+  totalMatches: NonNegInt.optional().describe(
+    'Total number of matching lines found: one per entry in matches, not per occurrence. A line with several occurrences counts once here; see that entry matchCount for its occurrence count.',
+  ),
   filesMatched: NonNegInt.optional().describe('Number of files containing at least one match'),
   filesScanned: NonNegInt.optional().describe('Total number of files examined'),
+  skippedInaccessible: NonNegInt.optional().describe(
+    'Files skipped unread due to permission or access errors',
+  ),
+  skippedTooLarge: NonNegInt.optional().describe(
+    'Files skipped unread because they exceed the text-file size limit; raise the limit or narrow pattern if a match was expected in one',
+  ),
   truncated: z
     .boolean()
     .optional()
@@ -164,7 +174,7 @@ function buildSearchStructured(
   return {
     ok: true,
     matches,
-    totalMatches: summary.matches,
+    totalMatches: summary.matchingLines,
     filesScanned: summary.filesScanned,
     ...buildStructuredSummaryFields(summary),
   };
@@ -333,7 +343,9 @@ async function handleSearchContent(
   matchCount: number;
   fileCount: number;
 }> {
-  const basePath = pathGuard.resolvePathOrRoot(args.path);
+  const basePath = await pathGuard.validateExistingDirectory(
+    pathGuard.resolvePathOrRoot(args.path),
+  );
   const regexMatcher = createSearchMatcher(args);
 
   const cursorOffset = args.cursor !== undefined ? decodeOffsetCursor(args.cursor) : 0;
@@ -394,9 +406,9 @@ export const SEARCH_CONTENT = defineTool({
     'Inline results are capped at 50 matches; the full list is stored at resourceUri when exceeded.',
   ],
   gotchas: [
-    'isRegex=true uses RE2 syntax: lookahead, lookbehind, and backreferences are not supported.',
+    'isRegex=true rejects lookahead, lookbehind, and backreferences (they throw before scanning).',
     'Without pattern, every text file is scanned; always set pattern to a specific glob to limit scope.',
-    'Unreadable files (binary, permission-denied) are silently skipped; use stat to verify a file is readable if you expect matches.',
+    'Unreadable files (binary, permission-denied) are skipped and counted in skippedInaccessible; files above the size limit are counted in skippedTooLarge. Check both before concluding a pattern is absent.',
     'File patterns without a slash (e.g. *.ts) match by basename anywhere in the tree. Add a path prefix (e.g. src/*.ts) to restrict to a subtree.',
   ],
   defaultErrorCode: ErrorCode.UNKNOWN,

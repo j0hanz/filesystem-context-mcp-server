@@ -150,7 +150,7 @@ const SearchAndReplaceOutputSchema = z.strictObject({
     .enum(['maxResults', 'maxFiles', 'timeout'])
     .optional()
     .describe(
-      'Why enumeration stopped early: maxResults = match cap reached, maxFiles = file cap reached, timeout = time limit hit',
+      'Why enumeration stopped early: maxResults = match cap reached, maxFiles = file cap reached, timeout = time limit hit or the request was cancelled. Absent when every matching file was enumerated. Files already dispatched still complete, so this marks the sweep incomplete, not the writes partial.',
     ),
 });
 
@@ -277,6 +277,15 @@ async function processEntry(entryPath: string, ctx: ReplaceContext): Promise<voi
       return;
     }
 
+    if (!options.dryRun) {
+      await atomicWriteFile(entryPath, plan.updatedContent, ctx.pathGuard, {
+        encoding: 'utf-8',
+        signal,
+      });
+    }
+
+    // Bookkeep only after the write succeeds (or in dryRun, where there is no
+    // write): a failed write must not count the file as changed.
     summary.totalMatches += plan.matchCount;
     summary.filesChanged++;
 
@@ -289,17 +298,10 @@ async function processEntry(entryPath: string, ctx: ReplaceContext): Promise<voi
       includeDiff: options.dryRun || options.returnDiff,
       ...(signal ? { signal } : {}),
     });
-
-    if (!options.dryRun) {
-      await atomicWriteFile(entryPath, plan.updatedContent, ctx.pathGuard, {
-        encoding: 'utf-8',
-        signal,
-      });
-    }
   } catch (error) {
     summary.failedFiles++;
     recordFailure(summary.failures, {
-      path: validPath,
+      path: toPosixRelative(summary.root, validPath),
       error: Problem.fromUnknown(error, ErrorCode.UNKNOWN, validPath),
     });
   }
@@ -370,7 +372,8 @@ async function maybeAppendPatchDiff(
   summary.diffTruncated = true;
 }
 
-async function processEntriesConcurrently(
+/** Exported for unit tests: the four exit reasons are the contract worth pinning. */
+export async function processEntriesConcurrently(
   entries: AsyncIterable<{ path: string }>,
   options: {
     signal: AbortSignal | undefined;
@@ -381,12 +384,13 @@ async function processEntriesConcurrently(
     onError?: (entryPath: string, err: unknown) => void;
     runEntry: (entryPath: string) => Promise<void>;
   },
-): Promise<{ stoppedByLimit: boolean; stoppedByMatchCap: boolean }> {
+): Promise<{ stoppedByLimit: boolean; stoppedByMatchCap: boolean; stoppedByAbort: boolean }> {
   const pending = new Set<Promise<void>>();
   const { signal, concurrency, maxEntries, shouldStop, onEntry, onError, runEntry } = options;
   let dispatched = 0;
   let stoppedByLimit = false;
   let stoppedByMatchCap = false;
+  let stoppedByAbort = false;
 
   const waitForSlot = async (): Promise<void> => {
     if (pending.size < concurrency) return;
@@ -394,7 +398,12 @@ async function processEntriesConcurrently(
   };
 
   for await (const entry of entries) {
-    if (signal?.aborted) break;
+    // The signal is cancellation OR the tool's timeout: stop dispatching and
+    // let the caller report the run as incomplete rather than as a full sweep.
+    if (signal?.aborted) {
+      stoppedByAbort = true;
+      break;
+    }
     if (maxEntries !== undefined && dispatched >= maxEntries) {
       stoppedByLimit = true;
       break;
@@ -434,7 +443,7 @@ async function processEntriesConcurrently(
     await Promise.allSettled([...pending]);
   }
 
-  return { stoppedByLimit, stoppedByMatchCap };
+  return { stoppedByLimit, stoppedByMatchCap, stoppedByAbort };
 }
 
 interface ReplaceSummary {
@@ -448,7 +457,7 @@ interface ReplaceSummary {
   changedFilesTruncated: boolean;
   diff: string;
   diffTruncated: boolean;
-  stoppedReason?: 'maxFiles' | 'maxResults';
+  stoppedReason?: 'maxFiles' | 'maxResults' | 'timeout';
 }
 
 function createReplaceSummary(root: string): ReplaceSummary {
@@ -524,9 +533,7 @@ async function handleSearchAndReplace(
     includeHidden: args.includeHidden,
     baseNameMatch: true,
     caseSensitiveMatch: true, // Default to sensitive for file paths
-    followSymbolicLinks: false,
     onlyFiles: true,
-    stats: false,
     suppressErrors: true,
     ...(args.maxDepth !== undefined ? { maxDepth: args.maxDepth } : {}),
   });
@@ -547,29 +554,35 @@ async function handleSearchAndReplace(
     fs: fsOps,
   };
 
-  const { stoppedByLimit, stoppedByMatchCap } = await processEntriesConcurrently(entries, {
-    signal,
-    concurrency: REPLACE_CONCURRENCY,
-    ...(args.maxFiles !== undefined ? { maxEntries: args.maxFiles } : {}),
-    shouldStop: () => summary.totalMatches >= args.maxResults,
-    onEntry: () => {
-      summary.processedFiles++;
-      onProgress({ current: summary.processedFiles });
+  const { stoppedByLimit, stoppedByMatchCap, stoppedByAbort } = await processEntriesConcurrently(
+    entries,
+    {
+      signal,
+      concurrency: REPLACE_CONCURRENCY,
+      ...(args.maxFiles !== undefined ? { maxEntries: args.maxFiles } : {}),
+      shouldStop: () => summary.totalMatches >= args.maxResults,
+      onEntry: () => {
+        summary.processedFiles++;
+        onProgress({ current: summary.processedFiles });
+      },
+      onError: (entryPath, err) => {
+        summary.failedFiles++;
+        recordFailure(summary.failures, {
+          path: toPosixRelative(summary.root, entryPath),
+          error: Problem.fromUnknown(err, ErrorCode.UNKNOWN, entryPath),
+        });
+      },
+      runEntry: (entryPath) => processEntry(entryPath, context),
     },
-    onError: (entryPath, err) => {
-      summary.failedFiles++;
-      recordFailure(summary.failures, {
-        path: entryPath,
-        error: Problem.fromUnknown(err, ErrorCode.UNKNOWN, entryPath),
-      });
-    },
-    runEntry: (entryPath) => processEntry(entryPath, context),
-  });
+  );
 
+  // Mutually exclusive by construction — the loop exits on exactly one of them.
   if (stoppedByLimit) {
     summary.stoppedReason = 'maxFiles';
   } else if (stoppedByMatchCap) {
     summary.stoppedReason = 'maxResults';
+  } else if (stoppedByAbort) {
+    summary.stoppedReason = 'timeout';
   }
 
   onProgress({ current: summary.processedFiles });

@@ -11,6 +11,7 @@ import {
   checkResourceAllowed,
   ProtocolError,
   ProtocolErrorCode,
+  ResourceNotFoundError,
   ResourceTemplate,
   resourceUrlFromServerUrl,
   UriTemplate,
@@ -64,7 +65,10 @@ interface BaseResourceContract {
     variables: Record<string, string | string[]>,
     ctx: ServerContext,
   ): Promise<ReadResourceResult> | ReadResourceResult;
-  subscribe?: (uri: string, notify: (uri: string) => void) => boolean | undefined;
+  subscribe?: (
+    uri: string,
+    notify: (uri: string) => void,
+  ) => Promise<boolean | undefined> | boolean | undefined;
   unsubscribe?: (uri: string) => void;
   destroy?: () => void;
 }
@@ -199,8 +203,6 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
   const watchers = new Map<string, FSWatcher>();
   const activeCallbacks = new Map<string, Set<(uri: string) => void>>();
   const desiredState = new Map<string, 'subscribed' | 'unsubscribed'>();
-  // Tracks URIs whose watcher is being created (validateExistingPath is async).
-  const pending = new Set<string>();
   let destroyed = false;
 
   const dropWatcher = (uri: string, watcher: FSWatcher): void => {
@@ -253,7 +255,7 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
       return [];
     },
 
-    subscribe(uri, notify) {
+    async subscribe(uri, notify) {
       if (!options.pathGuard) return;
 
       let callbacks = activeCallbacks.get(uri);
@@ -272,69 +274,60 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
         return false;
       }
 
-      if (pending.has(uri)) return true;
-
       const filePath = extractPath(uri);
       if (!filePath) {
-        Logger.warn(`Cannot subscribe to malformed or non-filesystem URI: ${uri}`);
+        throw new ResourceNotFoundError(uri, `Cannot subscribe: not a filesystem URI`);
+      }
+
+      let resolved: string;
+      try {
+        resolved = await options.pathGuard.validateExistingPath(filePath);
+      } catch (err: unknown) {
+        if (
+          err instanceof FsError &&
+          (err.code === ErrorCode.NOT_FOUND || err.code === ErrorCode.ACCESS_DENIED)
+        ) {
+          throw new ResourceNotFoundError(uri, `Cannot subscribe to ${uri}: ${err.message}`);
+        }
+        Logger.warn(
+          `Unexpected error validating path for watcher ${uri}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        throw err;
+      }
+
+      if (destroyed) return;
+      if (desiredState.get(uri) === 'unsubscribed') return;
+      if (watchers.has(uri)) return;
+      if (watchers.size >= MAX_WATCHERS) {
+        Logger.warn(`Cannot subscribe to ${uri}: MAX_WATCHERS limit (${MAX_WATCHERS}) reached.`);
         return;
       }
 
-      pending.add(uri);
-      options.pathGuard
-        .validateExistingPath(filePath)
-        .then((resolved) => {
-          if (destroyed) return;
-          if (desiredState.get(uri) === 'unsubscribed') {
-            return;
-          }
-          if (watchers.has(uri)) return;
-          if (watchers.size >= MAX_WATCHERS) {
-            Logger.warn(
-              `Cannot subscribe to ${uri}: MAX_WATCHERS limit (${MAX_WATCHERS}) reached.`,
-            );
-            return;
-          }
-
-          try {
-            const watcher = watchFactory(resolved, () => {
-              const currentCallbacks = activeCallbacks.get(uri);
-              if (currentCallbacks) {
-                for (const cb of currentCallbacks) {
-                  try {
-                    cb(uri);
-                  } catch (err) {
-                    Logger.warn(
-                      `Notify callback error for ${uri}: ${err instanceof Error ? err.message : String(err)}`,
-                    );
-                  }
-                }
+      try {
+        const watcher = watchFactory(resolved, () => {
+          const currentCallbacks = activeCallbacks.get(uri);
+          if (currentCallbacks) {
+            for (const cb of currentCallbacks) {
+              try {
+                cb(uri);
+              } catch (err) {
+                Logger.warn(
+                  `Notify callback error for ${uri}: ${err instanceof Error ? err.message : String(err)}`,
+                );
               }
-            });
-            watcher.on('error', (err: Error) => {
-              Logger.warn(`Watcher error for ${uri}: ${err.message}`);
-              dropWatcher(uri, watcher);
-            });
-            watchers.set(uri, watcher);
-          } catch (err) {
-            Logger.error(
-              `Failed to create watcher for ${uri}: ${err instanceof Error ? err.message : String(err)}`,
-            );
+            }
           }
-        })
-        .catch((err: unknown) => {
-          const isExpected =
-            err instanceof FsError &&
-            (err.code === ErrorCode.NOT_FOUND || err.code === ErrorCode.ACCESS_DENIED);
-          if (!isExpected) {
-            Logger.warn(
-              `Unexpected error validating path for watcher ${uri}: ${err instanceof Error ? err.message : String(err)}`,
-            );
-          }
-        })
-        .finally(() => {
-          pending.delete(uri);
         });
+        watcher.on('error', (err: Error) => {
+          Logger.warn(`Watcher error for ${uri}: ${err.message}`);
+          dropWatcher(uri, watcher);
+        });
+        watchers.set(uri, watcher);
+      } catch (err) {
+        Logger.error(
+          `Failed to create watcher for ${uri}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
       return undefined;
     },
 
@@ -389,8 +382,8 @@ function createResultResource(options: ResourceRegistrationOptions): ResourceCon
         entry = options.resourceStore.getEntry(uri.toString());
       } catch (err) {
         if (err instanceof FsError && err.code === ErrorCode.NOT_FOUND) {
-          throw new ProtocolError(
-            ProtocolErrorCode.ResourceNotFound,
+          throw new ResourceNotFoundError(
+            uri.toString(),
             'Cached result not found or expired. Re-run the tool to regenerate.',
           );
         }
@@ -497,7 +490,7 @@ function registerResources(
 
   server.server.setRequestHandler(
     'resources/subscribe',
-    (req: { params: SubscribeRequestParams }) => {
+    async (req: { params: SubscribeRequestParams }) => {
       const requestedResource = resourceUrlFromServerUrl(req.params.uri);
       let foundMatch = false;
       for (const contract of resourceContracts) {
@@ -511,15 +504,18 @@ function registerResources(
           })
         ) {
           foundMatch = true;
-          const subscribeResult = contract.subscribe(requestedResource.toString(), (updatedUri) => {
-            const updatePayload: ResourceUpdatedNotificationParams = { uri: updatedUri };
-            void server.server.sendResourceUpdated(updatePayload).catch((err: unknown) => {
-              const msg = err instanceof Error ? err.message : String(err);
-              if (!msg.includes('closed') && !msg.includes('Transport')) {
-                Logger.warn(`Failed to send resource update for ${updatedUri}: ${msg}`);
-              }
-            });
-          });
+          const subscribeResult = await contract.subscribe(
+            requestedResource.toString(),
+            (updatedUri) => {
+              const updatePayload: ResourceUpdatedNotificationParams = { uri: updatedUri };
+              void server.server.sendResourceUpdated(updatePayload).catch((err: unknown) => {
+                const msg = err instanceof Error ? err.message : String(err);
+                if (!msg.includes('closed') && !msg.includes('Transport')) {
+                  Logger.warn(`Failed to send resource update for ${updatedUri}: ${msg}`);
+                }
+              });
+            },
+          );
           if (subscribeResult === false) {
             throw new ProtocolError(
               ProtocolErrorCode.InternalError,
@@ -530,8 +526,8 @@ function registerResources(
         }
       }
       if (!foundMatch) {
-        throw new ProtocolError(
-          ProtocolErrorCode.ResourceNotFound,
+        throw new ResourceNotFoundError(
+          requestedResource.toString(),
           `Resource not found: ${requestedResource.toString()}`,
         );
       }

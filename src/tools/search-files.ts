@@ -17,7 +17,6 @@ import {
   CursorSchema,
   includeHiddenField,
   includeIgnoredField,
-  IsoDateTime,
   maxDepthField,
   NextCursorSchema,
   NonNegInt,
@@ -42,12 +41,10 @@ const SearchFilesInputSchema = z.strictObject({
   includeIgnored: includeIgnoredField(),
   includeHidden: includeHiddenField(),
   sortBy: z
-    .enum(['name', 'size', 'modified', 'path'])
+    .enum(['name', 'path'])
     .optional()
     .default('path')
-    .describe(
-      'Sort order: path = full path (default), name = basename only, size = bytes descending, modified = newest first',
-    ),
+    .describe('Sort order: path = full path (default), name = basename only'),
   maxDepth: maxDepthField(),
   cursor: CursorSchema,
 });
@@ -59,10 +56,6 @@ const SearchFilesOutputSchema = z.strictObject({
     .array(
       z.strictObject({
         path: z.string().describe('File path relative to the search root'),
-        size: NonNegInt.optional().describe('File size in bytes (present when sortBy=size)'),
-        modified: IsoDateTime.optional().describe(
-          'Last modification time (present when sortBy=modified)',
-        ),
       }),
     )
     .describe('Matched files ordered by sortBy'),
@@ -72,10 +65,10 @@ const SearchFilesOutputSchema = z.strictObject({
     'Files skipped due to permission or access errors',
   ),
   stoppedReason: z
-    .enum(['maxResults', 'maxFiles', 'timeout'])
+    .enum(['maxResults', 'timeout'])
     .optional()
     .describe(
-      'Why the search ended early: maxResults = result cap reached, maxFiles = scan cap reached, timeout = time limit hit',
+      'Why the search ended early: maxResults = result cap reached, timeout = time limit hit or the request was cancelled. Absent when the scan ran to completion.',
     ),
   resourceUri: z
     .string()
@@ -88,14 +81,12 @@ const SearchFilesOutputSchema = z.strictObject({
 
 function buildRelativeResults(
   basePath: string,
-  displayResults: readonly { path: string; size?: number; modified?: Date }[],
+  displayResults: readonly { path: string }[],
 ): NonNullable<z.infer<typeof SearchFilesOutputSchema>['results']> {
   const relativeResults: NonNullable<z.infer<typeof SearchFilesOutputSchema>['results']> = [];
   for (const entry of displayResults) {
     relativeResults.push({
       path: toPosixRelative(basePath, entry.path),
-      size: entry.size,
-      modified: entry.modified?.toISOString(),
     });
   }
   return relativeResults;
@@ -117,7 +108,7 @@ function applySummaryFields(
   summary: {
     truncated: boolean;
     skippedInaccessible: number;
-    stoppedReason?: 'timeout' | 'maxResults' | 'maxFiles';
+    stoppedReason?: 'timeout' | 'maxResults';
   },
   nextCursor?: string,
 ): void {
@@ -138,7 +129,9 @@ async function handleSearchFiles(
   link?: ReturnType<typeof putResource>['link'];
   count: number;
 }> {
-  const basePath = pathGuard.resolvePathOrRoot(args.path);
+  const basePath = await pathGuard.validateExistingDirectory(
+    pathGuard.resolvePathOrRoot(args.path),
+  );
   const excludePatterns = args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
   const cursorOffset = args.cursor !== undefined ? decodeOffsetCursor(args.cursor) : 0;
   const pageSize = args.maxResults;

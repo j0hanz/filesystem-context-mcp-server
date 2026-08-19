@@ -64,6 +64,23 @@ describe('liftFlagsToEnv / CLI_PARSER_CONFIG agreement', () => {
   });
 });
 
+describe('liftFlagsToEnv --deny layering', () => {
+  it('extends an existing DENYLIST rather than replacing it', () => {
+    const env: NodeJS.ProcessEnv = { DENYLIST: '*.env' };
+    liftFlagsToEnv(['--deny', '*.pem'], env);
+    assert.equal(env['DENYLIST'], '*.env,*.pem');
+  });
+
+  it('is idempotent — lifting the same argv twice does not duplicate entries', () => {
+    // Every other flag here overwrites, so a repeated lift is a no-op. Append
+    // without dedup would grow the denylist on each call.
+    const env: NodeJS.ProcessEnv = {};
+    liftFlagsToEnv(['--deny', '*.pem', '--deny', 'secrets/**'], env);
+    liftFlagsToEnv(['--deny', '*.pem', '--deny', 'secrets/**'], env);
+    assert.equal(env['DENYLIST'], '*.pem,secrets/**');
+  });
+});
+
 describe('liftFlagsToEnv edge cases', () => {
   it('leaves env untouched when no flags are passed', () => {
     assert.deepEqual(lift(['/some/dir', '--allow-cwd', '--port', '3000']), {});
