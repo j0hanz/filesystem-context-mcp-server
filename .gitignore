@@ -41,6 +41,7 @@ yarn-debug.log*
 yarn-error.log*
 logs/
 memory_db/
+graphify-out
 .tmp/
 
 # Editor directories and files
