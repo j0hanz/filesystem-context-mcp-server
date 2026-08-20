@@ -21,10 +21,12 @@ import type { FSWatcher } from 'node:fs';
 import { watch } from 'node:fs';
 
 import { ErrorCode, hasErrorShape, isFsError } from './core/errors.js';
-import { readFileRaw } from './core/fs.js';
+import { GuardedFileSystem } from './core/fs.js';
 import { Logger } from './core/observability.js';
+import { PathCompleter } from './core/path-completer.js';
 import type { PathGuard } from './core/path.js';
-import { PathCompleter } from './core/path.js';
+import type { IconInfo } from './core/primitives.js';
+import { withDefaultIcons } from './core/primitives.js';
 import type { Registrar, ServerDeps } from './core/registrar.js';
 import type { ResourceStore } from './core/store.js';
 import {
@@ -34,8 +36,6 @@ import {
   parseEnvInt,
 } from './core/util.js';
 import { extractPath } from './tools/_helpers.js';
-import type { IconInfo } from './tools/define.js';
-import { withDefaultIcons } from './tools/define.js';
 
 // ═══════════════════════════════════════════════════════════════
 // shared
@@ -228,7 +228,8 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
         );
       }
       await options.pathGuard.validateExistingPath(rawPath);
-      const readResult = await readFileRaw(rawPath, options.pathGuard);
+      const fs = new GuardedFileSystem(options.pathGuard);
+      const readResult = await fs.readRaw(rawPath);
 
       return {
         contents: [

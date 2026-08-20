@@ -6,6 +6,8 @@ import { readFile } from 'node:fs/promises';
 import { GuardedFileSystem } from './core/fs.js';
 import type { ServerOptions } from './core/path.js';
 import { PathGuard } from './core/path.js';
+import type { IconInfo } from './core/primitives.js';
+import { withDefaultIcons } from './core/primitives.js';
 import type { Registrar, ServerDeps } from './core/registrar.js';
 import { McpRootsSynchronizer } from './core/registrar.js';
 import type { ResourceStore } from './core/store.js';
@@ -13,8 +15,6 @@ import { createInMemoryResourceStore } from './core/store.js';
 import { pkgInfo } from './pkg-info.js';
 import { promptsRegistrar } from './prompts.js';
 import { resourcesRegistrar } from './resources.js';
-import type { IconInfo } from './tools/define.js';
-import { withDefaultIcons } from './tools/define.js';
 import { toolsRegistrar } from './tools/index.js';
 
 // ═══════════════════════════════════════════════════════════════

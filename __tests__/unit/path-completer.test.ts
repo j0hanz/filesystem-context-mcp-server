@@ -6,12 +6,8 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { test } from 'node:test';
 
-import {
-  normalizePath,
-  PathCompleter,
-  PathGuard,
-  resolveAllowedDirectoriesState,
-} from '../../src/core/path.js';
+import { PathCompleter } from '../../src/core/path-completer.js';
+import { normalizePath, PathGuard, resolveAllowedDirectoriesState } from '../../src/core/path.js';
 
 async function withTestDir(fn: (tmpDir: string) => Promise<void>) {
   const tmpDir = await mkdtemp(join(tmpdir(), `fsmcp-pathcomp-${randomUUID().slice(0, 8)}-`));

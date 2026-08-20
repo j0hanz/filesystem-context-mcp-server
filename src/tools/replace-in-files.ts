@@ -14,13 +14,7 @@ import {
   Problem,
 } from '../core/errors.js';
 import { truncateProgressPattern } from '../core/fmt.js';
-import {
-  atomicWriteFile,
-  countLines,
-  type GuardedFileSystem,
-  readFileBufferWithLimit,
-  stat,
-} from '../core/fs.js';
+import { countLines, type GuardedFileSystem, readFileBufferWithLimit } from '../core/fs.js';
 import { DEFAULT_EXCLUDE_PATTERNS, globEntries } from '../core/glob.js';
 import { detectMimeType, MIME_SAMPLE_SIZE } from '../core/mime.js';
 import { Logger } from '../core/observability.js';
@@ -249,7 +243,6 @@ interface ReplaceContext {
   maxFileSize: number;
   signal: AbortSignal | undefined;
   summary: ReplaceSummary;
-  pathGuard: PathGuard;
   fs: GuardedFileSystem;
 }
 
@@ -287,7 +280,7 @@ async function processEntry(entryPath: string, ctx: ReplaceContext): Promise<voi
     }
 
     if (!options.dryRun) {
-      await atomicWriteFile(entryPath, plan.updatedContent, ctx.pathGuard, {
+      await ctx.fs.writeFile(entryPath, plan.updatedContent, {
         encoding: 'utf-8',
         signal,
       });
@@ -487,12 +480,13 @@ function createReplaceSummary(root: string): ReplaceSummary {
 async function resolveSearchRoot(
   pathValue: string | undefined,
   pathGuard: PathGuard,
+  fs: GuardedFileSystem,
 ): Promise<{ root: string; filePattern: string | undefined }> {
   if (!pathValue) {
     return { root: pathGuard.resolvePathOrRoot(undefined), filePattern: undefined };
   }
   const resolvedPath = await pathGuard.validateExistingPath(pathValue);
-  const { stats: fileStats } = await stat(resolvedPath, pathGuard);
+  const { stats: fileStats } = await fs.stat(resolvedPath);
   if (fileStats.isFile()) {
     return {
       root: dirname(resolvedPath),
@@ -531,7 +525,7 @@ async function handleSearchAndReplace(
   link?: ContentBlock;
 }> {
   const maxFileSize = MAX_TEXT_FILE_SIZE;
-  const { root, filePattern } = await resolveSearchRoot(args.path, pathGuard);
+  const { root, filePattern } = await resolveSearchRoot(args.path, pathGuard, fsOps);
   const effectivePattern = filePattern ?? args.pattern ?? '**/*';
   const matcher = createReplacementMatcher(args);
 
@@ -559,7 +553,6 @@ async function handleSearchAndReplace(
     maxFileSize,
     signal,
     summary,
-    pathGuard,
     fs: fsOps,
   };
 

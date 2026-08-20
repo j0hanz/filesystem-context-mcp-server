@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-import { atomicWriteFile, GuardedFileSystem } from '../../src/core/fs.js';
+import { GuardedFileSystem } from '../../src/core/fs.js';
 import { isIgnoredByGitignore, loadRootGitignore } from '../../src/core/glob.js';
 import { PathGuard } from '../../src/core/path.js';
 
@@ -80,9 +80,10 @@ describe('silent-failure-hunter fixes', () => {
     it('uses a 12-character random suffix for temp files', async () => {
       const target = join(tempDir, 'atomic.txt');
       const pg = await PathGuard.fromAllowedDirectories([tempDir]);
+      const gfs = new GuardedFileSystem(pg);
 
       // Mock validatePathForWrite to return target
-      const { validPath } = await atomicWriteFile(target, 'content', pg);
+      const { validPath } = await gfs.writeFile(target, 'content');
       assert.equal(validPath.toLowerCase(), target.toLowerCase());
     });
   });

@@ -6,10 +6,10 @@ import * as z from 'zod/v4';
 import { createTwoFilesPatch, diffLines } from 'diff';
 
 import { ErrorCode, FsError } from '../core/errors.js';
-import { atomicWriteFile, countLines, readFileWithStats, stat } from '../core/fs.js';
+import { countLines, readFileWithStats } from '../core/fs.js';
+import type { GuardedFileSystem } from '../core/fs.js';
 import { detectMimeType, MIME_SAMPLE_SIZE } from '../core/mime.js';
 import { Logger } from '../core/observability.js';
-import type { PathGuard } from '../core/path.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
 import type { Regex } from '../core/search/engine.js';
 import { compileRegex } from '../core/search/engine.js';
@@ -352,14 +352,10 @@ async function buildDiff(validPath: string, original: string, modified: string):
 
 async function loadEditableFile(
   requestedPath: string,
-  pathGuard: PathGuard,
+  fs: GuardedFileSystem,
   signal?: AbortSignal,
 ): Promise<{ validPath: string; content: string }> {
-  const { stats, validPath } = await stat(
-    requestedPath,
-    pathGuard,
-    signal ? { signal } : undefined,
-  );
+  const { stats, validPath } = await fs.stat(requestedPath, signal ? { signal } : undefined);
 
   if (stats.size > MAX_TEXT_FILE_SIZE) {
     throw new FsError(
@@ -414,11 +410,11 @@ async function handleEditFile(
   edits: z.infer<typeof EditSpecSchema>[],
   dryRun: boolean,
   ignoreWhitespace: boolean,
-  pathGuard: PathGuard,
+  fs: GuardedFileSystem,
   resourceStore: ResourceStore | undefined,
   signal?: AbortSignal,
 ): Promise<{ value: EditFileValue; resourceLink?: ContentBlock }> {
-  const { validPath, content } = await loadEditableFile(filePath, pathGuard, signal);
+  const { validPath, content } = await loadEditableFile(filePath, fs, signal);
   const editResult = await applyEdits(content, edits, ignoreWhitespace);
 
   if (dryRun) {
@@ -447,7 +443,7 @@ async function handleEditFile(
   }
 
   if (editResult.appliedEdits > 0) {
-    await atomicWriteFile(filePath, editResult.content, pathGuard, {
+    await fs.writeFile(filePath, editResult.content, {
       encoding: 'utf-8',
       signal,
     });
@@ -459,7 +455,7 @@ async function handleEditFile(
   // `modified` is read from a post-write stat and is advisory: under a concurrent
   // writer it may reflect that writer's mtime while `size`/content below come from
   // this edit's atomic write. The file content itself is always consistent.
-  const { stats: fileStats } = await stat(filePath, pathGuard, signal ? { signal } : undefined);
+  const { stats: fileStats } = await fs.stat(filePath, signal ? { signal } : undefined);
   const meta = buildEditFileMetadata(
     editResult.content,
     validPath,
@@ -549,7 +545,7 @@ export const EDIT = defineTool({
           override?.edits ?? sharedEdits,
           args.dryRun,
           args.ignoreWhitespace,
-          ctx.pathGuard,
+          ctx.fs,
           ctx.resourceStore,
           ctx.signal,
         ),

@@ -1198,8 +1198,6 @@ export class PathGuard {
   }
 }
 
-export { PathCompleter } from './path-completer.js';
-
 const UNSAFE_CWD_PATHS = new Set(
   [
     '/usr',

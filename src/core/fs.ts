@@ -59,7 +59,7 @@ export interface FileInfo {
 
 // ─── Guarded Primitives ──────────────────────────────────────────────────────
 
-export async function stat(
+async function stat(
   filePath: string,
   pathGuard: PathGuard,
   options?: { signal?: AbortSignal },
@@ -69,7 +69,7 @@ export async function stat(
   return { stats, validPath };
 }
 
-export async function mkdir(
+async function mkdir(
   filePath: string,
   pathGuard: PathGuard,
   options?: Parameters<typeof fsMkdir>[1],
@@ -79,7 +79,7 @@ export async function mkdir(
   return { validPath, result };
 }
 
-export async function readlink(
+async function readlink(
   filePath: string,
   pathGuard: PathGuard,
   options?: Parameters<typeof fsReadlink>[1],
@@ -953,7 +953,7 @@ async function readFileWithStatsInternal(
   return await FileReader.read({ handle, validPath, filePath, stats, normalized, mode });
 }
 
-export async function readFileRaw(
+async function readFileRaw(
   filePath: string,
   pathGuard: PathGuard,
   options?: { signal?: AbortSignal },
@@ -985,7 +985,7 @@ export async function readFileWithStats(
   return readFileWithStatsInternal(filePath, validPath, stats, normalized, mode);
 }
 
-export async function atomicWriteFile(
+async function atomicWriteFile(
   filePath: string,
   content: string,
   pathGuard: PathGuard,
@@ -1076,6 +1076,10 @@ export class GuardedFileSystem {
     return { stats, validPath };
   }
 
+  async readlink(filePath: string, options?: Parameters<typeof fsReadlink>[1]) {
+    return readlink(filePath, this.pathGuard, options);
+  }
+
   async mkdir(filePath: string, options?: Parameters<typeof fsMkdir>[1]) {
     return mkdir(filePath, this.pathGuard, options);
   }
@@ -1087,6 +1091,14 @@ export class GuardedFileSystem {
     const validNew = await this.pathGuard.validatePathForWrite(newPath);
     await fsRename(validOld, validNew);
     return { validOld, validNew };
+  }
+
+  async writeFile(
+    filePath: string,
+    content: string,
+    options: { encoding?: BufferEncoding; signal?: AbortSignal | undefined } = {},
+  ) {
+    return atomicWriteFile(filePath, content, this.pathGuard, options);
   }
 
   async rm(filePath: string, options?: Parameters<typeof fsRm>[1]) {
@@ -1122,6 +1134,10 @@ export class GuardedFileSystem {
     assertNotAborted(normalized.signal);
     const stats = await withAbort(fsStat(validPath), normalized.signal);
     return readFileWithStatsInternal(filePath, validPath, stats, normalized, mode);
+  }
+
+  async readRaw(filePath: string, options?: { signal?: AbortSignal }) {
+    return readFileRaw(filePath, this.pathGuard, options);
   }
 
   async open(

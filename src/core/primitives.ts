@@ -33,3 +33,13 @@ export function parseEnvDirList(envVar: string): string[] {
 }
 
 export type IconInfo = Icon & { mimeType: string };
+
+export function withDefaultIcons<T extends object>(
+  obj: T,
+  iconInfo: IconInfo | undefined,
+): T & { icons?: Icon[] } {
+  if (!iconInfo) return obj;
+  const existing = (obj as { icons?: Icon[] }).icons;
+  if (existing && existing.length > 0) return obj;
+  return { ...obj, icons: [{ src: iconInfo.src, mimeType: iconInfo.mimeType }] };
+}

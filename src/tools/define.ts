@@ -3,7 +3,6 @@ import type {
   ContentBlock,
   ElicitRequestFormParams,
   ElicitResult,
-  Icon,
   McpServer,
   Notification,
   RequestMeta,
@@ -24,7 +23,6 @@ import { GuardedFileSystem } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import type { LoggingLevel } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
-import type { IconInfo } from '../core/primitives.js';
 import type { ResourceStore } from '../core/store.js';
 import {
   McpProgressSink,
@@ -54,18 +52,6 @@ interface ToolDeps {
   readonly server: McpServer;
   readonly pathGuard: PathGuard;
   readonly resourceStore: ResourceStore | undefined;
-}
-
-export type { IconInfo };
-
-export function withDefaultIcons<T extends object>(
-  obj: T,
-  iconInfo: IconInfo | undefined,
-): T & { icons?: Icon[] } {
-  if (!iconInfo) return obj;
-  const existing = (obj as { icons?: Icon[] }).icons;
-  if (existing && existing.length > 0) return obj;
-  return { ...obj, icons: [{ src: iconInfo.src, mimeType: iconInfo.mimeType }] };
 }
 
 interface RunResult<T> {

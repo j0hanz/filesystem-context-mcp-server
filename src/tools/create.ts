@@ -7,7 +7,7 @@ import * as z from 'zod/v4';
 import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, isAbortError, Problem } from '../core/errors.js';
 import { formatBytes } from '../core/fmt.js';
-import { atomicWriteFile, countLines, mkdir, stat } from '../core/fs.js';
+import { countLines } from '../core/fs.js';
 import { detectMimeType, MIME_SAMPLE_SIZE } from '../core/mime.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import { FileKind, IsoDateTime, NonNegInt, PerFileErrorSchema, RequiredPath } from '../schema.js';
@@ -107,14 +107,14 @@ export const CREATE = defineTool({
 
     for (const file of args.files) {
       try {
-        await withAbort(mkdir(dirname(file.path), ctx.pathGuard, { recursive: true }), ctx.signal);
+        await withAbort(ctx.fs.mkdir(dirname(file.path), { recursive: true }), ctx.signal);
 
-        const { validPath } = await atomicWriteFile(file.path, file.content, ctx.pathGuard, {
+        const { validPath } = await ctx.fs.writeFile(file.path, file.content, {
           encoding: 'utf-8',
           signal: ctx.signal,
         });
 
-        const { stats: fileStats } = await stat(file.path, ctx.pathGuard, { signal: ctx.signal });
+        const { stats: fileStats } = await ctx.fs.stat(file.path, { signal: ctx.signal });
         const bytesWritten = Buffer.byteLength(file.content, 'utf-8');
         const lineCount = countLines(file.content);
         const mimeInfo = detectMimeType(

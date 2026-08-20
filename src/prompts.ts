@@ -19,13 +19,13 @@ import * as z from 'zod/v4';
 
 import { hasErrorShape } from './core/errors.js';
 import { Logger } from './core/observability.js';
-import { PathCompleter } from './core/path.js';
+import { PathCompleter } from './core/path-completer.js';
 import type { PathGuard } from './core/path.js';
+import type { IconInfo } from './core/primitives.js';
+import { withDefaultIcons } from './core/primitives.js';
 import type { Registrar } from './core/registrar.js';
 import { INSTRUCTION_SECTIONS, serverInstructionsContent } from './resources.js';
 import { isBlank, RequiredPath, SHELL_METACHAR_RE } from './schema.js';
-import type { IconInfo } from './tools/define.js';
-import { withDefaultIcons } from './tools/define.js';
 
 // --- Types ---
 
