@@ -248,7 +248,14 @@ async function collectFileBudget(
     const size = byIndex.get(i);
     if (size === undefined) continue;
     if (total + size > maxTotalSize) {
-      for (let j = i; j < filePaths.length; j += 1) skippedBudget.add(j);
+      // Only mark files that were actually stat'd as too large for the batch
+      // budget. A file whose stat already failed (byIndex undefined) must fall
+      // through to survivors so its read surfaces the real error (NOT_FILE /
+      // permission) — not a misleading TOO_LARGE.
+      for (let j = i; j < filePaths.length; j += 1) {
+        if (byIndex.get(j) === undefined) continue;
+        skippedBudget.add(j);
+      }
       break;
     }
     total += size;
