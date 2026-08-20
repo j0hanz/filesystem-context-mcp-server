@@ -2006,8 +2006,13 @@ class TaskOrchestrator {
     const staticTasks = rest.slice(0, 3);
     const deepTasks = rest.slice(3);
 
+    // runPhased runs for every command except `fix`; auto-fix rewrites source
+    // files, so only `fix` may apply it. Letting it run in `check` would mutate
+    // the working tree despite the "Run validation" help text, and the lint/knip
+    // fixers would race on the same files in the Promise.all below.
+    const isFix = this.config.command === 'fix';
     await this.executeTask(formatTask, aggregate, reporter, {
-      allowAutoFix: true,
+      allowAutoFix: isFix,
     });
     if (this.shouldStop(aggregate)) return null;
 
@@ -2063,6 +2068,11 @@ class TaskOrchestrator {
     const activeTasks = [];
     const completed = [];
 
+    // Auto-fix is gated to the `fix` command — same gate as runSequential. In
+    // any other command this group runs concurrently via Promise.all, so letting
+    // two fixers (lint:fix + knip --fix) write the same files would race.
+    const isFix = this.config.command === 'fix';
+
     for (const task of tasks) {
       const skipResult = this._checkSkip(task, aggregate);
       if (skipResult) {
@@ -2081,7 +2091,7 @@ class TaskOrchestrator {
     const results = await Promise.all(
       activeTasks.map(async (task) => {
         const { result, ms } = await this.runMeasured(task, {
-          allowAutoFix: true,
+          allowAutoFix: isFix,
         });
         reporter.groupTaskEnd(task.label, result, ms);
         return { task, result, ms };
