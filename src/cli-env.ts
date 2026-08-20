@@ -2,7 +2,8 @@ import process from 'node:process';
 import { parseArgs } from 'node:util';
 
 /**
- * CLI flags that are consumed via `process.env` rather than the parsed value.
+ * Every CLI flag that is consumed via `process.env` rather than the parsed
+ * value, and how it is lifted.
  *
  * `--help` promises "flags take precedence when both are set", but every
  * consumer of these reads `process.env`, so the flag has to be copied across.
@@ -12,27 +13,24 @@ import { parseArgs } from 'node:util';
  * `src/index.ts` calls it above its dynamic imports rather than from
  * `parseArgs()`.
  *
- * Keep in sync with `CLI_PARSER_CONFIG` in `cli.ts` — `cli-flag-env.test.ts`
- * enforces that every key here is a declared flag there.
+ * - `string`  — copied verbatim into `env[name]`
+ * - `boolean` — lifted as "1" when the flag is present
+ * - `list`    — appended to a comma-separated `env[name]`, deduped
+ *
+ * Keys must be declared options in `CLI_PARSER_CONFIG` (`cli.ts`);
+ * `cli-flag-env.test.ts` proves it.
  */
-export const FLAG_TO_ENV = {
-  'http-host': 'HTTP_HOST',
-  'api-key': 'API_KEY',
-  'log-level': 'LOG_LEVEL',
-  'max-file-size': 'MAX_FILE_SIZE',
-  'root-boundary': 'ROOT_BOUNDARY',
-} as const satisfies Record<string, string>;
-
-/** Flags whose env var is not a plain string copy. */
-export const SPECIAL_FLAG_TO_ENV = {
-  'allow-sensitive': 'ALLOW_SENSITIVE',
-  'walk-cwd': 'ALLOW_CWD_WALK',
-  'allow-missing-roots': 'ALLOW_MISSING_ROOTS',
-  deny: 'DENYLIST',
-} as const satisfies Record<string, string>;
-
-/** Boolean flags lifted as "1" when present. */
-const BOOLEAN_FLAGS = ['allow-sensitive', 'walk-cwd', 'allow-missing-roots'] as const;
+export const FLAG_ENV_SPECS = {
+  'http-host': { env: 'HTTP_HOST', lift: 'string' },
+  'api-key': { env: 'API_KEY', lift: 'string' },
+  'log-level': { env: 'LOG_LEVEL', lift: 'string' },
+  'max-file-size': { env: 'MAX_FILE_SIZE', lift: 'string' },
+  'root-boundary': { env: 'ROOT_BOUNDARY', lift: 'string' },
+  'allow-sensitive': { env: 'ALLOW_SENSITIVE', lift: 'boolean' },
+  'walk-cwd': { env: 'ALLOW_CWD_WALK', lift: 'boolean' },
+  'allow-missing-roots': { env: 'ALLOW_MISSING_ROOTS', lift: 'boolean' },
+  deny: { env: 'DENYLIST', lift: 'list' },
+} as const satisfies Record<string, { env: string; lift: 'string' | 'boolean' | 'list' }>;
 
 /**
  * Copies env-backed CLI flags into `process.env`. `cli.ts` still owns strict
@@ -50,13 +48,16 @@ export function liftFlagsToEnv(
   try {
     ({ values } = parseArgs({
       args: [...argv],
-      options: {
-        ...Object.fromEntries(
-          Object.keys(FLAG_TO_ENV).map((flag) => [flag, { type: 'string' } as const]),
-        ),
-        ...Object.fromEntries(BOOLEAN_FLAGS.map((flag) => [flag, { type: 'boolean' } as const])),
-        deny: { type: 'string', multiple: true },
-      },
+      options: Object.fromEntries(
+        Object.entries(FLAG_ENV_SPECS).map(([flag, spec]) => [
+          flag,
+          spec.lift === 'string'
+            ? { type: 'string' }
+            : spec.lift === 'boolean'
+              ? { type: 'boolean' }
+              : { type: 'string', multiple: true },
+        ]),
+      ),
       strict: false,
       allowPositionals: true,
     }));
@@ -64,26 +65,25 @@ export function liftFlagsToEnv(
     return;
   }
 
-  for (const [flag, envVar] of Object.entries(FLAG_TO_ENV)) {
+  for (const [flag, spec] of Object.entries(FLAG_ENV_SPECS)) {
     const value = values[flag];
-    if (typeof value === 'string') env[envVar] = value;
-  }
-
-  for (const flag of BOOLEAN_FLAGS) {
-    if (values[flag] === true) env[SPECIAL_FLAG_TO_ENV[flag]] = '1';
-  }
-
-  const deny = values['deny'];
-  if (Array.isArray(deny) && deny.length > 0) {
-    // Deny is additive — a CLI `--deny` extends the env `DENYLIST` rather than
-    // replacing it, so operators can layer extra entries onto a base denylist.
-    // Deduped so a second lift over the same argv is a no-op, like every other
-    // flag here (which simply overwrite).
-    const existing = env['DENYLIST'];
-    const entries = existing ? existing.split(',') : [];
-    for (const entry of deny) {
-      if (typeof entry === 'string' && !entries.includes(entry)) entries.push(entry);
+    if (spec.lift === 'string') {
+      if (typeof value === 'string') env[spec.env] = value;
+    } else if (spec.lift === 'boolean') {
+      if (value === true) env[spec.env] = '1';
+    } else {
+      // Deny is additive — a CLI `--deny` extends the env `DENYLIST` rather than
+      // replacing it, so operators can layer extra entries onto a base denylist.
+      // Deduped so a second lift over the same argv is a no-op, like every other
+      // flag here (which simply overwrite).
+      if (Array.isArray(value) && value.length > 0) {
+        const existing = env[spec.env];
+        const entries = existing ? existing.split(',') : [];
+        for (const entry of value) {
+          if (typeof entry === 'string' && !entries.includes(entry)) entries.push(entry);
+        }
+        env[spec.env] = entries.join(',');
+      }
     }
-    env['DENYLIST'] = entries.join(',');
   }
 }

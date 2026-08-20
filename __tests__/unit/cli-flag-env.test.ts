@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { FLAG_TO_ENV, liftFlagsToEnv, SPECIAL_FLAG_TO_ENV } from '../../src/cli-env.js';
+import { FLAG_ENV_SPECS, liftFlagsToEnv } from '../../src/cli-env.js';
 import { CLI_PARSER_CONFIG } from '../../src/cli.js';
 
 function lift(argv: string[]): NodeJS.ProcessEnv {
@@ -13,7 +13,7 @@ function lift(argv: string[]): NodeJS.ProcessEnv {
 describe('liftFlagsToEnv / CLI_PARSER_CONFIG agreement', () => {
   it('every env-backed flag is a declared CLI option', () => {
     const declared = Object.keys(CLI_PARSER_CONFIG.options);
-    for (const flag of [...Object.keys(FLAG_TO_ENV), ...Object.keys(SPECIAL_FLAG_TO_ENV)]) {
+    for (const flag of Object.keys(FLAG_ENV_SPECS)) {
       assert.ok(declared.includes(flag), `--${flag} is lifted to env but not declared in cli.ts`);
     }
   });

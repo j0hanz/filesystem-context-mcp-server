@@ -174,7 +174,7 @@ const OPTIONS_HELP: HelpRow[] = [
   },
 ];
 
-const ENV_HELP: HelpRow[] = [
+export const ENV_HELP: HelpRow[] = [
   { flags: 'LOG_LEVEL', desc: 'Log level: debug|info|warn|error' },
   { flags: 'HTTP_HOST', desc: 'HTTP bind address' },
   { flags: 'API_KEY', desc: 'HTTP API key' },
@@ -197,6 +197,47 @@ const ENV_HELP: HelpRow[] = [
     flags: 'ALLOW_MISSING_ROOTS',
     desc: 'Start even if configured allowed directories do not exist (any value enables this)',
   },
+  {
+    flags: 'FILESYSTEM_MCP_ALLOWED_HOSTS',
+    desc: 'Comma-separated Host header values to accept (HTTP transport)',
+  },
+  { flags: 'FILESYSTEM_MCP_ALLOWED_ORIGINS', desc: 'Comma-separated origin hostnames for CORS' },
+  {
+    flags: 'FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS',
+    desc: 'Set to 1 to bind a wildcard host with no Host validation (accepts the risk)',
+  },
+  { flags: 'FILESYSTEM_MCP_PUBLIC_URL', desc: 'Resource identifier URL for RFC 9728 discovery' },
+  {
+    flags: 'FILESYSTEM_MCP_MAX_HTTP_SESSIONS',
+    desc: 'Max concurrent HTTP sessions (default 100, 1–10000)',
+  },
+  {
+    flags: 'FILESYSTEM_MCP_SESSION_IDLE_TIMEOUT_MS',
+    desc: 'HTTP session idle timeout in ms (default 1800000, 1000–86400000)',
+  },
+  {
+    flags: 'FS_CONTEXT_MAX_REQUEST_BYTES',
+    desc: 'Max HTTP request body bytes (default 4194304, 1024–268435456)',
+  },
+  {
+    flags: 'FILESYSTEM_MCP_MAX_WATCHERS',
+    desc: 'Max concurrent file watchers (default 256, 1–4096)',
+  },
+  {
+    flags: 'FS_CONTEXT_MAX_INLINE_MATCHES',
+    desc: 'Max inline content matches per search (default 50, 1–10000)',
+  },
+  {
+    flags: 'FS_INIT_HANDSHAKE_TIMEOUT_MS',
+    desc: 'Init handshake timeout in ms (default 30000, 1000–300000)',
+  },
+  { flags: 'FS_INIT_TIMEOUT_CLOSE', desc: 'Truthy value closes the server on handshake timeout' },
+  {
+    flags: 'MAX_READ_MANY_TOTAL_SIZE',
+    desc: 'Max total bytes across read_many (default 524288, 10240–104857600)',
+  },
+  { flags: 'DEFAULT_SEARCH_TIMEOUT', desc: 'Search timeout in ms (default 5000, 100–60000)' },
+  { flags: 'NO_COLOR', desc: 'Any value disables ANSI color output' },
 ];
 
 const EXAMPLES_HELP = [
@@ -220,7 +261,7 @@ function printHelpAndExit(): never {
   };
 
   const envRow = (name: string, desc: string): string => {
-    return `  ${padEndVisible(cyan(name), COL)}${desc}`;
+    return `  ${padEndVisible(cyan(name), COL - 1)} ${desc}`;
   };
 
   const lines = [
