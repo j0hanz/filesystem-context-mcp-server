@@ -278,22 +278,28 @@ function expandHiddenGlobstars(
   patterns: Set<string>,
   prefix: string,
   remainder: string,
-  maxDepth: number,
+  // The expansion no longer varies by depth: `**/` already spans any directory
+  // depth in fs.glob, so unrolling one walk per depth (the old code did up to
+  // maxDepth — ~200 walks for the search default of 100) was pure overhead.
+  _maxDepth: number,
 ): void {
   if (!remainder.startsWith('**/')) return;
 
   const afterGlobstar = remainder.slice(3);
+  // Node fs.glob skips leading-dot entries unless the matching segment itself
+  // starts with '.', and its `dot` option is not honored. So `**/*` alone misses
+  // hidden files. Two depth-agnostic patterns cover everything the per-depth
+  // unroll did: contents of dot-directories anywhere, and dotfiles/dotdirs
+  // anywhere.
+  patterns.add(`${prefix}**/.*/**/${afterGlobstar}`);
   const addDotFile = afterGlobstar.length > 0 && afterGlobstar.charCodeAt(0) !== DOT_CHAR_CODE;
-
-  let depthPrefix = '';
-  for (let depth = 0; depth <= maxDepth; depth++) {
-    patterns.add(`${prefix}${depthPrefix}.*/**/${afterGlobstar}`);
-    if (addDotFile) patterns.add(`${prefix}${depthPrefix}.${afterGlobstar}`);
-    depthPrefix += '*/';
-  }
+  if (addDotFile) patterns.add(`${prefix}**/.${afterGlobstar}`);
 }
 
-function buildHiddenPatterns(normalizedPattern: string, maxDepth: number): readonly string[] {
+export function buildHiddenPatterns(
+  normalizedPattern: string,
+  maxDepth: number,
+): readonly string[] {
   const patterns = new Set<string>([normalizedPattern]);
   const { prefix, remainder } = splitPatternPrefix(normalizedPattern);
 
