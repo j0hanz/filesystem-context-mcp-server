@@ -16,13 +16,6 @@ import {
 } from '../core/glob.js';
 import type { PathGuard } from '../core/path.js';
 import { toPosixRelative } from '../core/path.js';
-import type { ResourceStore } from '../core/store.js';
-import {
-  DEFAULT_SEARCH_TIMEOUT_MS,
-  DEFAULT_TREE_ENTRIES,
-  MAX_LIST_ENTRIES,
-  MAX_TREE_DEPTH,
-} from '../core/util.js';
 import {
   FileType as FileTypeEnum,
   includeHiddenField,
@@ -30,7 +23,14 @@ import {
   NonNegInt,
   OptionalPath,
   PositiveInt,
-} from '../schema.js';
+} from '../core/schema.js';
+import type { ResourceStore } from '../core/store.js';
+import {
+  DEFAULT_SEARCH_TIMEOUT_MS,
+  DEFAULT_TREE_ENTRIES,
+  MAX_LIST_ENTRIES,
+  MAX_TREE_DEPTH,
+} from '../core/util.js';
 import { putResource } from './_helpers.js';
 import { defineTool } from './define.js';
 

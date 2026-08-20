@@ -6,13 +6,6 @@ import { formatCount, truncateProgressPattern } from '../core/fmt.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../core/glob.js';
 import { toPosixRelative } from '../core/path.js';
-import { searchFiles } from '../core/search.js';
-import type { ResourceStore } from '../core/store.js';
-import {
-  DEFAULT_SEARCH_RESULTS,
-  DEFAULT_SEARCH_TIMEOUT_MS,
-  MAX_SEARCH_RESULTS,
-} from '../core/util.js';
 import {
   CursorSchema,
   includeHiddenField,
@@ -22,7 +15,14 @@ import {
   NonNegInt,
   OptionalPath,
   SafeGlobPattern,
-} from '../schema.js';
+} from '../core/schema.js';
+import { searchFiles } from '../core/search.js';
+import type { ResourceStore } from '../core/store.js';
+import {
+  DEFAULT_SEARCH_RESULTS,
+  DEFAULT_SEARCH_TIMEOUT_MS,
+  MAX_SEARCH_RESULTS,
+} from '../core/util.js';
 import { putResource } from './_helpers.js';
 import { defineTool } from './define.js';
 

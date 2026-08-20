@@ -10,7 +10,7 @@ import {
   NonNegInt,
   OperationSummarySchema,
   SafeGlobPattern,
-} from '../../src/schema.js';
+} from '../../src/core/schema.js';
 
 describe('fields', () => {
   it('IsoDateTime is in globalRegistry', () => {

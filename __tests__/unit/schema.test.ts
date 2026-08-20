@@ -8,7 +8,7 @@ import {
   defaultFalseBoolean,
   FILE_KINDS,
   FileKind,
-} from '../../src/schema.js';
+} from '../../src/core/schema.js';
 
 test('FILE_KINDS contains the five expected members', () => {
   assert.deepEqual([...FILE_KINDS], ['text', 'binary', 'image', 'audio', 'pdf']);

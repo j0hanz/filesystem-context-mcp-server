@@ -11,9 +11,9 @@ import type { GuardedFileSystem } from '../core/fs.js';
 import { globEntries, isIgnoredByGitignore, loadRootGitignore } from '../core/glob.js';
 import { toPosixRelative } from '../core/path.js';
 import type { PathGuard } from '../core/path.js';
+import { NonNegInt, RequiredPath } from '../core/schema.js';
 import type { ResourceStore } from '../core/store.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../core/util.js';
-import { NonNegInt, RequiredPath } from '../schema.js';
 import { putResource } from './_helpers.js';
 import { defineTool } from './define.js';
 

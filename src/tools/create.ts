@@ -10,8 +10,14 @@ import { buildFileResourceUri } from '../core/file-uri.js';
 import { formatBytes } from '../core/fmt.js';
 import { detectMimeFromContent } from '../core/mime.js';
 import { countLines } from '../core/read.js';
+import {
+  FileKind,
+  IsoDateTime,
+  NonNegInt,
+  PerFileErrorSchema,
+  RequiredPath,
+} from '../core/schema.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
-import { FileKind, IsoDateTime, NonNegInt, PerFileErrorSchema, RequiredPath } from '../schema.js';
 import { buildFileResourceLink } from './_helpers.js';
 import { defineTool } from './define.js';
 

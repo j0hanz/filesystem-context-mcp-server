@@ -12,13 +12,6 @@ import { detectMimeFromContent } from '../core/mime.js';
 import { Logger } from '../core/observability.js';
 import type { ReadFileResult, ReadSpec } from '../core/read.js';
 import {
-  DEFAULT_CONTINUATION_CHUNK_SIZE,
-  DEFAULT_READ_MANY_MAX_TOTAL_SIZE,
-  DEFAULT_SEARCH_TIMEOUT_MS,
-  MAX_TEXT_FILE_SIZE,
-  PARALLEL_CONCURRENCY,
-} from '../core/util.js';
-import {
   ContinuationSchema,
   createReadRangeFields,
   defaultFalseBoolean,
@@ -30,7 +23,14 @@ import {
   Sha256Hex,
   singleOrBatchPathsInput,
   validateReadRange,
-} from '../schema.js';
+} from '../core/schema.js';
+import {
+  DEFAULT_CONTINUATION_CHUNK_SIZE,
+  DEFAULT_READ_MANY_MAX_TOTAL_SIZE,
+  DEFAULT_SEARCH_TIMEOUT_MS,
+  MAX_TEXT_FILE_SIZE,
+  PARALLEL_CONCURRENCY,
+} from '../core/util.js';
 import { buildFileResourceLink } from './_helpers.js';
 import type { PerPathResult } from './batch.js';
 import { runOverPaths } from './batch.js';

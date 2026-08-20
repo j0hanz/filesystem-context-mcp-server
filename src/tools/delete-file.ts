@@ -8,8 +8,8 @@ import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode, isNodeError, Problem } from '../core/errors.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
+import { defaultFalseBoolean, RequiredPath } from '../core/schema.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
-import { defaultFalseBoolean, RequiredPath } from '../schema.js';
 import type { ToolCtx } from './define.js';
 import { confirmBoolean, defineTool } from './define.js';
 

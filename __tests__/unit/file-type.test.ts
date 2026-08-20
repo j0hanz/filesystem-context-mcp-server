@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { FileType } from '../../src/core/fs.js';
-import { FILE_TYPES, FileType as FileTypeSchema } from '../../src/schema.js';
+import { FILE_TYPES, FileType as FileTypeSchema } from '../../src/core/schema.js';
 
 test('FILE_TYPES contains the four members and FileType infers from it', () => {
   assert.deepEqual([...FILE_TYPES], ['file', 'directory', 'symlink', 'other']);

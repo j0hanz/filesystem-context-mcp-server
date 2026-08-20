@@ -7,6 +7,19 @@ import type { GuardedFileSystem } from '../core/fs.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../core/glob.js';
 import { toPosixRelative } from '../core/path.js';
 import {
+  CursorSchema,
+  defaultFalseBoolean,
+  includeHiddenField,
+  includeIgnoredField,
+  isBlank,
+  maxDepthField,
+  NextCursorSchema,
+  NonNegInt,
+  OptionalPath,
+  PositiveInt,
+  SafeGlobPattern,
+} from '../core/schema.js';
+import {
   compileRegex,
   freeRegex,
   type Regex,
@@ -20,19 +33,6 @@ import {
   MAX_SEARCH_RESULTS,
   parseEnvInt,
 } from '../core/util.js';
-import {
-  CursorSchema,
-  defaultFalseBoolean,
-  includeHiddenField,
-  includeIgnoredField,
-  isBlank,
-  maxDepthField,
-  NextCursorSchema,
-  NonNegInt,
-  OptionalPath,
-  PositiveInt,
-  SafeGlobPattern,
-} from '../schema.js';
 import { putResource } from './_helpers.js';
 import { defineTool } from './define.js';
 

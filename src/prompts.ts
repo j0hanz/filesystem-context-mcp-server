@@ -24,8 +24,8 @@ import type { PathGuard } from './core/path.js';
 import type { IconInfo } from './core/primitives.js';
 import { withDefaultIcons } from './core/primitives.js';
 import type { Registrar } from './core/registrar.js';
+import { isBlank, RequiredPath, SHELL_METACHAR_RE } from './core/schema.js';
 import { INSTRUCTION_SECTIONS, serverInstructionsContent } from './resources.js';
-import { isBlank, RequiredPath, SHELL_METACHAR_RE } from './schema.js';
 
 // --- Types ---
 

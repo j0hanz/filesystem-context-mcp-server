@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import * as z from 'zod/v4';
 
-import { singleOrBatchPathsInput } from '../../src/schema.js';
+import { singleOrBatchPathsInput } from '../../src/core/schema.js';
 
 describe('singleOrBatchPathsInput', () => {
   const binary = singleOrBatchPathsInput({ extra: { flag: z.boolean().optional() } });

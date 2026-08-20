@@ -12,14 +12,14 @@ import type { FileInfo, GuardedFileSystem, Stats } from '../core/fs.js';
 import { getFileType, isHidden } from '../core/fs.js';
 import { detectMimeType } from '../core/mime.js';
 import { Logger } from '../core/observability.js';
-import { DEFAULT_SEARCH_TIMEOUT_MS } from '../core/util.js';
 import {
   FileInfoSchema,
   NonNegInt,
   OperationSummarySchema,
   PerFileErrorSchema,
   singleOrBatchPathsInput,
-} from '../schema.js';
+} from '../core/schema.js';
+import { DEFAULT_SEARCH_TIMEOUT_MS } from '../core/util.js';
 import { buildFileInfoPayload, putResource } from './_helpers.js';
 import type { PerPathResult } from './batch.js';
 import { runOverPaths } from './batch.js';

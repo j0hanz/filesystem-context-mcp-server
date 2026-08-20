@@ -12,10 +12,6 @@ import { detectMimeFromContent } from '../core/mime.js';
 import { Logger } from '../core/observability.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
 import { countLines, readFileWithStats } from '../core/read.js';
-import type { Regex } from '../core/search.js';
-import { compileRegex, freeRegex } from '../core/search.js';
-import type { ResourceStore } from '../core/store.js';
-import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import {
   defaultFalseBoolean,
   FileKind,
@@ -26,7 +22,11 @@ import {
   PerFileErrorSchema,
   PositiveInt,
   singleOrBatchPathsInput,
-} from '../schema.js';
+} from '../core/schema.js';
+import type { Regex } from '../core/search.js';
+import { compileRegex, freeRegex } from '../core/search.js';
+import type { ResourceStore } from '../core/store.js';
+import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import { buildFileResourceLink } from './_helpers.js';
 import { runOverPaths } from './batch.js';
 import { defineTool } from './define.js';

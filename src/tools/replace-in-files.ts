@@ -22,16 +22,6 @@ import { Logger } from '../core/observability.js';
 import { toPosixRelative } from '../core/path.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
 import { countLines, readFileBufferWithLimit } from '../core/read.js';
-import type { Regex } from '../core/search.js';
-import { compileRegex, freeRegex } from '../core/search.js';
-import type { ResourceStore } from '../core/store.js';
-import {
-  DEFAULT_SEARCH_RESULTS,
-  DEFAULT_SEARCH_TIMEOUT_MS,
-  MAX_SEARCH_RESULTS,
-  MAX_TEXT_FILE_SIZE,
-  PARALLEL_CONCURRENCY,
-} from '../core/util.js';
 import {
   defaultFalseBoolean,
   FileKind,
@@ -43,7 +33,17 @@ import {
   OptionalPath,
   PerFileErrorSchema,
   SafeGlobPattern,
-} from '../schema.js';
+} from '../core/schema.js';
+import type { Regex } from '../core/search.js';
+import { compileRegex, freeRegex } from '../core/search.js';
+import type { ResourceStore } from '../core/store.js';
+import {
+  DEFAULT_SEARCH_RESULTS,
+  DEFAULT_SEARCH_TIMEOUT_MS,
+  MAX_SEARCH_RESULTS,
+  MAX_TEXT_FILE_SIZE,
+  PARALLEL_CONCURRENCY,
+} from '../core/util.js';
 import { buildFileResourceLink } from './_helpers.js';
 import { defineTool } from './define.js';
 

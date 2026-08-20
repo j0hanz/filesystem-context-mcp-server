@@ -14,7 +14,7 @@ import {
 import type { GuardedFileSystem } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import { isSamePath } from '../core/path.js';
-import { PerFileErrorSchema, RequiredPath } from '../schema.js';
+import { PerFileErrorSchema, RequiredPath } from '../core/schema.js';
 import type { ToolCtx } from './define.js';
 import { confirmBoolean, defineTool } from './define.js';
 

@@ -1,9 +1,9 @@
 import * as z from 'zod/v4';
 
-import { MIME_KINDS } from './core/mime.js';
-import { isSafeGlobSyntax } from './core/path.js';
-import { ENTRY_TYPES } from './core/primitives.js';
-import { MAX_SEARCH_DEPTH } from './core/util.js';
+import { MIME_KINDS } from './mime.js';
+import { isSafeGlobSyntax } from './path.js';
+import { ENTRY_TYPES } from './primitives.js';
+import { MAX_SEARCH_DEPTH } from './util.js';
 
 // Runtime: full ISO-8601 UTC; format pattern stripped by post-processor on the wire.
 export const IsoDateTime = z.iso.datetime().meta({
