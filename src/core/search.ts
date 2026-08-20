@@ -1,7 +1,7 @@
 import { stat as fsStat, readFile } from 'node:fs/promises';
 
-import type { RE2ExecArray } from 're2-wasm';
-import { RE2 } from 're2-wasm';
+import type { RE2ExecArray } from '@adguard/re2-wasm';
+import { RE2 } from '@adguard/re2-wasm';
 
 import { StopReasonTracker } from './concurrency.js';
 import type { StoppedReason } from './concurrency.js';
