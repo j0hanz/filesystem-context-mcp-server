@@ -385,7 +385,11 @@ async function* readLinesBounded(
       const buffer = chunk as Buffer;
       let offset = 0;
 
-      for (let nl = buffer.indexOf(LF, offset); nl !== -1; nl = buffer.indexOf(LF, offset)) {
+      // Search loop: each iteration finds the next LF and advances offset past
+      // it. Written as while-with-assignment so the re-search is visible, rather
+      // than buried in a for "increment" slot that re-runs indexOf.
+      let nl = buffer.indexOf(LF, offset);
+      while (nl !== -1) {
         const segment = buffer.subarray(offset, nl);
         const lineBytes = pendingBytes + segment.length;
         lineNumber++;
@@ -399,6 +403,7 @@ async function* readLinesBounded(
         pending = '';
         pendingBytes = 0;
         offset = nl + 1;
+        nl = buffer.indexOf(LF, offset);
       }
 
       const rest = buffer.subarray(offset);
@@ -634,183 +639,179 @@ interface ReadModeContext {
   spec: NormalizedSpec;
 }
 
-class FileReader {
-  private readonly context: ReadModeContext;
+async function readHead(
+  context: ReadModeContext,
+  spec: Extract<NormalizedSpec, { kind: 'head' }>,
+): Promise<ReadFileResult> {
+  const contentOptions = buildReadContentOptions(spec);
+  const { content, truncated, linesRead, hasMoreLines } = await readRangeContent(
+    context.handle,
+    1,
+    spec.lines,
+    contentOptions,
+    context.filePath,
+  );
 
-  private constructor(context: ReadModeContext) {
-    this.context = context;
-  }
+  return {
+    path: context.validPath,
+    content,
+    truncated,
+    readMode: 'head',
+    head: spec.lines,
+    linesRead,
+    hasMoreLines,
+  };
+}
 
-  static async read(context: ReadModeContext): Promise<ReadFileResult> {
-    const reader = new FileReader(context);
-    switch (context.spec.kind) {
-      case 'head':
-        return reader.executeHeadRead(context.spec);
-      case 'range':
-        return reader.executeRangeRead(context.spec);
-      case 'full':
-        return reader.executeFullRead(context.spec);
-      case 'tail':
-        return reader.executeTailRead(context.spec);
-      case 'byteRange':
-        return reader.executeByteRangeRead(context.spec);
-    }
-  }
+async function readRange(
+  context: ReadModeContext,
+  spec: Extract<NormalizedSpec, { kind: 'range' }>,
+): Promise<ReadFileResult> {
+  const contentOptions = buildReadContentOptions(spec);
+  const { content, truncated, linesRead, hasMoreLines } = await readRangeContent(
+    context.handle,
+    spec.start,
+    spec.end,
+    contentOptions,
+    context.filePath,
+  );
 
-  private async executeHeadRead(
-    spec: Extract<NormalizedSpec, { kind: 'head' }>,
-  ): Promise<ReadFileResult> {
-    const contentOptions = buildReadContentOptions(spec);
-    const { content, truncated, linesRead, hasMoreLines } = await readRangeContent(
-      this.context.handle,
-      1,
-      spec.lines,
-      contentOptions,
-      this.context.filePath,
-    );
+  return {
+    path: context.validPath,
+    content,
+    truncated,
+    readMode: 'range',
+    startLine: spec.start,
+    ...(spec.end !== undefined ? { endLine: spec.end } : {}),
+    linesRead,
+    hasMoreLines,
+  };
+}
 
+async function readFull(
+  context: ReadModeContext,
+  spec: Extract<NormalizedSpec, { kind: 'full' }>,
+): Promise<ReadFileResult> {
+  assertSizeWithinLimit(context.stats.size, spec.maxSize, context.filePath);
+  const { content, totalLines } = await readFullContent(
+    context.handle,
+    spec.encoding,
+    spec.maxSize,
+    context.filePath,
+    spec.signal,
+  );
+
+  return {
+    path: context.validPath,
+    content,
+    truncated: false,
+    totalLines,
+    readMode: 'full',
+    linesRead: totalLines,
+    hasMoreLines: false,
+  };
+}
+
+async function readTail(
+  context: ReadModeContext,
+  spec: Extract<NormalizedSpec, { kind: 'tail' }>,
+): Promise<ReadFileResult> {
+  const contentOptions = buildReadContentOptions(spec);
+  const { content, truncated, linesRead, hasMoreLines } = await readTailContent(
+    context.handle,
+    spec.lines,
+    contentOptions,
+    context.validPath,
+  );
+
+  return {
+    path: context.validPath,
+    content,
+    truncated,
+    readMode: 'tail',
+    tail: spec.lines,
+    linesRead,
+    hasMoreLines,
+  };
+}
+
+async function readByteRange(
+  context: ReadModeContext,
+  spec: Extract<NormalizedSpec, { kind: 'byteRange' }>,
+): Promise<ReadFileResult> {
+  const start = spec.offset;
+  const fileSize = context.stats.size;
+
+  // Past EOF — return empty immediately
+  if (start >= fileSize) {
     return {
-      path: this.context.validPath,
-      content,
-      truncated,
-      readMode: 'head',
-      head: spec.lines,
-      linesRead,
-      hasMoreLines,
-    };
-  }
-
-  private async executeRangeRead(
-    spec: Extract<NormalizedSpec, { kind: 'range' }>,
-  ): Promise<ReadFileResult> {
-    const contentOptions = buildReadContentOptions(spec);
-    const { content, truncated, linesRead, hasMoreLines } = await readRangeContent(
-      this.context.handle,
-      spec.start,
-      spec.end,
-      contentOptions,
-      this.context.filePath,
-    );
-
-    return {
-      path: this.context.validPath,
-      content,
-      truncated,
-      readMode: 'range',
-      startLine: spec.start,
-      ...(spec.end !== undefined ? { endLine: spec.end } : {}),
-      linesRead,
-      hasMoreLines,
-    };
-  }
-
-  private async executeFullRead(
-    spec: Extract<NormalizedSpec, { kind: 'full' }>,
-  ): Promise<ReadFileResult> {
-    assertSizeWithinLimit(this.context.stats.size, spec.maxSize, this.context.filePath);
-    const { content, totalLines } = await readFullContent(
-      this.context.handle,
-      spec.encoding,
-      spec.maxSize,
-      this.context.filePath,
-      spec.signal,
-    );
-
-    return {
-      path: this.context.validPath,
-      content,
-      truncated: false,
-      totalLines,
-      readMode: 'full',
-      linesRead: totalLines,
-      hasMoreLines: false,
-    };
-  }
-
-  private async executeTailRead(
-    spec: Extract<NormalizedSpec, { kind: 'tail' }>,
-  ): Promise<ReadFileResult> {
-    const contentOptions = buildReadContentOptions(spec);
-    const { content, truncated, linesRead, hasMoreLines } = await readTailContent(
-      this.context.handle,
-      spec.lines,
-      contentOptions,
-      this.context.validPath,
-    );
-
-    return {
-      path: this.context.validPath,
-      content,
-      truncated,
-      readMode: 'tail',
-      tail: spec.lines,
-      linesRead,
-      hasMoreLines,
-    };
-  }
-
-  private async executeByteRangeRead(
-    spec: Extract<NormalizedSpec, { kind: 'byteRange' }>,
-  ): Promise<ReadFileResult> {
-    const start = spec.offset;
-    const fileSize = this.context.stats.size;
-
-    // Past EOF — return empty immediately
-    if (start >= fileSize) {
-      return {
-        path: this.context.validPath,
-        content: '',
-        truncated: false,
-        readMode: 'byteRange',
-        offset: start,
-        bytesRead: 0,
-        reachedEOF: true,
-      };
-    }
-
-    const length = spec.length;
-    let end: number | undefined;
-    let reachedEOF: boolean;
-
-    if (length !== undefined) {
-      const requestedEnd = start + length - 1; // createReadStream end is inclusive
-      if (requestedEnd >= fileSize) {
-        end = fileSize - 1;
-        reachedEOF = true;
-      } else {
-        end = requestedEnd;
-        reachedEOF = false;
-      }
-    } else {
-      // No length → read to EOF
-      reachedEOF = true;
-    }
-
-    const actualEnd = end ?? fileSize - 1;
-    const bytesRead = actualEnd - start + 1;
-
-    if (bytesRead > spec.maxSize) {
-      throw createTooLargeError(bytesRead, spec.maxSize, this.context.filePath);
-    }
-
-    const stream = this.context.handle.createReadStream({
-      encoding: spec.encoding,
-      start,
-      ...(end !== undefined ? { end } : {}),
-      signal: spec.signal,
-    });
-
-    const content = await text(stream);
-
-    return {
-      path: this.context.validPath,
-      content,
+      path: context.validPath,
+      content: '',
       truncated: false,
       readMode: 'byteRange',
       offset: start,
-      bytesRead,
-      reachedEOF,
+      bytesRead: 0,
+      reachedEOF: true,
     };
+  }
+
+  const length = spec.length;
+  let end: number | undefined;
+  let reachedEOF: boolean;
+
+  if (length !== undefined) {
+    const requestedEnd = start + length - 1; // createReadStream end is inclusive
+    if (requestedEnd >= fileSize) {
+      end = fileSize - 1;
+      reachedEOF = true;
+    } else {
+      end = requestedEnd;
+      reachedEOF = false;
+    }
+  } else {
+    // No length → read to EOF
+    reachedEOF = true;
+  }
+
+  const actualEnd = end ?? fileSize - 1;
+  const bytesRead = actualEnd - start + 1;
+
+  if (bytesRead > spec.maxSize) {
+    throw createTooLargeError(bytesRead, spec.maxSize, context.filePath);
+  }
+
+  const stream = context.handle.createReadStream({
+    encoding: spec.encoding,
+    start,
+    ...(end !== undefined ? { end } : {}),
+    signal: spec.signal,
+  });
+
+  const content = await text(stream);
+
+  return {
+    path: context.validPath,
+    content,
+    truncated: false,
+    readMode: 'byteRange',
+    offset: start,
+    bytesRead,
+    reachedEOF,
+  };
+}
+
+async function readByMode(context: ReadModeContext): Promise<ReadFileResult> {
+  switch (context.spec.kind) {
+    case 'head':
+      return readHead(context, context.spec);
+    case 'range':
+      return readRange(context, context.spec);
+    case 'full':
+      return readFull(context, context.spec);
+    case 'tail':
+      return readTail(context, context.spec);
+    case 'byteRange':
+      return readByteRange(context, context.spec);
   }
 }
 
@@ -837,7 +838,7 @@ export async function readNormalized(
   }
   assertNotAborted(spec.signal);
 
-  return await FileReader.read({ handle, validPath, filePath, stats, spec });
+  return await readByMode({ handle, validPath, filePath, stats, spec });
 }
 
 export async function readFileWithStats(

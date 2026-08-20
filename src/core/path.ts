@@ -2,18 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Stats } from 'node:fs';
 import { lstat, readlink, realpath, stat } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
-import {
-  basename,
-  dirname,
-  isAbsolute,
-  join,
-  normalize,
-  parse,
-  posix,
-  relative,
-  resolve,
-  sep,
-} from 'node:path';
+import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 
 import { assertNotAborted, timedSignal, withAbort } from './concurrency.js';
 import {
@@ -26,29 +15,15 @@ import {
 } from './errors.js';
 import { Logger } from './observability.js';
 import { parseEnvDirList, parseTrueEnvFlag } from './primitives.js';
+import { SensitiveMatcher } from './sensitive.js';
 import { ROOTS_TIMEOUT_MS } from './util.js';
 
-// note: ~1.25k lines, over the 1k bar, and deliberately so. This file holds two
-// access-control concerns that share one set of path primitives and so do not
-// separate cleanly:
-//
-//  - denylist policy (~150 lines): DEFAULT_SENSITIVE_PATTERNS,
-//    buildSensitivePatterns, CompiledPattern/Set, compilePatternGlobs,
-//    compilePatterns, toPatternSet, matchesAnyGlob, stripAdsFromPath,
-//    isSensitive. Consumed independently by path-completer.ts, but built on the
-//    same primitives as the assembly below.
-//  - allowed-directory assembly (~250 lines): normalizeCLIDirectories,
-//    isRootWithin, filterRootsWithin, normalizeAllowedDirectories,
-//    expandAllowedDirectories, resolveAllowedDirectoriesState, the body of
-//    recomputeAllowedDirectories, UNSAFE_CWD_PATHS, isUnsafeCwdPath,
-//    findProjectRoot.
-//
-// Both rest on IS_WINDOWS, normalizeForMatch, and isPathWithinDirectories, and
-// both are pure access-control policy — neither carries its own state besides
-// the policy tables. Cutting either out would duplicate the primitives or push
-// a containment check through a cross-module call. Split only if one concern
-// grows a genuinely separate dependency, or if a third home for the shared
-// primitives appears. Separable peers are already extracted: path-completer.ts,
+// Allowed-directory assembly and the PathGuard that enforces it. The
+// sensitive-file denylist that used to live here moved to sensitive.ts — it
+// shared only isAlpha / toPosixPath / IS_WINDOWS with these primitives, not the
+// containment checks, and was consumed independently by path-completer.ts and
+// glob.ts via PathGuard.isSensitive (which delegates to SensitiveMatcher).
+// Separable peers already extracted: sensitive.ts, path-completer.ts,
 // cursor.ts.
 export type ValidatedPath = string & { readonly __validated: unique symbol };
 
@@ -128,7 +103,7 @@ async function filterRootsWithin(
 
 const WINDOWS_PATH_SEPARATOR = '\\';
 const POSIX_PATH_SEPARATOR = '/';
-const IS_WINDOWS = platform() === 'win32';
+export const IS_WINDOWS = platform() === 'win32';
 const HOMEDIR = homedir();
 const PATH_SEPARATOR = sep;
 
@@ -143,7 +118,7 @@ export function isSlash(code: number): boolean {
   return code === CHAR_FORWARD_SLASH || code === CHAR_BACKWARD_SLASH;
 }
 
-function isAlpha(code: number): boolean {
+export function isAlpha(code: number): boolean {
   return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
 }
 
@@ -156,11 +131,6 @@ export function toPosixPath(value: string): string {
 /** `path.relative` with forward slashes, so displayed paths match across platforms. */
 export function toPosixRelative(from: string, to: string): string {
   return toPosixPath(relative(from, to));
-}
-
-function normalizeForMatch(input: string): string {
-  // Always lowercase for case-insensitive denylist matching on all platforms.
-  return toPosixPath(normalize(input)).toLowerCase();
 }
 
 function expandHome(filepath: string): string {
@@ -253,79 +223,6 @@ export function isPathWithinDirectories(
 ): boolean {
   for (const allowedDir of allowedDirs) {
     if (isPathInsideDirectory(allowedDir, normalizedPath)) return true;
-  }
-
-  return false;
-}
-
-interface CompiledPattern {
-  globs: readonly string[];
-  matchesPath: boolean;
-}
-
-interface CompiledPatternSet {
-  pathGlobs: readonly string[];
-  nameGlobs: readonly string[];
-}
-
-function isWindowsAbsolutePosixPath(normalizedPattern: string): boolean {
-  return (
-    normalizedPattern.length >= 3 &&
-    normalizedPattern.charCodeAt(1) === CHAR_COLON &&
-    normalizedPattern.charCodeAt(2) === CHAR_FORWARD_SLASH &&
-    isAlpha(normalizedPattern.charCodeAt(0))
-  );
-}
-
-function compilePatternGlobs(normalizedPattern: string): readonly string[] {
-  const globs = new Set<string>([normalizedPattern]);
-
-  const isRooted =
-    normalizedPattern.startsWith('**/') || isWindowsAbsolutePosixPath(normalizedPattern);
-  if (!isRooted) {
-    const withoutRoot = normalizedPattern.replace(/^\/+/, '');
-    if (withoutRoot) {
-      globs.add(`**/${withoutRoot}`);
-    }
-  }
-
-  return Array.from(globs);
-}
-
-function compilePatterns(patterns: readonly string[]): CompiledPattern[] {
-  const deduped = Array.from(new Set(patterns.map((p) => p.trim()).filter((p) => p.length > 0)));
-  return deduped.map((pattern) => {
-    const normalized = normalizeForMatch(pattern);
-    const matchesPath = normalized.includes('/');
-    return {
-      globs: matchesPath ? compilePatternGlobs(normalized) : [normalized],
-      matchesPath,
-    };
-  });
-}
-
-function toPatternSet(patterns: readonly CompiledPattern[]): CompiledPatternSet {
-  const pathGlobs = new Set<string>();
-  const nameGlobs = new Set<string>();
-
-  for (const pattern of patterns) {
-    const target = pattern.matchesPath ? pathGlobs : nameGlobs;
-    for (const glob of pattern.globs) {
-      target.add(glob);
-    }
-  }
-
-  return {
-    pathGlobs: [...pathGlobs],
-    nameGlobs: [...nameGlobs],
-  };
-}
-
-function matchesAnyGlob(globs: readonly string[], candidate: string): boolean {
-  if (globs.length === 0) return false;
-
-  for (const glob of globs) {
-    if (posix.matchesGlob(candidate, glob)) return true;
   }
 
   return false;
@@ -525,55 +422,6 @@ export function isSafeGlobSyntax(pattern: string): boolean {
   return true;
 }
 
-const DEFAULT_SENSITIVE_PATTERNS = [
-  '.env',
-  '.env.*',
-  '.npmrc',
-  '.pypirc',
-  '.aws/credentials',
-  '.aws/config',
-  '.mcpregistry_*_token',
-  '*.pem',
-  '*.key',
-  '*.p12',
-  '*.pfx',
-  '*.crt',
-  '*.cer',
-  '*id_rsa*',
-  '*id_dsa*',
-] as const;
-
-function buildSensitivePatterns(): readonly string[] {
-  const allowSensitive = parseTrueEnvFlag(process.env['ALLOW_SENSITIVE']);
-  const envValue = process.env['DENYLIST'];
-  const envDenylist = envValue
-    ? envValue
-        .split(/[,\n]/u)
-        .map((t) => t.trim())
-        .filter((t) => t.length > 0)
-    : [];
-  // ALLOW_SENSITIVE suppresses built-ins only; DENYLIST entries always apply
-  return [...(allowSensitive ? [] : DEFAULT_SENSITIVE_PATTERNS), ...envDenylist];
-}
-
-function stripAdsFromPath(filePath: string): string {
-  const parts = filePath.split(/[\\/]/);
-  const stripped = parts.map((segment, i) => {
-    // Preserve the Windows drive-letter colon (e.g. "C:" at index 0 of absolute paths).
-    if (
-      i === 0 &&
-      segment.length === 2 &&
-      isAlpha(segment.charCodeAt(0)) &&
-      segment.charCodeAt(1) === CHAR_COLON
-    ) {
-      return segment;
-    }
-    const colonIdx = segment.indexOf(':');
-    return colonIdx !== -1 ? segment.slice(0, colonIdx) : segment;
-  });
-  return stripped.join(PATH_SEPARATOR);
-}
-
 export interface AccessGrantDeps {
   /** Ask the user to approve granting access to targetDir.
    *  Injected so PathGuard stays free of the MCP elicitation surface. */
@@ -593,7 +441,7 @@ export interface AccessGrantDeps {
  */
 export class PathGuard {
   private allowedDirectoriesState: AllowedDirectoriesState | undefined;
-  private denyPatterns: CompiledPatternSet;
+  private readonly sensitive = new SensitiveMatcher();
   private rootDirectories: string[] = [];
   private rootBoundaries: string[] = [];
   private readonly denialCache = new Map<string, boolean>();
@@ -619,7 +467,6 @@ export class PathGuard {
   >();
 
   constructor(options?: ServerOptions, isServerContext = false) {
-    this.denyPatterns = toPatternSet(compilePatterns(buildSensitivePatterns()));
     this.options = options;
     this.isServerContext = isServerContext;
   }
@@ -691,15 +538,7 @@ export class PathGuard {
   }
 
   isSensitive(filePath: string): boolean {
-    if (this.denyPatterns.pathGlobs.length === 0 && this.denyPatterns.nameGlobs.length === 0) {
-      return false;
-    }
-    const pathToCheck = IS_WINDOWS ? stripAdsFromPath(filePath) : filePath;
-    const normalizedPath = normalizeForMatch(pathToCheck);
-    return (
-      matchesAnyGlob(this.denyPatterns.pathGlobs, normalizedPath) ||
-      matchesAnyGlob(this.denyPatterns.nameGlobs, posix.basename(normalizedPath))
-    );
+    return this.sensitive.isSensitive(filePath);
   }
 
   async validateExistingPath(requestedPath: string): Promise<ValidatedPath> {
@@ -764,26 +603,18 @@ export class PathGuard {
       return false;
     }
 
-    const boundaries = parseEnvDirList('ROOT_BOUNDARY');
-    if (boundaries.length > 0) {
-      // Resolve both target and boundaries through symlinks so a symlink inside
-      // the boundary that points outside cannot bypass the ROOT_BOUNDARY constraint.
+    if (this.rootBoundaries.length > 0) {
+      // The guard already realpath-resolved ROOT_BOUNDARY into rootBoundaries
+      // during recomputeAllowedDirectories. Reuse that single source of truth so
+      // the grant path checks the same boundary the rest of the guard enforces,
+      // instead of re-reading the env and re-resolving each entry by hand.
       let resolvedTarget: string;
       try {
         resolvedTarget = normalizePath(await realpath(targetDir));
       } catch {
         resolvedTarget = normalizePath(targetDir);
       }
-      const resolvedBoundaries = await Promise.all(
-        boundaries.map(async (b) => {
-          try {
-            return normalizePath(await realpath(b));
-          } catch {
-            return normalizePath(b);
-          }
-        }),
-      );
-      if (!isPathWithinDirectories(resolvedTarget, resolvedBoundaries)) {
+      if (!isPathWithinDirectories(resolvedTarget, this.rootBoundaries)) {
         return false;
       }
     }
@@ -840,13 +671,12 @@ export class PathGuard {
         : 'No allowed directories configured.';
 
     if (!isPathWithinDirectories(normalizedRequested, allowedDirs)) {
-      const granted = await this.checkAndPromptAccess(normalizedRequested);
-      if (granted) {
-        const updatedDirs = this.allowedDirectoriesState.expanded;
-        if (!isPathWithinDirectories(normalizedRequested, updatedDirs)) {
-          this.throwAccessDenied(requestedPath, accessDeniedHint);
-        }
-      } else {
+      // Prompt for access, then re-check against the (possibly extended) set.
+      // Both "no handler / denied" and "granted but still outside" land here:
+      // the post-prompt containment test is the only real gate, so the
+      // granted boolean never changed the outcome — one re-check replaces it.
+      await this.checkAndPromptAccess(normalizedRequested);
+      if (!isPathWithinDirectories(normalizedRequested, this.allowedDirectoriesState.expanded)) {
         this.throwAccessDenied(requestedPath, accessDeniedHint);
       }
     }
@@ -991,12 +821,12 @@ export class PathGuard {
   }
 
   isAllowedRoot(normalizedPath: string): boolean {
-    const target = IS_WINDOWS ? normalizedPath.toLowerCase() : normalizedPath;
-    for (const dir of this.getAllowedDirectories()) {
-      const d = IS_WINDOWS ? dir.toLowerCase() : dir;
-      if (target === d) return true;
-    }
-    return false;
+    // isSamePath case-folds on case-insensitive filesystems (win + darwin),
+    // matching the containment checks used everywhere else in the guard. The
+    // previous IS_WINDOWS-only fold left darwin doing exact-case compares here
+    // while isPathInsideDirectory folded — a root matched case-insensitively
+    // everywhere else was missed.
+    return this.getAllowedDirectories().some((dir) => isSamePath(dir, normalizedPath));
   }
 
   // Checks ONLY the sensitive-file denylist. Root containment and symlink
