@@ -283,6 +283,16 @@ function expandHiddenGlobstars(
   // maxDepth — ~200 walks for the search default of 100) was pure overhead.
   _maxDepth: number,
 ): void {
+  // Trailing bare globstar — `src/**`, `**` (remainder is exactly `**`, no
+  // following segment). The pattern itself already matches every non-dot
+  // entry under the prefix; add the two hidden complements fs.glob skips:
+  // dotfiles/dot-dirs anywhere, and the contents of dot-dirs anywhere.
+  if (remainder === '**') {
+    patterns.add(`${prefix}**/.*`);
+    patterns.add(`${prefix}**/.*/**`);
+    return;
+  }
+
   if (!remainder.startsWith('**/')) return;
 
   const afterGlobstar = remainder.slice(3);
