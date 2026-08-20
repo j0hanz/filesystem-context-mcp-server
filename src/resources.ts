@@ -201,8 +201,17 @@ const MAX_WATCHERS = parseEnvInt('FILESYSTEM_MCP_MAX_WATCHERS', 256, 1, 4096);
 const watchFactory: (path: string, listener: () => void) => FSWatcher = (path, listener) =>
   watch(path, listener);
 
-function createFilesystemResource(options: ResourceRegistrationOptions): ResourceContract {
-  const completer = options.pathGuard ? new PathCompleter(options.pathGuard) : undefined;
+function warnWatcherCap(uri: string): void {
+  Logger.warn(`Cannot subscribe to ${uri}: MAX_WATCHERS limit (${MAX_WATCHERS}) reached.`);
+}
+
+/**
+ * Owns the uri → FSWatcher map and the subscription bookkeeping around it:
+ * notify callbacks, desired subscribe/unsubscribe state, and the watcher cap.
+ * `subscribe` awaits path validation midway, so callers re-check `isStale` and
+ * `hasWatcher` after the await before attaching.
+ */
+function createWatcherRegistry() {
   const watchers = new Map<string, FSWatcher>();
   const activeCallbacks = new Map<string, Set<(uri: string) => void>>();
   const desiredState = new Map<string, 'subscribed' | 'unsubscribed'>();
@@ -216,6 +225,84 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     activeCallbacks.delete(uri);
     desiredState.set(uri, 'unsubscribed');
   };
+
+  const notifyAll = (uri: string): void => {
+    const currentCallbacks = activeCallbacks.get(uri);
+    if (!currentCallbacks) return;
+    for (const cb of currentCallbacks) {
+      try {
+        cb(uri);
+      } catch (err) {
+        Logger.warn(
+          `Notify callback error for ${uri}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+  };
+
+  return {
+    hasWatcher: (uri: string): boolean => watchers.has(uri),
+
+    isAtCap: (): boolean => watchers.size >= MAX_WATCHERS,
+
+    /** The registry was destroyed, or this uri was unsubscribed, mid-await. */
+    isStale: (uri: string): boolean => destroyed || desiredState.get(uri) === 'unsubscribed',
+
+    addCallback(uri: string, notify: (uri: string) => void): void {
+      let callbacks = activeCallbacks.get(uri);
+      if (!callbacks) {
+        callbacks = new Set();
+        activeCallbacks.set(uri, callbacks);
+      }
+      callbacks.add(notify);
+      desiredState.set(uri, 'subscribed');
+    },
+
+    attach(uri: string, resolvedPath: string): void {
+      try {
+        const watcher = watchFactory(resolvedPath, () => {
+          notifyAll(uri);
+        });
+        watcher.on('error', (err: Error) => {
+          Logger.warn(`Watcher error for ${uri}: ${err.message}`);
+          dropWatcher(uri, watcher);
+        });
+        watchers.set(uri, watcher);
+      } catch (err) {
+        Logger.error(
+          `Failed to create watcher for ${uri}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    },
+
+    remove(uri: string): void {
+      desiredState.set(uri, 'unsubscribed');
+      activeCallbacks.delete(uri);
+      const watcher = watchers.get(uri);
+      if (watcher) {
+        dropWatcher(uri, watcher);
+      }
+    },
+
+    destroy(): void {
+      destroyed = true;
+      for (const watcher of watchers.values()) {
+        try {
+          watcher.close();
+        } catch {
+          /* ignore close errors so all watchers are attempted */
+        }
+      }
+      watchers.clear();
+      activeCallbacks.clear();
+      desiredState.clear();
+    },
+  };
+}
+
+function createFilesystemResource(options: ResourceRegistrationOptions): ResourceContract {
+  const completer = options.pathGuard ? new PathCompleter(options.pathGuard) : undefined;
+  const registry = createWatcherRegistry();
 
   return {
     name: 'filesystem-mcp-file',
@@ -266,19 +353,13 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     async subscribe(uri, notify) {
       if (!options.pathGuard) return;
 
-      let callbacks = activeCallbacks.get(uri);
-      if (!callbacks) {
-        callbacks = new Set();
-        activeCallbacks.set(uri, callbacks);
-      }
-      callbacks.add(notify);
+      registry.addCallback(uri, notify);
 
-      desiredState.set(uri, 'subscribed');
-
-      if (watchers.has(uri)) return;
-
-      if (watchers.size >= MAX_WATCHERS) {
-        Logger.warn(`Cannot subscribe to ${uri}: MAX_WATCHERS limit (${MAX_WATCHERS}) reached.`);
+      if (registry.hasWatcher(uri)) return;
+      // A cap hit before validation is reported to the caller as an outright
+      // rejection; after validation it is silent (see below).
+      if (registry.isAtCap()) {
+        warnWatcherCap(uri);
         return false;
       }
 
@@ -303,63 +384,24 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
         throw err;
       }
 
-      if (destroyed) return;
-      if (desiredState.get(uri) === 'unsubscribed') return;
-      if (watchers.has(uri)) return;
-      if (watchers.size >= MAX_WATCHERS) {
-        Logger.warn(`Cannot subscribe to ${uri}: MAX_WATCHERS limit (${MAX_WATCHERS}) reached.`);
+      // Re-check what the await could have changed.
+      if (registry.isStale(uri)) return;
+      if (registry.hasWatcher(uri)) return;
+      if (registry.isAtCap()) {
+        warnWatcherCap(uri);
         return;
       }
 
-      try {
-        const watcher = watchFactory(resolved, () => {
-          const currentCallbacks = activeCallbacks.get(uri);
-          if (currentCallbacks) {
-            for (const cb of currentCallbacks) {
-              try {
-                cb(uri);
-              } catch (err) {
-                Logger.warn(
-                  `Notify callback error for ${uri}: ${err instanceof Error ? err.message : String(err)}`,
-                );
-              }
-            }
-          }
-        });
-        watcher.on('error', (err: Error) => {
-          Logger.warn(`Watcher error for ${uri}: ${err.message}`);
-          dropWatcher(uri, watcher);
-        });
-        watchers.set(uri, watcher);
-      } catch (err) {
-        Logger.error(
-          `Failed to create watcher for ${uri}: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
+      registry.attach(uri, resolved);
       return undefined;
     },
 
     unsubscribe(uri) {
-      desiredState.set(uri, 'unsubscribed');
-      activeCallbacks.delete(uri);
-      const watcher = watchers.get(uri);
-      if (watcher) {
-        dropWatcher(uri, watcher);
-      }
+      registry.remove(uri);
     },
 
     destroy() {
-      destroyed = true;
-      for (const watcher of watchers.values()) {
-        try {
-          watcher.close();
-        } catch {
-          /* ignore close errors so all watchers are attempted */
-        }
-      }
-      watchers.clear();
-      activeCallbacks.clear();
-      desiredState.clear();
+      registry.destroy();
     },
   };
 }
