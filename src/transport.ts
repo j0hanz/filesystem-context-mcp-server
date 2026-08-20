@@ -11,7 +11,6 @@ import {
   isInitializedNotification,
   isInitializeRequest,
   isJSONRPCErrorResponse,
-  isJSONRPCNotification,
   isJSONRPCRequest,
   isJSONRPCResultResponse,
   JSONRPC_VERSION,
@@ -237,16 +236,6 @@ function getSessionId(req: IncomingMessage): string | undefined {
   const rawSessionId = req.headers['mcp-session-id'];
   if (typeof rawSessionId !== 'string' || !isValidSessionId(rawSessionId)) return undefined;
   return rawSessionId;
-}
-
-type JsonRpcKind = 'request' | 'notification' | 'result' | 'error' | 'unknown';
-
-function classifyJsonRpcMessage(message: JSONRPCMessage): JsonRpcKind {
-  if (isJSONRPCRequest(message)) return 'request';
-  if (isJSONRPCNotification(message)) return 'notification';
-  if (isJSONRPCResultResponse(message)) return 'result';
-  if (isJSONRPCErrorResponse(message)) return 'error';
-  return 'unknown';
 }
 
 // ---------------------------------------------------------------------------
@@ -646,10 +635,13 @@ async function handlePostMcp(
       return;
     }
 
-    const kind = classifyJsonRpcMessage(message);
+    const isResponse = isJSONRPCResultResponse(message) || isJSONRPCErrorResponse(message);
     if (isJSONRPCRequest(message)) requestId = message.id;
 
-    Logger.debug('[HTTP] inbound', { kind, sessionId: sessionId ?? null });
+    Logger.debug('[HTTP] inbound', {
+      method: 'method' in message ? message.method : null,
+      sessionId: sessionId ?? null,
+    });
     if (isInitializedNotification(message)) {
       Logger.debug('[HTTP] initialized notification received', {
         sessionId: sessionId ?? null,
@@ -665,7 +657,7 @@ async function handlePostMcp(
     }
 
     // No session yet — only an initialize request may open one.
-    if (kind === 'result' || kind === 'error') {
+    if (isResponse) {
       sendJsonRpcError(
         res,
         400,

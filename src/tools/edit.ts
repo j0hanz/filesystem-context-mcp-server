@@ -507,9 +507,6 @@ export const EDIT = defineTool({
     destructiveHint: true,
     openWorldHint: false,
   },
-  nuances: [
-    'Edits are applied sequentially: each edit operates on the result of the previous one.',
-  ],
   progress: (args) => {
     const dryLabel = args.dryRun ? ' [dry run]' : '';
     let subject: string;

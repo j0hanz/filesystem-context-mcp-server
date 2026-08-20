@@ -239,7 +239,6 @@ interface GlobDirentLike extends DirentLike {
 
 export interface GlobEntry {
   path: string;
-  relativePath?: string;
   dirent: DirentLike;
 }
 
@@ -249,7 +248,6 @@ interface GlobEntriesOptions {
   excludePatterns: readonly string[];
   includeHidden: boolean;
   baseNameMatch: boolean;
-  caseSensitiveMatch: boolean;
   maxDepth?: number;
   onlyFiles: boolean;
   suppressErrors?: boolean;
@@ -536,7 +534,6 @@ export function buildGlobOptions(config: GlobConfig): Parameters<typeof globEntr
     excludePatterns: config.excludePatterns ?? [],
     includeHidden: config.includeHidden ?? false,
     baseNameMatch: config.baseNameMatch ?? false,
-    caseSensitiveMatch: config.caseSensitiveMatch ?? true,
     onlyFiles: config.onlyFiles ?? true,
   };
 

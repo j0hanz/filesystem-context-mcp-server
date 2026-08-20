@@ -349,8 +349,6 @@ export async function parseArgs(): Promise<{
   readOnly: boolean;
   printConfig: boolean;
   json: boolean;
-  walkCwd: boolean;
-  allowMissingRoots: boolean;
 }> {
   try {
     const parsed = utilParseArgs(CLI_PARSER_CONFIG);
@@ -396,8 +394,6 @@ export async function parseArgs(): Promise<{
       readOnly,
       printConfig,
       json,
-      walkCwd,
-      allowMissingRoots,
     };
   } catch (error: unknown) {
     if (error instanceof CliExitError) {

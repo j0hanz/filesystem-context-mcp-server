@@ -1,9 +1,6 @@
 import { normalizeUnknownError } from './errors.js';
 import { PARALLEL_CONCURRENCY } from './util.js';
 
-const UNFILLED = Symbol('UNFILLED');
-type Unfilled = typeof UNFILLED;
-
 export interface ParallelResult<R> {
   results: { index: number; value: R }[];
   errors: { index: number; error: Error }[];
@@ -11,17 +8,6 @@ export interface ParallelResult<R> {
 
 function checkParallelAbort(signal?: AbortSignal): void {
   if (signal?.aborted) throw new DOMException('Operation aborted', 'AbortError');
-}
-
-export function isPositiveInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;
-}
-
-function normalizeConcurrency(concurrency: number): number {
-  if (!isPositiveInteger(concurrency)) {
-    throw new TypeError('concurrency must be a positive integer');
-  }
-  return concurrency;
 }
 
 export async function processInParallel<T, R>(
@@ -32,15 +18,13 @@ export async function processInParallel<T, R>(
 ): Promise<ParallelResult<R>> {
   const itemCount = items.length;
   if (itemCount === 0) return { results: [], errors: [] };
-  const effectiveConcurrency = normalizeConcurrency(concurrency);
 
-  const resultSlots: (R | Unfilled)[] = new Array<R | Unfilled>(itemCount);
+  const results: { index: number; value: R }[] = [];
   const errors: { index: number; error: Error }[] = [];
 
   checkParallelAbort(signal);
 
   let nextIndex = 0;
-  resultSlots.fill(UNFILLED);
 
   const next = async (): Promise<void> => {
     while (nextIndex < itemCount) {
@@ -51,9 +35,9 @@ export async function processInParallel<T, R>(
       const item = items[index] as T;
 
       try {
-        const result = await processor(item);
+        const value = await processor(item);
         checkParallelAbort(signal);
-        resultSlots[index] = result;
+        results.push({ index, value });
       } catch (error) {
         errors.push({
           index,
@@ -63,7 +47,7 @@ export async function processInParallel<T, R>(
     }
   };
 
-  const workerCount = Math.min(itemCount, effectiveConcurrency);
+  const workerCount = Math.min(itemCount, concurrency);
   const workers: Promise<void>[] = new Array<Promise<void>>(workerCount);
   for (let index = 0; index < workerCount; index += 1) {
     workers[index] = next();
@@ -72,20 +56,13 @@ export async function processInParallel<T, R>(
   await Promise.allSettled(workers);
   checkParallelAbort(signal);
 
-  const results: { index: number; value: R }[] = [];
-  resultSlots.forEach((slot, index) => {
-    if (slot !== UNFILLED) {
-      results.push({ index, value: slot });
-    }
-  });
+  results.sort((left, right) => left.index - right.index);
   return { results, errors };
 }
 
 function createAbortError(message = 'Operation aborted'): Error {
   return new DOMException(message, 'AbortError');
 }
-
-const SHARED_NOOP_SIGNAL = new AbortController().signal;
 
 function normalizeAbortReason(reason: unknown, message?: string): Error {
   if (reason instanceof Error) return reason;
@@ -146,62 +123,12 @@ export function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise
   });
 }
 
-export function createTimedAbortSignal(
-  baseSignal: AbortSignal | undefined,
-  timeoutMs?: number,
-): { signal: AbortSignal; cleanup: () => void } {
-  if (typeof timeoutMs === 'number' && Number.isFinite(timeoutMs)) {
-    if (baseSignal?.aborted) {
-      const controller = new AbortController();
-      controller.abort(baseSignal.reason);
-      return { signal: controller.signal, cleanup: () => undefined };
-    }
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => {
-      controller.abort(new DOMException('The operation timed out', 'TimeoutError'));
-    }, timeoutMs);
-    timer.unref();
-
-    let onBaseAbort: (() => void) | undefined;
-    if (baseSignal) {
-      if (baseSignal.aborted) {
-        controller.abort(baseSignal.reason);
-      } else {
-        onBaseAbort = () => {
-          controller.abort(baseSignal.reason);
-        };
-        baseSignal.addEventListener('abort', onBaseAbort, { once: true });
-      }
-    }
-
-    return {
-      signal: controller.signal,
-      cleanup: () => {
-        clearTimeout(timer);
-        if (baseSignal && onBaseAbort) {
-          baseSignal.removeEventListener('abort', onBaseAbort);
-        }
-      },
-    };
-  }
-
-  if (baseSignal) {
-    return { signal: baseSignal, cleanup: () => undefined };
-  }
-
-  return { signal: SHARED_NOOP_SIGNAL, cleanup: () => undefined };
-}
-
-export async function withTimedAbortSignal<T>(
-  baseSignal: AbortSignal | undefined,
-  timeoutMs: number | undefined,
-  run: (signal: AbortSignal) => Promise<T>,
-): Promise<T> {
-  const { signal, cleanup } = createTimedAbortSignal(baseSignal, timeoutMs);
-  try {
-    return await run(signal);
-  } finally {
-    cleanup();
-  }
+/**
+ * `baseSignal` combined with a deadline. `AbortSignal.timeout`'s timer does not
+ * hold the event loop open and is collected with the signal, so there is
+ * nothing for callers to clean up.
+ */
+export function timedSignal(baseSignal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  const deadline = AbortSignal.timeout(timeoutMs);
+  return baseSignal ? AbortSignal.any([baseSignal, deadline]) : deadline;
 }

@@ -194,21 +194,33 @@ const MAGIC_SIGNATURES: MagicSignature[] = [
 
 export const MIME_SAMPLE_SIZE = 512;
 
-function looksLikeText(buffer: Buffer): boolean {
-  const sample = buffer.subarray(0, MIME_SAMPLE_SIZE);
-  if (sample.length === 0) return true;
+function hasUtf16Bom(slice: Buffer): boolean {
+  return (
+    slice.length >= 2 &&
+    ((slice[0] === 0xff && slice[1] === 0xfe) || (slice[0] === 0xfe && slice[1] === 0xff))
+  );
+}
 
-  // Count non-text bytes
-  let nonTextCount = 0;
-  for (const byte of sample) {
-    // Allow common control characters (9=tab, 10=LF, 13=CR) and printable ASCII (32-126) + extended ASCII
-    if (byte < 9 || (byte > 13 && byte < 32 && byte !== 27) || (byte > 126 && byte < 160)) {
-      nonTextCount++;
-    }
+/**
+ * True when `slice` is valid UTF-8 *as a prefix*: `stream: true` parks a
+ * multi-byte sequence cut by the sample boundary in the decoder's buffer
+ * instead of reporting it, while `fatal: true` still throws on invalid bytes.
+ */
+function isUtf8Prefix(slice: Buffer): boolean {
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(slice, { stream: true });
+    return true;
+  } catch {
+    return false;
   }
+}
 
-  // If less than 30% non-text bytes, consider it text
-  return nonTextCount / sample.length < 0.3;
+/** Single binary-vs-text verdict, shared by `detectMimeType` and the read path. */
+export function isBinarySample(slice: Buffer): boolean {
+  if (slice.length === 0) return false;
+  if (hasUtf16Bom(slice)) return false;
+  if (slice.includes(0)) return true;
+  return !isUtf8Prefix(slice);
 }
 
 const WEBP_MARKER_BYTES = Buffer.from([0x57, 0x45, 0x42, 0x50]);
@@ -249,9 +261,9 @@ export function detectMimeType(path: string, sample?: Buffer): MimeInfo {
       const magicResult = detectByMagic(sample);
       if (magicResult !== null) return magicResult;
     }
-    return looksLikeText(sample)
-      ? { mimeType: 'text/plain', kind: 'text' }
-      : { mimeType: 'application/octet-stream', kind: 'binary' };
+    return isBinarySample(sample.subarray(0, MIME_SAMPLE_SIZE))
+      ? { mimeType: 'application/octet-stream', kind: 'binary' }
+      : { mimeType: 'text/plain', kind: 'text' };
   }
 
   // 3. Final fallback

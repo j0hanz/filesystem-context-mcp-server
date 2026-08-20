@@ -7,7 +7,6 @@ import * as z from 'zod/v4';
 import { ErrorCode } from '../../src/core/errors.js';
 import {
   classify,
-  classifyError,
   createDetailedError,
   formatUnknownErrorMessage,
   FsError,
@@ -16,10 +15,13 @@ import {
   isAbortError,
   isFsError,
   isNodeError,
-  isTimeoutLikeError,
   Problem,
   zodErrorToProblem,
 } from '../../src/core/errors.js';
+
+// Thin views over `classify` — the production surface these assertions cover.
+const classifyError = (error: unknown): ErrorCode => classify(error).code;
+const isTimeoutLikeError = (error: unknown): boolean => classify(error).code === ErrorCode.TIMEOUT;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 

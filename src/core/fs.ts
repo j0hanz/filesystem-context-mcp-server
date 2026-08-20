@@ -1,4 +1,3 @@
-import { isUtf8 } from 'node:buffer';
 import { createHash, randomUUID } from 'node:crypto';
 import type { ReadStream, Stats } from 'node:fs';
 import { createReadStream, constants as fsConstants } from 'node:fs';
@@ -24,9 +23,9 @@ import { dirname, extname, isAbsolute, resolve } from 'node:path';
 import { text } from 'node:stream/consumers';
 import { pipeline } from 'node:stream/promises';
 
-import { assertNotAborted, isPositiveInteger, withAbort } from './concurrency.js';
+import { assertNotAborted, withAbort } from './concurrency.js';
 import { ErrorCode, formatUnknownErrorMessage, FsError, isNodeError } from './errors.js';
-import { detectMimeType, MIME_SAMPLE_SIZE } from './mime.js';
+import { detectMimeType, isBinarySample, MIME_SAMPLE_SIZE } from './mime.js';
 import { Logger } from './observability.js';
 import type { PathGuard } from './path.js';
 import type { EntryType as FileType } from './primitives.js';
@@ -95,7 +94,11 @@ async function readlink(
 // ─── Input validation ────────────────────────────────────────────────────────
 
 function assertPositiveIntegerOption(name: string, value: unknown, message?: string): void {
-  if (value === undefined || isPositiveInteger(value)) return;
+  if (
+    value === undefined ||
+    (typeof value === 'number' && Number.isSafeInteger(value) && value >= 1)
+  )
+    return;
   throw new FsError(ErrorCode.INVALID_INPUT, message ?? `${name} must be a positive integer`);
 }
 
@@ -186,44 +189,6 @@ async function readProbe(handle: FileHandle, signal?: AbortSignal): Promise<Buff
   return buffer.subarray(0, bytesRead);
 }
 
-function hasUtf16Bom(slice: Buffer): boolean {
-  return (
-    slice.length >= 2 &&
-    ((slice[0] === 0xff && slice[1] === 0xfe) || (slice[0] === 0xfe && slice[1] === 0xff))
-  );
-}
-
-function stripTrailingTruncatedUtf8(buf: Buffer): Buffer {
-  const len = buf.length;
-  const maxSearch = Math.min(3, len);
-  for (let i = 1; i <= maxSearch; i++) {
-    const byte = buf[len - i];
-    if (byte === undefined) continue;
-    if ((byte & 0xc0) === 0xc0) {
-      let expectedLength = 0;
-      if ((byte & 0xe0) === 0xc0) expectedLength = 2;
-      else if ((byte & 0xf0) === 0xe0) expectedLength = 3;
-      else if ((byte & 0xf8) === 0xf0) expectedLength = 4;
-
-      if (i < expectedLength) {
-        return buf.subarray(0, len - i);
-      }
-      break;
-    }
-    if ((byte & 0x80) === 0x00) {
-      break;
-    }
-  }
-  return buf;
-}
-
-function isBinarySlice(slice: Buffer): boolean {
-  if (slice.length === 0) return false;
-  if (hasUtf16Bom(slice)) return false;
-  if (slice.includes(0)) return true;
-  return !isUtf8(stripTrailingTruncatedUtf8(slice));
-}
-
 async function isProbablyBinary(
   filePath: string,
   existingHandle?: FileHandle,
@@ -235,12 +200,12 @@ async function isProbablyBinary(
 
   if (existingHandle) {
     const slice = await readProbe(existingHandle, signal);
-    return isBinarySlice(slice);
+    return isBinarySample(slice);
   }
 
   await using handle = await openReadableFileHandle(filePath, signal);
   const slice = await readProbe(handle, signal);
-  return isBinarySlice(slice);
+  return isBinarySample(slice);
 }
 
 // ─── File hashing ────────────────────────────────────────────────────────────

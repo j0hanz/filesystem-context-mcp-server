@@ -2,7 +2,7 @@ import { basename } from 'node:path';
 
 import * as z from 'zod/v4';
 
-import { withTimedAbortSignal } from '../core/concurrency.js';
+import { timedSignal } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
@@ -97,7 +97,6 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
     excludePatterns: options.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS,
     includeHidden: options.includeHidden,
     baseNameMatch: false,
-    caseSensitiveMatch: true,
     maxDepth: options.maxDepth,
     onlyFiles: false,
   })) {
@@ -257,12 +256,12 @@ async function handleList(
   const resolvedPath = pathGuard.resolvePathOrRoot(path);
   const validDir = await pathGuard.validateExistingDirectory(resolvedPath);
 
-  return withTimedAbortSignal(signal, DEFAULT_SEARCH_TIMEOUT_MS, async (timedSignal) => {
+  {
     const result = await collect(validDir, {
       maxDepth: args.maxDepth,
       includeHidden: args.includeHidden,
       includeIgnored: args.includeIgnored,
-      signal: timedSignal,
+      signal: timedSignal(signal, DEFAULT_SEARCH_TIMEOUT_MS),
       pathGuard,
       ...(onProgress ? { onProgress } : {}),
     });
@@ -305,7 +304,7 @@ async function handleList(
     };
 
     return output;
-  });
+  }
 }
 
 // ─── Tool ─────────────────────────────────────────────────────────────────────

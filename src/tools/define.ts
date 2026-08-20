@@ -10,7 +10,6 @@ import type {
   StandardSchemaWithJSON,
   Tool,
   ToolAnnotations,
-  ToolExecution,
 } from '@modelcontextprotocol/server';
 import { SdkErrorCode } from '@modelcontextprotocol/server';
 
@@ -67,21 +66,17 @@ export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
   readonly input: I;
   readonly output: O;
   readonly annotations: ToolAnnotations;
-  readonly icons?: readonly unknown[];
-  readonly execution?: ToolExecution;
   readonly timeoutMs?: number;
   readonly progress?: (args: z.infer<I>) => ProgressCtx;
   readonly progressDone?: (args: z.infer<I>, result: z.infer<O>) => Partial<ProgressCtx>;
   readonly defaultErrorCode?: ErrorCode;
   readonly run: (args: z.infer<I>, ctx: ToolCtx) => Promise<RunResult<z.infer<O>>>;
-  readonly nuances?: readonly string[];
-  readonly gotchas?: readonly string[];
 }
 
-export interface DefinedTool extends Tool {
-  readonly nuances: readonly string[];
-  readonly gotchas: readonly string[];
-  readonly _def?: ToolDef<z.ZodType, z.ZodType>;
+export interface DefinedTool {
+  readonly name: string;
+  readonly inputSchema: Tool['inputSchema'];
+  readonly outputSchema: Record<string, unknown>;
 
   register(deps: ToolDeps): void;
 }
@@ -305,17 +300,7 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     }
     if (!caps?.elicitation) return undefined;
 
-    const fs = this.toolCtx.fs;
     const pathGuard = this.toolCtx.pathGuard;
-
-    const probe = async (path: string): Promise<'directory' | 'file' | 'missing'> => {
-      try {
-        const s = await fs.statUnchecked(path);
-        return s.isDirectory() ? 'directory' : 'file';
-      } catch {
-        return 'missing';
-      }
-    };
 
     const confirm = async (targetDir: string): Promise<boolean> => {
       try {
@@ -338,7 +323,7 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
       }
     };
 
-    return (blockedPath: string) => pathGuard.requestAccessGrant(blockedPath, { probe, confirm });
+    return (blockedPath: string) => pathGuard.requestAccessGrant(blockedPath, { confirm });
   }
 
   async execute(deps: ToolDeps): Promise<CallToolResult> {
@@ -436,15 +421,8 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
 
   const tool: DefinedTool = {
     name: def.name,
-    title: def.title,
-    description: def.description,
-    annotations: def.annotations,
-    execution: def.execution ?? { taskSupport: 'forbidden' },
-    nuances: def.nuances ?? [],
-    gotchas: def.gotchas ?? [],
     inputSchema: inputJsonSchema as Tool['inputSchema'],
     outputSchema: outputJsonSchema,
-    _def: def,
 
     register(deps: ToolDeps) {
       const toolDefShape = {

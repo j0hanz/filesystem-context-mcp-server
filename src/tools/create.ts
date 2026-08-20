@@ -96,10 +96,6 @@ export const CREATE = defineTool({
     destructiveHint: true,
     openWorldHint: false,
   },
-  gotchas: [
-    'Silently overwrites existing files; read existing content first if you need to preserve it.',
-    'For partial changes to existing files, use edit instead.',
-  ],
   run: async (args, ctx) => {
     const results: CreateFileResult[] = [];
     const links: ContentBlock[] = [];

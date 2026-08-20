@@ -318,9 +318,6 @@ export const DELETE_FILE = defineTool({
     destructiveHint: true,
     openWorldHint: false,
   },
-  gotchas: [
-    'Non-empty directories require recursive=true; attempting to delete one without it returns an error.',
-  ],
   defaultErrorCode: ErrorCode.UNKNOWN,
   progress: (args) => ({
     label: 'Delete',

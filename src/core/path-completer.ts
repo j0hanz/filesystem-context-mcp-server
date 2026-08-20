@@ -58,13 +58,10 @@ export class PathCompleter {
   }
 
   private setCacheValue(key: string, entry: CacheEntry): void {
-    if (this.cache.has(key)) this.cache.delete(key);
+    // Entries are stale after COMPLETION_RATE_LIMIT_MS anyway, so the cap only
+    // has to bound memory — dropping the whole map beats per-key LRU eviction.
+    if (this.cache.size >= MAX_COMPLETION_CACHE_KEYS) this.cache.clear();
     this.cache.set(key, entry);
-    while (this.cache.size > MAX_COMPLETION_CACHE_KEYS) {
-      const oldest = this.cache.keys().next();
-      if (oldest.done) break;
-      this.cache.delete(oldest.value);
-    }
   }
 
   private static chooseContextKeys(argumentName: string): readonly string[] {

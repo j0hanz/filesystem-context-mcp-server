@@ -4,9 +4,7 @@ import { ErrorCode, FsError } from './core/errors.js';
 
 const MAX_BEARER_TOKEN_LENGTH = 4096;
 
-const ALLOWED_ORIGIN_PATTERNS: readonly RegExp[] = [
-  /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/u,
-];
+const LOCALHOST_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/u;
 
 /**
  * Pure HTTP auth and binding policy. Holds no state; all functions are
@@ -20,7 +18,7 @@ export function isLoopbackHttpHost(host: string): boolean {
 }
 
 export function isAllowedLocalhostOrigin(origin: string): boolean {
-  return ALLOWED_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin));
+  return LOCALHOST_ORIGIN_RE.test(origin);
 }
 
 function originHostname(origin: string): string | undefined {

@@ -145,11 +145,10 @@ describe('--print-config (TASK-006/007)', () => {
     assert.equal(result.printConfig, false);
   });
 
-  it('parseArgs with --walk-cwd parses successfully and sets walkCwd and allowCwd to true', async () => {
+  it('parseArgs with --walk-cwd implies --allow-cwd', async () => {
     process.argv = ['node', 'index.js', '--walk-cwd'];
     const { parseArgs } = await import('../../src/cli.js');
     const result = await parseArgs();
-    assert.equal(result.walkCwd, true);
     assert.equal(result.allowCwd, true);
   });
 
@@ -164,7 +163,8 @@ describe('--print-config (TASK-006/007)', () => {
     process.argv = ['node', 'index.js', '--allow-missing-roots', '/nonexistent/path/here'];
     const { parseArgs } = await import('../../src/cli.js');
     const result = await parseArgs();
-    assert.equal(result.allowMissingRoots, true);
+    // --allow-missing-roots is consumed via ALLOW_MISSING_ROOTS (lifted in
+    // cli-env.ts); its effect here is that a nonexistent root is still accepted.
     assert.ok(result.allowedDirs.length === 1);
   });
 });

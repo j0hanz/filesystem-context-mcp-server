@@ -105,96 +105,10 @@ const DEFAULT_SUGGESTIONS: Readonly<Partial<Record<ErrorCode, string>>> = {
   [ErrorCode.SYMLINK_NOT_ALLOWED]: 'Symlink escapes allowed directories.',
 };
 
-function readSuggestionMeta(schema: z.ZodType | undefined): string | undefined {
-  if (schema === undefined || typeof schema !== 'object') return undefined;
-  let meta: { suggestion?: unknown } | undefined;
-  try {
-    meta = z.globalRegistry.get(schema) as { suggestion?: unknown } | undefined;
-  } catch {
-    return undefined;
-  }
-  if (meta && typeof meta.suggestion === 'string') return meta.suggestion;
-  const def = getZodDef(schema);
-  const inner = def?.innerType ?? def?.schema;
-  if (inner) return readSuggestionMeta(inner);
-  return undefined;
-}
-
-interface ZodDef {
-  shape?: Record<string, z.ZodType>;
-  type?: z.ZodType; // ZodArray inner type
-  innerType?: z.ZodType; // ZodOptional, ZodNullable, ZodDefault
-  schema?: z.ZodType; // ZodEffects
-}
-
-function getZodDef(schema: z.ZodType): ZodDef | undefined {
-  if (typeof schema !== 'object') return undefined;
-  if (!('_def' in schema)) return undefined;
-  try {
-    const def: unknown = (schema as { _def: unknown })._def;
-    if (def === null || typeof def !== 'object') return undefined;
-    return def;
-  } catch {
-    return undefined;
-  }
-}
-
-function descend(schema: z.ZodType, segment: string | number): z.ZodType | undefined {
-  let target: z.ZodType | undefined = schema;
-  while (target) {
-    const def = getZodDef(target);
-    if (!def) {
-      return undefined;
-    }
-
-    if (typeof segment === 'string' && def.shape !== undefined && segment in def.shape) {
-      return def.shape[segment];
-    }
-    if (typeof segment === 'number' && def.type !== undefined) {
-      return def.type;
-    }
-
-    if (def.innerType) {
-      target = def.innerType;
-    } else if (def.schema) {
-      target = def.schema;
-    } else {
-      target = undefined;
-    }
-  }
-  return undefined;
-}
-
-function suggestionFromIssueMeta(schema: z.ZodType, issue: ProblemIssue): string | undefined {
-  let cursor: z.ZodType | undefined = schema;
-  const trail: (z.ZodType | undefined)[] = [cursor];
-  for (const segment of issue.path) {
-    cursor = cursor ? descend(cursor, segment) : undefined;
-    trail.push(cursor);
-  }
-  // Walk leaf → root: first .meta().suggestion wins.
-  for (let i = trail.length - 1; i >= 0; i -= 1) {
-    const found = readSuggestionMeta(trail[i]);
-    if (found !== undefined) return found;
-  }
-  return undefined;
-}
-
-export function resolveSuggestion(
-  p: Pick<Problem, 'code' | 'issues'>,
-  schema?: z.ZodType,
-): string | undefined {
-  if (p.issues && p.issues.length > 0 && schema) {
-    for (const issue of p.issues) {
-      const fromMeta = suggestionFromIssueMeta(schema, issue);
-      if (fromMeta) return fromMeta;
-    }
-  }
-  if (p.issues && p.issues.length > 0) {
-    for (const issue of p.issues) {
-      const fromRule = issue.params?.['suggestion'];
-      if (typeof fromRule === 'string') return fromRule;
-    }
+export function resolveSuggestion(p: Pick<Problem, 'code' | 'issues'>): string | undefined {
+  for (const issue of p.issues ?? []) {
+    const fromRule = issue.params?.['suggestion'];
+    if (typeof fromRule === 'string') return fromRule;
   }
   return DEFAULT_SUGGESTIONS[p.code];
 }
@@ -276,11 +190,6 @@ function walkCauseChain(error: unknown): ClassificationSignal {
         errnoSignal = signal;
       }
     }
-    if (!(current instanceof Error)) {
-      visited.add(current);
-      current = (current as { cause?: unknown }).cause;
-      continue;
-    }
     visited.add(current);
     current = (current as { cause?: unknown }).cause;
   }
@@ -311,16 +220,6 @@ function buildProblemFromSignal(signal: ClassificationSignal, error: unknown): P
     }
     case 'unknown':
       return Problem.unknown(message);
-    default: {
-      const _exhaustive: never = signal;
-      let kindStr: string;
-      try {
-        kindStr = JSON.stringify(_exhaustive);
-      } catch {
-        kindStr = String(_exhaustive);
-      }
-      return Problem.ioError(`Unhandled error kind: ${kindStr}`);
-    }
   }
 }
 
@@ -347,9 +246,9 @@ function toProblemIssue(issue: z.core.$ZodIssue): ProblemIssue {
   };
 }
 
-export function zodErrorToProblem(err: z.ZodError, schema?: z.ZodType): Problem {
+export function zodErrorToProblem(err: z.ZodError): Problem {
   const issues = err.issues.map(toProblemIssue);
-  const suggestion = resolveSuggestion({ code: ErrorCode.VALIDATION_FAILED, issues }, schema);
+  const suggestion = resolveSuggestion({ code: ErrorCode.VALIDATION_FAILED, issues });
   return build(ErrorCode.VALIDATION_FAILED, z.prettifyError(err), {
     issues,
     ...(suggestion !== undefined ? { suggestion } : {}),
@@ -387,12 +286,12 @@ export function isFsError(error: unknown): error is FsError {
   return isFsErrorCarrier(error);
 }
 
-export function classify(error: unknown, ctx?: { schema?: z.ZodType }): Problem {
+export function classify(error: unknown): Problem {
   if (error === null || error === undefined) {
     return Problem.unknown('Unknown error');
   }
   if (isFsErrorCarrier(error)) return error.problem;
-  if (error instanceof z.ZodError) return zodErrorToProblem(error, ctx?.schema);
+  if (error instanceof z.ZodError) return zodErrorToProblem(error);
   if (!(error instanceof Error)) {
     return Problem.unknown(typeof error === 'string' ? error : '[non-Error thrown]');
   }
@@ -417,14 +316,6 @@ export function isNodeError(error: unknown): error is NodeJS.ErrnoException {
 
 export function isAbortError(error: unknown): boolean {
   return classify(error).code === ErrorCode.CANCELLED;
-}
-
-export function isTimeoutLikeError(error: unknown): boolean {
-  return classify(error).code === ErrorCode.TIMEOUT;
-}
-
-export function classifyError(error: unknown): ErrorCode {
-  return classify(error).code;
 }
 
 export function getSuggestion(code: ErrorCode): string | undefined {

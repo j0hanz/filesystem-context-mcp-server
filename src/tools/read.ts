@@ -373,11 +373,7 @@ export const READ_FILE = defineTool({
     destructiveHint: false,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-  nuances: [
-    'File content is always returned inline. resourceUri (filesystem-mcp://file/{path}) points to an on-demand resource handler — clients can subscribe to it for live change notifications.',
-  ],
   defaultErrorCode: ErrorCode.NOT_FILE,
   progress: (args) => {
     const isBatch = args.paths !== undefined;

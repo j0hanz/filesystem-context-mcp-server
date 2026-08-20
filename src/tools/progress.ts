@@ -30,8 +30,6 @@ interface ProgressSessionOptions {
   label: string;
   total?: number;
   sinks: ProgressSink[];
-  /** Clock injection for deterministic rate-limit tests. Defaults to Date.now. */
-  now?: () => number;
   /** Override the rate limit window. Default: 50ms. */
   rateLimitMs?: number;
   /** If true, rate limit window increases after 5 seconds of execution. */
@@ -44,7 +42,6 @@ export class ProgressSession {
   readonly #label: string;
   readonly #total: number | undefined;
   readonly #sinks: ProgressSink[];
-  readonly #now: () => number;
   readonly #rateLimitMs: number;
   readonly #dynamicRateLimit: boolean;
   readonly #startTime: number;
@@ -57,11 +54,10 @@ export class ProgressSession {
     this.#label = opts.label;
     this.#total = opts.total;
     this.#sinks = opts.sinks;
-    this.#now = opts.now ?? Date.now;
     this.#rateLimitMs = opts.rateLimitMs ?? DEFAULT_RATE_LIMIT_MS;
     this.#dynamicRateLimit = opts.dynamicRateLimit ?? false;
 
-    const now = this.#now();
+    const now = Date.now();
     this.#startTime = now;
     this.#lastSentMs = now - this.#rateLimitMs;
 
@@ -116,7 +112,7 @@ export class ProgressSession {
       return;
     }
 
-    this.#lastSentMs = this.#now();
+    this.#lastSentMs = Date.now();
 
     for (const sink of this.#sinks) {
       this.#emitGuarded(sink, event);
@@ -128,7 +124,7 @@ export class ProgressSession {
       return false;
     }
 
-    const now = this.#now();
+    const now = Date.now();
     const effectiveRateLimit =
       this.#dynamicRateLimit && now - this.#startTime > 5000
         ? Math.max(this.#rateLimitMs, 250)
@@ -164,16 +160,10 @@ export class StderrProgressSink implements ProgressSink {
   readonly name = 'stderr';
   readonly #startMs: number;
   #ctx: ProgressCtx;
-  readonly #writeFn: (line: string) => void;
 
-  constructor(ctx: ProgressCtx, writeFn?: (line: string) => void) {
+  constructor(ctx: ProgressCtx) {
     this.#ctx = ctx;
     this.#startMs = Date.now();
-    this.#writeFn =
-      writeFn ??
-      ((line) => {
-        process.stderr.write(line + '\n');
-      });
   }
 
   updateCtx(extra: Partial<ProgressCtx>): void {
@@ -205,7 +195,8 @@ export class StderrProgressSink implements ProgressSink {
     };
 
     try {
-      this.#writeFn(ansiLine(phase, merged));
+      process.stderr.write(`${ansiLine(phase, merged)}
+`);
     } catch {
       // never allow observability failures to affect tool execution
     }

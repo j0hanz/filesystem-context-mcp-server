@@ -2,59 +2,42 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-import { createTimedAbortSignal } from '../../src/core/concurrency.js';
+import { timedSignal } from '../../src/core/concurrency.js';
 
-describe('createTimedAbortSignal', () => {
+describe('timedSignal', () => {
   it('aborts the signal after the timeout elapses', async () => {
-    const { signal, cleanup } = createTimedAbortSignal(undefined, 50);
-    try {
-      await sleep(100);
-      assert.equal(signal.aborted, true, 'Signal must be aborted after timeout');
-      assert.equal(signal.reason?.name, 'TimeoutError');
-    } finally {
-      cleanup();
-    }
+    const signal = timedSignal(undefined, 50);
+    await sleep(100);
+    assert.equal(signal.aborted, true, 'Signal must be aborted after timeout');
+    assert.equal(signal.reason?.name, 'TimeoutError');
   });
 
-  it('cleanup() cancels the pending timer so the signal is NOT aborted', async () => {
-    const { signal, cleanup } = createTimedAbortSignal(undefined, 100);
-    cleanup(); // cancel before timeout fires
-    await sleep(150); // wait longer than the timeout
-    assert.equal(signal.aborted, false, 'Signal must NOT be aborted after cleanup');
-  });
-
-  it('returns a noop signal when no timeout and no base signal', () => {
-    const { signal, cleanup } = createTimedAbortSignal(undefined, undefined);
-    cleanup(); // no-op
+  it('is not aborted before the timeout elapses', async () => {
+    const signal = timedSignal(undefined, 1000);
+    await sleep(20);
     assert.equal(signal.aborted, false);
   });
 
-  it('returns the base signal unchanged when no timeout', () => {
+  it('combines base signal and timeout — base abort wins', () => {
     const ctrl = new AbortController();
-    const { signal } = createTimedAbortSignal(ctrl.signal, undefined);
-    assert.equal(signal, ctrl.signal);
-  });
-
-  it('combines base signal and timeout — base abort wins', async () => {
-    const ctrl = new AbortController();
-    const { signal, cleanup } = createTimedAbortSignal(ctrl.signal, 1000);
-    try {
-      ctrl.abort();
-      assert.equal(signal.aborted, true);
-    } finally {
-      cleanup();
-    }
-  });
-
-  it('removes listener on base signal after cleanup', () => {
-    const ctrl = new AbortController();
-    const { signal, cleanup } = createTimedAbortSignal(ctrl.signal, 1000);
-    cleanup();
+    const signal = timedSignal(ctrl.signal, 1000);
     ctrl.abort(new Error('base abort'));
-    assert.equal(
-      signal.aborted,
-      false,
-      'Signal must NOT be aborted if base signal aborts after cleanup',
-    );
+    assert.equal(signal.aborted, true);
+    assert.equal((signal.reason as Error).message, 'base abort');
+  });
+
+  it('is already aborted when the base signal aborted first', () => {
+    const ctrl = new AbortController();
+    ctrl.abort(new Error('early'));
+    const signal = timedSignal(ctrl.signal, 1000);
+    assert.equal(signal.aborted, true);
+  });
+
+  it('still honors the deadline when the base signal never aborts', async () => {
+    const ctrl = new AbortController();
+    const signal = timedSignal(ctrl.signal, 50);
+    await sleep(100);
+    assert.equal(signal.aborted, true);
+    assert.equal(signal.reason?.name, 'TimeoutError');
   });
 });

@@ -204,15 +204,7 @@ export const SEARCH_FILES = defineTool({
     destructiveHint: false,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-  nuances: [
-    'Respects .gitignore by default; set includeIgnored=true to include ignored files.',
-    'Result paths are relative to the search root, not the workspace root.',
-  ],
-  gotchas: [
-    'Bare filename patterns (e.g. README.md) match only at the root; prefix with **/ (e.g. **/README.md) for a recursive match.',
-  ],
   defaultErrorCode: ErrorCode.UNKNOWN,
   progress: (args) => ({
     label: 'Find',

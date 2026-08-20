@@ -15,7 +15,7 @@ import {
   sep,
 } from 'node:path';
 
-import { assertNotAborted, createTimedAbortSignal, withAbort } from './concurrency.js';
+import { assertNotAborted, timedSignal, withAbort } from './concurrency.js';
 import { ErrorCode, FsError, isAbortError, isFsError, isNodeError } from './errors.js';
 import { Logger } from './observability.js';
 import { parseEnvDirList, parseTrueEnvFlag } from './primitives.js';
@@ -513,9 +513,6 @@ function stripAdsFromPath(filePath: string): string {
 }
 
 export interface AccessGrantDeps {
-  /** Probe whether a path is an existing directory, an existing file, or missing.
-   *  Injected so PathGuard stays free of node:fs. */
-  probe: (path: string) => Promise<'directory' | 'file' | 'missing'>;
   /** Ask the user to approve granting access to targetDir.
    *  Injected so PathGuard stays free of the MCP elicitation surface. */
   confirm: (targetDir: string) => Promise<boolean>;
@@ -651,18 +648,20 @@ export class PathGuard {
   }
 
   /** Walk up from a blocked path to the closest existing ancestor directory. */
-  private async resolveGrantTargetDir(
-    blockedPath: string,
-    probe: AccessGrantDeps['probe'],
-  ): Promise<string> {
+  private async resolveGrantTargetDir(blockedPath: string): Promise<string> {
     let targetDir = blockedPath;
     for (;;) {
-      const kind = await probe(targetDir);
-      if (kind === 'directory') break;
+      let isFile = false;
+      try {
+        if ((await stat(targetDir)).isDirectory()) break;
+        isFile = true;
+      } catch {
+        // Missing — keep walking up.
+      }
       const parent = dirname(targetDir);
       if (parent === targetDir) break;
       targetDir = parent;
-      if (kind === 'file') break;
+      if (isFile) break;
     }
     return targetDir;
   }
@@ -670,11 +669,11 @@ export class PathGuard {
   /**
    * Access-grant policy: resolve the target directory, honor remembered denials,
    * ask the user, enforce ROOT_BOUNDARY, then grant by extending the roots.
-   * MCP elicitation and filesystem probing are injected via `deps` so this stays
-   * a pure access-control concern.
+   * MCP elicitation is injected via `deps` so this stays a pure access-control
+   * concern.
    */
   async requestAccessGrant(blockedPath: string, deps: AccessGrantDeps): Promise<boolean> {
-    const targetDir = await this.resolveGrantTargetDir(blockedPath, deps.probe);
+    const targetDir = await this.resolveGrantTargetDir(blockedPath);
 
     if (this.denialCache.has(targetDir)) return false;
 
@@ -1174,27 +1173,23 @@ export class PathGuard {
 
     const baseline = [...cliAllowedDirs, ...envAllowedDirs, ...allowCwdDirs];
 
-    const { signal, cleanup } = createTimedAbortSignal(undefined, ROOTS_TIMEOUT_MS);
-    try {
-      const rootsToInclude =
-        this.rootBoundaries.length > 0
-          ? await filterRootsWithin(
-              this.rootDirectories,
-              this.rootBoundaries,
-              'rootBoundary',
-              false,
-              signal,
-            )
-          : baseline.length > 0
-            ? await filterRootsWithin(this.rootDirectories, baseline, 'baseline', true, signal)
-            : this.rootDirectories;
+    const signal = timedSignal(undefined, ROOTS_TIMEOUT_MS);
+    const rootsToInclude =
+      this.rootBoundaries.length > 0
+        ? await filterRootsWithin(
+            this.rootDirectories,
+            this.rootBoundaries,
+            'rootBoundary',
+            false,
+            signal,
+          )
+        : baseline.length > 0
+          ? await filterRootsWithin(this.rootDirectories, baseline, 'baseline', true, signal)
+          : this.rootDirectories;
 
-      const combined = [...baseline, ...rootsToInclude];
-      const nextState = await resolveAllowedDirectoriesState(combined, signal);
-      this.initialize(nextState);
-    } finally {
-      cleanup();
-    }
+    const combined = [...baseline, ...rootsToInclude];
+    const nextState = await resolveAllowedDirectoriesState(combined, signal);
+    this.initialize(nextState);
   }
 }
 

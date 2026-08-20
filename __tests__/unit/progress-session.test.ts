@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { describe, it } from 'node:test';
+import { beforeEach, describe, it, mock } from 'node:test';
 
 import {
   type ProgressEvent,
@@ -15,14 +15,13 @@ class MemorySink implements ProgressSink {
   }
 }
 
-function makeClock(): { now: () => number; advance: (ms: number) => void } {
-  let t = 1_000;
-  return {
-    now: () => t,
-    advance: (ms) => {
-      t += ms;
-    },
-  };
+/**
+ * The rate limiter reads Date.now directly, so the clock is faked at the
+ * runtime level rather than injected through a constructor seam.
+ */
+function makeClock(): { advance: (ms: number) => void } {
+  mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  return { advance: (ms) => mock.timers.tick(ms) };
 }
 
 function tickOf(
@@ -39,13 +38,17 @@ function tickOf(
 }
 
 void describe('ProgressSession', () => {
+  beforeEach(() => {
+    mock.timers.reset();
+  });
+
   void it('emits a synthetic start tick on construction', () => {
     const sink = new MemorySink();
+    makeClock();
     new ProgressSession({
       label: 'Hash: foo.bin',
       total: 10,
       sinks: [sink],
-      now: makeClock().now,
     });
     assert.equal(sink.events.length, 1);
     assert.deepEqual(sink.events[0], {
@@ -63,7 +66,6 @@ void describe('ProgressSession', () => {
       label: 'job',
       total: 3,
       sinks: [sink],
-      now: clock.now,
     });
     sink.events.length = 0;
 
@@ -83,7 +85,6 @@ void describe('ProgressSession', () => {
     const session = new ProgressSession({
       label: 'job',
       sinks: [sink],
-      now: clock.now,
     });
     sink.events.length = 0;
 
@@ -105,7 +106,6 @@ void describe('ProgressSession', () => {
       label: 'job',
       total: 5,
       sinks: [sink],
-      now: clock.now,
     });
     sink.events.length = 0;
     clock.advance(100);
@@ -128,7 +128,6 @@ void describe('ProgressSession', () => {
     const session = new ProgressSession({
       label: 'job',
       sinks: [sink],
-      now: makeClock().now,
     });
     sink.events.length = 0;
     const err = new Error('boom');
@@ -149,7 +148,6 @@ void describe('ProgressSession', () => {
     const session = new ProgressSession({
       label: 'job',
       sinks: [sink],
-      now: makeClock().now,
     });
     session.complete('done');
     sink.events.length = 0;
@@ -167,7 +165,6 @@ void describe('ProgressSession', () => {
     const session = new ProgressSession({
       label: 'job',
       sinks: [sink],
-      now: clock.now,
     });
     sink.events.length = 0;
 
@@ -194,7 +191,6 @@ void describe('ProgressSession', () => {
     const session = new ProgressSession({
       label: 'job',
       sinks: [sink],
-      now: clock.now,
     });
     sink.events.length = 0;
 
@@ -219,7 +215,6 @@ void describe('ProgressSession', () => {
     const session = new ProgressSession({
       label: 'job',
       sinks: [badSink, goodSink],
-      now: makeClock().now,
     });
     // Constructor's start tick: badSink throws but session must construct.
     assert.equal(goodSink.events.length, 1);
@@ -240,7 +235,6 @@ void describe('ProgressSession', () => {
     const session = new ProgressSession({
       label: 'job',
       sinks: [badSink, goodSink],
-      now: makeClock().now,
     });
     session.complete('done');
 
@@ -256,7 +250,6 @@ void describe('ProgressSession', () => {
       label: 'job',
       total: 5,
       sinks: [],
-      now: makeClock().now,
     });
     session.set({ current: 3, message: 'three' });
     session.complete('done');

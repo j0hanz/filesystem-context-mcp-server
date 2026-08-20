@@ -32,8 +32,10 @@ type CapturedHandler = (args: unknown, ctx: ServerContext) => Promise<unknown>;
  */
 async function registerAgainstStub(tool: DefinedTool, root: string): Promise<CapturedHandler> {
   let handler: CapturedHandler | undefined;
+  let registeredSchema: RegisteredShape | undefined;
   const mockServer = {
-    registerTool: (_name: string, _schema: unknown, h: unknown): void => {
+    registerTool: (_name: string, schema: unknown, h: unknown): void => {
+      registeredSchema = schema as RegisteredShape;
       handler = h as CapturedHandler;
     },
   } as unknown as McpServer;
@@ -49,10 +51,21 @@ async function registerAgainstStub(tool: DefinedTool, root: string): Promise<Cap
   });
 
   const registered = handler;
-  const input = tool._def?.input;
+  const validate = registeredSchema?.inputSchema['~standard'].validate;
   assert.ok(registered, `Expected ${tool.name} to register a handler`);
-  assert.ok(input, `Expected ${tool.name} to expose its input schema`);
-  return (args, ctx) => registered(input.parse(args), ctx);
+  assert.ok(validate, `Expected ${tool.name} to register a validating input schema`);
+  return (args, ctx) => {
+    const parsed = validate(args) as { value?: unknown; issues?: readonly unknown[] };
+    assert.ok(!parsed.issues, `Expected ${tool.name} args to validate`);
+    return registered(parsed.value, ctx);
+  };
+}
+
+/** The shape `defineTool` hands to `registerTool` — the same object production uses. */
+interface RegisteredShape {
+  inputSchema: {
+    '~standard': { validate: (value: unknown) => unknown };
+  };
 }
 
 /** A ServerContext whose elicitInput fails the way the 2026-07-28 era does. */

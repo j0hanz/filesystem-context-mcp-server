@@ -52,23 +52,13 @@ const StatOutputSchema = z.strictObject({
     ),
 });
 
-const PERM_STRINGS = [
-  '---',
-  '--x',
-  '-w-',
-  '-wx',
-  'r--',
-  'r-x',
-  'rw-',
-  'rwx',
-] as const satisfies readonly string[];
-
 function getPermissions(mode: number): string {
-  return (
-    (PERM_STRINGS[(mode >> 6) & 0b111] ?? '---') +
-    (PERM_STRINGS[(mode >> 3) & 0b111] ?? '---') +
-    (PERM_STRINGS[mode & 0b111] ?? '---')
-  );
+  let out = '';
+  for (const shift of [6, 3, 0]) {
+    const bits = (mode >> shift) & 0b111;
+    out += (bits & 0b100 ? 'r' : '-') + (bits & 0b010 ? 'w' : '-') + (bits & 0b001 ? 'x' : '-');
+  }
+  return out;
 }
 
 function buildFileInfoResult(
@@ -201,7 +191,6 @@ export const GET_FILE_INFO = defineTool({
     destructiveHint: false,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   defaultErrorCode: ErrorCode.NOT_FOUND,
   progress: (args) => {

@@ -397,17 +397,7 @@ export const SEARCH_CONTENT = defineTool({
     destructiveHint: false,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-  nuances: [
-    'Inline results are capped at 50 matches; the full list is stored at resourceUri when exceeded.',
-  ],
-  gotchas: [
-    'isRegex=true rejects lookahead, lookbehind, and backreferences (they throw before scanning).',
-    'Without pattern, every text file is scanned; always set pattern to a specific glob to limit scope.',
-    'Unreadable files (binary, permission-denied) are skipped and counted in skippedInaccessible; files above the size limit are counted in skippedTooLarge. Check both before concluding a pattern is absent.',
-    'File patterns without a slash (e.g. *.ts) match by basename anywhere in the tree. Add a path prefix (e.g. src/*.ts) to restrict to a subtree.',
-  ],
   defaultErrorCode: ErrorCode.UNKNOWN,
   progress: (args) => ({
     label: 'Search',

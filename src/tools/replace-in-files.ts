@@ -535,7 +535,6 @@ async function handleSearchAndReplace(
     excludePatterns: args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS,
     includeHidden: args.includeHidden,
     baseNameMatch: true,
-    caseSensitiveMatch: true, // Default to sensitive for file paths
     onlyFiles: true,
     suppressErrors: true,
     ...(args.maxDepth !== undefined ? { maxDepth: args.maxDepth } : {}),
@@ -661,14 +660,7 @@ export const SEARCH_AND_REPLACE = defineTool({
     destructiveHint: true,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-  gotchas: [
-    'isRegex=true uses RE2 syntax: lookahead, lookbehind, and backreferences are not supported.',
-    'Replaces ALL occurrences per file; use edit if you need to replace only the first occurrence.',
-    'File patterns without a slash (e.g. *.ts) match by basename anywhere in the tree. Add a path prefix (e.g. src/*.ts) to restrict to a subtree.',
-    'Passing a file path as the path argument auto-scopes the search to that single file. To scope to a directory with a glob filter, set path to the directory and use the pattern field.',
-  ],
   defaultErrorCode: ErrorCode.UNKNOWN,
   progress: (args) => {
     const dryLabel = args.dryRun ? ' [dry run]' : '';

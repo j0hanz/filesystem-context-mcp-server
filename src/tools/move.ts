@@ -242,11 +242,6 @@ export const MOVE = defineTool({
     destructiveHint: true,
     openWorldHint: false,
   },
-  gotchas: [
-    'If the destination already exists, the user is prompted to confirm overwrite when the client supports elicitation.',
-    'If the client does not support elicitation, existing destinations are silently overwritten.',
-    'Self-moves (source == destination) are silently skipped without error.',
-  ],
   progress: (args) => {
     if (args.moves.length === 1) {
       const move = args.moves[0];

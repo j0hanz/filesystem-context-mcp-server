@@ -17,10 +17,8 @@ test('defineTool creates DefinedTool properly', () => {
   });
 
   assert.equal(tool.name, 'test_tool');
-  assert.equal(tool.title, 'Test Tool');
   assert.ok(tool.inputSchema);
   assert.ok(tool.outputSchema);
-  assert.equal(tool.annotations, 'readOnly');
 });
 
 test('defineTool execution handles errors', async () => {
@@ -57,7 +55,7 @@ test('defineTool produces StandardSchemaWithJSON-shaped inputSchema/outputSchema
   });
 
   const inputJsonSchema = tool.inputSchema as Record<string, unknown>;
-  const outputJsonSchema = tool.outputSchema as Record<string, unknown>;
+  const outputJsonSchema = tool.outputSchema;
   assert.equal(inputJsonSchema['type'], 'object');
   assert.equal(outputJsonSchema['type'], 'object');
   const inputProps = inputJsonSchema['properties'] as Record<string, unknown>;

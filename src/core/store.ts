@@ -92,22 +92,6 @@ class InMemoryResourceStore implements ResourceStore {
 
   // ── low-level storage ────────────────────────────────────────────────────
 
-  private get totalBytes(): number {
-    return this._totalBytes;
-  }
-
-  private get entryCount(): number {
-    return this.byUri.size;
-  }
-
-  private entries(): IterableIterator<StoredEntry> {
-    return this.byUri.values();
-  }
-
-  private getEntryIfExists(uri: string): StoredEntry | undefined {
-    return this.byUri.get(uri);
-  }
-
   private getEntryByHash(mimeType: string, contentHash: string): StoredEntry | undefined {
     const indexKey = buildIndexKey(mimeType, contentHash);
     const existingUri = this.byHashIndex.get(indexKey);
@@ -168,14 +152,14 @@ class InMemoryResourceStore implements ResourceStore {
   // ── eviction & cache policy ──────────────────────────────────────────────
 
   private evictOldest(): void {
-    const first = this.entries().next();
+    const first = this.byUri.values().next();
     if (first.done) return;
     this.removeEntry(first.value.uri);
   }
 
   private pruneExpiredEntries(now = Date.now()): void {
     const toRemove: string[] = [];
-    for (const entry of this.entries()) {
+    for (const entry of this.byUri.values()) {
       if (isExpired(entry, now)) toRemove.push(entry.uri);
     }
     for (const uri of toRemove) {
@@ -184,11 +168,11 @@ class InMemoryResourceStore implements ResourceStore {
   }
 
   private enforceLimits(): void {
-    while (this.entryCount > this.options.maxEntries) this.evictOldest();
-    while (this.totalBytes > this.options.maxTotalBytes) {
-      if (this.entryCount === 0) {
+    while (this.byUri.size > this.options.maxEntries) this.evictOldest();
+    while (this._totalBytes > this.options.maxTotalBytes) {
+      if (this.byUri.size === 0) {
         Logger.error(
-          `[resource-store] enforceLimits invariant violation: totalBytes=${this.totalBytes} but entryCount=0`,
+          `[resource-store] enforceLimits invariant violation: totalBytes=${this._totalBytes} but entryCount=0`,
         );
         break;
       }
@@ -197,7 +181,7 @@ class InMemoryResourceStore implements ResourceStore {
   }
 
   private getExisting(uri: string, expectedKind?: 'text' | 'blob'): StoredEntry {
-    const existing = this.getEntryIfExists(uri);
+    const existing = this.byUri.get(uri);
 
     if (!existing) {
       throw new FsError(
@@ -264,7 +248,7 @@ class InMemoryResourceStore implements ResourceStore {
 
   private enforceAfterPut(entry: StoredEntry): void {
     this.enforceLimits();
-    if (!this.getEntryIfExists(entry.uri)) {
+    if (!this.byUri.has(entry.uri)) {
       throw new FsError(ErrorCode.TOO_LARGE, 'Cache full: entry evicted.');
     }
   }

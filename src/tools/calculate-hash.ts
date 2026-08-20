@@ -152,7 +152,6 @@ async function hashDirectory(
     excludePatterns: [],
     includeHidden: false,
     baseNameMatch: false,
-    caseSensitiveMatch: true,
     onlyFiles: true,
     suppressErrors: true,
   })) {
@@ -314,13 +313,7 @@ export const CALCULATE_HASH = defineTool({
     destructiveHint: false,
     openWorldHint: false,
   },
-  execution: { taskSupport: 'forbidden' },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
-  nuances: [
-    'Directory hashing respects root `.gitignore` and sorts paths for stable output.',
-    'Hidden files (names starting with `.`) are excluded from directory hashing.',
-    'Supported algorithms: sha256, md5, sha1, sha512.',
-  ],
   defaultErrorCode: ErrorCode.UNKNOWN,
   progress: (args) => ({
     label: 'Hash',

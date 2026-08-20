@@ -91,9 +91,7 @@ function getLocalIconInfo(): Promise<IconInfo | undefined> {
   return cachedIconInfo;
 }
 
-export async function createServer(
-  options: ServerOptions & { isInitialized?: () => boolean } = {},
-): Promise<FilesystemServerContext> {
+export async function createServer(options: ServerOptions = {}): Promise<FilesystemServerContext> {
   const resourceStore = createInMemoryResourceStore();
   const localIcon = await getLocalIconInfo();
 
@@ -131,7 +129,7 @@ export async function createServer(
 
   const synchronizer = new McpRootsSynchronizer(pathGuard, true);
 
-  const isInitialized = options.isInitialized ?? (() => synchronizer.isInitialized());
+  const isInitialized = (): boolean => synchronizer.isInitialized();
   const deps: ServerDeps = {
     server,
     pathGuard,

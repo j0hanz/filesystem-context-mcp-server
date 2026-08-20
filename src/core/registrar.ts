@@ -3,12 +3,7 @@ import type { McpServer, Root } from '@modelcontextprotocol/server';
 import { realpath, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-import {
-  assertNotAborted,
-  createTimedAbortSignal,
-  processInParallel,
-  withAbort,
-} from './concurrency.js';
+import { assertNotAborted, processInParallel, timedSignal, withAbort } from './concurrency.js';
 import { isAbortError } from './errors.js';
 import { Logger } from './observability.js';
 import { isSamePath, normalizePath } from './path.js';
@@ -85,51 +80,24 @@ async function getValidRootDirectories(roots: Root[], signal?: AbortSignal): Pro
   const fileRoots = roots.filter(isFileRoot);
   if (fileRoots.length === 0) return [];
 
-  const { results: resolvedResults } = await processInParallel(
+  const { results } = await processInParallel(
     fileRoots,
-    (root) => resolveRootDirectory(root, signal),
-    PARALLEL_CONCURRENCY,
-    signal,
-  );
-  const validPaths = resolvedResults.map((r) => r.value).filter((p): p is string => p !== null);
-  if (validPaths.length === 0) return [];
-
-  const indexedPaths = validPaths.map((path, index) => ({ path, index }));
-  const { results: realExpansions } = await processInParallel(
-    indexedPaths,
-    async ({ path, index }) => {
-      const expanded = await resolveRealPathIfExists(path, signal);
-      return { index, expanded };
+    async (root) => {
+      const dir = await resolveRootDirectory(root, signal);
+      if (dir === null) return [];
+      const real = await resolveRealPathIfExists(dir, signal);
+      return real ? [dir, real] : [dir];
     },
     PARALLEL_CONCURRENCY,
     signal,
   );
 
-  const expandedMap = new Map<number, string | null>();
-  for (const { value: item } of realExpansions) {
-    expandedMap.set(item.index, item.expanded);
-  }
-
-  const validDirs: string[] = [];
-  for (let i = 0; i < validPaths.length; i++) {
-    const validPath = validPaths[i];
-    if (validPath !== undefined) {
-      validDirs.push(validPath);
-    }
-    const expanded = expandedMap.get(i);
-    if (expanded) validDirs.push(expanded);
-  }
-  return validDirs;
+  return results.flatMap((r) => r.value);
 }
 
 async function resolveRootDirectories(roots: Root[]): Promise<string[]> {
   if (roots.length === 0) return [];
-  const { signal, cleanup } = createTimedAbortSignal(undefined, ROOTS_TIMEOUT_MS);
-  try {
-    return await getValidRootDirectories(roots, signal);
-  } finally {
-    cleanup();
-  }
+  return getValidRootDirectories(roots, timedSignal(undefined, ROOTS_TIMEOUT_MS));
 }
 /* eslint-enable @typescript-eslint/no-deprecated */
 
