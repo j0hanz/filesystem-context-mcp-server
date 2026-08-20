@@ -122,7 +122,6 @@ async function handleSearchFiles(
   const excludePatterns = args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
   const { offset: cursorOffset, fetchMax } = openPage({
     cursor: args.cursor,
-    pageSize: args.maxResults,
     max: MAX_SEARCH_RESULTS,
   });
   const searchOptions: Parameters<typeof searchFiles>[3] = {
@@ -140,9 +139,11 @@ async function handleSearchFiles(
     searchOptions,
     fs.pathGuard,
   );
-  const displayResults = result.results.slice(cursorOffset);
+  // fetchMax covers the full capped set (see openPage), so the page window is
+  // bounded here by pageSize, not by the fetch cap.
+  const displayResults = result.results.slice(cursorOffset, cursorOffset + args.maxResults);
   const nextCursor = closePage({
-    truncated: result.summary.truncated,
+    total: result.results.length,
     offset: cursorOffset,
     pageCount: displayResults.length,
   });
@@ -156,8 +157,11 @@ async function handleSearchFiles(
   };
   applySummaryFields(structured, result.summary, nextCursor);
 
-  // If results were paginated, store the full list in the resource store
-  if (resourceStore !== undefined && result.summary.truncated) {
+  // Store the page so a caller can fetch the full result set by URI when the
+  // response is incomplete: `nextCursor` covers the multi-page case, and
+  // `summary.truncated` covers a single page that already hit the hard result
+  // cap (no nextCursor, but more matches exist beyond the cap).
+  if (resourceStore !== undefined && (nextCursor !== undefined || result.summary.truncated)) {
     const { entry, link } = putJsonResource(
       resourceStore,
       `${args.pattern} files`,

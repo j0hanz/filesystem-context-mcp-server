@@ -11,34 +11,51 @@ export function encodeOffsetCursor(offset: number): string {
 }
 
 /**
- * Owner of the offset-page rule: decode the incoming cursor and derive how many
- * results the underlying query must fetch to reach the end of this page.
- * `max` is the query's own hard cap, which the fetch may never exceed.
+ * Owner of the offset-page rule: decode the incoming cursor and derive the
+ * fetch window for this page. Every page re-runs the underlying query and sorts
+ * the result before slicing, so every page MUST sort the same universe —
+ * otherwise successive pages sort different populations and overlap/skip
+ * matches. That means the fetch has to cover the full result set up to the
+ * query's hard cap `max`, not just the end of this page: `fetchMax = max`.
  *
- * Named rather than positional for the same reason as {@link closePage}: the
- * numeric arguments are interchangeable to the compiler and not to the caller.
+ * (Capping at `offset + pageSize` would only be safe if the underlying scan
+ * yielded in sorted order; it yields in readdir order, so a per-page cap
+ * slices a different, unsorted prefix each time.)
+ *
+ * The page itself is bounded by `pageSize` later, in {@link closePage}'s caller
+ * via `slice(offset, offset + pageSize)`; `fetchMax` is only the scan cap.
+ *
+ * ponytail: every page re-scans to `max` and re-sorts — O(max) per page, not
+ * O(offset+pageSize). A ~100x work increase for page 1 over the old per-page
+ * cap, but the old cap sorted a different readdir prefix each page (overlap/
+ * skip). If per-page re-scan shows up in a profile, cache the page-1 sorted
+ * set (the resource store already persists it) and serve later pages from it
+ * by cursor instead of re-scanning.
  */
-export function openPage(params: { cursor: string | undefined; pageSize: number; max: number }): {
+export function openPage(params: { cursor: string | undefined; max: number }): {
   offset: number;
   fetchMax: number;
 } {
-  const { cursor, pageSize, max } = params;
+  const { cursor, max } = params;
   const offset = cursor !== undefined ? decodeOffsetCursor(cursor) : 0;
-  return { offset, fetchMax: Math.min(offset + pageSize, max) };
+  return { offset, fetchMax: max };
 }
 
 /**
  * The other half of {@link openPage}: a cursor for the next page, or undefined
- * when there is none. A truncated scan that yielded nothing on this page has no
- * further page to point at — issuing a cursor there would loop the caller.
+ * when there is none. `total` is the size of the full set this page sorted
+ * (the scan's capped result count, the same every page); a next page exists
+ * while this page did not reach the end of it. A page that yielded nothing is
+ * already at or past the end (`offset >= total`), so it naturally gets no
+ * cursor — issuing one there would loop the caller.
  */
 export function closePage(params: {
-  truncated: boolean;
+  total: number;
   offset: number;
   pageCount: number;
 }): string | undefined {
-  const { truncated, offset, pageCount } = params;
-  return truncated && pageCount > 0 ? encodeOffsetCursor(offset + pageCount) : undefined;
+  const { total, offset, pageCount } = params;
+  return offset + pageCount < total ? encodeOffsetCursor(offset + pageCount) : undefined;
 }
 
 export function decodeOffsetCursor(cursor: string): number {

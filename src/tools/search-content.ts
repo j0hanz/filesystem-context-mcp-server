@@ -304,9 +304,12 @@ function getPagedPayloads(
   cursorOffset: number,
 ): { matchPayloads: SearchMatchPayload[]; nextCursor: string | undefined } {
   const searchContext = createSearchContext(args, regexMatcher);
-  const matchPayloads = buildSortedPayloads(result, searchContext).slice(cursorOffset);
+  // Sort the full capped set before slicing: every page must sort the same
+  // universe (see openPage), so the page window is bounded by pageSize here.
+  const sorted = buildSortedPayloads(result, searchContext);
+  const matchPayloads = sorted.slice(cursorOffset, cursorOffset + args.maxResults);
   const nextCursor = closePage({
-    truncated: result.summary.truncated,
+    total: sorted.length,
     offset: cursorOffset,
     pageCount: matchPayloads.length,
   });
@@ -348,7 +351,6 @@ async function handleSearchContent(
 
   const { offset: cursorOffset, fetchMax } = openPage({
     cursor: args.cursor,
-    pageSize: args.maxResults,
     max: MAX_SEARCH_RESULTS,
   });
 

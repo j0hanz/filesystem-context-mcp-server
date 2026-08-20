@@ -74,22 +74,26 @@ describe('decodeOffsetCursor', () => {
 // ─── openPage / closePage ───────────────────────────────────────────────────
 
 describe('openPage', () => {
-  it('starts at offset 0 with no cursor', () => {
-    assert.deepEqual(openPage({ cursor: undefined, pageSize: 100, max: 10000 }), {
+  it('starts at offset 0 and fetches the full capped set', () => {
+    assert.deepEqual(openPage({ cursor: undefined, max: 10000 }), {
       offset: 0,
-      fetchMax: 100,
+      fetchMax: 10000,
     });
   });
 
-  it('fetches through the end of the requested page', () => {
-    assert.deepEqual(openPage({ cursor: encodeOffsetCursor(250), pageSize: 100, max: 10000 }), {
+  it('fetches the full capped set on every page', () => {
+    // Every page re-runs the query and sorts before slicing, so it must sort the
+    // same universe every time: fetchMax is always `max`, not offset+pageSize.
+    // Capping at offset+pageSize would slice a different unsorted prefix each
+    // page and overlap/skip matches.
+    assert.deepEqual(openPage({ cursor: encodeOffsetCursor(250), max: 10000 }), {
       offset: 250,
-      fetchMax: 350,
+      fetchMax: 10000,
     });
   });
 
   it('never fetches past the query cap', () => {
-    assert.deepEqual(openPage({ cursor: encodeOffsetCursor(9950), pageSize: 100, max: 10000 }), {
+    assert.deepEqual(openPage({ cursor: encodeOffsetCursor(9950), max: 10000 }), {
       offset: 9950,
       fetchMax: 10000,
     });
@@ -97,26 +101,23 @@ describe('openPage', () => {
 
   it('rejects a cursor it did not issue', () => {
     assert.throws(
-      () => openPage({ cursor: 'not-a-valid-cursor', pageSize: 100, max: 10000 }),
+      () => openPage({ cursor: 'not-a-valid-cursor', max: 10000 }),
       (err: unknown) => err instanceof FsError && err.code === ErrorCode.INVALID_INPUT,
     );
   });
 });
 
 describe('closePage', () => {
-  it('points at the next page when the scan was truncated', () => {
-    assert.equal(
-      closePage({ truncated: true, offset: 250, pageCount: 100 }),
-      encodeOffsetCursor(350),
-    );
+  it('points at the next page when more results remain', () => {
+    assert.equal(closePage({ total: 500, offset: 250, pageCount: 100 }), encodeOffsetCursor(350));
   });
 
-  it('issues no cursor when the scan ran to completion', () => {
-    assert.equal(closePage({ truncated: false, offset: 250, pageCount: 100 }), undefined);
+  it('issues no cursor when the page reached the end of the set', () => {
+    assert.equal(closePage({ total: 350, offset: 250, pageCount: 100 }), undefined);
   });
 
-  it('issues no cursor when a truncated page yielded nothing', () => {
+  it('issues no cursor when a page yielded nothing', () => {
     // Otherwise the caller loops forever on a cursor pointing at its own offset.
-    assert.equal(closePage({ truncated: true, offset: 250, pageCount: 0 }), undefined);
+    assert.equal(closePage({ total: 250, offset: 250, pageCount: 0 }), undefined);
   });
 });
