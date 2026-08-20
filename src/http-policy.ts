@@ -1,6 +1,12 @@
+import { getOAuthProtectedResourceMetadataUrl } from '@modelcontextprotocol/express';
+import { localhostAllowedHostnames } from '@modelcontextprotocol/server';
+
 import { createHash, timingSafeEqual } from 'node:crypto';
 
+import type { NextFunction, Request, RequestHandler, Response } from 'express';
+
 import { ErrorCode, FsError } from './core/errors.js';
+import { Logger } from './core/observability.js';
 
 const MAX_BEARER_TOKEN_LENGTH = 4096;
 
@@ -62,7 +68,7 @@ export function validateBearerAuthorization(apiKey: string, authHeader: unknown)
   return timingSafeEqual(expectedHash, actualHash);
 }
 
-export function isSecureApiKey(key: string | undefined): boolean {
+function isSecureApiKey(key: string | undefined): boolean {
   return typeof key === 'string' && key.trim().length >= 16;
 }
 
@@ -122,4 +128,131 @@ export function assertHttpHostPolicy(
     ErrorCode.PERMISSION_DENIED,
     `Refusing to bind wildcard host '${host}' without FILESYSTEM_MCP_ALLOWED_HOSTS. Set it to the public hostname(s) clients send, or set FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS=1 to accept the risk.`,
   );
+}
+
+// ─── Protected-resource discovery (RFC 9728 / RFC 6750) ──────────────────────
+
+/**
+ * This server is a resource server with no authorization server: `API_KEY` is a
+ * static secret the operator hands out of band, not an issued token. So the
+ * metadata document deliberately omits `authorization_servers` — RFC 9728 §2
+ * makes it optional, and its absence is the accurate statement that a token
+ * cannot be obtained from an endpoint. `mcpAuthMetadataRouter` from
+ * `@modelcontextprotocol/express` is the tool for the IdP-backed case: it
+ * requires RFC 8414 authorization-server metadata, and inventing an issuer with
+ * endpoints that answer nothing would send clients into a flow that cannot
+ * complete. Adopt it if this ever moves to a real IdP.
+ *
+ * What discovery buys here: a client hitting 401 learns the resource identifier
+ * and that the credential goes in the Authorization header, instead of a bare
+ * challenge plus a 404 on the well-known path.
+ */
+export function protectedResourceUrl(req: Request): URL | null {
+  const configured = process.env['FILESYSTEM_MCP_PUBLIC_URL'];
+  if (configured) {
+    const parsed = URL.parse(configured);
+    if (parsed) return parsed;
+    Logger.warn(
+      `[HTTP] Ignoring unparseable FILESYSTEM_MCP_PUBLIC_URL: ${configured}. Deriving the resource identifier from the Host header instead.`,
+    );
+  }
+  // Raw client input. The app's allowedHosts check constrains it ONLY when an
+  // allowlist is configured — a wildcard bind under
+  // FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS=1 computes an empty list, and the
+  // SDK mounts its Host validator conditionally on that list being non-empty.
+  // So this parse can fail (a space or `%` is not a legal host); null then
+  // means callers omit the hint rather than name a resource we invented.
+  const host = req.headers.host ?? '127.0.0.1';
+  return URL.parse(`${req.secure ? 'https' : 'http'}://${host}/mcp`);
+}
+
+/**
+ * RFC 6750 §3: a request with no credentials gets a bare challenge, while one
+ * that presented something invalid gets `error="invalid_token"`. Clients use
+ * the difference to tell "you must authenticate" from "your token is wrong".
+ */
+function buildAuthChallenge(req: Request, hasCredentials: boolean): string {
+  const resource = protectedResourceUrl(req);
+  const params: string[] = [];
+  if (resource) {
+    params.push(`resource_metadata="${getOAuthProtectedResourceMetadataUrl(resource)}"`);
+  }
+  if (hasCredentials) {
+    params.push('error="invalid_token"', 'error_description="Invalid or expired bearer token"');
+  }
+  // A bare `Bearer` is a complete challenge; avoid emitting a trailing space.
+  return params.length > 0 ? `Bearer ${params.join(', ')}` : 'Bearer';
+}
+
+/**
+ * Express middleware: when `apiKey` is set, require a matching bearer token.
+ * No key set = open access (loopback dev mode). `apiKey` is captured once per
+ * app setup (passed in from startHttpServer) so the middleware and
+ * assertHttpBindingPolicy share one source of truth.
+ */
+export function bearerAuthMiddleware(apiKey: string | undefined): RequestHandler {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!apiKey) {
+      next();
+      return;
+    }
+    if (isSecureApiKey(apiKey) && validateBearerAuthorization(apiKey, req.headers.authorization)) {
+      next();
+      return;
+    }
+    res.writeHead(401, {
+      'Content-Type': 'application/json',
+      'WWW-Authenticate': buildAuthChallenge(req, req.headers.authorization !== undefined),
+    });
+    // -32000 is the JSON-RPC server-defined error range; no SDK enum maps to
+    // "Unauthorized". The 401 body is inlined with the fixed JSON-RPC 2.0 "2.0"
+    // literal so this policy module does not depend on the transport's
+    // JSON-RPC wire-shape helpers (buildJsonRpcError), keeping http-policy
+    // free of server-runtime concerns.
+    res.end(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: -32000, message: 'Unauthorized' },
+      }),
+    );
+  };
+}
+
+/**
+ * Env-derived CORS origins (hostname-form, no scheme/port — matches the SDK
+ * app's `allowedOrigins` consumer). Defaults to the SDK's loopback hostname set
+ * so loopback browser clients keep working; operators set
+ * `FILESYSTEM_MCP_ALLOWED_ORIGINS` to allow remote clients on non-loopback
+ * binds. An empty value reads as unset, matching how parseAllowedHostsEnv
+ * treats an all-empty list. The same set is consulted by corsPreflightHandler
+ * so a remote origin is reflected end-to-end in Access-Control-Allow-Origin.
+ */
+export function computeAllowedOriginHostnames(originsEnv: string | undefined): string[] {
+  return originsEnv
+    ? originsEnv
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+    : localhostAllowedHostnames();
+}
+
+/**
+ * OPTIONS preflight for `/mcp`: reflect a present Origin if it is allowed —
+ * localhost, or in the env-derived `FILESYSTEM_MCP_ALLOWED_ORIGINS` set — and
+ * avoid emitting a wildcard fallback.
+ */
+export function corsPreflightHandler(allowedOriginHostnames: readonly string[]): RequestHandler {
+  return (req: Request, res: Response): void => {
+    const origin = req.headers.origin;
+    if (origin && isOriginAllowed(origin, allowedOriginHostnames)) {
+      res.header('Access-Control-Allow-Origin', origin);
+    }
+    res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.header(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization, mcp-session-id, mcp-protocol-version',
+    );
+    res.status(204).end();
+  };
 }

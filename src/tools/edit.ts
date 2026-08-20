@@ -6,13 +6,14 @@ import * as z from 'zod/v4';
 import { createTwoFilesPatch, diffLines } from 'diff';
 
 import { ErrorCode, FsError } from '../core/errors.js';
+import { buildFileResourceUri } from '../core/file-uri.js';
 import { countLines, readFileWithStats } from '../core/fs.js';
 import type { GuardedFileSystem } from '../core/fs.js';
-import { detectMimeType, MIME_SAMPLE_SIZE } from '../core/mime.js';
+import { detectMimeFromContent } from '../core/mime.js';
 import { Logger } from '../core/observability.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
 import type { Regex } from '../core/search/engine.js';
-import { compileRegex } from '../core/search/engine.js';
+import { compileRegex, freeRegex } from '../core/search/engine.js';
 import type { ResourceStore } from '../core/store.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import {
@@ -26,7 +27,7 @@ import {
   PositiveInt,
   singleOrBatchPathsInput,
 } from '../schema.js';
-import { buildFileResourceLink, buildFileResourceUri } from './_helpers.js';
+import { buildFileResourceLink } from './_helpers.js';
 import { runOverPaths } from './batch.js';
 import { defineTool } from './define.js';
 
@@ -186,19 +187,28 @@ function findEditMatch(
       .replace(/(\w)[^\S\n]+(\w)/g, '$1[^\\S\\n]+$2')
       .replace(/[^\S\n]+/g, '[^\\S\\n]*');
     let regex = regexCache?.get(pattern);
+    const owned = regex === undefined && regexCache === undefined;
     if (!regex) {
       regex = compileRegex(pattern, { caseSensitive: true });
-      if (regexCache) regexCache.set(pattern, regex);
+      regexCache?.set(pattern, regex);
     }
+    // The compiled regex is global and may come from the cache, so lastIndex
+    // still points past the previous edit's match — reset before searching.
+    regex.lastIndex = 0;
     const match = regex.exec(content);
+    // With no cache to free it later, this call owns the wasm memory. `match`
+    // is a plain array by now, so releasing the pattern here is safe.
+    if (owned) freeRegex(regex);
 
-    if (!match) {
-      return undefined;
-    }
+    if (match === null) return undefined;
+    // RE2ExecArray types group 0 as optional. A successful match always has it;
+    // an empty one would name a zero-length span, which cannot be replaced.
+    const matched = match[0];
+    if (matched === undefined || matched.length === 0) return undefined;
 
     return {
       startIndex: match.index,
-      length: match[0].length,
+      length: matched.length,
     };
   }
 
@@ -321,7 +331,7 @@ function buildEditFileMetadata(
 ): EditFileMetadata {
   const bytesWritten = Buffer.byteLength(content, 'utf-8');
   const lineCount = countLines(content);
-  const mimeInfo = detectMimeType(validPath, Buffer.from(content.slice(0, MIME_SAMPLE_SIZE)));
+  const mimeInfo = detectMimeFromContent(validPath, content);
   const resourceUri = appliedEdits > 0 ? buildFileResourceUri(validPath) : '';
   const resourceLink =
     appliedEdits > 0 && resourceStore
@@ -386,16 +396,23 @@ async function applyEdits(
   const unmatchedEdits: string[] = [];
   const regexCache = ignoreWhitespace ? new Map<string, Regex>() : undefined;
 
-  for (const edit of edits) {
-    const match = findEditMatch(newContent, edit.oldText, ignoreWhitespace, regexCache);
+  try {
+    for (const edit of edits) {
+      const match = findEditMatch(newContent, edit.oldText, ignoreWhitespace, regexCache);
 
-    if (!match) {
-      unmatchedEdits.push(edit.oldText);
-      continue;
+      if (!match) {
+        unmatchedEdits.push(edit.oldText);
+        continue;
+      }
+
+      newContent = replaceEditMatch(newContent, match, edit.newText);
+      appliedEdits += 1;
     }
-
-    newContent = replaceEditMatch(newContent, match, edit.newText);
-    appliedEdits += 1;
+  } finally {
+    // Every cached pattern owns wasm memory re2-wasm never reclaims on its own,
+    // and the cache does not outlive this call.
+    for (const cached of regexCache?.values() ?? []) freeRegex(cached);
+    regexCache?.clear();
   }
 
   // Compute the line range against the final content so earlier edits whose

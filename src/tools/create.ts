@@ -5,13 +5,14 @@ import { basename, dirname } from 'node:path';
 import * as z from 'zod/v4';
 
 import { withAbort } from '../core/concurrency.js';
-import { ErrorCode, isAbortError, Problem } from '../core/errors.js';
+import { ErrorCode, Problem, rethrowIfAborted } from '../core/errors.js';
+import { buildFileResourceUri } from '../core/file-uri.js';
 import { formatBytes } from '../core/fmt.js';
 import { countLines } from '../core/fs.js';
-import { detectMimeType, MIME_SAMPLE_SIZE } from '../core/mime.js';
+import { detectMimeFromContent } from '../core/mime.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import { FileKind, IsoDateTime, NonNegInt, PerFileErrorSchema, RequiredPath } from '../schema.js';
-import { buildFileResourceLink, buildFileResourceUri } from './_helpers.js';
+import { buildFileResourceLink } from './_helpers.js';
 import { defineTool } from './define.js';
 
 const CreateFileItemSchema = z.strictObject({
@@ -113,10 +114,7 @@ export const CREATE = defineTool({
         const { stats: fileStats } = await ctx.fs.stat(file.path, { signal: ctx.signal });
         const bytesWritten = Buffer.byteLength(file.content, 'utf-8');
         const lineCount = countLines(file.content);
-        const mimeInfo = detectMimeType(
-          validPath,
-          Buffer.from(file.content.slice(0, MIME_SAMPLE_SIZE)),
-        );
+        const mimeInfo = detectMimeFromContent(validPath, file.content);
 
         const resourceUri = buildFileResourceUri(validPath);
         if (ctx.resourceStore) {
@@ -135,7 +133,7 @@ export const CREATE = defineTool({
           modified: fileStats.mtime.toISOString(),
         });
       } catch (err) {
-        if (isAbortError(err)) throw err; // propagate cancellation
+        rethrowIfAborted(err); // propagate cancellation
         failures.push({
           path: file.path,
           error: Problem.fromUnknown(err, ErrorCode.UNKNOWN, file.path),

@@ -4,7 +4,7 @@ import { realpath, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import { assertNotAborted, processInParallel, timedSignal, withAbort } from './concurrency.js';
-import { isAbortError } from './errors.js';
+import { rethrowIfAborted } from './errors.js';
 import { Logger } from './observability.js';
 import { isSamePath, normalizePath } from './path.js';
 import type { PathGuard } from './path.js';
@@ -41,10 +41,6 @@ export interface Registrar {
 
 function isFileRoot(root: Root): boolean {
   return root.uri.startsWith('file://');
-}
-
-function rethrowIfAborted(error: unknown): void {
-  if (isAbortError(error)) throw error;
 }
 
 async function resolveRealPathIfExists(
@@ -123,12 +119,6 @@ function logMissingDirectories(pathGuard: PathGuard): void {
     'warning',
     'No allowed directories specified. Please configure directories via CLI arguments, the FS_ALLOWED_DIRS environment variable, the MCP Roots protocol (notifications/roots/list_changed), or enable --allow-cwd.',
   );
-}
-
-function logMissingDirectoriesIfNeeded(pathGuard: PathGuard): void {
-  if (pathGuard.getAllowedDirectories().length === 0 && pathGuard.isServerContext) {
-    logMissingDirectories(pathGuard);
-  }
 }
 
 type RootsManagerState = 'idle' | 'initializing' | 'updating' | 'shutting_down';
@@ -251,7 +241,9 @@ export class McpRootsSynchronizer {
   }
 
   logMissingDirectoriesIfNeeded(): void {
-    logMissingDirectoriesIfNeeded(this.pathGuard);
+    if (this.pathGuard.getAllowedDirectories().length === 0 && this.pathGuard.isServerContext) {
+      logMissingDirectories(this.pathGuard);
+    }
   }
 
   destroy(): void {

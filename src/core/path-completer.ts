@@ -1,7 +1,7 @@
 import { readdir, realpath, stat } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, parse, resolve, sep } from 'node:path';
 
-import { isAbortError, isNodeError } from './errors.js';
+import { isNodeError, rethrowIfAborted } from './errors.js';
 import { Logger } from './observability.js';
 import type { PathGuard } from './path.js';
 import { isPathWithinDirectories, isSlash, normalizePath, toPosixPath } from './path.js';
@@ -369,7 +369,7 @@ export class PathCompleter {
         MAX_COMPLETION_ITEMS,
       );
     } catch (error) {
-      if (isAbortError(error)) throw error;
+      rethrowIfAborted(error);
       Logger.warn('PathCompleter: completion failed, returning empty list', {
         error: error instanceof Error ? (error.stack ?? error.message) : String(error),
       });

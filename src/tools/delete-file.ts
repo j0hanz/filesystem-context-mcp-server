@@ -1,8 +1,4 @@
-import type {
-  ElicitRequestFormParams,
-  ElicitResult,
-  PrimitiveSchemaDefinition,
-} from '@modelcontextprotocol/server';
+import type { ElicitRequestFormParams, ElicitResult } from '@modelcontextprotocol/server';
 
 import { basename } from 'node:path';
 
@@ -15,7 +11,7 @@ import { Logger } from '../core/observability.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import { defaultFalseBoolean, RequiredPath } from '../schema.js';
 import type { ToolCtx } from './define.js';
-import { defineTool, isElicitationUnavailable } from './define.js';
+import { confirmBoolean, defineTool } from './define.js';
 
 const DeleteInputSchema = z.strictObject({
   paths: z
@@ -128,29 +124,19 @@ async function tryElicitConfirmation(
     return true; // Empty directory — nothing to recursively destroy, no prompt needed
   }
 
-  try {
-    const confirmField: PrimitiveSchemaDefinition = {
-      type: 'boolean',
-      title: 'Yes, delete permanently',
-    };
-    const elicitResult = await elicitInput({
-      mode: 'form',
-      message: `Permanently delete "${validPath}" and all its contents? This cannot be undone.`,
-      requestedSchema: {
-        type: 'object',
-        properties: { confirm: confirmField },
-        required: ['confirm'],
-      },
-    });
-
-    return elicitResult.action === 'accept' && elicitResult.content?.['confirm'] === true;
-  } catch (err) {
-    if (isElicitationUnavailable(err)) {
-      return true; // Connection cannot be asked at all — proceed unprompted.
-    }
-    Logger.warn(`delete: elicitation failed for "${validPath}": ${String(err)}`);
+  const r = await confirmBoolean(
+    { elicitInput },
+    'confirm',
+    `Permanently delete "${validPath}" and all its contents? This cannot be undone.`,
+    'Yes, delete permanently',
+  );
+  if (r.unavailable) return true; // Connection cannot be asked at all — proceed unprompted.
+  if (r.error) {
+    // eslint-disable-next-line @typescript-eslint/no-base-to-string -- r.error is the unknown elicitation failure, stringified for a warning only
+    Logger.warn(`delete: elicitation failed for "${validPath}": ${String(r.error)}`);
     return false; // Fail closed for unknown transport errors
   }
+  return r.confirmed;
 }
 
 async function performDeletion(
@@ -172,16 +158,16 @@ async function performDeletion(
 async function deleteSinglePath(
   inputPath: string,
   args: Pick<DeleteInput, 'recursive' | 'ignoreIfNotExists'>,
-  ctx: Pick<ToolCtx, 'fs' | 'pathGuard' | 'signal' | 'elicitInput'>,
+  ctx: Pick<ToolCtx, 'fs' | 'signal' | 'elicitInput'>,
 ): Promise<{ item: DeletedItem } | { failure: DeleteFailure }> {
   let validPath: string;
   try {
-    validPath = await ctx.pathGuard.validatePathForDelete(inputPath);
+    validPath = await ctx.fs.validatePathForDelete(inputPath);
   } catch (error) {
     return { failure: toDeleteFailure(inputPath, error) };
   }
 
-  if (ctx.pathGuard.isAllowedRoot(validPath)) {
+  if (ctx.fs.isAllowedRoot(validPath)) {
     return {
       failure: {
         path: validPath,

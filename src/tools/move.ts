@@ -1,5 +1,3 @@
-import type { PrimitiveSchemaDefinition } from '@modelcontextprotocol/server';
-
 import { basename, dirname, resolve, sep } from 'node:path';
 
 import * as z from 'zod/v4';
@@ -8,17 +6,17 @@ import { withAbort } from '../core/concurrency.js';
 import {
   ErrorCode,
   FsError,
-  isAbortError,
   isFsError,
   isNodeError,
   Problem,
+  rethrowIfAborted,
 } from '../core/errors.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import { isSamePath } from '../core/path.js';
 import { PerFileErrorSchema, RequiredPath } from '../schema.js';
 import type { ToolCtx } from './define.js';
-import { defineTool, isElicitationUnavailable } from './define.js';
+import { confirmBoolean, defineTool } from './define.js';
 
 const MoveItemSchema = z.strictObject({
   source: RequiredPath.describe('Absolute path of the file or directory to move'),
@@ -79,44 +77,30 @@ async function tryElicitOverwriteConfirmation(
 
   if (!destExists) return false;
 
-  try {
-    const confirmOverwriteField: PrimitiveSchemaDefinition = {
-      type: 'boolean',
-      title: 'Yes, overwrite',
-    };
-    const elicitResult = await ctx.elicitInput({
-      mode: 'form',
-      message: `"${destination}" already exists. Overwrite it?`,
-      requestedSchema: {
-        type: 'object',
-        properties: { confirmOverwrite: confirmOverwriteField },
-        required: ['confirmOverwrite'],
-      },
-    });
-
-    if (elicitResult.action !== 'accept' || elicitResult.content?.['confirmOverwrite'] !== true) {
-      // User declined - surface as a cancellation error.
-      throw new FsError(
-        ErrorCode.CANCELLED,
-        `Move cancelled: "${destination}" already exists and overwrite was declined.`,
-        destination,
-      );
-    }
-    return true;
-  } catch (err) {
-    if (isFsError(err)) throw err;
-    if (isElicitationUnavailable(err)) {
-      // Connection cannot be asked at all - proceed without confirming.
-      return false;
-    } else {
-      // Transport or unexpected failure - fail closed, don't move.
-      throw new FsError(
-        ErrorCode.CANCELLED,
-        `Move cancelled: could not confirm overwrite of "${destination}".`,
-        destination,
-      );
-    }
+  const r = await confirmBoolean(
+    ctx,
+    'confirmOverwrite',
+    `"${destination}" already exists. Overwrite it?`,
+    'Yes, overwrite',
+  );
+  if (r.unavailable) return false; // Connection cannot be asked at all - proceed without confirming.
+  if (r.error) {
+    // Transport or unexpected failure - fail closed, don't move.
+    throw new FsError(
+      ErrorCode.CANCELLED,
+      `Move cancelled: could not confirm overwrite of "${destination}".`,
+      destination,
+    );
   }
+  if (!r.confirmed) {
+    // User declined - surface as a cancellation error.
+    throw new FsError(
+      ErrorCode.CANCELLED,
+      `Move cancelled: "${destination}" already exists and overwrite was declined.`,
+      destination,
+    );
+  }
+  return true;
 }
 
 function buildSummary(
@@ -150,13 +134,10 @@ interface MoveSource {
  * target, or a link moved onto itself (or onto its own target) reads as a real
  * move and renames the link over that target, destroying it.
  */
-async function validateMoveSource(
-  source: string,
-  pathGuard: ToolCtx['pathGuard'],
-): Promise<MoveSource> {
+async function validateMoveSource(source: string, fs: ToolCtx['fs']): Promise<MoveSource> {
   try {
-    const realPath = await pathGuard.validateExistingPath(source);
-    const renamePath = await pathGuard.validatePathForDelete(source);
+    const realPath = await fs.validateExistingPath(source);
+    const renamePath = await fs.validatePathForDelete(source);
     return { renamePath, realPath };
   } catch (error) {
     if (isFsError(error)) throw error;
@@ -173,9 +154,7 @@ async function performRenameWithFallback(
   try {
     await fsOps.rename(validSource, validDest);
   } catch (error: unknown) {
-    if (isAbortError(error)) {
-      throw error;
-    }
+    rethrowIfAborted(error);
 
     if (!isNodeError(error) || error.code !== 'EXDEV') {
       // Preserve the original error code/message via cause so EPERM/EACCES/ENOSPC
@@ -201,9 +180,7 @@ async function performRenameWithFallback(
       copied = true;
       await fsOps.rm(validSource, { recursive: true, force: true });
     } catch (copyOrRemoveError) {
-      if (isAbortError(copyOrRemoveError)) {
-        throw copyOrRemoveError;
-      }
+      rethrowIfAborted(copyOrRemoveError);
       if (copied) {
         // cp succeeded but rm failed: the destination already holds a complete
         // copy and the source remains. Surface the rm error as the cause so the
@@ -259,8 +236,8 @@ export const MOVE = defineTool({
 
     for (const move of args.moves) {
       try {
-        const { renamePath, realPath } = await validateMoveSource(move.source, ctx.pathGuard);
-        const validDest = await ctx.pathGuard.validatePathForWrite(move.destination);
+        const { renamePath, realPath } = await validateMoveSource(move.source, ctx.fs);
+        const validDest = await ctx.fs.validatePathForWrite(move.destination);
 
         // Comparisons run on the resolved source; only the fs call below uses
         // renamePath. validatePathForWrite resolves the destination through a
@@ -335,7 +312,7 @@ export const MOVE = defineTool({
         ctx.log?.('info', `move: ${move.source} -> ${move.destination}`, 'move');
       } catch (err) {
         // Re-throw cancellation (user-declined overwrite or abort signal)
-        if (isAbortError(err)) throw err;
+        rethrowIfAborted(err);
         // Collect all other errors as per-move failures
         const structured = Problem.fromUnknown(err, ErrorCode.UNKNOWN, move.source);
         failures.push({

@@ -3,10 +3,12 @@ import * as z from 'zod/v4';
 import { decodeOffsetCursor, encodeOffsetCursor } from '../core/cursor.js';
 import { ErrorCode } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
+import type { GuardedFileSystem } from '../core/fs.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../core/glob.js';
-import { type PathGuard, toPosixRelative } from '../core/path.js';
+import { toPosixRelative } from '../core/path.js';
 import {
   compileRegex,
+  freeRegex,
   type Regex,
   searchContent,
   type SearchContentOptions,
@@ -94,7 +96,7 @@ const GrepInputSchema = z.strictObject({
       message: 'searchPattern cannot be empty or whitespace-only',
     })
     .describe(
-      'Exact literal text or regex pattern to search for in file contents. When isRegex=true, lookahead, lookbehind, and backreferences are rejected (unsupported). Cannot be empty or whitespace-only.',
+      'Exact literal text or RE2 regex pattern to search for in file contents. When isRegex=true, uses RE2 syntax (no lookahead, lookbehind, or backreferences). Cannot be empty or whitespace-only.',
     )
     .meta({ examples: ['TODO', 'function\\s+(\\w+)', 'import.*from'] }),
   isRegex: defaultFalseBoolean('Treat searchPattern as a regex (default: literal text match)'),
@@ -331,7 +333,7 @@ function finalizeSearchOutput(
 
 async function handleSearchContent(
   args: SearchInput,
-  pathGuard: PathGuard,
+  fs: GuardedFileSystem,
   signal?: AbortSignal,
   resourceStore?: ResourceStore,
 ): Promise<{
@@ -340,9 +342,7 @@ async function handleSearchContent(
   matchCount: number;
   fileCount: number;
 }> {
-  const basePath = await pathGuard.validateExistingDirectory(
-    pathGuard.resolvePathOrRoot(args.path),
-  );
+  const basePath = await fs.validateExistingDirectory(fs.resolvePathOrRoot(args.path));
   const regexMatcher = createSearchMatcher(args);
 
   const cursorOffset = args.cursor !== undefined ? decodeOffsetCursor(args.cursor) : 0;
@@ -353,10 +353,17 @@ async function handleSearchContent(
     basePath,
     args.searchPattern,
     buildSearchContentOptions({ ...args, maxResults: fetchMax }, signal),
-    pathGuard,
+    fs.pathGuard,
   );
 
-  const { matchPayloads, nextCursor } = getPagedPayloads(result, args, regexMatcher, cursorOffset);
+  // regexMatcher holds wasm memory re2-wasm never reclaims on its own.
+  let matchPayloads: SearchMatchPayload[];
+  let nextCursor: string | undefined;
+  try {
+    ({ matchPayloads, nextCursor } = getPagedPayloads(result, args, regexMatcher, cursorOffset));
+  } finally {
+    freeRegex(regexMatcher);
+  }
 
   const fullStructured: SearchOutput = {
     ...buildSearchStructured(result.summary, matchPayloads),
@@ -409,7 +416,7 @@ export const SEARCH_CONTENT = defineTool({
   run: async (args, ctx) => {
     const { structured, link } = await handleSearchContent(
       args,
-      ctx.pathGuard,
+      ctx.fs,
       ctx.signal,
       ctx.resourceStore,
     );

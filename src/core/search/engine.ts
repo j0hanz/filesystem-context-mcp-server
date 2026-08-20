@@ -1,18 +1,21 @@
 import { stat as fsStat, readFile } from 'node:fs/promises';
 
+import type { RE2ExecArray } from 're2-wasm';
+import { RE2 } from 're2-wasm';
+
 import { buildGlobOptions, globEntries } from '../glob.js';
 import type { PathGuard } from '../path.js';
 import { escapeRegexLiteral } from '../primitives.js';
 import { MAX_TEXT_FILE_SIZE } from '../util.js';
 
-export interface SearchResult {
+interface SearchResult {
   file: string;
   line: number;
   content: string;
   matchCount?: number;
 }
 
-export type Regex = RegExp;
+export type Regex = RE2;
 export interface RegexCompileOptions {
   caseSensitive?: boolean;
 }
@@ -21,87 +24,64 @@ export interface RegexCompileOptions {
 const MAX_MATCHES_PER_LINE = 100_000;
 
 /**
- * Reject regex constructs that the tool schema documents as unsupported and
- * that widen the ReDoS surface: lookahead, lookbehind, and backreferences.
- * Throws {@link SyntaxError} on the first forbidden construct; the tool layer
- * turns that into a normal tool error.
+ * Compile a pattern on RE2 rather than on V8's irregexp.
+ *
+ * Patterns arrive from the MCP client, so a backtracking engine would let one
+ * request pin the event loop with no way out: an abort signal cannot preempt a
+ * synchronous `exec`, and on stdio that wedges the whole server. RE2 matches in
+ * time linear in the input and cannot backtrack at all, so the hazard is gone
+ * rather than bounded.
+ *
+ * RE2 rejects the constructs the tool schema documents as unsupported —
+ * lookahead, lookbehind, backreferences — with its own {@link SyntaxError},
+ * which the tool layer turns into a normal tool error. It always matches in
+ * Unicode mode and requires the `u` flag to say so.
+ *
+ * Every compiled pattern owns memory in re2-wasm's fixed 16 MB heap, which
+ * `ALLOW_MEMORY_GROWTH` is off for. re2-wasm never frees it and a
+ * FinalizationRegistry does not keep up (V8 sees no pressure from the wasm
+ * heap), so exhaustion is an emscripten `abort()` that kills regex search for
+ * the rest of the process. Every caller MUST pass the result to
+ * {@link freeRegex} when it is done with it.
  */
-// ponytail: not a real RE2 engine. We reject the three constructs the schema
-// promises are unsupported (lookahead, lookbehind, backreferences). Nested
-// quantifiers and other catastrophic-backtracking shapes can still hang V8's
-// irregexp synchronously; a real RE2 binding (re2 / re2-wasm) is the upgrade
-// path if isRegex is exposed to untrusted clients.
-function assertSafeRegex(pattern: string): void {
-  // Lookahead / lookbehind: "(?=", "(?!", "(?<=", "(?<!"
-  let inClass = false;
-  for (let i = 0; i < pattern.length; i++) {
-    const ch = pattern[i];
-    if (ch === '\\') {
-      i++; // skip the escaped char
-      continue;
-    }
-    if (inClass) {
-      if (ch === ']') inClass = false;
-      continue;
-    }
-    if (ch === '[') {
-      inClass = true;
-      continue;
-    }
-    if (ch === '(' && pattern[i + 1] === '?') {
-      const next = pattern[i + 2];
-      if (next === '=' || next === '!') {
-        throw new SyntaxError(`Regex lookahead (?${next}) is not supported; use plain groups.`);
-      }
-      if (next === '<') {
-        const kind = pattern[i + 3];
-        if (kind === '=' || kind === '!') {
-          throw new SyntaxError(`Regex lookbehind (?<${kind}) is not supported; use plain groups.`);
-        }
-      }
-    }
-  }
-
-  // Backreferences outside a character class: numeric \1..\9 and named \k<name>.
-  inClass = false;
-  for (let i = 0; i < pattern.length; i++) {
-    const ch = pattern[i];
-    if (ch === '\\') {
-      const next = pattern[i + 1];
-      if (next !== undefined && !inClass) {
-        if (next >= '1' && next <= '9') {
-          throw new SyntaxError(
-            `Regex backreference \\${next} is not supported; avoid capture-group reuse.`,
-          );
-        }
-        if (next === 'k' && pattern[i + 2] === '<') {
-          throw new SyntaxError(
-            'Regex named backreference \\k<name> is not supported; avoid capture-group reuse.',
-          );
-        }
-      }
-      i++;
-      continue;
-    }
-    if (ch === '[') inClass = true;
-    else if (ch === ']') inClass = false;
+export function compileRegex(pattern: string, options: RegexCompileOptions = {}): Regex {
+  const flags = options.caseSensitive ? 'gu' : 'giu';
+  try {
+    return new RE2(pattern, flags);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    throw new SyntaxError(
+      `${error.message} — lookahead, lookbehind, and backreferences are not supported.`,
+      { cause: error },
+    );
   }
 }
 
-export function compileRegex(pattern: string, options: RegexCompileOptions = {}): RegExp {
-  assertSafeRegex(pattern);
-  const flags = options.caseSensitive ? 'g' : 'gi';
-  return new RegExp(pattern, flags);
+/**
+ * Release a compiled pattern's wasm memory. re2-wasm exposes no disposal of its
+ * own, so this reaches the embind handle it holds privately; a version that
+ * renames the field degrades to the pre-existing leak rather than throwing.
+ * Idempotent — a second call on an already-freed handle is swallowed. Using a
+ * {@link Regex} after freeing it is undefined behaviour in the wasm heap, so
+ * free only in a `finally` that owns the compile.
+ */
+export function freeRegex(regex: Regex | undefined): void {
+  const handle = (regex as unknown as { wrapper?: { delete?: () => void } } | undefined)?.wrapper;
+  try {
+    handle?.delete?.();
+  } catch {
+    // already deleted, or a re2-wasm build without embind disposal
+  }
 }
 
 /**
  * Count non-overlapping occurrences of a global regex in a single line. Guards
  * zero-length matches (e.g. `a*`) so they cannot loop forever.
  */
-function countLineMatches(regex: RegExp, line: string): number {
+function countLineMatches(regex: Regex, line: string): number {
   regex.lastIndex = 0;
   let count = 0;
-  let match: RegExpExecArray | null;
+  let match: RE2ExecArray | null;
   while ((match = regex.exec(line)) !== null) {
     count++;
     if (match.index === regex.lastIndex) regex.lastIndex++; // advance past zero-length match
@@ -123,12 +103,7 @@ export interface SearchContentOptions {
   signal?: AbortSignal;
 }
 
-export async function searchContent(
-  directory: string,
-  pattern: string,
-  options: SearchContentOptions,
-  pathGuard: PathGuard,
-): Promise<{
+export interface SearchContentOutcome {
   basePath: string;
   matches: SearchResult[];
   summary: {
@@ -146,7 +121,30 @@ export async function searchContent(
     /** Files skipped unread because they exceed maxFileSize. */
     skippedTooLarge: number;
   };
-}> {
+}
+
+/** Owns the compiled pattern's lifetime; the scan itself is `scanContent`. */
+export async function searchContent(
+  directory: string,
+  pattern: string,
+  options: SearchContentOptions,
+  pathGuard: PathGuard,
+): Promise<SearchContentOutcome> {
+  const regexPattern = options.isRegex ? pattern || '' : escapeRegexLiteral(pattern || '');
+  const regex = compileRegex(regexPattern, { caseSensitive: Boolean(options.caseSensitive) });
+  try {
+    return await scanContent(directory, options, pathGuard, regex);
+  } finally {
+    freeRegex(regex);
+  }
+}
+
+async function scanContent(
+  directory: string,
+  options: SearchContentOptions,
+  pathGuard: PathGuard,
+  regex: Regex,
+): Promise<SearchContentOutcome> {
   const matches: SearchResult[] = [];
   const maxResults = options.maxResults ?? 100;
   const maxFileSize = options.maxFileSize ?? MAX_TEXT_FILE_SIZE;
@@ -161,9 +159,6 @@ export async function searchContent(
   });
 
   const entries = globEntries(globOpts);
-
-  const regexPattern = options.isRegex ? pattern || '' : escapeRegexLiteral(pattern || '');
-  const regex = compileRegex(regexPattern, { caseSensitive: Boolean(options.caseSensitive) });
 
   let filesScanned = 0;
   let filesMatched = 0;

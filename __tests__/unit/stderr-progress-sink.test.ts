@@ -18,10 +18,10 @@ function captureStderr(): string[] {
   restoreStderr = () => {
     process.stderr.write = original;
   };
-  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+  process.stderr.write = (chunk: string | Uint8Array): boolean => {
     lines.push(typeof chunk === 'string' ? chunk.replace(/\n$/, '') : String(chunk));
     return true;
-  });
+  };
   return lines;
 }
 

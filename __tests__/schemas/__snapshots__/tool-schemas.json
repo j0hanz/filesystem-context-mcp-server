@@ -1577,7 +1577,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 10000,
-          "description": "Exact literal text or regex pattern to search for in file contents. When isRegex=true, lookahead, lookbehind, and backreferences are rejected (unsupported). Cannot be empty or whitespace-only.",
+          "description": "Exact literal text or RE2 regex pattern to search for in file contents. When isRegex=true, uses RE2 syntax (no lookahead, lookbehind, or backreferences). Cannot be empty or whitespace-only.",
           "examples": ["TODO", "function\\s+(\\w+)", "import.*from"]
         },
         "isRegex": {

@@ -21,6 +21,7 @@ import type { FSWatcher } from 'node:fs';
 import { watch } from 'node:fs';
 
 import { ErrorCode, hasErrorShape, isFsError } from './core/errors.js';
+import { extractPath, FILESYSTEM_FILE_URI_TEMPLATE } from './core/file-uri.js';
 import { GuardedFileSystem } from './core/fs.js';
 import { Logger } from './core/observability.js';
 import { PathCompleter } from './core/path-completer.js';
@@ -35,7 +36,6 @@ import {
   MAX_TEXT_FILE_SIZE,
   parseEnvInt,
 } from './core/util.js';
-import { extractPath } from './tools/_helpers.js';
 
 // ═══════════════════════════════════════════════════════════════
 // shared
@@ -81,7 +81,7 @@ interface StaticResourceContract extends BaseResourceContract {
   complete?: never;
 }
 
-/** A resource identified by a URI template (e.g. filesystem-mcp://file/{+path}). */
+/** A resource identified by a URI template (FILESYSTEM_FILE_URI_TEMPLATE). */
 interface TemplateResourceContract extends BaseResourceContract {
   uriTemplate: string;
   uri?: never;
@@ -179,8 +179,6 @@ function createInstructionsResource(): ResourceContract {
 // ═══════════════════════════════════════════════════════════════
 // filesystem
 // ═══════════════════════════════════════════════════════════════
-
-const FILESYSTEM_FILE_URI_TEMPLATE = 'filesystem-mcp://file/{+path}';
 
 // Cap concurrent file watchers to avoid exhausting OS-level watch handles
 // (e.g. Linux inotify, default ~8192/user). One subscription == one watcher.

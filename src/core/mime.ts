@@ -1,3 +1,6 @@
+import { Buffer } from 'node:buffer';
+import { extname } from 'node:path';
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export const MIME_KINDS = ['text', 'binary', 'image', 'audio', 'pdf'] as const;
@@ -194,6 +197,54 @@ const MAGIC_SIGNATURES: MagicSignature[] = [
 
 export const MIME_SAMPLE_SIZE = 512;
 
+const KNOWN_BINARY_EXTENSIONS = new Set([
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+  '.bmp',
+  '.ico',
+  '.mp3',
+  '.wav',
+  '.flac',
+  '.mp4',
+  '.mov',
+  '.avi',
+  '.mkv',
+  '.webm',
+  '.zip',
+  '.tar',
+  '.gz',
+  '.7z',
+  '.rar',
+  '.exe',
+  '.dll',
+  '.so',
+  '.dylib',
+  '.ttf',
+  '.otf',
+  '.woff',
+  '.woff2',
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
+  '.sqlite',
+  '.db',
+  '.wasm',
+  '.bin',
+  '.dat',
+]);
+
+export function isKnownBinaryExtension(filePath: string): boolean {
+  const ext = extname(filePath).toLowerCase();
+  return KNOWN_BINARY_EXTENSIONS.has(ext);
+}
+
 function hasUtf16Bom(slice: Buffer): boolean {
   return (
     slice.length >= 2 &&
@@ -268,4 +319,13 @@ export function detectMimeType(path: string, sample?: Buffer): MimeInfo {
 
   // 3. Final fallback
   return { mimeType: 'application/octet-stream', kind: 'binary' };
+}
+
+export function detectMimeFromContent(path: string, content: string | Buffer): MimeInfo {
+  return detectMimeType(
+    path,
+    Buffer.isBuffer(content)
+      ? content.subarray(0, MIME_SAMPLE_SIZE)
+      : Buffer.from(content.slice(0, MIME_SAMPLE_SIZE)),
+  );
 }

@@ -5,8 +5,8 @@ import { pipeline } from 'node:stream/promises';
 
 import * as z from 'zod/v4';
 
-import { assertNotAborted } from '../core/concurrency.js';
-import { ErrorCode, FsError } from '../core/errors.js';
+import { assertNotAborted, processInParallel } from '../core/concurrency.js';
+import { ErrorCode, FsError, rethrowIfAborted } from '../core/errors.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { globEntries, isIgnoredByGitignore, loadRootGitignore } from '../core/glob.js';
 import { toPosixRelative } from '../core/path.js';
@@ -174,16 +174,14 @@ async function hashDirectory(
   assertNotAborted(signal);
 
   const concurrency = Math.min(PARALLEL_CONCURRENCY, 8);
-  const entries: { path: string; hash: Buffer }[] = [];
-  let filesHashed = 0;
   const totalFiles = filteredPaths.length;
-  const taskQueue = filteredPaths;
-
-  const worker = async (): Promise<void> => {
-    while (taskQueue.length > 0) {
-      const task = taskQueue.pop();
-      if (!task) break;
-
+  let filesHashed = 0;
+  const { results, errors } = await processInParallel<
+    { filePath: string; relativePath: string },
+    { path: string; hash: Buffer }
+  >(
+    filteredPaths,
+    async (task) => {
       assertNotAborted(signal);
       // Read through the guarded filesystem so each file is re-validated
       // (sensitive denylist + realpath/root containment) before hashing.
@@ -193,19 +191,35 @@ async function hashDirectory(
       });
       const hasher = createHash('sha256');
       await pipeline(stream, hasher, { signal });
-      const fileHash = hasher.digest();
-      entries.push({ path: task.relativePath, hash: fileHash });
-
       filesHashed++;
       onProgress?.({ current: filesHashed, total: totalFiles });
-    }
-  };
-
-  await Promise.all(Array.from({ length: concurrency }, () => worker()));
-
+      return { path: task.relativePath, hash: hasher.digest() };
+    },
+    concurrency,
+    signal,
+  );
+  // One unreadable file aborts the whole directory hash rather than being
+  // dropped: a silently skipped file changes the digest and would break
+  // sensitive-exclusion determinism. Report the lowest-index failure so the
+  // path is stable across runs regardless of completion order.
+  if (errors.length > 0) {
+    const first = errors.reduce((prev, curr) => (curr.index < prev.index ? curr : prev));
+    // Cancellation is not a per-file failure — propagate it unwrapped so the
+    // caller still sees an AbortError.
+    rethrowIfAborted(first.error);
+    const failedPath = filteredPaths[first.index]?.relativePath ?? dirPath;
+    const alsoFailed = errors.length > 1 ? ` (and ${errors.length - 1} more)` : '';
+    throw new FsError(
+      first.error instanceof FsError ? first.error.code : ErrorCode.IO_ERROR,
+      `Failed to hash ${failedPath}: ${first.error.message}${alsoFailed}`,
+      failedPath,
+      { failedFiles: errors.length },
+      first.error,
+    );
+  }
   onProgress?.({ current: filesHashed, total: totalFiles });
-
   assertNotAborted(signal);
+  const entries = results.map((r) => r.value);
   // Sort by path with byte-wise semantics for deterministic ordering.
   entries.sort(comparePaths);
 

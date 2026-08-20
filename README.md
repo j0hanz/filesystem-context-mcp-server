@@ -25,19 +25,19 @@ Filesystem-MCP is a [Model Context Protocol](https://modelcontextprotocol.io) se
 | **Batch operations**    | Most tools accept `path`, `paths[]`, or `files[]` for parallel execution                                   |
 | **Dual transport**      | stdio by default; `--port` enables Streamable HTTP                                                         |
 | **File subscriptions**  | Resource subscriptions push change notifications when watched files update                                 |
-| **RE2 regex**           | Safe, non-backtracking regex engine in all search tools                                                    |
+| **Regex safety**        | RE2 in all search tools: linear-time matching, so no pattern can ReDoS the server                          |
 
 ## Built with
 
 [![Node.js](https://img.shields.io/badge/node-%3E%3D24-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org) [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org) [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com)
 
-| Layer     | Technology                                        |
-| :-------- | :------------------------------------------------ |
-| Protocol  | MCP SDK v2 (`@modelcontextprotocol/server`)       |
-| Runtime   | Node.js >= 24 · TypeScript 6 · ESM                |
-| Transport | stdio (default) · Streamable HTTP (`--port`)      |
-| Regex     | RE2 (non-backtracking, safe for untrusted input)  |
-| Container | Docker alpine · multi-stage build · non-root user |
+| Layer     | Technology                                                             |
+| :-------- | :--------------------------------------------------------------------- |
+| Protocol  | MCP SDK v2 (`@modelcontextprotocol/server`)                            |
+| Runtime   | Node.js >= 24 · TypeScript 6 · ESM                                     |
+| Transport | stdio (default) · Streamable HTTP (`--port`)                           |
+| Regex     | RE2 (`re2-wasm`) — linear time, no lookahead/lookbehind/backreferences |
+| Container | Docker alpine · multi-stage build · non-root user                      |
 
 ## Table of Contents
 
@@ -274,7 +274,8 @@ filesystem-mcp/
 | :-------------------- | :----------------------------------------------------------- |
 | `src/core/path.ts`    | `PathGuard` — validates every path against allowed roots     |
 | `src/core/fs.ts`      | `GuardedFileSystem` — all filesystem I/O flows through this  |
-| `src/tools/define.ts` | Tool registration, execution framework, and batch helpers    |
+| `src/tools/define.ts` | Tool registration and execution framework                    |
+| `src/tools/batch.ts`  | Batch helpers (runOverPaths, normalizeBatchItems)            |
 | `src/server.ts`       | Wires together all tools, resources, prompts, and transports |
 
 ## Configuration
@@ -284,63 +285,6 @@ Install it globally once and it works across all your workspaces with no per-pro
 1. **MCP Roots Protocol**: VS Code, Cursor, and Claude Code support the roots capability, so the server queries allowed folders from the client directly.
 2. **Environment Variable**: The `FS_ALLOWED_DIRS` environment variable lists fallback directory paths (separated by `:` on POSIX or `;` on Windows).
 3. **Current Working Directory**: The `--allow-cwd` flag grants access to the directory where the server started.
-
-### Authorizing directories via CLI
-
-The built-in subcommands `allow`, `disallow`, and `list-allowed` scan and update configuration files for **Claude Desktop**, **Cursor**, **Cline**, **Roo Code**, and standard **global MCP configs** (`.mcp.json`) automatically.
-
-> [!IMPORTANT]
-> **How to invoke the CLI**
->
-> - **`npx` (recommended — always works, no setup needed):**
->
->   ```bash
->   npx @j0hanz/filesystem-mcp list-allowed
->   ```
->
-> - **Globally installed binary** — only works if the npm global bin directory is in your `PATH`. If you see _"not recognized as a name of a cmdlet"_ (Windows) or _"command not found"_ (macOS/Linux), use the `npx` form above, or find and add the npm bin directory to your `PATH`:
->
->   ```bash
->   # Find the npm global bin directory:
->   npm config get prefix
->   # Then add <prefix>\bin (Windows) or <prefix>/bin (macOS/Linux) to your PATH.
->   ```
-
-#### Examples using the CLI helper
-
-- **Authorize a directory:**
-
-  ```bash
-  # via npx
-  npx @j0hanz/filesystem-mcp allow /path/to/my-project
-
-  # or if 'filesystem-mcp' is in PATH after global install
-  filesystem-mcp allow /path/to/my-project
-  ```
-
-  This adds `/path/to/my-project` to the arguments of `filesystem-mcp` in all detected client configuration files.
-
-- **De-authorize a directory:**
-
-  ```bash
-  npx @j0hanz/filesystem-mcp disallow /path/to/my-project
-  ```
-
-- **List all authorized directories:**
-
-  ```bash
-  npx @j0hanz/filesystem-mcp list-allowed
-  ```
-
-#### Subcommand options
-
-| Option / Flag          | Default      | Purpose                                                                                    |
-| :--------------------- | :----------- | :----------------------------------------------------------------------------------------- |
-| `--client <name>`      | —            | Limit modifications to configs matching `<name>` (e.g. `claude`, `cursor`, `cline`, `roo`) |
-| `--config <path>`      | —            | Target a specific configuration file path instead of scanning defaults                     |
-| `--server-name <name>` | `filesystem` | Target a specific server key in the configuration                                          |
-| `--dry-run`            | `false`      | Print changes without writing them to disk                                                 |
-| `--json`               | `false`      | Output the list in JSON format (only applicable for `list-allowed`)                        |
 
 ### Recommended global recipes
 
@@ -464,7 +408,7 @@ filesystem-mcp --port 3000
 | :-------------- | :------------------------------------------------------------------------------ |
 | Path traversal  | Every path is resolved and validated against allowed roots before any operation |
 | Sensitive files | `.env`, `*.pem`, `*id_rsa*`, and similar patterns are denied by default         |
-| Regex safety    | RE2 engine prevents catastrophic backtracking on untrusted search patterns      |
+| Regex safety    | RE2 cannot backtrack, so a hostile pattern cannot hang the server (ReDoS)       |
 | Container       | Runs as non-root `mcp` user; bind mounts control what is exposed                |
 
 ## Contributing

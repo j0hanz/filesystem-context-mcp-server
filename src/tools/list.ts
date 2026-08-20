@@ -4,6 +4,7 @@ import * as z from 'zod/v4';
 
 import { timedSignal } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
+import type { GuardedFileSystem } from '../core/fs.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
   type EntryType,
@@ -247,14 +248,14 @@ const ListOutputSchema = z.strictObject({
 
 async function handleList(
   args: z.infer<typeof ListInputSchema>,
-  pathGuard: PathGuard,
+  fs: GuardedFileSystem,
   signal?: AbortSignal,
   resourceStore?: ResourceStore,
   onProgress?: (progress: { current: number; total?: number }) => void,
 ): Promise<z.infer<typeof ListOutputSchema>> {
   const path = args.path;
-  const resolvedPath = pathGuard.resolvePathOrRoot(path);
-  const validDir = await pathGuard.validateExistingDirectory(resolvedPath);
+  const resolvedPath = fs.resolvePathOrRoot(path);
+  const validDir = await fs.validateExistingDirectory(resolvedPath);
 
   {
     const result = await collect(validDir, {
@@ -262,7 +263,7 @@ async function handleList(
       includeHidden: args.includeHidden,
       includeIgnored: args.includeIgnored,
       signal: timedSignal(signal, DEFAULT_SEARCH_TIMEOUT_MS),
-      pathGuard,
+      pathGuard: fs.pathGuard,
       ...(onProgress ? { onProgress } : {}),
     });
 
@@ -330,13 +331,7 @@ export const LIST = defineTool({
     subject: args.path ? basename(args.path) : '.',
   }),
   run: async (args, ctx) => {
-    const output = await handleList(
-      args,
-      ctx.pathGuard,
-      ctx.signal,
-      ctx.resourceStore,
-      ctx.onProgress,
-    );
+    const output = await handleList(args, ctx.fs, ctx.signal, ctx.resourceStore, ctx.onProgress);
     return { structured: output, text: output.markdown };
   },
 });

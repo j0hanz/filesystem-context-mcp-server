@@ -24,10 +24,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
+import { buildFileResourceUri } from '../../src/core/file-uri.js';
 import { PathGuard } from '../../src/core/path.js';
 import { createInMemoryResourceStore } from '../../src/core/store.js';
 import { resourcesRegistrar } from '../../src/resources.js';
-import { buildFileResourceUri } from '../../src/tools/_helpers.js';
 import { assertOk, createTestEnv, getStructured } from '../helpers.js';
 
 const IS_WINDOWS = process.platform === 'win32';

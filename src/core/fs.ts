@@ -11,7 +11,6 @@ import {
   opendir as fsOpendir,
   readFile as fsReadFile,
   readlink as fsReadlink,
-  realpath as fsRealpath,
   rename as fsRename,
   rm as fsRm,
   rmdir as fsRmdir,
@@ -19,13 +18,19 @@ import {
   unlink as fsUnlink,
   writeFile as fsWriteFile,
 } from 'node:fs/promises';
-import { dirname, extname, isAbsolute, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { text } from 'node:stream/consumers';
 import { pipeline } from 'node:stream/promises';
+import { StringDecoder } from 'node:string_decoder';
 
 import { assertNotAborted, withAbort } from './concurrency.js';
-import { ErrorCode, formatUnknownErrorMessage, FsError, isNodeError } from './errors.js';
-import { detectMimeType, isBinarySample, MIME_SAMPLE_SIZE } from './mime.js';
+import { ErrorCode, formatUnknownErrorMessage, FsError, isFsError, isNodeError } from './errors.js';
+import {
+  detectMimeFromContent,
+  isBinarySample,
+  isKnownBinaryExtension,
+  MIME_SAMPLE_SIZE,
+} from './mime.js';
 import { Logger } from './observability.js';
 import type { PathGuard } from './path.js';
 import type { EntryType as FileType } from './primitives.js';
@@ -102,58 +107,6 @@ function assertPositiveIntegerOption(name: string, value: unknown, message?: str
   throw new FsError(ErrorCode.INVALID_INPUT, message ?? `${name} must be a positive integer`);
 }
 
-// ─── Binary detection ────────────────────────────────────────────────────────
-
-const BINARY_CHECK_BUFFER_SIZE = 512;
-
-const KNOWN_BINARY_EXTENSIONS = new Set([
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.gif',
-  '.webp',
-  '.bmp',
-  '.ico',
-  '.mp3',
-  '.wav',
-  '.flac',
-  '.mp4',
-  '.mov',
-  '.avi',
-  '.mkv',
-  '.webm',
-  '.zip',
-  '.tar',
-  '.gz',
-  '.7z',
-  '.rar',
-  '.exe',
-  '.dll',
-  '.so',
-  '.dylib',
-  '.ttf',
-  '.otf',
-  '.woff',
-  '.woff2',
-  '.pdf',
-  '.doc',
-  '.docx',
-  '.xls',
-  '.xlsx',
-  '.ppt',
-  '.pptx',
-  '.sqlite',
-  '.db',
-  '.wasm',
-  '.bin',
-  '.dat',
-]);
-
-function hasKnownBinaryExtension(filePath: string): boolean {
-  const ext = extname(filePath).toLowerCase();
-  return KNOWN_BINARY_EXTENSIONS.has(ext);
-}
-
 async function openReadableFileHandle(filePath: string, signal?: AbortSignal): Promise<FileHandle> {
   const handlePromise = fsOpen(filePath, READ_ONLY_FILE_FLAG);
   if (!signal) return handlePromise;
@@ -176,11 +129,8 @@ async function openReadableFileHandle(filePath: string, signal?: AbortSignal): P
 }
 
 async function readProbe(handle: FileHandle, signal?: AbortSignal): Promise<Buffer> {
-  const buffer = Buffer.allocUnsafe(BINARY_CHECK_BUFFER_SIZE);
-  const { bytesRead } = await withAbort(
-    handle.read(buffer, 0, BINARY_CHECK_BUFFER_SIZE, 0),
-    signal,
-  );
+  const buffer = Buffer.allocUnsafe(MIME_SAMPLE_SIZE);
+  const { bytesRead } = await withAbort(handle.read(buffer, 0, MIME_SAMPLE_SIZE, 0), signal);
 
   if (bytesRead === 0) {
     return Buffer.alloc(0);
@@ -194,7 +144,7 @@ async function isProbablyBinary(
   existingHandle?: FileHandle,
   signal?: AbortSignal,
 ): Promise<boolean> {
-  if (hasKnownBinaryExtension(filePath)) {
+  if (isKnownBinaryExtension(filePath)) {
     return true;
   }
 
@@ -475,8 +425,110 @@ export function countLines(content: string): number {
 }
 
 async function peekHasMore(iterator: AsyncIterator<string>): Promise<boolean> {
-  const { done } = await iterator.next();
-  return !done;
+  try {
+    const { done } = await iterator.next();
+    return !done;
+  } catch (error) {
+    // The peek only asks "is there another line", and the caller keeps nothing
+    // it returns. An over-long line past the requested range still answers yes
+    // — failing the whole read over a line outside it would reject e.g. lines
+    // 1-2 of a file whose line 3 is one 50 KB blob.
+    if (isFsError(error) && error.code === ErrorCode.TOO_LARGE) return true;
+    throw error;
+  }
+}
+
+const LF = 0x0a;
+
+function stripCarriageReturn(line: string): string {
+  return line.endsWith('\r') ? line.slice(0, -1) : line;
+}
+
+/**
+ * Line iterator bounded by bytes rather than by the decoded string, so a file
+ * that is one enormous line cannot be materialized before the size check runs.
+ * `handle.readLines` decodes the whole line first and can OOM on such a file.
+ *
+ * Yields lines from `startLine` onward, 1-indexed. Lines before `startLine` are
+ * counted and discarded without accumulating, so an over-long line the caller
+ * skipped past does not fail the read. Line endings match `readLines`: split on
+ * `\n`, with a preceding `\r` stripped, so CRLF input decodes identically.
+ */
+async function* readLinesBounded(
+  handle: FileHandle,
+  options: ReadContentOptions,
+  filePath: string,
+  startLine: number,
+): AsyncGenerator<string, void, undefined> {
+  const stream = handle.createReadStream({
+    start: 0,
+    highWaterMark: STREAM_CHUNK_SIZE,
+    autoClose: false,
+    emitClose: false,
+    ...(options.signal ? { signal: options.signal } : {}),
+  });
+
+  const decoder = new StringDecoder(options.encoding);
+  let pending = '';
+  let pendingBytes = 0;
+  let lineNumber = 0;
+
+  const tooLong = (bytes: number): FsError =>
+    new FsError(
+      ErrorCode.TOO_LARGE,
+      `File too large (single line ${bytes} > ${options.maxSize} bytes). Use a narrower range or head.`,
+      filePath,
+      { size: bytes, maxSize: options.maxSize },
+    );
+
+  try {
+    for await (const chunk of stream) {
+      const buffer = chunk as Buffer;
+      let offset = 0;
+
+      for (let nl = buffer.indexOf(LF, offset); nl !== -1; nl = buffer.indexOf(LF, offset)) {
+        const segment = buffer.subarray(offset, nl);
+        const lineBytes = pendingBytes + segment.length;
+        lineNumber++;
+        // Decode even when skipping: the decoder carries multi-byte
+        // continuation state into the first line the caller keeps.
+        const decoded = decoder.write(segment);
+        if (lineNumber >= startLine) {
+          if (lineBytes > options.maxSize) throw tooLong(lineBytes);
+          yield stripCarriageReturn(pending + decoded);
+        }
+        pending = '';
+        pendingBytes = 0;
+        offset = nl + 1;
+      }
+
+      const rest = buffer.subarray(offset);
+      pendingBytes += rest.length;
+      if (lineNumber + 1 < startLine) {
+        decoder.write(rest); // still skipping; drop the text, keep decoder state
+      } else {
+        if (pendingBytes > options.maxSize) throw tooLong(pendingBytes);
+        pending += decoder.write(rest);
+      }
+    }
+
+    // Trailing line with no final newline. A file ending in `\n` leaves
+    // pendingBytes at 0 and emits nothing, matching readLines.
+    if (pendingBytes > 0) {
+      lineNumber++;
+      if (lineNumber >= startLine) {
+        if (pendingBytes > options.maxSize) throw tooLong(pendingBytes);
+        yield pending + decoder.end();
+      }
+    }
+  } finally {
+    if (!stream.destroyed) {
+      stream.on('error', (_err: unknown) => {
+        /* suppress post-destroy error event */
+      });
+      stream.destroy();
+    }
+  }
 }
 
 async function readRangeContent(
@@ -489,7 +541,7 @@ async function readRangeContent(
   assertNotAborted(options.signal);
 
   const lines: string[] = [];
-  let lineNumber = 0;
+  let lineNumber = startLine - 1;
   let estimatedBytes = 0;
   const newlineBytes = Buffer.byteLength('\n', options.encoding);
   const stopAt = endLine ?? Number.POSITIVE_INFINITY;
@@ -497,9 +549,9 @@ async function readRangeContent(
   let hasMoreLines = false;
   let stoppedByLimit = false;
 
-  const iterator = handle
-    .readLines({ encoding: options.encoding, signal: options.signal })
-    [Symbol.asyncIterator]();
+  // Byte-bounded: an over-long line throws TOO_LARGE while still a partial
+  // buffer, before it can be decoded into one huge string.
+  const iterator = readLinesBounded(handle, options, filePath, startLine)[Symbol.asyncIterator]();
 
   try {
     for (;;) {
@@ -509,26 +561,9 @@ async function readRangeContent(
       }
       lineNumber++;
 
-      if (lineNumber < startLine) {
-        continue;
-      }
-
       if (lineNumber > stopAt) {
         hasMoreLines = true;
         break;
-      }
-
-      // ponytail: a single line longer than maxSize is already materialized by
-      // node's readLines before we can check it; this guard bounds accumulation
-      // and reports the abuse case, but does not prevent the one-line OOM. A
-      // byte-bounded line reader is the upgrade path.
-      if (lines.length === 0 && Buffer.byteLength(line, options.encoding) > options.maxSize) {
-        throw new FsError(
-          ErrorCode.TOO_LARGE,
-          `File too large (single line ${Buffer.byteLength(line, options.encoding)} > ${options.maxSize} bytes). Use a narrower range or head.`,
-          filePath,
-          { size: Buffer.byteLength(line, options.encoding), maxSize: options.maxSize },
-        );
       }
 
       lines.push(line);
@@ -546,7 +581,7 @@ async function readRangeContent(
       }
     }
   } finally {
-    await iterator.return?.();
+    await iterator.return();
   }
 
   return {
@@ -931,7 +966,7 @@ async function readFileRaw(
     throw createTooLargeError(stats.size, MAX_TEXT_FILE_SIZE, filePath);
   }
   const content = await withAbort(fsReadFile(validPath), options?.signal);
-  const mimeInfo = detectMimeType(validPath, content.subarray(0, MIME_SAMPLE_SIZE));
+  const mimeInfo = detectMimeFromContent(validPath, content);
   return {
     content,
     mimeType: mimeInfo.mimeType,
@@ -1131,12 +1166,49 @@ export class GuardedFileSystem {
     await this.pathGuard.setRoots(resolvedRoots);
   }
 
-  async statUnchecked(filePath: string, options?: { signal?: AbortSignal }): Promise<Stats> {
-    return withAbort(fsStat(filePath), options?.signal);
+  // ─── Validation pass-throughs ──────────────────────────────────────────────
+  // One seam: tools call ctx.fs for everything, never ctx.pathGuard. These
+  // delegate to the same PathGuard instance. `this.pathGuard` stays public for
+  // the helpers that take a PathGuard as a parameter and cannot be expressed
+  // as a method here — list.ts's collect and the two search engines. That is
+  // the whole list; anything else belongs behind a method on this class.
+
+  resolvePathOrRoot(pathValue: string | undefined): string {
+    return this.pathGuard.resolvePathOrRoot(pathValue);
   }
 
-  async realpathUnchecked(filePath: string, options?: { signal?: AbortSignal }): Promise<string> {
-    return withAbort(fsRealpath(filePath), options?.signal);
+  validateExistingPath(requestedPath: string) {
+    return this.pathGuard.validateExistingPath(requestedPath);
+  }
+
+  validateExistingDirectory(requestedPath: string) {
+    return this.pathGuard.validateExistingDirectory(requestedPath);
+  }
+
+  validatePathForWrite(requestedPath: string) {
+    return this.pathGuard.validatePathForWrite(requestedPath);
+  }
+
+  validatePathForDelete(requestedPath: string) {
+    return this.pathGuard.validatePathForDelete(requestedPath);
+  }
+
+  isAllowedRoot(normalizedPath: string): boolean {
+    return this.pathGuard.isAllowedRoot(normalizedPath);
+  }
+
+  // Single resolution + stat: validateExistingPathDetailed resolves the real
+  // path (following symlinks, re-checking sensitivity) once, then we stat the
+  // resolved target. Replaces the tool-side validateExistingPathDetailed +
+  // fs.stat pair that re-validated through the free stat() guard.
+  async statDetailed(
+    filePath: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<{ requestedPath: string; isSymlink: boolean; stats: Stats }> {
+    const { requestedPath, resolvedPath, isSymlink } =
+      await this.pathGuard.validateExistingPathDetailed(filePath);
+    const stats = await withAbort(fsStat(resolvedPath), options?.signal);
+    return { requestedPath, isSymlink, stats };
   }
 
   async hasChildrenUnchecked(dirPath: string): Promise<boolean> {

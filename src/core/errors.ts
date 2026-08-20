@@ -318,6 +318,10 @@ export function isAbortError(error: unknown): boolean {
   return classify(error).code === ErrorCode.CANCELLED;
 }
 
+export function rethrowIfAborted(error: unknown): void {
+  if (isAbortError(error)) throw error;
+}
+
 export function getSuggestion(code: ErrorCode): string | undefined {
   return DEFAULT_SUGGESTIONS[code];
 }

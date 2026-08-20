@@ -7,8 +7,9 @@ import * as z from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
+import { buildFileResourceUri } from '../core/file-uri.js';
 import type { ReadFileResult, ReadSpec } from '../core/fs.js';
-import { detectMimeType, MIME_SAMPLE_SIZE } from '../core/mime.js';
+import { detectMimeFromContent } from '../core/mime.js';
 import { Logger } from '../core/observability.js';
 import {
   DEFAULT_CONTINUATION_CHUNK_SIZE,
@@ -30,7 +31,7 @@ import {
   singleOrBatchPathsInput,
   validateReadRange,
 } from '../schema.js';
-import { buildFileResourceLink, buildFileResourceUri } from './_helpers.js';
+import { buildFileResourceLink } from './_helpers.js';
 import type { PerPathResult } from './batch.js';
 import { runOverPaths } from './batch.js';
 import type { ToolCtx } from './define.js';
@@ -339,10 +340,7 @@ async function readOnePath(
   const spec = buildReadSpec(args, ctx.signal);
   const result = await ctx.fs.readFile(filePath, spec);
 
-  const mimeInfo = detectMimeType(
-    result.path,
-    Buffer.from(result.content.slice(0, MIME_SAMPLE_SIZE)),
-  );
+  const mimeInfo = detectMimeFromContent(result.path, result.content);
 
   const value: PerPathReadValue = {
     content: result.content,

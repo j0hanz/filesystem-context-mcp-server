@@ -14,8 +14,9 @@ import { liftFlagsToEnv } from './cli-env.js';
 z.config(z.locales.en());
 
 // Must run before the dynamic imports below: core/observability.ts and
-// core/util.ts freeze LOG_LEVEL and MAX_FILE_SIZE into module-level constants
-// at import time.
+// core/util.ts freeze several env-tuned constants (LOG_LEVEL, MAX_FILE_SIZE,
+// MAX_READ_MANY_TOTAL_SIZE, DEFAULT_SEARCH_TIMEOUT, …) into module-level
+// constants at import time.
 liftFlagsToEnv();
 
 // Dynamically import all modules that transitively load util.ts so that the

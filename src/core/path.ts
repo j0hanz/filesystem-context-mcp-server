@@ -16,17 +16,19 @@ import {
 } from 'node:path';
 
 import { assertNotAborted, timedSignal, withAbort } from './concurrency.js';
-import { ErrorCode, FsError, isAbortError, isFsError, isNodeError } from './errors.js';
+import { ErrorCode, FsError, isFsError, isNodeError, rethrowIfAborted } from './errors.js';
 import { Logger } from './observability.js';
 import { parseEnvDirList, parseTrueEnvFlag } from './primitives.js';
 import { ROOTS_TIMEOUT_MS } from './util.js';
 
-// ponytail: ~1.3k lines, over the 1k bar. PathGuard and its access-control
-// support (path primitives, glob/sensitive-pattern engine, Windows
-// reserved-device validation, cwd safety, project-root walking) are one cohesive
-// module. Separable peer concerns already extracted: path-completer.ts, cursor.ts.
-// Further cuts are <100-line fragments of a single concept and would scatter
-// access control across files; revisit when a new separable concern emerges.
+// note: ~1.3k lines, over the 1k bar, and deliberately so. PathGuard and its
+// access-control support (path primitives, glob/sensitive-pattern engine,
+// Windows reserved-device validation, cwd safety, project-root walking) are one
+// cohesive module. Separable peer concerns are already extracted:
+// path-completer.ts, cursor.ts. What is left splits only into <100-line
+// fragments of a single concept, which would scatter access control across
+// files — a worse shape, not a deferred one. Split only if a genuinely
+// separable concern appears.
 export type ValidatedPath = string & { readonly __validated: unique symbol };
 
 export interface ServerOptions {
@@ -63,7 +65,7 @@ async function isRootWithin(
     const realPath = await withAbort(realpath(normalizedRoot), signal);
     return isPathWithinDirectories(normalizePath(realPath), bounds);
   } catch (error) {
-    if (isAbortError(error)) throw error;
+    rethrowIfAborted(error);
     if (isNodeError(error) && error.code === 'ENOENT') return false;
     Logger.warn(`${label}: realpath failed unexpectedly`, {
       root: normalizedRoot,
@@ -338,7 +340,7 @@ async function resolveRealPath(normalized: string, signal?: AbortSignal): Promis
     const realPath = await withAbort(realpath(normalized), signal);
     return normalizeAllowedDirectory(realPath);
   } catch (error) {
-    if (isAbortError(error)) throw error;
+    rethrowIfAborted(error);
     // Only suppress ENOENT — the path genuinely does not exist.
     // EACCES, EIO, and other unexpected errors are rethrown so callers
     // cannot silently operate with a narrowed allowed-directory set.
@@ -773,18 +775,10 @@ export class PathGuard {
       if (granted) {
         const updatedDirs = this.allowedDirectoriesState.expanded;
         if (!isPathWithinDirectories(normalizedRequested, updatedDirs)) {
-          throw new FsError(
-            ErrorCode.ACCESS_DENIED,
-            `Outside allowed directories. ${accessDeniedHint}`,
-            requestedPath,
-          );
+          this.throwAccessDenied(requestedPath, accessDeniedHint);
         }
       } else {
-        throw new FsError(
-          ErrorCode.ACCESS_DENIED,
-          `Outside allowed directories. ${accessDeniedHint}`,
-          requestedPath,
-        );
+        this.throwAccessDenied(requestedPath, accessDeniedHint);
       }
     }
 
@@ -815,11 +809,7 @@ export class PathGuard {
           !isPathWithinDirectories(realAncestor, allowedDirs) ||
           !isPathWithinDirectories(resolvedTarget, allowedDirs)
         ) {
-          throw new FsError(
-            ErrorCode.ACCESS_DENIED,
-            `Outside allowed directories. ${accessDeniedHint}`,
-            requestedPath,
-          );
+          this.throwAccessDenied(requestedPath, accessDeniedHint);
         }
       } catch (ancestorErr) {
         // Rethrow any FsError — collapsing e.g. UNKNOWN to NOT_FOUND would mask
@@ -867,11 +857,7 @@ export class PathGuard {
     const normalizedReal = normalizePath(realPath);
 
     if (!isPathWithinDirectories(normalizedReal, allowedDirs)) {
-      throw new FsError(
-        ErrorCode.ACCESS_DENIED,
-        `Outside allowed directories. ${accessDeniedHint}`,
-        requestedPath,
-      );
+      this.throwAccessDenied(requestedPath, accessDeniedHint);
     }
 
     // Re-check the resolved real path: a symlink inside an allowed root may
@@ -953,6 +939,14 @@ export class PathGuard {
       );
     }
   }
+
+  private throwAccessDenied(requestedPath: string, hint?: string): never {
+    throw new FsError(
+      ErrorCode.ACCESS_DENIED,
+      hint ? `Outside allowed directories. ${hint}` : 'Outside allowed directories.',
+      requestedPath,
+    );
+  }
   private async resolveNearestExistingAncestor(
     requestedPath: string,
     currentPath: string,
@@ -976,11 +970,7 @@ export class PathGuard {
             const normalizedTarget = normalizePath(resolvedTarget);
             const allowedDirs = this.getAllowedDirectories();
             if (!isPathWithinDirectories(normalizedTarget, allowedDirs)) {
-              throw new FsError(
-                ErrorCode.ACCESS_DENIED,
-                `Outside allowed directories.`,
-                requestedPath,
-              );
+              this.throwAccessDenied(requestedPath);
             }
           }
         } catch (lstatErr) {
@@ -1027,11 +1017,7 @@ export class PathGuard {
       !isPathWithinDirectories(realAncestor, allowedDirs) ||
       !isPathWithinDirectories(resolvedTarget, allowedDirs)
     ) {
-      throw new FsError(
-        ErrorCode.ACCESS_DENIED,
-        `Outside allowed directories. ${accessDeniedHint}`,
-        requestedPath,
-      );
+      this.throwAccessDenied(requestedPath, accessDeniedHint);
     }
     // Re-check the resolved target: a symlink inside an allowed root may point
     // at a sensitive file. Writing through such a link must be blocked too.
@@ -1059,11 +1045,7 @@ export class PathGuard {
     const normalizedRealParent = normalizePath(realParent);
 
     if (!isPathWithinDirectories(normalizedRealParent, allowedDirs)) {
-      throw new FsError(
-        ErrorCode.ACCESS_DENIED,
-        `Outside allowed directories. ${accessDeniedHint}`,
-        requestedPath,
-      );
+      this.throwAccessDenied(requestedPath, accessDeniedHint);
     }
 
     // Resolve the final component when it exists. For deletion, we ONLY
@@ -1082,11 +1064,7 @@ export class PathGuard {
       // and block sensitive files.
       const realTarget = normalizePath(await realpath(normalizedRequested));
       if (!isPathWithinDirectories(realTarget, allowedDirs)) {
-        throw new FsError(
-          ErrorCode.ACCESS_DENIED,
-          `Outside allowed directories. ${accessDeniedHint}`,
-          requestedPath,
-        );
+        this.throwAccessDenied(requestedPath, accessDeniedHint);
       }
       this.assertNotSensitiveFile(realTarget, requestedPath);
       return realTarget as ValidatedPath;

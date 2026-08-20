@@ -5,6 +5,7 @@ import type {
   ElicitResult,
   McpServer,
   Notification,
+  PrimitiveSchemaDefinition,
   RequestMeta,
   ServerContext,
   StandardSchemaWithJSON,
@@ -97,11 +98,48 @@ export interface DefinedTool {
  * Neither is a denial, and neither is a transport failure — each caller picks
  * the fallback that is safe for its own operation.
  */
-export function isElicitationUnavailable(error: unknown): boolean {
+function isElicitationUnavailable(error: unknown): boolean {
   return (
     hasErrorShape(error, 'SdkError', SdkErrorCode.CapabilityNotSupported) ||
     hasErrorShape(error, 'SdkError', SdkErrorCode.MethodNotSupportedByProtocolVersion)
   );
+}
+
+/**
+ * Owner of the elicit-a-boolean-then-check idiom: builds the single-field form,
+ * sends it, and classifies the outcome. Returns `{ confirmed, unavailable, error }`
+ * so each caller can apply its own fallback policy (proceed / fail-closed /
+ * cancel) without re-implementing the form-build and error triage.
+ */
+export async function confirmBoolean(
+  ctx: Pick<ToolCtx, 'elicitInput'>,
+  field: string,
+  message: string,
+  title: string,
+): Promise<{ confirmed: boolean; unavailable: boolean; error: unknown }> {
+  const { elicitInput } = ctx;
+  if (!elicitInput) return { confirmed: false, unavailable: true, error: undefined };
+  const fieldSchema: PrimitiveSchemaDefinition = { type: 'boolean', title };
+  try {
+    const result = await elicitInput({
+      mode: 'form',
+      message,
+      requestedSchema: {
+        type: 'object',
+        properties: { [field]: fieldSchema },
+        required: [field],
+      },
+    });
+    return {
+      confirmed: result.action === 'accept' && result.content?.[field] === true,
+      unavailable: false,
+      error: undefined,
+    };
+  } catch (err) {
+    if (isElicitationUnavailable(err))
+      return { confirmed: false, unavailable: true, error: undefined };
+    return { confirmed: false, unavailable: false, error: err };
+  }
 }
 
 // ============ Context Builder ============
@@ -303,24 +341,19 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     const pathGuard = this.toolCtx.pathGuard;
 
     const confirm = async (targetDir: string): Promise<boolean> => {
-      try {
-        const response = await elicitInput({
-          mode: 'form',
-          message: `Grant filesystem access to: ${targetDir}?`,
-          requestedSchema: {
-            type: 'object',
-            properties: { confirm: { type: 'boolean', title: 'Confirm' } },
-            required: ['confirm'],
-          },
-        });
-        return response.action === 'accept' && response.content?.['confirm'] === true;
-      } catch (err) {
-        // No grant without a user saying yes, so an unaskable connection is
-        // still a denial — but a quiet one. requestAccessGrant's catch would
-        // otherwise warn on every out-of-root path for the whole session.
-        if (isElicitationUnavailable(err)) return false;
-        throw err;
-      }
+      const r = await confirmBoolean(
+        { elicitInput },
+        'confirm',
+        `Grant filesystem access to: ${targetDir}?`,
+        'Confirm',
+      );
+      // No grant without a user saying yes, so an unaskable connection is
+      // still a denial — but a quiet one. requestAccessGrant's catch would
+      // otherwise warn on every out-of-root path for the whole session.
+      if (r.unavailable) return false;
+      // eslint-disable-next-line @typescript-eslint/only-throw-error -- rethrow the elicitation failure verbatim so callers see the original error
+      if (r.error) throw r.error;
+      return r.confirmed;
     };
 
     return (blockedPath: string) => pathGuard.requestAccessGrant(blockedPath, { confirm });

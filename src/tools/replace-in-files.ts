@@ -10,19 +10,19 @@ import {
   ErrorCode,
   formatUnknownErrorMessage,
   FsError,
-  isAbortError,
   Problem,
+  rethrowIfAborted,
 } from '../core/errors.js';
+import { buildFileResourceUri } from '../core/file-uri.js';
 import { truncateProgressPattern } from '../core/fmt.js';
 import { countLines, type GuardedFileSystem, readFileBufferWithLimit } from '../core/fs.js';
 import { DEFAULT_EXCLUDE_PATTERNS, globEntries } from '../core/glob.js';
-import { detectMimeType, MIME_SAMPLE_SIZE } from '../core/mime.js';
+import { detectMimeFromContent } from '../core/mime.js';
 import { Logger } from '../core/observability.js';
 import { toPosixRelative } from '../core/path.js';
-import type { PathGuard } from '../core/path.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
 import type { Regex } from '../core/search/engine.js';
-import { compileRegex } from '../core/search/engine.js';
+import { compileRegex, freeRegex } from '../core/search/engine.js';
 import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_RESULTS,
@@ -43,7 +43,7 @@ import {
   PerFileErrorSchema,
   SafeGlobPattern,
 } from '../schema.js';
-import { buildFileResourceLink, buildFileResourceUri } from './_helpers.js';
+import { buildFileResourceLink } from './_helpers.js';
 import { defineTool } from './define.js';
 
 function globEscape(name: string): string {
@@ -177,23 +177,68 @@ interface ReplacementMatcher {
   count(content: string): number;
   replace(content: string, replacement: string): string;
   testBuffer(buffer: Buffer): boolean;
+  /** Releases any compiled pattern this matcher owns. Idempotent. */
+  dispose(): void;
 }
 
-function createRegexReplacementMatcher(
+const DOLLAR_TOKEN = /\$(\$|&|`|'|<([^>]*)>|\d{1,2})/g;
+
+/**
+ * Expand `$`-substitutions in a replacement template the way `RegExp` does.
+ *
+ * We cannot hand the template to RE2's own string replacer: it throws
+ * `Invalid replacement string` on any `$` not followed by a substitution it
+ * recognises (so a replacement of `$100` or a trailing `$` fails outright,
+ * where `RegExp` inserts the `$` literally), and it renders an out-of-range
+ * `$5` as `$4`. Passing a function to `String.replace` disables RE2's handling
+ * entirely, which leaves this the single owner of the syntax.
+ */
+function expandDollarTokens(
+  template: string,
+  match: string,
+  groups: (string | undefined)[],
+  offset: number,
+  input: string,
+  named: Record<string, string> | undefined,
+): string {
+  return template.replace(DOLLAR_TOKEN, (token: string, kind: string, name?: string) => {
+    if (kind === '$') return '$';
+    if (kind === '&') return match;
+    if (kind === '`') return input.slice(0, offset);
+    if (kind === "'") return input.slice(offset + match.length);
+    if (name !== undefined) return named?.[name] ?? token;
+    // `$12` prefers group 12, then falls back to group 1 followed by a literal
+    // `2`, and stays literal when neither exists — RegExp's own precedence.
+    const two = Number.parseInt(kind, 10);
+    if (kind.length === 2 && two >= 1 && two <= groups.length) return groups[two - 1] ?? '';
+    const one = Number.parseInt(kind.slice(0, 1), 10);
+    if (one >= 1 && one <= groups.length) {
+      return (groups[one - 1] ?? '') + (kind.length === 2 ? kind.slice(1) : '');
+    }
+    return token;
+  });
+}
+
+export function createRegexReplacementMatcher(
   regex: Regex,
   expandReplacement: boolean,
 ): ReplacementMatcher {
   return {
     testBuffer(buffer: Buffer): boolean {
+      // The regex is global and shared across every file in the batch, so a
+      // previous file's match would otherwise start this scan mid-string.
+      regex.lastIndex = 0;
       return regex.test(buffer.toString('utf-8'));
     },
     count(content: string): number {
       regex.lastIndex = 0;
       let matchCount = 0;
-      let m: RegExpExecArray | null;
+      let m: ReturnType<Regex['exec']>;
       while ((m = regex.exec(content)) !== null) {
         matchCount++;
-        if (m[0].length === 0) regex.lastIndex++;
+        // Treat an absent group 0 as zero-length: not bumping lastIndex here
+        // would spin forever.
+        if ((m[0]?.length ?? 0) === 0) regex.lastIndex++;
       }
       return matchCount;
     },
@@ -201,11 +246,25 @@ function createRegexReplacementMatcher(
       regex.lastIndex = 0;
       // Only isRegex=true opts into $1/$& substitution. A literal search reaches
       // this matcher too (case-insensitive and wholeWord both need a regex), and
-      // there the replacement must be inserted verbatim — the callback form of
-      // String.replace disables $-expansion entirely.
-      return expandReplacement
-        ? content.replace(regex, replacement)
-        : content.replace(regex, () => replacement);
+      // there the replacement must be inserted verbatim.
+      if (!expandReplacement) return content.replace(regex, () => replacement);
+      return content.replace(regex, (match: string, ...rest: unknown[]): string => {
+        // RE2 calls back with (match, ...groups, offset, input, namedGroups).
+        const named = rest.pop() as Record<string, string> | undefined;
+        const input = rest.pop() as string;
+        const offset = rest.pop() as number;
+        return expandDollarTokens(
+          replacement,
+          match,
+          rest as (string | undefined)[],
+          offset,
+          input,
+          named,
+        );
+      });
+    },
+    dispose(): void {
+      freeRegex(regex);
     },
   };
 }
@@ -229,6 +288,9 @@ function createCaseSensitiveLiteralMatcher(searchPattern: string): ReplacementMa
     },
     replace(content: string, replacement: string): string {
       return content.replaceAll(searchPattern, () => replacement);
+    },
+    dispose(): void {
+      // no compiled pattern to release
     },
   };
 }
@@ -479,13 +541,12 @@ function createReplaceSummary(root: string): ReplaceSummary {
 
 async function resolveSearchRoot(
   pathValue: string | undefined,
-  pathGuard: PathGuard,
   fs: GuardedFileSystem,
 ): Promise<{ root: string; filePattern: string | undefined }> {
   if (!pathValue) {
-    return { root: pathGuard.resolvePathOrRoot(undefined), filePattern: undefined };
+    return { root: fs.resolvePathOrRoot(undefined), filePattern: undefined };
   }
-  const resolvedPath = await pathGuard.validateExistingPath(pathValue);
+  const resolvedPath = await fs.validateExistingPath(pathValue);
   const { stats: fileStats } = await fs.stat(resolvedPath);
   if (fileStats.isFile()) {
     return {
@@ -516,7 +577,6 @@ function createReplacementMatcher(args: SearchAndReplaceArgs): ReplacementMatche
 async function handleSearchAndReplace(
   args: SearchAndReplaceArgs,
   fsOps: GuardedFileSystem,
-  pathGuard: PathGuard,
   signal?: AbortSignal,
   onProgress: (progress: { total?: number; current: number }) => void = () => undefined,
   resourceStore?: ResourceStore,
@@ -525,9 +585,8 @@ async function handleSearchAndReplace(
   link?: ContentBlock;
 }> {
   const maxFileSize = MAX_TEXT_FILE_SIZE;
-  const { root, filePattern } = await resolveSearchRoot(args.path, pathGuard, fsOps);
+  const { root, filePattern } = await resolveSearchRoot(args.path, fsOps);
   const effectivePattern = filePattern ?? args.pattern ?? '**/*';
-  const matcher = createReplacementMatcher(args);
 
   const entries = globEntries({
     cwd: root,
@@ -542,22 +601,26 @@ async function handleSearchAndReplace(
 
   const summary = createReplaceSummary(root);
 
-  const context: ReplaceContext = {
-    options: {
-      dryRun: args.dryRun,
-      returnDiff: args.returnDiff,
-    },
-    replacement: args.replacement,
-    matcher,
-    maxFileSize,
-    signal,
-    summary,
-    fs: fsOps,
-  };
+  // The matcher may own a compiled RE2 pattern, whose wasm memory re2-wasm
+  // never reclaims on its own. Nothing past the scan touches it, so free it the
+  // moment the scan is done — success, failure, or abort alike.
+  const matcher = createReplacementMatcher(args);
+  let scan: Awaited<ReturnType<typeof processEntriesConcurrently>>;
+  try {
+    const context: ReplaceContext = {
+      options: {
+        dryRun: args.dryRun,
+        returnDiff: args.returnDiff,
+      },
+      replacement: args.replacement,
+      matcher,
+      maxFileSize,
+      signal,
+      summary,
+      fs: fsOps,
+    };
 
-  const { stoppedByLimit, stoppedByMatchCap, stoppedByAbort } = await processEntriesConcurrently(
-    entries,
-    {
+    scan = await processEntriesConcurrently(entries, {
       signal,
       concurrency: REPLACE_CONCURRENCY,
       ...(args.maxFiles !== undefined ? { maxEntries: args.maxFiles } : {}),
@@ -574,8 +637,11 @@ async function handleSearchAndReplace(
         });
       },
       runEntry: (entryPath) => processEntry(entryPath, context),
-    },
-  );
+    });
+  } finally {
+    matcher.dispose();
+  }
+  const { stoppedByLimit, stoppedByMatchCap, stoppedByAbort } = scan;
 
   // Mutually exclusive by construction — the loop exits on exactly one of them.
   if (stoppedByLimit) {
@@ -615,7 +681,7 @@ async function handleSearchAndReplace(
         }
       })();
 
-      const mimeInfo = detectMimeType(fullPath, Buffer.from(content.slice(0, MIME_SAMPLE_SIZE)));
+      const mimeInfo = detectMimeFromContent(fullPath, content);
       const lineCount = countLines(content);
       const size = Buffer.byteLength(content, 'utf-8');
 
@@ -633,7 +699,7 @@ async function handleSearchAndReplace(
 
       return { structured, link };
     } catch (error) {
-      if (isAbortError(error)) throw error;
+      rethrowIfAborted(error);
       // Gracefully fall back if resource storage fails
       Logger.error(
         `Failed to store primary file in resource store: ${formatUnknownErrorMessage(error)}`,
@@ -680,7 +746,6 @@ export const SEARCH_AND_REPLACE = defineTool({
     const { structured, link } = await handleSearchAndReplace(
       args,
       ctx.fs,
-      ctx.pathGuard,
       ctx.signal,
       onProgress,
       ctx.resourceStore,

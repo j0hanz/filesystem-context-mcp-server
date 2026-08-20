@@ -6,13 +6,12 @@ import { parse } from 'node:path';
 import * as z from 'zod/v4';
 
 import { assertNotAborted, withAbort } from '../core/concurrency.js';
-import { ErrorCode, isAbortError } from '../core/errors.js';
+import { ErrorCode, rethrowIfAborted } from '../core/errors.js';
 import { formatBytes } from '../core/fmt.js';
 import type { FileInfo, GuardedFileSystem, Stats } from '../core/fs.js';
 import { getFileType, isHidden } from '../core/fs.js';
 import { detectMimeType } from '../core/mime.js';
 import { Logger } from '../core/observability.js';
-import type { PathGuard } from '../core/path.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../core/util.js';
 import {
   FileInfoSchema,
@@ -96,7 +95,7 @@ async function getSymlinkTarget(
     const { linkString } = await fs.readlink(pathToRead);
     return linkString;
   } catch (error) {
-    if (isAbortError(error)) throw error;
+    rethrowIfAborted(error);
     Logger.warn(`stat: readlink failed for "${pathToRead}": ${String(error)}`);
     return undefined;
   }
@@ -106,22 +105,23 @@ interface FileInfoOptions {
   includeMimeType?: boolean | undefined;
   signal?: AbortSignal | undefined;
   onProgress?: () => void;
-  pathGuard: PathGuard;
   fs: GuardedFileSystem;
 }
 
 async function getFileInfo(filePath: string, options: FileInfoOptions): Promise<FileInfo> {
-  const { signal, pathGuard, fs } = options;
+  const { signal, fs } = options;
   assertNotAborted(signal);
 
-  const { requestedPath, isSymlink } = await pathGuard.validateExistingPathDetailed(filePath);
+  const {
+    requestedPath,
+    isSymlink,
+    stats: followedStats,
+  } = await fs.statDetailed(filePath, signal ? { signal } : undefined);
 
   const { base: name, ext: rawExt } = parse(requestedPath);
   const includeMimeType = options.includeMimeType !== false;
   const mimeType =
     includeMimeType && rawExt.length > 0 ? detectMimeType(requestedPath).mimeType : undefined;
-
-  const { stats: followedStats } = await fs.stat(requestedPath, signal ? { signal } : undefined);
 
   // For a symlink, fsStat follows the link and reports the target's metadata.
   // Report the link's own metadata instead so size/permissions/timestamps
@@ -132,7 +132,7 @@ async function getFileInfo(filePath: string, options: FileInfoOptions): Promise<
       stats = await withAbort(fsLstat(requestedPath), signal);
     } catch (error) {
       // A cancelled request is not a "link metadata unavailable" fallback.
-      if (isAbortError(error)) throw error;
+      rethrowIfAborted(error);
       stats = followedStats;
     }
   }
@@ -208,7 +208,6 @@ export const GET_FILE_INFO = defineTool({
       async ({ path }) =>
         getFileInfo(path, {
           includeMimeType: true,
-          pathGuard: ctx.pathGuard,
           fs: ctx.fs,
           signal: ctx.signal,
         }),

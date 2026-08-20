@@ -3,8 +3,9 @@ import * as z from 'zod/v4';
 import { decodeOffsetCursor, encodeOffsetCursor } from '../core/cursor.js';
 import { ErrorCode } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
+import type { GuardedFileSystem } from '../core/fs.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../core/glob.js';
-import { type PathGuard, toPosixRelative } from '../core/path.js';
+import { toPosixRelative } from '../core/path.js';
 import { searchFiles } from '../core/search/engine.js';
 import type { ResourceStore } from '../core/store.js';
 import {
@@ -121,7 +122,7 @@ function applySummaryFields(
 
 async function handleSearchFiles(
   args: z.infer<typeof SearchFilesInputSchema>,
-  pathGuard: PathGuard,
+  fs: GuardedFileSystem,
   signal?: AbortSignal,
   resourceStore?: ResourceStore,
 ): Promise<{
@@ -129,9 +130,7 @@ async function handleSearchFiles(
   link?: ReturnType<typeof putResource>['link'];
   count: number;
 }> {
-  const basePath = await pathGuard.validateExistingDirectory(
-    pathGuard.resolvePathOrRoot(args.path),
-  );
+  const basePath = await fs.validateExistingDirectory(fs.resolvePathOrRoot(args.path));
   const excludePatterns = args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
   const cursorOffset = args.cursor !== undefined ? decodeOffsetCursor(args.cursor) : 0;
   const pageSize = args.maxResults;
@@ -148,7 +147,7 @@ async function handleSearchFiles(
     args.pattern,
     excludePatterns,
     searchOptions,
-    pathGuard,
+    fs.pathGuard,
   );
   const allResults = result.results;
   let displayResults = allResults;
@@ -216,7 +215,7 @@ export const SEARCH_FILES = defineTool({
   run: async (args, ctx) => {
     const { structured, link } = await handleSearchFiles(
       args,
-      ctx.pathGuard,
+      ctx.fs,
       ctx.signal,
       ctx.resourceStore,
     );

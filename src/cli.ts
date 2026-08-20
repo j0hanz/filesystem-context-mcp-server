@@ -405,7 +405,7 @@ export async function parseArgs(): Promise<{
 }
 
 // ════════════════════════════════════════════════════════════
-// Config File Management — reads/writes MCP client config files
+// Effective config reporting — prints the resolved server config
 // ════════════════════════════════════════════════════════════
 
 export interface EffectiveConfig {
