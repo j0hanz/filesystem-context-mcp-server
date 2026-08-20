@@ -24,15 +24,14 @@ import { dirname, extname, isAbsolute, resolve } from 'node:path';
 import { text } from 'node:stream/consumers';
 import { pipeline } from 'node:stream/promises';
 
-import type { FileType } from '../schema.js';
 import { assertNotAborted, isPositiveInteger, withAbort } from './concurrency.js';
 import { ErrorCode, formatUnknownErrorMessage, FsError, isNodeError } from './errors.js';
 import { detectMimeType, MIME_SAMPLE_SIZE } from './mime.js';
 import { Logger } from './observability.js';
 import type { PathGuard } from './path.js';
+import type { EntryType as FileType } from './primitives.js';
 import { MAX_TEXT_FILE_SIZE } from './util.js';
 
-// Re-export FileType from schema for external consumers
 export type { FileType };
 export type { Stats, ReadStream };
 export type { FileHandle };

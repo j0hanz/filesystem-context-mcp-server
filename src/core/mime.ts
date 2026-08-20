@@ -1,6 +1,7 @@
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type MimeKind = 'text' | 'binary' | 'image' | 'audio' | 'pdf';
+export const MIME_KINDS = ['text', 'binary', 'image', 'audio', 'pdf'] as const;
+export type MimeKind = (typeof MIME_KINDS)[number];
 
 export interface MimeInfo {
   mimeType: string;

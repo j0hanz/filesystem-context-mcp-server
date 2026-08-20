@@ -9,14 +9,15 @@ import { formatUnknownErrorMessage, isNodeError } from './errors.js';
 import { Logger } from './observability.js';
 import type { PathGuard } from './path.js';
 import { isPathWithinDirectories, normalizePath, toPosixPath } from './path.js';
+import type { EntryType } from './primitives.js';
+
+export type { EntryType };
 
 export interface DirentLike {
   isDirectory(): boolean;
   isFile(): boolean;
   isSymbolicLink(): boolean;
 }
-
-export type EntryType = 'file' | 'directory' | 'symlink' | 'other';
 
 export function resolveEntryType(dirent: DirentLike): EntryType {
   if (dirent.isDirectory()) return 'directory';

@@ -11,6 +11,11 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object';
 }
 
+/** The four filesystem entry types. Produced by `resolveEntryType` (glob.ts)
+ *  and `getFileType` (fs.ts); published as the `FileType` schema. */
+export const ENTRY_TYPES = ['file', 'directory', 'symlink', 'other'] as const;
+export type EntryType = (typeof ENTRY_TYPES)[number];
+
 const STRING_BOOL_SCHEMA = z.stringbool();
 
 export function parseTrueEnvFlag(value: string | undefined): boolean {

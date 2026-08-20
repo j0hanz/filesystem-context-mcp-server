@@ -1,6 +1,8 @@
 import * as z from 'zod/v4';
 
+import { MIME_KINDS } from './core/mime.js';
 import { isSafeGlobSyntax } from './core/path.js';
+import { ENTRY_TYPES } from './core/primitives.js';
 import { MAX_SEARCH_DEPTH } from './core/util.js';
 
 // Runtime: full ISO-8601 UTC; format pattern stripped by post-processor on the wire.
@@ -26,11 +28,11 @@ export const PositiveInt = z
   .positive({ message: 'Must be > 0' })
   .meta({ id: 'PositiveInt', title: 'Positive Integer' });
 
-export const FILE_TYPES = ['file', 'directory', 'symlink', 'other'] as const;
+export const FILE_TYPES = ENTRY_TYPES;
 export type FileType = (typeof FILE_TYPES)[number];
 export const FileType = z.enum(FILE_TYPES).meta({ id: 'FileType', title: 'File Type' });
 
-export const FILE_KINDS = ['text', 'binary', 'image', 'audio', 'pdf'] as const;
+export const FILE_KINDS = MIME_KINDS;
 export type FileKind = (typeof FILE_KINDS)[number];
 export const FileKind = z.enum(FILE_KINDS).meta({ id: 'FileKind', title: 'File Kind' });
 
