@@ -7,13 +7,13 @@ import { createTwoFilesPatch, diffLines } from 'diff';
 
 import { ErrorCode, FsError } from '../core/errors.js';
 import { buildFileResourceUri } from '../core/file-uri.js';
-import { countLines, readFileWithStats } from '../core/fs.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { detectMimeFromContent } from '../core/mime.js';
 import { Logger } from '../core/observability.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
-import type { Regex } from '../core/search/engine.js';
-import { compileRegex, freeRegex } from '../core/search/engine.js';
+import { countLines, readFileWithStats } from '../core/read.js';
+import type { Regex } from '../core/search.js';
+import { compileRegex, freeRegex } from '../core/search.js';
 import type { ResourceStore } from '../core/store.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import {

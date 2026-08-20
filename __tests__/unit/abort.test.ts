@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-import { timedSignal } from '../../src/core/concurrency.js';
+import { processInParallel, timedSignal } from '../../src/core/concurrency.js';
 
 describe('timedSignal', () => {
   it('aborts the signal after the timeout elapses', async () => {
@@ -39,5 +39,27 @@ describe('timedSignal', () => {
     await sleep(100);
     assert.equal(signal.aborted, true);
     assert.equal(signal.reason?.name, 'TimeoutError');
+  });
+});
+
+describe('processInParallel — timedSignal deadline', () => {
+  it('rejects with a TimeoutError reason when a timedSignal fires mid-run', async () => {
+    const signal = timedSignal(undefined, 20);
+    const items = [0, 1, 2, 3, 4];
+    // Each item sleeps longer than the 20ms deadline, so the deadline fires
+    // while a worker is mid-await. processInParallel must reject with the
+    // signal's own reason (a TimeoutError), not a fresh AbortError.
+    await assert.rejects(
+      processInParallel(
+        items,
+        async () => {
+          await sleep(200);
+          return 0;
+        },
+        2,
+        signal,
+      ),
+      (err: unknown) => (err as Error | undefined)?.name === 'TimeoutError',
+    );
   });
 });

@@ -14,12 +14,7 @@ import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import { PathGuard } from '../../src/core/path.js';
-import {
-  compileRegex,
-  freeRegex,
-  searchContent,
-  searchFiles,
-} from '../../src/core/search/engine.js';
+import { compileRegex, freeRegex, searchContent, searchFiles } from '../../src/core/search.js';
 
 describe('searchContent — abort marks the scan truncated', () => {
   let dir: string;

@@ -15,14 +15,15 @@ import {
 } from '../core/errors.js';
 import { buildFileResourceUri } from '../core/file-uri.js';
 import { truncateProgressPattern } from '../core/fmt.js';
-import { countLines, type GuardedFileSystem, readFileBufferWithLimit } from '../core/fs.js';
+import type { GuardedFileSystem } from '../core/fs.js';
 import { DEFAULT_EXCLUDE_PATTERNS, globEntries } from '../core/glob.js';
 import { detectMimeFromContent } from '../core/mime.js';
 import { Logger } from '../core/observability.js';
 import { toPosixRelative } from '../core/path.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
-import type { Regex } from '../core/search/engine.js';
-import { compileRegex, freeRegex } from '../core/search/engine.js';
+import { countLines, readFileBufferWithLimit } from '../core/read.js';
+import type { Regex } from '../core/search.js';
+import { compileRegex, freeRegex } from '../core/search.js';
 import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_RESULTS,
@@ -544,9 +545,9 @@ async function resolveSearchRoot(
   fs: GuardedFileSystem,
 ): Promise<{ root: string; filePattern: string | undefined }> {
   if (!pathValue) {
-    return { root: fs.resolvePathOrRoot(undefined), filePattern: undefined };
+    return { root: fs.pathGuard.resolvePathOrRoot(undefined), filePattern: undefined };
   }
-  const resolvedPath = await fs.validateExistingPath(pathValue);
+  const resolvedPath = await fs.pathGuard.validateExistingPath(pathValue);
   const { stats: fileStats } = await fs.stat(resolvedPath);
   if (fileStats.isFile()) {
     return {

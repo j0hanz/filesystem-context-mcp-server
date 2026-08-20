@@ -8,9 +8,9 @@ import * as z from 'zod/v4';
 import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
 import { buildFileResourceUri } from '../core/file-uri.js';
-import type { ReadFileResult, ReadSpec } from '../core/fs.js';
 import { detectMimeFromContent } from '../core/mime.js';
 import { Logger } from '../core/observability.js';
+import type { ReadFileResult, ReadSpec } from '../core/read.js';
 import {
   DEFAULT_CONTINUATION_CHUNK_SIZE,
   DEFAULT_READ_MANY_MAX_TOTAL_SIZE,

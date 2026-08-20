@@ -162,12 +162,12 @@ async function deleteSinglePath(
 ): Promise<{ item: DeletedItem } | { failure: DeleteFailure }> {
   let validPath: string;
   try {
-    validPath = await ctx.fs.validatePathForDelete(inputPath);
+    validPath = await ctx.fs.pathGuard.validatePathForDelete(inputPath);
   } catch (error) {
     return { failure: toDeleteFailure(inputPath, error) };
   }
 
-  if (ctx.fs.isAllowedRoot(validPath)) {
+  if (ctx.fs.pathGuard.isAllowedRoot(validPath)) {
     return {
       failure: {
         path: validPath,

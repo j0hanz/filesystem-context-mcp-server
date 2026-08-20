@@ -5,7 +5,13 @@ import type { Ignore } from 'ignore';
 import ignore from 'ignore';
 
 import { processInParallel } from './concurrency.js';
-import { formatUnknownErrorMessage, isNodeError } from './errors.js';
+import {
+  formatUnknownErrorMessage,
+  isFsError,
+  isNodeError,
+  SKIPPABLE_ERRNOS,
+  SKIPPABLE_FS_CODES,
+} from './errors.js';
 import { Logger } from './observability.js';
 import type { PathGuard } from './path.js';
 import { isPathWithinDirectories, normalizePath, toPosixPath } from './path.js';
@@ -47,20 +53,12 @@ export async function isEntryAccessibleByType(
     const validated = await pathGuard.validateExistingPathDetailed(entryPath);
     return !isSensitive(validated.requestedPath, validated.resolvedPath);
   } catch (error) {
-    if (
-      isNodeError(error) &&
-      (error.code === 'ENOENT' ||
-        error.code === 'EACCES' ||
-        error.code === 'ELOOP' ||
-        error.code === 'ACCESS_DENIED' ||
-        // A dangling symlink whose target path sits inside an allowed root
-        // surfaces as FsError NOT_FOUND, not ENOENT. Skipping the entry is the
-        // point of this list; rethrowing would fail the whole listing.
-        error.code === 'NOT_FOUND' ||
-        error.code === 'SYMLINK_NOT_ALLOWED')
-    ) {
-      return false;
+    if (isFsError(error)) {
+      if (SKIPPABLE_FS_CODES.has(error.code)) return false;
+      throw error;
     }
+    if (isNodeError(error) && error.code !== undefined && SKIPPABLE_ERRNOS.has(error.code))
+      return false;
     throw error;
   }
 }
@@ -242,14 +240,14 @@ export interface GlobEntry {
   dirent: DirentLike;
 }
 
-interface GlobEntriesOptions {
+export interface GlobEntriesOptions {
   cwd: string;
   pattern: string;
-  excludePatterns: readonly string[];
-  includeHidden: boolean;
-  baseNameMatch: boolean;
+  excludePatterns?: readonly string[];
+  includeHidden?: boolean;
+  baseNameMatch?: boolean;
   maxDepth?: number;
-  onlyFiles: boolean;
+  onlyFiles?: boolean;
   suppressErrors?: boolean;
   respectGitignore?: boolean;
 }
@@ -345,7 +343,7 @@ function buildHiddenPatterns(normalizedPattern: string, maxDepth: number): reado
 
 function normalizeGlobOptions(options: GlobEntriesOptions): NormalizedGlob {
   const cwd = resolve(options.cwd);
-  const normalizedPattern = normalizePattern(options.pattern, options.baseNameMatch);
+  const normalizedPattern = normalizePattern(options.pattern, options.baseNameMatch ?? false);
 
   const patterns = options.includeHidden
     ? buildHiddenPatterns(normalizedPattern, options.maxDepth ?? DEFAULT_MAX_HIDDEN_DEPTH)
@@ -354,7 +352,7 @@ function normalizeGlobOptions(options: GlobEntriesOptions): NormalizedGlob {
   const normalized: NormalizedGlob = {
     cwd,
     patterns,
-    exclude: options.excludePatterns.map(toPosixPath),
+    exclude: (options.excludePatterns ?? []).map(toPosixPath),
     suppressErrors: options.suppressErrors ?? false,
     respectGitignore: options.respectGitignore ?? false,
   };
@@ -406,14 +404,6 @@ function* processDirentMatch(
   yield { path: absolutePath, dirent: match };
 }
 
-interface ProcessContext {
-  cwd: string;
-  maxDepth: number | undefined;
-  seen: Set<string>;
-  onlyFiles: boolean;
-  suppressErrors: boolean;
-}
-
 function createExcludeFilter(
   cwd: string,
   excludePatterns: readonly string[],
@@ -435,12 +425,7 @@ function createExcludeFilter(
 
     // Gitignore check
     const isDir = typeof match === 'string' ? false : match.isDirectory();
-    if (
-      isIgnoredByGitignore(gitignoreMatcher, cwd, '', {
-        relativePath: posixRel,
-        isDirectory: isDir,
-      })
-    ) {
+    if (gitignoreMatcher.isIgnored(posixRel, isDir)) {
       return true;
     }
 
@@ -458,10 +443,11 @@ function createExcludeFilter(
 async function* processGlobPattern(
   pattern: string,
   plan: NormalizedGlob,
-  context: ProcessContext,
+  seen: Set<string>,
+  onlyFiles: boolean,
   excludeFunc: ((match: GlobMatch) => boolean) | readonly string[],
 ): AsyncGenerator<GlobEntry> {
-  const { cwd, suppressErrors } = plan;
+  const { cwd, maxDepth, suppressErrors } = plan;
   let iterable: AsyncIterable<GlobMatch>;
   try {
     iterable = fsGlob(pattern, {
@@ -476,13 +462,7 @@ async function* processGlobPattern(
 
   try {
     for await (const match of iterable) {
-      yield* processDirentMatch(
-        match as GlobDirentLike,
-        context.cwd,
-        context.maxDepth,
-        context.seen,
-        context.onlyFiles,
-      );
+      yield* processDirentMatch(match as GlobDirentLike, cwd, maxDepth, seen, onlyFiles);
     }
   } catch (error) {
     if (!suppressErrors) throw error;
@@ -492,64 +472,20 @@ async function* processGlobPattern(
   }
 }
 
-async function* nativeGlobEntries(
-  options: GlobEntriesOptions,
-  gitignoreMatcher?: GitignoreManager | null,
-): AsyncGenerator<GlobEntry> {
-  const plan = normalizeGlobOptions(options);
-  const seen = new Set<string>();
-
-  const { cwd, maxDepth, suppressErrors } = plan;
-  const { onlyFiles } = options;
-
-  const context: ProcessContext = {
-    cwd,
-    maxDepth,
-    seen,
-    onlyFiles,
-    suppressErrors,
-  };
-
-  const excludeFunc = createExcludeFilter(cwd, plan.exclude, gitignoreMatcher);
-
-  for (const pattern of plan.patterns) {
-    yield* processGlobPattern(pattern, plan, context, excludeFunc);
-  }
-}
-
 export async function* globEntries(options: GlobEntriesOptions): AsyncGenerator<GlobEntry> {
   let gitignoreMatcher: GitignoreManager | null = null;
   if (options.respectGitignore) {
     gitignoreMatcher = await loadRootGitignore(options.cwd);
   }
-  yield* nativeGlobEntries(options, gitignoreMatcher);
-}
 
-type GlobConfig = Partial<GlobEntriesOptions> & Pick<GlobEntriesOptions, 'cwd' | 'pattern'>;
+  const plan = normalizeGlobOptions(options);
+  const seen = new Set<string>();
+  const onlyFiles = options.onlyFiles ?? true;
+  const excludeFunc = createExcludeFilter(plan.cwd, plan.exclude, gitignoreMatcher);
 
-export function buildGlobOptions(config: GlobConfig): Parameters<typeof globEntries>[0] {
-  const options: Parameters<typeof globEntries>[0] = {
-    cwd: config.cwd,
-    pattern: config.pattern,
-    excludePatterns: config.excludePatterns ?? [],
-    includeHidden: config.includeHidden ?? false,
-    baseNameMatch: config.baseNameMatch ?? false,
-    onlyFiles: config.onlyFiles ?? true,
-  };
-
-  if (config.suppressErrors) {
-    options.suppressErrors = config.suppressErrors;
+  for (const pattern of plan.patterns) {
+    yield* processGlobPattern(pattern, plan, seen, onlyFiles, excludeFunc);
   }
-
-  if (config.maxDepth !== undefined) {
-    options.maxDepth = config.maxDepth;
-  }
-
-  if (config.respectGitignore !== undefined) {
-    options.respectGitignore = config.respectGitignore;
-  }
-
-  return options;
 }
 
 export const DEFAULT_EXCLUDE_PATTERNS = [

@@ -125,12 +125,11 @@ class InMemoryResourceStore implements ResourceStore {
     return existing;
   }
 
-  private rawPut(
-    params: { name: string; mimeType: string; data: string | Buffer },
-    createFn: (base: Omit<TextResourceEntry | BlobResourceEntry, 'text' | 'data'>) => StoredEntry,
-  ): StoredEntry {
-    const contentHash = computeSha256(params.data);
-    const entryBytes = estimateBytes(params.data);
+  private rawPut<E extends StoredEntry>(
+    params: { name: string; mimeType: string; contentHash: string; entryBytes: number },
+    createFn: (base: Omit<TextResourceEntry | BlobResourceEntry, 'text' | 'data'>) => E,
+  ): E {
+    const { contentHash, entryBytes } = params;
     const uri = `filesystem-mcp://result/${randomUUID()}`;
     const storedAt = new Date();
     const entry = createFn({
@@ -180,6 +179,9 @@ class InMemoryResourceStore implements ResourceStore {
     }
   }
 
+  private getExisting(uri: string, expectedKind: 'text'): TextResourceEntry & { kind: 'text' };
+  private getExisting(uri: string, expectedKind: 'blob'): BlobResourceEntry & { kind: 'blob' };
+  private getExisting(uri: string): StoredEntry;
   private getExisting(uri: string, expectedKind?: 'text' | 'blob'): StoredEntry {
     const existing = this.byUri.get(uri);
 
@@ -209,21 +211,31 @@ class InMemoryResourceStore implements ResourceStore {
     return existing;
   }
 
-  private checkBeforePut(data: string | Buffer): void {
+  private checkBeforePut(entryBytes: number): void {
     this.pruneExpiredEntries();
-    const entryBytes = estimateBytes(data);
     if (entryBytes > this.options.maxEntryBytes) {
       throw new FsError(ErrorCode.TOO_LARGE, `Resource too large to cache (${entryBytes} bytes).`);
     }
   }
 
   private tryReturnHashHit(
+    kind: 'text',
+    mimeType: string,
+    name: string,
+    contentHash: string,
+  ): (TextResourceEntry & { kind: 'text' }) | undefined;
+  private tryReturnHashHit(
+    kind: 'blob',
+    mimeType: string,
+    name: string,
+    contentHash: string,
+  ): (BlobResourceEntry & { kind: 'blob' }) | undefined;
+  private tryReturnHashHit(
     kind: 'text' | 'blob',
     mimeType: string,
-    data: string | Buffer,
     name: string,
+    contentHash: string,
   ): StoredEntry | undefined {
-    const contentHash = computeSha256(data);
     const cached = this.getEntryByHash(mimeType, contentHash);
     if (cached !== undefined) {
       if (isExpired(cached)) {
@@ -258,25 +270,27 @@ class InMemoryResourceStore implements ResourceStore {
   putText(params: { name: string; mimeType?: string; text: string }): TextResourceEntry & {
     kind: 'text';
   } {
-    this.checkBeforePut(params.text);
+    const contentHash = computeSha256(params.text);
+    const entryBytes = estimateBytes(params.text);
+    this.checkBeforePut(entryBytes);
     const hit = this.tryReturnHashHit(
       'text',
       params.mimeType ?? 'text/plain',
-      params.text,
       params.name,
+      contentHash,
     );
-    if (hit) return hit as TextResourceEntry & { kind: 'text' };
+    if (hit) return hit;
 
     const entry = this.rawPut(
-      { name: params.name, mimeType: params.mimeType ?? 'text/plain', data: params.text },
+      { name: params.name, mimeType: params.mimeType ?? 'text/plain', contentHash, entryBytes },
       (base) => ({ ...base, kind: 'text', text: params.text }),
     );
     this.enforceAfterPut(entry);
-    return entry as TextResourceEntry & { kind: 'text' };
+    return entry;
   }
 
   getText(uri: string): TextResourceEntry & { kind: 'text' } {
-    return this.getExisting(uri, 'text') as TextResourceEntry & { kind: 'text' };
+    return this.getExisting(uri, 'text');
   }
 
   putBlob(params: {
@@ -284,20 +298,22 @@ class InMemoryResourceStore implements ResourceStore {
     mimeType: string;
     data: Buffer;
   }): BlobResourceEntry & { kind: 'blob' } {
-    this.checkBeforePut(params.data);
-    const hit = this.tryReturnHashHit('blob', params.mimeType, params.data, params.name);
-    if (hit) return hit as BlobResourceEntry & { kind: 'blob' };
+    const contentHash = computeSha256(params.data);
+    const entryBytes = estimateBytes(params.data);
+    this.checkBeforePut(entryBytes);
+    const hit = this.tryReturnHashHit('blob', params.mimeType, params.name, contentHash);
+    if (hit) return hit;
 
     const entry = this.rawPut(
-      { name: params.name, mimeType: params.mimeType, data: params.data },
+      { name: params.name, mimeType: params.mimeType, contentHash, entryBytes },
       (base) => ({ ...base, kind: 'blob', data: params.data }),
     );
     this.enforceAfterPut(entry);
-    return entry as BlobResourceEntry & { kind: 'blob' };
+    return entry;
   }
 
   getBlob(uri: string): BlobResourceEntry & { kind: 'blob' } {
-    return this.getExisting(uri, 'blob') as BlobResourceEntry & { kind: 'blob' };
+    return this.getExisting(uri, 'blob');
   }
 
   getEntry(uri: string): StoredEntry {

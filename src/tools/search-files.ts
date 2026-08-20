@@ -6,10 +6,9 @@ import { formatCount, truncateProgressPattern } from '../core/fmt.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../core/glob.js';
 import { toPosixRelative } from '../core/path.js';
-import { searchFiles } from '../core/search/engine.js';
+import { searchFiles } from '../core/search.js';
 import type { ResourceStore } from '../core/store.js';
 import {
-  assignDefined,
   DEFAULT_SEARCH_RESULTS,
   DEFAULT_SEARCH_TIMEOUT_MS,
   MAX_SEARCH_RESULTS,
@@ -113,10 +112,10 @@ function applySummaryFields(
   },
   nextCursor?: string,
 ): void {
-  assignDefined(structured, {
-    skippedInaccessible: summary.skippedInaccessible || undefined,
-    stoppedReason: summary.stoppedReason,
-    nextCursor,
+  Object.assign(structured, {
+    ...(summary.skippedInaccessible ? { skippedInaccessible: summary.skippedInaccessible } : {}),
+    ...(summary.stoppedReason !== undefined ? { stoppedReason: summary.stoppedReason } : {}),
+    ...(nextCursor !== undefined ? { nextCursor } : {}),
   });
 }
 
@@ -130,7 +129,9 @@ async function handleSearchFiles(
   link?: ReturnType<typeof putResource>['link'];
   count: number;
 }> {
-  const basePath = await fs.validateExistingDirectory(fs.resolvePathOrRoot(args.path));
+  const basePath = await fs.pathGuard.validateExistingDirectory(
+    fs.pathGuard.resolvePathOrRoot(args.path),
+  );
   const excludePatterns = args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
   const cursorOffset = args.cursor !== undefined ? decodeOffsetCursor(args.cursor) : 0;
   const pageSize = args.maxResults;
@@ -140,8 +141,9 @@ async function handleSearchFiles(
     includeHidden: args.includeHidden,
     sortBy: args.sortBy,
     respectGitignore: !args.includeIgnored,
+    ...(args.maxDepth !== undefined ? { maxDepth: args.maxDepth } : {}),
+    ...(signal !== undefined ? { signal } : {}),
   };
-  assignDefined(searchOptions, { maxDepth: args.maxDepth, signal });
   const result = await searchFiles(
     basePath,
     args.pattern,

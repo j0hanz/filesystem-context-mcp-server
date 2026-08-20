@@ -10,7 +10,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { compileRegex, freeRegex } from '../../src/core/search/engine.js';
+import { compileRegex, freeRegex } from '../../src/core/search.js';
 import { createRegexReplacementMatcher } from '../../src/tools/replace-in-files.js';
 
 function replaceWith(pattern: string, content: string, template: string): string {

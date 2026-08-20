@@ -254,8 +254,8 @@ async function handleList(
   onProgress?: (progress: { current: number; total?: number }) => void,
 ): Promise<z.infer<typeof ListOutputSchema>> {
   const path = args.path;
-  const resolvedPath = fs.resolvePathOrRoot(path);
-  const validDir = await fs.validateExistingDirectory(resolvedPath);
+  const resolvedPath = fs.pathGuard.resolvePathOrRoot(path);
+  const validDir = await fs.pathGuard.validateExistingDirectory(resolvedPath);
 
   {
     const result = await collect(validDir, {

@@ -12,7 +12,7 @@ import {
   type Regex,
   searchContent,
   type SearchContentOptions,
-} from '../core/search/engine.js';
+} from '../core/search.js';
 import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_CONTENT_RESULTS,
@@ -67,6 +67,7 @@ function buildStructuredSummaryFields(summary: SearchSummary): Partial<SearchOut
   return {
     ...(summary.filesMatched ? { filesMatched: summary.filesMatched } : {}),
     ...(summary.truncated ? { truncated: true } : {}),
+    ...(summary.stoppedReason !== undefined ? { stoppedReason: summary.stoppedReason } : {}),
     ...(summary.skippedInaccessible ? { skippedInaccessible: summary.skippedInaccessible } : {}),
     ...(summary.skippedTooLarge ? { skippedTooLarge: summary.skippedTooLarge } : {}),
   };
@@ -142,6 +143,12 @@ const GrepOutputSchema = z.strictObject({
     .boolean()
     .optional()
     .describe('True when the match list was cut due to maxResults or timeout'),
+  stoppedReason: z
+    .enum(['maxResults', 'timeout'])
+    .optional()
+    .describe(
+      'Why the search ended early: maxResults = result cap reached, timeout = time limit hit or the request was cancelled. Absent when the scan ran to completion.',
+    ),
   resourceUri: z
     .string()
     .optional()
@@ -342,7 +349,9 @@ async function handleSearchContent(
   matchCount: number;
   fileCount: number;
 }> {
-  const basePath = await fs.validateExistingDirectory(fs.resolvePathOrRoot(args.path));
+  const basePath = await fs.pathGuard.validateExistingDirectory(
+    fs.pathGuard.resolvePathOrRoot(args.path),
+  );
   const regexMatcher = createSearchMatcher(args);
 
   const cursorOffset = args.cursor !== undefined ? decodeOffsetCursor(args.cursor) : 0;

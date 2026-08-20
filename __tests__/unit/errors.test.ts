@@ -7,10 +7,8 @@ import * as z from 'zod/v4';
 import { ErrorCode } from '../../src/core/errors.js';
 import {
   classify,
-  createDetailedError,
   formatUnknownErrorMessage,
   FsError,
-  getSuggestion,
   hasErrorShape,
   isAbortError,
   isFsError,
@@ -119,26 +117,6 @@ describe('FsError — details and cause', () => {
   });
 });
 
-// ─── getSuggestion ──────────────────────────────────────────────────────────
-
-describe('getSuggestion', () => {
-  it('returns a string or undefined for every ErrorCode value', () => {
-    const withSuggestion: string[] = [];
-    const withoutSuggestion: string[] = [];
-    for (const code of Object.values(ErrorCode)) {
-      const suggestion = getSuggestion(code);
-      if (suggestion !== undefined) {
-        assert.equal(typeof suggestion, 'string');
-        assert.ok(suggestion.length > 0, `Expected non-empty suggestion for ${code}`);
-        withSuggestion.push(code);
-      } else {
-        withoutSuggestion.push(code);
-      }
-    }
-    assert.ok(withSuggestion.length > 0, 'At least some codes should have suggestions');
-  });
-});
-
 // ─── classifyError — no message sniffing ────────────────────────────────────
 
 describe('classifyError — no message sniffing', () => {
@@ -220,35 +198,6 @@ describe('isTimeoutLikeError', () => {
   });
 });
 
-// ─── createDetailedError ────────────────────────────────────────────────────
-
-describe('createDetailedError', () => {
-  it('produces code and message from errno error', () => {
-    const err = makeErrno('ENOENT', 'no such file');
-    const d = createDetailedError(err);
-    assert.equal(d.code, ErrorCode.NOT_FOUND);
-    assert.equal(typeof d.message, 'string');
-  });
-
-  it('accepts optional path override', () => {
-    const err = makeErrno('EACCES', 'forbidden');
-    const d = createDetailedError(err, '/foo/bar');
-    assert.equal(d.path, '/foo/bar');
-  });
-
-  it('VALIDATION_FAILED error exposes issues array', () => {
-    const schema = z.strictObject({ name: z.string() });
-    const parsed = schema.safeParse({ name: 42 });
-    assert.ok(!parsed.success);
-    // classify() maps a raw ZodError straight to a VALIDATION_FAILED problem —
-    // this is the path tool input validation actually takes.
-    const d = createDetailedError(parsed.error);
-    assert.equal(d.code, ErrorCode.VALIDATION_FAILED);
-    assert.ok(Array.isArray(d.issues));
-    assert.ok((d.issues?.length ?? 0) > 0);
-  });
-});
-
 describe('Problem.fromUnknown', () => {
   it('overrides UNKNOWN from plain Error with defaultCode', () => {
     const err = new Error('boom');
@@ -275,7 +224,7 @@ describe('Problem.fromUnknown', () => {
     const err = new Error('io');
     const result = Problem.fromUnknown(err, ErrorCode.NOT_FOUND);
     assert.equal(result.code, ErrorCode.NOT_FOUND);
-    // suggestion should come from getSuggestion(NOT_FOUND)
+    // suggestion should come from DEFAULT_SUGGESTIONS[NOT_FOUND]
     assert.ok(result.suggestion !== undefined, 'suggestion should be populated when overriding');
   });
 
@@ -307,9 +256,9 @@ describe('Problem.fromUnknown', () => {
   });
 });
 
-// ─── classify — isFsErrorCarrier guard ──────────────────────────────────────
+// ─── classify — isFsError guard ─────────────────────────────────────────────
 
-describe('classify — isFsErrorCarrier guard (Finding 5)', () => {
+describe('classify — isFsError guard (Finding 5)', () => {
   it('does not crash when problem is null on a spoofed FsError', () => {
     const spoofed = Object.assign(new Error('spoofed'), { name: 'FsError', problem: null });
     // Must not throw and must not return null — falls through to generic classification.

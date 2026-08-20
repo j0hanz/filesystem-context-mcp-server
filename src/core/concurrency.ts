@@ -6,10 +6,6 @@ export interface ParallelResult<R> {
   errors: { index: number; error: Error }[];
 }
 
-function checkParallelAbort(signal?: AbortSignal): void {
-  if (signal?.aborted) throw new DOMException('Operation aborted', 'AbortError');
-}
-
 export async function processInParallel<T, R>(
   items: readonly T[],
   processor: (item: T) => Promise<R>,
@@ -22,13 +18,13 @@ export async function processInParallel<T, R>(
   const results: { index: number; value: R }[] = [];
   const errors: { index: number; error: Error }[] = [];
 
-  checkParallelAbort(signal);
+  signal?.throwIfAborted();
 
   let nextIndex = 0;
 
   const next = async (): Promise<void> => {
     while (nextIndex < itemCount) {
-      checkParallelAbort(signal);
+      signal?.throwIfAborted();
 
       const index = nextIndex;
       nextIndex += 1;
@@ -36,7 +32,7 @@ export async function processInParallel<T, R>(
 
       try {
         const value = await processor(item);
-        checkParallelAbort(signal);
+        signal?.throwIfAborted();
         results.push({ index, value });
       } catch (error) {
         errors.push({
@@ -54,37 +50,17 @@ export async function processInParallel<T, R>(
   }
 
   await Promise.allSettled(workers);
-  checkParallelAbort(signal);
+  // A deadline (timedSignal) hit during the run surfaces here as signal.reason
+  // — a TimeoutError — rather than a fresh AbortError, so callers see TIMEOUT,
+  // not CANCELLED. The per-item throws above are swallowed by allSettled.
+  signal?.throwIfAborted();
 
   results.sort((left, right) => left.index - right.index);
   return { results, errors };
 }
 
-function createAbortError(message = 'Operation aborted'): Error {
-  return new DOMException(message, 'AbortError');
-}
-
-function normalizeAbortReason(reason: unknown, message?: string): Error {
-  if (reason instanceof Error) return reason;
-  return createAbortError(message);
-}
-
-export function assertNotAborted(signal?: AbortSignal, message?: string): void {
-  if (!signal) return;
-  try {
-    signal.throwIfAborted();
-  } catch (reason) {
-    throw normalizeAbortReason(reason, message);
-  }
-}
-
-function getAbortError(signal: AbortSignal, message?: string): Error {
-  try {
-    signal.throwIfAborted();
-  } catch (reason) {
-    return normalizeAbortReason(reason, message);
-  }
-  return createAbortError(message);
+export function assertNotAborted(signal?: AbortSignal): void {
+  signal?.throwIfAborted();
 }
 
 export function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
@@ -96,7 +72,8 @@ export function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise
     const onAbort = (): void => {
       if (settled) return;
       settled = true;
-      reject(getAbortError(signal));
+      const reason: unknown = signal.reason;
+      reject(reason instanceof Error ? reason : new Error('Operation aborted'));
     };
 
     if (signal.aborted) {

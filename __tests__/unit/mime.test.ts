@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { detectMimeType, type MimeKind } from '../../src/core/mime.js';
+import { detectMimeType, isKnownBinaryExtension, type MimeKind } from '../../src/core/mime.js';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -139,5 +139,17 @@ describe('detectMimeType', () => {
     const result = detectMimeType('unknown.xyz', emptyBuffer);
     assert.equal(result.kind, 'text');
     assert.equal(result.mimeType, 'text/plain');
+  });
+});
+
+// ─── isKnownBinaryExtension ─────────────────────────────────────────────────
+
+describe('isKnownBinaryExtension', () => {
+  it('treats SVG as not binary (text bytes, image kind)', () => {
+    assert.equal(isKnownBinaryExtension('a.svg'), false);
+  });
+
+  it('treats a binary archive extension from EXT_MAP as binary', () => {
+    assert.equal(isKnownBinaryExtension('a.xz'), true);
   });
 });

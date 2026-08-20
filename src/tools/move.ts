@@ -136,8 +136,8 @@ interface MoveSource {
  */
 async function validateMoveSource(source: string, fs: ToolCtx['fs']): Promise<MoveSource> {
   try {
-    const realPath = await fs.validateExistingPath(source);
-    const renamePath = await fs.validatePathForDelete(source);
+    const realPath = await fs.pathGuard.validateExistingPath(source);
+    const renamePath = await fs.pathGuard.validatePathForDelete(source);
     return { renamePath, realPath };
   } catch (error) {
     if (isFsError(error)) throw error;
@@ -237,7 +237,7 @@ export const MOVE = defineTool({
     for (const move of args.moves) {
       try {
         const { renamePath, realPath } = await validateMoveSource(move.source, ctx.fs);
-        const validDest = await ctx.fs.validatePathForWrite(move.destination);
+        const validDest = await ctx.fs.pathGuard.validatePathForWrite(move.destination);
 
         // Comparisons run on the resolved source; only the fs call below uses
         // renamePath. validatePathForWrite resolves the destination through a

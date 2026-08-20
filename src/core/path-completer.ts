@@ -36,11 +36,7 @@ export class PathCompleter {
       return cacheEntry.result;
     }
 
-    const results = await this.completePath(value, {
-      pathGuard: this.pathGuard,
-      argumentName,
-      ...(contextArguments !== undefined ? { contextArguments } : {}),
-    });
+    const results = await this.completePath(value, argumentName, contextArguments);
     this.setCacheValue(cacheKey, { ms: now, result: results });
     return results;
   }
@@ -331,19 +327,15 @@ export class PathCompleter {
 
   private async completePath(
     value: string,
-    options: {
-      pathGuard: PathGuard;
-      argumentName?: string;
-      contextArguments?: Record<string, string>;
-    },
+    argumentName: string,
+    contextArguments?: Record<string, string>,
   ): Promise<string[]> {
-    const allowed = options.pathGuard.getAllowedDirectories();
-    const argName = options.argumentName ?? '';
+    const allowed = this.pathGuard.getAllowedDirectories();
 
     try {
       const contextBase = await PathCompleter.resolveContextBaseDirectory(
-        argName,
-        options.contextArguments,
+        argumentName,
+        contextArguments,
         allowed,
       );
 
@@ -361,7 +353,7 @@ export class PathCompleter {
         searchDir,
         prefix,
         allowed,
-        options.pathGuard.isSensitive.bind(options.pathGuard),
+        this.pathGuard.isSensitive.bind(this.pathGuard),
       );
       const rootMatches = PathCompleter.findMatchingRoots(searchDir, prefix, allowed);
       return PathCompleter.mergeCompletionMatches(dirMatches, rootMatches).slice(

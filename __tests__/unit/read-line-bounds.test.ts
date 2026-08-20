@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-import { readFileWithStats } from '../../src/core/fs.js';
+import { readFileWithStats } from '../../src/core/read.js';
 
 let dir: string;
 

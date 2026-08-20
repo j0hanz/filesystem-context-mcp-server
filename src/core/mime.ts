@@ -197,48 +197,45 @@ const MAGIC_SIGNATURES: MagicSignature[] = [
 
 export const MIME_SAMPLE_SIZE = 512;
 
-const KNOWN_BINARY_EXTENSIONS = new Set([
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.gif',
-  '.webp',
-  '.bmp',
-  '.ico',
-  '.mp3',
-  '.wav',
-  '.flac',
-  '.mp4',
-  '.mov',
-  '.avi',
-  '.mkv',
-  '.webm',
-  '.zip',
-  '.tar',
-  '.gz',
-  '.7z',
-  '.rar',
-  '.exe',
-  '.dll',
-  '.so',
-  '.dylib',
-  '.ttf',
-  '.otf',
-  '.woff',
-  '.woff2',
-  '.pdf',
-  '.doc',
-  '.docx',
-  '.xls',
-  '.xlsx',
-  '.ppt',
-  '.pptx',
-  '.sqlite',
-  '.db',
-  '.wasm',
-  '.bin',
-  '.dat',
-]);
+// Every non-text kind is binary for read purposes, except SVG — an image kind
+// whose bytes are text, and which the read path must not fast-path as binary.
+// EXT_MAP covers the extensions it knows (image/audio/pdf/binary kinds all
+// become binary here, image-kind SVG excepted); EXTRA_BINARY_EXTENSIONS lists
+// the rest that EXT_MAP does not carry but the read path must still treat as
+// binary. The two tables had drifted; this derivation resolves the drift toward
+// binary (only changes whether a file skips its content probe).
+const EXTRA_BINARY_EXTENSIONS = [
+  'mov',
+  'avi',
+  'mkv',
+  'webm',
+  'ttf',
+  'otf',
+  'woff',
+  'woff2',
+  'doc',
+  'docx',
+  'xls',
+  'xlsx',
+  'ppt',
+  'pptx',
+  'sqlite',
+  'db',
+  'bin',
+  'dat',
+  'mp4',
+];
+
+const KNOWN_BINARY_EXTENSIONS: ReadonlySet<string> = new Set(
+  [
+    ...Object.entries(EXT_MAP)
+      .filter(([, v]) => v.kind !== 'text')
+      .map(([k]) => k),
+    ...EXTRA_BINARY_EXTENSIONS,
+  ]
+    .filter((ext) => ext !== 'svg')
+    .map((ext) => `.${ext}`),
+);
 
 export function isKnownBinaryExtension(filePath: string): boolean {
   const ext = extname(filePath).toLowerCase();

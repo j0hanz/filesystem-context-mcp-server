@@ -33,24 +33,6 @@ export function debounce<Args extends unknown[]>(
   return debounced;
 }
 
-// Copies non-undefined source properties onto target; safe under exactOptionalPropertyTypes.
-export function assignDefined<T extends object>(
-  target: T,
-  source: { [K in keyof T]?: T[K] | undefined },
-): T {
-  for (const key of Reflect.ownKeys(source) as (keyof T)[]) {
-    const value = (source as Record<PropertyKey, unknown>)[key];
-    if (value !== undefined) {
-      try {
-        (target as Record<PropertyKey, unknown>)[key] = value;
-      } catch (err) {
-        Logger.warn(`Failed to assign defined property: ${String(key)}`, err);
-      }
-    }
-  }
-  return target;
-}
-
 const KIB = 1024;
 const MIB = 1024 * KIB;
 

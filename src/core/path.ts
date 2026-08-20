@@ -21,14 +21,28 @@ import { Logger } from './observability.js';
 import { parseEnvDirList, parseTrueEnvFlag } from './primitives.js';
 import { ROOTS_TIMEOUT_MS } from './util.js';
 
-// note: ~1.3k lines, over the 1k bar, and deliberately so. PathGuard and its
-// access-control support (path primitives, glob/sensitive-pattern engine,
-// Windows reserved-device validation, cwd safety, project-root walking) are one
-// cohesive module. Separable peer concerns are already extracted:
-// path-completer.ts, cursor.ts. What is left splits only into <100-line
-// fragments of a single concept, which would scatter access control across
-// files — a worse shape, not a deferred one. Split only if a genuinely
-// separable concern appears.
+// note: ~1.25k lines, over the 1k bar, and deliberately so. This file holds two
+// access-control concerns that share one set of path primitives and so do not
+// separate cleanly:
+//
+//  - denylist policy (~150 lines): DEFAULT_SENSITIVE_PATTERNS,
+//    buildSensitivePatterns, CompiledPattern/Set, compilePatternGlobs,
+//    compilePatterns, toPatternSet, matchesAnyGlob, stripAdsFromPath,
+//    isSensitive. Consumed independently by path-completer.ts, but built on the
+//    same primitives as the assembly below.
+//  - allowed-directory assembly (~250 lines): normalizeCLIDirectories,
+//    isRootWithin, filterRootsWithin, normalizeAllowedDirectories,
+//    expandAllowedDirectories, resolveAllowedDirectoriesState, the body of
+//    recomputeAllowedDirectories, UNSAFE_CWD_PATHS, isUnsafeCwdPath,
+//    findProjectRoot.
+//
+// Both rest on IS_WINDOWS, normalizeForMatch, and isPathWithinDirectories, and
+// both are pure access-control policy — neither carries its own state besides
+// the policy tables. Cutting either out would duplicate the primitives or push
+// a containment check through a cross-module call. Split only if one concern
+// grows a genuinely separate dependency, or if a third home for the shared
+// primitives appears. Separable peers are already extracted: path-completer.ts,
+// cursor.ts.
 export type ValidatedPath = string & { readonly __validated: unique symbol };
 
 export interface ServerOptions {
@@ -380,6 +394,42 @@ export async function resolveAllowedDirectoriesState(
   return { primary, expanded };
 }
 
+// Resolve a configured env-var directory list (FS_ALLOWED_DIRS / ROOT_BOUNDARY)
+// into normalized, verified directories. Each entry is stat'd; a non-directory
+// warns and is dropped, a missing entry warns unless `allowMissing` is set (in
+// which case the normalized path is kept). When `resolveReal` is set, a
+// directory entry is pushed as its realpath (normalized) instead of the raw
+// path — ROOT_BOUNDARY uses this so a symlinked root resolves to its target.
+// Both warning messages are templated on `envVar` so operator output is stable.
+async function resolveConfiguredDirs(
+  envVar: string,
+  opts: { allowMissing?: boolean; resolveReal?: boolean } = {},
+): Promise<string[]> {
+  const raw = parseEnvDirList(envVar);
+  const result: string[] = [];
+  for (const rawPath of raw) {
+    const normalized = normalizePath(rawPath);
+    try {
+      const s = await stat(normalized);
+      if (s.isDirectory()) {
+        result.push(opts.resolveReal ? normalizePath(await realpath(normalized)) : normalized);
+      } else {
+        Logger.emit('warning', `Path configured in ${envVar} is not a directory: ${rawPath}`);
+      }
+    } catch (error) {
+      if (opts.allowMissing) {
+        result.push(normalized);
+      } else {
+        Logger.emit(
+          'warning',
+          `Path configured in ${envVar} is invalid or does not exist: ${rawPath} (${error instanceof Error ? error.message : String(error)})`,
+        );
+      }
+    }
+  }
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // Windows helpers
 // ---------------------------------------------------------------------------
@@ -606,8 +656,17 @@ export class PathGuard {
   }
 
   async setRoots(resolvedRoots: readonly string[]): Promise<void> {
-    this.rootDirectories = [...resolvedRoots];
-    await this.recomputeAllowedDirectories();
+    const next = [...resolvedRoots];
+    const previous = this.rootDirectories;
+    this.rootDirectories = next;
+    try {
+      await this.recomputeAllowedDirectories();
+    } catch (error) {
+      // Roll back: a failed recompute leaves the guard with the old roots and
+      // its old, consistent allowed-directory view.
+      this.rootDirectories = previous;
+      throw error;
+    }
   }
 
   getAllowedDirectories(): string[] {
@@ -1082,54 +1141,11 @@ export class PathGuard {
     const cliAllowedDirs = normalizeCLIDirectories(this.options?.cliAllowedDirs ?? []);
 
     // Parse allowed directories from environment variable
-    const envAllowedRaw = parseEnvDirList('FS_ALLOWED_DIRS');
-    const envAllowedDirs: string[] = [];
     const allowMissing = parseTrueEnvFlag(process.env['ALLOW_MISSING_ROOTS']);
-    for (const rawPath of envAllowedRaw) {
-      const normalized = normalizePath(rawPath);
-      try {
-        const s = await stat(normalized);
-        if (s.isDirectory()) {
-          envAllowedDirs.push(normalized);
-        } else {
-          Logger.emit(
-            'warning',
-            `Path configured in FS_ALLOWED_DIRS is not a directory: ${rawPath}`,
-          );
-        }
-      } catch (_error) {
-        if (allowMissing) {
-          envAllowedDirs.push(normalized);
-        } else {
-          Logger.emit(
-            'warning',
-            `Path configured in FS_ALLOWED_DIRS is invalid or does not exist: ${rawPath} (${_error instanceof Error ? _error.message : String(_error)})`,
-          );
-        }
-      }
-    }
+    const envAllowedDirs = await resolveConfiguredDirs('FS_ALLOWED_DIRS', { allowMissing });
 
     // Parse ROOT_BOUNDARY
-    const boundaryRaw = parseEnvDirList('ROOT_BOUNDARY');
-    const boundaries: string[] = [];
-    for (const rawPath of boundaryRaw) {
-      const normalized = normalizePath(rawPath);
-      try {
-        const s = await stat(normalized);
-        if (s.isDirectory()) {
-          const realBoundary = await realpath(normalized);
-          boundaries.push(normalizePath(realBoundary));
-        } else {
-          Logger.emit('warning', `Path configured in ROOT_BOUNDARY is not a directory: ${rawPath}`);
-        }
-      } catch (_error) {
-        Logger.emit(
-          'warning',
-          `Path configured in ROOT_BOUNDARY is invalid or does not exist: ${rawPath} (${_error instanceof Error ? _error.message : String(_error)})`,
-        );
-      }
-    }
-    this.rootBoundaries = boundaries;
+    const boundaries = await resolveConfiguredDirs('ROOT_BOUNDARY', { resolveReal: true });
 
     const allowCwd = Boolean(this.options?.allowCwd);
     const allowCwdDirs: string[] = [];
@@ -1137,7 +1153,7 @@ export class PathGuard {
       let cwd = normalizePath(process.cwd());
       const walkCwd = parseTrueEnvFlag(process.env['ALLOW_CWD_WALK']);
       if (walkCwd) {
-        cwd = await findProjectRoot(cwd, [...this.rootBoundaries, homedir()]);
+        cwd = await findProjectRoot(cwd, [...boundaries, homedir()]);
       }
       if (isUnsafeCwdPath(cwd)) {
         Logger.emit(
@@ -1153,20 +1169,17 @@ export class PathGuard {
 
     const signal = timedSignal(undefined, ROOTS_TIMEOUT_MS);
     const rootsToInclude =
-      this.rootBoundaries.length > 0
-        ? await filterRootsWithin(
-            this.rootDirectories,
-            this.rootBoundaries,
-            'rootBoundary',
-            false,
-            signal,
-          )
+      boundaries.length > 0
+        ? await filterRootsWithin(this.rootDirectories, boundaries, 'rootBoundary', false, signal)
         : baseline.length > 0
           ? await filterRootsWithin(this.rootDirectories, baseline, 'baseline', true, signal)
           : this.rootDirectories;
 
     const combined = [...baseline, ...rootsToInclude];
     const nextState = await resolveAllowedDirectoriesState(combined, signal);
+    // Commit both fields together, after every await has resolved, so a
+    // rejecting recompute leaves the guard's previous, consistent view intact.
+    this.rootBoundaries = boundaries;
     this.initialize(nextState);
   }
 }

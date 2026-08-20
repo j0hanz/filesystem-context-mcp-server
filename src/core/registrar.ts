@@ -121,11 +121,15 @@ function logMissingDirectories(pathGuard: PathGuard): void {
   );
 }
 
-type RootsManagerState = 'idle' | 'initializing' | 'updating' | 'shutting_down';
 const ROOTS_DEBOUNCE_MS = 100;
 
 export class McpRootsSynchronizer {
-  private state: RootsManagerState = 'initializing';
+  // Widened from a string-literal union: control-flow analysis narrows a union
+  // field to the last assigned literal ('updating') and does not reset it across
+  // the awaited setRoots, so the shutdown check in the finally compared two
+  // non-overlapping literals. A `string` field resets across the await, making
+  // the live `this.state !== 'shutting_down'` check sound.
+  private state = 'initializing';
   private initTimer: ReturnType<typeof setTimeout> | undefined;
   private pendingRootsUpdate = false;
   private rootDirectories: string[] = [];
@@ -227,10 +231,19 @@ export class McpRootsSynchronizer {
         detail.includes('timeout') ? 'debug' : 'warning',
         `MCP Roots unavailable (${detail}). No roots discovered from the client — pass allowed directories as CLI arguments or set FS_ALLOWED_DIRS.`,
       );
+      // A client whose listRoots() failed told us nothing; clear the last-known
+      // roots so the guard does not keep granting a stale access-control input.
+      this.rootDirectories = [];
     } finally {
-      const currentState = this.state as RootsManagerState;
-      if (currentState !== 'shutting_down') {
-        await this.pathGuard.setRoots(this.rootDirectories);
+      if (this.state !== 'shutting_down') {
+        try {
+          await this.pathGuard.setRoots(this.rootDirectories);
+        } catch (error) {
+          Logger.emit(
+            'warning',
+            `Failed to apply roots to the path guard: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
         this.state = 'idle';
         if (this.pendingRootsUpdate) {
           this.pendingRootsUpdate = false;

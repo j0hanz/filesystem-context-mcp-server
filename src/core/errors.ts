@@ -73,17 +73,19 @@ export const Problem = {
   ioError: (msg: string, o?: ProblemFactoryOptions): Problem => build(ErrorCode.IO_ERROR, msg, o),
   unknown: (msg: string, o?: ProblemFactoryOptions): Problem => build(ErrorCode.UNKNOWN, msg, o),
   fromUnknown(error: unknown, defaultCode: ErrorCode, path?: string): Problem {
-    const detailed = createDetailedError(error, path);
+    const problem = classify(error);
     const shouldOverride =
-      detailed.code === ErrorCode.UNKNOWN || detailed.code === ErrorCode.IO_ERROR;
-    const code = shouldOverride ? defaultCode : detailed.code;
-    const defaultSuggestion = shouldOverride ? getSuggestion(code) : undefined;
-    const suggestion = defaultSuggestion ?? detailed.suggestion;
-    return build(code, detailed.message, {
-      ...(detailed.path !== undefined ? { path: detailed.path } : {}),
+      problem.code === ErrorCode.UNKNOWN || problem.code === ErrorCode.IO_ERROR;
+    const code = shouldOverride ? defaultCode : problem.code;
+    const baseSuggestion =
+      problem.suggestion ?? resolveSuggestion({ code: problem.code, issues: problem.issues ?? [] });
+    const suggestion = (shouldOverride ? DEFAULT_SUGGESTIONS[code] : undefined) ?? baseSuggestion;
+    const resolvedPath = path ?? problem.path;
+    return build(code, problem.message, {
+      ...(resolvedPath !== undefined ? { path: resolvedPath } : {}),
       ...(suggestion !== undefined ? { suggestion } : {}),
-      ...(detailed.issues !== undefined && detailed.issues.length > 0
-        ? { issues: detailed.issues }
+      ...(problem.issues !== undefined && problem.issues.length > 0
+        ? { issues: problem.issues }
         : {}),
     });
   },
@@ -131,6 +133,17 @@ const ERRNO_MAP: Readonly<Record<string, ErrorCode>> = {
 };
 
 const ERRNO_RE = /^E[A-Z]+$/;
+
+// NOT_FOUND is in here (not just ENOENT) because a dangling symlink whose
+// target sits inside an allowed root surfaces as an FsError NOT_FOUND. Skipping
+// the entry is the point of a listing; rethrowing would fail the whole listing.
+export const SKIPPABLE_FS_CODES: ReadonlySet<ErrorCode> = new Set([
+  ErrorCode.ACCESS_DENIED,
+  ErrorCode.NOT_FOUND,
+  ErrorCode.SYMLINK_NOT_ALLOWED,
+]);
+
+export const SKIPPABLE_ERRNOS: ReadonlySet<string> = new Set(['ENOENT', 'EACCES', 'ELOOP']);
 
 type ClassificationSignal =
   | { kind: 'abort' }
@@ -255,7 +268,7 @@ export function zodErrorToProblem(err: z.ZodError): Problem {
   });
 }
 
-function isFsErrorCarrier(error: unknown): error is { problem: Problem } {
+export function isFsError(error: unknown): error is FsError {
   if (!(error instanceof Error) || error.name !== 'FsError') return false;
   if (!('problem' in error)) return false;
   const p = (error as { problem?: unknown }).problem;
@@ -268,7 +281,7 @@ function isFsErrorCarrier(error: unknown): error is { problem: Problem } {
  * Structural discriminator for SDK error classes (`ProtocolError`, `SdkError`).
  * Checks `name` + `code` properties rather than `instanceof` so discrimination
  * survives cross-realm / multi-SDK-copy conditions where the prototype chain
- * breaks. Mirrors the isFsErrorCarrier pattern.
+ * breaks. Mirrors the isFsError pattern.
  */
 export function hasErrorShape(
   error: unknown,
@@ -281,16 +294,11 @@ export function hasErrorShape(
   return code === undefined || c === code;
 }
 
-/** Structural `FsError` check (cross-realm safe); see isFsErrorCarrier. */
-export function isFsError(error: unknown): error is FsError {
-  return isFsErrorCarrier(error);
-}
-
 export function classify(error: unknown): Problem {
   if (error === null || error === undefined) {
     return Problem.unknown('Unknown error');
   }
-  if (isFsErrorCarrier(error)) return error.problem;
+  if (isFsError(error)) return error.problem;
   if (error instanceof z.ZodError) return zodErrorToProblem(error);
   if (!(error instanceof Error)) {
     return Problem.unknown(typeof error === 'string' ? error : '[non-Error thrown]');
@@ -322,19 +330,6 @@ export function rethrowIfAborted(error: unknown): void {
   if (isAbortError(error)) throw error;
 }
 
-export function getSuggestion(code: ErrorCode): string | undefined {
-  return DEFAULT_SUGGESTIONS[code];
-}
-
-interface DetailedError {
-  code: ErrorCode;
-  message: string;
-  path?: string;
-  suggestion?: string;
-  details?: Record<string, unknown>;
-  issues?: readonly ProblemIssue[];
-}
-
 export function formatUnknownErrorMessage(error: unknown): string {
   if (typeof error === 'string') return error;
   if (isNativeError(error)) return error.message;
@@ -347,30 +342,6 @@ export function formatUnknownErrorMessage(error: unknown): string {
 
 export function normalizeUnknownError(error: unknown): Error {
   return error instanceof Error ? error : new Error(formatUnknownErrorMessage(error));
-}
-
-export function createDetailedError(
-  error: unknown,
-  path?: string,
-  additionalDetails?: Record<string, unknown>,
-): DetailedError {
-  const problem = classify(error);
-  const merged: Record<string, unknown> = {
-    ...(problem.details ?? {}),
-    ...(additionalDetails ?? {}),
-  };
-  const resolvedPath = path ?? problem.path;
-  const suggestion =
-    problem.suggestion ?? resolveSuggestion({ code: problem.code, issues: problem.issues ?? [] });
-
-  return {
-    code: problem.code,
-    message: problem.message,
-    ...(resolvedPath !== undefined ? { path: resolvedPath } : {}),
-    ...(suggestion !== undefined ? { suggestion } : {}),
-    ...(Object.keys(merged).length > 0 ? { details: merged } : {}),
-    ...(problem.issues && problem.issues.length > 0 ? { issues: problem.issues } : {}),
-  };
 }
 
 function formatDetailedError(
