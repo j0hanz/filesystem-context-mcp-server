@@ -1,6 +1,5 @@
 import { createMcpExpressApp } from '@modelcontextprotocol/express';
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
-import type { McpServer } from '@modelcontextprotocol/server';
 import {
   DEFAULT_REQUEST_TIMEOUT_MSEC,
   type EventId,
@@ -34,7 +33,7 @@ import type { Express, NextFunction, Request, Response } from 'express';
 
 import { ErrorCode, formatUnknownErrorMessage, FsError } from './core/errors.js';
 import { Logger, withSession } from './core/observability.js';
-import type { PathGuard, ServerOptions } from './core/path.js';
+import type { ServerOptions } from './core/path.js';
 import type { McpRootsSynchronizer } from './core/registrar.js';
 import { getInitHandshakeTimeoutMs, INIT_TIMEOUT_CLOSE, parseEnvInt } from './core/util.js';
 import {
@@ -223,18 +222,6 @@ interface PreDispatchJsonRpcError {
   error: { code: number; message: string };
 }
 
-function buildJsonRpcError(
-  code: number,
-  message: string,
-  id: RequestId | null = null,
-): PreDispatchJsonRpcError {
-  return {
-    jsonrpc: JSONRPC_VERSION,
-    id,
-    error: { code, message },
-  };
-}
-
 function sendJsonRpcError(
   res: ServerResponse,
   status: number,
@@ -242,8 +229,13 @@ function sendJsonRpcError(
   message: string,
   id: RequestId | null = null,
 ): void {
+  const body: PreDispatchJsonRpcError = {
+    jsonrpc: JSONRPC_VERSION,
+    id,
+    error: { code, message },
+  };
   res.writeHead(status, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(buildJsonRpcError(code, message, id)));
+  res.end(JSON.stringify(body));
 }
 
 function getSessionId(req: IncomingMessage): string | undefined {
@@ -257,9 +249,7 @@ function getSessionId(req: IncomingMessage): string | undefined {
 // ---------------------------------------------------------------------------
 
 interface HttpSession {
-  server: McpServer;
-  pathGuard: PathGuard;
-  synchronizer?: McpRootsSynchronizer;
+  synchronizer: McpRootsSynchronizer;
   transport: NodeStreamableHTTPServerTransport;
   createdAt: number;
   /** When the last request on this session finished; drives idle eviction. */
@@ -272,7 +262,6 @@ interface HttpSession {
 interface HttpSessionRegistryOptions {
   handshakeTimeoutMs: number;
   idleTimeoutMs: number;
-  sweepIntervalMs?: number;
 }
 
 /**
@@ -291,7 +280,7 @@ class HttpSessionRegistry {
   constructor(opts: HttpSessionRegistryOptions) {
     this.handshakeTimeoutMs = opts.handshakeTimeoutMs;
     this.idleTimeoutMs = opts.idleTimeoutMs;
-    this.sweepIntervalMs = opts.sweepIntervalMs ?? opts.handshakeTimeoutMs * 2;
+    this.sweepIntervalMs = opts.handshakeTimeoutMs * 2;
   }
 
   size(): number {
@@ -345,11 +334,7 @@ class HttpSessionRegistry {
    * long-lived GET stream sends nothing for hours and is not idle.
    */
   private evictionReason(session: HttpSession, now: number): string | undefined {
-    const isSessionInitialized = session.synchronizer
-      ? session.synchronizer.isInitialized()
-      : session.pathGuard.isInitialized();
-
-    if (!isSessionInitialized) {
+    if (!session.synchronizer.isInitialized()) {
       return now - session.createdAt > this.handshakeTimeoutMs ? 'handshake timeout' : undefined;
     }
     if (session.activeRequests > 0) return undefined;
@@ -443,17 +428,11 @@ async function createHttpSession(
     await mcpServer.close();
   };
 
-  let currentSessionId: string | undefined;
-
   const transport = new NodeStreamableHTTPServerTransport({
-    sessionIdGenerator: () => {
-      currentSessionId = randomUUID();
-      return currentSessionId;
-    },
+    sessionIdGenerator: () => randomUUID(),
     eventStore,
     retryInterval: 2_000,
     onsessioninitialized: (sessionId) => {
-      currentSessionId = sessionId;
       if (!pathGuard.isServerContext) {
         throw new FsError(
           ErrorCode.VALIDATION_FAILED,
@@ -498,8 +477,6 @@ async function createHttpSession(
   // through either path stamps the same activity clock.
   const now = Date.now();
   const session: HttpSession = {
-    server: mcpServer,
-    pathGuard,
     synchronizer,
     transport,
     createdAt: now,

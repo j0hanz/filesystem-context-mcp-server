@@ -207,7 +207,7 @@ export function bearerAuthMiddleware(apiKey: string | undefined): RequestHandler
     // -32000 is the JSON-RPC server-defined error range; no SDK enum maps to
     // "Unauthorized". The 401 body is inlined with the fixed JSON-RPC 2.0 "2.0"
     // literal so this policy module does not depend on the transport's
-    // JSON-RPC wire-shape helpers (buildJsonRpcError), keeping http-policy
+    // JSON-RPC wire-shape helpers (sendJsonRpcError), keeping http-policy
     // free of server-runtime concerns.
     res.end(
       JSON.stringify({
