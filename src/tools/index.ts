@@ -37,6 +37,23 @@ export const MUTATING_TOOL_NAMES = new Set([
 
 export const ALL_REGISTERED_TOOL_NAMES: readonly string[] = ALL_TOOLS.map((t) => t.name);
 
+// Re-exported so documentation surfaces quote `.name` off the definition rather
+// than repeating the string. This module is the only owner of the inventory.
+export {
+  CALCULATE_HASH,
+  CREATE,
+  DELETE_FILE,
+  EDIT,
+  LIST,
+  LIST_ALLOWED_DIRECTORIES,
+  MOVE,
+  READ_FILE,
+  SEARCH_AND_REPLACE,
+  SEARCH_CONTENT,
+  SEARCH_FILES,
+  GET_FILE_INFO,
+};
+
 export const toolsRegistrar: Registrar = {
   register(deps): void {
     const toolDeps = {

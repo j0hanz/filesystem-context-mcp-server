@@ -36,6 +36,20 @@ import {
   MAX_TEXT_FILE_SIZE,
   parseEnvInt,
 } from './core/util.js';
+import {
+  CALCULATE_HASH,
+  CREATE,
+  DELETE_FILE,
+  EDIT,
+  GET_FILE_INFO,
+  LIST,
+  LIST_ALLOWED_DIRECTORIES,
+  MOVE,
+  READ_FILE,
+  SEARCH_AND_REPLACE,
+  SEARCH_CONTENT,
+  SEARCH_FILES,
+} from './tools/index.js';
 
 // ═══════════════════════════════════════════════════════════════
 // shared
@@ -100,10 +114,10 @@ type ResourceContract = StaticResourceContract | TemplateResourceContract;
 
 function buildToolsOverview(): string {
   const rows: [string, string[]][] = [
-    ['Navigate', ['list_roots', 'list', 'find_files']],
-    ['Inspect', ['stat', 'search_text', 'hash_file']],
-    ['Read', ['read']],
-    ['Write', ['create', 'edit', 'move', 'delete', 'replace_text']],
+    ['Navigate', [LIST_ALLOWED_DIRECTORIES.name, LIST.name, SEARCH_FILES.name]],
+    ['Inspect', [GET_FILE_INFO.name, SEARCH_CONTENT.name, CALCULATE_HASH.name]],
+    ['Read', [READ_FILE.name]],
+    ['Write', [CREATE.name, EDIT.name, MOVE.name, DELETE_FILE.name, SEARCH_AND_REPLACE.name]],
   ];
 
   const rowLines = rows.map(([cat, names]) => `${cat}: ${names.join(', ')}`);
