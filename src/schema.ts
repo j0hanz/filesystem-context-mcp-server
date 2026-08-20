@@ -335,10 +335,11 @@ export function singleOrBatchPathsInput<
   TExtra & {
     path: z.ZodOptional<typeof RequiredPath>;
     paths: z.ZodOptional<z.ZodArray<typeof RequiredPath>>;
-    files: z.ZodOptional<
-      z.ZodArray<z.ZodObject<{ path: typeof RequiredPath } & NonNullable<TPerFile>>>
-    >;
-  }
+  } & (TPerFile extends z.ZodRawShape
+      ? {
+          files: z.ZodOptional<z.ZodArray<z.ZodObject<{ path: typeof RequiredPath } & TPerFile>>>;
+        }
+      : object)
 > {
   const maxBatch = opts.maxBatch ?? DEFAULT_MAX_BATCH;
   const perFileShape = opts.perFile;

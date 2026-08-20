@@ -33,7 +33,6 @@ export class FilesystemServerContext {
   public readonly synchronizer: McpRootsSynchronizer;
   public readonly fs: GuardedFileSystem;
   public readonly resources: ResourceStore;
-  public readonly resourcesHandle: { destroy(): void };
   private readonly registrars: readonly Registrar[];
   private cleanedUp = false;
 
@@ -42,7 +41,6 @@ export class FilesystemServerContext {
     pathGuard: PathGuard,
     synchronizer: McpRootsSynchronizer,
     resources: ResourceStore,
-    resourcesHandle: { destroy(): void },
     registrars: readonly Registrar[],
   ) {
     this.mcp = mcp;
@@ -50,7 +48,6 @@ export class FilesystemServerContext {
     this.synchronizer = synchronizer;
     this.fs = new GuardedFileSystem(pathGuard);
     this.resources = resources;
-    this.resourcesHandle = resourcesHandle;
     this.registrars = registrars;
   }
 
@@ -147,18 +144,5 @@ export async function createServer(
   const registrars: Registrar[] = [resourcesRegistrar, promptsRegistrar, toolsRegistrar];
   for (const r of registrars) r.register(deps);
 
-  const resourcesHandle = {
-    destroy: () => {
-      resourcesRegistrar.dispose(server);
-    },
-  };
-
-  return new FilesystemServerContext(
-    server,
-    pathGuard,
-    synchronizer,
-    resourceStore,
-    resourcesHandle,
-    registrars,
-  );
+  return new FilesystemServerContext(server, pathGuard, synchronizer, resourceStore, registrars);
 }

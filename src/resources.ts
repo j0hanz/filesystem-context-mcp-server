@@ -33,6 +33,7 @@ import {
   MAX_TEXT_FILE_SIZE,
   parseEnvInt,
 } from './core/util.js';
+import { extractPath } from './tools/_helpers.js';
 import type { IconInfo } from './tools/define.js';
 import { withDefaultIcons } from './tools/define.js';
 
@@ -187,16 +188,6 @@ const MAX_WATCHERS = parseEnvInt('FILESYSTEM_MCP_MAX_WATCHERS', 256, 1, 4096);
 
 const watchFactory: (path: string, listener: () => void) => FSWatcher = (path, listener) =>
   watch(path, listener);
-
-function extractPath(uri: string): string | undefined {
-  try {
-    const url = new URL(uri);
-    if (url.protocol !== 'filesystem-mcp:' || url.host !== 'file') return undefined;
-    return decodeURIComponent(url.pathname.slice(1));
-  } catch {
-    return undefined;
-  }
-}
 
 function createFilesystemResource(options: ResourceRegistrationOptions): ResourceContract {
   const completer = options.pathGuard ? new PathCompleter(options.pathGuard) : undefined;

@@ -11,7 +11,7 @@ import {
   isLoopbackHttpHost,
   parseAllowedHostsEnv,
   validateBearerAuthorization,
-} from '../../src/transport.js';
+} from '../../src/http-policy.js';
 
 describe('express host validation exports', () => {
   it('exposes host validation middleware factories as functions', () => {

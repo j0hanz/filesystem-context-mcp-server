@@ -141,7 +141,7 @@ class InMemoryResourceStore implements ResourceStore {
     return existing;
   }
 
-  private _rawPut(
+  private rawPut(
     params: { name: string; mimeType: string; data: string | Buffer },
     createFn: (base: Omit<TextResourceEntry | BlobResourceEntry, 'text' | 'data'>) => StoredEntry,
   ): StoredEntry {
@@ -196,7 +196,7 @@ class InMemoryResourceStore implements ResourceStore {
     }
   }
 
-  private _getExisting(uri: string, expectedKind?: 'text' | 'blob'): StoredEntry {
+  private getExisting(uri: string, expectedKind?: 'text' | 'blob'): StoredEntry {
     const existing = this.getEntryIfExists(uri);
 
     if (!existing) {
@@ -225,7 +225,7 @@ class InMemoryResourceStore implements ResourceStore {
     return existing;
   }
 
-  private _checkBeforePut(data: string | Buffer): void {
+  private checkBeforePut(data: string | Buffer): void {
     this.pruneExpiredEntries();
     const entryBytes = estimateBytes(data);
     if (entryBytes > this.options.maxEntryBytes) {
@@ -233,7 +233,7 @@ class InMemoryResourceStore implements ResourceStore {
     }
   }
 
-  private _tryReturnHashHit(
+  private tryReturnHashHit(
     kind: 'text' | 'blob',
     mimeType: string,
     data: string | Buffer,
@@ -255,14 +255,14 @@ class InMemoryResourceStore implements ResourceStore {
         this.bumpLru(refreshed.uri, refreshed);
         return refreshed;
       } else {
-        // Kind mismatch: remove orphan so _rawPut can safely take over the byHashIndex slot.
+        // Kind mismatch: remove orphan so rawPut can safely take over the byHashIndex slot.
         this.removeEntry(cached.uri);
       }
     }
     return undefined;
   }
 
-  private _enforceAfterPut(entry: StoredEntry): void {
+  private enforceAfterPut(entry: StoredEntry): void {
     this.enforceLimits();
     if (!this.getEntryIfExists(entry.uri)) {
       throw new FsError(ErrorCode.TOO_LARGE, 'Cache full: entry evicted.');
@@ -274,8 +274,8 @@ class InMemoryResourceStore implements ResourceStore {
   putText(params: { name: string; mimeType?: string; text: string }): TextResourceEntry & {
     kind: 'text';
   } {
-    this._checkBeforePut(params.text);
-    const hit = this._tryReturnHashHit(
+    this.checkBeforePut(params.text);
+    const hit = this.tryReturnHashHit(
       'text',
       params.mimeType ?? 'text/plain',
       params.text,
@@ -283,16 +283,16 @@ class InMemoryResourceStore implements ResourceStore {
     );
     if (hit) return hit as TextResourceEntry & { kind: 'text' };
 
-    const entry = this._rawPut(
+    const entry = this.rawPut(
       { name: params.name, mimeType: params.mimeType ?? 'text/plain', data: params.text },
       (base) => ({ ...base, kind: 'text', text: params.text }),
     );
-    this._enforceAfterPut(entry);
+    this.enforceAfterPut(entry);
     return entry as TextResourceEntry & { kind: 'text' };
   }
 
   getText(uri: string): TextResourceEntry & { kind: 'text' } {
-    return this._getExisting(uri, 'text') as TextResourceEntry & { kind: 'text' };
+    return this.getExisting(uri, 'text') as TextResourceEntry & { kind: 'text' };
   }
 
   putBlob(params: {
@@ -300,24 +300,24 @@ class InMemoryResourceStore implements ResourceStore {
     mimeType: string;
     data: Buffer;
   }): BlobResourceEntry & { kind: 'blob' } {
-    this._checkBeforePut(params.data);
-    const hit = this._tryReturnHashHit('blob', params.mimeType, params.data, params.name);
+    this.checkBeforePut(params.data);
+    const hit = this.tryReturnHashHit('blob', params.mimeType, params.data, params.name);
     if (hit) return hit as BlobResourceEntry & { kind: 'blob' };
 
-    const entry = this._rawPut(
+    const entry = this.rawPut(
       { name: params.name, mimeType: params.mimeType, data: params.data },
       (base) => ({ ...base, kind: 'blob', data: params.data }),
     );
-    this._enforceAfterPut(entry);
+    this.enforceAfterPut(entry);
     return entry as BlobResourceEntry & { kind: 'blob' };
   }
 
   getBlob(uri: string): BlobResourceEntry & { kind: 'blob' } {
-    return this._getExisting(uri, 'blob') as BlobResourceEntry & { kind: 'blob' };
+    return this.getExisting(uri, 'blob') as BlobResourceEntry & { kind: 'blob' };
   }
 
   getEntry(uri: string): StoredEntry {
-    return this._getExisting(uri);
+    return this.getExisting(uri);
   }
 
   clear(): void {

@@ -34,10 +34,6 @@ import {
 import { putResource } from './_helpers.js';
 import { defineTool } from './define.js';
 
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-
 /**
  * Configuration constants for the Search Content tool.
  */
@@ -180,6 +176,25 @@ function buildSearchStructured(
   };
 }
 
+function findColumnOffset(content: string, context: SearchContext): number | undefined {
+  try {
+    if (context.matcher) {
+      context.matcher.lastIndex = 0;
+      const match = context.matcher.exec(content);
+      return match ? match.index : undefined;
+    }
+    if (context.caseSensitive) {
+      const idx = content.indexOf(context.pattern);
+      return idx >= 0 ? idx : undefined;
+    }
+    // Case-insensitive literal search
+    const idx = content.toLowerCase().indexOf(context.foldedPattern ?? '');
+    return idx >= 0 ? idx : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function buildSortedPayloads(
   result: SearchResultValue,
   context: SearchContext,
@@ -218,24 +233,6 @@ function buildSortedPayloads(
   });
 
   return payloads.map((p) => p.payload);
-}
-function findColumnOffset(content: string, context: SearchContext): number | undefined {
-  try {
-    if (context.matcher) {
-      context.matcher.lastIndex = 0;
-      const match = context.matcher.exec(content);
-      return match ? match.index : undefined;
-    }
-    if (context.caseSensitive) {
-      const idx = content.indexOf(context.pattern);
-      return idx >= 0 ? idx : undefined;
-    }
-    // Case-insensitive literal search
-    const idx = content.toLowerCase().indexOf(context.foldedPattern ?? '');
-    return idx >= 0 ? idx : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 function buildSearchContentOptions(args: SearchInput, signal?: AbortSignal): SearchContentOptions {

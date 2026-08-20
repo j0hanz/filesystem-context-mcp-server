@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { assertHttpHostPolicy, isOriginAllowed } from '../../src/transport.js';
+import { assertHttpHostPolicy, isOriginAllowed } from '../../src/http-policy.js';
 
 describe('assertHttpHostPolicy (REQ-002)', () => {
   it('allows loopback binds without allowed-hosts config', () => {
