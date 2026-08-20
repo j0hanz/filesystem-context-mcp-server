@@ -157,15 +157,8 @@ export const cliFmt = {
   dim: (t: string) => tint('dim', t),
   cyan: (t: string) => tint('cyan', t),
   yellow: (t: string) => tint('yellow', t),
-  green: (t: string) => tint('green', t),
   flag: (t: string) => tint('green', t),
   placeholder: (t: string) => tint('yellow', t),
   section: (t: string) => tint('boldCyan', t),
-  pathStr: (t: string) => tint('cyan', t),
   bool: (v: boolean) => (v ? tint('green', 'true') : tint('red', 'false')),
-  success: (t: string) => `${tint('green', '✔')} ${t}`,
-  stderrWarn: (t: string) =>
-    isColorEnabled(process.stderr)
-      ? `${tint('yellow', '⚠', process.stderr)} Warning: ${t}`
-      : `Warning: ${t}`,
 };

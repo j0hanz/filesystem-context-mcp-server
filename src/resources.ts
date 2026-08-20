@@ -198,9 +198,6 @@ function createInstructionsResource(): ResourceContract {
 // (e.g. Linux inotify, default ~8192/user). One subscription == one watcher.
 const MAX_WATCHERS = parseEnvInt('FILESYSTEM_MCP_MAX_WATCHERS', 256, 1, 4096);
 
-const watchFactory: (path: string, listener: () => void) => FSWatcher = (path, listener) =>
-  watch(path, listener);
-
 function warnWatcherCap(uri: string): void {
   Logger.warn(`Cannot subscribe to ${uri}: MAX_WATCHERS limit (${MAX_WATCHERS}) reached.`);
 }
@@ -251,7 +248,7 @@ function createWatcherRegistry() {
 
     attach(uri: string, resolvedPath: string): void {
       try {
-        const watcher = watchFactory(resolvedPath, () => {
+        const watcher = watch(resolvedPath, () => {
           notifyAll(uri);
         });
         watcher.on('error', (err: Error) => {
