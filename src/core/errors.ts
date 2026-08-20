@@ -325,6 +325,11 @@ export function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return typeof code === 'string';
 }
 
+/** True when `error` is a Node errno error with code `ENOENT` (path not found). */
+export function isNotFoundErrno(error: unknown): error is NodeJS.ErrnoException {
+  return isNodeError(error) && error.code === 'ENOENT';
+}
+
 export function isAbortError(error: unknown): boolean {
   return classify(error).code === ErrorCode.CANCELLED;
 }

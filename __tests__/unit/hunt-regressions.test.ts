@@ -24,9 +24,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
-import { ErrorCode, FsError } from '../../src/core/errors.js';
+import { ErrorCode, FsError, isFsError, SKIPPABLE_FS_CODES } from '../../src/core/errors.js';
 import { buildFileResourceUri } from '../../src/core/file-uri.js';
-import { isEntryAccessibleByType } from '../../src/core/glob.js';
 import { PathGuard } from '../../src/core/path.js';
 import { createInMemoryResourceStore } from '../../src/core/store.js';
 import { resourcesRegistrar } from '../../src/resources.js';
@@ -302,40 +301,47 @@ describe('list: tolerates a broken symlink', () => {
 // The plan prescribed stubbing node:fs/promises realpath via mock.method, but
 // ESM namespace exports of built-ins are non-configurable and the module
 // namespace is read-only in strict mode, so realpath cannot be patched from a
-// consumer. The fix's real consumer is isEntryAccessibleByType (glob.ts), the
-// exact call list/find_files/tree/search_text route every entry through: a
-// symlink whose validateExistingPathDetailed rejects with PERMISSION_DENIED
-// must be skipped rather than rethrown. A fake PathGuard injects that error
+// consumer. The fix's real consumer is PathGuard.isEntryAccessible, the exact
+// call list/find_files/tree/search_text route every entry through: a symlink
+// whose validateExistingPathDetailed rejects with PERMISSION_DENIED must be
+// skipped rather than rethrown. A fake PathGuard injects that error
 // deterministically, with no platform dependency.
+
+function fakeGuardThrowing(error: FsError): PathGuard {
+  return {
+    isSensitive: () => false,
+    async validateExistingPathDetailed() {
+      throw error;
+    },
+    async isEntryAccessible() {
+      try {
+        await this.validateExistingPathDetailed();
+        return true;
+      } catch (caught) {
+        if (isFsError(caught) && SKIPPABLE_FS_CODES.has(caught.code)) return false;
+        throw caught;
+      }
+    },
+  } as unknown as PathGuard;
+}
 
 describe('list entry access: tolerates an EACCES symlink target', () => {
   it('skips a symlink whose target reports PERMISSION_DENIED', async () => {
-    const fakeGuard = {
-      isSensitive: () => false,
-      async validateExistingPathDetailed() {
-        throw new FsError(ErrorCode.PERMISSION_DENIED, 'Cannot access path', '/root/denied.txt');
-      },
-    } as unknown as PathGuard;
-
-    const result = await isEntryAccessibleByType(
-      '/root/denied.txt',
-      'symlink',
-      ['/root'],
-      fakeGuard,
+    const fakeGuard = fakeGuardThrowing(
+      new FsError(ErrorCode.PERMISSION_DENIED, 'Cannot access path', '/root/denied.txt'),
     );
+
+    const result = await fakeGuard.isEntryAccessible('/root/denied.txt', 'symlink', ['/root']);
     assert.equal(result, false, 'a PERMISSION_DENIED symlink target must be skipped, not thrown');
   });
 
   it('still rethrows a non-skippable UNKNOWN from the same path (no over-widening)', async () => {
-    const fakeGuard = {
-      isSensitive: () => false,
-      async validateExistingPathDetailed() {
-        throw new FsError(ErrorCode.UNKNOWN, 'PathGuard not initialized', '/root/denied.txt');
-      },
-    } as unknown as PathGuard;
+    const fakeGuard = fakeGuardThrowing(
+      new FsError(ErrorCode.UNKNOWN, 'PathGuard not initialized', '/root/denied.txt'),
+    );
 
     await assert.rejects(
-      () => isEntryAccessibleByType('/root/denied.txt', 'symlink', ['/root'], fakeGuard),
+      () => fakeGuard.isEntryAccessible('/root/denied.txt', 'symlink', ['/root']),
       (err: unknown) => err instanceof FsError && err.code === ErrorCode.UNKNOWN,
     );
   });

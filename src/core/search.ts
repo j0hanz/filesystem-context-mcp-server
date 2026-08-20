@@ -1,5 +1,6 @@
 import { stat as fsStat, readFile } from 'node:fs/promises';
 
+import * as z from 'zod/v4';
 import type { RE2ExecArray } from 're2-wasm';
 import { RE2 } from 're2-wasm';
 
@@ -7,6 +8,39 @@ import { globEntries, type GlobEntry } from './glob.js';
 import type { PathGuard } from './path.js';
 import { escapeRegexLiteral } from './primitives.js';
 import { MAX_TEXT_FILE_SIZE } from './util.js';
+
+export type StoppedReason = 'maxResults' | 'maxFiles' | 'timeout';
+
+export const StoppedReasonSchema = z.enum(['maxResults', 'maxFiles', 'timeout']).optional();
+
+/**
+ * Accumulates why an enumeration stopped early. maxResults wins over maxFiles
+ * wins over timeout (the most specific cap is the definite cause even if the
+ * abort also fired on the same iteration). Call `resolve()` once at the end.
+ */
+export class StopReasonTracker {
+  #maxResults = false;
+  #maxFiles = false;
+  #abort = false;
+  hitMaxResults(): void {
+    this.#maxResults = true;
+  }
+  hitMaxFiles(): void {
+    this.#maxFiles = true;
+  }
+  hitAbort(): void {
+    this.#abort = true;
+  }
+  get truncated(): boolean {
+    return this.#maxResults || this.#maxFiles || this.#abort;
+  }
+  resolve(): StoppedReason | undefined {
+    if (this.#maxResults) return 'maxResults';
+    if (this.#maxFiles) return 'maxFiles';
+    if (this.#abort) return 'timeout';
+    return undefined;
+  }
+}
 
 interface SearchResult {
   file: string;
@@ -120,7 +154,7 @@ export interface SearchContentOutcome {
     skippedInaccessible: number;
     /** Files skipped unread because they exceed maxFileSize. */
     skippedTooLarge: number;
-    stoppedReason?: 'timeout' | 'maxResults';
+    stoppedReason?: StoppedReason;
   };
 }
 
@@ -243,14 +277,10 @@ async function scanContent(
     }
   }
 
-  // maxResults wins over the abort: reaching the cap is the definite cause even
-  // if the signal also fired on the iteration that noticed it.
-  const hitMaxResults = matches.length >= maxResults;
-  const stoppedReason = hitMaxResults
-    ? 'maxResults'
-    : counters.stoppedByAbort
-      ? 'timeout'
-      : undefined;
+  const tracker = new StopReasonTracker();
+  if (matches.length >= maxResults) tracker.hitMaxResults();
+  if (counters.stoppedByAbort) tracker.hitAbort();
+  const stoppedReason = tracker.resolve();
 
   return {
     basePath: directory,
@@ -259,7 +289,7 @@ async function scanContent(
       matchingLines,
       filesScanned,
       filesMatched,
-      truncated: hitMaxResults || counters.stoppedByAbort,
+      truncated: tracker.truncated,
       skippedInaccessible: counters.skippedInaccessible,
       skippedTooLarge,
       ...(stoppedReason ? { stoppedReason } : {}),
@@ -288,7 +318,7 @@ export async function searchFiles(
     filesScanned: number;
     truncated: boolean;
     skippedInaccessible: number;
-    stoppedReason?: 'timeout' | 'maxResults';
+    stoppedReason?: StoppedReason;
   };
 }> {
   const maxResults = options.maxResults ?? 100;
@@ -323,14 +353,10 @@ export async function searchFiles(
     results.sort((a, b) => a.path.localeCompare(b.path));
   }
 
-  // maxResults wins over the abort: reaching the cap is the definite cause even
-  // if the signal also fired on the iteration that noticed it.
-  const hitMaxResults = results.length >= maxResults;
-  const stoppedReason = hitMaxResults
-    ? 'maxResults'
-    : counters.stoppedByAbort
-      ? 'timeout'
-      : undefined;
+  const tracker = new StopReasonTracker();
+  if (results.length >= maxResults) tracker.hitMaxResults();
+  if (counters.stoppedByAbort) tracker.hitAbort();
+  const stoppedReason = tracker.resolve();
 
   return {
     basePath: directory,
@@ -338,7 +364,7 @@ export async function searchFiles(
     summary: {
       matched: results.length,
       filesScanned,
-      truncated: hitMaxResults || counters.stoppedByAbort,
+      truncated: tracker.truncated,
       skippedInaccessible: counters.skippedInaccessible,
       ...(stoppedReason ? { stoppedReason } : {}),
     },

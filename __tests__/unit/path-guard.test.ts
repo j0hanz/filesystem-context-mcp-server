@@ -295,3 +295,50 @@ test('isSensitive does not break Windows drive-letter colon', (t) => {
     'D:\\ absolute path must not be broken',
   );
 });
+
+// ─── isEntryAccessible (R2 — moved in from glob.ts) ────────────────────────────
+
+test('isEntryAccessible returns false for a sensitive file', async () => {
+  const secret = join(tmpDir, '.env.entry-access');
+  await writeFile(secret, 'SECRET=1');
+  assert.strictEqual(await guard.isEntryAccessible(secret, 'file', [tmpDir]), false);
+});
+
+test('isEntryAccessible returns true for a non-sensitive file within bounds', async () => {
+  const file = join(tmpDir, 'entry-access.txt');
+  await writeFile(file, 'hello');
+  assert.strictEqual(await guard.isEntryAccessible(file, 'file', [tmpDir]), true);
+});
+
+test('isEntryAccessible returns false for a symlink escaping bounds', async () => {
+  const outsideDir = await mkdtemp(join(tmpdir(), 'path-guard-entry-outside-'));
+  const outsideFile = join(outsideDir, 'secret.txt');
+  await writeFile(outsideFile, 'secret');
+  const linkPath = join(tmpDir, 'entry-access-link.txt');
+
+  let linked = true;
+  try {
+    await symlink(outsideFile, linkPath, 'file');
+  } catch {
+    linked = false; // symlink creation may require privileges on Windows
+  }
+
+  try {
+    if (!linked) return;
+    assert.strictEqual(await guard.isEntryAccessible(linkPath, 'symlink', [tmpDir]), false);
+  } finally {
+    await rm(outsideDir, { recursive: true, force: true });
+  }
+});
+
+test('isEntryAccessible returns false for an entry outside bounds', async () => {
+  const outsideDir = await mkdtemp(join(tmpdir(), 'path-guard-entry-bounds-'));
+  const outsideFile = join(outsideDir, 'file.txt');
+  await writeFile(outsideFile, 'hello');
+
+  try {
+    assert.strictEqual(await guard.isEntryAccessible(outsideFile, 'file', [tmpDir]), false);
+  } finally {
+    await rm(outsideDir, { recursive: true, force: true });
+  }
+});

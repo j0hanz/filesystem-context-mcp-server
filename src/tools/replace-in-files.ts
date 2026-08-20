@@ -4,8 +4,8 @@ import { Buffer } from 'node:buffer';
 import { dirname, join } from 'node:path';
 
 import * as z from 'zod/v4';
-import { createTwoFilesPatch } from 'diff';
 
+import { buildPatchDiff } from '../core/diff.js';
 import {
   ErrorCode,
   formatUnknownErrorMessage,
@@ -34,8 +34,8 @@ import {
   PerFileErrorSchema,
   SafeGlobPattern,
 } from '../core/schema.js';
-import type { Regex } from '../core/search.js';
-import { compileRegex, freeRegex } from '../core/search.js';
+import type { Regex, StoppedReason } from '../core/search.js';
+import { compileRegex, freeRegex, StoppedReasonSchema } from '../core/search.js';
 import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_RESULTS,
@@ -137,12 +137,9 @@ const SearchAndReplaceOutputSchema = z.strictObject({
     .boolean()
     .optional()
     .describe('True when the diff was cut due to the size limit'),
-  stoppedReason: z
-    .enum(['maxResults', 'maxFiles', 'timeout'])
-    .optional()
-    .describe(
-      'Why enumeration stopped early: maxResults = match cap reached, maxFiles = file cap reached, timeout = time limit hit or the request was cancelled. Absent when every matching file was enumerated. Files already dispatched still complete, so this marks the sweep incomplete, not the writes partial.',
-    ),
+  stoppedReason: StoppedReasonSchema.describe(
+    'Why enumeration stopped early: maxResults = match cap reached, maxFiles = file cap reached, timeout = time limit hit or the request was cancelled. Absent when every matching file was enumerated. Files already dispatched still complete, so this marks the sweep incomplete, not the writes partial.',
+  ),
 });
 
 const MAX_FAILURES = 20;
@@ -401,24 +398,7 @@ async function maybeAppendPatchDiff(
   if (!params.includeDiff) return;
   const header = toPosixRelative(summary.root, params.filePath);
 
-  const patch = await new Promise<string>((resolve) => {
-    // Defer to event loop to avoid blocking on large diffs
-    setImmediate(() => {
-      createTwoFilesPatch(
-        header,
-        header,
-        params.originalContent,
-        params.updatedContent,
-        'Original',
-        'Modified',
-        {
-          callback: (res: string | undefined) => {
-            resolve(res ?? '');
-          },
-        },
-      );
-    });
-  });
+  const patch = await buildPatchDiff(header, params.originalContent, params.updatedContent);
 
   if (summary.diff.length >= MAX_DIFF_SIZE) {
     summary.diffTruncated = true;
@@ -518,7 +498,7 @@ interface ReplaceSummary {
   changedFilesTruncated: boolean;
   diff: string;
   diffTruncated: boolean;
-  stoppedReason?: 'maxFiles' | 'maxResults' | 'timeout';
+  stoppedReason?: StoppedReason;
 }
 
 function createReplaceSummary(root: string): ReplaceSummary {

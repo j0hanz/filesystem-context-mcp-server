@@ -25,6 +25,7 @@ import {
   type Regex,
   searchContent,
   type SearchContentOptions,
+  StoppedReasonSchema,
 } from '../core/search.js';
 import type { ResourceStore } from '../core/store.js';
 import {
@@ -143,12 +144,9 @@ const GrepOutputSchema = z.strictObject({
     .boolean()
     .optional()
     .describe('True when the match list was cut due to maxResults or timeout'),
-  stoppedReason: z
-    .enum(['maxResults', 'timeout'])
-    .optional()
-    .describe(
-      'Why the search ended early: maxResults = result cap reached, timeout = time limit hit or the request was cancelled. Absent when the scan ran to completion.',
-    ),
+  stoppedReason: StoppedReasonSchema.describe(
+    'Why the search ended early: maxResults = result cap reached, timeout = time limit hit or the request was cancelled. Absent when the scan ran to completion.',
+  ),
   resourceUri: z
     .string()
     .optional()

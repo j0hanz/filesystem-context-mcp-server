@@ -5,7 +5,7 @@ import { basename } from 'node:path';
 import * as z from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
-import { ErrorCode, isNodeError, Problem } from '../core/errors.js';
+import { ErrorCode, isNodeError, isNotFoundErrno, Problem } from '../core/errors.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import { defaultFalseBoolean, RequiredPath } from '../core/schema.js';
@@ -170,7 +170,7 @@ async function deleteSinglePath(
   try {
     itemStats = await ctx.fs.lstat(validPath);
   } catch (error) {
-    if (isNodeError(error) && error.code === 'ENOENT' && args.ignoreIfNotExists) {
+    if (isNotFoundErrno(error) && args.ignoreIfNotExists) {
       return { item: { path: validPath } };
     }
     return { failure: toDeleteFailure(inputPath, error) };
@@ -201,7 +201,7 @@ async function deleteSinglePath(
   try {
     currentStats = await ctx.fs.lstat(validPath);
   } catch (error) {
-    if (isNodeError(error) && error.code === 'ENOENT' && args.ignoreIfNotExists) {
+    if (isNotFoundErrno(error) && args.ignoreIfNotExists) {
       return { item: { path: validPath } };
     }
     return { failure: toDeleteFailure(inputPath, error) };

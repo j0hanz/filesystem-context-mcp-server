@@ -1,12 +1,12 @@
 import type { McpServer, Root } from '@modelcontextprotocol/server';
 
-import { realpath, stat } from 'node:fs/promises';
+import { stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import { assertNotAborted, processInParallel, timedSignal, withAbort } from './concurrency.js';
 import { rethrowIfAborted } from './errors.js';
 import { Logger } from './observability.js';
-import { isSamePath, normalizePath } from './path.js';
+import { isSamePath, normalizePath, resolveRealPath } from './path.js';
 import type { PathGuard } from './path.js';
 import type { IconInfo } from './primitives.js';
 import type { ResourceStore } from './store.js';
@@ -49,9 +49,9 @@ async function resolveRealPathIfExists(
 ): Promise<string | null> {
   try {
     assertNotAborted(signal);
-    const realPath = await withAbort(realpath(normalizedPath), signal);
-    const normalizedReal = normalizePath(realPath);
-    return isSamePath(normalizedReal, normalizedPath) ? null : normalizedReal;
+    const real = await resolveRealPath(normalizedPath, signal);
+    if (real === null) return null;
+    return isSamePath(real, normalizedPath) ? null : real;
   } catch (error) {
     rethrowIfAborted(error);
     return null;

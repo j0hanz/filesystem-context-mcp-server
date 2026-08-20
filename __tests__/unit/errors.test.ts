@@ -13,6 +13,7 @@ import {
   isAbortError,
   isFsError,
   isNodeError,
+  isNotFoundErrno,
   Problem,
   zodErrorToProblem,
 } from '../../src/core/errors.js';
@@ -57,6 +58,28 @@ describe('isNodeError', () => {
     assert.equal(isNodeError(null), false);
     assert.equal(isNodeError(undefined), false);
     assert.equal(isNodeError({}), false);
+  });
+});
+
+// ─── isNotFoundErrno ────────────────────────────────────────────────────────
+
+describe('isNotFoundErrno', () => {
+  it('returns true for ENOENT', () => {
+    assert.equal(isNotFoundErrno(makeErrno('ENOENT')), true);
+  });
+
+  it('returns false for EACCES', () => {
+    assert.equal(isNotFoundErrno(makeErrno('EACCES')), false);
+  });
+
+  it('returns false for non-Error', () => {
+    assert.equal(isNotFoundErrno('not an error'), false);
+  });
+
+  it('returns false for AbortError', () => {
+    const e = new Error('aborted');
+    e.name = 'AbortError';
+    assert.equal(isNotFoundErrno(e), false);
   });
 });
 

@@ -16,7 +16,7 @@ import {
   OptionalPath,
   SafeGlobPattern,
 } from '../core/schema.js';
-import { searchFiles } from '../core/search.js';
+import { searchFiles, type StoppedReason, StoppedReasonSchema } from '../core/search.js';
 import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_RESULTS,
@@ -64,12 +64,9 @@ const SearchFilesOutputSchema = z.strictObject({
   skippedInaccessible: NonNegInt.optional().describe(
     'Files skipped due to permission or access errors',
   ),
-  stoppedReason: z
-    .enum(['maxResults', 'timeout'])
-    .optional()
-    .describe(
-      'Why the search ended early: maxResults = result cap reached, timeout = time limit hit or the request was cancelled. Absent when the scan ran to completion.',
-    ),
+  stoppedReason: StoppedReasonSchema.describe(
+    'Why the search ended early: maxResults = result cap reached, timeout = time limit hit or the request was cancelled. Absent when the scan ran to completion.',
+  ),
   resourceUri: z
     .string()
     .optional()
@@ -108,7 +105,7 @@ function applySummaryFields(
   summary: {
     truncated: boolean;
     skippedInaccessible: number;
-    stoppedReason?: 'timeout' | 'maxResults';
+    stoppedReason?: StoppedReason;
   },
   nextCursor?: string,
 ): void {

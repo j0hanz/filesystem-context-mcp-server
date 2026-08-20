@@ -11,10 +11,14 @@ import {
   FsError,
   isFsError,
   isNodeError,
+  isNotFoundErrno,
   rethrowIfAborted,
+  SKIPPABLE_ERRNOS,
+  SKIPPABLE_FS_CODES,
 } from './errors.js';
 import { Logger } from './observability.js';
 import { parseEnvDirList, parseTrueEnvFlag } from './primitives.js';
+import type { EntryType } from './primitives.js';
 import { SensitiveMatcher } from './sensitive.js';
 import { ROOTS_TIMEOUT_MS } from './util.js';
 
@@ -62,7 +66,7 @@ async function isRootWithin(
     return isPathWithinDirectories(normalizePath(realPath), bounds);
   } catch (error) {
     rethrowIfAborted(error);
-    if (isNodeError(error) && error.code === 'ENOENT') return false;
+    if (isNotFoundErrno(error)) return false;
     Logger.warn(`${label}: realpath failed unexpectedly`, {
       root: normalizedRoot,
       error: String(error),
@@ -254,7 +258,10 @@ function normalizeAllowedDirectories(dirs: readonly string[]): string[] {
   return dedupePreserveOrder(normalized);
 }
 
-async function resolveRealPath(normalized: string, signal?: AbortSignal): Promise<string | null> {
+export async function resolveRealPath(
+  normalized: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
   try {
     assertNotAborted(signal);
     const realPath = await withAbort(realpath(normalized), signal);
@@ -264,7 +271,7 @@ async function resolveRealPath(normalized: string, signal?: AbortSignal): Promis
     // Only suppress ENOENT — the path genuinely does not exist.
     // EACCES, EIO, and other unexpected errors are rethrown so callers
     // cannot silently operate with a narrowed allowed-directory set.
-    if (isNodeError(error) && error.code === 'ENOENT') return null;
+    if (isNotFoundErrno(error)) return null;
     throw error;
   }
 }
@@ -407,8 +414,8 @@ export function isWindowsDriveRelativePath(requestedPath: string): boolean {
  * Returns false for absolute paths and patterns containing traversal sequences (`..'`).
  * This is the subset of safety enforcement suitable for schema-level validation.
  * Operational path enforcement (allowed-root containment, symlink resolution) is
- * handled by isEntryAccessibleByType in src/core/glob.ts, via
- * isPathWithinDirectories and pathGuard.validateExistingPathDetailed.
+ * handled by PathGuard.isEntryAccessible, via isPathWithinDirectories and
+ * validateExistingPathDetailed.
  */
 export function isSafeGlobSyntax(pattern: string): boolean {
   if (!pattern || pattern.trim().length === 0) return false;
@@ -539,6 +546,39 @@ export class PathGuard {
 
   isSensitive(filePath: string): boolean {
     return this.sensitive.isSensitive(filePath);
+  }
+
+  /**
+   * True when `entryPath` is both within `bounds` and not sensitive, checking
+   * the requested AND resolved paths. Symlinks are resolved via
+   * validateExistingPathDetailed (which checks containment against
+   * this.rootBoundaries internally); other types check `bounds` directly.
+   * Skippable errno/fs errors return false (the entry is filtered, not fatal).
+   */
+  async isEntryAccessible(
+    entryPath: string,
+    entryType: EntryType,
+    bounds: readonly string[],
+  ): Promise<boolean> {
+    const isSensitive = (requestedPath: string, resolvedPath: string): boolean =>
+      this.isSensitive(requestedPath) || this.isSensitive(resolvedPath);
+    if (entryType !== 'symlink') {
+      const normalizedPath = normalizePath(entryPath);
+      if (!isPathWithinDirectories(normalizedPath, bounds)) return false;
+      return !isSensitive(entryPath, normalizedPath);
+    }
+    try {
+      const validated = await this.validateExistingPathDetailed(entryPath);
+      return !isSensitive(validated.requestedPath, validated.resolvedPath);
+    } catch (error) {
+      if (isFsError(error)) {
+        if (SKIPPABLE_FS_CODES.has(error.code)) return false;
+        throw error;
+      }
+      if (isNodeError(error) && error.code !== undefined && SKIPPABLE_ERRNOS.has(error.code))
+        return false;
+      throw error;
+    }
   }
 
   async validateExistingPath(requestedPath: string): Promise<ValidatedPath> {
@@ -695,7 +735,7 @@ export class PathGuard {
     accessDeniedHint: string,
     requestedPath: string,
   ): Promise<never> {
-    if (isNodeError(error) && error.code === 'ENOENT') {
+    if (isNotFoundErrno(error)) {
       // Resolve the nearest existing ancestor to detect out-of-sandbox symlinks.
       // e.g. if `link -> C:\external` and path is `link\nonexistent.txt`, the
       // ancestor resolves outside allowed dirs → ACCESS_DENIED, not NOT_FOUND.

@@ -3,8 +3,9 @@ import type { ContentBlock } from '@modelcontextprotocol/server';
 import { basename } from 'node:path';
 
 import * as z from 'zod/v4';
-import { createTwoFilesPatch, diffLines } from 'diff';
+import { diffLines } from 'diff';
 
+import { buildPatchDiff } from '../core/diff.js';
 import { ErrorCode, FsError } from '../core/errors.js';
 import { buildFileResourceUri } from '../core/file-uri.js';
 import type { GuardedFileSystem } from '../core/fs.js';
@@ -346,19 +347,6 @@ function buildEditFileMetadata(
   };
 }
 
-async function buildDiff(validPath: string, original: string, modified: string): Promise<string> {
-  const fileName = basename(validPath);
-  return new Promise<string>((resolve) => {
-    setImmediate(() => {
-      createTwoFilesPatch(fileName, fileName, original, modified, 'Original', 'Modified', {
-        callback: (res: string | undefined) => {
-          resolve(res ?? '');
-        },
-      });
-    });
-  });
-}
-
 async function loadEditableFile(
   requestedPath: string,
   fs: GuardedFileSystem,
@@ -435,7 +423,7 @@ async function handleEditFile(
 
   if (dryRun) {
     if (editResult.appliedEdits > 0) {
-      editResult.diff = await buildDiff(validPath, content, editResult.content);
+      editResult.diff = await buildPatchDiff(basename(validPath), content, editResult.content);
     }
 
     const meta = buildEditFileMetadata(

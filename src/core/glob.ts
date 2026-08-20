@@ -5,16 +5,9 @@ import type { Ignore } from 'ignore';
 import ignore from 'ignore';
 
 import { processInParallel } from './concurrency.js';
-import {
-  formatUnknownErrorMessage,
-  isFsError,
-  isNodeError,
-  SKIPPABLE_ERRNOS,
-  SKIPPABLE_FS_CODES,
-} from './errors.js';
+import { formatUnknownErrorMessage } from './errors.js';
 import { Logger } from './observability.js';
-import type { PathGuard } from './path.js';
-import { isPathWithinDirectories, normalizePath, toPosixPath } from './path.js';
+import { toPosixPath } from './path.js';
 import type { EntryType } from './primitives.js';
 
 export type { EntryType };
@@ -30,37 +23,6 @@ export function resolveEntryType(dirent: DirentLike): EntryType {
   if (dirent.isFile()) return 'file';
   if (dirent.isSymbolicLink()) return 'symlink';
   return 'other';
-}
-
-export async function isEntryAccessibleByType(
-  entryPath: string,
-  entryType: EntryType,
-  rootDirectories: readonly string[],
-  pathGuard: PathGuard,
-): Promise<boolean> {
-  const isSensitive = (requestedPath: string, resolvedPath: string): boolean =>
-    pathGuard.isSensitive(requestedPath) || pathGuard.isSensitive(resolvedPath);
-
-  if (entryType !== 'symlink') {
-    const normalizedPath = normalizePath(entryPath);
-    if (!isPathWithinDirectories(normalizedPath, rootDirectories)) {
-      return false;
-    }
-    return !isSensitive(entryPath, normalizedPath);
-  }
-
-  try {
-    const validated = await pathGuard.validateExistingPathDetailed(entryPath);
-    return !isSensitive(validated.requestedPath, validated.resolvedPath);
-  } catch (error) {
-    if (isFsError(error)) {
-      if (SKIPPABLE_FS_CODES.has(error.code)) return false;
-      throw error;
-    }
-    if (isNodeError(error) && error.code !== undefined && SKIPPABLE_ERRNOS.has(error.code))
-      return false;
-    throw error;
-  }
 }
 
 async function loadGitignoreFiles(

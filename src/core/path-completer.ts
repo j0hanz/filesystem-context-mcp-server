@@ -1,7 +1,7 @@
-import { opendir, realpath, stat } from 'node:fs/promises';
+import { opendir, stat } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, parse, resolve, sep } from 'node:path';
 
-import { isNodeError, rethrowIfAborted } from './errors.js';
+import { isNodeError, isNotFoundErrno, rethrowIfAborted } from './errors.js';
 import { Logger } from './observability.js';
 import type { PathGuard } from './path.js';
 import {
@@ -9,6 +9,7 @@ import {
   isSamePath,
   isSlash,
   normalizePath,
+  resolveRealPath,
   toPosixPath,
 } from './path.js';
 
@@ -108,11 +109,12 @@ function resolveNamedRootContext(
 async function isAllowedCompletionDirectory(path: string, allowed: string[]): Promise<boolean> {
   if (!isPathWithinDirectories(path, allowed)) return false;
   try {
-    const [stats, resolvedRealPath] = await Promise.all([stat(path), realpath(path)]);
+    const stats = await stat(path);
     if (!stats.isDirectory()) return false;
-    return isPathWithinDirectories(normalizePath(resolvedRealPath), allowed);
+    const real = await resolveRealPath(path);
+    return real !== null && isPathWithinDirectories(real, allowed);
   } catch (err) {
-    if (!isNodeError(err) || (err.code !== 'ENOENT' && err.code !== 'EACCES')) {
+    if (!isNotFoundErrno(err) && (!isNodeError(err) || err.code !== 'EACCES')) {
       Logger.debug('isAllowedCompletionDirectory: unexpected probe error', {
         path,
         error: String(err),

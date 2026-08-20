@@ -652,7 +652,7 @@
         "stoppedReason": {
           "description": "Why the search ended early: maxResults = result cap reached, timeout = time limit hit or the request was cancelled. Absent when the scan ran to completion.",
           "type": "string",
-          "enum": ["maxResults", "timeout"]
+          "enum": ["maxResults", "maxFiles", "timeout"]
         },
         "resourceUri": {
           "description": "URI to the full results JSON in the resource store (present when results are paginated)",
@@ -1705,7 +1705,7 @@
         "stoppedReason": {
           "description": "Why the search ended early: maxResults = result cap reached, timeout = time limit hit or the request was cancelled. Absent when the scan ran to completion.",
           "type": "string",
-          "enum": ["maxResults", "timeout"]
+          "enum": ["maxResults", "maxFiles", "timeout"]
         },
         "resourceUri": {
           "description": "URI to the full match list in the resource store (present when matches exceed the inline limit)",

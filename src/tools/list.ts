@@ -9,7 +9,6 @@ import {
   DEFAULT_EXCLUDE_PATTERNS,
   type EntryType,
   globEntries,
-  isEntryAccessibleByType,
   isIgnoredByGitignore,
   loadRootGitignore,
   resolveEntryType,
@@ -120,12 +119,7 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
     ) {
       continue;
     }
-    const accessible = await isEntryAccessibleByType(
-      entry.path,
-      entryType,
-      [rootPath],
-      options.pathGuard,
-    );
+    const accessible = await options.pathGuard.isEntryAccessible(entry.path, entryType, [rootPath]);
     if (!accessible) continue;
 
     totalEntries++;
