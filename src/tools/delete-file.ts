@@ -220,7 +220,16 @@ async function deleteSinglePath(
   }
 
   const currentItemType = resolveItemType(currentStats);
-  if (itemType !== 'other' && currentItemType !== itemType) {
+  // Identity comparison, not just the coarse category: a swap during the
+  // elicitation gap (delete original, create a same-named replacement) keeps
+  // the type but changes dev/ino/birthtimeMs. birthtimeMs is the primary
+  // cross-platform signal — dev/ino can read 0 on some non-POSIX drivers — so
+  // combine all three rather than trusting dev/ino alone.
+  const identityChanged =
+    itemStats.stats.dev !== currentStats.stats.dev ||
+    itemStats.stats.ino !== currentStats.stats.ino ||
+    itemStats.stats.birthtimeMs !== currentStats.stats.birthtimeMs;
+  if (itemType !== 'other' && (currentItemType !== itemType || identityChanged)) {
     return {
       failure: {
         path: validPath,

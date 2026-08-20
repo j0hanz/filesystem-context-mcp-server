@@ -1,10 +1,16 @@
-import { readdir, realpath, stat } from 'node:fs/promises';
+import { opendir, realpath, stat } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, parse, resolve, sep } from 'node:path';
 
 import { isNodeError, rethrowIfAborted } from './errors.js';
 import { Logger } from './observability.js';
 import type { PathGuard } from './path.js';
-import { isPathWithinDirectories, isSlash, normalizePath, toPosixPath } from './path.js';
+import {
+  isPathWithinDirectories,
+  isSamePath,
+  isSlash,
+  normalizePath,
+  toPosixPath,
+} from './path.js';
 
 const MAX_COMPLETION_ITEMS = 100;
 const COMPLETION_RATE_LIMIT_MS = 100;
@@ -235,7 +241,7 @@ export class PathCompleter {
     const normalizedSearchDir = normalizePath(searchDir);
     return PathCompleter.collectAllowedRoots(allowed, (root) => {
       const rootDir = dirname(root);
-      if (normalizePath(rootDir) !== normalizedSearchDir) return false;
+      if (!isSamePath(rootDir, normalizedSearchDir)) return false;
       return basename(root).toLowerCase().startsWith(lowerPrefix);
     });
   }
@@ -270,23 +276,24 @@ export class PathCompleter {
     const matches: string[] = [];
     if (!(await PathCompleter.isAllowedCompletionDirectory(searchDir, allowed))) return matches;
     try {
-      const entries = await readdir(searchDir, { withFileTypes: true });
-
-      if (prefix === '') {
-        for (const entry of entries) {
+      // Stream via opendir and collect every match; the MAX_COMPLETION_ITEMS
+      // cap is applied AFTER the alphabetical sort in mergeCompletionMatches
+      // (slice at the call site). Capping here would keep the opendir-first
+      // 100, not the alphabetically-first 100 — the sort would only reorder
+      // an already-arbitrary subset.
+      const dir = await opendir(searchDir);
+      try {
+        const lowerPrefix = prefix.toLowerCase();
+        for await (const entry of dir) {
+          if (prefix !== '' && !entry.name.toLowerCase().startsWith(lowerPrefix)) continue;
           const fullPath = join(searchDir, entry.name);
           if (isSensitive?.(fullPath)) continue;
           matches.push(entry.isDirectory() ? `${fullPath}${sep}` : fullPath);
         }
-      } else {
-        const lowerPrefix = prefix.toLowerCase();
-        for (const entry of entries) {
-          if (entry.name.toLowerCase().startsWith(lowerPrefix)) {
-            const fullPath = join(searchDir, entry.name);
-            if (isSensitive?.(fullPath)) continue;
-            matches.push(entry.isDirectory() ? `${fullPath}${sep}` : fullPath);
-          }
-        }
+      } finally {
+        await dir.close().catch(() => {
+          /* dir already closed or opendir never resolved */
+        });
       }
     } catch (err) {
       if (!isNodeError(err) || (err.code !== 'ENOENT' && err.code !== 'EACCES')) {

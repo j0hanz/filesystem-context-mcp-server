@@ -135,7 +135,7 @@ async function handleSearchFiles(
   const excludePatterns = args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
   const cursorOffset = args.cursor !== undefined ? decodeOffsetCursor(args.cursor) : 0;
   const pageSize = args.maxResults;
-  const fetchMax = cursorOffset + pageSize;
+  const fetchMax = Math.min(cursorOffset + pageSize, MAX_SEARCH_RESULTS);
   const searchOptions: Parameters<typeof searchFiles>[3] = {
     maxResults: fetchMax,
     includeHidden: args.includeHidden,

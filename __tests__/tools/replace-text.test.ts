@@ -6,7 +6,7 @@
  * assertSafeRegex rejection path.
  */
 import assert from 'node:assert/strict';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
@@ -82,5 +82,85 @@ describe('replace_text — happy / no-match / failure', () => {
       },
     });
     assertToolError(res);
+  });
+});
+
+describe('replace_text — gitignore and single-file targeting', () => {
+  let env: TestEnv;
+
+  before(async () => {
+    env = await createTestEnv();
+  });
+
+  after(async () => {
+    await env.cleanup();
+  });
+
+  it('skips a gitignored file by default and rewrites it with includeIgnored', async () => {
+    const dir = join(env.tmpDir, 'git-test');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, '.gitignore'), 'ignored.txt\n');
+    const file = join(dir, 'ignored.txt');
+    await writeFile(file, 'MARKER content\n');
+
+    // Default args → respectGitignore: true → the gitignored file is untouched.
+    let res = await env.client.callTool({
+      name: 'replace_text',
+      arguments: {
+        path: dir,
+        pattern: '**/*',
+        searchPattern: 'MARKER',
+        replacement: 'DONE',
+      },
+    });
+    assertOk(res);
+    let s = getStructured<{ filesModified: number }>(res);
+    assert.equal(s.filesModified, 0, 'gitignored file must be skipped by default');
+    assert.equal(await readFile(file, 'utf8'), 'MARKER content\n');
+
+    // includeIgnored bypasses gitignore → the file is rewritten.
+    res = await env.client.callTool({
+      name: 'replace_text',
+      arguments: {
+        path: dir,
+        pattern: '**/*',
+        searchPattern: 'MARKER',
+        replacement: 'DONE',
+        includeIgnored: true,
+      },
+    });
+    assertOk(res);
+    s = getStructured<{ filesModified: number }>(res);
+    assert.equal(s.filesModified, 1, 'includeIgnored must rewrite the gitignored file');
+    assert.equal(await readFile(file, 'utf8'), 'DONE content\n');
+  });
+
+  it('targets only the named file, not same-named siblings', async () => {
+    const a = join(env.tmpDir, 'a');
+    const b = join(env.tmpDir, 'b');
+    await mkdir(a, { recursive: true });
+    await mkdir(b, { recursive: true });
+    const aFoo = join(a, 'foo.txt');
+    const bFoo = join(b, 'foo.txt');
+    await writeFile(aFoo, 'TARGET line\n');
+    await writeFile(bFoo, 'TARGET line\n');
+
+    const res = await env.client.callTool({
+      name: 'replace_text',
+      arguments: {
+        path: aFoo,
+        searchPattern: 'TARGET',
+        replacement: 'DONE',
+      },
+    });
+    assertOk(res);
+    const s = getStructured<{ filesModified: number }>(res);
+    assert.equal(s.filesModified, 1, 'only the explicitly named file must be modified');
+    assert.equal(await readFile(aFoo, 'utf8'), 'DONE line\n');
+    assert.equal(
+      await readFile(bFoo, 'utf8'),
+      'TARGET line\n',
+      'same-named sibling must be untouched',
+    );
   });
 });

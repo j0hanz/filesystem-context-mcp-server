@@ -98,7 +98,10 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
     excludePatterns: options.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS,
     includeHidden: options.includeHidden,
     baseNameMatch: false,
-    maxDepth: options.maxDepth,
+    // ListInputSchema.maxDepth is 1-based (1 = top-level only); the shared
+    // globEntries primitive is now 0-based, so subtract one here. options.maxDepth
+    // is guaranteed >= 1 by its PositiveInt schema, so this never underflows.
+    maxDepth: options.maxDepth - 1,
     onlyFiles: false,
   })) {
     if (options.signal.aborted) break;

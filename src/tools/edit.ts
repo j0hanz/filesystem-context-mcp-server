@@ -51,15 +51,17 @@ const EditSpecSchema = z.strictObject({
 });
 
 const MAX_MULTI_FILES = 5;
+const MAX_EDITS_PER_FILE = 100;
 
 const EditFileInputSchema = singleOrBatchPathsInput({
   extra: {
     edits: z
       .array(EditSpecSchema)
       .min(1)
+      .max(MAX_EDITS_PER_FILE)
       .optional()
       .describe(
-        'Replacements applied to path or to every file in paths; not allowed when using files (each file carries its own edits)',
+        'Replacements applied to path or to every file in paths (max 100); not allowed when using files (each file carries its own edits)',
       ),
     dryRun: defaultFalseBoolean(
       'Preview diffs without writing to disk (default: false = apply edits)',
@@ -69,7 +71,11 @@ const EditFileInputSchema = singleOrBatchPathsInput({
     ),
   },
   perFile: {
-    edits: z.array(EditSpecSchema).min(1).describe('Replacements to apply to this specific file'),
+    edits: z
+      .array(EditSpecSchema)
+      .min(1)
+      .max(MAX_EDITS_PER_FILE)
+      .describe('Replacements to apply to this specific file (max 100)'),
   },
   maxBatch: MAX_MULTI_FILES,
 }).superRefine((value, ctx) => {
@@ -102,10 +108,7 @@ const PerFileResultSchema = z.strictObject({
   appliedEdits: NonNegInt.describe('Number of edits successfully applied'),
   linesAdded: NonNegInt.optional().describe('Net lines added by all applied edits'),
   linesRemoved: NonNegInt.optional().describe('Net lines removed by all applied edits'),
-  diff: z
-    .string()
-    .optional()
-    .describe('Unified diff of all changes (present in dryRun mode or when changes were made)'),
+  diff: z.string().optional().describe('Unified diff of all changes (present only in dryRun mode)'),
   unmatchedEdits: z
     .array(z.string())
     .optional()

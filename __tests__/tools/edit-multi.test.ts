@@ -70,6 +70,24 @@ describe('edit tool — input validation', () => {
     assert.equal(res.isError, true);
   });
 
+  it('rejects path with more than 100 edits', async () => {
+    const edits = Array.from({ length: 101 }, (_, i) => ({ oldText: `a${i}`, newText: 'b' }));
+    const res = await env.client.callTool({
+      name: 'edit',
+      arguments: { path: join(env.tmpDir, 'x.txt'), edits },
+    });
+    assert.equal(res.isError, true);
+  });
+
+  it('rejects a files[] entry with more than 100 edits', async () => {
+    const edits = Array.from({ length: 101 }, (_, i) => ({ oldText: `a${i}`, newText: 'b' }));
+    const res = await env.client.callTool({
+      name: 'edit',
+      arguments: { files: [{ path: join(env.tmpDir, 'y.txt'), edits }] },
+    });
+    assert.equal(res.isError, true);
+  });
+
   it('rejects paths[] without edits', async () => {
     const res = await env.client.callTool({
       name: 'edit',

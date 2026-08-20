@@ -113,4 +113,52 @@ test('path-completer', async (t) => {
       );
     });
   });
+
+  await t.test('caps directory completion at MAX_COMPLETION_ITEMS', async () => {
+    await withTestDir(async (tmpDir) => {
+      for (let i = 0; i < 150; i++) {
+        await writeFile(join(tmpDir, `f${String(i).padStart(3, '0')}.txt`), 'x');
+      }
+
+      const pathGuard = new PathGuard();
+      const state = await resolveAllowedDirectoriesState([tmpDir]);
+      pathGuard.initialize(state);
+
+      const completer = new PathCompleter(pathGuard);
+      const results = await completer.suggest(tmpDir + sep);
+      assert.equal(results.length, 100, 'completion must stop at the cap, not buffer a huge dir');
+    });
+  });
+
+  await t.test(
+    'surfaces sibling roots when the parent-segment casing differs',
+    { skip: process.platform !== 'win32' ? 'requires a case-insensitive FS' : undefined },
+    async () => {
+      await withTestDir(async (tmpDir) => {
+        const parent = join(tmpDir, 'Parent');
+        const rootA = join(parent, 'rootA');
+        const rootB = join(parent, 'rootB');
+        await mkdir(rootA, { recursive: true });
+        await mkdir(rootB, { recursive: true });
+
+        const pathGuard = new PathGuard();
+        const state = await resolveAllowedDirectoriesState([rootA, rootB]);
+        pathGuard.initialize(state);
+
+        const completer = new PathCompleter(pathGuard);
+        // On-disk parent is 'Parent'; ask for 'parent' (lowercased). The parent
+        // is not itself an allowed directory, so only findMatchingRoots can
+        // surface the roots — and only if isSamePath case-folds the segment.
+        const loweredParent = join(tmpDir, 'parent');
+        const results = await completer.suggest(loweredParent + sep);
+        assert.equal(
+          results.length,
+          2,
+          'both sibling roots must surface despite the casing mismatch',
+        );
+        assert.ok(results.includes(normalizePath(rootA) + sep), 'rootA must surface');
+        assert.ok(results.includes(normalizePath(rootB) + sep), 'rootB must surface');
+      });
+    },
+  );
 });

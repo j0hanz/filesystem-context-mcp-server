@@ -56,6 +56,20 @@ describe('InMemoryEventStore', () => {
     assert.equal(await store.getStreamIdForEventId(firstEventId), undefined);
   });
 
+  it('evicts the oldest whole stream once the store exceeds the stream cap', async () => {
+    const store = new InMemoryEventStore();
+    const MAX_EVENT_STREAMS = 1000;
+    const firstEventId = await store.storeEvent('stream-0', msg(0));
+
+    for (let i = 1; i <= MAX_EVENT_STREAMS; i++) {
+      await store.storeEvent(`stream-${i}`, msg(i));
+    }
+
+    // The first stream was the oldest; its only event should be unreachable
+    // once the distinct-stream cap is exceeded.
+    assert.equal(await store.getStreamIdForEventId(firstEventId), undefined);
+  });
+
   it('clear() wipes every stream', async () => {
     const store = new InMemoryEventStore();
     const idA = await store.storeEvent('stream-a', msg(1));

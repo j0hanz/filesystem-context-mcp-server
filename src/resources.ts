@@ -213,7 +213,7 @@ function warnWatcherCap(uri: string): void {
  */
 function createWatcherRegistry() {
   const watchers = new Map<string, FSWatcher>();
-  const activeCallbacks = new Map<string, Set<(uri: string) => void>>();
+  const activeCallbacks = new Map<string, (uri: string) => void>();
   const desiredState = new Map<string, 'subscribed' | 'unsubscribed'>();
   let destroyed = false;
 
@@ -227,16 +227,14 @@ function createWatcherRegistry() {
   };
 
   const notifyAll = (uri: string): void => {
-    const currentCallbacks = activeCallbacks.get(uri);
-    if (!currentCallbacks) return;
-    for (const cb of currentCallbacks) {
-      try {
-        cb(uri);
-      } catch (err) {
-        Logger.warn(
-          `Notify callback error for ${uri}: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
+    const cb = activeCallbacks.get(uri);
+    if (!cb) return;
+    try {
+      cb(uri);
+    } catch (err) {
+      Logger.warn(
+        `Notify callback error for ${uri}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   };
 
@@ -249,12 +247,7 @@ function createWatcherRegistry() {
     isStale: (uri: string): boolean => destroyed || desiredState.get(uri) === 'unsubscribed',
 
     addCallback(uri: string, notify: (uri: string) => void): void {
-      let callbacks = activeCallbacks.get(uri);
-      if (!callbacks) {
-        callbacks = new Set();
-        activeCallbacks.set(uri, callbacks);
-      }
-      callbacks.add(notify);
+      activeCallbacks.set(uri, notify);
       desiredState.set(uri, 'subscribed');
     },
 
@@ -353,9 +346,13 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     async subscribe(uri, notify) {
       if (!options.pathGuard) return;
 
-      registry.addCallback(uri, notify);
-
-      if (registry.hasWatcher(uri)) return;
+      if (registry.hasWatcher(uri)) {
+        // A watcher already tracks this uri; just (re)register the callback so
+        // its change events reach the new subscriber. No validation or cap
+        // work is needed for an already-live watcher.
+        registry.addCallback(uri, notify);
+        return;
+      }
       // A cap hit before validation is reported to the caller as an outright
       // rejection; after validation it is silent (see below).
       if (registry.isAtCap()) {
@@ -386,12 +383,16 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
 
       // Re-check what the await could have changed.
       if (registry.isStale(uri)) return;
-      if (registry.hasWatcher(uri)) return;
+      if (registry.hasWatcher(uri)) {
+        registry.addCallback(uri, notify);
+        return;
+      }
       if (registry.isAtCap()) {
         warnWatcherCap(uri);
         return;
       }
 
+      registry.addCallback(uri, notify);
       registry.attach(uri, resolved);
       return undefined;
     },

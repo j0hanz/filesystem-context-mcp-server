@@ -7,6 +7,9 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 
+import { buildFileResourceUri } from '../src/core/file-uri.js';
+import { normalizePath } from '../src/core/path.js';
+
 interface PromptStdIoEnv {
   client: Client;
   tempDir: string;
@@ -82,6 +85,7 @@ describe('prompts over stdio transport', () => {
     assert.match(m0.content.text, /Analyze this file:/u);
     assert.match(m0.content.text, /sample\.txt/u);
     assert.equal(m1.content.type, 'resource_link');
+    assert.strictEqual(m1.content.uri, buildFileResourceUri(normalizePath(filePath)));
     assert.equal(m2.content.type, 'resource_link');
     assert.equal(m2.content.uri, 'internal://instructions');
   });

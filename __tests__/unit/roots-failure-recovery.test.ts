@@ -77,4 +77,48 @@ describe('McpRootsSynchronizer failure recovery', () => {
 
     manager.destroy();
   });
+
+  it('does not re-arm a queued roots update when destroy() lands during setRoots await', async () => {
+    let setRootsCalls = 0;
+    let resolveSetRoots!: () => void;
+    const setRootsGate = new Promise<void>((resolve) => {
+      resolveSetRoots = resolve;
+    });
+    const fakePathGuard = {
+      isServerContext: true,
+      getAllowedDirectories: () => [],
+      async setRoots(): Promise<void> {
+        setRootsCalls += 1;
+        // Block the in-flight updateRootsFromClient so destroy() can land mid-await.
+        await setRootsGate;
+      },
+    } as unknown as PathGuard;
+
+    const manager = new McpRootsSynchronizer(fakePathGuard, true);
+    const fakeServer = createFakeServer();
+    manager.registerHandlers(fakeServer.server);
+
+    // Start the first updateRootsFromClient (via the initialized handler) but
+    // do not await it: it parks at the setRoots gate with state === 'updating'.
+    const initPromise = fakeServer.getInitializedHandler()();
+    // Let the event loop settle so state reaches 'updating' before we proceed.
+    await delay(0);
+
+    // Queue a roots/list_changed: the debounced re-entry finds state 'updating'
+    // and sets pendingRootsUpdate = true without calling setRoots again.
+    fakeServer.getRootsChangedHandler()();
+    await delay(120); // ROOTS_DEBOUNCE_MS is 100ms
+
+    // Destroy mid-await — the finally block must observe 'shutting_down' and
+    // skip both the idle transition and the pendingRootsUpdate re-arm.
+    manager.destroy();
+
+    // Release the gate; the finally guard must NOT re-arm the queued update.
+    resolveSetRoots();
+    await initPromise;
+    await delay(150); // give any stray re-arm a chance to fire (it must not)
+
+    assert.equal(setRootsCalls, 1, 'setRoots must not be re-invoked after destroy()');
+    assert.equal(manager.isInitialized(), false, 'state must not recover to idle after destroy()');
+  });
 });

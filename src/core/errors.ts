@@ -115,7 +115,7 @@ export function resolveSuggestion(p: Pick<Problem, 'code' | 'issues'>): string |
   return DEFAULT_SUGGESTIONS[p.code];
 }
 
-const ERRNO_MAP: Readonly<Record<string, ErrorCode>> = {
+export const ERRNO_MAP: Readonly<Record<string, ErrorCode>> = {
   ENOENT: ErrorCode.NOT_FOUND,
   EACCES: ErrorCode.PERMISSION_DENIED,
   EPERM: ErrorCode.PERMISSION_DENIED,
@@ -140,6 +140,9 @@ const ERRNO_RE = /^E[A-Z]+$/;
 export const SKIPPABLE_FS_CODES: ReadonlySet<ErrorCode> = new Set([
   ErrorCode.ACCESS_DENIED,
   ErrorCode.NOT_FOUND,
+  // OS-level EACCES/EPERM on a symlink target during a listing is exactly as
+  // skippable as the other three codes.
+  ErrorCode.PERMISSION_DENIED,
   ErrorCode.SYMLINK_NOT_ALLOWED,
 ]);
 

@@ -254,8 +254,9 @@
       "type": "object",
       "properties": {
         "edits": {
-          "description": "Replacements applied to path or to every file in paths; not allowed when using files (each file carries its own edits)",
+          "description": "Replacements applied to path or to every file in paths (max 100); not allowed when using files (each file carries its own edits)",
           "minItems": 1,
+          "maxItems": 100,
           "type": "array",
           "items": {
             "type": "object",
@@ -322,6 +323,7 @@
               },
               "edits": {
                 "minItems": 1,
+                "maxItems": 100,
                 "type": "array",
                 "items": {
                   "type": "object",
@@ -341,7 +343,7 @@
                   "required": ["oldText", "newText"],
                   "additionalProperties": false
                 },
-                "description": "Replacements to apply to this specific file"
+                "description": "Replacements to apply to this specific file (max 100)"
               }
             },
             "required": ["path", "edits"],
@@ -415,7 +417,7 @@
                     "$ref": "#/$defs/NonNegInt"
                   },
                   "diff": {
-                    "description": "Unified diff of all changes (present in dryRun mode or when changes were made)",
+                    "description": "Unified diff of all changes (present only in dryRun mode)",
                     "type": "string"
                   },
                   "unmatchedEdits": {

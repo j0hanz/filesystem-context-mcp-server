@@ -55,6 +55,7 @@ import { createServer } from './server.js';
 // ═══════════════════════════════════════════════════════════════
 
 const MAX_EVENTS_PER_STREAM = 1000;
+const MAX_EVENT_STREAMS = 1000;
 
 interface StoredEvent {
   readonly id: EventId;
@@ -93,6 +94,20 @@ export class InMemoryEventStore implements EventStore {
       const removed = stream.shift();
       if (removed) {
         this.eventIdToStreamId.delete(removed.id);
+      }
+    }
+
+    if (this.streams.size > MAX_EVENT_STREAMS) {
+      // Map preserves insertion order: the first key is the oldest stream.
+      const oldestStreamId = this.streams.keys().next().value;
+      if (oldestStreamId !== undefined) {
+        const evicted = this.streams.get(oldestStreamId);
+        this.streams.delete(oldestStreamId);
+        if (evicted) {
+          for (const { id } of evicted) {
+            this.eventIdToStreamId.delete(id);
+          }
+        }
       }
     }
 

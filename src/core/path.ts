@@ -16,7 +16,14 @@ import {
 } from 'node:path';
 
 import { assertNotAborted, timedSignal, withAbort } from './concurrency.js';
-import { ErrorCode, FsError, isFsError, isNodeError, rethrowIfAborted } from './errors.js';
+import {
+  ERRNO_MAP,
+  ErrorCode,
+  FsError,
+  isFsError,
+  isNodeError,
+  rethrowIfAborted,
+} from './errors.js';
 import { Logger } from './observability.js';
 import { parseEnvDirList, parseTrueEnvFlag } from './primitives.js';
 import { ROOTS_TIMEOUT_MS } from './util.js';
@@ -191,8 +198,10 @@ export function normalizePath(p: string): string {
   return resolved;
 }
 
+const IS_CASE_INSENSITIVE_FS = IS_WINDOWS || platform() === 'darwin';
+
 function normalizeCaseForComparison(value: string): string {
-  return IS_WINDOWS ? value.toLowerCase() : value;
+  return IS_CASE_INSENSITIVE_FS ? value.toLowerCase() : value;
 }
 
 export function isSamePath(left: string, right: string): boolean {
@@ -501,7 +510,8 @@ export function isWindowsDriveRelativePath(requestedPath: string): boolean {
  * Returns false for absolute paths and patterns containing traversal sequences (`..'`).
  * This is the subset of safety enforcement suitable for schema-level validation.
  * Operational path enforcement (allowed-root containment, symlink resolution) is
- * handled by PathGuard.assertSafeGlob and the validateExistingPath family.
+ * handled by isEntryAccessibleByType in src/core/glob.ts, via
+ * isPathWithinDirectories and pathGuard.validateExistingPathDetailed.
  */
 export function isSafeGlobSyntax(pattern: string): boolean {
   if (!pattern || pattern.trim().length === 0) return false;
@@ -885,8 +895,10 @@ export class PathGuard {
       );
     }
 
+    const mapped =
+      isNodeError(error) && error.code !== undefined ? ERRNO_MAP[error.code] : undefined;
     throw new FsError(
-      ErrorCode.UNKNOWN,
+      mapped ?? ErrorCode.UNKNOWN,
       'Cannot access path',
       requestedPath,
       {

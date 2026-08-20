@@ -244,10 +244,16 @@ export class McpRootsSynchronizer {
             `Failed to apply roots to the path guard: ${error instanceof Error ? error.message : String(error)}`,
           );
         }
-        this.state = 'idle';
-        if (this.pendingRootsUpdate) {
-          this.pendingRootsUpdate = false;
-          void this.updateRootsFromClient(server);
+        // destroy() can flip state to 'shutting_down' during the await above.
+        // Re-check before marking idle or re-arming the queued update, so a
+        // shutdown started mid-await does not leave the manager in 'idle' or
+        // schedule work after destroy().
+        if (this.state !== 'shutting_down') {
+          this.state = 'idle';
+          if (this.pendingRootsUpdate) {
+            this.pendingRootsUpdate = false;
+            void this.updateRootsFromClient(server);
+          }
         }
       }
     }

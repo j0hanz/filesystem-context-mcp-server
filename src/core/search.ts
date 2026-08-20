@@ -181,6 +181,7 @@ async function scanContent(
     includeHidden: Boolean(options.includeHidden),
     respectGitignore: Boolean(options.respectGitignore),
     maxDepth: options.maxDepth ?? 100,
+    suppressErrors: true,
   });
 
   let filesScanned = 0;
@@ -298,6 +299,7 @@ export async function searchFiles(
     includeHidden: Boolean(options.includeHidden),
     respectGitignore: Boolean(options.respectGitignore),
     maxDepth: options.maxDepth ?? 100,
+    suppressErrors: true,
   });
   const results: { path: string }[] = [];
   let filesScanned = 0;

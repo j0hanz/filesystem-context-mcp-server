@@ -1,6 +1,6 @@
 // __tests__/tools/elicitation.test.ts (new file)
 import assert from 'node:assert/strict';
-import { mkdir, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
@@ -105,6 +105,44 @@ describe('delete: client accepts elicitation', () => {
     });
     assertOk(result);
     await assert.rejects(readdir(dir), { code: 'ENOENT' });
+  });
+
+  it('refuses to delete a directory swapped during the confirmation gap', async () => {
+    // holder dodges definite-assignment: the handler closes over the path
+    // before it is bound to swapEnv.tmpDir (which does not exist yet).
+    const holder: { dir: string } = { dir: '' };
+    const swapEnv = await createTestEnvWithElicitation(async () => {
+      // Swap fires between the pre-elicitation lstat and the post-elicitation
+      // re-stat: drop the original dir, recreate the same path with a marker.
+      // Same type (directory), different inode/birthtimeMs.
+      await rm(holder.dir, { recursive: true, force: true });
+      await mkdir(holder.dir);
+      await writeFile(join(holder.dir, 'marker.txt'), 'survivor');
+      return { action: 'accept' as const, content: { confirm: true } };
+    });
+    try {
+      holder.dir = join(swapEnv.tmpDir, 'swap-dir');
+      await mkdir(holder.dir);
+      await writeFile(join(holder.dir, 'original.txt'), 'content');
+
+      const result = await swapEnv.client.callTool({
+        name: 'delete',
+        arguments: { paths: [holder.dir], recursive: true },
+      });
+      const sc = (result as { structuredContent?: { ok?: unknown } }).structuredContent;
+      assert.equal((sc as { ok: unknown } | undefined)?.ok, false, 'swap must abort the delete');
+      const failures = (sc as { failures?: { error?: { code?: unknown } }[] } | undefined)
+        ?.failures;
+      assert.ok(Array.isArray(failures) && failures.length === 1, 'Expected 1 failure');
+      assert.equal(failures?.[0]?.error?.code, 'INVALID_INPUT');
+      const entries = await readdir(holder.dir);
+      assert.ok(
+        entries.includes('marker.txt'),
+        'swapped marker must survive — performDeletion never ran on the replaced content',
+      );
+    } finally {
+      await swapEnv.cleanup();
+    }
   });
 });
 

@@ -719,6 +719,42 @@ describe('invalid cursor rejection', () => {
   });
 });
 
+// ─── maxDepth:0 (0-based) returns only base-directory entries ───────────────
+
+describe('find_files — maxDepth:0 stays at the base directory', () => {
+  let env: TestEnv;
+
+  before(async () => {
+    env = await createTestEnv();
+    await writeFile(join(env.tmpDir, 'base.txt'), 'b', 'utf8');
+    await mkdir(join(env.tmpDir, 'sub'), { recursive: true });
+    await writeFile(join(env.tmpDir, 'sub', 'nested.txt'), 'n', 'utf8');
+  });
+
+  after(async () => {
+    await env.cleanup();
+  });
+
+  it('returns the base file and excludes the nested file at maxDepth:0', async () => {
+    const raw = await env.client.callTool({
+      name: 'find_files',
+      arguments: { path: env.tmpDir, pattern: '**/*.txt', maxDepth: 0 },
+    });
+    assertOk(raw);
+    const sc = getStructured(raw);
+    const results = sc['results'] as { path: string }[];
+    const paths = results.map((r) => r.path.replace(/\\/g, '/'));
+    assert.ok(
+      paths.some((p) => p.endsWith('base.txt')),
+      'base file must be returned at maxDepth:0',
+    );
+    assert.ok(
+      !paths.some((p) => p.endsWith('nested.txt')),
+      'nested file must NOT be returned at maxDepth:0',
+    );
+  });
+});
+
 // ─── array size limits ──────────────────────────────────────────────────────
 
 describe('array size limits', () => {

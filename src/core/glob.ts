@@ -374,7 +374,7 @@ function getRelativeDepth(relativePath: string): number {
       count++;
     }
   }
-  return count + 1;
+  return count;
 }
 
 function resolveDirentBase(cwd: string, parentPath: string | undefined): string {

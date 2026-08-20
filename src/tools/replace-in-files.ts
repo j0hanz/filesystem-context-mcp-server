@@ -1,7 +1,7 @@
 import type { ContentBlock } from '@modelcontextprotocol/server';
 
 import { Buffer } from 'node:buffer';
-import { basename, dirname, join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import * as z from 'zod/v4';
 import { createTwoFilesPatch } from 'diff';
@@ -46,10 +46,6 @@ import {
 } from '../core/util.js';
 import { buildFileResourceLink } from './_helpers.js';
 import { defineTool } from './define.js';
-
-function globEscape(name: string): string {
-  return name.replace(/[*?[\]{}()!|+@\\]/g, '\\$&');
-}
 
 const SearchAndReplaceInputSchema = z.strictObject({
   path: OptionalPath,
@@ -543,19 +539,23 @@ function createReplaceSummary(root: string): ReplaceSummary {
 async function resolveSearchRoot(
   pathValue: string | undefined,
   fs: GuardedFileSystem,
-): Promise<{ root: string; filePattern: string | undefined }> {
+): Promise<{ root: string; singleFile?: string }> {
   if (!pathValue) {
-    return { root: fs.pathGuard.resolvePathOrRoot(undefined), filePattern: undefined };
+    return { root: fs.pathGuard.resolvePathOrRoot(undefined) };
   }
   const resolvedPath = await fs.pathGuard.validateExistingPath(pathValue);
   const { stats: fileStats } = await fs.stat(resolvedPath);
   if (fileStats.isFile()) {
+    // A single explicit file target bypasses the glob machinery entirely:
+    // routing it through globEntries with baseNameMatch would rewrite the
+    // escaped basename to `**/${basename}` and match every same-named file
+    // under the parent tree, not just this one.
     return {
       root: dirname(resolvedPath),
-      filePattern: globEscape(basename(resolvedPath)),
+      singleFile: resolvedPath,
     };
   }
-  return { root: resolvedPath, filePattern: undefined };
+  return { root: resolvedPath };
 }
 
 function buildSearchPattern(args: SearchAndReplaceArgs): string {
@@ -586,19 +586,29 @@ async function handleSearchAndReplace(
   link?: ContentBlock;
 }> {
   const maxFileSize = MAX_TEXT_FILE_SIZE;
-  const { root, filePattern } = await resolveSearchRoot(args.path, fsOps);
-  const effectivePattern = filePattern ?? args.pattern ?? '**/*';
+  const { root, singleFile } = await resolveSearchRoot(args.path, fsOps);
+  const effectivePattern = args.pattern ?? '**/*';
 
-  const entries = globEntries({
-    cwd: root,
-    pattern: effectivePattern,
-    excludePatterns: args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS,
-    includeHidden: args.includeHidden,
-    baseNameMatch: true,
-    onlyFiles: true,
-    suppressErrors: true,
-    ...(args.maxDepth !== undefined ? { maxDepth: args.maxDepth } : {}),
-  });
+  // An explicit single-file target bypasses baseNameMatch/exclude/hidden/
+  // gitignore filtering — it should always be processed as the one file named.
+  // The async generator matches globEntries' AsyncIterable contract; it needs
+  // no await (single yield), hence the disable.
+  const entries: AsyncIterable<{ path: string }> = singleFile
+    ? // eslint-disable-next-line @typescript-eslint/require-await
+      (async function* singleFileEntry() {
+        yield { path: singleFile };
+      })()
+    : globEntries({
+        cwd: root,
+        pattern: effectivePattern,
+        excludePatterns: args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS,
+        includeHidden: args.includeHidden,
+        respectGitignore: !args.includeIgnored,
+        baseNameMatch: true,
+        onlyFiles: true,
+        suppressErrors: true,
+        ...(args.maxDepth !== undefined ? { maxDepth: args.maxDepth } : {}),
+      });
 
   const summary = createReplaceSummary(root);
 

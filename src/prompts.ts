@@ -13,11 +13,11 @@ import {
 } from '@modelcontextprotocol/server';
 
 import { lstat } from 'node:fs/promises';
-import { pathToFileURL } from 'node:url';
 
 import * as z from 'zod/v4';
 
 import { hasErrorShape } from './core/errors.js';
+import { buildFileResourceUri } from './core/file-uri.js';
 import { Logger } from './core/observability.js';
 import { PathCompleter } from './core/path-completer.js';
 import type { PathGuard } from './core/path.js';
@@ -111,7 +111,7 @@ function linkToInstructions(uri: string): PromptMessage {
 function linkToPath(absPath: string): PromptMessage {
   const content: ResourceLink = {
     type: 'resource_link',
-    uri: pathToFileURL(absPath).href,
+    uri: buildFileResourceUri(absPath),
     name: absPath,
     annotations: { audience: ['assistant'], priority: 1 },
   };

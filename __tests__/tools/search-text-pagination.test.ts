@@ -9,6 +9,8 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
+import { encodeOffsetCursor } from '../../src/core/cursor.js';
+import { MAX_SEARCH_RESULTS } from '../../src/core/util.js';
 import {
   assertOk,
   assertToolError,
@@ -68,5 +70,26 @@ describe('search_text — pagination and regex failures', () => {
   it('rejects an empty searchPattern as a tool error', async () => {
     const res = await search({ searchPattern: '   ' });
     assertToolError(res);
+  });
+
+  it('clamps a huge cursor so the scan does not collect past the result cap', async () => {
+    // More than MAX_SEARCH_RESULTS matching lines so an unclamped fetchMax
+    // (cursorOffset + pageSize) would collect past the cap. The clamp holds
+    // fetchMax at MAX_SEARCH_RESULTS, so totalMatches cannot exceed it.
+    const body =
+      Array.from({ length: MAX_SEARCH_RESULTS + 1 }, (_, i) => `marker line ${i}`).join('\n') +
+      '\n';
+    await writeFile(join(env.tmpDir, 'big.txt'), body);
+
+    const res = await search({
+      searchPattern: 'marker',
+      maxResults: 5,
+      cursor: encodeOffsetCursor(MAX_SEARCH_RESULTS * 5),
+    });
+    assertOk(res);
+    const s = getStructured<{ matches: unknown[]; totalMatches?: number }>(res);
+    // Offset (50000) is far past the cap, so the page is empty; the guard is the
+    // summary count. Without the clamp totalMatches would be 10000+ here.
+    assert.ok((s.totalMatches ?? 0) <= MAX_SEARCH_RESULTS);
   });
 });
