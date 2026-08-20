@@ -532,24 +532,28 @@ export class PathGuard {
   }
 
   /**
-   * True when `entryPath` is both within `bounds` and not sensitive, checking
-   * the requested AND resolved paths. Symlinks are resolved via
-   * validateExistingPathDetailed (which checks containment against
-   * this.rootBoundaries internally); other types check `bounds` directly.
-   * Skippable errno/fs errors return false (the entry is filtered, not fatal).
+   * True when `entryPath` is both within the guard's allowed directories and
+   * not sensitive, checking the requested AND resolved paths. EVERY entry is
+   * realpath-resolved via validateExistingPathDetailed: a symlinked ancestor
+   * directory pointing outside the sandbox would otherwise pass the lexical
+   * containment check (fs.glob follows symlinks and yields external entries as
+   * non-symlink dirents). validateExistingPathDetailed re-checks containment on
+   * the real path against this.allowedDirectoriesState.expanded (the guard's full
+   * allowed set — a superset of the single-root `bounds` callers pass) and
+   * re-checks sensitivity on the resolved target, throwing ACCESS_DENIED for
+   * escapes/sensitive, which the catch below turns into a filter. `_entryType`
+   * and `_bounds` are retained for call-site compatibility while the guard's own
+   * allowed set is the real gate. Skippable errno/fs errors return false (the
+   * entry is filtered, not fatal). The accepted TOCTOU window is documented at
+   * the class docstring above.
    */
   async isEntryAccessible(
     entryPath: string,
-    entryType: EntryType,
-    bounds: readonly string[],
+    _entryType: EntryType,
+    _bounds: readonly string[],
   ): Promise<boolean> {
     const isSensitive = (requestedPath: string, resolvedPath: string): boolean =>
       this.isSensitive(requestedPath) || this.isSensitive(resolvedPath);
-    if (entryType !== 'symlink') {
-      const normalizedPath = normalizePath(entryPath);
-      if (!isPathWithinDirectories(normalizedPath, bounds)) return false;
-      return !isSensitive(entryPath, normalizedPath);
-    }
     try {
       const validated = await this.validateExistingPathDetailed(entryPath);
       return !isSensitive(validated.requestedPath, validated.resolvedPath);

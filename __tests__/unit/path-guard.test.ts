@@ -5,7 +5,13 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import { ErrorCode } from '../../src/core/errors.js';
-import { type AllowedDirectoriesState, isSafeGlobSyntax, PathGuard } from '../../src/core/path.js';
+import {
+  type AllowedDirectoriesState,
+  IS_WINDOWS,
+  isSafeGlobSyntax,
+  PathGuard,
+} from '../../src/core/path.js';
+import { SensitiveMatcher } from '../../src/core/sensitive.js';
 
 function hasErrorCode(err: unknown, code: ErrorCode): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === code;
@@ -53,6 +59,56 @@ test('isSensitive returns true for .env files', () => {
 test('isSensitive returns false for normal files', () => {
   assert.strictEqual(guard.isSensitive('src/index.ts'), false);
   assert.strictEqual(guard.isSensitive('README.md'), false);
+});
+
+// Characterize the operator-supplied denylist contract: custom DENYLIST
+// patterns match, ALLOW_SENSITIVE suppresses built-ins but NOT operator
+// entries, and separators split correctly. Safety net for the Windows
+// trailing-dot normalization change (Plan 002).
+
+test('SensitiveMatcher honors custom DENYLIST patterns', () => {
+  const matcher = new SensitiveMatcher(['secrets/**', '*.pem']);
+  // rooted glob variant is added by compilePatternGlobs
+  assert.strictEqual(matcher.isSensitive('secrets/api.key'), true);
+  assert.strictEqual(matcher.isSensitive('config/secrets/api.key'), true);
+  assert.strictEqual(matcher.isSensitive('public.txt'), false);
+  assert.strictEqual(matcher.isSensitive('server.pem'), true);
+  assert.strictEqual(matcher.isSensitive('src/server.ts'), false);
+});
+
+test('ALLOW_SENSITIVE suppresses built-ins but not operator DENYLIST entries', () => {
+  const savedAllow = process.env['ALLOW_SENSITIVE'];
+  const savedDeny = process.env['DENYLIST'];
+  process.env['ALLOW_SENSITIVE'] = '1';
+  process.env['DENYLIST'] = 'secrets/**';
+  try {
+    const matcher = new SensitiveMatcher(); // calls buildSensitivePatterns()
+    // built-in .env is suppressed by ALLOW_SENSITIVE
+    assert.strictEqual(matcher.isSensitive('.env'), false);
+    // operator DENYLIST entry still applies
+    assert.strictEqual(matcher.isSensitive('secrets/api.key'), true);
+    assert.strictEqual(matcher.isSensitive('public.txt'), false);
+  } finally {
+    if (savedAllow === undefined) delete process.env['ALLOW_SENSITIVE'];
+    else process.env['ALLOW_SENSITIVE'] = savedAllow;
+    if (savedDeny === undefined) delete process.env['DENYLIST'];
+    else process.env['DENYLIST'] = savedDeny;
+  }
+});
+
+test('DENYLIST with comma and newline separators is split correctly', () => {
+  const savedDeny = process.env['DENYLIST'];
+  process.env['DENYLIST'] = '*.pem,secrets/**\n*.key';
+  try {
+    const matcher = new SensitiveMatcher();
+    assert.strictEqual(matcher.isSensitive('a.pem'), true);
+    assert.strictEqual(matcher.isSensitive('secrets/x'), true);
+    assert.strictEqual(matcher.isSensitive('b.key'), true);
+    assert.strictEqual(matcher.isSensitive('b.txt'), false);
+  } finally {
+    if (savedDeny === undefined) delete process.env['DENYLIST'];
+    else process.env['DENYLIST'] = savedDeny;
+  }
 });
 
 test('isSafeGlobSyntax returns false for traversal patterns', () => {
@@ -296,6 +352,22 @@ test('isSensitive does not break Windows drive-letter colon', (t) => {
   );
 });
 
+test('isSensitive strips Windows trailing dot/space (denylist bypass fix)', () => {
+  const matcher = new SensitiveMatcher(['.env', '.npmrc']);
+  if (IS_WINDOWS) {
+    // Win32 strips trailing dot/space at the syscall boundary -> must match.
+    assert.strictEqual(matcher.isSensitive('.env '), true);
+    assert.strictEqual(matcher.isSensitive('.env.'), true);
+    assert.strictEqual(matcher.isSensitive('.env...'), true);
+    assert.strictEqual(matcher.isSensitive('.npmrc '), true);
+  } else {
+    // POSIX: trailing dot/space are real filename chars, distinct from .env.
+    assert.strictEqual(matcher.isSensitive('.env '), false);
+  }
+  // Both platforms: the plain name still matches.
+  assert.strictEqual(matcher.isSensitive('.env'), true);
+});
+
 // ─── isEntryAccessible (R2 — moved in from glob.ts) ────────────────────────────
 
 test('isEntryAccessible returns false for a sensitive file', async () => {
@@ -340,5 +412,37 @@ test('isEntryAccessible returns false for an entry outside bounds', async () => 
     assert.strictEqual(await guard.isEntryAccessible(outsideFile, 'file', [tmpDir]), false);
   } finally {
     await rm(outsideDir, { recursive: true, force: true });
+  }
+});
+
+// A symlinked DIRECTORY inside an allowed root pointing outside the sandbox:
+// fs.glob follows it and yields the external file as a non-symlink dirent, so
+// the lexical-only check used to pass it. realpath resolution must filter it.
+test('isEntryAccessible blocks entries under a symlinked dir pointing outside the root', async () => {
+  if (IS_WINDOWS) {
+    // symlink creation may require elevated privileges / developer mode on Windows
+    let probe = true;
+    try {
+      await symlink(join(tmpDir, 'probe-link-target'), join(tmpDir, 'probe-link'), 'dir');
+    } catch {
+      probe = false;
+    } finally {
+      await rm(join(tmpDir, 'probe-link'), { force: true });
+    }
+    if (!probe) return; // cannot create symlinks here; POSIX CI covers the regression
+  }
+
+  const outside = await mkdtemp(join(tmpdir(), 'path-guard-outside-'));
+  try {
+    await writeFile(join(outside, 'leaked.txt'), 'secret');
+    const linkPath = join(tmpDir, 'escape-link');
+    await symlink(outside, linkPath, 'dir');
+    // The external file reached through the symlinked dir must be filtered.
+    const accessible = await guard.isEntryAccessible(join(linkPath, 'leaked.txt'), 'file', [
+      tmpDir,
+    ]);
+    assert.strictEqual(accessible, false);
+  } finally {
+    await rm(outside, { recursive: true, force: true });
   }
 });

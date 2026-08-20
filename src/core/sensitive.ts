@@ -11,6 +11,8 @@ import { parseTrueEnvFlag } from './primitives.js';
 
 const CHAR_COLON = 58;
 const CHAR_FORWARD_SLASH = 47;
+const CHAR_DOT = 46;
+const CHAR_SPACE = 32;
 
 function normalizeForMatch(input: string): string {
   // Always lowercase for case-insensitive denylist matching on all platforms.
@@ -92,7 +94,11 @@ function matchesAnyGlob(globs: readonly string[], candidate: string): boolean {
 
 // Strip NTFS alternate-data-stream suffixes (the ":stream" after a segment)
 // before denylist matching, so `.env:secret` is caught as `.env`. Preserves the
-// drive-letter colon in the first segment of an absolute path.
+// drive-letter colon in the first segment of an absolute path. Also trims
+// trailing dots/spaces: Win32 strips them at the syscall boundary (a request
+// to create `.env ` actually creates `.env`), so without trimming them here the
+// exact-name patterns (`.env`, `.npmrc`) are bypassed on Windows. Mirrors the
+// precedent in getReservedDeviceName (path.ts) which trims for the same reason.
 function stripAlternateDataStreams(filePath: string): string {
   const parts = filePath.split(/[\\/]/);
   const stripped = parts.map((segment, i) => {
@@ -105,9 +111,23 @@ function stripAlternateDataStreams(filePath: string): string {
       return segment;
     }
     const colonIdx = segment.indexOf(':');
-    return colonIdx !== -1 ? segment.slice(0, colonIdx) : segment;
+    const withoutStream = colonIdx !== -1 ? segment.slice(0, colonIdx) : segment;
+    // Win32 strips trailing dots and spaces at the syscall boundary, so a
+    // request for ".env " creates ".env". Strip them before denylist matching
+    // or the exact-name patterns (".env", ".npmrc") are bypassed on Windows.
+    return trimTrailingDotsAndSpaces(withoutStream);
   });
   return stripped.join(sep);
+}
+
+function trimTrailingDotsAndSpaces(segment: string): string {
+  let end = segment.length;
+  while (end > 0) {
+    const c = segment.charCodeAt(end - 1);
+    if (c === CHAR_SPACE || c === CHAR_DOT) end--;
+    else break;
+  }
+  return end === segment.length ? segment : segment.slice(0, end);
 }
 
 const DEFAULT_SENSITIVE_PATTERNS = [
