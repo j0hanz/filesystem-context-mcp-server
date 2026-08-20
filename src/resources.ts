@@ -246,7 +246,7 @@ function createWatcherRegistry() {
       desiredState.set(uri, 'subscribed');
     },
 
-    attach(uri: string, resolvedPath: string): void {
+    attach(uri: string, resolvedPath: string): boolean {
       try {
         const watcher = watch(resolvedPath, () => {
           notifyAll(uri);
@@ -256,8 +256,10 @@ function createWatcherRegistry() {
           dropWatcher(uri, watcher);
         });
         watchers.set(uri, watcher);
+        return true;
       } catch (err) {
         Logger.error(`Failed to create watcher for ${uri}: ${formatUnknownErrorMessage(err)}`);
+        return false;
       }
     },
 
@@ -347,7 +349,9 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
         return;
       }
       // A cap hit before validation is reported to the caller as an outright
-      // rejection; after validation it is silent (see below).
+      // rejection. A cap hit found after the validation await is the same
+      // condition, so it is also rejected — returning undefined here would let
+      // the handler report success with no watcher attached.
       if (registry.isAtCap()) {
         warnWatcherCap(uri);
         return false;
@@ -382,11 +386,18 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
       }
       if (registry.isAtCap()) {
         warnWatcherCap(uri);
-        return;
+        return false;
       }
 
       registry.addCallback(uri, notify);
-      registry.attach(uri, resolved);
+      if (!registry.attach(uri, resolved)) {
+        // fs.watch threw synchronously (e.g. inotify exhaustion, or a race
+        // deleted the path): roll back the callback we just registered and
+        // reject, so the caller is not left believing it is subscribed while
+        // no watcher exists.
+        registry.remove(uri);
+        return false;
+      }
       return undefined;
     },
 
@@ -563,7 +574,7 @@ function registerResources(
           if (subscribeResult === false) {
             throw new ProtocolError(
               ProtocolErrorCode.InternalError,
-              `Subscription rejected: watcher limit (${MAX_WATCHERS}) reached.`,
+              `Subscription rejected: no watcher attached (watcher limit ${MAX_WATCHERS} reached, or fs.watch failed to start).`,
             );
           }
           break;
