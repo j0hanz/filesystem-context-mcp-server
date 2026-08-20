@@ -216,6 +216,10 @@ export const ENV_HELP: HelpRow[] = [
     desc: 'HTTP session idle timeout in ms (default 1800000, 1000–86400000)',
   },
   {
+    flags: 'FILESYSTEM_MCP_RATE_LIMIT_RPM',
+    desc: 'Per-client-IP requests/min on public HTTP bind (default 120, 1–100000)',
+  },
+  {
     flags: 'FS_CONTEXT_MAX_REQUEST_BYTES',
     desc: 'Max HTTP request body bytes (default 4194304, 1024–268435456)',
   },

@@ -43,6 +43,7 @@ import {
   bearerAuthMiddleware,
   computeAllowedOriginHostnames,
   corsPreflightHandler,
+  createRateLimiter,
   isLoopbackHttpHost,
   parseAllowedHostsEnv,
   protectedResourceUrl,
@@ -610,6 +611,7 @@ async function handlePostMcp(
     }
     const maxSessions = parseEnvInt('FILESYSTEM_MCP_MAX_HTTP_SESSIONS', 100, 1, 10_000);
     if (registry.size() >= maxSessions) {
+      res.setHeader('Retry-After', '60');
       sendJsonRpcError(res, 503, ProtocolErrorCode.InternalError, 'Too many sessions');
       return;
     }
@@ -725,6 +727,15 @@ function setupExpressApp(
 
   app.options('/mcp', corsPreflightHandler(allowedOriginHostnames));
 
+  // Rate-limit the public surface only: when an API key is set, bound the
+  // request rate per client IP to deny online brute force of the bearer token.
+  // Loopback dev mode (no key) stays unlimited. The OPTIONS preflight above
+  // already ends the response, so CORS checks are not counted against the limit.
+  if (apiKey) {
+    const rpm = parseEnvInt('FILESYSTEM_MCP_RATE_LIMIT_RPM', 120, 1, 100_000);
+    app.use('/mcp', createRateLimiter(rpm));
+  }
+
   // Discovery is only truthful when a credential is actually required, and it
   // stays outside the bearer guard — a client reads it precisely because it
   // does not yet have a token. RFC 9728 §3.1 puts the document at the
@@ -776,6 +787,17 @@ function setupExpressApp(
   });
 
   app.use(errorHandlerMiddleware);
+
+  // Catch-all error handler for any middleware that throws. Express docs say to
+  // put this last, and to check res.headersSent before sending a response.
+  app.use((err: Error, _req: Request, res: Response, next: NextFunction): void => {
+    if (res.headersSent) {
+      next(err);
+      return;
+    }
+    Logger.error('[HTTP] Unhandled middleware error:', formatUnknownErrorMessage(err));
+    sendJsonRpcError(res, 500, ProtocolErrorCode.InternalError, 'Internal Server Error');
+  });
 
   return app;
 }

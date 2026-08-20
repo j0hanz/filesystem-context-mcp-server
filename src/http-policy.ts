@@ -256,3 +256,57 @@ export function corsPreflightHandler(allowedOriginHostnames: readonly string[]):
     res.status(204).end();
   };
 }
+
+// ─── Rate limiting (public bind only) ────────────────────────────────────────
+
+interface RateBucket {
+  windowStart: number;
+  count: number;
+}
+
+// Fixed 60s window; never tuned, so it is a constant rather than config plumbing.
+const RATE_LIMIT_WINDOW_MS = 60_000;
+
+/**
+ * Fixed-window per-client-IP rate limiter.
+ */
+export function createRateLimiter(max: number): RequestHandler {
+  const buckets = new Map<string, RateBucket>();
+  const sweep = setInterval(() => {
+    const cutoff = Date.now() - RATE_LIMIT_WINDOW_MS * 2;
+    for (const [ip, bucket] of buckets) {
+      if (bucket.windowStart < cutoff) buckets.delete(ip);
+    }
+  }, RATE_LIMIT_WINDOW_MS);
+  sweep.unref();
+
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const ip = req.ip ?? req.socket.remoteAddress ?? 'unknown';
+    const now = Date.now();
+    let bucket = buckets.get(ip);
+    if (!bucket || now - bucket.windowStart >= RATE_LIMIT_WINDOW_MS) {
+      bucket = { windowStart: now, count: 0 };
+      buckets.set(ip, bucket);
+    }
+    bucket.count += 1;
+    if (bucket.count <= max) {
+      next();
+      return;
+    }
+    const retryAfterSec = Math.max(
+      1,
+      Math.ceil((bucket.windowStart + RATE_LIMIT_WINDOW_MS - now) / 1000),
+    );
+    res.writeHead(429, {
+      'Content-Type': 'application/json',
+      'Retry-After': String(retryAfterSec),
+    });
+    res.end(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: -32000, message: 'Rate limit exceeded' },
+      }),
+    );
+  };
+}
