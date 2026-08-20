@@ -226,17 +226,7 @@
                 "type": "string"
               },
               "error": {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string"
-                  },
-                  "message": {
-                    "type": "string"
-                  }
-                },
-                "required": ["code", "message"],
-                "additionalProperties": false
+                "$ref": "#/$defs/PerFileError"
               }
             },
             "required": ["path", "error"],
@@ -246,7 +236,33 @@
       },
       "required": ["ok"],
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "additionalProperties": false
+      "additionalProperties": false,
+      "$defs": {
+        "PerFileError": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Error code"
+            },
+            "message": {
+              "type": "string",
+              "description": "Error message"
+            },
+            "path": {
+              "description": "Path involved",
+              "type": "string"
+            },
+            "suggestion": {
+              "description": "Suggested fix",
+              "type": "string"
+            }
+          },
+          "required": ["code", "message"],
+          "additionalProperties": false,
+          "title": "Per-File Error"
+        }
+      }
     }
   },
   "edit": {

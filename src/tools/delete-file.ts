@@ -8,7 +8,7 @@ import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode, isNodeError, isNotFoundErrno, Problem } from '../core/errors.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
-import { defaultFalseBoolean, RequiredPath } from '../core/schema.js';
+import { defaultFalseBoolean, PathFailureSchema, RequiredPath } from '../core/schema.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import type { ToolCtx } from './define.js';
 import { confirmBoolean, defineTool } from './define.js';
@@ -27,14 +27,6 @@ const DeleteInputSchema = z.strictObject({
   ),
 });
 
-const DeleteFailureItemSchema = z.strictObject({
-  path: z.string(),
-  error: z.strictObject({
-    code: z.string(),
-    message: z.string(),
-  }),
-});
-
 const DeleteOutputSchema = z.strictObject({
   ok: z
     .boolean()
@@ -47,14 +39,14 @@ const DeleteOutputSchema = z.strictObject({
     .optional()
     .describe('Deleted paths (present when multiple paths were deleted)'),
   failures: z
-    .array(DeleteFailureItemSchema)
+    .array(PathFailureSchema)
     .optional()
     .describe('Per-path error details for paths that could not be deleted'),
 });
 
 type DeleteInput = z.infer<typeof DeleteInputSchema>;
 type DeleteOutput = z.infer<typeof DeleteOutputSchema>;
-type DeleteFailureItem = z.infer<typeof DeleteFailureItemSchema>;
+type DeleteFailureItem = z.infer<typeof PathFailureSchema>;
 
 // Internal types for error handling
 interface DeletedItem {
@@ -85,6 +77,17 @@ function toDeleteFailure(path: string, error: unknown): DeleteFailure {
     };
   }
   return { path, error: Problem.fromUnknown(error, ErrorCode.UNKNOWN, path) };
+}
+
+// Picks the PerFileError fields explicitly: the internal error is a Problem,
+// which also carries issues/details that the strictObject schema rejects.
+function toPerFileError(error: DeleteFailure['error']): DeleteFailureItem['error'] {
+  return {
+    code: error.code,
+    message: error.message,
+    ...(error.path !== undefined ? { path: error.path } : {}),
+    ...(error.suggestion !== undefined ? { suggestion: error.suggestion } : {}),
+  };
 }
 
 function resolveItemType(
@@ -252,13 +255,7 @@ async function handleDelete(args: DeleteInput, ctx: ToolCtx): Promise<DeleteOutp
 
   for (const { value: r } of results) {
     if ('failure' in r) {
-      failures.push({
-        path: r.failure.path,
-        error: {
-          code: r.failure.error.code,
-          message: r.failure.error.message,
-        },
-      });
+      failures.push({ path: r.failure.path, error: toPerFileError(r.failure.error) });
     } else if (r.item.path) {
       successPaths.push(r.item.path);
     }

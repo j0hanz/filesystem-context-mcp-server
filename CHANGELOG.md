@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read as unset.
 - A `500` on the HTTP POST route replied with `id: null` even when the request
   carried an id, leaving clients waiting for a correlatable response.
+- **`delete` reported a narrower error shape than every other tool.** Its
+  `failures[].error` published only `code` and `message`, dropping the `path`
+  and `suggestion` the handler had already computed. It now emits
+  `PerFileError`, matching `create`, `move`, and `replace`.
 
 ### Changed
 
