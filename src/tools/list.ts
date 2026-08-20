@@ -6,7 +6,6 @@ import { withTimedAbortSignal } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
-  type EntryAccessDependencies,
   type EntryType,
   globEntries,
   isEntryAccessibleByType,
@@ -15,7 +14,7 @@ import {
   resolveEntryType,
 } from '../core/glob.js';
 import type { PathGuard } from '../core/path.js';
-import { isPathWithinDirectories, normalizePath, toPosixRelative } from '../core/path.js';
+import { toPosixRelative } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_TIMEOUT_MS,
@@ -86,14 +85,6 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
     ? null
     : await loadRootGitignore(rootPath, options.signal);
 
-  const accessDeps: EntryAccessDependencies = {
-    normalizePath,
-    isPathWithinDirectories,
-    isSensitivePath: (reqPath: string, resPath: string) =>
-      options.pathGuard.isSensitive(reqPath) || options.pathGuard.isSensitive(resPath),
-    validateSymlinkPath: (p: string) => options.pathGuard.validateExistingPathDetailed(p),
-  };
-
   const entries: CollectedEntry[] = [];
   let scanned = 0;
   let totalEntries = 0;
@@ -131,8 +122,7 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
       entry.path,
       entryType,
       [rootPath],
-      options.signal,
-      accessDeps,
+      options.pathGuard,
     );
     if (!accessible) continue;
 

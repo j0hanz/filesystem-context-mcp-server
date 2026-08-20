@@ -135,14 +135,9 @@ export function toPosixRelative(from: string, to: string): string {
   return toPosixPath(relative(from, to));
 }
 
-function normalizePathForMatch(input: string): string {
-  return toPosixPath(normalize(input));
-}
-
 function normalizeForMatch(input: string): string {
-  const normalized = normalizePathForMatch(input);
   // Always lowercase for case-insensitive denylist matching on all platforms.
-  return normalized.toLowerCase();
+  return toPosixPath(normalize(input)).toLowerCase();
 }
 
 function expandHome(filepath: string): string {
@@ -197,10 +192,6 @@ function stripTrailingSeparator(normalized: string): string {
     : normalized;
 }
 
-function isFileSystemRootPath(normalized: string, root: string): boolean {
-  return isSamePath(normalized, root);
-}
-
 function normalizeAllowedDirectory(dir: string): string {
   const trimmed = dir.trim();
   if (trimmed.length === 0) return '';
@@ -209,7 +200,7 @@ function normalizeAllowedDirectory(dir: string): string {
   const { root } = parse(normalized);
 
   // Keep filesystem roots as-is ("/", "c:\\", "\\\\server\\share\\").
-  if (isFileSystemRootPath(normalized, root)) {
+  if (isSamePath(normalized, root)) {
     return root;
   }
 

@@ -7,7 +7,8 @@ import ignore from 'ignore';
 import { processInParallel } from './concurrency.js';
 import { formatUnknownErrorMessage, isNodeError } from './errors.js';
 import { Logger } from './observability.js';
-import { toPosixPath } from './path.js';
+import type { PathGuard } from './path.js';
+import { isPathWithinDirectories, normalizePath, toPosixPath } from './path.js';
 
 export interface DirentLike {
   isDirectory(): boolean;
@@ -24,34 +25,26 @@ export function resolveEntryType(dirent: DirentLike): EntryType {
   return 'other';
 }
 
-export interface EntryAccessDependencies {
-  normalizePath: (inputPath: string) => string;
-  isPathWithinDirectories: (normalizedPath: string, rootDirectories: readonly string[]) => boolean;
-  isSensitivePath: (requestedPath: string, resolvedPath: string) => boolean;
-  validateSymlinkPath: (
-    inputPath: string,
-    signal: AbortSignal,
-  ) => Promise<{ requestedPath: string; resolvedPath: string }>;
-}
-
 export async function isEntryAccessibleByType(
   entryPath: string,
   entryType: EntryType,
   rootDirectories: readonly string[],
-  signal: AbortSignal,
-  deps: EntryAccessDependencies,
+  pathGuard: PathGuard,
 ): Promise<boolean> {
+  const isSensitive = (requestedPath: string, resolvedPath: string): boolean =>
+    pathGuard.isSensitive(requestedPath) || pathGuard.isSensitive(resolvedPath);
+
   if (entryType !== 'symlink') {
-    const normalizedPath = deps.normalizePath(entryPath);
-    if (!deps.isPathWithinDirectories(normalizedPath, rootDirectories)) {
+    const normalizedPath = normalizePath(entryPath);
+    if (!isPathWithinDirectories(normalizedPath, rootDirectories)) {
       return false;
     }
-    return !deps.isSensitivePath(entryPath, normalizedPath);
+    return !isSensitive(entryPath, normalizedPath);
   }
 
   try {
-    const validated = await deps.validateSymlinkPath(entryPath, signal);
-    return !deps.isSensitivePath(validated.requestedPath, validated.resolvedPath);
+    const validated = await pathGuard.validateExistingPathDetailed(entryPath);
+    return !isSensitive(validated.requestedPath, validated.resolvedPath);
   } catch (error) {
     if (
       isNodeError(error) &&

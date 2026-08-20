@@ -104,16 +104,12 @@ function getAvailableMemory(): number | undefined {
   return available;
 }
 
-function applyMemoryBound(cpuBound: number, bytesPerUnit: number, minValue: number): number {
-  const availableMemory = getAvailableMemory();
-  if (availableMemory === undefined) return cpuBound;
-  const memoryBound = Math.floor(availableMemory / bytesPerUnit);
-  return Math.min(cpuBound, Math.max(memoryBound, minValue));
-}
-
 function getOptimalParallelism(): number {
   const cpuBound = Math.min(Math.max(availableParallelism(), 4), 32);
-  return applyMemoryBound(cpuBound, BYTES_PER_PARALLEL_TASK, 2);
+  const availableMemory = getAvailableMemory();
+  if (availableMemory === undefined) return cpuBound;
+  const memoryBound = Math.floor(availableMemory / BYTES_PER_PARALLEL_TASK);
+  return Math.min(cpuBound, Math.max(memoryBound, 2));
 }
 
 export const PARALLEL_CONCURRENCY = getOptimalParallelism();

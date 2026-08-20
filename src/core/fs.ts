@@ -613,7 +613,6 @@ async function readTailContent(
   }
 
   const encoding = options.encoding;
-  const CHUNK_SIZE = 64 * 1024; // 64KB chunks
   // Accumulate raw bytes from the end rather than decoding each chunk
   // independently: decoding a chunk that ends mid-codepoint corrupts the
   // trailing multi-byte UTF-8 sequence into U+FFFD. 0x0A (newline) is a single
@@ -627,7 +626,7 @@ async function readTailContent(
 
   while (position > 0) {
     assertNotAborted(options.signal);
-    const chunkSize = Math.min(position, CHUNK_SIZE);
+    const chunkSize = Math.min(position, STREAM_CHUNK_SIZE);
     const buffer = Buffer.allocUnsafe(chunkSize);
     const { bytesRead } = await handle.read(buffer, 0, chunkSize, position - chunkSize);
     if (bytesRead < chunkSize) {
