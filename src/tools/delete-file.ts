@@ -59,7 +59,6 @@ type DeleteFailureItem = z.infer<typeof DeleteFailureItemSchema>;
 // Internal types for error handling
 interface DeletedItem {
   path: string;
-  type?: 'directory' | 'symlink' | 'file' | 'other';
 }
 interface DeleteFailure {
   path: string;
@@ -72,29 +71,18 @@ interface DeleteFailure {
 }
 
 function toDeleteFailure(path: string, error: unknown): DeleteFailure {
-  if (isNodeError(error)) {
-    if (error.code === 'ENOENT') {
-      return {
+  if (
+    isNodeError(error) &&
+    (error.code === 'ENOTEMPTY' || error.code === 'EISDIR' || error.code === 'EEXIST')
+  ) {
+    return {
+      path,
+      error: Problem.fromUnknown(
+        new Error('Directory not empty. Set recursive: true.'),
+        ErrorCode.INVALID_INPUT,
         path,
-        error: Problem.fromUnknown(error, ErrorCode.NOT_FOUND, path),
-      };
-    }
-    if (error.code === 'ENOTEMPTY' || error.code === 'EISDIR' || error.code === 'EEXIST') {
-      return {
-        path,
-        error: Problem.fromUnknown(
-          new Error('Directory not empty. Set recursive: true.'),
-          ErrorCode.INVALID_INPUT,
-          path,
-        ),
-      };
-    }
-    if (error.code === 'EPERM' || error.code === 'EACCES') {
-      return {
-        path,
-        error: Problem.fromUnknown(error, ErrorCode.PERMISSION_DENIED, path),
-      };
-    }
+      ),
+    };
   }
   return { path, error: Problem.fromUnknown(error, ErrorCode.UNKNOWN, path) };
 }
@@ -248,7 +236,7 @@ async function deleteSinglePath(
   }
 
   Logger.info(`rm: ${inputPath}`);
-  return { item: { path: validPath, type: itemType } };
+  return { item: { path: validPath } };
 }
 
 async function handleDelete(args: DeleteInput, ctx: ToolCtx): Promise<DeleteOutput> {

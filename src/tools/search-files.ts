@@ -127,7 +127,6 @@ async function handleSearchFiles(
 ): Promise<{
   structured: z.infer<typeof SearchFilesOutputSchema>;
   link?: ReturnType<typeof putResource>['link'];
-  count: number;
 }> {
   const basePath = await fs.pathGuard.validateExistingDirectory(
     fs.pathGuard.resolvePathOrRoot(args.path),
@@ -183,11 +182,10 @@ async function handleSearchFiles(
         resourceUri: entry.uri,
       },
       link,
-      count: relativeResults.length,
     };
   }
 
-  return { structured, count: relativeResults.length };
+  return { structured };
 }
 
 export const SEARCH_FILES = defineTool({

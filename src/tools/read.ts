@@ -324,7 +324,8 @@ function applyOptionalFeatures(
   ctx: ToolCtx,
 ): void {
   if (args.includeHash) {
-    // Hash the content as read (after truncation, if applicable) to avoid --- IGNORE ---
+    // Hash the post-truncation content so callers can detect partial reads
+    // without re-reading the (possibly truncated) file body.
     value.contentHash = createHash('sha256').update(result.content, 'utf-8').digest('hex');
   }
   if (ctx.resourceStore) {

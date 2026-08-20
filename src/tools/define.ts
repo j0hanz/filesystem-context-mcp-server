@@ -220,10 +220,6 @@ function composeSignal(base: AbortSignal, timeoutMs?: number): AbortSignal {
   return AbortSignal.any([base, AbortSignal.timeout(timeoutMs)]);
 }
 
-/**
- * The cast `result.structured as Record<string, unknown>` is required by the MCP SDK's `CallToolResult.structuredContent` type.
- * Callers MUST ensure tool output schemas resolve to object types (not primitives), otherwise the cast is silently unsound.
- */
 function buildSuccessResponse<O>(result: RunResult<O>): CallToolResult {
   const text = result.text ?? JSON.stringify(result.structured);
   const content: ContentBlock[] = [{ type: 'text' as const, text }, ...(result.resources ?? [])];

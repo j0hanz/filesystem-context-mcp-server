@@ -190,7 +190,6 @@ function findEditMatch(
       .replace(/(\w)[^\S\n]+(\w)/g, '$1[^\\S\\n]+$2')
       .replace(/[^\S\n]+/g, '[^\\S\\n]*');
     let regex = regexCache?.get(pattern);
-    const owned = regex === undefined && regexCache === undefined;
     if (!regex) {
       regex = compileRegex(pattern, { caseSensitive: true });
       regexCache?.set(pattern, regex);
@@ -199,9 +198,6 @@ function findEditMatch(
     // still points past the previous edit's match — reset before searching.
     regex.lastIndex = 0;
     const match = regex.exec(content);
-    // With no cache to free it later, this call owns the wasm memory. `match`
-    // is a plain array by now, so releasing the pattern here is safe.
-    if (owned) freeRegex(regex);
 
     if (match === null) return undefined;
     // RE2ExecArray types group 0 as optional. A successful match always has it;

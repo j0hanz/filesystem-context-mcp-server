@@ -53,7 +53,6 @@ interface CollectOptions {
 
 interface CollectResult {
   entries: CollectedEntry[];
-  scannedEntries: number;
   totalEntries: number;
   totalFiles: number;
   totalDirectories: number;
@@ -151,7 +150,6 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
 
   return {
     entries,
-    scannedEntries: scanned,
     totalEntries,
     totalFiles,
     totalDirectories,
@@ -260,55 +258,53 @@ async function handleList(
   const resolvedPath = fs.pathGuard.resolvePathOrRoot(path);
   const validDir = await fs.pathGuard.validateExistingDirectory(resolvedPath);
 
-  {
-    const result = await collect(validDir, {
-      maxDepth: args.maxDepth,
-      includeHidden: args.includeHidden,
-      includeIgnored: args.includeIgnored,
-      signal: timedSignal(signal, DEFAULT_SEARCH_TIMEOUT_MS),
-      pathGuard: fs.pathGuard,
-      ...(onProgress ? { onProgress } : {}),
-    });
+  const result = await collect(validDir, {
+    maxDepth: args.maxDepth,
+    includeHidden: args.includeHidden,
+    includeIgnored: args.includeIgnored,
+    signal: timedSignal(signal, DEFAULT_SEARCH_TIMEOUT_MS),
+    pathGuard: fs.pathGuard,
+    ...(onProgress ? { onProgress } : {}),
+  });
 
-    const inlineEntries = result.entries.slice(0, args.maxEntries);
-    const markdown = renderMarkdown(basename(validDir), inlineEntries);
+  const inlineEntries = result.entries.slice(0, args.maxEntries);
+  const markdown = renderMarkdown(basename(validDir), inlineEntries);
 
-    let resourceUri: string | undefined;
-    if (result.totalEntries > inlineEntries.length && resourceStore) {
-      const fullMarkdown = renderMarkdown(basename(validDir), result.entries);
-      const fullTruncated = result.totalEntries > result.entries.length;
-      const fullOutput = {
-        entries: result.entries,
-        markdown: fullMarkdown,
-        totalEntries: result.totalEntries,
-        totalFiles: result.totalFiles,
-        totalDirectories: result.totalDirectories,
-        ...(fullTruncated ? { truncated: true } : {}),
-      };
-      const { entry } = putResource({
-        store: resourceStore,
-        name: 'list-result.json',
-        mimeType: 'application/json',
-        kind: 'text',
-        content: JSON.stringify(fullOutput, null, 2),
-      });
-      resourceUri = entry.uri;
-    }
-
-    const output: z.infer<typeof ListOutputSchema> = {
-      ok: true,
-      path: validDir,
-      entries: inlineEntries,
-      markdown,
-      entryCount: inlineEntries.length,
+  let resourceUri: string | undefined;
+  if (result.totalEntries > inlineEntries.length && resourceStore) {
+    const fullMarkdown = renderMarkdown(basename(validDir), result.entries);
+    const fullTruncated = result.totalEntries > result.entries.length;
+    const fullOutput = {
+      entries: result.entries,
+      markdown: fullMarkdown,
       totalEntries: result.totalEntries,
       totalFiles: result.totalFiles,
       totalDirectories: result.totalDirectories,
-      ...(resourceUri ? { resourceUri } : {}),
+      ...(fullTruncated ? { truncated: true } : {}),
     };
-
-    return output;
+    const { entry } = putResource({
+      store: resourceStore,
+      name: 'list-result.json',
+      mimeType: 'application/json',
+      kind: 'text',
+      content: JSON.stringify(fullOutput, null, 2),
+    });
+    resourceUri = entry.uri;
   }
+
+  const output: z.infer<typeof ListOutputSchema> = {
+    ok: true,
+    path: validDir,
+    entries: inlineEntries,
+    markdown,
+    entryCount: inlineEntries.length,
+    totalEntries: result.totalEntries,
+    totalFiles: result.totalFiles,
+    totalDirectories: result.totalDirectories,
+    ...(resourceUri ? { resourceUri } : {}),
+  };
+
+  return output;
 }
 
 // ─── Tool ─────────────────────────────────────────────────────────────────────

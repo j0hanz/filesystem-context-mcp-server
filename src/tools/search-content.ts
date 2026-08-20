@@ -346,8 +346,6 @@ async function handleSearchContent(
 ): Promise<{
   structured: SearchOutput;
   link?: ReturnType<typeof putResource>['link'];
-  matchCount: number;
-  fileCount: number;
 }> {
   const basePath = await fs.pathGuard.validateExistingDirectory(
     fs.pathGuard.resolvePathOrRoot(args.path),
@@ -380,8 +378,6 @@ async function handleSearchContent(
   if (nextCursor !== undefined) fullStructured.nextCursor = nextCursor;
 
   const preview = buildSearchPreviewState(matchPayloads);
-  const matchCount = matchPayloads.length;
-  const fileCount = new Set(matchPayloads.map((m) => m.file)).size;
 
   const { structured, link } = finalizeSearchOutput(
     fullStructured,
@@ -393,8 +389,6 @@ async function handleSearchContent(
   return {
     structured,
     ...(link !== undefined ? { link } : {}),
-    matchCount,
-    fileCount,
   };
 }
 

@@ -15,9 +15,6 @@ interface PutResourceParams {
   mimeType: string;
   kind: MimeKind;
   content: string | Buffer;
-  audience?: Role[];
-  title?: string;
-  description?: string;
 }
 
 interface PutResourceResult {
@@ -30,21 +27,15 @@ function buildLinkBlock(
   name: string,
   mimeType: string,
   size: number,
-  params?: {
-    audience?: Role[];
-    title?: string;
-    description?: string;
-  },
+  audienceParam?: Role[],
 ): ContentBlock {
-  const audience = params?.audience ?? ['user'];
+  const audience = audienceParam ?? ['user'];
   return {
     type: 'resource_link',
     uri,
     name,
     mimeType,
     size,
-    ...(params?.title ? { title: params.title } : {}),
-    ...(params?.description ? { description: params.description } : {}),
     annotations: { audience },
   };
 }
@@ -56,9 +47,10 @@ export function buildFileResourceLink(
   mimeType: string,
   size: number,
 ): ContentBlock {
-  return buildLinkBlock(buildFileResourceUri(validPath), basename(validPath), mimeType, size, {
-    audience: ['user', 'assistant'],
-  });
+  return buildLinkBlock(buildFileResourceUri(validPath), basename(validPath), mimeType, size, [
+    'user',
+    'assistant',
+  ]);
 }
 
 export function putResource(params: PutResourceParams): PutResourceResult {
@@ -76,13 +68,7 @@ export function putResource(params: PutResourceParams): PutResourceResult {
           data: Buffer.isBuffer(params.content) ? params.content : Buffer.from(params.content),
         });
 
-  const linkParams = {
-    ...(params.audience !== undefined ? { audience: params.audience } : {}),
-    ...(params.title !== undefined ? { title: params.title } : {}),
-    ...(params.description !== undefined ? { description: params.description } : {}),
-  };
-
-  const link = buildLinkBlock(entry.uri, entry.name, entry.mimeType, entry.size, linkParams);
+  const link = buildLinkBlock(entry.uri, entry.name, entry.mimeType, entry.size);
 
   return {
     entry: {
