@@ -43,3 +43,15 @@ test('every environment variable read by src/ has a --help row', async () => {
     `Add a row to ENV_HELP in src/cli.ts for: ${undocumented.join(', ')}`,
   );
 });
+
+test('every ENV_HELP row is documented in the README env table', async () => {
+  const readme = await readFile(join(import.meta.dirname, '..', '..', 'README.md'), 'utf-8');
+  const missing = ENV_HELP.map((row) => row.flags)
+    .filter((name) => !readme.includes(`\`${name}\``))
+    .sort();
+  assert.deepEqual(
+    missing,
+    [],
+    `Add these env vars to the README "Environment variables" table: ${missing.join(', ')}`,
+  );
+});

@@ -366,18 +366,33 @@ filesystem-mcp /path/to/project1 /path/to/project2
 
 #### Environment variables
 
-| Variable              | Purpose                                                                                   |
-| :-------------------- | :---------------------------------------------------------------------------------------- |
-| `FS_ALLOWED_DIRS`     | Colon-separated (POSIX) or semicolon-separated (Windows) list of directories to allow.    |
-| `ROOT_BOUNDARY`       | Path prefix all allowed roots must fall under (mirrors `--root-boundary`).                |
-| `ALLOW_CWD_WALK`      | Set to any value to walk up from CWD to find a project root (mirrors `--walk-cwd`).       |
-| `ALLOW_MISSING_ROOTS` | Set to any value to start even if configured directories do not exist.                    |
-| `ALLOW_SENSITIVE`     | Set to any value to allow access to sensitive system paths (mirrors `--allow-sensitive`). |
-| `DENYLIST`            | Comma-separated list of paths or patterns to block (mirrors `--deny`).                    |
-| `MAX_FILE_SIZE`       | Maximum file size for reads in bytes (mirrors `--max-file-size`).                         |
-| `LOG_LEVEL`           | Log level: debug, info, warn, or error (mirrors `--log-level`).                           |
-| `HTTP_HOST`           | HTTP server bind address (mirrors `--http-host`).                                         |
-| `API_KEY`             | API key required on HTTP requests (mirrors `--api-key`).                                  |
+| Variable                                  | Purpose                                                                                   |
+| :---------------------------------------- | :---------------------------------------------------------------------------------------- |
+| `FS_ALLOWED_DIRS`                         | Colon-separated (POSIX) or semicolon-separated (Windows) list of directories to allow.    |
+| `ROOT_BOUNDARY`                           | Path prefix all allowed roots must fall under (mirrors `--root-boundary`).                |
+| `ALLOW_CWD_WALK`                          | Set to any value to walk up from CWD to find a project root (mirrors `--walk-cwd`).       |
+| `ALLOW_MISSING_ROOTS`                     | Set to any value to start even if configured directories do not exist.                    |
+| `ALLOW_SENSITIVE`                         | Set to any value to allow access to sensitive system paths (mirrors `--allow-sensitive`). |
+| `DENYLIST`                                | Comma-separated list of paths or patterns to block (mirrors `--deny`).                    |
+| `MAX_FILE_SIZE`                           | Maximum file size for reads in bytes (mirrors `--max-file-size`).                         |
+| `LOG_LEVEL`                               | Log level: debug, info, warn, or error (mirrors `--log-level`).                           |
+| `HTTP_HOST`                               | HTTP server bind address (mirrors `--http-host`).                                         |
+| `API_KEY`                                 | API key required on HTTP requests (mirrors `--api-key`).                                  |
+| `FILESYSTEM_MCP_ALLOWED_HOSTS`            | Comma-separated Host header values to accept (HTTP transport).                            |
+| `FILESYSTEM_MCP_ALLOWED_ORIGINS`          | Comma-separated origin hostnames for CORS.                                                |
+| `FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS` | Set to 1 to bind a wildcard host with no Host validation (accepts the risk).              |
+| `FILESYSTEM_MCP_PUBLIC_URL`               | Resource identifier URL for RFC 9728 discovery.                                           |
+| `FILESYSTEM_MCP_MAX_HTTP_SESSIONS`        | Max concurrent HTTP sessions (default 100, 1–10000).                                      |
+| `FILESYSTEM_MCP_SESSION_IDLE_TIMEOUT_MS`  | HTTP session idle timeout in ms (default 1800000, 1000–86400000).                         |
+| `FILESYSTEM_MCP_RATE_LIMIT_RPM`           | Per-client-IP requests/min on public HTTP bind (default 120, 1–100000).                   |
+| `FS_CONTEXT_MAX_REQUEST_BYTES`            | Max HTTP request body bytes (default 4194304, 1024–268435456).                            |
+| `FILESYSTEM_MCP_MAX_WATCHERS`             | Max concurrent file watchers (default 256, 1–4096).                                       |
+| `FS_CONTEXT_MAX_INLINE_MATCHES`           | Max inline content matches per search (default 50, 1–10000).                              |
+| `FS_INIT_HANDSHAKE_TIMEOUT_MS`            | Init handshake timeout in ms (default 30000, 1000–300000).                                |
+| `FS_INIT_TIMEOUT_CLOSE`                   | Truthy value closes the server on handshake timeout.                                      |
+| `MAX_READ_MANY_TOTAL_SIZE`                | Max total bytes across read_many (default 524288, 10240–104857600).                       |
+| `DEFAULT_SEARCH_TIMEOUT`                  | Search timeout in ms (default 5000, 100–60000).                                           |
+| `NO_COLOR`                                | Any value disables ANSI color output.                                                     |
 
 ### Examples
 
