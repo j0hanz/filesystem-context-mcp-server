@@ -94,7 +94,6 @@ async function createDistEnv(): Promise<DistEnv> {
       await client.close().catch(() => {});
       await server.close().catch(() => {});
       await rm(tmpDir, { recursive: true, force: true });
-      await pathsModule.setAllowedDirectoriesResolved([]).catch(() => {});
     },
   };
 }
@@ -112,8 +111,8 @@ describe('dist runtime regressions', () => {
 
   it('grep from dist can search files in an allowed root', async (t) => {
     try {
-      await access(resolve('dist/tools.js'));
-      await access(resolve('dist/core/paths.js'));
+      await access(resolve('dist/tools/index.js'));
+      await access(resolve('dist/core/path.js'));
     } catch {
       t.skip('dist runtime not present');
       return;
@@ -140,8 +139,8 @@ describe('dist runtime regressions', () => {
       name: 'search_text',
       arguments: {
         path: env.tmpDir,
-        pattern: 'needle value',
-        filePattern: '*.txt',
+        searchPattern: 'needle value',
+        pattern: '*.txt',
       },
     });
     const grepStructured = getStructured(grepResult);
