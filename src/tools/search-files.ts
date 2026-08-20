@@ -1,6 +1,8 @@
 import * as z from 'zod/v4';
 
-import { decodeOffsetCursor, encodeOffsetCursor } from '../core/cursor.js';
+import { StoppedReasonSchema } from '../core/concurrency.js';
+import type { StoppedReason } from '../core/concurrency.js';
+import { closePage, openPage } from '../core/cursor.js';
 import { ErrorCode } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
 import type { GuardedFileSystem } from '../core/fs.js';
@@ -16,14 +18,14 @@ import {
   OptionalPath,
   SafeGlobPattern,
 } from '../core/schema.js';
-import { searchFiles, type StoppedReason, StoppedReasonSchema } from '../core/search.js';
+import { searchFiles } from '../core/search.js';
 import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_RESULTS,
   DEFAULT_SEARCH_TIMEOUT_MS,
   MAX_SEARCH_RESULTS,
 } from '../core/util.js';
-import { putResource } from './_helpers.js';
+import { putJsonResource } from './_helpers.js';
 import { defineTool } from './define.js';
 
 // ---------------------------------------------------------------------------
@@ -89,17 +91,6 @@ function buildRelativeResults(
   return relativeResults;
 }
 
-function computeNextCursor(
-  summary: { truncated: boolean },
-  displayResultsCount: number,
-  cursorOffset: number,
-): string | undefined {
-  if (summary.truncated && displayResultsCount > 0) {
-    return encodeOffsetCursor(cursorOffset + displayResultsCount);
-  }
-  return undefined;
-}
-
 function applySummaryFields(
   structured: z.infer<typeof SearchFilesOutputSchema>,
   summary: {
@@ -123,15 +114,17 @@ async function handleSearchFiles(
   resourceStore?: ResourceStore,
 ): Promise<{
   structured: z.infer<typeof SearchFilesOutputSchema>;
-  link?: ReturnType<typeof putResource>['link'];
+  link?: ReturnType<typeof putJsonResource>['link'];
 }> {
   const basePath = await fs.pathGuard.validateExistingDirectory(
     fs.pathGuard.resolvePathOrRoot(args.path),
   );
   const excludePatterns = args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
-  const cursorOffset = args.cursor !== undefined ? decodeOffsetCursor(args.cursor) : 0;
-  const pageSize = args.maxResults;
-  const fetchMax = Math.min(cursorOffset + pageSize, MAX_SEARCH_RESULTS);
+  const { offset: cursorOffset, fetchMax } = openPage({
+    cursor: args.cursor,
+    pageSize: args.maxResults,
+    max: MAX_SEARCH_RESULTS,
+  });
   const searchOptions: Parameters<typeof searchFiles>[3] = {
     maxResults: fetchMax,
     includeHidden: args.includeHidden,
@@ -147,11 +140,12 @@ async function handleSearchFiles(
     searchOptions,
     fs.pathGuard,
   );
-  const allResults = result.results;
-  let displayResults = allResults;
-  if (cursorOffset > 0) displayResults = allResults.slice(cursorOffset);
-
-  const nextCursor = computeNextCursor(result.summary, displayResults.length, cursorOffset);
+  const displayResults = result.results.slice(cursorOffset);
+  const nextCursor = closePage({
+    truncated: result.summary.truncated,
+    offset: cursorOffset,
+    pageCount: displayResults.length,
+  });
   const relativeResults = buildRelativeResults(result.basePath, displayResults);
   const structured: z.infer<typeof SearchFilesOutputSchema> = {
     ok: true,
@@ -164,14 +158,11 @@ async function handleSearchFiles(
 
   // If results were paginated, store the full list in the resource store
   if (resourceStore !== undefined && result.summary.truncated) {
-    const resultsJson = JSON.stringify(relativeResults, null, 2);
-    const { entry, link } = putResource({
-      store: resourceStore,
-      name: `${args.pattern} files`,
-      mimeType: 'application/json',
-      kind: 'text',
-      content: resultsJson,
-    });
+    const { entry, link } = putJsonResource(
+      resourceStore,
+      `${args.pattern} files`,
+      relativeResults,
+    );
 
     return {
       structured: {

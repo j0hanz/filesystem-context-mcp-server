@@ -5,6 +5,8 @@ import { dirname, join } from 'node:path';
 
 import * as z from 'zod/v4';
 
+import { processEntriesConcurrently, StoppedReasonSchema } from '../core/concurrency.js';
+import type { StoppedReason, StopReasonTracker } from '../core/concurrency.js';
 import { buildPatchDiff } from '../core/diff.js';
 import {
   ErrorCode,
@@ -34,8 +36,8 @@ import {
   PathFailureSchema,
   SafeGlobPattern,
 } from '../core/schema.js';
-import type { Regex, StoppedReason } from '../core/search.js';
-import { compileRegex, freeRegex, StoppedReasonSchema } from '../core/search.js';
+import type { Regex } from '../core/search.js';
+import { compileRegex, freeRegex } from '../core/search.js';
 import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_RESULTS,
@@ -408,80 +410,6 @@ async function maybeAppendPatchDiff(
   summary.diffTruncated = true;
 }
 
-/** Exported for unit tests: the four exit reasons are the contract worth pinning. */
-export async function processEntriesConcurrently(
-  entries: AsyncIterable<{ path: string }>,
-  options: {
-    signal: AbortSignal | undefined;
-    concurrency: number;
-    maxEntries?: number;
-    shouldStop?: () => boolean;
-    onEntry: () => void;
-    onError?: (entryPath: string, err: unknown) => void;
-    runEntry: (entryPath: string) => Promise<void>;
-  },
-): Promise<{ stoppedByLimit: boolean; stoppedByMatchCap: boolean; stoppedByAbort: boolean }> {
-  const pending = new Set<Promise<void>>();
-  const { signal, concurrency, maxEntries, shouldStop, onEntry, onError, runEntry } = options;
-  let dispatched = 0;
-  let stoppedByLimit = false;
-  let stoppedByMatchCap = false;
-  let stoppedByAbort = false;
-
-  const waitForSlot = async (): Promise<void> => {
-    if (pending.size < concurrency) return;
-    await Promise.race(pending);
-  };
-
-  for await (const entry of entries) {
-    // The signal is cancellation OR the tool's timeout: stop dispatching and
-    // let the caller report the run as incomplete rather than as a full sweep.
-    if (signal?.aborted) {
-      stoppedByAbort = true;
-      break;
-    }
-    if (maxEntries !== undefined && dispatched >= maxEntries) {
-      stoppedByLimit = true;
-      break;
-    }
-    // Check the match cap before waiting for a slot so an in-flight task that
-    // already crossed the cap stops dispatch without an extra wait...
-    if (shouldStop?.()) {
-      stoppedByMatchCap = true;
-      break;
-    }
-    await waitForSlot();
-    // ...and again after the slot frees, since tasks settle concurrently. The
-    // cap can still be exceeded by at most `concurrency - 1` already-dispatched
-    // tasks that are mid-flight; that overrun is inherent to concurrent dispatch.
-    if (shouldStop?.()) {
-      stoppedByMatchCap = true;
-      break;
-    }
-    onEntry();
-    dispatched++;
-
-    // Track a non-rejecting wrapper so a rejected task can never propagate out of
-    // Promise.race(pending) in waitForSlot() and abort the loop before the final
-    // drain below (which would silently abandon other in-flight tasks).
-    // processEntry catches all expected errors internally; if it unexpectedly
-    // throws, record it as a failure rather than silently dropping it.
-    const tracked = runEntry(entry.path).catch((err: unknown) => {
-      onError?.(entry.path, err);
-    });
-    pending.add(tracked);
-    void tracked.finally(() => {
-      pending.delete(tracked);
-    });
-  }
-
-  if (pending.size > 0) {
-    await Promise.allSettled([...pending]);
-  }
-
-  return { stoppedByLimit, stoppedByMatchCap, stoppedByAbort };
-}
-
 interface ReplaceSummary {
   root: string;
   totalMatches: number;
@@ -591,7 +519,7 @@ async function handleSearchAndReplace(
   // never reclaims on its own. Nothing past the scan touches it, so free it the
   // moment the scan is done — success, failure, or abort alike.
   const matcher = createReplacementMatcher(args);
-  let scan: Awaited<ReturnType<typeof processEntriesConcurrently>>;
+  let scan: StopReasonTracker;
   try {
     const context: ReplaceContext = {
       options: {
@@ -627,16 +555,8 @@ async function handleSearchAndReplace(
   } finally {
     matcher.dispose();
   }
-  const { stoppedByLimit, stoppedByMatchCap, stoppedByAbort } = scan;
-
-  // Mutually exclusive by construction — the loop exits on exactly one of them.
-  if (stoppedByLimit) {
-    summary.stoppedReason = 'maxFiles';
-  } else if (stoppedByMatchCap) {
-    summary.stoppedReason = 'maxResults';
-  } else if (stoppedByAbort) {
-    summary.stoppedReason = 'timeout';
-  }
+  const stoppedReason = scan.resolve();
+  if (stoppedReason !== undefined) summary.stoppedReason = stoppedReason;
 
   onProgress({ current: summary.processedFiles });
 

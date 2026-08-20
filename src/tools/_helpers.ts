@@ -4,18 +4,9 @@ import { basename } from 'node:path';
 
 import { buildFileResourceUri } from '../core/file-uri.js';
 import type { FileInfo } from '../core/fs.js';
-import type { MimeKind } from '../core/mime.js';
 import type { ResourceStore } from '../core/store.js';
 
 // ============ Resource Store Helpers ============
-
-interface PutResourceParams {
-  store: ResourceStore;
-  name: string;
-  mimeType: string;
-  kind: MimeKind;
-  content: string | Buffer;
-}
 
 interface PutResourceResult {
   entry: { uri: string; size: number; mimeType: string; expiresAt: string };
@@ -53,20 +44,25 @@ export function buildFileResourceLink(
   ]);
 }
 
-export function putResource(params: PutResourceParams): PutResourceResult {
-  const entry =
-    params.kind === 'text'
-      ? params.store.putText({
-          name: params.name,
-          mimeType: params.mimeType,
-          text:
-            typeof params.content === 'string' ? params.content : params.content.toString('utf-8'),
-        })
-      : params.store.putBlob({
-          name: params.name,
-          mimeType: params.mimeType,
-          data: Buffer.isBuffer(params.content) ? params.content : Buffer.from(params.content),
-        });
+/**
+ * Owner of the externalize-a-payload rule: a tool whose inline response is
+ * truncated publishes the full value to the resource store as pretty-printed
+ * JSON and hands back the URI to reach it by, plus the link block that offers
+ * it to the user.
+ */
+export function putJsonResource(
+  store: ResourceStore,
+  name: string,
+  // `object`, not `unknown`: JSON.stringify returns undefined for undefined and
+  // for a function while TypeScript types the result `string`, which would put
+  // a non-string into the store's text entry.
+  value: object,
+): PutResourceResult {
+  const entry = store.putText({
+    name,
+    mimeType: 'application/json',
+    text: JSON.stringify(value, null, 2),
+  });
 
   const link = buildLinkBlock(entry.uri, entry.name, entry.mimeType, entry.size);
 

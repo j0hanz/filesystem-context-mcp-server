@@ -14,7 +14,7 @@ import type { PathGuard } from '../core/path.js';
 import { NonNegInt, RequiredPath } from '../core/schema.js';
 import type { ResourceStore } from '../core/store.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../core/util.js';
-import { putResource } from './_helpers.js';
+import { putJsonResource } from './_helpers.js';
 import { defineTool } from './define.js';
 
 const SUPPORTED_ALGORITHMS = ['sha256', 'md5', 'sha1', 'sha512'] as const;
@@ -282,16 +282,9 @@ async function handleCalculateHash(
     .join('\n');
 
   let resourceUri: string | undefined;
-  let link: ReturnType<typeof putResource>['link'] | undefined;
+  let link: ReturnType<typeof putJsonResource>['link'] | undefined;
   if (resourceStore) {
-    const hashJson = JSON.stringify(hashes, null, 2);
-    const result = putResource({
-      store: resourceStore,
-      name: basename(validPath),
-      mimeType: 'application/json',
-      kind: 'text',
-      content: hashJson,
-    });
+    const result = putJsonResource(resourceStore, basename(validPath), hashes);
     resourceUri = result.entry.uri;
     link = result.link;
   }

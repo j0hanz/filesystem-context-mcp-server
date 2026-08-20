@@ -30,7 +30,7 @@ import {
   MAX_LIST_ENTRIES,
   MAX_TREE_DEPTH,
 } from '../core/util.js';
-import { putResource } from './_helpers.js';
+import { putJsonResource } from './_helpers.js';
 import { defineTool } from './define.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -276,13 +276,7 @@ async function handleList(
       totalDirectories: result.totalDirectories,
       ...(fullTruncated ? { truncated: true } : {}),
     };
-    const { entry } = putResource({
-      store: resourceStore,
-      name: 'list-result.json',
-      mimeType: 'application/json',
-      kind: 'text',
-      content: JSON.stringify(fullOutput, null, 2),
-    });
+    const { entry } = putJsonResource(resourceStore, 'list-result.json', fullOutput);
     resourceUri = entry.uri;
   }
 

@@ -1,6 +1,7 @@
 import * as z from 'zod/v4';
 
-import { decodeOffsetCursor, encodeOffsetCursor } from '../core/cursor.js';
+import { StoppedReasonSchema } from '../core/concurrency.js';
+import { closePage, openPage } from '../core/cursor.js';
 import { ErrorCode } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
 import type { GuardedFileSystem } from '../core/fs.js';
@@ -25,7 +26,6 @@ import {
   type Regex,
   searchContent,
   type SearchContentOptions,
-  StoppedReasonSchema,
 } from '../core/search.js';
 import type { ResourceStore } from '../core/store.js';
 import {
@@ -34,7 +34,7 @@ import {
   MAX_SEARCH_RESULTS,
   parseEnvInt,
 } from '../core/util.js';
-import { putResource } from './_helpers.js';
+import { putJsonResource } from './_helpers.js';
 import { defineTool } from './define.js';
 
 /**
@@ -277,15 +277,12 @@ function buildExternalizedResponse(
   preview: SearchPreviewState,
   resourceStore: ResourceStore,
   searchPattern: string,
-): { structured: SearchOutput; link: ReturnType<typeof putResource>['link'] } {
-  const resultsJson = JSON.stringify(fullStructured, null, 2);
-  const { entry, link } = putResource({
-    store: resourceStore,
-    name: `'${searchPattern}' matches`,
-    mimeType: 'application/json',
-    kind: 'text',
-    content: resultsJson,
-  });
+): { structured: SearchOutput; link: ReturnType<typeof putJsonResource>['link'] } {
+  const { entry, link } = putJsonResource(
+    resourceStore,
+    `'${searchPattern}' matches`,
+    fullStructured,
+  );
 
   const structuredForResponse: SearchOutput = {
     ...fullStructured,
@@ -307,13 +304,12 @@ function getPagedPayloads(
   cursorOffset: number,
 ): { matchPayloads: SearchMatchPayload[]; nextCursor: string | undefined } {
   const searchContext = createSearchContext(args, regexMatcher);
-  const allPayloads = buildSortedPayloads(result, searchContext);
-  const matchPayloads = cursorOffset > 0 ? allPayloads.slice(cursorOffset) : allPayloads;
-
-  const nextCursor =
-    result.summary.truncated && matchPayloads.length > 0
-      ? encodeOffsetCursor(cursorOffset + matchPayloads.length)
-      : undefined;
+  const matchPayloads = buildSortedPayloads(result, searchContext).slice(cursorOffset);
+  const nextCursor = closePage({
+    truncated: result.summary.truncated,
+    offset: cursorOffset,
+    pageCount: matchPayloads.length,
+  });
 
   return { matchPayloads, nextCursor };
 }
@@ -323,7 +319,7 @@ function finalizeSearchOutput(
   preview: SearchPreviewState,
   resourceStore?: ResourceStore,
   searchPattern?: string,
-): { structured: SearchOutput; link?: ReturnType<typeof putResource>['link'] } {
+): { structured: SearchOutput; link?: ReturnType<typeof putJsonResource>['link'] } {
   if (resourceStore && preview.needsExternalize) {
     return buildExternalizedResponse(fullStructured, preview, resourceStore, searchPattern ?? '');
   }
@@ -343,16 +339,18 @@ async function handleSearchContent(
   resourceStore?: ResourceStore,
 ): Promise<{
   structured: SearchOutput;
-  link?: ReturnType<typeof putResource>['link'];
+  link?: ReturnType<typeof putJsonResource>['link'];
 }> {
   const basePath = await fs.pathGuard.validateExistingDirectory(
     fs.pathGuard.resolvePathOrRoot(args.path),
   );
   const regexMatcher = createSearchMatcher(args);
 
-  const cursorOffset = args.cursor !== undefined ? decodeOffsetCursor(args.cursor) : 0;
-  const pageSize = args.maxResults;
-  const fetchMax = Math.min(cursorOffset + pageSize, MAX_SEARCH_RESULTS);
+  const { offset: cursorOffset, fetchMax } = openPage({
+    cursor: args.cursor,
+    pageSize: args.maxResults,
+    max: MAX_SEARCH_RESULTS,
+  });
 
   const result = await searchContent(
     basePath,

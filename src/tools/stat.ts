@@ -20,7 +20,7 @@ import {
   singleOrBatchPathsInput,
 } from '../core/schema.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../core/util.js';
-import { buildFileInfoPayload, putResource } from './_helpers.js';
+import { buildFileInfoPayload, putJsonResource } from './_helpers.js';
 import type { PerPathResult } from './batch.js';
 import { runOverPaths } from './batch.js';
 import { defineTool } from './define.js';
@@ -220,13 +220,11 @@ export const GET_FILE_INFO = defineTool({
     let resourceUri: string | undefined;
     const resources: ContentBlock[] = [];
     if (ctx.resourceStore && batch.summary.total > 1) {
-      const { entry, link } = putResource({
-        store: ctx.resourceStore,
-        name: `${String(batch.summary.total)} paths`,
-        mimeType: 'application/json',
-        kind: 'text',
-        content: JSON.stringify(perPathPayload, null, 2),
-      });
+      const { entry, link } = putJsonResource(
+        ctx.resourceStore,
+        `${String(batch.summary.total)} paths`,
+        perPathPayload,
+      );
       resourceUri = entry.uri;
       resources.push(link);
     }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { StopReasonTracker } from '../../src/core/search.js';
+import { StopReasonTracker } from '../../src/core/concurrency.js';
 
 describe('StopReasonTracker', () => {
   it('resolves undefined and untruncated when nothing hit', () => {

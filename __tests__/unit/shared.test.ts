@@ -1,23 +1,32 @@
+import type { ContentBlock } from '@modelcontextprotocol/server';
+
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { createInMemoryResourceStore } from '../../src/core/store.js';
-import { putResource } from '../../src/tools/_helpers.js';
 import { readResourceLink } from '../helpers.js';
+
+/** A resource_link pointing at an entry already in the store. */
+function linkTo(entry: {
+  uri: string;
+  name: string;
+  mimeType: string;
+  size: number;
+}): ContentBlock {
+  return { type: 'resource_link', uri: entry.uri, ...entry };
+}
 
 describe('readResourceLink helper', () => {
   it('fetches text resource from store', async () => {
     const store = createInMemoryResourceStore();
-    const { link } = putResource({
-      store,
+    const entry = store.putText({
       name: 'test.txt',
       mimeType: 'text/plain',
-      kind: 'text',
-      content: 'hello world',
+      text: 'hello world',
     });
 
     const result = await readResourceLink(store, {
-      content: [link],
+      content: [linkTo(entry)],
     });
 
     assert.equal(result?.text, 'hello world');
@@ -29,16 +38,14 @@ describe('readResourceLink helper', () => {
   it('fetches blob resource from store', async () => {
     const store = createInMemoryResourceStore();
     const testData = Buffer.from('binary data');
-    const { link } = putResource({
-      store,
+    const entry = store.putBlob({
       name: 'test.bin',
       mimeType: 'application/octet-stream',
-      kind: 'blob',
-      content: testData,
+      data: testData,
     });
 
     const result = await readResourceLink(store, {
-      content: [link],
+      content: [linkTo(entry)],
     });
 
     assert.deepEqual(result?.blob, testData);
