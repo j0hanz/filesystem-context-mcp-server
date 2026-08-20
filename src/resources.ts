@@ -20,7 +20,7 @@ import {
 import type { FSWatcher } from 'node:fs';
 import { watch } from 'node:fs';
 
-import { ErrorCode, hasErrorShape, isFsError } from './core/errors.js';
+import { ErrorCode, formatUnknownErrorMessage, hasErrorShape, isFsError } from './core/errors.js';
 import { extractPath, FILESYSTEM_FILE_URI_TEMPLATE } from './core/file-uri.js';
 import { GuardedFileSystem } from './core/fs.js';
 import { Logger } from './core/observability.js';
@@ -232,9 +232,7 @@ function createWatcherRegistry() {
     try {
       cb(uri);
     } catch (err) {
-      Logger.warn(
-        `Notify callback error for ${uri}: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      Logger.warn(`Notify callback error for ${uri}: ${formatUnknownErrorMessage(err)}`);
     }
   };
 
@@ -262,9 +260,7 @@ function createWatcherRegistry() {
         });
         watchers.set(uri, watcher);
       } catch (err) {
-        Logger.error(
-          `Failed to create watcher for ${uri}: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        Logger.error(`Failed to create watcher for ${uri}: ${formatUnknownErrorMessage(err)}`);
       }
     },
 
@@ -376,7 +372,7 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
           throw new ResourceNotFoundError(uri, `Cannot subscribe to ${uri}: ${err.message}`);
         }
         Logger.warn(
-          `Unexpected error validating path for watcher ${uri}: ${err instanceof Error ? err.message : String(err)}`,
+          `Unexpected error validating path for watcher ${uri}: ${formatUnknownErrorMessage(err)}`,
         );
         throw err;
       }
@@ -518,7 +514,7 @@ function registerResources(
           }
           throw new ProtocolError(
             ProtocolErrorCode.InvalidRequest,
-            error instanceof Error ? error.message : String(error),
+            formatUnknownErrorMessage(error),
           );
         }
       });
@@ -532,7 +528,7 @@ function registerResources(
           }
           throw new ProtocolError(
             ProtocolErrorCode.InvalidRequest,
-            error instanceof Error ? error.message : String(error),
+            formatUnknownErrorMessage(error),
           );
         }
       });
@@ -560,7 +556,7 @@ function registerResources(
             (updatedUri) => {
               const updatePayload: ResourceUpdatedNotificationParams = { uri: updatedUri };
               void server.server.sendResourceUpdated(updatePayload).catch((err: unknown) => {
-                const msg = err instanceof Error ? err.message : String(err);
+                const msg = formatUnknownErrorMessage(err);
                 if (!msg.includes('closed') && !msg.includes('Transport')) {
                   Logger.warn(`Failed to send resource update for ${updatedUri}: ${msg}`);
                 }

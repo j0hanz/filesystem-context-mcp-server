@@ -5,7 +5,7 @@ import type { FileHandle } from 'node:fs/promises';
 import { text } from 'node:stream/consumers';
 import { StringDecoder } from 'node:string_decoder';
 
-import { assertNotAborted, withAbort } from './concurrency.js';
+import { withAbort } from './concurrency.js';
 import { ErrorCode, formatUnknownErrorMessage, FsError, isFsError } from './errors.js';
 import { isBinarySample, isKnownBinaryExtension, MIME_SAMPLE_SIZE } from './mime.js';
 import { Logger } from './observability.js';
@@ -231,7 +231,7 @@ function normalizeByteRangeSpec(
 
 export function normalizeSpec(spec: ReadSpec): NormalizedSpec {
   const base = buildBaseOptions(spec);
-  assertNotAborted(spec.signal);
+  spec.signal?.throwIfAborted();
 
   switch (spec.kind) {
     case 'head':
@@ -442,7 +442,7 @@ async function readRangeContent(
   options: ReadContentOptions,
   filePath: string,
 ): Promise<PartialReadResult> {
-  assertNotAborted(options.signal);
+  options.signal?.throwIfAborted();
 
   const lines: string[] = [];
   let lineNumber = startLine - 1;
@@ -502,7 +502,7 @@ async function readTailContent(
   options: ReadContentOptions,
   filePath: string,
 ): Promise<PartialReadResult> {
-  assertNotAborted(options.signal);
+  options.signal?.throwIfAborted();
 
   const stats = await handle.stat();
   const fileSize = stats.size;
@@ -527,7 +527,7 @@ async function readTailContent(
   let stoppedByLimit = false;
 
   while (position > 0) {
-    assertNotAborted(options.signal);
+    options.signal?.throwIfAborted();
     const chunkSize = Math.min(position, STREAM_CHUNK_SIZE);
     const buffer = Buffer.allocUnsafe(chunkSize);
     const { bytesRead } = await handle.read(buffer, 0, chunkSize, position - chunkSize);
@@ -615,7 +615,7 @@ async function assertNotBinary(
   handle: FileHandle,
   normalized: NormalizedBase,
 ): Promise<void> {
-  assertNotAborted(normalized.signal);
+  normalized.signal?.throwIfAborted();
   const isBinary = await isProbablyBinary(validPath, handle, normalized.signal);
   if (!isBinary) return;
   throw new FsError(ErrorCode.INVALID_INPUT, 'Binary file detected.', filePath);
@@ -827,7 +827,7 @@ export async function readNormalized(
   stats: Stats,
   spec: NormalizedSpec,
 ): Promise<ReadFileResult> {
-  assertNotAborted(spec.signal);
+  spec.signal?.throwIfAborted();
 
   assertFileStats(filePath, stats);
 
@@ -836,7 +836,7 @@ export async function readNormalized(
   if (spec.skipBinary) {
     await assertNotBinary(validPath, filePath, handle, spec);
   }
-  assertNotAborted(spec.signal);
+  spec.signal?.throwIfAborted();
 
   return await readByMode({ handle, validPath, filePath, stats, spec });
 }

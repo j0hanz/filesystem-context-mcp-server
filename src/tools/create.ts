@@ -14,7 +14,7 @@ import {
   FileKind,
   IsoDateTime,
   NonNegInt,
-  PerFileErrorSchema,
+  PathFailureSchema,
   RequiredPath,
 } from '../core/schema.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
@@ -55,18 +55,13 @@ const CreateInputSchema = z.strictObject({
     .describe('List of files to create (max 100); each entry requires path and content'),
 });
 
-const CreateFailureItemSchema = z.strictObject({
-  path: z.string(),
-  error: PerFileErrorSchema,
-});
-
-type CreateFailureItem = z.infer<typeof CreateFailureItemSchema>;
+type CreateFailureItem = z.infer<typeof PathFailureSchema>;
 
 const CreateOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Always true; per-file errors are in failures[]'),
   files: z.array(CreateFileResultSchema).describe('Successfully created files'),
   failures: z
-    .array(CreateFailureItemSchema)
+    .array(PathFailureSchema)
     .optional()
     .describe('Files that failed to create with per-file error details'),
 });

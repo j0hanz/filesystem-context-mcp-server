@@ -59,10 +59,6 @@ export async function processInParallel<T, R>(
   return { results, errors };
 }
 
-export function assertNotAborted(signal?: AbortSignal): void {
-  signal?.throwIfAborted();
-}
-
 export function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return promise;
   signal.throwIfAborted();

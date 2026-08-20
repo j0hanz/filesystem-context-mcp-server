@@ -31,7 +31,7 @@ import {
   maxDepthField,
   NonNegInt,
   OptionalPath,
-  PerFileErrorSchema,
+  PathFailureSchema,
   SafeGlobPattern,
 } from '../core/schema.js';
 import type { Regex, StoppedReason } from '../core/search.js';
@@ -102,12 +102,7 @@ const SearchAndReplaceOutputSchema = z.strictObject({
   processedFiles: NonNegInt.describe('Total number of files examined'),
   failedFiles: NonNegInt.optional().describe('Number of files that could not be processed'),
   failures: z
-    .array(
-      z.strictObject({
-        path: z.string(),
-        error: PerFileErrorSchema,
-      }),
-    )
+    .array(PathFailureSchema)
     .optional()
     .describe('Per-file error details for files that could not be processed'),
   primaryFile: z

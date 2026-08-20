@@ -3,8 +3,8 @@ import type { McpServer, Root } from '@modelcontextprotocol/server';
 import { stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-import { assertNotAborted, processInParallel, timedSignal, withAbort } from './concurrency.js';
-import { rethrowIfAborted } from './errors.js';
+import { processInParallel, timedSignal, withAbort } from './concurrency.js';
+import { formatUnknownErrorMessage, rethrowIfAborted } from './errors.js';
 import { Logger } from './observability.js';
 import { isSamePath, normalizePath, resolveRealPath } from './path.js';
 import type { PathGuard } from './path.js';
@@ -48,7 +48,7 @@ async function resolveRealPathIfExists(
   signal?: AbortSignal,
 ): Promise<string | null> {
   try {
-    assertNotAborted(signal);
+    signal?.throwIfAborted();
     const real = await resolveRealPath(normalizedPath, signal);
     if (real === null) return null;
     return isSamePath(real, normalizedPath) ? null : real;
@@ -62,7 +62,7 @@ async function resolveRootDirectory(root: Root, signal?: AbortSignal): Promise<s
   try {
     const dirPath = fileURLToPath(root.uri);
     const normalizedPath = normalizePath(dirPath);
-    assertNotAborted(signal);
+    signal?.throwIfAborted();
     const stats = await withAbort(stat(normalizedPath), signal);
     if (!stats.isDirectory()) return null;
     return normalizedPath;
@@ -226,7 +226,7 @@ export class McpRootsSynchronizer {
       // Ungated — a degraded-to-zero-roots server is exactly the case an
       // operator must be told about. listRoots() throws outright on the
       // 2026-07-28 protocol era, where the push-style request model is gone.
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = formatUnknownErrorMessage(error);
       Logger.emit(
         detail.includes('timeout') ? 'debug' : 'warning',
         `MCP Roots unavailable (${detail}). No roots discovered from the client — pass allowed directories as CLI arguments or set FS_ALLOWED_DIRS.`,
@@ -241,7 +241,7 @@ export class McpRootsSynchronizer {
         } catch (error) {
           Logger.emit(
             'warning',
-            `Failed to apply roots to the path guard: ${error instanceof Error ? error.message : String(error)}`,
+            `Failed to apply roots to the path guard: ${formatUnknownErrorMessage(error)}`,
           );
         }
         // destroy() can flip state to 'shutting_down' during the await above.

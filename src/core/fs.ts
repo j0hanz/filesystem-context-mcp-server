@@ -21,7 +21,7 @@ import {
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
-import { assertNotAborted, withAbort } from './concurrency.js';
+import { withAbort } from './concurrency.js';
 import { formatUnknownErrorMessage, isNodeError } from './errors.js';
 import { detectMimeFromContent } from './mime.js';
 import { Logger } from './observability.js';
@@ -112,7 +112,7 @@ async function atomicWriteFile(
   }
 
   try {
-    assertNotAborted(signal);
+    signal?.throwIfAborted();
     await fsWriteFile(tempPath, content, { encoding, signal });
     if (existingMode !== undefined) {
       await fsChmod(tempPath, existingMode);
@@ -224,7 +224,7 @@ export class GuardedFileSystem {
   async readFile(filePath: string, spec: ReadSpec) {
     const normalized = normalizeSpec(spec);
     const validPath = await this.pathGuard.validateExistingPath(filePath);
-    assertNotAborted(normalized.signal);
+    normalized.signal?.throwIfAborted();
     const stats = await withAbort(fsStat(validPath), normalized.signal);
     return readNormalized(filePath, validPath, stats, normalized);
   }

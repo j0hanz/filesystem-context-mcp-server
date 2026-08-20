@@ -3,6 +3,7 @@ import { stat } from 'node:fs/promises';
 import { getSystemErrorMessage, getSystemErrorName, parseArgs as utilParseArgs } from 'node:util';
 
 import { processInParallel } from './core/concurrency.js';
+import { formatUnknownErrorMessage } from './core/errors.js';
 import { cliFmt, padEndVisible } from './core/fmt.js';
 import {
   getReservedDeviceNameForPath,
@@ -295,7 +296,7 @@ function printVersionAndExit(): never {
 }
 
 function normalizeCliExitMessage(error: unknown): string {
-  const rawMessage = error instanceof Error ? error.message : String(error);
+  const rawMessage = formatUnknownErrorMessage(error);
   return rawMessage.startsWith('Error:') ? rawMessage : `Error: ${rawMessage}`;
 }
 
@@ -370,9 +371,15 @@ export async function parseArgs(): Promise<{
     }
 
     const vals = parsed.values as Record<string, unknown>;
-    const walkCwd =
-      (vals['walk-cwd'] as boolean) || parseTrueEnvFlag(process.env['ALLOW_CWD_WALK']);
-    const allowCwd = (vals['allow-cwd'] as boolean) || walkCwd;
+    // Both halves of these flag-or-env reads stay live even though
+    // liftFlagsToEnv (index.ts) has already copied every flag into its env var
+    // by the time the server calls this: the flag half covers parseArgs called
+    // standalone (tests, --print-config), the env half covers an operator who
+    // sets only the env var and passes no flag.
+    const allowCwd =
+      (vals['allow-cwd'] as boolean) ||
+      (vals['walk-cwd'] as boolean) ||
+      parseTrueEnvFlag(process.env['ALLOW_CWD_WALK']);
     const readOnly = (vals['read-only'] as boolean) || (vals['safe'] as boolean);
     const printConfig = vals['print-config'] as boolean;
     const json = vals['json'] as boolean;

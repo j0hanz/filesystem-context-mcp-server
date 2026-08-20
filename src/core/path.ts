@@ -4,10 +4,11 @@ import { lstat, readlink, realpath, stat } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 
-import { assertNotAborted, timedSignal, withAbort } from './concurrency.js';
+import { timedSignal, withAbort } from './concurrency.js';
 import {
   ERRNO_MAP,
   ErrorCode,
+  formatUnknownErrorMessage,
   FsError,
   isFsError,
   isNodeError,
@@ -37,16 +38,6 @@ export interface ServerOptions {
   readOnly?: boolean;
 }
 
-function normalizeCLIDirectories(dirs: readonly string[]): string[] {
-  const normalized: string[] = [];
-  for (const dir of dirs) {
-    const trimmed = dir.trim();
-    if (trimmed.length === 0) continue;
-    normalized.push(normalizePath(trimmed));
-  }
-  return normalized;
-}
-
 async function isRootWithin(
   normalizedRoot: string,
   bounds: readonly string[],
@@ -61,7 +52,7 @@ async function isRootWithin(
   }
 
   try {
-    assertNotAborted(signal);
+    signal?.throwIfAborted();
     const realPath = await withAbort(realpath(normalizedRoot), signal);
     return isPathWithinDirectories(normalizePath(realPath), bounds);
   } catch (error) {
@@ -82,7 +73,7 @@ async function filterRootsWithin(
   requireRequestedInside: boolean,
   signal?: AbortSignal,
 ): Promise<string[]> {
-  const normalizedBounds = normalizeCLIDirectories(bounds);
+  const normalizedBounds = normalizeAllowedDirectories(bounds);
   const normalizedRoots = roots.map(normalizePath);
   if (normalizedRoots.length === 0) return [];
 
@@ -263,7 +254,7 @@ export async function resolveRealPath(
   signal?: AbortSignal,
 ): Promise<string | null> {
   try {
-    assertNotAborted(signal);
+    signal?.throwIfAborted();
     const realPath = await withAbort(realpath(normalized), signal);
     return normalizeAllowedDirectory(realPath);
   } catch (error) {
@@ -335,7 +326,7 @@ async function resolveConfiguredDirs(
       } else {
         Logger.emit(
           'warning',
-          `Path configured in ${envVar} is invalid or does not exist: ${rawPath} (${error instanceof Error ? error.message : String(error)})`,
+          `Path configured in ${envVar} is invalid or does not exist: ${rawPath} (${formatUnknownErrorMessage(error)})`,
         );
       }
     }
@@ -451,7 +442,7 @@ export class PathGuard {
   private readonly sensitive = new SensitiveMatcher();
   private rootDirectories: string[] = [];
   private rootBoundaries: string[] = [];
-  private readonly denialCache = new Map<string, boolean>();
+  private readonly denialCache = new Set<string>();
 
   readonly options: ServerOptions | undefined;
   /**
@@ -501,17 +492,9 @@ export class PathGuard {
   }
 
   initialize(state: AllowedDirectoriesState): void {
-    const normalized: string[] = [];
-    for (const dir of state.expanded) {
-      const entry = normalizeAllowedDirectory(dir);
-      if (entry.length > 0) {
-        normalized.push(entry);
-      }
-    }
-
     this.allowedDirectoriesState = {
-      primary: [...dedupePreserveOrder(state.primary)],
-      expanded: [...dedupePreserveOrder(normalized)],
+      primary: dedupePreserveOrder(state.primary),
+      expanded: normalizeAllowedDirectories(state.expanded),
     };
   }
 
@@ -601,19 +584,17 @@ export class PathGuard {
   private async resolveGrantTargetDir(blockedPath: string): Promise<string> {
     let targetDir = blockedPath;
     for (;;) {
-      let isFile = false;
+      const parent = dirname(targetDir);
       try {
-        if ((await stat(targetDir)).isDirectory()) break;
-        isFile = true;
+        // An existing directory is the grant target; an existing file grants
+        // its parent directory.
+        return (await stat(targetDir)).isDirectory() ? targetDir : parent;
       } catch {
         // Missing — keep walking up.
       }
-      const parent = dirname(targetDir);
-      if (parent === targetDir) break;
+      if (parent === targetDir) return targetDir;
       targetDir = parent;
-      if (isFile) break;
     }
-    return targetDir;
   }
 
   /**
@@ -639,7 +620,7 @@ export class PathGuard {
     }
 
     if (!approved) {
-      this.denialCache.set(targetDir, true);
+      this.denialCache.add(targetDir);
       return false;
     }
 
@@ -772,7 +753,7 @@ export class PathGuard {
       'Cannot access path',
       requestedPath,
       {
-        originalError: error instanceof Error ? error.message : String(error),
+        originalError: formatUnknownErrorMessage(error),
       },
       error instanceof Error ? error : undefined,
     );
@@ -825,7 +806,7 @@ export class PathGuard {
         'Cannot access directory',
         requestedPath,
         {
-          originalError: error instanceof Error ? error.message : String(error),
+          originalError: formatUnknownErrorMessage(error),
         },
         error instanceof Error ? error : undefined,
       );
@@ -925,7 +906,7 @@ export class PathGuard {
               ErrorCode.UNKNOWN,
               'Cannot probe symlink ancestor',
               requestedPath,
-              { originalError: lstatErr instanceof Error ? lstatErr.message : String(lstatErr) },
+              { originalError: formatUnknownErrorMessage(lstatErr) },
               lstatErr instanceof Error ? lstatErr : undefined,
             );
           }
@@ -936,7 +917,7 @@ export class PathGuard {
             ErrorCode.UNKNOWN,
             'Cannot resolve path',
             requestedPath,
-            { originalError: error instanceof Error ? error.message : String(error) },
+            { originalError: formatUnknownErrorMessage(error) },
             error instanceof Error ? error : undefined,
           );
         }
@@ -979,7 +960,7 @@ export class PathGuard {
         ErrorCode.NOT_FOUND,
         'Parent directory not found',
         requestedPath,
-        { originalError: error instanceof Error ? error.message : String(error) },
+        { originalError: formatUnknownErrorMessage(error) },
         error instanceof Error ? error : undefined,
       );
     }
@@ -1020,7 +1001,7 @@ export class PathGuard {
   }
 
   async recomputeAllowedDirectories(): Promise<void> {
-    const cliAllowedDirs = normalizeCLIDirectories(this.options?.cliAllowedDirs ?? []);
+    const cliAllowedDirs = normalizeAllowedDirectories(this.options?.cliAllowedDirs ?? []);
 
     // Parse allowed directories from environment variable
     const allowMissing = parseTrueEnvFlag(process.env['ALLOW_MISSING_ROOTS']);

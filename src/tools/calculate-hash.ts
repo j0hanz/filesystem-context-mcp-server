@@ -5,7 +5,7 @@ import { pipeline } from 'node:stream/promises';
 
 import * as z from 'zod/v4';
 
-import { assertNotAborted, processInParallel } from '../core/concurrency.js';
+import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode, FsError, rethrowIfAborted } from '../core/errors.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { globEntries, isIgnoredByGitignore, loadRootGitignore } from '../core/glob.js';
@@ -155,7 +155,7 @@ async function hashDirectory(
     onlyFiles: true,
     suppressErrors: true,
   })) {
-    assertNotAborted(signal);
+    signal?.throwIfAborted();
     if (gitignoreMatcher && isIgnoredByGitignore(gitignoreMatcher, dirPath, entry.path)) {
       continue;
     }
@@ -171,7 +171,7 @@ async function hashDirectory(
     });
   }
 
-  assertNotAborted(signal);
+  signal?.throwIfAborted();
 
   const concurrency = Math.min(PARALLEL_CONCURRENCY, 8);
   const totalFiles = filteredPaths.length;
@@ -182,7 +182,7 @@ async function hashDirectory(
   >(
     filteredPaths,
     async (task) => {
-      assertNotAborted(signal);
+      signal?.throwIfAborted();
       // Read through the guarded filesystem so each file is re-validated
       // (sensitive denylist + realpath/root containment) before hashing.
       const stream = await fsOps.createReadStream(task.filePath, {
@@ -218,7 +218,7 @@ async function hashDirectory(
     );
   }
   onProgress?.({ current: filesHashed, total: totalFiles });
-  assertNotAborted(signal);
+  signal?.throwIfAborted();
   const entries = results.map((r) => r.value);
   // Sort by path with byte-wise semantics for deterministic ordering.
   entries.sort(comparePaths);
@@ -228,7 +228,7 @@ async function hashDirectory(
   const pathLengthBytes = Buffer.allocUnsafe(4);
   for (const { path: filePath, hash: fileHash } of entries) {
     updateCompositeHash(compositeHasher, pathLengthBytes, filePath, fileHash);
-    assertNotAborted(signal);
+    signal?.throwIfAborted();
   }
 
   return {

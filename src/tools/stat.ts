@@ -5,7 +5,7 @@ import { parse } from 'node:path';
 
 import * as z from 'zod/v4';
 
-import { assertNotAborted, withAbort } from '../core/concurrency.js';
+import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, rethrowIfAborted } from '../core/errors.js';
 import { formatBytes } from '../core/fmt.js';
 import type { FileInfo, GuardedFileSystem, Stats } from '../core/fs.js';
@@ -90,7 +90,7 @@ async function getSymlinkTarget(
   fs: GuardedFileSystem,
   signal?: AbortSignal,
 ): Promise<string | undefined> {
-  assertNotAborted(signal);
+  signal?.throwIfAborted();
   try {
     const { linkString } = await fs.readlink(pathToRead);
     return linkString;
@@ -110,7 +110,7 @@ interface FileInfoOptions {
 
 async function getFileInfo(filePath: string, options: FileInfoOptions): Promise<FileInfo> {
   const { signal, fs } = options;
-  assertNotAborted(signal);
+  signal?.throwIfAborted();
 
   const {
     requestedPath,

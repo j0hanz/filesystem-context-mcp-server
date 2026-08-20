@@ -1,10 +1,11 @@
 import type { Notification, ProgressNotificationParams } from '@modelcontextprotocol/server';
 
+import { formatUnknownErrorMessage } from '../core/errors.js';
 import { ansiLine, type Phase, type ProgressCtx } from '../core/fmt.js';
 import { Logger } from '../core/observability.js';
 
 function reportDetachedError(toolName: string, context: string, error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = formatUnknownErrorMessage(error);
   Logger.emit('warning', `${toolName}: ${context} failed: ${message}`);
 }
 
@@ -188,9 +189,7 @@ export class StderrProgressSink implements ProgressSink {
       ...(event.kind === 'tick' || event.kind === 'complete'
         ? { current: event.current, total: event.total }
         : {}),
-      ...(event.kind === 'fail'
-        ? { error: event.error instanceof Error ? event.error.message : String(event.error) }
-        : {}),
+      ...(event.kind === 'fail' ? { error: formatUnknownErrorMessage(event.error) } : {}),
       durationMs: Date.now() - this.#startMs,
     };
 

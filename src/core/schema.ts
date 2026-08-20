@@ -185,6 +185,16 @@ export const PerFileErrorSchema = z
   })
   .meta({ id: 'PerFileError', title: 'Per-File Error' });
 
+/**
+ * One entry of a tool's `failures[]`: the path that failed and why.
+ * Deliberately un-`meta`'d — an `id` would hoist it into `$defs` and change the
+ * emitted schema of every tool already publishing this shape inline.
+ */
+export const PathFailureSchema = z.strictObject({
+  path: z.string(),
+  error: PerFileErrorSchema,
+});
+
 // TODO(future): Wrap createReadRangeFields output in a typed Zod object with built-in
 // cross-validation. Safe for now — the only caller (read.ts) calls validateReadRange in its own superRefine.
 interface ReadRangeDescriptions {

@@ -1,6 +1,5 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": ["__tests__/helpers.ts", "__tests__/**/*.test.ts"],
-  "project": ["src/**/*.ts"],
-  "ignoreBinaries": ["taskkill"]
+  "project": ["src/**/*.ts"]
 }

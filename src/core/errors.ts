@@ -217,7 +217,7 @@ function walkCauseChain(error: unknown): ClassificationSignal {
 }
 
 function buildProblemFromSignal(signal: ClassificationSignal, error: unknown): Problem {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = formatUnknownErrorMessage(error);
   switch (signal.kind) {
     case 'abort':
       return Problem.cancelled(message);
@@ -349,7 +349,7 @@ export function formatUnknownErrorMessage(error: unknown): string {
 }
 
 export function normalizeUnknownError(error: unknown): Error {
-  return error instanceof Error ? error : new Error(formatUnknownErrorMessage(error));
+  return isNativeError(error) ? error : new Error(formatUnknownErrorMessage(error));
 }
 
 function formatDetailedError(

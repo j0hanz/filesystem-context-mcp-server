@@ -16,7 +16,7 @@ import { SdkErrorCode } from '@modelcontextprotocol/server';
 
 import * as z from 'zod/v4';
 
-import { ErrorCode, hasErrorShape, Problem } from '../core/errors.js';
+import { ErrorCode, formatUnknownErrorMessage, hasErrorShape, Problem } from '../core/errors.js';
 import type { ProgressCtx } from '../core/fmt.js';
 import { plainMessage } from '../core/fmt.js';
 import { GuardedFileSystem } from '../core/fs.js';
@@ -300,7 +300,7 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
   }
 
   private async failProgress(error: unknown): Promise<{ isError: true; content: ContentBlock[] }> {
-    const errMsg = error instanceof Error ? error.message : String(error);
+    const errMsg = formatUnknownErrorMessage(error);
     this.#stderrSink.updateCtx({ error: errMsg });
     const message = plainMessage('fail', { ...this.#progressCtx, error: errMsg });
     await this.#closeWithFail(error, message);

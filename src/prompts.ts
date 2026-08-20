@@ -16,7 +16,7 @@ import { lstat } from 'node:fs/promises';
 
 import * as z from 'zod/v4';
 
-import { hasErrorShape } from './core/errors.js';
+import { formatUnknownErrorMessage, hasErrorShape } from './core/errors.js';
 import { buildFileResourceUri } from './core/file-uri.js';
 import { Logger } from './core/observability.js';
 import { PathCompleter } from './core/path-completer.js';
@@ -138,7 +138,7 @@ async function wrapHandler<T>(
     return result;
   } catch (error) {
     if (hasErrorShape(error, 'ProtocolError')) throw error;
-    const message = error instanceof Error ? error.message : String(error);
+    const message = formatUnknownErrorMessage(error);
     Logger.error(`Prompt handler failed: ${message}`, {
       promptName: contract.name,
       error,

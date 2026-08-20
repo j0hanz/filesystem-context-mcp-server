@@ -1,6 +1,6 @@
 import * as z from 'zod/v4';
 
-import { ErrorCode, FsError } from './errors.js';
+import { ErrorCode, formatUnknownErrorMessage, FsError } from './errors.js';
 
 const OffsetCursorSchema = z.strictObject({
   offset: z.int().nonnegative(),
@@ -21,7 +21,7 @@ export function decodeOffsetCursor(cursor: string): number {
       ErrorCode.INVALID_INPUT,
       'Invalid cursor. Request the first page without a cursor.',
       undefined,
-      { originalError: error instanceof Error ? error.message : String(error) },
+      { originalError: formatUnknownErrorMessage(error) },
       error instanceof Error ? error : undefined,
     );
   }
