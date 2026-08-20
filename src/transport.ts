@@ -1,4 +1,7 @@
-import { createMcpExpressApp } from '@modelcontextprotocol/express';
+import {
+  createMcpExpressApp,
+  getOAuthProtectedResourceMetadataUrl,
+} from '@modelcontextprotocol/express';
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import type { McpServer } from '@modelcontextprotocol/server';
 import {
@@ -57,6 +60,13 @@ interface StoredEvent {
  * Each stream keeps at most `MAX_EVENTS_PER_STREAM` events (FIFO eviction);
  * events are lost across process restarts and once evicted, matching the
  * "best-effort" resumability contract of the streamable HTTP transport.
+ *
+ * ONE STORE PER SESSION. The SDK keys the standalone SSE stream with a constant
+ * (`"_GET_stream"`) and per-request streams with a fresh UUID — never with the
+ * session id. A store shared across sessions would therefore merge every
+ * session's GET-stream events into one buffer, so a `Last-Event-ID` resume
+ * would replay other sessions' notifications to the resuming client, and no
+ * session teardown could identify which streams to drop.
  */
 export class InMemoryEventStore implements EventStore {
   private readonly streams = new Map<StreamId, StoredEvent[]>();
@@ -121,15 +131,6 @@ export class InMemoryEventStore implements EventStore {
     return streamId;
   }
 
-  delete(streamId: string): void {
-    const stream = this.streams.get(streamId);
-    if (!stream) return;
-    for (const event of stream) {
-      this.eventIdToStreamId.delete(event.id);
-    }
-    this.streams.delete(streamId);
-  }
-
   clear(): void {
     this.streams.clear();
     this.eventIdToStreamId.clear();
@@ -188,7 +189,7 @@ export function isValidSessionId(id: string): boolean {
 }
 
 const ALLOWED_ORIGIN_PATTERNS: readonly RegExp[] = [
-  /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/u,
+  /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/u,
 ];
 
 /**
@@ -308,6 +309,62 @@ function isSecureApiKey(key: string | undefined): boolean {
   return typeof key === 'string' && key.trim().length >= 16;
 }
 
+// ---------------------------------------------------------------------------
+// Protected-resource discovery (RFC 9728 / RFC 6750)
+// ---------------------------------------------------------------------------
+
+/**
+ * This server is a resource server with no authorization server: `API_KEY` is a
+ * static secret the operator hands out of band, not an issued token. So the
+ * metadata document deliberately omits `authorization_servers` — RFC 9728 §2
+ * makes it optional, and its absence is the accurate statement that a token
+ * cannot be obtained from an endpoint. `mcpAuthMetadataRouter` from
+ * `@modelcontextprotocol/express` is the tool for the IdP-backed case: it
+ * requires RFC 8414 authorization-server metadata, and inventing an issuer with
+ * endpoints that answer nothing would send clients into a flow that cannot
+ * complete. Adopt it if this ever moves to a real IdP.
+ *
+ * What discovery buys here: a client hitting 401 learns the resource identifier
+ * and that the credential goes in the Authorization header, instead of a bare
+ * challenge plus a 404 on the well-known path.
+ */
+function protectedResourceUrl(req: Request): URL | null {
+  const configured = process.env['FILESYSTEM_MCP_PUBLIC_URL'];
+  if (configured) {
+    const parsed = URL.parse(configured);
+    if (parsed) return parsed;
+    Logger.warn(
+      `[HTTP] Ignoring unparseable FILESYSTEM_MCP_PUBLIC_URL: ${configured}. Deriving the resource identifier from the Host header instead.`,
+    );
+  }
+  // Raw client input. The app's allowedHosts check constrains it ONLY when an
+  // allowlist is configured — a wildcard bind under
+  // FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS=1 computes an empty list, and the
+  // SDK mounts its Host validator conditionally on that list being non-empty.
+  // So this parse can fail (a space or `%` is not a legal host); null then
+  // means callers omit the hint rather than name a resource we invented.
+  const host = req.headers.host ?? '127.0.0.1';
+  return URL.parse(`${req.secure ? 'https' : 'http'}://${host}/mcp`);
+}
+
+/**
+ * RFC 6750 §3: a request with no credentials gets a bare challenge, while one
+ * that presented something invalid gets `error="invalid_token"`. Clients use
+ * the difference to tell "you must authenticate" from "your token is wrong".
+ */
+function buildAuthChallenge(req: Request, hasCredentials: boolean): string {
+  const resource = protectedResourceUrl(req);
+  const params: string[] = [];
+  if (resource) {
+    params.push(`resource_metadata="${getOAuthProtectedResourceMetadataUrl(resource)}"`);
+  }
+  if (hasCredentials) {
+    params.push('error="invalid_token"', 'error_description="Invalid or expired bearer token"');
+  }
+  // A bare `Bearer` is a complete challenge; avoid emitting a trailing space.
+  return params.length > 0 ? `Bearer ${params.join(', ')}` : 'Bearer';
+}
+
 /**
  * Refuse to bind to a non-loopback host without an API key. Throws on
  * policy violation; returns silently when allowed.
@@ -384,7 +441,7 @@ function bearerAuthMiddleware(apiKey: string | undefined): RequestHandler {
     }
     res.writeHead(401, {
       'Content-Type': 'application/json',
-      'WWW-Authenticate': 'Bearer',
+      'WWW-Authenticate': buildAuthChallenge(req, req.headers.authorization !== undefined),
     });
     // -32000 is the JSON-RPC server-defined error range; no SDK enum maps to "Unauthorized".
     res.end(JSON.stringify(buildJsonRpcError(-32000, 'Unauthorized')));
@@ -401,13 +458,16 @@ interface HttpSession {
   synchronizer?: McpRootsSynchronizer;
   transport: NodeStreamableHTTPServerTransport;
   createdAt: number;
+  /** When the last request on this session finished; drives idle eviction. */
+  lastActiveAt: number;
+  /** Requests currently in flight, including long-lived GET/SSE streams. */
+  activeRequests: number;
   close: () => Promise<void>;
 }
 
 interface HttpSessionRegistryOptions {
-  eventStore: InMemoryEventStore;
-
   handshakeTimeoutMs: number;
+  idleTimeoutMs: number;
   sweepIntervalMs?: number;
 }
 
@@ -418,16 +478,15 @@ interface HttpSessionRegistryOptions {
  */
 class HttpSessionRegistry {
   private readonly sessions = new Map<string, HttpSession>();
-  private readonly eventStore: InMemoryEventStore;
 
   private readonly handshakeTimeoutMs: number;
+  private readonly idleTimeoutMs: number;
   private readonly sweepIntervalMs: number;
   private sweepTimer: NodeJS.Timeout | undefined;
 
   constructor(opts: HttpSessionRegistryOptions) {
-    this.eventStore = opts.eventStore;
-
     this.handshakeTimeoutMs = opts.handshakeTimeoutMs;
+    this.idleTimeoutMs = opts.idleTimeoutMs;
     this.sweepIntervalMs = opts.sweepIntervalMs ?? opts.handshakeTimeoutMs * 2;
   }
 
@@ -443,9 +502,10 @@ class HttpSessionRegistry {
     this.sessions.set(sessionId, session);
   }
 
+  // The session's own event store is cleared by its cleanup(), which runs
+  // before this — the registry owns no cross-session event state.
   remove(sessionId: string): void {
     this.sessions.delete(sessionId);
-    this.eventStore.delete(sessionId);
   }
 
   getOrRespondNotFound(sessionId: string, res: ServerResponse): HttpSession | undefined {
@@ -467,23 +527,46 @@ class HttpSessionRegistry {
 
   private closingSessionIds = new Set<string>();
 
+  /**
+   * Why a session is evictable, or undefined when it is not.
+   *
+   * Two clocks, because a session goes stale in two different ways: it never
+   * finishes the handshake, or it finishes and is then abandoned. Streamable
+   * HTTP has no connection to lose — a client that stops calling without
+   * sending DELETE would otherwise hold its server, watchers, and session slot
+   * until the process exits, and once `maxSessions` slots are held that way,
+   * every new initialize gets 503 forever.
+   *
+   * `activeRequests` is what keeps the idle clock honest: a client parked on a
+   * long-lived GET stream sends nothing for hours and is not idle.
+   */
+  private evictionReason(session: HttpSession, now: number): string | undefined {
+    const isSessionInitialized = session.synchronizer
+      ? session.synchronizer.isInitialized()
+      : session.pathGuard.isInitialized();
+
+    if (!isSessionInitialized) {
+      return now - session.createdAt > this.handshakeTimeoutMs ? 'handshake timeout' : undefined;
+    }
+    if (session.activeRequests > 0) return undefined;
+    return now - session.lastActiveAt > this.idleTimeoutMs ? 'idle timeout' : undefined;
+  }
+
   private sweepStale(): void {
     const now = Date.now();
-    const staleSessionIds: string[] = [];
+    const staleSessionIds: [string, string][] = [];
     for (const [sessionId, session] of this.sessions) {
       if (this.closingSessionIds.has(sessionId)) continue;
-      const isSessionInitialized = session.synchronizer
-        ? session.synchronizer.isInitialized()
-        : session.pathGuard.isInitialized();
-      if (!isSessionInitialized && now - session.createdAt > this.handshakeTimeoutMs) {
-        staleSessionIds.push(sessionId);
+      const reason = this.evictionReason(session, now);
+      if (reason) {
+        staleSessionIds.push([sessionId, reason]);
       }
     }
 
-    for (const sessionId of staleSessionIds) {
+    for (const [sessionId, reason] of staleSessionIds) {
       const session = this.sessions.get(sessionId);
       if (!session) continue;
-      Logger.warn(`[HTTP] Evicting stale session ${sessionId}`);
+      Logger.warn(`[HTTP] Evicting stale session ${sessionId} (${reason})`);
       this.closingSessionIds.add(sessionId);
       session
         .close()
@@ -511,7 +594,6 @@ class HttpSessionRegistry {
       }),
     );
     await Promise.allSettled(closes);
-    this.eventStore.clear();
   }
 }
 
@@ -525,18 +607,20 @@ const MAX_REQUEST_BODY_BYTES = parseEnvInt(
 async function createHttpSession(
   options: ServerOptions,
   registry: HttpSessionRegistry,
-  eventStore: InMemoryEventStore,
 ): Promise<HttpSession> {
   const serverCtx = await createServer(options);
   const mcpServer = serverCtx.mcp;
   const pathGuard = serverCtx.pathGuard;
   const synchronizer = serverCtx.synchronizer;
+  // Scoped to this session: see the InMemoryEventStore doc comment.
+  const eventStore = new InMemoryEventStore();
 
   let cleanedUp = false;
   const cleanup = (): void => {
     if (cleanedUp) return;
     cleanedUp = true;
     serverCtx.disposeRuntimeState();
+    eventStore.clear();
     const { sessionId } = transport;
     if (sessionId) {
       registry.remove(sessionId);
@@ -572,14 +656,10 @@ async function createHttpSession(
           'PathGuard must be constructed with isServerContext for an HTTP session',
         );
       }
-      registry.add(sessionId, {
-        server: mcpServer,
-        pathGuard,
-        synchronizer,
-        transport,
-        createdAt: Date.now(),
-        close,
-      });
+      // `session` is declared below and initialized before this can fire — the
+      // callback runs while handling an initialize request, which cannot reach
+      // the transport until createHttpSession has returned.
+      registry.add(sessionId, session);
       synchronizer.logMissingDirectoriesIfNeeded();
     },
     onsessionclosed: async (sessionId) => {
@@ -610,14 +690,20 @@ async function createHttpSession(
     throw error;
   }
 
-  return {
+  // One object, shared by the registry and the caller, so a request handled
+  // through either path stamps the same activity clock.
+  const now = Date.now();
+  const session: HttpSession = {
     server: mcpServer,
     pathGuard,
     synchronizer,
     transport,
-    createdAt: Date.now(),
+    createdAt: now,
+    lastActiveAt: now,
+    activeRequests: 0,
     close,
   };
+  return session;
 }
 
 async function handleSessionTransportRequest(
@@ -626,6 +712,14 @@ async function handleSessionTransportRequest(
   res: ServerResponse,
   body?: unknown,
 ): Promise<void> {
+  session.activeRequests++;
+  // 'close' fires for both a completed response and a client that hangs up
+  // mid-stream, which is exactly when a long-lived GET stream stops counting
+  // as activity. handleRequest returning is not the same moment.
+  res.once('close', () => {
+    session.activeRequests--;
+    session.lastActiveAt = Date.now();
+  });
   await withSession(session.transport.sessionId, async () => {
     await session.transport.handleRequest(req, res, body);
   });
@@ -653,7 +747,6 @@ async function handlePostMcp(
   res: Response,
   options: ServerOptions,
   registry: HttpSessionRegistry,
-  eventStore: InMemoryEventStore,
 ): Promise<void> {
   const sessionId = getSessionId(req);
   // Hoisted so the catch below can echo the id back — a client awaiting a
@@ -714,7 +807,7 @@ async function handlePostMcp(
       sendJsonRpcError(res, 503, ProtocolErrorCode.InternalError, 'Too many sessions');
       return;
     }
-    const session = await createHttpSession(options, registry, eventStore);
+    const session = await createHttpSession(options, registry);
     try {
       await handleSessionTransportRequest(session, req, res, message);
     } catch (error) {
@@ -779,7 +872,6 @@ function setupExpressApp(
   apiKey: string | undefined,
   options: ServerOptions,
   registry: HttpSessionRegistry,
-  eventStore: InMemoryEventStore,
 ): Express {
   const configuredHosts = parseAllowedHostsEnv(process.env['FILESYSTEM_MCP_ALLOWED_HOSTS']);
 
@@ -796,17 +888,21 @@ function setupExpressApp(
           : [httpHost];
 
   // Env-derived CORS origins (hostname-form, no scheme/port — matches the SDK
-  // app's allowedOrigins consumer). Default to the localhost set so loopback
-  // browser clients keep working; operators set FILESYSTEM_MCP_ALLOWED_ORIGINS
-  // to allow remote clients on non-loopback binds. The same set is consulted by
-  // the OPTIONS preflight handler below so a remote origin is reflected
-  // end-to-end in Access-Control-Allow-Origin.
-  const allowedOriginHostnames = (
-    process.env['FILESYSTEM_MCP_ALLOWED_ORIGINS'] ?? 'localhost,127.0.0.1'
-  )
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+  // app's allowedOrigins consumer). Default to localhostAllowedHostnames() —
+  // the SDK's own loopback set, which includes the IPv6 spelling `[::1]` that
+  // isLoopbackHttpHost already accepts as a bind host — so loopback browser
+  // clients keep working; operators set FILESYSTEM_MCP_ALLOWED_ORIGINS to allow
+  // remote clients on non-loopback binds. The same set is consulted by the
+  // OPTIONS preflight handler below so a remote origin is reflected end-to-end
+  // in Access-Control-Allow-Origin. An empty value reads as unset, matching how
+  // parseAllowedHostsEnv treats an all-empty host list.
+  const originsEnv = process.env['FILESYSTEM_MCP_ALLOWED_ORIGINS'];
+  const allowedOriginHostnames = originsEnv
+    ? originsEnv
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+    : localhostAllowedHostnames();
 
   const app = createMcpExpressApp({
     host: httpHost,
@@ -844,10 +940,43 @@ function setupExpressApp(
     res.status(204).end();
   });
 
+  // Discovery is only truthful when a credential is actually required, and it
+  // stays outside the bearer guard — a client reads it precisely because it
+  // does not yet have a token. RFC 9728 §3.1 puts the document at the
+  // well-known path with the resource's own path appended; the bare path is
+  // served too, since clients that treat the origin as the resource probe it.
+  if (apiKey) {
+    const metadataHandler = (req: Request, res: Response): void => {
+      const resource = protectedResourceUrl(req);
+      if (!resource) {
+        // The Host is unusable as a resource identifier and nothing else names
+        // this server, so the request cannot be answered truthfully.
+        sendJsonRpcError(
+          res,
+          400,
+          ProtocolErrorCode.InvalidRequest,
+          'Cannot derive a resource identifier from the Host header. Set FILESYSTEM_MCP_PUBLIC_URL.',
+        );
+        return;
+      }
+      // Wildcard is correct for this document and only this document: it is
+      // public by design, carries no secret, and grants no session. The /mcp
+      // routes stay on the reflected-allowlist policy above, where a wildcard
+      // would let any page drive a session.
+      res.header('Access-Control-Allow-Origin', '*');
+      res.status(200).json({
+        resource: resource.href,
+        bearer_methods_supported: ['header'],
+        resource_name: 'filesystem-mcp',
+      });
+    };
+    app.get('/.well-known/oauth-protected-resource/mcp', metadataHandler);
+  }
+
   app.use('/mcp', bearerAuthMiddleware(apiKey));
 
   app.post('/mcp', (req: Request, res: Response, next: NextFunction) => {
-    handlePostMcp(req, res, options, registry, eventStore).catch(next);
+    handlePostMcp(req, res, options, registry).catch(next);
   });
 
   const getOrDeleteHandler = (req: Request, res: Response, next: NextFunction) => {
@@ -867,7 +996,6 @@ function setupExpressApp(
 }
 
 export async function startHttpServer(port: number, options: ServerOptions): Promise<Server> {
-  const eventStore = new InMemoryEventStore();
   const httpHost = process.env['HTTP_HOST'] ?? '127.0.0.1';
   const apiKey = process.env['API_KEY'];
   assertHttpBindingPolicy(httpHost, apiKey);
@@ -878,12 +1006,19 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
   );
 
   const registry = new HttpSessionRegistry({
-    eventStore,
-
     handshakeTimeoutMs: getInitHandshakeTimeoutMs(),
+    // Generous by default: a client that calls a tool every so often and holds
+    // no stream must not lose its session between calls. Read per call, not at
+    // module load, so the value is settable per server instance.
+    idleTimeoutMs: parseEnvInt(
+      'FILESYSTEM_MCP_SESSION_IDLE_TIMEOUT_MS',
+      30 * 60_000,
+      1_000,
+      24 * 60 * 60_000,
+    ),
   });
 
-  const app = setupExpressApp(httpHost, apiKey, options, registry, eventStore);
+  const app = setupExpressApp(httpHost, apiKey, options, registry);
 
   const httpServer = createHttpServer(app);
   httpServer.headersTimeout = 10_000;

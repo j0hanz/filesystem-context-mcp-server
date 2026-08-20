@@ -1,5 +1,4 @@
 import type { PrimitiveSchemaDefinition } from '@modelcontextprotocol/server';
-import { SdkErrorCode } from '@modelcontextprotocol/server';
 
 import { basename, dirname, resolve, sep } from 'node:path';
 
@@ -9,7 +8,6 @@ import { withAbort } from '../core/concurrency.js';
 import {
   ErrorCode,
   FsError,
-  hasErrorShape,
   isAbortError,
   isFsError,
   isNodeError,
@@ -20,7 +18,7 @@ import { Logger } from '../core/observability.js';
 import { isSamePath } from '../core/path.js';
 import { PerFileErrorSchema, RequiredPath } from '../schema.js';
 import type { ToolCtx } from './define.js';
-import { defineTool } from './define.js';
+import { defineTool, isElicitationUnavailable } from './define.js';
 
 const MoveItemSchema = z.strictObject({
   source: RequiredPath.describe('Absolute path of the file or directory to move'),
@@ -107,8 +105,8 @@ async function tryElicitOverwriteConfirmation(
     return true;
   } catch (err) {
     if (isFsError(err)) throw err;
-    if (hasErrorShape(err, 'SdkError', SdkErrorCode.CapabilityNotSupported)) {
-      // Client doesn't support elicitation - proceed without asking.
+    if (isElicitationUnavailable(err)) {
+      // Connection cannot be asked at all - proceed without confirming.
       return false;
     } else {
       // Transport or unexpected failure - fail closed, don't move.

@@ -3,20 +3,19 @@ import type {
   ElicitResult,
   PrimitiveSchemaDefinition,
 } from '@modelcontextprotocol/server';
-import { SdkErrorCode } from '@modelcontextprotocol/server';
 
 import { basename } from 'node:path';
 
 import * as z from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
-import { ErrorCode, hasErrorShape, isNodeError, Problem } from '../core/errors.js';
+import { ErrorCode, isNodeError, Problem } from '../core/errors.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import { defaultFalseBoolean, RequiredPath } from '../schema.js';
 import type { ToolCtx } from './define.js';
-import { defineTool } from './define.js';
+import { defineTool, isElicitationUnavailable } from './define.js';
 
 const DeleteInputSchema = z.strictObject({
   paths: z
@@ -146,8 +145,8 @@ async function tryElicitConfirmation(
 
     return elicitResult.action === 'accept' && elicitResult.content?.['confirm'] === true;
   } catch (err) {
-    if (hasErrorShape(err, 'SdkError', SdkErrorCode.CapabilityNotSupported)) {
-      return true; // Proceed if client doesn't support elicitation
+    if (isElicitationUnavailable(err)) {
+      return true; // Connection cannot be asked at all — proceed unprompted.
     }
     Logger.warn(`delete: elicitation failed for "${validPath}": ${String(err)}`);
     return false; // Fail closed for unknown transport errors

@@ -56,13 +56,6 @@ describe('InMemoryEventStore', () => {
     assert.equal(await store.getStreamIdForEventId(firstEventId), undefined);
   });
 
-  it('delete() removes all events for a stream', async () => {
-    const store = new InMemoryEventStore();
-    const eventId = await store.storeEvent('stream-a', msg(1));
-    store.delete('stream-a');
-    assert.equal(await store.getStreamIdForEventId(eventId), undefined);
-  });
-
   it('clear() wipes every stream', async () => {
     const store = new InMemoryEventStore();
     const idA = await store.storeEvent('stream-a', msg(1));

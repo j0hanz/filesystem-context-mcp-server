@@ -102,6 +102,32 @@ async function createHttpClient(port: number): Promise<{
   return { client, transport };
 }
 
+function mcpPost(port: number, body: unknown, sessionId?: string): Promise<Response> {
+  return fetch(`http://127.0.0.1:${String(port)}/mcp`, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json, text/event-stream',
+      'content-type': 'application/json',
+      'mcp-protocol-version': LATEST_PROTOCOL_VERSION,
+      ...(sessionId ? { 'mcp-session-id': sessionId } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+function initializeRequest(clientName: string): Record<string, unknown> {
+  return {
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: {
+      protocolVersion: LATEST_PROTOCOL_VERSION,
+      capabilities: {},
+      clientInfo: { name: clientName, version: '1.0.0' },
+    },
+  };
+}
+
 async function closeServer(server: Server): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     server.close((error) => {
@@ -133,6 +159,9 @@ describe('HTTP transport', () => {
     delete process.env['HTTP_HOST'];
     delete process.env['API_KEY'];
     delete process.env['FS_INIT_HANDSHAKE_TIMEOUT_MS'];
+    delete process.env['FILESYSTEM_MCP_SESSION_IDLE_TIMEOUT_MS'];
+    delete process.env['FILESYSTEM_MCP_PUBLIC_URL'];
+    delete process.env['FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS'];
     delete process.env['FILESYSTEM_MCP_ALLOWED_HOSTS'];
   });
 
@@ -525,9 +554,8 @@ describe('HTTP transport', () => {
   });
 
   it('evicts stale uninitialized sessions through the full cleanup path', async () => {
-    // Smoke-only: full sweep semantics tested in
-    // `__tests__/unit/http-session-registry.test.ts`. This case exists to
-    // confirm the timer is wired into startHttpServer's lifecycle.
+    // Confirms the sweep timer is wired into startHttpServer's lifecycle, on
+    // the handshake clock. The idle clock is covered by the case below.
     process.env['FS_INIT_HANDSHAKE_TIMEOUT_MS'] = '1000';
     tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
     const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
@@ -574,6 +602,92 @@ describe('HTTP transport', () => {
 
     assert.equal(followUpResponse.status, 404);
     assert.match(await followUpResponse.text(), /Session not found/u);
+  });
+
+  it('evicts an initialized session that goes idle', async () => {
+    // A session that completes the handshake and is then abandoned holds its
+    // server and session slot forever without this clock — streamable HTTP has
+    // no connection whose loss would reveal the client is gone.
+    process.env['FS_INIT_HANDSHAKE_TIMEOUT_MS'] = '1000'; // sweep runs every 2s
+    process.env['FILESYSTEM_MCP_SESSION_IDLE_TIMEOUT_MS'] = '1000';
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+
+    const port = getServerPort(server);
+    const initResponse = await mcpPost(port, initializeRequest('http-idle-test'));
+    assert.equal(initResponse.status, 200);
+    const sessionId = initResponse.headers.get('mcp-session-id');
+    assert.ok(sessionId, 'Expected initialize response to include Mcp-Session-Id');
+    await initResponse.text(); // drain, so the response closes and stops counting as in flight
+
+    // Completing the handshake takes this session off the handshake clock — an
+    // eviction from here on can only be the idle clock.
+    const initializedResponse = await mcpPost(
+      port,
+      { jsonrpc: '2.0', method: 'notifications/initialized' },
+      sessionId,
+    );
+    assert.equal(initializedResponse.status, 202);
+    await initializedResponse.text();
+
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+
+    const afterIdle = await mcpPost(
+      port,
+      { jsonrpc: '2.0', id: 2, method: 'tools/list' },
+      sessionId,
+    );
+    assert.equal(afterIdle.status, 404);
+    assert.match(await afterIdle.text(), /Session not found/u);
+  });
+
+  it('keeps a session whose client is parked on an open GET stream', async () => {
+    // The counterweight to idle eviction: a subscriber holding a long-lived SSE
+    // stream sends nothing for hours and must not be mistaken for abandoned.
+    process.env['FS_INIT_HANDSHAKE_TIMEOUT_MS'] = '1000'; // sweep runs every 2s
+    process.env['FILESYSTEM_MCP_SESSION_IDLE_TIMEOUT_MS'] = '1000';
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+
+    const port = getServerPort(server);
+    const initResponse = await mcpPost(port, initializeRequest('http-parked-test'));
+    const sessionId = initResponse.headers.get('mcp-session-id');
+    assert.ok(sessionId, 'Expected initialize response to include Mcp-Session-Id');
+    await initResponse.text();
+
+    const initializedResponse = await mcpPost(
+      port,
+      { jsonrpc: '2.0', method: 'notifications/initialized' },
+      sessionId,
+    );
+    assert.equal(initializedResponse.status, 202);
+    await initializedResponse.text();
+
+    // Open the standalone SSE stream and leave it open — never drained.
+    const streamAbort = new AbortController();
+    const streamResponse = await fetch(`http://127.0.0.1:${String(port)}/mcp`, {
+      method: 'GET',
+      headers: { accept: 'text/event-stream', 'mcp-session-id': sessionId },
+      signal: streamAbort.signal,
+    });
+    assert.equal(streamResponse.status, 200);
+
+    try {
+      // Well past the idle timeout and two sweeps, with no request traffic.
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+
+      const stillAlive = await mcpPost(
+        port,
+        { jsonrpc: '2.0', id: 2, method: 'tools/list' },
+        sessionId,
+      );
+      assert.equal(stillAlive.status, 200);
+      await stillAlive.text();
+    } finally {
+      streamAbort.abort();
+    }
   });
 
   it('sets headersTimeout, requestTimeout, and keepAliveTimeout for Slowloris protection', async () => {
@@ -644,6 +758,25 @@ describe('HTTP transport', () => {
 
     assert.equal(response.statusCode, 204);
     assert.match(String(response.headers['access-control-allow-methods'] ?? ''), /OPTIONS/iu);
+  });
+
+  it('accepts an IPv6 loopback origin in CORS preflight', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+    const port = getServerPort(server);
+
+    // http://[::1]:<port> is the same loopback as http://localhost:<port>;
+    // isLoopbackHttpHost has always accepted it as a bind host.
+    const response = await rawHttpRequest({
+      port,
+      method: 'OPTIONS',
+      path: '/mcp',
+      headers: { origin: 'http://[::1]:3000' },
+    });
+
+    assert.equal(response.statusCode, 204);
+    assert.equal(response.headers['access-control-allow-origin'], 'http://[::1]:3000');
   });
 
   it('does not reflect disallowed origins in CORS preflight OPTIONS requests', async () => {
@@ -929,12 +1062,16 @@ describe('HTTP transport', () => {
       });
 
       assert.equal(response.statusCode, 401);
-      assert.equal(response.headers['www-authenticate'], 'Bearer');
+      const challenge = response.headers['www-authenticate'];
+      assert.ok(typeof challenge === 'string' && challenge.startsWith('Bearer '));
+      assert.match(challenge, /resource_metadata="[^"]+"/u);
+      // RFC 6750 §3.1: no credentials presented means no error code.
+      assert.doesNotMatch(challenge, /error=/u);
       const parsed = JSON.parse(response.body) as { error?: { message?: string } };
       assert.equal(parsed.error?.message, 'Unauthorized');
     });
 
-    it('rejects a wrong bearer token with 401', async () => {
+    it('rejects a wrong bearer token with 401 and error="invalid_token"', async () => {
       const port = await startAuthedServer();
 
       const response = await rawHttpRequest({
@@ -945,6 +1082,62 @@ describe('HTTP transport', () => {
       });
 
       assert.equal(response.statusCode, 401);
+      const challenge = response.headers['www-authenticate'];
+      // A presented-but-wrong token is a different situation from none at all.
+      assert.ok(typeof challenge === 'string' && challenge.includes('error="invalid_token"'));
+    });
+
+    it('points the challenge at a protected-resource document the client can fetch', async () => {
+      const port = await startAuthedServer();
+
+      const unauthorized = await rawHttpRequest({
+        port,
+        method: 'POST',
+        headers: jsonHeaders,
+        body: initializeBody(),
+      });
+      const challenge = unauthorized.headers['www-authenticate'];
+      assert.ok(typeof challenge === 'string');
+      const metadataUrl = /resource_metadata="([^"]+)"/u.exec(challenge)?.[1];
+      assert.ok(metadataUrl, 'Expected a resource_metadata parameter in the challenge');
+
+      // Follow it exactly as a client would — unauthenticated, since the point
+      // of reading it is not having a credential yet.
+      const metadataResponse = await rawHttpRequest({
+        port,
+        method: 'GET',
+        path: new URL(metadataUrl).pathname,
+      });
+
+      assert.equal(metadataResponse.statusCode, 200);
+      // Public by design, so browser clients on any origin can read it — the
+      // /mcp routes keep their reflected-allowlist policy.
+      assert.equal(metadataResponse.headers['access-control-allow-origin'], '*');
+      const doc = JSON.parse(metadataResponse.body) as {
+        resource?: string;
+        bearer_methods_supported?: string[];
+        authorization_servers?: unknown;
+      };
+      assert.match(doc.resource ?? '', /^http:\/\/127\.0\.0\.1:\d+\/mcp$/u);
+      assert.deepEqual(doc.bearer_methods_supported, ['header']);
+      // No AS exists — advertising one would send clients into a flow that
+      // cannot complete against a static operator-issued key.
+      assert.equal(doc.authorization_servers, undefined);
+    });
+
+    it('reflects FILESYSTEM_MCP_PUBLIC_URL when the server sits behind a proxy', async () => {
+      process.env['FILESYSTEM_MCP_PUBLIC_URL'] = 'https://mcp.example.com/mcp';
+      const port = await startAuthedServer();
+
+      const response = await rawHttpRequest({
+        port,
+        method: 'GET',
+        path: '/.well-known/oauth-protected-resource/mcp',
+      });
+
+      assert.equal(response.statusCode, 200);
+      const doc = JSON.parse(response.body) as { resource?: string };
+      assert.equal(doc.resource, 'https://mcp.example.com/mcp');
     });
 
     it('accepts the matching bearer token', async () => {
@@ -958,6 +1151,69 @@ describe('HTTP transport', () => {
       });
 
       assert.equal(response.statusCode, 200);
+    });
+
+    it('advertises no protected resource when the endpoint is unauthenticated', async () => {
+      // No API_KEY: the endpoint is open, so claiming a bearer token is
+      // required would be false. Discovery must be absent, not empty.
+      tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-noauth-'));
+      const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+      servers.push(server);
+
+      const response = await rawHttpRequest({
+        port: getServerPort(server),
+        method: 'GET',
+        path: '/.well-known/oauth-protected-resource/mcp',
+      });
+
+      assert.equal(response.statusCode, 404);
+    });
+
+    it('still answers 401, not 500, when the Host header is not a usable URL host', async () => {
+      // A space and a `%` are forbidden WHATWG host code points, so building the
+      // resource identifier from this Host throws. The only configuration that
+      // lets such a Host reach the auth middleware is a wildcard bind with host
+      // validation opted out — the SDK mounts its Host validator only when the
+      // allowlist is non-empty. Binds on an ephemeral port, dialed via loopback.
+      tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-badhost-'));
+      process.env['API_KEY'] = API_KEY;
+      process.env['HTTP_HOST'] = '0.0.0.0';
+      process.env['FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS'] = '1';
+      const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+      servers.push(server);
+      const port = getServerPort(server);
+
+      for (const host of ['a b', '%']) {
+        const response = await rawHttpRequest({
+          port,
+          method: 'POST',
+          headers: { ...jsonHeaders, host },
+          body: initializeBody(),
+        });
+
+        assert.equal(response.statusCode, 401, `Host: ${host} must still challenge`);
+        // The challenge stays well-formed; it just cannot name a resource it
+        // was unable to derive.
+        assert.equal(response.headers['www-authenticate'], 'Bearer');
+      }
+    });
+
+    it('reports 400 rather than 500 when the metadata route gets an unusable Host', async () => {
+      tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-badhost-'));
+      process.env['API_KEY'] = API_KEY;
+      process.env['HTTP_HOST'] = '0.0.0.0';
+      process.env['FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS'] = '1';
+      const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+      servers.push(server);
+
+      const response = await rawHttpRequest({
+        port: getServerPort(server),
+        method: 'GET',
+        path: '/.well-known/oauth-protected-resource/mcp',
+        headers: { host: 'a b' },
+      });
+
+      assert.equal(response.statusCode, 400);
     });
 
     it('guards GET and DELETE, not just POST', async () => {

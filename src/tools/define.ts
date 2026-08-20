@@ -13,10 +13,11 @@ import type {
   ToolAnnotations,
   ToolExecution,
 } from '@modelcontextprotocol/server';
+import { SdkErrorCode } from '@modelcontextprotocol/server';
 
 import * as z from 'zod/v4';
 
-import { ErrorCode, Problem } from '../core/errors.js';
+import { ErrorCode, hasErrorShape, Problem } from '../core/errors.js';
 import type { ProgressCtx } from '../core/fmt.js';
 import { plainMessage } from '../core/fmt.js';
 import { GuardedFileSystem } from '../core/fs.js';
@@ -97,6 +98,29 @@ export interface DefinedTool extends Tool {
   readonly _def?: ToolDef<z.ZodType, z.ZodType>;
 
   register(deps: ToolDeps): void;
+}
+
+/**
+ * True when the connection cannot answer an elicitation at all — as opposed to
+ * the user seeing the prompt and declining it. Two different SDK throws mean
+ * the same thing to a caller:
+ *
+ * - `CapabilityNotSupported` — client never advertised elicitation (or not the
+ *   requested mode).
+ * - `MethodNotSupportedByProtocolVersion` — the 2026-07-28 era dropped
+ *   push-style server→client requests, so `elicitInput` throws locally before
+ *   anything reaches the client. Migrating to `inputRequired(...)` would let
+ *   these tools prompt on that era; until then they must not read the era's
+ *   refusal as a "no" from the user.
+ *
+ * Neither is a denial, and neither is a transport failure — each caller picks
+ * the fallback that is safe for its own operation.
+ */
+export function isElicitationUnavailable(error: unknown): boolean {
+  return (
+    hasErrorShape(error, 'SdkError', SdkErrorCode.CapabilityNotSupported) ||
+    hasErrorShape(error, 'SdkError', SdkErrorCode.MethodNotSupportedByProtocolVersion)
+  );
 }
 
 // ============ Context Builder ============
@@ -308,16 +332,24 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     };
 
     const confirm = async (targetDir: string): Promise<boolean> => {
-      const response = await elicitInput({
-        mode: 'form',
-        message: `Grant filesystem access to: ${targetDir}?`,
-        requestedSchema: {
-          type: 'object',
-          properties: { confirm: { type: 'boolean', title: 'Confirm' } },
-          required: ['confirm'],
-        },
-      });
-      return response.action === 'accept' && response.content?.['confirm'] === true;
+      try {
+        const response = await elicitInput({
+          mode: 'form',
+          message: `Grant filesystem access to: ${targetDir}?`,
+          requestedSchema: {
+            type: 'object',
+            properties: { confirm: { type: 'boolean', title: 'Confirm' } },
+            required: ['confirm'],
+          },
+        });
+        return response.action === 'accept' && response.content?.['confirm'] === true;
+      } catch (err) {
+        // No grant without a user saying yes, so an unaskable connection is
+        // still a denial — but a quiet one. requestAccessGrant's catch would
+        // otherwise warn on every out-of-root path for the whole session.
+        if (isElicitationUnavailable(err)) return false;
+        throw err;
+      }
     };
 
     return (blockedPath: string) => pathGuard.requestAccessGrant(blockedPath, { probe, confirm });
