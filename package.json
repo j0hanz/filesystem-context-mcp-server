@@ -40,7 +40,7 @@
     "check:static": "npm run build && npm run type-check && eslint . && prettier --check . && knip",
     "check": "npm run check:static && npm run test",
     "test": "node --test --import tsx \"__tests__/**/*.test.ts\"",
-    "inspector": "npm run build && npx -y @modelcontextprotocol/inspector node dist/index.js ${workspaceFolder}",
+    "inspector": "npm run build && npx -y @modelcontextprotocol/inspector node dist/index.js",
     "tasks": "node scripts/tasks.mjs"
   },
   "keywords": [
