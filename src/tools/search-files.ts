@@ -1,7 +1,6 @@
 import * as z from 'zod/v4';
 
 import { StoppedReasonSchema } from '../core/concurrency.js';
-import type { StoppedReason } from '../core/concurrency.js';
 import { closePage, openPage } from '../core/cursor.js';
 import { ErrorCode } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
@@ -23,8 +22,8 @@ import {
   DEFAULT_SEARCH_TIMEOUT_MS,
   MAX_SEARCH_RESULTS,
 } from '../core/util.js';
-import { putJsonResource } from './_helpers.js';
 import { defineTool, type ToolCtx } from './define.js';
+import { putJsonResource } from './resource-links.js';
 
 // ---------------------------------------------------------------------------
 
@@ -89,22 +88,6 @@ function buildRelativeResults(
   return relativeResults;
 }
 
-function applySummaryFields(
-  structured: z.infer<typeof SearchFilesOutputSchema>,
-  summary: {
-    truncated: boolean;
-    skippedInaccessible: number;
-    stoppedReason?: StoppedReason;
-  },
-  nextCursor?: string,
-): void {
-  Object.assign(structured, {
-    ...(summary.skippedInaccessible ? { skippedInaccessible: summary.skippedInaccessible } : {}),
-    ...(summary.stoppedReason !== undefined ? { stoppedReason: summary.stoppedReason } : {}),
-    ...(nextCursor !== undefined ? { nextCursor } : {}),
-  });
-}
-
 async function handleSearchFiles(
   args: z.infer<typeof SearchFilesInputSchema>,
   ctx: ToolCtx,
@@ -143,6 +126,7 @@ async function handleSearchFiles(
     offset: cursorOffset,
     pageCount: displayResults.length,
   });
+
   const relativeResults = buildRelativeResults(result.basePath, displayResults);
   const structured: z.infer<typeof SearchFilesOutputSchema> = {
     ok: true,
@@ -150,8 +134,14 @@ async function handleSearchFiles(
     results: relativeResults,
     totalMatches: result.summary.matched,
     filesScanned: result.summary.filesScanned,
+    ...(result.summary.skippedInaccessible
+      ? { skippedInaccessible: result.summary.skippedInaccessible }
+      : {}),
+    ...(result.summary.stoppedReason !== undefined
+      ? { stoppedReason: result.summary.stoppedReason }
+      : {}),
+    ...(nextCursor !== undefined ? { nextCursor } : {}),
   };
-  applySummaryFields(structured, result.summary, nextCursor);
 
   // Store the full result set so a caller can fetch all matching files by URI
   // when the response is incomplete: `nextCursor` covers the multi-page case,

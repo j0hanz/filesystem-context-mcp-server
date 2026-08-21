@@ -2,7 +2,7 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
 import { createInMemoryResourceStore } from '../../src/core/store.js';
-import { putJsonResource } from '../../src/tools/_helpers.js';
+import { putJsonResource } from '../../src/tools/resource-links.js';
 
 test('putJsonResource: stores pretty JSON and returns a resource_link', () => {
   const store = createInMemoryResourceStore();

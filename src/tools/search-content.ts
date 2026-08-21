@@ -28,8 +28,8 @@ import {
   MAX_SEARCH_RESULTS,
   parseEnvInt,
 } from '../core/util.js';
-import { putJsonResource } from './_helpers.js';
 import { defineTool, type ToolCtx } from './define.js';
+import { putJsonResource } from './resource-links.js';
 
 /**
  * Configuration constants for the Search Content tool.
@@ -168,22 +168,19 @@ function buildSearchStructured(
 }
 
 function findColumnOffset(content: string, context: SearchContext): number | undefined {
-  try {
-    if (context.matcher) {
-      context.matcher.lastIndex = 0;
-      const match = context.matcher.exec(content);
-      return match ? match.index : undefined;
-    }
-    if (context.caseSensitive) {
-      const idx = content.indexOf(context.pattern);
-      return idx >= 0 ? idx : undefined;
-    }
-    // Case-insensitive literal search
-    const idx = content.toLowerCase().indexOf(context.foldedPattern ?? '');
-    return idx >= 0 ? idx : undefined;
-  } catch {
-    return undefined;
+  if (context.matcher) {
+    context.matcher.lastIndex = 0;
+    const match = context.matcher.exec(content);
+    return match ? match.index : undefined;
   }
+  if (context.caseSensitive) {
+    const idx = content.indexOf(context.pattern);
+    return idx >= 0 ? idx : undefined;
+  }
+  // Case-insensitive literal search
+  if (context.foldedPattern === undefined) return undefined;
+  const idx = content.toLowerCase().indexOf(context.foldedPattern);
+  return idx >= 0 ? idx : undefined;
 }
 
 function buildSortedPayloads(

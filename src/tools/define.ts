@@ -342,21 +342,12 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
   }
 }
 
-async function executeTool<I extends z.ZodType, O extends z.ZodType>(
-  def: ToolDef<I, O>,
-  ctx: ToolCtx,
-  deps: ToolDeps,
-  args: z.infer<I>,
-): Promise<CallToolResult | InputRequiredResult> {
-  const executor = new ToolExecutor<I, O>(def.name, ctx, def, args);
-  return executor.execute(deps);
-}
-
 function createServerToolHandler<I extends z.ZodType, O extends z.ZodType>(
   def: ToolDef<I, O>,
   deps: ToolDeps,
 ): (args: z.infer<I>, ctx: ServerContext) => Promise<CallToolResult | InputRequiredResult> {
-  return async (args, ctx) => executeTool(def, toToolCtx(ctx, deps), deps, args);
+  return async (args, ctx) =>
+    new ToolExecutor<I, O>(def.name, toToolCtx(ctx, deps), def, args).execute(deps);
 }
 
 // WHY THIS EXISTS: The SDK exports fromJsonSchema(rawSchema) which creates a

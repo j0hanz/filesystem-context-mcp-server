@@ -30,8 +30,8 @@ import {
   MAX_LIST_ENTRIES,
   MAX_TREE_DEPTH,
 } from '../core/util.js';
-import { putJsonResource } from './_helpers.js';
 import { defineTool, type ToolCtx } from './define.js';
+import { putJsonResource } from './resource-links.js';
 
 interface CollectedEntry {
   name: string;

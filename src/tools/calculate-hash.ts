@@ -15,8 +15,8 @@ import { toPosixRelative } from '../core/path.js';
 import type { PathValidator } from '../core/path.js';
 import { NonNegInt, RequiredPath } from '../core/schema.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../core/util.js';
-import { putJsonResource } from './_helpers.js';
 import { defineTool, type ToolCtx } from './define.js';
+import { putJsonResource } from './resource-links.js';
 
 const SUPPORTED_ALGORITHMS = ['sha256', 'md5', 'sha1', 'sha512'] as const;
 

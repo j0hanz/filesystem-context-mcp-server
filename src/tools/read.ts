@@ -34,11 +34,11 @@ import {
   MAX_TEXT_FILE_SIZE,
   PARALLEL_CONCURRENCY,
 } from '../core/util.js';
-import { buildFileResourceLink } from './_helpers.js';
 import type { PerPathResult } from './batch.js';
 import { runOverPaths } from './batch.js';
 import type { ToolCtx } from './define.js';
 import { defineTool } from './define.js';
+import { buildFileResourceLink } from './resource-links.js';
 
 const readRangeFields = createReadRangeFields({
   head: 'Return first N lines',
@@ -314,51 +314,46 @@ function preFilterByBudget(
   return { skippedResults, survivors };
 }
 
-function applyContinuation(value: PerPathReadValue, result: ReadFileResult): void {
-  if (!result.hasMoreLines) return;
-  // A tail read counts from the end of the file and reports no startLine, so a
-  // line-range continuation would be computed from line 1 and point at an
-  // unrelated region the caller already skipped past.
-  if (result.readMode === 'tail') return;
-  const continuation = buildReadContinuation({
-    path: result.path,
-    hasMoreLines: true,
+function buildPerPathReadValue(
+  result: ReadFileResult,
+  options: { includeHash?: boolean; hasResourceStore?: boolean },
+): PerPathReadValue {
+  const mimeInfo = detectMimeFromContent(result.path, result.content);
+  const continuation =
+    result.hasMoreLines && result.readMode !== 'tail'
+      ? buildReadContinuation({
+          path: result.path,
+          hasMoreLines: true,
+          ...(result.linesRead !== undefined ? { linesRead: result.linesRead } : {}),
+          ...(result.startLine !== undefined ? { startLine: result.startLine } : {}),
+          ...(result.endLine !== undefined ? { endLine: result.endLine } : {}),
+          ...(result.head !== undefined ? { head: result.head } : {}),
+          ...(result.totalLines !== undefined ? { totalLines: result.totalLines } : {}),
+        })
+      : undefined;
+  const contentHash = options.includeHash
+    ? createHash('sha256').update(result.content, 'utf-8').digest('hex')
+    : undefined;
+  const resourceUri = options.hasResourceStore ? buildFileResourceUri(result.path) : undefined;
+
+  return {
+    content: result.content,
+    mimeType: mimeInfo.mimeType,
+    kind: mimeInfo.kind,
+    ...(continuation ? { continuation } : {}),
+    ...(result.totalLines !== undefined ? { totalLines: result.totalLines } : {}),
     ...(result.linesRead !== undefined ? { linesRead: result.linesRead } : {}),
+    ...(result.hasMoreLines ? { hasMoreLines: true } : {}),
+    ...(result.head !== undefined ? { head: result.head } : {}),
+    ...(result.tail !== undefined ? { tail: result.tail } : {}),
     ...(result.startLine !== undefined ? { startLine: result.startLine } : {}),
     ...(result.endLine !== undefined ? { endLine: result.endLine } : {}),
-    ...(result.head !== undefined ? { head: result.head } : {}),
-    ...(result.totalLines !== undefined ? { totalLines: result.totalLines } : {}),
-  });
-  if (continuation) value.continuation = continuation;
-}
-
-function applyReadResultFields(value: PerPathReadValue, result: ReadFileResult): void {
-  if (result.totalLines !== undefined) value.totalLines = result.totalLines;
-  if (result.linesRead !== undefined) value.linesRead = result.linesRead;
-  if (result.hasMoreLines) value.hasMoreLines = true;
-  if (result.head !== undefined) value.head = result.head;
-  if (result.tail !== undefined) value.tail = result.tail;
-  if (result.startLine !== undefined) value.startLine = result.startLine;
-  if (result.endLine !== undefined) value.endLine = result.endLine;
-  if (result.offset !== undefined) value.offset = result.offset;
-  if (result.bytesRead !== undefined) value.bytesRead = result.bytesRead;
-  if (result.reachedEOF !== undefined) value.reachedEOF = result.reachedEOF;
-}
-
-function applyOptionalFeatures(
-  value: PerPathReadValue,
-  result: ReadFileResult,
-  args: ReadFileInput,
-  ctx: ToolCtx,
-): void {
-  if (args.includeHash) {
-    // Hash the post-truncation content so callers can detect partial reads
-    // without re-reading the (possibly truncated) file body.
-    value.contentHash = createHash('sha256').update(result.content, 'utf-8').digest('hex');
-  }
-  if (ctx.resourceStore) {
-    value.resourceUri = buildFileResourceUri(result.path);
-  }
+    ...(contentHash !== undefined ? { contentHash } : {}),
+    ...(result.offset !== undefined ? { offset: result.offset } : {}),
+    ...(result.bytesRead !== undefined ? { bytesRead: result.bytesRead } : {}),
+    ...(result.reachedEOF !== undefined ? { reachedEOF: result.reachedEOF } : {}),
+    ...(resourceUri !== undefined ? { resourceUri } : {}),
+  };
 }
 
 async function readOnePath(
@@ -372,19 +367,10 @@ async function readOnePath(
     ? await readFileWithStats(filePath, known.validPath, known.stats, spec)
     : await ctx.fs.readFile(filePath, spec);
 
-  const mimeInfo = detectMimeFromContent(result.path, result.content);
-
-  const value: PerPathReadValue = {
-    content: result.content,
-    mimeType: mimeInfo.mimeType,
-    kind: mimeInfo.kind,
-  };
-
-  applyContinuation(value, result);
-  applyReadResultFields(value, result);
-  applyOptionalFeatures(value, result, args, ctx);
-
-  return value;
+  return buildPerPathReadValue(result, {
+    includeHash: args.includeHash,
+    hasResourceStore: ctx.resourceStore !== undefined,
+  });
 }
 
 export const READ_FILE = defineTool({

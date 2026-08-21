@@ -45,8 +45,8 @@ import {
   MAX_TEXT_FILE_SIZE,
   PARALLEL_CONCURRENCY,
 } from '../core/util.js';
-import { buildFileResourceLink } from './_helpers.js';
 import { defineTool, type ToolCtx } from './define.js';
+import { buildFileResourceLink } from './resource-links.js';
 
 const SearchAndReplaceInputSchema = z.strictObject({
   path: OptionalPath,
@@ -480,6 +480,25 @@ function createReplacementMatcher(args: SearchAndReplaceArgs): ReplacementMatche
   return createCaseSensitiveLiteralMatcher(args.searchPattern);
 }
 
+function buildSearchAndReplaceStructuredResult(
+  summary: ReplaceSummary,
+  args: SearchAndReplaceArgs,
+): SearchAndReplaceOutput {
+  return {
+    ok: true,
+    filesModified: summary.filesChanged,
+    totalMatches: summary.totalMatches,
+    processedFiles: summary.processedFiles,
+    ...(summary.failedFiles > 0 ? { failedFiles: summary.failedFiles } : {}),
+    ...(summary.failures.length > 0 ? { failures: summary.failures } : {}),
+    ...(summary.changedFiles.length > 0 ? { results: summary.changedFiles } : {}),
+    ...(summary.changedFilesTruncated ? { resultsTruncated: true } : {}),
+    ...((args.dryRun || args.returnDiff) && summary.diff ? { diff: summary.diff } : {}),
+    ...(summary.diffTruncated ? { diffTruncated: true } : {}),
+    ...(summary.stoppedReason ? { stoppedReason: summary.stoppedReason } : {}),
+  };
+}
+
 async function handleSearchAndReplace(
   args: SearchAndReplaceArgs,
   ctx: ToolCtx,
@@ -661,21 +680,3 @@ export const SEARCH_AND_REPLACE = defineTool({
     return { structured, text: summaryText };
   },
 });
-function buildSearchAndReplaceStructuredResult(
-  summary: ReplaceSummary,
-  args: SearchAndReplaceArgs,
-): SearchAndReplaceOutput {
-  return {
-    ok: true,
-    filesModified: summary.filesChanged,
-    totalMatches: summary.totalMatches,
-    processedFiles: summary.processedFiles,
-    ...(summary.failedFiles > 0 ? { failedFiles: summary.failedFiles } : {}),
-    ...(summary.failures.length > 0 ? { failures: summary.failures } : {}),
-    ...(summary.changedFiles.length > 0 ? { results: summary.changedFiles } : {}),
-    ...(summary.changedFilesTruncated ? { resultsTruncated: true } : {}),
-    ...((args.dryRun || args.returnDiff) && summary.diff ? { diff: summary.diff } : {}),
-    ...(summary.diffTruncated ? { diffTruncated: true } : {}),
-    ...(summary.stoppedReason ? { stoppedReason: summary.stoppedReason } : {}),
-  };
-}

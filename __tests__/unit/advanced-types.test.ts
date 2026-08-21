@@ -88,4 +88,56 @@ describe('Type-Level Advanced Types & Invariants', () => {
     type _TestErrorCodes = Expect<Equals<ErrorCode, ExpectedCodes>>;
     assert.ok(true);
   });
+
+  it('validates triadic SingleOrBatchShape with perFile schema', () => {
+    const extraSchema = { dryRun: z.boolean().default(false) };
+    const perFileSchema = {
+      edits: z.array(z.object({ oldText: z.string(), newText: z.string() })),
+    };
+
+    const schema = singleOrBatchPathsInput({
+      extra: extraSchema,
+      perFile: perFileSchema,
+    });
+
+    type Inferred = z.infer<typeof schema>;
+    type _HasDryRun = Expect<Equals<Inferred['dryRun'], boolean>>;
+    type _HasPath = Expect<Equals<Inferred['path'], string | undefined>>;
+    type _HasPaths = Expect<Equals<Inferred['paths'], string[] | undefined>>;
+    type _HasFiles = Expect<
+      Equals<
+        Inferred['files'],
+        | {
+            path: string;
+            edits: { oldText: string; newText: string }[];
+          }[]
+        | undefined
+      >
+    >;
+
+    assert.ok(schema);
+  });
+
+  it('verifies StoppedReason and PendingOp union memberships', () => {
+    type ExpectedReasons = 'maxResults' | 'maxFiles' | 'timeout';
+    type ExpectedPendingOps = 'delete' | 'move' | 'grant';
+
+    type _TestReasons = Expect<
+      Equals<import('../../src/core/concurrency.js').StoppedReason, ExpectedReasons>
+    >;
+    type _TestPendingOps = Expect<
+      Equals<import('../../src/tools/input-required.js').PendingOp, ExpectedPendingOps>
+    >;
+
+    assert.ok(true);
+  });
+
+  it('verifies ReadSpec discriminated union kinds', () => {
+    type ReadSpec = import('../../src/core/read.js').ReadSpec;
+    type ReadKinds = ReadSpec['kind'];
+    type ExpectedKinds = 'full' | 'head' | 'tail' | 'range' | 'byteRange';
+
+    type _TestKinds = Expect<Equals<ReadKinds, ExpectedKinds>>;
+    assert.ok(true);
+  });
 });

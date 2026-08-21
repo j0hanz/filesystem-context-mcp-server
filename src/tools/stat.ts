@@ -20,10 +20,10 @@ import {
   singleOrBatchPathsInput,
 } from '../core/schema.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../core/util.js';
-import { buildFileInfoPayload, putJsonResource } from './_helpers.js';
 import type { PerPathResult } from './batch.js';
 import { runOverPaths } from './batch.js';
 import { defineTool } from './define.js';
+import { putJsonResource } from './resource-links.js';
 
 const StatInputSchema = singleOrBatchPathsInput({
   extra: {},
@@ -165,14 +165,25 @@ function classifyTypeCounts(results: readonly PerPathResult<FileInfo>[]): {
 
 function toStatPerPathPayload(r: PerPathResult<FileInfo>): z.infer<typeof StatPerPathSchema> {
   if ('error' in r) {
-    return {
-      path: r.path,
-      error: r.error,
-    };
+    return { path: r.path, error: r.error };
   }
+  const info = r.value;
   return {
     path: r.path,
-    value: buildFileInfoPayload(r.value),
+    value: {
+      name: info.name,
+      path: info.path,
+      type: info.type,
+      size: info.size,
+      ...(info.tokenEstimate !== undefined ? { tokenEstimate: info.tokenEstimate } : {}),
+      created: info.created.toISOString(),
+      modified: info.modified.toISOString(),
+      accessed: info.accessed.toISOString(),
+      permissions: info.permissions,
+      isHidden: info.isHidden,
+      ...(info.mimeType !== undefined ? { mimeType: info.mimeType } : {}),
+      ...(info.symlinkTarget !== undefined ? { symlinkTarget: info.symlinkTarget } : {}),
+    },
   };
 }
 

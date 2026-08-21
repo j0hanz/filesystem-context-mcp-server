@@ -17,9 +17,9 @@ import {
   RequiredPath,
 } from '../core/schema.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
-import { buildFileResourceLink } from './_helpers.js';
 import { runOverPaths } from './batch.js';
 import { defineTool } from './define.js';
+import { buildFileResourceLink } from './resource-links.js';
 
 const CreateFileItemSchema = z.strictObject({
   path: RequiredPath.describe('Absolute path where the file will be created'),
@@ -102,7 +102,7 @@ export const CREATE = defineTool({
   run: async (args, ctx) => {
     const batch = await runOverPaths<
       { content: string },
-      { value: CreateFileResult; resourceLink?: ContentBlock }
+      { file: CreateFileResult; resourceLink?: ContentBlock }
     >(
       { files: args.files },
       ctx,
@@ -122,7 +122,7 @@ export const CREATE = defineTool({
         const mimeInfo = detectMimeFromContent(validPath, content);
 
         const resourceUri = buildFileResourceUri(validPath);
-        const value: CreateFileResult = {
+        const file: CreateFileResult = {
           ok: true as const,
           path: validPath,
           size: bytesWritten,
@@ -136,10 +136,10 @@ export const CREATE = defineTool({
 
         return ctx.resourceStore
           ? {
-              value,
+              file,
               resourceLink: buildFileResourceLink(validPath, mimeInfo.mimeType, bytesWritten),
             }
-          : { value };
+          : { file };
       },
       { defaultErrorCode: ErrorCode.UNKNOWN },
     );
@@ -152,7 +152,7 @@ export const CREATE = defineTool({
         failures.push({ path: r.path, error: r.error });
         continue;
       }
-      results.push(r.value.value);
+      results.push(r.value.file);
       if (r.value.resourceLink) links.push(r.value.resourceLink);
     }
 

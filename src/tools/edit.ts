@@ -29,9 +29,9 @@ import type { Regex } from '../core/search.js';
 import { compileRegex, freeRegex } from '../core/search.js';
 import type { ResourceStore } from '../core/store.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
-import { buildFileResourceLink } from './_helpers.js';
 import { runOverPaths } from './batch.js';
 import { defineTool, type ToolCtx } from './define.js';
+import { buildFileResourceLink } from './resource-links.js';
 
 const EditSpecSchema = z.strictObject({
   oldText: z
@@ -420,7 +420,7 @@ async function handleEditFile(
   edits: z.infer<typeof EditSpecSchema>[],
   options: EditFileOptions,
   ctx: ToolCtx,
-): Promise<{ value: EditFileValue; resourceLink?: ContentBlock }> {
+): Promise<{ file: EditFileValue; resourceLink?: ContentBlock }> {
   const { validPath, content } = await loadEditableFile(filePath, ctx.fs, ctx.signal);
   const editResult = await applyEdits(content, edits, options.ignoreWhitespace);
 
@@ -436,7 +436,7 @@ async function handleEditFile(
       ctx.resourceStore,
     );
     return {
-      value: buildEditFileValue(validPath, meta, new Date().toISOString(), editResult),
+      file: buildEditFileValue(validPath, meta, new Date().toISOString(), editResult),
       ...(meta.resourceLink ? { resourceLink: meta.resourceLink } : {}),
     };
   }
@@ -470,7 +470,7 @@ async function handleEditFile(
     ctx.resourceStore,
   );
   return {
-    value: buildEditFileValue(validPath, meta, fileStats.mtime.toISOString(), editResult),
+    file: buildEditFileValue(validPath, meta, fileStats.mtime.toISOString(), editResult),
     ...(meta.resourceLink ? { resourceLink: meta.resourceLink } : {}),
   };
 }
@@ -545,7 +545,7 @@ export const EDIT = defineTool({
 
     const batch = await runOverPaths<
       { edits: z.infer<typeof EditSpecSchema>[] },
-      { value: EditFileValue; resourceLink?: ContentBlock }
+      { file: EditFileValue; resourceLink?: ContentBlock }
     >(
       batchInput,
       ctx,
@@ -560,7 +560,7 @@ export const EDIT = defineTool({
         perPathResults.push({ path: r.path, error: r.error });
         continue;
       }
-      perPathResults.push({ path: r.path, value: r.value.value });
+      perPathResults.push({ path: r.path, value: r.value.file });
       if (r.value.resourceLink) resourceLinks.push(r.value.resourceLink);
     }
 
